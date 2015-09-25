@@ -1,0 +1,931 @@
+#!/usr/bin/env bash
+
+USERNAME=$(whoami)
+
+####################################################
+# common functions used by other parts of Genesis
+
+find_toplevel_root() {
+	(while [[ $(pwd) != "/" && ! -d global/ && ! -f .deployment ]]; do
+		cd ..
+	 done
+	 if [[ -d global || -f .deployment ]]; then
+		pwd
+	 fi)
+}
+
+setup() {
+	if [[ ${DEPLOYMENT_ROOT:-unset} != "unset" ]]; then
+		return
+	fi
+
+	DEPLOYMENT_ROOT=$(find_toplevel_root)
+	if [[ -z ${DEPLOYMENT_ROOT:-} ]]; then
+		fail "Unable to determine Genesis DEPLOYMENT_ROOT"
+	fi
+
+	# What type of deployment is this?
+	#
+	#    normal    - A normal deployment
+	#    microbosh - MicroBOSH deployment
+	#
+	DEPLOYMENT_TYPE=normal
+	if [[ -f "${DEPLOYMENT_ROOT}/.deployment" ]]; then
+		DEPLOYMENT_TYPE=$(cat "${DEPLOYMENT_ROOT}/.deployment")
+	fi
+
+	case ${DEPLOYMENT_TYPE} in
+	(normal)    ;;
+	(microbosh) ;;
+	(*) fail "Unrecognized deployment type: ${DEPLOYMENT_TYPE}"
+	esac
+
+	DEPLOYMENT_SITE=""
+	DEPLOYMENT_ENVIRONMENT=""
+
+	local relpath=${PWD##$DEPLOYMENT_ROOT/}
+	if [[ ${relpath#global} == ${relpath} ]]; then
+		# not in /global
+		local site=${relpath%%/*}
+		if [[ -n ${site} && -d "${DEPLOYMENT_ROOT}/${site}" && -d "${DEPLOYMENT_ROOT}/${site}/site" ]]; then
+			DEPLOYMENT_SITE=${site}
+
+			relpath=${relpath#$site/}
+			local env=${relpath%%/*}
+			if [[ -n ${env} && ${env} != "site" && -d "${DEPLOYMENT_ROOT}/${site}/${env}" ]]; then
+				DEPLOYMENT_ENVIRONMENT=${env}
+			fi
+		fi
+	fi
+
+	DEPLOYMENT_SITE_DIR="${DEPLOYMENT_ROOT}/${DEPLOYMENT_SITE}"
+	DEPLOYMENT_ENV_DIR="${DEPLOYMENT_ROOT}/${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}"
+}
+
+
+####################################################
+# checks and validating functions
+
+need_command() {
+	local cmd=${1:?need_command() - no command name given}
+
+	if [[ ! -x "$(command -v $cmd)" ]]; then
+		echo >&2 "${cmd} is not installed."
+		if [[ "${cmd}" == "spruce" ]]; then
+			echo >&2 "Please download it from https://github.com/geoffranks/spruce/releases"
+		fi
+		exit 2
+	fi
+}
+
+check_site_name() {
+	local site=${1:?check_site_name() - no site name provided}
+
+	cleaned=$(echo -n ${site} | sed -e 's/[^a-z0-9_-]//')
+	if [[ ${cleaned} != ${site} ]]; then
+		echo >&2 "Error: Site name '${site}' contains invalid characters"
+		exit 2
+	fi
+}
+
+check_environment_name() {
+	local env=${1:?check_environment_name() - no env name provided}
+
+	case ${env} in
+	(site|global)
+		echo >&2 "Error: Environment name '${env}' is reserved"
+		exit 2
+		;;
+	esac
+
+	cleaned=$(echo -n ${env} | sed -e 's/[^a-z0-9_-]//')
+	if [[ ${cleaned} != ${env} ]]; then
+		echo >&2 "Error: Environment name '${env}' contains invalid characters"
+		exit 2
+	fi
+}
+
+must_be_in_a_site() {
+	setup
+	if [[ -z ${DEPLOYMENT_SITE} ]]; then
+		echo >&2 "Error: Must be in a site directory to run this command"
+		exit 2
+	fi
+}
+
+must_be_in_an_environment() {
+	setup
+	if [[ -z ${DEPLOYMENT_ENVIRONMENT} ]]; then
+		echo >&2 "Error: must be in an environment directory to run this command"
+		exit 2
+	fi
+}
+
+
+####################################################
+# helper functions
+
+env_root() {
+	site=${1:?env_root() - No site given}
+	name=${2:?env_root() - No environment given}
+
+	setup
+	echo "${DEPLOYMENT_ROOT}/${site}/${name}"
+}
+
+create_normal_deployment() {
+	setup
+	echo "normal" > ${DEPLOYMENT_ROOT}/.deployment
+	mkdir -p ${DEPLOYMENT_ROOT}/global
+	mkdir -p ${DEPLOYMENT_ROOT}/global/releases
+
+	cat > ${DEPLOYMENT_ROOT}/global/deployment.yml <<EOF
+---
+name: (( param "Please define the deployment name in the environment templates" ))
+
+update:
+  canaries: 1
+  max_in_flight: 1
+  serial: true
+EOF
+	for file in jobs properties; do
+		cat > ${DEPLOYMENT_ROOT}/global/${file}.yml <<EOF
+--- {}
+EOF
+	done
+}
+
+create_microbosh_deployment() {
+	setup
+	echo "microbosh" > ${DEPLOYMENT_ROOT}/.deployment
+	mkdir -p ${DEPLOYMENT_ROOT}/global
+
+	cat > ${DEPLOYMENT_ROOT}/global/deployment.yml <<EOF
+---
+name: (( param "Please specify a name for your MicroBOSH deployment" ))
+network: (( param "Please define a network for your MicroBOSH deployment" ))
+resources:
+  persistent_disk:  (( param "Please define your persistent disk configuration" ))
+  cloud_properties: (( param "Please define your infrastructure's cloud properties" ))
+cloud:
+  plugin: (( param "site does not define cloud.plugin" ))
+  properties:
+    agent:
+      ntp:
+      - 0.pool.ntp.org
+      - 1.pool.ntp.org
+      - 2.pool.ntp.org
+      - 3.pool.ntp.org
+
+apply_spec:
+  agent:
+    blobstore:
+      address: (( param "Please define an address for your blobstore" ))
+    nats:
+      address: (( param "Please define an address for your nats message broker" ))
+  properties:
+    director:
+      max_threads: 5
+    ntp: (( grab cloud.properties.agent.ntp ))
+    registry:
+      address: (( param "Please define an address for the registry" ))
+    hm:
+      pagerduty_enabled: false
+      pagerduty:         ~
+
+      graphite_enabled:  false
+      graphite:          ~
+
+      datadog_enabled:   false
+      datadog:           ~
+
+      director_account:  (( param "Please provide the BOSH account name to use for health monitoring" ))
+      resurrector_enabled: true
+EOF
+}
+
+refresh_global() {
+	setup
+	local site=${1:?refresh_global() - no site given}
+	local env=${2:?refresh_global() - no environment given}
+	local root="${DEPLOYMENT_ROOT}/${site}/${env}"
+
+	local saved=0
+	if [[ -d ${root}/.global ]]; then
+		saved=1
+		mv ${root}/.global ${root}/.global.old
+	fi
+
+	cp -a ${DEPLOYMENT_ROOT}/global ${root}/.global
+	if [[ $? != 0 ]]; then
+		if [[ ${saved} == 1 ]]; then
+			mv ${root}/.global.old ${root}/.global
+		fi
+		echo >&2 "Error: failed to refresh global for ${site}/${env}"
+		exit 2
+	fi
+
+	rm -fr ${root}/.global.old
+}
+
+create_normal_site() {
+	setup
+	local site=${1:?create_normal_site() - no site provided}
+
+	check_site_name ${site}
+
+	mkdir -p ${DEPLOYMENT_ROOT}/${site}
+	mkdir -p ${DEPLOYMENT_ROOT}/${site}/site
+	mkdir -p ${DEPLOYMENT_ROOT}/${site}/site/stemcell
+
+	cat > ${DEPLOYMENT_ROOT}/${site}/site/README <<EOF
+Site Definitions (${site})
+
+This directory contains templates that describe the infrastructure-specific
+settings and site-wide properties.
+
+  site/networks.yml           Define what networks to use for all the
+                              environments in this site (although you may
+                              want to defer the actual numbering to the
+                              environment level.
+
+  site/disk-pools.yml         If you need to, you can put disk pool
+                              definitions in this file.
+
+  site/resource-pools.yml     Set up the resource pools to use for job
+                              virtual machines, and apply their cloud
+                              properties (i.e. availability zones)
+
+  site/jobs.yml               Here you can modify the list of jobs defined
+                              at the global level, remove jobs (by setting
+                              their instances: count to 0), and supply any
+                              additional, site-wide job properties.
+
+  site/update.yml             Specify job update parameters here, which can
+                              change based on the cloud provider in use,
+                              and its performance characteristics.
+
+NOTE: If you make changes to the templates in here, they will automatically
+propagate to any newly-created environments, but you will need to run a
+refresh for existing environments to receive those updates.
+EOF
+# site/README
+
+	cat > ${DEPLOYMENT_ROOT}/${site}/site/disk-pools.yml <<EOF
+---
+disk_pools: []
+EOF
+	cat > ${DEPLOYMENT_ROOT}/${site}/site/update.yml <<EOF
+---
+update:
+  canary_watch_time: 30000-600000
+  update_watch_time: 5000-600000
+  max_in_flight: 1
+EOF
+	for file in networks resource-pools jobs; do
+		cat > ${DEPLOYMENT_ROOT}/${site}/site/${file}.yml <<EOF
+--- {}
+EOF
+	done
+
+	(cd ${DEPLOYMENT_ROOT}/global/releases ; ls -1) > ${DEPLOYMENT_ROOT}/${site}/site/releases
+
+	echo "Created site ${site}:"
+	tree "${DEPLOYMENT_ROOT}/${site}"
+	echo
+	echo
+}
+
+create_microbosh_site() {
+	setup
+	local site=${1:?create_normal_site() - no site provided}
+
+	check_site_name ${site}
+
+	mkdir -p ${DEPLOYMENT_ROOT}/${site}
+	mkdir -p ${DEPLOYMENT_ROOT}/${site}/site
+
+	cat > ${DEPLOYMENT_ROOT}/${site}/site/README <<EOF
+Site Definitions (${site})
+
+This directory contains templates that describe the infrastructure-specific
+settings and site-wide properties.
+
+  site/infra.yml              Define infrastructure-specific settings for
+                              this MicroBOSH deployment, including resources,
+                              cloud properties, etc.
+
+  site/scaling.yml            Define sizing properties for things like number
+                              of director threads, RAM/CPU/Disk sizing, etc.
+
+
+NOTE: If you make changes to the templates in here, they will automatically
+propagate to any newly-created environments, but you will need to run a
+refresh for existing environments to receive those updates.
+EOF
+# site/README
+
+	for file in infra scaling; do
+		cat > ${DEPLOYMENT_ROOT}/${site}/site/${file}.yml <<EOF
+--- {}
+EOF
+	done
+
+	echo "Created MicroBOSH site ${site}:"
+	tree "${DEPLOYMENT_ROOT}/${site}"
+	echo
+	echo
+}
+
+refresh_site() {
+	setup
+	local site=${1:?refresh_site() - no site given}
+	local env=${2:?refresh_site() - no environment given}
+	local root="${DEPLOYMENT_ROOT}/${site}/${env}"
+
+	local saved=0
+	if [[ -d ${root}/.site ]]; then
+		saved=1
+		mv ${root}/.site ${root}/.site.old
+	fi
+
+	cp -a ${DEPLOYMENT_ROOT}/${site}/site ${root}/.site
+	if [[ $? != 0 ]]; then
+		if [[ ${saved} == 1 ]]; then
+			mv ${root}/.site.old ${root}/.site
+		fi
+		echo >&2 "Error: failed to refresh site for ${site}/${env}"
+		exit 2
+	fi
+
+	rm -fr ${root}/.site.old
+}
+
+create_normal_environment() {
+	setup
+	local site=${1:?create_normal_environment() - no site provided}
+	local name=${2:?create_normal_environment() - no environment name provided}
+	local root=$(env_root ${site} ${name})
+
+	check_site_name ${site}
+	check_environment_name ${name}
+
+	if [[ ! -d "${DEPLOYMENT_ROOT}/${site}" ]]; then
+		create_normal_site ${site}
+	fi
+
+	mkdir -p ${root}
+	cat > ${root}/README <<EOF
+EOF
+
+	for file in cloudfoundry credentials director monitoring name properties networking scaling; do
+		cat > ${root}/${file}.yml <<EOF
+--- {}
+EOF
+	done
+
+	refresh_global ${site} ${name}
+	refresh_site   ${site} ${name}
+
+	echo "Created environment ${site}/${name}:"
+	tree ${root}
+	echo
+	echo
+}
+
+create_microbosh_environment() {
+	setup
+	local site=${1:?create_microbosh_environment() - no site provided}
+	local name=${2:?create_microbosh_environment() - no environment name provided}
+	local root=$(env_root ${site} ${name})
+
+	check_site_name ${site}
+	check_environment_name ${name}
+
+	if [[ ! -d "${DEPLOYMENT_ROOT}/${site}" ]]; then
+		create_microbosh_site ${site}
+	fi
+
+	mkdir -p ${root}
+	cat > ${root}/README <<EOF
+EOF
+
+	for file in director infra name scaling; do
+		cat > ${root}/${file}.yml <<EOF
+--- {}
+EOF
+	done
+
+	refresh_global ${site} ${name}
+	refresh_site   ${site} ${name}
+
+	echo "Created environment ${site}/${env}:"
+	tree ${root}
+	echo
+	echo
+}
+
+site_metadata() {
+	must_be_in_an_environment
+	if [[ ! -f "${DEPLOYMENT_ENV_DIR}/.site/stemcell/name" ]]; then
+		echo >&2 "Error: no stemcell name specified for site"
+		exit 2
+	fi
+	local stemcell_name=$(cat "${DEPLOYMENT_ENV_DIR}/.site/stemcell/name")
+
+	if [[ ! -f "${DEPLOYMENT_ENV_DIR}/.site/stemcell/version" ]]; then
+		echo >&2 "Error: no stemcell version specified for site"
+		exit 2
+	fi
+	local stemcell_version=$(cat "${DEPLOYMENT_ENV_DIR}/.site/stemcell/version")
+
+	if [[ ! -f "${DEPLOYMENT_ENV_DIR}/.site/releases" ]]; then
+		echo >&2 "Error: no releases listed for site"
+		exit 2
+	fi
+	local releases=$(cat "${DEPLOYMENT_ENV_DIR}/.site/releases" | sed 's/\s*#.*//')
+
+	for rel in ${releases}; do
+		if [[ ! -d "${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}" ]]; then
+			echo >&2 "Error: release '${rel}' not defined globally"
+			exit 2
+		fi
+		if [[ ! -f "${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/version" ]]; then
+			echo >&2 "Error: no version specified for '${rel}'"
+			exit 2
+		fi
+	done
+
+	cat <<EOF
+---
+meta:
+  stemcell:
+    name: ${stemcell_name}
+    version: ${stemcell_version}
+releases:
+EOF
+	for rel in ${releases}; do
+		echo "  - name: ${rel}"
+		echo "    version: $(cat ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/version)"
+	done
+}
+
+build_normal_manifest() {
+	must_be_in_an_environment
+	need_command spruce
+
+	site_metadata > ${DEPLOYMENT_ENV_DIR}/.begin.yml
+	(cd ${DEPLOYMENT_ENV_DIR}
+	 echo "# generated $(date) by $USERNAME"
+	 spruce merge --prune meta \
+		.begin.yml \
+		.global/jobs.yml \
+		.global/deployment.yml \
+		.global/properties.yml \
+		.site/disk-pools.yml \
+		.site/update.yml \
+		.site/jobs.yml \
+		.site/networks.yml \
+		.site/resource-pools.yml \
+		monitoring.yml \
+		networking.yml \
+		director.yml \
+		scaling.yml \
+		properties.yml \
+		credentials.yml \
+		cloudfoundry.yml \
+		name.yml)
+
+	rm -f ${DEPLOYMENT_ENV_DIR}/.begin.yml
+}
+
+build_microbosh_manifest() {
+	must_be_in_an_environment
+	need_command spruce
+
+	(cd ${DEPLOYMENT_ENV_DIR}
+	 echo "# generated $(date) by $USERNAME"
+	 spruce merge --prune meta \
+		.global/deployment.yml \
+		.site/infra.yml \
+		.site/scaling.yml \
+		infra.yml \
+		scaling.yml \
+		director.yml \
+		name.yml)
+}
+
+
+####################################################
+# multi-call handlers
+
+cmd_help() {
+	local topic=${1:-usage}
+
+	case ${topic} in
+	(usage)
+		cat >&2 <<EOF
+USAGE: genesis <command> [arguments]
+
+Common commands:
+
+    genesis new deployment      Create a new deployment directory, with all the
+                                necessary files for deploying with Genesis.
+
+    genesis new site            Set up the files and directories for a new site.
+
+    genesis new environment     Set up the files and directories for a new environment.
+
+    genesis build               When run from inside of an environment directory,
+                                paste together all of the template files, in order
+                                and pop out a manifest file.
+
+    genesis diff                When run from inside of an environment directory,
+                                show a semantic diff of the generated manifest for that
+                                environment, against some other manifest file.
+
+    genesis refresh             Refresh the cached copies of site and/or global
+                                definitions inside the current environment directory.
+
+    genesis help                Peruse the help!  Give it a topic argument, or the name
+                                of another command to get more detailed information.
+                                Documentation!
+
+EOF
+		exit 0
+		;;
+	(new)
+		cat >&2 <<EOF
+USAGE: genesis new deployment NAME
+       genesis new site SITE
+       genesis new environment SITE ENVIRONMENT
+
+Creates new things, with all the right files in all the right places.
+
+New Deployments
+---------------
+
+  genesis new deployment [-t TYPE] NAME
+
+  Create a new deployment, complete with all the correct templates in
+  global/, and a base configuration.  This will create a sub-directory
+  in the current working directory, named <NAME>-deployments, and set
+  it up with git version control.
+
+  If you are trying to set up a MicroBOSH deployment, specify a type
+  via '-t microbosh' and genesis will set up a template structure that
+  is more amenable to deploying MicroBOSH.  By default, it will set up
+  for normal ('-t normal') deployments, which assume you will need to
+  integrate with Cloud Foundry.
+
+
+New Sites
+---------
+
+  genesis new site NAME
+
+  Create a new site with the given name, and set up the necessary
+  directories and blank template files for defining the parts of a
+  BOSH manifest that map to infrastructural and site-wide things.
+
+
+New Environments
+----------------
+
+  genesis new environment SITE NAME
+
+  Create a new environment with the given name, in the specified
+  site, and set up the directories and template files for local,
+  environment-specific things.
+
+EOF
+		exit 0
+		;;
+	(build)
+		cat >&2 <<EOF
+USAGE: genesis build
+
+Compiles all of the YAML templates down to a single BOSH manifest
+for the current environment.
+
+EOF
+		exit 0
+		;;
+	(refresh)
+		cat >&2 <<EOF
+USAGE: genesis refresh [(global|site|all)]
+
+Copies current definitions of the global templates and/or the
+current site into the current environment.  By default, copies both.
+
+EOF
+		exit 0
+		;;
+	(*)
+		cat >&2 <<EOF
+Unrecognized help topic '${topic}'.
+Try one of these:
+
+    genesis help usage
+    genesis help <command>
+
+EOF
+		exit 0
+		;;
+	esac
+	exit 1
+}
+
+cmd_new_deployment() {
+	local dtype="normal"
+	local root=$(pwd)
+	local name=""
+
+	while (( $# )); do
+		arg=$1 ; shift
+		case ${arg} in
+		(-t|--type)
+			dtype=$1
+			shift
+			;;
+		(-r|--root)
+			root=$1
+			shift
+			;;
+		(*)
+			name=$arg
+			shift
+			;;
+		esac
+	done
+
+	if [[ -z ${name:-} ]]; then
+		echo >&2 "USAGE: genesis new deployment [options] name"
+		exit 1
+	fi
+
+	if [[ ! -d ${root} ]]; then
+		echo >&2 "Error: root directory ${root} does not exist"
+		exit 1
+	fi
+
+	if [[ -d "${root}/${name}-deployments" ]]; then
+		echo >&2 "Error: target directory ${root}/${name}-deployments already exists!"
+		exit 1
+	fi
+
+	case ${dtype} in
+	(normal|microbosh) ;;
+	(*)
+		echo >&2 "Error: unrecognized deployment type '${dtype}'"
+		exit 1
+		;;
+	esac
+
+	DEPLOYMENT_TYPE=${dtype}
+	DEPLOYMENT_ROOT="${root}/${name}-deployments"
+	mkdir ${DEPLOYMENT_ROOT}
+
+	case ${DEPLOYMENT_TYPE} in
+	(normal)
+		create_normal_deployment
+		;;
+	(microbosh)
+		create_microbosh_deployment
+		;;
+	esac
+
+	cat > ${DEPLOYMENT_ROOT}/.gitignore <<EOF
+.begin.yml
+EOF
+
+	(cd ${DEPLOYMENT_ROOT}
+	 git init
+	 git add .
+	 git ci -m "Initial commit of ${name}-deployments")
+
+	exit 0
+}
+
+cmd_new_site() {
+	local name=${1:?USAGE: genesis new site NAME}
+
+	setup
+	if [[ -d "${DEPLOYMENT_ROOT}/${name}" ]]; then
+		echo "Site ${name} already exists"
+		exit 0
+	fi
+
+	case ${DEPLOYMENT_TYPE} in
+	(normal)
+		create_normal_site ${name}
+		;;
+	(microbosh)
+		create_microbosh_site ${name}
+		;;
+	esac
+	exit 0
+}
+
+cmd_new_environment() {
+	local site=${1:?USAGE: genesis new environment SITE NAME}
+	local name=${2:?USAGE: genesis new environment SITE NAME}
+
+	setup
+	case ${DEPLOYMENT_TYPE} in
+	(normal)
+		create_normal_environment ${site} ${name}
+		;;
+	(microbosh)
+		create_microbosh_environment ${site} ${name}
+		;;
+	esac
+	exit 0
+}
+
+bad_new() {
+	local arg=${1}
+	cat >&2 <<EOF
+USAGE: genesis new deployment
+       genesis new (site|environment)
+EOF
+	exit 1
+}
+
+cmd_build() {
+	must_be_in_an_environment
+
+	target=${1:-manifest.yml}
+	mkdir -p ${DEPLOYMENT_ENV_DIR}/manifests
+
+	case ${DEPLOYMENT_TYPE} in
+	(normal)
+		build_normal_manifest > ${DEPLOYMENT_ENV_DIR}/manifests/${target}
+		;;
+	(microbosh)
+		build_microbosh_manifest > ${DEPLOYMENT_ENV_DIR}/manifests/${target}
+		;;
+	esac
+	exit 0
+}
+
+cmd_diff() {
+	must_be_in_an_environment
+	exit 0
+}
+
+cmd_refresh_global() {
+	must_be_in_an_environment
+	echo "Refreshing global definitions for ${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}"
+	refresh_global ${DEPLOYMENT_SITE} ${DEPLOYMENT_ENVIRONMENT}
+	exit 0
+}
+
+cmd_refresh_site() {
+	must_be_in_an_environment
+	echo "Refreshing site definitions for ${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}"
+	refresh_site ${DEPLOYMENT_SITE} ${DEPLOYMENT_ENVIRONMENT}
+	exit 0
+}
+
+cmd_refresh_all() {
+	must_be_in_an_environment
+	echo "Refreshing site definitions for ${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}"
+	refresh_site   ${DEPLOYMENT_SITE} ${DEPLOYMENT_ENVIRONMENT}
+	echo "Refreshing global definitions for ${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}"
+	refresh_global ${DEPLOYMENT_SITE} ${DEPLOYMENT_ENVIRONMENT}
+	exit 0
+}
+
+bad_refresh() {
+	local arg=${1}
+	cat >&2 <<EOF
+USAGE: genesis refresh (all|global|site)
+
+Refreshes the global and/or site definitions inside of a single environment,
+by copying in the definitions from upstream.
+EOF
+	exit 1
+}
+
+cmd_repipe() {
+	echo "Updating Concourse pipeline configurations"
+	need_command spruce
+	need_command fly
+
+	if [[ ! -f ${DEPLOYMENT_ROOT}/pipeline/target ]]; then
+		echo >&2 "No target specified in pipeline/target!"
+		exit 2
+	fi
+	local target=$(cat ${DEPLOYMENT_ROOT}/pipeline/target)
+
+	if [[ -f ${DEPLOYMENT_ROOT}/pipeline/name ]]; then
+		echo >&2 "No pipeline name specified in pipeline/name!"
+		exit 2
+	fi
+	local pipeline=$(cat ${DEPLOYMENT_ROOT}/pipeline/name)
+
+	(cd ${DEPLOYMENT_ROOT}/pipeline
+	 spruce --concourse merge > live.yml
+		pipeline/groups.yml \
+		pipeline/resources.yml \
+		pipeline/jobs/deploy-*.yml \
+		pipeline/jobs/build-task-image.yml
+
+	 fly -k -t ${target} configure -c pipeline/live.yml \
+		--vars-from pipeline/credentials.yml \
+		${pipeline})
+}
+
+cmd_dump() {
+	setup
+	printf "type: %s\n" ${DEPLOYMENT_TYPE}
+	printf "root: %s\n" ${DEPLOYMENT_ROOT}
+	printf "site: %s\n" ${DEPLOYMENT_SITE}
+	printf "env:  %s\n" ${DEPLOYMENT_ENVIRONMENT}
+	exit 0
+}
+
+bad_command() {
+	local cmd=${1}
+	cat >&2 <<EOF
+Unrecognized sub-command: '$cmd'
+
+Try one of these:
+
+   genesis help
+   genesis new (deployment|site|environment)
+   genesis build
+   genesis refresh (global|site|all)
+
+EOF
+	exit 1
+}
+
+
+####################################################
+# multi-call interface
+
+main() {
+	local cmd=${1:-help} ; shift
+
+	case ${cmd} in
+	(help)
+		cmd_help $*
+		;;
+	(new)
+		local arg=${1:-} ; shift
+		case ${arg} in
+		(deployment)
+			cmd_new_deployment $*
+			;;
+		(site)
+			cmd_new_site $*
+			;;
+		(env|environment)
+			cmd_new_environment $*
+			;;
+		(*)
+			bad_new ${arg}
+			;;
+		esac
+		;;
+	(build)
+		cmd_build $*
+		;;
+	(diff)
+		cmd_diff $*
+		;;
+	(refresh)
+		local arg=${1:-all} ; shift
+		case ${arg} in
+		(global)
+			cmd_refresh_global $*
+			;;
+		(site)
+			cmd_refresh_site $*
+			;;
+		(all)
+			cmd_refresh_all $*
+			;;
+		(*)
+			bad_refresh ${arg}
+			;;
+		esac
+		;;
+	(repipe)
+		cmd_repipe
+		;;
+	(dump)
+		cmd_dump
+		;;
+	(*)
+		bad_command ${cmd}
+		;;
+	esac
+}
+
+
+main $@
+
+# fin
