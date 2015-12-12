@@ -27,7 +27,9 @@ setup() {
 	# What type of deployment is this?
 	#
 	#    normal    - A normal deployment
+	#    bosh      - A BOSH deployment (currently-favored type)
 	#    microbosh - MicroBOSH deployment
+	#    bosh-init - A bosh-init BOSH deployment
 	#
 	DEPLOYMENT_TYPE=normal
 	if [[ -f "${DEPLOYMENT_ROOT}/.deployment" ]]; then
@@ -35,8 +37,8 @@ setup() {
 	fi
 
 	case ${DEPLOYMENT_TYPE} in
-	(normal)    ;;
-	(microbosh) ;;
+	(bosh) DEPLOYMENT_TYPE=bosh-init ;;
+	(normal|bosh-init|microbosh) ;;
 	(*) fail "Unrecognized deployment type: ${DEPLOYMENT_TYPE}"
 	esac
 
@@ -219,6 +221,33 @@ apply_spec:
 EOF
 }
 
+create_bosh_init_deployment() {
+	setup
+	echo "bosh-init" > ${DEPLOYMENT_ROOT}/.deployment
+	mkdir -p ${DEPLOYMENT_ROOT}/global
+	mkdir -p ${DEPLOYMENT_ROOT}/global/releases
+
+	cat > ${DEPLOYMENT_ROOT}/global/deployment.yml <<EOF
+---
+name: (( param "Please specify a name for your BOSH deployment" ))
+
+releases: (( param "bosh-init deployments require a list of BOSH releases to deploy" ))
+
+resource_pools: (( param "Please define one or more resource pools for your BOSH deployment" ))
+disk_pools:     (( param "Please define one or more disk pools for your BOSH deployment" ))
+networks:       (( param "Please define one or more networks for your BOSH deployment" ))
+
+cloud_provider:
+  template: (( param "Please define the Cloud Provider to use for your BOSH deployment" ))
+  properties: (( param "Please define the configuration for your BOSH Cloud Provider" ))
+EOF
+	for file in jobs properties; do
+		cat > ${DEPLOYMENT_ROOT}/global/${file}.yml <<EOF
+--- {}
+EOF
+	done
+}
+
 refresh_global() {
 	setup
 	local site=${1:?refresh_global() - no site given}
@@ -352,6 +381,62 @@ EOF
 	echo
 }
 
+create_bosh_init_site() {
+	setup
+	local site=${1:?create_normal_site() - no site provided}
+
+	check_site_name ${site}
+
+	mkdir -p ${DEPLOYMENT_ROOT}/${site}
+	mkdir -p ${DEPLOYMENT_ROOT}/${site}/site
+
+	cat > ${DEPLOYMENT_ROOT}/${site}/site/README <<EOF
+Site Definitions (${site})
+
+This directory contains templates that describe the infrastructure-specific
+settings and site-wide properties.
+
+  site/networks.yml           Define what networks to use for all the
+                              environments in this site (although you may
+                              want to defer the actual numbering to the
+                              environment level.
+
+  site/disk-pools.yml         If you need to, you can put disk pool
+                              definitions in this file.
+
+  site/resource-pools.yml     Set up the resource pools to use for job
+                              virtual machines, and apply their cloud
+                              properties (i.e. availability zones)
+
+  site/jobs.yml               Here you can modify the list of jobs defined
+                              at the global level, remove jobs (by setting
+                              their instances: count to 0), and supply any
+                              additional, site-wide job properties.
+
+NOTE: If you make changes to the templates in here, they will automatically
+propagate to any newly-created environments, but you will need to run a
+refresh for existing environments to receive those updates.
+EOF
+# site/README
+
+	cat > ${DEPLOYMENT_ROOT}/${site}/site/disk-pools.yml <<EOF
+---
+disk_pools: []
+EOF
+	for file in networks resource-pools jobs; do
+		cat > ${DEPLOYMENT_ROOT}/${site}/site/${file}.yml <<EOF
+--- {}
+EOF
+	done
+
+	(cd ${DEPLOYMENT_ROOT}/global/releases ; ls -1) > ${DEPLOYMENT_ROOT}/${site}/site/releases
+
+	echo "Created BOSH (bosh-init) site ${site}:"
+	tree "${DEPLOYMENT_ROOT}/${site}"
+	echo
+	echo
+}
+
 refresh_site() {
 	setup
 	local site=${1:?refresh_site() - no site given}
@@ -442,7 +527,40 @@ EOF
 	echo
 }
 
-site_metadata() {
+create_bosh_init_environment() {
+	setup
+	local site=${1:?create_bosh_init_environment() - no site provided}
+	local name=${2:?create_bosh_init_environment() - no environment name provided}
+	local root=$(env_root ${site} ${name})
+
+	check_site_name ${site}
+	check_environment_name ${name}
+
+	if [[ ! -d "${DEPLOYMENT_ROOT}/${site}" ]]; then
+		create_bosh_init_site ${site}
+	fi
+
+	mkdir -p ${root}
+	create_makefile ${root}/Makefile
+	cat > ${root}/README <<EOF
+EOF
+
+	for file in credentials name properties networking; do
+		cat > ${root}/${file}.yml <<EOF
+--- {}
+EOF
+	done
+
+	refresh_global ${site} ${name}
+	refresh_site   ${site} ${name}
+
+	echo "Created environment ${site}/${env}:"
+	tree ${root}
+	echo
+	echo
+}
+
+normal_site_metadata() {
 	must_be_in_an_environment
 	if [[ ! -f "${DEPLOYMENT_ENV_DIR}/.site/stemcell/name" ]]; then
 		echo >&2 "Error: no stemcell name specified for site"
@@ -491,7 +609,7 @@ build_normal_manifest() {
 	must_be_in_an_environment
 	need_command spruce
 
-	site_metadata > ${DEPLOYMENT_ENV_DIR}/.begin.yml
+	normal_site_metadata > ${DEPLOYMENT_ENV_DIR}/.begin.yml
 	(cd ${DEPLOYMENT_ENV_DIR}
 	 echo "# generated $(date) by $USERNAME"
 	 spruce merge --prune meta \
@@ -530,6 +648,75 @@ build_microbosh_manifest() {
 		scaling.yml \
 		director.yml \
 		name.yml)
+}
+
+bosh_init_site_metadata() {
+	must_be_in_an_environment
+	if [[ ! -f "${DEPLOYMENT_ENV_DIR}/.site/releases" ]]; then
+		echo >&2 "Error: no releases listed for site"
+		exit 2
+	fi
+	local releases=$(cat "${DEPLOYMENT_ENV_DIR}/.site/releases" | sed 's/\s*#.*//')
+
+	for rel in ${releases}; do
+		if [[ ! -d "${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}" ]]; then
+			echo >&2 "Error: release '${rel}' not defined globally"
+			exit 2
+		fi
+		if [[ ! -f "${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/url" ]]; then
+			echo >&2 "Error: no url specified for '${rel}'"
+			exit 2
+		fi
+		if [[ ! -f "${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/sha1" ]]; then
+			url=$(cat "${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/url")
+			echo >&2 "retrieving ${url}"
+			sha1=$(curl -LSs "${url}" | sha1sum | sed -e 's/ .*//')
+			if [[ -z "${sha1}" ]]; then
+				echo >&2 "Error: failed to download and verify ${rel} release"
+				echo >&2 "       (from $url)"
+				exit 2
+			fi
+			echo "$sha1" > "${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/sha1"
+		fi
+	done
+
+	cat <<EOF
+---
+meta:
+  stemcell:
+    name: ${stemcell_name}
+    version: ${stemcell_version}
+releases:
+EOF
+	for rel in ${releases}; do
+		echo "  - name: ${rel}"
+		echo "    url:  $(cat ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/url)"
+		echo "    sha1: $(cat ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/sha1)"
+	done
+}
+
+build_bosh_init_manifest() {
+	must_be_in_an_environment
+	need_command spruce
+
+	bosh_init_site_metadata > ${DEPLOYMENT_ENV_DIR}/.begin.yml
+	(cd ${DEPLOYMENT_ENV_DIR}
+	 echo "# generated $(date) by $USERNAME"
+	 spruce merge --prune meta \
+		.begin.yml \
+		.global/jobs.yml \
+		.global/deployment.yml \
+		.global/properties.yml \
+		.site/disk-pools.yml \
+		.site/jobs.yml \
+		.site/networks.yml \
+		.site/resource-pools.yml \
+		networking.yml \
+		properties.yml \
+		credentials.yml \
+		name.yml)
+
+	rm -f ${DEPLOYMENT_ENV_DIR}/.begin.yml
 }
 
 
@@ -712,7 +899,8 @@ cmd_new_deployment() {
 	fi
 
 	case ${dtype} in
-	(normal|microbosh) ;;
+	(bosh) dtype=bosh-init ;;
+	(normal|microbosh|bosh-init) ;;
 	(*)
 		echo >&2 "Error: unrecognized deployment type '${dtype}'"
 		exit 1
@@ -729,6 +917,9 @@ cmd_new_deployment() {
 		;;
 	(microbosh)
 		create_microbosh_deployment
+		;;
+	(bosh-init)
+		create_bosh_init_deployment
 		;;
 	esac
 
@@ -760,6 +951,9 @@ cmd_new_site() {
 	(microbosh)
 		create_microbosh_site ${name}
 		;;
+	(bosh-init)
+		create_bosh_init_site ${name}
+		;;
 	esac
 	exit 0
 }
@@ -775,6 +969,9 @@ cmd_new_environment() {
 		;;
 	(microbosh)
 		create_microbosh_environment ${site} ${name}
+		;;
+	(bosh-init)
+		create_bosh_init_environment ${site} ${name}
 		;;
 	esac
 	exit 0
@@ -801,6 +998,9 @@ cmd_build() {
 		;;
 	(microbosh)
 		build_microbosh_manifest > ${DEPLOYMENT_ENV_DIR}/manifests/${target}
+		;;
+	(bosh-init)
+		build_bosh_init_manifest > ${DEPLOYMENT_ENV_DIR}/manifests/${target}
 		;;
 	esac
 	exit 0
