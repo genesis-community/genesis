@@ -60,6 +60,11 @@ setup() {
 		fi
 	fi
 
+	SPRUCE_OPTS=""
+	if [[ -n "${SPRUCE_DEBUG}" ]]; then
+		SPRUCE_OPTS="--debug"
+	fi
+
 	DEPLOYMENT_SITE_DIR="${DEPLOYMENT_ROOT}/${DEPLOYMENT_SITE}"
 	DEPLOYMENT_ENV_DIR="${DEPLOYMENT_ROOT}/${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}"
 }
@@ -612,7 +617,7 @@ build_normal_manifest() {
 	normal_site_metadata > ${DEPLOYMENT_ENV_DIR}/.begin.yml
 	(cd ${DEPLOYMENT_ENV_DIR}
 	 echo "# generated $(date) by $USERNAME"
-	 spruce merge --prune meta \
+	 spruce $SPRUCE_OPTS merge --prune meta \
 		.begin.yml \
 		.global/jobs.yml \
 		.global/deployment.yml \
@@ -640,7 +645,7 @@ build_microbosh_manifest() {
 
 	(cd ${DEPLOYMENT_ENV_DIR}
 	 echo "# generated $(date) by $USERNAME"
-	 spruce merge --prune meta \
+	 spruce $SPRUCE_OPTS merge --prune meta \
 		.global/deployment.yml \
 		.site/infra.yml \
 		.site/scaling.yml \
@@ -702,7 +707,7 @@ build_bosh_init_manifest() {
 	bosh_init_site_metadata > ${DEPLOYMENT_ENV_DIR}/.begin.yml
 	(cd ${DEPLOYMENT_ENV_DIR}
 	 echo "# generated $(date) by $USERNAME"
-	 spruce merge --prune meta \
+	 spruce $SPRUCE_OPTS merge --prune meta \
 		.begin.yml \
 		.global/jobs.yml \
 		.global/deployment.yml \
@@ -1063,7 +1068,7 @@ cmd_repipe() {
 	local pipeline=$(cat ${DEPLOYMENT_ROOT}/pipeline/name)
 
 	(cd ${DEPLOYMENT_ROOT}/pipeline
-	 spruce --concourse merge > live.yml
+	 spruce $SPRUCE_OPTS --concourse merge > live.yml
 		pipeline/groups.yml \
 		pipeline/resources.yml \
 		pipeline/jobs/deploy-*.yml \
