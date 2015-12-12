@@ -146,7 +146,7 @@ refresh:
 	genesis refresh
 help:
 	genesis help makefile
-.PHONY: manifest refresh
+.PHONY: manifest refresh help
 EOF
 }
 
