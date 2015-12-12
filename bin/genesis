@@ -133,6 +133,21 @@ env_root() {
 	echo "${DEPLOYMENT_ROOT}/${site}/${name}"
 }
 
+create_makefile() {
+	path=${1:?create_makefile() - No path given}
+
+	cat > ${path} <<EOF
+# genesis, available at https://github.com/starkandwayne/genesis
+manifest:
+	genesis build
+refresh:
+	genesis refresh
+help:
+	genesis help makefile
+.PHONY: manifest refresh
+EOF
+}
+
 create_normal_deployment() {
 	setup
 	echo "normal" > ${DEPLOYMENT_ROOT}/.deployment
@@ -375,6 +390,7 @@ create_normal_environment() {
 	fi
 
 	mkdir -p ${root}
+	create_makefile ${root}/Makefile
 	cat > ${root}/README <<EOF
 EOF
 
@@ -407,6 +423,7 @@ create_microbosh_environment() {
 	fi
 
 	mkdir -p ${root}
+	create_makefile ${root}/Makefile
 	cat > ${root}/README <<EOF
 EOF
 
@@ -617,6 +634,26 @@ USAGE: genesis refresh [(global|site|all)]
 
 Copies current definitions of the global templates and/or the
 current site into the current environment.  By default, copies both.
+
+EOF
+		exit 0
+		;;
+	(makefile)
+		cat >&2 <<EOF
+When Genesis provisions a new environment, it creates a Makefile that
+provides some easy "shortcut" command invocation targets to simplify
+the manifest generation process.
+
+  $ make manifest           #  Build a new manifest for the environment
+                            #  by merging the template YAML files together.
+
+  $ make refresh            #  Pull in fresh copies of global and site YAML
+                            #  templates (into .global/ and .site/).
+
+Since this is a real Makefile, you can combine the two actions:
+
+  $ make refresh manifest   #  Refresh global / site configuration and then
+                            #  build an up-to-date deployment manifest.
 
 EOF
 		exit 0
