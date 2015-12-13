@@ -1058,7 +1058,7 @@ cmd_refresh_all() {
 cmd_refresh_makefile() {
 	must_be_in_an_environment
 	echo "Refreshing Makefile for ${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}"
-	create_makefile "${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}/Makefile"
+	create_makefile "${DEPLOYMENT_ENV_DIR}/Makefile"
 }
 
 bad_refresh() {
