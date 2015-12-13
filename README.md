@@ -51,4 +51,18 @@ produce a single BOSH manifest for each environment, and uses a
 tool called [spruce][spruce] to handle overrides and references in
 a straightforward and predictable manner.
 
+## Installation
+
+To install Genesis, you just need to put `bin/genesis` somewhere
+in your path and make it executable, like this:
+
+    $ curl https://raw.githubusercontent.com/starkandwayne/genesis/master/bin/genesis > ~/bin/genesis
+    $ chmod 0755 ~/bin/genesis
+
+(assuming that `~/bin` is in your `$PATH`, which it really ought
+to be)
+
+If you have privileged access and wish to install Genesis for all
+users, you can put it in `/usr/local/bin` or `/usr/bin`
+
 [spruce]: https://github.com/geofffranks/spruce
