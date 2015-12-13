@@ -1141,6 +1141,10 @@ main() {
 	(ping)
 		exit 0
 		;;
+	(ident)
+		s=$(cat ${BASH_SOURCE[0]} | sha1sum) ; echo ${s:0:12}
+		exit 0
+		;;
 	(help)
 		cmd_help $*
 		;;
