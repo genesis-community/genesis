@@ -146,17 +146,18 @@ create_makefile() {
 
 	cat > ${path} <<EOF
 # genesis, available at ${CANON_REPO}
-help:
-	genesis help makefile
 
-check:
-	@genesis ping >/dev/null 2>&1 || echo >&2 "You need to install Genesis first (see ${CANON_REPO})" && exit 1
+help: check
+	genesis help makefile
 
 manifest: check
 	genesis build
 
 refresh: check
 	genesis refresh
+
+check:
+	@genesis ping >/dev/null 2>&1 || echo >&2 "You need to install Genesis first (see ${CANON_REPO})" && exit 1
 
 .PHONY: help check manifest refresh
 EOF
@@ -762,6 +763,8 @@ Common commands:
 
     genesis refresh             Refresh the cached copies of site and/or global
                                 definitions inside the current environment directory.
+                                Can also be used to recreate the Makefile after a
+                                Genesis upgrade.
 
     genesis help                Peruse the help!  Give it a topic argument, or the name
                                 of another command to get more detailed information.
@@ -829,10 +832,14 @@ EOF
 		;;
 	(refresh)
 		cat >&2 <<EOF
-USAGE: genesis refresh [(global|site|all)]
+USAGE: genesis refresh [(global|site|all|makefile)]
 
 Copies current definitions of the global templates and/or the
 current site into the current environment.  By default, copies both.
+
+The argument 'makefile' only rebuilds the Makefile for an environment,
+which can be useful to bring old deployments in-line with newer versions
+of Genesis.
 
 EOF
 		exit 0
@@ -1046,13 +1053,23 @@ cmd_refresh_all() {
 	exit 0
 }
 
+cmd_refresh_makefile() {
+	must_be_in_an_environment
+	echo "Refreshing Makefile for ${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}"
+	create_makefile "${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}/Makefile"
+}
+
 bad_refresh() {
 	local arg=${1}
 	cat >&2 <<EOF
-USAGE: genesis refresh (all|global|site)
+USAGE: genesis refresh (all|global|site|makefile)
 
 Refreshes the global and/or site definitions inside of a single environment,
 by copying in the definitions from upstream.
+
+The argument 'makefile' only rebuilds the Makefile for an environment,
+which can be useful to bring old deployments in-line with newer versions
+of Genesis.
 EOF
 	exit 1
 }
@@ -1105,7 +1122,7 @@ Try one of these:
    genesis help
    genesis new (deployment|site|environment)
    genesis build
-   genesis refresh (global|site|all)
+   genesis refresh (global|site|all|makefile)
 
 EOF
 	exit 1
@@ -1159,6 +1176,9 @@ main() {
 			;;
 		(all)
 			cmd_refresh_all $*
+			;;
+		(makefile)
+			cmd_refresh_makefile $*
 			;;
 		(*)
 			bad_refresh ${arg}
