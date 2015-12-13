@@ -159,7 +159,7 @@ refresh: check
 	genesis refresh
 
 check:
-	@genesis ping >/dev/null 2>&1 || echo >&2 "You need to install Genesis first (see ${CANON_REPO})" && exit 1
+	@genesis ping >/dev/null 2>&1 || (echo >&2 "You need to install Genesis first (see ${CANON_REPO})" && exit 1)
 
 .PHONY: help check manifest refresh
 EOF
