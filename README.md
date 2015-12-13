@@ -50,3 +50,5 @@ Genesis combines these different levels of configuration to
 produce a single BOSH manifest for each environment, and uses a
 tool called [spruce][spruce] to handle overrides and references in
 a straightforward and predictable manner.
+
+[spruce]: https://github.com/geofffranks/spruce
