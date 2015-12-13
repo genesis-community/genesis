@@ -1,6 +1,7 @@
 #!/bin/bash
 
 USERNAME=$(whoami)
+CANON_REPO=https://github.com/starkandwayne/genesis
 
 ####################################################
 # common functions used by other parts of Genesis
@@ -144,14 +145,20 @@ create_makefile() {
 	path=${1:?create_makefile() - No path given}
 
 	cat > ${path} <<EOF
-# genesis, available at https://github.com/starkandwayne/genesis
-manifest:
-	genesis build
-refresh:
-	genesis refresh
+# genesis, available at ${CANON_REPO}
 help:
 	genesis help makefile
-.PHONY: manifest refresh help
+
+check:
+	@genesis ping >/dev/null 2>&1 || echo >&2 "You need to install Genesis first (see ${CANON_REPO})" && exit 1
+
+manifest: check
+	genesis build
+
+refresh: check
+	genesis refresh
+
+.PHONY: help check manifest refresh
 EOF
 }
 
@@ -1112,6 +1119,9 @@ main() {
 	local cmd=${1:-help} ; shift
 
 	case ${cmd} in
+	(ping)
+		exit 0
+		;;
 	(help)
 		cmd_help $*
 		;;
