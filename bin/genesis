@@ -22,7 +22,8 @@ setup() {
 
 	DEPLOYMENT_ROOT=$(find_toplevel_root)
 	if [[ -z ${DEPLOYMENT_ROOT:-} ]]; then
-		fail "Unable to determine Genesis DEPLOYMENT_ROOT"
+		echo >&2 "Unable to determine Genesis DEPLOYMENT_ROOT"
+		exit 3
 	fi
 
 	# What type of deployment is this?
@@ -40,7 +41,8 @@ setup() {
 	case ${DEPLOYMENT_TYPE} in
 	(bosh) DEPLOYMENT_TYPE=bosh-init ;;
 	(normal|bosh-init|microbosh) ;;
-	(*) fail "Unrecognized deployment type: ${DEPLOYMENT_TYPE}"
+	(*) echo >&2 "Unrecognized deployment type: ${DEPLOYMENT_TYPE}"
+	    exit 3 ;;
 	esac
 
 	DEPLOYMENT_SITE=""
