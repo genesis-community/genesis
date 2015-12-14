@@ -82,7 +82,7 @@ need_command() {
 	if [[ ! -x "$(command -v $cmd)" ]]; then
 		echo >&2 "${cmd} is not installed."
 		if [[ "${cmd}" == "spruce" ]]; then
-			echo >&2 "Please download it from https://github.com/geoffranks/spruce/releases"
+			echo >&2 "Please download it from https://github.com/geofffranks/spruce/releases"
 		fi
 		exit 2
 	fi
