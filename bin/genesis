@@ -951,7 +951,7 @@ EOF
 	(cd ${DEPLOYMENT_ROOT}
 	 git init
 	 git add .
-	 git ci -m "Initial commit of ${name}-deployments")
+	 git commit -m "Initial commit of ${name}-deployments")
 
 	exit 0
 }
