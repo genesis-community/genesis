@@ -337,8 +337,8 @@ EOF
 	cat > ${DEPLOYMENT_ROOT}/${site}/site/update.yml <<EOF
 ---
 update:
-  canary_watch_time: 30000-600000
-  update_watch_time: 5000-600000
+  canary_watch_time: 1000-60000
+  update_watch_time: 1000-60000
   max_in_flight: 1
 EOF
 	for file in networks resource-pools jobs; do
