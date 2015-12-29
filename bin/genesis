@@ -1007,6 +1007,74 @@ EOF
 	exit 1
 }
 
+cmd_add_release() {
+	local release=${1:?USAGE: genesis add relese NAME VERSION}
+	local version=${2:-latest}
+
+	setup
+	if [[ -d ${DEPLOYMENT_ROOT}/global/releases/${release} ]]; then
+		echo >&2 "Release ${release} already exists in global/releases/"
+		exit 1
+	fi
+	mkdir -p ${DEPLOYMENT_ROOT}/global/releases/${release}
+	echo ${version} > ${DEPLOYMENT_ROOT}/global/releases/${release}/version
+	if [[ ${version} == "latest" ]]; then
+		echo "Using the latest version of ${release}"
+	else
+		echo "Using v${version} of ${release}"
+	fi
+	exit 0
+}
+
+bad_add() {
+	local arg=${1}
+	cat >&2 <<EOF
+USAGE: genesis add release
+EOF
+	exit 1
+}
+
+cmd_use_release() {
+	release=${1:?USAGE: genesis use release NAME}
+
+	must_be_in_a_site
+	if [[ ! -d ${DEPLOYMENT_ROOT}/global/releases/${release} ]]; then
+		echo >&2 "Release ${release} is not defined globally."
+		echo >&2 "(Do you need to \`genesis add release ${release}\` first?)"
+		exit 1
+	fi
+
+	relfile=${DEPLOYMENT_SITE_DIR}/site/releases
+	if grep -q "^${release}$" $relfile >/dev/null 2>&1; then
+		echo "Site ${DEPLOYMENT_SITE} is already set to use release ${release}"
+	else
+		echo "${release}" >> $relfile
+		echo "Site ${DEPLOYMENT_SITE} is now using release ${release}"
+	fi
+	exit 0
+}
+
+cmd_use_stemcell() {
+	name=${1:?USAGE: genesis use stemcell NAME VERSION}
+	version=${2:?USAGE: genesis use stemcell NAME VERSION}
+
+	must_be_in_a_site
+	echo "${name}"    > ${DEPLOYMENT_SITE_DIR}/site/stemcell/name
+	echo "${version}" > ${DEPLOYMENT_SITE_DIR}/site/stemcell/version
+
+	echo "Site ${DEPLOYMENT_SITE} is now using stemcell ${name} v${version}"
+	exit 0
+}
+
+bad_use() {
+	local arg=${1}
+	cat >&2 <<EOF
+USAGE: genesis use release
+       genesis use stemcell
+EOF
+	exit 1
+}
+
 cmd_build() {
 	must_be_in_an_environment
 
@@ -1162,6 +1230,31 @@ main() {
 			;;
 		(*)
 			bad_new ${arg}
+			;;
+		esac
+		;;
+	(add)
+		local arg=${1:-} ; shift
+		case ${arg} in
+		(release)
+			cmd_add_release $*
+			;;
+		(*)
+			bad_add ${arg}
+			;;
+		esac
+		;;
+	(use)
+		local arg=${1:-} ; shift
+		case ${arg} in
+		(release)
+			cmd_use_release $*
+			;;
+		(stemcell)
+			cmd_use_stemcell $*
+			;;
+		(*)
+			bad_use ${arg}
 			;;
 		esac
 		;;
