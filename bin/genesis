@@ -15,6 +15,31 @@ find_toplevel_root() {
 	 fi)
 }
 
+all_sites() {
+	setup
+	for dir in ${DEPLOYMENT_ROOT}/*/; do
+		site=${dir%%/}
+		site=${site##*/}
+
+		if [[ "${site}" != "global" && -d "${dir}/site" ]]; then
+			echo ${site}
+		fi
+	done
+}
+
+all_environments_for() {
+	local site=${1:?all_environments_for() - no site name provided}
+	setup
+	for dir in ${DEPLOYMENT_ROOT}/${site}/*/; do
+		env=${dir%%/}
+		env=${env##*/}
+
+		if [[ "${env}" != "site" && -f "${dir}/Makefile" ]]; then
+			echo ${env}
+		fi
+	done
+}
+
 setup() {
 	if [[ ${DEPLOYMENT_ROOT:-unset} != "unset" ]]; then
 		return
@@ -68,6 +93,8 @@ setup() {
 		SPRUCE_OPTS="--debug"
 	fi
 
+	DEPLOYMENT_NAME="${DEPLOYMENT_ROOT##*/}"
+	DEPLOYMENT_NAME="${DEPLOYMENT_NAME%%-deployments}"
 	DEPLOYMENT_SITE_DIR="${DEPLOYMENT_ROOT}/${DEPLOYMENT_SITE}"
 	DEPLOYMENT_ENV_DIR="${DEPLOYMENT_ROOT}/${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}"
 }
@@ -165,11 +192,327 @@ check:
 EOF
 }
 
+create_root_readme() {
+	cat <<EOF
+${DEPLOYMENT_NAME} Deployments
+==============================
+
+This repository contains the YAML templates that make up a series of
+${DEPLOYMENT_NAME} BOSH deployments, using the format prescribed by the
+[Genesis][1] utility.
+
+The configuration is broken up into three logical strata: _global_,
+_site_, and _environment_.  _Global_ defines the universal aspects of any
+deployment, including overall job structure, constituent BOSH releases,
+and invariant (or default) properties.  Each _site_ represents a single
+IaaS (an AWS VPC, a vSphere cluster, etc.), and further refines the global
+configuration for that infrastructure.  Each _environment_ represents a
+single BOSH deployment, with specific network numbering, credentials,
+domain names, etc.
+
+For more information, see the READMEs scattered throughout this repository,
+and check out \`genesis help\`.  You can download the Genesis program from
+[Github][1]
+
+Quickstart
+----------
+
+To create a new site:
+
+  genesis new site NAME
+
+To create a new environment
+
+  cd site-name/
+  genesis new environment NAME
+
+To build the full BOSH manifest for an environment:
+
+  cd site-name/env-name
+  make manifest
+
+... and then deploy it:
+
+  cd site-name/env-name
+  make manifest
+  bosh -d manifests/manifest.yml deploy
+
+
+
+
+[1]: https://github.com/starkandwayne/genesis
+EOF
+}
+
+create_global_readme() {
+	case ${DEPLOYMENT_TYPE} in
+	(normal) # {{{
+		cat <<EOF
+Global Definitions
+
+This directory contains templates that describe the common elements of this
+deployments, to be shared (and possibly overridden) by sites and environments.
+
+  global/deployment.yml       Define the global structure of all deployments
+                              with the correct param calls to remind template
+                              writers to override the correct things.
+
+  global/jobs.yml             Specify what jobs will make up the canonical
+                              deployment, and what templates to apply to them.
+
+  global/properties.yml       Define the properties (global or per-job) for this
+                              deployment.
+
+NOTE: If you make changes to the templates in here, they will automatically
+propagate to any newly-created environments, but you will need to run a
+refresh for existing environments to receive those updates.
+EOF
+		;; # }}}
+	(microbosh) # {{{
+		cat <<EOF
+Global Definitions
+
+This directory contains templates that describe the common elements of MicroBOSH
+deployments, to be shared (and possibly overridden) by sites and environments.
+
+  global/deployment.yml       Define the global structure of all MicroBOSH
+                              deployments, with the correct param calls to remind
+                              template writers to override the correct things.
+
+NOTE: If you make changes to the templates in here, they will automatically
+propagate to any newly-created environments, but you will need to run a
+refresh for existing environments to receive those updates.
+EOF
+		;; # }}}
+	(bosh-init) # {{{
+		cat <<EOF
+Global Definitions
+
+This directory contains templates that describe the common elements of BOSH
+deployments, to be shared (and possibly overridden) by sites and environments.
+
+  global/deployment.yml       Define the global structure of all BOSH deployments
+                              with the correct param calls to remind template
+                              writers to override the correct things.
+
+  global/jobs.yml             Specify what jobs will make up the BOSH deployment,
+                              and what templates to apply to them.
+
+  global/properties.yml       Define the properties (global or per-job) for the
+                              BOSH deployment.
+
+NOTE: If you make changes to the templates in here, they will automatically
+propagate to any newly-created environments, but you will need to run a
+refresh for existing environments to receive those updates.
+EOF
+		;; # }}}
+	esac
+}
+
+create_site_readme() {
+	local site=${1:?create_site_readme() - no site given}
+
+	case ${DEPLOYMENT_TYPE} in
+	(normal) # {{{
+		cat <<EOF
+Site Definitions (${site})
+
+This directory contains templates that describe the infrastructure-specific
+settings and site-wide properties.
+
+  site/networks.yml           Define what networks to use for all the
+                              environments in this site (although you may
+                              want to defer the actual numbering to the
+                              environment level.
+
+  site/disk-pools.yml         If you need to, you can put disk pool
+                              definitions in this file.
+
+  site/resource-pools.yml     Set up the resource pools to use for job
+                              virtual machines, and apply their cloud
+                              properties (i.e. availability zones)
+
+  site/jobs.yml               Here you can modify the list of jobs defined
+                              at the global level, remove jobs (by setting
+                              their instances: count to 0), and supply any
+                              additional, site-wide job properties.
+
+  site/update.yml             Specify job update parameters here, which can
+                              change based on the cloud provider in use,
+                              and its performance characteristics.
+
+NOTE: If you make changes to the templates in here, they will automatically
+propagate to any newly-created environments, but you will need to run a
+refresh for existing environments to receive those updates.
+EOF
+		;; # }}}
+	(microbosh) # {{{
+		cat<<EOF
+Site Definitions (${site})
+
+This directory contains templates that describe the infrastructure-specific
+settings and site-wide properties.
+
+  site/infra.yml              Define infrastructure-specific settings for
+                              this MicroBOSH deployment, including resources,
+                              cloud properties, etc.
+
+  site/scaling.yml            Define sizing properties for things like number
+                              of director threads, RAM/CPU/Disk sizing, etc.
+
+
+NOTE: If you make changes to the templates in here, they will automatically
+propagate to any newly-created environments, but you will need to run a
+refresh for existing environments to receive those updates.
+EOF
+		;; # }}}
+	(bosh-init) # {{{
+		cat <<EOF
+Site Definitions (${site})
+
+This directory contains templates that describe the infrastructure-specific
+settings and site-wide properties.
+
+  site/networks.yml           Define what networks to use for all the
+                              environments in this site (although you may
+                              want to defer the actual numbering to the
+                              environment level.
+
+  site/disk-pools.yml         If you need to, you can put disk pool
+                              definitions in this file.
+
+  site/resource-pools.yml     Set up the resource pools to use for job
+                              virtual machines, and apply their cloud
+                              properties (i.e. availability zones)
+
+  site/jobs.yml               Here you can modify the list of jobs defined
+                              at the global level, remove jobs (by setting
+                              their instances: count to 0), and supply any
+                              additional, site-wide job properties.
+
+NOTE: If you make changes to the templates in here, they will automatically
+propagate to any newly-created environments, but you will need to run a
+refresh for existing environments to receive those updates.
+EOF
+# site/README
+		;; # }}}
+	esac
+}
+
+create_environment_readme() {
+	local site=${1:?create_environment_readme() - no site given}
+	local name=${2:?create_environment_readme() - no environment given}
+
+	case ${DEPLOYMENT_TYPE} in
+	(normal) # {{{
+		cat <<EOF
+Environment Definitions (${site}/${name})
+
+This directory contains templates that describe the environment-specific
+settings of a single deployment.  These templates will be combined with
+the global and site templates to produce a single BOSH manifest for deployment
+purposes.
+
+  cloudfoundry.yml            For deployments that integrate with Cloud Foundry
+                              installations (i.e. as service brokers), you can
+                              specify the integration details here, including
+                              things like the CF API, credentials, domains, etc.
+
+  credentials.yml             Define passwords and credentials here, so that they
+                              are centralized.  Keep in mind that commiting these
+                              into version control incurs some security risk.
+
+  director.yml                Identify the BOSH director UUID for this deployment.
+
+  monitoring.yml              Configure whatever (external) monitoring system you
+                              want to track the performance and health of your
+                              deployment.
+
+  name.yml                    Specify the name of this deployment.
+
+  properties.yml              Define properties (both globally and per-job),
+                              that are specific to this environment.  These will
+                              most likely override global properties.
+
+  networking.yml              Configure the network numbering for this deployment.
+
+  scaling.yml                 Define the scaling properties for this deployment,
+                              including things like the number of instances, sizes
+                              of persistent disks, resource pool limits, etc.
+
+
+This directory also contains a Makefile that makes it easier to build
+the final BOSH manifest from all of the constituent templates.
+Run \`make' to see some help, or \`make manifest' to just rebuild.
+EOF
+		;; # }}}
+	(microbosh) # {{{
+		cat <<EOF
+Environment Definitions (${site}/${name})
+
+This directory contains templates that describe the environment-specific
+settings of a single MicroBOSH deployment.  These templates will be combined
+with the global and site templates to produce a single manifest suitable for
+deployment via \`bosh micro'
+
+  director.yml                Identify the BOSH director UUID for this deployment.
+
+  name.yml                    Specify the name of this MicroBOSH deployment.
+
+  infra.yml                   Configure the Infrastructure that this MicroBOSH will
+                              be deployed on top of.
+
+  scaling.yml                 Define the scaling properties for this deployment,
+                              including things like disk sizing, RAM, etc.
+
+
+This directory also contains a Makefile that makes it easier to build
+the final manifest from all of the constituent templates.
+Run \`make' to see some help, or \`make manifest' to just rebuild.
+EOF
+		;; # }}}
+	(bosh-init) # {{{
+		cat <<EOF
+Environment Definitions (${site}/${name})
+
+This directory contains templates that describe the environment-specific
+settings of a single bosh-init deployment.  These templates will be combined
+with the global and site templates to produce a single manifest suitable for
+deployment via \`bosh-init'
+
+  credentials.yml             Define passwords and credentials here, so that they
+                              are centralized.  Keep in mind that commiting these
+                              into version control incurs some security risk.
+
+  name.yml                    Specify the name of this deployment.
+
+  properties.yml              Define properties (both globally and per-job),
+                              that are specific to this environment.  These will
+                              most likely override global properties.
+
+  networking.yml              Configure the network numbering for this BOSH.
+
+  scaling.yml                 Define the scaling properties for this deployment,
+                              including things like the number of instances, sizes
+                              of persistent disks, resource pool limits, etc.
+
+
+This directory also contains a Makefile that makes it easier to build
+the final manifest from all of the constituent templates.
+Run \`make' to see some help, or \`make manifest' to just rebuild.
+EOF
+		;; # }}}
+	esac
+}
+
 create_normal_deployment() {
 	setup
 	echo "normal" > ${DEPLOYMENT_ROOT}/.deployment
 	mkdir -p ${DEPLOYMENT_ROOT}/global
 	mkdir -p ${DEPLOYMENT_ROOT}/global/releases
+
+	create_root_readme   >${DEPLOYMENT_ROOT}/README.md
+	create_global_readme >${DEPLOYMENT_ROOT}/global/README
 
 	cat > ${DEPLOYMENT_ROOT}/global/deployment.yml <<EOF
 ---
@@ -191,6 +534,9 @@ create_microbosh_deployment() {
 	setup
 	echo "microbosh" > ${DEPLOYMENT_ROOT}/.deployment
 	mkdir -p ${DEPLOYMENT_ROOT}/global
+
+	create_root_readme   >${DEPLOYMENT_ROOT}/README.md
+	create_global_readme >${DEPLOYMENT_ROOT}/global/README
 
 	cat > ${DEPLOYMENT_ROOT}/global/deployment.yml <<EOF
 ---
@@ -241,6 +587,9 @@ create_bosh_init_deployment() {
 	echo "bosh-init" > ${DEPLOYMENT_ROOT}/.deployment
 	mkdir -p ${DEPLOYMENT_ROOT}/global
 	mkdir -p ${DEPLOYMENT_ROOT}/global/releases
+
+	create_root_readme   >${DEPLOYMENT_ROOT}/README.md
+	create_global_readme >${DEPLOYMENT_ROOT}/global/README
 
 	cat > ${DEPLOYMENT_ROOT}/global/deployment.yml <<EOF
 ---
@@ -297,38 +646,7 @@ create_normal_site() {
 	mkdir -p ${DEPLOYMENT_ROOT}/${site}/site
 	mkdir -p ${DEPLOYMENT_ROOT}/${site}/site/stemcell
 
-	cat > ${DEPLOYMENT_ROOT}/${site}/site/README <<EOF
-Site Definitions (${site})
-
-This directory contains templates that describe the infrastructure-specific
-settings and site-wide properties.
-
-  site/networks.yml           Define what networks to use for all the
-                              environments in this site (although you may
-                              want to defer the actual numbering to the
-                              environment level.
-
-  site/disk-pools.yml         If you need to, you can put disk pool
-                              definitions in this file.
-
-  site/resource-pools.yml     Set up the resource pools to use for job
-                              virtual machines, and apply their cloud
-                              properties (i.e. availability zones)
-
-  site/jobs.yml               Here you can modify the list of jobs defined
-                              at the global level, remove jobs (by setting
-                              their instances: count to 0), and supply any
-                              additional, site-wide job properties.
-
-  site/update.yml             Specify job update parameters here, which can
-                              change based on the cloud provider in use,
-                              and its performance characteristics.
-
-NOTE: If you make changes to the templates in here, they will automatically
-propagate to any newly-created environments, but you will need to run a
-refresh for existing environments to receive those updates.
-EOF
-# site/README
+	create_site_readme ${site} >${DEPLOYMENT_ROOT}/${site}/site/README
 
 	cat > ${DEPLOYMENT_ROOT}/${site}/site/disk-pools.yml <<EOF
 ---
@@ -364,25 +682,7 @@ create_microbosh_site() {
 	mkdir -p ${DEPLOYMENT_ROOT}/${site}
 	mkdir -p ${DEPLOYMENT_ROOT}/${site}/site
 
-	cat > ${DEPLOYMENT_ROOT}/${site}/site/README <<EOF
-Site Definitions (${site})
-
-This directory contains templates that describe the infrastructure-specific
-settings and site-wide properties.
-
-  site/infra.yml              Define infrastructure-specific settings for
-                              this MicroBOSH deployment, including resources,
-                              cloud properties, etc.
-
-  site/scaling.yml            Define sizing properties for things like number
-                              of director threads, RAM/CPU/Disk sizing, etc.
-
-
-NOTE: If you make changes to the templates in here, they will automatically
-propagate to any newly-created environments, but you will need to run a
-refresh for existing environments to receive those updates.
-EOF
-# site/README
+	create_site_readme ${site} >${DEPLOYMENT_ROOT}/${site}/site/README
 
 	for file in infra scaling; do
 		cat > ${DEPLOYMENT_ROOT}/${site}/site/${file}.yml <<EOF
@@ -405,34 +705,7 @@ create_bosh_init_site() {
 	mkdir -p ${DEPLOYMENT_ROOT}/${site}
 	mkdir -p ${DEPLOYMENT_ROOT}/${site}/site
 
-	cat > ${DEPLOYMENT_ROOT}/${site}/site/README <<EOF
-Site Definitions (${site})
-
-This directory contains templates that describe the infrastructure-specific
-settings and site-wide properties.
-
-  site/networks.yml           Define what networks to use for all the
-                              environments in this site (although you may
-                              want to defer the actual numbering to the
-                              environment level.
-
-  site/disk-pools.yml         If you need to, you can put disk pool
-                              definitions in this file.
-
-  site/resource-pools.yml     Set up the resource pools to use for job
-                              virtual machines, and apply their cloud
-                              properties (i.e. availability zones)
-
-  site/jobs.yml               Here you can modify the list of jobs defined
-                              at the global level, remove jobs (by setting
-                              their instances: count to 0), and supply any
-                              additional, site-wide job properties.
-
-NOTE: If you make changes to the templates in here, they will automatically
-propagate to any newly-created environments, but you will need to run a
-refresh for existing environments to receive those updates.
-EOF
-# site/README
+	create_site_readme ${site} >${DEPLOYMENT_ROOT}/${site}/site/README
 
 	cat > ${DEPLOYMENT_ROOT}/${site}/site/disk-pools.yml <<EOF
 ---
@@ -491,8 +764,7 @@ create_normal_environment() {
 
 	mkdir -p ${root}
 	create_makefile ${root}/Makefile
-	cat > ${root}/README <<EOF
-EOF
+	create_environment_readme ${site} ${name} >${root}/README
 
 	for file in cloudfoundry credentials director monitoring name properties networking scaling; do
 		cat > ${root}/${file}.yml <<EOF
@@ -524,8 +796,7 @@ create_microbosh_environment() {
 
 	mkdir -p ${root}
 	create_makefile ${root}/Makefile
-	cat > ${root}/README <<EOF
-EOF
+	create_environment_readme ${site} ${name} >${root}/README
 
 	for file in director infra name scaling; do
 		cat > ${root}/${file}.yml <<EOF
@@ -557,8 +828,7 @@ create_bosh_init_environment() {
 
 	mkdir -p ${root}
 	create_makefile ${root}/Makefile
-	cat > ${root}/README <<EOF
-EOF
+	create_environment_readme ${site} ${name} >${root}/README
 
 	for file in credentials name properties networking; do
 		cat > ${root}/${file}.yml <<EOF
@@ -834,7 +1104,7 @@ EOF
 		;;
 	(refresh)
 		cat >&2 <<EOF
-USAGE: genesis refresh [(global|site|all|makefile)]
+USAGE: genesis refresh [(global|site|all|makefile|readme)]
 
 Copies current definitions of the global templates and/or the
 current site into the current environment.  By default, copies both.
@@ -842,6 +1112,9 @@ current site into the current environment.  By default, copies both.
 The argument 'makefile' only rebuilds the Makefile for an environment,
 which can be useful to bring old deployments in-line with newer versions
 of Genesis.
+
+Similarly, 'readme' only recreates the various README files for the top-level,
+the global/ directories, and all sites and environments.
 
 EOF
 		exit 0
@@ -1129,10 +1402,28 @@ cmd_refresh_makefile() {
 	create_makefile "${DEPLOYMENT_ENV_DIR}/Makefile"
 }
 
+cmd_refresh_readmes() {
+	setup
+	echo "Refreshing README for the whole repository"
+	rm -f ${DEPLOYMENT_ROOT}/README*
+	create_root_readme >${DEPLOYMENT_ROOT}/README.md
+
+	echo "Refreshing README for global definitions"
+	create_global_readme >${DEPLOYMENT_ROOT}/global/README
+	for site in $(all_sites); do
+		echo "  Refreshing README for site '${site}'"
+		create_site_readme ${site} >${DEPLOYMENT_ROOT}/${site}/README
+		for env in $(all_environments_for ${site}); do
+			echo "    Refreshing README for environment '${site}/${env}'"
+			create_environment_readme ${site} ${env} >${DEPLOYMENT_ROOT}/${site}/${env}/README
+		done
+	done
+}
+
 bad_refresh() {
 	local arg=${1}
 	cat >&2 <<EOF
-USAGE: genesis refresh (all|global|site|makefile)
+USAGE: genesis refresh (all|global|site|makefile|readme)
 
 Refreshes the global and/or site definitions inside of a single environment,
 by copying in the definitions from upstream.
@@ -1140,6 +1431,9 @@ by copying in the definitions from upstream.
 The argument 'makefile' only rebuilds the Makefile for an environment,
 which can be useful to bring old deployments in-line with newer versions
 of Genesis.
+
+Similarly, 'readme' only recreates the various README files for the top-level,
+the global/ directories, and all sites and environments.
 EOF
 	exit 1
 }
@@ -1175,6 +1469,7 @@ cmd_repipe() {
 
 cmd_dump() {
 	setup
+	printf "name: %s\n" ${DEPLOYMENT_NAME}
 	printf "type: %s\n" ${DEPLOYMENT_TYPE}
 	printf "root: %s\n" ${DEPLOYMENT_ROOT}
 	printf "site: %s\n" ${DEPLOYMENT_SITE}
@@ -1192,7 +1487,7 @@ Try one of these:
    genesis help
    genesis new (deployment|site|environment)
    genesis build
-   genesis refresh (global|site|all|makefile)
+   genesis refresh (global|site|all|makefile|readme)
 
 EOF
 	exit 1
@@ -1276,8 +1571,11 @@ main() {
 		(all)
 			cmd_refresh_all $*
 			;;
-		(makefile)
+		(makefile|makefiles)
 			cmd_refresh_makefile $*
+			;;
+		(readme|readmes)
+			cmd_refresh_readmes $*
 			;;
 		(*)
 			bad_refresh ${arg}
