@@ -896,7 +896,6 @@ build_normal_manifest() {
 
 	normal_site_metadata > ${DEPLOYMENT_ENV_DIR}/.begin.yml
 	(cd ${DEPLOYMENT_ENV_DIR}
-	 echo "# generated $(date) by $USERNAME"
 	 spruce $SPRUCE_OPTS merge --prune meta \
 		.begin.yml \
 		.global/jobs.yml \
