@@ -559,12 +559,14 @@ resources:
 
   # Deployments need spruce to merge the manifest files together,
   # so we need to add that into the final task image
+  # (this resource is only checked every 24 hours, because github
+  #  rate-limits their API, and we can manage being a bit behind)
   - name: spruce
     type: github-release
+    check_every: 24h
     source:
       user:         geofffranks
       repository:   spruce
-      access_token: 766b0916b78570adc9825dd6b4c1d72a5cac763f
 
 
 #######################################################################
