@@ -181,6 +181,9 @@ switch_to() {
 	else
 		cd ${DEPLOYMENT_ROOT}/${site}/${name}
 	fi
+
+	unset DEPLOYMENT_ROOT
+	setup
 }
 
 create_makefile() {
