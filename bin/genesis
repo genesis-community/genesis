@@ -586,7 +586,8 @@ jobs:
             image: docker:///busybox
             inputs:
               - { name: dockerfile, path: . }
-              - { name: spruce,     path: dockerfile/ci/image/spruce }
+              - { name: spruce,     path: ./ci/image/spruce }
+            run: { path: /bin/true }
 
         - put: task-image
           params:
