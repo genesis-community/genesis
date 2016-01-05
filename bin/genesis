@@ -170,6 +170,19 @@ env_root() {
 	echo "${DEPLOYMENT_ROOT}/${site}/${name}"
 }
 
+switch_to() {
+	local site=${1}
+	local name=${2}
+
+	if [[ -z ${site} ]]; then
+		cd ${DEPLOYMENT_ROOT}/global
+	elif [[ -z ${name} ]]; then
+		cd ${DEPLOYMENT_ROOT}/${site}/site
+	else
+		cd ${DEPLOYMENT_ROOT}/${site}/${name}
+	fi
+}
+
 create_makefile() {
 	path=${1:?create_makefile() - No path given}
 
@@ -503,6 +516,158 @@ Run \`make' to see some help, or \`make manifest' to just rebuild.
 EOF
 		;; # }}}
 	esac
+}
+
+create_ci_pipeline() {
+	setup
+	mkdir -p ${DEPLOYMENT_ROOT}/ci
+	cat > ${DEPLOYMENT_ROOT}/ci/docker.yml <<EOF # {{{
+---
+# ci/docker.yml - Docker Image resource and tasks
+
+#######################################################################
+groups:
+  - (( append ))
+  - name: aux
+    jobs:
+    - build-task-image
+
+
+#######################################################################
+resources:
+
+  # The Docker image itself.  By default, this is going to be
+  # pushed to (public-facing) DockerHub, based on the credentials
+  # specified under `meta` in ci/pipeline.yml
+  - name: task-image
+    type: docker-image
+    source:
+      email:      (( grab meta.docker.hub.email ))
+      username:   (( grab meta.docker.hub.username ))
+      password:   (( grab meta.docker.hub.password ))
+      repository: (( grab meta.docker.hub.repository ))
+
+  # Watch the git repository for changes to the Dockerfile
+  # (and anything else in ci/image, for local injection).
+  - name: dockerfile
+    type: git
+    source:
+      uri:         (( grab meta.git.repository ))
+      branch:      (( grab meta.git.branch ))
+      private_key: (( grab meta.git.private_key ))
+      paths:       [ ci/image/* ]
+
+  # Deployments need spruce to merge the manifest files together,
+  # so we need to add that into the final task image
+  - name: spruce
+    type: github-release
+    source:
+      user:         geofffranks
+      repository:   spruce
+      access_token: 766b0916b78570adc9825dd6b4c1d72a5cac763f
+
+
+#######################################################################
+jobs:
+
+  # Build (or rebuild) the Docker image, any time its definition
+  # changes, or we get a new version of spruce on Github.
+  - name: build-task-image
+    public: (( grab meta.public ))
+    serial: true
+
+    plan:
+        - { get: dockerfile, trigger: true }
+        - { get: spruce,     trigger: true }
+
+        - task: combine-inputs
+          config:
+            platform: linux
+            image: docker:///busybox
+            inputs:
+              - { name: dockerfile, path: . }
+              - { name: spruce,     path: dockerfile/ci/image/spruce }
+
+        - put: task-image
+          params:
+            build: combine-inputs/ci/image
+
+EOF
+# }}} ci/docker.yml
+	cat > ${DEPLOYMENT_ROOT}/ci/pipeline.yml <<EOF # {{{
+---
+meta:
+  public: true
+  deployment: vault
+  git:
+    repository: (( param "Please specify the full URL of this git repository" ))
+    branch: master
+    private_key: (( param "Please specify the private key for accessing this git repository" ))
+
+  s3:
+    access_key: (( param "Please provide an Access Key for your S3 bucket" ))
+    secret_key: (( param "Please provide a Secret Key for your S3 bucket" ))
+    bucket:     (( concat meta.deployment "-pipeline-assets" ))
+    region:     us-east-1
+
+  docker:
+    image:
+      name: (( concat meta.deployment "-pipeline-builder" ))
+      url:  (( concat "docker://" meta.docker.registry "/" meta.docker.image.name ))
+    registry: ""
+    hub:
+      email:      (( param "Please specify the email address associated with your DockerHub account" ))
+      username:   (( param "Please specify the username of your DockerHub account" ))
+      password:   (( param "Please specify the password to your DockerHub account" ))
+      repository: (( grab meta.docker.image.name ))
+
+
+resources:
+  - name: deployments-repo
+    type: git
+    source:
+      uri:         (( grab meta.git.repository ))
+      branch:      (( grab meta.git.branch ))
+      private_key: (( grab meta.git.private_key ))
+
+  - name: global-candidate
+    type: git
+    source:
+      .: (( inject resources.deployments-repo.source ))
+      paths: [global/*.yml]
+
+  - name: global-approved
+    type: s3
+    source:
+      private: true
+      bucket:            (( grab meta.s3.bucket ))
+      access_key_id:     (( grab meta.s3.access_key ))
+      secret_access_key: (( grab meta.s3.secret_key ))
+      regexp: global-(.*).tar.gz
+
+  - name: v.global
+    type: semver
+    source:
+      key:               global-version
+      initial_version:   0.1.0
+      bucket:            (( grab meta.s3.bucket ))
+      access_key_id:     (( grab meta.s3.access_key ))
+      secret_access_key: (( grab meta.s3.secret_key ))
+EOF
+# }}} ci/pipeline.yml
+
+	mkdir -p ${DEPLOYMENT_ROOT}/ci/images
+	cat > ${DEPLOYMENT_ROOT}/ci/image/Dockerfile <<EOF # {{{
+FROM concourse/concourse-ci
+
+# install spruce
+ADD spruce/spruce_*_linux_amd64.tar.gz /tmp
+RUN mv /tmp/spruce_*_linux_amd64/spruce /usr/bin/spruce
+EOF
+# }}} ci/pipeline.yml
+
+	mkdir -p ${DEPLOYMENT_ROOT}/ci/steps
+	touch ${DEPLOYMENT_ROOT}/.gitkeep
 }
 
 create_normal_deployment() {
@@ -1216,8 +1381,11 @@ cmd_new_deployment() {
 		;;
 	esac
 
+	create_ci_pipeline
+
 	cat > ${DEPLOYMENT_ROOT}/.gitignore <<EOF
 .begin.yml
+.deploy.yml
 EOF
 
 	(cd ${DEPLOYMENT_ROOT}
@@ -1267,6 +1435,79 @@ cmd_new_environment() {
 		create_bosh_init_environment ${site} ${name}
 		;;
 	esac
+
+	cat > ${DEPLOYMENT_ROOT}/ci/steps/${site}-${name}.yml <<EOF # {{{
+---
+# ${site}/${name} deployment pipeine steps
+#######################################################################
+groups:
+  - name: ${site}
+    jobs:
+      - ${site}/${name}
+
+
+#######################################################################
+jobs:
+  - name: ${site}:${name}
+    public: (( grab meta.public ))
+    serial: true
+    serial-groups: [${site}/${name}]
+
+    plan:
+      - aggregate:
+        - get: repo
+          resource: ${site}:${name} changes
+          trigger: true
+
+      - task: manifest
+        config:
+          platform: linux
+          image: (( grab meta.docker.image.url ))
+          inputs:
+            - { name: repo, path: . }
+          run:
+            path: ./bin/genesis
+            args: [ci, manifest, '${site}', '${name}']
+
+      - put: bosh
+        resource: ${site}:${name} bosh
+        params:
+          manifest:  manifest/${site}/${name}/manifests/live.yml
+          releases:  []
+          stemcells: []
+
+      - task: commit
+        config:
+          platform: linux
+          image: (( grab meta.docker.image.url ))
+          inputs:
+            - { name: manifest, path: . }
+          run:
+            path: ./bin/genesis
+            args: [ci, commit, "[${site}/${name}] :airplane: Automated Deployment"]
+
+
+#######################################################################
+resources:
+  - name: ${site}:${name} changes
+    type: git
+    source:
+      .: (( inject resources.deployments-repo.source ))
+      paths:
+        - ${site}/${name}/*.yml
+        - ${site}/${name}/.site/*.yml
+        - ${site}/${name}/.global/*.yml
+
+  - name: ${site}:${name} bosh
+    type: bosh-deployment
+    source:
+      target:     (( grab meta.bosh.target ))
+      deployment: (( grab meta.bosh.deployment ))
+      username:   (( grab meta.bosh.username ))
+      password:   (( grab meta.bosh.password ))
+      ignore_ssl: true
+EOF
+# }}} ci/steps/*.yml
 	exit 0
 }
 
@@ -1442,28 +1683,82 @@ cmd_repipe() {
 	need_command spruce
 	need_command fly
 
-	if [[ ! -f ${DEPLOYMENT_ROOT}/pipeline/target ]]; then
-		echo >&2 "No target specified in pipeline/target!"
+	setup
+	if [[ ! -f ${DEPLOYMENT_ROOT}/ci/target ]]; then
+		echo >&2 "No target specified in ci/target!"
 		exit 2
 	fi
-	local target=$(cat ${DEPLOYMENT_ROOT}/pipeline/target)
+	local target=$(cat ${DEPLOYMENT_ROOT}/ci/target)
 
-	if [[ -f ${DEPLOYMENT_ROOT}/pipeline/name ]]; then
-		echo >&2 "No pipeline name specified in pipeline/name!"
-		exit 2
+	local pipeline="${DEPLOYMENT_NAME}-deployments"
+	if [[ -f ${DEPLOYMENT_ROOT}/ci/name ]]; then
+		pipeline=$(cat ${DEPLOYMENT_NAME}/ci/name)
 	fi
-	local pipeline=$(cat ${DEPLOYMENT_ROOT}/pipeline/name)
 
-	(cd ${DEPLOYMENT_ROOT}/pipeline
-	 spruce $SPRUCE_OPTS --concourse merge > live.yml
-		pipeline/groups.yml \
-		pipeline/resources.yml \
-		pipeline/jobs/deploy-*.yml \
-		pipeline/jobs/build-task-image.yml
+	(cd ${DEPLOYMENT_ROOT}/ci
+	 spruce $SPRUCE_OPTS merge > live.yml \
+	   pipeline.yml \
+	   steps/*.yml \
+	   docker.yml \
+	     || exit 1
 
-	 fly -k -t ${target} configure -c pipeline/live.yml \
-		--vars-from pipeline/credentials.yml \
-		${pipeline})
+	 fly --target ${target} \
+	     set-pipeline \
+	     --config live.yml \
+	     --pipeline ${pipeline})
+}
+
+cmd_embed() {
+	echo "Embedding genesis script into repository"
+	setup
+
+	mkdir -p ${DEPLOYMENT_ROOT}/bin
+	cp ${BASH_SOURCE[0]} ${DEPLOYMENT_ROOT}/bin/genesis
+
+	${DEPLOYMENT_ROOT}/bin/genesis ident
+}
+
+cmd_ci_manifeset() {
+	local site=${1:?cmd_ci_manifest() - no site name provided}
+	local name=${2:?cmd_ci_manifest() - no environment name provided}
+
+	setup
+	switch_to ${site} ${name}
+
+	if [[ $REFRESH_GLOBAL = "yes" ]]; then
+		refresh_global ${site} ${name}
+	fi
+	if [[ $REFRESH_SITE = "yes" ]]; then
+		refresh_site ${site} ${name}
+	fi
+
+	(VAULT_ADDR= cmd_build live.yml)    || exit 3
+	(            cmd_build .deploy.yml) || exit 4
+	exit 0
+}
+
+cmd_ci_commit() {
+	local msg=${1:?cmd_ci_commit() no message specified}
+
+	if [[ -z $(git config --get user.name) ]]; then
+		[ -z ${GIT_USERNAME} ] && GIT_USERNAME="Concourse Bot"
+		[ -z ${GIT_EMAIL}    ] && GIT_EMAIL="concourse@$(hostname -f)"
+
+		git config --global user.name  ${GIT_USERNAME}
+		git config --global user.email ${GIT_EMAIL}
+	fi
+
+	setup
+
+	# get rid of any untracked files (pipeline assets, stemcells, etc.)
+	git clean -df
+
+	# commit what changes we've got and go
+	if [[ -z $(git status --porcelain) ]]; then
+		git add .
+		git commit -am "${msg}"
+		git push
+	fi
 }
 
 cmd_dump() {
@@ -1583,6 +1878,23 @@ main() {
 		;;
 	(repipe)
 		cmd_repipe
+		;;
+	(embed)
+		cmd_embed
+		;;
+	(ci)
+		local arg=${1:-} ; shift
+		case ${arg} in
+		(manifest)
+			cmd_ci_manifest $*
+			;;
+		(commit)
+			cmd_ci_commit $*
+			;;
+		(*)
+			bad_ci ${arg}
+			;;
+		esac
 		;;
 	(dump)
 		cmd_dump
