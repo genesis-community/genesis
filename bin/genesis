@@ -1724,7 +1724,7 @@ cmd_embed() {
 	${DEPLOYMENT_ROOT}/bin/genesis ident
 }
 
-cmd_ci_manifeset() {
+cmd_ci_manifest() {
 	local site=${1:?cmd_ci_manifest() - no site name provided}
 	local name=${2:?cmd_ci_manifest() - no environment name provided}
 
