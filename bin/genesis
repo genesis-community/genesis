@@ -1756,6 +1756,9 @@ cmd_ci_commit() {
 
 	setup
 
+	# git add any live.yml files
+	find . -name live.yml | xargs -r git add
+
 	# get rid of any untracked files (pipeline assets, stemcells, etc.)
 	git clean -df
 
