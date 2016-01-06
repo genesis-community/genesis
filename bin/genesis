@@ -1100,7 +1100,6 @@ build_microbosh_manifest() {
 	need_command spruce
 
 	(cd ${DEPLOYMENT_ENV_DIR}
-	 echo "# generated $(date) by $USERNAME"
 	 spruce $SPRUCE_OPTS merge --prune meta \
 		.global/deployment.yml \
 		.site/infra.yml \
@@ -1167,7 +1166,6 @@ build_bosh_init_manifest() {
 
 	bosh_init_site_metadata > ${DEPLOYMENT_ENV_DIR}/.begin.yml
 	(cd ${DEPLOYMENT_ENV_DIR}
-	 echo "# generated $(date) by $USERNAME"
 	 spruce $SPRUCE_OPTS merge --prune meta \
 		.begin.yml \
 		.global/jobs.yml \
