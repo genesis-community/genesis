@@ -670,7 +670,7 @@ FROM concourse/concourse-ci
 ADD spruce/spruce_*_linux_amd64.tar.gz /tmp
 RUN mv /tmp/spruce_*_linux_amd64/spruce /usr/bin/spruce
 EOF
-# }}} ci/pipeline.yml
+# }}} ci/image/Dockerfile
 
 	mkdir -p ${DEPLOYMENT_ROOT}/ci/steps
 	touch ${DEPLOYMENT_ROOT}/.gitkeep
