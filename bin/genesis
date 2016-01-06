@@ -1814,6 +1814,8 @@ cmd_ci_manifest() {
 cmd_ci_commit() {
 	local msg=${1:?cmd_ci_commit() no message specified}
 
+	# git 2.0 introduced this little number
+	git config --global push.default simple
 	if [[ -z $(git config --get user.name) ]]; then
 		[ -z ${GIT_USERNAME} ] && GIT_USERNAME="Concourse Bot"
 		[ -z ${GIT_EMAIL}    ] && GIT_EMAIL="concourse@$(hostname -f)"
