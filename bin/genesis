@@ -1784,7 +1784,7 @@ cmd_ci_manifest() {
 		touch      ~/.vault-token ~/.vault
 		chmod 0400 ~/.vault-token ~/.vault
 		creds='{"user_id":"'${CI_VAULT_USER_ID:-concourse}'","app_id":"'${CI_VAULT_APP_ID:-generic-app}'"}'
-		if ! curl -Lv ${VAULT_ADDR}/v1/auth/app-id/login --data "${creds}" > ~/.vault; then
+		if ! curl -Ls ${VAULT_ADDR}/v1/auth/app-id/login --data "${creds}" > ~/.vault; then
 			echo >&2 "Failed to authenticate to the Vault app-id backend:"
 			cat >&2 ~/.vault
 			exit 2
