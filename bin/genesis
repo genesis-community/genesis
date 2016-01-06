@@ -1992,6 +1992,7 @@ main() {
 		cmd_embed
 		;;
 	(ci)
+		exec </dev/null
 		local arg=${1:-} ; shift
 		case ${arg} in
 		(manifest)
