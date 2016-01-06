@@ -627,6 +627,11 @@ meta:
       password:   (( param "Please specify the password to your DockerHub account" ))
       repository: (( grab meta.docker.image.name ))
 
+  global:
+    env:
+      VAULT_ADDR:       ~
+      CI_VAULT_USER_ID: concourse
+      CI_VAULT_APP_ID:  (( concat meta.deployment "-deployments-pipeline" ))
 
 resources:
   - name: deployments-repo
@@ -665,6 +670,17 @@ EOF
 	mkdir -p ${DEPLOYMENT_ROOT}/ci/images
 	cat > ${DEPLOYMENT_ROOT}/ci/image/Dockerfile <<EOF # {{{
 FROM concourse/concourse-ci
+
+# install curl
+RUN apt-get install -yy curl
+
+# install vault cli util
+ADD https://releases.hashicorp.com/vault/0.4.0/vault_0.4.0_linux_amd64.zip /tmp
+RUN cd /usr/bin && unzip /tmp/vault_0.4.0_linux_amd64.zip && ls && chmod 0755 /usr/bin/vault
+
+# install jq
+ADD http://stedolan.github.io/jq/download/linux64/jq /usr/bin/
+RUN chmod 775 /usr/bin/jq
 
 # install spruce
 ADD spruce/spruce_*_linux_amd64.tar.gz /tmp
@@ -1486,6 +1502,8 @@ jobs:
           image: (( grab meta.docker.image.url ))
           inputs:
             - { name: repo, path: . }
+          params:
+            .: (( inject meta.global.env ))
           run:
             path: ./bin/genesis
             args: [ci, manifest, '${site}', '${name}']
@@ -1753,6 +1771,41 @@ cmd_ci_manifest() {
 		refresh_site ${site} ${name}
 	fi
 
+	if [[ -n ${VAULT_ADDR} ]]; then
+		echo "Authenticating to Vault at ${VAULT_ADDR}"
+		if [[ -z $(command -v vault) ]]; then
+			echo >&2 "\`vault\` command not found in your \$PATH"
+			echo >&2 "  ($PATH)"
+			echo >&2 "You may need to install Vault in your task image"
+			exit 1
+		fi
+		echo
+
+		touch      ~/.vault-token ~/.vault
+		chmod 0400 ~/.vault-token ~/.vault
+		creds='{"user_id":"'${CI_VAULT_USER_ID:-concourse}'","app_id":"'${CI_VAULT_APP_ID:-generic-app}'"}'
+		if ! curl -Lv ${VAULT_ADDR}/v1/auth/app-id/login --data "${creds}" > ~/.vault; then
+			echo >&2 "Failed to authenticate to the Vault app-id backend:"
+			cat >&2 ~/.vault
+			exit 2
+		fi
+
+		cat ~/.vault | jq -r '.auth.client_token' > ~/.vault-token
+		if ! vault status; then
+			echo >&2 "Failed to authenticate to Vault at ${VAULT_ADDR}; bailing..."
+			exit 2
+		fi
+
+		echo
+		echo "Testing Vault authentication by retrieving secret/handshake"
+		if ! vault read secret/handshake; then
+			echo >&2 "Failed to retrieve secret/handshake; assuming authentication failed..."
+			exit 3
+		fi
+
+	else
+		echo >&2 "No VAULT_ADDR found in environment; skipping authentication step"
+	fi
 	(VAULT_ADDR= cmd_build live.yml)    || exit 3
 	(            cmd_build .deploy.yml) || exit 4
 	exit 0
