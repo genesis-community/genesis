@@ -604,7 +604,7 @@ EOF
 ---
 meta:
   public: true
-  deployment: vault
+  deployment: ${DEPLOYMENT_NAME}
   git:
     repository: (( param "Please specify the full URL of this git repository" ))
     branch: master
