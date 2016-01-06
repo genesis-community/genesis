@@ -1085,8 +1085,14 @@ build_normal_manifest() {
 		credentials.yml \
 		cloudfoundry.yml \
 		name.yml)
+	rc=$?
 
 	rm -f ${DEPLOYMENT_ENV_DIR}/.begin.yml
+
+	if [[ $rc != 0 ]]; then
+		echo >&2 "Failed to merge templates; bailing..."
+		exit 5
+	fi
 }
 
 build_microbosh_manifest() {
@@ -1103,6 +1109,11 @@ build_microbosh_manifest() {
 		scaling.yml \
 		director.yml \
 		name.yml)
+
+	if [[ $? != 0 ]]; then
+		echo >&2 "Failed to merge templates; bailing..."
+		exit 5
+	fi
 }
 
 bosh_init_site_metadata() {
@@ -1170,8 +1181,14 @@ build_bosh_init_manifest() {
 		properties.yml \
 		credentials.yml \
 		name.yml)
+	rc=$?
 
 	rm -f ${DEPLOYMENT_ENV_DIR}/.begin.yml
+
+	if [[ $rc != 0 ]]; then
+		echo >&2 "Failed to merge templates; bailing..."
+		exit 5
+	fi
 }
 
 
