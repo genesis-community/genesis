@@ -1506,7 +1506,7 @@ jobs:
             .: (( inject meta.global.env ))
           run:
             path: ./bin/genesis
-            args: [ci, manifest, '${site}', '${name}']
+            args: [ci, manifest, (( grab meta.git.branch )), '${site}', '${name}']
 
       - put: bosh
         resource: ${site}:${name} bosh
@@ -1812,7 +1812,8 @@ cmd_ci_manifest() {
 }
 
 cmd_ci_commit() {
-	local msg=${1:?cmd_ci_commit() no message specified}
+	local branch=${1:-master}
+	local msg=${2:?cmd_ci_commit() no message specified}
 
 	# git 2.0 introduced this little number
 	git config --global push.default simple
@@ -1833,10 +1834,20 @@ cmd_ci_commit() {
 	git clean -df
 
 	# commit what changes we've got and go
-	if [[ -z $(git status --porcelain) ]]; then
+	if [[ -n $(git status --porcelain) ]]; then
+		echo "Committing changes and pushing back to origin/${branch}"
+		git status
+		echo
+
 		git add .
 		git commit -am "${msg}"
-		git push
+		git push origin HEAD:${branch}
+		echo
+
+		git log -n1
+		echo
+	else
+		echo "Nothing changed - not bothering to commit or push"
 	fi
 }
 
