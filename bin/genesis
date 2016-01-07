@@ -1123,7 +1123,7 @@ build_normal_manifest() {
 		.site/jobs.yml \
 		.site/networks.yml \
 		.site/resource-pools.yml \
-        .site/properties.yml \
+		.site/properties.yml \
 		monitoring.yml \
 		networking.yml \
 		director.yml \
@@ -1222,7 +1222,7 @@ build_bosh_init_manifest() {
 		.site/jobs.yml \
 		.site/networks.yml \
 		.site/resource-pools.yml \
-        .site/properties.yml \
+		.site/properties.yml \
 		networking.yml \
 		properties.yml \
 		credentials.yml \
