@@ -883,7 +883,7 @@ update:
   update_watch_time: 1000-60000
   max_in_flight: 1
 EOF
-	for file in networks resource-pools jobs; do
+	for file in networks resource-pools jobs properties; do
 		cat > ${DEPLOYMENT_ROOT}/${site}/site/${file}.yml <<EOF
 --- {}
 EOF
@@ -935,7 +935,7 @@ create_bosh_init_site() {
 ---
 disk_pools: []
 EOF
-	for file in networks resource-pools jobs; do
+	for file in networks resource-pools jobs properties; do
 		cat > ${DEPLOYMENT_ROOT}/${site}/site/${file}.yml <<EOF
 --- {}
 EOF
@@ -1114,7 +1114,7 @@ EOF
 	done
 }
 
-ensure_normal_files() {
+ensure_normal_build_files() {
     ensure_yaml_files \
 		.global/jobs.yml \
 		.global/deployment.yml \
@@ -1143,7 +1143,7 @@ build_normal_manifest() {
 	(cd ${DEPLOYMENT_ENV_DIR}
 	 spruce $SPRUCE_OPTS merge --prune meta \
         .begin.yml \
-        $(ensure_normal_files)
+        $(ensure_normal_build_files)
      )
 
 	rc=$?
@@ -1156,19 +1156,25 @@ build_normal_manifest() {
 	fi
 }
 
-build_microbosh_manifest() {
-	must_be_in_an_environment
-	need_command spruce
-
-	(cd ${DEPLOYMENT_ENV_DIR}
-	 spruce $SPRUCE_OPTS merge --prune meta \
+ensure_microbosh_build_files() {
+    ensure_yaml_files \
 		.global/deployment.yml \
 		.site/infra.yml \
 		.site/scaling.yml \
 		infra.yml \
 		scaling.yml \
 		director.yml \
-		name.yml)
+		name.yml
+}
+
+build_microbosh_manifest() {
+	must_be_in_an_environment
+	need_command spruce
+
+	(cd ${DEPLOYMENT_ENV_DIR}
+	 spruce $SPRUCE_OPTS merge --prune meta \
+        $(ensure_microbosh_build_files)
+	 )
 
 	if [[ $? != 0 ]]; then
 		echo >&2 "Failed to merge templates; bailing..."
@@ -1221,13 +1227,8 @@ EOF
 	done
 }
 
-build_bosh_init_manifest() {
-	must_be_in_an_environment
-	need_command spruce
-
-	bosh_init_site_metadata > ${DEPLOYMENT_ENV_DIR}/.begin.yml
-	(cd ${DEPLOYMENT_ENV_DIR}
-	 spruce $SPRUCE_OPTS merge --prune meta \
+ensure_bosh_init_build_files() {
+    ensure_yaml_files \
 		.begin.yml \
 		.global/jobs.yml \
 		.global/deployment.yml \
@@ -1240,7 +1241,18 @@ build_bosh_init_manifest() {
 		networking.yml \
 		properties.yml \
 		credentials.yml \
-		name.yml)
+		name.yml
+}
+
+build_bosh_init_manifest() {
+	must_be_in_an_environment
+	need_command spruce
+
+	bosh_init_site_metadata > ${DEPLOYMENT_ENV_DIR}/.begin.yml
+	(cd ${DEPLOYMENT_ENV_DIR}
+	 spruce $SPRUCE_OPTS merge --prune meta \
+        $(ensure_bosh_init_build_files)
+     )
 	rc=$?
 
 	rm -f ${DEPLOYMENT_ENV_DIR}/.begin.yml
