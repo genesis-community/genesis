@@ -99,6 +99,13 @@ setup() {
 	DEPLOYMENT_ENV_DIR="${DEPLOYMENT_ROOT}/${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}"
 }
 
+ensure_yaml_files() {
+  for i in $*; do
+    [ ! -f $i ] && echo "--- {}" > $1
+    echo $i
+    shift
+  done
+}
 
 ####################################################
 # checks and validating functions
@@ -1107,14 +1114,8 @@ EOF
 	done
 }
 
-build_normal_manifest() {
-	must_be_in_an_environment
-	need_command spruce
-
-	normal_site_metadata > ${DEPLOYMENT_ENV_DIR}/.begin.yml
-	(cd ${DEPLOYMENT_ENV_DIR}
-	 spruce $SPRUCE_OPTS merge --prune meta \
-		.begin.yml \
+ensure_normal_files() {
+    ensure_yaml_files \
 		.global/jobs.yml \
 		.global/deployment.yml \
 		.global/properties.yml \
@@ -1131,7 +1132,20 @@ build_normal_manifest() {
 		properties.yml \
 		credentials.yml \
 		cloudfoundry.yml \
-		name.yml)
+		name.yml
+}
+
+build_normal_manifest() {
+	must_be_in_an_environment
+	need_command spruce
+
+	normal_site_metadata > ${DEPLOYMENT_ENV_DIR}/.begin.yml
+	(cd ${DEPLOYMENT_ENV_DIR}
+	 spruce $SPRUCE_OPTS merge --prune meta \
+        .begin.yml \
+        $(ensure_normal_files)
+     )
+
 	rc=$?
 
 	rm -f ${DEPLOYMENT_ENV_DIR}/.begin.yml
