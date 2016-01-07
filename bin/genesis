@@ -287,16 +287,18 @@ Global Definitions
 
 This directory contains templates that describe the common elements of this
 deployments, to be shared (and possibly overridden) by sites and environments.
+The templates are merged in the following order:
+
+  global/jobs.yml             Specify what jobs will make up the canonical
+                              deployment, and what templates to apply to them.
 
   global/deployment.yml       Define the global structure of all deployments
                               with the correct param calls to remind template
                               writers to override the correct things.
 
-  global/jobs.yml             Specify what jobs will make up the canonical
-                              deployment, and what templates to apply to them.
-
   global/properties.yml       Define the properties (global or per-job) for this
                               deployment.
+
 
 NOTE: If you make changes to the templates in here, they will automatically
 propagate to any newly-created environments, but you will need to run a
@@ -314,6 +316,7 @@ deployments, to be shared (and possibly overridden) by sites and environments.
                               deployments, with the correct param calls to remind
                               template writers to override the correct things.
 
+
 NOTE: If you make changes to the templates in here, they will automatically
 propagate to any newly-created environments, but you will need to run a
 refresh for existing environments to receive those updates.
@@ -325,16 +328,18 @@ Global Definitions
 
 This directory contains templates that describe the common elements of BOSH
 deployments, to be shared (and possibly overridden) by sites and environments.
+The templates are merged in the following order:
+
+  global/jobs.yml             Specify what jobs will make up the BOSH deployment,
+                              and what templates to apply to them.
 
   global/deployment.yml       Define the global structure of all BOSH deployments
                               with the correct param calls to remind template
                               writers to override the correct things.
 
-  global/jobs.yml             Specify what jobs will make up the BOSH deployment,
-                              and what templates to apply to them.
-
   global/properties.yml       Define the properties (global or per-job) for the
                               BOSH deployment.
+
 
 NOTE: If you make changes to the templates in here, they will automatically
 propagate to any newly-created environments, but you will need to run a
@@ -353,28 +358,33 @@ create_site_readme() {
 Site Definitions (${site})
 
 This directory contains templates that describe the infrastructure-specific
-settings and site-wide properties.
-
-  site/networks.yml           Define what networks to use for all the
-                              environments in this site (although you may
-                              want to defer the actual numbering to the
-                              environment level.
+settings and site-wide properties.  The templates are merged in the following order:
 
   site/disk-pools.yml         If you need to, you can put disk pool
                               definitions in this file.
 
-  site/resource-pools.yml     Set up the resource pools to use for job
-                              virtual machines, and apply their cloud
-                              properties (i.e. availability zones)
+  site/update.yml             Specify job update parameters here, which can
+                              change based on the cloud provider in use,
+                              and its performance characteristics.
 
   site/jobs.yml               Here you can modify the list of jobs defined
                               at the global level, remove jobs (by setting
                               their instances: count to 0), and supply any
                               additional, site-wide job properties.
 
-  site/update.yml             Specify job update parameters here, which can
-                              change based on the cloud provider in use,
-                              and its performance characteristics.
+  site/networks.yml           Define what networks to use for all the
+                              environments in this site (although you may
+                              want to defer the actual numbering to the
+                              environment level.
+
+  site/resource-pools.yml     Set up the resource pools to use for job
+                              virtual machines, and apply their cloud
+                              properties (i.e. availability zones)
+
+  site/properties.yml         Define properties (both globally and per-job),
+                              that are specific to this environment.  These will
+                              most likely override global properties.
+
 
 NOTE: If you make changes to the templates in here, they will automatically
 propagate to any newly-created environments, but you will need to run a
@@ -386,7 +396,7 @@ EOF
 Site Definitions (${site})
 
 This directory contains templates that describe the infrastructure-specific
-settings and site-wide properties.
+settings and site-wide properties.  The templates are merged in the following order:
 
   site/infra.yml              Define infrastructure-specific settings for
                               this MicroBOSH deployment, including resources,
@@ -406,24 +416,29 @@ EOF
 Site Definitions (${site})
 
 This directory contains templates that describe the infrastructure-specific
-settings and site-wide properties.
+settings and site-wide properties.  The templates are merged in the following order:
+
+  site/disk-pools.yml         If you need to, you can put disk pool
+                              definitions in this file.
+
+  site/jobs.yml               Here you can modify the list of jobs defined
+                              at the global level, remove jobs (by setting
+                              their instances: count to 0), and supply any
+                              additional, site-wide job properties.
 
   site/networks.yml           Define what networks to use for all the
                               environments in this site (although you may
                               want to defer the actual numbering to the
                               environment level.
 
-  site/disk-pools.yml         If you need to, you can put disk pool
-                              definitions in this file.
-
   site/resource-pools.yml     Set up the resource pools to use for job
                               virtual machines, and apply their cloud
                               properties (i.e. availability zones)
 
-  site/jobs.yml               Here you can modify the list of jobs defined
-                              at the global level, remove jobs (by setting
-                              their instances: count to 0), and supply any
-                              additional, site-wide job properties.
+  site/properties.yml         Define properties (both globally and per-job),
+                              that are specific to this environment.  These will
+                              most likely override global properties.
+
 
 NOTE: If you make changes to the templates in here, they will automatically
 propagate to any newly-created environments, but you will need to run a
@@ -446,34 +461,34 @@ Environment Definitions (${site}/${name})
 This directory contains templates that describe the environment-specific
 settings of a single deployment.  These templates will be combined with
 the global and site templates to produce a single BOSH manifest for deployment
-purposes.
+purposes.  The templates are merged in the following order:
+
+  monitoring.yml              Configure whatever (external) monitoring system you
+                              want to track the performance and health of your
+                              deployment.
+
+  networking.yml              Configure the network numbering for this deployment.
+
+  director.yml                Identify the BOSH director UUID for this deployment.
+
+  scaling.yml                 Define the scaling properties for this deployment,
+                              including things like the number of instances, sizes
+                              of persistent disks, resource pool limits, etc.
+
+  properties.yml              Define properties (both globally and per-job),
+                              that are specific to this environment.  These will
+                              most likely override global and site properties.
+
+  credentials.yml             Define passwords and credentials here, so that they
+                              are centralized.  Keep in mind that commiting these
+                              into version control incurs some security risk.
 
   cloudfoundry.yml            For deployments that integrate with Cloud Foundry
                               installations (i.e. as service brokers), you can
                               specify the integration details here, including
                               things like the CF API, credentials, domains, etc.
 
-  credentials.yml             Define passwords and credentials here, so that they
-                              are centralized.  Keep in mind that commiting these
-                              into version control incurs some security risk.
-
-  director.yml                Identify the BOSH director UUID for this deployment.
-
-  monitoring.yml              Configure whatever (external) monitoring system you
-                              want to track the performance and health of your
-                              deployment.
-
   name.yml                    Specify the name of this deployment.
-
-  properties.yml              Define properties (both globally and per-job),
-                              that are specific to this environment.  These will
-                              most likely override global properties.
-
-  networking.yml              Configure the network numbering for this deployment.
-
-  scaling.yml                 Define the scaling properties for this deployment,
-                              including things like the number of instances, sizes
-                              of persistent disks, resource pool limits, etc.
 
 
 This directory also contains a Makefile that makes it easier to build
@@ -488,17 +503,17 @@ Environment Definitions (${site}/${name})
 This directory contains templates that describe the environment-specific
 settings of a single MicroBOSH deployment.  These templates will be combined
 with the global and site templates to produce a single manifest suitable for
-deployment via \`bosh micro'
-
-  director.yml                Identify the BOSH director UUID for this deployment.
-
-  name.yml                    Specify the name of this MicroBOSH deployment.
+deployment via \`bosh micro'.  The templates are merged in the following order:
 
   infra.yml                   Configure the Infrastructure that this MicroBOSH will
                               be deployed on top of.
 
   scaling.yml                 Define the scaling properties for this deployment,
                               including things like disk sizing, RAM, etc.
+
+  director.yml                Identify the BOSH director UUID for this deployment.
+
+  name.yml                    Specify the name of this MicroBOSH deployment.
 
 
 This directory also contains a Makefile that makes it easier to build
@@ -513,23 +528,19 @@ Environment Definitions (${site}/${name})
 This directory contains templates that describe the environment-specific
 settings of a single bosh-init deployment.  These templates will be combined
 with the global and site templates to produce a single manifest suitable for
-deployment via \`bosh-init'
+deployment via \`bosh-init'.  The templates are merged in the following order:
+
+  networking.yml              Configure the network numbering for this BOSH.
+
+  properties.yml              Define properties (both globally and per-job),
+                              that are specific to this environment.  These will
+                              most likely override global and site properties.
 
   credentials.yml             Define passwords and credentials here, so that they
                               are centralized.  Keep in mind that commiting these
                               into version control incurs some security risk.
 
   name.yml                    Specify the name of this deployment.
-
-  properties.yml              Define properties (both globally and per-job),
-                              that are specific to this environment.  These will
-                              most likely override global properties.
-
-  networking.yml              Configure the network numbering for this BOSH.
-
-  scaling.yml                 Define the scaling properties for this deployment,
-                              including things like the number of instances, sizes
-                              of persistent disks, resource pool limits, etc.
 
 
 This directory also contains a Makefile that makes it easier to build
@@ -1104,9 +1115,23 @@ build_normal_manifest() {
 	(cd ${DEPLOYMENT_ENV_DIR}
 	 spruce $SPRUCE_OPTS merge --prune meta \
 		.begin.yml \
-		.global/*.yml \
-		.site/*.yml \
-        *.yml )
+		.global/jobs.yml \
+		.global/deployment.yml \
+		.global/properties.yml \
+		.site/disk-pools.yml \
+		.site/update.yml \
+		.site/jobs.yml \
+		.site/networks.yml \
+		.site/resource-pools.yml \
+        .site/properties.yml \
+		monitoring.yml \
+		networking.yml \
+		director.yml \
+		scaling.yml \
+		properties.yml \
+		credentials.yml \
+		cloudfoundry.yml \
+		name.yml)
 	rc=$?
 
 	rm -f ${DEPLOYMENT_ENV_DIR}/.begin.yml
@@ -1197,6 +1222,7 @@ build_bosh_init_manifest() {
 		.site/jobs.yml \
 		.site/networks.yml \
 		.site/resource-pools.yml \
+        .site/properties.yml \
 		networking.yml \
 		properties.yml \
 		credentials.yml \
