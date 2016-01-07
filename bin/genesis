@@ -624,10 +624,15 @@ EOF
 meta:
   public: true
   deployment: ${DEPLOYMENT_NAME}
+  bosh:
+    target:   (( param "Please provide the URL to your BOSH Director" ))
+    username: (( param "Please provide account credentials for running BOSH deployments" ))
+    password: (( param "Please provide account credentials for running BOSH deployments" ))
+
   git:
-    repository: (( param "Please specify the full URL of this git repository" ))
-    branch: master
+    repository:  (( param "Please specify the full URL of this git repository" ))
     private_key: (( param "Please specify the private key for accessing this git repository" ))
+    branch:      master
 
   s3:
     access_key: (( param "Please provide an Access Key for your S3 bucket" ))
@@ -699,7 +704,7 @@ RUN cd /usr/bin && unzip /tmp/vault_0.4.0_linux_amd64.zip && ls && chmod 0755 /u
 
 # install jq
 ADD http://stedolan.github.io/jq/download/linux64/jq /usr/bin/
-RUN chmod 775 /usr/bin/jq
+RUN chmod 755 /usr/bin/jq
 
 # install spruce
 ADD spruce/spruce_*_linux_amd64.tar.gz /tmp
