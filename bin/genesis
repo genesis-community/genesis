@@ -1736,6 +1736,13 @@ EOF
 	exit 1
 }
 
+ci_remerge_pipeline() {
+	spruce $SPRUCE_OPTS merge \
+	  pipeline.yml \
+	  steps/*.yml \
+	  docker.yml
+}
+
 cmd_repipe() {
 	echo "Updating Concourse pipeline configurations"
 	need_command spruce
@@ -1754,16 +1761,13 @@ cmd_repipe() {
 	fi
 
 	(cd ${DEPLOYMENT_ROOT}/ci
-	 spruce $SPRUCE_OPTS merge > live.yml \
-	   pipeline.yml \
-	   steps/*.yml \
-	   docker.yml \
-	     || exit 1
+	 VAULT_ADDR= ci_remerge_pipeline > live.yml    || exit 1
+	             ci_remerge_pipeline > .deploy.yml || exit 1
 
 	 fly --target ${target} \
 	     set-pipeline \
-	     --config live.yml \
-	     --pipeline ${pipeline})
+	     --config .deploy.yml \
+	     --pipeline ${pipeline}) || exit 1
 }
 
 cmd_embed() {
