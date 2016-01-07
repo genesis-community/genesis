@@ -1104,22 +1104,9 @@ build_normal_manifest() {
 	(cd ${DEPLOYMENT_ENV_DIR}
 	 spruce $SPRUCE_OPTS merge --prune meta \
 		.begin.yml \
-		.global/jobs.yml \
-		.global/deployment.yml \
-		.global/properties.yml \
-		.site/disk-pools.yml \
-		.site/update.yml \
-		.site/jobs.yml \
-		.site/networks.yml \
-		.site/resource-pools.yml \
-		monitoring.yml \
-		networking.yml \
-		director.yml \
-		scaling.yml \
-		properties.yml \
-		credentials.yml \
-		cloudfoundry.yml \
-		name.yml)
+		.global/*.yml \
+		.site/*.yml \
+        *.yml )
 	rc=$?
 
 	rm -f ${DEPLOYMENT_ENV_DIR}/.begin.yml
