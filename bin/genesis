@@ -1544,6 +1544,11 @@ jobs:
             path: ./bin/genesis
             args: [ci, commit, "[${site}/${name}] :airplane: Automated Deployment"]
 
+        - put: git push ${site}:${name}
+          params:
+            repository: commit
+            rebase:     true
+
 
 #######################################################################
 resources:
@@ -1555,6 +1560,11 @@ resources:
         - ${site}/${name}/*.yml
         - ${site}/${name}/.site/*.yml
         - ${site}/${name}/.global/*.yml
+
+  - name: git push ${site}:${name}
+    type: git
+    source:
+      .: (( inject resources.deployments-repo.source ))
 
   - name: ${site}:${name} bosh
     type: bosh-deployment
