@@ -1549,10 +1549,10 @@ jobs:
             path: ./bin/genesis
             args: [ci, commit, "[${site}/${name}] :airplane: Automated Deployment"]
 
-        - put: git push ${site}:${name}
-          params:
-            repository: commit
-            rebase:     true
+      - put: git push ${site}:${name}
+        params:
+          repository: commit
+          rebase:     true
 
 
 #######################################################################
