@@ -101,7 +101,7 @@ setup() {
 
 ensure_yaml_files() {
   for i in $*; do
-    [ ! -f $i ] && echo "--- {}" > $1
+    [ ! -f $i ] && echo "--- {}" > $i
     echo $i
     shift
   done
