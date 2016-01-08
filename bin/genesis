@@ -1504,7 +1504,7 @@ cmd_new_environment() {
 groups:
   - name: ${site}
     jobs:
-      - ${site}/${name}
+      - ${site}:${name}
 
 
 #######################################################################
@@ -1512,7 +1512,7 @@ jobs:
   - name: ${site}:${name}
     public: (( grab meta.public ))
     serial: true
-    serial-groups: [${site}/${name}]
+    serial-groups: [${site}:${name}]
 
     plan:
       - aggregate:
@@ -1752,7 +1752,7 @@ EOF
 }
 
 ci_remerge_pipeline() {
-	spruce $SPRUCE_OPTS merge \
+	spruce $SPRUCE_OPTS merge --prune meta \
 	  pipeline.yml \
 	  steps/*.yml \
 	  docker.yml
