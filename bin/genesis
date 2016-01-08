@@ -642,10 +642,15 @@ EOF
 meta:
   public: true
   deployment: ${DEPLOYMENT_NAME}
+  bosh:
+    target:   (( param "Please provide the URL to your BOSH Director" ))
+    username: (( param "Please provide account credentials for running BOSH deployments" ))
+    password: (( param "Please provide account credentials for running BOSH deployments" ))
+
   git:
-    repository: (( param "Please specify the full URL of this git repository" ))
-    branch: master
+    repository:  (( param "Please specify the full URL of this git repository" ))
     private_key: (( param "Please specify the private key for accessing this git repository" ))
+    branch:      master
 
   s3:
     access_key: (( param "Please provide an Access Key for your S3 bucket" ))
@@ -717,7 +722,7 @@ RUN cd /usr/bin && unzip /tmp/vault_0.4.0_linux_amd64.zip && ls && chmod 0755 /u
 
 # install jq
 ADD http://stedolan.github.io/jq/download/linux64/jq /usr/bin/
-RUN chmod 775 /usr/bin/jq
+RUN chmod 755 /usr/bin/jq
 
 # install spruce
 ADD spruce/spruce_*_linux_amd64.tar.gz /tmp
@@ -1583,6 +1588,11 @@ jobs:
             path: ./bin/genesis
             args: [ci, commit, "[${site}/${name}] :airplane: Automated Deployment"]
 
+        - put: git push ${site}:${name}
+          params:
+            repository: commit
+            rebase:     true
+
 
 #######################################################################
 resources:
@@ -1594,6 +1604,11 @@ resources:
         - ${site}/${name}/*.yml
         - ${site}/${name}/.site/*.yml
         - ${site}/${name}/.global/*.yml
+
+  - name: git push ${site}:${name}
+    type: git
+    source:
+      .: (( inject resources.deployments-repo.source ))
 
   - name: ${site}:${name} bosh
     type: bosh-deployment
@@ -1775,6 +1790,13 @@ EOF
 	exit 1
 }
 
+ci_remerge_pipeline() {
+	spruce $SPRUCE_OPTS merge \
+	  pipeline.yml \
+	  steps/*.yml \
+	  docker.yml
+}
+
 cmd_repipe() {
 	echo "Updating Concourse pipeline configurations"
 	need_command spruce
@@ -1793,16 +1815,13 @@ cmd_repipe() {
 	fi
 
 	(cd ${DEPLOYMENT_ROOT}/ci
-	 spruce $SPRUCE_OPTS merge > live.yml \
-	   pipeline.yml \
-	   steps/*.yml \
-	   docker.yml \
-	     || exit 1
+	 VAULT_ADDR= ci_remerge_pipeline > live.yml    || exit 1
+	             ci_remerge_pipeline > .deploy.yml || exit 1
 
 	 fly --target ${target} \
 	     set-pipeline \
-	     --config live.yml \
-	     --pipeline ${pipeline})
+	     --config .deploy.yml \
+	     --pipeline ${pipeline}) || exit 1
 }
 
 cmd_embed() {
@@ -1870,11 +1889,8 @@ cmd_ci_manifest() {
 }
 
 cmd_ci_commit() {
-	local branch=${1:-master}
-	local msg=${2:?cmd_ci_commit() no message specified}
+	local msg="${@:-Automated Depoyment via Concourse}"
 
-	# git 2.0 introduced this little number
-	git config --global push.default simple
 	if [[ -z $(git config --get user.name) ]]; then
 		[ -z ${GIT_USERNAME} ] && GIT_USERNAME="Concourse Bot"
 		[ -z ${GIT_EMAIL}    ] && GIT_EMAIL="concourse@$(hostname -f)"
@@ -1893,19 +1909,14 @@ cmd_ci_commit() {
 
 	# commit what changes we've got and go
 	if [[ -n $(git status --porcelain) ]]; then
-		echo "Committing changes and pushing back to origin/${branch}"
 		git status
 		echo
 
 		git add .
-		git commit -am "${msg}"
-		git push origin HEAD:${branch}
-		echo
-
-		git log -n1
+		git commit -m "${msg}"
 		echo
 	else
-		echo "Nothing changed - not bothering to commit or push"
+		echo "Nothing changed - not bothering to commit"
 	fi
 }
 
@@ -2031,7 +2042,9 @@ main() {
 		cmd_embed
 		;;
 	(ci)
+		TERM=dumb
 		exec </dev/null
+
 		local arg=${1:-} ; shift
 		case ${arg} in
 		(manifest)
