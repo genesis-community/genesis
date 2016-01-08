@@ -691,7 +691,7 @@ resources:
 EOF
 # }}} ci/pipeline.yml
 
-	mkdir -p ${DEPLOYMENT_ROOT}/ci/images
+	mkdir -p ${DEPLOYMENT_ROOT}/ci/image
 	cat > ${DEPLOYMENT_ROOT}/ci/image/Dockerfile <<EOF # {{{
 FROM concourse/concourse-ci
 
