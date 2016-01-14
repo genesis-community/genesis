@@ -1494,6 +1494,7 @@ cmd_new_deployment() {
 	esac
 
 	create_ci_pipeline
+	cmd_embed >/dev/null
 
 	cat > ${DEPLOYMENT_ROOT}/.gitignore <<EOF
 .begin.yml
