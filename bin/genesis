@@ -577,7 +577,7 @@ resources:
 
   # The Docker image itself.  By default, this is going to be
   # pushed to (public-facing) DockerHub, based on the credentials
-  # specified under `meta` in ci/pipeline.yml
+  # specified under \`meta' in ci/pipeline.yml
   - name: task-image
     type: docker-image
     source:
@@ -1664,7 +1664,7 @@ cmd_use_release() {
 	must_be_in_a_site
 	if [[ ! -d ${DEPLOYMENT_ROOT}/global/releases/${release} ]]; then
 		echo >&2 "Release ${release} is not defined globally."
-		echo >&2 "(Do you need to \`genesis add release ${release}\` first?)"
+		echo >&2 "(Do you need to \`genesis add release ${release}' first?)"
 		exit 1
 	fi
 
@@ -1850,7 +1850,7 @@ cmd_ci_manifest() {
 	if [[ -n ${VAULT_ADDR} ]]; then
 		echo "Authenticating to Vault at ${VAULT_ADDR}"
 		if [[ -z $(command -v vault) ]]; then
-			echo >&2 "\`vault\` command not found in your \$PATH"
+			echo >&2 "\`vault' command not found in your \$PATH"
 			echo >&2 "  ($PATH)"
 			echo >&2 "You may need to install Vault in your task image"
 			exit 1
