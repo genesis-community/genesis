@@ -201,14 +201,22 @@ create_makefile() {
 save_VAULT_ADDR := \$(VAULT_ADDR)
 VAULT_ADDR =
 
+root_path := \$(realpath \$(dir \$(abspath \$(lastword \$(MAKEFILE_LIST))))../..)
+PATH := \$(root_path)/bin:\$(PATH)
+
 help: check
-	genesis help makefile
+	@PATH=\$(PATH) genesis help makefile
+
+identify: ident
+ident:
+	@PATH=\$(PATH) echo "using \$\$(which genesis)"
+	@PATH=\$(PATH) genesis ident
 
 manifest: check
-	genesis build
+	@PATH=\$(PATH) genesis build
 
 withcreds: check
-	VAULT_ADDR=\$(save_VAULT_ADDR) genesis build
+	VAULT_ADDR=\$(save_VAULT_ADDR) PATH=\$(PATH) genesis build
 	@echo
 	@echo "##      ##    ###    ########  ##    ## #### ##    ##  ######"
 	@echo "##  ##  ##   ## ##   ##     ## ###   ##  ##  ###   ## ##    ##"
@@ -224,10 +232,10 @@ withcreds: check
 	@echo
 
 refresh: check
-	genesis refresh
+	@PATH=\$(PATH) genesis refresh
 
 check:
-	@genesis ping >/dev/null 2>&1 || (echo >&2 "You need to install Genesis first (see ${CANON_REPO})" && exit 1)
+	@PATH=\$(PATH) genesis ping >/dev/null 2>&1 || (echo >&2 "You need to install Genesis first (see ${CANON_REPO})" && exit 1)
 
 .PHONY: help check manifest withcreds refresh
 EOF
