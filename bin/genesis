@@ -202,7 +202,11 @@ save_VAULT_ADDR := \$(VAULT_ADDR)
 VAULT_ADDR =
 
 root_path := \$(realpath \$(dir \$(abspath \$(lastword \$(MAKEFILE_LIST))))../..)
-PATH := \$(root_path)/bin:\$(PATH)
+ifdef USE_SYSTEM_GENESIS
+	PATH := \$(PATH)
+else
+	PATH := \$(root_path)/bin:\$(PATH)
+endif
 
 help: check
 	@PATH=\$(PATH) genesis help makefile
