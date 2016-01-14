@@ -1487,11 +1487,12 @@ cmd_new_deployment() {
 .deploy.yml
 EOF
 
-	(cd ${DEPLOYMENT_ROOT}
-	 git init
-	 git add .
-	 git commit -m "Initial commit of ${name}-deployments")
-
+	if git symbolic-ref HEAD | grep -qE 'fatal: Not a git repository|fatal: Unable to read current working directory'; then
+		(cd ${DEPLOYMENT_ROOT}
+		 git init
+		 git add .
+		 git commit -m "Initial commit of ${name}-deployments")
+	fi
 	exit 0
 }
 
