@@ -1477,6 +1477,7 @@ cmd_new_deployment() {
 	esac
 
 	DEPLOYMENT_TYPE=${dtype}
+	DEPLOYMENT_NAME=${name}
 	DEPLOYMENT_ROOT="${root}/${name}-deployments"
 	mkdir ${DEPLOYMENT_ROOT}
 
