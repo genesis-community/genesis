@@ -1698,6 +1698,29 @@ cmd_use_stemcell() {
 	version=${2:?USAGE: genesis use stemcell NAME VERSION}
 
 	must_be_in_a_site
+
+	# resolve aliases
+	case ${name} in
+	(aws)
+		name="bosh-aws-xen-hvm-ubuntu-trusty-go_agent"
+		;;
+	(azure|hyperv)
+		name="bosh-azure-hyperv-ubuntu-trusty-go_agent"
+		;;
+	(openstack)
+		name="bosh-openstack-kvm-ubuntu-trusty-go_agent"
+		;;
+	(vcloud)
+		name="bosh-vcloud-esxi-ubuntu-trusty-go_agent"
+		;;
+	(vsphere)
+		name="bosh-vsphere-esxi-ubuntu-trusty-go_agent"
+		;;
+	(warden|bosh-lite)
+		name="bosh-warden-boshlite-ubuntu-trusty-go_agent"
+		;;
+	esac
+
 	echo "${name}"    > ${DEPLOYMENT_SITE_DIR}/site/stemcell/name
 	echo "${version}" > ${DEPLOYMENT_SITE_DIR}/site/stemcell/version
 
