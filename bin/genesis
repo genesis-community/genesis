@@ -89,7 +89,9 @@ setup() {
 	fi
 
 	SPRUCE_OPTS=""
-	if [[ -n "${SPRUCE_DEBUG}" ]]; then
+	if [[ -n "${SPRUCE_TRACE}" ]]; then
+		SPRUCE_OPTS="--debug --trace"
+	elif [[ -n "${SPRUCE_DEBUG}" ]]; then
 		SPRUCE_OPTS="--debug"
 	fi
 
