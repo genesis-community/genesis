@@ -747,6 +747,12 @@ EOF
 	touch ${DEPLOYMENT_ROOT}/.gitkeep
 }
 
+ensure_ci_pipeline() {
+	if [[ ! -d ${DEPLOYMENT_ROOT}/ci ]]; then
+		create_ci_pipeline
+	fi
+}
+
 create_normal_deployment() {
 	setup
 	echo "normal" > ${DEPLOYMENT_ROOT}/.deployment
@@ -1552,6 +1558,7 @@ cmd_new_environment() {
 		;;
 	esac
 
+	ensure_ci_pipeline
 	cat > ${DEPLOYMENT_ROOT}/ci/steps/${site}-${name}.yml <<EOF # {{{
 ---
 # ${site}/${name} deployment pipeine steps
@@ -1840,6 +1847,11 @@ cmd_repipe() {
 	echo "Updating Concourse pipeline configurations"
 	need_command spruce
 	need_command fly
+
+	if [[ ! -d ${DEPLOYMENT_ROOT}/ci ]]; then
+		echo >&2 "ci/ directory not found..."
+		exit 2
+	fi
 
 	setup
 	if [[ ! -f ${DEPLOYMENT_ROOT}/ci/target ]]; then
