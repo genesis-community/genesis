@@ -166,7 +166,6 @@ must_be_in_an_environment() {
 	fi
 }
 
-
 ####################################################
 # helper functions
 
@@ -1291,14 +1290,6 @@ build_bosh_init_manifest() {
 ####################################################
 # multi-call handlers
 
-sha1sum() {
-  if sha1sum 2>/dev/null; then
-    sha1sum "$@"
-  else
-    shasum "$@"
-  fi
-}
-
 cmd_help() {
 	local topic=${1:-usage}
 
@@ -2005,6 +1996,13 @@ EOF
 	exit 1
 }
 
+sha1sum() {
+	if [[ -z $(command -v sha1sum) ]]; then
+    shasum "$@"
+  else
+    sha1sum "$@"
+  fi
+}
 
 ####################################################
 # multi-call interface
@@ -2125,7 +2123,6 @@ main() {
 		;;
 	esac
 }
-
 
 main $@
 
