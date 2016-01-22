@@ -1092,6 +1092,26 @@ EOF
 	echo
 }
 
+releases_from() {
+	local file=${1:?releases_from() - file not provided}
+	cat ${file} | sed 's/\s*#.*//'
+}
+
+releases_for_site() {
+	setup
+	local site=${1:?releases_for_environment() - no site name provided}
+
+	releases_from "${DEPLOYMENT_ROOT}/${site}/site/releases"
+}
+
+releases_for_environment() {
+	setup
+	local site=${1:?releases_for_environment() - no site name provided}
+	local name=${2:?releases_for_environment() - no environment name provided}
+
+	releases_from "${DEPLOYMENT_ROOT}/${site}/${name}/.site/releases"
+}
+
 normal_site_metadata() {
 	must_be_in_an_environment
 	if [[ ! -f "${DEPLOYMENT_ENV_DIR}/.site/stemcell/name" ]]; then
@@ -1110,9 +1130,7 @@ normal_site_metadata() {
 		echo >&2 "Error: no releases listed for site"
 		exit 2
 	fi
-	local releases=$(cat "${DEPLOYMENT_ENV_DIR}/.site/releases" | sed 's/\s*#.*//')
-
-	for rel in ${releases}; do
+	for rel in $(releases_from "${DEPLOYMENT_ENV_DIR}/.site/releases"); do
 		if [[ ! -d "${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}" ]]; then
 			echo >&2 "Error: release '${rel}' not defined globally"
 			exit 2
@@ -1211,7 +1229,7 @@ bosh_init_site_metadata() {
 		echo >&2 "Error: no releases listed for site"
 		exit 2
 	fi
-	local releases=$(cat "${DEPLOYMENT_ENV_DIR}/.site/releases" | sed 's/\s*#.*//')
+	local releases=$(releases_from "${DEPLOYMENT_ENV_DIR}/.site/releases")
 
 	for rel in ${releases}; do
 		if [[ ! -d "${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}" ]]; then
@@ -1745,6 +1763,54 @@ EOF
 	exit 1
 }
 
+cmd_stemcells() {
+	setup
+
+	if [[ -n $2 ]]; then
+		name=$(cat ${DEPLOYMENT_ROOT}/${1}/${2}/.site/stemcell/name)
+		vers=$(cat ${DEPLOYMENT_ROOT}/${1}/${2}/.site/stemcell/version)
+		printf "%s/%s\n" ${name} ${vers}
+		return
+	fi
+
+	if [[ -n $1 ]]; then
+		name=$(cat ${DEPLOYMENT_ROOT}/${1}/site/stemcell/name)
+		vers=$(cat ${DEPLOYMENT_ROOT}/${1}/site/stemcell/version)
+		printf "%s/%s\n" ${name} ${vers}
+		return
+	fi
+
+	cat >&2 <<EOF
+USAGE: genesis stemcells <site> [<env>]
+EOF
+	exit 1
+}
+
+cmd_releases() {
+	setup
+
+	if [[ -n $2 ]]; then
+		for rel in $(releases_for_environment ${1} ${2}); do
+			vers=$(cat ${DEPLOYMENT_ROOT}/${1}/${2}/.global/releases/${rel}/version)
+			printf "%s/%s\n" ${rel} ${vers}
+		done
+		return
+	fi
+
+	if [[ -n $1 ]]; then
+		for rel in $(releases_for_site ${1}); do
+			vers=$(cat ${DEPLOYMENT_ROOT}/global/releases/${rel}/version)
+			printf "%s/%s\n" ${rel} ${vers}
+		done
+		return
+	fi
+
+	cat >&2 <<EOF
+USAGE: genesis releases <site> [<env>]
+EOF
+	exit 1
+}
+
 cmd_build() {
 	must_be_in_an_environment
 
@@ -2063,6 +2129,12 @@ main() {
 			bad_use ${arg}
 			;;
 		esac
+		;;
+	(stemcell|stemcells)
+		cmd_stemcells $*
+		;;
+	(release|releases)
+		cmd_releases $*
 		;;
 	(build)
 		cmd_build $*
