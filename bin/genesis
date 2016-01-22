@@ -1291,6 +1291,14 @@ build_bosh_init_manifest() {
 ####################################################
 # multi-call handlers
 
+sha1sum() {
+  if sha1sum 2>/dev/null; then
+    sha1sum "$@"
+  else
+    shasum "$@"
+  fi
+}
+
 cmd_help() {
 	local topic=${1:-usage}
 
