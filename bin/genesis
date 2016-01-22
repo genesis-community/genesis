@@ -1157,27 +1157,6 @@ EOF
 	done
 }
 
-ensure_normal_build_files() {
-    ensure_yaml_files \
-		.global/jobs.yml \
-		.global/deployment.yml \
-		.global/properties.yml \
-		.site/disk-pools.yml \
-		.site/update.yml \
-		.site/jobs.yml \
-		.site/networks.yml \
-		.site/resource-pools.yml \
-		.site/properties.yml \
-		monitoring.yml \
-		networking.yml \
-		director.yml \
-		scaling.yml \
-		properties.yml \
-		credentials.yml \
-		cloudfoundry.yml \
-		name.yml
-}
-
 build_normal_manifest() {
 	must_be_in_an_environment
 	need_command spruce
@@ -1185,9 +1164,29 @@ build_normal_manifest() {
 	normal_site_metadata > ${DEPLOYMENT_ENV_DIR}/.begin.yml
 	(cd ${DEPLOYMENT_ENV_DIR}
 	 spruce $SPRUCE_OPTS merge --prune meta \
-        .begin.yml \
-        $(ensure_normal_build_files)
-     )
+	    .begin.yml \
+	    $(ensure_yaml_files \
+	        .begin.yml \
+	        \
+	        .global/jobs.yml \
+	        .global/deployment.yml \
+	        .global/properties.yml \
+	        \
+	        .site/disk-pools.yml \
+	        .site/update.yml \
+	        .site/jobs.yml \
+	        .site/networks.yml \
+	        .site/resource-pools.yml \
+	        .site/properties.yml \
+	        \
+	        monitoring.yml \
+	        networking.yml \
+	        director.yml \
+	        scaling.yml \
+	        properties.yml \
+	        credentials.yml \
+	        cloudfoundry.yml \
+	        name.yml))
 
 	rc=$?
 
@@ -1199,25 +1198,22 @@ build_normal_manifest() {
 	fi
 }
 
-ensure_microbosh_build_files() {
-    ensure_yaml_files \
-		.global/deployment.yml \
-		.site/infra.yml \
-		.site/scaling.yml \
-		infra.yml \
-		scaling.yml \
-		director.yml \
-		name.yml
-}
-
 build_microbosh_manifest() {
 	must_be_in_an_environment
 	need_command spruce
 
 	(cd ${DEPLOYMENT_ENV_DIR}
 	 spruce $SPRUCE_OPTS merge --prune meta \
-        $(ensure_microbosh_build_files)
-	 )
+	    $(ensure_yaml_files \
+	        .global/deployment.yml \
+	        \
+	        .site/infra.yml \
+	        .site/scaling.yml \
+	        \
+	        infra.yml \
+	        scaling.yml \
+	        director.yml \
+	        name.yml))
 
 	if [[ $? != 0 ]]; then
 		echo >&2 "Failed to merge templates; bailing..."
@@ -1270,23 +1266,6 @@ EOF
 	done
 }
 
-ensure_bosh_init_build_files() {
-    ensure_yaml_files \
-		.begin.yml \
-		.global/jobs.yml \
-		.global/deployment.yml \
-		.global/properties.yml \
-		.site/disk-pools.yml \
-		.site/jobs.yml \
-		.site/networks.yml \
-		.site/resource-pools.yml \
-		.site/properties.yml \
-		networking.yml \
-		properties.yml \
-		credentials.yml \
-		name.yml
-}
-
 build_bosh_init_manifest() {
 	must_be_in_an_environment
 	need_command spruce
@@ -1294,8 +1273,23 @@ build_bosh_init_manifest() {
 	bosh_init_site_metadata > ${DEPLOYMENT_ENV_DIR}/.begin.yml
 	(cd ${DEPLOYMENT_ENV_DIR}
 	 spruce $SPRUCE_OPTS merge --prune meta \
-        $(ensure_bosh_init_build_files)
-     )
+	    $(ensure_yaml_files \
+	        .begin.yml \
+	        \
+	        .global/jobs.yml \
+	        .global/deployment.yml \
+	        .global/properties.yml \
+	        \
+	        .site/disk-pools.yml \
+	        .site/jobs.yml \
+	        .site/networks.yml \
+	        .site/resource-pools.yml \
+	        .site/properties.yml \
+	        \
+	        networking.yml \
+	        properties.yml \
+	        credentials.yml \
+	        name.yml))
 	rc=$?
 
 	rm -f ${DEPLOYMENT_ENV_DIR}/.begin.yml
