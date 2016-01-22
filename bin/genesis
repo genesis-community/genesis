@@ -166,7 +166,6 @@ must_be_in_an_environment() {
 	fi
 }
 
-
 ####################################################
 # helper functions
 
@@ -1997,6 +1996,13 @@ EOF
 	exit 1
 }
 
+sha1sum() {
+	if [[ -z $(command -v sha1sum) ]]; then
+    shasum "$@"
+  else
+    sha1sum "$@"
+  fi
+}
 
 ####################################################
 # multi-call interface
@@ -2117,7 +2123,6 @@ main() {
 		;;
 	esac
 }
-
 
 main $@
 
