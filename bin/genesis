@@ -1130,7 +1130,9 @@ normal_site_metadata() {
 		echo >&2 "Error: no releases listed for site"
 		exit 2
 	fi
-	for rel in $(releases_from "${DEPLOYMENT_ENV_DIR}/.site/releases"); do
+
+	local releases=$(releases_from "${DEPLOYMENT_ENV_DIR}/.site/releases")
+	for rel in ${releases}; do
 		if [[ ! -d "${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}" ]]; then
 			echo >&2 "Error: release '${rel}' not defined globally"
 			exit 2
