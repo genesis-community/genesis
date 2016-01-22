@@ -1908,8 +1908,8 @@ cmd_ci_manifest() {
 		fi
 		echo
 
-		touch      ~/.vault-token ~/.vault
-		chmod 0400 ~/.vault-token ~/.vault
+		touch      ~/.vault
+		chmod 0400 ~/.vault
 		creds='{"user_id":"'${CI_VAULT_USER_ID:-concourse}'","app_id":"'${CI_VAULT_APP_ID:-generic-app}'"}'
 		if ! curl -Ls ${VAULT_ADDR}/v1/auth/app-id/login --data "${creds}" > ~/.vault; then
 			echo >&2 "Failed to authenticate to the Vault app-id backend:"
@@ -1917,7 +1917,8 @@ cmd_ci_manifest() {
 			exit 2
 		fi
 
-		cat ~/.vault | jq -r '.auth.client_token' > ~/.vault-token
+		VAULT_TOKEN=$(cat ~/.vault | jq -r '.auth.client_token')
+		rm ~/.vault
 		if ! vault status; then
 			echo >&2 "Failed to authenticate to Vault at ${VAULT_ADDR}; bailing..."
 			exit 2
