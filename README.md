@@ -56,8 +56,10 @@ a straightforward and predictable manner.
 To install Genesis, you just need to put `bin/genesis` somewhere
 in your path and make it executable, like this:
 
-    $ curl https://raw.githubusercontent.com/starkandwayne/genesis/master/bin/genesis > ~/bin/genesis
-    $ chmod 0755 ~/bin/genesis
+```
+curl https://raw.githubusercontent.com/starkandwayne/genesis/master/bin/genesis > ~/bin/genesis
+chmod 0755 ~/bin/genesis
+```
 
 (assuming that `~/bin` is in your `$PATH`, which it really ought
 to be)
