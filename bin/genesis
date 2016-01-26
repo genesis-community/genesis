@@ -2060,10 +2060,10 @@ EOF
 }
 
 sha1sum() {
-	if [[ -z $(command -v sha1sum) ]]; then
+  if [[ -z $(command -v sha1sum) ]]; then
     shasum "$@"
   else
-    sha1sum "$@"
+    command sha1sum "$@"
   fi
 }
 
