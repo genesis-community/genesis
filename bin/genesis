@@ -220,21 +220,8 @@ ident:
 manifest: check
 	@PATH=\$(PATH) genesis build
 
-withcreds: check
-	VAULT_ADDR=\$(save_VAULT_ADDR) PATH=\$(PATH) genesis build
-	@echo
-	@echo "##      ##    ###    ########  ##    ## #### ##    ##  ######"
-	@echo "##  ##  ##   ## ##   ##     ## ###   ##  ##  ###   ## ##    ##"
-	@echo "##  ##  ##  ##   ##  ##     ## ####  ##  ##  ####  ## ##"
-	@echo "##  ##  ## ##     ## ########  ## ## ##  ##  ## ## ## ##   ####"
-	@echo "##  ##  ## ######### ##   ##   ##  ####  ##  ##  #### ##    ##"
-	@echo "##  ##  ## ##     ## ##    ##  ##   ###  ##  ##   ### ##    ##"
-	@echo " ###  ###  ##     ## ##     ## ##    ## #### ##    ##  ######"
-	@echo
-	@echo " This manifest MAY have sensitive credentials embedded in it!"
-	@echo
-	@echo "      !! YOU DO NOT WANT TO COMMIT THIS MANIFEST !!"
-	@echo
+deploy: check
+	@VAULT_ADDR=\$(save_VAULT_ADDR) PATH=\$(PATH) genesis deploy
 
 refresh: check
 	@PATH=\$(PATH) genesis refresh
@@ -242,7 +229,7 @@ refresh: check
 check:
 	@PATH=\$(PATH) genesis ping >/dev/null 2>&1 || (echo >&2 "You need to install Genesis first (see ${CANON_REPO})" && exit 1)
 
-.PHONY: help check manifest withcreds refresh
+.PHONY: help check manifest deploy refresh
 EOF
 }
 
@@ -288,8 +275,7 @@ To build the full BOSH manifest for an environment:
 ... and then deploy it:
 
   cd site-name/env-name
-  make manifest
-  bosh -d manifests/manifest.yml deploy
+  make deploy
 
 
 
@@ -1424,6 +1410,9 @@ the manifest generation process.
   $ make manifest           #  Build a new manifest for the environment
                             #  by merging the template YAML files together.
 
+  $ make deploy             # Build the manifest and attempt to deploy it.
+                            # (This safely handles Vault'd credentials)
+
   $ make refresh            #  Pull in fresh copies of global and site YAML
                             #  templates (into .global/ and .site/).
 
@@ -1897,6 +1886,36 @@ EOF
 	exit 1
 }
 
+cmd_deploy() {
+	must_be_in_an_environment
+	case ${DEPLOYMENT_TYPE} in
+	(normal)
+		(VAULT_ADDR= cmd_build manifest.yml) || exit 3
+		(            cmd_build .deploy.yml)  || exit 4
+		[[ -n $DEBUG_LEAVE_THE_CREDS_THERE ]] || \
+			trap "rm -f ${DEPLOYMENT_ENV_DIR}/manifests/.deploy.yml" QUIT TERM INT EXIT
+
+		bosh -d ${DEPLOYMENT_ENV_DIR}/manifests/.deploy.yml deploy
+		exit $?
+		;;
+
+	(bosh-init)
+		(VAULT_ADDR= cmd_build manifest.yml) || exit 3
+		(            cmd_build .deploy.yml)  || exit 4
+		[[ -n $DEBUG_LEAVE_THE_CREDS_THERE ]] || \
+			trap "rm -f ${DEPLOYMENT_ENV_DIR}/manifests/.deploy.yml" QUIT TERM INT EXIT
+
+		bosh-init deploy ${DEPLOYMENT_ENV_DIR}/manifests/.deploy.yml
+		exit $?
+		;;
+
+	(microbosh)
+		echo >&2 "MicroBOSH deployments do not currently support the \`deploy' command"
+		exit 1
+		;;
+	esac
+}
+
 ci_remerge_pipeline() {
 	spruce $SPRUCE_OPTS merge --prune meta \
 	  pipeline.yml \
@@ -2160,6 +2179,9 @@ main() {
 			bad_refresh ${arg}
 			;;
 		esac
+		;;
+	(deploy)
+		cmd_deploy
 		;;
 	(repipe)
 		cmd_repipe
