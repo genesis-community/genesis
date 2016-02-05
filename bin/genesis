@@ -1134,12 +1134,12 @@ normal_site_metadata() {
 meta:
   stemcell:
     name: ${stemcell_name}
-    version: ${stemcell_version}
+    version: "${stemcell_version}"
 releases:
 EOF
 	for rel in ${releases}; do
 		echo "  - name: ${rel}"
-		echo "    version: $(cat ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/version)"
+		echo "    version: \"$(cat ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/version)\""
 	done
 }
 
