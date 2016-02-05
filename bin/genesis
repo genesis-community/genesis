@@ -1751,22 +1751,28 @@ EOF
 cmd_stemcells() {
 	setup
 
-	if [[ -n $2 ]]; then
-		name=$(cat ${DEPLOYMENT_ROOT}/${1}/${2}/.site/stemcell/name)
-		vers=$(cat ${DEPLOYMENT_ROOT}/${1}/${2}/.site/stemcell/version)
+	local site=${1:-$DEPLOYMENT_SITE}
+	local env=${2:-$DEPLOYMENT_ENVIRONMENT}
+
+	if [[ -n ${env} ]]; then
+		name=$(cat ${DEPLOYMENT_ROOT}/${site}/${env}/.site/stemcell/name)
+		vers=$(cat ${DEPLOYMENT_ROOT}/${site}/${env}/.site/stemcell/version)
 		printf "%s/%s\n" ${name} ${vers}
 		return
 	fi
 
-	if [[ -n $1 ]]; then
-		name=$(cat ${DEPLOYMENT_ROOT}/${1}/site/stemcell/name)
-		vers=$(cat ${DEPLOYMENT_ROOT}/${1}/site/stemcell/version)
+	if [[ -n ${site} ]]; then
+		name=$(cat ${DEPLOYMENT_ROOT}/${site}/site/stemcell/name)
+		vers=$(cat ${DEPLOYMENT_ROOT}/${site}/site/stemcell/version)
 		printf "%s/%s\n" ${name} ${vers}
 		return
 	fi
 
 	cat >&2 <<EOF
 USAGE: genesis stemcells <site> [<env>]
+
+(you can also \`cd\` into a site or environment directory
+ and just run \`genesis stemcells\` without any arguments)
 EOF
 	exit 1
 }
@@ -1774,16 +1780,19 @@ EOF
 cmd_releases() {
 	setup
 
-	if [[ -n $2 ]]; then
-		for rel in $(releases_for_environment ${1} ${2}); do
-			vers=$(cat ${DEPLOYMENT_ROOT}/${1}/${2}/.global/releases/${rel}/version)
+	local site=${1:-$DEPLOYMENT_SITE}
+	local env=${2:-$DEPLOYMENT_ENVIRONMENT}
+
+	if [[ -n ${env} ]]; then
+		for rel in $(releases_for_environment ${site} ${env}); do
+			vers=$(cat ${DEPLOYMENT_ROOT}/${site}/${env}/.global/releases/${rel}/version)
 			printf "%s/%s\n" ${rel} ${vers}
 		done
 		return
 	fi
 
-	if [[ -n $1 ]]; then
-		for rel in $(releases_for_site ${1}); do
+	if [[ -n ${site} ]]; then
+		for rel in $(releases_for_site ${site}); do
 			vers=$(cat ${DEPLOYMENT_ROOT}/global/releases/${rel}/version)
 			printf "%s/%s\n" ${rel} ${vers}
 		done
@@ -1792,6 +1801,9 @@ cmd_releases() {
 
 	cat >&2 <<EOF
 USAGE: genesis releases <site> [<env>]
+
+(you can also \`cd\` into a site or environment directory
+ and just run \`genesis releases\` without any arguments)
 EOF
 	exit 1
 }
