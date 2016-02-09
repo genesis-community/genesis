@@ -1503,7 +1503,7 @@ cmd_new_deployment() {
 		;;
 	esac
 
-	create_ci_pipeline
+	#create_ci_pipeline
 	cmd_embed >/dev/null
 
 	cat > ${DEPLOYMENT_ROOT}/.gitignore <<EOF
@@ -1560,91 +1560,91 @@ cmd_new_environment() {
 		;;
 	esac
 
-	ensure_ci_pipeline
-	cat > ${DEPLOYMENT_ROOT}/ci/steps/${site}-${name}.yml <<EOF # {{{
----
-# ${site}/${name} deployment pipeine steps
-#######################################################################
-groups:
-  - name: ${site}
-    jobs:
-      - ${site}:${name}
-
-
-#######################################################################
-jobs:
-  - name: ${site}:${name}
-    public: (( grab meta.public ))
-    serial: true
-    serial-groups: [${site}:${name}]
-
-    plan:
-      - aggregate:
-        - get: repo
-          resource: ${site}:${name} changes
-          trigger: true
-
-      - task: manifest
-        config:
-          platform: linux
-          image: (( grab meta.docker.image.url ))
-          inputs:
-            - { name: repo, path: . }
-          params:
-            .: (( inject meta.global.env ))
-          run:
-            path: ./bin/genesis
-            args: [ci, manifest, (( grab meta.git.branch )), '${site}', '${name}']
-
-      - put: bosh
-        resource: ${site}:${name} bosh
-        params:
-          manifest:  manifest/${site}/${name}/manifests/.deploy.yml
-          releases:  []
-          stemcells: []
-
-      - task: commit
-        config:
-          platform: linux
-          image: (( grab meta.docker.image.url ))
-          inputs:
-            - { name: manifest, path: . }
-          run:
-            path: ./bin/genesis
-            args: [ci, commit, "[${site}/${name}] :airplane: Automated Deployment"]
-
-      - put: git push ${site}:${name}
-        params:
-          repository: commit
-          rebase:     true
-
-
-#######################################################################
-resources:
-  - name: ${site}:${name} changes
-    type: git
-    source:
-      .: (( inject resources.deployments-repo.source ))
-      paths:
-        - ${site}/${name}/*.yml
-        - ${site}/${name}/.site/*.yml
-        - ${site}/${name}/.global/*.yml
-
-  - name: git push ${site}:${name}
-    type: git
-    source:
-      .: (( inject resources.deployments-repo.source ))
-
-  - name: ${site}:${name} bosh
-    type: bosh-deployment
-    source:
-      target:     (( grab meta.bosh.target ))
-      deployment: (( grab meta.bosh.deployment ))
-      username:   (( grab meta.bosh.username ))
-      password:   (( grab meta.bosh.password ))
-      ignore_ssl: true
-EOF
-# }}} ci/steps/*.yml
+#	ensure_ci_pipeline
+#	cat > ${DEPLOYMENT_ROOT}/ci/steps/${site}-${name}.yml <<EOF # {{{
+#---
+## ${site}/${name} deployment pipeine steps
+########################################################################
+#groups:
+#  - name: ${site}
+#    jobs:
+#      - ${site}:${name}
+#
+#
+########################################################################
+#jobs:
+#  - name: ${site}:${name}
+#    public: (( grab meta.public ))
+#    serial: true
+#    serial-groups: [${site}:${name}]
+#
+#    plan:
+#      - aggregate:
+#        - get: repo
+#          resource: ${site}:${name} changes
+#          trigger: true
+#
+#      - task: manifest
+#        config:
+#          platform: linux
+#          image: (( grab meta.docker.image.url ))
+#          inputs:
+#            - { name: repo, path: . }
+#          params:
+#            .: (( inject meta.global.env ))
+#          run:
+#            path: ./bin/genesis
+#            args: [ci, manifest, (( grab meta.git.branch )), '${site}', '${name}']
+#
+#      - put: bosh
+#        resource: ${site}:${name} bosh
+#        params:
+#          manifest:  manifest/${site}/${name}/manifests/.deploy.yml
+#          releases:  []
+#          stemcells: []
+#
+#      - task: commit
+#        config:
+#          platform: linux
+#          image: (( grab meta.docker.image.url ))
+#          inputs:
+#            - { name: manifest, path: . }
+#          run:
+#            path: ./bin/genesis
+#            args: [ci, commit, "[${site}/${name}] :airplane: Automated Deployment"]
+#
+#      - put: git push ${site}:${name}
+#        params:
+#          repository: commit
+#          rebase:     true
+#
+#
+########################################################################
+#resources:
+#  - name: ${site}:${name} changes
+#    type: git
+#    source:
+#      .: (( inject resources.deployments-repo.source ))
+#      paths:
+#        - ${site}/${name}/*.yml
+#        - ${site}/${name}/.site/*.yml
+#        - ${site}/${name}/.global/*.yml
+#
+#  - name: git push ${site}:${name}
+#    type: git
+#    source:
+#      .: (( inject resources.deployments-repo.source ))
+#
+#  - name: ${site}:${name} bosh
+#    type: bosh-deployment
+#    source:
+#      target:     (( grab meta.bosh.target ))
+#      deployment: (( grab meta.bosh.deployment ))
+#      username:   (( grab meta.bosh.username ))
+#      password:   (( grab meta.bosh.password ))
+#      ignore_ssl: true
+#EOF
+## }}} ci/steps/*.yml
 	exit 0
 }
 
@@ -1936,35 +1936,37 @@ ci_remerge_pipeline() {
 }
 
 cmd_repipe() {
-	echo "Updating Concourse pipeline configurations"
-	need_command spruce
-	need_command fly
-
-	if [[ ! -d ${DEPLOYMENT_ROOT}/ci ]]; then
-		echo >&2 "ci/ directory not found..."
-		exit 2
-	fi
-
-	setup
-	if [[ ! -f ${DEPLOYMENT_ROOT}/ci/target ]]; then
-		echo >&2 "No target specified in ci/target!"
-		exit 2
-	fi
-	local target=$(cat ${DEPLOYMENT_ROOT}/ci/target)
-
-	local pipeline="${DEPLOYMENT_NAME}-deployments"
-	if [[ -f ${DEPLOYMENT_ROOT}/ci/name ]]; then
-		pipeline=$(cat ${DEPLOYMENT_NAME}/ci/name)
-	fi
-
-	(cd ${DEPLOYMENT_ROOT}/ci
-	 VAULT_ADDR= ci_remerge_pipeline > live.yml    || exit 1
-	             ci_remerge_pipeline > .deploy.yml || exit 1
-
-	 fly --target ${target} \
-	     set-pipeline \
-	     --config .deploy.yml \
-	     --pipeline ${pipeline}) || exit 1
+	echo "Implementation forthcoming..."
+	exit 1
+#	echo "Updating Concourse pipeline configurations"
+#	need_command spruce
+#	need_command fly
+#
+#	if [[ ! -d ${DEPLOYMENT_ROOT}/ci ]]; then
+#		echo >&2 "ci/ directory not found..."
+#		exit 2
+#	fi
+#
+#	setup
+#	if [[ ! -f ${DEPLOYMENT_ROOT}/ci/target ]]; then
+#		echo >&2 "No target specified in ci/target!"
+#		exit 2
+#	fi
+#	local target=$(cat ${DEPLOYMENT_ROOT}/ci/target)
+#
+#	local pipeline="${DEPLOYMENT_NAME}-deployments"
+#	if [[ -f ${DEPLOYMENT_ROOT}/ci/name ]]; then
+#		pipeline=$(cat ${DEPLOYMENT_NAME}/ci/name)
+#	fi
+#
+#	(cd ${DEPLOYMENT_ROOT}/ci
+#	 VAULT_ADDR= ci_remerge_pipeline > live.yml    || exit 1
+#	             ci_remerge_pipeline > .deploy.yml || exit 1
+#
+#	 fly --target ${target} \
+#	     set-pipeline \
+#	     --config .deploy.yml \
+#	     --pipeline ${pipeline}) || exit 1
 }
 
 cmd_embed() {
@@ -2196,12 +2198,18 @@ main() {
 		cmd_deploy
 		;;
 	(repipe)
-		cmd_repipe
+		# FIXME
+		echo "Implementation forthcoming..."
+		exit 1
 		;;
 	(embed)
 		cmd_embed
 		;;
 	(ci)
+		# FIXME
+		echo "Implementation forthcoming..."
+		exit 1
+
 		TERM=dumb
 		exec </dev/null
 
