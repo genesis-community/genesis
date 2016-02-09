@@ -1227,7 +1227,7 @@ bosh_init_site_metadata() {
 		if [[ ! -f "${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/sha1" ]]; then
 			url=$(cat "${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/url")
 			echo >&2 "retrieving ${url}"
-			sha1=$(curl -LSs "${url}" | sha1sum | sed -e 's/ .*//')
+			sha1=$(curl -LSs "${url}" | checksum | sed -e 's/ .*//')
 			if [[ -z "${sha1}" ]]; then
 				echo >&2 "Error: failed to download and verify ${rel} release"
 				echo >&2 "       (from $url)"
@@ -2092,11 +2092,11 @@ EOF
 	exit 1
 }
 
-sha1sum() {
+checksum() {
   if [[ -z $(command -v sha1sum) ]]; then
     shasum "$@"
   else
-    command sha1sum "$@"
+    sha1sum "$@"
   fi
 }
 
@@ -2111,7 +2111,7 @@ main() {
 		exit 0
 		;;
 	(ident)
-		s=$(cat ${BASH_SOURCE[0]} | sha1sum) ; echo ${s:0:12}
+		s=$(cat ${BASH_SOURCE[0]} | checksum) ; echo ${s:0:12}
 		exit 0
 		;;
 	(help)
