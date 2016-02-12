@@ -2137,7 +2137,7 @@ main() {
 		s=$(cat ${BASH_SOURCE[0]} | checksum) ; echo ${s:0:12}
 		exit 0
 		;;
-	(help)
+	(help|-h|--help|-?)
 		cmd_help $*
 		;;
 	(new)
