@@ -1684,6 +1684,29 @@ EOF
 	exit 1
 }
 
+cmd_set_release() {
+	local release=${1:?USAGE: genesis set relese NAME VERSION}
+	local version=${2:-latest}
+
+	setup
+	mkdir -p ${DEPLOYMENT_ROOT}/global/releases/${release}
+	echo ${version} > ${DEPLOYMENT_ROOT}/global/releases/${release}/version
+	if [[ ${version} == "latest" ]]; then
+		echo "Using the latest version of ${release}"
+	else
+		echo "Using v${version} of ${release}"
+	fi
+	exit 0
+}
+
+bad_set() {
+	local arg=${1}
+	cat >&2 <<EOF
+USAGE: genesis set release
+EOF
+	exit 1
+}
+
 cmd_use_release() {
 	release=${1:?USAGE: genesis use release NAME}
 
@@ -2142,6 +2165,17 @@ main() {
 			;;
 		(*)
 			bad_add ${arg}
+			;;
+		esac
+		;;
+	(set)
+		local arg=${1:-} ; shift
+		case ${arg} in
+		(release)
+			cmd_set_release $*
+			;;
+		(*)
+			bad_set ${arg}
 			;;
 		esac
 		;;
