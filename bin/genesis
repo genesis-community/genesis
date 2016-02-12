@@ -1,4 +1,5 @@
 #!/bin/bash
+VERSION=1.1.0
 
 USERNAME=$(whoami)
 CANON_REPO=https://github.com/starkandwayne/genesis
@@ -212,10 +213,9 @@ endif
 help: check
 	@PATH=\$(PATH) genesis help makefile
 
-identify: ident
-ident:
+version:
 	@PATH=\$(PATH) echo "using \$\$(which genesis)"
-	@PATH=\$(PATH) genesis ident
+	@PATH=\$(PATH) genesis version
 
 manifest: check
 	@PATH=\$(PATH) genesis build
@@ -229,7 +229,7 @@ refresh: check
 check:
 	@PATH=\$(PATH) genesis ping >/dev/null 2>&1 || (echo >&2 "You need to install Genesis first (see ${CANON_REPO})" && exit 1)
 
-.PHONY: help check manifest deploy refresh
+.PHONY: help check manifest deploy refresh version
 EOF
 }
 
@@ -1999,7 +1999,7 @@ cmd_embed() {
 	mkdir -p ${DEPLOYMENT_ROOT}/bin
 	cp ${BASH_SOURCE[0]} ${DEPLOYMENT_ROOT}/bin/genesis
 
-	${DEPLOYMENT_ROOT}/bin/genesis ident
+	${DEPLOYMENT_ROOT}/bin/genesis version
 }
 
 cmd_ci_manifest() {
@@ -2133,8 +2133,9 @@ main() {
 	(ping)
 		exit 0
 		;;
-	(ident)
-		s=$(cat ${BASH_SOURCE[0]} | checksum) ; echo ${s:0:12}
+	(version|-v|--version)
+		s=$(cat ${BASH_SOURCE[0]} | checksum)
+		echo "genesis v${VERSION} (${s:0:12})"
 		exit 0
 		;;
 	(help|-h|--help|-?)
