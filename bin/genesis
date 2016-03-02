@@ -1511,7 +1511,7 @@ cmd_new_deployment() {
 .deploy.yml
 EOF
 
-	if git symbolic-ref HEAD | grep -qE 'fatal: Not a git repository|fatal: Unable to read current working directory'; then
+	if git symbolic-ref HEAD 2>&1 | grep -qE 'fatal: Not a git repository|fatal: Unable to read current working directory'; then
 		(cd ${DEPLOYMENT_ROOT}
 		 git init
 		 git add .
