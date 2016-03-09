@@ -1,5 +1,5 @@
 #!/bin/bash
-VERSION=1.2.0
+VERSION=1.2.1
 
 USERNAME=$(whoami)
 CANON_REPO=https://github.com/starkandwayne/genesis
@@ -2119,7 +2119,8 @@ cmd_bosh() {
 		[[ -n $DEBUG_LEAVE_THE_CREDS_THERE ]] || \
 			trap "rm -f ${DEPLOYMENT_ENV_DIR}/manifests/.deploy.yml" QUIT TERM INT EXIT
 
-		exec bosh -d ${DEPLOYMENT_ENV_DIR}/manifests/.deploy.yml $@
+		bosh -d ${DEPLOYMENT_ENV_DIR}/manifests/.deploy.yml $@
+		exit $?
 		;;
 
 	(microbosh)
