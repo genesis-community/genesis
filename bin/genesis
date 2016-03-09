@@ -1,5 +1,5 @@
 #!/bin/bash
-VERSION=1.1.0
+VERSION=1.2.0
 
 USERNAME=$(whoami)
 CANON_REPO=https://github.com/starkandwayne/genesis
@@ -1320,6 +1320,10 @@ Common commands:
                                 Can also be used to recreate the Makefile after a
                                 Genesis upgrade.
 
+    genesis bosh                Generates a deployable manifest (which may have secrets
+                                in it) and then runs the \`bosh\` CLI with remaining
+                                arguments.  Useful for recreating workers.
+
     genesis help                Peruse the help!  Give it a topic argument, or the name
                                 of another command to get more detailed information.
                                 Documentation!
@@ -1420,6 +1424,23 @@ Since this is a real Makefile, you can combine the two actions:
 
   $ make refresh manifest   #  Refresh global / site configuration and then
                             #  build an up-to-date deployment manifest.
+
+EOF
+		exit 0
+		;;
+	(bosh)
+		cat >&2 <<EOF
+USAGE: genesis bosh [...]
+
+Generates a deployable manifest (which may contain credentials or other
+secrets) and then passes the remaining arguments off to the \`bosh\` CLI.
+
+For example, to rebuild the worker/1 job:
+
+    $ genesis bosh -t prod recreate worker 1
+
+All other BOSH commands are available, but may not necessarily benefit
+from the manifest re-generation step.
 
 EOF
 		exit 0
@@ -2089,6 +2110,30 @@ cmd_ci_commit() {
 	fi
 }
 
+cmd_bosh() {
+	must_be_in_an_environment
+
+	case ${DEPLOYMENT_TYPE} in
+	(normal)
+		(cmd_build .deploy.yml) || exit 3
+		[[ -n $DEBUG_LEAVE_THE_CREDS_THERE ]] || \
+			trap "rm -f ${DEPLOYMENT_ENV_DIR}/manifests/.deploy.yml" QUIT TERM INT EXIT
+
+		exec bosh -d ${DEPLOYMENT_ENV_DIR}/manifests/.deploy.yml $@
+		;;
+
+	(microbosh)
+		echo >&2 "MicroBOSH deployments do not currently support the \`bosh' command"
+		exit 1
+		;;
+
+	(bosh-init)
+		echo >&2 "BOSH-init deployments do not currently support the \`bosh' command"
+		exit 1
+		;;
+	esac
+}
+
 cmd_dump() {
 	setup
 	printf "name: %s\n" ${DEPLOYMENT_NAME}
@@ -2110,6 +2155,7 @@ Try one of these:
    genesis new (deployment|site|environment)
    genesis build
    genesis refresh (global|site|all|makefile|readme)
+   genesis bosh ...
 
 EOF
 	exit 1
@@ -2263,6 +2309,9 @@ main() {
 		;;
 	(dump)
 		cmd_dump
+		;;
+	(bosh)
+		cmd_bosh $*
 		;;
 	(*)
 		bad_command ${cmd}
