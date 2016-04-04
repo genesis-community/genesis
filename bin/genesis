@@ -1209,6 +1209,17 @@ build_microbosh_manifest() {
 
 bosh_init_site_metadata() {
 	must_be_in_an_environment
+	if [[ ! -f "${DEPLOYMENT_ENV_DIR}/.site/stemcell/url" ]]; then
+		echo >&2 "Error: no stemcell URL listed for site"
+		exit 2
+	fi
+	local stemcell_url=$(cat "${DEPLOYMENT_ENV_DIR}/.site/stemcell/url")
+	if [[ ! -f "${DEPLOYMENT_ENV_DIR}/.site/stemcell/sha1" ]]; then
+		echo >&2 "Error: no stemcell sha1 listed for site"
+		exit 2
+	fi
+	local stemcell_sha1=$(cat "${DEPLOYMENT_ENV_DIR}/.site/stemcell/sha1")
+
 	if [[ ! -f "${DEPLOYMENT_ENV_DIR}/.site/releases" ]]; then
 		echo >&2 "Error: no releases listed for site"
 		exit 2
@@ -1241,8 +1252,8 @@ bosh_init_site_metadata() {
 ---
 meta:
   stemcell:
-    name: ${stemcell_name}
-    version: ${stemcell_version}
+    url: ${stemcell_url}
+    sha1: ${stemcell_sha1}
 releases:
 EOF
 	for rel in ${releases}; do
