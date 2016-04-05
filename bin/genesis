@@ -1974,15 +1974,13 @@ cmd_deploy() {
 
 		if [[ ! -f "${DEPLOYMENT_ENV_DIR}/manifests/.deploy-state.json" ]]; then
 			echo "No existing genesis-created bosh-init statefile detected. Please help genesis find it."
-			echo -n "Path to existing bosh-init statefile (leave blank for new deployments): "
-			read statefile
+			read -e -p "Path to existing bosh-init statefile (leave blank for new deployments): " statefile
 			while [[ -n "${statefile}" && ! -f "${statefile}" ]]; do
 				echo "Invalid path."
-				echo -n "Path to existing bosh-init statefile (leave blank for new deployments): "
-				read statefile
+				read -e -p "Path to existing bosh-init statefile (leave blank for new deployments): " statefile
 			done
 			if [[ -n "${statefile}" ]]; then
-				mv "${statefile}" ${DEPLOYMENT_ENV_DIR}/manifests/.deploy-state.yml
+				mv "${statefile}" ${DEPLOYMENT_ENV_DIR}/manifests/.deploy-state.json
 			fi
 		fi
 
