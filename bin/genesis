@@ -1,5 +1,5 @@
 #!/bin/bash
-VERSION=1.2.1
+VERSION=1.2.2
 
 USERNAME=$(whoami)
 CANON_REPO=https://github.com/starkandwayne/genesis
@@ -202,6 +202,7 @@ create_makefile() {
 
 save_VAULT_ADDR := \$(VAULT_ADDR)
 VAULT_ADDR =
+REDACT = yes
 
 root_path := \$(realpath \$(dir \$(abspath \$(lastword \$(MAKEFILE_LIST))))../..)
 ifdef USE_SYSTEM_GENESIS
@@ -221,7 +222,7 @@ manifest: check
 	@PATH=\$(PATH) genesis build
 
 deploy: check
-	@VAULT_ADDR=\$(save_VAULT_ADDR) PATH=\$(PATH) genesis deploy
+	@VAULT_ADDR=\$(save_VAULT_ADDR) PATH=\$(PATH) REDACT= genesis deploy
 
 refresh: check
 	@PATH=\$(PATH) genesis refresh
