@@ -1,11 +1,19 @@
 #!/bin/bash
-VERSION=1.3.0
+VERSION=1.4.0
 
 USERNAME=$(whoami)
 CANON_REPO=https://github.com/starkandwayne/genesis
 
 ####################################################
 # common functions used by other parts of Genesis
+
+WORKDIR=""
+need_a_workdir() {
+	if [[ -z ${WORKDIR} ]]; then
+    WORKDIR=$(mktemp -d -t genesis.XXXXXX)
+		trap "rm -rf ${WORKDIR}" INT TERM QUIT EXIT
+	fi
+}
 
 find_toplevel_root() {
 	(while [[ $(pwd) != "/" && ! -d global/ && ! -f .deployment ]]; do
@@ -35,10 +43,40 @@ all_environments_for() {
 		env=${dir%%/}
 		env=${env##*/}
 
-		if [[ "${env}" != "site" && -f "${dir}/Makefile" ]]; then
+		if [[ -f "${dir}/Makefile" ]]; then
 			echo ${env}
 		fi
 	done
+}
+
+check_site() {
+	local path=${1:?is_site() - no site argument provided}
+	if [[ ! -d "${DEPLOYMENT_ROOT}/${path}" ]]; then
+		echo >&2 "${path} not found"
+		exit 1
+	fi
+	if [[ ! -d "${DEPLOYMENT_ROOT}/${path}/site" ]]; then
+		echo >&2 "${path} does not look like a valid site"
+		exit 2
+	fi
+}
+
+check_environment() {
+	local path=${1:?check_environment() - no site/environment argument provided}
+	if [[ ! -d "${DEPLOYMENT_ROOT}/${path}" ]]; then
+		echo >&2 "${path} not found"
+		exit 1
+	fi
+	if [[ ! -f "${DEPLOYMENT_ROOT}/${path}/Makefile" ]]; then
+		echo >&2 "${path} does not look like a valid environment"
+		exit 2
+	fi
+}
+
+line() {
+	echo
+	echo "########################################################################"
+	echo
 }
 
 setup() {
@@ -102,12 +140,69 @@ setup() {
 	DEPLOYMENT_ENV_DIR="${DEPLOYMENT_ROOT}/${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}"
 }
 
-ensure_yaml_files() {
-  for i in $*; do
-    [ -f $i ] && echo $i
-    shift
-  done
+actual_yaml_files() {
+	for i in $*; do
+		[ -f $i ] && echo $i
+		shift # FIXME: do we need this?
+	done
 }
+
+ensure_yaml_file() {
+	local path=${1:?ensure_yaml_file() - no path given}
+	if [[ ! -s $path ]]; then
+		echo "--- {}" > $path
+	fi
+}
+
+ensure_ci_configuration() {
+	ensure_yaml_file "${DEPLOYMENT_ROOT}/.ci.yml"
+}
+
+ALL_VAULTED=""
+need_a_vault() {
+	if [[ -z ${ALL_VAULTED} ]]; then
+		ALL_VAULTED=yes
+		if [[ -n ${VAULT_ADDR} ]]; then
+			echo "Authenticating to Vault at ${VAULT_ADDR}"
+			if [[ -z $(command -v vault) ]]; then
+				echo >&2 "\`vault' command not found in your \$PATH"
+				echo >&2 "  ($PATH)"
+				echo >&2 "You may need to install Vault in your task image"
+				exit 1
+			fi
+			echo
+
+			if [[ -n ${CI_SITE_ENV} ]]; then
+				touch      ~/.vault
+				chmod 0400 ~/.vault
+				creds='{"user_id":"'${CI_VAULT_USER_ID:-concourse}'","app_id":"'${CI_VAULT_APP_ID:-generic-app}'"}'
+				if ! curl -Ls ${VAULT_ADDR}/v1/auth/app-id/login --data "${creds}" > ~/.vault; then
+					echo >&2 "Failed to authenticate to the Vault app-id backend:"
+					cat >&2 ~/.vault
+					exit 2
+				fi
+
+				VAULT_TOKEN=$(cat ~/.vault | jq -r '.auth.client_token')
+				rm ~/.vault
+				if ! vault status; then
+					echo >&2 "Failed to authenticate to Vault at ${VAULT_ADDR}; bailing..."
+					exit 2
+				fi
+			fi
+
+			echo
+			echo "Testing Vault authentication by retrieving secret/handshake"
+			if ! vault read secret/handshake; then
+				echo >&2 "Failed to retrieve secret/handshake; assuming authentication failed..."
+				exit 3
+			fi
+
+		else
+			echo >&2 "No VAULT_ADDR found in environment; skipping authentication step"
+		fi
+	fi
+}
+
 
 ####################################################
 # checks and validating functions
@@ -557,188 +652,6 @@ EOF
 	esac
 }
 
-create_ci_pipeline() {
-	setup
-	mkdir -p ${DEPLOYMENT_ROOT}/ci
-	cat > ${DEPLOYMENT_ROOT}/ci/docker.yml <<EOF # {{{
----
-# ci/docker.yml - Docker Image resource and tasks
-
-#######################################################################
-groups:
-  - (( append ))
-  - name: aux
-    jobs:
-    - build-task-image
-
-
-#######################################################################
-resources:
-
-  # The Docker image itself.  By default, this is going to be
-  # pushed to (public-facing) DockerHub, based on the credentials
-  # specified under \`meta' in ci/pipeline.yml
-  - name: task-image
-    type: docker-image
-    source:
-      email:      (( grab meta.docker.hub.email ))
-      username:   (( grab meta.docker.hub.username ))
-      password:   (( grab meta.docker.hub.password ))
-      repository: (( grab meta.docker.hub.repository ))
-
-  # Watch the git repository for changes to the Dockerfile
-  # (and anything else in ci/image, for local injection).
-  - name: dockerfile
-    type: git
-    source:
-      uri:         (( grab meta.git.repository ))
-      branch:      (( grab meta.git.branch ))
-      private_key: (( grab meta.git.private_key ))
-      paths:       [ ci/image/* ]
-
-  # Deployments need spruce to merge the manifest files together,
-  # so we need to add that into the final task image
-  # (this resource is only checked every 24 hours, because github
-  #  rate-limits their API, and we can manage being a bit behind)
-  - name: spruce
-    type: github-release
-    check_every: 24h
-    source:
-      user:         geofffranks
-      repository:   spruce
-
-
-#######################################################################
-jobs:
-
-  # Build (or rebuild) the Docker image, any time its definition
-  # changes, or we get a new version of spruce on Github.
-  - name: build-task-image
-    public: (( grab meta.public ))
-    serial: true
-
-    plan:
-        - { get: dockerfile, trigger: true }
-        - { get: spruce,     trigger: true }
-
-        - task: combine-inputs
-          config:
-            platform: linux
-            image: docker:///busybox
-            inputs:
-              - { name: dockerfile, path: . }
-              - { name: spruce,     path: ./ci/image/spruce }
-            run: { path: /bin/true }
-
-        - put: task-image
-          params:
-            build: combine-inputs/ci/image
-
-EOF
-# }}} ci/docker.yml
-	cat > ${DEPLOYMENT_ROOT}/ci/pipeline.yml <<EOF # {{{
----
-meta:
-  public: true
-  deployment: ${DEPLOYMENT_NAME}
-  bosh:
-    target:   (( param "Please provide the URL to your BOSH Director" ))
-    username: (( param "Please provide account credentials for running BOSH deployments" ))
-    password: (( param "Please provide account credentials for running BOSH deployments" ))
-
-  git:
-    repository:  (( param "Please specify the full URL of this git repository" ))
-    private_key: (( param "Please specify the private key for accessing this git repository" ))
-    branch:      master
-
-  s3:
-    access_key: (( param "Please provide an Access Key for your S3 bucket" ))
-    secret_key: (( param "Please provide a Secret Key for your S3 bucket" ))
-    bucket:     (( concat meta.deployment "-pipeline-assets" ))
-    region:     us-east-1
-
-  docker:
-    image:
-      name: (( concat meta.deployment "-pipeline-builder" ))
-      url:  (( concat "docker://" meta.docker.registry "/" meta.docker.image.name ))
-    registry: ""
-    hub:
-      email:      (( param "Please specify the email address associated with your DockerHub account" ))
-      username:   (( param "Please specify the username of your DockerHub account" ))
-      password:   (( param "Please specify the password to your DockerHub account" ))
-      repository: (( grab meta.docker.image.name ))
-
-  global:
-    env:
-      VAULT_ADDR:       ~
-      CI_VAULT_USER_ID: concourse
-      CI_VAULT_APP_ID:  (( concat meta.deployment "-deployments-pipeline" ))
-
-resources:
-  - name: deployments-repo
-    type: git
-    source:
-      uri:         (( grab meta.git.repository ))
-      branch:      (( grab meta.git.branch ))
-      private_key: (( grab meta.git.private_key ))
-
-  - name: global-candidate
-    type: git
-    source:
-      .: (( inject resources.deployments-repo.source ))
-      paths: [global/*.yml]
-
-  - name: global-approved
-    type: s3
-    source:
-      private: true
-      bucket:            (( grab meta.s3.bucket ))
-      access_key_id:     (( grab meta.s3.access_key ))
-      secret_access_key: (( grab meta.s3.secret_key ))
-      regexp: global-(.*).tar.gz
-
-  - name: v.global
-    type: semver
-    source:
-      key:               global-version
-      initial_version:   0.1.0
-      bucket:            (( grab meta.s3.bucket ))
-      access_key_id:     (( grab meta.s3.access_key ))
-      secret_access_key: (( grab meta.s3.secret_key ))
-EOF
-# }}} ci/pipeline.yml
-
-	mkdir -p ${DEPLOYMENT_ROOT}/ci/image
-	cat > ${DEPLOYMENT_ROOT}/ci/image/Dockerfile <<EOF # {{{
-FROM concourse/concourse-ci
-
-# install curl
-RUN apt-get install -yy curl
-
-# install vault cli util
-ADD https://releases.hashicorp.com/vault/0.4.0/vault_0.4.0_linux_amd64.zip /tmp
-RUN cd /usr/bin && unzip /tmp/vault_0.4.0_linux_amd64.zip && ls && chmod 0755 /usr/bin/vault
-
-# install jq
-ADD http://stedolan.github.io/jq/download/linux64/jq /usr/bin/
-RUN chmod 755 /usr/bin/jq
-
-# install spruce
-ADD spruce/spruce_*_linux_amd64.tar.gz /tmp
-RUN mv /tmp/spruce_*_linux_amd64/spruce /usr/bin/spruce
-EOF
-# }}} ci/image/Dockerfile
-
-	mkdir -p ${DEPLOYMENT_ROOT}/ci/steps
-	touch ${DEPLOYMENT_ROOT}/.gitkeep
-}
-
-ensure_ci_pipeline() {
-	if [[ ! -d ${DEPLOYMENT_ROOT}/ci ]]; then
-		create_ci_pipeline
-	fi
-}
-
 create_normal_deployment() {
 	setup
 	echo "normal" > ${DEPLOYMENT_ROOT}/.deployment
@@ -1152,7 +1065,7 @@ build_normal_manifest() {
 	(cd ${DEPLOYMENT_ENV_DIR}
 	 spruce $SPRUCE_OPTS merge --prune meta \
 	    .begin.yml \
-	    $(ensure_yaml_files \
+	    $(actual_yaml_files \
 	        .begin.yml \
 	        \
 	        .global/jobs.yml \
@@ -1191,7 +1104,7 @@ build_microbosh_manifest() {
 
 	(cd ${DEPLOYMENT_ENV_DIR}
 	 spruce $SPRUCE_OPTS merge --prune meta \
-	    $(ensure_yaml_files \
+	    $(actual_yaml_files \
 	        .global/deployment.yml \
 	        \
 	        .site/infra.yml \
@@ -1271,7 +1184,7 @@ build_bosh_init_manifest() {
 	bosh_init_site_metadata > ${DEPLOYMENT_ENV_DIR}/.begin.yml
 	(cd ${DEPLOYMENT_ENV_DIR}
 	 spruce $SPRUCE_OPTS merge --prune meta \
-	    $(ensure_yaml_files \
+	    $(actual_yaml_files \
 	        .begin.yml \
 	        \
 	        .global/jobs.yml \
@@ -1495,6 +1408,7 @@ from the manifest re-generation step.
 EOF
 		exit 0
 		;;
+	# FIXME: ci
 	(*)
 		cat >&2 <<EOF
 Unrecognized help topic '${topic}'.
@@ -1603,7 +1517,6 @@ cmd_new_deployment() {
 		;;
 	esac
 
-	#create_ci_pipeline
 	cmd_embed >/dev/null
 
 	cat > ${DEPLOYMENT_ROOT}/.gitignore <<EOF
@@ -1689,92 +1602,6 @@ cmd_new_environment() {
 		create_bosh_init_environment ${site} ${name}
 		;;
 	esac
-
-#	ensure_ci_pipeline
-#	cat > ${DEPLOYMENT_ROOT}/ci/steps/${site}-${name}.yml <<EOF # {{{
-#---
-## ${site}/${name} deployment pipeine steps
-########################################################################
-#groups:
-#  - name: ${site}
-#    jobs:
-#      - ${site}:${name}
-#
-#
-########################################################################
-#jobs:
-#  - name: ${site}:${name}
-#    public: (( grab meta.public ))
-#    serial: true
-#    serial-groups: [${site}:${name}]
-#
-#    plan:
-#      - aggregate:
-#        - get: repo
-#          resource: ${site}:${name} changes
-#          trigger: true
-#
-#      - task: manifest
-#        config:
-#          platform: linux
-#          image: (( grab meta.docker.image.url ))
-#          inputs:
-#            - { name: repo, path: . }
-#          params:
-#            .: (( inject meta.global.env ))
-#          run:
-#            path: ./bin/genesis
-#            args: [ci, manifest, (( grab meta.git.branch )), '${site}', '${name}']
-#
-#      - put: bosh
-#        resource: ${site}:${name} bosh
-#        params:
-#          manifest:  manifest/${site}/${name}/manifests/.deploy.yml
-#          releases:  []
-#          stemcells: []
-#
-#      - task: commit
-#        config:
-#          platform: linux
-#          image: (( grab meta.docker.image.url ))
-#          inputs:
-#            - { name: manifest, path: . }
-#          run:
-#            path: ./bin/genesis
-#            args: [ci, commit, "[${site}/${name}] :airplane: Automated Deployment"]
-#
-#      - put: git push ${site}:${name}
-#        params:
-#          repository: commit
-#          rebase:     true
-#
-#
-########################################################################
-#resources:
-#  - name: ${site}:${name} changes
-#    type: git
-#    source:
-#      .: (( inject resources.deployments-repo.source ))
-#      paths:
-#        - ${site}/${name}/*.yml
-#        - ${site}/${name}/.site/*.yml
-#        - ${site}/${name}/.global/*.yml
-#
-#  - name: git push ${site}:${name}
-#    type: git
-#    source:
-#      .: (( inject resources.deployments-repo.source ))
-#
-#  - name: ${site}:${name} bosh
-#    type: bosh-deployment
-#    source:
-#      target:     (( grab meta.bosh.target ))
-#      deployment: (( grab meta.bosh.deployment ))
-#      username:   (( grab meta.bosh.username ))
-#      password:   (( grab meta.bosh.password ))
-#      ignore_ssl: true
-#EOF
-## }}} ci/steps/*.yml
 	exit 0
 }
 
@@ -1983,6 +1810,7 @@ cmd_build() {
 
 cmd_diff() {
 	must_be_in_an_environment
+	# FIXME: we should totes run spruce diff here
 	exit 0
 }
 
@@ -2093,47 +1921,6 @@ cmd_deploy() {
 	esac
 }
 
-ci_remerge_pipeline() {
-	spruce $SPRUCE_OPTS merge --prune meta \
-	  pipeline.yml \
-	  steps/*.yml \
-	  docker.yml
-}
-
-cmd_repipe() {
-	echo "Implementation forthcoming..."
-	exit 1
-#	echo "Updating Concourse pipeline configurations"
-#	need_command spruce
-#	need_command fly
-#
-#	if [[ ! -d ${DEPLOYMENT_ROOT}/ci ]]; then
-#		echo >&2 "ci/ directory not found..."
-#		exit 2
-#	fi
-#
-#	setup
-#	if [[ ! -f ${DEPLOYMENT_ROOT}/ci/target ]]; then
-#		echo >&2 "No target specified in ci/target!"
-#		exit 2
-#	fi
-#	local target=$(cat ${DEPLOYMENT_ROOT}/ci/target)
-#
-#	local pipeline="${DEPLOYMENT_NAME}-deployments"
-#	if [[ -f ${DEPLOYMENT_ROOT}/ci/name ]]; then
-#		pipeline=$(cat ${DEPLOYMENT_NAME}/ci/name)
-#	fi
-#
-#	(cd ${DEPLOYMENT_ROOT}/ci
-#	 VAULT_ADDR= ci_remerge_pipeline > live.yml    || exit 1
-#	             ci_remerge_pipeline > .deploy.yml || exit 1
-#
-#	 fly --target ${target} \
-#	     set-pipeline \
-#	     --config .deploy.yml \
-#	     --pipeline ${pipeline}) || exit 1
-}
-
 cmd_embed() {
 	echo "Embedding genesis script into repository"
 	setup
@@ -2144,91 +1931,1040 @@ cmd_embed() {
 	${DEPLOYMENT_ROOT}/bin/genesis version
 }
 
-cmd_ci_manifest() {
-	local site=${1:?cmd_ci_manifest() - no site name provided}
-	local name=${2:?cmd_ci_manifest() - no environment name provided}
+ci_environment_type() {
+  local site=${1:?ci_environment_type() - no site given}
+  local env=${2:?ci_environment_type() - no environment given}
 
+  local alpha=$(spruce json ${DEPLOYMENT_ROOT}/.ci.yml | jq -r ".alpha")
+  if [[ "${site}/${env}" == $alpha ]]; then
+    echo "alpha"
+    return
+  fi
+
+  local beta=$(spruce json ${DEPLOYMENT_ROOT}/.ci.yml | jq -r ".sites[\"${site}\"].beta")
+  if [[ "${env}" == $beta ]]; then
+    echo "beta"
+    return
+  fi
+
+  # otherwise, is it automatically updatable?
+  local auto=$(spruce json ${DEPLOYMENT_ROOT}/.ci.yml | jq -r ".sites[\"${site}\"].auto[\"${env}\"] // \"\"")
+  if [[ -n ${auto} ]]; then
+    echo "gamma"
+  else
+    echo "omega"
+  fi
+}
+
+ci_alpha_environment() {
+	spruce json ${DEPLOYMENT_ROOT}/.ci.yml | jq -r ".alpha"
+}
+
+ci_beta_environment_for() {
+  local site=${1:?ci_beta_environment_for() - no site given}
+  local env=$(spruce json ${DEPLOYMENT_ROOT}/.ci.yml | jq -r ".sites[\"${site}\"].beta // \"\"")
+  if [[ -n ${env} ]]; then
+    echo "${site}/${env}"
+  fi
+}
+
+ci_gamma_environments_for() {
+  local site=${1:?ci_gamma_environments_for() - no site given}
+  local beta=$(ci_beta_environment_for ${site})
+  local alpha=$(ci_alpha_environment)
+  for env in $(all_environments_for $site); do
+    if [[ "${site}/${env}" == "${beta}" || "${site}/${env}" == "${alpha}" ]] ; then continue ; fi
+    local auto=$(spruce json ${DEPLOYMENT_ROOT}/.ci.yml | jq -r ".sites[\"${site}\"].auto[\"${env}\"] // \"\"")
+    if [[ -n ${auto} ]]; then
+      echo ${site}/${env}
+    fi
+  done
+}
+
+ci_name() {
+  tr / - <<<"$1"
+}
+
+ci_check_configuration() {
 	setup
-	switch_to ${site} ${name}
 
-	if [[ $REFRESH_GLOBAL = "yes" ]]; then
-		refresh_global ${site} ${name}
-	fi
-	if [[ $REFRESH_SITE = "yes" ]]; then
-		refresh_site ${site} ${name}
+	local rc=0
+	if [[ ! -f ${DEPLOYMENT_ROOT}/ci/boshes.yml ]]; then
+		echo >&2 "No ci/boshes.yml detected.  Please create one, with the"
+		echo >&2 "credentials for the BOSH directors you want to deploy to."
+		echo >&2
+		echo >&2 "It should look something like this:"
+		echo >&2 "---"
+		echo >&2 "auth:"
+		echo >&2 "  https://ip.ad.dr.ess:2555:"
+		echo >&2 "    username: admin"
+		echo >&2 "    password: ..."
+		echo >&2
+		rc=1
 	fi
 
-	if [[ -n ${VAULT_ADDR} ]]; then
-		echo "Authenticating to Vault at ${VAULT_ADDR}"
-		if [[ -z $(command -v vault) ]]; then
-			echo >&2 "\`vault' command not found in your \$PATH"
-			echo >&2 "  ($PATH)"
-			echo >&2 "You may need to install Vault in your task image"
-			exit 1
+	local alpha=""
+	ensure_ci_configuration
+	for site in $(all_sites); do
+		local beta=""
+		local numenvs=0
+		for env in $(all_environments_for ${site}); do
+			local type="$(ci_environment_type ${site} ${env})"
+			case ${type} in
+			(alpha)
+				if [[ -n "${alpha}" ]]; then
+					echo >&2 "Multiple alpha environments detected: ${alpha} and ${site}/${env}"
+					rc=1
+				fi
+				alpha="${site}/${env}"
+				;;
+
+			(beta)
+				if [[ -n "${beta}" ]]; then
+					echo >&2 "Multiple beta environments detected for ${site}: ${beta} and ${site}/${env}."
+					rc=1
+				fi
+				beta="${site}/${env}"
+				;;
+			(*)
+				numenvs=$(( numenvs + 1 ))
+				;;
+			esac
+		done
+
+		if [[ -z "${beta}" && $numenvs -gt 0 ]]; then
+			echo >&2 "No beta environment found for ${site}."
+			rc=1
 		fi
-		echo
+	done
 
-		touch      ~/.vault
-		chmod 0400 ~/.vault
-		creds='{"user_id":"'${CI_VAULT_USER_ID:-concourse}'","app_id":"'${CI_VAULT_APP_ID:-generic-app}'"}'
-		if ! curl -Ls ${VAULT_ADDR}/v1/auth/app-id/login --data "${creds}" > ~/.vault; then
-			echo >&2 "Failed to authenticate to the Vault app-id backend:"
-			cat >&2 ~/.vault
+	if [[ -z "${alpha}" ]]; then
+		echo >&2 "No alpha environment found."
+		rc=1
+	fi
+
+	if [[ $rc -ne 0 ]]; then
+		echo >&2 "Configuration issues with CI found.  Please address the above."
+		exit 1
+	fi
+}
+
+ci_update() {
+	# emulate:
+	#   echo "some: change" | spruce merge -i ${DEPLOYMENT_ROOT}/.ci.yml
+
+	ensure_ci_configuration
+
+	need_a_workdir
+	cat > ${WORKDIR}/update.yml
+	ensure_yaml_file ${WORKDIR}/update.yml
+
+	if spruce merge "$@" ${DEPLOYMENT_ROOT}/.ci.yml ${WORKDIR}/update.yml > ${WORKDIR}/.ci.yml; then
+		mv ${WORKDIR}/.ci.yml ${DEPLOYMENT_ROOT}/.ci.yml
+	fi
+}
+
+need_ci_git_access() {
+	[ -z ${GIT_USERNAME} ] && GIT_USERNAME="Concourse Bot"
+	[ -z ${GIT_EMAIL}    ] && GIT_EMAIL="concourse@$(hostname -f)"
+	if [[ -z $(git config --global user.email) ]]; then
+		git config --global user.email ${GIT_EMAIL}
+	fi
+	if [[ -z $(git config --global user.name) ]]; then
+		git config --global user.name ${GIT_USERNAME}
+	fi
+
+	if [[ ! -f ~/.ssh/key && -n ${CI_PRIVATE_KEY} ]]; then
+		mkdir -p ~/.ssh
+		cat > ~/.ssh/key <<EOF
+${CI_PRIVATE_KEY}
+EOF
+		chmod 0400 ~/.ssh/key
+		eval $(ssh-agent) >/dev/null 2>&1
+		trap "kill $SSH_AGENT_PID" 0
+
+		cat >~/.ssh/askpass <<EOF
+#!/bin/sh
+echo "Looks like there is something wrong with your SSH private key (for accessing the repository)" >&2
+exit 1
+EOF
+		chmod 0755 ~/.ssh/askpass
+		SSH_ASKPASS=~/.ssh/askpass DISPLAY= ssh-add ~/.ssh/key >/dev/null
+	fi
+
+	if [[ ! -f ~/.ssh/config ]]; then
+		mkdir -p ~/.ssh
+		cat > ~/.ssh/config <<EOF
+StrictHostKeyChecking no
+LogLevel quiet
+EOF
+		chmod 0600 ~/.ssh/config
+	fi
+}
+
+ci_commit() {
+	local msg=${1:?ci_commit() - no commit message given}
+	if [[ -n $(git status --porcelain) ]]; then
+		need_ci_git_access
+		git add -A
+		git status
+		git --no-pager diff --cached
+		git commit -m "${msg}"
+	fi
+}
+
+cmd_ci_alpha() {
+	setup
+	local site_env=${1}
+	if [[ -z "${site_env}" ]]; then
+		must_be_in_an_environment
+		site_env="${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}"
+	fi
+
+	check_environment $site_env
+	local site=${site_env%%/*}
+	local env=${site_env##*/}
+	ci_update <<EOF
+---
+alpha: ${site_env}
+sites:
+  ${site}:
+    auto:
+      ${env}: y
+EOF
+}
+
+cmd_ci_beta() {
+	setup
+	if [[ $# -eq 0 ]]; then
+		must_be_in_an_environment
+		set -- "${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}"
+	fi
+	for site_env in "$@"; do
+		check_environment $site_env
+		local site=${site_env%%/*}
+		local env=${site_env##*/}
+		ci_update <<EOF
+---
+sites:
+  ${site}:
+    beta: ${env}
+    auto:
+      ${env}: y
+EOF
+	done
+}
+
+cmd_ci_auto() {
+	setup
+	if [[ $# -eq 0 ]]; then
+		must_be_in_an_environment
+		set -- "${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}"
+	fi
+	for site_env in "$@"; do
+		check_environment $site_env
+		local site=${site_env%%/*}
+		local env=${site_env##*/}
+		ci_update <<EOF
+---
+sites:
+  ${site}:
+    auto:
+      ${env}: y
+EOF
+	done
+}
+
+cmd_ci_manual() {
+	setup
+	if [[ $# -eq 0 ]]; then
+		must_be_in_an_environment
+		set -- "${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}"
+	fi
+	rc=0
+	for site_env in "$@"; do
+		check_environment $site_env
+		local site=${site_env%%/*}
+		local env=${site_env##*/}
+		case "$(ci_environment_type ${site} ${env})" in
+		(alpha)
+			cat >&2 <<EOF
+${site}/${env} is currently the Alpha CI environment.
+
+Alpha environments are automatically updated in response to changes made to global/,
+new BOSH releases, stemcells, etc.
+
+If you want to require manual approval for updates to ${site}/${env},
+please first select a different Alpha environment.
+EOF
 			exit 2
-		fi
+			;;
 
-		VAULT_TOKEN=$(cat ~/.vault | jq -r '.auth.client_token')
-		rm ~/.vault
-		if ! vault status; then
-			echo >&2 "Failed to authenticate to Vault at ${VAULT_ADDR}; bailing..."
+		(beta)
+			cat >&2 <<EOF
+${site}/${env} is currently the Beta CI environment for ${site}.
+
+Beta environments are automatically updated in response to changes made to global/,
+${site}/site/, new BOSH releases, stemcells, etc.
+
+If you want to require manual approval for updates to ${site}/${env},
+please first select a different Beta environment for ${site}.
+EOF
 			exit 2
-		fi
+			;;
+		esac
+		ci_update --prune "sites[${site}].auto[${env}]" </dev/null
+	done
+}
 
-		echo
-		echo "Testing Vault authentication by retrieving secret/handshake"
-		if ! vault read secret/handshake; then
-			echo >&2 "Failed to retrieve secret/handshake; assuming authentication failed..."
-			exit 3
-		fi
+ci_repipe_proto_job() {
+  local job_name=${1:?ci_repipe_proto_job() - no job name given}
 
-	else
-		echo >&2 "No VAULT_ADDR found in environment; skipping authentication step"
+  cat <<EOF
+jobs:
+  - name: ${job_name}
+    public: true
+    serial: true
+    plan:
+      - aggregate:
+          - get: world-changes
+            resource: (( param "looks like genesis forgot to override the resource name" ))
+          - get: local-changes
+            resource: (( param "looks like genesis forgot to override the resource name" ))
+      - task: (( param "looks like genesis forgot to override the task name" ))
+        config:
+          platform: linux
+          image_resource:
+            type: docker-image
+            source:
+              repository: starkandwayne/concourse
+              tag: latest
+          inputs:
+            - name: world-changes
+            - name: local-changes
+          outputs:
+            - name: out
+          run:
+            path: world-changes/bin/genesis
+            args: [ci, stage1]
+          params:
+            .: (( inject meta.env ))
+
+            VAULT_APP_ID:   concourse
+            VAULT_USER_ID:  (( concat meta.name "-pipeline" ))
+
+            CI_SITE_ENV:    (( param "looks like genesis forgot to override the CI_SITE_ENV variable" ))
+            CI_BRANCH:      (( grab resources.git.source.branch ))
+            CI_PRIVATE_KEY: (( grab resources.git.source.private_key ))
+
+            LOCAL_CHANGES:  local-changes
+            WORLD_CHANGES:  world-changes
+            WORKING_DIR:    out/git
+
+            CI_BOSHES: |
+EOF
+  need_a_vault
+  spruce merge ${DEPLOYMENT_ROOT}/ci/boshes.yml | sed -e 's/^/              /';
+}
+
+ci_repipe_build_base() {
+  need_a_workdir
+
+  cat >${WORKDIR}/pipeline.yml <<EOF
+---
+meta:
+  name: (( param "Please name this deployment pipeline" ))
+  env: {}
+
+  github:
+    uri:          (( concat "git@github.com:" meta.github.owner "/" meta.github.repo ))
+    owner:        (( param "Please specify the name of the user / organization that owns the Github repository" ))
+    repo:         (( param "Please specify the name of the Github repository" ))
+    branch:       master
+    private_key:  (( param "Please generate an SSH Deployment Key for this repo and specify it here" ))
+
+  slack:
+    webhook:  (( param "Please provide a Slack Integration WebHook" ))
+    channel:  (( param "Please specify the channel (#name) or user (@user) to send messages to" ))
+    username: runwaybot
+    icon:     http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
+
+resources:
+  - name: git
+    type: git
+    source:
+      uri:         (( grab meta.github.uri ))
+      branch:      (( grab meta.github.branch ))
+      private_key: (( grab meta.github.private_key ))
+
+  - name: notification
+    type: slack-notification
+    source:
+      url:      (( grab meta.slack.webhook ))
+
+
+
+resource_types:
+  - name: slack-notification
+    type: docker-image
+    source:
+      repository: cfcommunity/slack-notification-resource
+
+groups:
+  - name: '*'
+    jobs:
+      - stemcells
+
+  - name: upkeep
+    jobs:
+      - stemcells
+
+jobs:
+  - name: stemcells
+    public: true
+    serial: true
+    plan:
+      - aggregate:
+        - get: git
+      - task: update
+        config:
+          inputs:
+            - name: git
+          outputs:
+            - name: out
+          platform: linux
+          image_resource:
+            type: docker-image
+            source:
+              repository: starkandwayne/concourse
+          run:
+            path: git/bin/genesis
+            args: [ ci, stemcells ]
+          params:
+            STEMCELLS: stemcells
+            REPO_OUT:  out/git
+      - put: git
+        params:
+          rebase: true
+          repository: out/git
+EOF
+}
+
+ci_repipe_build_environments() {
+  local alpha_env=$(ci_alpha_environment)
+  local alpha_name=$(ci_name ${alpha_env})
+  local alpha_site=${alpha_env%%/*}
+
+  need_a_workdir
+  workdir="${WORKDIR}/repipe"
+  mkdir -p ${workdir}
+  cat <<EOF >${workdir}/09-all.yml
+---
+groups:
+  - name: '*'
+    jobs:
+      - (( append ))
+EOF
+  cat <<EOF >${workdir}/08-groups.yml
+---
+groups:
+  - name: '*'
+  - name: α
+    jobs:
+      - $alpha_name
+
+  - name: β
+    jobs:
+      - $alpha_name
+EOF
+
+  for site in $(all_sites); do
+    local site_name=$(ci_name ${site})
+    local beta_env=$(ci_beta_environment_for ${site})
+    local beta_name=$(ci_name ${beta_env})
+
+    if [[ -n ${beta_name} ]]; then
+      echo "      - ${beta_name}" >> ${workdir}/08-groups.yml
+    fi
+
+    local stemcell_alias=
+    local stemcell_name=$(cat ${DEPLOYMENT_ROOT}/${site}/site/stemcell/name)
+    case $stemcell_name in
+    (*vsphere*) stemcell_alias=vsphere-stemcell ;;
+    (*aws*hvm*) stemcell_alias=aws-hvm-stemcell ;;
+    (*aws*)     stemcell_alias=aws-stemcell     ;;
+    (*warden*)  stemcell_alias=warden-stemcell  ;;
+    (*)         stemcell_alias=${stemcell_name} ;;
+    esac
+    cat >${workdir}/77-${stemcell_alias}.yml <<EOF
+---
+resources:
+  - name: ${stemcell_alias}
+    type: bosh-io-stemcell
+    source: { name: ${stemcell_name} }
+
+jobs:
+  - name: stemcells
+    plan:
+      - (( inline ))
+      - aggregate:
+        - (( append ))
+        - get: ${stemcell_alias}
+          trigger: true
+          params: { tarball: true }
+      - task: update
+        config:
+          inputs:
+            - (( append ))
+            - name: ${stemcell_alias}
+              path: stemcells/${stemcell_name}
+EOF
+
+    if [[ -n ${beta_name} ]]; then
+      cat >${workdir}/10-${site}.yml <<EOF
+---
+groups:
+  - name: $site_name
+    jobs:
+      - $alpha_name # alpha
+      - $beta_name  # beta
+EOF
+    fi
+
+    for env in $(all_environments_for ${site}); do
+      local env_type=$(ci_environment_type ${site} ${env})
+      local env_name=$(ci_name ${env})
+      local site_env=${site}/${env}
+      local site_env_name=$(ci_name ${site_env})
+
+      cat >>${workdir}/09-all.yml <<EOF
+      - $site_env_name
+EOF
+
+      ci_repipe_proto_job ${site_env_name} > ${workdir}/50-${site_env_name}.yml
+      case ${env_type} in
+      (alpha)
+        cat >${workdir}/51-${site_env_name}.yml <<EOF
+---
+resources:
+  # changes that trigger the alpha environment
+
+  ##########################################################################
+  #
+  #   global-changes      Changes made to the global/ definitions,
+  #                       (and the alpha environment's site, for continuity)
+  #
+  - name: global-changes
+    .: (( inject resources.git ))
+    source:
+      paths:
+        - bin/genesis
+        - global
+
+  ##########################################################################
+  #
+  #   {env}-changes     Changes that only affect the current environment
+  #                     (i.e. property changes, re-IPing, creds, etc.)
+  #
+  - name: ${alpha_name}-changes
+    .: (( inject resources.git ))
+    source:
+      paths:
+        - ${alpha_site}/site
+        - ${alpha_env}/*.yml
+
+  ##########################################################################
+  #
+  #   α-changes         Changes that come from previous steps in the
+  #                     pipeline, from a successful build in alpha.
+  #                     (this will trigger beta builds)
+  #
+  - name: α-changes
+    .: (( inject resources.git ))
+    source:
+      paths:
+        - ${alpha_env}/.global
+
+jobs:
+  # alpha environment
+  - name: ${site_env_name}
+    plan:
+      - (( inline ))
+      - aggregate:
+        - (( merge on get ))
+
+        - get: world-changes
+          resource: global-changes
+          trigger: true
+
+        - get: local-changes
+          resource: ${alpha_name}-changes
+          trigger: true
+
+      - task: ${site_env_name}
+        config:
+          params:
+            CI_SITE_ENV: ${site_env}
+        # PUT to the beta inputs
+      - put: α-changes
+        params: { repository: out/git }
+EOF
+        ;;
+
+      (beta)
+        cat >${workdir}/51-${site_env_name}.yml <<EOF
+---
+resources:
+  # changes that trigger the beta environment
+
+  ##########################################################################
+  #
+  #   {site}-changes    Changes that only affect the current environment
+  #                     (i.e. property changes, re-IPing, creds, etc.)
+  #
+  - name: ${site}-changes
+    .: (( inject resources.git ))
+    source:
+      paths:
+        - ${site}/site
+        - ${beta_env}/*.yml
+
+  ##########################################################################
+  #
+  #   {site}-β-changes  Changes that come from previous steps in the
+  #                     pipeline, from a successful build in alpha.
+  #
+  - name: ${site}-β-changes
+    .: (( inject resources.git ))
+    source:
+      paths:
+        - ${beta_env}/.site
+        - ${beta_env}/.global
+
+jobs:
+  # beta environment
+  - name: ${site_env_name}
+    plan:
+      - (( inline ))
+      - aggregate:
+        - (( merge on get ))
+
+        - get: world-changes
+          resource: α-changes
+          trigger: true
+          passed: [${alpha_name}]
+
+        - get: local-changes
+          resource: ${site}-changes
+          trigger: true
+
+      - task: ${site_env_name}
+        config:
+          params:
+            CI_SITE_ENV: ${site_env}
+        # PUT to the gamma inputs
+      - put: ${site}-β-changes
+        params: { repository: out/git }
+EOF
+        ;;
+
+      (gamma)
+        cat >>${workdir}/10-${site}.yml <<EOF
+      - $site_env_name # gamma
+EOF
+        cat >${workdir}/51-${site_env_name}.yml <<EOF
+---
+resources:
+  # changes that trigger the gamma environment
+
+  ##########################################################################
+  #
+  #   {env}-changes     Changes that only affect the current environment
+  #                     (i.e. property changes, re-IPing, creds, etc.)
+  #
+  - name: ${site_env_name}-changes
+    .: (( inject resources.git ))
+    source:
+      paths:
+        - ${site_env}/*.yml
+
+jobs:
+  # gamma environment
+  - name: ${site_env_name}
+    plan:
+      - (( inline ))
+      - aggregate:
+        - (( merge on get ))
+
+        - get: world-changes
+          resource: ${site}-β-changes
+          trigger: true
+          passed: [${beta_name}]
+
+        - get: local-changes
+          resource: ${site_env_name}-changes
+          trigger: true
+
+      - task: ${site_env_name}
+        config:
+          params:
+            CI_SITE_ENV: ${site_env}
+        # PUT to git
+      - put: git
+        params: { repository: out/git }
+EOF
+        ;;
+
+      (omega)
+        cat >>${workdir}/09-all.yml <<EOF
+      - ${site_env_name}-notif
+EOF
+        cat >>${workdir}/10-${site}.yml <<EOF
+      - $site_env_name # omega
+      - ${site_env_name}-notif
+EOF
+        cat >${workdir}/51-${site_env_name}.yml <<EOF
+---
+resources:
+  # changes that trigger the omega environment
+
+  ##########################################################################
+  #
+  #   {env}-changes     Changes that only affect the current environment
+  #                     (i.e. property changes, re-IPing, creds, etc.)
+  #
+  - name: ${site_env_name}-changes
+    .: (( inject resources.git ))
+    source:
+      paths:
+        - ${site_env}/*.yml
+
+jobs:
+  # omega environment
+  - name: ${site_env_name}-notif
+    plan:
+      - aggregate:
+        - get: world-changes
+          resource: ${site}-β-changes
+          passed: [${beta_name}]
+          trigger: true
+
+        - get: local-changes
+          resource: ${site_env_name}-changes
+          trigger: true
+
+      - task: draft-message
+        config:
+          platform: linux
+          image_resource:
+            type: docker-image
+            source:
+              repository: starkandwayne/concourse
+              tag: latest
+          inputs:
+            - name: world-changes
+            - name: local-changes
+          outputs:
+            - name: out
+          run:
+            path: world-changes/bin/genesis
+            args: [ci, draft-message]
+          params:
+            LOCAL_CHANGES:  local-changes
+            WORLD_CHANGES:  world-changes
+            CI_SITE_ENV:    ${site_env}
+            DRAFT_FILE:     out/notif
+      - put: notification
+        params:
+          text_file: out/notif
+          username: (( grab meta.slack.username ))
+          channel:  (( grab meta.slack.channel ))
+          icon_url: (( grab meta.slack.icon ))
+
+  - name: ${site_env_name}
+    plan:
+      - (( inline ))
+      - aggregate:
+        - (( merge on get ))
+
+        - get: world-changes
+          resource: ${site}-β-changes
+          passed: [${site_env_name}-notif]
+          trigger: false
+
+        - get: local-changes
+          resource: ${site_env_name}-changes
+          passed: [${site_env_name}-notif]
+          trigger: false
+
+      - task: ${site_env_name}
+        config:
+          params:
+            CI_SITE_ENV: ${site_env}
+        # PUT to git
+      - put: git
+        params: { repository: out/git }
+EOF
+        ;;
+      esac
+    done
+  done
+}
+
+ci_repipe_merge() {
+	target=${1:-pipeline.yml}
+	mkdir -p ${DEPLOYMENT_ROOT}/ci
+
+	need_command spruce
+	spruce $SPRUCE_OPTS merge --prune meta \
+	    ${WORKDIR}/pipeline.yml \
+	    ${WORKDIR}/repipe/*.yml \
+	    $(actual_yaml_files ${DEPLOYMENT_ROOT}/ci/settings.yml) > ${DEPLOYMENT_ROOT}/ci/${target}
+}
+
+cmd_ci_repipe() {
+	setup
+	ci_check_configuration
+	need_a_workdir
+	need_a_vault
+
+	ci_repipe_build_base
+	ci_repipe_build_environments
+	VAULT_ADDR= ci_repipe_merge pipeline.yml || exit 3
+	            ci_repipe_merge .deploy.yml  || exit 4
+	[[ -n $DEBUG_LEAVE_THE_CREDS_THERE ]] || \
+		trap "rm -f ${DEPLOYMENT_ROOT}/ci/.deploy.yml" QUIT TERM INT EXIT
+
+	CI_TARGET_NAME=$(spruce json ${DEPLOYMENT_ROOT}/ci/settings.yml | jq -r '.meta.target // ""')
+	CI_PIPELINE=$(   spruce json ${DEPLOYMENT_ROOT}/ci/settings.yml | jq -r '.meta.name // ""')
+
+	echo
+	echo "Configuring pipeline at ${CI_TARGET_NAME} (${CI_TARGET_URL})"
+	fly -t ${CI_TARGET_NAME:-concourse} set-pipeline -p ${CI_PIPELINE:-pipeline} -c ${DEPLOYMENT_ROOT}/ci/.deploy.yml
+	exit $?
+}
+
+
+cmd_ci_flow() {
+	setup
+	# FIXME: ascii diagram!
+	cat ${DEPLOYMENT_ROOT}/.ci.yml
+}
+
+cmd_ci_stemcells() {
+	if [[ -z ${STEMCELLS} ]]; then
+		echo >&2 "!! ERROR: Your Concourse Pipeline seems to be MISCONFIGURED !!"
+		echo >&2
+		echo >&2 "The \$STEMCELLS environment variable was not set."
+		echo >&2
+		echo >&2 "This environment variable tells genesis where to find the"
+		echo >&2 "downloaded stemcells, for checksumming and version querying."
+		exit 2
 	fi
-	(VAULT_ADDR= cmd_build live.yml)    || exit 3
-	(            cmd_build .deploy.yml) || exit 4
+	if [[ ! -d ${STEMCELLS} ]]; then
+		echo >&2 "!! ERROR: Your Concourse Pipeline seems to be MISCONFIGURED !!"
+		echo >&2
+		echo >&2 "The \$STEMCELLS environment variable seems to be incorrect."
+		echo >&2
+		echo >&2 "Failed to find stemcell path '${STEMCELLS}',"
+		echo >&2 "starting from '$(pwd)'..."
+		exit 2
+	fi
+
+	REPO_IN=$(cd $(dirname $BASH_SOURCE[0])/..; pwd)
+	for dir in ${STEMCELLS}/*; do
+		local name=${dir##*/}
+		local vers=$(cat ${dir}/version)
+		local sha1=$(cat ${dir}/stemcell.tgz | sha1sum | awk '{print $1}')
+
+		pushd ${REPO_IN} >/dev/null
+			for site in */site; do
+				if [[ $(cat ${site}/stemcell/name 2>/dev/null) == ${name} ]]; then
+					echo ${vers} > ${site}/stemcell/version
+					echo ${sha1} > ${site}/stemcell/sha1
+				fi
+			done
+		popd >/dev/null
+	done
+
+	pushd ${REPO_IN} >/dev/null
+		ci_commit "upgrade stemcells via pipeline"
+	popd >/dev/null
+	[ -n ${REPO_OUT} ] && cp -a ${REPO_IN} ${REPO_OUT}/
 	exit 0
 }
 
-cmd_ci_commit() {
-	local msg="${@:-Automated Depoyment via Concourse}"
-
-	if [[ -z $(git config --get user.name) ]]; then
-		[ -z ${GIT_USERNAME} ] && GIT_USERNAME="Concourse Bot"
-		[ -z ${GIT_EMAIL}    ] && GIT_EMAIL="concourse@$(hostname -f)"
-
-		git config --global user.name  ${GIT_USERNAME}
-		git config --global user.email ${GIT_EMAIL}
+cmd_ci_stage1() {
+	if [[ -z ${WORKING_DIR} ]]; then
+		echo >&2 "!! ERROR: Your Concourse Pipeline seems to be MISCONFIGURED !!"
+		echo >&2
+		echo >&2 "The \$WORKING_DIR environment variable was not set."
+		echo >&2
+		echo >&2 "This environment variable tells genesis where to find the"
+		echo >&2 "committed changes to this deployment manifest, so that Concourse"
+		echo >&2 "can push the updatees back to origin properly."
+		exit 2
 	fi
 
-	setup
-
-	# git add any live.yml files
-	find . -name live.yml | xargs -r git add
-
-	# get rid of any untracked files (pipeline assets, stemcells, etc.)
-	git clean -df
-
-	# commit what changes we've got and go
-	if [[ -n $(git status --porcelain) ]]; then
-		git status
-		echo
-
-		git add .
-		git commit -m "${msg}"
-		echo
-	else
-		echo "Nothing changed - not bothering to commit"
+	cp -a ${LOCAL_CHANGES} ${WORKING_DIR}
+	if [[ ! -d ${WORKING_DIR} ]]; then
+		echo >&2 "Failed to copy the git working copy from"
+		echo >&2 "${LOCAL_CHANGES}"
+		echo >&2 "to"
+		echo >&2 "${WORKING_DIR}"
+		echo >&2
+		exit 2
 	fi
+
+	line
+	echo "Pulling in latest copy of ${CI_BRANCH}"
+	echo "(this avoids spurious git conflicts later)"
+	echo
+	pushd ${WORKING_DIR}/${CI_SITE_ENV} >/dev/null
+		need_ci_git_access
+		git pull origin ${CI_BRANCH} # in case we want to test...
+	popd
+
+	line
+	echo "Invoking stage2 of the Genesis CI pipeline"
+	echo
+	exec ${WORKING_DIR}/bin/genesis ci stage2
+}
+
+cmd_ci_stage2() {
+	line
+	echo "Setting up .bosh_config with values from ci/boshes.yml"
+	echo
+	cat >~/.bosh_config<<EOF
+${CI_BOSHES}
+EOF
+	ls -l ~/.bosh_config
+	echo
+
+	line
+	echo "Probing environment for information..."
+	# figure out our environment type
+	pushd ${WORKING_DIR}/${CI_SITE_ENV} >/dev/null
+		CI_SITE=$(setup; must_be_in_an_environment; echo $DEPLOYMENT_SITE)
+		CI_ENV=$( setup; must_be_in_an_environment; echo $DEPLOYMENT_ENVIRONMENT)
+
+		local env_type=$(setup; must_be_in_an_environment;
+			ci_environment_type ${DEPLOYMENT_SITE} ${DEPLOYMENT_ENVIRONMENT})
+
+		local alpha_env=$(setup; must_be_in_an_environment;
+			ci_alpha_environment)
+
+		local beta_env=$(setup; must_be_in_an_environment;
+			ci_beta_environment_for ${CI_SITE})
+	popd
+	echo "        CI_SITE_ENV: ${CI_SITE_ENV}"
+	echo "            CI_SITE: ${CI_SITE}"
+	echo "             CI_ENV: ${CI_ENV}"
+	echo "   Environment Type: ${env_type}"
+	echo "  Alpha Environment: ${alpha_env}"
+	echo "   Beta Environment: ${beta_env}"
+	echo
+
+	line
+	echo "Updating .site and .global copies from known good values"
+
+	rm -rf ${WORKING_DIR}/${CI_SITE_ENV}/.global
+	rm -rf ${WORKING_DIR}/${CI_SITE_ENV}/.site
+	case ${env_type} in
+	(alpha)
+		echo "... in ALPHA environment"
+		echo
+		echo "copy world/global -> ${CI_SITE_ENV}/.global"
+		echo "copy local/${CI_SITE}/site -> ${CI_SITE_ENV}/.site"
+		echo
+		cp -a ${WORLD_CHANGES}/global                ${WORKING_DIR}/${CI_SITE_ENV}/.global
+		cp -a ${LOCAL_CHANGES}/${CI_SITE}/site       ${WORKING_DIR}/${CI_SITE_ENV}/.site
+		;;
+	(beta)
+		echo "... in BETA environment"
+		echo
+		echo "copy world/${alpha_env}/.global -> ${CI_SITE_ENV}/.global"
+		echo "copy world/${CI_SITE}/site -> ${CI_SITE_ENV}/.site"
+		echo
+		cp -a ${WORLD_CHANGES}/${alpha_env}/.global  ${WORKING_DIR}/${CI_SITE_ENV}/.global
+		cp -a ${WORLD_CHANGES}/${CI_SITE}/site       ${WORKING_DIR}/${CI_SITE_ENV}/.site
+		;;
+	(*)
+		echo
+		echo "copy world/${beta_env}/.global -> ${CI_SITE_ENV}/.global"
+		echo "copy world/${beta_env}/.site -> ${CI_SITE_ENV}/.site"
+		cp -a ${WORLD_CHANGES}/${beta_env}/.global   ${WORKING_DIR}/${CI_SITE_ENV}/.global
+		cp -a ${WORLD_CHANGES}/${beta_env}/.site     ${WORKING_DIR}/${CI_SITE_ENV}/.site
+		;;
+	esac
+
+	pushd ${WORKING_DIR}/${CI_SITE_ENV} >/dev/null
+		setup
+		must_be_in_an_environment
+
+		line
+		echo "Generating manifest (live.yml)..."
+		echo
+		set -e
+		need_a_vault
+		(VAULT_ADDR= cmd_build live.yml)    || exit 3
+		(            cmd_build .deploy.yml) || exit 4
+
+		local target=$(spruce json ${DEPLOYMENT_ENV_DIR}/manifests/live.yml | jq -r '.director_uuid')
+		line
+		echo "Deploying to BOSH director ${target}"
+		echo
+		bosh target ${target}
+		bosh deployment ${DEPLOYMENT_ENV_DIR}/manifests/.deploy.yml
+		bosh -n deploy
+
+		line
+		echo "Committing changes to git repository..."
+		echo
+		if [[ -z ${GIT_MESSAGE} ]]; then
+			GIT_MESSAGE="[${CI_SITE_ENV}] deployed via pipeline"
+		fi
+		ci_commit "${GIT_MESSAGE}"
+		set +e
+	popd >/dev/null
+
+	line
+	echo "COMPLETE"
+
+	exit 0
+}
+
+cmd_ci_draft_message() {
+	(
+		echo "[${CI_SITE_ENV}] Deployment changes are ready to go!"
+		echo
+		echo "World:"
+		echo "\`\`\`"
+		(cd $WORLD_CHANGES && git log -n1)
+		echo "\`\`\`"
+		echo
+		echo "Local:"
+		echo "\`\`\`"
+		(cd $LOCAL_CHANGES && git log -n1)
+		echo "\`\`\`"
+	)>${DRAFT_FILE}
+}
+
+cmd_ci_check() {
+	ci_check_configuration
+}
+
+bad_ci() {
+	local cmd=${1}
+	cat >&2 <<EOF
+USAGE:  genesis ci alpha [site/env]
+        genesis ci beta [site/env [site/env ...]]
+        genesis ci auto [site/env [site/env ...]]
+        genesis ci manual [site/env [site/env ...]]
+        genesis ci repipe [target-concourse]
+        genesis ci flow
+EOF
+	exit 1
 }
 
 cmd_bosh() {
@@ -2400,29 +3136,45 @@ main() {
 	(deploy)
 		cmd_deploy
 		;;
-	(repipe)
-		# FIXME
-		echo "Implementation forthcoming..."
-		exit 1
-		;;
 	(embed)
 		cmd_embed
 		;;
 	(ci)
-		# FIXME
-		echo "Implementation forthcoming..."
-		exit 1
-
 		TERM=dumb
-		exec </dev/null
-
 		local arg=${1:-} ; shift
 		case ${arg} in
-		(manifest)
-			cmd_ci_manifest $*
+		(alpha)
+			cmd_ci_alpha $*
 			;;
-		(commit)
-			cmd_ci_commit $*
+		(beta)
+			cmd_ci_beta $*
+			;;
+		(auto)
+			cmd_ci_auto $*
+			;;
+		(manual)
+			cmd_ci_manual $*
+			;;
+		(repipe)
+			cmd_ci_repipe $*
+			;;
+		(flow)
+			cmd_ci_flow $*
+			;;
+		(stemcells)
+			cmd_ci_stemcells $*
+			;;
+		(stage1)
+			cmd_ci_stage1 $*
+			;;
+		(stage2)
+			cmd_ci_stage2 $*
+			;;
+		(draft-message)
+			cmd_ci_draft_message $*
+			;;
+		(check)
+			cmd_ci_check
 			;;
 		(*)
 			bad_ci ${arg}
@@ -2441,6 +3193,7 @@ main() {
 	esac
 }
 
+[ -n "${CI_DEBUG}" ] && set -x
 # look for some help flags
 declare -a argv
 while (( $# != 0 )); do
