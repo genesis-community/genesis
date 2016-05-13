@@ -97,7 +97,7 @@ setup() {
 	fi
 
 	DEPLOYMENT_NAME="${DEPLOYMENT_ROOT##*/}"
-	DEPLOYMENT_NAME="${DEPLOYMENT_NAME%%-deployments}"
+	DEPLOYMENT_NAME="${DEPLOYMENT_NAME%%-deployment*}"
 	DEPLOYMENT_SITE_DIR="${DEPLOYMENT_ROOT}/${DEPLOYMENT_SITE}"
 	DEPLOYMENT_ENV_DIR="${DEPLOYMENT_ROOT}/${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}"
 }
@@ -1546,7 +1546,7 @@ cmd_new_deployment() {
 
 		if [[ -z ${name} ]]; then
 			name=${template##*/}
-			name=${name#-deployment*}
+			name=${name%%-deployment*}
 		fi
 	fi
 	if [[ -z ${name:-} ]]; then
@@ -1654,7 +1654,7 @@ cmd_new_site() {
 			exit 2
 		fi
 
-		cp -a ${DEPLOYMENT_ROOT}/.templates/${template} ${DEPLOYMENT_ROOT}/${name}
+		cp -a ${DEPLOYMENT_ROOT}/.templates/${template} ${DEPLOYMENT_ROOT}/${name}/site
 		create_site_readme ${name} >${DEPLOYMENT_ROOT}/${name}/README
 		exit 0
 	fi
@@ -2018,7 +2018,7 @@ cmd_refresh_makefile() {
 cmd_refresh_readmes() {
 	setup
 	echo "Refreshing README for the whole repository"
-	em -f ${DEPLOYMENT_ROOT}/README*
+	rm -f ${DEPLOYMENT_ROOT}/README*
 	create_root_readme >${DEPLOYMENT_ROOT}/README.md
 
 	echo "Refreshing README for global definitions"
