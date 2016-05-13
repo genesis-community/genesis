@@ -261,22 +261,22 @@ Quickstart
 
 To create a new site:
 
-  genesis new site NAME
+    genesis new site NAME
 
 To create a new environment
 
-  cd site-name/
-  genesis new environment NAME
+    cd site-name/
+    genesis new environment NAME
 
 To build the full BOSH manifest for an environment:
 
-  cd site-name/env-name
-  make manifest
+    cd site-name/env-name
+    make manifest
 
 ... and then deploy it:
 
-  cd site-name/env-name
-  make deploy
+    cd site-name/env-name
+    make deploy
 
 
 
@@ -1303,10 +1303,24 @@ build_bosh_init_manifest() {
 # multi-call handlers
 
 cmd_help() {
-	local topic=${1:-usage}
+	local topic=""
+	while (( $# )); do
+		arg=$1 ; shift
+		case ${arg} in
+		(-*)
+			echo >&2 "USAGE: genesis help <topic>"
+			exit 1
+			;;
+		(*)
+			if [[ -n ${topic} ]]; then
+				topic="${topic} "
+			fi
+			topic="${topic}${arg}"
+		esac
+	done
 
-	case ${topic} in
-	(usage)
+	case ${topic:-usage} in
+	(usage|help)
 		cat >&2 <<EOF
 USAGE: genesis <command> [arguments]
 
@@ -1345,43 +1359,67 @@ EOF
 		;;
 	(new)
 		cat >&2 <<EOF
-USAGE: genesis new deployment NAME
-       genesis new site SITE
+USAGE: genesis new deployment [options] NAME
+       genesis new site [options] SITE
        genesis new environment SITE ENVIRONMENT
 
 Creates new things, with all the right files in all the right places.
 
-New Deployments
----------------
-
-  genesis new deployment [-t TYPE] NAME
+EOF
+		exit 0
+		;;
+	(new\ deployment)
+		cat >&2 <<EOF
+USAGE: genesis new deployment [options] NAME
 
   Create a new deployment, complete with all the correct templates in
   global/, and a base configuration.  This will create a sub-directory
   in the current working directory, named <NAME>-deployments, and set
   it up with git version control.
 
-  If you are trying to set up a MicroBOSH deployment, specify a type
-  via '-t microbosh' and genesis will set up a template structure that
-  is more amenable to deploying MicroBOSH.  By default, it will set up
-  for normal ('-t normal') deployments, which assume you will need to
-  integrate with Cloud Foundry.
+  OPTIONS
 
+    -T, --type <type>
 
-New Sites
----------
+        Generate a different type of deployment.  Valid values are
+        'bosh-init' and 'normal' (the default is 'normal').
 
-  genesis new site NAME
+    -t, --template <name>
+
+        Base the deployment off of an upstream Genesis template, by
+        cloning a repository from github.com and using that.
+
+        Templates can be specified as qualified name containing the
+        Github org/user and repository name, i.e. "jhunt/bolo", or
+        as a simple name, i.e. "shield", which will be inferred to
+        belong to the starkandwayne organization.
+
+EOF
+		exit 0
+		;;
+	(new\ site)
+		cat >&2 <<EOF
+USAGE: genesis new site [options] NAME
 
   Create a new site with the given name, and set up the necessary
   directories and blank template files for defining the parts of a
   BOSH manifest that map to infrastructural and site-wide things.
 
+  OPTIONS
 
-New Environments
-----------------
+    -t, --template <name>
 
-  genesis new environment SITE NAME
+        Base the new site off of a site template.
+
+        This generally only works if you generated the deployment
+        from an upstream Genesis template (via '--template')
+
+EOF
+		exit 0
+		;;
+	(new\ environment)
+		cat >&2 <<EOF
+USAGE: genesis new environment SITE NAME
 
   Create a new environment with the given name, in the specified
   site, and set up the directories and template files for local,
@@ -1980,7 +2018,7 @@ cmd_refresh_makefile() {
 cmd_refresh_readmes() {
 	setup
 	echo "Refreshing README for the whole repository"
-	rm -f ${DEPLOYMENT_ROOT}/README*
+	em -f ${DEPLOYMENT_ROOT}/README*
 	create_root_readme >${DEPLOYMENT_ROOT}/README.md
 
 	echo "Refreshing README for global definitions"
@@ -2407,8 +2445,8 @@ main() {
 declare -a argv
 while (( $# != 0 )); do
 	case ${1} in
-	(-h|-?|--help) argv=( help ${argv[@]}        ) ;;
-	(*)            argv=(      ${argv[@]} "${1}" ) ;;
+	(-h|-\?|--help) argv=( help ${argv[@]}        ) ;;
+	(*)             argv=(      ${argv[@]} "${1}" ) ;;
 	esac
 	shift
 done
