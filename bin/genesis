@@ -1563,6 +1563,7 @@ cmd_new_site() {
 			exit 2
 		fi
 
+		mkdir -p ${DEPLOYMENT_ROOT}/${name}
 		cp -a ${DEPLOYMENT_ROOT}/.templates/${template} ${DEPLOYMENT_ROOT}/${name}/site
 		create_site_readme ${name} >${DEPLOYMENT_ROOT}/${name}/README
 		exit 0
