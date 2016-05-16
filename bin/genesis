@@ -295,10 +295,6 @@ create_makefile() {
 	cat > ${path} <<EOF
 # genesis, available at ${CANON_REPO}
 
-save_VAULT_ADDR := \$(VAULT_ADDR)
-VAULT_ADDR =
-REDACT = yes
-
 root_path := \$(realpath \$(dir \$(abspath \$(lastword \$(MAKEFILE_LIST))))../..)
 ifdef USE_SYSTEM_GENESIS
 	PATH := \$(PATH)
@@ -317,7 +313,7 @@ manifest: check
 	@PATH=\$(PATH) genesis build
 
 deploy: check
-	@VAULT_ADDR=\$(save_VAULT_ADDR) PATH=\$(PATH) REDACT= genesis deploy
+	@PATH=\$(PATH) genesis deploy
 
 refresh: check
 	@PATH=\$(PATH) genesis refresh
@@ -1883,8 +1879,8 @@ cmd_deploy() {
 	must_be_in_an_environment
 	case ${DEPLOYMENT_TYPE} in
 	(normal)
-		(VAULT_ADDR= cmd_build manifest.yml) || exit 3
-		(            cmd_build .deploy.yml)  || exit 4
+		(VAULT_ADDR= REDACT=y cmd_build manifest.yml) || exit 3
+		(            REDACT=  cmd_build .deploy.yml)  || exit 4
 		[[ -n $DEBUG_LEAVE_THE_CREDS_THERE ]] || \
 			trap "rm -f ${DEPLOYMENT_ENV_DIR}/manifests/.deploy.yml" QUIT TERM INT EXIT
 
@@ -1893,8 +1889,8 @@ cmd_deploy() {
 		;;
 
 	(bosh-init)
-		(VAULT_ADDR= cmd_build manifest.yml) || exit 3
-		(            cmd_build .deploy.yml)  || exit 4
+		(VAULT_ADDR= REDACT=y cmd_build manifest.yml) || exit 3
+		(            REDACT=  cmd_build .deploy.yml)  || exit 4
 		[[ -n $DEBUG_LEAVE_THE_CREDS_THERE ]] || \
 			trap "rm -f ${DEPLOYMENT_ENV_DIR}/manifests/.deploy.yml" QUIT TERM INT EXIT
 
@@ -2730,8 +2726,8 @@ cmd_ci_repipe() {
 
 	ci_repipe_build_base
 	ci_repipe_build_environments
-	VAULT_ADDR= ci_repipe_merge pipeline.yml || exit 3
-	            ci_repipe_merge .deploy.yml  || exit 4
+	VAULT_ADDR= REDACT=y ci_repipe_merge pipeline.yml || exit 3
+	            REDACT=  ci_repipe_merge .deploy.yml  || exit 4
 	[[ -n $DEBUG_LEAVE_THE_CREDS_THERE ]] || \
 		trap "rm -f ${DEPLOYMENT_ROOT}/ci/.deploy.yml" QUIT TERM INT EXIT
 
@@ -2907,8 +2903,8 @@ EOF
 		echo
 		set -e
 		need_a_vault
-		(VAULT_ADDR= cmd_build live.yml)    || exit 3
-		(            cmd_build .deploy.yml) || exit 4
+		(VAULT_ADDR= REDACT=y cmd_build live.yml)    || exit 3
+		(            REDACT=  cmd_build .deploy.yml) || exit 4
 
 		local target=$(spruce json ${DEPLOYMENT_ENV_DIR}/manifests/live.yml | jq -r '.director_uuid')
 		line
@@ -2972,7 +2968,7 @@ cmd_bosh() {
 
 	case ${DEPLOYMENT_TYPE} in
 	(normal)
-		(cmd_build .deploy.yml) || exit 3
+		(REDACT= cmd_build .deploy.yml) || exit 3
 		[[ -n $DEBUG_LEAVE_THE_CREDS_THERE ]] || \
 			trap "rm -f ${DEPLOYMENT_ENV_DIR}/manifests/.deploy.yml" QUIT TERM INT EXIT
 
