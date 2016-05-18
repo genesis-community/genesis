@@ -913,11 +913,25 @@ create_normal_environment() {
 	create_makefile ${root}/Makefile
 	create_environment_readme ${site} ${name} >${root}/README
 
-	for file in cloudfoundry credentials director monitoring name properties networking scaling; do
+	for file in cloudfoundry credentials director monitoring properties networking scaling; do
 		cat > ${root}/${file}.yml <<EOF
 --- {}
 EOF
 	done
+
+	local director_uuid
+	director_uuid=$(bosh status --uuid)
+	if [[ "$?" -eq 0 ]] ; then
+		cat <<EOF > ${root}/director.yml
+---
+director_uuid: ${director_uuid}
+EOF
+	fi
+
+	cat <<EOF > ${root}/name.yml
+----
+name: ${site}-${name}-${DEPLOYMENT_NAME}
+EOF
 
 	refresh_global ${site} ${name}
 	refresh_site   ${site} ${name}
