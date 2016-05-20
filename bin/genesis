@@ -928,10 +928,24 @@ director_uuid: ${director_uuid}
 EOF
 	fi
 
+	export VAULT_PREFIX=secret/${site}/$name/${DEPLOYMENT_NAME}
 	cat <<EOF > ${root}/name.yml
 ----
 name: ${site}-${name}-${DEPLOYMENT_NAME}
+meta:
+  vault_prefix: ${VAULT_PREFIX}
 EOF
+
+	if [[ -d ${DEPLOYMENT_ROOT}/.env_hooks ]]; then
+		pushd ${DEPLOYMENT_ROOT}/.env_hooks
+		for file in *; do
+			if [[ -f ${file} && -x ${file} ]]; then
+				echo "Running env setup hook: ${file}"
+				./${file}
+			fi
+		done
+		popd
+	fi
 
 	refresh_global ${site} ${name}
 	refresh_site   ${site} ${name}
@@ -996,6 +1010,25 @@ create_bosh_init_environment() {
 --- {}
 EOF
 	done
+
+	export VAULT_PREFIX=secret/${site}/$name/${DEPLOYMENT_NAME}
+	cat <<EOF > ${root}/name.yml
+----
+name: ${site}-${name}-${DEPLOYMENT_NAME}
+meta:
+  vault_prefix: ${VAULT_PREFIX}
+EOF
+
+	if [[ -d ${DEPLOYMENT_ROOT}/.env_hooks ]]; then
+		pushd ${DEPLOYMENT_ROOT}/.env_hooks
+		for file in *; do
+			if [[ -f ${file} && -x ${file} ]]; then
+				echo "Running env setup hook: ${file}"
+				./${file}
+			fi
+		done
+		popd
+	fi
 
 	refresh_global ${site} ${name}
 	refresh_site   ${site} ${name}
