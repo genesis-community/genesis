@@ -79,17 +79,6 @@ line() {
 	echo
 }
 
-auto_sed() {
-	cmd=$1
-	shift
-
-	if [[ "$(uname -s)" == "Darwin" ]]; then
-		sed -E -e "$cmd"
-	else
-		sed -r -e "$cmd"
-	fi
-}
-
 version_checker() {
 	if [[ $1 == $2 ]]
 	then
@@ -136,21 +125,21 @@ setup() {
 	if [[ -f ${DEPLOYMENT_ROOT}/.genesis_deps ]]; then
 		errors=""
 		while IFS='' read -r line || [[ -n "$line" ]]; do
-			cmd=$(echo $line | cut -d ":" -f1)
-			version=$(echo $line | cut -d ":" -f2- | auto_sed 's/^ +//' | auto_sed 's/ +$//')
+			cmd=$(echo $line | perl -pe 's|^(.*?):.*$|$1|')
+			ver=$(echo $line | perl -pe 's|^.*?: *(.*)$|$1|')
 			if [[ ! -x $(which ${cmd}) ]]; then
 				errors="This genesis deployment requires the '${cmd}' command\n${errors}"
 				continue
 			fi
-			if [[ ${version} != "null" && ${version} != '~' ]]; then
+			if [[ ${ver} != "null" && ${ver} != '~' ]]; then
 				current_version=$(${cmd} -v 2>&1 | perl -pe 's|.*?(\d+\.\d+(\.\d+)*).*|$1|')
 				if [[ -z ${current_version} || $(echo ${current_version} | egrep '[^0-9\.]') ]]; then
-					errors="This genesis deployment requires ${cmd} version ${version}, but the current version could not be parsed\n${errors}"
+					errors="This genesis deployment requires ${cmd} version ${ver}, but the current ver could not be parsed\n${errors}"
 					echo ${current_version}
 					continue
 				fi
-				if ! version_checker ${current_version} ${version}; then
-					errors="This genesis deployment requires ${cmd} version ${version} (found ${current_version})\n${errors}"
+				if ! version_checker ${current_version} ${ver}; then
+					errors="This genesis deployment requires ${cmd} version ${ver} (found ${current_version})\n${errors}"
 					continue
 				fi
 			fi
@@ -999,23 +988,22 @@ director_uuid: ${director_uuid}
 EOF
 	fi
 
-	export VAULT_PREFIX=secret/${site}/$name/${DEPLOYMENT_NAME}
+	VAULT_PREFIX=secret/${site}/$name/${DEPLOYMENT_NAME}
 	cat <<EOF > ${root}/name.yml
-----
+---
 name: ${site}-${name}-${DEPLOYMENT_NAME}
 meta:
   vault_prefix: ${VAULT_PREFIX}
 EOF
 
 	if [[ -d ${DEPLOYMENT_ROOT}/.env_hooks ]]; then
-		pushd ${DEPLOYMENT_ROOT}/.env_hooks
-		for file in *; do
+		for file in ${DEPLOYMENT_ROOT}/.env_hooks/*; do
 			if [[ -f ${file} && -x ${file} ]]; then
 				echo "Running env setup hook: ${file}"
-				./${file}
+				export VAULT_PREFIX DEPLOYMENT_NAME DEPLOYMENT_SITE
+				${file}
 			fi
 		done
-		popd
 	fi
 
 	refresh_global ${site} ${name}
@@ -1082,23 +1070,22 @@ create_bosh_init_environment() {
 EOF
 	done
 
-	export VAULT_PREFIX=secret/${site}/$name/${DEPLOYMENT_NAME}
+	VAULT_PREFIX=secret/${site}/$name/${DEPLOYMENT_NAME}
 	cat <<EOF > ${root}/name.yml
-----
+---
 name: ${site}-${name}-${DEPLOYMENT_NAME}
 meta:
   vault_prefix: ${VAULT_PREFIX}
 EOF
 
 	if [[ -d ${DEPLOYMENT_ROOT}/.env_hooks ]]; then
-		pushd ${DEPLOYMENT_ROOT}/.env_hooks
-		for file in *; do
+		for file in ${DEPLOYMENT_ROOT}/.env_hooks/*; do
 			if [[ -f ${file} && -x ${file} ]]; then
 				echo "Running env setup hook: ${file}"
-				./${file}
+				export VAULT_PREFIX DEPLOYMENT_NAME DEPLOYMENT_SITE
+				${file}
 			fi
 		done
-		popd
 	fi
 
 	refresh_global ${site} ${name}
