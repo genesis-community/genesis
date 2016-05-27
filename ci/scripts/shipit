@@ -54,7 +54,7 @@ pushd $REPO_ROOT
 mkdir artifacts
 cp bin/${BINARY} artifacts/${BINARY}
 auto_sed artifacts/${BINARY} "s/^VERSION=.*/VERSION=\"v${VERSION}\"/"
-./${BINARY} -v | grep ${VERSION}
+artifacts/${BINARY} -v | grep ${VERSION}
 popd
 
 echo "v${VERSION}"                         > ${RELEASE_ROOT}/tag
