@@ -1,5 +1,5 @@
 #!/bin/bash
-VERSION=1.4.0
+VERSION=1.5.0
 
 USERNAME=$(whoami)
 CANON_REPO=https://github.com/starkandwayne/genesis
@@ -79,6 +79,38 @@ line() {
 	echo
 }
 
+version_checker() {
+	if [[ $1 == $2 ]]
+	then
+		return 0
+	fi
+	local IFS=.
+	local i actual=($1) expected=($2)
+	# fill empty fields in actual with zeros
+	for ((i=${#actual[@]}; i<${#expected[@]}; i++))
+	do
+		actual[i]=0
+	done
+	actual_numeric=0
+	expected_numeric=0
+	for ((i=0; i<${#actual[@]}; i++))
+	do
+		if [[ -z ${expected[i]} ]]
+		then
+			# fill empty fields in expected with zeros
+			expected[i]=0
+		fi
+		actual_numeric=$((actual_numeric+${actual[i]}*1000**(${#actual[@]}-i)))
+		expected_numeric=$((expected_numeric+${expected[i]}*1000**(${#expected[@]}-i)))
+	done
+
+
+	if [[ ${actual_numeric} < ${expected_numeric} ]]; then
+		return 1
+	fi
+	return 0
+}
+
 setup() {
 	if [[ ${DEPLOYMENT_ROOT:-unset} != "unset" ]]; then
 		return
@@ -88,6 +120,34 @@ setup() {
 	if [[ -z ${DEPLOYMENT_ROOT:-} ]]; then
 		echo >&2 "Unable to determine Genesis DEPLOYMENT_ROOT"
 		exit 3
+	fi
+
+	if [[ -f ${DEPLOYMENT_ROOT}/.genesis_deps ]]; then
+		errors=""
+		while IFS='' read -r line || [[ -n "$line" ]]; do
+			cmd=$(echo $line | perl -pe 's|^(.*?):.*$|$1|')
+			ver=$(echo $line | perl -pe 's|^.*?: *(.*)$|$1|')
+			if [[ ! -x $(which ${cmd}) ]]; then
+				errors="This genesis deployment requires the '${cmd}' command\n${errors}"
+				continue
+			fi
+			if [[ ${ver} != "null" && ${ver} != '~' ]]; then
+				current_version=$(${cmd} -v 2>&1 | perl -pe 's|.*?(\d+\.\d+(\.\d+)*).*|$1|')
+				if [[ -z ${current_version} || $(echo ${current_version} | egrep '[^0-9\.]') ]]; then
+					errors="This genesis deployment requires ${cmd} version ${ver}, but the current version could not be parsed\n${errors}"
+					echo ${current_version}
+					continue
+				fi
+				if ! version_checker ${current_version} ${ver}; then
+					errors="This genesis deployment requires ${cmd} version ${ver} (found ${current_version})\n${errors}"
+					continue
+				fi
+			fi
+		done < ${DEPLOYMENT_ROOT}/.genesis_deps
+		if [[ -n ${errors} ]]; then
+			echo -e ${errors}
+			exit 1
+		fi
 	fi
 
 	# What type of deployment is this?
@@ -928,10 +988,27 @@ director_uuid: ${director_uuid}
 EOF
 	fi
 
+	VAULT_PREFIX=secret/${site}/$name/${DEPLOYMENT_NAME}
+	DEPLOYMENT_SITE=${site}
+	DEPLOYMENT_ENVIRONMENT=${name}
+	ENVIRONMENT_ROOT=${DEPLOYMENT_ROOT}/${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}
+
 	cat <<EOF > ${root}/name.yml
-----
+---
 name: ${site}-${name}-${DEPLOYMENT_NAME}
+meta:
+  vault_prefix: ${VAULT_PREFIX}
 EOF
+
+	if [[ -d ${DEPLOYMENT_ROOT}/.env_hooks ]]; then
+		for file in ${DEPLOYMENT_ROOT}/.env_hooks/*; do
+			if [[ -f ${file} && -x ${file} ]]; then
+				echo "Running env setup hook: ${file}"
+				export VAULT_PREFIX DEPLOYMENT_NAME DEPLOYMENT_SITE DEPLOYMENT_ENVIRONMENT DEPLOYMENT_ROOT ENVIRONMENT_ROOT
+				${file}
+			fi
+		done
+	fi
 
 	refresh_global ${site} ${name}
 	refresh_site   ${site} ${name}
@@ -996,6 +1073,28 @@ create_bosh_init_environment() {
 --- {}
 EOF
 	done
+
+	VAULT_PREFIX=secret/${site}/$name/${DEPLOYMENT_NAME}
+	DEPLOYMENT_SITE=${site}
+	DEPLOYMENT_ENVIRONMENT=${name}
+	ENVIRONMENT_ROOT=${DEPLOYMENT_ROOT}/${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}
+
+	cat <<EOF > ${root}/name.yml
+---
+name: ${site}-${name}-${DEPLOYMENT_NAME}
+meta:
+  vault_prefix: ${VAULT_PREFIX}
+EOF
+
+	if [[ -d ${DEPLOYMENT_ROOT}/.env_hooks ]]; then
+		for file in ${DEPLOYMENT_ROOT}/.env_hooks/*; do
+			if [[ -f ${file} && -x ${file} ]]; then
+				echo "Running env setup hook: ${file}"
+				export VAULT_PREFIX DEPLOYMENT_NAME DEPLOYMENT_SITE DEPLOYMENT_ENVIRONMENT DEPLOYMENT_ROOT ENVIRONMENT_ROOT=${DEPLOYMENT_ROOT}/${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}
+				${file}
+			fi
+		done
+	fi
 
 	refresh_global ${site} ${name}
 	refresh_site   ${site} ${name}
