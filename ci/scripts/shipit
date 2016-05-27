@@ -16,9 +16,9 @@ auto_sed() {
   shift
 
   if [[ "$(uname -s)" == "Darwin" ]]; then
-    sed -E -i='' -e "$cmd"
+    sed -E -i='' -e "$cmd" ${file}
   else
-    sed -r -i -e "$cmd"
+    sed -r -i -e "$cmd" ${file}
   fi
 }
 
