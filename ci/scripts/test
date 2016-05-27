@@ -1,0 +1,9 @@
+#!/bin/bash
+
+set -e
+
+echo 'Verifying that `genesis` is a valid bash script'
+cd ${REPO_ROOT}
+bin/genesis help >/dev/null 2>&1
+
+exit 0

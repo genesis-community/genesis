@@ -1,5 +1,5 @@
 #!/bin/bash
-VERSION=1.5.0
+VERSION="(development build)"
 
 USERNAME=$(whoami)
 CANON_REPO=https://github.com/starkandwayne/genesis
@@ -3153,7 +3153,7 @@ main() {
 		;;
 	(version|-v|--version)
 		s=$(cat ${BASH_SOURCE[0]} | checksum)
-		echo "genesis v${VERSION} (${s:0:12})"
+		echo "genesis ${VERSION} (${s:0:12})"
 		exit 0
 		;;
 	(help|-h|--help|-?)

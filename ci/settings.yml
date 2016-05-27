@@ -1,0 +1,17 @@
+---
+meta:
+  name: genesis
+  target: sw
+
+  aws:
+    access_key: (( vault "secret/pipelines/genesis/aws:access_key" ))
+    secret_key: (( vault "secret/pipelines/genesis/aws:secret_key" ))
+
+  github:
+    owner: starkandwayne
+    repo:  genesis
+    private_key:  (( vault "secret/pipelines/genesis/github:private" ))
+    access_token: (( vault "secret/pipelines/genesis/github:access_token" ))
+  slack:
+    webhook: FIXME
+    channel: "#genesis"
