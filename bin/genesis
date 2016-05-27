@@ -1075,6 +1075,10 @@ EOF
 	done
 
 	VAULT_PREFIX=secret/${site}/$name/${DEPLOYMENT_NAME}
+	DEPLOYMENT_SITE=${site}
+	DEPLOYMENT_ENVIRONMENT=${name}
+	ENVIRONMENT_ROOT=${DEPLOYMENT_ROOT}/${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}
+
 	cat <<EOF > ${root}/name.yml
 ---
 name: ${site}-${name}-${DEPLOYMENT_NAME}
