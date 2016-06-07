@@ -145,7 +145,7 @@ setup() {
 			fi
 		done < ${DEPLOYMENT_ROOT}/.genesis_deps
 		if [[ -n ${errors} ]]; then
-			echo -e ${errors}
+			echo -e ${errors} >&2
 			exit 1
 		fi
 	fi
@@ -1539,6 +1539,7 @@ EOF
 
 cmd_new_deployment() {
 	local dtype="normal"
+	local force_dtype=0
 	local root=$(pwd)
 	local name=""
 	local template=""
@@ -1548,6 +1549,7 @@ cmd_new_deployment() {
 		case ${arg} in
 		(-t|--type)
 			dtype=$1
+			force_dtype=1
 			shift
 			;;
 		(-T|--template)
@@ -1591,19 +1593,6 @@ cmd_new_deployment() {
 		exit 1
 	fi
 
-	if [[ -n ${template} ]]; then
-		local url=https://github.com/${template}
-		set -e
-		echo "cloning from template ${url}"
-		git clone --origin upstream ${url} ${root}/${name}-deployments
-		cd ${root}/${name}-deployments
-		git config --remove-section branch.master
-		cmd_embed >/dev/null
-		git add bin/genesis
-		git commit -m "Initial clone of templated ${name} deployment"
-		exit 0
-	fi
-
 	case ${dtype} in
 	(bosh) dtype=bosh-init ;;
 	(normal|microbosh|bosh-init) ;;
@@ -1612,6 +1601,24 @@ cmd_new_deployment() {
 		exit 1
 		;;
 	esac
+
+	if [[ -n ${template} ]]; then
+		local url=https://github.com/${template}
+		set -e
+		echo "cloning from template ${url}"
+		git clone --origin upstream ${url} ${root}/${name}-deployments
+		cd ${root}/${name}-deployments
+		git config --remove-section branch.master
+		cmd_embed >/dev/null
+		if [[ ${force_dtype} == 1 ]]; then
+			echo "setting deployment type to ${dtype}"
+			echo ${dtype} > .deployment
+			git add .deployment
+		fi
+		git add bin/genesis
+		git commit -m "Initial clone of templated ${name} deployment"
+		exit 0
+	fi
 
 	DEPLOYMENT_TYPE=${dtype}
 	DEPLOYMENT_NAME=${name}
