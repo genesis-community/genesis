@@ -1405,12 +1405,12 @@ USAGE: genesis new deployment [options] NAME
 
   OPTIONS
 
-    -T, --type <type>
+    -t, --type <type>
 
         Generate a different type of deployment.  Valid values are
         'bosh-init' and 'normal' (the default is 'normal').
 
-    -t, --template <name>
+    -T, --template <name>
 
         Base the deployment off of an upstream Genesis template, by
         cloning a repository from github.com and using that.
@@ -1433,7 +1433,7 @@ USAGE: genesis new site [options] NAME
 
   OPTIONS
 
-    -t, --template <name>
+    -T, --template <name>
 
         Base the new site off of a site template.
 
