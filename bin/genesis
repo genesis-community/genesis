@@ -154,7 +154,6 @@ setup() {
 	#
 	#    normal    - A normal deployment
 	#    bosh      - A BOSH deployment (currently-favored type)
-	#    microbosh - MicroBOSH deployment
 	#    bosh-init - A bosh-init BOSH deployment
 	#
 	DEPLOYMENT_TYPE=normal
@@ -164,7 +163,7 @@ setup() {
 
 	case ${DEPLOYMENT_TYPE} in
 	(bosh) DEPLOYMENT_TYPE=bosh-init ;;
-	(normal|bosh-init|microbosh) ;;
+	(normal|bosh-init) ;;
 	(*) echo >&2 "Unrecognized deployment type: ${DEPLOYMENT_TYPE}"
 	    exit 3 ;;
 	esac
@@ -466,23 +465,6 @@ propagate to any newly-created environments, but you will need to run a
 refresh for existing environments to receive those updates.
 EOF
 		;; # }}}
-	(microbosh) # {{{
-		cat <<EOF
-Global Definitions
-
-This directory contains templates that describe the common elements of MicroBOSH
-deployments, to be shared (and possibly overridden) by sites and environments.
-
-  global/deployment.yml       Define the global structure of all MicroBOSH
-                              deployments, with the correct param calls to remind
-                              template writers to override the correct things.
-
-
-NOTE: If you make changes to the templates in here, they will automatically
-propagate to any newly-created environments, but you will need to run a
-refresh for existing environments to receive those updates.
-EOF
-		;; # }}}
 	(bosh-init) # {{{
 		cat <<EOF
 Global Definitions
@@ -545,26 +527,6 @@ settings and site-wide properties.  The templates are merged in the following or
   site/properties.yml         Define properties (both globally and per-job),
                               that are specific to this environment.  These will
                               most likely override global properties.
-
-
-NOTE: If you make changes to the templates in here, they will automatically
-propagate to any newly-created environments, but you will need to run a
-refresh for existing environments to receive those updates.
-EOF
-		;; # }}}
-	(microbosh) # {{{
-		cat<<EOF
-Site Definitions (${site})
-
-This directory contains templates that describe the infrastructure-specific
-settings and site-wide properties.  The templates are merged in the following order:
-
-  site/infra.yml              Define infrastructure-specific settings for
-                              this MicroBOSH deployment, including resources,
-                              cloud properties, etc.
-
-  site/scaling.yml            Define sizing properties for things like number
-                              of director threads, RAM/CPU/Disk sizing, etc.
 
 
 NOTE: If you make changes to the templates in here, they will automatically
@@ -657,31 +619,6 @@ the final BOSH manifest from all of the constituent templates.
 Run \`make' to see some help, or \`make manifest' to just rebuild.
 EOF
 		;; # }}}
-	(microbosh) # {{{
-		cat <<EOF
-Environment Definitions (${site}/${name})
-
-This directory contains templates that describe the environment-specific
-settings of a single MicroBOSH deployment.  These templates will be combined
-with the global and site templates to produce a single manifest suitable for
-deployment via \`bosh micro'.  The templates are merged in the following order:
-
-  infra.yml                   Configure the Infrastructure that this MicroBOSH will
-                              be deployed on top of.
-
-  scaling.yml                 Define the scaling properties for this deployment,
-                              including things like disk sizing, RAM, etc.
-
-  director.yml                Identify the BOSH director UUID for this deployment.
-
-  name.yml                    Specify the name of this MicroBOSH deployment.
-
-
-This directory also contains a Makefile that makes it easier to build
-the final manifest from all of the constituent templates.
-Run \`make' to see some help, or \`make manifest' to just rebuild.
-EOF
-		;; # }}}
 	(bosh-init) # {{{
 		cat <<EOF
 Environment Definitions (${site}/${name})
@@ -735,58 +672,6 @@ EOF
 --- {}
 EOF
 	done
-}
-
-create_microbosh_deployment() {
-	setup
-	echo "microbosh" > ${DEPLOYMENT_ROOT}/.deployment
-	mkdir -p ${DEPLOYMENT_ROOT}/global
-
-	create_root_readme   >${DEPLOYMENT_ROOT}/README.md
-	create_global_readme >${DEPLOYMENT_ROOT}/global/README
-
-	cat > ${DEPLOYMENT_ROOT}/global/deployment.yml <<EOF
----
-name: (( param "Please specify a name for your MicroBOSH deployment" ))
-network: (( param "Please define a network for your MicroBOSH deployment" ))
-resources:
-  persistent_disk:  (( param "Please define your persistent disk configuration" ))
-  cloud_properties: (( param "Please define your infrastructure's cloud properties" ))
-cloud:
-  plugin: (( param "site does not define cloud.plugin" ))
-  properties:
-    agent:
-      ntp:
-      - 0.pool.ntp.org
-      - 1.pool.ntp.org
-      - 2.pool.ntp.org
-      - 3.pool.ntp.org
-
-apply_spec:
-  agent:
-    blobstore:
-      address: (( param "Please define an address for your blobstore" ))
-    nats:
-      address: (( param "Please define an address for your nats message broker" ))
-  properties:
-    director:
-      max_threads: 5
-    ntp: (( grab cloud.properties.agent.ntp ))
-    registry:
-      address: (( param "Please define an address for the registry" ))
-    hm:
-      pagerduty_enabled: false
-      pagerduty:         ~
-
-      graphite_enabled:  false
-      graphite:          ~
-
-      datadog_enabled:   false
-      datadog:           ~
-
-      director_account:  (( param "Please provide the BOSH account name to use for health monitoring" ))
-      resurrector_enabled: true
-EOF
 }
 
 create_bosh_init_deployment() {
@@ -875,29 +760,6 @@ EOF
 	(cd ${DEPLOYMENT_ROOT}/global/releases ; ls -1) > ${DEPLOYMENT_ROOT}/${site}/site/releases
 
 	echo "Created site ${site}:"
-	tree "${DEPLOYMENT_ROOT}/${site}"
-	echo
-	echo
-}
-
-create_microbosh_site() {
-	setup
-	local site=${1:?create_normal_site() - no site provided}
-
-	check_site_name ${site}
-
-	mkdir -p ${DEPLOYMENT_ROOT}/${site}
-	mkdir -p ${DEPLOYMENT_ROOT}/${site}/site
-
-	create_site_readme ${site} >${DEPLOYMENT_ROOT}/${site}/site/README
-
-	for file in infra scaling; do
-		cat > ${DEPLOYMENT_ROOT}/${site}/site/${file}.yml <<EOF
---- {}
-EOF
-	done
-
-	echo "Created MicroBOSH site ${site}:"
 	tree "${DEPLOYMENT_ROOT}/${site}"
 	echo
 	echo
@@ -1014,38 +876,6 @@ EOF
 	refresh_site   ${site} ${name}
 
 	echo "Created environment ${site}/${name}:"
-	tree ${root}
-	echo
-	echo
-}
-
-create_microbosh_environment() {
-	setup
-	local site=${1:?create_microbosh_environment() - no site provided}
-	local name=${2:?create_microbosh_environment() - no environment name provided}
-	local root=$(env_root ${site} ${name})
-
-	check_site_name ${site}
-	check_environment_name ${name}
-
-	if [[ ! -d "${DEPLOYMENT_ROOT}/${site}" ]]; then
-		create_microbosh_site ${site}
-	fi
-
-	mkdir -p ${root}
-	create_makefile ${root}/Makefile
-	create_environment_readme ${site} ${name} >${root}/README
-
-	for file in director infra name scaling; do
-		cat > ${root}/${file}.yml <<EOF
---- {}
-EOF
-	done
-
-	refresh_global ${site} ${name}
-	refresh_site   ${site} ${name}
-
-	echo "Created environment ${site}/${env}:"
 	tree ${root}
 	echo
 	echo
@@ -1206,29 +1036,6 @@ build_normal_manifest() {
 	rm -f ${DEPLOYMENT_ENV_DIR}/.begin.yml
 
 	if [[ $rc != 0 ]]; then
-		echo >&2 "Failed to merge templates; bailing..."
-		exit 5
-	fi
-}
-
-build_microbosh_manifest() {
-	must_be_in_an_environment
-	need_command spruce
-
-	(cd ${DEPLOYMENT_ENV_DIR}
-	 spruce $SPRUCE_OPTS merge --prune meta \
-	    $(actual_yaml_files \
-	        .global/deployment.yml \
-	        \
-	        .site/infra.yml \
-	        .site/scaling.yml \
-	        \
-	        infra.yml \
-	        scaling.yml \
-	        director.yml \
-	        name.yml))
-
-	if [[ $? != 0 ]]; then
 		echo >&2 "Failed to merge templates; bailing..."
 		exit 5
 	fi
@@ -1606,7 +1413,7 @@ cmd_new_deployment() {
 
 	case ${dtype} in
 	(bosh) dtype=bosh-init ;;
-	(normal|microbosh|bosh-init) ;;
+	(normal|bosh-init) ;;
 	(*)
 		echo >&2 "Error: unrecognized deployment type '${dtype}'"
 		exit 1
@@ -1621,9 +1428,6 @@ cmd_new_deployment() {
 	case ${DEPLOYMENT_TYPE} in
 	(normal)
 		create_normal_deployment
-		;;
-	(microbosh)
-		create_microbosh_deployment
 		;;
 	(bosh-init)
 		create_bosh_init_deployment
@@ -1690,9 +1494,6 @@ cmd_new_site() {
 	(normal)
 		create_normal_site ${name}
 		;;
-	(microbosh)
-		create_microbosh_site ${name}
-		;;
 	(bosh-init)
 		create_bosh_init_site ${name}
 		;;
@@ -1708,9 +1509,6 @@ cmd_new_environment() {
 	case ${DEPLOYMENT_TYPE} in
 	(normal)
 		create_normal_environment ${site} ${name}
-		;;
-	(microbosh)
-		create_microbosh_environment ${site} ${name}
 		;;
 	(bosh-init)
 		create_bosh_init_environment ${site} ${name}
@@ -1912,9 +1710,6 @@ cmd_build() {
 	(normal)
 		build_normal_manifest > ${DEPLOYMENT_ENV_DIR}/manifests/${target}
 		;;
-	(microbosh)
-		build_microbosh_manifest > ${DEPLOYMENT_ENV_DIR}/manifests/${target}
-		;;
 	(bosh-init)
 		build_bosh_init_manifest > ${DEPLOYMENT_ENV_DIR}/manifests/${target}
 		;;
@@ -2026,11 +1821,6 @@ cmd_deploy() {
 
 		bosh-init deploy ${DEPLOYMENT_ENV_DIR}/manifests/.deploy.yml
 		exit $?
-		;;
-
-	(microbosh)
-		echo >&2 "MicroBOSH deployments do not currently support the \`deploy' command"
-		exit 1
 		;;
 	esac
 }
@@ -3092,11 +2882,6 @@ cmd_bosh() {
 
 		bosh -d ${DEPLOYMENT_ENV_DIR}/manifests/.deploy.yml $@
 		exit $?
-		;;
-
-	(microbosh)
-		echo >&2 "MicroBOSH deployments do not currently support the \`bosh' command"
-		exit 1
 		;;
 
 	(bosh-init)
