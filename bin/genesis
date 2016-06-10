@@ -1627,7 +1627,11 @@ cmd_use_stemcell() {
 	echo "${name}"    > ${DEPLOYMENT_SITE_DIR}/site/stemcell/name
 	echo "${version}" > ${DEPLOYMENT_SITE_DIR}/site/stemcell/version
 
-	echo "Site ${DEPLOYMENT_SITE} is now using stemcell ${name} v${version}"
+	if [[ ${version} == "latest" ]]; then
+		echo "Site ${DEPLOYMENT_SITE} is now using the latest version of stemcell ${name}"
+	else
+		echo "Site ${DEPLOYMENT_SITE} is now using stemcell ${name} v${version}"
+	fi
 	exit 0
 }
 
