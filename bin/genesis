@@ -873,6 +873,13 @@ EOF
 				echo "Running env setup hook: ${file}"
 				export VAULT_PREFIX DEPLOYMENT_NAME DEPLOYMENT_SITE DEPLOYMENT_ENVIRONMENT DEPLOYMENT_ROOT ENVIRONMENT_ROOT
 				${file}
+				local rc=$?
+				if [[ $rc -ne 0 ]]; then
+					echo "Setup script bailed (exit ${rc})."
+					echo "Tearing down ${DEPLOYMENT_SITE}/${DEPLOYMENT_ENV} environment..."
+					rm -rf ${ENVIRONMENT_ROOT}
+					exit 1
+				fi
 			fi
 		done
 	fi
