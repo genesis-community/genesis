@@ -105,7 +105,7 @@ version_checker() {
 	done
 
 
-	if [[ ${actual_numeric} < ${expected_numeric} ]]; then
+	if [[ ${actual_numeric} -lt ${expected_numeric} ]]; then
 		return 1
 	fi
 	return 0
