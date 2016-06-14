@@ -132,6 +132,11 @@ setup() {
 				continue
 			fi
 			if [[ ${ver} != "null" && ${ver} != '~' ]]; then
+				dev_version=$(${cmd} -v 2>&1 | perl -pe 's/.*development.*/DEV/')
+				if [[ ${dev_version} == "DEV" ]]; then
+					echo "Treating 'development' version as up-to-date with ${ver}"
+					continue
+				fi
 				current_version=$(${cmd} -v 2>&1 | perl -pe 's|.*?(\d+\.\d+(\.\d+)*).*|$1|')
 				if [[ -z ${current_version} || $(echo ${current_version} | egrep '[^0-9\.]') ]]; then
 					errors="This genesis deployment requires ${cmd} version ${ver}, but the current version could not be parsed\n${errors}"
