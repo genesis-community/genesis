@@ -17,7 +17,7 @@ For reasons of sanity, these environments should all be deployed
 on similar infrastructure, like Amazon EC2 or a hosted VMWare ESXi
 cluster.
 
-Challenge arise when you need to make changes to the "common
+Challenges arise when you need to make changes to the "common
 elements" of these different environments, like what AWS region
 the deployments should be done in, or what version of the BOSH
 release is being deployed.  Without intense discipline, these
