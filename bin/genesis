@@ -4,6 +4,12 @@ VERSION="(development build)"
 USERNAME=$(whoami)
 CANON_REPO=https://github.com/starkandwayne/genesis
 
+GENESIS_INDEX=${GENESIS_INDEX:-https://genesis.starkandwayne.com}
+GENESIS_INDEX=${GENESIS_INDEX%/}
+if [[ ${GENESIS_INDEX} = "no" ]]; then
+	GENESIS_INDEX=
+fi
+
 ####################################################
 # common functions used by other parts of Genesis
 
@@ -981,6 +987,25 @@ normal_site_metadata() {
 	fi
 	local stemcell_version=$(cat "${DEPLOYMENT_ENV_DIR}/.site/stemcell/version")
 
+	local stemcell_url=""
+	if [[ -f "${DEPLOYMENT_ENV_DIR}/.site/stemcell/url" ]]; then
+		stemcell_url=$(cat "${DEPLOYMENT_ENV_DIR}/.site/stemcell/url")
+	fi
+	local stemcell_sha1=""
+	if [[ -f "${DEPLOYMENT_ENV_DIR}/.site/stemcell/sha1" ]]; then
+		stemcell_sha1=$(cat "${DEPLOYMENT_ENV_DIR}/.site/stemcell/sha1")
+	fi
+	if [[ -z ${stemcell_url} ]]; then
+		if [[ -n ${GENESIS_INDEX} ]]; then
+			echo >&2 "Checking ${GENESIS_INDEX} for correct URL/SHA1 of stemcell ${stemcell_name}/${stemcell_version}"
+			stemcell_url=$(    check_index url     stemcell "${stemcell_name}" ${stemcell_version})
+			stemcell_sha1=$(   check_index sha1    stemcell "${stemcell_name}" ${stemcell_version})
+			stemcell_version=$(check_index version stemcell "${stemcell_name}" ${stemcell_version})
+		fi
+	elif [[ -z ${stemcell_sha1} ]]; then
+		stemcell_sha1=$(curl -Lsk ${stemcell_url} | checksum | awk '{print $1}')
+	fi
+
 	if [[ ! -f "${DEPLOYMENT_ENV_DIR}/.site/releases" ]]; then
 		echo >&2 "Error: no releases listed for site"
 		exit 2
@@ -1003,12 +1028,43 @@ normal_site_metadata() {
 meta:
   stemcell:
     name: ${stemcell_name}
-    version: "${stemcell_version}"
-releases:
+    version: ${stemcell_version}
 EOF
+	if [[ -n ${stemcell_url} ]]; then
+		echo "    url: ${stemcell_url}"
+	fi
+	if [[ -n ${stemcell_sha1} ]]; then
+		echo "    sha1: ${stemcell_sha1}"
+	fi
+	echo "releases:"
+
 	for rel in ${releases}; do
+		local release_version=$(cat ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/version)
+		local release_url=""
+		if [[ -f ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/url ]]; then
+			release_url=$(cat ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/url)
+		fi
+		local release_sha1=""
+		if [[ -f ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/sha1 ]]; then
+			release_sha1=$(cat ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/sha1)
+		fi
+		if [[ -z ${release_url} ]]; then
+			if [[ -n ${GENESIS_INDEX} ]]; then
+				echo >&2 "Checking ${GENESIS_INDEX} for correct URL/SHA1 of release ${rel}/${release_version}"
+				release_url=$(    check_index url     release "${rel}" ${release_version})
+				release_sha1=$(   check_index sha1    release "${rel}" ${release_version})
+				release_version=$(check_index version release "${rel}" ${release_version})
+			fi
+		fi
+
 		echo "  - name: ${rel}"
-		echo "    version: \"$(cat ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/version)\""
+		echo "    version: ${release_version}"
+		if [[ -n ${release_url} ]]; then
+			echo "    url: \"${release_url}\""
+		fi
+		if [[ -n ${release_sha1} ]]; then
+			echo "    sha1: \"${release_sha1}\""
+		fi
 	done
 }
 
@@ -1545,9 +1601,23 @@ EOF
 	exit 1
 }
 
+check_index() {
+	local want=${1:?check_index() - no desired attribute provided}
+	local type=${2:?check_index() - no type provided}
+	local name=${3:?check_index() - no name provided}
+	local vers=${4:-}
+
+	if [[ -n ${vers} && ${vers} != "latest" ]]; then
+		curl -Lsk ${GENESIS_INDEX}/v1/${type}/${name}/v/${vers} | jq -r .${want} 2>/dev/null
+	else
+		curl -Lsk ${GENESIS_INDEX}/v1/${type}/${name}/latest    | jq -r .${want} 2>/dev/null
+	fi
+}
+
 cmd_add_release() {
-	local release=${1:?USAGE: genesis add relese NAME VERSION}
+	local release=${1:?USAGE: genesis add relese NAME [VERSION] [URL]}
 	local version=${2:-latest}
+	local url=${3:-}
 
 	setup
 	if [[ -d ${DEPLOYMENT_ROOT}/global/releases/${release} ]]; then
@@ -1560,6 +1630,11 @@ cmd_add_release() {
 		echo "Using the latest version of ${release}"
 	else
 		echo "Using v${version} of ${release}"
+	fi
+
+	if [[ -n ${url} ]]; then
+		echo ${url} > ${DEPLOYMENT_ROOT}/global/releases/${release}/url
+		echo "  (from ${url})"
 	fi
 	exit 0
 }
