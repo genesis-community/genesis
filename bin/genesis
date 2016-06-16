@@ -1417,8 +1417,14 @@ cmd_new_deployment() {
 		git clone --origin upstream ${url} ${root}/${name}-deployments
 		cd ${root}/${name}-deployments
 		git config --remove-section branch.master
+
 		cmd_embed
 		git add bin/genesis
+
+		create_root_readme   >README.md
+		create_global_readme >global/README
+
+		git add .
 		git commit -m "Initial clone of templated ${name} deployment"
 		exit 0
 	fi
