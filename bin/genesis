@@ -1216,6 +1216,7 @@ EOF
 	(new\ deployment)
 		cat >&2 <<EOF
 USAGE: genesis new deployment [options] NAME
+       genesis new deployment --template TEMPLATE [NAME]
 
   Create a new deployment, complete with all the correct templates in
   global/, and a base configuration.  This will create a sub-directory
