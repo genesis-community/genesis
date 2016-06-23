@@ -1559,10 +1559,15 @@ cmd_new_site() {
 }
 
 cmd_new_environment() {
-	local site=${1:?USAGE: genesis new environment SITE NAME}
-	local name=${2:?USAGE: genesis new environment SITE NAME}
+	local site=${1:-}
+	local name=${2:-}
 
 	setup
+	if [[ -n ${DEPLOYMENT_SITE} && -z ${name} ]]; then
+		name=${site}
+		site=${DEPLOYMENT_SITE}
+	fi
+
 	case ${DEPLOYMENT_TYPE} in
 	(normal)
 		create_normal_environment ${site} ${name}

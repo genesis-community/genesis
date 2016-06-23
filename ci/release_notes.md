@@ -24,6 +24,9 @@
 - `genesis use stemcell` now defaults to 'latest' version,
   just like `genesis add release`.  Fixes #36
 
+- `genesis new environment` now defaults to the current site if no
+  site name is given.  Fixes #28
+
 # Bug Fixes
 
 - Fix typo in environment teardown messaging.
