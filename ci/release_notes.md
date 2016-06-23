@@ -21,5 +21,8 @@
   easily do so by pushing the [genesis-index][index] app to their
   Cloud Foundry instance.
 
+- `genesis use stemcell` now defaults to 'latest' version,
+  just like `genesis add release`.  Fixes #36
+
 
 [index]: https://github.com/starkandwayne/genesis-index

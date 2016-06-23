@@ -1702,7 +1702,7 @@ cmd_use_release() {
 
 cmd_use_stemcell() {
 	name=${1:?USAGE: genesis use stemcell NAME VERSION}
-	version=${2:?USAGE: genesis use stemcell NAME VERSION}
+	version=${2:-latest}
 
 	must_be_in_a_site
 
