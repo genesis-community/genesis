@@ -882,7 +882,7 @@ EOF
 				local rc=$?
 				if [[ $rc -ne 0 ]]; then
 					echo "Setup script bailed (exit ${rc})."
-					echo "Tearing down ${DEPLOYMENT_SITE}/${DEPLOYMENT_ENV} environment..."
+					echo "Tearing down ${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT} environment..."
 					rm -rf ${ENVIRONMENT_ROOT}
 					exit 1
 				fi

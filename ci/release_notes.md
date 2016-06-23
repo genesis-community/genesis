@@ -24,5 +24,8 @@
 - `genesis use stemcell` now defaults to 'latest' version,
   just like `genesis add release`.  Fixes #36
 
+# Bug Fixes
+
+- Fix typo in environment teardown messaging.
 
 [index]: https://github.com/starkandwayne/genesis-index
