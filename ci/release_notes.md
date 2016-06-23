@@ -27,6 +27,9 @@
 - `genesis new environment` now defaults to the current site if no
   site name is given.  Fixes #28
 
+- Templated site creation now provides similar output to normal
+  site creation (including the `tree` output).  Fixes #29
+
 # Bug Fixes
 
 - Fix typo in environment teardown messaging.

@@ -769,11 +769,6 @@ EOF
 	done
 
 	(cd ${DEPLOYMENT_ROOT}/global/releases ; ls -1) > ${DEPLOYMENT_ROOT}/${site}/site/releases
-
-	echo "Created site ${site}:"
-	tree "${DEPLOYMENT_ROOT}/${site}"
-	echo
-	echo
 }
 
 create_bosh_init_site() {
@@ -1544,17 +1539,23 @@ cmd_new_site() {
 		mkdir -p ${DEPLOYMENT_ROOT}/${name}
 		cp -a ${DEPLOYMENT_ROOT}/.templates/${template} ${DEPLOYMENT_ROOT}/${name}/site
 		create_site_readme ${name} >${DEPLOYMENT_ROOT}/${name}/README
-		exit 0
+		echo "Created site ${name} (from template ${template}):"
+
+	else
+		case ${DEPLOYMENT_TYPE} in
+		(normal)
+			create_normal_site ${name}
+			;;
+		(bosh-init)
+			create_bosh_init_site ${name}
+			;;
+		esac
+		echo "Created site ${name}:"
 	fi
 
-	case ${DEPLOYMENT_TYPE} in
-	(normal)
-		create_normal_site ${name}
-		;;
-	(bosh-init)
-		create_bosh_init_site ${name}
-		;;
-	esac
+	tree "${DEPLOYMENT_ROOT}/${name}"
+	echo
+	echo
 	exit 0
 }
 
