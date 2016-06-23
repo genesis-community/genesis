@@ -1003,7 +1003,8 @@ normal_site_metadata() {
 			stemcell_version=$(check_index version stemcell "${stemcell_name}" ${stemcell_version})
 		fi
 	elif [[ -z ${stemcell_sha1} ]]; then
-		stemcell_sha1=$(curl -Lsk ${stemcell_url} | checksum | awk '{print $1}')
+		echo >&2 "Error: no SHA1 listed for stemcell ${stemcell_name}/${stemcell_version}"
+		exit 2
 	fi
 
 	if [[ ! -f "${DEPLOYMENT_ENV_DIR}/.site/releases" ]]; then
