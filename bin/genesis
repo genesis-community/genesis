@@ -16,7 +16,7 @@ fi
 WORKDIR=""
 need_a_workdir() {
 	if [[ -z ${WORKDIR} ]]; then
-    WORKDIR=$(mktemp -d -t genesis.XXXXXX)
+		WORKDIR=$(mktemp -d -t genesis.XXXXXX)
 		trap "rm -rf ${WORKDIR}" INT TERM QUIT EXIT
 	fi
 }
@@ -995,17 +995,6 @@ normal_site_metadata() {
 	if [[ -f "${DEPLOYMENT_ENV_DIR}/.site/stemcell/sha1" ]]; then
 		stemcell_sha1=$(cat "${DEPLOYMENT_ENV_DIR}/.site/stemcell/sha1")
 	fi
-	if [[ -z ${stemcell_url} ]]; then
-		if [[ -n ${GENESIS_INDEX} ]]; then
-			echo >&2 "Checking ${GENESIS_INDEX} for correct URL/SHA1 of stemcell ${stemcell_name}/${stemcell_version}"
-			stemcell_url=$(    check_index url     stemcell "${stemcell_name}" ${stemcell_version})
-			stemcell_sha1=$(   check_index sha1    stemcell "${stemcell_name}" ${stemcell_version})
-			stemcell_version=$(check_index version stemcell "${stemcell_name}" ${stemcell_version})
-		fi
-	elif [[ -z ${stemcell_sha1} ]]; then
-		echo >&2 "Error: no SHA1 listed for stemcell ${stemcell_name}/${stemcell_version}"
-		exit 2
-	fi
 
 	if [[ ! -f "${DEPLOYMENT_ENV_DIR}/.site/releases" ]]; then
 		echo >&2 "Error: no releases listed for site"
@@ -1048,14 +1037,6 @@ EOF
 		local release_sha1=""
 		if [[ -f ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/sha1 ]]; then
 			release_sha1=$(cat ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/sha1)
-		fi
-		if [[ -z ${release_url} ]]; then
-			if [[ -n ${GENESIS_INDEX} ]]; then
-				echo >&2 "Checking ${GENESIS_INDEX} for correct URL/SHA1 of release ${rel}/${release_version}"
-				release_url=$(    check_index url     release "${rel}" ${release_version})
-				release_sha1=$(   check_index sha1    release "${rel}" ${release_version})
-				release_version=$(check_index version release "${rel}" ${release_version})
-			fi
 		fi
 
 		echo "  - name: ${rel}"
@@ -1603,15 +1584,40 @@ EOF
 }
 
 check_index() {
-	local want=${1:?check_index() - no desired attribute provided}
-	local type=${2:?check_index() - no type provided}
-	local name=${3:?check_index() - no name provided}
-	local vers=${4:-}
+	local type=${1:?check_index() - no type given}
+	local name=${2:?check_index() - no name given}
+	local version=${3:?check_index() - no version given}
 
-	if [[ -n ${vers} && ${vers} != "latest" ]]; then
-		curl -Lsk ${GENESIS_INDEX}/v1/${type}/${name}/v/${vers} | jq -r .${want} 2>/dev/null
-	else
-		curl -Lsk ${GENESIS_INDEX}/v1/${type}/${name}/latest    | jq -r .${want} 2>/dev/null
+	local root=""
+	case ${type} in
+	(stemcell)
+		root=${DEPLOYMENT_SITE_DIR}/site/stemcell
+		;;
+	(release)
+		root=${DEPLOYMENT_ROOT}/global/releases/${name}
+		;;
+	(*)
+		echo >&2 "Invalid type '${type}' given to check_index.  Please file a bug"
+		exit 2
+		;;
+	esac
+
+
+	if [[ -n ${GENESIS_INDEX} ]]; then
+		need_a_workdir
+		echo "  checking ${GENESIS_INDEX} for details on ${type} ${name}/${version}"
+		if [[ ${version} == "latest" ]]; then
+			curl -Lsk ${GENESIS_INDEX}/v1/${type}/${name}/latest       > ${WORKDIR}/index
+		else
+			curl -Lsk ${GENESIS_INDEX}/v1/${type}/${name}/v/${version} > ${WORKDIR}/index
+		fi
+
+		for thing in url sha1 version; do
+			v=$(jq -r .${thing} <${WORKDIR}/index)
+			if [[ -n ${v} ]]; then
+				echo "${v}" > ${root}/${thing}
+			fi
+		done
 	fi
 }
 
@@ -1628,23 +1634,10 @@ cmd_add_release() {
 	mkdir -p ${DEPLOYMENT_ROOT}/global/releases/${release}
 	echo ${version} > ${DEPLOYMENT_ROOT}/global/releases/${release}/version
 
-	if [[ -z ${url} && -n ${GENESIS_INDEX} ]]; then
-		echo "  checking ${GENESIS_INDEX} for details on release ${release}/${version}"
-		url=$(check_index url release "${release}" ${version})
-		if [[ -n ${url} ]]; then
-			sha1=$(check_index sha1 release "${release}" ${version})
-			if [[ -n ${sha1} ]]; then
-				echo ${sha1} > ${DEPLOYMENT_ROOT}/global/releases/${release}/sha1
-			fi
-
-			if [[ ${version} == "latest" ]]; then
-				version=$(check_index version release "${release}" ${version})
-				echo ${version} > ${DEPLOYMENT_ROOT}/global/releases/${release}/version
-			fi
-		fi
-	fi
 	if [[ -n ${url} ]]; then
 		echo ${url} > ${DEPLOYMENT_ROOT}/global/releases/${release}/url
+	else
+		check_index release ${release} ${version}
 	fi
 
 	if [[ ${version} == "latest" ]]; then
@@ -1738,22 +1731,7 @@ cmd_use_stemcell() {
 	echo "${name}"    > ${DEPLOYMENT_SITE_DIR}/site/stemcell/name
 	echo "${version}" > ${DEPLOYMENT_SITE_DIR}/site/stemcell/version
 
-	if [[ -n ${GENESIS_INDEX} ]]; then
-		echo "  checking ${GENESIS_INDEX} for details on stemcell ${name}/${version}"
-		url=$(check_index url stemcell "${name}" ${version})
-		if [[ -n ${url} ]]; then
-			echo "${url}" > ${DEPLOYMENT_SITE_DIR}/site/stemcell/url
-			sha1=$(check_index sha1 stemcell "${name}" ${version})
-			if [[ -n ${sha1} ]]; then
-				echo ${sha1} > ${DEPLOYMENT_SITE_DIR}/site/stemcell/sha1
-			fi
-
-			if [[ ${version} == "latest" ]]; then
-				version=$(check_index version stemcell "${name}" ${version})
-				echo ${version} > ${DEPLOYMENT_SITE_DIR}/site/stemcell/version
-			fi
-		fi
-	fi
+	check_index stemcell ${name} ${version}
 
 	if [[ ${version} == "latest" ]]; then
 		echo "Site ${DEPLOYMENT_SITE} is now using the latest version of stemcell ${name}"
