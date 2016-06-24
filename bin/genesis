@@ -4,13 +4,19 @@ VERSION="(development build)"
 USERNAME=$(whoami)
 CANON_REPO=https://github.com/starkandwayne/genesis
 
+GENESIS_INDEX=${GENESIS_INDEX:-https://genesis.starkandwayne.com}
+GENESIS_INDEX=${GENESIS_INDEX%/}
+if [[ ${GENESIS_INDEX} = "no" ]]; then
+	GENESIS_INDEX=
+fi
+
 ####################################################
 # common functions used by other parts of Genesis
 
 WORKDIR=""
 need_a_workdir() {
 	if [[ -z ${WORKDIR} ]]; then
-    WORKDIR=$(mktemp -d -t genesis.XXXXXX)
+		WORKDIR=$(mktemp -d -t genesis.XXXXXX)
 		trap "rm -rf ${WORKDIR}" INT TERM QUIT EXIT
 	fi
 }
@@ -981,6 +987,15 @@ normal_site_metadata() {
 	fi
 	local stemcell_version=$(cat "${DEPLOYMENT_ENV_DIR}/.site/stemcell/version")
 
+	local stemcell_url=""
+	if [[ -f "${DEPLOYMENT_ENV_DIR}/.site/stemcell/url" ]]; then
+		stemcell_url=$(cat "${DEPLOYMENT_ENV_DIR}/.site/stemcell/url")
+	fi
+	local stemcell_sha1=""
+	if [[ -f "${DEPLOYMENT_ENV_DIR}/.site/stemcell/sha1" ]]; then
+		stemcell_sha1=$(cat "${DEPLOYMENT_ENV_DIR}/.site/stemcell/sha1")
+	fi
+
 	if [[ ! -f "${DEPLOYMENT_ENV_DIR}/.site/releases" ]]; then
 		echo >&2 "Error: no releases listed for site"
 		exit 2
@@ -1003,12 +1018,35 @@ normal_site_metadata() {
 meta:
   stemcell:
     name: ${stemcell_name}
-    version: "${stemcell_version}"
-releases:
+    version: ${stemcell_version}
 EOF
+	if [[ -n ${stemcell_url} ]]; then
+		echo "    url: ${stemcell_url}"
+	fi
+	if [[ -n ${stemcell_sha1} ]]; then
+		echo "    sha1: ${stemcell_sha1}"
+	fi
+	echo "releases:"
+
 	for rel in ${releases}; do
+		local release_version=$(cat ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/version)
+		local release_url=""
+		if [[ -f ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/url ]]; then
+			release_url=$(cat ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/url)
+		fi
+		local release_sha1=""
+		if [[ -f ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/sha1 ]]; then
+			release_sha1=$(cat ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/sha1)
+		fi
+
 		echo "  - name: ${rel}"
-		echo "    version: \"$(cat ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/version)\""
+		echo "    version: ${release_version}"
+		if [[ -n ${release_url} ]]; then
+			echo "    url: \"${release_url}\""
+		fi
+		if [[ -n ${release_sha1} ]]; then
+			echo "    sha1: \"${release_sha1}\""
+		fi
 	done
 }
 
@@ -1545,9 +1583,48 @@ EOF
 	exit 1
 }
 
+check_index() {
+	local type=${1:?check_index() - no type given}
+	local name=${2:?check_index() - no name given}
+	local version=${3:?check_index() - no version given}
+
+	local root=""
+	case ${type} in
+	(stemcell)
+		root=${DEPLOYMENT_SITE_DIR}/site/stemcell
+		;;
+	(release)
+		root=${DEPLOYMENT_ROOT}/global/releases/${name}
+		;;
+	(*)
+		echo >&2 "Invalid type '${type}' given to check_index.  Please file a bug"
+		exit 2
+		;;
+	esac
+
+
+	if [[ -n ${GENESIS_INDEX} ]]; then
+		need_a_workdir
+		echo "  checking ${GENESIS_INDEX} for details on ${type} ${name}/${version}"
+		if [[ ${version} == "latest" ]]; then
+			curl -Lsk ${GENESIS_INDEX}/v1/${type}/${name}/latest       > ${WORKDIR}/index
+		else
+			curl -Lsk ${GENESIS_INDEX}/v1/${type}/${name}/v/${version} > ${WORKDIR}/index
+		fi
+
+		for thing in url sha1 version; do
+			v=$(jq -r .${thing} <${WORKDIR}/index)
+			if [[ -n ${v} ]]; then
+				echo "${v}" > ${root}/${thing}
+			fi
+		done
+	fi
+}
+
 cmd_add_release() {
-	local release=${1:?USAGE: genesis add relese NAME VERSION}
+	local release=${1:?USAGE: genesis add relese NAME [VERSION] [URL]}
 	local version=${2:-latest}
+	local url=${3:-}
 
 	setup
 	if [[ -d ${DEPLOYMENT_ROOT}/global/releases/${release} ]]; then
@@ -1556,11 +1633,19 @@ cmd_add_release() {
 	fi
 	mkdir -p ${DEPLOYMENT_ROOT}/global/releases/${release}
 	echo ${version} > ${DEPLOYMENT_ROOT}/global/releases/${release}/version
+
+	if [[ -n ${url} ]]; then
+		echo ${url} > ${DEPLOYMENT_ROOT}/global/releases/${release}/url
+	else
+		check_index release ${release} ${version}
+	fi
+
 	if [[ ${version} == "latest" ]]; then
 		echo "Using the latest version of ${release}"
 	else
 		echo "Using v${version} of ${release}"
 	fi
+
 	exit 0
 }
 
@@ -1645,6 +1730,8 @@ cmd_use_stemcell() {
 
 	echo "${name}"    > ${DEPLOYMENT_SITE_DIR}/site/stemcell/name
 	echo "${version}" > ${DEPLOYMENT_SITE_DIR}/site/stemcell/version
+
+	check_index stemcell ${name} ${version}
 
 	if [[ ${version} == "latest" ]]; then
 		echo "Site ${DEPLOYMENT_SITE} is now using the latest version of stemcell ${name}"
