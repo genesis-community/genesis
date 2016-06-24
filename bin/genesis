@@ -266,6 +266,7 @@ need_a_vault() {
 				echo >&2 "Failed to retrieve secret/handshake; assuming authentication failed..."
 				exit 3
 			fi
+			echo
 
 		else
 			echo >&2 "No VAULT_ADDR found in environment; skipping authentication step"
@@ -2007,20 +2008,59 @@ ci_name() {
 
 ci_check_configuration() {
 	setup
-
 	local rc=0
+
+	mkdir -p ${DEPLOYMENT_ROOT}/ci
 	if [[ ! -f ${DEPLOYMENT_ROOT}/ci/boshes.yml ]]; then
-		echo >&2 "No ci/boshes.yml detected.  Please create one, with the"
-		echo >&2 "credentials for the BOSH directors you want to deploy to."
-		echo >&2
-		echo >&2 "It should look something like this:"
-		echo >&2 "---"
-		echo >&2 "auth:"
-		echo >&2 "  https://ip.ad.dr.ess:2555:"
-		echo >&2 "    username: admin"
-		echo >&2 "    password: ..."
-		echo >&2
-		rc=1
+		cat >${DEPLOYMENT_ROOT}/ci/boshes.yml <<EOF
+---
+auth: (( param "Please define your BOSH directors in ci/boshes.yml (and remove this line)" ))
+
+# BOSH directors are specified by \`url: username / password\`
+# (just like in ~/.bosh_config's auth section), i.e.:
+#
+#auth:
+#  https://ip.ad.dr.ess:25555:
+#    username: admin
+#    password: (( vault "this/should/probably/be/in/vault" ))
+#
+EOF
+	fi
+	if [[ ! -f ${DEPLOYMENT_ROOT}/ci/settings.yml ]]; then
+		cat >${DEPLOYMENT_ROOT}/ci/settings.yml <<EOF
+--- {}
+# This is where you will configure your Genesis CI deployment pipeline
+# (everything goes under 'meta')
+#
+#meta:
+#  # This is the name of your pipeline
+#  name: Pipeline Name
+#
+#  # A map of name:value environment variables
+#  # that will be made available to the script
+#  env: {}
+#
+#  github:
+#    owner: github-user
+#    repo:  repository-name
+#
+#    private_key: |
+#      ssh-private-key
+#      (PEM-encoded)
+#
+#    # Optional branch to track for changes.
+#    # (defaults to "master")
+#    #branch: master
+#
+#  slack:
+#    webhook: https://slack/web/hook/url
+#    channel: '#name' # or '@user'
+#
+#    # Optional name/icon to use for posting the notification.
+#    #username: runwaybot
+#    #icon: http://ip.ad.dr.ess/of/icon.gif
+#
+EOF
 	fi
 
 	local alpha=""
@@ -2284,7 +2324,7 @@ jobs:
             CI_BOSHES: |
 EOF
   need_a_vault
-  spruce merge ${DEPLOYMENT_ROOT}/ci/boshes.yml | sed -e 's/^/              /';
+  spruce merge ${DEPLOYMENT_ROOT}/ci/boshes.yml | sed -e 's/^/              /' || exit $?
 }
 
 ci_repipe_build_base() {
@@ -2293,19 +2333,19 @@ ci_repipe_build_base() {
   cat >${WORKDIR}/pipeline.yml <<EOF
 ---
 meta:
-  name: (( param "Please name this deployment pipeline" ))
+  name: (( param "Please name this deployment pipeline (in ci/settings.yml)" ))
   env: {}
 
   github:
     uri:          (( concat "git@github.com:" meta.github.owner "/" meta.github.repo ))
-    owner:        (( param "Please specify the name of the user / organization that owns the Github repository" ))
-    repo:         (( param "Please specify the name of the Github repository" ))
+    owner:        (( param "Please specify the name of the user / organization that owns the Github repository (in ci/settings.yml)" ))
+    repo:         (( param "Please specify the name of the Github repository (in ci/settings.yml)" ))
     branch:       master
-    private_key:  (( param "Please generate an SSH Deployment Key for this repo and specify it here" ))
+    private_key:  (( param "Please generate an SSH Deployment Key for this repo and specify it in ci/settings.yml" ))
 
   slack:
-    webhook:  (( param "Please provide a Slack Integration WebHook" ))
-    channel:  (( param "Please specify the channel (#name) or user (@user) to send messages to" ))
+    webhook:  (( param "Please provide a Slack Integration WebHook (in ci/settings.yml)" ))
+    channel:  (( param "Please specify the channel (#name) or user (@user) to send messages to (in ci/settings.yml)" ))
     username: runwaybot
     icon:     http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
 
@@ -2398,6 +2438,18 @@ groups:
       - $alpha_name
 EOF
 
+  local rc=0
+  for site in $(all_sites); do
+    if [[ ! -f ${DEPLOYMENT_ROOT}/${site}/site/stemcell/name ]]; then
+      echo >&2 "Site ${site} has no defined stemcell"
+      rc=1
+    fi
+  done
+  if [[ $rc -ne 0 ]]; then
+    exit $rc
+  fi
+
+
   for site in $(all_sites); do
     local site_name=$(ci_name ${site})
     local beta_env=$(ci_beta_environment_for ${site})
@@ -2408,12 +2460,13 @@ EOF
     fi
 
     local stemcell_alias=
-    local stemcell_name=$(cat ${DEPLOYMENT_ROOT}/${site}/site/stemcell/name)
+    local stemcell_name=$(cat ${DEPLOYMENT_ROOT}/${site}/site/stemcell/name 2>/dev/null)
     case $stemcell_name in
     (*vsphere*) stemcell_alias=vsphere-stemcell ;;
     (*aws*hvm*) stemcell_alias=aws-hvm-stemcell ;;
     (*aws*)     stemcell_alias=aws-stemcell     ;;
     (*warden*)  stemcell_alias=warden-stemcell  ;;
+    ("")        stemcell_alias=empty            ;;
     (*)         stemcell_alias=${stemcell_name} ;;
     esac
     cat >${workdir}/77-${stemcell_alias}.yml <<EOF
@@ -2461,7 +2514,7 @@ EOF
       - $site_env_name
 EOF
 
-      ci_repipe_proto_job ${site_env_name} > ${workdir}/50-${site_env_name}.yml
+      ci_repipe_proto_job ${site_env_name} > ${workdir}/50-${site_env_name}.yml || exit 5
       case ${env_type} in
       (alpha)
         cat >${workdir}/51-${site_env_name}.yml <<EOF
@@ -2749,7 +2802,7 @@ cmd_ci_repipe() {
 	need_a_vault
 
 	ci_repipe_build_base
-	ci_repipe_build_environments
+	ci_repipe_build_environments || exit 2
 	VAULT_ADDR= REDACT=y ci_repipe_merge pipeline.yml || exit 3
 	            REDACT=  ci_repipe_merge .deploy.yml  || exit 4
 	[[ -n $DEBUG_LEAVE_THE_CREDS_THERE ]] || \
