@@ -1177,6 +1177,11 @@ build_bosh_init_manifest() {
 	fi
 }
 
+bad_usage() {
+	echo >&2 "USAGE: genesis $@"
+	exit 1
+}
+
 
 ####################################################
 # multi-call handlers
@@ -1398,6 +1403,7 @@ EOF
 }
 
 cmd_new_deployment() {
+	local USAGE="new deployment [-t type] [-T template] [-r root/dir] <name>"
 	local dtype="normal"
 	local root=$(pwd)
 	local name=""
@@ -1408,15 +1414,22 @@ cmd_new_deployment() {
 		case ${arg} in
 		(-t|--type)
 			dtype=$1
+			[[ -n ${dtype} ]] || bad_usage ${USAGE}
 			shift
 			;;
 		(-T|--template)
 			template=$1
+			[[ -n ${template} ]] || bad_usage ${USAGE}
 			shift
 			;;
 		(-r|--root)
 			root=$1
+			[[ -n ${root} ]] || bad_usage ${USAGE}
 			shift
+			;;
+		(-*)
+			bad_usage ${USAGE}
+			exit 1
 			;;
 		(*)
 			name=${arg%-deployment*}
@@ -1436,10 +1449,7 @@ cmd_new_deployment() {
 			name=${name%%-deployment*}
 		fi
 	fi
-	if [[ -z ${name:-} ]]; then
-		echo >&2 "USAGE: genesis new deployment [options] name"
-		exit 1
-	fi
+	[[ -n ${name:-} ]] || bad_usage ${USAGE}
 
 	if [[ ! -d ${root} ]]; then
 		echo >&2 "Error: root directory ${root} does not exist"
@@ -1510,6 +1520,7 @@ EOF
 }
 
 cmd_new_site() {
+	local USAGE="new site [-T template] <name>"
 	local name=""
 	local template=""
 
@@ -1520,16 +1531,15 @@ cmd_new_site() {
 			template=$1
 			shift
 			;;
+		(-*)
+			bad_usage ${USAGE}
+			;;
 		(*)
 			name=${arg}
 			;;
 		esac
 	done
-
-	if [[ -z ${name} ]]; then
-		echo >&2 "USAGE: genesis new site [options] name"
-		exit 1
-	fi
+	[[ -n ${name} ]] || bad_usage ${USAGE}
 
 	setup
 	if [[ -d "${DEPLOYMENT_ROOT}/${name}" ]]; then
@@ -1567,8 +1577,25 @@ cmd_new_site() {
 }
 
 cmd_new_environment() {
-	local site=${1:-}
-	local name=${2:-}
+	local USAGE="new environment [site] name"
+	local site name
+	while (( $# )); do
+		arg=$1 ; shift
+		case ${arg} in
+		(-*)
+			bad_usage ${USAGE}
+			;;
+		(*)
+			if [[ -z ${site} ]]; then
+				site=${arg}
+			elif [[ -z ${name} ]]; then
+				name=${arg}
+			else
+				bad_usage ${USAGE}
+			fi
+			;;
+		esac
+	done
 
 	setup
 	if [[ -n ${DEPLOYMENT_SITE} && -z ${name} ]]; then
@@ -1635,9 +1662,30 @@ check_index() {
 }
 
 cmd_add_release() {
-	local release=${1:?USAGE: genesis add relese NAME [VERSION] [URL]}
-	local version=${2:-latest}
-	local url=${3:-}
+	local USAGE="add release <name> [<version> [<url>]]"
+	local release version url
+
+	while (( $# )); do
+		arg=$1 ; shift
+		case ${arg} in
+		(-*)
+			bad_usage ${USAGE}
+			;;
+		(*)
+			if [[ -z ${release} ]]; then
+				release=${arg}
+			elif [[ -z ${version} ]]; then
+				version=${arg}
+			elif [[ -z ${url} ]]; then
+				url=${arg}
+			else
+				bad_usage ${USAGE}
+			fi
+			;;
+		esac
+	done
+	[[ -n ${release} ]] || bad_usage ${USAGE}
+	version=${version:-latest}
 
 	setup
 	if [[ -d ${DEPLOYMENT_ROOT}/global/releases/${release} ]]; then
@@ -1671,8 +1719,28 @@ EOF
 }
 
 cmd_set_release() {
-	local release=${1:?USAGE: genesis set relese NAME VERSION}
-	local version=${2:-latest}
+	local USAGE="set release <name> [<version>]"
+	local release version
+
+	while (( $# )); do
+		arg=$1 ; shift
+		case ${arg} in
+		(-*)
+			bad_usage ${USAGE}
+			;;
+		(*)
+			if [[ -z ${release} ]]; then
+				release=${arg}
+			elif [[ -z ${version} ]]; then
+				version=${arg}
+			else
+				bad_usage ${USAGE}
+			fi
+			;;
+		esac
+	done
+	[[ -n ${release} ]] || bad_usage ${USAGE}
+	version=${version:-latest}
 
 	setup
 	mkdir -p ${DEPLOYMENT_ROOT}/global/releases/${release}
@@ -1694,7 +1762,25 @@ EOF
 }
 
 cmd_use_release() {
-	release=${1:?USAGE: genesis use release NAME}
+	local USAGE="use release <name>"
+	local release
+
+	while (( $# )); do
+		arg=$1 ; shift
+		case ${arg} in
+		(-*)
+			bad_usage ${USAGE}
+			;;
+		(*)
+			if [[ -z ${release} ]]; then
+				release=${arg}
+			else
+				bad_usage ${USAGE}
+			fi
+			;;
+		esac
+	done
+	[[ -n ${release} ]] || bad_usage ${USAGE}
 
 	must_be_in_a_site
 	if [[ ! -d ${DEPLOYMENT_ROOT}/global/releases/${release} ]]; then
@@ -1714,8 +1800,28 @@ cmd_use_release() {
 }
 
 cmd_use_stemcell() {
-	name=${1:?USAGE: genesis use stemcell NAME VERSION}
-	version=${2:-latest}
+	local USAGE="use stemcell <name>"
+	local name version
+
+	while (( $# )); do
+		arg=$1 ; shift
+		case ${arg} in
+		(-*)
+			bad_usage ${USAGE}
+			;;
+		(*)
+			if [[ -z ${name} ]]; then
+				name=${arg}
+			elif [[ -z ${version} ]]; then
+				version=${arg}
+			else
+				bad_usage ${USAGE}
+			fi
+			;;
+		esac
+	done
+	[[ -n ${name} ]] || bad_usage ${USAGE}
+	version=${version:-latest}
 
 	must_be_in_a_site
 
@@ -1764,10 +1870,29 @@ EOF
 }
 
 cmd_stemcells() {
-	setup
+	local USAGE="stemcells [<site> [<env>]]"
+	local site env
+	while (( $# )); do
+		arg=$1 ; shift
+		case ${arg} in
+		(-*)
+			bad_usage ${USAGE}
+			;;
+		(*)
+			if [[ -z ${site} ]]; then
+				site=${arg}
+			elif [[ -z ${env} ]]; then
+				env=${arg}
+			else
+				bad_usage ${USAGE}
+			fi
+			;;
+		esac
+	done
 
-	local site=${1:-$DEPLOYMENT_SITE}
-	local env=${2:-$DEPLOYMENT_ENVIRONMENT}
+	setup
+	site=${site:-$DEPLOYMENT_SITE}
+	env=${env:-$DEPLOYMENT_ENVIRONMENT}
 
 	if [[ -n ${env} ]]; then
 		name=$(cat ${DEPLOYMENT_ROOT}/${site}/${env}/.site/stemcell/name)
@@ -1793,10 +1918,29 @@ EOF
 }
 
 cmd_releases() {
-	setup
+	local USAGE="releases [<site> [<env>]]"
+	local site env
+	while (( $# )); do
+		arg=$1 ; shift
+		case ${arg} in
+		(-*)
+			bad_usage ${USAGE}
+			;;
+		(*)
+			if [[ -z ${site} ]]; then
+				site=${arg}
+			elif [[ -z ${env} ]]; then
+				env=${arg}
+			else
+				bad_usage ${USAGE}
+			fi
+			;;
+		esac
+	done
 
-	local site=${1:-$DEPLOYMENT_SITE}
-	local env=${2:-$DEPLOYMENT_ENVIRONMENT}
+	setup
+	site=${site:-$DEPLOYMENT_SITE}
+	env=${env:-$DEPLOYMENT_ENVIRONMENT}
 
 	if [[ -n ${env} ]]; then
 		for rel in $(releases_for_environment ${site} ${env}); do
@@ -1824,9 +1968,27 @@ EOF
 }
 
 cmd_build() {
+	local USAGE="build [output.yml]"
+	local target
+	while (( $# )); do
+		arg=$1 ; shift
+		case ${arg} in
+		(-*)
+			bad_usage ${USAGE}
+			;;
+		(*)
+			if [[ -z ${target} ]]; then
+				target=${arg}
+			else
+				bad_usage ${USAGE}
+			fi
+			;;
+		esac
+	done
+	target=${target:-manifest.yml}
+
 	must_be_in_an_environment
 
-	target=${1:-manifest.yml}
 	mkdir -p ${DEPLOYMENT_ENV_DIR}/manifests
 
 	case ${DEPLOYMENT_TYPE} in
@@ -1841,6 +2003,8 @@ cmd_build() {
 }
 
 cmd_refresh_global() {
+	[[ -z $1 ]] || bad_usage "refresh global"
+
 	must_be_in_an_environment
 	echo "Refreshing global definitions for ${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}"
 	refresh_global ${DEPLOYMENT_SITE} ${DEPLOYMENT_ENVIRONMENT}
@@ -1848,6 +2012,8 @@ cmd_refresh_global() {
 }
 
 cmd_refresh_site() {
+	[[ -z $1 ]] || bad_usage "refresh site"
+
 	must_be_in_an_environment
 	echo "Refreshing site definitions for ${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}"
 	refresh_site ${DEPLOYMENT_SITE} ${DEPLOYMENT_ENVIRONMENT}
@@ -1855,6 +2021,8 @@ cmd_refresh_site() {
 }
 
 cmd_refresh_all() {
+	[[ -z $1 ]] || bad_usage "refresh all"
+
 	must_be_in_an_environment
 	echo "Refreshing site definitions for ${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}"
 	refresh_site   ${DEPLOYMENT_SITE} ${DEPLOYMENT_ENVIRONMENT}
@@ -1864,12 +2032,16 @@ cmd_refresh_all() {
 }
 
 cmd_refresh_makefile() {
+	[[ -z $1 ]] || bad_usage "refresh makefiles"
+
 	must_be_in_an_environment
 	echo "Refreshing Makefile for ${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}"
 	create_makefile "${DEPLOYMENT_ENV_DIR}/Makefile"
 }
 
 cmd_refresh_readmes() {
+	[[ -z $1 ]] || bad_usage "refresh readmes"
+
 	setup
 	echo "Refreshing README for the whole repository"
 	rm -f ${DEPLOYMENT_ROOT}/README*
@@ -1906,6 +2078,8 @@ EOF
 }
 
 cmd_deploy() {
+	[[ -z $1 ]] || bad_usage "deploy"
+
 	must_be_in_an_environment
 	case ${DEPLOYMENT_TYPE} in
 	(normal)
@@ -1943,6 +2117,8 @@ cmd_deploy() {
 }
 
 cmd_embed() {
+	[[ -z $1 ]] || bad_usage "embed"
+
 	echo "Embedding genesis script into repository"
 	setup
 
@@ -2176,8 +2352,26 @@ ci_commit() {
 }
 
 cmd_ci_alpha() {
+	local USAGE="ci alpha [<site/env>]"
+	local site_env
+
+	while (( $# )); do
+		arg=$1 ; shift
+		case ${arg} in
+		(-*)
+			bad_usage ${USAGE}
+			;;
+		(*)
+			if [[ -z ${site_env} ]]; then
+				site_env=${arg}
+			else
+				bad_usage ${USAGE}
+			fi
+			;;
+		esac
+	done
+
 	setup
-	local site_env=${1}
 	if [[ -z "${site_env}" ]]; then
 		must_be_in_an_environment
 		site_env="${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}"
@@ -2197,12 +2391,16 @@ EOF
 }
 
 cmd_ci_beta() {
+	local USAGE="ci beta [<site/env> ...]"
+
 	setup
 	if [[ $# -eq 0 ]]; then
 		must_be_in_an_environment
 		set -- "${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}"
 	fi
 	for site_env in "$@"; do
+		[[ ${site_env} =~ -* ]] && bad_usage ${USAGE}
+
 		check_environment $site_env
 		local site=${site_env%%/*}
 		local env=${site_env##*/}
@@ -2218,12 +2416,16 @@ EOF
 }
 
 cmd_ci_auto() {
+	local USAGE="ci auto [<site/env> ...]"
+
 	setup
 	if [[ $# -eq 0 ]]; then
 		must_be_in_an_environment
 		set -- "${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}"
 	fi
 	for site_env in "$@"; do
+		[[ ${site_env} =~ -* ]] && bad_usage ${USAGE}
+
 		check_environment $site_env
 		local site=${site_env%%/*}
 		local env=${site_env##*/}
@@ -2238,6 +2440,8 @@ EOF
 }
 
 cmd_ci_manual() {
+	local USAGE="ci manual [<site/env> ...]"
+
 	setup
 	if [[ $# -eq 0 ]]; then
 		must_be_in_an_environment
@@ -2245,6 +2449,8 @@ cmd_ci_manual() {
 	fi
 	rc=0
 	for site_env in "$@"; do
+		[[ ${site_env} =~ -* ]] && bad_usage ${USAGE}
+
 		check_environment $site_env
 		local site=${site_env%%/*}
 		local env=${site_env##*/}
@@ -2798,6 +3004,8 @@ ci_repipe_merge() {
 }
 
 cmd_ci_repipe() {
+	[[ -z $1 ]] || bad_usage "ci repipe"
+
 	setup
 	ci_check_configuration
 	need_a_workdir
@@ -2821,12 +3029,16 @@ cmd_ci_repipe() {
 
 
 cmd_ci_flow() {
+	[[ -z $1 ]] || bad_usage "ci flow"
+
 	setup
 	# FIXME: ascii diagram!
 	cat ${DEPLOYMENT_ROOT}/.ci.yml
 }
 
 cmd_ci_stemcells() {
+	[[ -z $1 ]] || bad_usage "ci stemcells"
+
 	if [[ -z ${STEMCELLS} ]]; then
 		echo >&2 "!! ERROR: Your Concourse Pipeline seems to be MISCONFIGURED !!"
 		echo >&2
@@ -2870,6 +3082,8 @@ cmd_ci_stemcells() {
 }
 
 cmd_ci_stage1() {
+	[[ -z $1 ]] || bad_usage "ci stage1"
+
 	if [[ -z ${WORKING_DIR} ]]; then
 		echo >&2 "!! ERROR: Your Concourse Pipeline seems to be MISCONFIGURED !!"
 		echo >&2
@@ -2907,6 +3121,8 @@ cmd_ci_stage1() {
 }
 
 cmd_ci_stage2() {
+	[[ -z $1 ]] || bad_usage "ci stage2"
+
 	line
 	echo "Setting up .bosh_config with values from ci/boshes.yml"
 	echo
@@ -3010,6 +3226,8 @@ EOF
 }
 
 cmd_ci_draft_message() {
+	[[ -z $1 ]] || bad_usage "ci draft-message"
+
 	(
 		echo "[${CI_SITE_ENV}] Deployment changes are ready to go!"
 		echo
@@ -3026,6 +3244,8 @@ cmd_ci_draft_message() {
 }
 
 cmd_ci_check() {
+	[[ -z $1 ]] || bad_usage "ci check"
+
 	ci_check_configuration
 }
 
@@ -3036,13 +3256,15 @@ USAGE:  genesis ci alpha [site/env]
         genesis ci beta [site/env [site/env ...]]
         genesis ci auto [site/env [site/env ...]]
         genesis ci manual [site/env [site/env ...]]
-        genesis ci repipe [target-concourse]
+        genesis ci repipe
         genesis ci flow
+        genesis ci check
 EOF
 	exit 1
 }
 
 cmd_bosh() {
+	# NOTE: cmd_bosh specifically avoids argv inspection
 	must_be_in_an_environment
 
 	case ${DEPLOYMENT_TYPE} in
@@ -3063,6 +3285,8 @@ cmd_bosh() {
 }
 
 cmd_dump() {
+	[[ -z $1 ]] || bad_usage "dump"
+
 	setup
 	printf "name: %s\n" ${DEPLOYMENT_NAME}
 	printf "type: %s\n" ${DEPLOYMENT_TYPE}

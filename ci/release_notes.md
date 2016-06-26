@@ -34,4 +34,9 @@
 
 - Fix typo in environment teardown messaging.
 
+- Argument processing got an overhaul, to make it more difficult
+  to supply (unused and previously ignored) command-line flags.
+  Now, genesis will print errors for unrecognized options.
+  Fixes #15
+
 [index]: https://github.com/starkandwayne/genesis-index
