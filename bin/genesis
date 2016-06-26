@@ -794,11 +794,6 @@ EOF
 	done
 
 	(cd ${DEPLOYMENT_ROOT}/global/releases ; ls -1) > ${DEPLOYMENT_ROOT}/${site}/site/releases
-
-	echo "Created BOSH (bosh-init) site ${site}:"
-	tree "${DEPLOYMENT_ROOT}/${site}"
-	echo
-	echo
 }
 
 refresh_site() {
@@ -1562,12 +1557,13 @@ cmd_new_site() {
 		case ${DEPLOYMENT_TYPE} in
 		(normal)
 			create_normal_site ${name}
+			echo "Created site ${name}:"
 			;;
 		(bosh-init)
 			create_bosh_init_site ${name}
+			echo "Created (bosh-init) site ${name}:"
 			;;
 		esac
-		echo "Created site ${name}:"
 	fi
 
 	tree "${DEPLOYMENT_ROOT}/${name}"
