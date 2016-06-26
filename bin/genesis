@@ -1959,28 +1959,28 @@ cmd_embed() {
 }
 
 ci_environment_type() {
-  local site=${1:?ci_environment_type() - no site given}
-  local env=${2:?ci_environment_type() - no environment given}
+	local site=${1:?ci_environment_type() - no site given}
+	local env=${2:?ci_environment_type() - no environment given}
 
-  local alpha=$(spruce json ${DEPLOYMENT_ROOT}/.ci.yml | jq -r ".alpha")
-  if [[ "${site}/${env}" == $alpha ]]; then
-    echo "alpha"
-    return
-  fi
+	local alpha=$(spruce json ${DEPLOYMENT_ROOT}/.ci.yml | jq -r ".alpha")
+	if [[ "${site}/${env}" == $alpha ]]; then
+		echo "alpha"
+		return
+	fi
 
-  local beta=$(spruce json ${DEPLOYMENT_ROOT}/.ci.yml | jq -r ".sites[\"${site}\"].beta")
-  if [[ "${env}" == $beta ]]; then
-    echo "beta"
-    return
-  fi
+	local beta=$(spruce json ${DEPLOYMENT_ROOT}/.ci.yml | jq -r ".sites[\"${site}\"].beta")
+	if [[ "${env}" == $beta ]]; then
+		echo "beta"
+		return
+	fi
 
-  # otherwise, is it automatically updatable?
-  local auto=$(spruce json ${DEPLOYMENT_ROOT}/.ci.yml | jq -r ".sites[\"${site}\"].auto[\"${env}\"] // \"\"")
-  if [[ -n ${auto} ]]; then
-    echo "gamma"
-  else
-    echo "omega"
-  fi
+	# otherwise, is it automatically updatable?
+	local auto=$(spruce json ${DEPLOYMENT_ROOT}/.ci.yml | jq -r ".sites[\"${site}\"].auto[\"${env}\"] // \"\"")
+	if [[ -n ${auto} ]]; then
+		echo "gamma"
+	else
+		echo "omega"
+	fi
 }
 
 ci_alpha_environment() {
@@ -1988,28 +1988,30 @@ ci_alpha_environment() {
 }
 
 ci_beta_environment_for() {
-  local site=${1:?ci_beta_environment_for() - no site given}
-  local env=$(spruce json ${DEPLOYMENT_ROOT}/.ci.yml | jq -r ".sites[\"${site}\"].beta // \"\"")
-  if [[ -n ${env} ]]; then
-    echo "${site}/${env}"
-  fi
+	local site=${1:?ci_beta_environment_for() - no site given}
+	local env=$(spruce json ${DEPLOYMENT_ROOT}/.ci.yml | jq -r ".sites[\"${site}\"].beta // \"\"")
+	if [[ -n ${env} ]]; then
+		echo "${site}/${env}"
+	fi
 }
 
 ci_gamma_environments_for() {
-  local site=${1:?ci_gamma_environments_for() - no site given}
-  local beta=$(ci_beta_environment_for ${site})
-  local alpha=$(ci_alpha_environment)
-  for env in $(all_environments_for $site); do
-    if [[ "${site}/${env}" == "${beta}" || "${site}/${env}" == "${alpha}" ]] ; then continue ; fi
-    local auto=$(spruce json ${DEPLOYMENT_ROOT}/.ci.yml | jq -r ".sites[\"${site}\"].auto[\"${env}\"] // \"\"")
-    if [[ -n ${auto} ]]; then
-      echo ${site}/${env}
-    fi
-  done
+	local site=${1:?ci_gamma_environments_for() - no site given}
+	local beta=$(ci_beta_environment_for ${site})
+	local alpha=$(ci_alpha_environment)
+	for env in $(all_environments_for $site); do
+		if [[ "${site}/${env}" == "${beta}" || "${site}/${env}" == "${alpha}" ]]; then
+			continue
+		fi
+		local auto=$(spruce json ${DEPLOYMENT_ROOT}/.ci.yml | jq -r ".sites[\"${site}\"].auto[\"${env}\"] // \"\"")
+		if [[ -n ${auto} ]]; then
+			echo ${site}/${env}
+		fi
+	done
 }
 
 ci_name() {
-  tr / - <<<"$1"
+	tr / - <<<"$1"
 }
 
 ci_check_configuration() {
@@ -2284,9 +2286,9 @@ EOF
 }
 
 ci_repipe_proto_job() {
-  local job_name=${1:?ci_repipe_proto_job() - no job name given}
+	local job_name=${1:?ci_repipe_proto_job() - no job name given}
 
-  cat <<EOF
+	cat <<EOF
 jobs:
   - name: ${job_name}
     public: true
@@ -2329,14 +2331,14 @@ jobs:
 
             CI_BOSHES: |
 EOF
-  need_a_vault
-  spruce merge ${DEPLOYMENT_ROOT}/ci/boshes.yml | sed -e 's/^/              /' || exit $?
+	need_a_vault
+	spruce merge ${DEPLOYMENT_ROOT}/ci/boshes.yml | sed -e 's/^/              /' || exit $?
 }
 
 ci_repipe_build_base() {
-  need_a_workdir
+	need_a_workdir
 
-  cat >${WORKDIR}/pipeline.yml <<EOF
+	cat >${WORKDIR}/pipeline.yml <<EOF
 ---
 meta:
   name: (( param "Please name this deployment pipeline (in ci/settings.yml)" ))
@@ -2417,21 +2419,21 @@ EOF
 }
 
 ci_repipe_build_environments() {
-  local alpha_env=$(ci_alpha_environment)
-  local alpha_name=$(ci_name ${alpha_env})
-  local alpha_site=${alpha_env%%/*}
+	local alpha_env=$(ci_alpha_environment)
+	local alpha_name=$(ci_name ${alpha_env})
+	local alpha_site=${alpha_env%%/*}
 
-  need_a_workdir
-  workdir="${WORKDIR}/repipe"
-  mkdir -p ${workdir}
-  cat <<EOF >${workdir}/09-all.yml
+	need_a_workdir
+	workdir="${WORKDIR}/repipe"
+	mkdir -p ${workdir}
+	cat <<EOF >${workdir}/09-all.yml
 ---
 groups:
   - name: '*'
     jobs:
       - (( append ))
 EOF
-  cat <<EOF >${workdir}/08-groups.yml
+	cat <<EOF >${workdir}/08-groups.yml
 ---
 groups:
   - name: '*'
@@ -2444,38 +2446,38 @@ groups:
       - $alpha_name
 EOF
 
-  local rc=0
-  for site in $(all_sites); do
-    if [[ ! -f ${DEPLOYMENT_ROOT}/${site}/site/stemcell/name ]]; then
-      echo >&2 "Site ${site} has no defined stemcell"
-      rc=1
-    fi
-  done
-  if [[ $rc -ne 0 ]]; then
-    exit $rc
-  fi
+	local rc=0
+	for site in $(all_sites); do
+		if [[ ! -f ${DEPLOYMENT_ROOT}/${site}/site/stemcell/name ]]; then
+			echo >&2 "Site ${site} has no defined stemcell"
+			rc=1
+		fi
+	done
+	if [[ $rc -ne 0 ]]; then
+		exit $rc
+	fi
 
 
-  for site in $(all_sites); do
-    local site_name=$(ci_name ${site})
-    local beta_env=$(ci_beta_environment_for ${site})
-    local beta_name=$(ci_name ${beta_env})
+	for site in $(all_sites); do
+		local site_name=$(ci_name ${site})
+		local beta_env=$(ci_beta_environment_for ${site})
+		local beta_name=$(ci_name ${beta_env})
 
-    if [[ -n ${beta_name} ]]; then
-      echo "      - ${beta_name}" >> ${workdir}/08-groups.yml
-    fi
+		if [[ -n ${beta_name} ]]; then
+			echo "      - ${beta_name}" >> ${workdir}/08-groups.yml
+		fi
 
-    local stemcell_alias=
-    local stemcell_name=$(cat ${DEPLOYMENT_ROOT}/${site}/site/stemcell/name 2>/dev/null)
-    case $stemcell_name in
-    (*vsphere*) stemcell_alias=vsphere-stemcell ;;
-    (*aws*hvm*) stemcell_alias=aws-hvm-stemcell ;;
-    (*aws*)     stemcell_alias=aws-stemcell     ;;
-    (*warden*)  stemcell_alias=warden-stemcell  ;;
-    ("")        stemcell_alias=empty            ;;
-    (*)         stemcell_alias=${stemcell_name} ;;
-    esac
-    cat >${workdir}/77-${stemcell_alias}.yml <<EOF
+		local stemcell_alias=
+		local stemcell_name=$(cat ${DEPLOYMENT_ROOT}/${site}/site/stemcell/name 2>/dev/null)
+		case $stemcell_name in
+		(*vsphere*) stemcell_alias=vsphere-stemcell ;;
+		(*aws*hvm*) stemcell_alias=aws-hvm-stemcell ;;
+		(*aws*)     stemcell_alias=aws-stemcell     ;;
+		(*warden*)  stemcell_alias=warden-stemcell  ;;
+		("")        stemcell_alias=empty            ;;
+		(*)         stemcell_alias=${stemcell_name} ;;
+		esac
+		cat >${workdir}/77-${stemcell_alias}.yml <<EOF
 ---
 resources:
   - name: ${stemcell_alias}
@@ -2499,8 +2501,8 @@ jobs:
               path: stemcells/${stemcell_name}
 EOF
 
-    if [[ -n ${beta_name} ]]; then
-      cat >${workdir}/10-${site}.yml <<EOF
+		if [[ -n ${beta_name} ]]; then
+			cat >${workdir}/10-${site}.yml <<EOF
 ---
 groups:
   - name: $site_name
@@ -2508,22 +2510,22 @@ groups:
       - $alpha_name # alpha
       - $beta_name  # beta
 EOF
-    fi
+		fi
 
-    for env in $(all_environments_for ${site}); do
-      local env_type=$(ci_environment_type ${site} ${env})
-      local env_name=$(ci_name ${env})
-      local site_env=${site}/${env}
-      local site_env_name=$(ci_name ${site_env})
+		for env in $(all_environments_for ${site}); do
+			local env_type=$(ci_environment_type ${site} ${env})
+			local env_name=$(ci_name ${env})
+			local site_env=${site}/${env}
+			local site_env_name=$(ci_name ${site_env})
 
-      cat >>${workdir}/09-all.yml <<EOF
+			cat >>${workdir}/09-all.yml <<EOF
       - $site_env_name
 EOF
 
-      ci_repipe_proto_job ${site_env_name} > ${workdir}/50-${site_env_name}.yml || exit 5
-      case ${env_type} in
-      (alpha)
-        cat >${workdir}/51-${site_env_name}.yml <<EOF
+			ci_repipe_proto_job ${site_env_name} > ${workdir}/50-${site_env_name}.yml || exit 5
+			case ${env_type} in
+			(alpha)
+				cat >${workdir}/51-${site_env_name}.yml <<EOF
 ---
 resources:
   # changes that trigger the alpha environment
@@ -2588,10 +2590,10 @@ jobs:
       - put: α-changes
         params: { repository: out/git }
 EOF
-        ;;
+				;;
 
-      (beta)
-        cat >${workdir}/51-${site_env_name}.yml <<EOF
+			(beta)
+				cat >${workdir}/51-${site_env_name}.yml <<EOF
 ---
 resources:
   # changes that trigger the beta environment
@@ -2645,13 +2647,13 @@ jobs:
       - put: ${site}-β-changes
         params: { repository: out/git }
 EOF
-        ;;
+				;;
 
-      (gamma)
-        cat >>${workdir}/10-${site}.yml <<EOF
+			(gamma)
+				cat >>${workdir}/10-${site}.yml <<EOF
       - $site_env_name # gamma
 EOF
-        cat >${workdir}/51-${site_env_name}.yml <<EOF
+				cat >${workdir}/51-${site_env_name}.yml <<EOF
 ---
 resources:
   # changes that trigger the gamma environment
@@ -2692,17 +2694,17 @@ jobs:
       - put: git
         params: { repository: out/git }
 EOF
-        ;;
+				;;
 
-      (omega)
-        cat >>${workdir}/09-all.yml <<EOF
+			(omega)
+				cat >>${workdir}/09-all.yml <<EOF
       - ${site_env_name}-notif
 EOF
-        cat >>${workdir}/10-${site}.yml <<EOF
+				cat >>${workdir}/10-${site}.yml <<EOF
       - $site_env_name # omega
       - ${site_env_name}-notif
 EOF
-        cat >${workdir}/51-${site_env_name}.yml <<EOF
+				cat >${workdir}/51-${site_env_name}.yml <<EOF
 ---
 resources:
   # changes that trigger the omega environment
@@ -2784,10 +2786,10 @@ jobs:
       - put: git
         params: { repository: out/git }
 EOF
-        ;;
-      esac
-    done
-  done
+				;;
+			esac
+		done
+	done
 }
 
 ci_repipe_merge() {
@@ -2796,9 +2798,9 @@ ci_repipe_merge() {
 
 	need_command spruce
 	spruce $SPRUCE_OPTS merge --prune meta \
-	    ${WORKDIR}/pipeline.yml \
-	    ${WORKDIR}/repipe/*.yml \
-	    $(actual_yaml_files ${DEPLOYMENT_ROOT}/ci/settings.yml) > ${DEPLOYMENT_ROOT}/ci/${target}
+	       ${WORKDIR}/pipeline.yml \
+	       ${WORKDIR}/repipe/*.yml \
+	       $(actual_yaml_files ${DEPLOYMENT_ROOT}/ci/settings.yml) > ${DEPLOYMENT_ROOT}/ci/${target}
 }
 
 cmd_ci_repipe() {
@@ -3094,11 +3096,11 @@ EOF
 }
 
 checksum() {
-  if [[ -z $(command -v sha1sum) ]]; then
-    shasum "$@"
-  else
-    sha1sum "$@"
-  fi
+	if [[ -z $(command -v sha1sum) ]]; then
+		shasum "$@"
+	else
+		sha1sum "$@"
+	fi
 }
 
 ####################################################
