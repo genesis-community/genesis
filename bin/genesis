@@ -1181,6 +1181,12 @@ build_bosh_init_manifest() {
 ####################################################
 # multi-call handlers
 
+cmd_version() {
+	s=$(cat ${BASH_SOURCE[0]} | checksum)
+	echo "genesis ${VERSION} (${s:0:12})"
+	exit 0
+}
+
 cmd_help() {
 	local topic=""
 	while (( $# )); do
@@ -3105,12 +3111,10 @@ main() {
 	(ping)
 		exit 0
 		;;
-	(version|-v|--version)
-		s=$(cat ${BASH_SOURCE[0]} | checksum)
-		echo "genesis ${VERSION} (${s:0:12})"
-		exit 0
+	(version)
+		cmd_version $*
 		;;
-	(help|-h|--help|-?)
+	(help)
 		cmd_help $*
 		;;
 	(new)
@@ -3266,8 +3270,9 @@ main() {
 declare -a argv
 while (( $# != 0 )); do
 	case ${1} in
-	(-h|-\?|--help) argv=( help ${argv[@]}        ) ;;
-	(*)             argv=(      ${argv[@]} "${1}" ) ;;
+	(-h|-\?|--help) argv=( help    ${argv[@]}        ) ;;
+	(-v|--version)  argv=( version ${argv[@]}        ) ;;
+	(*)             argv=(         ${argv[@]} "${1}" ) ;;
 	esac
 	shift
 done
