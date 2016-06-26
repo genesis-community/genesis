@@ -1840,12 +1840,6 @@ cmd_build() {
 	exit 0
 }
 
-cmd_diff() {
-	must_be_in_an_environment
-	# FIXME: we should totes run spruce diff here
-	exit 0
-}
-
 cmd_refresh_global() {
 	must_be_in_an_environment
 	echo "Refreshing global definitions for ${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}"
@@ -3180,9 +3174,6 @@ main() {
 		;;
 	(build)
 		cmd_build $*
-		;;
-	(diff)
-		cmd_diff $*
 		;;
 	(refresh)
 		local arg=${1:-all} ; shift
