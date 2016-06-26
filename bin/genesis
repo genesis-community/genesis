@@ -193,6 +193,9 @@ setup() {
 			local env=${relpath%%/*}
 			if [[ -n ${env} && ${env} != "site" && -d "${DEPLOYMENT_ROOT}/${site}/${env}" ]]; then
 				DEPLOYMENT_ENVIRONMENT=${env}
+				if [[ -f "${DEPLOYMENT_ROOT}/${site}/${env}/.type" ]]; then
+					DEPLOYMENT_TYPE=$(cat "${DEPLOYMENT_ROOT}/${site}/${env}/.type")
+				fi
 			fi
 		fi
 	fi
@@ -1574,10 +1577,20 @@ cmd_new_site() {
 
 cmd_new_environment() {
 	local USAGE="new environment [site] name"
-	local site name
+	local dtype site name
 	while (( $# )); do
 		arg=$1 ; shift
 		case ${arg} in
+		(-t|--type)
+			dtype=$1
+			case ${dtype} in
+			(bosh) dtype=bosh-init ;;
+			(normal|bosh-init) ;;
+			(*) echo >&2 "Unrecognized deployment type: ${dtype}"
+			    exit 1 ;;
+			esac
+			shift
+			;;
 		(-*)
 			bad_usage ${USAGE}
 			;;
@@ -1599,7 +1612,7 @@ cmd_new_environment() {
 		site=${DEPLOYMENT_SITE}
 	fi
 
-	case ${DEPLOYMENT_TYPE} in
+	case ${dtype:-$DEPLOYMENT_TYPE} in
 	(normal)
 		create_normal_environment ${site} ${name}
 		;;
@@ -1607,6 +1620,11 @@ cmd_new_environment() {
 		create_bosh_init_environment ${site} ${name}
 		;;
 	esac
+
+	if [[ -n ${dtype} ]]; then
+		echo ${dtype} > ${DEPLOYMENT_ROOT}/${site}/${name}/.type
+	fi
+
 	exit 0
 }
 
