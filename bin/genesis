@@ -666,7 +666,6 @@ EOF
 
 create_normal_deployment() {
 	setup
-	echo "normal" > ${DEPLOYMENT_ROOT}/.deployment
 	mkdir -p ${DEPLOYMENT_ROOT}/global
 	mkdir -p ${DEPLOYMENT_ROOT}/global/releases
 
@@ -677,40 +676,14 @@ create_normal_deployment() {
 ---
 name: (( param "Please define the deployment name in the environment templates" ))
 
-update:
-  canaries: 1
-  max_in_flight: 1
-  serial: true
-EOF
-	for file in jobs properties; do
-		cat > ${DEPLOYMENT_ROOT}/global/${file}.yml <<EOF
---- {}
-EOF
-	done
-}
-
-create_bosh_init_deployment() {
-	setup
-	echo "bosh-init" > ${DEPLOYMENT_ROOT}/.deployment
-	mkdir -p ${DEPLOYMENT_ROOT}/global
-	mkdir -p ${DEPLOYMENT_ROOT}/global/releases
-
-	create_root_readme   >${DEPLOYMENT_ROOT}/README.md
-	create_global_readme >${DEPLOYMENT_ROOT}/global/README
-
-	cat > ${DEPLOYMENT_ROOT}/global/deployment.yml <<EOF
----
-name: (( param "Please specify a name for your BOSH deployment" ))
-
-releases: (( param "bosh-init deployments require a list of BOSH releases to deploy" ))
-
 resource_pools: (( param "Please define one or more resource pools for your BOSH deployment" ))
 disk_pools:     (( param "Please define one or more disk pools for your BOSH deployment" ))
 networks:       (( param "Please define one or more networks for your BOSH deployment" ))
 
-cloud_provider:
-  template: (( param "Please define the Cloud Provider to use for your BOSH deployment" ))
-  properties: (( param "Please define the configuration for your BOSH Cloud Provider" ))
+update:
+  canaries: 1
+  max_in_flight: 1
+  serial: true
 EOF
 	for file in jobs properties; do
 		cat > ${DEPLOYMENT_ROOT}/global/${file}.yml <<EOF
@@ -765,30 +738,6 @@ update:
   canary_watch_time: 1000-60000
   update_watch_time: 1000-60000
   max_in_flight: 1
-EOF
-	for file in networks resource-pools jobs properties; do
-		cat > ${DEPLOYMENT_ROOT}/${site}/site/${file}.yml <<EOF
---- {}
-EOF
-	done
-
-	(cd ${DEPLOYMENT_ROOT}/global/releases ; ls -1) > ${DEPLOYMENT_ROOT}/${site}/site/releases
-}
-
-create_bosh_init_site() {
-	setup
-	local site=${1:?create_normal_site() - no site provided}
-
-	check_site_name ${site}
-
-	mkdir -p ${DEPLOYMENT_ROOT}/${site}
-	mkdir -p ${DEPLOYMENT_ROOT}/${site}/site
-
-	create_site_readme ${site} >${DEPLOYMENT_ROOT}/${site}/site/README
-
-	cat > ${DEPLOYMENT_ROOT}/${site}/site/disk-pools.yml <<EOF
----
-disk_pools: []
 EOF
 	for file in networks resource-pools jobs properties; do
 		cat > ${DEPLOYMENT_ROOT}/${site}/site/${file}.yml <<EOF
@@ -903,7 +852,7 @@ create_bosh_init_environment() {
 	check_environment_name ${name}
 
 	if [[ ! -d "${DEPLOYMENT_ROOT}/${site}" ]]; then
-		create_bosh_init_site ${site}
+		create_normal_site ${site}
 	fi
 
 	mkdir -p ${root}
@@ -1020,6 +969,7 @@ EOF
 	if [[ -n ${stemcell_sha1} ]]; then
 		echo "    sha1: ${stemcell_sha1}"
 	fi
+	echo 'update: (( param "Please specify update settings for your bosh deployment" ))'
 	echo "releases:"
 
 	for rel in ${releases}; do
@@ -1044,13 +994,22 @@ EOF
 	done
 }
 
-build_normal_manifest() {
+build_manifest() {
 	must_be_in_an_environment
 	need_command spruce
 
-	normal_site_metadata > ${DEPLOYMENT_ENV_DIR}/.begin.yml
+	case ${DEPLOYMENT_TYPE} in
+	(normal)
+		normal_site_metadata > ${DEPLOYMENT_ENV_DIR}/.begin.yml
+		PRUNES="--prune meta --prune cloud_provider"
+		;;
+	(bosh-init)
+		bosh_init_site_metadata > ${DEPLOYMENT_ENV_DIR}/.begin.yml
+		PRUNES="--prune meta --prune update"
+		;;
+	esac
 	(cd ${DEPLOYMENT_ENV_DIR}
-	 spruce $SPRUCE_OPTS merge --prune meta \
+	 spruce $SPRUCE_OPTS merge ${PRUNES} \
 	    .begin.yml \
 	    $(actual_yaml_files \
 	        .begin.yml \
@@ -1132,6 +1091,11 @@ meta:
   stemcell:
     url: ${stemcell_url}
     sha1: ${stemcell_sha1}
+
+cloud_provider:
+  template: (( param "Please define the Cloud Provider to use for your BOSH deployment" ))
+  properties: (( param "Please define the configuration for your BOSH Cloud Provider" ))
+
 releases:
 EOF
 	for rel in ${releases}; do
@@ -1139,40 +1103,6 @@ EOF
 		echo "    url:  $(cat ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/url)"
 		echo "    sha1: $(cat ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/sha1)"
 	done
-}
-
-build_bosh_init_manifest() {
-	must_be_in_an_environment
-	need_command spruce
-
-	bosh_init_site_metadata > ${DEPLOYMENT_ENV_DIR}/.begin.yml
-	(cd ${DEPLOYMENT_ENV_DIR}
-	 spruce $SPRUCE_OPTS merge --prune meta \
-	    $(actual_yaml_files \
-	        .begin.yml \
-	        \
-	        .global/jobs.yml \
-	        .global/deployment.yml \
-	        .global/properties.yml \
-	        \
-	        .site/disk-pools.yml \
-	        .site/jobs.yml \
-	        .site/networks.yml \
-	        .site/resource-pools.yml \
-	        .site/properties.yml \
-	        \
-	        networking.yml \
-	        properties.yml \
-	        credentials.yml \
-	        name.yml))
-	rc=$?
-
-	rm -f ${DEPLOYMENT_ENV_DIR}/.begin.yml
-
-	if [[ $rc != 0 ]]; then
-		echo >&2 "Failed to merge templates; bailing..."
-		exit 5
-	fi
 }
 
 bad_usage() {
@@ -1494,12 +1424,13 @@ cmd_new_deployment() {
 
 	case ${DEPLOYMENT_TYPE} in
 	(normal)
-		create_normal_deployment
+		echo "normal" > ${DEPLOYMENT_ROOT}/.deployment
 		;;
 	(bosh-init)
-		create_bosh_init_deployment
+		echo "bosh-init" > ${DEPLOYMENT_ROOT}/.deployment
 		;;
 	esac
+	create_normal_deployment
 
 	cmd_embed >/dev/null
 
@@ -1557,16 +1488,8 @@ cmd_new_site() {
 		echo "Created site ${name} (from template ${template}):"
 
 	else
-		case ${DEPLOYMENT_TYPE} in
-		(normal)
-			create_normal_site ${name}
-			echo "Created site ${name}:"
-			;;
-		(bosh-init)
-			create_bosh_init_site ${name}
-			echo "Created (bosh-init) site ${name}:"
-			;;
-		esac
+		create_normal_site ${name}
+		echo "Created site ${name}:"
 	fi
 
 	tree "${DEPLOYMENT_ROOT}/${name}"
@@ -2005,14 +1928,7 @@ cmd_build() {
 
 	mkdir -p ${DEPLOYMENT_ENV_DIR}/manifests
 
-	case ${DEPLOYMENT_TYPE} in
-	(normal)
-		build_normal_manifest > ${DEPLOYMENT_ENV_DIR}/manifests/${target}
-		;;
-	(bosh-init)
-		build_bosh_init_manifest > ${DEPLOYMENT_ENV_DIR}/manifests/${target}
-		;;
-	esac
+	build_manifest > ${DEPLOYMENT_ENV_DIR}/manifests/${target}
 	exit 0
 }
 
