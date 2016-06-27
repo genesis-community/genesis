@@ -1759,6 +1759,8 @@ cmd_set_release() {
 	setup
 	mkdir -p ${DEPLOYMENT_ROOT}/global/releases/${release}
 	echo ${version} > ${DEPLOYMENT_ROOT}/global/releases/${release}/version
+	check_index release ${release} ${version}
+
 	if [[ ${version} == "latest" ]]; then
 		echo "Using the latest version of ${release}"
 	else
