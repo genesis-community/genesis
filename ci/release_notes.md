@@ -1,5 +1,9 @@
 # Improvements
 
+- Environments can now sport a `.type` file, which is similar to the
+  global `.deployment` file in that it determines what type of environment
+  to deploy (bosh-init or normal) but only affects that environment.
+
 - Genesis now supports the Genesis Index, a free service available
   online at https://genesis.starkandwayne.com that tracks releases
   and stemcells from bosh.io and Github.  Genesis now uses this to
