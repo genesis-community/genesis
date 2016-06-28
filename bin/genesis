@@ -664,7 +664,7 @@ EOF
 	esac
 }
 
-create_normal_deployment() {
+create_deployment() {
 	setup
 	mkdir -p ${DEPLOYMENT_ROOT}/global
 	mkdir -p ${DEPLOYMENT_ROOT}/global/releases
@@ -716,9 +716,9 @@ refresh_global() {
 	rm -fr ${root}/.global.old
 }
 
-create_normal_site() {
+create_site() {
 	setup
-	local site=${1:?create_normal_site() - no site provided}
+	local site=${1:?create_site() - no site provided}
 
 	check_site_name ${site}
 
@@ -782,7 +782,7 @@ create_normal_environment() {
 	check_environment_name ${name}
 
 	if [[ ! -d "${DEPLOYMENT_ROOT}/${site}" ]]; then
-		create_normal_site ${site}
+		create_site ${site}
 	fi
 
 	mkdir -p ${root}
@@ -852,7 +852,7 @@ create_bosh_init_environment() {
 	check_environment_name ${name}
 
 	if [[ ! -d "${DEPLOYMENT_ROOT}/${site}" ]]; then
-		create_normal_site ${site}
+		create_site ${site}
 	fi
 
 	mkdir -p ${root}
@@ -1430,7 +1430,7 @@ cmd_new_deployment() {
 		echo "bosh-init" > ${DEPLOYMENT_ROOT}/.deployment
 		;;
 	esac
-	create_normal_deployment
+	create_deployment
 
 	cmd_embed >/dev/null
 
@@ -1488,7 +1488,7 @@ cmd_new_site() {
 		echo "Created site ${name} (from template ${template}):"
 
 	else
-		create_normal_site ${name}
+		create_site ${name}
 		echo "Created site ${name}:"
 	fi
 
