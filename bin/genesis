@@ -2060,6 +2060,14 @@ cmd_embed() {
 	${DEPLOYMENT_ROOT}/bin/genesis version
 }
 
+ci_smoke_test() {
+	local smoke_test=$(spruce json ${DEPLOYMENT_ROOT}/.ci.yml | jq -r '.smoke_test')
+
+	if [[ ${smoke_test} != 'null' ]]; then
+		echo ${smoke_test}
+	fi
+}
+
 ci_environment_type() {
 	local site=${1:?ci_environment_type() - no site given}
 	local env=${2:?ci_environment_type() - no environment given}
@@ -2371,6 +2379,23 @@ EOF
 	done
 }
 
+cmd_ci_smoke_test() {
+	local USAGE="ci smoke-test <errand>"
+	errand=${1}
+
+	if [[ -z ${errand} ]]; then
+		bad_usage ${USAGE}
+		exit 1
+	fi
+
+	setup
+
+	ci_update <<EOF
+---
+smoke_test: ${errand}
+EOF
+}
+
 cmd_ci_manual() {
 	local USAGE="ci manual [<site/env> ...]"
 
@@ -2466,6 +2491,42 @@ EOF
 	need_a_vault
 	spruce merge ${DEPLOYMENT_ROOT}/ci/boshes.yml | sed -e 's/^/              /' || exit $?
 }
+
+ci_repipe_smoke_test() {
+	local job_name=${1:?ci_repipe_smoke_test() - no job name given}
+	local errand_name=${2:?ci_repipe_smoke_test() - no errand name given}
+
+	cat <<EOF
+jobs:
+  - name: ${job_name}
+    plan:
+      - (( append ))
+      - task: smoke-test
+        config:
+          platform: linux
+          image_resource:
+            type: docker-image
+            source:
+              repository: starkandwayne/concourse
+              tag: latest
+          inputs: [{name: out}]
+          run:
+            path: out/git/bin/genesis
+            args: [ci, stage-smoke-test]
+          params:
+            .: (( inject meta.env ))
+
+            WORKING_DIR: out/git
+            CI_SITE_ENV: ${job_name}
+            ERRAND_NAME: ${errand_name}
+            VAULT_APP_ID:   concourse
+            VAULT_USER_ID:  (( concat meta.name "-pipeline" ))
+            CI_BOSHES: |
+EOF
+	need_a_vault
+	spruce merge ${DEPLOYMENT_ROOT}/ci/boshes.yml | sed -e 's/^/              /' || exit $?
+}
+
 
 ci_repipe_build_base() {
 	need_a_workdir
@@ -2644,6 +2705,8 @@ groups:
 EOF
 		fi
 
+		local smoke_test=$(ci_smoke_test)
+
 		for env in $(all_environments_for ${site}); do
 			local env_type=$(ci_environment_type ${site} ${env})
 			local env_name=$(ci_name ${env})
@@ -2653,6 +2716,10 @@ EOF
 			cat >>${workdir}/09-all.yml <<EOF
       - $site_env_name
 EOF
+
+			if [[ -n ${smoke_test} ]]; then
+				ci_repipe_smoke_test ${site_env_name} ${smoke_test} > ${workdir}/59-${site_env_name}.yml
+			fi
 
 			ci_repipe_proto_job ${site_env_name} > ${workdir}/50-${site_env_name}.yml || exit 5
 			case ${env_type} in
@@ -3157,6 +3224,37 @@ EOF
 	exit 0
 }
 
+cmd_ci_stage_smoke_test() {
+	if [[ -z ${WORKING_DIR} ]]; then
+		echo >&2 "!! ERROR: Your Concourse Pipeline seems to be MISCONFIGURED !!"
+		echo >&2
+		echo >&2 "The \$WORKING_DIR environment variable was not set."
+		exit 2
+	fi
+
+	pushd ${WORKING_DIR}/${CI_SITE_ENV} >/dev/null
+		setup
+		must_be_in_an_environment
+
+		line
+		echo "Generating manifest (live.yml)..."
+		echo
+		set -e
+		need_a_vault
+		(VAULT_ADDR= REDACT=y cmd_build live.yml)    || exit 3
+		(            REDACT=  cmd_build .deploy.yml) || exit 4
+
+		local target=$(spruce json ${DEPLOYMENT_ENV_DIR}/manifests/live.yml | jq -r '.director_uuid')
+		line
+		echo "Running Errand ${ERRAND_NAME} on BOSH director ${target}"
+		echo
+		bosh target ${target}
+		bosh deployment ${DEPLOYMENT_ENV_DIR}/manifests/.deploy.yml
+		bosh -n run errand ${ERRAND_NAME}
+		set +e
+	popd >/dev/null
+}
+
 cmd_ci_draft_message() {
 	[[ -z $1 ]] || bad_usage "ci draft-message"
 
@@ -3188,6 +3286,7 @@ USAGE:  genesis ci alpha [site/env]
         genesis ci beta [site/env [site/env ...]]
         genesis ci auto [site/env [site/env ...]]
         genesis ci manual [site/env [site/env ...]]
+        genesis ci smoke-test <errand>
         genesis ci repipe
         genesis ci flow
         genesis ci check
@@ -3373,6 +3472,9 @@ main() {
 		(auto)
 			cmd_ci_auto $*
 			;;
+		(smoke-test)
+			cmd_ci_smoke_test $*
+			;;
 		(manual)
 			cmd_ci_manual $*
 			;;
@@ -3390,6 +3492,9 @@ main() {
 			;;
 		(stage2)
 			cmd_ci_stage2 $*
+			;;
+		(stage-smoke-test)
+			cmd_ci_stage_smoke_test $*
 			;;
 		(draft-message)
 			cmd_ci_draft_message $*
