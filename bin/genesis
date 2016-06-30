@@ -2381,9 +2381,9 @@ EOF
 
 cmd_ci_smoke_test() {
 	local USAGE="ci smoke-test <errand>"
-	errand=${1}
+	local errand_name=${1}
 
-	if [[ -z ${errand} ]]; then
+	if [[ -z ${errand_name} ]]; then
 		bad_usage ${USAGE}
 		exit 1
 	fi
@@ -2392,7 +2392,7 @@ cmd_ci_smoke_test() {
 
 	ci_update <<EOF
 ---
-smoke_test: ${errand}
+smoke_test: ${errand_name}
 EOF
 }
 
