@@ -1786,6 +1786,7 @@ cmd_use_stemcell() {
 		;;
 	esac
 
+	mkdir -p ${DEPLOYMENT_SITE_DIR}/site/stemcell
 	echo "${name}"    > ${DEPLOYMENT_SITE_DIR}/site/stemcell/name
 	echo "${version}" > ${DEPLOYMENT_SITE_DIR}/site/stemcell/version
 
