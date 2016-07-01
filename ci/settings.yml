@@ -15,3 +15,28 @@ meta:
   slack:
     webhook: FIXME
     channel: "#genesis"
+
+  dockerhub:
+    email: (( vault "secret/pipelines/genesis/dockerhub:email" ))
+    username: (( vault "secret/pipelines/genesis/dockerhub:username" ))
+    password: (( vault "secret/pipelines/genesis/dockerhub:password" ))
+    repository: starkandwayne/genesis
+
+jobs:
+  - name: shipit
+    plan:
+      - (( append ))
+      - put: genesis-image
+        params:
+          build: pushme/git
+          tag: version/number
+          tag_as_latest: true
+
+resources:
+  - name: genesis-image
+    type: docker-image
+    source:
+      email: (( grab meta.dockerhub.email ))
+      username: (( grab meta.dockerhub.username ))
+      password: (( grab meta.dockerhub.password ))
+      repository: (( grab meta.dockerhub.repository ))
