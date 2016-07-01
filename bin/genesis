@@ -259,7 +259,7 @@ need_a_vault() {
 					exit 2
 				fi
 
-				VAULT_TOKEN=$(cat ~/.vault | jq -r '.auth.client_token')
+				export VAULT_TOKEN=$(cat ~/.vault | jq -r '.auth.client_token')
 				rm ~/.vault
 				if ! vault status; then
 					echo >&2 "Failed to authenticate to Vault at ${VAULT_ADDR}; bailing..."
