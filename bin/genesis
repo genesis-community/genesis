@@ -248,14 +248,18 @@ need_a_vault() {
 			if [[ -n ${CI_SITE_ENV} ]]; then
 				touch      ~/.vault
 				chmod 0400 ~/.vault
-				creds='{"user_id":"'${CI_VAULT_USER_ID:-concourse}'","app_id":"'${CI_VAULT_APP_ID:-generic-app}'"}'
-				if ! curl -Ls ${VAULT_ADDR}/v1/auth/app-id/login --data "${creds}" > ~/.vault; then
+
+				if [[ ${VAULT_SKIP_VERIFY} == '1' ]]; then
+					skip_verify='-k'
+				fi
+				creds='{"user_id":"'${CI_VAULT_USER_ID:-generic-deployment-generic-userpipeline}'","app_id":"'${CI_VAULT_APP_ID:-concousre}'"}'
+				if ! curl ${skip_verify} -Ls ${VAULT_ADDR}/v1/auth/app-id/login --data "${creds}" > ~/.vault; then
 					echo >&2 "Failed to authenticate to the Vault app-id backend:"
 					cat >&2 ~/.vault
 					exit 2
 				fi
 
-				VAULT_TOKEN=$(cat ~/.vault | jq -r '.auth.client_token')
+				export VAULT_TOKEN=$(cat ~/.vault | jq -r '.auth.client_token')
 				rm ~/.vault
 				if ! vault status; then
 					echo >&2 "Failed to authenticate to Vault at ${VAULT_ADDR}; bailing..."
@@ -2476,8 +2480,8 @@ jobs:
           params:
             .: (( inject meta.env ))
 
-            VAULT_APP_ID:   concourse
-            VAULT_USER_ID:  (( concat meta.name "-pipeline" ))
+            CI_VAULT_APP_ID:   concourse
+            CI_VAULT_USER_ID:  (( concat meta.name "-pipeline" ))
 
             CI_SITE_ENV:    (( param "looks like genesis forgot to override the CI_SITE_ENV variable" ))
             CI_BRANCH:      (( grab resources.git.source.branch ))
