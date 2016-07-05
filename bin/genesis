@@ -2139,6 +2139,7 @@ cmd_embed() {
 
 	mkdir -p ${DEPLOYMENT_ROOT}/bin
 	cp ${BASH_SOURCE[0]} ${DEPLOYMENT_ROOT}/bin/genesis
+	chmod 755 ${DEPLOYMENT_ROOT}/bin/genesis
 
 	${DEPLOYMENT_ROOT}/bin/genesis version
 }
