@@ -933,6 +933,12 @@ normal_site_metadata() {
 		exit 2
 	fi
 	local stemcell_version=$(cat "${DEPLOYMENT_ENV_DIR}/.site/stemcell/version")
+	if [[ ${stemcell_version} == "latest" ]]; then
+		rm -f ${DEPLOYMENT_ENV_DIR}/.site/stemcell/url
+		rm -f ${DEPLOYMENT_ENV_DIR}/.site/stemcell/sha1
+	else
+		check_index stemcell ${stemcell_name} ${stemcell_version}
+	fi
 
 	local stemcell_url=""
 	if [[ -f "${DEPLOYMENT_ENV_DIR}/.site/stemcell/url" ]]; then
@@ -955,8 +961,16 @@ normal_site_metadata() {
 			exit 2
 		fi
 		if [[ ! -f "${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/version" ]]; then
-			echo >&2 "Error: no version specified for '${rel}'"
+			echo >&2 "Error: no version specified for release '${rel}'"
 			exit 2
+		fi
+
+		local release_version=$(cat ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/version)
+		if [[ ${release_version} == "latest" ]]; then
+			rm -f ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/url
+			rm -f ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/sha1
+		else
+			check_index release ${rel} ${release_version}
 		fi
 	done
 
@@ -1004,11 +1018,11 @@ build_manifest() {
 
 	case ${DEPLOYMENT_TYPE} in
 	(normal)
-		normal_site_metadata > ${DEPLOYMENT_ENV_DIR}/.begin.yml
+		normal_site_metadata > ${DEPLOYMENT_ENV_DIR}/.begin.yml || exit 2
 		PRUNES="--prune meta --prune cloud_provider"
 		;;
 	(bosh-init)
-		bosh_init_site_metadata > ${DEPLOYMENT_ENV_DIR}/.begin.yml
+		bosh_init_site_metadata > ${DEPLOYMENT_ENV_DIR}/.begin.yml || exit 2
 		PRUNES="--prune meta --prune update"
 		;;
 	esac
@@ -1050,6 +1064,24 @@ build_manifest() {
 
 bosh_init_site_metadata() {
 	must_be_in_an_environment
+	if [[ ! -f "${DEPLOYMENT_ENV_DIR}/.site/stemcell/name" ]]; then
+		echo >&2 "Error: no stemcell name specified for site"
+		exit 2
+	fi
+	local stemcell_name=$(cat "${DEPLOYMENT_ENV_DIR}/.site/stemcell/name")
+
+	if [[ ! -f "${DEPLOYMENT_ENV_DIR}/.site/stemcell/version" ]]; then
+		echo >&2 "Error: no stemcell version specified for site"
+		exit 2
+	fi
+	local stemcell_version=$(cat "${DEPLOYMENT_ENV_DIR}/.site/stemcell/version")
+	if [[ ${stemcell_version} == "latest" ]]; then
+		echo >&2 "Error: bosh-init deployments cannot use 'latest' as a stemcell version"
+		echo >&2 "       (you probably want 'track', so that Genesis uses the Index)"
+		exit 2
+	fi
+	check_index stemcell ${stemcell_name} ${stemcell_version}
+
 	if [[ ! -f "${DEPLOYMENT_ENV_DIR}/.site/stemcell/url" ]]; then
 		echo >&2 "Error: no stemcell URL listed for site"
 		exit 2
@@ -1072,6 +1104,19 @@ bosh_init_site_metadata() {
 			echo >&2 "Error: release '${rel}' not defined globally"
 			exit 2
 		fi
+		if [[ ! -f "${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/version" ]]; then
+			echo >&2 "Error: no version specified for release '${rel}'"
+			exit 2
+		fi
+
+		local release_version=$(cat ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/version)
+		if [[ ${release_version} == "latest" ]]; then
+			echo >&2 "Error: bosh-init deployments cannot use 'latest' as release versions [for ${rel}]"
+			echo >&2 "       (you probably want 'track', so that Genesis uses the Index)"
+			exit 2
+		fi
+		check_index release ${rel} ${release_version}
+
 		if [[ ! -f "${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/url" ]]; then
 			echo >&2 "Error: no url specified for '${rel}'"
 			exit 2
@@ -1569,13 +1614,20 @@ check_index() {
 	local name=${2:?check_index() - no name given}
 	local version=${3:?check_index() - no version given}
 
+	# if the caller wants "latest", that means latest
+	# available on the BOSH director, so there's nothing
+	# we can / should do about that.
+	if [[ ${version} == "latest" ]]; then
+		return
+	fi
+
 	local root=""
 	case ${type} in
 	(stemcell)
-		root=${DEPLOYMENT_SITE_DIR}/site/stemcell
+		root=${DEPLOYMENT_ENV_DIR}/.site/stemcell
 		;;
 	(release)
-		root=${DEPLOYMENT_ROOT}/global/releases/${name}
+		root=${DEPLOYMENT_ENV_DIR}/.global/releases/${name}
 		;;
 	(*)
 		echo >&2 "Invalid type '${type}' given to check_index.  Please file a bug"
@@ -1583,18 +1635,32 @@ check_index() {
 		;;
 	esac
 
+	# if the operator wants us to track, but we are likewise
+	# instructed not to contact the index, we should bail out
+	if [[ -z ${GENESIS_INDEX} && ${version} == "track" ]]; then
+		echo >&2 "Unable to check the Genesis Index for the latest version of ${type} ${name}!"
+		echo >&2 "(GENESIS_INDEX environment variable is either not set, or"
+		echo >&2 " set explicitly to 'no', disabling access to the Index)"
+		exit 2
+	fi
 
 	if [[ -n ${GENESIS_INDEX} ]]; then
 		need_a_workdir
-		echo "  checking ${GENESIS_INDEX} for details on ${type} ${name}/${version}"
-		if [[ ${version} == "latest" ]]; then
-			curl -Lsk ${GENESIS_INDEX}/v1/${type}/${name}/latest       > ${WORKDIR}/index
+		if [[ ${version} == "track" ]]; then
+			echo >&2 "  checking ${GENESIS_INDEX} for details on latest ${type} ${name}"
+			if ! curl --fail -Lsk ${GENESIS_INDEX}/v1/${type}/${name}/latest > ${WORKDIR}/index; then
+				echo >&2 "Failed to access the Genesis Index"
+				echo >&2 "(at $GENESIS_INDEX)"
+				echo >&2 "Unable to track the latest version of ${type} ${name}"
+				exit 2
+			fi
 		else
+			echo >&2 "  checking ${GENESIS_INDEX} for details on ${type} ${name}/${version}"
 			curl -Lsk ${GENESIS_INDEX}/v1/${type}/${name}/v/${version} > ${WORKDIR}/index
 		fi
 
 		for thing in url sha1 version; do
-			v=$(jq -r .${thing} <${WORKDIR}/index)
+			v=$(jq -r ".${thing} // \"\"" <${WORKDIR}/index)
 			if [[ -n ${v} ]]; then
 				echo "${v}" > ${root}/${thing}
 			fi
@@ -1626,7 +1692,7 @@ cmd_add_release() {
 		esac
 	done
 	[[ -n ${release} ]] || bad_usage ${USAGE}
-	version=${version:-latest}
+	version=${version:-track}
 
 	setup
 	if [[ -d ${DEPLOYMENT_ROOT}/global/releases/${release} ]]; then
@@ -1638,16 +1704,19 @@ cmd_add_release() {
 
 	if [[ -n ${url} ]]; then
 		echo ${url} > ${DEPLOYMENT_ROOT}/global/releases/${release}/url
-	else
-		check_index release ${release} ${version}
 	fi
 
-	if [[ ${version} == "latest" ]]; then
-		echo "Using the latest version of ${release}"
-	else
+	case ${version} in
+	(latest)
+		echo "Using the latest version of ${release} available on your BOSH director"
+		;;
+	(track)
+		echo "Using the latest version of ${release} available via the Genesis Index"
+		;;
+	(*)
 		echo "Using v${version} of ${release}"
-	fi
-
+		;;
+	esac
 	exit 0
 }
 
@@ -1681,18 +1750,23 @@ cmd_set_release() {
 		esac
 	done
 	[[ -n ${release} ]] || bad_usage ${USAGE}
-	version=${version:-latest}
+	version=${version:-track}
 
 	setup
 	mkdir -p ${DEPLOYMENT_ROOT}/global/releases/${release}
 	echo ${version} > ${DEPLOYMENT_ROOT}/global/releases/${release}/version
-	check_index release ${release} ${version}
 
-	if [[ ${version} == "latest" ]]; then
-		echo "Using the latest version of ${release}"
-	else
+	case ${version} in
+	(latest)
+		echo "Using the latest version of ${release} available on your BOSH director"
+		;;
+	(track)
+		echo "Using the latest version of ${release} available via the Genesis Index"
+		;;
+	(*)
 		echo "Using v${version} of ${release}"
-	fi
+		;;
+	esac
 	exit 0
 }
 
@@ -1764,7 +1838,7 @@ cmd_use_stemcell() {
 		esac
 	done
 	[[ -n ${name} ]] || bad_usage ${USAGE}
-	version=${version:-latest}
+	version=${version:-track}
 
 	must_be_in_a_site
 
@@ -1794,13 +1868,17 @@ cmd_use_stemcell() {
 	echo "${name}"    > ${DEPLOYMENT_SITE_DIR}/site/stemcell/name
 	echo "${version}" > ${DEPLOYMENT_SITE_DIR}/site/stemcell/version
 
-	check_index stemcell ${name} ${version}
-
-	if [[ ${version} == "latest" ]]; then
-		echo "Site ${DEPLOYMENT_SITE} is now using the latest version of stemcell ${name}"
-	else
+	case ${version} in
+	(latest)
+		echo "Site ${DEPLOYMENT_SITE} is now using the latest version of stemcell ${name} (per BOSH director)"
+		;;
+	(track)
+		echo "Site ${DEPLOYMENT_SITE} is now tracking the latest version of stemcell ${name} via the Genesis Index"
+		;;
+	(*)
 		echo "Site ${DEPLOYMENT_SITE} is now using stemcell ${name} v${version}"
-	fi
+		;;
+	esac
 	exit 0
 }
 
