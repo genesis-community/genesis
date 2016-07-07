@@ -3,7 +3,7 @@ FROM concourse/concourse-ci
 ENV SPRUCE_VERSION=1.5.0 \
   CF_CLI_VERSION=6.13.0 \
   VAULT_VERSION=0.6.0 \
-  GENESIS_VERSION=1.5.1
+  GENESIS_VERSION=1.5.2
 
 # base packages
 RUN apt-get install -yy curl file
