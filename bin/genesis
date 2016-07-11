@@ -2601,10 +2601,10 @@ jobs:
             .: (( inject meta.env ))
 
             WORKING_DIR: out/git
-            CI_SITE_ENV: ${job_name}
+            CI_SITE_ENV: ${site_env}
             ERRAND_NAME: ${errand_name}
-            VAULT_APP_ID:   concourse
-            VAULT_USER_ID:  (( concat meta.name "-pipeline" ))
+            CI_VAULT_APP_ID:   concourse
+            CI_VAULT_USER_ID:  (( concat meta.name "-pipeline" ))
             CI_BOSHES: |
 EOF
 	need_a_vault
@@ -3316,6 +3316,15 @@ cmd_ci_stage_smoke_test() {
 		exit 2
 	fi
 
+	echo "Setting up .bosh_config with values from ci/boshes.yml"
+	echo
+	cat >~/.bosh_config<<EOF
+${CI_BOSHES}
+EOF
+	ls -l ~/.bosh_config
+	echo
+
+	line
 	pushd ${WORKING_DIR}/${CI_SITE_ENV} >/dev/null
 		setup
 		must_be_in_an_environment
