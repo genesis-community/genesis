@@ -2871,7 +2871,7 @@ jobs:
             CI_SITE_ENV: ${site_env}
         # PUT to the beta inputs
       - put: α-changes
-        params: { repository: out/git }
+        params: { repository: out/git, rebase: true }
 EOF
 				;;
 
@@ -2928,7 +2928,7 @@ jobs:
             CI_SITE_ENV: ${site_env}
         # PUT to the gamma inputs
       - put: ${site}-β-changes
-        params: { repository: out/git }
+        params: { repository: out/git, rebase: true }
 EOF
 				;;
 
@@ -2975,7 +2975,7 @@ jobs:
             CI_SITE_ENV: ${site_env}
         # PUT to git
       - put: git
-        params: { repository: out/git }
+        params: { repository: out/git, rebase: true }
 EOF
 				;;
 
@@ -3067,7 +3067,7 @@ jobs:
             CI_SITE_ENV: ${site_env}
         # PUT to git
       - put: git
-        params: { repository: out/git }
+        params: { repository: out/git, rebase: true }
 EOF
 				;;
 			esac
