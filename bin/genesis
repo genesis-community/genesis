@@ -3095,9 +3095,11 @@ cmd_ci_repipe() {
 	need_a_vault
 
 	ci_repipe_build_base
-	ci_repipe_build_environments || exit 2
+	VAULT_ADDR= REDACT=y ci_repipe_build_environments || exit 2
 	VAULT_ADDR= REDACT=y ci_repipe_merge pipeline.yml || exit 3
-	            REDACT=  ci_repipe_merge .deploy.yml  || exit 4
+
+	            REDACT=  ci_repipe_build_environments || exit 4
+	            REDACT=  ci_repipe_merge .deploy.yml  || exit 5
 	[[ -n $DEBUG_LEAVE_THE_CREDS_THERE ]] || \
 		trap "rm -f ${DEPLOYMENT_ROOT}/ci/.deploy.yml" QUIT TERM INT EXIT
 
