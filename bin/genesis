@@ -3263,7 +3263,7 @@ EOF
 		echo "copy world/${CI_SITE}/site -> ${CI_SITE_ENV}/.site"
 		echo
 		cp -a ${WORLD_CHANGES}/${alpha_env}/.global  ${WORKING_DIR}/${CI_SITE_ENV}/.global
-		cp -a ${WORLD_CHANGES}/${CI_SITE}/site       ${WORKING_DIR}/${CI_SITE_ENV}/.site
+		cp -a ${LOCAL_CHANGES}/${CI_SITE}/site       ${WORKING_DIR}/${CI_SITE_ENV}/.site
 		;;
 	(*)
 		echo
