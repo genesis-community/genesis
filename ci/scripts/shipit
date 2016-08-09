@@ -53,7 +53,6 @@ pushd $REPO_ROOT
 
 mkdir artifacts
 cp bin/${BINARY} artifacts/${BINARY}
-auto_sed Dockerfile "s/GENESIS_VERSION=.*/GENESIS_VERSION=${VERSION}/"
 auto_sed artifacts/${BINARY} "s/^VERSION=.*/VERSION=\"v${VERSION}\"/"
 artifacts/${BINARY} -v | grep ${VERSION}
 popd
