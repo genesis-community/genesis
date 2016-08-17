@@ -804,14 +804,23 @@ create_normal_environment() {
 EOF
 	done
 
-	local director_uuid
-	director_uuid=$(bosh status --uuid)
-	if [[ "$?" -eq 0 ]] ; then
-		cat <<EOF > ${root}/director.yml
+	# As a convenience, try to get the BOSH Director UUID, but only if the director in set and reachable.
+	local director_uuid='(( param "Please specify the BOSH Director UUID in '${root}'/director.yml" ))'
+	local director_url
+	local director_address
+	local fetched_director_id
+
+	read director_url director_address < <(bosh target 2>/dev/null | sed -e 's/.* is \(https\{0,1\}:\/\/\(.*\):[0-9]\{1,\}\) (.*)$/\1 \2/')
+	if [[ -n "$director_address" ]] &&\
+		 ping $director_address -c1 -W1 >/dev/null 2>&1 &&\
+		 curl -k -m5 ${director_url}/info >/dev/null 2>&1
+	then
+		fetched_director_uuid=$(bosh status --uuid) && director_uuid=${fetched_director_uuid}
+	fi
+	cat <<EOF > ${root}/director.yml
 ---
 director_uuid: ${director_uuid}
 EOF
-	fi
 
 	VAULT_PREFIX=secret/${site}/$name/${DEPLOYMENT_NAME}
 	DEPLOYMENT_SITE=${site}
