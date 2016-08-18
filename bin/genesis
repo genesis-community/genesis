@@ -1419,7 +1419,11 @@ cmd_new_deployment() {
 		if [[ ${template} != ?*/?* ]]; then
 			template="starkandwayne/${template}"
 		fi
-		template="${template%%-deployment*}-deployment"
+		if [[ ${template} =~ (http(s)?):\/\/ ]]; then
+			custom_url=yes
+		else
+			template="${template%%-deployment*}-deployment"
+		fi
 
 		if [[ -z ${name} ]]; then
 			name=${template##*/}
@@ -1439,7 +1443,16 @@ cmd_new_deployment() {
 	fi
 
 	if [[ -n ${template} ]]; then
-		local url=https://github.com/${template}
+		if [[ -n ${custom_url} ]]; then
+			local url=${template}
+			if [[ ${url} =~ \/([a-zA-z]*)-deployments.git ]]; then
+				name=${BASH_REMATCH[1]}
+			else
+				echo "Unable to determine the template name from that URL"
+			fi
+		else
+			local url=https://github.com/${template}
+		fi
 		set -e
 		echo "cloning from template ${url}"
 		git clone --origin upstream ${url} ${root}/${name}-deployments
