@@ -51,6 +51,20 @@ produce a single BOSH manifest for each environment, and uses a
 tool called [spruce][spruce] to handle overrides and references in
 a straightforward and predictable manner.
 
+## More Information
+
+For more information, check out these fantastic Stark & Wayne blog
+articles about using Genesis in real world situations:
+
+  - [Managing Multiple BOSH Environments with Genesis][blog-bosh]
+  - [Standing up Vault with Genesis][blog-vault]
+  - [Using Genesis to Deploy Cloud Foundry][blog-cf]
+
+[blog-bosh]:  https://www.starkandwayne.com/blog/managing-multiple-bosh-environments-with-genesis/
+[blog-vault]: https://www.starkandwayne.com/blog/standing-up-vault-using-genesis/
+[blog-cf]:    https://www.starkandwayne.com/blog/using-genesis-to-deploy-cloud-foundry/
+
+
 ## Installation
 
 To install Genesis, you just need to put `bin/genesis` somewhere
