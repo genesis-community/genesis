@@ -10,6 +10,11 @@ if [[ ${GENESIS_INDEX} = "no" ]]; then
 	GENESIS_INDEX=
 fi
 
+HAVE_TREE=
+if [[ -n $(command -v tree 2>/dev/null) ]]; then
+	HAVE_TREE=yes
+fi
+
 ####################################################
 # common functions used by other parts of Genesis
 
@@ -840,8 +845,12 @@ EOF
 	refresh_global ${site} ${name}
 	refresh_site   ${site} ${name}
 
-	echo "Created environment ${site}/${name}:"
-	tree ${root}
+	if [[ -n $HAVE_TREE ]]; then
+		echo "Created environment ${site}/${name}:"
+		tree ${root}
+	else
+		echo "Created environment ${site}/${name}"
+	fi
 	echo
 	echo
 }
@@ -894,8 +903,12 @@ EOF
 	refresh_global ${site} ${name}
 	refresh_site   ${site} ${name}
 
-	echo "Created environment ${site}/${env}:"
-	tree ${root}
+	if [[ -n $HAVE_TREE ]]; then
+		echo "Created environment ${site}/${env}:"
+		tree ${root}
+	else
+		echo "Created environment ${site}/${env}"
+	fi
 	echo
 	echo
 }
@@ -1534,14 +1547,23 @@ cmd_new_site() {
 		mkdir -p ${DEPLOYMENT_ROOT}/${name}
 		cp -a ${DEPLOYMENT_ROOT}/.templates/${template} ${DEPLOYMENT_ROOT}/${name}/site
 		create_site_readme ${name} >${DEPLOYMENT_ROOT}/${name}/README
-		echo "Created site ${name} (from template ${template}):"
+		if [[ -n $HAVE_TREE ]]; then
+			echo "Created site ${name} (from template ${template}):"
+			tree "${DEPLOYMENT_ROOT}/${name}"
+		else
+			echo "Created site ${name} (from template ${template})"
+		fi
 
 	else
 		create_site ${name}
-		echo "Created site ${name}:"
+		if [[ -n $HAVE_TREE ]]; then
+			echo "Created site ${name}:"
+			tree "${DEPLOYMENT_ROOT}/${name}"
+		else
+			echo "Created site ${name}"
+		fi
 	fi
 
-	tree "${DEPLOYMENT_ROOT}/${name}"
 	echo
 	echo
 	exit 0
