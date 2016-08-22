@@ -933,12 +933,6 @@ normal_site_metadata() {
 		exit 2
 	fi
 	local stemcell_version=$(cat "${DEPLOYMENT_ENV_DIR}/.site/stemcell/version")
-	if [[ ${stemcell_version} == "latest" ]]; then
-		rm -f ${DEPLOYMENT_ENV_DIR}/.site/stemcell/url
-		rm -f ${DEPLOYMENT_ENV_DIR}/.site/stemcell/sha1
-	else
-		check_index stemcell ${stemcell_name} ${stemcell_version}
-	fi
 
 	local stemcell_url=""
 	if [[ -f "${DEPLOYMENT_ENV_DIR}/.site/stemcell/url" ]]; then
@@ -965,13 +959,6 @@ normal_site_metadata() {
 			exit 2
 		fi
 
-		local release_version=$(cat ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/version)
-		if [[ ${release_version} == "latest" ]]; then
-			rm -f ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/url
-			rm -f ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/sha1
-		else
-			check_index release ${rel} ${release_version}
-		fi
 	done
 
 	cat <<EOF
@@ -1607,6 +1594,92 @@ USAGE: genesis new deployment
        genesis new (site|environment)
 EOF
 	exit 1
+}
+
+sync_releases_via_index() {
+	local releases_root=${1:?sync_releases_via_index() - no releases root given}
+
+	if [[ -z ${GENESIS_INDEX} ]]; then
+		echo >&2 "(GENESIS_INDEX environment variable is either not set, or"
+		echo >&2 " set explicitly to 'no', disabling access to the Index)"
+		exit 2
+	fi
+
+	for release_name in $(ls ${releases_root}); do
+		version=$(cat ${releases_root}/${release_name}/version)
+		if [[ ${version} == "latest" ]]; then
+			rm -f ${releases_root}/${release_name}/url
+			rm -f ${releases_root}/${release_name}/sha1
+			continue
+		fi
+		need_a_workdir
+		if [[ ${version} == "track" ]]; then
+			echo >&2 "  checking ${GENESIS_INDEX} for details on latest release ${release_name}"
+			if ! curl --fail -Lsk ${GENESIS_INDEX}/v1/release/${release_name}/latest > ${WORKDIR}/index; then
+				echo >&2 "Failed to access the Genesis Index"
+				echo >&2 "(at $GENESIS_INDEX)"
+				echo >&2 "Unable to track the latest version of release ${release_name}"
+				exit 2
+			fi
+		else
+			echo >&2 "  checking ${GENESIS_INDEX} for details on release ${release_name}/${version}"
+			if ! curl -Lsk ${GENESIS_INDEX}/v1/release/${release_name}/v/${version} > ${WORKDIR}/index; then
+				echo >&2 "Failed to access the Genesis Index"
+				echo >&2 "(at $GENESIS_INDEX)"
+				echo >&2 "Unable to track the latest version of release ${release_name}"
+				exit 2
+			fi
+		fi
+		for thing in url sha1 version; do
+			v=$(jq -r ".${thing} // \"\"" <${WORKDIR}/index)
+			if [[ -n ${v} ]]; then
+				echo "${v}" > ${releases_root}/${release_name}/${thing}
+			fi
+		done
+	done
+}
+
+sync_stemcell_via_index() {
+	local stemcell_root=${1:?sync_stemcell_via_index() - no stemcell root given}
+
+	if [[ -z ${GENESIS_INDEX} ]]; then
+		echo >&2 "(GENESIS_INDEX environment variable is either not set, or"
+		echo >&2 " set explicitly to 'no', disabling access to the Index)"
+		exit 2
+	fi
+
+	version=$(cat ${stemcell_root}/version)
+	if [[ ${version} == "latest" ]]; then
+		rm -f ${stemcell_root}/url
+		rm -f ${stemcell_root}/sha1
+		return
+	fi
+
+	need_a_workdir
+  stemcell_name=$(cat ${stemcell_root}/name)
+	if [[ ${version} == "track" ]]; then
+		echo >&2 "  checking ${GENESIS_INDEX} for details on latest stemcell ${stemcell_name}"
+		if ! curl --fail -Lsk ${GENESIS_INDEX}/v1/stemcell/${stemcell_name}/latest > ${WORKDIR}/index; then
+			echo >&2 "Failed to access the Genesis Index"
+			echo >&2 "(at $GENESIS_INDEX)"
+			echo >&2 "Unable to track the latest version of stemcell ${stemcell_name}"
+			exit 2
+		fi
+	else
+		echo >&2 "  checking ${GENESIS_INDEX} for details on stemcell ${stemcell_name}/${version}"
+		if ! curl -Lsk ${GENESIS_INDEX}/v1/stemcell/${stemcell_name}/v/${version} > ${WORKDIR}/index; then
+			echo >&2 "Failed to access the Genesis Index"
+			echo >&2 "(at $GENESIS_INDEX)"
+			echo >&2 "Unable to track the latest version of stemcell ${stemcell_name}"
+			exit 2
+		fi
+	fi
+	for thing in url sha1 version; do
+		v=$(jq -r ".${thing} // \"\"" <${WORKDIR}/index)
+		if [[ -n ${v} ]]; then
+			echo "${v}" > ${stemcells_root}/${thing}
+		fi
+	done
 }
 
 check_index() {
@@ -3255,6 +3328,12 @@ EOF
 		echo
 		cp -a ${WORLD_CHANGES}/global                ${WORKING_DIR}/${CI_SITE_ENV}/.global
 		cp -a ${LOCAL_CHANGES}/${CI_SITE}/site       ${WORKING_DIR}/${CI_SITE_ENV}/.site
+		echo "Syncing releases via genesis-index"
+		echo
+		sync_releases_via_index ${WORKING_DIR}/${CI_SITE_ENV}/.global/releases
+		echo "Syncing stemcells via genesis-index"
+		echo
+		sync_stemcell_via_index ${WORKING_DIR}/${CI_SITE_ENV}/.site/stemcell
 		;;
 	(beta)
 		echo "... in BETA environment"
@@ -3264,6 +3343,9 @@ EOF
 		echo
 		cp -a ${WORLD_CHANGES}/${alpha_env}/.global  ${WORKING_DIR}/${CI_SITE_ENV}/.global
 		cp -a ${LOCAL_CHANGES}/${CI_SITE}/site       ${WORKING_DIR}/${CI_SITE_ENV}/.site
+		echo "Syncing stemcells via genesis-index"
+		echo
+		sync_stemcell_via_index ${WORKING_DIR}/${CI_SITE_ENV}/.site/releases
 		;;
 	(*)
 		echo
