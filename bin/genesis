@@ -2108,6 +2108,13 @@ cmd_deploy() {
 	[[ -z $1 ]] || bad_usage "deploy"
 
 	must_be_in_an_environment
+
+	echo "Syncing releases via genesis-index"
+	sync_releases_via_index ${DEPLOYMENT_ENV_DIR}/.global/releases
+	echo "Syncing stemcells via genesis-index"
+	sync_stemcell_via_index ${DEPLOYMENT_ENV_DIR}/.site/stemcell
+	echo
+
 	case ${DEPLOYMENT_TYPE} in
 	(normal)
 		(VAULT_ADDR= REDACT=y cmd_build manifest.yml) || exit 3
