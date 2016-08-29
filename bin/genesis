@@ -3277,7 +3277,7 @@ EOF
 		echo "Syncing releases via genesis-index"
 		echo
 		sync_releases_via_index ${WORKING_DIR}/${CI_SITE_ENV}/.global/releases
-		echo "Syncing stemcells via genesis-index"
+		echo "Syncing stemcell via genesis-index"
 		echo
 		sync_stemcell_via_index ${WORKING_DIR}/${CI_SITE_ENV}/.site/stemcell
 		;;
@@ -3289,7 +3289,7 @@ EOF
 		echo
 		cp -a ${WORLD_CHANGES}/${alpha_env}/.global  ${WORKING_DIR}/${CI_SITE_ENV}/.global
 		cp -a ${LOCAL_CHANGES}/${CI_SITE}/site       ${WORKING_DIR}/${CI_SITE_ENV}/.site
-		echo "Syncing stemcells via genesis-index"
+		echo "Syncing stemcell via genesis-index"
 		echo
 		sync_stemcell_via_index ${WORKING_DIR}/${CI_SITE_ENV}/.site/releases
 		;;
