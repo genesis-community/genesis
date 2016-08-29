@@ -1067,7 +1067,6 @@ bosh_init_site_metadata() {
 		echo >&2 "       (you probably want 'track', so that Genesis uses the Index)"
 		exit 2
 	fi
-	check_index stemcell ${stemcell_name} ${stemcell_version}
 
 	if [[ ! -f "${DEPLOYMENT_ENV_DIR}/.site/stemcell/url" ]]; then
 		echo >&2 "Error: no stemcell URL listed for site"
@@ -1102,7 +1101,6 @@ bosh_init_site_metadata() {
 			echo >&2 "       (you probably want 'track', so that Genesis uses the Index)"
 			exit 2
 		fi
-		check_index release ${rel} ${release_version}
 
 		if [[ ! -f "${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/url" ]]; then
 			echo >&2 "Error: no url specified for '${rel}'"
@@ -1680,65 +1678,6 @@ sync_stemcell_via_index() {
 			echo "${v}" > ${stemcell_root}/${thing}
 		fi
 	done
-}
-
-check_index() {
-	local type=${1:?check_index() - no type given}
-	local name=${2:?check_index() - no name given}
-	local version=${3:?check_index() - no version given}
-
-	# if the caller wants "latest", that means latest
-	# available on the BOSH director, so there's nothing
-	# we can / should do about that.
-	if [[ ${version} == "latest" ]]; then
-		return
-	fi
-
-	local root=""
-	case ${type} in
-	(stemcell)
-		root=${DEPLOYMENT_ENV_DIR}/.site/stemcell
-		;;
-	(release)
-		root=${DEPLOYMENT_ENV_DIR}/.global/releases/${name}
-		;;
-	(*)
-		echo >&2 "Invalid type '${type}' given to check_index.  Please file a bug"
-		exit 2
-		;;
-	esac
-
-	# if the operator wants us to track, but we are likewise
-	# instructed not to contact the index, we should bail out
-	if [[ -z ${GENESIS_INDEX} && ${version} == "track" ]]; then
-		echo >&2 "Unable to check the Genesis Index for the latest version of ${type} ${name}!"
-		echo >&2 "(GENESIS_INDEX environment variable is either not set, or"
-		echo >&2 " set explicitly to 'no', disabling access to the Index)"
-		exit 2
-	fi
-
-	if [[ -n ${GENESIS_INDEX} ]]; then
-		need_a_workdir
-		if [[ ${version} == "track" ]]; then
-			echo >&2 "  checking ${GENESIS_INDEX} for details on latest ${type} ${name}"
-			if ! curl --fail -Lsk ${GENESIS_INDEX}/v1/${type}/${name}/latest > ${WORKDIR}/index; then
-				echo >&2 "Failed to access the Genesis Index"
-				echo >&2 "(at $GENESIS_INDEX)"
-				echo >&2 "Unable to track the latest version of ${type} ${name}"
-				exit 2
-			fi
-		else
-			echo >&2 "  checking ${GENESIS_INDEX} for details on ${type} ${name}/${version}"
-			curl -Lsk ${GENESIS_INDEX}/v1/${type}/${name}/v/${version} > ${WORKDIR}/index
-		fi
-
-		for thing in url sha1 version; do
-			v=$(jq -r ".${thing} // \"\"" <${WORKDIR}/index)
-			if [[ -n ${v} ]]; then
-				echo "${v}" > ${root}/${thing}
-			fi
-		done
-	fi
 }
 
 cmd_add_release() {
