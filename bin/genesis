@@ -1677,7 +1677,7 @@ sync_stemcell_via_index() {
 	for thing in url sha1 version; do
 		v=$(jq -r ".${thing} // \"\"" <${WORKDIR}/index)
 		if [[ -n ${v} ]]; then
-			echo "${v}" > ${stemcells_root}/${thing}
+			echo "${v}" > ${stemcell_root}/${thing}
 		fi
 	done
 }
