@@ -2111,7 +2111,7 @@ cmd_deploy() {
 
 	echo "Syncing releases via genesis-index"
 	sync_releases_via_index ${DEPLOYMENT_ENV_DIR}/.global/releases
-	echo "Syncing stemcells via genesis-index"
+	echo "Syncing stemcell via genesis-index"
 	sync_stemcell_via_index ${DEPLOYMENT_ENV_DIR}/.site/stemcell
 	echo
 
