@@ -1,4 +1,4 @@
-FROM concourse/concourse-ci
+FROM ubuntu
 
 ENV SPRUCE_VERSION=1.5.0 \
   CF_CLI_VERSION=6.13.0 \
@@ -6,7 +6,9 @@ ENV SPRUCE_VERSION=1.5.0 \
   GENESIS_VERSION=1.5.2
 
 # base packages
-RUN apt-get install -yy curl file
+RUN apt-get update \
+      && apt-get install -yy curl file unzip git ruby \
+      && gem install bosh_cli
 
 # spruce
 RUN curl -L >/usr/bin/spruce https://github.com/geofffranks/spruce/releases/download/v${SPRUCE_VERSION}/spruce-linux-amd64 \
