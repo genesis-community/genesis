@@ -10,6 +10,12 @@ if [[ ${GENESIS_INDEX} = "no" ]]; then
 	GENESIS_INDEX=
 fi
 
+GENESIS_PIPELINE_IMAGE=${GENESIS_PIPELINE_IMAGE:-starkandwayne/genesis}
+GENESIS_PIPLINE_IMAGE_TAG=${GENESIS_PIPLINE_IMAGE_TAG:-$VERSION}
+if [[ ${GENESIS_PIPLINE_IMAGE_TAG} = "(development build)" ]]; then
+  GENESIS_PIPLINE_IMAGE_TAG="latest"
+fi
+
 HAVE_TREE=
 if [[ -n $(command -v tree 2>/dev/null) ]]; then
 	HAVE_TREE=yes
@@ -2568,8 +2574,8 @@ jobs:
           image_resource:
             type: docker-image
             source:
-              repository: starkandwayne/concourse
-              tag: latest
+              repository: ${GENESIS_PIPELINE_IMAGE}
+              tag: ${GENESIS_PIPLINE_IMAGE_TAG}
           inputs:
             - name: world-changes
             - name: local-changes
@@ -2613,8 +2619,8 @@ jobs:
           image_resource:
             type: docker-image
             source:
-              repository: starkandwayne/concourse
-              tag: latest
+              repository: ${GENESIS_PIPELINE_IMAGE}
+              tag: ${GENESIS_PIPLINE_IMAGE_TAG}
           inputs: [{name: out}]
           run:
             path: out/git/bin/genesis
@@ -2703,7 +2709,8 @@ jobs:
           image_resource:
             type: docker-image
             source:
-              repository: starkandwayne/concourse
+              repository: ${GENESIS_PIPELINE_IMAGE}
+              tag: ${GENESIS_PIPLINE_IMAGE_TAG}
           run:
             path: git/bin/genesis
             args: [ ci, stemcells ]
@@ -3045,8 +3052,8 @@ jobs:
           image_resource:
             type: docker-image
             source:
-              repository: starkandwayne/concourse
-              tag: latest
+              repository: ${GENESIS_PIPELINE_IMAGE}
+              tag: ${GENESIS_PIPLINE_IMAGE_TAG}
           inputs:
             - name: world-changes
             - name: local-changes
