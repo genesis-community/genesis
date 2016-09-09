@@ -3185,12 +3185,14 @@ cmd_ci_stemcells() {
 		local name=${dir##*/}
 		local vers=$(cat ${dir}/version)
 		local sha1=$(cat ${dir}/stemcell.tgz | sha1sum | awk '{print $1}')
+		local url=$(cat ${dir}/url})
 
 		pushd ${REPO_IN} >/dev/null
 			for site in */site; do
 				if [[ $(cat ${site}/stemcell/name 2>/dev/null) == ${name} ]]; then
 					echo ${vers} > ${site}/stemcell/version
 					echo ${sha1} > ${site}/stemcell/sha1
+					echo ${url} > ${site}/stemcell/url
 				fi
 			done
 		popd >/dev/null
