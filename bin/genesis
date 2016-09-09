@@ -257,7 +257,7 @@ need_a_vault() {
 				if [[ ${VAULT_SKIP_VERIFY} == '1' ]]; then
 					skip_verify='-k'
 				fi
-				creds='{"user_id":"'${CI_VAULT_USER_ID:-generic-deployment-generic-userpipeline}'","app_id":"'${CI_VAULT_APP_ID:-concousre}'"}'
+				creds='{"user_id":"'${CI_VAULT_USER_ID:-generic-deployment-generic-userpipeline}'","app_id":"'${CI_VAULT_APP_ID:-concourse}'"}'
 				if ! curl ${skip_verify} -Ls ${VAULT_ADDR}/v1/auth/app-id/login --data "${creds}" > ~/.vault; then
 					echo >&2 "Failed to authenticate to the Vault app-id backend:"
 					cat >&2 ~/.vault
