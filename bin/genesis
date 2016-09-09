@@ -2249,10 +2249,15 @@ ci_check_configuration() {
 		cat >${DEPLOYMENT_ROOT}/ci/boshes.yml <<EOF
 ---
 auth: (( param "Please define your BOSH directors in ci/boshes.yml (and remove this line)" ))
+aliases:
+  target: (( param "Please define aliases for your BOSH directors (uuid -> addr)" ))
 
 # BOSH directors are specified by \`url: username / password\`
 # (just like in ~/.bosh_config's auth section), i.e.:
 #
+#aliases:
+#  target:
+#    DIRECTOR-UUID: https://ip.ad.dr.ess:25555
 #auth:
 #  https://ip.ad.dr.ess:25555:
 #    username: admin
