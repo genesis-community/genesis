@@ -814,7 +814,7 @@ EOF
 			 curl -k -m5 ${director_url}/info >/dev/null 2>&1
 		then
 			director_uuid=$(bosh status --uuid)
-			if [[ "$?" eq 0 && -n "${director_uuid}" ]] ; then
+			if [[ $? == 0 && -n "${director_uuid}" ]] ; then
 				cat <<EOF > ${root}/director.yml
 ---
 director_uuid: ${director_uuid}
