@@ -19,7 +19,7 @@
 | Configure a site to use the cf-release | `genesis use release cf` |
 | Update the version of cf-release used to v242 | `genesis set release cf 242`
 | Configure a site to use v3262.12 of the default vsphere stemcell | `genesis use stemcell vsphere 3262.12` |
-| Configure a site to use v3262.12 of a specific stemcell | `genesis use stemcell bosh-vsphere-esxi-ubuntu-trusty-go_agent 3262.12` |
+| Configure a site to use v3262.12 of a specific stemcell | `genesis use stemcell bosh-vsphere-esxi-centos-trusty-go_agent 3262.12` |
 | SSH into a BOSH VM | `genesis bosh ssh` |
 | Recreate a specific VM | `genesis bosh recreate api_z1/0` |
 | Run the smoke-tests BOSH errand | `genesis bosh run errand smoke-tests` |
