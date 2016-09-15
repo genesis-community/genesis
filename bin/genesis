@@ -1211,7 +1211,7 @@ cmd_help() {
 
 	case ${topic:-usage} in
 	(usage|help)
-		cat >&2 <<EOF
+		cat >&2 <<'EOF'
 USAGE: genesis <command> [arguments]
 
 Common commands:
@@ -1219,13 +1219,56 @@ Common commands:
     genesis new deployment      Create a new deployment directory, with all the
                                 necessary files for deploying with Genesis.
 
+                                Specifying `--template' tells genesis to create your
+                                deployment directory based on the specified template repo.
+
     genesis new site            Set up the files and directories for a new site.
+                                Specifying `--template' tells genesis to create the
+                                site directory based on the specified IaaS templates.
+
+                                See the `.templates' directory at the root of your
+                                deployment repo for valid options.
 
     genesis new environment     Set up the files and directories for a new environment.
+
+                                Specifying `--type' of `bosh-init' will tell genesis
+                                to treat this specific environment as a bosh-init type
+                                deployment. Useful if you need to use bosh-init for some
+                                environments, but regular BOSH deployments for others.
+
+    genesis stemcells           Lists the stemcell name + version in use by the
+                                specified site or environment. If no arguments are
+                                specified, you must be in a site/environment directory.
+
+    genesis releases            Lists the release name and version in use by the
+                                specified site or environment. If no arguments are
+                                specified, you must be in a site/environment directory.
+
+    genesis add release         Adds release definitions to the global configurations
+                                for the specified release and optionally, its version.
+
+    genesis set release         Updates the specified release to the specified version,
+                                globally.
+
+    genesis use release         When inside a site or environment directory, takes
+                                the provided release name, and configures the site
+                                to include the release when deploying to environments
+                                in that site.
+
+    genesis use stemcell        When inside a site or environment directory, takes
+                                the provided stemcell name, and updates the site
+                                directory to use that stemcell. You can optionally
+                                specify the version of the stemcell to be used as
+                                a second argument after the stemcell name.
 
     genesis build               When run from inside of an environment directory,
                                 paste together all of the template files, in order
                                 and pop out a manifest file.
+
+    genesis deploy              When run from inside of an environment directory,
+                                builds and deploys your BOSH manifest. A redacted
+                                copy is left in the repo for posterity. The copy
+                                deployed is non-redacted.
 
     genesis diff                When run from inside of an environment directory,
                                 show a semantic diff of the generated manifest for that
@@ -1236,8 +1279,15 @@ Common commands:
                                 Can also be used to recreate the Makefile after a
                                 Genesis upgrade.
 
+                                Use `genesis refresh <site|global|makefile|readme>'
+                                to specify what to refresh.
+
+    genesis embed               Embeds the version of `genesis' installed in your $PATH
+                                into your deployment repo, so it can be used via the Makefile
+                                and Concourse tasks.
+
     genesis bosh                Generates a deployable manifest (which may have secrets
-                                in it) and then runs the \`bosh\` CLI with remaining
+                                in it) and then runs the `bosh' CLI with remaining
                                 arguments.  Useful for recreating workers.
 
     genesis help                Peruse the help!  Give it a topic argument, or the name
