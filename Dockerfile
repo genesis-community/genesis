@@ -1,9 +1,14 @@
-FROM concourse/concourse-ci
+FROM ubuntu
 
-ENV SPRUCE_VERSION=1.8.1 \
+ENV SPRUCE_VERSION=1.5.0 \
   CF_CLI_VERSION=6.13.0 \
   VAULT_VERSION=0.6.0 \
-  GENESIS_VERSION=1.5.3
+  GENESIS_VERSION=1.5.2
+
+# base packages
+RUN apt-get update \
+      && apt-get install -yy curl file unzip git ruby \
+      && gem install bosh_cli
 
 # base packages
 RUN apt-get install -yy curl file
