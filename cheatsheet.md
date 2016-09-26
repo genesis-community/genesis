@@ -24,6 +24,34 @@
 | Recreate a specific VM | `genesis bosh recreate api_z1/0` |
 | Run the smoke-tests BOSH errand | `genesis bosh run errand smoke-tests` |
 
+# Stemcell Aliases
+
+| Alias | Stemcell |
+| ----- | -------- |
+| aws | bosh-aws-xen-hvm-ubuntu-trusty-go_agent |
+| azure | bosh-azure-hyperv-ubuntu-trusty-go_agent |
+| hyperv | bosh-azure-hyperv-ubuntu-trusty-go_agent |
+| openstack | bosh-openstack-kvm-ubuntu-trusty-go_agent |
+| vcloud | bosh-vcloud-esxi-ubuntu-trusty-go_agent |
+| vsphere | bosh-vsphere-esxi-ubuntu-trusty-go_agent |
+| warden | bosh-warden-boshlite-ubuntu-trusty-go_agent |
+| bosh-lite | bosh-warden-boshlite-ubuntu-trusty-go_agent |
+
+# Version Keywords
+
+| Keyword | Behavior |
+| ------- | -------- |
+| track   | Always fetches and deploys the latest release/stemcell found on the Genesis Index |
+| latest | Use the latest version on the BOSH director. If none present, uploads the latest found on the Genesis Index |
+| 1.2.3 | Use version 1.2.3, uploading if necessary |
+
+# Environment Variables
+
+| GENESIS_INDEX=http://your.genesis.index.com | Overrides the default Gensis Index URL |
+| GENESIS_INDEX=no | Disables checking of the Genesis Index |
+| USE_SYSTEM_GENESIS | Overrides the `genesis` command from $PATH instead of the repo-embedded copy |
+| DEBUG=true | Turns on debugging for spruce when generating manifests |
+
 # Managing Genesis
 
 | How do I use Genesis to ... ? | Example |

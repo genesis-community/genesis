@@ -808,11 +808,7 @@ EOF
 	if [[ -f $HOME/.bosh_config ]] ; then
 		local director_uuid
 		local director_url=$(spruce json ~/.bosh_config | jq -r ".target")
-		local director_address=$(echo $director_url | sed -ne 's/^https\{0,1\}:\/\/\(.*\):[0-9]\{1,\}$/\1/p')
-		if [[ -n "$director_address" ]] &&\
-			 ping $director_address -c1 -W1 >/dev/null 2>&1 &&\
-			 curl -k -m5 ${director_url}/info >/dev/null 2>&1
-		then
+		if director_alive ${director_url}; then
 			director_uuid=$(bosh status --uuid)
 			if [[ $? == 0 && -n "${director_uuid}" ]] ; then
 				cat <<EOF > ${root}/director.yml
@@ -959,9 +955,9 @@ normal_site_metadata() {
 	if [[ ${stemcell_version} == "latest" ]]; then
 		rm -f ${DEPLOYMENT_ENV_DIR}/.site/stemcell/url
 		rm -f ${DEPLOYMENT_ENV_DIR}/.site/stemcell/sha1
-	else
-		check_index stemcell ${stemcell_name} ${stemcell_version}
 	fi
+
+	ensure_present stemcell ${stemcell_name} ${stemcell_version}
 
 	local stemcell_url=""
 	if [[ -f "${DEPLOYMENT_ENV_DIR}/.site/stemcell/url" ]]; then
@@ -992,9 +988,8 @@ normal_site_metadata() {
 		if [[ ${release_version} == "latest" ]]; then
 			rm -f ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/url
 			rm -f ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/sha1
-		else
-			check_index release ${rel} ${release_version}
 		fi
+		ensure_present release ${rel} ${release_version}
 	done
 
 	cat <<EOF
@@ -1082,6 +1077,151 @@ build_manifest() {
 	if [[ $rc != 0 ]]; then
 		echo >&2 "Failed to merge templates; bailing..."
 		exit 5
+	fi
+}
+
+director_alive() {
+	director_url=$1; shift
+	local director_address=$(echo $director_url | sed -ne 's/^https\{0,1\}:\/\/\(.*\):[0-9]\{1,\}$/\1/p')
+	if [[ -n "$director_address" ]] &&\
+	 ping -c1 -W1 $director_address >/dev/null 2>&1 &&\
+	 curl -k -m5 ${director_url}/info >/dev/null 2>&1; then
+		return 0
+	else
+		return 1
+	fi
+}
+
+have_blob() {
+	local type=$1; shift
+	local name=$1; shift
+	local version=$1; shift
+
+	local director_url=$(spruce json ~/.bosh_config | jq -r ".target")
+	local director_creds=$(spruce json ~/.bosh_config | jq -r '.auth[.target].username + ":" + .auth[.target].password')
+	if director_alive $director_url; then
+		if [[ ${version} == "latest" ]]; then
+			if [[ ${type} == "release" ]]; then
+				if [[ -n $(curl -Lks --connect-timeout 1 -u "${director_creds}" ${director_url}/releases | jq -r '.[]| select(.name == "'${name}'") | "release-detected"') ]]; then
+					return 0
+				else
+					return 1
+				fi
+			elif [[ ${type} == "stemcell" ]]; then
+				if [[ -n $(curl -Lks --connect-timeout 1 -u "${director_creds}" ${director_url}/stemcells | jq -r '.[]| select(.name == "'${name}'") | "stemcell-detected"') ]]; then
+					return 0
+				else
+					return 1
+				fi
+			else
+				echo >&2 "Error: Invalid type. This is a bug. Got ${type} but expected 'stemcell' or 'release'"
+				exit 2
+			fi
+		else
+			if [[ ${type} == "release" ]]; then
+				if [[ -n $(curl -Lks --connect-timeout 1 -u "${director_creds}" ${director_url}/releases | jq -r '.[] | select(.name == "'${name}'") | .release_versions[] | select(.version == "'${version}'") | "release-version-detected"') ]]; then
+					return 0
+				else
+					return 1
+				fi
+			elif [[ ${type} == "stemcell" ]]; then
+				if [[ -n $(curl -Lks --connect-timeout 1 -u "${director_creds}" ${director_url}/stemcells | jq -r '.[]| select(.name == "'${name}'") | select(.version == "'${version}'") | "stemcell-version-detected"') ]]; then
+					return 0
+				else
+					return 1
+				fi
+			else
+				echo >&2 "Error: Invalid type. This is a bug. Got ${type} but expected 'stemcell' or 'release'"
+				exit 2
+			fi
+		fi
+	else
+		echo >&2 "Error: Could not contact ${director_url} to find release information"
+		exit 2
+	fi
+}
+
+ensure_present() {
+	local type=$1; shift
+	local name=$1; shift
+	local version=$1; shift
+	if [[ ${version} != "track" ]]; then
+		if [[ $ENSURE_PRESENT == "yes" ]]; then
+			if have_blob ${type} ${name} ${version}; then
+				echo >&2 Found ${type} ${name} ${version} on director
+				return 0
+			else
+				local root=""
+				case ${type} in
+				(stemcell)
+					root=${DEPLOYMENT_ENV_DIR}/.site/stemcell
+					;;
+				(release)
+					root=${DEPLOYMENT_ENV_DIR}/.global/releases/${name}
+					;;
+				(*)
+					echo >&2 "Invalid type '${type}' given to check_index.  Please file a bug"
+					exit 2
+					;;
+				esac
+
+				# if sha1 + url are specified, let bosh handle the uploads
+				if [[ ! -f ${root}/sha1 && ! -f ${root}/url ]]; then
+					echo >&2 "Uploading ${type} ${name}/${version} as it is required, but not present"
+					upload_blob ${type} ${name} ${version}
+				fi
+			fi
+		fi
+	else
+		echo >&2 ${type} ${name} ${version} is set to track from the index
+		check_index ${type} ${name} ${version}
+	fi
+}
+
+upload_blob() {
+	local type=$1; shift
+	local name=$1; shift
+	local version=$1; shift
+
+	if [[ -z ${GENESIS_INDEX} ]]; then
+		echo >&2 "Error: ${type} ${name}/${version} is not present on the BOSH director."
+		echo >&2 "       Please either \`bosh upload ${type}\` manually, or enable the"
+		echo >&2 "       Genesis index by setting the GENESIS_INDEX environment variable."
+		exit 2
+	fi
+
+	need_a_workdir
+
+	if [[ $version != "latest" ]]; then
+		version="v/${version}"
+	fi
+
+	echo >&2 "  checking ${GENESIS_INDEX} for details on ${type} ${name}/${version}"
+	if ! curl --fail -Lsk ${GENESIS_INDEX}/v1/${type}/${name}/${version} > ${WORKDIR}/index; then
+		echo >&2 "Unable to upload ${type} ${name}/${version} - could not find details on Genesis index"
+		echo >&2 "(at $GENESIS_INDEX)"
+		exit 2
+	fi
+
+	url=$(jq -r ".url" <${WORKDIR}/index)
+	if [[ -z ${url} ]]; then
+		echo >&2 "No URL found in the Genesis index for ${type}/${name}/${version}"
+		echo >&2 "(at $GENESIS_INDEX)"
+		echo >&2 "Either upload the ${type} manually, or add ${name} to the Genesis index."
+		exit 2
+	fi
+
+	desired_uuid=$(spruce json director.yml | jq -r '.director_uuid')
+	current_uuid=$(bosh status --uuid)
+	if [[ $desired_uuid != $current_uuid ]]; then
+		echo >&2 "Director UUID mismatch detected. You do not appear to be targeting"
+		echo >&2 "the director for this deployment (expected $desired_uuid, got $current_uuid)"
+		exit 2
+	fi
+	echo >&2 "Could not find ${type} ${name}/${version} on the director, uploading it for you"
+	if ! bosh upload "${type}" "${url}" >&2; then
+		echo >&2 "Failed to upload ${type} ${name}/${version}. Bailing out"
+		exit 2
 	fi
 }
 
@@ -2178,6 +2318,11 @@ cmd_deploy() {
 	[[ -z $1 ]] || bad_usage "deploy"
 
 	must_be_in_an_environment
+
+	# add flag to ensure that we're going to check/upload releases
+	# and stemcells if missing
+	ENSURE_PRESENT=yes
+
 	case ${DEPLOYMENT_TYPE} in
 	(normal)
 		(VAULT_ADDR= REDACT=y cmd_build manifest.yml) || exit 3
