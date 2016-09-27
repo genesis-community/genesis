@@ -3,7 +3,7 @@ FROM ubuntu
 ENV SPRUCE_VERSION=1.5.0 \
   CF_CLI_VERSION=6.13.0 \
   VAULT_VERSION=0.6.0 \
-  GENESIS_VERSION=1.5.2
+  GENESIS_VERSION=1.5.3
 
 # base packages
 RUN apt-get update \
