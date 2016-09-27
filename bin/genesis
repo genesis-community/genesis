@@ -1914,7 +1914,7 @@ cmd_add_release() {
 		esac
 	done
 	[[ -n ${release} ]] || bad_usage ${USAGE}
-	version=${version:-track}
+	version=${version:-latest}
 
 	setup
 	if [[ -d ${DEPLOYMENT_ROOT}/global/releases/${release} ]]; then
@@ -2060,7 +2060,7 @@ cmd_use_stemcell() {
 		esac
 	done
 	[[ -n ${name} ]] || bad_usage ${USAGE}
-	version=${version:-track}
+	version=${version:-latest}
 
 	must_be_in_a_site
 
