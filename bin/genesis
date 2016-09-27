@@ -2537,6 +2537,24 @@ EOF
 		rc=1
 	fi
 
+	if [[ ${GENESIS_CI_ALLOW_TRACK} != "true" ]]; then
+		for site in $(all_sites); do
+			if [[ $(cat ${site}/site/stemcell/version) == "track" ]]; then
+				echo >&2 "Stemcell for site '${site}' is set to version 'track'. If desired, set GENESIS_CI_ALLOW_TRACK=true to override."
+				rc=1
+			fi
+		done
+
+		pushd global/releases >/dev/null
+			for release in *; do
+				if [[ $(cat ${release}/version) == "track" ]]; then
+					echo >&2 "Release '${release}' is set to version 'track'. If desired, set GENESIS_CI_ALLOW_TRACK=true to override."
+					rc=1
+				fi
+			done
+		popd > /dev/null
+	fi
+
 	if [[ $rc -ne 0 ]]; then
 		echo >&2 "Configuration issues with CI found.  Please address the above."
 		exit 1
