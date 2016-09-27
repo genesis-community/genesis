@@ -56,7 +56,7 @@ fi
  git stash pop
  git add -A
  git status
- git commit -m "release v${VERSION}")
+ git commit -m "Update docker-image with release v${VERSION}")
 
 # so that future steps in the pipeline can push our changes
 cp -a ${REPO_ROOT} ${REPO_OUT}/git
