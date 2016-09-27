@@ -38,34 +38,9 @@ if [[ -z ${VERSION} ]]; then
   exit 2
 fi
 
-if [[ ! -f ${REPO_ROOT}/ci/release_notes.md ]]; then
-  echo >&2 "ci/release_notes.md not found.  Did you forget to write them?"
-  exit 1
-fi
-
-###############################################################
-
-#?#ORIGIN=$(pwd)
-TARGETS=${TARGETS:-linux/amd64 darwin/amd64}
-ROOT=$( cd "$( dirname "${BASH_SOURCE[0]}" )/../.." && pwd )
-
 pushd $REPO_ROOT
-
-mkdir artifacts
-cp bin/${BINARY} artifacts/${BINARY}
-auto_sed artifacts/${BINARY} "s/^VERSION=.*/VERSION=\"v${VERSION}\"/"
-artifacts/${BINARY} -v | grep ${VERSION}
+auto_sed Dockerfile "s/GENESIS_VERSION=.*/GENESIS_VERSION=${VERSION}/"
 popd
-
-echo "v${VERSION}"                         > ${RELEASE_ROOT}/tag
-echo "${RELEASE_NAME} v${VERSION}"         > ${RELEASE_ROOT}/name
-mv ${REPO_ROOT}/ci/release_notes.md          ${RELEASE_ROOT}/notes.md
-mv ${REPO_ROOT}/artifacts                    ${RELEASE_ROOT}/artifacts
-
-cat > ${RELEASE_ROOT}/notification <<EOF
-<!here> New ${RELEASE_NAME} v${VERSION} released!
-EOF
-
 
 # GIT!
 if [[ -z $(git config --global user.email) ]]; then

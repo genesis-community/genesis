@@ -22,15 +22,47 @@ meta:
     password: (( vault "secret/pipelines/genesis/dockerhub:password" ))
     repository: starkandwayne/genesis
 
+groups:
+- name: (( grab meta.name ))
+  jobs:
+  - (( append ))
+  - genesis-docker-image
 jobs:
-  - name: shipit
-    plan:
-      - (( append ))
-      - put: genesis-image
-        params:
-          build: pushme/git
-          tag: version/number
-          tag_as_latest: true
+- (( append ))
+- name: genesis-docker-image
+  public: true
+  serial: true
+  plan:
+  - aggregate:
+    - { get: version, passed: [shipit] }
+    - { get: git, passed: [shipit] }
+    - { get: github, passed: [shipit], trigger: true }
+  - task: update-docker-genesis
+    config:
+      image: (( grab meta.image ))
+      platform: linux
+      inputs:
+      - name: version
+      - name: git
+      outputs:
+      - name: pushme
+      run:
+        path: "git/ci/scripts/bump-docker-image"
+        args: []
+      params:
+        REPO_ROOT: git
+        VERSION_FROM: version/number
+        REPO_OUT: pushme
+        BRANCH: (( grab meta.github.branch ))
+  - put: git
+    params:
+      rebase: true
+      repository: pushme/git
+  - put: genesis-image
+    params:
+      build: pushme/git
+      tag: version/number
+      tag_as_latest: true
 
 resources:
   - name: genesis-image
