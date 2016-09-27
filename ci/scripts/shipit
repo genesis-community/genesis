@@ -77,7 +77,9 @@ if [[ -z $(git config --global user.name) ]]; then
 fi
 
 (cd ${REPO_ROOT}
+ git stash
  git merge --no-edit ${BRANCH}
+ git stash pop
  git add -A
  git status
  git commit -m "release v${VERSION}")
