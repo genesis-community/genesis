@@ -1102,13 +1102,13 @@ have_blob() {
 	if director_alive $director_url; then
 		if [[ ${version} == "latest" ]]; then
 			if [[ ${type} == "release" ]]; then
-				if [[ -n $(curl -Lks --connect-timeout 1 -u "${director_creds}" ${director_url}/releases | jq -r '.[]| select(.name == "'${name}'") | "release-detected"') ]]; then
+				if [[ -n $(curl -Lks -u "${director_creds}" ${director_url}/releases | jq -r '.[]| select(.name == "'${name}'") | "release-detected"') ]]; then
 					return 0
 				else
 					return 1
 				fi
 			elif [[ ${type} == "stemcell" ]]; then
-				if [[ -n $(curl -Lks --connect-timeout 1 -u "${director_creds}" ${director_url}/stemcells | jq -r '.[]| select(.name == "'${name}'") | "stemcell-detected"') ]]; then
+				if [[ -n $(curl -Lks -u "${director_creds}" ${director_url}/stemcells | jq -r '.[]| select(.name == "'${name}'") | "stemcell-detected"') ]]; then
 					return 0
 				else
 					return 1
@@ -1119,13 +1119,13 @@ have_blob() {
 			fi
 		else
 			if [[ ${type} == "release" ]]; then
-				if [[ -n $(curl -Lks --connect-timeout 1 -u "${director_creds}" ${director_url}/releases | jq -r '.[] | select(.name == "'${name}'") | .release_versions[] | select(.version == "'${version}'") | "release-version-detected"') ]]; then
+				if [[ -n $(curl -Lks -u "${director_creds}" ${director_url}/releases | jq -r '.[] | select(.name == "'${name}'") | .release_versions[] | select(.version == "'${version}'") | "release-version-detected"') ]]; then
 					return 0
 				else
 					return 1
 				fi
 			elif [[ ${type} == "stemcell" ]]; then
-				if [[ -n $(curl -Lks --connect-timeout 1 -u "${director_creds}" ${director_url}/stemcells | jq -r '.[]| select(.name == "'${name}'") | select(.version == "'${version}'") | "stemcell-version-detected"') ]]; then
+				if [[ -n $(curl -Lks -u "${director_creds}" ${director_url}/stemcells | jq -r '.[]| select(.name == "'${name}'") | select(.version == "'${version}'") | "stemcell-version-detected"') ]]; then
 					return 0
 				else
 					return 1
