@@ -819,7 +819,7 @@ EOF
 		fi
 	fi
 
-	VAULT_PREFIX=secret/${site}/$name/${DEPLOYMENT_NAME}
+	VAULT_PREFIX=secret/${site}/${name}/${DEPLOYMENT_NAME}
 	DEPLOYMENT_SITE=${site}
 	DEPLOYMENT_ENVIRONMENT=${name}
 	ENVIRONMENT_ROOT=${DEPLOYMENT_ROOT}/${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}
@@ -828,6 +828,9 @@ EOF
 ---
 name: ${site}-${name}-${DEPLOYMENT_NAME}
 meta:
+  type: ${DEPLOYMENT_NAME}
+  site: ${site}
+  env:  ${name}
   vault_prefix: ${VAULT_PREFIX}
 EOF
 
@@ -884,7 +887,7 @@ create_bosh_init_environment() {
 EOF
 	done
 
-	VAULT_PREFIX=secret/${site}/$name/${DEPLOYMENT_NAME}
+	VAULT_PREFIX=secret/${site}/${name}/${DEPLOYMENT_NAME}
 	DEPLOYMENT_SITE=${site}
 	DEPLOYMENT_ENVIRONMENT=${name}
 	ENVIRONMENT_ROOT=${DEPLOYMENT_ROOT}/${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}
@@ -893,6 +896,9 @@ EOF
 ---
 name: ${site}-${name}-${DEPLOYMENT_NAME}
 meta:
+  type: ${DEPLOYMENT_NAME}
+  site: ${site}
+  env:  ${name}
   vault_prefix: ${VAULT_PREFIX}
 EOF
 
