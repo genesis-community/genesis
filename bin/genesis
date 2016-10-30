@@ -3,6 +3,7 @@ VERSION="(development build)"
 
 USERNAME=$(whoami)
 CANON_REPO=https://github.com/starkandwayne/genesis
+API_REPO=https://api.github.com/repos/starkandwayne/genesis
 
 GENESIS_INDEX=${GENESIS_INDEX:-https://genesis.starkandwayne.com}
 GENESIS_INDEX=${GENESIS_INDEX%/}
@@ -1360,6 +1361,20 @@ cmd_version() {
 	s=$(cat ${BASH_SOURCE[0]} | checksum)
 	echo "genesis ${VERSION} (${s:0:12})"
 	exit 0
+}
+
+cmd_update() {
+	need_a_workdir
+	curl -Ls $(curl -s ${API_REPO}/releases/latest | jq -r '.assets[] | select(.name | test("genesis")) | .browser_download_url') > ${WORKDIR}/bin
+	chmod 0755 ${WORKDIR}/bin
+	if ! ${WORKDIR}/bin ping >/dev/null 2>&1; then
+		echo >&2 "Download failed / corrupt; NOT proceeding with update..."
+		echo >&2 "sha1:$(sha1sum ${WORKDIR}/bin | awk '{print $1}')"
+		${WORKDIR}/bin ping >&2
+		exit 1
+	fi
+	cp ${WORKDIR}/bin $0
+	exit $?
 }
 
 cmd_help() {
@@ -3741,6 +3756,9 @@ main() {
 		;;
 	(version)
 		cmd_version $*
+		;;
+	(update)
+		cmd_update $*
 		;;
 	(help)
 		cmd_help $*

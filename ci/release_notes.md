@@ -19,3 +19,7 @@
 - Checking / verification of stemcells and releases is now only
   done once, minimizing roundtrip interaction with both the BOSH
   director and (if in play) the Genesis Index.
+
+- New command, `genesis update` to pull down the latest _released_
+  version of Genesis from Github, and update your local copy.
+  Fixes #86
