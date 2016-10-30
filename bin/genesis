@@ -286,6 +286,32 @@ need_a_vault() {
 	fi
 }
 
+ask_bosh() {
+	local url=$1
+
+	need_a_workdir
+	file="${WORKDIR}/bosh.$(echo ${url} | sha1sum | awk '{print $1}')"
+	if [[ ! -f ${file} ]]; then
+		need_a_bosh
+		curl -Lks -u "${DIRECTOR_CREDS}" ${DIRECTOR_URL}/${url} > ${file}
+	fi
+	cat ${file}
+}
+
+need_a_bosh() {
+	setup
+	if [[ -n ${DIRECTOR_URL} ]]; then
+		return
+	fi
+
+	# Interrogate bosh_config for director-y things
+	if [[ -f ~/.bosh_config ]]; then
+		DIRECTOR_URL=$(spruce json ~/.bosh_config | jq -r .target)
+		DIRECTOR_CREDS=$(spruce json ~/.bosh_config | jq -r '.auth[.target].username + ":" + .auth[.target].password')
+		DIRECTOR_UUID=$(curl -m${DIRECTOR_TIMEOUT:-3} -Lks -u "${DIRECTOR_CREDS}" ${DIRECTOR_URL}/info | jq -r .uuid)
+	fi
+}
+
 
 ####################################################
 # checks and validating functions
@@ -804,19 +830,12 @@ create_normal_environment() {
 EOF
 	done
 
-	# As a convenience, try to get the BOSH Director UUID, but only if the director is set and reachable.
-	if [[ -f $HOME/.bosh_config ]] ; then
-		local director_uuid
-		local director_url=$(spruce json ~/.bosh_config | jq -r ".target")
-		if director_alive ${director_url}; then
-			director_uuid=$(bosh status --uuid)
-			if [[ $? == 0 && -n "${director_uuid}" ]] ; then
-				cat <<EOF > ${root}/director.yml
+	need_a_bosh
+	if [[ -n ${DIRECTOR_UUID} ]]; then
+		cat <<EOF > ${root}/director.yml
 ---
-director_uuid: ${director_uuid}
+director_uuid: ${DIRECTOR_UUID}
 EOF
-			fi
-		fi
 	fi
 
 	VAULT_PREFIX=secret/${site}/${name}/${DEPLOYMENT_NAME}
@@ -1086,63 +1105,44 @@ build_manifest() {
 	fi
 }
 
-director_alive() {
-	director_url=$1; shift
-	local director_address=$(echo $director_url | sed -ne 's/^https\{0,1\}:\/\/\(.*\):[0-9]\{1,\}$/\1/p')
-	if [[ -n "$director_address" ]] &&\
-	 ping -c1 -W1 $director_address >/dev/null 2>&1 &&\
-	 curl -k -m5 ${director_url}/info >/dev/null 2>&1; then
-		return 0
-	else
-		return 1
-	fi
-}
-
 have_blob() {
 	local type=$1; shift
 	local name=$1; shift
 	local version=$1; shift
 
-	local director_url=$(spruce json ~/.bosh_config | jq -r ".target")
-	local director_creds=$(spruce json ~/.bosh_config | jq -r '.auth[.target].username + ":" + .auth[.target].password')
-	if director_alive $director_url; then
-		if [[ ${version} == "latest" ]]; then
-			if [[ ${type} == "release" ]]; then
-				if [[ -n $(curl -Lks -u "${director_creds}" ${director_url}/releases | jq -r '.[]| select(.name == "'${name}'") | "release-detected"') ]]; then
-					return 0
-				else
-					return 1
-				fi
-			elif [[ ${type} == "stemcell" ]]; then
-				if [[ -n $(curl -Lks -u "${director_creds}" ${director_url}/stemcells | jq -r '.[]| select(.name == "'${name}'") | "stemcell-detected"') ]]; then
-					return 0
-				else
-					return 1
-				fi
-			else
-				echo >&2 "Error: Invalid type. This is a bug. Got ${type} but expected 'stemcell' or 'release'"
-				exit 2
-			fi
-		else
-			if [[ ${type} == "release" ]]; then
-				if [[ -n $(curl -Lks -u "${director_creds}" ${director_url}/releases | jq -r '.[] | select(.name == "'${name}'") | .release_versions[] | select(.version == "'${version}'") | "release-version-detected"') ]]; then
-					return 0
-				else
-					return 1
-				fi
-			elif [[ ${type} == "stemcell" ]]; then
-				if [[ -n $(curl -Lks -u "${director_creds}" ${director_url}/stemcells | jq -r '.[]| select(.name == "'${name}'") | select(.version == "'${version}'") | "stemcell-version-detected"') ]]; then
-					return 0
-				else
-					return 1
-				fi
-			else
-				echo >&2 "Error: Invalid type. This is a bug. Got ${type} but expected 'stemcell' or 'release'"
-				exit 2
-			fi
-		fi
+	need_a_bosh
+	need_a_workdir
+	ask_bosh /releases  > ${WORKDIR}/bosh.releases
+	ask_bosh /stemcells > ${WORKDIR}/bosh.stemcells
+	if [[ -n ${DIRECTOR_UUID} ]]; then
+		case "${version}/${type}" in
+		(latest/release)
+			test -n $(jq <${WORKDIR}/bosh.releases -r '.[]| select(.name == "'${name}'") | "ok"')
+			return $?
+			;;
+
+		(latest/stemcell)
+			test -n $(jq <${WORKDIR}/bosh.stemcells -r '.[]| select(.name == "'${name}'") | "ok"')
+			return $?
+			;;
+
+		(*/release)
+			test -n $(jq <${WORKDIR}/bosh.releases -r '.[] | select(.name == "'${name}'") | .release_versions[] | select(.version == "'${version}'") | "ok"')
+			return $?
+			;;
+
+		(*/stemcell)
+			test -n $(jq <${WORKDIR}/bosh.stemcells -r '.[]| select(.name == "'${name}'") | select(.version == "'${version}'") | "ok"') ]]
+			return $?
+			;;
+
+		(*)
+			echo >&2 "Error: Invalid type. This is a bug. Got ${type} but expected 'stemcell' or 'release'"
+			exit 2
+			;;
+		esac
 	else
-		echo >&2 "Error: Could not contact ${director_url} to find release information"
+		echo >&2 "Error: Could not contact your BOSH director to find release / stemcell information"
 		exit 2
 	fi
 }
@@ -1152,30 +1152,28 @@ ensure_present() {
 	local name=$1; shift
 	local version=$1; shift
 	if [[ ${version} != "track" ]]; then
-		if [[ $ENSURE_PRESENT == "yes" ]]; then
-			if have_blob ${type} ${name} ${version}; then
-				echo >&2 Found ${type} ${name} ${version} on director
-				return 0
-			else
-				local root=""
-				case ${type} in
-				(stemcell)
-					root=${DEPLOYMENT_ENV_DIR}/.site/stemcell
-					;;
-				(release)
-					root=${DEPLOYMENT_ENV_DIR}/.global/releases/${name}
-					;;
-				(*)
-					echo >&2 "Invalid type '${type}' given to check_index.  Please file a bug"
-					exit 2
-					;;
-				esac
+		if have_blob ${type} ${name} ${version}; then
+			echo >&2 "Found ${type} ${name} ${version} on director"
+			return 0
+		else
+			local root=""
+			case ${type} in
+			(stemcell)
+				root=${DEPLOYMENT_ENV_DIR}/.site/stemcell
+				;;
+			(release)
+				root=${DEPLOYMENT_ENV_DIR}/.global/releases/${name}
+				;;
+			(*)
+				echo >&2 "Invalid type '${type}' given to check_index.  Please file a bug"
+				exit 2
+				;;
+			esac
 
-				# if sha1 + url are specified, let bosh handle the uploads
-				if [[ ! -f ${root}/sha1 && ! -f ${root}/url ]]; then
-					echo >&2 "Uploading ${type} ${name}/${version} as it is required, but not present"
-					upload_blob ${type} ${name} ${version}
-				fi
+			# if sha1 + url are specified, let bosh handle the uploads
+			if [[ ! -f ${root}/sha1 && ! -f ${root}/url ]]; then
+				echo >&2 "Uploading ${type} ${name}/${version} as it is required, but not present"
+				upload_blob ${type} ${name} ${version}
 			fi
 		fi
 	else
@@ -2324,10 +2322,6 @@ cmd_deploy() {
 	[[ -z $1 ]] || bad_usage "deploy"
 
 	must_be_in_an_environment
-
-	# add flag to ensure that we're going to check/upload releases
-	# and stemcells if missing
-	ENSURE_PRESENT=yes
 
 	case ${DEPLOYMENT_TYPE} in
 	(normal)
