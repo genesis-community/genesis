@@ -1039,6 +1039,8 @@ normal_site_metadata() {
 	must_be_in_an_environment
 	preflight_deployment
 
+	local stemcell_name=$(cat "${DEPLOYMENT_ENV_DIR}/.site/stemcell/name")
+	local stemcell_version=$(cat "${DEPLOYMENT_ENV_DIR}/.site/stemcell/version")
 	cat <<EOF
 ---
 meta:
@@ -1055,6 +1057,7 @@ EOF
 	echo 'update: (( param "Please specify update settings for your bosh deployment" ))'
 	echo "releases:"
 
+	local releases=$(releases_from "${DEPLOYMENT_ENV_DIR}/.site/releases")
 	for rel in ${releases}; do
 		local release_version=$(cat ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/version)
 		local release_url=""
@@ -1140,22 +1143,22 @@ have_blob() {
 	if [[ -n ${DIRECTOR_UUID} ]]; then
 		case "${version}/${type}" in
 		(latest/release)
-			test -n $(jq <${WORKDIR}/bosh.releases -r '.[]| select(.name == "'${name}'") | "ok"')
+			test -n "$(jq <${WORKDIR}/bosh.releases -r '.[]| select(.name == "'${name}'") | "ok"')"
 			return $?
 			;;
 
 		(latest/stemcell)
-			test -n $(jq <${WORKDIR}/bosh.stemcells -r '.[]| select(.name == "'${name}'") | "ok"')
+			test -n "$(jq <${WORKDIR}/bosh.stemcells -r '.[]| select(.name == "'${name}'") | "ok"')"
 			return $?
 			;;
 
 		(*/release)
-			test -n $(jq <${WORKDIR}/bosh.releases -r '.[] | select(.name == "'${name}'") | .release_versions[] | select(.version == "'${version}'") | "ok"')
+			test -n "$(jq <${WORKDIR}/bosh.releases -r '.[] | select(.name == "'${name}'") | .release_versions[] | select(.version == "'${version}'") | "ok"')"
 			return $?
 			;;
 
 		(*/stemcell)
-			test -n $(jq <${WORKDIR}/bosh.stemcells -r '.[]| select(.name == "'${name}'") | select(.version == "'${version}'") | "ok"') ]]
+			test -n "$(jq <${WORKDIR}/bosh.stemcells -r '.[]| select(.name == "'${name}'") | select(.version == "'${version}'") | "ok"')"
 			return $?
 			;;
 
