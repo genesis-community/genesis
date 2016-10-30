@@ -15,3 +15,7 @@
    4. Timeouts for interacting with BOSH can be set via the new
       `$DIRECTOR_TIMEOUT` environment variable.  Value is in
       seconds, and defaults to '3'.
+
+- Checking / verification of stemcells and releases is now only
+  done once, minimizing roundtrip interaction with both the BOSH
+  director and (if in play) the Genesis Index.

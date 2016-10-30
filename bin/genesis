@@ -964,8 +964,24 @@ releases_for_environment() {
 	releases_from "${DEPLOYMENT_ROOT}/${site}/${name}/.site/releases"
 }
 
-normal_site_metadata() {
+preflight_deployment() {
+	if [[ -n ${DEPLOYMENT_OK} ]]; then
+		return
+	fi
+
 	must_be_in_an_environment
+	case ${DEPLOYMENT_TYPE} in
+	(normal)    preflight_normal_deployment    ;;
+	(bosh-init) preflight_bosh_init_deployment ;;
+	esac
+	DEPLOYMENT_OK=yes
+}
+
+skip_preflight() {
+	DEPLOYMENT_OK=skipped
+}
+
+preflight_normal_deployment() {
 	if [[ ! -f "${DEPLOYMENT_ENV_DIR}/.site/stemcell/name" ]]; then
 		echo >&2 "Error: no stemcell name specified for site"
 		exit 2
@@ -1016,6 +1032,11 @@ normal_site_metadata() {
 		fi
 		ensure_present release ${rel} ${release_version}
 	done
+}
+
+normal_site_metadata() {
+	must_be_in_an_environment
+	preflight_deployment
 
 	cat <<EOF
 ---
@@ -1058,6 +1079,7 @@ EOF
 build_manifest() {
 	must_be_in_an_environment
 	need_command spruce
+	preflight_deployment
 
 	case ${DEPLOYMENT_TYPE} in
 	(normal)
@@ -1229,8 +1251,7 @@ upload_blob() {
 	fi
 }
 
-bosh_init_site_metadata() {
-	must_be_in_an_environment
+preflight_bosh_init_deployment() {
 	if [[ ! -f "${DEPLOYMENT_ENV_DIR}/.site/stemcell/name" ]]; then
 		echo >&2 "Error: no stemcell name specified for site"
 		exit 2
@@ -1300,6 +1321,11 @@ bosh_init_site_metadata() {
 			echo "$sha1" > "${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/sha1"
 		fi
 	done
+}
+
+bosh_init_site_metadata() {
+	must_be_in_an_environment
+	preflight_deployment
 
 	cat <<EOF
 ---
@@ -2322,6 +2348,7 @@ cmd_deploy() {
 	[[ -z $1 ]] || bad_usage "deploy"
 
 	must_be_in_an_environment
+	preflight_deployment
 
 	case ${DEPLOYMENT_TYPE} in
 	(normal)
@@ -3535,6 +3562,7 @@ EOF
 		echo
 		set -e
 		need_a_vault
+		preflight_deployment
 		(VAULT_ADDR= REDACT=y cmd_build live.yml)    || exit 3
 		(            REDACT=  cmd_build .deploy.yml) || exit 4
 
@@ -3588,6 +3616,7 @@ EOF
 		echo
 		set -e
 		need_a_vault
+		preflight_deployment
 		(VAULT_ADDR= REDACT=y cmd_build live.yml)    || exit 3
 		(            REDACT=  cmd_build .deploy.yml) || exit 4
 
@@ -3647,6 +3676,7 @@ cmd_bosh() {
 
 	case ${DEPLOYMENT_TYPE} in
 	(normal)
+		skip_preflight
 		(REDACT= cmd_build .deploy.yml) || exit 3
 		[[ -n $DEBUG_LEAVE_THE_CREDS_THERE ]] || \
 			trap "rm -f ${DEPLOYMENT_ENV_DIR}/manifests/.deploy.yml" QUIT TERM INT EXIT
