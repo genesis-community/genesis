@@ -23,3 +23,8 @@
 - New command, `genesis update` to pull down the latest _released_
   version of Genesis from Github, and update your local copy.
   Fixes #86
+
+## Bug Fixes
+
+- `cmd ci` commands now properly handle site and environment names
+  that contain embedded (non-leading) hyphens.

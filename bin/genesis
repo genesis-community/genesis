@@ -2718,7 +2718,7 @@ cmd_ci_beta() {
 		set -- "${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}"
 	fi
 	for site_env in "$@"; do
-		[[ ${site_env} =~ -.* ]] && bad_usage ${USAGE}
+		[[ ${site_env} =~ ^- ]] && bad_usage ${USAGE}
 
 		check_environment $site_env
 		local site=${site_env%%/*}
@@ -2743,7 +2743,7 @@ cmd_ci_auto() {
 		set -- "${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}"
 	fi
 	for site_env in "$@"; do
-		[[ ${site_env} =~ -.* ]] && bad_usage ${USAGE}
+		[[ ${site_env} =~ ^- ]] && bad_usage ${USAGE}
 
 		check_environment $site_env
 		local site=${site_env%%/*}
@@ -2785,7 +2785,7 @@ cmd_ci_manual() {
 	fi
 	rc=0
 	for site_env in "$@"; do
-		[[ ${site_env} =~ -.* ]] && bad_usage ${USAGE}
+		[[ ${site_env} =~ ^- ]] && bad_usage ${USAGE}
 
 		check_environment $site_env
 		local site=${site_env%%/*}
