@@ -3514,6 +3514,12 @@ EOF
 	ls -l ~/.bosh_config
 	echo
 
+	local target=$(spruce json ${WORKING_DIR}/${CI_SITE_ENV}/director.yml | jq -r '.director_uuid')
+	line
+	echo "Targeting BOSH director ${target}"
+	echo
+	bosh target ${target}
+
 	line
 	echo "Probing environment for information..."
 	# figure out our environment type
