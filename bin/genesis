@@ -1056,7 +1056,7 @@ normal_site_metadata() {
 meta:
   stemcell:
     name: ${stemcell_name}
-    version: ${stemcell_version}
+    version: "${stemcell_version}"
 EOF
 	if [[ -n ${stemcell_url} ]]; then
 		echo "    url: ${stemcell_url}"
@@ -1080,7 +1080,7 @@ EOF
 		fi
 
 		echo "  - name: ${rel}"
-		echo "    version: ${release_version}"
+		echo "    version: \"${release_version}\""
 		if [[ -n ${release_url} ]]; then
 			echo "    url: \"${release_url}\""
 		fi
