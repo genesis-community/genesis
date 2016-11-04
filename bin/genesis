@@ -1001,15 +1001,6 @@ preflight_normal_deployment() {
 
 	ensure_present stemcell ${stemcell_name} ${stemcell_version}
 
-	local stemcell_url=""
-	if [[ -f "${DEPLOYMENT_ENV_DIR}/.site/stemcell/url" ]]; then
-		stemcell_url=$(cat "${DEPLOYMENT_ENV_DIR}/.site/stemcell/url")
-	fi
-	local stemcell_sha1=""
-	if [[ -f "${DEPLOYMENT_ENV_DIR}/.site/stemcell/sha1" ]]; then
-		stemcell_sha1=$(cat "${DEPLOYMENT_ENV_DIR}/.site/stemcell/sha1")
-	fi
-
 	if [[ ! -f "${DEPLOYMENT_ENV_DIR}/.site/releases" ]]; then
 		echo >&2 "Error: no releases listed for site"
 		exit 2
