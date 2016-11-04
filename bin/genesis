@@ -1041,6 +1041,16 @@ normal_site_metadata() {
 
 	local stemcell_name=$(cat "${DEPLOYMENT_ENV_DIR}/.site/stemcell/name")
 	local stemcell_version=$(cat "${DEPLOYMENT_ENV_DIR}/.site/stemcell/version")
+
+	local stemcell_url=""
+	if [[ -f ${DEPLOYMENT_ENV_DIR}/.global/stemcell/url ]]; then
+		stemcell_url=$(cat ${DEPLOYMENT_ENV_DIR}/.global/stemcell/url)
+	fi
+	local stemcell_sha1=""
+	if [[ -f ${DEPLOYMENT_ENV_DIR}/.global/stemcell/sha1 ]]; then
+		stemcell_sha1=$(cat ${DEPLOYMENT_ENV_DIR}/.global/stemcell/sha1)
+	fi
+
 	cat <<EOF
 ---
 meta:
