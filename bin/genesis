@@ -1001,15 +1001,6 @@ preflight_normal_deployment() {
 
 	ensure_present stemcell ${stemcell_name} ${stemcell_version}
 
-	local stemcell_url=""
-	if [[ -f "${DEPLOYMENT_ENV_DIR}/.site/stemcell/url" ]]; then
-		stemcell_url=$(cat "${DEPLOYMENT_ENV_DIR}/.site/stemcell/url")
-	fi
-	local stemcell_sha1=""
-	if [[ -f "${DEPLOYMENT_ENV_DIR}/.site/stemcell/sha1" ]]; then
-		stemcell_sha1=$(cat "${DEPLOYMENT_ENV_DIR}/.site/stemcell/sha1")
-	fi
-
 	if [[ ! -f "${DEPLOYMENT_ENV_DIR}/.site/releases" ]]; then
 		echo >&2 "Error: no releases listed for site"
 		exit 2
@@ -1056,7 +1047,7 @@ normal_site_metadata() {
 meta:
   stemcell:
     name: ${stemcell_name}
-    version: ${stemcell_version}
+    version: "${stemcell_version}"
 EOF
 	if [[ -n ${stemcell_url} ]]; then
 		echo "    url: ${stemcell_url}"
@@ -1080,7 +1071,7 @@ EOF
 		fi
 
 		echo "  - name: ${rel}"
-		echo "    version: ${release_version}"
+		echo "    version: \"${release_version}\""
 		if [[ -n ${release_url} ]]; then
 			echo "    url: \"${release_url}\""
 		fi
@@ -3639,6 +3630,12 @@ ${CI_BOSHES}
 EOF
 	ls -l ~/.bosh_config
 	echo
+
+	local target=$(spruce json ${WORKING_DIR}/${CI_SITE_ENV}/director.yml | jq -r '.director_uuid')
+	line
+	echo "Targeting BOSH director ${target}"
+	echo
+	bosh target ${target}
 
 	line
 	pushd ${WORKING_DIR}/${CI_SITE_ENV} >/dev/null
