@@ -1332,6 +1332,9 @@ bosh_init_site_metadata() {
 	must_be_in_an_environment
 	preflight_deployment
 
+	local stemcell_name=$(cat "${DEPLOYMENT_ENV_DIR}/.site/stemcell/name")
+	local stemcell_url=$(cat "${DEPLOYMENT_ENV_DIR}/.site/stemcell/url")
+	local stemcell_sha1=$(cat "${DEPLOYMENT_ENV_DIR}/.site/stemcell/sha1")
 	cat <<EOF
 ---
 meta:
@@ -1345,6 +1348,8 @@ cloud_provider:
 
 releases:
 EOF
+
+	local releases=$(releases_from "${DEPLOYMENT_ENV_DIR}/.site/releases")
 	for rel in ${releases}; do
 		echo "  - name: ${rel}"
 		echo "    url:  $(cat ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/url)"
