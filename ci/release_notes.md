@@ -32,3 +32,6 @@
 
 - Target bosh director earlier in pipeline based deployment.
   Fixes #91
+
+- `env_hook` failure is now detected and handled properly in
+  bosh-init deployments.

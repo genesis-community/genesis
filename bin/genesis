@@ -808,6 +808,24 @@ refresh_site() {
 	rm -fr ${root}/.site.old
 }
 
+run_env_hooks() {
+	if [[ -d ${DEPLOYMENT_ROOT}/.env_hooks ]]; then
+		for file in ${DEPLOYMENT_ROOT}/.env_hooks/*; do
+			if [[ -f ${file} && -x ${file} ]]; then
+				export VAULT_PREFIX DEPLOYMENT_NAME DEPLOYMENT_SITE DEPLOYMENT_ENVIRONMENT DEPLOYMENT_ROOT ENVIRONMENT_ROOT
+				if ! ${file}; then
+					echo
+					echo
+					echo "env_hook '${file##*/}' bailed (exit ${?})."
+					echo "Tearing down ${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT} environment..."
+					rm -rf ${ENVIRONMENT_ROOT}
+					exit 1
+				fi
+			fi
+		done
+	fi
+}
+
 create_normal_environment() {
 	setup
 	local site=${1:?create_normal_environment() - no site provided}
@@ -854,22 +872,7 @@ meta:
   vault_prefix: ${VAULT_PREFIX}
 EOF
 
-	if [[ -d ${DEPLOYMENT_ROOT}/.env_hooks ]]; then
-		for file in ${DEPLOYMENT_ROOT}/.env_hooks/*; do
-			if [[ -f ${file} && -x ${file} ]]; then
-				echo "Running env setup hook: ${file}"
-				export VAULT_PREFIX DEPLOYMENT_NAME DEPLOYMENT_SITE DEPLOYMENT_ENVIRONMENT DEPLOYMENT_ROOT ENVIRONMENT_ROOT
-				${file}
-				local rc=$?
-				if [[ $rc -ne 0 ]]; then
-					echo "Setup script bailed (exit ${rc})."
-					echo "Tearing down ${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT} environment..."
-					rm -rf ${ENVIRONMENT_ROOT}
-					exit 1
-				fi
-			fi
-		done
-	fi
+	run_env_hooks
 
 	refresh_global ${site} ${name}
 	refresh_site   ${site} ${name}
@@ -922,15 +925,7 @@ meta:
   vault_prefix: ${VAULT_PREFIX}
 EOF
 
-	if [[ -d ${DEPLOYMENT_ROOT}/.env_hooks ]]; then
-		for file in ${DEPLOYMENT_ROOT}/.env_hooks/*; do
-			if [[ -f ${file} && -x ${file} ]]; then
-				echo "Running env setup hook: ${file}"
-				export VAULT_PREFIX DEPLOYMENT_NAME DEPLOYMENT_SITE DEPLOYMENT_ENVIRONMENT DEPLOYMENT_ROOT ENVIRONMENT_ROOT=${DEPLOYMENT_ROOT}/${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}
-				${file}
-			fi
-		done
-	fi
+	run_env_hooks
 
 	refresh_global ${site} ${name}
 	refresh_site   ${site} ${name}
