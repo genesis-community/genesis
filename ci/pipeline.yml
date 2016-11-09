@@ -160,11 +160,6 @@ resources:
       secret_access_key: (( grab meta.aws.secret_key ))
       initial_version:   (( grab meta.initial_version || "1.5.0" ))
 
-  - name: notify
-    type: slack-notification
-    source:
-      url: (( grab meta.slack.webhook ))
-
   - name: github
     type: github-release
     source:
