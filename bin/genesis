@@ -3839,7 +3839,7 @@ main() {
 		cmd_releases $*
 		;;
 	(build)
-		cmd_build $*
+		REDACT=y cmd_build $*
 		;;
 	(refresh)
 		local arg=${1:-all} ; shift
