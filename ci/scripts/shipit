@@ -45,16 +45,22 @@ fi
 
 ###############################################################
 
-#?#ORIGIN=$(pwd)
-TARGETS=${TARGETS:-linux/amd64 darwin/amd64}
 ROOT=$( cd "$( dirname "${BASH_SOURCE[0]}" )/../.." && pwd )
 
 pushd $REPO_ROOT
 
 mkdir artifacts
-cp bin/${BINARY} artifacts/${BINARY}
-auto_sed artifacts/${BINARY} "s/^VERSION=.*/VERSION=\"v${VERSION}\"/"
-artifacts/${BINARY} -v | grep ${VERSION}
+
+if [[ ! -d ${BIN_DIR} ]]; then
+	echo "${BIN_DIR} does not exist as a directory inside ${REPO_ROOT}"
+	exit 1
+fi
+
+for bin in $(cd ${BIN_DIR} && ls ${BINARIES}); do
+  cp ${BIN_DIR}/${bin} artifacts/${bin}
+  auto_sed artifacts/${bin} "s/^VERSION=.*/VERSION=\"v${VERSION}\"/"
+  artifacts/${bin} -v | grep ${VERSION}
+done
 popd
 
 echo "v${VERSION}"                         > ${RELEASE_ROOT}/tag

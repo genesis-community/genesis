@@ -2,6 +2,7 @@
 meta:
   name: genesis
   target: sw
+  url: https://ci.vsphere.starkandwayne.com
 
   aws:
     access_key: (( vault "secret/pipelines/genesis/aws:access_key" ))
@@ -13,7 +14,7 @@ meta:
     private_key:  (( vault "secret/pipelines/genesis/github:private" ))
     access_token: (( vault "secret/pipelines/genesis/github:access_token" ))
   slack:
-    webhook: FIXME
+    webhook: (( vault "secret/pipelines/genesis/slack:webhook" ))
     channel: "#genesis"
 
   dockerhub:
@@ -23,7 +24,7 @@ meta:
     repository: starkandwayne/genesis
 
 groups:
-- name: (( grab meta.name ))
+- name: (( grab meta.pipeline ))
   jobs:
   - (( append ))
   - genesis-docker-image

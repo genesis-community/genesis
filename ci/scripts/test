@@ -2,8 +2,16 @@
 
 set -e
 
-echo 'Verifying that `genesis` is a valid bash script'
 cd ${REPO_ROOT}
-bin/genesis help >/dev/null 2>&1
+
+if [[ ! -d ${BIN_DIR} ]]; then
+	echo "${BIN_DIR} does not exist as a directory inside ${REPO_ROOT}"
+	exit 1
+fi
+
+for file in $(cd ${BIN_DIR} && ls ${BINARIES}); do
+	echo 'Verifying that `'${file}'` is a valid bash script'
+	${BIN_DIR}/$file -h >/dev/null 2>&1
+done
 
 exit 0
