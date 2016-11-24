@@ -1678,6 +1678,9 @@ cmd_new_deployment() {
 	done
 
 	if [[ -n ${template} ]]; then
+		if [[ ${template} =~ (http(s)?):\/\/ ]]; then
+			custom_template=true
+		fi
 		if [[ ${template} != ?*/?* ]]; then
 			template="starkandwayne/${template}"
 		fi
@@ -1701,7 +1704,11 @@ cmd_new_deployment() {
 	fi
 
 	if [[ -n ${template} ]]; then
-		local url=https://github.com/${template}
+		if [[ ! -z ${custom_template} ]]; then
+			local url=${template}
+		else
+			local url=https://github.com/${template}
+		fi
 		set -e
 		echo "cloning from template ${url}"
 		git clone --origin upstream ${url} ${root}/${name}-deployments
