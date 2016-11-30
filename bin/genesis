@@ -2025,7 +2025,7 @@ cmd_set_release() {
 
 	setup
 	mkdir -p ${DEPLOYMENT_ROOT}/global/releases/${release}
-	rm -rf ${DEPLOYMENT_ROOT}/global/releases/${releases}/*
+	rm -rf ${DEPLOYMENT_ROOT}/global/releases/${release}/*
 	echo ${version} > ${DEPLOYMENT_ROOT}/global/releases/${release}/version
 
 	case ${version} in
