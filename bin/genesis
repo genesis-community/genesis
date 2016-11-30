@@ -2025,6 +2025,7 @@ cmd_set_release() {
 
 	setup
 	mkdir -p ${DEPLOYMENT_ROOT}/global/releases/${release}
+	rm -rf ${DEPLOYMENT_ROOT}/global/releases/${releases}/*
 	echo ${version} > ${DEPLOYMENT_ROOT}/global/releases/${release}/version
 
 	case ${version} in
@@ -3520,6 +3521,11 @@ EOF
 	echo "Targeting BOSH director ${target}"
 	echo
 	bosh target ${target}
+
+	if [[ $? != 0 ]]; then
+		echo "Could not target BOSH director"
+		exit 1
+	fi
 
 	line
 	echo "Probing environment for information..."
