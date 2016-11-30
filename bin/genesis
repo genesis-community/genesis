@@ -3521,6 +3521,11 @@ EOF
 	echo
 	bosh target ${target}
 
+	if [[ $? != 0 ]]; then
+		echo "Could not target BOSH director"
+		exit 1
+	fi
+
 	line
 	echo "Probing environment for information..."
 	# figure out our environment type
