@@ -35,3 +35,6 @@
 
 - `env_hook` failure is now detected and handled properly in
   bosh-init deployments.
+
+- Updating a release version will clear out sha1 and url files to
+  force a genesis-index lookup on next deploy.
