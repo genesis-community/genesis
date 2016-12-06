@@ -2517,9 +2517,14 @@ EOF
 #  # This is the name of your pipeline
 #  name: Pipeline Name
 #
+#  # This is the name of your fly target
+#  target: proto
+#
 #  # A map of name:value environment variables
 #  # that will be made available to the script
-#  env: {}
+#  env:
+#    VAULT_ADDR: https://va.ul.t.ip:8200
+#  # VAULT_SKIP_VERIFY: 1
 #
 #  github:
 #    owner: github-user
