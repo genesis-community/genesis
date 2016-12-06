@@ -2463,6 +2463,19 @@ ci_beta_environment_for() {
 	fi
 }
 
+
+ci_parent_environment_for() {
+	local site=${1:?ci_parent_environment_for() - no site given}
+	local env=${2:?ci_parent_environment_for() - no env given}
+	local parent=$(spruce json ${DEPLOYMENT_ROOT}/.ci.yml | jq -r ".sites[\"${site}\"][\"${env}\"].parent // \"\"")
+
+	if [[ -n ${parent} ]]; then
+		echo "${site}/${parent}"
+	else
+		ci_beta_environment_for ${site}
+	fi
+}
+
 ci_gamma_environments_for() {
 	local site=${1:?ci_gamma_environments_for() - no site given}
 	local beta=$(ci_beta_environment_for ${site})
