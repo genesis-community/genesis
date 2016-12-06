@@ -2463,6 +2463,19 @@ ci_beta_environment_for() {
 	fi
 }
 
+
+ci_parent_environment_for() {
+	local site=${1:?ci_parent_environment_for() - no site given}
+	local env=${2:?ci_parent_environment_for() - no env given}
+	local parent=$(spruce json ${DEPLOYMENT_ROOT}/.ci.yml | jq -r ".sites[\"${site}\"][\"${env}\"].parent // \"\"")
+
+	if [[ -n ${parent} ]]; then
+		echo "${site}/${parent}"
+	else
+		ci_beta_environment_for ${site}
+	fi
+}
+
 ci_gamma_environments_for() {
 	local site=${1:?ci_gamma_environments_for() - no site given}
 	local beta=$(ci_beta_environment_for ${site})
@@ -2517,9 +2530,14 @@ EOF
 #  # This is the name of your pipeline
 #  name: Pipeline Name
 #
+#  # This is the name of your fly target
+#  target: proto
+#
 #  # A map of name:value environment variables
 #  # that will be made available to the script
-#  env: {}
+#  env:
+#    VAULT_ADDR: https://va.ul.t.ip:8200
+#  # VAULT_SKIP_VERIFY: 1
 #
 #  github:
 #    owner: github-user
@@ -2734,6 +2752,30 @@ sites:
       ${env}: y
 EOF
 	done
+}
+
+cmd_ci_parent() {
+	local USAGE="ci parent <target_site/target_env> <parent_env> "
+
+	setup
+
+	local target=${1}
+	local parent_env=${2}
+	[[ -z ${target} || -z ${parent_env} ]] && bad_usage ${USAGE}
+
+	local target_site=${target%%/*}
+	local target_env=${target##*/}
+
+	check_environment ${target}
+	check_environment "${target_site}/${parent_env}"
+
+	ci_update <<EOF
+---
+sites:
+  ${target_site}:
+    ${target_env}:
+      parent: ${parent_env}
+EOF
 }
 
 cmd_ci_auto() {
@@ -3093,6 +3135,8 @@ EOF
 			local env_name=$(ci_name ${env})
 			local site_env=${site}/${env}
 			local site_env_name=$(ci_name ${site_env})
+			local parent_env=$(ci_parent_environment_for ${site} ${env})
+			local parent_env_name=$(ci_name ${parent_env})
 
 			cat >>${workdir}/09-all.yml <<EOF
       - $site_env_name
@@ -3260,7 +3304,7 @@ jobs:
         - get: world-changes
           resource: ${site}-β-changes
           trigger: true
-          passed: [${beta_name}]
+          passed: [${parent_env_name}]
 
         - get: local-changes
           resource: ${site_env_name}-changes
@@ -3307,7 +3351,7 @@ jobs:
       - aggregate:
         - get: world-changes
           resource: ${site}-β-changes
-          passed: [${beta_name}]
+          passed: [${parent_env_name}]
           trigger: true
 
         - get: local-changes
@@ -3885,6 +3929,9 @@ main() {
 			;;
 		(beta)
 			cmd_ci_beta $*
+			;;
+		(parent)
+			cmd_ci_parent $*
 			;;
 		(auto)
 			cmd_ci_auto $*
