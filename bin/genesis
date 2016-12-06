@@ -2741,6 +2741,30 @@ EOF
 	done
 }
 
+cmd_ci_parent() {
+	local USAGE="ci parent <target_site/target_env> <parent_env> "
+
+	setup
+
+	local target=${1}
+	local parent_env=${2}
+	[[ -z ${target} || -z ${parent_env} ]] && bad_usage ${USAGE}
+
+	local target_site=${target%%/*}
+	local target_env=${target##*/}
+
+	check_environment ${target}
+	check_environment "${target_site}/${parent_env}"
+
+	ci_update <<EOF
+---
+sites:
+  ${target_site}:
+    ${target_env}:
+      parent: ${parent_env}
+EOF
+}
+
 cmd_ci_auto() {
 	local USAGE="ci auto [<site/env> ...]"
 
@@ -3890,6 +3914,9 @@ main() {
 			;;
 		(beta)
 			cmd_ci_beta $*
+			;;
+		(parent)
+			cmd_ci_parent $*
 			;;
 		(auto)
 			cmd_ci_auto $*
