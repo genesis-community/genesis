@@ -3135,6 +3135,8 @@ EOF
 			local env_name=$(ci_name ${env})
 			local site_env=${site}/${env}
 			local site_env_name=$(ci_name ${site_env})
+			local parent_env=$(ci_parent_environment_for ${site} ${env})
+			local parent_env_name=$(ci_name ${parent_env})
 
 			cat >>${workdir}/09-all.yml <<EOF
       - $site_env_name
@@ -3302,7 +3304,7 @@ jobs:
         - get: world-changes
           resource: ${site}-β-changes
           trigger: true
-          passed: [${beta_name}]
+          passed: [${parent_env_name}]
 
         - get: local-changes
           resource: ${site_env_name}-changes
@@ -3349,7 +3351,7 @@ jobs:
       - aggregate:
         - get: world-changes
           resource: ${site}-β-changes
-          passed: [${beta_name}]
+          passed: [${parent_env_name}]
           trigger: true
 
         - get: local-changes
