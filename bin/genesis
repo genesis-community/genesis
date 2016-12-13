@@ -234,7 +234,7 @@ ensure_yaml_file() {
 }
 
 ensure_ci_configuration() {
-	ensure_yaml_file "${DEPLOYMENT_ROOT}/.ci.yml"
+	ensure_yaml_file $(ci_pipeline_yaml)
 }
 
 ALL_VAULTED=""
@@ -2419,7 +2419,7 @@ cmd_embed() {
 }
 
 ci_smoke_test() {
-	local smoke_test=$(spruce json ${DEPLOYMENT_ROOT}/.ci.yml | jq -r '.smoke_test')
+	local smoke_test=$(spruce json $(ci_pipeline_yaml) | jq -r '.smoke_test')
 
 	if [[ ${smoke_test} != 'null' ]]; then
 		echo ${smoke_test}
@@ -2430,20 +2430,20 @@ ci_environment_type() {
 	local site=${1:?ci_environment_type() - no site given}
 	local env=${2:?ci_environment_type() - no environment given}
 
-	local alpha=$(spruce json ${DEPLOYMENT_ROOT}/.ci.yml | jq -r ".alpha")
+	local alpha=$(spruce json $(ci_pipeline_yaml) | jq -r ".alpha")
 	if [[ "${site}/${env}" == $alpha ]]; then
 		echo "alpha"
 		return
 	fi
 
-	local beta=$(spruce json ${DEPLOYMENT_ROOT}/.ci.yml | jq -r ".sites[\"${site}\"].beta")
+	local beta=$(spruce json $(ci_pipeline_yaml) | jq -r ".sites[\"${site}\"].beta")
 	if [[ "${env}" == $beta ]]; then
 		echo "beta"
 		return
 	fi
 
 	# otherwise, is it automatically updatable?
-	local auto=$(spruce json ${DEPLOYMENT_ROOT}/.ci.yml | jq -r ".sites[\"${site}\"].auto[\"${env}\"] // \"\"")
+	local auto=$(spruce json $(ci_pipeline_yaml) | jq -r ".sites[\"${site}\"].auto[\"${env}\"] // \"\"")
 	if [[ -n ${auto} ]]; then
 		echo "gamma"
 	else
@@ -2452,12 +2452,12 @@ ci_environment_type() {
 }
 
 ci_alpha_environment() {
-	spruce json ${DEPLOYMENT_ROOT}/.ci.yml | jq -r ".alpha"
+	spruce json $(ci_pipeline_yaml) | jq -r ".alpha"
 }
 
 ci_beta_environment_for() {
 	local site=${1:?ci_beta_environment_for() - no site given}
-	local env=$(spruce json ${DEPLOYMENT_ROOT}/.ci.yml | jq -r ".sites[\"${site}\"].beta // \"\"")
+	local env=$(spruce json $(ci_pipeline_yaml) | jq -r ".sites[\"${site}\"].beta // \"\"")
 	if [[ -n ${env} ]]; then
 		echo "${site}/${env}"
 	fi
@@ -2471,7 +2471,7 @@ ci_gamma_environments_for() {
 		if [[ "${site}/${env}" == "${beta}" || "${site}/${env}" == "${alpha}" ]]; then
 			continue
 		fi
-		local auto=$(spruce json ${DEPLOYMENT_ROOT}/.ci.yml | jq -r ".sites[\"${site}\"].auto[\"${env}\"] // \"\"")
+		local auto=$(spruce json $(ci_pipeline_yaml) | jq -r ".sites[\"${site}\"].auto[\"${env}\"] // \"\"")
 		if [[ -n ${auto} ]]; then
 			echo ${site}/${env}
 		fi
@@ -2610,7 +2610,7 @@ EOF
 
 ci_update() {
 	# emulate:
-	#   echo "some: change" | spruce merge -i ${DEPLOYMENT_ROOT}/.ci.yml
+	#   echo "some: change" | spruce merge -i $(ci_pipeline_yaml)
 
 	ensure_ci_configuration
 
@@ -2618,8 +2618,8 @@ ci_update() {
 	cat > ${WORKDIR}/update.yml
 	ensure_yaml_file ${WORKDIR}/update.yml
 
-	if spruce merge "$@" ${DEPLOYMENT_ROOT}/.ci.yml ${WORKDIR}/update.yml > ${WORKDIR}/.ci.yml; then
-		mv ${WORKDIR}/.ci.yml ${DEPLOYMENT_ROOT}/.ci.yml
+	if spruce merge "$@" $(ci_pipeline_yaml) ${WORKDIR}/update.yml > ${WORKDIR}/.ci.yml; then
+		mv ${WORKDIR}/.ci.yml $(ci_pipeline_yaml)
 	fi
 }
 
@@ -2669,6 +2669,14 @@ ci_commit() {
 		git status
 		git --no-pager diff --cached
 		git commit -m "${msg}"
+	fi
+}
+
+ci_pipline_yaml() {
+	if [[ -n ${CI_PIPELINE:-} ]]; then
+		echo ${DEPLOYMENT_ROOT}/.ci.yml
+	else
+		echo ${DEPLOYMENT_ROOT}/.ci.${CI_PIPELINE}.yml
 	fi
 }
 
@@ -3415,7 +3423,7 @@ cmd_ci_flow() {
 
 	setup
 	# FIXME: ascii diagram!
-	cat ${DEPLOYMENT_ROOT}/.ci.yml
+	cat $(ci_pipeline_yaml)
 }
 
 cmd_ci_stemcells() {
@@ -3695,14 +3703,14 @@ cmd_ci_check() {
 bad_ci() {
 	local cmd=${1}
 	cat >&2 <<EOF
-USAGE:  genesis ci alpha [site/env]
-        genesis ci beta [site/env [site/env ...]]
-        genesis ci auto [site/env [site/env ...]]
-        genesis ci manual [site/env [site/env ...]]
-        genesis ci smoke-test <errand>
-        genesis ci repipe
-        genesis ci flow
-        genesis ci check
+USAGE:  genesis ci [-p pipeline] alpha [site/env]
+        genesis ci [-p pipeline] beta [site/env [site/env ...]]
+        genesis ci [-p pipeline] auto [site/env [site/env ...]]
+        genesis ci [-p pipeline] manual [site/env [site/env ...]]
+        genesis ci [-p pipeline] smoke-test <errand>
+        genesis ci [-p pipeline] repipe
+        genesis ci [-p pipeline] flow
+        genesis ci [-p pipeline] check
 EOF
 	exit 1
 }
@@ -3878,8 +3886,29 @@ main() {
 		;;
 	(ci)
 		TERM=dumb
-		local arg=${1:-} ; shift
-		case ${arg} in
+		command=""
+		CI_PIPELINE=${CI_PIPELINE:-}
+		while [[ $# -eq 0 ]]; do
+			local arg=${1:-} ; shift
+			case ${arg} in
+			(-p|--pipeline)
+				shift ; CI_PIPELINE=${2:-} ; shift
+				;;
+			(-*)
+				echo >&2 "bad flag '${arg}'"
+				exit 1
+				;;
+			(*)
+				if [[ -n ${command} ]]; then
+					echo >&2 "bad command '${command}'"
+					exit 1
+				fi
+				command=$arg
+				;;
+			esac
+		done
+
+		case ${command} in
 		(alpha)
 			cmd_ci_alpha $*
 			;;
