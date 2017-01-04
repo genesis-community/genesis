@@ -139,7 +139,13 @@ setup() {
 		while IFS='' read -r line || [[ -n "$line" ]]; do
 			cmd=$(echo $line | perl -pe 's|^(.*?):.*$|$1|')
 			ver=$(echo $line | perl -pe 's|^.*?: *(.*)$|$1|')
-			if [[ -z $(command -v ${cmd}) ]]; then
+			if [[ ${cmd} == "genesis" ]] ; then
+				if [[ ${ver} != ${VERSION} ]] ; then
+					errors="This genesis deployment depends on ${cmd} version ${ver}, "\
+						"but the current version is ${VERSION}\n${errors}"
+				fi
+				continue
+			elif [[ -z $(command -v ${cmd}) ]] ; then
 				errors="This genesis deployment requires the '${cmd}' command\n${errors}"
 				continue
 			fi
