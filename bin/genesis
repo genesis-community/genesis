@@ -7,10 +7,15 @@ USAGE
 @~include=usage{"cmd":"<command> [options] [arguments]"}
 
 DESCRIPTION
-	Create and manage unified deployment manifests across multiple sites and
-	environments
+	Genesis is a tool build around a BOSH deployment paradigm that allows you to
+	create and manage unified deployment manifests across multiple sites and
+	environments.
 
-	TODO: Provide full description of what genesis is.
+	It does this by breaking up your BOSH configuration manifest along three
+	logical strata: global, site and environment.  This allows you to work on
+	small related blocks of elements, reducing complexity and redundancy, then
+	package them up for deployment across different IaaS providers and target
+	environments with properties appropriate for their needs.
 
 CONCEPTS
 @~include=topic{"category":"concept","leader":"    ","scope":"intro","desc":"block"}
@@ -116,6 +121,10 @@ all_sites() {
 			echo ${site}
 		fi
 	done
+}
+
+all_pipeline_sites() {
+	spruce json $(ci_pipeline_yaml) | jq -r ".sites | keys | .[]"
 }
 
 all_environments_for() {
@@ -2088,7 +2097,8 @@ dox-concept:Releases
 
 : <<'dox-command:releases'
 USAGE
-@~include=usage{"args":"[<site> [<env>]]"}
+@~include=usage{"args":"[<site> [<env>]]","cmd":"release[s]"}
+@~alias=release
 
 DESCRIPTION
 	Lists the release name and version in use by the specified site or
@@ -2633,7 +2643,7 @@ SEE ALSO
 dox-concept:Cached-Definitions
 
 : <<'dox-partial:refresh'
-USAGE: 
+USAGE 
 @~include=usage{"args":"[(global|site|all|makefile|readme)]"}
 
 DESCRIPTION
@@ -2641,7 +2651,6 @@ DESCRIPTION
 	environment directory.  Can also be used to recreate the Makefile and readme
 	files after a Genesis upgrade.  If run without a subcommand, it will default
 	to 'all'.
-	
 dox-partial:refresh
 
 : <<'dox-command:refresh-all'
@@ -2810,66 +2819,8 @@ cmd_deploy() {
 		;;
 	esac
 }
-: <<'dox-concept:CI'
-dox-concept:CI
 
 ### CI SUPPORT FUNCTIONS
-
-ci_pipeline_name() {
-	[[ -n "$CI_PIPELINE" || -n $DEPLOYMENT_NAME ]] || setup
-	echo "${CI_PIPELINE:-"${DEPLOYMENT_NAME}-deployments"}"
-}
-
-ci_role_file() {
-  local site="$1" env="$2"
-  [[ -n $DEPLOYMENT_ROOT ]] || setup
-  local role_file="${DEPLOYMENT_ROOT}/${site}/${env}/.ci-role"
-  [[ -f $role_file ]] || role_file=""
-  echo $role_file
-}
-
-ci_get_role_info() {
-	local site="$1" env="$2" pipeline_var="$3" role_var="$4" parent_var="$5" err_var="$6"
-	if [[ -z $pipeline_var || -z $role_var || -z $parent_var || -z $err_var ]] ; then
-		echo "Internal Error: ci_get_role_info() calling error"
-		exit 1
-	fi
-
-  local role_file="$(ci_role_file "$site" "$env")"
-	[[ -n $role_file ]] || return 2
-
-	local role_content="$(cat $role_file | grep -v '^\( *#.*\)\?$' | head -n1)"
-	local env_pipeline="${role_content%%:*}"
-	local env_role_info="${role_content#*:}"
-	local env_role="${env_role_info%%=*}"
-	local env_after="${env_role_info#*=}"
-	if [[ -z "$env_pipeline" || "$env_pipeline" == "$role_content" ||
-				-z "$env_role"     || "$env_role"     == "$role_content" ]] ; then
-		eval "$err_var=\"CI role improperly formed for \${site}/\${env}\""
-		return 1
-	else
-		[[ "$env_role" == "$env_role_info" ]] && env_after=""
-		eval "$pipeline_var=\"\$env_pipeline\""
-		eval "$role_var=\"\$env_role\""
-		eval "$parent_var=\"\$env_after\""
-		return 0
-	fi
-}
-
-ci_report_role() {
-	local site="$1" env="$2"
-	local pipeline="" role=""	parent=""	error=""
-
-	ci_get_role_info $site $env "pipeline" "role" "parent" "error"
-	case $? in 
-		2) echo "No assigned CI role"; return 2 ;;
-		1) echo "ERROR: $error"; return 1;;
-		0) [[ "$role" == "alpha" ]] && site=""
-			 echo "[Pipeline: ${pipeline}] $role${site:+" for site $site"}${parent:+" after $parent passes"}"
-			 return 0
-			 ;;
-	esac
-}
 
 ci_smoke_test() {
 	local smoke_test=$(spruce json $(ci_pipeline_yaml) | jq -r '.smoke_test')
@@ -2920,7 +2871,7 @@ ci_beta_environment_for() {
 ci_parent_environment_for() {
 	local site=${1:?ci_parent_environment_for() - no site given}
 	local env=${2:?ci_parent_environment_for() - no env given}
-	local parent=$(spruce json ${DEPLOYMENT_ROOT}/.ci.yml | jq -r ".sites[\"${site}\"][\"${env}\"].parent // \"\"")
+	local parent=$(spruce json $(ci_pipeline_yaml) | jq -r ".sites[\"${site}\"][\"${env}\"].parent // \"\"")
 
 	if [[ -n ${parent} ]]; then
 		echo "${site}/${parent}"
@@ -2986,9 +2937,6 @@ EOF
 #  # This is the name of your fly target
 #  target: proto
 #
-#  # This is the name of your fly target
-#  target: proto
-#
 #  # A map of name:value environment variables
 #  # that will be made available to the script
 #  env:
@@ -3020,7 +2968,7 @@ EOF
 
 	local alpha=""
 	ensure_ci_configuration
-	for site in $(all_sites); do
+	for site in $(all_pipeline_sites); do
 		local beta=""
 		local numenvs=0
 		for env in $(all_environments_for ${site}); do
@@ -3097,6 +3045,15 @@ ci_update() {
 	fi
 }
 
+ci_pipeline_yaml() {
+	if [[ -n ${CI_PIPELINE:-} ]]; then
+		echo ${DEPLOYMENT_ROOT}/.ci.yml
+	else
+		echo ${DEPLOYMENT_ROOT}/.ci.${CI_PIPELINE}.yml
+	fi
+}
+
+
 need_ci_git_access() {
 	[ -z ${GIT_USERNAME} ] && GIT_USERNAME="Concourse Bot"
 	[ -z ${GIT_EMAIL}    ] && GIT_EMAIL="concourse@$(hostname -f)"
@@ -3146,191 +3103,170 @@ ci_commit() {
 	fi
 }
 
-ci_pipline_yaml() {
-	if [[ -n ${CI_PIPELINE:-} ]]; then
-		echo ${DEPLOYMENT_ROOT}/.ci.yml
-	else
-		echo ${DEPLOYMENT_ROOT}/.ci.${CI_PIPELINE}.yml
-	fi
-}
-: <<'dox-concept:Structure'
-DESCRIPTION
-	Genesis organizes the files used to build your manifests into logical
-	locations based on hierarchial and functional scope.
-
-	TODO: Fine details regarding structure
-
-dox-concept:Structure
-
 : <<'dox-concept:CI'
 DESCRIPTION
-  Genesis provides a integrated CI/CD solution to ensure that changes to your
-	deployment manifests can propagate through your environments.
+  When making a change to a deployment, you want to make sure it causes the
+  least impact and has the highest chance of catching an issue early.  Genesis
+  provides an integrated CI/CD solution that is built on Concourse to ensure
+  that changes to your deployments can propagate through your environments
+  safely.
 
-  TODO: Fine details regarding CI
+  Changes come to the manifest from the sources:  global changes that impact
+  all deployments, site changes that only impact all environments in that site
+  and changes that are isolated to a specific environment.
 
+  Changes at the global level are called alpha changes.  These can be tested on
+  a single isolated environment to ensure that they can be deployed with golden
+  configuration for site and env.
+
+  Changes at the site level are called beta changes.  They are applied on top
+  of the last known-good alpha chagnes that passed.  One environment for the
+  site is picked as a `beta environment` on which the deployment is tested.
+
+  Environment changes need to be applied to the target environment, and will be
+  applied over the known-good beta changes.
+
+WORKFLOW
+  The CI pipeline is created as follows:
+
+                   .-------.
+  global changes ->| alpha |--+--+--+
+                   '-------'  |  |  |
+      .-SITE-C----------------|--|--v---------------------------------------.
+    .-SITE-B------------------|--v----------------------------------------. |
+  .-SITE-A--------------------|-----------------------------------------. | |
+  |                  .--------'                                         | | |
+  |                  |  .---------.                                     | | |
+  |                  '->| beta:   |---.                                 | | |
+  | site changes ------>| SITE-A/ |-. |  .---------.        .---------. | | |
+  | 'sandbox' changes ->| sandbox | | +->| notify: |- - - ->| manual: | | | |
+  |                     '---------' +-|->| SITE-A/ |- - - ->| SITE-A/ | | | |
+  | 'dev' changes ------------------|-|->| dev     |- - - ->| dev     | | | |
+  |                                 | |  '---------'        '---------' | | |
+  |                                 | |  .---------.        .---------. | | |
+  |                                 | '->| auto    |---+--->| auto:   | | | |
+  |                                 '--->| SITE-A/ |-+-|--->| SITE-A/ | | | |
+  | 'qa' changes ----------------------->| qa      | | | .->| live    | | | |
+  |                                      '---------' | | |  '---------' | | |
+  | 'live' changes ----------------------------------|-|-'              | | |
+  |                                 .----------------' |                | | |
+  |                                 | .----------------'                | | |
+  |                                 | |  .---------.        .---------. | | |
+  |                                 ' '->| notify: |- - - ->| manual: | | | |
+  |                                 '--->| SITE-A/ |- - - ->| SITE-A/ | | | |
+  | 'prod' changes --------------------->| prod    |- - - ->| prod    | | |-'
+  |                                      '---------'        '---------' |-'
+  '---------------------------------------------------------------------'
+
+  In the example pipeline above, there are three sites: SITE-A, SITE-B and
+  SITE-C.  Let's walk through what happens:
+
+	alpha
+  * Any changes to /global will trigger a deployment on the alpha environment.
+		A successful deployment will be used as a triggering input for the beta
+		environments on each site.  We will focus on SITE-A, but all sites will
+		operate the same way.
+
+	beta:SITE-A/sandbox
+	* A successful deployment on the alpha site will trigger a deployment on 
+		beta: SITE-A/sandbox environment using the global changes that just passed
+		and the last known good SITE-A site changes as well.
+
+	* Any changes to SITE-A/site will also trigger a deployment on
+		beta:SITE-A/sandbox, which will use the last passed global changes as well.
+
+	* A change to the SITE-A/sandbox directory will also trigger a deployment on
+		beta:SITE-A/sandbox environment using the last known good global and site
+		changes.  However, a successful deployment will NOT trigger any downstream
+		deployments.
+
+	REMAINING ENVIRONMENTS
+
+	The four remaining environments in SITE-A are dev, qa, live and prod.  They
+	are configured as:
+		qa:   'auto' environment.
+		dev:  'manual' environment.
+		live: 'auto' environment, with SITE-A/qa as parent.
+		prod: 'manual' environment, with SITE-A/qa as parent.
+
+	notify:SITE-A/dev + manual:SITE-A/dev
+	* Because 'dev' is manual, the successful deployment of beta:SITE-A/sandbox
+		does not trigger the deployment on SITE-A/dev.  Instead, it sends out a
+		notification that SITE-A/dev is ready to be deployed.  This notification
+		will instruct the receiver to visit the Concourse link for SITE-A/dev and
+		click the (+) button, which will manually start the deployment.
+
+	* A change to SITE-A/dev environment directory will also trigger a
+		notification instead of starting the deployment.
+
+	auto:SITE-A/qa
+	* Because 'qa' is auto, a deployment will be triggered by a successful 
+		deployment of beta/SITE-A/sandbox that was due to global or site changes.
+
+	* Changes to SITE-A/qa directory will also trigger a deployment on 
+		auto:SITE-A/qa, but its success will not trigger further downstream 
+		deployments.
+
+	auto:SITE-A/live
+	* This operates similar to SITE-A/qa, but instead of being triggered by a
+		successful deployment of beta:SITE-A/sandbox, it is triggered by a
+		successful deployment of auto:SITE-A/qa (for site or global changes).
+
+	notify:SITE-A/prod + manual:SITE-A/prod
+	* Similar to SITE-A/dev in behaviour, except its notification istriggered on
+		a successful deployment due to global or site changes on auto:SITE-A/qa
+
+SEE ALSO
+@~include=topic{"category":"command","desc":"inline","leader":"  ","partial":"ci"}
 dox-concept:CI
 
 : <<'dox-partial:ci'
+
+beta
+	Sets the role to beta.  Beta environments are run after alpha environments
+	pass, or when site-specific changes are introduced.  You must have one beta
+	environment for each site in your pipeline.
+
+auto
+	Set the role to auto.  Auto environments run automatically once the beta
+	environment for the site passes.  You can have any number of auto
+	environments.
+
+manual
+	Set the role to manual.  When the proceeding environment passes, a
+	notification will be sent out that the enviroment can be run, with a link
+	to the environment task in Concourse.  You can have any number of manual
+	environments.
+
+<site>/<env>
+	You can optionally specify which environment it the target of this command
+	by specifying the path of the environment.  If ommitted, the current
+	environment is the target.
 DESCRIPTION
   Manages the CI pipeline configurations.
 dox-partial:ci
 
-ci_pipeline_yaml() {
-	if [[ -n ${CI_PIPELINE:-} ]]; then
-		echo ${DEPLOYMENT_ROOT}/.ci.yml
-	else
-		echo ${DEPLOYMENT_ROOT}/.ci.${CI_PIPELINE}.yml
-	fi
-}
-
 ### CI API Commands
 
-cmd_ci_initialize() {
-
-	ci_pipe_name 
-	local pipe_name=$1
-	[[ -n ${pipe_name} ]] || pipe_name=
-	ci_create
-}
-
-: <<'dox-command:ci-role'
-USAGE
-@~include=usage{"args":"[-p|--pipeline <pipeline>] alpha|beta [<site>/<env>]"}
-@~include=usage{"args":"[-p|--pipeline <pipeline>] auto|manual [<site>/<env>] [-a|--after <site>/<env>]"}
-@~include=usage{"args":"[-p|--pipeline <pipeline>] [<site>/<env>]"}
-
-DESCRIPTION
-	Assigns the specified (or current) environment to a specific role in the
-	given (or default) pipeline. When called without specifying a role of alpha,
-	beta, auto, or manual, it will return the role of the specified or current
-	environment.
-
-ARGUMENTS
-	-p|--pipeline <pipeline>
-		Specify the pipeline that will contain the current environment in the given
-		role. If ommitted, the value of $CI_PIPELINE will be used if present, or
-		the name of the deployment if $CI_PIPELINE is empty.
-
-	-a|--after <site>/<env>
-		For auto or manual roles, you can specify another environment to follow.
-		If this option is not present, this environment will follow the beta
-		environment.  If the given environment does not have a role in the given
-		pipeline, or an environment in an alpha or beta role, you will not be able
-		to deploy the pipeline until this is corrected.
-
-	alpha
-		Sets the role to 'alpha'.  This is the first environment tested when global
-		parameters change.  You must have one alpha environment per pipeline.
-	
-	beta
-		Sets the role to beta.  Beta environments are run after alpha environments
-		pass, or when site-specific changes are introduced.  You must have one beta
-		environment for each site in your pipeline.
-	
-	auto
-		Set the role to auto.  Auto environments run automatically once the beta
-		environment for the site passes.  You can have any number of auto
-		environments.
-
-	manual
-		Set the role to manual.  When the proceeding environment passes, a
-		notification will be sent out that the enviroment can be run, with a link
-		to the environment task in Concourse.  You can have any number of manual
-		environments.
-
-	<site>/<env>
-		You can optionally specify which environment it the target of this command
-		by specifying the path of the environment.  If ommitted, the current
-		environment is the target.
-
-SEE ALSO
-@~include=related{"items":["concept:CI","command:ci initialize","command:ci repipe","command:ci check"]}
-dox-command:ci-role
-cmd_ci_role() {
-	local role="" after="" force=false target=""
-	while (( $# )); do
-		local arg=$1 ; shift
-		case ${arg} in
-			(-a|--after) check_opt_usage "$arg" "$1"; after="$1"; shift ;;
-			(-f|--force) force=true ;;
-			(-*) bad_usage_invalid_opt "$arg" ;;
-			(alpha|beta|auto|manual)
-				[[ -z $role ]] || bad_usage_extra "$arg" "role" "$role"
-				role="$arg"
-				;;
-			(*/*)
-				[[ -z $target ]] || bad_usage_extra "$arg" "site/env" "${target}"
-				target="$arg"
-				;;
-			(*) bad_usage_extra "$arg" ;;
-		esac
-	done
-
-	setup
-	local site env
-	if [[ -n $target ]] ; then
-		check_environment $target;
-		site="${target%%/*}"
-		env="${target#*/}"
-	elif [[ -n $DEPLOYMENT_ENVIRONMENT ]] ; then
-		site="$DEPLOYMENT_SITE"
-		env="$DEPLOYMENT_ENVIRONMENT"
-	else
-		bad_usage "<site>/<env> must be specified when not in an environment directory"
-	fi
-
-	if [[ -n $after ]] ; then
-		if [[ $role != "auto" && $role == "manual" ]] ; then
-			bad_usage "Can only specify -a|--after <site>/<env> for auto or manual roles"
-		fi
-		check_environment $after
-	fi
-
-	local current_pipeline current_role current_parent err_msg
-	ci_get_role_info "$site" "$env" current_pipeline current_role current_parent err_msg
-	local ci_current_state
-	case $? in
-		0 ) ci_current_state='set' ;;
-		2 ) ci_current_state='free' ;;
-		* ) ci_current_state='error' ;;
-	esac
-
-	if [[ -z "$role" ]] ; then
-		case $ci_current_state in 
-			free)  echo "No assigned CI role"$'\n'; exit 2 ;;
-			error) echo "ERROR: ${err_msg:-Internal Error}"$'\n'; exit 1;;
-			set)   [[ "$current_role" == "alpha" ]] && site=""
-						 echo "[Pipeline: ${current_pipeline}] $current_role${site:+" for site $site"}${current_parent:+" after $current_parent passes"}"$'\n'
-						 exit 0
-						 ;;
-		esac
-	fi
-
-	local ci_pipeline="$(ci_pipeline_name)"
-	local ci_role_file="$(ci_role_file $site $env)"
-
-  if [[ $ci_current_state == 'set' && $current_pipeline != $ci_pipeline && $force != true ]] ; then
-		err_msg="$(cat <<EOF
-		  $site/$env is already assigned as $current_role on
-			'$current_pipeline' pipeline.  Use --force to force change.
-EOF)"
-		echo >&2 "$(__dox_reflow_text "$err_msg" "       " "ERROR: ")"$'\n'
-		exit 1
-	fi
-
-	cat <<"EOF" > $ci_role_file
-# Generate by `genesis ci role` -- do not manually update
-
-$ci_pipeline:${role}{$parent:+"=$after"}
-EOF 
-}
 : <<'dox-command:ci-alpha'
 USAGE
-@~include=usage
+@~include=usage{"args":"[-p|--pipeline <name>] [<site>/<env>]"}
 
 DESCRIPTION
-	Sets the alpha test target for the 
+	Sets the specified or current environment as the alpha enviroment in the
+	specified or default pipeline.
+	
+ARGUMENTS
+	-p|--pipeline <name>
+		the name of the pipeline to be configured.  Defaults to the deployment name
+
+	<site>/<env>
+		This is the path to the environment relative to the deployment root
+		directory.  If this command is issued within an environment directory, it
+		defaults to the current directory; otherwise, it is required.
+
+SEE ALSO:
+@~include=related{"items":["concept:CI","command:ci-beta","command:ci-auto","command:ci-manual","command:ci-parent","command:ci-repipe","command:ci-flow"]}
 dox-command:ci-alpha
 cmd_ci_alpha() {
 	local USAGE="ci alpha [<site/env>]"
@@ -3371,6 +3307,26 @@ sites:
 EOF
 }
 
+: <<'dox-command:ci-beta'
+USAGE
+@~include=usage{"args":"[-p|--pipeline <name>] [<site>/<env>]"}
+
+DESCRIPTION
+	Sets the specified or current environment as the beta enviroment for its
+	associated site in the specified or default pipeline.
+	
+ARGUMENTS
+	-p|--pipeline <name>
+		the name of the pipeline to be configured.  Defaults to the deployment name
+
+	<site>/<env>
+		This is the path to the environment relative to the deployment root
+		directory.  If this command is issued within an environment directory, it
+		defaults to the current directory; otherwise, it is required.
+
+SEE ALSO:
+@~include=related{"items":["concept:CI","command:ci-alpha","command:ci-auto","command:ci-manual","command:ci-parent","command:ci-repipe","command:ci-flow"]}
+dox-command:ci-beta
 cmd_ci_beta() {
 	local USAGE="ci beta [<site/env> ...]"
 
@@ -3396,30 +3352,27 @@ EOF
 	done
 }
 
-cmd_ci_parent() {
-	local USAGE="ci parent <target_site/target_env> <parent_env> "
 
-	setup
+: <<'dox-command:ci-auto'
+USAGE
+@~include=usage{"args":"[-p|--pipeline <name>] [<site>/<env>]"}
 
-	local target=${1}
-	local parent_env=${2}
-	[[ -z ${target} || -z ${parent_env} ]] && bad_usage ${USAGE}
+DESCRIPTION
+	Sets the specified or current environment as an automatically triggered
+	enviroment within its associated site in the specified or default pipeline.
+	
+ARGUMENTS
+	-p|--pipeline <name>
+		the name of the pipeline to be configured.  Defaults to the deployment name
 
-	local target_site=${target%%/*}
-	local target_env=${target##*/}
+	<site>/<env>
+		This is the path to the environment relative to the deployment root
+		directory.  If this command is issued within an environment directory, it
+		defaults to the current directory; otherwise, it is required.
 
-	check_environment ${target}
-	check_environment "${target_site}/${parent_env}"
-
-	ci_update <<EOF
----
-sites:
-  ${target_site}:
-    ${target_env}:
-      parent: ${parent_env}
-EOF
-}
-
+SEE ALSO:
+@~include=related{"items":["concept:CI","command:ci-alpha","command:ci-beta","command:ci-manual","command:ci-parent","command:ci-repipe","command:ci-flow"]}
+dox-command:ci-auto
 cmd_ci_auto() {
 	local USAGE="ci auto [<site/env> ...]"
 
@@ -3444,23 +3397,26 @@ EOF
 	done
 }
 
-cmd_ci_smoke_test() {
-	local USAGE="ci smoke-test <errand>"
-	local errand_name=${1}
+: <<'dox-command:ci-manual'
+USAGE
+@~include=usage{"args":"[-p|--pipeline <name>] [<site>/<env>]"}
 
-	if [[ -z ${errand_name} ]]; then
-		bad_usage ${USAGE}
-		exit 1
-	fi
+DESCRIPTION
+	Sets the specified or current environment as an manually triggered
+	enviroment within its associated site in the specified or default pipeline.
+	
+ARGUMENTS
+	-p|--pipeline <name>
+		the name of the pipeline to be configured.  Defaults to the deployment name
 
-	setup
+	<site>/<env>
+		This is the path to the environment relative to the deployment root
+		directory.  If this command is issued within an environment directory, it
+		defaults to the current directory; otherwise, it is required.
 
-	ci_update <<EOF
----
-smoke_test: ${errand_name}
-EOF
-}
-
+SEE ALSO:
+@~include=related{"items":["concept:CI","command:ci-alpha","command:ci-beta","command:ci-auto","command:ci-parent","command:ci-repipe","command:ci-flow"]}
+dox-command:ci-manual
 cmd_ci_manual() {
 	local USAGE="ci manual [<site/env> ...]"
 
@@ -3505,6 +3461,102 @@ EOF
 		esac
 		ci_update --prune "sites[${site}].auto[${env}]" </dev/null
 	done
+}
+
+: <<'dox-command:ci-parent'
+USAGE
+@~include=usage{"args":"[-p|--pipeline <name>] [<site>/<env>] <parent_env>"}
+
+DESCRIPTION
+	Sets the parent environment for specified or current environment in the
+	specified or default pipeline.  If no parent is set, the beta environment
+	for the site is assumed.
+	
+ARGUMENTS
+	-p|--pipeline <name>
+		the name of the pipeline to be configured.  Defaults to the deployment name
+
+	<site>/<env>
+		This is the path to the environment relative to the deployment root
+		directory.  If this command is issued within an environment directory, it
+		defaults to the current directory; otherwise, it is required.
+
+SEE ALSO:
+@~include=related{"items":["concept:CI","command:ci-alpha","command:ci-beta","command:ci-auto","command:ci-manual","command:ci-repipe","command:ci-flow"]}
+dox-command:ci-parent
+cmd_ci_parent() {
+	local target parent_env
+	while (( $# )); do
+		arg=$1 ; shift
+		case ${arg} in
+		(-*) bad_usage_invalid_opt "$arg" ;;
+		(*/*)
+			[[ -z $target_site ]] || bad_usage_extra "$arg" "site/env" "$target_site/$target_env"
+			target="${arg}"
+			;;	
+		(*)
+			[[ -z $parent_env ]] || bad_usage_extra "$arg" "parent-env" $parent_env
+			parent_env="${arg}"
+			;;
+		esac
+	done
+
+	setup
+	local target_site=${target%%/*}
+	local target_env=${target#*/}
+
+	target_site=${target_site:-$DEPLOYMENT_SITE}
+	target_env=${target_env:-$DEPLOYMENT_ENVIRONMENT}
+	[[ -n $target_env ]] || bad_usage "<site>/<env> must be specified when not in an environment directory"
+
+	# FIXME: need way to clear parent; currently passing in empty parent results
+  #        in error
+	check_environment ${target}
+	check_environment "${target_site}/${parent_env}"
+
+	# FIXME: would be better if it was "parent" => {<target_env> => <parent_env>}
+	#        but that would require fixing other bits of code and existing files.
+	ci_update <<EOF
+---
+sites:
+	${target_site}:
+		${target_env}:
+			parent: ${parent_env}
+EOF
+}
+: <<'dox-command:ci-smoke-test'
+USAGE
+@~include=usage{"args":"[-p|--pipeline <name>] <errand>"}
+
+DESCRIPTION
+	Sets the smoke test errand for the specified or default pipeline.
+	
+ARGUMENTS
+	-p|--pipeline <name>
+		the name of the pipeline to be configured.  Defaults to the deployment name
+
+	<errand>
+		This is the name of the errand to run as a smoke test.
+
+SEE ALSO:
+@~include=related{"items":["concept:CI","command:ci-repipe","command:ci-flow"]}
+dox-command:ci-smoke-test
+
+cmd_ci_smoke_test() {
+	local USAGE="ci smoke-test <errand>"
+	local errand_name=${1}
+
+	if [[ -z ${errand_name} ]]; then
+		bad_usage ${USAGE}
+		exit 1
+	fi
+
+	setup
+
+	ci_update <<EOF
+---
+smoke_test: ${errand_name}
+EOF
 }
 
 ci_repipe_proto_job() {
@@ -3705,7 +3757,7 @@ groups:
 EOF
 
 	local rc=0
-	for site in $(all_sites); do
+	for site in $(all_pipeline_sites); do
 		if [[ ! -f ${DEPLOYMENT_ROOT}/${site}/site/stemcell/name ]]; then
 			echo >&2 "Site ${site} has no defined stemcell"
 			rc=1
@@ -3716,7 +3768,7 @@ EOF
 	fi
 
 
-	for site in $(all_sites); do
+	for site in $(all_pipeline_sites); do
 		local site_name=$(ci_name ${site})
 		local beta_env=$(ci_beta_environment_for ${site})
 		local beta_name=$(ci_name ${beta_env})
@@ -4069,8 +4121,28 @@ ci_repipe_merge() {
 	       $(actual_yaml_files ${DEPLOYMENT_ROOT}/ci/settings.yml) > ${DEPLOYMENT_ROOT}/ci/${target}
 }
 
+: <<'dox-command:ci-repipe'
+USAGE
+@~include=usage{"args":"[-p|--pipeline <name>] [-d|--draft]"}
+
+DESCRIPTION
+  Generate the given or default CI pipeline and push it to Concourse.
+
+ARGUMENTS
+  -d|--draft
+		Don't push the pipeline, instead output it to STDOUT
+dox-command:ci-repipe
 cmd_ci_repipe() {
-	[[ -z $1 ]] || bad_usage "ci repipe"
+
+  local draft=""
+	while (( $# )); do
+		arg=$1 ; shift
+		case ${arg} in
+		(-d|--draft) draft=1 ;;
+		(-*)         bad_usage_invalid_opt "$arg" ;;
+		(*)          bad_usage_extra       "$arg" ;;
+		esac
+	done
 
 	setup
 	ci_check_configuration
@@ -4090,9 +4162,13 @@ cmd_ci_repipe() {
 	CI_PIPELINE=$(   spruce json ${DEPLOYMENT_ROOT}/ci/settings.yml | jq -r '.meta.name // ""')
 
 	echo
-	echo "Configuring pipeline at ${CI_TARGET_NAME} (${CI_TARGET_URL})"
-	fly -t ${CI_TARGET_NAME:-concourse} set-pipeline -p ${CI_PIPELINE:-pipeline} -c ${DEPLOYMENT_ROOT}/ci/.deploy.yml
-	exit $?
+	if [[ -z $draft ]] ; then
+		echo "Configuring pipeline at ${CI_TARGET_NAME} (${CI_TARGET_URL})"
+		fly -t ${CI_TARGET_NAME:-concourse} set-pipeline -p ${CI_PIPELINE:-pipeline} -c ${DEPLOYMENT_ROOT}/ci/.deploy.yml
+		exit $?
+	else
+		cat "${DEPLOYMENT_ROOT}/ci/.deploy.yml"
+	fi
 }
 
 
@@ -4601,19 +4677,19 @@ __dox_get_help() {
 			IFS=':' read category topic <<< "${exact_match[0]}"
 		else
 			__dox_ambiguous_topic "$topic" "${topic_list[@]}"
-			exit 2
+			return 2
 		fi
 	fi
 
 	if [[ "$category" == 'partial' ]] ; then
 		__dox_ambiguous_topic "$topic"
-		exit 0
+		return 0
 	else
 		category="${category:-command}"
 		local content="$(__dox_get_content "${topic}" "${category}")"
 		__dox_process_content "$content"
 	fi
-	exit 0
+	return 0
 }
 __dox_get_content() {
 	#echo >&2 "======"$'\n'"DEBUG: called '${FUNCNAME[0]}' with "$'\n'" --($@)--"$'\n'"^^^^^^"
@@ -4645,9 +4721,9 @@ __dox_get_usage() {
 	local content="${3:-"$(__dox_get_content "$topic" "$category")"}"
 	local usage="$(__dox_parse_section "$content" 'USAGE')"
 	if [[ -z "$usage" && "$category" == "partial" ]] ; then
-		content='@~include=topic{"category":"command","desc":"usage","leader":"  ","partial":"'"${topic}"'"}'
+		usage='@~include=topic{"category":"command","desc":"usage","leader":"  ","partial":"'"${topic}"'"}'
 	fi
-	echo "$content" | grep -v '^@~alias'
+	echo "$usage" | grep -v '^@~alias'
 	
 }
 
@@ -4962,11 +5038,9 @@ main() {
 			while [[ $# -gt 0 && -z "$ci_cmd" ]] ; do
 				potential="${potential:+"$potential "}$1"
 				case "$potential" in
-					(init|initialize)                          ci_cmd="initialize" ;;
-					(list|check|role|repipe|flow|stemcells)    ci_cmd="$potential" ;;
-					("stage 1"|"stage 2"|"stage smoke test")   ci_cmd="$potential" ;; 
-					("draft message")                          ci_cmd="$potential" ;;
-					(stage|"stage smoke"|draft)                ci_partial="$potential" ;;
+					(alpha|beta|auto|manual|repipe|flow|smoke-test)   ci_cmd="$potential" ;;
+					(parent|"draft-messages"|stemcells)    ci_cmd="$potential" ;;
+					("stage1"|"stage2"|"stage-smoke-test") ci_cmd="$potential" ;; 
 					(*) 
 						# In future, partials may be valid commands (ie stage 1 and stage 1
 						# smoke test) so if we have a partial that can also be a command,
@@ -4992,7 +5066,7 @@ main() {
 			set -- "${ci_args[@]}"
 			
 			# Process sub-commands
-			$(echo "cmd_ci_${ci_cmd}" | tr " " "_") $*
+			$(echo "cmd_ci_${ci_cmd}" | tr "-" "_") $*
 			;;
 		(dump)                   cmd_dump ;;
 		(bosh)                   cmd_bosh $* ;;
