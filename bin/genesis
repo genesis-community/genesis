@@ -1,13 +1,12 @@
 #!/bin/bash
 unset IFS
 
-# echo >&2 "======"$'\n'"DEBUG: called '${FUNCNAME[0]}' with "$'\n'" --($@)--"$'\n'"^^^^^^"
 : <<'dox-overview:genesis'
 USAGE
 @~include=usage{"cmd":"<command> [options] [arguments]"}
 
 DESCRIPTION
-	Genesis is a tool build around a BOSH deployment paradigm that allows you to
+	Genesis is a tool built around a BOSH deployment paradigm that allows you to
 	create and manage unified deployment manifests across multiple sites and
 	environments.
 
@@ -69,12 +68,8 @@ COMMANDS
 
 dox-concept:Makefiles
 
-( set -o posix ; set > /tmp/variables.$$)
-__debug_vars() {
-	diff /tmp/variables.$$ <(set -o posix; set) | grep '^[<>]'
-}
 VERSION="(development build)"
-SCRIPT_NAME=$0 # or $(basename $0) ?
+SCRIPT_NAME="$(basename $0)"
 
 USERNAME=$(whoami)
 CANON_REPO=https://github.com/starkandwayne/genesis
@@ -294,9 +289,9 @@ setup() {
 }
 
 actual_yaml_files() {
-	for i in $*; do
-		[ -f $i ] && echo $i
-		shift # FIXME: do we need this?
+	while (($#)) ; do
+		[[ -f "$1" ]] && echo $1
+		shift
 	done
 }
 
@@ -1758,8 +1753,8 @@ cmd_new_deployment() {
 			;;
 		(-*) bad_usage_invalid_opt "$arg" ;;
 		(*)
+			[[ -z $name ]] || bad_usage_extra "$arg" "name" "$name"
 			name=${arg%-deployment*}
-			shift
 			;;
 		esac
 	done
@@ -1888,6 +1883,7 @@ cmd_new_site() {
 		arg=$1 ; shift
 		case ${arg} in
 		(-T|--template)
+			check_opt_usage "$arg" "$1"
 			template=$1
 			shift
 			;;
@@ -1980,6 +1976,7 @@ cmd_new_environment() {
 		arg=$1 ; shift
 		case ${arg} in
 		(-t|--type)
+			check_opt_usage "$arg" "$1"
 			dtype=$1
 			case ${dtype} in
 			(normal|bosh-init) ;;
@@ -4244,8 +4241,8 @@ cmd_help() {
 	while (( $# )); do
 		arg="$1"; shift
 		case "${arg}" in
-		(*-) bad_usage_no_opts ;;
 		(--*) [[ -z "$category" ]] && category="${arg:2}" || bad_usage "Can only specify one category" ;;
+		(*-) bad_usage_invalid_opt "$arg";;
 		(*)  topic="${topic:+"${topic}-"}${arg}" ;;
 		esac
 	done
@@ -4296,7 +4293,7 @@ bad_usage_partial() {
 }
 
 check_opt_usage() {
-	if [[ -z "$2" || "${2:0:1}" != '-' ]] ; then
+	if [[ -z "$2" || "${2:0:1}" == '-' ]] ; then
 		bad_usage "missing value for option $1" "${FUNCNAME[1]}"
 	fi
 }
