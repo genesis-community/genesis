@@ -38,8 +38,8 @@ DESCRIPTION
 			Displays this help content.
 
 		make version
-			Displays the version and location of the genesis executable that will be
-			used by the other make actions
+			Displays the version and location of the `genesis` executable that will
+			be used by the other make actions
 
 		make refresh
 			Pull in fresh copies of global and site YAML templates (into .global/ and
@@ -210,7 +210,7 @@ setup() {
 			cmd=$(echo $line | perl -pe 's|^(.*?):.*$|$1|')
 			ver=$(echo $line | perl -pe 's|^.*?: *(.*)$|$1|')
 			if [[ -z $(command -v ${cmd}) ]]; then
-				errors="This genesis deployment requires the '${cmd}' command\n${errors}"
+				errors="This Genesis deployment requires the '${cmd}' command\n${errors}"
 				continue
 			fi
 			if [[ ${ver} != "null" && ${ver} != '~' ]]; then
@@ -221,12 +221,12 @@ setup() {
 				fi
 				current_version=$(${cmd} -v 2>&1 | perl -pe 's|.*?(\d+\.\d+(\.\d+)*).*|$1|')
 				if [[ -z ${current_version} || $(echo ${current_version} | egrep '[^0-9\.]') ]]; then
-					errors="This genesis deployment requires ${cmd} version ${ver}, but the current version could not be parsed\n${errors}"
+					errors="This Genesis deployment requires ${cmd} version ${ver}, but the current version could not be parsed\n${errors}"
 					echo ${current_version}
 					continue
 				fi
 				if ! version_checker ${current_version} ${ver}; then
-					errors="This genesis deployment requires ${cmd} version ${ver} (found ${current_version})\n${errors}"
+					errors="This Genesis deployment requires ${cmd} version ${ver} (found ${current_version})\n${errors}"
 					continue
 				fi
 			fi
@@ -1678,7 +1678,9 @@ DESCRIPTION
   Genesis can be used to create manifests that can standup a BOSH director
   using bosh-init.
 
-TODO: Fill in info on how to do this.
+	TODO:
+	Explain the difference between normal and bosh-init structures, and how
+	to build a bosh-init manifest and deploy it.
 dox-concept:Structure-bosh-init
 
 : <<'dox-partial:new'
@@ -2078,14 +2080,45 @@ check_index() {
 
 : <<'dox-concept:Releases'
 DESCRIPTION
-	TODO: Add details on how releases are handled
+	Genesis manages the association and uploading of the releases used by your
+	deployment manifests.
 
-Details on whats in the release directory, what's in the directory named for the desired release and what version sha1 and url files are for.
-explain how to support multiple releases and release propagation, link to see also Refreshing.
+	Deployment manifests require BOSH releases for the software they are
+	deploying.  Typically, a deployment has one eponymous release, and usually a
+	few support releases.  For example, concourse-deployment requires the
+	concourse release as well as garden-runc, and may optionally include
+	cf-haproxy, shield, slack-notification-resource and others.
+
+	To add a release to the deployment, use the `genesis add release` command to
+	provide the name and version.  The version can be upgraded using the `genesis
+	set release` command.  This sets the release as available for any site and
+	environment in the deployment repo.
+
+	To enable a release for a site, use the `genesis use release <name>` command.
+	Only a single version of a resource is supported across all sites that use it,
+	but through global and site caching, the version can be locked down in an
+	environment until it is ready to be upgraded to the latest available in the
+	deployment repository.
+
+AUTOMATIC UPLOAD TO BOSH
+	Genesis uses an index for open-source BOSH releases so that if the version
+	you specify is not available on the BOSH director, it will automatically be
+	uploaded.  You can also set the version to 'track' to use the latest version
+	of that release found in the Genesis index.  This index is maintained by
+	Stark & Wayne, and regularly updates version availability.
+
+	Alternatively, if you set the version to 'latest', it will use the latest
+	version of that release ALREADY PRESENT on the BOSH director.  Of course,
+	there has to be at least one version present, which would need to be uploaded
+	manually prior to deploying the manifest.
 
 COMMANDS
 @~include=topic{"category":"command","scope":"releases","desc":"inline","leader":"  <<SCRIPT_NAME>> "}
 
+SEE ALSO
+@~include=topic{"category":"concept","partial":"Cached-Definitions","desc":"inline","leader":"  "}
+@~include=topic{"category":"concept","partial":"CI","desc":"inline","leader":"  "}
+@~scope=releases
 dox-concept:Releases
 
 : <<'dox-command:releases'
@@ -2268,7 +2301,6 @@ ARGUMENTS
 
 SEE ALSO
 @~include=related{"items":["concept:Releases","command:releases","command:add release","command:use release"]}
-	name
 @~scope=common,releases
 dox-command:set-release
 cmd_set_release() {
@@ -2373,11 +2405,20 @@ cmd_use_release() {
 
 : <<'dox-concept:Stemcells'
 DESCRIPTION
-	Talk about stemcells
+	Stemcells used by each deployment are managed by Genesis to ensure version
+	upgrades propagate correctly through environment deployments.
+
+	TODO: Include details on:
+	* adding stemcells
+	* automatic upload of stemcells using url/sha1
+	* propagating stemcell upgrades
 
 COMMANDS
 @~include=topic{"category":"command","scope":"stemcells","desc":"inline","leader":"  <<SCRIPT_NAME>> "}
 @~scope=stemcells
+
+SEE ALSO
+@~include=topic{"category":"concept","partial":"Cached-Definitions","desc":"inline","leader":"  "}
 dox-concept:Stemcells
 
 : <<'dox-command:stemcells'
@@ -2594,13 +2635,24 @@ cmd_build() {
 
 : <<'dox-concept:Cached-Definitions'
 DESCRIPTION
-	Stablizes deployment manifests by caching global and site definitions.
+	Global and site definitions are cached in each environment in order to
+	mitigate premature changes impacting other environments prematurely.
 
-	As explained in the Structure concept documents, genesis organizes the parts
+	As explained in the Structure concept documents, Genesis organizes the parts
 	of the manifest definitions into those that apply globally, site-wide and to
 	a specific environment.  However, since deployments are capable of changing
 	over time (upgrades, bug fixes, expanded functionality), how do you ensure
-	changes propagate correctly
+	changes propagate correctly.
+
+	To solve this, the shared global and site level definitions are cached in
+	each environment, under .global and .site directories respectively.  This
+	allows that environment to deploy environment level changes (ie scaling)
+	without worrying that the global and site definitions haven't changed.
+
+	When making global and/or site level changes, they can be applied to specific
+	environments by using the `genesis refresh` command (or the associated
+	`make refresh`).  This allows controlled deployment of these changes across
+	environments.  This can be automated by using the built-in CI functionality.
 
 COMMANDS
 @~include=topic{"category":"command","scope":"refresh","desc":"inline","leader":"  <<SCRIPT_NAME>> "}
@@ -4133,7 +4185,7 @@ EOF
 
 : <<'dox-command:bosh'
 USAGE
-	<<SCRIPT_NAME>> bosh <args...>
+@~include=usage{"args":"<args...>"}
 
 DESCRIPTION
 	Run a bosh command against a freshly generated non-redacted BOSH manifest
@@ -4274,7 +4326,7 @@ bad_usage() {
   local prefix="[$SCRIPT_NAME${name:+ ${name[@]}}] "
   echo >&2 $'\n'"$(__dox_reflow_text "ERROR: ${msg}" "${prefix//?/ }" "$prefix")"
   echo >&2 "$(__dox_process_content "USAGE"$'\n'"${content}")"
-  echo >&2 $'\n'"For more details, run \`$0 help <command>\` for the desired command."$'\n'
+  echo >&2 $'\n'"For more details, run \`${SCRIPT_NAME} help <command>\` for the desired command."$'\n'
   exit 1
 }
 bad_usage_invalid_opt() { bad_usage "invalid option '$1'"; }
@@ -4307,7 +4359,7 @@ __dox_get_help() {
 		echo ""
 		if [[ "${#categories[@]}" -eq 0 ]] ; then
 			echo >&2 $'\n'"[$SCRIPT_NAME help] ERROR: No help category matching '$category'"
-			echo >&2 $'\n''For information on available help topics, run `'"$0"' help --topics`'
+			echo >&2 $'\n''For information on available help topics, run `'"${SCRIPT_NAME}"' help --topics`'
 			exit 2
 		fi
 		for category in "${categories[@]}" ; do
@@ -4423,7 +4475,7 @@ __dox_replace_line() {
 
 __dox_not_found() {
 	echo >&2 $'\n'"[$SCRIPT_NAME help] ERROR: No help topic matching '${argv[@]:1}'"
-	echo >&2 $'\n''For information on available help topics, run `'"$0"' help --topics`'
+	echo >&2 $'\n''For information on available help topics, run `'"${SCRIPT_NAME}"' help --topics`'
 	exit 2
 }
 
@@ -4609,7 +4661,7 @@ __dox_generate_usage() {
 	[[ ${#args[@]} -gt 0 ]] || args+='' # default with no arguments
 	local arg_set
 	for arg_set in "${args[@]}" ; do
-		echo "${leader}${0} ${cmd} ${arg_set}"
+		echo "${leader}${SCRIPT_NAME} ${cmd} ${arg_set}"
 	done
 }
 
