@@ -2962,6 +2962,9 @@ EOF
 #  # This is the name of your pipeline
 #  name: $DEPLOYMENT_NAME
 #
+#  # This is where you set your visibility of the pipeline
+#  public_pipeline: # set to true or false
+#
 #  # This is the name of your fly target
 #  target: proto
 #
@@ -3131,6 +3134,14 @@ ci_commit() {
 	fi
 }
 
+ci_pipeline_yaml() {
+	if [[ -n ${CI_PIPELINE:-} ]]; then
+		echo ${DEPLOYMENT_ROOT}/.ci.${CI_PIPELINE}.yml
+	else
+		echo ${DEPLOYMENT_ROOT}/.ci.yml
+	fi
+}
+
 : <<'dox-concept:CI'
 DESCRIPTION
   When making a change to a deployment, you want to make sure it causes the
@@ -3249,27 +3260,6 @@ SEE ALSO
 dox-concept:CI
 
 : <<'dox-partial:ci'
-
-beta
-	Sets the role to beta.  Beta environments are run after alpha environments
-	pass, or when site-specific changes are introduced.  You must have one beta
-	environment for each site in your pipeline.
-
-auto
-	Set the role to auto.  Auto environments run automatically once the beta
-	environment for the site passes.  You can have any number of auto
-	environments.
-
-manual
-	Set the role to manual.  When the proceeding environment passes, a
-	notification will be sent out that the enviroment can be run, with a link
-	to the environment task in Concourse.  You can have any number of manual
-	environments.
-
-<site>/<env>
-	You can optionally specify which environment it the target of this command
-	by specifying the path of the environment.  If ommitted, the current
-	environment is the target.
 DESCRIPTION
   Manages the CI pipeline configurations.
 dox-partial:ci
@@ -3513,6 +3503,7 @@ EOF
 : <<'dox-command:ci-parent'
 USAGE
 @~include=usage{"args":"[-p|--pipeline <name>] [<site>/<env>] <parent_env>"}
+@~include=usage{"args":"[-p|--pipeline <name>] [<site>/<env>] -c|--clear"}
 
 DESCRIPTION
 	Sets the parent environment for specified or current environment in the
@@ -3533,10 +3524,11 @@ SEE ALSO:
 @~scope=ci
 dox-command:ci-parent
 cmd_ci_parent() {
-	local target parent_env
+	local target parent_env clear_parent
 	while (( $# )); do
 		arg=$1 ; shift
 		case ${arg} in
+		(-c|--clear) clear_parent=1 ;;
 		(-*) bad_usage_invalid_opt "$arg" ;;
 		(*/*)
 			[[ -z $target_site ]] || bad_usage_extra "$arg" "site/env" "$target_site/$target_env"
@@ -3549,6 +3541,8 @@ cmd_ci_parent() {
 		esac
 	done
 
+	[[ -n $clear_parent && -n $parent_env ]] && bad_usage "Cannot specify -c|--clear and parent_env"
+
 	setup
 	local target_site=${target%%/*}
 	local target_env=${target#*/}
@@ -3556,21 +3550,22 @@ cmd_ci_parent() {
 	target_site=${target_site:-$DEPLOYMENT_SITE}
 	target_env=${target_env:-$DEPLOYMENT_ENVIRONMENT}
 	[[ -n $target_env ]] || bad_usage "<site>/<env> must be specified when not in an environment directory"
+	check_environment "${target_site}/${target_env}"
 
-	# FIXME: need way to clear parent; currently passing in empty parent results
-	# in error
-	check_environment ${target}
-	check_environment "${target_site}/${parent_env}"
-
-	# FIXME: would be better if it was "parent" => {<target_env> => <parent_env>}
-	#        but that would require fixing other bits of code and existing files.
-	ci_update <<EOF
+	if [[ -n $clear_parent ]] ; then
+		ci_update --prune "sites.[${target_site}].[${target_env}]" </dev/null
+		echo "Task for $target_site/$target_env will be started after beta environment."
+	else
+		check_environment "${target_site}/${parent_env}"
+		ci_update <<EOF
 ---
 sites:
-	${target_site}:
-		${target_env}:
-			parent: ${parent_env}
+  ${target_site}:
+    ${target_env}:
+      parent: ${parent_env}
 EOF
+		echo "Task for $target_site/$target_env will be started after $target_site/$parent_env"
+	fi
 }
 : <<'dox-command:ci-smoke-test'
 USAGE
@@ -3618,7 +3613,7 @@ ci_repipe_proto_job() {
 	cat <<EOF
 jobs:
   - name: ${job_name}
-    public: true
+    public: (( grab meta.public_pipeline ))
     serial: true
     plan:
       - aggregate:
@@ -3705,6 +3700,7 @@ ci_repipe_build_base() {
 ---
 meta:
   name: (( param "Please name this deployment pipeline (in ci/settings.yml)" ))
+  public_pipeline: false
   env: {}
 
   github:
@@ -4252,7 +4248,13 @@ cmd_ci_flow() {
 
 	setup
 	# FIXME: ascii diagram!
-	cat $(ci_pipeline_yaml)
+	local yaml_file="$(ci_pipeline_yaml)"
+	if [[ -f "${yaml_file}" ]] ; then
+		cat "${yaml_file}"
+	else
+		echo 'No CI defined.  See `genesis help CI` for more information'$'\n'
+		exit 1
+	fi
 }
 
 # Commands that are used by Concourse pipelines themselves
