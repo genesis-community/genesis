@@ -1047,44 +1047,51 @@ skip_preflight() {
 }
 
 preflight_normal_deployment() {
-	if [[ ! -f "${DEPLOYMENT_ENV_DIR}/.site/stemcell/name" ]]; then
-		echo >&2 "Error: no stemcell name specified for site"
-		exit 2
-	fi
-	local stemcell_name=$(cat "${DEPLOYMENT_ENV_DIR}/.site/stemcell/name")
-
-	if [[ ! -f "${DEPLOYMENT_ENV_DIR}/.site/stemcell/version" ]]; then
+	local stemcell_dir="${DEPLOYMENT_ENV_DIR}/.site/stemcell"
+	if [[ ! -f "${stemcell_dir}/version" ]]; then
 		echo >&2 "Error: no stemcell version specified for site"
 		exit 2
 	fi
-	local stemcell_version=$(cat "${DEPLOYMENT_ENV_DIR}/.site/stemcell/version")
+	local stemcell_version=$(cat "${stemcell_dir}/version")
 	if [[ ${stemcell_version} == "latest" ]]; then
-		rm -f ${DEPLOYMENT_ENV_DIR}/.site/stemcell/url
-		rm -f ${DEPLOYMENT_ENV_DIR}/.site/stemcell/sha1
+		rm -f ${stemcell_dir}/url
+		rm -f ${stemcell_dir}/sha1
 	fi
-
-	ensure_present stemcell ${stemcell_name} ${stemcell_version}
+	if [[ -f "${stemcell_dir}/alias" ]]; then
+		if [[ ! -f "${stemcell_dir}/os" && ! -f "${stemcell_dir}/name" ]] ; then
+			echo >&2 "Error: no stemcell os or name specified for site"
+			exit 2
+		fi
+		# TODO: do we need to ensure cloud config knows about this alias?
+	elif [[ -f "${stemcell_dir}/name" ]]; then
+		local stemcell_name=$(cat "${stemcell_dir}/name")
+		ensure_present stemcell ${stemcell_name} ${stemcell_version}
+	else
+		echo >&2 "Error: no stemcell name or alias specified for site"
+		exit 2
+	fi
 
 	if [[ ! -f "${DEPLOYMENT_ENV_DIR}/.site/releases" ]]; then
 		echo >&2 "Error: no releases listed for site"
 		exit 2
 	fi
-
 	local releases=$(releases_from "${DEPLOYMENT_ENV_DIR}/.site/releases")
+
+	local rel_dir="${DEPLOYMENT_ENV_DIR}/.global/releases"
 	for rel in ${releases}; do
-		if [[ ! -d "${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}" ]]; then
+		if [[ ! -d "${rel_dir}/${rel}" ]]; then
 			echo >&2 "Error: release '${rel}' not defined globally"
 			exit 2
 		fi
-		if [[ ! -f "${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/version" ]]; then
+		if [[ ! -f "${rel_dir}/${rel}/version" ]]; then
 			echo >&2 "Error: no version specified for release '${rel}'"
 			exit 2
 		fi
 
-		local release_version=$(cat ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/version)
+		local release_version=$(cat ${rel_dir}/${rel}/version)
 		if [[ ${release_version} == "latest" ]]; then
-			rm -f ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/url
-			rm -f ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/sha1
+			rm -f ${rel_dir}/${rel}/url
+			rm -f ${rel_dir}/${rel}/sha1
 		fi
 		ensure_present release ${rel} ${release_version}
 	done
@@ -1094,55 +1101,30 @@ normal_site_metadata() {
 	must_be_in_an_environment
 	preflight_deployment
 
-	local stemcell_name=$(cat "${DEPLOYMENT_ENV_DIR}/.site/stemcell/name")
-	local stemcell_version=$(cat "${DEPLOYMENT_ENV_DIR}/.site/stemcell/version")
-
-	local stemcell_url=""
-	if [[ -f ${DEPLOYMENT_ENV_DIR}/.site/stemcell/url ]]; then
-		stemcell_url=$(cat ${DEPLOYMENT_ENV_DIR}/.site/stemcell/url)
-	fi
-	local stemcell_sha1=""
-	if [[ -f ${DEPLOYMENT_ENV_DIR}/.site/stemcell/sha1 ]]; then
-		stemcell_sha1=$(cat ${DEPLOYMENT_ENV_DIR}/.site/stemcell/sha1)
-	fi
-
 	cat <<EOF
 ---
 meta:
   stemcell:
-    name: ${stemcell_name}
-    version: "${stemcell_version}"
 EOF
-	if [[ -n ${stemcell_url} ]]; then
-		echo "    url: ${stemcell_url}"
-	fi
-	if [[ -n ${stemcell_sha1} ]]; then
-		echo "    sha1: ${stemcell_sha1}"
-	fi
-	echo 'update: (( param "Please specify update settings for your bosh deployment" ))'
-	echo "releases:"
 
+	# Stemcell bits (presence of required values confirmed in preflight_normal_deployment)
+	for item in "alias" "name" "version" "url" "sha1" ; do
+		local _file="${DEPLOYMENT_ENV_DIR}/.site/stemcell/${item}"
+		[[ -f $_file ]] && echo "    $item: "'"'$(cat $_file | head -n1 | sed 's/"/\\"/g')'"'
+	done
+	echo 'update: (( param "Please specify update settings for your bosh deployment" ))'
+
+	# Release bits
+	echo "releases:"
 	local releases=$(releases_from "${DEPLOYMENT_ENV_DIR}/.site/releases")
 	for rel in ${releases}; do
-		local release_version=$(cat ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/version)
-		local release_url=""
-		if [[ -f ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/url ]]; then
-			release_url=$(cat ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/url)
-		fi
-		local release_sha1=""
-		if [[ -f ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/sha1 ]]; then
-			release_sha1=$(cat ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/sha1)
-		fi
-
 		echo "  - name: ${rel}"
-		echo "    version: \"${release_version}\""
-		if [[ -n ${release_url} ]]; then
-			echo "    url: \"${release_url}\""
-		fi
-		if [[ -n ${release_sha1} ]]; then
-			echo "    sha1: \"${release_sha1}\""
-		fi
+		for item in "version" "url" "sha1" ; do
+			local _file="${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/${item}"
+			[[ -f $_file ]] && echo "    $item: "'"'$(cat $_file | head -n1 | sed 's/"/\\"/g')'"'
+		done
 	done
+	return 0
 }
 
 build_manifest() {
@@ -2496,7 +2478,7 @@ cmd_stemcells() {
 }
 : <<'dox-command:use-stemcell'
 USAGE
-@~include=usage{"args":"[--alias <alias> [--os]] <name> [<version>]"}
+@~include=usage{"args":"[-a|--alias <alias> [--os]] <name> [<version>]"}
 
 DESCRIPTION
 	When inside a site or environment directory, takes the provided stemcell
@@ -2521,7 +2503,7 @@ ARGUMENTS
 		cell to the name of the OS.  This can only be used if you also specify the
 		--alias option.
 
-	--alias <alias>
+	-a|--alias <alias>
 		Used to specify the stemcell alias as used by v2-style manifests to refer
 		to a stemcell specified in the cloud config on the BOSH Director.
 
@@ -2552,6 +2534,14 @@ cmd_use_stemcell() {
 	while (( $# )); do
 		arg=$1 ; shift
 		case ${arg} in
+		(-a|--alias)
+			check_opt_usage "$arg" "$1"
+			sc_alias=$1
+			shift
+			;;
+		(--os)
+			os=true
+			;;
 		(-*)
 			bad_usage_invalid_opt "$arg"
 			;;
@@ -2566,10 +2556,17 @@ cmd_use_stemcell() {
 			;;
 		esac
 	done
-	[[ -n ${name} ]] || bad_usage ${USAGE}
+
+	[[ $os && -z $sc_alias ]] && bad_usage "Cannot specify --os without --alias <alias>"
+	[[ $os && "${name}" == "track" ]] && bad_usage "Cannot track against OS"
+	[[ -n ${name} ]] || bad_usage_missing "name"
 	version=${version:-latest}
 
 	must_be_in_a_site
+
+	if [[ "$DEPLOYMENT_TYPE" == 'bosh-init' && -n "$sc_alias" ]] ; then
+		bad_usage "bosh-init cannot use v2-style manifests"
+	fi
 
 	# resolve aliases
 	case ${name} in
@@ -2583,18 +2580,25 @@ cmd_use_stemcell() {
 
 	echo "Site ${DEPLOYMENT_SITE} stemcell:"
 	mkdir -p ${DEPLOYMENT_SITE_DIR}/site/stemcell
-	echo "${name}"    > ${DEPLOYMENT_SITE_DIR}/site/stemcell/name
-	echo "${version}" > ${DEPLOYMENT_SITE_DIR}/site/stemcell/version
-
+	rm       "${DEPLOYMENT_SITE_DIR}/site/stemcell/*" >/dev/null 2>&1
+	local name_file="name"
+	if [[ -n "$sc_alias" ]] ; then
+		echo "  - v2 manifest alias '$sc_alias'"
+		echo "${sc_alias}" > "${DEPLOYMENT_SITE_DIR}/site/stemcell/alias"
+		[[ $os ]] && name_file="os"
+	fi
+	echo "${name}"    > "${DEPLOYMENT_SITE_DIR}/site/stemcell/$name_file"
+	echo "${version}" > "${DEPLOYMENT_SITE_DIR}/site/stemcell/version"
+	echo "  - ${name_file} '${name}'";
 	case ${version} in
 	(latest)
-		echo "Site ${DEPLOYMENT_SITE} is now using the latest version of stemcell ${name} (per BOSH director)"
+		echo "  - using the latest version on BOSH director"
 		;;
 	(track)
-		echo "Site ${DEPLOYMENT_SITE} is now tracking the latest version of stemcell ${name} via the Genesis Index"
+		echo "  - tracking the latest version via the Genesis Index"
 		;;
 	(*)
-		echo "Site ${DEPLOYMENT_SITE} is now using stemcell ${name} v${version}"
+		echo "  - version ${version}"
 		;;
 	esac
 	exit 0
