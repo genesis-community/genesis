@@ -4659,7 +4659,7 @@ cmd_help() {
 		arg="$1"; shift
 		case "${arg}" in
 		(--*) [[ -z "$category" ]] && category="${arg:2}" || bad_usage "Can only specify one category" ;;
-		(*-) bad_usage_invalid_opt "$arg";;
+		(-*) bad_usage_invalid_opt "$arg";;
 		(*)  topic="${topic:+"${topic}-"}${arg}" ;;
 		esac
 	done
