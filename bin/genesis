@@ -4329,11 +4329,11 @@ bad_usage() {
   echo >&2 $'\n'"For more details, run \`${SCRIPT_NAME} help <command>\` for the desired command."$'\n'
   exit 1
 }
-bad_usage_invalid_opt() { bad_usage "invalid option '$1'"; }
-bad_usage_no_args()     { bad_usage "does not take any options or arguments"; }
-bad_usage_no_opts()     { bad_usage "does not take any options"; }
-bad_usage_missing()     { bad_usage "required argument for $1 not provided"; }
-bad_usage_extra()       { bad_usage "extraneous argument '${1}'${2:+"; $2 already provided as '$3'"}"; }
+bad_usage_invalid_opt() { bad_usage "invalid option '$1'" "${FUNCNAME[1]}"; }
+bad_usage_no_args()     { bad_usage "does not take any options or arguments" "${FUNCNAME[1]}"; }
+bad_usage_no_opts()     { bad_usage "does not take any options" "${FUNCNAME[1]}"; }
+bad_usage_missing()     { bad_usage "required argument for '$1' not provided" "${FUNCNAME[1]}"; }
+bad_usage_extra()       { bad_usage "extraneous argument '${1}'${2:+"; $2 already provided as '$3'"}" "${FUNCNAME[1]}"; }
 
 bad_usage_partial() {
 	local cmd="$1" subcmd="$2"
