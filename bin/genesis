@@ -1,5 +1,6 @@
 #!/bin/bash
 unset IFS
+shopt -s nullglob
 
 : <<'dox-overview:genesis'
 USAGE
