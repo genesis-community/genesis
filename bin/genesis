@@ -365,10 +365,10 @@ ask_bosh() {
 	local url=$1
 
 	need_a_workdir
-	file="${WORKDIR}/bosh.$(echo ${url} | sha1sum | awk '{print $1}')"
+	file="${WORKDIR}/bosh.$(echo "${url}" | sha1sum | awk '{print $1}')"
 	if [[ ! -f ${file} ]]; then
 		need_a_bosh
-		curl -Lks -u "${DIRECTOR_CREDS}" ${DIRECTOR_URL}/${url} > ${file}
+		curl -Lks -u "${DIRECTOR_CREDS}" "${DIRECTOR_URL}/${url}" > ${file}
 	fi
 	cat ${file}
 }
@@ -2963,6 +2963,10 @@ EOF
 #  # This is the name of your pipeline
 #  name: $DEPLOYMENT_NAME
 #
+#  # Should genesis wait for existing BOSH tasks to complete prior to deploying?
+#  # This should be set to 'true' for any pipelines that deploy/update BOSH itself
+#  pause_for_existing_bosh_tasks: false
+#
 #  # This is where you set your visibility of the pipeline
 #  public_pipeline: # set to true or false
 #
@@ -3647,6 +3651,7 @@ jobs:
             CI_SITE_ENV:    (( param "looks like genesis forgot to override the CI_SITE_ENV variable" ))
             CI_BRANCH:      (( grab resources.git.source.branch ))
             CI_PRIVATE_KEY: (( grab resources.git.source.private_key ))
+            CI_WAIT_FOR_CLEAN_BOSH: (( grab meta.pause_for_existing_bosh_tasks ))
 
             LOCAL_CHANGES:  local-changes
             WORLD_CHANGES:  world-changes
@@ -3702,6 +3707,8 @@ ci_repipe_build_base() {
 meta:
   name: (( param "Please name this deployment pipeline (in ci/settings.yml)" ))
   public_pipeline: false
+  pause_for_existing_bosh_tasks: false
+
   env: {}
 
   github:
@@ -4445,6 +4452,49 @@ EOF
 		echo
 		bosh target ${target}
 		bosh deployment ${DEPLOYMENT_ENV_DIR}/manifests/.deploy.yml
+
+		if [[ ${CI_WAIT_FOR_CLEAN_BOSH} == "true" ]]; then
+			i=1
+			attempts=10
+			wait=10
+			echo "Checking if BOSH has any tasks running... (for up to $(( $attempts * $wait )) seconds)"
+
+			while (( $i <= $attempts ))
+			do
+				tasks=$(ask_bosh '/tasks?state=queued,processing,cancelling&verbose=2')
+				if [[ -z ${tasks} || $? != 0 ]]; then
+					echo "FATAL: Unable to contact BOSH to find existing tasks before deploying. Cowardly refusing to deploy"
+					exit 1
+				fi
+
+				running=$(echo ${tasks} | jq -r '. | length')
+				if [[ $? != 0 ]]; then
+					echo "FATAL: Unexpected task output from BOSH. Cowardly refusing to deploy"
+					echo "Unexpected response:"
+					echo
+					cat << EOF
+$tasks
+EOF
+					exit 1
+				fi
+
+				if [[ $running == 0 ]]; then
+					echo "BOSH has no tasks currently running. Starting deployment..."
+					break
+				fi
+
+				echo "BOSH has tasks running, sleeping for $wait seconds"
+				sleep $wait
+				((i+=1))
+			done
+
+			if [[ $i -gt $attempts ]]; then
+				bosh tasks --no-filter
+				echo "BOSH still has running tasks.  Aborting..."
+				exit 1
+			fi
+		fi
+
 		bosh -n deploy
 
 		line
