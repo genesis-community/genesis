@@ -2938,7 +2938,11 @@ ci_check_configuration() {
 ---
 auth: (( param "Please define your BOSH directors in ci/boshes.yml (and remove this line)" ))
 aliases:
+  # NOTE: if you're making use of `meta.pause_for_existing_bosh_tasks`, you will
+  #       also need to add aliases for the name of the bosh deployment -> addr
+  #       (e.g. vsphere-prod-bosh -> https://10.4.16.4:25555)
   target: (( param "Please define aliases for your BOSH directors (uuid -> addr)" ))
+
 
 # BOSH directors are specified by \`url: username / password\`
 # (just like in ~/.bosh_config's auth section), i.e.:
@@ -2946,6 +2950,7 @@ aliases:
 #aliases:
 #  target:
 #    DIRECTOR-UUID: https://ip.ad.dr.ess:25555
+#    DIRECTOR-NAME: https://ip.ad.dr.ess:25555
 #auth:
 #  https://ip.ad.dr.ess:25555:
 #    username: admin
@@ -4450,8 +4455,6 @@ EOF
 		line
 		echo "Deploying to BOSH director ${target}"
 		echo
-		bosh target ${target}
-		bosh deployment ${DEPLOYMENT_ENV_DIR}/manifests/.deploy.yml
 
 		if [[ ${CI_WAIT_FOR_CLEAN_BOSH} == "true" ]]; then
 			i=1
@@ -4461,13 +4464,15 @@ EOF
 
 			while (( $i <= $attempts ))
 			do
+				bosh target $(spruce json ${DEPLOYMENT_ENV_DIR}/name.yml | jq -r '.name')
+				unset DIRECTOR_URL
 				tasks=$(ask_bosh '/tasks?state=queued,processing,cancelling&verbose=2')
-				if [[ -z ${tasks} || $? != 0 ]]; then
+				if [[ -z "${tasks}" || $? != 0 ]]; then
 					echo "FATAL: Unable to contact BOSH to find existing tasks before deploying. Cowardly refusing to deploy"
 					exit 1
 				fi
 
-				running=$(echo ${tasks} | jq -r '. | length')
+				running=$(echo "${tasks}" | jq -r '. | length')
 				if [[ $? != 0 ]]; then
 					echo "FATAL: Unexpected task output from BOSH. Cowardly refusing to deploy"
 					echo "Unexpected response:"
@@ -4495,6 +4500,9 @@ EOF
 			fi
 		fi
 
+		unset DIRECTOR_URL
+		bosh target ${target}
+		bosh deployment ${DEPLOYMENT_ENV_DIR}/manifests/.deploy.yml
 		bosh -n deploy
 
 		line

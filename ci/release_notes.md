@@ -5,7 +5,15 @@
   deploy BOSH itself, so you do not interrupt active tasks by upgrading BOSH.
 
   To configure it, set the `meta.pause_for_existing_bosh_tasks` value to `true` in
-  `ci/settings.yml`. If not set, this defaults to `false`.
+  `ci/settings.yml`. If not set, this defaults to `false`. Additionally, to help guide
+  genesis to target the right BOSH to query for active tasks, you will need to add additional
+  aliases in your `ci/boshes.yml`, pointing the name of the BOSH director (from it's name.yml
+  file) to the URL of the director:
+
+        aliases:
+          target:
+            f635b1ba-5000-48e1-92c8-19471d20e0e4: https://10.10.10.10:25555
+            vsphere-prod-bosh: https://10.10.10.10:25555
 
   The deployment task will wait up to 100 seconds for BOSH to finish current tasks.
   If tasks are stull running after 100 seconds, it will give up, refusing to deploy.
