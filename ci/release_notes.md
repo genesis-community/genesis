@@ -17,3 +17,7 @@
 
   The deployment task will wait up to 100 seconds for BOSH to finish current tasks.
   If tasks are stull running after 100 seconds, it will give up, refusing to deploy.
+
+# Bug Fixes
+
+- Fixed an issue where `genesis ci draft-messages` was not working
