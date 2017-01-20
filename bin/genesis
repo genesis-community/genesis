@@ -1,5 +1,76 @@
 #!/bin/bash
+unset IFS
+shopt -s nullglob
+
+: <<'dox-overview:genesis'
+USAGE
+@~include=usage{"cmd":"<command> [options] [arguments]"}
+
+DESCRIPTION
+	Genesis is a tool built around a BOSH deployment paradigm that allows you to
+	create and manage unified deployment manifests across multiple sites and
+	environments.
+
+	It does this by breaking up your BOSH configuration manifest along three
+	logical strata: global, site and environment.  This allows you to work on
+	small related blocks of elements, reducing complexity and redundancy, then
+	package them up for deployment across different IaaS providers and target
+	environments with properties appropriate for their needs.
+
+CONCEPTS
+@~include=topic{"category":"concept","leader":"    ","scope":"intro","desc":"block"}
+
+	More details are available for each concept by running
+	`<<SCRIPT_NAME>> help --concept <concept-name>`.
+
+COMMON COMMANDS
+@~include=topic{"category":"command","scope":"common","leader":"  genesis ","desc":"inline"}
+
+  For more details, run `genesis help <command>`
+dox-overview:genesis
+
+: <<'dox-concept:Makefiles'
+DESCRIPTION
+	When Genesis provisions a new environment, it creates a Makefile that
+	provides some easy "shortcut" command invocation targets to simplify the
+	manifest generation process.
+
+		make help
+			Displays this help content.
+
+		make version
+			Displays the version and location of the `genesis` executable that will
+			be used by the other make actions
+
+		make refresh
+			Pull in fresh copies of global and site YAML templates (into .global/ and
+			.site/).  This is a shortcut for `<<SCRIPT_NAME>> refresh all`
+
+		make manifest
+			Build a new manifest for the environment by merging the template YAML
+			files together.
+
+		make deploy
+			Build the manifest and attempt to deploy it.  This safely handles Vault'd
+			credentials by creating a separate manifest yaml file that only exists
+			for the duration of the deploy.
+
+	Since this is a real Makefile, you can combine the two actions.  For example:
+
+		make refresh manifest
+			Refresh global / site configuration, and then build an up-to-date
+			deployment manifest.
+
+SEE ALSO
+@~include=topic{"category":"concept","scope":"makefile","desc":"none","leader":"  <<SCRIPT_NAME>> help --concept "}
+
+COMMANDS
+@~include=topic{"category":"command","scope":"makefile","desc":"inline","leader":"  <<SCRIPT_NAME>> "}
+
+dox-concept:Makefiles
+
 VERSION="(development build)"
+SCRIPT_NAME="$(basename $0)"
 
 USERNAME=$(whoami)
 CANON_REPO=https://github.com/starkandwayne/genesis
@@ -48,6 +119,10 @@ all_sites() {
 	done
 }
 
+all_pipeline_sites() {
+	spruce json $(ci_pipeline_yaml) | jq -r ".sites | keys | .[]"
+}
+
 all_environments_for() {
 	local site=${1:?all_environments_for() - no site name provided}
 	setup
@@ -64,7 +139,7 @@ all_environments_for() {
 check_site() {
 	local path=${1:?is_site() - no site argument provided}
 	if [[ ! -d "${DEPLOYMENT_ROOT}/${path}" ]]; then
-		echo >&2 "${path} not found"
+		echo >&2 "Site ${path} not found"
 		exit 1
 	fi
 	if [[ ! -d "${DEPLOYMENT_ROOT}/${path}/site" ]]; then
@@ -76,7 +151,7 @@ check_site() {
 check_environment() {
 	local path=${1:?check_environment() - no site/environment argument provided}
 	if [[ ! -d "${DEPLOYMENT_ROOT}/${path}" ]]; then
-		echo >&2 "${path} not found"
+		echo >&2 "Environment ${path} not found"
 		exit 1
 	fi
 	if [[ ! -f "${DEPLOYMENT_ROOT}/${path}/Makefile" ]]; then
@@ -139,30 +214,32 @@ setup() {
 		while IFS='' read -r line || [[ -n "$line" ]]; do
 			cmd=$(echo $line | perl -pe 's|^(.*?):.*$|$1|')
 			ver=$(echo $line | perl -pe 's|^.*?: *(.*)$|$1|')
+			
 			if [[ ${cmd} == "genesis" ]] ; then
-				if [[ ${ver} != ${VERSION} ]] ; then
-					errors="This genesis deployment depends on ${cmd} version ${ver}, "\
-						"but the current version is ${VERSION}\n${errors}"
+				cmd_version="${VERSION}"
+			else
+				if [[ -z $(command -v ${cmd}) ]] ; then
+					errors="This Genesis deployment requires the '${cmd}' command\n${errors}"
+					continue
 				fi
-				continue
-			elif [[ -z $(command -v ${cmd}) ]] ; then
-				errors="This genesis deployment requires the '${cmd}' command\n${errors}"
-				continue
+				cmd_version=$(${cmd} -v)
 			fi
+
 			if [[ ${ver} != "null" && ${ver} != '~' ]]; then
-				dev_version=$(${cmd} -v 2>&1 | perl -pe 's/.*development.*/DEV/')
+				dev_version=$(echo "${cmd_version}" | perl -pe 's/.*development.*/DEV/')
 				if [[ ${dev_version} == "DEV" ]]; then
 					echo "Treating 'development' version as up-to-date with ${ver}"
 					continue
 				fi
-				current_version=$(${cmd} -v 2>&1 | perl -pe 's|.*?(\d+\.\d+(\.\d+)*).*|$1|')
+				current_version=$(echo "${cmd_version}" | perl -pe 's|.*?(\d+\.\d+(\.\d+)*).*|$1|')
 				if [[ -z ${current_version} || $(echo ${current_version} | egrep '[^0-9\.]') ]]; then
-					errors="This genesis deployment requires ${cmd} version ${ver}, but the current version could not be parsed\n${errors}"
+					errors="This Genesis deployment requires ${cmd} version ${ver}, but the current version could not be parsed\n${errors}"
 					echo ${current_version}
 					continue
 				fi
+
 				if ! version_checker ${current_version} ${ver}; then
-					errors="This genesis deployment requires ${cmd} version ${ver} (found ${current_version})\n${errors}"
+					errors="This Genesis deployment requires ${cmd} version ${ver} (found ${current_version})\n${errors}"
 					continue
 				fi
 			fi
@@ -175,8 +252,7 @@ setup() {
 
 	# What type of deployment is this?
 	#
-	#    normal    - A normal deployment
-	#    bosh      - A BOSH deployment (currently-favored type)
+	#    normal    - A normal BOSH deployment
 	#    bosh-init - A bosh-init BOSH deployment
 	#
 	DEPLOYMENT_TYPE=normal
@@ -226,9 +302,9 @@ setup() {
 }
 
 actual_yaml_files() {
-	for i in $*; do
-		[ -f $i ] && echo $i
-		shift # FIXME: do we need this?
+	while (($#)) ; do
+		[[ -f "$1" ]] && echo $1
+		shift
 	done
 }
 
@@ -240,7 +316,7 @@ ensure_yaml_file() {
 }
 
 ensure_ci_configuration() {
-	ensure_yaml_file "${DEPLOYMENT_ROOT}/.ci.yml"
+	ensure_yaml_file $(ci_pipeline_yaml)
 }
 
 ALL_VAULTED=""
@@ -423,7 +499,7 @@ else
 endif
 
 help: check
-	@PATH=\$(PATH) genesis help makefile
+	@PATH=\$(PATH) genesis help --concept Makefiles
 
 version:
 	@PATH=\$(PATH) echo "using \$\$(which genesis)"
@@ -503,7 +579,7 @@ create_global_readme() {
 Global Definitions
 
 This directory contains templates that describe the common elements of this
-deployments, to be shared (and possibly overridden) by sites and environments.
+deployment, to be shared (and possibly overridden) by sites and environments.
 The templates are merged in the following order:
 
   global/jobs.yml             Specify what jobs will make up the canonical
@@ -984,44 +1060,51 @@ skip_preflight() {
 }
 
 preflight_normal_deployment() {
-	if [[ ! -f "${DEPLOYMENT_ENV_DIR}/.site/stemcell/name" ]]; then
-		echo >&2 "Error: no stemcell name specified for site"
-		exit 2
-	fi
-	local stemcell_name=$(cat "${DEPLOYMENT_ENV_DIR}/.site/stemcell/name")
-
-	if [[ ! -f "${DEPLOYMENT_ENV_DIR}/.site/stemcell/version" ]]; then
+	local stemcell_dir="${DEPLOYMENT_ENV_DIR}/.site/stemcell"
+	if [[ ! -f "${stemcell_dir}/version" ]]; then
 		echo >&2 "Error: no stemcell version specified for site"
 		exit 2
 	fi
-	local stemcell_version=$(cat "${DEPLOYMENT_ENV_DIR}/.site/stemcell/version")
+	local stemcell_version=$(cat "${stemcell_dir}/version")
 	if [[ ${stemcell_version} == "latest" ]]; then
-		rm -f ${DEPLOYMENT_ENV_DIR}/.site/stemcell/url
-		rm -f ${DEPLOYMENT_ENV_DIR}/.site/stemcell/sha1
+		rm -f ${stemcell_dir}/url
+		rm -f ${stemcell_dir}/sha1
 	fi
-
-	ensure_present stemcell ${stemcell_name} ${stemcell_version}
+	if [[ -f "${stemcell_dir}/alias" ]]; then
+		if [[ ! -f "${stemcell_dir}/os" && ! -f "${stemcell_dir}/name" ]] ; then
+			echo >&2 "Error: no stemcell os or name specified for site"
+			exit 2
+		fi
+		# TODO: do we need to ensure cloud config knows about this alias?
+	elif [[ -f "${stemcell_dir}/name" ]]; then
+		local stemcell_name=$(cat "${stemcell_dir}/name")
+		ensure_present stemcell ${stemcell_name} ${stemcell_version}
+	else
+		echo >&2 "Error: no stemcell name or alias specified for site"
+		exit 2
+	fi
 
 	if [[ ! -f "${DEPLOYMENT_ENV_DIR}/.site/releases" ]]; then
 		echo >&2 "Error: no releases listed for site"
 		exit 2
 	fi
-
 	local releases=$(releases_from "${DEPLOYMENT_ENV_DIR}/.site/releases")
+
+	local rel_dir="${DEPLOYMENT_ENV_DIR}/.global/releases"
 	for rel in ${releases}; do
-		if [[ ! -d "${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}" ]]; then
+		if [[ ! -d "${rel_dir}/${rel}" ]]; then
 			echo >&2 "Error: release '${rel}' not defined globally"
 			exit 2
 		fi
-		if [[ ! -f "${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/version" ]]; then
+		if [[ ! -f "${rel_dir}/${rel}/version" ]]; then
 			echo >&2 "Error: no version specified for release '${rel}'"
 			exit 2
 		fi
 
-		local release_version=$(cat ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/version)
+		local release_version=$(cat ${rel_dir}/${rel}/version)
 		if [[ ${release_version} == "latest" ]]; then
-			rm -f ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/url
-			rm -f ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/sha1
+			rm -f ${rel_dir}/${rel}/url
+			rm -f ${rel_dir}/${rel}/sha1
 		fi
 		ensure_present release ${rel} ${release_version}
 	done
@@ -1031,55 +1114,30 @@ normal_site_metadata() {
 	must_be_in_an_environment
 	preflight_deployment
 
-	local stemcell_name=$(cat "${DEPLOYMENT_ENV_DIR}/.site/stemcell/name")
-	local stemcell_version=$(cat "${DEPLOYMENT_ENV_DIR}/.site/stemcell/version")
-
-	local stemcell_url=""
-	if [[ -f ${DEPLOYMENT_ENV_DIR}/.site/stemcell/url ]]; then
-		stemcell_url=$(cat ${DEPLOYMENT_ENV_DIR}/.site/stemcell/url)
-	fi
-	local stemcell_sha1=""
-	if [[ -f ${DEPLOYMENT_ENV_DIR}/.site/stemcell/sha1 ]]; then
-		stemcell_sha1=$(cat ${DEPLOYMENT_ENV_DIR}/.site/stemcell/sha1)
-	fi
-
 	cat <<EOF
 ---
 meta:
   stemcell:
-    name: ${stemcell_name}
-    version: "${stemcell_version}"
 EOF
-	if [[ -n ${stemcell_url} ]]; then
-		echo "    url: ${stemcell_url}"
-	fi
-	if [[ -n ${stemcell_sha1} ]]; then
-		echo "    sha1: ${stemcell_sha1}"
-	fi
-	echo 'update: (( param "Please specify update settings for your bosh deployment" ))'
-	echo "releases:"
 
+	# Stemcell bits (presence of required values confirmed in preflight_normal_deployment)
+	for item in "alias" "name" "version" "url" "sha1" ; do
+		local _file="${DEPLOYMENT_ENV_DIR}/.site/stemcell/${item}"
+		[[ -f $_file ]] && echo "    $item: "'"'$(cat $_file | head -n1 | sed 's/"/\\"/g')'"'
+	done
+	echo 'update: (( param "Please specify update settings for your bosh deployment" ))'
+
+	# Release bits
+	echo "releases:"
 	local releases=$(releases_from "${DEPLOYMENT_ENV_DIR}/.site/releases")
 	for rel in ${releases}; do
-		local release_version=$(cat ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/version)
-		local release_url=""
-		if [[ -f ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/url ]]; then
-			release_url=$(cat ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/url)
-		fi
-		local release_sha1=""
-		if [[ -f ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/sha1 ]]; then
-			release_sha1=$(cat ${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/sha1)
-		fi
-
 		echo "  - name: ${rel}"
-		echo "    version: \"${release_version}\""
-		if [[ -n ${release_url} ]]; then
-			echo "    url: \"${release_url}\""
-		fi
-		if [[ -n ${release_sha1} ]]; then
-			echo "    sha1: \"${release_sha1}\""
-		fi
+		for item in "version" "url" "sha1" ; do
+			local _file="${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/${item}"
+			[[ -f $_file ]] && echo "    $item: "'"'$(cat $_file | head -n1 | sed 's/"/\\"/g')'"'
+		done
 	done
+	return 0
 }
 
 build_manifest() {
@@ -1358,21 +1416,36 @@ EOF
 	done
 }
 
-bad_usage() {
-	echo >&2 "USAGE: genesis $@"
-	exit 1
-}
-
-
 ####################################################
 # multi-call handlers
 
+: <<'dox-command:version'
+USAGE
+@~include=usage
+
+DESCRIPTION
+	Displays the version and checksum of the genesis executable.
+
+SEE ALSO
+@~include=related{"items":["command:update","command:embed"]}
+dox-command:version
 cmd_version() {
 	s=$(cat ${BASH_SOURCE[0]} | checksum)
 	echo "genesis ${VERSION} (${s:0:12})"
 	exit 0
 }
 
+: <<'dox-command:update'
+USAGE
+@~include=usage
+
+DESCRIPTION
+	Updates the version of the genesis executable to the latest release from the
+	genesis repo.
+
+SEE ALSO
+@~include=related{"items":["command:version","command:embed"]}
+dox-command:update
 cmd_update() {
 	need_a_workdir
 	curl -Ls $(curl -s ${API_REPO}/releases/latest | jq -r '.assets[] | select(.name | test("genesis")) | .browser_download_url') > ${WORKDIR}/bin
@@ -1387,268 +1460,271 @@ cmd_update() {
 	exit $?
 }
 
-cmd_help() {
-	local topic=""
-	while (( $# )); do
-		arg=$1 ; shift
-		case ${arg} in
-		(-*)
-			echo >&2 "USAGE: genesis help <topic>"
-			exit 1
-			;;
-		(*)
-			if [[ -n ${topic} ]]; then
-				topic="${topic} "
-			fi
-			topic="${topic}${arg}"
-		esac
-	done
+: <<'dox-command:embed'
+USAGE
+@~include=usage
 
-	case ${topic:-usage} in
-	(usage|help)
-		cat >&2 <<'EOF'
-USAGE: genesis <command> [arguments]
+DESCRIPTION
+	Embeds the version of `genesis' installed in your $PATH into your deployment
+	repo under /bin, so it can be used via the Makefile and Concourse tasks.
+	This will replace any version already embedded.
 
-Common commands:
+SEE ALSO
+@~include=related{"items":["command:version","command:update"]}
+dox-command:embed
+cmd_embed() {
+  [[ -z $1 ]] || bad_usage_no_args
 
-    genesis new deployment      Create a new deployment directory, with all the
-                                necessary files for deploying with Genesis.
+  echo "Embedding genesis script into repository"
+  setup
 
-                                Specifying `--template' tells genesis to create your
-                                deployment directory based on the specified template repo.
+  mkdir -p ${DEPLOYMENT_ROOT}/bin
+  cp ${BASH_SOURCE[0]} ${DEPLOYMENT_ROOT}/bin/genesis
+  chmod 755 ${DEPLOYMENT_ROOT}/bin/genesis
 
-    genesis new site            Set up the files and directories for a new site.
-                                Specifying `--template' tells genesis to create the
-                                site directory based on the specified IaaS templates.
-
-                                See the `.templates' directory at the root of your
-                                deployment repo for valid options.
-
-    genesis new environment     Set up the files and directories for a new environment.
-
-                                Specifying `--type' of `bosh-init' will tell genesis
-                                to treat this specific environment as a bosh-init type
-                                deployment. Useful if you need to use bosh-init for some
-                                environments, but regular BOSH deployments for others.
-
-    genesis stemcells           Lists the stemcell name + version in use by the
-                                specified site or environment. If no arguments are
-                                specified, you must be in a site/environment directory.
-
-    genesis releases            Lists the release name and version in use by the
-                                specified site or environment. If no arguments are
-                                specified, you must be in a site/environment directory.
-
-    genesis add release         Adds release definitions to the global configurations
-                                for the specified release and optionally, its version.
-
-    genesis set release         Updates the specified release to the specified version,
-                                globally.
-
-    genesis use release         When inside a site or environment directory, takes
-                                the provided release name, and configures the site
-                                to include the release when deploying to environments
-                                in that site.
-
-    genesis use stemcell        When inside a site or environment directory, takes
-                                the provided stemcell name, and updates the site
-                                directory to use that stemcell. You can optionally
-                                specify the version of the stemcell to be used as
-                                a second argument after the stemcell name.
-
-    genesis build               When run from inside of an environment directory,
-                                paste together all of the template files, in order
-                                and pop out a manifest file.
-
-    genesis deploy              When run from inside of an environment directory,
-                                builds and deploys your BOSH manifest. A redacted
-                                copy is left in the repo for posterity. The copy
-                                deployed is non-redacted.
-
-    genesis diff                When run from inside of an environment directory,
-                                show a semantic diff of the generated manifest for that
-                                environment, against some other manifest file.
-
-    genesis refresh             Refresh the cached copies of site and/or global
-                                definitions inside the current environment directory.
-                                Can also be used to recreate the Makefile after a
-                                Genesis upgrade.
-
-                                Use `genesis refresh <site|global|makefile|readme>'
-                                to specify what to refresh.
-
-    genesis embed               Embeds the version of `genesis' installed in your $PATH
-                                into your deployment repo, so it can be used via the Makefile
-                                and Concourse tasks.
-
-    genesis bosh                Generates a deployable manifest (which may have secrets
-                                in it) and then runs the `bosh' CLI with remaining
-                                arguments.  Useful for recreating workers.
-
-    genesis help                Peruse the help!  Give it a topic argument, or the name
-                                of another command to get more detailed information.
-                                Documentation!
-
-EOF
-		exit 0
-		;;
-	(new)
-		cat >&2 <<EOF
-USAGE: genesis new deployment [options] NAME
-       genesis new site [options] SITE
-       genesis new environment SITE ENVIRONMENT
-
-Creates new things, with all the right files in all the right places.
-
-EOF
-		exit 0
-		;;
-	(new\ deployment)
-		cat >&2 <<EOF
-USAGE: genesis new deployment [options] NAME
-       genesis new deployment --template TEMPLATE [NAME]
-
-  Create a new deployment, complete with all the correct templates in
-  global/, and a base configuration.  This will create a sub-directory
-  in the current working directory, named <NAME>-deployments, and set
-  it up with git version control.
-
-  OPTIONS
-
-    -t, --type <type>
-
-        Generate a different type of deployment.  Valid values are
-        'bosh-init' and 'normal' (the default is 'normal').
-
-    -T, --template <name>
-
-        Base the deployment off of an upstream Genesis template, by
-        cloning a repository from github.com and using that.
-
-        Templates can be specified as qualified name containing the
-        Github org/user and repository name, i.e. "jhunt/bolo", or
-        as a simple name, i.e. "shield", which will be inferred to
-        belong to the starkandwayne organization.
-
-EOF
-		exit 0
-		;;
-	(new\ site)
-		cat >&2 <<EOF
-USAGE: genesis new site [options] NAME
-
-  Create a new site with the given name, and set up the necessary
-  directories and blank template files for defining the parts of a
-  BOSH manifest that map to infrastructural and site-wide things.
-
-  OPTIONS
-
-    -T, --template <name>
-
-        Base the new site off of a site template.
-
-        This generally only works if you generated the deployment
-        from an upstream Genesis template (via '--template')
-
-EOF
-		exit 0
-		;;
-	(new\ environment)
-		cat >&2 <<EOF
-USAGE: genesis new environment SITE NAME
-
-  Create a new environment with the given name, in the specified
-  site, and set up the directories and template files for local,
-  environment-specific things.
-
-EOF
-		exit 0
-		;;
-	(build)
-		cat >&2 <<EOF
-USAGE: genesis build
-
-Compiles all of the YAML templates down to a single BOSH manifest
-for the current environment.
-
-EOF
-		exit 0
-		;;
-	(refresh)
-		cat >&2 <<EOF
-USAGE: genesis refresh [(global|site|all|makefile|readme)]
-
-Copies current definitions of the global templates and/or the
-current site into the current environment.  By default, copies both.
-
-The argument 'makefile' only rebuilds the Makefile for an environment,
-which can be useful to bring old deployments in-line with newer versions
-of Genesis.
-
-Similarly, 'readme' only recreates the various README files for the top-level,
-the global/ directories, and all sites and environments.
-
-EOF
-		exit 0
-		;;
-	(makefile)
-		cat >&2 <<EOF
-When Genesis provisions a new environment, it creates a Makefile that
-provides some easy "shortcut" command invocation targets to simplify
-the manifest generation process.
-
-  $ make manifest           #  Build a new manifest for the environment
-                            #  by merging the template YAML files together.
-
-  $ make deploy             # Build the manifest and attempt to deploy it.
-                            # (This safely handles Vault'd credentials)
-
-  $ make refresh            #  Pull in fresh copies of global and site YAML
-                            #  templates (into .global/ and .site/).
-
-Since this is a real Makefile, you can combine the two actions:
-
-  $ make refresh manifest   #  Refresh global / site configuration and then
-                            #  build an up-to-date deployment manifest.
-
-EOF
-		exit 0
-		;;
-	(bosh)
-		cat >&2 <<EOF
-USAGE: genesis bosh [...]
-
-Generates a deployable manifest (which may contain credentials or other
-secrets) and then passes the remaining arguments off to the \`bosh\` CLI.
-
-For example, to rebuild the worker/1 job:
-
-    $ genesis bosh -t prod recreate worker 1
-
-All other BOSH commands are available, but may not necessarily benefit
-from the manifest re-generation step.
-
-EOF
-		exit 0
-		;;
-	# FIXME: ci
-	(*)
-		cat >&2 <<EOF
-Unrecognized help topic '${topic}'.
-Try one of these:
-
-    genesis help usage
-    genesis help <command>
-
-EOF
-		exit 0
-		;;
-	esac
-	exit 1
+  ${DEPLOYMENT_ROOT}/bin/genesis version
 }
 
+: <<'dox-concept:Structure'
+DESCRIPTION
+  Genesis organizes the files used to build your manifests into logical
+  locations based on hierarchial and functional scope.
+
+  Each genesis-generated deployment repository contains the YAML templates that
+  contain the details required to create the BOSH deployment manifest across
+  one or more sites and environments.
+
+  The configuration is broken up into three logical strata: global,
+  site, and environment:
+
+    global:
+      Defines the universal aspects of any deployment, including overall job
+      structure, constituent BOSH releases, and invariant (or default)
+      properties.
+
+    site:
+      represents a single IaaS (an AWS VPC, a vSphere cluster, etc.), and
+      further refines the global configuration for that infrastructure.
+
+    environment:
+      represents a single BOSH deployment, with specific network numbering,
+      credentials, domain names, etc.
+
+  Directory Structure
+  -------------------
+
+  <software>-deployments
+  |-- README.md
+  |-- bin
+  |   `-- genesis
+  |-- global
+  |   |-- README
+  |   |-- deployment.yml
+  |   |-- jobs.yml
+  |   |-- properties.yml
+  |   `-- releases
+  |       |-- <release-name-1>
+  |       |   |-- sha1
+  |       |   |-- url
+  |       |   `-- version
+  |       `-- <release-name-2>
+  |           `-- version
+  `-- <site-name-1>
+      |-- <environment-name-1>
+      |   |-- Makefile
+      |   |-- README
+      |   |-- cloudfoundry.yml
+      |   |-- credentials.yml
+      |   |-- director.yml
+      |   |-- manifests
+      |   |   `-- manifest.yml
+      |   |-- monitoring.yml
+      |   |-- name.yml
+      |   |-- networking.yml
+      |   |-- properties.yml
+      |   `-- scaling.yml
+      `-- site
+          |-- README
+          |-- disk-pools.yml
+          |-- jobs.yml
+          |-- networks.yml
+          |-- properties.yml
+          |-- releases
+          |-- resource-pools.yml
+          |-- stemcell
+          |   |-- name
+          |   `-- version
+          `-- update.yml
+
+  Global Definitions
+  ------------------
+
+  The `global` directory contains templates that describe the common elements
+  of all deployments for this software, to be shared (and possibly overridden)
+  by sites and environments.  The templates are merged in the following
+  order:
+
+    jobs.yml:       Specify what jobs will make up the canonical deployment,
+                    and what templates to apply to them.
+
+    deployment.yml: Define the global structure of all deployments with the
+                    correct param calls to remind template writers to override
+                    the correct things.
+
+    properties.yml: Define the properties for this deployment.  This can be
+                    done on a per-job basis, or under the top-level properties
+                    key.
+
+    releases:       This directory contains a directory for each release used
+                    by the deployment.  These should not be modified by hand,
+                    but instead using the `(add|set|use) release` commands. See
+                    help for `Releases` for more information.
+
+  NOTE:
+    If you make changes to the templates in here, they will automatically
+    propagate to any newly-created environments, but you will need to run a
+    refresh for existing environments to receive those updates.
+
+  Site Definitions
+  ----------------
+
+  All directories found at the root of the repository that themselves contain
+  a directory called `site` are considered sites.  This is usually used to
+  describe infrastructure-specific settings and site-wide properties, although
+  you can have multiple sites that run under the same infrastructure.  The
+  templates are merged in the following order:
+
+    disk-pools.yml:     If you are using disk pools, put disk pool definitions
+                        in this file.
+
+    update.yml:         Specify job update parameters here, which can change
+                        based on the cloud provider in use, and its performance
+                        characteristics.
+
+    jobs.yml:           Here you can modify the list of jobs defined at the
+                        global level, remove jobs (by setting their instances:
+                        count to 0), and supply any additional, site-wide job
+                        properties.
+
+    networks.yml:       Define what networks to use for all the environments in
+                        this site (although you may want to defer the actual
+                        numbering to the environment level.
+
+    resource-pools.yml: Set up the resource pools to use for job virtual
+                        machines, and apply their cloud properties (i.e.
+                        availability zones)
+
+    properties.yml:     Define properties (both globally and per-job), that are
+                        specific to this environment.  These will most likely
+                        override global properties.
+
+  NOTE:
+    If you make changes to the templates in here, they will automatically
+    propagate to any newly-created environments, but you will need to run a
+    refresh for existing environments to receive those updates.
+
+  Environment Definitions
+  -----------------------
+
+  All other directories that are siblings to the `site` directory represent a
+  single environment to be deployed.  Each one contains templates that describe
+  the environment-specific settings of a single deployment.  These templates
+  will be combined with the global and site templates to produce a single BOSH
+  manifest for deployment purposes.  The templates are merged in the following
+  order:
+
+    monitoring.yml:   Configure whatever (external) monitoring system you want
+                      to track the performance and health of your deployment.
+
+    networking.yml:   Configure the network numbering for this deployment.
+
+    director.yml:     Identify the BOSH director UUID for this deployment.
+
+    scaling.yml:      Define the scaling properties for this deployment,
+                      including things like the number of instances, sizes of
+                      persistent disks, resource pool limits, etc.
+
+    properties.yml:   Define properties (both globally and per-job), that are
+                      specific to this environment.  These will most likely
+                      override global and site properties.
+
+    credentials.yml:  Define passwords and credentials here, so that they are
+                      centralized.  Keep in mind that commiting these into
+                      version control incurs some security risk.
+
+    cloudfoundry.yml: For deployments that integrate with Cloud Foundry
+                      installations (i.e. as service brokers), you can specify
+                      the integration details here, including things like the
+                      CF API, credentials, domains, etc.
+
+    name.yml:         Specify the name of this deployment.
+
+  This directory also contains a Makefile that makes it easier to build the
+  final BOSH manifest from all of the constituent templates.  See help for
+  `Makefiles`for more information.
+
+COMMANDS
+@~include=topic{"category":"command","scope":"structure","leader":"  <<SCRIPT_NAME>> ","desc":"inline"}
+
+dox-concept:Structure
+
+: <<'dox-concept:Structure-bosh-init'
+DESCRIPTION
+  Genesis can be used to create manifests that can standup a BOSH director
+  using bosh-init.
+
+	TODO:
+	Explain the difference between normal and bosh-init structures, and how
+	to build a bosh-init manifest and deploy it.
+dox-concept:Structure-bosh-init
+
+: <<'dox-partial:new'
+DESCRIPTION
+  Creates new things, with all the right files in all the right places.
+dox-partial:new
+
+: <<'dox-command:new-deployment'
+USAGE
+@~include=usage{"args":"[-t <type>] [-T <template>] [-r <dir>] <name>"}
+
+DESCRIPTION
+	Create a new deployment directory, with all the necessary files for deploying
+	with Genesis.
+
+	Specifying `--template' tells genesis to create your deployment directory
+	based on the specified template repo.
+
+OPTIONS
+	-t, --type <type>
+		Generate a different type of deployment.  Valid values are 'normal' and
+		'bosh' (or 'bosh-init'). The default is 'normal'.
+
+	-T, --template <name>
+		Base the deployment off of an upstream Genesis template, by cloning a
+		repository from github.com and using that.
+
+		Templates can be specified as qualified name containing the Github org/user
+		and repository name, i.e. "jhunt/bolo", or as a simple name, i.e. "shield",
+		which will be inferred to belong to the starkandwayne organization.
+
+	-r, --root <dirname>
+		The root directory under which to create the new deployment structure.
+		Defaults to the current directory.
+
+ARGUMENTS
+	name
+		The name of the deployment to be created.  This will result in a directory
+		called <name>-deployments
+
+SEE ALSO
+@~include=related{"items":["command:new site","command:new environment"]}
+
+@~include=related{"items":["concept:Structure","concept:Structure bosh-init"]}
+
+@~scope=common,structure
+dox-command:new-deployment
+
 cmd_new_deployment() {
-	local USAGE="new deployment [-t type] [-T template] [-r root/dir] <name>"
 	local dtype="normal"
 	local root=$(pwd)
 	local name=""
@@ -1658,27 +1734,24 @@ cmd_new_deployment() {
 		arg=$1 ; shift
 		case ${arg} in
 		(-t|--type)
+			check_opt_usage "$arg" "$1"
 			dtype=$1
-			[[ -n ${dtype} ]] || bad_usage ${USAGE}
 			shift
 			;;
 		(-T|--template)
+			check_opt_usage "$arg" "$1"
 			template=$1
-			[[ -n ${template} ]] || bad_usage ${USAGE}
 			shift
 			;;
 		(-r|--root)
+			check_opt_usage "$arg" "$1"
 			root=$1
-			[[ -n ${root} ]] || bad_usage ${USAGE}
 			shift
 			;;
-		(-*)
-			bad_usage ${USAGE}
-			exit 1
-			;;
+		(-*) bad_usage_invalid_opt "$arg" ;;
 		(*)
+			[[ -z $name ]] || bad_usage_extra "$arg" "name" "$name"
 			name=${arg%-deployment*}
-			shift
 			;;
 		esac
 	done
@@ -1694,7 +1767,7 @@ cmd_new_deployment() {
 			name=${name%%-deployment*}
 		fi
 	fi
-	[[ -n ${name:-} ]] || bad_usage ${USAGE}
+	[[ -n ${name:-} ]] || bad_usage_missing "deployment name"
 
 	if [[ ! -d ${root} ]]; then
 		echo >&2 "Error: root directory ${root} does not exist"
@@ -1726,12 +1799,12 @@ cmd_new_deployment() {
 	fi
 
 	case ${dtype} in
-	(bosh) dtype=bosh-init ;;
-	(normal|bosh-init) ;;
-	(*)
-		echo >&2 "Error: unrecognized deployment type '${dtype}'"
-		exit 1
-		;;
+		(normal|bosh-init) ;;
+		(bosh) dtype=bosh-init ;;
+		(*)
+			echo >&2 "Error: unrecognized deployment type '${dtype}'"
+			exit 1
+			;;
 	esac
 
 	DEPLOYMENT_TYPE=${dtype}
@@ -1765,8 +1838,41 @@ EOF
 	exit 0
 }
 
+: <<'dox-command:new-site'
+USAGE
+@~include=usage{"args":"[-T <template>] <name>"}
+
+DESCRIPTION
+	Sets up the files and directories for a new site.
+
+	When run, this command creates a new site with the given name, and set up the
+	necessary directories and blank template files for defining the parts of a
+	BOSH manifest that map to infrastructural and site-wide things.
+
+	Specifying `--template' tells genesis to create the
+	site directory based on the specified IaaS templates.
+
+OPTIONS
+	-T, --template <name>
+		Base the new site off of a site template.  This generally only works if you
+		generated the deployment from an upstream Genesis template (via
+		'--template')
+
+		See the `.templates' directory at the root of your
+		deployment repo for valid options.
+
+ARGUMENTS
+	name
+		The name of the site being created.  This is usually discriptive of a data
+		center or cloud provider, such as `aws-us-east` or `myOrg-myDC-vsphere`
+
+SEE ALSO
+@~include=related{"items":["command:new deployment","command:new environment"]}
+
+@~scope=common,structure
+dox-command:new-site
+
 cmd_new_site() {
-	local USAGE="new site [-T template] <name>"
 	local name=""
 	local template=""
 
@@ -1774,18 +1880,19 @@ cmd_new_site() {
 		arg=$1 ; shift
 		case ${arg} in
 		(-T|--template)
+			check_opt_usage "$arg" "$1"
 			template=$1
 			shift
 			;;
 		(-*)
-			bad_usage ${USAGE}
+			bad_usage_invalid_opt "$arg"
 			;;
 		(*)
 			name=${arg}
 			;;
 		esac
 	done
-	[[ -n ${name} ]] || bad_usage ${USAGE}
+	[[ -n ${name} ]] || bad_usage_missing "site name"
 
 	setup
 	if [[ -d "${DEPLOYMENT_ROOT}/${name}" ]]; then
@@ -1824,32 +1931,66 @@ cmd_new_site() {
 	exit 0
 }
 
+: <<'dox-command:new-environment'
+USAGE
+@~include=usage{"args":"[-t <type>] <site> <name>","cmd":"new env[ironment]"}
+@~alias=new-env
+
+DESCRIPTION
+	Set up the files and directories for a new environment.
+
+	When run, this command creates a new environment with the given name, in the
+	specified site, and set up the directories and template files for local,
+	environment-specific things.
+
+	Specifying `--type' of `bosh-init' will tell genesis to treat this specific
+	environment as a bosh-init type deployment. Useful if you need to use
+	bosh-init for some environments, but regular BOSH deployments for others.
+
+OPTIONS
+	-t, --type <type>
+		Generate a different type of deployment.  Valid values are 'bosh-init' for
+		a bosh-init environment, 'bosh' which is an abreviation for 'bosh-init',
+		and 'normal' for standard bosh deployments (the default is 'normal') .
+
+ARGUMENTS
+	site (optional if in a site directory, required otherwise)
+		The name of the site under which the environment is being created.
+	name
+		The name of the environment being created.  This is usually discriptive of
+		a data center or cloud provider, such as `aws-us-east` or
+		`myOrg-myDC-vsphere`
+
+SEE ALSO
+@~include=related{"items":["command:new deployment","command:new site"]}
+
+@~scope=common,structure
+dox-command:new-environment
+
 cmd_new_environment() {
-	local USAGE="new environment [site] name"
 	local dtype site name
 	while (( $# )); do
 		arg=$1 ; shift
 		case ${arg} in
 		(-t|--type)
+			check_opt_usage "$arg" "$1"
 			dtype=$1
 			case ${dtype} in
-			(bosh) dtype=bosh-init ;;
 			(normal|bosh-init) ;;
-			(*) echo >&2 "Unrecognized deployment type: ${dtype}"
+			(bosh) dtype=bosh-init ;;
+			(*) echo >&2 "unrecognized deployment type: ${dtype}"
 			    exit 1 ;;
 			esac
 			shift
 			;;
-		(-*)
-			bad_usage ${USAGE}
-			;;
+		(-*) bad_usage_invalid_opt "$arg" ;;
 		(*)
 			if [[ -z ${site} ]]; then
 				site=${arg}
 			elif [[ -z ${name} ]]; then
 				name=${arg}
 			else
-				bad_usage ${USAGE}
+				bad_usage_extra "$arg"
 			fi
 			;;
 		esac
@@ -1862,12 +2003,8 @@ cmd_new_environment() {
 	fi
 
 	case ${dtype:-$DEPLOYMENT_TYPE} in
-	(normal)
-		create_normal_environment ${site} ${name}
-		;;
-	(bosh-init)
-		create_bosh_init_environment ${site} ${name}
-		;;
+		(normal)    create_normal_environment ${site} ${name} ;;
+		(bosh-init) create_bosh_init_environment ${site} ${name} ;;
 	esac
 
 	if [[ -n ${dtype} ]]; then
@@ -1875,15 +2012,6 @@ cmd_new_environment() {
 	fi
 
 	exit 0
-}
-
-bad_new() {
-	local arg=${1}
-	cat >&2 <<EOF
-USAGE: genesis new deployment
-       genesis new (site|environment)
-EOF
-	exit 1
 }
 
 check_index() {
@@ -1945,30 +2073,169 @@ check_index() {
 	fi
 }
 
+: <<'dox-concept:Releases'
+DESCRIPTION
+	Genesis manages the association and uploading of the releases used by your
+	deployment manifests.
+
+	Deployment manifests require BOSH releases for the software they are
+	deploying.  Typically, a deployment has one eponymous release, and usually a
+	few support releases.  For example, concourse-deployment requires the
+	concourse release as well as garden-runc, and may optionally include
+	cf-haproxy, shield, slack-notification-resource and others.
+
+	To add a release to the deployment, use the `genesis add release` command to
+	provide the name and version.  The version can be upgraded using the `genesis
+	set release` command.  This sets the release as available for any site and
+	environment in the deployment repo.
+
+	To enable a release for a site, use the `genesis use release <name>` command.
+	Only a single version of a resource is supported across all sites that use it,
+	but through global and site caching, the version can be locked down in an
+	environment until it is ready to be upgraded to the latest available in the
+	deployment repository.
+
+AUTOMATIC UPLOAD TO BOSH
+	Genesis uses an index for open-source BOSH releases so that if the version
+	you specify is not available on the BOSH director, it will automatically be
+	uploaded.  You can also set the version to 'track' to use the latest version
+	of that release found in the Genesis index.  This index is maintained by
+	Stark & Wayne, and regularly updates version availability.
+
+	Alternatively, if you set the version to 'latest', it will use the latest
+	version of that release ALREADY PRESENT on the BOSH director.  Of course,
+	there has to be at least one version present, which would need to be uploaded
+	manually prior to deploying the manifest.
+
+COMMANDS
+@~include=topic{"category":"command","scope":"releases","desc":"inline","leader":"  <<SCRIPT_NAME>> "}
+
+SEE ALSO
+@~include=topic{"category":"concept","partial":"Cached-Definitions","desc":"inline","leader":"  "}
+@~include=topic{"category":"concept","partial":"CI","desc":"inline","leader":"  "}
+@~scope=releases
+dox-concept:Releases
+
+: <<'dox-command:releases'
+USAGE
+@~include=usage{"args":"[<site> [<env>]]","cmd":"release[s]"}
+@~alias=release
+
+DESCRIPTION
+	Lists the release name and version in use by the specified site or
+	environment. If no arguments are specified, you must be in a site/environment
+	directory.
+
+ARGUMENTS
+	site (optional)
+		if this is the sole argument, the releases used by the named
+		site will be displayed.  This is identical to the behaviour when run in
+		a site directory with no arguments.
+
+		Note: If in an environment directory, and just the site argument is
+		supplied, it will display the releases for the environment of the same
+		name as the current environment directory under the given site.
+
+	env (optional)
+		will show the releases used by the specified environment
+		under the given site.  This is identical to if no arguments are given
+		when run from an environment directory.
+
+SEE ALSO
+@~include=related{"items":["concept:Releases","command:add release","command:set release", "command:use release"]}
+@~scope=common,releases
+dox-command:releases
+cmd_releases() {
+	local site env
+	while (( $# )); do
+		arg=$1 ; shift
+		case ${arg} in
+		(-*) bad_usage_no_opts ;;
+		(*)
+			if [[ -z ${site} ]]; then  site=${arg}
+			elif [[ -z ${env} ]]; then env=${arg}
+			else bad_usage_extra "$arg"
+			fi
+			;;
+		esac
+	done
+
+	setup
+	site=${site:-$DEPLOYMENT_SITE}
+	env=${env:-$DEPLOYMENT_ENVIRONMENT}
+
+	if [[ -n ${env} ]]; then
+		for rel in $(releases_for_environment ${site} ${env}); do
+			vers=$(cat ${DEPLOYMENT_ROOT}/${site}/${env}/.global/releases/${rel}/version)
+			printf "%s/%s\n" ${rel} ${vers}
+		done
+		return
+	fi
+
+	if [[ -n ${site} ]]; then
+		for rel in $(releases_for_site ${site}); do
+			vers=$(cat ${DEPLOYMENT_ROOT}/global/releases/${rel}/version)
+			printf "%s/%s\n" ${rel} ${vers}
+		done
+		return
+	fi
+
+	bad_usage
+	exit 1
+}
+: <<'dox-command:add-release'
+USAGE
+@~include=usage{"args":"<name> [<version> [<url>]]"}
+
+DESCRIPTION
+	 Adds release definitions to the global configurations for the specified
+	 release and optionally, its version.
+
+ARGUMENTS
+	name
+		This is the name of the release
+
+	version (optional)
+		The version of the release that is to be used.  If not specified, it will
+		default to `latest`.  The valid values are:
+
+			`latest`:  use the latest version that is already available on the BOSH
+								 director.  this may not be the latest version that exists for
+								 this release at its source.
+
+			`track`:   use the version specified in the Genesis Index, which tracks
+								 accepted release versions.
+
+			<version>: A cardinal or SemVer value for the exact release you want to
+								 use, without any prefix such as 'v'
+
+	url
+		Specify the URL where the release is found, including the schema and the
+		version.  For example:
+		  https://bosh.io/d/github.com/myorg/mystuff-boshrelease?v=1.2.3
+
+SEE ALSO
+@~include=related{"items":["concept:Releases","command:releases","command:set release","command:use release"]}
+@~scope=common,releases
+dox-command:add-release
+
 cmd_add_release() {
-	local USAGE="add release <name> [<version> [<url>]]"
 	local release version url
 
 	while (( $# )); do
 		arg=$1 ; shift
 		case ${arg} in
-		(-*)
-			bad_usage ${USAGE}
-			;;
+		(-*) bad_usage_no_opts ;;
 		(*)
-			if [[ -z ${release} ]]; then
-				release=${arg}
-			elif [[ -z ${version} ]]; then
-				version=${arg}
-			elif [[ -z ${url} ]]; then
-				url=${arg}
-			else
-				bad_usage ${USAGE}
+			if [[ -z ${release} ]]; then   release=${arg}
+			elif [[ -z ${version} ]]; then version=${arg}
+			elif [[ -z ${url} ]]; then     url=${arg}
+			else bad_usage_extra "$arg"
 			fi
 			;;
 		esac
 	done
-	[[ -n ${release} ]] || bad_usage ${USAGE}
+	[[ -n ${release} ]] || bad_usage_missing "name"
 	version=${version:-latest}
 
 	setup
@@ -1997,42 +2264,67 @@ cmd_add_release() {
 	exit 0
 }
 
-bad_add() {
-	local arg=${1}
-	cat >&2 <<EOF
-USAGE: genesis add release
-EOF
-	exit 1
-}
+: <<'dox-command:set-release'
+USAGE
+@~include=usage{"args":"<name> [<version> [<url>]]"}
 
+DESCRIPTION
+	Updates the specified release to the specified version at the global level.
+
+ARGUMENTS
+	name
+		This is the name of the release
+
+	version (optional)
+		The version of the release that is to be used.  If not specified, it will
+		default to `latest`.  The valid values are:
+
+			`latest`:  use the latest version that is already available on the BOSH
+								 director.  this may not be the latest version that exists for
+								 this release at its source.
+
+			`track`:   use the version specified in the Genesis Index, which tracks
+								 accepted release versions.
+
+			<version>: A cardinal or SemVer value for the exact release you want to
+								 use, without any prefix such as 'v'
+
+	url
+		Specify the URL where the release is found, including the schema and the
+		version.  For example:
+		  https://bosh.io/d/github.com/myorg/mystuff-boshrelease?v=1.2.3
+
+SEE ALSO
+@~include=related{"items":["concept:Releases","command:releases","command:add release","command:use release"]}
+@~scope=common,releases
+dox-command:set-release
 cmd_set_release() {
-	local USAGE="set release <name> [<version>]"
 	local release version
 
 	while (( $# )); do
 		arg=$1 ; shift
 		case ${arg} in
 		(-*)
-			bad_usage ${USAGE}
+			bad_usage
 			;;
 		(*)
-			if [[ -z ${release} ]]; then
-				release=${arg}
-			elif [[ -z ${version} ]]; then
-				version=${arg}
-			else
-				bad_usage ${USAGE}
+			if [[ -z ${release} ]]; then   release=${arg}
+			elif [[ -z ${version} ]]; then version=${arg}
+			elif [[ -z ${url} ]]; then     url=${arg}
+			else bad_usage_extra "$arg"
 			fi
 			;;
 		esac
 	done
-	[[ -n ${release} ]] || bad_usage ${USAGE}
+	[[ -n ${release} ]] || bad_usage_missing "name"
 	version=${version:-track}
 
 	setup
 	mkdir -p ${DEPLOYMENT_ROOT}/global/releases/${release}
-	rm -rf ${DEPLOYMENT_ROOT}/global/releases/${release}/*
+	rm -rf   ${DEPLOYMENT_ROOT}/global/releases/${release}/*
 	echo ${version} > ${DEPLOYMENT_ROOT}/global/releases/${release}/version
+
+	[[ -n ${url} ]] && echo ${url} > ${DEPLOYMENT_ROOT}/global/releases/${release}/url
 
 	case ${version} in
 	(latest)
@@ -2056,26 +2348,38 @@ EOF
 	exit 1
 }
 
+: <<'dox-command:use-release'
+USAGE
+@~include=usage{"args":"<name>"}
+
+DESCRIPTION
+	 When inside a site or environment directory, takes the provided release
+	 name, and configures the site to include the release when deploying to
+	 environments in that site.
+
+ARGUMENTS
+	name
+		This is the name of the release to use.  Do not include the version.
+
+SEE ALSO
+@~include=related{"items":["concept:Releases","command:releases","command:add release","command:set release"]}
+
+@~scope=common,releases
+dox-command:use-release
 cmd_use_release() {
-	local USAGE="use release <name>"
 	local release
 
 	while (( $# )); do
 		arg=$1 ; shift
 		case ${arg} in
-		(-*)
-			bad_usage ${USAGE}
-			;;
+		(-*) bad_usage_invalid_opt "$arg" ;;
 		(*)
-			if [[ -z ${release} ]]; then
-				release=${arg}
-			else
-				bad_usage ${USAGE}
-			fi
+			[[ -z ${release} ]] || bad_usage_extra "$arg" "name" "$release"
+			release=${arg}
 			;;
 		esac
 	done
-	[[ -n ${release} ]] || bad_usage ${USAGE}
+	[[ -n ${release} ]] || bad_usage_missing "release name"
 
 	must_be_in_a_site
 	if [[ ! -d ${DEPLOYMENT_ROOT}/global/releases/${release} ]]; then
@@ -2094,15 +2398,165 @@ cmd_use_release() {
 	exit 0
 }
 
+: <<'dox-concept:Stemcells'
+DESCRIPTION
+	Stemcells used by each deployment are managed by Genesis to ensure version
+	upgrades propagate correctly through environment deployments.
+
+	TODO: Include details on:
+	* adding stemcells
+	* automatic upload of stemcells using url/sha1
+	* propagating stemcell upgrades
+
+COMMANDS
+@~include=topic{"category":"command","scope":"stemcells","desc":"inline","leader":"  <<SCRIPT_NAME>> "}
+@~scope=stemcells
+
+SEE ALSO
+@~include=topic{"category":"concept","partial":"Cached-Definitions","desc":"inline","leader":"  "}
+dox-concept:Stemcells
+
+: <<'dox-command:stemcells'
+USAGE
+	<<SCRIPT_NAME>> stemcells [<site> [<env>]]
+
+DESCRIPTION
+	Lists the stemcell name + version in use by the specified site or
+	environment.  If no arguments are specified, you must be in a
+	site/environment directory.
+
+ARGUMENTS
+	site (optional)
+		if this is the sole argument, the stemcell used by the named site will be
+		displayed.  This is identical to the behaviour when run in a site directory
+		with no arguments.
+
+		Note: If in an environment directory, and just the site argument is
+		supplied, it will display the stemcell for the environment of the same name
+		as the current environment directory under the given site.
+
+	env (optional)
+		will show the stemcell used by the specified environment under the given
+		site.  This is identical to if no arguments are given when run from an
+		environment directory.
+
+SEE ALSO
+@~include=related{"items":["concept:Stemcells","command:use stemcell"]}
+@~scope=common,stemcells
+dox-command:stemcells
+
+cmd_stemcells() {
+	local site env
+	while (( $# )); do
+		arg=$1 ; shift
+		case ${arg} in
+		(-*) bad_usage_no_opts ;;
+		(*)
+			if [[ -z ${site} ]]; then  site=${site}
+			elif [[ -z ${env} ]]; then env=${arg}
+			else bad_usage_extra "$arg"
+			fi
+			;;
+		esac
+	done
+
+	setup
+	site=${site:-$DEPLOYMENT_SITE}
+	env=${env:-$DEPLOYMENT_ENVIRONMENT}
+	local path=""
+	if [[ -n ${env} ]]; then
+		path="${DEPLOYMENT_ROOT}/${site}/${env}/.site/stemcell"
+	elif  [[ -n ${site} ]]; then
+		path="${DEPLOYMENT_ROOT}/${site}/site/stemcell"
+	else
+		bad_usage_missing "site and/or env, or not in correct directory"
+	fi
+
+	if [[ -f "${path}/alias" ]] ; then # v2 Style
+		local sc_alias="$(cat ${path}/alias)"
+		local name
+		if [[ -f "${path}/os" ]] ; then
+			name="OS:$(cat ${path}/os)"
+		else
+			name="$(cat ${path}/name)"
+		fi
+
+		printf "%s/%s (v2 Manifest alias: %s)\n" "$name" $(cat "${path}/version") "$sc_alias"
+	elif [[ -f "${path}/name" ]] ; then # v1 Style
+		printf "%s/%s\n" $(cat ${path}/name) $(cat ${path}/version)
+	else
+		echo "ERROR: No stemcell found."
+		exit 2
+	fi
+}
+: <<'dox-command:use-stemcell'
+USAGE
+@~include=usage{"args":"[-a|--alias <alias> [--os]] <name> [<version>]"}
+
+DESCRIPTION
+	When inside a site or environment directory, takes the provided stemcell
+	name, and updates the site directory to use that stemcell. You can
+	optionally specify the version of the stemcell to be used as a second
+	argument after the stemcell name.
+
+	For v1 manifests that do not use cloud config, you only specify name and
+	optionally version.
+
+	To generate v2-compatible manifests, you must also specify --alias <alias>
+	and optionally the --os option.
+
+ARGUMENTS
+	name
+		This is the full name of the stemcell, or a shorthand of the name (see the
+		table below).  If the --os option is specified, this name is the name of
+		the os (ie ubuntu-trusty)
+
+	--os
+		This changes the meaning of the name argument, from the name of the stem-
+		cell to the name of the OS.  This can only be used if you also specify the
+		--alias option.
+
+	-a|--alias <alias>
+		Used to specify the stemcell alias as used by v2-style manifests to refer
+		to a stemcell specified in the cloud config on the BOSH Director.
+
+	version
+		The version of the stemcell to be used.  If omitted, it will default to
+		`latest`.  Other valid versions are an explicit numerical version or
+		`track` to indicate the most recent version found in the Genesis Index.
+		Note: you cannot track against OS, only named stemcells.
+
+STEMCELL SHORTHAND NAMES
+	aws:       bosh-aws-xen-hvm-ubuntu-trusty-go_agent
+	azure,
+	hyperv:    bosh-azure-hyperv-ubuntu-trusty-go_agent
+	openstack: bosh-openstack-kvm-ubuntu-trusty-go_agent
+	vcloud:    bosh-vcloud-esxi-ubuntu-trusty-go_agent
+	vsphere:   bosh-vsphere-esxi-ubuntu-trusty-go_agent
+	warden,
+	bosh-lite: bosh-warden-boshlite-ubuntu-trusty-go_agent"
+
+SEE ALSO
+@~include=related{"items":"concept:Stemcells"}
+
+@~scope=common,stemcells
+dox-command:use-stemcell
 cmd_use_stemcell() {
-	local USAGE="use stemcell <name>"
-	local name version
+	local name version sc_alias os
 
 	while (( $# )); do
 		arg=$1 ; shift
 		case ${arg} in
+		(-a|--alias)
+			check_opt_usage "$arg" "$1"
+			sc_alias=$1
+			shift
+			;;
+		(--os)
+			os=true
+			;;
 		(-*)
-			bad_usage ${USAGE}
+			bad_usage_invalid_opt "$arg"
 			;;
 		(*)
 			if [[ -z ${name} ]]; then
@@ -2110,211 +2564,146 @@ cmd_use_stemcell() {
 			elif [[ -z ${version} ]]; then
 				version=${arg}
 			else
-				bad_usage ${USAGE}
+				bad_usage
 			fi
 			;;
 		esac
 	done
-	[[ -n ${name} ]] || bad_usage ${USAGE}
+
+	[[ $os && -z $sc_alias ]] && bad_usage "Cannot specify --os without --alias <alias>"
+	[[ $os && "${name}" == "track" ]] && bad_usage "Cannot track against OS"
+	[[ -n ${name} ]] || bad_usage_missing "name"
 	version=${version:-latest}
 
 	must_be_in_a_site
 
+	if [[ "$DEPLOYMENT_TYPE" == 'bosh-init' && -n "$sc_alias" ]] ; then
+		bad_usage "bosh-init cannot use v2-style manifests"
+	fi
+
 	# resolve aliases
 	case ${name} in
-	(aws)
-		name="bosh-aws-xen-hvm-ubuntu-trusty-go_agent"
-		;;
-	(azure|hyperv)
-		name="bosh-azure-hyperv-ubuntu-trusty-go_agent"
-		;;
-	(openstack)
-		name="bosh-openstack-kvm-ubuntu-trusty-go_agent"
-		;;
-	(vcloud)
-		name="bosh-vcloud-esxi-ubuntu-trusty-go_agent"
-		;;
-	(vsphere)
-		name="bosh-vsphere-esxi-ubuntu-trusty-go_agent"
-		;;
-	(warden|bosh-lite)
-		name="bosh-warden-boshlite-ubuntu-trusty-go_agent"
-		;;
+		(aws)              name="bosh-aws-xen-hvm-ubuntu-trusty-go_agent"     ;;
+		(azure|hyperv)     name="bosh-azure-hyperv-ubuntu-trusty-go_agent"    ;;
+		(openstack)        name="bosh-openstack-kvm-ubuntu-trusty-go_agent"   ;;
+		(vcloud)           name="bosh-vcloud-esxi-ubuntu-trusty-go_agent"     ;;
+		(vsphere)          name="bosh-vsphere-esxi-ubuntu-trusty-go_agent"    ;;
+		(warden|bosh-lite) name="bosh-warden-boshlite-ubuntu-trusty-go_agent" ;;
 	esac
 
+	echo "Site ${DEPLOYMENT_SITE} stemcell:"
 	mkdir -p ${DEPLOYMENT_SITE_DIR}/site/stemcell
-	echo "${name}"    > ${DEPLOYMENT_SITE_DIR}/site/stemcell/name
-	echo "${version}" > ${DEPLOYMENT_SITE_DIR}/site/stemcell/version
-
+	rm       "${DEPLOYMENT_SITE_DIR}/site/stemcell/*" >/dev/null 2>&1
+	local name_file="name"
+	if [[ -n "$sc_alias" ]] ; then
+		echo "  - v2 manifest alias '$sc_alias'"
+		echo "${sc_alias}" > "${DEPLOYMENT_SITE_DIR}/site/stemcell/alias"
+		[[ $os ]] && name_file="os"
+	fi
+	echo "${name}"    > "${DEPLOYMENT_SITE_DIR}/site/stemcell/$name_file"
+	echo "${version}" > "${DEPLOYMENT_SITE_DIR}/site/stemcell/version"
+	echo "  - ${name_file} '${name}'";
 	case ${version} in
 	(latest)
-		echo "Site ${DEPLOYMENT_SITE} is now using the latest version of stemcell ${name} (per BOSH director)"
+		echo "  - using the latest version on BOSH director"
 		;;
 	(track)
-		echo "Site ${DEPLOYMENT_SITE} is now tracking the latest version of stemcell ${name} via the Genesis Index"
+		echo "  - tracking the latest version via the Genesis Index"
 		;;
 	(*)
-		echo "Site ${DEPLOYMENT_SITE} is now using stemcell ${name} v${version}"
+		echo "  - version ${version}"
 		;;
 	esac
 	exit 0
 }
 
-bad_use() {
-	local arg=${1}
-	cat >&2 <<EOF
-USAGE: genesis use release
-       genesis use stemcell
-EOF
-	exit 1
-}
+: <<'dox-command:build'
+USAGE
+@~include=usage{"args":"[<manifest-file>]"}
 
-cmd_stemcells() {
-	local USAGE="stemcells [<site> [<env>]]"
-	local site env
-	while (( $# )); do
-		arg=$1 ; shift
-		case ${arg} in
-		(-*)
-			bad_usage ${USAGE}
-			;;
-		(*)
-			if [[ -z ${site} ]]; then
-				site=${arg}
-			elif [[ -z ${env} ]]; then
-				env=${arg}
-			else
-				bad_usage ${USAGE}
-			fi
-			;;
-		esac
-	done
+DESCRIPTION
+	Compiles all of the YAML templates down to a single BOSH manifest for the
+	current environment.
 
-	setup
-	site=${site:-$DEPLOYMENT_SITE}
-	env=${env:-$DEPLOYMENT_ENVIRONMENT}
+ARGUMENTS
+  manifest-file (optional, default: manifest.yml)
+		The file into which the manifest YAML document is written.
 
-	if [[ -n ${env} ]]; then
-		name=$(cat ${DEPLOYMENT_ROOT}/${site}/${env}/.site/stemcell/name)
-		vers=$(cat ${DEPLOYMENT_ROOT}/${site}/${env}/.site/stemcell/version)
-		printf "%s/%s\n" ${name} ${vers}
-		return
-	fi
-
-	if [[ -n ${site} ]]; then
-		name=$(cat ${DEPLOYMENT_ROOT}/${site}/site/stemcell/name)
-		vers=$(cat ${DEPLOYMENT_ROOT}/${site}/site/stemcell/version)
-		printf "%s/%s\n" ${name} ${vers}
-		return
-	fi
-
-	cat >&2 <<EOF
-USAGE: genesis stemcells <site> [<env>]
-
-(you can also \`cd\` into a site or environment directory
- and just run \`genesis stemcells\` without any arguments)
-EOF
-	exit 1
-}
-
-cmd_releases() {
-	local USAGE="releases [<site> [<env>]]"
-	local site env
-	while (( $# )); do
-		arg=$1 ; shift
-		case ${arg} in
-		(-*)
-			bad_usage ${USAGE}
-			;;
-		(*)
-			if [[ -z ${site} ]]; then
-				site=${arg}
-			elif [[ -z ${env} ]]; then
-				env=${arg}
-			else
-				bad_usage ${USAGE}
-			fi
-			;;
-		esac
-	done
-
-	setup
-	site=${site:-$DEPLOYMENT_SITE}
-	env=${env:-$DEPLOYMENT_ENVIRONMENT}
-
-	if [[ -n ${env} ]]; then
-		for rel in $(releases_for_environment ${site} ${env}); do
-			vers=$(cat ${DEPLOYMENT_ROOT}/${site}/${env}/.global/releases/${rel}/version)
-			printf "%s/%s\n" ${rel} ${vers}
-		done
-		return
-	fi
-
-	if [[ -n ${site} ]]; then
-		for rel in $(releases_for_site ${site}); do
-			vers=$(cat ${DEPLOYMENT_ROOT}/global/releases/${rel}/version)
-			printf "%s/%s\n" ${rel} ${vers}
-		done
-		return
-	fi
-
-	cat >&2 <<EOF
-USAGE: genesis releases <site> [<env>]
-
-(you can also \`cd\` into a site or environment directory
- and just run \`genesis releases\` without any arguments)
-EOF
-	exit 1
-}
-
+@~scope=make
+dox-command:build
 cmd_build() {
-	local USAGE="build [output.yml]"
 	local target
 	while (( $# )); do
 		arg=$1 ; shift
 		case ${arg} in
-		(-*)
-			bad_usage ${USAGE}
-			;;
+		(-*) bad_usage_invalid_opt "$arg"	;;
 		(*)
-			if [[ -z ${target} ]]; then
-				target=${arg}
-			else
-				bad_usage ${USAGE}
-			fi
+			[[ -z ${target} ]] || bad_usage_extra "$arg" "manifest-file" "$target"
+			target=${arg}
 			;;
 		esac
 	done
 	target=${target:-manifest.yml}
-
 	must_be_in_an_environment
-
 	mkdir -p ${DEPLOYMENT_ENV_DIR}/manifests
-
 	build_manifest > ${DEPLOYMENT_ENV_DIR}/manifests/${target}
 	exit 0
 }
 
-cmd_refresh_global() {
-	[[ -z $1 ]] || bad_usage "refresh global"
+: <<'dox-concept:Cached-Definitions'
+DESCRIPTION
+	Global and site definitions are cached in each environment in order to
+	mitigate premature changes impacting other environments prematurely.
 
-	must_be_in_an_environment
-	echo "Refreshing global definitions for ${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}"
-	refresh_global ${DEPLOYMENT_SITE} ${DEPLOYMENT_ENVIRONMENT}
-	exit 0
-}
+	As explained in the Structure concept documents, Genesis organizes the parts
+	of the manifest definitions into those that apply globally, site-wide and to
+	a specific environment.  However, since deployments are capable of changing
+	over time (upgrades, bug fixes, expanded functionality), how do you ensure
+	changes propagate correctly.
 
-cmd_refresh_site() {
-	[[ -z $1 ]] || bad_usage "refresh site"
+	To solve this, the shared global and site level definitions are cached in
+	each environment, under .global and .site directories respectively.  This
+	allows that environment to deploy environment level changes (ie scaling)
+	without worrying that the global and site definitions haven't changed.
 
-	must_be_in_an_environment
-	echo "Refreshing site definitions for ${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}"
-	refresh_site ${DEPLOYMENT_SITE} ${DEPLOYMENT_ENVIRONMENT}
-	exit 0
-}
+	When making global and/or site level changes, they can be applied to specific
+	environments by using the `genesis refresh` command (or the associated
+	`make refresh`).  This allows controlled deployment of these changes across
+	environments.  This can be automated by using the built-in CI functionality.
 
+COMMANDS
+@~include=topic{"category":"command","scope":"refresh","desc":"inline","leader":"  <<SCRIPT_NAME>> "}
+
+SEE ALSO
+@~include=related{"items":["concept:Structure","concept:Makefiles","concept:CI"]}
+@~scope=makefile
+dox-concept:Cached-Definitions
+
+: <<'dox-partial:refresh'
+USAGE
+@~include=usage{"args":"[(global|site|all|makefile|readme)]"}
+
+DESCRIPTION
+	Refresh the cached copies of site and/or global definitions inside the current
+	environment directory.  Can also be used to recreate the Makefile and readme
+	files after a Genesis upgrade.  If run without a subcommand, it will default
+	to 'all'.
+dox-partial:refresh
+
+: <<'dox-command:refresh-all'
+USAGE
+@~include=usage{"cmd":"refresh [all]"}
+
+DESCRIPTION
+	Refresh (or create) the cached copies of site and global definitions inside
+	the current environment directory.  This is the default action if no refresh
+	subcommand is specified.
+
+@~group=refresh
+@~scope=make
+dox-command:refresh-all
 cmd_refresh_all() {
-	[[ -z $1 ]] || bad_usage "refresh all"
+	[[ -z $1 ]] || bad_usage_no_args
 
 	must_be_in_an_environment
 	echo "Refreshing site definitions for ${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}"
@@ -2324,16 +2713,79 @@ cmd_refresh_all() {
 	exit 0
 }
 
+: <<'dox-command:refresh-global'
+USAGE
+@~include=usage
+
+DESCRIPTION
+	Create or refresh the files in the .global cached directory in the current
+	environment directory from the files in the ../../global directory.
+
+@~group=refresh
+@~scope=make
+dox-command:refresh-global
+cmd_refresh_global() {
+	[[ -z $1 ]] || bad_usage_no_args
+
+	must_be_in_an_environment
+	echo "Refreshing global definitions for ${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}"
+	refresh_global ${DEPLOYMENT_SITE} ${DEPLOYMENT_ENVIRONMENT}
+	exit 0
+}
+
+: <<'dox-command:refresh-site'
+USAGE
+@~include=usage
+
+DESCRIPTION
+	Create or refresh the files in the .site cached directory in the current
+	environment directory from the files in the ../site directory.
+
+@~group=refresh
+@~scope=make
+dox-command:refresh-site
+cmd_refresh_site() {
+	[[ -z $1 ]] || bad_usage_no_args
+
+	must_be_in_an_environment
+	echo "Refreshing site definitions for ${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}"
+	refresh_site ${DEPLOYMENT_SITE} ${DEPLOYMENT_ENVIRONMENT}
+	exit 0
+}
+
+: <<'dox-command:refresh-makefile'
+USAGE
+@~include=usage
+
+DESCRIPTION
+	Rebuild the Makefile for an environment, which can be useful to bring old
+	deployments in-line with newer versions of Genesis.
+
+@~group=refresh
+@~scope=makefile
+dox-command:refresh-makefile
 cmd_refresh_makefile() {
-	[[ -z $1 ]] || bad_usage "refresh makefiles"
+	[[ -z $1 ]] || bad_usage_no_args
 
 	must_be_in_an_environment
 	echo "Refreshing Makefile for ${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}"
 	create_makefile "${DEPLOYMENT_ENV_DIR}/Makefile"
 }
 
+: <<'dox-command:refresh-readmes'
+USAGE
+@~include=usage
+
+DESCRIPTION
+	Rebuild the various README files for the top-level and 'global' directories,
+	and all sites and environments, which can be useful to bring old deployments
+	in-line with newer versions of Genesis.
+
+@~group=refresh
+@~scope=make
+dox-command:refresh-readmes
 cmd_refresh_readmes() {
-	[[ -z $1 ]] || bad_usage "refresh readmes"
+	[[ -z $1 ]] || bad_usage_no_args
 
 	setup
 	echo "Refreshing README for the whole repository"
@@ -2352,26 +2804,20 @@ cmd_refresh_readmes() {
 	done
 }
 
-bad_refresh() {
-	local arg=${1}
-	cat >&2 <<EOF
-USAGE: genesis refresh (all|global|site|makefile|readme)
+: <<'dox-command:deploy'
+USAGE
+@~include=usage
 
-Refreshes the global and/or site definitions inside of a single environment,
-by copying in the definitions from upstream.
+DESCRIPTION
+	When run from inside of an environment directory, builds and deploys your
+	BOSH manifest. A redacted copy is left in the repo for posterity. The copy
+	deployed is non-redacted.
 
-The argument 'makefile' only rebuilds the Makefile for an environment,
-which can be useful to bring old deployments in-line with newer versions
-of Genesis.
-
-Similarly, 'readme' only recreates the various README files for the top-level,
-the global/ directories, and all sites and environments.
-EOF
-	exit 1
-}
-
+@~group=build
+@~scope=make
+dox-command:deploy
 cmd_deploy() {
-	[[ -z $1 ]] || bad_usage "deploy"
+	[[ -z $1 ]] || bad_usage_no_args
 
 	must_be_in_an_environment
 	preflight_deployment
@@ -2411,21 +2857,10 @@ cmd_deploy() {
 	esac
 }
 
-cmd_embed() {
-	[[ -z $1 ]] || bad_usage "embed"
-
-	echo "Embedding genesis script into repository"
-	setup
-
-	mkdir -p ${DEPLOYMENT_ROOT}/bin
-	cp ${BASH_SOURCE[0]} ${DEPLOYMENT_ROOT}/bin/genesis
-	chmod 755 ${DEPLOYMENT_ROOT}/bin/genesis
-
-	${DEPLOYMENT_ROOT}/bin/genesis version
-}
+### CI SUPPORT FUNCTIONS
 
 ci_smoke_test() {
-	local smoke_test=$(spruce json ${DEPLOYMENT_ROOT}/.ci.yml | jq -r '.smoke_test')
+	local smoke_test=$(spruce json $(ci_pipeline_yaml) | jq -r '.smoke_test')
 
 	if [[ ${smoke_test} != 'null' ]]; then
 		echo ${smoke_test}
@@ -2436,20 +2871,20 @@ ci_environment_type() {
 	local site=${1:?ci_environment_type() - no site given}
 	local env=${2:?ci_environment_type() - no environment given}
 
-	local alpha=$(spruce json ${DEPLOYMENT_ROOT}/.ci.yml | jq -r ".alpha")
+	local alpha=$(spruce json $(ci_pipeline_yaml) | jq -r ".alpha")
 	if [[ "${site}/${env}" == $alpha ]]; then
 		echo "alpha"
 		return
 	fi
 
-	local beta=$(spruce json ${DEPLOYMENT_ROOT}/.ci.yml | jq -r ".sites[\"${site}\"].beta")
+	local beta=$(spruce json $(ci_pipeline_yaml) | jq -r ".sites[\"${site}\"].beta")
 	if [[ "${env}" == $beta ]]; then
 		echo "beta"
 		return
 	fi
 
 	# otherwise, is it automatically updatable?
-	local auto=$(spruce json ${DEPLOYMENT_ROOT}/.ci.yml | jq -r ".sites[\"${site}\"].auto[\"${env}\"] // \"\"")
+	local auto=$(spruce json $(ci_pipeline_yaml) | jq -r ".sites[\"${site}\"].auto[\"${env}\"] // \"\"")
 	if [[ -n ${auto} ]]; then
 		echo "gamma"
 	else
@@ -2458,12 +2893,12 @@ ci_environment_type() {
 }
 
 ci_alpha_environment() {
-	spruce json ${DEPLOYMENT_ROOT}/.ci.yml | jq -r ".alpha"
+	spruce json $(ci_pipeline_yaml) | jq -r ".alpha"
 }
 
 ci_beta_environment_for() {
 	local site=${1:?ci_beta_environment_for() - no site given}
-	local env=$(spruce json ${DEPLOYMENT_ROOT}/.ci.yml | jq -r ".sites[\"${site}\"].beta // \"\"")
+	local env=$(spruce json $(ci_pipeline_yaml) | jq -r ".sites[\"${site}\"].beta // \"\"")
 	if [[ -n ${env} ]]; then
 		echo "${site}/${env}"
 	fi
@@ -2473,7 +2908,7 @@ ci_beta_environment_for() {
 ci_parent_environment_for() {
 	local site=${1:?ci_parent_environment_for() - no site given}
 	local env=${2:?ci_parent_environment_for() - no env given}
-	local parent=$(spruce json ${DEPLOYMENT_ROOT}/.ci.yml | jq -r ".sites[\"${site}\"][\"${env}\"].parent // \"\"")
+	local parent=$(spruce json $(ci_pipeline_yaml) | jq -r ".sites[\"${site}\"][\"${env}\"].parent // \"\"")
 
 	if [[ -n ${parent} ]]; then
 		echo "${site}/${parent}"
@@ -2490,7 +2925,7 @@ ci_gamma_environments_for() {
 		if [[ "${site}/${env}" == "${beta}" || "${site}/${env}" == "${alpha}" ]]; then
 			continue
 		fi
-		local auto=$(spruce json ${DEPLOYMENT_ROOT}/.ci.yml | jq -r ".sites[\"${site}\"].auto[\"${env}\"] // \"\"")
+		local auto=$(spruce json $(ci_pipeline_yaml) | jq -r ".sites[\"${site}\"].auto[\"${env}\"] // \"\"")
 		if [[ -n ${auto} ]]; then
 			echo ${site}/${env}
 		fi
@@ -2534,7 +2969,10 @@ EOF
 #
 #meta:
 #  # This is the name of your pipeline
-#  name: Pipeline Name
+#  name: $DEPLOYMENT_NAME
+#
+#  # This is where you set your visibility of the pipeline
+#  public_pipeline: # set to true or false
 #
 #  # This is the name of your fly target
 #  target: proto
@@ -2570,7 +3008,7 @@ EOF
 
 	local alpha=""
 	ensure_ci_configuration
-	for site in $(all_sites); do
+	for site in $(all_pipeline_sites); do
 		local beta=""
 		local numenvs=0
 		for env in $(all_environments_for ${site}); do
@@ -2634,7 +3072,7 @@ EOF
 
 ci_update() {
 	# emulate:
-	#   echo "some: change" | spruce merge -i ${DEPLOYMENT_ROOT}/.ci.yml
+	#   echo "some: change" | spruce merge -i $(ci_pipeline_yaml)
 
 	ensure_ci_configuration
 
@@ -2642,10 +3080,19 @@ ci_update() {
 	cat > ${WORKDIR}/update.yml
 	ensure_yaml_file ${WORKDIR}/update.yml
 
-	if spruce merge "$@" ${DEPLOYMENT_ROOT}/.ci.yml ${WORKDIR}/update.yml > ${WORKDIR}/.ci.yml; then
-		mv ${WORKDIR}/.ci.yml ${DEPLOYMENT_ROOT}/.ci.yml
+	if spruce merge "$@" $(ci_pipeline_yaml) ${WORKDIR}/update.yml > ${WORKDIR}/.ci.yml; then
+		mv ${WORKDIR}/.ci.yml $(ci_pipeline_yaml)
 	fi
 }
+
+ci_pipeline_yaml() {
+	if [[ -n ${CI_PIPELINE:-} ]]; then
+		echo ${DEPLOYMENT_ROOT}/.ci.yml
+	else
+		echo ${DEPLOYMENT_ROOT}/.ci.${CI_PIPELINE}.yml
+	fi
+}
+
 
 need_ci_git_access() {
 	[ -z ${GIT_USERNAME} ] && GIT_USERNAME="Concourse Bot"
@@ -2696,22 +3143,169 @@ ci_commit() {
 	fi
 }
 
+ci_pipeline_yaml() {
+	if [[ -n ${CI_PIPELINE:-} ]]; then
+		echo ${DEPLOYMENT_ROOT}/.ci.${CI_PIPELINE}.yml
+	else
+		echo ${DEPLOYMENT_ROOT}/.ci.yml
+	fi
+}
+
+: <<'dox-concept:CI'
+DESCRIPTION
+  When making a change to a deployment, you want to make sure it causes the
+  least impact and has the highest chance of catching an issue early.  Genesis
+  provides an integrated CI/CD solution that is built on Concourse to ensure
+  that changes to your deployments can propagate through your environments
+  safely.
+
+  Changes come to the manifest from the sources:  global changes that impact
+  all deployments, site changes that only impact all environments in that site
+  and changes that are isolated to a specific environment.
+
+  Changes at the global level are called alpha changes.  These can be tested on
+  a single isolated environment to ensure that they can be deployed with golden
+  configuration for site and env.
+
+  Changes at the site level are called beta changes.  They are applied on top
+  of the last known-good alpha chagnes that passed.  One environment for the
+  site is picked as a `beta environment` on which the deployment is tested.
+
+  Environment changes need to be applied to the target environment, and will be
+  applied over the known-good beta changes.
+
+WORKFLOW
+  The CI pipeline is created as follows:
+
+                   .-------.
+  global changes ->| alpha |--+--+--+
+                   '-------'  |  |  |
+      .-SITE-C----------------|--|--v---------------------------------------.
+    .-SITE-B------------------|--v----------------------------------------. |
+  .-SITE-A--------------------|-----------------------------------------. | |
+  |                  .--------'                                         | | |
+  |                  |  .---------.                                     | | |
+  |                  '->| beta:   |---.                                 | | |
+  | site changes ------>| SITE-A/ |-. |  .---------.        .---------. | | |
+  | 'sandbox' changes ->| sandbox | | +->| notify: |- - - ->| manual: | | | |
+  |                     '---------' +-|->| SITE-A/ |- - - ->| SITE-A/ | | | |
+  | 'dev' changes ------------------|-|->| dev     |- - - ->| dev     | | | |
+  |                                 | |  '---------'        '---------' | | |
+  |                                 | |  .---------.        .---------. | | |
+  |                                 | '->| auto    |---+--->| auto:   | | | |
+  |                                 '--->| SITE-A/ |-+-|--->| SITE-A/ | | | |
+  | 'qa' changes ----------------------->| qa      | | | .->| live    | | | |
+  |                                      '---------' | | |  '---------' | | |
+  | 'live' changes ----------------------------------|-|-'              | | |
+  |                                 .----------------' |                | | |
+  |                                 | .----------------'                | | |
+  |                                 | |  .---------.        .---------. | | |
+  |                                 ' '->| notify: |- - - ->| manual: | | | |
+  |                                 '--->| SITE-A/ |- - - ->| SITE-A/ | | | |
+  | 'prod' changes --------------------->| prod    |- - - ->| prod    | | |-'
+  |                                      '---------'        '---------' |-'
+  '---------------------------------------------------------------------'
+
+  In the example pipeline above, there are three sites: SITE-A, SITE-B and
+  SITE-C.  Let's walk through what happens:
+
+	alpha
+  * Any changes to /global will trigger a deployment on the alpha environment.
+		A successful deployment will be used as a triggering input for the beta
+		environments on each site.  We will focus on SITE-A, but all sites will
+		operate the same way.
+
+	beta:SITE-A/sandbox
+	* A successful deployment on the alpha site will trigger a deployment on
+		beta: SITE-A/sandbox environment using the global changes that just passed
+		and the last known good SITE-A site changes as well.
+
+	* Any changes to SITE-A/site will also trigger a deployment on
+		beta:SITE-A/sandbox, which will use the last passed global changes as well.
+
+	* A change to the SITE-A/sandbox directory will also trigger a deployment on
+		beta:SITE-A/sandbox environment using the last known good global and site
+		changes.  However, a successful deployment will NOT trigger any downstream
+		deployments.
+
+	REMAINING ENVIRONMENTS
+
+	The four remaining environments in SITE-A are dev, qa, live and prod.  They
+	are configured as:
+		qa:   'auto' environment.
+		dev:  'manual' environment.
+		live: 'auto' environment, with SITE-A/qa as parent.
+		prod: 'manual' environment, with SITE-A/qa as parent.
+
+	notify:SITE-A/dev + manual:SITE-A/dev
+	* Because 'dev' is manual, the successful deployment of beta:SITE-A/sandbox
+		does not trigger the deployment on SITE-A/dev.  Instead, it sends out a
+		notification that SITE-A/dev is ready to be deployed.  This notification
+		will instruct the receiver to visit the Concourse link for SITE-A/dev and
+		click the (+) button, which will manually start the deployment.
+
+	* A change to SITE-A/dev environment directory will also trigger a
+		notification instead of starting the deployment.
+
+	auto:SITE-A/qa
+	* Because 'qa' is auto, a deployment will be triggered by a successful
+		deployment of beta/SITE-A/sandbox that was due to global or site changes.
+
+	* Changes to SITE-A/qa directory will also trigger a deployment on
+		auto:SITE-A/qa, but its success will not trigger further downstream
+		deployments.
+
+	auto:SITE-A/live
+	* This operates similar to SITE-A/qa, but instead of being triggered by a
+		successful deployment of beta:SITE-A/sandbox, it is triggered by a
+		successful deployment of auto:SITE-A/qa (for site or global changes).
+
+	notify:SITE-A/prod + manual:SITE-A/prod
+	* Similar to SITE-A/dev in behaviour, except its notification istriggered on
+		a successful deployment due to global or site changes on auto:SITE-A/qa
+
+SEE ALSO
+@~include=topic{"category":"command","desc":"inline","leader":"  ","partial":"ci"}
+dox-concept:CI
+
+: <<'dox-partial:ci'
+DESCRIPTION
+  Manages the CI pipeline configurations.
+dox-partial:ci
+
+### CI API Commands
+
+: <<'dox-command:ci-alpha'
+USAGE
+@~include=usage{"args":"[-p|--pipeline <name>] [<site>/<env>]"}
+
+DESCRIPTION
+	Sets the specified or current environment as the alpha enviroment in the
+	specified or default pipeline.
+
+ARGUMENTS
+	-p|--pipeline <name>
+		the name of the pipeline to be configured.  Defaults to the deployment name
+
+	<site>/<env>
+		This is the path to the environment relative to the deployment root
+		directory.  If this command is issued within an environment directory, it
+		defaults to the current directory; otherwise, it is required.
+
+SEE ALSO:
+@~include=related{"items":["concept:CI","command:ci-beta","command:ci-auto","command:ci-manual","command:ci-parent","command:ci-repipe","command:ci-flow"]}
+@~scope=ci
+dox-command:ci-alpha
 cmd_ci_alpha() {
-	local USAGE="ci alpha [<site/env>]"
 	local site_env
 
 	while (( $# )); do
 		arg=$1 ; shift
 		case ${arg} in
-		(-*)
-			bad_usage ${USAGE}
-			;;
+		(-*) bad_usage_no_opts ;;
 		(*)
-			if [[ -z ${site_env} ]]; then
-				site_env=${arg}
-			else
-				bad_usage ${USAGE}
-			fi
+			[[ -z ${site_env} ]] || bad_usage_extra "$arg" "<site>/<env>" "$site_env"
+			site_env=${arg}
 			;;
 		esac
 	done
@@ -2735,20 +3329,49 @@ sites:
 EOF
 }
 
+: <<'dox-command:ci-beta'
+USAGE
+@~include=usage{"args":"[-p|--pipeline <name>] [<site>/<env> [... <siteN>/<envN>]]"}
+
+DESCRIPTION
+	Sets the specified or current environment as the beta enviroment for its
+	associated site in the specified or default pipeline.
+
+ARGUMENTS
+	-p|--pipeline <name>
+		the name of the pipeline to be configured.  Defaults to the deployment name
+
+	<site>/<env>
+		This is the path to the environment relative to the deployment root
+		directory.  If this command is issued within an environment directory, it
+		defaults to the current directory; otherwise, it is required.
+
+		You can specify 0 or more <site>/<env> pairs in a single call.
+
+SEE ALSO:
+@~include=related{"items":["concept:CI","command:ci-alpha","command:ci-auto","command:ci-manual","command:ci-parent","command:ci-repipe","command:ci-flow"]}
+@~scope=ci
+dox-command:ci-beta
 cmd_ci_beta() {
-	local USAGE="ci beta [<site/env> ...]"
+
+	site_envs=()
+	while (( $# )); do
+		arg=$1 ; shift
+		case ${arg} in
+		(-*) bad_usage_no_opts ;;
+		(*)  site_envs+=($arg) ;;
+		esac
+	done
 
 	setup
-	if [[ $# -eq 0 ]]; then
+	if [[ ${#site_envs} -eq 0 ]]; then
 		must_be_in_an_environment
-		set -- "${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}"
+		site_envs+=("${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}")
 	fi
-	for site_env in "$@"; do
-		[[ ${site_env} =~ ^- ]] && bad_usage ${USAGE}
-
+	for site_env in "${site_envs[@]}"; do
 		check_environment $site_env
 		local site=${site_env%%/*}
-		local env=${site_env##*/}
+		local env=${site_env#*/}
 		ci_update <<EOF
 ---
 sites:
@@ -2760,41 +3383,46 @@ EOF
 	done
 }
 
-cmd_ci_parent() {
-	local USAGE="ci parent <target_site/target_env> <parent_env> "
 
-	setup
+: <<'dox-command:ci-auto'
+USAGE
+@~include=usage{"args":"[-p|--pipeline <name>] [<site>/<env> [... <siteN>/<envN>]]"}
 
-	local target=${1}
-	local parent_env=${2}
-	[[ -z ${target} || -z ${parent_env} ]] && bad_usage ${USAGE}
+DESCRIPTION
+	Sets the specified or current environment as an automatically triggered
+	enviroment within its associated site in the specified or default pipeline.
 
-	local target_site=${target%%/*}
-	local target_env=${target##*/}
+ARGUMENTS
+	-p|--pipeline <name>
+		the name of the pipeline to be configured.  Defaults to the deployment name
 
-	check_environment ${target}
-	check_environment "${target_site}/${parent_env}"
+	<site>/<env>
+		This is the path to the environment relative to the deployment root
+		directory.  If this command is issued within an environment directory, it
+		defaults to the current directory; otherwise, it is required.
 
-	ci_update <<EOF
----
-sites:
-  ${target_site}:
-    ${target_env}:
-      parent: ${parent_env}
-EOF
-}
+		You can specify 0 or more <site>/<env> pairs in a single call.
 
+SEE ALSO:
+@~include=related{"items":["concept:CI","command:ci-alpha","command:ci-beta","command:ci-manual","command:ci-parent","command:ci-repipe","command:ci-flow"]}
+@~scope=ci
+dox-command:ci-auto
 cmd_ci_auto() {
-	local USAGE="ci auto [<site/env> ...]"
+	site_envs=()
+	while (( $# )); do
+		arg=$1 ; shift
+		case ${arg} in
+		(-*) bad_usage_no_opts ;;
+		(*)  site_envs+=($arg) ;;
+		esac
+	done
 
 	setup
-	if [[ $# -eq 0 ]]; then
+	if [[ ${#site_envs} -eq 0 ]]; then
 		must_be_in_an_environment
-		set -- "${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}"
+		site_envs+=("${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}")
 	fi
-	for site_env in "$@"; do
-		[[ ${site_env} =~ ^- ]] && bad_usage ${USAGE}
-
+	for site_env in "${site_envs[@]}"; do
 		check_environment $site_env
 		local site=${site_env%%/*}
 		local env=${site_env##*/}
@@ -2808,35 +3436,45 @@ EOF
 	done
 }
 
-cmd_ci_smoke_test() {
-	local USAGE="ci smoke-test <errand>"
-	local errand_name=${1}
+: <<'dox-command:ci-manual'
+USAGE
+@~include=usage{"args":"[-p|--pipeline <name>] [<site>/<env> [... <siteN>/<envN>]]"}
 
-	if [[ -z ${errand_name} ]]; then
-		bad_usage ${USAGE}
-		exit 1
-	fi
+DESCRIPTION
+	Sets the specified or current environment as an manually triggered
+	enviroment within its associated site in the specified or default pipeline.
 
-	setup
+ARGUMENTS
+	-p|--pipeline <name>
+		the name of the pipeline to be configured.  Defaults to the deployment name
 
-	ci_update <<EOF
----
-smoke_test: ${errand_name}
-EOF
-}
+	<site>/<env>
+		This is the path to the environment relative to the deployment root
+		directory.  If this command is issued within an environment directory, it
+		defaults to the current directory; otherwise, it is required.
 
+		You can specify 0 or more <site>/<env> pairs in a single call.
+
+SEE ALSO:
+@~include=related{"items":["concept:CI","command:ci-alpha","command:ci-beta","command:ci-auto","command:ci-parent","command:ci-repipe","command:ci-flow"]}
+@~scope=ci
+dox-command:ci-manual
 cmd_ci_manual() {
-	local USAGE="ci manual [<site/env> ...]"
+	site_envs=()
+	while (( $# )); do
+		arg=$1 ; shift
+		case ${arg} in
+		(-*) bad_usage_no_opts ;;
+		(*)  site_envs+=($arg) ;;
+		esac
+	done
 
 	setup
-	if [[ $# -eq 0 ]]; then
+	if [[ ${#site_envs} -eq 0 ]]; then
 		must_be_in_an_environment
-		set -- "${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}"
+		site_envs+=("${DEPLOYMENT_SITE}/${DEPLOYMENT_ENVIRONMENT}")
 	fi
-	rc=0
-	for site_env in "$@"; do
-		[[ ${site_env} =~ ^- ]] && bad_usage ${USAGE}
-
+	for site_env in "${site_envs[@]}"; do
 		check_environment $site_env
 		local site=${site_env%%/*}
 		local env=${site_env##*/}
@@ -2871,13 +3509,120 @@ EOF
 	done
 }
 
+: <<'dox-command:ci-parent'
+USAGE
+@~include=usage{"args":"[-p|--pipeline <name>] [<site>/<env>] <parent_env>"}
+@~include=usage{"args":"[-p|--pipeline <name>] [<site>/<env>] -c|--clear"}
+
+DESCRIPTION
+	Sets the parent environment for specified or current environment in the
+	specified or default pipeline.  If no parent is set, the beta environment
+	for the site is assumed.
+
+ARGUMENTS
+	-p|--pipeline <name>
+		the name of the pipeline to be configured.  Defaults to the deployment name
+
+	<site>/<env>
+		This is the path to the environment relative to the deployment root
+		directory.  If this command is issued within an environment directory, it
+		defaults to the current directory; otherwise, it is required.
+
+SEE ALSO:
+@~include=related{"items":["concept:CI","command:ci-alpha","command:ci-beta","command:ci-auto","command:ci-manual","command:ci-repipe","command:ci-flow"]}
+@~scope=ci
+dox-command:ci-parent
+cmd_ci_parent() {
+	local target parent_env clear_parent
+	while (( $# )); do
+		arg=$1 ; shift
+		case ${arg} in
+		(-c|--clear) clear_parent=1 ;;
+		(-*) bad_usage_invalid_opt "$arg" ;;
+		(*/*)
+			[[ -z $target_site ]] || bad_usage_extra "$arg" "site/env" "$target_site/$target_env"
+			target="${arg}"
+			;;
+		(*)
+			[[ -z $parent_env ]] || bad_usage_extra "$arg" "parent-env" $parent_env
+			parent_env="${arg}"
+			;;
+		esac
+	done
+
+	[[ -n $clear_parent && -n $parent_env ]] && bad_usage "Cannot specify -c|--clear and parent_env"
+
+	setup
+	local target_site=${target%%/*}
+	local target_env=${target#*/}
+
+	target_site=${target_site:-$DEPLOYMENT_SITE}
+	target_env=${target_env:-$DEPLOYMENT_ENVIRONMENT}
+	[[ -n $target_env ]] || bad_usage "<site>/<env> must be specified when not in an environment directory"
+	check_environment "${target_site}/${target_env}"
+
+	if [[ -n $clear_parent ]] ; then
+		ci_update --prune "sites.[${target_site}].[${target_env}]" </dev/null
+		echo "Task for $target_site/$target_env will be started after beta environment."
+	else
+		check_environment "${target_site}/${parent_env}"
+		ci_update <<EOF
+---
+sites:
+  ${target_site}:
+    ${target_env}:
+      parent: ${parent_env}
+EOF
+		echo "Task for $target_site/$target_env will be started after $target_site/$parent_env"
+	fi
+}
+: <<'dox-command:ci-smoke-test'
+USAGE
+@~include=usage{"args":"[-p|--pipeline <name>] <errand>"}
+
+DESCRIPTION
+	Sets the smoke test errand for the specified or default pipeline.
+
+ARGUMENTS
+	-p|--pipeline <name>
+		the name of the pipeline to be configured.  Defaults to the deployment name
+
+	<errand>
+		This is the name of the errand to run as a smoke test.
+
+SEE ALSO:
+@~include=related{"items":["concept:CI","command:ci-repipe","command:ci-flow"]}
+@~scope=ci
+dox-command:ci-smoke-test
+
+cmd_ci_smoke_test() {
+	local errand_name=${1}
+	while (( $# )); do
+		arg=$1 ; shift
+		case ${arg} in
+		(-*) bad_usage_invalid_opt "$arg" ;;
+		(*)
+			[[ -z $errand_name ]] || bad_usage_extra "$arg" "errand" "$errand_name"
+			errand_name="${arg}"
+			;;
+		esac
+	done
+	[[ -z ${errand_name} ]] && bad_usage_missing 'errand'
+
+	setup
+	ci_update <<EOF
+---
+smoke_test: ${errand_name}
+EOF
+}
+
 ci_repipe_proto_job() {
 	local job_name=${1:?ci_repipe_proto_job() - no job name given}
 
 	cat <<EOF
 jobs:
   - name: ${job_name}
-    public: true
+    public: (( grab meta.public_pipeline ))
     serial: true
     plan:
       - aggregate:
@@ -2964,6 +3709,7 @@ ci_repipe_build_base() {
 ---
 meta:
   name: (( param "Please name this deployment pipeline (in ci/settings.yml)" ))
+  public_pipeline: false
   env: {}
 
   github:
@@ -3069,7 +3815,7 @@ groups:
 EOF
 
 	local rc=0
-	for site in $(all_sites); do
+	for site in $(all_pipeline_sites); do
 		if [[ ! -f ${DEPLOYMENT_ROOT}/${site}/site/stemcell/name ]]; then
 			echo >&2 "Site ${site} has no defined stemcell"
 			rc=1
@@ -3080,7 +3826,7 @@ EOF
 	fi
 
 
-	for site in $(all_sites); do
+	for site in $(all_pipeline_sites); do
 		local site_name=$(ci_name ${site})
 		local beta_env=$(ci_beta_environment_for ${site})
 		local beta_name=$(ci_name ${beta_env})
@@ -3433,8 +4179,35 @@ ci_repipe_merge() {
 	       $(actual_yaml_files ${DEPLOYMENT_ROOT}/ci/settings.yml) > ${DEPLOYMENT_ROOT}/ci/${target}
 }
 
+: <<'dox-command:ci-repipe'
+USAGE
+@~include=usage{"args":"[-p|--pipeline <name>] [-d|--draft]"}
+
+DESCRIPTION
+  Generate the given or default CI pipeline and push it to Concourse.
+
+ARGUMENTS
+	-p|--pipeline <name>
+		the name of the pipeline to be configured.  Defaults to the deployment name
+
+  -d|--draft
+		Don't push the pipeline, instead output it to STDOUT
+
+SEE ALSO
+@~include=related{"items":["concept:CI","command:ci-alpha","command:ci-beta","command:ci-auto","command:ci-manual","command:ci-parent","command:ci-flow"]}
+@~scope=ci
+dox-command:ci-repipe
 cmd_ci_repipe() {
-	[[ -z $1 ]] || bad_usage "ci repipe"
+
+	local draft=""
+	while (( $# )); do
+		arg=$1 ; shift
+		case ${arg} in
+		(-d|--draft) draft=1 ;;
+		(-*)         bad_usage_invalid_opt "$arg" ;;
+		(*)          bad_usage_extra       "$arg" ;;
+		esac
+	done
 
 	setup
 	ci_check_configuration
@@ -3454,19 +4227,46 @@ cmd_ci_repipe() {
 	CI_PIPELINE=$(   spruce json ${DEPLOYMENT_ROOT}/ci/settings.yml | jq -r '.meta.name // ""')
 
 	echo
-	echo "Configuring pipeline at ${CI_TARGET_NAME} (${CI_TARGET_URL})"
-	fly -t ${CI_TARGET_NAME:-concourse} set-pipeline -p ${CI_PIPELINE:-pipeline} -c ${DEPLOYMENT_ROOT}/ci/.deploy.yml
-	exit $?
+	if [[ -z $draft ]] ; then
+		echo "Configuring pipeline at ${CI_TARGET_NAME} (${CI_TARGET_URL})"
+		fly -t ${CI_TARGET_NAME:-concourse} set-pipeline -p ${CI_PIPELINE:-pipeline} -c ${DEPLOYMENT_ROOT}/ci/.deploy.yml
+		exit $?
+	else
+		cat "${DEPLOYMENT_ROOT}/ci/.deploy.yml"
+	fi
 }
 
 
+: <<'dox-command:ci-flow'
+USAGE
+@~include=usage{"args":"[-p|--pipeline <name>] [-d|--draft]"}
+
+DESCRIPTION
+	Generate the given or default CI pipeline and push it to Concourse.
+
+ARGUMENTS
+	-p|--pipeline <name>
+		the name of the pipeline to be configured.  Defaults to the deployment name
+
+SEE ALSO
+@~include=related{"items":["concept:CI","command:ci-alpha","command:ci-beta","command:ci-auto","command:ci-manual","command:ci-parent","command:ci-repipe"]}
+@~scope=ci
+dox-command:ci-flow
 cmd_ci_flow() {
-	[[ -z $1 ]] || bad_usage "ci flow"
+	[[ -z $1 ]] || bad_usage
 
 	setup
 	# FIXME: ascii diagram!
-	cat ${DEPLOYMENT_ROOT}/.ci.yml
+	local yaml_file="$(ci_pipeline_yaml)"
+	if [[ -f "${yaml_file}" ]] ; then
+		cat "${yaml_file}"
+	else
+		echo 'No CI defined.  See `genesis help CI` for more information'$'\n'
+		exit 1
+	fi
 }
+
+# Commands that are used by Concourse pipelines themselves
 
 cmd_ci_stemcells() {
 	[[ -z $1 ]] || bad_usage "ci stemcells"
@@ -3745,18 +4545,56 @@ cmd_ci_check() {
 bad_ci() {
 	local cmd=${1}
 	cat >&2 <<EOF
-USAGE:  genesis ci alpha [site/env]
-        genesis ci beta [site/env [site/env ...]]
-        genesis ci auto [site/env [site/env ...]]
-        genesis ci manual [site/env [site/env ...]]
-        genesis ci smoke-test <errand>
-        genesis ci repipe
-        genesis ci flow
-        genesis ci check
+USAGE:  genesis ci [-p pipeline] alpha [site/env]
+        genesis ci [-p pipeline] beta [site/env [site/env ...]]
+        genesis ci [-p pipeline] auto [site/env [site/env ...]]
+        genesis ci [-p pipeline] manual [site/env [site/env ...]]
+        genesis ci [-p pipeline] smoke-test <errand>
+        genesis ci [-p pipeline] repipe
+        genesis ci [-p pipeline] flow
+        genesis ci [-p pipeline] check
 EOF
 	exit 1
 }
 
+: <<'dox-command:bosh'
+USAGE
+@~include=usage{"args":"<args...>"}
+
+DESCRIPTION
+	Run a bosh command against a freshly generated non-redacted BOSH manifest
+	from the current environment directory.
+
+	For configurations that don't make use of Vault, this is equivalent of
+	building the manifest and adding '-d manifests/manifests.yml' to the BOSH
+	command.  When vault operators are present in the source yml files, this is
+	the only way run BOSH command using a manifest since the one built in the
+	manifests directory will have all vault values redacted.
+
+	Similarly, it provides an alternative method for running `make deploy` with
+	further arguments, such as --recreate.
+
+	All BOSH commands are available, but may not necessarily benefit from the
+	manifest re-generation step.
+
+ARGUMENTS
+	The arguments expected for this command are exactly what you'd specify for a
+	normal bosh CLI command, less the -d option which this adds for you.  See
+	`bosh help <command>` for help on the desired bosh command.
+
+EXAMPLES
+  Rebuild the worker/1 job:
+  $ genesis bosh -t prod recreate worker 1
+
+  SSH into etcd/0 instance
+  $ genesis bosh ssh etcd/0
+
+  Dry-run of a deploy while showing all changes:
+  $ genesis bosh deploy --dry-run --no-redact
+
+SEE ALSO
+@~include=related{"items":["concept:Makefiles","concept:Vault-Secrets"]}
+dox-command:bosh
 cmd_bosh() {
 	# NOTE: cmd_bosh specifically avoids argv inspection
 	must_be_in_an_environment
@@ -3791,23 +4629,6 @@ cmd_dump() {
 	exit 0
 }
 
-bad_command() {
-	local cmd=${1}
-	cat >&2 <<EOF
-Unrecognized sub-command: '$cmd'
-
-Try one of these:
-
-   genesis help
-   genesis new (deployment|site|environment)
-   genesis build
-   genesis refresh (global|site|all|makefile|readme)
-   genesis bosh ...
-
-EOF
-	exit 1
-}
-
 checksum() {
 	if [[ -z $(command -v sha1sum) ]]; then
 		shasum "$@"
@@ -3816,176 +4637,528 @@ checksum() {
 	fi
 }
 
+: <<'dox-command:help'
+NAME
+	help - Display help on genesis concepts and commands
+
+USAGE
+@~include=usage{"args":[" ","--topics","--<category>","[--<category>] <topic>"]}
+
+DESCRIPTION
+	Get help on how to use `genesis`.
+
+	With no arguments, will print this help message.  By specifying a category,
+	the list of topics in that category will be specified.  The available
+	categories are:
+@~include=categories{"leader":"    * "}
+
+  You can also specify --topics to get a list of all topics in all categories.
+
+	For detailed help on a given topic, you can specify that topic as an argument
+	to the help command.  For topics that are composed of multiple words, do
+	*not* wrap the topic in quotes.  In the rare case that the topic appears in
+	multiple categories, you can specify the category type as an double-hyphenated
+	option.
+dox-command:help
+
+cmd_help() {
+	local category=""
+	local topic=""
+	while (( $# )); do
+		arg="$1"; shift
+		case "${arg}" in
+		(--*) [[ -z "$category" ]] && category="${arg:2}" || bad_usage "Can only specify one category" ;;
+		(-*) bad_usage_invalid_opt "$arg";;
+		(*)  topic="${topic:+"${topic}-"}${arg}" ;;
+		esac
+	done
+
+	local result=$(__dox_get_help "$category" "$topic")
+	if [[ $? -ne 0 ]] ; then
+		echo >&2 "ERROR: Could not fetch help - fatal internal error"
+		exit 1
+	fi
+
+	local pager="cat"
+	# TODO: The following pages if output is bigger than the current screen - is
+	#				this a good idea?
+	#local rows="$(stty -a | head -1 | tr ';' "\n" | grep rows | sed -e 's/^[^0-9]*\([0-9]\{1,\}\).*$/\1/')"
+	#[[ "$rows" -gt 1 && "$(echo "$result" | wc -l)" -ge "$rows" ]] && pager="less"
+	echo "$result"$'\n' | $pager
+}
+
+bad_usage() {
+  local msg="${1:-bad usage}" callee=${2:-${FUNCNAME[1]}}
+
+  local callee_bits=( ${callee//_/ } )
+  local category="${callee_bits[0]}"
+  local name=( "${callee_bits[@]:1}" )
+  local cmd=$(IFS='-'; echo "${name[*]}")
+
+  [[ "$category" == "cmd" ]] && category="command"
+  local content="$(__dox_get_usage "$cmd" "$category")"
+  local prefix="[$SCRIPT_NAME${name:+ ${name[@]}}] "
+  echo >&2 $'\n'"$(__dox_reflow_text "ERROR: ${msg}" "${prefix//?/ }" "$prefix")"
+  echo >&2 "$(__dox_process_content "USAGE"$'\n'"${content}")"
+  echo >&2 $'\n'"For more details, run \`${SCRIPT_NAME} help <command>\` for the desired command."$'\n'
+  exit 1
+}
+bad_usage_invalid_opt() { bad_usage "invalid option '$1'" "${FUNCNAME[1]}"; }
+bad_usage_no_args()     { bad_usage "does not take any options or arguments" "${FUNCNAME[1]}"; }
+bad_usage_no_opts()     { bad_usage "does not take any options" "${FUNCNAME[1]}"; }
+bad_usage_missing()     { bad_usage "required argument for '$1' not provided" "${FUNCNAME[1]}"; }
+bad_usage_extra()       { bad_usage "extraneous argument '${1}'${2:+"; $2 already provided as '$3'"}" "${FUNCNAME[1]}"; }
+
+bad_usage_partial() {
+	local cmd="$1" subcmd="$2"
+	if [[ -n "$subcmd" ]] ; then
+		bad_usage "invalid subcommand '${subcmd}'${cmd:+" for command '${cmd}'"}" "partial_${cmd}"
+	else
+		bad_usage "missing subcommand for '${cmd}' command" "partial_${cmd}"
+	fi
+}
+
+check_opt_usage() {
+	if [[ -z "$2" || "${2:0:1}" == '-' ]] ; then
+		bad_usage "missing value for option $1" "${FUNCNAME[1]}"
+	fi
+}
+
+__dox_get_help() {
+  local category="$1" topic="$2"
+	[[ -z "${topic}" && -z "${category}" ]] && { category="command"; topic="help"; }
+	if [[ -z "${topic}" ]] ; then
+		[[ "$category" == 'topics' ]] && { category='' ; } # --topics is a meta-topic of all topics
+		IFS=$'\n' read -rd '' -a categories <<< "$(__dox_get_topics '' "$category" | sed 's/:.*//' | sort | uniq )"
+		echo ""
+		if [[ "${#categories[@]}" -eq 0 ]] ; then
+			echo >&2 $'\n'"[$SCRIPT_NAME help] ERROR: No help category matching '$category'"
+			echo >&2 $'\n''For information on available help topics, run `'"${SCRIPT_NAME}"' help --topics`'
+			exit 2
+		fi
+		for category in "${categories[@]}" ; do
+			[[ "${category}" == "partial" ]] && continue
+			local _header="Available '${category}' help topics:"
+			echo "${_header}"$'\n'"${_header//?/-}"
+			__dox_generate_topic_includes '{"category":"'$category'","desc":"inline","leader":"  * "}'
+			echo ""
+		done
+		exit 0
+	fi
+
+	local topic_list=( $(__dox_get_topics "$topic" "$category" ) )
+	if [[ "${#topic_list[@]}" -eq 0 ]] ; then
+		# Check for aliases
+		if grep '^@~alias=\(.*,\)\{0,\}'"$topic"'\(,.*\)\{0,\}' $0 >/dev/null 2>&1; then
+			topic_list=( $(__dox_get_topics '' "$category" '' "$topic" ) )
+		fi
+	fi
+	if [[ ${#topic_list[@]} -eq 1 ]] ; then
+		# Only one potential match
+		IFS=':' read category topic <<< "${topic_list[0]}"
+	elif [[ ${#topic_list[@]} -eq 0 ]] ; then
+		__dox_not_found
+	else
+		local exact_match
+		exact_match=( $(printf -- '%s\n' "${topic_list[@]}" | grep ':'"$topic"'$') )
+		if [[ ${#exact_match[@]} -eq 1 ]] ; then
+			IFS=':' read category topic <<< "${exact_match[0]}"
+		else
+			__dox_ambiguous_topic "$topic" "${topic_list[@]}"
+			return 2
+		fi
+	fi
+
+	if [[ "$category" == 'partial' ]] ; then
+		__dox_ambiguous_topic "$topic"
+		return 0
+	else
+		category="${category:-command}"
+		local content="$(__dox_get_content "${topic}" "${category}")"
+		__dox_process_content "$content"
+	fi
+	return 0
+}
+__dox_get_content() {
+	#echo >&2 "======"$'\n'"DEBUG: called '${FUNCNAME[0]}' with "$'\n'" --($@)--"$'\n'"^^^^^^"
+	local topic="$1" category="${2:-'command'}"
+	local pattern="$(echo "dox-${category}:${topic}" | tr " " "-")"
+	# Check if content is present
+	if grep "^: <<'$pattern'\$" $0 >/dev/null 2>&1 && grep "^$pattern\$" $0 >/dev/null 2>&1; then
+		# FIXME: changing all tabs to 2 spaces; ideally this should only change leading tabs
+		local content="$(sed \
+			-e 's/	/  /g;'"/^: <<'$pattern'/,/^$pattern\$/"'!d;//d' \
+			-e "s:<<[S]CRIPT_NAME>>:$SCRIPT_NAME:g" \
+			$0 )"
+
+		# Process usage includes
+		declare -a uses
+		IFS=$'\n'	read -rd '' -a uses <<< "$(__dox_get_meta "$content" 'include' 'usage')"
+		local _line
+		for _line in "${uses[@]}" ; do
+			local opts="${_line:5}"
+			local usage="$(__dox_generate_usage "$topic" "${opts:-"{}"}" )"
+			content="$( __dox_replace_line "$content" "@~include=${_line}" "$usage" )"
+		done
+		echo "$content"
+	fi
+}
+
+__dox_get_usage() {
+	local topic="$1" category="${2:-'command'}"
+	local content="${3:-"$(__dox_get_content "$topic" "$category")"}"
+	local usage="$(__dox_parse_section "$content" 'USAGE')"
+	if [[ -z "$usage" && "$category" == "partial" ]] ; then
+		usage='@~include=topic{"category":"command","desc":"usage","leader":"  ","partial":"'"${topic}"'"}'
+	fi
+	echo "$usage" | grep -v '^@~alias'
+
+}
+
+__dox_process_content() {
+	local _tail=$'\n'" "
+	local content="$1${_tail}"
+
+	# Process meta details
+	declare -a includes
+	IFS=$'\n' read -rd '' -a includes <<< "$(__dox_get_meta "$content" include)"
+	local _tag
+	for _tag in "${includes[@]}"; do
+		local replacement=""
+		case "${_tag%\{*}" in
+			(topic)      replacement="$(__dox_generate_topic_includes "${_tag:5}")" ;;
+			(categories) replacement="$(__dox_generate_category_list "${_tag:10}")" ;;
+      (related)    replacement="$(__dox_generate_related_list "${_tag:7}")" ;;
+			(*)          replacement='' ;;
+		esac
+		content="$( __dox_replace_line "$content" "@~include=${_tag}" "$replacement" )"
+	done
+	echo $'\n'"$( __dox_trim "${content}")"$'\n'
+}
+
+__dox_replace_line() {
+	# Args: content, line, replacement
+	while IFS= read -r line; do
+		if [[ "$line" == "$2" ]] ; then
+#			[[ -z "$3" ]] && continue
+			line="$3"
+		fi
+		echo "$line"
+	done <<< "$1"
+}
+
+__dox_not_found() {
+	echo >&2 $'\n'"[$SCRIPT_NAME help] ERROR: No help topic matching '${argv[@]:1}'"
+	echo >&2 $'\n''For information on available help topics, run `'"${SCRIPT_NAME}"' help --topics`'
+	exit 2
+}
+
+__dox_ambiguous_topic() {
+	local topic=$1 ; shift
+	local _args=( "$@" )
+	local content="$(__dox_get_content $topic 'partial')"
+
+	# We only use the description and usage from partials
+	local _usage="$(__dox_get_usage $topic 'partial' "$content")"
+	local _desc="$(__dox_parse_section "$content" DESCRIPTION)"
+	[[ -n "$_desc" ]] || { _desc="  This is a partial command stub which requires further arguments." ; }
+
+	content="$(cat<<EOF
+USAGE
+$_usage
+
+DESCRIPTION
+$_desc
+
+@~include=topic{"category":"concept","desc":"block","leader":"  ","partial":"${topic}"}
+
+COMMANDS
+@~include=topic{"category":"command","desc":"inline","leader":"  ","partial":"${topic}"}
+
+  For more details, run \`$SCRIPT_NAME help <command>\` for the desired command.
+EOF)"
+
+	__dox_process_content "$content"
+}
+
+__dox_get_meta() {
+	local content="$1" key=${2:-'.*'} sep="=${3:+"${3}\\b"}" filter=${2:+"$2="}
+	echo "$content" | grep '^@~'"$key$sep" | sed 's/^@~'"$filter"'//'
+}
+
+__dox_get_meta_option() {
+	local meta_str="$1" option="$2"
+	opt_line="$(echo "$meta_str" | sed 's/^[^{]*\(.*\)[^}]*$/\1/')"
+	case "$(echo "$opt_line" | jq -r ".$option | type")" in
+		(array)
+			i=0; while value="$(echo "$opt_line" | jq -er ".${option}[${i}]")" ; do
+				echo $value
+				((i++))
+			done
+			;;
+		(null) return 1;;
+		(*)    echo "$opt_line" | jq  -er ".$option" ;;
+	esac
+}
+
+__dox_get_sections() {
+	echo "$1" | grep '^[A-Z][-A-Z0-1 ]*'
+}
+
+__dox_parse_section() {
+	local content="$1" subject="$2"
+	local output
+	if [[ -n "$subject" ]] ; then
+		_found=false
+		_nl=""
+		while IFS= read -r line; do
+			[[ "${line}" =~ ^${subject} ]] && { _found=true ; continue ; }
+			[[ ${_found} == true ]]  || { continue ; }
+			[[ "${line}" =~ ^[^[:space:]@] ]] && { break ; }
+			[[ "${line}" =~ ^$ ]] && { _nl="${_nl}"$'\n' ; continue ; }
+			echo "${_nl}${line}" ; _nl=""
+		done <<< "$content"
+	fi
+}
+
+__dox_get_topics() {
+	#echo >&2 "======"$'\n'"DEBUG: called '${FUNCNAME[0]}' with "$'\n'" --($@)--"$'\n'"^^^^^^"
+	local topic="${1:-.*}" category="${2:-.*}" scope="$3" alias="$4"
+	local candidates=( $(grep '^: <<'"'dox-${category}:${topic}\(-.*\)\?'\$" $0 | sed 's/.*'".dox-//;s/.\$//") )
+	for candidate in "${candidates[@]}" ; do
+		if [[ -n $scope ]] ; then
+			IFS=':' read category topic <<< "$candidate"
+			if __dox_get_content $topic $category | grep '@~scope=\(.*,\)\{0,\}'"$scope"'\(,.*\)\{0,\}' 2>&1 > /dev/null ; then
+				echo $candidate
+			fi
+		elif [[ -n $alias ]] ; then
+			IFS=':' read category topic <<< "$candidate"
+			if __dox_get_content $topic $category | grep '@~alias=\(.*,\)\{0,\}'"$alias"'\(,.*\)\{0,\}' 2>&1 > /dev/null ; then
+				echo $candidate
+			fi
+		else
+			echo $candidate
+		fi
+	done
+}
+
+__dox_generate_topic_includes() {
+	local opts="$1"
+	local scope="$(__dox_get_meta_option "${opts}" scope)"
+	local category="$(__dox_get_meta_option "${opts}" category)"
+	local partial="$(__dox_get_meta_option "${opts}" partial)"
+	local leader="$(__dox_get_meta_option "${opts}" leader)"
+	local desc="$(__dox_get_meta_option "${opts}" desc)"
+	local items=( $(__dox_get_topics "$partial" "$category" "$scope") )
+
+	local item
+	if [[ "${desc}" == "inline" ]] ; then
+		local indent=0
+		for item in "${items[@]}" ; do
+			local _header="${leader}${item#*:}: "
+			[[ "${indent}" -ge "${#_header}" ]] || { indent="${#_header}" ; }
+		done
+		local padding="$(seq -f ' ' -s '' $indent)"
+	fi
+
+	for item in "${items[@]}" ; do
+		local _header="${leader}""$(echo "${item#*:}" | sed -e 's/-/ /g')"":"
+		case "${desc}" in
+			(inline)
+				local _desc
+				_desc="$( __dox_parse_section "$(__dox_get_content "${item#*:}" "${item%%:*}" )"  DESCRIPTION )"
+				__dox_reflow_text "${_desc%%$'\n'$'\n'*}" "$padding" "${_header}${padding:${#_header}}"
+				echo ""
+				;;
+			(block)
+				echo "${_header}"
+				local _desc
+				_desc="$( __dox_parse_section "$(__dox_get_content "${item#*:}" "${item%%:*}" )"  DESCRIPTION )"
+				__dox_reflow_text "${_desc%%$'\n'$'\n'*}" "${leader}  "
+				echo ""
+				;;
+			(usage)
+				_desc="$( __dox_parse_section "$( __dox_get_content "${item#*:}" "${item%%:*}" )" USAGE | grep -v '^@~')"
+				while read -r line ; do echo "${leader}${line}" ; done <<< "$_desc"
+				;;
+			(*)
+				echo "${_header/%:/}"
+				;;
+		esac
+	done
+}
+
+__dox_generate_category_list() {
+	local opts="$1"
+	local leader="$( __dox_get_meta_option "${opts}" "leader" )"
+	local items=("commands" "concepts") # hardcoded for now
+	for category in "${items[@]}" ; do
+		echo "${leader}${category}"
+	done
+}
+
+__dox_generate_related_list() {
+	local opts="$1"
+	local desc=''
+	local category
+  declare -a items
+	IFS=$'\n' items=( $( __dox_get_meta_option "${opts}" "items" ) )
+	unset IFS
+	for topic in "${items[@]}" ; do
+		category="${topic%%:*}"
+		if [[ "$category" == "$topic" ]] ; then
+			category=""
+		else
+			topic="${topic#*:}"
+		fi
+		_desc="$( __dox_parse_section "$(__dox_get_content "$topic" "$category")" DESCRIPTION "" )"
+		[[ -n "$_desc" ]] || continue
+		echo "  $topic${category:+" ($category)"}:"
+		__dox_reflow_text "${_desc%%$'\n'$'\n'*}" "    "
+		echo ""
+	done
+}
+
+__dox_generate_usage() {
+	local topic="$1"
+	local opts="$2"
+	local args
+	local leader="$(__dox_get_meta_option "${opts}" "leader" )"
+	local cmd="$(__dox_get_meta_option "${opts}" "cmd" )"
+
+	#FIXME: this doesn't allow empty strings as a valid arg, necessitating using ' ' for no args
+	IFS=$'\n' args=( $(__dox_get_meta_option "${opts}" "args" ) )
+	unset IFS
+	leader="${leader:-"  "}"
+	cmd="${cmd:-"$(echo "$topic" | tr "-" " ")"}"
+
+	[[ ${#args[@]} -gt 0 ]] || args+='' # default with no arguments
+	local arg_set
+	for arg_set in "${args[@]}" ; do
+		echo "${leader}${SCRIPT_NAME} ${cmd} ${arg_set}"
+	done
+}
+
+__dox_reflow_text() {
+	local content="$(echo ${1} | expand -t 2)"
+	local leader="$2"
+	local header="$3"
+	local width=$(( 79 - ${#leader} ))
+	unset IFS
+	while read -r line ; do
+		echo "${header:-$leader}${line}"
+		header=""
+	done <<< "$(set +x; echo ${content} | fold -s -w $width)"
+}
+__dox_trim() {
+	# trims unused meta, whitespace off end and collapse inner multiple blank lines
+	content="$( echo "$1" | grep -v '^@~.*')"
+	i=${#content}
+	while (( i-- )) ; do [[ "${content:$i:1}" =~ ^[[:space:]]$ ]] || { break ; } ; done
+	echo "${content:0:$(( ++i ))}" | cat -s
+}
+
+
 ####################################################
-# multi-call interface
+# multi-call interace
 
 main() {
-	local cmd=${1:-help} ; shift
-
+	unset IFS
+	local cmd=${1:-info} ; shift
 	case ${cmd} in
-	(ping)
-		exit 0
-		;;
-	(version)
-		cmd_version $*
-		;;
-	(update)
-		cmd_update $*
-		;;
-	(help)
-		cmd_help $*
-		;;
-	(new)
-		local arg=${1:-} ; shift
-		case ${arg} in
-		(deployment)
-			cmd_new_deployment $*
+		(ping)                   exit 0 ;;
+		(version)                cmd_version $* ;;
+		(help)                   cmd_help $* ;;
+		(info)                   cmd_help --overview genesis ;;
+		(update)                 cmd_update $* ;;
+		(new)
+			local arg=${1:-} ; shift
+			case ${arg} in
+				(deployment)         cmd_new_deployment $* ;;
+				(site)               cmd_new_site $* ;;
+				(env|environment)    cmd_new_environment $* ;;
+				(*)                  bad_usage_partial "${cmd}" ${arg} ;;
+			esac
 			;;
-		(site)
-			cmd_new_site $*
+		(stemcell|stemcells)     cmd_stemcells $* ;;
+		(release|releases)       cmd_releases $* ;;
+		(add)
+			local arg=${1:-} ; shift
+			case ${arg} in
+				(release)            cmd_add_release $* ;;
+				(*)                  bad_usage_partial "${cmd}" ${arg} ;;
+			esac
 			;;
-		(env|environment)
-			cmd_new_environment $*
+		(set)
+			local arg=${1:-} ; shift
+			case ${arg} in
+				(release)            cmd_set_release $* ;;
+				(*)                  bad_usage_partial "${cmd}" ${arg} ;;
+			esac
 			;;
-		(*)
-			bad_new ${arg}
+		(use)
+			local arg=${1:-} ; shift
+			case ${arg} in
+			(release)              cmd_use_release $* ;;
+			(stemcell)             cmd_use_stemcell $* ;;
+			(*)                    bad_usage_partial "${cmd}" ${arg} ;;
+			esac
 			;;
-		esac
-		;;
-	(add)
-		local arg=${1:-} ; shift
-		case ${arg} in
-		(release)
-			cmd_add_release $*
+		(refresh)
+			local arg=${1:-all} ; shift
+			case ${arg} in
+				(global)             cmd_refresh_global $* ;;
+				(site)               cmd_refresh_site $* ;;
+				(all)                cmd_refresh_all $* ;;
+				(makefile|makefiles) cmd_refresh_makefile $* ;;
+				(readme|readmes)     cmd_refresh_readmes $* ;;
+				(*)                  bad_usage_partial "${cmd}" ${arg} ;;
+			esac
 			;;
-		(*)
-			bad_add ${arg}
+		(build)                  REDACT=y cmd_build $* ;;
+		(deploy)                 cmd_deploy ;;
+		(embed)                  cmd_embed ;;
+		(ci)
+			TERM=dumb
+			# Buildout command before parsing opts and args
+			local ci_cmd=""
+			local ci_partial=""
+			while [[ $# -gt 0 && -z "$ci_cmd" ]] ; do
+				potential="${potential:+"$potential "}$1"
+				case "$potential" in
+					(alpha|beta|auto|manual|repipe|flow|smoke-test)   ci_cmd="$potential" ;;
+					(parent|"draft-messages"|stemcells)    ci_cmd="$potential" ;;
+					("stage1"|"stage2"|"stage-smoke-test") ci_cmd="$potential" ;;
+					(*)
+						# In future, partials may be valid commands (ie stage 1 and stage 1
+						# smoke test) so if we have a partial that can also be a command,
+						# check here before delaring bad usage. (also why we don't shift
+						# until after we test)
+						bad_usage_partial "ci${ci_partial:+ $ci_partial}" "$1"
+						;;
+				esac
+				shift
+			done
+			[[ -n $ci_cmd ]] || bad_usage_partial "ci${ci_partial:+ $ci_partial}" ""
+
+			# Check for common pipeline arg
+			declare -a ci_args
+			CI_PIPELINE=${CI_PIPELINE:-}
+			while [[ $# -gt 0 ]]; do
+				local arg=${1:-} ; shift
+				case ${arg} in
+					(-p|--pipeline) CI_PIPELINE="${1:-}"; shift ;;
+					(*)             ci_args+=("$arg") ;;
+				esac
+			done
+			set -- "${ci_args[@]}"
+
+			# Process sub-commands
+			$(echo "cmd_ci_${ci_cmd}" | tr "-" "_") $*
 			;;
-		esac
-		;;
-	(set)
-		local arg=${1:-} ; shift
-		case ${arg} in
-		(release)
-			cmd_set_release $*
-			;;
-		(*)
-			bad_set ${arg}
-			;;
-		esac
-		;;
-	(use)
-		local arg=${1:-} ; shift
-		case ${arg} in
-		(release)
-			cmd_use_release $*
-			;;
-		(stemcell)
-			cmd_use_stemcell $*
-			;;
-		(*)
-			bad_use ${arg}
-			;;
-		esac
-		;;
-	(stemcell|stemcells)
-		cmd_stemcells $*
-		;;
-	(release|releases)
-		cmd_releases $*
-		;;
-	(build)
-		REDACT=y cmd_build $*
-		;;
-	(refresh)
-		local arg=${1:-all} ; shift
-		case ${arg} in
-		(global)
-			cmd_refresh_global $*
-			;;
-		(site)
-			cmd_refresh_site $*
-			;;
-		(all)
-			cmd_refresh_all $*
-			;;
-		(makefile|makefiles)
-			cmd_refresh_makefile $*
-			;;
-		(readme|readmes)
-			cmd_refresh_readmes $*
-			;;
-		(*)
-			bad_refresh ${arg}
-			;;
-		esac
-		;;
-	(deploy)
-		cmd_deploy
-		;;
-	(embed)
-		cmd_embed
-		;;
-	(ci)
-		TERM=dumb
-		local arg=${1:-} ; shift
-		case ${arg} in
-		(alpha)
-			cmd_ci_alpha $*
-			;;
-		(beta)
-			cmd_ci_beta $*
-			;;
-		(parent)
-			cmd_ci_parent $*
-			;;
-		(auto)
-			cmd_ci_auto $*
-			;;
-		(smoke-test)
-			cmd_ci_smoke_test $*
-			;;
-		(manual)
-			cmd_ci_manual $*
-			;;
-		(repipe)
-			cmd_ci_repipe $*
-			;;
-		(flow)
-			cmd_ci_flow $*
-			;;
-		(stemcells)
-			cmd_ci_stemcells $*
-			;;
-		(stage1)
-			cmd_ci_stage1 $*
-			;;
-		(stage2)
-			cmd_ci_stage2 $*
-			;;
-		(stage-smoke-test)
-			cmd_ci_stage_smoke_test $*
-			;;
-		(draft-message)
-			cmd_ci_draft_message $*
-			;;
-		(check)
-			cmd_ci_check
-			;;
-		(*)
-			bad_ci ${arg}
-			;;
-		esac
-		;;
-	(dump)
-		cmd_dump
-		;;
-	(bosh)
-		cmd_bosh $*
-		;;
-	(*)
-		bad_command ${cmd}
-		;;
+		(dump)                   cmd_dump ;;
+		(bosh)                   cmd_bosh $* ;;
+		(*)                      bad_usage_partial "" "$cmd" ;;
 	esac
 }
 
