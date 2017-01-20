@@ -5118,9 +5118,9 @@ main() {
 			while [[ $# -gt 0 && -z "$ci_cmd" ]] ; do
 				potential="${potential:+"$potential "}$1"
 				case "$potential" in
-					(alpha|beta|auto|manual|repipe|flow|smoke-test)   ci_cmd="$potential" ;;
-					(parent|"draft-messages"|stemcells)    ci_cmd="$potential" ;;
-					("stage1"|"stage2"|"stage-smoke-test") ci_cmd="$potential" ;;
+					(alpha|beta|auto|manual|parent|repipe|flow)   ci_cmd="$potential" ;;
+					("smoke-test"|"draft-message"|stemcells)      ci_cmd="$potential" ;;
+					("stage1"|"stage2"|"stage-smoke-test")        ci_cmd="$potential" ;;
 					(*)
 						# In future, partials may be valid commands (ie stage 1 and stage 1
 						# smoke test) so if we have a partial that can also be a command,
