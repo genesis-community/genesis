@@ -4570,9 +4570,8 @@ EOF
 
 cmd_ci_draft_message() {
 	[[ -z $1 ]] || bad_usage "ci draft-message"
-
 	(
-		echo "[${CI_SITE_ENV}] Deployment changes are ready to go!"
+		awk '/^name: /{print "[" $2 "] Deployment changes are ready to go!"}' "${LOCAL_CHANGES}/${CI_SITE_ENV}/name.yml"
 		echo
 		echo "World:"
 		echo "\`\`\`"
