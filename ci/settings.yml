@@ -2,7 +2,7 @@
 meta:
   name: genesis
   target: sw
-  url: https://ci.vsphere.starkandwayne.com
+  url: https://ci.starkandwayne.com
 
   aws:
     access_key: (( vault "secret/pipelines/genesis/aws:access_key" ))
