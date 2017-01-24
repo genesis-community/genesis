@@ -3666,8 +3666,7 @@ jobs:
 
             CI_BOSHES: |
 EOF
-	need_a_vault
-	spruce merge ${DEPLOYMENT_ROOT}/ci/boshes.yml | sed -e 's/^/              /' || exit $?
+	ci_bosh_configs
 }
 
 ci_tags_for() {
@@ -3676,6 +3675,20 @@ ci_tags_for() {
 		echo "~"
 	else
 		echo "[${tag}]"
+	fi
+}
+
+ci_bosh_configs() {
+	need_a_vault
+
+	local config=${DEPLOYMENT_ROOT}/ci/boshes.yml
+	if [[ -n $(spruce json ${config} | jq -r '.auth // ""') ]]; then
+		spruce merge ${config} | sed -e 's/^/              /' || exit $?
+	else
+		need_a_workdir
+		spruce merge ${config} | spruce json | jq -r '.["'"${site_env_name}"'"] // {}' > ${WORKDIR}/.bosh.yml
+		cp ${WORKDIR}/.bosh.yml /tmp
+		spruce merge ${WORKDIR}/.bosh.yml | sed -e 's/^/              /' || exit $?
 	fi
 }
 
@@ -3713,8 +3726,7 @@ jobs:
             CI_VAULT_USER_ID:  (( grab meta.secret ))
             CI_BOSHES: |
 EOF
-	need_a_vault
-	spruce merge ${DEPLOYMENT_ROOT}/ci/boshes.yml | sed -e 's/^/              /' || exit $?
+	ci_bosh_configs
 }
 
 
