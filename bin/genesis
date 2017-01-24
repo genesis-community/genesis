@@ -3632,6 +3632,7 @@ jobs:
           - get: local-changes
             resource: (( param "looks like genesis forgot to override the resource name" ))
       - task: (( param "looks like genesis forgot to override the task name" ))
+        tags: (( param "looks like genesis forgot to override the task tags" ))
         config:
           platform: linux
           image_resource:
@@ -3668,6 +3669,15 @@ EOF
 	spruce merge ${DEPLOYMENT_ROOT}/ci/boshes.yml | sed -e 's/^/              /' || exit $?
 }
 
+ci_tags_for() {
+	local tag=${1?ci_tags_for() - no site_env_name given}
+	if [[ -z $CI_TAGGED ]]; then
+		echo "~"
+	else
+		echo "[${tag}]"
+	fi
+}
+
 ci_repipe_smoke_test() {
 	local job_name=${1:?ci_repipe_smoke_test() - no job name given}
 	local errand_name=${2:?ci_repipe_smoke_test() - no errand name given}
@@ -3678,6 +3688,7 @@ jobs:
     plan:
       - (( append ))
       - task: smoke-test
+        tags: $(ci_tags_for $site_env_name)
         config:
           platform: linux
           image_resource:
@@ -3963,6 +3974,7 @@ jobs:
           trigger: true
 
       - task: ${site_env_name}
+        tags: $(ci_tags_for $site_env_name)
         config:
           params:
             CI_SITE_ENV: ${site_env}
@@ -4020,6 +4032,7 @@ jobs:
           trigger: true
 
       - task: ${site_env_name}
+        tags: $(ci_tags_for $site_env_name)
         config:
           params:
             CI_SITE_ENV: ${site_env}
@@ -4067,6 +4080,7 @@ jobs:
           trigger: true
 
       - task: ${site_env_name}
+        tags: $(ci_tags_for $site_env_name)
         config:
           params:
             CI_SITE_ENV: ${site_env}
@@ -4115,6 +4129,7 @@ jobs:
           trigger: true
 
       - task: draft-message
+        tags: $(ci_tags_for $site_env_name)
         config:
           platform: linux
           image_resource:
@@ -4159,6 +4174,7 @@ jobs:
           trigger: false
 
       - task: ${site_env_name}
+        tags: $(ci_tags_for $site_env_name)
         config:
           params:
             CI_SITE_ENV: ${site_env}
@@ -4217,6 +4233,8 @@ cmd_ci_repipe() {
 	ci_check_configuration
 	need_a_workdir
 	need_a_vault
+
+	CI_TAGGED=$(     spruce json ${DEPLOYMENT_ROOT}/ci/settings.yml | jq -r '.meta.tagged // ""')
 
 	ci_repipe_build_base
 	VAULT_ADDR= REDACT=y ci_repipe_build_environments || exit 2
