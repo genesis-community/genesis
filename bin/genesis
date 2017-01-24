@@ -3651,6 +3651,7 @@ jobs:
           params:
             .: (( inject meta.env ))
 
+            CI_PIPELINE:       (( grab \$CI_PIPELINE || "" ))
             CI_VAULT_APP_ID:   concourse
             CI_VAULT_USER_ID:  (( grab meta.secret ))
 
@@ -3706,6 +3707,8 @@ jobs:
             WORKING_DIR: out/git
             CI_SITE_ENV: ${site_env}
             ERRAND_NAME: ${errand_name}
+
+            CI_PIPELINE:       (( grab \$CI_PIPELINE || ""))
             CI_VAULT_APP_ID:   concourse
             CI_VAULT_USER_ID:  (( grab meta.secret ))
             CI_BOSHES: |
@@ -5220,6 +5223,7 @@ main() {
 					(*)             ci_args+=("$arg") ;;
 				esac
 			done
+			export CI_PIPELINE
 			set -- "${ci_args[@]}"
 
 			# Process sub-commands
