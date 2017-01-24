@@ -3776,7 +3776,10 @@ resource_types:
     type: docker-image
     source:
       repository: cfcommunity/slack-notification-resource
+EOF
 
+	if [[ -z $CI_SKIP_UPKEEP ]]; then
+		ci_update <<EOF
 groups:
   - name: '*'
     jobs:
@@ -3815,6 +3818,7 @@ jobs:
           rebase: true
           repository: out/git
 EOF
+	fi
 }
 
 ci_repipe_build_environments() {
@@ -3876,7 +3880,8 @@ EOF
 		("")        stemcell_alias=empty            ;;
 		(*)         stemcell_alias=${stemcell_name} ;;
 		esac
-		cat >${workdir}/77-${stemcell_alias}.yml <<EOF
+		if [[ -z $CI_SKIP_UPKEEP ]]; then
+			cat >${workdir}/77-${stemcell_alias}.yml <<EOF
 ---
 resources:
   - name: ${stemcell_alias}
@@ -3899,6 +3904,7 @@ jobs:
             - name: ${stemcell_alias}
               path: stemcells/${stemcell_name}
 EOF
+		fi
 
 		if [[ -n ${beta_name} ]]; then
 			cat >${workdir}/10-${site}.yml <<EOF
@@ -4251,6 +4257,7 @@ cmd_ci_repipe() {
 	need_a_vault
 
 	CI_TAGGED=$(     spruce json ${DEPLOYMENT_ROOT}/ci/settings.yml | jq -r '.meta.tagged // ""')
+	CI_SKIP_UPKEEP=$(spruce json ${DEPLOYMENT_ROOT}/ci/settings.yml | jq -r '.meta.skip_upkeep // ""')
 
 	ci_repipe_build_base
 	VAULT_ADDR= REDACT=y ci_repipe_build_environments || exit 2
