@@ -3652,7 +3652,7 @@ jobs:
             .: (( inject meta.env ))
 
             CI_VAULT_APP_ID:   concourse
-            CI_VAULT_USER_ID:  (( concat meta.name "-pipeline" ))
+            CI_VAULT_USER_ID:  (( grab meta.secret ))
 
             CI_SITE_ENV:    (( param "looks like genesis forgot to override the CI_SITE_ENV variable" ))
             CI_BRANCH:      (( grab resources.git.source.branch ))
@@ -3707,7 +3707,7 @@ jobs:
             CI_SITE_ENV: ${site_env}
             ERRAND_NAME: ${errand_name}
             CI_VAULT_APP_ID:   concourse
-            CI_VAULT_USER_ID:  (( concat meta.name "-pipeline" ))
+            CI_VAULT_USER_ID:  (( grab meta.secret ))
             CI_BOSHES: |
 EOF
 	need_a_vault
@@ -3724,6 +3724,7 @@ meta:
   name: (( param "Please name this deployment pipeline (in ci/settings.yml)" ))
   public_pipeline: false
   pause_for_existing_bosh_tasks: false
+  secret: (( concat meta.name "-pipeline" ))
 
   env: {}
 
