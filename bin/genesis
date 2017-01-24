@@ -3763,19 +3763,6 @@ resources:
       uri:         (( grab meta.github.uri ))
       branch:      (( grab meta.github.branch ))
       private_key: (( grab meta.github.private_key ))
-
-  - name: notification
-    type: slack-notification
-    source:
-      url:      (( grab meta.slack.webhook ))
-
-
-
-resource_types:
-  - name: slack-notification
-    type: docker-image
-    source:
-      repository: cfcommunity/slack-notification-resource
 EOF
 
 	if [[ -z $CI_SKIP_UPKEEP ]]; then
@@ -4172,12 +4159,6 @@ jobs:
             WORLD_CHANGES:  world-changes
             CI_SITE_ENV:    ${site_env}
             DRAFT_FILE:     out/notif
-      - put: notification
-        params:
-          text_file: out/notif
-          username: (( grab meta.slack.username ))
-          channel:  (( grab meta.slack.channel ))
-          icon_url: (( grab meta.slack.icon ))
 
   - name: ${site_env_name}
     plan:
@@ -4204,6 +4185,108 @@ jobs:
       - put: git
         params: { repository: out/git, rebase: true }
 EOF
+				case $CI_NOTIFICATION_SCHEME in
+				(email)
+					cat >${workdir}/52-${site_env_name}.yml <<EOF
+meta:
+  slack: (( empty hash ))
+resources:
+  - name: build-email
+    type: script
+    source:
+      filename: run
+      body: |
+        #!/bin/bash
+        mkdir -p email
+        rm -rf email/*
+        echo "X-Concourse-Site-Env: ${CI_SITE_ENV}" >>email/header
+        head -n1 out/notif > email/subject
+        sed -e 's/\`\`\`//' out/notif > email/body
+
+  - name: send-email
+    type: email
+    source:
+      to:   (( grab meta.email.to ))
+      from: (( grab meta.email.from ))
+      smtp:
+        host:     (( grab meta.email.smtp.host ))
+        port:     (( grab meta.email.smtp.port ))
+        username: (( grab meta.email.smtp.username ))
+        password: (( grab meta.email.smtp.password ))
+
+resource_types:
+  - name: script
+    type: docker-image
+    source:
+      repository: cfcommunity/script-resource
+
+  - name: email
+    type: docker-image
+    source:
+      repository: pcfseceng/email-resource
+
+jobs:
+  # omega environment
+  - name: ${site_env_name}-notif
+    plan:
+    - (( append ))
+    - do:
+      - get: build-email
+      - task: write-email-body
+        config:
+          platform: linux
+          image_resource:
+            type: docker-image
+            source:
+              repository: ubuntu
+
+          inputs:
+          - name: build-email
+          - name: out
+          outputs:
+          - name: email
+
+          run:
+            path: build-email/run
+            args: []
+
+      - put: send-email
+        params:
+          body:    email/body
+          headers: email/header
+          subject: email/subject
+EOF
+				  ;;
+				(slack)
+					cat >${workdir}/52-${site_env_name}.yml <<EOF
+meta:
+  email: (( empty hash ))
+resources:
+  - name: notification
+    type: slack-notification
+    source:
+      url: (( grab meta.slack.webhook ))
+
+resource_types:
+  - name: slack-notification
+    type: docker-image
+    source:
+      repository: cfcommunity/slack-notification-resource
+
+jobs:
+  # omega environment
+  - name: ${site_env_name}-notif
+    plan:
+      - (( append ))
+      - put: notification
+        params:
+          text_file: out/notif
+          username: (( grab meta.slack.username ))
+          channel:  (( grab meta.slack.channel ))
+          icon_url: (( grab meta.slack.icon ))
+EOF
+				  ;;
+				esac
 				;;
 			esac
 		done
@@ -4258,6 +4341,12 @@ cmd_ci_repipe() {
 
 	CI_TAGGED=$(     spruce json ${DEPLOYMENT_ROOT}/ci/settings.yml | jq -r '.meta.tagged // ""')
 	CI_SKIP_UPKEEP=$(spruce json ${DEPLOYMENT_ROOT}/ci/settings.yml | jq -r '.meta.skip_upkeep // ""')
+	CI_NOTIFICATION_SCHEME=none
+	for scheme in slack email; do
+		if [[ -n $(spruce json ${DEPLOYMENT_ROOT}/ci/settings.yml | jq -r '.meta.'"$scheme"' // ""') ]]; then
+			CI_NOTIFICATION_SCHEME=$scheme
+		fi
+	done
 
 	ci_repipe_build_base
 	VAULT_ADDR= REDACT=y ci_repipe_build_environments || exit 2
