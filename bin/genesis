@@ -4269,12 +4269,12 @@ cmd_ci_repipe() {
 		trap "rm -f ${DEPLOYMENT_ROOT}/ci/.deploy.yml" QUIT TERM INT EXIT
 
 	CI_TARGET_NAME=$(spruce json ${DEPLOYMENT_ROOT}/ci/settings.yml | jq -r '.meta.target // ""')
-	CI_PIPELINE=$(   spruce json ${DEPLOYMENT_ROOT}/ci/settings.yml | jq -r '.meta.name // ""')
+	CI_PIPE_NAME=$(  spruce json ${DEPLOYMENT_ROOT}/ci/settings.yml | jq -r '.meta.name // ""')
 
 	echo
 	if [[ -z $draft ]] ; then
 		echo "Configuring pipeline at ${CI_TARGET_NAME} (${CI_TARGET_URL})"
-		fly -t ${CI_TARGET_NAME:-concourse} set-pipeline -p ${CI_PIPELINE:-pipeline} -c ${DEPLOYMENT_ROOT}/ci/.deploy.yml
+		fly -t ${CI_TARGET_NAME:-concourse} set-pipeline -p ${CI_PIPE_NAME:-pipeline} -c ${DEPLOYMENT_ROOT}/ci/.deploy.yml
 		exit $?
 	else
 		cat "${DEPLOYMENT_ROOT}/ci/.deploy.yml"
