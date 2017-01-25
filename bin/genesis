@@ -3695,6 +3695,7 @@ ci_bosh_configs() {
 	else
 		need_a_workdir
 		spruce merge ${config} | spruce json | jq -r '.["'"${site_env_name}"'"] // {}' > ${WORKDIR}/.bosh.yml
+		cp ${WORKDIR}/.bosh.yml /tmp
 		spruce merge ${WORKDIR}/.bosh.yml | sed -e 's/^/              /' || exit $?
 	fi
 }
