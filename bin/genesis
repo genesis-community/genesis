@@ -3773,7 +3773,7 @@ resources:
 EOF
 
 	if [[ -z $CI_SKIP_UPKEEP ]]; then
-		ci_update <<EOF
+		cat >> ${WORKDIR}/pipeline.yml <<EOF
 groups:
   - name: '*'
     jobs:
