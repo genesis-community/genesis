@@ -214,22 +214,30 @@ setup() {
 		while IFS='' read -r line || [[ -n "$line" ]]; do
 			cmd=$(echo $line | perl -pe 's|^(.*?):.*$|$1|')
 			ver=$(echo $line | perl -pe 's|^.*?: *(.*)$|$1|')
-			if [[ -z $(command -v ${cmd}) ]]; then
-				errors="This Genesis deployment requires the '${cmd}' command\n${errors}"
-				continue
+			
+			if [[ ${cmd} == "genesis" ]] ; then
+				cmd_version="${VERSION}"
+			else
+				if [[ -z $(command -v ${cmd}) ]] ; then
+					errors="This Genesis deployment requires the '${cmd}' command\n${errors}"
+					continue
+				fi
+				cmd_version=$(${cmd} -v)
 			fi
+
 			if [[ ${ver} != "null" && ${ver} != '~' ]]; then
-				dev_version=$(${cmd} -v 2>&1 | perl -pe 's/.*development.*/DEV/')
+				dev_version=$(echo "${cmd_version}" | perl -pe 's/.*development.*/DEV/')
 				if [[ ${dev_version} == "DEV" ]]; then
 					echo "Treating 'development' version as up-to-date with ${ver}"
 					continue
 				fi
-				current_version=$(${cmd} -v 2>&1 | perl -pe 's|.*?(\d+\.\d+(\.\d+)*).*|$1|')
+				current_version=$(echo "${cmd_version}" | perl -pe 's|.*?(\d+\.\d+(\.\d+)*).*|$1|')
 				if [[ -z ${current_version} || $(echo ${current_version} | egrep '[^0-9\.]') ]]; then
 					errors="This Genesis deployment requires ${cmd} version ${ver}, but the current version could not be parsed\n${errors}"
 					echo ${current_version}
 					continue
 				fi
+
 				if ! version_checker ${current_version} ${ver}; then
 					errors="This Genesis deployment requires ${cmd} version ${ver} (found ${current_version})\n${errors}"
 					continue
