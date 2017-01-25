@@ -3960,6 +3960,7 @@ resources:
     source:
       paths:
         - ${alpha_site}/site
+        - ${alpha_env}
         - ${alpha_env}/*.yml
 
   ##########################################################################
@@ -4017,6 +4018,7 @@ resources:
     source:
       paths:
         - ${site}/site
+        - ${beta_env}
         - ${beta_env}/*.yml
 
   ##########################################################################
@@ -4077,6 +4079,7 @@ resources:
     .: (( inject resources.git ))
     source:
       paths:
+        - ${site_env}
         - ${site_env}/*.yml
 
 jobs:
@@ -4129,6 +4132,7 @@ resources:
     .: (( inject resources.git ))
     source:
       paths:
+        - ${site_env}
         - ${site_env}/*.yml
 
 jobs:
