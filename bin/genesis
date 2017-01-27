@@ -5218,8 +5218,8 @@ __dox_generate_usage() {
 	local cmd="$(__dox_get_meta_option "${opts}" "cmd" )"
 
 	#FIXME: this doesn't allow empty strings as a valid arg, necessitating using ' ' for no args
-	IFS=$'\n' args=( $(__dox_get_meta_option "${opts}" "args" ) )
-	unset IFS
+  IFS=$'\n' read -d '' -r -a args <<<"$(__dox_get_meta_option "${opts}" "args" )"
+  unset IFS
 	leader="${leader:-"  "}"
 	cmd="${cmd:-"$(echo "$topic" | tr "-" " ")"}"
 
