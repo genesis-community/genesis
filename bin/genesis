@@ -373,7 +373,7 @@ ask_bosh() {
 	local url=$1
 
 	need_a_workdir
-	file="${WORKDIR}/bosh.$(echo "${url}" | sha1sum | awk '{print $1}')"
+	file="${WORKDIR}/bosh.$(echo "${url}" | checksum | awk '{print $1}')"
 	if [[ ! -f ${file} ]]; then
 		need_a_bosh
 		curl -Lks -u "${DIRECTOR_CREDS}" "${DIRECTOR_URL}/${url}" > ${file}
@@ -1452,7 +1452,7 @@ cmd_update() {
 	chmod 0755 ${WORKDIR}/bin
 	if ! ${WORKDIR}/bin ping >/dev/null 2>&1; then
 		echo >&2 "Download failed / corrupt; NOT proceeding with update..."
-		echo >&2 "sha1:$(sha1sum ${WORKDIR}/bin | awk '{print $1}')"
+		echo >&2 "sha1:$(checksum ${WORKDIR}/bin | awk '{print $1}')"
 		${WORKDIR}/bin ping >&2
 		exit 1
 	fi
@@ -4439,7 +4439,7 @@ cmd_ci_stemcells() {
 	for dir in ${STEMCELLS}/*; do
 		local name=${dir##*/}
 		local vers=$(cat ${dir}/version)
-		local sha1=$(cat ${dir}/stemcell.tgz | sha1sum | awk '{print $1}')
+		local sha1=$(cat ${dir}/stemcell.tgz | checksum | awk '{print $1}')
 		local url=$(cat ${dir}/url)
 
 		pushd ${REPO_IN} >/dev/null
