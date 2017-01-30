@@ -222,7 +222,7 @@ setup() {
 					errors="This Genesis deployment requires the '${cmd}' command\n${errors}"
 					continue
 				fi
-				cmd_version=$(${cmd} -v)
+				cmd_version=$(${cmd} -v 2>&1)
 			fi
 
 			if [[ ${ver} != "null" && ${ver} != '~' ]]; then
