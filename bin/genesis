@@ -1076,7 +1076,9 @@ preflight_normal_deployment() {
 			exit 2
 		fi
 		# TODO: do we need to ensure cloud config knows about this alias?
-	elif [[ -f "${stemcell_dir}/name" ]]; then
+	fi
+
+	if [[ -f "${stemcell_dir}/name" ]]; then
 		local stemcell_name=$(cat "${stemcell_dir}/name")
 		ensure_present stemcell ${stemcell_name} ${stemcell_version}
 	else
