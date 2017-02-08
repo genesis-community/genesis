@@ -1125,7 +1125,7 @@ EOF
 	# Stemcell bits (presence of required values confirmed in preflight_normal_deployment)
 	for item in "alias" "name" "version" "url" "sha1" ; do
 		local _file="${DEPLOYMENT_ENV_DIR}/.site/stemcell/${item}"
-		[[ -f $_file ]] && echo "    $item: "'"'$(cat $_file | head -n1 | sed 's/"/\\"/g')'"'
+		[[ -f $_file ]] && echo "    $item: "'"'"$(cat $_file | head -n1 | sed 's/"/\\"/g')"'"'
 	done
 	echo 'update: (( param "Please specify update settings for your bosh deployment" ))'
 
