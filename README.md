@@ -72,10 +72,10 @@ is to use homebrew:
 
 ```
 brew tap starkandwayne/cf
-brew install safe
+brew install genesis
 ```
 
-Otherwise, you can grab the latest release artifact from our [GitHub Releases](https://github.com/starkandwayne/safe/releases).
+Otherwise, you can grab the latest release artifact from our [GitHub Releases](https://github.com/starkandwayne/genesis/releases).
 
 # Managing BOSH Release/Stemcell Versions with Genesis
 
