@@ -67,21 +67,15 @@ articles about using Genesis in real world situations:
 
 ## Installation
 
-To install Genesis, you just need to put `bin/genesis` somewhere
-in your path and make it executable, like this:
+There are a couple ways to get Genesis on your machine. If you're on a Mac, the easiest
+is to use homebrew:
 
 ```
-curl https://raw.githubusercontent.com/starkandwayne/genesis/master/bin/genesis > ~/bin/genesis
-chmod 0755 ~/bin/genesis
+brew tap starkandwayne/cf
+brew install safe
 ```
 
-(assuming that `~/bin` is in your `$PATH`, which it really ought
-to be)
-
-If you have privileged access and wish to install Genesis for all
-users, you can put it in `/usr/local/bin` or `/usr/bin`
-
-[spruce]: https://github.com/geofffranks/spruce
+Otherwise, you can grab the latest release artifact from our [GitHub Releases](https://github.com/starkandwayne/safe/releases).
 
 # Managing BOSH Release/Stemcell Versions with Genesis
 
