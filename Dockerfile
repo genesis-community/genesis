@@ -11,7 +11,9 @@ RUN apt-get update \
       && gem install bosh_cli
 
 # base packages
-RUN apt-get install -yy curl file
+RUN apt-get update \
+      && apt-get install -yy curl file unzip git ruby \
+      && gem install bosh_cli
 
 # spruce
 RUN curl -L >/usr/bin/spruce https://github.com/geofffranks/spruce/releases/download/v${SPRUCE_VERSION}/spruce-linux-amd64 \
