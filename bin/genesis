@@ -4804,10 +4804,34 @@ cmd_bosh() {
 		;;
 
 	(bosh-init)
-		echo >&2 "BOSH-init deployments do not currently support the \`bosh' command"
+		echo >&2 "Please use the 'genesis bosh-init' command instead."
 		exit 1
 		;;
 	esac
+}
+
+cmd_boshinit() {
+	# NOTE: cmd_bosh specifically avoids argv inspection
+	must_be_in_an_environment
+
+	case ${DEPLOYMENT_TYPE} in
+	(bosh-init)
+		skip_preflight
+		(REDACT= cmd_build .deploy.yml) || exit 3
+		[[ -n $DEBUG_LEAVE_THE_CREDS_THERE ]] || \
+			trap "rm -f ${DEPLOYMENT_ENV_DIR}/manifests/.deploy.yml" QUIT TERM INT EXIT
+
+		bosh-init $@ ${DEPLOYMENT_ENV_DIR}/manifests/.deploy.yml
+
+		exit $?
+		;;
+
+	(normal)
+		echo >&2 "Please use the 'genesis bosh' command instead."
+		exit 1
+		;;
+	esac
+
 }
 
 cmd_dump() {
@@ -5352,6 +5376,7 @@ main() {
 			;;
 		(dump)                   cmd_dump ;;
 		(bosh)                   cmd_bosh $* ;;
+        (bosh-init)              cmd_boshinit $* ;;
 		(*)                      bad_usage_partial "" "$cmd" ;;
 	esac
 }
