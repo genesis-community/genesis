@@ -70,7 +70,13 @@ COMMANDS
 dox-concept:Makefiles
 
 VERSION="(development build)"
+if [[ -n "$GENESIS_V2_VERSION" ]] ; then
+  VERSION="(v${GENESIS_V2_VERSION} embedded build)"
+fi
 SCRIPT_NAME="$(basename $0)"
+if [[ -n "$GENESIS_V1_PATH_OVERRIDE" ]] ; then
+  SCRIPT_NAME="$(basename "$GENESIS_V1_PATH_OVERRIDE")"
+fi
 
 USERNAME=$(whoami)
 CANON_REPO=https://github.com/starkandwayne/genesis
@@ -1449,6 +1455,11 @@ SEE ALSO
 @~include=related{"items":["command:version","command:embed"]}
 dox-command:update
 cmd_update() {
+  if [[ -n "$GENESIS_V2_VERSION" ]] ; then
+    echo >&2 "Cannot update the version of Genesis v1 embedded in Genesis v2."
+    echo >&2 "Please update Genesis v2 to get the latest embedded v1 version."
+    exit 1
+  fi
 	need_a_workdir
 	curl -Ls $(curl -s ${API_REPO}/releases/latest | jq -r '.assets[] | select(.name | test("genesis")) | .browser_download_url') > ${WORKDIR}/bin
 	chmod 0755 ${WORKDIR}/bin
