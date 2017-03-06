@@ -1136,7 +1136,7 @@ EOF
 		echo "  - name: ${rel}"
 		for item in "version" "url" "sha1" ; do
 			local _file="${DEPLOYMENT_ENV_DIR}/.global/releases/${rel}/${item}"
-			[[ -f $_file ]] && echo "    $item: "'"'$(cat $_file | head -n1 | sed 's/"/\\"/g')'"'
+			[[ -f $_file ]] && echo "    $item: "'"'"$(cat $_file | head -n1 | sed 's/"/\\"/g')"'"'
 		done
 	done
 	return 0
