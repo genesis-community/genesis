@@ -2943,8 +2943,8 @@ ci_check_configuration() {
 	local rc=0
 
 	mkdir -p ${DEPLOYMENT_ROOT}/ci
-	if [[ ! -f ${DEPLOYMENT_ROOT}/ci/boshes.yml ]]; then
-		cat >${DEPLOYMENT_ROOT}/ci/boshes.yml <<EOF
+	if [[ ! -f $(ci_boshes_yaml) ]]; then
+		cat >$(ci_boshes_yaml) <<EOF
 ---
 auth: (( param "Please define your BOSH directors in ci/boshes.yml (and remove this line)" ))
 aliases:
@@ -2968,8 +2968,8 @@ aliases:
 #
 EOF
 	fi
-	if [[ ! -f ${DEPLOYMENT_ROOT}/ci/settings.yml ]]; then
-		cat >${DEPLOYMENT_ROOT}/ci/settings.yml <<EOF
+	if [[ ! -f $(ci_settings_yaml) ]]; then
+		cat >$(ci_settings_yaml) <<EOF
 --- {}
 # This is where you will configure your Genesis CI deployment pipeline
 # (everything goes under 'meta')
@@ -3096,15 +3096,6 @@ ci_update() {
 	fi
 }
 
-ci_pipeline_yaml() {
-	if [[ -n ${CI_PIPELINE:-} ]]; then
-		echo ${DEPLOYMENT_ROOT}/.ci.yml
-	else
-		echo ${DEPLOYMENT_ROOT}/.ci.${CI_PIPELINE}.yml
-	fi
-}
-
-
 need_ci_git_access() {
 	[ -z ${GIT_USERNAME} ] && GIT_USERNAME="Concourse Bot"
 	[ -z ${GIT_EMAIL}    ] && GIT_EMAIL="concourse@$(hostname -f)"
@@ -3161,6 +3152,23 @@ ci_pipeline_yaml() {
 		echo ${DEPLOYMENT_ROOT}/.ci.yml
 	fi
 }
+
+ci_boshes_yaml() {
+	if [[ -n ${CI_PIPELINE:-} ]]; then
+		echo ${DEPLOYMENT_ROOT}/ci/boshes.${CI_PIPELINE}.yml
+	else
+		echo ${DEPLOYMENT_ROOT}/ci/boshes.yml
+	fi
+}
+
+ci_settings_yaml() {
+	if [[ -n ${CI_PIPELINE:-} ]]; then
+		echo ${DEPLOYMENT_ROOT}/ci/settings.${CI_PIPELINE}.yml
+	else
+		echo ${DEPLOYMENT_ROOT}/ci/settings.yml
+	fi
+}
+
 
 : <<'dox-concept:CI'
 DESCRIPTION
@@ -3691,7 +3699,7 @@ ci_tags_for() {
 ci_bosh_configs() {
 	need_a_vault
 
-	local config=${DEPLOYMENT_ROOT}/ci/boshes.yml
+	local config=$(ci_boshes_yaml)
 	if [[ -n $(spruce json ${config} | jq -r '.auth // ""') ]]; then
 		spruce merge ${config} | sed -e 's/^/              /' || exit $?
 	else
@@ -4309,12 +4317,12 @@ EOF
 ci_repipe_merge() {
 	target=${1:-pipeline.yml}
 	mkdir -p ${DEPLOYMENT_ROOT}/ci
-
+	
 	need_command spruce
 	spruce $SPRUCE_OPTS merge --prune meta \
 	       ${WORKDIR}/pipeline.yml \
 	       ${WORKDIR}/repipe/*.yml \
-	       $(actual_yaml_files ${DEPLOYMENT_ROOT}/ci/settings.yml) > ${DEPLOYMENT_ROOT}/ci/${target}
+	       $(actual_yaml_files $(ci_settings_yaml)) > ${DEPLOYMENT_ROOT}/ci/${target}
 }
 
 : <<'dox-command:ci-repipe'
@@ -4352,11 +4360,11 @@ cmd_ci_repipe() {
 	need_a_workdir
 	need_a_vault
 
-	CI_TAGGED=$(     spruce json ${DEPLOYMENT_ROOT}/ci/settings.yml | jq -r '.meta.tagged // ""')
-	CI_SKIP_UPKEEP=$(spruce json ${DEPLOYMENT_ROOT}/ci/settings.yml | jq -r '.meta.skip_upkeep // ""')
+	CI_TAGGED=$(     spruce json $(ci_settings_yaml) | jq -r '.meta.tagged // ""')
+	CI_SKIP_UPKEEP=$(spruce json $(ci_settings_yaml) | jq -r '.meta.skip_upkeep // ""')
 	CI_NOTIFICATION_SCHEME=none
 	for scheme in slack email; do
-		if [[ -n $(spruce json ${DEPLOYMENT_ROOT}/ci/settings.yml | jq -r '.meta.'"$scheme"' // ""') ]]; then
+		if [[ -n $(spruce json $(ci_settings_yaml) | jq -r '.meta.'"$scheme"' // ""') ]]; then
 			CI_NOTIFICATION_SCHEME=$scheme
 		fi
 	done
@@ -4370,8 +4378,8 @@ cmd_ci_repipe() {
 	[[ -n $DEBUG_LEAVE_THE_CREDS_THERE ]] || \
 		trap "rm -f ${DEPLOYMENT_ROOT}/ci/.deploy.yml" QUIT TERM INT EXIT
 
-	CI_TARGET_NAME=$(spruce json ${DEPLOYMENT_ROOT}/ci/settings.yml | jq -r '.meta.target // ""')
-	CI_PIPE_NAME=$(  spruce json ${DEPLOYMENT_ROOT}/ci/settings.yml | jq -r '.meta.name // ""')
+	CI_TARGET_NAME=$(spruce json $(ci_settings_yaml) | jq -r '.meta.target // ""')
+	CI_PIPE_NAME=$(  spruce json $(ci_settings_yaml) | jq -r '.meta.name // ""')
 
 	echo
 	if [[ -z $draft ]] ; then
