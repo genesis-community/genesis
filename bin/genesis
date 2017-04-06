@@ -3169,6 +3169,14 @@ ci_settings_yaml() {
 	fi
 }
 
+pipeline_yaml() {
+	if [[ -n ${CI_PIPELINE:-} ]]; then
+		echo pipeline.${CI_PIPELINE}.yml
+	else
+		echo pipeline.yml
+	fi
+}
+
 
 : <<'dox-concept:CI'
 DESCRIPTION
@@ -3750,7 +3758,7 @@ EOF
 ci_repipe_build_base() {
 	need_a_workdir
 
-	cat >${WORKDIR}/pipeline.yml <<EOF
+	cat >${WORKDIR}/$(pipeline_yaml) <<EOF
 ---
 meta:
   name: (( param "Please name this deployment pipeline (in ci/settings.yml)" ))
@@ -3783,7 +3791,7 @@ resources:
 EOF
 
 	if [[ -z $CI_SKIP_UPKEEP ]]; then
-		cat >> ${WORKDIR}/pipeline.yml <<EOF
+		cat >> ${WORKDIR}/$(pipeline_yaml) <<EOF
 groups:
   - name: '*'
     jobs:
@@ -4315,12 +4323,12 @@ EOF
 }
 
 ci_repipe_merge() {
-	target=${1:-pipeline.yml}
+	target=${1:-$(pipeline_yaml)}
 	mkdir -p ${DEPLOYMENT_ROOT}/ci
-	
+
 	need_command spruce
 	spruce $SPRUCE_OPTS merge --prune meta \
-	       ${WORKDIR}/pipeline.yml \
+	       ${WORKDIR}/$(pipeline_yaml) \
 	       ${WORKDIR}/repipe/*.yml \
 	       $(actual_yaml_files $(ci_settings_yaml)) > ${DEPLOYMENT_ROOT}/ci/${target}
 }
@@ -4371,7 +4379,7 @@ cmd_ci_repipe() {
 
 	ci_repipe_build_base
 	VAULT_ADDR= REDACT=y ci_repipe_build_environments || exit 2
-	VAULT_ADDR= REDACT=y ci_repipe_merge pipeline.yml || exit 3
+	VAULT_ADDR= REDACT=y ci_repipe_merge $(pipeline_yaml) || exit 3
 
 	            REDACT=  ci_repipe_build_environments || exit 4
 	            REDACT=  ci_repipe_merge .deploy.yml  || exit 5
