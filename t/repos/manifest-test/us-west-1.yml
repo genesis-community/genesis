@@ -1,0 +1,5 @@
+---
+params:
+  site: us-west-1
+  # don't do this at home, kids
+  domain: (( concat params.env "." params.site ".example.com" ))

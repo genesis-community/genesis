@@ -1,0 +1,8 @@
+---
+kit:
+  subkits:
+    - s3
+    - webdav
+
+params:
+  env: sandbox

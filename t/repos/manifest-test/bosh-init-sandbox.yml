@@ -1,0 +1,6 @@
+kit:
+  subkits:
+  - bosh-init
+params:
+  env: bosh-init-sandbox
+  domain: bosh-init.example.com

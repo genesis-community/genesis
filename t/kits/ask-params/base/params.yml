@@ -1,0 +1,7 @@
+---
+params:
+  availability_zones: [z1, z2, z3]
+  cell_instances: 3
+  router_instances: 2
+  nats_instances: 2
+  cell_vm_type: small

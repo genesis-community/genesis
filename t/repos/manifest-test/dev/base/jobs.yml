@@ -1,0 +1,8 @@
+---
+jobs:
+  - name: thing
+    templates:
+      - { release: foo, name: bar }
+    properties:
+      domain: (( grab params.domain ))
+      endpoint: (( concat "https://" params.domain ":8443" ))

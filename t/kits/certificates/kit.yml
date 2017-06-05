@@ -1,0 +1,35 @@
+---
+name: certificatetest
+version: 0.0.1
+
+subkits:
+  - prompt: Generate all the certificates?
+    subkit: certs-b
+    default: yes
+
+params:
+  base:
+  - ask: "What is your base domain?"
+    param: base_domain
+    description: "base domain"
+
+secrets: {}
+
+certificates:
+  base:
+    auto-generated-certs-a:
+      ca: { valid_for: 1y }
+      server:
+        valid_for: 6m
+        names:
+        - server.example.com
+        - 10.10.10.10
+        - '*.server.example.com'
+        - '*.system.${params.base_domain}'
+
+  certs-b:
+    auto-generated-certs-b:
+      ca: { valid_for: 1y }
+      server:
+        valid_for: 4m
+        names: [ asdf.com, www.asdf.com ]

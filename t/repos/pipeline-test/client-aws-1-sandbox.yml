@@ -1,0 +1,4 @@
+---
+params:
+  env: sandbox
+  domain: sandbox.thing.example.com

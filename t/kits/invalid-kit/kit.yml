@@ -1,0 +1,79 @@
+---
+name: paramtest
+version: 0.0.1
+
+description: Testing the asking of parameters
+
+subkits:
+- prompt: Should we ask additional questions?
+  subkit: subkit-params
+  default: yes
+
+credentials: {}
+certificates: {}
+params:
+  base:
+    - ska: this is an intentional typo of 'ask'
+      rapams: i'm dyslexic
+
+    - description: Dude, where's my data?
+
+    - ask: "this has no param/params/vault and should fail"
+      description: "lets cut down on errors"
+
+    - ask: "cannot be used with params"
+      params: [ "this causes failure" ]
+      description: "lets cut down on errors"
+
+    - params: ["here's a param"]
+      param: but here's another to fail
+      description: "lets cut down on errors"
+
+    - ask: lets put this in vault and your env
+      param: bad
+      vault: also/bad
+      description: "lets cut down on errors"
+
+    - vault: putstuff-here
+      params: [ "putstuff-there" ]
+      description: so confused
+
+    - vault: omgs-this-is-bad
+
+  valid-params:
+    - ask: "What should we put in vault?"
+      description: "I'm describing stuff"
+      vault: This will go in vault
+
+    - description: This value sets the port advertised for wss://doppler.<system_domain>
+      param: logger_port
+
+    - description: These set instance counts for VMs
+      params:
+      - cell_instances
+      - api_instances
+
+    - ask: How many fish heads do you want?
+      description: This value refers to the number of fish heads you earned in apple school.
+      example: FIVE
+      param: fish_heads
+
+  more-bad-params:
+    - params: this is wrong
+      description: "lets cut down on errors"
+
+    - param: [ this is also wrong ]
+      description: "lets cut down on errors"
+
+    - description: ""
+      param: ""
+
+    - description: ~
+      param: ~
+
+    - description:
+        - oops
+      example:
+        - "whoa there"
+      ask:
+        huh: bad?

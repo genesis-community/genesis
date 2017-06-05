@@ -1,0 +1,220 @@
+#!/bin/bash
+
+# Exported variables: 
+#   infile:  the name of the file containing the incoming json
+#   in_json: the json passed in from Genesis
+#   outfile: the file the params hook will write the json to
+#   subkits: the array of subkits being used
+#
+# Exported functions:
+#   contains needle [item1 item2 item3...]
+#     - emits index of needle if found in list of items, nothing otherwise
+#     - returns 0 if found, 1 otherwise
+#     - needle can be string or a literal perlstyle regular expression in the
+#       form of /<pattern>/i (the i is optional, case-insensitive if present)
+#
+#   color string fg[bg]
+#     - fg and bg can be one of (blac)k, r(ed), g(reen), b(lue), y(ellow),
+#       m(agenta), p(urple) c(yan) w(white)
+#     - fg can also take the same value in uppercase for brighter (bold) color
+#     - example: color "This will be bright yellow on a red background" Yr
+#
+#   prompt_for variable prompt [opts]
+#     - Will show prompt and return any user input in the given variable
+#     - Options can be one or more of:
+#       - "allow_blank" 
+#         - allows user to enter blank as a valid response; otherwise re-prompts
+#           for value if user enters a blank response
+#       - "multiline"
+#         - allows for multiline input (ctrl-d to end)
+#       - "list" or "list:<limits>"
+#         - sets the variable to an array of prompted items (blank to end input)
+#         - if limits given, can be of the form <count>, <min>+, or <min>-<max>
+#         - ignores allow_blank or default options
+#       - "default:<value>"
+#         - sets the variable to <value> if user enters a blank response
+#         - ignores allow_blank option
+#       - "prompt:<string>"
+#         - sets the item prompt to "<prompt> >"
+#         - by default, the prompt is ">"
+#       - "validate:<function>"
+#         - function can be one of:
+#           - regexp in the form of "/<pattern>/" or "/<pattern>/i"
+#           - "boolean" : will only allow string starting with y|n|t|f
+#           - comma-separated list: only allows one of the given values
+#       - "err:<msg>"
+#         - If the input is invalid, the given message will be displayed before
+#           reprompting the user.
+#         - if not given, a generic error message is shown.
+
+if [[ "$(base_name -- $0)" == "params_helper" ]] ; then
+  echo >&2 "Error: Do not call $0 directly; it needs to be sourced by the params hook script"
+  exit 2
+fi
+
+infile="$1";  shift;
+outfile="$1"; shift;
+subkits=("$@"); set --
+
+if [[ -z "$infile" || -z "$outfile" || -z "$GENESIS" || -z "$GENESIS_ENVIRONMENT_NAME" ]] ; then
+  echo >&2 "Error: This should only be called by Genesis."
+  exit 2
+fi
+if [[ ! -f "$infile" ]] ; then
+  echo >&2 "Internal error: input file not found."
+  exit 2
+fi
+in_json="$(cat "$infile")"
+
+trap ctrl_c INT
+ctrl_c() {
+  color "\n*** USER INTERRUPT ***\n" r y
+  exit 130
+}
+
+contains() {
+  # returns 0 if present, 1 if not; outputs index where element found
+  # NOTE: index is 1-based, to support $@;
+  local el=$1; shift
+  local re_mode=false
+  if [[ "$el" =~ ^/.*/$ ]] ; then
+    re_mode=true
+    el="${el:1:${#el}-2}"
+  fi
+  local i=1
+  while (( $# > 0 )) ; do
+    local found=false
+    if $re_mode ; then
+      [[ "$1" =~ $el ]] && found=true
+    else
+      [[ "$1" == "$el" ]] && found=true
+    fi
+    if $found ; then
+      echo $i;
+      return 0
+    fi
+    shift
+    (( ++i ))
+  done
+  return 1
+}
+
+color() {
+  local colors=" k=0 r=1 g=2 y=3 b=4 m=5 p=5 c=6 w=7 "
+  local ansi="" c="$(echo "$2" | tr "[:upper:]" "[:lower:]")"
+  local fg="${c:0:1}" bg="${c:1:1}"
+  if [[ -n "${fg}" ]] ; then
+    ansi="3$(echo "$colors" | sed "s/.* ${fg}=\\([^ ]*\\) .*/\\1/")"
+    [[ "${#ansi}" -eq 2 ]] || ansi=""
+    [[ "${fg}" == "${2:0:1}" || -z "$ansi" ]] || ansi="1;${ansi}"
+  fi
+  if [[ -n "${bg}" ]] ; then
+    local bg_ansi="4$(echo "$colors" | sed "s/.* ${bg}=\\([^ ]*\\) .*/\\1/")"
+    [[ "${#bg_ansi}" -eq 2 ]] && ansi="${ansi:+$ansi;}$bg_ansi"
+  fi
+  printf "\x1b[${ansi}m%b\x1b[0m" "$1"
+}
+
+prompt_for() {
+  local old_IFS="$IFS"
+  unset IFS
+  local var="$1" preamble="$2" ; shift 2
+  local allow_blank=false has_default=false multiline=false is_list=false default
+  local prompt="" err_msg="" boolean=false validate="" display_default=false
+  contains "allow_blank"    "$@" > /dev/null && allow_blank=true
+  contains "multiline"      "$@" > /dev/null && multiline=true
+  local input i=-1 
+  i="$(contains "/^list(:.*)?$/" "$@")" && is_list=true && local list_limit=${!i:5}
+  i="$(contains "/^default:.*/" "$@")"  && default="${!i:8}" && has_default=true && display_default=true
+  i="$(contains "/^validate:.*/" "$@")" && validate="${!i:9}"
+  i="$(contains "/^prompt:.*/" "$@")"   && prompt=${!i:7}
+  i="$(contains "/^err:.*/" "$@")"      && err_msg=${!i:4}
+  if $is_list && [[ "$list_limit" =~ ^([0-9]+)(\+|-([0-9]+))?$ ]] ; then
+    local list_min_count=${BASH_REMATCH[1]}
+    local list_max_count=${BASH_REMATCH[3]:-${BASH_REMATCH[2]:-${BASH_REMATCH[1]}}}
+  fi
+  if [[ "$validate" == "boolean" ]] ; then
+    boolean=true
+    local validate_re="^(y(es)?|n(o)?)$"
+    local ci='-s'
+    prompt="[y|n]"
+    $has_default && [[ "$default" =~ ^[YyTt] ]] && prompt="[$(color "Y" "g")]|n"
+    $has_default && [[ "$default" =~ ^[NnFf] ]] && prompt="[y|$(color "N" "g")]"
+    display_default=false
+    err_msg="You must answer y, yes, n or no"
+  elif [[ "$validate" =~ ^/.*/(i)?$ ]] ; then
+    local ci='-u' offset=2
+    [[ "${BASH_REMATCH[1]}" == 'i' ]] && ci='-s' && offset=3
+    local validate_re="${validate:1:${#validate}-$offset}"
+  else
+    local validate_list
+    IFS="," ; validate_list=($validate); unset IFS
+  fi
+
+  printf "\n%b" "$preamble"
+  $display_default && printf "%s" "$(color "$(printf " (default: %s)" "$default")" g)"
+  $is_list && printf " (%b)" "$(color "Leave blank to end" c)"
+  declare -a list_input
+  while true ; do # list
+    while true ; do # item processing
+      if $multiline ; then
+        local _prompt=$(printf "%s(Enter <CTRL-D> to end)" "${prompt:+"$prompt "}")
+        printf "\n%s\n%s\n" "$_prompt" "${_prompt//[^-]/-}"
+        input=$(cat)
+      else
+        printf "\n%s> " "${prompt:+"$prompt "}"
+        read -r input
+      fi
+      if [[ -z "$input" ]] ; then
+        ($allow_blank || $is_list) && break
+        $has_default && input="$default" && break
+         printf "%s: %s\n" "$(color "Invalid" r)" "${err_msg:-Cannot be blank.}"
+      else
+        [[ -z "$validate" ]] && break
+        if [[ -n "${validate_re+x}" ]] ; then
+          (shopt $ci nocasematch ; [[ "$input" =~ $validate_re ]]) && break
+        elif [[ -n "${validate_list+x}" ]] ; then
+          contains "$input" "${validate_list[@]}" > /dev/null && break
+        fi
+        printf "%s: %s\n" "$(color "Invalid" r)" "${err_msg:-Unexpected value provided.}"
+      fi
+    done
+    if $boolean ; then
+      [[ "$input" =~ ^[YyTt] ]] && input=true || input=false
+    fi
+    if $is_list ; then
+      if [[ -z "$input" ]] ; then
+        if [[ -n $list_min_count && $list_min_count -gt ${#list_input[@]} ]] ; then
+          color "Insufficient data:" r
+          color "You must enter at least $list_min_count items.\n"
+          continue
+        fi
+        eval "$var=(\"\${list_input[@]}\")"
+        break
+      fi
+      list_input+=("$input")
+      if [[ -n $list_max_count && "$list_max_count" != "+" && $list_max_count -eq ${#list_input[@]} ]]; then 
+        color "Maximum reached:" g
+        color "No further items allowed.\n"
+        break
+      fi
+    else
+      eval "$var=\"\$input\""
+      break
+    fi
+  done
+  IFS="$old_IFS"
+  return 0
+}
+
+TRACE() {
+  while (( $# )); do
+    if [[ -z ${!1+x} ]] ; then
+      echo >&2 "[TRACE: ${1}] ---undefined---"
+    #add array check
+    else
+      echo >&2 "[TRACE: ${1}] '${!1}'"
+    fi
+    shift
+  done
+}

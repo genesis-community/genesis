@@ -1,0 +1,82 @@
+name:     Omega
+version:  1.0.0
+author:   James Hunt <jhunt@starkandwayne.com>
+homepage: omega.starkandwayne.com
+github:   https://github.com/genesis-community/omega-genesis-kit
+
+description: |
+  This kit is designed to exercise as much of the Genesis codebase
+  as is robotically possible.  It does not purport to provide any
+  sort of useful functionality to operators, nor is it required to
+  make any real sense.
+
+subkits:
+  # you have to choose an auth subkit
+  - prompt:  How would you like to perform authentication?
+    type:    authentication method
+    choices:
+      - subkit:  gh-oauth
+        label:   Github OAuth2 (Organization-based Authentication)
+
+      - subkit:  cf-uaa
+        label:   Cloud Foundry UAA
+
+      - subkit:  basic
+        label:   HTTP Basic Auth over TLS/SSL
+        default: yes
+
+  # you can load toolbelt, or not.
+  - prompt:  Would you like to load the most excellent Toolbelt add-on?
+    subkit:  toolbelt
+    default: yes
+
+  # you may choose a backup solution.
+  - prompt: How would you like to perform backups of this deployment?
+    type:   backup strategy
+    choices:
+      - subkit:  shield
+        label:   Using the super awesome SHIELD backup system
+        default: yes
+
+      - subkit:  s3-backups
+        label:   Simple S3-bucket Backups
+
+      - subkit:  ~
+        label:   I do not wish to perform backups
+
+
+credentials:
+  base:
+    test/random:
+      username: random 32
+      password: random 109
+      limited:  random 16 allowed-chars a-z
+
+
+    test/ssh/strong: ssh 4096
+    test/ssh/meh:    ssh 2048
+    test/ssh/weak:   ssh 1024
+
+    test/rsa/strong: rsa 4096
+    test/rsa/meh:    rsa 2048
+    test/rsa/weak:   rsa 1024
+
+    test/fmt/sha512/default:
+      random: random 8 fmt crypt-sha512
+    test/fmt/sha512/at:
+      random: random 8 fmt crypt-sha512 at cryptonomicon
+
+    test/fixed/random:
+      username: random 32 fixed
+    test/fixed/ssh: ssh 2048 fixed
+    test/fixed/rsa: rsa 2048 fixed
+
+  gh-oauth:
+    auth/github/oauth:
+      shared_secret: random 128
+      fixed:         random 128 fixed
+
+  cf-uaa:
+    auth/cf/uaa:
+      shared_secret: random 128
+      fixed:         random 128 fixed

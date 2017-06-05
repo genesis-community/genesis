@@ -1,0 +1,41 @@
+#!/bin/bash
+
+infile="$1";  shift;
+outfile="$1"; shift;
+subkits=("$@")
+
+tempdir="$(jq <$infile -rcM 'to_entries[] | .value.values[] | to_entries[] | select(.key == "tempdir") | .value')"
+if [[ -n "${tempdir}" ]] ; then
+  logfile="${tempdir}/params.out"
+  echo "Environment: $GENESIS_ENVIRONMENT_NAME" > $logfile
+
+  echo $'\n'"Subkits:" >> $logfile
+  for sk in "${subkits[@]}" ; do
+    echo "  - $sk" >> $logfile
+  done
+
+  echo $'\n'"Input:" >> $logfile
+  cat $infile | jq --sort-keys -r . >> $logfile
+fi
+
+while true ; do
+  echo -n "Please state your purpose: "
+  read purpose
+  if [[ -n $purpose ]] ; then break ; fi
+done
+echo ""
+
+jq <$infile --arg purpose "$purpose" -r '. |= .+ [
+  {
+    "comment": "this was programatically included",
+    "default": 0,
+    "example": null, "values": [
+      {"rules" : [
+        "protect humans",
+        "obey humans",
+        "protect self",
+        $purpose
+      ]}
+    ]
+  }]' > $outfile
+

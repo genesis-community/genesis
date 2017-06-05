@@ -1,0 +1,7 @@
+#!/bin/bash
+
+# this hook is intentionally non-executable + a failure.
+# the test will run it, expect failure, chmod, run, expect more failure,
+# and then modify the setup script as it goes until it works
+echo "this is not a subkit"
+exit 0

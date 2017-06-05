@@ -1,0 +1,14 @@
+---
+name: hooks
+version: 0.0.1
+
+description: test subkit hooks
+
+subkits:
+  - prompt: Install OpenVPN?
+    subkit:  openvpn
+    default: yes
+
+credentials: {}
+certificates: {}
+params: {}

@@ -1,0 +1,69 @@
+#!/usr/bin/env perl
+# vim:ft=perl:ts=4:sts=4:sw=4
+use strict;
+use warnings;
+
+
+######################################################################
+
+system "perl -c bin/genesis";
+die "Perl compilation failed, not packing\n" unless $? == 0;
+
+my $VERSION = $ARGV[0] || '';
+my $file = "genesis-$VERSION";
+if (!$VERSION) {
+	chomp(my $sha1 = qx(git rev-parse HEAD));
+	$sha1 = substr($sha1, 0, 10);
+	$file = "genesis-$sha1";
+	if (qx(git status --porcelain bin/genesis lib/)) {
+		$sha1 .= '+';
+		$file .= "-dirty";
+	}
+	$VERSION = "($sha1)";
+}
+
+open my $out, ">", "$file"
+	or die "Failed to open $file for writing: $!\n";
+open my $in, "<", "bin/genesis"
+	or die "Failed to open bin/genesis for reading: $!\n";
+open my $v1, "<", "bin/genesis-v1"
+	or die "Failed to open bin/genesis-v1 for reading: $!\n";
+
+print $out "#!/usr/bin/env perl\n";
+print $out "{ # embedded JSON::PP {{{\n";
+print $out qx(perl -p -e 'last if m/__END__/' lib/JSON/PP.pm);
+print $out "} # }}}\n";
+
+LINE:
+while (<$in>) {
+	for my $mod (qw(JSON::PP)) {
+		next LINE if m{^use $mod;};
+		if (m{^use $mod (qw.*);}) {
+			print $out "$mod->import($1);\n";
+			next LINE;
+		}
+	}
+	next if m{^use lib };
+
+	if (m{^((?:our|my) \$VERSION)}) {
+		print $out "$1 = \"$VERSION\";\n";
+		next;
+	}
+	# skip the shebang, we already got one
+	next if m|^#!/|;
+	last if m|^__DATA__$|;
+	print $out $_;
+}
+
+# Embed the v1 script
+print $out "__DATA__\n";
+while (<$v1>) {
+	print $out $_;
+}
+
+close $out;
+close $in;
+close $v1;
+
+chmod 0755, $file;
+print "packaged v$VERSION as ./$file\n";

@@ -1,0 +1,7 @@
+---
+vm_types:
+- name: should-not-appear
+resource_pools:
+- name: should-not-appear
+networks:
+- name: should-not-appear

@@ -1,0 +1,4 @@
+---
+params:
+  env: prod
+  domain: prod.thing.example.com

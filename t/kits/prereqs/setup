@@ -1,0 +1,15 @@
+#!/bin/bash
+set -eu
+
+cat > $GENESIS_ENVIRONMENT_FILE <<EOF
+---
+# this is a valid environment file...
+kit:
+  name:    $GENESIS_KIT_NAME
+  version: $GENESIS_KIT_VERSION
+  subkits: []
+
+params:
+  env:   $GENESIS_ENVIRONMENT_NAME
+  vault: $GENESIS_VAULT_PREFIX
+EOF

@@ -1,0 +1,59 @@
+#!/bin/bash
+#
+# pipey - a small proof-of-concept of pipeline caching
+# USAGE: ./pipey from-environment.yml to-environment.yml
+#
+
+split() {
+  local ll
+  local IFS=-
+  set -f ; ll=( $@ ) ; set +f
+  printf '%s\n' "${ll[@]}"
+}
+
+common_prefix() {
+  local IFS=-
+  set -f
+  local lla=( $1 )
+  local llb=( $2 )
+  set +f
+
+  local ll=()
+  local i=0
+  while :; do
+    if [[ ${lla[$i]} == "" || ${lla[$i]} != ${llb[$i]} ]]; then
+      break
+    fi
+    ll+=(${lla[$i]})
+    i=$((i+1))
+  done
+  echo "${ll[*]}"
+}
+
+if [[ -z ${1:-} || -z ${2:-} ]]; then
+  echo >&2 "USAGE: $0 from-env-manifest.yml to-env-manifest.yml"
+  exit 1
+fi
+from_env=${1%.yml}
+to_env=${2%.yml}
+
+echo "pipeline progression"
+echo "  from [$from_env]"
+echo "    to [$to_env]"
+echo
+
+prefix=$(common_prefix ${from_env} ${to_env})
+suffix=${to_env#$prefix-}
+
+stem=
+for x in $(split ${prefix}); do
+  stem="${stem:+$stem-}${x}"
+  printf "%-40s" "CACHED ${stem}.yml"
+  echo "(from .genesis/cached/${from_env}/${stem}.yml)"
+done
+for x in $(split ${suffix}); do
+  stem="${stem:+$stem-}${x}"
+  echo "DIRECT ${stem}.yml"
+done
+
+exit 0

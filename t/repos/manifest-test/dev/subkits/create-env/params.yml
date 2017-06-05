@@ -1,0 +1,12 @@
+resource_pools:
+- name: small
+networks:
+- name: mynet
+azs:
+- name: z1
+disk_types:
+- name: persistent-1
+disk_pools:
+- name: pool-1
+vm_extensions:
+- vm_ext_1

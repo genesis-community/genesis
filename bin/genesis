@@ -1,0 +1,4284 @@
+#!/usr/bin/env perl
+# vim:ft=perl:noet:ts=4:sts=4:sw=4
+use strict;
+use warnings;
+
+# non-core modules
+use JSON::PP qw/decode_json encode_json/;
+use HTTP::Tiny;
+# NOTE: if you add more non-core modules,
+# be sure to update ./pack!
+
+use Getopt::Long qw/GetOptionsFromArray/;
+use File::Temp qw/tempdir tempfile/;
+use File::Basename qw/dirname/;
+use POSIX qw/strftime/;
+use FindBin;
+use Socket qw/inet_ntoa/;
+use Cwd qw/getcwd abs_path/;
+use lib "$FindBin::Bin/../lib";
+
+our $VERSION = "2.0";
+our $GITHUB_URL = "https://github.com/starkandwayne/genesis";
+our $USER_AGENT_STRING = "genesis/$VERSION";
+
+sub DumpJSON {
+	my ($file, $data) = @_;
+	open my $fh, ">", $file or die "Unable to write to $file: $!\n";
+	print $fh encode_json($data);
+	close $fh;
+}
+
+sub LoadFile {
+	my ($file) = @_;
+	decode_json(qx(spruce json $file));
+}
+
+sub Load {
+	my ($yaml) = @_;
+
+	my $tmp = workdir();
+	open my $fh, "|-", "spruce json >$tmp/yaml.json"
+		or die "Failed to execute `spruce json': $!\n";
+	print $fh $yaml;
+	close $fh;
+
+	return LoadFile("$tmp/yaml.json")
+}
+
+my $END_HOOKS = [];
+sub at_exit {
+	my ($fn) = @_;
+	push @$END_HOOKS, $fn;
+}
+
+END {
+	$_->($?) for @$END_HOOKS;
+}
+
+sub envset {
+	my ($var) = @_;
+	return (defined $ENV{$var} and $ENV{$var} =~ m/^(1|y|yes|true)$/i);
+}
+
+sub envdefault {
+	my ($var, $default) = @_;
+	return defined $ENV{$var} ? $ENV{$var} : $default;
+}
+
+sub ago {
+	my ($ts) = @_;
+	my $ago = time - $ts;
+	if ($ago >  90 * 86400) { return sprintf("%i months ago", $ago / 30 / 86400); }
+	if ($ago >= 21 * 86400) { return sprintf("%i weeks ago", $ago / 7  / 86400); }
+	if ($ago >= 2  * 86400) { return sprintf("%i days ago", $ago / 86400); }
+	if ($ago >= 90 * 60)    { return sprintf("%i hours ago", $ago / 3600); }
+	if ($ago >  60)         { return sprintf("%i minutes ago", $ago / 60); }
+	return "just now";
+}
+
+sub colorize {
+	my ($c, $msg) = @_;
+	return $msg if envset('NOCOLOR');
+	$c = substr $c, 1, 1;
+	my %color = (
+		'k'		=> "\e[30m",     #black
+		'K'		=> "\e[1;30m",   #black (BOLD)
+		'r'		=> "\e[31m",     #red
+		'R'		=> "\e[1;31m",   #red (BOLD)
+		'g'		=> "\e[32m",     #green
+		'G'		=> "\e[1;32m",   #green (BOLD)
+		'y'		=> "\e[33m",     #yellow
+		'Y'		=> "\e[1;33m",   #yellow (BOLD)
+		'b'		=> "\e[34m",     #blue
+		'B'		=> "\e[1;34m",   #blue (BOLD)
+		'm'		=> "\e[35m",     #magenta
+		'M'		=> "\e[1;35m",   #magenta (BOLD)
+		'p'		=> "\e[35m",     #purple (alias for magenta)
+		'P'		=> "\e[1;35m",   #purple (BOLD)
+		'c'		=> "\e[36m",     #cyan
+		'C'		=> "\e[1;36m",   #cyan (BOLD)
+		'w'		=> "\e[37m",     #white
+		'W'		=> "\e[1;37m",   #white (BOLD)
+	);
+
+	if ($c eq "*") {
+		my @rainbow = ('R','G','Y','B','M','C');
+		my $i = 0;
+		my $msgc = "";
+		foreach my $char (split //, $msg) {
+			$msgc = $msgc . "$color{$rainbow[$i%6]}$char";
+			if ($char =~ m/\S/) {
+				$i++;
+			}
+		}
+		return "$msgc\e[0m";
+	} else {
+		return "$color{$c}$msg\e[0m";
+	}
+}
+
+sub csprintf {
+	my ($fmt, @args) = @_;
+	return '' unless $fmt;
+	my $s = sprintf($fmt, @args);
+	$s =~ s/(#[KRGYBMPCW*]\{)(.*?)(\})/colorize($1, $2)/egi;
+	return $s;
+}
+sub explain(@) {
+	return if envset "QUIET";
+	my $colorize = $ENV{NOCOLOR};
+	$ENV{NOCOLOR} = "true" if (! -t STDOUT);
+	print csprintf(@_);
+	$ENV{NOCOLOR} = $colorize;
+	print "\n";
+}
+
+sub debug(@) {
+	return unless envset "DEBUG";
+	print STDERR "DEBUG> ";
+	my $colorize = $ENV{NOCOLOR};
+	$ENV{NOCOLOR} = "true" if (! -t STDERR);
+	print STDERR csprintf(@_);
+	$ENV{NOCOLOR} = $colorize;
+	print STDERR "\n";
+}
+
+sub trace(@) {
+	return unless envset "TRACE";
+	print STDERR "TRACE> ";
+	print STDERR csprintf(@_);
+	print STDERR "\n";
+}
+
+sub error {
+	printf STDERR csprintf(@_) . "\n";
+}
+
+sub online {
+	return !envset('OFFLINE');
+}
+
+sub execute {
+	my ($prog) = @_;
+	debug "executing `#C{$prog} 2>&1`";
+	my $out = qx($prog 2>&1);
+	my $rc = $?;
+
+	if ($rc != 0) {
+		debug "command exited #R{%d}.", $rc >> 8;
+		debug "--------------------------------";
+		debug $out;
+		debug "--------------------------------";
+		return 0;
+	}
+	return 1;
+}
+
+sub system_execute {
+	my ($prog) = @_;
+	debug "executing `#C{$prog}`";
+	my $out = system "$prog";
+	my $rc = $?;
+
+	if ($rc != 0) {
+		debug "command exited #R{%d}.", $rc >> 8;
+		return 0;
+	}
+	return 1;
+}
+
+sub mkfile_or_fail {
+	my ($f, $c) = @_;
+	debug "creating file $f";
+	eval {
+		open my $fh, ">", $f;
+		print $fh $c;
+		close $fh;
+	} or die "Error creating file $f: $!\n";
+}
+
+# mkdir_or_fail $dir;
+sub mkdir_or_fail {
+	my ($dir) = @_;
+	return if -d $dir;
+	debug "creating directory $dir/";
+	system("mkdir", "-p", "$dir/") == 0 or die "Unable to create directory $dir/: $!\n";
+}
+# chdir_or_fail $dir;
+sub chdir_or_fail {
+	my ($dir) = @_;
+	debug "changing current working directory to $dir/";
+	chdir $dir or die "Unable to change directory to $dir/: $!\n";
+}
+
+our @DIRSTACK;
+sub pushd {
+	my ($dir) = @_;
+	push @DIRSTACK, Cwd::cwd;
+	chdir_or_fail($dir);
+}
+sub popd {
+	@DIRSTACK or die "popd called when we don't have anything on the directory stack; please file a bug\n";
+	chdir_or_fail(pop @DIRSTACK);
+}
+
+# copy_or_fail $from, $to;
+sub copy_or_fail {
+	my ($from, $to) = @_;
+	-f $from or die "$from: $!\n";
+	open my $in,  "<", $from or die "Unable to open $from for reading: $!\n";
+	open my $out, ">", $to   or die "Unable to open $to for writing: $!\n";
+	print $out $_ while (<$in>);
+	close $in;
+	close $out;
+}
+# chmod_or_fail "0755", $path;
+sub chmod_or_fail {
+	my ($mode, $path) = @_;
+	-e $path or die "$path: $!\n";
+	chmod $mode, $path;
+}
+# workdir;
+my $WORKDIR;
+sub workdir {
+	if (!defined $WORKDIR) {
+		$WORKDIR = tempdir(CLEANUP => 1);
+	}
+	return $WORKDIR;
+}
+# put_file $path, $contents;
+sub put_file {
+	my ($path, $contents, $mode) = @_;
+	debug "populating $path file";
+	open my $fh, ">", $path
+		or die "Unable to open $path for writing: $!\n";
+	chmod_or_fail $mode, $path if defined $mode;
+	print $fh $contents || "";
+	close $fh;
+}
+
+# get_file $path
+sub get_file {
+	my ($file) = @_;
+	open my $fh, "<", $file
+		or die "failed to open '$file' for reading: $!\n";
+	my $contents = do { local $/; <$fh> };
+	close $fh;
+	return $contents;
+}
+
+sub yaml_bool {
+	my ($bool, $default) = @_;
+	return ($default || 0) unless defined($bool);
+	return $bool;
+}
+
+sub validate_subkits {
+	my ($kit, $version, $meta, @subkits) = @_;
+	for my $sk (@subkits) {
+		die "You specified a subkit without a name\n" unless $sk;
+		my $path = kit_file($kit, $version, "subkits/$sk", 0);
+		my ($k, $v) = ($kit, $version);
+		$k ||= "dev";
+		$v = "latest" unless defined $v;
+		die "No subkit '$sk' found in kit $k/$v.\n"
+			unless -d $path;
+	}
+
+	my %requested_subkits = map { $_ => 1 } @subkits;
+	for my $sk (@{$meta->{subkits}}) {
+		if ($sk->{choices}) {
+			my $matches = 0;
+			my $min_matches = 1;
+			my @choices;
+			for my $choice (@{$sk->{choices}}) {
+				push @choices, $choice->{subkit} if defined $choice && defined $choice->{subkit};
+				if (! defined $choice->{subkit}){
+					$min_matches = 0;
+				} elsif ($requested_subkits{$choice->{subkit}}) {
+					$matches++;
+				}
+			}
+			my $choices = join(", ", map { "'$_'" } @choices);
+			if ($matches > 1) {
+				die "You selected too many subkits for your $sk->{type}. Should be only one of $choices\n";
+			}
+			if ($matches < $min_matches) {
+				die "You must select a subkit to provide your $sk->{type}. Should be one of $choices\n";
+			}
+		}
+	}
+}
+
+sub run_subkit_hook {
+	my ($kit, $version, @subkits) = @_;
+	my $hook = kit_file($kit, $version, "hooks/subkit", 0);
+	return @subkits unless -f $hook;
+
+
+	$kit ||= "dev";
+	$version = "latest" unless defined $version;
+	chmod(0755,$hook) unless -e $hook;
+
+	my $cmd = "$hook " . join(" ", map { "'$_'" } @subkits);
+	my $out = qx($cmd);
+	die "Error running subkit hook for $kit/$version. Contact your kit author for a bugfix.\n"
+		if $? >> 8;
+
+	@subkits = map { $_ =~ s/^\s+|\s+$//g; $_ } split /\n/, $out, -1;
+	pop @subkits if @subkits && $subkits[-1] eq "";
+	return @subkits;
+}
+
+sub run_param_hook {
+	my ($kit, $version, $env_name, $params, @subkits) = @_;
+	my $hook = kit_file($kit, $version, "hooks/params", 0);
+	return $params unless -f $hook;
+
+
+	$kit ||= "dev";
+	$version = "latest" unless defined $version;
+	chmod(0755,$hook) unless -e $hook;
+
+	my $dir = workdir;
+	DumpJSON "$dir/in", $params;
+	my $cmd = "$hook $dir/in $dir/out " . join(" ", map { "'$_'" } @subkits);
+	$ENV{GENESIS_ENVIRONMENT_NAME} = $env_name;
+	system($cmd);
+	die "\nNew environment creation cancelled.\n"
+		if $? >> 8 eq 130;
+	die "Error running params hook for $kit/$version. Contact your kit author for a bugfix.\n"
+		if $? >> 8;
+
+	# FIXME: get a better error message when json fails to load
+	open my $fh, "<", "$dir/out";
+	my @json = <$fh>;
+	close $fh;
+	return decode_json(join("\n",@json));
+}
+
+sub new_environment {
+	my ($meta, $kit, $version, $env, $vault_prefix, $params, @subkits) = @_;
+
+	$kit     = "dev"    unless defined $kit;
+	$version = "latest" unless defined $version;
+
+	my $file = "$env.yml";
+	open my $fh, ">", $file or die "Couldn't write to $file: $!";
+	print $fh <<EOF;
+---
+kit:
+  name:    $kit
+  version: $version
+EOF
+	if (! @subkits) {
+		print $fh "  subkits: []\n";
+	} else {
+		print $fh "  subkits:\n";
+		for my $subkit (@subkits) {
+			print $fh <<EOF;
+  - $subkit
+EOF
+		}
+	}
+	print $fh <<EOF;
+
+params:
+  env:   $env
+  vault: $vault_prefix
+EOF
+	if (defined($ENV{GENESIS_BOSH_ENVIRONMENT})) {
+		print $fh <<EOF;
+  bosh:  $ENV{GENESIS_BOSH_ENVIRONMENT}
+EOF
+	}
+
+	for my $param (@$params) {
+		print $fh "\n";
+		my $indent = "  # ";
+		if (defined $param->{comment}) {
+			for my $line (split /\n/, $param->{comment}) {
+				print $fh "${indent}$line\n";
+			}
+		}
+		if (defined $param->{example}) {
+			print $fh "${indent}(e.g. $param->{example})\n";
+		}
+
+		$indent = $param->{default} ? "  #" : "  ";
+
+		for my $val (@{$param->{values}}) {
+			my $k = (keys(%$val))[0];
+			# if the value is a spruce operator, we know it's a string, and don't need fancy encoding of the value
+			# this helps us not run into issues resolving the operator
+			my $v = $val->{$k};
+			if (defined $v && ! ref($v) && $v =~ m/^\(\(.*\)\)$/) {
+				print $fh "${indent}$k: $v\n";
+				next;
+			}
+			my $tmpdir = workdir;
+			open my $tmpfile, ">", "$tmpdir/value_formatting";
+			print $tmpfile encode_json($val);
+			close $tmpfile;
+			open my $spruce, "-|", "spruce merge $tmpdir/value_formatting";
+
+			for my $line (<$spruce>) {
+				chomp $line;
+				next unless $line;
+				next if $line eq "---";
+				print $fh "${indent}$line\n";
+			}
+			close $spruce;
+			die "Unable to convert JSON to spruce-compatible YAML. This is a bug\n"
+				if $? >> 8;
+		}
+	}
+	close $fh;
+}
+
+sub kit_yaml_files_in {
+	my ($env, $dir, @subkits) = @_;
+	$env =~ s/\.ya?ml$//;
+
+	my @files = glob "$dir/base/*.yml";
+	push @files, map { glob "$dir/subkits/$_/*.yml" } @subkits;
+	return @files;
+}
+
+sub kit_yaml_files {
+	my ($env) = @_;
+	my @files;
+
+	my $kit     = get_key($env, 'kit.name');
+	my $version = get_key($env, 'kit.version');
+	my @subkits = @{get_key($env, 'kit.subkits', [])};
+	my $meta = read_kit_metadata($kit, $version);
+	validate_subkits($kit, $version, $meta, @subkits);
+
+	if ($kit && $version && $kit ne 'dev') {
+		my $dir = workdir();
+		qx(tar -xz -C $dir --strip-components 1 -f .genesis/kits/$kit-$version.tar.gz);
+		$? == 0 or die;
+		return kit_yaml_files_in($env, $dir, @subkits);
+	}
+
+	if (-d "dev") {
+		return kit_yaml_files_in($env, "dev", @subkits);
+	}
+
+	die "No kit/version detected in $env.\n";
+}
+
+# takes a list of tokens, in order, and generates
+# all strictly ordered combinations of them.
+#
+# for example:
+#  [us, east, 1] -> [[us]
+#                    [us-east]
+#                    [us-east-1]]
+#
+sub expand_tokens {
+	my @tokens = @_;
+
+	my @l;
+	my @pre;
+
+	for (@tokens) {
+		push @pre, $_;
+		push @l, join '-', @pre;
+	}
+
+	return @l;
+}
+
+# return a list of the hyphen-separated tokens
+# that form a common prefix to both arguments.
+#
+# for example:
+#   us-east-1-preprod-a
+#   us-east-1-sandbox-a
+#   ->    (us, east, 1)
+#
+sub common_base {
+	my ($a, $b) = @_;
+	my @a = split /-/, $a;
+	my @b = split /-/, $b;
+	my @c = (); # common
+
+	while (@a and @b) {
+		$a = shift @a;
+		$b = shift @b;
+		last unless $a eq $b;
+		push @c, $a;
+	}
+	return @c;
+}
+
+# return a list of the hyphen-separated tokens
+# that form a unique suffix for the second argument.
+#
+# for example:
+#   us-east-1-preprod-a
+#   us-east-1-sandbox-a
+#   ->     us-east-1, (sandbox, a)
+sub unique_suffix {
+	my ($a, $b) = @_;
+	my @a = split /-/, $a;
+	my @b = split /-/, $b;
+	my @pre;
+
+	while (@a and @b) {
+		last if $a[0] ne $b[0];
+		$a = shift @a;
+		$b = shift @b;
+		push @pre, $a;
+	}
+	return join('-', @pre), @b;
+}
+
+sub mergeable_yaml_files {
+	my ($file) = @_;
+	$file =~ s/\.yml$//;
+	my @parts = split /-/, $file;
+
+	my @ll;
+	if ($ENV{PREVIOUS_ENV}) {
+		for (expand_tokens(common_base($file, $ENV{PREVIOUS_ENV}))) {
+			my $here = ".genesis/cached/$ENV{PREVIOUS_ENV}/$_.yml";
+			push @ll, $here if -f $here;
+		}
+		my ($pre, @unique) = unique_suffix($ENV{PREVIOUS_ENV}, $file);
+		$pre = "$pre-" unless $pre eq "";
+		for (map { "$pre$_" } expand_tokens(@unique)) {
+			my $here = "$_.yml";
+			push @ll, $here if -f $here;
+		}
+
+	} else {
+		while (@parts) {
+			my $here = join('-', @parts) . ".yml";
+			push @ll, $here if -f $here;
+			pop @parts;
+		}
+	}
+	return reverse @ll;
+}
+
+sub standalone_environment_yaml_files {
+	my @envs = @_;
+	grep { has_own_key($_, "params.env") } @envs;
+}
+
+sub has_key {
+	my ($file, $key) = @_;
+	for (mergeable_yaml_files $file) {
+		chomp(my $out = qx(spruce json $_ | jq -r '.$key'));
+		return 1 if $? == 0 and $out ne "null";
+	}
+	return 0;
+}
+
+sub has_own_key {
+	my ($file, $key) = @_;
+	return 0 unless -f $file;
+	chomp(my $out = qx(spruce json $file | jq -r '.$key'));
+	return 1 if $? == 0 and $out ne "null";
+}
+
+sub get_key {
+	my ($file, $key, $default) = @_;
+	return $default unless has_key($file, $key);
+
+	my $result = Load(spruce_merge({ 'cherry-pick' => $key },
+	                               mergeable_yaml_files($file)));
+	for (grep {$_ !~ m/^\.?$/} split(/(\.|\[[0-9+]\])/, $key)) {
+		if ($_ =~ m/^\[[0-9]+\]$/) {
+			return $default unless @{$result}[0];
+			$result = @{$result}[0];
+		} else {
+			return $default unless exists $result->{$_};
+			$result = $result->{$_};
+		}
+	}
+	return defined $result ? $result : $default;
+}
+
+sub has_subkit {
+	my ($file, $subkit) = @_;
+	my %subkits = map { $_ => 1 } @{get_key($file, "kit.subkits", [])};
+	return $subkits{$subkit};
+}
+
+###########################################################################
+
+sub dereference_param {
+	my ($env, $key) = @_;
+	my $val = get_key($env, $key);
+	die "Unable to resolve '$key' for $env. This must be defined in the environment YAML.\n"
+		unless defined $val;
+	return $val;
+}
+
+sub dereference_params {
+	my ($cmd, $env) = @_;
+	$cmd =~ s/\$\{(.*?)\}/dereference_param($env, $1)/ge;
+	return $cmd;
+}
+
+sub safe_commands {
+	my ($creds, %options) = @_;
+	my @cmds;
+	for my $path (sort keys %$creds) {
+		if (! ref $creds->{$path}) {
+			my $cmd = $creds->{$path};
+			$cmd = dereference_params($cmd, $options{env});
+
+			if ($cmd =~ m/^(ssh|rsa)\s+(\d+)(\s+fixed)?$/) {
+				my $safe = [$1, $2, "secret/$options{prefix}/$path"];
+				push @$safe, "--no-clobber", "--quiet" if $3 && !$options{force_rotate};
+				push @cmds, $safe;
+
+			} elsif ($cmd =~ m/^dhparams?\s+(\d+)(\s+fixed)?$/) {
+				my $safe = ['dhparam', $1, "secret/$options{prefix}/$path"];
+				push @$safe, "--no-clobber", "--quiet" if $2 && !$options{force_rotate};
+				push @cmds, $safe;
+
+			} else {
+				die "unrecognized credential type: `$cmd'\n";
+			}
+		} elsif ('HASH' eq ref $creds->{$path}) {
+			for my $attr (sort keys %{$creds->{$path}}) {
+				my $cmd = $creds->{$path}{$attr};
+				$cmd = dereference_params($cmd, $options{env});
+
+				if ($cmd =~ m/^random\s+(\d+)(\s+fmt\s+(\S+)(\s+at\s+(\S+))?)?(\s+allowed-chars\s+(\S+))?(\s+fixed)?$/) {
+					my ($len, $format, $destination, $valid_chars, $fixed) = ($1, $3, $5, $7, $8);
+					my @allowed_chars = ();
+					if ($valid_chars) {
+						@allowed_chars = ("--policy", $valid_chars);
+					}
+					my $safe = ['gen', $len, @allowed_chars, "secret/$options{prefix}/$path", $attr];
+					push @$safe, "--no-clobber", "--quiet" if $fixed && !$options{force_rotate};
+					push @cmds, $safe;
+					if ($format) {
+						$destination ||= "$attr-$format";
+						my $safe = ["fmt", $format , "secret/$options{prefix}/$path", $attr, $destination];
+						push @$safe, "--no-clobber", "--quiet" if $fixed && !$options{force_rotate};
+						push @cmds, $safe;
+					}
+
+				} else {
+					die "unrecognized credential type: `$cmd'\n";
+				}
+			}
+		} else {
+			die "unrecognized datastructure for $path. Please contact your kit author\n";
+		}
+	}
+
+	return @cmds;
+}
+
+sub cert_commands {
+	my ($certs, %options) = @_;
+	my @cmds;
+	for my $path (sort keys %$certs) {
+		my @cmd = ("safe", "x509", "issue", "secret/$options{prefix}/$path/ca", "--name", "ca.$path",
+			"--ca");
+		push @cmd, "--no-clobber", "--quiet" if !$options{force_rotate};
+		system @cmd;
+
+		die "Failure autogenerating certificates.\n" if ($? >> 8);
+
+		for my $cert (sort keys %{$certs->{$path}}) {
+			next if $cert eq "ca";
+			my $c = $certs->{$path}{$cert};
+
+			die "Required 'names' value missing for cert at $path/$cert.\n" unless $c->{names}[0];
+			my $cn = $c->{names}[0];
+			$c->{valid_for} ||= "1y";
+
+			my @name_flags = map {( "--name", dereference_params($_, $options{env}) )} @{$c->{names}};
+			system "safe", "x509", "issue", "secret/$options{prefix}/$path/$cert", "--ttl", $c->{valid_for},
+				@name_flags, "--signed-by", "secret/$options{prefix}/$path/ca";
+			die "Failure autogenerating certificates.\n" if ($? >> 8);
+		}
+	}
+	return @cmds;
+}
+
+###########################################################################
+
+sub validate_repo_name {
+	my ($name) = @_;
+	return $name =~ m/^[a-z][a-z0-9-]+$/;
+}
+
+sub validate_env_name {
+	my ($name) = @_;
+	return $name =~ m/^[a-z][a-z0-9-]+$/
+	    && $name !~ m/--/;
+}
+
+###########################################################################
+
+our %ord_suffix = (11 => 'th', 12 => 'th', 13 => 'th', 1 => 'st', 2 => 'nd', 3 => 'rd');
+sub ordify {
+	return "$_[0]". ($ord_suffix{ $_[0] % 100 } || $ord_suffix{ $_[0] % 10 } || 'th')." ";
+}
+
+sub __prompt_for_line {
+	my ($prompt,$validation,$err_msg,$default,$allow_blank) = @_;
+	$prompt = join(' ', grep {defined($_) && $_ ne ""} ($prompt, '>')) . " ";
+
+	# `validate` is a sub with first argument the test value, and the second
+	# being an optional error message
+	my $validate;
+	if (defined($validation)) {
+		if ($validation =~ m/^\/(.*)\/(i?m?s?)$/) {
+			my $__vre;
+			# safe because the only thing being eval'ed is the optional i,s, or m
+			eval "\$__vre = qr/\$1/$2"
+				or die "Error compiling param regex: $!";
+			$validate = sub() {
+				return ($_[0] =~ $__vre ? "" : ( $_[1] ? $_[1] : "Does not match required pattern"));
+			}
+		} elsif ($validation =~ m/^((^|,)[^,]+){2,}$/) {
+			my @__vlist = split(",", $validation);
+			$validate = sub() {
+				my $needle=shift;
+				my @matches = grep {$_ eq $needle} @__vlist;
+				return (scalar(@matches) != 0 ? "" : ($_[1] ? $_[1] : "Expecting one of ".join(", ",@__vlist)))
+			}
+		} elsif ($validation eq "vault_path") {
+			my $validate = sub() {
+				system "safe exists $_[0]";
+				return ( $? eq 0 ? "" : ($_[1] ? $_[1] :"$_[0] not found in vault\n"))
+			}
+		}
+	}
+
+	while (1) {
+		print csprintf($prompt);
+		chomp (my $in=<STDIN>);
+		$in = $default if ($in eq "" && defined($default));
+		$in =~ s/^\s+|\s+$//g;
+
+		return "" if ($in eq "" && $allow_blank);
+		my $err="";
+		if ($in eq "") {
+			return "" if $allow_blank;
+			$err= "#R{No default:} you must specify a non-empty string";
+		} else {
+			$err = &$validate($in,$err_msg) if defined($validate);
+			$err = "#r{Invalid:} $err" if $err;
+		}
+
+		no warnings "numeric";
+		return (($in eq $in + 0) ? $in + 0 : $in) unless $err;
+		use warnings "numeric";
+		error($err);
+	}
+}
+
+sub __prompt_for_block {
+	my ($prompt) = @_;
+	$prompt = "$prompt (Enter <CTRL-D> to end)";
+	(my $line = $prompt) =~ s/./-/g;
+	print "\n$prompt\n$line\n";
+	my @data = <STDIN>;
+	return join("", @data);
+}
+
+sub prompt_for_boolean {
+	my ($prompt,$default) = @_;
+
+	my $true_re = qr/^(?:y(?:es)?|t(rue)?)$/i;
+	my $false_re =  qr/^(?:no?|f(alse)?)$/i;
+	my $val_prompt = "[y|n]";
+	if (defined $default) {
+		$default = $default ? "y" : "n" if $default =~ m/^[01]$/; # standardize
+		$val_prompt = $default =~ $true_re ? "[#g{Y}|n]" : "[y|#g{N}]";
+	}
+
+	print "$prompt\n";
+	while (1) {
+		my $answer = __prompt_for_line($val_prompt,undef,undef,$default,'allow_blank');
+		return JSON::PP::true  if $answer =~ $true_re;
+		return JSON::PP::false if $answer =~ $false_re;
+		error "#r{Invalid response:} you must specify y, yes, true, n, no or false";
+	}
+}
+
+sub prompt_for_line {
+	my ($prompt,$label,$default,$validation,$err_msg) = @_;
+	print "$prompt";
+	my $padding = ($prompt =~ /\s$/) ? "" : " ";
+	print(csprintf("${padding}#g{(default: $default)}")) if defined($default);
+	print "\n";
+	return __prompt_for_line(defined($label) ? $label : "", $validation, $err_msg, $default);
+}
+
+sub prompt_for_list {
+	my ($type,$prompt,$label,$min,$max,$validation, $err_msg) = @_;
+	$label ||= "value";
+	$min ||= 0;
+	die "Illegal list maximum count specified. Please contact your kit author for a fix.\n"
+		if (defined($max) and $max < 2);
+
+	print "$prompt (leave $label empty to end)\n";
+
+	my @ll;
+	while (1) {
+		my $v;
+		if ($type eq 'line') {
+			$v = __prompt_for_line(ordify(scalar(@ll) + 1) . $label, $validation, $err_msg, undef, 'allow_blank');
+		} else {
+			$v = __prompt_for_block(ordify(scalar(@ll) + 1) . $label);
+		}
+		if ($v eq "") {
+			if (scalar(@ll) < $min) {
+				error "#r{ERROR:} Insufficient items provided - at least $min required.";
+				next;
+			}
+			last;
+		}
+		push @ll, $v;
+		last if (defined($max) && scalar(@ll) == $max);
+	}
+	return \@ll;
+}
+
+sub prompt_for_block {
+	return __prompt_for_block(@_);
+}
+
+my $BOSH; # used for abstracting out the actual name of the installed
+          # bosh (v2) cli (could be bosh, bosh2, or boshv2)
+sub detect_bosh_version {
+	my ($BOSH2_MIN_VERSION) = @_;
+	foreach my $boshcmd ("bosh", "bosh2", "boshv2") {
+		my $version = qx($boshcmd -v 2>&1 | head -n1);
+		if ($version) {
+			chomp($version);
+			if ($version =~ s/version (\S+?)-.*/$1/){
+				if (!new_enough($version, $BOSH2_MIN_VERSION)) {
+					error "BOSH (v2) CLI v${version} is installed, but Genesis requires #R{at least $BOSH2_MIN_VERSION} - upgrade your BOSH CLI, via #B{https://github.com/cloudfoundry/bosh-cli/releases}";
+				}
+				$BOSH = $boshcmd;
+			}
+		}
+	}
+	if (!$BOSH) {
+		error "Missing `bosh2' - install the BOSH (v2) CLI from #B{https://github.com/cloudfoundry/bosh-cli/releases}";
+	}
+}
+
+sub bosh_deploy {
+	my ($target, $deployment, $path_to_manifest) = @_;
+	my @args = ();
+	if ($target eq "create-env") {
+		@args = ("create-env", "--state", $deployment, $path_to_manifest);
+	} else {
+		@args = ("-e", $target, "-d", $deployment, "deploy", $path_to_manifest);
+	}
+	push @args, "-n" if $ENV{BOSH_NON_INTERACTIVE};
+	system($BOSH, @args) == 0 or return 1;
+	return 0;
+}
+
+sub bosh_alias {
+	my ($target) = @_;
+	system($BOSH, "alias-env", $target) == 0, or exit 1;
+}
+
+sub bosh_run_errand {
+	my ($target, $deployment, $errand) = @_;
+	system($BOSH, "-n", "-e", $target, "-d", $deployment, "run-errand", $errand) == 0 or exit 1;
+}
+
+sub bosh_upload_stemcell {
+	my ($name, $version, $sha1, $url) = @_;
+	system($BOSH, "-n", "upload-stemcell", "--name", $name, "--version", $version, "--sha1", $sha1, $url) == 0 or exit 1;
+}
+
+sub bosh_download_cloud_config {
+	my ($target, $path_to_cloudconfig) = @_;
+	execute("$BOSH -e $target cloud-config > $path_to_cloudconfig") or
+		die "Failed to download cloud-config from '$target' BOSH director.\n";
+	die "No cloud-config defined on BOSH director '$target'.\n" unless -s $path_to_cloudconfig;
+}
+
+# `genesis bosh ...`
+sub bosh_exec {
+	die "not implemented";
+}
+
+sub spruce_vault_paths {
+	my (@files) = @_;
+	my $ymls = join(" ", @files);
+	my @keys= qx/spruce vaultinfo $ymls | spruce json | jq -r '.secrets[].key'/;
+	if ($? != 0) {
+		die "Failure while running spruce vaultinfo.\n";
+	}
+	my %paths = map {$_ =~ s/:.*?$//; $_ => 1} @keys;
+	return keys %paths;
+}
+
+sub spruce_merge {
+	my (@files) = @_;
+	if (!@files) {
+		my (undef, $file, $line) = caller;
+		die "BUG DETECTED!  $file:$line called spruce_merge without any arguments.  Please file a bug report at $GITHUB_URL\n";
+	}
+
+	# spruce_merge({ prune => ['meta', 'pipeline']}, $file1, $file2)
+	# spruce_merge({ prune => 'meta'}, $file1, $file2)
+	my $opts = ref($files[0]) eq 'HASH' ? shift @files : {};
+	my @flags;
+	for my $flag (keys %$opts) {
+		for my $value (ref($opts->{$flag}) ? @{ $opts->{$flag} } : ($opts->{$flag})) {
+			push @flags, "--$flag", $value;
+		}
+	}
+
+	open my $cmd, "-|", (qw(spruce merge), @flags, @files)
+		or die "Failed to execute `spruce merge': $!\n";
+	my $out = do { local $/; <$cmd> };
+	close $cmd;
+	exit ($? >> 8 ) unless $? == 0;
+	return $out;
+}
+
+# finds the "name" of the deployment type that we are in
+# (i.e. redis-deployments/... -> 'redis')
+sub deployment_suffix {
+	my $config = LoadFile(".genesis/config");
+	die "No deployment type defined in .genesis/config." unless $config->{deployment_type};
+	return $config->{deployment_type};
+}
+
+sub base_yaml_files {
+	my ($env) = @_;
+	my $type = deployment_suffix;
+	my $dir = workdir;
+	open my $fh, ">", "$dir/base.yml";
+	print $fh <<EOF;
+params:
+  name: (( concat params.env "-$type" ))
+name: (( grab params.name ))
+EOF
+	close $fh;
+	return "$dir/base.yml";
+}
+
+sub merge_files {
+	my ($env, $options) = @_;
+	$env =~ s/(\.yml)?$/.yml/;
+
+	my @files = ();
+	push @files, base_yaml_files($env);
+	push @files, kit_yaml_files($env);
+	push @files, mergeable_yaml_files($env);
+	push @files, grep { $_ } $options->{'cloud-config'};
+	return \@files;
+}
+
+sub merge_manifest {
+	my ($file, $options) = @_;
+	$file =~ s/(\.yml)?$/.yml/;
+
+	my @prunables = qw/meta pipeline params kit compilation/;
+	push @prunables, qw/resource_pools disk_pools
+	                    networks vm_types disk_types
+	                    azs vm_extensions/
+		unless $options->{'create-env'};
+
+	if ($options->{'create-env'}) {
+		my $stemcells = "{}";
+		if ($ENV{GENESIS_INDEX} ne "no") {
+			$stemcells = `curl -ks $ENV{GENESIS_INDEX}/v1/stemcell/latest | jq '. | map({"key": .name, "value": { "sha1": .sha1, "url": .url}}) | from_entries' -Mc`;
+			die "Unable to contact the genesis index to retrieve stemcell data. Cannot continue." unless ($? == 0);
+		}
+		my $dir = workdir;
+		open my $fh, ">", "$dir/cloud.yml";
+		print $fh <<EOF;
+---
+meta:
+  latest_stemcells: $stemcells
+
+EOF
+		close $fh;
+		$options->{'cloud-config'} = "$dir/cloud.yml";
+	}
+
+	return spruce_merge({
+			prune => [@prunables],
+		},
+		@{merge_files($file, $options)});
+}
+
+sub deploy_manifest {
+	my ($env, $options) = @_;
+	$ENV{REDACT} = '';
+	my $dir = workdir;
+	my $target = bosh_target_for($env);
+
+	my $create_env = has_subkit($env, 'bosh-init') || has_subkit($env, 'create-env');
+
+	if (!$create_env) {
+		bosh_download_cloud_config($target, "$dir/cloud.yml");
+		$options->{'cloud-config'} = "$dir/cloud.yml";
+	} else {
+		$ENV{OFFLINE} = 1; # set offline since there's no director to talk to
+	}
+
+	my $merge_opts = {
+		'cloud-config' => $options->{'cloud-config'},
+		'create-env'   => $create_env,
+	};
+	mkfile_or_fail("$dir/manifest.yml", merge_manifest($env, $merge_opts));
+
+	$env =~ s/.yml$//;
+	my $deployment = "$env-" . deployment_suffix;
+	my $yes = $options->{yes} ? "-n" : "";
+
+	mkdir_or_fail(".genesis/manifests");
+
+	$ENV{REDACT} = 'true';
+	mkfile_or_fail(".genesis/manifests/$env.yml", merge_manifest($env, $merge_opts));
+
+	if ($create_env) {
+		$target = "create-env";
+		$deployment = ".genesis/manifests/$env-state.yml";
+	}
+	my $rc = bosh_deploy $target, $deployment, "$dir/manifest.yml";
+	return $rc;
+}
+
+sub curl {
+	my ($method, $url, $headers, $data, $skip_verify) = @_;
+	my $flags = "-X '$method'";
+	for my $header (keys %$headers) {
+		$flags .= " -H '$header: $headers->{$header}'";
+	}
+	if ($data) {
+		$flags .= " -d '$data'";
+	}
+	if ($skip_verify) {
+		$flags .= " -k";
+	}
+	my $status = "";
+	my $status_line = "";
+	my @data = qx(curl -isL $url $flags);
+	unless (scalar(@data) && $? == 0) {
+		system "curl -L $url $flags"; # curl again to get stdout/err into concourse for debugging
+		return 599, "Unable to execute curl command", "";
+	}
+	while (my $line = shift @data) {
+		if ($line =~ m/^HTTP\/\d+\.\d+\s+((\d+)(\s+.*)?)$/) {
+			$status_line = $1;
+			$status = $2;
+		}
+		# curl -iL will output a second set of headers if following links
+		if ($line =~ /^\s+$/ && $status !~ /^3\d\d$/) {
+			last;
+		}
+	}
+	return $status, $status_line, join("", @data);
+}
+
+###########################################################################
+
+sub vault_auth {
+	my %options = @_;
+	for (qw/vault skip_verify secret_id role_id/) {
+		next if exists $options{$_} and defined $options{$_};
+		die "vault_auth() requires the '$_' argument; please file a bug.\n";
+	}
+
+	my ($code, $msg, $data) = curl "POST", "$options{vault}/v1/auth/approle/login", {
+			'Content-type' => 'application/json',
+		},
+		encode_json({
+			role_id => $options{role_id},
+			secret_id  => $options{secret_id},
+		}), $options{skip_verify};
+
+	if ($code != 200) {
+		die "Failed to authenticate to the Vault at $options{vault} using role ID $options{role_id}:\n".
+			"HTTP $msg\n$data\n";
+	}
+	my $output;
+	eval { $output = decode_json($data); 1 }
+		or die "Invalid JSON received from the Vault at $options{vault}\n($data)\n";
+	exists $output->{auth} and exists $output->{auth}{client_token}
+		or die "No Client Token found in response from the Vault at $options{vault}\n($data)\n";
+
+	$ENV{VAULT_TOKEN} = $output->{auth}{client_token};
+	$output = qx(vault status 2>&1);
+	if ($? != 0) {
+		die "Failed to authenticate to the Vault at $options{vault}\n:`vault status` said:\n$output\n";
+	}
+
+	$output = qx(vault read secret/handshake 2>&1);
+	if ($? != 0) {
+		die "Failed to retrieve secret/handshake from the Vault at $options{vault}; assuming token authentication failure.\n";
+	}
+}
+
+sub commit_changes {
+	my ($branch, $key, $message) = @_;
+
+	my $output = qx(git status --porcelain 2>&1);
+	if ($output) {
+		$ENV{GIT_AUTHOR_NAME}   ||= 'Concourse Bot';
+		$ENV{GIT_AUTHOR_EMAIL}  ||= 'concourse@pipeline';
+		$ENV{GIT_COMMITTER_NAME}  = $ENV{GIT_AUTHOR_NAME};
+		$ENV{GIT_COMMITTER_EMAIL} = $ENV{GIT_AUTHOR_EMAIL};
+		$ENV{GIT_ASKPASS}         = "/bin/false";
+
+		# FIXME: why do we need ssh config here, can't we just commit + use the git resource?
+		my $tmp = workdir;
+		mkdir_or_fail("$tmp/home/.ssh");
+		put_file("$tmp/home/.ssh/key", $key, "0600");
+		put_file("$tmp/home/.ssh/config", <<EOF);
+Host *
+  StrictHostKeyChecking no
+  UserKnownHostsFile /dev/null
+  LogLevel QUIET
+  IdentityFile $tmp/.ssh/key
+EOF
+
+		system(qq( HOME=$tmp/home \
+		             git add -A && \
+		             git status && \
+		             git --no-pager diff --cached && \
+		             git commit -m "CI commit: $message" ));
+	}
+}
+
+sub read_pipeline {
+	my ($file) = @_;
+
+	my @errors = ();
+	my $p = Load(spruce_merge($file));
+	unless (exists $p->{pipeline}) {
+		# fatal error
+		push @errors, "Missing top-level 'pipeline:' key.";
+		return $p, \@errors;
+	}
+
+	unless (ref($p->{pipeline}) eq 'HASH') {
+		# fatal error
+		push @errors, "Top-level 'pipeline:' key must be a map.";
+		return $p, \@errors;
+	}
+	for (keys %{$p->{pipeline}}) {
+		push @errors, "Unrecognized `pipeline.$_' key found."
+			unless m/^(name|public|tagged|errands|vault|git|slack|hipchat|email|boshes|task|layout|layouts|debug|stemcells|skip_upkeep|locker)$/;
+	}
+	for (qw(name vault git boshes)) {
+		push @errors, "`pipeline.$_' is required."
+			unless $p->{pipeline}{$_};
+	}
+
+	# validate pipeline.vault.*
+	if (ref($p->{pipeline}{vault}) ne 'HASH') {
+		push @errors, "`pipeline.vault' must be a map.";
+	} else {
+		# required subkeys
+		for (qw(url)) {
+			push @errors, "`pipeline.vault.$_' is required."
+				unless $p->{pipeline}{vault}{$_};
+		}
+		# allowed subkeys
+		for (keys %{$p->{pipeline}{vault}}) {
+			push @errors, "Unrecognized `pipeline.vault.$_' key found."
+				unless m/^(url|role|secret|verify)$/;
+		}
+	}
+
+	# validate pipeline.git.*
+	if (ref($p->{pipeline}{git}) ne 'HASH') {
+		push @errors, "`pipeline.git' must be a map.";
+	} else {
+		# required subkeys
+		for (qw(owner repo private_key)) {
+			push @errors, "`pipeline.git.$_' is required."
+				unless $p->{pipeline}{git}{$_};
+		}
+		# allowed subkeys
+		for (keys %{$p->{pipeline}{git}}) {
+			push @errors, "Unrecognized `pipeline.git.$_' key found."
+				unless m/^(host|owner|repo|private_key)$/;
+		}
+	}
+
+	# validate stemcells
+	if (! $p->{pipeline}{skip_upkeep}) {
+		if (! $p->{pipeline}{stemcells}) {
+			push @errors, "Neither `pipeline.skip_upkeep' nor `pipeline.stemcells' were configured. One or the other is required.";
+		} elsif (ref($p->{pipeline}{stemcells}) ne 'HASH') {
+			push @errors, "`pipeline.stemcells' must be a map.";
+		}
+	}
+
+	# validate locker
+	if ($p->{pipeline}{locker}) {
+		if (ref($p->{pipeline}{locker}) ne 'HASH') {
+			push @errors, "`pipeline.locker' must be a map.";
+		} else {
+			for (qw/url username password/) {
+				push @errors, "`pipeline.locker.$_' is required."
+					unless $p->{pipeline}{locker}{$_};
+			}
+			for (keys %{$p->{pipeline}{locker}}) {
+				push @errors, "Unrecognized `pipeline.locker.$_' key found."
+					unless m/^(url|username|password|ca_cert|skip_ssl_validation)/;
+			}
+		}
+	} else {
+		$p->{pipeline}{locker}{url} = "";
+	}
+
+	# validate notifications
+	my $n = 0;
+	for (qw(slack hipchat email)) {
+		$n++ if exists $p->{pipeline}{$_};
+	}
+	if ($n == 0) {
+		push @errors, "No notification stanzas defined.  Please define `pipeline.slack' or `pipeline.email'.\n";
+	} else {
+		if ($p->{pipeline}{slack}) {
+			# validate pipeline.slack.*
+			if (ref($p->{pipeline}{slack}) ne 'HASH') {
+				push @errors, "`pipeline.slack' must be a map.";
+			} else {
+				# required subkeys
+				for (qw(webhook channel)) {
+					push @errors, "`pipeline.slack.$_' is required."
+						unless $p->{pipeline}{slack}{$_};
+				}
+				# allowed subkeys
+				for (keys %{$p->{pipeline}{slack}}) {
+					push @errors, "Unrecognized `pipeline.slack.$_' key found."
+						unless m/^(webhook|channel|username|icon)$/;
+				}
+			}
+		}
+		if ($p->{pipeline}{hipchat}) {
+			# validate pipeline.hipchat.*
+			if (ref($p->{pipeline}{hipchat}) ne 'HASH') {
+				push @errors, "`pipeline.hipchat' must be am ap.";
+			} else {
+				# required subkeys
+				for (qw/room_id token/) {
+					push @errors, "`pipeline.hipchat.$_' is required."
+						unless $p->{pipeline}{hipchat}{$_};
+				}
+				# allowed subkeys
+				for (keys %{$p->{pipeline}{hipchat}}) {
+					push @errors, "Unrecognized `pipeline.hipchat.$_' key found."
+						unless m/^(url|token|room_id|notify|username)$/;
+				}
+			}
+		}
+		if ($p->{pipeline}{email}) {
+			# validate pipeline.email.*
+			# FIXME: fully implement and test email notifications
+			push @errors, "Email notifications are not fully implemented yet.";
+			if (ref($p->{pipeline}{email}) ne 'HASH') {
+				push @errors, "`pipeline.email' must be a map.";
+			} else {
+				# required subkeys
+				for (qw(to from smtp)) {
+					push @errors, "`pipeline.email.$_' is required."
+						unless $p->{pipeline}{email}{$_};
+				}
+				# to must be a list...
+				if (exists $p->{pipeline}{email}{to}) {
+					if (ref($p->{pipeline}{email}{to}) ne 'ARRAY') {
+						push @errors, "`pipeline.email.to' must be a list of addresses.";
+					} else {
+						if (@{$p->{pipeline}{email}{to}} == 0) {
+							push @errors, "`pipeline.email.to' must contain at least one address.";
+						}
+					}
+				}
+				# allowed subkeys
+				for (keys %{$p->{pipeline}{email}}) {
+					push @errors, "Unrecognized `pipeline.email.$_' key found."
+						unless m/^(to|from|smtp)$/;
+				}
+				if (ref($p->{pipeline}{email}{smtp}) eq 'HASH') {
+					# required sub-subkeys
+					for (qw(host username password)) {
+						push @errors, "`pipeline.email.smtp.$_' is required."
+							unless $p->{pipeline}{email}{smtp}{$_};
+					}
+					# allowed subkeys
+					for (keys %{$p->{pipeline}{email}{smtp}}) {
+						push @errors, "Unrecognized `pipeline.email.smtp.$_' key found."
+							unless m/^(host|port|username|password)$/;
+					}
+				} else {
+				}
+			}
+		}
+	}
+
+	# validate (optional) pipeline.task.*
+	if (exists $p->{pipeline}{task}) {
+		if (ref($p->{pipeline}{task}) eq 'HASH') {
+			# allowed subkeys
+			for (keys %{$p->{pipeline}{task}}) {
+				push @errors, "Unrecognized `pipeline.task.$_' key found."
+					unless m/^(image|version)$/;
+			}
+		} else {
+			push @errors, "`pipeline.task' must be a map.";
+		}
+	}
+
+	# validate layouts
+	my $key = undef; # for better messaging, later
+	if (exists $p->{pipeline}{layout} && exists $p->{pipeline}{layouts}) {
+		push @errors, "Both `pipeline.layout' and `pipeline.layouts' (plural) specified.  Please pick one or the other.";
+	} elsif (exists $p->{pipeline}{layout}) {
+		$p->{pipeline}{layouts}{default} = $p->{pipeline}{layout};
+		delete $p->{pipeline}{layout};
+		$key = 'pipeline.layout'; # we're pretending the user did it correctly.
+	}
+	if (ref($p->{pipeline}{layouts}) eq 'HASH') {
+		for (keys %{$p->{pipeline}{layouts}}) {
+			if (ref($p->{pipeline}{layouts}{$_})) {
+				my $k = $key || "pipeline.layouts.$_";
+				push @errors, "`$k' must be a string.";
+			}
+		}
+	} else {
+		push @errors, "`pipeline.layouts' must be a map.";
+	}
+
+	# validate BOSH directors
+	if (ref($p->{pipeline}{boshes}) eq 'HASH') {
+		for my $env (keys %{$p->{pipeline}{boshes}}) {
+			# required sub-subkeys
+			for (qw(url ca_cert username password)) {
+				push @errors, "`pipeline.boshes[$env].$_' is required."
+					unless $p->{pipeline}{boshes}{$env}{$_};
+			}
+			# allowed subkeys
+			for (keys %{$p->{pipeline}{boshes}{$env}}) {
+				push @errors, "Unrecognized `pipeline.boshes[$env].$_' key found."
+					unless m/^(stemcells|url|ca_cert|username|password|alias)$/;
+			}
+			if (! $p->{pipeline}{skip_upkeep}) {
+				if (! $p->{pipeline}{boshes}{$env}{stemcells}) {
+					push @errors, "No stemcells specified for `pipeline.boshes[$env]' and `pipeline.skip_upkeep' not enabled.";
+				} elsif (ref($p->{pipeline}{boshes}{$env}{stemcells}) ne 'ARRAY') {
+					push @errors, "`pipeline.boshes[$env].stemcells' is not an array";
+				} else {
+					for (@{$p->{pipeline}{boshes}{$env}{stemcells}}) {
+						push @errors, "`pipeline.boshes[$env].stemcells.$env' is not a stemcell alias listed in `pipeline.stemcells'"
+							unless $p->{pipeline}{stemcells}{$_};
+					}
+				}
+			}
+		}
+	}
+
+	return $p, @errors;
+}
+
+
+sub parse_pipeline {
+	my ($file, $layout) = @_;
+	my ($pipeline, @errors) = read_pipeline($file);
+	if (@errors) {
+		error "#R{ERRORS encountered} in pipeline definition in #Y{$file}:";
+		error "  - #R{$_}" for @errors;
+		exit 1;
+	}
+
+	my $src = $pipeline->{pipeline}{layouts}{$layout}
+		or die "No such layout `${layout}'\n";
+
+	# our internal representatio
+	my $P = $pipeline;
+	$P->{file} = $file;  # the path to the original pipeline file,
+	                     # which we need to merge in with the guts.yml
+	                     # definition to get the final configuration.
+
+	$P->{auto} = [];     # list of patterns that match environments
+	                     # we want concourse to trigger automatically.
+
+	$P->{envs} = [];     # list of all environment names seen in the
+	                     # configuration, to be used for validation.
+
+	$P->{will_trigger} = {}; # map of (A -> [B, C, D]) triggers, where A triggers
+	                         # a deploy (or notification) of B, C, and D.  Note that
+	                         # the values are lists, because one environment
+	                         # can trigger multiple other environments.
+	$P->{triggers} = {};     # map of B -> A where B was a deploy triggered
+	                         # by a successful deploy of A. Only one environment
+	                         # can have triggered each given environment
+
+	# handle yes/no/y/n/true/false/1/0 in our source YAML.
+	$P->{pipeline}{tagged} = yaml_bool($P->{pipeline}{tagged}, 0);
+	$P->{pipeline}{public} = yaml_bool($P->{pipeline}{public}, 0);
+
+	# some default values, if the user didn't supply any
+	$P->{pipeline}{vault}{role}   ||= "";
+	$P->{pipeline}{vault}{secret} ||= "";
+	$P->{pipeline}{vault}{verify} = yaml_bool($P->{pipeline}{vault}{verify}, 1);
+
+	$P->{pipeline}{task}{image}   ||= 'starkandwayne/concourse';
+	$P->{pipeline}{task}{version} ||= 'latest';
+
+	# NOTE that source-level mucking about via regexen obliterates
+	# all of the line and column information we would expect from
+	# a more traditional parser.  If it becomes important to report
+	# syntax / semantic errors with line information, this whole
+	# parser has to be gutted and re-written.
+
+	$src =~ s/\s*#.*$//gm;   # remove comments (without strings, this is fine)
+	$src =~ s/[\r\n]+/ ; /g; # collapse newlines into ';' terminators
+	$src =~ s/(^\s+|\s+$)//; # strip leading and trailing whitespace
+
+	# condense the raw stream of tokens into a list or rules,
+	# where each rule is itself a list of the significant tokens
+	# between two terminators (or begining of file and a terminator)
+	#
+	# i.e.
+	#   [['auto', 'sandbox*'],
+	#    ['auto', 'preprod*'],
+	#    ['tagged'],
+	#    ['sandbox-a', '->', 'sandbox-b']]
+	#
+	# this structure is designed to be easier to interpret individual
+	# rules from, since we can assert against arity and randomly access
+	# tokens (i.e. a trigger rule must have '->' at $rule[1]).
+	#
+	my @rules = ();
+	my $rule = [];
+	for my $tok (split /\s+/, "$src ;") {
+		$tok or die "'$tok' was empty in [$src]!\n";
+		if ($tok eq ';') {
+			if (@$rule) {
+				push @rules, $rule;
+				$rule = [];
+			}
+			next;
+		}
+		push @$rule, $tok;
+	}
+
+	my @auto; # patterns; we'll expand them once we have all the
+	          # environments, and then populate $P->{auto};
+	my %envs; # de-duplicating map; keys will become $P->{envs}
+	for $rule (@rules) {
+		if (@$rule >= 3 && $rule->[1] eq '->') {
+			my $orig = join ' ', @$rule;
+			while (@$rule >= 3 && $rule->[1] eq '->') {
+				my ($a, $b) = ($rule->[0], $rule->[2]);
+				$envs{$a} = $envs{$b} = 1;
+				$P->{will_trigger}{$a} ||= [];
+				push @{$P->{will_trigger}{$a}}, $b;
+				shift @$rule;
+				shift @$rule;
+			}
+			die "Invalid pipeline definition '$orig'.\n"
+				unless @$rule == 1;
+			next;
+		}
+
+		my ($cmd, @args) = @$rule;
+		if ($cmd eq 'auto') {
+			die "The 'auto' directive requires at least one argument.\n"
+				unless @args;
+			push @auto, @args;
+			next;
+		}
+
+		die "Unrecognized configuration directive '$cmd'.\n";
+	}
+	$P->{envs} = [keys %envs];
+	$P->{aliases} = { map { $_ => ($P->{pipeline}{boshes}{$_}{alias} || $_) } keys %envs};
+
+	%envs = (); # we'll reuse envs for auto environment de-duplication
+	for my $pattern (@auto) {
+		my $regex = $pattern;
+		$regex =~ s/\*/.*/g;
+		$regex = qr/^$regex$/;
+
+		my $n = 0;
+		for my $env (@{$P->{envs}}) {
+			if ($env =~ $regex) {
+				$envs{$env} = 1;
+				$n++;
+			}
+		}
+		if ($n == 0) {
+			error "#Y{warning}: rule `auto $pattern' did not match any environments...\n";
+		}
+	}
+	$P->{auto} = [keys %envs];
+
+	# make sure we have a BOSH director for each seen environment.
+	# (thanks to read_pipeline, we know any extant BOSH director configs are good)
+	for my $env (@{$P->{envs}}) {
+		die "No BOSH director configuration found for $env (at `pipeline.boshes[$env]').\n"
+			unless $P->{pipeline}{boshes}{$env};
+	}
+
+	# figure out who triggers each environment.
+	# this is an inversion of the directed acyclic graph that we
+	# are storing in {triggers}.
+	#
+	# this means that it is illegal for a given environment to be
+	# triggererd by more than one other environment.  this decision
+	# was made to simplify implementation, and was deemed to not
+	# impose overly much on desired pipeline structure.
+	my $triggers = {};
+	for my $a (keys %{$P->{will_trigger}}) {
+		for my $b (@{$P->{will_trigger}{$a}}) {
+			# $a triggers $b, that is $b won't deploy unti we
+			# see a successful deploy (+test) of the $a environment
+			die "Environment '$b' is already being triggered by environment '$triggers->{$b}'.\nIt is illegal to trigger an environment more than once.\n"
+				if $triggers->{$b} and $triggers->{$b} ne $a;
+			$triggers->{$b} = $a;
+		}
+	}
+	$P->{triggers} = $triggers;
+
+	return $P;
+}
+
+# FYI: we use quasi-JSON here, so we don't need to care about our indent level when consuming
+#      the notification definitions
+sub gen_notifications {
+	my ($pipeline, $message, $alias) = @_;
+	$alias = "" unless defined $alias;
+	my $notification = "aggregate: [\n";
+	if ($pipeline->{pipeline}{slack}) {
+		$notification .= <<EOF;
+{
+  put: "slack",
+  params: {
+    channel: "(( grab pipeline.slack.channel ))",
+    username: "(( grab pipeline.slack.username ))",
+    icon_url: "(( grab pipeline.slack.icon ))",
+    text: '(( concat pipeline.name ": $message" ))'
+  }
+},
+EOF
+	}
+	if ($pipeline->{pipeline}{hipchat}) {
+		$notification .= <<EOF;
+{
+  put: "hipchat",
+  params: {
+    from: "(( grab pipeline.hipchat.username ))",
+    color: "gray",
+    message: '(( concat pipeline.name ": $message" ))',
+    notify: "(( grab pipeline.hipchat.notify ))"
+  }
+},
+EOF
+	}
+	if ($pipeline->{pipeline}{email}) {
+		$notification .= <<EOF;
+{
+  do: [
+  { get: build-email-$alias },
+  { task: write-email-body,
+    config: {
+      platform: linux,
+      image_resource: {
+        type: docker-image,
+        source: {
+          repository: ubuntu,
+        },
+      },
+
+      inputs: [
+        { name: build-email-$alias },
+        { name: out },
+      ],
+      outputs: [
+        { name: email },
+      ],
+
+      run: {
+        path: build-email-$alias/run,
+        args: [],
+      },
+    },
+  },
+
+  { put: email,
+    params: {
+      body:    email/body,
+      headers: email/header,
+      subject: email/subject,
+    },
+  }]
+}
+EOF
+	}
+	$notification .= "]";
+	return $notification;
+}
+
+sub generate_pipeline_concourse_yaml {
+	my ($pipeline) = @_;
+	my $dir = workdir;
+	open my $OUT, ">", "$dir/guts.yml"
+		or die "Failed to generate Concourse Pipeline YAML configuration: $!\n";
+
+	# Figure out what environments auto-trigger, and what don't
+	my %auto = map { $_ => 1 } @{$pipeline->{auto}};
+
+	# Determine what stemcells are being tracked
+	my @stemcells = ();
+	unless ($pipeline->{pipeline}{skip_upkeep}) {
+		@stemcells = map { { name => $pipeline->{pipeline}{stemcells}{$_}, alias => $_ } } keys %{$pipeline->{pipeline}{stemcells}}
+	}
+
+	# CONCOURSE: pipeline (+params) {{{
+	print $OUT <<'EOF';
+---
+pipeline:
+  git:
+    host:        github.com
+    uri:         (( concat "git@" pipeline.git.host ":" pipeline.git.owner "/" pipeline.git.repo ))
+    owner:       (( param "Please specify the name of the user / organization that owns the Github repository" ))
+    repo:        (( param "Please specify the name of the Github repository" ))
+    branch:      master
+    private_key: (( param "Please generate an SSH Deployment Key and install it into Github (with write privileges)" ))
+
+EOF
+
+	if ($pipeline->{pipeline}{slack}) {
+		print $OUT <<'EOF';
+  slack:
+    webhook:  (( param "Please provide a Slack Integration WebHook." ))
+    channel:  (( param "Please specify the channel (#name) or user (@user) to send messages to." ))
+    username: runwaybot
+    icon:     http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
+EOF
+	}
+	if ($pipeline->{pipeline}{hipchat}) {
+		print $OUT <<'EOF';
+  hipchat:
+    url:      http://api.hipchat.com
+    room_id:  (( param "Please specify the room ID that Concourse should send HipChat notifications to" ))
+    token:    (( param "Please specify the HipChat authentication token" ))
+    notify:   false
+    username: runwaybot
+EOF
+	}
+	if ($pipeline->{pipeline}{email}) {
+		print $OUT <<'EOF';
+  email:
+    to:   (( param "Please provide a list of email addresses to send 'Pending Deployment' notifications to." ))
+    from: (( param "Please specify a 'From:' account (an email address).  Email will be sent from this address." ))
+    smtp:
+      username: (( param "Please provide a username to authenticate against your Mail Server (SMTP) host." ))
+      password: (( param "Please provide a password to authenticate against your Mail Server (SMTP) host." ))
+      host:     (( param "Please specify the FQDN or IP address of your Mail Server (SMTP) host." ))
+      port:     587
+EOF
+	}
+	if ($pipeline->{pipeline}{locker}{url}) {
+		print $OUT <<'EOF';
+  locker:
+    url:                 (( param "Please provide the URI to the locker API" ))
+    username:            (( param "Please provide the locker API username" ))
+    password:            (( param "Please provide the locker API password" ))
+    # FIXME until we have service discovery (bosh dns) to reliably know the
+    #       locker hostname, and have a ca_cert generated in the concourse kit,
+    #       we need to turn on skip_ssl_validation, and nullify the ca_cert by default
+    ca_cert:             ~
+    skip_ssl_validation: true
+
+EOF
+	}
+	# }}}
+	# CONCOURSE: groups, and resource configuration {{{
+	print $OUT <<EOF;
+groups:
+  - name: $pipeline->{pipeline}{name}
+    jobs:
+EOF
+	print $OUT "    - $_\n" for sort map { "$pipeline->{aliases}{$_}-" . deployment_suffix } @{$pipeline->{envs}};
+	print $OUT "    - notify-$_-changes\n" for sort map { "$pipeline->{aliases}{$_}-" . deployment_suffix }
+		grep { ! $auto{$_} } @{$pipeline->{envs}};
+
+	print $OUT <<EOF;
+
+resources:
+  - name: git
+    type: git
+    source:
+      branch:      (( grab pipeline.git.branch ))
+      private_key: (( grab pipeline.git.private_key ))
+      uri:         (( grab pipeline.git.uri ))
+EOF
+	for (@stemcells) {
+		print $OUT <<EOF;
+  - name: $_->{alias}-stemcell
+    type: bosh-io-stemcell
+    source: { name: $_->{name} }
+EOF
+	}
+   # }}}
+	# CONCOURSE: env-specific resource configuration {{{
+	for my $env (sort @{$pipeline->{envs}}) {
+		my $alias = $pipeline->{aliases}{$env};
+		print $OUT <<EOF;
+  - name: ${alias}-changes
+    type: git
+    source:
+      .: (( inject resources.git.source ))
+      paths:
+EOF
+		# watch the common files in our predecessor cache - for example,
+		# if us-west-1-sandbox-a triggers us-west-1-preprod-a, then
+		# preprod-a would watch the cache of sandbox-a for:
+		#
+		#    us.yml
+		#    us-west.yml
+		#    us-west-1.yml
+		#
+		# and it would only check the top-level root for it's own files:
+		#
+		#    us-west-1-preprod.yml
+		#    us-west-1-preprod-a.yml
+		#
+		if ($pipeline->{triggers}{$env}) {
+			my $trigger = $pipeline->{triggers}{$env};
+			my ($pre, @unique) = unique_suffix($trigger, $env);
+			$pre = "$pre-" unless $pre eq "";
+			for (map { "$pre$_" } expand_tokens(@unique)) {
+				print $OUT <<EOF;
+        - ${_}.yml
+EOF
+			}
+			print $OUT <<EOF;
+
+  - name: ${alias}-cache
+    type: git
+    source:
+      .: (( inject resources.git.source ))
+      paths:
+        - .genesis/bin/genesis
+        - .genesis/kits
+        - .genesis/config
+EOF
+			print $OUT "# $trigger -> $env\n";
+			for (expand_tokens(common_base($env, $trigger))) {
+				print $OUT <<EOF;
+        - .genesis/cached/${trigger}/${_}.yml
+EOF
+			}
+		} else {
+			print $OUT <<EOF;
+        - .genesis/bin/genesis
+        - .genesis/kits
+        - .genesis/config
+EOF
+			for (expand_tokens(split /-/, $env)) {
+				print $OUT <<EOF;
+        - ${_}.yml
+EOF
+			}
+		}
+		print $OUT <<EOF;
+
+  - name: ${alias}-cloud-config
+    type: bosh-config
+    source:
+      target: $pipeline->{pipeline}{boshes}{$env}{url}
+      client: $pipeline->{pipeline}{boshes}{$env}{username}
+      client_secret: $pipeline->{pipeline}{boshes}{$env}{password}
+      ca_cert: |
+EOF
+		for (split /\n/, $pipeline->{pipeline}{boshes}{$env}{ca_cert}) {
+			print $OUT <<EOF;
+         $_
+EOF
+		}
+		print $OUT <<EOF;
+      config: cloud
+
+  - name: ${alias}-runtime-config
+    type: bosh-config
+    source:
+      target: $pipeline->{pipeline}{boshes}{$env}{url}
+      client: $pipeline->{pipeline}{boshes}{$env}{username}
+      client_secret: $pipeline->{pipeline}{boshes}{$env}{password}
+      ca_cert: |
+EOF
+		for (split /\n/, $pipeline->{pipeline}{boshes}{$env}{ca_cert}) {
+			print $OUT <<EOF;
+        $_
+EOF
+		}
+		print $OUT <<EOF;
+      config: runtime
+
+EOF
+		if ($pipeline->{pipeline}{locker}{url}) {
+			my $bosh_lock = $env;
+			if ($pipeline->{pipeline}{boshes}{$env}{url} =~ m|https?://(.*)?:(.*)|) {
+				my $addr = gethostbyname($1);
+				$bosh_lock = inet_ntoa($addr) . ":" . $2;
+			}
+			my $deployment_suffix = deployment_suffix;
+			print $OUT <<EOF;
+  - name: ${alias}-stemcell-lock
+    type: locker
+    source:
+      locker_uri: (( grab pipeline.locker.url ))
+      username: (( grab pipeline.locker.username ))
+      password: (( grab pipeline.locker.password ))
+      skip_ssl_validation: (( grab pipeline.locker.skip_ssl_validation ))
+      ca_cert: (( grab pipeline.locker.ca_cert ))
+      lock_name: ${bosh_lock}-stemcell-lock
+
+  - name: ${alias}-bosh-lock
+    type: locker
+    source:
+      locker_uri: (( grab pipeline.locker.url ))
+      username: (( grab pipeline.locker.username ))
+      password: (( grab pipeline.locker.password ))
+      skip_ssl_validation: (( grab pipeline.locker.skip_ssl_validation ))
+      ca_cert: (( grab pipeline.locker.ca_cert ))
+      bosh_lock: $pipeline->{pipeline}{boshes}{$env}{url}
+
+  - name: ${alias}-deployment-lock
+    type: locker
+    source:
+      locker_uri: (( grab pipeline.locker.url ))
+      username: (( grab pipeline.locker.username ))
+      password: (( grab pipeline.locker.password ))
+      skip_ssl_validation: (( grab pipeline.locker.skip_ssl_validation ))
+      ca_cert: (( grab pipeline.locker.ca_cert ))
+      lock_name:  ${env}-${deployment_suffix}
+
+EOF
+		}
+	}
+	# }}}
+	# CONCOURSE: notification resource configuration {{{
+	if ($pipeline->{pipeline}{slack}) {
+		print $OUT <<'EOF';
+  - name: slack
+    type: slack-notification
+    source:
+      url: (( grab pipeline.slack.webhook ))
+
+EOF
+	}
+	if ($pipeline->{pipeline}{hipchat}) {
+		print $OUT <<'EOF';
+  - name: hipchat
+    type: hipchat-notification
+    source:
+      hipchat_server_url: (( grab pipeline.hipchat.url ))
+      room_id:  (( grab pipeline.hipchat.room_id ))
+      token:    (( grab pipeline.hipchat.token ))
+EOF
+	}
+	if ($pipeline->{pipeline}{email}) {
+		print $OUT <<'EOF';
+  - name: build-email-changes-staged
+    type: script
+    source:
+      filename: run
+      body: |
+        #!/bin/bash
+        mkdir -p email
+        rm -rf email/*
+        echo "X-Concourse-Site-Env: ${CI_SITE_ENV}" >>email/header
+        head -n1 out/notif > email/subject
+        sed -e 's/\`\`\`//' out/notif > email/body
+  - name: build-email-success
+    .: (( inject resources.build-email-changes-staged ))
+  - name: build-email-failure
+    .: (( inject resources.build-email-changes-staged ))
+
+  - name: email
+    type: email
+    source:
+      to:   (( grab pipeline.email.to ))
+      from: (( grab pipeline.email.from ))
+      smtp:
+        host:     (( grab pipeline.email.smtp.host ))
+        port:     (( grab pipeline.email.smtp.port ))
+        username: (( grab pipeline.email.smtp.username ))
+        password: (( grab pipeline.email.smtp.password ))
+EOF
+	}
+	# }}}
+	# CONCOURSE: resource types {{{
+	print $OUT <<'EOF';
+resource_types:
+  - name: script
+    type: docker-image
+    source:
+      repository: cfcommunity/script-resource
+
+  - name: email
+    type: docker-image
+    source:
+      repository: pcfseceng/email-resource
+
+  - name: slack-notification
+    type: docker-image
+    source:
+      repository: cfcommunity/slack-notification-resource
+
+  - name: hipchat-notification
+    type: docker-image
+    source:
+      repository: cfcommunity/hipchat-notification-resource
+
+  - name: bosh-config
+    type: docker-image
+    source:
+      repository: cfcommunity/bosh-config-resource
+
+  - name: locker
+    type: docker-image
+    source:
+      repository: cfcommunity/locker-resource
+
+EOF
+	# }}}
+	print $OUT <<EOF;
+jobs:
+EOF
+	for my $env (sort @{$pipeline->{envs}}) {
+	 	# CONCOURSE: env-specific job configuration {{{
+
+		# YAML snippets, to make the print's less obnoxious {{{
+		#
+		# 1) do we tag the jobs so that they are constrained to a
+		#   specific subset of concourse workers? ('tagged' directive)
+		my $tag_yaml = $pipeline->{pipeline}{tagged} ? "tags: [$env]" : "";
+
+		# 2) Are we auto-triggering this environment?
+		my $trigger = $auto{$env} ? "true" : "false";
+
+		# 3) what is our deployment suffix?
+		my $deployment_suffix = deployment_suffix;
+
+		# 4) what previous (triggering) job/env do we need to wait
+		#    on for our cached configuration changes
+		my $passed =$pipeline->{triggers}{$env} ? $pipeline->{triggers}{$env} : "";
+		my $passed_alias = $passed ? "$pipeline->{aliases}{$passed}-$deployment_suffix" : "";
+
+		# 5) Alias of environment for concourse readabilitys
+		my $alias = $pipeline->{aliases}{$env};
+
+		# 6) If we have a previous environment, generate input definition
+		#    too look at our cache
+		my $cache_yaml = "";
+		if ($pipeline->{triggers}{$env}) {
+			if ($trigger eq "true") {
+				$cache_yaml = "- { get: $alias-cache, passed: [$passed_alias], trigger: true }";
+			} else {
+				$cache_yaml = "- { get: $alias-cache, passed: [notify-$alias-$deployment_suffix-changes], trigger: false }";
+			}
+		}
+		my $notify_cache = $pipeline->{triggers}{$env} ?
+			"- { get: $alias-cache, passed: [$passed_alias], trigger: true }" : "";
+
+		# 7) If we don't auto-trigger, we should use passed as our notify resource
+		#    otherwise, use the live value
+        my $changes_yaml = $trigger eq "true" ?
+			"- { get: $alias-changes, trigger: true }" :
+			"- { get: $alias-changes, trigger: false, passed: [notify-$alias-$deployment_suffix-changes]}";
+
+		# 8) Build notifications for non-automatic deployments that sense changes
+		my $changes_staged_notification = gen_notifications($pipeline,
+			"Changes are staged to be deployed to $env-$deployment_suffix, " .
+			"please schedule + run a deploy via Concourse", "changes-staged");
+
+		# 9) Build notifications for failed deployments
+		my $deployment_failure_notification = gen_notifications($pipeline,
+			"Concourse deployment to $env-$deployment_suffix failed", "failure");
+
+		# 10) Build notifications for successful deployments
+		my $deployment_success_notification = gen_notifications($pipeline,
+			"Concourse successfully deployed $env-$deployment_suffix", "success");
+
+		# 11) notifications for stemcell upload success
+		my $stemcell_success_notification = gen_notifications($pipeline,
+			"New stemcells have been uploaded to the $env BOSH", "success");
+		# 12) notifications for stemcell upload failure
+		my $stemcell_failure_notification = gen_notifications($pipeline,
+			"Failed uploading new stemcells to the $env BOSH", "failure");
+
+		# 13) directory to find the genesis binary in (use previous env cache if present, else local-changes
+		my $genesis_bindir = $passed ? "$alias-cache" : "git";
+
+		# }}}
+
+		if ($trigger eq "false" ) {
+			# notify job for non-automatic deploys {{{
+			print $OUT <<EOF;
+  - name: notify-$alias-$deployment_suffix-changes
+    public: true
+    serial: true
+    plan:
+    - aggregate:
+      - { get: $alias-changes, trigger: true }
+      - { get: $alias-cloud-config, trigger: true }
+      - { get: $alias-runtime-config, trigger: true }
+      $notify_cache
+EOF
+			unless ($pipeline->{pipeline}{skip_upkeep}) {
+				for (@{$pipeline->{pipeline}{boshes}{$env}{stemcells}}) {
+					print $OUT <<EOF;
+      - get: $_-stemcell
+        trigger: true
+        params: { tarball: true }
+EOF
+				}
+			}
+			print $OUT <<EOF;
+    - $changes_staged_notification
+EOF
+		}
+	 	# }}}
+		print $OUT <<EOF;
+  - name: $alias-$deployment_suffix
+    public: true
+    serial: true
+    plan:
+    - on_failure:
+        $deployment_failure_notification
+      on_success:
+        $deployment_success_notification
+EOF
+		if ($pipeline->{pipeline}{locker}{url}) {
+			print $OUT <<EOF;
+      ensure:
+        do:
+        - put: ${alias}-bosh-lock
+          params:
+            lock_op: unlock
+            key: dont-upgrade-bosh-on-me
+            locked_by: ${alias}-${deployment_suffix}
+        - put: ${alias}-deployment-lock
+          params:
+            lock_op: unlock
+            key: i-need-to-deploy-myself
+            locked_by: ${alias}-${deployment_suffix}
+EOF
+		}
+		print $OUT <<EOF;
+      do:
+EOF
+		if ($pipeline->{pipeline}{locker}{url}) {
+			print $OUT <<EOF;
+      - put: ${alias}-bosh-lock
+        params:
+          lock_op: lock
+          key: dont-upgrade-bosh-on-me
+          locked_by: ${alias}-${deployment_suffix}
+      - put: ${alias}-deployment-lock
+        params:
+          lock_op: lock
+          key: i-need-to-deploy-myself
+          locked_by: ${alias}-${deployment_suffix}
+EOF
+		}
+		print $OUT <<EOF;
+      - aggregate:
+        - { get: git }
+EOF
+		# only add cloud/runtime config on true-triggers, otherwise it goes in notifications
+		if ($trigger eq "true") {
+			print $OUT <<EOF;
+        - { get: $alias-cloud-config, trigger: true }
+        - { get: $alias-runtime-config, trigger: true }
+EOF
+		}
+		unless ($pipeline->{pipeline}{skip_upkeep}) {
+			for (@{$pipeline->{pipeline}{boshes}{$env}{stemcells}}) {
+				print $OUT <<EOF;
+        - get: $_-stemcell
+          trigger: $trigger
+          params: { tarball: true }
+EOF
+			}
+		}
+		print $OUT <<EOF;
+        # genesis itself handles the propagation of files from successful environment
+        # to the next. anything triggering env-changes should be considered to have passed
+        # the previous environment, if in cached, and if not, should be triggered
+        $changes_yaml
+        $cache_yaml
+EOF
+		# Update stemcells {{{
+		unless ($pipeline->{pipeline}{skip_upkeep}) {
+			if ($pipeline->{pipeline}{locker}{url}) {
+				print $OUT <<EOF;
+      - put: ${alias}-stemcell-lock
+        params:
+          lock_op: lock
+          key: ${alias}-${deployment_suffix}
+EOF
+			}
+			print $OUT <<EOF;
+      - task: upload-stemcells
+EOF
+			if ($pipeline->{pipeline}{locker}{url}) {
+				print $OUT <<EOF;
+        ensure:
+          put: ${alias}-stemcell-lock
+          params:
+            lock_op: unlock
+            key: ${alias}-${deployment_suffix}
+EOF
+			}
+			print $OUT <<EOF;
+        config:
+          inputs:
+            - name: $genesis_bindir
+EOF
+			for (@{$pipeline->{pipeline}{boshes}{$env}{stemcells}}) {
+				print $OUT <<EOF;
+            - name: $_-stemcell
+              path: stemcells/$pipeline->{pipeline}{stemcells}{$_}
+EOF
+			}
+			print $OUT <<EOF;
+          outputs:
+            - name: out
+          platform: linux
+          image_resource:
+            type: docker-image
+            source:
+              repository: starkandwayne/concourse
+          run:
+            path: .genesis/bin/genesis
+            args: [ ci-stemcells ]
+            dir: $genesis_bindir
+          params:
+            STEMCELLS:            ../stemcells
+            BOSH_ENVIRONMENT:     $pipeline->{pipeline}{boshes}{$env}{url}
+            BOSH_NON_INTERACTIVE: true
+            BOSH_CA_CERT: |
+EOF
+			for (split /\n/, $pipeline->{pipeline}{boshes}{$env}{ca_cert}) {
+				print $OUT <<EOF;
+              $_
+EOF
+			}
+			print $OUT <<EOF;
+            BOSH_CLIENT:        $pipeline->{pipeline}{boshes}{$env}{username}
+            BOSH_CLIENT_SECRET: $pipeline->{pipeline}{boshes}{$env}{password}
+
+EOF
+			print $OUT <<EOF if $pipeline->{pipeline}{debug};
+            DEBUG:              $pipeline->{pipeline}{debug}
+EOF
+		}
+		#  }}}
+		print $OUT <<EOF;
+      - task: bosh-deploy
+        $tag_yaml
+        config:
+          platform: linux
+          image_resource:
+            type: docker-image
+            source:
+              repository: $pipeline->{pipeline}{task}{image}
+              tag:        $pipeline->{pipeline}{task}{version}
+          params:
+            CURRENT_ENV:          $env
+            PREVIOUS_ENV:         $passed
+            CACHE_DIR:            $alias-cache
+            GIT_BRANCH:           (( grab pipeline.git.branch ))
+            GIT_PRIVATE_KEY:      (( grab pipeline.git.private_key ))
+            VAULT_ROLE_ID:        $pipeline->{pipeline}{vault}{role}
+            VAULT_SECRET_ID:      $pipeline->{pipeline}{vault}{secret}
+            VAULT_ADDR:           $pipeline->{pipeline}{vault}{url}
+            VAULT_SKIP_VERIFY:    ${\(!$pipeline->{pipeline}{vault}{verify})}
+
+            BOSH_ENVIRONMENT:     $pipeline->{pipeline}{boshes}{$env}{url}
+            BOSH_NON_INTERACTIVE: true
+            BOSH_CA_CERT: |
+EOF
+		for (split /\n/, $pipeline->{pipeline}{boshes}{$env}{ca_cert}) {
+			print $OUT <<EOF;
+              $_
+EOF
+		}
+		print $OUT <<EOF;
+            BOSH_CLIENT:        $pipeline->{pipeline}{boshes}{$env}{username}
+            BOSH_CLIENT_SECRET: $pipeline->{pipeline}{boshes}{$env}{password}
+EOF
+		print $OUT <<EOF if $pipeline->{pipeline}{debug};
+            DEBUG:              $pipeline->{pipeline}{debug}
+EOF
+		print $OUT <<EOF;
+            WORKING_DIR:        git # trigger off of changes, but nothing newer will
+                                    # be here (caches get pulled in separately)
+            OUT_DIR:            out/git
+
+
+          run:
+            # run from inside the environment changes to get latest cache + regular data
+            # but use the executable from genesis
+            path: $genesis_bindir/.genesis/bin/genesis
+            args: [ci-pipeline-deploy]
+          inputs:
+            - { name: git } # $alias-changes is a trigger, but not used directly
+EOF
+		print $OUT <<EOF if $passed;
+            - { name: $alias-cache }
+EOF
+		print $OUT <<EOF;
+          outputs:
+            - { name: out }
+
+        # push the deployment changes up to git, even if the deploy fails, to save
+        # files for create-env + reflect "live" state
+        ensure:
+          put: git
+          params:
+            rebase: true
+            repository: out/git
+EOF
+
+		# CONCOURSE: run optional errands as tasks {{{
+		for my $errand_name (@{$pipeline->{pipeline}{errands}}) {
+			print $OUT <<EOF;
+        # run errands against the deployment
+      - task: $errand_name-errand
+        $tag_yaml
+        config:
+          platform: linux
+          image_resource:
+            type: docker-image
+            source:
+              repository: $pipeline->{pipeline}{task}{image}
+              tag:        $pipeline->{pipeline}{task}{version}
+          params:
+            CURRENT_ENV:        $env
+            ERRAND_NAME:        $errand_name
+
+            BOSH_ENVIRONMENT:   $pipeline->{pipeline}{boshes}{$env}{url}
+            BOSH_CA_CERT: |
+EOF
+		for (split /\n/, $pipeline->{pipeline}{boshes}{$env}{ca_cert}) {
+			print $OUT <<EOF;
+              $_
+EOF
+		}
+		print $OUT <<EOF;
+            BOSH_CLIENT:        $pipeline->{pipeline}{boshes}{$env}{username}
+            BOSH_CLIENT:        $pipeline->{pipeline}{boshes}{$env}{username}
+            BOSH_CLIENT_SECRET: $pipeline->{pipeline}{boshes}{$env}{password}
+EOF
+		print $OUT <<EOF if $pipeline->{pipeline}{debug};
+            DEBUG:              $pipeline->{pipeline}{debug}
+EOF
+		print $OUT <<EOF;
+
+          run:
+            path: ../../$genesis_bindir/.genesis/bin/genesis
+            dir:  out/git
+            args: [ci-pipeline-run-errand]
+          inputs:
+            - name: out
+            - name: $genesis_bindir
+EOF
+		}
+		# }}}
+		print $OUT <<EOF;
+      - task: generate-cache
+        $tag_yaml
+        config:
+          inputs:
+          - { name: out }
+          - { name: $genesis_bindir }
+          outputs:
+          - { name: cache-out }
+          run:
+            path: $genesis_bindir/.genesis/bin/genesis
+            args: [ci-generate-cache]
+          params:
+            CURRENT_ENV:     $env
+            WORKING_DIR:     out/git
+            OUT_DIR:         cache-out/git
+            GIT_BRANCH:      (( grab pipeline.git.branch ))
+            GIT_PRIVATE_KEY: (( grab pipeline.git.private_key ))
+EOF
+
+		print $OUT <<EOF if $pipeline->{pipeline}{debug};
+            DEBUG:       $pipeline->{pipeline}{debug}
+EOF
+		print $OUT <<EOF;
+          platform: linux
+          image_resource:
+            type: docker-image
+            source:
+              repository: $pipeline->{pipeline}{task}{image}
+              tag:        $pipeline->{pipeline}{task}{version}
+      - put: git
+        params:
+          rebase: true
+          repository: cache-out/git
+EOF
+
+		for my $push_env (@{$pipeline->{will_trigger}{$env}}) {
+			print $OUT <<EOF;
+      - put: $pipeline->{aliases}{$push_env}-cache
+        params:
+          rebase: true
+          repository: cache-out/git
+EOF
+		}
+	# }}}
+	}
+	close $OUT;
+
+	return spruce_merge({ prune => [qw(meta pipeline)] },
+		"$dir/guts.yml", $pipeline->{file});
+}
+
+sub generate_pipeline_graphviz_source {
+	my ($pipeline) = @_;
+	my $out = "";
+	open my $fh, ">", \$out;
+	print $fh "digraph {\n";
+	print $fh "  rankdir = LR; node [shape=none]; edge [color=\"#777777\",fontcolor=\"red\"];\n";
+
+	my %auto = map { $_ => 1 } @{$pipeline->{auto}};
+	for my $b (keys %{$pipeline->{triggers}}) {
+		my $a = $pipeline->{triggers}{$b};
+		(my $b1 = $b) =~ s/-/_/g;
+		(my $a1 = $a) =~ s/-/_/g;
+		print $fh "  $a1 [label=\"$a\"];\n";
+		print $fh "  $b1 [label=\"$b\"];\n";
+		if ($auto{$b}) {
+			print $fh "  $a1 -> $b1;\n";
+		} else {
+			print $fh "  $a1 -> $b1 [label=\"manual\"];\n";
+		}
+	}
+
+
+	print $fh "}\n";
+	close $fh;
+	return $out;
+}
+
+sub pipeline_tree {
+	my ($prefix, $env, $trees) = @_;
+	#
+	# sandbox
+	#  |--> preprod
+	#  |     |--> prod
+	#  |     |--> prod-2
+	#  |     `--> some-prod
+	#  |
+	#  `--> other-preprod
+	#        `--> other-prod
+	#
+
+	print "$env\n";
+	my $n = @{$trees->{$env} || []};
+	for my $kid (sort @{$trees->{$env} || []}) {
+		$n--;
+		if ($n) {
+			print "$prefix  |--> ";
+			pipeline_tree("$prefix  |   ", $kid, $trees);
+		} else {
+			print "$prefix  `--> ";
+			pipeline_tree("$prefix      ", $kid, $trees);
+		}
+	}
+}
+
+sub generate_pipeline_human_description {
+	my ($pipeline) = @_;
+
+	my %auto = map { $_ => 1 } @{$pipeline->{auto}};
+
+	my %trees;
+	my %envs = map { $_ => 1 } @{$pipeline->{envs}};
+	for my $b (keys %{$pipeline->{triggers}}) {
+		my $a = $pipeline->{triggers}{$b};
+		push @{$trees{$a}}, $b;
+		delete $envs{$b};
+	}
+	for (sort keys %envs) {
+		pipeline_tree("", $_, \%trees);
+		print "\n";
+	}
+}
+
+sub semver {
+	my ($v) = @_;
+	if ($v =~  m/^(\d+)(?:\.(\d+)(?:\.(\d+)(?:[.-]rc[.-]?(\d+))?)?)?$/) {
+		return ($1, $2 || 0, $3 || 0, $4 || 0);
+	}
+	die "Unrecognized version string '$v'\n";
+}
+
+sub new_enough {
+	my ($v, $min) = @_;
+	my @v = semver($v);
+	my @min = semver($min);
+	while (@v) {
+		return 1 if $v[0] > $min[0];
+		return 0 if $v[0] < $min[0];
+		shift @v;
+		shift @min;
+	}
+	return 1;
+}
+
+sub check_prereqs {
+	my $SPRUCE_MIN_VERSION = "1.9.0";
+	my $SAFE_MIN_VERSION   = "0.1.8";
+	my $VAULT_MIN_VERSION  = "0.6.0";
+	my $GIT_MIN_VERSION    = "1.8.0";
+	my $BOSH2_MIN_VERSION  = "2.0.1";
+
+	my @errors;
+	my $version;
+
+	# check that we has a spruce
+	$version = qx(spruce -v 2>/dev/null);
+	if (!$version || $version =~ s/not found//) {
+		push @errors, "Missing `spruce' - install Spruce from #B{https://github.com/geofffranks/spruce/releases}";
+	} else {
+		unless(envset('GENESIS_DEV_MODE') && $version =~ /development build/) {
+			chomp($version); $version =~ s/.*version\s+(\S+).*/$1/i;
+			if (!new_enough($version, $SPRUCE_MIN_VERSION)) {
+				push @errors, "Spruce v${version} is installed, but Genesis requires #R{at least $SPRUCE_MIN_VERSION} - upgrade your Spruce, via #B{https://github.com/geofffranks/spruce/releases}";
+			}
+		}
+	}
+
+	# check that we has a safe
+	$version = qx(safe -v 2>&1 >/dev/null);
+	if (!$version || $version =~ s/not found//) {
+		push @errors, "Missing `safe' - install Safe from #B{https://github.com/starkandwayne/safe/releases}";
+	} else {
+		unless (envset('GENESIS_DEV_MODE') && $version =~ /development build/) {
+			chomp($version); $version =~ s/^safe v(\S+)/$1/i;
+			if (!new_enough($version, $SAFE_MIN_VERSION)) {
+				push @errors, "Safe v${version} is installed, but Genesis requires #R{at least $SAFE_MIN_VERSION} - upgrade your Safe, via #B{https://github.com/starkandwayne/safe/releases}";
+			}
+		}
+	}
+
+	# check that we has a vault
+	$version = qx(vault -v 2>/dev/null);
+	if (!$version) {
+		push @errors, "Missing `vault' - install Vault from #B{https://www.vaultproject.io/downloads.html}";
+	} else {
+		chomp($version); $version =~ s/^vault v(\S+).*/$1/i;
+		if (!new_enough($version, $VAULT_MIN_VERSION)) {
+			push @errors, "Vault v${version} is installed, but Genesis requires #R{at least $VAULT_MIN_VERSION} - upgrade your Vault, via #B{https://www.vaultproject.io/downloads.html}";
+		}
+	}
+
+	# check that we has a bosh (v2)
+	detect_bosh_version($BOSH2_MIN_VERSION);
+
+	# check that we has a git
+	$version = qx(git --version 2>/dev/null);
+	if (!$version || $version =~ s/not found//) {
+		push @errors, "Missing `git' - install git via your platform package manager";
+	} else {
+		chomp($version); $version =~ s/.*version\s+(\S+).*/$1/i;
+		if (!new_enough($version, $GIT_MIN_VERSION)) {
+			push @errors, "Git v${version} is installed, but Genesis requires #R{at least $GIT_MIN_VERSION}";
+		}
+	}
+
+	if (@errors) {
+		error "#R{GENESIS PRE-REQUISITES CHECKS FAILED!!}";
+		error;
+		error "Your system does not look like it is ready for Genesis.";
+		error "  - $_" for @errors;
+		exit 2;
+	}
+}
+
+sub extract_kit_name_and_version {
+	my ($combined) = @_;
+	return ($1, $2) if $combined =~ m{(.*)/(.*)};
+	return $combined, "latest";
+}
+
+sub kit_release_url {
+	my ($name, $version) = @_;
+
+	my ($code, $msg, $data) = curl "GET", "https://api.github.com/repos/genesis-community/$name-genesis-kit/releases";
+	if ($code == 404) {
+		die "Could not find Genesis Kit $name on Github; does https://github.com/genesis-community/$name-genesis-kit/releases exist?\n";
+	}
+	if ($code != 200) {
+		die "Could not find Genesis Kit $name release information; Github returned a ".$msg."\n";
+	}
+
+	my $releases;
+	eval { $releases = decode_json($data); 1 }
+		or die "Failed to read releases information from Github: $@\n";
+
+	if (!@$releases) {
+		die "No released versions of Genesis Kit $name found at https://github.com/genesis-community/$name-genesis-kit/releases.\n";
+	}
+
+	for (map { @{$_->{assets} || []} } @$releases) {
+		if ($version eq 'latest') {
+			next unless $_->{name} =~ m/^\Q$name\E-(.*)\.(tar\.gz|tgz)$/;
+			$version = $1;
+		} else {
+			next unless $_->{name} eq "$name-$version.tar.gz"
+			         or $_->{name} eq "$name-$version.tgz";
+		}
+		return ($_->{browser_download_url}, $version);
+	}
+
+	die "$name/$version tarball asset not found on Github.  Oops.\n";
+}
+
+sub kit_file {
+	my ($kit, $version, $relpath, $required) = @_;
+
+	if (!$kit || $kit eq "dev") {
+		-d "dev/"                       or die "dev/ kit directory not found. Please contact your kit author for a fix.\n";
+		!$required || -f "dev/$relpath" or die "dev/$relpath not found. Please contact your kit author for a fix.\n";
+		return "dev/$relpath";
+	}
+	-f ".genesis/kits/$kit-$version.tar.gz"
+		or die "Kit $kit/$version not found in .genesis/kits!\n";
+
+	my $tmp = workdir();
+	qx(tar -C $tmp -xzf .genesis/kits/$kit-$version.tar.gz $kit-$version/$relpath 2>/dev/null);
+	!$required || -f "$tmp/$kit-$version/$relpath"
+		or die "$relpath not found in $kit-$version kit. Please contact your kit author for a fix.\n";
+	return "$tmp/$kit-$version/$relpath";
+}
+
+sub download_kit_tarball
+{
+	my ($name, $want) = @_;
+
+	if ($want eq 'latest') {
+		explain "Downloading Genesis kit #M{$name} (#Y{latest} version)\n";
+	} else {
+		explain "Downloading Genesis kit #M{$name}, version #C{$want}\n";
+	}
+	my ($url, $version) = kit_release_url($name, $want);
+	mkdir_or_fail ".genesis";
+	mkdir_or_fail ".genesis/kits";
+	open my $kit, ">", ".genesis/kits/$name-$version.tar.gz"
+		or die "Failed to open .genesis/kits/$name-$version.tar.gz for writing: $!\n";
+	my ($code, $msg, $data) = curl "GET", $url;
+	if ($code != 200) {
+		die "Failed to download $name/$version from $url: Github returned an HTTP ".$msg."\n";
+	}
+	print $kit $data;
+	close $kit;
+	debug "downloaded kit #M{$name}/#C{$version}\n";
+}
+sub validate_kit_metadata {
+	my ($kit, $version, $meta) = @_;
+	$kit ||= "dev";
+	$version = "latest" unless defined $version;
+	my @errors;
+
+	# validate params
+	for my $subkit (sort keys %{$meta->{params}}) {
+		my $i = 0;
+		debug ("Validationg params for subkit '$subkit' (#$i)");
+		if (ref($meta->{params}{$subkit}) ne "ARRAY") {
+			push @errors, "$subkit subkit parameters not a list (found ".(ref($meta->{params}{$subkit}) || "a string").")";
+		} else {
+			for my $param (@{$meta->{params}{$subkit}}) {
+				my $parameter = "params.$subkit\[$i\]";
+				my (@extras, @bad);
+				for my $key (sort keys %$param) {
+					push @extras, $key if $key !~ m/^(params?|ask|vault|description|example|type)$/;
+				}
+				if (defined($param->{ask})) {
+					my $type = exists($param->{type}) ? $param->{type} : "string";
+					if (defined($param->{validate})) {
+						if ($type =~ m/^(string|list)$/) {
+							@extras = grep {$_ !~ /^(validate|err_msg)$/ } @extras;
+							if ($param->{validate} !~ m/^\/.*\/i?m?s?$/     && # regex validation
+								$param->{validate} !~ m/^((^|,)[^,]+){2,}$/ && # comma-separated list
+								$param->{validate} !~ m/^(vault_path)$/     ){ # key-words
+								push @errors, "$parameter has an invalid validation formula";
+							}
+						}
+					}
+					if ( $type =~ m/^(string|block|multi-?line)$/) {
+						push @bad, grep {$_ !~ m/^(label|default)$/} @extras;
+					} elsif ($type eq 'boolean') {
+						push @bad, grep {$_ !~ m/^(label|default)$/} @extras;
+						push @errors, "$parameter has invalid default value '$param->{default}'"
+						  if (defined($param->{default}) && $param->{default} !~ /^(1|0|y(es)?|no?|true|false)$/i);
+					} elsif ($type =~ m/^((block|multi-?line)-)?list$/) {
+						push @bad, grep {$_ !~ m/^(label|(max|min)_count)$/} @extras;
+					} else {
+						push @errors, "$parameter has unsupported type '$type'";
+						@bad = @extras;
+					}
+				} else {
+					@bad = @extras;
+				}
+				push @errors, "$parameter has an invalid attribute: '$_'" foreach @bad;
+				push @errors, "$parameter does not specify 'vault', 'param', or 'params'"
+					unless ($param->{param} || $param->{params} || $param->{vault});
+				push @errors, "$parameter specifies both 'param' and 'params'"
+					if ($param->{param} && $param->{params});
+				push @errors, "$parameter specifies both 'param' and 'vault'"
+					if ($param->{param} && $param->{vault});
+				push @errors, "$parameter specifies both 'params' and 'vault'"
+					if ($param->{vault} && $param->{params});
+				push @errors, "$parameter specifies 'param', but it is not a string"
+					if $param->{param} && ref $param->{param};
+				push @errors, "$parameter specifies 'params', but it is not an array"
+					if $param->{params} && ref $param->{params} ne "ARRAY";
+				push @errors, "$parameter specifies both 'params' and 'ask'"
+					if $param->{params} && $param->{ask};
+				push @errors, "$parameter does not have a 'description'"
+					if ! $param->{description};
+				push @errors, "$parameter specifies 'ask', but does not have a corresponding 'vault' or 'param'"
+					if ($param->{ask} && ! $param->{vault} && ! $param->{param});
+				push @errors, "$parameter specifies 'vault' but does not have a corresponding 'ask'"
+					if $param->{vault} && ! $param->{ask};
+
+				$i++;
+			}
+		}
+	}
+
+	if (@errors) {
+		print STDERR "The following errors have been encountered validating the $kit/$version kit:\n";
+		for my $err (@errors) {
+			print STDERR " - $err\n";
+		}
+		die "Please contact your kit author for a fix.\n";
+	}
+}
+
+# read the metadata for the given kit (and version)
+# if no kit/version is given, assume 'dev'
+sub read_kit_metadata {
+	my ($kit, $version) = @_;
+	my $metadata = LoadFile(kit_file($kit, $version, "kit.yml", 1));
+	validate_kit_metadata($kit, $version, $metadata);
+	return $metadata;
+}
+
+sub latest_kit_name_and_version {
+	# use dev/, if we have it
+	return (undef, undef) if -d "dev";
+
+	# use latest available:
+	my ($kit, @versions);
+	for (glob(".genesis/kits/*.tar.gz")) {
+		next unless m{^\.genesis/kits/(.*?)-(\d+(\.\d+(\.\d+([.-]rc[.-]?\d+)?)?)?).tar.gz$};
+		my ($n, $v) = ($1, $2);
+		if ($kit && $kit ne $n) {
+			die "Found multiple different kits!\n";
+		}
+		$kit = $n;
+
+		push @versions, [$v, semver($v)];
+	}
+	@versions > 0
+		or die "No kits have been downloaded for use in this set of deployment environments.\nPlease download a kit via `genesis download kit-name[/version]`\n";
+	my @sorted = reverse sort { $a->[1] <=> $b->[1] } @versions;
+	return ($kit, $sorted[0][0]);
+}
+
+sub kit_name_and_version_for {
+	my ($env) = @_;
+	my $name = get_key($env, 'kit.name');
+	my $vers = get_key($env, 'kit.version');
+	return (undef, undef) if $name && $name eq 'dev';
+	return ($name, $vers) if $name && $vers;
+	return latest_kit_name_and_version();
+}
+
+sub check_kit_prereqs {
+	my ($kit, $version) = @_;
+	my $script = kit_file($kit, $version, "prereqs", 0);
+	return unless -e $script;
+	-x $script or die "Prereqs script $script was found, but is not executable...\n";
+	qx(./dev/prereqs);
+	$? == 0 or die "Some prerequisites for this Genesis Kit have not been met.\n";
+}
+
+sub prompt_for_subkits_alternates {
+	my ($prompt) = @_;
+	my $attempt;
+	print "\n";
+
+reprompt:
+	$attempt = 0;
+	print "$prompt->{prompt}\n\n";
+
+	my $n = 0;
+	for my $choice (@{ $prompt->{choices} }) {
+		$n++;
+		if ($choice->{default}) {
+			print "  *${n}) $choice->{label} (default)\n";
+		} else {
+			print "   ${n}) $choice->{label}\n";
+		}
+	}
+	print "\n";
+
+again:
+	$attempt++;
+	print " choice? [1-$n]: ";
+	my $answer = <STDIN>; defined $answer or die "unexpected EOF on standard input...\n";
+	$answer =~ s/^\s+|\s+$//g;
+	if ($answer && $answer >= 1 && $answer <= $n) {
+		return $prompt->{choices}[$answer - 1]{subkit};
+	}
+	if ($answer) {
+		print "'$answer' is an invalid choice...\n";
+	}
+	if ($attempt < 3) {
+		goto again;
+	}
+	print "You can <CTRL-C> to exit setup...\n";
+	goto reprompt;
+}
+
+sub resolve_params_ref {
+	my ($key,$references) = @_;
+	die("\$\{$key\} referenced but not found -- perhaps it hasn't been defined yet.  Contact your Kit author for a bugfix.\n")
+		unless exists($references->{$key});
+	return $references->{$key};
+}
+
+sub process_kit_params {
+	my %opts = @_;
+	my @answers;
+	my $resolveable_params = {
+		"params.vault_prefix" => $opts{vault_prefix},
+		"params.env" => $opts{env}
+	};
+	for my $subkit ("base", @{$opts{subkits}}) {
+		next unless defined $opts{params}{$subkit} && @{$opts{params}{$subkit}};
+		my $kit_params_file = $subkit eq "base" ? "base/params.yml" : "subkits/$subkit/params.yml";
+		my $defaults = LoadFile(kit_file($opts{kit}, $opts{version}, $kit_params_file, 1));
+		for my $q (@{$opts{params}{$subkit}}) {
+			my $answer;
+			my $vault_path;
+			next if ($q->{vault} && ! $opts{should_vault});
+			# Expand any values from default and examples for vault prefix
+			foreach (qw(description ask default example validate err_msg)) {
+				$q->{$_} =~ s/\$\{([^}]*)\}/resolve_params_ref($1,$resolveable_params)/ge if defined($q->{$_});
+			}
+			if (defined($q->{validate}) && $q->{validate} eq 'vault_path') {
+				if (defined($q->{default})) {
+					while ($q->{default} =~ s#/[^/]+/\.\./#/#) {};
+				}
+				if (defined($q->{example})) {
+					while ($q->{example} =~ s#/[^/]+/\.\./#/#) {};
+				}
+			}
+			if ($q->{ask}) {
+				$q->{type} ||= "string";
+				print "\n";
+				if ($q->{param}) {
+					print csprintf("#y{Required parameter:} #W{$q->{param}}\n\n");
+				} else {
+					$vault_path = "secret/$opts{vault_prefix}/$q->{vault}";
+					print csprintf("#y{Secret data required} -- will be stored in Vault under #W{$vault_path}\n\n");
+				}
+				print "$q->{description}\n";
+				print "(e.g. $q->{example})\n\n" if defined $q->{example};
+				if ($q->{param}) {
+					my $type = $q->{type};
+					if (defined($q->{validate}) && $q->{validate} eq "vault_path" && ! $opts{should_vault}) {
+						print csprintf("#y{Warning:} Cannot validate vault path when --no-secrets option specified\n");
+						$q->{validate}=undef;
+					}
+					if ($type eq 'boolean') {
+						$answer = prompt_for_boolean($q->{ask},$q->{default});
+					} elsif ($type eq 'string') {
+						$answer = prompt_for_line($q->{ask},$q->{label},$q->{default},$q->{validate},$q->{err_msg});
+					} elsif ($type =~ m/^(block|multi-?line)$/) {
+						$answer = prompt_for_block($q->{ask},$q->{label},$q->{default});
+					} elsif ($type eq 'list') {
+						$answer = prompt_for_list('line',$q->{ask},$q->{label},$q->{min_count},$q->{max_count},$q->{validate},$q->{err_msg});
+					} elsif ($type =~ m/^(block|multi-?line)-list$/) {
+						$answer = prompt_for_list('block',$q->{ask},$q->{label},$q->{min_count},$q->{max_count});
+					} else {
+						die "Unsupported type '$type' for parameter '$q->{param}'. Please contact your kit author for a fix.\n";
+					}
+					print "\n";
+				} else {
+					my ($path, $key) = split /:/, $vault_path;
+					if ($q->{type} =~ /^(boolean|string)$/) {
+						system "safe", "prompt", $q->{ask}, "--", "set", $path, $key;
+						die "Failed to save data to $vault_path in Vault\n" if ($? >> 8);
+					} elsif ($q->{type} eq "multi-line") {
+						$answer = prompt_for_block($q->{ask});
+						my $tmpdir = workdir;
+						open my $fh, ">", "$tmpdir/param" or die "Could not write to $tmpdir/param: $!\n";
+						print $fh $answer;
+						close $fh;
+						my $err = qx(safe set "$path" "$key\@$tmpdir/param" 2>&1);
+						die "$err\n\nFailed to save data to $vault_path in Vault\n" if ($? >> 8);
+					} else {
+						die "Unsupported parameter type '$q->{type}' for $q->{vault}. Please contact your kit author for a fix.\n";
+					}
+					print "\n";
+					next;
+				}
+			}
+			my @values;
+			my $is_default = 0;
+			if (! $q->{ask}) {
+				$is_default = 1;
+				if (defined $q->{param}) {
+					$q->{params} = [$q->{param}];
+				}
+				for my $p (@{$q->{params}}) {
+					# Should we throw an error here if the default value is
+					# a spruce operator like (( param ))?
+					push @values, { $p => $defaults->{params}{$p} };
+					$resolveable_params->{"params.$p"} = $defaults->{params}{$p};
+				}
+			} else {
+				push @values, { $q->{param} => $answer };
+				$resolveable_params->{"params.$q->{param}"} = $answer;
+			}
+
+			push @answers, {
+				comment => $q->{description},
+				example => $q->{example},
+				values  => \@values,
+				default => $is_default,
+			};
+		}
+	}
+	return \@answers;
+}
+
+sub prompt_for_subkits_optional {
+	my ($prompt) = @_;
+	my $attempt = 0;
+	print "\n";
+
+again:
+	$attempt++;
+	print "$prompt->{prompt}\n";
+	print $prompt->{default} ? "[Y/n]: " : "[y/n]: ";
+	my $answer = <STDIN>; defined $answer or die "unexpected EOF on standard input...\n";
+	$answer =~ s/^\s+|\s+$//g;
+
+	return $prompt->{subkit} if !$answer && $prompt->{default};
+	return $prompt->{subkit} if $answer =~ m{(y|yes)}i;
+	return undef             if $answer =~ m{(n|no)}i;
+
+	if ($answer) {
+		print "'$answer' is an invalid choice; try 'yes' or 'no'...\n";
+	}
+	if ($attempt % 3 == 0) {
+		print "You can <CTRL-C> to exit setup...\n";
+	}
+	goto again;
+}
+
+sub prompt_for_subkits {
+	my @subkits;
+	for my $prompt (@{$_[0]}) {
+		my $subkit;
+
+		if (exists $prompt->{choices}) {
+			$subkit = prompt_for_subkits_alternates($prompt);
+		} else {
+			$subkit = prompt_for_subkits_optional($prompt);
+		}
+
+		push @subkits, $subkit if $subkit;
+	}
+
+	return @subkits;
+}
+
+sub active_credentials {
+	my ($meta, $subkits) = @_;
+
+	my $active = {};
+	for my $sub (('base', @$subkits)) {
+		next unless $meta->{credentials}{$sub};
+		for my $path (keys %{ $meta->{credentials}{$sub} }) {
+			if (exists $active->{$path} && ref $meta->{credentials}{$sub}{$path}) {
+				for my $k (keys %{ $meta->{credentials}{$sub}{$path} }) {
+					$active->{$path}{$k} = $meta->{credentials}{$sub}{$path}{$k};
+				}
+			} else {
+				$active->{$path} = $meta->{credentials}{$sub}{$path};
+			}
+		}
+	}
+	return $active;
+}
+
+sub active_certificates {
+	my ($meta, $subkits) = @_;
+
+	my $active = {};
+	for my $sub (('base', @$subkits)) {
+		next unless $meta->{certificates}{$sub};
+		for my $path (keys %{ $meta->{certificates}{$sub} }) {
+			if (exists $active->{$path} && ref $meta->{certificates}{$sub}{path}) {
+				for my $k (keys %{ $meta->{certificates}{$sub}{$path} }) {
+					$active->{$path}{$k} = $meta->{certificates}{$sub}{$path}{$k};
+				}
+			} else {
+				$active->{$path} = $meta->{certificates}{$sub}{$path};
+			}
+		}
+	}
+	return $active;
+}
+
+sub target_vault {
+	my ($target) = @_;
+	if ($target) {
+		system(qw(safe target), $target) == 0 or exit 1;
+	} else {
+		system(qw(safe target -i)) == 0 or exit 1;
+	}
+}
+# generate (and optionally rotate) credentials.
+#
+## just rotate credentials
+# vaultify_secrets $kit_metadata,
+#                  target       => "my-vault",
+#                  env          => "us-east-sandbox",
+#                  prefix       => "us/east/sandbox",
+#                  force_rotate => 0;
+#
+## generate all credentials (including 'fixed' creds)
+# vaultify_secrets $kit_metadata,
+#                  target       => "my-vault",
+#                  env          => "us-east-sandbox",
+#                  prefix       => "us/east/sandbox",
+#                  force_rotate => 1;
+#
+sub vaultify_secrets {
+	my ($meta, %options) = @_;
+	$options{env} or die "generate_secrets() was not given an 'env' option.\n";
+
+	my $creds = active_credentials($meta, $options{subkits} || []);
+	if (%$creds) {
+		explain " - auto-generating credentials (in secret/$options{prefix})...\n";
+		for (safe_commands $creds, %options) {
+			system('safe', @$_);
+			die "Failure autogenerating credentials.\n" if ($? >> 8);
+		}
+	} else {
+		explain " - no credentials need to be generated.\n";
+	}
+
+	my $certs = active_certificates($meta, $options{subkits} || []);
+	if (%$certs) {
+		explain " - auto-generating certificates (in secret/$options{prefix})...\n";
+		cert_commands($certs, %options);
+	} else {
+		explain " - no certificates need to be generated.\n";
+	}
+}
+
+# build a columnar display of tabular data,
+# tablify($headers, [$row1,$row2,...])
+sub tablify {
+	my ($headers_ref, $rows_ref) = @_;
+	my @headers = @{$headers_ref};
+	my @rows    = @{$rows_ref};
+	my @widths  = map { length $_ } @headers;
+
+	for my $row (@rows) {
+		next unless $row;
+		for (my $i = 0; $i < @$row; $i++) {
+			my $l = length($row->[$i] || '');
+			$widths[$i] = $l unless defined $widths[$i] and $widths[$i] > $l;
+		}
+	}
+	@widths = map { $_ + 4 } @widths;
+
+	for (my $i = 0; $i < @headers; $i++) {
+		printf("%-*s", $widths[$i], $headers[$i]);
+	}
+	printf("\n");
+
+	for (my $i = 0; $i < @headers; $i++) {
+		printf("%-*s", $widths[$i], ("=" x length($headers[$i])));
+	}
+	printf("\n");
+
+	for my $row (@rows) {
+		if ($row) {
+			for (my $i = 0; $i < @$row; $i++) {
+				printf("%-*s", $widths[$i], $row->[$i]);
+			}
+		}
+		printf("\n");
+	}
+}
+
+# bosh_target_for $env
+sub bosh_target_for {
+	my ($env) = @_;
+	return $ENV{GENESIS_BOSH_ENVIRONMENT} if defined($ENV{GENESIS_BOSH_ENVIRONMENT});
+	return get_key($env, 'params.bosh')
+	    || get_key($env, 'params.env')
+	    || die "Could not find the `params.bosh' or `params.env' key in $env!\n";
+}
+
+
+###########################################################################
+
+my ($COMMAND, %COMMAND, %USAGE);
+
+sub usage {
+	my ($cmd, $rc) = @_;
+	if (!defined $rc) {
+		# invoked as usage(0);
+		# use the currently executing COMMAND
+		$rc = $cmd;
+		$cmd = $COMMAND;
+	}
+	print STDERR $USAGE{$cmd} if $USAGE{$cmd};
+	exit $rc;
+}
+
+our $GLOBAL_USAGE = <<EOF;
+  -h, --help        Show this help screen.
+  -D, --debug       Enable debugging, printing helpful message about what
+                    Genesis is doing, to standard error.
+  -T, --trace       Even more debugging, including debugging inside called
+                    tools (like spruce and bosh).
+  -C, --cwd         Effective working directory.  Defaults to '.'
+  -e, --environment Which BOSH environment (aka director) to use.  If not
+                    specified, it will use the value in params.bosh or
+                    params.env in that order.  Can also be provided using the
+                    \$GENESIS_BOSH_ENVIRONMENT environment variable.
+  -y, --yes         Answer "yes" to all question, automatically.
+EOF
+sub options {
+	my ($args, $options, @spec) = @_;
+	$options->{color} = 1 unless exists $options->{color};
+	GetOptionsFromArray($args, $options,
+		(qw/
+			help|h
+			debug|D
+			trace|T
+			quiet|q
+			offline
+			cwd|C=s
+			environment|e=s
+			yes|y
+			color!
+		/,
+		@spec))
+			or usage(1);
+
+	usage(0) if $options->{help};
+
+	$ENV{QUIET}   = 'y' if  $options->{quiet};
+	$ENV{DEBUG}   = 'y' if  $options->{debug};
+	$ENV{TRACE}   = 'y' if  $options->{trace};
+	$ENV{NOCOLOR} = 'y' if !$options->{color};
+	$ENV{OFFLINE} = 'y' if  $options->{offline};
+
+	debug("bosh env: ".($options->{environment} || "-same-as-env-file-"));
+
+	$ENV{GENESIS_BOSH_ENVIRONMENT} = $options->{environment} 
+		if $options->{environment};
+	chdir_or_fail $options->{cwd} if $options->{cwd};
+}
+
+sub command {
+	my ($name, $usage, $fn) = @_;
+	if (ref($name) ne 'ARRAY') {
+		$name = [$name];
+	}
+	for my $cmd (@$name) {
+		$USAGE{$cmd}   = $usage;
+		$COMMAND{$cmd} = sub {
+			$COMMAND = $cmd;
+			$fn->(@_);
+		};
+	}
+}
+
+
+###########################################################################
+
+# genesis help - print the help screen. {{{
+
+command("help", <<EOF,
+genesis v$VERSION
+USAGE: genesis [OPTIONS] COMMAND [MORE OPTIONS]
+
+OPTIONS
+$GLOBAL_USAGE
+COMMANDS
+  compile-kit      Create a distributable kit archive from dev.
+  decompile-kit    Unpack a kit archive to dev.
+  deploy           Generate a real manifest using Vault + Cloud Config, and deploy it to BOSH.
+  describe         Describe a Concourse pipeline, in words.
+  download         Download a Genesis Kit from the Internet.
+  graph            Draw a Concourse pipeline.
+  init             Initialize a new Genesis deployment.
+  lookup           Find a key set in environment manifests.
+  manifest         Generate a redacted BOSH deployment manifest for an environment.
+  new              Create a new Genesis deployment environment.
+  ping             See if the genesis binary is a real thing.
+  repipe           Configure a Concourse pipeline for automating deployments.
+  secrets          Re-generate / rotate credentials (passwords, keys, etc.).
+  summary          Print a summary of defined environments.
+  version          Print the version of genesis
+  yamls            Print a list of the YAML files used for a single environment.
+
+See `genesis COMMAND -h' for more specific, per-command usage information.
+EOF
+sub {
+	usage(0);
+});
+
+# }}}
+# genesis ping - see if the genesis binary is a real thing. {{{
+
+command("ping", <<EOF,
+genesis v$VERSION
+USAGE: genesis ping
+
+OPTIONS
+$GLOBAL_USAGE
+EOF
+sub {
+	check_prereqs;
+	print "PING!\n";
+});
+
+# }}}
+# genesis version - Print the version of Genesis. {{{
+
+command("version", <<EOF,
+genesis v$VERSION
+USAGE: genesis version
+
+OPTIONS
+$GLOBAL_USAGE
+EOF
+sub {
+	print "Genesis $VERSION\n";
+});
+
+# }}}
+# genesis embed - embed Genesis in the repository {{{
+
+command("embed", <<EOF,
+genesis v$VERSION
+USAGE: genesis embed
+
+OPTIONS
+$GLOBAL_USAGE
+EOF
+sub {
+	my %options;
+	options(\@_, \%options, qw/
+	/);
+	usage(1) if @_;
+	check_prereqs;
+
+	# FIXME: update .genesis/config with new version info
+	mkdir_or_fail ".genesis/bin";
+	copy_or_fail $0, ".genesis/bin/genesis";
+	chmod_or_fail 0755, ".genesis/bin/genesis";
+});
+# }}}
+#  genesis init - initialize a new Genesis repository {{{
+
+command("init", <<EOF,
+genesis v$VERSION
+USAGE: genesis init [-k KIT/VERSION] [-d directory] [name]
+
+OPTIONS
+$GLOBAL_USAGE
+  -k, --kit        Name (and optionally, version) of the Genesis Kit to
+                   base these deployments on.  I.e.: shield/6.3.0.  If you do
+                   not specify a kit, a dev directory will be created for you
+                   to develop a local kit into.
+  -d, --directory  By default, the directory in which the Genesis deployment
+                   will be created in will be named ./<name>-deployments.  Use
+                   this option to change it to something else.
+
+  name             If the name argument is not specified, it will default to 
+                   the same name as the kit.  You must specify either name or
+                   kit.
+EOF
+sub {
+	my %options;
+	options(\@_, \%options, qw/
+		kit|k=s
+		directory|d=s
+	/);
+	usage(1) if @_ > 1; # name is now optional if kit specified
+	check_prereqs;
+
+	my ($name) = @_;
+	unless ($name) {
+		unless ($options{kit}) {
+			printf STDERR "You must specify a deployment name if you don't specify a kit.\n";
+			usage(1);
+		}
+		$name = $options{kit};
+	}
+	$name =~ s/-deployments//;
+
+	validate_repo_name $name or die "Invalid Genesis repo name '$name'\n";
+
+	debug "generating a new Genesis repo, named $name";
+	debug "using kit $options{kit}" if $options{kit};
+
+	my $root = $options{directory} || "${name}-deployments";
+	debug "in directory $root";
+	mkdir_or_fail $root;
+	mkdir_or_fail "$root/.genesis";
+	put_file "$root/.genesis/config", <<EOF;
+---
+genesis: $VERSION
+deployment_type: $name
+EOF
+	mkdir_or_fail "$root/.genesis/bin";
+	copy_or_fail  $0, "$root/.genesis/bin/genesis";
+	chmod_or_fail 0755, "$root/.genesis/bin/genesis";
+	mkdir_or_fail "$root/dev" if $options{dev};
+
+	chdir_or_fail $root;
+	execute 'git init'
+		or die "Failed to initialize a git repository in $root/\n";
+	execute 'git add .'
+		or die "Failed to stage files to git, for initial commit, in $root/\n";
+	execute 'git commit -m "Initial Genesis Repo"'
+		or die "Failed to commit initial Genesis repository in $root/\n";
+
+	if ($options{kit}) {
+		my ($kit, $version) = extract_kit_name_and_version($options{kit});
+		download_kit_tarball($kit, $version);
+	}
+	exit 0;
+});
+
+# }}}
+# genesis new - create a new Genesis deployment environment (YAML file) {{{
+
+command("new", <<EOF,
+genesis v$VERSION
+USAGE: genesis new [--vault target] env-name[.yml]
+
+OPTIONS
+$GLOBAL_USAGE
+      --vault        The name of a `safe' target (a Vault) to store newly
+                     generated credentials in.
+
+      --no-secrets   Do not generate secrets in the Vault.  You will have to
+                     manually run `genesis secrets` yourself.
+
+  -k, --kit          Name (and optionally, version) of the Genesis Kit to
+                     use for this environment.  I.e.: shield/6.3.0
+                     Defaults to latest.
+EOF
+sub {
+	my %options = (
+		secrets => 1,
+	);
+	options(\@_, \%options, qw/
+		vault=s
+		secrets!
+		kit|k=s
+	/);
+	usage(1) if @_ != 1;
+
+	my ($name) = @_;
+	$name =~ s/\.ya?ml$//;
+
+	validate_env_name $name or die "Invalid environment name '$name'\n";
+	-f "$name.yml" and die "Environment '$name' already exists\n";
+
+	at_exit(sub {
+		# remove the env file if either prereqs check or vaultification fails
+		unlink "$name.yml" unless $? == 0;
+	});
+
+	check_prereqs;
+	explain "Generating new environment #C{$name}...\n";
+
+	my ($kit, $version);
+	if ($options{kit}) {
+		($kit, $version) = extract_kit_name_and_version($options{kit});
+	} else {
+		($kit, $version) = latest_kit_name_and_version();
+	}
+	if ($kit && $kit ne "dev") {
+		explain "Using $kit/$version kit...\n";
+	} else {
+		explain "Using dev/ (development version) kit...\n";
+	}
+
+	my $meta = read_kit_metadata($kit, $version);
+
+	explain "Checking kit pre-requisites...\n";
+	check_kit_prereqs($kit, $version);
+
+	my @subkits = prompt_for_subkits($meta->{subkits} || []);
+	@subkits = run_subkit_hook($kit, $version, @subkits);
+	validate_subkits($kit, $version, $meta, @subkits);
+
+	my $deployment = $name . "-" . deployment_suffix;
+	(my $prefix = $name) =~ s|-|/|g;
+	$prefix = "$prefix/".deployment_suffix;
+
+	if ($options{secrets}) {
+		target_vault($options{vault});
+	}
+
+	my $params = process_kit_params(kit          => $kit,
+									version      => $version,
+									env          => $name,
+									vault_prefix => $prefix,
+									should_vault => $options{secrets},
+									params       => $meta->{params} || [],
+									subkits      => \@subkits);
+	$params = run_param_hook($kit, $version, $name, $params, @subkits);
+
+	new_environment($meta, $kit, $version, $name, $prefix, $params, @subkits);
+
+	if ($options{secrets}) {
+		explain "Generating secrets / credentials (in secret/$prefix)...\n";
+		vaultify_secrets($meta, env          => $name,
+		                        prefix       => $prefix,
+		                        force_rotate => 1,
+		                        subkits      => [@subkits]);
+	} else {
+		explain "Skipping generation of secret / credentials.\n";
+		explain "Don't forget to run `$0 secrets $name`\n";
+	}
+
+	explain "New environment $name provisioned.\n";
+});
+
+# }}}
+# genesis deploy - Pull in Cloud Config, Generate a manifest, deploy {{{
+
+command("deploy", <<EOF,
+genesis v$VERSION
+USAGE: genesis deploy env-name[.yml]
+
+OPTIONS
+$GLOBAL_USAGE
+EOF
+sub {
+	my %options;
+	options(\@_, \%options, qw/
+	/);
+	usage(1) if @_ != 1;
+	check_prereqs;
+
+	my $rc = deploy_manifest($_[0], \%options);
+	exit $rc;
+});
+# }}}
+# genesis secrets - Generate / Rotate required credentials for an environment. {{{
+
+command("secrets", <<EOF,
+genesis v$VERSION
+USAGE: genesis secrets [--rotate] [--vault target] deployment-env.yml
+
+Generates new secrets for your deployment. If any credentials were marked by
+the kit as `fixed', they are not updated. Useful for credential rotation, and
+generating credentials after `genesis new --no-secrets' was called.
+
+OPTIONS
+$GLOBAL_USAGE
+      --force-rotate-all  Rotate *ALL* credentials, including any credentials
+                          that the kit defined as `fixed'. This is very dangerous.
+      --vault             The name of a `safe' target (a Vault) to store newly
+                          generated credentials in.
+EOF
+sub {
+	my %options;
+	options(\@_, \%options, qw/
+		force-rotate-all
+		vault=s
+	/);
+	usage(1) if @_ != 1;
+	check_prereqs;
+
+	my ($name) = @_;
+	$name =~ s/\.ya?ml$//;
+	my $deployment = $name . "-" . deployment_suffix;
+	(my $prefix = $deployment) =~ s|-|/|g;
+
+	my ($kit, $version) = kit_name_and_version_for($name);
+	my $meta = read_kit_metadata($kit, $version);
+	target_vault($options{vault});
+	vaultify_secrets($meta, env          => $name,
+	                        prefix       => $prefix,
+	                        subkits      => get_key($name, 'kit.subkits', []),
+	                        force_rotate => $options{"force-rotate-all"});
+});
+
+# }}}
+# genesis yamls - Print a list of the YAML files used for a single environment. {{{
+
+command("yamls", <<EOF,
+genesis v$VERSION
+USAGE: genesis yamls deployment-env.yml
+
+OPTIONS
+$GLOBAL_USAGE
+EOF
+sub {
+	my %options;
+	options(\@_, \%options, qw/
+		rotate
+	/);
+	usage(1) if @_ != 1;
+	check_prereqs;
+
+	print "$_\n" for mergeable_yaml_files($_[0]);
+});
+
+# }}}
+# genesis create-kit - Create the structure for a new kit {{{
+#
+command("create-kit", <<EOF,
+genesis v$VERSION
+USAGE: genesis create-kit -d|--dev -n NAME [SUBKIT1 ...]
+
+OPTIONS
+$GLOBAL_USAGE
+  -d, --dev       create kit in ./dev directory instead of <name>-genesis-kit
+  -n, --name      Name of the kit archive.
+EOF
+sub {
+	my %options;
+	options(\@_, \%options, qw/
+		name|n=s
+		dev|d
+	/);
+	usage(2) unless $options{name};
+	check_prereqs;
+
+	my $dir = ($options{cwd} || ".") . "/". ($options{dev} ? "dev" : "$options{name}-genesis-kit");
+
+	die "$dir already exists, cowardly refusing to overwrite it\n"
+	  if -d $dir;
+
+	mkdir_or_fail $dir;
+	mkdir_or_fail "$dir/base";
+
+	mkfile_or_fail "$dir/base/params.yml", <<EOF;
+---
+# Contains the defaults for the parameters needed for the base $options{name} kit.
+params: {}
+EOF
+	mkfile_or_fail "$dir/base/$options{name}.yml", <<EOF;
+---
+# Contains the configuration for base $options{name} kit.
+instance_groups: {}
+properties: {}
+
+releases:
+- name: $options{name}
+  version:
+  sha1:
+  url:
+
+EOF
+	mkfile_or_fail "$dir/base/0-deployment.yml", <<EOF;
+---
+# Contains the instance_groups in install order, as well as the stemcells and
+# update stanzas for the base $options{name} kit.
+instance_groups:
+- name: *jobname*
+  instances: 1
+  azs: (( grab params.availability_zones ))
+  stemcell: default
+  persistent_disk_pool: (( grab params.disk_pool ))
+  networks:
+  - name: (( grab params.network ))
+    static_ips: (( static_ips(0) ))
+  vm_type: (( grab params.vm_type ))
+  update:
+    max_in_flight: 1
+
+stemcells:
+- alias: default
+  os: (( grab params.stemcell_os ))
+  version: (( grab params.stemcell_version ))
+
+meta:
+  vault: (( concat "secret/" params.vault ))
+
+update:
+  serial: false
+  canaries: 1
+  canary_watch_time: 30000-600000
+  update_watch_time: 5000-600000
+  max_in_flight: 1
+  max_errors: 1
+EOF
+
+	# Subkits
+	mkdir_or_fail "$dir/subkits";
+	my $subkit_groups="";
+	my $subkit_prompts="";
+	foreach my $subkit_req (@_) {
+		my ($subkit,$prompt) = split("=",$subkit_req, 2);
+		mkdir_or_fail "$dir/subkits/$subkit";
+		$subkit_groups .= "  $subkit: {}\n";
+		next if defined($prompt) && $prompt eq '-';
+		$prompt ||= "Do you want to use subkit '$subkit'?";
+		$subkit_prompts .= "- prompt: $prompt\n  subkit: $subkit\n";
+
+		mkfile_or_fail "$dir/subkits/$subkit/params.yml", "---\nparams: {}\n";
+		mkfile_or_fail "$dir/subkits/$subkit/$subkit.yml", "--- {}\n";
+	}
+
+	chomp(my $user = qx'git config user.name');
+	chomp(my $email = qx'git config user.email');
+	mkfile_or_fail "$dir/kit.yml", <<EOF;
+---
+name: $options{name}
+author: $user <$email>
+homepage: https://github.com/cloudfoundry-community/$options{name}-boshrelease
+github: https://github.com/genesis-community/$options{name}-genesis-kit
+
+subkits:
+$subkit_prompts
+params:
+  base: {}
+$subkit_groups
+credentials:
+  base: {}
+$subkit_groups
+certificates:
+  base: {}
+$subkit_groups
+EOF
+
+});
+
+# }}}
+# genesis compile-kit - Create a distributable kit archive from dev/. {{{
+
+command("compile-kit", <<EOF,
+genesis v$VERSION
+USAGE: genesis compile-kit -n NAME -v VERSION
+
+OPTIONS
+$GLOBAL_USAGE
+
+  -d, --dev       Compile based off of a dev-kit (./dev). If not specified,
+                  genesis will compile based off of ./<name>-genesis-kit
+  -n, --name      Name of the kit archive.
+  -v, --version   Version to package.
+EOF
+sub {
+	my %options;
+	options(\@_, \%options, qw/
+		dev|d
+		name|n=s
+		version|v=s
+	/);
+	usage(1) if @_ != 0;
+	usage(1) unless $options{name};
+	usage(1) unless $options{version};
+	check_prereqs;
+
+	my $dir = ($options{cwd} || ".") . "/". ($options{dev} ? "dev" : "$options{name}-genesis-kit");
+
+	my $temp = tempdir(CLEANUP => 1);
+	my $stem = "$options{name}-$options{version}";
+	mkdir_or_fail "$temp/$stem";
+	qx(cp -aH $dir/* $temp/$stem);
+
+	qx(rm -rf $temp/.git $temp/.gitignore);
+
+	qx(tar -czf $stem.tar.gz -C $temp $stem/);
+});
+
+# }}}
+# genesis decompile-kit - Unpack a kit archive to dev/. {{{
+
+command("decompile-kit", <<EOF,
+genesis v$VERSION
+USAGE: genesis decompile-kit [NAME/VERSION | path/to/kit.tar.gz]
+
+OPTIONS
+$GLOBAL_USAGE
+  -f, --force  Overwrite dev/, if it exists.
+EOF
+sub {
+	my %options;
+	options(\@_, \%options, qw/
+		force|f
+	/);
+	usage(1) if @_ != 1;
+	check_prereqs;
+
+	if (-d "dev" && !$options{force}) {
+		die "dev/ directory already exists (and --force not specified).  Bailing out.\n";
+	}
+
+	my $temp = tempdir(CLEANUP => 1);
+	my $file = $_[0];
+	if (! -f $file) {
+		(my $stem = $file) =~ s|/|-|;
+		$file = ".genesis/kits/$stem.tar.gz";
+	}
+	-f $file or die "Unable to find Kit archive $_[0]\n";
+
+	qx(tar -xzf $file -C $temp && rm -rf dev && mv $temp/*/ dev/);
+});
+
+# }}}
+# genesis manifest - Compile a deployment manifest. {{{
+
+command("manifest", <<EOF,
+genesis v$VERSION
+USAGE: genesis manifest [--no-redact] [--cloud-config path.yml] deployment-env.yml
+
+OPTIONS
+$GLOBAL_USAGE
+
+  -c, --cloud-config PATH    Path to your downloaded BOSH cloud-config
+
+      --no-redact            Do not redact credentials in the manifest.
+                             USE THIS OPTION WITH GREAT CARE AND CAUTION.
+EOF
+sub {
+	my %options;
+	options(\@_, \%options, qw/
+		cloud-config|c=s
+		no-redact
+	/);
+	usage(1) if @_ != 1;
+	my ($env) = @_;
+	check_prereqs;
+
+	$ENV{REDACT} = 'true';
+	$ENV{REDACT} = '' if $options{'no-redact'};
+
+	my $create_env = has_subkit($env, 'bosh-init') || has_subkit($env, 'create-env');
+
+	# set offline since there's no director to talk to
+	$ENV{OFFLINE} = 1 if ($create_env);
+
+	if (!$options{'cloud-config'} && !$create_env) {
+		if (!online) {
+			error "You requested #B{offline} mode, but did not provide a #C{--cloud-config} to use.\n";
+			error "In offline mode, Genesis is not allowed to talk to the BOSH director,\n";
+			error "so you must provide a cloud config explicitly.\n";
+			exit 1;
+		}
+		my $dir = workdir;
+		bosh_download_cloud_config(bosh_target_for($env), "$dir/cloud.yml");
+		$options{'cloud-config'} = "$dir/cloud.yml";
+	}
+	print merge_manifest($env, {
+		'cloud-config' => $options{'cloud-config'},
+		'create-env'   => $create_env,
+	});
+});
+
+# }}}
+# genesis repipe - Deploy a Concourse CI/CD deployment pipeline. {{{
+
+command(["repipe", "push"], <<EOF,
+genesis v$VERSION
+USAGE genesis repipe [pipeline-layout]
+
+OPTIONS
+$GLOBAL_USAGE
+  -t, --target     The name of your Concourse target (per `fly targets'),
+                   if it differs from the pipeline layout name.
+
+  -n, --dry-run    Generate the Concourse Pipeline configuration, but
+                   refrain from actually deploying it to Concourse.
+                   Instead, just print the YAML.
+
+  -c, --config     Path to the pipeline configuration file, which specifies
+                   Git parameters, notification settings, pipeline layouts,
+                   etc.  Defaults to 'ci.yml'
+EOF
+sub {
+	my %options;
+	options(\@_, \%options, qw/
+		dry-run|n
+		target|t=s
+		config|c=s
+	/);
+	check_prereqs;
+
+	my $layout = $_[0] || "default";
+	$options{target} ||= $layout;
+	$options{config} ||= 'ci.yml';
+
+	my $pipeline = parse_pipeline($options{config}, $layout);
+	my $yaml = generate_pipeline_concourse_yaml($pipeline);
+	if ($options{'dry-run'}) {
+		print $yaml;
+		exit 0;
+	}
+
+	my $dir = workdir;
+	put_file("${dir}/pipeline.yml", $yaml);
+	system_execute("fly -t $options{target} set-pipeline -p $pipeline->{pipeline}{name} -c ${dir}/pipeline.yml") or exit 1;
+	system_execute("fly -t $options{target} unpause-pipeline -p $pipeline->{pipeline}{name}") or exit 1;
+	if ($pipeline->{pipeline}{public}) {
+		system_execute("fly -t $options{target} expose-pipeline -p $pipeline->{pipeline}{name}") or exit 1;
+	} else {
+		system_execute("fly -t $options{target} hide-pipeline -p $pipeline->{pipeline}{name}") or exit 1;
+	}
+	exit 0;
+});
+# }}}
+# genesis graph - Draw a Concourse CI/CD deployment pipeline. {{{
+
+command("graph", <<EOF,
+genesis v$VERSION
+USAGE genesis graph [pipeline-layout] | dot -Tpng > pipe.png
+
+Note: This command outputs a directed, acyclic graph (a DAG) in the
+      Graphviz language (http://www.graphviz.org/).  If you want a
+      picture of the pipeline, you will need to pipe the output through
+      one of the many Graphviz formatters, like `dot -Tpng > out.png`
+
+OPTIONS
+$GLOBAL_USAGE
+  -c, --config     Path to the pipeline configuration file, which specifies
+                   Git parameters, notification settings, pipeline layouts,
+                   etc.  Defaults to 'ci.yml'
+EOF
+sub {
+	my %options;
+	options(\@_, \%options, qw/
+		config|c=s
+	/);
+	check_prereqs;
+
+	my $layout = $_[0] || "default";
+	$options{config} ||= 'ci.yml';
+
+	my $pipeline = parse_pipeline($options{config}, $layout);
+	my $dot = generate_pipeline_graphviz_source($pipeline);
+	print "$dot\n";
+	exit 0;
+});
+# }}}
+# genesis describe - Describe a Concourse CI/CD deployment pipeline. {{{
+
+command("describe", <<EOF,
+genesis v$VERSION
+USAGE genesis describe [pipeline-layout]
+
+OPTIONS
+$GLOBAL_USAGE
+  -c, --config     Path to the pipeline configuration file, which specifies
+                   Git parameters, notification settings, pipeline layouts,
+                   etc.  Defaults to 'ci.yml'
+EOF
+sub {
+	my %options;
+	options(\@_, \%options, qw/
+		config|c=s
+	/);
+	check_prereqs;
+
+	my $layout = $_[0] || "default";
+	$options{config} ||= 'ci.yml';
+
+	my $pipeline = parse_pipeline($options{config}, $layout);
+	generate_pipeline_human_description($pipeline);
+	exit 0;
+});
+# }}}
+# genesis lookup - Find a key set in environment manifests. {{{
+
+command("lookup", <<EOF,
+genesis v$VERSION
+USAGE genesis lookup key env-name default-value
+
+OPTIONS
+$GLOBAL_USAGE
+EOF
+sub {
+	my %options;
+	options(\@_, \%options, qw/
+	/);
+	usage(1) if @_ != 3;
+	check_prereqs;
+
+	my ($key, $env, $default) = @_;
+	my $v = get_key($env, $key);
+	$v = defined $v ? $v : $default;
+	if (ref($v)) {
+		print encode_json($v)."\n";
+	} else {
+		print "$v\n";
+	}
+	exit 0;
+});
+# }}}
+# genesis download - Download a Genesis Kit from the Internet. {{{
+
+command("download", <<EOF,
+genesis v$VERSION
+USAGE genesis download NAME[/VERSION] [...]
+
+OPTIONS
+$GLOBAL_USAGE
+EOF
+sub {
+	my %options;
+	options(\@_, \%options, qw/
+	/);
+	usage(1) if @_ < 1;
+	check_prereqs;
+
+	for (@_) {
+		my ($name, $version) = extract_kit_name_and_version($_);
+		download_kit_tarball($name, $version)
+			or exit 1;
+	}
+	exit 0;
+});
+# }}}
+# genesis summary - Print a summary of each environment. {{{
+
+command("summary", <<EOF,
+genesis v$VERSION
+USAGE genesis summary
+
+OPTIONS
+$GLOBAL_USAGE
+EOF
+sub {
+	my %options;
+	options(\@_, \%options, qw/
+	/);
+	check_prereqs;
+
+	my @rows;
+	my $stem = undef;
+	for my $env (standalone_environment_yaml_files(glob("*.yml"))) {
+		$env =~ s/\.yml$//;
+		my $kit = get_key($env, "kit.name");
+		my $ver = get_key($env, "kit.version");
+
+		# FIXME: look at last  time i deployed the manifest instead of this cache file
+		# FIXME: show what is out of date, if anything
+		my $last = "never";
+		if (-f ".genesis/cached/$env/last") {
+			my $ts = get_file(".genesis/cached/$env/last") + 0;
+			if ($ts) { # in case `last' is corrupt (i.e. not a timestamp)
+				$last = strftime(envdefault("GENESIS_TIME_FORMAT", "%Y-%m-%d %H:%M:%S%P (@@)"), localtime($ts));
+
+				$last =~ s/@@/ago($ts)/ge;
+			}
+		}
+
+		(my $tmp = $env) =~ s/-[^-]*$//;
+		push @rows, undef if defined $stem && $stem ne $tmp;
+		$stem = $tmp;
+
+		push @rows, [$env, "$kit/$ver", $last];
+
+	}
+	tablify(['Environment', 'Kit/Version', 'Last Deployed'], \@rows);
+	exit 0;
+});
+# }}}
+# genesis vault-policies - Generate Vault policies for an environment {{{
+command("vault-policies", <<EOF,
+genesis v$VERSION
+USAGE genesis vault-policies [pipeline-layout]
+
+OPTIONS
+$GLOBAL_USAGE
+  -c, --config     Path to the pipeline configuration file, which specifies
+                   Git parameters, notification settings, pipeline layouts,
+                   etc.  Defaults to 'ci.yml'
+EOF
+sub {
+	my %options;
+	options(\@_, \%options, qw/
+	/);
+	check_prereqs;
+
+	my $layout = $_[0] || "default";
+	$options{config} ||= "ci.yml";
+
+	$ENV{REDACT} = "true"; # we don't need vault creds for this, just pipeline layout
+	my $pipeline = parse_pipeline($options{config}, $layout);
+	for my $env (sort @{$pipeline->{envs}}) {
+		my $create_env = has_subkit($env, 'bosh-init') || has_subkit($env, 'create-env');
+		# Always grab cloud config, since we're probably up and running if using this command
+		# Posible issues we could run into are that the jumpbox doesn't have access to all
+		# BOSH directors, or that someone is trying to build their vault policies before
+		# anything is running. If we run into these cases, this can be changed, either by
+		# somehow providing cloud configs for *all* boshes, or by making `spruce vaultinfo`
+		# ignore static_ips?
+		if (!$create_env) {
+			my $dir = workdir;
+			bosh_download_cloud_config(bosh_target_for($env), "$dir/cloud.yml");
+			$options{'cloud-config'} = "$dir/cloud.yml";
+		}
+
+		# get all files for a deployment
+		my $vault_prefix = get_key($env, "params.vault", "");
+		chomp $vault_prefix;
+		$vault_prefix = "secret/$vault_prefix";
+		die "Unable to find `params.vault' for environment `$env'. Cannot continue\n" unless $vault_prefix;
+		print <<EOF;
+path "$vault_prefix/*" {
+    capabilities = [ "read", "list" ]
+}
+
+EOF
+		for my $path (sort grep { chomp; $_ !~ m/^$vault_prefix/ } spruce_vault_paths(@{merge_files($env, \%options)})) {
+			print <<EOF;
+path "$path" {
+    capabilities = [ "read", "list" ]
+}
+
+EOF
+		}
+	}
+	print <<EOF;
+path "secret/handshake" {
+    capabilities = [ "read", "list" ]
+}
+EOF
+});
+# }}}
+# genesis ci-pipeline-deploy - Deploy via the CI/CD Pipeline {{{
+
+command("ci-pipeline-deploy", <<EOF,
+genesis v$VERSION
+USAGE genesis ci-pipeline-deploy
+
+OPTIONS
+$GLOBAL_USAGE
+EOF
+sub {
+	my %options;
+	options(\@_, \%options, qw/
+	/);
+	usage(1) if @_;
+	check_prereqs;
+
+	# environment variables we should have
+	#   CURRENT_ENV                - Name of the current environment
+	#   PREVIOUS_ENV               - Name of previous environment (if applicable, for finding
+	#                                correct cache files)
+	#   BOSH_ENVIRONMENT           - URL of the BOSH director to deploy on
+	#   BOSH_CA_CERT               - CA Certificate for the BOSH director
+	#   BOSH_CLIENT                - Username or client ID (UAA-auth) to authenticate with
+	#   BOSH_CLIENT_SECRET         - Password/Client-Secret to authenticate with
+	#
+	#   VAULT_ROLE_ID              - Vault RoleID to authenticate to Vault with
+	#   VAULT_SECRET_ID            - Vault SecretID to authenticate to Vault with
+	#   VAULT_ADDR                 - URL of the Vault to use for credentials retrieval
+	#   VAULT_SKIP_VERIFY          - Whether or not to enforce SSL/TLS validation
+	#
+	#   GIT_BRANCH                 - Name of the git branch to push commits to. post-deploy
+	#   GIT_PRIVATE_KEY            - Private Key to use for pushing commits, post-deploy
+	#
+	#   WORKING_DIR - Path to the directory to deploy/work from
+	#   OUT_DIR     - Path to the directory to output to
+	#   CACHE_DIR   - Path to the directory our cache is in (required if PREVIOUS_ENV is present
+
+	my @undefined = grep { !$ENV{$_} }
+		qw/BOSH_ENVIRONMENT BOSH_CA_CERT
+		   BOSH_CLIENT BOSH_CLIENT_SECRET
+		   CURRENT_ENV GIT_BRANCH GIT_PRIVATE_KEY
+		   OUT_DIR WORKING_DIR
+		   VAULT_ROLE_ID VAULT_SECRET_ID VAULT_ADDR/;
+	push @undefined, "CACHE_DIR" if ($ENV{PREVIOUS_ENV} && ! $ENV{CACHE_DIR});
+	if (@undefined) {
+		error "The following #R{required} environment variables have not been defined:";
+		error " - \$#Y{$_}" for @undefined;
+		error;
+		error;
+		error "Please check your CI Pipeline configuration.";
+		exit 1;
+	}
+
+	pushd $ENV{WORKING_DIR};
+	if ($ENV{PREVIOUS_ENV}) {
+		system("rm -rf .genesis/cached") == 0 or exit 1;
+		system("cp -R ../$ENV{CACHE_DIR}/.genesis/cached .genesis/cached") == 0 or exit 1;
+	}
+	## rm cache dir
+	## copy previous env cache dir
+
+	my $target = bosh_target_for($ENV{CURRENT_ENV});
+	bosh_alias($target); # exits on failure
+
+	vault_auth(vault       => $ENV{VAULT_ADDR},
+	           skip_verify => envset("VAULT_SKIP_VERIFY"),
+	           role_id     => $ENV{VAULT_ROLE_ID},
+	           secret_id   => $ENV{VAULT_SECRET_ID});
+
+	my $rc = deploy_manifest($ENV{CURRENT_ENV}); # exits if it fails
+	if ($ENV{PREVIOUS_ENV}) {
+		system("rm -rf .genesis/cached") == 0 or exit 1;
+		system("git checkout .genesis/cached") == 0 or exit 1;
+	}
+	commit_changes($ENV{GIT_BRANCH}, $ENV{GIT_PRIVATE_KEY}, "deployed to $ENV{CURRENT_ENV}");
+	popd;
+	mkdir_or_fail(dirname($ENV{OUT_DIR}));
+	system("cp -R $ENV{WORKING_DIR} $ENV{OUT_DIR}") == 0 or exit 1;
+	exit $rc;
+});
+# }}}
+# genesis ci-stemcells - Upload stemcells to an environment via the CI/CD Pipeline {{{
+command("ci-stemcells", <<EOF,
+genesis v$VERSION
+USAGE genesis ci-stemcells
+
+OPTIONS
+$GLOBAL_USAGE
+EOF
+sub {
+	my %options;
+	options(\@_, \%options, qw/
+	/);
+	usage(1) if @_;
+	check_prereqs;
+
+	# environment variables we should have
+	#   STEMCELLS - Path to the directory containing stemcells to upload
+	#   BOSH_ENVIRONMENT           - URL of the BOSH director to deploy on
+	#   BOSH_CA_CERT               - CA Certificate for the BOSH director
+	#   BOSH_CLIENT                - Username or client ID (UAA-auth) to authenticate with
+	#   BOSH_CLIENT_SECRET         - Password/Client-Secret to authenticate with
+	#
+	my @undefined = grep { !$ENV{$_} }
+		qw/STEMCELLS BOSH_ENVIRONMENT BOSH_CA_CERT BOSH_CLIENT BOSH_CLIENT_SECRET/;
+	if (@undefined) {
+		error "The following #R{required} environment variables have not been defined:";
+		error " - \$#Y{$_}" for @undefined;
+		error;
+		error;
+		error "Please check your CI Pipeline configuration.";
+		exit 1;
+	}
+
+	opendir(my $dh, $ENV{STEMCELLS})
+		or die "Could not open `$ENV{STEMCELLS}' directory to find stemcells.\n";
+	while (my $stemcell = readdir($dh)) {
+		if ($stemcell !~ /^\./ && -d "$ENV{STEMCELLS}/$stemcell") {
+			my $version = get_file "$ENV{STEMCELLS}/$stemcell/version";
+			my $sha1    = get_file "$ENV{STEMCELLS}/$stemcell/sha1";
+			my $url     = get_file "$ENV{STEMCELLS}/$stemcell/url";
+			bosh_upload_stemcell($stemcell, $version, $sha1, $url);
+		}
+	}
+	closedir $dh
+});
+# }}}
+# genesis ci-generate-cache - Generate cache for an environment via the CI/CD Pipeline {{{
+command("ci-generate-cache", <<EOF,
+genesis v$VERSION
+USAGE genesis ci-generate-cache
+
+OPTIONS
+$GLOBAL_USAGE
+EOF
+sub {
+	my %options;
+	options(\@_, \%options, qw/
+	/);
+	usage(1) if @_;
+	check_prereqs;
+
+	# environment variables we should have
+	#   CURRENT_ENV - Name of the current environment
+	#   GIT_BRANCH                 - Name of the git branch to push commits to. post-deploy
+	#   GIT_PRIVATE_KEY            - Private Key to use for pushing commits, post-deploy
+	#   WORKING_DIR - Path to the directory to deploy/work from
+	#   OUT_DIR     - Path to the directory to output to
+	#
+	my @undefined = grep { !$ENV{$_} }
+		qw/CURRENT_ENV GIT_BRANCH GIT_PRIVATE_KEY
+		   WORKING_DIR OUT_DIR/;
+	if (@undefined) {
+		error "The following #R{required} environment variables have not been defined:";
+		error " - \$#Y{$_}" for @undefined;
+		error;
+		error;
+		error "Please check your CI Pipeline configuration.";
+		exit 1;
+	}
+
+	pushd $ENV{WORKING_DIR};
+	mkdir_or_fail ".genesis/cached/$ENV{CURRENT_ENV}";
+	for my $file (expand_tokens(split /\-/, $ENV{CURRENT_ENV})) {
+		copy_or_fail "$file.yml", ".genesis/cached/$ENV{CURRENT_ENV}/$file.yml" if -f "$file.yml";
+	}
+	commit_changes($ENV{GIT_BRANCH}, $ENV{GIT_PRIVATE_KEY}, "generated cache for $ENV{CURRENT_ENV}");
+	popd;
+	# copy to output directory
+	mkdir_or_fail(dirname($ENV{OUT_DIR}));
+	system("cp -R $ENV{WORKING_DIR} $ENV{OUT_DIR}") == 0 or exit 1;
+	chdir_or_fail($ENV{OUT_DIR});
+});
+# }}}
+# genesis ci-pipeline-run-errand - Run arbitrary errands via the CI/CD Pipeline {{{
+
+command("ci-pipeline-run-errand", <<EOF,
+genesis v$VERSION
+USAGE genesis ci-pipeline-run-errand
+
+OPTIONS
+$GLOBAL_USAGE
+EOF
+sub {
+	my %options;
+	options(\@_, \%options, qw/
+	/);
+	usage(1) if @_;
+	check_prereqs;
+
+	# environment variables we should have
+	#   CURRENT_ENV - Name of the current environment
+	#   BOSH_ENVIRONMENT   - URL of the BOSH director to deploy on
+	#   BOSH_CA_CERT       - CA Certificate for the BOSH director
+	#   BOSH_CLIENT        - Username or client ID (UAA-auth) to authenticate with
+	#   BOSH_CLIENT_SECRET - Password/Client-Secret to authenticate with
+	#   ERRAND_NAME - Name of the Smoke Test errand to run
+
+	my @undefined = grep { !$ENV{$_} }
+		qw/CURRENT_ENV ERRAND_NAME
+		   BOSH_ENVIRONMENT BOSH_CA_CERT
+		   BOSH_CLIENT BOSH_CLIENT_SECRET/;
+	if (@undefined) {
+		error "The following #R{required} environment variables have not been defined:";
+		error " - \$#Y{$_}" for @undefined;
+		error;
+		error;
+		error "Please check your CI Pipeline configuration.";
+		exit 1;
+	}
+
+	my $target = bosh_target_for($ENV{CURRENT_ENV});
+	bosh_alias($target); # exits on failure
+
+	my $deployment = "$ENV{CURRENT_ENV}-" . deployment_suffix;
+	bosh_run_errand($target, $deployment, $ENV{ERRAND_NAME}); # exits on failure
+
+	exit 0;
+});
+# }}}
+
+###########################################################################
+
+sub main {
+	debug "genesis starting up...";
+
+	$ENV{GENESIS} = $FindBin::Script;
+	$ENV{GENESIS_INDEX} = "https://genesis.starkandwayne.com" unless $ENV{GENESIS_INDEX};
+
+	# Check if we're in a v1 repo
+	my $path = abs_path(getcwd);
+	my $in_version = 0;
+	if (-d ".genesis" && -e ".genesis/config") {
+		$in_version = 2;
+	} else {
+		while ($path ne "") {
+			if (-d "$path/global" && -e "$path/.deployment") {
+				$in_version = 1;
+				last;
+			}
+			$path =~ s/\/[^\/]*$//;
+		}
+	}
+
+	if ($in_version == 1) {
+		# Make temp file for the script.
+		my ($g1file,$g1filename) = tempfile("genesis-v1-XXXXXX",DIR =>"$path/bin/", UNLINK => 1);
+
+		# Copy __DATA__ to tmpdir as "genesis-v1"
+		my $g1script = do { local $/; <DATA> };
+		print $g1file $g1script;
+		close $g1file;
+		chmod 0755, $g1filename;
+
+		# Set GENESIS_V1_PATH env var to shadow the obscure location
+		($ENV{GENESIS_V2_VERSION} = $VERSION) =~ s/^\((.*)\)$/$1/;
+		$ENV{GENESIS_V1_PATH_OVERRIDE} = $0;
+
+		# Run v1 bash script
+		system($g1filename, @_);
+		exit $? >> 8;
+	}
+	my ($cmd, @args);
+	while (@_ > 0) {
+		my $arg = shift @_;
+		if ($cmd || $arg =~ m/^-+/) {
+			push @args, $arg;
+			push @args, shift @_ if $arg eq '-C';
+		} else {
+			$cmd = $arg;
+		}
+	}
+
+	if ($cmd) {
+		debug "running command '$cmd'";
+		debug "arguments are [".join(', ', @args)."]";
+		if (exists $COMMAND{$cmd}) {
+			$COMMAND{$cmd}(@args);
+			exit 0;
+		}
+		error "unrecognized command '$cmd'";
+		usage("help", 2);
+	}
+	if (@args and $args[0] =~ m/^(-h|--help)$/) {
+		$COMMAND{help}();
+		exit 0;
+	}
+	$COMMAND{help}();
+	exit 2;
+}
+
+main(@ARGV);
+
+__DATA__

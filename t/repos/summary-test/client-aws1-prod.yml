@@ -1,0 +1,8 @@
+---
+kit:
+  # upgrades are still in-flight, for now
+  # keep prod at 1.0.0
+  version: 1.0.0
+
+params:
+  env: prod

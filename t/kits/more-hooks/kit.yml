@@ -1,0 +1,25 @@
+---
+name: hooks
+version: 0.0.1
+
+description: test subkit hooks
+
+subkits:
+  - prompt: Install OpenVPN?
+    subkit:  openvpn
+    default: yes
+
+credentials: {}
+certificates: {}
+
+params:
+  base:
+  - description: "Need to provide a tempdir for output"
+    ask: What is the temp dir?
+    param: tempdir
+
+  mandatory:
+  - description: "This will get asked even if not specified"
+    ask: "You must type 'fun'"
+    default: fun
+    param: mandatory_fun

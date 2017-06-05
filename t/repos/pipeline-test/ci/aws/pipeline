@@ -1,0 +1,56 @@
+---
+pipeline:
+  name: aws-1
+  boshes:
+    client-aws-1-sandbox:
+      stemcells: [bosh-lite]
+      url:      https://sandbox.example.com:25555
+      ca_cert: |
+        ----- BEGIN CERTIFICATE -----
+        cert-goes-here
+        ----- END CERTIFICATE -----
+      username: sb-admin
+      password: PaeM2Eip
+    client-aws-1-preprod:
+      stemcells: [bosh-lite]
+      url:      https://preprod.example.com:25555
+      ca_cert: |
+        ----- BEGIN CERTIFICATE -----
+        cert-goes-here
+        ----- END CERTIFICATE -----
+      username: pp-admin
+      password: Ahti2eeth3aewohnee1Phaec
+    client-aws-1-prod:
+      stemcells: [bosh-lite]
+      url:      https://prod.example.com:25555
+      ca_cert: |
+        ----- BEGIN CERTIFICATE -----
+        cert-goes-here
+        ----- END CERTIFICATE -----
+      username: pr-admin
+      password: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
+  stemcells:
+    bosh-lite: bosh-warden-boshlite-ubuntu-trusty-go_agent
+
+  vault:
+    url: https://127.0.0.1:8200
+
+  skip_upkeep: true
+  layouts:
+    default: |
+      auto *sandbox *preprod
+      client-aws-1-sandbox -> client-aws-1-preprod -> client-aws-1-prod
+
+  git:
+    owner: someco
+    repo:  something-deployments
+    private_key: |
+      -----BEGIN RSA PRIVATE KEY-----
+      lol. you didn't really think that
+      we'd put the key here, in a test,
+      did you?!
+      -----END RSA PRIVATE KEY-----
+
+  slack:
+    channel: '#botspam'
+    webhook: http://127.0.0.1:1337

@@ -1,0 +1,15 @@
+---
+name: hooks
+version: 0.0.1
+
+description: test subkit hooks
+
+subkits: []
+
+credentials: {}
+certificates: {}
+
+params:
+  base:
+  - param: base_domain
+    description: This is your base domain

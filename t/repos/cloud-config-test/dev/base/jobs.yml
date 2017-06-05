@@ -1,0 +1,12 @@
+---
+jobs:
+  - name: thing
+    instances: 1
+    networks:
+      - name: default
+        static_ips: (( static_ips 0 ))
+    templates:
+      - { release: foo, name: bar }
+    properties:
+      domain: (( grab params.domain ))
+      endpoint: (( concat "https://" params.domain ":8443" ))

@@ -1,0 +1,113 @@
+---
+name: paramtest
+version: 0.0.1
+
+description: Testing the asking of parameters
+
+subkits:
+- prompt: Should we ask additional questions?
+  subkit: subkit-params
+  default: yes
+
+credentials: {}
+certificates: {}
+params:
+  base:
+    - ask: What is the base domain of your Cloud Foundry?
+      description: |
+        This is used to autocalculate many domain-based values of your Cloud Foundry.
+        Changing it will have widespread changes throughout the installation. If you change
+        this, make sure to audit the domains available in your system org, as well as
+        the shared domains.
+      example: bosh-lite.com
+      param: base_domain
+
+    - description: Used to scale out the number of VMs performing various jobs
+      params:
+        - cell_instances
+        - router_instances
+        - nats_instances
+    - description: Default VM type for cell nodes
+      params:
+      - cell_vm_type
+
+    - description: Enter a list of names. Anything will do
+      ask: What users will be accessing this deployment?
+      type: list
+      param: allowed_users
+      label: user
+
+    - description: Specify the availability zones your deployment is spread across
+      param: availability_zones
+
+    - ask: This shouldn't be asked?
+      description: Don't ask vault questions when --no-secrets is on
+      vault: bad:password
+
+  subkit-params:
+    - description: This value sets the port advertised for wss://doppler.<system_domain>
+      param: logger_port
+
+    - ask: How many fish heads do you want?
+      description: This value refers to the number of fish heads you earned in apple school.
+      example: FIVE
+      param: fish_heads
+
+    - ask: Are there rocks ahead?
+      description: That Vizzini, he can fuss
+      default: "If there are, we all be dead"
+      param: fezzik_quote
+
+    - param: boolean-a
+      type: boolean
+      description: "Defaults to yes"
+      default: y
+      ask: Is this a question?
+
+    - param: boolean-b
+      type: boolean
+      description: "Defaults to no"
+      default: no
+      ask: "Did you answer this?"
+
+    - param: boolean-c
+      type: boolean
+      description: "Defaults but answered."
+      default: y
+      ask: "Would you?"
+
+    - param: boolean-d
+      type: boolean
+      description: "No defaults"
+      ask: "Flip a coin; is it heads?"
+
+    - description: Enter a big paragraph here
+      ask: What's your life story?
+      param: biography
+      type: multi-line
+
+    - param: blog
+      description: "You're an interesting person; tell us about your thoughts"
+      ask: "Fill in your blog posts"
+      label: entry
+      min_count: 2
+      type: multi-line-list
+
+    - param: validity-regex
+      description: "The CIDR for your target network; pattern of #.#.#.#/#"
+      ask: "Specify ip/mask"
+      validate: /^((^|.)?([0-9]|[0-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])){4}\/[0-9]+$/
+
+    - param: validity-list
+      description: "Order these languages in order of preference: c, lisp, ruby, perl, go"
+      ask: Specify one per line
+      label: language
+      type: list
+      min_count: 5
+      max_count: 5
+      validate: c,lisp,ruby,perl,go
+
+    - param: validity-vault_path
+      description: Need a vault path
+      ask: Specify the path
+      validate: vault_path

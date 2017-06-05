@@ -1,0 +1,60 @@
+#!/bin/bash
+set -e
+
+bail() {
+	echo >&2 $*
+	exit 2
+}
+
+mkdir -p t/tmp/home t/vaults
+
+version=0.6.4
+platform=
+arch=amd64
+case $OSTYPE in
+(darwin*) platform=darwin ;;
+(linux*)  platform=linux  ;;
+(*)
+	echo >&2 "UNRECOGNIZED OSTYPE '$OSTYPE'"
+	exit 1
+	;;
+esac
+
+killall vault-${version} >/dev/null 2>&1 || true
+if [[ ! -f t/vaults/vault-${version} ]]; then
+	echo >&2 "Downloading Vault ${version} CLI..."
+	curl --fail -sLk > t/tmp/archive.zip \
+		https://releases.hashicorp.com/vault/${version}/vault_${version}_${platform}_${arch}.zip \
+		|| bail "download of vault ${version} failed"
+
+	unzip -d t/tmp t/tmp/archive.zip
+	mv t/tmp/vault t/vaults/vault-${version}
+	echo >&2 "DONE"
+	echo >&2
+fi
+
+old_home=$HOME
+export HOME=${PWD}/t/tmp/home
+
+rm -rf t/tmp/home ; mkdir -p t/tmp/home
+trap "rm -rf t/home" INT TERM QUIT EXIT
+
+./t/vaults/vault-${version} server -dev >$HOME/log 2>&1 &
+vault_pid=$!
+waitfor=600
+while ! grep -iq '^root token: ' $HOME/log; do
+	if [[ $waitfor -gt 0 ]]; then
+		waitfor=$((waitfor - 1))
+		sleep 0.1
+	else
+		echo >&2 "FAILED - timed out waiting for vault server (-dev) to start"
+		exit 1
+	fi
+done
+
+root_token=$(awk '/^Root Token:/ { print $3 }' < $HOME/log | head -n1)
+unseal_key=$(awk '/^Unseal Key:/ { print $3 }' < $HOME/log | head -n1)
+
+safe target unit-tests http://127.0.0.1:8200 >/dev/null 2>&1
+safe auth token <<<${root_token}             >/dev/null 2>&1
+echo $vault_pid

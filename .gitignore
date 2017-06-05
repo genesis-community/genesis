@@ -1,1 +1,11 @@
+t/tmp
+t/vaults
+t/repos/vault-test/*.yml
+t/repos/*/tmp.yml
+t/repos/summary-test/.genesis/cached/*/last
+t/repos/compiled-kit-test/new-env.yml
+*.tar.gz
+*.tgz
+
+/genesis-*
 *.swp

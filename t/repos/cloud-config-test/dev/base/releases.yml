@@ -1,0 +1,4 @@
+---
+releases:
+  - name: foo
+    version: 1.2.3-rc.1

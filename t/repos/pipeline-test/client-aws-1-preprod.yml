@@ -1,0 +1,4 @@
+---
+params:
+  env: preprod
+  domain: preprod.thing.example.com
