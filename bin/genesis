@@ -3255,7 +3255,7 @@ sub {
 			printf STDERR "You must specify a deployment name if you don't specify a kit.\n";
 			usage(1);
 		}
-		$name = $options{kit};
+		($name, $_) = extract_kit_name_and_version($options{kit});
 	}
 	$name =~ s/-deployments//;
 
@@ -3276,7 +3276,7 @@ EOF
 	mkdir_or_fail "$root/.genesis/bin";
 	copy_or_fail  $0, "$root/.genesis/bin/genesis";
 	chmod_or_fail 0755, "$root/.genesis/bin/genesis";
-	mkdir_or_fail "$root/dev" if $options{dev};
+	mkdir_or_fail "$root/dev" unless $options{kit};
 
 	chdir_or_fail $root;
 	execute 'git init'
