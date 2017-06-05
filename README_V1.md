@@ -8,7 +8,7 @@ specialized where they shouldn't.
 
 An ideal deployment pipeline might look something like this:
 
-![Environments](docs/envs.png)
+![Environments](docs/v1-envs.png)
 
 Where sandbox is used to validate that deployments are sane, test
 stemcell upgrades, etc., preprod enables integration and
@@ -28,7 +28,7 @@ Genesis changes this by breaking up your BOSH configuration
 manifest along three logical strata: _global_, _site_ and
 _environment_.
 
-![Tiered Architecture](docs/tiers.png)
+![Tiered Architecture](docs/v1-tiers.png)
 
 At the top, the most generic configuration is considered
 **global**.  The general outline of your deployment, what jobs run
