@@ -313,7 +313,8 @@ sub expect_ok {
 	my $cmd;
 	if (ref($desc) eq "Expect") {
 		$cmd = $desc;
-		$desc = "expected questions from genesis";
+    use Data::Dumper;
+		$desc = "expected questions from genesis (".Dumper(\@_).")";
 	} else {
 		$cmd = shift;
 	}
