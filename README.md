@@ -1,71 +1,82 @@
-genesis v2 - super secret research
+Genesis - A BOSH Deployment Paradigm
 ==================================
 
-**PRIVATE REPO BECAUSE CREDENTIALS / not quite ready for the light**
+## Genesis v2.0
 
-## Design Notes
+Genesis v2.0 is the first version of Genesis to fully support BOSH v2. It is primarily geared
+to deployments that make use of Cloud Config, and Runtime Config. The BOSH v2 CLI is also a
+requirement of Genesis v2.
 
-Design documentation that was previously found here has moved.
+Genesis v2.0 builds upon the previous generation of Genesis, eliminating
+the vast majority of YAML files all over the place, leading to confusion and
+questions like "Where do I put property X - properties.yml, networking.yml, or credentials.yml?"
 
-  - [Design Notes](docs/DESIGN.md)
-  - [Pipelines](docs/PIPELINES.md)
-  - [Authoring Kits](docs/AUTHORING-KITS.md)
-  - [Environment Parameters](docs/PARAMS.md)
+It also supports the next generation of Genesis deployment templates - Kits.
+In the old genesis, deployment templates were pulled in once, forked from their upstream,
+and likely never reconciled. With kits, you can keep upgrading the kit, pulling in
+newer versions of your deployment to make life much easier down the road.
 
-**NOTE: This README should begin to transition to a more
-operator-centric document, to assist in the setup and
-provisioning, deployment, CI configuration, etc.**
+### Credential Rotation Built-in
 
-## Using Kits
+Genesis v2 makes use of Vault as a back-end for storing credentials, most easily deployed
++ managed via the [Vault kit](https://github.com/genesis-community/vault-genesis-kit), and
+the [safe CLI](https://github.com/starkandwayne/safe). Each kit will auto-generate credentials
+where appropriate, ensuring that each environment has unique and secure credentials. Secrets
+can be manually or automatically rotated at the drop of hat with the `genesis secrets` command.
+Kits will define certain credentials as fixed, indicating that they should not be rotated
+under normal circumstances, as that would have ill effects on the deployment (the CF db encryption
+key for example). 
 
-Environment manifests will have to specify their kit using the
-top-level (reserved) parameters `params.kit` and `params.version`:
+### The New Tiered Architecture
+
+In Genesis v2, the data that was previously stored in `global` and `site` by and large go away.
+Most of `global` is provided via Kits. Most of `site` is now moved into Cloud Config. As a result,
+we can stick most of the customization into a single file per environment, and the directory
+structure has been flattened. To share information between environments, and reduce config repitition,
+you can create files based on shared prefixes of the environment. For example, `us-west-1` and `us-west-2`
+share both `us`, and `us-west` prefixes, and could share configuration in files named as such).
+
+Here's what the new layout looks like:
+
+```
+.
+├── ci.yml
+├── us-boshlite-alpha.yml
+├── us-east-dev.yml
+├── us-east-prod.yml
+├── us.yml # shared with us-*.yml
+├── LICENSE
+└── README.md
+```
+
+### Using Kits
+
+When using a kit with Genesis v2, Genesis will automatically download the latest (or
+specified) version of a kit, when you initialize your deployment repo. Any new
+versions of the kit can be retrieved with `genesis download`. Each deployment environment
+must have at some point in its merge-path, a `kit` section, indicating what kit + version
+should be deployed. It will look something like this:
 
 ```
 ---
-params:
-  kit:     jumpbox
+kit:
+  name: jumpbox
   version: 2.0
 ```
+To get the full benefit of CI, operators should place this in a file
+that is shared across all environments, so that upgrades can be vetted in the deployment pipeline
+in non-production environments, before going to production.
 
-These parameters are **required**.  They can be set at
-higher-levels if necessary / desired.
+### Flexible Deployment Pipelines
 
-### Kits and the Genesis Index
+The pipeline strategy of Genesis v2.0 is much more flexible than the previous approach. Operators
+are able to define what environments should trigger, which should not, as well as which environments
+are gateways to deploying in later environments. Stemcell management is built-in, as are locking
+mechanisms to ensure that your BOSH isn't upgraded while it's in the middle of deploying something.
 
-Kits will be distributed primarily via the Genesis Index, and
-secondarily through the use of local files.  We will have to add a
-new type (`kit`) to the index to support these, but the new type
-should behave similarly to releases and stemcells - probably via
-Github Release URLs.
+For a full run-down on Genesis v2.0 + deployment pipelines, see our [pipeline documentation](docs/PIPELINES.md)
 
-Possible bootstrap secnario:
-
-```
-$ genesis bootstrap --kit shield [shield-deployments]
-```
-
-Possible upgrade command:
-
-```
-$ genesis kit shield 6.3.7
-```
-
-(to download version 6.3.7 of the `shield` kit)
-
-## Reserved Parameters
-
-The following top-level parameters are reserved:
-
-- **params.kit** - The name of the kit to use for this
-  environment.
-- **params.version** - The version of the kit to deploy.
-- **params.env** - The name of the environment.
-- **params.bosh** - The alias (or URL) of the BOSH director that
-  owns this environment.  Defaults to `params.env`.
-- **params.vault** - The prefix to store credentials in the Vault.
-
-## The Genesis CLI - A Cookbook
+## Using Genesis
 
 Here are a few thoughts on the Genesis CLI.
 
@@ -86,20 +97,19 @@ Initialize a Genesis repo:
 
 ```
 genesis init --kit shield
-genesis init --kit shield --version 1.2.3
+genesis init --kit shield/1.2.3
 ```
 
 Create a new deployment named us-west-1-sandbox:
 
 ```
 genesis new us-west-1-sandbox
-genesis new-deployment us-west-1-sandbox
 ```
 
 Generate a manifest for an environment:
 
 ```
-# download the cloud-config from the BOSH director
+# Using the live the cloud-config from the BOSH director
 genesis manifest my-sandbox
 # or, using the local file cached-cloud-config.yml:
 genesis manifest -c cached-cloud-config.yml
@@ -109,6 +119,12 @@ Deploy a deployment, manually:
 
 ```
 genesis deploy us-west-1-sandbox
+```
+
+Rotate credentials for a deployment:
+
+```
+genesis secrets us-west-1-sandbox
 ```
 
 Summarize the current state of deployments and what kits they are
@@ -127,14 +143,13 @@ genesis download shield 1.3.4
 Deploy the Genesis CI/CD pipeline configuration to Concourse:
 
 ```
-genesis push aws
-genesis repipe aws
+genesis repipe
 ```
 
 Describe a given pipeline, in words:
 
 ```
-genesis describe pipelines/aws
+genesis describe
 ```
 
 Draw a pretty picture of a pipeline, using `dot`, suitable for
@@ -150,11 +165,20 @@ Embed the calling Genesis script in the Genesis repo:
 genesis embed
 ```
 
-Update the calling copy of the Genesis script, from the latest
-upstream release on Github:
+## Transitioning to Genesis v2
 
-```
-genesis sync
-```
+Due to the sweeping changes involved in Genesis v2, it is recommended to start
+with a fresh deployment repo, and migrate existing deployments slowly but surely
+over to Genesis v2 using the appropriate kits, or if necessary, a `dev` kit (see
+[Authoring Kits](docs/AUTHORING-KITS.md) for more info). The `genesis` command will
+auto-detect if you are running inside a Genesis v1 repo, and switch to a `v1` mode,
+for compatibility.
 
-I'm sure there are others.
+## Design Notes + Genesis Developer Resources
+
+Genesis v2.0 design documentation that was previously found here has moved.
+
+  - [Design Notes](docs/DESIGN.md)
+  - [Pipelines](docs/PIPELINES.md)
+  - [Authoring Kits](docs/AUTHORING-KITS.md)
+  - [Environment Parameters](docs/PARAMS.md)
