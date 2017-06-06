@@ -14,4 +14,7 @@ for file in $(cd ${BIN_DIR} && ls ${BINARIES}); do
 	${BIN_DIR}/$file -h >/dev/null 2>&1
 done
 
+# customization for running genesis tests
+make test
+
 exit 0
