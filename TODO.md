@@ -128,9 +128,4 @@ just that: desired.
   against a given environment.yml file.) ie jumpbox user certs that depend on 
   the ca being available.
 
-
-G1 Integrations
-===============
-
-1) Detect if in g2/g1/not environment
-
+- (P5) init -k url:repo/kit support for private/custom kit repos
