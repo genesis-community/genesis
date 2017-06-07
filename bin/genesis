@@ -875,6 +875,13 @@ sub detect_bosh_version {
 	}
 }
 
+sub is_create_env {
+	my ($env) = @_;
+	# convert env to file for env if not already done
+	$env = "$env.yml" unless $env =~ /\.yml$/;
+	return has_subkit($env, 'bosh-init') || has_subkit($env, 'create-env');
+}
+
 sub bosh_deploy {
 	my ($target, $deployment, $path_to_manifest) = @_;
 	my @args = ();
@@ -1366,24 +1373,35 @@ sub read_pipeline {
 	if (ref($p->{pipeline}{boshes}) eq 'HASH') {
 		for my $env (keys %{$p->{pipeline}{boshes}}) {
 			# required sub-subkeys
-			for (qw(url ca_cert username password)) {
-				push @errors, "`pipeline.boshes[$env].$_' is required."
-					unless $p->{pipeline}{boshes}{$env}{$_};
+			if (is_create_env($env)) {
+				# allowed subkeys for a create-env deploy
+				for (keys %{$p->{pipeline}{boshes}{$env}}) {
+					push @errors, "Unrecognized `pipeline.boshes[$env].$_' key found."
+						unless m/^(alias)$/;
+				}
+			} else {
+				for (qw(url ca_cert username password)) {
+					push @errors, "`pipeline.boshes[$env].$_' is required."
+						unless $p->{pipeline}{boshes}{$env}{$_};
+				}
+				# allowed subkeys
+				for (keys %{$p->{pipeline}{boshes}{$env}}) {
+					push @errors, "Unrecognized `pipeline.boshes[$env].$_' key found."
+						unless m/^(stemcells|url|ca_cert|username|password|alias)$/;
+				}
 			}
-			# allowed subkeys
-			for (keys %{$p->{pipeline}{boshes}{$env}}) {
-				push @errors, "Unrecognized `pipeline.boshes[$env].$_' key found."
-					unless m/^(stemcells|url|ca_cert|username|password|alias)$/;
-			}
+
 			if (! $p->{pipeline}{skip_upkeep}) {
-				if (! $p->{pipeline}{boshes}{$env}{stemcells}) {
-					push @errors, "No stemcells specified for `pipeline.boshes[$env]' and `pipeline.skip_upkeep' not enabled.";
-				} elsif (ref($p->{pipeline}{boshes}{$env}{stemcells}) ne 'ARRAY') {
-					push @errors, "`pipeline.boshes[$env].stemcells' is not an array";
-				} else {
-					for (@{$p->{pipeline}{boshes}{$env}{stemcells}}) {
-						push @errors, "`pipeline.boshes[$env].stemcells.$env' is not a stemcell alias listed in `pipeline.stemcells'"
-							unless $p->{pipeline}{stemcells}{$_};
+				unless (is_create_env($env)) {
+					if (! $p->{pipeline}{boshes}{$env}{stemcells}) {
+						push @errors, "No stemcells specified for `pipeline.boshes[$env]' and `pipeline.skip_upkeep' not enabled.";
+					} elsif (ref($p->{pipeline}{boshes}{$env}{stemcells}) ne 'ARRAY') {
+						push @errors, "`pipeline.boshes[$env].stemcells' is not an array";
+					} else {
+						for (@{$p->{pipeline}{boshes}{$env}{stemcells}}) {
+							push @errors, "`pipeline.boshes[$env].stemcells.$env' is not a stemcell alias listed in `pipeline.stemcells'"
+								unless $p->{pipeline}{stemcells}{$_};
+						}
 					}
 				}
 			}
@@ -1392,7 +1410,6 @@ sub read_pipeline {
 
 	return $p, @errors;
 }
-
 
 sub parse_pipeline {
 	my ($file, $layout) = @_;
@@ -1797,7 +1814,8 @@ EOF
 EOF
 			}
 		}
-		print $OUT <<EOF;
+		unless (is_create_env($env)) {
+			print $OUT <<EOF;
 
   - name: ${alias}-cloud-config
     type: bosh-config
@@ -1807,12 +1825,12 @@ EOF
       client_secret: $pipeline->{pipeline}{boshes}{$env}{password}
       ca_cert: |
 EOF
-		for (split /\n/, $pipeline->{pipeline}{boshes}{$env}{ca_cert}) {
-			print $OUT <<EOF;
+			for (split /\n/, $pipeline->{pipeline}{boshes}{$env}{ca_cert}) {
+				print $OUT <<EOF;
          $_
 EOF
-		}
-		print $OUT <<EOF;
+			}
+			print $OUT <<EOF;
       config: cloud
 
   - name: ${alias}-runtime-config
@@ -1823,23 +1841,30 @@ EOF
       client_secret: $pipeline->{pipeline}{boshes}{$env}{password}
       ca_cert: |
 EOF
-		for (split /\n/, $pipeline->{pipeline}{boshes}{$env}{ca_cert}) {
-			print $OUT <<EOF;
+			for (split /\n/, $pipeline->{pipeline}{boshes}{$env}{ca_cert}) {
+				print $OUT <<EOF;
         $_
 EOF
-		}
-		print $OUT <<EOF;
+			}
+			print $OUT <<EOF;
       config: runtime
 
 EOF
+		}
 		if ($pipeline->{pipeline}{locker}{url}) {
-			my $bosh_lock = $env;
-			if ($pipeline->{pipeline}{boshes}{$env}{url} =~ m|https?://(.*)?:(.*)|) {
-				my $addr = gethostbyname($1);
-				$bosh_lock = inet_ntoa($addr) . ":" . $2;
-			}
 			my $deployment_suffix = deployment_suffix;
-			print $OUT <<EOF;
+			unless (is_create_env($env)) {
+				my $bosh_lock = $env;
+				if ($pipeline->{pipeline}{boshes}{$env}{url} && $pipeline->{pipeline}{boshes}{$env}{url} =~ m|https?://(.*)?:(.*)|) {
+					my $addr = gethostbyname($1);
+					$bosh_lock = inet_ntoa($addr) . ":" . $2;
+				}
+
+				# <alias>-stemcell-lock is used to not upload the same stemcell to the same bosh multiple
+				# times - not necessary for create-env
+				# <alias>-bosh-lock is used to prevent the parent bosh from upgrading while we deploy
+				# - not necessary for create-env
+				print $OUT <<EOF;
   - name: ${alias}-stemcell-lock
     type: locker
     source:
@@ -1859,7 +1884,9 @@ EOF
       skip_ssl_validation: (( grab pipeline.locker.skip_ssl_validation ))
       ca_cert: (( grab pipeline.locker.ca_cert ))
       bosh_lock: $pipeline->{pipeline}{boshes}{$env}{url}
-
+EOF
+			}
+			print $OUT <<EOF;
   - name: ${alias}-deployment-lock
     type: locker
     source:
@@ -1964,7 +1991,7 @@ EOF
 jobs:
 EOF
 	for my $env (sort @{$pipeline->{envs}}) {
-	 	# CONCOURSE: env-specific job configuration {{{
+		# CONCOURSE: env-specific job configuration {{{
 
 		# YAML snippets, to make the print's less obnoxious {{{
 		#
@@ -2039,8 +2066,14 @@ EOF
     plan:
     - aggregate:
       - { get: $alias-changes, trigger: true }
+EOF
+			unless (is_create_env($env)) {
+				print $OUT <<EOF;
       - { get: $alias-cloud-config, trigger: true }
       - { get: $alias-runtime-config, trigger: true }
+EOF
+			}
+			print $OUT <<EOF;
       $notify_cache
 EOF
 			unless ($pipeline->{pipeline}{skip_upkeep}) {
@@ -2056,7 +2089,7 @@ EOF
     - $changes_staged_notification
 EOF
 		}
-	 	# }}}
+		# }}}
 		print $OUT <<EOF;
   - name: $alias-$deployment_suffix
     public: true
@@ -2071,11 +2104,19 @@ EOF
 			print $OUT <<EOF;
       ensure:
         do:
+EOF
+			unless (is_create_env($env)) {
+				# <alias>-bosh-lock is used to prevent the parent bosh from upgrading while we deploy
+				# - not necessary for create-env
+				print $OUT <<EOF;
         - put: ${alias}-bosh-lock
           params:
             lock_op: unlock
             key: dont-upgrade-bosh-on-me
             locked_by: ${alias}-${deployment_suffix}
+EOF
+			}
+			print $OUT <<EOF;
         - put: ${alias}-deployment-lock
           params:
             lock_op: unlock
@@ -2087,12 +2128,18 @@ EOF
       do:
 EOF
 		if ($pipeline->{pipeline}{locker}{url}) {
-			print $OUT <<EOF;
+			unless (is_create_env($env)) {
+				# <alias>-bosh-lock is used to prevent the parent bosh from upgrading while we deploy
+				# - not necessary for create-env
+				print $OUT <<EOF;
       - put: ${alias}-bosh-lock
         params:
           lock_op: lock
           key: dont-upgrade-bosh-on-me
           locked_by: ${alias}-${deployment_suffix}
+EOF
+			}
+			print $OUT <<EOF;
       - put: ${alias}-deployment-lock
         params:
           lock_op: lock
@@ -2105,7 +2152,8 @@ EOF
         - { get: git }
 EOF
 		# only add cloud/runtime config on true-triggers, otherwise it goes in notifications
-		if ($trigger eq "true") {
+		# also make sure that we are not deploying with create-env (no cloud/runtime config for that scenario)
+		if (! is_create_env($env) && $trigger eq "true") {
 			print $OUT <<EOF;
         - { get: $alias-cloud-config, trigger: true }
         - { get: $alias-runtime-config, trigger: true }
@@ -2127,8 +2175,8 @@ EOF
         $changes_yaml
         $cache_yaml
 EOF
-		# Update stemcells {{{
-		unless ($pipeline->{pipeline}{skip_upkeep}) {
+		# Update stemcells unless we are create-env based or skip_upkeep requested {{{
+		unless (is_create_env($env) || $pipeline->{pipeline}{skip_upkeep}) {
 			if ($pipeline->{pipeline}{locker}{url}) {
 				print $OUT <<EOF;
       - put: ${alias}-stemcell-lock
@@ -2192,7 +2240,7 @@ EOF
             DEBUG:              $pipeline->{pipeline}{debug}
 EOF
 		}
-		#  }}}
+		#   }}}
 		print $OUT <<EOF;
       - task: bosh-deploy
         $tag_yaml
@@ -2213,20 +2261,24 @@ EOF
             VAULT_SECRET_ID:      $pipeline->{pipeline}{vault}{secret}
             VAULT_ADDR:           $pipeline->{pipeline}{vault}{url}
             VAULT_SKIP_VERIFY:    ${\(!$pipeline->{pipeline}{vault}{verify})}
-
-            BOSH_ENVIRONMENT:     $pipeline->{pipeline}{boshes}{$env}{url}
             BOSH_NON_INTERACTIVE: true
+EOF
+		# don't supply bosh creds if we're create-env, because no one to talk to
+		unless (is_create_env($env)) {
+			print $OUT <<EOF;
+            BOSH_ENVIRONMENT:     $pipeline->{pipeline}{boshes}{$env}{url}
             BOSH_CA_CERT: |
 EOF
-		for (split /\n/, $pipeline->{pipeline}{boshes}{$env}{ca_cert}) {
-			print $OUT <<EOF;
+			for (split /\n/, $pipeline->{pipeline}{boshes}{$env}{ca_cert}) {
+				print $OUT <<EOF;
               $_
 EOF
-		}
-		print $OUT <<EOF;
+			}
+			print $OUT <<EOF;
             BOSH_CLIENT:        $pipeline->{pipeline}{boshes}{$env}{username}
             BOSH_CLIENT_SECRET: $pipeline->{pipeline}{boshes}{$env}{password}
 EOF
+		}
 		print $OUT <<EOF if $pipeline->{pipeline}{debug};
             DEBUG:              $pipeline->{pipeline}{debug}
 EOF
@@ -2260,9 +2312,10 @@ EOF
             repository: out/git
 EOF
 
-		# CONCOURSE: run optional errands as tasks {{{
-		for my $errand_name (@{$pipeline->{pipeline}{errands}}) {
-			print $OUT <<EOF;
+		# CONCOURSE: run optional errands as tasks - non-create-env only (otherwise no bosh to run the errand) {{{
+		unless (is_create_env($env)) {
+			for my $errand_name (@{$pipeline->{pipeline}{errands}}) {
+				print $OUT <<EOF;
         # run errands against the deployment
       - task: $errand_name-errand
         $tag_yaml
@@ -2280,20 +2333,20 @@ EOF
             BOSH_ENVIRONMENT:   $pipeline->{pipeline}{boshes}{$env}{url}
             BOSH_CA_CERT: |
 EOF
-		for (split /\n/, $pipeline->{pipeline}{boshes}{$env}{ca_cert}) {
-			print $OUT <<EOF;
+			for (split /\n/, $pipeline->{pipeline}{boshes}{$env}{ca_cert}) {
+				print $OUT <<EOF;
               $_
 EOF
-		}
-		print $OUT <<EOF;
+			}
+			print $OUT <<EOF;
             BOSH_CLIENT:        $pipeline->{pipeline}{boshes}{$env}{username}
             BOSH_CLIENT:        $pipeline->{pipeline}{boshes}{$env}{username}
             BOSH_CLIENT_SECRET: $pipeline->{pipeline}{boshes}{$env}{password}
 EOF
-		print $OUT <<EOF if $pipeline->{pipeline}{debug};
+			print $OUT <<EOF if $pipeline->{pipeline}{debug};
             DEBUG:              $pipeline->{pipeline}{debug}
 EOF
-		print $OUT <<EOF;
+			print $OUT <<EOF;
 
           run:
             path: ../../$genesis_bindir/.genesis/bin/genesis
@@ -2303,6 +2356,7 @@ EOF
             - name: out
             - name: $genesis_bindir
 EOF
+			}
 		}
 		# }}}
 		print $OUT <<EOF;
@@ -3695,7 +3749,7 @@ sub {
 	$ENV{REDACT} = 'true';
 	$ENV{REDACT} = '' if $options{'no-redact'};
 
-	my $create_env = has_subkit($env, 'bosh-init') || has_subkit($env, 'create-env');
+	my $create_env = is_create_env($env);
 
 	# set offline since there's no director to talk to
 	$ENV{OFFLINE} = 1 if ($create_env);
@@ -3948,7 +4002,7 @@ sub {
 	$ENV{REDACT} = "true"; # we don't need vault creds for this, just pipeline layout
 	my $pipeline = parse_pipeline($options{config}, $layout);
 	for my $env (sort @{$pipeline->{envs}}) {
-		my $create_env = has_subkit($env, 'bosh-init') || has_subkit($env, 'create-env');
+		my $create_env = is_create_env($env);
 		# Always grab cloud config, since we're probably up and running if using this command
 		# Posible issues we could run into are that the jumpbox doesn't have access to all
 		# BOSH directors, or that someone is trying to build their vault policies before
@@ -4007,11 +4061,6 @@ sub {
 	# environment variables we should have
 	#   CURRENT_ENV                - Name of the current environment
 	#   PREVIOUS_ENV               - Name of previous environment (if applicable, for finding
-	#                                correct cache files)
-	#   BOSH_ENVIRONMENT           - URL of the BOSH director to deploy on
-	#   BOSH_CA_CERT               - CA Certificate for the BOSH director
-	#   BOSH_CLIENT                - Username or client ID (UAA-auth) to authenticate with
-	#   BOSH_CLIENT_SECRET         - Password/Client-Secret to authenticate with
 	#
 	#   VAULT_ROLE_ID              - Vault RoleID to authenticate to Vault with
 	#   VAULT_SECRET_ID            - Vault SecretID to authenticate to Vault with
@@ -4024,14 +4073,21 @@ sub {
 	#   WORKING_DIR - Path to the directory to deploy/work from
 	#   OUT_DIR     - Path to the directory to output to
 	#   CACHE_DIR   - Path to the directory our cache is in (required if PREVIOUS_ENV is present
+	#
+	# and unless we're a create-env based deploy, we should also have:
+	#   BOSH_ENVIRONMENT           - URL of the BOSH director to deploy on
+	#   BOSH_CA_CERT               - CA Certificate for the BOSH director
+	#   BOSH_CLIENT                - Username or client ID (UAA-auth) to authenticate with
+	#   BOSH_CLIENT_SECRET         - Password/Client-Secret to authenticate with
 
 	my @undefined = grep { !$ENV{$_} }
-		qw/BOSH_ENVIRONMENT BOSH_CA_CERT
-		   BOSH_CLIENT BOSH_CLIENT_SECRET
-		   CURRENT_ENV GIT_BRANCH GIT_PRIVATE_KEY
+		qw/CURRENT_ENV GIT_BRANCH GIT_PRIVATE_KEY
 		   OUT_DIR WORKING_DIR
 		   VAULT_ROLE_ID VAULT_SECRET_ID VAULT_ADDR/;
 	push @undefined, "CACHE_DIR" if ($ENV{PREVIOUS_ENV} && ! $ENV{CACHE_DIR});
+	push(@undefined, grep { !$ENV{$_} }
+		qw/BOSH_ENVIRONMENT BOSH_CA_CERT
+		   BOSH_CLIENT BOSH_CLIENT_SECRET/) unless is_create_env($ENV{CURRENT_ENV});
 	if (@undefined) {
 		error "The following #R{required} environment variables have not been defined:";
 		error " - \$#Y{$_}" for @undefined;
