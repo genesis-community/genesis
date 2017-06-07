@@ -4093,6 +4093,7 @@ sub {
 		error " - \$#Y{$_}" for @undefined;
 		error;
 		error;
+		error "Environment: $ENV{CURRENT_ENVIRONMENT} " . (is_create_env($ENV{CURRENT_ENV}) ? "bosh-init" : "normal" );
 		error "Please check your CI Pipeline configuration.";
 		exit 1;
 	}
