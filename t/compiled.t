@@ -40,5 +40,6 @@ params:
   env:   new-env
   vault: new/env/compiled-kit-test
 EOF
+qx(rm -f new-env.yml);
 
 done_testing;
