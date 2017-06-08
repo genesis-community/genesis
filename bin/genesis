@@ -922,6 +922,23 @@ sub bosh_exec {
 	die "not implemented";
 }
 
+sub write_stemcell_data {
+	my ($file) = @_;
+	my $stemcells = "{}";
+	if ($ENV{GENESIS_INDEX} ne "no") {
+		$stemcells = `curl -ks $ENV{GENESIS_INDEX}/v1/stemcell/latest | jq '. | map({"key": .name, "value": { "sha1": .sha1, "url": .url}}) | from_entries' -Mc`;
+		die "Unable to contact the genesis index to retrieve stemcell data. Cannot continue." unless ($? == 0);
+	}
+	open my $fh, ">", $file;
+	print $fh <<EOF;
+---
+meta:
+  latest_stemcells: $stemcells
+
+EOF
+	close $fh;
+}
+
 sub spruce_vault_paths {
 	my (@files) = @_;
 	my $ymls = join(" ", @files);
@@ -1003,20 +1020,8 @@ sub merge_manifest {
 		unless $options->{'create-env'};
 
 	if ($options->{'create-env'}) {
-		my $stemcells = "{}";
-		if ($ENV{GENESIS_INDEX} ne "no") {
-			$stemcells = `curl -ks $ENV{GENESIS_INDEX}/v1/stemcell/latest | jq '. | map({"key": .name, "value": { "sha1": .sha1, "url": .url}}) | from_entries' -Mc`;
-			die "Unable to contact the genesis index to retrieve stemcell data. Cannot continue." unless ($? == 0);
-		}
 		my $dir = workdir;
-		open my $fh, ">", "$dir/cloud.yml";
-		print $fh <<EOF;
----
-meta:
-  latest_stemcells: $stemcells
-
-EOF
-		close $fh;
+		write_stemcell_data("$dir/cloud.yml");
 		$options->{'cloud-config'} = "$dir/cloud.yml";
 	}
 
@@ -4009,11 +4014,13 @@ sub {
 		# anything is running. If we run into these cases, this can be changed, either by
 		# somehow providing cloud configs for *all* boshes, or by making `spruce vaultinfo`
 		# ignore static_ips?
+		my $dir = workdir;
 		if (!$create_env) {
-			my $dir = workdir;
 			bosh_download_cloud_config(bosh_target_for($env), "$dir/cloud.yml");
-			$options{'cloud-config'} = "$dir/cloud.yml";
+		} else {
+			write_stemcell_data("$dir/cloud.yml");
 		}
+		$options{'cloud-config'} = "$dir/cloud.yml";
 
 		# get all files for a deployment
 		my $vault_prefix = get_key($env, "params.vault", "");
@@ -4085,29 +4092,32 @@ sub {
 		   OUT_DIR WORKING_DIR
 		   VAULT_ROLE_ID VAULT_SECRET_ID VAULT_ADDR/;
 	push @undefined, "CACHE_DIR" if ($ENV{PREVIOUS_ENV} && ! $ENV{CACHE_DIR});
+
+	# move to working dir prior to seeing if current env is bosh-init
+	pushd $ENV{WORKING_DIR};
 	push(@undefined, grep { !$ENV{$_} }
 		qw/BOSH_ENVIRONMENT BOSH_CA_CERT
 		   BOSH_CLIENT BOSH_CLIENT_SECRET/) unless is_create_env($ENV{CURRENT_ENV});
+
 	if (@undefined) {
 		error "The following #R{required} environment variables have not been defined:";
 		error " - \$#Y{$_}" for @undefined;
 		error;
 		error;
-		error "Environment: $ENV{CURRENT_ENVIRONMENT} " . (is_create_env($ENV{CURRENT_ENV}) ? "bosh-init" : "normal" );
 		error "Please check your CI Pipeline configuration.";
 		exit 1;
 	}
 
-	pushd $ENV{WORKING_DIR};
 	if ($ENV{PREVIOUS_ENV}) {
 		system("rm -rf .genesis/cached") == 0 or exit 1;
 		system("cp -R ../$ENV{CACHE_DIR}/.genesis/cached .genesis/cached") == 0 or exit 1;
 	}
-	## rm cache dir
-	## copy previous env cache dir
 
-	my $target = bosh_target_for($ENV{CURRENT_ENV});
-	bosh_alias($target); # exits on failure
+	# don't set up a bosh alias if we're a create-env based deploy, no need, no data
+	unless (is_create_env($ENV{CURRENT_ENV})) {
+		my $target = bosh_target_for($ENV{CURRENT_ENV});
+		bosh_alias($target); # exits on failure
+	}
 
 	vault_auth(vault       => $ENV{VAULT_ADDR},
 	           skip_verify => envset("VAULT_SKIP_VERIFY"),
@@ -4116,6 +4126,8 @@ sub {
 
 	my $rc = deploy_manifest($ENV{CURRENT_ENV}); # exits if it fails
 	if ($ENV{PREVIOUS_ENV}) {
+		## rm cache dir
+		## copy previous env cache dir
 		system("rm -rf .genesis/cached") == 0 or exit 1;
 		system("git checkout .genesis/cached") == 0 or exit 1;
 	}
