@@ -3,6 +3,7 @@ meta:
   name: genesis
   target: sw
   url: https://ci.starkandwayne.com
+  image: docker:///starkandwayne/genesis_ci
 
   aws:
     access_key: (( vault "secret/pipelines/genesis/aws:access_key" ))
@@ -24,52 +25,24 @@ meta:
     repository: starkandwayne/genesis
 
 groups:
-- name: (( grab meta.pipeline ))
+- name: generate-ci-image
   jobs:
-  - (( append ))
-  - genesis-docker-image
+  - genesis-ci-docker-image
 jobs:
 - (( append ))
-- name: genesis-docker-image
-  public: true
-  serial: true
+- name: genesis-ci-docker-image
   plan:
-  - aggregate:
-    - { get: version, passed: [shipit] }
-    - { get: git, passed: [shipit] }
-    - { get: github, passed: [shipit], trigger: true }
-  - task: update-docker-genesis
-    config:
-      image: (( grab meta.image ))
-      platform: linux
-      inputs:
-      - name: version
-      - name: git
-      outputs:
-      - name: pushme
-      run:
-        path: "git/ci/scripts/bump-docker-image"
-        args: []
-      params:
-        REPO_ROOT: git
-        VERSION_FROM: version/number
-        REPO_OUT: pushme
-        BRANCH: (( grab meta.github.branch ))
-  - put: git
+  - get: git
+  - put: genesis-ci
     params:
-      rebase: true
-      repository: pushme/git
-  - put: genesis-image
-    params:
-      build: pushme/git
-      tag: version/number
+      build: git/ci
       tag_as_latest: true
 
 resources:
-  - name: genesis-image
-    type: docker-image
-    source:
-      email: (( grab meta.dockerhub.email ))
-      username: (( grab meta.dockerhub.username ))
-      password: (( grab meta.dockerhub.password ))
-      repository: (( grab meta.dockerhub.repository ))
+- name: genesis-ci
+  type: docker-image
+  source:
+    email:    (( grab meta.dockerhub.email ))
+    username: (( grab meta.dockerhub.username ))
+    password: (( grab meta.dockerhub.password ))
+    repository: (( grab meta.image ))
