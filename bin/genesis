@@ -2579,7 +2579,7 @@ sub check_prereqs {
 		}
 	}
 
-	if ($conditions{no_repo_needed}) {
+	unless ($conditions{no_repo_needed}) {
 		push @errors, "This command needs to be run from a Genesis v2 deployment repo, or specify one using -C <dir> option"
 			unless in_repo_dir;
 	}
