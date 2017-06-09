@@ -32,7 +32,8 @@ jobs:
 - (( append ))
 - name: genesis-ci-docker-image
   plan:
-  - get: git
+  - get: dockerfile
+    trigger: true
   - put: genesis-ci
     params:
       build: git/ci
@@ -46,3 +47,9 @@ resources:
     username: (( grab meta.dockerhub.username ))
     password: (( grab meta.dockerhub.password ))
     repository: (( grab meta.image ))
+- name: dockerfile
+  type: git
+  source:
+    .: (( inject resources.git ))
+    paths:
+    - ci/Dockerfile
