@@ -2602,7 +2602,11 @@ sub extract_kit_name_and_version {
 sub kit_release_url {
 	my ($name, $version) = @_;
 
-	my ($code, $msg, $data) = curl "GET", "https://api.github.com/repos/genesis-community/$name-genesis-kit/releases";
+	my @creds = ();
+	if ($ENV{GITHUB_USER} && $ENV{GITHUB_AUTH_TOKEN}) {
+		push @creds, "-u", "$ENV{GITHUB_USER}:$ENV{GITHUB_AUTH_TOKEN}";
+	}
+	my ($code, $msg, $data) = curl "GET", "https://api.github.com/repos/genesis-community/$name-genesis-kit/releases", @creds;
 	if ($code == 404) {
 		die "Could not find Genesis Kit $name on Github; does https://github.com/genesis-community/$name-genesis-kit/releases exist?\n";
 	}
