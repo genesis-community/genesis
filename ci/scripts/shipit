@@ -56,7 +56,7 @@ if [[ ! -d ${BIN_DIR} ]]; then
 fi
 
 ./pack ${VERSION}
-mv ${BIN_DIR}/genesis-${VERSION} artifacts/genesis
+mv genesis-${VERSION} artifacts/genesis
 artifacts/genesis -v | grep ${VERSION}
 
 popd
