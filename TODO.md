@@ -3,7 +3,7 @@ TODO
 
 Priorities:
 * P1: Must be done before first release
-* P2: Must be done before handoff to Demand Bridge
+* P2: Highly desirable in the near future
 * P3: Needed for completeness, not needed for first release.
 * P4: Nice to have/additive functionality, add if you're bored.
 * P5: Nice to have, add if customer requests it
@@ -72,17 +72,9 @@ These things need to be done. They cannot be ignored.
   - kit must have base/params.yml
   - kit base/\*.yml must be parseable
 
-- (P1) Add support to the genesis pipelines to hanlde bosh-init
-
 - (P2) docs on genesis-v2
 
 - (P2) Add readme to genesis init production.
-
-- (P2) rename + release genesis-v2 (not needed if we embed v1 script)
-
-- (P1) Detect if we're in a genesis deployment or not; furthermore, if in a v1
-  repo, exec embedded script and pass args, otherwise, continue processing as
-  a v2 repo.
 
 - (P3) Support for turning off deployments when done (for alpha/testing env + cost savings)
   Add a flag to CI that will shut down the environment via bosh stop --hard, after
