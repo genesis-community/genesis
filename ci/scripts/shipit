@@ -48,7 +48,6 @@ fi
 ROOT=$( cd "$( dirname "${BASH_SOURCE[0]}" )/../.." && pwd )
 
 pushd $REPO_ROOT
-
 mkdir artifacts
 
 if [[ ! -d ${BIN_DIR} ]]; then
@@ -56,11 +55,10 @@ if [[ ! -d ${BIN_DIR} ]]; then
 	exit 1
 fi
 
-for bin in $(cd ${BIN_DIR} && ls ${BINARIES}); do
-  cp ${BIN_DIR}/${bin} artifacts/${bin}
-  auto_sed artifacts/${bin} "s/^VERSION=.*/VERSION=\"v${VERSION}\"/"
-  artifacts/${bin} -v | grep ${VERSION}
-done
+./pack ${VERSION}
+mv ${BIN_DIR}/genesis-${VERSION} artifacts/genesis
+artifacts/genesis -v | grep ${VERSION}
+
 popd
 
 echo "v${VERSION}"                         > ${RELEASE_ROOT}/tag
