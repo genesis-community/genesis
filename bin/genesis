@@ -567,8 +567,9 @@ sub mergeable_yaml_files {
 			push @ll, $here if -f $here;
 			pop @parts;
 		}
+		@ll = reverse @ll;
 	}
-	return reverse @ll;
+	return @ll;
 }
 
 sub standalone_environment_yaml_files {
