@@ -1076,7 +1076,7 @@ sub deploy_manifest {
 }
 
 sub curl {
-	my ($method, $url, $headers, $data, $creds, $skip_verify) = @_;
+	my ($method, $url, $headers, $data, $skip_verify, $creds) = @_;
 	my $flags = "-X '$method'";
 	for my $header (keys %$headers) {
 		$flags .= " -H '$header: $headers->{$header}'";
@@ -2609,7 +2609,7 @@ sub kit_release_url {
 	if ($ENV{GITHUB_USER} && $ENV{GITHUB_AUTH_TOKEN}) {
 		$creds = "$ENV{GITHUB_USER}:$ENV{GITHUB_AUTH_TOKEN}";
 	}
-	my ($code, $msg, $data) = curl "GET", "https://api.github.com/repos/genesis-community/$name-genesis-kit/releases", undef, undef, $creds, 0;
+	my ($code, $msg, $data) = curl "GET", "https://api.github.com/repos/genesis-community/$name-genesis-kit/releases", undef, undef, 0, $creds;
 	if ($code == 404) {
 		die "Could not find Genesis Kit $name on Github; does https://github.com/genesis-community/$name-genesis-kit/releases exist?\n";
 	}
