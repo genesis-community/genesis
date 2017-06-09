@@ -4365,6 +4365,10 @@ sub main {
 		$COMMAND{help}();
 		exit 0;
 	}
+	if (@args and scalar(@args) == 1 && $args[0] =~ m/^(-v|--version)$/) {
+		$COMMAND{version}();
+		exit 0;
+	}
 	$COMMAND{help}();
 	exit 2;
 }
