@@ -27,7 +27,7 @@ if [[ ! -f t/vaults/vault-${version} ]]; then
 		https://releases.hashicorp.com/vault/${version}/vault_${version}_${platform}_${arch}.zip \
 		|| bail "download of vault ${version} failed"
 
-	unzip -d t/tmp t/tmp/archive.zip
+	unzip -d t/tmp t/tmp/archive.zip > /dev/null 2>&1
 	mv t/tmp/vault t/vaults/vault-${version}
 	echo >&2 "DONE"
 	echo >&2
