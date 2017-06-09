@@ -30,6 +30,15 @@ groups:
   jobs:
   - genesis-ci-docker-image
 jobs:
+- name: test
+  plan:
+  - name: testing
+    do:
+    - name: run_tests
+      config:
+        params:
+          GITHUB_USER: starkandwayne-bot
+          GITHUB_AUTH_TOKEN: (( grab meta.github.access_token ))
 - (( append ))
 - name: genesis-ci-docker-image
   plan:
@@ -37,8 +46,9 @@ jobs:
     trigger: true
   - put: genesis-ci
     params:
-      build: git/ci
+      build: dockerfile/ci
       tag_as_latest: true
+
 
 resources:
 - name: genesis-ci
@@ -51,6 +61,6 @@ resources:
 - name: dockerfile
   type: git
   source:
-    .: (( inject resources.git ))
+    .: (( inject resources.git.source ))
     paths:
     - ci/Dockerfile

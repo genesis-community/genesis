@@ -63,9 +63,11 @@ jobs:
     public: true
     serial: true
     plan:
-      - do:
-        - { get: git, trigger: true }
-        - task: test
+      - name: testing
+        do:
+        - { name: inputs, get: git, trigger: true }
+        - name: run_tests
+          task: test
           config:
             platform: linux
             rootfs_uri: (( grab meta.image ))
