@@ -18,7 +18,7 @@ use Socket qw/inet_ntoa/;
 use Cwd qw/getcwd abs_path/;
 use lib "$FindBin::Bin/../lib";
 
-our $VERSION = "2.0";
+our $VERSION = "(development)";
 our $GITHUB_URL = "https://github.com/starkandwayne/genesis";
 our $USER_AGENT_STRING = "genesis/$VERSION";
 
