@@ -47,7 +47,7 @@
 #           reprompting the user.
 #         - if not given, a generic error message is shown.
 
-if [[ "$(base_name -- $0)" == "params_helper" ]] ; then
+if [[ "$(basename -- $0)" == "params_helper" ]] ; then
   echo >&2 "Error: Do not call $0 directly; it needs to be sourced by the params hook script"
   exit 2
 fi
