@@ -890,14 +890,17 @@ sub is_create_env {
 }
 
 sub bosh_deploy {
-	my ($target, $deployment, $path_to_manifest) = @_;
+	my ($target, $deployment, $path_to_manifest, @deploy_opts) = @_;
 	my @args = ();
 	if ($target eq "create-env") {
-		@args = ("create-env", "--state", $deployment, $path_to_manifest);
+		@args = ("create-env", "--state", $deployment);
+		push @args, "-n" if $ENV{BOSH_NON_INTERACTIVE};
+		push @args, $path_to_manifest;
 	} else {
-		@args = ("-e", $target, "-d", $deployment, "deploy", $path_to_manifest);
+		@args = ("-e", $target, "-d", $deployment);
+		push @args, "-n" if $ENV{BOSH_NON_INTERACTIVE};
+		push @args, "deploy", @deploy_opts, $path_to_manifest;
 	}
-	push @args, "-n" if $ENV{BOSH_NON_INTERACTIVE};
 	system($BOSH, @args) == 0 or return 1;
 	return 0;
 }
@@ -1061,7 +1064,6 @@ sub deploy_manifest {
 
 	$env =~ s/.yml$//;
 	my $deployment = "$env-" . deployment_suffix;
-	my $yes = $options->{yes} ? "-n" : "";
 
 	mkdir_or_fail(".genesis/manifests");
 
@@ -1072,7 +1074,11 @@ sub deploy_manifest {
 		$target = "create-env";
 		$deployment = ".genesis/manifests/$env-state.yml";
 	}
-	my $rc = bosh_deploy $target, $deployment, "$dir/manifest.yml";
+	my @deploy_opts;
+	foreach (qw/no-redact fix recreate/) {
+		push @deploy_opts, "--$_" if $options->{$_};
+	}
+	my $rc = bosh_deploy $target, $deployment, "$dir/manifest.yml", @deploy_opts;
 	return $rc;
 }
 
@@ -3143,13 +3149,9 @@ sub bosh_target_for {
 my ($COMMAND, %COMMAND, %USAGE);
 
 sub usage {
-	my ($cmd, $rc) = @_;
-	if (!defined $rc) {
-		# invoked as usage(0);
-		# use the currently executing COMMAND
-		$rc = $cmd;
-		$cmd = $COMMAND;
-	}
+	my ($rc, $msg, $cmd) = @_;
+	$cmd = $COMMAND unless $cmd;
+	print STDERR "$msg\n\n" if $msg;
 	print STDERR $USAGE{$cmd} if $USAGE{$cmd};
 	exit $rc;
 }
@@ -3165,7 +3167,6 @@ our $GLOBAL_USAGE = <<EOF;
                     specified, it will use the value in params.bosh or
                     params.env in that order.  Can also be provided using the
                     \$GENESIS_BOSH_ENVIRONMENT environment variable.
-  -y, --yes         Answer "yes" to all question, automatically.
 EOF
 sub options {
 	my ($args, $options, @spec) = @_;
@@ -3179,7 +3180,6 @@ sub options {
 			offline
 			cwd|C=s
 			environment|e=s
-			yes|y
 			color!
 		/,
 		@spec))
@@ -3477,7 +3477,7 @@ sub {
 
 command("deploy", <<EOF,
 genesis v$VERSION
-USAGE: genesis deploy env-name[.yml]
+USAGE: genesis deploy [-n|--non-interactive] [--fix|--recreate] [--no-redact] env-name[.yml]
 
 OPTIONS
 $GLOBAL_USAGE
@@ -3485,9 +3485,22 @@ EOF
 sub {
 	my %options;
 	options(\@_, \%options, qw/
+		non-interactive|n
+		no-redact
+		fix
+		recreate
 	/);
 	usage(1) if @_ != 1;
 	check_prereqs;
+
+	if ($options{fix} && $options{recreate}) {
+		usage(1,"Cannot specify --fix and --recreate together");
+	}
+
+	if ($options{'non-interactive'}) {
+		$ENV{BOSH_NON_INTERACTIVE}='true';
+		delete $options{'non-interactive'};
+	}
 
 	my $rc = deploy_manifest($_[0], \%options);
 	exit $rc;
@@ -4360,7 +4373,7 @@ sub main {
 			exit 0;
 		}
 		error "unrecognized command '$cmd'";
-		usage("help", 2);
+		usage(2, "", "help");
 	}
 	if (@args and $args[0] =~ m/^(-h|--help)$/) {
 		$COMMAND{help}();
