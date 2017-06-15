@@ -3226,6 +3226,7 @@ USAGE: genesis [OPTIONS] COMMAND [MORE OPTIONS]
 OPTIONS
 $GLOBAL_USAGE
 COMMANDS
+  create-kit       Create a new kit with default scaffolding.
   compile-kit      Create a distributable kit archive from dev.
   decompile-kit    Unpack a kit archive to dev.
   deploy           Generate a real manifest using Vault + Cloud Config, and deploy it to BOSH.
