@@ -338,7 +338,7 @@ sub run_subkit_hook {
 }
 
 sub run_param_hook {
-	my ($kit, $version, $env_name, $params, @subkits) = @_;
+	my ($kit, $version, $env_name, $vault_prefix, $params, @subkits) = @_;
 	my $hook = kit_file($kit, $version, "hooks/params", 0);
 	return $params unless -f $hook;
 
@@ -351,6 +351,7 @@ sub run_param_hook {
 	DumpJSON "$dir/in", $params;
 	my $cmd = "$hook $dir/in $dir/out " . join(" ", map { "'$_'" } @subkits);
 	$ENV{GENESIS_ENVIRONMENT_NAME} = $env_name;
+	$ENV{GENESIS_VAULT_PREFIX} = $vault_prefix;
 	system($cmd);
 	die "\nNew environment creation cancelled.\n"
 		if $? >> 8 eq 130;
@@ -3455,7 +3456,7 @@ sub {
 									should_vault => $options{secrets},
 									params       => $meta->{params} || [],
 									subkits      => \@subkits);
-	$params = run_param_hook($kit, $version, $name, $params, @subkits);
+	$params = run_param_hook($kit, $version, $name, $prefix, $params, @subkits);
 
 	new_environment($meta, $kit, $version, $name, $prefix, $params, @subkits);
 
