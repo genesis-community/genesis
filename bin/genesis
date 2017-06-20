@@ -3588,7 +3588,7 @@ sub {
 		dev|d
 	/);
 	usage(2) unless $options{name};
-	check_prereqs(no_repo_needed => 1);
+	check_prereqs(no_repo_needed => ! $options{dev}); # only require repo if in dev mode
 
 	my $dir = ($options{cwd} || ".") . "/". ($options{dev} ? "dev" : "$options{name}-genesis-kit");
 
@@ -3666,6 +3666,13 @@ EOF
 		mkfile_or_fail "$dir/subkits/$subkit/$subkit.yml", "--- {}\n";
 	}
 
+	my $subkits = "";
+	if ($subkit_prompts) {
+		$subkits = "subkits:\n$subkit_prompts";
+	} else {
+		$subkits = "subkits: []\n";
+	}
+
 	chomp(my $user = qx'git config user.name');
 	chomp(my $email = qx'git config user.email');
 	mkfile_or_fail "$dir/kit.yml", <<EOF;
@@ -3675,8 +3682,7 @@ author: $user <$email>
 homepage: https://github.com/cloudfoundry-community/$options{name}-boshrelease
 github: https://github.com/genesis-community/$options{name}-genesis-kit
 
-subkits:
-$subkit_prompts
+$subkits
 params:
   base: {}
 $subkit_groups
