@@ -3588,7 +3588,7 @@ sub {
 		dev|d
 	/);
 	usage(2) unless $options{name};
-	check_prereqs;
+	check_prereqs(no_repo_needed => 1);
 
 	my $dir = ($options{cwd} || ".") . "/". ($options{dev} ? "dev" : "$options{name}-genesis-kit");
 
