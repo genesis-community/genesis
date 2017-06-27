@@ -1,6 +1,7 @@
 # Improvements
 
 - `genesis init` now creates a useful readme for deployment repos.
+- `genesis create-kit` now creates a stub readme for kit repos.
 
 # Bug Fixes
 
