@@ -3755,11 +3755,13 @@ EOF
 	# Subkits
 	mkdir_or_fail "$dir/subkits";
 	my $subkit_groups="";
+	my $subkit_param_groups="";
 	my $subkit_prompts="";
 	foreach my $subkit_req (@_) {
 		my ($subkit,$prompt) = split("=",$subkit_req, 2);
 		mkdir_or_fail "$dir/subkits/$subkit";
 		$subkit_groups .= "  $subkit: {}\n";
+		$subkit_param_groups .= "  $subkit: []\n";
 		next if defined($prompt) && $prompt eq '-';
 		$prompt ||= "Do you want to use subkit '$subkit'?";
 		$subkit_prompts .= "- prompt: $prompt\n  subkit: $subkit\n";
@@ -3786,8 +3788,8 @@ github: https://github.com/genesis-community/$options{name}-genesis-kit
 
 $subkits
 params:
-  base: {}
-$subkit_groups
+  base: []
+$subkit_param_groups
 credentials:
   base: {}
 $subkit_groups
