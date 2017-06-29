@@ -3842,6 +3842,15 @@ be in different sections (one for base, one per subkit). Unfortunately,
 the author has not done this, and that is sad. Perhaps a GitHub issue
 should be opened to remind them of this?
 
+Cloud Config
+------------
+
+FIXME: The kit author should have filled in this section with details about
+what cloud config definitions this kit expects to see in play and how to
+override them. Also useful are hints at default values for disk + vm sizing,
+scaling considerations, and other miscellaneous IaaS components that the deployment
+might require, like load balancers.
+
 EOF
 
 });
