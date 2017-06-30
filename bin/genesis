@@ -697,7 +697,7 @@ sub cert_commands {
 		push @cmd, "--no-clobber", "--quiet" if !$options{force_rotate};
 		system @cmd;
 
-		die "Failure autogenerating certificates.\n" if ($? >> 8);
+		die "Failure autogenerating certificates.\n" if ($? != 0);
 
 		for my $cert (sort keys %{$certs->{$path}}) {
 			next if $cert eq "ca";
@@ -710,7 +710,7 @@ sub cert_commands {
 			my @name_flags = map {( "--name", dereference_params($_, $options{env}) )} @{$c->{names}};
 			system "safe", "x509", "issue", "secret/$options{prefix}/$path/$cert", "--ttl", $c->{valid_for},
 				@name_flags, "--signed-by", "secret/$options{prefix}/$path/ca";
-			die "Failure autogenerating certificates.\n" if ($? >> 8);
+			die "Failure autogenerating certificates.\n" if ($? != 0);
 		}
 	}
 	return @cmds;

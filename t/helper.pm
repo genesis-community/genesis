@@ -308,6 +308,18 @@ sub yaml_is($$$) {
 	return 0;
 }
 
+sub expect_exit {
+	my ($cmd, $rc, $msg) = @_;
+	$cmd->expect(300, 'eof');
+	$cmd->soft_close();
+	if ($rc) {
+		is $cmd->exitstatus() >> 8, $rc, $msg;
+	} else {
+		is $cmd->exitstatus(), 0, $msg
+			or diag "NOTE: exitstatus() returned from expect was not shifted, exit code 1, indicates SIGHUP, not rc 1";
+	}
+}
+
 sub expect_ok {
 	my $desc = shift;
 	my $cmd;

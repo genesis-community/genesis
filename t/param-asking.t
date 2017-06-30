@@ -180,8 +180,7 @@ expect_ok "", $cmd, [
   }
 ];
 
-$cmd->soft_close();
-is $cmd->exitstatus() >> 8, 0, "Creating a new environment with subkits exited successfully";
+expect_exit $cmd, 0, "Creating a new environment with subkits exited successfully";
 eq_or_diff get_file("with-subkit.yml"), <<EOF, "New environment file contains base + subkit params, comments, and examples";
 ---
 kit:
@@ -279,7 +278,7 @@ params:
 EOF
 
 $cmd = Expect->new();
-$cmd->log_stdout(1);
+$cmd->log_stdout(0);
 $cmd->spawn("genesis new without-subkit --no-secrets");
 expect_ok $cmd, ['Should we ask additional questions', sub {
 	my $fh = shift;
@@ -295,8 +294,7 @@ expect_ok "getting second user", $cmd, ['2nd user >', sub {
 		$_[0]->send("dbell\n"); }];
 expect_ok "getting third user", $cmd, ['3rd user >', sub {
 		$_[0]->send("\n"); }];
-$cmd->soft_close();
-is $cmd->exitstatus() >> 8, 0, "Creating a new environment without subkits exited successfully";
+expect_exit $cmd, 0, "Creating a new environment without subkits exited successfully";
 eq_or_diff get_file("without-subkit.yml"), <<EOF, "New environment file contains base params, comments, and examples (no subkits)";
 ---
 kit:

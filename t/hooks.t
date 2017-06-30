@@ -21,8 +21,7 @@ sub subkit_hook_ok {
 	$cmd->log_stdout(0);
 	$cmd->spawn("genesis new $env --no-secrets");
 	expect_ok $cmd, ["Install OpenVPN?", sub { $_[0]->send("yes\n"); }];
-	$cmd->soft_close();
-	is $cmd->exitstatus() >> 8, $rc, $msg;
+	expect_exit $cmd, $rc, $msg;
 }
 
 sub new_hook {
@@ -158,8 +157,7 @@ expect_ok $cmd, ["You must type 'fun'", sub { $_[0]->send("'fun'\n"); }];
 expect_ok $cmd, ["Please state your purpose: ", sub { $_[0]->send("\n"); }];
 expect_ok $cmd, ["Please state your purpose: ", sub { $_[0]->send("be awesome\n"); }];
 
-$cmd->soft_close();
-is $cmd->exitstatus() >> 8, 0, "Creating new env with kit using subkit and param hooks";
+expect_exit $cmd, 0, "Creating new env with kit using subkit and param hooks";
 
 eq_or_diff get_file("params.out"), <<EOF, "Contains the expected diagnostic output";
 Environment: inspect
