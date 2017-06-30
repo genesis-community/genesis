@@ -12,14 +12,6 @@ Priorities:
 Herein lies the things we found while working on Genesis v2.
 These things need to be done. They cannot be ignored.
 
-- (P3) **BUG** - `genesis init` doesnt bail out if the destination repo already
-  exists. Instead it carries on and commits to it as if it were brand new. Should fail
-  by default, and have a flag to force-use-existing repo?
-
-- (P3) **BUG** - `genesis init --kit <kit>` doesn't save the downloaded kit in the initial
-  commit, so after it's done, there are untracked files in the repo, which should have been
-  committed.
-
 - (P3) **genesis ccck** - Cloud Config Check!  Take a manifest,
   fully-generated, and compare it against the cloud-config
   (required argument) to see if they are mutually consistent.
@@ -73,8 +65,6 @@ These things need to be done. They cannot be ignored.
   - kit base/\*.yml must be parseable
 
 - (P2) docs on genesis-v2
-
-- (P2) Add readme to genesis init production.
 
 - (P3) Support for turning off deployments when done (for alpha/testing env + cost savings)
   Add a flag to CI that will shut down the environment via bosh stop --hard, after
