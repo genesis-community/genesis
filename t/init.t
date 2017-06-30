@@ -48,4 +48,9 @@ ok -f "backups/README.md",            "`genesis init` created a README";
 ok ! -d "backups/dev",                "`genesis init` did not create the dev/ directory, since -k was given";
 ok get_file("backups/.genesis/config") =~ /\ndeployment_type: back-ups($|\n)/s, "`genesis init` uses the correct deployment-type";
 
+qx(rm -rf backups);
+
+mkdir "random-deployments";
+run_fails "genesis init random", "`genesis init` fails when the destination it would use already exists";
+
 done_testing

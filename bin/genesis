@@ -3349,6 +3349,9 @@ sub {
 
 	my $root = $options{directory} || "${name}-deployments";
 	debug "in directory $root";
+	if (-e $root) {
+		die "Attempted to create new environment `$root' failed: Path already exists.\n";
+	}
 	mkdir_or_fail $root;
 	mkdir_or_fail "$root/.genesis";
 	put_file "$root/.genesis/config", <<EOF;
