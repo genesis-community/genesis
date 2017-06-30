@@ -3467,6 +3467,12 @@ what is being deployed, and how.
 EOF
 
 	chdir_or_fail $root;
+
+	if ($options{kit}) {
+		my ($kit, $version) = extract_kit_name_and_version($options{kit});
+		download_kit_tarball($kit, $version);
+	}
+
 	execute 'git init'
 		or die "Failed to initialize a git repository in $root/\n";
 	execute 'git add .'
@@ -3474,10 +3480,6 @@ EOF
 	execute 'git commit -m "Initial Genesis Repo"'
 		or die "Failed to commit initial Genesis repository in $root/\n";
 
-	if ($options{kit}) {
-		my ($kit, $version) = extract_kit_name_and_version($options{kit});
-		download_kit_tarball($kit, $version);
-	}
 	exit 0;
 });
 

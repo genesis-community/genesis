@@ -34,6 +34,8 @@ ok -f "shield-deployments/.genesis/kits/shield-0.1.0.tar.gz", "`genesis init` em
 ok -f "shield-deployments/README.md",            "`genesis init` created a README";
 ok ! -d "shield-deployments/dev",                "`genesis init` did not create the dev/ directory, since -k was given";
 ok get_file("shield-deployments/.genesis/config") =~ /\ndeployment_type: shield($|\n)/s, "`genesis init` uses the correct deployment-type";
+chdir("shield-deployments");
+output_ok("git status --porcelain", "", "No untracked/changed files exist after a genesis init");
 
 qx(rm -rf *-deployments/);
 runs_ok "genesis init -k shield/0.1.0 -d backups back-ups";
