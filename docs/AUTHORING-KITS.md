@@ -31,10 +31,10 @@ Table of Contents
     - [The `kit.yml` Metadata File](#kityml---kit-metadata)
       - [Defining Subkits](#defining-subkits-in-kityml)
         - [Using the subkit hook](#using-the-subkit-hook)
-      - [Defining Parameters](#defining-perameters-in-kityml)
+      - [Defining Parameters](#defining-parameters-in-kityml)
         - [Using the params hook](#using-the-params-hook)
       - [Defining Credentials](#defining-credentials-in-kityml)
-      - [Defining Certificates](#defining-certificats-in-kityml)
+      - [Defining Certificates](#defining-certificates-in-kityml)
     - [The `prereqs` Prerequisite Check Script](#prereqs---prerequisite-check-script)
     - [The `setup` Environment Provisioning Script](#setup---environment-provisioning-script)
     - [Base Templates](#base---shared-deployment-templates)
@@ -546,7 +546,7 @@ can:
      in a location defined by the Kit Author and compatible with
      the kit's YAML configurations.
 
-This is all done via the top-level `params` key of `kit.yml`. It 
+This is all done via the top-level `params` key of `kit.yml`. It
 looks like this:
 
 ```
@@ -714,6 +714,75 @@ However, some rules must be followed. Here are some guidelines for using it:
    are all similar, and only need one description, to save space. This
    **CANNOT** be used with `ask`.
 8. Each param must have one and only one of `vault`, `param`, and `params`.
+
+#### Using the params hook
+
+An optional hook is provided to Kit Authors that will be fired
+immediately after the user-interactive for asking/retreiving param information.
+This allows Kit Authors to perform obscure customizations/transformations to
+the param data, if needed. Generally this should not be used, but it is here in case
+there are edge cases requiring the human-friendly data entry to be massaged into
+something that the bosh releases support.
+
+Examples of when it might be used:
+
+- The [cf-genesis-kit](https://github.com/genesis-community/cf-genesis-kit) uses
+  the params hook to convert lists of IPs/networks into Application Security Group
+  rules, since data entry is much easier on the operator this way.
+- The [cf-genesis-kit](https://github.com/genesis-community/cf-genesis-kit) uses
+  the params hook to query the user if they have an SSL certificate to give to
+  HAProxy, or if they would like one auto-generated. In one case, the user is prompted
+  for the certificate. In the other, it is just generated for them in Vault. If
+  the cert was auto-generated, it also overrides the default value for another
+  param (`params.skip_ssl_validation`), to make life easier for the operator.
+- The [jumpbox-genesis-kit](https://github.com/genesis-community/jumpbox-genesis-kit) uses
+  the params hook to allow for complicated data entry regarding jumpbox users, that
+  otherwise would not be possible via traditional params support in genesis.
+
+The params hook lives in `hooks/params` inside the Kit. It should be a self-contained
+portable executable. The contract around params hooks is slightly more complicated
+than subkit hooks, as there is more going on. The hook is passed via CLI args the
+path to the file containing param input, the path to the file that the hook should
+output it's manipulated data, and a list of all subkits marked for inclusion in the
+environment. The input file is a JSON structure containing the definitions of all
+the params currently defined for the environment (any non-Vault params defined in
+the `kit.yml`'s `params` section, based on the applicable subkits). This JSON structure
+must be manipulated as required, and output into the specified path, for genesis to
+read in. Similar to the subkit hook, if there is a param passed into this hook that
+is not present in the output, it will be omitted from the environment.
+
+Providing the input/output of this script as file paths makes it easy to interactively
+query the operator for more information via stdin and stdout, as well as to provide
+debugging and display errors encountered via stderr.
+
+Example of a simple param-hook in action (it will convert `params.my_list` from a list to
+a map, with each value being `1`):
+
+```
+$ cat tmpdir/in
+[
+  { "comment": "This is the description for the param",
+    "example": "This is the example value for the param",
+    "default": false, # a boolean representing if this is a default value or user-supplied
+                     # if true, the param will be commented out in the resultant environment yml file
+    # `values` is a list of params that apply to this param (to support the same comment across multiple
+       default params). Each item of its list is an object with one key representing the param name,
+       and the value associated with that key.
+    "values": [{"params.my_list": ["red", "blue", "green"]}]
+  }
+]
+$ hooks/params tmpdir/in tmpdir/out
+Converting params.my_list into a map
+$ cat tmpdir/out
+[
+  { "comment": "This is the description for the param",
+    "example": "This is the example value for the param",
+    "default": true, # a boolean representing if this is a default value or user-supplied
+                     # if true, the param will be commented out in the resultant environment yml file
+    "values": [{"params.my_list": { "red":1, "blue": 1, "green": 1}}]
+  }
+]
+```
 
 #### Defining Certificates in `kit.yml`
 
