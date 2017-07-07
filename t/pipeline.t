@@ -26,7 +26,6 @@ jobs:
   plan:
   - do:
     - aggregate:
-      - get: git
       - get: client-aws-1-preprod-cloud-config
         trigger: true
       - get: client-aws-1-preprod-runtime-config
@@ -44,7 +43,7 @@ jobs:
             tag: latest
           type: docker-image
         inputs:
-        - name: git
+        - name: client-aws-1-preprod-changes
         - name: client-aws-1-preprod-cache
         outputs:
         - name: out
@@ -72,7 +71,7 @@ jobs:
           VAULT_ROLE_ID: null
           VAULT_SECRET_ID: null
           VAULT_SKIP_VERIFY: null
-          WORKING_DIR: git
+          WORKING_DIR: client-aws-1-preprod-changes
         platform: linux
         run:
           args:
@@ -80,7 +79,6 @@ jobs:
           path: client-aws-1-preprod-cache/.genesis/bin/genesis
       ensure:
         params:
-          rebase: true
           repository: out/git
         put: git
       task: bosh-deploy
@@ -113,11 +111,9 @@ jobs:
           path: client-aws-1-preprod-cache/.genesis/bin/genesis
       task: generate-cache
     - params:
-        rebase: true
         repository: cache-out/git
       put: git
     - params:
-        rebase: true
         repository: cache-out/git
       put: client-aws-1-prod-cache
     on_failure:
@@ -166,7 +162,6 @@ jobs:
   plan:
   - do:
     - aggregate:
-      - get: git
       - get: client-aws-1-prod-changes
         passed:
         - notify-client-aws-1-prod-pipeline-test-changes
@@ -182,7 +177,7 @@ jobs:
             tag: latest
           type: docker-image
         inputs:
-        - name: git
+        - name: client-aws-1-prod-changes
         - name: client-aws-1-prod-cache
         outputs:
         - name: out
@@ -210,7 +205,7 @@ jobs:
           VAULT_ROLE_ID: null
           VAULT_SECRET_ID: null
           VAULT_SKIP_VERIFY: null
-          WORKING_DIR: git
+          WORKING_DIR: client-aws-1-prod-changes
         platform: linux
         run:
           args:
@@ -218,7 +213,6 @@ jobs:
           path: client-aws-1-prod-cache/.genesis/bin/genesis
       ensure:
         params:
-          rebase: true
           repository: out/git
         put: git
       task: bosh-deploy
@@ -251,7 +245,6 @@ jobs:
           path: client-aws-1-prod-cache/.genesis/bin/genesis
       task: generate-cache
     - params:
-        rebase: true
         repository: cache-out/git
       put: git
     on_failure:
@@ -276,7 +269,6 @@ jobs:
   plan:
   - do:
     - aggregate:
-      - get: git
       - get: client-aws-1-sandbox-cloud-config
         trigger: true
       - get: client-aws-1-sandbox-runtime-config
@@ -290,7 +282,7 @@ jobs:
             tag: latest
           type: docker-image
         inputs:
-        - name: git
+        - name: client-aws-1-sandbox-changes
         outputs:
         - name: out
         params:
@@ -317,15 +309,14 @@ jobs:
           VAULT_ROLE_ID: null
           VAULT_SECRET_ID: null
           VAULT_SKIP_VERIFY: null
-          WORKING_DIR: git
+          WORKING_DIR: client-aws-1-sandbox-changes
         platform: linux
         run:
           args:
           - ci-pipeline-deploy
-          path: git/.genesis/bin/genesis
+          path: client-aws-1-sandbox-changes/.genesis/bin/genesis
       ensure:
         params:
-          rebase: true
           repository: out/git
         put: git
       task: bosh-deploy
@@ -337,7 +328,7 @@ jobs:
           type: docker-image
         inputs:
         - name: out
-        - name: git
+        - name: client-aws-1-sandbox-changes
         outputs:
         - name: cache-out
         params:
@@ -355,14 +346,12 @@ jobs:
         run:
           args:
           - ci-generate-cache
-          path: git/.genesis/bin/genesis
+          path: client-aws-1-sandbox-changes/.genesis/bin/genesis
       task: generate-cache
     - params:
-        rebase: true
         repository: cache-out/git
       put: git
     - params:
-        rebase: true
         repository: cache-out/git
       put: client-aws-1-preprod-cache
     on_failure:
@@ -589,7 +578,6 @@ jobs:
   plan:
   - do:
     - aggregate:
-      - get: git
       - get: client-aws-1-preprod-cloud-config
         trigger: true
       - get: client-aws-1-preprod-runtime-config
@@ -607,7 +595,7 @@ jobs:
             tag: latest
           type: docker-image
         inputs:
-        - name: git
+        - name: client-aws-1-preprod-changes
         - name: client-aws-1-preprod-cache
         outputs:
         - name: out
@@ -635,7 +623,7 @@ jobs:
           VAULT_ROLE_ID: null
           VAULT_SECRET_ID: null
           VAULT_SKIP_VERIFY: null
-          WORKING_DIR: git
+          WORKING_DIR: client-aws-1-preprod-changes
         platform: linux
         run:
           args:
@@ -643,7 +631,6 @@ jobs:
           path: client-aws-1-preprod-cache/.genesis/bin/genesis
       ensure:
         params:
-          rebase: true
           repository: out/git
         put: git
       tags:
@@ -680,11 +667,9 @@ jobs:
       - client-aws-1-preprod
       task: generate-cache
     - params:
-        rebase: true
         repository: cache-out/git
       put: git
     - params:
-        rebase: true
         repository: cache-out/git
       put: client-aws-1-prod-cache
     on_failure:
@@ -733,7 +718,6 @@ jobs:
   plan:
   - do:
     - aggregate:
-      - get: git
       - get: client-aws-1-prod-changes
         passed:
         - notify-client-aws-1-prod-pipeline-test-changes
@@ -749,7 +733,7 @@ jobs:
             tag: latest
           type: docker-image
         inputs:
-        - name: git
+        - name: client-aws-1-prod-changes
         - name: client-aws-1-prod-cache
         outputs:
         - name: out
@@ -777,7 +761,7 @@ jobs:
           VAULT_ROLE_ID: null
           VAULT_SECRET_ID: null
           VAULT_SKIP_VERIFY: null
-          WORKING_DIR: git
+          WORKING_DIR: client-aws-1-prod-changes
         platform: linux
         run:
           args:
@@ -785,7 +769,6 @@ jobs:
           path: client-aws-1-prod-cache/.genesis/bin/genesis
       ensure:
         params:
-          rebase: true
           repository: out/git
         put: git
       tags:
@@ -822,7 +805,6 @@ jobs:
       - client-aws-1-prod
       task: generate-cache
     - params:
-        rebase: true
         repository: cache-out/git
       put: git
     on_failure:
@@ -847,7 +829,6 @@ jobs:
   plan:
   - do:
     - aggregate:
-      - get: git
       - get: client-aws-1-sandbox-cloud-config
         trigger: true
       - get: client-aws-1-sandbox-runtime-config
@@ -861,7 +842,7 @@ jobs:
             tag: latest
           type: docker-image
         inputs:
-        - name: git
+        - name: client-aws-1-sandbox-changes
         outputs:
         - name: out
         params:
@@ -888,15 +869,14 @@ jobs:
           VAULT_ROLE_ID: null
           VAULT_SECRET_ID: null
           VAULT_SKIP_VERIFY: null
-          WORKING_DIR: git
+          WORKING_DIR: client-aws-1-sandbox-changes
         platform: linux
         run:
           args:
           - ci-pipeline-deploy
-          path: git/.genesis/bin/genesis
+          path: client-aws-1-sandbox-changes/.genesis/bin/genesis
       ensure:
         params:
-          rebase: true
           repository: out/git
         put: git
       tags:
@@ -910,7 +890,7 @@ jobs:
           type: docker-image
         inputs:
         - name: out
-        - name: git
+        - name: client-aws-1-sandbox-changes
         outputs:
         - name: cache-out
         params:
@@ -928,16 +908,14 @@ jobs:
         run:
           args:
           - ci-generate-cache
-          path: git/.genesis/bin/genesis
+          path: client-aws-1-sandbox-changes/.genesis/bin/genesis
       tags:
       - client-aws-1-sandbox
       task: generate-cache
     - params:
-        rebase: true
         repository: cache-out/git
       put: git
     - params:
-        rebase: true
         repository: cache-out/git
       put: client-aws-1-preprod-cache
     on_failure:
@@ -1164,7 +1142,6 @@ jobs:
   plan:
   - do:
     - aggregate:
-      - get: git
       - get: preprod-cloud-config
         trigger: true
       - get: preprod-runtime-config
@@ -1182,7 +1159,7 @@ jobs:
             tag: latest
           type: docker-image
         inputs:
-        - name: git
+        - name: preprod-changes
         - name: preprod-cache
         outputs:
         - name: out
@@ -1211,7 +1188,7 @@ jobs:
           VAULT_ROLE_ID: null
           VAULT_SECRET_ID: null
           VAULT_SKIP_VERIFY: null
-          WORKING_DIR: git
+          WORKING_DIR: preprod-changes
         platform: linux
         run:
           args:
@@ -1219,7 +1196,6 @@ jobs:
           path: preprod-cache/.genesis/bin/genesis
       ensure:
         params:
-          rebase: true
           repository: out/git
         put: git
       task: bosh-deploy
@@ -1280,11 +1256,9 @@ jobs:
           path: preprod-cache/.genesis/bin/genesis
       task: generate-cache
     - params:
-        rebase: true
         repository: cache-out/git
       put: git
     - params:
-        rebase: true
         repository: cache-out/git
       put: prod-cache
     on_failure:
@@ -1333,7 +1307,6 @@ jobs:
   plan:
   - do:
     - aggregate:
-      - get: git
       - get: prod-changes
         passed:
         - notify-prod-pipeline-test-changes
@@ -1349,7 +1322,7 @@ jobs:
             tag: latest
           type: docker-image
         inputs:
-        - name: git
+        - name: prod-changes
         - name: prod-cache
         outputs:
         - name: out
@@ -1378,7 +1351,7 @@ jobs:
           VAULT_ROLE_ID: null
           VAULT_SECRET_ID: null
           VAULT_SKIP_VERIFY: null
-          WORKING_DIR: git
+          WORKING_DIR: prod-changes
         platform: linux
         run:
           args:
@@ -1386,7 +1359,6 @@ jobs:
           path: prod-cache/.genesis/bin/genesis
       ensure:
         params:
-          rebase: true
           repository: out/git
         put: git
       task: bosh-deploy
@@ -1447,7 +1419,6 @@ jobs:
           path: prod-cache/.genesis/bin/genesis
       task: generate-cache
     - params:
-        rebase: true
         repository: cache-out/git
       put: git
     on_failure:
@@ -1472,7 +1443,6 @@ jobs:
   plan:
   - do:
     - aggregate:
-      - get: git
       - get: sandbox-cloud-config
         trigger: true
       - get: sandbox-runtime-config
@@ -1486,7 +1456,7 @@ jobs:
             tag: latest
           type: docker-image
         inputs:
-        - name: git
+        - name: sandbox-changes
         outputs:
         - name: out
         params:
@@ -1514,15 +1484,14 @@ jobs:
           VAULT_ROLE_ID: null
           VAULT_SECRET_ID: null
           VAULT_SKIP_VERIFY: null
-          WORKING_DIR: git
+          WORKING_DIR: sandbox-changes
         platform: linux
         run:
           args:
           - ci-pipeline-deploy
-          path: git/.genesis/bin/genesis
+          path: sandbox-changes/.genesis/bin/genesis
       ensure:
         params:
-          rebase: true
           repository: out/git
         put: git
       task: bosh-deploy
@@ -1534,7 +1503,7 @@ jobs:
           type: docker-image
         inputs:
         - name: out
-        - name: git
+        - name: sandbox-changes
         params:
           BOSH_CA_CERT: |
             ----- BEGIN CERTIFICATE -----
@@ -1551,7 +1520,7 @@ jobs:
           args:
           - ci-pipeline-run-errand
           dir: out/git
-          path: ../../git/.genesis/bin/genesis
+          path: ../../sandbox-changes/.genesis/bin/genesis
       task: a-testing-errand-for-the-ages-errand
     - config:
         image_resource:
@@ -1561,7 +1530,7 @@ jobs:
           type: docker-image
         inputs:
         - name: out
-        - name: git
+        - name: sandbox-changes
         outputs:
         - name: cache-out
         params:
@@ -1580,14 +1549,12 @@ jobs:
         run:
           args:
           - ci-generate-cache
-          path: git/.genesis/bin/genesis
+          path: sandbox-changes/.genesis/bin/genesis
       task: generate-cache
     - params:
-        rebase: true
         repository: cache-out/git
       put: git
     - params:
-        rebase: true
         repository: cache-out/git
       put: preprod-cache
     on_failure:
@@ -1824,7 +1791,6 @@ jobs:
         locked_by: client-aws-1-preprod-pipeline-test
       put: client-aws-1-preprod-deployment-lock
     - aggregate:
-      - get: git
       - get: client-aws-1-preprod-cloud-config
         trigger: true
       - get: client-aws-1-preprod-runtime-config
@@ -1884,7 +1850,7 @@ jobs:
             tag: rc1
           type: docker-image
         inputs:
-        - name: git
+        - name: client-aws-1-preprod-changes
         - name: client-aws-1-preprod-cache
         outputs:
         - name: out
@@ -1913,7 +1879,7 @@ jobs:
           VAULT_ROLE_ID: role-uuid-here
           VAULT_SECRET_ID: secret-uuid-here
           VAULT_SKIP_VERIFY: 1
-          WORKING_DIR: git
+          WORKING_DIR: client-aws-1-preprod-changes
         platform: linux
         run:
           args:
@@ -1921,7 +1887,6 @@ jobs:
           path: client-aws-1-preprod-cache/.genesis/bin/genesis
       ensure:
         params:
-          rebase: true
           repository: out/git
         put: git
       tags:
@@ -1988,11 +1953,9 @@ jobs:
       - client-aws-1-preprod
       task: generate-cache
     - params:
-        rebase: true
         repository: cache-out/git
       put: git
     - params:
-        rebase: true
         repository: cache-out/git
       put: client-aws-1-prod-cache
     ensure:
@@ -2087,7 +2050,6 @@ jobs:
         locked_by: client-aws-1-prod-pipeline-test
       put: client-aws-1-prod-deployment-lock
     - aggregate:
-      - get: git
       - get: bosh-lite-stemcell
         params:
           tarball: true
@@ -2145,7 +2107,7 @@ jobs:
             tag: rc1
           type: docker-image
         inputs:
-        - name: git
+        - name: client-aws-1-prod-changes
         - name: client-aws-1-prod-cache
         outputs:
         - name: out
@@ -2174,7 +2136,7 @@ jobs:
           VAULT_ROLE_ID: role-uuid-here
           VAULT_SECRET_ID: secret-uuid-here
           VAULT_SKIP_VERIFY: 1
-          WORKING_DIR: git
+          WORKING_DIR: client-aws-1-prod-changes
         platform: linux
         run:
           args:
@@ -2182,7 +2144,6 @@ jobs:
           path: client-aws-1-prod-cache/.genesis/bin/genesis
       ensure:
         params:
-          rebase: true
           repository: out/git
         put: git
       tags:
@@ -2249,7 +2210,6 @@ jobs:
       - client-aws-1-prod
       task: generate-cache
     - params:
-        rebase: true
         repository: cache-out/git
       put: git
     ensure:
@@ -2309,7 +2269,6 @@ jobs:
         locked_by: client-aws-1-sandbox-pipeline-test
       put: client-aws-1-sandbox-deployment-lock
     - aggregate:
-      - get: git
       - get: client-aws-1-sandbox-cloud-config
         trigger: true
       - get: client-aws-1-sandbox-runtime-config
@@ -2330,7 +2289,7 @@ jobs:
             repository: starkandwayne/concourse
           type: docker-image
         inputs:
-        - name: git
+        - name: client-aws-1-sandbox-changes
         - name: bosh-lite-stemcell
           path: stemcells/bosh-warden-boshlite-ubuntu-trusty-go_agent
         outputs:
@@ -2350,7 +2309,7 @@ jobs:
         run:
           args:
           - ci-stemcells
-          dir: git
+          dir: client-aws-1-sandbox-changes
           path: .genesis/bin/genesis
       ensure:
         params:
@@ -2365,7 +2324,7 @@ jobs:
             tag: rc1
           type: docker-image
         inputs:
-        - name: git
+        - name: client-aws-1-sandbox-changes
         outputs:
         - name: out
         params:
@@ -2393,15 +2352,14 @@ jobs:
           VAULT_ROLE_ID: role-uuid-here
           VAULT_SECRET_ID: secret-uuid-here
           VAULT_SKIP_VERIFY: 1
-          WORKING_DIR: git
+          WORKING_DIR: client-aws-1-sandbox-changes
         platform: linux
         run:
           args:
           - ci-pipeline-deploy
-          path: git/.genesis/bin/genesis
+          path: client-aws-1-sandbox-changes/.genesis/bin/genesis
       ensure:
         params:
-          rebase: true
           repository: out/git
         put: git
       tags:
@@ -2415,7 +2373,7 @@ jobs:
           type: docker-image
         inputs:
         - name: out
-        - name: git
+        - name: client-aws-1-sandbox-changes
         params:
           BOSH_CA_CERT: |
             ----- BEGIN CERTIFICATE -----
@@ -2432,7 +2390,7 @@ jobs:
           args:
           - ci-pipeline-run-errand
           dir: out/git
-          path: ../../git/.genesis/bin/genesis
+          path: ../../client-aws-1-sandbox-changes/.genesis/bin/genesis
       tags:
       - client-aws-1-sandbox
       task: run-something-good-errand
@@ -2444,7 +2402,7 @@ jobs:
           type: docker-image
         inputs:
         - name: out
-        - name: git
+        - name: client-aws-1-sandbox-changes
         outputs:
         - name: cache-out
         params:
@@ -2463,16 +2421,14 @@ jobs:
         run:
           args:
           - ci-generate-cache
-          path: git/.genesis/bin/genesis
+          path: client-aws-1-sandbox-changes/.genesis/bin/genesis
       tags:
       - client-aws-1-sandbox
       task: generate-cache
     - params:
-        rebase: true
         repository: cache-out/git
       put: git
     - params:
-        rebase: true
         repository: cache-out/git
       put: client-aws-1-preprod-cache
     ensure:

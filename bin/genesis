@@ -233,7 +233,7 @@ sub copy_or_fail {
 	close $in;
 	close $out;
 }
-# chmod_or_fail "0755", $path;
+# chmod_or_fail 0755, $path; <-- don't quote the mode. make it an octal number.
 sub chmod_or_fail {
 	my ($mode, $path) = @_;
 	-e $path or die "$path: $!\n";
@@ -1158,28 +1158,65 @@ sub vault_auth {
 }
 
 sub commit_changes {
-	my ($branch, $key, $message) = @_;
+	my ($indir, $outdir, $branch, $key, $message) = @_;
 
-	my $output = qx(git status --porcelain 2>&1);
-	if ($output) {
-		$ENV{GIT_AUTHOR_NAME}   ||= 'Concourse Bot';
-		$ENV{GIT_AUTHOR_EMAIL}  ||= 'concourse@pipeline';
-		$ENV{GIT_COMMITTER_NAME}  = $ENV{GIT_AUTHOR_NAME};
-		$ENV{GIT_COMMITTER_EMAIL} = $ENV{GIT_AUTHOR_EMAIL};
-		$ENV{GIT_ASKPASS}         = "/bin/false";
+	# the below copying of files into new repos from older repos is all
+	# done in the name of avoiding merge conflicts, or weird errors when
+	# rebasing, and git discovers that there are no changes after you rebase
 
-		# FIXME: why do we need ssh config here, can't we just commit + use the git resource?
-		my $tmp = workdir;
-		mkdir_or_fail("$tmp/home/.ssh");
-		put_file("$tmp/home/.ssh/key", $key, "0600");
-		put_file("$tmp/home/.ssh/config", <<EOF);
+	# create an output git repo based off of latest origin/$branch
+	system("cp -R $indir $outdir") == 0 or exit 1;
+	pushd $outdir;
+
+	# We need this here so we can do a manual pull after the build/deploy, but
+	# prior to pushing. Rebasing inside the concourse resource will not work,
+	# as we are changing files that are not watched by the resources. This may
+	# cause conflicts as older commits try to change more and more things that
+	# have already been updated in the .genesis/manifests directory.
+	#
+	my $tmp = workdir;
+	mkdir_or_fail("$tmp/home/.ssh");
+	chmod_or_fail(0700, "$tmp/home/.ssh");
+	put_file("$tmp/home/.ssh/key", $key, 0600);
+      put_file("$tmp/home/.ssh/config", <<EOF);
 Host *
   StrictHostKeyChecking no
   UserKnownHostsFile /dev/null
   LogLevel QUIET
-  IdentityFile $tmp/.ssh/key
+  IdentityFile $tmp/home/.ssh/key
 EOF
 
+	$ENV{GIT_AUTHOR_NAME}   ||= 'Concourse Bot';
+	$ENV{GIT_AUTHOR_EMAIL}  ||= 'concourse@pipeline';
+	$ENV{GIT_COMMITTER_NAME}  = $ENV{GIT_AUTHOR_NAME};
+	$ENV{GIT_COMMITTER_EMAIL} = $ENV{GIT_AUTHOR_EMAIL};
+	$ENV{GIT_ASKPASS}         = "/bin/false";
+	$ENV{GIT_SSH_COMMAND}     = "ssh -F $tmp/home/.ssh/config";
+	$ENV{HOME}                = "$tmp/home";
+
+	# no need to fetch or pull from origin/$branch, as the git resource in the pipeline should
+	# have the latest data from origin, we just need to reset to the newest applicable ref
+	system(qq( HOME=$tmp/home \
+	             git reset --hard origin/$branch && \
+	             git checkout $branch && \
+	             git pull origin $branch)) == 0 or exit 1;
+	popd;
+
+	# find and copy all potential changes to the outdir
+	pushd $indir;
+	my @output = qx(git status --porcelain);
+	popd;
+	my @changes = map { chomp; s/^...//; $_; } @output;
+	for my $file (@changes) {
+		mkdir_or_fail(dirname("$outdir/$file"));
+		system("cp", "-R", "$indir/$file", "$outdir/$file") == 0 or exit 1;
+	}
+
+	# check if any changes actually exist in the outdir (potential changes may have alread
+	# been tracked after $indir's commit, so they could disappear here), then commit them
+	pushd $outdir;
+	my $output = qx(git status --porcelain 2>&1);
+	if ($output) {
 		system(qq( HOME=$tmp/home \
 		             git add -A && \
 		             git status && \
@@ -2075,7 +2112,7 @@ EOF
 			"Failed uploading new stemcells to the $env BOSH", "failure");
 
 		# 13) directory to find the genesis binary in (use previous env cache if present, else local-changes
-		my $genesis_bindir = $passed ? "$alias-cache" : "git";
+		my $genesis_bindir = $passed ? "$alias-cache" : "$alias-changes";
 
 		# }}}
 
@@ -2171,7 +2208,6 @@ EOF
 		}
 		print $OUT <<EOF;
       - aggregate:
-        - { get: git }
 EOF
 		# only add cloud/runtime config on true-triggers, otherwise it goes in notifications
 		# also make sure that we are not deploying with create-env (no cloud/runtime config for that scenario)
@@ -2305,8 +2341,7 @@ EOF
             DEBUG:              $pipeline->{pipeline}{debug}
 EOF
 		print $OUT <<EOF;
-            WORKING_DIR:        git # trigger off of changes, but nothing newer will
-                                    # be here (caches get pulled in separately)
+            WORKING_DIR:        $alias-changes # work out of latest changes for this environment
             OUT_DIR:            out/git
 
 
@@ -2316,7 +2351,7 @@ EOF
             path: $genesis_bindir/.genesis/bin/genesis
             args: [ci-pipeline-deploy]
           inputs:
-            - { name: git } # $alias-changes is a trigger, but not used directly
+            - { name: $alias-changes } # deploy from latest changes
 EOF
 		print $OUT <<EOF if $passed;
             - { name: $alias-cache }
@@ -2330,7 +2365,6 @@ EOF
         ensure:
           put: git
           params:
-            rebase: true
             repository: out/git
 EOF
 
@@ -2413,7 +2447,6 @@ EOF
               tag:        $pipeline->{pipeline}{task}{version}
       - put: git
         params:
-          rebase: true
           repository: cache-out/git
 EOF
 
@@ -2421,7 +2454,6 @@ EOF
 			print $OUT <<EOF;
       - put: $pipeline->{aliases}{$push_env}-cache
         params:
-          rebase: true
           repository: cache-out/git
 EOF
 		}
@@ -3196,7 +3228,7 @@ sub options {
 
 	debug("bosh env: ".($options->{environment} || "-same-as-env-file-"));
 
-	$ENV{GENESIS_BOSH_ENVIRONMENT} = $options->{environment} 
+	$ENV{GENESIS_BOSH_ENVIRONMENT} = $options->{environment}
 		if $options->{environment};
 	chdir_or_fail $options->{cwd} if $options->{cwd};
 }
@@ -3319,7 +3351,7 @@ $GLOBAL_USAGE
                    will be created in will be named ./<name>-deployments.  Use
                    this option to change it to something else.
 
-  name             If the name argument is not specified, it will default to 
+  name             If the name argument is not specified, it will default to
                    the same name as the kit.  You must specify either name or
                    kit.
 EOF
@@ -4316,8 +4348,10 @@ sub {
 	}
 
 	if ($ENV{PREVIOUS_ENV}) {
-		system("rm -rf .genesis/cached") == 0 or exit 1;
+		system("rm -rf .genesis/config .genesis/kits .genesis/cached") == 0 or exit 1;
 		system("cp -R ../$ENV{CACHE_DIR}/.genesis/cached .genesis/cached") == 0 or exit 1;
+		system("cp -R ../$ENV{CACHE_DIR}/.genesis/config .genesis/config") == 0 or exit 1;
+		system("cp -R ../$ENV{CACHE_DIR}/.genesis/kits .genesis/kits") == 0 or exit 1;
 	}
 
 	# don't set up a bosh alias if we're a create-env based deploy, no need, no data
@@ -4335,13 +4369,14 @@ sub {
 	if ($ENV{PREVIOUS_ENV}) {
 		## rm cache dir
 		## copy previous env cache dir
-		system("rm -rf .genesis/cached") == 0 or exit 1;
-		system("git checkout .genesis/cached") == 0 or exit 1;
+		system("rm -rf .genesis/config .genesis/kits .genesis/cached") == 0 or exit 1;
+		system("git checkout .genesis/config"); # ignore failure for git checkout so that
+		system("git checkout .genesis/kits");   # we don't cause problems if these files dont
+		system("git checkout .genesis/cached"); # yet exist in the working tree (but did in the cache tree)
 	}
-	commit_changes($ENV{GIT_BRANCH}, $ENV{GIT_PRIVATE_KEY}, "deployed to $ENV{CURRENT_ENV}");
 	popd;
-	mkdir_or_fail(dirname($ENV{OUT_DIR}));
-	system("cp -R $ENV{WORKING_DIR} $ENV{OUT_DIR}") == 0 or exit 1;
+	commit_changes($ENV{WORKING_DIR}, $ENV{OUT_DIR}, $ENV{GIT_BRANCH}, $ENV{GIT_PRIVATE_KEY},
+		"deployed to $ENV{CURRENT_ENV}");
 	exit $rc;
 });
 # }}}
@@ -4430,12 +4465,8 @@ sub {
 	for my $file (expand_tokens(split /\-/, $ENV{CURRENT_ENV})) {
 		copy_or_fail "$file.yml", ".genesis/cached/$ENV{CURRENT_ENV}/$file.yml" if -f "$file.yml";
 	}
-	commit_changes($ENV{GIT_BRANCH}, $ENV{GIT_PRIVATE_KEY}, "generated cache for $ENV{CURRENT_ENV}");
 	popd;
-	# copy to output directory
-	mkdir_or_fail(dirname($ENV{OUT_DIR}));
-	system("cp -R $ENV{WORKING_DIR} $ENV{OUT_DIR}") == 0 or exit 1;
-	chdir_or_fail($ENV{OUT_DIR});
+	commit_changes($ENV{WORKING_DIR}, $ENV{OUT_DIR}, $ENV{GIT_BRANCH}, $ENV{GIT_PRIVATE_KEY}, "generated cache for $ENV{CURRENT_ENV}");
 });
 # }}}
 # genesis ci-pipeline-run-errand - Run arbitrary errands via the CI/CD Pipeline {{{
