@@ -1214,6 +1214,65 @@ properties:
       password: (( vault "secret/" params.vault "account/passswords:admin" ))
 ```
 
+#### Special Formatting
+
+Sometimes you might want to randomly generate a password, but then format it in a way
+that deployments are expecting it, commonly a hashed copy of the password. You'll still
+want the original for the operator to reference, but you'll also want to perhaps crypt-sha512
+hash it, for the boshrelease to use properly. Good news! That can be done relatively easily:
+
+```
+credentials:
+  base:
+    users/root:
+      password: random 64 fmt crypt-sha512
+```
+
+You can specify any format options that are supported by `safe`, such as `crypt-sha512`, `crypt-sha256`,
+`crypt-md5`, `base64`, or `bcrypt`. The formatted values are stored in vault along side the original,
+with the name of the format appended to the name of the original key, e.g. `secrets/mything:supersecret`
+would have a `secrets/mything:supersecret-bcrypt` if formatted with `bcrypt`.
+
+You can then reference the values as follows:
+
+```
+raw_password: (( vault "secret/" params.vault "users/root:password" ))
+hashed_password: (( vault "secret/" params.vault "users/root:password-crypt-sha512" ))
+```
+
+You can even specify where you want the formatted password to go:
+
+```
+credentials:
+  base:
+    users/root:
+      password: random 64 fmt crypt-sha512 at hashed_passwd
+```
+
+You would then reference these values as follows:
+
+```
+raw_password: (( vault "secret/" params.vault "users/root:password" ))
+hashed_password: (( vault "secret/" params.vault "users/root:hashed_passwd" ))
+```
+
+#### Limiting randomly generated characters
+
+On occasion, you may need to limit, or expand the characterset used to generate random passwords.
+By default, genesis uses `safe`'s default characterset (`a-zA-Z0-9`). This is also fairly easy:
+
+```
+credentials:
+  base:
+    restricted:
+      characters: random 64 allowed-chars a-c
+```
+
+This will generate a secret with 64 characters randomly chosen from the set of `a`, `b`, and `c`.
+
+If you use this in conjunction with the `fmt` keyword, ensure that `allowed-chars` comes after the
+end of the `fmt` definition.
+
 ## from file "/path/to/file"
 
 DEPRECATED: use the `params` section of kit.yml instead
