@@ -3,8 +3,7 @@ meta:
   name: genesis
   target: sw
   url: https://ci.starkandwayne.com
-  image-name: starkandwayne/genesis_ci
-  image: (( concat "docker:///" meta.image-name "#latest" ))
+  image: starkandwayne/genesis_ci
 
   aws:
     access_key: (( vault "secret/pipelines/genesis/aws:access_key" ))
@@ -57,7 +56,7 @@ resources:
     email:    (( grab meta.dockerhub.email ))
     username: (( grab meta.dockerhub.username ))
     password: (( grab meta.dockerhub.password ))
-    repository: (( grab meta.image-name ))
+    repository: (( grab meta.image ))
 - name: dockerfile
   type: git
   source:
