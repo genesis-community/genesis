@@ -977,6 +977,7 @@ sub spruce_merge {
 			push @flags, "--$flag", $value;
 		}
 	}
+	push @flags, "--go-patch";
 
 	open my $cmd, "-|", (qw(spruce merge), @flags, @files)
 		or die "Failed to execute `spruce merge': $!\n";
