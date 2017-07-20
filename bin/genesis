@@ -977,6 +977,7 @@ sub spruce_merge {
 			push @flags, "--$flag", $value;
 		}
 	}
+	push @flags, "--go-patch";
 
 	open my $cmd, "-|", (qw(spruce merge), @flags, @files)
 		or die "Failed to execute `spruce merge': $!\n";
@@ -2562,7 +2563,7 @@ sub check_prereqs {
 
 	my %conditions = @_;
 
-	my $SPRUCE_MIN_VERSION = "1.9.0";
+	my $SPRUCE_MIN_VERSION = "1.11.0";
 	my $SAFE_MIN_VERSION   = "0.1.8";
 	my $VAULT_MIN_VERSION  = "0.6.0";
 	my $GIT_MIN_VERSION    = "1.8.0";
