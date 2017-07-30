@@ -84,8 +84,6 @@ On Ubuntu/Debian you can install `genesis` and all its dependencies:
 echo "deb [trusted=yes] https://apt.starkandwayne.com stable main" > /etc/apt/sources.list.d/starkandwayne.list
 apt-get update
 apt-get install genesis -y
-git config --global user.name "Your Name"
-git config --global user.email your@email.com
 ```
 
 On OS X/Mac:
@@ -93,10 +91,17 @@ On OS X/Mac:
 ```
 brew tap starkandwayne/cf
 brew tap cloudfoundry/tap
-brew install genesis spruce safe bosh-cli vault
+brew install genesis spruce safe bosh-cli vault git
 ```
 
 `genesis` requires Perl. But Perl is everywhere.
+
+You will need to setup Git:
+
+```
+git config --global user.name "Your Name"
+git config --global user.email your@email.com
+```
 
 ## Using Genesis
 
