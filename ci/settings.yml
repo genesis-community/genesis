@@ -43,6 +43,8 @@ jobs:
   plan:
   - get: dockerfile
     trigger: true
+  - get: snw-concourse-image
+    trigger: true
   - put: genesis-ci
     params:
       build: dockerfile/ci
@@ -63,3 +65,10 @@ resources:
     .: (( inject resources.git.source ))
     paths:
     - ci/Dockerfile
+- name: snw-concourse-image
+  type: docker-image
+  source:
+    email:    (( grab meta.dockerhub.email ))
+    username: (( grab meta.dockerhub.username ))
+    password: (( grab meta.dockerhub.password ))
+    repository: starkandwayne/concourse
