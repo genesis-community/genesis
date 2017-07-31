@@ -128,10 +128,10 @@ sub runs_ok($;$) {
 		diag $err ? $err : '(no output)';
 		diag "-----------------------------------------------";
 		diag "";
-		return 0;
+		return wantarray ? (0, $exit, $err) : 0;
 	}
 	pass $msg;
-	return 1;
+	return wantarray ? (1, $exit, $err) : 1;
 }
 
 sub run_fails($$;$) {
@@ -148,15 +148,26 @@ sub run_fails($$;$) {
 		fail $msg;
 		diag "`$cmd` exited $exit (instead of $rc)";
 		diag $err;
-		return 0;
+		return wantarray ? (0, $exit, $err) : 0 ;
 	} elsif (!defined $rc && $exit == 0) {
 		fail $msg;
 		diag "`$cmd` exited $exit (instead of non-zero)";
 		diag $err;
-		return 0;
+		return wantarray ? (0, $exit, $err) : 0;
 	}
 	pass $msg;
-	return 1;
+	return wantarray ? (1, $exit, $err) : 1;
+}
+
+sub matches($$$) {
+	my ($str,$test,$msg) = @_;
+	my $matches = (ref($test) eq 'Regexp') ? $str =~ $test : $str eq $test;
+	if ($matches) {
+		pass $msg;
+	} else {
+		fail $msg;
+		diag "Expected:\n$test\n\nGot:\n$str\n";
+	}
 }
 
 sub expects_ok($;$) {

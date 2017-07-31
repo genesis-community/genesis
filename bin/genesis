@@ -4538,7 +4538,7 @@ sub main {
 		$in_version = 2;
 	} else {
 		while ($path ne "") {
-			if (-d "$path/global" && -e "$path/.deployment") {
+			if (-d "$path/global" && -e "$path/global/deployment.yml") {
 				$in_version = 1;
 				last;
 			}
@@ -4548,6 +4548,8 @@ sub main {
 
 	if ($in_version == 1) {
 		# Make temp file for the script.
+		die "Missing bin directory in the genesis deployment root -- required to run genesis v1\n"
+			unless -d "$path/bin";
 		my ($g1file,$g1filename) = tempfile("genesis-v1-XXXXXX",DIR =>"$path/bin/", UNLINK => 1);
 
 		# Copy __DATA__ to tmpdir as "genesis-v1"
@@ -4561,6 +4563,8 @@ sub main {
 		$ENV{GENESIS_V1_PATH_OVERRIDE} = $0;
 
 		# Run v1 bash script
+		$SIG{TERM} = sub {exit 3};
+		$SIG{INT} = sub {exit 3};
 		system($g1filename, @_);
 		exit $? >> 8;
 	}
