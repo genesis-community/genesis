@@ -28,7 +28,7 @@ version: 0.0.2
 EOF
 
 qx(rm -f new-env.yml);
-runs_ok "genesis new --no-secrets new-env> $tmp/output";
+runs_ok "genesis new --no-secrets new-env";
 is get_file("new-env.yml"), <<EOF, "environment file generated has latest kit name / version in it";
 ---
 kit:

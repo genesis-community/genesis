@@ -2825,7 +2825,7 @@ sub latest_kit_name_and_version {
 		}
 		$kit = $n;
 
-		push @versions, [$v, semver($v)];
+		push @versions, [$v, semver($kit, $v)];
 	}
 	@versions > 0
 		or die "No kits have been downloaded for use in this set of deployment environments.\nPlease download a kit via `genesis download kit-name[/version]`\n";

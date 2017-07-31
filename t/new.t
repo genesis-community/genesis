@@ -5,10 +5,16 @@ use warnings;
 use lib 't';
 use helper;
 
+$ENV{HOME} = "$ENV{PWD}/t/tmp/home";
+system "mkdir -p $ENV{HOME}";
+
 my $dir = workdir;
 chdir $dir;
 
 bosh_ruby_cli_ok;
+
+system 'git config --global user.name "CI Testing"';
+system 'git config --global user.email ci@starkandwayne.com';
 
 runs_ok "genesis init new";
 ok -d "new-deployments", "created initial deployments directory";
