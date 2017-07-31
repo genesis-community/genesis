@@ -2577,7 +2577,7 @@ sub check_prereqs {
 	if (!$version || $version =~ s/not found//) {
 		push @errors, "Missing `spruce' - install Spruce from #B{https://github.com/geofffranks/spruce/releases}";
 	} else {
-		unless(envset('GENESIS_DEV_MODE') && $version =~ /development build/) {
+		unless(envset('GENESIS_DEV_MODE') && $version =~ /development/) {
 			chomp($version); $version =~ s/.*version\s+(\S+).*/$1/i;
 			if (!new_enough("spruce", $version, $SPRUCE_MIN_VERSION)) {
 				push @errors, "Spruce v${version} is installed, but Genesis requires #R{at least $SPRUCE_MIN_VERSION} - upgrade your Spruce, via #B{https://github.com/geofffranks/spruce/releases}";
