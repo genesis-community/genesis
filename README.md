@@ -25,7 +25,7 @@ where appropriate, ensuring that each environment has unique and secure credenti
 can be manually or automatically rotated at the drop of hat with the `genesis secrets` command.
 Kits will define certain credentials as fixed, indicating that they should not be rotated
 under normal circumstances, as that would have ill effects on the deployment (the CF db encryption
-key for example). 
+key for example).
 
 ### The New Tiered Architecture
 
@@ -75,6 +75,33 @@ are gateways to deploying in later environments. Stemcell management is built-in
 mechanisms to ensure that your BOSH isn't upgraded while it's in the middle of deploying something.
 
 For a full run-down on Genesis v2.0 + deployment pipelines, see our [pipeline documentation](docs/PIPELINES.md)
+
+## Installation
+
+On Ubuntu/Debian you can install `genesis` and all its dependencies:
+
+```
+echo "deb [trusted=yes] https://apt.starkandwayne.com stable main" > /etc/apt/sources.list.d/starkandwayne.list
+apt-get update
+apt-get install genesis -y
+```
+
+On OS X/Mac:
+
+```
+brew tap starkandwayne/cf
+brew tap cloudfoundry/tap
+brew install genesis spruce safe bosh-cli vault git
+```
+
+`genesis` requires Perl. But Perl is everywhere.
+
+You will need to setup Git:
+
+```
+git config --global user.name "Your Name"
+git config --global user.email your@email.com
+```
 
 ## Using Genesis
 
