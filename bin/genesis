@@ -871,7 +871,7 @@ sub detect_bosh_version {
 		if ($version) {
 			chomp($version);
 			if ($version =~ s/version (\S+?)-.*/$1/){
-				if (!new_enough($version, $BOSH2_MIN_VERSION)) {
+				if (!new_enough("bosh2", $version, $BOSH2_MIN_VERSION)) {
 					error "BOSH (v2) CLI v${version} is installed, but Genesis requires #R{at least $BOSH2_MIN_VERSION} - upgrade your BOSH CLI, via #B{https://github.com/cloudfoundry/bosh-cli/releases}";
 				}
 				$BOSH = $boshcmd;
@@ -2539,17 +2539,17 @@ sub generate_pipeline_human_description {
 }
 
 sub semver {
-	my ($v) = @_;
+	my ($name, $v) = @_;
 	if ($v =~  m/^(\d+)(?:\.(\d+)(?:\.(\d+)(?:[.-]rc[.-]?(\d+))?)?)?$/) {
 		return ($1, $2 || 0, $3 || 0, $4 || 0);
 	}
-	die "Unrecognized version string '$v'\n";
+	die "Unrecognized version string '$v' for $name\n";
 }
 
 sub new_enough {
-	my ($v, $min) = @_;
-	my @v = semver($v);
-	my @min = semver($min);
+	my ($name, $v, $min) = @_;
+	my @v = semver($name, $v);
+	my @min = semver($name, $min);
 	while (@v) {
 		return 1 if $v[0] > $min[0];
 		return 0 if $v[0] < $min[0];
@@ -2579,7 +2579,7 @@ sub check_prereqs {
 	} else {
 		unless(envset('GENESIS_DEV_MODE') && $version =~ /development build/) {
 			chomp($version); $version =~ s/.*version\s+(\S+).*/$1/i;
-			if (!new_enough($version, $SPRUCE_MIN_VERSION)) {
+			if (!new_enough("spruce", $version, $SPRUCE_MIN_VERSION)) {
 				push @errors, "Spruce v${version} is installed, but Genesis requires #R{at least $SPRUCE_MIN_VERSION} - upgrade your Spruce, via #B{https://github.com/geofffranks/spruce/releases}";
 			}
 		}
@@ -2592,7 +2592,7 @@ sub check_prereqs {
 	} else {
 		unless (envset('GENESIS_DEV_MODE') && $version =~ /development build/) {
 			chomp($version); $version =~ s/^safe v(\S+)/$1/i;
-			if (!new_enough($version, $SAFE_MIN_VERSION)) {
+			if (!new_enough("safe", $version, $SAFE_MIN_VERSION)) {
 				push @errors, "Safe v${version} is installed, but Genesis requires #R{at least $SAFE_MIN_VERSION} - upgrade your Safe, via #B{https://github.com/starkandwayne/safe/releases}";
 			}
 		}
@@ -2604,7 +2604,7 @@ sub check_prereqs {
 		push @errors, "Missing `vault' - install Vault from #B{https://www.vaultproject.io/downloads.html}";
 	} else {
 		chomp($version); $version =~ s/^vault v(\S+).*/$1/i;
-		if (!new_enough($version, $VAULT_MIN_VERSION)) {
+		if (!new_enough("vault", $version, $VAULT_MIN_VERSION)) {
 			push @errors, "Vault v${version} is installed, but Genesis requires #R{at least $VAULT_MIN_VERSION} - upgrade your Vault, via #B{https://www.vaultproject.io/downloads.html}";
 		}
 	}
@@ -2618,7 +2618,7 @@ sub check_prereqs {
 		push @errors, "Missing `git' - install git via your platform package manager";
 	} else {
 		chomp($version); $version =~ s/.*version\s+(\S+).*/$1/i;
-		if (!new_enough($version, $GIT_MIN_VERSION)) {
+		if (!new_enough("git", $version, $GIT_MIN_VERSION)) {
 			push @errors, "Git v${version} is installed, but Genesis requires #R{at least $GIT_MIN_VERSION}";
 		}
 	}
