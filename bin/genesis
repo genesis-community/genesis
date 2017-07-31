@@ -3310,7 +3310,7 @@ OPTIONS
 $GLOBAL_USAGE
 EOF
 sub {
-	print "Genesis $VERSION\n";
+	print "Genesis v$VERSION\n";
 });
 
 # }}}

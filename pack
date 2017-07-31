@@ -19,8 +19,9 @@ if (!$VERSION) {
 		$sha1 .= '+';
 		$file .= "-dirty";
 	}
-	$VERSION = "($sha1)";
+	$VERSION = "2.x.x (devel-$sha1)";
 }
+$file = ($ENV{GENESIS_PACK_PATH}||".")."/$file";
 
 open my $out, ">", "$file"
 	or die "Failed to open $file for writing: $!\n";
@@ -66,4 +67,4 @@ close $in;
 close $v1;
 
 chmod 0755, $file;
-print "packaged v$VERSION as ./$file\n";
+print "packaged v$VERSION as $file\n";

@@ -71,7 +71,7 @@ dox-concept:Makefiles
 
 VERSION="(development build)"
 if [[ -n "$GENESIS_V2_VERSION" ]] ; then
-  VERSION="(v${GENESIS_V2_VERSION} embedded build)"
+  VERSION="v1.x.x"
 fi
 SCRIPT_NAME="$(basename $0)"
 if [[ -n "$GENESIS_V1_PATH_OVERRIDE" ]] ; then
@@ -1439,7 +1439,11 @@ SEE ALSO
 dox-command:version
 cmd_version() {
 	s=$(cat ${BASH_SOURCE[0]} | checksum)
-	echo "genesis ${VERSION} (${s:0:12})"
+	ver_str="genesis ${VERSION} (${s:0:12})"
+	if [[ -n "$GENESIS_V2_VERSION" ]] ; then
+		ver_str="${ver_str} - embedded in ${GENESIS_V2_VERSION}"
+	fi
+	echo "$ver_str"
 	exit 0
 }
 
@@ -1448,18 +1452,18 @@ USAGE
 @~include=usage
 
 DESCRIPTION
-	Updates the version of the genesis executable to the latest release from the
-	genesis repo.
+  Updates the version of the genesis executable to the latest release from the
+  genesis repo.
 
 SEE ALSO
 @~include=related{"items":["command:version","command:embed"]}
 dox-command:update
 cmd_update() {
-  if [[ -n "$GENESIS_V2_VERSION" ]] ; then
-    echo >&2 "Cannot update the version of Genesis v1 embedded in Genesis v2."
-    echo >&2 "Please update Genesis v2 to get the latest embedded v1 version."
-    exit 1
-  fi
+	if [[ -n "$GENESIS_V2_VERSION" ]] ; then
+		echo >&2 "Cannot update the version of Genesis v1 embedded in Genesis v2."
+		echo >&2 "Please update Genesis v2 to get the latest embedded v1 version."
+		exit 1
+	fi
 	need_a_workdir
 	curl -Ls $(curl -s ${API_REPO}/releases/latest | jq -r '.assets[] | select(.name | test("genesis")) | .browser_download_url') > ${WORKDIR}/bin
 	chmod 0755 ${WORKDIR}/bin
