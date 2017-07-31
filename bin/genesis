@@ -3380,6 +3380,12 @@ sub {
 	debug "generating a new Genesis repo, named $name";
 	debug "using kit $options{kit}" if $options{kit};
 
+	debug "checking git config so can git commit later";
+	execute 'git config user.name'
+		or die 'Please setup git - git config --global user.name "Your Name" -';
+	execute 'git config user.email'
+		or die 'Please setup git - git config --global user.email your@email.com -';
+
 	my $root = $options{directory} || "${name}-deployments";
 	debug "in directory $root";
 	if (-e $root) {
