@@ -1,4 +1,16 @@
 #!perl
+
+#TODO: Cleanup hacky assertions into diags that print if tests fail:
+# - Temporary bin/genesis-v1-..... was produced (when testing CTRL-C cleanup)
+# - Killed genesis process (when testing CTRL-C cleanup)
+# - Temporary bin/genesis-v1-..... was produced (when testing SIGTERM cleanup)
+# - Killed genesis process (when testing SIGTERM cleanup)
+# - Temporary bin/genesis-v1-..... was produced (when testing parent removal cleanup)
+# - Killed genesis process (when testing parent removal cleanup)
+#
+# Change repeated code blocks in last three specs to test_until() function
+# that can be used for that repeated code.
+
 use strict;
 use warnings;
 
@@ -20,7 +32,7 @@ matches($out, qr(packaged v2.x.x \(devel-([a-f0-9]{10})\+?\) as t/tmp/genesis-\1
 (my $bin = $out) =~ s/\A.* as (t\/tmp\/genesis[^\s]*).*\z/\.\/$1/sm;
 $bin = abs_path($bin);
 
-# Set up legacy repo skeleton 
+# Set up legacy repo skeleton
 chdir "t/tmp";
 mkdir "global";
 qx(touch global/deployment.yml);
@@ -39,26 +51,87 @@ ok ! glob("bin/genesis-v1-*"), "Temporary bin/genesis-v1-..... file is cleaned u
 
 # Test that extracted v1 executable gets cleaned up when killed with Cmd-C (SIGINT)
 SKIP: {
-  skip "needs pgrep", 1 unless system('which pgrep >/dev/null') >> 8 == 0;
+  skip "needs pgrep", 3 unless system('which pgrep >/dev/null') >> 8 == 0;
+  my $pid = qx($bin help new env 1>/dev/null 2>/dev/null & echo \$!); chomp($pid);
+  my $legacyfound = 0;
+  for (my $i = 0; $i < 12; $i++) {
+    select(undef, undef, undef, 0.25);
+    if (glob("bin/genesis-v1-*")) {
+      $legacyfound = 1; last;
+    }
+  }
 
-  qx($bin help new env& sleep 1 && pgrep -P \$! | xargs kill -SIGINT);
-  ok ! glob("bin/genesis-v1-*"), "Temporary bin/genesis-v1-..... file is cleaned up when CTRL-C encountered.";
+  ok $legacyfound, "Temporary bin/genesis-v1-..... was produced (when testing CTRL-C cleanup)";
+
+  qx(pgrep -P $pid | xargs kill -SIGINT);
+  my $retcode = $? >> 8; chomp($retcode);
+  ok ! $retcode, "Killed genesis process (when testing CTRL-C cleanup)";
+
+
+  my $legacydeleted = 0;
+  for (my $i = 0; $i < 12; $i++) { #Test every quarter-second for 3 seconds
+    select(undef, undef, undef, 0.25);
+    if (!glob("bin/genesis-v1-*")) {
+      $legacydeleted = 1; last;
+    }
+  }
+  ok $legacydeleted, "Temporary bin/genesis-v1-..... file is cleaned up when CTRL-C encountered.";
 }
 
 # Test that extracted v1 executable gets cleaned up when killed with SIGTERM
 SKIP: {
-  skip "needs pgrep", 1 unless system('which pgrep >/dev/null') >> 8 == 0;
+  skip "needs pgrep", 3 unless system('which pgrep >/dev/null') >> 8 == 0;
+  my $pid = qx($bin help new env 1>/dev/null 2>/dev/null & echo \$!); chomp($pid);
+  my $legacyfound = 0;
+  for (my $i = 0; $i < 12; $i++) {
+    select(undef, undef, undef, 0.25);
+    if (glob("bin/genesis-v1-*")) {
+      $legacyfound = 1; last;
+    }
+  }
 
-  qx($bin help new env& sleep 1 && pgrep -P \$! | xargs kill -SIGTERM);
-  ok ! glob("bin/genesis-v1-*"), "Temporary bin/genesis-v1-..... file is cleaned up when prematurely terminated";
+  ok $legacyfound, "Temporary bin/genesis-v1-..... was produced (when testing SIGTERM cleanup)";
+
+  qx(pgrep -P $pid | xargs kill -SIGTERM);
+  my $retcode = $? >> 8; chomp($retcode);
+  ok ! $retcode, "Killed genesis process (when testing SIGTERM cleanup)";
+
+  my $legacydeleted = 0;
+  for (my $i = 0; $i < 12; $i++) { #Test every quarter-second for 3 seconds
+    select(undef, undef, undef, 0.25);
+    if (!glob("bin/genesis-v1-*")) {
+      $legacydeleted = 1; last;
+    }
+  }
+  ok $legacydeleted, "Temporary bin/genesis-v1-..... file is cleaned up when prematurely terminated";
 }
 
 # Test that extracted v1 executable gets cleaned up when parent is killed.
 SKIP: {
-  skip "needs pgrep", 1 unless system('which pgrep >/dev/null') >> 8 == 0;
+  skip "needs pgrep", 3 unless system('which pgrep >/dev/null') >> 8 == 0;
 
-  qx($bin help new env 1>/dev/null 2>&1& sleep 1 && kill %);
-  ok ! glob("bin/genesis-v1-*"), "Temporary bin/genesis-v1-..... file is cleaned up when prematurely terminated";
+  my $pid = qx($bin help new env 1>/dev/null 2>/dev/null & echo \$!); chomp($pid);
+  my $legacyfound = 0;
+  for (my $i = 0; $i < 12; $i++) {
+    select(undef, undef, undef, 0.25);
+    if (glob("bin/genesis-v1-*")) {
+      $legacyfound = 1; last;
+    }
+  }
+
+  ok $legacyfound, "Temporary bin/genesis-v1-..... was produced (when testing parent removal cleanup)";
+
+  qx(kill $pid);
+  my $retcode = $? >> 8; chomp($retcode);
+  ok ! $retcode, "Killed genesis process (when testing parent removal cleanup)";
+  my $legacydeleted = 0;
+  for (my $i = 0; $i < 12; $i++) { #Test every quarter-second for 3 seconds
+    select(undef, undef, undef, 0.25);
+    if (!glob("bin/genesis-v1-*")) {
+      $legacydeleted = 1; last;
+    }
+  }
+  ok $legacydeleted, "Temporary bin/genesis-v1-..... file is cleaned up when parent is prematurely terminated";
 }
 # Test packaged executable in v2 mode
 qx(rm global/deployment.yml && rmdir global);
