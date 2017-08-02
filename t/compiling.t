@@ -11,7 +11,7 @@ ok -d "t/repos/compile-test", "compile-test repo exists" or die;
 chdir "t/repos/compile-test" or die;
 qx(rm -f *.tar.gz *.tgz); # just to be safe
 
-bosh_ruby_cli_ok;
+bosh2_cli_ok;
 
 my $bsdtar = `tar --version | grep bsdtar`;
 my $tar_parser;

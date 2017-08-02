@@ -12,7 +12,7 @@ my $tmp = workdir;
 ok -d "t/repos/summary-test", "summary-test repo exists" or die;
 chdir "t/repos/summary-test" or die;
 
-bosh_ruby_cli_ok;
+bosh2_cli_ok;
 
 qx(rm -f .genesis/cached/*/last);
 sub last_deployed($$) {

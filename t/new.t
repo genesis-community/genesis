@@ -11,7 +11,7 @@ system "mkdir -p $ENV{HOME}";
 my $dir = workdir;
 chdir $dir;
 
-bosh_ruby_cli_ok;
+bosh2_cli_ok;
 
 system 'git config --global user.name "CI Testing"';
 system 'git config --global user.email ci@starkandwayne.com';

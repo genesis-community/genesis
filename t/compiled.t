@@ -9,7 +9,7 @@ my $tmp = workdir;
 ok -d "t/repos/compiled-kit-test", "compiled-kit-test repo exists" or die;
 chdir "t/repos/compiled-kit-test" or die;
 
-bosh_ruby_cli_ok;
+bosh2_cli_ok;
 
 runs_ok "genesis manifest -c cloud.yml test-env >$tmp/manifest.yml";
 is get_file("$tmp/manifest.yml"), <<EOF, "manifest generated based on compile kit";

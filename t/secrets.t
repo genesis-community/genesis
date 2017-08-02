@@ -9,7 +9,7 @@ use Cwd qw(abs_path);
 
 vault_ok;
 
-bosh_ruby_cli_ok;
+bosh2_cli_ok;
 
 my $dir = workdir 'redis-deployments';
 chdir $dir or die;

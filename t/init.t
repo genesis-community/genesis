@@ -5,7 +5,7 @@ use warnings;
 use lib 't';
 use helper;
 
-bosh_ruby_cli_ok;
+bosh2_cli_ok;
 
 qx(rm -rf t/tmp; mkdir -p t/tmp);
 chdir "t/tmp";

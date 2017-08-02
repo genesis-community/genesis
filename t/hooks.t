@@ -8,7 +8,7 @@ use Test::Differences;
 use lib 't';
 use helper;
 
-bosh_ruby_cli_ok;
+bosh2_cli_ok;
 
 my $dir = workdir 'subkit-hook-deployments';
 chdir $dir;
