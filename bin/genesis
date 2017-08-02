@@ -399,6 +399,10 @@ EOF
 		print $fh <<EOF;
   bosh:  $ENV{GENESIS_BOSH_ENVIRONMENT}
 EOF
+	} elsif (defined($ENV{BOSH_ENVIRONMENT})) {
+		print $fh <<EOF;
+  bosh:  $ENV{BOSH_ENVIRONMENT}
+EOF
 	}
 
 	for my $param (@$params) {
@@ -3172,6 +3176,7 @@ sub tablify {
 sub bosh_target_for {
 	my ($env) = @_;
 	return $ENV{GENESIS_BOSH_ENVIRONMENT} if defined($ENV{GENESIS_BOSH_ENVIRONMENT});
+	return $ENV{BOSH_ENVIRONMENT} if defined($ENV{BOSH_ENVIRONMENT});
 	return get_key($env, 'params.bosh')
 	    || get_key($env, 'params.env')
 	    || die "Could not find the `params.bosh' or `params.env' key in $env!\n";
@@ -3199,8 +3204,8 @@ our $GLOBAL_USAGE = <<EOF;
   -C, --cwd         Effective working directory.  Defaults to '.'
   -e, --environment Which BOSH environment (aka director) to use.  If not
                     specified, it will use the value in params.bosh or
-                    params.env in that order.  Can also be provided using the
-                    \$GENESIS_BOSH_ENVIRONMENT environment variable.
+                    params.env in that order.  Can also be provided using either
+                    \$GENESIS_BOSH_ENVIRONMENT or \$BOSH_ENVIRONMENT env variables.
 EOF
 sub options {
 	my ($args, $options, @spec) = @_;
