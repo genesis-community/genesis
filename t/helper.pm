@@ -207,9 +207,14 @@ sub output_ok($$;$) {
 	return 0;
 }
 
-sub bosh_ruby_cli_ok {
+sub bosh2_cli_ok {
 	runs_ok "bosh help", "the BOSH ruby CLI works ok"
 		or die "There seems to be something wrong with your Ruby BOSH CLI.\n";
+}
+
+sub bosh2_cli_ok {
+	runs_ok "bosh2 help", "the BOSH2 golang CLI works ok"
+		or die "There seems to be something wrong with your bosh2 CLI.\n";
 }
 
 sub no_env($;$) {

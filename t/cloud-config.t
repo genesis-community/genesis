@@ -8,7 +8,7 @@ use helper;
 ok -d "t/repos/cloud-config-test", "cloud-config-test repo exists" or die;
 chdir "t/repos/cloud-config-test" or die;
 
-bosh_ruby_cli_ok;
+bosh2_cli_ok;
 
 run_fails "genesis manifest test-env", 1;
 runs_ok "genesis manifest -c cloud.yml test-env";

@@ -9,7 +9,7 @@ my $tmp = workdir;
 ok -d "t/repos/pipeline-test", "pipeline-test repo exists" or die;
 chdir "t/repos/pipeline-test" or die;
 
-bosh_ruby_cli_ok;
+bosh2_cli_ok;
 
 runs_ok "genesis repipe --dry-run --config ci/aws/pipeline" and # {{{
 runs_ok "genesis repipe --dry-run --config ci/aws/pipeline >$tmp/pipeline.yml" and

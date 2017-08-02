@@ -9,7 +9,7 @@ my $dir = workdir;
 chdir $dir;
 
 
-bosh_ruby_cli_ok;
+bosh2_cli_ok;
 
 reprovision kit => 'prereqs';
 

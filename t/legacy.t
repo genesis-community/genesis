@@ -8,7 +8,7 @@ use Test::Differences;
 use lib 't';
 use helper;
 
-bosh_ruby_cli_ok;
+bosh2_cli_ok;
 my ($pass, $rc, $out);
 
 qx(rm -rf t/tmp; mkdir -p t/tmp);

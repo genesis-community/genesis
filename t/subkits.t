@@ -9,7 +9,7 @@ my $tmp = workdir;
 ok -d "t/repos/subkit-test", "subkit-test repo exists" or die;
 chdir "t/repos/subkit-test" or die;
 
-bosh_ruby_cli_ok;
+bosh2_cli_ok;
 
 runs_ok "genesis manifest -c cloud.yml use-s3 >$tmp/manifest.yml";
 is get_file("$tmp/manifest.yml"), <<EOF, "manifest generated with s3 subkit";
