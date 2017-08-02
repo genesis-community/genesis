@@ -81,7 +81,8 @@ For a full run-down on Genesis v2.0 + deployment pipelines, see our [pipeline do
 On Ubuntu/Debian you can install `genesis` and all its dependencies:
 
 ```
-echo "deb [trusted=yes] https://apt.starkandwayne.com stable main" > /etc/apt/sources.list.d/starkandwayne.list
+wget -q -O - https://raw.githubusercontent.com/starkandwayne/homebrew-cf/master/public.key | apt-key add -
+echo "deb http://apt.starkandwayne.com stable main" | tee /etc/apt/sources.list.d/starkandwayne.list
 apt-get update
 apt-get install genesis -y
 ```
