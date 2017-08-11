@@ -212,6 +212,14 @@ sub chdir_or_fail {
 	chdir $dir or die "Unable to change directory to $dir/: $!\n";
 }
 
+# symlink_or_fail $source $dest;
+sub symlink_or_fail {
+	my ($source, $dest) = @_;
+	-d $source or die "$source does not exist!\n";
+	-e $dest and die abs_path($dest)." already exists!";
+	symlink($source, $dest) or die "Unable to link $source to $dest: $!\n";
+}
+
 our @DIRSTACK;
 sub pushd {
 	my ($dir) = @_;
@@ -3349,41 +3357,56 @@ USAGE: genesis init [-k KIT/VERSION] [-d directory] [name]
 
 OPTIONS
 $GLOBAL_USAGE
-  -k, --kit        Name (and optionally, version) of the Genesis Kit to
-                   base these deployments on.  I.e.: shield/6.3.0.  If you do
-                   not specify a kit, a dev directory will be created for you
-                   to develop a local kit into.
-  -d, --directory  By default, the directory in which the Genesis deployment
-                   will be created in will be named ./<name>-deployments.  Use
-                   this option to change it to something else.
+  -k, --kit           Name (and optionally, version) of the Genesis Kit to base
+                      these deployments on.  I.e.: shield/6.3.0.  If you do not
+                      specify a kit, a dev directory will be created for you to
+                      develop a local kit into.
+  -L, --link-dev-kit  Instead of using a kit or initializing an empty dev
+                      directory, this will link the specified directory to the
+                      dev directory.
+  -d, --directory     By default, the directory in which the Genesis deployment
+                      will be created in will be named ./<name>-deployments.
+                      Use this option to change it to something else.
 
-  name             If the name argument is not specified, it will default to
-                   the same name as the kit.  You must specify either name or
-                   kit.
+  name                If the name argument is not specified, it will default to
+                      the same name as the kit.  You must specify either name
+                      or kit.
 EOF
 sub {
 	my %options;
 	options(\@_, \%options, qw/
 		kit|k=s
 		directory|d=s
+		link-dev-kit|L=s
 	/);
 	usage(1) if @_ > 1; # name is now optional if kit specified
 	check_prereqs(no_repo_needed => 1);
 
+	my $abs_target;
+	if ($options{'link-dev-kit'}) {
+		usage(1,"Cannot specify both a kit (-k) and a link to a kit (-L)") if $options{kit};
+		$abs_target = abs_path($options{'link-dev-kit'});
+		my $pwd = Cwd::getcwd();
+		die "Link target '$options{'link-dev-kit'}' cannot be found from $pwd!\n" unless $abs_target;
+	}
+
 	my ($name) = @_;
 	unless ($name) {
-		unless ($options{kit}) {
-			printf STDERR "You must specify a deployment name if you don't specify a kit.\n";
+		if ($options{kit}) {
+			($name, $_) = extract_kit_name_and_version($options{kit});
+		} elsif ($options{'link-dev-kit'}) {
+			use File::Basename;
+			$name = File::Basename::basename($options{'link-dev-kit'});
+		} else {
+			printf STDERR "You must specify a deployment name if you don't specify a kit or a dev link target.\n";
 			usage(1);
 		}
-		($name, $_) = extract_kit_name_and_version($options{kit});
 	}
 	$name =~ s/-deployments//;
 
 	validate_repo_name $name or die "Invalid Genesis repo name '$name'\n";
 
 	debug "generating a new Genesis repo, named $name";
-	debug "using kit $options{kit}" if $options{kit};
 
 	debug "checking git config so can git commit later";
 	execute 'git config user.name'
@@ -3406,8 +3429,6 @@ EOF
 	mkdir_or_fail "$root/.genesis/bin";
 	copy_or_fail  $0, "$root/.genesis/bin/genesis";
 	chmod_or_fail 0755, "$root/.genesis/bin/genesis";
-	mkdir_or_fail "$root/dev" unless $options{kit};
-
 	put_file "$root/README.md", <<EOF;
 $name deployments
 ==============================
@@ -3512,9 +3533,16 @@ EOF
 
 	chdir_or_fail $root;
 
-	if ($options{kit}) {
+	if ($options{'link-dev-kit'}) {
+		debug "Kit: linking dev to $abs_target";
+		symlink_or_fail $abs_target, "./dev";
+	} elsif ($options{kit}) {
+		debug "Kit: installing kit $options{kit}";
 		my ($kit, $version) = extract_kit_name_and_version($options{kit});
 		download_kit_tarball($kit, $version);
+	} else {
+		debug "Kit: creating empty ./dev kit directory";
+		mkdir_or_fail "./dev";
 	}
 
 	execute 'git init'
