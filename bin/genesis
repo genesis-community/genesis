@@ -4587,6 +4587,11 @@ sub main {
 
 		# Copy __DATA__ to tmpdir as "genesis-v1"
 		my $g1script = do { local $/; <DATA> };
+
+		# If this isn't the packaged version of genesis, bail
+		die "ERROR: Attempting to use an unpackaged version of Genesis v2 in a v1 repository.\n"
+		  unless $g1script;
+
 		print $g1file $g1script;
 		close $g1file;
 		chmod 0755, $g1filename;

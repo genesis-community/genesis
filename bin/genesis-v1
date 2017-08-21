@@ -71,7 +71,7 @@ dox-concept:Makefiles
 
 VERSION="(development build)"
 if [[ -n "$GENESIS_V2_VERSION" ]] ; then
-  VERSION="v1.x.x"
+  VERSION="1.x.x"
 fi
 SCRIPT_NAME="$(basename $0)"
 if [[ -n "$GENESIS_V1_PATH_OVERRIDE" ]] ; then
@@ -219,7 +219,7 @@ setup() {
 		errors=""
 		while IFS='' read -r line || [[ -n "$line" ]]; do
 			cmd=$(echo $line | perl -pe 's|^(.*?):.*$|$1|')
-			ver=$(echo $line | perl -pe 's|^.*?: *(.*)$|$1|')
+			ver=$(echo $line | perl -pe 's|^.*?: *v?(.*)$|$1|')
 
 			if [[ ${cmd} == "genesis" ]] ; then
 				cmd_version="${VERSION}"
@@ -237,10 +237,17 @@ setup() {
 					echo "Treating 'development' version as up-to-date with ${ver}"
 					continue
 				fi
+
+				# 1.x.x version of genesis is always the latest available (no further features being developed in the 1.x.x branch)
+				if [[ "${cmd}" == "genesis" ]] ; then 
+					major_ver="$(echo "$ver" | perl -pe 's|.*?(\d+)\.\d+(\.\d+)*.*$|$1.x.x|')"
+					# == $cmd_version ]] ; then
+					continue
+				fi
+
 				current_version=$(echo "${cmd_version}" | perl -pe 's|.*?(\d+\.\d+(\.\d+)*).*|$1|')
 				if [[ -z ${current_version} || $(echo ${current_version} | egrep '[^0-9\.]') ]]; then
 					errors="This Genesis deployment requires ${cmd} version ${ver}, but the current version could not be parsed\n${errors}"
-					echo ${current_version}
 					continue
 				fi
 
@@ -1439,7 +1446,7 @@ SEE ALSO
 dox-command:version
 cmd_version() {
 	s=$(cat ${BASH_SOURCE[0]} | checksum)
-	ver_str="genesis ${VERSION} (${s:0:12})"
+	ver_str="genesis v${VERSION} (${s:0:12})"
 	if [[ -n "$GENESIS_V2_VERSION" ]] ; then
 		ver_str="${ver_str} - embedded in ${GENESIS_V2_VERSION}"
 	fi
