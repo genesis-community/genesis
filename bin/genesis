@@ -879,7 +879,7 @@ my $BOSH; # used for abstracting out the actual name of the installed
 sub detect_bosh_version {
 	my ($BOSH2_MIN_VERSION) = @_;
 	foreach my $boshcmd ("bosh", "bosh2", "boshv2") {
-		my $version = qx($boshcmd -v 2>&1 | head -n1);
+		my $version = qx($boshcmd -v 2>&1 | grep version | head -n1);
 		if ($version) {
 			chomp($version);
 			if ($version =~ s/version (\S+?)-.*/$1/){
