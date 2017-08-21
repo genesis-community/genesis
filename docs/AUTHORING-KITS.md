@@ -768,7 +768,7 @@ $ cat tmpdir/in
     # `values` is a list of params that apply to this param (to support the same comment across multiple
        default params). Each item of its list is an object with one key representing the param name,
        and the value associated with that key.
-    "values": [{"params.my_list": ["red", "blue", "green"]}]
+    "values": [{"my_list": ["red", "blue", "green"]}]
   }
 ]
 $ hooks/params tmpdir/in tmpdir/out
@@ -779,7 +779,7 @@ $ cat tmpdir/out
     "example": "This is the example value for the param",
     "default": true, # a boolean representing if this is a default value or user-supplied
                      # if true, the param will be commented out in the resultant environment yml file
-    "values": [{"params.my_list": { "red":1, "blue": 1, "green": 1}}]
+    "values": [{"my_list": { "red":1, "blue": 1, "green": 1}}]
   }
 ]
 ```
