@@ -1,5 +1,8 @@
 #!/bin/bash
 
+set -e
+source "$(dirname "$0")/params_helper"
+
 infile="$1";  shift;
 outfile="$1"; shift;
 subkits=("$@")

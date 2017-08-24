@@ -145,7 +145,7 @@ params:
 EOF
 
 # Test combination of subkit and param hooks
-reprovision kit => 'more-hooks';
+reprovision kit => 'more-hooks', compiled => 1; # use a compiled kit to verify we extract param helpers
 
 my $cmd = Expect->new();
 my $env = "inspect";
@@ -194,8 +194,8 @@ EOF
 eq_or_diff get_file("$env.yml"), <<EOF, "New environment file contains correct data";
 ---
 kit:
-  name:    dev
-  version: latest
+  name:    more-hooks
+  version: 1.0.0
   subkits:
   - mandatory
   - openvpn
