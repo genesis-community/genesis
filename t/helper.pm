@@ -86,9 +86,9 @@ sub reprovision {
 
 		if ($opts{compiled}) {
 			$opts{version} ||= "1.0.0";
-			$err = qx(cp -a $TOPDIR/t/kits/$opts{kit} $opts{kit}-$opts{version} && \
-			          mkdir -p $TOPDIR/.genesis/kits && \
-			          tar -czf .genesis/kits/$opts{kit}-$opts{version}.tar.gz $opts{kit}-$opts{version}/);
+			$err = qx(cp -a $TOPDIR/t/kits/$opts{kit} $opts{kit}-$opts{version} 2>&1 && \
+			          mkdir -p .genesis/kits 2>&1 && \
+			          tar -czf .genesis/kits/$opts{kit}-$opts{version}.tar.gz $opts{kit}-$opts{version}/ 2>&1);
 			if ($? != 0) {
 				diag "failed to compile the $opts{kit}-$opts{version} kit:";
 				diag "-----------------------------------------------";

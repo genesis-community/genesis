@@ -327,7 +327,8 @@ sub validate_subkits {
 
 sub run_subkit_hook {
 	my ($kit, $version, @subkits) = @_;
-	my $hook = kit_file($kit, $version, "hooks/subkit", 0);
+	my $hook_dir = kit_file($kit, $version, "hooks", 0); # grab subkit hook + any helpers
+	my $hook = "$hook_dir/subkit";
 	return @subkits unless -f $hook;
 
 
@@ -347,7 +348,8 @@ sub run_subkit_hook {
 
 sub run_param_hook {
 	my ($kit, $version, $env_name, $vault_prefix, $params, @subkits) = @_;
-	my $hook = kit_file($kit, $version, "hooks/params", 0);
+	my $hook_dir = kit_file($kit, $version, "hooks", 0); # grab params hook + any helpers
+	my $hook = "$hook_dir/params";
 	return $params unless -f $hook;
 
 
