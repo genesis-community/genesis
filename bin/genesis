@@ -965,7 +965,7 @@ EOF
 sub spruce_vault_paths {
 	my (@files) = @_;
 	my $ymls = join(" ", @files);
-	my @keys= qx/spruce vaultinfo $ymls | spruce json | jq -r '.secrets[].key'/;
+	my @keys= qx/spruce vaultinfo --go-patch $ymls | spruce json | jq -r '.secrets[].key'/;
 	if ($? != 0) {
 		die "Failure while running spruce vaultinfo.\n";
 	}
@@ -2575,7 +2575,7 @@ sub check_prereqs {
 
 	my %conditions = @_;
 
-	my $SPRUCE_MIN_VERSION = "1.11.0";
+	my $SPRUCE_MIN_VERSION = "1.12.0";
 	my $SAFE_MIN_VERSION   = "0.1.8";
 	my $VAULT_MIN_VERSION  = "0.6.0";
 	my $GIT_MIN_VERSION    = "1.8.0";
