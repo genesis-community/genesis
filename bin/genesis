@@ -3185,11 +3185,25 @@ sub tablify {
 # bosh_target_for $env
 sub bosh_target_for {
 	my ($env) = @_;
-	return $ENV{GENESIS_BOSH_ENVIRONMENT} if defined($ENV{GENESIS_BOSH_ENVIRONMENT});
-	return $ENV{BOSH_ENVIRONMENT} if defined($ENV{BOSH_ENVIRONMENT});
-	return get_key($env, 'params.bosh')
-	    || get_key($env, 'params.env')
-	    || die "Could not find the `params.bosh' or `params.env' key in $env!\n";
+	if (defined($ENV{GENESIS_BOSH_ENVIRONMENT})) {
+		return $ENV{GENESIS_BOSH_ENVIRONMENT} if (system($BOSH, "-e", $ENV{GENESIS_BOSH_ENVIRONMENT}, "env") == 0 );
+		die "No such host: $ENV{GENESIS_BOSH_ENVIRONMENT} from ENV{GENESIS_BOSH_ENVIRONMENT} for the BOSH Direcor.\n";
+	}
+	if (defined($ENV{BOSH_ENVIRONMENT})) {
+		return $ENV{BOSH_ENVIRONMENT} if (system($BOSH, "-e", $ENV{BOSH_ENVIRONMENT}, "env") == 0);
+		die "No such host: $ENV{BOSH_ENVIRONMENT} from ENV{BOSH_ENVIRONMENT} for the BOSH Direcor you are targeting at.\n";
+	}
+	my $bosh = get_key($env, 'params.bosh');
+	if (defined($bosh)) {
+		return $bosh if (system($BOSH, "-e", $bosh, "env") == 0);
+		die "No such host: $bosh for the BOSH Direcor which you configured in params.bosh.\n";
+	 }
+	$bosh = get_key($env, 'params.env');
+	if (defined($bosh)) {
+		 return $bosh if (system($BOSH, "-e", $bosh, "env") == 0);
+		 die "No such host: $bosh for the BOSH Direcor which you configured in params.env. You can specify your BOSH Director alias name in params.bosh.\n";
+	}
+	die "Could not find the `params.bosh' or `params.env' key in $env!\n";
 }
 
 
