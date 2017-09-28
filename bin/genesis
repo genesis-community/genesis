@@ -3691,6 +3691,296 @@ sub {
 	explain "New environment $name provisioned.\n";
 });
 
+
+
+# }}}
+# genesis ci - generate pipeline YAML template file to be used by genesis repipe to generate a pipeline file. {{{
+
+command("ci", <<EOF,
+genesis v$VERSION
+USAGE: genesis ci [--name ci.yml]
+
+OPTIONS
+$GLOBAL_USAGE
+      --name        The name of the yaml file to generate, default is `ci.yml'
+
+EOF
+sub {
+	my %options = (
+		 name => "ci.yml",
+	);
+
+	options(\@_, \%options, qw/
+		name=s
+	/);
+	usage(1) if @_ != 0;
+
+	my $name = $options{name} || "ci.yml";
+
+	at_exit(sub {
+		unlink "$name" unless $? == 0;
+	});
+
+	check_prereqs;
+	explain "Generating new CI YAML Template #C{$name}...\n";
+
+	my %pipeline;
+
+	$pipeline{name} = prompt_for_line("What is the name of your pipeline? \n It will display in Concourse, ex: cf-deployments.");
+
+	$pipeline{public} = (prompt_for_boolean("Would you like to make the pipeline visible to everyone? \nSetting this to yes will make the Concourse pipeline (and all logs related to deployments) public. This is off by default.", "no") ? "yes" : "no");
+
+	$pipeline{tagged} = (prompt_for_boolean("Would you like to use tags on each job? If you do not know why you need it, then you do not need it. Default is no.","no") ? "yes" : "no");
+
+	$pipeline{debug} = (prompt_for_boolean("Would you like to use debug on bosh jobs? Default: no." ,"no") ? "yes" : "no");
+
+	$pipeline{skip_upkeep} = (prompt_for_boolean("Would you like to automatically update stemcells? If set, disables the automatic stemcell updating behavior of the pipeline. Default is no.","no") ? "yes" : "no");
+
+	$pipeline{git} = prompt_for_git();
+
+	$pipeline{notifications} = prompt_for_notifications();
+
+	$pipeline{locker} = prompt_for_locker();
+
+	$pipeline{vault} = prompt_for_vault();
+
+	$pipeline{stemcells} = prompt_for_block("What is(are) the stemcell(s) you need for all your deployments in this pipeline? \nOne stemcell per line, for example you can input the bosh-lite stemcell like the following example and then hit enter.\nbosh-lite: bosh-warden-boshlite-ubuntu-trusty-go_agent\nNote:\"bosh-lite\" is the short name you want to call this stemcell which will be used to configure stemcell for your \"boshes\" later; \"bosh-warden-boshlite-ubuntu-trusty-go_agent\" is the stemcell name from 'bosh.io'.\n");
+
+	$pipeline{boshes} = prompt_for_boshes();
+
+	if (prompt_for_boolean("Would you like to add one or more errands?")) {
+		$pipeline{errands} = prompt_for_list("line","Enter your errand(s)",undef,1);
+	}
+
+	$pipeline{layouts} = prompt_for_layouts();
+
+	generate_ci_template_file(\%pipeline, $name);
+
+	explain "Generated CI template file: $name\n";
+});
+
+sub prompt_for_git {
+    my (%git);
+    $git{owner} = prompt_for_line("What is the git repository owner (user or organization) name?");
+    $git{repo} = prompt_for_line("What is the git repository name?");
+    $git{private_key} = prompt_for_line("What is the vault path for your git private key (installed in your Github with write privileges)?\nex:secret/bosh/lite/git/repo_name:private_key",undef,undef, "vault_path");
+    return \%git;
+}
+
+sub prompt_for_notifications {
+    my (%notifications);
+    $notifications{slack} = {};
+    $notifications{email} = {};
+    $notifications{email}{smtp} = {};
+    $notifications{hipchat} = {};
+
+    if (prompt_for_boolean("Would you like to configure slack notification?")) {
+		$notifications{slack}{webhook} = prompt_for_line("What is the slack Integration WebHook URL? \nIt is provided by Slack when you configure a new integration.", undef, undef, "url");
+		$notifications{slack}{channel} = prompt_for_line("What is the name of the slack channel which will receive the slack notifications?");
+    }
+
+    if (prompt_for_boolean("Would you like to configure email notification?")) {
+		$notifications{email}{smtp}{host} = prompt_for_line("What is the email SMTP host? ex: mail\@domain.com");
+		$notifications{email}{smtp}{username} = prompt_for_line("What is the email SMTP username? ex: username");
+		$notifications{email}{smtp}{password} = prompt_for_line("What is the vault path for your email SMTP password? \nex: secret/notifications/email/smtp/password", undef, undef, "vault_path");
+		$notifications{email}{smtp}{port} = prompt_for_line("What is the email SMTP port? ex: 25", undef, undef, "port");
+		$notifications{email}{to} = prompt_for_line("What is the email to? ex: user\@domain.com");
+		$notifications{email}{from} = prompt_for_line("What is the email from? ex: system\@domain.com");
+    }
+
+    if (prompt_for_boolean("Would you like to configure hipchat notification?")) {
+		$notifications{hipchat}{token} = prompt_for_line("What is the vault path for hipchat notification token? \nex: secret/notifications/hipchat/token", undef, undef, "vault_path");
+		$notifications{hipchat}{room_id} = prompt_for_line("What is the hipchat notification Room ID?");
+    }
+    return \%notifications;
+}
+
+sub prompt_for_locker {
+    my (%locker);
+    if ( prompt_for_boolean("Would you like to use locker for your pipeline? \nThe locker is deployed along side your Concourse database node if you use genesis kit to deploy your concourse.")) {
+		$locker{url} = prompt_for_line("What is the URL to the locker API?", undef, undef, "url");
+		$locker{username} = prompt_for_line("What is the locker API username?");
+		$locker{password} = prompt_for_line("What is the Vault path for locker API password? \nex: secret/bosh/lite/concourse/locker/api:password",undef,undef,"vault_path");
+    }
+    return \%locker;
+}
+
+sub prompt_for_vault {
+    my (%vault);
+    $vault{role} = prompt_for_line("What is the Vault path for your Vault App Role Backend ID? \nex: secret/concourse/pipeline_name/vault/role",undef,undef,"vault_path");
+    $vault{secret} = prompt_for_line("What is the Vault path for your Vault Secret ID? \nex: secret/concourse/pipeline_name/vault/secret",undef,undef,"vault_path");
+    $vault{url} = prompt_for_line("What is the Vault URL?", undef, undef,"url");
+    $vault{verify} = (prompt_for_boolean("Do you want to use Vault verification? Default is no.", "no") ? "yes" : "no");
+    return \%vault;
+}
+
+sub prompt_for_boshes {
+    my (%boshes);
+    do {
+		my $env_name = prompt_for_line("Let's configure your BOSHes.\nWhat is the env(ironment) name? It should be of the env names used in the command `genesis new env-name`");
+        $boshes{$env_name} = {};
+		$boshes{$env_name}{alias} = prompt_for_line("What is the alias for the BOSH target environment?");
+		$boshes{$env_name}{url} = prompt_for_line("What is the BOSH target URL? ex: https://192.168.50.6:25555", undef, undef, "url");
+		$boshes{$env_name}{ca_cert} = prompt_for_line("What is the vault path for the BOSH target environment ca_cert? \nex: secret/bosh/lite/ssl:ca", undef,undef,"vault_path");
+		$boshes{$env_name}{username} = prompt_for_line("What is the BOSH target environment username?");
+		$boshes{$env_name}{password} = prompt_for_line("What is the vault path for the BOSH target environment password? \nex: secret/bosh/lite/admin/password", undef, undef, "vault_path"); 
+        $boshes{$env_name}{stemcells} = prompt_for_list("line","What stemcell do you need to use for the $env_name environment? \nUse the short names you come up for stemcells earlier.",undef,1);
+    } while (prompt_for_boolean("Would you like to enter BOSH configuration for another environment?"));
+   return \%boshes;
+}
+
+sub prompt_for_layouts {
+    my (%layouts);
+    do {
+        my $name = prompt_for_line("What is your name for the layout? Default: default.", undef, "default");
+        $layouts{$name}{deployments_chains} = prompt_for_block("What are the deployment orders? \nex: east-1-bosh-lite -> east-1-sandbox -> east-1-prod. \nIt means that you want to deploy to east-1-bosh-lite, then east-1-sandbox and finnally east-1-prod, where east-1* are the env names used in the command `genesis new env-name`. \nYou can specify multiple of deployments chains in multiple lines.");
+        $layouts{$name}{auto} = prompt_for_line("What deployments do you want to automaticlly trigger when there are corresponding deployment changes? \nIf you have multiple deployments, you can use certain regular expression and white space between different expressions. ex: *bosh-lite *sandbox");
+    } while (prompt_for_boolean("Would you like to enter another layout for your pipeline?"));
+    return \%layouts;
+}
+
+sub generate_ci_template_file() {
+	my ($pipeline, $name) = @_;
+
+	open my $OUT, ">", $name or die "Unable to open $name for writing: $!\n";
+	print $OUT <<"EOF";
+pipeline:
+
+  name: $pipeline->{name}
+
+  public: $pipeline->{public}
+
+  tagged: $pipeline->{tagged}
+
+  debug: $pipeline->{debug}
+
+  skip_upkeep: $pipeline->{skip_upkeep}
+
+  git:
+    owner: $pipeline->{git}{owner}
+    repo:  $pipeline->{git}{repo}
+    private_key: (( vault "$pipeline->{git}{private_key}" ))
+
+  vault:
+    role: (( vault "$pipeline->{vault}{role}" ))
+    secret: (( vault "$pipeline->{vault}{secret}" ))
+    url: $pipeline->{vault}{url}
+    verify: $pipeline->{vault}{verify}
+EOF
+
+	if ($pipeline->{notifications}{slack}{webhook}) {
+		print $OUT <<"EOF";
+
+  slack:
+    webhook: $pipeline->{notifications}{slack}{webhook}
+    channel: $pipeline->{notifications}{slack}{channel}
+EOF
+	}
+
+	if ($pipeline->{notifications}{hipchat}{token}) {
+		print $OUT <<"EOF";
+
+  hipchat:
+    room_id: $pipeline->{notifications}{hipchat}{room_id}
+    token: (( vault "$pipeline->{notifications}{hipchat}{token}" ))
+EOF
+	}
+
+	if ($pipeline->{notifications}{email}{to}) {
+		print $OUT <<"EOF";
+
+  email:
+    to: $pipeline->{notifications}{email}{to}
+    from: $pipeline->{notifications}{email}{from}
+    smtp:
+      username: $pipeline->{notifications}{email}{smtp}{username}
+      password: (( vault "$pipeline->{notifications}{email}{smtp}{password}" ))
+      host: $pipeline->{notifications}{email}{smtp}{host}
+      port: $pipeline->{notifications}{email}{smtp}{port}
+EOF
+	}
+
+	if ($pipeline->{locker}{url}) {
+		print $OUT <<"EOF";
+
+  locker:
+    url: $pipeline->{locker}{url}
+    username: (( vault "$pipeline->{locker}{username}" ))
+    password: (( vault "$pipeline->{locker}{password}" ))
+EOF
+	}
+
+    my @stemcells = split("\n",$pipeline->{stemcells});
+	print $OUT <<"EOF";
+
+  stemcells:
+EOF
+	foreach my $stemcell (@stemcells) {
+		print $OUT <<"EOF";
+    $stemcell
+EOF
+	}
+
+	print $OUT <<"EOF";
+
+  boshes:
+EOF
+    foreach my $env (keys $pipeline->{boshes}) {
+		print $OUT <<"EOF";
+    $env:
+      alias: $pipeline->{boshes}{$env}{alias}
+      url: $pipeline->{boshes}{$env}{url}
+      ca_cert: (( vault "$pipeline->{boshes}{$env}{ca_cert}" ))
+      username: $pipeline->{boshes}{$env}{username}
+      password: (( vault "$pipeline->{boshes}{$env}{password}" ))
+      stemcells:
+EOF
+		foreach my $i ( 0 .. $#{ $pipeline->{boshes}{$env}{stemcells} } ) {
+            print $OUT <<"EOF";
+      - $pipeline->{boshes}{$env}{stemcells}[$i]
+EOF
+        }
+	}
+
+    if (scalar keys $pipeline->{layouts} == 1) {
+        print $OUT <<"EOF";
+
+  layout:
+EOF
+    } else {
+	    print $OUT <<"EOF";
+
+  layouts:
+EOF
+    }
+    foreach my $layout (keys $pipeline->{layouts}) {
+		print $OUT <<"EOF";
+    $layout: |+
+      auto $pipeline->{layouts}{$layout}{auto}
+EOF
+        my @deployments_chains = split("\n",$pipeline->{layouts}{$layout}{deployments_chains});
+		foreach my $deployments_chain (@deployments_chains) {
+		print $OUT <<"EOF";
+      $deployments_chain
+EOF
+		}
+	}
+
+	if ($pipeline->{errands}){
+		my @errands;
+		for my $i ( 0 .. $#{ $pipeline->{errands} } ) {
+            push (@errands, $pipeline->{errands}[$i]);
+       }
+    my $errands = "[".join(",", @errands)."]";
+
+		print $OUT <<"EOF";
+
+  errands: $errands
+EOF
+	}
+
+	close $OUT;
+}
 # }}}
 # genesis deploy - Pull in Cloud Config, Generate a manifest, deploy {{{
 
