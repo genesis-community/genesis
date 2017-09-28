@@ -758,7 +758,23 @@ sub __prompt_for_line {
 	# being an optional error message
 	my $validate;
 	if (defined($validation)) {
-		if ($validation =~ m/^\/(.*)\/(i?m?s?)$/) {
+		if ($validation eq "url") {
+			$validate = sub() {
+				if (is_valid_uri($_[0])) {
+					return "";
+				} else {
+					return ($_[1] ? $_[1] :"$_[0] is not a valid URL\n");
+				}
+			}
+		} elsif ($validation eq "port") {
+			$validate = sub() {
+				if ( ($_[0] =~ /^\s*[\+\-]?\d+\s*$/) && ($_[0] >= 0 ) && ($_[0] <= 65535) ) {
+					return "";
+				} else {
+					return ($_[1] ? $_[1] :"$_[0] is not a valid port\n");
+				}
+			}
+		} elsif ($validation =~ m/^\/(.*)\/(i?m?s?)$/) {
 			my $__vre;
 			# safe because the only thing being eval'ed is the optional i,s, or m
 			eval "\$__vre = qr/\$1/$2"
@@ -771,12 +787,12 @@ sub __prompt_for_line {
 			$validate = sub() {
 				my $needle=shift;
 				my @matches = grep {$_ eq $needle} @__vlist;
-				return (scalar(@matches) != 0 ? "" : ($_[1] ? $_[1] : "Expecting one of ".join(", ",@__vlist)))
+				return (scalar(@matches) != 0 ? "" : ($_[1] ? $_[1] : "Expecting one of ".join(", ",@__vlist)));
 			}
 		} elsif ($validation eq "vault_path") {
-			my $validate = sub() {
+			$validate = sub() {
 				system "safe exists $_[0]";
-				return ( $? eq 0 ? "" : ($_[1] ? $_[1] :"$_[0] not found in vault\n"))
+				return ( $? eq 0) ? "" : ($_[1] ? $_[1] :"$_[0] not found in vault\n");
 			}
 		}
 	}
@@ -874,6 +890,26 @@ sub prompt_for_list {
 
 sub prompt_for_block {
 	return __prompt_for_block(@_);
+}
+
+sub is_valid_uri {
+	my ($uri) = @_;
+	# https://tools.ietf.org/html/rfc3986
+    # We use very basic validation
+	$uri=~ m/^(?<scheme>[a-zA-Z][a-zA-Z0-9+.-]+):
+		(?<authority>\/\/
+			(?<user>[^@]+@)?
+			(?<host>[a-zA-Z0-9.\-_~]+)
+			(?<port>:\d+)?
+		)
+		(?<path>(?:[a-zA-Z0-9-._~]|[a-f0-9]|[!\$&'()*+,;=:@])+(?:\/(?:[a-zA-Z0-9-._~]|[a-f0-9]|[!\$&'()*+,;=:@])*)*|(?:\/(?:[a-zA-Z0-9-._~]|[a-f0-9]|[!\$&'()*+,;=:@])+)*)?
+		(?<query>\?(?:[a-zA-Z0-9-._~]|[a-f0-9]|[!\$&'()*+,;=:@])+)?
+		(?<fragment>\#(?:[a-zA-Z0-9-._~]|[a-f0-9]|[!\$&'()*+,;=:@])+)?
+		/gsx;
+
+		return if (not grep($+{scheme},["http","https","file"]));
+		return if (not $+{authority});
+		return $uri;
 }
 
 my $BOSH; # used for abstracting out the actual name of the installed
@@ -1330,7 +1366,7 @@ sub read_pipeline {
 		$n++ if exists $p->{pipeline}{$_};
 	}
 	if ($n == 0) {
-		push @errors, "No notification stanzas defined.  Please define `pipeline.slack' or `pipeline.email'.\n";
+		push @errors, "No notification stanzas defined.  Please define `pipeline.slack', 'pipeline.hipchat' or `pipeline.email'.\n";
 	} else {
 		if ($p->{pipeline}{slack}) {
 			# validate pipeline.slack.*
@@ -1497,7 +1533,7 @@ sub parse_pipeline {
 	my $src = $pipeline->{pipeline}{layouts}{$layout}
 		or die "No such layout `${layout}'\n";
 
-	# our internal representatio
+	# our internal representation
 	my $P = $pipeline;
 	$P->{file} = $file;  # the path to the original pipeline file,
 	                     # which we need to merge in with the guts.yml
