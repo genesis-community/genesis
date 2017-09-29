@@ -890,7 +890,7 @@ sub is_valid_uri {
 	my ($uri) = @_;
 	# https://tools.ietf.org/html/rfc3986
     # We use very basic validation
-	$uri=~ m/^(?<scheme>[a-zA-Z][a-zA-Z0-9+.-]+):
+	my (@components) = $uri =~ m/^(?<scheme>[a-zA-Z][a-zA-Z0-9+.-]+):
 		(?<authority>\/\/
 			(?<user>[^@]+@)?
 			(?<host>[a-zA-Z0-9.\-_~]+)
@@ -901,8 +901,9 @@ sub is_valid_uri {
 		(?<fragment>\#(?:[a-zA-Z0-9-._~]|[a-f0-9]|[!\$&'()*+,;=:@])+)?
 		/gsx;
 
-		return if (not grep($+{scheme},["http","https","file"]));
-		return if (not $+{authority});
+        return if (not $components[0]);
+        return if ($components[0] !~ m/(http|https|file)/);
+		return if (not $components[1]);
 		return $uri;
 }
 
