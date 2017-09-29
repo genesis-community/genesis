@@ -3697,7 +3697,7 @@ USAGE: genesis ci [--name ci.yml]
 
 OPTIONS
 $GLOBAL_USAGE
-      --name        The name of the yaml file to generate, default is `ci.yml'
+      --name        The name of the configuration yaml file to generate, default is `ci.yml'
 
 EOF
 sub {
@@ -3711,6 +3711,8 @@ sub {
 	usage(1) if @_ != 0;
 
 	my $name = $options{name} || "ci.yml";
+
+	-f "$name" and die "Pipeline configuration file '$name' already exists\n";
 
 	at_exit(sub {
 		unlink "$name" unless $? == 0;
