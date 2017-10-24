@@ -651,6 +651,8 @@ sub dereference_params {
 sub safe_commands {
 	my ($creds, %options) = @_;
 	my @cmds;
+	my $force_rotate = ($options{scope}||'') eq 'force';
+	my $missing_only = ($options{scope}||'') eq 'add';
 	for my $path (sort keys %$creds) {
 		if (! ref $creds->{$path}) {
 			my $cmd = $creds->{$path};
@@ -658,12 +660,12 @@ sub safe_commands {
 
 			if ($cmd =~ m/^(ssh|rsa)\s+(\d+)(\s+fixed)?$/) {
 				my $safe = [$1, $2, "secret/$options{prefix}/$path"];
-				push @$safe, "--no-clobber", "--quiet" if $3 && !$options{force_rotate};
+				push @$safe, "--no-clobber", "--quiet" if ($3 && !$force_rotate) || $missing_only;
 				push @cmds, $safe;
 
 			} elsif ($cmd =~ m/^dhparams?\s+(\d+)(\s+fixed)?$/) {
 				my $safe = ['dhparam', $1, "secret/$options{prefix}/$path"];
-				push @$safe, "--no-clobber", "--quiet" if $2 && !$options{force_rotate};
+				push @$safe, "--no-clobber", "--quiet" if ($2 && !$force_rotate) || $missing_only;
 				push @cmds, $safe;
 
 			} else {
@@ -681,12 +683,12 @@ sub safe_commands {
 						@allowed_chars = ("--policy", $valid_chars);
 					}
 					my $safe = ['gen', $len, @allowed_chars, "secret/$options{prefix}/$path", $attr];
-					push @$safe, "--no-clobber", "--quiet" if $fixed && !$options{force_rotate};
+					push @$safe, "--no-clobber", "--quiet" if ($fixed && !$force_rotate) || $missing_only;
 					push @cmds, $safe;
 					if ($format) {
 						$destination ||= "$attr-$format";
 						my $safe = ["fmt", $format , "secret/$options{prefix}/$path", $attr, $destination];
-						push @$safe, "--no-clobber", "--quiet" if $fixed && !$options{force_rotate};
+						push @$safe, "--no-clobber", "--quiet" if ($fixed && !$force_rotate) || $missing_only;
 						push @cmds, $safe;
 					}
 
@@ -705,13 +707,17 @@ sub safe_commands {
 sub cert_commands {
 	my ($certs, %options) = @_;
 	my @cmds;
+	my $force_rotate = ($options{scope}||'') eq 'force';
+	my $missing_only = ($options{scope}||'') eq 'add';
 	for my $path (sort keys %$certs) {
-		my @cmd = ("safe", "x509", "issue", "secret/$options{prefix}/$path/ca", "--name", "ca.$path",
+		my @cmd = (
+			"x509",
+			"issue",
+			"secret/$options{prefix}/$path/ca",
+			"--name", "ca.$path",
 			"--ca");
-		push @cmd, "--no-clobber", "--quiet" if !$options{force_rotate};
-		system @cmd;
-
-		die "Failure autogenerating certificates.\n" if ($? != 0);
+		push @cmd, "--no-clobber", "--quiet" if !$force_rotate; # All CA certs are considered kept
+		push @cmds, \@cmd;
 
 		for my $cert (sort keys %{$certs->{$path}}) {
 			next if $cert eq "ca";
@@ -722,12 +728,58 @@ sub cert_commands {
 			$c->{valid_for} ||= "1y";
 
 			my @name_flags = map {( "--name", dereference_params($_, $options{env}) )} @{$c->{names}};
-			system "safe", "x509", "issue", "secret/$options{prefix}/$path/$cert", "--ttl", $c->{valid_for},
-				@name_flags, "--signed-by", "secret/$options{prefix}/$path/ca";
-			die "Failure autogenerating certificates.\n" if ($? != 0);
+			my @cmd = (
+				"x509",
+				"issue",
+				"secret/$options{prefix}/$path/$cert",
+				"--ttl", $c->{valid_for},
+				@name_flags,
+				"--signed-by", "secret/$options{prefix}/$path/ca");
+			push @cmd, "--no-clobber", "--quiet" if $missing_only;
+			push @cmds, \@cmd;
 		}
 	}
 	return @cmds;
+}
+
+sub check_secret {
+	my ($cmd, %options) = @_;
+	my (@keys);
+	my $type = $cmd->[0];
+	my $path = $cmd->[2];
+	if ($type eq 'x509') {
+		if (grep {$_ eq '--signed-by'} @$cmd) {
+			$type = "certificate";
+			@keys = qw(certificate combined key);
+		} else {
+			$type = "CA certificate";
+			@keys = qw(certificate combined crl key serial);
+		}
+	} elsif ($type eq 'rsa') {
+		@keys = qw(private public);
+	} elsif ($type eq 'ssh') {
+		@keys = qw(private public fingerprint);
+	} elsif ($type eq 'dhparam') {
+		@keys = qw(dhparam-pem);
+	} elsif ($type eq 'gen') {
+		$type = 'random';
+		my $path_offset = $cmd->[1] eq '-l' ? 3 : 2;
+		$path_offset += 2 if $cmd->[$path_offset] eq '--policy';
+		$path = $cmd->[$path_offset];
+		@keys = ($cmd->[$path_offset + 1]);
+	} elsif ($type eq 'fmt') {
+		$type = 'random/formatted';
+		@keys = ($cmd->[4]);
+	} else {
+		die "Unrecognized credential or certificate command: '".join(" ", @$cmd)."'\n";
+	}
+
+	my @missing = ();
+	for (@keys) {
+		system('safe', 'exists', "$path:$_");
+		push @missing, ["[$type]", "$path:$_"] if $?;
+	}
+	return @missing;
 }
 
 ###########################################################################
@@ -3112,20 +3164,27 @@ sub target_vault {
 #                  target       => "my-vault",
 #                  env          => "us-east-sandbox",
 #                  prefix       => "us/east/sandbox",
-#                  force_rotate => 0;
+#                  scope        => 'rotate'; # or scope => '' or undef
 #
 ## generate all credentials (including 'fixed' creds)
 # vaultify_secrets $kit_metadata,
 #                  target       => "my-vault",
 #                  env          => "us-east-sandbox",
 #                  prefix       => "us/east/sandbox",
-#                  force_rotate => 1;
+#                  scope        => 'force';
+#
+## generate only missing credentials
+# vaultify_secrets $kit_metadata,
+#                  target       => "my-vault",
+#                  env          => "us-east-sandbox",
+#                  prefix       => "us/east/sandbox",
+#                  scope        => 'add';
 #
 sub vaultify_secrets {
 	my ($meta, %options) = @_;
 	$options{env} or die "generate_secrets() was not given an 'env' option.\n";
 
-	my $creds = active_credentials($meta, $options{subkits} || []);
+	my $creds = active_credentials($meta, $options{subkits} || {});
 	if (%$creds) {
 		explain " - auto-generating credentials (in secret/$options{prefix})...\n";
 		for (safe_commands $creds, %options) {
@@ -3136,12 +3195,44 @@ sub vaultify_secrets {
 		explain " - no credentials need to be generated.\n";
 	}
 
-	my $certs = active_certificates($meta, $options{subkits} || []);
+	my $certs = active_certificates($meta, $options{subkits} || {});
 	if (%$certs) {
 		explain " - auto-generating certificates (in secret/$options{prefix})...\n";
-		cert_commands($certs, %options);
+		for (cert_commands $certs, %options) {
+			system('safe', @$_);
+			die "Failure autogenerating certificates.\n" if ($? != 0);
+		}
 	} else {
 		explain " - no certificates need to be generated.\n";
+	}
+}
+
+sub check_secrets {
+	my ($meta, %options) = @_;
+	$options{env} or die "generate_secrets() was not given an 'env' option.\n";
+
+	my @missing = ();
+	for (safe_commands(active_credentials($meta, $options{subkits}||{}),%options)) {
+		my @miss = check_secret($_, %options);
+		if (@miss) {
+			push @missing, @miss;
+		}
+	}
+	for (cert_commands(active_certificates($meta, $options{subkits}||{}),%options)) {
+		my @miss = check_secret($_, %options);
+		if (@miss) {
+			push @missing, @miss;
+		}
+	}
+	if (@missing) {
+		my $suf = scalar(@missing) == 1 ? '' : 's';
+		printf "Missing %d credential%s or certificate%s:\n  * %s\n",
+			scalar(@missing), $suf, $suf,
+			join ("\n  * ", map {join " ", @$_} @missing);
+		return 1;
+	} else {
+		print "All credentials and certificates present.\n";
+		return 0;
 	}
 }
 
@@ -3663,7 +3754,7 @@ sub {
 		explain "Generating secrets / credentials (in secret/$prefix)...\n";
 		vaultify_secrets($meta, env          => $name,
 		                        prefix       => $prefix,
-		                        force_rotate => 1,
+		                        scope        => 'force',
 		                        subkits      => [@subkits]);
 	} else {
 		explain "Skipping generation of secret / credentials.\n";
@@ -3711,29 +3802,54 @@ sub {
 
 command("secrets", <<EOF,
 genesis v$VERSION
-USAGE: genesis secrets [--rotate] [--vault target] deployment-env.yml
+USAGE: genesis secrets [check|add|rotate [--force]][--vault target] deployment-env.yml
 
-Generates new secrets for your deployment. If any credentials were marked by
-the kit as `fixed', they are not updated. Useful for credential rotation, and
-generating credentials after `genesis new --no-secrets' was called.
+Checks, adds or rotates secrets for your deployment.
+
+  * check:  Checks that all required secrets are present.  Returns a exit code
+            of 1 if any are missing, and lists them, otherwise states all
+            secrets are present and exits with 0.
+
+  * add:    Generates any missing secrets required by the deployment.  Useful
+            to generate credentials after upgrading kits or if `genesis new
+            --no-secrets` was used to create the deployment.
+
+  * rotate: Generates new secrets for your deployment. If any credentials were
+            marked by the kit as `fixed', they are not updated unless the 
+            `--force` option was also specified.
 
 OPTIONS
 $GLOBAL_USAGE
-      --force-rotate-all  Rotate *ALL* credentials, including any credentials
-                          that the kit defined as `fixed'. This is very dangerous.
-      --vault             The name of a `safe' target (a Vault) to store newly
-                          generated credentials in.
+  -f, --force        Rotate *ALL* credentials, including any credentials that
+                     the kit defined as `fixed'. This is very dangerous.  Only 
+                     applies to `rotate`
+
+      --vault        The name of a `safe' target (a Vault) to store newly
+                     generated credentials in.
+
 EOF
 sub {
 	my %options;
 	options(\@_, \%options, qw/
-		force-rotate-all
+		force|force-rotate-all|f
 		vault=s
 	/);
-	usage(1) if @_ != 1;
+
+	my ($action,$name) = @_;
+	if (@_ == 1) {
+		$name = $action;
+		$action = 'check';
+	}
+	usage(1) if @_ < 1 or @_ > 2;
+    usage(1, "Must specify check, add or rotate, not $action")
+		unless (grep {$_ eq $action} qw(check add rotate));
+	if ($options{force}) {
+		usage(1, "Can only specify --force with rotate") if $action ne 'rotate';
+		$action = 'force';
+	}
+
 	check_prereqs;
 
-	my ($name) = @_;
 	$name =~ s/\.ya?ml$//;
 	my $deployment = $name . "-" . deployment_suffix;
 	(my $prefix = $deployment) =~ s|-|/|g;
@@ -3741,10 +3857,21 @@ sub {
 	my ($kit, $version) = kit_name_and_version_for($name);
 	my $meta = read_kit_metadata($kit, $version);
 	target_vault($options{vault});
-	vaultify_secrets($meta, env          => $name,
-	                        prefix       => $prefix,
-	                        subkits      => get_key($name, 'kit.subkits', []),
-	                        force_rotate => $options{"force-rotate-all"});
+
+	if ($action eq "check") {
+		exit check_secrets(   $meta,
+			env       => $name,
+			prefix    => $prefix,
+			subkits   => get_key($name, 'kit.subkits', [])
+		);
+	} else {
+		vaultify_secrets($meta,
+			env       => $name,
+			prefix    => $prefix,
+			subkits   => get_key($name, 'kit.subkits', []),
+			scope     => $action
+		);
+	}
 });
 
 # }}}
