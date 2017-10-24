@@ -3831,7 +3831,7 @@ EOF
 sub {
 	my %options;
 	options(\@_, \%options, qw/
-		force
+		force|force-rotate-all|f
 		vault=s
 	/);
 

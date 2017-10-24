@@ -262,7 +262,15 @@ $new_cert = secret "$v/auto-generated-certs-a/server:certificate";
 isnt $cert, $new_cert, "Certificates are rotated normally";
 
 $cert = secret "$v/auto-generated-certs-a/server:certificate";
-runs_ok "genesis secrets rotate --force --vault unit-tests west-us-sandbox", "genesis secrets --force-rotate-all regenerates CA certs";
+runs_ok "genesis secrets rotate --force-rotate-all --vault unit-tests west-us-sandbox", "genesis secrets --force-rotate-all regenerates CA certs";
+have_secret "$v/auto-generated-certs-a/ca:certificate";
+$new_ca = secret "$v/auto-generated-certs-a/ca:certificate";
+isnt $ca, $new_ca, "CA certificate changes under force-rotation";
+$new_cert = secret "$v/auto-generated-certs-a/server:certificate";
+isnt $cert, $new_cert, "Certificates are rotated when forced.";
+
+$cert = secret "$v/auto-generated-certs-a/server:certificate";
+runs_ok "genesis secrets rotate -f --vault unit-tests west-us-sandbox", "genesis secrets -f regenerates CA certs";
 have_secret "$v/auto-generated-certs-a/ca:certificate";
 $new_ca = secret "$v/auto-generated-certs-a/ca:certificate";
 isnt $ca, $new_ca, "CA certificate changes under force-rotation";
