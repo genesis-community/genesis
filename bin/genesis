@@ -750,10 +750,10 @@ sub check_secret {
 	if ($type eq 'x509') {
 		if (grep {$_ eq '--signed-by'} @$cmd) {
 			$type = "certificate";
-			@keys = qw(certificate);
+			@keys = qw(certificate combined key);
 		} else {
 			$type = "CA certificate";
-			@keys = qw(certificate);
+			@keys = qw(certificate combined crl key serial);
 		}
 	} elsif ($type eq 'rsa') {
 		@keys = qw(private public);

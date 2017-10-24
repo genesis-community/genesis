@@ -132,7 +132,6 @@ matches $msg, qr/All credentials and certificates present./, "No missing secrets
 # Test only missing secrets are regenerated
 %before = %after;
 for (@$removed) {
-  diag "$v/$_ was '$before{$_}'";
   runs_ok "safe delete -f $v/$_", "removed $v/$_  for testing";
   no_secret "$v/$_", "$v/$_ should not exist";
 }
@@ -234,6 +233,25 @@ no_secret "$v/auto-generated-certs-b/server";
 $v = "secret/west/us/sandbox/certificates";
 runs_ok "safe delete -Rf $v", "clean up certs for rotation testing";
 no_secret "$v/auto-generated-certs-a/ca:certificate";
+($pass,$rc,$msg) = run_fails "genesis secrets check west-us-sandbox --vault unit-tests", 1;
+matches $msg, qr#Missing 16 credentials or certificates:#, "Correct number of secrets reported missing";
+matches $msg, qr#  \* \[CA certificate] $v/auto-generated-certs-a/ca:certificate#,  "CA cert certificate missing";
+matches $msg, qr#  \* \[CA certificate] $v/auto-generated-certs-a/ca:combined#,  "CA cert combined missing";
+matches $msg, qr#  \* \[CA certificate] $v/auto-generated-certs-a/ca:crl#,  "CA cert crl missing";
+matches $msg, qr#  \* \[CA certificate] $v/auto-generated-certs-a/ca:key#,  "CA cert key missing";
+matches $msg, qr#  \* \[CA certificate] $v/auto-generated-certs-a/ca:serial#,  "CA cert serial missing";
+matches $msg, qr#  \* \[certificate] $v/auto-generated-certs-a/server:certificate#, "Cert certificate missing";
+matches $msg, qr#  \* \[certificate] $v/auto-generated-certs-a/server:combined#, "Cert combined missing";
+matches $msg, qr#  \* \[certificate] $v/auto-generated-certs-a/server:key#, "Cert key missing";
+matches $msg, qr#  \* \[CA certificate] $v/auto-generated-certs-b/ca:certificate#,  "CA cert certificate missing";
+matches $msg, qr#  \* \[CA certificate] $v/auto-generated-certs-b/ca:combined#,  "CA cert combined missing";
+matches $msg, qr#  \* \[CA certificate] $v/auto-generated-certs-b/ca:crl#,  "CA cert crl missing";
+matches $msg, qr#  \* \[CA certificate] $v/auto-generated-certs-b/ca:key#,  "CA cert key missing";
+matches $msg, qr#  \* \[CA certificate] $v/auto-generated-certs-b/ca:serial#,  "CA cert serial missing";
+matches $msg, qr#  \* \[certificate] $v/auto-generated-certs-b/server:certificate#, "Cert certificate missing";
+matches $msg, qr#  \* \[certificate] $v/auto-generated-certs-b/server:combined#, "Cert combined missing";
+matches $msg, qr#  \* \[certificate] $v/auto-generated-certs-b/server:key#, "Cert key missing";
+
 runs_ok "genesis secrets rotate --vault unit-tests west-us-sandbox", "genesis secrets creates our certs";
 have_secret "$v/auto-generated-certs-a/server:certificate";
 my $cert = secret "$v/auto-generated-certs-a/server:certificate";
