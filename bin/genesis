@@ -1113,11 +1113,11 @@ sub deploy_manifest {
 	my ($env, $options) = @_;
 	$ENV{REDACT} = '';
 	my $dir = workdir;
-	my $target = bosh_target_for($env);
-
+	my $target = ''; 
 	my $create_env = has_subkit($env, 'bosh-init') || has_subkit($env, 'create-env');
 
 	if (!$create_env) {
+		$target = bosh_target_for($env);
 		bosh_download_cloud_config($target, "$dir/cloud.yml");
 		$options->{'cloud-config'} = "$dir/cloud.yml";
 	} else {
