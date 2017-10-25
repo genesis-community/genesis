@@ -2786,8 +2786,31 @@ sub download_kit_tarball
 	close $kit;
 	debug "downloaded kit #M{$name}/#C{$version}\n";
 }
+sub validate_kit_files {
+
+	my $dir = shift;
+	my @errors = ();
+	if (-d $dir) {
+		for (qw(base subkits hooks)) {
+			push @errors, "$dir/$_ directory does not exist" unless -d "$dir/$_";
+		}
+		for (qw(kit.yml README.md base/params.yml)) {
+			push @errors, "$dir/$_ does not exist" unless -f "$dir/$_";
+		}
+		for (glob "$dir/subkits/*") {
+			push @errors, "$_/params.yml does not exist" unless -f "$_/params.yml";
+		}
+	} else {
+		push @errors, "$dir does not exist";
+	}
+	die("$dir does not look like a valid kit directory:\n".
+		"  * ".join("\n  * ", @errors).
+		"\n\nCannot continue.\n")
+		if @errors;
+}
+
 sub validate_kit_metadata {
-	my ($kit, $version, $meta) = @_;
+	my ($kit, $version, $meta,$is_author) = @_;
 	$kit ||= "dev";
 	$version = "latest" unless defined $version;
 	my @errors;
@@ -2795,7 +2818,7 @@ sub validate_kit_metadata {
 	# validate params
 	for my $subkit (sort keys %{$meta->{params}}) {
 		my $i = 0;
-		debug ("Validationg params for subkit '$subkit' (#$i)");
+		debug ("Validating params for subkit '$subkit' (#$i)");
 		if (ref($meta->{params}{$subkit}) ne "ARRAY") {
 			push @errors, "$subkit subkit parameters not a list (found ".(ref($meta->{params}{$subkit}) || "a string").")";
 		} else {
@@ -2864,7 +2887,7 @@ sub validate_kit_metadata {
 		for my $err (@errors) {
 			print STDERR " - $err\n";
 		}
-		die "Please contact your kit author for a fix.\n";
+		die ($is_author ? "Cannot continue.\n" : "Please contact your kit author for a fix.\n");
 	}
 }
 
@@ -4078,15 +4101,21 @@ EOF
 
 command("compile-kit", <<EOF,
 genesis v$VERSION
-USAGE: genesis compile-kit -n NAME -v VERSION
+USAGE: genesis compile-kit -v VERSION [-n NAME] [-d|--dev]
 
 OPTIONS
 $GLOBAL_USAGE
 
-  -d, --dev       Compile based off of a dev-kit (./dev). If not specified,
-                  genesis will compile based off of ./<name>-genesis-kit
-  -n, --name      Name of the kit archive.
-  -v, --version   Version to package.
+  -v, --version Version to package.
+
+  -n, --name    Name of the kit archive.  If not provided, will take the name
+                of the current (or specified with -C) directory before the
+                suffix of -genesis-kit (standalone mode) or -deployments
+                (dev mode).
+
+  -d, --dev     Compile based off of a dev-kit (./dev). If not specified,
+                genesis will compile based off of ./<name>-genesis-kit. 
+                Automatically set if run from inside a genesis deployments directory.
 EOF
 sub {
 	my %options;
@@ -4096,11 +4125,39 @@ sub {
 		version|v=s
 	/);
 	usage(1) if @_ != 0;
-	usage(1) unless $options{name};
+
+	my $dir;
+	unless ($options{name}) {
+		my $pwd = abs_path($options{cwd} || getcwd);
+		if ($pwd =~ /\/([^\/]*)-deployments(\/)?$/) {
+		# Building from a dev inside a deployment repo - gleen the name
+			$options{name} = $1;
+			$dir = "$pwd/dev";
+			$options{dev} = 1;
+		} elsif ($pwd =~ /\/([^\/]*)-genesis-kit(\/)?$/) {
+			$options{name} = $1;
+			$dir = $pwd;
+			die "Current directory is a kit -- cannot specify dev mode\n"
+				if $options{dev};
+		}
+	}
+	usage(1, "Missing name option, cannot determine from `pwd`") unless $options{name};
 	usage(1) unless $options{version};
 	check_prereqs(no_repo_needed => 1);
 
-	my $dir = ($options{cwd} || ".") . "/". ($options{dev} ? "dev" : "$options{name}-genesis-kit");
+	unless ($dir) {
+		if ($options{dev}) {
+			$dir = ($options{cwd} || ".") . "/dev";
+			die "$dir does not exist -- cannot continue compiling dev kit.\n" unless -d $dir;
+		} else {
+			$dir = ($options{cwd} || ".");
+			$dir .= "/$options{name}-genesis-kit"
+				if (! -f "$dir/kit.yml" && -d "/$options{name}-genesis-kit");
+		}
+	}
+
+	validate_kit_files($dir);
+	validate_kit_metadata($options{name},$options{version},LoadFile("$dir/kit.yml"),1);
 
 	my $temp = tempdir(CLEANUP => 1);
 	my $stem = "$options{name}-$options{version}";
@@ -4110,6 +4167,8 @@ sub {
 	qx(rm -rf $temp/.git $temp/.gitignore);
 
 	qx(tar -czf $stem.tar.gz -C $temp $stem/);
+
+	printf "Created $stem.tar.gz\n\n";
 });
 
 # }}}
