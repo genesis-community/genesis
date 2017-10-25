@@ -3182,7 +3182,7 @@ sub target_vault {
 #
 sub vaultify_secrets {
 	my ($meta, %options) = @_;
-	$options{env} or die "generate_secrets() was not given an 'env' option.\n";
+	$options{env} or die "vaultify_secrets() was not given an 'env' option.\n";
 
 	my $creds = active_credentials($meta, $options{subkits} || {});
 	if (%$creds) {
@@ -3209,20 +3209,14 @@ sub vaultify_secrets {
 
 sub check_secrets {
 	my ($meta, %options) = @_;
-	$options{env} or die "generate_secrets() was not given an 'env' option.\n";
+	$options{env} or die "check_secrets() was not given an 'env' option.\n";
 
 	my @missing = ();
 	for (safe_commands(active_credentials($meta, $options{subkits}||{}),%options)) {
-		my @miss = check_secret($_, %options);
-		if (@miss) {
-			push @missing, @miss;
-		}
+		push @missing, check_secret($_, %options);
 	}
 	for (cert_commands(active_certificates($meta, $options{subkits}||{}),%options)) {
-		my @miss = check_secret($_, %options);
-		if (@miss) {
-			push @missing, @miss;
-		}
+		push @missing, check_secret($_, %options);
 	}
 	if (@missing) {
 		my $suf = scalar(@missing) == 1 ? '' : 's';

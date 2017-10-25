@@ -13,7 +13,7 @@
     
 ## Breaking Change
     
-If you ommit a subcommand, it defaults to `check`.  If you have any automation
+If you omit a subcommand, it defaults to `check`.  If you have any automation
 that uses this, please update to specify `rotate` explicitly.  Furthermore,
 the `--force-rotate-all` has been shortened to `--force`, but still accepts
 the original.
