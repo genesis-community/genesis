@@ -160,13 +160,24 @@ sub run_fails($$;$) {
 }
 
 sub matches($$$) {
+  my ($str,$test,$msg) = @_;
+  my $matches = (ref($test) eq 'Regexp') ? $str =~ $test : $str eq $test;
+  if ($matches) {
+    pass $msg;
+  } else {
+    fail $msg;
+    diag "Expected:\n$test\n\nGot:\n$str\n";
+  }
+}
+
+sub doesnt_match($$$) {
 	my ($str,$test,$msg) = @_;
 	my $matches = (ref($test) eq 'Regexp') ? $str =~ $test : $str eq $test;
 	if ($matches) {
-		pass $msg;
-	} else {
 		fail $msg;
-		diag "Expected:\n$test\n\nGot:\n$str\n";
+    diag "Expected to not find:\n$test\n\nGot:\n$str\n";
+	} else {
+		pass $msg;
 	}
 }
 

@@ -2790,15 +2790,21 @@ sub validate_kit_files {
 
 	my $dir = shift;
 	my @errors = ();
+	my @warnings = ();
 	if (-d $dir) {
-		for (qw(base subkits hooks)) {
+		for (qw(subkits hooks)) {
+			push @warnings, "$dir/$_ directory does not exist" unless -d "$dir/$_";
+		}
+		for (qw(base)) {
 			push @errors, "$dir/$_ directory does not exist" unless -d "$dir/$_";
 		}
 		for (qw(kit.yml README.md base/params.yml)) {
 			push @errors, "$dir/$_ does not exist" unless -f "$dir/$_";
 		}
-		for (glob "$dir/subkits/*") {
-			push @errors, "$_/params.yml does not exist" unless -f "$_/params.yml";
+		if (-d "$dir/subkits/") {
+			for (glob "$dir/subkits/*") {
+				push @errors, "$_/params.yml does not exist" unless -f "$_/params.yml";
+			}
 		}
 	} else {
 		push @errors, "$dir does not exist";
@@ -2807,6 +2813,10 @@ sub validate_kit_files {
 		"  * ".join("\n  * ", @errors).
 		"\n\nCannot continue.\n")
 		if @errors;
+	warn("Warning: $dir has abnormal contents (non-fatal):\n".
+		"  * ".join("\n  * ", @warnings).
+		"\n\n")
+		if @warnings;
 }
 
 sub validate_kit_metadata {
