@@ -40,6 +40,25 @@ params:
 
     - vault: omgs-this-is-bad
 
+    - ask: Good morning, Sir. Welcome to the National Cheese Emporium. What can I do for you?
+      description: Henry Wenslydale's Cheese shop
+      param: cheese-selection
+      type: choice
+      max_count: 1
+
+    - param: pizza-toppings
+      ask: Design your pizza
+      type: multi-choice
+      min_count: 3
+      validate:
+        - cheese
+
+    - param: stuff
+      ask: Pick some stuff
+      type: multi-choice
+      min_count: 6
+      max_count: 3
+
   valid-params:
     - ask: "What should we put in vault?"
       description: "I'm describing stuff"

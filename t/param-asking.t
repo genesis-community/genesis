@@ -15,7 +15,7 @@ chdir $dir;
 reprovision kit => 'ask-params';
 
 my $cmd = Expect->new();
-$cmd->log_stdout(0);
+$cmd->log_stdout(1);
 $cmd->spawn("genesis new with-subkit --no-secrets");
 expect_ok "extra questions subkit", $cmd, [
 	'Should we ask additional questions?', sub {
@@ -92,28 +92,28 @@ expect_ok "...then with an actual answer", $cmd, [
 
 
 expect_ok "multi-line question", $cmd, [
-	"What's your life story\\? \\(Enter <CTRL-D> to end\\)[\r\n]{1,2}---------------------------------------------", sub {
+	"What's your life story\\? \\(Enter <CTRL-D> to end\\\)[\r\n]{1,2}---------------------------------------------", sub {
 		$_[0]->send("this\nis\nmulti\nline\ndata\n\x4");
 	}
 ];
 
 expect_ok "first blog entry", $cmd, [
-	"Fill in your blog posts \\(leave entry empty to end\\)[\r\n]{2,4}1st entry \\(Enter <CTRL-D> to end\\)[\r\n]{1,2}---------------------------------[\r\n]{1,2}", sub {
+	"Fill in your blog posts \\(leave entry empty to end\\\)[\r\n]{2,4}1st entry \\(Enter <CTRL-D> to end\\\)[\r\n]{1,2}---------------------------------[\r\n]{1,2}", sub {
 		$_[0]->send("A programmer started to cuss\nCos getting to sleep was a fuss\nAs he lay in his bed, going round in his head\nwas while (!asleep) sheep++\n\x4")
 	}
 ];
 expect_ok "second blog entry", $cmd, [
-	"2nd entry \\(Enter <CTRL-D> to end\\)[\r\n]{1,2}---------------------------------[\r\n]{1,2}", sub {
+	"2nd entry \\(Enter <CTRL-D> to end\\\)[\r\n]{1,2}---------------------------------[\r\n]{1,2}", sub {
 		$_[0]->send("\x4")
 	}
 ];
 expect_ok "second blog entry - retry", $cmd, [
-	"ERROR:.* Insufficient items provided - at least 2 required.[\r\n]{2,4}2nd entry \\(Enter <CTRL-D> to end\\)[\r\n]{1,2}---------------------------------[\r\n]{1,2}", sub {
+	"ERROR:.* Insufficient items provided - at least 2 required.[\r\n]{2,4}2nd entry \\(Enter <CTRL-D> to end\\\)[\r\n]{1,2}---------------------------------[\r\n]{1,2}", sub {
 		$_[0]->send("A programmer's wife tells him: \"Run to the store and pick up a loaf of bread. If they have eggs, get a dozen.\"\nThe programmer comes home with 12 loaves of bread.\n\x4")
 	}
 ];
 expect_ok "third blog entry", $cmd, [
-	"3rd entry \\(Enter <CTRL-D> to end\\)[\r\n]{1,2}---------------------------------[\r\n]{1,2}", sub {
+	"3rd entry \\(Enter <CTRL-D> to end\\\)[\r\n]{1,2}---------------------------------[\r\n]{1,2}", sub {
 		$_[0]->send("\x4")
 	}
 ];
@@ -162,11 +162,191 @@ expect_ok "reprompt for 5th language", $cmd, [
     $_[0]->send("go\n");
   }
 ];
-expect_ok "completed list, next question", $cmd, [
+expect_ok "completed list, enter an invalid match", $cmd, [
   "6th language >", sub {
     print STDERR "Exit status: " . ($cmd->exitstatus() >> 8);
     fail "got prompted for a 6th language, but should have stopped after 5";
   }], [
+  "Give me a number[\r\n]{1,2}>",  sub {
+    $_[0]->send("3\n");
+  }
+];
+expect_ok "a different number that isn't verboten", $cmd, [
+  "Invalid:.* Cannot be one of 1, 3, 5, 7[\r\n]{1,2}>", sub {
+    $_[0]->send("-5\n");
+  }
+];
+expect_ok "exclusionary regex pattern - fail", $cmd,[
+  "Invalid:.* Cannot be one of 1, 3, 5, 7[\r\n]{1,2}>", sub {
+    fail "-5 got rejected even though it isn't 1,3,5 or 7";;
+  }], [
+  "An inflatable spherical object[\r\n]{1,2}>", sub {
+    $_[0]->send("balloon\n");
+  }
+];
+
+expect_ok "exclusionary regex pattern - pass", $cmd, [
+  "Invalid:.* Matches exclusionary pattern[\r\n]{1,2}>", sub {
+    $_[0]->send("tire\n");
+  }
+];
+
+expect_ok "range input - fail", $cmd,[
+  "Invalid:.* Matches exclusionary pattern[\r\n]{1,2}>", sub {
+    fail "'tire' got rejected even though it doesn't match pattern";;
+  }], [
+  "Adjust treble baseline[\r\n]{1,2}>", sub {
+    $_[0]->send("101\n");
+  }
+];
+
+expect_ok "range input fail - pass", $cmd, [
+  "Invalid:.* expected to be between -5 and 5[\r\n]{1,2}>", sub {
+    $_[0]->send("2\n");
+  }
+];
+
+expect_ok "colour choices", $cmd,[
+  "Invalid:.* expected to be between -5 and 5[\r\n]{1,2}>", sub {
+    fail "2 is between -5 and 5, but wasn't accepted";;
+  }], [
+  "Lets mix some colors[\r\n]{1,2}Select between 2 and 3 colors[\r\n]{1,2}  1\\) red[\r\n]{1,2}  2\\) orange[\r\n]{1,2}  3\\) yellow[\r\n]{1,2}  4\\) green[\r\n]{1,2}  5\\) blue[\r\n]{1,2}  6\\) indigo[\r\n]{1,2}  7\\) violet[\r\n]{2,4}Make your selections \\(leave choice empty to end\\):[\r\n]{2,2}1st choice >", sub {
+    $_[0]->send("5\n");
+  }
+];
+
+expect_ok "colour choices - abort early", $cmd, [
+  "blue[^\r\n]*[\r\n]{1,2}2nd choice >", sub {
+    $_[0]->send("\n");
+  }
+];
+expect_ok "colour choices - i really like blue", $cmd, [
+  "Insufficient items provided - at least 2 required.[\r\n]{1,2}2nd choice >", sub {
+    $_[0]->send("5\n");
+  }
+];
+expect_ok "colour choices - make some green", $cmd, [
+  "blue already selected - choose another value.[\r\n]{1,2}2nd choice >", sub {
+    $_[0]->send("3\n");
+  }
+];
+
+expect_ok "colour choices - done", $cmd, [
+  "yellow[^\r\n]*[\r\n]{1,2}3rd choice >", sub {
+    $_[0]->send("\n");
+  }
+];
+
+expect_ok "paired programming partners - mystery stranger", $cmd,[
+  "Insufficient items provided - at least 2 required[\r\n]{1,2}3rd choice >", sub {
+    fail "Entered 2 choices, but it wants more";
+  }], [
+  "Select your partner[\r\n]{1,2}  1\\) Julia Breiner[\r\n]{1,2}  2\\) Intan Jans[\r\n]{1,2}  3\\) Irma D. Spears[\r\n]{1,2}  4\\) Sudhir Lykke[\r\n]{2,4}Select choice >", sub {
+    $_[0]->send("Joe\n");
+  }
+];
+
+expect_ok "paired-programming partners - Sudhir", $cmd, [
+  "enter a number between 1 and 4[\r\n]{1,2}Select choice >", sub {
+    $_[0]->send("4\n");
+  }
+];
+expect_ok "paired programming partners - got back fill", $cmd, [
+  "Sudhir Lykke[^\r\n]*[\r\n]{1,2}", sub {
+    1;
+  }
+];
+
+expect_ok "choice use default", $cmd, [
+  "Ice Cream Choices:[\r\n]{1,2}  1\\) chocolate [^\r\n]*\\(default\\)[^\r\n]*[\r\n]{1,2}  2\\) vanilla[\r\n]{1,2}  3\\) strawberry[\r\n]{2,4}Select choice >", sub {
+    $_[0]->send("\n");
+  }
+];
+expect_ok "choice using default - got default", $cmd, [
+  "chocolate[^\r\n]*[\r\n]{1,2}", sub {
+    1;
+  }
+];
+
+expect_ok "choice not use default", $cmd, [
+  "Pie Choices:[\r\n]{1,2}  1\\) chocolate cream[\r\n]{1,2}  2\\) apple [^\r\n]*\\(default\\)[^\r\n]*[\r\n]{1,2}  3\\) pumpkin[\r\n]{2,4}Select choice >", sub {
+    $_[0]->send("3\n");
+  }
+];
+expect_ok "choice not using default - got specified value", $cmd, [
+  "pumpkin[^\r\n]*[\r\n]{1,2}", sub {
+    1;
+  }
+];
+
+expect_ok "URL parsing - simple", $cmd, [
+  "URL #1[\r\n]{1,2}>", sub {
+    $_[0]->send("http://example.com\n");
+  }
+];
+expect_ok "URL parsing - with port", $cmd, [
+  "http://example.com is not a valid URL[\r\n]{1,2}>", sub {
+    fail "Valid url not correctly identified";
+  }], [
+  "URL #2[\r\n]{1,2}>", sub {
+    $_[0]->send("http://example.com:3000\n");
+  }
+];
+expect_ok "URL parsing - secure with query pramas", $cmd, [
+  "http://example.com:3000 is not a valid URL[\r\n]{1,2}>", sub {
+    fail "Valid url not correctly identified";
+  }], [
+  "URL #3[\r\n]{1,2}>", sub {
+    $_[0]->send("https://client.mybank.com?account=direstraights&pw=Money+for+nothin\%27+chicks+for+free\n");
+  }
+];
+expect_ok "URL parsing - file", $cmd, [
+  "https://client.mybank.com?account=direstraights&pw=Money+for+nothin\%27+chicks+for+free is not a valid URL[\r\n]{1,2}>", sub {
+    fail "Valid url not correctly identified";
+  }], [
+  "URL #4[\r\n]{1,2}>", sub {
+    $_[0]->send("file:///etc/passwd\n");
+  }
+];
+expect_ok "URL parsing - full", $cmd, [
+  "file:///etc/passwd is not a valid URL[\r\n]{1,2}>", sub {
+    fail "Valid url not correctly identified";
+  }], [
+  "URL #5[\r\n]{1,2}>", sub {
+    $_[0]->send("https://bob:mypass\@example.com:1234/files/1/description?lang=en&fmt=json#the-good-stuff\n");
+  }
+];
+expect_ok "URL parsing - bad url check 1 - no protocol", $cmd, [
+  "https://bob:mypass\@example.com:1234/files/1/description?lang=en&fmt=json#the-good-stuff is not a valid URL[\r\n]{1,2}>", sub {
+    fail "Valid url not correctly identified";
+  }], [
+  "URL #6[\r\n]{1,2}>", sub {
+    $_[0]->send("this.is.it\n");
+  }
+];
+
+expect_ok "URL parsing - bad url check 2 - ftp not allowed", $cmd, [
+  "this.is.it is not a valid URL[\r\n]{1,2}>", sub {
+    $_[0]->send("ftp://user:pass\@ftp.example.com\n");
+  }
+];
+expect_ok "URL parsing - bad url check 2 - ftp not allowed", $cmd, [
+  "ftp://user:pass\@ftp.example.com is not a valid URL[\r\n]{1,2}>", sub {
+    $_[0]->send("ftp://user:pass\@ftp.example.com\n");
+  }
+];
+expect_ok "URL parsing - bad url check 3 - invalid characters", $cmd, [
+  "ftp://user:pass\@ftp.example.com is not a valid URL[\r\n]{1,2}>", sub {
+    $_[0]->send("https://my.dev.local:5555/endpoint?badquery='this is not allowed'\n");
+  }
+];
+expect_ok "URL parsing - finish up", $cmd, [
+  "https://my.dev.local:5555/endpoint\\?badquery='this is not allowed' is not a valid URL[\r\n]{1,2}>", sub {
+    $_[0]->send("https://github.com/starkandwayne/genesis/blob/master/t/param-asking.t#L345\n");
+  }
+];
+
+expect_ok "Vault paths with --no-secrets option", $cmd, [
   "Warning:.* Cannot validate vault path when --no-secrets option specified[\r\n]{1,2}Specify the path[\r\n]{1,2}>", sub {
     $_[0]->send("/secret/this/path/does/not/exist\n");
   }
@@ -272,6 +452,47 @@ params:
   - c
   - lisp
   - go
+
+  # Type any number except 1, 3, 5 or 7
+  not-in-list: -5
+
+  # Don't use any words that have two consecutive identical letters
+  not-a-match: tire
+
+  # I need a number between -5 and 5
+  in-a-range: 2
+
+  # Lets mix some colors
+  color-choices:
+  - blue
+  - yellow
+
+  # Pairing on code is an important skill to develop
+  pick-a-person: sudhir
+
+  # What's your favorite flavour of icecream?
+  pick-icecream-default: chocolate
+
+  # What's your favorite pie?
+  pick-pie-notdefault: pumpkin
+
+  # Give me your favorite site's URL
+  need-a-url: http://example.com
+
+  # Give me your dev test URL with port
+  need-a-url-and-port: http://example.com:3000
+
+  # Give me your banks URL and login creds
+  need-a-https-url-and-query-param: https://client.mybank.com?account=direstraights&pw=Money+for+nothin\%27+chicks+for+free
+
+  # Give me your password file URL
+  need-a-file-url: file:///etc/passwd
+
+  # Give me your favorite site's URL
+  need-a-full-url: https://bob:mypass\@example.com:1234/files/1/description?lang=en&fmt=json#the-good-stuff
+
+  # Give me a bad URL (not that kind)
+  test-bad-URL-handling: https://github.com/starkandwayne/genesis/blob/master/t/param-asking.t#L345
 
   # Need a vault path
   validity-vault_path: /secret/this/path/does/not/exist

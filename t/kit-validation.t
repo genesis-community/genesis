@@ -30,12 +30,19 @@ The following errors have been encountered validating the dev/latest kit:
  - params.base[2] specifies 'ask', but does not have a corresponding 'vault' or 'param'
  - params.base[3] specifies both 'params' and 'ask'
  - params.base[3] specifies 'ask', but does not have a corresponding 'vault' or 'param'
- - params.base[4] specifies both 'param' and 'params'
- - params.base[5] specifies both 'param' and 'vault'
+ - params.base[4:but here's another to fail] specifies both 'param' and 'params'
+ - params.base[5:bad] specifies both 'param' and 'vault'
  - params.base[6] specifies both 'params' and 'vault'
  - params.base[6] specifies 'vault' but does not have a corresponding 'ask'
  - params.base[7] does not have a 'description'
  - params.base[7] specifies 'vault' but does not have a corresponding 'ask'
+ - params.base[8:cheese-selection] requires validation to provide choices
+ - params.base[8:cheese-selection] has an invalid attribute: 'max_count'
+ - params.base[9:pizza-toppings] requires at least 2 choices
+ - params.base[9:pizza-toppings] does not have a 'description'
+ - params.base[10:stuff] requires validation to provide choices
+ - params.base[10:stuff] requires max_count to be equal to or greater than min_count
+ - params.base[10:stuff] does not have a 'description'
  - params.more-bad-params[0] specifies 'params', but it is not an array
  - params.more-bad-params[1] specifies 'param', but it is not a string
  - params.more-bad-params[2] does not specify 'vault', 'param', or 'params'
