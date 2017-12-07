@@ -152,7 +152,9 @@ sub trace(@) {
 }
 
 sub error {
-	printf STDERR csprintf(@_) . "\n";
+	my @err = @_;
+	unshift @err, "%s" if $#err == 0;
+	print STDERR csprintf(@err) . "\n";
 }
 
 sub online {
@@ -761,22 +763,41 @@ sub __prompt_for_line {
 		if ($validation eq "url") {
 			$validate = sub() {
 				return "" if (is_valid_uri($_[0]));
-				return ($_[1] ? $_[1] :"$_[0] is not a valid URL\n");
+				return ($_[1] ? $_[1] :"$_[0] is not a valid URL");
 			}
 		} elsif ($validation eq "port") {
 			$validate = sub() {
 				return "" if ( ($_[0] =~ m/^\d+$/) && ($_[0] >= 0 ) && ($_[0] <= 65535) );
-				return ($_[1] ? $_[1] :"$_[0] is not a valid port\n");
+				return ($_[1] ? $_[1] :"$_[0] is not a valid port");
 			}
-		} elsif ($validation =~ m/^\/(.*)\/(i?m?s?)$/) {
-			my $__vre;
-			# safe because the only thing being eval'ed is the optional i,s, or m
-			eval "\$__vre = qr/\$1/$2"
-				or die "Error compiling param regex: $!";
+		} elsif ($validation =~ m/^(-?\d+(?:.\d+)?)-(-?\d+(?:.\d+)?)$/) {
+			my ($__min,$__max) = ($1,$2);
 			$validate = sub() {
-				return ($_[0] =~ $__vre ? "" : ( $_[1] ? $_[1] : "Does not match required pattern"));
+				return "" if (($_[0] =~ m/^\d+$/) && ($_[0] >= $__min ) && ($_[0] <= $__max));
+				return ($_[1] ? $_[1] : "$_[0] expected to be between $__min and $__max");
 			}
-		} elsif ($validation =~ m/^((^|,)[^,]+){2,}$/) {
+		} elsif ($validation =~ m/^(!)?\/(.*)\/(i?m?s?)$/) {
+			my $__vre;
+			my $__negate = ($1 && $1 eq "!");
+			# safe because the only thing being eval'ed is the optional i,s, or m
+			eval "\$__vre = qr/\$2/$3"
+				or die "Error compiling param regex: $!";
+			$validate = $__negate ? sub() {
+				return ($_[0] !~ $__vre ? "" : ( $_[1] ? $_[1] : "Matches exclusionary pattern"));
+			} : sub() {
+				return ($_[0] =~ $__vre ? "" : ( $_[1] ? $_[1] : "Does not match required pattern"));
+			};
+		} elsif ($validation =~ m/^(!)?\[([^,]+(,[^,]+)*)\]$/) {
+			my @__vlist = split(",", $2);
+			my $__negate = ($1 && $1 eq "!");
+			$validate =  sub() {
+				my $needle=shift;
+				my @matches = grep {$_ eq $needle} @__vlist;
+				return $__negate ?
+					(scalar(@matches) == 0 ? "" : ($_[1] ? $_[1] : "Cannot be one of ".join(", ",@__vlist))):
+					(scalar(@matches) != 0 ? "" : ($_[1] ? $_[1] : "Expecting one of ".join(", ",@__vlist)));
+			}
+		} elsif ($validation =~ m/^((^|,)[^,]+){2,}$/) { # Depricated list match 2 or more
 			my @__vlist = split(",", $validation);
 			$validate = sub() {
 				my $needle=shift;
@@ -785,16 +806,18 @@ sub __prompt_for_line {
 			}
 		} elsif ($validation eq "vault_path") {
 			$validate = sub() {
-				system "safe exists $_[0]";
-				return ( $? eq 0) ? "" : ($_[1] ? $_[1] :"$_[0] not found in vault\n");
+				return (safe_path_exists $_[0]) ? "" : ($_[1] ? $_[1] :"$_[0] not found in vault\n");
 			}
 		}
 	}
 
 	while (1) {
-		print csprintf($prompt);
+		print csprintf("%s", $prompt);
 		chomp (my $in=<STDIN>);
-		$in = $default if ($in eq "" && defined($default));
+		if ($in eq "" && defined($default)) {
+			$in = $default;
+			print(csprintf("\033[1A%s#C{%s}\n",$prompt, $in));
+		}
 		$in =~ s/^\s+|\s+$//g;
 
 		return "" if ($in eq "" && $allow_blank);
@@ -824,7 +847,8 @@ sub __prompt_for_block {
 }
 
 sub prompt_for_boolean {
-	my ($prompt,$default) = @_;
+	my ($prompt,$default,$invert) = @_;
+	my ($t,$f) = (JSON::PP::true,JSON::PP::false);
 
 	my $true_re = qr/^(?:y(?:es)?|t(rue)?)$/i;
 	my $false_re =  qr/^(?:no?|f(alse)?)$/i;
@@ -833,21 +857,91 @@ sub prompt_for_boolean {
 		$default = $default ? "y" : "n" if $default =~ m/^[01]$/; # standardize
 		$val_prompt = $default =~ $true_re ? "[#g{Y}|n]" : "[y|#g{N}]";
 	}
-
-	print "$prompt\n";
+	chomp $prompt;
+	print "\n$prompt\n";
 	while (1) {
 		my $answer = __prompt_for_line($val_prompt,undef,undef,$default,'allow_blank');
-		return JSON::PP::true  if $answer =~ $true_re;
-		return JSON::PP::false if $answer =~ $false_re;
+		return ($invert ? $f : $t) if $answer =~ $true_re;
+		return ($invert ? $t : $f) if $answer =~ $false_re;
 		error "#r{Invalid response:} you must specify y, yes, true, n, no or false";
 	}
+}
+sub prompt_for_choices {
+	my ($prompt, $choices, $min, $max, $labels, $err_msg) = @_;
+
+	my %chosen;
+	$labels ||= [];
+	my $num_choices = scalar(@{$choices});
+	for my $i (0 .. $#$choices) {
+		$labels->[$i] ||= $choices->[$i];
+		$prompt .= "\n  ".($i+1).") ".$labels->[$i];
+	}
+	my $line_prompt = "choice";
+	$min ||= 0;
+	$max ||= $num_choices;
+	die "Illegal list maximum count specified. Please contact your kit author for a fix.\n"
+		if $max < $min;
+
+	print csprintf($prompt."\n\nMake your selections (leave $line_prompt empty to end):\n");
+
+	my @ll;
+	while (1) {
+		my $v = __prompt_for_line(
+			ordify(scalar(@ll) + 1) . $line_prompt,
+			"1-$num_choices",
+			$err_msg || "Invalid choice - enter a number between 1 and $max",
+			undef,
+			'allow_blank'
+		);
+		if ($chosen{$v}) {
+			error "#r{ERROR:} ".$choices->[$v-1]." already selected - choose another value";
+			next;
+		}
+		if ($v eq "") {
+			if (scalar(@ll) < $min) {
+				error "#r{ERROR:} Insufficient items provided - at least $min required.";
+				next;
+			}
+			last;
+		}
+		push @ll, $choices->[$v-1];
+		$chosen{$v} = 1;
+		print(csprintf("\033[1A%s%s > #C{%s}\n",ordify(scalar(@ll)), $line_prompt, $labels->[$v-1]));
+		last if scalar(@ll) == $max;
+	}
+	return \@ll;
+	
+}
+sub prompt_for_choice {
+	my ($prompt, $choices, $default, $labels, $err_msg) = @_;
+
+	my $default_choice;
+	my $num_choices = scalar(@{$choices});
+	print "\n$prompt";
+	for my $i (0 .. $#$choices) {
+		my $label = (ref($labels) eq 'ARRAY' &&  $labels->[$i]) ? $labels->[$i] : $choices->[$i];
+		print "\n  ".($i+1).") ".$label;
+		if ($default && $default eq $choices->[$i]) {
+			print csprintf(" #G{(default)}");
+			$default_choice = $i+1;
+		}
+	}
+	print "\n\n";
+	my $c = __prompt_for_line(
+		"Select choice",
+		"1-$num_choices",
+		$err_msg || "enter a number between 1 and $num_choices",
+		$default_choice);
+	
+	print(csprintf("\033[1ASelect choice > #C{%s}\n", (ref($labels) eq 'ARRAY' &&  $labels->[$c-1]) ? $labels->[$c-1] : $choices->[$c-1]));
+	return $choices->[$c-1];
 }
 
 sub prompt_for_line {
 	my ($prompt,$label,$default,$validation,$err_msg) = @_;
-	print "$prompt";
+	print "\n$prompt";
 	my $padding = ($prompt =~ /\s$/) ? "" : " ";
-	print(csprintf("${padding}#g{(default: $default)}")) if defined($default);
+	print(csprintf("%s", "${padding}#g{(default: $default)}")) if defined($default);
 	print "\n";
 	return __prompt_for_line(defined($label) ? $label : "", $validation, $err_msg, $default);
 }
@@ -857,9 +951,9 @@ sub prompt_for_list {
 	$label ||= "value";
 	$min ||= 0;
 	die "Illegal list maximum count specified. Please contact your kit author for a fix.\n"
-		if (defined($max) and $max < 2);
+		if (defined($max) and $max < 1);
 
-	print "$prompt (leave $label empty to end)\n";
+	print "\n$prompt (leave $label empty to end)\n";
 
 	my @ll;
 	while (1) {
@@ -883,28 +977,33 @@ sub prompt_for_list {
 }
 
 sub prompt_for_block {
+	printf("\n");
 	return __prompt_for_block(@_);
 }
 
-sub is_valid_uri {
+sub parse_uri {
 	my ($uri) = @_;
 	# https://tools.ietf.org/html/rfc3986
     # We use very basic validation
-	my (@components) = $uri =~ m/^(?<scheme>[a-zA-Z][a-zA-Z0-9+.-]+):
-		(?<authority>\/\/
-			(?<user>[^@]+@)?
-			(?<host>[a-zA-Z0-9.\-_~]+)
-			(?<port>:\d+)?
+	$uri =~ m/^(?<uri>
+		(?<scheme>[a-zA-Z][a-zA-Z0-9+.-]+):\/\/
+		(?<authority>
+			(?:(?<userinfo>(?<user>[^:@]+)(?::(?<password>[^@]+)))?@)?
+			(?<host>[a-zA-Z0-9.\-_~]+)?
+			(?::(?<port>\d+))?
 		)
-		(?<path>(?:[a-zA-Z0-9-._~]|[a-f0-9]|[!\$&'()*+,;=:@])+(?:\/(?:[a-zA-Z0-9-._~]|[a-f0-9]|[!\$&'()*+,;=:@])*)*|(?:\/(?:[a-zA-Z0-9-._~]|[a-f0-9]|[!\$&'()*+,;=:@])+)*)?
-		(?<query>\?(?:[a-zA-Z0-9-._~]|[a-f0-9]|[!\$&'()*+,;=:@])+)?
-		(?<fragment>\#(?:[a-zA-Z0-9-._~]|[a-f0-9]|[!\$&'()*+,;=:@])+)?
-		/gsx;
+		(?<path>\/(?:[a-zA-Z0-9-._~]|[a-f0-9]|[!\$&'()*+,;=:@])+(?:\/(?:[a-zA-Z0-9-._~]|[a-f0-9]|[!\$&'()*+,;=:@])*)*|(?:\/(?:[a-zA-Z0-9-._~]|[a-f0-9]|[!\$&'()*+,;=:@])+)*)?
+		(?:\?(?<query>(?:[a-zA-Z0-9-._~]|[a-f0-9]|[!\$&'()*+,;=:@]|%[A-Fa-f0-9]{2})+))?
+		(?:\#(?<fragment>(?:[a-zA-Z0-9-._~]|[a-f0-9]|[!\$&'()*+,;=:@])+))?
+	)$/gsx;
+	return %+;
+}
 
-        return if (not $components[0]);
-        return if ($components[0] !~ m/(http|https|file)/);
-		return if (not $components[1]);
-		return $uri;
+sub is_valid_uri {
+	my %components = parse_uri($_[0]);
+	return unless ($components{scheme}||"") =~ /^(https?|file)$/;
+	return unless $components{authority} || ($components{scheme} eq 'file' && $components{path});
+	return $components{uri};
 }
 
 my $BOSH; # used for abstracting out the actual name of the installed
@@ -2779,7 +2878,8 @@ sub validate_kit_metadata {
 			push @errors, "$subkit subkit parameters not a list (found ".(ref($meta->{params}{$subkit}) || "a string").")";
 		} else {
 			for my $param (@{$meta->{params}{$subkit}}) {
-				my $parameter = "params.$subkit\[$i\]";
+				my $name = ($param->{param} && !ref($param->{param})) ? ':'.$param->{param} : "";
+				my $parameter = "params.$subkit\[$i$name\]";
 				my (@extras, @bad);
 				for my $key (sort keys %$param) {
 					push @extras, $key if $key !~ m/^(params?|ask|vault|description|example|type)$/;
@@ -2789,14 +2889,34 @@ sub validate_kit_metadata {
 					if (defined($param->{validate})) {
 						if ($type =~ m/^(string|list)$/) {
 							@extras = grep {$_ !~ /^(validate|err_msg)$/ } @extras;
-							if ($param->{validate} !~ m/^\/.*\/i?m?s?$/     && # regex validation
-								$param->{validate} !~ m/^((^|,)[^,]+){2,}$/ && # comma-separated list
-								$param->{validate} !~ m/^(vault_path)$/     ){ # key-words
+							if ($param->{validate} !~ m/^!?\/.*\/i?m?s?$/              && # regex validation
+								$param->{validate} !~ m/^((^|,)[^,]+){2,}$/            && # comma-separated list
+								$param->{validate} !~ m/^!?\[([^,]+(,[^,]+)*)]$/       && # new invertable comma-separated list
+								$param->{validate} !~ m/^((^|,)[^,]+){2,}$/            && # comma-separated list
+								$param->{validate} !~ m/^-?\d+(\.\d+)?--?\d+(\.\d+)?$/ && # range
+								$param->{validate} !~ m/^(vault_path|url|port)$/       ){ # key-words
 								push @errors, "$parameter has an invalid validation formula";
 							}
+
+						} elsif ($type =~ m/^(multi-)?choice$/) {
+							@extras = grep {$_ !~ /^(validate|err_msg)$/ } @extras;
+							if (ref($param->{validate}) eq 'ARRAY') {
+								# All array elements must be simple strings
+								push @errors, "$parameter validation array can only contain strings or 2-string arrays"
+									if (grep {ref($_) && !(ref($_) eq 'ARRAY' && $#$_ == 1 && !ref($_->[0]) && !ref($_->[1]))} @{$param->{validate}});
+								my $min = 2;
+								$min = $param->{min_count} if ($type eq 'multi-choice' && defined($param->{min_count}) && $param->{min_count} > $min);
+								push(@errors, "$parameter requires at least 2 choices") if scalar(@{$param->{validate}}) < $min;
+							} else {
+								push @errors, "$parameter validation must be an array of strings or 2-string arrays";
+							}
+						}
+					} else {
+						if ($type =~ m/^(multi-)?choice$/) {
+							push @errors, "$parameter requires validation to provide choices";
 						}
 					}
-					if ( $type =~ m/^(string|block|multi-?line)$/) {
+					if ( $type =~ m/^(string|block|multi-?line|choice)$/) {
 						push @bad, grep {$_ !~ m/^(label|default)$/} @extras;
 					} elsif ($type eq 'boolean') {
 						push @bad, grep {$_ !~ m/^(label|default)$/} @extras;
@@ -2804,6 +2924,20 @@ sub validate_kit_metadata {
 						  if (defined($param->{default}) && $param->{default} !~ /^(1|0|y(es)?|no?|true|false)$/i);
 					} elsif ($type =~ m/^((block|multi-?line)-)?list$/) {
 						push @bad, grep {$_ !~ m/^(label|(max|min)_count)$/} @extras;
+						push @errors, "$parameter requires max_count to be equal to or greater than min_count"
+							if (defined($param->{min_count}) && defined($param->{max_count}) && $param->{max_count} < $param->{min_count});
+						foreach (qw/min_count max_count/) {
+							push @errors, "$parameter requires $_ to be non-negative"
+								if (defined($param->{$_}) && $param->{$_} < 0);
+						}
+					} elsif ($type eq 'multi-choice') {
+						push @bad, grep {$_ !~ m/^((max|min)_count)$/} @extras;
+						push @errors, "$parameter requires max_count to be equal to or greater than min_count"
+							if (defined($param->{min_count}) && defined($param->{max_count}) && $param->{max_count} < $param->{min_count});
+						foreach (qw/min_count max_count/) {
+							push @errors, "$parameter requires $_ to be non-negative"
+								if (defined($param->{$_}) && $param->{$_} < 0);
+						}
 					} else {
 						push @errors, "$parameter has unsupported type '$type'";
 						@bad = @extras;
@@ -2995,6 +3129,24 @@ sub process_kit_params {
 						$answer = prompt_for_list('line',$q->{ask},$q->{label},$q->{min_count},$q->{max_count},$q->{validate},$q->{err_msg});
 					} elsif ($type =~ m/^(block|multi-?line)-list$/) {
 						$answer = prompt_for_list('block',$q->{ask},$q->{label},$q->{min_count},$q->{max_count});
+					} elsif ($type =~ m/^(multi-)?choice$/) {
+						my ($choices,$labels)=([],[]);
+						if (ref($q->{validate}) eq 'ARRAY') {
+							foreach (@{$q->{validate}}) {
+								if (ref($_) eq 'ARRAY') {
+									push @$choices, $_->[0];
+									push @$labels, $_->[1];
+								} else {
+									push @$choices, $_;
+									push @$labels, undef;
+								}
+							}
+						}
+						if ($type eq 'choice') {
+							$answer = prompt_for_choice($q->{ask},$choices,$q->{default},$labels,$q->{err_msg});
+						} else {
+							$answer = prompt_for_choices($q->{ask},$choices,$q->{min_count},$q->{max_count},$labels,$q->{err_msg});
+						}
 					} else {
 						die "Unsupported type '$type' for parameter '$q->{param}'. Please contact your kit author for a fix.\n";
 					}
