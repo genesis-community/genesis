@@ -111,3 +111,14 @@ just that: desired.
   the ca being available.
 
 - (P5) init -k url:repo/kit support for private/custom kit repos
+
+## Update CI pipeline assumptions
+- replace using bosh aliases with the URL
+
+## Bake in Concourse pipeline vault policies
+- On genesis init, build the hcl file
+- On repipe, cycle the role_id and secret_id
+- Remove hack that just asks for the role_id and secret_id paths to generate
+  the ci.yml file.
+
+## Add validation that any default supplied by kit passes validation?
