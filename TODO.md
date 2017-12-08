@@ -112,6 +112,12 @@ just that: desired.
 
 - (P5) init -k url:repo/kit support for private/custom kit repos
 
+- (P5) Add test pre-detection for the following binaries: bosh2, jq, expect
+
+- (P5) Add test pre-detection for the following cpan libraries: Expect, Test::Differences, Test::More
+
+- (P5) Figure out why tests using tar don't pass on ubuntu
+
 ## Update CI pipeline assumptions
 - replace using bosh aliases with the URL
 

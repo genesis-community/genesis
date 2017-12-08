@@ -3945,7 +3945,7 @@ sub {
 
 	$pipeline{vault} = prompt_for_vault($pipeline{name});
 
-	($pipeline{boshes},$pipeline{stemcells}) = prompt_for_boshes_and_stemcells_for(%envs);
+	($pipeline{boshes},$pipeline{stemcells}) = prompt_for_boshes_and_stemcells_for(!$pipeline{skip_upkeep}, %envs);
 
 	$pipeline{errands} = prompt_for_list("line",clean_heredoc(<<"	|EOF"), 'errand');
 	|Enter any errands you'd like to use to test your deployments
@@ -4146,8 +4146,7 @@ sub prompt_for_vault {
 }
 
 sub prompt_for_boshes_and_stemcells_for {
-
-	my %envs = @_;
+	my ($ask_stemcells, %envs) = @_;
 
 	# Get the current boshes
 	my %boshes;
@@ -4180,7 +4179,7 @@ sub prompt_for_boshes_and_stemcells_for {
 			$boshenvs{$env}{url} = $bosh_info{url}
 		}
 		if ($boshenvs{$env}{url}) {
-			explain "\nUsing BOSH directorat #C{$boshenvs{$env}{url}}";
+			explain "\nUsing BOSH director at #C{$boshenvs{$env}{url}}";
 		} else {
 			$boshenvs{$env}{url} = prompt_for_line("Could not determine BOSH url -- please specify fully\ne.g.: https://10.0.1.44:25555");
 		}
@@ -4216,27 +4215,30 @@ sub prompt_for_boshes_and_stemcells_for {
 			|EOF
 		}
 
+		
 		my ($stemcells, %candidates) = ([]);
-		explain "\nFetching stemcells from BOSH...";
-		my $sc_info = qx($BOSH -e $boshenvs{$env}{url} ss);
-		if ($? > 0) {
-			# Couldn't get stemcells - ask for them manually (just die for now)
-			die "Could not retrieve stemcell\n";
-		} else {
-			my (@choices, @labels);
-			foreach (split("\n", $sc_info)) {
-				my ($stemcell, undef, $os) = split(' ',  $_);
-				next unless $stemcell;
-				
-				my ($alias) = split("-$os-",$stemcell);
-				$alias =~ s/^bosh-//;
-				$alias .= '-$os' if $candidates{$alias} &&($candidates{$alias} ne $stemcell);
-				next if $candidates{$alias};
-				$candidates{$alias} = $stemcell;
-				push @choices, $alias;
-				push @labels, $stemcell;
+		if ($ask_stemcells) {
+			explain "\nFetching stemcells from BOSH...";
+			my $sc_info = qx($BOSH -e $boshenvs{$env}{url} ss);
+			if ($? > 0) {
+				# Couldn't get stemcells - ask for them manually (just die for now)
+				die "Could not retrieve stemcell\n";
+			} else {
+				my (@choices, @labels);
+				foreach (split("\n", $sc_info)) {
+					my ($stemcell, undef, $os) = split(' ',  $_);
+					next unless $stemcell;
+					
+					my ($alias) = split("-$os-",$stemcell);
+					$alias =~ s/^bosh-//;
+					$alias .= '-$os' if $candidates{$alias} &&($candidates{$alias} ne $stemcell);
+					next if $candidates{$alias};
+					$candidates{$alias} = $stemcell;
+					push @choices, $alias;
+					push @labels, $stemcell;
+				}
+				$stemcells = prompt_for_choices("Select one or more stemcells to watch for updates",\@choices,1,undef,\@labels);
 			}
-			$stemcells = prompt_for_choices("Select one or more stemcells to watch for updates",\@choices,1,undef,\@labels);
 		}
 		$boshenvs{$env}{stemcells} = $stemcells;
 		$used_stemcells{$_} = $candidates{$_} foreach (@$stemcells);
