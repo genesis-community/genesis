@@ -79,6 +79,7 @@ sub valid_envs {
 			bosh => $json->{params}{bosh} || $json->{params}{env}
 		}
 	}
+	return %envs;
 }
 
 sub ago {
@@ -832,7 +833,7 @@ sub __prompt_for_line {
 			}
 		} elsif ($validation eq "vault_path") {
 			$validate = sub() {
-				return (safe_path_exists $_[0]) ? "" : ($_[1] ? $_[1] :"$_[0] not found in vault\n");
+				return (safe_path_exists $_[0]) ? "" : ($_[1] ? $_[1] :"$_[0] not found in vault");
 			}
 		}
 	}
@@ -3946,7 +3947,7 @@ sub {
 
 	($pipeline{boshes},$pipeline{stemcells}) = prompt_for_boshes_and_stemcells_for(%envs);
 
-	$pipeline{errands} = prompt_for_list("line",clean_heredoc(<<"	|EOF"));
+	$pipeline{errands} = prompt_for_list("line",clean_heredoc(<<"	|EOF"), 'errand');
 	|Enter any errands you'd like to use to test your deployments
 	|e.g.: smoke-tests
 	|EOF
@@ -3955,7 +3956,7 @@ sub {
 
 	generate_ci_template_file(\%pipeline, $name);
 
-	explain "Generated CI template file: $name\n";
+	explain "\n#g{Generated CI template file:} #C{$name}\n";
 });
 
 sub prompt_for_git {
@@ -3964,29 +3965,40 @@ sub prompt_for_git {
     my %git;
 	my ($user,$host,$org,$repo) = ("git","github.com",undef,$pipeline_name);
 	my $gitremote = qx(git config --get remote.origin.url);
-	($user,$host,$org,$repo) = $gitremote =~ qr/^(?:([^@]+)@)?(.*):(?:(.*)\/)?([^\/]+)$/
-		if ($gitremote);
+	if ($gitremote) {
+		chomp($gitremote);
+		($user,$host,$org,$repo) = $gitremote =~ qr/^(?:ssh:\/\/([^@]+)@)?([^\/:]*)[\/:](?:(.*)\/)?([^\/]+)$/;
+		$repo =~ s/\.git$// if $repo;
+	}
 
 	$git{host} = prompt_for_line("What is the Git host?", undef, $host);
 	$git{user} = prompt_for_line("What is the Git user on $git{host}?", undef, $user);
     $git{repo} = prompt_for_line("What is the name of the Git repository?", undef, $repo);
 	$git{owner} = prompt_for_line("What organization owns the '$git{repo}' repository?", undef, $org);
 
-	my $have_key = prompt_for_boolean(clean_heredoc(<<"	|EOF"));
-	|You will need to provide a SSH private key that has write access for $git{user}\@$git{host}.
-	|Do you already have this available in your vault?
+	my $key_choice = prompt_for_choice(clean_heredoc(<<"	|EOF"),[qw|reuse add new|],'reuse',["Use existing key in Vault","Add an existing key in Vault", "Generate a new key"]);
+	|How would you like to provide a SSH private key that has write access for $git{user}\@$git{host}.
 	|EOF
 
-	if ($have_key) {
-		$git{private_key} = prompt_for_line(clean_heredoc(<<"		|EOF"),undef,undef, "vault_path");
+	my $path = "secret/$ENV{GENESIS_CI_VAULT_PREFIX}/git-ssh/$git{user}\@$git{host}/$git{owner}/$git{repo}";
+	if ($key_choice eq 'reuse') {
+		$git{private_key} = prompt_for_line(clean_heredoc(<<"		|EOF"),undef,"$path:private", "vault_path");
 		|What is the vault path for your git private key?
-		|ex: secret/bosh/lite/git/repo_name:private_key
 		|EOF
+	} elsif ($key_choice eq 'new') {
+		my $result = qx(safe ssh 4096 $path);
+		die "Failed to generate Git SSH key: $result\n" if $? > 0;
+		my $fingerprint = qx(safe get $path:fingerprint);
+		die "Failed to get SSH key fingerprint from $path:fingerprint\n$fingerprint\n" if $? > 0;
+		my $pubkey = qx(safe get $path:public);
+		die "Failed to get public SSH key from $path:public\n$pubkey\n" if $? > 0;
+		chomp($pubkey,$fingerprint);
+		explain "\nGenerated 4096-bit SSH key (fingerprint: $fingerprint)\n\n#R{IMPORTANT:} Add this PUBLIC key to your Git provider ($git{host}) to grant access for this pipeline:\n\n$pubkey";
+
 	} else {
-		my $path = "secret/$ENV{GENESIS_CI_VAULT_PREFIX}/smtp/$git{host}/$git{user}/$git{org}/$git{repo}";
-		my $key =  "private_key";
+		my $key =  "private";
 		my $vault_path = "$path:$key";
-		my $answer = prompt_for_block("Enter your SSH private key for #C{$git{user}\@$git{host}:$git{org}/$git{repo}}");
+		my $answer = prompt_for_block("Enter your SSH private key for $git{user}\@$git{host}:$git{owner}/$git{repo}");
 		my $tmpdir = workdir;
 		open my $fh, ">", "$tmpdir/sshkeyforgit" or die "Could not write to $tmpdir/param: $!\n";
 		print $fh $answer;
@@ -4042,7 +4054,7 @@ sub prompt_for_notifications {
 		$notifications{email}{from} = prompt_for_line("What email address will the notifictions will be sent from?");
     }
 
-    if (prompt_for_boolean("\nWould you like to configure HipChat notification?", 0)) {
+    if (prompt_for_boolean("Would you like to configure HipChat notification?", 0)) {
 		$have_key = prompt_for_boolean(clean_heredoc(<<"		|EOF"));
 		|You will need to provide the HipChat notification token.  Do you already have this
 		|available in your vault?
@@ -4079,8 +4091,8 @@ sub prompt_for_locker {
 	|Would you like to use Locker?
 	|EOF
     if ($use_locker) {
-		$locker{url} = prompt_for_line("\nWhat is the URL to the locker API?", undef, undef, "url");
-		$locker{username} = prompt_for_line("\nWhat is the locker API username?");
+		$locker{url} = prompt_for_line("What is the URL to the locker API?", undef, undef, "url");
+		$locker{username} = prompt_for_line("What is the locker API username?");
 		my $have_key = prompt_for_boolean(clean_heredoc(<<"		|EOF"));
 		|You will need to provide the Locker API password.  Do you already have this
 		|available in your vault?
@@ -4118,10 +4130,10 @@ sub prompt_for_vault {
 	}
 	if ($@ || ! $safe_json) {
 		$vault{url} = prompt_for_line("\nWhat is the Vault URL?", undef, undef,"url");
-		$vault{verify} = prompt_for_boolean("\nDo you want to use Vault verification?\n\nDefault is no.\n", 0);
+		$vault{verify} = prompt_for_boolean("\nDo you want to skip SSL verification?\n\nDefault is no.\n", 0, 'invert');
 	} else {
 		$vault{url} = $safe_json->{Aliases}{$safe_json->{Current}};
-		$vault{verify} = $safe_json->{SkipVerify}{$vault{url}};
+		$vault{verify} = ! $safe_json->{SkipVerify}{$vault{url}};
 	}
 	$vault{role} = prompt_for_line(clean_heredoc(<<"	|EOF"),undef,"secret/$ENV{GENESIS_CI_VAULT_PREFIX}/$name/vault:role_id","vault_path");
 	|Please specify the path in Vault that contains the vault Role ID for Concourse
@@ -4150,17 +4162,17 @@ sub prompt_for_boshes_and_stemcells_for {
 		$boshes{$boshes{$_}{url}} = $boshes{$_} foreach (keys %boshes);
 	}
 
-	explain "#W{Processing detected environment files}\n#W{-------------------------------------}\n\n";
+	explain "\n#Y{Processing Detected Environments}\n#Y{--------------------------------}";
 
 	my (%boshenvs,%used_stemcells);
-	foreach my $e (map keys(%envs)) {
-		my $env = $envs{e}{env};
-		explain "Environment: #C{$env} (./$envs{e}{file})";
+	foreach my $e (sort keys(%envs)) {
+		my $env = $envs{$e}{env};
+		explain "\n#W{==> Environment:} #C{$env} (./$envs{$e}{file})";
 		$boshenvs{$env} = {};
-		my %bosh_info = $boshes{$envs{$e}{bosh}};
+		my %bosh_info = %{$boshes{$envs{$e}{bosh}}};
 
 		# Get display name (defaults to environment)
-		$boshenvs{$e}{alias} = prompt_for_line(undef, "Display name", $e);
+		$boshenvs{$env}{alias} = prompt_for_line("Display name", undef, $env);
 
 		if (is_valid_uri($envs{$e}{bosh})) {
 			$boshenvs{$env}{url} = $envs{$e}{bosh}
@@ -4168,14 +4180,14 @@ sub prompt_for_boshes_and_stemcells_for {
 			$boshenvs{$env}{url} = $bosh_info{url}
 		}
 		if ($boshenvs{$env}{url}) {
-			explain "Using BOSH at $boshenvs{$env}{url}";
+			explain "\nUsing BOSH directorat #C{$boshenvs{$env}{url}}";
 		} else {
 			$boshenvs{$env}{url} = prompt_for_line("Could not determine BOSH url -- please specify fully\ne.g.: https://10.0.1.44:25555");
 		}
 
 		if ($bosh_info{username}) {
 			$boshenvs{$env}{username} = $bosh_info{username};
-			explain "Using BOSH admin username '$boshenvs{$env}{url}'";
+			explain "\nUsing BOSH admin username #C{'$boshenvs{$env}{username}'}";
 		} else {
 			$boshenvs{$env}{username} = prompt_for_line(
 				undef,
@@ -4185,29 +4197,27 @@ sub prompt_for_boshes_and_stemcells_for {
 		}
 
 		(my $safe_slug = "secret/$env") =~ s/-/\//g;
-		if (safe_path_exists("$safe_slug/bosh/user/admin:password")) {
-			$boshenvs{$env}{password} = "$safe_slug/bosh/user/admin:password";
+		if (safe_path_exists("$safe_slug/bosh/users/admin:password")) {
+			$boshenvs{$env}{password} = "$safe_slug/bosh/users/admin:password";
+			explain "\nUsing BOSH admin password in Vault under #C{'$boshenvs{$env}{password}'}";
 		} else {
-			$boshenvs{$env}{password} = prompt_for_line(clean_heredoc(<<"			|EOF"),undef, undef, "vault_path");
+			$boshenvs{$env}{password} = prompt_for_line(clean_heredoc(<<"			|EOF"),"Specify vault path", undef, "vault_path");
 			|Could not locate the password for admin user in Vault under:
-			|$safe_slug/bosh/user/admin:password.
-			|
-			|Specify correct vault path:"
+			|$safe_slug/bosh/users/admin:password.
 			|EOF
 		}
 		if (safe_path_exists("$safe_slug/bosh/ssl/ca:certificate")) {
 			$boshenvs{$env}{ca_cert} = "$safe_slug/bosh/ssl/ca:certificate";
+			explain "\nUsing BOSH CA Certificate in Vault under #C{'$boshenvs{$env}{ca_cert}'}";
 		} else {
-			$boshenvs{$env}{ca_cert} = prompt_for_line(clean_heredoc(<<"			|EOF"),undef, undef, "vault_path");
+			$boshenvs{$env}{ca_cert} = prompt_for_line(clean_heredoc(<<"			|EOF"),"Specify vault path", undef, "vault_path");
 			|Could not locate the BOSH SSL CA certificate in Vault under:
 			|$safe_slug/bosh/ssl/ca:certificate.
-			|
-			|Specify correct vault path:"
 			|EOF
 		}
 
 		my ($stemcells, %candidates) = ([]);
-		explain "Fetching stemcells from BOSH...";
+		explain "\nFetching stemcells from BOSH...";
 		my $sc_info = qx($BOSH -e $boshenvs{$env}{url} ss);
 		if ($? > 0) {
 			# Couldn't get stemcells - ask for them manually (just die for now)
@@ -4217,7 +4227,9 @@ sub prompt_for_boshes_and_stemcells_for {
 			foreach (split("\n", $sc_info)) {
 				my ($stemcell, undef, $os) = split(' ',  $_);
 				next unless $stemcell;
-				(my ($alias) = split("-$os-",$stemcell)) =~ s/^bosh-//;
+				
+				my ($alias) = split("-$os-",$stemcell);
+				$alias =~ s/^bosh-//;
 				$alias .= '-$os' if $candidates{$alias} &&($candidates{$alias} ne $stemcell);
 				next if $candidates{$alias};
 				$candidates{$alias} = $stemcell;
@@ -4228,6 +4240,8 @@ sub prompt_for_boshes_and_stemcells_for {
 		}
 		$boshenvs{$env}{stemcells} = $stemcells;
 		$used_stemcells{$_} = $candidates{$_} foreach (@$stemcells);
+
+		print "\n";
 	}
 
    return (\%boshenvs, \%used_stemcells);
@@ -4236,28 +4250,31 @@ sub prompt_for_boshes_and_stemcells_for {
 sub prompt_for_layouts_for {
 	my %envs = @_;
 
-	explain "#W{Buliding Pipeline Layouts}\n#W{-------------------------}";
-	my %layouts;
+	explain "\n#Y{Buliding Pipeline Layouts}\n#Y{-------------------------}";
+	my %layouts = ();
 	my $default_layout = "default";
+	my $validate = undef;
 	do {
-		my $name = prompt_for_line("Name of ".ordify(keys %layouts)." layout", "![".join(",",keys(%layouts))."]", $default_layout);
+		my $name = prompt_for_line("Name of ".ordify(keys(%layouts) + 1)."layout", undef, $default_layout, $validate);
 		$default_layout = undef if $default_layout && $name eq $default_layout;
 
-		explain "\nValid deployment environments ".join(", ", keys(%envs))."\n\n";
+		explain "\n#G{Valid deployment environments:} ".join(", ", keys(%envs))."";
 
-		my @deployment_paths = prompt_for_list("line", clean_heredoc(<<"		|EOF"),"Deployment Pathway",1);
+		$layouts{$name}{deployments_chains} = prompt_for_list("line", clean_heredoc(<<"		|EOF"),"deployment pathway",1);
 		|Please specify the order of the environments.  You can specify multiple pathways, and
 		|reuse environments across pathways, as long as no cycles are created.
 		|e.g.:  east-1-bosh-lite -> east-1-sandbox -> east-1-prod
+		|
 		|EOF
-		$layouts{$name}{deployments_chains} = join("\n",@deployment_paths);
 
-		my $auto_triggers = prompt_for_choices(clean_heredoc(<<"		|EOF"), \keys(%envs));
+		my $auto_triggers = prompt_for_choices(clean_heredoc(<<"		|EOF"), [(keys(%envs))]);
+		|
 		|What deployments do you want to automaticlly trigger when there are corresponding
 		|deployment or stemcell changes?
 		|EOF
 
 		$layouts{$name}{auto} = join(" ",@$auto_triggers);
+		$validate = "![".join(",",keys(%layouts))."]";
 
     } while (prompt_for_boolean("Would you like to enter another layout for your pipeline?"));
     return \%layouts;
@@ -4274,20 +4291,31 @@ sub generate_ci_template_file() {
 	print $OUT <<"EOF";
 pipeline:
   name: $pipeline->{name}
+
   public:      ${\boolean_to_yaml($pipeline->{public})}
   tagged:      ${\boolean_to_yaml($pipeline->{tagged})}
   debug:       ${\boolean_to_yaml($pipeline->{debug})}
   skip_upkeep: ${\boolean_to_yaml($pipeline->{skip_upkeep})}
 
   git:
-    owner: $pipeline->{git}{owner}
-    repo:  $pipeline->{git}{repo}
+EOF
+
+	my @components = ("owner","repo");
+	unshift(@components, "host") unless $pipeline->{git}{host} eq "github.com";
+	unshift(@components, "user") unless $pipeline->{git}{user} eq "git";
+	foreach (@components) {
+		my $label = sprintf("%-13s", "$_:");
+		print $OUT <<"EOF";
+    $label$pipeline->{git}{$_}
+EOF
+	}
+	print $OUT <<"EOF";
     private_key: (( vault "$pipeline->{git}{private_key}" ))
 
   vault:
-    role: (( vault "$pipeline->{vault}{role}" ))
+    role:   (( vault "$pipeline->{vault}{role}" ))
     secret: (( vault "$pipeline->{vault}{secret}" ))
-    url: $pipeline->{vault}{url}
+    url:    $pipeline->{vault}{url}
     verify: ${\boolean_to_yaml($pipeline->{vault}{verify})}
 EOF
 
@@ -4304,8 +4332,8 @@ EOF
 		print $OUT <<"EOF";
 
   hipchat:
+    token:   (( vault "$pipeline->{notifications}{hipchat}{token}" ))
     room_id: $pipeline->{notifications}{hipchat}{room_id}
-    token: (( vault "$pipeline->{notifications}{hipchat}{token}" ))
 EOF
 	}
 
@@ -4313,13 +4341,13 @@ EOF
 		print $OUT <<"EOF";
 
   email:
-    to: $pipeline->{notifications}{email}{to}
+    to:   $pipeline->{notifications}{email}{to}
     from: $pipeline->{notifications}{email}{from}
     smtp:
       username: $pipeline->{notifications}{email}{smtp}{username}
       password: (( vault "$pipeline->{notifications}{email}{smtp}{password}" ))
-      host: $pipeline->{notifications}{email}{smtp}{host}
-      port: $pipeline->{notifications}{email}{smtp}{port}
+      host:     $pipeline->{notifications}{email}{smtp}{host}
+      port:     $pipeline->{notifications}{email}{smtp}{port}
 EOF
 	}
 
@@ -4327,8 +4355,8 @@ EOF
 		print $OUT <<"EOF";
 
   locker:
-    url: $pipeline->{locker}{url}
-    username: (( vault "$pipeline->{locker}{username}" ))
+    url:      $pipeline->{locker}{url}
+    username: $pipeline->{locker}{username}
     password: (( vault "$pipeline->{locker}{password}" ))
 EOF
 	}
@@ -4340,7 +4368,7 @@ EOF
 EOF
 	foreach my $alias (keys %{$pipeline->{stemcells}}) {
 		print $OUT <<"EOF"
-    $alias: $pipeline->{stemcells}{$alias}\n"
+    $alias: $pipeline->{stemcells}{$alias}
 EOF
 	}
 
@@ -4351,22 +4379,22 @@ EOF
     foreach my $env (keys %{$pipeline->{boshes}}) {
 		print $OUT <<"EOF";
     $env:
-      alias: $pipeline->{boshes}{$env}{alias}
-      url: $pipeline->{boshes}{$env}{url}
-      ca_cert: (( vault "$pipeline->{boshes}{$env}{ca_cert}" ))
+      alias:    $pipeline->{boshes}{$env}{alias}
+      url:      $pipeline->{boshes}{$env}{url}
+      ca_cert:  (( vault "$pipeline->{boshes}{$env}{ca_cert}" ))
       username: $pipeline->{boshes}{$env}{username}
       password: (( vault "$pipeline->{boshes}{$env}{password}" ))
       stemcells:
 EOF
 		foreach my $i ( 0 .. $#{ $pipeline->{boshes}{$env}{stemcells} } ) {
-            print $OUT <<"EOF";
+			print $OUT <<"EOF";
       - $pipeline->{boshes}{$env}{stemcells}[$i]
 EOF
-        }
+		}
+		print $OUT "\n";
 	}
 
 	print $OUT <<"EOF";
-
   layouts:
 EOF
     foreach my $layout (keys %{$pipeline->{layouts}}) {
@@ -4374,7 +4402,8 @@ EOF
     $layout: |+
       auto $pipeline->{layouts}{$layout}{auto}
 EOF
-		print $OUT "      $_\n" foreach ($pipeline->{layouts}{$layout}{deployments_chains});
+		print $OUT "      $_\n" foreach (@{$pipeline->{layouts}{$layout}{deployments_chains}});
+		print $OUT "\n";
 	}
 
 	if ($pipeline->{errands}){
@@ -4385,7 +4414,6 @@ EOF
     my $errands = "[".join(",", @errands)."]";
 
 		print $OUT <<"EOF";
-
   errands: $errands
 EOF
 	}
