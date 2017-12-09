@@ -787,7 +787,9 @@ sub __prompt_for_line {
 	# being an optional error message
 	my $validate;
 	if (defined($validation)) {
-		if ($validation eq "url") {
+		if (ref($validation) eq 'CODE') {
+			$validate = $validation; # Only used by internal usage of prompts
+		} elsif ($validation eq "url") {
 			$validate = sub() {
 				return "" if (is_valid_uri($_[0]));
 				return ($_[1] ? $_[1] :"$_[0] is not a valid URL");
@@ -974,13 +976,14 @@ sub prompt_for_line {
 }
 
 sub prompt_for_list {
-	my ($type,$prompt,$label,$min,$max,$validation, $err_msg) = @_;
+	my ($type,$prompt,$label,$min,$max,$validation, $err_msg, $end_prompt) = @_;
 	$label ||= "value";
 	$min ||= 0;
+	$end_prompt = "(leave $label empty to end)" unless defined($end_prompt);
 	die "Illegal list maximum count specified. Please contact your kit author for a fix.\n"
 		if (defined($max) and $max < 1);
 
-	print "\n$prompt (leave $label empty to end)\n";
+	print csprintf("\n%s %s\n", $prompt, $end_prompt);
 
 	my @ll;
 	while (1) {
@@ -3939,7 +3942,11 @@ sub {
 
 	$pipeline{git} = prompt_for_git($pipeline{name});
 
-	$pipeline{notifications} = prompt_for_notifications();
+	do {
+		$pipeline{notifications} = prompt_for_notifications();
+		explain "\n#r{ERROR: You must have at least one notification system!}"
+			unless %{$pipeline{notifications}};
+	} until (%{$pipeline{notifications}});
 
 	$pipeline{locker} = prompt_for_locker();
 
@@ -4015,9 +4022,6 @@ sub prompt_for_notifications {
 	my (%notifications,$have_key);
 
 	explain "\n#Y{Notification Details}";
-	$notifications{slack} = {};
-	$notifications{email} = {smtp => {}};
-	$notifications{hipchat} = {};
 
 	if (prompt_for_boolean("Would you like to configure Slack notification?", 1)) {
 		$notifications{slack}{webhook} = prompt_for_line(clean_heredoc(<<"		|EOF"), undef, undef, "url");
@@ -4260,16 +4264,24 @@ sub prompt_for_layouts_for {
 		my $name = prompt_for_line("Name of ".ordify(keys(%layouts) + 1)."layout", undef, $default_layout, $validate);
 		$default_layout = undef if $default_layout && $name eq $default_layout;
 
-		explain "\n#G{Valid deployment environments:} ".join(", ", keys(%envs))."";
+		explain "\n#G{Valid deployment environments:} ".join(", ", sort keys(%envs))."";
+		my $validate_pathway = sub() {
+			my @valid_envs = grep {defined($envs{$_})} split(" -> ",$_[0]);
+			my @invalid_envs = grep {!defined($envs{$_})} split(" -> ",$_[0]);
+			return "Unknown environment specified: ${\join(', ', map {qq('$_')} @invalid_envs)}" if @invalid_envs;
+			return "No environments specified" unless @valid_envs;
+			# TODO: also check for duplicates and cycles
+			return "";
+		};
 
-		$layouts{$name}{deployments_chains} = prompt_for_list("line", clean_heredoc(<<"		|EOF"),"deployment pathway",1);
-		|Please specify the order of the environments.  You can specify multiple pathways, and
-		|reuse environments across pathways, as long as no cycles are created.
-		|e.g.:  east-1-bosh-lite -> east-1-sandbox -> east-1-prod
-		|
+		$layouts{$name}{deployments_chains} = prompt_for_list("line", clean_heredoc(<<"		|EOF"),"deployment pathway",1,undef,$validate_pathway,undef,"\n\nSpecify one or more deployment pathways (leave empty to end)\n" );
+		|Deployment pathways describe the flow of the pipeline from one passing deployment
+		|to the next.  You can specify multiple pathways, and reuse environments across
+		|pathways, as long as no cycles are created.
+		|e.g.:  ${\join(" -> ", sort keys(%envs))}
 		|EOF
 
-		my $auto_triggers = prompt_for_choices(clean_heredoc(<<"		|EOF"), [(keys(%envs))]);
+		my $auto_triggers = prompt_for_choices(clean_heredoc(<<"		|EOF"), [(sort keys(%envs))]);
 		|
 		|What deployments do you want to automaticlly trigger when there are corresponding
 		|deployment or stemcell changes?
