@@ -69,7 +69,7 @@ sub envdefault {
 sub valid_envs {
 	my (%envs, $json);
 	foreach (glob "*.yml") {
-		eval {$json = decode_json(qx{spruce json "$_"});};
+		eval {$json = decode_json(qx{spruce json "$_" 2>/dev/null});};
 		next if $@;
 		next unless $json && $json->{params} && $json->{params}{env};
 		(my $label= $_) =~ s/\.yml$//;
@@ -824,7 +824,7 @@ sub __prompt_for_line {
 					(scalar(@matches) == 0 ? "" : ($_[1] ? $_[1] : "Cannot be one of ".join(", ",@__vlist))):
 					(scalar(@matches) != 0 ? "" : ($_[1] ? $_[1] : "Expecting one of ".join(", ",@__vlist)));
 			}
-		} elsif ($validation =~ m/^((^|,)[^,]+){2,}$/) { # Depricated list match 2 or more
+		} elsif ($validation =~ m/^((^|,)[^,]+){2,}$/) { # Deprecated list match 2 or more
 			my @__vlist = split(",", $validation);
 			$validate = sub() {
 				my $needle=shift;
@@ -3878,8 +3878,8 @@ USAGE: genesis ci [--name ci.yml]
 OPTIONS
 $GLOBAL_USAGE
         --name          The name of the configuration yaml file to generate, default is `ci.yml'
-	-f, --force         Force overwrite the configuraiton yaml file if it already exists.
-	    --vault-prefix  The prefix for any new vault secrets (default: concourse-ci)
+    -f, --force         Force overwrite the configuraiton yaml file if it already exists.
+        --vault-prefix  The prefix for any new vault secrets (default: concourse-ci)
 
 EOF
 sub {
@@ -3962,7 +3962,7 @@ sub {
 sub prompt_for_git {
 	explain "\n#Y{Git Repository Details}";
 	my $pipeline_name = shift;
-    my %git;
+	my %git;
 	my ($user,$host,$org,$repo) = ("git","github.com",undef,$pipeline_name);
 	my $gitremote = qx(git config --get remote.origin.url);
 	if ($gitremote) {
@@ -3973,7 +3973,7 @@ sub prompt_for_git {
 
 	$git{host} = prompt_for_line("What is the Git host?", undef, $host);
 	$git{user} = prompt_for_line("What is the Git user on $git{host}?", undef, $user);
-    $git{repo} = prompt_for_line("What is the name of the Git repository?", undef, $repo);
+	$git{repo} = prompt_for_line("What is the name of the Git repository?", undef, $repo);
 	$git{owner} = prompt_for_line("What organization owns the '$git{repo}' repository?", undef, $org);
 
 	my $key_choice = prompt_for_choice(clean_heredoc(<<"	|EOF"),[qw|reuse add new|],'reuse',["Use existing key in Vault","Add an existing key in Vault", "Generate a new key"]);
@@ -4008,25 +4008,25 @@ sub prompt_for_git {
 		explain "Stored SSH private key in Vault under #W{$vault_path}";
 		$git{private_key} = $vault_path;
 	}
-    return \%git;
+	return \%git;
 }
 
 sub prompt_for_notifications {
-    my (%notifications,$have_key);
+	my (%notifications,$have_key);
 
 	explain "\n#Y{Notification Details}";
-    $notifications{slack} = {};
-    $notifications{email} = {smtp => {}};
-    $notifications{hipchat} = {};
+	$notifications{slack} = {};
+	$notifications{email} = {smtp => {}};
+	$notifications{hipchat} = {};
 
-    if (prompt_for_boolean("Would you like to configure Slack notification?", 1)) {
+	if (prompt_for_boolean("Would you like to configure Slack notification?", 1)) {
 		$notifications{slack}{webhook} = prompt_for_line(clean_heredoc(<<"		|EOF"), undef, undef, "url");
 		|What is your Slack Integration WebHook URL?
 		|EOF
 		$notifications{slack}{channel} = prompt_for_line("\nWhich slack channel which will receive notifications?");
-    }
+	}
 
-    if (prompt_for_boolean("Would you like to configure email notification via SMTP?", 0)) {
+	if (prompt_for_boolean("Would you like to configure email notification via SMTP?", 0)) {
 		$notifications{email}{smtp}{host} = prompt_for_line("\nWhat is the SMTP host?");
 		$notifications{email}{smtp}{port} = prompt_for_line("\nWhat is the SMTP port?", undef, undef, "0-65535");
 		$notifications{email}{smtp}{username} = prompt_for_line("\nWhat is the SMTP username?");
@@ -4052,9 +4052,9 @@ sub prompt_for_notifications {
 		}
 		$notifications{email}{to} = prompt_for_line("What email address will the notifications be sent to?");
 		$notifications{email}{from} = prompt_for_line("What email address will the notifictions will be sent from?");
-    }
+	}
 
-    if (prompt_for_boolean("Would you like to configure HipChat notification?", 0)) {
+	if (prompt_for_boolean("Would you like to configure HipChat notification?", 0)) {
 		$have_key = prompt_for_boolean(clean_heredoc(<<"		|EOF"));
 		|You will need to provide the HipChat notification token.  Do you already have this
 		|available in your vault?
@@ -4075,12 +4075,12 @@ sub prompt_for_notifications {
 			$notifications{hipchat}{token} = $vault_path;
 		}
 		$notifications{hipchat}{room_id} = prompt_for_line("What is the ID of the room you want the notifications posted to?");
-    }
-    return \%notifications;
+	}
+	return \%notifications;
 }
 
 sub prompt_for_locker {
-    my (%locker);
+	my (%locker);
 
 	explain "\n#Y{Workflow Details}";
 	my $use_locker = prompt_for_boolean(clean_heredoc(<<"	|EOF"),1);
@@ -4090,7 +4090,7 @@ sub prompt_for_locker {
 	|
 	|Would you like to use Locker?
 	|EOF
-    if ($use_locker) {
+	if ($use_locker) {
 		$locker{url} = prompt_for_line("What is the URL to the locker API?", undef, undef, "url");
 		$locker{username} = prompt_for_line("What is the locker API username?");
 		my $have_key = prompt_for_boolean(clean_heredoc(<<"		|EOF"));
@@ -4115,14 +4115,14 @@ sub prompt_for_locker {
 			explain "Stored Locker API password in Vault under #W{$vault_path}";
 			$locker{password} = $vault_path;
 		}
-    }
-    return \%locker;
+	}
+	return \%locker;
 }
 
 sub prompt_for_vault {
 	my $name = shift;
 	explain "\n#Y{Vault Connection Details}";
-    my (%vault,$safe_json);
+	my (%vault,$safe_json);
 	if (-f "$ENV{HOME}/.saferc") {
 		eval {
 			$safe_json = decode_json(qx(spruce json \$HOME/.saferc));
@@ -4142,7 +4142,7 @@ sub prompt_for_vault {
 	|Please specify the path in Vault that contains the vault Secret ID for Concourse
 	|EOF
 
-    return \%vault;
+	return \%vault;
 }
 
 sub prompt_for_boshes_and_stemcells_for {
@@ -4278,8 +4278,8 @@ sub prompt_for_layouts_for {
 		$layouts{$name}{auto} = join(" ",@$auto_triggers);
 		$validate = "![".join(",",keys(%layouts))."]";
 
-    } while (prompt_for_boolean("Would you like to enter another layout for your pipeline?"));
-    return \%layouts;
+	} while (prompt_for_boolean("Would you like to enter another layout for your pipeline?"));
+	return \%layouts;
 }
 
 sub boolean_to_yaml {
@@ -4363,7 +4363,7 @@ EOF
 EOF
 	}
 
-    my @stemcells = split("\n",$pipeline->{stemcells});
+	my @stemcells = split("\n",$pipeline->{stemcells});
 	print $OUT <<"EOF";
 
   stemcells:
@@ -4378,7 +4378,7 @@ EOF
 
   boshes:
 EOF
-    foreach my $env (keys %{$pipeline->{boshes}}) {
+	foreach my $env (keys %{$pipeline->{boshes}}) {
 		print $OUT <<"EOF";
     $env:
       alias:    $pipeline->{boshes}{$env}{alias}
@@ -4399,7 +4399,7 @@ EOF
 	print $OUT <<"EOF";
   layouts:
 EOF
-    foreach my $layout (keys %{$pipeline->{layouts}}) {
+	foreach my $layout (keys %{$pipeline->{layouts}}) {
 		print $OUT <<"EOF";
     $layout: |+
       auto $pipeline->{layouts}{$layout}{auto}
@@ -4408,12 +4408,12 @@ EOF
 		print $OUT "\n";
 	}
 
-	if ($pipeline->{errands}){
+	if ($pipeline->{errands}) {
 		my @errands;
 		for my $i ( 0 .. $#{ $pipeline->{errands} } ) {
-            push (@errands, $pipeline->{errands}[$i]);
-       }
-    my $errands = "[".join(",", @errands)."]";
+			push (@errands, $pipeline->{errands}[$i]);
+		}
+		my $errands = "[".join(",", @errands)."]";
 
 		print $OUT <<"EOF";
   errands: $errands
