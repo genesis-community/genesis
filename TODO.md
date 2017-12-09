@@ -111,3 +111,20 @@ just that: desired.
   the ca being available.
 
 - (P5) init -k url:repo/kit support for private/custom kit repos
+
+- (P5) Add test pre-detection for the following binaries: bosh2, jq, expect
+
+- (P5) Add test pre-detection for the following cpan libraries: Expect, Test::Differences, Test::More
+
+- (P5) Figure out why tests using tar don't pass on ubuntu
+
+## Update CI pipeline assumptions
+- replace using bosh aliases with the URL
+
+## Bake in Concourse pipeline vault policies
+- On genesis init, build the hcl file
+- On repipe, cycle the role_id and secret_id
+- Remove hack that just asks for the role_id and secret_id paths to generate
+  the ci.yml file.
+
+## Add validation that any default supplied by kit passes validation?

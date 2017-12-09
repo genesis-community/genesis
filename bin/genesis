@@ -11,7 +11,7 @@ use HTTP::Tiny;
 
 use Getopt::Long qw/GetOptionsFromArray :config no_ignore_case/;
 use File::Temp qw/tempdir tempfile/;
-use File::Basename qw/dirname/;
+use File::Basename qw/dirname basename/;
 use POSIX qw/strftime/;
 use FindBin;
 use Socket qw/inet_ntoa/;
@@ -64,6 +64,22 @@ sub envset {
 sub envdefault {
 	my ($var, $default) = @_;
 	return defined $ENV{$var} ? $ENV{$var} : $default;
+}
+
+sub valid_envs {
+	my (%envs, $json);
+	foreach (glob "*.yml") {
+		eval {$json = decode_json(qx{spruce json "$_" 2>/dev/null});};
+		next if $@;
+		next unless $json && $json->{params} && $json->{params}{env};
+		(my $label= $_) =~ s/\.yml$//;
+		$envs{$label} = {
+			file => $_,
+			env  => $json->{params}{env},
+			bosh => $json->{params}{bosh} || $json->{params}{env}
+		}
+	}
+	return %envs;
 }
 
 sub ago {
@@ -152,7 +168,9 @@ sub trace(@) {
 }
 
 sub error {
-	printf STDERR csprintf(@_) . "\n";
+	my @err = @_;
+	unshift @err, "%s" if $#err == 0;
+	print STDERR csprintf(@err) . "\n";
 }
 
 sub online {
@@ -250,7 +268,7 @@ sub chmod_or_fail {
 
 # check we're in a Genesis v2 directory
 sub in_repo_dir {
-  return  -d ".genesis" && -e ".genesis/config";
+	return  -d ".genesis" && -e ".genesis/config";
 }
 
 # workdir;
@@ -648,6 +666,11 @@ sub dereference_params {
 	return $cmd;
 }
 
+sub safe_path_exists {
+	system "safe exists $_[0]";
+	return ( $? eq 0);
+}
+
 sub safe_commands {
 	my ($creds, %options) = @_;
 	my @cmds;
@@ -802,6 +825,12 @@ sub ordify {
 	return "$_[0]". ($ord_suffix{ $_[0] % 100 } || $ord_suffix{ $_[0] % 10 } || 'th')." ";
 }
 
+sub clean_heredoc {
+	my $heredoc = join("",map {s/^\s*\|//; $_} split(/^/, shift));
+	chomp $heredoc;
+	return $heredoc;
+}
+
 sub __prompt_for_line {
 	my ($prompt,$validation,$err_msg,$default,$allow_blank) = @_;
 	$prompt = join(' ', grep {defined($_) && $_ ne ""} ($prompt, '>')) . " ";
@@ -810,33 +839,66 @@ sub __prompt_for_line {
 	# being an optional error message
 	my $validate;
 	if (defined($validation)) {
-		if ($validation =~ m/^\/(.*)\/(i?m?s?)$/) {
-			my $__vre;
-			# safe because the only thing being eval'ed is the optional i,s, or m
-			eval "\$__vre = qr/\$1/$2"
-				or die "Error compiling param regex: $!";
+		if (ref($validation) eq 'CODE') {
+			$validate = $validation; # Only used by internal usage of prompts
+		} elsif ($validation eq "url") {
 			$validate = sub() {
-				return ($_[0] =~ $__vre ? "" : ( $_[1] ? $_[1] : "Does not match required pattern"));
+				return "" if (is_valid_uri($_[0]));
+				return ($_[1] ? $_[1] :"$_[0] is not a valid URL");
 			}
-		} elsif ($validation =~ m/^((^|,)[^,]+){2,}$/) {
+		} elsif ($validation eq "port") {
+			$validate = sub() {
+				return "" if ( ($_[0] =~ m/^\d+$/) && ($_[0] >= 0 ) && ($_[0] <= 65535) );
+				return ($_[1] ? $_[1] :"$_[0] is not a valid port");
+			}
+		} elsif ($validation =~ m/^(-?\d+(?:.\d+)?)-(-?\d+(?:.\d+)?)$/) {
+			my ($__min,$__max) = ($1,$2);
+			$validate = sub() {
+				return "" if (($_[0] =~ m/^\d+$/) && ($_[0] >= $__min ) && ($_[0] <= $__max));
+				return ($_[1] ? $_[1] : "$_[0] expected to be between $__min and $__max");
+			}
+		} elsif ($validation =~ m/^(!)?\/(.*)\/(i?m?s?)$/) {
+			my $__vre;
+			my $__negate = ($1 && $1 eq "!");
+			# safe because the only thing being eval'ed is the optional i,s, or m
+			eval "\$__vre = qr/\$2/$3"
+				or die "Error compiling param regex: $!";
+			$validate = $__negate ? sub() {
+				return ($_[0] !~ $__vre ? "" : ( $_[1] ? $_[1] : "Matches exclusionary pattern"));
+			} : sub() {
+				return ($_[0] =~ $__vre ? "" : ( $_[1] ? $_[1] : "Does not match required pattern"));
+			};
+		} elsif ($validation =~ m/^(!)?\[([^,]+(,[^,]+)*)\]$/) {
+			my @__vlist = split(",", $2);
+			my $__negate = ($1 && $1 eq "!");
+			$validate =  sub() {
+				my $needle=shift;
+				my @matches = grep {$_ eq $needle} @__vlist;
+				return $__negate ?
+					(scalar(@matches) == 0 ? "" : ($_[1] ? $_[1] : "Cannot be one of ".join(", ",@__vlist))):
+					(scalar(@matches) != 0 ? "" : ($_[1] ? $_[1] : "Expecting one of ".join(", ",@__vlist)));
+			}
+		} elsif ($validation =~ m/^((^|,)[^,]+){2,}$/) { # Deprecated list match 2 or more
 			my @__vlist = split(",", $validation);
 			$validate = sub() {
 				my $needle=shift;
 				my @matches = grep {$_ eq $needle} @__vlist;
-				return (scalar(@matches) != 0 ? "" : ($_[1] ? $_[1] : "Expecting one of ".join(", ",@__vlist)))
+				return (scalar(@matches) != 0 ? "" : ($_[1] ? $_[1] : "Expecting one of ".join(", ",@__vlist)));
 			}
 		} elsif ($validation eq "vault_path") {
-			my $validate = sub() {
-				system "safe exists $_[0]";
-				return ( $? eq 0 ? "" : ($_[1] ? $_[1] :"$_[0] not found in vault\n"))
+			$validate = sub() {
+				return (safe_path_exists $_[0]) ? "" : ($_[1] ? $_[1] :"$_[0] not found in vault");
 			}
 		}
 	}
 
 	while (1) {
-		print csprintf($prompt);
+		print csprintf("%s", $prompt);
 		chomp (my $in=<STDIN>);
-		$in = $default if ($in eq "" && defined($default));
+		if ($in eq "" && defined($default)) {
+			$in = $default;
+			print(csprintf("\033[1A%s#C{%s}\n",$prompt, $in));
+		}
 		$in =~ s/^\s+|\s+$//g;
 
 		return "" if ($in eq "" && $allow_blank);
@@ -866,7 +928,8 @@ sub __prompt_for_block {
 }
 
 sub prompt_for_boolean {
-	my ($prompt,$default) = @_;
+	my ($prompt,$default,$invert) = @_;
+	my ($t,$f) = (JSON::PP::true,JSON::PP::false);
 
 	my $true_re = qr/^(?:y(?:es)?|t(rue)?)$/i;
 	my $false_re =  qr/^(?:no?|f(alse)?)$/i;
@@ -875,33 +938,104 @@ sub prompt_for_boolean {
 		$default = $default ? "y" : "n" if $default =~ m/^[01]$/; # standardize
 		$val_prompt = $default =~ $true_re ? "[#g{Y}|n]" : "[y|#g{N}]";
 	}
-
-	print "$prompt\n";
+	chomp $prompt;
+	print "\n$prompt\n";
 	while (1) {
 		my $answer = __prompt_for_line($val_prompt,undef,undef,$default,'allow_blank');
-		return JSON::PP::true  if $answer =~ $true_re;
-		return JSON::PP::false if $answer =~ $false_re;
+		return ($invert ? $f : $t) if $answer =~ $true_re;
+		return ($invert ? $t : $f) if $answer =~ $false_re;
 		error "#r{Invalid response:} you must specify y, yes, true, n, no or false";
 	}
+}
+sub prompt_for_choices {
+	my ($prompt, $choices, $min, $max, $labels, $err_msg) = @_;
+
+	my %chosen;
+	$labels ||= [];
+	my $num_choices = scalar(@{$choices});
+	for my $i (0 .. $#$choices) {
+		$labels->[$i] ||= $choices->[$i];
+		$prompt .= "\n  ".($i+1).") ".$labels->[$i];
+	}
+	my $line_prompt = "choice";
+	$min ||= 0;
+	$max ||= $num_choices;
+	die "Illegal list maximum count specified. Please contact your kit author for a fix.\n"
+		if $max < $min;
+
+	print csprintf($prompt."\n\nMake your selections (leave $line_prompt empty to end):\n");
+
+	my @ll;
+	while (1) {
+		my $v = __prompt_for_line(
+			ordify(scalar(@ll) + 1) . $line_prompt,
+			"1-$num_choices",
+			$err_msg || "Invalid choice - enter a number between 1 and $max",
+			undef,
+			'allow_blank'
+		);
+		if ($chosen{$v}) {
+			error "#r{ERROR:} ".$choices->[$v-1]." already selected - choose another value";
+			next;
+		}
+		if ($v eq "") {
+			if (scalar(@ll) < $min) {
+				error "#r{ERROR:} Insufficient items provided - at least $min required.";
+				next;
+			}
+			last;
+		}
+		push @ll, $choices->[$v-1];
+		$chosen{$v} = 1;
+		print(csprintf("\033[1A%s%s > #C{%s}\n",ordify(scalar(@ll)), $line_prompt, $labels->[$v-1]));
+		last if scalar(@ll) == $max;
+	}
+	return \@ll;
+
+}
+sub prompt_for_choice {
+	my ($prompt, $choices, $default, $labels, $err_msg) = @_;
+
+	my $default_choice;
+	my $num_choices = scalar(@{$choices});
+	print "\n$prompt";
+	for my $i (0 .. $#$choices) {
+		my $label = (ref($labels) eq 'ARRAY' &&  $labels->[$i]) ? $labels->[$i] : $choices->[$i];
+		print "\n  ".($i+1).") ".$label;
+		if ($default && $default eq $choices->[$i]) {
+			print csprintf(" #G{(default)}");
+			$default_choice = $i+1;
+		}
+	}
+	print "\n\n";
+	my $c = __prompt_for_line(
+		"Select choice",
+		"1-$num_choices",
+		$err_msg || "enter a number between 1 and $num_choices",
+		$default_choice);
+
+	print(csprintf("\033[1ASelect choice > #C{%s}\n", (ref($labels) eq 'ARRAY' &&  $labels->[$c-1]) ? $labels->[$c-1] : $choices->[$c-1]));
+	return $choices->[$c-1];
 }
 
 sub prompt_for_line {
 	my ($prompt,$label,$default,$validation,$err_msg) = @_;
-	print "$prompt";
+	print "\n$prompt";
 	my $padding = ($prompt =~ /\s$/) ? "" : " ";
-	print(csprintf("${padding}#g{(default: $default)}")) if defined($default);
+	print(csprintf("%s", "${padding}#g{(default: $default)}")) if defined($default);
 	print "\n";
 	return __prompt_for_line(defined($label) ? $label : "", $validation, $err_msg, $default);
 }
 
 sub prompt_for_list {
-	my ($type,$prompt,$label,$min,$max,$validation, $err_msg) = @_;
+	my ($type,$prompt,$label,$min,$max,$validation, $err_msg, $end_prompt) = @_;
 	$label ||= "value";
 	$min ||= 0;
+	$end_prompt = "(leave $label empty to end)" unless defined($end_prompt);
 	die "Illegal list maximum count specified. Please contact your kit author for a fix.\n"
-		if (defined($max) and $max < 2);
+		if (defined($max) and $max < 1);
 
-	print "$prompt (leave $label empty to end)\n";
+	print csprintf("\n%s %s\n", $prompt, $end_prompt);
 
 	my @ll;
 	while (1) {
@@ -925,7 +1059,33 @@ sub prompt_for_list {
 }
 
 sub prompt_for_block {
+	printf("\n");
 	return __prompt_for_block(@_);
+}
+
+sub parse_uri {
+	my ($uri) = @_;
+	# https://tools.ietf.org/html/rfc3986
+    # We use very basic validation
+	$uri =~ m/^(?<uri>
+		(?<scheme>[a-zA-Z][a-zA-Z0-9+.-]+):\/\/
+		(?<authority>
+			(?:(?<userinfo>(?<user>[^:@]+)(?::(?<password>[^@]+)))?@)?
+			(?<host>[a-zA-Z0-9.\-_~]+)?
+			(?::(?<port>\d+))?
+		)
+		(?<path>\/(?:[a-zA-Z0-9-._~]|[a-f0-9]|[!\$&'()*+,;=:@])+(?:\/(?:[a-zA-Z0-9-._~]|[a-f0-9]|[!\$&'()*+,;=:@])*)*|(?:\/(?:[a-zA-Z0-9-._~]|[a-f0-9]|[!\$&'()*+,;=:@])+)*)?
+		(?:\?(?<query>(?:[a-zA-Z0-9-._~]|[a-f0-9]|[!\$&'()*+,;=:@]|%[A-Fa-f0-9]{2})+))?
+		(?:\#(?<fragment>(?:[a-zA-Z0-9-._~]|[a-f0-9]|[!\$&'()*+,;=:@])+))?
+	)$/gsx;
+	return %+;
+}
+
+sub is_valid_uri {
+	my %components = parse_uri($_[0]);
+	return unless ($components{scheme}||"") =~ /^(https?|file)$/;
+	return unless $components{authority} || ($components{scheme} eq 'file' && $components{path});
+	return $components{uri};
 }
 
 my $BOSH; # used for abstracting out the actual name of the installed
@@ -1382,7 +1542,7 @@ sub read_pipeline {
 		$n++ if exists $p->{pipeline}{$_};
 	}
 	if ($n == 0) {
-		push @errors, "No notification stanzas defined.  Please define `pipeline.slack' or `pipeline.email'.\n";
+		push @errors, "No notification stanzas defined.  Please define `pipeline.slack', 'pipeline.hipchat' or `pipeline.email'.\n";
 	} else {
 		if ($p->{pipeline}{slack}) {
 			# validate pipeline.slack.*
@@ -1549,7 +1709,7 @@ sub parse_pipeline {
 	my $src = $pipeline->{pipeline}{layouts}{$layout}
 		or die "No such layout `${layout}'\n";
 
-	# our internal representatio
+	# our internal representation
 	my $P = $pipeline;
 	$P->{file} = $file;  # the path to the original pipeline file,
 	                     # which we need to merge in with the guts.yml
@@ -1796,10 +1956,11 @@ sub generate_pipeline_concourse_yaml {
 ---
 pipeline:
   git:
+    user:        git
     host:        github.com
-    uri:         (( concat "git@" pipeline.git.host ":" pipeline.git.owner "/" pipeline.git.repo ))
-    owner:       (( param "Please specify the name of the user / organization that owns the Github repository" ))
-    repo:        (( param "Please specify the name of the Github repository" ))
+    uri:         (( concat pipeline.git.user "@" pipeline.git.host ":" pipeline.git.owner "/" pipeline.git.repo ))
+    owner:       (( param "Please specify the name of the user / organization that owns the Git repository" ))
+    repo:        (( param "Please specify the name of the Git repository" ))
     branch:      master
     private_key: (( param "Please generate an SSH Deployment Key and install it into Github (with write privileges)" ))
 
@@ -2833,7 +2994,8 @@ sub validate_kit_metadata {
 			push @errors, "$subkit subkit parameters not a list (found ".(ref($meta->{params}{$subkit}) || "a string").")";
 		} else {
 			for my $param (@{$meta->{params}{$subkit}}) {
-				my $parameter = "params.$subkit\[$i\]";
+				my $name = ($param->{param} && !ref($param->{param})) ? ':'.$param->{param} : "";
+				my $parameter = "params.$subkit\[$i$name\]";
 				my (@extras, @bad);
 				for my $key (sort keys %$param) {
 					push @extras, $key if $key !~ m/^(params?|ask|vault|description|example|type)$/;
@@ -2843,14 +3005,34 @@ sub validate_kit_metadata {
 					if (defined($param->{validate})) {
 						if ($type =~ m/^(string|list)$/) {
 							@extras = grep {$_ !~ /^(validate|err_msg)$/ } @extras;
-							if ($param->{validate} !~ m/^\/.*\/i?m?s?$/     && # regex validation
-								$param->{validate} !~ m/^((^|,)[^,]+){2,}$/ && # comma-separated list
-								$param->{validate} !~ m/^(vault_path)$/     ){ # key-words
+							if ($param->{validate} !~ m/^!?\/.*\/i?m?s?$/              && # regex validation
+								$param->{validate} !~ m/^((^|,)[^,]+){2,}$/            && # comma-separated list
+								$param->{validate} !~ m/^!?\[([^,]+(,[^,]+)*)]$/       && # new invertable comma-separated list
+								$param->{validate} !~ m/^((^|,)[^,]+){2,}$/            && # comma-separated list
+								$param->{validate} !~ m/^-?\d+(\.\d+)?--?\d+(\.\d+)?$/ && # range
+								$param->{validate} !~ m/^(vault_path|url|port)$/       ){ # key-words
 								push @errors, "$parameter has an invalid validation formula";
 							}
+
+						} elsif ($type =~ m/^(multi-)?choice$/) {
+							@extras = grep {$_ !~ /^(validate|err_msg)$/ } @extras;
+							if (ref($param->{validate}) eq 'ARRAY') {
+								# All array elements must be simple strings
+								push @errors, "$parameter validation array can only contain strings or 2-string arrays"
+									if (grep {ref($_) && !(ref($_) eq 'ARRAY' && $#$_ == 1 && !ref($_->[0]) && !ref($_->[1]))} @{$param->{validate}});
+								my $min = 2;
+								$min = $param->{min_count} if ($type eq 'multi-choice' && defined($param->{min_count}) && $param->{min_count} > $min);
+								push(@errors, "$parameter requires at least 2 choices") if scalar(@{$param->{validate}}) < $min;
+							} else {
+								push @errors, "$parameter validation must be an array of strings or 2-string arrays";
+							}
+						}
+					} else {
+						if ($type =~ m/^(multi-)?choice$/) {
+							push @errors, "$parameter requires validation to provide choices";
 						}
 					}
-					if ( $type =~ m/^(string|block|multi-?line)$/) {
+					if ( $type =~ m/^(string|block|multi-?line|choice)$/) {
 						push @bad, grep {$_ !~ m/^(label|default)$/} @extras;
 					} elsif ($type eq 'boolean') {
 						push @bad, grep {$_ !~ m/^(label|default)$/} @extras;
@@ -2858,6 +3040,20 @@ sub validate_kit_metadata {
 						  if (defined($param->{default}) && $param->{default} !~ /^(1|0|y(es)?|no?|true|false)$/i);
 					} elsif ($type =~ m/^((block|multi-?line)-)?list$/) {
 						push @bad, grep {$_ !~ m/^(label|(max|min)_count)$/} @extras;
+						push @errors, "$parameter requires max_count to be equal to or greater than min_count"
+							if (defined($param->{min_count}) && defined($param->{max_count}) && $param->{max_count} < $param->{min_count});
+						foreach (qw/min_count max_count/) {
+							push @errors, "$parameter requires $_ to be non-negative"
+								if (defined($param->{$_}) && $param->{$_} < 0);
+						}
+					} elsif ($type eq 'multi-choice') {
+						push @bad, grep {$_ !~ m/^((max|min)_count)$/} @extras;
+						push @errors, "$parameter requires max_count to be equal to or greater than min_count"
+							if (defined($param->{min_count}) && defined($param->{max_count}) && $param->{max_count} < $param->{min_count});
+						foreach (qw/min_count max_count/) {
+							push @errors, "$parameter requires $_ to be non-negative"
+								if (defined($param->{$_}) && $param->{$_} < 0);
+						}
 					} else {
 						push @errors, "$parameter has unsupported type '$type'";
 						@bad = @extras;
@@ -3031,12 +3227,13 @@ sub process_kit_params {
 					$vault_path = "secret/$opts{vault_prefix}/$q->{vault}";
 					print csprintf("#y{Secret data required} -- will be stored in Vault under #W{$vault_path}\n\n");
 				}
+				chomp $q->{description};
 				print "$q->{description}\n";
-				print "(e.g. $q->{example})\n\n" if defined $q->{example};
+				print "(e.g. $q->{example})\n" if defined $q->{example};
 				if ($q->{param}) {
 					my $type = $q->{type};
 					if (defined($q->{validate}) && $q->{validate} eq "vault_path" && ! $opts{should_vault}) {
-						print csprintf("#y{Warning:} Cannot validate vault path when --no-secrets option specified\n");
+						print csprintf("#y{Warning:} Cannot validate vault path when --no-secrets option specified");
 						$q->{validate}=undef;
 					}
 					if ($type eq 'boolean') {
@@ -3049,6 +3246,24 @@ sub process_kit_params {
 						$answer = prompt_for_list('line',$q->{ask},$q->{label},$q->{min_count},$q->{max_count},$q->{validate},$q->{err_msg});
 					} elsif ($type =~ m/^(block|multi-?line)-list$/) {
 						$answer = prompt_for_list('block',$q->{ask},$q->{label},$q->{min_count},$q->{max_count});
+					} elsif ($type =~ m/^(multi-)?choice$/) {
+						my ($choices,$labels)=([],[]);
+						if (ref($q->{validate}) eq 'ARRAY') {
+							foreach (@{$q->{validate}}) {
+								if (ref($_) eq 'ARRAY') {
+									push @$choices, $_->[0];
+									push @$labels, $_->[1];
+								} else {
+									push @$choices, $_;
+									push @$labels, undef;
+								}
+							}
+						}
+						if ($type eq 'choice') {
+							$answer = prompt_for_choice($q->{ask},$choices,$q->{default},$labels,$q->{err_msg});
+						} else {
+							$answer = prompt_for_choices($q->{ask},$choices,$q->{min_count},$q->{max_count},$labels,$q->{err_msg});
+						}
 					} else {
 						die "Unsupported type '$type' for parameter '$q->{param}'. Please contact your kit author for a fix.\n";
 					}
@@ -3524,7 +3739,7 @@ sub {
 	if ($options{'link-dev-kit'}) {
 		usage(1,"Cannot specify both a kit (-k) and a link to a kit (-L)") if $options{kit};
 		$abs_target = abs_path($options{'link-dev-kit'});
-		my $pwd = Cwd::getcwd();
+		my $pwd = getcwd;
 		die "Link target '$options{'link-dev-kit'}' cannot be found from $pwd!\n" unless $abs_target;
 	}
 
@@ -3533,8 +3748,7 @@ sub {
 		if ($options{kit}) {
 			($name, $_) = extract_kit_name_and_version($options{kit});
 		} elsif ($options{'link-dev-kit'}) {
-			use File::Basename;
-			$name = File::Basename::basename($options{'link-dev-kit'});
+			$name = basename($options{'link-dev-kit'});
 		} else {
 			printf STDERR "You must specify a deployment name if you don't specify a kit or a dev link target.\n";
 			usage(1);
@@ -3791,6 +4005,571 @@ sub {
 	explain "New environment $name provisioned.\n";
 });
 
+
+
+# }}}
+# genesis ci - generate pipeline YAML template file to be used by genesis repipe to generate a pipeline file. {{{
+
+command("ci", <<EOF,
+genesis v$VERSION
+USAGE: genesis ci [--name ci.yml]
+
+OPTIONS
+$GLOBAL_USAGE
+        --name          The name of the configuration yaml file to generate, default is `ci.yml'
+    -f, --force         Force overwrite the configuraiton yaml file if it already exists.
+        --vault-prefix  The prefix for any new vault secrets (default: concourse-ci)
+
+EOF
+sub {
+	my (%options,%pipeline, $prompt, $default);
+
+	options(\@_, \%options, qw/
+		name=s
+		vault=s
+		vault-prefix=s
+		force|f
+	/);
+	usage(1) if @_ != 0;
+	check_prereqs;
+
+	$ENV{GENESIS_CI_VAULT_PREFIX} = $options{'vault-prefix'}
+		if $options{'vault-prefix'};
+	$ENV{GENESIS_CI_VAULT_PREFIX} ||= "concourse-ci";
+
+	my $name = $options{name} || "ci.yml";
+	die "Pipeline configuration file '$name' already exists\n"
+		if -f $name && ! $options{force};
+
+	at_exit(sub {
+		unlink "$name" unless $? == 0;
+	});
+
+	# Detect envs
+	my %envs = valid_envs();
+	die "\nERROR: No environments found -- cannot continue.\n\n"
+		unless %envs;
+
+	explain "\nGenerating new CI YAML Template #C{$name}...";
+
+	target_vault($options{vault});
+
+	explain "#Y{Setting Common Configuration}\n#Y{----------------------------}";
+
+	$pipeline{name} = prompt_for_line(clean_heredoc(<<"	|EOF"), undef, basename(getcwd));
+	|Please provide the name of you pipeline as you'd like it to appear in Concourse
+	|EOF
+
+	$pipeline{public} = prompt_for_boolean(clean_heredoc(<<"	|EOF"),0);
+	|Would you like to make the Concourse pipeline (and all logs related to deployments) public?
+	|EOF
+
+	$pipeline{tagged} = prompt_for_boolean(clean_heredoc(<<"	|EOF"),0);
+	|Would you like to use tags on each job (If unsure, choose no)?
+	|EOF
+
+	$pipeline{debug} = prompt_for_boolean(clean_heredoc(<<"	|EOF"),0);
+	|Would you like to have debug output on BOSH jobs?
+	|EOF
+
+	$pipeline{skip_upkeep} = prompt_for_boolean(clean_heredoc(<<"	|EOF"), 0, "invert");
+	|Would you like to automatically keep your stemcells up to date?
+	|EOF
+
+	$pipeline{git} = prompt_for_git($pipeline{name});
+
+	do {
+		$pipeline{notifications} = prompt_for_notifications();
+		explain "\n#r{ERROR: You must have at least one notification system!}"
+			unless %{$pipeline{notifications}};
+	} until (%{$pipeline{notifications}});
+
+	$pipeline{locker} = prompt_for_locker();
+
+	$pipeline{vault} = prompt_for_vault($pipeline{name});
+
+	($pipeline{boshes},$pipeline{stemcells}) = prompt_for_boshes_and_stemcells_for(!$pipeline{skip_upkeep}, %envs);
+
+	$pipeline{errands} = prompt_for_list("line",clean_heredoc(<<"	|EOF"), 'errand');
+	|Enter any errands you'd like to use to test your deployments
+	|e.g.: smoke-tests
+	|EOF
+
+	$pipeline{layouts} = prompt_for_layouts_for(%envs);
+
+	generate_ci_template_file(\%pipeline, $name);
+
+	explain "\n#g{Generated CI template file:} #C{$name}\n";
+});
+
+sub prompt_for_git {
+	explain "\n#Y{Git Repository Details}";
+	my $pipeline_name = shift;
+	my %git;
+	my ($user,$host,$org,$repo) = ("git","github.com",undef,$pipeline_name);
+	my $gitremote = qx(git config --get remote.origin.url);
+	if ($gitremote) {
+		chomp($gitremote);
+		($user,$host,$org,$repo) = $gitremote =~ qr/^(?:ssh:\/\/([^@]+)@)?([^\/:]*)[\/:](?:(.*)\/)?([^\/]+)$/;
+		$repo =~ s/\.git$// if $repo;
+	}
+
+	$git{host} = prompt_for_line("What is the Git host?", undef, $host);
+	$git{user} = prompt_for_line("What is the Git user on $git{host}?", undef, $user);
+	$git{repo} = prompt_for_line("What is the name of the Git repository?", undef, $repo);
+	$git{owner} = prompt_for_line("What organization owns the '$git{repo}' repository?", undef, $org);
+
+	my $key_choice = prompt_for_choice(clean_heredoc(<<"	|EOF"),[qw|reuse add new|],'reuse',["Use existing key in Vault","Add an existing key in Vault", "Generate a new key"]);
+	|How would you like to provide a SSH private key that has write access for $git{user}\@$git{host}.
+	|EOF
+
+	my $path = "secret/$ENV{GENESIS_CI_VAULT_PREFIX}/git-ssh/$git{user}\@$git{host}/$git{owner}/$git{repo}";
+	if ($key_choice eq 'reuse') {
+		$git{private_key} = prompt_for_line(clean_heredoc(<<"		|EOF"),undef,"$path:private", "vault_path");
+		|What is the vault path for your git private key?
+		|EOF
+	} elsif ($key_choice eq 'new') {
+		my $result = qx(safe ssh 4096 $path);
+		die "Failed to generate Git SSH key: $result\n" if $? > 0;
+		my $fingerprint = qx(safe get $path:fingerprint);
+		die "Failed to get SSH key fingerprint from $path:fingerprint\n$fingerprint\n" if $? > 0;
+		my $pubkey = qx(safe get $path:public);
+		die "Failed to get public SSH key from $path:public\n$pubkey\n" if $? > 0;
+		chomp($pubkey,$fingerprint);
+		explain "\nGenerated 4096-bit SSH key (fingerprint: $fingerprint)\n\n#R{IMPORTANT:} Add this PUBLIC key to your Git provider ($git{host}) to grant access for this pipeline:\n\n$pubkey";
+
+	} else {
+		my $key =  "private";
+		my $vault_path = "$path:$key";
+		my $answer = prompt_for_block("Enter your SSH private key for $git{user}\@$git{host}:$git{owner}/$git{repo}");
+		my $tmpdir = workdir;
+		open my $fh, ">", "$tmpdir/sshkeyforgit" or die "Could not write to $tmpdir/param: $!\n";
+		print $fh $answer;
+		close $fh;
+		my $err = qx(safe set "$path" "$key\@$tmpdir/sshkeyforgit" 2>&1);
+		die "$err\n\nFailed to save data to $vault_path in Vault\n" if ($? >> 8);
+		explain "Stored SSH private key in Vault under #W{$vault_path}";
+		$git{private_key} = $vault_path;
+	}
+	return \%git;
+}
+
+sub prompt_for_notifications {
+	my (%notifications,$have_key);
+
+	explain "\n#Y{Notification Details}";
+
+	if (prompt_for_boolean("Would you like to configure Slack notification?", 1)) {
+		$notifications{slack}{webhook} = prompt_for_line(clean_heredoc(<<"		|EOF"), undef, undef, "url");
+		|What is your Slack Integration WebHook URL?
+		|EOF
+		$notifications{slack}{channel} = prompt_for_line("\nWhich slack channel which will receive notifications?");
+	}
+
+	if (prompt_for_boolean("Would you like to configure email notification via SMTP?", 0)) {
+		$notifications{email}{smtp}{host} = prompt_for_line("\nWhat is the SMTP host?");
+		$notifications{email}{smtp}{port} = prompt_for_line("\nWhat is the SMTP port?", undef, undef, "0-65535");
+		$notifications{email}{smtp}{username} = prompt_for_line("\nWhat is the SMTP username?");
+
+		$have_key = prompt_for_boolean(clean_heredoc(<<"		|EOF"));
+		|You will need to provide the password for your SMTP user.  Do you already have this
+		|available in your vault?
+		|EOF
+
+		if ($have_key) {
+			$notifications{email}{smtp}{password} = prompt_for_line(clean_heredoc(<<"			|EOF"),undef,undef, "vault_path");
+			|What is the vault path for your email SMTP password?
+			|ex: secret/notifications/email/smtp:password
+			|EOF
+		} else {
+			my $path = "secret/$ENV{GENESIS_CI_VAULT_PREFIX}/notifications/smtp/$notifications{email}{smtp}{host}/$notifications{email}{smtp}{username}";
+			my $key =  "password";
+			my $vault_path = "$path:$key";
+			system "safe", "prompt", "What is your email SMTP password?", "--", "set", $path, $key;
+			die "Failed to save data to $vault_path in Vault\n" if ($? >> 8);
+			explain "Stored SMTP password in Vault under #W{$vault_path}";
+			$notifications{email}{smtp}{password} = $vault_path;
+		}
+		$notifications{email}{to} = prompt_for_line("What email address will the notifications be sent to?");
+		$notifications{email}{from} = prompt_for_line("What email address will the notifictions will be sent from?");
+	}
+
+	if (prompt_for_boolean("Would you like to configure HipChat notification?", 0)) {
+		$have_key = prompt_for_boolean(clean_heredoc(<<"		|EOF"));
+		|You will need to provide the HipChat notification token.  Do you already have this
+		|available in your vault?
+		|EOF
+
+		if ($have_key) {
+			$notifications{hipchat}{token} = prompt_for_line(clean_heredoc(<<"			|EOF"),undef,undef, "vault_path");
+			|What is the vault path for your HipChat token?
+			|ex: secret/notifications/hipchat:token
+			|EOF
+		} else {
+			my $path = "secret/$ENV{GENESIS_CI_VAULT_PREFIX}/notifications/smtp/$notifications{email}{smtp}{host}/$notifications{email}{smtp}{username}";
+			my $key =  "token";
+			my $vault_path = "$path:$key";
+			system "safe", "prompt", "What is your HipChat token?", "--", "set", $path, $key;
+			die "Failed to save data to $vault_path in Vault\n" if ($? >> 8);
+			explain "Stored HipChat token in Vault under #W{$vault_path}";
+			$notifications{hipchat}{token} = $vault_path;
+		}
+		$notifications{hipchat}{room_id} = prompt_for_line("What is the ID of the room you want the notifications posted to?");
+	}
+	return \%notifications;
+}
+
+sub prompt_for_locker {
+	my (%locker);
+
+	explain "\n#Y{Workflow Details}";
+	my $use_locker = prompt_for_boolean(clean_heredoc(<<"	|EOF"),1);
+	|Locker is simple web app for managing locks.  Genesis pipelines can use it to prevent
+	|multiple pipelines utilizing the same BOSH targets at the same time.  It is deployed
+	|to the Concourse database node if you use the Concourse Genesis Kit to deploy Concourse.
+	|
+	|Would you like to use Locker?
+	|EOF
+	if ($use_locker) {
+		$locker{url} = prompt_for_line("What is the URL to the locker API?", undef, undef, "url");
+		$locker{username} = prompt_for_line("What is the locker API username?");
+		my $have_key = prompt_for_boolean(clean_heredoc(<<"		|EOF"));
+		|You will need to provide the Locker API password.  Do you already have this
+		|available in your vault?
+		|EOF
+
+		if ($have_key) {
+			$locker{password} = prompt_for_line(clean_heredoc(<<"			|EOF"),undef,undef, "vault_path");
+			|What is the vault path for the Locker API password?
+			|ex: secret/bosh/lite/concourse/locker/api:password
+			|EOF
+		} else {
+			my $slug = $locker{url};
+			$slug =~ s#^https?://##;
+			$slug =~ s#[^a-zA-Z0-9\._-]+#_#g;
+			my $path = "secret/$ENV{GENESIS_CI_VAULT_PREFIX}/locker/$slug";
+			my $key =  "password";
+			my $vault_path = "$path:$key";
+			system "safe", "prompt", "What is your Locker API password?", "--", "set", $path, $key;
+			die "Failed to save data to $vault_path in Vault\n" if ($? >> 8);
+			explain "Stored Locker API password in Vault under #W{$vault_path}";
+			$locker{password} = $vault_path;
+		}
+	}
+	return \%locker;
+}
+
+sub prompt_for_vault {
+	my $name = shift;
+	explain "\n#Y{Vault Connection Details}";
+	my (%vault,$safe_json);
+	if (-f "$ENV{HOME}/.saferc") {
+		eval {
+			$safe_json = decode_json(qx(spruce json \$HOME/.saferc));
+		};
+	}
+	if ($@ || ! $safe_json) {
+		$vault{url} = prompt_for_line("\nWhat is the Vault URL?", undef, undef,"url");
+		$vault{verify} = prompt_for_boolean("\nDo you want to skip SSL verification?\n\nDefault is no.\n", 0, 'invert');
+	} else {
+		$vault{url} = $safe_json->{Aliases}{$safe_json->{Current}};
+		$vault{verify} = ! $safe_json->{SkipVerify}{$vault{url}};
+	}
+	$vault{role} = prompt_for_line(clean_heredoc(<<"	|EOF"),undef,"secret/$ENV{GENESIS_CI_VAULT_PREFIX}/$name/vault:role_id","vault_path");
+	|Please specify the path in Vault that contains the vault Role ID for Concourse
+	|EOF
+	$vault{secret} = prompt_for_line(clean_heredoc(<<"	|EOF"),undef,"secret/$ENV{GENESIS_CI_VAULT_PREFIX}/$name/vault:secret_id","vault_path");
+	|Please specify the path in Vault that contains the vault Secret ID for Concourse
+	|EOF
+
+	return \%vault;
+}
+
+sub prompt_for_boshes_and_stemcells_for {
+	my ($ask_stemcells, %envs) = @_;
+
+	# Get the current boshes
+	my %boshes;
+	if (-f $ENV{HOME}."/.bosh/config") {
+		my $bosh_json = decode_json(qx{spruce json \$HOME/.bosh/config});
+		$boshes{$_->{alias}} = {
+			url => $_->{url},
+			username => $_->{username},
+			password => $_->{password},
+			ca_cert => $_->{ca_cert},
+		} foreach (@{$bosh_json->{environments}});
+		$boshes{$boshes{$_}{url}} = $boshes{$_} foreach (keys %boshes);
+	}
+
+	explain "\n#Y{Processing Detected Environments}\n#Y{--------------------------------}";
+
+	my (%boshenvs,%used_stemcells);
+	foreach my $e (sort keys(%envs)) {
+		my $env = $envs{$e}{env};
+		explain "\n#W{==> Environment:} #C{$env} (./$envs{$e}{file})";
+		$boshenvs{$env} = {};
+		my %bosh_info = %{$boshes{$envs{$e}{bosh}}};
+
+		# Get display name (defaults to environment)
+		$boshenvs{$env}{alias} = prompt_for_line("Display name", undef, $env);
+
+		if (is_valid_uri($envs{$e}{bosh})) {
+			$boshenvs{$env}{url} = $envs{$e}{bosh}
+		} else {
+			$boshenvs{$env}{url} = $bosh_info{url}
+		}
+		if ($boshenvs{$env}{url}) {
+			explain "\nUsing BOSH director at #C{$boshenvs{$env}{url}}";
+		} else {
+			$boshenvs{$env}{url} = prompt_for_line("Could not determine BOSH url -- please specify fully\ne.g.: https://10.0.1.44:25555");
+		}
+
+		if ($bosh_info{username}) {
+			$boshenvs{$env}{username} = $bosh_info{username};
+			explain "\nUsing BOSH admin username #C{'$boshenvs{$env}{username}'}";
+		} else {
+			$boshenvs{$env}{username} = prompt_for_line(
+				undef,
+				"Admin Username",
+				"admin"
+			);
+		}
+
+		(my $safe_slug = "secret/$env") =~ s/-/\//g;
+		if (safe_path_exists("$safe_slug/bosh/users/admin:password")) {
+			$boshenvs{$env}{password} = "$safe_slug/bosh/users/admin:password";
+			explain "\nUsing BOSH admin password in Vault under #C{'$boshenvs{$env}{password}'}";
+		} else {
+			$boshenvs{$env}{password} = prompt_for_line(clean_heredoc(<<"			|EOF"),"Specify vault path", undef, "vault_path");
+			|Could not locate the password for admin user in Vault under:
+			|$safe_slug/bosh/users/admin:password.
+			|EOF
+		}
+		if (safe_path_exists("$safe_slug/bosh/ssl/ca:certificate")) {
+			$boshenvs{$env}{ca_cert} = "$safe_slug/bosh/ssl/ca:certificate";
+			explain "\nUsing BOSH CA Certificate in Vault under #C{'$boshenvs{$env}{ca_cert}'}";
+		} else {
+			$boshenvs{$env}{ca_cert} = prompt_for_line(clean_heredoc(<<"			|EOF"),"Specify vault path", undef, "vault_path");
+			|Could not locate the BOSH SSL CA certificate in Vault under:
+			|$safe_slug/bosh/ssl/ca:certificate.
+			|EOF
+		}
+
+		
+		my ($stemcells, %candidates) = ([]);
+		if ($ask_stemcells) {
+			explain "\nFetching stemcells from BOSH...";
+			my $sc_info = qx($BOSH -e $boshenvs{$env}{url} ss);
+			if ($? > 0) {
+				# Couldn't get stemcells - ask for them manually (just die for now)
+				die "Could not retrieve stemcell\n";
+			} else {
+				my (@choices, @labels);
+				foreach (split("\n", $sc_info)) {
+					my ($stemcell, undef, $os) = split(' ',  $_);
+					next unless $stemcell;
+					
+					my ($alias) = split("-$os-",$stemcell);
+					$alias =~ s/^bosh-//;
+					$alias .= '-$os' if $candidates{$alias} &&($candidates{$alias} ne $stemcell);
+					next if $candidates{$alias};
+					$candidates{$alias} = $stemcell;
+					push @choices, $alias;
+					push @labels, $stemcell;
+				}
+				$stemcells = prompt_for_choices("Select one or more stemcells to watch for updates",\@choices,1,undef,\@labels);
+			}
+		}
+		$boshenvs{$env}{stemcells} = $stemcells;
+		$used_stemcells{$_} = $candidates{$_} foreach (@$stemcells);
+
+		print "\n";
+	}
+
+   return (\%boshenvs, \%used_stemcells);
+}
+
+sub prompt_for_layouts_for {
+	my %envs = @_;
+
+	explain "\n#Y{Buliding Pipeline Layouts}\n#Y{-------------------------}";
+	my %layouts = ();
+	my $default_layout = "default";
+	my $validate = undef;
+	do {
+		my $name = prompt_for_line("Name of ".ordify(keys(%layouts) + 1)."layout", undef, $default_layout, $validate);
+		$default_layout = undef if $default_layout && $name eq $default_layout;
+
+		explain "\n#G{Valid deployment environments:} ".join(", ", sort keys(%envs))."";
+		my $validate_pathway = sub() {
+			my @valid_envs = grep {defined($envs{$_})} split(" -> ",$_[0]);
+			my @invalid_envs = grep {!defined($envs{$_})} split(" -> ",$_[0]);
+			return "Unknown environment specified: ${\join(', ', map {qq('$_')} @invalid_envs)}" if @invalid_envs;
+			return "No environments specified" unless @valid_envs;
+			# TODO: also check for duplicates and cycles
+			return "";
+		};
+
+		$layouts{$name}{deployments_chains} = prompt_for_list("line", clean_heredoc(<<"		|EOF"),"deployment pathway",1,undef,$validate_pathway,undef,"\n\nSpecify one or more deployment pathways (leave empty to end)\n" );
+		|Deployment pathways describe the flow of the pipeline from one passing deployment
+		|to the next.  You can specify multiple pathways, and reuse environments across
+		|pathways, as long as no cycles are created.
+		|e.g.:  ${\join(" -> ", sort keys(%envs))}
+		|EOF
+
+		my $auto_triggers = prompt_for_choices(clean_heredoc(<<"		|EOF"), [(sort keys(%envs))]);
+		|
+		|What deployments do you want to automaticlly trigger when there are corresponding
+		|deployment or stemcell changes?
+		|EOF
+
+		$layouts{$name}{auto} = join(" ",@$auto_triggers);
+		$validate = "![".join(",",keys(%layouts))."]";
+
+	} while (prompt_for_boolean("Would you like to enter another layout for your pipeline?"));
+	return \%layouts;
+}
+
+sub boolean_to_yaml {
+	return $_[0] ? "true" : "false";
+}
+
+sub generate_ci_template_file() {
+	my ($pipeline, $name) = @_;
+
+	open my $OUT, ">", $name or die "Unable to open $name for writing: $!\n";
+	print $OUT <<"EOF";
+pipeline:
+  name: $pipeline->{name}
+
+  public:      ${\boolean_to_yaml($pipeline->{public})}
+  tagged:      ${\boolean_to_yaml($pipeline->{tagged})}
+  debug:       ${\boolean_to_yaml($pipeline->{debug})}
+  skip_upkeep: ${\boolean_to_yaml($pipeline->{skip_upkeep})}
+
+  git:
+EOF
+
+	my @components = ("owner","repo");
+	unshift(@components, "host") unless $pipeline->{git}{host} eq "github.com";
+	unshift(@components, "user") unless $pipeline->{git}{user} eq "git";
+	foreach (@components) {
+		my $label = sprintf("%-13s", "$_:");
+		print $OUT <<"EOF";
+    $label$pipeline->{git}{$_}
+EOF
+	}
+	print $OUT <<"EOF";
+    private_key: (( vault "$pipeline->{git}{private_key}" ))
+
+  vault:
+    role:   (( vault "$pipeline->{vault}{role}" ))
+    secret: (( vault "$pipeline->{vault}{secret}" ))
+    url:    $pipeline->{vault}{url}
+    verify: ${\boolean_to_yaml($pipeline->{vault}{verify})}
+EOF
+
+	if ($pipeline->{notifications}{slack}{webhook}) {
+		print $OUT <<"EOF";
+
+  slack:
+    webhook: $pipeline->{notifications}{slack}{webhook}
+    channel: $pipeline->{notifications}{slack}{channel}
+EOF
+	}
+
+	if ($pipeline->{notifications}{hipchat}{token}) {
+		print $OUT <<"EOF";
+
+  hipchat:
+    token:   (( vault "$pipeline->{notifications}{hipchat}{token}" ))
+    room_id: $pipeline->{notifications}{hipchat}{room_id}
+EOF
+	}
+
+	if ($pipeline->{notifications}{email}{to}) {
+		print $OUT <<"EOF";
+
+  email:
+    to:   $pipeline->{notifications}{email}{to}
+    from: $pipeline->{notifications}{email}{from}
+    smtp:
+      username: $pipeline->{notifications}{email}{smtp}{username}
+      password: (( vault "$pipeline->{notifications}{email}{smtp}{password}" ))
+      host:     $pipeline->{notifications}{email}{smtp}{host}
+      port:     $pipeline->{notifications}{email}{smtp}{port}
+EOF
+	}
+
+	if ($pipeline->{locker}{url}) {
+		print $OUT <<"EOF";
+
+  locker:
+    url:      $pipeline->{locker}{url}
+    username: $pipeline->{locker}{username}
+    password: (( vault "$pipeline->{locker}{password}" ))
+EOF
+	}
+
+	my @stemcells = split("\n",$pipeline->{stemcells});
+	print $OUT <<"EOF";
+
+  stemcells:
+EOF
+	foreach my $alias (keys %{$pipeline->{stemcells}}) {
+		print $OUT <<"EOF"
+    $alias: $pipeline->{stemcells}{$alias}
+EOF
+	}
+
+	print $OUT <<"EOF";
+
+  boshes:
+EOF
+	foreach my $env (keys %{$pipeline->{boshes}}) {
+		print $OUT <<"EOF";
+    $env:
+      alias:    $pipeline->{boshes}{$env}{alias}
+      url:      $pipeline->{boshes}{$env}{url}
+      ca_cert:  (( vault "$pipeline->{boshes}{$env}{ca_cert}" ))
+      username: $pipeline->{boshes}{$env}{username}
+      password: (( vault "$pipeline->{boshes}{$env}{password}" ))
+      stemcells:
+EOF
+		foreach my $i ( 0 .. $#{ $pipeline->{boshes}{$env}{stemcells} } ) {
+			print $OUT <<"EOF";
+      - $pipeline->{boshes}{$env}{stemcells}[$i]
+EOF
+		}
+		print $OUT "\n";
+	}
+
+	print $OUT <<"EOF";
+  layouts:
+EOF
+	foreach my $layout (keys %{$pipeline->{layouts}}) {
+		print $OUT <<"EOF";
+    $layout: |+
+      auto $pipeline->{layouts}{$layout}{auto}
+EOF
+		print $OUT "      $_\n" foreach (@{$pipeline->{layouts}{$layout}{deployments_chains}});
+		print $OUT "\n";
+	}
+
+	if ($pipeline->{errands}) {
+		my @errands;
+		for my $i ( 0 .. $#{ $pipeline->{errands} } ) {
+			push (@errands, $pipeline->{errands}[$i]);
+		}
+		my $errands = "[".join(",", @errands)."]";
+
+		print $OUT <<"EOF";
+  errands: $errands
+EOF
+	}
+
+	close $OUT;
+}
 # }}}
 # genesis deploy - Pull in Cloud Config, Generate a manifest, deploy {{{
 
