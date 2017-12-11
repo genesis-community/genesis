@@ -4278,7 +4278,7 @@ sub prompt_for_vault {
 		$vault{url} = $safe_json->{Aliases}{$safe_json->{Current}};
 		$vault{verify} = ! $safe_json->{SkipVerify}{$vault{url}};
 	}
-}
+
 	$vault{role} = prompt_for_line(clean_heredoc(<<"	|EOF"),undef,"secret/$ENV{GENESIS_CI_VAULT_PREFIX}/$name/vault:role_id","vault_path");
 	|Please specify the path in Vault that contains the vault Role ID for Concourse
 	|EOF
