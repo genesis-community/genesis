@@ -4113,7 +4113,7 @@ sub prompt_for_git {
 		chomp($gitremote);
 		($user,$host,$org,$repo) = $gitremote =~ qr/^(?:ssh:\/\/([^@]+)@)?([^\/:]*)[\/:](?:(.*)\/)?([^\/]+)$/
 		  if $gitremote =~ qr/^ssh:.*/; 
-	  ($host,$org,$repo) = $gitremote =~ qr/^(?:https:\/\/([^\/:]*)[\/:](?:(.*)\/)?([^\/]+)$/
+	  ($host,$org,$repo) = $gitremote =~ qr/^https:\/\/([^\/:]*)[\/:](?:(.*)\/)?([^\/]+)$/
 		if $gitremote =~ qr/^https:.*/; 
 
 		$repo =~ s/\.git$// if $repo;
