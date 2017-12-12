@@ -1289,9 +1289,10 @@ sub deploy_manifest {
 		'create-env'   => $create_env,
 	};
 	mkfile_or_fail("$dir/manifest.yml", merge_manifest($env, $merge_opts));
-
+	my $deployment_prefix = get_key($env, 'params.env')
 	$env =~ s/.yml$//;
-	my $deployment = "$env-" . deployment_suffix;
+	$deployment_prefix ||= $env;
+	my $deployment = "$deployment_prefix-" . deployment_suffix;
 
 	mkdir_or_fail(".genesis/manifests");
 
