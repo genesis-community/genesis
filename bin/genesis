@@ -4341,7 +4341,7 @@ sub prompt_for_boshes_and_stemcells_for {
 			);
 		}
 
-		(my $safe_slug = "secret/$env") =~ s/-/\//g;
+		(my $safe_slug = "secret/$envs{$e}{bosh}") =~ s/-/\//g;
 		if (safe_path_exists("$safe_slug/bosh/users/admin:password")) {
 			$boshenvs{$env}{password} = "$safe_slug/bosh/users/admin:password";
 			explain "\nUsing BOSH admin password in Vault under #C{'$boshenvs{$env}{password}'}";
