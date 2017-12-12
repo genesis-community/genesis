@@ -4136,7 +4136,8 @@ sub prompt_for_git {
 		my $pubkey = qx(safe get $path:public);
 		die "Failed to get public SSH key from $path:public\n$pubkey\n" if $? > 0;
 		chomp($pubkey,$fingerprint);
-		explain "\nGenerated 4096-bit SSH key (fingerprint: $fingerprint) in Vault under #W{$vault_path}\n\n#R{IMPORTANT:} Add this PUBLIC key to your Git provider ($git{host}) to grant access for this pipeline:\n\n$pubkey";
+		explain "\nGenerated 4096-bit SSH key (fingerprint: $fingerprint) in Vault under #W{$path}\n\n#R{IMPORTANT:} Add this PUBLIC key to your Git provider ($git{host}) to grant access for this pipeline:\n\n$pubkey";
+		$git{private_key} = "$path:private";
 
 	} else {
 		my $key =  "private";
