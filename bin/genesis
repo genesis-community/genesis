@@ -2999,7 +2999,7 @@ sub validate_kit_metadata {
 				my $parameter = "params.$subkit\[$i$name\]";
 				my (@extras, @bad);
 				for my $key (sort keys %$param) {
-					push @extras, $key if $key !~ m/^(params?|ask|vault|description|example|type)$/;
+					push @extras, $key if $key !~ m/^(params?|ask|vault|description|example|type|echo)$/;
 				}
 				if (defined($param->{ask})) {
 					my $type = exists($param->{type}) ? $param->{type} : "string";
@@ -3272,7 +3272,7 @@ sub process_kit_params {
 				} else {
 					my ($path, $key) = split /:/, $vault_path;
 					if ($q->{type} =~ /^(boolean|string)$/) {
-						system "safe", "prompt", $q->{ask}, "--", "set", $path, $key;
+						system "safe", "prompt", $q->{ask}, "--", ($q->{echo} ? "ask" : "set"), $path, $key;
 						die "Failed to save data to $vault_path in Vault\n" if ($? >> 8);
 					} elsif ($q->{type} eq "multi-line") {
 						$answer = prompt_for_block($q->{ask});
