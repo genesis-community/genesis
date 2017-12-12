@@ -4524,7 +4524,7 @@ EOF
 	my @stemcells = split("\n",$pipeline->{stemcells});
 	print $OUT <<"EOF";
 
-	stemcells:${\(scalar(keys %{$pipeline->{stemcells}}) ? "" : " []")}
+  stemcells:${\(scalar(keys %{$pipeline->{stemcells}}) ? "" : " []")}
 EOF
 	foreach my $alias (keys %{$pipeline->{stemcells}}) {
 		print $OUT <<"EOF"
@@ -4544,7 +4544,7 @@ EOF
       ca_cert:   (( vault "$pipeline->{boshes}{$env}{ca_cert}" ))
       username:  $pipeline->{boshes}{$env}{username}
       password:  (( vault "$pipeline->{boshes}{$env}{password}" ))
-	  stemcells: ${\(scalar(@{$pipeline->{boshes}{$env}{stemcells}}) ? "" : " []")}
+      stemcells: ${\(scalar(@{$pipeline->{boshes}{$env}{stemcells}}) ? "" : " []")}
 EOF
 		foreach my $i ( 0 .. $#{ $pipeline->{boshes}{$env}{stemcells} } ) {
 			print $OUT <<"EOF";
