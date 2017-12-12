@@ -4111,7 +4111,11 @@ sub prompt_for_git {
 	my $gitremote = qx(git config --get remote.origin.url);
 	if ($gitremote) {
 		chomp($gitremote);
-		($user,$host,$org,$repo) = $gitremote =~ qr/^(?:ssh:\/\/([^@]+)@)?([^\/:]*)[\/:](?:(.*)\/)?([^\/]+)$/;
+		($user,$host,$org,$repo) = $gitremote =~ qr/^(?:ssh:\/\/([^@]+)@)?([^\/:]*)[\/:](?:(.*)\/)?([^\/]+)$/
+		  if $gitremote =~ qr/^ssh:.*/; 
+	  ($host,$org,$repo) = $gitremote =~ qr/^(?:https:\/\/([^\/:]*)[\/:](?:(.*)\/)?([^\/]+)$/
+		if $gitremote =~ qr/^https:.*/; 
+
 		$repo =~ s/\.git$// if $repo;
 	}
 
@@ -4275,7 +4279,7 @@ sub prompt_for_vault {
 		$vault{verify} = prompt_for_boolean("\nDo you want to skip SSL verification?\n\nDefault is no.\n", 0, 'invert');
 	} elsif ($safe_json->{version} && $safe_json->{version}==1) {
 		$vault{url} = $safe_json->{vaults}{$safe_json->{current}}{url};
-		$vault{verify} = $safe_json->{vaults}{$safe_json->{current}}{skip_verify};
+		$vault{verify} = ! $safe_json->{vaults}{$safe_json->{current}}{skip_verify};
 	} else {
 		$vault{url} = $safe_json->{Aliases}{$safe_json->{Current}};
 		$vault{verify} = ! $safe_json->{SkipVerify}{$vault{url}};
@@ -4540,7 +4544,7 @@ EOF
       ca_cert:   (( vault "$pipeline->{boshes}{$env}{ca_cert}" ))
       username:  $pipeline->{boshes}{$env}{username}
       password:  (( vault "$pipeline->{boshes}{$env}{password}" ))
-	  stemcells: ${\(scalar(keys %{$pipeline->{boshes}{$env}{stemcells}}) ? "" : " []")}
+	  stemcells: ${\(scalar(@{$pipeline->{boshes}{$env}{stemcells}}) ? "" : " []")}
 EOF
 		foreach my $i ( 0 .. $#{ $pipeline->{boshes}{$env}{stemcells} } ) {
 			print $OUT <<"EOF";
