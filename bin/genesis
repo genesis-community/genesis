@@ -5290,6 +5290,7 @@ sub {
 
 	my $layout = $_[0] || "default";
 	$options{config} ||= "ci.yml";
+	my @paths;
 
 	$ENV{REDACT} = "true"; # we don't need vault creds for this, just pipeline layout
 	my $pipeline = parse_pipeline($options{config}, $layout);
@@ -5305,36 +5306,46 @@ sub {
 		if (!$create_env) {
 			bosh_download_cloud_config(bosh_target_for($env), "$dir/cloud.yml");
 		} else {
-			write_stemcell_data("$dir/cloud.yml");
+			write_stemcell_data("$dir/cloud.yml"); # Why write stemcell to cloud.yml??!!
 		}
 		$options{'cloud-config'} = "$dir/cloud.yml";
 
 		# get all files for a deployment
 		my $vault_prefix = get_key($env, "params.vault", "");
 		chomp $vault_prefix;
-		$vault_prefix = "secret/$vault_prefix";
 		die "Unable to find `params.vault' for environment `$env'. Cannot continue\n" unless $vault_prefix;
-		print <<EOF;
-path "$vault_prefix/*" {
-    capabilities = [ "read", "list" ]
-}
 
-EOF
-		for my $path (sort grep { chomp; $_ !~ m/^$vault_prefix/ } spruce_vault_paths(@{merge_files($env, \%options)})) {
-			print <<EOF;
-path "$path" {
-    capabilities = [ "read", "list" ]
-}
-
-EOF
+		push @paths, "secret/$vault_prefix/*";
+		for my $extra_path (sort grep {chomp; $_ !~ m/^secret\/$vault_prefix\// } spruce_vault_paths(@{merge_files($env, \%options)})) {
+			push @paths, $extra_path;
 		}
 	}
-	print <<EOF;
-path "secret/handshake" {
-    capabilities = [ "read", "list" ]
-}
-EOF
+	push @paths, "secret/handshake";
+	generate_ci_hcl_file('-', @paths);
 });
+
+sub generate_ci_hcl_file {
+	my (
+		$hclfile,           # SET TO '-' to print to screen
+		@vault_paths
+	) = @_;
+
+	my $fh = *STDOUT;
+	unless ($hclfile eq '-') {
+		open($fh, ">$hclfile") or die "can't open $hclfile: $!\n";
+	}
+
+	foreach (@vault_paths) {
+		print $fh clean_heredoc(<<"		|EOF");
+		|path "$_" {
+		|    capabilities = [ "read", "list" ]
+		|}
+		|
+		|EOF
+	}
+	close $fh unless $hclfile eq '-';
+}
+
 # }}}
 # genesis ci-pipeline-deploy - Deploy via the CI/CD Pipeline {{{
 
