@@ -939,7 +939,14 @@ sub prompt_for_boolean {
 		$val_prompt = $default =~ $true_re ? "[#g{Y}|n]" : "[y|#g{N}]";
 	}
 	chomp $prompt;
-	print "\n$prompt\n";
+	if ($prompt =~ /\[y\|n\]/) {
+		# Allow a single line boolean prompt
+		$prompt =~ s/\[y\|n\]/$val_prompt/;
+		$val_prompt = $prompt;
+		print "\n";
+	} else {
+		print "\n$prompt\n";
+	}
 	while (1) {
 		my $answer = __prompt_for_line($val_prompt,undef,undef,$default,'allow_blank');
 		return ($invert ? $f : $t) if $answer =~ $true_re;
@@ -4319,6 +4326,8 @@ sub prompt_for_boshes_and_stemcells_for {
 		explain "\n#W{==> Environment:} #C{$env} (./$envs{$e}{file})";
 		$boshenvs{$env} = {};
 		my %bosh_info = %{$boshes{$envs{$e}{bosh}}};
+
+		next unless prompt_for_boolean("Do you want to use this environment [y|n]?", 1);
 
 		# Get display name (defaults to environment)
 		$boshenvs{$env}{alias} = prompt_for_line("Display name", undef, $env);
