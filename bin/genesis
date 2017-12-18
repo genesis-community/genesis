@@ -4612,7 +4612,7 @@ EOF
 	my @stemcells = split("\n",$pipeline->{stemcells});
 	print $OUT <<"EOF";
 
-  stemcells:${\(scalar(keys %{$pipeline->{stemcells}}) ? "" : " []")}
+  stemcells:${\(scalar(keys %{$pipeline->{stemcells}}) ? "" : " {}")}
 EOF
 	foreach my $alias (keys %{$pipeline->{stemcells}}) {
 		print $OUT <<"EOF"
