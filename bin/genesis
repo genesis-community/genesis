@@ -4384,6 +4384,7 @@ sub prompt_for_boshes_and_stemcells_for {
 	if (-f $ENV{HOME}."/.bosh/config") {
 		my $bosh_json = decode_json(qx{spruce json \$HOME/.bosh/config});
 		$boshes{$_->{alias}} = {
+			#url => (($_->{url} =~ /:\d+$/) ? $_->{url} : $_->{url}.":25555"),
 			url => $_->{url},
 			username => $_->{username},
 			password => $_->{password},
@@ -4410,11 +4411,13 @@ sub prompt_for_boshes_and_stemcells_for {
 			$boshenvs{$env}{url} = $envs{$e}{bosh};
 		} else {
 			$boshenvs{$env}{url} = $bosh_info{url};
+			$boshenvs{$env}{url} .= ":25555" unless $boshenvs{$env}{url} =~ m/:\d+$/;
 		}
 		if ($boshenvs{$env}{url}) {
 			explain "\nUsing BOSH director at #C{$boshenvs{$env}{url}}";
 		} else {
 			$boshenvs{$env}{url} = prompt_for_line("Could not determine BOSH url -- please specify fully\ne.g.: https://10.0.1.44:25555");
+			$boshenvs{$env}{url} .= ":25555" unless $boshenvs{$env}{url} =~ m/:\d+$/;
 		}
 
 		if ($bosh_info{username}) {
