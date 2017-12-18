@@ -1281,7 +1281,7 @@ sub deploy_manifest {
 	$ENV{REDACT} = '';
 	my $dir = workdir;
 	my $target = ''; 
-	my $create_env = has_subkit($env, 'bosh-init') || has_subkit($env, 'create-env');
+	my $create_env = is_create_env($env);
 
 	if (!$create_env) {
 		$target = bosh_target_for($env);
@@ -5295,7 +5295,6 @@ sub {
 	$ENV{REDACT} = "true"; # we don't need vault creds for this, just pipeline layout
 	my $pipeline = parse_pipeline($options{config}, $layout);
 	for my $env (sort @{$pipeline->{envs}}) {
-		my $create_env = is_create_env($env);
 		# Always grab cloud config, since we're probably up and running if using this command
 		# Posible issues we could run into are that the jumpbox doesn't have access to all
 		# BOSH directors, or that someone is trying to build their vault policies before
@@ -5303,10 +5302,10 @@ sub {
 		# somehow providing cloud configs for *all* boshes, or by making `spruce vaultinfo`
 		# ignore static_ips?
 		my $dir = workdir;
-		if (!$create_env) {
-			bosh_download_cloud_config(bosh_target_for($env), "$dir/cloud.yml");
-		} else {
+		if (is_create_env($env)) {
 			write_stemcell_data("$dir/cloud.yml"); # Why write stemcell to cloud.yml??!!
+		} else {
+			bosh_download_cloud_config(bosh_target_for($env), "$dir/cloud.yml");
 		}
 		$options{'cloud-config'} = "$dir/cloud.yml";
 
