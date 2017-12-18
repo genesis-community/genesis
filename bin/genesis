@@ -74,9 +74,10 @@ sub valid_envs {
 		next unless $json && $json->{params} && $json->{params}{env};
 		(my $label= $_) =~ s/\.yml$//;
 		$envs{$label} = {
-			file => $_,
-			env  => $json->{params}{env},
-			bosh => $json->{params}{bosh} || $json->{params}{env}
+			file  => $_,
+			env   => $json->{params}{env},
+			vault => $json->{params}{vault} || join('/',(split('-', $json->{params}{env}))),
+			bosh  => $json->{params}{bosh}  || $json->{params}{env}
 		}
 	}
 	return %envs;
@@ -4084,6 +4085,20 @@ sub {
 	|Would you like to automatically keep your stemcells up to date?
 	|EOF
 
+	my %chosen_envs;
+	($pipeline{boshes},$pipeline{stemcells},%chosen_envs) = prompt_for_boshes_and_stemcells_for(!$pipeline{skip_upkeep}, %envs);
+
+	$pipeline{layouts} = prompt_for_layouts_for(%chosen_envs);
+
+	$pipeline{errands} = prompt_for_list("line",clean_heredoc(<<"	|EOF"), 'errand');
+	|Enter any errands you'd like to use to test your deployments
+	|e.g.: smoke-tests
+	|EOF
+
+	$pipeline{locker} = prompt_for_locker();
+
+	$pipeline{vault} = prompt_for_vault($pipeline{name},%chosen_envs);
+
 	$pipeline{git} = prompt_for_git($pipeline{name});
 
 	do {
@@ -4091,19 +4106,6 @@ sub {
 		explain "\n#r{ERROR: You must have at least one notification system!}"
 			unless %{$pipeline{notifications}};
 	} until (%{$pipeline{notifications}});
-
-	$pipeline{locker} = prompt_for_locker();
-
-	$pipeline{vault} = prompt_for_vault($pipeline{name});
-
-	($pipeline{boshes},$pipeline{stemcells}) = prompt_for_boshes_and_stemcells_for(!$pipeline{skip_upkeep}, %envs);
-
-	$pipeline{errands} = prompt_for_list("line",clean_heredoc(<<"	|EOF"), 'errand');
-	|Enter any errands you'd like to use to test your deployments
-	|e.g.: smoke-tests
-	|EOF
-
-	$pipeline{layouts} = prompt_for_layouts_for(%envs);
 
 	generate_ci_template_file(\%pipeline, $name);
 
@@ -4273,7 +4275,7 @@ sub prompt_for_locker {
 }
 
 sub prompt_for_vault {
-	my $name = shift;
+	my ($name, %envs) = @_;
 	explain "\n#Y{Vault Connection Details}";
 	my (%vault,$safe_json);
 	if (-f "$ENV{HOME}/.saferc") {
@@ -4292,12 +4294,84 @@ sub prompt_for_vault {
 		$vault{verify} = ! $safe_json->{SkipVerify}{$vault{url}};
 	}
 
-	$vault{role} = prompt_for_line(clean_heredoc(<<"	|EOF"),undef,"secret/$ENV{GENESIS_CI_VAULT_PREFIX}/$name/vault:role_id","vault_path");
-	|Please specify the path in Vault that contains the vault Role ID for Concourse
-	|EOF
-	$vault{secret} = prompt_for_line(clean_heredoc(<<"	|EOF"),undef,"secret/$ENV{GENESIS_CI_VAULT_PREFIX}/$name/vault:secret_id","vault_path");
-	|Please specify the path in Vault that contains the vault Secret ID for Concourse
-	|EOF
+	my $default_approle_path = "secret/$ENV{GENESIS_CI_VAULT_PREFIX}/$name/vault";
+	my ($regenerate, $c);
+
+	if (safe_path_exists $default_approle_path) {
+		my $choices = ["use","regen","alt"];
+		my $labels = [
+			"Use this path for role_id and secret_id",
+			"Regenerate new credentials to this path",
+			"Specify alternate paths for role_id and secret_id",
+		];
+		$c = prompt_for_choice(clean_heredoc(<<"		|EOF"),$choices,"use",$labels);
+		|Discovered Concourse AppRole credentials at $default_approle_path.
+		|Do you want to:
+		|EOF
+	} else {
+		my $choices = ["regen","alt"];
+		my $labels = [
+			"Generate credentials to this path",
+			"Specify alternate paths for role_id and secret_id",
+		];
+		$c = prompt_for_choice(clean_heredoc(<<"		|EOF"),$choices,"use",$labels);
+		|Could not find Concourse AppRole credentials at $default_approle_path.
+		|Do you want to:
+		|EOF
+	}
+	if ($c eq "use" || $c eq "regen") {
+		$regenerate = ($c eq "regen");
+		$vault{role}   = $default_approle_path . ":role_id";
+		$vault{secret} = $default_approle_path . ":secret_id";
+	} else {
+		$vault{role} = prompt_for_line(clean_heredoc(<<"		|EOF"),undef,"$default_approle_path:role_id","/secret\/.*[^\/]:.+", "Expecting secret/<path>:<key>");
+		|Please specify the path in Vault that contains the vault Role ID for Concourse
+		|EOF
+		$vault{secret} = prompt_for_line(clean_heredoc(<<"		|EOF"),undef,"$default_approle_path:secret_id",,"/secret\/.*[^\/]:.+", "Expecting secret/<path>:<key>");
+		|Please specify the path in Vault that contains the vault Secret ID for Concourse
+		|EOF
+
+		if (safe_path_exists $vault{role} && safe_path_exists $vault{secret}) {
+
+		} else {
+			explain "#R{WARNING: $vault{role} doesn't exist!" unless safe_path_exists $vault{role};
+			explain "#R{WARNING: $vault{secret} doesn't exist!" unless safe_path_exists $vault{secret};
+			die "Exiting.\n" unless prompt_for_boolean(clean_heredoc(<<"			|EOF"));
+			|To use these paths, the Concourse AppRole credentials will have to be (re-)generated.
+			|Continue [y|n]?
+			|EOF
+			$regenerate = 1;
+		}
+	}
+
+	if ($regenerate) {
+		my @paths;
+		foreach (keys %envs) {
+			my $env = $envs{$_}{env};
+			explain "#Y{Determining Vault paths needed for $env ...}\n";
+
+			my $dir = workdir;
+			if (is_create_env($env)) {
+				write_stemcell_data("$dir/cloud.yml"); # Why write stemcell to cloud.yml??!!
+			} else {
+				bosh_download_cloud_config(bosh_target_for($env), "$dir/cloud.yml");
+			}
+			my %options = ('cloud-config' => "$dir/cloud.yml");
+			my $vault_prefix = $envs{$_}{vault};
+			push @paths, "secret/$vault_prefix/*";
+			my @merge_files = @{merge_files($envs{$_}{file}, \%options)};
+			for my $extra_path (sort grep {chomp; $_ !~ m/^secret\/$vault_prefix\// } spruce_vault_paths(@merge_files)) {
+				push @paths, $extra_path;
+			}
+		}
+		push @paths, "secret/handshake";
+		generate_ci_approle_policies(
+			$name,
+			$vault{role},
+			$vault{secret},
+			@paths
+		)
+	};
 
 	return \%vault;
 }
@@ -4306,7 +4380,7 @@ sub prompt_for_boshes_and_stemcells_for {
 	my ($ask_stemcells, %envs) = @_;
 
 	# Get the current boshes
-	my %boshes;
+	my (%boshes, %chosen_envs);
 	if (-f $ENV{HOME}."/.bosh/config") {
 		my $bosh_json = decode_json(qx{spruce json \$HOME/.bosh/config});
 		$boshes{$_->{alias}} = {
@@ -4324,18 +4398,18 @@ sub prompt_for_boshes_and_stemcells_for {
 	foreach my $e (sort keys(%envs)) {
 		my $env = $envs{$e}{env};
 		explain "\n#W{==> Environment:} #C{$env} (./$envs{$e}{file})";
+		next unless prompt_for_boolean("Do you want to use this environment [y|n]?", 1);
+		$chosen_envs{$e} = $envs{$e};
+
 		$boshenvs{$env} = {};
 		my %bosh_info = %{$boshes{$envs{$e}{bosh}}};
-
-		next unless prompt_for_boolean("Do you want to use this environment [y|n]?", 1);
-
 		# Get display name (defaults to environment)
 		$boshenvs{$env}{alias} = prompt_for_line("Display name", undef, $env);
 
 		if (is_valid_uri($envs{$e}{bosh})) {
-			$boshenvs{$env}{url} = $envs{$e}{bosh}
+			$boshenvs{$env}{url} = $envs{$e}{bosh};
 		} else {
-			$boshenvs{$env}{url} = $bosh_info{url}
+			$boshenvs{$env}{url} = $bosh_info{url};
 		}
 		if ($boshenvs{$env}{url}) {
 			explain "\nUsing BOSH director at #C{$boshenvs{$env}{url}}";
@@ -4405,7 +4479,9 @@ sub prompt_for_boshes_and_stemcells_for {
 		print "\n";
 	}
 
-   return (\%boshenvs, \%used_stemcells);
+	die "NO REMAINING ENVIRONMENTS - Cannot continue!\n" unless %chosen_envs;
+
+	return (\%boshenvs, \%used_stemcells, %chosen_envs);
 }
 
 sub prompt_for_layouts_for {
@@ -5323,26 +5399,73 @@ sub {
 	generate_ci_hcl_file('-', @paths);
 });
 
+sub generate_ci_approle_policies {
+	my (
+		$role_name,
+		$role_path,
+		$secret_path,
+		@access_paths
+	) = @_;
+
+	my $dir = workdir;
+	my $hcl_file = "$dir/concourse.hcl";
+	my $r;
+
+	explain "#Y{Determining vault paths needed for Concourse pipelines...}\n";
+	generate_ci_hcl_file($hcl_file, @access_paths);
+
+	explain "#Y{Creating Concourse AppRole for $role_name}\n";
+	$r = system("safe", "vault", "policy-write", $role_name, $hcl_file);
+	die "Could not set policy for $role_name:\n$r\n" unless ($? >> 8) == 0;
+	$r = system("safe", "vault", "write", "auth/approle/role/$role_name",
+		"secret_id_ttl=0",
+		"token_num_uses=0",
+		"token_ttl=1m",
+		"token_max_ttl=1m",
+		"secret_id_num_uses=0",
+		"policies=$role_name"
+	);
+	die "Could not create approle for $role_name:\n$r\n" unless ($? >> 8) == 0;
+
+	explain "#Y{Getting role and secret credentials from AppRole}\n";
+	my ($role_p, $role_k) = $role_path =~/^(.*):([^:]*)$/;
+	die "Invalid vault path '$role_path': expecting <path>:<key>\n" unless defined($role_p) && defined($role_k);
+
+	my ($secret_p, $secret_k) = $secret_path =~/^(.*):([^:]*)$/;
+	die "Invalid vault path '$secret_path': expecting <path>:<key>\n" unless defined($secret_p) && defined($secret_k);
+
+	$r = qx(safe read auth/approle/role/$role_name/role-id | spruce json | jq -r .role_id | safe paste $role_p $role_k);
+	die "Could not store role_id to $role_path:\n$r\n" unless ($? >> 8) == 0;
+	$r = qx(safe vault write -f -format=json auth/approle/role/$role_name/secret-id | jq -r '.data.secret_id' | safe paste $secret_p $secret_k);
+	die "Could not store secret_id to $secret_path:\n$r\n" unless ($? >> 8) == 0;
+
+	explain "#G{Completed AppRole creation for $role_name.}";
+}
+
 sub generate_ci_hcl_file {
 	my (
 		$hclfile,           # SET TO '-' to print to screen
 		@vault_paths
 	) = @_;
 
-	my $fh = *STDOUT;
-	unless ($hclfile eq '-') {
+	my $fh;
+	if ($hclfile eq '-') {
+		$fh = *STDOUT;
+	} else {
 		open($fh, ">$hclfile") or die "can't open $hclfile: $!\n";
 	}
 
+	my %done;
 	foreach (@vault_paths) {
+		next if $done{$_};
+		$done{$_} = 1;
 		print $fh clean_heredoc(<<"		|EOF");
 		|path "$_" {
 		|    capabilities = [ "read", "list" ]
 		|}
-		|
 		|EOF
 	}
-	close $fh unless $hclfile eq '-';
+	close $fh unless ($hclfile eq '-');
 }
 
 # }}}
