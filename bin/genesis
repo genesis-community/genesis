@@ -1281,7 +1281,7 @@ sub deploy_manifest {
 	my ($env, $options) = @_;
 	$ENV{REDACT} = '';
 	my $dir = workdir;
-	my $target = ''; 
+	my $target = '';
 	my $create_env = is_create_env($env);
 
 	if (!$create_env) {
@@ -4719,13 +4719,13 @@ Checks, adds or rotates secrets for your deployment.
             --no-secrets` was used to create the deployment.
 
   * rotate: Generates new secrets for your deployment. If any credentials were
-            marked by the kit as `fixed', they are not updated unless the 
+            marked by the kit as `fixed', they are not updated unless the
             `--force` option was also specified.
 
 OPTIONS
 $GLOBAL_USAGE
   -f, --force        Rotate *ALL* credentials, including any credentials that
-                     the kit defined as `fixed'. This is very dangerous.  Only 
+                     the kit defined as `fixed'. This is very dangerous.  Only
                      applies to `rotate`
 
       --vault        The name of a `safe' target (a Vault) to store newly
@@ -5001,7 +5001,7 @@ $GLOBAL_USAGE
                 (dev mode).
 
   -d, --dev     Compile based off of a dev-kit (./dev). If not specified,
-                genesis will compile based off of ./<name>-genesis-kit. 
+                genesis will compile based off of ./<name>-genesis-kit.
                 Automatically set if run from inside a genesis deployments directory.
 EOF
 sub {
