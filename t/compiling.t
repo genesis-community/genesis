@@ -22,7 +22,6 @@ if ($bsdtar) {
 $repo = "compile-test-deployments-bad";
 ok -d "t/repos/$repo", "$repo repo exists" or die;
 chdir "t/repos/$repo" or die;
-diag "Running in t/repos/$repo";
 qx(rm -f *.tar.gz *.tgz); # just to be safe
 
 ($pass, $rc, $msg) = run_fails "genesis compile-kit --name custom-named-kit --version 1.0.4 --dev", 2;
@@ -56,7 +55,6 @@ chdir "../../.." or die;
 $repo = "compile-test-deployments";
 ok -d "t/repos/$repo", "$repo repo exists" or die;
 chdir "t/repos/$repo" or die;
-diag "Running in t/repos/$repo";
 qx(rm -f *.tar.gz *.tgz); # just to be safe
 
 ($pass, $rc, $msg) = runs_ok "genesis compile-kit --version 1.0.4";
@@ -83,7 +81,6 @@ chdir "../../.." or die;
 $repo = "compile-test-genesis-kit-bad";
 ok -d "t/repos/$repo", "$repo repo exists" or die;
 chdir "t/repos/$repo" or die;
-diag "Running in t/repos/$repo";
 qx(rm -f *.tar.gz *.tgz); # just to be safe
 
 ($pass, $rc, $msg) = run_fails "genesis compile-kit --name my-kit --version 1.0.4", 2;
@@ -105,7 +102,6 @@ chdir "../../.." or die;
 $repo = "compile-test-genesis-kit";
 ok -d "t/repos/$repo", "$repo repo exists" or die;
 chdir "t/repos/$repo" or die;
-diag "Running in t/repos/$repo";
 qx(rm -f *.tar.gz *.tgz); # just to be safe
 
 # Try to run it in dev mode
