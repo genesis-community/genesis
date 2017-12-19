@@ -889,6 +889,14 @@ sub __prompt_for_line {
 			$validate = sub() {
 				return (safe_path_exists $_[0]) ? "" : ($_[1] ? $_[1] :"$_[0] not found in vault");
 			}
+		} elsif ($validation eq "vault_path_and_key") {
+			$validate = sub() {
+				# Revisit this when https://github.com/starkandwayne/safe/issues/121 is resolved; for
+				# now, assume there can only be one colon separating the path from the key.
+				return "$_[0] is missing a key - expecting secret/<path>:<key>" unless $_[0] =~ qr(^[^:]*:[^:]*$);
+				return (safe_path_exists $_[0]) ? "" : ($_[1] ? $_[1] :"$_[0] not found in vaul:w
+					t");
+			}
 		}
 	}
 
@@ -3240,8 +3248,8 @@ sub process_kit_params {
 				print "(e.g. $q->{example})\n" if defined $q->{example};
 				if ($q->{param}) {
 					my $type = $q->{type};
-					if (defined($q->{validate}) && $q->{validate} eq "vault_path" && ! $opts{should_vault}) {
-						print csprintf("#y{Warning:} Cannot validate vault path when --no-secrets option specified");
+					if (defined($q->{validate}) && $q->{validate} =~ /^vault_path(_and_key)?$/ && ! $opts{should_vault}) {
+						print csprintf("#y{Warning:} Cannot validate vault paths when --no-secrets option specified");
 						$q->{validate}=undef;
 					}
 					if ($type eq 'boolean') {
@@ -4137,7 +4145,7 @@ sub prompt_for_git {
 
 	my $path = "secret/$ENV{GENESIS_CI_VAULT_PREFIX}/git-ssh/$git{user}\@$git{host}/$git{owner}/$git{repo}";
 	if ($key_choice eq 'reuse') {
-		$git{private_key} = prompt_for_line(clean_heredoc(<<"		|EOF"),undef,"$path:private", "vault_path");
+		$git{private_key} = prompt_for_line(clean_heredoc(<<"		|EOF"),undef,"$path:private", "vault_path_and_key");
 		|What is the vault path for your git private key?
 		|EOF
 	} elsif ($key_choice eq 'new') {
@@ -4190,7 +4198,7 @@ sub prompt_for_notifications {
 		|EOF
 
 		if ($have_key) {
-			$notifications{email}{smtp}{password} = prompt_for_line(clean_heredoc(<<"			|EOF"),undef,undef, "vault_path");
+			$notifications{email}{smtp}{password} = prompt_for_line(clean_heredoc(<<"			|EOF"),undef,undef, "vault_path_and_key");
 			|What is the vault path for your email SMTP password?
 			|ex: secret/notifications/email/smtp:password
 			|EOF
@@ -4214,7 +4222,7 @@ sub prompt_for_notifications {
 		|EOF
 
 		if ($have_key) {
-			$notifications{hipchat}{token} = prompt_for_line(clean_heredoc(<<"			|EOF"),undef,undef, "vault_path");
+			$notifications{hipchat}{token} = prompt_for_line(clean_heredoc(<<"			|EOF"),undef,undef, "vault_path_and_key");
 			|What is the vault path for your HipChat token?
 			|ex: secret/notifications/hipchat:token
 			|EOF
@@ -4252,7 +4260,7 @@ sub prompt_for_locker {
 		|EOF
 
 		if ($have_key) {
-			$locker{password} = prompt_for_line(clean_heredoc(<<"			|EOF"),undef,undef, "vault_path");
+			$locker{password} = prompt_for_line(clean_heredoc(<<"			|EOF"),undef,undef, "vault_path_and_key");
 			|What is the vault path for the Locker API password?
 			|ex: secret/bosh/lite/concourse/locker/api:password
 			|EOF
@@ -4292,10 +4300,10 @@ sub prompt_for_vault {
 		$vault{verify} = ! $safe_json->{SkipVerify}{$vault{url}};
 	}
 
-	$vault{role} = prompt_for_line(clean_heredoc(<<"	|EOF"),undef,"secret/$ENV{GENESIS_CI_VAULT_PREFIX}/$name/vault:role_id","vault_path");
+	$vault{role} = prompt_for_line(clean_heredoc(<<"	|EOF"),undef,"secret/$ENV{GENESIS_CI_VAULT_PREFIX}/$name/vault:role_id","vault_path_and_key");
 	|Please specify the path in Vault that contains the vault Role ID for Concourse
 	|EOF
-	$vault{secret} = prompt_for_line(clean_heredoc(<<"	|EOF"),undef,"secret/$ENV{GENESIS_CI_VAULT_PREFIX}/$name/vault:secret_id","vault_path");
+	$vault{secret} = prompt_for_line(clean_heredoc(<<"	|EOF"),undef,"secret/$ENV{GENESIS_CI_VAULT_PREFIX}/$name/vault:secret_id","vault_path_and_key");
 	|Please specify the path in Vault that contains the vault Secret ID for Concourse
 	|EOF
 
@@ -4359,7 +4367,7 @@ sub prompt_for_boshes_and_stemcells_for {
 			$boshenvs{$env}{password} = "$safe_slug/bosh/users/admin:password";
 			explain "\nUsing BOSH admin password in Vault under #C{'$boshenvs{$env}{password}'}";
 		} else {
-			$boshenvs{$env}{password} = prompt_for_line(clean_heredoc(<<"			|EOF"),"Specify vault path", undef, "vault_path");
+			$boshenvs{$env}{password} = prompt_for_line(clean_heredoc(<<"			|EOF"),"Specify vault path", undef, "vault_path_and_key");
 			|Could not locate the password for admin user in Vault under:
 			|$safe_slug/bosh/users/admin:password.
 			|EOF
@@ -4368,7 +4376,7 @@ sub prompt_for_boshes_and_stemcells_for {
 			$boshenvs{$env}{ca_cert} = "$safe_slug/bosh/ssl/ca:certificate";
 			explain "\nUsing BOSH CA Certificate in Vault under #C{'$boshenvs{$env}{ca_cert}'}";
 		} else {
-			$boshenvs{$env}{ca_cert} = prompt_for_line(clean_heredoc(<<"			|EOF"),"Specify vault path", undef, "vault_path");
+			$boshenvs{$env}{ca_cert} = prompt_for_line(clean_heredoc(<<"			|EOF"),"Specify vault path", undef, "vault_path_and_key");
 			|Could not locate the BOSH SSL CA certificate in Vault under:
 			|$safe_slug/bosh/ssl/ca:certificate.
 			|EOF
