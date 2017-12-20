@@ -178,6 +178,10 @@ sub online {
 	return !envset('OFFLINE');
 }
 
+sub vaulted {
+	return !envset('NOVAULT');
+}
+
 sub execute {
 	my ($prog) = @_;
 	debug "executing `#C{$prog} 2>&1`";
@@ -888,15 +892,16 @@ sub __prompt_for_line {
 			}
 		} elsif ($validation eq "vault_path") {
 			$validate = sub() {
+				return "" unless vaulted();
 				return (safe_path_exists $_[0]) ? "" : ($_[1] ? $_[1] :"$_[0] not found in vault");
 			}
 		} elsif ($validation eq "vault_path_and_key") {
 			$validate = sub() {
 				# Revisit this when https://github.com/starkandwayne/safe/issues/121 is resolved; for
 				# now, assume there can only be one colon separating the path from the key.
-				return "$_[0] is missing a key - expecting secret/<path>:<key>" unless $_[0] =~ qr(^[^:]*:[^:]*$);
-				return (safe_path_exists $_[0]) ? "" : ($_[1] ? $_[1] :"$_[0] not found in vaul:w
-					t");
+				return "$_[0] is missing a key - expecting secret/<path>:<key>" unless $_[0] =~ qr(^[^:]+:[^:]+$);
+				return "" unless vaulted();
+				return (safe_path_exists $_[0]) ? "" : ($_[1] ? $_[1] :"$_[0] not found in vault");
 			}
 		}
 	}
@@ -3022,12 +3027,12 @@ sub validate_kit_metadata {
 					if (defined($param->{validate})) {
 						if ($type =~ m/^(string|list)$/) {
 							@extras = grep {$_ !~ /^(validate|err_msg)$/ } @extras;
-							if ($param->{validate} !~ m/^!?\/.*\/i?m?s?$/              && # regex validation
-								$param->{validate} !~ m/^((^|,)[^,]+){2,}$/            && # comma-separated list
-								$param->{validate} !~ m/^!?\[([^,]+(,[^,]+)*)]$/       && # new invertable comma-separated list
-								$param->{validate} !~ m/^((^|,)[^,]+){2,}$/            && # comma-separated list
-								$param->{validate} !~ m/^-?\d+(\.\d+)?--?\d+(\.\d+)?$/ && # range
-								$param->{validate} !~ m/^(vault_path|url|port)$/       ){ # key-words
+							if ($param->{validate} !~ m/^!?\/.*\/i?m?s?$/                   && # regex validation
+								$param->{validate} !~ m/^((^|,)[^,]+){2,}$/                 && # comma-separated list
+								$param->{validate} !~ m/^!?\[([^,]+(,[^,]+)*)]$/            && # new invertable comma-separated list
+								$param->{validate} !~ m/^((^|,)[^,]+){2,}$/                 && # comma-separated list
+								$param->{validate} !~ m/^-?\d+(\.\d+)?--?\d+(\.\d+)?$/      && # range
+								$param->{validate} !~ m/^(vault_path(_and_key)?|url|port)$/ ){ # key-words
 								push @errors, "$parameter has an invalid validation formula";
 							}
 
@@ -3222,7 +3227,7 @@ sub process_kit_params {
 		for my $q (@{$opts{params}{$subkit}}) {
 			my $answer;
 			my $vault_path;
-			next if ($q->{vault} && ! $opts{should_vault});
+			next if ($q->{vault} && !vaulted);
 			# Expand any values from default and examples for vault prefix
 			foreach (qw(description ask default example validate err_msg)) {
 				$q->{$_} =~ s/\$\{([^}]*)\}/resolve_params_ref($1,$resolveable_params)/ge if defined($q->{$_});
@@ -3249,9 +3254,8 @@ sub process_kit_params {
 				print "(e.g. $q->{example})\n" if defined $q->{example};
 				if ($q->{param}) {
 					my $type = $q->{type};
-					if (defined($q->{validate}) && $q->{validate} =~ /^vault_path(_and_key)?$/ && ! $opts{should_vault}) {
+					if (defined($q->{validate}) && $q->{validate} =~ /^vault_path(_and_key)?$/ && ! vaulted()) {
 						print csprintf("#y{Warning:} Cannot validate vault paths when --no-secrets option specified");
-						$q->{validate}=undef;
 					}
 					if ($type eq 'boolean') {
 						$answer = prompt_for_boolean($q->{ask},$q->{default});
@@ -3995,13 +3999,14 @@ sub {
 
 	if ($options{secrets}) {
 		target_vault($options{vault});
+	} else {
+		$ENV{NOVAULT} = 'y';
 	}
 
 	my $params = process_kit_params(kit          => $kit,
 									version      => $version,
 									env          => $name,
 									vault_prefix => $prefix,
-									should_vault => $options{secrets},
 									params       => $meta->{params} || [],
 									subkits      => \@subkits);
 	$params = run_param_hook($kit, $version, $name, $prefix, $params, @subkits);

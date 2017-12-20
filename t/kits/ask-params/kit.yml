@@ -197,9 +197,14 @@ params:
       description: Give me a bad URL (not that kind)
       ask: 'URL #6'
       validate: url
-      
+
     - param: validity-vault_path
       description: Need a vault path
       ask: Specify the path
       validate: vault_path
+
+    - param: validity-vault_path_and_key
+      description: Need a vault path with key
+      ask: Specify the path with key
+      validate: vault_path_and_key
 
