@@ -347,16 +347,41 @@ expect_ok "URL parsing - finish up", $cmd, [
 ];
 
 expect_ok "Vault paths with --no-secrets option", $cmd, [
-  "Warning:.* Cannot validate vault path when --no-secrets option specified[\r\n]{1,2}Specify the path[\r\n]{1,2}>", sub {
+  "Warning:.* Cannot validate vault paths when --no-secrets option specified[\r\n]{1,2}Specify the path[\r\n]{1,2}>", sub {
     $_[0]->send("/secret/this/path/does/not/exist\n");
   }
 ];
-expect_ok "", $cmd, [
+expect_ok "Vault paths and key prompt with --no-secrets option", $cmd, [
+  "not found in vault", sub {
+    fail "got vault validation failure but --no-secrets was specified";
+  }], [
+  "Warning:.* Cannot validate vault paths when --no-secrets option specified[\r\n]{1,2}Specify the path with key[\r\n]{1,2}>", sub {
+    $_[0]->send("/secret/this/path/does/not/exist\n");
+  }
+];
+
+expect_ok "Vault path and key without key, --no-secrets option", $cmd, [
   "not found in vault", sub {
     fail "got vault validation failure but --no-secrets was specified";
   }], [
   "Skipping generation", sub {
-    1
+    fail "Did not get error when key was missing";
+  }], [
+  "\\/secret\\/this\\/path\\/does\\/not\\/exist is missing a key - expecting secret\\/<path>:<key>[\r\n]{1,2}>", sub {
+    $_[0]->send("/secret/this/path/does/not/exist:password\n");
+  }
+];
+
+
+expect_ok "Finished, --no-secrets option", $cmd, [
+  "not found in vault", sub {
+    fail "got vault validation failure but --no-secrets was specified";
+  }], [
+  "Skipping generation", sub {
+    1;
+  }], [
+  '\/secret\/this\/path\/does\/not\/exist:password is missing a key - expecting secret\/<path>:<key>', sub {
+    fail "Provided a key, but got a key missing error message";
   }
 ];
 
@@ -496,6 +521,9 @@ params:
 
   # Need a vault path
   validity-vault_path: /secret/this/path/does/not/exist
+
+  # Need a vault path with key
+  validity-vault_path_and_key: /secret/this/path/does/not/exist:password
 EOF
 
 $cmd = Expect->new();
