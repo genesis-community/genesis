@@ -528,7 +528,7 @@ EOF
 
 sub kit_yaml_files_in {
 	my ($env, $dir, @subkits) = @_;
-	$env =~ s/\.ya?ml$//;
+	$env =~ s/\.yml$//;
 
 	my @files = glob "$dir/base/*.yml";
 	push @files, map { glob "$dir/subkits/$_/*.yml" } @subkits;
@@ -4007,7 +4007,7 @@ sub {
 	usage(1) if @_ != 1;
 
 	my ($name) = @_;
-	$name =~ s/\.ya?ml$//;
+	$name =~ s/\.yml$//;
 
 	my $err = check_env_name_for_errors($name);
 	die "Invalid environment name '$name': $err\n" if $err;
@@ -4815,7 +4815,7 @@ sub {
 
 	check_prereqs;
 
-	$name =~ s/\.ya?ml$//;
+	$name =~ s/\.yml$//;
 	my $deployment = $name . "-" . deployment_suffix;
 	(my $prefix = $deployment) =~ s|-|/|g;
 
