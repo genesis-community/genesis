@@ -3271,7 +3271,8 @@ sub process_kit_params {
 	my %opts = @_;
 	my @answers;
 	my $resolveable_params = {
-		"params.vault_prefix" => $opts{vault_prefix},
+		"params.vault_prefix" => $opts{vault_prefix}, # for backwards compatibility
+		"params.vault" => $opts{vault_prefix},
 		"params.env" => $opts{env}
 	};
 	for my $subkit ("base", @{$opts{subkits}}) {
