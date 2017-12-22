@@ -386,14 +386,17 @@ expect_ok "Finished, --no-secrets option", $cmd, [
 ];
 
 expect_exit $cmd, 0, "Creating a new environment with subkits exited successfully";
-eq_or_diff get_file("with-subkit.yml"), <<EOF, "New environment file contains base + subkit params, comments, and examples";
+eq_or_diff get_file("with.yml"), <<EOF, "New environment file contains base + subkit params, comments, and examples";
 ---
 kit:
   name:    dev
   version: latest
   subkits:
   - subkit-params
+EOF
 
+eq_or_diff get_file("with-subkit.yml"), <<EOF, "New environment file contains base + subkit params, comments, and examples";
+---
 params:
   env:   with-subkit
   vault: with/subkit/ask-params
@@ -544,13 +547,16 @@ expect_ok "getting second user", $cmd, ['2nd user >', sub {
 expect_ok "getting third user", $cmd, ['3rd user >', sub {
 		$_[0]->send("\n"); }];
 expect_exit $cmd, 0, "Creating a new environment without subkits exited successfully";
-eq_or_diff get_file("without-subkit.yml"), <<EOF, "New environment file contains base params, comments, and examples (no subkits)";
+eq_or_diff get_file("without.yml"), <<EOF, "New environment file contains base params, comments, and examples (no subkits)";
 ---
 kit:
   name:    dev
   version: latest
   subkits: []
+EOF
 
+eq_or_diff get_file("without-subkit.yml"), <<EOF, "New environment file contains base params, comments, and examples (no subkits)";
+---
 params:
   env:   without-subkit
   vault: without/subkit/ask-params
