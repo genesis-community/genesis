@@ -3988,6 +3988,11 @@ $GLOBAL_USAGE
       --vault        The name of a `safe' target (a Vault) to store newly
                      generated credentials in.
 
+      --prefix       By default, the vault path is secret/<env-name>/<kit>
+                     where <env-name> has had any - converted to / and
+                     <kit> is the kit name.  Use this option to change the part
+                     after secret/
+
       --no-secrets   Do not generate secrets in the Vault.  You will have to
                      manually run `genesis secrets` yourself.
 
@@ -4001,6 +4006,7 @@ sub {
 	);
 	options(\@_, \%options, qw/
 		vault=s
+		prefix=s
 		secrets!
 		kit|k=s
 	/);
