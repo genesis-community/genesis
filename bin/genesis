@@ -4779,7 +4779,7 @@ sub {
 
 command("secrets", <<EOF,
 genesis v$VERSION
-USAGE: genesis secrets [check|add|rotate [--force]][--vault target] deployment-env.yml
+USAGE: genesis secrets [check|add|rotate [--force]] [--vault target] deployment-env.yml
 
 Checks, adds or rotates secrets for your deployment.
 
@@ -4814,6 +4814,7 @@ sub {
 
 	my ($action,$name) = @_;
 	if (@_ == 1) {
+		die "Must specify environment name\n" if $name =~ m/^(check|add|rotate)$/;
 		$name = $action;
 		$action = 'check';
 	}
