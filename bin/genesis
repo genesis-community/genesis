@@ -320,6 +320,12 @@ sub yaml_bool {
 	return $bool;
 }
 
+sub vault_slug {
+	my ($name) = @_;
+	$name =~ s/-/\//g;
+	return $name;
+}
+
 sub validate_subkits {
 	my ($kit, $version, $meta, @subkits) = @_;
 	for my $sk (@subkits) {
@@ -4049,8 +4055,7 @@ sub {
 	validate_subkits($kit, $version, $meta, @subkits);
 
 	my $deployment = $name . "-" . deployment_suffix;
-	(my $prefix = $name) =~ s|-|/|g;
-	$prefix = "$prefix/".deployment_suffix;
+	my $prefix = ($options{prefix} ? $options{prefix} : (vault_slug($name).'/'.deployment_suffix));
 
 	if ($options{secrets}) {
 		target_vault($options{vault});
@@ -4499,7 +4504,7 @@ sub prompt_for_boshes_and_stemcells_for {
 			);
 		}
 
-		(my $safe_slug = "secret/$envs{$e}{bosh}") =~ s/-/\//g;
+		my $safe_slug = "secret/". vault_slug($envs{$e}{bosh});
 		if (safe_path_exists("$safe_slug/bosh/users/admin:password")) {
 			$boshenvs{$env}{password} = "$safe_slug/bosh/users/admin:password";
 			explain "\nUsing BOSH admin password in Vault under #C{'$boshenvs{$env}{password}'}";
@@ -4822,8 +4827,12 @@ sub {
 	check_prereqs;
 
 	$name =~ s/\.yml$//;
+	die "No environment file named $name exists.\n" unless -f $name.".yml";
+	my $prefix = get_key($name, 'params.vault');
+	unless ($prefix) {
+		$prefix = vault_slug($name)."-".deployment_suffix;
+	}
 	my $deployment = $name . "-" . deployment_suffix;
-	(my $prefix = $deployment) =~ s|-|/|g;
 
 	my ($kit, $version) = kit_name_and_version_for($name);
 	my $meta = read_kit_metadata($kit, $version);
