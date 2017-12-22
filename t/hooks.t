@@ -51,13 +51,15 @@ new_hook "dev/hooks/subkit", <<EOF;
 exit 0
 EOF
 subkit_hook_ok "no-subkits", 0, "Subkit hooks can override subkit selection";
-is get_file("no-subkits.yml"), <<EOF, "env file has no subkits listed";
+is get_file("no.yml"), <<EOF, "env file has no subkits listed";
 ---
 kit:
   name:    dev
   version: latest
   subkits: []
-
+EOF
+is get_file("no-subkits.yml"), <<EOF, "env file has no subkits listed";
+---
 params:
   env:   no-subkits
   vault: no/subkits/subkit-hooks
@@ -69,7 +71,7 @@ echo "openvpn"
 echo "toolbelt"
 EOF
 subkit_hook_ok "good-subkit", 0, "Subkit hook can add in additional subkits not listed in kit.yml";
-is get_file("good-subkit.yml"), <<EOF, "env file has correct subkits listed";
+is get_file("good.yml"), <<EOF, "env file has correct subkits listed";
 ---
 kit:
   name:    dev
@@ -77,7 +79,9 @@ kit:
   subkits:
   - openvpn
   - toolbelt
-
+EOF
+is get_file("good-subkit.yml"), <<EOF, "env file has correct subkits listed";
+---
 params:
   env:   good-subkit
   vault: good/subkit/subkit-hooks
@@ -90,13 +94,15 @@ chdir $dir;
 reprovision kit => 'param-hooks';
 rename "dev/hooks/params", "dev/hooks/params.bak";
 runs_ok "genesis new no-additional-questions --no-secrets", "setup succeeds when no param hook exists";
-is get_file("no-additional-questions.yml"), <<EOF, "environment yaml has original params when no hook present";
+is get_file("no.yml"), <<EOF, "environment yaml has original params when no hook present";
 ---
 kit:
   name:    dev
   version: latest
   subkits: []
-
+EOF
+is get_file("no-additional-questions.yml"), <<EOF, "environment yaml has original params when no hook present";
+---
 params:
   env:   no-additional-questions
   vault: no/additional/questions/param-hooks
@@ -124,13 +130,15 @@ no_env "bad-output-hook";
 
 $ENV{HOOK_OUTPUT} = "jq '.[1].comment = \"comment\" | .[1].values = [{ \"new_param\" : [{ \"message\":\"hi there\"},{\"message\":\"byebye\"}]}]' < \$1";
 runs_ok "genesis new params-hook-succeeds --no-secrets", "Setup succeeds when param hook succeeds";
-is get_file("params-hook-succeeds.yml"), <<EOF, "environment yaml has updated params";
+is get_file("params.yml"), <<EOF, "environment yaml has updated params";
 ---
 kit:
   name:    dev
   version: latest
   subkits: []
-
+EOF
+is get_file("params-hook-succeeds.yml"), <<EOF, "environment yaml has updated params";
+---
 params:
   env:   params-hook-succeeds
   vault: params/hook/succeeds/param-hooks
@@ -148,7 +156,7 @@ EOF
 reprovision kit => 'more-hooks', compiled => 1; # use a compiled kit to verify we extract param helpers
 
 my $cmd = Expect->new();
-my $env = "inspect";
+my $env = "inspect-this";
 $cmd->log_stdout(0);
 $cmd->spawn("genesis new $env --no-secrets");
 expect_ok $cmd, ["Install OpenVPN?", sub { $_[0]->send("yes\n"); }];
@@ -160,7 +168,7 @@ expect_ok $cmd, ["Please state your purpose: ", sub { $_[0]->send("be awesome\n"
 expect_exit $cmd, 0, "Creating new env with kit using subkit and param hooks";
 
 eq_or_diff get_file("params.out"), <<EOF, "Contains the expected diagnostic output";
-Environment: inspect
+Environment: inspect-this
 
 Subkits:
   - mandatory
@@ -191,7 +199,7 @@ Input:
 ]
 EOF
 
-eq_or_diff get_file("$env.yml"), <<EOF, "New environment file contains correct data";
+eq_or_diff get_file((split('-',$env))[0].".yml"), <<EOF, "New environment file contains correct data";
 ---
 kit:
   name:    more-hooks
@@ -199,10 +207,12 @@ kit:
   subkits:
   - mandatory
   - openvpn
-
+EOF
+eq_or_diff get_file("$env.yml"), <<EOF, "New environment file contains correct data";
+---
 params:
-  env:   inspect
-  vault: inspect/more-hooks
+  env:   inspect-this
+  vault: inspect/this/more-hooks
 
   # Need to provide a tempdir for output
   tempdir: $dir

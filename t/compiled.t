@@ -29,17 +29,19 @@ EOF
 
 qx(rm -f new-env.yml);
 runs_ok "genesis new --no-secrets new-env";
-is get_file("new-env.yml"), <<EOF, "environment file generated has latest kit name / version in it";
+is get_file("new.yml"), <<EOF, "environment file generated has latest kit name / version in it";
 ---
 kit:
   name:    compiled
   version: 0.0.2
   subkits: []
-
+EOF
+is get_file("new-env.yml"), <<EOF, "environment file generated doesn't have kit name / version in it";
+---
 params:
   env:   new-env
   vault: new/env/compiled-kit-test
 EOF
-qx(rm -f new-env.yml);
+qx(rm -f new.yml new-env.yml);
 
 done_testing;

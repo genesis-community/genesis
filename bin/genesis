@@ -168,6 +168,15 @@ sub trace(@) {
 	print STDERR "\n";
 }
 
+sub same($$) {
+	my ($a,$b) = @_;
+	die "Arguments are not arrays" unless ref($a) eq 'ARRAY' && ref($b) eq 'ARRAY';
+	return 0 unless scalar(@$a) == scalar(@$b);
+	return 0 unless join(',',map {length} @$a) eq join(',',map {length} @$b);
+	return 0 unless join("\0", @$a) eq join("\0",@$b);
+	return 1;
+}
+
 sub error {
 	my @err = @_;
 	unshift @err, "%s" if $#err == 0;
@@ -405,22 +414,57 @@ sub new_environment {
 	$version = "latest" unless defined $version;
 
 	my $file = "$env.yml";
-	open my $fh, ">", $file or die "Couldn't write to $file: $!";
-	print $fh <<EOF;
+	(my $parent = $file) =~ s/-.*\.yml/.yml/;
+
+	my %existing_info;
+	if (-e $parent) {
+		%existing_info = %{LoadFile($parent)};
+		explain "Using #C{$parent} file as base config.";
+	} else {
+		open my $fh, ">", $parent or die "Couldn't write to $parent: $!";
+		print $fh <<EOF;
 ---
 kit:
   name:    $kit
   version: $version
 EOF
-	if (! @subkits) {
-		print $fh "  subkits: []\n";
-	} else {
-		print $fh "  subkits:\n";
-		for my $subkit (@subkits) {
-			print $fh <<EOF;
-  - $subkit
-EOF
+		if (@subkits) {
+			print $fh "  subkits:\n";
+			print $fh "  - $_\n" foreach (@subkits);
+		} else {
+			print $fh "  subkits: []\n";
 		}
+		%existing_info = (
+			kit => {
+				name => $kit,
+				version => $version,
+				subkits => \@subkits
+			}
+		);
+		close $fh; $fh = undef;
+		explain "Created #C{$parent} file for $kit/$version";
+	}
+
+	open my $fh, ">", $file or die "Couldn't write to $file: $!";
+	print $fh "---";
+	print $fh "\nkit:\n" if (
+		!%existing_info ||
+		$existing_info{kit}{name} ne $kit ||
+		$existing_info{kit}{version} ne $version ||
+		!same($existing_info{kit}{subkits}||[],\@subkits)
+	);
+	if (!%existing_info || $existing_info{kit}{name} ne $kit) {
+		print $fh "  name:    $kit\n";
+		error "#y{WARNING:} $parent specifies a different kit name ($existing_info{kit}{name})";
+	}
+	if (!%existing_info || $existing_info{kit}{version} ne $version) {
+		print $fh "  version: $version\n";
+		error "#y{WARNING:} $parent specifies a different kit version ($existing_info{kit}{version})";
+	}
+	if (!%existing_info || !same($existing_info{kit}{subkits}||[],\@subkits)) {
+		print $fh "  subkits:\n";
+		print $fh "  - (( replace ))\n" if defined($existing_info{kit}{subkits});
+		print $fh "  - $_\n" foreach (@subkits);
 	}
 	print $fh <<EOF;
 
@@ -479,6 +523,7 @@ EOF
 		}
 	}
 	close $fh;
+	explain "Created #C{$file} environment file";
 }
 
 sub kit_yaml_files_in {
@@ -817,10 +862,13 @@ sub validate_repo_name {
 	return $name =~ m/^[a-z][a-z0-9-]+$/;
 }
 
-sub validate_env_name {
+sub check_env_name_for_errors {
 	my ($name) = @_;
-	return $name =~ m/^[a-z][a-z0-9-]+$/
-	    && $name !~ m/--/;
+	return "Can only contain lowercase alphanumeric characters and dashes." if $name !~ m/^[a-z0-9-]+$/;
+	return "Must start with a lowercase alphabetic character." if $name !~ m/^[a-z]/;
+	return "Cannot contain sequential dashes." if $name =~ m/--/;
+	return "Must be at least two levels to allow a base file for pipeline propagation." if $name !~ m/-/;
+	return "";
 }
 
 ###########################################################################
@@ -3961,7 +4009,8 @@ sub {
 	my ($name) = @_;
 	$name =~ s/\.ya?ml$//;
 
-	validate_env_name $name or die "Invalid environment name '$name'\n";
+	my $err = check_env_name_for_errors($name);
+	die "Invalid environment name '$name': $err\n" if $err;
 	-f "$name.yml" and die "Environment '$name' already exists\n";
 
 	at_exit(sub {
@@ -4464,7 +4513,6 @@ sub prompt_for_boshes_and_stemcells_for {
 			|EOF
 		}
 
-		
 		my ($stemcells, %candidates) = ([]);
 		if ($ask_stemcells) {
 			explain "\nFetching stemcells from BOSH...";
@@ -4477,7 +4525,7 @@ sub prompt_for_boshes_and_stemcells_for {
 				foreach (split("\n", $sc_info)) {
 					my ($stemcell, undef, $os) = split(' ',  $_);
 					next unless $stemcell;
-					
+
 					my ($alias) = split("-$os-",$stemcell);
 					$alias =~ s/^bosh-//;
 					$alias .= '-$os' if $candidates{$alias} &&($candidates{$alias} ne $stemcell);

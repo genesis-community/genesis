@@ -1,0 +1,53 @@
+#!/usr/bin/expect
+
+#log_user 0
+spawn /bin/sh -c "exec 2>&1 ; genesis --no-color new [set argv]"
+
+set step "waiting for the question about authentication"
+expect {
+  "*How would you like to perform authentication?\r\n\r\n" { }
+  timeout { puts "Timed out [set step]\n"      ; exit 1 }
+  eof     { puts "Unexpected EOF [set step]\n" ; exit 1 }
+}
+
+set step "looking for authentication choice prompt"
+expect {
+  "*\r\n choice? \\\[1-3]: " {
+    send "3\r" ;# choose cf-uaa
+  }
+  timeout { puts "Timed out [set step]\n"      ; exit 1 }
+  eof     { puts "Unexpected EOF [set step]\n" ; exit 1 }
+}
+
+set step "waiting for the question about toolbelt"
+expect {
+  "*Would you like to load the most excellent Toolbelt add-on?\r\n\\\[Y/n]: " {
+    send "no\r" ;# choose toolbelt
+  }
+  timeout { puts "Timed out [set step]\n"      ; exit 1 }
+  eof     { puts "Unexpected EOF [set step]\n" ; exit 1 }
+}
+
+set step "waiting for the question about backups"
+expect {
+  "*How would you like to perform backups of this deployment?\r\n" { }
+  timeout { puts "Timed out [set step]\n"      ; exit 1 }
+  eof     { puts "Unexpected EOF [set step]\n" ; exit 1 }
+}
+
+set step "looking for backups choice prompt"
+expect {
+  "*\r\n choice? \\\[1-3]: " {
+    send "3\r" ;# choose shield
+  }
+  timeout { puts "Timed out [set step]\n"      ; exit 1 }
+  eof     { puts "Unexpected EOF [set step]\n" ; exit 1 }
+}
+
+set timeout 60 ;# in case we are vaulting
+set step "waiting for success indicator"
+expect {
+  "*New environment [lindex $argv 0] provisioned.\r\n" { }
+  timeout { puts "Timed out [set step]\n"      ; exit 1 }
+  eof     { puts "Unexpected EOF [set step]\n" ; exit 1 }
+}
