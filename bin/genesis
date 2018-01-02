@@ -320,6 +320,12 @@ sub yaml_bool {
 	return $bool;
 }
 
+sub vault_slug {
+	my ($name) = @_;
+	$name =~ s/-/\//g;
+	return $name;
+}
+
 sub validate_subkits {
 	my ($kit, $version, $meta, @subkits) = @_;
 	for my $sk (@subkits) {
@@ -528,7 +534,7 @@ EOF
 
 sub kit_yaml_files_in {
 	my ($env, $dir, @subkits) = @_;
-	$env =~ s/\.ya?ml$//;
+	$env =~ s/\.yml$//;
 
 	my @files = glob "$dir/base/*.yml";
 	push @files, map { glob "$dir/subkits/$_/*.yml" } @subkits;
@@ -3265,7 +3271,8 @@ sub process_kit_params {
 	my %opts = @_;
 	my @answers;
 	my $resolveable_params = {
-		"params.vault_prefix" => $opts{vault_prefix},
+		"params.vault_prefix" => $opts{vault_prefix}, # for backwards compatibility
+		"params.vault" => $opts{vault_prefix},
 		"params.env" => $opts{env}
 	};
 	for my $subkit ("base", @{$opts{subkits}}) {
@@ -3988,6 +3995,11 @@ $GLOBAL_USAGE
       --vault        The name of a `safe' target (a Vault) to store newly
                      generated credentials in.
 
+      --prefix       By default, the vault path is secret/<env-name>/<kit>
+                     where <env-name> has had any - converted to / and
+                     <kit> is the kit name.  Use this option to change the part
+                     after secret/
+
       --no-secrets   Do not generate secrets in the Vault.  You will have to
                      manually run `genesis secrets` yourself.
 
@@ -4001,13 +4013,14 @@ sub {
 	);
 	options(\@_, \%options, qw/
 		vault=s
+		prefix=s
 		secrets!
 		kit|k=s
 	/);
 	usage(1) if @_ != 1;
 
 	my ($name) = @_;
-	$name =~ s/\.ya?ml$//;
+	$name =~ s/\.yml$//;
 
 	my $err = check_env_name_for_errors($name);
 	die "Invalid environment name '$name': $err\n" if $err;
@@ -4043,8 +4056,7 @@ sub {
 	validate_subkits($kit, $version, $meta, @subkits);
 
 	my $deployment = $name . "-" . deployment_suffix;
-	(my $prefix = $name) =~ s|-|/|g;
-	$prefix = "$prefix/".deployment_suffix;
+	my $prefix = ($options{prefix} ? $options{prefix} : (vault_slug($name).'/'.deployment_suffix));
 
 	if ($options{secrets}) {
 		target_vault($options{vault});
@@ -4493,23 +4505,23 @@ sub prompt_for_boshes_and_stemcells_for {
 			);
 		}
 
-		(my $safe_slug = "secret/$envs{$e}{bosh}") =~ s/-/\//g;
-		if (safe_path_exists("$safe_slug/bosh/users/admin:password")) {
-			$boshenvs{$env}{password} = "$safe_slug/bosh/users/admin:password";
+		my $prefix = "secret/". vault_slug($envs{$e}{bosh});
+		if (safe_path_exists("$prefix/bosh/users/admin:password")) {
+			$boshenvs{$env}{password} = "$prefix/bosh/users/admin:password";
 			explain "\nUsing BOSH admin password in Vault under #C{'$boshenvs{$env}{password}'}";
 		} else {
 			$boshenvs{$env}{password} = prompt_for_line(clean_heredoc(<<"			|EOF"),"Specify vault path", undef, "vault_path_and_key");
 			|Could not locate the password for admin user in Vault under:
-			|$safe_slug/bosh/users/admin:password.
+			|$prefix/bosh/users/admin:password.
 			|EOF
 		}
-		if (safe_path_exists("$safe_slug/bosh/ssl/ca:certificate")) {
-			$boshenvs{$env}{ca_cert} = "$safe_slug/bosh/ssl/ca:certificate";
+		if (safe_path_exists("$prefix/bosh/ssl/ca:certificate")) {
+			$boshenvs{$env}{ca_cert} = "$prefix/bosh/ssl/ca:certificate";
 			explain "\nUsing BOSH CA Certificate in Vault under #C{'$boshenvs{$env}{ca_cert}'}";
 		} else {
 			$boshenvs{$env}{ca_cert} = prompt_for_line(clean_heredoc(<<"			|EOF"),"Specify vault path", undef, "vault_path_and_key");
 			|Could not locate the BOSH SSL CA certificate in Vault under:
-			|$safe_slug/bosh/ssl/ca:certificate.
+			|$prefix/bosh/ssl/ca:certificate.
 			|EOF
 		}
 
@@ -4767,7 +4779,7 @@ sub {
 
 command("secrets", <<EOF,
 genesis v$VERSION
-USAGE: genesis secrets [check|add|rotate [--force]][--vault target] deployment-env.yml
+USAGE: genesis secrets [check|add|rotate [--force]] [--vault target] deployment-env.yml
 
 Checks, adds or rotates secrets for your deployment.
 
@@ -4802,6 +4814,7 @@ sub {
 
 	my ($action,$name) = @_;
 	if (@_ == 1) {
+		die "Must specify environment name\n" if $name =~ m/^(check|add|rotate)$/;
 		$name = $action;
 		$action = 'check';
 	}
@@ -4815,9 +4828,13 @@ sub {
 
 	check_prereqs;
 
-	$name =~ s/\.ya?ml$//;
+	$name =~ s/\.yml$//;
+	die "No environment file named $name exists.\n" unless -f $name.".yml";
+	my $prefix = get_key($name, 'params.vault');
+	unless ($prefix) {
+		$prefix = vault_slug($name)."-".deployment_suffix;
+	}
 	my $deployment = $name . "-" . deployment_suffix;
-	(my $prefix = $deployment) =~ s|-|/|g;
 
 	my ($kit, $version) = kit_name_and_version_for($name);
 	my $meta = read_kit_metadata($kit, $version);
