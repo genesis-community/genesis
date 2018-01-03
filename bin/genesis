@@ -4458,13 +4458,17 @@ sub prompt_for_boshes_and_stemcells_for {
 	if (-f $ENV{HOME}."/.bosh/config") {
 		my $bosh_json = decode_json(qx{spruce json \$HOME/.bosh/config});
 		$boshes{$_->{alias}} = {
-			#url => (($_->{url} =~ /:\d+$/) ? $_->{url} : $_->{url}.":25555"),
-			url => $_->{url},
+			url => (($_->{url} =~ /:\d+$/) ? $_->{url} : $_->{url}.":25555"),
 			username => $_->{username},
-			password => $_->{password},
-			ca_cert => $_->{ca_cert},
+			password => $_->{password}, # Not used, may be in future (if not in vault)
+			ca_cert => $_->{ca_cert},   # Not used, may be in future (if not in vault)
 		} foreach (@{$bosh_json->{environments}});
-		$boshes{$boshes{$_}{url}} = $boshes{$_} foreach (keys %boshes);
+		foreach (keys %boshes) {
+			# Add the url (with and without port) to the lookup map.
+			$boshes{$boshes{$_}{url}} = $boshes{$_};
+			(my $url = $boshes{$_}{url}) =~ s /:\d+$//;
+			$boshes{$url} = $boshes{$_};
+		}
 	}
 
 	explain "\n#Y{Processing Detected Environments}\n#Y{--------------------------------}";
@@ -4481,17 +4485,19 @@ sub prompt_for_boshes_and_stemcells_for {
 		# Get display name (defaults to environment)
 		$boshenvs{$env}{alias} = prompt_for_line("Display name", undef, $env);
 
-		if (is_valid_uri($envs{$e}{bosh})) {
-			$boshenvs{$env}{url} = $envs{$e}{bosh};
-		} else {
+		if ($bosh_info{url}) {
+			# Found in .bosh/config (either alias or url)
 			$boshenvs{$env}{url} = $bosh_info{url};
-			$boshenvs{$env}{url} .= ":25555" unless $boshenvs{$env}{url} =~ m/:\d+$/;
-		}
-		if ($boshenvs{$env}{url}) {
 			explain "\nUsing BOSH director at #C{$boshenvs{$env}{url}}";
 		} else {
-			$boshenvs{$env}{url} = prompt_for_line("Could not determine BOSH url -- please specify fully\ne.g.: https://10.0.1.44:25555");
-			$boshenvs{$env}{url} .= ":25555" unless $boshenvs{$env}{url} =~ m/:\d+$/;
+			# Not found -- need info
+			if (is_valid_uri($envs{$e}{bosh})) {
+				$boshenvs{$env}{url} = $envs{$e}{bosh};
+				explain "\nUsing BOSH director at #C{$boshenvs{$env}{url}}";
+			} else {
+				$boshenvs{$env}{url} = prompt_for_line("Could not determine BOSH url -- please specify fully\ne.g.: https://10.0.1.44:25555");
+				$boshenvs{$env}{url} .= ":25555" unless $boshenvs{$env}{url} =~ m/:\d+$/;
+			}
 		}
 
 		if ($bosh_info{username}) {
@@ -4528,7 +4534,10 @@ sub prompt_for_boshes_and_stemcells_for {
 		my ($stemcells, %candidates) = ([]);
 		if ($ask_stemcells) {
 			explain "\nFetching stemcells from BOSH...";
-			my $sc_info = qx($BOSH -e $boshenvs{$env}{url} ss);
+			chomp($ENV{BOSH_CA_CERT} = qx(safe get "$boshenvs{$env}{ca_cert}"));
+			$ENV{BOSH_CLIENT} = $boshenvs{$env}{username};
+			chomp($ENV{BOSH_CLIENT_SECRET} = qx(safe get "$boshenvs{$env}{password}"));
+			my $sc_info = qx($BOSH -e $boshenvs{$env}{url} stemcells);
 			if ($? > 0) {
 				# Couldn't get stemcells - ask for them manually (just die for now)
 				die "Could not retrieve stemcell\n";
