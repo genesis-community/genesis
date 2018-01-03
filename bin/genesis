@@ -5129,7 +5129,7 @@ sub {
 	mkdir_or_fail "$temp/$stem";
 	qx(cp -aH $dir/* $temp/$stem);
 
-	qx(rm -rf $temp/.git $temp/.gitignore);
+	qx(rm -rf $temp/$stem/.git $temp/$stem/.gitignore $temp/$stem/*.tar.gz);
 
 	qx(tar -czf $stem.tar.gz -C $temp $stem/);
 
