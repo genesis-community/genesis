@@ -2227,7 +2227,8 @@ EOF
 				# times - not necessary for create-env
 				# <alias>-bosh-lock is used to prevent the parent bosh from upgrading while we deploy
 				# - not necessary for create-env
-				print $OUT <<EOF;
+				unless ($pipeline->{pipeline}{skip_upkeep}) {
+					print $OUT <<EOF;
   - name: ${alias}-stemcell-lock
     type: locker
     source:
@@ -2238,6 +2239,9 @@ EOF
       ca_cert: (( grab pipeline.locker.ca_cert ))
       lock_name: ${bosh_lock}-stemcell-lock
 
+EOF
+				}
+				print $OUT <<EOF;
   - name: ${alias}-bosh-lock
     type: locker
     source:
