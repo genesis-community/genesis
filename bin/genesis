@@ -1095,9 +1095,14 @@ sub prompt_for_choice {
 
 sub prompt_for_line {
 	my ($prompt,$label,$default,$validation,$err_msg) = @_;
-	print "\n$prompt";
-	my $padding = ($prompt =~ /\s$/) ? "" : " ";
-	print(csprintf("%s", "${padding}#g{(default: $default)}")) if defined($default);
+	if ($prompt) {
+		print "\n$prompt";
+		my $padding = ($prompt =~ /\s$/) ? "" : " ";
+		print(csprintf("%s", "${padding}#g{(default: $default)}")) if defined($default);
+	} elsif (defined($default) && defined($label)) {
+		my $padding = ($label =~ /\s$/) ? "" : " ";
+		$label .= csprintf("%s", "${padding}#g{(default: $default)}");
+	}
 	print "\n";
 	return __prompt_for_line(defined($label) ? $label : "", $validation, $err_msg, $default);
 }
