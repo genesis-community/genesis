@@ -4658,8 +4658,8 @@ EOF
 		print $OUT <<"EOF";
 
   slack:
-    webhook: $pipeline->{notifications}{slack}{webhook}
-    channel: $pipeline->{notifications}{slack}{channel}
+    webhook: "$pipeline->{notifications}{slack}{webhook}"
+    channel: "$pipeline->{notifications}{slack}{channel}"
 EOF
 	}
 
