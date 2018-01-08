@@ -4486,7 +4486,7 @@ sub prompt_for_boshes_and_stemcells_for {
 		$chosen_envs{$e} = $envs{$e};
 
 		$boshenvs{$env} = {};
-		my %bosh_info = %{$boshes{$envs{$e}{bosh}}};
+		my %bosh_info = $boshes{$envs{$e}{bosh}} ? %{$boshes{$envs{$e}{bosh}}} : ();
 		# Get display name (defaults to environment)
 		$boshenvs{$env}{alias} = prompt_for_line("Display name", undef, $env);
 
@@ -4500,7 +4500,7 @@ sub prompt_for_boshes_and_stemcells_for {
 				$boshenvs{$env}{url} = $envs{$e}{bosh};
 				explain "\nUsing BOSH director at #C{$boshenvs{$env}{url}}";
 			} else {
-				$boshenvs{$env}{url} = prompt_for_line("Could not determine BOSH url -- please specify fully\ne.g.: https://10.0.1.44:25555");
+				$boshenvs{$env}{url} = prompt_for_line("Could not determine BOSH url for alias `$e` -- please specify fully\ne.g.: https://10.0.1.44:25555");
 				$boshenvs{$env}{url} .= ":25555" unless $boshenvs{$env}{url} =~ m/:\d+$/;
 			}
 		}
