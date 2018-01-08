@@ -4372,21 +4372,23 @@ sub prompt_for_vault {
 	my ($regenerate, $c);
 
 	if (safe_path_exists $default_approle_path) {
-		my $choices = ["use","regen","alt"];
+		my $choices = ["use","regen","alt","skip"];
 		my $labels = [
 			"Use this path for role_id and secret_id",
 			"Regenerate new credentials to this path",
 			"Specify alternate paths for role_id and secret_id",
+			"Manually add it later - do this if you do not have write-access to approle"
 		];
 		$c = prompt_for_choice(clean_heredoc(<<"		|EOF"),$choices,"use",$labels);
 		|Discovered Concourse AppRole credentials at $default_approle_path.
 		|Do you want to:
 		|EOF
 	} else {
-		my $choices = ["regen","alt"];
+		my $choices = ["regen","alt","skip"];
 		my $labels = [
 			"Generate credentials to this path",
 			"Specify alternate paths for role_id and secret_id",
+			"Manually add it later - do this if you do not have write-access to approle"
 		];
 		$c = prompt_for_choice(clean_heredoc(<<"		|EOF"),$choices,"use",$labels);
 		|Could not find Concourse AppRole credentials at $default_approle_path.
@@ -4397,6 +4399,9 @@ sub prompt_for_vault {
 		$regenerate = ($c eq "regen");
 		$vault{role}   = $default_approle_path . ":role_id";
 		$vault{secret} = $default_approle_path . ":secret_id";
+	} elsif ($c eq "skip") {
+		$vault{role}   = "";
+		$vault{secret} = "";
 	} else {
 		$vault{role} = prompt_for_line(clean_heredoc(<<"		|EOF"),undef,"$default_approle_path:role_id","/secret\/.*[^\/]:.+", "Expecting secret/<path>:<key>");
 		|Please specify the path in Vault that contains the vault Role ID for Concourse
@@ -4405,9 +4410,7 @@ sub prompt_for_vault {
 		|Please specify the path in Vault that contains the vault Secret ID for Concourse
 		|EOF
 
-		if (safe_path_exists $vault{role} && safe_path_exists $vault{secret}) {
-
-		} else {
+		unless (safe_path_exists $vault{role} && safe_path_exists $vault{secret}) {
 			explain "#R{WARNING: $vault{role} doesn't exist!" unless safe_path_exists $vault{role};
 			explain "#R{WARNING: $vault{secret} doesn't exist!" unless safe_path_exists $vault{secret};
 			die "Exiting.\n" unless prompt_for_boolean(clean_heredoc(<<"			|EOF"));
@@ -4639,12 +4642,18 @@ EOF
     $label$pipeline->{git}{$_}
 EOF
 	}
+	my $role_op = $pipeline->{vault}{role}
+		? "vault \"$pipeline->{vault}{role}\"" 
+		: "param \"Please provide a vault path for pipeline.vault.role\"";
+	my $secret_op = $pipeline->{vault}{secret}
+		? "vault \"$pipeline->{vault}{secret}\"" 
+		: "param \"Please provide a vault path for pipeline.vault.secret\"";
 	print $OUT <<"EOF";
     private_key: (( vault "$pipeline->{git}{private_key}" ))
 
   vault:
-    role:   (( vault "$pipeline->{vault}{role}" ))
-    secret: (( vault "$pipeline->{vault}{secret}" ))
+    role:   (( $role_op ))
+    secret: (( $secret_op ))
     url:    $pipeline->{vault}{url}
     verify: ${\boolean_to_yaml($pipeline->{vault}{verify})}
 EOF
