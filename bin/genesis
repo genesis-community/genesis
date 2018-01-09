@@ -1864,21 +1864,6 @@ sub parse_pipeline {
 	          # environments, and then populate $P->{auto};
 	my %envs; # de-duplicating map; keys will become $P->{envs}
 	for $rule (@rules) {
-		if (@$rule >= 3 && $rule->[1] eq '->') {
-			my $orig = join ' ', @$rule;
-			while (@$rule >= 3 && $rule->[1] eq '->') {
-				my ($a, $b) = ($rule->[0], $rule->[2]);
-				$envs{$a} = $envs{$b} = 1;
-				$P->{will_trigger}{$a} ||= [];
-				push @{$P->{will_trigger}{$a}}, $b;
-				shift @$rule;
-				shift @$rule;
-			}
-			die "Invalid pipeline definition '$orig'.\n"
-				unless @$rule == 1;
-			next;
-		}
-
 		my ($cmd, @args) = @$rule;
 		if ($cmd eq 'auto') {
 			die "The 'auto' directive requires at least one argument.\n"
@@ -1887,7 +1872,28 @@ sub parse_pipeline {
 			next;
 		}
 
-		die "Unrecognized configuration directive '$cmd'.\n";
+		# Anything that is not a command must be a pipeline
+		if ($P->{pipeline}{boshes}{$cmd}) {
+			# Pipeline definition: env [ -> env]*
+			my $orig = join ' ', @$rule;
+			my ($env, $token);
+			while (@$rule) {
+				($env, $token, @$rule) = @$rule;
+				die "Unknown environment '$env' in pipeline definition '$orig'\n"
+					unless ($P->{pipeline}{boshes}{$cmd});
+				$envs{$env} = 1;
+				if (defined($token)) {
+					die "Invalid pipeline definition '$orig': expecting '<env> [-> <env>]...'.\n"
+						unless $token eq '->';
+					my $target =  $rule->[0];
+					die "Missing target after -> in pipeline definition '$orig'\n"
+						unless $target;
+					push @{$P->{will_trigger}{$env}}, $target;
+				}
+			}
+			next;
+		}
+		die "Unrecognized environment or configuration directive:  '$cmd'.\n";
 	}
 	$P->{envs} = [keys %envs];
 	$P->{aliases} = { map { $_ => ($P->{pipeline}{boshes}{$_}{alias} || $_) } keys %envs};
