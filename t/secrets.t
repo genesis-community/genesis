@@ -17,7 +17,7 @@ chdir $dir or die;
 reprovision init => 'redis',
             kit => 'omega';
 
-diag "Connecting to the local vault (this may take a while)...";
+diag "\rConnecting to the local vault (this may take a while)...";
 expects_ok 'new-omega us-east-sandbox --vault unit-tests';
 
 my $sec;
