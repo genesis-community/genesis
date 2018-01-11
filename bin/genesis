@@ -221,21 +221,28 @@ sub system_execute {
 }
 
 sub mkfile_or_fail {
-	my ($f, $c) = @_;
-	debug "creating file $f";
+	my ($file, $mode, $content) = @_;
+	unless (defined($content)) {
+		$content = $mode;
+		$mode = undef;
+	}
+	debug "creating file $file";
 	eval {
-		open my $fh, ">", $f;
-		print $fh $c;
+		open my $fh, ">", $file;
+		print $fh $content;
 		close $fh;
-	} or die "Error creating file $f: $!\n";
+	} or die "Error creating file $file: $!\n";
+	chmod_or_fail $mode, $file if defined $mode;
 }
 
 # mkdir_or_fail $dir;
 sub mkdir_or_fail {
-	my ($dir) = @_;
-	return if -d $dir;
-	debug "creating directory $dir/";
-	system("mkdir", "-p", "$dir/") == 0 or die "Unable to create directory $dir/: $!\n";
+	my ($dir,$mode) = @_;
+	unless (-d $dir) {;
+		debug "creating directory $dir/";
+		system("mkdir", "-p", "$dir/") == 0 or die "Unable to create directory $dir/: $!\n";
+	}
+	chmod_or_fail $mode, $dir if defined $mode;
 }
 # chdir_or_fail $dir;
 sub chdir_or_fail {
@@ -252,17 +259,6 @@ sub symlink_or_fail {
 	symlink($source, $dest) or die "Unable to link $source to $dest: $!\n";
 }
 
-our @DIRSTACK;
-sub pushd {
-	my ($dir) = @_;
-	push @DIRSTACK, Cwd::cwd;
-	chdir_or_fail($dir);
-}
-sub popd {
-	@DIRSTACK or die "popd called when we don't have anything on the directory stack; please file a bug\n";
-	chdir_or_fail(pop @DIRSTACK);
-}
-
 # copy_or_fail $from, $to;
 sub copy_or_fail {
 	my ($from, $to) = @_;
@@ -277,7 +273,19 @@ sub copy_or_fail {
 sub chmod_or_fail {
 	my ($mode, $path) = @_;
 	-e $path or die "$path: $!\n";
-	chmod $mode, $path;
+	chmod $mode, $path
+		or die "Could not change mode of $path: $!\n";
+}
+
+our @DIRSTACK;
+sub pushd {
+	my ($dir) = @_;
+	push @DIRSTACK, Cwd::cwd;
+	chdir_or_fail($dir);
+}
+sub popd {
+	@DIRSTACK or die "popd called when we don't have anything on the directory stack; please file a bug\n";
+	chdir_or_fail(pop @DIRSTACK);
 }
 
 # check we're in a Genesis v2 directory
@@ -292,16 +300,6 @@ sub workdir {
 		$WORKDIR = tempdir(CLEANUP => 1);
 	}
 	return $WORKDIR;
-}
-# put_file $path, $contents;
-sub put_file {
-	my ($path, $contents, $mode) = @_;
-	debug "populating $path file";
-	open my $fh, ">", $path
-		or die "Unable to open $path for writing: $!\n";
-	chmod_or_fail $mode, $path if defined $mode;
-	print $fh $contents || "";
-	close $fh;
 }
 
 # get_file $path
@@ -1483,10 +1481,9 @@ sub commit_changes {
 	# have already been updated in the .genesis/manifests directory.
 	#
 	my $tmp = workdir;
-	mkdir_or_fail("$tmp/home/.ssh");
-	chmod_or_fail(0700, "$tmp/home/.ssh");
-	put_file("$tmp/home/.ssh/key", $key, 0600);
-      put_file("$tmp/home/.ssh/config", <<EOF);
+	mkdir_or_fail  "$tmp/home/.ssh", 0700;
+	mkfile_or_fail "$tmp/home/.ssh/key", 0600, $key;
+    mkfile_or_fail "$tmp/home/.ssh/config", <<EOF;
 Host *
   StrictHostKeyChecking no
   UserKnownHostsFile /dev/null
@@ -3856,17 +3853,16 @@ sub {
 	if (-e $root) {
 		die "Attempted to create new environment `$root' failed: Path already exists.\n";
 	}
-	mkdir_or_fail $root;
-	mkdir_or_fail "$root/.genesis";
-	put_file "$root/.genesis/config", <<EOF;
+	mkdir_or_fail  "$root/.genesis";
+	mkfile_or_fail "$root/.genesis/config", <<EOF;
 ---
 genesis: $VERSION
 deployment_type: $name
 EOF
-	mkdir_or_fail "$root/.genesis/bin";
-	copy_or_fail  $0, "$root/.genesis/bin/genesis";
-	chmod_or_fail 0755, "$root/.genesis/bin/genesis";
-	put_file "$root/README.md", <<EOF;
+	mkdir_or_fail  "$root/.genesis/bin";
+	copy_or_fail   $0, "$root/.genesis/bin/genesis";
+	chmod_or_fail  0755, "$root/.genesis/bin/genesis";
+	mkfile_or_fail "$root/README.md", <<EOF;
 $name deployments
 ==============================
 
@@ -5288,7 +5284,7 @@ sub {
 	}
 
 	my $dir = workdir;
-	put_file("${dir}/pipeline.yml", $yaml);
+	mkfile_or_fail "${dir}/pipeline.yml", $yaml;
 	system_execute("fly -t $options{target} set-pipeline -p $pipeline->{pipeline}{name} -c ${dir}/pipeline.yml") or exit 1;
 	system_execute("fly -t $options{target} unpause-pipeline -p $pipeline->{pipeline}{name}") or exit 1;
 	if ($pipeline->{pipeline}{public}) {
