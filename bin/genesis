@@ -2847,6 +2847,10 @@ sub generate_pipeline_human_description {
 	}
 }
 
+sub is_semver {
+	return $_[0] =~ m/^(\d+)(?:\.(\d+)(?:\.(\d+)(?:[.-]rc[.-]?(\d+))?)?)?$/;
+}
+
 sub semver {
 	my ($name, $v) = @_;
 	if ($v =~  m/^(\d+)(?:\.(\d+)(?:\.(\d+)(?:[.-]rc[.-]?(\d+))?)?)?$/) {
@@ -3063,10 +3067,28 @@ sub validate_kit_files {
 }
 
 sub validate_kit_metadata {
-	my ($kit, $version, $meta,$is_author) = @_;
+	my ($kit, $version, $meta, $is_author) = @_;
 	$kit ||= "dev";
 	$version = "latest" unless defined $version;
 	my @errors;
+
+	# Validate acceptable genesis version
+	if (defined $meta->{genesis_version_min}) {
+		if (!is_semver $meta->{genesis_version_min}) {
+			push @errors, "Specified minimum Genesis version of '$meta->{genesis_version_min}' for kit is invalid.";
+		} elsif (!is_semver $VERSION) {
+			error "#Y{WARNING:} Using a development version of Genesis.  Cannot determine if minimal Genesis version of '$meta->{genesis_version_min}' by kit '$kit/$version' is met."
+		} elsif (! new_enough "genesis", $VERSION, $meta->{genesis_version_min}) {
+			# Fatal error - die immediately
+			error clean_heredoc(<<"			|EOF");
+			|#R{ERROR:} Kit $kit/$version requires Genesis version $meta->{genesis_version_min}, but installed Genesis is only version $VERSION.
+			|
+			|Please upgrade your version and don't forget to run `genesis embed` to update the version embedded in your deployment repository.
+			|
+			|EOF
+			exit 86; #no longer available, decommissioned, off the menu
+		}
+	}
 
 	# validate params
 	for my $subkit (sort keys %{$meta->{params}}) {
@@ -3171,9 +3193,9 @@ sub validate_kit_metadata {
 	}
 
 	if (@errors) {
-		print STDERR "The following errors have been encountered validating the $kit/$version kit:\n";
+		error "#R{ERROR:} The following errors have been encountered validating the $kit/$version kit:\n";
 		for my $err (@errors) {
-			print STDERR " - $err\n";
+			error " - $err\n";
 		}
 		die ($is_author ? "Cannot continue.\n" : "Please contact your kit author for a fix.\n");
 	}
@@ -3221,11 +3243,12 @@ sub kit_name_and_version_for {
 
 sub check_kit_prereqs {
 	my ($kit, $version) = @_;
-	my $script = kit_file($kit, $version, "prereqs", 0);
+	my $script = kit_file($kit, $version, "hooks/prereqs", 0);
 	return unless -e $script;
-	-x $script or die "Prereqs script $script was found, but is not executable...\n";
-	qx(./dev/prereqs);
-	$? == 0 or die "Some prerequisites for this Genesis Kit have not been met.\n";
+	explain "Checking kit pre-requisites...\n";
+	-x $script || chmod_or_fail 0755, $script;
+	my $out = qx($script);
+	$? == 0 or die "Some prerequisites for this Genesis Kit have not been met:\n$out\n";
 }
 
 sub prompt_for_subkits_alternates {
@@ -4052,8 +4075,6 @@ sub {
 	}
 
 	my $meta = read_kit_metadata($kit, $version);
-
-	explain "Checking kit pre-requisites...\n";
 	check_kit_prereqs($kit, $version);
 
 	my @subkits = prompt_for_subkits($meta->{subkits} || []);
@@ -5006,15 +5027,23 @@ EOF
 		$subkits = "subkits: []\n";
 	}
 
+	my $gen_version="";
+	if (is_semver $VERSION) {
+		$gen_version = "\ngenesis_min_version: $VERSION\n";
+	} else {
+		print STDERR csprintf("\n#R{Warning:} Using development version of Genesis -- cannot specify minimum Genesis version\n");
+	}
+
 	chomp(my $user = qx'git config user.name');
 	chomp(my $email = qx'git config user.email');
 	mkfile_or_fail "$dir/kit.yml", <<EOF;
 ---
 name: $options{name}
+version: 0.0.1
 author: $user <$email>
 homepage: https://github.com/cloudfoundry-community/$options{name}-boshrelease
 github: https://github.com/genesis-community/$options{name}-genesis-kit
-
+$gen_version
 $subkits
 params:
   base: []
