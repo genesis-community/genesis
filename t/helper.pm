@@ -62,6 +62,21 @@ sub spruce_fmt($$) {
 	close $fh;
 }
 
+sub compiled_genesis {
+  my ($version) = @_;
+  my ($rc, $out);
+  my $tmp = workdir();
+
+  my $cmd = "cd $TOPDIR && GENESIS_PACK_PATH=$tmp ./pack";
+  $cmd .= " $version" if $version;
+  $out = qx($cmd 2>&1);
+  $rc = $? >> 8;
+  die "Could not compile genesis: $!" if $? >> 8;
+  die "Could not compile genesis: $out" unless $out =~ qr%packaged v${\($version || "2.x.x")}%;
+  (my $bin = $out) =~ s/\A.* as (.*\/genesis[^\s]*).*\z/$1/sm;
+  return Cwd::abs_path($bin);
+}
+
 sub reprovision {
 	my %opts = @_;
 	my $err = qx(rm -rf *.yml .genesis/kits .genesis/cache dev/);

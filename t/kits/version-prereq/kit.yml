@@ -1,0 +1,4 @@
+name: Kit Dependencies Test
+version: 0.0.1
+
+genesis_version_min: 9.5.2
