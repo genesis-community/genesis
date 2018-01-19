@@ -1,0 +1,7 @@
+---
+kit:
+  features:
+  - s3
+
+params:
+  env: sandbox

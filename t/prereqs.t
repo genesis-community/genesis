@@ -59,10 +59,9 @@ ok -f "something-newer.yml", "Deployment environment file should be created, whe
 reprovision kit =>'version-prereq-bad';
 ($pass, $rc, $msg) = run_fails "$bin new something-crazy", 255;
 
-#
 matches $msg, qr'.*ERROR:.* The following errors have been encountered validating the dev/latest kit:',"kit has errors";
 matches $msg, qr% - Specified minimum Genesis version of '~>4.5' for kit is invalid.%,"kit has bad min version";
-matches $msg, qr'Please contact your kit author for a fix.',"kit has bad min version - cannot continue ";
+matches $msg, qr'Cannot continue',"kit has bad min version - cannot continue ";
 doesnt_match $msg, qr'New environment something-crazy provisioned.', "Did not create new environment 'something-crazy'";
 ok ! -f "something.yml", "Org-level env file should not exist.";
 ok ! -f "something-crazy.yml", "Deployment environment file should not be created, when kit min genesis version bad";

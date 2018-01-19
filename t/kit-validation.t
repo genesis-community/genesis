@@ -18,9 +18,11 @@ run_fails "genesis new failures-galore > errors 2>&1", 255, "Invalid kits fail t
 eq_or_diff get_file("errors"), <<EOF, "Invalid kits generate expected error messages";
 Generating new environment failures-galore...
 
-Using dev/ (development version) kit...
+Using local development kit (./dev)...
 
-The following errors have been encountered validating the dev/latest kit:
+\e[1;33mDEPRECATED:\e[0m subkits are deprecated in favour of features.  Please update your kit.
+
+\e[1;31mERROR:\e[0m The following errors have been encountered validating the dev/latest kit:
  - params.base[0] has an invalid attribute: 'rapams'
  - params.base[0] has an invalid attribute: 'ska'
  - params.base[0] does not specify 'vault', 'param', or 'params'
@@ -51,7 +53,7 @@ The following errors have been encountered validating the dev/latest kit:
  - params.more-bad-params[3] does not have a 'description'
  - params.more-bad-params[4] does not specify 'vault', 'param', or 'params'
  - params.more-bad-params[4] specifies 'ask', but does not have a corresponding 'vault' or 'param'
-Please contact your kit author for a fix.
+Cannot continue.
 EOF
 
 chdir $TOPDIR;

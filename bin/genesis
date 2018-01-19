@@ -324,66 +324,64 @@ sub vault_slug {
 	return $name;
 }
 
-sub validate_subkits {
-	my ($kit, $version, $meta, @subkits) = @_;
-	for my $sk (@subkits) {
-		die "You specified a subkit without a name\n" unless $sk;
-		my $path = kit_file($kit, $version, "subkits/$sk", 0);
-		my ($k, $v) = ($kit, $version);
-		$k ||= "dev";
-		$v = "latest" unless defined $v;
-		die "No subkit '$sk' found in kit $k/$v.\n"
-			unless -d $path;
+sub validate_features  {
+	my ($kit, $version, $meta, @features) = @_;
+	my ($k, $v) = ($kit, $version);
+	$k ||= "dev";
+	$v = "latest" unless defined $v;
+	my $label = defined($meta->{subkits}) ? "subkit" : "feature";
+	for my $sk (@features) {
+		die "You specified a feature without a name\n" unless $sk;
+		-d kit_file($kit, $version, "features/$sk", 0) ||
+		-d kit_file($kit, $version, "subkits/$sk", 0) ||
+		die "No $label '$sk' found in kit $k/$v.\n";
 	}
 
-	my %requested_subkits = map { $_ => 1 } @subkits;
-	for my $sk (@{$meta->{subkits}}) {
+	my %requested_features = map { $_ => 1 } @features;
+	for my $sk (@{$meta->{"${label}s"}}) {
 		if ($sk->{choices}) {
 			my $matches = 0;
 			my $min_matches = 1;
 			my @choices;
 			for my $choice (@{$sk->{choices}}) {
-				push @choices, $choice->{subkit} if defined $choice && defined $choice->{subkit};
-				if (! defined $choice->{subkit}){
+				push @choices, $choice->{$label} if defined $choice && defined $choice->{$label};
+				if (! defined $choice->{$label}){
 					$min_matches = 0;
-				} elsif ($requested_subkits{$choice->{subkit}}) {
+				} elsif ($requested_features{$choice->{$label}}) {
 					$matches++;
 				}
 			}
 			my $choices = join(", ", map { "'$_'" } @choices);
 			if ($matches > 1) {
-				die "You selected too many subkits for your $sk->{type}. Should be only one of $choices\n";
+				die "You selected too many ${label}s for your $sk->{type}. Should be only one of $choices\n";
 			}
 			if ($matches < $min_matches) {
-				die "You must select a subkit to provide your $sk->{type}. Should be one of $choices\n";
+				die "You must select a $label to provide your $sk->{type}. Should be one of $choices\n";
 			}
 		}
 	}
 }
 
-sub run_subkit_hook {
-	my ($kit, $version, @subkits) = @_;
+sub run_feature_hook {
+	my ($kit, $version, @features) = @_;
 	my $hook_dir = kit_file($kit, $version, "hooks", 0); # grab subkit hook + any helpers
-	my $hook = "$hook_dir/subkit";
-	return @subkits unless -f $hook;
-
+	my $hook = (grep { -f $_ } ("$hook_dir/feature","$hook_dir/subkit"))[0];
+	return @features unless $hook;
 
 	$kit ||= "dev";
 	$version = "latest" unless defined $version;
-	chmod(0755,$hook) unless -e $hook;
+	chmod(0755,$hook) unless -x $hook;
 
-	my $cmd = "$hook " . join(" ", map { "'$_'" } @subkits);
+	my $cmd = "$hook " . join(" ", map { "'$_'" } @features);
 	my $out = qx($cmd);
-	die "Error running subkit hook for $kit/$version. Contact your kit author for a bugfix.\n"
+	die "Error running $hook for $kit/$version. Contact your kit author for a bugfix.\n"
 		if $? >> 8;
 
-	@subkits = map { $_ =~ s/^\s+|\s+$//g; $_ } split /\n/, $out, -1;
-	pop @subkits if @subkits && $subkits[-1] eq "";
-	return @subkits;
+	return grep {$_ ne ""} map { $_ =~ s/^\s+|\s+$//g; $_ } split /\n/, $out, -1;
 }
 
 sub run_param_hook {
-	my ($kit, $version, $env_name, $vault_prefix, $params, @subkits) = @_;
+	my ($kit, $version, $env_name, $vault_prefix, $params, @features) = @_;
 	my $hook_dir = kit_file($kit, $version, "hooks", 0); # grab params hook + any helpers
 	my $hook = "$hook_dir/params";
 	return $params unless -f $hook;
@@ -395,7 +393,7 @@ sub run_param_hook {
 
 	my $dir = workdir;
 	DumpJSON "$dir/in", $params;
-	my $cmd = "$hook $dir/in $dir/out " . join(" ", map { "'$_'" } @subkits);
+	my $cmd = "$hook $dir/in $dir/out " . join(" ", map { "'$_'" } @features);
 	$ENV{GENESIS_ENVIRONMENT_NAME} = $env_name;
 	$ENV{GENESIS_VAULT_PREFIX} = $vault_prefix;
 	system($cmd);
@@ -412,7 +410,7 @@ sub run_param_hook {
 }
 
 sub new_environment {
-	my ($meta, $kit, $version, $env, $vault_prefix, $params, @subkits) = @_;
+	my ($meta, $kit, $version, $env, $vault_prefix, $params, @features) = @_;
 
 	$kit     = "dev"    unless defined $kit;
 	$version = "latest" unless defined $version;
@@ -429,20 +427,20 @@ sub new_environment {
 		print $fh <<EOF;
 ---
 kit:
-  name:    $kit
-  version: $version
+  name:     $kit
+  version:  $version
 EOF
-		if (@subkits) {
-			print $fh "  subkits:\n";
-			print $fh "  - $_\n" foreach (@subkits);
+		if (@features) {
+			print $fh "  features:\n";
+			print $fh "  - $_\n" foreach (@features);
 		} else {
-			print $fh "  subkits: []\n";
+			print $fh "  features: []\n";
 		}
 		%existing_info = (
 			kit => {
 				name => $kit,
 				version => $version,
-				subkits => \@subkits
+				features => \@features
 			}
 		);
 		close $fh; $fh = undef;
@@ -455,20 +453,20 @@ EOF
 		!%existing_info ||
 		$existing_info{kit}{name} ne $kit ||
 		$existing_info{kit}{version} ne $version ||
-		!same($existing_info{kit}{subkits}||[],\@subkits)
+		!same($existing_info{kit}{features}||[],\@features)
 	);
 	if (!%existing_info || $existing_info{kit}{name} ne $kit) {
-		print $fh "  name:    $kit\n";
+		print $fh "  name:     $kit\n";
 		error "#y{WARNING:} $parent specifies a different kit name ($existing_info{kit}{name})";
 	}
 	if (!%existing_info || $existing_info{kit}{version} ne $version) {
-		print $fh "  version: $version\n";
+		print $fh "  version:  $version\n";
 		error "#y{WARNING:} $parent specifies a different kit version ($existing_info{kit}{version})";
 	}
-	if (!%existing_info || !same($existing_info{kit}{subkits}||[],\@subkits)) {
-		print $fh "  subkits:\n";
-		print $fh "  - (( replace ))\n" if defined($existing_info{kit}{subkits});
-		print $fh "  - $_\n" foreach (@subkits);
+	if (!%existing_info || !same($existing_info{kit}{features}||[],\@features)) {
+		print $fh "  features:\n";
+		print $fh "  - (( replace ))\n" if defined($existing_info{kit}{features});
+		print $fh "  - $_\n" foreach (@features);
 	}
 	print $fh <<EOF;
 
@@ -531,11 +529,12 @@ EOF
 }
 
 sub kit_yaml_files_in {
-	my ($env, $dir, @subkits) = @_;
-	$env =~ s/\.yml$//;
-
-	my @files = glob "$dir/base/*.yml";
-	push @files, map { glob "$dir/subkits/$_/*.yml" } @subkits;
+	my ($env_file, $dir, @features) = @_;
+	$env_file =~ s/(\.yml)?$/.yml/;
+	my @files;
+	my $features_dir = (-d "$dir/features") ? 'features' : 'subkits';
+	@files = glob "$dir/base/*.yml";
+	push @files, map { glob "$dir/$features_dir/$_/*.yml" } @features;
 	return @files;
 }
 
@@ -543,24 +542,22 @@ sub kit_yaml_files {
 	my ($env) = @_;
 	my @files;
 
-	my $kit     = get_key($env, 'kit.name');
+	my $kit     = get_key($env, 'kit.name', "dev");
 	my $version = get_key($env, 'kit.version');
-	my @subkits = @{get_key($env, 'kit.subkits', [])};
-	my $meta = read_kit_metadata($kit, $version);
-	validate_subkits($kit, $version, $meta, @subkits);
+	die "No kit/version detected in $env.\n"
+		unless $kit && ($kit eq 'dev' || $version);
 
-	if ($kit && $version && $kit ne 'dev') {
-		my $dir = workdir();
+	my @features = @{get_key($env, 'kit.features', get_key($env, 'kit.subkits',[]))};
+	my $meta = read_kit_metadata($kit, $version);
+	validate_features($kit, $version, $meta, @features);
+
+	my $dir = 'dev';
+	if ($kit && $version) {
+		$dir = workdir();
 		qx(tar -xz -C $dir --strip-components 1 -f .genesis/kits/$kit-$version.tar.gz);
 		$? == 0 or die;
-		return kit_yaml_files_in($env, $dir, @subkits);
-	}
-
-	if (-d "dev") {
-		return kit_yaml_files_in($env, "dev", @subkits);
-	}
-
-	die "No kit/version detected in $env.\n";
+	} 
+	return kit_yaml_files_in($env, $dir, @features);
 }
 
 # takes a list of tokens, in order, and generates
@@ -698,10 +695,10 @@ sub get_key {
 	return defined $result ? $result : $default;
 }
 
-sub has_subkit {
-	my ($file, $subkit) = @_;
-	my %subkits = map { $_ => 1 } @{get_key($file, "kit.subkits", [])};
-	return $subkits{$subkit};
+sub has_feature {
+	my ($file, $feature) = @_;
+	my %features = map { $_ => 1 } @{get_key($file, "kit.features", get_key($file, "kit.subkits", []))};
+	return $features{$feature};
 }
 
 ###########################################################################
@@ -1191,7 +1188,7 @@ sub is_create_env {
 	my ($env) = @_;
 	# convert env to file for env if not already done
 	$env = "$env.yml" unless $env =~ /\.yml$/;
-	return has_subkit($env, 'bosh-init') || has_subkit($env, 'create-env');
+	return has_feature($env, 'bosh-init') || has_feature($env, 'create-env');
 }
 
 sub bosh_deploy {
@@ -3040,10 +3037,8 @@ sub download_kit_tarball
 	debug "downloaded kit #M{$name}/#C{$version}\n";
 }
 sub validate_kit_files {
-
-	my $dir = shift;
-	my @errors = ();
-	my @warnings = ();
+	my ($dir,$meta) = @_;
+	my ($metadata, $label, @errors, @warnings);
 	if (-d $dir) {
 		for (qw(subkits hooks)) {
 			push @warnings, "$dir/$_ directory does not exist" unless -d "$dir/$_";
@@ -3051,17 +3046,37 @@ sub validate_kit_files {
 		for (qw(base)) {
 			push @errors, "$dir/$_ directory does not exist" unless -d "$dir/$_";
 		}
-		for (qw(kit.yml README.md base/params.yml)) {
+		for (qw(README.md base/params.yml)) {
 			push @errors, "$dir/$_ does not exist" unless -f "$dir/$_";
 		}
+		if (-f "$dir/kit.yml") {
+			eval {
+				$metadata = LoadFile("$dir/kit.yml") if -f "$dir/kit.yml";
+			};
+			push @errors, "$dir/kit.yml could not be read: $@" if $@;
+		} else {
+			push @errors, "$dir/kit.yml does not exist";
+		}
+
 		if (-d "$dir/subkits/") {
+			$label = "subkits";
+			push @warnings, "using deprecated 'subkits' subdirectory -- use 'features' instead.";
 			for (glob "$dir/subkits/*") {
+				push @errors, "$_/params.yml does not exist" unless -f "$_/params.yml";
+			}
+		}
+		if (-d "$dir/features/") {
+			push @errors, "using both features and subkits subdirectories -- use only features"
+				if $label && $label eq "subkits";
+			$label = "features";
+			for (glob "$dir/features/*") {
 				push @errors, "$_/params.yml does not exist" unless -f "$_/params.yml";
 			}
 		}
 	} else {
 		push @errors, "$dir does not exist";
 	}
+
 	die("$dir does not look like a valid kit directory:\n".
 		"  * ".join("\n  * ", @errors).
 		"\n\nCannot continue.\n")
@@ -3070,6 +3085,8 @@ sub validate_kit_files {
 		"  * ".join("\n  * ", @warnings).
 		"\n\n")
 		if @warnings;
+
+	return $metadata;
 }
 
 sub validate_kit_metadata {
@@ -3096,16 +3113,44 @@ sub validate_kit_metadata {
 		}
 	}
 
+	# validate features/subkits
+	my ($group,$label,$not_label);
+	if (exists $meta->{features}) {
+		if (exists $meta->{subkits}) {
+			error "\n#R{ERROR:} Kit contains both 'features' and deprecated 'subkits'.\n";
+			die $is_author
+				? "Update kit to move deprecated subkits under 'features' and update 'subkit' key to 'feature'\n"
+				: "Please contact your kit author for a fix.\n";
+		}
+		($group,$label,$not_label) = qw(features feature subkit);
+	} elsif (exists $meta->{subkits}) {
+		error "\n#Y{DEPRECATED:} subkits are deprecated in favour of features.  Please update your kit." if $is_author;
+		($group,$label,$not_label) = qw(subkits subkit feature);
+	}
+	if (defined $group) {
+		my $errored;
+		foreach (@{$meta->{"${group}"}}) {
+			if (exists $_->{$not_label} ) {
+				print STDERR csprintf "\n#R{ERROR:} $group '$_->{$not_label}' uses key '$not_label' instead of '$label' - should use features/feature";
+				$errored = 1;
+			}
+		}
+		die($is_author
+			? "\nUpdate kit to used 'features' and 'feature' exclusively\n"
+			: "\nPlease contact your kit author for a fix.\n"
+		) if $errored;
+	}
+
 	# validate params
-	for my $subkit (sort keys %{$meta->{params}}) {
+	for my $feature (sort keys %{$meta->{params}}) {
 		my $i = 0;
-		debug ("Validating params for subkit '$subkit' (#$i)");
-		if (ref($meta->{params}{$subkit}) ne "ARRAY") {
-			push @errors, "$subkit subkit parameters not a list (found ".(ref($meta->{params}{$subkit}) || "a string").")";
+		debug ("Validating params for feature '$feature' (#$i)");
+		if (ref($meta->{params}{$feature}) ne "ARRAY") {
+			push @errors, "$feature feature parameters not a list (found ".(ref($meta->{params}{$feature}) || "a string").")";
 		} else {
-			for my $param (@{$meta->{params}{$subkit}}) {
+			for my $param (@{$meta->{params}{$feature}}) {
 				my $name = ($param->{param} && !ref($param->{param})) ? ':'.$param->{param} : "";
-				my $parameter = "params.$subkit\[$i$name\]";
+				my $parameter = "params.$feature\[$i$name\]";
 				my (@extras, @bad);
 				for my $key (sort keys %$param) {
 					push @extras, $key if $key !~ m/^(params?|ask|vault|description|example|type|echo)$/;
@@ -3199,9 +3244,9 @@ sub validate_kit_metadata {
 	}
 
 	if (@errors) {
-		error "#R{ERROR:} The following errors have been encountered validating the $kit/$version kit:\n";
+		error "\n#R{ERROR:} The following errors have been encountered validating the $kit/$version kit:";
 		for my $err (@errors) {
-			error " - $err\n";
+			error " - $err";
 		}
 		die ($is_author ? "Cannot continue.\n" : "Please contact your kit author for a fix.\n");
 	}
@@ -3212,7 +3257,7 @@ sub validate_kit_metadata {
 sub read_kit_metadata {
 	my ($kit, $version) = @_;
 	my $metadata = LoadFile(kit_file($kit, $version, "kit.yml", 1));
-	validate_kit_metadata($kit, $version, $metadata);
+	validate_kit_metadata($kit, $version, $metadata, !$kit || $kit eq "dev");
 	return $metadata;
 }
 
@@ -3229,7 +3274,6 @@ sub latest_kit_name_and_version {
 			die "Found multiple different kits!\n";
 		}
 		$kit = $n;
-
 		push @versions, [$v, semver($kit, $v)];
 	}
 	@versions > 0
@@ -3257,42 +3301,38 @@ sub check_kit_prereqs {
 	$? == 0 or die "Some prerequisites for this Genesis Kit have not been met:\n$out\n";
 }
 
-sub prompt_for_subkits_alternates {
-	my ($prompt) = @_;
-	my $attempt;
-	print "\n";
-
-reprompt:
-	$attempt = 0;
-	print "$prompt->{prompt}\n\n";
-
-	my $n = 0;
-	for my $choice (@{ $prompt->{choices} }) {
-		$n++;
-		if ($choice->{default}) {
-			print "  *${n}) $choice->{label} (default)\n";
+sub prompt_for_env_features {
+	my ($kit, $version, $meta) = @_;
+	my @features;
+	my $features_meta = $meta->{features} || $meta->{subkits} || [];
+	my @meta_key = (defined $meta->{features}) ? 'feature' : 'subkit';
+	foreach my $feature (@$features_meta) {
+		my $prompt = $feature->{prompt}."\n";
+		if (exists $feature->{choices}) {
+			my (@choices,@labels,$default);
+			foreach (@{$feature->{choices}}) {
+				push @choices, $_->{feature} || $_->{subkit};
+				push @labels,  $_->{label};
+				$default = ($_->{feature} || $_->{subkit}) if $_->{default} && $_->{default} =~ /^(y(es)?|t(rue)?|1)$/i;
+			}
+			if (exists $feature->{pick}) {
+				die "There is a problem with kit $kit/$version: $feature->{type} pick invalid.  Please contact the kit author for a fix"
+					unless $feature->{pick} =~ /^\d+(-\d+)?$/;
+				my ($min, $max) =  ($feature->{pick} =~ /-/)
+					? split('-',$feature->{pick})
+					: ($feature->{pick},$feature->{pick});
+				my $selections = grep {$_} prompt_for_choices($prompt,\@choices,$min,$max,\@labels);
+				push @features, @$selections;
+			} else {
+				push @features, grep {$_} (prompt_for_choice($prompt,\@choices,$default,\@labels));
+			}
 		} else {
-			print "   ${n}) $choice->{label}\n";
+			push(@features, ($feature->{feature} || $feature->{subkit})) if  prompt_for_boolean($prompt,$feature->{default});
 		}
 	}
-	print "\n";
-
-again:
-	$attempt++;
-	print " choice? [1-$n]: ";
-	my $answer = <STDIN>; defined $answer or die "unexpected EOF on standard input...\n";
-	$answer =~ s/^\s+|\s+$//g;
-	if ($answer && $answer >= 1 && $answer <= $n) {
-		return $prompt->{choices}[$answer - 1]{subkit};
-	}
-	if ($answer) {
-		print "'$answer' is an invalid choice...\n";
-	}
-	if ($attempt < 3) {
-		goto again;
-	}
-	print "You can <CTRL-C> to exit setup...\n";
-	goto reprompt;
+	@features = run_feature_hook($kit, $version, @features);
+	validate_features($kit, $version, $meta, @features);
+	return @features;
 }
 
 sub resolve_params_ref {
@@ -3310,11 +3350,15 @@ sub process_kit_params {
 		"params.vault" => $opts{vault_prefix},
 		"params.env" => $opts{env}
 	};
-	for my $subkit ("base", @{$opts{subkits}}) {
-		next unless defined $opts{params}{$subkit} && @{$opts{params}{$subkit}};
-		my $kit_params_file = $subkit eq "base" ? "base/params.yml" : "subkits/$subkit/params.yml";
+	for my $feature ("base", @{$opts{features}}) {
+		next unless defined $opts{params}{$feature} && @{$opts{params}{$feature}};
+		my $kit_params_file = $feature eq "base" ? "base/params.yml" : (
+			-f kit_file($opts{kit}, $opts{version}, "subkits/$feature/params.yml",0)
+				? "subkits/$feature/params.yml"
+				: "features/$feature/params.yml"
+		);
 		my $defaults = LoadFile(kit_file($opts{kit}, $opts{version}, $kit_params_file, 1));
-		for my $q (@{$opts{params}{$subkit}}) {
+		for my $q (@{$opts{params}{$feature}}) {
 			my $answer;
 			my $vault_path;
 			next if ($q->{vault} && !vaulted);
@@ -3428,53 +3472,11 @@ sub process_kit_params {
 	return \@answers;
 }
 
-sub prompt_for_subkits_optional {
-	my ($prompt) = @_;
-	my $attempt = 0;
-	print "\n";
-
-again:
-	$attempt++;
-	print "$prompt->{prompt}\n";
-	print $prompt->{default} ? "[Y/n]: " : "[y/n]: ";
-	my $answer = <STDIN>; defined $answer or die "unexpected EOF on standard input...\n";
-	$answer =~ s/^\s+|\s+$//g;
-
-	return $prompt->{subkit} if !$answer && $prompt->{default};
-	return $prompt->{subkit} if $answer =~ m{(y|yes)}i;
-	return undef             if $answer =~ m{(n|no)}i;
-
-	if ($answer) {
-		print "'$answer' is an invalid choice; try 'yes' or 'no'...\n";
-	}
-	if ($attempt % 3 == 0) {
-		print "You can <CTRL-C> to exit setup...\n";
-	}
-	goto again;
-}
-
-sub prompt_for_subkits {
-	my @subkits;
-	for my $prompt (@{$_[0]}) {
-		my $subkit;
-
-		if (exists $prompt->{choices}) {
-			$subkit = prompt_for_subkits_alternates($prompt);
-		} else {
-			$subkit = prompt_for_subkits_optional($prompt);
-		}
-
-		push @subkits, $subkit if $subkit;
-	}
-
-	return @subkits;
-}
-
 sub active_credentials {
-	my ($meta, $subkits) = @_;
+	my ($meta, $features) = @_;
 
 	my $active = {};
-	for my $sub (('base', @$subkits)) {
+	for my $sub (('base', @$features)) {
 		next unless $meta->{credentials}{$sub};
 		for my $path (keys %{ $meta->{credentials}{$sub} }) {
 			if (exists $active->{$path} && ref $meta->{credentials}{$sub}{$path}) {
@@ -3490,10 +3492,10 @@ sub active_credentials {
 }
 
 sub active_certificates {
-	my ($meta, $subkits) = @_;
+	my ($meta, $features) = @_;
 
 	my $active = {};
-	for my $sub (('base', @$subkits)) {
+	for my $sub (('base', @$features)) {
 		next unless $meta->{certificates}{$sub};
 		for my $path (keys %{ $meta->{certificates}{$sub} }) {
 			if (exists $active->{$path} && ref $meta->{certificates}{$sub}{path}) {
@@ -3543,7 +3545,7 @@ sub vaultify_secrets {
 	my ($meta, %options) = @_;
 	$options{env} or die "vaultify_secrets() was not given an 'env' option.\n";
 
-	my $creds = active_credentials($meta, $options{subkits} || {});
+	my $creds = active_credentials($meta, $options{features} || {});
 	if (%$creds) {
 		explain " - auto-generating credentials (in secret/$options{prefix})...\n";
 		for (safe_commands $creds, %options) {
@@ -3554,7 +3556,7 @@ sub vaultify_secrets {
 		explain " - no credentials need to be generated.\n";
 	}
 
-	my $certs = active_certificates($meta, $options{subkits} || {});
+	my $certs = active_certificates($meta, $options{features} || {});
 	if (%$certs) {
 		explain " - auto-generating certificates (in secret/$options{prefix})...\n";
 		for (cert_commands $certs, %options) {
@@ -3571,10 +3573,10 @@ sub check_secrets {
 	$options{env} or die "check_secrets() was not given an 'env' option.\n";
 
 	my @missing = ();
-	for (safe_commands(active_credentials($meta, $options{subkits}||{}),%options)) {
+	for (safe_commands(active_credentials($meta, $options{features}||{}),%options)) {
 		push @missing, check_secret($_, %options);
 	}
-	for (cert_commands(active_certificates($meta, $options{subkits}||{}),%options)) {
+	for (cert_commands(active_certificates($meta, $options{features}||{}),%options)) {
 		push @missing, check_secret($_, %options);
 	}
 	if (@missing) {
@@ -3961,7 +3963,7 @@ Helpful Links
 -------------
 
 - [$name-genesis-kit][2] - Details on the kit used in this repo,
-  its subkits, prerequesites, and params.
+  its features, prerequesites, and params.
 - [Deployment Pipeline Documentation][3] - Docs on all the
   configuration options for `ci.yml`, and how the automated
   deployment pipelines behave.
@@ -4075,18 +4077,17 @@ sub {
 		($kit, $version) = latest_kit_name_and_version();
 	}
 	if ($kit && $kit ne "dev") {
-		explain "Using $kit/$version kit...\n";
+		explain "Using compiled kit $kit/$version...\n";
 	} else {
-		explain "Using dev/ (development version) kit...\n";
+		explain "Using local development kit (./dev)...";
+		$kit = "dev";
+		$version = "latest";
 	}
 
 	my $meta = read_kit_metadata($kit, $version);
 	check_kit_prereqs($kit, $version);
 
-	my @subkits = prompt_for_subkits($meta->{subkits} || []);
-	@subkits = run_subkit_hook($kit, $version, @subkits);
-	validate_subkits($kit, $version, $meta, @subkits);
-
+	my @features = prompt_for_env_features($kit, $version, $meta);
 	my $deployment = $name . "-" . deployment_suffix;
 	my $prefix = ($options{prefix} ? $options{prefix} : (vault_slug($name).'/'.deployment_suffix));
 
@@ -4101,17 +4102,17 @@ sub {
 									env          => $name,
 									vault_prefix => $prefix,
 									params       => $meta->{params} || [],
-									subkits      => \@subkits);
-	$params = run_param_hook($kit, $version, $name, $prefix, $params, @subkits);
+									features     => \@features);
+	$params = run_param_hook($kit, $version, $name, $prefix, $params, @features);
 
-	new_environment($meta, $kit, $version, $name, $prefix, $params, @subkits);
+	new_environment($meta, $kit, $version, $name, $prefix, $params, @features);
 
 	if ($options{secrets}) {
 		explain "Generating secrets / credentials (in secret/$prefix)...\n";
 		vaultify_secrets($meta, env          => $name,
 		                        prefix       => $prefix,
 		                        scope        => 'force',
-		                        subkits      => [@subkits]);
+		                        features     => [@features]);
 	} else {
 		explain "Skipping generation of secret / credentials.\n";
 		explain "Don't forget to run `$0 secrets $name`\n";
@@ -4124,7 +4125,6 @@ sub {
 
 # }}}
 # genesis ci - generate pipeline YAML template file to be used by genesis repipe to generate a pipeline file. {{{
-
 command("ci", <<EOF,
 genesis v$VERSION
 USAGE: genesis ci [--name ci.yml]
@@ -4894,13 +4894,13 @@ sub {
 		exit check_secrets(   $meta,
 			env       => $name,
 			prefix    => $prefix,
-			subkits   => get_key($name, 'kit.subkits', [])
+			features  => get_key($name, 'kit.features', get_key($name, 'kit.subkits', []))
 		);
 	} else {
 		vaultify_secrets($meta,
 			env       => $name,
 			prefix    => $prefix,
-			subkits   => get_key($name, 'kit.subkits', []),
+			features  => get_key($name, 'kit.features', get_key($name, 'kit.subkits', [])),
 			scope     => $action
 		);
 	}
@@ -4932,7 +4932,7 @@ sub {
 #
 command("create-kit", <<EOF,
 genesis v$VERSION
-USAGE: genesis create-kit -d|--dev -n NAME [SUBKIT1 ...]
+USAGE: genesis create-kit -d|--dev -n NAME [FEATURE ...]
 
 OPTIONS
 $GLOBAL_USAGE
@@ -5008,29 +5008,29 @@ update:
   max_errors: 1
 EOF
 
-	# Subkits
-	mkdir_or_fail "$dir/subkits";
-	my $subkit_groups="";
-	my $subkit_param_groups="";
-	my $subkit_prompts="";
-	foreach my $subkit_req (@_) {
-		my ($subkit,$prompt) = split("=",$subkit_req, 2);
-		mkdir_or_fail "$dir/subkits/$subkit";
-		$subkit_groups .= "  $subkit: {}\n";
-		$subkit_param_groups .= "  $subkit: []\n";
+	# Features (backwards compatibility named Subkits)
+	mkdir_or_fail "$dir/features";
+	my $feature_groups="";
+	my $feature_param_groups="";
+	my $feature_prompts="";
+	foreach my $feature_req (@_) {
+		my ($feature,$prompt) = split("=",$feature_req, 2);
+		mkdir_or_fail "$dir/features/$feature";
+		$feature_groups .= "  $feature: {}\n";
+		$feature_param_groups .= "  $feature: []\n";
 		next if defined($prompt) && $prompt eq '-';
-		$prompt ||= "Do you want to use subkit '$subkit'?";
-		$subkit_prompts .= "- prompt: $prompt\n  subkit: $subkit\n";
+		$prompt ||= "Do you want to use feature '$feature'?";
+		$feature_prompts .= "- prompt: $prompt\n  feature: $feature\n";
 
-		mkfile_or_fail "$dir/subkits/$subkit/params.yml", "---\nparams: {}\n";
-		mkfile_or_fail "$dir/subkits/$subkit/$subkit.yml", "--- {}\n";
+		mkfile_or_fail "$dir/features/$feature/params.yml", "---\nparams: {}\n";
+		mkfile_or_fail "$dir/features/$feature/$feature.yml", "--- {}\n";
 	}
 
-	my $subkits = "";
-	if ($subkit_prompts) {
-		$subkits = "subkits:\n$subkit_prompts";
+	my $features = "";
+	if ($feature_prompts) {
+		$features = "features:\n$feature_prompts";
 	} else {
-		$subkits = "subkits: []\n";
+		$features = "features: []\n";
 	}
 
 	my $gen_version="";
@@ -5050,16 +5050,16 @@ author: $user <$email>
 homepage: https://github.com/cloudfoundry-community/$options{name}-boshrelease
 github: https://github.com/genesis-community/$options{name}-genesis-kit
 $gen_version
-$subkits
+$features
 params:
   base: []
-$subkit_param_groups
+$feature_param_groups
 credentials:
   base: {}
-$subkit_groups
+$feature_groups
 certificates:
   base: {}
-$subkit_groups
+$feature_groups
 EOF
 
 	mkfile_or_fail "$dir/README.md", <<EOF;
@@ -5089,11 +5089,11 @@ genesis init --kit $options{name} -d my-$options{name}-configs
 
 Once created, refer to the deployment repo's README for information on creating
 
-Subkits
+Features
 -------
 
 FIXME: The kit author should have filled this in with details
-about what subkits are defined, and how they affect the deployment. But they
+about what features are defined, and how they affect the deployment. But they
 have not, and that is sad. Perhaps a GitHub issue should be opened to remind
 them of this?
 
@@ -5101,8 +5101,8 @@ Params
 ------
 
 FIXME: The kit author should have filled this in with details about the params
-present in the base kit, as well as each subkit defined. These should likely
-be in different sections (one for base, one per subkit). Unfortunately,
+present in the base kit, as well as each feature defined. These should likely
+be in different sections (one for base, one per feature). Unfortunately,
 the author has not done this, and that is sad. Perhaps a GitHub issue
 should be opened to remind them of this?
 
@@ -5117,6 +5117,7 @@ might require, like load balancers.
 
 EOF
 
+explain "\n#G{Created new Genesis kit '}#C{$options{name}}#G{' in directory }#C{$dir}\n\n"
 });
 
 # }}}
@@ -5179,8 +5180,8 @@ sub {
 		}
 	}
 
-	validate_kit_files($dir);
-	validate_kit_metadata($options{name},$options{version},LoadFile("$dir/kit.yml"),1);
+	my $metadata = validate_kit_files($dir);
+	validate_kit_metadata($options{name},$options{version},$metadata,1);
 
 	my $temp = tempdir(CLEANUP => 1);
 	my $stem = "$options{name}-$options{version}";

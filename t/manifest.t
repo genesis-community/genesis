@@ -4,6 +4,7 @@ use warnings;
 
 use lib 't';
 use helper;
+use Test::Differences;
 
 my $tmp = workdir;
 ok -d "t/repos/manifest-test", "manifest-test repo exists" or die;
@@ -12,7 +13,7 @@ chdir "t/repos/manifest-test" or die;
 bosh2_cli_ok;
 
 runs_ok "genesis manifest -c cloud.yml us-east-1-sandbox >$tmp/manifest.yml";
-is get_file("$tmp/manifest.yml"), <<EOF, "manifest generated for us-east-1/sandbox";
+eq_or_diff get_file("$tmp/manifest.yml"), <<EOF, "manifest generated for us-east-1/sandbox";
 jobs:
 - name: thing
   properties:
@@ -29,7 +30,7 @@ releases:
 EOF
 
 runs_ok "genesis manifest -c cloud.yml us-west-1-sandbox >$tmp/manifest.yml";
-is get_file("$tmp/manifest.yml"), <<EOF, "manifest generated for us-west-1/sandbox";
+eq_or_diff get_file("$tmp/manifest.yml"), <<EOF, "manifest generated for us-west-1/sandbox";
 jobs:
 - name: thing
   properties:
@@ -46,8 +47,8 @@ releases:
 EOF
 
 $ENV{GENESIS_INDEX} = "no";
-runs_ok "genesis manifest -c init-cloud.yml bosh-init-sandbox > $tmp/manifest.yml";
-is get_file("$tmp/manifest.yml"), <<EOF, "manifest for bosh-int/create-env scenario ignores provided cloud config file, and doesnt prune cloud-y datastructures";
+runs_ok "genesis manifest -c init-cloud.yml bosh-init-sandbox >$tmp/manifest.yml";
+eq_or_diff get_file("$tmp/manifest.yml"), <<EOF, "manifest for bosh-int/create-env scenario ignores provided cloud config file, and doesnt prune cloud-y datastructures";
 azs:
 - name: z1
 disk_pools:
@@ -75,8 +76,8 @@ vm_extensions:
 
 EOF
 
-runs_ok "genesis manifest -c init-cloud.yml create-env-sandbox > $tmp/manifest.yml";
-is get_file("$tmp/manifest.yml"), <<EOF, "manifest for bosh-int/create-env scenario ignores provided cloud config file, and doesnt prune cloud-y datastructures";
+runs_ok "genesis manifest -c init-cloud.yml create-env-sandbox >$tmp/manifest.yml";
+eq_or_diff get_file("$tmp/manifest.yml"), <<EOF, "manifest for bosh-int/create-env scenario ignores provided cloud config file, and doesnt prune cloud-y datastructures";
 azs:
 - name: z1
 disk_pools:
@@ -105,8 +106,8 @@ vm_extensions:
 EOF
 
 $ENV{PREVIOUS_ENV} = "us-cache-test";
-runs_ok "genesis manifest -c init-cloud.yml us-west-1-sandbox > $tmp/manifest.yml";
-is get_file("$tmp/manifest.yml"), <<EOF, "manifest is generated using cached files if PREVIOUS_ENV variable is set";
+runs_ok "genesis manifest -c init-cloud.yml us-west-1-sandbox >$tmp/manifest.yml";
+eq_or_diff get_file("$tmp/manifest.yml"), <<EOF, "manifest is generated using cached files if PREVIOUS_ENV variable is set";
 cached_value: is_present
 jobs:
 - name: thing
