@@ -3117,14 +3117,14 @@ sub validate_kit_metadata {
 	my ($group,$label,$not_label);
 	if (exists $meta->{features}) {
 		if (exists $meta->{subkits}) {
-			error "\n#R{ERROR:} Kit contains both 'features' and depricated 'subkits'.\n";
+			error "\n#R{ERROR:} Kit contains both 'features' and deprecated 'subkits'.\n";
 			die $is_author
-				? "Update kit to move depricated subkits under 'features' and update 'subkit' key to 'feature'\n"
+				? "Update kit to move deprecated subkits under 'features' and update 'subkit' key to 'feature'\n"
 				: "Please contact your kit author for a fix.\n";
 		}
 		($group,$label,$not_label) = qw(features feature subkit);
 	} elsif (exists $meta->{subkits}) {
-		error "\n#Y{DEPRICATED:} subkits are depricated in favour of features.  Please update your kit." if $is_author;
+		error "\n#Y{DEPRECATED} subkits are deprecated in favour of features.  Please update your kit." if $is_author;
 		($group,$label,$not_label) = qw(subkits subkit feature);
 	}
 	if (defined $group) {
