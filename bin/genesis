@@ -3124,7 +3124,7 @@ sub validate_kit_metadata {
 		}
 		($group,$label,$not_label) = qw(features feature subkit);
 	} elsif (exists $meta->{subkits}) {
-		error "\n#Y{DEPRECATED} subkits are deprecated in favour of features.  Please update your kit." if $is_author;
+		error "\n#Y{DEPRECATED:} subkits are deprecated in favour of features.  Please update your kit." if $is_author;
 		($group,$label,$not_label) = qw(subkits subkit feature);
 	}
 	if (defined $group) {
