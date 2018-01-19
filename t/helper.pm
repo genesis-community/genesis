@@ -131,9 +131,10 @@ sub reprovision {
 
 sub runs_ok($;$) {
 	my ($cmd, $msg) = @_;
+	$cmd .= " 2>&1" unless $cmd =~ / 2>/;
 	$msg ||= "running `$cmd`";
 
-	my $err = qx($cmd 2>&1 </dev/null);
+	my $err = qx($cmd </dev/null);
 	if ($? != 0) {
 		my $exit = $? >> 8;
 		fail $msg;

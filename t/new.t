@@ -51,9 +51,9 @@ have_env 'generate-nominal';
 is get_file("generate.yml"), <<EOF, "environment file generated has latest kit name / version in it";
 ---
 kit:
-  name:    dev
-  version: latest
-  subkits:
+  name:     dev
+  version:  latest
+  features:
   - basic
 EOF
 is get_file("generate-nominal.yml"), <<EOF, "environment file generated has latest kit name / version in it";
@@ -70,15 +70,15 @@ have_env 'generate-full';
 is get_file("generate.yml"), <<EOF, "environment file generated has latest kit name / version in it";
 ---
 kit:
-  name:    dev
-  version: latest
-  subkits:
+  name:     dev
+  version:  latest
+  features:
   - basic
 EOF
 is get_file("generate-full.yml"), <<EOF, "environment file generated has latest kit name / version in it";
 ---
 kit:
-  subkits:
+  features:
   - (( replace ))
   - cf-uaa
   - toolbelt
@@ -93,9 +93,9 @@ open my $fh, ">", "generate.yml" or die "Could not overwrite generate.yml\n";
 print $fh <<EOF;
 ---
 kit:
-  name:    omega
-  version: 0.1.2
-  subkits:
+  name:     omega
+  version:  0.1.2
+  features:
   - cf-uaa
   - toolbelt
   - shield
@@ -108,9 +108,9 @@ have_env 'generate-full-2';
 is get_file("generate.yml"), <<EOF, "environment file generated has latest kit name / version in it";
 ---
 kit:
-  name:    omega
-  version: 0.1.2
-  subkits:
+  name:     omega
+  version:  0.1.2
+  features:
   - cf-uaa
   - toolbelt
   - shield
@@ -118,8 +118,8 @@ EOF
 is get_file("generate-full-2.yml"), <<EOF, "environment file generated has latest kit name / version in it";
 ---
 kit:
-  name:    dev
-  version: latest
+  name:     dev
+  version:  latest
 
 params:
   env:   generate-full-2

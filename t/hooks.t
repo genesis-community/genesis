@@ -31,20 +31,35 @@ sub new_hook {
 	close $fh;
 }
 
-subkit_hook_ok "hook-fails", 126, "Creating new env fails when subkit hook is nonexecutable";
-no_env "hook-fails";
-
-chmod 0755, "dev/hooks/subkit";
 subkit_hook_ok "hook-fails", 2, "Subkit hook fails if it returns a bad subkit";
 no_env "hook-fails";
 
 new_hook "dev/hooks/subkit", <<EOF;
 #!/bin/bash
 echo ""
-exit 0
+echo "openvpn"
+echo ""
+echo ""
+echo "toolbelt"
+echo ""
+echo ""
 EOF
-subkit_hook_ok "hook-fails", 255, "Subkit hooks fails if they return empty lines (what path was that?)";
-no_env "hook-fails";
+subkit_hook_ok "airy-subkit", 0, "Subkit hook ignores blank lines";
+is get_file("airy.yml"), <<EOF, "org file has correct subkits listed when hook echos blank lines";
+---
+kit:
+  name:     dev
+  version:  latest
+  features:
+  - openvpn
+  - toolbelt
+EOF
+is get_file("airy-subkit.yml"), <<EOF, "env file is correct when hook echos blank lines";
+---
+params:
+  env:   airy-subkit
+  vault: airy/subkit/subkit-hooks
+EOF
 
 new_hook "dev/hooks/subkit", <<EOF;
 #!/bin/bash
@@ -54,9 +69,9 @@ subkit_hook_ok "no-subkits", 0, "Subkit hooks can override subkit selection";
 is get_file("no.yml"), <<EOF, "env file has no subkits listed";
 ---
 kit:
-  name:    dev
-  version: latest
-  subkits: []
+  name:     dev
+  version:  latest
+  features: []
 EOF
 is get_file("no-subkits.yml"), <<EOF, "env file has no subkits listed";
 ---
@@ -74,9 +89,9 @@ subkit_hook_ok "good-subkit", 0, "Subkit hook can add in additional subkits not 
 is get_file("good.yml"), <<EOF, "env file has correct subkits listed";
 ---
 kit:
-  name:    dev
-  version: latest
-  subkits:
+  name:     dev
+  version:  latest
+  features:
   - openvpn
   - toolbelt
 EOF
@@ -97,9 +112,9 @@ runs_ok "genesis new no-additional-questions --no-secrets", "setup succeeds when
 is get_file("no.yml"), <<EOF, "environment yaml has original params when no hook present";
 ---
 kit:
-  name:    dev
-  version: latest
-  subkits: []
+  name:     dev
+  version:  latest
+  features: []
 EOF
 is get_file("no-additional-questions.yml"), <<EOF, "environment yaml has original params when no hook present";
 ---
@@ -133,9 +148,9 @@ runs_ok "genesis new params-hook-succeeds --no-secrets", "Setup succeeds when pa
 is get_file("params.yml"), <<EOF, "environment yaml has updated params";
 ---
 kit:
-  name:    dev
-  version: latest
-  subkits: []
+  name:     dev
+  version:  latest
+  features: []
 EOF
 is get_file("params-hook-succeeds.yml"), <<EOF, "environment yaml has updated params";
 ---
@@ -202,9 +217,9 @@ EOF
 eq_or_diff get_file((split('-',$env))[0].".yml"), <<EOF, "New environment file contains correct data";
 ---
 kit:
-  name:    more-hooks
-  version: 1.0.0
-  subkits:
+  name:     more-hooks
+  version:  1.0.0
+  features:
   - mandatory
   - openvpn
 EOF

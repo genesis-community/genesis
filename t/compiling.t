@@ -27,9 +27,7 @@ qx(rm -f *.tar.gz *.tgz); # just to be safe
 ($pass, $rc, $msg) = run_fails "genesis compile-kit --name custom-named-kit --version 1.0.4 --dev", 2;
 matches $msg, qr'./dev does not look like a valid kit directory:', "Bad dev kit directory";
 matches $msg, qr'  \* ./dev/README.md does not exist', "Bad dev kit directory - README.md does not exist";
-#matches $msg, qr'  \* ./dev/hooks directory does not exist', "Bad dev kit directory - hooks directory does not exist";
 matches $msg, qr'  \* ./dev/base/params.yml does not exist', "Bad dev kit directory - base/params.yml does not exist";
-#matches $msg, qr'  \* ./dev/subkits directory does not exist', "Bad dev kit directory - subkits directory does not exist";
 matches $msg, qr'\nCannot continue.\n', "Bad dev kit directory - cannot continue";
 $_ = $msg;
 is tr/\n// + !/\n\z/, 5, "Bad dev kit directory -- no unexpected errors.";
@@ -112,7 +110,12 @@ qx(rm -f *.tar.gz *.tgz); # just to be safe
 
 # Run it properly, override name
 ($pass, $rc, $msg) = runs_ok "genesis compile-kit -n kickass --version 0.0.1";
-matches $msg, qr'Created kickass-0.0.1.tar.gz\n', "Good dev kit directory - created release.";
+matches $msg, qr'Warning: . has abnormal contents \(non-fatal\):', "Kit with subkits warning";
+matches $msg, qr/  \* using deprecated 'subkits' subdirectory -- use 'features' instead./, "Abnormal kit directory - using subkits";
+matches $msg, qr'Created kickass-0.0.1.tar.gz\n', "Good kit directory - created release.";
+doesnt_match $msg, qr'\nCannot continue.\n', "Abnormal dev kit directory - still can continue";
+$_ = $msg;
+is tr/\n// + !/\n\z/, 5, "Bad dev kit directory -- no unexpected errors or warnings.";
 ok -f "kickass-0.0.1.tar.gz", "genesis compile-test-kit should create the tarball";
 output_ok "tar -tzvf kickass-0.0.1.tar.gz | $tar_parser | sort -k3", <<EOF, "tarball contents are correct";
 drwxr-xr-x 0 kickass-0.0.1/

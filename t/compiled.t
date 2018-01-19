@@ -32,9 +32,9 @@ runs_ok "genesis new --no-secrets new-env";
 is get_file("new.yml"), <<EOF, "environment file generated has latest kit name / version in it";
 ---
 kit:
-  name:    compiled
-  version: 0.0.2
-  subkits: []
+  name:     compiled
+  version:  0.0.2
+  features: []
 EOF
 is get_file("new-env.yml"), <<EOF, "environment file generated doesn't have kit name / version in it";
 ---

@@ -1,0 +1,4 @@
+---
+properties:
+  blobstore:
+    config: (( param "This kit is broken; please report a bug..." ))

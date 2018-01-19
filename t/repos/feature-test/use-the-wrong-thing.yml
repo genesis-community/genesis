@@ -1,0 +1,6 @@
+---
+kit:
+  features:
+  - magic
+params:
+  env: sandbox

@@ -9,13 +9,16 @@ use helper;
 
 bosh2_cli_ok;
 
+# EXPECT DEBUGGING
+my $log_expect_stdout=0;
+
 my $dir = workdir 'paramtest-deployments';
 chdir $dir;
 
 reprovision kit => 'ask-params';
 
 my $cmd = Expect->new();
-$cmd->log_stdout(1);
+$cmd->log_stdout($log_expect_stdout);
 $cmd->spawn("genesis new with-subkit --no-secrets");
 expect_ok "extra questions subkit", $cmd, [
 	'Should we ask additional questions?', sub {
@@ -389,9 +392,9 @@ expect_exit $cmd, 0, "Creating a new environment with subkits exited successfull
 eq_or_diff get_file("with.yml"), <<EOF, "New environment file contains base + subkit params, comments, and examples";
 ---
 kit:
-  name:    dev
-  version: latest
-  subkits:
+  name:     dev
+  version:  latest
+  features:
   - subkit-params
 EOF
 
@@ -530,7 +533,7 @@ params:
 EOF
 
 $cmd = Expect->new();
-$cmd->log_stdout(0);
+$cmd->log_stdout($log_expect_stdout);
 $cmd->spawn("genesis new without-subkit --no-secrets");
 expect_ok $cmd, ['Should we ask additional questions', sub {
 	my $fh = shift;
@@ -550,9 +553,9 @@ expect_exit $cmd, 0, "Creating a new environment without subkits exited successf
 eq_or_diff get_file("without.yml"), <<EOF, "New environment file contains base params, comments, and examples (no subkits)";
 ---
 kit:
-  name:    dev
-  version: latest
-  subkits: []
+  name:     dev
+  version:  latest
+  features: []
 EOF
 
 eq_or_diff get_file("without-subkit.yml"), <<EOF, "New environment file contains base params, comments, and examples (no subkits)";
