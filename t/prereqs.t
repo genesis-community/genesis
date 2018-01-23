@@ -36,7 +36,7 @@ ok -f "using-dev-genesis.yml", "Deployment environment file should not be create
 
 my $bin = compiled_genesis "9.0.1";
 
-($pass, $rc, $msg) = run_fails "$bin new something-new", 86;
+($pass, $rc, $msg) = run_fails "$bin new something-new --no-secrets", 86;
 matches $msg, qr'.*ERROR:.* Kit version-prereq/1.0.0 requires Genesis version 9.5.2, but installed Genesis is only version 9.0.1.',"Genesis not new enough";
 doesnt_match $msg, qr'New environment something-new provisioned.', "Did not create new environment 'something-new'";
 ok ! -f "something.yml", "Org environment file should not be created, when prereqs fails";
@@ -57,7 +57,7 @@ ok -f "something.yml", "Org environment file should be created, when version mee
 ok -f "something-newer.yml", "Deployment environment file should be created, when version meets minimum";
 
 reprovision kit =>'version-prereq-bad';
-($pass, $rc, $msg) = run_fails "$bin new something-crazy", 255;
+($pass, $rc, $msg) = run_fails "$bin new something-crazy --no-secrets", 255;
 
 matches $msg, qr'.*ERROR:.* The following errors have been encountered validating the dev/latest kit:',"kit has errors";
 matches $msg, qr% - Specified minimum Genesis version of '~>4.5' for kit is invalid.%,"kit has bad min version";
