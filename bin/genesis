@@ -4507,9 +4507,6 @@ sub prompt_for_boshes_and_stemcells_for {
 		my $bosh_json = decode_json(qx{spruce json \$HOME/.bosh/config});
 		$boshes{$_->{alias}} = {
 			url => (($_->{url} =~ /:\d+$/) ? $_->{url} : $_->{url}.":25555"),
-			username => $_->{username},
-			password => $_->{password}, # Not used, may be in future (if not in vault)
-			ca_cert => $_->{ca_cert},   # Not used, may be in future (if not in vault)
 		} foreach (@{$bosh_json->{environments}});
 		foreach (keys %boshes) {
 			# Add the url (with and without port) to the lookup map.
@@ -4548,25 +4545,20 @@ sub prompt_for_boshes_and_stemcells_for {
 			}
 		}
 
-		if ($bosh_info{username}) {
-			$boshenvs{$env}{username} = $bosh_info{username};
-			explain "\nUsing BOSH admin username #C{'$boshenvs{$env}{username}'}";
-		} else {
-			$boshenvs{$env}{username} = prompt_for_line(
-				undef,
-				"Admin Username",
-				"admin"
-			);
-		}
+		$boshenvs{$env}{username} = prompt_for_line(
+			undef,
+			"Concourse Username",
+			"concourse "
+		);
 
 		my $prefix = "secret/". vault_slug($envs{$e}{bosh});
-		if (safe_path_exists("$prefix/bosh/users/admin:password")) {
-			$boshenvs{$env}{password} = "$prefix/bosh/users/admin:password";
-			explain "\nUsing BOSH admin password in Vault under #C{'$boshenvs{$env}{password}'}";
+		if (safe_path_exists("$prefix/bosh/users/concourse:password")) {
+			$boshenvs{$env}{password} = "$prefix/bosh/users/concourse:password";
+			explain "\nUsing BOSH concourse user password in Vault under #C{'$boshenvs{$env}{password}'}";
 		} else {
 			$boshenvs{$env}{password} = prompt_for_line(clean_heredoc(<<"			|EOF"),"Specify vault path", undef, "vault_path_and_key");
-			|Could not locate the password for admin user in Vault under:
-			|$prefix/bosh/users/admin:password.
+			|Could not locate the password for concourse user in Vault under:
+			|$prefix/bosh/users/concourse:password.
 			|EOF
 		}
 		if (safe_path_exists("$prefix/bosh/ssl/ca:certificate")) {
