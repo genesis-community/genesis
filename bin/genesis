@@ -346,7 +346,14 @@ sub validate_features  {
 	for my $sk (@{$meta->{"${label}s"}}) {
 		if ($sk->{choices}) {
 			my $matches = 0;
-			my $min_matches = 1;
+			my ($min_matches,$max_matches) = (1,1);
+			if (defined $sk->{pick}) {
+				if ($sk->{pick} =~ /^(?:(\d+)|(\d+)?-(\d+)?)$/) {
+					($min_matches,$max_matches) = (defined $1) ? ($1,$1) : ($2, $3);
+				} else {
+					$! = 2; die "There is a problem with kit $kit/$version: $sk->{type} pick invalid.  Please contact the kit author for a fix";
+				}
+			}
 			my @choices;
 			for my $choice (@{$sk->{choices}}) {
 				push @choices, $choice->{$label} if defined $choice && defined $choice->{$label};
@@ -357,10 +364,10 @@ sub validate_features  {
 				}
 			}
 			my $choices = join(", ", map { "'$_'" } @choices);
-			if ($matches > 1) {
+			if ($max_matches && $matches > $max_matches) {
 				die "You selected too many ${label}s for your $sk->{type}. Should be only one of $choices\n";
 			}
-			if ($matches < $min_matches) {
+			if ($min_matches && $matches < $min_matches) {
 				die "You must select a $label to provide your $sk->{type}. Should be one of $choices\n";
 			}
 		}
