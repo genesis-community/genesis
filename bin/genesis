@@ -5066,20 +5066,31 @@ sub {
 
 command("yamls", <<EOF,
 genesis v$VERSION
-USAGE: genesis yamls deployment-env.yml
+USAGE: genesis yamls [--include-kit] deployment-env.yml
 
 OPTIONS
+      --include-kit This is also include the files that will be merges from the kit.
 $GLOBAL_USAGE
 EOF
 sub {
 	my %options;
 	options(\@_, \%options, qw/
-		rotate
+		include-kit
 	/);
 	usage(1) if @_ != 1;
 	check_prereqs;
 
-	print "$_\n" for mergeable_yaml_files($_[0]);
+	my ($kit,$version) = kit_name_and_version_for($_[0]);
+	my @yamls;
+	if ($options{"include-kit"}) {
+		push @yamls, kit_yaml_files($_[0]);
+		if ($kit && $kit ne "dev") {
+			my $cache_dir = Cwd::abs_path($KIT_CACHE_DIR{"$kit/$version"});
+			@yamls = map {$_ =~ s%^$cache_dir/%\@kit($kit/$version):%; $_} @yamls;
+		}
+	}
+	push @yamls, mergeable_yaml_files($_[0]);
+	print "$_\n" for @yamls;
 });
 
 # }}}
