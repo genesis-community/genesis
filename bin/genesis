@@ -232,7 +232,8 @@ sub mkfile_or_fail {
 		print $fh $content;
 		close $fh;
 	} or die "Error creating file $file: $!\n";
-	chmod_or_fail $mode, $file if defined $mode;
+	chmod_or_fail($mode, $file) if defined $mode;
+	return $file;
 }
 
 # mkdir_or_fail $dir;
@@ -242,7 +243,8 @@ sub mkdir_or_fail {
 		debug "creating directory $dir/";
 		system("mkdir", "-p", "$dir/") == 0 or die "Unable to create directory $dir/: $!\n";
 	}
-	chmod_or_fail $mode, $dir if defined $mode;
+	chmod_or_fail($mode, $dir) if defined $mode;
+	return $dir;
 }
 # chdir_or_fail $dir;
 sub chdir_or_fail {
