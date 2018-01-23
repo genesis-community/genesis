@@ -337,9 +337,8 @@ sub validate_features  {
 	my $label = defined($meta->{subkits}) ? "subkit" : "feature";
 	for my $sk (@features) {
 		die "You specified a feature without a name\n" unless $sk;
-		-d kit_file($kit, $version, "features/$sk", 0) ||
-		-d kit_file($kit, $version, "subkits/$sk", 0) ||
-		die "No $label '$sk' found in kit $k/$v.\n";
+		die "No subkit '$sk' found in kit $k/$v.\n"
+			if $label eq "subkit" && ! -d  kit_file($kit, $version, "subkits/$sk", 0);
 	}
 
 	my %requested_features = map { $_ => 1 } @features;
@@ -540,34 +539,154 @@ EOF
 	explain "Created #C{$file} environment file";
 }
 
-sub kit_yaml_files_in {
-	my ($env_file, $dir, @features) = @_;
-	$env_file =~ s/(\.yml)?$/.yml/;
-	my @files;
-	my $features_dir = (-d "$dir/features") ? 'features' : 'subkits';
-	@files = glob "$dir/base/*.yml";
-	push @files, map { glob "$dir/$features_dir/$_/*.yml" } @features;
-	return @files;
-}
-
 sub kit_yaml_files {
 	my ($env) = @_;
 	my @files;
 
-	my $kit     = get_key($env, 'kit.name', "dev");
-	my $version = get_key($env, 'kit.version');
-	die "No kit/version detected in $env.\n"
-		unless $kit && ($kit eq 'dev' || $version);
+	my ($kit,$version) = kit_name_and_version_for($env);
+	$kit ||= "dev";
+	die "No kit/version detected in $env.\n" unless $kit && ($kit eq 'dev' || $version);
 
 	my @features = @{get_key($env, 'kit.features', get_key($env, 'kit.subkits',[]))};
 	my $meta = read_kit_metadata($kit, $version);
-	validate_features($kit, $version, $meta, @features);
+	validate_features($kit, $version, $meta, @features) unless -f kit_file($kit,$version,"hooks/blueprint",0);
 
 	my $dir = 'dev';
 	if ($kit && $version) {
 		$dir = get_kit($kit,$version);
 	} 
-	return kit_yaml_files_in($env, $dir, @features);
+	return kit_yaml_files_in($kit,$version,$env, $dir, @features);
+}
+
+sub kit_yaml_files_in {
+	my ($kit,$version,$env, $dir, @features) = @_;
+	my @files;
+	# use hooks/blueprint script if present
+	my $blueprint_script_path = "$dir/hooks/blueprint";
+	if (-f $blueprint_script_path) {
+		pushd($dir);
+		-x $blueprint_script_path || chmod_or_fail 0755,$blueprint_script_path;
+		my $helper = blueprint_script_helper($kit,$version,$env,@features);
+		my $script = clean_heredoc(<<"			|EOF");
+			|source "$helper"
+			|$blueprint_script_path
+			|EOF
+		my $result = qx($script);
+		if ($? >> 8) {
+			error "#R{ERROR}: Cound not execute $kit/$version hooks/blueprint script successfully:\n";
+			exit 2;
+		}
+		@files = map {Cwd::abs_path $_} grep {$_} split(" ", $result);
+		popd;
+		my @missing_files = grep {! -e $_} @files;
+		if (@missing_files) {
+			error "%s",
+				"#R{ERROR:} Missing $kit/$version files required to satisfy selected features in #C{$env}:\n  - ",
+				join('\n  - ',@missing_files),
+				"\n\nPlease contact kit author to get a fix.\n";
+			exit 2
+		}
+	} else {
+		my $features_dir = (-d "$dir/features") ? 'features' : 'subkits';
+		@files = glob "$dir/base/*.yml";
+		push @files, map { glob "$dir/$features_dir/$_/*.yml" } @features;
+	}
+	return @files;
+}
+
+sub generate_blueprint_script {
+	my (@features) = @_;
+	return clean_heredoc(<<"	|EOF");
+	|#!/bin/bash
+	|# Genesis hooks/blueprint script
+	|#
+	|# This script outputs the list of merge files needed to support the desired
+	|# feature set selected by the environment parameter file.  As generated, it
+	|# lists all *.yml files in the base, then all *.yml files in each detected
+	|# feature directory, in the order the features are specified in the environment
+	|# yml file.  If finer control is desired, add logic around the wants_kit_feature()
+	|# function (takes a feature as a string, returns exit code 0 if present, non-
+	|# zero exit code otherwise).
+	|
+	|set -eu
+	|
+	|validate_features ${\join("\\\n                  ", map {"'$_' "} @features)}
+	|
+	|declare -a manifests
+	|manifests+=(base/*.yml)
+	|
+	|for dir in features/*; do
+	|	sub=\$(basename \$dir)
+	|	if want_feature \$sub; then
+	|		manifests+=(\$dir/*.yml)
+	|	fi
+	|done
+    |echo \${manifests[@]}
+	|EOF
+}
+
+sub blueprint_script_helper {
+	# Assumes it will be executed in the base of the kit directory
+	# by the kit_yaml_files_in command.
+	my ($kit,$version,$env,@features) = @_;
+	my $env_file = get_env_file($env);
+	my $helper_dir = workdir('helper');
+	my $out = clean_heredoc(<<"	|EOF");
+	|export GENESIS_KIT_NAME="$kit";
+	|export GENESIS_KIT_VERSION="$version";
+	|export GENESIS_ENV_FILE="$env_file";
+	|export GENESIS_REQUESTED_FEATURES="${\join(' ', @features)}"
+	|
+	|want_feature() {
+	|	want=\${1:?want_feature() -- must specify a feature}
+	|	for feature in \$GENESIS_REQUESTED_FEATURES; do
+	|		[[ "\$want" == "\$feature" ]] && return 0
+	|	done
+	|	return 1
+	|}
+	|export -f want_feature
+	|
+	|invalid_features() {
+	|	declare -a invalid
+	|	for have in \$GENESIS_REQUESTED_FEATURES; do
+	|		local found='';
+	|		for valid in "\$@"; do 
+	|			[[ "\$have" == "\$valid" ]] && found=1 && break
+	|		done
+	|		[[ -n \$found ]] || invalid+=(\$wanted)
+	|	done
+	|	echo "\${invalid[@]}"
+	|	return 0
+	|}
+	|export -f invalid_features
+	|
+	|valid_features() {
+	|	for have in \$GENESIS_ENV_FEATURES; do
+	|		local found='';
+	|		for valid in "\$@"; do
+	|			[[ "\${have}" = "\${valid}" ]] && found=1 && break
+	|		done
+	|		[[ -n \$found ]] || return 1
+	|	done
+	|	return 0
+	|}
+	|export -f valid_features
+	|
+	|validate_features() {
+	|	if ! valid_features "\$@"; then
+	|		echo >&2 "\$GENESIS_KIT_NAME/\$GENESIS_KIT_VERSION does not understand the following feature flags:"
+	|		for bad in \$(invalid_features "\$@"); do
+	|			echo >&2 " - \$bad"
+	|		done
+	|		[[ -f "feature_usage.txt" ]] && echo >&2 "" && cat "feature_usage.txt"
+	|		exit 1
+	|	fi
+	|}
+	|export -f validate_features
+	|
+	|EOF
+	
+	return mkfile_or_fail("$helper_dir/blueprint_helper",$out);
 }
 
 # takes a list of tokens, in order, and generates
@@ -5046,11 +5165,10 @@ EOF
 
 	# Features (backwards compatibility named Subkits)
 	mkdir_or_fail "$dir/features";
-	my $feature_groups="";
-	my $feature_param_groups="";
-	my $feature_prompts="";
+	my ($feature_groups, $feature_param_groups, $feature_prompts, @feature_names);
 	foreach my $feature_req (@_) {
 		my ($feature,$prompt) = split("=",$feature_req, 2);
+		push @feature_names, $feature;
 		mkdir_or_fail "$dir/features/$feature";
 		$feature_groups .= "  $feature: {}\n";
 		$feature_param_groups .= "  $feature: []\n";
@@ -5153,7 +5271,10 @@ might require, like load balancers.
 
 EOF
 
-explain "\n#G{Created new Genesis kit '}#C{$options{name}}#G{' in directory }#C{$dir}\n\n"
+	mkdir_or_fail "$dir/hooks";
+	mkfile_or_fail "$dir/hooks/blueprint", generate_blueprint_script(@feature_names);
+
+	explain "\n#G{Created new Genesis kit '}#C{$options{name}}#G{' in directory }#C{$dir}\n\n"
 });
 
 # }}}
