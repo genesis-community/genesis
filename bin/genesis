@@ -554,7 +554,7 @@ sub kit_yaml_files {
 	my $dir = 'dev';
 	if ($kit && $version) {
 		$dir = get_kit($kit,$version);
-	} 
+	}
 	return kit_yaml_files_in($kit,$version,$env, $dir, @features);
 }
 
@@ -650,7 +650,7 @@ sub blueprint_script_helper {
 	|	declare -a invalid
 	|	for have in \$GENESIS_REQUESTED_FEATURES; do
 	|		local found='';
-	|		for valid in "\$@"; do 
+	|		for valid in "\$@"; do
 	|			[[ "\$have" == "\$valid" ]] && found=1 && break
 	|		done
 	|		[[ -n \$found ]] || invalid+=(\$wanted)
@@ -685,7 +685,7 @@ sub blueprint_script_helper {
 	|export -f validate_features
 	|
 	|EOF
-	
+
 	return mkfile_or_fail("$helper_dir/blueprint_helper",$out);
 }
 
@@ -4228,6 +4228,7 @@ sub {
 	} else {
 		($kit, $version) = latest_kit_name_and_version();
 	}
+
 	if ($kit && $kit ne "dev") {
 		explain "Using compiled kit $kit/$version...\n";
 	} else {
@@ -4829,10 +4830,10 @@ EOF
 EOF
 	}
 	my $role_op = $pipeline->{vault}{role}
-		? "vault \"$pipeline->{vault}{role}\"" 
+		? "vault \"$pipeline->{vault}{role}\""
 		: "param \"Please provide a vault path for pipeline.vault.role\"";
 	my $secret_op = $pipeline->{vault}{secret}
-		? "vault \"$pipeline->{vault}{secret}\"" 
+		? "vault \"$pipeline->{vault}{secret}\""
 		: "param \"Please provide a vault path for pipeline.vault.secret\"";
 	print $OUT <<"EOF";
     private_key: (( vault "$pipeline->{git}{private_key}" ))
