@@ -296,12 +296,12 @@ sub in_repo_dir {
 }
 
 # workdir;
-my $WORKDIR;
+my %WORKDIR;
 sub workdir {
-	if (!defined $WORKDIR) {
-		$WORKDIR = tempdir(CLEANUP => 1);
-	}
-	return $WORKDIR;
+	return $WORKDIR{$_[0]} if ($_[0] && defined $WORKDIR{$_[0]});
+	my $dir = tempdir(CLEANUP => 1);
+	$WORKDIR{$_[0]} = $dir if $_[0];
+	return $dir;
 }
 
 # get_file $path
@@ -558,9 +558,7 @@ sub kit_yaml_files {
 
 	my $dir = 'dev';
 	if ($kit && $version) {
-		$dir = workdir();
-		qx(tar -xz -C $dir --strip-components 1 -f .genesis/kits/$kit-$version.tar.gz);
-		$? == 0 or die;
+		$dir = get_kit($kit,$version);
 	} 
 	return kit_yaml_files_in($env, $dir, @features);
 }
@@ -630,6 +628,19 @@ sub unique_suffix {
 		push @pre, $a;
 	}
 	return join('-', @pre), @b;
+}
+
+our %KIT_CACHE_DIR;
+sub get_kit {
+	my ($kit,$version) = @_;
+	unless (exists $KIT_CACHE_DIR{"$kit/$version"}) {
+		my $dir = workdir('kit');
+		die "Kit $kit/$version not found!\n" unless -e ".genesis/kits/$kit-$version.tar.gz";
+		qx(tar -xz -C $dir --strip-components 1 -f .genesis/kits/$kit-$version.tar.gz);
+		$? == 0 or die;
+		$KIT_CACHE_DIR{"$kit/$version"} = $dir;
+	}
+	return $KIT_CACHE_DIR{"$kit/$version"};
 }
 
 sub mergeable_yaml_files {
@@ -3012,11 +3023,16 @@ sub kit_file {
 	-f ".genesis/kits/$kit-$version.tar.gz"
 		or die "Kit $kit/$version not found in .genesis/kits!\n";
 
-	my $tmp = workdir();
-	qx(tar -C $tmp -xzf .genesis/kits/$kit-$version.tar.gz $kit-$version/$relpath 2>/dev/null);
-	!$required || -f "$tmp/$kit-$version/$relpath"
+	my $dir;
+	if (exists $KIT_CACHE_DIR{"$kit/$version"}) {
+		$dir = $KIT_CACHE_DIR{"$kit/$version"};
+	} else {
+		$dir = workdir('kit');
+		qx(tar -C $dir -xz --strip-components 1 -f .genesis/kits/$kit-$version.tar.gz $kit-$version/$relpath 2>/dev/null);
+	}
+	!$required || -f "$dir/$relpath"
 		or die "$relpath not found in $kit-$version kit. Please contact your kit author for a fix.\n";
-	return "$tmp/$kit-$version/$relpath";
+	return "$dir/$relpath";
 }
 
 sub download_kit_tarball
