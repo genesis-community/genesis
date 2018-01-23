@@ -1460,7 +1460,6 @@ EOF
 
 sub merge_files {
 	my ($env, $options) = @_;
-	$env =~ s/(\.yml)?$/.yml/;
 
 	my @files = ();
 	push @files, base_yaml_files($env);
