@@ -428,35 +428,7 @@ sub new_environment {
 
 	my $file = "$env.yml";
 	(my $parent = $file) =~ s/-.*\.yml/.yml/;
-
-	my %existing_info;
-	if (-e $parent) {
-		%existing_info = %{LoadFile($parent)};
-		explain "Using #C{$parent} file as base config.";
-	} else {
-		open my $fh, ">", $parent or die "Couldn't write to $parent: $!";
-		print $fh <<EOF;
----
-kit:
-  name:     $kit
-  version:  $version
-EOF
-		if (@features) {
-			print $fh "  features:\n";
-			print $fh "  - $_\n" foreach (@features);
-		} else {
-			print $fh "  features: []\n";
-		}
-		%existing_info = (
-			kit => {
-				name => $kit,
-				version => $version,
-				features => \@features
-			}
-		);
-		close $fh; $fh = undef;
-		explain "Created #C{$parent} file for $kit/$version";
-	}
+	my %existing_info = ensure_org_level_environment_file_exists($parent,$kit,$version,@features);
 
 	open my $fh, ">", $file or die "Couldn't write to $file: $!";
 	print $fh "---";
@@ -537,6 +509,40 @@ EOF
 	}
 	close $fh;
 	explain "Created #C{$file} environment file";
+}
+
+sub ensure_org_level_environment_file_exists {
+	my ($parent,$kit,$version,@features) = @_;
+
+	my %existing_info;
+	if (-e $parent) {
+		%existing_info = %{LoadFile($parent)};
+		explain "Using existing #C{$parent} file as base config.";
+	} else {
+		open my $fh, ">", $parent or die "Couldn't write to $parent: $!";
+		print $fh <<EOF;
+---
+kit:
+  name:     $kit
+  version:  $version
+EOF
+		if (@features) {
+			print $fh "  features:\n";
+			print $fh "  - $_\n" foreach (@features);
+		} else {
+			print $fh "  features: []\n";
+		}
+		%existing_info = (
+			kit => {
+				name => $kit,
+				version => $version,
+				features => \@features
+			}
+		);
+		close $fh; $fh = undef;
+		explain "Created new #C{$parent} file for $kit/$version";
+	}
+	return %existing_info;
 }
 
 sub kit_yaml_files {
@@ -4213,6 +4219,8 @@ sub {
 	my $err = check_env_name_for_errors($name);
 	die "Invalid environment name '$name': $err\n" if $err;
 	-f "$name.yml" and die "Environment '$name' already exists\n";
+	my $deployment = $name . "-" . deployment_suffix;
+	my $prefix = ($options{prefix} ? $options{prefix} : (vault_slug($name).'/'.deployment_suffix));
 
 	at_exit(sub {
 		# remove the env file if either prereqs check or vaultification fails
@@ -4222,7 +4230,7 @@ sub {
 	check_prereqs;
 	explain "Generating new environment #C{$name}...\n";
 
-	my ($kit, $version);
+	my ($kit, $version, @features, $kit_dir);
 	if ($options{kit}) {
 		($kit, $version) = extract_kit_name_and_version($options{kit});
 	} else {
@@ -4230,19 +4238,14 @@ sub {
 	}
 
 	if ($kit && $kit ne "dev") {
+		$kit_dir = get_kit($kit,$version);
 		explain "Using compiled kit $kit/$version...\n";
 	} else {
 		explain "Using local development kit (./dev)...";
 		$kit = "dev";
 		$version = "latest";
+		$kit_dir = "./dev";
 	}
-
-	my $meta = read_kit_metadata($kit, $version);
-	check_kit_prereqs($kit, $version);
-
-	my @features = prompt_for_env_features($kit, $version, $meta);
-	my $deployment = $name . "-" . deployment_suffix;
-	my $prefix = ($options{prefix} ? $options{prefix} : (vault_slug($name).'/'.deployment_suffix));
 
 	if ($options{secrets}) {
 		target_vault($options{vault});
@@ -4250,15 +4253,32 @@ sub {
 		$ENV{NOVAULT} = 'y';
 	}
 
-	my $params = process_kit_params(kit          => $kit,
-									version      => $version,
-									env          => $name,
-									vault_prefix => $prefix,
-									params       => $meta->{params} || [],
-									features     => \@features);
-	$params = run_param_hook($kit, $version, $name, $prefix, $params, @features);
+	my $meta = read_kit_metadata($kit, $version);
+	my $new_script=kit_file($kit,$version,"hooks/new",0);
+	if (-f $new_script) {
+		chmod_or_fail(0755, $new_script) unless -x $new_script;
+		my $curdir = Cwd::getcwd;
+		my $out = qx(cd $kit_dir && $new_script $curdir $name);
+		die "Could not create new environment $name using kit $kit/$version"
+			if ($! >> 8);
+		die "New environment '$name' was not generated.  Contact your kit developer for a fix"
+			unless -f "$name.yml";
+		@features = get_key($name, 'kit.features', []);
+		(my $parent = $name) =~ s/-.*/.yml/;
+		ensure_org_level_environment_file_exists($parent,$kit,$version);
+	} else {
+		check_kit_prereqs($kit, $version);
+		@features = prompt_for_env_features($kit, $version, $meta);
+		my $params = process_kit_params(kit          => $kit,
+										version      => $version,
+										env          => $name,
+										vault_prefix => $prefix,
+										params       => $meta->{params} || [],
+										features     => \@features);
+		$params = run_param_hook($kit, $version, $name, $prefix, $params, @features);
 
-	new_environment($meta, $kit, $version, $name, $prefix, $params, @features);
+		new_environment($meta, $kit, $version, $name, $prefix, $params, @features);
+	}
 
 	if ($options{secrets}) {
 		explain "Generating secrets / credentials (in secret/$prefix)...\n";
