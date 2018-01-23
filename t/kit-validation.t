@@ -14,7 +14,7 @@ chdir $dir;
 
 reprovision kit => 'invalid-kit';
 
-run_fails "genesis new failures-galore > errors 2>&1", 255, "Invalid kits fail to validate";
+run_fails "genesis new failures-galore --no-secret > errors 2>&1", 255, "Invalid kits fail to validate";
 eq_or_diff get_file("errors"), <<EOF, "Invalid kits generate expected error messages";
 Generating new environment failures-galore...
 

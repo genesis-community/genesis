@@ -33,10 +33,9 @@ properties:
     type: webdav
 
 EOF
-
 run_fails "genesis manifest -c cloud.yml use-the-wrong-thing >$tmp/errors 2>&1", undef;
 is get_file("$tmp/errors"), <<EOF, "manifest generate fails with an invalid blobstore feature";
-No feature 'magic' found in kit dev/latest.
+You must select a feature to provide your blobstore. Should be one of 'webdav', 's3'
 EOF
 
 run_fails "genesis manifest -c cloud.yml use-nothing >$tmp/errors 2>&1", undef;
