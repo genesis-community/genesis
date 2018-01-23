@@ -4507,9 +4507,6 @@ sub prompt_for_boshes_and_stemcells_for {
 		my $bosh_json = decode_json(qx{spruce json \$HOME/.bosh/config});
 		$boshes{$_->{alias}} = {
 			url => (($_->{url} =~ /:\d+$/) ? $_->{url} : $_->{url}.":25555"),
-			username => $_->{username},
-			password => $_->{password}, # Not used, may be in future (if not in vault)
-			ca_cert => $_->{ca_cert},   # Not used, may be in future (if not in vault)
 		} foreach (@{$bosh_json->{environments}});
 		foreach (keys %boshes) {
 			# Add the url (with and without port) to the lookup map.
