@@ -4744,9 +4744,9 @@ sub prompt_for_boshes_and_stemcells_for {
 		my ($stemcells, %candidates) = ([]);
 		if ($ask_stemcells) {
 			explain "\nFetching stemcells from BOSH...";
-			chomp($ENV{BOSH_CA_CERT} = qx(safe get "$boshenvs{$env}{ca_cert}"));
-			$ENV{BOSH_CLIENT} = $boshenvs{$env}{username};
-			chomp($ENV{BOSH_CLIENT_SECRET} = qx(safe get "$boshenvs{$env}{password}"));
+			chomp(local $ENV{BOSH_CA_CERT} = qx(safe get "$boshenvs{$env}{ca_cert}"));
+			local $ENV{BOSH_CLIENT} = $boshenvs{$env}{username};
+			chomp(local $ENV{BOSH_CLIENT_SECRET} = qx(safe get "$boshenvs{$env}{password}"));
 			my $sc_info = qx($BOSH -e $boshenvs{$env}{url} stemcells);
 			if ($? > 0) {
 				# Couldn't get stemcells - ask for them manually (just die for now)
