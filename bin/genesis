@@ -677,6 +677,12 @@ sub standalone_environment_yaml_files {
 	grep { has_own_key($_, "params.env") } @envs;
 }
 
+sub get_env_file {
+	my ($env) = @_;
+	$env =~ s/.yml$//;
+	return $env.".yml";
+}
+
 sub has_key {
 	my ($file, $key) = @_;
 	for (mergeable_yaml_files $file) {
