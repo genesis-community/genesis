@@ -959,7 +959,7 @@ sub cert_commands {
 				"--ttl", $c->{valid_for},
 				@name_flags,
 				"--signed-by", "secret/$options{prefix}/$path/ca");
-			push @cmd, "--no-clobber", "--quiet" if $missing_only;
+			push @cmd, "--no-clobber", "--quiet" if $missing_only || $c->{fixed};
 			push @cmds, \@cmd;
 		}
 	}

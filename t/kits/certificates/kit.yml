@@ -27,6 +27,14 @@ certificates:
         - '*.server.example.com'
         - '*.system.${params.base_domain}'
 
+    fixed:
+      ca: { valid_for: 1y }
+      server:
+        fixed: true
+        valid_for: 1y
+        names:
+        - just.a.cert
+
   certs-b:
     auto-generated-certs-b:
       ca: { valid_for: 1y }
