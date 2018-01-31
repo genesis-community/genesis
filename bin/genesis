@@ -3068,7 +3068,7 @@ sub check_prereqs {
 	if (!$version) {
 		push @errors, "Missing `vault' - install Vault from #B{https://www.vaultproject.io/downloads.html}";
 	} else {
-		chomp($version); $version =~ s/^vault v(\S+).*/$1/i;
+		chomp($version); $version =~ s/.*vault v(\S+).*/$1/i;
 		if (!new_enough("vault", $version, $VAULT_MIN_VERSION)) {
 			push @errors, "Vault v${version} is installed, but Genesis requires #R{at least $VAULT_MIN_VERSION} - upgrade your Vault, via #B{https://www.vaultproject.io/downloads.html}";
 		}
