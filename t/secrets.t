@@ -67,7 +67,7 @@ my $removed = [qw[
   test/fixed/ssh:public
   test/fixed/ssh:private
   test/fixed/ssh:fingerprint
-  
+
   test/fmt/sha512/default:random
   test/fmt/sha512/default:random-crypt-sha512
 ]];
@@ -234,7 +234,7 @@ $v = "secret/west/us/sandbox/certificates";
 runs_ok "safe delete -Rf $v", "clean up certs for rotation testing";
 no_secret "$v/auto-generated-certs-a/ca:certificate";
 ($pass,$rc,$msg) = run_fails "genesis secrets check west-us-sandbox --vault unit-tests", 1;
-matches $msg, qr#Missing 16 credentials or certificates:#, "Correct number of secrets reported missing";
+matches $msg, qr#Missing 24 credentials or certificates:#, "Correct number of secrets reported missing";
 matches $msg, qr#  \* \[CA certificate] $v/auto-generated-certs-a/ca:certificate#,  "CA cert certificate missing";
 matches $msg, qr#  \* \[CA certificate] $v/auto-generated-certs-a/ca:combined#,  "CA cert combined missing";
 matches $msg, qr#  \* \[CA certificate] $v/auto-generated-certs-a/ca:crl#,  "CA cert crl missing";
@@ -258,10 +258,18 @@ my $cert = secret "$v/auto-generated-certs-a/server:certificate";
 have_secret "$v/auto-generated-certs-a/ca:certificate";
 my $ca = secret "$v/auto-generated-certs-a/ca:certificate";
 
+have_secret "$v/fixed/server:certificate";
+my $fixed_cert = secret "$v/fixed/server:certificate";
+
 runs_ok "genesis secrets rotate --vault unit-tests west-us-sandbox", "genesis secrets doesn't rotate the CA";
 have_secret "$v/auto-generated-certs-a/ca:certificate";
 my $new_ca = secret "$v/auto-generated-certs-a/ca:certificate";
 is $ca, $new_ca, "CA cert doesnt change under normal secret rotation";
+
+have_secret "$v/fixed/server:certificate";
+my $new_fixed = secret "$v/fixed/server:certificate";
+is $fixed_cert, $new_fixed, "Fixed certificate doesn't change under normal secret rotation";
+
 
 runs_ok "genesis secrets add --vault unit-tests west-us-sandbox", "genesis secrets --missing-only doesn't rotate the CA";
 have_secret "$v/auto-generated-certs-a/ca:certificate";
