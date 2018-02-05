@@ -188,7 +188,7 @@ sub online {
 }
 
 sub vaulted {
-	return !envset('NOVAULT');
+	return !!$ENV{GENESIS_TARGET_VAULT};
 }
 
 sub execute {
@@ -3674,6 +3674,8 @@ sub target_vault {
 	} else {
 		system(qw(safe target -i)) == 0 or exit 1;
 	}
+	chomp($ENV{GENESIS_TARGET_VAULT}=qx(safe target 2>&1 | grep '.*targeting .* at.*' | sed -e 's/.*targeting \\([^ ]*\\) at.*/\\1/'));
+	die "Could not set target vault" if $? >> 8;
 }
 # generate (and optionally rotate) credentials.
 #
@@ -4243,8 +4245,6 @@ sub {
 
 	if ($options{secrets}) {
 		target_vault($options{vault});
-	} else {
-		$ENV{NOVAULT} = 'y';
 	}
 
 	my $meta = read_kit_metadata($kit, $version);
