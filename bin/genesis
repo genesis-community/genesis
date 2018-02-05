@@ -691,6 +691,94 @@ sub blueprint_script_helper {
 	return mkfile_or_fail("$helper_dir/blueprint_helper",$out);
 }
 
+sub new_script_helper {
+	my ($kit,$version) = @_;
+	my $helper_dir = workdir('helper');
+	my $genesis_binary=Cwd::abs_path($0);
+	my $out = clean_heredoc(<<"	|EOF")
+	|export GENESIS_KIT_NAME="$kit"
+	|export GENESIS_KIT_VERSION="$version"
+	|describe() {
+	|	$genesis_binary ui-describe ""  "\$@"
+	|}
+	|export -f describe
+	|prompt_for() {
+	|	local __var="\$1" __type="\$2"; shift 2;
+	|	if [[ "\$__type" =~ ^secret- ]] ; then
+	|		export GENESIS_TARGET_VAULT="$ENV{GENESIS_TARGET_VAULT}"
+	|		$genesis_binary ui-prompt-for "\$__type" "\$__var" "\$@"
+	|		local __rc="\$?"
+	|		[[ \$__rc -ne 0 ]] && echo "Error encountered - cannot continue" && exit \$__rc
+	|	else
+	|		local __tmpfile
+	|		__tmpfile=\$(mktemp)
+	|		[[ $? -ne 0 ]] && echo >&2 "Failed to create tmpdir: \$__tmpfile" && exit 2
+	|		$genesis_binary ui-prompt-for "\$__type" "\$__tmpfile" "\$@"
+	|		local __rc="\$?"
+	|		if [[ \$__rc -ne 0 ]] ; then
+	|			# error
+	|			echo "Error encountered - cannot continue";
+	|			rm -f "\$__tmpfile"
+	|			exit \$__rc
+	|		fi
+	|		if [[ \$__type =~ ^multi- ]] ; then
+	|			local __i
+	|			eval "unset \$__var __i"
+	|			eval "while IFS= read -r -d '' \\"\${__var}[__i++]\\"; do :; done < \\"\$__tmpfile\\""
+	|			eval "\$__var=(\\"\\\${\${__var}[@]:1}\\")"
+	|		else
+	|			eval "\$__var=\\\$(<\\"\$__tmpfile\\")"
+	|		fi
+	|		rm -f "\$__tmpfile"
+	|	fi
+	|}
+	|export -f prompt_for
+	|
+	|EOF
+	.clean_heredoc(<<'	|EOF');
+	|param_entry() {
+	|	local __disabled="" __varname="$1" __key="$2" __opt="$3" ; shift 3
+	|	if [[ "$__opt" == "-d" ]] ; then
+	|		__disabled="# "
+	|		__opt=$1 ; shift
+	|	fi
+	|	if [[ "$__opt" == "-a" ]] ; then
+	|		if [[ "${#@}" -eq 0 ]] ; then
+	|			eval "$__varname+=\"  $__disabled\$__key: []\\n\""
+	|		else
+	|			eval "$__varname+=\"  $__disabled\$__key:\\n\""
+	|			local __line
+	|			for __line in "$@" ; do
+	|				eval "$__varname+=\"    \$__disabled- \$__line\\n\""
+	|			done
+	|		fi
+	|	elif [[ -n "$__opt" ]] ; then
+	|		eval "$__varname+=\"  $__disabled\$__key: \$__opt\\n\""
+	|	else
+	|		eval "$__varname+=\"  $__disabled\$__key: \$$__key\\n\""
+	|	fi
+	|}
+	|export -f param_entry
+	|param_comment() {
+	|	local __line __varname=$1; shift
+	|	eval "$__varname+=\"\\n\""
+	|	for __line in "$@" ; do
+	|		eval "$__varname+=\"  # \$__line\\n\""
+	|	done
+	|}
+	|export -f param_comment
+	|describe_and_comment() {
+	|	local varname=$1; shift
+	|	describe "$@"
+	|	param_comment $varname "$@"
+	|}
+	|export -f describe_and_comment
+	|
+	|EOF
+
+	return mkfile_or_fail("$helper_dir/new_helper",$out);
+}
+
 # takes a list of tokens, in order, and generates
 # all strictly ordered combinations of them.
 #
@@ -1287,6 +1375,111 @@ sub prompt_for_block {
 	printf("\n");
 	return __prompt_for_block(@_);
 }
+
+# genesis prompt support routines: *_prompt_handlers {{{
+
+sub validate_prompt_opts {
+	my ($type,$opts,@valid_opts) = @_;
+	my @invalid_opts;
+	for my $opt (keys %$opts) {
+		push @invalid_opts, $opt unless grep {$_ eq $opt} @valid_opts;
+	}
+	if (@invalid_opts) {
+		error "#R{ERROR:} %s prompt does not support option(s) '%s'", $type, join("', '", @invalid_opts);
+		error "Contact your kit author for a fix.";
+		exit 2;
+	}
+}
+
+sub line_prompt_handler {
+	my ($prompt, %opts) = @_;
+	validate_prompt_opts("line", \%opts, qw(label default validation msg));
+	return prompt_for_line($prompt, $opts{label},$opts{default},$opts{validation},$opts{msg})
+}
+
+sub boolean_prompt_handler {
+	my ($prompt, %opts) = @_;
+	validate_prompt_opts("boolean", \%opts, qw(default invert));
+	return prompt_for_boolean($prompt, $opts{default}, $opts{invert}) ? "true" : "false";
+}
+sub block_prompt_handler {
+	my ($prompt, %opts) = @_;
+	validate_prompt_opts("block", \%opts, qw());
+	return prompt_for_block($prompt);
+}
+sub select_prompt_handler {
+	my ($prompt, %opts) = @_;
+	validate_prompt_opts("select", \%opts, qw(label default option));
+	my (@choices,@labels);
+	die "No options provided to prompt for select\n" unless $opts{option} && @{$opts{option}};
+	for (@{$opts{option}}) {
+		$_ =~ m/^(\[(.*?)\]\s*)?(\S.*)$/;
+		push @labels, $3;
+		push @choices, $1 ? $2 : $3;
+	}
+	return prompt_for_choice($prompt,\@choices, $opts{default}, \@labels, $opts{msg});
+}
+sub multi_line_prompt_handler {
+	my ($prompt, %opts) = @_;
+	validate_prompt_opts("multi-line", \%opts, qw(label min max validation msg));
+	my $results = prompt_for_list('line',$prompt,$opts{label},$opts{min},$opts{max},$opts{validation},$opts{msg});
+	return "" unless scalar @$results;
+	return join("\0", '' , @$results);
+}
+sub multi_block_prompt_handler {
+	my ($prompt, %opts) = @_;
+	validate_prompt_opts("multi-block", \%opts, qw(label min max msg));
+	my $results = prompt_for_list('block',$prompt,$opts{label},$opts{min},$opts{max},undef,$opts{msg});
+	return "" unless scalar @$results;
+	return join("\0", '' , @$results);
+}
+sub multi_select_prompt_handler {
+	my ($prompt, %opts) = @_;
+	validate_prompt_opts("multi-select", \%opts, qw(label min max option));
+	my (@choices,@labels);
+	die "No options provided to prompt for select\n" unless $opts{option} && @{$opts{option}};
+	for (@{$opts{option}}) {
+		$_ =~ m/^(\[(.*?)\]\s*)?(\S.*)$/;
+		push @labels, $3;
+		push @choices, $1 ? $2 : $3;
+	}
+	my $results = prompt_for_choices($prompt,\@choices, $opts{min}, $opts{max}, \@labels, $opts{msg});
+	return "" unless scalar @$results;
+	return join("\0", '' , @$results);
+}
+sub secret_line_prompt_handler {
+	my ($prompt,%opts) = @_;
+	my $secret = delete $opts{secret};
+	validate_prompt_opts("secret-line", \%opts, qw(echo));
+	target_vault($ENV{GENESIS_TARGET_VAULT});
+	my ($path, $key) = split /:/, "secret/$secret";
+	system "safe", "prompt", $prompt, "--", ($opts{echo} ? "ask" : "set"), $path, $key;
+	die "Failed to save data to secret/$secret in Vault '$ENV{GENESIS_TARGET_VAULT}'\n" if ($? >> 8);
+}
+sub secret_block_prompt_handler {
+	my ($prompt,%opts) = @_;
+	my $secret = delete $opts{secret};
+	validate_prompt_opts("secret-block", \%opts, ());
+	target_vault($ENV{GENESIS_TARGET_VAULT});
+	my ($path, $key) = split /:/, "secret/$secret";
+	my $file = mkfile_or_fail(workdir()."/param", prompt_for_block($prompt));
+	my $err = qx(safe set "$path" "$key\@$file" 2>&1);
+	die "$err\n\nFailed to save data to secret/$secret in Vault '$ENV{GENESIS_TARGET_VAULT}'\n" if ($? >> 8);
+}
+
+our $prompt_handlers = {
+	line =>           \&line_prompt_handler,
+	boolean =>        \&boolean_prompt_handler,
+	block =>          \&block_prompt_handler,
+	select =>         \&select_prompt_handler,
+	"multi-line" =>   \&multi_line_prompt_handler,
+	"multi-block" =>  \&multi_block_prompt_handler,
+	"multi-select" => \&multi_select_prompt_handler,
+	"secret-line" =>  \&secret_line_prompt_handler,
+	"secret-block" => \&secret_block_prompt_handler,
+};
+
+# }}}
 
 sub parse_uri {
 	my ($uri) = @_;
@@ -4252,12 +4445,21 @@ sub {
 	if (-f $new_script) {
 		chmod_or_fail(0755, $new_script) unless -x $new_script;
 		my $curdir = Cwd::getcwd;
-		my $out = qx(cd $kit_dir && $new_script $curdir $name);
-		die "Could not create new environment $name using kit $kit/$version"
-			if ($! >> 8);
+		my $helper = new_script_helper($kit,$version);
+		my $script = clean_heredoc(<<"			|EOF");
+			|cd $kit_dir
+			|source "$helper"
+			|hooks/new "$curdir" "$name" "$prefix"
+			|EOF
+
+		system($script);
+		if ($? >> 8) {
+			error "#R{ERROR}: Cound not create new environment $name by executing $kit/$version hooks/new script";
+			exit 2;
+		}
 		die "New environment '$name' was not generated.  Contact your kit developer for a fix"
 			unless -f "$name.yml";
-		@features = get_key($name, 'kit.features', []);
+		@features = @{get_key($name, 'kit.features', [])};
 		(my $parent = $name) =~ s/-.*/.yml/;
 		ensure_org_level_environment_file_exists($parent,$kit,$version);
 	} else {
@@ -4268,7 +4470,7 @@ sub {
 										env          => $name,
 										vault_prefix => $prefix,
 										params       => $meta->{params} || [],
-										features     => \@features);
+										features     => [@features]);
 		$params = run_param_hook($kit, $version, $name, $prefix, $params, @features);
 
 		new_environment($meta, $kit, $version, $name, $prefix, $params, @features);
@@ -4279,7 +4481,7 @@ sub {
 		vaultify_secrets($meta, env          => $name,
 		                        prefix       => $prefix,
 		                        scope        => 'force',
-		                        features     => [@features]);
+		                        features     => \@features);
 	} else {
 		explain "Skipping generation of secret / credentials.\n";
 		explain "Don't forget to run `$0 secrets $name`\n";
@@ -6015,6 +6217,128 @@ sub {
 	bosh_run_errand($target, $deployment, $ENV{ERRAND_NAME}); # exits on failure
 
 	exit 0;
+});
+# }}}
+
+# genesis ui-describe - Provides colored explanatory test {{{
+command("ui-describe", <<EOF,
+genesis v$VERSION
+USAGE genesis ui-describe "string" ... [options...]
+
+Prints each string, separated by a new line.  Supports color blocks by the
+wrapping of a block of text with #x{block}, where x is one of:
+  b - blue
+  c - dark cyan
+  g - green
+  k - black
+  m - magenta
+  r - red
+  w - light grey
+  y - brown
+  B - light blue
+  C - cyan
+  G - light green
+  K - dark grey
+  M - light magenta
+  R - light red
+  W - white
+  Y - yellow
+
+GLOBAL OPTIONS (may not apply)
+$GLOBAL_USAGE
+EOF
+sub {
+	my %options;
+	options(\@_, \%options);
+	explain $_ for (@_);
+});
+# }}}
+
+# genesis ui-prompt-for - Provides prompts in support of hooks/new script {{{
+command("ui-prompt-for", <<EOF,
+genesis v$VERSION
+USAGE genesis ui-prompt-for <type> <path> [options...] [<prompt>]
+
+<type> is one of:
+    line:          prompt for a single line of text
+    boolean:       prompt for a boolean value, returns "true"/"false"
+    block:         prompt for a multi-line block of text
+    select:        prompt the user to select one of a list of choices
+    multi-line     prompt for zero or more lines of text
+    multi-block:   prompt for zero or more blocks of text
+    multi-select:  provide the user with a list of choices to select zero or more of them
+    secret-line:   prompt for a single line of test, stores it in vault
+    secret-block:  prompt for a block of text, stores it in vault
+
+<path> is either a file path, or a vault path exlcuding the secret/ prefix (for secret-* types)
+
+Note: With multi-* types, the first entry in the file is blank, to indicate
+     that there is at least one entry -- an empty list will not contain any
+     fields.  This is to distinguish between a single empty string and no
+     entries at all.
+
+OPTIONS
+  -l, --label  "x"      prompt string immediately in front of cursor (default: '> ')
+      --default "x"     for line/boolean/select: default value if user leaves prompt empty.
+  -V, --validation "x"  for line/multi-line: validation type, one of :
+                          comma-separated list of strings: [a,b,c]
+                          negative comma-separated list:   ![a,b,c]
+                          regular expression literal: /^(this|that)\$/i
+                          negative regular expression: !/[^a-zA-Z0-9]/
+                          range expression: min-max
+                          "url"
+                          "port"
+                          "vault_path"
+                          "vault_path_and_key"
+  -m, --min x           for multi-*: minimum items to enter - default: none
+  -M, --max x           for multi-*: maximum items to enter - default: unlimited
+  -o, --option "x"      options to chose from (can be specified multiple times)
+                        either specify a string that is used for both the value
+                        and the label, or in the form of "[value]label"
+      --msg "x"         specify the message to print on validation failure, default
+                        is specific to the validation type used.
+      --invert          (boolean only) invert the answer (true becomes 0, false 1)
+
+GLOBAL OPTIONS (may not apply)
+$GLOBAL_USAGE
+EOF
+sub {
+
+	my %options;
+	options(\@_, \%options, qw(
+		label|l=s
+		default=s
+		validation|V=s
+		min|m=i
+		max|M=i
+		option|o=s@
+		invert
+	));
+	usage(1) if @_ < 2 || @_ > 3; # prompt is optional, type and path are not
+	check_prereqs(no_repo_needed => 1);
+	my ($type,$path,$prompt) = @_;
+	my $use_vault = ($type =~ /^secret-*/);
+	$options{secret} = $path if ($use_vault);
+
+	delete @options{qw(color debug trace quiet cwd offline environment)};  # clean out global options
+	die csprintf(
+		"#R{ERROR:} cannot prompt for %s: unknown type, expecting one of: %s\n",
+		$type,
+		join(", ", (sort keys %$prompt_handlers))
+	) unless exists($prompt_handlers->{$type});
+
+	if ($use_vault && ! vaulted) {
+		explain clean_heredoc(<<"		|EOF");
+		|
+		|#Y{WARNING:} No vault selected - you will have to later manually add the answer to
+		|"#C{$prompt}"
+		|to #G{secret/$path} when the Vault is available
+		|EOF
+		return 0
+	}
+	my $result = $prompt_handlers->{$type}->($prompt,%options);
+	mkfile_or_fail $path, $result unless ($use_vault);
+	exit 0
 });
 # }}}
 
