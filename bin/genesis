@@ -566,12 +566,12 @@ sub kit_yaml_files_in {
 	# use hooks/blueprint script if present
 	my $blueprint_script_path = "$dir/hooks/blueprint";
 	if (-f $blueprint_script_path) {
-		pushd($dir);
 		-x $blueprint_script_path || chmod_or_fail 0755,$blueprint_script_path;
 		my $helper = blueprint_script_helper($kit,$version,$env,@features);
+		pushd($dir);
 		my $script = clean_heredoc(<<"			|EOF");
 			|source "$helper"
-			|$blueprint_script_path
+			|hooks/blueprint
 			|EOF
 		my $result = qx($script);
 		if ($? >> 8) {
