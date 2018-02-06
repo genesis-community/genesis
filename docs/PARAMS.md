@@ -20,3 +20,4 @@ does not represent a deployment environment.
 | -------------- | -------- | ------- | ----------- |
 | `params.env`   |   YES    |    -    | The name of the environment. |
 | `params.vault` |   YES    |    -    | Vault prefix for storing secrets. |
+| `params.name`  |   NO     | `params.env`-`kit.name` | The name of the deployment. |
