@@ -66,10 +66,12 @@ drwxr-xr-x 0 compile-test-1.0.4/base/
 -rw-r--r-- 46 compile-test-1.0.4/base/stuff.yml
 drwxr-xr-x 0 compile-test-1.0.4/hooks/
 -rw-r--r-- 0 compile-test-1.0.4/hooks/params
--rw-r--r-- 28 compile-test-1.0.4/kit.yml
+-rw-r--r-- 40 compile-test-1.0.4/kit.yml
 drwxr-xr-x 0 compile-test-1.0.4/subkits/
 -rw-r--r-- 0 compile-test-1.0.4/subkits/.none
 EOF
+
+output_ok "tar zxf compile-test-1.0.4.tar.gz -O compile-test-1.0.4/kit.yml | spruce json | jq -r '.version'", "1.0.4", "Correct version set";
 
 # Cleanup
 qx(rm -f *.tar.gz *.tgz); # just to be safe
@@ -125,7 +127,7 @@ drwxr-xr-x 0 kickass-0.0.1/base/
 -rw-r--r-- 46 kickass-0.0.1/base/stuff.yml
 drwxr-xr-x 0 kickass-0.0.1/hooks/
 -rw-r--r-- 0 kickass-0.0.1/hooks/.none
--rw-r--r-- 28 kickass-0.0.1/kit.yml
+-rw-r--r-- 40 kickass-0.0.1/kit.yml
 drwxr-xr-x 0 kickass-0.0.1/subkits/
 drwxr-xr-x 0 kickass-0.0.1/subkits/dohickey/
 -rw-r--r-- 8 kickass-0.0.1/subkits/dohickey/params.yml
@@ -134,6 +136,7 @@ drwxr-xr-x 0 kickass-0.0.1/subkits/thingamabob/
 drwxr-xr-x 0 kickass-0.0.1/subkits/whatsit/
 -rw-r--r-- 8 kickass-0.0.1/subkits/whatsit/params.yml
 EOF
+output_ok "tar zxf kickass-0.0.1.tar.gz -O kickass-0.0.1/kit.yml | spruce json | jq -r '.version'", "0.0.1", "Correct version set";
 
 # Cleanup
 qx(rm -f *.tar.gz *.tgz); # just to be safe
