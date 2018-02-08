@@ -266,14 +266,14 @@ sub vault_ok {
 	$ENV{HOME} = "$ENV{PWD}/t/tmp/home";
 	my $pid = qx(./t/bin/vault) or do {
 		fail "failed to spin a vault server in (-dev) mode.";
-		return 0;
+		die "Cannot continue\n";
 	};
 
 	chomp($pid);
 	$VAULT_PID = $pid;
 	kill -0, $pid or do {
 		fail "failed to spin a vault server in (-dev) mode: couldn't signal pid $pid.";
-		return 0;
+		die "Cannot continue\n";
 	};
 	pass "vault running [pid $pid]";
 	return 1;
@@ -281,6 +281,7 @@ sub vault_ok {
 
 sub teardown_vault {
 	if (defined $VAULT_PID) {
+		print STDERR "\nShutting down vault (pid: $VAULT_PID)\n";
 		kill 'TERM', $VAULT_PID;
 	}
 }

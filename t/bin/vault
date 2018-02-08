@@ -2,7 +2,7 @@
 set -e
 
 bail() {
-	echo >&2 $*
+	printf >&2 $*
 	exit 2
 }
 
@@ -20,41 +20,53 @@ case $OSTYPE in
 	;;
 esac
 
-killall vault-${version} >/dev/null 2>&1 || true
 if [[ ! -f t/vaults/vault-${version} ]]; then
-	echo >&2 "Downloading Vault ${version} CLI..."
+	printf >&2 "\rDownloading Vault ${version} CLI..."
 	curl --fail -sLk > t/tmp/archive.zip \
 		https://releases.hashicorp.com/vault/${version}/vault_${version}_${platform}_${arch}.zip \
-		|| bail "download of vault ${version} failed"
+		|| bail "\nFAILED - could not download of vault ${version}"
 
 	unzip -d t/tmp t/tmp/archive.zip > /dev/null 2>&1
 	mv t/tmp/vault t/vaults/vault-${version}
-	echo >&2 "DONE"
-	echo >&2
+	printf >&2 "nDONE\n\n"
 fi
 
 old_home=$HOME
 export HOME=${PWD}/t/tmp/home
+touch $HOME/.vault_token  # Hack around safe init issue
 
 rm -rf t/tmp/home ; mkdir -p t/tmp/home
-trap "rm -rf t/home" INT TERM QUIT EXIT
-
-./t/vaults/vault-${version} server -dev >$HOME/log 2>&1 &
+port=8200
+while lsof -nP -i ":$port" | grep ":$port\s*(LISTEN)" >/dev/null 2>&1 ; do
+  [[ $((++port)) -gt 8300 ]] && bail "No free ports available for dev vault server"
+done
+./t/vaults/vault-${version} server -config <(cat <<EOF
+listener "tcp" {
+  address     = "127.0.0.1:$port"
+  tls_disable = 1
+}
+storage "inmem" {}
+EOF
+) >$HOME/log 2>&1 &
 vault_pid=$!
+printf >&2 "\rStarting Vault ${version} CLI on port $port (pid: $vault_pid)..."
 waitfor=600
-while ! grep -iq '^root token: ' $HOME/log; do
+while ! lsof -a -p $vault_pid -i tcp:$port -s TCP:listen -nP >/dev/null 2>&1; do
 	if [[ $waitfor -gt 0 ]]; then
 		waitfor=$((waitfor - 1))
 		sleep 0.1
 	else
-		echo >&2 "FAILED - timed out waiting for vault server (-dev) to start"
-		exit 1
+		bail "\nFAILED - timed out waiting for vault server to start\n"
 	fi
 done
+safe target unit-tests http://127.0.0.1:$port >/dev/null 2>&1
+safe auth token <<<"dummy" > /dev/null 2>&1 # Another Hack around safe init issue
+root_token=$(safe init --json | jq -r '.root_token')
+safe auth token <<<${root_token} >/dev/null 2>&1
+if ! safe exists "secret/handshake" ;  then 
+  bail "\nFAILED - failed to unseal vault\n"
+fi
 
-root_token=$(awk '/^Root Token:/ { print $3 }' < $HOME/log | head -n1)
-unseal_key=$(awk '/^Unseal Key:/ { print $3 }' < $HOME/log | head -n1)
-
-safe target unit-tests http://127.0.0.1:8200 >/dev/null 2>&1
-safe auth token <<<${root_token}             >/dev/null 2>&1
+printf >&2 "done.\n"
 echo $vault_pid
+exit 0
