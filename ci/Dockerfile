@@ -1,6 +1,6 @@
 FROM starkandwayne/concourse:latest-rc
 
-RUN apt-get update
+RUN apt-get update \
  && apt-get install -y \
       libexpect-perl \
       expect \
