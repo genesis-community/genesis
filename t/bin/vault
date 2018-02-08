@@ -8,7 +8,7 @@ bail() {
 
 mkdir -p t/tmp/home t/vaults
 
-version=0.6.4
+version="0.9.3"
 platform=
 arch=amd64
 case $OSTYPE in
