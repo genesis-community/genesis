@@ -579,8 +579,12 @@ jobs:
   - do:
     - aggregate:
       - get: client-aws-1-preprod-cloud-config
+        tags:
+        - client-aws-1-preprod
         trigger: true
       - get: client-aws-1-preprod-runtime-config
+        tags:
+        - client-aws-1-preprod
         trigger: true
       - get: client-aws-1-preprod-changes
         trigger: true
@@ -697,8 +701,12 @@ jobs:
     - get: client-aws-1-prod-changes
       trigger: true
     - get: client-aws-1-prod-cloud-config
+      tags:
+      - client-aws-1-prod
       trigger: true
     - get: client-aws-1-prod-runtime-config
+      tags:
+      - client-aws-1-prod
       trigger: true
     - get: client-aws-1-prod-cache
       passed:
@@ -830,8 +838,12 @@ jobs:
   - do:
     - aggregate:
       - get: client-aws-1-sandbox-cloud-config
+        tags:
+        - client-aws-1-sandbox
         trigger: true
       - get: client-aws-1-sandbox-runtime-config
+        tags:
+        - client-aws-1-sandbox
         trigger: true
       - get: client-aws-1-sandbox-changes
         trigger: true
@@ -1015,6 +1027,8 @@ resources:
     client_secret: Ahti2eeth3aewohnee1Phaec
     config: cloud
     target: https://preprod.example.com:25555
+  tags:
+    - client-aws-1-preprod
   type: bosh-config
 - name: client-aws-1-preprod-runtime-config
   source:
@@ -1026,6 +1040,8 @@ resources:
     client_secret: Ahti2eeth3aewohnee1Phaec
     config: runtime
     target: https://preprod.example.com:25555
+  tags:
+    - client-aws-1-preprod
   type: bosh-config
 - name: client-aws-1-prod-changes
   source:
@@ -1068,6 +1084,8 @@ resources:
     client_secret: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
     config: cloud
     target: https://prod.example.com:25555
+  tags:
+    - client-aws-1-prod
   type: bosh-config
 - name: client-aws-1-prod-runtime-config
   source:
@@ -1079,6 +1097,8 @@ resources:
     client_secret: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
     config: runtime
     target: https://prod.example.com:25555
+  tags:
+    - client-aws-1-prod
   type: bosh-config
 - name: client-aws-1-sandbox-changes
   source:
@@ -1109,6 +1129,8 @@ resources:
     client_secret: PaeM2Eip
     config: cloud
     target: https://sandbox.example.com:25555
+  tags:
+    - client-aws-1-sandbox
   type: bosh-config
 - name: client-aws-1-sandbox-runtime-config
   source:
@@ -1120,6 +1142,8 @@ resources:
     client_secret: PaeM2Eip
     config: runtime
     target: https://sandbox.example.com:25555
+  tags:
+    - client-aws-1-sandbox
   type: bosh-config
 - name: slack
   source:
@@ -1785,15 +1809,23 @@ jobs:
         lock_op: lock
         locked_by: client-aws-1-preprod-pipeline-test
       put: client-aws-1-preprod-bosh-lock
+      tags:
+      - client-aws-1-preprod
     - params:
         key: i-need-to-deploy-myself
         lock_op: lock
         locked_by: client-aws-1-preprod-pipeline-test
       put: client-aws-1-preprod-deployment-lock
+      tags:
+      - client-aws-1-preprod
     - aggregate:
       - get: client-aws-1-preprod-cloud-config
+        tags:
+        - client-aws-1-preprod
         trigger: true
       - get: client-aws-1-preprod-runtime-config
+        tags:
+        - client-aws-1-preprod
         trigger: true
       - get: bosh-lite-stemcell
         params:
@@ -1809,6 +1841,8 @@ jobs:
         key: client-aws-1-preprod-pipeline-test
         lock_op: lock
       put: client-aws-1-preprod-stemcell-lock
+      tags:
+      - client-aws-1-preprod
     - config:
         image_resource:
           source:
@@ -1842,6 +1876,10 @@ jobs:
           key: client-aws-1-preprod-pipeline-test
           lock_op: unlock
         put: client-aws-1-preprod-stemcell-lock
+        tags:
+        - client-aws-1-preprod
+      tags:
+      - client-aws-1-preprod
       task: upload-stemcells
     - config:
         image_resource:
@@ -1965,11 +2003,15 @@ jobs:
           lock_op: unlock
           locked_by: client-aws-1-preprod-pipeline-test
         put: client-aws-1-preprod-bosh-lock
+        tags:
+        - client-aws-1-preprod
       - params:
           key: i-need-to-deploy-myself
           lock_op: unlock
           locked_by: client-aws-1-preprod-pipeline-test
         put: client-aws-1-preprod-deployment-lock
+        tags:
+        - client-aws-1-preprod
     on_failure:
       aggregate:
       - params:
@@ -2008,8 +2050,12 @@ jobs:
     - get: client-aws-1-prod-changes
       trigger: true
     - get: client-aws-1-prod-cloud-config
+      tags:
+      - client-aws-1-prod
       trigger: true
     - get: client-aws-1-prod-runtime-config
+      tags:
+      - client-aws-1-prod
       trigger: true
     - get: client-aws-1-prod-cache
       passed:
@@ -2044,11 +2090,15 @@ jobs:
         lock_op: lock
         locked_by: client-aws-1-prod-pipeline-test
       put: client-aws-1-prod-bosh-lock
+      tags:
+      - client-aws-1-prod
     - params:
         key: i-need-to-deploy-myself
         lock_op: lock
         locked_by: client-aws-1-prod-pipeline-test
       put: client-aws-1-prod-deployment-lock
+      tags:
+      - client-aws-1-prod
     - aggregate:
       - get: bosh-lite-stemcell
         params:
@@ -2066,6 +2116,8 @@ jobs:
         key: client-aws-1-prod-pipeline-test
         lock_op: lock
       put: client-aws-1-prod-stemcell-lock
+      tags:
+      - client-aws-1-prod
     - config:
         image_resource:
           source:
@@ -2099,6 +2151,10 @@ jobs:
           key: client-aws-1-prod-pipeline-test
           lock_op: unlock
         put: client-aws-1-prod-stemcell-lock
+        tags:
+        - client-aws-1-prod
+      tags:
+      - client-aws-1-prod
       task: upload-stemcells
     - config:
         image_resource:
@@ -2219,11 +2275,15 @@ jobs:
           lock_op: unlock
           locked_by: client-aws-1-prod-pipeline-test
         put: client-aws-1-prod-bosh-lock
+        tags:
+        - client-aws-1-prod
       - params:
           key: i-need-to-deploy-myself
           lock_op: unlock
           locked_by: client-aws-1-prod-pipeline-test
         put: client-aws-1-prod-deployment-lock
+        tags:
+        - client-aws-1-prod
     on_failure:
       aggregate:
       - params:
@@ -2263,15 +2323,25 @@ jobs:
         lock_op: lock
         locked_by: client-aws-1-sandbox-pipeline-test
       put: client-aws-1-sandbox-bosh-lock
+      tags:
+      - client-aws-1-sandbox
     - params:
         key: i-need-to-deploy-myself
         lock_op: lock
         locked_by: client-aws-1-sandbox-pipeline-test
       put: client-aws-1-sandbox-deployment-lock
+      tags:
+      - client-aws-1-sandbox
+      tags:
+      - client-aws-1-sandbox
     - aggregate:
       - get: client-aws-1-sandbox-cloud-config
+        tags:
+        - client-aws-1-sandbox
         trigger: true
       - get: client-aws-1-sandbox-runtime-config
+        tags:
+        - client-aws-1-sandbox
         trigger: true
       - get: bosh-lite-stemcell
         params:
@@ -2283,6 +2353,8 @@ jobs:
         key: client-aws-1-sandbox-pipeline-test
         lock_op: lock
       put: client-aws-1-sandbox-stemcell-lock
+      tags:
+      - client-aws-1-sandbox
     - config:
         image_resource:
           source:
@@ -2316,6 +2388,10 @@ jobs:
           key: client-aws-1-sandbox-pipeline-test
           lock_op: unlock
         put: client-aws-1-sandbox-stemcell-lock
+        tags:
+        - client-aws-1-sandbox
+      tags:
+      - client-aws-1-sandbox
       task: upload-stemcells
     - config:
         image_resource:
@@ -2438,11 +2514,15 @@ jobs:
           lock_op: unlock
           locked_by: client-aws-1-sandbox-pipeline-test
         put: client-aws-1-sandbox-bosh-lock
+        tags:
+        - client-aws-1-sandbox
       - params:
           key: i-need-to-deploy-myself
           lock_op: unlock
           locked_by: client-aws-1-sandbox-pipeline-test
         put: client-aws-1-sandbox-deployment-lock
+        tags:
+        - client-aws-1-sandbox
     on_failure:
       aggregate:
       - params:
@@ -2557,6 +2637,8 @@ resources:
     client_secret: Ahti2eeth3aewohnee1Phaec
     config: cloud
     target: https://preprod.bosh-lite.com:25555
+  tags:
+  - client-aws-1-preprod
   type: bosh-config
 - name: client-aws-1-preprod-runtime-config
   source:
@@ -2568,6 +2650,8 @@ resources:
     client_secret: Ahti2eeth3aewohnee1Phaec
     config: runtime
     target: https://preprod.bosh-lite.com:25555
+  tags:
+  - client-aws-1-preprod
   type: bosh-config
 - name: client-aws-1-preprod-stemcell-lock
   source:
@@ -2577,6 +2661,8 @@ resources:
     password: locker
     skip_ssl_validation: true
     username: locker
+  tags:
+  - client-aws-1-preprod
   type: locker
 - name: client-aws-1-preprod-bosh-lock
   source:
@@ -2586,6 +2672,8 @@ resources:
     password: locker
     skip_ssl_validation: true
     username: locker
+  tags:
+  - client-aws-1-preprod
   type: locker
 - name: client-aws-1-preprod-deployment-lock
   source:
@@ -2595,6 +2683,8 @@ resources:
     password: locker
     skip_ssl_validation: true
     username: locker
+  tags:
+  - client-aws-1-preprod
   type: locker
 - name: client-aws-1-prod-changes
   source:
@@ -2637,6 +2727,8 @@ resources:
     client_secret: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
     config: cloud
     target: https://prod.bosh-lite.com:25555
+  tags:
+  - client-aws-1-prod
   type: bosh-config
 - name: client-aws-1-prod-runtime-config
   source:
@@ -2648,6 +2740,8 @@ resources:
     client_secret: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
     config: runtime
     target: https://prod.bosh-lite.com:25555
+  tags:
+  - client-aws-1-prod
   type: bosh-config
 - name: client-aws-1-prod-stemcell-lock
   source:
@@ -2657,6 +2751,8 @@ resources:
     password: locker
     skip_ssl_validation: true
     username: locker
+  tags:
+  - client-aws-1-prod
   type: locker
 - name: client-aws-1-prod-bosh-lock
   source:
@@ -2666,6 +2762,8 @@ resources:
     password: locker
     skip_ssl_validation: true
     username: locker
+  tags:
+  - client-aws-1-prod
   type: locker
 - name: client-aws-1-prod-deployment-lock
   source:
@@ -2675,6 +2773,8 @@ resources:
     password: locker
     skip_ssl_validation: true
     username: locker
+  tags:
+  - client-aws-1-prod
   type: locker
 - name: client-aws-1-sandbox-changes
   source:
@@ -2705,6 +2805,8 @@ resources:
     client_secret: PaeM2Eip
     config: cloud
     target: https://sandbox.bosh-lite.com:25555
+  tags:
+  - client-aws-1-sandbox
   type: bosh-config
 - name: client-aws-1-sandbox-runtime-config
   source:
@@ -2716,6 +2818,8 @@ resources:
     client_secret: PaeM2Eip
     config: runtime
     target: https://sandbox.bosh-lite.com:25555
+  tags:
+  - client-aws-1-sandbox
   type: bosh-config
 - name: client-aws-1-sandbox-stemcell-lock
   source:
@@ -2725,6 +2829,8 @@ resources:
     password: locker
     skip_ssl_validation: true
     username: locker
+  tags:
+  - client-aws-1-sandbox
   type: locker
 - name: client-aws-1-sandbox-bosh-lock
   source:
@@ -2734,6 +2840,8 @@ resources:
     password: locker
     skip_ssl_validation: true
     username: locker
+  tags:
+  - client-aws-1-sandbox
   type: locker
 - name: client-aws-1-sandbox-deployment-lock
   source:
@@ -2743,6 +2851,8 @@ resources:
     password: locker
     skip_ssl_validation: true
     username: locker
+  tags:
+  - client-aws-1-sandbox
   type: locker
 - name: slack
   source:

@@ -2468,6 +2468,12 @@ EOF
    # }}}
 	# CONCOURSE: env-specific resource configuration {{{
 	for my $env (sort @{$pipeline->{envs}}) {
+		# YAML snippets, to make the print's less obnoxious {{{
+		#
+		# 1) do we tag the jobs so that they are constrained to a
+		#   specific subset of concourse workers? ('tagged' directive)
+		my $tag_yaml = $pipeline->{pipeline}{tagged} ? "tags: [$env]" : "";
+
 		my $alias = $pipeline->{aliases}{$env};
 		print $OUT <<EOF;
   - name: ${alias}-changes
@@ -2532,6 +2538,7 @@ EOF
 
   - name: ${alias}-cloud-config
     type: bosh-config
+    $tag_yaml
     source:
       target: $pipeline->{pipeline}{boshes}{$env}{url}
       client: $pipeline->{pipeline}{boshes}{$env}{username}
@@ -2548,6 +2555,7 @@ EOF
 
   - name: ${alias}-runtime-config
     type: bosh-config
+    $tag_yaml
     source:
       target: $pipeline->{pipeline}{boshes}{$env}{url}
       client: $pipeline->{pipeline}{boshes}{$env}{username}
@@ -2581,6 +2589,7 @@ EOF
 					print $OUT <<EOF;
   - name: ${alias}-stemcell-lock
     type: locker
+    $tag_yaml
     source:
       locker_uri: (( grab pipeline.locker.url ))
       username: (( grab pipeline.locker.username ))
@@ -2594,6 +2603,7 @@ EOF
 				print $OUT <<EOF;
   - name: ${alias}-bosh-lock
     type: locker
+    $tag_yaml
     source:
       locker_uri: (( grab pipeline.locker.url ))
       username: (( grab pipeline.locker.username ))
@@ -2606,6 +2616,7 @@ EOF
 			print $OUT <<EOF;
   - name: ${alias}-deployment-lock
     type: locker
+    $tag_yaml
     source:
       locker_uri: (( grab pipeline.locker.url ))
       username: (( grab pipeline.locker.username ))
@@ -2786,8 +2797,12 @@ EOF
 EOF
 			unless (is_create_env($env)) {
 				print $OUT <<EOF;
-      - { get: $alias-cloud-config, trigger: true }
-      - { get: $alias-runtime-config, trigger: true }
+      - get: $alias-cloud-config
+        $tag_yaml
+        trigger: true
+      - get: $alias-runtime-config
+        $tag_yaml
+        trigger: true
 EOF
 			}
 			print $OUT <<EOF;
@@ -2827,6 +2842,7 @@ EOF
 				# - not necessary for create-env
 				print $OUT <<EOF;
         - put: ${alias}-bosh-lock
+          $tag_yaml
           params:
             lock_op: unlock
             key: dont-upgrade-bosh-on-me
@@ -2835,6 +2851,7 @@ EOF
 			}
 			print $OUT <<EOF;
         - put: ${alias}-deployment-lock
+          $tag_yaml
           params:
             lock_op: unlock
             key: i-need-to-deploy-myself
@@ -2850,6 +2867,7 @@ EOF
 				# - not necessary for create-env
 				print $OUT <<EOF;
       - put: ${alias}-bosh-lock
+        $tag_yaml
         params:
           lock_op: lock
           key: dont-upgrade-bosh-on-me
@@ -2858,6 +2876,7 @@ EOF
 			}
 			print $OUT <<EOF;
       - put: ${alias}-deployment-lock
+        $tag_yaml
         params:
           lock_op: lock
           key: i-need-to-deploy-myself
@@ -2871,8 +2890,12 @@ EOF
 		# also make sure that we are not deploying with create-env (no cloud/runtime config for that scenario)
 		if (! is_create_env($env) && $trigger eq "true") {
 			print $OUT <<EOF;
-        - { get: $alias-cloud-config, trigger: true }
-        - { get: $alias-runtime-config, trigger: true }
+        - get: $alias-cloud-config
+          $tag_yaml
+          trigger: true
+        - get: $alias-runtime-config
+          $tag_yaml
+          trigger: true
 EOF
 		}
 		unless ($pipeline->{pipeline}{skip_upkeep}) {
@@ -2896,6 +2919,7 @@ EOF
 			if ($pipeline->{pipeline}{locker}{url}) {
 				print $OUT <<EOF;
       - put: ${alias}-stemcell-lock
+        $tag_yaml
         params:
           lock_op: lock
           key: ${alias}-${deployment_suffix}
@@ -2903,11 +2927,13 @@ EOF
 			}
 			print $OUT <<EOF;
       - task: upload-stemcells
+        $tag_yaml
 EOF
 			if ($pipeline->{pipeline}{locker}{url}) {
 				print $OUT <<EOF;
         ensure:
           put: ${alias}-stemcell-lock
+          $tag_yaml
           params:
             lock_op: unlock
             key: ${alias}-${deployment_suffix}
