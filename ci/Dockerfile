@@ -1,4 +1,4 @@
-FROM starkandwayne/concourse
+FROM starkandwayne/concourse:latest-rc
 
 RUN apt-get install -yy libexpect-perl expect libtest-differences-perl
 
