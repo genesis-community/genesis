@@ -28,7 +28,7 @@ if [[ ! -f t/vaults/vault-${version} ]]; then
 
 	unzip -d t/tmp t/tmp/archive.zip > /dev/null 2>&1
 	mv t/tmp/vault t/vaults/vault-${version}
-	printf >&2 "nDONE\n\n"
+	printf >&2 "DONE\n\n"
 fi
 
 old_home=$HOME

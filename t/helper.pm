@@ -265,14 +265,14 @@ sub vault_ok {
 
 	$ENV{HOME} = "$ENV{PWD}/t/tmp/home";
 	my $pid = qx(./t/bin/vault) or do {
-		fail "failed to spin a vault server in (-dev) mode.";
+		fail "failed to spin a vault server.";
 		die "Cannot continue\n";
 	};
 
 	chomp($pid);
 	$VAULT_PID = $pid;
 	kill -0, $pid or do {
-		fail "failed to spin a vault server in (-dev) mode: couldn't signal pid $pid.";
+		fail "failed to spin a vault server: couldn't signal pid $pid.";
 		die "Cannot continue\n";
 	};
 	pass "vault running [pid $pid]";
