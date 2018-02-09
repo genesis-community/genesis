@@ -41,6 +41,7 @@ while lsof -nP -i ":$port" | grep ":$port\s*(LISTEN)" >/dev/null 2>&1 ; do
   [[ $((++port)) -gt 8300 ]] && bail "No free ports available for dev vault server"
 done
 ./t/vaults/vault-${version} server -config <(cat <<EOF
+disable_mlock = 1
 listener "tcp" {
   address     = "127.0.0.1:$port"
   tls_disable = 1
