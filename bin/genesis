@@ -723,7 +723,7 @@ sub new_script_helper {
 	|		fi
 	|		if [[ \$__type =~ ^multi- ]] ; then
 	|			local __i
-	|			eval "unset \$__var __i"
+	|			eval "unset \$__var"
 	|			eval "while IFS= read -r -d '' \\"\${__var}[__i++]\\"; do :; done < \\"\$__tmpfile\\""
 	|			eval "\$__var=(\\"\\\${\${__var}[@]:1}\\")"
 	|		else
@@ -731,6 +731,7 @@ sub new_script_helper {
 	|		fi
 	|		rm -f "\$__tmpfile"
 	|	fi
+	|	return 0
 	|}
 	|export -f prompt_for
 	|
