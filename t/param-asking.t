@@ -349,6 +349,53 @@ expect_ok "URL parsing - finish up", $cmd, [
   }
 ];
 
+
+expect_ok "IP parsing - initial prompt", $cmd, [
+  "IP Address[\r\n]{1,2}>", sub {
+    $_[0]->send("mysite.example.com\n");
+  }
+];
+expect_ok "IP parsing - used domain name", $cmd, [
+  "Specify the path", sub {
+    fail "Invalid IP address not correctly identified: used domain name";
+  }], [
+  "mysite.example.com is not a valid IPv4 address[\r\n]{1,2}>", sub {
+    $_[0]->send("123.045.067.008\n");
+  }
+];
+expect_ok "IP parsing - used leading zeros", $cmd, [
+  "Specify the path", sub {
+    fail "Invalid IP address not correctly identified: used leading zeros";
+  }], [
+  "123.045.067.008 is not a valid IPv4 address: octets cannot be zero-padded[\r\n]{1,2}>", sub {
+    $_[0]->send("123.456.789.10\n");
+  }
+];
+expect_ok "IP parsing - octets too big", $cmd, [
+  "Specify the path", sub {
+    fail "Invalid IP address not correctly identified: octets too big";
+  }], [
+  "123.456.789.10 is not a valid IPv4 address[\r\n]{1,2}>", sub {
+    $_[0]->send("123.45.67\n");
+  }
+];
+expect_ok "IP parsing - not enough octets", $cmd, [
+  "Specify the path", sub {
+    fail "Invalid IP address not correctly identified: not enough octets";
+  }], [
+  "123.45.67 is not a valid IPv4 address[\r\n]{1,2}>", sub {
+    $_[0]->send("123.4.5.6.78\n");
+  }
+];
+expect_ok "IP parsing - too many octets", $cmd, [
+  "Specify the path", sub {
+    fail "Invalid IP address not correctly identified: too many octets";
+  }], [
+  "123.4.5.6.78 is not a valid IPv4 address[\r\n]{1,2}>", sub {
+    $_[0]->send("123.4.5.67\n");
+  }
+];
+
 expect_ok "Vault paths with --no-secrets option", $cmd, [
   "Warning:.* Cannot validate vault paths when --no-secrets option specified[\r\n]{1,2}Specify the path[\r\n]{1,2}>", sub {
     $_[0]->send("/secret/this/path/does/not/exist\n");
@@ -524,6 +571,9 @@ params:
 
   # Give me a bad URL (not that kind)
   test-bad-URL-handling: https://github.com/starkandwayne/genesis/blob/master/t/param-asking.t#L345
+
+  # Need a url
+  ipaddress: 123.4.5.67
 
   # Need a vault path
   validity-vault_path: /secret/this/path/does/not/exist

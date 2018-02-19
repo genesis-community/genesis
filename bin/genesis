@@ -1133,6 +1133,14 @@ sub __prompt_for_line {
 	if (defined($validation)) {
 		if (ref($validation) eq 'CODE') {
 			$validate = $validation; # Only used by internal usage of prompts
+		} elsif ($validation eq "ip") {
+			$validate = sub() {
+				my @ipbits = split(/\./, $_[0]);
+				my $msg = ($_[1] ? $_[1] :"$_[0] is not a valid IPv4 address");
+				return "" if scalar(grep {$_ =~ /^\d+$/ && $_ !~ /^0./ && $_ < 256} @ipbits) == 4;
+				return "$msg: octets cannot be zero-padded" if scalar(grep {$_ =~  /^0./} @ipbits);
+				return $msg;
+			}
 		} elsif ($validation eq "url") {
 			$validate = sub() {
 				return "" if (is_valid_uri($_[0]));
@@ -3555,7 +3563,7 @@ sub validate_kit_metadata {
 								$param->{validate} !~ m/^!?\[([^,]+(,[^,]+)*)]$/            && # new invertable comma-separated list
 								$param->{validate} !~ m/^((^|,)[^,]+){2,}$/                 && # comma-separated list
 								$param->{validate} !~ m/^-?\d+(\.\d+)?--?\d+(\.\d+)?$/      && # range
-								$param->{validate} !~ m/^(vault_path(_and_key)?|url|port)$/ ){ # key-words
+								$param->{validate} !~ m/^(vault_path(_and_key)?|url|port|ip)$/ ){ # key-words
 								push @errors, "$parameter has an invalid validation formula";
 							}
 
