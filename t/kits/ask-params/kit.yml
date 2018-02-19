@@ -198,6 +198,11 @@ params:
       ask: 'URL #6'
       validate: url
 
+    - param: ipaddress
+      description: Need a url
+      ask: IP Address
+      validate: ip
+
     - param: validity-vault_path
       description: Need a vault path
       ask: Specify the path
