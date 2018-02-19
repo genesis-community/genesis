@@ -6375,6 +6375,7 @@ OPTIONS
       --msg "x"         specify the message to print on validation failure, default
                         is specific to the validation type used.
       --invert          (boolean only) invert the answer (true becomes 0, false 1)
+      --echo            (secret-line only) echo what the user types to the screen
 
 GLOBAL OPTIONS (may not apply)
 $GLOBAL_USAGE
@@ -6390,6 +6391,7 @@ sub {
 		max|M=i
 		option|o=s@
 		invert
+		echo
 	));
 	usage(1) if @_ < 2 || @_ > 3; # prompt is optional, type and path are not
 	check_prereqs(no_repo_needed => 1);
