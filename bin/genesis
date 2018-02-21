@@ -5613,6 +5613,12 @@ sub {
 	qx(rm -rf $temp/$stem/.git $temp/$stem/.gitignore $temp/$stem/*.tar.gz);
 	qx(echo "version: $options{version}" | spruce merge $dir/kit.yml - > $temp/$stem/kit.yml);
 
+	my $changes = qx(git status --porcelain);
+	if ($? == 0 && $changes) {
+		error "\n#R{ERROR}: Unstaged / uncommited changes found in working directory.\n".
+		      "Please either #C{stash} or #C{commit} those changes before compiling your kit.\n";
+		exit 1;
+	}
 	qx(tar -czf $stem.tar.gz -C $temp $stem/);
 
 	printf "Created $stem.tar.gz\n\n";

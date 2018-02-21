@@ -10,6 +10,10 @@
   passwords and keys, so use this with caution, and only on
   secure Concourse installations that are not publicly viewable.
 
+- `genesis compile-kit` now halts, refusing to compile the kit
+  tarball, if you have unstaged or uncommitted changes to your
+  working directory.
+
 - `genesis create-kit` now populates a .gitignore with appropriate
   entries, to save you from the embarassment of commiting a
   compiled kit tarball to the git repo.
