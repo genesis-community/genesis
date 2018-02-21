@@ -2934,6 +2934,7 @@ jobs:
           BOSH_ENVIRONMENT: https://sandbox.bosh-lite.com:25555
           BOSH_NON_INTERACTIVE: true
           CACHE_DIR: client-aws-1-sandbox-cache
+          CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-sandbox
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
@@ -2971,6 +2972,7 @@ jobs:
         outputs:
         - name: cache-out
         params:
+          CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-sandbox
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
