@@ -5273,14 +5273,14 @@ sub {
 		vault=s
 	/);
 
-	my ($action,$name) = @_;
-	if (@_ == 1) {
-		die "Must specify environment name\n" if $name =~ m/^(check|add|rotate)$/;
+	my ($action, $name) = @_;
+	if (!$name) {
+		die "Must specify environment name\n" if $action =~ m/^(check|add|rotate)$/;
 		$name = $action;
 		$action = 'check';
 	}
 	usage(1) if @_ < 1 or @_ > 2;
-    usage(1, "Must specify check, add or rotate, not $action")
+	usage(1, "Must specify check, add or rotate, not $action")
 		unless (grep {$_ eq $action} qw(check add rotate));
 	if ($options{force}) {
 		usage(1, "Can only specify --force with rotate") if $action ne 'rotate';

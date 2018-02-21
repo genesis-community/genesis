@@ -4,6 +4,10 @@
   run non-interactively (i.e. when not attached to a controlling
   terminal).
 
+- `genesis secrets` now properly detects a missing environment
+  name, instead of throwing obtuse errors about uninitialized
+  variables in pattern matching.
+
 - When running in debug mode, genesis now runs curl with the `-v`
   flag, so that operators can see what headers and responses are
   being sent across the wire.
