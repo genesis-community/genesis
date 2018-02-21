@@ -6046,6 +6046,8 @@ OPTIONS
 $GLOBAL_USAGE
 EOF
 sub {
+	explain "[#G{genesis} ci-pipeline-deploy] v#G{%s}\n\n", $VERSION;
+
 	my %options;
 	options(\@_, \%options, qw/
 	/);
@@ -6138,6 +6140,8 @@ OPTIONS
 $GLOBAL_USAGE
 EOF
 sub {
+	explain "[#G{genesis} ci-stemcells] v#G{%s}\n\n", $VERSION;
+
 	my %options;
 	options(\@_, \%options, qw/
 	/);
@@ -6184,6 +6188,8 @@ OPTIONS
 $GLOBAL_USAGE
 EOF
 sub {
+	explain "[#G{genesis} ci-generate-cache] v#G{%s}\n\n", $VERSION;
+
 	my %options;
 	options(\@_, \%options, qw/
 	/);
@@ -6228,6 +6234,8 @@ OPTIONS
 $GLOBAL_USAGE
 EOF
 sub {
+	explain "[#G{genesis} ci-pipeline-run-errand] v#G{%s}\n\n", $VERSION;
+
 	my %options;
 	options(\@_, \%options, qw/
 	/);

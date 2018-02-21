@@ -8,6 +8,10 @@
   flag, so that operators can see what headers and responses are
   being sent across the wire.
 
+- Genesis pipeline steps now print the version of Genesis that
+  they are running, to ease debugging / troubleshooting of
+  pipeline weirdness.
+
 - Genesis pipelines can now be configured in `unredacted: yes`
   mode, causing them to run `genesis deploy` without redaction.
   This has the potential to leak sensitive credentials like
