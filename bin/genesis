@@ -1724,8 +1724,11 @@ sub deploy_manifest {
 		$deployment = ".genesis/manifests/$env-state.yml";
 	}
 	my @deploy_opts;
-	foreach (qw/no-redact fix recreate/) {
+	foreach (qw/fix recreate/) {
 		push @deploy_opts, "--$_" if $options->{$_};
+	}
+	if (!$options->{redact}) {
+		push @deploy_opts, "--no-redact";
 	}
 	my $rc = bosh_deploy $target, $deployment, "$dir/manifest.yml", @deploy_opts;
 	return $rc;
@@ -1890,7 +1893,7 @@ sub read_pipeline {
 	}
 	for (keys %{$p->{pipeline}}) {
 		push @errors, "Unrecognized `pipeline.$_' key found."
-			unless m/^(name|public|tagged|errands|vault|git|slack|hipchat|email|boshes|task|layout|layouts|debug|stemcells|skip_upkeep|locker)$/;
+			unless m/^(name|public|tagged|errands|vault|git|slack|hipchat|email|boshes|task|layout|layouts|debug|stemcells|skip_upkeep|locker|unredacted)$/;
 	}
 	for (qw(name vault git boshes)) {
 		push @errors, "`pipeline.$_' is required."
@@ -2150,8 +2153,9 @@ sub parse_pipeline {
 	                         # can have triggered each given environment
 
 	# handle yes/no/y/n/true/false/1/0 in our source YAML.
-	$P->{pipeline}{tagged} = yaml_bool($P->{pipeline}{tagged}, 0);
-	$P->{pipeline}{public} = yaml_bool($P->{pipeline}{public}, 0);
+	$P->{pipeline}{tagged}     = yaml_bool($P->{pipeline}{tagged}, 0);
+	$P->{pipeline}{public}     = yaml_bool($P->{pipeline}{public}, 0);
+	$P->{pipeline}{unredacted} = yaml_bool($P->{pipeline}{unredacted}, 0);
 
 	# some default values, if the user didn't supply any
 	$P->{pipeline}{vault}{role}   ||= "";
@@ -2994,6 +2998,7 @@ EOF
               repository: $pipeline->{pipeline}{task}{image}
               tag:        $pipeline->{pipeline}{task}{version}
           params:
+            CI_NO_REDACT:         $pipeline->{pipeline}{unredacted}
             CURRENT_ENV:          $env
             PREVIOUS_ENV:         $passed
             CACHE_DIR:            $alias-cache
@@ -3067,6 +3072,7 @@ EOF
               repository: $pipeline->{pipeline}{task}{image}
               tag:        $pipeline->{pipeline}{task}{version}
           params:
+            CI_NO_REDACT:       $pipeline->{pipeline}{unredacted}
             CURRENT_ENV:        $env
             ERRAND_NAME:        $errand_name
 
@@ -3112,6 +3118,7 @@ EOF
             path: $genesis_bindir/.genesis/bin/genesis
             args: [ci-generate-cache]
           params:
+            CI_NO_REDACT:    $pipeline->{pipeline}{unredacted}
             CURRENT_ENV:     $env
             WORKING_DIR:     out/git
             OUT_DIR:         cache-out/git
@@ -5193,16 +5200,18 @@ EOF
 
 command("deploy", <<EOF,
 genesis v$VERSION
-USAGE: genesis deploy [-n|--non-interactive] [--fix|--recreate] [--no-redact] env-name[.yml]
+USAGE: genesis deploy [-n|--non-interactive] [--fix|--recreate] [--redact] env-name[.yml]
 
 OPTIONS
 $GLOBAL_USAGE
 EOF
 sub {
-	my %options;
+	my %options = (
+		redact => (!(-t STDIN))
+	);
 	options(\@_, \%options, qw/
 		non-interactive|n
-		no-redact
+		redact
 		fix
 		recreate
 	/);
@@ -6096,7 +6105,8 @@ sub {
 	           role_id     => $ENV{VAULT_ROLE_ID},
 	           secret_id   => $ENV{VAULT_SECRET_ID});
 
-	my $rc = deploy_manifest($ENV{CURRENT_ENV}); # exits if it fails
+	# exits if it fails
+	my $rc = deploy_manifest($ENV{CURRENT_ENV}, { redact => !envset('CI_NO_REDACT') });
 	if ($ENV{PREVIOUS_ENV}) {
 		## rm cache dir
 		## copy previous env cache dir

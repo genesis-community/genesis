@@ -5,6 +5,7 @@ pipeline:
   tagged: on
   errands: [run-something-good]
   debug: true
+  unredacted: yes
 
   task:
     image:   custom/concourse-image
