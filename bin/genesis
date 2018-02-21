@@ -1581,7 +1581,9 @@ sub write_stemcell_data {
 	my ($file) = @_;
 	my $stemcells = "{}";
 	if ($ENV{GENESIS_INDEX} ne "no") {
-		$stemcells = `curl -ks $ENV{GENESIS_INDEX}/v1/stemcell/latest | jq '. | map({"key": .name, "value": { "sha1": .sha1, "url": .url}}) | from_entries' -Mc`;
+		my $flags = "-ks";
+		$flags += " -v" if envset 'DEBUG';
+		$stemcells = `curl $flags $ENV{GENESIS_INDEX}/v1/stemcell/latest | jq '. | map({"key": .name, "value": { "sha1": .sha1, "url": .url}}) | from_entries' -Mc`;
 		die "Unable to contact the genesis index to retrieve stemcell data. Cannot continue." unless ($? == 0);
 	}
 	open my $fh, ">", $file;
@@ -1748,6 +1750,9 @@ sub curl {
 	}
 	if ($creds) {
 		$flags .= " -u '$creds'";
+	}
+	if (envset('DEBUG')) {
+		$flags .= " -v";
 	}
 	my $status = "";
 	my $status_line = "";

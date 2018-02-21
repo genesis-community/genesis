@@ -4,6 +4,10 @@
   run non-interactively (i.e. when not attached to a controlling
   terminal).
 
+- When running in debug mode, genesis now runs curl with the `-v`
+  flag, so that operators can see what headers and responses are
+  being sent across the wire.
+
 - Genesis pipelines can now be configured in `unredacted: yes`
   mode, causing them to run `genesis deploy` without redaction.
   This has the potential to leak sensitive credentials like
