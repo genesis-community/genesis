@@ -290,6 +290,13 @@ pipeline:
   distributed Concourse implementations.  This is off by default,
   and if you don't know why you would need it, you don't need it.
 
+- **pipeline.unredacted** - Whether or not deployment output will
+  be redacted when run in the pipeline.  This is off by default.
+  If you set it to 'yes', the `genesis deploy` output in pipeline
+  build logs will be unredacted, showing you all of the changes
+  that are taking place, including any changes in potentially
+  sensitive credentials.
+
 - **pipeline.smoke-tests** - The name of the BOSH smoke test
   errand to run after a successsful deployment / upgrade.  If not
   specified, no smoke testing will be carried out.

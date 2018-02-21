@@ -57,6 +57,7 @@ jobs:
           BOSH_ENVIRONMENT: https://preprod.example.com:25555
           BOSH_NON_INTERACTIVE: true
           CACHE_DIR: client-aws-1-preprod-cache
+          CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-preprod
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
@@ -94,6 +95,7 @@ jobs:
         outputs:
         - name: cache-out
         params:
+          CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-preprod
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
@@ -191,6 +193,7 @@ jobs:
           BOSH_ENVIRONMENT: https://prod.example.com:25555
           BOSH_NON_INTERACTIVE: true
           CACHE_DIR: client-aws-1-prod-cache
+          CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-prod
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
@@ -228,6 +231,7 @@ jobs:
         outputs:
         - name: cache-out
         params:
+          CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-prod
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
@@ -295,6 +299,7 @@ jobs:
           BOSH_ENVIRONMENT: https://sandbox.example.com:25555
           BOSH_NON_INTERACTIVE: true
           CACHE_DIR: client-aws-1-sandbox-cache
+          CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-sandbox
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
@@ -332,6 +337,7 @@ jobs:
         outputs:
         - name: cache-out
         params:
+          CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-sandbox
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
@@ -613,6 +619,7 @@ jobs:
           BOSH_ENVIRONMENT: https://preprod.example.com:25555
           BOSH_NON_INTERACTIVE: true
           CACHE_DIR: client-aws-1-preprod-cache
+          CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-preprod
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
@@ -652,6 +659,7 @@ jobs:
         outputs:
         - name: cache-out
         params:
+          CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-preprod
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
@@ -755,6 +763,7 @@ jobs:
           BOSH_ENVIRONMENT: https://prod.example.com:25555
           BOSH_NON_INTERACTIVE: true
           CACHE_DIR: client-aws-1-prod-cache
+          CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-prod
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
@@ -794,6 +803,7 @@ jobs:
         outputs:
         - name: cache-out
         params:
+          CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-prod
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
@@ -867,6 +877,7 @@ jobs:
           BOSH_ENVIRONMENT: https://sandbox.example.com:25555
           BOSH_NON_INTERACTIVE: true
           CACHE_DIR: client-aws-1-sandbox-cache
+          CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-sandbox
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
@@ -906,6 +917,7 @@ jobs:
         outputs:
         - name: cache-out
         params:
+          CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-sandbox
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
@@ -1197,6 +1209,7 @@ jobs:
           BOSH_ENVIRONMENT: https://preprod.example.com:25555
           BOSH_NON_INTERACTIVE: true
           CACHE_DIR: preprod-cache
+          CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-preprod
           DEBUG: 1
           GIT_BRANCH: master
@@ -1240,6 +1253,7 @@ jobs:
           BOSH_CLIENT: pp-admin
           BOSH_CLIENT_SECRET: Ahti2eeth3aewohnee1Phaec
           BOSH_ENVIRONMENT: https://preprod.example.com:25555
+          CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-preprod
           DEBUG: 1
           ERRAND_NAME: a-testing-errand-for-the-ages
@@ -1262,6 +1276,7 @@ jobs:
         outputs:
         - name: cache-out
         params:
+          CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-preprod
           DEBUG: 1
           GIT_BRANCH: master
@@ -1360,6 +1375,7 @@ jobs:
           BOSH_ENVIRONMENT: https://prod.example.com:25555
           BOSH_NON_INTERACTIVE: true
           CACHE_DIR: prod-cache
+          CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-prod
           DEBUG: 1
           GIT_BRANCH: master
@@ -1403,6 +1419,7 @@ jobs:
           BOSH_CLIENT: pr-admin
           BOSH_CLIENT_SECRET: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
           BOSH_ENVIRONMENT: https://prod.example.com:25555
+          CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-prod
           DEBUG: 1
           ERRAND_NAME: a-testing-errand-for-the-ages
@@ -1425,6 +1442,7 @@ jobs:
         outputs:
         - name: cache-out
         params:
+          CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-prod
           DEBUG: 1
           GIT_BRANCH: master
@@ -1493,6 +1511,7 @@ jobs:
           BOSH_ENVIRONMENT: https://sandbox.example.com:25555
           BOSH_NON_INTERACTIVE: true
           CACHE_DIR: sandbox-cache
+          CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-sandbox
           DEBUG: 1
           GIT_BRANCH: master
@@ -1536,6 +1555,7 @@ jobs:
           BOSH_CLIENT: sb-admin
           BOSH_CLIENT_SECRET: PaeM2Eip
           BOSH_ENVIRONMENT: https://sandbox.example.com:25555
+          CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-sandbox
           DEBUG: 1
           ERRAND_NAME: a-testing-errand-for-the-ages
@@ -1558,6 +1578,7 @@ jobs:
         outputs:
         - name: cache-out
         params:
+          CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-sandbox
           DEBUG: 1
           GIT_BRANCH: master
@@ -1902,6 +1923,7 @@ jobs:
           BOSH_ENVIRONMENT: https://preprod.bosh-lite.com:25555
           BOSH_NON_INTERACTIVE: true
           CACHE_DIR: client-aws-1-preprod-cache
+          CI_NO_REDACT: 1
           CURRENT_ENV: client-aws-1-preprod
           DEBUG: 1
           GIT_BRANCH: master
@@ -1947,6 +1969,7 @@ jobs:
           BOSH_CLIENT: pp-admin
           BOSH_CLIENT_SECRET: Ahti2eeth3aewohnee1Phaec
           BOSH_ENVIRONMENT: https://preprod.bosh-lite.com:25555
+          CI_NO_REDACT: 1
           CURRENT_ENV: client-aws-1-preprod
           DEBUG: 1
           ERRAND_NAME: run-something-good
@@ -1971,6 +1994,7 @@ jobs:
         outputs:
         - name: cache-out
         params:
+          CI_NO_REDACT: 1
           CURRENT_ENV: client-aws-1-preprod
           DEBUG: 1
           GIT_BRANCH: master
@@ -2177,6 +2201,7 @@ jobs:
           BOSH_ENVIRONMENT: https://prod.bosh-lite.com:25555
           BOSH_NON_INTERACTIVE: true
           CACHE_DIR: client-aws-1-prod-cache
+          CI_NO_REDACT: 1
           CURRENT_ENV: client-aws-1-prod
           DEBUG: 1
           GIT_BRANCH: master
@@ -2222,6 +2247,7 @@ jobs:
           BOSH_CLIENT: pr-admin
           BOSH_CLIENT_SECRET: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
           BOSH_ENVIRONMENT: https://prod.bosh-lite.com:25555
+          CI_NO_REDACT: 1
           CURRENT_ENV: client-aws-1-prod
           DEBUG: 1
           ERRAND_NAME: run-something-good
@@ -2246,6 +2272,7 @@ jobs:
         outputs:
         - name: cache-out
         params:
+          CI_NO_REDACT: 1
           CURRENT_ENV: client-aws-1-prod
           DEBUG: 1
           GIT_BRANCH: master
@@ -2413,6 +2440,7 @@ jobs:
           BOSH_ENVIRONMENT: https://sandbox.bosh-lite.com:25555
           BOSH_NON_INTERACTIVE: true
           CACHE_DIR: client-aws-1-sandbox-cache
+          CI_NO_REDACT: 1
           CURRENT_ENV: client-aws-1-sandbox
           DEBUG: 1
           GIT_BRANCH: master
@@ -2458,6 +2486,7 @@ jobs:
           BOSH_CLIENT: sb-admin
           BOSH_CLIENT_SECRET: PaeM2Eip
           BOSH_ENVIRONMENT: https://sandbox.bosh-lite.com:25555
+          CI_NO_REDACT: 1
           CURRENT_ENV: client-aws-1-sandbox
           DEBUG: 1
           ERRAND_NAME: run-something-good
@@ -2482,6 +2511,7 @@ jobs:
         outputs:
         - name: cache-out
         params:
+          CI_NO_REDACT: 1
           CURRENT_ENV: client-aws-1-sandbox
           DEBUG: 1
           GIT_BRANCH: master
