@@ -2896,6 +2896,203 @@ resources:
   type: hipchat-notification
 EOF
 # }}}
+runs_ok "genesis repipe --dry-run --config ci/aws/pipeline.singleton" and # {{{
+runs_ok "genesis repipe --dry-run --config ci/aws/pipeline.singleton >$tmp/pipeline.yml" and
+yaml_is get_file("$tmp/pipeline.yml"), <<'EOF', "pipeline generated for aws/pipeline (singleton job)";
+groups:
+- jobs:
+  - client-aws-1-sandbox-pipeline-test
+  name: aws-1
+jobs:
+- name: client-aws-1-sandbox-pipeline-test
+  plan:
+  - do:
+    - aggregate:
+      - get: client-aws-1-sandbox-cloud-config
+        trigger: true
+      - get: client-aws-1-sandbox-runtime-config
+        trigger: true
+      - get: client-aws-1-sandbox-changes
+        trigger: true
+    - config:
+        image_resource:
+          source:
+            repository: custom/concourse-image
+            tag: rc1
+          type: docker-image
+        inputs:
+        - name: client-aws-1-sandbox-changes
+        outputs:
+        - name: out
+        params:
+          BOSH_CA_CERT: |
+            ----- BEGIN CERTIFICATE -----
+            cert-goes-here
+            ----- END CERTIFICATE -----
+          BOSH_CLIENT: sb-admin
+          BOSH_CLIENT_SECRET: PaeM2Eip
+          BOSH_ENVIRONMENT: https://sandbox.bosh-lite.com:25555
+          BOSH_NON_INTERACTIVE: true
+          CACHE_DIR: client-aws-1-sandbox-cache
+          CURRENT_ENV: client-aws-1-sandbox
+          GIT_BRANCH: master
+          GIT_PRIVATE_KEY: |
+            -----BEGIN RSA PRIVATE KEY-----
+            lol. you didn't really think that
+            we'd put the key here, in a test,
+            did you?!
+            -----END RSA PRIVATE KEY-----
+          OUT_DIR: out/git
+          PREVIOUS_ENV: null
+          VAULT_ADDR: http://myvault.myorg.com:5999
+          VAULT_ROLE_ID: role-uuid-here
+          VAULT_SECRET_ID: secret-uuid-here
+          VAULT_SKIP_VERIFY: 1
+          WORKING_DIR: client-aws-1-sandbox-changes
+        platform: linux
+        run:
+          args:
+          - ci-pipeline-deploy
+          path: client-aws-1-sandbox-changes/.genesis/bin/genesis
+      ensure:
+        params:
+          repository: out/git
+        put: git
+      task: bosh-deploy
+    - config:
+        image_resource:
+          source:
+            repository: custom/concourse-image
+            tag: rc1
+          type: docker-image
+        inputs:
+        - name: out
+        - name: client-aws-1-sandbox-changes
+        outputs:
+        - name: cache-out
+        params:
+          CURRENT_ENV: client-aws-1-sandbox
+          GIT_BRANCH: master
+          GIT_PRIVATE_KEY: |
+            -----BEGIN RSA PRIVATE KEY-----
+            lol. you didn't really think that
+            we'd put the key here, in a test,
+            did you?!
+            -----END RSA PRIVATE KEY-----
+          OUT_DIR: cache-out/git
+          WORKING_DIR: out/git
+        platform: linux
+        run:
+          args:
+          - ci-generate-cache
+          path: client-aws-1-sandbox-changes/.genesis/bin/genesis
+      task: generate-cache
+    - params:
+        repository: cache-out/git
+      put: git
+    on_failure:
+      aggregate:
+      - params:
+          channel: '#botspam'
+          icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
+          text: 'aws-1: Concourse deployment to client-aws-1-sandbox-pipeline-test
+            failed'
+          username: runwaybot
+        put: slack
+    on_success:
+      aggregate:
+      - params:
+          channel: '#botspam'
+          icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
+          text: 'aws-1: Concourse successfully deployed client-aws-1-sandbox-pipeline-test'
+          username: runwaybot
+        put: slack
+  public: true
+  serial: true
+resource_types:
+- name: script
+  source:
+    repository: cfcommunity/script-resource
+  type: docker-image
+- name: email
+  source:
+    repository: pcfseceng/email-resource
+  type: docker-image
+- name: slack-notification
+  source:
+    repository: cfcommunity/slack-notification-resource
+  type: docker-image
+- name: hipchat-notification
+  source:
+    repository: cfcommunity/hipchat-notification-resource
+  type: docker-image
+- name: bosh-config
+  source:
+    repository: cfcommunity/bosh-config-resource
+  type: docker-image
+- name: locker
+  source:
+    repository: cfcommunity/locker-resource
+  type: docker-image
+resources:
+- name: git
+  source:
+    branch: master
+    private_key: |
+      -----BEGIN RSA PRIVATE KEY-----
+      lol. you didn't really think that
+      we'd put the key here, in a test,
+      did you?!
+      -----END RSA PRIVATE KEY-----
+    uri: git@github.com:someco/something-deployments
+  type: git
+- name: client-aws-1-sandbox-changes
+  source:
+    branch: master
+    paths:
+    - .genesis/bin/genesis
+    - .genesis/kits
+    - .genesis/config
+    - client.yml
+    - client-aws.yml
+    - client-aws-1.yml
+    - client-aws-1-sandbox.yml
+    private_key: |
+      -----BEGIN RSA PRIVATE KEY-----
+      lol. you didn't really think that
+      we'd put the key here, in a test,
+      did you?!
+      -----END RSA PRIVATE KEY-----
+    uri: git@github.com:someco/something-deployments
+  type: git
+- name: client-aws-1-sandbox-cloud-config
+  source:
+    ca_cert: |
+      ----- BEGIN CERTIFICATE -----
+      cert-goes-here
+      ----- END CERTIFICATE -----
+    client: sb-admin
+    client_secret: PaeM2Eip
+    config: cloud
+    target: https://sandbox.bosh-lite.com:25555
+  type: bosh-config
+- name: client-aws-1-sandbox-runtime-config
+  source:
+    ca_cert: |
+      ----- BEGIN CERTIFICATE -----
+      cert-goes-here
+      ----- END CERTIFICATE -----
+    client: sb-admin
+    client_secret: PaeM2Eip
+    config: runtime
+    target: https://sandbox.bosh-lite.com:25555
+  type: bosh-config
+- name: slack
+  source:
+    url: http://127.0.0.1:1337
+  type: slack-notification
+EOF
+# }}}
 
 output_ok "genesis describe --config ci/pipeline.all", <<EOF, "large pipelines are described properly"; # {{{
 sandbox-1

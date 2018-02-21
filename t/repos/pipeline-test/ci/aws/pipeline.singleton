@@ -1,0 +1,47 @@
+---
+pipeline:
+  name: aws-1
+  public: yes
+  skip_upkeep: true
+
+  task:
+    image:   custom/concourse-image
+    version: rc1
+
+  vault:
+    url: https://127.0.0.1:8200
+
+  boshes:
+    client-aws-1-sandbox:
+      url:      https://sandbox.bosh-lite.com:25555
+      ca_cert: |
+        ----- BEGIN CERTIFICATE -----
+        cert-goes-here
+        ----- END CERTIFICATE -----
+      username: sb-admin
+      password: PaeM2Eip
+
+  vault:
+    role:   role-uuid-here
+    secret: secret-uuid-here
+    url:  http://myvault.myorg.com:5999
+    verify: no
+
+  layouts:
+    default: |
+      auto *sandbox
+      client-aws-1-sandbox
+
+  git:
+    owner: someco
+    repo:  something-deployments
+    private_key: |
+      -----BEGIN RSA PRIVATE KEY-----
+      lol. you didn't really think that
+      we'd put the key here, in a test,
+      did you?!
+      -----END RSA PRIVATE KEY-----
+
+  slack:
+    channel: '#botspam'
+    webhook: http://127.0.0.1:1337
