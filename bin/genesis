@@ -5373,6 +5373,9 @@ sub {
 	mkdir_or_fail $dir;
 	mkdir_or_fail "$dir/base";
 
+	mkfile_or_fail "$dir/gitignore", <<EOF;
+*.tar.gz
+EOF
 	mkfile_or_fail "$dir/base/params.yml", <<EOF;
 ---
 # Contains the defaults for the parameters needed for the base $options{name} kit.

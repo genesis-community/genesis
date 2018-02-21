@@ -9,3 +9,7 @@
   This has the potential to leak sensitive credentials like
   passwords and keys, so use this with caution, and only on
   secure Concourse installations that are not publicly viewable.
+
+- `genesis create-kit` now populates a .gitignore with appropriate
+  entries, to save you from the embarassment of commiting a
+  compiled kit tarball to the git repo.
