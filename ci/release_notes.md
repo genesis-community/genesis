@@ -29,3 +29,9 @@
 - `genesis create-kit` now populates a .gitignore with appropriate
   entries, to save you from the embarassment of commiting a
   compiled kit tarball to the git repo.
+
+# Kit Authoring Improvements
+
+- Kit authors no longer have to define `meta.vault` as a concat of
+  "secret/" and the `params.vault` value; Genesis now does this
+  for you.  You are welcome.
