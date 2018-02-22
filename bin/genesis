@@ -663,7 +663,7 @@ sub blueprint_script_helper {
 	|export -f invalid_features
 	|
 	|valid_features() {
-	|	for have in \$GENESIS_ENV_FEATURES; do
+	|	for have in \$GENESIS_REQUESTED_FEATURES; do
 	|		local found='';
 	|		for valid in "\$@"; do
 	|			[[ "\${have}" = "\${valid}" ]] && found=1 && break

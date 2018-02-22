@@ -30,6 +30,11 @@
   entries, to save you from the embarassment of commiting a
   compiled kit tarball to the git repo.
 
+# Bug Fixes
+
+- Fix bad reference in `valid_features()` helper made available to
+  the blueprint hook.
+
 # Kit Authoring Improvements
 
 - Kit authors no longer have to define `meta.vault` as a concat of
