@@ -5563,7 +5563,7 @@ $GLOBAL_USAGE
                 genesis will compile based off of ./<name>-genesis-kit.
                 Automatically set if run from inside a genesis deployments directory.
 
-  -f, --force   Proceed with compilation even if there are unstaged or uncomitted
+  -f, --force   Proceed with compilation even if there are unstaged or uncommitted
                 changes in the working directory.  Normally, genesis will refuse
                 to continue when this happens.
 EOF
