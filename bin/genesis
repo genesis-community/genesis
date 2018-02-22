@@ -1648,7 +1648,7 @@ sub base_yaml_files {
 	open my $fh, ">", "$dir/base.yml";
 	print $fh <<EOF;
 meta:
-  vault: (( concat "secret/" params.vault ))
+  vault: (( concat "secret/" params.vault || "nowhere" ))
 params:
   name: (( concat params.env "-$type" ))
 name: (( grab params.name ))
