@@ -5567,6 +5567,10 @@ $GLOBAL_USAGE
   -d, --dev     Compile based off of a dev-kit (./dev). If not specified,
                 genesis will compile based off of ./<name>-genesis-kit.
                 Automatically set if run from inside a genesis deployments directory.
+
+  -f, --force   Proceed with compilation even if there are unstaged or uncommitted
+                changes in the working directory.  Normally, genesis will refuse
+                to continue when this happens.
 EOF
 sub {
 	my %options;
@@ -5574,6 +5578,7 @@ sub {
 		dev|d
 		name|n=s
 		version|v=s
+		force|f
 	/);
 	usage(1) if @_ != 0;
 
@@ -5618,6 +5623,14 @@ sub {
 	qx(rm -rf $temp/$stem/.git $temp/$stem/.gitignore $temp/$stem/*.tar.gz);
 	qx(echo "version: $options{version}" | spruce merge $dir/kit.yml - > $temp/$stem/kit.yml);
 
+	if (!$options{force}) {
+		my $changes = qx(git status --porcelain);
+		if ($? == 0 && $changes) {
+			error "\n#R{ERROR}: Unstaged / uncommited changes found in working directory.\n".
+			      "Please either #C{stash} or #C{commit} those changes before compiling your kit.\n";
+			exit 1;
+		}
+	}
 	qx(tar -czf $stem.tar.gz -C $temp $stem/);
 
 	printf "Created $stem.tar.gz\n\n";
