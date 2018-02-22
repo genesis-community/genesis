@@ -24,7 +24,7 @@ ok -d "t/repos/$repo", "$repo repo exists" or die;
 chdir "t/repos/$repo" or die;
 qx(rm -f *.tar.gz *.tgz); # just to be safe
 
-($pass, $rc, $msg) = run_fails "genesis compile-kit --name custom-named-kit --version 1.0.4 --dev", 2;
+($pass, $rc, $msg) = run_fails "genesis compile-kit --name custom-named-kit --version 1.0.4 --dev --force", 2;
 matches $msg, qr'./dev does not look like a valid kit directory:', "Bad dev kit directory";
 matches $msg, qr'  \* ./dev/README.md does not exist', "Bad dev kit directory - README.md does not exist";
 matches $msg, qr'  \* ./dev/base/params.yml does not exist', "Bad dev kit directory - base/params.yml does not exist";
@@ -36,7 +36,7 @@ ok ! -f "custom-named-kit-1.0.4.tar.gz", "genesis custom-named-kit should not cr
 # Test warnings
 qx(touch "./dev/README.md");
 qx(touch "./dev/base/params.yml");
-($pass, $rc, $msg) = runs_ok "genesis compile-kit --name custom-named-kit --version 1.0.4 --dev";
+($pass, $rc, $msg) = runs_ok "genesis compile-kit --name custom-named-kit --version 1.0.4 --dev --force";
 matches $msg, qr'Warning: ./dev has abnormal contents \(non-fatal\):', "Abnormal dev kit directory";
 matches $msg, qr'  \* ./dev/hooks directory does not exist', "Abnormal dev kit directory - hooks directory does not exist";
 matches $msg, qr'  \* ./dev/subkits directory does not exist', "Abnormal dev kit directory - subkits directory does not exist";
@@ -55,7 +55,7 @@ ok -d "t/repos/$repo", "$repo repo exists" or die;
 chdir "t/repos/$repo" or die;
 qx(rm -f *.tar.gz *.tgz); # just to be safe
 
-($pass, $rc, $msg) = runs_ok "genesis compile-kit --version 1.0.4";
+($pass, $rc, $msg) = runs_ok "genesis compile-kit --version 1.0.4 --force";
 matches $msg, qr'Created compile-test-1.0.4.tar.gz\n', "Good dev kit directory - created release.";
 ok -f "compile-test-1.0.4.tar.gz", "genesis compile-test-kit should create the tarball";
 output_ok "tar -tzvf compile-test-1.0.4.tar.gz | $tar_parser | sort -k3", <<EOF, "tarball contents are correct";
@@ -83,7 +83,7 @@ ok -d "t/repos/$repo", "$repo repo exists" or die;
 chdir "t/repos/$repo" or die;
 qx(rm -f *.tar.gz *.tgz); # just to be safe
 
-($pass, $rc, $msg) = run_fails "genesis compile-kit --name my-kit --version 1.0.4", 2;
+($pass, $rc, $msg) = run_fails "genesis compile-kit --name my-kit --version 1.0.4 --force", 2;
 matches $msg, qr'. does not look like a valid kit directory:', "Bad kit directory";
 matches $msg, qr'  \* ./kit.yml does not exist', "Bad kit directory - README.md does not exist";
 matches $msg, qr'  \* ./base directory does not exist', "Bad kit directory - base directory does not exist";
@@ -105,13 +105,13 @@ chdir "t/repos/$repo" or die;
 qx(rm -f *.tar.gz *.tgz); # just to be safe
 
 # Try to run it in dev mode
-($pass, $rc, $msg) = run_fails "genesis compile-kit --version 1.2.3 --dev", 2;
+($pass, $rc, $msg) = run_fails "genesis compile-kit --version 1.2.3 --dev --force", 2;
 matches $msg, qr'Current directory is a kit -- cannot specify dev mode\n', "Not a dev kit repo";
 ok ! -f "compile-test-kit-1.2.3.tar.gz", "genesis custom-named-kit should not create the tarball";
 qx(rm -f *.tar.gz *.tgz); # just to be safe
 
 # Run it properly, override name
-($pass, $rc, $msg) = runs_ok "genesis compile-kit -n kickass --version 0.0.1";
+($pass, $rc, $msg) = runs_ok "genesis compile-kit -n kickass --version 0.0.1 --force";
 matches $msg, qr'Warning: . has abnormal contents \(non-fatal\):', "Kit with subkits warning";
 matches $msg, qr/  \* using deprecated 'subkits' subdirectory -- use 'features' instead./, "Abnormal kit directory - using subkits";
 matches $msg, qr'Created kickass-0.0.1.tar.gz\n', "Good kit directory - created release.";
