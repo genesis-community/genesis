@@ -40,3 +40,5 @@
 - Kit authors no longer have to define `meta.vault` as a concat of
   "secret/" and the `params.vault` value; Genesis now does this
   for you.  You are welcome.
+
+- New unbounded maximum range validation: e.g.: 3+ for 3 or greater.

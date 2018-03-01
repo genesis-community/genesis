@@ -1130,6 +1130,9 @@ sub __prompt_for_line {
 
 	# `validate` is a sub with first argument the test value, and the second
 	# being an optional error message
+	#
+	# NOTE:  IF YOU ADD OR MODIFY A VALIDATION, YOU NEED TO ADD IT TO THE 
+	#        `validate_kit_metadata` routine below
 	my $validate;
 	if (defined($validation)) {
 		if (ref($validation) eq 'CODE') {
@@ -1152,11 +1155,12 @@ sub __prompt_for_line {
 				return "" if ( ($_[0] =~ m/^\d+$/) && ($_[0] >= 0 ) && ($_[0] <= 65535) );
 				return ($_[1] ? $_[1] :"$_[0] is not a valid port");
 			}
-		} elsif ($validation =~ m/^(-?\d+(?:.\d+)?)-(-?\d+(?:.\d+)?)$/) {
-			my ($__min,$__max) = ($1,$2);
+		} elsif ($validation =~ m/^(-?\d+(?:.\d+)?)(?:(\+)|-(-?\d+(?:.\d+)?))$/) {
+			my ($__min,$__unbound_max,$__max) = ($1,$2,$3);
+			$__unbound_max ||= "";
 			$validate = sub() {
-				return "" if (($_[0] =~ m/^\d+$/) && ($_[0] >= $__min ) && ($_[0] <= $__max));
-				return ($_[1] ? $_[1] : "$_[0] expected to be between $__min and $__max");
+				return "" if (($_[0] =~ m/^\d+$/) && ($_[0] >= $__min ) && ($_[0] <= $__max || $__unbound_max eq "+"));
+				return ($_[1] ? $_[1] : ( $__unbound_max eq "+" ? "$_[0] must be at least $__min" : "$_[0] expected to be between $__min and $__max"));
 			}
 		} elsif ($validation =~ m/^(!)?\/(.*)\/(i?m?s?)$/) {
 			my $__vre;
@@ -3564,7 +3568,7 @@ sub validate_kit_metadata {
 								$param->{validate} !~ m/^!?\[([^,]+(,[^,]+)*)]$/            && # new invertable comma-separated list
 								$param->{validate} !~ m/^((^|,)[^,]+){2,}$/                 && # comma-separated list
 								$param->{validate} !~ m/^-?\d+(\.\d+)?--?\d+(\.\d+)?$/      && # range
-								$param->{validate} !~ m/^(vault_path(_and_key)?|url|port|ip)$/ ){ # key-words
+								$param->{validate} !~ m/^(vault_path(_and_key)?|url|port)$/ ){ # key-words
 								push @errors, "$parameter has an invalid validation formula";
 							}
 

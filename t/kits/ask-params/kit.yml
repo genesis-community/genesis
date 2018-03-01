@@ -123,6 +123,16 @@ params:
       ask: Adjust treble baseline
       validate: -5-5
 
+    - param: age
+      description: "Super secure check to see if you're allowed to drink"
+      ask: What is your age
+      validate: 21+
+
+    - param: real-age
+      description: "Okay, now enter your REAL age"
+      ask: What is your real age
+      validate: 18+
+
     - param: color-choices
       description: "Lets mix some colors"
       ask: Select between 2 and 3 colors

@@ -10,7 +10,7 @@ use helper;
 bosh2_cli_ok;
 
 # EXPECT DEBUGGING
-my $log_expect_stdout=0;
+my $log_expect_stdout=$ENV{SHOW_EXPECT_OUTPUT}||0;
 
 my $dir = workdir 'paramtest-deployments';
 chdir $dir;
@@ -209,9 +209,40 @@ expect_ok "range input fail - pass", $cmd, [
   }
 ];
 
-expect_ok "colour choices", $cmd,[
+expect_ok "range input - unbounded max - fail", $cmd,[
   "Invalid:.* expected to be between -5 and 5[\r\n]{1,2}>", sub {
     fail "2 is between -5 and 5, but wasn't accepted";;
+  }], [
+  "What is your age[\r\n]{1,2}>", sub {
+    $_[0]->send("18\n");
+  }
+];
+
+expect_ok "range input unbounded max - pass", $cmd, [
+  "Invalid:.* must be at least 21[\r\n]{1,2}>", sub {
+    $_[0]->send("111\n");
+  }
+];
+
+expect_ok "range input - unbounded max - fail (negative)", $cmd,[
+  "Invalid:.* must be at least 21[\r\n]{1,2}>", sub {
+    fail "111 is greater than 21, but wasn't accepted";;
+  }], [
+  "What is your real age[\r\n]{1,2}>", sub {
+    $_[0]->send("-22\n");
+  }
+];
+
+expect_ok "range input unbounded max - pass (on boundry)", $cmd, [
+  "Invalid:.* must be at least 18[\r\n]{1,2}>", sub {
+    $_[0]->send("18\n");
+  }
+];
+
+
+expect_ok "colour choices", $cmd,[
+  "Invalid:.* must be at least 18[\r\n]{1,2}>", sub {
+    fail "18 is the minumum, but wasn't accepted";;
   }], [
   "Lets mix some colors[\r\n]{1,2}Select between 2 and 3 colors[\r\n]{1,2}  1\\) red[\r\n]{1,2}  2\\) orange[\r\n]{1,2}  3\\) yellow[\r\n]{1,2}  4\\) green[\r\n]{1,2}  5\\) blue[\r\n]{1,2}  6\\) indigo[\r\n]{1,2}  7\\) violet[\r\n]{2,4}Make your selections \\(leave choice empty to end\\):[\r\n]{2,2}1st choice >", sub {
     $_[0]->send("5\n");
@@ -554,6 +585,12 @@ params:
 
   # I need a number between -5 and 5
   in-a-range: 2
+
+  # Super secure check to see if you're allowed to drink
+  age: 111
+
+  # Okay, now enter your REAL age
+  real-age: 18
 
   # Lets mix some colors
   color-choices:
