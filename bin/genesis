@@ -575,7 +575,7 @@ sub kit_yaml_files_in {
 			|EOF
 		my $result = qx($script);
 		if ($? >> 8) {
-			error "#R{ERROR}: Cound not execute $kit/$version hooks/blueprint script successfully:\n";
+			error "#R{ERROR}: Could not execute $kit/$version hooks/blueprint script successfully:\n";
 			exit 2;
 		}
 		@files = map {Cwd::abs_path $_} grep {$_} split(" ", $result);
@@ -4494,7 +4494,7 @@ sub {
 
 		system($script);
 		if ($? >> 8) {
-			error "#R{ERROR}: Cound not create new environment $name by executing $kit/$version hooks/new script";
+			error "#R{ERROR}: Could not create new environment $name by executing $kit/$version hooks/new script";
 			exit 2;
 		}
 		die "New environment '$name' was not generated.  Contact your kit developer for a fix"
