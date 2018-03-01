@@ -358,6 +358,18 @@ pipeline:
   profile picture when posting notifications to Slack.  Defaults
   to an airplane-looking thing.
 
+- **pipeline.stride.client_id** - The Client ID of the Stride app that
+  you would like to post notifications as. **required**.
+
+- **pipeline.stride.client_secret** - The Client Secret of the Stride app
+  that you would like to post notifications as. **required**.
+
+- **pipeline.stride.cloud_id** - The ID of the Stride cloud that you would like
+  to post to. **required**.
+
+- **pipeline.stride.conversation** - Name of the stride conversation (channel)
+  that you would like notifications to go to. **required**
+
 - **pipeline.email.to** - A list of email addresses to send
   notifications to.  This is **required** if you wish to use email
   for notification.
