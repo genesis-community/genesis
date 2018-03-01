@@ -1913,7 +1913,7 @@ sub read_pipeline {
 	}
 	for (keys %{$p->{pipeline}}) {
 		push @errors, "Unrecognized `pipeline.$_' key found."
-			unless m/^(name|public|tagged|errands|vault|git|slack|hipchat|email|boshes|task|layout|layouts|debug|stemcells|skip_upkeep|locker|unredacted)$/;
+			unless m/^(name|public|tagged|errands|vault|git|slack|hipchat|stride|email|boshes|task|layout|layouts|debug|stemcells|skip_upkeep|locker|unredacted)$/;
 	}
 	for (qw(name vault git boshes)) {
 		push @errors, "`pipeline.$_' is required."
@@ -1981,11 +1981,11 @@ sub read_pipeline {
 
 	# validate notifications
 	my $n = 0;
-	for (qw(slack hipchat email)) {
+	for (qw(slack hipchat stride email)) {
 		$n++ if exists $p->{pipeline}{$_};
 	}
 	if ($n == 0) {
-		push @errors, "No notification stanzas defined.  Please define `pipeline.slack', 'pipeline.hipchat' or `pipeline.email'.\n";
+		push @errors, "No notification stanzas defined.  Please define `pipeline.slack', `pipeline.hipchat', `pipeline.stride' or `pipeline.email'.\n";
 	} else {
 		if ($p->{pipeline}{slack}) {
 			# validate pipeline.slack.*
@@ -2007,7 +2007,7 @@ sub read_pipeline {
 		if ($p->{pipeline}{hipchat}) {
 			# validate pipeline.hipchat.*
 			if (ref($p->{pipeline}{hipchat}) ne 'HASH') {
-				push @errors, "`pipeline.hipchat' must be am ap.";
+				push @errors, "`pipeline.hipchat' must be a map.";
 			} else {
 				# required subkeys
 				for (qw/room_id token/) {
@@ -2018,6 +2018,23 @@ sub read_pipeline {
 				for (keys %{$p->{pipeline}{hipchat}}) {
 					push @errors, "Unrecognized `pipeline.hipchat.$_' key found."
 						unless m/^(url|token|room_id|notify|username)$/;
+				}
+			}
+		}
+		if ($p->{pipeline}{stride}) {
+			# validate pipeline.stride.*
+			if (ref($p->{pipeline}{stride}) ne 'HASH') {
+				push @errors, "`pipeline.stride' must be a map.";
+			} else {
+				# required subkeys
+				for (qw/client_id client_secret cloud_id conversation/) {
+					push @errors, "`pipeline.stride.$_' is required."
+						unless $p->{pipeline}{stride}{$_};
+				}
+				# allowed subkeys
+				for (keys %{$p->{pipeline}{stride}}) {
+					push @errors, "Unrecognized `pipeline.stride.$_' key found."
+						unless m/^(client_id|client_secret|cloud_id|conversation)$/;
 				}
 			}
 		}
@@ -2342,6 +2359,17 @@ EOF
 },
 EOF
 	}
+	if ($pipeline->{pipeline}{stride}) {
+		$notification .= <<EOF;
+{
+  put: "stride",
+  params: {
+    conversation: "(( grab pipeline.stride.conversation ))",
+    message: '(( concat pipeline.name ": $message" ))'
+  }
+},
+EOF
+	}
 	if ($pipeline->{pipeline}{email}) {
 		$notification .= <<EOF;
 {
@@ -2433,6 +2461,15 @@ EOF
     token:    (( param "Please specify the HipChat authentication token" ))
     notify:   false
     username: runwaybot
+EOF
+	}
+	if ($pipeline->{pipeline}{stride}) {
+		print $OUT <<'EOF';
+  stride:
+    client_id: (( param "Please specify the client ID for the Stride app that Concourse should send notifications as" ))
+    client_secret: (( param "Please specify the client secret for the Stride app that Concourse should send notifications as" ))
+    cloud_id: (( param "Please specify the Stride cloud ID that Concourse should send notifications to" ))
+    conversation: (( param "Please specify the Stride conversation name that Concourse should send notifications to" ))
 EOF
 	}
 	if ($pipeline->{pipeline}{email}) {
@@ -2673,6 +2710,16 @@ EOF
       token:    (( grab pipeline.hipchat.token ))
 EOF
 	}
+	if ($pipeline->{pipeline}{stride}) {
+		print $OUT <<'EOF';
+  - name: stride
+    type: stride-notification
+    source:
+      client_id: (( grab pipeline.stride.client_id ))
+      client_secret: (( grab pipeline.stride.client_secret ))
+      cloud_id: (( grab pipeline.stride.cloud_id ))
+EOF
+	}
 	if ($pipeline->{pipeline}{email}) {
 		print $OUT <<'EOF';
   - name: build-email-changes-staged
@@ -2726,6 +2773,11 @@ resource_types:
     type: docker-image
     source:
       repository: cfcommunity/hipchat-notification-resource
+
+  - name: stride-notification
+    type: docker-image
+    source:
+      repository: starkandwayne/stride-notification-resource
 
   - name: bosh-config
     type: docker-image

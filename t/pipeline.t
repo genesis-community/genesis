@@ -396,6 +396,10 @@ resource_types:
   source:
     repository: cfcommunity/hipchat-notification-resource
   type: docker-image
+- name: stride-notification
+  source:
+    repository: starkandwayne/stride-notification-resource
+  type: docker-image
 - name: bosh-config
   source:
     repository: cfcommunity/bosh-config-resource
@@ -977,6 +981,10 @@ resource_types:
 - name: hipchat-notification
   source:
     repository: cfcommunity/hipchat-notification-resource
+  type: docker-image
+- name: stride-notification
+  source:
+    repository: starkandwayne/stride-notification-resource
   type: docker-image
 - name: bosh-config
   source:
@@ -1637,6 +1645,10 @@ resource_types:
 - name: hipchat-notification
   source:
     repository: cfcommunity/hipchat-notification-resource
+  type: docker-image
+- name: stride-notification
+  source:
+    repository: starkandwayne/stride-notification-resource
   type: docker-image
 - name: bosh-config
   source:
@@ -2602,6 +2614,10 @@ resource_types:
   source:
     repository: cfcommunity/hipchat-notification-resource
   type: docker-image
+- name: stride-notification
+  source:
+    repository: starkandwayne/stride-notification-resource
+  type: docker-image
 - name: bosh-config
   source:
     repository: cfcommunity/bosh-config-resource
@@ -3027,6 +3043,10 @@ resource_types:
 - name: hipchat-notification
   source:
     repository: cfcommunity/hipchat-notification-resource
+  type: docker-image
+- name: stride-notification
+  source:
+    repository: starkandwayne/stride-notification-resource
   type: docker-image
 - name: bosh-config
   source:
