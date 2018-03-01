@@ -395,6 +395,21 @@ expect_ok "IP parsing - too many octets", $cmd, [
     $_[0]->send("123.4.5.67\n");
   }
 ];
+expect_ok "IP parsing - loopback", $cmd, [
+  "Loopback IP Address[\r\n]{1,2}>", sub {
+    $_[0]->send("127.0.0.1\n");
+  }
+];
+expect_ok "IP parsing - unspecified ip address ", $cmd, [
+  "Listening IP Address[\r\n]{1,2}>", sub {
+    $_[0]->send("0.0.0.0\n");
+  }
+];
+expect_ok "IP parsing - bounds checking ", $cmd, [
+  "Network Mask[\r\n]{1,2}>", sub {
+    $_[0]->send("10.0.255.255\n");
+  }
+];
 
 expect_ok "Vault paths with --no-secrets option", $cmd, [
   "Warning:.* Cannot validate vault paths when --no-secrets option specified[\r\n]{1,2}Specify the path[\r\n]{1,2}>", sub {
@@ -574,6 +589,15 @@ params:
 
   # Need a url
   ipaddress: 123.4.5.67
+
+  # Need your loopback IP address
+  loopback-ipaddress: 127.0.0.1
+
+  # Listen on what IP address
+  listen-on-ip: 0.0.0.0
+
+  # Internal network mask
+  mask: 10.0.255.255
 
   # Need a vault path
   validity-vault_path: /secret/this/path/does/not/exist

@@ -203,6 +203,21 @@ params:
       ask: IP Address
       validate: ip
 
+    - param: loopback-ipaddress
+      description: Need your loopback IP address
+      ask: Loopback IP Address
+      validate: ip
+
+    - param: listen-on-ip
+      description: Listen on what IP address
+      ask: Listening IP Address
+      validate: ip
+
+    - param: mask
+      description: Internal network mask
+      ask: Network Mask
+      validate: ip
+
     - param: validity-vault_path
       description: Need a vault path
       ask: Specify the path
