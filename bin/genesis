@@ -3563,12 +3563,13 @@ sub validate_kit_metadata {
 					if (defined($param->{validate})) {
 						if ($type =~ m/^(string|list)$/) {
 							@extras = grep {$_ !~ /^(validate|err_msg)$/ } @extras;
-							if ($param->{validate} !~ m/^!?\/.*\/i?m?s?$/                   && # regex validation
-								$param->{validate} !~ m/^((^|,)[^,]+){2,}$/                 && # comma-separated list
-								$param->{validate} !~ m/^!?\[([^,]+(,[^,]+)*)]$/            && # new invertable comma-separated list
-								$param->{validate} !~ m/^((^|,)[^,]+){2,}$/                 && # comma-separated list
-								$param->{validate} !~ m/^-?\d+(\.\d+)?--?\d+(\.\d+)?$/      && # range
-								$param->{validate} !~ m/^(vault_path(_and_key)?|url|port)$/ ){ # key-words
+							if ($param->{validate} !~ m/^!?\/.*\/i?m?s?$/                      && # regex validation
+								$param->{validate} !~ m/^((^|,)[^,]+){2,}$/                    && # comma-separated list
+								$param->{validate} !~ m/^!?\[([^,]+(,[^,]+)*)]$/               && # new invertable comma-separated list
+								$param->{validate} !~ m/^((^|,)[^,]+){2,}$/                    && # comma-separated list
+								$param->{validate} !~ m/^-?\d+(\.\d+)?--?\d+(\.\d+)?$/         && # range
+								$param->{validate} !~ m/^-?\d+(\.\d+)?(\+|--?\d+(\.\d+)?)$/    && # range
+								$param->{validate} !~ m/^(vault_path(_and_key)?|url|port|ip)$/ ){ # key-words
 								push @errors, "$parameter has an invalid validation formula";
 							}
 
