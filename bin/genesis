@@ -3503,13 +3503,10 @@ sub validate_kit_files {
 	my ($dir,$meta) = @_;
 	my ($metadata, $label, @errors, @warnings);
 	if (-d $dir) {
-		for (qw(subkits hooks)) {
+		for (qw(hooks)) {
 			push @warnings, "$dir/$_ directory does not exist" unless -d "$dir/$_";
 		}
-		for (qw(base)) {
-			push @errors, "$dir/$_ directory does not exist" unless -d "$dir/$_";
-		}
-		for (qw(README.md base/params.yml)) {
+		for (qw(README.md)) {
 			push @errors, "$dir/$_ does not exist" unless -f "$dir/$_";
 		}
 		if (-f "$dir/kit.yml") {
