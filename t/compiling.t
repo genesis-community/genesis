@@ -27,26 +27,23 @@ qx(rm -f *.tar.gz *.tgz); # just to be safe
 ($pass, $rc, $msg) = run_fails "genesis compile-kit --name custom-named-kit --version 1.0.4 --dev --force", 2;
 matches $msg, qr'./dev does not look like a valid kit directory:', "Bad dev kit directory";
 matches $msg, qr'  \* ./dev/README.md does not exist', "Bad dev kit directory - README.md does not exist";
-matches $msg, qr'  \* ./dev/base/params.yml does not exist', "Bad dev kit directory - base/params.yml does not exist";
 matches $msg, qr'\nCannot continue.\n', "Bad dev kit directory - cannot continue";
 $_ = $msg;
-is tr/\n// + !/\n\z/, 5, "Bad dev kit directory -- no unexpected errors.";
+is tr/\n// + !/\n\z/, 4, "Bad dev kit directory -- no unexpected errors.";
 ok ! -f "custom-named-kit-1.0.4.tar.gz", "genesis custom-named-kit should not create the tarball";
 
 # Test warnings
 qx(touch "./dev/README.md");
-qx(touch "./dev/base/params.yml");
 ($pass, $rc, $msg) = runs_ok "genesis compile-kit --name custom-named-kit --version 1.0.4 --dev --force";
 matches $msg, qr'Warning: ./dev has abnormal contents \(non-fatal\):', "Abnormal dev kit directory";
 matches $msg, qr'  \* ./dev/hooks directory does not exist', "Abnormal dev kit directory - hooks directory does not exist";
-matches $msg, qr'  \* ./dev/subkits directory does not exist', "Abnormal dev kit directory - subkits directory does not exist";
 doesnt_match $msg, qr'\nCannot continue.\n', "Abnormal dev kit directory - still can continue";
 $_ = $msg;
-is tr/\n// + !/\n\z/, 6, "Bad dev kit directory -- no unexpected errors or warnings.";
+is tr/\n// + !/\n\z/, 5, "Bad dev kit directory -- no unexpected errors or warnings.";
 ok -f "custom-named-kit-1.0.4.tar.gz", "genesis custom-named-kit should not create the tarball";
 
 # Cleanup
-qx(rm -f *.tar.gz *.tgz ./dev/README.md ./dev/base/params.yml);
+qx(rm -f *.tar.gz *.tgz ./dev/README.md);
 chdir "../../.." or die;
 
 # Test Good Development Kit
@@ -86,12 +83,10 @@ qx(rm -f *.tar.gz *.tgz); # just to be safe
 ($pass, $rc, $msg) = run_fails "genesis compile-kit --name my-kit --version 1.0.4 --force", 2;
 matches $msg, qr'. does not look like a valid kit directory:', "Bad kit directory";
 matches $msg, qr'  \* ./kit.yml does not exist', "Bad kit directory - README.md does not exist";
-matches $msg, qr'  \* ./base directory does not exist', "Bad kit directory - base directory does not exist";
-matches $msg, qr'  \* ./base/params.yml does not exist', "Bad kit directory - base/params.yml does not exist";
 matches $msg, qr'  \* ./subkits/thingamabob/params.yml does not exist', "Bad kit directory - subkits/thingamabob/params.yml does not exist";
 matches $msg, qr'\nCannot continue.\n', "Bad kit directory - cannot continue";
 $_ = $msg;
-is tr/\n// + !/\n\z/, 7, "Bad kit directory -- no unexpected errors.";
+is tr/\n// + !/\n\z/, 5, "Bad kit directory -- no unexpected errors.";
 ok ! -f "my-kit-1.0.4.tar.gz", "genesis custom-named-kit should not create the tarball";
 
 # Cleanup
