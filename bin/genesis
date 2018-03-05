@@ -583,8 +583,8 @@ sub kit_yaml_files_in {
 		my @missing_files = grep {! -e $_} @files;
 		if (@missing_files) {
 			error "%s",
-				"#R{ERROR:} Missing $kit/$version files required to satisfy selected features in #C{$env}:\n  - ",
-				join('\n  - ',@missing_files),
+				"#R{ERROR:} Missing $kit/$version files required to satisfy selected features in #C{$env}:\n  - ".
+				join("\n  - ", @missing_files).
 				"\n\nPlease contact kit author to get a fix.\n";
 			exit 2
 		}
