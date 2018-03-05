@@ -572,11 +572,7 @@ sub kit_yaml_files_in {
 		-x $blueprint_script_path || chmod_or_fail 0755,$blueprint_script_path;
 		my $helper = blueprint_script_helper($kit,$version,$env,@features);
 		pushd($dir);
-		my $script = clean_heredoc(<<"			|EOF");
-			|source "$helper"
-			|hooks/blueprint
-			|EOF
-		my $result = qx($script);
+		my $result = qx(bash -c 'source $helper; hooks/blueprint');
 		if ($? >> 8) {
 			error "#R{ERROR}: Could not execute $kit/$version hooks/blueprint script successfully:\n";
 			exit 2;
@@ -4563,13 +4559,7 @@ sub {
 		chmod_or_fail(0755, $new_script) unless -x $new_script;
 		my $curdir = Cwd::getcwd;
 		my $helper = new_script_helper($kit,$version);
-		my $script = clean_heredoc(<<"			|EOF");
-			|cd $kit_dir
-			|source "$helper"
-			|hooks/new "$curdir" "$name" "$prefix"
-			|EOF
-
-		system($script);
+		system("cd $kit_dir; source $helper; hooks/new $curdir $name $prefix");
 		if ($? >> 8) {
 			error "#R{ERROR}: Could not create new environment $name by executing $kit/$version hooks/new script";
 			exit 2;
