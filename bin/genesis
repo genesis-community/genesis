@@ -640,45 +640,53 @@ sub blueprint_script_helper {
 	|export GENESIS_REQUESTED_FEATURES="${\join(' ', @features)}"
 	|
 	|want_feature() {
-	|	want=\${1:?want_feature() -- must specify a feature}
-	|	for feature in \$GENESIS_REQUESTED_FEATURES; do
-	|		[[ "\$want" == "\$feature" ]] && return 0
+	|	local __want=\${1:?want_feature() -- must specify a feature}
+	|	local __feature
+	|	for __feature in \$GENESIS_REQUESTED_FEATURES; do
+	|		[[ "\$__want" == "\$__feature" ]] && return 0
 	|	done
 	|	return 1
 	|}
 	|export -f want_feature
 	|
 	|invalid_features() {
-	|	declare -a invalid
+	|	local __found
+	|	local __valid
+	|	local __have
+	|	declare -a __invalid
 	|	for have in \$GENESIS_REQUESTED_FEATURES; do
-	|		local found='';
-	|		for valid in "\$@"; do
-	|			[[ "\$have" == "\$valid" ]] && found=1 && break
+	|		__found='';
+	|		for __valid in "\$@"; do
+	|			[[ "\$__have" == "\$__valid" ]] && __found=1 && break
 	|		done
-	|		[[ -n \$found ]] || invalid+=(\$wanted)
+	|		[[ -n \$__found ]] || __invalid+=(\$wanted)
 	|	done
-	|	echo "\${invalid[@]}"
+	|	echo "\${__invalid[@]}"
 	|	return 0
 	|}
 	|export -f invalid_features
 	|
 	|valid_features() {
-	|	for have in \$GENESIS_REQUESTED_FEATURES; do
-	|		local found='';
-	|		for valid in "\$@"; do
-	|			[[ "\${have}" = "\${valid}" ]] && found=1 && break
+	|	local __have
+	|	local __found
+	|	local __valid
+	|	for __have in \$GENESIS_REQUESTED_FEATURES; do
+	|		__found=''
+	|		for __valid in "\$@"; do
+	|			[[ "\${__have}" = "\${__valid}" ]] && __found=1 && break
 	|		done
-	|		[[ -n \$found ]] || return 1
+	|		[[ -n \$__found ]] || return 1
 	|	done
 	|	return 0
 	|}
 	|export -f valid_features
 	|
 	|validate_features() {
+	|	local __bad
 	|	if ! valid_features "\$@"; then
 	|		echo >&2 "\$GENESIS_KIT_NAME/\$GENESIS_KIT_VERSION does not understand the following feature flags:"
-	|		for bad in \$(invalid_features "\$@"); do
-	|			echo >&2 " - \$bad"
+	|		for __bad in \$(invalid_features "\$@"); do
+	|			echo >&2 " - \$__bad"
 	|		done
 	|		[[ -f "feature_usage.txt" ]] && echo >&2 "" && cat "feature_usage.txt"
 	|		exit 1
