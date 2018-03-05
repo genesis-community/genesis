@@ -1552,7 +1552,7 @@ sub is_create_env {
 	my ($env) = @_;
 	# convert env to file for env if not already done
 	$env = "$env.yml" unless $env =~ /\.yml$/;
-	return has_feature($env, 'bosh-init') || has_feature($env, 'create-env');
+	return has_feature($env, 'bosh-init') || has_feature($env, 'create-env') || has_feature($env, 'proto');
 }
 
 sub bosh_deploy {
