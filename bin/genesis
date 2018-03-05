@@ -562,6 +562,9 @@ sub kit_yaml_files {
 
 sub kit_yaml_files_in {
 	my ($kit,$version,$env, $dir, @features) = @_;
+	$kit     ||= "dev";
+	$version ||= "";
+
 	my @files;
 	# use hooks/blueprint script if present
 	my $blueprint_script_path = "$dir/hooks/blueprint";
@@ -631,6 +634,9 @@ sub blueprint_script_helper {
 	# Assumes it will be executed in the base of the kit directory
 	# by the kit_yaml_files_in command.
 	my ($kit,$version,$env,@features) = @_;
+	$kit     ||= "dev";
+	$version ||= "";
+
 	my $env_file = get_env_file($env);
 	my $helper_dir = workdir('helper');
 	my $out = clean_heredoc(<<"	|EOF");
