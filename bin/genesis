@@ -665,7 +665,7 @@ sub blueprint_script_helper {
 	|		for __valid in "\$@"; do
 	|			[[ "\$__have" == "\$__valid" ]] && __found=1 && break
 	|		done
-	|		[[ -n \$__found ]] || __invalid+=(\$wanted)
+	|		[[ -n \$__found ]] || __invalid+=(\$__have)
 	|	done
 	|	echo "\${__invalid[@]}"
 	|	return 0
