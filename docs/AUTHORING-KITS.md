@@ -500,6 +500,9 @@ the type.  It's a small thing, but people notice small things.
 
 #### Using the subkit hook
 
+**Note:** This machinery was replaced by `hooks/blueprint`.  All
+new kits should use that hook.
+
 An optional hook is provided to Kit Authors that will be fired
 immediately after the user-interactive subkit selection. This allows
 Kit Authors to perform obscure customizations to the subkit list, if
@@ -716,6 +719,9 @@ However, some rules must be followed. Here are some guidelines for using it:
 8. Each param must have one and only one of `vault`, `param`, and `params`.
 
 #### Using the params hook
+
+**Note:** This machinery was replaced by `hooks/new`.  All new
+kits should use that hook.
 
 An optional hook is provided to Kit Authors that will be fired
 immediately after the user-interactive for asking/retreiving param information.
