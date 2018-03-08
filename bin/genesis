@@ -1773,12 +1773,8 @@ sub deploy_manifest {
 		$deployment = ".genesis/manifests/$env-state.yml";
 	}
 	my @deploy_opts;
-	foreach (qw/fix recreate/) {
-		push @deploy_opts, "--$_" if $options->{$_};
-	}
-	if (!$options->{redact}) {
-		push @deploy_opts, "--no-redact";
-	}
+	push @deploy_opts, "--$_" foreach (grep {$options->{$_}} qw/fix recreate dry-run/);
+	push @deploy_opts, "--no-redact" if (!$options->{redact});
 	my $rc = bosh_deploy $target, $deployment, "$dir/manifest.yml", @deploy_opts;
 	return $rc;
 }
@@ -5307,6 +5303,7 @@ sub {
 		redact!
 		fix
 		recreate
+		dry-run
 	/);
 	usage(1) if @_ != 1;
 	check_prereqs;
