@@ -195,6 +195,10 @@ sub vaulted {
 	return !!$ENV{GENESIS_TARGET_VAULT};
 }
 
+sub controlling_terminal {
+	return -t STDOUT;
+}
+
 sub execute {
 	my ($prog) = @_;
 	debug "executing `#C{$prog} 2>&1`";
@@ -5297,12 +5301,10 @@ OPTIONS
 $GLOBAL_USAGE
 EOF
 sub {
-	my %options = (
-		redact => (!(-t STDIN))
-	);
+	my %options = (redact => ! controlling_terminal);
 	options(\@_, \%options, qw/
 		non-interactive|n
-		redact
+		redact!
 		fix
 		recreate
 	/);
@@ -5768,21 +5770,21 @@ $GLOBAL_USAGE
 
   -c, --cloud-config PATH    Path to your downloaded BOSH cloud-config
 
-      --no-redact            Do not redact credentials in the manifest.
-                             USE THIS OPTION WITH GREAT CARE AND CAUTION.
+      --[no-]redact          Determines if vault values are fetched or redacted.
+                             By default, the manifest will be redacted unless
+                             being output to the live console.
 EOF
 sub {
-	my %options;
+	my %options = (redact => ! controlling_terminal);
 	options(\@_, \%options, qw/
 		cloud-config|c=s
-		no-redact
+		redact!
 	/);
 	usage(1) if @_ != 1;
 	my ($env) = @_;
 	check_prereqs;
 
-	$ENV{REDACT} = 'true';
-	$ENV{REDACT} = '' if $options{'no-redact'};
+	$ENV{REDACT} = $options{'redact'} ? "1" : "";
 
 	my $create_env = is_create_env($env);
 
