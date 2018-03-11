@@ -929,8 +929,7 @@ sub mergeable_yaml_files {
 }
 
 sub standalone_environment_yaml_files {
-	my @envs = @_;
-	grep { has_own_key($_, "params.env") } @envs;
+	return grep { find_key("params.env", $_) } @_;
 }
 
 sub get_env_file {
@@ -939,43 +938,61 @@ sub get_env_file {
 	return $env.".yml";
 }
 
-sub has_key {
-	my ($file, $key) = @_;
-	for (mergeable_yaml_files $file) {
-		chomp(my $out = qx(spruce json $_ | jq -r '.$key'));
-		return 1 if $? == 0 and $out ne "null";
+sub build_jq_filter {
+	my ($path) = @_;
+	$path =~ s/^([^\.])/.$1/; # ensure it starts with a .
+	my @path_bits = grep /\S/, split(/([\.\[]+)/, $path);
+	my ($join,$value,$filter);
+	while (@path_bits) {
+		($join,$value,@path_bits) = @path_bits;
+		if ($join eq '.') {
+			$filter .= "$join$value";
+		} elsif ($join =~ /^\.?\[$/ && $value =~ /([-[:word:]]+)=([-[:word:]]+)\]$/) {
+			$filter .= "[] | select(.$1 == \"$2\") | ";
+		} elsif ($join =~ /^\.?\[$/ && $value =~ /(\d+)\]$/) {
+			$filter .= "[$1]";
+		} else {
+			die "Invalid pick path: $join$value\n";
+		}
 	}
-	return 0;
+	$filter =~ s/ \| $//; # clean off trailing pipes if select was last item.
+	return $filter;
 }
 
-sub has_own_key {
-	my ($file, $key) = @_;
-	return 0 unless -f $file;
-	chomp(my $out = qx(spruce json $file | jq -r '.$key'));
-	return 1 if $? == 0 and $out ne "null";
+sub find_key {
+	my ($key, @files) = @_;
+	my $filter = build_jq_filter($key);
+	for (@files) {
+		next unless -f $_;
+		my $out = qx(spruce json $_ | jq -r '$filter');
+		return $_ if $? == 0 and $out !~ /^(null\n)?$/;
+	}
+	return '';
 }
 
+sub has_key {
+	find_key($_[1], reverse mergeable_yaml_files($_[0]));
+}
+
+# Get key from environment file hierarchy.  Returns the default
+# if the key does not exist or is null, otherwise it returns the value of
+# the key (even if value is 0 or empty string.)
 sub get_key {
 	my ($file, $key, $default) = @_;
 	return $default unless has_key($file, $key);
+	my $filter = build_jq_filter($key);
 
-	my $result = Load(spruce_merge({ 'cherry-pick' => $key },
-	                               mergeable_yaml_files($file)));
-	for (grep {$_ !~ m/^\.?$/} split(/(\.|\[[0-9+]\])/, $key)) {
-		if ($_ =~ m/^\[[0-9]+\]$/) {
-			return $default unless @{$result}[0];
-			$result = @{$result}[0];
-		} else {
-			return $default unless exists $result->{$_};
-			$result = $result->{$_};
-		}
-	}
-	return defined $result ? $result : $default;
+	my ($out,$rc) = execute(
+		'f=$1; shift; spruce merge --skip-eval $@ | spruce json | jq -Mc $f',
+		$filter, mergeable_yaml_files($file)
+	);
+	die "Unable to merge environment files: \n$out\n" if $rc;
+	JSON::PP->new->allow_nonref->decode($out);
 }
 
 sub has_feature {
 	my ($file, $feature) = @_;
-	my %features = map { $_ => 1 } @{get_key($file, "kit.features", get_key($file, "kit.subkits", []))};
+	my %features = map { $_ => 1 } @{get_key($file, "kit.features") || get_key($file, "kit.subkits") || []};
 	return $features{$feature};
 }
 
