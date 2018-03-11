@@ -199,20 +199,41 @@ sub controlling_terminal {
 	return -t STDOUT;
 }
 
+# Execute the requested command.  You can operate this in two modes:
+#   1) Pass the command as a string will all the arguments in it.
+#   2) Pass the command as a template, and the template args as an array
+#
+# The latter is recommended as it properly encapsulates/tokenizes the 
+# arguments to prevent accidental expansion or splitting due to quoting
+# and spaces.
+#
+# Use this where you would normally use backticks or qx() calls.  It also
+# supports debug output when DEBUG env is set.
+#
+# If called in a scalar context, it will return true if success, false
+# otherwise.  In a list context, it will return the output and the exit code
 sub execute {
-	my ($prog) = @_;
-	debug "executing `#C{$prog} 2>&1`";
-	my $out = qx($prog 2>&1);
-	my $rc = $?;
+	my ($prog,@args) = @_;
+	my $shell = $ENV{SHELL} || '/bin/bash';
+	debug "#M{Executing:} `#C{$prog 2>&1}`";
+	if (@args) {
+		unshift @args, $ENV{SHELL};
+		debug "#m{ - with arguments:}";
+		debug "#m{%4s:} '#c{%s}'", $_, $args[$_] for (1..$#args);
+	}
+	open my $pipe, "-|", $shell, '-c', $prog, @args;
+	my $out = do { local $/; <$pipe> };
+	my $rc = $? >> 8;
 
 	if ($rc != 0) {
-		debug "command exited #R{%d}.", $rc >> 8;
-		debug "--------------------------------";
+		debug "command exited #R{%d}.  Output:", $rc;
+		debug "#R{vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv}";
 		debug $out;
-		debug "--------------------------------";
-		return 0;
+		debug "#R{^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^}";
+	} else {
+		debug "#g{Command executed successfully.}";
 	}
-	return 1;
+	return wantarray ? ($out, $rc) : ($rc ? 0 : 1);
 }
 
 sub system_execute {
