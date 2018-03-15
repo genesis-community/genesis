@@ -156,7 +156,7 @@ sub explain(@) {
 }
 
 sub debug(@) {
-	return unless envset "DEBUG";
+	return unless envset "GENESIS_DEBUG";
 	print STDERR "DEBUG> ";
 	my $colorize = $ENV{NOCOLOR};
 	$ENV{NOCOLOR} = "true" if (! -t STDERR);
@@ -205,10 +205,10 @@ sub controlling_terminal {
 #
 # The latter is recommended as it properly encapsulates/tokenizes the 
 # arguments to prevent accidental expansion or splitting due to quoting
-# and spaces.
+# and spaces.  If using it, remember to quote all variable references.
 #
 # Use this where you would normally use backticks or qx() calls.  It also
-# supports debug output when DEBUG env is set.
+# supports debug output when GENESIS_DEBUG env is set.
 #
 # If called in a scalar context, it will return true if success, false
 # otherwise.  In a list context, it will return the output and the exit code
@@ -1665,7 +1665,7 @@ sub write_stemcell_data {
 	my $stemcells = "{}";
 	if ($ENV{GENESIS_INDEX} ne "no") {
 		my $flags = "-ks";
-		$flags += " -v" if envset 'DEBUG';
+		$flags += " -v" if envset 'GENESIS_DEBUG';
 		$stemcells = `curl $flags $ENV{GENESIS_INDEX}/v1/stemcell/latest | jq '. | map({"key": .name, "value": { "sha1": .sha1, "url": .url}}) | from_entries' -Mc`;
 		die "Unable to contact the genesis index to retrieve stemcell data. Cannot continue." unless ($? == 0);
 	}
@@ -1832,7 +1832,7 @@ sub curl {
 	if ($creds) {
 		$flags .= " -u '$creds'";
 	}
-	if (envset('DEBUG')) {
+	if (envset('GENESIS_DEBUG')) {
 		$flags .= " -v";
 	}
 	my $status = "";
@@ -4214,11 +4214,11 @@ sub options {
 
 	usage(0) if $options->{help};
 
-	$ENV{QUIET}   = 'y' if  $options->{quiet};
-	$ENV{DEBUG}   = 'y' if  $options->{debug};
-	$ENV{TRACE}   = 'y' if  $options->{trace};
-	$ENV{NOCOLOR} = 'y' if !$options->{color};
-	$ENV{OFFLINE} = 'y' if  $options->{offline};
+	$ENV{QUIET}         = 'y' if  $options->{quiet};
+	$ENV{GENESIS_DEBUG} = 'y' if  $options->{debug} || envset "DEBUG";
+	$ENV{TRACE}         = 'y' if  $options->{trace};
+	$ENV{NOCOLOR}       = 'y' if !$options->{color};
+	$ENV{OFFLINE}       = 'y' if  $options->{offline};
 
 	debug("bosh env: ".($options->{environment} || "-same-as-env-file-"));
 
