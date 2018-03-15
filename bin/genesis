@@ -932,6 +932,21 @@ sub standalone_environment_yaml_files {
 	return grep { find_key("params.env", $_) } @_;
 }
 
+sub get_env {
+	(my $env = shift) =~ s/\.yml$//;
+	my $file =  $env.".yml";
+	die "Environment file '$file' does not exist!\n" unless -f $file;
+	#die "File '$file' is not a valid environment!\n" unless find_key('params.env',$file);
+	#^ The above breaks tests (t/compile.t) because we were lax in the past
+	#  about what constitutes a deployable env yml file.  If test-env.yml is a
+	#  valid file, with params.env == test-env, can you deploy with file
+	#  test-env-upgrade.yml that changes the kit version but keeps the same 
+	#  params.env??? (Commented out for now)
+	#  we may also want a check such as the following:
+	#die "File '$file' defines a different environment according to its params.env.  Cut and paste error?\n" unless get_key($env,'params.env') eq $env;
+	return $env;
+}
+
 sub get_env_file {
 	my ($env) = @_;
 	$env =~ s/.yml$//;
@@ -5344,6 +5359,7 @@ sub {
 		dry-run
 	/);
 	usage(1) if @_ != 1;
+	my $env = get_env(shift);;
 	check_prereqs;
 
 	if ($options{fix} && $options{recreate}) {
@@ -5355,7 +5371,7 @@ sub {
 		delete $options{'non-interactive'};
 	}
 
-	my $rc = deploy_manifest($_[0], \%options);
+	my $rc = deploy_manifest($env, \%options);
 	exit $rc;
 });
 # }}}
@@ -5816,7 +5832,7 @@ sub {
 		redact!
 	/);
 	usage(1) if @_ != 1;
-	my ($env) = @_;
+	my $env = get_env(shift);;
 	check_prereqs;
 
 	$ENV{REDACT} = $options{'redact'} ? "1" : "";
