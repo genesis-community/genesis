@@ -1,0 +1,12 @@
+#!/bin/bash
+#
+# ci/repipe
+#
+# Script for merging together pipeline configuration files
+# and configuring Concourse.
+
+do-the-magicks() {
+  echo "Poof.  You have a pipeline!"
+}
+
+do-the-magics

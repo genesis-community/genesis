@@ -1,0 +1,18 @@
+---
+#
+# ci/pipeline.yml
+#
+# Pipeline structure file for a Genesis Release pipeline
+#
+# DO NOT MAKE CHANGES TO THIS FILE.  Instead, modify
+# ci/settings.yml and override what needs overridden.
+# This uses spruce, so you have some options there.
+#
+meta:
+  kit:      (( param "Which kit is this pipeline for?" ))
+  name:     (( concat meta.kit "-genesis-kit" ))
+  release:  (( concat meta.kit " Genesis Kit" ))
+  target:   (( param "Please identify the name of the target Concourse CI" ))
+  url:      (( param "Please specify the full url of the target Concourse CI" ))
+  pipeline: (( grab meta.name ))
+

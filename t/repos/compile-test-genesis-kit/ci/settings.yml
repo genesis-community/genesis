@@ -1,0 +1,6 @@
+---
+meta:
+  kit:     kick-ass
+  release: KickAss Genesis Kit
+  target:  ci
+  url:     https://my.concourse.ci
