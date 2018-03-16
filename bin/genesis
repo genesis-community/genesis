@@ -3573,8 +3573,8 @@ sub download_kit_tarball
 	debug "downloaded kit #M{$name}/#C{$version}\n";
 }
 sub validate_kit_files {
-	my ($dir,$meta) = @_;
-	my ($metadata, $label, @errors, @warnings);
+	my ($dir,$is_author) = @_;
+	my ($metadata, @errors, @warnings);
 	if (-d $dir) {
 		for (qw(hooks)) {
 			push @warnings, "$dir/$_ directory does not exist" unless -d "$dir/$_";
@@ -3592,17 +3592,12 @@ sub validate_kit_files {
 		}
 
 		if (-d "$dir/subkits/") {
-			$label = "subkits";
-			push @warnings, "using deprecated 'subkits' subdirectory -- use 'features' instead.";
+			# Once the docs/AUTHORING-KITS.md has been updated, we want to educate
+			# kit authors that the preferred way is to use features instead of
+			# subkits, and that subkits will probably be deprecated in 3.0
+			#push @warnings, "Enhancement: using 'subkits' subdirectory structure has been  -- use 'features' instead."
+			#	if $is_author;
 			for (glob "$dir/subkits/*") {
-				push @errors, "$_/params.yml does not exist" unless -f "$_/params.yml";
-			}
-		}
-		if (-d "$dir/features/") {
-			push @errors, "using both features and subkits subdirectories -- use only features"
-				if $label && $label eq "subkits";
-			$label = "features";
-			for (glob "$dir/features/*") {
 				push @errors, "$_/params.yml does not exist" unless -f "$_/params.yml";
 			}
 		}
@@ -3650,14 +3645,17 @@ sub validate_kit_metadata {
 	my ($group,$label,$not_label);
 	if (exists $meta->{features}) {
 		if (exists $meta->{subkits}) {
-			error "\n#R{ERROR:} Kit contains both 'features' and deprecated 'subkits'.\n";
+			error "\n#R{ERROR:} Kit contains both 'features' and 'subkits'.\n";
 			die $is_author
-				? "Update kit to move deprecated subkits under 'features' and update 'subkit' key to 'feature'\n"
+				? "Update kit to move subkits under 'features' and update 'subkit' key to 'feature'\n"
 				: "Please contact your kit author for a fix.\n";
 		}
 		($group,$label,$not_label) = qw(features feature subkit);
 	} elsif (exists $meta->{subkits}) {
-		error "\n#Y{DEPRECATED:} subkits are deprecated in favour of features.  Please update your kit." if $is_author;
+		# Once the docs/AUTHORING-KITS.md has been updated, we want to educate
+		# kit authors that the preferred way is to use features instead of
+		# subkits, and that subkits will probably be deprecated in 3.0
+		# error "\n#Y{DEPRECATED:} subkits are deprecated in favour of features.  Please update your kit." if $is_author;
 		($group,$label,$not_label) = qw(subkits subkit feature);
 	}
 	if (defined $group) {
@@ -3669,7 +3667,7 @@ sub validate_kit_metadata {
 			}
 		}
 		die($is_author
-			? "\nUpdate kit to used 'features' and 'feature' exclusively\n"
+			? "\nUpdate kit to use 'features' and 'feature' exclusively\n"
 			: "\nPlease contact your kit author for a fix.\n"
 		) if $errored;
 	}
@@ -5751,7 +5749,7 @@ sub {
 		}
 	}
 
-	my $metadata = validate_kit_files($dir);
+	my $metadata = validate_kit_files($dir,1);
 	validate_kit_metadata($options{name},$options{version},$metadata,1);
 
 	my $temp = tempdir(CLEANUP => 1);

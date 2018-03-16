@@ -20,8 +20,6 @@ Generating new environment failures-galore...
 
 Using local development kit (./dev)...
 
-\e[1;33mDEPRECATED:\e[0m subkits are deprecated in favour of features.  Please update your kit.
-
 \e[1;31mERROR:\e[0m The following errors have been encountered validating the dev/latest kit:
  - params.base[0] has an invalid attribute: 'rapams'
  - params.base[0] has an invalid attribute: 'ska'
