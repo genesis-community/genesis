@@ -107,12 +107,13 @@ qx(rm -f *.tar.gz *.tgz); # just to be safe
 
 # Run it properly, override name
 ($pass, $rc, $msg) = runs_ok "genesis compile-kit -n kickass --version 0.0.1 --force";
-matches $msg, qr'Warning: . has abnormal contents \(non-fatal\):', "Kit with subkits warning";
-matches $msg, qr/  \* using deprecated 'subkits' subdirectory -- use 'features' instead./, "Abnormal kit directory - using subkits";
+# [When subkits are deprecated] matches $msg, qr'Warning: . has abnormal contents \(non-fatal\):', "Kit with subkits warning";
+# [When subkits are deprecated] matches $msg, qr/  \* using deprecated 'subkits' subdirectory -- use 'features' instead./, "Abnormal kit directory - using subkits";
 matches $msg, qr'Created kickass-0.0.1.tar.gz\n', "Good kit directory - created release.";
 doesnt_match $msg, qr'\nCannot continue.\n', "Abnormal dev kit directory - still can continue";
 $_ = $msg;
-is tr/\n// + !/\n\z/, 5, "Bad dev kit directory -- no unexpected errors or warnings.";
+is tr/\n// + !/\n\z/, 2, "Good dev kit directory -- no unexpected errors or warnings.";
+# [When subkits are deprecated] is tr/\n// + !/\n\z/, 2, "Good dev kit directory -- no unexpected errors or warnings.";
 ok -f "kickass-0.0.1.tar.gz", "genesis compile-test-kit should create the tarball";
 output_ok "tar -tzvf kickass-0.0.1.tar.gz | $tar_parser | sort -k3", <<EOF, "tarball contents are correct";
 drwxr-xr-x 0 kickass-0.0.1/
