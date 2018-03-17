@@ -22,6 +22,10 @@ our $VERSION = "(development)";
 our $GITHUB_URL = "https://github.com/starkandwayne/genesis";
 our $USER_AGENT_STRING = "genesis/$VERSION";
 
+if ($ENV{BOSH_ALL_PROXY}) {
+	$ENV{HTTPS_PROXY}=$ENV{BOSH_ALL_PROXY};
+}
+
 sub DumpJSON {
 	my ($file, $data) = @_;
 	open my $fh, ">", $file or die "Unable to write to $file: $!\n";
@@ -1550,6 +1554,16 @@ sub detect_bosh_version {
 	}
 }
 
+sub system_bosh {
+  local $ENV{HTTPS_PROXY} = ''; # bosh dislikes this env var
+  return system_execute(join(" ", $BOSH, @_));
+}
+
+sub qx_bosh {
+  local $ENV{HTTPS_PROXY} = ''; # bosh dislikes this env var
+  return qx(join(" ", $BOSH, @_));
+}
+
 sub is_create_env {
 	my ($env) = @_;
 	# convert env to file for env if not already done
@@ -1569,28 +1583,27 @@ sub bosh_deploy {
 		push @args, "-n" if $ENV{BOSH_NON_INTERACTIVE};
 		push @args, "deploy", @deploy_opts, $path_to_manifest;
 	}
-	system($BOSH, @args) == 0 or return 1;
-	return 0;
+	return system_bosh(@args);
 }
 
 sub bosh_alias {
 	my ($target) = @_;
-	system($BOSH, "alias-env", $target) == 0, or exit 1;
+	system_bosh("alias-env", $target) or exit 1;
 }
 
 sub bosh_run_errand {
 	my ($target, $deployment, $errand) = @_;
-	system($BOSH, "-n", "-e", $target, "-d", $deployment, "run-errand", $errand) == 0 or exit 1;
+	system_bosh("-n", "-e", $target, "-d", $deployment, "run-errand", $errand) or exit 1;
 }
 
 sub bosh_upload_stemcell {
 	my ($name, $version, $sha1, $url) = @_;
-	system($BOSH, "-n", "upload-stemcell", "--name", $name, "--version", $version, "--sha1", $sha1, $url) == 0 or exit 1;
+	system_bosh("-n", "upload-stemcell", "--name", $name, "--version", $version, "--sha1", $sha1, $url) or exit 1;
 }
 
 sub bosh_download_cloud_config {
 	my ($target, $path_to_cloudconfig) = @_;
-	execute("$BOSH -e $target cloud-config > $path_to_cloudconfig") or
+	system_bosh("-e $target cloud-config > $path_to_cloudconfig") or
 		die "Failed to download cloud-config from '$target' BOSH director.\n";
 	die "No cloud-config defined on BOSH director '$target'.\n" unless -s $path_to_cloudconfig;
 }
@@ -4097,20 +4110,18 @@ sub tablify {
 sub bosh_target_for {
 	my ($env) = @_;
 	if (defined($ENV{GENESIS_BOSH_ENVIRONMENT})) {
-		`$BOSH "-e" $ENV{GENESIS_BOSH_ENVIRONMENT} "env" &>/dev/null`;
-		return $ENV{GENESIS_BOSH_ENVIRONMENT} if ($? == 0);
+		system_bosh("-e $ENV{GENESIS_BOSH_ENVIRONMENT} env") and
+			return $ENV{GENESIS_BOSH_ENVIRONMENT};
 		die "No such host: $ENV{GENESIS_BOSH_ENVIRONMENT} from GENESIS_BOSH_ENVIRONMENT environment variable for the BOSH Director.\n";
 	}
 	my $bosh = get_key($env, 'params.bosh');
 	if (defined($bosh)) {
-		`$BOSH "-e" $bosh "env" &>/dev/null`;
-		return $bosh if ($? == 0);
+		system_bosh("-e $bosh env") and return $bosh;
 		die "No such host: $bosh for the BOSH Director which you configured in params.bosh.\n";
 	 }
 	$bosh = get_key($env, 'params.env');
 	if (defined($bosh)) {
-		`$BOSH "-e" $bosh "env" &>/dev/null`;
-		return $bosh if ($? == 0);
+		system_bosh("-e $bosh env") and return $bosh;
 		die "No such host: $bosh for the BOSH Director which you configured in params.env. You can specify your BOSH Director alias name in params.bosh.\n";
 	}
 	die "Could not find the `params.bosh' or `params.env' key in $env!\n";
@@ -5050,7 +5061,7 @@ sub prompt_for_boshes_and_stemcells_for {
 			chomp(local $ENV{BOSH_CA_CERT} = qx(safe get "$boshenvs{$env}{ca_cert}"));
 			local $ENV{BOSH_CLIENT} = $boshenvs{$env}{username};
 			chomp(local $ENV{BOSH_CLIENT_SECRET} = qx(safe get "$boshenvs{$env}{password}"));
-			my $sc_info = qx($BOSH -e $boshenvs{$env}{url} stemcells);
+			my $sc_info = qx_bosh("-e $boshenvs{$env}{url} stemcells");
 			if ($? > 0) {
 				# Couldn't get stemcells - ask for them manually (just die for now)
 				die "Could not retrieve stemcell\n";
