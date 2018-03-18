@@ -1556,6 +1556,10 @@ sub detect_bosh_version {
 
 sub system_bosh {
   local $ENV{HTTPS_PROXY} = ''; # bosh dislikes this env var
+  local $ENV{BOSH_ENVIRONMENT} = ''; # ensure using ~/.bosh/config via alias
+  local $ENV{BOSH_CA_CERT} = '';
+  local $ENV{BOSH_CLIENT} = '';
+  local $ENV{BOSH_CLIENT_SECRET} = '';
   return system_execute(join(" ", $BOSH, @_));
 }
 
