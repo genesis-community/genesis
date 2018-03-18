@@ -1561,7 +1561,8 @@ sub system_bosh {
 
 sub qx_bosh {
   local $ENV{HTTPS_PROXY} = ''; # bosh dislikes this env var
-  return qx(join(" ", $BOSH, @_));
+  my ($cmd) = join(" ", $BOSH, @_);
+  return qx($cmd);
 }
 
 sub is_create_env {
