@@ -622,7 +622,7 @@ sub kit_yaml_files_in {
 			error "#R{ERROR}: Could not execute $kit/$version hooks/blueprint script successfully:\n";
 			exit 2;
 		}
-		@files = map {Cwd::abs_path $_} grep {$_} split(" ", $result);
+		@files = map {Cwd::abs_path($_) || $_ } split /\s+/, $result;
 		popd;
 		my @missing_files = grep {! -e $_} @files;
 		if (@missing_files) {
