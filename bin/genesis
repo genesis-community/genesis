@@ -200,8 +200,16 @@ sub controlling_terminal {
 }
 
 # Execute the requested command.  You can operate this in two modes:
-#   1) Pass the command as a string will all the arguments in it.
+#
+#   1) Pass the command as a string with all the arguments in it.
+#      eg: execute("safe read auth/approle/role/$role_name/role-id | spruce json | jq -r .role_id | safe paste $role_p $role_k");
+#
 #   2) Pass the command as a template, and the template args as an array
+#      eg: execute('safe read "$1" | spruce json | jq -r .role_id | safe paste "$2" "$3"',
+#                  "auth/approle/role/$role_name/role-id",
+#                  $role_p,
+#                  $role_k
+#          );
 #
 # The latter is recommended as it properly encapsulates/tokenizes the 
 # arguments to prevent accidental expansion or splitting due to quoting
@@ -211,13 +219,21 @@ sub controlling_terminal {
 # supports debug output when GENESIS_DEBUG env is set.
 #
 # If called in a scalar context, it will return true if success, false
-# otherwise.  In a list context, it will return the output and the exit code
+# otherwise.  In a list context, it will return the output and the exit code.
+#
+# Scalar context (often used in conditionals):
+#   if (execute('grep "$1" "$@"', $pattern, @files)) { ... }
+#
+# List context (when you want to capture the output) {
+#   my ($out,$rc) = execute('spruce json "$1" | jq -r "$2"', $_, $filter);
+#   die "Could not find desired key: $out\n" if $rc; # 0 means success
+#   my $key_value = $out;
 sub execute {
 	my ($prog,@args) = @_;
-	my $shell = $ENV{SHELL} || '/bin/bash';
+	my $shell = '/bin/bash';
 	debug "#M{Executing:} `#C{$prog 2>&1}`";
 	if (@args) {
-		unshift @args, $ENV{SHELL};
+		unshift @args, $shell;
 		debug "#m{ - with arguments:}";
 		debug "#m{%4s:} '#c{%s}'", $_, $args[$_] for (1..$#args);
 	}
@@ -237,16 +253,16 @@ sub execute {
 }
 
 sub system_execute {
-	my ($prog) = @_;
-	debug "executing `#C{$prog}`";
-	my $out = system "$prog";
-	my $rc = $?;
-
-	if ($rc != 0) {
-		debug "command exited #R{%d}.", $rc >> 8;
-		return 0;
-	}
-	return 1;
+	my (@args) = @_;
+	debug "executing `#C{$args[0]}`";
+    if (scalar(@args) > 1) {
+        debug "#m{ - with arguments:}";
+        debug "#m{%4s:} '#c{%s}'", $_, $args[$_] for (1..$#args);
+    }
+	my $out = system @args;
+	my $rc = $? >> 8;
+	debug("command exited #R{%d}.", $rc) if $rc;
+	return !$rc;
 }
 
 sub mkfile_or_fail {
@@ -979,8 +995,8 @@ sub find_key {
 	my $filter = build_jq_filter($key);
 	for (@files) {
 		next unless -f $_;
-		my $out = qx(spruce json $_ | jq -r '$filter');
-		return $_ if $? == 0 and $out !~ /^(null\n)?$/;
+		my ($out,$rc) = execute('spruce json "$1" | jq -r "$2"', $_, $filter);
+		return $_ if $rc == 0 and $out !~ /^(null\n)?$/;
 	}
 	return '';
 }
@@ -998,7 +1014,7 @@ sub get_key {
 	my $filter = build_jq_filter($key);
 
 	my ($out,$rc) = execute(
-		'f=$1; shift; spruce merge --skip-eval $@ | spruce json | jq -Mc $f',
+		'f="$1"; shift; spruce merge --skip-eval "$@" | spruce json | jq -Mc "$f"',
 		$filter, mergeable_yaml_files($file)
 	);
 	die "Unable to merge environment files: \n$out\n" if $rc;
@@ -1612,12 +1628,18 @@ sub detect_bosh_version {
 }
 
 sub system_bosh {
-  local $ENV{HTTPS_PROXY} = ''; # bosh dislikes this env var
-  local $ENV{BOSH_ENVIRONMENT} = ''; # ensure using ~/.bosh/config via alias
-  local $ENV{BOSH_CA_CERT} = '';
-  local $ENV{BOSH_CLIENT} = '';
-  local $ENV{BOSH_CLIENT_SECRET} = '';
-  return system_execute(join(" ", $BOSH, @_));
+	my @args = @_;
+	local $ENV{HTTPS_PROXY} = ''; # bosh dislikes this env var
+	local $ENV{BOSH_ENVIRONMENT} = ''; # ensure using ~/.bosh/config via alias
+	local $ENV{BOSH_CA_CERT} = '';
+	local $ENV{BOSH_CLIENT} = '';
+	local $ENV{BOSH_CLIENT_SECRET} = '';
+	if (scalar(@args) > 1) {
+		unshift @args, $BOSH;
+	} else {
+		$args[0] = "$BOSH ".$args[0];
+	}
+	return system_execute($BOSH, @_);
 }
 
 sub qx_bosh {
@@ -1826,8 +1848,10 @@ sub deploy_manifest {
 		$deployment = ".genesis/manifests/$env-state.yml";
 	}
 	my @deploy_opts;
-	push @deploy_opts, "--$_" foreach (grep {$options->{$_}} qw/fix recreate dry-run/);
-	push @deploy_opts, "--no-redact" if (!$options->{redact});
+	push @deploy_opts, "--$_"                for grep {$options->{$_}} qw/fix recreate dry-run/;
+	push @deploy_opts, "--no-redact"         if  !$options->{redact};
+	push @deploy_opts, "--skip-drain=$_"     for @{$options->{'skip-drain'} || []};
+	push @deploy_opts, "--$_=$options->{$_}" for grep {defined $options->{$_}} qw/canaries max-in-flight/;
 	my $rc = bosh_deploy $target, $deployment, "$dir/manifest.yml", @deploy_opts;
 	return $rc;
 }
@@ -5342,10 +5366,35 @@ EOF
 
 command("deploy", <<EOF,
 genesis v$VERSION
-USAGE: genesis deploy [-n|--non-interactive] [--fix|--recreate] [--redact] env-name[.yml]
+USAGE: genesis deploy <options> env-name[.yml]
 
 OPTIONS
 $GLOBAL_USAGE
+  -n, --non-interactive  Do not ask any questions, assume 'y' for any that would
+                         normally be asked.  Allows automation to deploy without
+                         requiring human intervention or expect-style scripting.
+
+      --[no-]redact      Determines if values are shown on the diff output.  By
+                         default, the manifest will be redacted unless being
+                         output to the live console.
+      --skip-drain xxx   Skip running drain scripts for specific instance group.
+                         Can be specified multiple times.
+
+      --canaries #       Override the default number of canary VMs per instance
+                         group.
+
+      --max-in-flight #  Override the default number of maximum VMs in flight
+                         per instance group.
+
+Can specify one of the follow three:
+      --dry-run          Build the manifest and validate it against the current
+                         state of the BOSH director for this deployment, but
+                         doesn't change anything.
+
+      --recreate         Recreate all VMs instead of just applying changes to them.
+
+      --fix              Only recreate VMs that are unresponsive.
+
 EOF
 sub {
 	my %options = (redact => ! controlling_terminal);
@@ -5355,13 +5404,16 @@ sub {
 		fix
 		recreate
 		dry-run
+		skip-drain=s@
+		canaries=i
+		max-in-flight=i
 	/);
 	usage(1) if @_ != 1;
-	my $env = get_env(shift);;
+	my $env = get_env(shift);
 	check_prereqs;
 
-	if ($options{fix} && $options{recreate}) {
-		usage(1,"Cannot specify --fix and --recreate together");
+	if (scalar(grep {$_} ($options{fix}, $options{recreate}, $options{'dry-run'})) > 1) {
+		usage(1,"Can only specify one of --dry-run, --fix or --recreate");
 	}
 
 	if ($options{'non-interactive'}) {
@@ -5830,7 +5882,7 @@ sub {
 		redact!
 	/);
 	usage(1) if @_ != 1;
-	my $env = get_env(shift);;
+	my $env = get_env(shift);
 	check_prereqs;
 
 	$ENV{REDACT} = $options{'redact'} ? "1" : "";
