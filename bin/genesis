@@ -26,6 +26,192 @@ if ($ENV{BOSH_ALL_PROXY}) {
 	$ENV{HTTPS_PROXY}=$ENV{BOSH_ALL_PROXY};
 }
 
+package Genesis::ShellExec;
+
+# This package provides a unified method of executing shell commands, and some
+# convenience methods to run them in common ways.
+#
+# You can operate this in two modes:
+#
+#   1) Pass the command as a string with all the arguments in it.
+#      eg: execute("safe read auth/approle/role/$role_name/role-id | spruce json | jq -r .role_id | safe paste $role_p $role_k");
+#
+#   2) Pass the command as a template, and the template args as an array
+#      eg: execute('safe read "$1" | spruce json | jq -r .role_id | safe paste "$2" "$3"',
+#                  "auth/approle/role/$role_name/role-id",
+#                  $role_p,
+#                  $role_k
+#          );
+#
+# The latter is recommended as it properly encapsulates/tokenizes the
+# arguments to prevent accidental expansion or splitting due to quoting
+# and spaces.  If using it, remember to quote all variable references.
+#
+# You can also pass a hash reference as the first argument to supply options to
+# change the behaviour of the execution.  The following options are supported:
+#
+#   interactive: boolean - If true, run the command interactively on a
+#                controlling terminal.  This uses the perl `system` command, so
+#                capturing output cannot be done.  Returns exit code.
+#
+#   passfail:    boolean - If true, returns true if exit code is 0, false
+#                otherwise.  Can work in conjunction with interactive.
+#
+#   onfailure:   string - Print the string on error and exit program.  If not
+#                running interactively, also prints the output received.
+#
+#   env:         hash - Sets the env variables specified as keys in the hash to
+#                the corresponding values before executing the command.
+#
+#   shell:       string - By default, will use /bin/bash, but if the command
+#                needs a different shell, specify it with this option.
+#
+#   stderr:      string - By default, stderr is redirected to stdout (&1), but
+#                you can use this option to redirect it to a file for later
+#                use.  Cannot use with interactive mode.
+#
+# Finally, if you are not running in interactive or passfail mode, you can call
+# this in either scalar or list context.  If calling in list context, the output
+# and exit code are returned in a list, otherwise just the output.
+#
+# Scalar context:
+#   my $out = execute('grep "$1" "$@"', $pattern, @files);
+#   my $rc = $? >> 8;
+#
+# List context:
+#   my ($out,$rc) = execute('spruce json "$1" | jq -r "$2"', $_, $filter);
+#
+# -----------------------------------------------------------------------------
+# Convenience commands:
+#
+# interact - sets the mode to interactive and passfail
+#
+# bosh - sets the environment for bosh and injects the correct bosh executable
+#
+# bosh_interact - same as bosh, but using interactive and passfail modes
+#
+# check - sets passfail mode, no output returned.
+#
+# do_or_die: first argument is printed along with any output received, then
+#            exits non-zero (dies) if remaining argument fails execution
+#
+# get - returns just output, regardless of context
+#
+# getlines - returns output as an array of lines
+sub execute {
+	my (@args) = @_;
+	my %opts = %{((ref($args[0]) eq 'HASH') ? shift @args: {})};
+	my $prog = shift @args;
+	if ($prog !~ /\$\{?[\@0-9]/ && scalar(@args) > 0) {
+		$prog .= ' "$@"'; # old style of passing in args as array, need to wrap for shell call
+	}
+
+	local %ENV = %ENV; # To get local scope for duration of this call
+	for (keys %{$opts{env} || {}}) {
+		$ENV{$_} = $opts{env}{$_};
+		main::debug("#M{Setting: }#B{$_}='#C{$ENV{$_}}'");
+	}
+	my $shell = $opts{shell} || '/bin/bash';
+	$prog .= ($opts{stderr} ? " 2>$opts{stderr}" : ' 2>&1') unless ($opts{interactive});
+	main::debug("#M{Executing:} `#C{$prog}`%s", ($opts{interactive} ? " #Y{(interacively)}" : ''));
+	if (@args) {
+		unshift @args, $shell;
+		main::debug("#m{ - with arguments:}");
+		main::debug("#m{%4s:} '#c{%s}'", $_, $args[$_]) for (1..$#args);
+	}
+
+	my @cmd = ($shell, "-c", $prog, @args);
+	my $out;
+	if ($opts{interactive}) {
+		system @cmd;
+	} else {
+		open my $pipe, "-|", @cmd;
+		$out = do { local $/; <$pipe> };
+		close $pipe;
+	}
+	my $rc = $? >>8;
+	if ($rc) {
+		die("#R{$opts{onfailure}}%s\n", defined($out) ? ":\n$out" :'') if $opts{onfailure};
+		main::debug("#R{==== ERROR: $rc}");
+		main::debug("$out\n#R{==== END}") if defined($out);
+	} else {
+		main::debug("#g{Command executed successfully.}");
+	}
+	return
+		$opts{passfail}    ? $rc == 0 :
+		$opts{interactive} ? $rc :
+		wantarray          ? ($out,$rc) :
+		$out;
+}
+
+sub interact {
+	my @args = @_;
+	my $opts = (ref($args[0]) eq 'HASH') ? shift @args : {};
+	$opts->{interactive} = 1;
+	$opts->{passfail} = 1;
+	return execute($opts,@args);
+}
+
+sub check {
+	my @args = @_;
+	my $opts = (ref($args[0]) eq 'HASH') ? shift @args : {};
+	$opts->{interactive} = 0;
+	$opts->{passfail} = 1;
+	return execute($opts,@args);
+}
+
+sub bosh {
+	my @args = @_;
+	my $opts = (ref($args[0]) eq 'HASH') ? shift @args : {};
+	$opts->{env} ||= {};
+	# Clear out the BOSH env vars unless we're under Concourse
+	unless ($ENV{BUILD_PIPELINE_NAME}) {
+		$opts->{env}{HTTPS_PROXY} = ''; # bosh dislikes this env var
+		$opts->{env}{https_proxy} = ''; # bosh dislikes this env var
+		$opts->{env}{BOSH_ENVIRONMENT}   ||= ''; # ensure using ~/.bosh/config via alias
+		$opts->{env}{BOSH_CA_CERT}       ||= '';
+		$opts->{env}{BOSH_CLIENT}        ||= '';
+		$opts->{env}{BOSH_CLIENT_SECRET} ||= '';
+	}
+	if ($args[0] =~ /\$\{?[\@0-9]/ && scalar(@args) > 1) {
+		$args[0] = main::bosh_cmd() ." $args[0]";
+	} else {
+		unshift @args, main::bosh_cmd()
+	}
+	return wantarray ? (execute($opts,@args)) : execute($opts,@args);
+}
+
+sub bosh_interact {
+	my @args = @_;
+	my $opts = (ref($args[0]) eq 'HASH') ? shift @args : {};
+	$opts->{interactive} = 1;
+	$opts->{passfail} = 1;
+	return bosh($opts,@args);
+}
+
+sub do_or_die {
+	my @args = @_;
+	my $opts = (ref($args[0]) eq 'HASH') ? shift @args : {};
+	delete @{$opts}{qw/interative passfail/};
+	$opts->{onfailure} = shift @args;
+	execute($opts,@args);
+	return undef;
+}
+
+sub get {
+	my @args = @_;
+	my $opts = (ref($args[0]) eq 'HASH') ? shift @args : {};
+	delete @{$opts}{qw/interative passfail/};
+	my $out = execute($opts,@args);
+	return $out
+}
+
+sub getlines {
+	my $out = get(@_);
+	return ($? >> 0) ? () : split $/, $out;
+}
+package main;
+
 sub DumpJSON {
 	my ($file, $data) = @_;
 	open my $fh, ">", $file or die "Unable to write to $file: $!\n";
@@ -35,7 +221,7 @@ sub DumpJSON {
 
 sub LoadFile {
 	my ($file) = @_;
-	decode_json(qx(spruce json $file));
+	decode_json(Genesis::ShellExec::get('spruce json "$1"', $file));
 }
 
 sub Load {
@@ -73,7 +259,9 @@ sub envdefault {
 sub valid_envs {
 	my (%envs, $json);
 	foreach (glob "*.yml") {
-		eval {$json = decode_json(qx{spruce json "$_" 2>/dev/null});};
+		eval {
+			$json = decode_json(Genesis::ShellExec::get({stderr=>"/dev/null"}, 'spruce json "$1"', $_))
+		};
 		next if $@;
 		next unless $json && $json->{params} && $json->{params}{env};
 		(my $label= $_) =~ s/\.yml$//;
@@ -199,72 +387,6 @@ sub controlling_terminal {
 	return -t STDOUT;
 }
 
-# Execute the requested command.  You can operate this in two modes:
-#
-#   1) Pass the command as a string with all the arguments in it.
-#      eg: execute("safe read auth/approle/role/$role_name/role-id | spruce json | jq -r .role_id | safe paste $role_p $role_k");
-#
-#   2) Pass the command as a template, and the template args as an array
-#      eg: execute('safe read "$1" | spruce json | jq -r .role_id | safe paste "$2" "$3"',
-#                  "auth/approle/role/$role_name/role-id",
-#                  $role_p,
-#                  $role_k
-#          );
-#
-# The latter is recommended as it properly encapsulates/tokenizes the 
-# arguments to prevent accidental expansion or splitting due to quoting
-# and spaces.  If using it, remember to quote all variable references.
-#
-# Use this where you would normally use backticks or qx() calls.  It also
-# supports debug output when GENESIS_DEBUG env is set.
-#
-# If called in a scalar context, it will return true if success, false
-# otherwise.  In a list context, it will return the output and the exit code.
-#
-# Scalar context (often used in conditionals):
-#   if (execute('grep "$1" "$@"', $pattern, @files)) { ... }
-#
-# List context (when you want to capture the output) {
-#   my ($out,$rc) = execute('spruce json "$1" | jq -r "$2"', $_, $filter);
-#   die "Could not find desired key: $out\n" if $rc; # 0 means success
-#   my $key_value = $out;
-sub execute {
-	my ($prog,@args) = @_;
-	my $shell = '/bin/bash';
-	debug "#M{Executing:} `#C{$prog 2>&1}`";
-	if (@args) {
-		unshift @args, $shell;
-		debug "#m{ - with arguments:}";
-		debug "#m{%4s:} '#c{%s}'", $_, $args[$_] for (1..$#args);
-	}
-	open my $pipe, "-|", $shell, '-c', $prog, @args;
-	my $out = do { local $/; <$pipe> };
-	my $rc = $? >> 8;
-
-	if ($rc != 0) {
-		debug "command exited #R{%d}.  Output:", $rc;
-		debug "#R{vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv}";
-		debug $out;
-		debug "#R{^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^}";
-	} else {
-		debug "#g{Command executed successfully.}";
-	}
-	return wantarray ? ($out, $rc) : ($rc ? 0 : 1);
-}
-
-sub system_execute {
-	my (@args) = @_;
-	debug "executing `#C{$args[0]}`";
-    if (scalar(@args) > 1) {
-        debug "#m{ - with arguments:}";
-        debug "#m{%4s:} '#c{%s}'", $_, $args[$_] for (1..$#args);
-    }
-	my $out = system @args;
-	my $rc = $? >> 8;
-	debug("command exited #R{%d}.", $rc) if $rc;
-	return !$rc;
-}
-
 sub mkfile_or_fail {
 	my ($file, $mode, $content) = @_;
 	unless (defined($content)) {
@@ -286,7 +408,10 @@ sub mkdir_or_fail {
 	my ($dir,$mode) = @_;
 	unless (-d $dir) {;
 		debug "creating directory $dir/";
-		system("mkdir", "-p", "$dir/") == 0 or die "Unable to create directory $dir/: $!\n";
+		Genesis::ShellExec::do_or_die(
+			"Unable to create directory $dir",
+			'mkdir -p "$1"', $dir
+		);
 	}
 	chmod_or_fail($mode, $dir) if defined $mode;
 	return $dir;
@@ -428,8 +553,7 @@ sub run_feature_hook {
 	$version = "latest" unless defined $version;
 	chmod(0755,$hook) unless -x $hook;
 
-	my $cmd = "$hook " . join(" ", map { "'$_'" } @features);
-	my $out = qx($cmd);
+	my $out = Genesis::ShellExec::get('cmd="$1"; shift; "$cmd" "$@"', $hook, @features);
 	die "Error running $hook for $kit/$version. Contact your kit author for a bugfix.\n"
 		if $? >> 8;
 
@@ -449,10 +573,14 @@ sub run_param_hook {
 
 	my $dir = workdir;
 	DumpJSON "$dir/in", $params;
-	my $cmd = "$hook $dir/in $dir/out " . join(" ", map { "'$_'" } @features);
-	$ENV{GENESIS_ENVIRONMENT_NAME} = $env_name;
-	$ENV{GENESIS_VAULT_PREFIX} = $vault_prefix;
-	system($cmd);
+	Genesis::ShellExec::interact(
+		{env => {
+			GENESIS_ENVIRONMENT_NAME => $env_name,
+			GENESIS_VAULT_PREFIX => $vault_prefix
+		}},
+		'dir="$1"; shift 1; "'.$hook.'" "${dir}/in" "${dir}/out" "$@"',
+		$dir, @features
+	);
 	die "\nNew environment creation cancelled.\n"
 		if $? >> 8 eq 130;
 	die "Error running params hook for $kit/$version. Contact your kit author for a bugfix.\n"
@@ -617,7 +745,7 @@ sub kit_yaml_files_in {
 		-x $blueprint_script_path || chmod_or_fail 0755,$blueprint_script_path;
 		my $helper = blueprint_script_helper($kit,$version,$env,@features);
 		pushd($dir);
-		my $result = qx(bash -c 'source $helper; hooks/blueprint');
+		my $result = Genesis::ShellExec::get('source "$1"; hooks/blueprint', $helper);
 		if ($? >> 8) {
 			error "#R{ERROR}: Could not execute $kit/$version hooks/blueprint script successfully:\n";
 			exit 2;
@@ -908,8 +1036,8 @@ sub get_kit {
 	unless (exists $KIT_CACHE_DIR{"$kit/$version"}) {
 		my $dir = workdir('kit');
 		die "Kit $kit/$version not found!\n" unless -e ".genesis/kits/$kit-$version.tar.gz";
-		qx(tar -xz -C $dir --strip-components 1 -f .genesis/kits/$kit-$version.tar.gz);
-		$? == 0 or die;
+		Genesis::ShellExec::check('tar -xz -C "$1" --strip-components 1 -f ".genesis/kits/${2}-${3}.tar.gz"', $dir, $kit, $version)
+			or die "Could not read kit file";
 		$KIT_CACHE_DIR{"$kit/$version"} = $dir;
 	}
 	return $KIT_CACHE_DIR{"$kit/$version"};
@@ -956,7 +1084,7 @@ sub get_env {
 	#^ The above breaks tests (t/compile.t) because we were lax in the past
 	#  about what constitutes a deployable env yml file.  If test-env.yml is a
 	#  valid file, with params.env == test-env, can you deploy with file
-	#  test-env-upgrade.yml that changes the kit version but keeps the same 
+	#  test-env-upgrade.yml that changes the kit version but keeps the same
 	#  params.env??? (Commented out for now)
 	#  we may also want a check such as the following:
 	#die "File '$file' defines a different environment according to its params.env.  Cut and paste error?\n" unless get_key($env,'params.env') eq $env;
@@ -995,7 +1123,7 @@ sub find_key {
 	my $filter = build_jq_filter($key);
 	for (@files) {
 		next unless -f $_;
-		my ($out,$rc) = execute('spruce json "$1" | jq -r "$2"', $_, $filter);
+		my ($out,$rc) = Genesis::ShellExec::execute('spruce json "$1" | jq -r "$2"', $_, $filter);
 		return $_ if $rc == 0 and $out !~ /^(null\n)?$/;
 	}
 	return '';
@@ -1013,11 +1141,11 @@ sub get_key {
 	return $default unless has_key($file, $key);
 	my $filter = build_jq_filter($key);
 
-	my ($out,$rc) = execute(
+	my $out = Genesis::ShellExec::execute(
+		{onfailure => "Unable to merge environment files"},
 		'f="$1"; shift; spruce merge --skip-eval "$@" | spruce json | jq -Mc "$f"',
 		$filter, mergeable_yaml_files($file)
 	);
-	die "Unable to merge environment files: \n$out\n" if $rc;
 	JSON::PP->new->allow_nonref->decode($out);
 }
 
@@ -1044,8 +1172,7 @@ sub dereference_params {
 }
 
 sub safe_path_exists {
-	system "safe exists $_[0]";
-	return ( $? eq 0);
+	return Genesis::ShellExec::check('safe exists "$1"', $_[0]);
 }
 
 sub safe_commands {
@@ -1173,13 +1300,7 @@ sub check_secret {
 	} else {
 		die "Unrecognized credential or certificate command: '".join(" ", @$cmd)."'\n";
 	}
-
-	my @missing = ();
-	for (@keys) {
-		system('safe', 'exists', "$path:$_");
-		push @missing, ["[$type]", "$path:$_"] if $?;
-	}
-	return @missing;
+	return map {["[$type]", "$path:$_"]} grep {!safe_path_exists("$path:$_")} @keys;
 }
 
 ###########################################################################
@@ -1218,7 +1339,7 @@ sub __prompt_for_line {
 	# `validate` is a sub with first argument the test value, and the second
 	# being an optional error message
 	#
-	# NOTE:  IF YOU ADD OR MODIFY A VALIDATION, YOU NEED TO ADD IT TO THE 
+	# NOTE:  IF YOU ADD OR MODIFY A VALIDATION, YOU NEED TO ADD IT TO THE
 	#        `validate_kit_metadata` routine below
 	my $validate;
 	if (defined($validation)) {
@@ -1553,8 +1674,11 @@ sub secret_line_prompt_handler {
 	validate_prompt_opts("secret-line", \%opts, qw(echo));
 	target_vault($ENV{GENESIS_TARGET_VAULT});
 	my ($path, $key) = split /:/, "secret/$secret";
-	system "safe", "prompt", $prompt, "--", ($opts{echo} ? "ask" : "set"), $path, $key;
-	die "Failed to save data to secret/$secret in Vault '$ENV{GENESIS_TARGET_VAULT}'\n" if ($? >> 8);
+	Genesis::ShellExec::interact(
+		{onfailure => "Failed to save data to secret/$secret in Vault '$ENV{GENESIS_TARGET_VAULT}'"},
+		'safe prompt "$1" --  "$2" "$3" "$4"',
+		$prompt, ($opts{echo} ? "ask" : "set"), $path, $key
+	);
 }
 sub secret_block_prompt_handler {
 	my ($prompt,%opts) = @_;
@@ -1563,7 +1687,7 @@ sub secret_block_prompt_handler {
 	target_vault($ENV{GENESIS_TARGET_VAULT});
 	my ($path, $key) = split /:/, "secret/$secret";
 	my $file = mkfile_or_fail(workdir()."/param", prompt_for_block($prompt));
-	my $err = qx(safe set "$path" "$key\@$file" 2>&1);
+	my $err = Genesis::ShellExec::get('safe set "$1" "${2}@${3}"', $path, $key, $file);
 	die "$err\n\nFailed to save data to secret/$secret in Vault '$ENV{GENESIS_TARGET_VAULT}'\n" if ($? >> 8);
 }
 
@@ -1608,44 +1732,29 @@ sub is_valid_uri {
 
 my $BOSH; # used for abstracting out the actual name of the installed
           # bosh (v2) cli (could be bosh, bosh2, or boshv2)
+sub bosh_cmd {
+	check_prereqs() unless $BOSH;
+	return $BOSH;
+}
 sub detect_bosh_version {
 	my ($BOSH2_MIN_VERSION) = @_;
-	foreach my $boshcmd ("bosh", "bosh2", "boshv2") {
-		my $version = qx($boshcmd -v 2>&1 | grep version | head -n1);
-		if ($version) {
-			chomp($version);
-			if ($version =~ s/version (\S+?)-.*/$1/){
-				if (!new_enough("bosh2", $version, $BOSH2_MIN_VERSION)) {
-					error "BOSH (v2) CLI v${version} is installed, but Genesis requires #R{at least $BOSH2_MIN_VERSION} - upgrade your BOSH CLI, via #B{https://github.com/cloudfoundry/bosh-cli/releases}";
-				}
+	my $best = "0.0.0";
+	foreach my $boshcmd (qw(bosh2 boshv2 bosh)) {
+		chomp(my $version = Genesis::ShellExec::execute("$boshcmd -v 2>&1 | grep version | head -n1"));
+		if ($version =~ /version (\S+?)-.*/) {
+			if (new_enough("bosh", $1, $BOSH2_MIN_VERSION)) {
 				$BOSH = $boshcmd;
+				debug "Found BOSH v$1 as '$BOSH'";
+				return 1
 			}
+			$best = $1 if new_enough("bosh", $1, $best); # Track the best we've found for error message
 		}
 	}
-	if (!$BOSH) {
-		error "Missing `bosh2' - install the BOSH (v2) CLI from #B{https://github.com/cloudfoundry/bosh-cli/releases}";
-	}
-}
-
-sub system_bosh {
-	my @args = @_;
-	local $ENV{HTTPS_PROXY} = ''; # bosh dislikes this env var
-	local $ENV{BOSH_ENVIRONMENT} = ''; # ensure using ~/.bosh/config via alias
-	local $ENV{BOSH_CA_CERT} = '';
-	local $ENV{BOSH_CLIENT} = '';
-	local $ENV{BOSH_CLIENT_SECRET} = '';
-	if (scalar(@args) > 1) {
-		unshift @args, $BOSH;
+	if ($best eq "0.0.0") {
+		die "Missing `bosh2' - install the BOSH (v2) CLI from #B{https://github.com/cloudfoundry/bosh-cli/releases}\n";
 	} else {
-		$args[0] = "$BOSH ".$args[0];
+		die "BOSH (v2) CLI v${best} is installed, but Genesis requires #R{at least $BOSH2_MIN_VERSION} - upgrade your BOSH CLI, via #B{https://github.com/cloudfoundry/bosh-cli/releases}\n";
 	}
-	return system_execute($BOSH, @_);
-}
-
-sub qx_bosh {
-  local $ENV{HTTPS_PROXY} = ''; # bosh dislikes this env var
-  my ($cmd) = join(" ", $BOSH, @_);
-  return qx($cmd);
 }
 
 sub is_create_env {
@@ -1667,27 +1776,29 @@ sub bosh_deploy {
 		push @args, "-n" if $ENV{BOSH_NON_INTERACTIVE};
 		push @args, "deploy", @deploy_opts, $path_to_manifest;
 	}
-	return system_bosh(@args);
+	return Genesis::ShellExec::bosh_interact(@args);
 }
 
 sub bosh_alias {
-	my ($target) = @_;
-	system_bosh("alias-env", $target) or exit 1;
+	Genesis::ShellExec::bosh_interact(
+		{onfailure => "Could not create BOSH alias for '$_[0]'"},
+		'alias-env "$1"', $_[0]
+	);
 }
 
 sub bosh_run_errand {
 	my ($target, $deployment, $errand) = @_;
-	system_bosh("-n", "-e", $target, "-d", $deployment, "run-errand", $errand) or exit 1;
+	Genesis::ShellExec::bosh_interact("-n", "-e", $target, "-d", $deployment, "run-errand", $errand) or exit 1;
 }
 
 sub bosh_upload_stemcell {
 	my ($name, $version, $sha1, $url) = @_;
-	system_bosh("-n", "upload-stemcell", "--name", $name, "--version", $version, "--sha1", $sha1, $url) or exit 1;
+	Genesis::ShellExec::bosh_interact("-n", "upload-stemcell", "--name", $name, "--version", $version, "--sha1", $sha1, $url) or exit 1;
 }
 
 sub bosh_download_cloud_config {
 	my ($target, $path_to_cloudconfig) = @_;
-	system_bosh("-e $target cloud-config > $path_to_cloudconfig") or
+	Genesis::ShellExec::bosh_interact('-e "$1" cloud-config > "$2"', $target, $path_to_cloudconfig) or
 		die "Failed to download cloud-config from '$target' BOSH director.\n";
 	die "No cloud-config defined on BOSH director '$target'.\n" unless -s $path_to_cloudconfig;
 }
@@ -1703,8 +1814,11 @@ sub write_stemcell_data {
 	if ($ENV{GENESIS_INDEX} ne "no") {
 		my $flags = "-ks";
 		$flags += " -v" if envset 'GENESIS_DEBUG';
-		$stemcells = `curl $flags $ENV{GENESIS_INDEX}/v1/stemcell/latest | jq '. | map({"key": .name, "value": { "sha1": .sha1, "url": .url}}) | from_entries' -Mc`;
-		die "Unable to contact the genesis index to retrieve stemcell data. Cannot continue." unless ($? == 0);
+		$stemcells = Genesis::ShellExec::get(
+			{onfailure => "Unable to contact the genesis index to retrieve stemcell data. Cannot continue."},
+			'curl '.$flags.' "${1}/v1/stemcell/latest | jq -Mc "$2"',
+			$ENV{GENESIS_INDEX}, '. | map({"key": .name, "value": { "sha1": .sha1, "url": .url}}) | from_entries'
+		);
 	}
 	open my $fh, ">", $file;
 	print $fh <<EOF;
@@ -1718,8 +1832,7 @@ EOF
 
 sub spruce_vault_paths {
 	my (@files) = @_;
-	my $ymls = join(" ", @files);
-	my @keys= qx/spruce vaultinfo --go-patch $ymls | spruce json | jq -r '.secrets[].key'/;
+	my @keys= Genesis::ShellExec::getlines('f="$1"; shift; spruce vaultinfo --go-patch "$@" | spruce json | jq -r "$f"', '.secrets[].key', @files);
 	if ($? != 0) {
 		die "Failure while running spruce vaultinfo.\n";
 	}
@@ -1858,27 +1971,17 @@ sub deploy_manifest {
 
 sub curl {
 	my ($method, $url, $headers, $data, $skip_verify, $creds) = @_;
-	my $flags = "-X '$method'";
-	for my $header (keys %$headers) {
-		$flags .= " -H '$header: $headers->{$header}'";
-	}
-	if ($data) {
-		$flags .= " -d '$data'";
-	}
-	if ($skip_verify) {
-		$flags .= " -k";
-	}
-	if ($creds) {
-		$flags .= " -u '$creds'";
-	}
-	if (envset('GENESIS_DEBUG')) {
-		$flags .= " -v";
-	}
+	my @flags = ("-X", $method);
+	push @flags, "-H", "$_: $headers->{$_}" for (keys %$headers);
+	push @flags, "-d", $data if $data;
+	push @flags, "-k"  if ($skip_verify);
+	push @flags, "-u", $creds if ($creds);
+	push @flags, "-v"  if (envset('GENESIS_DEBUG'));
 	my $status = "";
 	my $status_line = "";
-	my @data = qx(curl -isL $url $flags);
+	my @data = Genesis::ShellExec::getlines('u="$1"; shift; curl -isL "$u" "$@"', $url, @flags);
 	unless (scalar(@data) && $? == 0) {
-		system "curl -L $url $flags"; # curl again to get stdout/err into concourse for debugging
+		Genesis::ShellExec::interact('u="$1"; shift; curl -L "$u" "$@"', $url, @flags); # curl again to get stdout/err into concourse for debugging
 		return 599, "Unable to execute curl command", "";
 	}
 	while (my $line = shift @data) {
@@ -1922,15 +2025,15 @@ sub vault_auth {
 		or die "No Client Token found in response from the Vault at $options{vault}\n($data)\n";
 
 	$ENV{VAULT_TOKEN} = $output->{auth}{client_token};
-	$output = qx(vault status 2>&1);
-	if ($? != 0) {
-		die "Failed to authenticate to the Vault at $options{vault}\n:`vault status` said:\n$output\n";
-	}
+	Genesis::ShellExec::do_or_die(
+		"Failed to authenticate to the Vault at $options{vault}\n:`vault status` said",
+		"vault status"
+	);
 
-	$output = qx(vault read secret/handshake 2>&1);
-	if ($? != 0) {
-		die "Failed to retrieve secret/handshake from the Vault at $options{vault}; assuming token authentication failure.\n";
-	}
+	Genesis::ShellExec::do_or_die(
+		"Failed to retrieve secret/handshake from the Vault at $options{vault}",
+		"vault read secret/handshake"
+	)
 }
 
 sub commit_changes {
@@ -1941,7 +2044,7 @@ sub commit_changes {
 	# rebasing, and git discovers that there are no changes after you rebase
 
 	# create an output git repo based off of latest origin/$branch
-	system("cp -R $indir $outdir") == 0 or exit 1;
+	Genesis::ShellExec::check({interactive => 1}, 'cp -R "$1" "$2"', $indir, $outdir) or exit 1;
 	pushd $outdir;
 
 	# We need this here so we can do a manual pull after the build/deploy, but
@@ -1971,32 +2074,39 @@ EOF
 
 	# no need to fetch or pull from origin/$branch, as the git resource in the pipeline should
 	# have the latest data from origin, we just need to reset to the newest applicable ref
-	system(qq( HOME=$tmp/home \
-	             git reset --hard origin/$branch && \
-	             git checkout $branch && \
-	             git pull origin $branch)) == 0 or exit 1;
+	Genesis::ShellExec::do_or_die(
+		{interactive => 1, env =>{HOME => "$tmp/home"}},
+		"Could not reset to the newest applicable ref in git",
+		'git reset --hard "origin/${1}" && git checkout "$1" &&  git pull origin "$1"',
+		$branch
+	);
 	popd;
 
 	# find and copy all potential changes to the outdir
 	pushd $indir;
-	my @output = qx(git status --porcelain);
+	my @output = Genesis::ShellExec::getlines('git status --porcelain');
 	popd;
 	my @changes = map { chomp; s/^...//; $_; } @output;
 	for my $file (@changes) {
 		mkdir_or_fail(dirname("$outdir/$file"));
-		system("cp", "-R", "$indir/$file", "$outdir/$file") == 0 or exit 1;
+		Genesis::ShellExec::do_or_die(
+			"Could not copy changed files to output directory",
+			'cp -R "$1" "$2"', "$indir/$file", "$outdir/$file"
+		)
 	}
 
 	# check if any changes actually exist in the outdir (potential changes may have alread
 	# been tracked after $indir's commit, so they could disappear here), then commit them
 	pushd $outdir;
-	my $output = qx(git status --porcelain 2>&1);
+	my $output = Genesis::ShellExec::get('git status --porcelain');
 	if ($output) {
-		system(qq( HOME=$tmp/home \
-		             git add -A && \
-		             git status && \
-		             git --no-pager diff --cached && \
-		             git commit -m "CI commit: $message" ));
+		Genesis::ShellExec::interact( # use interact because we want to capture the output live (concourse)
+			{env => {HOME => "$tmp/home"}},
+			'git add -A && '.
+			'git status && '.
+			'git --no-pager diff --cached && '.
+			'git commit -m "$1"', "CI commit: $message"
+		);
 	}
 }
 
@@ -3444,7 +3554,7 @@ sub check_prereqs {
 	my $version;
 
 	# check that we has a spruce
-	$version = qx(spruce -v 2>/dev/null);
+	$version = Genesis::ShellExec::get {stderr => '/dev/null'}, 'spruce -v';
 	if (!$version || $version =~ s/not found//) {
 		push @errors, "Missing `spruce' - install Spruce from #B{https://github.com/geofffranks/spruce/releases}";
 	} else {
@@ -3457,7 +3567,7 @@ sub check_prereqs {
 	}
 
 	# check that we has a safe
-	$version = qx(safe -v 2>&1 >/dev/null);
+	$version = Genesis::ShellExec::get {stderr => "&1 >/dev/null"}, 'safe -v'; # kinda hacky way of getting stdout to /dev/null and stderr to stdout
 	if (!$version || $version =~ s/not found//) {
 		push @errors, "Missing `safe' - install Safe from #B{https://github.com/starkandwayne/safe/releases}";
 	} else {
@@ -3470,7 +3580,7 @@ sub check_prereqs {
 	}
 
 	# check that we has a vault
-	$version = qx(vault -v 2>/dev/null);
+	$version = Genesis::ShellExec::get {stderr => '/dev/null'}, 'vault -v';
 	if (!$version) {
 		push @errors, "Missing `vault' - install Vault from #B{https://www.vaultproject.io/downloads.html}";
 	} else {
@@ -3484,7 +3594,7 @@ sub check_prereqs {
 	detect_bosh_version($BOSH2_MIN_VERSION);
 
 	# check that we has a git
-	$version = qx(git --version 2>/dev/null);
+	$version = Genesis::ShellExec::get {stderr => '/dev/null'}, 'git --version';
 	if (!$version || $version =~ s/not found//) {
 		push @errors, "Missing `git' - install git via your platform package manager";
 	} else {
@@ -3567,7 +3677,11 @@ sub kit_file {
 		$dir = $KIT_CACHE_DIR{"$kit/$version"};
 	} else {
 		$dir = workdir('kit');
-		qx(tar -C $dir -xz --strip-components 1 -f .genesis/kits/$kit-$version.tar.gz $kit-$version/$relpath 2>/dev/null);
+		Genesis::ShellExec::check(
+			{stderr => '/dev/null'},
+			'tar -C "$1" -xz --strip-components 1 -f ".genesis/kits/${2}-${3}.tar.gz" "${2}-${3}/${4}"',
+			$dir, $kit, $version, $relpath
+		);
 	}
 	!$required || -f "$dir/$relpath"
 		or die "$relpath not found in $kit-$version kit. Please contact your kit author for a fix.\n";
@@ -3853,8 +3967,10 @@ sub check_kit_prereqs {
 	return unless -e $script;
 	explain "Checking kit pre-requisites...\n";
 	-x $script || chmod_or_fail 0755, $script;
-	my $out = qx($script);
-	$? == 0 or die "Some prerequisites for this Genesis Kit have not been met:\n$out\n";
+	Genesis::ShellExec::do_or_die(
+		"Some prerequisites for this Genesis Kit have not been met",
+		$script
+	);
 }
 
 sub prompt_for_env_features {
@@ -3982,16 +4098,22 @@ sub process_kit_params {
 				} else {
 					my ($path, $key) = split /:/, $vault_path;
 					if ($q->{type} =~ /^(boolean|string)$/) {
-						system "safe", "prompt", $q->{ask}, "--", ($q->{echo} ? "ask" : "set"), $path, $key;
-						die "Failed to save data to $vault_path in Vault\n" if ($? >> 8);
+						Genesis::ShellExec::interact(
+							{onfailure => "Failed to save data to $vault_path in Vault"},
+							'safe prompt "$1" -- "$2" "$3" "$4"',
+							$q->{ask}, ($q->{echo} ? "ask" : "set"), $path, $key
+						);
 					} elsif ($q->{type} eq "multi-line") {
 						$answer = prompt_for_block($q->{ask});
 						my $tmpdir = workdir;
 						open my $fh, ">", "$tmpdir/param" or die "Could not write to $tmpdir/param: $!\n";
 						print $fh $answer;
 						close $fh;
-						my $err = qx(safe set "$path" "$key\@$tmpdir/param" 2>&1);
-						die "$err\n\nFailed to save data to $vault_path in Vault\n" if ($? >> 8);
+						Genesis::ShellExec::do_or_die(
+							"Failed to save data to $vault_path in Vault",
+							'safe set "$1" "${2}@${3}/param"',
+							$path, $key, $tmpdir
+						);
 					} else {
 						die "Unsupported parameter type '$q->{type}' for $q->{vault}. Please contact your kit author for a fix.\n";
 					}
@@ -4069,12 +4191,17 @@ sub active_certificates {
 sub target_vault {
 	my ($target) = @_;
 	if ($target) {
-		system(qw(safe target), $target) == 0 or exit 1;
+		Genesis::ShellExec::interact({passfail => 1}, 'safe target "$1"', $target) or exit 1;
 	} else {
-		system(qw(safe target -i)) == 0 or exit 1;
+		Genesis::ShellExec::interact({passfail => 1}, 'safe target -i') or exit 1;
 	}
-	chomp($ENV{GENESIS_TARGET_VAULT}=qx(safe target 2>&1 | grep '.*targeting .* at.*' | sed -e 's/.*targeting \\([^ ]*\\) at.*/\\1/'));
-	die "Could not set target vault" if $? >> 8;
+	chomp(
+		$ENV{GENESIS_TARGET_VAULT}=Genesis::ShellExec::get(
+			{onfailure => "Could not set target vault"} ,
+			'safe target 2>&1 | grep "$1" | sed -e "$2"',
+			'.*targeting .* at.*', 's/.*targeting \([^ ]*\) at.*/\1/'
+		)
+	);
 }
 # generate (and optionally rotate) credentials.
 #
@@ -4107,8 +4234,10 @@ sub vaultify_secrets {
 	if (%$creds) {
 		explain " - auto-generating credentials (in secret/$options{prefix})...\n";
 		for (safe_commands $creds, %options) {
-			system('safe', @$_);
-			die "Failure autogenerating credentials.\n" if ($? >> 8);
+			Genesis::ShellExec::interact(
+				{onfailure => "Failure autogenerating credentials."},
+				'safe "$@"', @$_
+			);
 		}
 	} else {
 		explain " - no credentials need to be generated.\n";
@@ -4118,8 +4247,10 @@ sub vaultify_secrets {
 	if (%$certs) {
 		explain " - auto-generating certificates (in secret/$options{prefix})...\n";
 		for (cert_commands $certs, %options) {
-			system('safe', @$_);
-			die "Failure autogenerating certificates.\n" if ($? != 0);
+			Genesis::ShellExec::interact(
+				{onfailure => "Failure autogenerating certificates."},
+				'safe "$@"', @$_
+			);
 		}
 	} else {
 		explain " - no certificates need to be generated.\n";
@@ -4190,18 +4321,18 @@ sub tablify {
 sub bosh_target_for {
 	my ($env) = @_;
 	if (defined($ENV{GENESIS_BOSH_ENVIRONMENT})) {
-		system_bosh("-e $ENV{GENESIS_BOSH_ENVIRONMENT} env") and
+		Genesis::ShellExec::bosh_interact('-e "$1" env', $ENV{GENESIS_BOSH_ENVIRONMENT}) and
 			return $ENV{GENESIS_BOSH_ENVIRONMENT};
 		die "No such host: $ENV{GENESIS_BOSH_ENVIRONMENT} from GENESIS_BOSH_ENVIRONMENT environment variable for the BOSH Director.\n";
 	}
 	my $bosh = get_key($env, 'params.bosh');
 	if (defined($bosh)) {
-		system_bosh("-e $bosh env") and return $bosh;
+		Genesis::ShellExec::bosh_interact('-e "$1" env', $bosh) and return $bosh;
 		die "No such host: $bosh for the BOSH Director which you configured in params.bosh.\n";
 	 }
 	$bosh = get_key($env, 'params.env');
 	if (defined($bosh)) {
-		system_bosh("-e $bosh env") and return $bosh;
+		Genesis::ShellExec::bosh_interact('-e "$1" env', $bosh) and return $bosh;
 		die "No such host: $bosh for the BOSH Director which you configured in params.env. You can specify your BOSH Director alias name in params.bosh.\n";
 	}
 	die "Could not find the `params.bosh' or `params.env' key in $env!\n";
@@ -4426,9 +4557,9 @@ sub {
 	debug "generating a new Genesis repo, named $name";
 
 	debug "checking git config so can git commit later";
-	execute 'git config user.name'
+	Genesis::ShellExec::check 'git config user.name'
 		or die 'Please setup git - git config --global user.name "Your Name" -';
-	execute 'git config user.email'
+	Genesis::ShellExec::check 'git config user.email'
 		or die 'Please setup git - git config --global user.email your@email.com -';
 
 	my $root = $options{directory} || "${name}-deployments";
@@ -4561,11 +4692,11 @@ EOF
 		mkdir_or_fail "./dev";
 	}
 
-	execute 'git init'
+	Genesis::ShellExec::check 'git init'
 		or die "Failed to initialize a git repository in $root/\n";
-	execute 'git add .'
+	Genesis::ShellExec::check 'git add .'
 		or die "Failed to stage files to git, for initial commit, in $root/\n";
-	execute 'git commit -m "Initial Genesis Repo"'
+	Genesis::ShellExec::check 'git commit -m "Initial Genesis Repo"'
 		or die "Failed to commit initial Genesis repository in $root/\n";
 
 	exit 0;
@@ -4651,7 +4782,10 @@ sub {
 		chmod_or_fail(0755, $new_script) unless -x $new_script;
 		my $curdir = Cwd::getcwd;
 		my $helper = new_script_helper($kit,$version);
-		system("cd $kit_dir; source $helper; hooks/new $curdir $name $prefix");
+		Genesis::ShellExec::interact(
+			'cd "$1"; source "$2"; hooks/new "$3" "$4" "$5"',
+			$kit_dir, $helper, $curdir, $name, $prefix
+		);
 		if ($? >> 8) {
 			error "#R{ERROR}: Could not create new environment $name by executing $kit/$version hooks/new script";
 			exit 2;
@@ -4793,7 +4927,7 @@ sub prompt_for_git {
 	my $pipeline_name = shift;
 	my %git;
 	my ($user,$host,$org,$repo) = ("git","github.com",undef,$pipeline_name);
-	my $gitremote = qx(git config --get remote.origin.url);
+	my $gitremote = Genesis::ShellExec::get 'git config --get remote.origin.url';
 	if ($gitremote) {
 		chomp($gitremote);
 		($user,$host,$org,$repo) = $gitremote =~ qr/^(?:ssh:\/\/([^@]+)@)?([^\/:]*)[\/:](?:(.*)\/)?([^\/]+)$/
@@ -4819,11 +4953,11 @@ sub prompt_for_git {
 		|What is the vault path for your git private key?
 		|EOF
 	} elsif ($key_choice eq 'new') {
-		my $result = qx(safe ssh 4096 $path);
+		my $result = Genesis::ShellExec::get('safe ssh 4096 "$1"', $path);
 		die "Failed to generate Git SSH key: $result\n" if $? > 0;
-		my $fingerprint = qx(safe get $path:fingerprint);
+		my $fingerprint = Genesis::ShellExec::get('safe get "${1}:fingerprint"', $path);
 		die "Failed to get SSH key fingerprint from $path:fingerprint\n$fingerprint\n" if $? > 0;
-		my $pubkey = qx(safe get $path:public);
+		my $pubkey = Genesis::ShellExec::get('safe get "${1}:public"', $path);
 		die "Failed to get public SSH key from $path:public\n$pubkey\n" if $? > 0;
 		chomp($pubkey,$fingerprint);
 		explain "\nGenerated 4096-bit SSH key (fingerprint: $fingerprint) in Vault under #W{$path}\n\n#R{IMPORTANT:} Add this PUBLIC key to your Git provider ($git{host}) to grant access for this pipeline:\n\n$pubkey";
@@ -4837,8 +4971,11 @@ sub prompt_for_git {
 		open my $fh, ">", "$tmpdir/sshkeyforgit" or die "Could not write to $tmpdir/param: $!\n";
 		print $fh $answer;
 		close $fh;
-		my $err = qx(safe set "$path" "$key\@$tmpdir/sshkeyforgit" 2>&1);
-		die "$err\n\nFailed to save data to $vault_path in Vault\n" if ($? >> 8);
+		Genesis::ShellExec::do_or_die(
+			"Failed to save data to $vault_path in Vault",
+			'safe set "$1" "${2}@${3}/sshkeyforgit"',
+			$path, $key, $tmpdir
+		);
 		explain "Stored SSH private key in Vault under #W{$vault_path}";
 		$git{private_key} = $vault_path;
 	}
@@ -4878,8 +5015,11 @@ sub prompt_for_notifications {
 			my $path = "secret/$ENV{GENESIS_CI_VAULT_PREFIX}/notifications/smtp/$notifications{email}{smtp}{host}/$notifications{email}{smtp}{username}";
 			my $key =  "password";
 			my $vault_path = "$path:$key";
-			system "safe", "prompt", "What is your email SMTP password?", "--", "set", $path, $key;
-			die "Failed to save data to $vault_path in Vault\n" if ($? >> 8);
+			Genesis::ShellExec::interact(
+				{onfailure => "Failed to save data to $vault_path in Vault"},
+				'safe prompt "$1" -- set "$2", "$3"',
+				"What is your email SMTP password?", $path, $key
+			);
 			explain "Stored SMTP password in Vault under #W{$vault_path}";
 			$notifications{email}{smtp}{password} = $vault_path;
 		}
@@ -4902,8 +5042,12 @@ sub prompt_for_notifications {
 			my $path = "secret/$ENV{GENESIS_CI_VAULT_PREFIX}/notifications/smtp/$notifications{email}{smtp}{host}/$notifications{email}{smtp}{username}";
 			my $key =  "token";
 			my $vault_path = "$path:$key";
-			system "safe", "prompt", "What is your HipChat token?", "--", "set", $path, $key;
-			die "Failed to save data to $vault_path in Vault\n" if ($? >> 8);
+			Genesis::ShellExec::interact(
+				{onfailure => "Failed to save data to $vault_path in Vault"},
+				'safe prompt "$1" -- set "$2" "$3"',
+				"What is your HipChat token?", $path, $key
+			);
+
 			explain "Stored HipChat token in Vault under #W{$vault_path}";
 			$notifications{hipchat}{token} = $vault_path;
 		}
@@ -4945,8 +5089,11 @@ sub prompt_for_locker {
 			my $path = "secret/$ENV{GENESIS_CI_VAULT_PREFIX}/locker/$slug";
 			my $key =  "password";
 			my $vault_path = "$path:$key";
-			system "safe", "prompt", "What is your Locker API password?", "--", "set", $path, $key;
-			die "Failed to save data to $vault_path in Vault\n" if ($? >> 8);
+			Genesis::ShellExec::interact(
+				{onfailure => "Failed to save data to $vault_path in Vault"},
+				'safe prompt "$1" -- set "$2" "$3"',
+				"What is your Locker API password?", $path, $key
+			);
 			explain "Stored Locker API password in Vault under #W{$vault_path}";
 			$locker{password} = $vault_path;
 		}
@@ -4962,7 +5109,7 @@ sub prompt_for_vault {
 	my (%vault,$safe_json);
 	if (-f "$ENV{HOME}/.saferc") {
 		eval {
-			$safe_json = decode_json(qx(spruce json \$HOME/.saferc));
+			$safe_json = decode_json(Genesis::ShellExec::get('spruce json "$HOME/.saferc"'));
 		};
 	}
 	if ($@ || ! $safe_json) {
@@ -5069,7 +5216,7 @@ sub prompt_for_boshes_and_stemcells_for {
 	# Get the current boshes
 	my (%boshes, %chosen_envs);
 	if (-f $ENV{HOME}."/.bosh/config") {
-		my $bosh_json = decode_json(qx{spruce json \$HOME/.bosh/config});
+		my $bosh_json = decode_json(Genesis::ShellExec::get('spruce json "$HOME/.bosh/config"'));
 		$boshes{$_->{alias}} = {
 			url => (($_->{url} =~ /:\d+$/) ? $_->{url} : $_->{url}.":25555"),
 		} foreach (@{$bosh_json->{environments}});
@@ -5139,29 +5286,32 @@ sub prompt_for_boshes_and_stemcells_for {
 		my ($stemcells, %candidates) = ([]);
 		if ($ask_stemcells) {
 			explain "\nFetching stemcells from BOSH...";
-			chomp(local $ENV{BOSH_CA_CERT} = qx(safe get "$boshenvs{$env}{ca_cert}"));
-			local $ENV{BOSH_CLIENT} = $boshenvs{$env}{username};
-			chomp(local $ENV{BOSH_CLIENT_SECRET} = qx(safe get "$boshenvs{$env}{password}"));
-			my $sc_info = qx_bosh("-e $boshenvs{$env}{url} stemcells");
-			if ($? > 0) {
-				# Couldn't get stemcells - ask for them manually (just die for now)
-				die "Could not retrieve stemcell\n";
-			} else {
-				my (@choices, @labels);
-				foreach (split("\n", $sc_info)) {
-					my ($stemcell, undef, $os) = split(' ',  $_);
-					next unless $stemcell;
+			my $bosh_client = $boshenvs{$env}{username};
+			chomp(my $bosh_ca_cert = Genesis::ShellExec::get('safe get "$1"', $boshenvs{$env}{ca_cert}));
+			chomp(my $bosh_client_secret = Genesis::ShellExec::get('safe get "$1"', $boshenvs{$env}{password}));
+			my $sc_info = Genesis::ShellExec::bosh({
+				onfailure => "Could not retrieve stemcells",
+				env => {
+					BOSH_CA_CERT => $bosh_ca_cert,
+					BOSH_CLIENT => $bosh_client,
+					BOSH_CLIENT_SECRET => $bosh_client_secret,
+				}}, 
+				'-e "$1" stemcells', $boshenvs{$env}{url}
+			);
+			my (@choices, @labels);
+			foreach (split("\n", $sc_info)) {
+				my ($stemcell, undef, $os) = split(' ',  $_);
+				next unless $stemcell;
 
-					my ($alias) = split("-$os-",$stemcell);
-					$alias =~ s/^bosh-//;
-					$alias .= '-$os' if $candidates{$alias} &&($candidates{$alias} ne $stemcell);
-					next if $candidates{$alias};
-					$candidates{$alias} = $stemcell;
-					push @choices, $alias;
-					push @labels, $stemcell;
-				}
-				$stemcells = prompt_for_choices("Select one or more stemcells to watch for updates",\@choices,1,undef,\@labels);
+				my ($alias) = split("-$os-",$stemcell);
+				$alias =~ s/^bosh-//;
+				$alias .= '-$os' if $candidates{$alias} &&($candidates{$alias} ne $stemcell);
+				next if $candidates{$alias};
+				$candidates{$alias} = $stemcell;
+				push @choices, $alias;
+				push @labels, $stemcell;
 			}
+			$stemcells = prompt_for_choices("Select one or more stemcells to watch for updates",\@choices,1,undef,\@labels);
 		}
 		$boshenvs{$env}{stemcells} = $stemcells;
 		$used_stemcells{$_} = $candidates{$_} foreach (@$stemcells);
@@ -5653,8 +5803,8 @@ EOF
 		print STDERR csprintf("\n#R{Warning:} Using development version of Genesis -- cannot specify minimum Genesis version\n");
 	}
 
-	chomp(my $user = qx'git config user.name');
-	chomp(my $email = qx'git config user.email');
+	chomp(my $user = Genesis::ShellExec::get('git config user.name'));
+	chomp(my $email = Genesis::ShellExec::get('git config user.email'));
 	mkfile_or_fail "$dir/kit.yml", <<EOF;
 ---
 name: $options{name}
@@ -5807,20 +5957,22 @@ sub {
 	my $temp = tempdir(CLEANUP => 1);
 	my $stem = "$options{name}-$options{version}";
 	mkdir_or_fail "$temp/$stem";
-	qx(cp -aH $dir/* $temp/$stem);
-
-	qx(rm -rf $temp/$stem/.git $temp/$stem/.gitignore $temp/$stem/*.tar.gz $temp/$stem/ci);
-	qx(echo "version: $options{version}" | spruce merge $dir/kit.yml - > $temp/$stem/kit.yml);
+	Genesis::ShellExec::check('cp -aH "${1}"/* "${2}/${3}"', $dir, $temp, $stem);
+	Genesis::ShellExec::check('rm -rf "${1}/${2}/"{.git,.gitignore,*.tar.gz,ci}', $temp, $stem);
+	Genesis::ShellExec::check(
+		'echo "version: ${1}" | spruce merge "${2}/kit.yml" - > "${3}/${4}/kit.yml"',
+		$options{version}, $dir, $temp, $stem
+	);
 
 	if (!$options{force}) {
-		my $changes = qx(git status --porcelain);
+		my $changes = Genesis::ShellExec::check('git status --porcelain');
 		if ($? == 0 && $changes) {
 			error "\n#R{ERROR}: Unstaged / uncommited changes found in working directory.\n".
 			      "Please either #C{stash} or #C{commit} those changes before compiling your kit.\n";
 			exit 1;
 		}
 	}
-	qx(tar -czf $stem.tar.gz -C $temp $stem/);
+	Genesis::ShellExec::check('tar -czf "${2}.tar.gz" -C "$1" "$2/"', $temp, $stem);
 
 	printf "Created $stem.tar.gz\n\n";
 });
@@ -5856,7 +6008,7 @@ sub {
 	}
 	-f $file or die "Unable to find Kit archive $_[0]\n";
 
-	qx(tar -xzf $file -C $temp && rm -rf dev && mv $temp/*/ dev/);
+	Genesis::ShellExec::check('tar -xzf "$1" -C "$2" && rm -rf dev && mv "${2}/*/" dev/', $file, $temp);
 });
 
 # }}}
@@ -5951,12 +6103,12 @@ sub {
 
 	my $dir = workdir;
 	mkfile_or_fail "${dir}/pipeline.yml", $yaml;
-	system_execute("fly -t $options{target} set-pipeline -p $pipeline->{pipeline}{name} -c ${dir}/pipeline.yml") or exit 1;
-	system_execute("fly -t $options{target} unpause-pipeline -p $pipeline->{pipeline}{name}") or exit 1;
+	Genesis::ShellExec::interact("fly -t $options{target} set-pipeline -p $pipeline->{pipeline}{name} -c ${dir}/pipeline.yml") or exit 1;
+	Genesis::ShellExec::interact("fly -t $options{target} unpause-pipeline -p $pipeline->{pipeline}{name}") or exit 1;
 	if ($pipeline->{pipeline}{public}) {
-		system_execute("fly -t $options{target} expose-pipeline -p $pipeline->{pipeline}{name}") or exit 1;
+		Genesis::ShellExec::interact("fly -t $options{target} expose-pipeline -p $pipeline->{pipeline}{name}") or exit 1;
 	} else {
-		system_execute("fly -t $options{target} hide-pipeline -p $pipeline->{pipeline}{name}") or exit 1;
+		Genesis::ShellExec::interact("fly -t $options{target} hide-pipeline -p $pipeline->{pipeline}{name}") or exit 1;
 	}
 	exit 0;
 });
@@ -6185,9 +6337,13 @@ sub generate_ci_approle_policies {
 	generate_ci_hcl_file($hcl_file, @access_paths);
 
 	explain "#Y{Creating Concourse AppRole for $role_name}\n";
-	$r = system("safe", "vault", "policy-write", $role_name, $hcl_file);
-	die "Could not set policy for $role_name:\n$r\n" unless ($? >> 8) == 0;
-	$r = system("safe", "vault", "write", "auth/approle/role/$role_name",
+	Genesis::ShellExec::do_or_die(
+		"Could not set policy for $role_name",
+		'safe "$@"', "vault", "policy-write", $role_name, $hcl_file
+	);
+	Genesis::ShellExec::do_or_die(
+		"Could not create approle for $role_name",
+		'safe "$@"', "vault", "write", "auth/approle/role/$role_name",
 		"secret_id_ttl=0",
 		"token_num_uses=0",
 		"token_ttl=1m",
@@ -6195,7 +6351,6 @@ sub generate_ci_approle_policies {
 		"secret_id_num_uses=0",
 		"policies=$role_name"
 	);
-	die "Could not create approle for $role_name:\n$r\n" unless ($? >> 8) == 0;
 
 	explain "#Y{Getting role and secret credentials from AppRole}\n";
 	my ($role_p, $role_k) = $role_path =~/^(.*):([^:]*)$/;
@@ -6204,10 +6359,16 @@ sub generate_ci_approle_policies {
 	my ($secret_p, $secret_k) = $secret_path =~/^(.*):([^:]*)$/;
 	die "Invalid vault path '$secret_path': expecting <path>:<key>\n" unless defined($secret_p) && defined($secret_k);
 
-	$r = qx(safe read auth/approle/role/$role_name/role-id | spruce json | jq -r .role_id | safe paste $role_p $role_k);
-	die "Could not store role_id to $role_path:\n$r\n" unless ($? >> 8) == 0;
-	$r = qx(safe vault write -f -format=json auth/approle/role/$role_name/secret-id | jq -r '.data.secret_id' | safe paste $secret_p $secret_k);
-	die "Could not store secret_id to $secret_path:\n$r\n" unless ($? >> 8) == 0;
+	Genesis::ShellExec::do_or_die(
+		"Could not store role_id to $role_path",
+		'safe read "auth/approle/role/${1}/role-id" | spruce json | jq -r .role_id | safe paste "$2" "$3"',
+		$role_name, $role_p, $role_k
+	);
+	Genesis::ShellExec::do_or_die(
+		"Could not store secret_id to $secret_path",
+		'safe vault write -f -format=json "auth/approle/role/${1}/secret-id | jq -r ".data.secret_id" | safe paste "$2" "$3"',
+		$role_name, $secret_p, $secret_k
+	);
 
 	explain "#G{Completed AppRole creation for $role_name.}";
 }
@@ -6300,10 +6461,12 @@ sub {
 	}
 
 	if ($ENV{PREVIOUS_ENV}) {
-		system("rm -rf .genesis/config .genesis/kits .genesis/cached") == 0 or exit 1;
-		system("cp -R ../$ENV{CACHE_DIR}/.genesis/cached .genesis/cached") == 0 or exit 1;
-		system("cp -R ../$ENV{CACHE_DIR}/.genesis/config .genesis/config") == 0 or exit 1;
-		system("cp -R ../$ENV{CACHE_DIR}/.genesis/kits .genesis/kits") == 0 or exit 1;
+		Genesis::ShellExec::do_or_die({interactive => 1}, "Failed to run `$_`", $_) for (
+			"rm -rf .genesis/config .genesis/kits .genesis/cached",
+			"cp -R '../$ENV{CACHE_DIR}/.genesis/cached' .genesis/cached",
+			"cp -R '../$ENV{CACHE_DIR}/.genesis/config' .genesis/config",
+			"cp -R '../$ENV{CACHE_DIR}/.genesis/kits' .genesis/kits"
+		);
 	}
 
 	# don't set up a bosh alias if we're a create-env based deploy, no need, no data
@@ -6322,6 +6485,7 @@ sub {
 	if ($ENV{PREVIOUS_ENV}) {
 		## rm cache dir
 		## copy previous env cache dir
+		# leaving as system calls for Concourse so output shows up in log
 		system("rm -rf .genesis/config .genesis/kits .genesis/cached") == 0 or exit 1;
 		system("git checkout .genesis/config"); # ignore failure for git checkout so that
 		system("git checkout .genesis/kits");   # we don't cause problems if these files dont
