@@ -26,6 +26,9 @@ if ($ENV{BOSH_ALL_PROXY}) {
 	$ENV{HTTPS_PROXY}=$ENV{BOSH_ALL_PROXY};
 }
 
+my $BOSH; # used for abstracting out the actual name of the installed
+          # bosh (v2) cli (could be bosh, bosh2, or boshv2)
+
 sub DumpJSON {
 	my ($file, $data) = @_;
 	open my $fh, ">", $file or die "Unable to write to $file: $!\n";
@@ -199,70 +202,92 @@ sub controlling_terminal {
 	return -t STDOUT;
 }
 
-# Execute the requested command.  You can operate this in two modes:
-#
-#   1) Pass the command as a string with all the arguments in it.
-#      eg: execute("safe read auth/approle/role/$role_name/role-id | spruce json | jq -r .role_id | safe paste $role_p $role_k");
-#
-#   2) Pass the command as a template, and the template args as an array
-#      eg: execute('safe read "$1" | spruce json | jq -r .role_id | safe paste "$2" "$3"',
-#                  "auth/approle/role/$role_name/role-id",
-#                  $role_p,
-#                  $role_k
-#          );
-#
-# The latter is recommended as it properly encapsulates/tokenizes the 
-# arguments to prevent accidental expansion or splitting due to quoting
-# and spaces.  If using it, remember to quote all variable references.
-#
-# Use this where you would normally use backticks or qx() calls.  It also
-# supports debug output when GENESIS_DEBUG env is set.
-#
-# If called in a scalar context, it will return true if success, false
-# otherwise.  In a list context, it will return the output and the exit code.
-#
-# Scalar context (often used in conditionals):
-#   if (execute('grep "$1" "$@"', $pattern, @files)) { ... }
-#
-# List context (when you want to capture the output) {
-#   my ($out,$rc) = execute('spruce json "$1" | jq -r "$2"', $_, $filter);
-#   die "Could not find desired key: $out\n" if $rc; # 0 means success
-#   my $key_value = $out;
-sub execute {
-	my ($prog,@args) = @_;
-	my $shell = '/bin/bash';
-	debug "#M{Executing:} `#C{$prog 2>&1}`";
-	if (@args) {
-		unshift @args, $shell;
-		debug "#m{ - with arguments:}";
-		debug "#m{%4s:} '#c{%s}'", $_, $args[$_] for (1..$#args);
-	}
-	open my $pipe, "-|", $shell, '-c', $prog, @args;
-	my $out = do { local $/; <$pipe> };
-	my $rc = $? >> 8;
 
-	if ($rc != 0) {
-		debug "command exited #R{%d}.  Output:", $rc;
-		debug "#R{vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv}";
-		debug $out;
-		debug "#R{^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^}";
-	} else {
-		debug "#g{Command executed successfully.}";
+# Run a command.
+#
+# run("ls -1 $dir/*.yml | sort");
+# run(qw(bosh deploy), $manifest);
+# run('f="$1"; shift; spruce merge "$@" | spruce json | jq -r "$f"', $filter, @yamls)
+#
+sub run {
+	my ($bin, @args) = @_;
+
+	my %opts = (
+		interactive => 0,
+	);
+
+	# the first argument might be a hashref of { option => 'value' }
+	# configuration directives that override the default $opts.
+	if (ref($bin) eq 'HASH') {
+		%opts = (%opts, %$bin); # shallow merge
+		$bin = shift @args;
 	}
-	return wantarray ? ($out, $rc) : ($rc ? 0 : 1);
+
+	# if the first non-hashref argument contains whitespace,
+	# semi-colons, or pipes, we need to do /bin/bash -c
+	if ($bin =~ m/\s|[;|]/) {
+		unshift @args, "bash";
+		unshift @args, $bin;
+		unshift @args, "-c";
+		$bin = "/bin/bash";
+	}
+
+	if (@args) {
+		debug("running `$bin` with the following arguments:");
+		my $i = 1;
+		for my $arg (@args) {
+			debug("  $i) `$arg`");
+			$i += 1;
+		}
+	} else {
+		debug("running `$bin` with no arguments");
+	}
+
+	my ($rc, $out);
+	if ($opts{interactive}) {
+		system($bin, @args);
+		$rc = $? >> 8;
+
+	} else {
+		open my $fh, "-|", $bin, @args;
+		$out = do { local $/; <$fh> };
+		$rc = $? >> 8;
+	}
+
+	if ($rc) {
+		debug "command exited #R{%d}, with output:", $rc;
+		if (defined $out) {
+			debug "#R{vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv}";
+			debug $out;
+			debug "#R{^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^}";
+		}
+
+	} else {
+		debug "command executed successfully.";
+	}
+
+	# otherwise, in list context we return the output and
+	# the exit code, and in scalar context, we just return
+	# true if the invocation exited zero.
+	return wantarray ? ($out, $rc) : $rc == 0;
 }
 
-sub system_execute {
-	my (@args) = @_;
-	debug "executing `#C{$args[0]}`";
-    if (scalar(@args) > 1) {
-        debug "#m{ - with arguments:}";
-        debug "#m{%4s:} '#c{%s}'", $_, $args[$_] for (1..$#args);
-    }
-	my $out = system @args;
-	my $rc = $? >> 8;
-	debug("command exited #R{%d}.", $rc) if $rc;
-	return !$rc;
+sub bosh {
+	my $opts = { interactive => 1 };
+	if (ref($_[0]) eq 'HASH') {
+		$opts = {%$opts, %{$_[0]}};
+		shift @_;
+	}
+	return run($opts, $BOSH, @_);
+}
+
+sub safe {
+	my $opts = { interactive => 1 };
+	if (ref($_[0]) eq 'HASH') {
+		$opts = {%$opts, %{$_[0]}};
+		shift @_;
+	}
+	return run($opts, 'safe', @_);
 }
 
 sub mkfile_or_fail {
@@ -286,7 +311,8 @@ sub mkdir_or_fail {
 	my ($dir,$mode) = @_;
 	unless (-d $dir) {;
 		debug "creating directory $dir/";
-		system("mkdir", "-p", "$dir/") == 0 or die "Unable to create directory $dir/: $!\n";
+		run("mkdir", "-p", "$dir/")
+			or die "Unable to create directory $dir/: $!\n";
 	}
 	chmod_or_fail($mode, $dir) if defined $mode;
 	return $dir;
@@ -426,7 +452,7 @@ sub run_feature_hook {
 
 	$kit ||= "dev";
 	$version = "latest" unless defined $version;
-	chmod(0755,$hook) unless -x $hook;
+	chmod(0755, $hook) unless -x $hook;
 
 	my $cmd = "$hook " . join(" ", map { "'$_'" } @features);
 	my $out = qx($cmd);
@@ -445,7 +471,7 @@ sub run_param_hook {
 
 	$kit ||= "dev";
 	$version = "latest" unless defined $version;
-	chmod(0755,$hook) unless -x $hook;
+	chmod(0755, $hook) unless -x $hook;
 
 	my $dir = workdir;
 	DumpJSON "$dir/in", $params;
@@ -995,7 +1021,7 @@ sub find_key {
 	my $filter = build_jq_filter($key);
 	for (@files) {
 		next unless -f $_;
-		my ($out,$rc) = execute('spruce json "$1" | jq -r "$2"', $_, $filter);
+		my ($out, $rc) = run('spruce json "$1" | jq -r "$2"', $_, $filter);
 		return $_ if $rc == 0 and $out !~ /^(null\n)?$/;
 	}
 	return '';
@@ -1013,7 +1039,7 @@ sub get_key {
 	return $default unless has_key($file, $key);
 	my $filter = build_jq_filter($key);
 
-	my ($out,$rc) = execute(
+	my ($out,$rc) = run(
 		'f="$1"; shift; spruce merge --skip-eval "$@" | spruce json | jq -Mc "$f"',
 		$filter, mergeable_yaml_files($file)
 	);
@@ -1044,8 +1070,7 @@ sub dereference_params {
 }
 
 sub safe_path_exists {
-	system "safe exists $_[0]";
-	return ( $? eq 0);
+	safe("exists", @_);
 }
 
 sub safe_commands {
@@ -1176,8 +1201,8 @@ sub check_secret {
 
 	my @missing = ();
 	for (@keys) {
-		system('safe', 'exists', "$path:$_");
-		push @missing, ["[$type]", "$path:$_"] if $?;
+		next if safe_path_exists("$path:$_");
+		push @missing, ["[$type]", "$path:$_"];
 	}
 	return @missing;
 }
@@ -1553,8 +1578,8 @@ sub secret_line_prompt_handler {
 	validate_prompt_opts("secret-line", \%opts, qw(echo));
 	target_vault($ENV{GENESIS_TARGET_VAULT});
 	my ($path, $key) = split /:/, "secret/$secret";
-	system "safe", "prompt", $prompt, "--", ($opts{echo} ? "ask" : "set"), $path, $key;
-	die "Failed to save data to secret/$secret in Vault '$ENV{GENESIS_TARGET_VAULT}'\n" if ($? >> 8);
+	safe("prompt", $prompt, "--", ($opts{echo} ? "ask" : "set"), $path, $key)
+		or die "Failed to save data to secret/$secret in Vault '$ENV{GENESIS_TARGET_VAULT}'\n";
 }
 sub secret_block_prompt_handler {
 	my ($prompt,%opts) = @_;
@@ -1606,8 +1631,6 @@ sub is_valid_uri {
 	return $components{uri};
 }
 
-my $BOSH; # used for abstracting out the actual name of the installed
-          # bosh (v2) cli (could be bosh, bosh2, or boshv2)
 sub detect_bosh_version {
 	my ($BOSH2_MIN_VERSION) = @_;
 	foreach my $boshcmd ("bosh", "bosh2", "boshv2") {
@@ -1625,27 +1648,6 @@ sub detect_bosh_version {
 	if (!$BOSH) {
 		error "Missing `bosh2' - install the BOSH (v2) CLI from #B{https://github.com/cloudfoundry/bosh-cli/releases}";
 	}
-}
-
-sub system_bosh {
-	my @args = @_;
-	local $ENV{HTTPS_PROXY} = ''; # bosh dislikes this env var
-	local $ENV{BOSH_ENVIRONMENT} = ''; # ensure using ~/.bosh/config via alias
-	local $ENV{BOSH_CA_CERT} = '';
-	local $ENV{BOSH_CLIENT} = '';
-	local $ENV{BOSH_CLIENT_SECRET} = '';
-	if (scalar(@args) > 1) {
-		unshift @args, $BOSH;
-	} else {
-		$args[0] = "$BOSH ".$args[0];
-	}
-	return system_execute($BOSH, @_);
-}
-
-sub qx_bosh {
-  local $ENV{HTTPS_PROXY} = ''; # bosh dislikes this env var
-  my ($cmd) = join(" ", $BOSH, @_);
-  return qx($cmd);
 }
 
 sub is_create_env {
@@ -1667,34 +1669,32 @@ sub bosh_deploy {
 		push @args, "-n" if $ENV{BOSH_NON_INTERACTIVE};
 		push @args, "deploy", @deploy_opts, $path_to_manifest;
 	}
-	return system_bosh(@args);
+	return bosh(@args);
 }
 
 sub bosh_alias {
 	my ($target) = @_;
-	system_bosh("alias-env", $target) or exit 1;
+	bosh("alias-env", $target)
+		or die "Unable to create a BOSH environment alias for '$target'\n";
 }
 
 sub bosh_run_errand {
 	my ($target, $deployment, $errand) = @_;
-	system_bosh("-n", "-e", $target, "-d", $deployment, "run-errand", $errand) or exit 1;
+	bosh("-n", "-e", $target, "-d", $deployment, "run-errand", $errand) or
+		die "Unable to run errand '$errand' against $deployment\n";
 }
 
 sub bosh_upload_stemcell {
 	my ($name, $version, $sha1, $url) = @_;
-	system_bosh("-n", "upload-stemcell", "--name", $name, "--version", $version, "--sha1", $sha1, $url) or exit 1;
+	bosh("-n", "upload-stemcell", "--name", $name, "--version", $version, "--sha1", $sha1, $url)
+		or die "Unable to upload stemcell $name/$version to BOSH director.\n";
 }
 
 sub bosh_download_cloud_config {
-	my ($target, $path_to_cloudconfig) = @_;
-	system_bosh("-e $target cloud-config > $path_to_cloudconfig") or
-		die "Failed to download cloud-config from '$target' BOSH director.\n";
-	die "No cloud-config defined on BOSH director '$target'.\n" unless -s $path_to_cloudconfig;
-}
-
-# `genesis bosh ...`
-sub bosh_exec {
-	die "not implemented";
+	my ($target, $path) = @_;
+	run("$BOSH -e $target cloud-config > $path")
+		or die "Failed to download cloud-config from '$target' BOSH director.\n";
+	die "No cloud-config defined on BOSH director '$target'.\n" unless -s $path;
 }
 
 sub write_stemcell_data {
@@ -1941,7 +1941,8 @@ sub commit_changes {
 	# rebasing, and git discovers that there are no changes after you rebase
 
 	# create an output git repo based off of latest origin/$branch
-	system("cp -R $indir $outdir") == 0 or exit 1;
+	run("cp -R $indir $outdir")
+		or die "Unable to copy git working directory to output area.\n";
 	pushd $outdir;
 
 	# We need this here so we can do a manual pull after the build/deploy, but
@@ -1971,10 +1972,10 @@ EOF
 
 	# no need to fetch or pull from origin/$branch, as the git resource in the pipeline should
 	# have the latest data from origin, we just need to reset to the newest applicable ref
-	system(qq( HOME=$tmp/home \
-	             git reset --hard origin/$branch && \
-	             git checkout $branch && \
-	             git pull origin $branch)) == 0 or exit 1;
+	run(qq( HOME=$tmp/home git reset --hard origin/$branch && \
+	                       git checkout $branch && \
+	                       git pull origin $branch))
+		or die "Unable to commit changes to local git repository.\n";
 	popd;
 
 	# find and copy all potential changes to the outdir
@@ -1984,7 +1985,8 @@ EOF
 	my @changes = map { chomp; s/^...//; $_; } @output;
 	for my $file (@changes) {
 		mkdir_or_fail(dirname("$outdir/$file"));
-		system("cp", "-R", "$indir/$file", "$outdir/$file") == 0 or exit 1;
+		run("cp", "-R", "$indir/$file", "$outdir/$file")
+			or die "Unable to copy '$file' from input to output directory.\n";
 	}
 
 	# check if any changes actually exist in the outdir (potential changes may have alread
@@ -1992,11 +1994,10 @@ EOF
 	pushd $outdir;
 	my $output = qx(git status --porcelain 2>&1);
 	if ($output) {
-		system(qq( HOME=$tmp/home \
-		             git add -A && \
-		             git status && \
-		             git --no-pager diff --cached && \
-		             git commit -m "CI commit: $message" ));
+		run(qq( HOME=$tmp/home git add -A && \
+		                       git status && \
+		                       git --no-pager diff --cached && \
+		                       git commit -m "CI commit: $message" ));
 	}
 }
 
@@ -3903,8 +3904,8 @@ sub process_kit_params {
 	my @answers;
 	my $resolveable_params = {
 		"params.vault_prefix" => $opts{vault_prefix}, # for backwards compatibility
-		"params.vault" => $opts{vault_prefix},
-		"params.env" => $opts{env}
+		"params.vault"        => $opts{vault_prefix},
+		"params.env"          => $opts{env}
 	};
 	for my $feature ("base", @{$opts{features}}) {
 		next unless defined $opts{params}{$feature} && @{$opts{params}{$feature}};
@@ -3982,8 +3983,8 @@ sub process_kit_params {
 				} else {
 					my ($path, $key) = split /:/, $vault_path;
 					if ($q->{type} =~ /^(boolean|string)$/) {
-						system "safe", "prompt", $q->{ask}, "--", ($q->{echo} ? "ask" : "set"), $path, $key;
-						die "Failed to save data to $vault_path in Vault\n" if ($? >> 8);
+						safe('prompt', $q->{ask}, '--', ($q->{echo} ? "ask" : "set"), $path, $key)
+							or die "Failed to save data to $vault_path in Vault\n";
 					} elsif ($q->{type} eq "multi-line") {
 						$answer = prompt_for_block($q->{ask});
 						my $tmpdir = workdir;
@@ -4068,11 +4069,10 @@ sub active_certificates {
 
 sub target_vault {
 	my ($target) = @_;
-	if ($target) {
-		system(qw(safe target), $target) == 0 or exit 1;
-	} else {
-		system(qw(safe target -i)) == 0 or exit 1;
-	}
+	safe('target', $target || '-i')
+		or die "Unable to determine which Vault to use for storing credentials.\n";
+
+	# FIXME: safe target will soon support a --json flag
 	chomp($ENV{GENESIS_TARGET_VAULT}=qx(safe target 2>&1 | grep '.*targeting .* at.*' | sed -e 's/.*targeting \\([^ ]*\\) at.*/\\1/'));
 	die "Could not set target vault" if $? >> 8;
 }
@@ -4105,24 +4105,22 @@ sub vaultify_secrets {
 
 	my $creds = active_credentials($meta, $options{features} || {});
 	if (%$creds) {
-		explain " - auto-generating credentials (in secret/$options{prefix})...\n";
+		explain " - auto-generating credentials (in secret/$options{prefix})...";
 		for (safe_commands $creds, %options) {
-			system('safe', @$_);
-			die "Failure autogenerating credentials.\n" if ($? >> 8);
+			safe(@$_) or die "Failure autogenerating credentials.\n";
 		}
 	} else {
-		explain " - no credentials need to be generated.\n";
+		explain " - no credentials need to be generated.";
 	}
 
 	my $certs = active_certificates($meta, $options{features} || {});
 	if (%$certs) {
-		explain " - auto-generating certificates (in secret/$options{prefix})...\n";
+		explain " - auto-generating certificates (in secret/$options{prefix})...";
 		for (cert_commands $certs, %options) {
-			system('safe', @$_);
-			die "Failure autogenerating certificates.\n" if ($? != 0);
+			safe(@$_) or die "Failure autogenerating certificates.\n";
 		}
 	} else {
-		explain " - no certificates need to be generated.\n";
+		explain " - no certificates need to be generated.";
 	}
 }
 
@@ -4189,22 +4187,28 @@ sub tablify {
 # bosh_target_for $env
 sub bosh_target_for {
 	my ($env) = @_;
-	if (defined($ENV{GENESIS_BOSH_ENVIRONMENT})) {
-		system_bosh("-e $ENV{GENESIS_BOSH_ENVIRONMENT} env") and
-			return $ENV{GENESIS_BOSH_ENVIRONMENT};
-		die "No such host: $ENV{GENESIS_BOSH_ENVIRONMENT} from GENESIS_BOSH_ENVIRONMENT environment variable for the BOSH Director.\n";
+	my $yaml = "$env.yml"; $yaml =~ s/\.yml\.yml/.yml/;
+
+	my $bosh = $ENV{GENESIS_BOSH_ENVIRONMENT};
+	if (defined $bosh) {
+		return $bosh if bosh('-e', $bosh, 'env');
+		die "No such BOSH director: $bosh (from \$GENESIS_BOSH_ENVIRONMENT)\n";
 	}
-	my $bosh = get_key($env, 'params.bosh');
-	if (defined($bosh)) {
-		system_bosh("-e $bosh env") and return $bosh;
-		die "No such host: $bosh for the BOSH Director which you configured in params.bosh.\n";
-	 }
+
+	$bosh = get_key($env, 'params.bosh');
+	if (defined $bosh) {
+		return $bosh if bosh('-e', $bosh, 'env');
+		die "No such BOSH director: $bosh (from params.bosh in $yaml).\n";
+	}
+
 	$bosh = get_key($env, 'params.env');
-	if (defined($bosh)) {
-		system_bosh("-e $bosh env") and return $bosh;
-		die "No such host: $bosh for the BOSH Director which you configured in params.env. You can specify your BOSH Director alias name in params.bosh.\n";
+	if (defined $bosh) {
+		return $bosh if bosh('-e', $bosh, 'env');
+		die "No such BOSH director: $bosh (from params.env in $yaml)\n".
+		    "You can specify a differnt BOSH Director alias via params.bosh.\n";
 	}
-	die "Could not find the `params.bosh' or `params.env' key in $env!\n";
+
+	die "Unable to find the `params.bosh' or `params.env' key in $env!\n";
 }
 
 
@@ -4426,9 +4430,9 @@ sub {
 	debug "generating a new Genesis repo, named $name";
 
 	debug "checking git config so can git commit later";
-	execute 'git config user.name'
+	run('git config user.name')
 		or die 'Please setup git - git config --global user.name "Your Name" -';
-	execute 'git config user.email'
+	run('git config user.email')
 		or die 'Please setup git - git config --global user.email your@email.com -';
 
 	my $root = $options{directory} || "${name}-deployments";
@@ -4561,11 +4565,11 @@ EOF
 		mkdir_or_fail "./dev";
 	}
 
-	execute 'git init'
+	run('git init')
 		or die "Failed to initialize a git repository in $root/\n";
-	execute 'git add .'
+	run('git add .')
 		or die "Failed to stage files to git, for initial commit, in $root/\n";
-	execute 'git commit -m "Initial Genesis Repo"'
+	run('git commit -m "Initial Genesis Repo"')
 		or die "Failed to commit initial Genesis repository in $root/\n";
 
 	exit 0;
@@ -4878,8 +4882,8 @@ sub prompt_for_notifications {
 			my $path = "secret/$ENV{GENESIS_CI_VAULT_PREFIX}/notifications/smtp/$notifications{email}{smtp}{host}/$notifications{email}{smtp}{username}";
 			my $key =  "password";
 			my $vault_path = "$path:$key";
-			system "safe", "prompt", "What is your email SMTP password?", "--", "set", $path, $key;
-			die "Failed to save data to $vault_path in Vault\n" if ($? >> 8);
+			safe("prompt", "What is your email SMTP password?", "--", "set", $path, $key)
+				or die "Failed to save data to $vault_path in Vault\n";
 			explain "Stored SMTP password in Vault under #W{$vault_path}";
 			$notifications{email}{smtp}{password} = $vault_path;
 		}
@@ -4902,8 +4906,8 @@ sub prompt_for_notifications {
 			my $path = "secret/$ENV{GENESIS_CI_VAULT_PREFIX}/notifications/smtp/$notifications{email}{smtp}{host}/$notifications{email}{smtp}{username}";
 			my $key =  "token";
 			my $vault_path = "$path:$key";
-			system "safe", "prompt", "What is your HipChat token?", "--", "set", $path, $key;
-			die "Failed to save data to $vault_path in Vault\n" if ($? >> 8);
+			safe("prompt", "What is your HipChat token?", "--", "set", $path, $key)
+				or die "Failed to save data to $vault_path in Vault\n";
 			explain "Stored HipChat token in Vault under #W{$vault_path}";
 			$notifications{hipchat}{token} = $vault_path;
 		}
@@ -4945,8 +4949,8 @@ sub prompt_for_locker {
 			my $path = "secret/$ENV{GENESIS_CI_VAULT_PREFIX}/locker/$slug";
 			my $key =  "password";
 			my $vault_path = "$path:$key";
-			system "safe", "prompt", "What is your Locker API password?", "--", "set", $path, $key;
-			die "Failed to save data to $vault_path in Vault\n" if ($? >> 8);
+			safe("prompt", "What is your Locker API password?", "--", "set", $path, $key)
+				or die "Failed to save data to $vault_path in Vault\n";
 			explain "Stored Locker API password in Vault under #W{$vault_path}";
 			$locker{password} = $vault_path;
 		}
@@ -5142,26 +5146,25 @@ sub prompt_for_boshes_and_stemcells_for {
 			chomp(local $ENV{BOSH_CA_CERT} = qx(safe get "$boshenvs{$env}{ca_cert}"));
 			local $ENV{BOSH_CLIENT} = $boshenvs{$env}{username};
 			chomp(local $ENV{BOSH_CLIENT_SECRET} = qx(safe get "$boshenvs{$env}{password}"));
-			my $sc_info = qx_bosh("-e $boshenvs{$env}{url} stemcells");
-			if ($? > 0) {
-				# Couldn't get stemcells - ask for them manually (just die for now)
-				die "Could not retrieve stemcell\n";
-			} else {
-				my (@choices, @labels);
-				foreach (split("\n", $sc_info)) {
-					my ($stemcell, undef, $os) = split(' ',  $_);
-					next unless $stemcell;
 
-					my ($alias) = split("-$os-",$stemcell);
-					$alias =~ s/^bosh-//;
-					$alias .= '-$os' if $candidates{$alias} &&($candidates{$alias} ne $stemcell);
-					next if $candidates{$alias};
-					$candidates{$alias} = $stemcell;
-					push @choices, $alias;
-					push @labels, $stemcell;
-				}
-				$stemcells = prompt_for_choices("Select one or more stemcells to watch for updates",\@choices,1,undef,\@labels);
+			my ($out, $rc) = bosh('-e', $boshenvs{$env}{url}, 'stemcells');
+			die "Unable to retrieve stemcell information from $env ($boshenvs{$env}{url}\n"
+				if $rc != 0;
+
+			my (@choices, @labels);
+			foreach (split("\n", $out)) {
+				my ($stemcell, undef, $os) = split(' ',  $_);
+				next unless $stemcell;
+
+				my ($alias) = split("-$os-",$stemcell);
+				$alias =~ s/^bosh-//;
+				$alias .= '-$os' if $candidates{$alias} &&($candidates{$alias} ne $stemcell);
+				next if $candidates{$alias};
+				$candidates{$alias} = $stemcell;
+				push @choices, $alias;
+				push @labels, $stemcell;
 			}
+			$stemcells = prompt_for_choices("Select one or more stemcells to watch for updates",\@choices,1,undef,\@labels);
 		}
 		$boshenvs{$env}{stemcells} = $stemcells;
 		$used_stemcells{$_} = $candidates{$_} foreach (@$stemcells);
@@ -5951,13 +5954,13 @@ sub {
 
 	my $dir = workdir;
 	mkfile_or_fail "${dir}/pipeline.yml", $yaml;
-	system_execute("fly -t $options{target} set-pipeline -p $pipeline->{pipeline}{name} -c ${dir}/pipeline.yml") or exit 1;
-	system_execute("fly -t $options{target} unpause-pipeline -p $pipeline->{pipeline}{name}") or exit 1;
-	if ($pipeline->{pipeline}{public}) {
-		system_execute("fly -t $options{target} expose-pipeline -p $pipeline->{pipeline}{name}") or exit 1;
-	} else {
-		system_execute("fly -t $options{target} hide-pipeline -p $pipeline->{pipeline}{name}") or exit 1;
-	}
+
+	my $verb = $pipeline->{pipeline}{public} ? 'export' : 'hide';
+	run({ interactive => 1 },
+		"fly -t $options{target} set-pipeline -p $pipeline->{pipeline}{name} -c ${dir}/pipeline.yml && ".
+		"fly -t $options{target} unpause-pipeline -p $pipeline->{pipeline}{name} && ".
+		"fly -t $options{target} $verb-pipeline -p $pipeline->{pipeline}{name}")
+		or die "Failed to convince Concourse to do our bidding.\n";
 	exit 0;
 });
 # }}}
@@ -6185,17 +6188,17 @@ sub generate_ci_approle_policies {
 	generate_ci_hcl_file($hcl_file, @access_paths);
 
 	explain "#Y{Creating Concourse AppRole for $role_name}\n";
-	$r = system("safe", "vault", "policy-write", $role_name, $hcl_file);
-	die "Could not set policy for $role_name:\n$r\n" unless ($? >> 8) == 0;
-	$r = system("safe", "vault", "write", "auth/approle/role/$role_name",
-		"secret_id_ttl=0",
-		"token_num_uses=0",
-		"token_ttl=1m",
-		"token_max_ttl=1m",
-		"secret_id_num_uses=0",
-		"policies=$role_name"
-	);
-	die "Could not create approle for $role_name:\n$r\n" unless ($? >> 8) == 0;
+	safe(qw(vault policy-wrioe), $role_name, $hcl_file)
+		or die "Unable to set Vault access control policy for role '$role_name'\n";
+
+	safe(qw(vault write), "auth/approle/role/$role_name",
+		qw(secret_id_ttl=0
+		 token_num_uses=0
+		 token_ttl=1m
+		 token_max_ttl=1m
+		 secret_id_num_uses=0),
+		"policies=$role_name")
+		or die "Unable to create a Vault AppRole for role '$role_name'\n";
 
 	explain "#Y{Getting role and secret credentials from AppRole}\n";
 	my ($role_p, $role_k) = $role_path =~/^(.*):([^:]*)$/;
@@ -6300,10 +6303,11 @@ sub {
 	}
 
 	if ($ENV{PREVIOUS_ENV}) {
-		system("rm -rf .genesis/config .genesis/kits .genesis/cached") == 0 or exit 1;
-		system("cp -R ../$ENV{CACHE_DIR}/.genesis/cached .genesis/cached") == 0 or exit 1;
-		system("cp -R ../$ENV{CACHE_DIR}/.genesis/config .genesis/config") == 0 or exit 1;
-		system("cp -R ../$ENV{CACHE_DIR}/.genesis/kits .genesis/kits") == 0 or exit 1;
+		run(qq(rm -rf .genesis/config .genesis/kits .genesis/cached && \
+		       cp -R ../$ENV{CACHE_DIR}/.genesis/cached .genesis/cached && \
+		       cp -R ../$ENV{CACHE_DIR}/.genesis/config .genesis/config && \
+		       cp -R ../$ENV{CACHE_DIR}/.genesis/kits   .genesis/kits))
+			or die "Unable to copy down cache from previous environment '$ENV{PREVIOUS_ENV}'.\n";
 	}
 
 	# don't set up a bosh alias if we're a create-env based deploy, no need, no data
@@ -6322,10 +6326,11 @@ sub {
 	if ($ENV{PREVIOUS_ENV}) {
 		## rm cache dir
 		## copy previous env cache dir
-		system("rm -rf .genesis/config .genesis/kits .genesis/cached") == 0 or exit 1;
-		system("git checkout .genesis/config"); # ignore failure for git checkout so that
-		system("git checkout .genesis/kits");   # we don't cause problems if these files dont
-		system("git checkout .genesis/cached"); # yet exist in the working tree (but did in the cache tree)
+		run("rm -rf .genesis/config .genesis/kits .genesis/cached")
+			or die "Unable to reset git working directory in preparation for a git commit.\n";
+		run("git checkout .genesis/config"); # ignore failure for git checkout so that
+		run("git checkout .genesis/kits");   # we don't cause problems if these files dont
+		run("git checkout .genesis/cached"); # yet exist in the working tree (but did in the cache tree)
 	}
 	popd;
 	commit_changes($ENV{WORKING_DIR}, $ENV{OUT_DIR}, $ENV{GIT_BRANCH}, $ENV{GIT_PRIVATE_KEY},
