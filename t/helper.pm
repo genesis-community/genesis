@@ -124,9 +124,10 @@ sub reprovision {
 				exit 1;
 			}
 		}
+		pass "working directory re-provisioned for next set of tests (kit $opts{kit})";
+	} else {
+		pass "working directory re-provisioned for next set of tests";
 	}
-
-	pass "working directory re-provisioned for next set of tests";
 }
 
 sub runs_ok($;$) {
