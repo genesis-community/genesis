@@ -127,14 +127,8 @@ params:
 EOF
 rename "dev/hooks/params.bak", "dev/hooks/params";
 
-$ENV{HOOK_OUTPUT} = "echo '{}'";
-$ENV{HOOK_EXIT} = 0;
-chmod 0644, "dev/hooks/params";
-run_fails "genesis new unexecutable-param-hook --no-secrets", 13, "Setup fails when param hook can't exec";
-no_env "unexecutable-param-hook";
-chmod 0755, "dev/hooks/params";
-
 $ENV{HOOK_EXIT} = 4;
+$ENV{HOOK_OUTPUT} = "echo '{}'";
 run_fails "genesis new failing-param-hook --no-secrets", undef, "Setup fails when param hook fails";
 no_env "failing-param-hook";
 

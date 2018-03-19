@@ -445,7 +445,7 @@ sub run_param_hook {
 
 	$kit ||= "dev";
 	$version = "latest" unless defined $version;
-	chmod(0755,$hook) unless -e $hook;
+	chmod(0755,$hook) unless -x $hook;
 
 	my $dir = workdir;
 	DumpJSON "$dir/in", $params;
