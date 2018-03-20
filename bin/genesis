@@ -4729,7 +4729,7 @@ EOF
 
 command("new", <<EOF,
 genesis v$VERSION
-USAGE: genesis new [--vault target] env-name[.yml]
+USAGE: genesis new [--vault target]
 
 OPTIONS
 $GLOBAL_USAGE
@@ -4758,10 +4758,25 @@ sub {
 		secrets!
 		kit|k=s
 	/);
-	usage(1) if @_ != 1;
+	usage(0) if @_ != 0;
 
-	my ($name) = @_;
-	$name =~ s/\.yml$//;
+	use Data::Dumper;
+	my (@bosh_envs, @bosh_envs_with_urls);
+	if (-f $ENV{HOME}."/.bosh/config") {
+		my $bosh_json = decode_json(qx{spruce json \$HOME/.bosh/config});
+		foreach my $env (@{$bosh_json->{environments}}) {
+			push(@bosh_envs, $env->{alias});
+			push(@bosh_envs_with_urls, "$env->{alias} ($env->{url})");
+		}
+	}
+	if (scalar(@bosh_envs) == 0) {
+		explain "Please run `bosh alias-env` to register the available BOSH environments.";
+		exit 1;
+	}
+
+	my $name = prompt_for_choice(clean_heredoc(<<"	  |EOF"), \@bosh_envs, undef, \@bosh_envs_with_urls);
+	  |Choose a BOSH/Genesis environment:
+	  |EOF
 
 	my $err = check_env_name_for_errors($name);
 	die "Invalid environment name '$name': $err\n" if $err;
