@@ -7,6 +7,9 @@ use warnings;
 use JSON::PP qw/decode_json encode_json/;
 # NOTE: if you add more non-core modules, they and all their non-core
 # dependencies have to be placed in lib/
+#
+# Ensure code exits and cleans up workdirs
+$SIG{INT}=$SIG{TERM}=sub{die};
 
 use Getopt::Long qw/GetOptionsFromArray :config no_ignore_case/;
 use File::Temp qw/tempdir tempfile/;
@@ -776,7 +779,7 @@ sub get_env_file {
 	return $env.".yml";
 }
 
-sub build_jq_filter {
+sub jq_extractor {
 	my ($path) = @_;
 	$path =~ s/^([^\.])/.$1/; # ensure it starts with a .
 	my @path_bits = grep /\S/, split(/([\.\[]+)/, $path);
@@ -790,16 +793,33 @@ sub build_jq_filter {
 		} elsif ($join =~ /^\.?\[$/ && $value =~ /(\d+)\]$/) {
 			$filter .= "[$1]";
 		} else {
-			die "Invalid pick path: $join$value\n";
+			die "Invalid extraction path: $join$value\n";
 		}
 	}
 	$filter =~ s/ \| $//; # clean off trailing pipes if select was last item.
 	return $filter;
 }
 
+sub jq_embedder {
+	my ($path) = @_;
+	$path =~ s/^([^\.])/.$1/; # ensure it starts with a .
+	my @path_bits = reverse grep /\S/, split(/([\.\[]+)/, $path);
+	my ($join,$value);
+	my $wrapper = '.';
+	while (@path_bits) {
+		($value,$join,@path_bits) = @path_bits;
+		if ($join eq '.') {
+			$wrapper = qq({"$value": $wrapper});
+		} else {
+			die "Invalid embed path: $join$value\n";
+		}
+	}
+	return $wrapper;
+}
+
 sub find_key {
 	my ($key, @files) = @_;
-	my $filter = build_jq_filter($key);
+	my $filter = jq_extractor($key);
 	for (@files) {
 		next unless -f $_;
 		my ($out,$rc) = run('spruce json "$1" | jq -r "$2"', $_, $filter);
@@ -818,7 +838,7 @@ sub has_key {
 sub get_key {
 	my ($file, $key, $default) = @_;
 	return $default unless has_key($file, $key);
-	my $filter = build_jq_filter($key);
+	my $filter = jq_extractor($key);
 
 	my $out = Genesis::Run::get(
 		{onfailure => "Unable to merge environment files"},
@@ -1484,6 +1504,7 @@ sub bosh_upload_stemcell {
 
 sub bosh_download_cloud_config {
 	my ($target, $path_to_cloudconfig) = @_;
+	die "No target file for cloud-config specified -- cannot fetch from BOSH\n" unless $path_to_cloudconfig;
 	Genesis::Run::interactive_bosh(
 		{onfailure => "Failed to download cloud-config from '$target' BOSH director."},
 		'-e "$1" cloud-config > "$2"', $target, $path_to_cloudconfig
@@ -1513,16 +1534,6 @@ EOF
 	close $fh;
 }
 
-sub spruce_vault_paths {
-	my (@files) = @_;
-	my @keys= Genesis::Run::getlines('f="$1"; shift; spruce vaultinfo --go-patch "$@" | spruce json | jq -r "$f"', '.secrets[].key', @files);
-	if ($? != 0) {
-		die "Failure while running spruce vaultinfo.\n";
-	}
-	my %paths = map {$_ =~ s/:.*?$//; $_ => 1} @keys;
-	return keys %paths;
-}
-
 sub spruce_merge {
 	my (@files) = @_;
 	if (!@files) {
@@ -1534,6 +1545,7 @@ sub spruce_merge {
 	# spruce_merge({ prune => 'meta'}, $file1, $file2)
 	my $opts = ref($files[0]) eq 'HASH' ? shift @files : {};
 	my @flags;
+	push @flags, "--skip-eval" if delete $opts->{'skip-eval'};
 	for my $flag (keys %$opts) {
 		for my $value (ref($opts->{$flag}) ? @{ $opts->{$flag} } : ($opts->{$flag})) {
 			push @flags, "--$flag", $value;
@@ -1541,6 +1553,7 @@ sub spruce_merge {
 	}
 	push @flags, "--go-patch";
 
+	debug "#Y{REDACT:} '$ENV{REDACT}'";
 	open my $cmd, "-|", (qw(spruce merge), @flags, @files)
 		or die "Failed to execute `spruce merge': $!\n";
 	my $out = do { local $/; <$cmd> };
@@ -1557,98 +1570,76 @@ sub deployment_suffix {
 	return $config->{deployment_type};
 }
 
-sub base_yaml_files {
-	my ($env) = @_;
-	my $type = deployment_suffix;
-	my $dir = workdir;
-	open my $fh, ">", "$dir/base.yml";
-	print $fh <<EOF;
-meta:
-  vault: (( concat "secret/" params.vault || "nowhere" ))
-params:
-  name: (( concat params.env "-$type" ))
-name: (( grab params.name ))
-EOF
-	close $fh;
-	return "$dir/base.yml";
-}
-
-sub merge_files {
-	my ($env, $options) = @_;
-
-	my @files = ();
-	push @files, base_yaml_files($env);
-	push @files, kit_yaml_files($env);
-	push @files, mergeable_yaml_files($env);
-	push @files, grep { $_ } $options->{'cloud-config'};
-	return \@files;
-}
-
-sub merge_manifest {
-	my ($file, $options) = @_;
-	$file =~ s/(\.yml)?$/.yml/;
-
-	my @prunables = qw/meta pipeline params kit compilation/;
-	push @prunables, qw/resource_pools disk_pools
-	                    networks vm_types disk_types
-	                    azs vm_extensions/
-		unless $options->{'create-env'};
-
-	if ($options->{'create-env'}) {
-		my $dir = workdir;
-		write_stemcell_data("$dir/cloud.yml");
-		$options->{'cloud-config'} = "$dir/cloud.yml";
-	}
-
-	return spruce_merge({
-			prune => [@prunables],
-		},
-		@{merge_files($file, $options)});
-}
-
 sub deploy_manifest {
 	my ($env, $options) = @_;
-	$ENV{REDACT} = '';
+	$env =~ s/.yml$//;
 	my $dir = workdir;
-	my $target = '';
+	my ($target,$cloud_config,$deployment);
+	my $type=deployment_suffix();
 	my $create_env = is_create_env($env);
 
-	if (!$create_env) {
-		$target = bosh_target_for($env);
-		bosh_download_cloud_config($target, "$dir/cloud.yml");
-		$options->{'cloud-config'} = "$dir/cloud.yml";
-	} else {
-		$ENV{OFFLINE} = 1; # set offline since there's no director to talk to
-	}
-
-	my $merge_opts = {
-		'cloud-config' => $options->{'cloud-config'},
-		'create-env'   => $create_env,
-	};
-	mkfile_or_fail("$dir/manifest.yml", merge_manifest($env, $merge_opts));
-	my $deployment = get_key($env, "params.name");
-	if (!$deployment) {
-		my $deployment_prefix = get_key($env, 'params.env');
-		$env =~ s/.yml$//;
-		$deployment_prefix ||= $env;
-		$deployment = "$deployment_prefix-" . deployment_suffix;
-	}
-
-	mkdir_or_fail(".genesis/manifests");
-
-	$ENV{REDACT} = 'true';
-	mkfile_or_fail(".genesis/manifests/$env.yml", merge_manifest($env, $merge_opts));
-
 	if ($create_env) {
+		$ENV{OFFLINE} = 1; # set offline since there's no director to talk to
 		$target = "create-env";
 		$deployment = ".genesis/manifests/$env-state.yml";
+	} else {
+		$target = bosh_target_for($env);
+		$cloud_config = "$dir/cloud.yml";
+		bosh_download_cloud_config($target, $cloud_config);
+		$deployment = get_key($env, "params.name") ||
+					  ((get_key($env, 'params.env') || $env) . "-$type");
 	}
+
+	my $manifest = Genesis::Manifest->new($env,'cloud-config' => $cloud_config);
+	mkdir_or_fail(".genesis/manifests") unless -d ".genesis/manifests";
+	mkfile_or_fail(".genesis/manifests/$env.yml", $manifest->contents('redact' => 1));
+	mkfile_or_fail("$dir/manifest.yml", $manifest->contents('redact' => 0));
+
 	my @deploy_opts;
 	push @deploy_opts, "--$_"                for grep {$options->{$_}} qw/fix recreate dry-run/;
 	push @deploy_opts, "--no-redact"         if  !$options->{redact};
 	push @deploy_opts, "--skip-drain=$_"     for @{$options->{'skip-drain'} || []};
 	push @deploy_opts, "--$_=$options->{$_}" for grep {defined $options->{$_}} qw/canaries max-in-flight/;
-	return bosh_deploy $target, $deployment, "$dir/manifest.yml", @deploy_opts;
+	my $rc = bosh_deploy $target, $deployment, "$dir/manifest.yml", @deploy_opts;
+	if ($rc >> 8 == 0) {
+		my %errs = safe_set_json("secret/genesis/$type/$env", $manifest->pick('genesis'));
+		if (%errs) {
+			explain "#Y{ERROR:} Deployment succeeded, but failed to register deployment metadata to vault:";
+			explain "  - %s: %s", $_, %errs{$_} for (keys %errs);
+		}
+	}
+	return $rc;
+}
+
+# Writes the contents of the data to the given path.
+sub safe_set_json {
+	my ($vault_path,$data) = @_;
+	my %failures;
+	die "Data to be written to '$vault_path' is not a HASH\n" unless ref($data) eq "HASH";
+	# TODO: in future, if path is a key, the whole content can be written to
+	#       that key, allowing the data to be any type, not just HASH.
+	for (keys %$data) {
+		my $json = JSON::PP->new->allow_nonref->encode($data->{$_});
+		my ($out,$rc) = execute('safe set "$1" "$2"="$3"', $vault_path, $_, $json);
+		$failures{$_} =[$out,$rc] if $rc;
+	}
+	return %failures;
+}
+
+# Reads all the keys from a given safe path into a hash ref.  Expects each key
+# to be a stringified json object
+sub safe_get_json {
+	my ($vault_path) = @_;
+	my $out = {};
+	my ($keys, $rc) = execute('safe get "$1" --keys', $vault_path);
+	die "Cannot read vault path '$vault_path': $out\n" if $rc;
+	for (split $/, $keys) {
+		chomp;
+		my ($value, $rc) = execute('safe get "$1:$2"', $vault_path, $_);
+		die "Failed to retrieve $vault_path:$_: $out\n" if $rc;
+		$out->{$_} = JSON::PP->new->allow_nonref->decode($value);
+	}
+	return $out;
 }
 
 sub curl {
@@ -4872,19 +4863,17 @@ sub prompt_for_vault {
 			my $env = $envs{$_}{env};
 			explain "#Y{Determining Vault paths needed for $env ...}\n";
 
-			my $dir = workdir;
-			if (is_create_env($env)) {
-				write_stemcell_data("$dir/cloud.yml"); # Why write stemcell to cloud.yml??!!
-			} else {
-				bosh_download_cloud_config(bosh_target_for($env), "$dir/cloud.yml");
+			my %opts;
+			unless (is_create_env($env)) {
+				$opts{'cloud-config'} = workdir . "/cloud.yml";
+				bosh_download_cloud_config(bosh_target_for($env), $opts{'cloud-config'});
 			}
-			my %options = ('cloud-config' => "$dir/cloud.yml");
 			my $vault_prefix = $envs{$_}{vault};
-			push @paths, "secret/$vault_prefix/*";
-			my @merge_files = @{merge_files($envs{$_}{file}, \%options)};
-			for my $extra_path (sort grep {chomp; $_ !~ m/^secret\/$vault_prefix\// } spruce_vault_paths(@merge_files)) {
-				push @paths, $extra_path;
-			}
+			push(@paths, "secret/$vault_prefix/*");
+			push(@paths, $_) foreach (
+				sort grep {! qr{^secret/$vault_prefix/}}
+				Genesis::Manifest->new($env, %opts)->secrets('paths-only' => 1)
+			);
 		}
 		push @paths, "secret/handshake";
 		generate_ci_approle_policies(
@@ -5364,18 +5353,12 @@ sub {
 	/);
 	usage(1) if @_ != 1;
 	check_prereqs;
+	
+	my %manifest_options = (no_base => 1);
+	$manifest_options{no_kit} = 1 unless $options{"include-kit"};
 
-	my ($kit,$version) = kit_name_and_version_for($_[0]);
-	my @yamls;
-	if ($options{"include-kit"}) {
-		push @yamls, kit_yaml_files($_[0]);
-		if ($kit && $kit ne "dev") {
-			my $cache_dir = Cwd::abs_path($KIT_CACHE_DIR{"$kit/$version"});
-			@yamls = map {$_ =~ s%^$cache_dir/%\@kit($kit/$version):%; $_} @yamls;
-		}
-	}
-	push @yamls, mergeable_yaml_files($_[0]);
-	print "$_\n" for @yamls;
+	my $manifest = Genesis::Manifest->new($_[0]);
+	print "$_\n" for $manifest->source_files(%manifest_options);
 });
 
 # }}}
@@ -5716,39 +5699,40 @@ $GLOBAL_USAGE
       --[no-]redact          Determines if vault values are fetched or redacted.
                              By default, the manifest will be redacted unless
                              being output to the live console.
+
+      --no-prune             Do not prune away any of the params, meta or
+                             other supporting values that normally gets
+                             pruned prior to deployment.
 EOF
 sub {
 	my %options = (redact => ! controlling_terminal);
 	options(\@_, \%options, qw/
 		cloud-config|c=s
 		redact!
+		no-prune
 	/);
 	usage(1) if @_ != 1;
 	my $env = get_env(shift);
 	check_prereqs;
 
-	$ENV{REDACT} = $options{'redact'} ? "1" : "";
-
-	my $create_env = is_create_env($env);
-
-	# set offline since there's no director to talk to
-	$ENV{OFFLINE} = 1 if ($create_env);
-
-	if (!$options{'cloud-config'} && !$create_env) {
-		if (!online) {
-			error "You requested #B{offline} mode, but did not provide a #C{--cloud-config} to use.\n";
-			error "In offline mode, Genesis is not allowed to talk to the BOSH director,\n";
-			error "so you must provide a cloud config explicitly.\n";
-			exit 1;
+	if (is_create_env $env) {
+		if ($options{'cloud-config'}) {
+			main::error "#y{[Warning]} The specified cloud-config will be ignored as create-env environments do not use them.";
+			delete $options{'cloud-config'};
 		}
-		my $dir = workdir;
-		bosh_download_cloud_config(bosh_target_for($env), "$dir/cloud.yml");
-		$options{'cloud-config'} = "$dir/cloud.yml";
+	} else {
+		unless ($options{'cloud-config'}) {
+			if (!online) {
+				error "\nYou requested #B{offline} mode, but did not provide a #C{--cloud-config} to use.\n" .
+					  "In offline mode, Genesis is not allowed to talk to the BOSH director,\n" .
+					  "so you must provide a cloud config explicitly.\n";
+				exit 1;
+			}
+			$options{'cloud-config'} = workdir . "/cloud.yml";
+			bosh_download_cloud_config(bosh_target_for($env), $options{'cloud-config'});
+		}
 	}
-	print merge_manifest($env, {
-		'cloud-config' => $options{'cloud-config'},
-		'create-env'   => $create_env,
-	});
+	print Genesis::Manifest->new($env, %options)->contents(%options);
 });
 
 # }}}
@@ -5995,23 +5979,21 @@ sub {
 		# anything is running. If we run into these cases, this can be changed, either by
 		# somehow providing cloud configs for *all* boshes, or by making `spruce vaultinfo`
 		# ignore static_ips?
-		my $dir = workdir;
-		if (is_create_env($env)) {
-			write_stemcell_data("$dir/cloud.yml"); # Why write stemcell to cloud.yml??!!
-		} else {
-			bosh_download_cloud_config(bosh_target_for($env), "$dir/cloud.yml");
+		my %opts;
+		unless (is_create_env($env)) {
+			$opts{'cloud-config'} = workdir . "/cloud.yml";
+			bosh_download_cloud_config(bosh_target_for($env), $opts{'cloud-config'});
 		}
-		$options{'cloud-config'} = "$dir/cloud.yml";
 
 		# get all files for a deployment
-		my $vault_prefix = get_key($env, "params.vault", "");
-		chomp $vault_prefix;
+		chomp(my $vault_prefix = get_key($env, "params.vault", ""));
 		die "Unable to find `params.vault' for environment `$env'. Cannot continue\n" unless $vault_prefix;
 
-		push @paths, "secret/$vault_prefix/*";
-		for my $extra_path (sort grep {chomp; $_ !~ m/^secret\/$vault_prefix\// } spruce_vault_paths(@{merge_files($env, \%options)})) {
-			push @paths, $extra_path;
-		}
+		push(@paths, "secret/$vault_prefix/*");
+		push(@paths, $_) foreach (
+			sort grep {! qr{^secret/$vault_prefix/}}
+			Genesis::Manifest->new($env, %opts)->secrets('paths-only' => 1)
+		);
 	}
 	push @paths, "secret/handshake";
 	generate_ci_hcl_file('-', @paths);
