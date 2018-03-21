@@ -4,6 +4,8 @@ use Cwd ();
 use Config;
 use File::Temp qw/tempdir/;
 
+$ENV{PERL5LIB} = "$ENV{PWD}/lib";
+
 our $TOPDIR;
 sub import {
 	my ($class, @args) = @_;

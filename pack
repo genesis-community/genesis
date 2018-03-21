@@ -3,68 +3,159 @@
 use strict;
 use warnings;
 
+use Digest::SHA;
+use MIME::Base64 qw(encode_base64);
 
 ######################################################################
 
-system "perl -c bin/genesis";
-die "Perl compilation failed, not packing\n" unless $? == 0;
+system "perl -c -Ilib bin/genesis";
+die "Perl compilation failed, not packing\n" if $?;
 
+# ---
+# Build package structure
+# ---
+system 'rm -rf pkg/ pkg.tar.gz && mkdir pkg';
+die "Could not create a clean package staging area\n" if $?;
+
+system 'cp -a bin/genesis-v1 lib pkg/';
+die "Could not copy library into the package staging area\n" if $?;
+
+# ---
+# Version Handling
+# ---
+my $stub_out = ($ENV{GENESIS_PACK_PATH}||".")."/genesis-";
 my $VERSION = $ARGV[0] || '';
-my $file = "genesis-$VERSION";
-if (!$VERSION) {
+if ($VERSION) {
+    $stub_out .= $VERSION;
+} else {
 	chomp(my $sha1 = qx(git rev-parse HEAD));
 	$sha1 = substr($sha1, 0, 10);
-	$file = "genesis-$sha1";
-	if (qx(git status --porcelain bin/genesis lib/)) {
+	$stub_out .= "$sha1";
+	if (qx(git status --porcelain bin/genesis bin/genesis-v1 lib/)) {
 		$sha1 .= '+';
-		$file .= "-dirty";
+		$stub_out .= "-dirty";
 	}
 	$VERSION = "2.x.x (devel-$sha1)";
 }
-$file = ($ENV{GENESIS_PACK_PATH}||".")."/$file";
 
-open my $out, ">", "$file"
-	or die "Failed to open $file for writing: $!\n";
+# ---
+# Brand script with version
+# ---
+open my $out, ">", "pkg/genesis"
+	or die "Failed to open pkg/genesis for writing: $!\n";
 open my $in, "<", "bin/genesis"
 	or die "Failed to open bin/genesis for reading: $!\n";
-open my $v1, "<", "bin/genesis-v1"
-	or die "Failed to open bin/genesis-v1 for reading: $!\n";
 
-print $out "#!/usr/bin/env perl\n";
-print $out "{ # embedded JSON::PP {{{\n";
-print $out qx(perl -p -e 'last if m/__END__/' lib/JSON/PP.pm);
-print $out "} # }}}\n";
-
-LINE:
 while (<$in>) {
-	for my $mod (qw(JSON::PP)) {
-		next LINE if m{^use $mod;};
-		if (m{^use $mod (qw.*);}) {
-			print $out "$mod->import($1);\n";
-			next LINE;
-		}
-	}
-	next if m{^use lib };
-
-	if (m{^((?:our|my) \$VERSION)}) {
-		print $out "$1 = \"$VERSION\";\n";
-		next;
-	}
-	# skip the shebang, we already got one
-	next if m|^#!/|;
-	last if m|^__DATA__$|;
-	print $out $_;
-}
-
-# Embed the v1 script
-print $out "__DATA__\n";
-while (<$v1>) {
+	s/^our \$VERSION = .*$/our \$VERSION = \"$VERSION\";/;
 	print $out $_;
 }
 
 close $out;
 close $in;
-close $v1;
+chmod 0755, "pkg/genesis";
 
-chmod 0755, $file;
-print "packaged v$VERSION as $file\n";
+# ---
+# Assemble the tarball (with embedded checksum)
+# ---
+my $fh;
+system('tar -cf pkg.tar -C pkg .') == 0
+	or die "Failed to compile runtime archive: $!\n";
+open $fh, "<", "pkg.tar"
+	or die "Failed to reopen runtime archive for reading: $!\n";
+my $sha = Digest::SHA->new('sha1');
+$sha->addfile($fh);
+my $checksum = $sha->hexdigest;
+
+open $fh, ">", "pkg/checksum"
+	or die "Failed to open checksum file for writing: $!\n";
+print $fh "$checksum\n";
+close $fh;
+
+system('tar -rf pkg.tar -C pkg ./checksum') == 0
+	or die "Failed to append checksum file to runtime archive: $!\n";
+
+system('gzip -9 pkg.tar') == 0
+	or die "Failed to compress runtime archive: $!\n";
+
+open my $o, ">", $stub_out
+	or die "Failed to open $stub_out for writing: $!\n";
+
+print $o $_ for <DATA>;
+print $o "__DATA__\n$checksum\n";
+
+my $buf;
+open my $tbfh, "< :raw :bytes", "pkg.tar.gz"
+	or die "Could not open tarball for reading: $!\n";
+
+while (read($tbfh, $buf, 60*57)) {
+	print $o encode_base64($buf);
+}
+close $o;
+chmod 0755, $stub_out;
+
+print "GEESE RUNTIME ARCHIVE:\n";
+system("tar -tzvf pkg.tar.gz");
+print "\n---\n";
+print "packaged v$VERSION as $stub_out\n\n";
+
+# clean up after the geese
+system 'rm -rf pkg/ pkg.tar.gz';
+
+__DATA__
+#!/usr/bin/perl
+use strict;
+use warnings;
+
+use MIME::Base64 qw/decode_base64/;
+use FindBin;
+
+# Genesis Extraction and Execution Stub Engine (GEESE)
+#
+# This perl script contains the entire runtime environment needed to execute 
+# Genesis.  It unpacks the compressed contents into your ~/.geese/ directory
+# then passes execution to the ~/.geese/genesis Perl script that was
+# extracted, using the libraries located in ~/.geese/lib.
+#
+# Once extracted, further execution of this stub will use the previously
+# extracted library after checking that the checksum is identical.  This way,
+# new versions will be properly handled.
+
+# NOTE: BOSH will not work without $HOME set; so ...
+die "You have no \$HOME.  Please set one and re-run.\n"
+	unless $ENV{HOME};
+
+my $root = "$ENV{HOME}/.geese";
+mkdir $root unless -d $root;
+
+$ENV{GENESIS_V1_PATH_OVERRIDE} = $FindBin::Script;
+$ENV{GENESIS_V1_BIN} = "$root/genesis-v1";
+
+# check the checksum to see if we should untar
+my ($fh, $want, $have) = (undef, "", "");
+chomp($want = <DATA>);
+open $fh, "<", "$root/checksum" or $fh = undef;
+if ($fh) {
+	chomp($have = <$fh>);
+	close $fh;
+}
+
+if ($want ne $have) {
+	system("rm -rf $root/*");
+
+	# extract the payload
+	print STDERR "(inflating genesis runtime...)\n";
+	open my $tar, "|-", "tar -xzf - -C $root"
+		or die "Failed to do stuff\n";
+	while (<DATA>) {
+		chomp;
+		print $tar decode_base64($_);
+	}
+	close $tar;
+}
+
+# run it!
+$ENV{PERL5LIB} = "$root/lib";
+chmod 0755, "$root/genesis";
+exec "$root/genesis", @ARGV;
+exit(1);
