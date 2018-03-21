@@ -12,13 +12,15 @@ bosh2_cli_ok;
 
 my $dir = workdir 'subkit-hook-deployments';
 chdir $dir;
+# EXPECT DEBUGGING
+my $log_expect_stdout=$ENV{SHOW_EXPECT_OUTPUT}||0;
 
 reprovision kit => "subkit-hooks";
 
 sub subkit_hook_ok {
 	my ($env, $rc, $msg) = @_;
 	my $cmd = Expect->new();
-	$cmd->log_stdout(0);
+	$cmd->log_stdout($log_expect_stdout);
 	$cmd->spawn("genesis new $env --no-secrets");
 	expect_ok $cmd, ["Install OpenVPN?", sub { $_[0]->send("yes\n"); }];
 	expect_exit $cmd, $rc, $msg;
@@ -166,7 +168,7 @@ reprovision kit => 'more-hooks', compiled => 1; # use a compiled kit to verify w
 
 my $cmd = Expect->new();
 my $env = "inspect-this";
-$cmd->log_stdout(0);
+$cmd->log_stdout($log_expect_stdout);
 $cmd->spawn("genesis new $env --no-secrets");
 expect_ok $cmd, ["Install OpenVPN?", sub { $_[0]->send("yes\n"); }];
 expect_ok $cmd, ["What is the temp dir\?", sub { $_[0]->send("$dir\n"); }];
