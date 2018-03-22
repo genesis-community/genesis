@@ -22,6 +22,7 @@ use Cwd qw/getcwd abs_path/;
 use Genesis::Utils;
 use Genesis::Run;
 use Genesis::IO;
+use Genesis::Manifest;
 
 our $VERSION = "(development)";
 our $GITHUB_URL = "https://github.com/starkandwayne/genesis";
@@ -1553,13 +1554,10 @@ sub spruce_merge {
 	}
 	push @flags, "--go-patch";
 
-	debug "#Y{REDACT:} '$ENV{REDACT}'";
-	open my $cmd, "-|", (qw(spruce merge), @flags, @files)
-		or die "Failed to execute `spruce merge': $!\n";
-	my $out = do { local $/; <$cmd> };
-	close $cmd;
-	exit ($? >> 8 ) unless $? == 0;
-	return $out;
+	return Genesis::Run::get(
+		{onfailure => 'Failed to execute `spruce merge`'},
+		qw(spruce merge), @flags, @files
+	);
 }
 
 # finds the "name" of the deployment type that we are in
@@ -1601,11 +1599,11 @@ sub deploy_manifest {
 	push @deploy_opts, "--skip-drain=$_"     for @{$options->{'skip-drain'} || []};
 	push @deploy_opts, "--$_=$options->{$_}" for grep {defined $options->{$_}} qw/canaries max-in-flight/;
 	my $rc = bosh_deploy $target, $deployment, "$dir/manifest.yml", @deploy_opts;
-	if ($rc >> 8 == 0) {
+	if ($rc == 0) {
 		my %errs = safe_set_json("secret/genesis/$type/$env", $manifest->pick('genesis'));
 		if (%errs) {
-			explain "#Y{ERROR:} Deployment succeeded, but failed to register deployment metadata to vault:";
-			explain "  - %s: %s", $_, %errs{$_} for (keys %errs);
+			explain("#Y{ERROR:} Deployment succeeded, but failed to register deployment metadata to vault:");
+			explain("  - %s: %s", $_, $errs{$_}) for (keys %errs);
 		}
 	}
 	return $rc;
@@ -1620,7 +1618,7 @@ sub safe_set_json {
 	#       that key, allowing the data to be any type, not just HASH.
 	for (keys %$data) {
 		my $json = JSON::PP->new->allow_nonref->encode($data->{$_});
-		my ($out,$rc) = execute('safe set "$1" "$2"="$3"', $vault_path, $_, $json);
+		my ($out,$rc) = run('safe set "$1" "$2"="$3"', $vault_path, $_, $json);
 		$failures{$_} =[$out,$rc] if $rc;
 	}
 	return %failures;
@@ -1631,12 +1629,16 @@ sub safe_set_json {
 sub safe_get_json {
 	my ($vault_path) = @_;
 	my $out = {};
-	my ($keys, $rc) = execute('safe get "$1" --keys', $vault_path);
-	die "Cannot read vault path '$vault_path': $out\n" if $rc;
+	my ($keys, $rc) = run(
+		{onfailure => "Cannot read vault path '$vault_path'"},
+		'safe get "$1" --keys', $vault_path
+	);
 	for (split $/, $keys) {
 		chomp;
-		my ($value, $rc) = execute('safe get "$1:$2"', $vault_path, $_);
-		die "Failed to retrieve $vault_path:$_: $out\n" if $rc;
+		my ($value, $rc) = run(
+			{onfailure => "Failed to retrieve $vault_path:$_"},
+			'safe get "$1:$2"', $vault_path, $_
+		);
 		$out->{$_} = JSON::PP->new->allow_nonref->decode($value);
 	}
 	return $out;

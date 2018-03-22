@@ -1,5 +1,10 @@
 package Genesis::Manifest;
 
+use base 'Exporter';
+our @EXPORT = qw{
+  new
+};
+
 use constant {
 	REDACTED_FILENAME   => "redacted-manifest.yml",
 	UNREDACTED_FILENAME => "unredacted-manifest.yml"
