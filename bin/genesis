@@ -3223,7 +3223,10 @@ sub check_version {
 	$url ||= "your platform package manager";
 	my $version = Genesis::Run::get({stderr => (($from eq 'stderr') ? "&1 >":"")."/dev/null"}, $cmd);
 	return "#R{Missing `$name`} -- install from #B{$url}" if (!$version || $version =~ /not found/);
-	return if (envset('GENESIS_DEV_MODE') && $version =~ /development/);
+	if (envset('GENESIS_DEV_MODE') && $version =~ /development/) {
+		debug "#Y{Version $version} of #C{$name} (development) being used - minimum of #w{$min} needed.";
+		return;
+	}
 	$version =~ $regex;
 	return "Could not determine version of $name from `#m{$cmd}`: Got '#C{$version}" unless $1 && is_semver($1);
 	if (new_enough($name, $1, $min)) {
@@ -3244,7 +3247,7 @@ sub check_prereqs {
 		["safe",    "0.1.8", "safe -v",                              'stderr', qr(safe v(\S+)),          "https://github.com/starkandwayne/safe/releases"],
 		["vault",   "0.6.0", "vault -v",                             'stdout', qr(.*vault v(\S+).*)i,    "https://www.vaultproject.io/downloads.html"],
 		["git",     "1.8.0", "git --version",                        'stdout', qr(.*version\s+(\S+).*)],
-		["jq",        "1.5", "jq --version",                         'stdout', qr(^jq-(\S+)),            "https://stedolan.github.io/jq/download/"],
+		["jq",        "1.5", "jq --version",                         'stdout', qr(^jq-([\.0-9]+)),       "https://stedolan.github.io/jq/download/"],
 		["curl",   "7.30.0", "curl --version 2>/dev/null | head -n1",'stdout', qr(^curl\s+(\S+))]
 	];
 
