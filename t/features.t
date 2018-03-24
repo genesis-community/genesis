@@ -20,7 +20,6 @@ properties:
       aki: yup, we got one
       secret: haha
     type: s3
-
 EOF
 
 runs_ok "genesis manifest -c cloud.yml use-webdav >$tmp/manifest.yml";
@@ -31,7 +30,6 @@ properties:
     config:
       url: https://blobstore.internal
     type: webdav
-
 EOF
 run_fails "genesis manifest -c cloud.yml use-the-wrong-thing >$tmp/errors 2>&1", undef;
 is get_file("$tmp/errors"), <<EOF, "manifest generate fails with an invalid blobstore feature";

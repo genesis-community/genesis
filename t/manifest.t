@@ -26,7 +26,6 @@ name: sandbox-manifest-test
 releases:
 - name: foo
   version: 1.2.3-rc.1
-
 EOF
 
 runs_ok "genesis manifest -c cloud.yml us-west-1-sandbox >$tmp/manifest.yml";
@@ -43,7 +42,6 @@ name: sandbox-manifest-test
 releases:
 - name: foo
   version: 1.2.3-rc.1
-
 EOF
 
 $ENV{GENESIS_INDEX} = "no";
@@ -76,7 +74,6 @@ resource_pools:
 - name: small
 vm_extensions:
 - vm_ext_1
-
 EOF
 
 runs_ok "genesis manifest -c init-cloud.yml create-env-sandbox >$tmp/manifest.yml 2>$tmp/error.txt";
@@ -108,7 +105,6 @@ resource_pools:
 - name: small
 vm_extensions:
 - vm_ext_1
-
 EOF
 
 $ENV{PREVIOUS_ENV} = "us-cache-test";
@@ -127,7 +123,6 @@ name: sandbox-manifest-test
 releases:
 - name: foo
   version: 1.2.3-rc.1
-
 EOF
 
 done_testing;
