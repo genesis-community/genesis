@@ -1600,11 +1600,12 @@ sub deploy_manifest {
 	push @deploy_opts, "--$_=$options->{$_}" for grep {defined $options->{$_}} qw/canaries max-in-flight/;
 	my $rc = bosh_deploy $target, $deployment, "$dir/manifest.yml", @deploy_opts;
 	if ($rc == 0) {
-		my %errs = safe_set_json("secret/genesis/$type/$env", $manifest->pick('genesis'));
-		if (%errs) {
-			explain("#Y{ERROR:} Deployment succeeded, but failed to register deployment metadata to vault:");
-			explain("  - %s: %s", $_, $errs{$_}) for (keys %errs);
-		}
+		my $meta = $manifest->metadata();
+		return run(
+			{ onfailure => "Could not save $env metadata to the Vault" },
+			'safe', 'set', "secret/genesis/$type/$env",
+			               map { "$_=$meta->{$_}" } keys %$meta
+		);
 	}
 	return $rc;
 }
@@ -1622,26 +1623,6 @@ sub safe_set_json {
 		$failures{$_} =[$out,$rc] if $rc;
 	}
 	return %failures;
-}
-
-# Reads all the keys from a given safe path into a hash ref.  Expects each key
-# to be a stringified json object
-sub safe_get_json {
-	my ($vault_path) = @_;
-	my $out = {};
-	my ($keys, $rc) = run(
-		{onfailure => "Cannot read vault path '$vault_path'"},
-		'safe get "$1" --keys', $vault_path
-	);
-	for (split $/, $keys) {
-		chomp;
-		my ($value, $rc) = run(
-			{onfailure => "Failed to retrieve $vault_path:$_"},
-			'safe get "$1:$2"', $vault_path, $_
-		);
-		$out->{$_} = JSON::PP->new->allow_nonref->decode($value);
-	}
-	return $out;
 }
 
 sub curl {

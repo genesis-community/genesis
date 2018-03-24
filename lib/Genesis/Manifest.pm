@@ -95,6 +95,44 @@ sub pick {
 	return $out;
 }
 
+sub metadata {
+	my ($self) = @_;
+
+	my $data = $self->pick('genesis');
+	my (@args, %final);
+
+	for my $key (keys %$data) {
+		my $val = $data->{$key};
+
+		# convert arrays -> hashes
+		if (ref $val eq 'ARRAY') {
+			my $h = {};
+			for (my $i = 0; $i < @$val; $i++) {
+				$h{$i} = $val->[$i];
+			}
+			$val = $h;
+		}
+
+		# flatten hashes
+		if (ref $val eq 'HASH') {
+			for my $k (keys %$val) {
+				if (ref $val->{$k}) {
+					explain "#Y{WARNING:} The kit has specified the genesis.$key.$k\n".
+					        "metadata item, but the given value is not a simple scalar.\n";
+					        "Ignoring this metadata value.\n";
+					next;
+				}
+				$final{"$key.$k"} = $val->{$k};
+			}
+
+		} else {
+			$final{$key} = $data->{$key};
+		}
+	}
+
+	return \%final;
+}
+
 sub secrets {
 	my ($self,%opts) = @_;
 	my $yaml_files = join '" "', $self->source_files;
