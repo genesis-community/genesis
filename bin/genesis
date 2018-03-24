@@ -6393,8 +6393,8 @@ sub {
 		label|l=s
 		default=s
 		validation|V=s
-		min|m=i
-		max|M=i
+		min|minimum|m=i
+		max|maximum|M=i
 		option|o=s@
 		invert
 		echo
