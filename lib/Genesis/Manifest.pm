@@ -37,7 +37,7 @@ sub DESTROY {
 			rmtree $self->{workdir};
 			debug("#g{Deleted Manifest workdir:} $self->{workdir}");
 		}
-		$self->env = undef if $self->env; #important once env becomes an object
+		$self->{env} = undef;
 	}
 }
 
@@ -69,7 +69,7 @@ sub contents {
 			vm_extensions
 		}) unless $self->{create_env};
 	}
-	return main::spruce_merge({prune => [@prunables]}, $self->_file($opts{rebuild}));
+	return main::spruce_merge({prune => [@prunables]}, $self->_file(%opts));
 }
 
 # Writes a redacted manifest to the specified location
@@ -105,7 +105,7 @@ sub metadata {
 		if (ref $val eq 'ARRAY') {
 			my $h = {};
 			for (my $i = 0; $i < @$val; $i++) {
-				$h{$i} = $val->[$i];
+				$h->{$i} = $val->[$i];
 			}
 			$val = $h;
 		}
@@ -115,7 +115,7 @@ sub metadata {
 			for my $k (keys %$val) {
 				if (ref $val->{$k}) {
 					explain "#Y{WARNING:} The kit has specified the genesis.$key.$k\n".
-					        "metadata item, but the given value is not a simple scalar.\n";
+					        "metadata item, but the given value is not a simple scalar.\n".
 					        "Ignoring this metadata value.\n";
 					next;
 				}
@@ -132,11 +132,10 @@ sub metadata {
 
 sub secrets {
 	my ($self,%opts) = @_;
-	my $yaml_files = join '" "', $self->source_files;
 	my @keys= grep {$_ ne ''} Genesis::Run::getlines(
 		{onfailure => "Failure while running spruce vaultinfo"},
 		'f="$1"; shift; spruce vaultinfo --go-patch "$@" | spruce json | jq -r "$f"',
-		'.secrets[].key', @files);
+		'.secrets[].key', $self->source_files);
 	return @keys if $opts{include_keys};
 	return keys %{{map {(my $p = $_) =~ s/:.*?$//; $p => 1} @keys}};
 }
