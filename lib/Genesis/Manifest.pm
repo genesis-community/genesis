@@ -61,7 +61,6 @@ sub contents {
 	my ($self,%opts) = @_;
 	# Default to producing pruned, redacted contents
 	$opts{$_} = 1 for grep {! defined $opts{$_}} qw/prune redact/;
-	local $ENV{REDACT} = $opts{redact} ? "1" : "";
 	my @prunables = ();
 	if ($opts{prune}) {
 		@prunables = qw/meta pipeline params kit genesis compilation/;
@@ -84,11 +83,10 @@ sub write {
 sub pick {
 	my ($self, $subpath, %opts) = @_;
 	my $cmd = 'spruce json "$1" | jq -M "$2"';
-	local $ENV{REDACT} = "";
 	my $filter = main::jq_extractor($subpath);
 	my ($out,$rc) = run(
     {onfailure => "Could not retrieve '$subpath' from manifest"},
-    $cmd,$self->_file($opts{rebuild}),$filter
+    $cmd,$self->_file(%opts),$filter
   );
 	$out = JSON::PP->new->allow_nonref->decode($out);
 	return $out;
@@ -145,18 +143,19 @@ sub secrets {
 
 # --- below are "private" support methods not intended to be called directly ---
 
-# Provides the path to, and generates if necessary, an unpruned manifest that
-# is redacted (or not) according to $ENV{REDACT}
+# Provides the path to, and generates if necessary, an unpruned manifest.  Will
+# provide a redacted manifest unless $opts{redact} is falsey.  Will use cached
+# version if available unless $opts{rebuild} is truthy.
 sub _file {
-	my ($self,$force) = @_;
+	my ($self,%opts) = @_;
 	my $file = $self->{workdir}."/";
-	if ($ENV{REDACT}) {
+	if ($opts{redact} || ! defined $opts{redact}) {
 		$file .= "redacted-manifest.yml";
-		$self->_build($file,1) unless -e $file && ! $force;
+		$self->_build($file,1) unless -e $file && ! $opts{rebuild};
 		debug("#Y{Redacted Manifest generated}: $file");
 	} else {
 		$file .= "unredacted-manifest.yml";
-		$self->_build($file) unless -e $file && ! $force;
+		$self->_build($file) unless -e $file && ! $opts{rebuild};
 		debug("#Y{Unredacted Manifest generated}: $file");
 	}
 	return $file
