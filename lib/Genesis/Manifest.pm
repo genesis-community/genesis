@@ -12,6 +12,7 @@ use constant {
 
 use JSON::PP;
 use File::Path qw(rmtree);
+use File::Basename;
 
 use Genesis::Run;
 use Genesis::Utils;
@@ -75,6 +76,13 @@ sub contents {
 		}) unless $self->{create_env};
 	}
 	return main::spruce_merge({prune => [@prunables]}, $self->file);
+}
+
+# Writes a redacted manifest to the specified location
+sub write {
+	my ($self, $path, %opts) = @_;
+	main::mkdir_or_fail(dirname($path));
+	mkfile_or_fail($path, $self->contents(%opts));
 }
 
 sub pick {

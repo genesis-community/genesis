@@ -1589,9 +1589,7 @@ sub deploy_manifest {
 	}
 
 	my $manifest = Genesis::Manifest->new($env,'cloud-config' => $cloud_config);
-	mkdir_or_fail(".genesis/manifests") unless -d ".genesis/manifests";
-	mkfile_or_fail(".genesis/manifests/$env.yml", $manifest->contents('redact' => 1));
-	mkfile_or_fail("$dir/manifest.yml", $manifest->contents('redact' => 0));
+	$manifest->write("$dir/manifest.yml", redact => 0);
 
 	my @deploy_opts;
 	push @deploy_opts, "--$_"                for grep {$options->{$_}} qw/fix recreate dry-run/;
@@ -1599,7 +1597,9 @@ sub deploy_manifest {
 	push @deploy_opts, "--skip-drain=$_"     for @{$options->{'skip-drain'} || []};
 	push @deploy_opts, "--$_=$options->{$_}" for grep {defined $options->{$_}} qw/canaries max-in-flight/;
 	my $rc = bosh_deploy $target, $deployment, "$dir/manifest.yml", @deploy_opts;
+	unlink "$dir/manifest.yml" or debug "Could not delete unredacted $dir/manifest.yml";
 	if ($rc == 0) {
+		$manifest->write(".genesis/manifests/$env.yml");
 		my $meta = $manifest->metadata();
 		return run(
 			{ onfailure => "Could not save $env metadata to the Vault" },
