@@ -63,7 +63,7 @@ sub contents {
 	$opts{$_} = 1 for grep {! defined $opts{$_}} qw/prune redact/;
 	my @prunables = ();
 	if ($opts{prune}) {
-		@prunables = qw/meta pipeline params kit genesis compilation/;
+		@prunables = qw/meta pipeline params kit exodus compilation/;
 		push(@prunables, qw{
 			resource_pools disk_pools networks vm_types disk_types azs
 			vm_extensions
@@ -95,7 +95,7 @@ sub pick {
 sub metadata {
 	my ($self) = @_;
 
-	my $data = $self->pick('genesis');
+	my $data = $self->pick('exodus');
 	my (@args, %final);
 
 	for my $key (keys %$data) {
@@ -174,7 +174,7 @@ sub _base_yml_file {
 ---
 meta:
   vault: (( concat "secret/" params.vault || "nowhere" ))
-genesis: {}
+exodus: {}
 params:
   name: (( concat params.env "-$self->{type}" ))
 name: (( grab params.name ))
@@ -187,7 +187,7 @@ sub _finalize_yml_file {
 	my $file = $self->{workdir} . "/finalize.yml";
 	main::mkfile_or_fail($file,0644,<<EOF);
 ---
-genesis:
+exodus:
   kit_name:    (( grab kit.name    || "unknown" ))
   kit_version: (( grab kit.version || "unknown" ))
   vault_base:  (( grab meta.vault ))
