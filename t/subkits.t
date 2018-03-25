@@ -21,7 +21,6 @@ properties:
       aki: yup, we got one
       secret: haha
     type: s3
-
 EOF
 eq_or_diff get_file("$tmp/manifest-errors"), <<EOF, "errors from manifest generated with webdav subkit";
 EOF
@@ -34,7 +33,6 @@ properties:
     config:
       url: https://blobstore.internal
     type: webdav
-
 EOF
 eq_or_diff get_file("$tmp/manifest-errors"), <<EOF, "errors from manifest generated with webdav subkit";
 EOF

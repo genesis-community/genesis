@@ -26,7 +26,6 @@ name: sandbox-manifest-test
 releases:
 - name: foo
   version: 1.2.3-rc.1
-
 EOF
 
 runs_ok "genesis manifest -c cloud.yml us-west-1-sandbox >$tmp/manifest.yml";
@@ -43,12 +42,14 @@ name: sandbox-manifest-test
 releases:
 - name: foo
   version: 1.2.3-rc.1
-
 EOF
 
 $ENV{GENESIS_INDEX} = "no";
-runs_ok "genesis manifest -c init-cloud.yml bosh-init-sandbox >$tmp/manifest.yml";
-eq_or_diff get_file("$tmp/manifest.yml"), <<EOF, "manifest for bosh-int/create-env scenario ignores provided cloud config file, and doesnt prune cloud-y datastructures";
+runs_ok "genesis manifest -c init-cloud.yml bosh-init-sandbox >$tmp/manifest.yml 2>$tmp/error.txt";
+eq_or_diff get_file("$tmp/error.txt"), <<EOF, "manifest for bosh-init/create-env scenario warns that a cloud config file was provided";
+\e[33m[Warning]\e[0m The specified cloud-config will be ignored as create-env environments do not use them.
+EOF
+eq_or_diff get_file("$tmp/manifest.yml"), <<EOF, "manifest for bosh-init/create-env scenario ignores provided cloud config file, and doesnt prune cloud-y datastructures";
 azs:
 - name: z1
 disk_pools:
@@ -73,10 +74,12 @@ resource_pools:
 - name: small
 vm_extensions:
 - vm_ext_1
-
 EOF
 
-runs_ok "genesis manifest -c init-cloud.yml create-env-sandbox >$tmp/manifest.yml";
+runs_ok "genesis manifest -c init-cloud.yml create-env-sandbox >$tmp/manifest.yml 2>$tmp/error.txt";
+eq_or_diff get_file("$tmp/error.txt"), <<EOF, "manifest for bosh-init/create-env scenario warns that a cloud config file was provided";
+\e[33m[Warning]\e[0m The specified cloud-config will be ignored as create-env environments do not use them.
+EOF
 eq_or_diff get_file("$tmp/manifest.yml"), <<EOF, "manifest for bosh-int/create-env scenario ignores provided cloud config file, and doesnt prune cloud-y datastructures";
 azs:
 - name: z1
@@ -102,7 +105,6 @@ resource_pools:
 - name: small
 vm_extensions:
 - vm_ext_1
-
 EOF
 
 $ENV{PREVIOUS_ENV} = "us-cache-test";
@@ -121,7 +123,6 @@ name: sandbox-manifest-test
 releases:
 - name: foo
   version: 1.2.3-rc.1
-
 EOF
 
 done_testing;
