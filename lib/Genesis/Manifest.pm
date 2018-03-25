@@ -1,15 +1,5 @@
 package Genesis::Manifest;
 
-use base 'Exporter';
-our @EXPORT = qw{
-  new
-};
-
-use constant {
-	REDACTED_FILENAME   => "redacted-manifest.yml",
-	UNREDACTED_FILENAME => "unredacted-manifest.yml"
-};
-
 use JSON::PP;
 use File::Path qw(rmtree);
 use File::Basename;
@@ -87,21 +77,17 @@ sub write {
 	mkfile_or_fail($path, $self->contents(%opts));
 }
 
+# Picks a subpath from the manifest, returning a perl "structure"
 sub pick {
-	my ($self, $path, %opts) = @_;
+	my ($self, $subpath, %opts) = @_;
 	my $cmd = 'spruce json "$1" | jq -M "$2"';
-	my $format = $opts{'format'} || '';
-	$cmd .= ' -c'             if $format eq "JSON";
-	$cmd .= ' -r'             if $format eq "PP";
-	$cmd .= ' | spruce merge' if $format eq "YAML";
 	local $ENV{REDACT} = "";
-	my $filter = main::jq_extractor($path);
-	$filter .= (" | " . main::jq_embedder($opts{wrap})) if $opts{wrap};
+	my $filter = main::jq_extractor($subpath);
 	my ($out,$rc) = run(
-    {onfailure => "Could not retrieve '$path' from manifest"},
-    $cmd,$self->file,$filter
+    {onfailure => "Could not retrieve '$subpath' from manifest"},
+    $cmd,$self->_file($opts{rebuild}),$filter
   );
-	$out = JSON::PP->new->allow_nonref->decode($out) unless $format;
+	$out = JSON::PP->new->allow_nonref->decode($out);
 	return $out;
 }
 
@@ -150,22 +136,25 @@ sub secrets {
 		{onfailure => "Failure while running spruce vaultinfo"},
 		'f="$1"; shift; spruce vaultinfo --go-patch "$@" | spruce json | jq -r "$f"',
 		'.secrets[].key', @files);
-	return @keys unless $opts{'paths-only'};
+	return @keys if $opts{include_keys};
 	return keys %{{map {(my $p = $_) =~ s/:.*?$//; $p => 1} @keys}};
 }
 
 # --- below are "private" support methods not intended to be called directly ---
-sub file {
+
+# Provides the path to, and generates if necessary, an unpruned manifest that
+# is redacted (or not) according to $ENV{REDACT}
+sub _file {
 	my ($self,$force) = @_;
 	my $file = $self->{workdir}."/";
 	if ($ENV{REDACT}) {
-		$file .= REDACTED_FILENAME;
+		$file .= "redacted-manifest.yml";
 		$self->_build($file,1) unless -e $file && ! $force;
-		debug("#Y{Redacted Manifest generated}");
+		debug("#Y{Redacted Manifest generated}: $file");
 	} else {
-		$file .= UNREDACTED_FILENAME;
+		$file .= "unredacted-manifest.yml";
 		$self->_build($file) unless -e $file && ! $force;
-		debug("#Y{Unredacted Manifest generated}");
+		debug("#Y{Unredacted Manifest generated}: $file");
 	}
 	return $file
 }
