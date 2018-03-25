@@ -39,24 +39,25 @@ sub new {
 
 sub DESTROY {
 	my ($self) = @_;
-	if ($self && $self->{workdir} && -d $self->{workdir}) {
-		rmtree $self->{workdir};
-		main::debug("#g{Deleted Manifest workdir:} $self->{workdir}");
+	if ($self) {
+		if ($self->{workdir} && -d $self->{workdir}) {
+			rmtree $self->{workdir};
+			debug("#g{Deleted Manifest workdir:} $self->{workdir}");
+		}
+		$self->env = undef if $self->env; #important once env becomes an object
 	}
 }
 
-# Returns the source files used to build the manifest.  Option no_base will
-# exclude the genesis-generated base file, and option no_kit will exclude the
-# yaml files that come from the kit
-
 sub source_files {
 	my ($self,%opts) = @_;
+	# Default to having everything
+	$opts{$_} = 1 for grep {! defined $opts{$_}} qw/base kit/;
 	my @files = ();
-	push @files, $self->_base_yml_file unless $opts{no_base};
-	push @files, $self->_kit_yaml_files unless $opts{no_kit};						# Will be replaced with Genesis::Kit obj method call
+	push @files, $self->_base_yml_file     if $opts{base};
+	push @files, $self->_kit_yaml_files    if $opts{kit};						# Will be replaced with Genesis::Kit obj method call
 	push @files, main::mergeable_yaml_files($self->{env});							# Will be replaced with Genesis::Env obj method call
-	push @files, $self->{cloud_config} if $self->{cloud_config};
-	push @files, $self->_finalize_yml_file unless $opts{no_base};
+	push @files, $self->{cloud_config}     if $self->{cloud_config};
+	push @files, $self->_finalize_yml_file if $opts{base};
 	return @files;
 }
 
@@ -65,17 +66,18 @@ sub source_files {
 # prior to deployment
 sub contents {
 	my ($self,%opts) = @_;
-	# Default to producing redacted contents
-	local $ENV{REDACT} = (defined($opts{redact}) && !$opts{redact}) ? "" : "1";
+	# Default to producing pruned, redacted contents
+	$opts{$_} = 1 for grep {! defined $opts{$_}} qw/prune redact/;
+	local $ENV{REDACT} = $opts{redact} ? "1" : "";
 	my @prunables = ();
-	unless ($opts{'no-prune'}) {
+	if ($opts{prune}) {
 		@prunables = qw/meta pipeline params kit genesis compilation/;
 		push(@prunables, qw{
 			resource_pools disk_pools networks vm_types disk_types azs
 			vm_extensions
 		}) unless $self->{create_env};
 	}
-	return main::spruce_merge({prune => [@prunables]}, $self->file);
+	return main::spruce_merge({prune => [@prunables]}, $self->_file($opts{rebuild}));
 }
 
 # Writes a redacted manifest to the specified location

@@ -4855,7 +4855,7 @@ sub prompt_for_vault {
 			push(@paths, "secret/$vault_prefix/*");
 			push(@paths, $_) foreach (
 				sort grep {! qr{^secret/$vault_prefix/}}
-				Genesis::Manifest->new($env, %opts)->secrets('paths-only' => 1)
+				Genesis::Manifest->new($env, %opts)->secrets()
 			);
 		}
 		push @paths, "secret/handshake";
@@ -5330,18 +5330,15 @@ OPTIONS
 $GLOBAL_USAGE
 EOF
 sub {
-	my %options;
+	my %options = ("include-kit" => 0);
 	options(\@_, \%options, qw/
 		include-kit
 	/);
 	usage(1) if @_ != 1;
 	check_prereqs;
 	
-	my %manifest_options = (no_base => 1);
-	$manifest_options{no_kit} = 1 unless $options{"include-kit"};
-
 	my $manifest = Genesis::Manifest->new($_[0]);
-	print "$_\n" for $manifest->source_files(%manifest_options);
+	print "$_\n" for $manifest->source_files(base=>0, kit=>$options{"include-kit"});
 });
 
 # }}}
@@ -5677,22 +5674,21 @@ USAGE: genesis manifest [--no-redact] [--cloud-config path.yml] deployment-env.y
 OPTIONS
 $GLOBAL_USAGE
 
-  -c, --cloud-config PATH    Path to your downloaded BOSH cloud-config
+  -c, --cloud-config PATH   Path to your downloaded BOSH cloud-config
 
-      --[no-]redact          Determines if vault values are fetched or redacted.
-                             By default, the manifest will be redacted unless
-                             being output to the live console.
+      --[no-]redact         Determines if vault values are fetched or redacted.
+                            By default, the manifest will be redacted unless
+                            being output to the live console.
 
-      --no-prune             Do not prune away any of the params, meta or
-                             other supporting values that normally gets
-                             pruned prior to deployment.
+      --[no-]prune          Determines if the build metadata is pruned.  Defaults
+                            to true.
 EOF
 sub {
-	my %options = (redact => ! controlling_terminal);
+	my %options = (redact => ! controlling_terminal, prune => 1);
 	options(\@_, \%options, qw/
 		cloud-config|c=s
 		redact!
-		no-prune
+		prune!
 	/);
 	usage(1) if @_ != 1;
 	my $env = get_env(shift);
@@ -5975,7 +5971,7 @@ sub {
 		push(@paths, "secret/$vault_prefix/*");
 		push(@paths, $_) foreach (
 			sort grep {! qr{^secret/$vault_prefix/}}
-			Genesis::Manifest->new($env, %opts)->secrets('paths-only' => 1)
+			Genesis::Manifest->new($env, %opts)->secrets()
 		);
 	}
 	push @paths, "secret/handshake";
