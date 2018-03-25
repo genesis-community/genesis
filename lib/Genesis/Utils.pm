@@ -6,8 +6,11 @@ our @EXPORT = qw/
 
 	csprintf
 	explain debug trace error
+	bail
 
 	workdir
+
+	is_semver
 /;
 
 use File::Temp qw/tempdir/;
@@ -113,12 +116,21 @@ sub error(@) {
 	print STDERR csprintf(@err) . "\n";
 }
 
+sub bail(@) {
+	error(@_);
+	exit 1;
+}
+
 my %WORKDIR;
 sub workdir {
 	return $WORKDIR{$_[0]} if ($_[0] && defined $WORKDIR{$_[0]});
 	my $dir = tempdir(CLEANUP => 1);
 	$WORKDIR{$_[0]} = $dir if $_[0];
 	return $dir;
+}
+
+sub is_semver {
+	return $_[0] =~ m/^(\d+)(?:\.(\d+)(?:\.(\d+)(?:[.-]rc[.-]?(\d+))?)?)?$/;
 }
 
 1;

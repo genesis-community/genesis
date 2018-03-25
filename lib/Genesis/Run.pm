@@ -1,7 +1,7 @@
 package Genesis::Run;
 
 use base 'Exporter';
-our @EXPORT = qw/run/;
+our @EXPORT = qw/run curl/;
 
 use Genesis::Utils;
 use File::Basename qw/basename/;
@@ -202,6 +202,34 @@ sub get {
 sub getlines {
 	my $out = get(@_);
 	return ($? >> 8) ? () : split $/, $out;
+}
+
+sub curl {
+	my ($method, $url, $headers, $data, $skip_verify, $creds) = @_;
+	my @flags = ("-X", $method);
+	push @flags, "-H", "$_: $headers->{$_}" for (keys %$headers);
+	push @flags, "-d", $data                if  $data;
+	push @flags, "-k"                       if  ($skip_verify);
+	push @flags, "-u", $creds               if  ($creds);
+	push @flags, "-v"                       if  (envset('GENESIS_DEBUG'));
+	my $status = "";
+	my $status_line = "";
+	my @data = getlines('curl', '-isL', $url, @flags);
+	unless (scalar(@data) && $? == 0) {
+		interact('curl', '-L', $url, @flags); # curl again to get stdout/err into concourse for debugging
+		return 599, "Unable to execute curl command", "";
+	}
+	while (my $line = shift @data) {
+		if ($line =~ m/^HTTP\/\d+\.\d+\s+((\d+)(\s+.*)?)$/) {
+			$status_line = $1;
+			$status = $2;
+		}
+		# curl -iL will output a second set of headers if following links
+		if ($line =~ /^\s+$/ && $status !~ /^3\d\d$/) {
+			last;
+		}
+	}
+	return $status, $status_line, join("", @data);
 }
 
 1;

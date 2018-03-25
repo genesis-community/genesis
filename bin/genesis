@@ -21,6 +21,7 @@ use Cwd qw/getcwd abs_path/;
 # Genesis Libs
 use Genesis::Utils;
 use Genesis::Run;
+use Genesis::Kit::Compiler;
 use Genesis::IO;
 use Genesis::Manifest;
 
@@ -1626,34 +1627,6 @@ sub safe_set_json {
 	return %failures;
 }
 
-sub curl {
-	my ($method, $url, $headers, $data, $skip_verify, $creds) = @_;
-	my @flags = ("-X", $method);
-	push @flags, "-H", "$_: $headers->{$_}" for (keys %$headers);
-	push @flags, "-d", $data                if  $data;
-	push @flags, "-k"                       if  ($skip_verify);
-	push @flags, "-u", $creds               if  ($creds);
-	push @flags, "-v"                       if  (envset('GENESIS_DEBUG'));
-	my $status = "";
-	my $status_line = "";
-	my @data = Genesis::Run::getlines('curl', '-isL', $url, @flags);
-	unless (scalar(@data) && $? == 0) {
-		Genesis::Run::interact('curl', '-L', $url, @flags); # curl again to get stdout/err into concourse for debugging
-		return 599, "Unable to execute curl command", "";
-	}
-	while (my $line = shift @data) {
-		if ($line =~ m/^HTTP\/\d+\.\d+\s+((\d+)(\s+.*)?)$/) {
-			$status_line = $1;
-			$status = $2;
-		}
-		# curl -iL will output a second set of headers if following links
-		if ($line =~ /^\s+$/ && $status !~ /^3\d\d$/) {
-			last;
-		}
-	}
-	return $status, $status_line, join("", @data);
-}
-
 ###########################################################################
 
 sub vault_auth {
@@ -3170,10 +3143,6 @@ sub generate_pipeline_human_description {
 		pipeline_tree("", $_, \%trees);
 		print "\n";
 	}
-}
-
-sub is_semver {
-	return $_[0] =~ m/^(\d+)(?:\.(\d+)(?:\.(\d+)(?:[.-]rc[.-]?(\d+))?)?)?$/;
 }
 
 sub semver {
@@ -5559,14 +5528,16 @@ sub {
 	unless ($options{name}) {
 		my $pwd = abs_path($options{cwd} || getcwd);
 		if ($pwd =~ /\/([^\/]*)-deployments(\/)?$/) {
-		# Building from a dev inside a deployment repo - gleen the name
+			# Building from dev/ inside a deployment repo - glean the name
 			$options{name} = $1;
 			$dir = "$pwd/dev";
 			$options{dev} = 1;
+
 		} elsif ($pwd =~ /\/([^\/]*)-genesis-kit(\/)?$/) {
+			# Building from a Genesis Kit source repo
 			$options{name} = $1;
 			$dir = $pwd;
-			die "Current directory is a kit -- cannot specify dev mode\n"
+			bail "Current directory is a kit -- cannot specify dev mode\n"
 				if $options{dev};
 		}
 	}
@@ -5577,7 +5548,7 @@ sub {
 	unless ($dir) {
 		if ($options{dev}) {
 			$dir = ($options{cwd} || ".") . "/dev";
-			die "$dir does not exist -- cannot continue compiling dev kit.\n" unless -d $dir;
+			bail "$dir does not exist -- cannot continue compiling dev kit.\n" unless -d $dir;
 		} else {
 			$dir = ($options{cwd} || ".");
 			$dir .= "/$options{name}-genesis-kit"
@@ -5585,30 +5556,18 @@ sub {
 		}
 	}
 
-	my $metadata = validate_kit_files($dir,1);
-	validate_kit_metadata($options{name},$options{version},$metadata,1);
-
-	my $temp = tempdir(CLEANUP => 1);
-	my $stem = "$options{name}-$options{version}";
-	mkdir_or_fail "$temp/$stem";
-	run('cp -aH "${1}"/* "${2}/${3}"', $dir, $temp, $stem);
-	run('rm -rf "${1}/${2}/"{.git,.gitignore,*.tar.gz,ci}', $temp, $stem);
-	run(
-		'echo "version: ${1}" | spruce merge "${2}/kit.yml" - > "${3}/${4}/kit.yml"',
-		$options{version}, $dir, $temp, $stem
-	);
-
 	if (!$options{force}) {
-		my $changes = Genesis::Run::get('git status --porcelain');
-		if ($? == 0 && $changes) {
-			error "\n#R{ERROR}: Unstaged / uncommited changes found in working directory.\n".
-			      "Please either #C{stash} or #C{commit} those changes before compiling your kit.\n";
-			exit 1;
+		my ($changes, $rc) = Genesis::Run::get('git status --porcelain');
+		if (!$rc && $changes) {
+			bail "\n#R{ERROR}: Unstaged / uncommited changes found in working directory.\n".
+			     "Please either #C{stash} or #C{commit} those changes before compiling your kit.\n";
 		}
 	}
-	run('tar -czf "${2}.tar.gz" -C "$1" "$2/"', $temp, $stem);
 
-	printf "Created $stem.tar.gz\n\n";
+	my $cc = Genesis::Kit::Compiler->new($dir);
+	my $tar = $cc->compile($options{name}, $options{version}, ".")
+		or bail "Unable to compile v$options{version} of $options{name} Genesis Kit.\n";
+	printf "Created $tar\n\n";
 });
 
 # }}}

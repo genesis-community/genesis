@@ -9,3 +9,5 @@ t/repos/compiled-kit-test/new-env.yml
 
 /genesis-*
 *.swp
+
+/cover_db

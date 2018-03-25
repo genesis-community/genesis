@@ -18,19 +18,19 @@ sub DumpJSON {
 
 sub LoadFile {
 	my ($file) = @_;
-	decode_json(Genesis::Run::get('spruce json "$1"', $file));
+	my ($out, $rc) = run('spruce json "$1"', $file);
+	return $rc ? undef : decode_json($out);
 }
 
 sub Load {
 	my ($yaml) = @_;
 
 	my $tmp = workdir();
-	open my $fh, "|-", "spruce json >$tmp/yaml.json"
-		or die "Failed to execute `spruce json': $!\n";
+	open my $fh, ">", "$tmp/json.yml"
+		or die "Unable to create tempfile for YAML conversion: $!\n";
 	print $fh $yaml;
 	close $fh;
-
-	return LoadFile("$tmp/yaml.json")
+	return LoadFile("$tmp/json.yml")
 }
 
 1;

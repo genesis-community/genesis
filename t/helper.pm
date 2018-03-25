@@ -1,5 +1,6 @@
 package helper;
 use Test::More;
+use Test::Exception;
 use Cwd ();
 use Config;
 use File::Temp qw/tempdir/;
