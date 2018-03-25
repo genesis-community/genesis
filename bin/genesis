@@ -1546,7 +1546,6 @@ sub spruce_merge {
 	# spruce_merge({ prune => 'meta'}, $file1, $file2)
 	my $opts = ref($files[0]) eq 'HASH' ? shift @files : {};
 	my @flags;
-	push @flags, "--skip-eval" if delete $opts->{'skip-eval'};
 	for my $flag (keys %$opts) {
 		for my $value (ref($opts->{$flag}) ? @{ $opts->{$flag} } : ($opts->{$flag})) {
 			push @flags, "--$flag", $value;

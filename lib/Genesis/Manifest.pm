@@ -1,5 +1,8 @@
 package Genesis::Manifest;
 
+use strict;
+use warnings;
+
 use JSON::PP;
 use File::Path qw(rmtree);
 use File::Basename;
@@ -224,8 +227,9 @@ The following options are supported:
 
 The path to the cloud config file.  This file will contain the network details
 that are needed when the kit files use the C<(( static_ip ))> operator.
-Furthermore, this can be ommitted when the using the source_files method, or the
-pick method for a subpath that doesn't use the C<(( static_ip ))> operator.
+Furthermore, this can be omitted when the using the C<source_files> method, or
+the pick method for a subpath that doesn't use the C<(( static_ip ))>
+operator.
 
 =back
 
@@ -341,11 +345,6 @@ given path.
 Defaults to I<false>
 
 =back
-
-=head1 AUTHORS
-
-Dennis J. Bell E<lt>dennis.j.bell@gmail.comE<gt> - 2018
-James Hunt E<lt>james@niftylogic.comE<gt> - 2018
 
 =cut
 
