@@ -1398,8 +1398,14 @@ our $prompt_handlers = {
 	boolean =>        \&boolean_prompt_handler,
 	block =>          \&block_prompt_handler,
 	select =>         \&select_prompt_handler,
+
+	list         =>   \&multi_line_prompt_handler,
+	lines        =>   \&multi_line_prompt_handler,
 	"multi-line" =>   \&multi_line_prompt_handler,
+
+	blocks        =>  \&multi_block_prompt_handler,
 	"multi-block" =>  \&multi_block_prompt_handler,
+
 	"multi-select" => \&multi_select_prompt_handler,
 	"secret-line" =>  \&secret_line_prompt_handler,
 	"secret-block" => \&secret_block_prompt_handler,
