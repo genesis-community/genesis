@@ -4082,6 +4082,10 @@ OPTIONS
 $GLOBAL_USAGE
 EOF
 sub {
+	my %options;
+	options(\@_, \%options, qw/
+	/);
+	usage(1) if @_;
 	check_prereqs(no_repo_needed => 1);
 	print "PING!\n";
 });
@@ -4097,6 +4101,10 @@ OPTIONS
 $GLOBAL_USAGE
 EOF
 sub {
+	my %options;
+	options(\@_, \%options, qw/
+	/);
+	usage(1) if @_;
 	print "Genesis v$VERSION\n";
 });
 
