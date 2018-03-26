@@ -76,7 +76,7 @@ sub contents {
 sub write {
 	my ($self, $path, %opts) = @_;
 	main::mkdir_or_fail(dirname($path));
-	mkfile_or_fail($path, $self->contents(%opts));
+	main::mkfile_or_fail($path, $self->contents(%opts));
 }
 
 # Picks a subpath from the manifest, returning a perl "structure"
