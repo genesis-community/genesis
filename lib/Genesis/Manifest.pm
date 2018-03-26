@@ -170,10 +170,11 @@ sub _build{
 sub _base_yml_file {
 	my ($self) = @_;
 	my $file = $self->{workdir} . "/base.yml";
+	my $vault = main::vault_slug($self->{env}).'/'.$self->{type};
 	main::mkfile_or_fail($file,0644,<<EOF);
 ---
 meta:
-  vault: (( concat "secret/" params.vault || "nowhere" ))
+  vault: (( concat "secret/" params.vault || "$vault" ))
 exodus: {}
 params:
   name: (( concat params.env "-$self->{type}" ))

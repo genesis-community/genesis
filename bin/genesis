@@ -5275,7 +5275,7 @@ sub {
 	die "No environment file named $name exists.\n" unless -f $name.".yml";
 	my $prefix = get_key($name, 'params.vault');
 	unless ($prefix) {
-		$prefix = vault_slug($name)."-".deployment_suffix;
+		$prefix = vault_slug($name)."/".deployment_suffix;
 	}
 	my $deployment = $name . "-" . deployment_suffix;
 
