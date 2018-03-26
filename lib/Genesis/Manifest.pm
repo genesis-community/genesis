@@ -85,9 +85,9 @@ sub pick {
 	my $cmd = 'spruce json "$1" | jq -M "$2"';
 	my $filter = main::jq_extractor($subpath);
 	my ($out,$rc) = run(
-    {onfailure => "Could not retrieve '$subpath' from manifest"},
-    $cmd,$self->_file(%opts),$filter
-  );
+		{ onfailure => "Could not retrieve '$subpath' from manifest" },
+		$cmd,$self->_file(%opts),$filter
+	);
 	$out = JSON::PP->new->allow_nonref->decode($out);
 	return $out;
 }
