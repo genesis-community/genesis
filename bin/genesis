@@ -21,6 +21,7 @@ use Cwd qw/getcwd abs_path/;
 # Genesis Libs
 use Genesis::Utils;
 use Genesis::Run;
+use Genesis::Top;
 use Genesis::Kit::Compiler;
 use Genesis::IO;
 use Genesis::Manifest;
@@ -184,7 +185,7 @@ sub vault_slug {
 	return $name;
 }
 
-sub validate_features  {
+sub validate_features  { ## TODO: removed to G::Kit
 	my ($kit, $version, $meta, @features) = @_;
 	my ($k, $v) = ($kit, $version);
 	$k ||= "dev";
@@ -273,127 +274,6 @@ sub run_param_hook {
 	my @json = <$fh>;
 	close $fh;
 	return decode_json(join("\n",@json));
-}
-
-sub new_environment {
-	my ($meta, $kit, $version, $env, $vault_prefix, $params, @features) = @_;
-
-	$kit     = "dev"    unless defined $kit;
-	$version = "latest" unless defined $version;
-
-	my $file = "$env.yml";
-	(my $parent = $file) =~ s/-.*\.yml/.yml/;
-	my %existing_info = ensure_org_level_environment_file_exists($parent,$kit,$version,@features);
-
-	open my $fh, ">", $file or die "Couldn't write to $file: $!";
-	print $fh "---";
-	print $fh "\nkit:\n" if (
-		!%existing_info ||
-		$existing_info{kit}{name} ne $kit ||
-		$existing_info{kit}{version} ne $version ||
-		!same($existing_info{kit}{features}||[],\@features)
-	);
-	if (!%existing_info || $existing_info{kit}{name} ne $kit) {
-		print $fh "  name:     $kit\n";
-		error "#y{WARNING:} $parent specifies a different kit name ($existing_info{kit}{name})";
-	}
-	if (!%existing_info || $existing_info{kit}{version} ne $version) {
-		print $fh "  version:  $version\n";
-		error "#y{WARNING:} $parent specifies a different kit version ($existing_info{kit}{version})";
-	}
-	if (!%existing_info || !same($existing_info{kit}{features}||[],\@features)) {
-		print $fh "  features:\n";
-		print $fh "  - (( replace ))\n" if defined($existing_info{kit}{features});
-		print $fh "  - $_\n" foreach (@features);
-	}
-	print $fh <<EOF;
-
-params:
-  env:   $env
-  vault: $vault_prefix
-EOF
-	if (defined($ENV{GENESIS_BOSH_ENVIRONMENT})) {
-		print $fh <<EOF;
-  bosh:  $ENV{GENESIS_BOSH_ENVIRONMENT}
-EOF
-	}
-
-	for my $param (@$params) {
-		print $fh "\n";
-		my $indent = "  # ";
-		if (defined $param->{comment}) {
-			for my $line (split /\n/, $param->{comment}) {
-				print $fh "${indent}$line\n";
-			}
-		}
-		if (defined $param->{example}) {
-			print $fh "${indent}(e.g. $param->{example})\n";
-		}
-
-		$indent = $param->{default} ? "  #" : "  ";
-
-		for my $val (@{$param->{values}}) {
-			my $k = (keys(%$val))[0];
-			# if the value is a spruce operator, we know it's a string, and don't need fancy encoding of the value
-			# this helps us not run into issues resolving the operator
-			my $v = $val->{$k};
-			if (defined $v && ! ref($v) && $v =~ m/^\(\(.*\)\)$/) {
-				print $fh "${indent}$k: $v\n";
-				next;
-			}
-			my $tmpdir = workdir;
-			open my $tmpfile, ">", "$tmpdir/value_formatting";
-			print $tmpfile encode_json($val);
-			close $tmpfile;
-			open my $spruce, "-|", "spruce merge $tmpdir/value_formatting";
-
-			for my $line (<$spruce>) {
-				chomp $line;
-				next unless $line;
-				next if $line eq "---";
-				print $fh "${indent}$line\n";
-			}
-			close $spruce;
-			die "Unable to convert JSON to spruce-compatible YAML. This is a bug\n"
-				if $? >> 8;
-		}
-	}
-	close $fh;
-	explain "Created #C{$file} environment file";
-}
-
-sub ensure_org_level_environment_file_exists {
-	my ($parent,$kit,$version,@features) = @_;
-
-	my %existing_info;
-	if (-e $parent) {
-		%existing_info = %{LoadFile($parent)};
-		explain "Using existing #C{$parent} file as base config.";
-	} else {
-		open my $fh, ">", $parent or die "Couldn't write to $parent: $!";
-		print $fh <<EOF;
----
-kit:
-  name:     $kit
-  version:  $version
-EOF
-		if (@features) {
-			print $fh "  features:\n";
-			print $fh "  - $_\n" foreach (@features);
-		} else {
-			print $fh "  features: []\n";
-		}
-		%existing_info = (
-			kit => {
-				name => $kit,
-				version => $version,
-				features => \@features
-			}
-		);
-		close $fh; $fh = undef;
-		explain "Created new #C{$parent} file for $kit/$version";
-	}
-	return %existing_info;
 }
 
 sub kit_yaml_files {
@@ -553,95 +433,6 @@ sub blueprint_script_helper {
 	|EOF
 
 	return mkfile_or_fail("$helper_dir/blueprint_helper",$out);
-}
-
-sub new_script_helper {
-	my ($kit,$version) = @_;
-	my $helper_dir = workdir('helper');
-	my $genesis_binary=Cwd::abs_path($0);
-	my $out = clean_heredoc(<<"	|EOF")
-	|export GENESIS_KIT_NAME="$kit"
-	|export GENESIS_KIT_VERSION="$version"
-	|describe() {
-	|	$genesis_binary ui-describe ""  "\$@"
-	|}
-	|export -f describe
-	|prompt_for() {
-	|	local __var="\$1" __type="\$2"; shift 2;
-	|	if [[ "\$__type" =~ ^secret- ]] ; then
-	|		export GENESIS_TARGET_VAULT="$ENV{GENESIS_TARGET_VAULT}"
-	|		$genesis_binary ui-prompt-for "\$__type" "\$__var" "\$@"
-	|		local __rc="\$?"
-	|		[[ \$__rc -ne 0 ]] && echo "Error encountered - cannot continue" && exit \$__rc
-	|	else
-	|		local __tmpfile
-	|		__tmpfile=\$(mktemp)
-	|		[[ $? -ne 0 ]] && echo >&2 "Failed to create tmpdir: \$__tmpfile" && exit 2
-	|		$genesis_binary ui-prompt-for "\$__type" "\$__tmpfile" "\$@"
-	|		local __rc="\$?"
-	|		if [[ \$__rc -ne 0 ]] ; then
-	|			# error
-	|			echo "Error encountered - cannot continue";
-	|			rm -f "\$__tmpfile"
-	|			exit \$__rc
-	|		fi
-	|		if [[ \$__type =~ ^multi- ]] ; then
-	|			local __i
-	|			eval "unset \$__var"
-	|			eval "while IFS= read -r -d '' \\"\${__var}[__i++]\\"; do :; done < \\"\$__tmpfile\\""
-	|			eval "\$__var=(\\"\\\${\${__var}[@]:1}\\")"
-	|		else
-	|			eval "\$__var=\\\$(<\\"\$__tmpfile\\")"
-	|		fi
-	|		rm -f "\$__tmpfile"
-	|	fi
-	|	return 0
-	|}
-	|export -f prompt_for
-	|
-	|EOF
-	.clean_heredoc(<<'	|EOF');
-	|param_entry() {
-	|	local __disabled="" __varname="$1" __key="$2" __opt="$3" ; shift 3
-	|	if [[ "$__opt" == "-d" ]] ; then
-	|		__disabled="# "
-	|		__opt=$1 ; shift
-	|	fi
-	|	if [[ "$__opt" == "-a" ]] ; then
-	|		if [[ "${#@}" -eq 0 ]] ; then
-	|			eval "$__varname+=\"  $__disabled\$__key: []\\n\""
-	|		else
-	|			eval "$__varname+=\"  $__disabled\$__key:\\n\""
-	|			local __line
-	|			for __line in "$@" ; do
-	|				eval "$__varname+=\"    \$__disabled- \$__line\\n\""
-	|			done
-	|		fi
-	|	elif [[ -n "$__opt" ]] ; then
-	|		eval "$__varname+=\"  $__disabled\$__key: \$__opt\\n\""
-	|	else
-	|		eval "$__varname+=\"  $__disabled\$__key: \$$__key\\n\""
-	|	fi
-	|}
-	|export -f param_entry
-	|param_comment() {
-	|	local __line __varname=$1; shift
-	|	eval "$__varname+=\"\\n\""
-	|	for __line in "$@" ; do
-	|		eval "$__varname+=\"  # \$__line\\n\""
-	|	done
-	|}
-	|export -f param_comment
-	|describe_and_comment() {
-	|	local varname=$1; shift
-	|	describe "$@"
-	|	param_comment $varname "$@"
-	|}
-	|export -f describe_and_comment
-	|
-	|EOF
-
-	return mkfile_or_fail("$helper_dir/new_helper",$out);
 }
 
 # takes a list of tokens, in order, and generates
@@ -858,151 +649,7 @@ sub has_feature {
 
 ###########################################################################
 
-sub dereference_param {
-	my ($env, $key) = @_;
-	my $val = get_key($env, $key);
-	die "Unable to resolve '$key' for $env. This must be defined in the environment YAML.\n"
-		unless defined $val;
-	return $val;
-}
 
-sub dereference_params {
-	my ($cmd, $env) = @_;
-	$cmd =~ s/\$\{(.*?)\}/dereference_param($env, $1)/ge;
-	return $cmd;
-}
-
-sub safe_path_exists {
-	return Genesis::Run::check(qw(safe exists), $_[0]);
-}
-
-sub safe_commands {
-	my ($creds, %options) = @_;
-	my @cmds;
-	my $force_rotate = ($options{scope}||'') eq 'force';
-	my $missing_only = ($options{scope}||'') eq 'add';
-	for my $path (sort keys %$creds) {
-		if (! ref $creds->{$path}) {
-			my $cmd = $creds->{$path};
-			$cmd = dereference_params($cmd, $options{env});
-
-			if ($cmd =~ m/^(ssh|rsa)\s+(\d+)(\s+fixed)?$/) {
-				my $safe = [$1, $2, "secret/$options{prefix}/$path"];
-				push @$safe, "--no-clobber", "--quiet" if ($3 && !$force_rotate) || $missing_only;
-				push @cmds, $safe;
-
-			} elsif ($cmd =~ m/^dhparams?\s+(\d+)(\s+fixed)?$/) {
-				my $safe = ['dhparam', $1, "secret/$options{prefix}/$path"];
-				push @$safe, "--no-clobber", "--quiet" if ($2 && !$force_rotate) || $missing_only;
-				push @cmds, $safe;
-
-			} else {
-				die "unrecognized credential type: `$cmd'\n";
-			}
-		} elsif ('HASH' eq ref $creds->{$path}) {
-			for my $attr (sort keys %{$creds->{$path}}) {
-				my $cmd = $creds->{$path}{$attr};
-				$cmd = dereference_params($cmd, $options{env});
-
-				if ($cmd =~ m/^random\s+(\d+)(\s+fmt\s+(\S+)(\s+at\s+(\S+))?)?(\s+allowed-chars\s+(\S+))?(\s+fixed)?$/) {
-					my ($len, $format, $destination, $valid_chars, $fixed) = ($1, $3, $5, $7, $8);
-					my @allowed_chars = ();
-					if ($valid_chars) {
-						@allowed_chars = ("--policy", $valid_chars);
-					}
-					my $safe = ['gen', $len, @allowed_chars, "secret/$options{prefix}/$path", $attr];
-					push @$safe, "--no-clobber", "--quiet" if ($fixed && !$force_rotate) || $missing_only;
-					push @cmds, $safe;
-					if ($format) {
-						$destination ||= "$attr-$format";
-						my $safe = ["fmt", $format , "secret/$options{prefix}/$path", $attr, $destination];
-						push @$safe, "--no-clobber", "--quiet" if ($fixed && !$force_rotate) || $missing_only;
-						push @cmds, $safe;
-					}
-
-				} else {
-					die "unrecognized credential type: `$cmd'\n";
-				}
-			}
-		} else {
-			die "unrecognized datastructure for $path. Please contact your kit author\n";
-		}
-	}
-
-	return @cmds;
-}
-
-sub cert_commands {
-	my ($certs, %options) = @_;
-	my @cmds;
-	my $force_rotate = ($options{scope}||'') eq 'force';
-	my $missing_only = ($options{scope}||'') eq 'add';
-	for my $path (sort keys %$certs) {
-		my @cmd = (
-			"x509",
-			"issue",
-			"secret/$options{prefix}/$path/ca",
-			"--name", "ca.$path",
-			"--ca");
-		push @cmd, "--no-clobber", "--quiet" if !$force_rotate; # All CA certs are considered kept
-		push @cmds, \@cmd;
-
-		for my $cert (sort keys %{$certs->{$path}}) {
-			next if $cert eq "ca";
-			my $c = $certs->{$path}{$cert};
-
-			die "Required 'names' value missing for cert at $path/$cert.\n" unless $c->{names}[0];
-			my $cn = $c->{names}[0];
-			$c->{valid_for} ||= "1y";
-
-			my @name_flags = map {( "--name", dereference_params($_, $options{env}) )} @{$c->{names}};
-			my @cmd = (
-				"x509",
-				"issue",
-				"secret/$options{prefix}/$path/$cert",
-				"--ttl", $c->{valid_for},
-				@name_flags,
-				"--signed-by", "secret/$options{prefix}/$path/ca");
-			push @cmd, "--no-clobber", "--quiet" if $missing_only || $c->{fixed};
-			push @cmds, \@cmd;
-		}
-	}
-	return @cmds;
-}
-
-sub check_secret {
-	my ($cmd, %options) = @_;
-	my (@keys);
-	my $type = $cmd->[0];
-	my $path = $cmd->[2];
-	if ($type eq 'x509') {
-		if (grep {$_ eq '--signed-by'} @$cmd) {
-			$type = "certificate";
-			@keys = qw(certificate combined key);
-		} else {
-			$type = "CA certificate";
-			@keys = qw(certificate combined crl key serial);
-		}
-	} elsif ($type eq 'rsa') {
-		@keys = qw(private public);
-	} elsif ($type eq 'ssh') {
-		@keys = qw(private public fingerprint);
-	} elsif ($type eq 'dhparam') {
-		@keys = qw(dhparam-pem);
-	} elsif ($type eq 'gen') {
-		$type = 'random';
-		my $path_offset = $cmd->[1] eq '-l' ? 3 : 2;
-		$path_offset += 2 if $cmd->[$path_offset] eq '--policy';
-		$path = $cmd->[$path_offset];
-		@keys = ($cmd->[$path_offset + 1]);
-	} elsif ($type eq 'fmt') {
-		$type = 'random/formatted';
-		@keys = ($cmd->[4]);
-	} else {
-		die "Unrecognized credential or certificate command: '".join(" ", @$cmd)."'\n";
-	}
-	return map {["[$type]", "$path:$_"]} grep {!safe_path_exists("$path:$_")} @keys;
-}
 
 ###########################################################################
 
@@ -1011,292 +658,7 @@ sub validate_repo_name {
 	return $name =~ m/^[a-z][a-z0-9-]+$/;
 }
 
-sub check_env_name_for_errors {
-	my ($name) = @_;
-	return "Can only contain lowercase alphanumeric characters and dashes." if $name !~ m/^[a-z0-9-]+$/;
-	return "Must start with a lowercase alphabetic character." if $name !~ m/^[a-z]/;
-	return "Cannot contain sequential dashes." if $name =~ m/--/;
-	return "Must be at least two levels to allow a base file for pipeline propagation." if $name !~ m/-/;
-	return "";
-}
-
 ###########################################################################
-
-our %ord_suffix = (11 => 'th', 12 => 'th', 13 => 'th', 1 => 'st', 2 => 'nd', 3 => 'rd');
-sub ordify {
-	return "$_[0]". ($ord_suffix{ $_[0] % 100 } || $ord_suffix{ $_[0] % 10 } || 'th')." ";
-}
-
-sub clean_heredoc {
-	my $heredoc = join("",map {s/^\s*\|//; $_} split(/^/, shift));
-	chomp $heredoc;
-	return $heredoc;
-}
-
-sub __prompt_for_line {
-	my ($prompt,$validation,$err_msg,$default,$allow_blank) = @_;
-	$prompt = join(' ', grep {defined($_) && $_ ne ""} ($prompt, '>')) . " ";
-
-	# `validate` is a sub with first argument the test value, and the second
-	# being an optional error message
-	#
-	# NOTE:  IF YOU ADD OR MODIFY A VALIDATION, YOU NEED TO ADD IT TO THE
-	#        `validate_kit_metadata` routine below
-	my $validate;
-	if (defined($validation)) {
-		if (ref($validation) eq 'CODE') {
-			$validate = $validation; # Only used by internal usage of prompts
-		} elsif ($validation eq "ip") {
-			$validate = sub() {
-				my @ipbits = split(/\./, $_[0]);
-				my $msg = ($_[1] ? $_[1] :"$_[0] is not a valid IPv4 address");
-				return "" if scalar(grep {$_ =~ /^\d+$/ && $_ !~ /^0./ && $_ < 256} @ipbits) == 4;
-				return "$msg: octets cannot be zero-padded" if scalar(grep {$_ =~  /^0./} @ipbits);
-				return $msg;
-			}
-		} elsif ($validation eq "url") {
-			$validate = sub() {
-				return "" if (is_valid_uri($_[0]));
-				return ($_[1] ? $_[1] :"$_[0] is not a valid URL");
-			}
-		} elsif ($validation eq "port") {
-			$validate = sub() {
-				return "" if ( ($_[0] =~ m/^\d+$/) && ($_[0] >= 0 ) && ($_[0] <= 65535) );
-				return ($_[1] ? $_[1] :"$_[0] is not a valid port");
-			}
-		} elsif ($validation =~ m/^(-?\d+(?:.\d+)?)(?:(\+)|-(-?\d+(?:.\d+)?))$/) {
-			my ($__min,$__unbound_max,$__max) = ($1,$2,$3);
-			$__unbound_max ||= "";
-			$validate = sub() {
-				return "" if (($_[0] =~ m/^\d+$/) && ($_[0] >= $__min ) && ($_[0] <= $__max || $__unbound_max eq "+"));
-				return ($_[1] ? $_[1] : ( $__unbound_max eq "+" ? "$_[0] must be at least $__min" : "$_[0] expected to be between $__min and $__max"));
-			}
-		} elsif ($validation =~ m/^(!)?\/(.*)\/(i?m?s?)$/) {
-			my $__vre;
-			my $__negate = ($1 && $1 eq "!");
-			# safe because the only thing being eval'ed is the optional i,s, or m
-			eval "\$__vre = qr/\$2/$3"
-				or die "Error compiling param regex: $!";
-			$validate = $__negate ? sub() {
-				return ($_[0] !~ $__vre ? "" : ( $_[1] ? $_[1] : "Matches exclusionary pattern"));
-			} : sub() {
-				return ($_[0] =~ $__vre ? "" : ( $_[1] ? $_[1] : "Does not match required pattern"));
-			};
-		} elsif ($validation =~ m/^(!)?\[([^,]+(,[^,]+)*)\]$/) {
-			my @__vlist = split(",", $2);
-			my $__negate = ($1 && $1 eq "!");
-			$validate =  sub() {
-				my $needle=shift;
-				my @matches = grep {$_ eq $needle} @__vlist;
-				return $__negate ?
-					(scalar(@matches) == 0 ? "" : ($_[1] ? $_[1] : "Cannot be one of ".join(", ",@__vlist))):
-					(scalar(@matches) != 0 ? "" : ($_[1] ? $_[1] : "Expecting one of ".join(", ",@__vlist)));
-			}
-		} elsif ($validation =~ m/^((^|,)[^,]+){2,}$/) { # Deprecated list match 2 or more
-			my @__vlist = split(",", $validation);
-			$validate = sub() {
-				my $needle=shift;
-				my @matches = grep {$_ eq $needle} @__vlist;
-				return (scalar(@matches) != 0 ? "" : ($_[1] ? $_[1] : "Expecting one of ".join(", ",@__vlist)));
-			}
-		} elsif ($validation eq "vault_path") {
-			$validate = sub() {
-				return "" unless vaulted();
-				return (safe_path_exists $_[0]) ? "" : ($_[1] ? $_[1] :"$_[0] not found in vault");
-			}
-		} elsif ($validation eq "vault_path_and_key") {
-			$validate = sub() {
-				# Revisit this when https://github.com/starkandwayne/safe/issues/121 is resolved; for
-				# now, assume there can only be one colon separating the path from the key.
-				return "$_[0] is missing a key - expecting secret/<path>:<key>" unless $_[0] =~ qr(^[^:]+:[^:]+$);
-				return "" unless vaulted();
-				return (safe_path_exists $_[0]) ? "" : ($_[1] ? $_[1] :"$_[0] not found in vault");
-			}
-		}
-	}
-
-	while (1) {
-		print csprintf("%s", $prompt);
-		chomp (my $in=<STDIN>);
-		if ($in eq "" && defined($default)) {
-			$in = $default;
-			print(csprintf("\033[1A%s#C{%s}\n",$prompt, $in));
-		}
-		$in =~ s/^\s+|\s+$//g;
-
-		return "" if ($in eq "" && $allow_blank);
-		my $err="";
-		if ($in eq "") {
-			return "" if $allow_blank;
-			$err= "#R{No default:} you must specify a non-empty string";
-		} else {
-			$err = &$validate($in,$err_msg) if defined($validate);
-			$err = "#r{Invalid:} $err" if $err;
-		}
-
-		no warnings "numeric";
-		return (($in eq $in + 0) ? $in + 0 : $in) unless $err;
-		use warnings "numeric";
-		error($err);
-	}
-}
-
-sub __prompt_for_block {
-	my ($prompt) = @_;
-	$prompt = "$prompt (Enter <CTRL-D> to end)";
-	(my $line = $prompt) =~ s/./-/g;
-	print "\n$prompt\n$line\n";
-	my @data = <STDIN>;
-	return join("", @data);
-}
-
-sub prompt_for_boolean {
-	my ($prompt,$default,$invert) = @_;
-	my ($t,$f) = (JSON::PP::true,JSON::PP::false);
-
-	my $true_re = qr/^(?:y(?:es)?|t(rue)?)$/i;
-	my $false_re =  qr/^(?:no?|f(alse)?)$/i;
-	my $val_prompt = "[y|n]";
-	if (defined $default) {
-		$default = $default ? "y" : "n" if $default =~ m/^[01]$/; # standardize
-		$val_prompt = $default =~ $true_re ? "[#g{Y}|n]" : "[y|#g{N}]";
-	}
-	chomp $prompt;
-	if ($prompt =~ /\[y\|n\]/) {
-		# Allow a single line boolean prompt
-		$prompt =~ s/\[y\|n\]/$val_prompt/;
-		$val_prompt = $prompt;
-		print "\n";
-	} else {
-		print "\n$prompt\n";
-	}
-	while (1) {
-		my $answer = __prompt_for_line($val_prompt,undef,undef,$default,'allow_blank');
-		return ($invert ? $f : $t) if $answer =~ $true_re;
-		return ($invert ? $t : $f) if $answer =~ $false_re;
-		error "#r{Invalid response:} you must specify y, yes, true, n, no or false";
-	}
-}
-sub prompt_for_choices {
-	my ($prompt, $choices, $min, $max, $labels, $err_msg) = @_;
-
-	my %chosen;
-	$labels ||= [];
-	my $num_choices = scalar(@{$choices});
-	for my $i (0 .. $#$choices) {
-		$labels->[$i] ||= $choices->[$i];
-		$prompt .= "\n  ".($i+1).") ".$labels->[$i];
-	}
-	my $line_prompt = "choice";
-	$min ||= 0;
-	$max ||= $num_choices;
-	die "Illegal list maximum count specified. Please contact your kit author for a fix.\n"
-		if $max < $min;
-
-	print csprintf($prompt."\n\nMake your selections (leave $line_prompt empty to end):\n");
-
-	my @ll;
-	while (1) {
-		my $v = __prompt_for_line(
-			ordify(scalar(@ll) + 1) . $line_prompt,
-			"1-$num_choices",
-			$err_msg || "Invalid choice - enter a number between 1 and $max",
-			undef,
-			'allow_blank'
-		);
-		if ($chosen{$v}) {
-			error "#r{ERROR:} ".$choices->[$v-1]." already selected - choose another value";
-			next;
-		}
-		if ($v eq "") {
-			if (scalar(@ll) < $min) {
-				error "#r{ERROR:} Insufficient items provided - at least $min required.";
-				next;
-			}
-			last;
-		}
-		push @ll, $choices->[$v-1];
-		$chosen{$v} = 1;
-		print(csprintf("\033[1A%s%s > #C{%s}\n",ordify(scalar(@ll)), $line_prompt, $labels->[$v-1]));
-		last if scalar(@ll) == $max;
-	}
-	return \@ll;
-
-}
-sub prompt_for_choice {
-	my ($prompt, $choices, $default, $labels, $err_msg) = @_;
-
-	my $default_choice;
-	my $num_choices = scalar(@{$choices});
-	print "\n$prompt";
-	for my $i (0 .. $#$choices) {
-		my $label = (ref($labels) eq 'ARRAY' &&  $labels->[$i]) ? $labels->[$i] : $choices->[$i];
-		print "\n  ".($i+1).") ".$label;
-		if ($default && $default eq $choices->[$i]) {
-			print csprintf(" #G{(default)}");
-			$default_choice = $i+1;
-		}
-	}
-	print "\n\n";
-	my $c = __prompt_for_line(
-		"Select choice",
-		"1-$num_choices",
-		$err_msg || "enter a number between 1 and $num_choices",
-		$default_choice);
-
-	print(csprintf("\033[1ASelect choice > #C{%s}\n", (ref($labels) eq 'ARRAY' &&  $labels->[$c-1]) ? $labels->[$c-1] : $choices->[$c-1]));
-	return $choices->[$c-1];
-}
-
-sub prompt_for_line {
-	my ($prompt,$label,$default,$validation,$err_msg) = @_;
-	if ($prompt) {
-		print "\n$prompt";
-		my $padding = ($prompt =~ /\s$/) ? "" : " ";
-		print(csprintf("%s", "${padding}#g{(default: $default)}")) if defined($default);
-	} elsif (defined($default) && defined($label)) {
-		my $padding = ($label =~ /\s$/) ? "" : " ";
-		$label .= csprintf("%s", "${padding}#g{(default: $default)}");
-	}
-	print "\n";
-	return __prompt_for_line(defined($label) ? $label : "", $validation, $err_msg, $default);
-}
-
-sub prompt_for_list {
-	my ($type,$prompt,$label,$min,$max,$validation, $err_msg, $end_prompt) = @_;
-	$label ||= "value";
-	$min ||= 0;
-	$end_prompt = "(leave $label empty to end)" unless defined($end_prompt);
-	die "Illegal list maximum count specified. Please contact your kit author for a fix.\n"
-		if (defined($max) and $max < 1);
-
-	print csprintf("\n%s %s\n", $prompt, $end_prompt);
-
-	my @ll;
-	while (1) {
-		my $v;
-		if ($type eq 'line') {
-			$v = __prompt_for_line(ordify(scalar(@ll) + 1) . $label, $validation, $err_msg, undef, 'allow_blank');
-		} else {
-			$v = __prompt_for_block(ordify(scalar(@ll) + 1) . $label);
-		}
-		if ($v eq "") {
-			if (scalar(@ll) < $min) {
-				error "#r{ERROR:} Insufficient items provided - at least $min required.";
-				next;
-			}
-			last;
-		}
-		push @ll, $v;
-		last if (defined($max) && scalar(@ll) == $max);
-	}
-	return \@ll;
-}
-
-sub prompt_for_block {
-	printf("\n");
-	return __prompt_for_block(@_);
-}
 
 # genesis prompt support routines: *_prompt_handlers {{{
 
@@ -1414,30 +776,6 @@ our $prompt_handlers = {
 
 # }}}
 
-sub parse_uri {
-	my ($uri) = @_;
-	# https://tools.ietf.org/html/rfc3986
-    # We use very basic validation
-	$uri =~ m/^(?<uri>
-		(?<scheme>[a-zA-Z][a-zA-Z0-9+.-]+):\/\/
-		(?<authority>
-			(?:(?<userinfo>(?<user>[^:@]+)(?::(?<password>[^@]+)))?@)?
-			(?<host>[a-zA-Z0-9.\-_~]+)?
-			(?::(?<port>\d+))?
-		)
-		(?<path>\/(?:[a-zA-Z0-9-._~]|[a-f0-9]|[!\$&'()*+,;=:@])+(?:\/(?:[a-zA-Z0-9-._~]|[a-f0-9]|[!\$&'()*+,;=:@])*)*|(?:\/(?:[a-zA-Z0-9-._~]|[a-f0-9]|[!\$&'()*+,;=:@])+)*)?
-		(?:\?(?<query>(?:[a-zA-Z0-9-._~]|[a-f0-9]|[!\$&'()*+,;=:@]|%[A-Fa-f0-9]{2})+))?
-		(?:\#(?<fragment>(?:[a-zA-Z0-9-._~]|[a-f0-9]|[!\$&'()*+,;=:@])+))?
-	)$/gsx;
-	return %+;
-}
-
-sub is_valid_uri {
-	my %components = parse_uri($_[0]);
-	return unless ($components{scheme}||"") =~ /^(https?|file)$/;
-	return unless $components{authority} || ($components{scheme} eq 'file' && $components{path});
-	return $components{uri};
-}
 
 sub check_bosh_version {
 	my ($min) = @_;
@@ -2388,6 +1726,8 @@ EOF
       .: (( inject resources.git.source ))
       paths:
 EOF
+		# }}}
+
 		# watch the common files in our predecessor cache - for example,
 		# if us-west-1-sandbox-a triggers us-west-1-preprod-a, then
 		# preprod-a would watch the cache of sandbox-a for:
@@ -3222,7 +2562,7 @@ sub extract_kit_name_and_version {
 	return $combined, "latest";
 }
 
-sub kit_release_url {
+sub kit_release_url { # DEPRECATED
 	my ($name, $version) = @_;
 
 	my $creds = "";
@@ -3259,7 +2599,7 @@ sub kit_release_url {
 	die "$name/$version tarball asset not found on Github.  Oops.\n";
 }
 
-sub kit_file {
+sub kit_file { # DEPRECATED
 	my ($kit, $version, $relpath, $required) = @_;
 
 	if (!$kit || $kit eq "dev") {
@@ -3308,7 +2648,8 @@ sub download_kit_tarball
 	close $kit;
 	debug "downloaded kit #M{$name}/#C{$version}\n";
 }
-sub validate_kit_files {
+
+sub validate_kit_files { # DEPRECATED
 	my ($dir,$is_author) = @_;
 	my ($metadata, @errors, @warnings);
 	if (-d $dir) {
@@ -3353,179 +2694,11 @@ sub validate_kit_files {
 	return $metadata;
 }
 
-sub validate_kit_metadata {
-	my ($kit, $version, $meta, $is_author) = @_;
-	$kit ||= "dev";
-	$version = "latest" unless defined $version;
-	my @errors;
-
-	# Validate acceptable genesis version
-	if (defined $meta->{genesis_version_min}) {
-		if (!is_semver $meta->{genesis_version_min}) {
-			push @errors, "Specified minimum Genesis version of '$meta->{genesis_version_min}' for kit is invalid.";
-		} elsif (!is_semver $VERSION) {
-			error "#Y{WARNING:} Using a development version of Genesis.  Cannot determine if minimal Genesis version of '$meta->{genesis_version_min}' by kit '$kit/$version' is met."
-		} elsif (! new_enough "genesis", $VERSION, $meta->{genesis_version_min}) {
-			# Fatal error - die immediately
-			error clean_heredoc(<<"			|EOF");
-			|#R{ERROR:} Kit $kit/$version requires Genesis version $meta->{genesis_version_min}, but installed Genesis is only version $VERSION.
-			|
-			|Please upgrade your version and don't forget to run `genesis embed` to update the version embedded in your deployment repository.
-			|
-			|EOF
-			exit 86; #no longer available, decommissioned, off the menu
-		}
-	}
-
-	# validate features/subkits
-	my ($group,$label,$not_label);
-	if (exists $meta->{features}) {
-		if (exists $meta->{subkits}) {
-			error "\n#R{ERROR:} Kit contains both 'features' and 'subkits'.\n";
-			die $is_author
-				? "Update kit to move subkits under 'features' and update 'subkit' key to 'feature'\n"
-				: "Please contact your kit author for a fix.\n";
-		}
-		($group,$label,$not_label) = qw(features feature subkit);
-	} elsif (exists $meta->{subkits}) {
-		# Once the docs/AUTHORING-KITS.md has been updated, we want to educate
-		# kit authors that the preferred way is to use features instead of
-		# subkits, and that subkits will probably be deprecated in 3.0
-		# error "\n#Y{DEPRECATED:} subkits are deprecated in favour of features.  Please update your kit." if $is_author;
-		($group,$label,$not_label) = qw(subkits subkit feature);
-	}
-	if (defined $group) {
-		my $errored;
-		foreach (@{$meta->{"${group}"}}) {
-			if (exists $_->{$not_label} ) {
-				print STDERR csprintf "\n#R{ERROR:} $group '$_->{$not_label}' uses key '$not_label' instead of '$label' - should use features/feature";
-				$errored = 1;
-			}
-		}
-		die($is_author
-			? "\nUpdate kit to use 'features' and 'feature' exclusively\n"
-			: "\nPlease contact your kit author for a fix.\n"
-		) if $errored;
-	}
-
-	# validate params
-	for my $feature (sort keys %{$meta->{params}}) {
-		my $i = 0;
-		debug ("Validating params for feature '$feature' (#$i)");
-		if (ref($meta->{params}{$feature}) ne "ARRAY") {
-			push @errors, "$feature feature parameters not a list (found ".(ref($meta->{params}{$feature}) || "a string").")";
-		} else {
-			for my $param (@{$meta->{params}{$feature}}) {
-				my $name = ($param->{param} && !ref($param->{param})) ? ':'.$param->{param} : "";
-				my $parameter = "params.$feature\[$i$name\]";
-				my (@extras, @bad);
-				for my $key (sort keys %$param) {
-					push @extras, $key if $key !~ m/^(params?|ask|vault|description|example|type|echo)$/;
-				}
-				if (defined($param->{ask})) {
-					my $type = exists($param->{type}) ? $param->{type} : "string";
-					if (defined($param->{validate})) {
-						if ($type =~ m/^(string|list)$/) {
-							@extras = grep {$_ !~ /^(validate|err_msg)$/ } @extras;
-							if ($param->{validate} !~ m/^!?\/.*\/i?m?s?$/                      && # regex validation
-								$param->{validate} !~ m/^((^|,)[^,]+){2,}$/                    && # comma-separated list
-								$param->{validate} !~ m/^!?\[([^,]+(,[^,]+)*)]$/               && # new invertable comma-separated list
-								$param->{validate} !~ m/^((^|,)[^,]+){2,}$/                    && # comma-separated list
-								$param->{validate} !~ m/^-?\d+(\.\d+)?--?\d+(\.\d+)?$/         && # range
-								$param->{validate} !~ m/^-?\d+(\.\d+)?(\+|--?\d+(\.\d+)?)$/    && # range
-								$param->{validate} !~ m/^(vault_path(_and_key)?|url|port|ip)$/ ){ # key-words
-								push @errors, "$parameter has an invalid validation formula";
-							}
-
-						} elsif ($type =~ m/^(multi-)?choice$/) {
-							@extras = grep {$_ !~ /^(validate|err_msg)$/ } @extras;
-							if (ref($param->{validate}) eq 'ARRAY') {
-								# All array elements must be simple strings
-								push @errors, "$parameter validation array can only contain strings or 2-string arrays"
-									if (grep {ref($_) && !(ref($_) eq 'ARRAY' && $#$_ == 1 && !ref($_->[0]) && !ref($_->[1]))} @{$param->{validate}});
-								my $min = 2;
-								$min = $param->{min_count} if ($type eq 'multi-choice' && defined($param->{min_count}) && $param->{min_count} > $min);
-								push(@errors, "$parameter requires at least 2 choices") if scalar(@{$param->{validate}}) < $min;
-							} else {
-								push @errors, "$parameter validation must be an array of strings or 2-string arrays";
-							}
-						}
-					} else {
-						if ($type =~ m/^(multi-)?choice$/) {
-							push @errors, "$parameter requires validation to provide choices";
-						}
-					}
-					if ( $type =~ m/^(string|block|multi-?line|choice)$/) {
-						push @bad, grep {$_ !~ m/^(label|default)$/} @extras;
-					} elsif ($type eq 'boolean') {
-						push @bad, grep {$_ !~ m/^(label|default)$/} @extras;
-						push @errors, "$parameter has invalid default value '$param->{default}'"
-						  if (defined($param->{default}) && $param->{default} !~ /^(1|0|y(es)?|no?|true|false)$/i);
-					} elsif ($type =~ m/^((block|multi-?line)-)?list$/) {
-						push @bad, grep {$_ !~ m/^(label|(max|min)_count)$/} @extras;
-						push @errors, "$parameter requires max_count to be equal to or greater than min_count"
-							if (defined($param->{min_count}) && defined($param->{max_count}) && $param->{max_count} < $param->{min_count});
-						foreach (qw/min_count max_count/) {
-							push @errors, "$parameter requires $_ to be non-negative"
-								if (defined($param->{$_}) && $param->{$_} < 0);
-						}
-					} elsif ($type eq 'multi-choice') {
-						push @bad, grep {$_ !~ m/^((max|min)_count)$/} @extras;
-						push @errors, "$parameter requires max_count to be equal to or greater than min_count"
-							if (defined($param->{min_count}) && defined($param->{max_count}) && $param->{max_count} < $param->{min_count});
-						foreach (qw/min_count max_count/) {
-							push @errors, "$parameter requires $_ to be non-negative"
-								if (defined($param->{$_}) && $param->{$_} < 0);
-						}
-					} else {
-						push @errors, "$parameter has unsupported type '$type'";
-						@bad = @extras;
-					}
-				} else {
-					@bad = @extras;
-				}
-				push @errors, "$parameter has an invalid attribute: '$_'" foreach @bad;
-				push @errors, "$parameter does not specify 'vault', 'param', or 'params'"
-					unless ($param->{param} || $param->{params} || $param->{vault});
-				push @errors, "$parameter specifies both 'param' and 'params'"
-					if ($param->{param} && $param->{params});
-				push @errors, "$parameter specifies both 'param' and 'vault'"
-					if ($param->{param} && $param->{vault});
-				push @errors, "$parameter specifies both 'params' and 'vault'"
-					if ($param->{vault} && $param->{params});
-				push @errors, "$parameter specifies 'param', but it is not a string"
-					if $param->{param} && ref $param->{param};
-				push @errors, "$parameter specifies 'params', but it is not an array"
-					if $param->{params} && ref $param->{params} ne "ARRAY";
-				push @errors, "$parameter specifies both 'params' and 'ask'"
-					if $param->{params} && $param->{ask};
-				push @errors, "$parameter does not have a 'description'"
-					if ! $param->{description};
-				push @errors, "$parameter specifies 'ask', but does not have a corresponding 'vault' or 'param'"
-					if ($param->{ask} && ! $param->{vault} && ! $param->{param});
-				push @errors, "$parameter specifies 'vault' but does not have a corresponding 'ask'"
-					if $param->{vault} && ! $param->{ask};
-
-				$i++;
-			}
-		}
-	}
-
-	if (@errors) {
-		error "\n#R{ERROR:} The following errors have been encountered validating the $kit/$version kit:";
-		for my $err (@errors) {
-			error " - $err";
-		}
-		die ($is_author ? "Cannot continue.\n" : "Please contact your kit author for a fix.\n");
-	}
-}
-
 # read the metadata for the given kit (and version)
 # if no kit/version is given, assume 'dev'
 sub read_kit_metadata {
 	my ($kit, $version) = @_;
 	my $metadata = LoadFile(kit_file($kit, $version, "kit.yml", 1));
-	validate_kit_metadata($kit, $version, $metadata, !$kit || $kit eq "dev");
 	return $metadata;
 }
 
@@ -3559,52 +2732,6 @@ sub kit_name_and_version_for {
 	return latest_kit_name_and_version();
 }
 
-sub check_kit_prereqs {
-	my ($kit, $version) = @_;
-	my $script = kit_file($kit, $version, "hooks/prereqs", 0);
-	return unless -e $script;
-	explain "Checking kit pre-requisites...\n";
-	-x $script || chmod_or_fail 0755, $script;
-	Genesis::Run::do_or_die(
-		"Some prerequisites for this Genesis Kit have not been met",
-		$script
-	);
-}
-
-sub prompt_for_env_features {
-	my ($kit, $version, $meta) = @_;
-	my @features;
-	my $features_meta = $meta->{features} || $meta->{subkits} || [];
-	my @meta_key = (defined $meta->{features}) ? 'feature' : 'subkit';
-	foreach my $feature (@$features_meta) {
-		my $prompt = $feature->{prompt}."\n";
-		if (exists $feature->{choices}) {
-			my (@choices,@labels,$default);
-			foreach (@{$feature->{choices}}) {
-				push @choices, $_->{feature} || $_->{subkit};
-				push @labels,  $_->{label};
-				$default = ($_->{feature} || $_->{subkit}) if $_->{default} && $_->{default} =~ /^(y(es)?|t(rue)?|1)$/i;
-			}
-			if (exists $feature->{pick}) {
-				die "There is a problem with kit $kit/$version: $feature->{type} pick invalid.  Please contact the kit author for a fix"
-					unless $feature->{pick} =~ /^\d+(-\d+)?$/;
-				my ($min, $max) =  ($feature->{pick} =~ /-/)
-					? split('-',$feature->{pick})
-					: ($feature->{pick},$feature->{pick});
-				my $selections = grep {$_} prompt_for_choices($prompt,\@choices,$min,$max,\@labels);
-				push @features, @$selections;
-			} else {
-				push @features, grep {$_} (prompt_for_choice($prompt,\@choices,$default,\@labels));
-			}
-		} else {
-			push(@features, ($feature->{feature} || $feature->{subkit})) if  prompt_for_boolean($prompt,$feature->{default});
-		}
-	}
-	@features = run_feature_hook($kit, $version, @features);
-	validate_features($kit, $version, $meta, @features);
-	return @features;
-}
-
 sub resolve_params_ref {
 	my ($key,$references) = @_;
 	die("\$\{$key\} referenced but not found -- perhaps it hasn't been defined yet.  Contact your Kit author for a bugfix.\n")
@@ -3613,139 +2740,6 @@ sub resolve_params_ref {
 }
 
 sub process_kit_params {
-	my %opts = @_;
-	my @answers;
-	my $resolveable_params = {
-		"params.vault_prefix" => $opts{vault_prefix}, # for backwards compatibility
-		"params.vault" => $opts{vault_prefix},
-		"params.env" => $opts{env}
-	};
-	for my $feature ("base", @{$opts{features}}) {
-		next unless defined $opts{params}{$feature} && @{$opts{params}{$feature}};
-		my $kit_params_file = $feature eq "base" ? "base/params.yml" : (
-			-f kit_file($opts{kit}, $opts{version}, "subkits/$feature/params.yml",0)
-				? "subkits/$feature/params.yml"
-				: "features/$feature/params.yml"
-		);
-		my $defaults = LoadFile(kit_file($opts{kit}, $opts{version}, $kit_params_file, 1));
-		for my $q (@{$opts{params}{$feature}}) {
-			my $answer;
-			my $vault_path;
-			next if ($q->{vault} && !vaulted);
-			# Expand any values from default and examples for vault prefix
-			foreach (qw(description ask default example validate err_msg)) {
-				$q->{$_} =~ s/\$\{([^}]*)\}/resolve_params_ref($1,$resolveable_params)/ge if defined($q->{$_});
-			}
-			if (defined($q->{validate}) && $q->{validate} eq 'vault_path') {
-				if (defined($q->{default})) {
-					while ($q->{default} =~ s#/[^/]+/\.\./#/#) {};
-				}
-				if (defined($q->{example})) {
-					while ($q->{example} =~ s#/[^/]+/\.\./#/#) {};
-				}
-			}
-			if ($q->{ask}) {
-				$q->{type} ||= "string";
-				print "\n";
-				if ($q->{param}) {
-					print csprintf("#y{Required parameter:} #W{$q->{param}}\n\n");
-				} else {
-					$vault_path = "secret/$opts{vault_prefix}/$q->{vault}";
-					print csprintf("#y{Secret data required} -- will be stored in Vault under #W{$vault_path}\n\n");
-				}
-				chomp $q->{description};
-				print "$q->{description}\n";
-				print "(e.g. $q->{example})\n" if defined $q->{example};
-				if ($q->{param}) {
-					my $type = $q->{type};
-					if (defined($q->{validate}) && $q->{validate} =~ /^vault_path(_and_key)?$/ && ! vaulted()) {
-						print csprintf("#y{Warning:} Cannot validate vault paths when --no-secrets option specified");
-					}
-					if ($type eq 'boolean') {
-						$answer = prompt_for_boolean($q->{ask},$q->{default});
-					} elsif ($type eq 'string') {
-						$answer = prompt_for_line($q->{ask},$q->{label},$q->{default},$q->{validate},$q->{err_msg});
-					} elsif ($type =~ m/^(block|multi-?line)$/) {
-						$answer = prompt_for_block($q->{ask},$q->{label},$q->{default});
-					} elsif ($type eq 'list') {
-						$answer = prompt_for_list('line',$q->{ask},$q->{label},$q->{min_count},$q->{max_count},$q->{validate},$q->{err_msg});
-					} elsif ($type =~ m/^(block|multi-?line)-list$/) {
-						$answer = prompt_for_list('block',$q->{ask},$q->{label},$q->{min_count},$q->{max_count});
-					} elsif ($type =~ m/^(multi-)?choice$/) {
-						my ($choices,$labels)=([],[]);
-						if (ref($q->{validate}) eq 'ARRAY') {
-							foreach (@{$q->{validate}}) {
-								if (ref($_) eq 'ARRAY') {
-									push @$choices, $_->[0];
-									push @$labels, $_->[1];
-								} else {
-									push @$choices, $_;
-									push @$labels, undef;
-								}
-							}
-						}
-						if ($type eq 'choice') {
-							$answer = prompt_for_choice($q->{ask},$choices,$q->{default},$labels,$q->{err_msg});
-						} else {
-							$answer = prompt_for_choices($q->{ask},$choices,$q->{min_count},$q->{max_count},$labels,$q->{err_msg});
-						}
-					} else {
-						die "Unsupported type '$type' for parameter '$q->{param}'. Please contact your kit author for a fix.\n";
-					}
-					print "\n";
-				} else {
-					my ($path, $key) = split /:/, $vault_path;
-					if ($q->{type} =~ /^(boolean|string)$/) {
-						Genesis::Run::interact(
-							{onfailure => "Failed to save data to $vault_path in Vault"},
-							'safe prompt "$1" -- "$2" "$3" "$4"',
-							$q->{ask}, ($q->{echo} ? "ask" : "set"), $path, $key
-						);
-					} elsif ($q->{type} eq "multi-line") {
-						$answer = prompt_for_block($q->{ask});
-						my $tmpdir = workdir;
-						open my $fh, ">", "$tmpdir/param" or die "Could not write to $tmpdir/param: $!\n";
-						print $fh $answer;
-						close $fh;
-						Genesis::Run::do_or_die(
-							"Failed to save data to $vault_path in Vault",
-							'safe set "$1" "${2}@${3}/param"',
-							$path, $key, $tmpdir
-						);
-					} else {
-						die "Unsupported parameter type '$q->{type}' for $q->{vault}. Please contact your kit author for a fix.\n";
-					}
-					print "\n";
-					next;
-				}
-			}
-			my @values;
-			my $is_default = 0;
-			if (! $q->{ask}) {
-				$is_default = 1;
-				if (defined $q->{param}) {
-					$q->{params} = [$q->{param}];
-				}
-				for my $p (@{$q->{params}}) {
-					# Should we throw an error here if the default value is
-					# a spruce operator like (( param ))?
-					push @values, { $p => $defaults->{params}{$p} };
-					$resolveable_params->{"params.$p"} = $defaults->{params}{$p};
-				}
-			} else {
-				push @values, { $q->{param} => $answer };
-				$resolveable_params->{"params.$q->{param}"} = $answer;
-			}
-
-			push @answers, {
-				comment => $q->{description},
-				example => $q->{example},
-				values  => \@values,
-				default => $is_default,
-			};
-		}
-	}
-	return \@answers;
 }
 
 sub active_credentials {
@@ -3800,82 +2794,6 @@ sub target_vault {
 		'safe target 2>&1 | grep "$1" | sed -e "$2"',
 		'.*targeting .* at.*', 's/.*targeting \([^ ]*\) at.*/\1/'
 	);
-}
-# generate (and optionally rotate) credentials.
-#
-## just rotate credentials
-# vaultify_secrets $kit_metadata,
-#                  target       => "my-vault",
-#                  env          => "us-east-sandbox",
-#                  prefix       => "us/east/sandbox",
-#                  scope        => 'rotate'; # or scope => '' or undef
-#
-## generate all credentials (including 'fixed' creds)
-# vaultify_secrets $kit_metadata,
-#                  target       => "my-vault",
-#                  env          => "us-east-sandbox",
-#                  prefix       => "us/east/sandbox",
-#                  scope        => 'force';
-#
-## generate only missing credentials
-# vaultify_secrets $kit_metadata,
-#                  target       => "my-vault",
-#                  env          => "us-east-sandbox",
-#                  prefix       => "us/east/sandbox",
-#                  scope        => 'add';
-#
-sub vaultify_secrets {
-	my ($meta, %options) = @_;
-	$options{env} or die "vaultify_secrets() was not given an 'env' option.\n";
-
-	my $creds = active_credentials($meta, $options{features} || {});
-	if (%$creds) {
-		explain " - auto-generating credentials (in secret/$options{prefix})...\n";
-		for (safe_commands $creds, %options) {
-			Genesis::Run::interact(
-				{onfailure => "Failure autogenerating credentials."},
-				'safe', @$_
-			);
-		}
-	} else {
-		explain " - no credentials need to be generated.\n";
-	}
-
-	my $certs = active_certificates($meta, $options{features} || {});
-	if (%$certs) {
-		explain " - auto-generating certificates (in secret/$options{prefix})...\n";
-		for (cert_commands $certs, %options) {
-			Genesis::Run::interact(
-				{onfailure => "Failure autogenerating certificates."},
-				'safe', @$_
-			);
-		}
-	} else {
-		explain " - no certificates need to be generated.\n";
-	}
-}
-
-sub check_secrets {
-	my ($meta, %options) = @_;
-	$options{env} or die "check_secrets() was not given an 'env' option.\n";
-
-	my @missing = ();
-	for (safe_commands(active_credentials($meta, $options{features}||{}),%options)) {
-		push @missing, check_secret($_, %options);
-	}
-	for (cert_commands(active_certificates($meta, $options{features}||{}),%options)) {
-		push @missing, check_secret($_, %options);
-	}
-	if (@missing) {
-		my $suf = scalar(@missing) == 1 ? '' : 's';
-		printf "Missing %d credential%s or certificate%s:\n  * %s\n",
-			scalar(@missing), $suf, $suf,
-			join ("\n  * ", map {join " ", @$_} @missing);
-		return 1;
-	} else {
-		print "All credentials and certificates present.\n";
-		return 0;
-	}
 }
 
 # build a columnar display of tabular data,
@@ -4350,96 +3268,62 @@ sub {
 		kit|k=s
 	/);
 	usage(1) if @_ != 1;
+	warn "The --no-secrets flag is deprecated, and no longer honored.\n"
+		if !$options{secrets};
+	check_prereqs;
 
-	my ($name) = @_;
-	$name =~ s/\.yml$//;
+	# get our context
+	my $top = Genesis::Top->new('.'); # FIXME: drop chdir from -C handling eventually
 
-	$! = 2; # make die return 2; for the tests
-	my $err = check_env_name_for_errors($name);
-	die "Invalid environment name '$name': $err\n" if $err;
-	-f "$name.yml" and die "Environment '$name' already exists\n";
-	my $deployment = $name . "-" . deployment_suffix;
-	my $prefix = ($options{prefix} ? $options{prefix} : (vault_slug($name).'/'.deployment_suffix));
+	my $name = $_[0];
+	die "No environment name specified!\n"
+		unless $name;
 
+	# determine the kit to use (dev or compiled)
+	$options{kit} ||= '';
+	my $kit = $top->find_kit(split '/', $options{kit});
+	if (!$kit) {
+		if (!$options{kit}) {
+			die "Unable to determine the correct version of the Genesis Kit to use.\n".
+			    "Perhaps you should specify it with the `--kit` flag.\n";
+		}
+		if ($options{kit} eq 'dev') {
+			die "No dev/ kit found in current working directory.\n".
+			    "(did you forget to `genesis decompile-kit` first?)\n";
+		}
+		die "Kit '$options{kit}' not found in compiled kit cache.\n".
+		    "Do you need to `genesis download $options{kit}`?\n";
+	}
+
+	# target the vault
+	target_vault($options{vault});
+
+	# create the environment
+	explain "Setting up new environment #C{$name}...\n";
+	my $env = Genesis::Env->create(
+		top    => $top,
+		name   => $name,
+		kit    => $kit,
+		prefix => $options{prefix},
+	); # calls ->target / ->initialize / ->add_secrets
+
+	# let the user know
+	explain "New env $env->{name} provisioned!\n";
+	return 0;
+
+	################################# THIS FAR, NO FURTHER!
+=cut
 	at_exit(sub {
 		# remove the env file if either prereqs check or vaultification fails
 		unlink "$name.yml" unless $? == 0;
 	});
-
-	check_prereqs;
-	explain "Generating new environment #C{$name}...\n";
-
-	my ($kit, $version, @features, $kit_dir);
-	if ($options{kit}) {
-		($kit, $version) = extract_kit_name_and_version($options{kit});
-	} else {
-		($kit, $version) = latest_kit_name_and_version();
-	}
-
-	if ($kit && $kit ne "dev") {
-		$kit_dir = get_kit($kit,$version);
-		explain "Using compiled kit $kit/$version...\n";
-	} else {
-		explain "Using local development kit (./dev)...";
-		$kit = "dev";
-		$version = "latest";
-		$kit_dir = "./dev";
-	}
-
-	if ($options{secrets}) {
-		target_vault($options{vault});
-	}
-
-	my $meta = read_kit_metadata($kit, $version);
-	my $new_script=kit_file($kit,$version,"hooks/new",0);
-	if (-f $new_script) {
-		chmod_or_fail(0755, $new_script) unless -x $new_script;
-		my $curdir = Cwd::getcwd;
-		my $helper = new_script_helper($kit,$version);
-		Genesis::Run::interact(
-			'cd "$1"; source "$2"; hooks/new "$3" "$4" "$5"',
-			$kit_dir, $helper, $curdir, $name, $prefix
-		);
-		if ($? >> 8) {
-			error "#R{ERROR}: Could not create new environment $name by executing $kit/$version hooks/new script";
-			exit 2;
-		}
-		die "New environment '$name' was not generated.  Contact your kit developer for a fix"
-			unless -f "$name.yml";
-		@features = @{get_key($name, 'kit.features', [])};
-		(my $parent = $name) =~ s/-.*/.yml/;
-		ensure_org_level_environment_file_exists($parent,$kit,$version);
-	} else {
-		check_kit_prereqs($kit, $version);
-		@features = prompt_for_env_features($kit, $version, $meta);
-		my $params = process_kit_params(kit          => $kit,
-										version      => $version,
-										env          => $name,
-										vault_prefix => $prefix,
-										params       => $meta->{params} || [],
-										features     => [@features]);
-		$params = run_param_hook($kit, $version, $name, $prefix, $params, @features);
-
-		new_environment($meta, $kit, $version, $name, $prefix, $params, @features);
-	}
-
-	if ($options{secrets}) {
-		explain "Generating secrets / credentials (in secret/$prefix)...\n";
-		vaultify_secrets($meta, env          => $name,
-		                        prefix       => $prefix,
-		                        scope        => 'force',
-		                        features     => \@features);
-	} else {
-		explain "Skipping generation of secret / credentials.\n";
-		explain "Don't forget to run `$0 secrets $name`\n";
-	}
-
-	explain "New environment $name provisioned.\n";
+=cut
 });
 
 
 
 # }}}
+=cut
 # genesis ci - generate pipeline YAML template file to be used by genesis repipe to generate a pipeline file. {{{
 command("ci", <<EOF,
 genesis v$VERSION
@@ -5124,6 +4008,7 @@ EOF
 	close $OUT;
 }
 #}}}
+=cut
 # genesis deploy - Pull in Cloud Config, Generate a manifest, deploy {{{
 
 command("deploy", <<EOF,
@@ -5235,36 +4120,33 @@ sub {
 		unless (grep {$_ eq $action} qw(check add rotate));
 	if ($options{force}) {
 		usage(1, "Can only specify --force with rotate") if $action ne 'rotate';
-		$action = 'force';
 	}
 
 	check_prereqs;
+	my $top = Genesis::Top->new(".");
+	my $env = Genesis::Env->load(
+		name => $name,
+		top  => $top,
+	);
+	#$name =~ s/\.yml$//;
+	#die "No environment file named $name exists.\n" unless -f $name.".yml";
+	#my $prefix = get_key($name, 'params.vault');
+	#unless ($prefix) {
+#		$prefix = vault_slug($name)."/".deployment_suffix;
+#	}
+#	my $deployment = $name . "-" . deployment_suffix;
 
-	$name =~ s/\.yml$//;
-	die "No environment file named $name exists.\n" unless -f $name.".yml";
-	my $prefix = get_key($name, 'params.vault');
-	unless ($prefix) {
-		$prefix = vault_slug($name)."/".deployment_suffix;
-	}
-	my $deployment = $name . "-" . deployment_suffix;
-
-	my ($kit, $version) = kit_name_and_version_for($name);
-	my $meta = read_kit_metadata($kit, $version);
 	target_vault($options{vault});
 
+#	my ($kit, $version) = kit_name_and_version_for($name);
+#	my $meta = read_kit_metadata($kit, $version);
+
 	if ($action eq "check") {
-		exit check_secrets(   $meta,
-			env       => $name,
-			prefix    => $prefix,
-			features  => get_key($name, 'kit.features', get_key($name, 'kit.subkits', []))
-		);
+		$env->check_secrets();
+	} elsif ($action eq 'add') {
+		$env->add_secrets();
 	} else {
-		vaultify_secrets($meta,
-			env       => $name,
-			prefix    => $prefix,
-			features  => get_key($name, 'kit.features', get_key($name, 'kit.subkits', [])),
-			scope     => $action
-		);
+		$env->rotate_secrets(force => $options{force});
 	}
 });
 

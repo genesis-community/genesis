@@ -98,7 +98,7 @@ sub run {
 	}
 	my $shell = $opts{shell} || '/bin/bash';
 	$prog .= ($opts{stderr} ? " 2>$opts{stderr}" : ' 2>&1') unless ($opts{interactive});
-	debug("#M{Executing:} `#C{$prog}`%s", ($opts{interactive} ? " #Y{(interacively)}" : ''));
+	debug("#M{Executing:} `#C{$prog}`%s", ($opts{interactive} ? " #Y{(interactively)}" : ''));
 	if (@args) {
 		unshift @args, basename($shell);
 		debug("#m{ - with arguments:}");

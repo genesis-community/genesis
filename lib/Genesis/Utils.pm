@@ -11,6 +11,14 @@ our @EXPORT = qw/
 	workdir
 
 	is_semver
+
+	clean_heredoc
+
+	parse_uri
+	is_valid_uri
+
+	ordify
+
 /;
 
 use File::Temp qw/tempdir/;
@@ -131,4 +139,39 @@ sub is_semver {
 	return $_[0] =~ m/^(\d+)(?:\.(\d+)(?:\.(\d+)(?:[.-]rc[.-]?(\d+))?)?)?$/;
 }
 
+sub clean_heredoc {
+	my $heredoc = join("",map {s/^\s*\|//; $_} split(/^/, shift));
+	chomp $heredoc;
+	return $heredoc;
+}
+
+our %ord_suffix = (11 => 'th', 12 => 'th', 13 => 'th', 1 => 'st', 2 => 'nd', 3 => 'rd');
+sub ordify {
+	return "$_[0]". ($ord_suffix{ $_[0] % 100 } || $ord_suffix{ $_[0] % 10 } || 'th')." ";
+}
+
+sub parse_uri {
+	my ($uri) = @_;
+	# https://tools.ietf.org/html/rfc3986
+	# We use very basic validation
+	$uri =~ m/^(?<uri>
+		(?<scheme>[a-zA-Z][a-zA-Z0-9+.-]+):\/\/
+		(?<authority>
+			(?:(?<userinfo>(?<user>[^:@]+)(?::(?<password>[^@]+)))?@)?
+			(?<host>[a-zA-Z0-9.\-_~]+)?
+			(?::(?<port>\d+))?
+		)
+		(?<path>\/(?:[a-zA-Z0-9-._~]|[a-f0-9]|[!\$&'()*+,;=:@])+(?:\/(?:[a-zA-Z0-9-._~]|[a-f0-9]|[!\$&'()*+,;=:@])*)*|(?:\/(?:[a-zA-Z0-9-._~]|[a-f0-9]|[!\$&'()*+,;=:@])+)*)?
+		(?:\?(?<query>(?:[a-zA-Z0-9-._~]|[a-f0-9]|[!\$&'()*+,;=:@]|%[A-Fa-f0-9]{2})+))?
+		(?:\#(?<fragment>(?:[a-zA-Z0-9-._~]|[a-f0-9]|[!\$&'()*+,;=:@])+))?
+	)$/gsx;
+	return %+;
+}
+
+sub is_valid_uri {
+	my %components = parse_uri($_[0]);
+	return unless ($components{scheme}||"") =~ /^(https?|file)$/;
+	return unless $components{authority} || ($components{scheme} eq 'file' && $components{path});
+	return $components{uri};
+}
 1;

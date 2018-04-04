@@ -4,6 +4,7 @@ use Test::Exception;
 use Cwd ();
 use Config;
 use File::Temp qw/tempdir/;
+use File::Basename qw/dirname/;
 
 $ENV{PERL5LIB} = "$ENV{PWD}/lib";
 
@@ -40,6 +41,7 @@ sub workdir {
 
 sub put_file($$) {
 	my ($file, $contents) = @_;
+	system("mkdir -p ".dirname($file));
 	open my $fh, ">", $file
 		or fail "failed to open '$file' for writing: $!";
 
