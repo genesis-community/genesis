@@ -80,7 +80,10 @@ sub find_kit {
 
 	if (defined $version and $version ne 'latest') {
 		return exists $kits->{$name}{$version}
-		     ? Genesis::Kit::Compiled->new($name, $version, $kits->{$name}{$version})
+		     ? Genesis::Kit::Compiled->new(
+		         name    => $name,
+		         version => $version,
+		         archive => $kits->{$name}{$version})
 		     : undef;
 	}
 
@@ -88,7 +91,10 @@ sub find_kit {
 	                       map  { [$_, _semver($_)] }
 	                       keys %{$kits->{$name}};
 	$version = $versions[0][0];
-	return Genesis::Kit::Compiled->new($name, $version, $kits->{$name}{$version});
+	return Genesis::Kit::Compiled->new(
+		name    => $name,
+		version => $version,
+		archive => $kits->{$name}{$version});
 }
 
 1;

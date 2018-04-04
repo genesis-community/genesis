@@ -3,6 +3,7 @@ use strict;
 use warnings;
 
 use Genesis::Utils;
+use Genesis::Legacy; # but we'd rather not
 
 sub new {
 	my ($class, %opts) = @_;
@@ -54,7 +55,7 @@ sub create {
 	my $self = new(@_);
 
 	# validate call
-	for (qw(kit vault)) {
+	for (qw(kit)) {
 		die "No '$_' specified in call to Genesis::Env->create; this is a bug in Genesis.\n"
 			unless $self->{$_};
 	}
@@ -71,7 +72,7 @@ sub create {
 		                              vault => $self->{prefix});    # where do the secrets go?
 
 	} else {
-		$self->_legacy_new_environment();
+		Genesis::Legacy::new_environment($self);
 	}
 
 	$self->add_secrets();
@@ -194,7 +195,7 @@ sub add_secrets { # WIP - majorly broken right now.  sorry bout that.
 		                          vault    => $self->{prefix});
 	} else {
 		my @features = []; # FIXME
-		$kit->_legacy_vaultify_secrets(
+		Genesis::Legacy::vaultify_secrets($kit,
 			env       => $self->{name},
 			prefix    => $self->{prefix},
 			scope     => $opts{recreate} ? 'force' : 'add',
@@ -212,7 +213,7 @@ sub check_secrets {
 		                          vault  => $self->{prefix});
 	} else {
 		my @features = []; # FIXME
-		$kit->_legacy_check_secrets(
+		Genesis::Legacy::vaultify_secrets($kit,
 			env       => $self->{name},
 			prefix    => $self->{prefix},
 			features  => \@features);
@@ -230,7 +231,7 @@ sub rotate_secrets {
 		                          vault  => $self->{prefix});
 	} else {
 		my @features = []; # FIXME
-		$kit->_legacy_vaultify_secrets(
+		Genesis::Legacy::vaultify_secrets($kit,
 			env       => $self->{name},
 			prefix    => $self->{prefix},
 			scope     => $opts{force} ? 'force' : '',
@@ -258,210 +259,6 @@ sub validate_name {
 
 	die "names must not contain sequential hyphens (i.e. '--').\n"
 		if $name =~ m/--/;
-}
-
-
-#######################   here thar be legacy, dragons of yore!
-
-sub _legacy_new_environment {
-	my ($self) = @_;
-	my ($k, $kit, $version) = ($self->{kit}, $self->name, $self->version);
-	my $meta = $k->metadata;
-
-	$k->run_hook('prereqs') if $k->has_hook('prereqs');
-
-	my @features = $self->_legacy_prompt_for_env_features();
-	my $params = $k->_legacy_process_params(
-		env          => $self->{name},
-		vault_prefix => $self->{prefix},
-		features     => \@features,
-	);
-	if ($k->has_hook('params')) {
-		$params = $k->run_hook('params', params => $params);
-	}
-
-	## create the environment file.
-	my $file = "$self->{name}.yml";
-	my ($parent, %existing_info);
-	if ($self->{name} =~ m/-/) { # multi-level environment; make/use a top-level
-		($parent = $file) =~ s/-.*\.yml/.yml/;
-		if (-e $parent) {
-			explain "Using existing #C{$parent} file as base config.";
-			%existing_info = %{LoadFile($parent)};
-		}
-	}
-
-	open my $fh, ">", $file or die "Couldn't write to $file: $!";
-	print $fh "---";
-	print $fh "\nkit:\n" if (
-		!%existing_info ||
-		$existing_info{kit}{name} ne $kit ||
-		$existing_info{kit}{version} ne $version ||
-		!same($existing_info{kit}{features}||[],\@features)
-	);
-	if (!%existing_info || $existing_info{kit}{name} ne $kit) {
-		print $fh "  name:     $kit\n";
-		error "#y{WARNING:} $parent specifies a different kit name ($existing_info{kit}{name})";
-	}
-	if (!%existing_info || $existing_info{kit}{version} ne $version) {
-		print $fh "  version:  $version\n";
-		error "#y{WARNING:} $parent specifies a different kit version ($existing_info{kit}{version})";
-	}
-	if (!%existing_info || !same($existing_info{kit}{features}||[],\@features)) {
-		print $fh "  features:\n";
-		print $fh "  - (( replace ))\n" if defined($existing_info{kit}{features});
-		print $fh "  - $_\n" foreach (@features);
-	}
-	print $fh <<EOF;
-
-params:
-  env:   $self->{name}
-  vault: $self->{prefix}
-EOF
-	if (defined($ENV{GENESIS_BOSH_ENVIRONMENT})) {
-		print $fh <<EOF;
-  bosh:  $ENV{GENESIS_BOSH_ENVIRONMENT}
-EOF
-	}
-
-	for my $param (@$params) {
-		print $fh "\n";
-		my $indent = "  # ";
-		if (defined $param->{comment}) {
-			for my $line (split /\n/, $param->{comment}) {
-				print $fh "${indent}$line\n";
-			}
-		}
-		if (defined $param->{example}) {
-			print $fh "${indent}(e.g. $param->{example})\n";
-		}
-
-		$indent = $param->{default} ? "  #" : "  ";
-
-		for my $val (@{$param->{values}}) {
-			my $k = (keys(%$val))[0];
-			# if the value is a spruce operator, we know it's a string, and don't need fancy encoding of the value
-			# this helps us not run into issues resolving the operator
-			my $v = $val->{$k};
-			if (defined $v && ! ref($v) && $v =~ m/^\(\(.*\)\)$/) {
-				print $fh "${indent}$k: $v\n";
-				next;
-			}
-			my $tmpdir = workdir;
-			open my $tmpfile, ">", "$tmpdir/value_formatting";
-			print $tmpfile encode_json($val);
-			close $tmpfile;
-			open my $spruce, "-|", "spruce merge $tmpdir/value_formatting";
-
-			for my $line (<$spruce>) {
-				chomp $line;
-				next unless $line;
-				next if $line eq "---";
-				print $fh "${indent}$line\n";
-			}
-			close $spruce;
-			die "Unable to convert JSON to spruce-compatible YAML. This is a bug\n"
-				if $? >> 8;
-		}
-	}
-	close $fh;
-	explain "Created #C{$file} environment file";
-}
-
-sub _legacy_prompt_for_env_features {
-	my ($self) = @_;
-	my ($kit, $version) = ($self->{kit}{name}, $self->{kit}{version});
-	my $meta = $self->{kit}->metadata;
-
-	my @features;
-	my $features_meta = $meta->{features} || $meta->{subkits} || [];
-	my @meta_key = (defined $meta->{features}) ? 'feature' : 'subkit';
-	foreach my $feature (@$features_meta) {
-		my $prompt = $feature->{prompt}."\n";
-		if (exists $feature->{choices}) {
-			my (@choices,@labels,$default);
-			foreach (@{$feature->{choices}}) {
-				push @choices, $_->{feature} || $_->{subkit};
-				push @labels,  $_->{label};
-				$default = ($_->{feature} || $_->{subkit}) if $_->{default} && $_->{default} =~ /^(y(es)?|t(rue)?|1)$/i;
-			}
-			if (exists $feature->{pick}) {
-				die "There is a problem with kit $kit/$version: $feature->{type} pick invalid.  Please contact the kit author for a fix"
-					unless $feature->{pick} =~ /^\d+(-\d+)?$/;
-				my ($min, $max) =  ($feature->{pick} =~ /-/)
-					? split('-',$feature->{pick})
-					: ($feature->{pick},$feature->{pick});
-				my $selections = grep {$_} prompt_for_choices($prompt,\@choices,$min,$max,\@labels);
-				push @features, @$selections;
-			} else {
-				push @features, grep {$_} (prompt_for_choice($prompt,\@choices,$default,\@labels));
-			}
-		} else {
-			push(@features, ($feature->{feature} || $feature->{subkit})) if  prompt_for_boolean($prompt,$feature->{default});
-		}
-	}
-
-	if ($self->{kit}->has_hook('subkits')) {
-		@features = $self->{kit}->run_hook('subkits', features => \@features);
-	}
-	$self->{kit}->_legacy_validate_features(@features);
-	return @features;
-}
-
-# generate (and optionally rotate) credentials.
-#
-## just rotate credentials
-# vaultify_secrets $kit_metadata,
-#                  target       => "my-vault",
-#                  env          => "us-east-sandbox",
-#                  prefix       => "us/east/sandbox",
-#                  scope        => 'rotate'; # or scope => '' or undef
-#
-## generate all credentials (including 'fixed' creds)
-# vaultify_secrets $kit_metadata,
-#                  target       => "my-vault",
-#                  env          => "us-east-sandbox",
-#                  prefix       => "us/east/sandbox",
-#                  scope        => 'force';
-#
-## generate only missing credentials
-# vaultify_secrets $kit_metadata,
-#                  target       => "my-vault",
-#                  env          => "us-east-sandbox",
-#                  prefix       => "us/east/sandbox",
-#                  scope        => 'add';
-#
-sub _legacy_vaultify_secrets {
-	my ($self, %options) = @_;
-	my $meta = $self->metadata;
-
-	$options{env} or die "vaultify_secrets() was not given an 'env' option.\n";
-
-	my $creds = active_credentials($meta, $options{features} || {});
-	if (%$creds) {
-		explain " - auto-generating credentials (in secret/$options{prefix})...\n";
-		for (safe_commands $creds, %options) {
-			Genesis::Run::interact(
-				{onfailure => "Failure autogenerating credentials."},
-				'safe', @$_
-			);
-		}
-	} else {
-		explain " - no credentials need to be generated.\n";
-	}
-
-	my $certs = active_certificates($meta, $options{features} || {});
-	if (%$certs) {
-		explain " - auto-generating certificates (in secret/$options{prefix})...\n";
-		for (cert_commands $certs, %options) {
-			Genesis::Run::interact(
-				{onfailure => "Failure autogenerating certificates."},
-				'safe', @$_
-			);
-		}
-	} else {
-		explain " - no certificates need to be generated.\n";
-	}
 }
 
 1;

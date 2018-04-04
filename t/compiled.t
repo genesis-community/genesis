@@ -26,16 +26,15 @@ version: 0.0.2
 EOF
 
 qx(rm -f new-env.yml);
-runs_ok "genesis new --no-secrets new-env";
-is get_file("new.yml"), <<EOF, "environment file generated has latest kit name / version in it";
+runs_ok "genesis new --vault unassailable-garrison new-env";
+is get_file("new-env.yml"), <<EOF, "environment file is correctly generated";
 ---
 kit:
   name:     compiled
   version:  0.0.2
-  features: []
-EOF
-is get_file("new-env.yml"), <<EOF, "environment file generated doesn't have kit name / version in it";
----
+  features:
+    - (( replace ))
+
 params:
   env:   new-env
   vault: new/env/compiled-kit-test

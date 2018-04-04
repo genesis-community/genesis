@@ -2732,53 +2732,6 @@ sub kit_name_and_version_for {
 	return latest_kit_name_and_version();
 }
 
-sub resolve_params_ref {
-	my ($key,$references) = @_;
-	die("\$\{$key\} referenced but not found -- perhaps it hasn't been defined yet.  Contact your Kit author for a bugfix.\n")
-		unless exists($references->{$key});
-	return $references->{$key};
-}
-
-sub process_kit_params {
-}
-
-sub active_credentials {
-	my ($meta, $features) = @_;
-
-	my $active = {};
-	for my $sub (('base', @$features)) {
-		next unless $meta->{credentials}{$sub};
-		for my $path (keys %{ $meta->{credentials}{$sub} }) {
-			if (exists $active->{$path} && ref $meta->{credentials}{$sub}{$path}) {
-				for my $k (keys %{ $meta->{credentials}{$sub}{$path} }) {
-					$active->{$path}{$k} = $meta->{credentials}{$sub}{$path}{$k};
-				}
-			} else {
-				$active->{$path} = $meta->{credentials}{$sub}{$path};
-			}
-		}
-	}
-	return $active;
-}
-
-sub active_certificates {
-	my ($meta, $features) = @_;
-
-	my $active = {};
-	for my $sub (('base', @$features)) {
-		next unless $meta->{certificates}{$sub};
-		for my $path (keys %{ $meta->{certificates}{$sub} }) {
-			if (exists $active->{$path} && ref $meta->{certificates}{$sub}{path}) {
-				for my $k (keys %{ $meta->{certificates}{$sub}{$path} }) {
-					$active->{$path}{$k} = $meta->{certificates}{$sub}{$path}{$k};
-				}
-			} else {
-				$active->{$path} = $meta->{certificates}{$sub}{$path};
-			}
-		}
-	}
-	return $active;
-}
 
 sub target_vault {
 	my ($target) = @_;
