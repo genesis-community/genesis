@@ -121,12 +121,10 @@ sub bail(@) {
 	exit 1;
 }
 
-my %WORKDIR;
+my $WORKDIR;
 sub workdir {
-	return $WORKDIR{$_[0]} if ($_[0] && defined $WORKDIR{$_[0]});
-	my $dir = tempdir(CLEANUP => 1);
-	$WORKDIR{$_[0]} = $dir if $_[0];
-	return $dir;
+	$WORKDIR ||= tempdir(CLEANUP => 1);
+	return tempdir(DIR => $WORKDIR);
 }
 
 sub is_semver {
