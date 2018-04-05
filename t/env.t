@@ -118,7 +118,7 @@ subtest 'env-to-env relation' => sub {
 		}
 };
 
-subtest 'parameter lookup' => sub {
+subtest 'environment metadata' => sub {
 	my $tmp = workdir."/work";
 	my $top = Genesis::Top->new($tmp);
 
@@ -126,7 +126,7 @@ subtest 'parameter lookup' => sub {
 	put_file "$tmp/.genesis/config", <<EOF;
 ---
 genesis:         2.6.0
-deployment_type: test-type
+deployment_type: thing
 EOF
 
 	put_file "$tmp/standalone.yml", <<EOF;
@@ -139,6 +139,45 @@ kit:
     - proto
 
 params:
+  env:     standalone
+  state:   awesome
+  running: yes
+  false:   ~
+EOF
+
+	put_file "$tmp/.genesis/kits/bosh-0.2.3.tar.gz", "not a tarball.  sorry.";
+
+	my $env;
+	lives_ok { $env = $top->load_env('standalone') }
+	         "Genesis::Env should be able to load the `standalone' environment.";
+
+	is($env->name, "standalone", "an environment should know its name");
+	is($env->file, "standalone.yml", "an environment should know its file path");
+	is($env->deployment, "standalone-thing", "an environment should know its deployment name");
+};
+
+subtest 'parameter lookup' => sub {
+	my $tmp = workdir."/work";
+	my $top = Genesis::Top->new($tmp);
+
+	system("rm -rf $tmp; mkdir -p $tmp");
+	put_file "$tmp/.genesis/config", <<EOF;
+---
+genesis:         2.6.0
+deployment_type: thing
+EOF
+
+	put_file "$tmp/standalone.yml", <<EOF;
+---
+kit:
+  name:    bosh
+  version: 0.2.3
+  features:
+    - vsphere
+    - proto
+
+params:
+  env:     standalone
   state:   awesome
   running: yes
   false:   ~

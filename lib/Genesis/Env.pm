@@ -100,6 +100,12 @@ sub _default_prefix {
 	return $p;
 }
 
+sub use_cloud_config {
+	my ($self, $path) = @_;
+	$self->{ccfile} = $path;
+	return $self;
+}
+
 sub features {
 	my ($self) = @_;
 	if ($self->defines('kit.features')) {
@@ -191,8 +197,8 @@ sub lookup {
 }
 
 sub manifest_lookup {
-	my ($self, $key, $default, %opts) = @_;
-	my ($manifest, undef) = $self->raw_manifest(%opts);
+	my ($self, $key, $default) = @_;
+	my ($manifest, undef) = $self->_manifest(redact => 0);
 	return _lookup($manifest, $key, $default);
 }
 
@@ -219,7 +225,7 @@ sub params {
 	return $self->{__params};
 }
 
-sub raw_manifest {
+sub _manifest {
 	my ($self, %opts) = @_;
 	my $which = $opts{redact} ? '__redacted' : '__unredacted';
 	my $path = "$self->{__tmp}/$which.yml";
@@ -228,7 +234,7 @@ sub raw_manifest {
 		local $ENV{REDACT} = $opts{redact} ? 'yes' : ''; # for spruce
 		my $out = Genesis::Run::get(
 			{ onfailure => "Unable to merge $self->{name} manifest" },
-			'spruce', 'merge', $self->mergeable_yaml_files($opts{'cloud-config'}));
+			'spruce', 'merge', $self->_yaml_files);
 
 		mkfile_or_fail($path, 0400, $out);
 		$self->{$which} = Load($out);
@@ -239,21 +245,16 @@ sub raw_manifest {
 sub manifest {
 	my ($self, %opts) = @_;
 
-	my (undef, $path) = $self->raw_manifest(%opts);
+	# prune by default.
+	$opts{prune} = 1 unless exists $opts{prune};
+
+	my (undef, $path) = $self->_manifest(redact => $opts{redact});
 	if ($opts{prune}) {
 		my @prune = qw/meta pipeline params kit exodus compilation/;
 
 		if (!$self->needs_bosh_create_env) {
-			# cloud-config strikes again!  we have to merge in the entire
-			# downloaded cloud-config so that we can use things like Spruce's
-			# (( static_ips ... )) operator, but we definitely don't want
-			# to overwhelm the end user with "here's your manifest, oh, and
-			# also, your entire cloud-config."
-			#
-			# additionally, BOSH itself gets quite irrate if it finds anything
-			# that looks like a cloud-config in its deployment manifest.
-			#
-			# so, we prune them out.
+			# bosh create-env needs these, so we only prune them
+			# when we are deploying via `bosh deploy`.
 			push(@prune, qw( resource_pools vm_types
 			                 disk_pools disk_types
 			                 networks
@@ -271,13 +272,12 @@ sub manifest {
 
 sub write_manifest {
 	my ($self, $file, %opts) = @_;
-	mkfile_or_fail($file, 0644,
-		$self->manifest(redact         => $opts{redact},
-		                'cloud-config' => $opts{'cloud-config'}) . "\n");
+	my (undef, $src) = $self->manifest(redact => $opts{redact});
+	copy_or_fail($src, $file);
 }
 
-sub mergeable_yaml_files {
-	my ($self, $cc) = @_;
+sub _yaml_files {
+	my ($self) = @_;
 	my $prefix = $self->_default_prefix;
 	my $type   = $self->{top}->type;
 
@@ -299,10 +299,17 @@ exodus:
   vault_base:  (( grab meta.vault ))
 EOF
 
+	my @cc;
+	if (!$self->needs_bosh_create_env) {
+		die "No cloud-config specified for this environment\n"
+			unless $self->{ccfile};
+		push @cc, $self->{ccfile};
+	}
+
 	return (
 		"$self->{__tmp}/init.yml",
 		$self->kit_files,
-		$cc || (),
+		@cc,
 		$self->actual_environment_files(),
 		"$self->{__tmp}/fin.yml",
 	);
@@ -316,10 +323,7 @@ sub kit_files {
 sub exodus {
 	my ($self) = @_;
 
-	# not going to work - check real manifest FIXME
-	my $data = $self->manifest_lookup('exodus', {},
-	);
-
+	my $data = $self->manifest_lookup('exodus', {});
 	my (@args, %final);
 
 	for my $key (keys %$data) {
@@ -444,12 +448,11 @@ sub add_secrets { # WIP - majorly broken right now.  sorry bout that.
 		                          env      => $self->{name},
 		                          vault    => $self->{prefix});
 	} else {
-		my @features = []; # FIXME
 		Genesis::Legacy::vaultify_secrets($kit,
 			env       => $self->{name},
 			prefix    => $self->{prefix},
 			scope     => $opts{recreate} ? 'force' : 'add',
-			features  => \@features);
+			features  => [$self->features]);
 	}
 }
 
@@ -661,6 +664,14 @@ Retrieves the bare environment name (without the file suffix).
 Retrieves the file name of the final environment file.  This is just the
 name with a C<.yml> suffix attached.
 
+
+=head2 deployment()
+
+Retrieves the BOSH deployment name for this environment, which is based off
+of the environment name and the root directory repository type (i.e.
+C<bosh>, C<concourse>, etc.)
+
+
 =head2 prefix()
 
 Retrieve the Vault prefix that this environment should store its secrets
@@ -675,6 +686,13 @@ Retrieve the Genesis::Kit object for this environment.
 
 Returns the absolute path to the root directory, with C<$relative> appended
 if it is passed.
+
+=head2 use_cloud_config($file)
+
+Use the given BOSH cloud-config (as defined in C<$file>) when merging this
+environments manifest.  This must be called before calls to C<manifest()>,
+C<write_manifest()>, or C<manifest_lookup()>.
+
 
 =head2 relate($them, [$cachedir, [$topdir])
 
@@ -776,6 +794,13 @@ Return C<potential_environment_files>, filtered to include only the files
 that actually reside on-disk.  Suitable for merging with Spruce!
 
 
+=head2 kit_files
+
+Returns the source YAML files from the environment's kit, based on the
+selected features.  This is a very thin wrapper around Genesis::Kit's
+C<source_yaml_files> method.
+
+
 =head2 params()
 
 Merges the environment files (see C<environment_files>), without evaluating
@@ -844,5 +869,169 @@ C<kit.features>.
 Returns true if this environment (based on its activated features) needs to
 be deployed via a C<bosh create-env> run, instead of the more normal C<bosh
 deploy>.
+
+
+=head2 manifest_lookup($key, $default)
+
+Like C<lookup()>, except that it considers the entire, unredacted deployment
+manifest for the environment.  You must have set a cloud-config via
+C<use_cloud_config()> before you call this method.
+
+
+=head2 manifest(%opts)
+
+Generates the complete manifest for this environment, merging in the
+environment definition files with the kit manifest fragments for the
+selected features.  The manifest will be cached, effectively memoizing this
+method.  You must have set a cloud-config via C<use_cloud_config()> before
+you call this method.
+
+The following options are recognized:
+
+=over
+
+=item redact
+
+Redact the manifest, obscuring all secrets that would normally have been
+populated from the Genesis Vault.  Redacted and unredacted versions of the
+manifest will be memoized separately, to avoid cache coherence issues.
+
+=item prune
+
+Whether or not to prune auxilliary top-level keys from the generated
+manifest (redacted or otherwise).  BOSH requires the manifest to be pruned
+before it will process it for deployment, since Genesis has to merge in the
+active BOSH cloud-config for things like the Spruce (( static_ips ... ))
+operator.
+
+You may want to set prune => 0 to get the full manifest, for debugging.
+
+By default, the manifest will be pruned.
+
+=back
+
+
+=head2 write_manifest($file, %opts)
+
+Write the deployment manifest (as generated by C<manifest>) to the given
+C<$file>.  This method takes the same options as the C<manifest> method that
+it wraps.  You must have set a cloud-config via C<use_cloud_config()> before
+you call this method.
+
+
+=head2 exodus()
+
+Retrieves the I<Exodus> data that the kit compiled for this environment, and
+flatten it so that it can be stuffed into the Genesis Vault.
+
+
+=head2 bosh_target()
+
+Determine the alias of the BOSH director that Genesis would use to deploy
+this environment.  It consults the following, in order:
+
+=over
+
+=item 1.
+
+The C<$GENESIS_BOSH_ENVIRONMENT> variable.
+
+=item 2.
+
+The C<params.bosh> parameter
+
+=item 3.
+
+The C<params.env> parameter
+
+=back
+
+If none of these pan out, this method will die with a suitable error.
+
+Note that if this environment is to be deployed via C<bosh create-env>, this
+method will always return C<undef> immediately.
+
+
+=head2 deploy(%opts)
+
+Deploy this environment, to its BOSH director.  If successful, a redacted
+copy of the manifest will be saved in C<.genesis/manifests>.  The I<Exodus>
+data for the environment will also be extracted and placed in the Genesis
+Vault at that point.
+
+The following options are recognized (for non-create-env deployments only):
+
+=over
+
+=item redact
+
+Do (or don't) redact the output of the C<bosh deploy> command.
+
+=item fix
+
+Sets the C<--fix> flag in the call to C<bosh deploy>.
+
+=item recreate
+
+Sets the C<--recreate> flag in the call to C<bosh deploy>.
+
+=item dry-run
+
+Sets the C<--dry-run> flag in the call to C<bosh deploy>.
+
+=item skip-drain => [ ... ]
+
+Sets the C<--skip-drain> flag multiple times, once for each value in the
+given arrayref.
+
+=item canaries => ...
+
+Sets the C<--canaries> flag to the given value.
+
+=item max-in-flight => ...
+
+Sets the C<--max-in-flight> flag to the given value.
+
+=back
+
+
+=head2 add_secrets(%opts)
+
+Adds secrets to the Genesis Vault.  This generally invokes the "secrets"
+hook, but can fallback to legacy kit.yml behavior.
+
+The following options are recognized:
+
+=over
+
+=item recreate
+
+This is a recreate, and all credentials should be recreated, not just the
+missing one.
+
+=back
+
+
+=head2 check_secrets()
+
+Checks the Genesis Vault for secrets that the kit defines, but that are not
+present.  This runs the "secrets" hook, but also handles legacy kit.yml
+behavior.
+
+
+=head2 rotate_secrets(%opts)
+
+Rotates all non-fixed secrets stored in the Genesis Vault.
+
+The following options are recognized:
+
+=over
+
+=item force
+
+If set to true, all non-fixed credentials will be rotated, not just the
+missing ones (which is the default behavior for some reason).
+
+=back
 
 =cut
