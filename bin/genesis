@@ -304,10 +304,6 @@ sub mergeable_yaml_files {
 	return @ll;
 }
 
-sub standalone_environment_yaml_files {
-	return grep { find_key("params.env", $_) } @_;
-}
-
 sub get_env {
 	(my $env = shift) =~ s/\.yml$//;
 	my $file =  $env.".yml";
@@ -348,23 +344,6 @@ sub jq_extractor {
 	}
 	$filter =~ s/ \| $//; # clean off trailing pipes if select was last item.
 	return $filter;
-}
-
-sub jq_embedder {
-	my ($path) = @_;
-	$path =~ s/^([^\.])/.$1/; # ensure it starts with a .
-	my @path_bits = reverse grep /\S/, split(/([\.\[]+)/, $path);
-	my ($join,$value);
-	my $wrapper = '.';
-	while (@path_bits) {
-		($value,$join,@path_bits) = @path_bits;
-		if ($join eq '.') {
-			$wrapper = qq({"$value": $wrapper});
-		} else {
-			die "Invalid embed path: $join$value\n";
-		}
-	}
-	return $wrapper;
 }
 
 sub find_key {
