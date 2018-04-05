@@ -551,7 +551,7 @@ sub prompt_for_env_features {
 	}
 
 	if ($self->{kit}->has_hook('subkits')) {
-		@features = $self->{kit}->run_hook('subkits', features => \@features);
+		@features = $self->{kit}->run_hook('subkit', features => \@features);
 	}
 	Genesis::Legacy::validate_features($self->{kit}, @features);
 	return @features;
