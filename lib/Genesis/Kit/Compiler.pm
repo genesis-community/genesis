@@ -114,6 +114,196 @@ sub compile {
 	return "$self->{relpath}.tar.gz";
 }
 
+sub scaffold {
+	my ($self, $name) = @_;
+
+	my $user   = Genesis::Run::get('git config user.name')  || 'The Unknown Kit Author';
+	my $email  = Genesis::Run::get('git config user.email') || 'no-reply@example.com';
+
+	if (-f "$self->{root}/kit.yml") {
+		die "Found a kit.yml in $self->{root}; cowardly refusing to overwrite an existing kit.\n";
+	}
+
+	mkdir_or_fail "$self->{root}";
+# .gitignore {{{
+	mkfile_or_fail "$self->{root}/.gitignore", <<DONE;
+*.tar.gz
+DONE
+
+# }}}
+# kit.yml {{{
+	mkfile_or_fail "$self->{root}/kit.yml", <<DONE;
+name:     $name
+version:  0.0.1
+author:   $user <$email>
+homepage: https://github.com/cloudfoundry-community/$name-boshrelease
+github:   https://github.com/genesis-community/$name-genesis-kit
+
+# 2.6.0 was our last big feature bump
+genesis_min_version: 2.6.0
+DONE
+
+# }}}
+# README.md {{{
+	mkfile_or_fail "$self->{root}/README.md", <<DONE;
+$name Genesis Kit
+=================
+
+FIXME: The kit author should have filled this in with details about
+what this is, and what it provides. But they have not, and that is sad.
+Perhaps a GitHub issue should be opened to remind them of this?
+
+Quick Start
+-----------
+
+To use it, you don't even need to clone this repository! Just run
+the following (using Genesis v2):
+
+```
+# create a $name-deployments repo using the latest version of the $name kit
+genesis init --kit $name
+
+# create a $name-deployments repo using v1.0.0 of the $name kit
+genesis init --kit $name/1.0.0
+
+# create a my-$name-configs repo using the latest version of the $name kit
+genesis init --kit $name -d my-$name-configs
+```
+
+Once created, refer to the deployment repository README for information on
+provisioning and deploying new environments.
+
+Features
+-------
+
+FIXME: The kit author should have filled this in with details
+about what features are defined, and how they affect the deployment. But they
+have not, and that is sad. Perhaps a GitHub issue should be opened to remind
+them of this?
+
+Params
+------
+
+FIXME: The kit author should have filled this in with details about the params
+present in the base kit, as well as each feature defined. These should likely
+be in different sections (one for base, one per feature). Unfortunately,
+the author has not done this, and that is sad. Perhaps a GitHub issue
+should be opened to remind them of this?
+
+Cloud Config
+------------
+
+FIXME: The kit author should have filled in this section with details about
+what cloud config definitions this kit expects to see in play and how to
+override them. Also useful are hints at default values for disk + vm sizing,
+scaling considerations, and other miscellaneous IaaS components that the deployment
+might require, like load balancers.
+DONE
+
+# }}}
+
+	mkdir_or_fail "$self->{root}/manifests";
+# manifests/$name.yml {{{
+	mkfile_or_fail "$self->{root}/manifests/$name.yml", <<DONE;
+---
+meta:
+  default:
+    azs: [z1]
+
+instance_groups:
+  - name:      $name
+    instances: 1
+    azs:       (( grab params.availability_zones || meta.default.azs ))
+    stemcell:  default
+    networks:  { name: (( grab params.network || "default" )) }
+    vm_type:   (( grab params.vm_type || "default" ))
+
+    properties:
+      debug: false
+
+
+update:
+  serial:            false
+  canaries:          1
+  max_in_flight:     1
+  max_errors:        1
+  canary_watch_time: 5000-600000
+  update_watch_time: 5000-600000
+
+stemcells:
+  - alias:   default
+    os:      (( grab params.stemcell_os      || "ubuntu-trusty" ))
+    version: (( grab params.stemcell_version || "latest" ))
+
+releases:
+  - name: $name
+    version: (( param "The Kit Author forgot to fill out manifests/$name.yml" ))
+    sha1:    (( param "The Kit Author forgot to fill out manifests/$name.yml" ))
+    url:     (( param "The Kit Author forgot to fill out manifests/$name.yml" ))
+DONE
+
+# }}}
+
+	mkdir_or_fail "$self->{root}/hooks";
+# hooks/new {{{
+	mkfile_or_fail "$self->{root}/hooks/new", <<DONE;
+#!/bin/bash
+shopt -s nullglob
+set -eu
+
+#
+# Genesis Kit `new' Hook
+#
+
+cat <<EOF >\$GENESIS_ROOT/\$GENESIS_ENVIRONMENT.yml
+kit:
+  name:    \$GENESIS_KIT_NAME
+  version: \$GENESIS_KIT_VERSION
+  features:
+    - (( replace ))
+
+params:
+  env:   \$GENESIS_ENVIRONMENT
+  vault: \$GENESIS_VAULT_PREFIX
+EOF
+exit 0
+DONE
+
+# }}}
+# hooks/blueprint {{{
+	mkfile_or_fail "$self->{root}/hooks/blueprint", <<DONE;
+#!/bin/bash
+shopt -s nullglob
+set -eu
+
+# Genesis Kit `blueprint' Hook
+#
+# This script outputs the list of merge files needed to support the desired
+# feature set selected by the environment parameter file.  As generated, it
+# lists all *.yml files in the base, then all *.yml files in each detected
+# feature directory, in the order the features are specified in the environment
+# yml file.  If finer control is desired, add logic around the wants_kit_feature()
+# function (takes a feature as a string, returns exit code 0 if present, non-
+# zero exit code otherwise).
+
+
+validate_features your-list of-features \
+                  go-here
+
+declare -a manifests
+manifests+=( manifests/$name.yml )
+
+for dir in features/*; do
+	if want_feature \$basename(\$dir); then
+		manifests+=( \$dir/*.yml )
+	fi
+done
+echo \${manifests[@]}
+DONE
+
+# }}}
+}
+
 1;
 
 =head1 NAME
@@ -200,3 +390,5 @@ Several internal functions cache state that is only valid for a single root
 source directory.  In practice this is not an issue, since for the most
 part Genesis just uses this for the C<compile-kit> sub-command, which only
 deals with a single Kit.
+
+=cut
