@@ -248,6 +248,21 @@ and exit code are returned in a list, otherwise just the output.
     my ($out, $rc) = run('spruce json "$1" | jq -r "$2"', $_, $filter);
 
 
+=head2 curl($method, $url, $headers, $data, $skip_verify, $creds)
+
+Runs the C<curl> command, with the appropriate credentials, and returns the
+status code, status line, and output data to the caller:
+
+    my ($st, $line, $response) = curl(GET => 'https://example.com');
+    if ($st != 200) {
+      die "request failed: $line\n";
+    }
+    print "data:\n";
+    print $response;
+
+
+=head1 CONVENIENCE WRAPPERS
+
 =head2 interact(...)
 
 This helper function sets C<interactive> and C<passfail>, to return truthy
