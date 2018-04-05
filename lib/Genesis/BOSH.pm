@@ -27,4 +27,18 @@ sub deploy {
 
 }
 
+sub alias {
+	my ($class, $alias) = @_;
+	return Genesis::Run::interactive_bosh(
+		{ onfailure => "Could not create BOSH alias for '$_[0]'" },
+		'alias-env', $alias);
+}
+
+sub run_errand {
+	my ($class, $target, $deployment, $errand) = @_;
+	return Genesis::Run::interactive_bosh(
+		{ onfailure => "Failed to run errand '$errand' ($deployment deployment on $target BOSH)" },
+		"-n", "-e", $target, "-d", $deployment, "run-errand", $errand);
+}
+
 1;
