@@ -185,6 +185,9 @@ subtest 'fs utilities' => sub {
 	ok -f "$tmp/file", "mkfile_or_fail should make a file if it didn't fail";
 	ok -d "$tmp/dir",  "mkdir_or_fail should make a dir if it didn't fail";
 
+	is Genesis::Utils::get_file("$tmp/file"), "stuff!",
+		"mkfile_or_fail should populate the file";
+
 	dies_ok { mkfile_or_fail("$tmp/file/not/a/dir/file", "whatevs") };
 	dies_ok { mkdir_or_fail("$tmp/file/not/a/dir") };
 

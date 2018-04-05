@@ -21,8 +21,7 @@ our @EXPORT = qw/
 
 	ordify
 
-	lookup_in_yaml
-
+	get_file
 	mkfile_or_fail mkdir_or_fail
 	chdir_or_fail chmod_or_fail
 	symlink_or_fail
@@ -167,14 +166,13 @@ sub is_valid_uri {
 	return $components{uri};
 }
 
-sub lookup_in_yaml {
-	my ($what, $key, $default) = @_;
-
-	for (split /\./, $key) {
-		return $default if !exists $what->{$_};
-		$what = $what->{$_};
-	}
-	return $what;
+sub get_file {
+	my ($file) = @_;
+	open my $fh, "<", $file
+		or die "failed to open '$file' for reading: $!\n";
+	my $contents = do { local $/; <$fh> };
+	close $fh;
+	return $contents;
 }
 
 sub mkfile_or_fail {

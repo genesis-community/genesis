@@ -70,16 +70,6 @@ sub in_repo_dir {
 	return  -d ".genesis" && -e ".genesis/config";
 }
 
-# get_file $path
-sub get_file {
-	my ($file) = @_;
-	open my $fh, "<", $file
-		or die "failed to open '$file' for reading: $!\n";
-	my $contents = do { local $/; <$fh> };
-	close $fh;
-	return $contents;
-}
-
 sub boolean_to_yaml {
 	return $_[0] ? "true" : "false";
 }
@@ -1205,10 +1195,11 @@ sub {
 
 	my $env = Genesis::Top->new('.')->load_env($_[0]);
 	if ($options{'include-kit'}) {
-		print "$_\n" for $env->kit_files;
+		print "[".$env->kit->id."] $_\n" for $env->kit_files;
 	}
 	print "$_\n" for $env->actual_environment_files;
 });
+
 
 # }}}
 # genesis create-kit - Create the structure for a new kit {{{
@@ -1395,7 +1386,9 @@ sub {
 		}
 	}
 
-	print $env->raw_manifest('cloud-config' => $options{'cloud-config'});
+	print $env->manifest('cloud-config' => $options{'cloud-config'},
+	                     redact         => $options{redact},
+	                     prune          => $options{prune});
 });
 
 # }}}

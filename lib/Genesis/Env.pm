@@ -26,6 +26,7 @@ sub new {
 	die "No deployment type specified in .genesis/config!\n"
 		unless $opts{top}->type;
 
+	$opts{__tmp} = workdir;
 	my $self = bless(\%opts, $class);
 	$self->{prefix} ||= $self->default_prefix;
 
@@ -81,10 +82,15 @@ sub create {
 }
 
 # public accessors
-sub name   { $_[0]->{name};      }
-sub file   { $_[0]->{file};      }
-sub prefix { $_[0]->{prefix};    }
-sub path   { $_[0]->{top}->path; }
+sub name   { $_[0]->{name};   }
+sub file   { $_[0]->{file};   }
+sub prefix { $_[0]->{prefix}; }
+sub kit    { $_[0]->{kit};    }
+
+sub path {
+	my ($self, @rest) = @_;
+	$self->{top}->path(@rest);
+}
 
 sub default_prefix {
 	my ($self) = @_;
@@ -170,11 +176,24 @@ sub actual_environment_files {
 		$self->potential_environment_files;
 }
 
-# NOTE: not sure if this is how we want to do this, but
-#       it does seem to be working for all callers.
+sub _lookup {
+	my ($what, $key, $default) = @_;
+
+	for (split /\./, $key) {
+		return $default if !exists $what->{$_};
+		$what = $what->{$_};
+	}
+	return $what;
+}
 sub lookup {
 	my ($self, $key, $default) = @_;
-	return lookup_in_yaml($self->params, $key, $default);
+	return $self->_lookup($self->params, $key, $default);
+}
+
+sub manifest_lookup {
+	my ($self, $key, $default, %opts) = @_;
+	my ($manifest, undef) = $self->raw_manifest(%opts);
+	return $self->_lookup($manifest, $key, $default);
 }
 
 sub defines {
@@ -202,31 +221,67 @@ sub params {
 
 sub raw_manifest {
 	my ($self, %opts) = @_;
-	my $cache = $opts{redact} ? '__redacted' : '__unredacted';
+	my $which = $opts{redact} ? '__redacted' : '__unredacted';
+	my $path = "$self->{__tmp}/$which.yml"
 
-	if (!$self->{$cache}) {
+	if (!$self->{$which}) {
 		local $ENV{REDACT} = $opts{redact} ? 'yes' : ''; # for spruce
-		$self->{$cache} = Genesis::Run::get(
+		my $out = Genesis::Run::get(
 			{ onfailure => "Unable to merge $self->{name} manifest" },
 			'spruce', 'merge', $self->mergeable_yaml_files($opts{'cloud-config'}));
+
+		mkfile_or_fail($path, 0400, $out});
+		$self->{$which} = Load($out});
 	}
-	return $self->{$cache};
+	return $self->{$which}, $path;
+}
+
+sub manifest {
+	my ($self, %opts) = @_;
+
+	my (undef, $path) = $self->raw_manifest(%opts);
+	if ($opts{prune}) {
+		my @prune = qw/meta pipeline params kit exodus compilation/;
+
+		if (!$self->needs_bosh_create_env) {
+			# cloud-config strikes again!  we have to merge in the entire
+			# downloaded cloud-config so that we can use things like Spruce's
+			# (( static_ips ... )) operator, but we definitely don't want
+			# to overwhelm the end user with "here's your manifest, oh, and
+			# also, your entire cloud-config."
+			#
+			# additionally, BOSH itself gets quite irrate if it finds anything
+			# that looks like a cloud-config in its deployment manifest.
+			#
+			# so, we prune them out.
+			push(@prune, qw( resource_pools vm_types
+			                 disk_pools disk_types
+			                 networks
+			                 azs
+			                 vm_extensions));
+		}
+
+		return Genesis::Run::get('spruce', 'merge',
+			'--prune', @prune,
+			$path);
+	}
+
+	return get_file($path);
 }
 
 sub write_manifest {
 	my ($self, $file, %opts) = @_;
-	file($file, mode     =>  0644,
-	            contents => $self->raw_manifest(redact         => $opts{redact},
-	                                            'cloud-config' => $opts{'cloud-config'}) . "\n");
+	mkfile_or_fail($file, 0644,
+		$self->manifest(redact         => $opts{redact},
+		                'cloud-config' => $opts{'cloud-config'}) . "\n");
 }
 
 sub mergeable_yaml_files {
 	my ($self, $cc) = @_;
-	my $tmp    = workdir;
 	my $prefix = $self->default_prefix;
 	my $type   = $self->{top}->type;
 
-	file("$tmp/init.yml", mode => 0644, contents => <<EOF);
+	mkfile_or_fail("$self->{__tmp}/init.yml", 0644, <<EOF);
 ---
 meta:
   vault: (( concat "secret/" params.vault || "$prefix" ))
@@ -236,7 +291,7 @@ params:
 name: (( grab params.name ))
 EOF
 
-	file("$tmp/fin.yml", mode => 0644, contents => <<EOF);
+	mkfile_or_fail("$self->{__tmp}/fin.yml", 0644, <<EOF);
 ---
 exodus:
   kit_name:    (( grab kit.name    || "unknown" ))
@@ -245,11 +300,11 @@ exodus:
 EOF
 
 	return (
-		"$tmp/init.yml",
+		"$self->{__tmp}/init.yml",
 		$self->kit_files,
 		$cc || (),
 		$self->actual_environment_files(),
-		"$tmp/fin.yml",
+		"$self->{__tmp}/fin.yml",
 	);
 }
 
@@ -261,7 +316,10 @@ sub kit_files {
 sub exodus {
 	my ($self) = @_;
 
-	my $data = $self->lookup('exodus', {});
+	# not going to work - check real manifest FIXME
+	my $data = $self->manifest_lookup('exodus', {},
+	);
+
 	my (@args, %final);
 
 	for my $key (keys %$data) {
@@ -298,7 +356,7 @@ sub exodus {
 
 sub bosh_target {
 	my ($self) = @_;
-	return "create-env" if $self->needs_bosh_create_env;
+	return undef if $self->needs_bosh_create_env;
 
 	my ($bosh, $source);
 	if ($bosh = $ENV{GENESIS_BOSH_ENVIRONMENT}) {
@@ -334,16 +392,15 @@ sub deploy {
 	my ($self, %opts) = @_;
 
 	my $ok;
-	my $tmp = workdir;
-	$self->write_manifest("$tmp/manifest.yml", redact => 0);
+	$self->write_manifest("$self->{__tmp}/manifest.yml", redact => 0);
 
 	if ($self->needs_bosh_create_env) {
 		$ok = Genesis::BOSH->create_env(
-			"$tmp/manifest.yml",
+			"$self->{__tmp}/manifest.yml",
 			state => $self->path(".genesis/manifests/$self->{name}-state.yml"));
 
 	} else {
-		$self->{__cloud_config} = "$tmp/cloud.yml";
+		$self->{__cloud_config} = "$self->{__tmp}/cloud.yml";
 		Genesis::BOSH->download_cloud_config($self->bosh_target, $self->{__cloud_config});
 
 		my @bosh_opts;
@@ -353,14 +410,14 @@ sub deploy {
 		push @bosh_opts, "--$_=$opts{$_}"   for grep { defined $opts{$_} }
 		                                          qw/canaries max-in-flight/;
 
-		$ok = Genesis::BOSH->deploy("$tmp/manifest.yml",
+		$ok = Genesis::BOSH->deploy("$self->{__tmp}/manifest.yml",
 			target     => $self->bosh_target,
 			deployment => $self->deployment,
 			options    => \@bosh_opts);
 	}
 
-	unlink "$tmp/manifest.yml"
-		or debug "Could not remove unredacted manifest $tmp/manifest.yml";
+	unlink "$self->{__tmp}/manifest.yml"
+		or debug "Could not remove unredacted manifest $self->{__tmp}/manifest.yml";
 
 	# bail out early if the deployment failed;
 	# don't update the cached manifests
@@ -368,6 +425,7 @@ sub deploy {
 
 	# deployment succeeded; update the cache
 	$self->write_manifest($self->{top}->path(".genesis/manifests/$self->{name}.yml"), redact => 1);
+
 	# track exodus data in the vault
 	my $exodus = $self->exodus;
 	return run(
