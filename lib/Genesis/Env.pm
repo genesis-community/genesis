@@ -208,7 +208,7 @@ sub raw_manifest {
 		local $ENV{REDACT} = $opts{redact} ? 'yes' : ''; # for spruce
 		$self->{$cache} = Genesis::Run::get(
 			{ onfailure => "Unable to merge $self->{name} manifest" },
-			'spruce', 'merge', $self->mergeable_yaml_files);
+			'spruce', 'merge', $self->mergeable_yaml_files($opts{'cloud-config'}));
 	}
 	return $self->{$cache};
 }
@@ -216,11 +216,12 @@ sub raw_manifest {
 sub write_manifest {
 	my ($self, $file, %opts) = @_;
 	file($file, mode     =>  0644,
-	            contents => $self->raw_manifest(redact => $opts{redact}) . "\n");
+	            contents => $self->raw_manifest(redact         => $opts{redact},
+	                                            'cloud-config' => $opts{'cloud-config'}) . "\n");
 }
 
 sub mergeable_yaml_files {
-	my ($self) = @_;
+	my ($self, $cc) = @_;
 	my $tmp    = workdir;
 	my $prefix = $self->default_prefix;
 	my $type   = $self->{top}->type;
@@ -245,11 +246,16 @@ EOF
 
 	return (
 		"$tmp/init.yml",
-		$self->{kit}->source_yaml_files($self->features),
-		# cloud config
+		$self->kit_files,
+		$cc || (),
 		$self->actual_environment_files(),
 		"$tmp/fin.yml",
 	);
+}
+
+sub kit_files {
+	my ($self) = @_;
+	return $self->{kit}->source_yaml_files($self->features),
 }
 
 sub exodus {

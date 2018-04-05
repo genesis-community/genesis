@@ -24,7 +24,6 @@ use Genesis::Run;
 use Genesis::Top;
 use Genesis::Kit::Compiler;
 use Genesis::IO;
-use Genesis::Manifest;
 
 our $VERSION = "(development)";
 our $GITHUB_URL = "https://github.com/starkandwayne/genesis";
@@ -1172,15 +1171,6 @@ sub {
 
 	# let the user know
 	explain "New env $env->{name} provisioned!\n";
-	return 0;
-
-	################################# THIS FAR, NO FURTHER!
-=cut
-	at_exit(sub {
-		# remove the env file if either prereqs check or vaultification fails
-		unlink "$name.yml" unless $? == 0;
-	});
-=cut
 });
 
 
@@ -1330,9 +1320,12 @@ sub {
 	/);
 	usage(1) if @_ != 1;
 	check_prereqs;
-	
-	my $manifest = Genesis::Manifest->new($_[0]);
-	print "$_\n" for $manifest->source_files(base=>0, kit=>$options{"include-kit"});
+
+	my $env = Genesis::Top->new('.')->load_env($_[0]);
+	if ($options{'include-kit'}) {
+		print "$_\n" for $env->kit_files;
+	}
+	print "$_\n" for $env->actual_environment_files;
 });
 
 # }}}
@@ -1692,7 +1685,7 @@ sub {
 		}
 	}
 
-	print Genesis::Manifest->new($env->name, %options)->contents(%options);
+	print $env->raw_manifest('cloud-config' => $options{'cloud-config'});
 });
 
 # }}}
