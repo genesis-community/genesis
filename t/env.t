@@ -161,6 +161,14 @@ EOF
 		"params lookup should return the default value is the param is not defined");
 	is($env->lookup('params.false', 'MISSING'), undef,
 		"params lookup should return falsey values if they are set");
+
+	cmp_deeply([$env->features], [qw[vsphere proto]],
+		"features() returns the current features");
+	ok($env->has_feature('vsphere'));
+	ok($env->has_feature('proto'));
+	ok(!$env->has_feature('xyzzy'));
+	ok($env->needs_bosh_create_env(),
+		"environments with the 'proto' feature enabled required bosh create-env");
 };
 
 done_testing;

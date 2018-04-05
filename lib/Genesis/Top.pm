@@ -153,6 +153,11 @@ Qualifies and returns C<$relative> as an absolute path.
 Parses and returns the Genesis deployments repository configuration, found
 in C<$root/.genesis/config>.
 
+=head2 type()
+
+Returns the deployment type of this Genesis root directory, which is used in
+naming deployment environments.
+
 =head2 has_dev_kit()
 
 Returns true if the root directory has a so-called I<dev kit>, an uncompiled
@@ -212,5 +217,15 @@ passing C<$version> as "latest" and not passing it (or passing it as
 C<undef>, explicitly).  In the former case (version = "latest"), the latest
 version of the singleton compiled kit is returned.  In the latter case,
 C<find_kit> will check for a dev/ directory and use that if available.
+
+=head2 load_env($name)
+
+Loads a new Genesis::Env object, named $name, from the root directory.
+This wraps a call to Genesis::Env->load().
+
+=head2 create_env($name, $kit, %opts)
+
+Creates a new Genesis::Env object, which will go through provisioning.
+This wraps a call to Genesis::Env->create().
 
 =cut

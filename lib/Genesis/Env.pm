@@ -28,7 +28,7 @@ sub new {
 
 	$opts{__tmp} = workdir;
 	my $self = bless(\%opts, $class);
-	$self->{prefix} ||= $self->default_prefix;
+	$self->{prefix} ||= $self->_default_prefix;
 
 	return $self;
 }
@@ -36,12 +36,12 @@ sub new {
 sub load {
 	my $self = new(@_);
 
-	if (!-f $self->{top}->path("$self->{file}")) {
+	if (!-f $self->path("$self->{file}")) {
 		die "Environment file $self->{file} does not exist.\n";
 	}
 
 	# determine our vault prefix
-	$self->{prefix} = $self->lookup('params.vault', $self->default_prefix);
+	$self->{prefix} = $self->lookup('params.vault', $self->_default_prefix);
 
 	# reconstitute our kit via top
 	$self->{kit} = $self->{top}->find_kit(
@@ -62,15 +62,15 @@ sub create {
 	}
 
 	# environment must not already exist...
-	if (-f $self->{top}->path("$self->{file}")) {
+	if (-f $self->path("$self->{file}")) {
 		die "Environment file $self->{file} already exists.\n";
 	}
 
 	## initialize the environment
 	if ($self->{kit}->has_hook('new')) {
-		$self->{kit}->run_hook('new', root  => $self->{top}->path,  # where does the yaml go?
-		                              env   => $self->{name},       # what is it called?
-		                              vault => $self->{prefix});    # where do the secrets go?
+		$self->{kit}->run_hook('new', root  => $self->path,      # where does the yaml go?
+		                              env   => $self->{name},    # what is it called?
+		                              vault => $self->{prefix}); # where do the secrets go?
 
 	} else {
 		Genesis::Legacy::new_environment($self);
@@ -92,7 +92,7 @@ sub path {
 	$self->{top}->path(@rest);
 }
 
-sub default_prefix {
+sub _default_prefix {
 	my ($self) = @_;
 	my $p = $self->{name};         # start with env name
 	$p =~ s|-|/|g;                 # swap hyphens for slashes
@@ -172,7 +172,7 @@ sub actual_environment_files {
 
 	# only return the constituent YAML files
 	# that actually exist on the filesystem.
-	return grep { -f $self->{top}->path($_) }
+	return grep { -f $self->path($_) }
 		$self->potential_environment_files;
 }
 
@@ -187,22 +187,22 @@ sub _lookup {
 }
 sub lookup {
 	my ($self, $key, $default) = @_;
-	return $self->_lookup($self->params, $key, $default);
+	return _lookup($self->params, $key, $default);
 }
 
 sub manifest_lookup {
 	my ($self, $key, $default, %opts) = @_;
 	my ($manifest, undef) = $self->raw_manifest(%opts);
-	return $self->_lookup($manifest, $key, $default);
+	return _lookup($manifest, $key, $default);
 }
 
 sub defines {
 	my ($self, $key) = @_;
-	my $params = $self->params();
+	my $what = $self->params();
 
 	for (split /\./, $key) {
-		return 0 unless exists $params->{$_};
-		$params = $params->{$_};
+		return 0 unless exists $what->{$_};
+		$what = $what->{$_};
 	}
 	return 1;
 }
@@ -213,7 +213,7 @@ sub params {
 		my $out = Genesis::Run::get(
 			{ onfailure => "Unable to merge $self->{name} environment files" },
 			'spruce merge --skip-eval "$@" | spruce json',
-			map { $self->{top}->path($_) } $self->actual_environment_files());
+			map { $self->path($_) } $self->actual_environment_files());
 		$self->{__params} = JSON::PP->new->allow_nonref->decode($out);
 	}
 	return $self->{__params};
@@ -222,7 +222,7 @@ sub params {
 sub raw_manifest {
 	my ($self, %opts) = @_;
 	my $which = $opts{redact} ? '__redacted' : '__unredacted';
-	my $path = "$self->{__tmp}/$which.yml"
+	my $path = "$self->{__tmp}/$which.yml";
 
 	if (!$self->{$which}) {
 		local $ENV{REDACT} = $opts{redact} ? 'yes' : ''; # for spruce
@@ -230,8 +230,8 @@ sub raw_manifest {
 			{ onfailure => "Unable to merge $self->{name} manifest" },
 			'spruce', 'merge', $self->mergeable_yaml_files($opts{'cloud-config'}));
 
-		mkfile_or_fail($path, 0400, $out});
-		$self->{$which} = Load($out});
+		mkfile_or_fail($path, 0400, $out);
+		$self->{$which} = Load($out);
 	}
 	return $self->{$which}, $path;
 }
@@ -278,7 +278,7 @@ sub write_manifest {
 
 sub mergeable_yaml_files {
 	my ($self, $cc) = @_;
-	my $prefix = $self->default_prefix;
+	my $prefix = $self->_default_prefix;
 	my $type   = $self->{top}->type;
 
 	mkfile_or_fail("$self->{__tmp}/init.yml", 0644, <<EOF);
@@ -424,7 +424,7 @@ sub deploy {
 	return if !$ok;
 
 	# deployment succeeded; update the cache
-	$self->write_manifest($self->{top}->path(".genesis/manifests/$self->{name}.yml"), redact => 1);
+	$self->write_manifest($self->path(".genesis/manifests/$self->{name}.yml"), redact => 1);
 
 	# track exodus data in the vault
 	my $exodus = $self->exodus;
@@ -652,6 +652,30 @@ Sequential hyphens (C<-->) are expressly prohibited
 
 =head1 METHODS
 
+=head2 name()
+
+Retrieves the bare environment name (without the file suffix).
+
+=head2 file()
+
+Retrieves the file name of the final environment file.  This is just the
+name with a C<.yml> suffix attached.
+
+=head2 prefix()
+
+Retrieve the Vault prefix that this environment should store its secrets
+under, based off of either its name (by default) or its C<params.vault>
+parameter.
+
+=head2 kit()
+
+Retrieve the Genesis::Kit object for this environment.
+
+=head2 path([$relative])
+
+Returns the absolute path to the root directory, with C<$relative> appended
+if it is passed.
+
 =head2 relate($them, [$cachedir, [$topdir])
 
 Relates an environment to another environment, and returns the set of
@@ -804,5 +828,21 @@ and lists (arrayrefs) by not specifying a leaf node:
 
 This can be preferable to calling C<lookup> multiple times, and is currently
 the only way to pull data out of a list.
+
+=head2 features()
+
+Returns a list (not an arrayref) of the features that this environment has
+specified in its C<kit.features> parameter.
+
+=head2 has_feature($x)
+
+Returns true if this environment has activated the feature C<$x> by way of
+C<kit.features>.
+
+=head2 needs_bosh_create_env()
+
+Returns true if this environment (based on its activated features) needs to
+be deployed via a C<bosh create-env> run, instead of the more normal C<bosh
+deploy>.
 
 =cut
