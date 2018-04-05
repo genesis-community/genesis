@@ -70,14 +70,6 @@ sub same($$) {
 	return 1;
 }
 
-sub online {
-	return !envset('OFFLINE');
-}
-
-sub vaulted {
-	return !!$ENV{GENESIS_TARGET_VAULT};
-}
-
 sub controlling_terminal {
 	return -t STDOUT;
 }
@@ -185,150 +177,6 @@ sub vault_slug {
 	return $name;
 }
 
-sub validate_features  { ## TODO: removed to G::Kit
-	my ($kit, $version, $meta, @features) = @_;
-	my ($k, $v) = ($kit, $version);
-	$k ||= "dev";
-	$v = "latest" unless defined $v;
-	my $label = defined($meta->{subkits}) ? "subkit" : "feature";
-	for my $sk (@features) {
-		die "You specified a feature without a name\n" unless $sk;
-		die "No subkit '$sk' found in kit $k/$v.\n"
-			if $label eq "subkit" && ! -d  kit_file($kit, $version, "subkits/$sk", 0);
-	}
-
-	my %requested_features = map { $_ => 1 } @features;
-	for my $sk (@{$meta->{"${label}s"}}) {
-		if ($sk->{choices}) {
-			my $matches = 0;
-			my ($min_matches,$max_matches) = (1,1);
-			if (defined $sk->{pick}) {
-				if ($sk->{pick} =~ /^(?:(\d+)|(\d+)?-(\d+)?)$/) {
-					($min_matches,$max_matches) = (defined $1) ? ($1,$1) : ($2, $3);
-				} else {
-					$! = 2; die "There is a problem with kit $kit/$version: $sk->{type} pick invalid.  Please contact the kit author for a fix";
-				}
-			}
-			my @choices;
-			for my $choice (@{$sk->{choices}}) {
-				push @choices, $choice->{$label} if defined $choice && defined $choice->{$label};
-				if (! defined $choice->{$label}){
-					$min_matches = 0;
-				} elsif ($requested_features{$choice->{$label}}) {
-					$matches++;
-				}
-			}
-			my $choices = join(", ", map { "'$_'" } @choices);
-			if ($max_matches && $matches > $max_matches) {
-				die "You selected too many ${label}s for your $sk->{type}. Should be only one of $choices\n";
-			}
-			if ($min_matches && $matches < $min_matches) {
-				die "You must select a $label to provide your $sk->{type}. Should be one of $choices\n";
-			}
-		}
-	}
-}
-
-sub run_feature_hook {
-	my ($kit, $version, @features) = @_;
-	my $hook_dir = kit_file($kit, $version, "hooks", 0); # grab subkit hook + any helpers
-	my $hook = (grep { -f $_ } ("$hook_dir/feature","$hook_dir/subkit"))[0];
-	return @features unless $hook;
-
-	$kit ||= "dev";
-	$version = "latest" unless defined $version;
-	chmod(0755,$hook) unless -x $hook;
-
-	my @out = Genesis::Run::getlines(
-		{onfailure => "Error running $hook for $kit/$version. Contact your kit author for a bugfix."},
-		$hook, @features
-	);
-
-	return grep {$_ ne ""} map { $_ =~ s/^\s+|\s+$//g; $_ } @out;
-}
-
-sub run_param_hook {
-	my ($kit, $version, $env_name, $vault_prefix, $params, @features) = @_;
-	my $hook_dir = kit_file($kit, $version, "hooks", 0); # grab params hook + any helpers
-	my $hook = "$hook_dir/params";
-	return $params unless -f $hook;
-
-
-	$kit ||= "dev";
-	$version = "latest" unless defined $version;
-	chmod(0755,$hook) unless -x $hook;
-
-	my $dir = workdir;
-	DumpJSON "$dir/in", $params;
-	my $rc = run(
-		{interactive => 1, env => {
-			GENESIS_ENVIRONMENT_NAME => $env_name,
-			GENESIS_VAULT_PREFIX => $vault_prefix }},
-		$hook, "$dir/in", "$dir/out", @features
-	);
-	die "\nNew environment creation cancelled.\n" if $rc == 130;
-	die "\nError running params hook for $kit/$version. Contact your kit author for a bugfix.\n" if $rc;
-
-	# FIXME: get a better error message when json fails to load
-	open my $fh, "<", "$dir/out";
-	my @json = <$fh>;
-	close $fh;
-	return decode_json(join("\n",@json));
-}
-
-sub kit_yaml_files {
-	my ($env) = @_;
-	my @files;
-
-	my ($kit,$version) = kit_name_and_version_for($env);
-	$kit ||= "dev";
-	die "No kit/version detected in $env.\n" unless $kit && ($kit eq 'dev' || $version);
-
-	my @features = @{get_key($env, 'kit.features', get_key($env, 'kit.subkits',[]))};
-	my $meta = read_kit_metadata($kit, $version);
-	validate_features($kit, $version, $meta, @features) unless -f kit_file($kit,$version,"hooks/blueprint",0);
-
-	my $dir = 'dev';
-	if ($kit && $version) {
-		$dir = get_kit($kit,$version);
-	}
-	return kit_yaml_files_in($kit,$version,$env, $dir, @features);
-}
-
-sub kit_yaml_files_in {
-	my ($kit,$version,$env, $dir, @features) = @_;
-	$kit     ||= "dev";
-	$version ||= "";
-
-	my @files;
-	# use hooks/blueprint script if present
-	my $blueprint_script_path = "$dir/hooks/blueprint";
-	if (-f $blueprint_script_path) {
-		-x $blueprint_script_path || chmod_or_fail 0755,$blueprint_script_path;
-		my $helper = blueprint_script_helper($kit,$version,$env,@features);
-		pushd($dir);
-		my $result = Genesis::Run::get(
-			{onfailure => "Could not execute $kit/$version hooks/blueprint script successfully"},
-			'source "$1"; hooks/blueprint', $helper
-		);
-		@files = map {Cwd::abs_path($_) || $_ } split /\s+/, $result;
-		popd;
-		my @missing_files = grep {! -e $_} @files;
-		if (@missing_files) {
-			error "%s",
-				"#R{ERROR:} Missing $kit/$version files required to satisfy selected features in #C{$env}:\n  - ".
-				join("\n  - ", @missing_files).
-				"\n\nPlease contact kit author to get a fix.\n";
-			exit 2
-		}
-	} else {
-		my $features_dir = (-d "$dir/features") ? 'features' : 'subkits';
-		@files = glob "$dir/base/*.yml";
-		push @files, map { glob "$dir/$features_dir/$_/*.yml" } @features;
-	}
-	return @files;
-}
-
 sub generate_blueprint_script {
 	my (@features) = @_;
 	return clean_heredoc(<<"	|EOF");
@@ -358,81 +206,6 @@ sub generate_blueprint_script {
 	|done
     |echo \${manifests[@]}
 	|EOF
-}
-
-sub blueprint_script_helper {
-	# Assumes it will be executed in the base of the kit directory
-	# by the kit_yaml_files_in command.
-	my ($kit,$version,$env,@features) = @_;
-	$kit     ||= "dev";
-	$version ||= "";
-
-	my $env_file = get_env_file($env);
-	my $helper_dir = workdir('helper');
-	my $out = clean_heredoc(<<"	|EOF");
-	|export GENESIS_KIT_NAME="$kit";
-	|export GENESIS_KIT_VERSION="$version";
-	|export GENESIS_ENV_FILE="$env_file";
-	|export GENESIS_REQUESTED_FEATURES="${\join(' ', @features)}"
-	|
-	|want_feature() {
-	|	local __want=\${1:?want_feature() -- must specify a feature}
-	|	local __feature
-	|	for __feature in \$GENESIS_REQUESTED_FEATURES; do
-	|		[[ "\$__want" == "\$__feature" ]] && return 0
-	|	done
-	|	return 1
-	|}
-	|export -f want_feature
-	|
-	|invalid_features() {
-	|	local __found
-	|	local __valid
-	|	local __have
-	|	declare -a __invalid
-	|	for have in \$GENESIS_REQUESTED_FEATURES; do
-	|		__found='';
-	|		for __valid in "\$@"; do
-	|			[[ "\$__have" == "\$__valid" ]] && __found=1 && break
-	|		done
-	|		[[ -n \$__found ]] || __invalid+=(\$__have)
-	|	done
-	|	echo "\${__invalid[@]}"
-	|	return 0
-	|}
-	|export -f invalid_features
-	|
-	|valid_features() {
-	|	local __have
-	|	local __found
-	|	local __valid
-	|	for __have in \$GENESIS_REQUESTED_FEATURES; do
-	|		__found=''
-	|		for __valid in "\$@"; do
-	|			[[ "\${__have}" = "\${__valid}" ]] && __found=1 && break
-	|		done
-	|		[[ -n \$__found ]] || return 1
-	|	done
-	|	return 0
-	|}
-	|export -f valid_features
-	|
-	|validate_features() {
-	|	local __bad
-	|	if ! valid_features "\$@"; then
-	|		echo >&2 "\$GENESIS_KIT_NAME/\$GENESIS_KIT_VERSION does not understand the following feature flags:"
-	|		for __bad in \$(invalid_features "\$@"); do
-	|			echo >&2 " - \$__bad"
-	|		done
-	|		[[ -f "feature_usage.txt" ]] && echo >&2 "" && cat "feature_usage.txt"
-	|		exit 1
-	|	fi
-	|}
-	|export -f validate_features
-	|
-	|EOF
-
-	return mkfile_or_fail("$helper_dir/blueprint_helper",$out);
 }
 
 # takes a list of tokens, in order, and generates
@@ -2649,90 +2422,6 @@ sub download_kit_tarball
 	debug "downloaded kit #M{$name}/#C{$version}\n";
 }
 
-sub validate_kit_files { # DEPRECATED
-	my ($dir,$is_author) = @_;
-	my ($metadata, @errors, @warnings);
-	if (-d $dir) {
-		for (qw(hooks)) {
-			push @warnings, "$dir/$_ directory does not exist" unless -d "$dir/$_";
-		}
-		for (qw(README.md)) {
-			push @errors, "$dir/$_ does not exist" unless -f "$dir/$_";
-		}
-		if (-f "$dir/kit.yml") {
-			eval {
-				$metadata = LoadFile("$dir/kit.yml") if -f "$dir/kit.yml";
-			};
-			push @errors, "$dir/kit.yml could not be read: $@" if $@;
-		} else {
-			push @errors, "$dir/kit.yml does not exist";
-		}
-
-		if (-d "$dir/subkits/") {
-			# Once the docs/AUTHORING-KITS.md has been updated, we want to educate
-			# kit authors that the preferred way is to use features instead of
-			# subkits, and that subkits will probably be deprecated in 3.0
-			#push @warnings, "Enhancement: using 'subkits' subdirectory structure has been  -- use 'features' instead."
-			#	if $is_author;
-			for (glob "$dir/subkits/*") {
-				push @errors, "$_/params.yml does not exist" unless -f "$_/params.yml";
-			}
-		}
-	} else {
-		push @errors, "$dir does not exist";
-	}
-
-	die("$dir does not look like a valid kit directory:\n".
-		"  * ".join("\n  * ", @errors).
-		"\n\nCannot continue.\n")
-		if @errors;
-	warn("Warning: $dir has abnormal contents (non-fatal):\n".
-		"  * ".join("\n  * ", @warnings).
-		"\n\n")
-		if @warnings;
-
-	return $metadata;
-}
-
-# read the metadata for the given kit (and version)
-# if no kit/version is given, assume 'dev'
-sub read_kit_metadata {
-	my ($kit, $version) = @_;
-	my $metadata = LoadFile(kit_file($kit, $version, "kit.yml", 1));
-	return $metadata;
-}
-
-sub latest_kit_name_and_version {
-	# use dev/, if we have it
-	return (undef, undef) if -d "dev";
-
-	# use latest available:
-	my ($kit, @versions);
-	for (glob(".genesis/kits/*.tar.gz")) {
-		next unless m{^\.genesis/kits/(.*?)-(\d+(\.\d+(\.\d+([.-]rc[.-]?\d+)?)?)?).tar.gz$};
-		my ($n, $v) = ($1, $2);
-		if ($kit && $kit ne $n) {
-			die "Found multiple different kits!\n";
-		}
-		$kit = $n;
-		push @versions, [$v, semver($kit, $v)];
-	}
-	@versions > 0
-		or die "No kits have been downloaded for use in this set of deployment environments.\nPlease download a kit via `genesis download kit-name[/version]`\n";
-	my @sorted = reverse sort { $a->[1] <=> $b->[1] } @versions;
-	return ($kit, $sorted[0][0]);
-}
-
-sub kit_name_and_version_for {
-	my ($env) = @_;
-	my $name = get_key($env, 'kit.name');
-	my $vers = get_key($env, 'kit.version');
-	return (undef, undef) if $name && $name eq 'dev';
-	return ($name, $vers) if $name && $vers;
-	return latest_kit_name_and_version();
-}
-
-
 sub target_vault {
 	my ($target) = @_;
 	$target ||= '-i';  # Default to interactive mode
@@ -2747,43 +2436,6 @@ sub target_vault {
 		'safe target 2>&1 | grep "$1" | sed -e "$2"',
 		'.*targeting .* at.*', 's/.*targeting \([^ ]*\) at.*/\1/'
 	);
-}
-
-# build a columnar display of tabular data,
-# tablify($headers, [$row1,$row2,...])
-sub tablify {
-	my ($headers_ref, $rows_ref) = @_;
-	my @headers = @{$headers_ref};
-	my @rows    = @{$rows_ref};
-	my @widths  = map { length $_ } @headers;
-
-	for my $row (@rows) {
-		next unless $row;
-		for (my $i = 0; $i < @$row; $i++) {
-			my $l = length($row->[$i] || '');
-			$widths[$i] = $l unless defined $widths[$i] and $widths[$i] > $l;
-		}
-	}
-	@widths = map { $_ + 4 } @widths;
-
-	for (my $i = 0; $i < @headers; $i++) {
-		printf("%-*s", $widths[$i], $headers[$i]);
-	}
-	printf("\n");
-
-	for (my $i = 0; $i < @headers; $i++) {
-		printf("%-*s", $widths[$i], ("=" x length($headers[$i])));
-	}
-	printf("\n");
-
-	for my $row (@rows) {
-		if ($row) {
-			for (my $i = 0; $i < @$row; $i++) {
-				printf("%-*s", $widths[$i], $row->[$i]);
-			}
-		}
-		printf("\n");
-	}
 }
 
 # bosh_target_for $env
@@ -3153,7 +2805,7 @@ for shared YAML files along the pipelines. To aid in CI deploys, the
 
 `.genesis/kits` contains copies of the kits that have been used in
 this deployment. Once a kit is no longer used in any environment,
-it can be safely removed (`genesis summary`).
+it can be safely removed.
 
 `.genesis/config` is used internally by `genesis` to understand
 what is being deployed, and how.
@@ -4081,18 +3733,12 @@ sub {
 		name => $name,
 		top  => $top,
 	);
-	#$name =~ s/\.yml$//;
-	#die "No environment file named $name exists.\n" unless -f $name.".yml";
 	#my $prefix = get_key($name, 'params.vault');
 	#unless ($prefix) {
 #		$prefix = vault_slug($name)."/".deployment_suffix;
 #	}
-#	my $deployment = $name . "-" . deployment_suffix;
 
 	target_vault($options{vault});
-
-#	my ($kit, $version) = kit_name_and_version_for($name);
-#	my $meta = read_kit_metadata($kit, $version);
 
 	if ($action eq "check") {
 		$env->check_secrets();
@@ -4476,12 +4122,6 @@ sub {
 		}
 	} else {
 		unless ($options{'cloud-config'}) {
-			if (!online) {
-				error "\nYou requested #B{offline} mode, but did not provide a #C{--cloud-config} to use.\n" .
-					  "In offline mode, Genesis is not allowed to talk to the BOSH director,\n" .
-					  "so you must provide a cloud config explicitly.\n";
-				exit 1;
-			}
 			$options{'cloud-config'} = workdir . "/cloud.yml";
 			bosh_download_cloud_config(bosh_target_for($env), $options{'cloud-config'});
 		}
@@ -4655,51 +4295,6 @@ sub {
 		download_kit_tarball($name, $version)
 			or exit 1;
 	}
-	exit 0;
-});
-# }}}
-# genesis summary - Print a summary of each environment. {{{
-
-command("summary", <<EOF,
-genesis v$VERSION
-USAGE genesis summary
-
-OPTIONS
-$GLOBAL_USAGE
-EOF
-sub {
-	my %options;
-	options(\@_, \%options, qw/
-	/);
-	check_prereqs;
-
-	my @rows;
-	my $stem = undef;
-	for my $env (standalone_environment_yaml_files(glob("*.yml"))) {
-		$env =~ s/\.yml$//;
-		my $kit = get_key($env, "kit.name");
-		my $ver = get_key($env, "kit.version");
-
-		# FIXME: look at last  time i deployed the manifest instead of this cache file
-		# FIXME: show what is out of date, if anything
-		my $last = "never";
-		if (-f ".genesis/cached/$env/last") {
-			my $ts = get_file(".genesis/cached/$env/last") + 0;
-			if ($ts) { # in case `last' is corrupt (i.e. not a timestamp)
-				$last = strftime(envdefault("GENESIS_TIME_FORMAT", "%Y-%m-%d %H:%M:%S%P (@@)"), localtime($ts));
-
-				$last =~ s/@@/ago($ts)/ge;
-			}
-		}
-
-		(my $tmp = $env) =~ s/-[^-]*$//;
-		push @rows, undef if defined $stem && $stem ne $tmp;
-		$stem = $tmp;
-
-		push @rows, [$env, "$kit/$ver", $last];
-
-	}
-	tablify(['Environment', 'Kit/Version', 'Last Deployed'], \@rows);
 	exit 0;
 });
 # }}}
@@ -5180,15 +4775,6 @@ sub {
 		join(", ", (sort keys %$prompt_handlers))
 	) unless exists($prompt_handlers->{$type});
 
-	if ($use_vault && ! vaulted) {
-		explain clean_heredoc(<<"		|EOF");
-		|
-		|#Y{WARNING:} No vault selected - you will have to later manually add the answer to
-		|"#C{$prompt}"
-		|to #G{secret/$path} when the Vault is available
-		|EOF
-		return 0
-	}
 	my $result = $prompt_handlers->{$type}->($prompt,%options);
 	mkfile_or_fail $path, $result unless ($use_vault);
 	exit 0

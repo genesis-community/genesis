@@ -151,13 +151,7 @@ sub actual_environment_files {
 #       it does seem to be working for all callers.
 sub lookup {
 	my ($self, $key, $default) = @_;
-	my $params = $self->params();
-
-	for (split /\./, $key) {
-		return $default if !exists $params->{$_};
-		$params = $params->{$_};
-	}
-	return $params;
+	return lookup_in_yaml($self->params, $key, $default);
 }
 
 sub defines {

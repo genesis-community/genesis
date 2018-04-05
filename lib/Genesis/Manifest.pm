@@ -81,15 +81,14 @@ sub write {
 
 # Picks a subpath from the manifest, returning a perl "structure"
 sub pick {
-	my ($self, $subpath, %opts) = @_;
-	my $cmd = 'spruce json "$1" | jq -M "$2"';
-	my $filter = main::jq_extractor($subpath);
-	my ($out,$rc) = run(
-		{ onfailure => "Could not retrieve '$subpath' from manifest" },
-		$cmd,$self->_file(%opts),$filter
-	);
-	$out = JSON::PP->new->allow_nonref->decode($out);
-	return $out;
+	my ($self, $key, %opts) = @_;
+
+	open my $fh, "<", $self->_file(%opts);
+		or die "Unable to open manifest for reading: $!\n";
+	my $data = JSON::PP->new->allow_nonref->decode(do { local $/; <$fh> });
+	close $fh;
+
+	return lookup_in_yaml($data, $key);
 }
 
 sub metadata {

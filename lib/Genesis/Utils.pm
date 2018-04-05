@@ -19,6 +19,7 @@ our @EXPORT = qw/
 
 	ordify
 
+	lookup_in_yaml
 /;
 
 use File::Temp qw/tempdir/;
@@ -174,4 +175,15 @@ sub is_valid_uri {
 	return unless $components{authority} || ($components{scheme} eq 'file' && $components{path});
 	return $components{uri};
 }
+
+sub lookup_in_yaml {
+	my ($what, $key, $default) = @_;
+
+	for (split /\./, $key) {
+		return $default if !exists $what->{$_};
+		$what = $what->{$_};
+	}
+	return $what;
+}
+
 1;
