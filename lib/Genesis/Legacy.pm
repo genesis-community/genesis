@@ -2,6 +2,7 @@ package Genesis::Legacy;
 use strict;
 use warnings;
 
+use Genesis::IO;
 use Genesis::Utils;
 
 sub validate_features {
@@ -66,8 +67,8 @@ sub process_params {
 	};
 	for my $feature ("base", @{$opts{features}}) {
 		next unless defined $opts{params}{$feature} && @{$opts{params}{$feature}};
-		my $kit_params_file = $feature eq "base" ? "base/params.yml" : "subkits/$feature/params.yml";
-		my $defaults = LoadFile(kit_file($opts{kit}, $opts{version}, $kit_params_file, 1));
+		my $defaults = LoadFile($feature eq "base" ? "base/params.yml"
+		                                           : "subkits/$feature/params.yml");
 		for my $q (@{$opts{params}{$feature}}) {
 			my $answer;
 			my $vault_path;

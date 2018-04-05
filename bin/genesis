@@ -275,22 +275,6 @@ sub unique_suffix {
 	return join('-', @pre), @b;
 }
 
-our %KIT_CACHE_DIR;
-sub get_kit {
-	my ($kit,$version) = @_;
-	unless (exists $KIT_CACHE_DIR{"$kit/$version"}) {
-		my $dir = workdir('kit');
-		die "Kit $kit/$version not found!\n" unless -e ".genesis/kits/$kit-$version.tar.gz";
-		Genesis::Run::do_or_die(
-			"Could not read kit file",
-			'tar -xz -C "$1" --strip-components 1 -f ".genesis/kits/${2}-${3}.tar.gz"',
-			$dir, $kit, $version
-		);
-		$KIT_CACHE_DIR{"$kit/$version"} = $dir;
-	}
-	return $KIT_CACHE_DIR{"$kit/$version"};
-}
-
 sub mergeable_yaml_files {
 	my ($file) = @_;
 	$file =~ s/\.yml$//;
@@ -2372,33 +2356,6 @@ sub kit_release_url { # DEPRECATED
 	die "$name/$version tarball asset not found on Github.  Oops.\n";
 }
 
-sub kit_file { # DEPRECATED
-	my ($kit, $version, $relpath, $required) = @_;
-
-	if (!$kit || $kit eq "dev") {
-		-d "dev/"                       or die "dev/ kit directory not found. Please contact your kit author for a fix.\n";
-		!$required || -f "dev/$relpath" or die "dev/$relpath not found. Please contact your kit author for a fix.\n";
-		return "dev/$relpath";
-	}
-	-f ".genesis/kits/$kit-$version.tar.gz"
-		or die "Kit $kit/$version not found in .genesis/kits!\n";
-
-	my $dir;
-	if (exists $KIT_CACHE_DIR{"$kit/$version"}) {
-		$dir = $KIT_CACHE_DIR{"$kit/$version"};
-	} else {
-		$dir = workdir('kit');
-		run(
-			{stderr => '/dev/null'},
-			'tar -C "$1" -xz --strip-components 1 -f ".genesis/kits/${2}-${3}.tar.gz" "${2}-${3}/${4}"',
-			$dir, $kit, $version, $relpath
-		);
-	}
-	!$required || -f "$dir/$relpath"
-		or die "$relpath not found in $kit-$version kit. Please contact your kit author for a fix.\n";
-	return "$dir/$relpath";
-}
-
 sub download_kit_tarball
 {
 	my ($name, $want) = @_;
@@ -2629,7 +2586,7 @@ sub {
 	chmod_or_fail 0755, ".genesis/bin/genesis";
 });
 # }}}
-#  genesis init - initialize a new Genesis repository {{{
+# genesis init - initialize a new Genesis repository {{{
 
 command("init", <<EOF,
 genesis v$VERSION
@@ -4665,7 +4622,6 @@ sub {
 	exit 0;
 });
 # }}}
-
 # genesis ui-describe - Provides colored explanatory test {{{
 command("ui-describe", <<EOF,
 genesis v$VERSION
@@ -4699,7 +4655,6 @@ sub {
 	explain $_ for (@_);
 });
 # }}}
-
 # genesis ui-prompt-for - Provides prompts in support of hooks/new script {{{
 command("ui-prompt-for", <<EOF,
 genesis v$VERSION
