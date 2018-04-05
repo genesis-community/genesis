@@ -37,6 +37,13 @@ my $kit = kit(compiled => '0.0.1');
 # -rw-r--r--  0 jhunt  staff      15 Dec 18  2016 compiled-0.0.1/base/params.yml
 # -rw-r--r--  0 jhunt  staff      19 Dec 18  2016 compiled-0.0.1/base/stuff.yml
 
+cmp_deeply($kit->metadata, {
+		name => 'Compiled Kit Test',
+		vault => ignore,
+	}, "a kit should be able to parse its metadata");
+cmp_deeply($kit->metadata, $kit->metadata,
+	"subsequent calls to kit->metadata should return the same metadata");
+
 is($kit->id, "compiled/0.0.1", "compiled kits should report their ID properly");
 is($kit->name, "compiled", "compiled kits should be know their own name");
 is($kit->version, "0.0.1", "compiled kits should be know their own version");

@@ -121,8 +121,8 @@ sub run_hook {
 		@args = ();
 
 	} elsif ($hook eq 'subkit') {
-		# hooks/subkits
-		@args = @{$opts{features} || []};
+		# hooks/subkits subkit1 [subkit2 ...]
+		@args = $opts{env}->features;
 
 	} else {
 		die "Unrecognized hook '$hook'\n";
@@ -156,12 +156,12 @@ sub run_hook {
 		return @manifests;
 	}
 
-	if ($hook eq 'subkits') {
+	if ($hook eq 'subkit') {
 		if ($rc != 0) {
-			die "Could not determine what auxiliary kits (if any) needed to be activated\n";
+			die "Could not determine which auxiliary subkits (if any) needed to be activated\n";
 		}
 		$out =~ s/^\s+//;
-		return split(/ /, $out); # FIXME broken
+		return split(/\s+/, $out);
 	}
 
 	if ($rc != 0) {

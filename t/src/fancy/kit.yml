@@ -1,8 +1,8 @@
 ---
-name:     fancy
-author:   James Hunt <jhunt@starkandwayne.com>
-homepage: https://github.com/genesis-community/fancy-genesis-kit
-github:   https://github.com/genesis-community/fancy-genesis-kit
+name:   fancy
+author: James Hunt <jhunt@starkandwayne.com>
+docs:   https://github.com/genesis-community/fancy-genesis-kit
+code:   https://github.com/genesis-community/fancy-genesis-kit
 
 genesis_version_min: 2.6.0
 

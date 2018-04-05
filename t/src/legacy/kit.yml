@@ -1,0 +1,32 @@
+---
+name:   legacy
+author: James Hunt <jhunt@starkandwayne.com>
+docs:   https://github.com/genesis-community/legacy-genesis-kit
+code:   https://github.com/genesis-community/legacy-genesis-kit
+
+genesis_version_min: 2.6.0
+
+description: |
+  This kit exemplifies all that was right with Genesis 2.5.0
+  and below, and most of the things we've set out to change
+  in Genesis 2.6.0.  This is a backwards-compatibility test.
+
+subkits:
+  - subkit:  do-stuff
+    prompt:  Do stuff?
+    default: yes
+
+params:
+  base:
+    - param: static_ip
+      ask:   What is the static IP address of the thing?
+      description: The static IP address of the thing.
+
+  forced-subkit:
+    param:   mandatory_fun
+    ask:     What do you want to have?
+    default: fun
+    description: This subkit kit got activated via a subkits hook.
+
+credentials: {}
+certificates: {}

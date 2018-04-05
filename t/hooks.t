@@ -14,7 +14,18 @@ use Genesis::Kit::Dev;
 use Genesis::Top;
 
 my $tmp = workdir."/work";
-my ($top, $simple, $fancy, $us_west_1_prod, $snw_lab_dev);
+my $top; # Genesis::Top
+
+# test kits from t/src/*
+my $simple;
+my $fancy;
+my $legacy;
+
+# test environments, created on-the-fly
+my $us_west_1_prod;
+my $snw_lab_dev;
+my $stack_scale;
+
 sub again {
 	system("rm -rf $tmp; mkdir -p $tmp");
 	put_file "$tmp/.genesis/config", <<EOF;
@@ -25,6 +36,7 @@ EOF
 	$top    = Genesis::Top->new($tmp);
 	$simple = Genesis::Kit::Dev->new("t/src/simple");
 	$fancy  = Genesis::Kit::Dev->new("t/src/fancy");
+	$legacy = Genesis::Kit::Dev->new("t/src/legacy");
 
 	put_file "$tmp/dev/kit.yml", "--- {}\n";
 	put_file "$tmp/us-west-1-prod.yml", <<EOF;
@@ -48,7 +60,29 @@ kit:
     - kilo
 EOF
 	$snw_lab_dev = $top->load_env('snw-lab-dev');
+
+	put_file "$tmp/stack-scale.yml", <<EOF;
+---
+kit:
+  name:    dev
+  version: latest
+  subkits:
+    - do-thing
+EOF
+	$stack_scale = $top->load_env('stack-scale');
 }
+
+subtest 'invalid or nonexistent hooks' => sub {
+	again();
+
+	ok $fancy->has_hook('xyzzy');
+	throws_ok { $fancy->run_hook('xyzzy', env => $snw_lab_dev); }
+		qr/unrecognized/i;
+
+	ok !$simple->has_hook('info');
+	throws_ok { $simple->run_hook('info', env => $us_west_1_prod); }
+		qr/no 'info' hook script found/i;
+};
 
 subtest 'new hook' => sub {
 	again();
@@ -201,6 +235,12 @@ subtest 'info hook' => sub {
 EOF
 		"[fancy] info hook output should be correct");
 	ok $rc, "[fancy] running the 'info' hook should succeed";
+
+	{
+		local $ENV{HOOK_SHOULD_FAIL} = 'yes';
+		throws_ok { $fancy->run_hook('info', env => $snw_lab_dev) }
+			qr/could not run 'info' hook/i;
+	}
 };
 
 subtest 'LEGACY prereqs hook' => sub {
@@ -208,7 +248,24 @@ subtest 'LEGACY prereqs hook' => sub {
 };
 
 subtest 'LEGACY subkit hook' => sub {
-	ok 1;
+	again();
+
+	cmp_deeply([$legacy->run_hook('subkit', env => $stack_scale)], [qw[
+			do-thing
+			forced-subkit
+		]], "[legacy] the 'subkit' hook can force new subkits");
+
+	{
+		local $ENV{HOOK_SHOULD_FAIL} = 'yes';
+		throws_ok { $legacy->run_hook('subkit', env => $stack_scale); }
+			qr/could not determine which auxiliary subkits/i;
+	}
+
+	{
+		local $ENV{HOOK_NO_SUBKITS} = 'yes';
+		cmp_deeply([$legacy->run_hook('subkit', env => $stack_scale)], [],
+			"[legacy] the 'subkit' hook can remove all subkits");
+	}
 };
 
 done_testing;
