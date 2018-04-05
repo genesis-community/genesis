@@ -393,7 +393,6 @@ our $prompt_handlers = {
 
 # }}}
 
-
 sub check_bosh_version {
 	my ($min) = @_;
 	my $best = "0.0.0";
@@ -413,14 +412,6 @@ sub check_bosh_version {
 	} else {
 		return "BOSH (v2) CLI v${best} is installed, but Genesis requires #R{at least $min} - upgrade your BOSH CLI, via #B{https://github.com/cloudfoundry/bosh-cli/releases}";
 	}
-}
-
-sub bosh_upload_stemcell {
-	my ($name, $version, $sha1, $url) = @_;
-	Genesis::Run::interactive_bosh(
-		{onfailure => "Failed to upload stemcell $name/$version from $url"},
-		"-n", "upload-stemcell", "--name", $name, "--version", $version, "--sha1", $sha1, $url
-	);
 }
 
 sub write_stemcell_data {
@@ -1964,54 +1955,6 @@ sub {
 	popd;
 	commit_changes($ENV{WORKING_DIR}, $ENV{OUT_DIR}, $ENV{GIT_BRANCH}, $ENV{GIT_PRIVATE_KEY},
 		"deployed to $ENV{CURRENT_ENV}");
-});
-# }}}
-# genesis ci-stemcells - Upload stemcells to an environment via the CI/CD Pipeline {{{
-command("ci-stemcells", <<EOF,
-genesis v$VERSION
-USAGE genesis ci-stemcells
-
-OPTIONS
-$GLOBAL_USAGE
-EOF
-sub {
-	explain "[#G{genesis} ci-stemcells] v#G{%s}\n\n", $VERSION;
-
-	my %options;
-	options(\@_, \%options, qw/
-	/);
-	usage(1) if @_;
-	check_prereqs(no_repo_needed => 1);
-
-	# environment variables we should have
-	#   STEMCELLS - Path to the directory containing stemcells to upload
-	#   BOSH_ENVIRONMENT           - URL of the BOSH director to deploy on
-	#   BOSH_CA_CERT               - CA Certificate for the BOSH director
-	#   BOSH_CLIENT                - Username or client ID (UAA-auth) to authenticate with
-	#   BOSH_CLIENT_SECRET         - Password/Client-Secret to authenticate with
-	#
-	my @undefined = grep { !$ENV{$_} }
-		qw/STEMCELLS BOSH_ENVIRONMENT BOSH_CA_CERT BOSH_CLIENT BOSH_CLIENT_SECRET/;
-	if (@undefined) {
-		error "The following #R{required} environment variables have not been defined:";
-		error " - \$#Y{$_}" for @undefined;
-		error;
-		error;
-		error "Please check your CI Pipeline configuration.";
-		exit 1;
-	}
-
-	opendir(my $dh, $ENV{STEMCELLS})
-		or die "Could not open `$ENV{STEMCELLS}' directory to find stemcells.\n";
-	while (my $stemcell = readdir($dh)) {
-		if ($stemcell !~ /^\./ && -d "$ENV{STEMCELLS}/$stemcell") {
-			my $version = get_file "$ENV{STEMCELLS}/$stemcell/version";
-			my $sha1    = get_file "$ENV{STEMCELLS}/$stemcell/sha1";
-			my $url     = get_file "$ENV{STEMCELLS}/$stemcell/url";
-			bosh_upload_stemcell($stemcell, $version, $sha1, $url);
-		}
-	}
-	closedir $dh
 });
 # }}}
 # genesis ci-generate-cache - Generate cache for an environment via the CI/CD Pipeline {{{

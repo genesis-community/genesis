@@ -144,15 +144,6 @@ sub read {
 		}
 	}
 
-	# validate stemcells
-	if (! $p->{pipeline}{skip_upkeep}) {
-		if (! $p->{pipeline}{stemcells}) {
-			push @errors, "Neither `pipeline.skip_upkeep' nor `pipeline.stemcells' were configured. One or the other is required.";
-		} elsif (ref($p->{pipeline}{stemcells}) ne 'HASH') {
-			push @errors, "`pipeline.stemcells' must be a map.";
-		}
-	}
-
 	# validate locker
 	if ($p->{pipeline}{locker}) {
 		if (ref($p->{pipeline}{locker}) ne 'HASH') {
@@ -326,21 +317,6 @@ sub read {
 				for (keys %{$p->{pipeline}{boshes}{$env}}) {
 					push @errors, "Unrecognized `pipeline.boshes[$env].$_' key found."
 						unless m/^(stemcells|url|ca_cert|username|password|alias)$/;
-				}
-			}
-
-			if (! $p->{pipeline}{skip_upkeep}) {
-				unless (is_create_env($env)) {
-					if (! $p->{pipeline}{boshes}{$env}{stemcells}) {
-						push @errors, "No stemcells specified for `pipeline.boshes[$env]' and `pipeline.skip_upkeep' not enabled.";
-					} elsif (ref($p->{pipeline}{boshes}{$env}{stemcells}) ne 'ARRAY') {
-						push @errors, "`pipeline.boshes[$env].stemcells' is not an array";
-					} else {
-						for (@{$p->{pipeline}{boshes}{$env}{stemcells}}) {
-							push @errors, "`pipeline.boshes[$env].stemcells.$env' is not a stemcell alias listed in `pipeline.stemcells'"
-								unless $p->{pipeline}{stemcells}{$_};
-						}
-					}
 				}
 			}
 		}
@@ -607,12 +583,6 @@ sub as_concourse {
 	# Figure out what environments auto-trigger, and what don't
 	my %auto = map { $_ => 1 } @{$pipeline->{auto}};
 
-	# Determine what stemcells are being tracked
-	my @stemcells = ();
-	unless ($pipeline->{pipeline}{skip_upkeep}) {
-		@stemcells = map { { name => $pipeline->{pipeline}{stemcells}{$_}, alias => $_ } } keys %{$pipeline->{pipeline}{stemcells}}
-	}
-
 	# CONCOURSE: pipeline (+params) {{{
 	print $OUT <<'EOF';
 ---
@@ -703,13 +673,6 @@ resources:
       private_key: (( grab pipeline.git.private_key ))
       uri:         (( grab pipeline.git.uri ))
 EOF
-	for (@stemcells) {
-		print $OUT <<EOF;
-  - name: $_->{alias}-stemcell
-    type: bosh-io-stemcell
-    source: { name: $_->{name} }
-EOF
-	}
    # }}}
 	# CONCOURSE: env-specific resource configuration {{{
 	for my $env (sort @{$pipeline->{envs}}) {
@@ -828,25 +791,8 @@ EOF
 					$bosh_lock = inet_ntoa($addr) . ":" . $2;
 				}
 
-				# <alias>-stemcell-lock is used to not upload the same stemcell to the same bosh multiple
-				# times - not necessary for create-env
 				# <alias>-bosh-lock is used to prevent the parent bosh from upgrading while we deploy
 				# - not necessary for create-env
-				unless ($pipeline->{pipeline}{skip_upkeep}) {
-					print $OUT <<EOF;
-  - name: ${alias}-stemcell-lock
-    type: locker
-    $tag_yaml
-    source:
-      locker_uri: (( grab pipeline.locker.url ))
-      username: (( grab pipeline.locker.username ))
-      password: (( grab pipeline.locker.password ))
-      skip_ssl_validation: (( grab pipeline.locker.skip_ssl_validation ))
-      ca_cert: (( grab pipeline.locker.ca_cert ))
-      lock_name: ${bosh_lock}-stemcell-lock
-
-EOF
-				}
 				print $OUT <<EOF;
   - name: ${alias}-bosh-lock
     type: locker
@@ -1035,14 +981,7 @@ EOF
 		my $deployment_success_notification = _gen_notifications($pipeline,
 			"Concourse successfully deployed $env-$deployment_suffix", "success");
 
-		# 11) notifications for stemcell upload success
-		my $stemcell_success_notification = _gen_notifications($pipeline,
-			"New stemcells have been uploaded to the $env BOSH", "success");
-		# 12) notifications for stemcell upload failure
-		my $stemcell_failure_notification = _gen_notifications($pipeline,
-			"Failed uploading new stemcells to the $env BOSH", "failure");
-
-		# 13) directory to find the genesis binary in (use previous env cache if present, else local-changes
+		# 11) directory to find the genesis binary in (use previous env cache if present, else local-changes
 		my $genesis_bindir = $passed ? "$alias-cache" : "$alias-changes";
 
 		# }}}
@@ -1070,15 +1009,6 @@ EOF
 			print $OUT <<EOF;
       $notify_cache
 EOF
-			unless ($pipeline->{pipeline}{skip_upkeep}) {
-				for (@{$pipeline->{pipeline}{boshes}{$env}{stemcells}}) {
-					print $OUT <<EOF;
-      - get: $_-stemcell
-        trigger: true
-        params: { tarball: true }
-EOF
-				}
-			}
 			print $OUT <<EOF;
     - $changes_staged_notification
 EOF
@@ -1160,15 +1090,6 @@ EOF
           trigger: true
 EOF
 		}
-		unless ($pipeline->{pipeline}{skip_upkeep}) {
-			for (@{$pipeline->{pipeline}{boshes}{$env}{stemcells}}) {
-				print $OUT <<EOF;
-        - get: $_-stemcell
-          trigger: $trigger
-          params: { tarball: true }
-EOF
-			}
-		}
 		print $OUT <<EOF;
         # genesis itself handles the propagation of files from successful environment
         # to the next. anything triggering env-changes should be considered to have passed
@@ -1176,75 +1097,6 @@ EOF
         $changes_yaml
         $cache_yaml
 EOF
-		# Update stemcells unless we are create-env based or skip_upkeep requested {{{
-		unless (is_create_env($env) || $pipeline->{pipeline}{skip_upkeep}) {
-			if ($pipeline->{pipeline}{locker}{url}) {
-				print $OUT <<EOF;
-      - put: ${alias}-stemcell-lock
-        $tag_yaml
-        params:
-          lock_op: lock
-          key: ${alias}-${deployment_suffix}
-EOF
-			}
-			print $OUT <<EOF;
-      - task: upload-stemcells
-        $tag_yaml
-EOF
-			if ($pipeline->{pipeline}{locker}{url}) {
-				print $OUT <<EOF;
-        ensure:
-          put: ${alias}-stemcell-lock
-          $tag_yaml
-          params:
-            lock_op: unlock
-            key: ${alias}-${deployment_suffix}
-EOF
-			}
-			print $OUT <<EOF;
-        config:
-          inputs:
-            - name: $genesis_bindir
-EOF
-			for (@{$pipeline->{pipeline}{boshes}{$env}{stemcells}}) {
-				print $OUT <<EOF;
-            - name: $_-stemcell
-              path: stemcells/$pipeline->{pipeline}{stemcells}{$_}
-EOF
-			}
-			print $OUT <<EOF;
-          outputs:
-            - name: out
-          platform: linux
-          image_resource:
-            type: docker-image
-            source:
-              repository: starkandwayne/concourse
-          run:
-            path: .genesis/bin/genesis
-            args: [ ci-stemcells ]
-            dir: $genesis_bindir
-          params:
-            STEMCELLS:            ../stemcells
-            BOSH_ENVIRONMENT:     $pipeline->{pipeline}{boshes}{$env}{url}
-            BOSH_NON_INTERACTIVE: true
-            BOSH_CA_CERT: |
-EOF
-			for (split /\n/, $pipeline->{pipeline}{boshes}{$env}{ca_cert}) {
-				print $OUT <<EOF;
-              $_
-EOF
-			}
-			print $OUT <<EOF;
-            BOSH_CLIENT:        $pipeline->{pipeline}{boshes}{$env}{username}
-            BOSH_CLIENT_SECRET: $pipeline->{pipeline}{boshes}{$env}{password}
-
-EOF
-			print $OUT <<EOF if $pipeline->{pipeline}{debug};
-            DEBUG:              $pipeline->{pipeline}{debug}
-EOF
-		}
-		#   }}}
 		print $OUT <<EOF;
       - task: bosh-deploy
         $tag_yaml
