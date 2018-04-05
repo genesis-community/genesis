@@ -12,8 +12,6 @@ our @EXPORT = qw/
 
 	is_semver
 
-	clean_heredoc
-
 	parse_uri
 	is_valid_uri
 
@@ -97,7 +95,8 @@ sub explain(@) {
 }
 
 sub debug(@) {
-	return unless envset "GENESIS_DEBUG";
+	return unless envset "GENESIS_DEBUG"
+	           or envset "GENESIS_TRACE";
 	print STDERR "DEBUG> ";
 	my $colorize = $ENV{NOCOLOR};
 	$ENV{NOCOLOR} = "true" if (! -t STDERR);
@@ -107,7 +106,7 @@ sub debug(@) {
 }
 
 sub trace(@) {
-	return unless envset "TRACE";
+	return unless envset "GENESIS_TRACE";
 	print STDERR "TRACE> ";
 	print STDERR csprintf(@_);
 	print STDERR "\n";
@@ -120,8 +119,8 @@ sub error(@) {
 }
 
 sub bail(@) {
-	error(@_);
-	exit 1;
+	unshift @err, "%s" if $#err == 0;
+	$! = 1; die csprintf(@_)."\n";
 }
 
 my $WORKDIR;
@@ -132,12 +131,6 @@ sub workdir {
 
 sub is_semver {
 	return $_[0] =~ m/^(\d+)(?:\.(\d+)(?:\.(\d+)(?:[.-]rc[.-]?(\d+))?)?)?$/;
-}
-
-sub clean_heredoc {
-	my $heredoc = join("",map {s/^\s*\|//; $_} split(/^/, shift));
-	chomp $heredoc;
-	return $heredoc;
 }
 
 our %ord_suffix = (11 => 'th', 12 => 'th', 13 => 'th', 1 => 'st', 2 => 'nd', 3 => 'rd');
@@ -156,7 +149,7 @@ sub parse_uri {
 			(?<host>[a-zA-Z0-9.\-_~]+)?
 			(?::(?<port>\d+))?
 		)
-		(?<path>\/(?:[a-zA-Z0-9-._~]|[a-f0-9]|[!\$&'()*+,;=:@])+(?:\/(?:[a-zA-Z0-9-._~]|[a-f0-9]|[!\$&'()*+,;=:@])*)*|(?:\/(?:[a-zA-Z0-9-._~]|[a-f0-9]|[!\$&'()*+,;=:@])+)*)?
+		(?<path>(?:[a-zA-Z0-9-._~]|[a-f0-9]|[!\$&'()*+,;=:@])+(?:\/(?:[a-zA-Z0-9-._~]|[a-f0-9]|[!\$&'()*+,;=:@])*)*|(?:\/(?:[a-zA-Z0-9-._~]|[a-f0-9]|[!\$&'()*+,;=:@])+)*)?
 		(?:\?(?<query>(?:[a-zA-Z0-9-._~]|[a-f0-9]|[!\$&'()*+,;=:@]|%[A-Fa-f0-9]{2})+))?
 		(?:\#(?<fragment>(?:[a-zA-Z0-9-._~]|[a-f0-9]|[!\$&'()*+,;=:@])+))?
 	)$/gsx;
