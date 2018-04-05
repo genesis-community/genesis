@@ -6,83 +6,6 @@ our @EXPORT = qw/run curl/;
 use Genesis::Utils;
 use File::Basename qw/basename/;
 
-# This package provides a unified method of executing shell commands, and some
-# convenience methods to run them in common ways.
-#
-# You can operate this in three modes:
-#
-#   1) Pass the command as a string with all the arguments in it.
-#      eg: run("safe read auth/approle/role/$role_name/role-id | spruce json | jq -r .role_id | safe paste $role_p $role_k");
-#
-#   2) Pass the command as an array -- this only works if no pipes or redirects are involved.
-#      eg: run(qw(spruce merge --skip-eval), @files)
-#
-#   3) Pass the command as a template, and the template args as an array
-#      eg: run('safe read "$1" | spruce json | jq -r .role_id | safe paste "$2" "$3"',
-#                  "auth/approle/role/$role_name/role-id",
-#                  $role_p,
-#                  $role_k
-#          );
-#
-# The latter is recommended as it properly encapsulates/tokenizes the
-# arguments to prevent accidental expansion or splitting due to quoting
-# and spaces.  If using it, remember to quote all variable references.
-#
-# You can also pass a hash reference as the first argument to supply options to
-# change the behaviour of the execution.  The following options are supported:
-#
-#   interactive: boolean - If true, run the command interactively on a
-#                controlling terminal.  This uses the perl `system` command, so
-#                capturing output cannot be done.  Returns exit code.
-#
-#   passfail:    boolean - If true, returns true if exit code is 0, false
-#                otherwise.  Can work in conjunction with interactive.
-#
-#   onfailure:   string - Print the string on error and exit program.  If not
-#                running interactively, also prints the output received.
-#
-#   env:         hash - Sets the env variables specified as keys in the hash to
-#                the corresponding values before executing the command.
-#
-#   shell:       string - By default, will use /bin/bash, but if the command
-#                needs a different shell, specify it with this option.
-#
-#   stderr:      string - By default, stderr is redirected to stdout (&1), but
-#                you can use this option to redirect it to a file for later
-#                use.  If you want to capture stderr but not stdout, you can
-#                specify `{stderr => '&1 >/dev/null'`.  
-#                Cannot use with interactive mode.
-#
-# Finally, if you are not running in interactive or passfail mode, you can call
-# this in either scalar or list context.  If calling in list context, the output
-# and exit code are returned in a list, otherwise just the output.
-#
-# Scalar context:
-#   my $out = run('grep "$1" "$@"', $pattern, @files);
-#   my $rc = $? >> 8;
-#
-# List context:
-#   my ($out,$rc) = run('spruce json "$1" | jq -r "$2"', $_, $filter);
-#
-# -----------------------------------------------------------------------------
-# Convenience commands:
-#
-# interact - sets the mode to interactive and passfail, returns 1 on success,
-#            0 otherwise.
-#
-# bosh - sets the environment for bosh and injects the correct bosh executable
-#
-# interactive_bosh - same as bosh, but using interactive and passfail modes
-#
-# check - sets passfail mode, no output returned.
-#
-# do_or_die - first argument is printed along with any output received, then
-#             exits non-zero (dies) if remaining argument fails execution
-#
-# get - returns just output (chomped), regardless of context
-#
-# getlines - returns output as an array of lines
-#
 sub run {
 	my (@args) = @_;
 	my %opts = %{((ref($args[0]) eq 'HASH') ? shift @args: {})};
@@ -232,3 +155,128 @@ sub curl {
 }
 
 1;
+
+=head1 NAME
+
+Genesis::Run
+
+=head1 DESCRIPTION
+
+This package provides a unified method of executing shell commands, and some
+convenience methods to run them in common ways.  Only C<run> and C<curl> are
+exported by default, other functions need to be referenced by
+fully-qualified namespace (Genesis::Run::*)
+
+=head1 FUNCTIONS
+
+=head2 run([\%opts,] $command, @args)
+
+Run a command.  This is the Swiss Army knife of command execution, with lots
+of bells and whistles.
+
+You can operate this in three modes:
+
+    # Single string, embedded arguments
+    my ($out, $rc) = run("safe read a/b/c | spruce json");
+
+    # Pre-tokenized array of arguments
+    my ($out, $rc) = run('spruce', 'merge', '--skip-eval, @files);
+
+    # Complicated pipeline, pre-tokenized arguments
+    my ($out, $rc) = run('spruce merge "$1" - "$2" < "$3.yml"',
+                            $file1, $file2, $file3);
+
+In all cases, the output of the command (including STDERR) is returned,
+along with the exit code (without the other bits that normally accompany
+C<$?>).
+
+The third form is recommended as it properly encapsulates/tokenizes the
+arguments to prevent accidental expansion or splitting due to quoting and
+spaces.  If using it, remember to quote all variable references.
+
+You can also pass a hash reference as the first argument to supply options
+to change the behaviour of the execution.  The following options are
+supported:
+
+=over
+
+=item interactive
+
+If true, run the command interactively on a controlling terminal.  This uses
+the perl `system` command, so capturing output cannot be done.  Returned
+output will be undefined.
+
+=item passfail
+
+If true, returns true if exit code is 0, false otherwise.  Can work in
+conjunction with interactive.
+
+=item onfailure
+
+An error message to bail with, in the event that the program either fails to
+execute, or exits non-zero.  In non-interactive mode, the output of the
+failing command will be printed (in interactive mode, it's already been
+printed).
+
+=item env
+
+A hash defining modifications to the execution environment.  These
+environment variables will only be set for the duration of the command run.
+
+=item shell
+
+Change the executing shell from C</bin/bash> to something else.  You
+generally don't need to set this unless you are doing something strange.
+
+=item stderr
+
+A shell-specific redirection destination for standard error.  This gets
+appended to the idiom "2>".  Normally, standard error is redirected back
+into standard output.
+
+=over
+
+Finally, if you are not running in C<interactive> or C<passfail> mode, you
+can call this in either scalar or list context.  In list context, the output
+and exit code are returned in a list, otherwise just the output.
+
+    # scalar context
+    my $out = run('grep "$1" "$@"', $pattern, @files);
+    my $rc = $? >> 8;
+
+    # list contex
+    my ($out, $rc) = run('spruce json "$1" | jq -r "$2"', $_, $filter);
+
+
+=head2 interact(...)
+
+This helper function sets C<interactive> and C<passfail>, to return truthy
+on success.
+
+=head2 bosh(...)
+
+Configures a custom environment for the BOSH CLI.
+
+=head2 interactive_bosh(...)
+
+Works like C<bosh>, but with C<interactive> on.
+
+=head2 check(...)
+
+Sets C<passfail>, to be used in boolean conditions.
+
+=head2 do_or_die($msg, ...)
+
+Runs the command (honoring other options), and if it exits non-zero, dies
+with the given error C<$msg>, printing any output that the command printed.
+
+=head2 get(...)
+
+Returns just the output, regardless of context (scalar or list).
+
+=head2 getlines(...)
+
+Like C<get>, but it splits the output on newlines and returns the list of
+lines.
+
+=cut

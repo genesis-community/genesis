@@ -385,6 +385,12 @@ The output tarball will be written to C<$outdir/$name-$version.tar.gz>, and
 will bundle all files in the archive under the relative path
 C<$name-$version/>.
 
+=head2 scaffold($name)
+
+Generates a new kit source directory, populating it with (hopefully!)
+helpful scaffolding files for things like kit.yml, hooks, and manifest
+fragments.
+
 =head2 CAVEATS
 
 You cannot easily re-use one Kit Compiler to compile a different directory.

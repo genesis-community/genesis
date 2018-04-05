@@ -233,13 +233,17 @@ The specific composition of C<%opts>, as well as the return value / side
 effects of running a hook are wholly hook-dependent.  Refer to the section
 B<GENESIS KIT HOOKS>, later, for more detail.
 
+=head2 source_yaml_files(@features)
+
+Determines, by way of either C<hooks/blueprint>, or the legacy subkit
+detection logic, which kit YAML files need to be merged together, and
+returns there paths.
+
 =head1 GENESIS KIT HOOKS
 
 Genesis defines the following hooks:
 
-=over
-
-=item new
+=head2 new
 
 Provisions a new environment, by interrogating the environment or asking the
 operator for information.
