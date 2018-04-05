@@ -18,6 +18,27 @@ sub write {
 }
 
 1;
+
+=head1 NAME
+
+Genesis::Helpers
+
+=head1 DESCRIPTION
+
+This module wraps up the bash hooks helper that defines various functions
+designed to make life easier on Kit authors.  It also includes a method for
+writing the helper to an extracted kit workspace, but primarily we're using
+the separate module to abuse Perl's awesome __DATA__ facility.
+
+=head1 FUNCTIONS
+
+=head2 write($path)
+
+Writes the hooks helper to the given C<$path>.  Can be called more than
+once, without issue.
+
+=cut
+
 __DATA__
 ###
 ###   Feature Flag Functions

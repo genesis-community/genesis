@@ -34,3 +34,29 @@ sub Load {
 }
 
 1;
+
+=head1 NAME
+
+Genesis::IO
+
+=head1 DESCRIPTION
+
+This module provides utilities for performing JSON / YAML input output.
+
+=head1 FUNCTIONS
+
+=head2 LoadFile($path)
+
+Reads the contents of C<$path>, interprets it as YAML, and parses it into a
+Perl hashref structure.  This leverages C<spruce>, so it can only be used on
+YAML documents with top-level maps.  In practice, this limitation is hardly
+a problem.
+
+=head2 Load($yaml)
+
+Interprets its argument as a string of YAML, and parses it into a Perl
+hashref structure.  This leverages C<spruce>, so it can only be used on
+YAML documents with top-level maps.  In practice, this limitation is hardly
+a problem.
+
+=cut

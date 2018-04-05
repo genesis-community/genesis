@@ -121,6 +121,15 @@ Create a new root, at C<$path>.
 
 =head1 METHODS
 
+=head2 path([$relative])
+
+Qualifies and returns C<$relative> as an absolute path.
+
+=head2 config()
+
+Parses and returns the Genesis deployments repository configuration, found
+in C<$root/.genesis/config>.
+
 =head2 has_dev_kit()
 
 Returns true if the root directory has a so-called I<dev kit>, an uncompiled

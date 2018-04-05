@@ -192,3 +192,82 @@ sub source_yaml_files {
 }
 
 1;
+
+=head1 NAME
+
+Genesis::Kit
+
+=head1 DESCRIPTION
+
+This module encapsulates all of the logic for dealing with Genesis Kits in
+the abstract.  It does not handle the concrete problems of dealing with
+tarballs (Genesis::Kit::Compiled) or dev/ directories (Genesis::Kit::Dev).
+
+=head1 METHODS
+
+=head2 path([$relative])
+
+Returns a fully-qualified, absolute path to a file inside the kit workspace.
+If C<$relative> is omitted, the workspace root is returned.
+
+=head2 glob($pattern)
+
+Returns the absolute paths to all files inside the kit workspace that match
+the given C<$pattern> file glob.
+
+=head2 metadata()
+
+Returns the parsed metadata from this kit's C<kit.yml> file.  This call is
+moemoized, so it only actually touches the disk once.
+
+=head2 has_hook($name)
+
+Returns true if the kit has defined the given hook.
+
+=head2 run_hook($name, %opts)
+
+Executes the named hook and returns something useful to the caller.  It is
+an error if the kit does not define the kit; use C<has_hook> to avoid that.
+
+The specific composition of C<%opts>, as well as the return value / side
+effects of running a hook are wholly hook-dependent.  Refer to the section
+B<GENESIS KIT HOOKS>, later, for more detail.
+
+=head1 GENESIS KIT HOOKS
+
+Genesis defines the following hooks:
+
+=over
+
+=item new
+
+Provisions a new environment, by interrogating the environment or asking the
+operator for information.
+
+=head2 blueprint
+
+Maps feature flags in an environment onto manifest fragment YAML files in
+the kit, prescribing order and augmenting feature selection with additional
+logic as needed.
+
+=head2 secret
+
+Manages automatic generation of non-Credhub secrets that are stored in the
+shared Genesis Vault.  This hook is repoonsible for determining if secrets
+are missing (i.e. after an upgrade), adding them if they are, and rotating
+what is safe to rotate.
+
+=head2 info
+
+Prints out a kit-specific summary of a single environment.  This could
+include IP addresses, certificates, passwords, and URLs.
+
+=head2 addon
+
+Executes arbitrary actions.  This allows kit authors to enrich the Genesis
+expierience in highly kit-specific ways by giving operators new commands to
+run.  For example, the BOSH kit defines a C<login> addon that sets up a BOSH
+CLI alias and authenticates to the BOSH director, transparently pulling
+secrets from the Vault.
+
+=cut
