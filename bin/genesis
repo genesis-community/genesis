@@ -73,68 +73,6 @@ sub controlling_terminal {
 	return -t STDOUT;
 }
 
-sub mkfile_or_fail {
-	my ($file, $mode, $content) = @_;
-	unless (defined($content)) {
-		$content = $mode;
-		$mode = undef;
-	}
-	debug "creating file $file";
-	eval {
-		open my $fh, ">", $file;
-		print $fh $content;
-		close $fh;
-	} or die "Error creating file $file: $!\n";
-	chmod_or_fail($mode, $file) if defined $mode;
-	return $file;
-}
-
-# mkdir_or_fail $dir;
-sub mkdir_or_fail {
-	my ($dir,$mode) = @_;
-	unless (-d $dir) {;
-		debug "creating directory $dir/";
-		Genesis::Run::do_or_die(
-			"Unable to create directory $dir",
-			'mkdir -p "$1"', $dir
-		);
-	}
-	chmod_or_fail($mode, $dir) if defined $mode;
-	return $dir;
-}
-# chdir_or_fail $dir;
-sub chdir_or_fail {
-	my ($dir) = @_;
-	debug "changing current working directory to $dir/";
-	chdir $dir or die "Unable to change directory to $dir/: $!\n";
-}
-
-# symlink_or_fail $source $dest;
-sub symlink_or_fail {
-	my ($source, $dest) = @_;
-	-d $source or die "$source does not exist!\n";
-	-e $dest and die abs_path($dest)." already exists!";
-	symlink($source, $dest) or die "Unable to link $source to $dest: $!\n";
-}
-
-# copy_or_fail $from, $to;
-sub copy_or_fail {
-	my ($from, $to) = @_;
-	-f $from or die "$from: $!\n";
-	open my $in,  "<", $from or die "Unable to open $from for reading: $!\n";
-	open my $out, ">", $to   or die "Unable to open $to for writing: $!\n";
-	print $out $_ while (<$in>);
-	close $in;
-	close $out;
-}
-# chmod_or_fail 0755, $path; <-- don't quote the mode. make it an octal number.
-sub chmod_or_fail {
-	my ($mode, $path) = @_;
-	-e $path or die "$path: $!\n";
-	chmod $mode, $path
-		or die "Could not change mode of $path: $!\n";
-}
-
 our @DIRSTACK;
 sub pushd {
 	my ($dir) = @_;
