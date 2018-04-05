@@ -94,15 +94,15 @@ sub run {
 	local %ENV = %ENV; # To get local scope for duration of this call
 	for (keys %{$opts{env} || {}}) {
 		$ENV{$_} = $opts{env}{$_};
-		debug("#M{Setting: }#B{$_}='#C{$ENV{$_}}'");
+		Genesis::Utils::debug("#M{Setting: }#B{$_}='#C{$ENV{$_}}'");
 	}
 	my $shell = $opts{shell} || '/bin/bash';
 	$prog .= ($opts{stderr} ? " 2>$opts{stderr}" : ' 2>&1') unless ($opts{interactive});
-	debug("#M{Executing:} `#C{$prog}`%s", ($opts{interactive} ? " #Y{(interactively)}" : ''));
+	Genesis::Utils::debug("#M{Executing:} `#C{$prog}`%s", ($opts{interactive} ? " #Y{(interactively)}" : ''));
 	if (@args) {
 		unshift @args, basename($shell);
-		debug("#m{ - with arguments:}");
-		debug("#m{%4s:} '#c{%s}'", $_, $args[$_]) for (1..$#args);
+		Genesis::Utils::debug("#m{ - with arguments:}");
+		Genesis::Utils::debug("#m{%4s:} '#c{%s}'", $_, $args[$_]) for (1..$#args);
 	}
 
 	my @cmd = ($shell, "-c", $prog, @args);
@@ -120,10 +120,10 @@ sub run {
 			explain("#R{[ERROR/%d] }%s%s", $rc, $opts{onfailure}, defined($out) ? ":\n$out" :'');
 			exit $rc;
 		}
-		debug("#R{==== ERROR: $rc}");
-		debug("$out\n#R{==== END}") if defined($out);
+		Genesis::Utils::debug("#R{==== ERROR: $rc}");
+		Genesis::Utils::debug("$out\n#R{==== END}") if defined($out);
 	} else {
-		debug("#g{Command run successfully.}");
+		Genesis::Utils::debug("#g{Command run successfully.}");
 	}
 	return unless defined(wantarray);
 	return

@@ -1,4 +1,8 @@
 package Genesis::Utils;
+#use strict;
+#use warnings;
+
+use Genesis::Run;
 
 use base 'Exporter';
 our @EXPORT = qw/
@@ -179,7 +183,7 @@ sub mkfile_or_fail {
 		$content = $mode;
 		$mode = undef;
 	}
-	debug "creating file $file";
+	debug("creating file $file");
 	eval {
 		open my $fh, ">", $file;
 		print $fh $content;
@@ -193,7 +197,7 @@ sub mkfile_or_fail {
 sub mkdir_or_fail {
 	my ($dir,$mode) = @_;
 	unless (-d $dir) {;
-		debug "creating directory $dir/";
+		debug("creating directory $dir/");
 		Genesis::Run::do_or_die(
 			"Unable to create directory $dir",
 			'mkdir -p "$1"', $dir
@@ -205,14 +209,14 @@ sub mkdir_or_fail {
 # chdir_or_fail $dir;
 sub chdir_or_fail {
 	my ($dir) = @_;
-	debug "changing current working directory to $dir/";
+	debug("changing current working directory to $dir/");
 	chdir $dir or die "Unable to change directory to $dir/: $!\n";
 }
 
 # symlink_or_fail $source $dest;
 sub symlink_or_fail {
 	my ($source, $dest) = @_;
-	-d $source or die "$source does not exist!\n";
+	-e $source or die "$source does not exist!\n";
 	-e $dest and die abs_path($dest)." already exists!";
 	symlink($source, $dest) or die "Unable to link $source to $dest: $!\n";
 }
