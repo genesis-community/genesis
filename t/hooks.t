@@ -26,13 +26,14 @@ EOF
 	$simple = Genesis::Kit::Dev->new("t/src/simple");
 	$fancy  = Genesis::Kit::Dev->new("t/src/fancy");
 
+	put_file "$tmp/dev/kit.yml", "--- {}\n";
 	put_file "$tmp/us-west-1-prod.yml", <<EOF;
 ---
 kit:
   name:    dev
   version: latest
 EOF
-	$us_west_1_prod = Genesis::Env->load(top => $top, name => 'us-west-1-prod');
+	$us_west_1_prod = $top->load_env('us-west-1-prod');
 
 	put_file "$tmp/snw-lab-dev.yml", <<EOF;
 ---
@@ -46,7 +47,7 @@ kit:
     - charlie
     - kilo
 EOF
-	$snw_lab_dev = Genesis::Env->load(top => $top, name => 'snw-lab-dev');
+	$snw_lab_dev = $top->load_env('snw-lab-dev');
 }
 
 subtest 'new hook' => sub {

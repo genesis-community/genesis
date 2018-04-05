@@ -24,17 +24,12 @@ sub new {
 
 	# make sure .genesis is good to go
 	die "No deployment type specified in .genesis/config!\n"
-		unless $opts{top}->config->{deployment_type};
+		unless $opts{top}->type;
 
-	# provide default prefix
-	if (!$opts{prefix}) {
-		$opts{prefix} = $opts{name};
-		$opts{prefix} =~ s|-|/|g;
-		$opts{prefix} .= "/".$opts{top}->config->{deployment_type};
-	}
+	my $self = bless(\%opts, $class);
+	$self->{prefix} ||= $self->default_prefix;
 
-	# here ya go
-	return bless(\%opts, $class);
+	return $self;
 }
 
 sub load {
@@ -44,9 +39,14 @@ sub load {
 		die "Environment file $self->{file} does not exist.\n";
 	}
 
-	# do other stuff:
-	#  - override prefix
-	#  - populate self->kit
+	# determine our vault prefix
+	$self->{prefix} = $self->lookup('params.vault', $self->default_prefix);
+
+	# reconstitute our kit via top
+	$self->{kit} = $self->{top}->find_kit(
+		$self->lookup('kit.name'),
+		$self->lookup('kit.version'))
+			or die "Unable to locate kit for $self->{name} environment.\n";
 
 	return $self;
 }
@@ -86,6 +86,14 @@ sub file   { $_[0]->{file};      }
 sub prefix { $_[0]->{prefix};    }
 sub path   { $_[0]->{top}->path; }
 
+sub default_prefix {
+	my ($self) = @_;
+	my $p = $self->{name};         # start with env name
+	$p =~ s|-|/|g;                 # swap hyphens for slashes
+	$p .= "/".$self->{top}->type;  # append '/type'
+	return $p;
+}
+
 sub features {
 	my ($self) = @_;
 	if ($self->defines('kit.features')) {
@@ -93,6 +101,21 @@ sub features {
 	} else {
 		return @{ $self->lookup('kit.subkits', []) };
 	}
+}
+
+sub has_feature {
+	my ($self, $feature) = @_;
+	for my $have ($self->features) {
+		return 1 if $feature eq $have;
+	}
+	return 0;
+}
+
+sub needs_bosh_create_env {
+	my ($self) = @_;
+	return $self->has_feature('proto')      || \
+	       $self->has_feature('bosh-init')  || \
+	       $self->has_feature('create-env');
 }
 
 sub relate {
@@ -175,6 +198,176 @@ sub params {
 		$self->{__params} = JSON::PP->new->allow_nonref->decode($out);
 	}
 	return $self->{__params};
+}
+
+sub raw_manifest {
+	my ($self, %opts) = @_;
+	my $cache = $opts{redact} ? '__redacted' : '__unredacted';
+
+	if (!$self->{$cache}) {
+		local $ENV{REDACT} = $opts{redact} ? 'yes' : ''; # for spruce
+		$self->{$cache} = Genesis::Run::get(
+			{ onfailure => "Unable to merge $self->{name} manifest" },
+			'spruce', 'merge', $self->mergeable_yaml_files);
+	}
+	return $self->{$cache};
+}
+
+sub write_manifest {
+	my ($self, $file, %opts) = @_;
+	file($file, mode     =>  0644,
+	            contents => $self->raw_manifest(redact => $opts{redact}) . "\n");
+}
+
+sub mergeable_yaml_files {
+	my ($self) = @_;
+	my $tmp    = workdir;
+	my $prefix = $self->default_prefix;
+	my $type   = $self->{top}->type;
+
+	file("$tmp/init.yml", mode => 0644, contents => <<EOF);
+---
+meta:
+  vault: (( concat "secret/" params.vault || "$prefix" ))
+exodus: {}
+params:
+  name: (( concat params.env "-$type" ))
+name: (( grab params.name ))
+EOF
+
+	file("$tmp/fin.yml", mode => 0644, contents => <<EOF);
+---
+exodus:
+  kit_name:    (( grab kit.name    || "unknown" ))
+  kit_version: (( grab kit.version || "unknown" ))
+  vault_base:  (( grab meta.vault ))
+EOF
+
+	return (
+		"$tmp/init.yml",
+		$self->{kit}->source_yaml_files($self->features),
+		# cloud config
+		$self->actual_environment_files(),
+		"$tmp/fin.yml",
+	);
+}
+
+sub exodus {
+	my ($self) = @_;
+
+	my $data = $self->lookup('exodus', {});
+	my (@args, %final);
+
+	for my $key (keys %$data) {
+		my $val = $data->{$key};
+
+		# convert arrays -> hashes
+		if (ref $val eq 'ARRAY') {
+			my $h = {};
+			for (my $i = 0; $i < @$val; $i++) {
+				$h->{$i} = $val->[$i];
+			}
+			$val = $h;
+		}
+
+		# flatten hashes
+		if (ref $val eq 'HASH') {
+			for my $k (keys %$val) {
+				if (ref $val->{$k}) {
+					explain "#Y{WARNING:} The kit has specified the genesis.$key.$k\n".
+					        "metadata item, but the given value is not a simple scalar.\n".
+					        "Ignoring this metadata value.\n";
+					next;
+				}
+				$final{"$key.$k"} = $val->{$k};
+			}
+
+		} else {
+			$final{$key} = $data->{$key};
+		}
+	}
+
+	return \%final;
+}
+
+sub bosh_target {
+	my ($self) = @_;
+	return "create-env" if $self->needs_bosh_create_env;
+
+	my ($bosh, $source);
+	if ($bosh = $ENV{GENESIS_BOSH_ENVIRONMENT}) {
+			$source = "GENESIS_BOSH_ENVIRONMENT environment variable";
+
+	} elsif ($bosh = $self->lookup('params.bosh')) {
+			$source = "params.bosh in $self->{name} environment file";
+
+	} elsif ($bosh = $self->lookup('params.env')) {
+			$source = "params.env in $self->{name} environment file because no params.bosh was present";
+
+	} else {
+		die "Could not find the `params.bosh' or `params.env' key in $self->{name} environment file!\n";
+	}
+
+	Genesis::Run::interactive_bosh(
+		{ onfailure => "Could not find BOSH Director `$bosh` (specified via $source).",
+		  env       => { BOSH_ENVIRONMENT => $bosh } },
+		'env');
+
+	return $bosh;
+}
+
+sub deployment {
+	my ($self) = @_;
+	if ($self->defines('params.name')) {
+		return $self->lookup('params.name');
+	}
+	return $self->lookup('params.env') . '-' . $self->{top}->type;
+}
+
+sub deploy {
+	my ($self, %opts) = @_;
+
+	my $ok;
+	my $tmp = workdir;
+	$self->write_manifest("$tmp/manifest.yml", redact => 0);
+
+	if ($self->needs_bosh_create_env) {
+		$ok = Genesis::BOSH->create_env(
+			"$tmp/manifest.yml",
+			state => $self->path(".genesis/manifests/$self->{name}-state.yml"));
+
+	} else {
+		$self->{__cloud_config} = "$tmp/cloud.yml";
+		Genesis::BOSH->download_cloud_config($self->bosh_target, $self->{__cloud_config});
+
+		my @bosh_opts;
+		push @bosh_opts, "--$_"             for grep { $opts{$_} } qw/fix recreate dry-run/;
+		push @bosh_opts, "--no-redact"      if  !$opts{redact};
+		push @bosh_opts, "--skip-drain=$_"  for @{$opts{'skip-drain'} || []};
+		push @bosh_opts, "--$_=$opts{$_}"   for grep { defined $opts{$_} }
+		                                          qw/canaries max-in-flight/;
+
+		$ok = Genesis::BOSH->deploy("$tmp/manifest.yml",
+			target     => $self->bosh_target,
+			deployment => $self->deployment,
+			options    => \@bosh_opts);
+	}
+
+	unlink "$tmp/manifest.yml"
+		or debug "Could not remove unredacted manifest $tmp/manifest.yml";
+
+	# bail out early if the deployment failed;
+	# don't update the cached manifests
+	return if !$ok;
+
+	# deployment succeeded; update the cache
+	$self->write_manifest($self->{top}->path(".genesis/manifests/$self->{name}.yml"), redact => 1);
+	# track exodus data in the vault
+	my $exodus = $self->exodus;
+	return run(
+		{ onfailure => "Could not save $self->{name} metadata to the Vault" },
+		'safe', 'set', "secret/genesis/".$self->{top}->type."/$self->{name}",
+		               map { "$_=$exodus->{$_}" } keys %$exodus);
 }
 
 sub add_secrets { # WIP - majorly broken right now.  sorry bout that.

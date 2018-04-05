@@ -144,11 +144,13 @@ params:
   false:   ~
 EOF
 
-	my $env;
-	throws_ok { Genesis::Env->load(top => $top, name => 'enoent');   } qr/enoent.yml does not exist/;
-	throws_ok { Genesis::Env->load(top => $top, name => 'e-no-ent'); } qr/does not exist/;
+	put_file "$tmp/.genesis/kits/bosh-0.2.3.tar.gz", "not a tarball.  sorry.";
 
-	lives_ok { $env = Genesis::Env->load(top => $top, name => 'standalone') }
+	my $env;
+	throws_ok { $top->load_env('enoent');   } qr/enoent.yml does not exist/;
+	throws_ok { $top->load_env('e-no-ent'); } qr/does not exist/;
+
+	lives_ok { $env = $top->load_env('standalone') }
 	         "Genesis::Env should be able to load the `standalone' environment.";
 
 	ok($env->defines('params.state'), "standalone.yml should define params.state");

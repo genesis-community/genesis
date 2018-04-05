@@ -23,9 +23,32 @@ sub config {
 	return $self->{__config} ||= LoadFile($self->path(".genesis/config"));
 }
 
+sub type {
+	my ($self) = @_;
+	return $self->config->{deployment_type};
+}
+
 sub has_dev_kit {
 	my ($self) = @_;
 	return -d $self->path("dev");
+}
+
+sub load_env {
+	my ($self, $name) = @_;
+	return Genesis::Env->load(
+		top  => $self,
+		name => $name,
+	);
+}
+
+sub create_env {
+	my ($self, $name, $kit, %opts) = @_;
+	return Genesis::Env->create(
+		%opts,
+		top  => $self,
+		name => $name,
+		kit  => $kit,
+	);
 }
 
 sub compiled_kits {
