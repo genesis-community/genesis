@@ -133,11 +133,11 @@ DONE
 # }}}
 # kit.yml {{{
 	mkfile_or_fail "$self->{root}/kit.yml", <<DONE;
-name:     $name
-version:  0.0.1
-author:   $user <$email>
-homepage: https://github.com/cloudfoundry-community/$name-boshrelease
-github:   https://github.com/genesis-community/$name-genesis-kit
+name:    $name
+version: 0.0.1
+author:  $user <$email>
+docs:    https://github.com/cloudfoundry-community/$name-boshrelease
+code:    https://github.com/genesis-community/$name-genesis-kit
 
 # 2.6.0 was our last big feature bump
 genesis_min_version: 2.6.0
@@ -270,6 +270,7 @@ exit 0
 DONE
 
 # }}}
+	chmod_or_fail 0755, "$self->{root}/hooks/new";
 # hooks/blueprint {{{
 	mkfile_or_fail "$self->{root}/hooks/blueprint", <<DONE;
 #!/bin/bash
@@ -302,6 +303,7 @@ echo \${manifests[@]}
 DONE
 
 # }}}
+	chmod_or_fail 0755, "$self->{root}/hooks/blueprint";
 }
 
 1;

@@ -12,49 +12,33 @@ use Genesis::IO;
 use_ok 'Genesis::Kit::Compiler';
 
 my $tmp = workdir();
+my $cc = Genesis::Kit::Compiler->new("$tmp/test-genesis-kit");
+
 sub again {
 	system("rm -rf $tmp/test-genesis-kit; mkdir -p $tmp/test-genesis-kit/hooks");
-	system("mkdir -p $tmp/test-genesis-kit/ci");
-put_file("$tmp/test-genesis-kit/ci/pipe.yml", <<EOF);
----
-concourse: is fun
-EOF
-	put_file("$tmp/test-genesis-kit/NOTES", <<EOF);
-these are notes
-EOF
-	put_file("$tmp/test-genesis-kit/kit.yml", <<EOF);
----
-name:   test
-author: jhunt
-code:   https://github.com/genesis-community/test-genesis-kit
+	$cc->scaffold("test");
 
-genesis_min_version: 2.5.2
-EOF
-	put_file("$tmp/test-genesis-kit/hooks/new", <<'EOF');
-#!/bin/bash
-set -eu
-echo "--- {}" > $1/$2.yml
-EOF
-	put_file("$tmp/test-genesis-kit/hooks/blueprint", <<'EOF');
-#!/bin/bash
-set -eu
-echo "manifests/test.yml"
-EOF
-	system("chmod 755 $tmp/test-genesis-kit/hooks/*");
-	put_file("$tmp/test-genesis-kit/.gitignore", <<EOF);
-*.tar.gz
-NOTES
-EOF
+	# add some extra files
+	system("mkdir -p $tmp/test-genesis-kit/ci");
+	put_file("$tmp/test-genesis-kit/ci/pipe.yml", "concourse: is fun\n");
+
+	# git init it
 	system("cd $tmp/test-genesis-kit && git init &>/dev/null && git add .");
 }
-
-my $cc = Genesis::Kit::Compiler->new("$tmp/test-genesis-kit");
 
 sub quietly(&) {
 	local *STDERR;
 	open(STDERR, '>', '/dev/null') or die "failed to quiet stderr!";
 	return $_[0]->();
 }
+
+##################################
+
+again();
+system("rm -f $tmp/README.md");
+throws_ok { $cc->scaffold; } qr/cowardly refusing/,
+	"scaffold() cowardly refuses to overwrite the target directory";
+ok !-f "$tmp/README.md", "scaffold() should not have re-created missing README";
 
 ##################################
 
@@ -160,10 +144,16 @@ my $tar = Archive::Tar->new("$tmp/test-1.2.3.tar.gz");
 my %files = map { delete $_->{name} => $_ } $tar->list_files([qw[name size mode]]);
 cmp_deeply(\%files, {
 	'test-1.2.3/' => superhashof({ mode => 0755 }),
-	'test-1.2.3/kit.yml' => {
+	'test-1.2.3/README.md' => {
 		'mode' => 0644,
-		# '7' arrived at through rigorous scientific research
-		'size' => 7 + -s "$tmp/test-genesis-kit/kit.yml",
+		'size' => -s "$tmp/test-genesis-kit/README.md",
+	},
+	'test-1.2.3/kit.yml' => superhashof({ 'mode' => 0644 }),
+
+	'test-1.2.3/manifests/' => superhashof({ mode => 0755 }),
+	'test-1.2.3/manifests/test.yml' => {
+		'mode' => 0644,
+		'size' => -s "$tmp/test-genesis-kit/manifests/test.yml",
 	},
 
 	'test-1.2.3/hooks/' => superhashof({ mode => 0755 }),
@@ -178,7 +168,7 @@ cmp_deeply(\%files, {
 }, "compiled kit tarball should contain just the files we want");
 
 my $meta;
-lives_ok { $meta = Load($tar->get_content('test-1.2.3/kit.yml')) } "compiled kit tarball should contain a valid kit.yml file";
+lives_ok { $meta = Load($tar->get_content('test-1.2.3/kit.yml')); } "compiled kit tarball should contain a valid kit.yml file";
 is($meta->{version}, '1.2.3', "compiled kit tarball should contain the correct version in kit.yml metadata");
 
 
