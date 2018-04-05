@@ -80,6 +80,21 @@ sub create {
 	return $self;
 }
 
+# public accessors
+sub name   { $_[0]->{name};      }
+sub file   { $_[0]->{file};      }
+sub prefix { $_[0]->{prefix};    }
+sub path   { $_[0]->{top}->path; }
+
+sub features {
+	my ($self) = @_;
+	if ($self->defines('kit.features')) {
+		return @{ $self->lookup('kit.features') };
+	} else {
+		return @{ $self->lookup('kit.subkits', []) };
+	}
+}
+
 sub relate {
 	my ($self, $them, $common_base, $unique_base) = @_;
 	$common_base ||= '.';
@@ -113,39 +128,23 @@ sub relate {
 	return wantarray ? (@common, @unique)
 	                 : { common => \@common,
 	                     unique => \@unique };
-
-	# $a = Genesis::Env->new(name => 'us-west-1-preprod-a')
-	# $b = Genesis::Env->new(name => 'us-west-1-prod-b-ftw')
-	#
-	# $a->relate($b, '.cache', '') # list context
-	#   -> (.cache/us.yml,
-	#       .cache/us-west.yml,
-	#       .cache/us-west-1.yml,
-	#       us-west-1-preprod.yml,
-	#       us-west-1-preprod-a.yml)
-	#
-	# $a->relate($b, '.cache', '') # scalar context
-	#   -> { common => [.cache/us.yml,
-	#                   .cache/us-west.yml,
-	#                   .cache/us-west-1.yml],
-	#        unique => [us-west-1-preprod.yml,
-	#                   us-west-1-preprod-a.yml] };
-	#
-	# $a->relate(common => $b)
-	#   # return (us, west, 1)
-	# $a->relate(unique => $b)
-	#   # return (us-west-1, preprod, a)
-	# $a->relate($v)
-	#   # return [(us, west, 1), (preprod, a)]
-	#
 }
 
-sub environment_files {
+sub potential_environment_files {
 	my ($self) = @_;
 
 	# ci pipelines need to pull cache for previous envs
 	my $env = $ENV{PREVIOUS_ENV} || '';
 	return $self->relate($env, ".genesis/cached/$env");
+}
+
+sub actual_environment_files {
+	my ($self) = @_;
+
+	# only return the constituent YAML files
+	# that actually exist on the filesystem.
+	return grep { -f $self->{top}->path($_) }
+		$self->potential_environment_files;
 }
 
 # NOTE: not sure if this is how we want to do this, but
@@ -178,7 +177,7 @@ sub params {
 		my $out = Genesis::Run::get(
 			{ onfailure => "Unable to merge $self->{name} environment files" },
 			'spruce merge --skip-eval "$@" | spruce json',
-			map { $self->{top}->path($_) } $self->environment_files());
+			map { $self->{top}->path($_) } $self->actual_environment_files());
 		$self->{__params} = JSON::PP->new->allow_nonref->decode($out);
 	}
 	return $self->{__params};
@@ -262,3 +261,297 @@ sub validate_name {
 }
 
 1;
+
+=head1 NAME
+
+Genesis::Env
+
+=head1 DESCRIPTION
+
+The Env class represents a single, deployable unit of YAML files in a
+Genesis deployment repository / working directory, and wraps up all of the
+core rules for dealing with the set as a whole.
+
+To load an existing environment, all you need is the C<Genesis::Top> object
+that represents the top of the deployment repository, and the name of the
+environment you want:
+
+    use Genesis::Top;
+    use Genesis::Env;
+
+    my $top = Genesis::Top->new('.');
+    my $env = Genesis::Env->new(
+      top  => $top,
+      name => 'us-west-1-preprod',
+    );
+
+To create a new environment, you need a bit more information.  You also need
+to be ready to run through interactive ask-the-user-questions mode, for
+things like the `new` hook:
+
+    my $env = Genesis::Env->create(
+       top  => $top,
+       name => 'us-west-1-preprod',
+       kit  => $top->find_kit('some-kit', 'latest'),
+    );
+
+You can also avail yourself of the C<new> constructor, which does a lot of
+the validation, but won't access the environment files directly:
+
+    my $env = Genesis::Env->new(
+       top  => $top,
+       name => 'us-west-1-preprod',
+    );
+
+=head1 CONSTRUCTORS
+
+=head2 new(%opts)
+
+Create a new Env object without making any assertions about the filesystem.
+Usually, this is not the constructor you want.  Check out C<load> or
+C<create> instead.
+
+The following options are recognized:
+
+=over
+
+=item B<name> (required)
+
+The name of your environment.  See NAME VALIDATION for details on naming
+requirements.  This option is B<required>.
+
+=item B<top> (required)
+
+The Genesis::Top object that represents the root working directory of the
+deployments repository.  This is used to fetch things like deployment
+configuration, kits, etc.  This option is B<required>.
+
+=item B<prefix>
+
+A path in the Genesis Vault, under which secrets for this environment should
+be stored.  Normally, you don't need to specify this.  When an environment
+is loaded, it will probably be overridden by the operators C<param>s.
+Otherwise, Genesis can figure out the correct default value.
+
+=back
+
+Unrecognized options will be silently ignored.
+
+=head2 load(%opts)
+
+Create a new Env object by loading its definition from constituent YAML
+files on-disk (by way of the given Genesis::Top object).  If the given
+environment does not exist on-disk, this constructor will throw an error
+(via C<die>), so you may want to C<eval> your call to it.
+
+C<load> does not recognize additional options, above and beyond those which
+are handled by and required by C<new>.
+
+=head2 create(%opts)
+
+Create a new Env object by running the user through the wizardy setup of the
+C<hooks/new> kit hook.  This often cannot be run unattended, and definitely
+cannot be run without access to the Genesis Vault.
+
+If the named environment already exists on-disk, C<create> throws an error
+and dies.
+
+C<create> recognizes the following options, in addition to those recognized
+by (and required by) C<new>:
+
+=over
+
+=item B<kit> (required)
+
+A Genesis::Kit object that represents the Genesis Kit to use for
+provisioning (and eventually deploying) this environment.  This option is
+required.
+
+=back
+
+=head1 CLASS FUNCTIONS
+
+=head2 validate_name($name)
+
+Validates an environment name, according to the following rules:
+
+=over
+
+=item 1.
+
+Names must not be empty.
+
+=item 2.
+
+They cannot contain whitespace
+
+=item 3.
+
+They must consist entirely of lowercase letters, numbers, and hyphens
+
+=item 4.
+
+Names must start with a letter, and cannot end with a hyphen
+
+=item 5.
+
+Sequential hyphens (C<-->) are expressly prohibited
+
+=back
+
+=head1 METHODS
+
+=head2 relate($them, [$cachedir, [$topdir])
+
+Relates an environment to another environment, and returns the set of
+possible YAML files that could comprise the environment.  C<$them> can
+either be another Env object, or the name of an environment, as a string.
+
+This method returns either a list of files (in list mode) or a hashref
+containing the set of common files and the set of unique files.  Aside from
+that, it's actually really hard to explain I<what> it does, without resoring
+to examples.  Without further ado:
+
+    my $a = Genesis::Env->new(name => "us-west-1-preprod");
+    my @files = $a->relate('us-west-1-prod');
+
+    #
+    # returns:
+    #   - ./us.yml
+    #   - ./us-west.yml
+    #   - ./us-west-1.yml
+    #   - ./us-west-1-preprod.yml
+    #
+
+The real fun begins when you pass a directory prefix as the second argument:
+
+    my $a = Genesis::Env->new(name => "us-west-1-preprod");
+    my @files = $a->relate('us-west-1-prod', '.cache');
+
+    #
+    # returns:
+    #   - .cache/us.yml
+    #   - .cache/us-west.yml
+    #   - .cache/us-west-1.yml
+    #   - ./us-west-1-preprod.yml
+    #
+
+Notice that the first three file paths returned are inside of the C<./cache>
+directory, since those constituent YAML files are common to both
+environments.  This is how the Genesis CI/CD pipelines handle propagation of
+environmental changes.
+
+If you pass a third argument, it affects the I<unique set>, YAML files that
+only affect the first environment:
+
+    my $a = Genesis::Env->new(name => "us-west-1-preprod");
+    my @files = $a->relate('us-west-1-prod', 'old', 'NEW');
+
+    #
+    # returns:
+    #   - old/us.yml
+    #   - old/us-west.yml
+    #   - old/us-west-1.yml
+    #   - NEW/us-west-1-preprod.yml
+    #
+
+In scalar mode, the two sets (I<common> and I<unique>) are returned as array
+references under respecitvely named hashref keys:
+
+
+    my $a = Genesis::Env->new(name => "us-west-1-preprod");
+    my $files = $a->relate('us-west-1-prod');
+
+    #
+    # returns:
+    # {
+    #    common => [
+    #                './us.yml',
+    #                './us-west.yml',
+    #                './us-west-1.yml',
+    #              ],
+    #    unique => [
+    #                './us-west-1-preprod.yml',
+    #              ],
+    # }
+    #
+
+Callers can use this to treat the common files differently from the unique
+files.  The CI pipelines use this to properly craft the Concourse git
+resource watch paths.
+
+
+=head2 potential_environment_files()
+
+Assemble the list of candidate YAML files that comprise this environment.
+Under the hood, this is just a call to C<relate()> with no environment,
+which forces everything into the I<unique> set.  See C<relate()> for more
+details.
+
+If the C<PREVIOUS_ENV> environment variable is set, it is interpreted as the
+name of the Genesis environment that preceeds this one in the piepline.
+Files that this environment shares with that one (per the semantics of
+C<relate>) will be taken from the C<.genesis/cached/$env> directory, instead
+of the top-level.
+
+
+=head2 actual_environment_files()
+
+Return C<potential_environment_files>, filtered to include only the files
+that actually reside on-disk.  Suitable for merging with Spruce!
+
+
+=head2 params()
+
+Merges the environment files (see C<environment_files>), without evaluating
+Spruce operators (i.e. C<--skip-eval>), and then returns the resulting
+hashref structure.
+
+This structure can then be interrogated by things like C<defines> and
+C<lookup> to retrieve metadata about the environment.
+
+This call is I<memoized>; calling it multiple times on the same object will
+not incur additional merges.  If cache coherency is a concern, recreate your
+object.
+
+
+=head2 defines($key)
+
+Returns true of this environment has defined C<$key> in any of its
+constituent YAML files.  Multi-level keys should be specified in
+dot-notation:
+
+    if ($env->defines('params.something')) {
+      # ...
+    }
+
+If you need the actual I<values> that the defined key is set to, look at
+C<lookup>.
+
+
+=head2 lookup($key, [$default])
+
+Retrieve the value an environment has set for C<$key> (in any of its files),
+or C<$default> if the key hasn't been defined.
+
+    my $v = $env->lookup('kit.version', 'latest');
+    print "using version $v...\n";
+
+This can be combined with calls to C<defines> to avoid having to specify a
+default value when you don't want to:
+
+    if ($env->defines('params.optional')) {
+      my $something = $env->lookup('params.optional');
+      print "optionally doing $something\n";
+    }
+
+Note that you can retrieve complex structures like YAML maps (Perl hashrefs)
+and lists (arrayrefs) by not specifying a leaf node:
+
+    my $kit = $env->lookup('kit');
+    print "Using $kit->{name}/$kit->{version}\n";
+
+This can be preferable to calling C<lookup> multiple times, and is currently
+the only way to pull data out of a list.
+
+=cut

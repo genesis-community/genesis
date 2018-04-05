@@ -37,7 +37,7 @@ __DATA__
 want_feature() {
   local __want=${1:?want_feature() -- must specify a feature}
   local __feature
-  for __feature in GENESIS_REQUESTED_FEATURES; do
+  for __feature in $GENESIS_REQUESTED_FEATURES; do
     [[ "$__want" == "$__feature" ]] && return 0
   done
   return 1
@@ -60,7 +60,7 @@ invalid_features() {
   local __valid
   local __have
   declare -a __invalid
-  for have in genesis_REQUESTED_FEATURES; do
+  for have in $GENESIS_REQUESTED_FEATURES; do
     __found='';
     for __valid in "$@"; do
       [[ "$__have" == "$__valid" ]] && __found=1 && break
@@ -76,7 +76,7 @@ valid_features() {
   local __have
   local __found
   local __valid
-  for __have in genesis_REQUESTED_FEATURES; do
+  for __have in $GENESIS_REQUESTED_FEATURES; do
     __found=''
     for __valid in "$@"; do
       [[ "${__have}" = "${__valid}" ]] && __found=1 && break
@@ -90,7 +90,7 @@ export -f valid_features
 validate_features() {
   local __bad
   if ! valid_features "$@"; then
-    echo >&2 "genesis_KIT_NAME/genesis_KIT_VERSION does not understand the following feature flags:"
+    echo >&2 "$GENESIS_KIT_NAME/$GENESIS_KIT_VERSION does not understand the following feature flags:"
     for __bad in $(invalid_features "$@"); do
       echo >&2 " - $__bad"
     done

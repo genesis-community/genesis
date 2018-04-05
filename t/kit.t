@@ -38,12 +38,16 @@ my $kit = kit(compiled => '0.0.1');
 # -rw-r--r--  0 jhunt  staff      19 Dec 18  2016 compiled-0.0.1/base/stuff.yml
 
 is($kit->id, "compiled/0.0.1", "compiled kits should report their ID properly");
+is($kit->name, "compiled", "compiled kits should be know their own name");
+is($kit->version, "0.0.1", "compiled kits should be know their own version");
 ok(-d $kit->path("base"),  "[compiled-0.0.1] base/ should exist in compiled kit");
 ok(-f $kit->path("setup"), "[compiled-0.0.1] the setup file should exist in compiled kit");
 
 ok(!$kit->has_hook('new'), "[compiled-0.0.1] kit should not report hooks it doesn't have");
 
 my $dev = decompile_kit(compiled => '0.0.1');
+is($dev->name, "dev", "dev kits are all named 'dev'");
+is($dev->version, "latest", "dev kits are always at latest");
 is($dev->id, "(dev kit)", "dev kits should report their ID as dev, all the time");
 ok(-d $dev->path("base"),  "[dev :: compiled-0.0.1] base/ should exist in compiled kit");
 ok(-f $dev->path("setup"), "[dev :: compiled-0.0.1] the setup file should exist in compiled kit");

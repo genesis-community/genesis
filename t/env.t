@@ -105,6 +105,17 @@ subtest 'env-to-env relation' => sub {
 				TOP/LEVEL/us-west-1-preprod-a.yml
 			]],
 		}, "relate() in scalar mode passes back a hashref");
+
+	{
+		local $ENV{PREVIOUS_ENV} = 'us-west-1-sandbox';
+		cmp_deeply([$a->potential_environment_files()], [qw[
+				.genesis/cached/us-west-1-sandbox/us.yml
+				.genesis/cached/us-west-1-sandbox/us-west.yml
+				.genesis/cached/us-west-1-sandbox/us-west-1.yml
+				./us-west-1-preprod.yml
+				./us-west-1-preprod-a.yml
+			]], "potential_environment_files() called with PREVIOUS_ENV should leverage the Genesis cache");
+		}
 };
 
 subtest 'parameter lookup' => sub {

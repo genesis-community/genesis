@@ -128,9 +128,8 @@ sub run {
 	return unless defined(wantarray);
 	return
 		$opts{passfail}    ? $rc == 0 :
-		$opts{interactive} ? $rc :
-		wantarray          ? ($out,$rc) :
-		$out;
+		$opts{interactive} ? (wantarray ? (undef, $rc) : $rc)
+		                   : (wantarray ? ($out,  $rc) : $out);
 }
 
 sub interact {

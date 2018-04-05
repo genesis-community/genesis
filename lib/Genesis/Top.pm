@@ -14,7 +14,8 @@ sub new {
 
 sub path {
 	my ($self, $relative) = @_;
-	return "$self->{root}/$relative";
+	return $relative ? "$self->{root}/$relative"
+	                 :  $self->{root};
 }
 
 sub config {

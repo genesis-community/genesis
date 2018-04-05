@@ -1,5 +1,6 @@
-.PHONY: sanity-test test test-quick test-secrets test-ci release dev-release clean
+.PHONY: sanity-test test test-quick test-secrets test-ci release dev-release clean coverage
 
+MODULE_TESTS := $(shell grep -rl use_ok t/*.t)
 
 sanity-test:
 	perl -Ilib -c bin/genesis
@@ -27,3 +28,6 @@ dev-release:
 
 clean:
 	rm -f genesis-*
+
+coverage:
+	cover -t -make "prove -lv $(MODULE_TESTS)" -ignore_re '(/Legacy.pm|^t/|/JSON/)'

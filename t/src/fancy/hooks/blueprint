@@ -1,0 +1,47 @@
+#!/bin/bash
+set -eu
+
+if [[ ${HOOK_SHOULD_FAIL:-no} = "yes" ]]; then
+  exit 42;
+fi
+
+if [[ ${HOOK_NO_BLUEPRINT:-no} = "yes" ]]; then
+  echo >&2 "Fake Error: this blueprint is supposed to be empty"
+  exit 0
+fi
+
+validate_features alpha bravo charlie delta 'echo' \
+                  foxtrot golf hotel india juliett \
+                  kilo lima mike november oscar papa \
+                  quebec romeo sierra tango uniform \
+                  victor whiskey x-ray yankee zulu
+
+declare -a manifests
+manifests=( base.yml )
+
+for want in ${GENESIS_REQUESTED_FEATURES}; do
+  manifests+=( addons/$want.yml )
+done
+
+if want_feature foxtrot && \
+   want_feature uniform && \
+   want_feature charlie && \
+   want_feature kilo    && \
+ ! want_feature bravo; then
+
+  manifests+=( addons/bravo.yml )
+fi
+
+if want_feature alpha; then
+  # warn about alpha
+  echo >&2 "(ignore this) the alpha feature is deprecated, and you should remove it from your env files."
+fi
+
+if [[ ${HOOK_SHOULD_BE_AIRY:-no} = "yes" ]]; then
+  for x in ${manifests[@]}; do
+    echo; echo "  $x"; echo; echo
+  done
+else
+  echo "${manifests[@]}"
+fi
+exit 0

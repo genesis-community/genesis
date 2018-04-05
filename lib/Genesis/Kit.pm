@@ -78,45 +78,42 @@ sub run_hook {
 		unless $self->has_hook($hook);
 
 	local %ENV = %ENV;
-	$ENV{GENESIS_KIT_NAME}     = $self->{name};
-	$ENV{GENESIS_KIT_VERSION}  = $self->{version};
-	$ENV{GENESIS_ROOT}         = $opts{root};  # to be replaced with ::Env
-	$ENV{GENESIS_ENVIRONMENT}  = $opts{env};   # to be replaced with ::Env
-	$ENV{GENESIS_VAULT_PREFIX} = $opts{vault}; # to be replaced with ::Env
+	$ENV{GENESIS_KIT_NAME}     = $self->name;
+	$ENV{GENESIS_KIT_VERSION}  = $self->version;
+	$ENV{GENESIS_ROOT}         = $opts{env}->path;
+	$ENV{GENESIS_ENVIRONMENT}  = $opts{env}->name;
+	$ENV{GENESIS_VAULT_PREFIX} = $opts{env}->prefix;
 
 	my @args;
 	if ($hook eq 'new') {
 		# hooks/new root-path env-name vault-prefix
 		@args = (
-			$opts{root},
-			$opts{env},
-			$opts{vault},
+			$ENV{GENESIS_ROOT},           # deprecate!
+			$ENV{GENESIS_ENVIRONMENT},    # deprecate!
+			$ENV{GENESIS_VAULT_PREFIX},   # deprecate!
 		);
 
 	} elsif ($hook eq 'secrets') {
 		# hook/secret action env-name vault-prefix
 		@args = (
 			$opts{action},
-			$opts{env},
-			$opts{vault},
+			$ENV{GENESIS_ENVIRONMENT},    # deprecate!
+			$ENV{GENESIS_VAULT_PREFIX},   # deprecate!
 		);
 
 	} elsif ($hook eq 'blueprint') {
 		# hooks/blueprint
+		$ENV{GENESIS_REQUESTED_FEATURES} = join(' ', $opts{env}->features);
 		@args = ();
 
 	} elsif ($hook eq 'info') {
-		# hooks/info env-name
-		@args = (
-			$opts{env},
-		);
+		# hooks/info
+		@args = ();
 
 	} elsif ($hook eq 'addon') {
-		# hooks/addon script [user-supplied-args ...]
-		@args = (
-			$opts{script},
-			@{$opts{args} || []},
-		);
+		# hooks/addon [user-supplied-args ...]
+		$ENV{GENESIS_ADDON_SCRIPT} = $opts{script};
+		@args = @{$opts{args} || []};
 
 	##### LEGACY HOOKS
 	} elsif ($hook eq 'prereqs') {
@@ -132,26 +129,31 @@ sub run_hook {
 	}
 
 	chmod 0755, $self->path("hooks/$hook");
-	my ($out, $rc) = run({ interactive => $hook eq 'new' },
+	my ($out, $rc) = run({ interactive => scalar $hook =~ m/^(addon|new|info)$/,
+	                       stderr => '&2' },
 		'cd "$1"; source .helper; hook=$2; shift 2; ./hooks/$hook "$@"',
 		$self->path, $hook, @args);
 
 	if ($hook eq 'new') {
 		if ($rc != 0) {
-			die "Could not create new env $args[0]\n";
+			die "Could not create new env $args[1] (in $args[0]): 'new' hook exited $rc\n";
 		}
-		if (! -f "$args[0].yml") {
-			die "Could not create new env $args[0]\n";
+		if (! -f "$args[0]/$args[1].yml") {
+			die "Could not create new env $args[1] (in $args[0]): 'new' hook did not create $args[1].yml\n";
 		}
 		return 1;
 	}
 
 	if ($hook eq 'blueprint') {
 		if ($rc != 0) {
-			die "Could not determine what YAML files to merge from the kit blueprint\n";
+			die "Could not determine which YAML files to merge: 'blueprint' hook exited $rc\n";
 		}
 		$out =~ s/^\s+//;
-		return split(/ /, $out); # FIXME broken
+		my @manifests = split(/\s+/, $out);
+		if (!@manifests) {
+			die "Could not determine which YAML files to merge: 'blueprint' specified no files\n";
+		}
+		return @manifests;
 	}
 
 	if ($hook eq 'subkits') {
