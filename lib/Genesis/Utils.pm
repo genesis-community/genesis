@@ -34,17 +34,6 @@ sub envdefault {
 	return defined $ENV{$var} ? $ENV{$var} : $default;
 }
 
-sub ago {
-	my ($ts) = @_;
-	my $ago = time - $ts;
-	if ($ago >  90 * 86400) { return sprintf("%i months ago", $ago / 30 / 86400); }
-	if ($ago >= 21 * 86400) { return sprintf("%i weeks ago", $ago / 7  / 86400); }
-	if ($ago >= 2  * 86400) { return sprintf("%i days ago", $ago / 86400); }
-	if ($ago >= 90 * 60)    { return sprintf("%i hours ago", $ago / 3600); }
-	if ($ago >  60)         { return sprintf("%i minutes ago", $ago / 60); }
-	return "just now";
-}
-
 sub colorize {
 	my ($c, $msg) = @_;
 	return $msg if envset('NOCOLOR');

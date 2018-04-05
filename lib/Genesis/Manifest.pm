@@ -83,7 +83,7 @@ sub write {
 sub pick {
 	my ($self, $key, %opts) = @_;
 
-	open my $fh, "<", $self->_file(%opts);
+	open my $fh, "<", $self->_file(%opts)
 		or die "Unable to open manifest for reading: $!\n";
 	my $data = JSON::PP->new->allow_nonref->decode(do { local $/; <$fh> });
 	close $fh;
