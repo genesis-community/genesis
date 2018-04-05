@@ -41,25 +41,6 @@ END {
 	$_->($?) for @$END_HOOKS;
 }
 
-sub valid_envs {
-	my (%envs, $json);
-	foreach (glob "*.yml") {
-		eval {
-			$json = decode_json(Genesis::Run::get({stderr=>"/dev/null"}, 'spruce json "$1"', $_))
-		};
-		next if $@;
-		next unless $json && $json->{params} && $json->{params}{env};
-		(my $label= $_) =~ s/\.yml$//;
-		$envs{$label} = {
-			file  => $_,
-			env   => $json->{params}{env},
-			vault => $json->{params}{vault} || join('/',(split('-', $json->{params}{env}))),
-			bosh  => $json->{params}{bosh}  || $json->{params}{env}
-		}
-	}
-	return %envs;
-}
-
 sub same($$) {
 	my ($a,$b) = @_;
 	die "Arguments are not arrays" unless ref($a) eq 'ARRAY' && ref($b) eq 'ARRAY';
