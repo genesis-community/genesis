@@ -589,6 +589,14 @@ and exit code are returned in a list, otherwise just the output.
     my ($out, $rc) = run('spruce json "$1" | jq -r "$2"', $_, $filter);
 
 
+=head2 lines($out, $rc)
+
+Ignore C<$rc>, and split C<$out> on newlines, returning the resulting list.
+This is best used with C<run()>, like this:
+
+    my @lines = lines(run('some command'));
+
+
 =head2 curl($method, $url, $headers, $data, $skip_verify, $creds)
 
 Runs the C<curl> command, with the appropriate credentials, and returns the
@@ -656,5 +664,22 @@ to copy, instead of the `cp` command.
 =head2 chmod_or_fail($mode, $path)
 
 Changes the permissions on C<$path> to C<$mode>, or dies trying.
+
+
+=head2 load_json($json)
+
+Parse C<$json> (as a JSON string) into a hashref.
+
+
+=head2 load_yaml($yaml)
+
+Convert C<$yaml> into JSON by way of a C<spruce merge>, and then parse it
+into a hashref.
+
+
+=head2 load_yaml_file($file)
+
+Read C<$file> into memory, and then convert it into JSON via C<load_yaml>.
+
 
 =cut

@@ -13,6 +13,7 @@ use_ok 'Genesis::Kit::Dev';
 
 sub kit {
 	my ($name, $version) = @_;
+	$version ||= 'latest';
 
 	return Genesis::Kit::Compiled->new(
 		name    => $name,
@@ -70,6 +71,25 @@ cmp_deeply([$kit->source_yaml_files()],
 cmp_deeply([$kit->source_yaml_files('bogus', 'features')],
            [$kit->source_yaml_files()],
            "simple kits ignore features they don't know about");
+
+
+##
+
+my ($url, $version);
+
+$kit = kit('bosh');
+lives_ok { ($url, $version) = $kit->url } "The BOSH kit has a valid download url";
+like $url, qr{^https://github.com/genesis-community/bosh-genesis-kit/releases/download/},
+	"The BOSH kit url is on Github";
+
+$kit = kit('bosh', '0.2.0');
+lives_ok { ($url, $version) = $kit->url } "The BOSH kit has a valid download url";
+is $version, '0.2.0', 'bosh-0.2.0 is v0.2.0';
+is $url, 'https://github.com/genesis-community/bosh-genesis-kit/releases/download/v0.2.0/bosh-0.2.0.tar.gz',
+	"The BOSH kit url points to the 0.2.0 release";
+
+$kit = kit('bosh', '0.0.781');
+dies_ok { $kit->url } "Non-existent versions of kits do not have download urls";
 
 
 done_testing;

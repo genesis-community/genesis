@@ -21,7 +21,7 @@ sub url {
 	}
 
 	my $releases;
-	eval { $releases = decode_json($data); 1 }
+	eval { $releases = load_json($data); 1 }
 		or die "Failed to read releases information from Github: $@\n";
 
 	if (!@$releases) {
@@ -29,7 +29,7 @@ sub url {
 	}
 
 	for (map { @{$_->{assets} || []} } @$releases) {
-		if ($self->{version} eq 'latest') {
+		if (!$self->{version} or $self->{version} eq 'latest') {
 			next unless $_->{name} =~ m/^\Q$self->{name}\E-(.*)\.(tar\.gz|tgz)$/;
 			$self->{version} = $1;
 		} else {
@@ -236,6 +236,17 @@ B<GENESIS KIT HOOKS>, later, for more detail.
 Determines, by way of either C<hooks/blueprint>, or the legacy subkit
 detection logic, which kit YAML files need to be merged together, and
 returns there paths.
+
+=head2 url()
+
+Determines the download URL for this kit, by consulting Github.
+Right now, this is limited to just the C<genesis-community> organization.
+
+If the Kit object doesn't specify a version, or that version is C<latest>,
+the most recent released version on Github will be used.  Otherwise, the URL
+for the given version will be used.
+
+An error will be thrown if the version in question does not exist on Github.
 
 =head1 GENESIS KIT HOOKS
 

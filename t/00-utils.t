@@ -183,11 +183,18 @@ subtest 'fs utilities' => sub {
 	ok -f "$tmp/file", "mkfile_or_fail should make a file if it didn't fail";
 	is slurp("$tmp/file"), "stuff!", "mkfile_or_fail should populate the file";
 
+	lives_ok { copy_or_fail("$tmp/file", "$tmp/copy") } "copy_or_fail should not fail";
+	ok -f "$tmp/copy", "copy_or_fail should make a file if it didn't fail";
+	is slurp("$tmp/copy"), slurp("$tmp/file"), "copy_or_fail should copy the file";
+
 	lives_ok { mkdir_or_fail("$tmp/dir") } "mkdir_or_fail should not fail";
 	ok -d "$tmp/dir",  "mkdir_or_fail should make a dir if it didn't fail";
 
 	dies_ok { mkfile_or_fail("$tmp/file/not/a/dir/file", "whatevs"); }
 		"mkfile_or_fail should fail if it cannot succeed";
+
+	dies_ok { copy_or_fail("$tmp/e/no/ent", "$tmp/copy2") }
+		"copy_or_fail should fail if it cannot succeed";
 
 	dies_ok { mkdir_or_fail("$tmp/file/not/a/dir"); }
 		"mkdir_or_fail should fail if it cannot succeed";
