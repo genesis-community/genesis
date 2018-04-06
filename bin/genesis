@@ -1179,19 +1179,23 @@ sub {
 	usage(1) if @_ != 1;
 	check_prereqs;
 
-	if (-d "dev" && !$options{force}) {
+	my $top = Genesis::Top->new('.');
+	if ($top->has_dev_kit && !$options{force}) {
 		die "dev/ directory already exists (and --force not specified).  Bailing out.\n";
 	}
 
-	my $temp = tempdir(CLEANUP => 1);
 	my $file = $_[0];
 	if (! -f $file) {
 		(my $stem = $file) =~ s|/|-|;
-		$file = ".genesis/kits/$stem.tar.gz";
+		$file = $top->path(".genesis/kits/$stem.tar.gz");
 	}
-	-f $file or die "Unable to find Kit archive $_[0]\n";
+	if (! -f $file) {
+		die "Unable to find Kit archive $_[0]\n";
+	}
 
-	run('tar -xzf "$1" -C "$2" && rm -rf dev && mv "${2}/*/" dev/', $file, $temp);
+	explain "Uncompressing compiled kit archive #G{$file} into #C{dev/}";
+	run('tar -xzf "$1" -C "$2" && rm -rf dev && mv "${2}/*/" dev/',
+		$file, workdir);
 });
 
 # }}}
