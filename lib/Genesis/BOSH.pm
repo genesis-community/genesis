@@ -10,7 +10,7 @@ sub create_env {
 	my ($class, $manifest, %opts) = @_;
 
 	return bosh({ interactive => 1, passfail => 1 },
-		'create-env', '--state', $opts{state},
+		'bosh', 'create-env', '--state', $opts{state},
 		$ENV{BOSH_NON_INTERACTIVE} ? '-n' : (),
 		$manifest);
 }
@@ -18,7 +18,7 @@ sub create_env {
 sub download_cloud_config {
 	my ($class, $target, $path) = @_;
 	bosh({ interactive => 1, onfailure => "Could not download cloud-config from '$target' BOSH director" },
-		'bosh', '-e "$1" cloud-config > "$2"', $target, $path);
+		'bosh -e "$1" cloud-config > "$2"', $target, $path);
 
 	die "No cloud-config defined on '$target' BOSH director\n"
 		unless -s $path;

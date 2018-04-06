@@ -64,11 +64,11 @@ isnt($kit->path("base"), $dev->path("base"), "compiled-kit paths are not the sam
 
 ## source yaml files, based on features:
 cmp_deeply([$kit->source_yaml_files()],
-           [re('.*/base/params.yml$'),
-            re('.*/base/stuff.yml$')],
+           [re('\bbase/params.yml$'),
+            re('\bbase/stuff.yml$')],
            "simple kits without subkits should return base yaml files only");
 
-cmp_deeply([$kit->source_yaml_files('bogus', 'features')],
+cmp_deeply([$kit->source_yaml_files(['bogus', 'features'])],
            [$kit->source_yaml_files()],
            "simple kits ignore features they don't know about");
 

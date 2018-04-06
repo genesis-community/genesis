@@ -47,7 +47,7 @@ sub load {
 	$self->{kit} = $self->{top}->find_kit(
 		$self->lookup('kit.name'),
 		$self->lookup('kit.version'))
-			or die "Unable to locate kit for $self->{name} environment.\n";
+			or die "Unable to locate kit for '$self->{name}' environment.\n";
 
 	return $self;
 }
@@ -125,8 +125,8 @@ sub has_feature {
 
 sub needs_bosh_create_env {
 	my ($self) = @_;
-	return $self->has_feature('proto')      || \
-	       $self->has_feature('bosh-init')  || \
+	return $self->has_feature('proto')      ||
+	       $self->has_feature('bosh-init')  ||
 	       $self->has_feature('create-env');
 }
 
@@ -159,6 +159,9 @@ sub relate {
 		push @acc, $_;
 		push @unique, "$unique_base/".join('-', @acc).".yml";
 	}
+
+	trace("[env $self->{name}] in relate(): common $_") for @common;
+	trace("[env $self->{name}] in relate(): unique $_") for @unique;
 
 	return wantarray ? (@common, @unique)
 	                 : { common => \@common,
@@ -230,10 +233,18 @@ sub _manifest {
 	my $which = $opts{redact} ? '__redacted' : '__unredacted';
 	my $path = "$self->{__tmp}/$which.yml";
 
+	trace("[env $self->{name}] in _manifest(): looking for the '$which' cached manifest");
 	if (!$self->{$which}) {
+		trace("[env $self->{name}] in _manifest(): cache MISS; generating");
+		trace("[env $self->{name}] in _manifest(): cwd is ".Cwd::cwd);
+		trace("[env $self->{name}] in _manifest(): merging $_")
+			for $self->_yaml_files;
 		local $ENV{REDACT} = $opts{redact} ? 'yes' : ''; # for spruce
+
+		pushd $self->path;
 		my $out = run({ onfailure => "Unable to merge $self->{name} manifest" },
 			'spruce', 'merge', $self->_yaml_files);
+		popd;
 
 		mkfile_or_fail($path, 0400, $out);
 		$self->{$which} = load_yaml($out);
@@ -262,7 +273,7 @@ sub manifest {
 		}
 
 		return run({ onfailure => "Failed to merge $self->{name} manifest" },
-			'spruce', 'merge', '--prune', @prune, $path);
+			'spruce', 'merge', (map { ('--prune', $_) } @prune), $path);
 	}
 
 	return slurp($path);
@@ -270,7 +281,7 @@ sub manifest {
 
 sub write_manifest {
 	my ($self, $file, %opts) = @_;
-	my (undef, $src) = $self->manifest(redact => $opts{redact});
+	my (undef, $src) = $self->_manifest(redact => $opts{redact});
 	copy_or_fail($src, $file);
 }
 
@@ -281,9 +292,14 @@ sub _yaml_files {
 
 	my @cc;
 	if (!$self->needs_bosh_create_env) {
+		trace("[env $self->{name}] in _yaml_files(): not a create-env, we need cloud-config");
 		die "No cloud-config specified for this environment\n"
 			unless $self->{ccfile};
+
+		trace("[env $self->{name}] in _yaml_files(): cloud-config at $self->{ccfile}");
 		push @cc, $self->{ccfile};
+	} else {
+		trace("[env $self->{name}] in_yaml_files(): IS a create-env, skipping cloud-config");
 	}
 
 	mkfile_or_fail("$self->{__tmp}/init.yml", 0644, <<EOF);
@@ -306,7 +322,7 @@ EOF
 
 	return (
 		"$self->{__tmp}/init.yml",
-		$self->kit_files,
+		$self->kit_files(1), # absolute
 		@cc,
 		$self->actual_environment_files(),
 		"$self->{__tmp}/fin.yml",
@@ -314,8 +330,8 @@ EOF
 }
 
 sub kit_files {
-	my ($self) = @_;
-	return $self->{kit}->source_yaml_files($self->features),
+	my ($self, $absolute) = @_;
+	return $self->{kit}->source_yaml_files([$self->features], $absolute),
 }
 
 sub exodus {

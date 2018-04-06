@@ -2,3 +2,21 @@
 fancy:
   status: online
 addons: {}
+exodus:
+  # this should get flattened to `hello.world: i see you`
+  hello:
+    world: i see you
+
+  addons: (( keys addons ))
+
+  multilevel:
+    arrays:
+      - strictly
+      - verboten
+
+  three:
+    levels:
+      or:
+        more:
+          is:
+            right: out

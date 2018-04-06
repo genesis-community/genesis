@@ -29,5 +29,7 @@ dev-release:
 clean:
 	rm -f genesis-*
 
+mtests:
+	prove -lv $(MODULE_TESTS)
 coverage:
 	cover -t -make "prove -lv $(MODULE_TESTS)" -ignore_re '(/Legacy.pm|^t/|/JSON/)'

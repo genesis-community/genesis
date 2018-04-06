@@ -10,6 +10,7 @@ use Test::Deep;
 
 use_ok 'Genesis::Env';
 use Genesis::Top;
+use Genesis::Utils;
 
 subtest 'name validation' => sub {
 	lives_ok { Genesis::Env->validate_name("my-new-env"); }
@@ -203,11 +204,116 @@ EOF
 
 	cmp_deeply([$env->features], [qw[vsphere proto]],
 		"features() returns the current features");
-	ok($env->has_feature('vsphere'));
-	ok($env->has_feature('proto'));
-	ok(!$env->has_feature('xyzzy'));
+	ok($env->has_feature('vsphere'), "standalone env has the vsphere feature");
+	ok($env->has_feature('proto'), "standalone env has the proto feature");
+	ok(!$env->has_feature('xyzzy'), "standalone env doesn't have the xyzzy feature");
 	ok($env->needs_bosh_create_env(),
-		"environments with the 'proto' feature enabled required bosh create-env");
+		"environments with the 'proto' feature enabled require bosh create-env");
+
+	put_file "$tmp/regular-deploy.yml", <<EOF;
+---
+kit:
+  name:    bosh
+  version: 0.2.3
+  features:
+    - vsphere
+
+params:
+  env:     regular-deploy
+EOF
+	lives_ok { $env = $top->load_env('regular-deploy') }
+	         "Genesis::Env should be able to load the `regular-deploy' environment.";
+	ok($env->has_feature('vsphere'), "regular-deploy env has the vsphere feature");
+	ok(!$env->has_feature('proto'), "regular-deploy env does not have the proto feature");
+	ok(!$env->needs_bosh_create_env(),
+		"environments without the 'proto' feature enabled do not require bosh create-env");
+};
+
+subtest 'manifest generation' => sub {
+	my $tmp = workdir."/work";
+	$tmp = Cwd::abs_path("t/tmp/save");
+	my $top = Genesis::Top->new($tmp);
+
+	system("rm -rf $tmp; mkdir -p $tmp");
+	put_file "$tmp/.genesis/config", <<EOF;
+---
+genesis:         2.6.0
+deployment_type: thing
+EOF
+
+	put_file $top->path('standalone.yml'), <<EOF;
+---
+kit:
+  name:    dev
+  version: latest
+  features:
+    - whiskey
+    - tango
+    - foxtrot
+
+params:
+  env: standalone
+EOF
+
+	symlink_or_fail Cwd::abs_path("t/src/fancy"), $top->path('dev');
+	ok $top->has_dev_kit, "working directory should have a dev kit now";
+	my $env = $top->load_env('standalone');
+	cmp_deeply([$env->kit_files], [qw[
+		base.yml
+		addons/whiskey.yml
+		addons/tango.yml
+		addons/foxtrot.yml
+	]], "env gets the correct kit yaml files to merge");
+	cmp_deeply([$env->potential_environment_files], [qw[
+		./standalone.yml
+	]], "env formulates correct potential environment files to merge");
+	cmp_deeply([$env->actual_environment_files], [qw[
+		./standalone.yml
+	]], "env detects correct actual environment files to merge");
+
+	$ENV{GENESIS_TRACE} = 1;
+	dies_ok { $env->manifest; } "should not be able to merge an env without a cloud-config";
+	$ENV{GENESIS_TRACE} = 0;
+
+
+	put_file "$tmp/.cloud.yml", <<EOF;
+--- {}
+# not really a cloud config, but close enough
+EOF
+	lives_ok { $env->use_cloud_config("$tmp/.cloud.yml")->manifest; }
+		"should be able to merge an env with a cloud-config";
+
+	$env->write_manifest("$tmp/.manifest.yml");
+	ok -f "$tmp/.manifest.yml", "env->write_manifest should actually write the file";
+	ok -s "$tmp/.manifest.yml" > -s "$tmp/standalone.yml",
+		"written manifest should be at least as big as the env file";
+
+	ok $env->manifest_lookup('addons.foxtrot'), "env manifest defines addons.foxtrot";
+	is $env->manifest_lookup('addons.bravo', 'MISSING'), 'MISSING',
+		"env manifest doesn't define addons.bravo";
+
+	cmp_deeply($env->exodus, {
+			kit_name      => 'dev',
+			kit_version   => 'latest',
+			vault_base    => 'secret/standalone/thing',
+			'addons.0'    => 'foxtrot',
+			'addons.1'    => 'tango',
+			'addons.2'    => 'whiskey',
+			'hello.world' => 'i see you',
+		}, "env manifest can provide exodus with flattened keys");
+
+	cmp_deeply(load_yaml($env->manifest(prune => 0)),
+		superhashof({
+			kit => superhashof({
+				name => 'dev',
+			}),
+		}), "unpruned manifest should have the `kit` toplevel");
+
+	cmp_deeply(load_yaml($env->manifest(prune => 1)), {
+		name   => ignore,
+		fancy  => ignore,
+		addons => ignore,
+	}, "pruned manifest should not contain the `kit` toplevel");
 };
 
 done_testing;

@@ -55,13 +55,24 @@ sub path {
 }
 
 sub glob {
-	my ($self, $glob) = @_;
+	my ($self, $glob, $absolute) = @_;
 	$glob =~ s|^/+||;
 
 	$self->extract;
 	die "self->extract did not set self->{root}; this is a bug in Genesis!\n"
 		unless $self->{root};
-	return glob "$self->{root}/$glob";
+
+	if ($absolute) {
+		return glob "$self->{root}/$glob";
+	}
+
+	# do a relative glob by popping into the root
+	# and processing the glob from there.
+	#
+	pushd $self->{root};
+	my @l = glob $glob;
+	popd;
+	return @l;
 }
 
 sub has_hook {
@@ -78,13 +89,31 @@ sub run_hook {
 	local %ENV = %ENV;
 	$ENV{GENESIS_KIT_NAME}     = $self->name;
 	$ENV{GENESIS_KIT_VERSION}  = $self->version;
-	$ENV{GENESIS_ROOT}         = $opts{env}->path;
-	$ENV{GENESIS_ENVIRONMENT}  = $opts{env}->name;
-	$ENV{GENESIS_VAULT_PREFIX} = $opts{env}->prefix;
+
+	die "Unrecognized hook '$hook'\n"
+		unless grep { $_ eq $hook } qw/new blueprint secrets info addon
+		                               prereq subkit/;
+
+	if (grep { $_ eq $hook } qw/new secrets info addon prereq/) {
+		# env is REQUIRED
+		die "The 'env' option to run_hook is required for the '$hook' hook.  This is a bug in Genesis.\n"
+			unless $opts{env};
+
+		$ENV{GENESIS_ROOT}         = $opts{env}->path;
+		$ENV{GENESIS_ENVIRONMENT}  = $opts{env}->name;
+		$ENV{GENESIS_VAULT_PREFIX} = $opts{env}->prefix;
+
+	} elsif (grep { $_ eq $hook } qw/blueprint subkit/) {
+		# features is REQUIRED
+		die "The 'features' option to run_hook is required for the '$hook' hook.  This is a bug in Genesis.\n"
+			unless $opts{features};
+
+	} else {
+		die "Unrecognized hook '$hook'\n";
+	}
 
 	my @args;
 	if ($hook eq 'new') {
-		# hooks/new root-path env-name vault-prefix
 		@args = (
 			$ENV{GENESIS_ROOT},           # deprecate!
 			$ENV{GENESIS_ENVIRONMENT},    # deprecate!
@@ -92,38 +121,18 @@ sub run_hook {
 		);
 
 	} elsif ($hook eq 'secrets') {
-		# hook/secret action env-name vault-prefix
-		@args = (
-			$opts{action},
-			$ENV{GENESIS_ENVIRONMENT},    # deprecate!
-			$ENV{GENESIS_VAULT_PREFIX},   # deprecate!
-		);
+		@args = ($opts{action});
 
 	} elsif ($hook eq 'blueprint') {
-		# hooks/blueprint
-		$ENV{GENESIS_REQUESTED_FEATURES} = join(' ', $opts{env}->features);
-		@args = ();
-
-	} elsif ($hook eq 'info') {
-		# hooks/info
-		@args = ();
+		$ENV{GENESIS_REQUESTED_FEATURES} = join(' ', @{$opts{features}});
 
 	} elsif ($hook eq 'addon') {
-		# hooks/addon [user-supplied-args ...]
 		$ENV{GENESIS_ADDON_SCRIPT} = $opts{script};
 		@args = @{$opts{args} || []};
 
 	##### LEGACY HOOKS
-	} elsif ($hook eq 'prereqs') {
-		# hooks/prereqs
-		@args = ();
-
 	} elsif ($hook eq 'subkit') {
-		# hooks/subkits subkit1 [subkit2 ...]
-		@args = $opts{env}->features;
-
-	} else {
-		die "Unrecognized hook '$hook'\n";
+		@args = @{ $opts{features} };
 	}
 
 	chmod 0755, $self->path("hooks/$hook");
@@ -174,16 +183,19 @@ sub metadata {
 }
 
 sub source_yaml_files {
-	my ($self, @features) = @_;
+	my ($self, $features, $absolute) = @_;
+	$features ||= [];
 
 	my @files;
 	if ($self->has_hook('blueprint')) {
-		local $ENV{GENESIS_REQUESTED_FEATURES} = join(' ', @features);
-		@files = $self->run_hook('blueprint');
+		@files = $self->run_hook('blueprint', features => $features);
+		if ($absolute) {
+			@files = map { $self->path($_) } @files;
+		}
 
 	} else {
-		@files = $self->glob("base/*.yml");
-		push @files, map { $self->glob("subkits/$_/*.yml") } @features;
+		@files = $self->glob("base/*.yml", $absolute);
+		push @files, map { $self->glob("subkits/$_/*.yml", $absolute) } @$features;
 	}
 
 	return @files;
@@ -245,11 +257,18 @@ The specific composition of C<%opts>, as well as the return value / side
 effects of running a hook are wholly hook-dependent.  Refer to the section
 B<GENESIS KIT HOOKS>, later, for more detail.
 
-=head2 source_yaml_files(@features)
+=head2 source_yaml_files(\@features, $absolute)
 
 Determines, by way of either C<hooks/blueprint>, or the legacy subkit
 detection logic, which kit YAML files need to be merged together, and
 returns there paths.
+
+If you pass C<$absolute> as a true value, the paths returned by this
+function will be absolutely qualified to the Kit's Top object root.  This is
+necessary for merging from a different directory (i.e. the deployment root,
+when blueprint is going to return paths relative to the kit working space).
+
+If C<\@features> is omitted, it defaults to the empty arrayref, C<[]>.
 
 =head1 GENESIS KIT HOOKS
 
