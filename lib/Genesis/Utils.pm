@@ -1,8 +1,8 @@
 package Genesis::Utils;
-#use strict;
-#use warnings;
+use strict;
+use warnings;
 
-use Genesis::Run;
+use File::Basename qw/basename/;
 
 use base 'Exporter';
 our @EXPORT = qw/
@@ -21,14 +21,20 @@ our @EXPORT = qw/
 
 	ordify
 
-	get_file
+	run lines bosh curl
+
+	slurp
 	mkfile_or_fail mkdir_or_fail
 	chdir_or_fail chmod_or_fail
 	symlink_or_fail
 	copy_or_fail
+
+	load_json
+	load_yaml load_yaml_file
 /;
 
 use File::Temp qw/tempdir/;
+use JSON::PP qw//;
 
 sub envset {
 	my ($var) = @_;
@@ -88,14 +94,14 @@ sub csprintf {
 	$s =~ s/(#[KRGYBMPCW*]\{)(.*?)(\})/_colorize($1, $2)/egi;
 	return $s;
 }
-sub explain(@) {
+sub explain {
 	return if envset "QUIET";
 	{ local $ENV{NOCOLOR} = "yes" unless -t STDOUT;
 	        print csprintf(@_); }
 	print "\n";
 }
 
-sub debug(@) {
+sub debug {
 	return unless envset "GENESIS_DEBUG"
 	           or envset "GENESIS_TRACE";
 	print STDERR "DEBUG> ";
@@ -104,7 +110,7 @@ sub debug(@) {
 	print STDERR "\n";
 }
 
-sub trace(@) {
+sub trace {
 	return unless envset "GENESIS_TRACE";
 	print STDERR "TRACE> ";
 	{ local $ENV{NOCOLOR} = "yes" unless -t STDOUT;
@@ -112,13 +118,14 @@ sub trace(@) {
 	print STDERR "\n";
 }
 
-sub error(@) {
+sub error {
 	my @err = @_;
 	unshift @err, "%s" if $#err == 0;
 	print STDERR csprintf(@err) . "\n";
 }
 
-sub bail(@) {
+sub bail {
+	my @err = @_;
 	unshift @err, "%s" if $#err == 0;
 	$! = 1; die csprintf(@_)."\n";
 }
@@ -163,7 +170,123 @@ sub is_valid_uri {
 	return $components{uri};
 }
 
-sub get_file {
+sub run {
+	my (@args) = @_;
+	my %opts = %{((ref($args[0]) eq 'HASH') ? shift @args: {})};
+	my $prog = shift @args;
+	if ($prog !~ /\$\{?[\@0-9]/ && scalar(@args) > 0) {
+		$prog .= ' "$@"'; # old style of passing in args as array, need to wrap for shell call
+	}
+
+	local %ENV = %ENV; # To get local scope for duration of this call
+	for (keys %{$opts{env} || {}}) {
+		$ENV{$_} = $opts{env}{$_};
+		debug("#M{Setting: }#B{$_}='#C{$ENV{$_}}'");
+	}
+	my $shell = $opts{shell} || '/bin/bash';
+	$prog .= ($opts{stderr} ? " 2>$opts{stderr}" : ' 2>&1') unless ($opts{interactive});
+	debug("#M{Executing:} `#C{$prog}`%s", ($opts{interactive} ? " #Y{(interactively)}" : ''));
+	if (@args) {
+		unshift @args, basename($shell);
+		debug("#M{ - with arguments:}");
+		debug("#M{%4s:} '#C{%s}'", $_, $args[$_]) for (1..$#args);
+	}
+
+	my @cmd = ($shell, "-c", $prog, @args);
+	my $out;
+	if ($opts{interactive}) {
+		system @cmd;
+	} else {
+		open my $pipe, "-|", @cmd;
+		$out = do { local $/; <$pipe> };
+		$out =~ s/\s+$//;
+		close $pipe;
+	}
+	my $rc = $? >>8;
+	if ($rc) {
+		if ($opts{onfailure}) {
+			bail("#R{%s} (run failed)%s", $opts{onfailure}, defined($out) ? ":\n$out" :'');
+		}
+		debug("#R{==== ERROR: $rc}");
+		debug("$out\n#R{==== END}") if defined($out);
+	} else {
+		debug("#g{Command run successfully.}");
+	}
+	return unless defined(wantarray);
+	return
+		$opts{passfail}    ? $rc == 0 :
+		$opts{onfailure}   ? $out :
+		$opts{interactive} ? (wantarray ? (undef, $rc) : $rc)
+		                   : (wantarray ? ($out,  $rc) : $out);
+}
+
+sub lines {
+	my ($out, $rc) = @_;
+	return $rc ? () : split $/, $out;
+}
+
+sub bosh {
+	my @args = @_;
+
+	die "Unable to determine where the bosh CLI lives.  This is a bug, please report it.\n"
+		unless $ENV{GENESIS_BOSH_COMMAND};
+
+	my $opts = (ref($args[0]) eq 'HASH') ? shift @args : {};
+	$opts->{env} ||= {};
+
+	# Clear out the BOSH env vars unless we're under Concourse
+	unless ($ENV{BUILD_PIPELINE_NAME}) {
+		$opts->{env}{HTTPS_PROXY} = ''; # bosh dislikes this env var
+		$opts->{env}{https_proxy} = ''; # bosh dislikes this env var
+
+		$opts->{env}{BOSH_ENVIRONMENT}   ||= ''; # ensure using ~/.bosh/config via alias
+		$opts->{env}{BOSH_CA_CERT}       ||= '';
+		$opts->{env}{BOSH_CLIENT}        ||= '';
+		$opts->{env}{BOSH_CLIENT_SECRET} ||= '';
+	}
+
+	if ($args[0] =~ /\$\{?[\@0-9]/ && scalar(@args) > 1) {
+		$args[0] = $ENV{GENESIS_BOSH_COMMAND} ." $args[0]";
+
+	} else {
+		unshift @args, $ENV{GENESIS_BOSH_COMMAND}
+	}
+
+	return run($opts, @args);
+}
+
+sub curl {
+	my ($method, $url, $headers, $data, $skip_verify, $creds) = @_;
+	my @flags = ("-X", $method);
+	push @flags, "-H", "$_: $headers->{$_}" for (keys %$headers);
+	push @flags, "-d", $data                if  $data;
+	push @flags, "-k"                       if  ($skip_verify);
+	push @flags, "-u", $creds               if  ($creds);
+	push @flags, "-v"                       if  (envset('GENESIS_DEBUG'));
+
+	my $status = "";
+	my $status_line = "";
+
+	my @data = lines(run('curl', '-isL', $url, @flags));
+
+	unless (scalar(@data) && $? == 0) {
+		interact('curl', '-L', $url, @flags); # curl again to get stdout/err into concourse for debugging
+		return 599, "Unable to execute curl command", "";
+	}
+	while (my $line = shift @data) {
+		if ($line =~ m/^HTTP\/\d+\.\d+\s+((\d+)(\s+.*)?)$/) {
+			$status_line = $1;
+			$status = $2;
+		}
+		# curl -iL will output a second set of headers if following links
+		if ($line =~ /^\s+$/ && $status !~ /^3\d\d$/) {
+			last;
+		}
+	}
+	return $status, $status_line, join("", @data);
+}
+
+sub slurp {
 	my ($file) = @_;
 	open my $fh, "<", $file
 		or die "failed to open '$file' for reading: $!\n";
@@ -180,7 +303,7 @@ sub mkfile_or_fail {
 	}
 	debug("creating file $file");
 	eval {
-		open my $fh, ">", $file;
+		open my $fh, ">", $file or die $!;
 		print $fh $content;
 		close $fh;
 	} or die "Error creating file $file: $!\n";
@@ -188,27 +311,22 @@ sub mkfile_or_fail {
 	return $file;
 }
 
-# mkdir_or_fail $dir;
 sub mkdir_or_fail {
 	my ($dir,$mode) = @_;
 	unless (-d $dir) {;
 		debug("creating directory $dir/");
-		Genesis::Run::do_or_die(
-			"Unable to create directory $dir",
-			'mkdir -p "$1"', $dir
-		);
+		run({ onfailure => "Unable to create directory $dir" },
+			'mkdir -p "$1"', $dir);
 	}
 	chmod_or_fail($mode, $dir) if defined $mode;
 	return $dir;
 }
-# chdir_or_fail $dir;
 sub chdir_or_fail {
 	my ($dir) = @_;
 	debug("changing current working directory to $dir/");
 	chdir $dir or die "Unable to change directory to $dir/: $!\n";
 }
 
-# symlink_or_fail $source $dest;
 sub symlink_or_fail {
 	my ($source, $dest) = @_;
 	-e $source or die "$source does not exist!\n";
@@ -216,7 +334,6 @@ sub symlink_or_fail {
 	symlink($source, $dest) or die "Unable to link $source to $dest: $!\n";
 }
 
-# copy_or_fail $from, $to;
 sub copy_or_fail {
 	my ($from, $to) = @_;
 	-f $from or die "$from: $!\n";
@@ -233,6 +350,29 @@ sub chmod_or_fail {
 	chmod $mode, $path
 		or die "Could not change mode of $path: $!\n";
 }
+
+sub load_json {
+	my ($json) = @_;
+	return JSON::PP->new->allow_nonref->decode($json);
+}
+
+sub load_yaml_file {
+	my ($file) = @_;
+	my ($out, $rc) = run('spruce json "$1"', $file);
+	return $rc ? undef : load_json($out);
+}
+
+sub load_yaml {
+	my ($yaml) = @_;
+
+	my $tmp = workdir();
+	open my $fh, ">", "$tmp/json.yml"
+		or die "Unable to create tempfile for YAML conversion: $!\n";
+	print $fh $yaml;
+	close $fh;
+	return load_yaml_file("$tmp/json.yml")
+}
+
 1;
 
 =head1 NAME
@@ -370,7 +510,119 @@ following keys:
 
 Returns true if C<$uri> can be parsed successfully as a URI.
 
-=head2 get_file($path)
+=head2 run([\%opts,] $command, @args)
+
+Run a command.  This is the Swiss Army knife of command execution, with lots
+of bells and whistles.
+
+You can operate this in three modes:
+
+    # Single string, embedded arguments
+    my ($out, $rc) = run("safe read a/b/c | spruce json");
+
+    # Pre-tokenized array of arguments
+    my ($out, $rc) = run('spruce', 'merge', '--skip-eval, @files);
+
+    # Complicated pipeline, pre-tokenized arguments
+    my ($out, $rc) = run('spruce merge "$1" - "$2" < "$3.yml"',
+                            $file1, $file2, $file3);
+
+In all cases, the output of the command (including STDERR) is returned,
+along with the exit code (without the other bits that normally accompany
+C<$?>).
+
+The third form is recommended as it properly encapsulates/tokenizes the
+arguments to prevent accidental expansion or splitting due to quoting and
+spaces.  If using it, remember to quote all variable references.
+
+You can also pass a hash reference as the first argument to supply options
+to change the behaviour of the execution.  The following options are
+supported:
+
+=over
+
+=item interactive
+
+If true, run the command interactively on a controlling terminal.  This uses
+the perl `system` command, so capturing output cannot be done.  Returned
+output will be undefined.
+
+=item passfail
+
+If true, returns true if exit code is 0, false otherwise.  Can work in
+conjunction with interactive.
+
+=item onfailure
+
+An error message to bail with, in the event that the program either fails to
+execute, or exits non-zero.  In non-interactive mode, the output of the
+failing command will be printed (in interactive mode, it's already been
+printed).
+
+=item env
+
+A hash defining modifications to the execution environment.  These
+environment variables will only be set for the duration of the command run.
+
+=item shell
+
+Change the executing shell from C</bin/bash> to something else.  You
+generally don't need to set this unless you are doing something strange.
+
+=item stderr
+
+A shell-specific redirection destination for standard error.  This gets
+appended to the idiom "2>".  Normally, standard error is redirected back
+into standard output.
+
+=over
+
+Finally, if you are not running in C<interactive> or C<passfail> mode, you
+can call this in either scalar or list context.  In list context, the output
+and exit code are returned in a list, otherwise just the output.
+
+    # scalar context
+    my $out = run('grep "$1" "$@"', $pattern, @files);
+    my $rc = $? >> 8;
+
+    # list contex
+    my ($out, $rc) = run('spruce json "$1" | jq -r "$2"', $_, $filter);
+
+
+=head2 curl($method, $url, $headers, $data, $skip_verify, $creds)
+
+Runs the C<curl> command, with the appropriate credentials, and returns the
+status code, status line, and output data to the caller:
+
+    my ($st, $line, $response) = curl(GET => 'https://example.com');
+    if ($st != 200) {
+      die "request failed: $line\n";
+    }
+    print "data:\n";
+    print $response;
+
+
+=head2 interact(...)
+
+This helper function sets C<interactive> and C<passfail>, to return truthy
+on success, and then just delegates to C<run()>.
+
+=head2 bosh(...)
+
+Configures a custom environment for the BOSH CLI, and then delegates to
+C<run()>.
+
+=head2 get(...)
+
+Calls C<run()>, but then returns just the output, regardless of context
+(scalar or list).
+
+=head2 getlines(...)
+
+Like C<get>, but it splits the output on newlines and returns the list of
+lines.
+
+=head2 slurp($path)
 
 Opens C<$path> for reading, reads its entire contents into memory, and
 returns that as a string.  Dies if it was unable to open the file.

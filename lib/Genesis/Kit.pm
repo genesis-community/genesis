@@ -3,8 +3,6 @@ use strict;
 use warnings;
 
 use Genesis::Utils;
-use Genesis::IO;
-use Genesis::Run;
 use Genesis::Helpers;
 
 sub url {
@@ -172,7 +170,7 @@ sub run_hook {
 
 sub metadata {
 	my ($self) = @_;
-	return $self->{__metadata} ||= LoadFile($self->path('kit.yml'));
+	return $self->{__metadata} ||= load_yaml_file($self->path('kit.yml'));
 }
 
 sub source_yaml_files {

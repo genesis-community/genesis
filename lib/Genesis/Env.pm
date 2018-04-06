@@ -216,11 +216,11 @@ sub defines {
 sub params {
 	my ($self) = @_;
 	if (!$self->{__params}) {
-		my $out = Genesis::Run::get(
-			{ onfailure => "Unable to merge $self->{name} environment files" },
+		my $out = run({ onfailure => "Unable to merge $self->{name} environment files" },
 			'spruce merge --skip-eval "$@" | spruce json',
-			map { $self->path($_) } $self->actual_environment_files());
-		$self->{__params} = JSON::PP->new->allow_nonref->decode($out);
+				map { $self->path($_) } $self->actual_environment_files());
+
+		$self->{__params} = load_json($out);
 	}
 	return $self->{__params};
 }
@@ -232,12 +232,11 @@ sub _manifest {
 
 	if (!$self->{$which}) {
 		local $ENV{REDACT} = $opts{redact} ? 'yes' : ''; # for spruce
-		my $out = Genesis::Run::get(
-			{ onfailure => "Unable to merge $self->{name} manifest" },
+		my $out = run({ onfailure => "Unable to merge $self->{name} manifest" },
 			'spruce', 'merge', $self->_yaml_files);
 
 		mkfile_or_fail($path, 0400, $out);
-		$self->{$which} = Load($out);
+		$self->{$which} = load_yaml($out);
 	}
 	return $self->{$which}, $path;
 }
@@ -262,12 +261,11 @@ sub manifest {
 			                 vm_extensions));
 		}
 
-		return Genesis::Run::get('spruce', 'merge',
-			'--prune', @prune,
-			$path);
+		return run({ onfailure => "Failed to merge $self->{name} manifest" },
+			'spruce', 'merge', '--prune', @prune, $path);
 	}
 
-	return get_file($path);
+	return slurp($path);
 }
 
 sub write_manifest {
@@ -342,9 +340,9 @@ sub exodus {
 		if (ref $val eq 'HASH') {
 			for my $k (keys %$val) {
 				if (ref $val->{$k}) {
-					explain "#Y{WARNING:} The kit has specified the genesis.$key.$k\n".
-					        "metadata item, but the given value is not a simple scalar.\n".
-					        "Ignoring this metadata value.\n";
+					explain("#Y{WARNING:} The kit has specified the genesis.$key.$k");
+					explain("metadata item, but the given value is not a simple scalar.");
+					explain("Ignoring this metadata value.");
 					next;
 				}
 				$final{"$key.$k"} = $val->{$k};
@@ -376,10 +374,8 @@ sub bosh_target {
 		die "Could not find the `params.bosh' or `params.env' key in $self->{name} environment file!\n";
 	}
 
-	Genesis::Run::interactive_bosh(
-		{ onfailure => "Could not find BOSH Director `$bosh` (specified via $source).",
-		  env       => { BOSH_ENVIRONMENT => $bosh } },
-		'env');
+	Genesis::BOSH->env($bosh)
+		or die "Could not find BOSH Director `$bosh` (specified via $source).\n";
 
 	return $bosh;
 }

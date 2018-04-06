@@ -91,7 +91,7 @@ sub read {
 	my ($class, $file) = @_;
 
 	my @errors = ();
-	my $p = Load(spruce_merge($file));
+	my $p = load_yaml(spruce_merge($file));
 	unless (exists $p->{pipeline}) {
 		# fatal error
 		push @errors, "Missing top-level 'pipeline:' key.";

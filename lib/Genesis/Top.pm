@@ -2,7 +2,7 @@ package Genesis::Top;
 use strict;
 use warnings;
 
-use Genesis::IO;
+use Genesis::Utils;
 use Genesis::Env;
 use Genesis::Kit::Compiled;
 use Genesis::Kit::Dev;
@@ -20,7 +20,7 @@ sub path {
 
 sub config {
 	my ($self) = @_;
-	return $self->{__config} ||= LoadFile($self->path(".genesis/config"));
+	return $self->{__config} ||= load_yaml_file($self->path(".genesis/config"));
 }
 
 sub type {

@@ -8,8 +8,8 @@ use helper;
 use Test::Deep;
 use Archive::Tar;
 
-use Genesis::IO;
 use_ok 'Genesis::Kit::Compiler';
+use Genesis::Utils;
 
 my $tmp = workdir();
 my $cc = Genesis::Kit::Compiler->new("$tmp/test-genesis-kit");
@@ -168,8 +168,10 @@ cmp_deeply(\%files, {
 }, "compiled kit tarball should contain just the files we want");
 
 my $meta;
-lives_ok { $meta = Load($tar->get_content('test-1.2.3/kit.yml')); } "compiled kit tarball should contain a valid kit.yml file";
-is($meta->{version}, '1.2.3', "compiled kit tarball should contain the correct version in kit.yml metadata");
+lives_ok { $meta = load_yaml($tar->get_content('test-1.2.3/kit.yml')); }
+	"compiled kit tarball should contain a valid kit.yml file";
+is($meta->{version}, '1.2.3',
+	"compiled kit tarball should contain the correct version in kit.yml metadata");
 
 
 done_testing;

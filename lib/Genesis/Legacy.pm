@@ -2,7 +2,6 @@ package Genesis::Legacy;
 use strict;
 use warnings;
 
-use Genesis::IO;
 use Genesis::Utils;
 
 sub validate_features {
@@ -67,7 +66,7 @@ sub process_params {
 	};
 	for my $feature ("base", @{$opts{features}}) {
 		next unless defined $opts{params}{$feature} && @{$opts{params}{$feature}};
-		my $defaults = LoadFile($feature eq "base" ? "base/params.yml"
+		my $defaults = load_yaml_file($feature eq "base" ? "base/params.yml"
 		                                           : "subkits/$feature/params.yml");
 		for my $q (@{$opts{params}{$feature}}) {
 			my $answer;
@@ -136,22 +135,22 @@ sub process_params {
 				} else {
 					my ($path, $key) = split /:/, $vault_path;
 					if ($q->{type} =~ /^(boolean|string)$/) {
-						Genesis::Run::interact(
-							{onfailure => "Failed to save data to $vault_path in Vault"},
+						run({ interactive => 1, onfailure => "Failed to save data to $vault_path in Vault" },
 							'safe prompt "$1" -- "$2" "$3" "$4"',
-							$q->{ask}, ($q->{echo} ? "ask" : "set"), $path, $key
-						);
+							$q->{ask}, ($q->{echo} ? "ask" : "set"), $path, $key);
+
 					} elsif ($q->{type} eq "multi-line") {
 						$answer = prompt_for_block($q->{ask});
 						my $tmpdir = workdir;
+
 						open my $fh, ">", "$tmpdir/param" or die "Could not write to $tmpdir/param: $!\n";
 						print $fh $answer;
 						close $fh;
-						Genesis::Run::do_or_die(
-							"Failed to save data to $vault_path in Vault",
+
+						run({ onfailure => "Failed to save data to $vault_path in Vault" },
 							'safe set "$1" "${2}@${3}/param"',
-							$path, $key, $tmpdir
-						);
+							$path, $key, $tmpdir);
+
 					} else {
 						die "Unsupported parameter type '$q->{type}' for $q->{vault}. Please contact your kit author for a fix.\n";
 					}
@@ -189,7 +188,7 @@ sub process_params {
 }
 
 sub safe_path_exists {
-	return Genesis::Run::check(qw(safe exists), $_[0]);
+	return run({ passfail => 1 }, qw(safe exists), $_[0]);
 }
 
 sub dereference_param {
@@ -386,28 +385,24 @@ sub vaultify_secrets {
 
 	my $creds = active_credentials($meta, $options{features} || {});
 	if (%$creds) {
-		explain " - auto-generating credentials (in secret/$options{prefix})...\n";
+		explain(" - auto-generating credentials (in secret/$options{prefix})...");
 		for (safe_commands $creds, %options) {
-			Genesis::Run::interact(
-				{onfailure => "Failure autogenerating credentials."},
-				'safe', @$_
-			);
+			run({ interactive => 1, onfailure => "Failure autogenerating credentials." },
+				'safe', @$_);
 		}
 	} else {
-		explain " - no credentials need to be generated.\n";
+		explain(" - no credentials need to be generated.");
 	}
 
 	my $certs = active_certificates($meta, $options{features} || {});
 	if (%$certs) {
-		explain " - auto-generating certificates (in secret/$options{prefix})...\n";
+		explain(" - auto-generating certificates (in secret/$options{prefix})...");
 		for (cert_commands $certs, %options) {
-			Genesis::Run::interact(
-				{onfailure => "Failure autogenerating certificates."},
-				'safe', @$_
-			);
+			run({ interactive => 1, onfailure => "Failure autogenerating certificates." },
+				'safe', @$_);
 		}
 	} else {
-		explain " - no certificates need to be generated.\n";
+		explain(" - no certificates need to be generated.");
 	}
 }
 
@@ -434,8 +429,8 @@ sub new_environment {
 	if ($self->{name} =~ m/-/) { # multi-level environment; make/use a top-level
 		($parent = $file) =~ s/-.*\.yml/.yml/;
 		if (-e $parent) {
-			explain "Using existing #C{$parent} file as base config.";
-			%existing_info = %{LoadFile($parent)};
+			explain("Using existing #C{$parent} file as base config.");
+			%existing_info = %{load_yaml_file($parent)};
 		}
 	}
 
@@ -514,7 +509,7 @@ EOF
 		}
 	}
 	close $fh;
-	explain "Created #C{$file} environment file";
+	explain("Created #C{$file} environment file");
 }
 
 sub prompt_for_env_features {

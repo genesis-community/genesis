@@ -3,14 +3,15 @@
 use strict;
 use warnings;
 
+# Ensure code exits and cleans up workdirs
+$SIG{INT} = $SIG{TERM} = sub { die };
+
 # non-core modules
-use JSON::PP qw/decode_json encode_json/;
+use JSON::PP qw/encode_json/;
 # NOTE: if you add more non-core modules, they and all their non-core
 # dependencies have to be placed in lib/
-#
-# Ensure code exits and cleans up workdirs
-$SIG{INT}=$SIG{TERM}=sub{die};
 
+# core modules
 use Getopt::Long qw/GetOptionsFromArray :config no_ignore_case/;
 use File::Temp qw/tempdir tempfile/;
 use File::Basename qw/dirname basename/;
@@ -20,10 +21,8 @@ use Cwd qw/getcwd abs_path/;
 
 # Genesis Libs
 use Genesis::Utils;
-use Genesis::Run;
 use Genesis::Top;
 use Genesis::Kit::Compiler;
-use Genesis::IO;
 
 our $VERSION = "(development)";
 our $GITHUB_URL = "https://github.com/starkandwayne/genesis";
@@ -157,8 +156,8 @@ sub validate_prompt_opts {
 		push @invalid_opts, $opt unless grep {$_ eq $opt} @valid_opts;
 	}
 	if (@invalid_opts) {
-		error "#R{ERROR:} %s prompt does not support option(s) '%s'", $type, join("', '", @invalid_opts);
-		error "Contact your kit author for a fix.";
+		error("#R{ERROR:} %s prompt does not support option(s) '%s'", $type, join("', '", @invalid_opts));
+		error("Contact your kit author for a fix.");
 		exit 2;
 	}
 }
@@ -225,11 +224,9 @@ sub secret_line_prompt_handler {
 	validate_prompt_opts("secret-line", \%opts, qw(echo));
 	target_vault($ENV{GENESIS_TARGET_VAULT});
 	my ($path, $key) = split /:/, "secret/$secret";
-	Genesis::Run::interact(
-		{onfailure => "Failed to save data to secret/$secret in Vault '$ENV{GENESIS_TARGET_VAULT}'"},
+	run({ interactive => 1, onfailure => "Failed to save data to secret/$secret in Vault '$ENV{GENESIS_TARGET_VAULT}'" },
 		'safe prompt "$1" --  "$2" "$3" "$4"',
-		$prompt, ($opts{echo} ? "ask" : "set"), $path, $key
-	);
+		$prompt, ($opts{echo} ? "ask" : "set"), $path, $key);
 }
 sub secret_block_prompt_handler {
 	my ($prompt,%opts) = @_;
@@ -238,10 +235,8 @@ sub secret_block_prompt_handler {
 	target_vault($ENV{GENESIS_TARGET_VAULT});
 	my ($path, $key) = split /:/, "secret/$secret";
 	my $file = mkfile_or_fail(workdir()."/param", prompt_for_block($prompt));
-	Genesis::Run::do_or_die(
-		"Failed to save data to secret/$secret in Vault '$ENV{GENESIS_TARGET_VAULT}'",
-		'safe set "$1" "${2}@${3}"', $path, $key, $file
-	);
+	run({ onfailure => "Failed to save data to secret/$secret in Vault '$ENV{GENESIS_TARGET_VAULT}'" },
+		'safe set "$1" "${2}@${3}"', $path, $key, $file);
 }
 
 our $prompt_handlers = {
@@ -268,11 +263,11 @@ sub check_bosh_version {
 	my ($min) = @_;
 	my $best = "0.0.0";
 	foreach my $boshcmd (qw(bosh2 boshv2 bosh)) {
-		my $version = Genesis::Run::get("$boshcmd -v 2>&1 | grep version | head -n1");
+		my ($version, undef) = run("$boshcmd -v 2>&1 | grep version | head -n1");
 		if ($version =~ /version (\S+?)-.*/) {
 			if (new_enough("bosh", $1, $min)) {
 				$ENV{GENESIS_BOSH_COMMAND} = $boshcmd;
-				debug "#g{Version $1} of #C{$boshcmd} meets or exceeds minimum of #w{$min}";
+				debug("#G{Version $1} of #C{$boshcmd} meets or exceeds minimum of #W{$min}");
 				return ();
 			}
 			$best = $1 if new_enough("bosh", $1, $best); # Track the best we've found for error message
@@ -290,12 +285,10 @@ sub write_stemcell_data {
 	my $stemcells = "{}";
 	if ($ENV{GENESIS_INDEX} ne "no") {
 		my $flags = "-ks";
-		$flags += " -v" if envset 'GENESIS_DEBUG';
-		$stemcells = Genesis::Run::get(
-			{onfailure => "Unable to contact the genesis index to retrieve stemcell data. Cannot continue."},
+		$flags += " -v" if envset('GENESIS_DEBUG');
+		$stemcells = run({ onfailure => "Unable to contact the genesis index to retrieve stemcell data. Cannot continue." },
 			'curl '.$flags.' "${1}/v1/stemcell/latest | jq -Mc "$2"',
-			$ENV{GENESIS_INDEX}, '. | map({"key": .name, "value": { "sha1": .sha1, "url": .url}}) | from_entries'
-		);
+			$ENV{GENESIS_INDEX}, '. | map({"key": .name, "value": { "sha1": .sha1, "url": .url}}) | from_entries');
 	}
 	open my $fh, ">", $file;
 	print $fh <<EOF;
@@ -325,10 +318,8 @@ sub spruce_merge {
 	}
 	push @flags, "--go-patch";
 
-	return Genesis::Run::get(
-		{onfailure => 'Failed to execute `spruce merge`'},
-		qw(spruce merge), @flags, @files
-	);
+	return run({ onfailure => 'Failed to execute `spruce merge`' },
+		'spruce', 'merge', @flags, @files);
 }
 
 ###########################################################################
@@ -353,21 +344,17 @@ sub vault_auth {
 			"HTTP $msg\n$data\n";
 	}
 	my $output;
-	eval { $output = decode_json($data); 1 }
+	eval { $output = load_json($data); 1 }
 		or die "Invalid JSON received from the Vault at $options{vault}\n($data)\n";
 	exists $output->{auth} and exists $output->{auth}{client_token}
 		or die "No Client Token found in response from the Vault at $options{vault}\n($data)\n";
 
 	$ENV{VAULT_TOKEN} = $output->{auth}{client_token};
-	Genesis::Run::do_or_die(
-		"Failed to authenticate to the Vault at $options{vault}\n:`vault status` said",
-		"vault status"
-	);
+	run({ onfailure => "Failed to authenticate to the Vault at $options{vault}\n:`vault status` said" },
+		"vault status");
 
-	Genesis::Run::do_or_die(
-		"Failed to retrieve secret/handshake from the Vault at $options{vault}",
-		"vault read secret/handshake"
-	)
+	run({ onfailure => "Failed to retrieve secret/handshake from the Vault at $options{vault}" },
+		"vault read secret/handshake");
 }
 
 sub commit_changes {
@@ -378,7 +365,8 @@ sub commit_changes {
 	# rebasing, and git discovers that there are no changes after you rebase
 
 	# create an output git repo based off of latest origin/$branch
-	Genesis::Run::check({interactive => 1}, 'cp -R "$1" "$2"', $indir, $outdir) or exit 1;
+	run({ interactive => 1, passfail => 1},
+		'cp -R "$1" "$2"', $indir, $outdir) or exit 1;
 	pushd $outdir;
 
 	# We need this here so we can do a manual pull after the build/deploy, but
@@ -388,9 +376,9 @@ sub commit_changes {
 	# have already been updated in the .genesis/manifests directory.
 	#
 	my $tmp = workdir;
-	mkdir_or_fail  "$tmp/home/.ssh", 0700;
-	mkfile_or_fail "$tmp/home/.ssh/key", 0600, $key;
-    mkfile_or_fail "$tmp/home/.ssh/config", <<EOF;
+	mkdir_or_fail( "$tmp/home/.ssh", 0700);
+	mkfile_or_fail("$tmp/home/.ssh/key", 0600, $key);
+	mkfile_or_fail("$tmp/home/.ssh/config", <<EOF);
 Host *
   StrictHostKeyChecking no
   UserKnownHostsFile /dev/null
@@ -408,39 +396,35 @@ EOF
 
 	# no need to fetch or pull from origin/$branch, as the git resource in the pipeline should
 	# have the latest data from origin, we just need to reset to the newest applicable ref
-	Genesis::Run::do_or_die(
-		{interactive => 1, env =>{HOME => "$tmp/home"}},
-		"Could not reset to the newest applicable ref in git",
+	run({ onfailure   => "Could not reset to the newest applicable ref in git",
+		  interactive => 1,
+		  env => { HOME => "$tmp/home" } },
 		'git reset --hard "origin/${1}" && git checkout "$1" &&  git pull origin "$1"',
-		$branch
-	);
+		$branch);
 	popd;
 
 	# find and copy all potential changes to the outdir
 	pushd $indir;
-	my @output = Genesis::Run::getlines('git status --porcelain');
+	my @output = lines(run('git status --porcelain'));
 	popd;
 	my @changes = map { chomp; s/^...//; $_; } @output;
 	for my $file (@changes) {
 		mkdir_or_fail(dirname("$outdir/$file"));
-		Genesis::Run::do_or_die(
-			"Could not copy changed files to output directory",
-			'cp -R "$1" "$2"', "$indir/$file", "$outdir/$file"
-		)
+		run({ onfailure => "Could not copy changed files to output directory" },
+			'cp -R "$1" "$2"', "$indir/$file", "$outdir/$file");
 	}
 
 	# check if any changes actually exist in the outdir (potential changes may have alread
 	# been tracked after $indir's commit, so they could disappear here), then commit them
 	pushd $outdir;
-	my $output = Genesis::Run::get('git status --porcelain');
+	my ($output, undef) = run('git status --porcelain');
 	if ($output) {
-		Genesis::Run::interact( # use interact because we want to capture the output live (concourse)
-			{env => {HOME => "$tmp/home"}},
+		run({ interactive => 1, # print output to Concourse log
+			  env => { HOME => "$tmp/home" } },
 			'git add -A && '.
 			'git status && '.
 			'git --no-pager diff --cached && '.
-			'git commit -m "$1"', "CI commit: $message"
-		);
+			'git commit -m "$1"', "CI commit: $message");
 	}
 }
 
@@ -468,19 +452,25 @@ sub new_enough {
 sub check_version {
 	my ($name, $min, $cmd, $from, $regex, $url) = @_;
 	$url ||= "your platform package manager";
-	my $version = Genesis::Run::get({stderr => (($from eq 'stderr') ? "&1 >":"")."/dev/null"}, $cmd);
-	return "#R{Missing `$name`} -- install from #B{$url}" if (!$version || $version =~ /not found/);
+	my ($version, undef) = run({ stderr => (($from eq 'stderr') ? "&1 >" : "")."/dev/null" }, $cmd);
+
+	return "#R{Missing `$name`} -- install from #B{$url}"
+		if !$version || $version =~ /not found/;
+
 	if (envset('GENESIS_DEV_MODE') && $version =~ /development/) {
-		debug "#Y{Version $version} of #C{$name} (development) being used - minimum of #w{$min} needed.";
+		debug("#Y{Version $version} of #C{$name} (development) being used - minimum of #W{$min} needed.");
 		return;
 	}
+
 	$version =~ $regex;
-	return "Could not determine version of $name from `#m{$cmd}`: Got '#C{$version}" unless $1 && is_semver($1);
-	if (new_enough($name, $1, $min)) {
-		debug "#g{Version $1} of #C{$name} meets or exceeds minimum of #w{$min}";
-		return;
-	}
-	return "$name v{$1} is installed, but Genesis requires #R{at least $min} -- upgrade via #B{$url}";
+	return "Could not determine version of $name from `#M{$cmd}`: Got '#C{$version}"
+		unless $1 && is_semver($1);
+
+	return "$name v{$1} is installed, but Genesis requires #R{at least $min} -- please upgrade via #B{$url}"
+		unless new_enough($name, $1, $min);
+
+	debug("#G{Version $1} of #C{$name} meets or exceeds minimum of #w{$min}");
+	return; # no error
 }
 
 sub check_prereqs {
@@ -537,7 +527,7 @@ sub kit_release_url { # DEPRECATED
 	}
 
 	my $releases;
-	eval { $releases = decode_json($data); 1 }
+	eval { $releases = load_json($data); 1 }
 		or die "Failed to read releases information from Github: $@\n";
 
 	if (!@$releases) {
@@ -563,13 +553,13 @@ sub download_kit_tarball
 	my ($name, $want) = @_;
 
 	if ($want eq 'latest') {
-		explain "Downloading Genesis kit #M{$name} (#Y{latest} version)\n";
+		explain("Downloading Genesis kit #M{$name} (#Y{latest} version)");
 	} else {
-		explain "Downloading Genesis kit #M{$name}, version #C{$want}\n";
+		explain("Downloading Genesis kit #M{$name}, version #C{$want}");
 	}
 	my ($url, $version) = kit_release_url($name, $want);
-	mkdir_or_fail ".genesis";
-	mkdir_or_fail ".genesis/kits";
+	mkdir_or_fail(".genesis");
+	mkdir_or_fail(".genesis/kits");
 	open my $kit, ">", ".genesis/kits/$name-$version.tar.gz"
 		or die "Failed to open .genesis/kits/$name-$version.tar.gz for writing: $!\n";
 	my ($code, $msg, $data) = curl "GET", $url;
@@ -578,23 +568,20 @@ sub download_kit_tarball
 	}
 	print $kit $data;
 	close $kit;
-	debug "downloaded kit #M{$name}/#C{$version}\n";
+	debug("downloaded kit #M{$name}/#C{$version}");
 }
 
 sub target_vault {
 	my ($target) = @_;
 	$target ||= '-i';  # Default to interactive mode
-	Genesis::Run::interact(
-		{onfailure => "Could not set safe target"},
-		'safe', 'target', $target
-	);
+	run(
+		{ interactive => 1, onfailure => "Could not set safe target" },
+		'safe', 'target', $target);
 
 	# FIXME: safe now supports safe target --json, and once that gets released, we should totes use that.
-	$ENV{GENESIS_TARGET_VAULT}=Genesis::Run::get(
-		{onfailure => "Could not set target vault"} ,
+	$ENV{GENESIS_TARGET_VAULT} = run({ onfailure => "Could not set target Vault" } ,
 		'safe target 2>&1 | grep "$1" | sed -e "$2"',
-		'.*targeting .* at.*', 's/.*targeting \([^ ]*\) at.*/\1/'
-	);
+		'.*targeting .* at.*', 's/.*targeting \([^ ]*\) at.*/\1/');
 }
 
 ###########################################################################
@@ -648,7 +635,7 @@ sub options {
 
 	$ENV{GENESIS_BOSH_ENVIRONMENT} = $options->{environment}
 		if $options->{environment};
-	chdir_or_fail $options->{cwd} if $options->{cwd};
+	chdir_or_fail($options->{cwd}) if $options->{cwd};
 }
 
 sub command {
@@ -757,9 +744,9 @@ sub {
 	check_prereqs;
 
 	# FIXME: update .genesis/config with new version info
-	mkdir_or_fail ".genesis/bin";
-	copy_or_fail $0, ".genesis/bin/genesis";
-	chmod_or_fail 0755, ".genesis/bin/genesis";
+	mkdir_or_fail(".genesis/bin");
+	copy_or_fail($0, ".genesis/bin/genesis");
+	chmod_or_fail(0755, ".genesis/bin/genesis");
 });
 # }}}
 # genesis init - initialize a new Genesis repository {{{
@@ -819,31 +806,29 @@ sub {
 	$name =~ m/^[a-z][a-z0-9-]+$/
 		or die "Invalid Genesis repo name '$name'\n";
 
-	debug "generating a new Genesis repo, named $name";
+	debug("generating a new Genesis repo, named $name");
 
-	debug "checking git config so can git commit later";
-	Genesis::Run::do_or_die(
-		'Please setup git - git config --global user.name "Your Name" -',
+	debug("checking git config so can git commit later");
+	run({ onfailure => 'Please setup git - git config --global user.name "Your Name" -' },
 		'git config user.name');
-	Genesis::Run::check(
-		'Please setup git - git config --global user.email your@email.com -',
+	run({ 'Please setup git - git config --global user.email your@email.com -' },
 		'git config user.email');
 
 	my $root = $options{directory} || "${name}-deployments";
-	debug "in directory $root";
+	debug("in directory $root");
 	if (-e $root) {
 		die "Attempted to create new environment `$root' failed: Path already exists.\n";
 	}
-	mkdir_or_fail  "$root/.genesis";
-	mkfile_or_fail "$root/.genesis/config", <<EOF;
+	mkdir_or_fail( "$root/.genesis");
+	mkfile_or_fail("$root/.genesis/config", <<EOF);
 ---
 genesis: $VERSION
 deployment_type: $name
 EOF
-	mkdir_or_fail  "$root/.genesis/bin";
-	copy_or_fail   $0, "$root/.genesis/bin/genesis";
-	chmod_or_fail  0755, "$root/.genesis/bin/genesis";
-	mkfile_or_fail "$root/README.md", <<EOF;
+	mkdir_or_fail( "$root/.genesis/bin");
+	copy_or_fail(  $0, "$root/.genesis/bin/genesis");
+	chmod_or_fail( 0755, "$root/.genesis/bin/genesis");
+	mkfile_or_fail("$root/README.md", <<EOF);
 $name deployments
 ==============================
 
@@ -945,28 +930,24 @@ it can be safely removed.
 what is being deployed, and how.
 EOF
 
-	chdir_or_fail $root;
+	chdir_or_fail($root);
 
 	if ($options{'link-dev-kit'}) {
-		debug "Kit: linking dev to $abs_target";
-		symlink_or_fail $abs_target, "./dev";
+		debug("Kit: linking dev to $abs_target");
+		symlink_or_fail($abs_target, "./dev");
 	} elsif ($options{kit}) {
-		debug "Kit: installing kit $options{kit}";
+		debug("Kit: installing kit $options{kit}");
 		my ($kit, $version) = extract_kit_name_and_version($options{kit});
 		download_kit_tarball($kit, $version);
 	} else {
-		debug "Kit: creating empty ./dev kit directory";
-		mkdir_or_fail "./dev";
+		debug("Kit: creating empty ./dev kit directory");
+		mkdir_or_fail("./dev");
 	}
 
-	Genesis::Run::do_or_die(
-		"Failed to initialize a git repository in $root/",
-		'git init');
-	Genesis::Run::do_or_die(
-		"Failed to stage files to git, for initial commit, in $root/",
-		'git add .');
-	Genesis::Run::do_or_die(
-		"Failed to commit initial Genesis repository in $root/",
+	run({ onfailure => "Failed to initialize a git repository in $root/" },
+		'git init && git add .');
+
+	run({ onfailure => "Failed to commit initial Genesis repository in $root/" },
 		'git commit -m "Initial Genesis Repo"');
 
 	exit 0;
@@ -1038,11 +1019,11 @@ sub {
 	target_vault($options{vault});
 
 	# create the environment
-	explain "Setting up new environment #C{$name}...\n";
+	explain("Setting up new environment #C{$name}...");
 	my $env = $top->create_env($name, $kit, prefix => $options{prefix});
 
 	# let the user know
-	explain "New env $env->{name} provisioned!\n";
+	explain("New environment $env->{name} provisioned!");
 });
 
 
@@ -1224,7 +1205,8 @@ sub {
 
 	my $dir = abs_path($options{dev} ? "dev" : "$options{name}-genesis-kit");
 	Genesis::Kit::Compiler->new($dir)->scaffold($options{name});
-	explain "\n#G{Created new Genesis kit '}#C{$options{name}}#G{' in }#C{$dir}\n\n"
+
+	explain("\n#G{Created new Genesis kit '}#C{$options{name}}#G{' in }#C{$dir}");
 });
 
 # }}}
@@ -1295,17 +1277,17 @@ sub {
 	}
 
 	if (!$options{force}) {
-		my ($changes, $rc) = Genesis::Run::get('git status --porcelain');
-		if (!$rc && $changes) {
-			bail "\n#R{ERROR}: Unstaged / uncommited changes found in working directory.\n".
-			     "Please either #C{stash} or #C{commit} those changes before compiling your kit.\n";
-		}
+		my ($changes, undef) = run('git status --porcelain');
+		bail "\n#R{ERROR}: Unstaged / uncommited changes found in working directory.\n".
+		     "Please either #C{stash} or #C{commit} those changes before compiling your kit.\n"
+			if $changes;
 	}
 
 	my $cc = Genesis::Kit::Compiler->new($dir);
 	my $tar = $cc->compile($options{name}, $options{version}, ".")
 		or bail "Unable to compile v$options{version} of $options{name} Genesis Kit.\n";
-	printf "Created $tar\n\n";
+
+	explain("Compiled #G{$options{name}} v#C{$options{version}} at $tar");
 });
 
 # }}}
@@ -1432,20 +1414,17 @@ sub {
 	}
 
 	my $dir = workdir;
-	mkfile_or_fail "${dir}/pipeline.yml", $yaml;
-	Genesis::Run::interact(
-		{onfailure => "Could not upload pipeline $pipeline->{pipeline}{name}"},
-		'fly','-t',$options{target},'set-pipeline','-p',$pipeline->{pipeline}{name},'-c',"${dir}/pipeline.yml"
-	);
-	Genesis::Run::interact(
-		{onfailure => "Could not unpause pipeline $pipeline->{pipeline}{name}"},
-		'fly','-t',$options{target},'unpause-pipeline','-p',$pipeline->{pipeline}{name}
-	);
+	mkfile_or_fail("${dir}/pipeline.yml", $yaml);
+	run({ interactive => 1, onfailure => "Could not upload pipeline $pipeline->{pipeline}{name}" },
+		'fly','-t',$options{target},'set-pipeline','-p',$pipeline->{pipeline}{name},'-c',"${dir}/pipeline.yml");
+
+	run({ interactive => 1, onfailure => "Could not unpause pipeline $pipeline->{pipeline}{name}" },
+		'fly','-t',$options{target},'unpause-pipeline','-p',$pipeline->{pipeline}{name});
+
 	my $action = ($pipeline->{pipeline}{public} ? 'expose' : 'hide');
-	Genesis::Run::interact(
-		{onfailure => "Could not $action pipeline $pipeline->{pipeline}{name}"},
-		'fly','-t',$options{target},$action.'-pipeline','-p',$pipeline->{pipeline}{name}
-	);
+	run({ interactive => 1, onfailure => "Could not $action pipeline $pipeline->{pipeline}{name}" },
+		'fly','-t',$options{target},$action.'-pipeline','-p',$pipeline->{pipeline}{name});
+
 	exit 0;
 });
 # }}}
@@ -1565,7 +1544,7 @@ OPTIONS
 $GLOBAL_USAGE
 EOF
 sub {
-	explain "[#G{genesis} ci-pipeline-deploy] v#G{%s}\n\n", $VERSION;
+	explain("[#G{genesis} ci-pipeline-deploy] v#G{$VERSION}\n");
 
 	my %options;
 	options(\@_, \%options, qw/
@@ -1618,7 +1597,7 @@ sub {
 	}
 
 	if ($ENV{PREVIOUS_ENV}) {
-		Genesis::Run::do_or_die({interactive => 1}, "Failed to run `$_`", $_) for (
+		run({ onfailure => "Failed to run `$_`", interactive => 1 }, $_) for (
 			"rm -rf .genesis/config .genesis/kits .genesis/cached",
 			"cp -R '../$ENV{CACHE_DIR}/.genesis/cached' .genesis/cached",
 			"cp -R '../$ENV{CACHE_DIR}/.genesis/config' .genesis/config",
@@ -1662,7 +1641,7 @@ OPTIONS
 $GLOBAL_USAGE
 EOF
 sub {
-	explain "[#G{genesis} ci-generate-cache] v#G{%s}\n\n", $VERSION;
+	explain("[#G{genesis} ci-generate-cache] v#G{$VERSION}\n");
 
 	my %options;
 	options(\@_, \%options, qw/
@@ -1690,9 +1669,9 @@ sub {
 	}
 
 	pushd $ENV{WORKING_DIR};
-	mkdir_or_fail ".genesis/cached/$ENV{CURRENT_ENV}";
-	for my $file (expand_tokens(split /\-/, $ENV{CURRENT_ENV})) {
-		copy_or_fail "$file.yml", ".genesis/cached/$ENV{CURRENT_ENV}/$file.yml" if -f "$file.yml";
+	mkdir_or_fail(".genesis/cached/$ENV{CURRENT_ENV}");
+	for (expand_tokens(split /\-/, $ENV{CURRENT_ENV})) {
+		copy_or_fail("$_.yml", ".genesis/cached/$ENV{CURRENT_ENV}/$_.yml") if -f "$_.yml";
 	}
 	popd;
 	commit_changes($ENV{WORKING_DIR}, $ENV{OUT_DIR}, $ENV{GIT_BRANCH}, $ENV{GIT_PRIVATE_KEY}, "generated cache for $ENV{CURRENT_ENV}");
@@ -1708,7 +1687,7 @@ OPTIONS
 $GLOBAL_USAGE
 EOF
 sub {
-	explain "[#G{genesis} ci-pipeline-run-errand] v#G{%s}\n\n", $VERSION;
+	explain("[#G{genesis} ci-pipeline-run-errand] v#G{$VERSION}\n");
 
 	my %options;
 	options(\@_, \%options, qw/
@@ -1773,7 +1752,7 @@ EOF
 sub {
 	my %options;
 	options(\@_, \%options);
-	explain $_ for (@_);
+	explain($_) for (@_);
 });
 # }}}
 # genesis ui-prompt-for - Provides prompts in support of hooks/new script {{{
@@ -1852,7 +1831,7 @@ sub {
 	) unless exists($prompt_handlers->{$type});
 
 	my $result = $prompt_handlers->{$type}->($prompt,%options);
-	mkfile_or_fail $path, $result unless ($use_vault);
+	mkfile_or_fail($path, $result) unless $use_vault;
 	exit 0
 });
 # }}}
@@ -1860,7 +1839,7 @@ sub {
 ###########################################################################
 
 sub main {
-	debug "genesis starting up...";
+	debug("#G{genesis} starting up...");
 
 	$ENV{GENESIS_INDEX} = "https://genesis.starkandwayne.com" unless $ENV{GENESIS_INDEX};
 
@@ -1896,8 +1875,8 @@ sub main {
 	}
 
 	if ($cmd) {
-		debug "running command '$cmd'";
-		debug "arguments are [".join(', ', @args)."]";
+		debug("running command '$cmd'");
+		debug("arguments are [".join(', ', @args)."]");
 		if (exists $COMMAND{$cmd}) {
 			$COMMAND{$cmd}(@args);
 			exit 0;

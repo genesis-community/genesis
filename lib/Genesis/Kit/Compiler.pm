@@ -1,8 +1,8 @@
 package Genesis::Kit::Compiler;
+use strict;
+use warnings;
 
 use Genesis::Utils;
-use Genesis::IO;
-use Genesis::Run;
 
 sub new {
 	my ($class, $root) = @_;
@@ -21,11 +21,6 @@ sub validate {
 		return 0;
 	}
 
-	#if (!-d "$self->{root}/hooks/") {
-	#	error "No hooks/ directory found.";
-	#	$rc = 0;
-	#}
-
 	for my $hook (qw(new secrets blueprint info addon)) {
 		next unless -e "$self->{root}/hooks/$hook";
 		if (!-f "$self->{root}/hooks/$hook") {
@@ -41,7 +36,7 @@ sub validate {
 		error "Kit Metadata file kit.yml does not exist.";
 		$rc = 0;
 	} else {
-		my $meta = eval { LoadFile("$self->{root}/kit.yml") };
+		my $meta = eval { load_yaml_file("$self->{root}/kit.yml") };
 		if ($@) {
 			error "Kit Metadata file kit.yml is not well-formed YAML: $@";
 			$rc = 0;
@@ -117,8 +112,8 @@ sub compile {
 sub scaffold {
 	my ($self, $name) = @_;
 
-	my $user   = Genesis::Run::get('git config user.name')  || 'The Unknown Kit Author';
-	my $email  = Genesis::Run::get('git config user.email') || 'no-reply@example.com';
+	my ($user, undef)  = run('git config user.name');  $user  ||= 'The Unknown Kit Author';
+	my ($email, undef) = run('git config user.email'); $email ||= 'no-reply@example.com';
 
 	if (-f "$self->{root}/kit.yml") {
 		die "Found a kit.yml in $self->{root}; cowardly refusing to overwrite an existing kit.\n";

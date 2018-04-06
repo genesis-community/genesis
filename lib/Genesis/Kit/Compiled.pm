@@ -5,7 +5,6 @@ use warnings;
 use base 'Genesis::Kit';
 use Genesis::Utils;
 use Genesis::Helpers;
-use Genesis::Run;
 
 sub new {
 	my ($class, %opts) = @_;

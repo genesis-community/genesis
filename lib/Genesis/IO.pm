@@ -7,7 +7,6 @@ our @EXPORT = qw/
 
 use JSON::PP qw/decode_json encode_json/;
 use Genesis::Utils;
-use Genesis::Run;
 
 sub DumpJSON {
 	my ($file, $data) = @_;

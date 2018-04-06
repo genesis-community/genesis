@@ -172,34 +172,36 @@ subtest 'ordify' => sub {
 
 	for my $num (keys %cases) {
 		# there's a trailing space for some reason.
-		is ordify($num), "$cases{$num} ", "$num should ordify as $cases{$num}";
+		is ordify($num), "$cases{$num} ", "numeric $num should ordify as $cases{$num}";
 	}
 };
 
 subtest 'fs utilities' => sub {
 	my $tmp = workdir;
 
-	lives_ok { mkfile_or_fail("$tmp/file", "stuff!") };
-	lives_ok { mkdir_or_fail("$tmp/dir") };
-
+	lives_ok { mkfile_or_fail("$tmp/file", "stuff!") } "mkfile_or_fail should not fail";
 	ok -f "$tmp/file", "mkfile_or_fail should make a file if it didn't fail";
+	is slurp("$tmp/file"), "stuff!", "mkfile_or_fail should populate the file";
+
+	lives_ok { mkdir_or_fail("$tmp/dir") } "mkdir_or_fail should not fail";
 	ok -d "$tmp/dir",  "mkdir_or_fail should make a dir if it didn't fail";
 
-	is Genesis::Utils::get_file("$tmp/file"), "stuff!",
-		"mkfile_or_fail should populate the file";
+	dies_ok { mkfile_or_fail("$tmp/file/not/a/dir/file", "whatevs"); }
+		"mkfile_or_fail should fail if it cannot succeed";
 
-	dies_ok { mkfile_or_fail("$tmp/file/not/a/dir/file", "whatevs") };
-	dies_ok { mkdir_or_fail("$tmp/file/not/a/dir") };
+	dies_ok { mkdir_or_fail("$tmp/file/not/a/dir"); }
+		"mkdir_or_fail should fail if it cannot succeed";
 
-	lives_ok { symlink_or_fail("$tmp/file", "$tmp/link"); }
+	lives_ok { symlink_or_fail("$tmp/file", "$tmp/link"); } "symlink_or_fail shoud not fail";
 	sleep 0.1; # symlink() seems to have a race condition?
 	ok -l "$tmp/link", "symlink_or_fail should make a symbolic link if it didn't fail";
 
-	dies_ok { symlink_or_fail("$tmp/e/no/ent", "$tmp/void") };
+	dies_ok { symlink_or_fail("$tmp/e/no/ent", "$tmp/void") }
+		"symlink_or_fail should fail if it cannot succeed";
 
 	my $here = Cwd::getcwd;
-	chdir $here; lives_ok { chdir_or_fail("$tmp/dir"); }
-	chdir $here; dies_ok  { chdir_or_fail("$tmp/file"); }
+	chdir $here; lives_ok { chdir_or_fail("$tmp/dir"); }  "chdir_or_fail(dir) should not fail";
+	chdir $here; dies_ok  { chdir_or_fail("$tmp/file"); } "chdir_or_fail(file) should fail";
 	chdir $here;
 };
 
