@@ -6,6 +6,8 @@ use Genesis;
 use Genesis::Legacy; # but we'd rather not
 use Genesis::BOSH;
 
+use POSIX qw/strftime/;
+
 sub new {
 	my ($class, %opts) = @_;
 
@@ -313,9 +315,13 @@ params:
 name: (( grab params.name ))
 EOF
 
+	my $now = strftime("%Y-%m-%d %H:%M:%S %z", gmtime());
 	mkfile_or_fail("$self->{__tmp}/fin.yml", 0644, <<EOF);
 ---
 exodus:
+  version:     $Genesis::VERSION
+  dated:       $now
+  deployer:    (( grab \$CONCOURSE_USERNAME || \$USER || "unknown" ))
   kit_name:    (( grab kit.name    || "unknown" ))
   kit_version: (( grab kit.version || "unknown" ))
   vault_base:  (( grab meta.vault ))
