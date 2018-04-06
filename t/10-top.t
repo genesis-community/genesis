@@ -32,13 +32,13 @@ subtest 'kit location' => sub {
 	ok(!$top->has_dev_kit, "roots without dev/ should not report having a dev kit");
 	cmp_deeply($top->compiled_kits, {
 			foo => {
-				'0.9.5' => "$tmp/.genesis/kits/foo-0.9.5.tar.gz",
-				'0.9.6' => "$tmp/.genesis/kits/foo-0.9.6.tar.gz",
-				'1.0.0' => "$tmp/.genesis/kits/foo-1.0.0.tar.gz",
-				'1.0.1' => "$tmp/.genesis/kits/foo-1.0.1.tgz",
+				'0.9.5' => $top->path(".genesis/kits/foo-0.9.5.tar.gz"),
+				'0.9.6' => $top->path(".genesis/kits/foo-0.9.6.tar.gz"),
+				'1.0.0' => $top->path(".genesis/kits/foo-1.0.0.tar.gz"),
+				'1.0.1' => $top->path(".genesis/kits/foo-1.0.1.tgz"),
 			},
 			bar => {
-				'3.4.5' => "$tmp/.genesis/kits/bar-3.4.5.tar.gz",
+				'3.4.5' => $top->path(".genesis/kits/bar-3.4.5.tar.gz"),
 			},
 		}, "roots should list out all of their compiled kits");
 
@@ -57,10 +57,10 @@ subtest 'kit location' => sub {
 	system("rm -f $tmp/.genesis/kits/bar-*gz");
 	cmp_deeply($top->compiled_kits, {
 			foo => {
-				'0.9.5' => "$tmp/.genesis/kits/foo-0.9.5.tar.gz",
-				'0.9.6' => "$tmp/.genesis/kits/foo-0.9.6.tar.gz",
-				'1.0.0' => "$tmp/.genesis/kits/foo-1.0.0.tar.gz",
-				'1.0.1' => "$tmp/.genesis/kits/foo-1.0.1.tgz",
+				'0.9.5' => $top->path(".genesis/kits/foo-0.9.5.tar.gz"),
+				'0.9.6' => $top->path(".genesis/kits/foo-0.9.6.tar.gz"),
+				'1.0.0' => $top->path(".genesis/kits/foo-1.0.0.tar.gz"),
+				'1.0.1' => $top->path(".genesis/kits/foo-1.0.1.tgz"),
 			},
 		}, "root should only have `foo' kit");
 	ok( defined $top->find_kit(undef, 'latest'), "root should find latest kit version of only kit");

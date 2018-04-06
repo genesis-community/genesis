@@ -14,7 +14,8 @@ use Genesis::Kit::Dev;
 use Genesis::Top;
 
 my $tmp = workdir."/work";
-my $top; # Genesis::Top
+my $top;  # Genesis::Top
+my $root; # absolute path to $top's root
 
 # test kits from t/src/*
 my $simple;
@@ -34,6 +35,7 @@ genesis: 2.6.0
 deployment_type: thing
 EOF
 	$top    = Genesis::Top->new($tmp);
+	$root   = $top->path;
 	$simple = Genesis::Kit::Dev->new("t/src/simple");
 	$fancy  = Genesis::Kit::Dev->new("t/src/fancy");
 	$legacy = Genesis::Kit::Dev->new("t/src/legacy");
@@ -121,9 +123,9 @@ params:
   GENESIS_KIT_VERSION:  latest
   GENESIS_ENVIRONMENT:  snw-lab-dev
   GENESIS_VAULT_PREFIX: snw/lab/dev/thing
-  GENESIS_ROOT:        $tmp
+  GENESIS_ROOT:         $root
 
-  root:   $tmp
+  root:   $root
   env:    snw-lab-dev
   prefix: snw/lab/dev/thing
   extra:  (none)
@@ -226,7 +228,7 @@ subtest 'info hook' => sub {
 
    env name  : snw-lab-dev
    deploying : dev/latest
-   from      : $tmp
+   from      : $root
    vault at  : snw/lab/dev/thing
 
    arguments : [(none)]

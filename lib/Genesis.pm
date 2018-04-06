@@ -5,7 +5,7 @@ use warnings;
 our $VERSION = "(development)";
 
 use File::Basename qw/basename/;
-use Cwd qw//;
+use Cwd ();
 
 use base 'Exporter';
 our @EXPORT = qw/

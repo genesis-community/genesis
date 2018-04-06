@@ -2,7 +2,7 @@ package Genesis::Env;
 use strict;
 use warnings;
 
-use Genesis::Utils;
+use Genesis;
 use Genesis::Legacy; # but we'd rather not
 use Genesis::BOSH;
 

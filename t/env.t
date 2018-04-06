@@ -299,9 +299,13 @@ EOF
 		"env manifest doesn't define addons.bravo";
 
 	cmp_deeply($env->exodus, {
+			version       => re(/\d/),
+			dated         => re(/\d\d\d\d-\d\d-\d\d \d\d:\d\d:\d\d/),
+			deployer      => ignore,
 			kit_name      => 'dev',
 			kit_version   => 'latest',
 			vault_base    => 'secret/standalone/thing',
+
 			'addons.0'    => 'foxtrot',
 			'addons.1'    => 'tango',
 			'addons.2'    => 'whiskey',
