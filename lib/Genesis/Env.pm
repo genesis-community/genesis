@@ -279,6 +279,13 @@ sub _yaml_files {
 	my $prefix = $self->_default_prefix;
 	my $type   = $self->{top}->type;
 
+	my @cc;
+	if (!$self->needs_bosh_create_env) {
+		die "No cloud-config specified for this environment\n"
+			unless $self->{ccfile};
+		push @cc, $self->{ccfile};
+	}
+
 	mkfile_or_fail("$self->{__tmp}/init.yml", 0644, <<EOF);
 ---
 meta:
@@ -296,13 +303,6 @@ exodus:
   kit_version: (( grab kit.version || "unknown" ))
   vault_base:  (( grab meta.vault ))
 EOF
-
-	my @cc;
-	if (!$self->needs_bosh_create_env) {
-		die "No cloud-config specified for this environment\n"
-			unless $self->{ccfile};
-		push @cc, $self->{ccfile};
-	}
 
 	return (
 		"$self->{__tmp}/init.yml",
