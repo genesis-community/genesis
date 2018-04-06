@@ -177,7 +177,7 @@ subtest 'ordify' => sub {
 };
 
 subtest 'fs utilities' => sub {
-	my $tmp = workdir;
+	my $tmp = Cwd::abs_path(workdir);
 
 	lives_ok { mkfile_or_fail("$tmp/file", "stuff!") } "mkfile_or_fail should not fail";
 	ok -f "$tmp/file", "mkfile_or_fail should make a file if it didn't fail";
@@ -210,6 +210,52 @@ subtest 'fs utilities' => sub {
 	chdir $here; lives_ok { chdir_or_fail("$tmp/dir"); }  "chdir_or_fail(dir) should not fail";
 	chdir $here; dies_ok  { chdir_or_fail("$tmp/file"); } "chdir_or_fail(file) should fail";
 	chdir $here;
+
+	pushd("$tmp/dir"); is Cwd::getcwd, "$tmp/dir", "pushd put us where we wanted to go";
+	pushd("$tmp/dir"); is Cwd::getcwd, "$tmp/dir", "pushd put us where we wanted to go (again)";
+	popd();            is Cwd::getcwd, "$tmp/dir", "popd put us back in the previous \$tmp/dir...";
+	popd();            is Cwd::getcwd, "$here",    "popd put us back in our old cwd";
+};
+
+subtest 'semantic versioning' => sub {
+	for my $bad (qw(
+		foo
+		forty-two
+		1.2.3.4.5.6.7.8
+	)) {
+		ok !semver($bad), "'$bad' should not be considered a valid semantic version";
+	}
+
+	for my $good (qw(
+		1
+		1.2
+		1.2.3
+		1.22.33
+		1.2.3.rc4
+		1.2.3.rc.4
+		1.2.3-rc4
+		1.2.3-rc-4
+		0.0.0
+		0.0.1
+		0.999999.1
+
+		1.2.3-RC4
+		1.2.3-RC.4
+
+		v1.2.3
+		V1.2.3
+	)) {
+		ok semver($good), "'$good' should be considered a valid semantic version";
+	}
+
+	ok  new_enough('1.0.0',      '1.0.0'), "1.0.0 is new enough to satisfy 1.0.0+";
+	ok  new_enough('1.0',        '1.0.0'), "1.0 is new enough to satisfy 1.0.0+";
+	ok  new_enough('1.1',        '1.0.0'), "1.1 is new enough to satisfy 1.0.0+";
+	ok !new_enough('0.1',        '1.0.0'), "0.1 is not new enough to satisfy 1.0.0+";
+	ok !new_enough('1.0.0-rc.1', '1.0.0'), '1.0.0-rc.1 is not new enough to satisfy 1.0.0+ (RCs come before point releases)';
+	ok !new_enough('1.0.0-rc.0', '1.0.0'), '1.0.0-rc.0 is not new enough to satisfy 1.0.0+';
+	ok  new_enough('1.0.0-rc.5', '1.0.0-rc.3'), '1.0.0-rc.5 is new enough to satisfy 1.0.0-rc.3+';
+	ok !new_enough('1.0.0-rc.2', '1.0.0-rc.3'), '1.0.0-rc.2 is not new enough to satisfy 1.0.0-rc.3+';
 };
 
 done_testing;

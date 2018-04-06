@@ -57,7 +57,7 @@ sub validate {
 
 		# genesis versions must be semver
 		if (exists $meta->{genesis_min_version}) {
-			if (!is_semver($meta->{genesis_min_version})) {
+			if (!semver($meta->{genesis_min_version})) {
 				error "Kit Metadata specifies minimum Genesis version '$meta->{genesis_min_version}', which is not a semantic version (x.y.z).";
 				$rc = 0;
 			}

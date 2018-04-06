@@ -18,16 +18,13 @@ sub download_kit {
 	my ($name, $version) = $spec =~ m{(.*)/(.*)} ? ($1, $2)
 	                                             : ($spec, 'latest');
 
-	my $kit = Genesis::Kit::Compiled->new(name => $name,
-	                                      version => $version);
-	
 	if ($version eq 'latest') {
 		explain("Downloading Genesis kit #M{$name} (#Y{latest} version)");
 	} else {
 		explain("Downloading Genesis kit #M{$name}, version #C{$version}");
 	}
 
-	my $url = $kit->url;
+	my $url = Genesis::Kit->url($name, $version);
 
 	mkdir_or_fail($self->path(".genesis"));
 	mkdir_or_fail($self->path(".genesis/kits"));
@@ -35,7 +32,7 @@ sub download_kit {
 	if ($code != 200) {
 		die "Failed to download $name/$version from $url: Github returned an HTTP ".$msg."\n";
 	}
-	mkfile_or_fail($self->path(".genesis/kits/$name-$version.tar.gz", 0400, $data);
+	mkfile_or_fail($self->path(".genesis/kits/$name-$version.tar.gz"), 0400, $data);
 	debug("downloaded kit #M{$name}/#C{$version}");
 }
 
@@ -170,6 +167,12 @@ instead can carry around a C<Top> context object which handles it for them.
 Create a new root, at C<$path>.
 
 =head1 METHODS
+
+=head2 download_kit($name, $version)
+
+Contact Github, search through the B<genesis-community> organization, and
+download the named kit and version (or latest) and stuff it in the
+.genesis/kits directory.  This is the magic behind C<genesis download>.
 
 =head2 path([$relative])
 

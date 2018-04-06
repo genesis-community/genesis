@@ -6,18 +6,18 @@ use Genesis::Utils;
 use Genesis::Helpers;
 
 sub url {
-	my ($self) = @_;
+	my ($class, $name, $version) = @_;
 
 	my $creds = "";
 	if ($ENV{GITHUB_USER} && $ENV{GITHUB_AUTH_TOKEN}) {
 		$creds = "$ENV{GITHUB_USER}:$ENV{GITHUB_AUTH_TOKEN}";
 	}
-	my ($code, $msg, $data) = curl("GET", "https://api.github.com/repos/genesis-community/$self->{name}-genesis-kit/releases", undef, undef, 0, $creds);
+	my ($code, $msg, $data) = curl("GET", "https://api.github.com/repos/genesis-community/$name-genesis-kit/releases", undef, undef, 0, $creds);
 	if ($code == 404) {
-		die "Could not find Genesis Kit $self->{name} on Github; does https://github.com/genesis-community/$self->{name}-genesis-kit/releases exist?\n";
+		die "Could not find Genesis Kit $name on Github; does https://github.com/genesis-community/$name-genesis-kit/releases exist?\n";
 	}
 	if ($code != 200) {
-		die "Could not find Genesis Kit $self->{name} release information; Github returned a ".$msg."\n";
+		die "Could not find Genesis Kit $name release information; Github returned a ".$msg."\n";
 	}
 
 	my $releases;
@@ -25,21 +25,21 @@ sub url {
 		or die "Failed to read releases information from Github: $@\n";
 
 	if (!@$releases) {
-		die "No released versions of Genesis Kit $self->{name} found at https://github.com/genesis-community/$self->{name}-genesis-kit/releases.\n";
+		die "No released versions of Genesis Kit $name found at https://github.com/genesis-community/$name-genesis-kit/releases.\n";
 	}
 
 	for (map { @{$_->{assets} || []} } @$releases) {
-		if (!$self->{version} or $self->{version} eq 'latest') {
-			next unless $_->{name} =~ m/^\Q$self->{name}\E-(.*)\.(tar\.gz|tgz)$/;
-			$self->{version} = $1;
+		if (!$version or $version eq 'latest') {
+			next unless $_->{name} =~ m/^\Q$name\E-(.*)\.(tar\.gz|tgz)$/;
+			$version = $1;
 		} else {
-			next unless $_->{name} eq "$self->{name}-$self->{version}.tar.gz"
-			         or $_->{name} eq "$self->{name}-$self->{version}.tgz";
+			next unless $_->{name} eq "$name-$version.tar.gz"
+			         or $_->{name} eq "$name-$version.tgz";
 		}
-		return ($_->{browser_download_url}, $self->{version});
+		return ($_->{browser_download_url}, $version);
 	}
 
-	die "$self->{name}/$self->{version} tarball asset not found on Github.  Oops.\n";
+	die "$name/$version tarball asset not found on Github.  Oops.\n";
 }
 
 sub path {
@@ -201,7 +201,21 @@ This module encapsulates all of the logic for dealing with Genesis Kits in
 the abstract.  It does not handle the concrete problems of dealing with
 tarballs (Genesis::Kit::Compiled) or dev/ directories (Genesis::Kit::Dev).
 
-=head1 METHODS
+=head1 CLASS METHODS
+
+=head2 url($name, $version)
+
+Determines the download URL for this kit, by consulting Github.
+Right now, this is limited to just the C<genesis-community> organization.
+
+If you omit C<$version>, or set it to "latest", the most recent released
+version on Github will be used.  Otherwise, the URL for the given version
+will be used.
+
+An error will be thrown if the version in question does not exist on Github.
+
+
+=head1 INSTANCE METHODS
 
 =head2 path([$relative])
 
@@ -236,17 +250,6 @@ B<GENESIS KIT HOOKS>, later, for more detail.
 Determines, by way of either C<hooks/blueprint>, or the legacy subkit
 detection logic, which kit YAML files need to be merged together, and
 returns there paths.
-
-=head2 url()
-
-Determines the download URL for this kit, by consulting Github.
-Right now, this is limited to just the C<genesis-community> organization.
-
-If the Kit object doesn't specify a version, or that version is C<latest>,
-the most recent released version on Github will be used.  Otherwise, the URL
-for the given version will be used.
-
-An error will be thrown if the version in question does not exist on Github.
 
 =head1 GENESIS KIT HOOKS
 

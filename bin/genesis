@@ -40,30 +40,6 @@ END {
 	$_->($?) for @$END_HOOKS;
 }
 
-sub same($$) {
-	my ($a,$b) = @_;
-	die "Arguments are not arrays" unless ref($a) eq 'ARRAY' && ref($b) eq 'ARRAY';
-	return 0 unless scalar(@$a) == scalar(@$b);
-	return 0 unless join(',',map {length} @$a) eq join(',',map {length} @$b);
-	return 0 unless join("\0", @$a) eq join("\0",@$b);
-	return 1;
-}
-
-sub controlling_terminal {
-	return -t STDOUT;
-}
-
-our @DIRSTACK;
-sub pushd {
-	my ($dir) = @_;
-	push @DIRSTACK, Cwd::cwd;
-	chdir_or_fail($dir);
-}
-sub popd {
-	@DIRSTACK or die "popd called when we don't have anything on the directory stack; please file a bug\n";
-	chdir_or_fail(pop @DIRSTACK);
-}
-
 # check we're in a Genesis v2 directory
 sub in_repo_dir {
 	return  -d ".genesis" && -e ".genesis/config";
@@ -265,12 +241,12 @@ sub check_bosh_version {
 	foreach my $boshcmd (qw(bosh2 boshv2 bosh)) {
 		my ($version, undef) = run("$boshcmd -v 2>&1 | grep version | head -n1");
 		if ($version =~ /version (\S+?)-.*/) {
-			if (new_enough("bosh", $1, $min)) {
+			if (new_enough($1, $min)) {
 				$ENV{GENESIS_BOSH_COMMAND} = $boshcmd;
 				debug("#G{Version $1} of #C{$boshcmd} meets or exceeds minimum of #W{$min}");
 				return ();
 			}
-			$best = $1 if new_enough("bosh", $1, $best); # Track the best we've found for error message
+			$best = $1 if new_enough($1, $best); # Track the best we've found for error message
 		}
 	}
 	if ($best eq "0.0.0") {
@@ -406,27 +382,6 @@ EOF
 	}
 }
 
-sub semver {
-	my ($name, $v) = @_;
-	if ($v =~  m/^(\d+)(?:\.(\d+)(?:\.(\d+)(?:[.-]rc[.-]?(\d+))?)?)?$/) {
-		return ($1, $2 || 0, $3 || 0, $4 || 0);
-	}
-	die "Unrecognized version string '$v' for $name\n";
-}
-
-sub new_enough {
-	my ($name, $v, $min) = @_;
-	my @v = semver($name, $v);
-	my @min = semver($name, $min);
-	while (@v) {
-		return 1 if $v[0] > $min[0];
-		return 0 if $v[0] < $min[0];
-		shift @v;
-		shift @min;
-	}
-	return 1;
-}
-
 sub check_version {
 	my ($name, $min, $cmd, $from, $regex, $url) = @_;
 	$url ||= "your platform package manager";
@@ -440,14 +395,14 @@ sub check_version {
 		return;
 	}
 
-	$version =~ $regex;
-	return "Could not determine version of $name from `#M{$cmd}`: Got '#C{$version}"
-		unless $1 && is_semver($1);
+	$version =~ $regex; my $v = $1;
+	return "Could not determine version of $name from `#M{$cmd}`: Got '#C{$version}'"
+		unless $v && semver($v);
 
-	return "$name v{$1} is installed, but Genesis requires #R{at least $min} -- please upgrade via #B{$url}"
-		unless new_enough($name, $1, $min);
+	return "$name v{$v} is installed, but Genesis requires #R{at least $min} -- please upgrade via #B{$url}"
+		unless new_enough($v, $min);
 
-	debug("#G{Version $1} of #C{$name} meets or exceeds minimum of #w{$min}");
+	debug("#G{Version $v} of #C{$name} meets or exceeds minimum of #w{$min}");
 	return; # no error
 }
 
@@ -979,7 +934,7 @@ Can specify one of the follow three:
 
 EOF
 sub {
-	my %options = (redact => ! controlling_terminal);
+	my %options = (redact => ! -t STDOUT);
 	options(\@_, \%options, qw/
 		non-interactive|n
 		redact!
@@ -1259,7 +1214,7 @@ $GLOBAL_USAGE
                             to true.
 EOF
 sub {
-	my %options = (redact => ! controlling_terminal, prune => 1);
+	my %options = (redact => ! -t STDOUT, prune => 1);
 	options(\@_, \%options, qw/
 		cloud-config|c=s
 		redact!

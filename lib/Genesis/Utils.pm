@@ -3,6 +3,7 @@ use strict;
 use warnings;
 
 use File::Basename qw/basename/;
+use Cwd qw//;
 
 use base 'Exporter';
 our @EXPORT = qw/
@@ -14,7 +15,8 @@ our @EXPORT = qw/
 
 	workdir
 
-	is_semver
+	semver
+	new_enough
 
 	parse_uri
 	is_valid_uri
@@ -31,6 +33,8 @@ our @EXPORT = qw/
 
 	load_json
 	load_yaml load_yaml_file
+
+	pushd popd
 /;
 
 use File::Temp qw/tempdir/;
@@ -136,8 +140,26 @@ sub workdir {
 	return tempdir(DIR => $WORKDIR);
 }
 
-sub is_semver {
-	return $_[0] =~ m/^(\d+)(?:\.(\d+)(?:\.(\d+)(?:[.-]rc[.-]?(\d+))?)?)?$/;
+sub semver {
+	my ($v) = @_;
+	if ($v && $v =~ m/^v?(\d+)(?:\.(\d+)(?:\.(\d+)(?:[.-]rc[.-]?(\d+))?)?)?$/i) {
+		return wantarray ? ($1, $2 || 0, $3 || 0, (defined $4 ? $4 - 100000 : 0))
+		                 : [$1, $2 || 0, $3 || 0, (defined $4 ? $4 - 100000 : 0)];
+	}
+	return undef;
+}
+
+sub new_enough {
+	my ($v, $min) = @_;
+	my @v = semver($v);
+	my @min = semver($min);
+	while (@v) {
+		return 1 if $v[0] > $min[0];
+		return 0 if $v[0] < $min[0];
+		shift @v;
+		shift @min;
+	}
+	return 1;
 }
 
 our %ord_suffix = (11 => 'th', 12 => 'th', 13 => 'th', 1 => 'st', 2 => 'nd', 3 => 'rd');
@@ -215,8 +237,8 @@ sub run {
 	return unless defined(wantarray);
 	return
 		$opts{passfail}    ? $rc == 0 :
-		$opts{onfailure}   ? $out :
-		$opts{interactive} ? (wantarray ? (undef, $rc) : $rc)
+		$opts{interactive} ? (wantarray ? (undef, $rc) : $rc) :
+		$opts{onfailure}   ? $out
 		                   : (wantarray ? ($out,  $rc) : $out);
 }
 
@@ -373,6 +395,18 @@ sub load_yaml {
 	return load_yaml_file("$tmp/json.yml")
 }
 
+
+my @DIRSTACK;
+sub pushd {
+	my ($dir) = @_;
+	push @DIRSTACK, Cwd::cwd;
+	chdir_or_fail($dir);
+}
+sub popd {
+	@DIRSTACK or die "popd called when we don't have anything on the directory stack; please file a bug\n";
+	chdir_or_fail(pop @DIRSTACK);
+}
+
 1;
 
 =head1 NAME
@@ -473,19 +507,29 @@ Supports color formatting codes.  A trailing newline will be added for you.
 Generate a unique, temporary directory to be used for scratch space.  When
 the program exits, all provisioned work directories will be cleaned up.
 
-=head2 is_semver($v)
+=head2 semver($v)
 
-Returns true if C<$v> looks like a semantic version number.  This handles
-the following formats:
+Parses a semantic version string, and returns it as an array of the major,
+minor, revision, and release candidate components.  If any piece is missing
+(i.e. "1.0"), inferior components are treated as '0'.  This makes "1.0"
+equivalent to "1.0.0-rc.0".
+
+The following version formats are recognized:
 
     1
     1.0
     1.23
     1.23.4
     1.23.4-rc2
-    1.23.4.rc
     1.23.4-rc.2
     1.23.4-rc-2
+
+=head2 new_enough($version, $minimum)
+
+Returns true if C<$version> is, semantically speaking, greater than or equal
+to the C<$minimum> required version.  Release candidate versions are counted
+as less than their point release, so 1.0.0-rc5 is not newer than 1.0.0.
+
 
 =head2 ordify($n)
 
@@ -610,25 +654,10 @@ status code, status line, and output data to the caller:
     print $response;
 
 
-=head2 interact(...)
-
-This helper function sets C<interactive> and C<passfail>, to return truthy
-on success, and then just delegates to C<run()>.
-
 =head2 bosh(...)
 
 Configures a custom environment for the BOSH CLI, and then delegates to
 C<run()>.
-
-=head2 get(...)
-
-Calls C<run()>, but then returns just the output, regardless of context
-(scalar or list).
-
-=head2 getlines(...)
-
-Like C<get>, but it splits the output on newlines and returns the list of
-lines.
 
 =head2 slurp($path)
 
@@ -680,6 +709,18 @@ into a hashref.
 =head2 load_yaml_file($file)
 
 Read C<$file> into memory, and then convert it into JSON via C<load_yaml>.
+
+
+=head2 pushd($dir)
+
+Temporarily change the current working directory to C<$dir>, until the next
+paired call to C<popd>.  This is similary to shell pushd / popd builtins.
+
+
+=head2 popd($dir)
+
+Restore the current working directory to what it was immediately before the
+last call to C<pushd>.  This is similarly to shell pushd / popd builtins.
 
 
 =cut

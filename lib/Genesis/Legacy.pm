@@ -4,6 +4,15 @@ use warnings;
 
 use Genesis::Utils;
 
+sub same {
+	my ($a, $b) = @_;
+	die "Arguments are not arrays" unless ref($a) eq 'ARRAY' && ref($b) eq 'ARRAY';
+	return 0 unless scalar(@$a) == scalar(@$b);
+	return 0 unless join(',',map {length} @$a) eq join(',',map {length} @$b);
+	return 0 unless join("\0", @$a) eq join("\0",@$b);
+	return 1;
+}
+
 sub validate_features {
 	my ($self, @features) = @_;
 	my $id = $self->id;
