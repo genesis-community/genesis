@@ -300,28 +300,6 @@ EOF
 	close $fh;
 }
 
-sub spruce_merge {
-	my (@files) = @_;
-	if (!@files) {
-		my (undef, $file, $line) = caller;
-		die "BUG DETECTED!  $file:$line called spruce_merge without any arguments.  Please file a bug report at $GITHUB_URL\n";
-	}
-
-	# spruce_merge({ prune => ['meta', 'pipeline']}, $file1, $file2)
-	# spruce_merge({ prune => 'meta'}, $file1, $file2)
-	my $opts = ref($files[0]) eq 'HASH' ? shift @files : {};
-	my @flags;
-	for my $flag (keys %$opts) {
-		for my $value (ref($opts->{$flag}) ? @{ $opts->{$flag} } : ($opts->{$flag})) {
-			push @flags, "--$flag", $value;
-		}
-	}
-	push @flags, "--go-patch";
-
-	return run({ onfailure => 'Failed to execute `spruce merge`' },
-		'spruce', 'merge', @flags, @files);
-}
-
 ###########################################################################
 
 sub vault_auth {

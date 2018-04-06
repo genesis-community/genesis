@@ -91,7 +91,7 @@ sub read {
 	my ($class, $file) = @_;
 
 	my @errors = ();
-	my $p = load_yaml(spruce_merge($file));
+	my $p = load_yaml(run({ onfailure => "Failed to evaluate pipeline $file" }, 'spruce', 'merge', $file));
 	unless (exists $p->{pipeline}) {
 		# fatal error
 		push @errors, "Missing top-level 'pipeline:' key.";
@@ -1262,8 +1262,8 @@ EOF
 	}
 	close $OUT;
 
-	return spruce_merge({ prune => [qw(meta pipeline)] },
-		"$dir/guts.yml", $pipeline->{file});
+	return run({ onfailure => 'Failed to merge Concourse pipeline definition' },
+		'spruce', 'merge', '--prune', 'meta', '--prune', 'pipeline', "$dir/guts.yml", $pipeline->{file});
 }
 
 1;
