@@ -427,10 +427,11 @@ sub deploy {
 		push @bosh_opts, "--$_=$opts{$_}"   for grep { defined $opts{$_} }
 		                                          qw/canaries max-in-flight/;
 
-		$ok = Genesis::BOSH->deploy("$self->{__tmp}/manifest.yml",
-			target     => $self->bosh_target,
+		$ok = Genesis::BOSH->deploy(
+			$self->bosh_target,
+			manifest   => "$self->{__tmp}/manifest.yml",
 			deployment => $self->deployment,
-			options    => \@bosh_opts);
+			flags      => \@bosh_opts);
 	}
 
 	unlink "$self->{__tmp}/manifest.yml"

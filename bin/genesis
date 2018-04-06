@@ -1457,11 +1457,10 @@ sub {
 		   BOSH_CLIENT BOSH_CLIENT_SECRET/) unless $env->needs_bosh_create_env;
 
 	if (@undefined) {
-		error "The following #R{required} environment variables have not been defined:";
-		error " - \$#Y{$_}" for @undefined;
-		error;
-		error;
-		error "Please check your CI Pipeline configuration.";
+		error("The following #R{required} environment variables have not been defined:");
+		error(" - \$#Y{$_}") for @undefined;
+		error("\n");
+		error("Please check your CI Pipeline configuration.");
 		exit 1;
 	}
 

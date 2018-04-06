@@ -247,36 +247,6 @@ sub lines {
 	return $rc ? () : split $/, $out;
 }
 
-sub bosh {
-	my @args = @_;
-
-	die "Unable to determine where the bosh CLI lives.  This is a bug, please report it.\n"
-		unless $ENV{GENESIS_BOSH_COMMAND};
-
-	my $opts = (ref($args[0]) eq 'HASH') ? shift @args : {};
-	$opts->{env} ||= {};
-
-	# Clear out the BOSH env vars unless we're under Concourse
-	unless ($ENV{BUILD_PIPELINE_NAME}) {
-		$opts->{env}{HTTPS_PROXY} = ''; # bosh dislikes this env var
-		$opts->{env}{https_proxy} = ''; # bosh dislikes this env var
-
-		$opts->{env}{BOSH_ENVIRONMENT}   ||= ''; # ensure using ~/.bosh/config via alias
-		$opts->{env}{BOSH_CA_CERT}       ||= '';
-		$opts->{env}{BOSH_CLIENT}        ||= '';
-		$opts->{env}{BOSH_CLIENT_SECRET} ||= '';
-	}
-
-	if ($args[0] =~ /\$\{?[\@0-9]/ && scalar(@args) > 1) {
-		$args[0] = $ENV{GENESIS_BOSH_COMMAND} ." $args[0]";
-
-	} else {
-		unshift @args, $ENV{GENESIS_BOSH_COMMAND}
-	}
-
-	return run($opts, @args);
-}
-
 sub curl {
 	my ($method, $url, $headers, $data, $skip_verify, $creds) = @_;
 	my @flags = ("-X", $method);
@@ -654,11 +624,6 @@ status code, status line, and output data to the caller:
     print "data:\n";
     print $response;
 
-
-=head2 bosh(...)
-
-Configures a custom environment for the BOSH CLI, and then delegates to
-C<run()>.
 
 =head2 slurp($path)
 

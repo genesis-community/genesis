@@ -2,16 +2,56 @@ package Genesis::BOSH;
 
 use Genesis::Utils;
 
+sub _bosh {
+	my @args = @_;
+
+	die "Unable to determine where the bosh CLI lives.  This is a bug, please report it.\n"
+		unless $ENV{GENESIS_BOSH_COMMAND};
+
+	my $opts = (ref($args[0]) eq 'HASH') ? shift @args : {};
+	$opts->{env} ||= {};
+
+	# Clear out the BOSH env vars unless we're under Concourse
+	unless ($ENV{BUILD_PIPELINE_NAME}) {
+		$opts->{env}{HTTPS_PROXY} = ''; # bosh dislikes this env var
+		$opts->{env}{https_proxy} = ''; # bosh dislikes this env var
+
+		$opts->{env}{BOSH_ENVIRONMENT}   ||= ''; # ensure using ~/.bosh/config via alias
+		$opts->{env}{BOSH_CA_CERT}       ||= '';
+		$opts->{env}{BOSH_CLIENT}        ||= '';
+		$opts->{env}{BOSH_CLIENT_SECRET} ||= '';
+	}
+
+	if ($args[0] =~ m/^bosh(\s|$)/) {
+		# ('bosh', 'do', 'things') or 'bosh do things'
+		$args[0] =~ s/^bosh/$ENV{GENESIS_BOSH_COMMAND}/;
+
+	} elsif ($args[0] =~ /\$\{?[\@0-9]/) {
+		# ('deploy "$1" | jq -r .whatever', $d)
+		$args[0] = "$ENV{GENESIS_BOSH_COMMAND} $args[0]";
+
+	} else {
+		# ('deploy', $d)
+		unshift @args, $ENV{GENESIS_BOSH_COMMAND};
+	}
+
+	return run($opts, @args);
+}
+
 sub ping {
 	my ($class, $env) = @_;
-	return bosh({ interactive => 1, passfail => 1 },
+	return _bosh({ interactive => 1, passfail => 1 },
 		'bosh', '-e', $env, 'env');
 }
 
 sub create_env {
 	my ($class, $manifest, %opts) = @_;
+	die "Missing deployment manifest in call to create_env().  This is a bug in Genesis.\n"
+		unless $manifest;
+	die "Missing 'state' option in call to create_env().  This is a bug in Genesis\n"
+		unless $opts{state};
 
-	return bosh({ interactive => 1, passfail => 1 },
+	return _bosh({ interactive => 1, passfail => 1 },
 		'bosh', 'create-env', '--state', $opts{state},
 		$ENV{BOSH_NON_INTERACTIVE} ? '-n' : (),
 		$manifest);
@@ -19,32 +59,51 @@ sub create_env {
 
 sub download_cloud_config {
 	my ($class, $env, $path) = @_;
-	bosh({ interactive => 1, onfailure => "Could not download cloud-config from '$env' BOSH director" },
+	_bosh({ interactive => 1, onfailure => "Could not download cloud-config from '$env' BOSH director" },
 		'bosh -e "$1" cloud-config > "$2"', $env, $path);
 
 	die "No cloud-config defined on '$env' BOSH director\n"
 		unless -s $path;
+	return 1;
 }
 
 sub deploy {
-	my ($class, $manifest, %opts) = @_;
-	return bosh({ interactive => 1, passfail => 1 },
-		'bosh', '-e', $opts{target}, '-d', $opts{deployment},
+	my ($class, $env, %opts) = @_;
+	die "Missing BOSH environment name in call to deploy().  This is a bug in Genesis.\n"
+		unless $env;
+
+	for my $o (qw(manifest deployment)) {
+		die "Missing '$o' option in call to deploy().  This is a bug in Genesis.\n"
+			unless $opts{$o};
+	}
+
+
+	return _bosh({ interactive => 1, passfail => 1 },
+		'bosh', '-e', $env, '-d', $opts{deployment},
 		$ENV{BOSH_NON_INTERACTIVE} ? '-n' : (),
-		'deploy', @{ $opts{options} || [] });
+		'deploy', $opts{manifest}, @{ $opts{flags} || [] });
 
 }
 
 sub alias {
 	my ($class, $alias) = @_;
-	bosh({ interactive => 1, onfailure => "Could not create BOSH alias for '$_[0]'" },
+	_bosh({ interactive => 1, onfailure => "Could not create BOSH alias for '$_[0]'" },
 		'bosh', 'alias-env', $alias);
 }
 
 sub run_errand {
-	my ($class, $env, $deployment, $errand) = @_;
-	bosh({ interactive => 1, onfailure => "Failed to run errand '$errand' ($deployment deployment on $env BOSH)" },
-		'bosh', '-n', '-e', $env, '-d', $deployment, 'run-errand', $errand);
+	my ($class, $env, %opts) = @_;
+	die "Missing BOSH environment name in call to run_errand().  This is a bug in Genesis.\n"
+		unless $env;
+
+	for my $o (qw(deployment errand)) {
+		die "Missing '$o' option in call to run_errand().  This is a bug in Genesis.\n"
+			unless $opts{$o};
+	}
+
+	_bosh({ interactive => 1, onfailure => "Failed to run errand '$opts{errand}' ($opts{deployment} deployment on $env BOSH)" },
+		'bosh', '-n', '-e', $env, '-d', $opts{deployment}, 'run-errand', $opts{errand});
+	return 1;
 }
 
 1;
@@ -125,5 +184,60 @@ This is probably bad and we should change it.  (FIXME)
 
 Runs the named C<$errand> against the given C<$deployment>, and bails if the
 errand doesn't succeed.
+
+
+=head1 INTERNAL FUNCTIONS
+
+These functions are implementation details of this module, and should not
+concern anyone else, ever.
+
+
+=head2 _bosh(...)
+
+This is a wrapper function to Genesis::Utils's C<run()> function.  It
+does things that are useful if you are running the C<bosh> CLI, and not
+anything else.  Specifically, it:
+
+=over
+
+=item 1.
+
+Clears the https proxy environment variables because this does bad things to
+BOSH.  It clears out both the lowercase (https_proxy) and upercase
+(HTTPS_PROXY) versions.
+
+=item 2.
+
+Clears the BOSH_ENVIRONENT, BOSH_CA_CERT, BOSH_CLIENT, and
+BOSH_CLIENT_SECRET unless explicitly sent in via the C<env> option.  This
+allows B<Genesis> to specify these values when needed, but removes any
+exposure to these set from the caller's environment.
+
+=item 3.
+
+Runs the command with the correct version of the BOSH CLI executable.  The
+command may or may not be provided with C<bosh> as the first item; if it
+does, it is replaced with the correct path, if not, the correct path is
+prepended to the command before it is called.
+
+=back
+
+Otherwise it is exactly the same as the C<run> command, and supports all the
+same syntax and options -- see C<run>'s documentation for more details.
+
+Note that you can leave off the actual "bosh" token in your command, and
+C<_bosh()> will do what you mean:
+
+    # this:
+    _bosh('bosh deploy -d concourse manifest.yml');
+
+    # is equivalent to:
+    _bosh('deploy -d concourse manifest.yml');
+
+This comes in handy because sometimes it looks weird to omit the leading
+C<bosh> token, as in:
+
+    _bosh({ onfailure => 'oops; stuff broke' },
+          '-e', $env, '-n', @etc);
 
 =cut
