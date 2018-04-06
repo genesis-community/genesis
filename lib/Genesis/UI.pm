@@ -10,7 +10,7 @@ our @EXPORT = qw/
 	prompt_for_block
 /;
 
-use Genesis::Utils;
+use Genesis;
 
 sub __prompt_for_line {
 	my ($prompt,$validation,$err_msg,$default,$allow_blank) = @_;

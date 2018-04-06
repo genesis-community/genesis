@@ -19,14 +19,14 @@ use POSIX qw/strftime/;
 use Socket qw/inet_ntoa/;
 use Cwd qw/getcwd abs_path/;
 
-# Genesis Libs
-use Genesis::Utils;
+use Genesis;
 use Genesis::Top;
 use Genesis::Kit::Compiler;
 
-our $VERSION = "(development)";
+$Genesis::VERSION = "(development)";
+
 our $GITHUB_URL = "https://github.com/starkandwayne/genesis";
-our $USER_AGENT_STRING = "genesis/$VERSION";
+our $USER_AGENT_STRING = "genesis/$Genesis::VERSION";
 
 $ENV{HTTPS_PROXY}=$ENV{BOSH_ALL_PROXY} if ($ENV{BOSH_ALL_PROXY});
 
@@ -525,7 +525,7 @@ sub command {
 # genesis help - print the help screen. {{{
 
 command("help", <<EOF,
-genesis v$VERSION
+genesis v$Genesis::VERSION
 USAGE: genesis [OPTIONS] COMMAND [MORE OPTIONS]
 
 OPTIONS
@@ -560,7 +560,7 @@ sub {
 # genesis ping - see if the genesis binary is a real thing. {{{
 
 command("ping", <<EOF,
-genesis v$VERSION
+genesis v$Genesis::VERSION
 USAGE: genesis ping
 
 OPTIONS
@@ -579,7 +579,7 @@ sub {
 # genesis version - Print the version of Genesis. {{{
 
 command("version", <<EOF,
-genesis v$VERSION
+genesis v$Genesis::VERSION
 USAGE: genesis version
 
 OPTIONS
@@ -590,14 +590,14 @@ sub {
 	options(\@_, \%options, qw/
 	/);
 	usage(1) if @_;
-	print "Genesis v$VERSION\n";
+	print "Genesis v$Genesis::VERSION\n";
 });
 
 # }}}
 # genesis embed - embed Genesis in the repository {{{
 
 command("embed", <<EOF,
-genesis v$VERSION
+genesis v$Genesis::VERSION
 USAGE: genesis embed
 
 OPTIONS
@@ -619,7 +619,7 @@ sub {
 # genesis init - initialize a new Genesis repository {{{
 
 command("init", <<EOF,
-genesis v$VERSION
+genesis v$Genesis::VERSION
 USAGE: genesis init [-k KIT/VERSION] [-d directory] [name]
 
 OPTIONS
@@ -827,7 +827,7 @@ EOF
 # genesis new - create a new Genesis deployment environment (YAML file) {{{
 
 command("new", <<EOF,
-genesis v$VERSION
+genesis v$Genesis::VERSION
 USAGE: genesis new [--vault target] env-name[.yml]
 
 OPTIONS
@@ -902,7 +902,7 @@ sub {
 # genesis deploy - Pull in Cloud Config, Generate a manifest, deploy {{{
 
 command("deploy", <<EOF,
-genesis v$VERSION
+genesis v$Genesis::VERSION
 USAGE: genesis deploy <options> env-name[.yml]
 
 OPTIONS
@@ -964,7 +964,7 @@ sub {
 # genesis secrets - Generate / Rotate required credentials for an environment. {{{
 
 command("secrets", <<EOF,
-genesis v$VERSION
+genesis v$Genesis::VERSION
 USAGE: genesis secrets [check|add|rotate [--force]] [--vault target] deployment-env.yml
 
 Checks, adds or rotates secrets for your deployment.
@@ -1029,7 +1029,7 @@ sub {
 # genesis yamls - Print a list of the YAML files used for a single environment. {{{
 
 command("yamls", <<EOF,
-genesis v$VERSION
+genesis v$Genesis::VERSION
 USAGE: genesis yamls [--include-kit] deployment-env.yml
 
 OPTIONS
@@ -1056,7 +1056,7 @@ sub {
 # genesis create-kit - Create the structure for a new kit {{{
 #
 command("create-kit", <<EOF,
-genesis v$VERSION
+genesis v$Genesis::VERSION
 USAGE: genesis create-kit -d|--dev -n NAME [FEATURE ...]
 
 OPTIONS
@@ -1083,7 +1083,7 @@ sub {
 # genesis compile-kit - Create a distributable kit archive from dev/. {{{
 
 command("compile-kit", <<EOF,
-genesis v$VERSION
+genesis v$Genesis::VERSION
 USAGE: genesis compile-kit -v VERSION [-n NAME] [-d|--dev]
 
 OPTIONS
@@ -1164,7 +1164,7 @@ sub {
 # genesis decompile-kit - Unpack a kit archive to dev/. {{{
 
 command("decompile-kit", <<EOF,
-genesis v$VERSION
+genesis v$Genesis::VERSION
 USAGE: genesis decompile-kit [NAME/VERSION | path/to/kit.tar.gz]
 
 OPTIONS
@@ -1202,7 +1202,7 @@ sub {
 # genesis manifest - Compile a deployment manifest. {{{
 
 command("manifest", <<EOF,
-genesis v$VERSION
+genesis v$Genesis::VERSION
 USAGE: genesis manifest [--no-redact] [--cloud-config path.yml] deployment-env.yml
 
 OPTIONS
@@ -1251,7 +1251,7 @@ sub {
 # genesis repipe - Deploy a Concourse CI/CD deployment pipeline. {{{
 
 command(["repipe", "push"], <<EOF,
-genesis v$VERSION
+genesis v$Genesis::VERSION
 USAGE genesis repipe [pipeline-layout]
 
 OPTIONS
@@ -1305,7 +1305,7 @@ sub {
 # genesis graph - Draw a Concourse CI/CD deployment pipeline. {{{
 
 command("graph", <<EOF,
-genesis v$VERSION
+genesis v$Genesis::VERSION
 USAGE genesis graph [pipeline-layout] | dot -Tpng > pipe.png
 
 Note: This command outputs a directed, acyclic graph (a DAG) in the
@@ -1338,7 +1338,7 @@ sub {
 # genesis describe - Describe a Concourse CI/CD deployment pipeline. {{{
 
 command("describe", <<EOF,
-genesis v$VERSION
+genesis v$Genesis::VERSION
 USAGE genesis describe [pipeline-layout]
 
 OPTIONS
@@ -1365,7 +1365,7 @@ sub {
 # genesis lookup - Find a key set in environment manifests. {{{
 
 command("lookup", <<EOF,
-genesis v$VERSION
+genesis v$Genesis::VERSION
 USAGE genesis lookup key env-name default-value
 
 OPTIONS
@@ -1388,7 +1388,7 @@ sub {
 # genesis download - Download a Genesis Kit from the Internet. {{{
 
 command("download", <<EOF,
-genesis v$VERSION
+genesis v$Genesis::VERSION
 USAGE genesis download NAME[/VERSION] [...]
 
 OPTIONS
@@ -1410,14 +1410,14 @@ sub {
 # }}}
 # genesis ci-pipeline-deploy - Deploy via the CI/CD Pipeline {{{
 command("ci-pipeline-deploy", <<EOF,
-genesis v$VERSION
+genesis v$Genesis::VERSION
 USAGE genesis ci-pipeline-deploy
 
 OPTIONS
 $GLOBAL_USAGE
 EOF
 sub {
-	explain("[#G{genesis} ci-pipeline-deploy] v#G{$VERSION}\n");
+	explain("[#G{genesis} ci-pipeline-deploy] v#G{$Genesis::VERSION}\n");
 
 	my %options;
 	options(\@_, \%options, qw/
@@ -1506,14 +1506,14 @@ sub {
 # }}}
 # genesis ci-generate-cache - Generate cache for an environment via the CI/CD Pipeline {{{
 command("ci-generate-cache", <<EOF,
-genesis v$VERSION
+genesis v$Genesis::VERSION
 USAGE genesis ci-generate-cache
 
 OPTIONS
 $GLOBAL_USAGE
 EOF
 sub {
-	explain("[#G{genesis} ci-generate-cache] v#G{$VERSION}\n");
+	explain("[#G{genesis} ci-generate-cache] v#G{$Genesis::VERSION}\n");
 
 	my %options;
 	options(\@_, \%options, qw/
@@ -1552,14 +1552,14 @@ sub {
 # genesis ci-pipeline-run-errand - Run arbitrary errands via the CI/CD Pipeline {{{
 
 command("ci-pipeline-run-errand", <<EOF,
-genesis v$VERSION
+genesis v$Genesis::VERSION
 USAGE genesis ci-pipeline-run-errand
 
 OPTIONS
 $GLOBAL_USAGE
 EOF
 sub {
-	explain("[#G{genesis} ci-pipeline-run-errand] v#G{$VERSION}\n");
+	explain("[#G{genesis} ci-pipeline-run-errand] v#G{$Genesis::VERSION}\n");
 
 	my %options;
 	options(\@_, \%options, qw/
@@ -1596,7 +1596,7 @@ sub {
 # }}}
 # genesis ui-describe - Provides colored explanatory test {{{
 command("ui-describe", <<EOF,
-genesis v$VERSION
+genesis v$Genesis::VERSION
 USAGE genesis ui-describe "string" ... [options...]
 
 Prints each string, separated by a new line.  Supports color blocks by the
@@ -1629,7 +1629,7 @@ sub {
 # }}}
 # genesis ui-prompt-for - Provides prompts in support of hooks/new script {{{
 command("ui-prompt-for", <<EOF,
-genesis v$VERSION
+genesis v$Genesis::VERSION
 USAGE genesis ui-prompt-for <type> <path> [options...] [<prompt>]
 
 <type> is one of:
@@ -1732,7 +1732,7 @@ sub main {
 
 	if ($in_version == 1) {
 		# Set GENESIS_V1_PATH env var to shadow the obscure location
-		($ENV{GENESIS_V2_VERSION} = $VERSION) =~ s/^\((.*)\)$/$1/;
+		($ENV{GENESIS_V2_VERSION} = $Genesis::VERSION) =~ s/^\((.*)\)$/$1/;
 		exec $ENV{GENESIS_V1_BIN}, @_;
 	}
 	my ($cmd, @args);

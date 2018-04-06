@@ -3,7 +3,7 @@ use strict;
 use warnings;
 
 use base 'Genesis::Kit';
-use Genesis::Utils;
+use Genesis;
 use Genesis::Helpers;
 
 sub new {

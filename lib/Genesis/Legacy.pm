@@ -2,7 +2,7 @@ package Genesis::Legacy;
 use strict;
 use warnings;
 
-use Genesis::Utils;
+use Genesis;
 
 sub same {
 	my ($a, $b) = @_;

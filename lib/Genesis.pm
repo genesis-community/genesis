@@ -1,6 +1,8 @@
-package Genesis::Utils;
+package Genesis;
 use strict;
 use warnings;
+
+our $VERSION = "(development)";
 
 use File::Basename qw/basename/;
 use Cwd qw//;
@@ -382,14 +384,14 @@ sub popd {
 
 =head1 NAME
 
-Genesis::Utils
+Genesis
 
 =head1 DESCRIPTION
 
 This module contains assorted and sundry utilities that more or less stand
 on their own.  All of these procedures are exported by default.
 
-    use Genesis::Utils;
+    use Genesis;
     explain("utilities are utilitous!");
 
 =head1 FUNCTIONS

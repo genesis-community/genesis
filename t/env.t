@@ -10,7 +10,7 @@ use Test::Deep;
 
 use_ok 'Genesis::Env';
 use Genesis::Top;
-use Genesis::Utils;
+use Genesis;
 
 subtest 'new() validation' => sub {
 	throws_ok { Genesis::Env->new() }

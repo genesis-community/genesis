@@ -9,7 +9,7 @@ use Test::Deep;
 use Archive::Tar;
 
 use_ok 'Genesis::Kit::Compiler';
-use Genesis::Utils;
+use Genesis;
 
 my $tmp = workdir();
 my $cc = Genesis::Kit::Compiler->new("$tmp/test-genesis-kit");

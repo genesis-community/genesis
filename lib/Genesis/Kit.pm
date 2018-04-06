@@ -2,7 +2,7 @@ package Genesis::Kit;
 use strict;
 use warnings;
 
-use Genesis::Utils;
+use Genesis;
 use Genesis::Helpers;
 
 sub url {

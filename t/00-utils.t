@@ -7,7 +7,7 @@ use lib 't';
 use helper;
 use Test::Output;
 
-use_ok 'Genesis::Utils';
+use_ok 'Genesis';
 use Cwd ();
 
 subtest 'environment variable utilities' => sub {

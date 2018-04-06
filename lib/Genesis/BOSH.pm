@@ -1,6 +1,6 @@
 package Genesis::BOSH;
 
-use Genesis::Utils;
+use Genesis;
 
 sub _bosh {
 	my @args = @_;

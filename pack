@@ -26,7 +26,7 @@ die "Could not copy library into the package staging area\n" if $?;
 my $stub_out = ($ENV{GENESIS_PACK_PATH}||".")."/genesis-";
 my $VERSION = $ARGV[0] || '';
 if ($VERSION) {
-    $stub_out .= $VERSION;
+	$stub_out .= $VERSION;
 } else {
 	chomp(my $sha1 = qx(git rev-parse HEAD));
 	$sha1 = substr($sha1, 0, 10);
@@ -47,7 +47,7 @@ open my $in, "<", "bin/genesis"
 	or die "Failed to open bin/genesis for reading: $!\n";
 
 while (<$in>) {
-	s/^our \$VERSION = .*$/our \$VERSION = \"$VERSION\";/;
+	s/^(\$Genesis::VERSION) = .*$/$1 = \"$VERSION\";/;
 	print $out $_;
 }
 

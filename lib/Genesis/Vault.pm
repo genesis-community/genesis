@@ -2,7 +2,7 @@ package Genesis::Vault;
 use strict;
 use warnings;
 
-use Genesis::Utils;
+use Genesis;
 
 sub target {
 	my ($class, $target) = @_;

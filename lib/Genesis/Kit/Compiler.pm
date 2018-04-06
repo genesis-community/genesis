@@ -2,7 +2,7 @@ package Genesis::Kit::Compiler;
 use strict;
 use warnings;
 
-use Genesis::Utils;
+use Genesis;
 
 sub new {
 	my ($class, $root) = @_;

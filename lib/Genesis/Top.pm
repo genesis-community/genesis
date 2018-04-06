@@ -2,7 +2,7 @@ package Genesis::Top;
 use strict;
 use warnings;
 
-use Genesis::Utils;
+use Genesis;
 use Genesis::Env;
 use Genesis::Kit::Compiled;
 use Genesis::Kit::Dev;
