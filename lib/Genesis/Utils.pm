@@ -292,7 +292,8 @@ sub curl {
 	my @data = lines(run('curl', '-isL', $url, @flags));
 
 	unless (scalar(@data) && $? == 0) {
-		interact('curl', '-L', $url, @flags); # curl again to get stdout/err into concourse for debugging
+		# curl again to get stdout/err into concourse for debugging
+		run({ interactive => 1 }, 'curl', '-L', $url, @flags);
 		return 599, "Unable to execute curl command", "";
 	}
 	while (my $line = shift @data) {

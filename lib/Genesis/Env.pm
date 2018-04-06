@@ -4,6 +4,7 @@ use warnings;
 
 use Genesis::Utils;
 use Genesis::Legacy; # but we'd rather not
+use Genesis::BOSH;
 
 sub new {
 	my ($class, %opts) = @_;
@@ -390,7 +391,7 @@ sub bosh_target {
 		die "Could not find the `params.bosh' or `params.env' key in $self->{name} environment file!\n";
 	}
 
-	Genesis::BOSH->env($bosh)
+	Genesis::BOSH->ping($bosh)
 		or die "Could not find BOSH Director `$bosh` (specified via $source).\n";
 
 	return $bosh;

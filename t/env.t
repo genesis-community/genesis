@@ -12,6 +12,14 @@ use_ok 'Genesis::Env';
 use Genesis::Top;
 use Genesis::Utils;
 
+subtest 'new() validation' => sub {
+	throws_ok { Genesis::Env->new() }
+		qr/no 'name' specified.*this is a bug/i;
+
+	throws_ok { Genesis::Env->new(name => 'foo') }
+		qr/no 'top' specified.*this is a bug/i;
+};
+
 subtest 'name validation' => sub {
 	lives_ok { Genesis::Env->validate_name("my-new-env"); }
 		"my-new-env is a good enough name";
@@ -155,6 +163,7 @@ EOF
 	is($env->name, "standalone", "an environment should know its name");
 	is($env->file, "standalone.yml", "an environment should know its file path");
 	is($env->deployment, "standalone-thing", "an environment should know its deployment name");
+	is($env->kit->id, "bosh/0.2.3", "an environment can ask the kit for its kit name/version");
 };
 
 subtest 'parameter lookup' => sub {
@@ -231,7 +240,6 @@ EOF
 
 subtest 'manifest generation' => sub {
 	my $tmp = workdir."/work";
-	$tmp = Cwd::abs_path("t/tmp/save");
 	my $top = Genesis::Top->new($tmp);
 
 	system("rm -rf $tmp; mkdir -p $tmp");
@@ -271,9 +279,7 @@ EOF
 		./standalone.yml
 	]], "env detects correct actual environment files to merge");
 
-	$ENV{GENESIS_TRACE} = 1;
 	dies_ok { $env->manifest; } "should not be able to merge an env without a cloud-config";
-	$ENV{GENESIS_TRACE} = 0;
 
 
 	put_file "$tmp/.cloud.yml", <<EOF;
@@ -314,6 +320,59 @@ EOF
 		fancy  => ignore,
 		addons => ignore,
 	}, "pruned manifest should not contain the `kit` toplevel");
+};
+
+subtest 'bosh targeting' => sub {
+	my $tmp = workdir."/work";
+	my $top = Genesis::Top->new($tmp);
+	my $env;
+
+	system("rm -rf $tmp; mkdir -p $tmp");
+	put_file("$tmp/fake-bosh", <<EOF);
+#!/bin/bash
+# this is AGREEABLE BOSH...
+exit 0
+EOF
+	chmod(0755, "$tmp/fake-bosh");
+	local $ENV{GENESIS_BOSH_COMMAND} = "$tmp/fake-bosh";
+
+	symlink_or_fail Cwd::abs_path("t/src/fancy"), $top->path('dev');
+
+	put_file "$tmp/.genesis/config", <<EOF;
+---
+genesis:         2.6.0
+deployment_type: thing
+EOF
+
+	put_file $top->path('standalone.yml'), <<EOF;
+---
+kit:
+  name:    dev
+  version: latest
+params:
+  env: standalone
+EOF
+
+	$env = $top->load_env('standalone');
+	is $env->bosh_target, "standalone", "without a params.bosh, params.env is the BOSH target";
+
+	put_file $top->path('standalone.yml'), <<EOF;
+---
+kit:
+  name:    dev
+  version: latest
+params:
+  env: standalone
+  bosh: override-me
+EOF
+
+	$env = $top->load_env('standalone');
+	is $env->bosh_target, "override-me", "with a params.bosh, it becomes the BOSH target";
+
+	{
+		local $ENV{GENESIS_BOSH_ENVIRONMENT} = "https://127.0.0.86:25555";
+		is $env->bosh_target, "https://127.0.0.86:25555", "the \$GENESIS_BOSH_ENVIRONMENT overrides all";
+	}
 };
 
 done_testing;

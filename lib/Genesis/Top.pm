@@ -24,7 +24,7 @@ sub download_kit {
 		explain("Downloading Genesis kit #M{$name}, version #C{$version}");
 	}
 
-	my $url = Genesis::Kit->url($name, $version);
+	(my $url, $version) = Genesis::Kit->url($name, $version);
 
 	mkdir_or_fail($self->path(".genesis"));
 	mkdir_or_fail($self->path(".genesis/kits"));
