@@ -611,9 +611,7 @@ sub {
 	check_prereqs;
 
 	# FIXME: update .genesis/config with new version info
-	mkdir_or_fail(".genesis/bin");
-	copy_or_fail($0, ".genesis/bin/genesis");
-	chmod_or_fail(0755, ".genesis/bin/genesis");
+	Genesis::Top->new('.')->embed($0);
 });
 # }}}
 # genesis init - initialize a new Genesis repository {{{
@@ -669,138 +667,17 @@ sub {
 			usage(1);
 		}
 	}
-	$name =~ s/-deployments//;
 
-	$name =~ m/^[a-z][a-z0-9-]+$/
-		or die "Invalid Genesis repo name '$name'\n";
-
-	debug("generating a new Genesis repo, named $name");
-
-	debug("checking git config so can git commit later");
 	run({ onfailure => 'Please setup git - git config --global user.name "Your Name" -' },
 		'git config user.name');
-	run({ 'Please setup git - git config --global user.email your@email.com -' },
+	run({ onfailure => 'Please setup git - git config --global user.email your@email.com -' },
 		'git config user.email');
 
-	my $root = $options{directory} || "${name}-deployments";
-	debug("in directory $root");
-	if (-e $root) {
-		die "Attempted to create new environment `$root' failed: Path already exists.\n";
-	}
-	mkdir_or_fail( "$root/.genesis");
-	mkfile_or_fail("$root/.genesis/config", <<EOF);
----
-genesis: $VERSION
-deployment_type: $name
-EOF
-	mkdir_or_fail( "$root/.genesis/bin");
-	copy_or_fail(  $0, "$root/.genesis/bin/genesis");
-	chmod_or_fail( 0755, "$root/.genesis/bin/genesis");
-	mkfile_or_fail("$root/README.md", <<EOF);
-$name deployments
-==============================
+	my $top = Genesis::Top->create('.', $name, directory => $options{directory});
+	$top->embed($0);
 
-This repository contains the YAML templates that make up a series of
-$name BOSH deployments, using the format prescribed by the
-[Genesis][1] utility. These deployments are based off of the
-[$name-genesis-kit][2].
-
-Environment Naming
-------------------
-
-Each environment managed by this repository will have its own
-deployment file, e.g. `us-east-prod.yml`. However, in many cases,
-it can be desirable to share param configurations, or kit configurations
-across all of the environments, or specific subsets. Genesis supports
-this by splitting environment names based on hypthens (`-`), and finding
-files with common prefixes to include in the final manifest.
-
-For example, let's look at a scenario where there are three environments
-deployed by genesis: `us-west-prod.yml`, `us-east-prod.yml`, and `us-east-dev.yml`.
-If there were configurations that should be shared by all environments,
-they should go in `us.yml`. Configurations shared by `us-east-dev` and `us-east-prod`
-would go in `us-east.yml`.
-
-To see what files are currently in play for an environment, you can run
-`genesis <environment-name>`
-
-Quickstart
-----------
-
-To create a new environment (called us-east-prod-$name):
-
-    genesis new us-east-prod
-
-To build the full BOSH manifest for an environment:
-
-    genesis manifest us-east-prod
-
-... and then deploy it:
-
-    genesis deploy us-east-prod
-
-To rotate credentials for an environment:
-
-    genesis secrets us-east-prod
-    genesis deploy us-east-prod
-
-To update the Concourse Pipeline for this repo:
-
-    genesis repipe
-
-To download a new version of the kit, and deploy it:
-
-    genesis download $name [version] # omitting version downloads the latest
-
-    # update the environment yaml to use the desired kit version,
-    # this might be in a different file if using CI to propagate
-    # deployment upgrades (perhaps us.yml)
-    vi us-east-prod.yml
-
-    genesis deploy us-east-prod.yml # or commit + git push for CI to run through the upgrades
-
-See the [Deployment Pipeline Documentation][3] for more
-information on getting set up with Concourse deployment pipelines.
-
-Helpful Links
--------------
-
-- [$name-genesis-kit][2] - Details on the kit used in this repo,
-  its features, prerequesites, and params.
-- [Deployment Pipeline Documentation][3] - Docs on all the
-  configuration options for `ci.yml`, and how the automated
-  deployment pipelines behave.
-
-[1]: https://github.com/starkandwayne/genesis
-[2]: https://github.com/genesis-community/$name-genesis-kit
-[3]: https://github.com/starkandwayne/genesis/blob/master/docs/PIPELINES.md
-
-Repo Structure
---------------
-
-Most of the meat of the deployment repo happens at the base level.
-Envirionment YAML files, shared YAML files, and the CI
-configuration YAML file will all be here.
-
-The `.genesis/manifests` directory saves redacted copies of the
-deployment manifests as they are deployed, for posterity, and to
-keep track of any `my-env-name-state.yml` files from `bosh create-env`.
-
-The `.genesis/cached` directory is used by CI to propagate changes
-for shared YAML files along the pipelines. To aid in CI deploys, the
-`genesis/bin` directory contains an embedded copy of genesis.
-
-`.genesis/kits` contains copies of the kits that have been used in
-this deployment. Once a kit is no longer used in any environment,
-it can be safely removed.
-
-`.genesis/config` is used internally by `genesis` to understand
-what is being deployed, and how.
-EOF
-
-	chdir_or_fail($root);
-	my $top = Genesis::Top->new('.');
-
+	my $root = $top->path;
+	pushd($root);
 	if ($options{'link-dev-kit'}) {
 		debug("Kit: linking dev to $abs_target");
 		symlink_or_fail($abs_target, "./dev");
@@ -814,12 +691,14 @@ EOF
 		mkdir_or_fail("./dev");
 	}
 
+	print STDERR "cwd is ".qx(cwd)."\n";
 	run({ onfailure => "Failed to initialize a git repository in $root/" },
 		'git init && git add .');
 
 	run({ onfailure => "Failed to commit initial Genesis repository in $root/" },
 		'git commit -m "Initial Genesis Repo"');
 
+	popd;
 	exit 0;
 });
 
@@ -1242,9 +1121,9 @@ sub {
 		}
 	}
 
-	print $env->manifest('cloud-config' => $options{'cloud-config'},
-	                     redact         => $options{redact},
-	                     prune          => $options{prune});
+	$env->use_cloud_config($options{'cloud-config'});
+	print $env->manifest(redact => $options{redact},
+	                     prune  => $options{prune});
 });
 
 # }}}

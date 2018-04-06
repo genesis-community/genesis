@@ -20,7 +20,7 @@ sub bosh_runs_as {
 	put_file($bin, <<EOF);
 $output
 [[ "\$@" == "$expect" ]] && exit 0;
-echo >&2 "got  '\$@'"
+echo >&2 "got  '\$@\'"
 echo >&2 "want '$expect'"
 exit 2
 EOF

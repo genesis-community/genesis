@@ -8,6 +8,13 @@ if [[ ${HOOK_NO_SUBKITS:-no} = "yes" ]]; then
   exit 0
 fi
 
+if [[ ${HOOK_SHOULD_BE_AIRY:-no} = "yes" ]]; then
+	for subkit in "$@"; do
+		echo; echo "     $subkit   "; echo; echo
+	done
+	exit 0
+fi
+
 for subkit in "$@"; do
 	echo $subkit
 done

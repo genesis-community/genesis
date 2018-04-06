@@ -6,9 +6,10 @@ use lib 'lib';
 use lib 't';
 use helper;
 use Test::Deep;
+use Cwd ();
 
 use_ok 'Genesis::Top';
-
+use Genesis;
 
 subtest 'kit location' => sub {
 	my $tmp = workdir();
@@ -69,6 +70,56 @@ subtest 'kit location' => sub {
 	is($top->find_kit(undef, 'latest')->{name}, 'foo', "the only kit should be 'foo'");
 	is($top->find_kit(undef, '0.9.6')->{version}, '0.9.6', "specific version of the kit are returned");
 	is($top->find_kit(undef, '0.9.6')->{name}, 'foo', "the only kit should be 'foo' (0.9.6)");
+};
+
+subtest 'init' => sub {
+	my ($tmp, $top);
+
+	# without a directory override
+	$tmp = workdir;
+	ok ! -f "$tmp/jumpbox-deployments/.genesis/config", "No .genesis/config in new Top";
+	$top = Genesis::Top->create($tmp, 'jumpbox');
+	ok -f "$tmp/jumpbox-deployments/.genesis/config", ".genesis created in correct top dir";
+	ok -f $top->path('.genesis/config'), "Top->create should create a new .genesis/config";
+	is $top->type, 'jumpbox', 'an initialized top has a type';
+
+	# with a directory override
+	$tmp = workdir;
+	$top = Genesis::Top->create($tmp, 'jumpbox', directory => 'something-else');
+	ok -f Cwd::abs_path("$tmp/something-else/.genesis/config"), ".genesis created in correct top dir";
+	ok -f $top->path('.genesis/config'), "Top->create should create a new .genesis/config";
+	is $top->type, 'jumpbox', 'an initialized top has a type';
+
+	# overwrite tests
+	$tmp = workdir;
+	lives_ok { Genesis::Top->create($tmp, 'test') } "it should be okay to init once";
+	throws_ok { Genesis::Top->create($tmp, 'test') } qr/cowardly refusing/i,
+		"it is not okay to init twice";
+
+	# name validation
+	throws_ok { Genesis::Top->create($tmp, '!@#$ing-deployments') } qr/invalid genesis repo name/i,
+		"it is not okay to swear in genesis repo names";
+};
+
+subtest 'embedding stuff' => sub {
+	my $tmp = workdir;
+	my $top = Genesis::Top->create($tmp, 'thing');
+	put_file("$tmp/not-genesis", <<EOF);
+#!/bin/bash
+echo "this is not genesis"
+EOF
+	system("$tmp/not-genesis 2>/dev/null");
+	isnt $?, 0, "tmp/not-genesis should not be executable";
+
+	ok ! -f "$tmp/thing-deployments/.genesis/bin/genesis",
+		"genesis bin should not be embedded by default";
+
+	$top->embed("$tmp/not-genesis");
+	ok -f "$tmp/thing-deployments/.genesis/bin/genesis",
+		"genesis bin should be embedded once we call embed()";
+
+	is qx($tmp/thing-deployments/.genesis/bin/genesis), "this is not genesis\n",
+		"embed() makes the embedded copy executable";
 };
 
 subtest 'downloading kits' => sub {

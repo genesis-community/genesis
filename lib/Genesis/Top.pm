@@ -7,9 +7,154 @@ use Genesis::Env;
 use Genesis::Kit::Compiled;
 use Genesis::Kit::Dev;
 
+use Cwd ();
+
 sub new {
 	my ($class, $root) = @_;
-	bless({ root => $root }, $class);
+	bless({ root => Cwd::abs_path($root) }, $class);
+}
+
+sub create {
+	my ($class, $path, $name, %opts) = @_;
+
+	$name =~ s/-deployments//;
+	$name =~ m/^[a-z][a-z0-9_-]+$/
+		or die "Invalid Genesis repo name '$name'\n";
+	debug("generating a new Genesis repo, named $name");
+
+	my $dir = $opts{directory} || "${name}-deployments";
+	$path .= "/$dir";
+	die "Cowardly refusing to create new deployments repository `$dir': one already exists.\n"
+		if -e $path;
+
+	my $self = $class->new($path);
+	$self->mkdir(".genesis");
+
+	$self->mkfile(".genesis/config", # {{{
+<<EOF);
+---
+genesis: $Genesis::VERSION
+deployment_type: $name
+EOF
+
+# }}}
+	$self->mkfile("README.md", # {{{
+<<EOF);
+$name deployments
+==============================
+
+This repository contains the YAML templates that make up a series of
+$name BOSH deployments, using the format prescribed by the
+[Genesis][1] utility. These deployments are based off of the
+[$name-genesis-kit][2].
+
+Environment Naming
+------------------
+
+Each environment managed by this repository will have its own
+deployment file, e.g. `us-east-prod.yml`. However, in many cases,
+it can be desirable to share param configurations, or kit configurations
+across all of the environments, or specific subsets. Genesis supports
+this by splitting environment names based on hypthens (`-`), and finding
+files with common prefixes to include in the final manifest.
+
+For example, let's look at a scenario where there are three environments
+deployed by genesis: `us-west-prod.yml`, `us-east-prod.yml`, and `us-east-dev.yml`.
+If there were configurations that should be shared by all environments,
+they should go in `us.yml`. Configurations shared by `us-east-dev` and `us-east-prod`
+would go in `us-east.yml`.
+
+To see what files are currently in play for an environment, you can run
+`genesis <environment-name>`
+
+Quickstart
+----------
+
+To create a new environment (called us-east-prod-$name):
+
+    genesis new us-east-prod
+
+To build the full BOSH manifest for an environment:
+
+    genesis manifest us-east-prod
+
+... and then deploy it:
+
+    genesis deploy us-east-prod
+
+To rotate credentials for an environment:
+
+    genesis secrets us-east-prod
+    genesis deploy us-east-prod
+
+To update the Concourse Pipeline for this repo:
+
+    genesis repipe
+
+To download a new version of the kit, and deploy it:
+
+    genesis download $name [version] # omitting version downloads the latest
+
+    # update the environment yaml to use the desired kit version,
+    # this might be in a different file if using CI to propagate
+    # deployment upgrades (perhaps us.yml)
+    vi us-east-prod.yml
+
+    genesis deploy us-east-prod.yml     # or commit + git push to have
+                                        # CI run through the upgrades
+
+See the [Deployment Pipeline Documentation][3] for more
+information on getting set up with Concourse deployment pipelines.
+
+Helpful Links
+-------------
+
+- [$name-genesis-kit][2] - Details on the kit used in this repo,
+  its features, prerequesites, and params.
+
+- [Deployment Pipeline Documentation][3] - Docs on all the
+  configuration options for `ci.yml`, and how the automated
+  deployment pipelines behave.
+
+[1]: https://github.com/starkandwayne/genesis
+[2]: https://github.com/genesis-community/$name-genesis-kit
+[3]: https://github.com/starkandwayne/genesis/blob/master/docs/PIPELINES.md
+
+Repo Structure
+--------------
+
+Most of the meat of the deployment repo happens at the base level.
+Envirionment YAML files, shared YAML files, and the CI
+configuration YAML file will all be here.
+
+The `.genesis/manifests` directory saves redacted copies of the
+deployment manifests as they are deployed, for posterity, and to
+keep track of any `my-env-name-state.yml` files from `bosh create-env`.
+
+The `.genesis/cached` directory is used by CI to propagate changes
+for shared YAML files along the pipelines. To aid in CI deploys, the
+`genesis/bin` directory contains an embedded copy of genesis.
+
+`.genesis/kits` contains copies of the kits that have been used in
+this deployment. Once a kit is no longer used in any environment,
+it can be safely removed.
+
+`.genesis/config` is used internally by `genesis` to understand
+what is being deployed, and how.
+EOF
+
+# }}}
+
+	return $self;
+}
+
+sub embed {
+	my ($self, $bin) = @_;
+
+	$self->mkdir(".genesis/bin");
+	copy_or_fail($bin, $self->path(".genesis/bin/genesis"));
+	chmod_or_fail(0755, $self->path(".genesis/bin/genesis"));
+	return 1;
 }
 
 sub download_kit {
@@ -40,6 +185,16 @@ sub path {
 	my ($self, $relative) = @_;
 	return $relative ? "$self->{root}/$relative"
 	                 :  $self->{root};
+}
+
+sub mkfile {
+	my ($self, $file, @rest) = @_;
+	mkfile_or_fail($self->path($file), @rest);
+}
+
+sub mkdir {
+	my ($self, $dir, @rest) = @_;
+	mkdir_or_fail($self->path($dir), @rest);
 }
 
 sub config {
@@ -164,9 +319,33 @@ instead can carry around a C<Top> context object which handles it for them.
 
 =head2 new($path)
 
-Create a new root, at C<$path>.
+Instantiate a new Top object, pointing at C<$path>.
+
+=head2 create($path, $name, %opts)
+
+Creates a new deployment repository in C<$path>/C<$name>-deployments,
+initializes it by creating the C<.genesis/> directory hierarchy, and returns
+a new Top object pointing to that root directory.
+
+The following options are currently supported:
+
+=over
+
+=item directory
+
+Override the name of the new directory (which defaults to
+C<$name>-deployments).
+
+=back
+
 
 =head1 METHODS
+
+=head2 embed($bin)
+
+Embeds the file C<$bin> into C<.genesis/bin/genesis>, and chmods it
+properly.  This embedded copy of (probably Genesis) is used by the CI/CD
+pipelines to avoid having to stuff versions into docker images.
 
 =head2 download_kit($name, $version)
 
@@ -177,6 +356,15 @@ download the named kit and version (or latest) and stuff it in the
 =head2 path([$relative])
 
 Qualifies and returns C<$relative> as an absolute path.
+
+=head2 mkfile($file, [$mode], $contents)
+
+Creates a file, relative to the Top root directory, using C<mkfile_or_fail>.
+
+=head2 mkdir($file, [$mode])
+
+Creates a directory, relative to the Top root directory, using
+C<mkfile_or_fail>.
 
 =head2 config()
 

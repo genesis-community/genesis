@@ -4,6 +4,7 @@ use warnings;
 
 use lib 't';
 use helper;
+use Test::Differences;
 
 my $tmp = workdir;
 ok -d "t/repos/compiled-kit-test", "compiled-kit-test repo exists" or die;
@@ -12,13 +13,13 @@ chdir "t/repos/compiled-kit-test" or die;
 bosh2_cli_ok;
 
 runs_ok "genesis manifest -c cloud.yml test-env >$tmp/manifest.yml";
-is get_file("$tmp/manifest.yml"), <<EOF, "manifest generated based on compile kit";
+eq_or_diff get_file("$tmp/manifest.yml"), <<EOF, "manifest generated based on compile kit";
 name: env-compiled-kit-test
 version: 0.0.1
 EOF
 
 runs_ok "genesis manifest -c cloud.yml test-env-upgrade >$tmp/manifest.yml";
-is get_file("$tmp/manifest.yml"), <<EOF, "manifest generated based on compile kit";
+eq_or_diff get_file("$tmp/manifest.yml"), <<EOF, "manifest generated based on compile kit";
 name: env-compiled-kit-test
 properties:
   added: stuff
@@ -27,7 +28,7 @@ EOF
 
 qx(rm -f new-env.yml);
 runs_ok "genesis new --vault unassailable-garrison new-env";
-is get_file("new-env.yml"), <<EOF, "environment file is correctly generated";
+eq_or_diff get_file("new-env.yml"), <<EOF, "environment file is correctly generated";
 ---
 kit:
   name:     compiled

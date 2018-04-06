@@ -132,17 +132,14 @@ subtest 'environment metadata' => sub {
 	my $top = Genesis::Top->new($tmp);
 
 	system("rm -rf $tmp; mkdir -p $tmp");
-	put_file "$tmp/.genesis/config", <<EOF;
----
-genesis:         2.6.0
-deployment_type: thing
-EOF
+	$top = Genesis::Top->create($tmp, 'thing');
+	$top->download_kit('bosh/0.2.0');
 
-	put_file "$tmp/standalone.yml", <<EOF;
+	put_file $top->path("standalone.yml"), <<EOF;
 ---
 kit:
   name:    bosh
-  version: 0.2.3
+  version: 0.2.0
   features:
     - vsphere
     - proto
@@ -153,8 +150,6 @@ params:
   running: yes
   false:   ~
 EOF
-
-	put_file "$tmp/.genesis/kits/bosh-0.2.3.tar.gz", "not a tarball.  sorry.";
 
 	my $env;
 	lives_ok { $env = $top->load_env('standalone') }
@@ -163,25 +158,20 @@ EOF
 	is($env->name, "standalone", "an environment should know its name");
 	is($env->file, "standalone.yml", "an environment should know its file path");
 	is($env->deployment, "standalone-thing", "an environment should know its deployment name");
-	is($env->kit->id, "bosh/0.2.3", "an environment can ask the kit for its kit name/version");
+	is($env->kit->id, "bosh/0.2.0", "an environment can ask the kit for its kit name/version");
 };
 
 subtest 'parameter lookup' => sub {
-	my $tmp = workdir."/work";
-	my $top = Genesis::Top->new($tmp);
+	my $tmp = workdir;
 
 	system("rm -rf $tmp; mkdir -p $tmp");
-	put_file "$tmp/.genesis/config", <<EOF;
----
-genesis:         2.6.0
-deployment_type: thing
-EOF
-
-	put_file "$tmp/standalone.yml", <<EOF;
+	my $top = Genesis::Top->create($tmp, 'thing');
+	$top->download_kit('bosh/0.2.0');
+	put_file $top->path("standalone.yml"), <<EOF;
 ---
 kit:
   name:    bosh
-  version: 0.2.3
+  version: 0.2.0
   features:
     - vsphere
     - proto
@@ -192,8 +182,6 @@ params:
   running: yes
   false:   ~
 EOF
-
-	put_file "$tmp/.genesis/kits/bosh-0.2.3.tar.gz", "not a tarball.  sorry.";
 
 	my $env;
 	throws_ok { $top->load_env('enoent');   } qr/enoent.yml does not exist/;
@@ -219,11 +207,11 @@ EOF
 	ok($env->needs_bosh_create_env(),
 		"environments with the 'proto' feature enabled require bosh create-env");
 
-	put_file "$tmp/regular-deploy.yml", <<EOF;
+	put_file $top->path("regular-deploy.yml"), <<EOF;
 ---
 kit:
   name:    bosh
-  version: 0.2.3
+  version: 0.2.0
   features:
     - vsphere
 
@@ -239,15 +227,12 @@ EOF
 };
 
 subtest 'manifest generation' => sub {
-	my $tmp = workdir."/work";
-	my $top = Genesis::Top->new($tmp);
+	my $tmp = workdir;
 
 	system("rm -rf $tmp; mkdir -p $tmp");
-	put_file "$tmp/.genesis/config", <<EOF;
----
-genesis:         2.6.0
-deployment_type: thing
-EOF
+	my $top = Genesis::Top->create($tmp, 'thing');
+	symlink_or_fail Cwd::abs_path("t/src/fancy"), $top->path('dev');
+	ok $top->has_dev_kit, "working directory should have a dev kit now";
 
 	put_file $top->path('standalone.yml'), <<EOF;
 ---
@@ -263,8 +248,6 @@ params:
   env: standalone
 EOF
 
-	symlink_or_fail Cwd::abs_path("t/src/fancy"), $top->path('dev');
-	ok $top->has_dev_kit, "working directory should have a dev kit now";
 	my $env = $top->load_env('standalone');
 	cmp_deeply([$env->kit_files], [qw[
 		base.yml
@@ -282,16 +265,16 @@ EOF
 	dies_ok { $env->manifest; } "should not be able to merge an env without a cloud-config";
 
 
-	put_file "$tmp/.cloud.yml", <<EOF;
+	put_file $top->path(".cloud.yml"), <<EOF;
 --- {}
 # not really a cloud config, but close enough
 EOF
-	lives_ok { $env->use_cloud_config("$tmp/.cloud.yml")->manifest; }
+	lives_ok { $env->use_cloud_config($top->path(".cloud.yml"))->manifest; }
 		"should be able to merge an env with a cloud-config";
 
-	$env->write_manifest("$tmp/.manifest.yml");
-	ok -f "$tmp/.manifest.yml", "env->write_manifest should actually write the file";
-	ok -s "$tmp/.manifest.yml" > -s "$tmp/standalone.yml",
+	$env->write_manifest($top->path(".manifest.yml"));
+	ok -f $top->path(".manifest.yml"), "env->write_manifest should actually write the file";
+	ok -s $top->path(".manifest.yml") > -s $top->path("standalone.yml"),
 		"written manifest should be at least as big as the env file";
 
 	ok $env->manifest_lookup('addons.foxtrot'), "env manifest defines addons.foxtrot";
@@ -299,8 +282,8 @@ EOF
 		"env manifest doesn't define addons.bravo";
 
 	cmp_deeply($env->exodus, {
-			version       => re(/\d/),
-			dated         => re(/\d\d\d\d-\d\d-\d\d \d\d:\d\d:\d\d/),
+			version       => ignore,
+			dated         => re(qr/\d\d\d\d-\d\d-\d\d \d\d:\d\d:\d\d/),
 			deployer      => ignore,
 			kit_name      => 'dev',
 			kit_version   => 'latest',
@@ -327,8 +310,7 @@ EOF
 };
 
 subtest 'bosh targeting' => sub {
-	my $tmp = workdir."/work";
-	my $top = Genesis::Top->new($tmp);
+	my $tmp = workdir;
 	my $env;
 
 	system("rm -rf $tmp; mkdir -p $tmp");
@@ -340,13 +322,8 @@ EOF
 	chmod(0755, "$tmp/fake-bosh");
 	local $ENV{GENESIS_BOSH_COMMAND} = "$tmp/fake-bosh";
 
+	my $top = Genesis::Top->create($tmp, 'thing');
 	symlink_or_fail Cwd::abs_path("t/src/fancy"), $top->path('dev');
-
-	put_file "$tmp/.genesis/config", <<EOF;
----
-genesis:         2.6.0
-deployment_type: thing
-EOF
 
 	put_file $top->path('standalone.yml'), <<EOF;
 ---

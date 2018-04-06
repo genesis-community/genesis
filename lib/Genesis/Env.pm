@@ -276,7 +276,7 @@ sub manifest {
 		}
 
 		return run({ onfailure => "Failed to merge $self->{name} manifest" },
-			'spruce', 'merge', (map { ('--prune', $_) } @prune), $path);
+			'spruce', 'merge', (map { ('--prune', $_) } @prune), $path)."\n";
 	}
 
 	return slurp($path);

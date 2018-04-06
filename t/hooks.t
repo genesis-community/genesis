@@ -13,7 +13,7 @@ use_ok 'Genesis::Kit';
 use Genesis::Kit::Dev;
 use Genesis::Top;
 
-my $tmp = workdir."/work";
+my $tmp = workdir;
 my $top;  # Genesis::Top
 my $root; # absolute path to $top's root
 
@@ -29,19 +29,14 @@ my $stack_scale;
 
 sub again {
 	system("rm -rf $tmp; mkdir -p $tmp");
-	put_file "$tmp/.genesis/config", <<EOF;
----
-genesis: 2.6.0
-deployment_type: thing
-EOF
-	$top    = Genesis::Top->new($tmp);
+	$top    = Genesis::Top->create($tmp, 'thing');
 	$root   = $top->path;
 	$simple = Genesis::Kit::Dev->new("t/src/simple");
 	$fancy  = Genesis::Kit::Dev->new("t/src/fancy");
 	$legacy = Genesis::Kit::Dev->new("t/src/legacy");
 
-	put_file "$tmp/dev/kit.yml", "--- {}\n";
-	put_file "$tmp/us-west-1-prod.yml", <<EOF;
+	put_file "$root/dev/kit.yml", "--- {}\n";
+	put_file "$root/us-west-1-prod.yml", <<EOF;
 ---
 kit:
   name:    dev
@@ -49,7 +44,7 @@ kit:
 EOF
 	$us_west_1_prod = $top->load_env('us-west-1-prod');
 
-	put_file "$tmp/snw-lab-dev.yml", <<EOF;
+	put_file "$root/snw-lab-dev.yml", <<EOF;
 ---
 kit:
   name:    dev
@@ -63,7 +58,7 @@ kit:
 EOF
 	$snw_lab_dev = $top->load_env('snw-lab-dev');
 
-	put_file "$tmp/stack-scale.yml", <<EOF;
+	put_file "$root/stack-scale.yml", <<EOF;
 ---
 kit:
   name:    dev
@@ -92,10 +87,10 @@ subtest 'new hook' => sub {
 	ok $simple->run_hook('new', env => $us_west_1_prod),
 	   "[simple] running the 'new' hook should succeed";
 
-	ok -f "$tmp/us-west-1-prod.yml",
+	ok -f "$root/us-west-1-prod.yml",
 	   "[simple] the 'new' hook should create the env yaml file";
 
-	yaml_is get_file("$tmp/us-west-1-prod.yml"), <<EOF,
+	yaml_is get_file("$root/us-west-1-prod.yml"), <<EOF,
 kit:
   name:     dev
   version:  latest
@@ -110,10 +105,10 @@ EOF
 	ok $fancy->run_hook('new', env => $snw_lab_dev),
 	   "[fancy] running the 'new' hook should succeed";
 	
-	ok -f "$tmp/snw-lab-dev.yml",
+	ok -f "$root/snw-lab-dev.yml",
 	   "[fancy] the 'new' hook should create the env yaml file";
 
-	yaml_is get_file("$tmp/snw-lab-dev.yml"), <<EOF,
+	yaml_is get_file("$root/snw-lab-dev.yml"), <<EOF,
 kit:
   name:     dev
   version:  latest
@@ -140,7 +135,7 @@ EOF
 				env => Genesis::Env->new(top => $top, name => 'env-should-fail'));
 		} qr/could not create/i;
 
-		ok ! -f "$tmp/env-should-fail.yml",
+		ok ! -f "$root/env-should-fail.yml",
 		   "[fancy] if the 'new' hook script exists non-zero, the env file should not get created";
 	}
 
@@ -151,7 +146,7 @@ EOF
 				env => Genesis::Env->new(top => $top, name => 'env-should-fail'));
 		} qr/could not create/i;
 
-		ok ! -f "$tmp/env-should-fail.yml",
+		ok ! -f "$root/env-should-fail.yml",
 		   "[fancy] if the 'new' hook script fails, the env file shoud be missing";
 	}
 };
@@ -183,6 +178,19 @@ subtest 'blueprint hook' => sub {
 		local $ENV{HOOK_NO_BLUEPRINT} = 'yes';
 		throws_ok { $fancy->run_hook('blueprint', features => [$snw_lab_dev->features]); }
 			qr/could not determine which yaml files/i;
+	}
+
+	{
+		local $ENV{HOOK_SHOULD_BE_AIRY} = 'yes';
+		cmp_deeply([$fancy->run_hook('blueprint', features => [$snw_lab_dev->features])], [qw[
+				base.yml
+				addons/alpha.yml
+				addons/foxtrot.yml
+				addons/uniform.yml
+				addons/charlie.yml
+				addons/kilo.yml
+				addons/bravo.yml
+			]], "[fancy] blueprint hook should ignore whitespace");
 	}
 };
 
@@ -267,6 +275,13 @@ subtest 'LEGACY subkit hook' => sub {
 		local $ENV{HOOK_NO_SUBKITS} = 'yes';
 		cmp_deeply([$legacy->run_hook('subkit', features => [$stack_scale->features])], [],
 			"[legacy] the 'subkit' hook can remove all subkits");
+	}
+
+	{
+		local $ENV{HOOK_SHOULD_BE_AIRY} = 'yes';
+		cmp_deeply([$legacy->run_hook('subkit', features => [$stack_scale->features])], [qw[
+				do-thing
+			]], "[legacy] the 'subkit' hook ignores whitespace");
 	}
 };
 
