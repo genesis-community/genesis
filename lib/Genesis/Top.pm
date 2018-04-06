@@ -12,6 +12,33 @@ sub new {
 	bless({ root => $root }, $class);
 }
 
+sub download_kit {
+	my ($self, $spec) = @_;
+
+	my ($name, $version) = $spec =~ m{(.*)/(.*)} ? ($1, $2)
+	                                             : ($spec, 'latest');
+
+	my $kit = Genesis::Kit::Compiled->new(name => $name,
+	                                      version => $version);
+	
+	if ($version eq 'latest') {
+		explain("Downloading Genesis kit #M{$name} (#Y{latest} version)");
+	} else {
+		explain("Downloading Genesis kit #M{$name}, version #C{$version}");
+	}
+
+	my $url = $kit->url;
+
+	mkdir_or_fail($self->path(".genesis"));
+	mkdir_or_fail($self->path(".genesis/kits"));
+	my ($code, $msg, $data) = curl("GET", $url);
+	if ($code != 200) {
+		die "Failed to download $name/$version from $url: Github returned an HTTP ".$msg."\n";
+	}
+	mkfile_or_fail($self->path(".genesis/kits/$name-$version.tar.gz", 0400, $data);
+	debug("downloaded kit #M{$name}/#C{$version}");
+}
+
 sub path {
 	my ($self, $relative) = @_;
 	return $relative ? "$self->{root}/$relative"

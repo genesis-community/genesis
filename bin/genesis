@@ -505,72 +505,6 @@ sub check_prereqs {
 	}
 }
 
-sub extract_kit_name_and_version {
-	my ($combined) = @_;
-	return ($1, $2) if $combined =~ m{(.*)/(.*)};
-	return $combined, "latest";
-}
-
-sub kit_release_url { # DEPRECATED
-	my ($name, $version) = @_;
-
-	my $creds = "";
-	if ($ENV{GITHUB_USER} && $ENV{GITHUB_AUTH_TOKEN}) {
-		$creds = "$ENV{GITHUB_USER}:$ENV{GITHUB_AUTH_TOKEN}";
-	}
-	my ($code, $msg, $data) = curl "GET", "https://api.github.com/repos/genesis-community/$name-genesis-kit/releases", undef, undef, 0, $creds;
-	if ($code == 404) {
-		die "Could not find Genesis Kit $name on Github; does https://github.com/genesis-community/$name-genesis-kit/releases exist?\n";
-	}
-	if ($code != 200) {
-		die "Could not find Genesis Kit $name release information; Github returned a ".$msg."\n";
-	}
-
-	my $releases;
-	eval { $releases = load_json($data); 1 }
-		or die "Failed to read releases information from Github: $@\n";
-
-	if (!@$releases) {
-		die "No released versions of Genesis Kit $name found at https://github.com/genesis-community/$name-genesis-kit/releases.\n";
-	}
-
-	for (map { @{$_->{assets} || []} } @$releases) {
-		if ($version eq 'latest') {
-			next unless $_->{name} =~ m/^\Q$name\E-(.*)\.(tar\.gz|tgz)$/;
-			$version = $1;
-		} else {
-			next unless $_->{name} eq "$name-$version.tar.gz"
-			         or $_->{name} eq "$name-$version.tgz";
-		}
-		return ($_->{browser_download_url}, $version);
-	}
-
-	die "$name/$version tarball asset not found on Github.  Oops.\n";
-}
-
-sub download_kit_tarball
-{
-	my ($name, $want) = @_;
-
-	if ($want eq 'latest') {
-		explain("Downloading Genesis kit #M{$name} (#Y{latest} version)");
-	} else {
-		explain("Downloading Genesis kit #M{$name}, version #C{$want}");
-	}
-	my ($url, $version) = kit_release_url($name, $want);
-	mkdir_or_fail(".genesis");
-	mkdir_or_fail(".genesis/kits");
-	open my $kit, ">", ".genesis/kits/$name-$version.tar.gz"
-		or die "Failed to open .genesis/kits/$name-$version.tar.gz for writing: $!\n";
-	my ($code, $msg, $data) = curl "GET", $url;
-	if ($code != 200) {
-		die "Failed to download $name/$version from $url: Github returned an HTTP ".$msg."\n";
-	}
-	print $kit $data;
-	close $kit;
-	debug("downloaded kit #M{$name}/#C{$version}");
-}
-
 sub target_vault {
 	my ($target) = @_;
 	$target ||= '-i';  # Default to interactive mode
@@ -793,7 +727,8 @@ sub {
 	my ($name) = @_;
 	unless ($name) {
 		if ($options{kit}) {
-			($name, $_) = extract_kit_name_and_version($options{kit});
+			($name = $options{kit}) =~ s|/.*||;
+
 		} elsif ($options{'link-dev-kit'}) {
 			$name = basename($options{'link-dev-kit'});
 		} else {
@@ -931,14 +866,16 @@ what is being deployed, and how.
 EOF
 
 	chdir_or_fail($root);
+	my $top = Genesis::Top->new('.');
 
 	if ($options{'link-dev-kit'}) {
 		debug("Kit: linking dev to $abs_target");
 		symlink_or_fail($abs_target, "./dev");
+
 	} elsif ($options{kit}) {
 		debug("Kit: installing kit $options{kit}");
-		my ($kit, $version) = extract_kit_name_and_version($options{kit});
-		download_kit_tarball($kit, $version);
+		$top->download_kit($options{kit});
+
 	} else {
 		debug("Kit: creating empty ./dev kit directory");
 		mkdir_or_fail("./dev");
@@ -1527,12 +1464,11 @@ sub {
 	usage(1) if @_ < 1;
 	check_prereqs;
 
+	my $top = Genesis::Top->new('.');
 	for (@_) {
-		my ($name, $version) = extract_kit_name_and_version($_);
-		download_kit_tarball($name, $version)
-			or exit 1;
+		$top->download_kit($_)
+			or bail "Failed to download Genesis Kit #C{$_}";
 	}
-	exit 0;
 });
 # }}}
 # genesis ci-pipeline-deploy - Deploy via the CI/CD Pipeline {{{
