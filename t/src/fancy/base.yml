@@ -11,12 +11,13 @@ exodus:
 
   multilevel:
     arrays:
-      - strictly
-      - verboten
+      - so
+      - useful
 
   three:
     levels:
+      works: now
       or:
         more:
           is:
-            right: out
+            right: on, man!

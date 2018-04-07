@@ -431,6 +431,14 @@ EOF
 			vault_base    => 'secret/standalone/thing',
 
 			'hello.world' => 'i see you',
+
+			# we allow multi-level arrays now
+			'multilevel.arrays.0' => 'so',
+			'multilevel.arrays.1' => 'useful',
+
+			# we allow multi-level maps now
+			'three.levels.works'            => 'now',
+			'three.levels.or.more.is.right' => 'on, man!',
 		}, "env manifest can provide exodus with flattened keys");
 };
 

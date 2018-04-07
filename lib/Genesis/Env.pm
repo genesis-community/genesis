@@ -341,42 +341,29 @@ sub kit_files {
 	return $self->{kit}->source_yaml_files([$self->features], $absolute),
 }
 
-sub exodus {
-	my ($self) = @_;
+sub _flatten {
+	my ($final, $key, $val) = @_;
 
-	my $data = $self->manifest_lookup('exodus', {});
-	my (@args, %final);
-
-	for my $key (keys %$data) {
-		my $val = $data->{$key};
-
-		# convert arrays -> hashes
-		if (ref $val eq 'ARRAY') {
-			my $h = {};
-			for (my $i = 0; $i < @$val; $i++) {
-				$h->{$i} = $val->[$i];
-			}
-			$val = $h;
+	if (ref $val eq 'ARRAY') {
+		for (my $i = 0; $i < @$val; $i++) {
+			_flatten($final, $key ? "$key.$i" : "$i", $val->[$i]);
 		}
 
-		# flatten hashes
-		if (ref $val eq 'HASH') {
-			for my $k (keys %$val) {
-				if (ref $val->{$k}) {
-					explain("#Y{WARNING:} The kit has specified the genesis.$key.$k");
-					explain("metadata item, but the given value is not a simple scalar.");
-					explain("Ignoring this metadata value.");
-					next;
-				}
-				$final{"$key.$k"} = $val->{$k};
-			}
-
-		} else {
-			$final{$key} = $data->{$key};
+	} elsif (ref $val eq 'HASH') {
+		for (keys %$val) {
+			_flatten($final, $key ? "$key.$_" : "$_", $val->{$_})
 		}
+
+	} else {
+		$final->{$key} = $val;
 	}
 
-	return \%final;
+	return $final;
+}
+
+sub exodus {
+	my ($self) = @_;
+	return _flatten({}, undef, $self->manifest_lookup('exodus', {}));
 }
 
 sub bosh_target {
