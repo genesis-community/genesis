@@ -39,7 +39,7 @@ sub validate_features {
 				if ($sk->{pick} =~ /^(?:(\d+)|(\d+)?-(\d+)?)$/) {
 					($min_matches,$max_matches) = (defined $1) ? ($1,$1) : ($2, $3);
 				} else {
-					$! = 2; die "There is a problem with kit $id: $sk->{type} pick invalid.  Please contact the kit author for a fix";
+					$self->kit_bug("$sk->{type} pick is invalid");
 				}
 			}
 			my @choices;
@@ -140,7 +140,7 @@ sub process_params {
 							$answer = prompt_for_choices($q->{ask},$choices,$q->{min_count},$q->{max_count},$labels,$q->{err_msg});
 						}
 					} else {
-						die "Unsupported type '$type' for parameter '$q->{param}'. Please contact your kit author for a fix.\n";
+						$self->kit_bug("Unsupported type '$type' for parameter '$q->{param}'!!");
 					}
 					print "\n";
 				} else {
@@ -163,7 +163,7 @@ sub process_params {
 							$path, $key, $tmpdir);
 
 					} else {
-						die "Unsupported parameter type '$q->{type}' for $q->{vault}. Please contact your kit author for a fix.\n";
+						$self->kit_bug("Unsupported parameter type '$q->{type}' for $q->{vault}!!");
 					}
 					print "\n";
 					next;
@@ -216,7 +216,7 @@ sub dereference_params {
 	return $cmd;
 }
 sub safe_commands {
-	my ($creds, %options) = @_;
+	my ($self, $creds, %options) = @_;
 	my @cmds;
 	my $force_rotate = ($options{scope}||'') eq 'force';
 	my $missing_only = ($options{scope}||'') eq 'add';
@@ -264,7 +264,7 @@ sub safe_commands {
 				}
 			}
 		} else {
-			die "unrecognized datastructure for $path. Please contact your kit author\n";
+			$self->kit_bug("Unrecognized datastructure for $path.!!");
 		}
 	}
 
@@ -349,7 +349,7 @@ sub check_secrets {
 	$options{env} or die "check_secrets() was not given an 'env' option.\n";
 
 	my @missing = ();
-	for (safe_commands(active_credentials($meta, $options{features}||{}),%options)) {
+	for (safe_commands($self, active_credentials($meta, $options{features}||{}),%options)) {
 		push @missing, check_secret($_, %options);
 	}
 	for (cert_commands(active_certificates($meta, $options{features}||{}),%options)) {
@@ -398,7 +398,7 @@ sub vaultify_secrets {
 	my $creds = active_credentials($meta, $options{features} || []);
 	if (%$creds) {
 		explain(" - auto-generating credentials (in secret/$options{prefix})...");
-		for (safe_commands $creds, %options) {
+		for (safe_commands $self, $creds, %options) {
 			run({ interactive => 1, onfailure => "Failure autogenerating credentials." },
 				'safe', @$_);
 		}
@@ -542,8 +542,9 @@ sub prompt_for_env_features {
 				$default = ($_->{feature} || $_->{subkit}) if $_->{default} && $_->{default} =~ /^(y(es)?|t(rue)?|1)$/i;
 			}
 			if (exists $feature->{pick}) {
-				die "There is a problem with kit $kit/$version: $feature->{type} pick invalid.  Please contact the kit author for a fix"
-					unless $feature->{pick} =~ /^\d+(-\d+)?$/;
+				$feature->{pick} =~ /^\d+(-\d+)?$/
+					or $self->kit_bug("$feature->{type} pick invalid!!");
+
 				my ($min, $max) =  ($feature->{pick} =~ /-/)
 					? split('-',$feature->{pick})
 					: ($feature->{pick},$feature->{pick});

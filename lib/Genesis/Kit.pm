@@ -46,7 +46,7 @@ sub url {
 sub path {
 	my ($self, $path) = @_;
 	$self->extract;
-	die "self->extract did not set self->{root}; this is a bug in Genesis!\n"
+	bug("self->extract did not set self->{root}!!")
 		unless $self->{root};
 
 	return $self->{root} unless $path;
@@ -60,7 +60,7 @@ sub glob {
 	$glob =~ s|^/+||;
 
 	$self->extract;
-	die "self->extract did not set self->{root}; this is a bug in Genesis!\n"
+	bug("self->extract did not set self->{root}!!")
 		unless $self->{root};
 
 	if ($absolute) {
@@ -97,7 +97,7 @@ sub run_hook {
 
 	if (grep { $_ eq $hook } qw/new secrets info addon prereqs/) {
 		# env is REQUIRED
-		die "The 'env' option to run_hook is required for the '$hook' hook.  This is a bug in Genesis.\n"
+		bug("The 'env' option to run_hook is required for the '$hook' hook!!")
 			unless $opts{env};
 
 		$ENV{GENESIS_ROOT}         = $opts{env}->path;
@@ -106,7 +106,7 @@ sub run_hook {
 
 	} elsif (grep { $_ eq $hook } qw/blueprint subkit/) {
 		# features is REQUIRED
-		die "The 'features' option to run_hook is required for the '$hook' hook.  This is a bug in Genesis.\n"
+		bug("The 'features' option to run_hook is required for the '$hook' hook!!")
 			unless $opts{features};
 
 	} else {

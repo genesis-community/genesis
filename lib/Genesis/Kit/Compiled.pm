@@ -15,6 +15,30 @@ sub new {
 	}, $class);
 }
 
+sub kit_bug {
+	my ($self, @msg) = @_;
+	my @errs = (
+		csprintf(@msg),
+		csprintf("#R{This is a bug in the %s kit.}", $self->id));
+
+	my @authors;
+	if ($self->metadata->{authors}) {
+		@authors = @{$self->metadata->{authors}};
+	} elsif ($self->metadata->{author}) {
+		@authors = ($self->metadata->{author});
+	}
+
+	my $url = $self->metadata->{code} || '';
+	if ($url =~ m/github/) {
+		push @errs, csprintf("Please file an issue at #C{%s/issues}", $url);
+	} elsif (@authors) {
+		push @errs, "Please contact the author(s):";
+		push @errs, "  - $_" for @authors;
+	}
+
+	$! = 2; die join("\n", @errs)."\n\n";
+}
+
 sub id {
 	my ($self) = @_;
 	return "$self->{name}/$self->{version}";

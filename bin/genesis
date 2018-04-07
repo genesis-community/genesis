@@ -24,8 +24,6 @@ use Genesis::Top;
 use Genesis::Kit::Compiler;
 
 $Genesis::VERSION = "(development)";
-
-our $GITHUB_URL = "https://github.com/starkandwayne/genesis";
 our $USER_AGENT_STRING = "genesis/$Genesis::VERSION";
 
 $ENV{HTTPS_PROXY}=$ENV{BOSH_ALL_PROXY} if ($ENV{BOSH_ALL_PROXY});

@@ -13,6 +13,14 @@ sub new {
 	}, $class);
 }
 
+sub kit_bug {
+	my ($self, @msg) = @_;
+	$! = 2; die csprintf(@msg)."\n".
+	            csprintf("#R{This is a bug in your dev/ kit.}\n").
+	            csprintf("Please contact the author(s):\n").
+	            csprintf("  - you\n\n"); # you're welcome, Tom
+}
+
 sub id {
 	return "(dev kit)";
 }

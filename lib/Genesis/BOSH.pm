@@ -46,9 +46,9 @@ sub ping {
 
 sub create_env {
 	my ($class, $manifest, %opts) = @_;
-	die "Missing deployment manifest in call to create_env().  This is a bug in Genesis.\n"
+	bug("Missing deployment manifest in call to create_env()!!")
 		unless $manifest;
-	die "Missing 'state' option in call to create_env().  This is a bug in Genesis\n"
+	bug("Missing 'state' option in call to create_env()!!")
 		unless $opts{state};
 
 	return _bosh({ interactive => 1, passfail => 1 },
@@ -69,11 +69,11 @@ sub download_cloud_config {
 
 sub deploy {
 	my ($class, $env, %opts) = @_;
-	die "Missing BOSH environment name in call to deploy().  This is a bug in Genesis.\n"
+	bug("Missing BOSH environment name in call to deploy()!!")
 		unless $env;
 
 	for my $o (qw(manifest deployment)) {
-		die "Missing '$o' option in call to deploy().  This is a bug in Genesis.\n"
+		bug("Missing '$o' option in call to deploy()!!")
 			unless $opts{$o};
 	}
 
@@ -93,16 +93,17 @@ sub alias {
 
 sub run_errand {
 	my ($class, $env, %opts) = @_;
-	die "Missing BOSH environment name in call to run_errand().  This is a bug in Genesis.\n"
+	bug("Missing BOSH environment name in call to run_errand()!!")
 		unless $env;
 
 	for my $o (qw(deployment errand)) {
-		die "Missing '$o' option in call to run_errand().  This is a bug in Genesis.\n"
+		bug("Missing '$o' option in call to run_errand()!!")
 			unless $opts{$o};
 	}
 
 	_bosh({ interactive => 1, onfailure => "Failed to run errand '$opts{errand}' ($opts{deployment} deployment on $env BOSH)" },
 		'bosh', '-n', '-e', $env, '-d', $opts{deployment}, 'run-errand', $opts{errand});
+
 	return 1;
 }
 

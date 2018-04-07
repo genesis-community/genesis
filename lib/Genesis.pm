@@ -3,6 +3,7 @@ use strict;
 use warnings;
 
 our $VERSION = "(development)";
+our $GITHUB  = "https://github.com/starkandwayne/genesis";
 
 use File::Basename qw/basename/;
 use Cwd ();
@@ -14,6 +15,8 @@ our @EXPORT = qw/
 	csprintf
 	explain debug trace error
 	bail
+
+	bug
 
 	workdir
 
@@ -134,6 +137,14 @@ sub bail {
 	my @err = @_;
 	unshift @err, "%s" if $#err == 0;
 	$! = 1; die csprintf(@_)."\n";
+}
+
+sub bug {
+	my (@msg) = @_;
+
+	$! = 2; die csprintf(@msg)."\n".
+	            csprintf("#R{This is a bug in Genesis itself.}\n").
+	            csprintf("Please file an issue at #C{%s/issues}\n\n", $GITHUB);
 }
 
 my $WORKDIR;

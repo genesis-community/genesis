@@ -14,10 +14,10 @@ use Genesis;
 
 subtest 'new() validation' => sub {
 	throws_ok { Genesis::Env->new() }
-		qr/no 'name' specified.*this is a bug/i;
+		qr/no 'name' specified.*this is a bug/is;
 
 	throws_ok { Genesis::Env->new(name => 'foo') }
-		qr/no 'top' specified.*this is a bug/i;
+		qr/no 'top' specified.*this is a bug/is;
 };
 
 subtest 'name validation' => sub {

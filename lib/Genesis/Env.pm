@@ -13,7 +13,7 @@ sub new {
 
 	# validate call
 	for (qw(name top)) {
-		die "No '$_' specified in call to Genesis::Env->new; this is a bug in Genesis.\n"
+		bug("No '$_' specified in call to Genesis::Env->new!!")
 			unless $opts{$_};
 	}
 
@@ -60,7 +60,7 @@ sub create {
 
 	# validate call
 	for (qw(kit)) {
-		die "No '$_' specified in call to Genesis::Env->create; this is a bug in Genesis.\n"
+		bug("No '$_' specified in call to Genesis::Env->create!!")
 			unless $self->{$_};
 	}
 
