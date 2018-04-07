@@ -47,7 +47,7 @@ expect {
 set timeout 60 ;# in case we are vaulting
 set step "waiting for success indicator"
 expect {
-  "*New environment [lindex $argv 0] provisioned.\r\n" { }
+  "*New environment [lindex $argv 0] provisioned!\r\n" { }
   timeout { puts "Timed out [set step]\n"      ; exit 1 }
   eof     { puts "Unexpected EOF [set step]\n" ; exit 1 }
 }

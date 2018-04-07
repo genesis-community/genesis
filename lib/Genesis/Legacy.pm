@@ -3,6 +3,7 @@ use strict;
 use warnings;
 
 use Genesis;
+use Genesis::UI;
 
 sub same {
 	my ($a, $b) = @_;
