@@ -133,7 +133,6 @@ EOF
 		BOSH_ENVIRONMENT   BOSH_CA_CERT
 		BOSH_CLIENT        BOSH_CLIENT_SECRET));
 
-	#plan skip_all => 'it broke';
 	stdout_is(sub { Genesis::BOSH::_bosh({ interactive => 1 }, 'bosh', 'foo'); }, <<EOF,
 HTTPS_PROXY=...
 https_proxy=...
