@@ -1,6 +1,0 @@
----
-kit:
-  features:
-  - webdav
-params:
-  env: sandbox

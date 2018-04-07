@@ -3,6 +3,7 @@ use strict;
 use warnings;
 
 use Genesis;
+use Genesis::Legacy; # but we'd rather not
 use Genesis::Helpers;
 
 sub url {

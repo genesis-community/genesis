@@ -14,7 +14,8 @@ validate_features alpha bravo charlie delta 'echo' \
                   foxtrot golf hotel india juliett \
                   kilo lima mike november oscar papa \
                   quebec romeo sierra tango uniform \
-                  victor whiskey x-ray yankee zulu
+                  victor whiskey x-ray yankee zulu \
+                  proto
 
 declare -a manifests
 manifests=( base.yml )

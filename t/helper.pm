@@ -59,6 +59,19 @@ sub get_file($) {
 	return $contents;
 }
 
+sub fake_bosh {
+	my ($script) = @_;
+	$script ||= <<EOF;
+#!/bin/bash
+exit 0
+EOF
+
+	my $tmp = workdir;
+	put_file("$tmp/fake-bosh", $script);
+	chmod(0755, "$tmp/fake-bosh");
+	$ENV{GENESIS_BOSH_COMMAND} = "$tmp/fake-bosh";
+}
+
 sub spruce_fmt($$) {
 	my ($yaml, $file) = @_;
 	open my $fh, "|-", "spruce merge - >$file"

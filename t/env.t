@@ -51,6 +51,25 @@ subtest 'name validation' => sub {
 	}
 };
 
+subtest 'loading' => sub {
+	my $top = Genesis::Top->create(workdir, 'thing')->link_dev_kit('t/src/simple');
+	put_file $top->path("standalone.yml"), <<EOF;
+---
+kit:
+  name:    dev
+  version: latest
+  features: []
+
+params:
+  env: standalone
+EOF
+
+	lives_ok { $top->load_env('standalone') }
+	         "should be able to load the `standalone' environment.";
+	lives_ok { $top->load_env('standalone.yml') }
+	         "should be able to load an environment by filename.";
+};
+
 subtest 'env-to-env relation' => sub {
 	my $a = bless({ name => "us-west-1-preprod-a" }, 'Genesis::Env');
 	my $b = bless({ name => "us-west-1-prod"      }, 'Genesis::Env');
@@ -128,13 +147,7 @@ subtest 'env-to-env relation' => sub {
 };
 
 subtest 'environment metadata' => sub {
-	my $tmp = workdir."/work";
-	my $top = Genesis::Top->new($tmp);
-
-	system("rm -rf $tmp; mkdir -p $tmp");
-	$top = Genesis::Top->create($tmp, 'thing');
-	$top->download_kit('bosh/0.2.0');
-
+	my $top = Genesis::Top->create(workdir, 'thing')->download_kit('bosh/0.2.0');
 	put_file $top->path("standalone.yml"), <<EOF;
 ---
 kit:
@@ -151,10 +164,7 @@ params:
   false:   ~
 EOF
 
-	my $env;
-	lives_ok { $env = $top->load_env('standalone') }
-	         "Genesis::Env should be able to load the `standalone' environment.";
-
+	my $env = $top->load_env('standalone');
 	is($env->name, "standalone", "an environment should know its name");
 	is($env->file, "standalone.yml", "an environment should know its file path");
 	is($env->deployment, "standalone-thing", "an environment should know its deployment name");
@@ -162,11 +172,7 @@ EOF
 };
 
 subtest 'parameter lookup' => sub {
-	my $tmp = workdir;
-
-	system("rm -rf $tmp; mkdir -p $tmp");
-	my $top = Genesis::Top->create($tmp, 'thing');
-	$top->download_kit('bosh/0.2.0');
+	my $top = Genesis::Top->create(workdir, 'thing')->download_kit('bosh/0.2.0');
 	put_file $top->path("standalone.yml"), <<EOF;
 ---
 kit:
@@ -227,13 +233,7 @@ EOF
 };
 
 subtest 'manifest generation' => sub {
-	my $tmp = workdir;
-
-	system("rm -rf $tmp; mkdir -p $tmp");
-	my $top = Genesis::Top->create($tmp, 'thing');
-	symlink_or_fail Cwd::abs_path("t/src/fancy"), $top->path('dev');
-	ok $top->has_dev_kit, "working directory should have a dev kit now";
-
+	my $top = Genesis::Top->create(workdir, 'thing')->link_dev_kit('t/src/fancy');
 	put_file $top->path('standalone.yml'), <<EOF;
 ---
 kit:
@@ -280,51 +280,166 @@ EOF
 	ok $env->manifest_lookup('addons.foxtrot'), "env manifest defines addons.foxtrot";
 	is $env->manifest_lookup('addons.bravo', 'MISSING'), 'MISSING',
 		"env manifest doesn't define addons.bravo";
+};
 
+subtest 'manifest pruning' => sub {
+	my $top = Genesis::Top->create(workdir, 'thing')->link_dev_kit('t/src/fancy');
+	put_file $top->path(".cloud.yml"), <<EOF;
+---
+resource_pools: { from: 'cloud-config' }
+vm_types:       { from: 'cloud-config' }
+disk_pools:     { from: 'cloud-config' }
+disk_types:     { from: 'cloud-config' }
+networks:       { from: 'cloud-config' }
+azs:            { from: 'cloud-config' }
+vm_extensions:  { from: 'cloud-config' }
+compilation:    { from: 'cloud-config' }
+EOF
+
+	put_file $top->path('standalone.yml'), <<EOF;
+---
+kit:
+  name:    dev
+  version: latest
+  features:
+    - papa    # for pruning tests
+params:
+  env: standalone
+EOF
+	my $env = $top->load_env('standalone')->use_cloud_config($top->path('.cloud.yml'));
+
+	cmp_deeply(load_yaml($env->manifest(prune => 0)), {
+		name   => ignore,
+		fancy  => ignore,
+		addons => ignore,
+
+		# Genesis stuff
+		meta        => ignore,
+		pipeline    => ignore,
+		params      => ignore,
+		exodus      => ignore,
+		kit         => superhashof({ name => 'dev' }),
+
+		# cloud-config
+		resource_pools => ignore,
+		vm_types       => ignore,
+		disk_pools     => ignore,
+		disk_types     => ignore,
+		networks       => ignore,
+		azs            => ignore,
+		vm_extensions  => ignore,
+		compilation    => ignore,
+
+	}, "unpruned manifest should have all the top-level keys");
+
+	cmp_deeply(load_yaml($env->manifest(prune => 1)), {
+		name   => ignore,
+		fancy  => ignore,
+		addons => ignore,
+	}, "pruned manifest should not have all the top-level keys");
+};
+
+subtest 'manifest pruning (bosh create-env)' => sub {
+	my $top = Genesis::Top->create(workdir, 'thing')->link_dev_kit('t/src/fancy');
+	put_file $top->path(".cloud.yml"), <<EOF;
+---
+ignore: cloud-config
+EOF
+
+	# create-env
+	put_file $top->path('proto.yml'), <<EOF;
+---
+kit:
+  name:    dev
+  version: latest
+  features:
+    - papa     # for pruning tests
+    - proto
+params:
+  env: proto
+EOF
+	my $env = $top->load_env('proto')->use_cloud_config($top->path('.cloud.yml'));
+	ok $env->needs_bosh_create_env, "'proto' test env needs create-env";
+
+	cmp_deeply(load_yaml($env->manifest(prune => 0)), {
+		name   => ignore,
+		fancy  => ignore,
+		addons => ignore,
+
+		# Genesis stuff
+		meta        => ignore,
+		pipeline    => ignore,
+		params      => ignore,
+		exodus      => ignore,
+		kit         => superhashof({ name => 'dev' }),
+
+		# BOSH stuff
+		compilation => ignore,
+
+		# "cloud-config"
+		resource_pools => ignore,
+		vm_types       => ignore,
+		disk_pools     => ignore,
+		disk_types     => ignore,
+		networks       => ignore,
+		azs            => ignore,
+		vm_extensions  => ignore,
+
+	}, "unpruned proto-style manifest should have all the top-level keys");
+
+	cmp_deeply(load_yaml($env->manifest(prune => 1)), {
+		name   => ignore,
+		fancy  => ignore,
+		addons => ignore,
+
+		# "cloud-config"
+		resource_pools => ignore,
+		vm_types       => ignore,
+		disk_pools     => ignore,
+		disk_types     => ignore,
+		networks       => ignore,
+		azs            => ignore,
+		vm_extensions  => ignore,
+	}, "pruned proto-style manifest should retain 'cloud-config' keys, since create-env needs them");
+};
+
+subtest 'exodus data' => sub {
+	my $top = Genesis::Top->create(workdir, 'thing')->link_dev_kit('t/src/fancy');
+	put_file $top->path('standalone.yml'), <<EOF;
+---
+kit:
+  name:    dev
+  version: latest
+  features:
+    - echo    # for pruning tests
+params:
+  env: standalone
+EOF
+	put_file $top->path(".cloud.yml"), <<EOF;
+--- {}
+# not really a cloud config, but close enough
+EOF
+
+	my $env = $top->load_env('standalone')->use_cloud_config($top->path('.cloud.yml'));
 	cmp_deeply($env->exodus, {
 			version       => ignore,
 			dated         => re(qr/\d\d\d\d-\d\d-\d\d \d\d:\d\d:\d\d/),
 			deployer      => ignore,
 			kit_name      => 'dev',
 			kit_version   => 'latest',
+			'addons.0'    => 'echo',
 			vault_base    => 'secret/standalone/thing',
 
-			'addons.0'    => 'foxtrot',
-			'addons.1'    => 'tango',
-			'addons.2'    => 'whiskey',
 			'hello.world' => 'i see you',
 		}, "env manifest can provide exodus with flattened keys");
-
-	cmp_deeply(load_yaml($env->manifest(prune => 0)),
-		superhashof({
-			kit => superhashof({
-				name => 'dev',
-			}),
-		}), "unpruned manifest should have the `kit` toplevel");
-
-	cmp_deeply(load_yaml($env->manifest(prune => 1)), {
-		name   => ignore,
-		fancy  => ignore,
-		addons => ignore,
-	}, "pruned manifest should not contain the `kit` toplevel");
 };
 
 subtest 'bosh targeting' => sub {
-	my $tmp = workdir;
+	local $ENV{GENESIS_BOSH_COMMAND};
+	fake_bosh;
+
 	my $env;
-
-	system("rm -rf $tmp; mkdir -p $tmp");
-	put_file("$tmp/fake-bosh", <<EOF);
-#!/bin/bash
-# this is AGREEABLE BOSH...
-exit 0
-EOF
-	chmod(0755, "$tmp/fake-bosh");
-	local $ENV{GENESIS_BOSH_COMMAND} = "$tmp/fake-bosh";
-
-	my $top = Genesis::Top->create($tmp, 'thing');
-	symlink_or_fail Cwd::abs_path("t/src/fancy"), $top->path('dev');
-
+	my $top = Genesis::Top->create(workdir, 'thing')->link_dev_kit('t/src/fancy');
 	put_file $top->path('standalone.yml'), <<EOF;
 ---
 kit:

@@ -14,18 +14,14 @@ sub bosh_runs_as {
 	my ($expect, $output) = @_;
 	$output = $output ? "echo \"$output\"" : "";
 
-	my $tmp = workdir;
-	my $bin = "$tmp/fake-bosh";
 
-	put_file($bin, <<EOF);
+	fake_bosh(<<EOF);
 $output
 [[ "\$@" == "$expect" ]] && exit 0;
 echo >&2 "got  '\$@\'"
 echo >&2 "want '$expect'"
 exit 2
 EOF
-	chmod(0755, $bin);
-	$ENV{GENESIS_BOSH_COMMAND} = $bin;
 }
 
 subtest '_bosh helper magic' => sub {
@@ -121,10 +117,9 @@ subtest 'bosh run_errand' => sub {
 };
 
 subtest 'environment variable management' => sub {
-	my $tmp = workdir;
-	my $bin = "$tmp/fake-bosh";
+	local %ENV;
 
-	put_file($bin, <<'EOF');
+	fake_bosh(<<'EOF');
 echo HTTPS_PROXY=$HTTPS_PROXY...
 echo https_proxy=$https_proxy...
 echo BOSH_ENVIRONMENT=$BOSH_ENVIRONMENT...
@@ -132,10 +127,6 @@ echo BOSH_CA_CERT=$BOSH_CA_CERT...
 echo BOSH_CLIENT=$BOSH_CLIENT...
 echo BOSH_CLIENT_SECRET=$BOSH_CLIENT_SECRET...
 EOF
-	chmod(0755, $bin);
-
-	local %ENV;
-	$ENV{GENESIS_BOSH_COMMAND} = $bin;
 
 	$ENV{$_} = "a {$_} got missed" for (qw(
 		HTTPS_PROXY        https_proxy

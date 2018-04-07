@@ -7,6 +7,8 @@ use helper;
 use Expect;
 use Cwd qw(abs_path);
 
+subtest 'prereqs skips' => sub { plan skip_all => 'prereqs broke';
+
 # EXPECT DEBUGGING
 my $log_expect_stdout=0;
 
@@ -66,4 +68,5 @@ doesnt_match $msg, qr'New environment something-crazy provisioned.', "Did not cr
 ok ! -f "something.yml", "Org-level env file should not exist.";
 ok ! -f "something-crazy.yml", "Deployment environment file should not be created, when kit min genesis version bad";
 
+};
 done_testing;

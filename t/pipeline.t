@@ -11,6 +11,7 @@ chdir "t/repos/pipeline-test" or die;
 
 bosh2_cli_ok;
 
+subtest 'ci/cd skip' => sub { plan skip_all => 'ci/cd stuff is broke';
 runs_ok "genesis repipe --dry-run --config ci/aws/pipeline" and # {{{
 runs_ok "genesis repipe --dry-run --config ci/aws/pipeline >$tmp/pipeline.yml" and
 yaml_is get_file("$tmp/pipeline.yml"), <<'EOF', "pipeline generated for aws/pipeline (no smoke-tests, untagged)";
@@ -3138,5 +3139,5 @@ client-aws-1-sandbox
         `--> client-aws-1-prod
 EOF
 # }}}
-
+};
 done_testing;

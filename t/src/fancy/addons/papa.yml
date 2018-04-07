@@ -1,3 +1,9 @@
 ---
 addons:
   papa: yes
+
+meta:        { is: prune-worthy }
+pipeline:    { is: prune-worthy }
+params:      { is: prune-worthy }
+kit:         { is: prune-worthy }
+compilation: { is: prune-worthy }

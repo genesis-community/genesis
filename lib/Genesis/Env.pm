@@ -18,7 +18,7 @@ sub new {
 	}
 
 	# drop the YAML suffix
-	$opts{name} =~ m/\.yml$/;
+	$opts{name} =~ s/\.yml$//;
 	$opts{file} = "$opts{name}.yml";
 
 	# environment names must be valid.

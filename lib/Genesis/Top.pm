@@ -148,6 +148,20 @@ EOF
 	return $self;
 }
 
+sub link_dev_kit {
+	my ($self, $path) = @_;
+	my $abs = Cwd::abs_path($path)
+		or die "Unable to locate $path from ".Cwd::getcwd."\n";
+
+	my $dev = $self->path('dev');
+	unlink($dev) if -l $dev; # overwrite the link
+	die "dev/ already exists, and is not a symbolic link\n"
+		if -e $dev;
+
+	symlink_or_fail($abs, $dev);
+	return $self;
+}
+
 sub embed {
 	my ($self, $bin) = @_;
 
@@ -179,6 +193,8 @@ sub download_kit {
 	}
 	mkfile_or_fail($self->path(".genesis/kits/$name-$version.tar.gz"), 0400, $data);
 	debug("downloaded kit #M{$name}/#C{$version}");
+
+	return $self;
 }
 
 sub path {
