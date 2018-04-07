@@ -194,6 +194,7 @@ sub source_yaml_files {
 		}
 
 	} else {
+		Genesis::Legacy::validate_features($self, @$features);
 		@files = $self->glob("base/*.yml", $absolute);
 		push @files, map { $self->glob("subkits/$_/*.yml", $absolute) } @$features;
 	}
