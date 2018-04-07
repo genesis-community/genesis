@@ -1,5 +1,14 @@
 package Genesis::CI::Pipeline;
 
+sub boolean_to_yaml {
+	return $_[0] ? "true" : "false";
+}
+sub yaml_bool {
+	my ($bool, $default) = @_;
+	return ($default || 0) unless defined($bool);
+	return $bool;
+}
+
 # FYI: we use quasi-JSON here, so we don't need to care about our indent level when consuming
 #      the notification definitions
 sub _gen_notifications {

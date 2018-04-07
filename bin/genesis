@@ -43,15 +43,6 @@ sub in_repo_dir {
 	return  -d ".genesis" && -e ".genesis/config";
 }
 
-sub boolean_to_yaml {
-	return $_[0] ? "true" : "false";
-}
-sub yaml_bool {
-	my ($bool, $default) = @_;
-	return ($default || 0) unless defined($bool);
-	return $bool;
-}
-
 # takes a list of tokens, in order, and generates
 # all strictly ordered combinations of them.
 #
@@ -233,27 +224,6 @@ our $prompt_handlers = {
 
 # }}}
 
-sub check_bosh_version {
-	my ($min) = @_;
-	my $best = "0.0.0";
-	foreach my $boshcmd (qw(bosh2 boshv2 bosh)) {
-		my ($version, undef) = run("$boshcmd -v 2>&1 | grep version | head -n1");
-		if ($version =~ /version (\S+?)-.*/) {
-			if (new_enough($1, $min)) {
-				$ENV{GENESIS_BOSH_COMMAND} = $boshcmd;
-				debug("#G{Version $1} of #C{$boshcmd} meets or exceeds minimum of #W{$min}");
-				return ();
-			}
-			$best = $1 if new_enough($1, $best); # Track the best we've found for error message
-		}
-	}
-	if ($best eq "0.0.0") {
-		return "#R{Missing `bosh2`} - install the BOSH (v2) CLI from #B{https://github.com/cloudfoundry/bosh-cli/releases}";
-	} else {
-		return "BOSH (v2) CLI v${best} is installed, but Genesis requires #R{at least $min} - upgrade your BOSH CLI, via #B{https://github.com/cloudfoundry/bosh-cli/releases}";
-	}
-}
-
 sub write_stemcell_data {
 	my ($file) = @_;
 	my $stemcells = "{}";
@@ -377,6 +347,27 @@ EOF
 			'git status && '.
 			'git --no-pager diff --cached && '.
 			'git commit -m "$1"', "CI commit: $message");
+	}
+}
+
+sub check_bosh_version {
+	my ($min) = @_;
+	my $best = "0.0.0";
+	foreach my $boshcmd (qw(bosh2 boshv2 bosh)) {
+		my ($version, undef) = run("$boshcmd -v 2>&1 | grep version | head -n1");
+		if ($version =~ /version (\S+?)-.*/) {
+			if (new_enough($1, $min)) {
+				$ENV{GENESIS_BOSH_COMMAND} = $boshcmd;
+				debug("#G{Version $1} of #C{$boshcmd} meets or exceeds minimum of #W{$min}");
+				return ();
+			}
+			$best = $1 if new_enough($1, $best); # Track the best we've found for error message
+		}
+	}
+	if ($best eq "0.0.0") {
+		return "#R{Missing `bosh2`} - install the BOSH (v2) CLI from #B{https://github.com/cloudfoundry/bosh-cli/releases}";
+	} else {
+		return "BOSH (v2) CLI v${best} is installed, but Genesis requires #R{at least $min} - upgrade your BOSH CLI, via #B{https://github.com/cloudfoundry/bosh-cli/releases}";
 	}
 }
 
