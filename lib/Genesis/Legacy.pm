@@ -73,7 +73,7 @@ sub process_params {
 	my $resolveable_params = {
 		"params.vault_prefix" => $opts{vault_prefix}, # for backwards compatibility
 		"params.vault" => $opts{vault_prefix},
-		"params.env" => $opts{env}
+		"params.env" => $opts{env}->name,
 	};
 	for my $feature ("base", @{$opts{features}}) {
 		next unless defined $opts{params}{$feature} && @{$opts{params}{$feature}};
@@ -204,8 +204,8 @@ sub safe_path_exists {
 
 sub dereference_param {
 	my ($env, $key) = @_;
-	my $val = get_key($env, $key);
-	die "Unable to resolve '$key' for $env. This must be defined in the environment YAML.\n"
+	my $val = $env->lookup($key, undef);
+	die "Unable to resolve '$key' for ".$env->name.". This must be defined in the environment YAML.\n"
 		unless defined $val;
 	return $val;
 }
@@ -391,10 +391,11 @@ sub check_secrets {
 #                  scope        => 'add';
 #
 sub vaultify_secrets {
-	my ($meta, %options) = @_;
+	my ($self, %options) = @_;
 	$options{env} or die "vaultify_secrets() was not given an 'env' option.\n";
+	my $meta = $self->metadata;
 
-	my $creds = active_credentials($meta, $options{features} || {});
+	my $creds = active_credentials($meta, $options{features} || []);
 	if (%$creds) {
 		explain(" - auto-generating credentials (in secret/$options{prefix})...");
 		for (safe_commands $creds, %options) {
@@ -405,7 +406,7 @@ sub vaultify_secrets {
 		explain(" - no credentials need to be generated.");
 	}
 
-	my $certs = active_certificates($meta, $options{features} || {});
+	my $certs = active_certificates($meta, $options{features} || []);
 	if (%$certs) {
 		explain(" - auto-generating certificates (in secret/$options{prefix})...");
 		for (cert_commands $certs, %options) {
@@ -426,7 +427,7 @@ sub new_environment {
 
 	my @features = prompt_for_env_features($self);
 	my $params = process_params($k,
-		env          => $self->{name},
+		env          => $self,
 		vault_prefix => $self->{prefix},
 		features     => \@features,
 	);

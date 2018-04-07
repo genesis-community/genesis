@@ -81,18 +81,18 @@ sub spruce_fmt($$) {
 }
 
 sub compiled_genesis {
-  my ($version) = @_;
-  my ($rc, $out);
-  my $tmp = workdir();
+	my ($version) = @_;
+	my ($rc, $out);
+	my $tmp = workdir();
 
-  my $cmd = "cd $TOPDIR && GENESIS_PACK_PATH=$tmp ./pack";
-  $cmd .= " $version" if $version;
-  $out = qx($cmd 2>&1);
-  $rc = $? >> 8;
-  die "Could not compile genesis: $!" if $? >> 8;
-  die "Could not compile genesis: $out" unless $out =~ qr%packaged v${\($version || "2.x.x")}%;
-  (my $bin = $out) =~ s/\A.* as (.*\/genesis[^\s]*).*\z/$1/sm;
-  return Cwd::abs_path($bin);
+	my $cmd = "cd $TOPDIR && GENESIS_PACK_PATH=$tmp ./pack";
+	$cmd .= " $version" if $version;
+	$out = qx($cmd 2>&1);
+	$rc = $? >> 8;
+	die "Could not compile genesis: $!" if $? >> 8;
+	die "Could not compile genesis: $out" unless $out =~ qr%packaged v${\($version || "2.x.x")}%;
+	(my $bin = $out) =~ s/\A.* as (.*\/genesis[^\s]*).*\z/$1/sm;
+	return Cwd::abs_path($bin);
 }
 
 sub reprovision {
@@ -376,9 +376,10 @@ sub expect_exit {
 	$cmd->soft_close();
 	if ($rc) {
 		is $cmd->exitstatus() >> 8, $rc, $msg;
+		diag "NOTE: exitstatus() returned from expect was not shifted, exit code 1, indicates SIGHUP, not rc 1"
+			if $cmd->exitstat() != 0;
 	} else {
-		is $cmd->exitstatus(), 0, $msg
-			or diag "NOTE: exitstatus() returned from expect was not shifted, exit code 1, indicates SIGHUP, not rc 1";
+		is $cmd->exitstatus(), 0, $msg;
 	}
 }
 
@@ -387,7 +388,7 @@ sub expect_ok {
 	my $cmd;
 	if (ref($desc) eq "Expect") {
 		$cmd = $desc;
-    use Data::Dumper;
+		use Data::Dumper;
 		$desc = "expected questions from genesis (".Dumper(\@_).")";
 	} else {
 		$cmd = shift;
@@ -402,53 +403,6 @@ sub expect_ok {
 				exit;
 			}
 		]);
-}
-sub colorize {
-	my ($c, $msg) = @_;
-	$c = substr $c, 1, 1;
-	my %color = (
-		'k'		=> "\e[30m",     #black
-		'K'		=> "\e[1;30m",   #black (BOLD)
-		'r'		=> "\e[31m",     #red
-		'R'		=> "\e[1;31m",   #red (BOLD)
-		'g'		=> "\e[32m",     #green
-		'G'		=> "\e[1;32m",   #green (BOLD)
-		'y'		=> "\e[33m",     #yellow
-		'Y'		=> "\e[1;33m",   #yellow (BOLD)
-		'b'		=> "\e[34m",     #blue
-		'B'		=> "\e[1;34m",   #blue (BOLD)
-		'm'		=> "\e[35m",     #magenta
-		'M'		=> "\e[1;35m",   #magenta (BOLD)
-		'p'		=> "\e[35m",     #purple (alias for magenta)
-		'P'		=> "\e[1;35m",   #purple (BOLD)
-		'c'		=> "\e[36m",     #cyan
-		'C'		=> "\e[1;36m",   #cyan (BOLD)
-		'w'		=> "\e[37m",     #white
-		'W'		=> "\e[1;37m",   #white (BOLD)
-	);
-
-	if ($c eq "*") {
-		my @rainbow = ('R','G','Y','B','M','C');
-		my $i = 0;
-		my $msgc = "";
-		foreach my $char (split //, $msg) {
-			$msgc = $msgc . "$color{$rainbow[$i%6]}$char";
-			if ($char =~ m/\S/) {
-				$i++;
-			}
-		}
-		return "$msgc\e[0m";
-	} else {
-		return "$color{$c}$msg\e[0m";
-	}
-}
-
-sub csprintf {
-	my ($fmt, @args) = @_;
-	return '' unless $fmt;
-	my $s = sprintf($fmt, @args);
-	$s =~ s/(#[KRGYBMPCW*]\{)(.*?)(\})/colorize($1, $2)/egi;
-	return $s;
 }
 
 1;

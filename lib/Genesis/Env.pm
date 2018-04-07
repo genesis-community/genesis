@@ -464,12 +464,12 @@ sub add_secrets { # WIP - majorly broken right now.  sorry bout that.
 
 	if ($kit->has_hook('secrets')) {
 		$kit->run_hook('secrets', action   => 'add',
-		                          recreate => $opts{recreate},
-		                          env      => $self->{name},
-		                          vault    => $self->{prefix});
+		                          env      => $self,
+		                          vault    => $self->{prefix},
+		                          recreate => $opts{recreate});
 	} else {
 		Genesis::Legacy::vaultify_secrets($kit,
-			env       => $self->{name},
+			env       => $self,
 			prefix    => $self->{prefix},
 			scope     => $opts{recreate} ? 'force' : 'add',
 			features  => [$self->features]);
@@ -484,12 +484,13 @@ sub check_secrets {
 		$kit->run_hook('secrets', action => 'check',
 		                          env    => $self->{name},
 		                          vault  => $self->{prefix});
+		return 1; # FIXME
 	} else {
-		my @features = []; # FIXME
-		Genesis::Legacy::vaultify_secrets($kit,
-			env       => $self->{name},
+		my $rc = Genesis::Legacy::check_secrets($kit,
+			env       => $self,
 			prefix    => $self->{prefix},
-			features  => \@features);
+			features  => [$self->features]);
+		return $rc == 0;
 	}
 }
 
@@ -503,12 +504,11 @@ sub rotate_secrets {
 		                          env    => $self->{name},
 		                          vault  => $self->{prefix});
 	} else {
-		my @features = []; # FIXME
 		Genesis::Legacy::vaultify_secrets($kit,
-			env       => $self->{name},
+			env       => $self,
 			prefix    => $self->{prefix},
 			scope     => $opts{force} ? 'force' : '',
-			features  => \@features);
+			features  => [$self->features]);
 	}
 }
 

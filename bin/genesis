@@ -773,6 +773,10 @@ sub {
 	explain("Setting up new environment #C{$name}...");
 	my $env = $top->create_env($name, $kit, prefix => $options{prefix});
 
+	# generate all (missing) secrets ignoring any that exist
+	# from a previous 'new' attempt.
+	$env->add_secrets(recreate => 1);
+
 	# let the user know
 	explain("New environment $env->{name} provisioned!");
 });
@@ -898,7 +902,8 @@ sub {
 	target_vault($options{vault});
 
 	if ($action eq "check") {
-		$env->check_secrets();
+		$env->check_secrets()
+			or exit 1;
 	} elsif ($action eq 'add') {
 		$env->add_secrets();
 	} else {
