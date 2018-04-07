@@ -377,7 +377,7 @@ sub load_json {
 
 sub load_yaml_file {
 	my ($file) = @_;
-	my ($out, $rc) = run('spruce json "$1"', $file);
+	my ($out, $rc) = run({ stderr => 0 }, 'spruce json "$1"', $file);
 	return $rc ? undef : load_json($out);
 }
 

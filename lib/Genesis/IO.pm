@@ -17,7 +17,7 @@ sub DumpJSON {
 
 sub LoadFile {
 	my ($file) = @_;
-	my ($out, $rc) = run('spruce json "$1"', $file);
+	my ($out, $rc) = run({ stderr => 0 }, 'spruce json "$1"', $file);
 	return $rc ? undef : decode_json($out);
 }
 

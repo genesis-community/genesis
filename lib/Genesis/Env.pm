@@ -222,7 +222,7 @@ sub defines {
 sub params {
 	my ($self) = @_;
 	if (!$self->{__params}) {
-		my $out = run({ onfailure => "Unable to merge $self->{name} environment files" },
+		my $out = run({ onfailure => "Unable to merge $self->{name} environment files", stderr => 0 },
 			'spruce merge --skip-eval "$@" | spruce json',
 				map { $self->path($_) } $self->actual_environment_files());
 
@@ -245,7 +245,7 @@ sub _manifest {
 		local $ENV{REDACT} = $opts{redact} ? 'yes' : ''; # for spruce
 
 		pushd $self->path;
-		my $out = run({ onfailure => "Unable to merge $self->{name} manifest" },
+		my $out = run({ onfailure => "Unable to merge $self->{name} manifest", stderr => 0 },
 			'spruce', 'merge', $self->_yaml_files);
 		popd;
 
@@ -275,7 +275,7 @@ sub manifest {
 			                 vm_extensions));
 		}
 
-		return run({ onfailure => "Failed to merge $self->{name} manifest" },
+		return run({ onfailure => "Failed to merge $self->{name} manifest", stderr => 0 },
 			'spruce', 'merge', (map { ('--prune', $_) } @prune), $path)."\n";
 	}
 

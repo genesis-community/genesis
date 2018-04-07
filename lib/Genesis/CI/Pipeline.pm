@@ -100,7 +100,7 @@ sub read {
 	my ($class, $file) = @_;
 
 	my @errors = ();
-	my $p = load_yaml(run({ onfailure => "Failed to evaluate pipeline $file" }, 'spruce', 'merge', $file));
+	my $p = load_yaml(run({ onfailure => "Failed to evaluate pipeline $file", stderr => 0}, 'spruce', 'merge', $file));
 	unless (exists $p->{pipeline}) {
 		# fatal error
 		push @errors, "Missing top-level 'pipeline:' key.";
@@ -1271,7 +1271,7 @@ EOF
 	}
 	close $OUT;
 
-	return run({ onfailure => 'Failed to merge Concourse pipeline definition' },
+	return run({ onfailure => 'Failed to merge Concourse pipeline definition', stderr => 0 },
 		'spruce', 'merge', '--prune', 'meta', '--prune', 'pipeline', "$dir/guts.yml", $pipeline->{file});
 }
 

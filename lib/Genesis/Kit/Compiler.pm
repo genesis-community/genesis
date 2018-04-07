@@ -96,13 +96,11 @@ sub compile {
 	$self->validate or return undef;
 	$self->_prepare("$name-$version");
 
-	run(
-		{ onfailure => 'Unable to update kit.yml with version "$version"' },
+	run({ onfailure => 'Unable to update kit.yml with version "$version"', stderr => 0 },
 		'echo "version: ${1}" | spruce merge "${2}/kit.yml" - > "${3}/${4}/kit.yml"',
 		$version, $self->{root}, $self->{work}, $self->{relpath});
 
-	run(
-		{ onfailure => 'Unable to compile final kit tarball' },
+	run({ onfailure => 'Unable to compile final kit tarball' },
 		'tar -czf "$1/$3.tar.gz" -C "$2" "$3/"',
 		$outdir, $self->{work}, $self->{relpath});
 
