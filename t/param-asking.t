@@ -7,7 +7,8 @@ use Test::Differences;
 use lib 't';
 use helper;
 
-subtest 'params-asking skips' => sub { plan skip_all => 'params-asking is broke';
+vault_ok;
+
 bosh2_cli_ok;
 
 # EXPECT DEBUGGING
@@ -20,7 +21,7 @@ reprovision kit => 'ask-params';
 
 my $cmd = Expect->new();
 $cmd->log_stdout($log_expect_stdout);
-$cmd->spawn("genesis new with-subkit --no-secrets");
+$cmd->spawn("genesis new with-subkit --vault unit-tests");
 expect_ok "extra questions subkit", $cmd, [
 	'Should we ask additional questions?', sub {
 		my $fh = shift;
@@ -50,14 +51,12 @@ expect_ok "getting forth user", $cmd, ['4th user >', sub {
 expect_ok "getting fifth user", $cmd, ['5th user >', sub {
 		$_[0]->send("\n"); }];
 
-expect_ok $cmd, ["This shouldn't be asked?", sub {
-		print STDERR "Exit status: " . ($cmd->exitstatus() >> 8);
-		fail "--no-secrets enabled, but we were asked for a secret";
-	}],
-	["How many fish heads do you want?", sub {
-		my $fh = shift;
-		$fh->send("5\n");
-}];
+expect_ok "getting secret password", $cmd, ["What is the password?", sub {
+		$_[0]->send("sekrit\n"); $_[0]->send("sekrit\n"); }];
+
+expect_ok "getting fish heads count", $cmd, ["How many fish heads do you want?", sub {
+		$_[0]->send("5\n"); }];
+
 expect_ok "answer a question using default", $cmd, [
 	"Are there rocks ahead\\? .*(default: If there are, we all be dead).*[\r\n]{1,2}> ", sub {
 		$_[0]->send("\n");
@@ -442,58 +441,17 @@ expect_ok "IP parsing - bounds checking ", $cmd, [
     $_[0]->send("10.0.255.255\n");
   }
 ];
-
-expect_ok "Vault paths with --no-secrets option", $cmd, [
-  "Warning:.* Cannot validate vault paths when --no-secrets option specified[\r\n]{1,2}Specify the path[\r\n]{1,2}>", sub {
-    $_[0]->send("/secret/this/path/does/not/exist\n");
-  }
-];
-expect_ok "Vault paths and key prompt with --no-secrets option", $cmd, [
-  "not found in vault", sub {
-    fail "got vault validation failure but --no-secrets was specified";
-  }], [
-  "Warning:.* Cannot validate vault paths when --no-secrets option specified[\r\n]{1,2}Specify the path with key[\r\n]{1,2}>", sub {
-    $_[0]->send("/secret/this/path/does/not/exist\n");
-  }
-];
-
-expect_ok "Vault path and key without key, --no-secrets option", $cmd, [
-  "not found in vault", sub {
-    fail "got vault validation failure but --no-secrets was specified";
-  }], [
-  "Skipping generation", sub {
-    fail "Did not get error when key was missing";
-  }], [
-  "\\/secret\\/this\\/path\\/does\\/not\\/exist is missing a key - expecting secret\\/<path>:<key>[\r\n]{1,2}>", sub {
-    $_[0]->send("/secret/this/path/does/not/exist:password\n");
-  }
-];
-
-
-expect_ok "Finished, --no-secrets option", $cmd, [
-  "not found in vault", sub {
-    fail "got vault validation failure but --no-secrets was specified";
-  }], [
-  "Skipping generation", sub {
-    1;
-  }], [
-  '\/secret\/this\/path\/does\/not\/exist:password is missing a key - expecting secret\/<path>:<key>', sub {
-    fail "Provided a key, but got a key missing error message";
-  }
-];
-
+expect_ok $cmd, ["New environment .* provisioned!\r\n", sub { 1 }];
 expect_exit $cmd, 0, "Creating a new environment with subkits exited successfully";
-eq_or_diff get_file("with.yml"), <<EOF, "New environment file contains base + subkit params, comments, and examples";
+eq_or_diff get_file("with-subkit.yml"), <<EOF, "New environment file contains base + subkit params, comments, and examples";
 ---
 kit:
   name:     dev
   version:  latest
   features:
-  - subkit-params
-EOF
+    - (( replace ))
+    - subkit-params
 
-eq_or_diff get_file("with-subkit.yml"), <<EOF, "New environment file contains base + subkit params, comments, and examples";
----
 params:
   env:   with-subkit
   vault: with/subkit/ask-params
@@ -636,17 +594,11 @@ params:
 
   # Internal network mask
   mask: 10.0.255.255
-
-  # Need a vault path
-  validity-vault_path: /secret/this/path/does/not/exist
-
-  # Need a vault path with key
-  validity-vault_path_and_key: /secret/this/path/does/not/exist:password
 EOF
 
 $cmd = Expect->new();
 $cmd->log_stdout($log_expect_stdout);
-$cmd->spawn("genesis new without-subkit --no-secrets");
+$cmd->spawn("genesis new without-subkit --vault unit-tests");
 expect_ok $cmd, ['Should we ask additional questions', sub {
 	my $fh = shift;
 	$fh->send("no\n");
@@ -661,17 +613,18 @@ expect_ok "getting second user", $cmd, ['2nd user >', sub {
 		$_[0]->send("dbell\n"); }];
 expect_ok "getting third user", $cmd, ['3rd user >', sub {
 		$_[0]->send("\n"); }];
+expect_ok "getting secret password", $cmd, ["What is the password?", sub {
+		$_[0]->send("sekrit\n"); $_[0]->send("sekrit\n"); }];
+expect_ok $cmd, ["New environment .* provisioned!\r\n", sub { 1 }];
 expect_exit $cmd, 0, "Creating a new environment without subkits exited successfully";
-eq_or_diff get_file("without.yml"), <<EOF, "New environment file contains base params, comments, and examples (no subkits)";
+eq_or_diff get_file("without-subkit.yml"), <<EOF, "New environment file contains base params, comments, and examples (no subkits)";
 ---
 kit:
   name:     dev
   version:  latest
-  features: []
-EOF
+  features:
+    - (( replace ))
 
-eq_or_diff get_file("without-subkit.yml"), <<EOF, "New environment file contains base params, comments, and examples (no subkits)";
----
 params:
   env:   without-subkit
   vault: without/subkit/ask-params
@@ -704,5 +657,6 @@ params:
 EOF
 
 chdir $TOPDIR;
-};
+teardown_vault;
+
 done_testing;

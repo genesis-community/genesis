@@ -691,7 +691,6 @@ sub {
 		mkdir_or_fail("./dev");
 	}
 
-	print STDERR "cwd is ".qx(cwd)."\n";
 	run({ onfailure => "Failed to initialize a git repository in $root/" },
 		'git init && git add .');
 
@@ -763,6 +762,9 @@ sub {
 		die "Kit '$options{kit}' not found in compiled kit cache.\n".
 		    "Do you need to `genesis download $options{kit}`?\n";
 	}
+
+	# check version prereqs
+	$kit->check_prereqs or exit 86;
 
 	# target the vault
 	target_vault($options{vault});

@@ -12,11 +12,9 @@ subtest 'secrets' => sub {
 		if $ENV{SKIP_SECRETS_TESTS};
 
 vault_ok;
-
 bosh2_cli_ok;
 
-my $dir = workdir 'redis-deployments';
-chdir $dir or die;
+chdir workdir('redis-deployments') or die;
 
 reprovision init => 'redis',
             kit => 'omega';

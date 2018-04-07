@@ -93,9 +93,9 @@ sub run_hook {
 
 	die "Unrecognized hook '$hook'\n"
 		unless grep { $_ eq $hook } qw/new blueprint secrets info addon
-		                               prereq subkit/;
+		                               prereqs subkit/;
 
-	if (grep { $_ eq $hook } qw/new secrets info addon prereq/) {
+	if (grep { $_ eq $hook } qw/new secrets info addon prereqs/) {
 		# env is REQUIRED
 		die "The 'env' option to run_hook is required for the '$hook' hook.  This is a bug in Genesis.\n"
 			unless $opts{env};
@@ -181,6 +181,32 @@ sub run_hook {
 sub metadata {
 	my ($self) = @_;
 	return $self->{__metadata} ||= load_yaml_file($self->path('kit.yml'));
+}
+
+sub check_prereqs {
+	my ($self) = @_;
+	my $id = $self->id;
+
+	my $min = $self->metadata->{genesis_version_min};
+	return 1 unless $min && semver($min);
+
+	if (!semver($Genesis::VERSION)) {
+		error("#Y{WARNING:} Using a development version of Genesis.");
+		error("Cannot determine if it meets or exceeds the minimum version");
+		error("requirement (v$min) for $id.");
+		return 1;
+	}
+
+	if (!new_enough($Genesis::VERSION, $min)) {
+		error("#R{ERROR:} $id requires Genesis version $min,");
+		error("but this Genesis is version $Genesis::VERSION.");
+		error("");
+		error("Please upgrade Genesis.  Don't forget to run `genesis embed afterward,` to");
+		error("update the version embedded in your deployment repository.");
+		return 0;
+	}
+
+	return 1;
 }
 
 sub source_yaml_files {

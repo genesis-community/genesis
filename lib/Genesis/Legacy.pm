@@ -4,6 +4,7 @@ use warnings;
 
 use Genesis;
 use Genesis::UI;
+use JSON::PP qw/encode_json/;
 
 sub same {
 	my ($a, $b) = @_;
@@ -76,8 +77,8 @@ sub process_params {
 	};
 	for my $feature ("base", @{$opts{features}}) {
 		next unless defined $opts{params}{$feature} && @{$opts{params}{$feature}};
-		my $defaults = load_yaml_file($feature eq "base" ? "base/params.yml"
-		                                           : "subkits/$feature/params.yml");
+		my $defaults = load_yaml_file($self->path($feature eq "base" ? "base/params.yml"
+		                                                             : "subkits/$feature/params.yml"));
 		for my $q (@{$opts{params}{$feature}}) {
 			my $answer;
 			my $vault_path;
@@ -421,7 +422,7 @@ sub new_environment {
 	my ($k, $kit, $version) = ($self->{kit}, $self->{kit}->name, $self->{kit}->version);
 	my $meta = $k->metadata;
 
-	$k->run_hook('prereqs') if $k->has_hook('prereqs');
+	$k->run_hook('prereqs', env => $self) if $k->has_hook('prereqs');
 
 	my @features = prompt_for_env_features($self);
 	my $params = process_params($k,

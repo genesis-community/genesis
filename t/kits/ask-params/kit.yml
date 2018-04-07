@@ -40,9 +40,8 @@ params:
     - description: Specify the availability zones your deployment is spread across
       param: availability_zones
 
-    - ask: This shouldn't be asked?
-      description: Don't ask vault questions when --no-secrets is on
-      vault: bad:password
+    - ask: What is the password?
+      vault: the:password
 
   subkit-params:
     - description: This value sets the port advertised for wss://doppler.<system_domain>
@@ -227,14 +226,3 @@ params:
       description: Internal network mask
       ask: Network Mask
       validate: ip
-
-    - param: validity-vault_path
-      description: Need a vault path
-      ask: Specify the path
-      validate: vault_path
-
-    - param: validity-vault_path_and_key
-      description: Need a vault path with key
-      ask: Specify the path with key
-      validate: vault_path_and_key
-
