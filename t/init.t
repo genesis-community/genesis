@@ -1,7 +1,6 @@
 #!perl
 use strict;
 use warnings;
-## WHITELIST
 
 use lib 't';
 use helper;

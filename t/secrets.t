@@ -7,6 +7,10 @@ use lib 't';
 use helper;
 use Cwd qw(abs_path);
 
+subtest 'secrets' => sub {
+	plan skip_all => 'skipping secrets tests because SKIP_SECRETS_TESTS was set'
+		if $ENV{SKIP_SECRETS_TESTS};
+
 vault_ok;
 
 bosh2_cli_ok;
@@ -305,4 +309,6 @@ isnt $cert, $new_cert, "Certificates are rotated when forced.";
 
 chdir $TOPDIR;
 teardown_vault;
+
+};
 done_testing;

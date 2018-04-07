@@ -1,17 +1,18 @@
 .PHONY: sanity-test test test-quick test-secrets test-ci release dev-release clean coverage
 
-MODULE_TESTS := $(shell grep -Erl 'WHITELIST|use_ok' t/*.t)
-
 sanity-test:
 	perl -Ilib -c bin/genesis
 
 test: sanity-test test-quick test-secrets
 
+coverage:
+	SKIP_SECRETS_TESTS=yes cover -t -ignore_re '(/Legacy.pm|^t/|/JSON/)'
+
 test-ci: sanity-test
 	prove t/*.t
 
 test-quick: sanity-test
-	ls t/*.t | grep -v secrets.t | xargs prove
+	SKIP_SECRETS_TESTS=yes prove t/*.t
 
 test-secrets: sanity-test
 	@echo 'prove t/secrets.t'
@@ -28,8 +29,3 @@ dev-release:
 
 clean:
 	rm -f genesis-*
-
-mtests:
-	prove -lv $(MODULE_TESTS)
-coverage:
-	cover -t -make "prove -lv $(MODULE_TESTS)" -ignore_re '(/Legacy.pm|^t/|/JSON/)'
