@@ -197,6 +197,8 @@ sub is_valid_uri {
 sub run {
 	my (@args) = @_;
 	my %opts = %{((ref($args[0]) eq 'HASH') ? shift @args: {})};
+	$opts{stderr} = '&1' unless exists $opts{stderr};
+
 	my $prog = shift @args;
 	if ($prog !~ /\$\{?[\@0-9]/ && scalar(@args) > 0) {
 		$prog .= ' "$@"'; # old style of passing in args as array, need to wrap for shell call
@@ -208,7 +210,9 @@ sub run {
 		debug("#M{Setting: }#B{$_}='#C{$ENV{$_}}'");
 	}
 	my $shell = $opts{shell} || '/bin/bash';
-	$prog .= ($opts{stderr} ? " 2>$opts{stderr}" : ' 2>&1') unless ($opts{interactive});
+	if (!$opts{interactive} && $opts{stderr}) {
+		$prog .= " 2>$opts{stderr}";
+	}
 	debug("#M{Executing:} `#C{$prog}`%s", ($opts{interactive} ? " #Y{(interactively)}" : ''));
 	if (@args) {
 		unshift @args, basename($shell);
@@ -228,13 +232,22 @@ sub run {
 	}
 	my $rc = $? >>8;
 	if ($rc) {
+		debug("command exited with status %x (rc %d)", $rc, $rc >> 8);
+		if (defined($out)) {
+			debug("#R{==== <output> ==================================}");
+			debug($out);
+			debug("#R{==== </output> =================================}");
+		}
 		if ($opts{onfailure}) {
 			bail("#R{%s} (run failed)%s", $opts{onfailure}, defined($out) ? ":\n$out" :'');
 		}
-		debug("#R{==== ERROR: $rc}");
-		debug("$out\n#R{==== END}") if defined($out);
 	} else {
-		debug("#g{Command run successfully.}");
+		debug("command exited #G{0}");
+		if (defined($out)) {
+			trace("==== <output> ==================================");
+			trace($out);
+			trace("==== </output> =================================");
+		}
 	}
 	return unless defined(wantarray);
 	return
@@ -590,7 +603,8 @@ generally don't need to set this unless you are doing something strange.
 
 A shell-specific redirection destination for standard error.  This gets
 appended to the idiom "2>".  Normally, standard error is redirected back
-into standard output.
+into standard output.  If you pass this explicitly as C<undef>, standard
+error will B<not> be redirected for you, at all.
 
 =over
 

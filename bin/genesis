@@ -383,9 +383,9 @@ EOF
 }
 
 sub check_version {
-	my ($name, $min, $cmd, $from, $regex, $url) = @_;
+	my ($name, $min, $cmd, $regex, $url) = @_;
 	$url ||= "your platform package manager";
-	my ($version, undef) = run({ stderr => (($from eq 'stderr') ? "&1 >" : "")."/dev/null" }, $cmd);
+	my ($version, undef) = run({ stderr => undef }, $cmd);
 
 	return "#R{Missing `$name`} -- install from #B{$url}"
 		if !$version || $version =~ /not found/;
@@ -407,18 +407,17 @@ sub check_version {
 }
 
 sub check_prereqs {
-
 	my %conditions = @_;
 
 	my $bosh_min_version = "2.0.1";
 	my $reqs = [
-		# Name,     Version, Command,                                Grab      Pattern                  Source
-		["spruce", "1.12.0", "spruce -v",                            'stdout', qr(.*version\s+(\S+).*)i, "https://github.com/geofffranks/spruce/releases"],
-		["safe",    "0.1.8", "safe -v",                              'stderr', qr(safe v(\S+)),          "https://github.com/starkandwayne/safe/releases"],
-		["vault",   "0.6.0", "vault -v",                             'stdout', qr(.*vault v(\S+).*)i,    "https://www.vaultproject.io/downloads.html"],
-		["git",     "1.8.0", "git --version",                        'stdout', qr(.*version\s+(\S+).*)],
-		["jq",        "1.5", "jq --version",                         'stdout', qr(^jq-([\.0-9]+)),       "https://stedolan.github.io/jq/download/"],
-		["curl",   "7.30.0", "curl --version 2>/dev/null | head -n1",'stdout', qr(^curl\s+(\S+))]
+		# Name,     Version, Command,                                 Pattern                   Source
+		["spruce", "1.12.0", "spruce -v      2>/dev/null",            qr(.*version\s+(\S+).*)i, "https://github.com/geofffranks/spruce/releases"],
+		["safe",    "0.1.8", "safe -v        2>&1 >/dev/null",        qr(safe v(\S+)),          "https://github.com/starkandwayne/safe/releases"],
+		["vault",   "0.6.0", "vault -v       2>/dev/null",            qr(.*vault v(\S+).*)i,    "https://www.vaultproject.io/downloads.html"],
+		["git",     "1.8.0", "git --version  2>/dev/null",            qr(.*version\s+(\S+).*)],
+		["jq",        "1.5", "jq --version   2>/dev/null",            qr(^jq-([\.0-9]+)),       "https://stedolan.github.io/jq/download/"],
+		["curl",   "7.30.0", "curl --version 2>/dev/null | head -n1", qr(^curl\s+(\S+))]
 	];
 
 	my @errors = grep {$_} map {check_version(@$_)} @$reqs;
