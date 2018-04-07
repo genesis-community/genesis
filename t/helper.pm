@@ -40,6 +40,7 @@ sub workdir {
 }
 
 sub put_file($$) {
+	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($file, $contents) = @_;
 	system("mkdir -p ".dirname($file));
 	open my $fh, ">", $file
@@ -50,6 +51,7 @@ sub put_file($$) {
 }
 
 sub get_file($) {
+	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($file) = @_;
 	open my $fh, "<", $file
 		or fail "failed to open '$file' for reading: $!";
@@ -60,6 +62,7 @@ sub get_file($) {
 }
 
 sub fake_bosh {
+	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($script) = @_;
 	$script ||= <<EOF;
 #!/bin/bash
@@ -148,6 +151,7 @@ sub reprovision {
 }
 
 sub runs_ok($;$) {
+	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($cmd, $msg) = @_;
 	$cmd .= " 2>&1" unless $cmd =~ / 2>/;
 	$msg ||= "running `$cmd`";
@@ -169,6 +173,7 @@ sub runs_ok($;$) {
 }
 
 sub run_fails($$;$) {
+	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($cmd, $rc, $msg) = @_;
 	$msg ||= "running `$cmd` (expecting exit code $rc)";
 	if (defined $rc && $rc !~ m/^\d+$/) {
@@ -194,38 +199,43 @@ sub run_fails($$;$) {
 }
 
 sub matches($$$) {
-  my ($str,$test,$msg) = @_;
-  my $matches = (ref($test) eq 'Regexp') ? $str =~ $test : $str eq $test;
-  if ($matches) {
-    pass $msg;
-  } else {
-    fail $msg;
-    diag "Expected:\n$test\n\nGot:\n$str\n";
-  }
+	local $Test::Builder::Level = $Test::Builder::Level + 1;
+	my ($str,$test,$msg) = @_;
+	my $matches = (ref($test) eq 'Regexp') ? $str =~ $test : $str eq $test;
+	if ($matches) {
+		pass $msg;
+	} else {
+		fail $msg;
+		diag "Expected:\n$test\n\nGot:\n$str\n";
+	}
 }
 
 sub doesnt_match($$$) {
+	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($str,$test,$msg) = @_;
 	my $matches = (ref($test) eq 'Regexp') ? $str =~ $test : $str eq $test;
 	if ($matches) {
 		fail $msg;
-    diag "Expected to not find:\n$test\n\nGot:\n$str\n";
+		diag "Expected to not find:\n$test\n\nGot:\n$str\n";
 	} else {
 		pass $msg;
 	}
 }
 
 sub expects_ok($;$) {
+	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($cmd, $msg) = @_;
 	return runs_ok "${TOPDIR}/t/expect/$cmd", $msg;
 }
 
 sub expect_fails($;$) {
+	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($cmd, $msg) = @_;
 	return run_fails "${TOPDIR}/t/expect/$cmd", $msg;
 }
 
 sub output_ok($$;$) {
+	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($cmd, $expect, $msg) = @_;
 	$msg ||= "`$cmd` ≅ '$expect'";
 
@@ -253,22 +263,20 @@ sub output_ok($$;$) {
 }
 
 sub bosh2_cli_ok {
-	runs_ok "bosh help", "the BOSH ruby CLI works ok"
-		or die "There seems to be something wrong with your Ruby BOSH CLI.\n";
-}
-
-sub bosh2_cli_ok {
+	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	runs_ok "bosh2 help", "the BOSH2 golang CLI works ok"
 		or die "There seems to be something wrong with your bosh2 CLI.\n";
 }
 
 sub no_env($;$) {
+	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($env, $msg) = @_;
 	$msg ||= "$env environment (in $env.yml) should not exist";
 	ok ! -f "$env.yml", $msg;
 }
 
 sub have_env($;$) {
+	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($env, $msg) = @_;
 	$msg ||= "$env environment (in $env.yml) should exist";
 	ok -f "$env.yml", $msg;
@@ -276,6 +284,7 @@ sub have_env($;$) {
 
 my $VAULT_PID;
 sub vault_ok {
+	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	if (defined $VAULT_PID) {
 		pass "vault already running.";
 		return 1;
@@ -305,20 +314,7 @@ sub teardown_vault {
 }
 
 sub no_secret($;$) {
-	my ($secret, $msg) = @_;
-	$msg ||= "secret '$secret' should not exist";
-	qx(safe exists $secret);
-	if ($? == 0) {
-		fail $msg;
-		diag "    (safe exited $?)";
-		return 0;
-	}
-
-	pass $msg;
-	return 1;
-}
-
-sub no_secret($;$) {
+	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($secret, $msg) = @_;
 	$msg ||= "secret '$secret' should not exist";
 	qx(safe exists $secret);
@@ -333,6 +329,7 @@ sub no_secret($;$) {
 }
 
 sub have_secret($;$) {
+	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($secret, $msg) = @_;
 	$msg ||= "secret '$secret' should exist";
 	qx(safe exists $secret);
@@ -353,6 +350,7 @@ sub secret($) {
 }
 
 sub yaml_is($$$) {
+	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($got, $expect, $msg) = @_;
 	my $dir = workdir;
 	spruce_fmt $got,    "$dir/got.yml";
@@ -371,6 +369,7 @@ sub yaml_is($$$) {
 }
 
 sub expect_exit {
+	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($cmd, $rc, $msg) = @_;
 	$cmd->expect(300, 'eof');
 	$cmd->soft_close();
@@ -384,6 +383,7 @@ sub expect_exit {
 }
 
 sub expect_ok {
+	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my $desc = shift;
 	my $cmd;
 	if (ref($desc) eq "Expect") {
