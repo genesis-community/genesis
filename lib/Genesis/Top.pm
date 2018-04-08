@@ -357,6 +357,12 @@ C<$name>-deployments).
 
 =head1 METHODS
 
+=head2 link_dev_kit($path)
+
+Creates a symbolic link from C<dev/> to C<$path> (re-interpreted as an
+absolute path).  This allows callers to correctly install the link for
+Genesis to find a development kit source directory.
+
 =head2 embed($bin)
 
 Embeds the file C<$bin> into C<.genesis/bin/genesis>, and chmods it

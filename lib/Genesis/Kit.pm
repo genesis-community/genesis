@@ -272,6 +272,11 @@ the given C<$pattern> file glob.
 Returns the parsed metadata from this kit's C<kit.yml> file.  This call is
 moemoized, so it only actually touches the disk once.
 
+=head2 check_prereqs()
+
+Checks the prerequisites of the kit, notably the C<genesis_version_min>
+assertion, against the executing environment.
+
 =head2 has_hook($name)
 
 Returns true if the kit has defined the given hook.

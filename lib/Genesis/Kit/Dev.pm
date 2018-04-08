@@ -82,6 +82,11 @@ Returns the name of the dev kit, which is always C<dev>.
 
 Returns the version of the dev kit, which is always C<latest>.
 
+=head2 kit_bug($fmt, ...)
+
+Prints an error to the screen, complete with details about how the problem
+at hand is a problem with the (local) development kit.
+
 =head2 extract()
 
 Copies the contents of the dev/ working directory to a temporary workspace,

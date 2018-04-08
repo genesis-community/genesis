@@ -499,6 +499,12 @@ Print an error to standard error, and exit the program immediately, with an
 exit code of C<1>.  This function does not honor C<$QUIET>.
 Supports color formatting codes.  A trailing newline will be added for you.
 
+=head2 bug($fmt, ...)
+
+Prints an error to standard error, informing the operator that the aberrant
+behavior detected is in fact a bug in Genesis itself, and asking them to
+please submit an issue to the project Github page.
+
 =head2 workdir()
 
 Generate a unique, temporary directory to be used for scratch space.  When

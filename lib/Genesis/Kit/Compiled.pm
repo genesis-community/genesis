@@ -117,6 +117,12 @@ Returns the name of the kit.
 
 Returns the version of the kit.
 
+=head2 kit_bug($fmt, ...)
+
+Prints an error to the screen, complete with details about how the problem
+at hand is not the operator's fault, and that they should file a bug against
+the kit's Github page, or contact the authors.
+
 =head2 extract()
 
 Extracts the compiled kit tarball to a temporary workspace, and installs the

@@ -5,10 +5,19 @@ use warnings;
 use lib 'lib';
 use lib 't';
 use helper;
+use Test::Exception;
 use Test::Output;
 
 use_ok 'Genesis';
 use Cwd ();
+
+subtest 'bug reporting utilities' => sub {
+	throws_ok { bug("an example bug"); } qr{
+			an \s+ example \s+ bug.*
+			a \s+ bug \s+ in \s+ genesis.*
+			file \s+ an \s+ issue .* https://github\.com/starkandwayne/genesis/issues
+		}six, "bug() reports all the necessary details";
+};
 
 subtest 'environment variable utilities' => sub {
 	delete $ENV{DO_THING};

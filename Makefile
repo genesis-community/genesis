@@ -6,7 +6,7 @@ sanity-test:
 test: sanity-test test-quick test-secrets
 
 coverage:
-	SKIP_SECRETS_TESTS=yes cover -t -ignore_re '(/Legacy.pm|^t/|/JSON/)'
+	SKIP_SECRETS_TESTS=yes cover -t -ignore_re '(/Legacy.pm|/UI.pm|^t/|/JSON/)'
 
 test-ci: sanity-test
 	prove t/*.t
