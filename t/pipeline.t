@@ -11,7 +11,6 @@ chdir "t/repos/pipeline-test" or die;
 
 bosh2_cli_ok;
 
-subtest 'ci/cd skip' => sub { plan skip_all => 'ci/cd stuff is broke';
 runs_ok "genesis repipe --dry-run --config ci/aws/pipeline" and # {{{
 runs_ok "genesis repipe --dry-run --config ci/aws/pipeline >$tmp/pipeline.yml" and
 yaml_is get_file("$tmp/pipeline.yml"), <<'EOF', "pipeline generated for aws/pipeline (no smoke-tests, untagged)";
@@ -425,7 +424,7 @@ resources:
   source:
     branch: master
     paths:
-    - client-aws-1-preprod.yml
+    - ./client-aws-1-preprod.yml
     private_key: |
       -----BEGIN RSA PRIVATE KEY-----
       lol. you didn't really think that
@@ -478,7 +477,7 @@ resources:
   source:
     branch: master
     paths:
-    - client-aws-1-prod.yml
+    - ./client-aws-1-prod.yml
     private_key: |
       -----BEGIN RSA PRIVATE KEY-----
       lol. you didn't really think that
@@ -534,10 +533,10 @@ resources:
     - .genesis/bin/genesis
     - .genesis/kits
     - .genesis/config
-    - client.yml
-    - client-aws.yml
-    - client-aws-1.yml
-    - client-aws-1-sandbox.yml
+    - ./client.yml
+    - ./client-aws.yml
+    - ./client-aws-1.yml
+    - ./client-aws-1-sandbox.yml
     private_key: |
       -----BEGIN RSA PRIVATE KEY-----
       lol. you didn't really think that
@@ -1011,7 +1010,7 @@ resources:
   source:
     branch: master
     paths:
-    - client-aws-1-preprod.yml
+    - ./client-aws-1-preprod.yml
     private_key: |
       -----BEGIN RSA PRIVATE KEY-----
       lol. you didn't really think that
@@ -1068,7 +1067,7 @@ resources:
   source:
     branch: master
     paths:
-    - client-aws-1-prod.yml
+    - ./client-aws-1-prod.yml
     private_key: |
       -----BEGIN RSA PRIVATE KEY-----
       lol. you didn't really think that
@@ -1128,10 +1127,10 @@ resources:
     - .genesis/bin/genesis
     - .genesis/kits
     - .genesis/config
-    - client.yml
-    - client-aws.yml
-    - client-aws-1.yml
-    - client-aws-1-sandbox.yml
+    - ./client.yml
+    - ./client-aws.yml
+    - ./client-aws-1.yml
+    - ./client-aws-1-sandbox.yml
     private_key: |
       -----BEGIN RSA PRIVATE KEY-----
       lol. you didn't really think that
@@ -1675,7 +1674,7 @@ resources:
   source:
     branch: master
     paths:
-    - client-aws-1-preprod.yml
+    - ./client-aws-1-preprod.yml
     private_key: |
       -----BEGIN RSA PRIVATE KEY-----
       lol. you didn't really think that
@@ -1728,7 +1727,7 @@ resources:
   source:
     branch: master
     paths:
-    - client-aws-1-prod.yml
+    - ./client-aws-1-prod.yml
     private_key: |
       -----BEGIN RSA PRIVATE KEY-----
       lol. you didn't really think that
@@ -1784,10 +1783,10 @@ resources:
     - .genesis/bin/genesis
     - .genesis/kits
     - .genesis/config
-    - client.yml
-    - client-aws.yml
-    - client-aws-1.yml
-    - client-aws-1-sandbox.yml
+    - ./client.yml
+    - ./client-aws.yml
+    - ./client-aws-1.yml
+    - ./client-aws-1-sandbox.yml
     private_key: |
       -----BEGIN RSA PRIVATE KEY-----
       lol. you didn't really think that
@@ -1861,60 +1860,12 @@ jobs:
         tags:
         - client-aws-1-preprod
         trigger: true
-      - get: bosh-lite-stemcell
-        params:
-          tarball: true
-        trigger: true
       - get: client-aws-1-preprod-changes
         trigger: true
       - get: client-aws-1-preprod-cache
         passed:
         - client-aws-1-sandbox-pipeline-test
         trigger: true
-    - params:
-        key: client-aws-1-preprod-pipeline-test
-        lock_op: lock
-      put: client-aws-1-preprod-stemcell-lock
-      tags:
-      - client-aws-1-preprod
-    - config:
-        image_resource:
-          source:
-            repository: starkandwayne/concourse
-          type: docker-image
-        inputs:
-        - name: client-aws-1-preprod-cache
-        - name: bosh-lite-stemcell
-          path: stemcells/bosh-warden-boshlite-ubuntu-trusty-go_agent
-        outputs:
-        - name: out
-        params:
-          BOSH_CA_CERT: |
-            ----- BEGIN CERTIFICATE -----
-            cert-goes-here
-            ----- END CERTIFICATE -----
-          BOSH_CLIENT: pp-admin
-          BOSH_CLIENT_SECRET: Ahti2eeth3aewohnee1Phaec
-          BOSH_ENVIRONMENT: https://preprod.bosh-lite.com:25555
-          BOSH_NON_INTERACTIVE: true
-          DEBUG: 1
-          STEMCELLS: ../stemcells
-        platform: linux
-        run:
-          args:
-          - ci-stemcells
-          dir: client-aws-1-preprod-cache
-          path: .genesis/bin/genesis
-      ensure:
-        params:
-          key: client-aws-1-preprod-pipeline-test
-          lock_op: unlock
-        put: client-aws-1-preprod-stemcell-lock
-        tags:
-        - client-aws-1-preprod
-      tags:
-      - client-aws-1-preprod
-      task: upload-stemcells
     - config:
         image_resource:
           source:
@@ -2098,10 +2049,6 @@ jobs:
       passed:
       - client-aws-1-preprod-pipeline-test
       trigger: true
-    - get: bosh-lite-stemcell
-      params:
-        tarball: true
-      trigger: true
   - aggregate:
     - params:
         channel: '#botspam'
@@ -2137,10 +2084,6 @@ jobs:
       tags:
       - client-aws-1-prod
     - aggregate:
-      - get: bosh-lite-stemcell
-        params:
-          tarball: true
-        trigger: false
       - get: client-aws-1-prod-changes
         passed:
         - notify-client-aws-1-prod-pipeline-test-changes
@@ -2149,50 +2092,6 @@ jobs:
         passed:
         - notify-client-aws-1-prod-pipeline-test-changes
         trigger: false
-    - params:
-        key: client-aws-1-prod-pipeline-test
-        lock_op: lock
-      put: client-aws-1-prod-stemcell-lock
-      tags:
-      - client-aws-1-prod
-    - config:
-        image_resource:
-          source:
-            repository: starkandwayne/concourse
-          type: docker-image
-        inputs:
-        - name: client-aws-1-prod-cache
-        - name: bosh-lite-stemcell
-          path: stemcells/bosh-warden-boshlite-ubuntu-trusty-go_agent
-        outputs:
-        - name: out
-        params:
-          BOSH_CA_CERT: |
-            ----- BEGIN CERTIFICATE -----
-            cert-goes-here
-            ----- END CERTIFICATE -----
-          BOSH_CLIENT: pr-admin
-          BOSH_CLIENT_SECRET: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
-          BOSH_ENVIRONMENT: https://prod.bosh-lite.com:25555
-          BOSH_NON_INTERACTIVE: true
-          DEBUG: 1
-          STEMCELLS: ../stemcells
-        platform: linux
-        run:
-          args:
-          - ci-stemcells
-          dir: client-aws-1-prod-cache
-          path: .genesis/bin/genesis
-      ensure:
-        params:
-          key: client-aws-1-prod-pipeline-test
-          lock_op: unlock
-        put: client-aws-1-prod-stemcell-lock
-        tags:
-        - client-aws-1-prod
-      tags:
-      - client-aws-1-prod
-      task: upload-stemcells
     - config:
         image_resource:
           source:
@@ -2383,56 +2282,8 @@ jobs:
         tags:
         - client-aws-1-sandbox
         trigger: true
-      - get: bosh-lite-stemcell
-        params:
-          tarball: true
-        trigger: true
       - get: client-aws-1-sandbox-changes
         trigger: true
-    - params:
-        key: client-aws-1-sandbox-pipeline-test
-        lock_op: lock
-      put: client-aws-1-sandbox-stemcell-lock
-      tags:
-      - client-aws-1-sandbox
-    - config:
-        image_resource:
-          source:
-            repository: starkandwayne/concourse
-          type: docker-image
-        inputs:
-        - name: client-aws-1-sandbox-changes
-        - name: bosh-lite-stemcell
-          path: stemcells/bosh-warden-boshlite-ubuntu-trusty-go_agent
-        outputs:
-        - name: out
-        params:
-          BOSH_CA_CERT: |
-            ----- BEGIN CERTIFICATE -----
-            cert-goes-here
-            ----- END CERTIFICATE -----
-          BOSH_CLIENT: sb-admin
-          BOSH_CLIENT_SECRET: PaeM2Eip
-          BOSH_ENVIRONMENT: https://sandbox.bosh-lite.com:25555
-          BOSH_NON_INTERACTIVE: true
-          DEBUG: 1
-          STEMCELLS: ../stemcells
-        platform: linux
-        run:
-          args:
-          - ci-stemcells
-          dir: client-aws-1-sandbox-changes
-          path: .genesis/bin/genesis
-      ensure:
-        params:
-          key: client-aws-1-sandbox-pipeline-test
-          lock_op: unlock
-        put: client-aws-1-sandbox-stemcell-lock
-        tags:
-        - client-aws-1-sandbox
-      tags:
-      - client-aws-1-sandbox
-      task: upload-stemcells
     - config:
         image_resource:
           source:
@@ -2639,15 +2490,11 @@ resources:
       -----END RSA PRIVATE KEY-----
     uri: git@github.com:someco/something-deployments
   type: git
-- name: bosh-lite-stemcell
-  source:
-    name: bosh-warden-boshlite-ubuntu-trusty-go_agent
-  type: bosh-io-stemcell
 - name: client-aws-1-preprod-changes
   source:
     branch: master
     paths:
-    - client-aws-1-preprod.yml
+    - ./client-aws-1-preprod.yml
     private_key: |
       -----BEGIN RSA PRIVATE KEY-----
       lol. you didn't really think that
@@ -2700,17 +2547,6 @@ resources:
   tags:
   - client-aws-1-preprod
   type: bosh-config
-- name: client-aws-1-preprod-stemcell-lock
-  source:
-    ca_cert: null
-    lock_name: 10.244.0.34:25555-stemcell-lock
-    locker_uri: https://127.0.0.1:8910
-    password: locker
-    skip_ssl_validation: true
-    username: locker
-  tags:
-  - client-aws-1-preprod
-  type: locker
 - name: client-aws-1-preprod-bosh-lock
   source:
     bosh_lock: https://preprod.bosh-lite.com:25555
@@ -2737,7 +2573,7 @@ resources:
   source:
     branch: master
     paths:
-    - client-aws-1-prod.yml
+    - ./client-aws-1-prod.yml
     private_key: |
       -----BEGIN RSA PRIVATE KEY-----
       lol. you didn't really think that
@@ -2790,17 +2626,6 @@ resources:
   tags:
   - client-aws-1-prod
   type: bosh-config
-- name: client-aws-1-prod-stemcell-lock
-  source:
-    ca_cert: null
-    lock_name: 10.244.0.34:25555-stemcell-lock
-    locker_uri: https://127.0.0.1:8910
-    password: locker
-    skip_ssl_validation: true
-    username: locker
-  tags:
-  - client-aws-1-prod
-  type: locker
 - name: client-aws-1-prod-bosh-lock
   source:
     bosh_lock: https://prod.bosh-lite.com:25555
@@ -2830,10 +2655,10 @@ resources:
     - .genesis/bin/genesis
     - .genesis/kits
     - .genesis/config
-    - client.yml
-    - client-aws.yml
-    - client-aws-1.yml
-    - client-aws-1-sandbox.yml
+    - ./client.yml
+    - ./client-aws.yml
+    - ./client-aws-1.yml
+    - ./client-aws-1-sandbox.yml
     private_key: |
       -----BEGIN RSA PRIVATE KEY-----
       lol. you didn't really think that
@@ -2868,17 +2693,6 @@ resources:
   tags:
   - client-aws-1-sandbox
   type: bosh-config
-- name: client-aws-1-sandbox-stemcell-lock
-  source:
-    ca_cert: null
-    lock_name: 10.244.0.34:25555-stemcell-lock
-    locker_uri: https://127.0.0.1:8910
-    password: locker
-    skip_ssl_validation: true
-    username: locker
-  tags:
-  - client-aws-1-sandbox
-  type: locker
 - name: client-aws-1-sandbox-bosh-lock
   source:
     bosh_lock: https://sandbox.bosh-lite.com:25555
@@ -3076,10 +2890,10 @@ resources:
     - .genesis/bin/genesis
     - .genesis/kits
     - .genesis/config
-    - client.yml
-    - client-aws.yml
-    - client-aws-1.yml
-    - client-aws-1-sandbox.yml
+    - ./client.yml
+    - ./client-aws.yml
+    - ./client-aws-1.yml
+    - ./client-aws-1-sandbox.yml
     private_key: |
       -----BEGIN RSA PRIVATE KEY-----
       lol. you didn't really think that
@@ -3139,5 +2953,5 @@ client-aws-1-sandbox
         `--> client-aws-1-prod
 EOF
 # }}}
-};
+
 done_testing;

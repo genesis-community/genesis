@@ -1,4 +1,9 @@
-package Genesis::CI::Pipeline;
+package Genesis::CI::Legacy;
+use strict;
+use warnings;
+
+use Genesis;
+use Socket qw/inet_ntoa/;
 
 sub boolean_to_yaml {
 	return $_[0] ? "true" : "false";
@@ -96,8 +101,8 @@ EOF
 	return $notification;
 }
 
-sub read {
-	my ($class, $file) = @_;
+sub parse_pipeline {
+	my ($file, $top) = @_;
 
 	my @errors = ();
 	my $p = load_yaml(run({ onfailure => "Failed to evaluate pipeline $file", stderr => 0}, 'spruce', 'merge', $file));
@@ -310,8 +315,10 @@ sub read {
 	# validate BOSH directors
 	if (ref($p->{pipeline}{boshes}) eq 'HASH') {
 		for my $env (keys %{$p->{pipeline}{boshes}}) {
+			my $E = eval { $top->load_env($env) };
+
 			# required sub-subkeys
-			if (is_create_env($env)) {
+			if ($E && $E->needs_bosh_create_env) {
 				# allowed subkeys for a create-env deploy
 				for (keys %{$p->{pipeline}{boshes}{$env}}) {
 					push @errors, "Unrecognized `pipeline.boshes[$env].$_' key found."
@@ -335,10 +342,10 @@ sub read {
 }
 
 sub parse {
-	my ($class, $file, $layout) = @_;
+	my ($file, $layout, $top) = @_;
 	$layout ||= 'default';
 
-	my ($pipeline, @errors) = $class->read($file);
+	my ($pipeline, @errors) = parse_pipeline($file, $top);
 	if (@errors) {
 		error "#R{ERRORS encountered} in pipeline definition in #Y{$file}:";
 		error "  - #R{$_}" for @errors;
@@ -503,10 +510,10 @@ sub parse {
 	}
 	$P->{triggers} = $triggers;
 
-	return bless($P, $class);
+	return $P;
 }
 
-sub _tree {
+sub pipeline_tree {
 	my ($prefix, $env, $trees) = @_;
 	#
 	# sandbox
@@ -533,7 +540,7 @@ sub _tree {
 	}
 }
 
-sub as_tree {
+sub generate_pipeline_human_description {
 	my ($self) = @_;
 	my $pipeline = $self;
 
@@ -547,12 +554,12 @@ sub as_tree {
 		delete $envs{$b};
 	}
 	for (sort keys %envs) {
-		_tree("", $_, \%trees);
+		pipeline_tree("", $_, \%trees);
 		print "\n";
 	}
 }
 
-sub as_graphviz {
+sub generate_pipeline_graphviz_source {
 	my ($self) = @_;
 	my $pipeline = $self;
 
@@ -581,9 +588,8 @@ sub as_graphviz {
 	return $out;
 }
 
-sub as_concourse {
-	my ($self) = @_;
-	my $pipeline = $self;
+sub generate_pipeline_concourse_yaml {
+	my ($pipeline, $top) = @_;
 
 	my $dir = workdir;
 	open my $OUT, ">", "$dir/guts.yml"
@@ -668,8 +674,8 @@ groups:
   - name: $pipeline->{pipeline}{name}
     jobs:
 EOF
-	print $OUT "    - $_\n" for sort map { "$pipeline->{aliases}{$_}-" . deployment_suffix } @{$pipeline->{envs}};
-	print $OUT "    - notify-$_-changes\n" for sort map { "$pipeline->{aliases}{$_}-" . deployment_suffix }
+	print $OUT "    - $_\n" for sort map { "$pipeline->{aliases}{$_}-" . $top->type } @{$pipeline->{envs}};
+	print $OUT "    - notify-$_-changes\n" for sort map { "$pipeline->{aliases}{$_}-" . $top->type }
 		grep { ! $auto{$_} } @{$pipeline->{envs}};
 
 	print $OUT <<EOF;
@@ -685,6 +691,7 @@ EOF
    # }}}
 	# CONCOURSE: env-specific resource configuration {{{
 	for my $env (sort @{$pipeline->{envs}}) {
+		my $E = $top->load_env($env);
 		# YAML snippets, to make the print's less obnoxious {{{
 		#
 		# 1) do we tag the jobs so that they are constrained to a
@@ -716,13 +723,8 @@ EOF
 		#
 		if ($pipeline->{triggers}{$env}) {
 			my $trigger = $pipeline->{triggers}{$env};
-			my ($pre, @unique) = unique_suffix($trigger, $env);
-			$pre = "$pre-" unless $pre eq "";
-			for (map { "$pre$_" } expand_tokens(@unique)) {
-				print $OUT <<EOF;
-        - ${_}.yml
-EOF
-			}
+			my $lineage = $E->relate($trigger, ".genesis/cached/$trigger");
+			print $OUT "        - ${_}\n" for @{ $lineage->{unique} };
 			print $OUT <<EOF;
 
   - name: ${alias}-cache
@@ -735,24 +737,16 @@ EOF
         - .genesis/config
 EOF
 			print $OUT "# $trigger -> $env\n";
-			for (expand_tokens(common_base($env, $trigger))) {
-				print $OUT <<EOF;
-        - .genesis/cached/${trigger}/${_}.yml
-EOF
-			}
+			print $OUT "        - ${_}\n" for @{ $lineage->{common} };
 		} else {
 			print $OUT <<EOF;
         - .genesis/bin/genesis
         - .genesis/kits
         - .genesis/config
 EOF
-			for (expand_tokens(split /-/, $env)) {
-				print $OUT <<EOF;
-        - ${_}.yml
-EOF
-			}
+			print $OUT "        - ${_}\n" for $E->potential_environment_files();
 		}
-		unless (is_create_env($env)) {
+		unless ($E->needs_bosh_create_env) {
 			print $OUT <<EOF;
 
   - name: ${alias}-cloud-config
@@ -792,8 +786,8 @@ EOF
 EOF
 		}
 		if ($pipeline->{pipeline}{locker}{url}) {
-			my $deployment_suffix = deployment_suffix;
-			unless (is_create_env($env)) {
+			my $deployment_suffix = $top->type;
+			unless ($E->needs_bosh_create_env) {
 				my $bosh_lock = $env;
 				if ($pipeline->{pipeline}{boshes}{$env}{url} && $pipeline->{pipeline}{boshes}{$env}{url} =~ m|https?://(.*)?:(.*)|) {
 					my $addr = gethostbyname($1);
@@ -936,6 +930,7 @@ EOF
 jobs:
 EOF
 	for my $env (sort @{$pipeline->{envs}}) {
+		my $E = $top->load_env($env);
 		# CONCOURSE: env-specific job configuration {{{
 
 		# YAML snippets, to make the print's less obnoxious {{{
@@ -948,7 +943,7 @@ EOF
 		my $trigger = $auto{$env} ? "true" : "false";
 
 		# 3) what is our deployment suffix?
-		my $deployment_suffix = deployment_suffix;
+		my $deployment_suffix = $top->type;
 
 		# 4) what previous (triggering) job/env do we need to wait
 		#    on for our cached configuration changes
@@ -1005,7 +1000,7 @@ EOF
     - aggregate:
       - { get: $alias-changes, trigger: true }
 EOF
-			unless (is_create_env($env)) {
+			unless ($E->needs_bosh_create_env) {
 				print $OUT <<EOF;
       - get: $alias-cloud-config
         $tag_yaml
@@ -1038,7 +1033,7 @@ EOF
       ensure:
         do:
 EOF
-			unless (is_create_env($env)) {
+			unless ($E->needs_bosh_create_env) {
 				# <alias>-bosh-lock is used to prevent the parent bosh from upgrading while we deploy
 				# - not necessary for create-env
 				print $OUT <<EOF;
@@ -1063,7 +1058,7 @@ EOF
       do:
 EOF
 		if ($pipeline->{pipeline}{locker}{url}) {
-			unless (is_create_env($env)) {
+			unless ($E->needs_bosh_create_env) {
 				# <alias>-bosh-lock is used to prevent the parent bosh from upgrading while we deploy
 				# - not necessary for create-env
 				print $OUT <<EOF;
@@ -1089,7 +1084,7 @@ EOF
 EOF
 		# only add cloud/runtime config on true-triggers, otherwise it goes in notifications
 		# also make sure that we are not deploying with create-env (no cloud/runtime config for that scenario)
-		if (! is_create_env($env) && $trigger eq "true") {
+		if (! $E->needs_bosh_create_env && $trigger eq "true") {
 			print $OUT <<EOF;
         - get: $alias-cloud-config
           $tag_yaml
@@ -1130,7 +1125,7 @@ EOF
             BOSH_NON_INTERACTIVE: true
 EOF
 		# don't supply bosh creds if we're create-env, because no one to talk to
-		unless (is_create_env($env)) {
+		unless ($E->needs_bosh_create_env) {
 			print $OUT <<EOF;
             BOSH_ENVIRONMENT:     $pipeline->{pipeline}{boshes}{$env}{url}
             BOSH_CA_CERT: |
@@ -1177,7 +1172,7 @@ EOF
 EOF
 
 		# CONCOURSE: run optional errands as tasks - non-create-env only (otherwise no bosh to run the errand) {{{
-		unless (is_create_env($env)) {
+		unless ($E->needs_bosh_create_env) {
 			for my $errand_name (@{$pipeline->{pipeline}{errands}}) {
 				print $OUT <<EOF;
         # run errands against the deployment
