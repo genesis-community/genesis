@@ -13,10 +13,11 @@ use_ok 'Genesis::Kit::Dev';
 use Genesis::Kit::Compiler;
 
 sub kit {
-	my ($name, $version) = @_;
+	my ($name, $version, $path) = @_;
 	$version ||= 'latest';
+	$path ||= 't/src/simple';
 	my $tmp = workdir;
-	my $file = Genesis::Kit::Compiler->new('t/src/simple')->compile($name, $version, $tmp);
+	my $file = Genesis::Kit::Compiler->new($path)->compile($name, $version, $tmp);
 
 	return Genesis::Kit::Compiled->new(
 		name    => $name,
@@ -98,6 +99,19 @@ subtest 'dev kits' => sub {
 	cmp_deeply([$kit->source_yaml_files(['bogus', 'features'])],
 	           [$kit->source_yaml_files()],
 	           "simple kits ignore features they don't know about");
+};
+
+subtest 'legacy kit support' => sub {
+	my $kit = kit('legacy', '1.9.8', 't/src/legacy');
+
+	cmp_deeply([$kit->source_yaml_files()],
+	           [re('\bbase/params.yml')],
+	           "legacy kits without subkits should return base yaml files only");
+
+	cmp_deeply([$kit->source_yaml_files(['do-thing'])],
+	           [re('\bbase/params.yml'),
+	            re('\bdo-thing/params.yml')],
+	           "legacy kits with subkits should return all relevant yaml files");
 };
 
 subtest 'kit urls' => sub {
