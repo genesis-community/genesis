@@ -27,7 +27,7 @@ use Genesis::CI::Legacy; # but we'd rather not...
 
 $Genesis::VERSION = "(development)";
 our $USER_AGENT_STRING = "genesis/$Genesis::VERSION";
-our $GENESIS_CALLBACK_BIN = $FindBin::Script;
+$ENV{GENESIS_CALLBACK_BIN} = $FindBin::Script;
 
 $ENV{HTTPS_PROXY}=$ENV{BOSH_ALL_PROXY} if ($ENV{BOSH_ALL_PROXY});
 
