@@ -322,7 +322,7 @@ sub mkfile_or_fail {
 	}
 	debug("creating file $file");
 	eval {
-		open my $fh, ">", $file or die $!;
+		open my $fh, ">", $file or die "Unable to open $file for writing: $!";
 		print $fh $content;
 		close $fh;
 	} or die "Error creating file $file: $!\n";
