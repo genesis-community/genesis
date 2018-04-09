@@ -79,7 +79,9 @@ sub create {
 		Genesis::Legacy::new_environment($self);
 	}
 
-	$self->add_secrets();
+	# generate all (missing) secrets ignoring any that exist
+	# from a previous 'new' attempt.
+	$env->add_secrets(recreate => 1);
 
 	return $self;
 }
