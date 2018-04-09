@@ -6,6 +6,8 @@ use lib 't';
 use helper;
 use Test::Differences;
 
+my $vault_target = vault_ok;
+
 my $tmp = workdir;
 ok -d "t/repos/compiled-kit-test", "compiled-kit-test repo exists" or die;
 chdir "t/repos/compiled-kit-test" or die;
@@ -27,7 +29,7 @@ version: 0.0.2
 EOF
 
 qx(rm -f new-env.yml);
-runs_ok "genesis new --vault unassailable-garrison new-env";
+runs_ok "genesis new --vault $vault_target new-env";
 eq_or_diff get_file("new-env.yml"), <<EOF, "environment file is correctly generated";
 ---
 kit:
@@ -41,5 +43,8 @@ params:
   vault: new/env/compiled-kit-test
 EOF
 qx(rm -f new.yml new-env.yml);
+
+chdir $TOPDIR;
+teardown_vault;
 
 done_testing;
