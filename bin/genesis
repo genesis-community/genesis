@@ -830,6 +830,11 @@ sub {
 		delete $options{'non-interactive'};
 	}
 
+	if (!$env->needs_bosh_create_env) {
+		my $cloud = workdir."/cloud.yml";
+		Genesis::BOSH->download_cloud_config($env->bosh_target, $cloud);
+		$env->use_cloud_config($cloud);
+	}
 	$env->deploy(%options);
 });
 # }}}
