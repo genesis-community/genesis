@@ -272,10 +272,22 @@ EOF
 	lives_ok { $env->use_cloud_config($top->path(".cloud.yml"))->manifest; }
 		"should be able to merge an env with a cloud-config";
 
-	$env->write_manifest($top->path(".manifest.yml"));
-	ok -f $top->path(".manifest.yml"), "env->write_manifest should actually write the file";
-	ok -s $top->path(".manifest.yml") > -s $top->path("standalone.yml"),
-		"written manifest should be at least as big as the env file";
+	my $mfile = $top->path(".manifest.yml");
+	my ($manifest, undef) = $env->_manifest(redact => 1);
+	$env->write_manifest($mfile, prune => 0);
+	ok -f $mfile, "env->write_manifest should actually write the file";
+	my $mcontents;
+	lives_ok { $mcontents = load_yaml_file($mfile) } 'written manifest (pruned) is valid YAML';
+	cmp_deeply($mcontents, $manifest, "written manifest (unpruned) matches the raw unpruned manifest");
+	cmp_deeply($mcontents, {
+		name   => ignore,
+		fancy  => ignore,
+		addons => ignore,
+		exodus => ignore,
+		kit    => ignore,
+		meta   => ignore,
+		params => ignore
+	}, "written manifest (unpruned) contains all the keys");
 
 	ok $env->manifest_lookup('addons.foxtrot'), "env manifest defines addons.foxtrot";
 	is $env->manifest_lookup('addons.bravo', 'MISSING'), 'MISSING',
@@ -337,6 +349,19 @@ EOF
 		fancy  => ignore,
 		addons => ignore,
 	}, "pruned manifest should not have all the top-level keys");
+
+	my $mfile = $top->path(".manifest.yml");
+	my ($manifest, undef) = $env->_manifest(redact => 1);
+	$env->write_manifest($mfile);
+	ok -f $mfile, "env->write_manifest should actually write the file";
+	my $mcontents;
+	lives_ok { $mcontents = load_yaml_file($mfile) } 'written manifest is valid YAML';
+	cmp_deeply($mcontents, subhashof($manifest), "written manifest content matches unpruned manifest for values that weren't pruned");
+	cmp_deeply($mcontents, {
+		name   => ignore,
+		fancy  => ignore,
+		addons => ignore,
+	}, "written manifest doesn't contain the pruned keys (no cloud-config)");
 };
 
 subtest 'manifest pruning (bosh create-env)' => sub {
@@ -401,6 +426,28 @@ EOF
 		azs            => ignore,
 		vm_extensions  => ignore,
 	}, "pruned proto-style manifest should retain 'cloud-config' keys, since create-env needs them");
+
+	my $mfile = $top->path(".manifest-create-env.yml");
+	my ($manifest, undef) = $env->_manifest(redact => 1);
+	$env->write_manifest($mfile);
+	ok -f $mfile, "env->write_manifest should actually write the file";
+	my $mcontents;
+	lives_ok { $mcontents = load_yaml_file($mfile) } 'written manifest for bosh-create-env is valid YAML';
+	cmp_deeply($mcontents, subhashof($manifest), "written manifest for bosh-create-env content matches unpruned manifest for values that weren't pruned");
+	cmp_deeply($mcontents, {
+		name   => ignore,
+		fancy  => ignore,
+		addons => ignore,
+
+		# "cloud-config"
+		resource_pools => ignore,
+		vm_types       => ignore,
+		disk_pools     => ignore,
+		disk_types     => ignore,
+		networks       => ignore,
+		azs            => ignore,
+		vm_extensions  => ignore,
+	}, "written manifest for bosh-create-env doesn't contain the pruned keys (includes cloud-config)");
 };
 
 subtest 'exodus data' => sub {
