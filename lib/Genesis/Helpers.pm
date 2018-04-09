@@ -125,22 +125,21 @@ export -f validate_features
 
 
 describe() {
-	genesis ui-describe ""  "$@"
+	$GENESIS_CALLBACK_BIN ui-describe ""  "$@"
 }
 export -f describe
 
 prompt_for() {
 	local __var="$1" __type="$2"; shift 2;
 	if [[ "$__type" =~ ^secret- ]] ; then
-		export GENESIS_TARGET_VAULT="$ENV{GENESIS_TARGET_VAULT}"
-		genesis ui-prompt-for "$__type" "$__var" "$@"
+		$GENESIS_CALLBACK_BIN ui-prompt-for "$__type" "$__var" "$@"
 		local __rc="$?"
 		[[ $__rc -ne 0 ]] && echo "Error encountered - cannot continue" && exit $__rc
 	else
 		local __tmpfile
 		__tmpfile=$(mktemp)
 		[[ $? -ne 0 ]] && echo >&2 "Failed to create tmpdir: $__tmpfile" && exit 2
-		genesis ui-prompt-for "$__type" "$__tmpfile" "$@"
+		$GENESIS_CALLBACK_BIN ui-prompt-for "$__type" "$__tmpfile" "$@"
 		local __rc="$?"
 		if [[ $__rc -ne 0 ]] ; then
 			# error
