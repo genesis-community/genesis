@@ -285,9 +285,10 @@ sub have_env($;$) {
 my $VAULT_PID;
 sub vault_ok {
 	local $Test::Builder::Level = $Test::Builder::Level + 1;
+	my $target = 'genesis-ci-unit-tests';
 	if (defined $VAULT_PID) {
 		pass "vault already running.";
-		return 1;
+		return $target;
 	}
 
 	$ENV{HOME} = "$ENV{PWD}/t/tmp/home";
@@ -303,13 +304,14 @@ sub vault_ok {
 		die "Cannot continue\n";
 	};
 	pass "vault running [pid $pid]";
-	return 1;
+	return $target;
 }
 
 sub teardown_vault {
 	if (defined $VAULT_PID) {
 		print STDERR "\nShutting down vault (pid: $VAULT_PID)\n";
 		kill 'TERM', $VAULT_PID;
+		$VAULT_PID = undef;
 	}
 }
 

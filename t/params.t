@@ -7,7 +7,7 @@ use Test::Differences;
 use lib 't';
 use helper;
 
-vault_ok;
+my $vault_target = vault_ok;
 
 bosh2_cli_ok;
 
@@ -21,7 +21,7 @@ reprovision kit => 'ask-params';
 
 my $cmd = Expect->new();
 $cmd->log_stdout($log_expect_stdout);
-$cmd->spawn("genesis new with-subkit --vault unit-tests");
+$cmd->spawn("genesis new with-subkit --vault $vault_target");
 expect_ok "extra questions subkit", $cmd, [
 	'Should we ask additional questions?', sub {
 		my $fh = shift;
@@ -598,7 +598,7 @@ EOF
 
 $cmd = Expect->new();
 $cmd->log_stdout($log_expect_stdout);
-$cmd->spawn("genesis new without-subkit --vault unit-tests");
+$cmd->spawn("genesis new without-subkit --vault $vault_target");
 expect_ok $cmd, ['Should we ask additional questions', sub {
 	my $fh = shift;
 	$fh->send("no\n");

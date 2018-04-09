@@ -11,7 +11,7 @@ subtest 'secrets' => sub {
 	plan skip_all => 'skipping secrets tests because SKIP_SECRETS_TESTS was set'
 		if $ENV{SKIP_SECRETS_TESTS};
 
-	vault_ok;
+	my $vault_target = vault_ok;
 	bosh2_cli_ok;
 
 	chdir workdir('redis-deployments') or die;
@@ -20,7 +20,7 @@ subtest 'secrets' => sub {
 				kit => 'omega';
 
 	diag "\rConnecting to the local vault (this may take a while)...";
-	expects_ok 'new-omega us-east-sandbox --vault unit-tests';
+	expects_ok "new-omega us-east-sandbox --vault $vault_target";
 	system('safe tree');
 
 	my $sec;
@@ -104,7 +104,7 @@ subtest 'secrets' => sub {
 
 	like secret("$v/test/random:limited"), qr/^[a-z]{16}$/, "It is possible to limit chars used for random credentials";
 
-	runs_ok "genesis secrets rotate us-east-sandbox --vault unit-tests";
+	runs_ok "genesis secrets rotate us-east-sandbox --vault $vault_target";
 	my %after;
 	for (@$rotated, @$fixed) {
 	  have_secret "$v/$_";
@@ -119,7 +119,7 @@ subtest 'secrets' => sub {
 	}
 
 	%before = %after;
-	runs_ok "genesis secrets rotate --force us-east-sandbox --vault unit-tests";
+	runs_ok "genesis secrets rotate --force us-east-sandbox --vault $vault_target";
 	for (@$rotated, @$fixed) {
 	  have_secret "$v/$_";
 	  $after{$_} = secret "$v/$_";
@@ -129,7 +129,7 @@ subtest 'secrets' => sub {
 	}
 
 	# Test that nothing is missing
-	my ($pass,$rc,$msg) = runs_ok "genesis secrets check us-east-sandbox --vault unit-tests";
+	my ($pass,$rc,$msg) = runs_ok "genesis secrets check us-east-sandbox --vault $vault_target";
 	matches $msg, qr/All credentials and certificates present./, "No missing secrets";
 
 	# Test only missing secrets are regenerated
@@ -138,7 +138,7 @@ subtest 'secrets' => sub {
 	  runs_ok "safe delete -f $v/$_", "removed $v/$_  for testing";
 	  no_secret "$v/$_", "$v/$_ should not exist";
 	}
-	($pass,$rc,$msg) = run_fails "genesis secrets check us-east-sandbox --vault unit-tests", 1;
+	($pass,$rc,$msg) = run_fails "genesis secrets check us-east-sandbox --vault $vault_target", 1;
 	matches $msg, qr#Missing 8 credentials or certificates:#, "Correct number of secrets reported missing";
 	matches $msg, qr#  \* \[random\] $v/test/random:username#, "Random-type secret missing";
 	matches $msg, qr#  \* \[rsa\] $v/test/rsa/strong:public#, "RSA-type public secret missing";
@@ -149,7 +149,7 @@ subtest 'secrets' => sub {
 	matches $msg, qr#  \* \[random\] $v/test/fmt/sha512/default:random#, "Random-type secret missing";
 	matches $msg, qr#  \* \[random/formatted\] $v/test/fmt/sha512/default:random-crypt-sha512#, "Random-type formatted secret missing";
 
-	runs_ok "genesis secrets add us-east-sandbox --vault unit-tests";
+	runs_ok "genesis secrets add us-east-sandbox --vault $vault_target";
 	for (@$rotated, @$fixed) {
 	  have_secret "$v/$_";
 	  $after{$_} = secret "$v/$_";
@@ -167,7 +167,7 @@ subtest 'secrets' => sub {
 	$cmd->log_stdout($ENV{GENESIS_TRACE} ? 1 : 0);
 	$cmd->spawn("genesis new east-us-sandbox");
 	$v = "secret/east/us/sandbox/asksecrets";
-	expect_ok $cmd, ["Which Vault would you like to target.*\n.*> ", sub { $_[0]->send("unit-tests\n"); }];
+	expect_ok $cmd, ["Which Vault would you like to target.*\n.*> ", sub { $_[0]->send("$vault_target\n"); }];
 	expect_ok $cmd, ['password .*\[hidden\]:', sub { $_[0]->send("my-password\n");}];
 	expect_ok $cmd, ['password .*\[confirm\]:',  sub { $_[0]->send("my-password\n");}];
 	expect_ok $cmd, ["\\(Enter <CTRL-D> to end\\)", sub {
@@ -191,7 +191,7 @@ EOF
 	$cmd->log_stdout($ENV{GENESIS_TRACE} ? 1 : 0);
 	$cmd->spawn("genesis new west-us-sandbox");
 	$v = "secret/west/us/sandbox/certificates";
-	expect_ok $cmd, [ "Which Vault would you like to target.*\n.*>", sub { $_[0]->send("unit-tests\n"); }];
+	expect_ok $cmd, [ "Which Vault would you like to target.*\n.*>", sub { $_[0]->send("$vault_target\n"); }];
 	expect_ok $cmd, [ "Generate all the certificates?", sub { $_[0]->send("yes\n"); }];
 	expect_ok $cmd, [ "What is your base domain?", sub { $_[0]->send("cf.example.com\n"); }];
 	expect_exit $cmd, 0, "genesis creates a new environment and auto-generates certificates";
@@ -226,7 +226,7 @@ EOF
 	$cmd->log_stdout($ENV{GENESIS_TRACE} ? 1 : 0);
 	$cmd->spawn("genesis new north-us-sandbox");
 	$v = "secret/north/us/sandbox/certificates";
-	expect_ok $cmd, [ "Which Vault would you like to target.*\n.*> ", sub { $_[0]->send("unit-tests\n"); }];
+	expect_ok $cmd, [ "Which Vault would you like to target.*\n.*> ", sub { $_[0]->send("$vault_target\n"); }];
 	expect_ok $cmd, [ "Generate all the certificates?", sub { $_[0]->send("no\n"); }];
 	expect_ok $cmd, [ "What is your base domain?", sub { $_[0]->send("cf.example.com\n"); }];
 	expect_exit $cmd, 0, "genesis creates a new environment and doesn't create new certificates from ignored submodules";
@@ -236,7 +236,7 @@ EOF
 	$v = "secret/west/us/sandbox/certificates";
 	runs_ok "safe delete -Rf $v", "clean up certs for rotation testing";
 	no_secret "$v/auto-generated-certs-a/ca:certificate";
-	($pass,$rc,$msg) = run_fails "genesis secrets check west-us-sandbox --vault unit-tests", 1;
+	($pass,$rc,$msg) = run_fails "genesis secrets check west-us-sandbox --vault $vault_target", 1;
 	matches $msg, qr#Missing 24 credentials or certificates:#, "Correct number of secrets reported missing";
 	matches $msg, qr#  \* \[CA certificate] $v/auto-generated-certs-a/ca:certificate#,  "CA cert certificate missing";
 	matches $msg, qr#  \* \[CA certificate] $v/auto-generated-certs-a/ca:combined#,  "CA cert combined missing";
@@ -255,7 +255,7 @@ EOF
 	matches $msg, qr#  \* \[certificate] $v/auto-generated-certs-b/server:combined#, "Cert combined missing";
 	matches $msg, qr#  \* \[certificate] $v/auto-generated-certs-b/server:key#, "Cert key missing";
 
-	runs_ok "genesis secrets rotate --vault unit-tests west-us-sandbox", "genesis secrets creates our certs";
+	runs_ok "genesis secrets rotate --vault $vault_target west-us-sandbox", "genesis secrets creates our certs";
 	have_secret "$v/auto-generated-certs-a/server:certificate";
 	my $cert = secret "$v/auto-generated-certs-a/server:certificate";
 	have_secret "$v/auto-generated-certs-a/ca:certificate";
@@ -264,7 +264,7 @@ EOF
 	have_secret "$v/fixed/server:certificate";
 	my $fixed_cert = secret "$v/fixed/server:certificate";
 
-	runs_ok "genesis secrets rotate --vault unit-tests west-us-sandbox", "genesis secrets doesn't rotate the CA";
+	runs_ok "genesis secrets rotate --vault $vault_target west-us-sandbox", "genesis secrets doesn't rotate the CA";
 	have_secret "$v/auto-generated-certs-a/ca:certificate";
 	my $new_ca = secret "$v/auto-generated-certs-a/ca:certificate";
 	is $ca, $new_ca, "CA cert doesnt change under normal secret rotation";
@@ -274,24 +274,24 @@ EOF
 	is $fixed_cert, $new_fixed, "Fixed certificate doesn't change under normal secret rotation";
 
 
-	runs_ok "genesis secrets add --vault unit-tests west-us-sandbox", "genesis secrets --missing-only doesn't rotate the CA";
+	runs_ok "genesis secrets add --vault $vault_target west-us-sandbox", "genesis secrets --missing-only doesn't rotate the CA";
 	have_secret "$v/auto-generated-certs-a/ca:certificate";
 	$new_ca = secret "$v/auto-generated-certs-a/ca:certificate";
 	is $ca, $new_ca, "CA cert doesnt change under normal secret rotation";
 
 	$cert = secret "$v/auto-generated-certs-a/server:certificate";
-	runs_ok "genesis secrets add --vault unit-tests west-us-sandbox", "genesis secrets --missing-only doesn't rotate regular certs";
+	runs_ok "genesis secrets add --vault $vault_target west-us-sandbox", "genesis secrets --missing-only doesn't rotate regular certs";
 	have_secret "$v/auto-generated-certs-a/server:certificate";
 	my $new_cert = secret "$v/auto-generated-certs-a/server:certificate";
 	is $cert, $new_cert, "Certificates do not change if existing";
 
-	runs_ok "genesis secrets rotate --vault unit-tests west-us-sandbox", "genesis secrets rotates regular certs";
+	runs_ok "genesis secrets rotate --vault $vault_target west-us-sandbox", "genesis secrets rotates regular certs";
 	have_secret "$v/auto-generated-certs-a/server:certificate";
 	$new_cert = secret "$v/auto-generated-certs-a/server:certificate";
 	isnt $cert, $new_cert, "Certificates are rotated normally";
 
 	$cert = secret "$v/auto-generated-certs-a/server:certificate";
-	runs_ok "genesis secrets rotate --force-rotate-all --vault unit-tests west-us-sandbox", "genesis secrets --force-rotate-all regenerates CA certs";
+	runs_ok "genesis secrets rotate --force-rotate-all --vault $vault_target west-us-sandbox", "genesis secrets --force-rotate-all regenerates CA certs";
 	have_secret "$v/auto-generated-certs-a/ca:certificate";
 	$new_ca = secret "$v/auto-generated-certs-a/ca:certificate";
 	isnt $ca, $new_ca, "CA certificate changes under force-rotation";
@@ -299,7 +299,7 @@ EOF
 	isnt $cert, $new_cert, "Certificates are rotated when forced.";
 
 	$cert = secret "$v/auto-generated-certs-a/server:certificate";
-	runs_ok "genesis secrets rotate -f --vault unit-tests west-us-sandbox", "genesis secrets -f regenerates CA certs";
+	runs_ok "genesis secrets rotate -f --vault $vault_target west-us-sandbox", "genesis secrets -f regenerates CA certs";
 	have_secret "$v/auto-generated-certs-a/ca:certificate";
 	$new_ca = secret "$v/auto-generated-certs-a/ca:certificate";
 	isnt $ca, $new_ca, "CA certificate changes under force-rotation";

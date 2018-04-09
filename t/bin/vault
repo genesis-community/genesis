@@ -10,6 +10,7 @@ mkdir -p t/tmp/home t/vaults
 
 version="0.9.3"
 platform=
+target="${1:-genesis-ci-unit-tests}"
 arch=amd64
 case $OSTYPE in
 (darwin*) platform=darwin ;;
@@ -60,7 +61,7 @@ while ! lsof -a -p $vault_pid -i tcp:$port -s TCP:listen -nP >/dev/null 2>&1; do
 		bail "\nFAILED - timed out waiting for vault server to start\n"
 	fi
 done
-safe target unit-tests http://127.0.0.1:$port >/dev/null 2>&1
+safe target "$target" http://127.0.0.1:$port >/dev/null 2>&1
 safe auth token <<<"dummy" > /dev/null 2>&1 # Another Hack around safe init issue
 root_token=$(safe init --json | jq -r '.root_token')
 safe auth token <<<${root_token} >/dev/null 2>&1

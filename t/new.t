@@ -6,7 +6,7 @@ use lib 't';
 use helper;
 use Test::Differences;
 
-vault_ok;
+my $vault_target = vault_ok;
 $ENV{HOME} = "$ENV{PWD}/t/tmp/home";
 system "mkdir -p $ENV{HOME}";
 
@@ -27,7 +27,7 @@ reprovision kit => 'omega';
 # Test base file propagation
 no_env "generate";
 no_env "generate-nominal";
-expects_ok "simple-omega generate-nominal --vault unit-tests";
+expects_ok "simple-omega generate-nominal --vault $vault_target";
 have_env 'generate-nominal';
 
 eq_or_diff get_file("generate-nominal.yml"), <<EOF, "environment file generated has latest kit name / version in it";
@@ -45,7 +45,7 @@ params:
 EOF
 
 no_env "generate-full";
-expects_ok "new-omega generate-full --vault unit-tests";
+expects_ok "new-omega generate-full --vault $vault_target";
 have_env 'generate-full';
 eq_or_diff get_file("generate-full.yml"), <<EOF, "environment file generated has latest kit name / version in it";
 ---
@@ -63,7 +63,7 @@ params:
   vault: generate/full/omega
 EOF
 
-expects_ok "new-omega generate-full-2 --vault unit-tests";
+expects_ok "new-omega generate-full-2 --vault $vault_target";
 have_env 'generate-full-2';
 eq_or_diff get_file("generate-full-2.yml"), <<EOF, "environment file generated has latest kit name / version in it";
 ---
