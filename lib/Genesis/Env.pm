@@ -286,7 +286,7 @@ sub manifest {
 
 sub write_manifest {
 	my ($self, $file, %opts) = @_;
-	my (undef, $src) = $self->_manifest(redact => $opts{redact});
+	my (undef, $src) = $self->manifest(redact => $opts{redact});
 	copy_or_fail($src, $file);
 }
 
