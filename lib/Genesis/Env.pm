@@ -81,7 +81,7 @@ sub create {
 
 	# generate all (missing) secrets ignoring any that exist
 	# from a previous 'new' attempt.
-	$env->add_secrets(recreate => 1);
+	$self->add_secrets(recreate => 1);
 
 	return $self;
 }
