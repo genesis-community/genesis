@@ -72,7 +72,7 @@ sub create {
 	## initialize the environment
 	if ($self->{kit}->has_hook('new')) {
 		$self->{kit}->run_hook('new', root  => $self->path,      # where does the yaml go?
-		                              env   => $self->{name},    # what is it called?
+		                              env   => $self,            # what is it called?
 		                              vault => $self->{prefix}); # where do the secrets go?
 
 	} else {

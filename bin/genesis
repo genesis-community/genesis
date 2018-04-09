@@ -19,6 +19,7 @@ use POSIX qw/strftime/;
 use Cwd qw/getcwd abs_path/;
 
 use Genesis;
+use Genesis::UI;
 use Genesis::Top;
 use Genesis::Kit::Compiler;
 use Genesis::CI::Legacy; # but we'd rather not...

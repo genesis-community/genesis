@@ -151,10 +151,10 @@ prompt_for() {
 		if [[ $__type =~ ^multi- ]] ; then
 			local __i
 			eval "unset $__var"
-			eval "while IFS= read -r -d '' \\"${__var}[__i++]\\"; do :; done < \\"$__tmpfile\\""
-			eval "$__var=(\\"\\${${__var}[@]:1}\\")"
+			eval "while IFS= read -r -d '' \"${__var}[__i++]\"; do :; done < \"$__tmpfile\""
+			eval "$__var=(\"\${${__var}[@]:1}\")"
 		else
-			eval "$__var=\\$(<\\"$__tmpfile\\")"
+			eval "$__var=\$(<\"$__tmpfile\")"
 		fi
 		rm -f "$__tmpfile"
 	fi
