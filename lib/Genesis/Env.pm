@@ -261,7 +261,7 @@ sub manifest {
 	my ($self, %opts) = @_;
 
 	# prune by default.
-	$opts{prune} = 1 unless exists $opts{prune};
+	$opts{prune} = 1 unless defined $opts{prune};
 
 	my (undef, $path) = $self->_manifest(redact => $opts{redact});
 	if ($opts{prune}) {
@@ -286,8 +286,8 @@ sub manifest {
 
 sub write_manifest {
 	my ($self, $file, %opts) = @_;
-	my (undef, $src) = $self->manifest(redact => $opts{redact});
-	copy_or_fail($src, $file);
+	my $out = $self->manifest(redact => $opts{redact}, prune => $opts{prune});
+	mkfile_or_fail($file, $out);
 }
 
 sub _yaml_files {
