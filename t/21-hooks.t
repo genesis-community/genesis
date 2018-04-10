@@ -283,8 +283,8 @@ EOF
 
 	{
 		local $ENV{HOOK_SHOULD_FAIL} = 'yes';
-		throws_ok { $fancy->run_hook('check', env => $snw_lab_dev) }
-			qr/could not run 'check' hook/i;
+		ok !$fancy->run_hook('check', env => $snw_lab_dev),
+			"check hooks return non-zero when they fail";
 	}
 };
 
