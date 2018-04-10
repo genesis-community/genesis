@@ -61,6 +61,22 @@ lookup() {
 }
 export -f lookup
 
+
+typeof() {
+  local __key=${1:?typeof() - must specify a key to look up}
+  local __val=$($GENESIS_CALLBACK_BIN -C "$GENESIS_ROOT" lookup "$__key" $GENESIS_ENVIRONMENT "" |  sed -e 's/\(.\).*/\1/')
+  if [[ $__val == "{" ]]; then
+    echo "map"
+  elif [[ $__val == "[" ]]; then
+    echo "list"
+  elif [[ $__val == "" ]]; then
+    echo ""
+  else
+    echo "scalar"
+  fi
+}
+export -f typeof
+
 ###
 ###   Cloud-Config Inspection Functions
 ###
