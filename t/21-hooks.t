@@ -42,6 +42,8 @@ sub again {
 kit:
   name:    dev
   version: latest
+params:
+  env: us-west-1-prod
 EOF
 	$us_west_1_prod = $top->load_env('us-west-1-prod');
 
@@ -56,6 +58,8 @@ kit:
     - uniform
     - charlie
     - kilo
+params:
+  env: snw-lab-dev
 EOF
 	$snw_lab_dev = $top->load_env('snw-lab-dev');
 
@@ -66,6 +70,8 @@ kit:
   version: latest
   subkits:
     - do-thing
+params:
+  env: stack-scale
 EOF
 	$stack_scale = $top->load_env('stack-scale');
 }
