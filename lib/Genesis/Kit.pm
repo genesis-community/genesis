@@ -100,14 +100,16 @@ sub run_hook {
 		bug("The 'env' option to run_hook is required for the '$hook' hook!!")
 			unless $opts{env};
 
-		$ENV{GENESIS_ROOT}               = $opts{env}->path;
-		$ENV{GENESIS_ENVIRONMENT}        = $opts{env}->name;
-		$ENV{GENESIS_TYPE}               = $opts{env}->type;
-		$ENV{GENESIS_VAULT_PREFIX}       = $opts{env}->prefix;
-		$ENV{GENESIS_REQUESTED_FEATURES} = join(' ', $opts{env}->features)
-			unless $hook eq 'new';
-		$ENV{GENESIS_ENV_BOSH_TARGET}    = $opts{env}->bosh_target
-			unless $opts{env}->needs_bosh_create_env
+		$ENV{GENESIS_ROOT}         = $opts{env}->path;
+		$ENV{GENESIS_ENVIRONMENT}  = $opts{env}->name;
+		$ENV{GENESIS_TYPE}         = $opts{env}->type;
+		$ENV{GENESIS_VAULT_PREFIX} = $opts{env}->prefix;
+
+		unless (grep { $_ eq $hook } qw/new prereqs/) {
+			$ENV{GENESIS_REQUESTED_FEATURES} = join(' ', $opts{env}->features);
+			$ENV{GENESIS_ENV_BOSH_TARGET}    = $opts{env}->bosh_target
+				unless $opts{env}->needs_bosh_create_env;
+		}
 
 	} elsif ($hook eq 'subkit') {
 		bug("The 'features' option to run_hook is required for the '$hook' hook!!")
