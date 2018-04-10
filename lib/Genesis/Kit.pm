@@ -106,6 +106,8 @@ sub run_hook {
 		$ENV{GENESIS_VAULT_PREFIX}       = $opts{env}->prefix;
 		$ENV{GENESIS_REQUESTED_FEATURES} = join(' ', $opts{env}->features)
 			unless $hook eq 'new';
+		$ENV{GENESIS_ENV_BOSH_TARGET}    = $opts{env}->bosh_target
+			unless $opts{env}->needs_bosh_create_env
 
 	} elsif ($hook eq 'subkit') {
 		bug("The 'features' option to run_hook is required for the '$hook' hook!!")

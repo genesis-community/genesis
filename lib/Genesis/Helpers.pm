@@ -141,6 +141,17 @@ typeof() {
 export -f typeof
 
 ###
+###   BOSH Inspection Functions
+###
+
+bosh_cpi() {
+  if [[ -n "${GENESIS_ENV_BOSH_TARGET:-}" ]]; then
+    bosh -e "$GENESIS_ENV_BOSH_TARGET" env --json | jq -r '.Tables[0].Rows[0].cpi'
+  fi
+}
+export -f bosh_cpi
+
+###
 ###   Cloud-Config Inspection Functions
 ###
 

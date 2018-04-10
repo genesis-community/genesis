@@ -40,6 +40,11 @@ sub _bosh {
 
 sub ping {
 	my ($class, $env) = @_;
+	return _bosh({ passfail => 1 }, 'bosh', '-e', $env, 'env');
+}
+
+sub env {
+	my ($class, $env) = @_;
 	return _bosh({ interactive => 1, passfail => 1 },
 		'bosh', '-e', $env, 'env');
 }
