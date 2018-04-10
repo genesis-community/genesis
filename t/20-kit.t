@@ -12,6 +12,22 @@ use_ok 'Genesis::Kit::Compiled';
 use_ok 'Genesis::Kit::Dev';
 use Genesis::Kit::Compiler;
 
+package mockenv;
+
+sub new {
+	my ($class, @features) = @_;
+	bless { f => \@features }, $class;
+}
+sub features { @{$_[0]{f}}; }
+sub name { "mock-env"; }
+sub type { "mock-type"; }
+sub prefix { "mock/env"; }
+sub needs_bosh_create_env { 0; }
+sub bosh_target { 'a-bosh'; }
+sub path { "some/path/some/where".($_[1]?"/$_[1]":""); }
+
+package main;
+
 sub kit {
 	my ($name, $version, $path) = @_;
 	$version ||= 'latest';
@@ -92,23 +108,23 @@ subtest 'dev kits' => sub {
 		"compiled-kit paths are not the same as dev-kit paths");
 
 	## source yaml files, based on features:
-	cmp_deeply([$kit->source_yaml_files()],
+	cmp_deeply([$kit->source_yaml_files(mockenv->new())],
 	           [re('\bmanifest.yml$')],
 	           "simple kits without subkits should return base yaml files only");
 
-	cmp_deeply([$kit->source_yaml_files(['bogus', 'features'])],
-	           [$kit->source_yaml_files()],
+	cmp_deeply([$kit->source_yaml_files(mockenv->new('bogus', 'features'))],
+	           [$kit->source_yaml_files(mockenv->new())],
 	           "simple kits ignore features they don't know about");
 };
 
 subtest 'legacy kit support' => sub {
 	my $kit = kit('legacy', '1.9.8', 't/src/legacy');
 
-	cmp_deeply([$kit->source_yaml_files()],
+	cmp_deeply([$kit->source_yaml_files(mockenv->new())],
 	           [re('\bbase/params.yml')],
 	           "legacy kits without subkits should return base yaml files only");
 
-	cmp_deeply([$kit->source_yaml_files(['do-thing'])],
+	cmp_deeply([$kit->source_yaml_files(mockenv->new('do-thing'))],
 	           [re('\bbase/params.yml'),
 	            re('\bdo-thing/params.yml')],
 	           "legacy kits with subkits should return all relevant yaml files");
