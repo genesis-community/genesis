@@ -490,6 +490,7 @@ sub options {
 	$ENV{NOCOLOR}       = 'y' if !$options->{color};
 
 	# spruce debugging
+	$options->{trace} ||= 0;
 	$ENV{DEBUG}         = 'y' if  $options->{trace} > 1;
 	$ENV{TRACE}         = 'y' if  $options->{trace} > 2;
 
