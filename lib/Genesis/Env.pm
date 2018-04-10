@@ -226,6 +226,7 @@ sub defines {
 sub params {
 	my ($self) = @_;
 	if (!$self->{__params}) {
+		debug("running spruce merge of environment files, without evaluation, to find parameters");
 		my $out = run({ onfailure => "Unable to merge $self->{name} environment files", stderr => 0 },
 			'spruce merge --skip-eval "$@" | spruce json',
 				map { $self->path($_) } $self->actual_environment_files());
@@ -249,10 +250,12 @@ sub _manifest {
 		local $ENV{REDACT} = $opts{redact} ? 'yes' : ''; # for spruce
 
 		pushd $self->path;
+		debug("running spruce merge of all files, with evaluation, to generate a manifest");
 		my $out = run({ onfailure => "Unable to merge $self->{name} manifest", stderr => 0 },
 			'spruce', 'merge', $self->_yaml_files);
 		popd;
 
+		debug("saving #W{%s} manifest to $path", $opts{redact} ? 'redacted' : 'unredacted');
 		mkfile_or_fail($path, 0400, $out);
 		$self->{$which} = load_yaml($out);
 	}
@@ -279,8 +282,12 @@ sub manifest {
 			                 vm_extensions));
 		}
 
+		debug("pruning top-level keys from #W{%s} manifest...", $opts{redact} ? 'redacted' : 'unredacted');
+		debug("  - removing #C{%s} key...", $_) for @prune;
 		return run({ onfailure => "Failed to merge $self->{name} manifest", stderr => 0 },
 			'spruce', 'merge', (map { ('--prune', $_) } @prune), $path)."\n";
+	} else {
+		debug("not pruning #W{%s} manifest.", $opts{redact} ? 'redacted' : 'unredacted');
 	}
 
 	return slurp($path);
@@ -429,6 +436,7 @@ sub deploy {
 	$self->write_manifest("$self->{__tmp}/manifest.yml", redact => 0);
 
 	if ($self->needs_bosh_create_env) {
+		debug("deploying this environment via `bosh create-env`, locally");
 		$ok = Genesis::BOSH->create_env(
 			"$self->{__tmp}/manifest.yml",
 			state => $self->path(".genesis/manifests/$self->{name}-state.yml"));
@@ -444,6 +452,7 @@ sub deploy {
 		push @bosh_opts, "--$_=$opts{$_}"   for grep { defined $opts{$_} }
 		                                          qw/canaries max-in-flight/;
 
+		debug("deploying this environment to our BOSH director");
 		$ok = Genesis::BOSH->deploy(
 			$self->bosh_target,
 			manifest   => "$self->{__tmp}/manifest.yml",
@@ -463,6 +472,7 @@ sub deploy {
 
 	# track exodus data in the vault
 	my $exodus = $self->exodus;
+	debug("setting exodus data in the Vault, for use later by other deployments");
 	return run(
 		{ onfailure => "Could not save $self->{name} metadata to the Vault" },
 		'safe', 'set', "secret/genesis/".$self->{top}->type."/$self->{name}",

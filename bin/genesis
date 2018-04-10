@@ -473,7 +473,7 @@ sub options {
 		(qw/
 			help|h
 			debug|D
-			trace|T
+			trace|T+
 			quiet|q
 			cwd|C=s
 			environment|e=s
@@ -486,10 +486,14 @@ sub options {
 
 	$ENV{QUIET}         = 'y' if  $options->{quiet};
 	$ENV{GENESIS_DEBUG} = 'y' if  $options->{debug} || envset "DEBUG";
-	$ENV{TRACE}         = 'y' if  $options->{trace};
+	$ENV{GENESIS_TRACE} = 'y' if  $options->{trace};
 	$ENV{NOCOLOR}       = 'y' if !$options->{color};
 
-	debug("bosh env: ".($options->{environment} || "-same-as-env-file-"));
+	# spruce debugging
+	$ENV{DEBUG}         = 'y' if  $options->{trace} > 1;
+	$ENV{TRACE}         = 'y' if  $options->{trace} > 2;
+
+	debug("bosh env: ".($options->{environment} || "(defined in environment file)"));
 
 	$ENV{GENESIS_BOSH_ENVIRONMENT} = $options->{environment}
 		if $options->{environment};
@@ -1838,8 +1842,8 @@ sub main {
 	}
 
 	if ($cmd) {
-		debug("running command '$cmd'");
-		debug("arguments are [".join(', ', @args)."]");
+		trace("running command '$cmd'");
+		trace("arguments are [".join(', ', @args)."]");
 		if (exists $COMMAND{$cmd}) {
 			$COMMAND{$cmd}(@args);
 			exit 0;

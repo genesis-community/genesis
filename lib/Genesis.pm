@@ -219,17 +219,17 @@ sub run {
 	local %ENV = %ENV; # To get local scope for duration of this call
 	for (keys %{$opts{env} || {}}) {
 		$ENV{$_} = $opts{env}{$_};
-		debug("#M{Setting: }#B{$_}='#C{$ENV{$_}}'");
+		trace("#M{Setting: }#B{$_}='#C{$ENV{$_}}'");
 	}
 	my $shell = $opts{shell} || '/bin/bash';
 	if (!$opts{interactive} && $opts{stderr}) {
 		$prog .= " 2>$opts{stderr}";
 	}
-	debug("#M{Executing:} `#C{$prog}`%s", ($opts{interactive} ? " #Y{(interactively)}" : ''));
+	trace("#M{Executing:} `#C{$prog}`%s", ($opts{interactive} ? " #Y{(interactively)}" : ''));
 	if (@args) {
 		unshift @args, basename($shell);
-		debug("#M{ - with arguments:}");
-		debug("#M{%4s:} '#C{%s}'", $_, $args[$_]) for (1..$#args);
+		trace("#M{ - with arguments:}");
+		trace("#M{%4s:} '#C{%s}'", $_, $args[$_]) for (1..$#args);
 	}
 
 	my @cmd = ($shell, "-c", $prog, @args);
@@ -244,17 +244,17 @@ sub run {
 	}
 	my $rc = $? >>8;
 	if ($rc) {
-		debug("command exited with status %x (rc %d)", $rc, $rc >> 8);
+		trace("command exited with status %x (rc %d)", $rc, $rc >> 8);
 		if (defined($out)) {
-			debug("#R{==== <output> ==================================}");
-			debug($out);
-			debug("#R{==== </output> =================================}");
+			trace("#R{==== <output> ==================================}");
+			trace($out);
+			trace("#R{==== </output> =================================}");
 		}
 		if ($opts{onfailure}) {
 			bail("#R{%s} (run failed)%s", $opts{onfailure}, defined($out) ? ":\n$out" :'');
 		}
 	} else {
-		debug("command exited #G{0}");
+		trace("command exited #G{0}");
 		if (defined($out)) {
 			trace("==== <output> ==================================");
 			trace($out);
@@ -321,7 +321,7 @@ sub mkfile_or_fail {
 		$content = $mode;
 		$mode = undef;
 	}
-	debug("creating file $file");
+	trace("creating file $file");
 	eval {
 		open my $fh, ">", $file or die "Unable to open $file for writing: $!";
 		print $fh $content;
@@ -334,7 +334,7 @@ sub mkfile_or_fail {
 sub mkdir_or_fail {
 	my ($dir,$mode) = @_;
 	unless (-d $dir) {;
-		debug("creating directory $dir/");
+		trace("creating directory $dir/");
 		run({ onfailure => "Unable to create directory $dir" },
 			'mkdir -p "$1"', $dir);
 	}
@@ -351,6 +351,7 @@ sub symlink_or_fail {
 	my ($source, $dest) = @_;
 	-e $source or die "$source does not exist!\n";
 	-e $dest and die abs_path($dest)." already exists!";
+	trace("creating symbolic link $source -> $dest");
 	symlink($source, $dest) or die "Unable to link $source to $dest: $!\n";
 }
 

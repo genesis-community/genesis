@@ -78,12 +78,14 @@ sub glob {
 
 sub has_hook {
 	my ($self, $hook) = @_;
+	debug("checking the kit for a(n) '$hook' hook");
 	return -f $self->path("hooks/$hook");
 }
 
 sub run_hook {
 	my ($self, $hook, %opts) = @_;
 
+	debug("running the kit 'check' hook");
 	die "No '$hook' hook script found\n"
 		unless $self->has_hook($hook);
 

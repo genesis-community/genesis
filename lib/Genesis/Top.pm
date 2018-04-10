@@ -16,6 +16,7 @@ sub new {
 
 sub create {
 	my ($class, $path, $name, %opts) = @_;
+	debug("creating a new Genesis deployments repo named '$name' at $path...");
 
 	$name =~ s/-deployments//;
 	$name =~ m/^[a-z][a-z0-9_-]+$/
@@ -150,6 +151,7 @@ EOF
 
 sub link_dev_kit {
 	my ($self, $path) = @_;
+	debug("linking dev kit '$path'");
 	my $abs = Cwd::abs_path($path)
 		or die "Unable to locate $path from ".Cwd::getcwd."\n";
 
@@ -164,6 +166,7 @@ sub link_dev_kit {
 
 sub embed {
 	my ($self, $bin) = @_;
+	debug("embedding `genesis' binary installed at $bin...");
 
 	$self->mkdir(".genesis/bin");
 	copy_or_fail($bin, $self->path(".genesis/bin/genesis"));
@@ -230,6 +233,7 @@ sub has_dev_kit {
 
 sub load_env {
 	my ($self, $name) = @_;
+	debug("loading environment #C{%s}", $name);
 	return Genesis::Env->load(
 		top  => $self,
 		name => $name,
@@ -238,6 +242,7 @@ sub load_env {
 
 sub create_env {
 	my ($self, $name, $kit, %opts) = @_;
+	debug("setting up new environment #C{%s}", $name);
 	return Genesis::Env->create(
 		%opts,
 		top  => $self,
