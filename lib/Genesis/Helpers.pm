@@ -67,7 +67,6 @@ export -f lookup
 
 declare -a __cloud_config_error_messages
 __cloud_config_ok=yes
-export __cloud_config_ok
 
 cloud_config_needs() {
   local __type=${1:?cloud_config_needs() - must specify a type}; shift
@@ -107,6 +106,31 @@ check_cloud_config() {
   fi
 }
 export -f check_cloud_config
+
+cloud_config_has() {
+  local __type=${1:?cloud_config_has() - must specify a type}
+  local __want=${2:?cloud_config_has() - must specify a name}
+  local __name
+  case "${__type}" in
+  vm_type|vm_types)            __type=vm_types;      __name=vm_type      ;;
+  vm_extension|vm_extensions)  __type=vm_extensions; __name=vm_extension ;;
+  network|networks)            __type=networks;      __name=network      ;;
+  disk_type|disk_types)        __type=disk_types;    __name=disk_type    ;;
+  az|azs)                      __type=azs;           __name=az           ;;
+  *) echo >&2 "cloud_config_has(): invalid cloud-config object type '$__type'; must be one of"
+     echo >&2 "                    'vm_type', 'vm_extension', 'disk_type', or 'az'"
+     exit 77 ;;
+  esac
+
+  __have=$(spruce json "$GENESIS_CLOUD_CONFIG" | \
+    jq -r "if (.${__type}[] | select(.name == \"$__want\")) then 1 else 0 end")
+  if [[ -n "$__have" ]]; then
+    return 0
+  else
+    return 1
+  fi
+}
+export -f cloud_config_has
 
 ###
 ###   Feature Flag Functions
