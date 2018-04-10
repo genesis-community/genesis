@@ -381,24 +381,27 @@ sub bosh_target {
 	my ($self) = @_;
 	return undef if $self->needs_bosh_create_env;
 
-	my ($bosh, $source);
-	if ($bosh = $ENV{GENESIS_BOSH_ENVIRONMENT}) {
-			$source = "GENESIS_BOSH_ENVIRONMENT environment variable";
+	unless ($self->{__bosh_target}) {
+		my ($bosh, $source);
+		if ($bosh = $ENV{GENESIS_BOSH_ENVIRONMENT}) {
+				$source = "GENESIS_BOSH_ENVIRONMENT environment variable";
 
-	} elsif ($bosh = $self->lookup('params.bosh')) {
-			$source = "params.bosh in $self->{name} environment file";
+		} elsif ($bosh = $self->lookup('params.bosh')) {
+				$source = "params.bosh in $self->{name} environment file";
 
-	} elsif ($bosh = $self->lookup('params.env')) {
-			$source = "params.env in $self->{name} environment file because no params.bosh was present";
+		} elsif ($bosh = $self->lookup('params.env')) {
+				$source = "params.env in $self->{name} environment file because no params.bosh was present";
 
-	} else {
-		die "Could not find the `params.bosh' or `params.env' key in $self->{name} environment file!\n";
+		} else {
+			die "Could not find the `params.bosh' or `params.env' key in $self->{name} environment file!\n";
+		}
+
+		Genesis::BOSH->ping($bosh)
+			or die "Could not find BOSH Director `$bosh` (specified via $source).\n";
+
+		$self->{__bosh_target} = $bosh;
 	}
-
-	Genesis::BOSH->ping($bosh)
-		or die "Could not find BOSH Director `$bosh` (specified via $source).\n";
-
-	return $bosh;
+	return $self->{__bosh_target};
 }
 
 sub deployment {
