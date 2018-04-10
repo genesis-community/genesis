@@ -257,7 +257,9 @@ sub run {
 		trace("command exited #G{0}");
 		if (defined($out)) {
 			trace("==== <output> ==================================");
-			trace($out);
+			trace($out =~ m/[\x00-\x1f\x7f-\xff]/
+				? "[".length($out)."b of binary data omited from trace]"
+				: $out);
 			trace("==== </output> =================================");
 		}
 	}
@@ -286,7 +288,7 @@ sub curl {
 	my $status = "";
 	my $status_line = "";
 
-	my @data = lines(run('curl', '-isL', $url, @flags));
+	my @data = lines(run({ stderr => 0 }, 'curl', '-isL', $url, @flags));
 
 	unless (scalar(@data) && $? == 0) {
 		# curl again to get stdout/err into concourse for debugging
@@ -303,7 +305,7 @@ sub curl {
 			last;
 		}
 	}
-	return $status, $status_line, join("", @data);
+	return $status, $status_line, join("\n", @data);
 }
 
 sub slurp {
