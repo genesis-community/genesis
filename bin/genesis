@@ -1758,6 +1758,28 @@ sub {
 	exit 0
 });
 # }}}
+# genesis ui-semver - Provides semver in support of hook scripts {{{
+command("ui-semver", <<EOF,
+genesis v$Genesis::VERSION
+USAGE genesis ui-semver [version] ge [min]
+
+Note: non-semantic versions (i.e. "latest", confusingly enough)
+are never valid for either side of a version assertion.
+
+GLOBAL OPTIONS (may not apply)
+$GLOBAL_USAGE
+EOF
+sub {
+
+	my %options;
+	options(\@_, \%options, qw(
+	));
+	usage(1) if @_ != 3 || $_[1] ne 'ge';
+
+	my ($have, undef, $min) = @_;
+	exit(new_enough($have, $min) ? 0 : 1);
+});
+# }}}
 
 ###########################################################################
 

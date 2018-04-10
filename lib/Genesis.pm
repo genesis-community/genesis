@@ -159,13 +159,14 @@ sub semver {
 		return wantarray ? ($1, $2 || 0, $3 || 0, (defined $4 ? $4 - 100000 : 0))
 		                 : [$1, $2 || 0, $3 || 0, (defined $4 ? $4 - 100000 : 0)];
 	}
-	return undef;
+	return;
 }
 
 sub new_enough {
 	my ($v, $min) = @_;
 	my @v = semver($v);
 	my @min = semver($min);
+	return 0 unless @v && @min;
 	while (@v) {
 		return 1 if $v[0] > $min[0];
 		return 0 if $v[0] < $min[0];

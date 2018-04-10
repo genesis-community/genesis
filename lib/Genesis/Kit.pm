@@ -102,6 +102,7 @@ sub run_hook {
 
 		$ENV{GENESIS_ROOT}               = $opts{env}->path;
 		$ENV{GENESIS_ENVIRONMENT}        = $opts{env}->name;
+		$ENV{GENESIS_TYPE}               = $opts{env}->type;
 		$ENV{GENESIS_VAULT_PREFIX}       = $opts{env}->prefix;
 		$ENV{GENESIS_REQUESTED_FEATURES} = join(' ', $opts{env}->features)
 			unless $hook eq 'new';

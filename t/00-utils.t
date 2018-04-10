@@ -257,6 +257,7 @@ subtest 'semantic versioning' => sub {
 		ok semver($good), "'$good' should be considered a valid semantic version";
 	}
 
+	ok !new_enough('latest',     '1.0.0'), "non-semver versions are never good enough";
 	ok  new_enough('1.0.0',      '1.0.0'), "1.0.0 is new enough to satisfy 1.0.0+";
 	ok  new_enough('1.0',        '1.0.0'), "1.0 is new enough to satisfy 1.0.0+";
 	ok  new_enough('1.1',        '1.0.0'), "1.1 is new enough to satisfy 1.0.0+";

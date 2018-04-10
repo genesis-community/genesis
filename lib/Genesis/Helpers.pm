@@ -41,6 +41,69 @@ once, without issue.
 
 __DATA__
 ###
+###   Exodus Data Exfiltration Functions
+###
+
+# exodus - lookup exodus data about this or other deployments / envs.
+#
+# USAGE:  exodus some-key
+#         exodus other-env/type their-key
+#
+# Examples:
+#
+#    # what version was I last deployed with?
+#    exodus kit_version
+#
+#    # what is the TSA URL of my Concourse?
+#    exodus my-proto/concourse tsa_url
+#
+#    # what is the CF URL of my local instance?
+#    exodus $GENESIS_ENVIRONMENT/cf api_url
+#
+exodus() {
+  # movement of the people
+  local __env __key
+  __env="$GENESIS_ENVIRONMENT/$GENESIS_TYPE"
+  __key=${1:?exodus() must provide at least an exodus key}
+  if [[ -n ${2:-} ]]; then
+    __key=$2
+    __env=$1
+  fi
+  if safe exists "secret/genesis/${__env}:${__key}"; then
+    safe get "secret/genesis/${__env}:${__key}"
+  fi
+}
+export -f exodus
+
+# have_exodus_data_for env/type - return true if exodus data exists
+#
+have_exodus_data_for() {
+  local __env=${1:?have_exodus_data_for() must provide an environment/type}
+  safe exists "secret/genesis/${__env}"
+  return $?
+}
+export -f have_exodus_data_for
+
+have_exodus_data() {
+  have_exodus_data_for "$GENESIS_ENVIRONMENT/$GENESIS_TYPE"
+  return $?
+}
+export -f have_exodus_data
+
+###
+### new_enough - Check semantic versions
+###
+### USAGE: new_enough $have $minimum
+###
+new_enough() {
+  local __have=${1:?new_enough() requires an actual version as the first argument}
+  local __min=${2:?new_enough() requires an actual version as the second argument}
+  $GENESIS_CALLBACK_BIN ui-semver "$__have" ge "$__min"
+  return $?
+}
+export -f new_enough
+
+###
 ###   Environment File Inspection Functions
 ###
 

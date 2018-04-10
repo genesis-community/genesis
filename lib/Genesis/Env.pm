@@ -91,6 +91,9 @@ sub file   { $_[0]->{file};   }
 sub prefix { $_[0]->{prefix}; }
 sub kit    { $_[0]->{kit};    }
 
+# delegations
+sub type { $_[0]->{top}->type; }
+
 sub path {
 	my ($self, @rest) = @_;
 	$self->{top}->path(@rest);
