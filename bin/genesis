@@ -890,7 +890,7 @@ USAGE: genesis deploy <options> env-name[.yml]
 
 OPTIONS
 $GLOBAL_USAGE
-  -n, --non-interactive  Do not ask any questions, assume 'y' for any that would
+  -y, --yes              Do not ask any questions, assume 'y' for any that would
                          normally be asked.  Allows automation to deploy without
                          requiring human intervention or expect-style scripting.
 
@@ -920,6 +920,7 @@ sub {
 	my %options = (redact => ! -t STDOUT);
 	options(\@_, \%options, qw/
 		non-interactive|n
+		yes|y
 		redact!
 		fix
 		recreate
@@ -932,13 +933,21 @@ sub {
 	check_prereqs;
 	my $env = Genesis::Top->new('.')->load_env($_[0]);
 
+	if ($options{'non-interactive'}) {
+		explain("#Y{WARNING:} the --non-interactive / -n options has been deprecated.");
+		explain("The -n flag is now an alias for --dry-run, which will NOT deploy anything.");
+		explain("You are encouraged to move over to --yes / -y for auto-confirmation.");
+		delete $options{'non-interactive'};
+		$options{yes} = 1;
+	}
+
 	if (scalar(grep {$_} ($options{fix}, $options{recreate}, $options{'dry-run'})) > 1) {
 		usage(1,"Can only specify one of --dry-run, --fix or --recreate");
 	}
 
-	if ($options{'non-interactive'}) {
-		$ENV{BOSH_NON_INTERACTIVE}='true';
-		delete $options{'non-interactive'};
+	if ($options{yes}) {
+		$ENV{BOSH_NON_INTERACTIVE} = 'true';
+		delete $options{yes};
 	}
 
 	if (!$env->needs_bosh_create_env) {
@@ -1304,6 +1313,10 @@ USAGE genesis repipe [pipeline-layout]
 
 OPTIONS
 $GLOBAL_USAGE
+  -y, --yes        Do not ask any questions, assume 'y' for any that would
+                   normally be asked.  Allows automation to repipe without
+                   requiring human intervention or expect-style scripting.
+
   -t, --target     The name of your Concourse target (per `fly targets'),
                    if it differs from the pipeline layout name.
 
@@ -1318,6 +1331,7 @@ EOF
 sub {
 	my %options;
 	options(\@_, \%options, qw/
+		yes|y
 		dry-run|n
 		target|t=s
 		config|c=s
@@ -1336,17 +1350,21 @@ sub {
 		exit 0;
 	}
 
+	my $yes = $options{yes} ? ' -n ' : '';
 	my $dir = workdir;
 	mkfile_or_fail("${dir}/pipeline.yml", $yaml);
 	run({ interactive => 1, onfailure => "Could not upload pipeline $pipeline->{pipeline}{name}" },
-		'fly','-t',$options{target},'set-pipeline','-p',$pipeline->{pipeline}{name},'-c',"${dir}/pipeline.yml");
+		'fly -t $1 set-pipeline '.$yes.' -p $2 -c $3/pipeline.yml',
+		$options{target}, $pipeline->{pipeline}{name}, $dir);
 
 	run({ interactive => 1, onfailure => "Could not unpause pipeline $pipeline->{pipeline}{name}" },
-		'fly','-t',$options{target},'unpause-pipeline','-p',$pipeline->{pipeline}{name});
+		'fly -t $1 unpause-pipeline -p $2',
+		$options{target}, $pipeline->{pipeline}{name});
 
 	my $action = ($pipeline->{pipeline}{public} ? 'expose' : 'hide');
 	run({ interactive => 1, onfailure => "Could not $action pipeline $pipeline->{pipeline}{name}" },
-		'fly','-t',$options{target},$action.'-pipeline','-p',$pipeline->{pipeline}{name});
+		'fly -t $1 '.$action.'-pipleine -p $2',
+		$options{target}, $pipeline->{pipeline}{name});
 
 	exit 0;
 });
