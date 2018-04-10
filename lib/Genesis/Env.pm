@@ -70,10 +70,9 @@ sub create {
 	}
 
 	## initialize the environment
-	if ($self->{kit}->has_hook('new')) {
-		$self->{kit}->run_hook('new', root  => $self->path,      # where does the yaml go?
-		                              env   => $self,            # what is it called?
-		                              vault => $self->{prefix}); # where do the secrets go?
+	if ($self->has_hook('new')) {
+		$self->run_hook('new', root  => $self->path,      # where does the yaml go?
+		                       vault => $self->{prefix}); # where do the secrets go?
 
 	} else {
 		Genesis::Legacy::new_environment($self);
@@ -400,6 +399,26 @@ sub deployment {
 	return $self->lookup('params.env') . '-' . $self->{top}->type;
 }
 
+sub has_hook {
+	my $self = shift;
+	return $self->kit->has_hook(@_);
+}
+
+sub run_hook {
+	my ($self, $hook, %opts) = @_;
+	return $self->kit->run_hook($hook, %opts, env => $self);
+}
+
+sub check {
+	my ($self) = @_;
+	$self->write_manifest("$self->{__tmp}/manifest.yml", redact => 0);
+
+	if ($self->has_hook('check')) {
+		return $self->run_hook('check', manifest => "$self->{__tmp}/manifest.yml");
+	}
+	return 1;
+}
+
 sub deploy {
 	my ($self, %opts) = @_;
 
@@ -449,15 +468,12 @@ sub deploy {
 
 sub add_secrets { # WIP - majorly broken right now.  sorry bout that.
 	my ($self, %opts) = @_;
-	my $kit = $self->{kit};
 
-	if ($kit->has_hook('secrets')) {
-		$kit->run_hook('secrets', action   => 'add',
-		                          env      => $self,
-		                          vault    => $self->{prefix},
-		                          recreate => $opts{recreate});
+	if ($self->has_hook('secrets')) {
+		$self->run_hook('secrets', action => $opts{recreate} ? 'new' : 'add',
+		                           vault  => $self->{prefix});
 	} else {
-		Genesis::Legacy::vaultify_secrets($kit,
+		Genesis::Legacy::vaultify_secrets($self->kit,
 			env       => $self,
 			prefix    => $self->{prefix},
 			scope     => $opts{recreate} ? 'force' : 'add',
@@ -467,15 +483,13 @@ sub add_secrets { # WIP - majorly broken right now.  sorry bout that.
 
 sub check_secrets {
 	my ($self) = @_;
-	my $kit = $self->{kit};
 
-	if ($kit->has_hook('secrets')) {
-		$kit->run_hook('secrets', action => 'check',
-		                          env    => $self->{name},
-		                          vault  => $self->{prefix});
+	if ($self->has_hook('secrets')) {
+		$self->run_hook('secrets', action => 'check',
+		                           vault  => $self->{prefix});
 		return 1; # FIXME
 	} else {
-		my $rc = Genesis::Legacy::check_secrets($kit,
+		my $rc = Genesis::Legacy::check_secrets($self->kit,
 			env       => $self,
 			prefix    => $self->{prefix},
 			features  => [$self->features]);
@@ -485,15 +499,12 @@ sub check_secrets {
 
 sub rotate_secrets {
 	my ($self, %opts) = @_;
-	my $kit = $self->{kit};
 
-	if ($kit->has_hook('secrets')) {
-		$kit->run_hook('secrets', action => 'rotate',
-		                          force  => $opts{force},
-		                          env    => $self->{name},
-		                          vault  => $self->{prefix});
+	if ($self->has_hook('secrets')) {
+		$self->run_hook('secrets', action => 'rotate',
+		                           vault  => $self->{prefix});
 	} else {
-		Genesis::Legacy::vaultify_secrets($kit,
+		Genesis::Legacy::vaultify_secrets($self->kit,
 			env       => $self,
 			prefix    => $self->{prefix},
 			scope     => $opts{force} ? 'force' : '',

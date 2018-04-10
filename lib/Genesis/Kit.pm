@@ -92,10 +92,10 @@ sub run_hook {
 	$ENV{GENESIS_KIT_VERSION}  = $self->version;
 
 	die "Unrecognized hook '$hook'\n"
-		unless grep { $_ eq $hook } qw/new blueprint secrets info addon
+		unless grep { $_ eq $hook } qw/new blueprint secrets info addon check
 		                               prereqs subkit/;
 
-	if (grep { $_ eq $hook } qw/new secrets info addon prereqs/) {
+	if (grep { $_ eq $hook } qw/new secrets info addon check prereqs/) {
 		# env is REQUIRED
 		bug("The 'env' option to run_hook is required for the '$hook' hook!!")
 			unless $opts{env};
@@ -122,7 +122,7 @@ sub run_hook {
 		);
 
 	} elsif ($hook eq 'secrets') {
-		@args = ($opts{action});
+		$ENV{GENESIS_SECRET_ACTION} = $opts{action};
 
 	} elsif ($hook eq 'blueprint') {
 		$ENV{GENESIS_REQUESTED_FEATURES} = join(' ', @{$opts{features}});
@@ -131,13 +131,17 @@ sub run_hook {
 		$ENV{GENESIS_ADDON_SCRIPT} = $opts{script};
 		@args = @{$opts{args} || []};
 
+	} elsif ($hook eq 'check') {
+		$ENV{GENESIS_CHECK}        = $opts{check};
+		$ENV{GENESIS_CLOUD_CONFIG} = $opts{'cloud-config'} || '';
+
 	##### LEGACY HOOKS
 	} elsif ($hook eq 'subkit') {
 		@args = @{ $opts{features} };
 	}
 
 	chmod 0755, $self->path("hooks/$hook");
-	my ($out, $rc) = run({ interactive => scalar $hook =~ m/^(addon|new|info)$/,
+	my ($out, $rc) = run({ interactive => scalar $hook =~ m/^(addon|new|info|check|secrets)$/,
 	                       stderr => '&2' },
 		'cd "$1"; source .helper; hook=$2; shift 2; ./hooks/$hook "$@"',
 		$self->path, $hook, @args);
@@ -170,6 +174,14 @@ sub run_hook {
 		}
 		$out =~ s/^\s+//;
 		return split(/\s+/, $out);
+	}
+
+	if ($hook eq 'check') {
+		return $rc == 0 ? 1 : 0;
+	}
+
+	if ($hook eq 'secrets' && $opts{action} eq 'check') {
+		return $rc == 0 ? 1 : 0;
 	}
 
 	if ($rc != 0) {
@@ -318,7 +330,7 @@ Maps feature flags in an environment onto manifest fragment YAML files in
 the kit, prescribing order and augmenting feature selection with additional
 logic as needed.
 
-=head2 secret
+=head2 secrets
 
 Manages automatic generation of non-Credhub secrets that are stored in the
 shared Genesis Vault.  This hook is repoonsible for determining if secrets

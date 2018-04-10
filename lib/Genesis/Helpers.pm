@@ -41,6 +41,74 @@ once, without issue.
 
 __DATA__
 ###
+###   Environment File Inspection Functions
+###
+
+# lookup key [default]
+#
+# Looks up the key in the environment files, taken as
+# an skip-eval'd spruce merge.
+#
+# If the key is not found, $default is returned as a
+# value.  If $default is not set, the empty string will
+# be used instead.
+#
+lookup() {
+  local __key=${1:?lookup() - must specify a key to look up}
+  local __default=${2:-}
+
+  $GENESIS_CALLBACK_BIN -C "$GENESIS_ROOT" lookup "$__key" $GENESIS_ENVIRONMENT "$__default"
+}
+export -f lookup
+
+###
+###   Cloud-Config Inspection Functions
+###
+
+declare -a __cloud_config_error_messages
+__cloud_config_ok=yes
+export __cloud_config_ok
+
+cloud_config_needs() {
+  local __type=${1:?cloud_config_needs() - must specify a type}; shift
+  local __name
+  case "${__type}" in
+  vm_type|vm_types)            __type=vm_types;      __name=vm_type      ;;
+  vm_extension|vm_extensions)  __type=vm_extensions; __name=vm_extension ;;
+  network|networks)            __type=networks;      __name=network      ;;
+  disk_type|disk_types)        __type=disk_types;    __name=disk_type    ;;
+  az|azs)                      __type=azs;           __name=az           ;;
+  *) echo >&2 "cloud_config_needs(): invalid cloud-config object type '$__type'; must be one of"
+     echo >&2 "                      'vm_type', 'vm_extension', 'disk_type', or 'az'"
+     exit 77 ;;
+  esac
+
+  local __want __have
+  for __want in "$@"; do
+    __have=$(spruce json "$GENESIS_CLOUD_CONFIG" | \
+      jq -r "if (.${__type}[] | select(.name == \"$__want\")) then 1 else 0 end")
+    if [[ -z "$__have" ]]; then
+      __cloud_config_ok=no
+      __cloud_config_error_messages+=( "no #Y{$__name} named '#Y{$__want}' found, which is required" )
+    fi
+  done
+}
+export -f cloud_config_needs
+
+check_cloud_config() {
+  if [[ ${__cloud_config_ok} != "yes" ]]; then
+    describe "#R{Errors were encountered} in your cloud-config:"
+    local __e
+    for __e in "${__cloud_config_error_messages[@]}"; do
+      describe " - ${__e}"
+    done
+    echo
+    exit 1
+  fi
+}
+export -f check_cloud_config
+
+###
 ###   Feature Flag Functions
 ###
 
@@ -125,7 +193,7 @@ export -f validate_features
 
 
 describe() {
-	$GENESIS_CALLBACK_BIN ui-describe ""  "$@"
+	$GENESIS_CALLBACK_BIN ui-describe "$@"
 }
 export -f describe
 

@@ -12,7 +12,7 @@ use JSON::PP qw/encode_json/;
 # dependencies have to be placed in lib/
 
 # core modules
-use Getopt::Long qw/GetOptionsFromArray :config no_ignore_case/;
+use Getopt::Long qw/GetOptionsFromArray :config no_ignore_case bundling/;
 use File::Temp qw/tempdir tempfile/;
 use File::Basename qw/dirname basename/;
 use POSIX qw/strftime/;
@@ -527,6 +527,8 @@ COMMANDS
   compile-kit      Create a distributable kit archive from dev.
   decompile-kit    Unpack a kit archive to dev.
   deploy           Generate a real manifest using Vault + Cloud Config, and deploy it to BOSH.
+  check            Check a deployment manifest for errors, without deploying it.
+  do               Run an addon script provided by the Kit.  Try `do list`
   describe         Describe a Concourse pipeline, in words.
   download         Download a Genesis Kit from the Internet.
   graph            Draw a Concourse pipeline.
@@ -771,6 +773,115 @@ sub {
 
 
 # }}}
+# genesis check - generate the manifest and run the check hook {{{
+
+command("check", <<EOF,
+genesis v$Genesis::VERSION
+USAGE: genesis check <options> env-name[.yml]
+
+OPTIONS
+$GLOBAL_USAGE
+
+    --secrets       Only check secrets, don't do the others.      (secrets check)
+    --cloud-config  Only check cloud-config, don't do the others. (check cloud-config)
+    --parameters    Check the parameters in the env files.        (check parameters)
+    --manifest      Check that we can merge the manifest.         (manifest -- not a hook)
+
+
+genesis check
+genesis check -csm
+genesis check --check-cloud-config --check-secrets --check-manifest
+genesis check -cs --cloud-config ./cc.yml
+
+EOF
+sub {
+	my %options = (redact => ! -t STDOUT);
+	options(\@_, \%options, qw/
+		check-secrets|s
+		check-cloud-config|c
+		check-parameters|p
+		check-manifest|m
+		cloud-config|cc=s
+	/);
+	usage(1) if @_ != 1;
+
+	my %check = (
+		secrets     => 1,
+		cloudconfig => 1,
+		parameters  => 1,
+		manifest    => 1,
+	);
+	if ($options{'check-secrets'}
+	 || $options{'check-cloud-config'}
+	 || $options{'check-parameters'}
+	 || $options{'check-manifest'}) {
+			delete $check{secrets}     unless $options{'check-secrets'};
+			delete $check{cloudconfig} unless $options{'check-cloud-config'};
+			delete $check{parameters}  unless $options{'check-parameters'};
+			delete $check{manifest}    unless $options{'check-manifest'};
+	}
+
+	check_prereqs;
+	my $env = Genesis::Top->new('.')->load_env($_[0]);
+
+	my $ok = 1;
+
+	if ($check{cloudconfig} && !$env->needs_bosh_create_env) {
+		if (!$env->has_hook('check')) {
+			explain "#Y{%s does not define a 'check' hook; cloud-config checks cannot be run.}", $env->kit->id;
+
+		} else {
+			my $cc = $options{'cloud-config'};
+			if ($cc) {
+				$cc = Cwd::abs_path($cc)
+					or bail "$cc: no such file or directory";
+				explain "(using supplied #W{cloud-config}: #M{%s})", $cc;
+
+			} else {
+				explain "(downloading #W{cloud-config} from #M{%s} BOSH)", $env->bosh_target;
+
+				$cc = workdir."/cloud.yml";
+				Genesis::BOSH->download_cloud_config($env->bosh_target, $cc);
+			}
+
+			explain "[#C{%s}] running cloud-config checks...", $env->name;
+			$env->run_hook('check', check          => 'cloud-config',
+				                    'cloud-config' => $cc)
+				or $ok = 0;
+		}
+	}
+
+	if ($check{parameters}) {
+		explain "[#C{%s}] running environmental parameters checks...", $env->name;
+		if (!$env->has_hook('check')) {
+			explain "#Y{%s does not define a 'check' hook; parameters checks cannot be run.}", $env->kit->id;
+		} else {
+			$env->run_hook('check', check => 'parameters')
+				or $ok = 0;
+		}
+	}
+
+	if ($check{secrets}) {
+		explain "[#C{%s}] running credentials / certificates checks...", $env->name;
+		$env->check_secrets
+			or $ok = 0;
+	}
+
+	if ($check{manifest}) {
+		explain "[#C{%s}] running manifest viability checks...", $env->name;
+		$env->manifest
+			or $ok = 0;
+	}
+
+	if ($ok) {
+		explain "[#C{%s}] all checks succeeded, #G{preflight ok}", $env->name;
+		exit 0;
+	} else {
+		explain "[#C{%s}] #R{PREFLIGHT FAILED}", $env->name;
+		exit 1;
+	}
+});
+# }}}
 # genesis deploy - Pull in Cloud Config, Generate a manifest, deploy {{{
 
 command("deploy", <<EOF,
@@ -835,7 +946,66 @@ sub {
 		Genesis::BOSH->download_cloud_config($env->bosh_target, $cloud);
 		$env->use_cloud_config($cloud);
 	}
+
+	explain "Running preflight checks against #C{%s}", $env->name;
+	$env->check
+		or bail "Kit #R{preflight checks failed}; deployment operation #R{halted}.";
+
+	explain "Preflight #G{ok}, deploying %s...", $env->name;
 	$env->deploy(%options);
+});
+# }}}
+# genesis do - run a kit addon {{{
+
+command("do", <<EOF,
+genesis v$Genesis::VERSION
+USAGE: genesis do <options> env-name[.yml] action [args ...]
+
+OPTIONS
+$GLOBAL_USAGE
+EOF
+sub {
+	my %options;
+	options(\@_, \%options, qw/
+	/);
+	usage(1) if @_ < 2;
+	check_prereqs;
+
+	my ($name, $script, @args) = @_;
+	my $env = Genesis::Top->new('.')->load_env($name);
+
+	$env->has_hook('addon')
+		or bail "#R{Kit %s does not provide an addon hook!}", $env->kit->id;
+
+	explain "Running #G{%s} addon for #C{%s}", $script, $env->name;
+	$env->run_hook('addon', script => $script, args => \@args)
+		or exit 1;
+});
+# }}}
+# genesis info - get deployment environment information from  a kit{{{
+
+command("info", <<EOF,
+genesis v$Genesis::VERSION
+USAGE: genesis info <options> env-name[.yml]
+
+OPTIONS
+$GLOBAL_USAGE
+EOF
+sub {
+	my %options;
+	options(\@_, \%options, qw/
+	/);
+	usage(1) if @_ != 1;
+	check_prereqs;
+
+	my ($name) = @_;
+	my $env = Genesis::Top->new('.')->load_env($name);
+
+	if (!$env->has_hook('info')) {
+		explain "no additional information available for %s", $name;
+	} else {
+		$env->run_hook('info');
+	}
 });
 # }}}
 # genesis secrets - Generate / Rotate required credentials for an environment. {{{

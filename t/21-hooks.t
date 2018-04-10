@@ -195,9 +195,97 @@ subtest 'blueprint hook' => sub {
 };
 
 subtest 'secrets hook' => sub {
+	my ($rc, $s, $value);
+
+	again();
+	vault_ok();
+
+	## secrets check
+	qx(safe rm secret/snw/lab/dev/thing/args secret/snw/lab/dev/thing/env);
+	stdout_is(sub { $rc = $fancy->run_hook('secrets', env => $snw_lab_dev,
+	                                                  action => 'check') }, <<EOF,
+[admin:password] is missing
+EOF
+		"[fancy] 'secrets check' hook output should be correct");
+	ok !$rc, "[fancy] running the 'secrets check' hook should return failure if anything is missing";
+
+	$s = 'secret/snw/lab/dev/thing/args';
+	is secret("$s:all"), '{}', "'secrets check' hook should get no arguments";
+
+	$s = 'secret/snw/lab/dev/thing/env';
+	is secret("$s:GENESIS_KIT_NAME"),      'dev',               'check:GENESIS_KIT_NAME';
+	is secret("$s:GENESIS_KIT_VERSION"),   'latest',            'check:GENESIS_KIT_VERISON';
+	is secret("$s:GENESIS_ROOT"),          $top->path,          'check:GENESIS_ROOT';
+	is secret("$s:GENESIS_ENVIRONMENT"),   'snw-lab-dev',       'check:GENESIS_ENVIRONMENT';
+	is secret("$s:GENESIS_VAULT_PREFIX"),  'snw/lab/dev/thing', 'check:GENESIS_VAULT_PREFIX';
+	is secret("$s:GENESIS_SECRET_ACTION"), 'check',             'check:GENESIS_SECRET_ACTION';
+
+
+	## secrets add
+	qx(safe rm secret/snw/lab/dev/thing/args secret/snw/lab/dev/thing/env);
+	stdout_is(sub { $rc = $fancy->run_hook('secrets', env => $snw_lab_dev,
+	                                                  action => 'add') }, <<EOF,
+[admin:password] generating new administrator password
+EOF
+		"[fancy] 'secrets add' hook output should be correct");
+	ok $rc, "[fancy] running the 'secrets add' hook should succeed";
+
+	$s = 'secret/snw/lab/dev/thing/args';
+	is secret "$s:all", '{}', "'secrets add' hook should get no arguments";
+
+	$s = 'secret/snw/lab/dev/thing/env';
+	is secret("$s:GENESIS_KIT_NAME"),      'dev',               'add:GENESIS_KIT_NAME';
+	is secret("$s:GENESIS_KIT_VERSION"),   'latest',            'add:GENESIS_KIT_VERISON';
+	is secret("$s:GENESIS_ROOT"),          $top->path,          'add:GENESIS_ROOT';
+	is secret("$s:GENESIS_ENVIRONMENT"),   'snw-lab-dev',       'add:GENESIS_ENVIRONMENT';
+	is secret("$s:GENESIS_VAULT_PREFIX"),  'snw/lab/dev/thing', 'add:GENESIS_VAULT_PREFIX';
+	is secret("$s:GENESIS_SECRET_ACTION"), 'add',               'add:GENESIS_SECRET_ACTION';
+
+	## secrets check (after an add)
+	stdout_is(sub { $rc = $fancy->run_hook('secrets', env => $snw_lab_dev,
+	                                                  action => 'check') }, <<EOF,
+all secrets and certs present!
+EOF
+		"[fancy] 'secrets check' hook output should be correct");
+	ok $rc, "[fancy] running the 'secrets check' hook should succeed if all secrets are present";
+
+
+	## secrets rotate
+	stdout_is(sub { $rc = $fancy->run_hook('secrets', env => $snw_lab_dev,
+	                                                  action => 'rotate') }, <<EOF,
+[admin:password] rotating administrator password
+EOF
+		"[fancy] 'secrets rotate' hook should succeed");
+
+	$s = 'secret/snw/lab/dev/thing/args';
+	is secret "$s:all", '{}', "'secrets rotate' hook should get no arguments";
+
+	$s = 'secret/snw/lab/dev/thing/env';
+	is secret("$s:GENESIS_KIT_NAME"),      'dev',               'rotate:GENESIS_KIT_NAME';
+	is secret("$s:GENESIS_KIT_VERSION"),   'latest',            'rotate:GENESIS_KIT_VERISON';
+	is secret("$s:GENESIS_ROOT"),          $top->path,          'rotate:GENESIS_ROOT';
+	is secret("$s:GENESIS_ENVIRONMENT"),   'snw-lab-dev',       'rotate:GENESIS_ENVIRONMENT';
+	is secret("$s:GENESIS_VAULT_PREFIX"),  'snw/lab/dev/thing', 'rotate:GENESIS_VAULT_PREFIX';
+	is secret("$s:GENESIS_SECRET_ACTION"), 'rotate',            'rotate:GENESIS_SECRET_ACTION';
+
+	teardown_vault();
+};
+
+subtest 'check hook' => sub {
 	again();
 
-	ok 1;
+	my $rc;
+	stdout_is(sub { $rc = $fancy->run_hook('check', env => $snw_lab_dev) }, <<EOF,
+everything checks out!
+EOF
+		"[fancy] check hook output should be correct");
+	ok $rc, "[fancy] running the 'check' hook should succeed";
+
+	{
+		local $ENV{HOOK_SHOULD_FAIL} = 'yes';
+		throws_ok { $fancy->run_hook('check', env => $snw_lab_dev) }
+			qr/could not run 'check' hook/i;
+	}
 };
 
 subtest 'addon hook' => sub {
