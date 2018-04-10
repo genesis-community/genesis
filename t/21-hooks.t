@@ -29,6 +29,7 @@ my $stack_scale;
 
 sub again {
 	system("rm -rf $tmp; mkdir -p $tmp");
+	fake_bosh;
 	$top    = Genesis::Top->create($tmp, 'thing');
 	$root   = $top->path;
 	$simple = Genesis::Kit::Dev->new("t/src/simple");

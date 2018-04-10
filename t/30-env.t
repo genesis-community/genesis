@@ -12,6 +12,8 @@ use_ok 'Genesis::Env';
 use Genesis::Top;
 use Genesis;
 
+fake_bosh;
+
 subtest 'new() validation' => sub {
 	throws_ok { Genesis::Env->new() }
 		qr/no 'name' specified.*this is a bug/is;
