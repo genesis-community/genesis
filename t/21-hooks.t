@@ -154,11 +154,11 @@ EOF
 subtest 'blueprint hook' => sub {
 	again();
 
-	cmp_deeply([$simple->run_hook('blueprint', features => [$us_west_1_prod->features])], [qw[
+	cmp_deeply([$simple->run_hook('blueprint', env => $us_west_1_prod)], [qw[
 			manifest.yml
 		]], "[simple] blueprint hook should return the relative manifest file paths");
 
-	cmp_deeply([$fancy->run_hook('blueprint', features => [$snw_lab_dev->features])], [qw[
+	cmp_deeply([$fancy->run_hook('blueprint', env => $snw_lab_dev)], [qw[
 			base.yml
 			addons/alpha.yml
 			addons/foxtrot.yml
@@ -170,19 +170,19 @@ subtest 'blueprint hook' => sub {
 
 	{
 		local $ENV{HOOK_SHOULD_FAIL} = 'yes';
-		throws_ok { $fancy->run_hook('blueprint', features => [$snw_lab_dev->features]); }
+		throws_ok { $fancy->run_hook('blueprint', env => $snw_lab_dev); }
 			qr/could not determine which yaml files/i;
 	}
 
 	{
 		local $ENV{HOOK_NO_BLUEPRINT} = 'yes';
-		throws_ok { $fancy->run_hook('blueprint', features => [$snw_lab_dev->features]); }
+		throws_ok { $fancy->run_hook('blueprint', env => $snw_lab_dev); }
 			qr/could not determine which yaml files/i;
 	}
 
 	{
 		local $ENV{HOOK_SHOULD_BE_AIRY} = 'yes';
-		cmp_deeply([$fancy->run_hook('blueprint', features => [$snw_lab_dev->features])], [qw[
+		cmp_deeply([$fancy->run_hook('blueprint', env => $snw_lab_dev)], [qw[
 				base.yml
 				addons/alpha.yml
 				addons/foxtrot.yml

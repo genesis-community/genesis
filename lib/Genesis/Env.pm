@@ -339,7 +339,7 @@ EOF
 
 sub kit_files {
 	my ($self, $absolute) = @_;
-	return $self->{kit}->source_yaml_files([$self->features], $absolute),
+	return $self->{kit}->source_yaml_files($self, $absolute),
 }
 
 sub _flatten {

@@ -95,17 +95,18 @@ sub run_hook {
 		unless grep { $_ eq $hook } qw/new blueprint secrets info addon check
 		                               prereqs subkit/;
 
-	if (grep { $_ eq $hook } qw/new secrets info addon check prereqs/) {
+	if (grep { $_ eq $hook } qw/new secrets info addon check prereqs blueprint/) {
 		# env is REQUIRED
 		bug("The 'env' option to run_hook is required for the '$hook' hook!!")
 			unless $opts{env};
 
-		$ENV{GENESIS_ROOT}         = $opts{env}->path;
-		$ENV{GENESIS_ENVIRONMENT}  = $opts{env}->name;
-		$ENV{GENESIS_VAULT_PREFIX} = $opts{env}->prefix;
+		$ENV{GENESIS_ROOT}               = $opts{env}->path;
+		$ENV{GENESIS_ENVIRONMENT}        = $opts{env}->name;
+		$ENV{GENESIS_VAULT_PREFIX}       = $opts{env}->prefix;
+		$ENV{GENESIS_REQUESTED_FEATURES} = join(' ', $opts{env}->features)
+			unless $hook eq 'new';
 
-	} elsif (grep { $_ eq $hook } qw/blueprint subkit/) {
-		# features is REQUIRED
+	} elsif ($hook eq 'subkit') {
 		bug("The 'features' option to run_hook is required for the '$hook' hook!!")
 			unless $opts{features};
 
@@ -123,9 +124,6 @@ sub run_hook {
 
 	} elsif ($hook eq 'secrets') {
 		$ENV{GENESIS_SECRET_ACTION} = $opts{action};
-
-	} elsif ($hook eq 'blueprint') {
-		$ENV{GENESIS_REQUESTED_FEATURES} = join(' ', @{$opts{features}});
 
 	} elsif ($hook eq 'addon') {
 		$ENV{GENESIS_ADDON_SCRIPT} = $opts{script};
@@ -222,17 +220,17 @@ sub check_prereqs {
 }
 
 sub source_yaml_files {
-	my ($self, $features, $absolute) = @_;
-	$features ||= [];
+	my ($self, $env, $absolute) = @_;
 
 	my @files;
 	if ($self->has_hook('blueprint')) {
-		@files = $self->run_hook('blueprint', features => $features);
+		@files = $self->run_hook('blueprint', env => $env);
 		if ($absolute) {
 			@files = map { $self->path($_) } @files;
 		}
 
 	} else {
+		my $features = [$env->features];
 		Genesis::Legacy::validate_features($self, @$features);
 		@files = $self->glob("base/*.yml", $absolute);
 		push @files, map { $self->glob("subkits/$_/*.yml", $absolute) } @$features;
