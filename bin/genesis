@@ -835,7 +835,7 @@ sub {
 
 	if ($check{cloudconfig} && !$env->needs_bosh_create_env) {
 		if (!$env->has_hook('check')) {
-			explain "#Y{%s does not define a 'check' hook; cloud-config checks cannot be run.}", $env->kit->id;
+			explain "#Y{%s does not define a 'check' hook; cloud-config checks will be skipped.}", $env->kit->id;
 
 		} else {
 			my $cc = $options{'cloud-config'};
@@ -861,7 +861,7 @@ sub {
 	if ($check{parameters}) {
 		explain "[#C{%s}] running environmental parameters checks...", $env->name;
 		if (!$env->has_hook('check')) {
-			explain "#Y{%s does not define a 'check' hook; parameters checks cannot be run.}", $env->kit->id;
+			explain "#Y{%s does not define a 'check' hook; parameters checks will be skipped.}", $env->kit->id;
 		} else {
 			$env->run_hook('check', check => 'parameters')
 				or $ok = 0;
