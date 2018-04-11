@@ -5,7 +5,7 @@ use warnings;
 our $VERSION = "(development)";
 our $GITHUB  = "https://github.com/starkandwayne/genesis";
 
-use File::Basename qw/basename/;
+use File::Basename qw/basename dirname/;
 use Cwd ();
 
 use base 'Exporter';
@@ -324,6 +324,13 @@ sub mkfile_or_fail {
 		$mode = undef;
 	}
 	trace("creating file $file");
+
+	my $dir = dirname($file);
+	if ($dir && ! -d $dir) {
+		trace("creating parent directories $dir");
+		mkdir_or_fail($dir);
+	}
+
 	eval {
 		open my $fh, ">", $file or die "Unable to open $file for writing: $!";
 		print $fh $content;
