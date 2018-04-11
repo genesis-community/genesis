@@ -21,7 +21,7 @@ sub validate {
 		return 0;
 	}
 
-	for my $hook (qw(new secrets blueprint info addon)) {
+	for my $hook (qw(new secrets blueprint info addon check)) {
 		next unless -e "$self->{root}/hooks/$hook";
 		if (!-f "$self->{root}/hooks/$hook") {
 			error "Hook script hooks/$hook is not a regular file.";
