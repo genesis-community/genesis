@@ -57,44 +57,48 @@ sub envdefault {
 	return defined $ENV{$var} ? $ENV{$var} : $default;
 }
 
+sub _color {
+	my ($fg, $bg) = split(//, $_[0]);
+	my @c = (  # NOTE: backgrounds only use the darker version
+		'Kk',    # dark grey/black)
+		'Rr',    # light red/red
+		'Gg',    # light green/green
+		'Yy',    # yellow/amber
+		'Bb',    # light blue/blue
+		'MmPp',  # light magenta/magenta/light purple/purple
+		'Cc',    # light cyan/dark cyan
+		'Ww'     # light grey/white
+	);
+	my $fid = (grep {$c[$_] =~ qr/$fg/} 0..7 || ())[0];
+	my $bid = (grep {$c[$_] =~ qr/$bg/} 0..7 || ())[0];
+	return "" unless defined $fid || defined $bid;
+	my @cc;
+	push @cc, "1" if $fg eq uc($fg);
+	push @cc, "3$fid" if defined $fid;
+	push @cc, "4$bid" if defined $bid;
+	return "\e[".join(";",@cc)."m";
+}
+
 sub _colorize {
 	my ($c, $msg) = @_;
 	return $msg if envset('NOCOLOR');
-	$c = substr $c, 1, 1;
-	my %color = (
-		'k'		=> "\e[30m",     #black
-		'K'		=> "\e[1;30m",   #black (BOLD)
-		'r'		=> "\e[31m",     #red
-		'R'		=> "\e[1;31m",   #red (BOLD)
-		'g'		=> "\e[32m",     #green
-		'G'		=> "\e[1;32m",   #green (BOLD)
-		'y'		=> "\e[33m",     #yellow
-		'Y'		=> "\e[1;33m",   #yellow (BOLD)
-		'b'		=> "\e[34m",     #blue
-		'B'		=> "\e[1;34m",   #blue (BOLD)
-		'm'		=> "\e[35m",     #magenta
-		'M'		=> "\e[1;35m",   #magenta (BOLD)
-		'p'		=> "\e[35m",     #purple (alias for magenta)
-		'P'		=> "\e[1;35m",   #purple (BOLD)
-		'c'		=> "\e[36m",     #cyan
-		'C'		=> "\e[1;36m",   #cyan (BOLD)
-		'w'		=> "\e[37m",     #white
-		'W'		=> "\e[1;37m",   #white (BOLD)
-	);
+	my ($fg,$bg) = split //, (substr $c, 1, 2);
 
-	if ($c eq "*") {
+	if ($fg eq "*" || $bg eq "*") {
 		my @rainbow = ('R','G','Y','B','M','C');
 		my $i = 0;
 		my $msgc = "";
 		foreach my $char (split //, $msg) {
-			$msgc = $msgc . "$color{$rainbow[$i%6]}$char";
+			my $fr = $fg eq "*" ? $rainbow[$i%6] : $fg;
+			my $br = $bg eq "*" ? $rainbow[($i+3)%6] : $bg;
+			$msgc = $msgc . _color($fr.$br)."$char";
 			if ($char =~ m/\S/) {
 				$i++;
 			}
 		}
 		return "$msgc\e[0m";
 	} else {
-		return "$color{$c}$msg\e[0m";
+		return _color($fg.$bg)."$msg\e[0m";
 	}
 }
 
@@ -102,7 +106,7 @@ sub csprintf {
 	my ($fmt, @args) = @_;
 	return '' unless $fmt;
 	my $s = sprintf($fmt, @args);
-	$s =~ s/(#[KRGYBMPCW*]\{)(.*?)(\})/_colorize($1, $2)/egi;
+	$s =~ s/(#[KRGYBMPCW*]{1,2}\{)(.*?)(\})/_colorize($1, $2)/egi;
 	return $s;
 }
 sub explain {
