@@ -3,6 +3,8 @@ use strict;
 use warnings;
 
 our $VERSION = "(development)";
+our $BUILD   = "";
+
 our $GITHUB  = "https://github.com/starkandwayne/genesis";
 
 use File::Basename qw/basename dirname/;
@@ -141,6 +143,15 @@ sub bail {
 
 sub bug {
 	my (@msg) = @_;
+
+	if ($Genesis::VERSION =~ /dev/) {
+		$! = 2; die csprintf(@msg)."\n".
+		            csprintf("This is a bug in Genesis itself.\n").
+		            csprintf("#Y{NOTE: This is a development build of Genesis.}\n").
+		            csprintf("      Please try to reproduce this behavior with an\n").
+		            csprintf("      officially-released version before submitting\n").
+		            csprintf("      issues to the Genesis Github Issue Tracker.\n\n");
+	}
 
 	$! = 2; die csprintf(@msg)."\n".
 	            csprintf("#R{This is a bug in Genesis itself.}\n").

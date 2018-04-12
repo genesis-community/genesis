@@ -5,6 +5,7 @@ use warnings;
 
 use Digest::SHA;
 use MIME::Base64 qw(encode_base64);
+use POSIX qw(strftime);
 
 ######################################################################
 
@@ -25,18 +26,22 @@ die "Could not copy library into the package staging area\n" if $?;
 # ---
 my $stub_out = ($ENV{GENESIS_PACK_PATH}||".")."/genesis-";
 my $VERSION = $ARGV[0] || '';
+
+chomp(my $sha1 = qx(git rev-parse HEAD));
+$sha1 = substr($sha1, 0, 10);
+
 if ($VERSION) {
 	$stub_out .= $VERSION;
 } else {
-	chomp(my $sha1 = qx(git rev-parse HEAD));
-	$sha1 = substr($sha1, 0, 10);
-	$stub_out .= "$sha1";
-	if (qx(git status --porcelain bin/genesis bin/genesis-v1 lib/)) {
-		$sha1 .= '+';
-		$stub_out .= "-dirty";
-	}
-	$VERSION = "2.x.x (devel-$sha1)";
+	$VERSION = '2.x.x-dev';
+	$stub_out .= "dev-$sha1";
 }
+
+if (qx(git status --porcelain bin/genesis bin/genesis-v1 lib/)) {
+	$sha1 .= '+';
+	$stub_out .= '-dirty';
+}
+my $BUILD = "($sha1) build ".strftime("%Y%m%d.%H%M%S", gmtime);
 
 # ---
 # Brand script with version
@@ -48,6 +53,7 @@ open my $in, "<", "bin/genesis"
 
 while (<$in>) {
 	s/^(\$Genesis::VERSION) = .*$/$1 = \"$VERSION\";/;
+	s/^(\$Genesis::BUILD) = .*$/$1 = \" $BUILD\";/;
 	print $out $_;
 }
 

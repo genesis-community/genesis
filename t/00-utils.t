@@ -12,6 +12,7 @@ use_ok 'Genesis';
 use Cwd ();
 
 subtest 'bug reporting utilities' => sub {
+	local $Genesis::VERSION = '2.6.0';
 	throws_ok { bug("an example bug"); } qr{
 			an \s+ example \s+ bug.*
 			a \s+ bug \s+ in \s+ genesis.*

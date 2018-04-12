@@ -523,6 +523,7 @@ EOF
 	is $env->bosh_target, "override-me", "with a params.bosh, it becomes the BOSH target";
 
 	{
+		$env = $top->load_env('standalone');
 		local $ENV{GENESIS_BOSH_ENVIRONMENT} = "https://127.0.0.86:25555";
 		is $env->bosh_target, "https://127.0.0.86:25555", "the \$GENESIS_BOSH_ENVIRONMENT overrides all";
 	}
