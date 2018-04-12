@@ -856,9 +856,12 @@ sub {
 	my $env = Genesis::Top->new('.')->load_env($_[0]);
 
 	if ($options{'non-interactive'}) {
-		explain("#Y{WARNING:} the --non-interactive / -n options has been deprecated.");
-		explain("The -n flag is now an alias for --dry-run, which will NOT deploy anything.");
-		explain("You are encouraged to move over to --yes / -y for auto-confirmation.");
+		explain "\n#yr{%s}", "="x71;
+		explain "\e[5m#Yr{ WARNING: }#wr{the }#Wr{--non-interactive|-n}#wr{ options has been deprecated.        }";
+		explain "#wr{ The }#Wr{-n}#wr{ flag will become an alias for }#Wr{--dry-run}#wr{ in Genesis v2.7,       }";
+		explain "#wr{ which will hang on a prompt to proceed before checking if deployable. }";
+		explain "#wr{ You are encouraged to move over to }#Wr{--yes|-y}#wr{ for auto-confirmation.    }";
+		explain "#yr{%s}\n", "="x71;
 		delete $options{'non-interactive'};
 		$options{yes} = 1;
 	}
