@@ -362,7 +362,7 @@ sub check_secrets {
 			join ("\n  * ", map {join " ", @$_} @missing);
 		return 1;
 	} else {
-		print "All credentials and certificates present.\n";
+		explain "  credentials and certificates present. [#G{OK}]";
 		return 0;
 	}
 }

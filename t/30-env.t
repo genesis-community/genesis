@@ -275,11 +275,11 @@ EOF
 		"should be able to merge an env with a cloud-config";
 
 	my $mfile = $top->path(".manifest.yml");
-	my ($manifest, undef) = $env->_manifest(redact => 1);
+	my ($manifest, undef) = $env->_manifest(redact => 0);
 	$env->write_manifest($mfile, prune => 0);
 	ok -f $mfile, "env->write_manifest should actually write the file";
 	my $mcontents;
-	lives_ok { $mcontents = load_yaml_file($mfile) } 'written manifest (pruned) is valid YAML';
+	lives_ok { $mcontents = load_yaml_file($mfile) } 'written manifest (unpruned) is valid YAML';
 	cmp_deeply($mcontents, $manifest, "written manifest (unpruned) matches the raw unpruned manifest");
 	cmp_deeply($mcontents, {
 		name   => ignore,
@@ -353,7 +353,7 @@ EOF
 	}, "pruned manifest should not have all the top-level keys");
 
 	my $mfile = $top->path(".manifest.yml");
-	my ($manifest, undef) = $env->_manifest(redact => 1);
+	my ($manifest, undef) = $env->_manifest(redact => 0);
 	$env->write_manifest($mfile);
 	ok -f $mfile, "env->write_manifest should actually write the file";
 	my $mcontents;
@@ -430,7 +430,7 @@ EOF
 	}, "pruned proto-style manifest should retain 'cloud-config' keys, since create-env needs them");
 
 	my $mfile = $top->path(".manifest-create-env.yml");
-	my ($manifest, undef) = $env->_manifest(redact => 1);
+	my ($manifest, undef) = $env->_manifest(redact => 0);
 	$env->write_manifest($mfile);
 	ok -f $mfile, "env->write_manifest should actually write the file";
 	my $mcontents;
@@ -525,6 +525,7 @@ EOF
 	{
 		$env = $top->load_env('standalone');
 		local $ENV{GENESIS_BOSH_ENVIRONMENT} = "https://127.0.0.86:25555";
+		$env = $top->load_env('standalone'); # reload otherwise its cached by the previous call
 		is $env->bosh_target, "https://127.0.0.86:25555", "the \$GENESIS_BOSH_ENVIRONMENT overrides all";
 	}
 };
