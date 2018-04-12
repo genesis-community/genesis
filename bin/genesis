@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-# vim:ft=perl:noet:ts=4:sts=4:sw=4
+# vim:ft=perl:noet:ts=4:sts=4:sw=4:fdm=marker
 use strict;
 use warnings;
 
@@ -70,50 +70,6 @@ sub expand_tokens {
 	return @l;
 }
 
-# return a list of the hyphen-separated tokens
-# that form a common prefix to both arguments.
-#
-# for example:
-#   us-east-1-preprod-a
-#   us-east-1-sandbox-a
-#   ->    (us, east, 1)
-#
-sub common_base {
-	my ($a, $b) = @_;
-	my @a = split /-/, $a;
-	my @b = split /-/, $b;
-	my @c = (); # common
-
-	while (@a and @b) {
-		$a = shift @a;
-		$b = shift @b;
-		last unless $a eq $b;
-		push @c, $a;
-	}
-	return @c;
-}
-
-# return a list of the hyphen-separated tokens
-# that form a unique suffix for the second argument.
-#
-# for example:
-#   us-east-1-preprod-a
-#   us-east-1-sandbox-a
-#   ->     us-east-1, (sandbox, a)
-sub unique_suffix {
-	my ($a, $b) = @_;
-	my @a = split /-/, $a;
-	my @b = split /-/, $b;
-	my @pre;
-
-	while (@a and @b) {
-		last if $a[0] ne $b[0];
-		$a = shift @a;
-		$b = shift @b;
-		push @pre, $a;
-	}
-	return join('-', @pre), @b;
-}
 
 ###########################################################################
 
@@ -229,25 +185,6 @@ our $prompt_handlers = {
 
 # }}}
 
-sub write_stemcell_data {
-	my ($file) = @_;
-	my $stemcells = "{}";
-	if ($ENV{GENESIS_INDEX} ne "no") {
-		my $flags = "-ks";
-		$flags += " -v" if envset('GENESIS_DEBUG');
-		$stemcells = run({ onfailure => "Unable to contact the genesis index to retrieve stemcell data. Cannot continue." },
-			'curl '.$flags.' "${1}/v1/stemcell/latest | jq -Mc "$2"',
-			$ENV{GENESIS_INDEX}, '. | map({"key": .name, "value": { "sha1": .sha1, "url": .url}}) | from_entries');
-	}
-	open my $fh, ">", $file;
-	print $fh <<EOF;
----
-meta:
-  latest_stemcells: $stemcells
-
-EOF
-	close $fh;
-}
 
 ###########################################################################
 
