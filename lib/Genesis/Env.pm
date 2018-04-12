@@ -113,6 +113,18 @@ sub use_cloud_config {
 	return $self;
 }
 
+sub download_cloud_config {
+	my ($self) = @_;
+	my $ccfile = "$self->{__tmp}/cloud.yml";
+	Genesis::BOSH->download_cloud_config($self->bosh_target,$ccfile)
+		or die "Could not fetch cloud config from ".$self->bosh_target."\n";
+	$self->use_cloud_config($ccfile);
+}
+
+sub cloud_config {
+	return $_[0]->{ccfile} || '';
+}
+
 sub features {
 	my ($self) = @_;
 	if ($self->defines('kit.features')) {
@@ -422,16 +434,6 @@ sub run_hook {
 	return $self->kit->run_hook($hook, %opts, env => $self);
 }
 
-sub check {
-	my ($self) = @_;
-	$self->write_manifest("$self->{__tmp}/manifest.yml", redact => 0);
-
-	if ($self->has_hook('check')) {
-		return $self->run_hook('check', manifest => "$self->{__tmp}/manifest.yml");
-	}
-	return 1;
-}
-
 sub deploy {
 	my ($self, %opts) = @_;
 
@@ -445,8 +447,7 @@ sub deploy {
 			state => $self->path(".genesis/manifests/$self->{name}-state.yml"));
 
 	} else {
-		$self->{__cloud_config} = "$self->{__tmp}/cloud.yml";
-		Genesis::BOSH->download_cloud_config($self->bosh_target, $self->{__cloud_config});
+		$self->download_cloud_config unless $self->{ccfile};
 
 		my @bosh_opts;
 		push @bosh_opts, "--$_"             for grep { $opts{$_} } qw/fix recreate dry-run/;
@@ -729,6 +730,15 @@ Use the given BOSH cloud-config (as defined in C<$file>) when merging this
 environments manifest.  This must be called before calls to C<manifest()>,
 C<write_manifest()>, or C<manifest_lookup()>.
 
+=head2 download_cloud_config()
+
+Download a cloud-config file from the BOSH director, and set the environment
+to use it.  This can be used in leiu of C<use_cloud_config>.
+
+=head2 cloud_config
+
+Returns the path to the cloud-config file that has been associated with this
+environment or empty string if no cloud-config present.
 
 =head2 relate($them, [$cachedir, [$topdir])
 

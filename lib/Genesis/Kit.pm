@@ -137,8 +137,7 @@ sub run_hook {
 		@args = @{$opts{args} || []};
 
 	} elsif ($hook eq 'check') {
-		$ENV{GENESIS_CHECK}        = $opts{check};
-		$ENV{GENESIS_CLOUD_CONFIG} = $opts{'cloud-config'} || '';
+		$ENV{GENESIS_CLOUD_CONFIG} = $opts{env}->{ccfile} || '';
 
 	##### LEGACY HOOKS
 	} elsif ($hook eq 'subkit') {

@@ -368,6 +368,36 @@ sub check_prereqs {
 	}
 }
 
+sub check_environment {
+	my ($env,%opts) = @_;
+
+	my $ok = 1;
+	my $checks = "environmental parameter";
+	$checks = "cloud-config and $checks" if $env->cloud_config;
+	if ($env->has_hook('check')) {
+		explain "[#C{%s}] running $checks checks...", $env->name;
+		$env->run_hook('check') or $ok = 0;
+	} else {
+		explain "[#C{%s}] #Y{%s does not define a 'check' hook; $checks checks will be skipped.}", $env->name, $env->kit->id;
+	}
+
+	if ($opts{check_secrets}) {
+		explain "[#C{%s}] running credentials / certificates checks...", $env->name;
+		$env->check_secrets or $ok = 0;
+	}
+
+	if ($ok) {
+		if ($env->needs_bosh_create_env || $env->cloud_config) {
+			explain "[#C{%s}] running manifest viability checks...", $env->name;
+			$env->manifest or $ok = 0;
+		} else {
+			explain "[#C{%s}] #Y{No cloud config provided - can't check manifest viability}", $env->name;
+		}
+	}
+	return $ok;
+}
+
+
 sub target_vault {
 	my ($target) = @_;
 	$target ||= '-i';  # Default to interactive mode
@@ -723,108 +753,56 @@ command("check", <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis check <options> env-name[.yml]
 
+Runs checks against the cloud config, environment files and vault secrets to 
+determine if a manifest can be successfully built.  Partial checks can also be
+performed as per the options below.  Run with the -q|--quiet flag will result
+in no output except exit-code 0 on success, 1 otherwise.
+
 OPTIONS
+  --[no-]cloud-config [<path>]  Determines if the cloud-config checks are run.
+                                If a path is given, use that file as the cloud-
+                                config, otherwise fetch it from the BOSH
+                                director (default behavour).
+  --[no-]secrets                Determines if the secrets checks are run.
+                                Runs by default.
+
 $GLOBAL_USAGE
-
-    --secrets       Only check secrets, don't do the others.      (secrets check)
-    --cloud-config  Only check cloud-config, don't do the others. (check cloud-config)
-    --parameters    Check the parameters in the env files.        (check parameters)
-    --manifest      Check that we can merge the manifest.         (manifest -- not a hook)
-
-
-genesis check
-genesis check -csm
-genesis check --check-cloud-config --check-secrets --check-manifest
-genesis check -cs --cloud-config ./cc.yml
 
 EOF
 sub {
-	my %options = (redact => ! -t STDOUT);
+	my %options = (secrets => 1);
 	options(\@_, \%options, qw/
-		check-secrets|s
-		check-cloud-config|c
-		check-parameters|p
-		check-manifest|m
-		cloud-config|cc=s
+		cloud-config:s
+		no-cloud-config
+		secrets!
 	/);
 	usage(1) if @_ != 1;
-
-	my %check = (
-		secrets     => 1,
-		cloudconfig => 1,
-		parameters  => 1,
-		manifest    => 1,
-	);
-	if ($options{'check-secrets'}
-	 || $options{'check-cloud-config'}
-	 || $options{'check-parameters'}
-	 || $options{'check-manifest'}) {
-			delete $check{secrets}     unless $options{'check-secrets'};
-			delete $check{cloudconfig} unless $options{'check-cloud-config'};
-			delete $check{parameters}  unless $options{'check-parameters'};
-			delete $check{manifest}    unless $options{'check-manifest'};
-	}
 
 	check_prereqs;
 	my $env = Genesis::Top->new('.')->load_env($_[0]);
 
-	my $ok = 1;
-
-	if ($check{cloudconfig} && !$env->needs_bosh_create_env) {
-		if (!$env->has_hook('check')) {
-			explain "#Y{%s does not define a 'check' hook; cloud-config checks will be skipped.}", $env->kit->id;
-
-		} else {
-			my $cc = $options{'cloud-config'};
-			if ($cc) {
-				$cc = Cwd::abs_path($cc)
-					or bail "$cc: no such file or directory";
-				explain "(using supplied #W{cloud-config}: #M{%s})", $cc;
-
-			} else {
-				explain "(downloading #W{cloud-config} from #M{%s} BOSH)", $env->bosh_target;
-
-				$cc = workdir."/cloud.yml";
-				Genesis::BOSH->download_cloud_config($env->bosh_target, $cc);
-			}
-
-			explain "[#C{%s}] running cloud-config checks...", $env->name;
-			$env->run_hook('check', check          => 'cloud-config',
-				                    'cloud-config' => $cc)
-				or $ok = 0;
-		}
+	if ($options{'no-cloud-config'}) {
+		bail "Cannot specify --no-cloud-config and --cloud-config"
+			if defined $options{'cloud-config'};
+	} elsif ($options{'cloud-config'}) {
+		my $cc = Cwd::abs_path($options{'cloud-config'})
+			or bail "$options{'cloud-config'}: no such file or directory";
+		$env->use_cloud_config($cc);
+	} elsif (!$env->needs_bosh_create_env) {
+		explain "Downloading #W{cloud-config} from #M{%s} BOSH)", $env->bosh_target;
+		$env->download_cloud_config;
 	}
 
-	if ($check{parameters}) {
-		explain "[#C{%s}] running environmental parameters checks...", $env->name;
-		if (!$env->has_hook('check')) {
-			explain "#Y{%s does not define a 'check' hook; parameters checks will be skipped.}", $env->kit->id;
-		} else {
-			$env->run_hook('check', check => 'parameters')
-				or $ok = 0;
-		}
-	}
-
-	if ($check{secrets}) {
-		explain "[#C{%s}] running credentials / certificates checks...", $env->name;
-		$env->check_secrets
-			or $ok = 0;
-	}
-
-	if ($check{manifest}) {
-		explain "[#C{%s}] running manifest viability checks...", $env->name;
-		$env->manifest
-			or $ok = 0;
-	}
-
+	my $ok = check_environment($env, check_secrets => $options{secrets});
 	if ($ok) {
-		explain "[#C{%s}] all checks succeeded, #G{preflight ok}", $env->name;
+		explain "[#C{%s}] #G{All Checks Succeeded}", $env->name;
 		exit 0;
 	} else {
 		explain "[#C{%s}] #R{PREFLIGHT FAILED}", $env->name;
 		exit 1;
 	}
 });
+
 # }}}
 # genesis deploy - Pull in Cloud Config, Generate a manifest, deploy {{{
 
@@ -894,17 +872,22 @@ sub {
 		delete $options{yes};
 	}
 
-	if (!$env->needs_bosh_create_env) {
-		my $cloud = workdir."/cloud.yml";
-		Genesis::BOSH->download_cloud_config($env->bosh_target, $cloud);
-		$env->use_cloud_config($cloud);
+	if ($env->needs_bosh_create_env) {
+		explain "Preparing to deploy #C{%s}as a #C{create-env} deployment\n", $env->name;
+	} else {
+		explain "Preparing to deploy #C{%s} to #C{%s} BOSH director.\n", $env->name, $env->bosh_target;
+		explain "- Fetching cloud config from #C{%s}", $env->bosh_target;
+		$env->download_cloud_config();
 	}
 
-	explain "Running preflight checks against #C{%s}", $env->name;
-	$env->check
-		or bail "Kit #R{preflight checks failed}; deployment operation #R{halted}.";
+	explain "- Running preflight checks against [#C{%s}]:", $env->name;
+	if (!$env->needs_bosh_create_env && !$env->cloud_config) {
+		explain "#Y{! No cloud config detected -- this may be a Genesis bug}";
+	}
+	check_environment($env, secrets => 1)
+		or bail "! Kit #R{preflight checks failed}; deployment operation #R{halted}.";
 
-	explain "Preflight #G{ok}, deploying %s...", $env->name;
+	explain "- Preflight #G{ok}, initiating BOSH deploy...";
 	$env->deploy(%options);
 });
 # }}}

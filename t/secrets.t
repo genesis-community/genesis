@@ -130,7 +130,7 @@ subtest 'secrets' => sub {
 
 	# Test that nothing is missing
 	my ($pass,$rc,$msg) = runs_ok "genesis secrets check us-east-sandbox --vault $vault_target";
-	matches $msg, qr/All credentials and certificates present./, "No missing secrets";
+	matches $msg, qr/credentials and certificates present./, "No missing secrets";
 
 	# Test only missing secrets are regenerated
 	%before = %after;
