@@ -250,6 +250,7 @@ sub params {
 
 sub _manifest {
 	my ($self, %opts) = @_;
+	trace "[env $self->{name}] in _manifest(): Redact %s", defined($opts{redact}) ? "'$opts{redact}'" : '#C{(undef)}';
 	my $which = $opts{redact} ? '__redacted' : '__unredacted';
 	my $path = "$self->{__tmp}/$which.yml";
 
@@ -278,7 +279,10 @@ sub manifest {
 	my ($self, %opts) = @_;
 
 	# prune by default.
+	trace "[env $self->{name}] in manifest(): Redact %s", defined($opts{redact}) ? "'$opts{redact}'" : '#C{(undef)}';
+	trace "[env $self->{name}] in manifest(): Prune: %s", defined($opts{prune}) ? "'$opts{prune}'" : '#C{(undef)}';
 	$opts{prune} = 1 unless defined $opts{prune};
+
 
 	my (undef, $path) = $self->_manifest(redact => $opts{redact});
 	if ($opts{prune}) {

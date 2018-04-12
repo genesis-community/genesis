@@ -40,6 +40,7 @@ sub _bosh {
 
 sub ping {
 	my ($class, $env) = @_;
+	debug "Checking BOSH at '$env' for connectivity";
 	return _bosh({ passfail => 1 }, 'bosh', '-e', $env, 'env');
 }
 
