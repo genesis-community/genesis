@@ -154,16 +154,12 @@ export -f bosh_cpi
 ###
 ###   Cloud-Config Inspection Functions
 ###
-export __cloud_config_ok=""
+export __cloud_config_ok="yes"
 
 cloud_config_needs() {
   local __type=${1:?cloud_config_needs() - must specify a type}; shift
   local __name
 
-  if [[ -z "$__cloud_config_ok" ]] ; then
-    __cloud_config_ok=yes
-    declare -a __cloud_config_error_messages;
-  fi
   case "${__type}" in
   vm_type|vm_types)            __type=vm_types;      __name=vm_type      ;;
   vm_extension|vm_extensions)  __type=vm_extensions; __name=vm_extension ;;
@@ -188,6 +184,11 @@ cloud_config_needs() {
 export -f cloud_config_needs
 
 check_cloud_config() {
+	# check_cloud_config - outputs errors found by cloud_config_needs.  Returns 1
+	# if any errors were found.
+	# Usage:
+	#   check_cloud_config || exit 1  # exit if errors found
+	#   check_cloud_config && describe "  cloud config [#G{OK}] # report ok if no errors
   if [[ ${__cloud_config_ok} != "yes" ]]; then
     describe "#R{Errors were encountered} in your cloud-config:"
     local __e
@@ -195,7 +196,7 @@ check_cloud_config() {
       describe " - ${__e}"
     done
     echo
-    exit 1
+    return 1
   fi
 }
 export -f check_cloud_config
