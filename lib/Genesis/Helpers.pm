@@ -154,13 +154,16 @@ export -f bosh_cpi
 ###
 ###   Cloud-Config Inspection Functions
 ###
-
-declare -a __cloud_config_error_messages
-__cloud_config_ok=yes
+export __cloud_config_ok=""
 
 cloud_config_needs() {
   local __type=${1:?cloud_config_needs() - must specify a type}; shift
   local __name
+
+  if [[ -z "$__cloud_config_ok" ]] ; then
+    __cloud_config_ok=yes
+    declare -a __cloud_config_error_messages;
+  fi
   case "${__type}" in
   vm_type|vm_types)            __type=vm_types;      __name=vm_type      ;;
   vm_extension|vm_extensions)  __type=vm_extensions; __name=vm_extension ;;
