@@ -418,6 +418,35 @@ sub vaultify_secrets {
 	}
 }
 
+sub run_param_hook {
+	my ($env,$params,@features) = @_;
+
+	my $hook = $env->kit->path("hooks/params");
+	return $params unless -f $hook;
+	chmod(0755,$hook) unless -x $hook;
+
+	my $dir = workdir;
+	my $infile = "$dir/in";
+	open my $ifh, ">", $infile or die "Unable to write to $infile: $!\n";
+	print $ifh encode_json($params);
+	close $ifh;
+
+	my $rc = run(
+		{interactive => 1, env => {
+			GENESIS_ENVIRONMENT_NAME => $env->{name},
+			GENESIS_VAULT_PREFIX => $env->{prefix} }},
+		$hook, "$dir/in", "$dir/out", @features
+	);
+	die "\nNew environment creation cancelled.\n" if $rc == 130;
+	die "\nError running params hook for ".$env->kit->id.". Contact your kit author for a bugfix.\n" if $rc;
+
+	# FIXME: get a better error message when json fails to load
+	open my $ofh, "<", "$dir/out";
+	my @json = <$ofh>;
+	close $ofh;
+	return decode_json(join("\n",@json));
+}
+
 sub new_environment {
 	my ($self) = @_;
 	my ($k, $kit, $version) = ($self->{kit}, $self->{kit}->name, $self->{kit}->version);
@@ -431,11 +460,9 @@ sub new_environment {
 		vault_prefix => $self->{prefix},
 		features     => \@features,
 	);
-	if ($k->has_hook('params')) {
-		$params = $k->run_hook('params', params => $params);
-	}
+	$params = run_param_hook($self, $params, @features);
 
-	## create the environment file.
+	## create the environment file
 	my $file = "$self->{name}.yml";
 	my ($parent, %existing_info);
 	if ($self->{name} =~ m/-/) { # multi-level environment; make/use a top-level

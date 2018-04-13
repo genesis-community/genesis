@@ -45,6 +45,7 @@ releases:
 EOF
 
 $ENV{GENESIS_INDEX} = "no";
+$ENV{TERM} = "xterm";
 runs_ok "genesis manifest -c init-cloud.yml bosh-init-sandbox >$tmp/manifest.yml 2>$tmp/error.txt";
 eq_or_diff get_file("$tmp/error.txt"), <<EOF, "manifest for bosh-init/create-env scenario warns that a cloud config file was provided";
 \e[1;33m[Warning]\e[0m The specified cloud-config will be ignored as create-env environments do not use them.
