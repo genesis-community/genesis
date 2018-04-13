@@ -616,6 +616,7 @@ sub {
 	check_prereqs(no_repo_needed => 1);
 
 	my $abs_target;
+	my $kit_desc = "";
 	if ($options{'link-dev-kit'}) {
 		usage(1,"Cannot specify both a kit (-k) and a link to a kit (-L)") if $options{kit};
 		$abs_target = abs_path($options{'link-dev-kit'});
@@ -649,14 +650,17 @@ sub {
 	if ($options{'link-dev-kit'}) {
 		debug("Kit: linking dev to $abs_target");
 		symlink_or_fail($abs_target, "./dev");
+		$kit_desc = "linked to kit at #C{$abs_target}.";
 
 	} elsif ($options{kit}) {
 		debug("Kit: installing kit $options{kit}");
 		$top->download_kit($options{kit});
+		$kit_desc = "using the #C{$options{kit}} kit.";
 
 	} else {
 		debug("Kit: creating empty ./dev kit directory");
 		mkdir_or_fail("./dev");
+		$kit_desc = "with an empty development kit in #C{$root/.dev}.";
 	}
 
 	run({ onfailure => "Failed to initialize a git repository in $root/" },
@@ -666,6 +670,7 @@ sub {
 		'git commit -m "Initial Genesis Repo"');
 
 	popd;
+	explain "\nInitialized empty Genesis repository in #C{%s}\n%s\n", $root, $kit_desc;
 	exit 0;
 });
 
