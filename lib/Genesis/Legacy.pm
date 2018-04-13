@@ -4,7 +4,7 @@ use warnings;
 
 use Genesis;
 use Genesis::UI;
-use JSON::PP qw/encode_json/;
+use JSON::PP qw/encode_json decode_json/;
 
 sub same {
 	my ($a, $b) = @_;
@@ -433,6 +433,7 @@ sub run_param_hook {
 
 	my $rc = run(
 		{interactive => 1, env => {
+			GENESIS => $ENV{GENESIS_CALLBACK_BIN},
 			GENESIS_ENVIRONMENT_NAME => $env->{name},
 			GENESIS_VAULT_PREFIX => $env->{prefix} }},
 		$hook, "$dir/in", "$dir/out", @features
