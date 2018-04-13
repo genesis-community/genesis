@@ -103,7 +103,7 @@ chmod 0755, $stub_out;
 print "GEESE RUNTIME ARCHIVE:\n";
 system("tar -tzvf pkg.tar.gz");
 print "\n---\n";
-print "packaged v$VERSION as $stub_out\n\n";
+print "packaged v$VERSION $BUILD as $stub_out\n\n";
 
 # clean up after the geese
 system 'rm -rf pkg/ pkg.tar.gz';
