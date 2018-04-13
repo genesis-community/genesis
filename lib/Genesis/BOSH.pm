@@ -38,8 +38,12 @@ sub _bosh {
 	return run($opts, @args);
 }
 
+my $reping;
 sub ping {
 	my ($class, $env) = @_;
+	explain "Checking availability of the '#M{$env}' BOSH director..."
+		unless $reping || envset "GENESIS_TESTING";
+	$reping = 1;
 	debug "Checking BOSH at '$env' for connectivity";
 	return _bosh({ passfail => 1 }, 'bosh', '-e', $env, 'env');
 }
@@ -65,10 +69,10 @@ sub create_env {
 
 sub download_cloud_config {
 	my ($class, $env, $path) = @_;
-	_bosh({ interactive => 1, onfailure => "Could not download cloud-config from '$env' BOSH director" },
+	_bosh({ interactive => 1, onfailure => "Could not download cloud-config from '#M{$env}' BOSH director" },
 		'bosh -e "$1" cloud-config > "$2"', $env, $path);
 
-	die "No cloud-config defined on '$env' BOSH director\n"
+	die "No cloud-config defined on '#M{$env}' BOSH director\n"
 		unless -s $path;
 	return 1;
 }
@@ -107,7 +111,7 @@ sub run_errand {
 			unless $opts{$o};
 	}
 
-	_bosh({ interactive => 1, onfailure => "Failed to run errand '$opts{errand}' ($opts{deployment} deployment on $env BOSH)" },
+	_bosh({ interactive => 1, onfailure => "Failed to run errand '$opts{errand}' ($opts{deployment} deployment on '#M{$env}' BOSH)" },
 		'bosh', '-n', '-e', $env, '-d', $opts{deployment}, 'run-errand', $opts{errand});
 
 	return 1;

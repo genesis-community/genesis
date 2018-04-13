@@ -796,7 +796,7 @@ sub {
 			or bail "$options{'cloud-config'}: no such file or directory";
 		$env->use_cloud_config($cc);
 	} elsif (!$env->needs_bosh_create_env) {
-		explain "Downloading #W{cloud-config} from #M{%s} BOSH)", $env->bosh_target;
+		explain "Downloading #W{cloud-config} from '#M{%s}')", $env->bosh_target;
 		$env->download_cloud_config;
 	}
 
@@ -885,8 +885,8 @@ sub {
 	if ($env->needs_bosh_create_env) {
 		explain "Preparing to deploy #C{%s}as a #C{create-env} deployment\n", $env->name;
 	} else {
-		explain "Preparing to deploy #C{%s} to #C{%s} BOSH director.\n", $env->name, $env->bosh_target;
-		explain "- Fetching cloud config from #C{%s}", $env->bosh_target;
+		explain "Preparing to deploy #C{%s} to '#M{%s}' BOSH director.\n", $env->name, $env->bosh_target;
+		explain "- Fetching cloud config from '#M{%s}'", $env->bosh_target;
 		$env->download_cloud_config();
 	}
 
