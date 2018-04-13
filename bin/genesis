@@ -29,7 +29,8 @@ $Genesis::VERSION = "(development)";
 $Genesis::BUILD = "";
 
 our $USER_AGENT_STRING = "genesis/$Genesis::VERSION";
-$ENV{GENESIS_CALLBACK_BIN} = $FindBin::Script;
+$ENV{GENESIS_CALLBACK_BIN} ||= __FILE__;
+
 
 $ENV{HTTPS_PROXY}=$ENV{BOSH_ALL_PROXY} if ($ENV{BOSH_ALL_PROXY});
 
