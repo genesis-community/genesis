@@ -92,6 +92,7 @@ sub run_hook {
 	local %ENV = %ENV;
 	$ENV{GENESIS_KIT_NAME}     = $self->name;
 	$ENV{GENESIS_KIT_VERSION}  = $self->version;
+	$ENV{GENESIS_IS_HELPING_YOU} = 'yes';
 
 	die "Unrecognized hook '$hook'\n"
 		unless grep { $_ eq $hook } qw/new blueprint secrets info addon check

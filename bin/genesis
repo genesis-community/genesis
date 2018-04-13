@@ -340,6 +340,7 @@ sub check_version {
 
 sub check_prereqs {
 	my %conditions = @_;
+	return 1 if envset("GENESIS_IS_HELPING_YOU");
 
 	my $bosh_min_version = "2.0.1";
 	my $reqs = [
@@ -1738,7 +1739,11 @@ sub {
 ###########################################################################
 
 sub main {
-	debug("#G{genesis} starting up...");
+	if (envset 'GENESIS_IS_HELPING_YOU') {
+		debug "#G{genesis} callback...";
+	} else {
+		debug "#G{genesis} starting up...";
+	}
 
 	$ENV{GENESIS_INDEX} = "https://genesis.starkandwayne.com" unless $ENV{GENESIS_INDEX};
 
