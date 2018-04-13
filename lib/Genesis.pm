@@ -57,9 +57,10 @@ sub envdefault {
 	return defined $ENV{$var} ? $ENV{$var} : $default;
 }
 
+my $__is_highcolour = $ENV{TERM} && $ENV{TERM} =~ /256color/;
 sub _color {
 	my ($fg, $bg) = split(//, $_[0]);
-	my @c = (  # NOTE: backgrounds only use the darker version
+	my @c = (  # NOTE: backgrounds only use the darker version unless highcolour terminal
 		'Kk',    # dark grey/black)
 		'Rr',    # light red/red
 		'Gg',    # light green/green
@@ -73,9 +74,14 @@ sub _color {
 	my $bid = (grep {$c[$_] =~ qr/$bg/} 0..7 || ())[0];
 	return "" unless defined $fid || defined $bid;
 	my @cc;
-	push @cc, "1" if $fg eq uc($fg);
-	push @cc, "3$fid" if defined $fid;
-	push @cc, "4$bid" if defined $bid;
+	if ($__is_highcolour) {
+		push(@cc, 38, 5, $fid + ($fg eq uc($fg) ? 8 : 0)) if defined $fid;
+		push(@cc, 48, 5, $bid + ($bg eq uc($bg) ? 8 : 0)) if defined $bid;
+	} else {
+		push @cc, "1" if $fg eq uc($fg);
+		push @cc, "3$fid" if defined $fid;
+		push @cc, "4$bid" if defined $bid;
+	}
 	return "\e[".join(";",@cc)."m";
 }
 
