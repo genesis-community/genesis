@@ -1188,8 +1188,13 @@ sub {
 	}
 
 	explain "Uncompressing compiled kit archive #G{$file} into #C{dev/}";
-	run('tar -xzf "$1" -C "$2" && rm -rf dev && mv "${2}/*/" dev/',
-		$file, workdir);
+
+	# Test the kit
+	my ($out,$rc) = run("tar -ztf \$1 |cut -d'/' -f1 | uniq", $file);
+	bail "#R{ERROR} #C{$file} does not look like a valid compiled kit"
+		unless $rc == 0 && scalar(split $/, $out) == 1;
+	run('rm -rf ./dev && mkdir ./dev && tar -xzf "$1" --strip-components=1 -C ./dev/',
+		$file);
 });
 
 # }}}
