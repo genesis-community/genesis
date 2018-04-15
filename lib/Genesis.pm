@@ -246,6 +246,7 @@ sub run {
 	if (!$opts{interactive} && $opts{stderr}) {
 		$prog .= " 2>$opts{stderr}";
 	}
+	trace("#M{From directory:} #C{%s}", Cwd::getcwd);
 	trace("#M{Executing:} `#C{$prog}`%s", ($opts{interactive} ? " #Y{(interactively)}" : ''));
 	if (@args) {
 		unshift @args, basename($shell);
