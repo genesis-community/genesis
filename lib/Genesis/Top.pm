@@ -180,12 +180,6 @@ sub download_kit {
 	my ($name, $version) = $spec =~ m{(.*)/(.*)} ? ($1, $2)
 	                                             : ($spec, 'latest');
 
-	if ($version eq 'latest') {
-		explain("Downloading Genesis kit #M{$name} (#Y{latest} version)");
-	} else {
-		explain("Downloading Genesis kit #M{$name}, version #C{$version}");
-	}
-
 	(my $url, $version) = Genesis::Kit->url($name, $version);
 
 	mkdir_or_fail($self->path(".genesis"));
@@ -197,7 +191,7 @@ sub download_kit {
 	mkfile_or_fail($self->path(".genesis/kits/$name-$version.tar.gz"), 0400, $data);
 	debug("downloaded kit #M{$name}/#C{$version}");
 
-	return $self;
+	return ($name,$version);
 }
 
 sub path {
@@ -374,11 +368,17 @@ Embeds the file C<$bin> into C<.genesis/bin/genesis>, and chmods it
 properly.  This embedded copy of (probably Genesis) is used by the CI/CD
 pipelines to avoid having to stuff versions into docker images.
 
-=head2 download_kit($name, $version)
+=head2 download_kit($spec)
+
+Takes a kit spec (name or name/version) and attempts to download the release
+matching the spec from Github.
 
 Contact Github, search through the B<genesis-community> organization, and
 download the named kit and version (or latest) and stuff it in the
 .genesis/kits directory.  This is the magic behind C<genesis download>.
+
+This returns the actual kit name and version that was downloaded (useful when
+no version specified or was specified as "latest")
 
 =head2 path([$relative])
 

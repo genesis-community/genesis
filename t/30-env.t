@@ -54,7 +54,8 @@ subtest 'name validation' => sub {
 };
 
 subtest 'loading' => sub {
-	my $top = Genesis::Top->create(workdir, 'thing')->link_dev_kit('t/src/simple');
+	my $top = Genesis::Top->create(workdir, 'thing');
+	$top->link_dev_kit('t/src/simple');
 	put_file $top->path("standalone.yml"), <<EOF;
 ---
 kit:
@@ -149,7 +150,8 @@ subtest 'env-to-env relation' => sub {
 };
 
 subtest 'environment metadata' => sub {
-	my $top = Genesis::Top->create(workdir, 'thing')->download_kit('bosh/0.2.0');
+	my $top = Genesis::Top->create(workdir, 'thing');
+	$top->download_kit('bosh/0.2.0');
 	put_file $top->path("standalone.yml"), <<EOF;
 ---
 kit:
@@ -174,7 +176,8 @@ EOF
 };
 
 subtest 'parameter lookup' => sub {
-	my $top = Genesis::Top->create(workdir, 'thing')->download_kit('bosh/0.2.0');
+	my $top = Genesis::Top->create(workdir, 'thing');
+	$top->download_kit('bosh/0.2.0');
 	put_file $top->path("standalone.yml"), <<EOF;
 ---
 kit:
@@ -235,7 +238,8 @@ EOF
 };
 
 subtest 'manifest generation' => sub {
-	my $top = Genesis::Top->create(workdir, 'thing')->link_dev_kit('t/src/fancy');
+	my $top = Genesis::Top->create(workdir, 'thing');
+	$top->link_dev_kit('t/src/fancy');
 	put_file $top->path('standalone.yml'), <<EOF;
 ---
 kit:
@@ -297,7 +301,8 @@ EOF
 };
 
 subtest 'manifest pruning' => sub {
-	my $top = Genesis::Top->create(workdir, 'thing')->link_dev_kit('t/src/fancy');
+	my $top = Genesis::Top->create(workdir, 'thing');
+	$top->link_dev_kit('t/src/fancy');
 	put_file $top->path(".cloud.yml"), <<EOF;
 ---
 resource_pools: { from: 'cloud-config' }
@@ -367,7 +372,8 @@ EOF
 };
 
 subtest 'manifest pruning (bosh create-env)' => sub {
-	my $top = Genesis::Top->create(workdir, 'thing')->link_dev_kit('t/src/fancy');
+	my $top = Genesis::Top->create(workdir, 'thing');
+	$top->link_dev_kit('t/src/fancy');
 	put_file $top->path(".cloud.yml"), <<EOF;
 ---
 ignore: cloud-config
@@ -453,7 +459,8 @@ EOF
 };
 
 subtest 'exodus data' => sub {
-	my $top = Genesis::Top->create(workdir, 'thing')->link_dev_kit('t/src/fancy');
+	my $top = Genesis::Top->create(workdir, 'thing');
+	$top->link_dev_kit('t/src/fancy');
 	put_file $top->path('standalone.yml'), <<EOF;
 ---
 kit:

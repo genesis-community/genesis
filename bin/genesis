@@ -655,8 +655,9 @@ sub {
 
 	} elsif ($options{kit}) {
 		debug("Kit: installing kit $options{kit}");
-		$top->download_kit($options{kit});
-		$kit_desc = "using the #C{$options{kit}} kit.";
+		explain "Downloading Genesis kit #M{$options{kit}} (#Y{latest} version)...";
+		my (undef, $version) = $top->download_kit($options{kit});
+		$kit_desc = "using the #C{$options{kit}/$version} kit.";
 
 	} else {
 		debug("Kit: creating empty ./dev kit directory");
@@ -1414,8 +1415,11 @@ sub {
 
 	my $top = Genesis::Top->new('.');
 	for (@_) {
-		$top->download_kit($_)
+		my ($name,$version) = $_ =~ m/^([^\/]*)(?:\/(.*))?$/;
+		explain("Attempting to download Genesis kit #M{$name (%s)}...", $version ? "v$version" : "latest version" );
+		($name,$version) = $top->download_kit($_)
 			or bail "Failed to download Genesis Kit #C{$_}";
+		explain "Downloaded version #C{$version} of the #C{$name} kit";
 	}
 });
 # }}}
