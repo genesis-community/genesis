@@ -23,6 +23,7 @@ our @EXPORT = qw/
 	workdir
 
 	semver
+	by_semver
 	new_enough
 
 	parse_uri
@@ -176,25 +177,31 @@ sub workdir {
 
 sub semver {
 	my ($v) = @_;
-	if ($v && $v =~ m/^v?(\d+)(?:\.(\d+)(?:\.(\d+)(?:[.-]rc[.-]?(\d+))?)?)?$/i) {
+	if ($v && $v =~ m/^v?(\d+)(?:\.(\d+)(?:\.(\d+)(?:[\.-]rc[\.-]?(\d+))?)?)?$/i) {
 		return wantarray ? ($1, $2 || 0, $3 || 0, (defined $4 ? $4 - 100000 : 0))
 		                 : [$1, $2 || 0, $3 || 0, (defined $4 ? $4 - 100000 : 0)];
 	}
 	return;
 }
 
+sub by_semver ($$) { # sort block -- needs prototype
+	my ($a, $b) = @_;
+	my @a = semver($a);
+	my @b = semver($b);
+	return 0 unless @a && @b;
+	while (@a) {
+		return 1 if $a[0] > $b[0];
+		return -1 if $a[0] < $b[0];
+		shift @a;
+		shift @b;
+	}
+	return 0;
+}
+
 sub new_enough {
 	my ($v, $min) = @_;
-	my @v = semver($v);
-	my @min = semver($min);
-	return 0 unless @v && @min;
-	while (@v) {
-		return 1 if $v[0] > $min[0];
-		return 0 if $v[0] < $min[0];
-		shift @v;
-		shift @min;
-	}
-	return 1;
+	return 0 unless semver($v) && semver($min);
+	return by_semver($v, $min) >= 0;
 }
 
 our %ord_suffix = (11 => 'th', 12 => 'th', 13 => 'th', 1 => 'st', 2 => 'nd', 3 => 'rd');
@@ -559,6 +566,14 @@ The following version formats are recognized:
     1.23.4-rc2
     1.23.4-rc.2
     1.23.4-rc-2
+
+=head2 by_semver($a,$b)
+
+Sorting routine to sort by semver.  See perlops for cmp or <=> for details.
+
+Release candidate versions are counted as less than their point release, so
+1.0.0-rc5 is not newer than 1.0.0.  Otherwise, sorts by major, then minor, then
+patch, then rc.
 
 =head2 new_enough($version, $minimum)
 

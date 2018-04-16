@@ -144,6 +144,11 @@ given BOSH command (with C<ping()> being a notable exception!)
 
 Try to contact the BOSH director at C<$env>, and report success or failure.
 
+=head2 env($env)
+
+Similar to C<ping>, this tries to contact the BOSH director at C<$env>, and
+reports success or failure.  However, this function prints its output to the
+user, so it is useful in presenting the environment's details.
 
 =head2 create_env($manifest, %opts)
 

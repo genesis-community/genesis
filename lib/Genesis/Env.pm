@@ -723,6 +723,10 @@ parameter.
 
 Retrieve the Genesis::Kit object for this environment.
 
+=head2 type()
+
+Retrieve the deployment type for this Genesis::Kit object.
+
 =head2 path([$relative])
 
 Returns the absolute path to the root directory, with C<$relative> appended
@@ -1001,6 +1005,14 @@ If none of these pan out, this method will die with a suitable error.
 Note that if this environment is to be deployed via C<bosh create-env>, this
 method will always return C<undef> immediately.
 
+=head2 has_hook($hook)
+
+Returns true if the kit used by this environment has the named hook.
+
+=head2 run_hook($hook, %options)
+
+Runs the kit hook named C<$hook> against this environment, with the given
+options.  See C<Genesis::Kit::run_hook> for more details.
 
 =head2 deploy(%opts)
 

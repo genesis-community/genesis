@@ -7,6 +7,7 @@ use lib 't';
 use helper;
 use Test::Deep;
 
+use_ok 'Genesis';
 use_ok 'Genesis::Kit';
 use_ok 'Genesis::Kit::Compiled';
 use_ok 'Genesis::Kit::Dev';
