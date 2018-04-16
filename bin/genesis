@@ -420,8 +420,8 @@ my ($COMMAND, %COMMAND, %USAGE);
 sub usage {
 	my ($rc, $msg, $cmd) = @_;
 	$cmd = $COMMAND unless $cmd;
-	print STDERR "$msg\n\n" if $msg;
-	print STDERR $USAGE{$cmd} if $USAGE{$cmd};
+	error "$msg\n" if $msg;
+	error $USAGE{$cmd} if $USAGE{$cmd};
 	exit $rc;
 }
 
