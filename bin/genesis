@@ -23,6 +23,7 @@ use Genesis;
 use Genesis::UI;
 use Genesis::Top;
 use Genesis::Kit::Compiler;
+use Genesis::Kit;
 use Genesis::CI::Legacy; # but we'd rather not...
 
 $Genesis::VERSION = "(development)";
@@ -761,7 +762,7 @@ command("check", <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis check <options> env-name[.yml]
 
-Runs checks against the cloud config, environment files and vault secrets to 
+Runs checks against the cloud config, environment files and vault secrets to
 determine if a manifest can be successfully built.  Partial checks can also be
 performed as per the options below.  Run with the -q|--quiet flag will result
 in no output except exit-code 0 on success, 1 otherwise.
@@ -1196,6 +1197,84 @@ sub {
 		unless $rc == 0 && scalar(split $/, $out) == 1;
 	run('rm -rf ./dev && mkdir ./dev && tar -xzf "$1" --strip-components=1 -C ./dev/',
 		$file);
+});
+
+# }}}
+# genesis list-kits - list kit versions available locally or remotely {{{
+command("list-kits", <<EOF,
+genesis v$Genesis::VERSION$Genesis::BUILD
+USAGE: genesis list-kits [-r|--remote[=URL]] [--versions] [--filter <re pattern>|<name>]
+
+Lists the kits available locally or remotely.  If filter is specified, use it
+as a regular expression to filter the kits returned.
+
+OPTIONS
+$GLOBAL_USAGE
+  -r, --remote           List the remote kits available from the Genesis
+                         Community Github organization
+      --latest[=N]       List only the latest (N) versions -- N defaults to 1
+
+Remote supports further options
+	  --prereleases      Include pre-release versions of kits
+	  --details          Show release date and notes.
+EOF
+sub {
+	my %options;
+	options(\@_, \%options, qw/
+		remote|r
+		latest:i
+		prereleases
+		details
+	/);
+	usage(1) if @_ > 1;
+	my $name = $_[0];
+	usage(1,"#R{[ERROR]} Cannot specify both --filter and name.")
+		if ($name && $options{filter});
+	check_prereqs(no_repo_needed => $options{remote});
+
+	my %kits;
+	if ($options{remote}) {
+		my @kit_names = ($name ? ($name) : Genesis::Kit->downloadable($options{filter}));
+		for my $kit (@kit_names) {
+			$kits{$kit} = {Genesis::Kit->versions($kit, latest=>$options{latest}, prerelease=>$options{prereleases})};
+		}
+	} else {
+		my $top = Genesis::Top->new('.');
+		my $available_kits = $top->compiled_kits;
+		for (keys %$available_kits) {
+			next if $name && $name ne $_;
+			$kits{$_} = $available_kits->{$_};
+		}
+	}
+
+	explain "\n#Y{No kits found%s.}", (
+		$name ? " matching '$name'"
+			  : ($options{filter} ? " matching pattern /$options{filter}/" : ''))
+		unless keys %kits;
+
+	for my $kit (sort(keys %kits)) {
+		explain "\n\e[4m#C{Kit: %s}", $kit;
+		explain "\n#Y{No versions found.}"
+			unless keys(%{$kits{$kit}});
+		for my $version (sort by_semver keys(%{$kits{$kit}})) {
+			my $c = $version =~ /[\.-]rc[\.-]?(\d+)$/ ? "Y"
+			      : ($kits{$kit}{$version}{prerelease} ? "y" : "G");
+			my $d = "";
+			if ($kits{$kit}{$version}{date} && $options{details}) {
+				$d = "Published ".$kits{$kit}{$version}{date};
+				$d .= " - \e[3mPre-release\e[0m"
+					if $kits{$kit}{$version}{prerelease};
+				$d = " ($d)";
+			}
+			explain "  #%s{v%s%s}", $c, $version, $d;
+			if ($kits{$kit}{$version}{body} && $options{details}) {
+				explain "    Release Notes:";
+				explain "      $_" for split $/, $kits{$kit}{$version}{body};
+				explain "";
+			}
+		}
+		explain "";
+	}
 });
 
 # }}}

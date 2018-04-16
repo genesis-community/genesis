@@ -6,8 +6,47 @@ use Genesis;
 use Genesis::Legacy; # but we'd rather not
 use Genesis::Helpers;
 
-sub url {
-	my ($class, $name, $version) = @_;
+### Class Methods
+
+sub downloadable {
+	my ($class, $filter) = @_;
+	$filter ||= '';
+	if (substr($filter,-1,1) eq '$') {
+		substr($filter,-1,1,'');
+	} else {
+		$filter .= '.*';
+	}
+
+	my $creds = "";
+	if ($ENV{GITHUB_USER} && $ENV{GITHUB_AUTH_TOKEN}) {
+		$creds = "$ENV{GITHUB_USER}:$ENV{GITHUB_AUTH_TOKEN}";
+	}
+	my ($code, $msg, $data) = curl("GET", "https://api.github.com/users/genesis-community/repos", undef, undef, 0, $creds);
+	if ($code == 404) {
+		die "Could not find Genesis Community organization on Github; are you able to route to the Internet?\n";
+	}
+	if ($code == 403) {
+		die "Access forbidden trying to reach Github; throttling may be in effect.  Set your GITHUB_USER and GITHUB_AUTH_TOKEN to prevent throttling.\n";
+	}
+	if ($code != 200) {
+		die "Could not read Genesis Community organization's reposotories; Github returned a ".$msg."\n";
+	}
+
+	my $repositories;
+	eval { $repositories = load_json($data); 1 }
+		or die "Failed to read repository information from Github: $@\n";
+
+	if (!@$repositories) {
+		die "No repositories found in the Genesis Community organition at https://github.com/genesis-community/repos.\n";
+	}
+
+	return map {(my $k = $_) =~ s/-genesis-kit$//; $k}
+         grep {$_ =~ qr/$filter-genesis-kit/}
+         map {$_->{name}} @$repositories;
+}
+
+sub releases {
+	my ($class, $name, $test) = @_;
 
 	my $creds = "";
 	if ($ENV{GITHUB_USER} && $ENV{GITHUB_AUTH_TOKEN}) {
@@ -17,6 +56,9 @@ sub url {
 	if ($code == 404) {
 		die "Could not find Genesis Kit $name on Github; does https://github.com/genesis-community/$name-genesis-kit/releases exist?\n";
 	}
+	if ($code == 403) {
+		die "Access forbidden trying to reach Github; throttling may be in effect.  Set your GITHUB_USER and GITHUB_AUTH_TOKEN to prevent throttling.\n";
+	}
 	if ($code != 200) {
 		die "Could not find Genesis Kit $name release information; Github returned a ".$msg."\n";
 	}
@@ -25,11 +67,16 @@ sub url {
 	eval { $releases = load_json($data); 1 }
 		or die "Failed to read releases information from Github: $@\n";
 
-	if (!@$releases) {
+	if (!@$releases && !$test) {
 		die "No released versions of Genesis Kit $name found at https://github.com/genesis-community/$name-genesis-kit/releases.\n";
 	}
+	return @$releases;
+}
 
-	for (map { @{$_->{assets} || []} } @$releases) {
+sub url {
+	my ($class, $name, $version) = @_;
+
+	for (map { @{$_->{assets} || []} } $class->releases($name)) {
 		if (!$version or $version eq 'latest') {
 			next unless $_->{name} =~ m/^\Q$name\E-(.*)\.(tar\.gz|tgz)$/;
 			$version = $1;
@@ -42,6 +89,31 @@ sub url {
 
 	die "$name/$version tarball asset not found on Github.  Oops.\n";
 }
+
+sub versions {
+	my ($class, $name,  %opts) = @_;
+
+	my @releases =
+    grep {!$_->{draft}      || $opts{'drafts'}}
+    grep {!$_->{prerelease} || $opts{'prerelease'}}
+    $class->releases($name, 1);
+
+	if (defined $opts{latest}) {
+		my $latest = $opts{latest} || 1;
+		my @versions = (reverse sort by_semver (map {$_->{tag_name}} @releases))[0..($latest-1)];
+		@releases = grep {my $v = $_->{tag_name}; grep {$_ eq $v} @versions} @releases;
+	}
+	return map {
+		(my $v = $_->{tag_name}) =~ s/^v//;
+		($v => {
+			body => $_->{body},
+			draft=> !!$_->{draft},
+			prerelease => !!$_->{prerelease},
+			date => $_->{published_at} || $_->{created_at}
+		})} @releases;
+}
+
+# Instance methods
 
 sub path {
 	my ($self, $path) = @_;
@@ -259,6 +331,36 @@ the abstract.  It does not handle the concrete problems of dealing with
 tarballs (Genesis::Kit::Compiled) or dev/ directories (Genesis::Kit::Dev).
 
 =head1 CLASS METHODS
+
+=head2 downloadable($filter)
+
+Lists the known downloadable compiled kits on the Genesis Community Github
+organization.  If a filter is given, it will be used to limit the kit names to
+match that filter as a regular expression.
+
+An error will be thrown if it cannot reach the github api endpoint for
+genesis-community organization, if the response is not valid JSON, or for
+any other communication error.
+
+=head2 releases($name)
+
+Returns the list of releases for a given repository under the Genesis Community
+Github organization.  This is the full response from Github, converted from
+JSON, and includes all the information for all releases under the given
+repository.  This is primarily a low-level function for C<url> and C<versions>
+
+An error will be thrown if it cannot reach the github api endpoint for
+genesis-community organization, if the repository does not exist,  if the
+response is not valid JSON, or for any other communication error.
+
+=head2 versions($name)
+
+Returns a hash of tag,name,draft,prerelease,body and timestamp for each version
+for the named repository under the Genesis Community Github organization.
+
+An error will be thrown if it cannot reach the github api endpoint for
+genesis-community organization, if the repository does not exist,  if the
+response is not valid JSON, or for any other communication error.
 
 =head2 url($name, $version)
 

@@ -146,6 +146,45 @@ subtest 'kit urls' => sub {
 	dies_ok { Genesis::Kit->url('bosh', '0.0.781') } "Non-existent versions of kits do not have download urls";
 };
 
+subtest 'kit downloadable' => sub {
+	my (@kits,@expected);
+
+	lives_ok { @kits = Genesis::Kit->downloadable() } "Can get a list of downloadable kits from Github";
+	@expected = qw(blacksmith bosh cf concourse jumpbox logsearch shield vault);
+	cmp_deeply(\@kits, supersetof(@expected),
+		"Downloadable kits includes at least the core kits known at the time of this writing.");
+	
+	lives_ok { @kits = Genesis::Kit->downloadable('^b.*h$') } "Can filter on a regex pattern";
+	@expected = qw(bosh blacksmith);
+	cmp_deeply(\@kits, supersetof(@expected), "Can filter on anchors to get bosh and blacksmith");
+	my @bad = grep {$_ !~ /^b.*h$/} @kits;
+	ok scalar(@bad) == 0, "No erroneous element were found in the filter";
+
+	lives_ok { @kits = Genesis::Kit->downloadable('^cf$') } "Can filter on explicit name";
+	ok @kits == 1 && $kits[0] eq 'cf', "Found one and only one match to 'cf' genesis kit";
+};
+
+subtest 'kit versions' => sub {
+	my (%versions,@versions);
+
+	lives_ok { %versions = Genesis::Kit->versions('jumpbox') } "The Jumpbox kit has versions";
+	@versions = keys %versions;
+	my @bad = grep {$_ !~ /^(\d+)(?:\.(\d+)(?:\.(\d+)(?:[\.-]rc[\.-]?(\d+))?)?)?/} @versions;
+	ok scalar(@versions) > 0 && scalar(@bad) == 0, "Returned good semver versions and no bad ones";
+
+	my %struct = (body       => ignore(),
+	              date       => re('\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ'),
+	              draft      => re('^1?$'),
+	              prerelease => re('^1?$'));
+	cmp_deeply( [values %versions], array_each(\%struct), "Each version contains desired details");
+
+	my @latest_two = (reverse sort by_semver @versions)[0..1];
+	lives_ok { %versions = Genesis::Kit->versions('jumpbox',latest => 2) } "get the latest 2 versions";
+	@versions = keys %versions;
+	cmp_bag(\@versions, \@latest_two);
+	
+};
+
 subtest 'version requirements' => sub {
 	my $kit = kit(test => '1.2.3');
 	local $Genesis::VERSION;
