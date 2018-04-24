@@ -1203,47 +1203,72 @@ sub {
 # genesis list-kits - list kit versions available locally or remotely {{{
 command("list-kits", <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE: genesis list-kits [-r|--remote[=URL]] [--versions] [--filter <re pattern>|<name>]
+USAGE: genesis list-kits [-r|--remote|--updates|-u] [<options>] [--filter <re pattern>|<name>]
 
 Lists the kits available locally or remotely.  If filter is specified, use it
 as a regular expression to filter the kits returned.
 
 OPTIONS
 $GLOBAL_USAGE
-  -r, --remote           List the remote kits available from the Genesis
-                         Community Github organization
-      --latest[=N]       List only the latest (N) versions -- N defaults to 1
+  -u, --updates         List remote updates newer than the latest local
+  -r, --remote          List the remote kits available from the Genesis
+                        Community Github organization
+      --latest[=N]      List only the latest (N) versions -- N defaults to 1
 
-Remote supports further options
-	  --prereleases      Include pre-release versions of kits
-	  --details          Show release date and notes.
+Remote and updates supports further options
+      --prereleases     Include pre-release versions of kits
+      --[no-]details    Determines if release date and details are shown.
+                        Defaults to show for --updated, not show for others.
 EOF
 sub {
 	my %options;
 	options(\@_, \%options, qw/
+		updates|u
 		remote|r
 		latest:i
 		prereleases
-		details
+		details!
 	/);
 	usage(1) if @_ > 1;
 	my $name = $_[0];
 	usage(1,"#R{[ERROR]} Cannot specify both --filter and name.")
 		if ($name && $options{filter});
+	usage(1,"#R{[ERROR]} Cannot specify both --remote|-r and --updates|-u.")
+		if $options{remote} && $options{updates};
 	check_prereqs(no_repo_needed => $options{remote});
 
-	my %kits;
+	my (%kits, %latest);
+	$options{details} = $options{updates} unless defined $options{details};
 	if ($options{remote}) {
 		my @kit_names = ($name ? ($name) : Genesis::Kit->downloadable($options{filter}));
 		for my $kit (@kit_names) {
 			$kits{$kit} = {Genesis::Kit->versions($kit, latest=>$options{latest}, prerelease=>$options{prereleases})};
 		}
+
+	} elsif ($options{updates}) {
+		my $available_kits = Genesis::Top->new('.')->compiled_kits;
+		for my $k (keys %$available_kits) {
+			$kits{$k} = {};
+			$latest{$k} = (reverse sort by_semver keys(%{$available_kits->{$k}}))[0];
+			my %versions = Genesis::Kit->versions($k, latest=>$options{latest}, prerelease=>$options{prereleases});
+			for my $v (reverse sort by_semver keys(%versions)) {
+				last if $latest{$k} && by_semver($v,$latest{$k}) < 1;
+				$kits{$k}{$v} = $versions{$v};
+			}
+		}
+
 	} else {
-		my $top = Genesis::Top->new('.');
-		my $available_kits = $top->compiled_kits;
-		for (keys %$available_kits) {
-			next if $name && $name ne $_;
-			$kits{$_} = $available_kits->{$_};
+		my $available_kits = Genesis::Top->new('.')->compiled_kits;
+		for my $k (keys %$available_kits) {
+			next if $name && $name ne $k;
+			$kits{$k} ||= {};
+			my @versions = keys %{$available_kits->{$k}};
+			@versions = grep {$_} (reverse sort by_semver @versions)[0..(($options{latest} || 1)-1)]
+				if defined $options{latest};
+			my %details = $options{details}
+				? Genesis::Kit->versions($k, prerelease=>1, draft=>1)
+				: ();
+			$kits{$k}{$_} = ($details{$_} || {}) for (@versions);
 		}
 	}
 
@@ -1253,11 +1278,23 @@ sub {
 		unless keys %kits;
 
 	for my $kit (sort(keys %kits)) {
-		explain "\n\e[4m#C{Kit: %s}", $kit;
-		explain "\n#Y{No versions found.}"
-			unless keys(%{$kits{$kit}});
+		if ($options{updates}) {
+			my $num_updates = keys(%{$kits{$kit}});
+			if ($num_updates) {
+				explain "\n#Y{There %s for the }#C{%s}#Y{ kit (currently using }#C{v%s}#Y{):}",
+				         ($num_updates == 1 ? "is 1 update" : "are $num_updates updates"),
+				         $kit,
+						 $latest{$kit};
+			} else {
+				explain "\n#G{There are no updates available for the }#C{%s}#G{ kit.}", $kit;
+			}
+		} else {
+			explain "\n\e[4m#C{Kit: %s}", $kit;
+			explain "#Y{  No versions found%s.}", ($options{updates} && $latest{$kit} ? " newer that v$latest{$kit}" : "")
+				unless keys(%{$kits{$kit}});
+		}
 		for my $version (sort by_semver keys(%{$kits{$kit}})) {
-			my $c = $version =~ /[\.-]rc[\.-]?(\d+)$/ ? "Y"
+			my $c = ($version =~ /[\.-]rc[\.-]?(\d+)$/) ? "Y"
 			      : ($kits{$kit}{$version}{prerelease} ? "y" : "G");
 			my $d = "";
 			if ($kits{$kit}{$version}{date} && $options{details}) {

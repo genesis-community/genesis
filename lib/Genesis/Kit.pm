@@ -91,7 +91,7 @@ sub url {
 }
 
 sub versions {
-	my ($class, $name,  %opts) = @_;
+	my ($class, $name, %opts) = @_;
 
 	my @releases =
     grep {!$_->{draft}      || $opts{'drafts'}}
