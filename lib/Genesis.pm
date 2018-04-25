@@ -60,7 +60,7 @@ sub envdefault {
 
 my $__is_highcolour = $ENV{TERM} && $ENV{TERM} =~ /256color/;
 sub _color {
-	my ($fg, $bg) = split(//, $_[0]);
+	my ($fg,$bg) = @_;
 	my @c = (  # NOTE: backgrounds only use the darker version unless highcolour terminal
 		'Kk',    # dark grey/black)
 		'Rr',    # light red/red
@@ -71,8 +71,8 @@ sub _color {
 		'Cc',    # light cyan/dark cyan
 		'Ww'     # light grey/white
 	);
-	my $fid = (grep {$c[$_] =~ qr/$fg/} 0..7 || ())[0];
-	my $bid = (grep {$c[$_] =~ qr/$bg/} 0..7 || ())[0];
+	my $fid = (grep {$c[$_] =~ qr/$fg/} 0..7 || ())[0] if $fg;
+	my $bid = (grep {$c[$_] =~ qr/$bg/} 0..7 || ())[0] if $bg;
 	return "" unless defined $fid || defined $bid;
 	my @cc;
 	if ($__is_highcolour) {
@@ -88,24 +88,30 @@ sub _color {
 
 sub _colorize {
 	my ($c, $msg) = @_;
+	$c = substr($c, 1);
 	return $msg if envset('NOCOLOR');
-	my ($fg,$bg) = split //, (substr $c, 1, 2);
 
-	if ($fg eq "*" || $bg eq "*") {
+	my @fmt = ();
+	push @fmt, 3 if $c =~ /i/i;
+	push @fmt, 4 if $c =~ /u/i;
+	my ($fg, $bg) = grep {$_ !~ /^[ui]$/i} split(//, $c);
+
+  my $prefix = (@fmt) ? "\e[".join(";", @fmt)."m" : "";
+	if (($fg && $fg eq "*") || ($bg && $bg eq "*")) {
 		my @rainbow = ('R','G','Y','B','M','C');
 		my $i = 0;
 		my $msgc = "";
 		foreach my $char (split //, $msg) {
 			my $fr = $fg eq "*" ? $rainbow[$i%6] : $fg;
 			my $br = $bg eq "*" ? $rainbow[($i+3)%6] : $bg;
-			$msgc = $msgc . _color($fr.$br)."$char";
+			$msgc = $msgc . _color($fr,$br)."$char";
 			if ($char =~ m/\S/) {
 				$i++;
 			}
 		}
-		return "$msgc\e[0m";
+		return "$prefix$msgc\e[0m";
 	} else {
-		return _color($fg.$bg)."$msg\e[0m";
+		return $prefix._color($fg,$bg)."$msg\e[0m";
 	}
 }
 
@@ -113,7 +119,7 @@ sub csprintf {
 	my ($fmt, @args) = @_;
 	return '' unless $fmt;
 	my $s = sprintf($fmt, @args);
-	$s =~ s/(#[KRGYBMPCW*]{1,2}\{)(.*?)(\})/_colorize($1, $2)/egi;
+	$s =~ s/(#[IUKRGYBMPCW*]{1,4})\{(.*?)(\})/_colorize($1, $2)/egi;
 	return $s;
 }
 sub explain {
