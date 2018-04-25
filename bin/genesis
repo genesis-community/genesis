@@ -498,28 +498,38 @@ USAGE: genesis [OPTIONS] COMMAND [MORE OPTIONS]
 
 OPTIONS
 $GLOBAL_USAGE
-COMMANDS
-  ci               Interactively setup Concourse deployment pipeline.
-  create-kit       Create a new kit with default scaffolding.
-  compile-kit      Create a distributable kit archive from dev.
-  decompile-kit    Unpack a kit archive to dev.
-  deploy           Generate a real manifest using Vault + Cloud Config, and deploy it to BOSH.
-  check            Check a deployment manifest for errors, without deploying it.
-  do               Run an addon script provided by the Kit.  Try `do list`
-  describe         Describe a Concourse pipeline, in words.
-  download         Download a Genesis Kit from the Internet.
-  graph            Draw a Concourse pipeline.
-  init             Initialize a new Genesis deployment.
-  lookup           Find a key set in environment manifests.
-  manifest         Generate a redacted BOSH deployment manifest for an environment.
-  new              Create a new Genesis deployment environment.
-  ping             See if the genesis binary is a real thing.
-  repipe           Configure a Concourse pipeline for automating deployments.
-  secrets          Re-generate / rotate credentials (passwords, keys, etc.).
-  summary          Print a summary of defined environments.
-  version          Print the version of genesis
-  yamls            Print a list of the YAML files used for a single environment.
+#U{BASIC ENVIRONMENT MANAGEMENT COMMANDS:}
+  #C{init}              Initialize a new Genesis deployment.
+  #G{new}               Create a new Genesis deployment environment.
+  #G{check}             Check a deployment manifest for errors, without deploying it.
+  #G{secrets}           Re-generate / rotate credentials (passwords, keys, etc.).
+  #G{manifest}          Generate a redacted BOSH deployment manifest for an environment.
+  #G{deploy}            Generate a real manifest using Vault + Cloud Config, and deploy it to BOSH.
+  #G{do}                Run an addon script provided by the Kit.  Try `do list`
 
+#U{INFORMATIVE COMMANDS:}
+  #C{ping}              See if the genesis binary is a real thing.
+  #C{version}           Print the version of genesis
+  #C{help}              As you can guess, prints this out.
+  #G{info}              Prints out kit-specific information for a given environment.
+  #G{lookup}            Find a key set in environment manifests.
+  #G{yamls}             Print a list of the YAML files used for a single environment.
+
+#U{PIPELINE MANAGEMENT COMMANDS:}
+  ci                Interactively setup Concourse deployment pipeline.
+  repipe            Configure a Concourse pipeline for automating deployments.
+  describe          Describe a Concourse pipeline, in words.
+  graph             Draw a Concourse pipeline.
+
+#U{KIT MANAGEMENT COMMANDS:}
+  #C{create-kit}        Create a new kit with default scaffolding.
+  #C{compile-kit}       Create a distributable kit archive from dev.
+  #C{decompile-kit}     Unpack a kit archive to dev.
+  #C{list-kits}         List local or remote Genesis kits.
+  download          Download a Genesis Kit from the Internet.
+
+Those commands listed in #G{green} operate on a single specified environment.  Those that
+are in #C{cyan} can (or in some cases must) be run outside a Genesis repository.
 See `genesis COMMAND -h' for more specific, per-command usage information.
 EOF
 sub {
