@@ -157,7 +157,7 @@ sub has_hook {
 sub run_hook {
 	my ($self, $hook, %opts) = @_;
 
-	debug("running the kit 'check' hook");
+	debug("running the kit '$hook' hook");
 	die "No '$hook' hook script found\n"
 		unless $self->has_hook($hook);
 

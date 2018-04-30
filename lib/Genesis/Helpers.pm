@@ -311,7 +311,7 @@ export -f validate_features
 
 
 describe() {
-	$GENESIS_CALLBACK_BIN ui-describe "$@"
+	$GENESIS_CALLBACK_BIN ui-describe -- "$@"
 }
 export -f describe
 

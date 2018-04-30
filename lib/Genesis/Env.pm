@@ -435,6 +435,7 @@ sub has_hook {
 
 sub run_hook {
 	my ($self, $hook, %opts) = @_;
+	debug "Started run_hook '$hook'";
 	return $self->kit->run_hook($hook, %opts, env => $self);
 }
 

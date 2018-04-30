@@ -41,6 +41,7 @@ sub _bosh {
 my $reping;
 sub ping {
 	my ($class, $env) = @_;
+	# TODO: once using vault-stored bosh targetting, we don't need to do this anymore
 	explain "Checking availability of the '#M{$env}' BOSH director..."
 		unless $reping || envset "GENESIS_TESTING";
 	$reping = 1;
@@ -69,6 +70,7 @@ sub create_env {
 
 sub download_cloud_config {
 	my ($class, $env, $path) = @_;
+	explain "Downloading cloud config from '#M{$env}' BOSH director...";
 	_bosh({ interactive => 1, onfailure => "Could not download cloud-config from '#M{$env}' BOSH director" },
 		'bosh -e "$1" cloud-config > "$2"', $env, $path);
 
