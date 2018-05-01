@@ -413,7 +413,7 @@ sub bosh_target {
 		}
 
 		Genesis::BOSH->ping($bosh)
-			or die csprintf("Could not find BOSH Director '#M{$bosh}' (specified via $source).\n");
+			or die csprintf("Could not reach BOSH Director '#M{$bosh}'\n  - specified via $source\n\nDid you create an alias and login to it?\n");
 
 		$self->{__bosh_target} = $bosh;
 	}
