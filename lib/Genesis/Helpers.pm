@@ -60,6 +60,14 @@ __DATA__
 #    # what is the CF URL of my local instance?
 #    exodus $GENESIS_ENVIRONMENT/cf api_url
 #
+genesis() {
+  [[ -z "${GENESIS_CALLBACK_BIN}" ]] \
+    && echo >&2 "Genesis command not specified - this is a bug in Genesis, or you are running $0 outside of Genesis" \
+    && exit 1
+  ${GENESIS_CALLBACK_BIN} "$@"
+}
+export -f genesis
+
 exodus() {
   # movement of the people
   local __env __key
@@ -98,7 +106,7 @@ export -f have_exodus_data
 new_enough() {
   local __have=${1:?new_enough() requires an actual version as the first argument}
   local __min=${2:?new_enough() requires an actual version as the second argument}
-  $GENESIS_CALLBACK_BIN ui-semver "$__have" ge "$__min"
+  genesis ui-semver "$__have" ge "$__min"
   return $?
 }
 export -f new_enough
@@ -120,14 +128,15 @@ lookup() {
   local __key=${1:?lookup() - must specify a key to look up}
   local __default=${2:-}
 
-  $GENESIS_CALLBACK_BIN -C "$GENESIS_ROOT" lookup "$__key" $GENESIS_ENVIRONMENT "$__default"
+  genesis -C "$GENESIS_ROOT" lookup "$__key" "$GENESIS_ENVIRONMENT" "$__default"
 }
 export -f lookup
 
 
 typeof() {
   local __key=${1:?typeof() - must specify a key to look up}
-  local __val=$($GENESIS_CALLBACK_BIN -C "$GENESIS_ROOT" lookup "$__key" $GENESIS_ENVIRONMENT "" |  sed -e 's/\(.\).*/\1/')
+  local __val
+  __val="$(genesis -C "$GENESIS_ROOT" lookup "$__key" "$GENESIS_ENVIRONMENT" "" |  sed -e 's/\(.\).*/\1/')"
   if [[ $__val == "{" ]]; then
     echo "map"
   elif [[ $__val == "[" ]]; then
@@ -144,10 +153,31 @@ export -f typeof
 ###   BOSH Inspection Functions
 ###
 
+bosh() {
+  [[ -z "${GENESIS_BOSH_COMMAND}" ]] \
+    && echo >&2 "BOSH CLI command not specified - this is a bug in Genesis, or you are running $0 outside of Genesis" \
+    && exit 1
+  ${GENESIS_BOSH_COMMAND} "$@"
+}
+export -f bosh
+
 bosh_cpi() {
-  if [[ -n "${GENESIS_ENV_BOSH_TARGET:-}" ]]; then
-    bosh -e "$GENESIS_ENV_BOSH_TARGET" env --json | jq -r '.Tables[0].Rows[0].cpi'
+  local __have_env __error
+  if [[ -z "${GENESIS_ENV_BOSH_TARGET:-}" ]]; then
+    __error="unknown target"
+  else
+    __have_env="$(bosh -e "${GENESIS_ENV_BOSH_TARGET}" env --json | jq -r '.Tables[0].Rows[0].cpi')"
+    if [[ "$?" != "0" ]] ; then
+      __error="failed to communicate with BOSH director:"$'\n'"${__have_env}"
+    elif [[ -z "${__have_env}" ]] ; then
+      __error="no response from BOSH director"
+    else
+      echo "${__have_env}"
+      return 0
+    fi
   fi
+  echo >&2 "Cannot determine CPI from BOSH director: unknown target: ${__error}"
+  exit 2
 }
 export -f bosh_cpi
 
@@ -306,26 +336,22 @@ validate_features() {
 }
 export -f validate_features
 
-
-
-
-
 describe() {
-	$GENESIS_CALLBACK_BIN ui-describe -- "$@"
+	genesis ui-describe -- "$@"
 }
 export -f describe
 
 prompt_for() {
 	local __var="$1" __type="$2"; shift 2;
 	if [[ "$__type" =~ ^secret- ]] ; then
-		$GENESIS_CALLBACK_BIN ui-prompt-for "$__type" "$__var" "$@"
+		genesis ui-prompt-for "$__type" "$__var" "$@"
 		local __rc="$?"
 		[[ $__rc -ne 0 ]] && echo "Error encountered - cannot continue" && exit $__rc
 	else
 		local __tmpfile
 		__tmpfile=$(mktemp)
 		[[ $? -ne 0 ]] && echo >&2 "Failed to create tmpdir: $__tmpfile" && exit 2
-		$GENESIS_CALLBACK_BIN ui-prompt-for "$__type" "$__tmpfile" "$@"
+		genesis ui-prompt-for "$__type" "$__tmpfile" "$@"
 		local __rc="$?"
 		if [[ $__rc -ne 0 ]] ; then
 			# error
