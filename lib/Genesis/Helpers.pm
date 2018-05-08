@@ -297,14 +297,15 @@ invalid_features() {
   local __valid
   local __have
   declare -a __invalid
-  for have in $GENESIS_REQUESTED_FEATURES; do
+  for __have in $GENESIS_REQUESTED_FEATURES; do
     __found='';
     for __valid in "$@"; do
       [[ "$__have" == "$__valid" ]] && __found=1 && break
     done
-    [[ -n $__found ]] || __invalid+=($__have)
+    [[ -n $__found ]] || __invalid+=("$__have")
   done
-  echo "${__invalid[@]}"
+  [[ "${#__invalid[@]}" -gt 0 ]] && \
+    echo "${__invalid[@]}"
   return 0
 }
 export -f invalid_features
