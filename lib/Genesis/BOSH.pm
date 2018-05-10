@@ -38,6 +38,26 @@ sub _bosh {
 	return run($opts, @args);
 }
 
+sub environment_variables {
+	my ($class, $env) = @_;
+
+	return {} unless -f "$ENV{HOME}/.bosh/config";
+	my $bosh = load_yaml_file("$ENV{HOME}/.bosh/config")
+		or return {};
+
+	for my $e (@{ $bosh->{environments} || []  }) {
+		next unless $e->{alias} eq $env;
+		return {
+			BOSH_ENVIRONMENT   => $e->{url},
+			BOSH_CA_CERT       => $e->{ca_cert},
+			BOSH_CLIENT        => $e->{username},
+			BOSH_CLIENT_SECRET => $e->{password},
+		};
+	}
+
+	return {};
+}
+
 my $reping;
 sub ping {
 	my ($class, $env) = @_;

@@ -182,8 +182,15 @@ sub run_hook {
 
 		unless (grep { $_ eq $hook } qw/new prereqs/) {
 			$ENV{GENESIS_REQUESTED_FEATURES} = join(' ', $opts{env}->features);
-			$ENV{GENESIS_ENV_BOSH_TARGET}    = $opts{env}->bosh_target
-				unless $opts{env}->needs_bosh_create_env;
+			if ($opts{env}->needs_bosh_create_env) {
+				$ENV{GENESIS_USE_CREATE_ENV} = 'yes';
+			} else {
+				my $bosh = Genesis::BOSH->environment_variables($opts{env}->bosh_target);
+				for my $var (keys %$bosh) {
+					$ENV{$var} = $bosh->{$var};
+				}
+				$ENV{BOSH_DEPLOYMENT} = $opts{env}->name . '-' . $opts{env}->type;
+			}
 		}
 
 	} elsif ($hook eq 'subkit') {
