@@ -165,18 +165,14 @@ export -f bosh
 
 bosh_cpi() {
   local __have_env __error
-  if [[ -z "${GENESIS_ENV_BOSH_TARGET:-}" ]]; then
-    __error="unknown target"
+  __have_env="$(bosh env --json | jq -r '.Tables[0].Rows[0].cpi')"
+  if [[ "$?" != "0" ]] ; then
+    __error="failed to communicate with BOSH director:"$'\n'"${__have_env}"
+  elif [[ -z "${__have_env}" ]] ; then
+    __error="no response from BOSH director"
   else
-    __have_env="$(bosh -e "${GENESIS_ENV_BOSH_TARGET}" env --json | jq -r '.Tables[0].Rows[0].cpi')"
-    if [[ "$?" != "0" ]] ; then
-      __error="failed to communicate with BOSH director:"$'\n'"${__have_env}"
-    elif [[ -z "${__have_env}" ]] ; then
-      __error="no response from BOSH director"
-    else
-      echo "${__have_env%_cpi}"
-      return 0
-    fi
+		echo "${__have_env%_cpi}"
+    return 0
   fi
   echo >&2 "Cannot determine CPI from BOSH director: unknown target: ${__error}"
   exit 2
