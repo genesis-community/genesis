@@ -64,8 +64,10 @@ sub get_file($) {
 sub fake_bosh {
 	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($script) = @_;
-	$script ||= <<EOF;
+	$script ||= <<'EOF';
 #!/bin/bash
+echo "bosh"
+for x in "$@" ; do printf "%s\n" "$x"; done
 exit 0
 EOF
 

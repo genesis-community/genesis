@@ -7,6 +7,8 @@ use lib 't';
 use helper;
 use Test::Exception;
 use Test::Deep;
+use Test::Output;
+use Test::Differences;
 
 use_ok 'Genesis::Env';
 use Genesis::Top;
@@ -535,6 +537,78 @@ EOF
 		$env = $top->load_env('standalone'); # reload otherwise its cached by the previous call
 		is $env->bosh_target, "https://127.0.0.86:25555", "the \$GENESIS_BOSH_ENVIRONMENT overrides all";
 	}
+};
+
+subtest 'cloud_config_and_deployment' => sub{
+	local $ENV{GENESIS_BOSH_COMMAND};
+	fake_bosh;
+	my $vault_target = vault_ok;
+	`safe set --quiet secret/code word='penguin'`;
+
+	my $env;
+	my $top = Genesis::Top->create(workdir, 'thing')->link_dev_kit('t/src/fancy');
+	put_file $top->path('standalone.yml'), <<EOF;
+---
+kit:
+  name:    dev
+  version: latest
+params:
+  env: standalone
+EOF
+
+	$env = $top->load_env('standalone');
+	
+	lives_ok { $env->download_cloud_config(); }
+		"download_cloud_config runs correctly";
+
+	ok -f $env->{ccfile}, "download_cloud_config created cc file";
+	eq_or_diff get_file($env->{ccfile}), <<EOF, "download_cloud_config calls BOSH correctly";
+bosh
+-e
+standalone
+cloud-config
+EOF
+
+	put_file $env->{ccfile}, <<EOF;
+---
+something: (( vault "secret/code:word" ))
+EOF
+
+	is($env->lookup("something","goose"), "goose", "Environment doesn't contain cloud config details");
+	is($env->manifest_lookup("something","goose"), "penguin", "Manifest contains cloud config details");
+	stdout_is(sub {$env->deploy()}, <<EOF,
+bosh
+-e
+standalone
+-d
+standalone-thing
+deploy
+$env->{__tmp}/manifest.yml
+--no-redact
+EOF
+		"Deploy should call BOSH with the correct options");
+
+	my $manifest_file = $env->path(".genesis/manifests/".$env->name.".yml");
+	ok -f $manifest_file, "deploy created cached redacted manifest file";
+	
+	is($env->last_deployed_lookup("something","goose"), "REDACTED", "Cached manifest contains redacted vault details");
+	is($env->last_deployed_lookup("fancy.status","none"), "online", "Cached manifest contains non-redacted params");
+	is($env->last_deployed_lookup("params.env","none"), "none", "Cached manifest doesn't contain pruned params");
+	cmp_deeply($env->exodus_lookup("",{}), {
+				dated => ignore(),
+				deployer => $ENV{USER},
+				kit_name => "dev",
+				kit_version => "latest",
+				vault_base => "secret/standalone/thing",
+				version => '(development)',
+				'hello.world' => 'i see you',
+				'multilevel.arrays.0' => 'so',
+				'multilevel.arrays.1' => 'useful',
+				'three.levels.or.more.is.right' => 'on, man!',
+				'three.levels.works' => 'now'
+			}, "exodus data was written by deployment");
+
+	teardown_vault();
 };
 
 done_testing;

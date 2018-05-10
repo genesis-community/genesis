@@ -207,6 +207,8 @@ sub actual_environment_files {
 sub _lookup {
 	my ($what, $key, $default) = @_;
 
+	return $what if $key eq '';
+
 	for (split /\./, $key) {
 		return $default if !exists $what->{$_};
 		$what = $what->{$_};
@@ -222,6 +224,32 @@ sub manifest_lookup {
 	my ($self, $key, $default) = @_;
 	my ($manifest, undef) = $self->_manifest(redact => 0);
 	return _lookup($manifest, $key, $default);
+}
+
+sub last_deployed_lookup {
+	my ($self, $key, $default) = @_;
+	my $last_deployment = $self->path(".genesis/manifests/".$self->{name}.".yml");
+	die "No successfully deployed manifest found for $self->{name} environment"
+		unless -e $last_deployment;
+	my $out = run(
+		{ onfailure => "Could not read last deployed manifest for $self->{name}" },
+		'spruce json $1', $last_deployment);
+	my $manifest = load_json($out);
+	return _lookup($manifest, $key, $default);
+}
+
+sub exodus_lookup {
+	my ($self, $key, $default) = @_;
+	debug "Checking if secret/genesis/$self->{name}/".$self->{top}->type." path exists...";
+	my (undef, $rc) = run('safe exists secret/genesis/$1/$2', $self->{name}, $self->{top}->type);
+	return $default if $rc;
+	debug "Exodus data exists, retrieving it and converting to json";
+	my $out = run(
+		{ onfailure => "Could not get $self->{name} exodus data from the Vault" },
+		'safe get secret/genesis/$1/$2 | spruce json',
+		$self->{name}, $self->{top}->type);
+	my $exodus = load_json($out);
+	return _lookup($exodus, $key, $default);
 }
 
 sub defines {
@@ -484,7 +512,7 @@ sub deploy {
 	debug("setting exodus data in the Vault, for use later by other deployments");
 	return run(
 		{ onfailure => "Could not save $self->{name} metadata to the Vault" },
-		'safe', 'set', "secret/genesis/".$self->{top}->type."/$self->{name}",
+		'safe', 'set', "secret/genesis/$self->{name}/".$self->{top}->type,
 		               map { "$_=$exodus->{$_}" } keys %$exodus);
 }
 
@@ -908,6 +936,24 @@ and lists (arrayrefs) by not specifying a leaf node:
 
 This can be preferable to calling C<lookup> multiple times, and is currently
 the only way to pull data out of a list.
+
+If the key is an empty string, it will return the entire data structure.
+
+==head2 manifest_lookup($key, [$default])
+
+Similar to C<lookup>, but uses the merged manifest as the source of the data.
+
+==head2 last_deployed_lookup($key, [$default])
+
+Similar to C<lookup>, but uses the last deployed (redacted) manifest for the
+environment.  Raises an error if there hasn't been a cached manifest for the
+environment.
+
+==head2 exodus_lookup($key, [$default])
+
+Similar to C<lookup>, but uses the exodus data stored in Vault for the
+environment.  Raises an error if there hasn't been a successful deployment for
+the environment.
 
 =head2 features()
 

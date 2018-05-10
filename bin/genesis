@@ -1504,20 +1504,47 @@ sub {
 
 command("lookup", <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE genesis lookup key env-name default-value
+USAGE genesis lookup [--exodus|--deployed|--merged] key env-name [default-value]
+
+Looks up data from the environment file (or alterative source: see options below)
+If the key is empty string, it will return all data from the source.
 
 OPTIONS
+      --merged      Lookup data from a fully merged manifest for the environment.
+      --exodus      Lookup data from the genesis exodus data for the last deployment.
+      --deployed    Lookup data from the manifest of the last deployment.
+
 $GLOBAL_USAGE
 EOF
 sub {
 	my %options;
 	options(\@_, \%options, qw/
+		--exodus
+		--deployed
+		--merged
 	/);
-	usage(1) if @_ != 3;
+	usage(1) if @_ < 2 or @_ > 3;
 	check_prereqs;
+	if ((grep {$_ =~ /^(exodus|deployed|merged)$/} keys(%options)) > 1) {
+		usage 1,"#R{[ERROR]} Can only specify one of --merged, --deployed, or --exodus";
+	}
 
 	my ($key, $name, $default) = @_;
-	my $v = Genesis::Top->new('.')->load_env($name)->lookup($key, $default);
+	my $env = Genesis::Top->new('.')->load_env($name);
+	my $v;
+	if ($options{merged}) {
+		die "Circular reference detected while trying to lookup merged manifest of $name\n"
+			if envset("GENESIS__LOOKUP_MERGED_MANIFEST");
+		$ENV{GENESIS__LOOKUP_MERGED_MANIFEST}="1";
+		$v = $env->manifest_lookup($key,$default);
+	} elsif ($options{deployed}) {
+		$v = $env->last_deployed_lookup($key,$default);
+	} elsif ($options{exodus}) {
+		$v = $env->exodus_lookup($key,$default)
+	} else {
+		$v = $env->lookup($key, $default);
+	}
+	$v="" unless defined($v);
 	$v = encode_json($v) if ref($v);
 	print "$v\n";
 	exit 0;
