@@ -65,6 +65,7 @@ genesis() {
     && echo >&2 "Genesis command not specified - this is a bug in Genesis, or you are running $0 outside of Genesis" \
     && exit 1
   ${GENESIS_CALLBACK_BIN} "$@"
+  return $?
 }
 export -f genesis
 
@@ -158,6 +159,7 @@ bosh() {
     && echo >&2 "BOSH CLI command not specified - this is a bug in Genesis, or you are running $0 outside of Genesis" \
     && exit 1
   ${GENESIS_BOSH_COMMAND} "$@"
+  return $?
 }
 export -f bosh
 
@@ -172,7 +174,7 @@ bosh_cpi() {
     elif [[ -z "${__have_env}" ]] ; then
       __error="no response from BOSH director"
     else
-      echo "${__have_env}"
+      echo "${__have_env%_cpi}"
       return 0
     fi
   fi
