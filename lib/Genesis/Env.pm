@@ -502,7 +502,11 @@ sub deploy {
 
 	# bail out early if the deployment failed;
 	# don't update the cached manifests
-	return if !$ok;
+	if (!$ok) {
+		$self->run_hook('post-deploy', rc => 1)
+			if $self->has_hook('post-deploy');
+		return
+	}
 
 	# deployment succeeded; update the cache
 	$self->write_manifest($self->path(".genesis/manifests/$self->{name}.yml"), redact => 1);
@@ -510,10 +514,14 @@ sub deploy {
 	# track exodus data in the vault
 	my $exodus = $self->exodus;
 	debug("setting exodus data in the Vault, for use later by other deployments");
-	return run(
+	$ok = run(
 		{ onfailure => "Could not save $self->{name} metadata to the Vault" },
 		'safe', 'set', "secret/genesis/$self->{name}/".$self->{top}->type,
 		               map { "$_=$exodus->{$_}" } keys %$exodus);
+
+	$self->run_hook('post-deploy', rc => 0)
+		if $self->has_hook('post-deploy');
+	return $ok;
 }
 
 sub add_secrets { # WIP - majorly broken right now.  sorry bout that.
