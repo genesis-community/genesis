@@ -5,6 +5,7 @@ use warnings;
 use Genesis;
 use Genesis::Legacy; # but we'd rather not
 use Genesis::Helpers;
+use Genesis::BOSH;
 
 ### Class Methods
 
