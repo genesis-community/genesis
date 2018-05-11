@@ -7,6 +7,7 @@ use Genesis::Legacy; # but we'd rather not
 use Genesis::BOSH;
 
 use POSIX qw/strftime/;
+use Digest::file qw/digest_file_hex/;
 
 sub new {
 	my ($class, %opts) = @_;
@@ -240,14 +241,14 @@ sub last_deployed_lookup {
 
 sub exodus_lookup {
 	my ($self, $key, $default) = @_;
-	debug "Checking if secret/genesis/$self->{name}/".$self->{top}->type." path exists...";
-	my (undef, $rc) = run('safe exists secret/genesis/$1/$2', $self->{name}, $self->{top}->type);
+	my $path="secret/exodus/$self->{name}/".$self->{top}->type;
+	debug "Checking if $path path exists...";
+	my (undef, $rc) = run('safe exists "$1"', $path);
 	return $default if $rc;
 	debug "Exodus data exists, retrieving it and converting to json";
 	my $out = run(
 		{ onfailure => "Could not get $self->{name} exodus data from the Vault" },
-		'safe get secret/genesis/$1/$2 | spruce json',
-		$self->{name}, $self->{top}->type);
+		'safe get "$1" | spruce json', $path);
 	my $exodus = load_json($out);
 	return _lookup($exodus, $key, $default);
 }
@@ -341,6 +342,14 @@ sub write_manifest {
 	my ($self, $file, %opts) = @_;
 	my $out = $self->manifest(redact => $opts{redact}, prune => $opts{prune});
 	mkfile_or_fail($file, $out);
+}
+
+sub cached_manifest_info {
+	my ($self) = @_;
+	my $mpath = $self->path(".genesis/manifests/".$self->name.".yml");
+	my $exists = -f $mpath;
+	my $sha1 = $exists ? digest_file_hex($mpath, "SHA-1") : undef;
+	return (wantarray ? ($mpath, $exists, $sha1) : $mpath);
 }
 
 sub _yaml_files {
@@ -505,14 +514,17 @@ sub deploy {
 	return if !$ok;
 
 	# deployment succeeded; update the cache
-	$self->write_manifest($self->path(".genesis/manifests/$self->{name}.yml"), redact => 1);
+	my $manifest_path=$self->path(".genesis/manifests/$self->{name}.yml");
+	$self->write_manifest($manifest_path, redact => 1);
+	debug("written redacted manifest to $manifest_path");
 
 	# track exodus data in the vault
 	my $exodus = $self->exodus;
+	$exodus->{manifest_sha1} = digest_file_hex($manifest_path, 'SHA-1');
 	debug("setting exodus data in the Vault, for use later by other deployments");
 	return run(
 		{ onfailure => "Could not save $self->{name} metadata to the Vault" },
-		'safe', 'set', "secret/genesis/$self->{name}/".$self->{top}->type,
+		'safe', 'set', "secret/exodus/$self->{name}/".$self->{top}->type,
 		               map { "$_=$exodus->{$_}" } keys %$exodus);
 }
 
@@ -1019,6 +1031,11 @@ C<$file>.  This method takes the same options as the C<manifest> method that
 it wraps.  You must have set a cloud-config via C<use_cloud_config()> before
 you call this method.
 
+=head2 cached_manifest_info
+
+Returns the path, existance (boolean), and SHA-1 checksum for the cached
+redacted deployment manifest.  The SHA-1 sum is undefined if the file does not
+exist.
 
 =head2 exodus()
 

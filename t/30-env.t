@@ -576,6 +576,10 @@ EOF
 
 	is($env->lookup("something","goose"), "goose", "Environment doesn't contain cloud config details");
 	is($env->manifest_lookup("something","goose"), "penguin", "Manifest contains cloud config details");
+	my ($manifest_file, $exists, $sha1) = $env->cached_manifest_info;
+	ok $manifest_file eq $env->path(".genesis/manifests/".$env->name.".yml"), "cached manifest path correctly determined";
+	ok ! $exists, "manifest file doesn't exist.";
+	ok ! defined($sha1), "sha1 sum for manifest not computed.";
 	stdout_is(sub {$env->deploy()}, <<EOF,
 bosh
 -e
@@ -588,7 +592,10 @@ $env->{__tmp}/manifest.yml
 EOF
 		"Deploy should call BOSH with the correct options");
 
-	my $manifest_file = $env->path(".genesis/manifests/".$env->name.".yml");
+	($manifest_file, $exists, $sha1) = $env->cached_manifest_info;
+	ok $manifest_file eq $env->path(".genesis/manifests/".$env->name.".yml"), "cached manifest path correctly determined";
+	ok $exists, "manifest file should exist.";
+	ok $sha1 =~ /[a-f0-9]{40}/, "cached manifest calculates valid SHA-1 checksum";
 	ok -f $manifest_file, "deploy created cached redacted manifest file";
 	
 	is($env->last_deployed_lookup("something","goose"), "REDACTED", "Cached manifest contains redacted vault details");
@@ -601,6 +608,7 @@ EOF
 				kit_version => "latest",
 				vault_base => "secret/standalone/thing",
 				version => '(development)',
+				manifest_sha1 => $sha1,
 				'hello.world' => 'i see you',
 				'multilevel.arrays.0' => 'so',
 				'multilevel.arrays.1' => 'useful',
