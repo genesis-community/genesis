@@ -431,7 +431,7 @@ sub exodus {
 }
 
 sub bosh_target {
-	my ($self) = @_;
+	my ($self, $passive) = @_;
 	return undef if $self->needs_bosh_create_env;
 
 	unless ($self->{__bosh_target}) {
@@ -449,9 +449,10 @@ sub bosh_target {
 			die "Could not find the `params.bosh' or `params.env' key in $self->{name} environment file!\n";
 		}
 
+		return $bosh if $passive; # Don't cache if we didn't verify connectivity;
+
 		Genesis::BOSH->ping($bosh)
 			or die csprintf("Could not reach BOSH Director '#M{$bosh}'\n  - specified via $source\n\nDid you create an alias and login to it?\n");
-
 		$self->{__bosh_target} = $bosh;
 	}
 	return $self->{__bosh_target};
@@ -521,6 +522,7 @@ sub deploy {
 	# track exodus data in the vault
 	my $exodus = $self->exodus;
 	$exodus->{manifest_sha1} = digest_file_hex($manifest_path, 'SHA-1');
+	$exodus->{bosh} = $self->bosh_target;
 	debug("setting exodus data in the Vault, for use later by other deployments");
 	return run(
 		{ onfailure => "Could not save $self->{name} metadata to the Vault" },

@@ -186,7 +186,7 @@ sub run_hook {
 			if ($opts{env}->needs_bosh_create_env) {
 				$ENV{GENESIS_USE_CREATE_ENV} = 'yes';
 			} else {
-				my $bosh = Genesis::BOSH->environment_variables($opts{env}->bosh_target);
+				my $bosh = Genesis::BOSH->environment_variables($opts{env}->bosh_target("passive"));
 				for my $var (keys %$bosh) {
 					$ENV{$var} = $bosh->{$var};
 				}
