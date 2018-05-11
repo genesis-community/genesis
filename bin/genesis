@@ -18,6 +18,7 @@ use File::Basename qw/dirname basename/;
 use POSIX qw/strftime/;
 use Cwd qw/getcwd abs_path/;
 use FindBin;
+use Data::Dumper;
 
 use Genesis;
 use Genesis::UI;
@@ -959,11 +960,49 @@ sub {
 	my ($name) = @_;
 	my $env = Genesis::Top->new('.')->load_env($name);
 
-	if (!$env->has_hook('info')) {
-		explain "no additional information available for %s", $name;
+	explain "\n#c{%s}\n\n#C{%s Deployment for Environment '}#M{%s}#C{'}\n",
+		"="x80, uc($env->type), $env->name;
+
+	my $exodus = $env->exodus_lookup("",{});
+	debug("Exodus Data: \n".Dumper($exodus));
+	my $unknown = csprintf("#YI{unknown}");
+	if ($exodus->{dated}) {
+		explain("  #I{Last deployed} %s",
+			strfuzzytime($exodus->{dated}, "#C{%~} #K{(%I:%M%p on %b %d, %Y UTC)}"));
+		explain("  #I{           by} #C{%s}",
+			$exodus->{deployer} || $unknown);
+		explain("  #I{ based on kit} #C{%s}#C{/%s}",
+			$exodus->{kit_name}||$unknown, $exodus->{kit_version}||$unknown);
+		explain("  #I{        using} #C{Genesis v%s}",
+			$exodus->{version} ||$unknown);
+
+		my ($manifest_path,$exists,$sha1) = $env->cached_manifest_info;
+		my $pwd = Cwd::abs_path(Cwd::getcwd);
+		$manifest_path =~ s#^$pwd/##;
+		if ($exists) {
+			if (! defined($exodus->{manifest_sha1})) {
+				explain "\n  #R{[ERROR]} Cannot confirm local cached deployment manifest pertains to this\n"
+					  . "  deployment -- perform another deployment to correct this metdata problem."
+			} elsif ($exodus->{manifest_sha1} ne $sha1) {
+				explain "\n  #Y{[WARNING]} Latest deployment does not match the local cached deployment\n"
+				      . "  manifest, perhaps you need to perform a #C{git pull}."
+			} else {
+				explain "  #I{ which cached} #C{%s} #K{(redacted)}", $manifest_path;
+				explain "  #I{ with sha1sum} #C{%s}", $sha1;
+			}
+		} else {
+			explain "\n  #Y{[WARNING]} No local cashed deployment manifest found for this environment,\n"
+				  . "  perhaps you need to perform a #C{git pull}."
+		}
 	} else {
+		explain "  #YI{No record of deployment found!}"
+	}
+
+	if ($env->has_hook('info')) {
+		explain "\n#c{%s}\n", "-"x80;
 		$env->run_hook('info');
 	}
+	explain "\n#c{%s}\n", "="x80;
 });
 # }}}
 # genesis secrets - Generate / Rotate required credentials for an environment. {{{
