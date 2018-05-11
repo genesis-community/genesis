@@ -6,7 +6,10 @@ use lib 'lib';
 use lib 't';
 use helper;
 use Test::Exception;
+use Test::Differences;
 use Test::Output;
+use Time::Seconds;
+use Time::Piece;
 
 use_ok 'Genesis';
 use Cwd ();
@@ -270,6 +273,51 @@ subtest 'semantic versioning' => sub {
 	ok !new_enough('1.0.0-rc.0', '1.0.0'), '1.0.0-rc.0 is not new enough to satisfy 1.0.0+';
 	ok  new_enough('1.0.0-rc.5', '1.0.0-rc.3'), '1.0.0-rc.5 is new enough to satisfy 1.0.0-rc.3+';
 	ok !new_enough('1.0.0-rc.2', '1.0.0-rc.3'), '1.0.0-rc.2 is not new enough to satisfy 1.0.0-rc.3+';
+};
+
+subtest 'fuzzy time' => sub {
+	sub make_timestring {
+		my $delta = shift;
+		my $t = Time::Piece->new() + Time::Seconds->new($delta);
+		return $t->strftime("%Y-%m-%d %H:%M:%S %z");
+	}
+	for (
+		[               -4, "a few moments ago"                     ],
+		[               32, "in half a minute"                      ],
+		[               45, "in less than a minute"                 ],
+		[              -75, "about a minute ago"                    ],
+		[ ONE_MINUTE *  18, "in about 18 minutes"                   ],
+		[ ONE_MINUTE * -43, "about 43 minutes ago"                  ],
+		[ ONE_MINUTE *  72, "in about an hour"                      ],
+		[           -55000, "about 15 hours ago"                    ],
+		[ ONE_HOUR *   -26, "about a day ago"                       ],
+		[ ONE_DAY *     -1, "about a day ago"                       ],
+		[ ONE_DAY *    4.7, "in about 5 days"                       ],
+		[ ONE_DAY *   -3.2, "about 3 days ago"                      ],
+		[ ONE_DAY *      9, "in about a week"                       ],
+		[ ONE_DAY *     11, "in about a week and a half"            ],
+		[ ONE_DAY *    -19, "about 2 and a half weeks ago"          ],
+		[ ONE_DAY *     29, "in about 4 weeks"                      ],
+		[ ONE_DAY *    -40, "more than a month ago"                 ],
+		[ ONE_DAY *     88, "in almost 3 months"                    ],
+		[ ONE_DAY *   -130, "just over 4 months ago"                ],
+		[ ONE_MONTH * 15.3, "in just over 15 months"                ],
+		[ ONE_MONTH *  -25, "about 2 years ago"                     ],
+		[ ONE_YEAR * -17.6, "more than 17 years ago"                ]
+	) {
+		eq_or_diff strfuzzytime(make_timestring($_->[0])), $_->[1], $_->[1];
+	}
+
+	my $ts = Time::Piece->new() + Time::Seconds->new(-2 * ONE_YEAR);
+	my $infmt = "%A, %B %d, %Y \@ %H:%M:%S";
+	my $in = $ts->strftime($infmt);
+	my $out = $ts->strftime("%I:%M%p on %b %d, %Y");
+	
+	eq_or_diff
+		strfuzzytime($in, "Was deployed %~ (%I:%M%p on %b %d, %Y)", $infmt),
+		"Was deployed about 2 years ago ($out)",
+		"can change input and output format of strfuzzytime.";
+	
 };
 
 done_testing;

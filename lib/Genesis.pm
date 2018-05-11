@@ -8,6 +8,8 @@ our $BUILD   = "";
 our $GITHUB  = "https://github.com/starkandwayne/genesis";
 
 use File::Basename qw/basename dirname/;
+use Time::Seconds;
+use Time::Piece;
 use Cwd ();
 
 use base 'Exporter';
@@ -29,6 +31,7 @@ our @EXPORT = qw/
 	parse_uri
 	is_valid_uri
 
+	strfuzzytime
 	ordify
 
 	run lines bosh curl
@@ -208,6 +211,59 @@ sub new_enough {
 	my ($v, $min) = @_;
 	return 0 unless semver($v) && semver($min);
 	return by_semver($v, $min) >= 0;
+}
+
+sub strfuzzytime {
+	my ($datestring,$output_format, $input_format) = @_;
+  $input_format ||= "%Y-%m-%d %H:%M:%S %z";
+
+	my $time = Time::Piece->strptime($datestring,$input_format);
+	my $delta = Time::Piece->new() - $time;
+	my $fuzzy;
+	my $past = ($delta >= 0);
+	$delta = - $delta unless $past;
+
+	# Adapted from rails' distance_of_time_in_words
+	if ($delta->minutes < 2) {
+		if ($delta->seconds < 20) {
+			$fuzzy = "a few moments";
+		} elsif ($delta->seconds < 40 ) {
+			$fuzzy = "half a minute";
+		} elsif ($delta->seconds < 60 ) {
+			$fuzzy = "less than a minute" ;
+		} else {
+			$fuzzy = "about a minute";
+		}
+	} elsif ($delta->minutes < 50) {
+		$fuzzy = sprintf("about %d minutes", $delta->minutes);
+	} elsif ($delta->minutes < 90) {
+		$fuzzy = "about an hour";
+	} elsif ($delta->hours < 22) {
+		$fuzzy = sprintf("about %d hours", $delta->hours);
+	} elsif ($delta->hours < 42) {
+		$fuzzy = "about a day";
+	} elsif ($delta->days < 6) {
+		$fuzzy = sprintf("about %d days", $delta->days + 0.5);
+	} elsif ($delta->days < 13) {
+		$fuzzy = "about a week";
+		$fuzzy .= " and a half" if $delta->days >= 10;
+	} elsif ($delta->days < 34) {
+		my $half = (int($delta->weeks) == int($delta->weeks + 0.5)) ? "" : " and a half";
+		$fuzzy = sprintf("about %d%s weeks", $delta->weeks, $half );
+	} elsif ($delta->months < 1.5) {
+		$fuzzy = "more than a month";
+	} elsif ($delta->months < 22) {
+		my $aproach = (int($delta->months) == int($delta->months + 0.5)) ? "just over" : "almost";
+		$fuzzy = sprintf("%s %d months", $aproach, $delta->months + 0.5);
+	} elsif ($delta->months < 25) {
+		$fuzzy = "about 2 years";
+	} else {
+		$fuzzy = sprintf("more than %d years", $delta->years );
+	}
+	$fuzzy = $past ? "$fuzzy ago" : "in $fuzzy";
+	$fuzzy = join($fuzzy, map {$time->strftime($_)} split(/%~/, $output_format))
+		if ($output_format);
+	return $fuzzy;
 }
 
 our %ord_suffix = (11 => 'th', 12 => 'th', 13 => 'th', 1 => 'st', 2 => 'nd', 3 => 'rd');
@@ -587,6 +643,18 @@ Returns true if C<$version> is, semantically speaking, greater than or equal
 to the C<$minimum> required version.  Release candidate versions are counted
 as less than their point release, so 1.0.0-rc5 is not newer than 1.0.0.
 
+=head2 strfuzzytime($timestring, [$output_format, [$input_format]])
+
+Parses the C<$timestring>, then returns the aproximate delta from now in natural
+language (eg: "a few moments ago", "in about a week and a half", "about 2 days
+ago")
+
+You can also pass in an output format, and performs C<strfdate> on the C<timestring>,
+with the additional format atom of '%~' as a placeholder for the fuzzy delta.
+
+It expects C<$timestring> to be formatted as "%Y-%m-%d %H:%M:%S %z" -- if the
+source timestring is a different format, you can specify the format as per
+C<strptime>.
 
 =head2 ordify($n)
 
