@@ -379,7 +379,7 @@ params:
 name: (( grab params.name ))
 EOF
 
-	my $now = strftime("%Y-%m-%d %H:%M:%S %z", gmtime());
+	my $now = strftime("%Y-%m-%d %H:%M:%S +0000", gmtime());
 	mkfile_or_fail("$self->{__tmp}/fin.yml", 0644, <<EOF);
 ---
 exodus:

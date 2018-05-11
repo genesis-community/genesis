@@ -8,6 +8,7 @@ our $BUILD   = "";
 our $GITHUB  = "https://github.com/starkandwayne/genesis";
 
 use File::Basename qw/basename dirname/;
+use POSIX qw/strftime/;
 use Time::Seconds;
 use Time::Piece;
 use Cwd ();
@@ -261,8 +262,10 @@ sub strfuzzytime {
 		$fuzzy = sprintf("more than %d years", $delta->years );
 	}
 	$fuzzy = $past ? "$fuzzy ago" : "in $fuzzy";
-	$fuzzy = join($fuzzy, map {$time->strftime($_)} split(/%~/, $output_format))
-		if ($output_format);
+	if ($output_format) {
+		my @lt = localtime($time->epoch); # Convert to localtime
+		$fuzzy = join($fuzzy, map {strftime($_, @lt)} split(/%~/, $output_format))
+	}
 	return $fuzzy;
 }
 

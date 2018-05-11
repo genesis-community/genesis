@@ -968,9 +968,11 @@ sub {
 	my $unknown = csprintf("#YI{unknown}");
 	if ($exodus->{dated}) {
 		explain("  #I{Last deployed} %s",
-			strfuzzytime($exodus->{dated}, "#C{%~} #K{(%I:%M%p on %b %d, %Y UTC)}"));
+			strfuzzytime($exodus->{dated}, "#C{%~} #K{(%I:%M%p on %b %d, %Y %Z)}"));
 		explain("  #I{           by} #C{%s}",
 			$exodus->{deployer} || $unknown);
+		explain("  #I{      to BOSH} #C{%s}",
+			$exodus->{bosh}) if $exodus->{bosh};
 		explain("  #I{ based on kit} #C{%s}#C{/%s}",
 			$exodus->{kit_name}||$unknown, $exodus->{kit_version}||$unknown);
 		explain("  #I{        using} #C{Genesis v%s}",
@@ -982,17 +984,16 @@ sub {
 		if ($exists) {
 			if (! defined($exodus->{manifest_sha1})) {
 				explain "\n  #R{[ERROR]} Cannot confirm local cached deployment manifest pertains to this\n"
-					  . "  deployment -- perform another deployment to correct this metdata problem."
+					  . "          deployment -- perform another deployment to correct this problem."
 			} elsif ($exodus->{manifest_sha1} ne $sha1) {
 				explain "\n  #Y{[WARNING]} Latest deployment does not match the local cached deployment\n"
-				      . "  manifest, perhaps you need to perform a #C{git pull}."
+				      . "             manifest, perhaps you need to perform a #C{git pull}."
 			} else {
-				explain "  #I{ which cached} #C{%s} #K{(redacted)}", $manifest_path;
-				explain "  #I{ with sha1sum} #C{%s}", $sha1;
+				explain "  #I{with manifest} #C{%s} #K{(redacted)}", $manifest_path;
 			}
 		} else {
 			explain "\n  #Y{[WARNING]} No local cashed deployment manifest found for this environment,\n"
-				  . "  perhaps you need to perform a #C{git pull}."
+				  . "            perhaps you need to perform a #C{git pull}."
 		}
 	} else {
 		explain "  #YI{No record of deployment found!}"
