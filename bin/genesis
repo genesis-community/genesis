@@ -1792,7 +1792,7 @@ EOF
 sub {
 	my %options;
 	options(\@_, \%options);
-	explain($_) for (@_);
+	explain("%s", $_) for (@_);
 });
 # }}}
 # genesis ui-prompt-for - Provides prompts in support of hooks/new script {{{
