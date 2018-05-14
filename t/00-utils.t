@@ -5,6 +5,7 @@ use warnings;
 use lib 'lib';
 use lib 't';
 use helper;
+use POSIX;
 use Test::Exception;
 use Test::Differences;
 use Test::Output;
@@ -308,13 +309,14 @@ subtest 'fuzzy time' => sub {
 		eq_or_diff strfuzzytime(make_timestring($_->[0])), $_->[1], $_->[1];
 	}
 
-	my $ts = Time::Piece->new() + Time::Seconds->new(-2 * ONE_YEAR);
-	my $infmt = "%A, %B %d, %Y \@ %H:%M:%S";
+	my $ts = Time::Piece->new() + Time::Seconds->new(-2 * NON_LEAP_YEAR );
+	my $infmt = "%A, %B %d, %Y (%z) \@ %H:%M:%S";
 	my $in = $ts->strftime($infmt);
-	my $out = $ts->strftime("%I:%M%p on %b %d, %Y");
+	my @lt = localtime($ts->epoch); # Convert to localtime
+	my $out = POSIX::strftime("%I:%M%p on %b %d, %Y %Z", @lt);
 	
 	eq_or_diff
-		strfuzzytime($in, "Was deployed %~ (%I:%M%p on %b %d, %Y)", $infmt),
+		strfuzzytime($in, "Was deployed %~ (%I:%M%p on %b %d, %Y %Z)", $infmt),
 		"Was deployed about 2 years ago ($out)",
 		"can change input and output format of strfuzzytime.";
 	

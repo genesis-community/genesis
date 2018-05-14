@@ -13,6 +13,9 @@ use Time::Seconds;
 use Time::Piece;
 use Cwd ();
 
+$ENV{TZ} = "UTC";
+POSIX::tzset();
+
 use base 'Exporter';
 our @EXPORT = qw/
 	envset envdefault
