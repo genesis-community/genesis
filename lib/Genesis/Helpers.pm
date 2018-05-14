@@ -71,16 +71,14 @@ export -f genesis
 
 exodus() {
   # movement of the people
-  local __env __key
-  __env="$GENESIS_ENVIRONMENT/$GENESIS_TYPE"
+  local __target __key
+  __target="--exodus"
   __key=${1:?exodus() must provide at least an exodus key}
   if [[ -n ${2:-} ]]; then
     __key=$2
-    __env=$1
+    __target="--exodus-for \"$1\""
   fi
-  if safe exists "secret/genesis/${__env}:${__key}"; then
-    safe get "secret/genesis/${__env}:${__key}"
-  fi
+  lookup $GENESIS_ENVIRONMENT $__target "$__key"
 }
 export -f exodus
 
@@ -88,7 +86,7 @@ export -f exodus
 #
 have_exodus_data_for() {
   local __env=${1:?have_exodus_data_for() must provide an environment/type}
-  safe exists "secret/genesis/${__env}"
+  safe exists "secret/exodus/${__env}"
   return $?
 }
 export -f have_exodus_data_for
