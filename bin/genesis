@@ -503,7 +503,9 @@ $GLOBAL_USAGE
   #C{init}              Initialize a new Genesis deployment.
   #G{new}               Create a new Genesis deployment environment.
   #G{check}             Check a deployment manifest for errors, without deploying it.
-  #G{secrets}           Re-generate / rotate credentials (passwords, keys, etc.).
+  #G{check-secrets}     Check for missing credentials (passwords, keys, etc.).
+  #G{add-secrets}       Generate missing credentials (passwords, keys, etc.).
+  #G{rotate-secrets}    Rrotate credentials (passwords, keys, etc.).
   #G{manifest}          Generate a redacted BOSH deployment manifest for an environment.
   #G{deploy}            Generate a real manifest using Vault + Cloud Config, and deploy it to BOSH.
   #G{do}                Run an addon script provided by the Kit.  Try `do list`
@@ -1007,6 +1009,106 @@ sub {
 	}
 	explain "\n#c{%s}\n", "="x80;
 });
+
+# }}}
+# genesis check-secrets - Check required credentials for an environment. {{{
+
+command("check-secrets", <<EOF,
+genesis v$Genesis::VERSION$Genesis::BUILD
+USAGE: genesis check-secrets [--vault target] deployment-env.yml
+
+Checks that all required secrets are present.  Returns a exit code of 1 if any
+are missing, and lists them, otherwise states all secrets are present and exits
+with 0.
+
+OPTIONS
+$GLOBAL_USAGE
+	  --vault        The name of a `safe' target (a Vault) to store newly
+					 generated credentials in.
+
+EOF
+sub {
+	my %options;
+	options(\@_, \%options, qw/
+		vault=s
+	/);
+
+	my ($name) = @_;
+	usage(1) if @_ != 1;
+
+	check_prereqs;
+	my $env = Genesis::Top->new(".")->load_env($name);
+	target_vault($options{vault});
+	$env->check_secrets() or exit 1;
+}); # }}}
+# genesis add-secrets - Generate missing credentials for an environment. {{{
+
+command("add-secrets", <<EOF,
+genesis v$Genesis::VERSION$Genesis::BUILD
+USAGE: genesis add-secrets [--vault target] deployment-env.yml
+
+Generates any missing secrets required by the deployment.  Useful to generate
+credentials after upgrading kits.
+
+OPTIONS
+$GLOBAL_USAGE
+	  --vault        The name of a `safe' target (a Vault) to store newly
+					 generated credentials in.
+
+EOF
+sub {
+	my %options;
+	options(\@_, \%options, qw/
+		vault=s
+	/);
+
+	my ($name) = @_;
+	usage(1) if @_ != 1;
+
+	check_prereqs;
+	my $env = Genesis::Top->new(".")->load_env($name);
+	target_vault($options{vault});
+	$env->add_secrets();
+});
+
+# }}}
+# genesis rotate-secrets - Rotate required credentials for an environment. {{{
+
+command("rotate-secrets", <<EOF,
+genesis v$Genesis::VERSION$Genesis::BUILD
+USAGE: genesis rotate-secrets [--force] [--vault target] deployment-env.yml
+
+Generates new secrets for your deployment. If any credentials were marked by
+the kit as `fixed', they are not updated unless the `--force` option was also
+specified.
+
+OPTIONS
+$GLOBAL_USAGE
+  -f, --force        Rotate *ALL* credentials, including any credentials that
+					 the kit defined as `fixed'. This is very dangerous.  Only
+					 applies to `rotate`.  This will still not rotate CA
+					 certificates.
+
+	  --vault        The name of a `safe' target (a Vault) to store newly
+					 generated credentials in.
+
+EOF
+sub {
+	my %options;
+	options(\@_, \%options, qw/
+		force|force-rotate-all|f
+		vault=s
+	/);
+
+	my ($name) = @_;
+	usage(1) if @_ != 1;
+
+	check_prereqs;
+	my $env = Genesis::Top->new(".")->load_env($name);
+	target_vault($options{vault});
+	$env->rotate_secrets(force => $options{force});
+});
+
 # }}}
 # genesis secrets - Generate / Rotate required credentials for an environment. {{{
 
@@ -1017,25 +1119,31 @@ USAGE: genesis secrets [check|add|rotate [--force]] [--vault target] deployment-
 Checks, adds or rotates secrets for your deployment.
 
   * check:  Checks that all required secrets are present.  Returns a exit code
-            of 1 if any are missing, and lists them, otherwise states all
-            secrets are present and exits with 0.
+			of 1 if any are missing, and lists them, otherwise states all
+			secrets are present and exits with 0.
+
+			This functionality is replaced by the command check-secrets
 
   * add:    Generates any missing secrets required by the deployment.  Useful
-            to generate credentials after upgrading kits or if `genesis new
-            --no-secrets` was used to create the deployment.
+			to generate credentials after upgrading kits or if `genesis new
+			--no-secrets` was used to create the deployment.
+
+			This functionality is replaced by the command add-secrets
 
   * rotate: Generates new secrets for your deployment. If any credentials were
-            marked by the kit as `fixed', they are not updated unless the
-            `--force` option was also specified.
+			marked by the kit as `fixed', they are not updated unless the
+			`--force` option was also specified.
+
+			This functionality is replaced by the command rotate-secrets
 
 OPTIONS
 $GLOBAL_USAGE
   -f, --force        Rotate *ALL* credentials, including any credentials that
-                     the kit defined as `fixed'. This is very dangerous.  Only
-                     applies to `rotate`
+					 the kit defined as `fixed'. This is very dangerous.  Only
+					 applies to `rotate`
 
-      --vault        The name of a `safe' target (a Vault) to store newly
-                     generated credentials in.
+	  --vault        The name of a `safe' target (a Vault) to store newly
+					 generated credentials in.
 
 EOF
 sub {
@@ -1102,7 +1210,7 @@ sub {
 
 # }}}
 # genesis create-kit - Create the structure for a new kit {{{
-#
+
 command("create-kit", <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis create-kit -d|--dev -n NAME [FEATURE ...]
@@ -1577,7 +1685,6 @@ sub {
 		if ((grep {$_ =~ /^(exodus|deployed|merged)$/} keys(%options)) > 1);
 
 	my ($name, $key, $default) = @_;
-	
 	# Legacy support -- previous versions used key/name order
 	my $top = Genesis::Top->new('.');
 	($name, $key) = ($key,$name) if !$top->has_env($name) && $top->has_env($key);
@@ -1824,6 +1931,7 @@ sub {
 });
 # }}}
 # genesis ui-describe - Provides colored explanatory test {{{
+
 command("ui-describe", <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE genesis ui-describe "string" ... [options...]
