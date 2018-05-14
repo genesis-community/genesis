@@ -40,6 +40,21 @@ once, without issue.
 =cut
 
 __DATA__
+
+if [[ "${GENESIS_TRACE}" == "y" ]] ; then
+  echo >&2 "TRACE> Helper script environment variables:"
+  export >&2
+fi 
+
+genesis() {
+  [[ -z "${GENESIS_CALLBACK_BIN}" ]] \
+    && echo >&2 "Genesis command not specified - this is a bug in Genesis, or you are running $0 outside of Genesis" \
+    && exit 1
+  ${GENESIS_CALLBACK_BIN} "$@"
+  return $?
+}
+export -f genesis
+
 ###
 ###   Exodus Data Exfiltration Functions
 ###
@@ -60,17 +75,9 @@ __DATA__
 #    # what is the CF URL of my local instance?
 #    exodus $GENESIS_ENVIRONMENT/cf api_url
 #
-genesis() {
-  [[ -z "${GENESIS_CALLBACK_BIN}" ]] \
-    && echo >&2 "Genesis command not specified - this is a bug in Genesis, or you are running $0 outside of Genesis" \
-    && exit 1
-  ${GENESIS_CALLBACK_BIN} "$@"
-  return $?
-}
-export -f genesis
-
 exodus() {
   # movement of the people
+  # TODO: Depreciate for lookup --exodus or lookup --exodus-for
   local __target __key
   __target="--exodus"
   __key=${1:?exodus() must provide at least an exodus key}
@@ -83,8 +90,8 @@ exodus() {
 export -f exodus
 
 # have_exodus_data_for env/type - return true if exodus data exists
-#
 have_exodus_data_for() {
+  # TODO: Depreciate for lookup --exodus-for $1 --defined $2
   local __env=${1:?have_exodus_data_for() must provide an environment/type}
   safe exists "secret/exodus/${__env}"
   return $?
@@ -92,6 +99,7 @@ have_exodus_data_for() {
 export -f have_exodus_data_for
 
 have_exodus_data() {
+  # TODO: Depreciate for lookup --exodus --defined $1
   have_exodus_data_for "$GENESIS_ENVIRONMENT/$GENESIS_TYPE"
   return $?
 }
@@ -124,10 +132,7 @@ export -f new_enough
 # be used instead.
 #
 lookup() {
-  local __key=${1:?lookup() - must specify a key to look up}
-  local __default=${2:-}
-
-  genesis -C "$GENESIS_ROOT" lookup "$__key" "$GENESIS_ENVIRONMENT" "$__default"
+  genesis -C "$GENESIS_ROOT" lookup "$GENESIS_ENVIRONMENT" "$@"
 }
 export -f lookup
 
@@ -372,3 +377,27 @@ prompt_for() {
 	return 0
 }
 export -f prompt_for
+
+param_entry() {
+	local __disabled="" __varname="$1" __key="$2" __opt="$3" ; shift 3
+	if [[ "$__opt" == "-d" ]] ; then
+		__disabled="# "
+		__opt=$1 ; shift
+	fi
+	if [[ "$__opt" == "-a" ]] ; then
+		if [[ "${#@}" -eq 0 ]] ; then
+			eval "$__varname+=\"  $__disabled\$__key: []\\n\""
+		else
+			eval "$__varname+=\"  $__disabled\$__key:\\n\""
+			local __line
+			for __line in "$@" ; do
+				eval "$__varname+=\"    \$__disabled- \$__line\\n\""
+			done
+		fi
+	elif [[ -n "$__opt" ]] ; then
+		eval "$__varname+=\"  $__disabled\$__key: \$__opt\\n\""
+	else
+		eval "$__varname+=\"  $__disabled\$__key: \$$__key\\n\""
+	fi
+}
+export -f param_entry
