@@ -93,13 +93,20 @@ sub validate_prompt_opts {
 
 sub line_prompt_handler {
 	my ($prompt, %opts) = @_;
-	validate_prompt_opts("line", \%opts, qw(label default validation msg));
+	validate_prompt_opts("line", \%opts, qw(label default validation msg inline));
+	if ($opts{inline}) {
+		die "Cannot request both label and inline options to prompt_for line\n"
+			if defined($opts{label});
+		$opts{label} = $prompt;
+		$prompt=undef
+	}
 	return prompt_for_line($prompt, $opts{label},$opts{default},$opts{validation},$opts{msg})
 }
 
 sub boolean_prompt_handler {
 	my ($prompt, %opts) = @_;
-	validate_prompt_opts("boolean", \%opts, qw(default invert));
+	validate_prompt_opts("boolean", \%opts, qw(default invert inline));
+	$prompt .= ' [y|n]' if $opts{inline};
 	return prompt_for_boolean($prompt, $opts{default}, $opts{invert}) ? "true" : "false";
 }
 sub block_prompt_handler {
@@ -1988,6 +1995,8 @@ Note: With multi-* types, the first entry in the file is blank, to indicate
      entries at all.
 
 OPTIONS
+  -i, --inline          Place the cursor immediately after the prompt instead of on
+                        the next line
   -l, --label  "x"      prompt string immediately in front of cursor (default: '> ')
       --default "x"     for line/boolean/select: default value if user leaves prompt empty.
   -V, --validation "x"  for line/multi-line: validation type, one of :
@@ -2017,6 +2026,7 @@ sub {
 
 	my %options;
 	options(\@_, \%options, qw(
+		inline|i
 		label|l=s
 		default=s
 		validation|V=s
