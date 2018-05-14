@@ -39,14 +39,14 @@ sub _bosh {
 }
 
 sub environment_variables {
-	my ($class, $env) = @_;
+	my ($class, $alias) = @_;
 
 	return {} unless -f "$ENV{HOME}/.bosh/config";
 	my $bosh = load_yaml_file("$ENV{HOME}/.bosh/config")
 		or return {};
 
 	for my $e (@{ $bosh->{environments} || []  }) {
-		next unless $e->{alias} eq $env;
+		next unless $e->{alias} eq $alias;
 		return {
 			BOSH_ENVIRONMENT   => $e->{url},
 			BOSH_CA_CERT       => $e->{ca_cert},
@@ -161,6 +161,12 @@ Most of these functions will die() if they encounter any issues running the
 given BOSH command (with C<ping()> being a notable exception!)
 
 =head1 CLASS METHODS
+
+=head2 environment_variables($alias)
+
+Returns a hash ref of environment variables and values corresponding to the
+BOSH Director matching the specified alias name.  Returns an empty hash ref if
+no alias matches or if the ~/.bosh/config file is unreadable.
 
 =head2 ping($env)
 
