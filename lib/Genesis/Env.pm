@@ -240,16 +240,17 @@ sub last_deployed_lookup {
 }
 
 sub exodus_lookup {
-	my ($self, $key, $default) = @_;
-	my $path="secret/exodus/$self->{name}/".$self->{top}->type;
+	my ($self, $key, $default,$for) = @_;
+	$for ||= "$self->{name}/".$self->{top}->type;
+	my $path="secret/exodus/$for";
 	debug "Checking if $path path exists...";
 	my (undef, $rc) = run('safe exists "$1"', $path);
 	return $default if $rc;
 	debug "Exodus data exists, retrieving it and converting to json";
 	my $out = run(
-		{ onfailure => "Could not get $self->{name} exodus data from the Vault" },
+		{ onfailure => "Could not get $for exodus data from the Vault" },
 		'safe get "$1" | spruce json', $path);
-	my $exodus = load_json($out);
+	my $exodus = _unflatten(load_json($out));
 	return _lookup($exodus, $key, $default);
 }
 
@@ -410,7 +411,7 @@ sub _flatten {
 
 	if (ref $val eq 'ARRAY') {
 		for (my $i = 0; $i < @$val; $i++) {
-			_flatten($final, $key ? "$key.$i" : "$i", $val->[$i]);
+			_flatten($final, $key ? "${key}[$i]" : "$i", $val->[$i]);
 		}
 
 	} elsif (ref $val eq 'HASH') {
@@ -423,6 +424,56 @@ sub _flatten {
 	}
 
 	return $final;
+}
+
+sub _unflatten {
+	my ($data, $branch) = @_;
+
+	return $data unless ref($data) eq 'HASH'; # Catchall for scalar data coming in.
+
+	# Data must represent all array elements or all hash keys.
+	my ($elements, $keys) = ([],[]);
+	push @{($_ =~ /^\[\d+\](?:\.|\[|$)/) ? $elements : $keys}, $_ for (sort keys %$data);
+	die("Cannot unflatten data that contains both array elements and hash keys at same level "
+		 . ($branch ? "(at $branch)" : "(top level)") ."\n") if @$elements && @$keys;
+
+	if (@$elements) {
+		my @a_data;
+		for my $k (sort keys %$data) {
+			my ($i, $sk) = $k =~ /^\[(\d+)\](?:\.)?([^\.].*)?$/;
+			if (defined $sk) {
+				die "Array cannot have scalar and non-scalar values (at ${branch}[$i])"
+					if defined $a_data[$i] && ref($a_data[$i]) ne 'HASH';
+				$a_data[$i]->{$sk} = delete $data->{$k};
+			} else {
+				die "Array cannot have scalar and non-scalar values (at ${branch}[$i])"
+					if defined $a_data[$i];
+				$a_data[$i] = delete $data->{$k};
+			}
+		}
+		for my $i (0..$#a_data) {
+			$a_data[$i] = _unflatten($a_data[$i], ($branch||"")."[$i]");
+		}
+		return [@a_data];
+	} else {
+		my %h_data;
+		for my $k (sort keys %$data) {
+			my ($pk, $sk) = $k =~ /^([^\[\.]*)(?:\.)?([^\.].*?)?$/;
+			if (defined $sk) {
+				die "Hash cannot have scalar and non-scalar values (at ".join('.', grep $_, ($branch, "pk")).")"
+					if defined $h_data{$pk} && ref($h_data{$pk}) ne 'HASH';
+				$h_data{$pk}->{$sk} = delete $data->{$k};
+			} else {
+				die "Hash cannot have scalar and non-scalar values (at ".join('.', grep $_, ($branch, "pk")).")"
+					if defined $h_data{$pk};
+				$h_data{$pk} = delete $data->{$k};
+			}
+		}
+		for my $k (sort keys %h_data) {
+			$h_data{$k} = _unflatten($h_data{$k}, join('.', grep $_, ($branch, "$k")));
+		}
+		return {%h_data}
+	}
 }
 
 sub exodus {

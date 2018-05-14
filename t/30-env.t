@@ -485,19 +485,74 @@ EOF
 			deployer      => ignore,
 			kit_name      => 'dev',
 			kit_version   => 'latest',
-			'addons.0'    => 'echo',
+			'addons[0]'    => 'echo',
 			vault_base    => 'secret/standalone/thing',
 
 			'hello.world' => 'i see you',
 
 			# we allow multi-level arrays now
-			'multilevel.arrays.0' => 'so',
-			'multilevel.arrays.1' => 'useful',
+			'multilevel.arrays[0]' => 'so',
+			'multilevel.arrays[1]' => 'useful',
 
 			# we allow multi-level maps now
 			'three.levels.works'            => 'now',
 			'three.levels.or.more.is.right' => 'on, man!',
 		}, "env manifest can provide exodus with flattened keys");
+
+	my $good_flattened = {
+		key => "value",
+		another_key => "another value",
+
+		# flattened hash
+		'this.is.a.test' => '100%',
+		'this.is.a.dog'  => 'woof',
+		'this.is.sparta' => 300,
+
+		# flattened array
+		'matrix[0][0]' => -2,
+		'matrix[0][1]' =>  4,
+		'matrix[1][0]' =>  2,
+		'matrix[1][1]' => -4,
+
+		# flattened array of hashes
+		'network[0].name' => 'default',
+		'network[0].subnet' => '10.0.0.0/24',
+		'network[1].name' => 'super-special',
+		'network[1].subnet' => '10.0.1.0/24',
+		'network[2].name' => 'secret',
+		'network[2].subnet' => '10.0.2.0/24',
+	};
+
+
+	cmp_deeply(Genesis::Env::_unflatten($good_flattened), {
+		key => "value",
+		another_key => "another value",
+		this => {
+			is => {
+				a => {
+					test => '100%',
+					dog  => 'woof',
+				},
+				sparta => 300,
+			}
+		},
+		matrix => [
+			[-2, 4],
+			[ 2,-4]
+		],
+		network => [
+			{
+				name => 'default',
+				subnet => '10.0.0.0/24',
+			}, {
+				name => 'super-special',
+				subnet => '10.0.1.0/24',
+			}, {
+				name => 'secret',
+				subnet => '10.0.2.0/24',
+			}
+		]
+	}, "exodus data can be correctly unflattened")
 };
 
 subtest 'bosh targeting' => sub {
@@ -597,23 +652,54 @@ EOF
 	ok $exists, "manifest file should exist.";
 	ok $sha1 =~ /[a-f0-9]{40}/, "cached manifest calculates valid SHA-1 checksum";
 	ok -f $manifest_file, "deploy created cached redacted manifest file";
-	
+
+	# Compare the raw exodus data
+	#
+	runs_ok('safe exists "secret/exodus/standalone/thing"', 'exodus entry created in vault');
+	# this doesn't work and I have no idea why - so we're using the simple qx()
+	# my ($pass, $rc, $out) = runs_ok('safe get "secret/exodus/standalone/thing" | spruce json');
+	my $out = qx(safe get "secret/exodus/standalone/thing" | spruce json);
+	my $exodus = load_json($out);
+	cmp_deeply($exodus, {
+				dated => re(qr/\d\d\d\d-\d\d-\d\d \d\d:\d\d:\d\d \+0000/),
+				deployer => $ENV{USER},
+				kit_name => "dev",
+				kit_version => "latest",
+				bosh => "standalone",
+				vault_base => "secret/standalone/thing",
+				version => '(development)',
+				manifest_sha1 => $sha1,
+				'hello.world' => 'i see you',
+				'multilevel.arrays[0]' => 'so',
+				'multilevel.arrays[1]' => 'useful',
+				'three.levels.or.more.is.right' => 'on, man!',
+				'three.levels.works' => 'now'
+			}, "exodus data was written by deployment");
+
 	is($env->last_deployed_lookup("something","goose"), "REDACTED", "Cached manifest contains redacted vault details");
 	is($env->last_deployed_lookup("fancy.status","none"), "online", "Cached manifest contains non-redacted params");
 	is($env->last_deployed_lookup("params.env","none"), "none", "Cached manifest doesn't contain pruned params");
 	cmp_deeply($env->exodus_lookup("",{}), {
-				dated => ignore(),
+				dated => $exodus->{dated},
 				deployer => $ENV{USER},
+				bosh => "standalone",
 				kit_name => "dev",
 				kit_version => "latest",
 				vault_base => "secret/standalone/thing",
 				version => '(development)',
 				manifest_sha1 => $sha1,
-				'hello.world' => 'i see you',
-				'multilevel.arrays.0' => 'so',
-				'multilevel.arrays.1' => 'useful',
-				'three.levels.or.more.is.right' => 'on, man!',
-				'three.levels.works' => 'now'
+				hello => {
+					world => 'i see you'
+				},
+				multilevel => {
+					arrays => ['so','useful']
+				},
+				three => {
+					levels => {
+						'or'    => { more => {is => {right => 'on, man!'}}},
+						'works' => 'now'
+					}
+				}
 			}, "exodus data was written by deployment");
 
 	teardown_vault();
