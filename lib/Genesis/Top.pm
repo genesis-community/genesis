@@ -234,6 +234,14 @@ sub load_env {
 	);
 }
 
+sub has_env {
+	my ($self, $name) = @_;
+	return Genesis::Env->exists(
+		top => $self,
+		name => $name
+	);
+}
+
 sub create_env {
 	my ($self, $name, $kit, %opts) = @_;
 	debug("setting up new environment #C{%s}", $name);
@@ -467,6 +475,10 @@ C<find_kit> will check for a dev/ directory and use that if available.
 
 Loads a new Genesis::Env object, named $name, from the root directory.
 This wraps a call to Genesis::Env->load().
+
+=head2 has_env($name)
+
+Returns true if an environment by the given name exists under the repo.
 
 =head2 create_env($name, $kit, %opts)
 

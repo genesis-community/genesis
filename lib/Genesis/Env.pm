@@ -56,6 +56,11 @@ sub load {
 	return $self;
 }
 
+sub exists {
+	my $self = new(@_);
+	return -f $self->path("$self->{file}");
+}
+
 sub create {
 	my $self = new(@_);
 
@@ -743,6 +748,10 @@ environment does not exist on-disk, this constructor will throw an error
 
 C<load> does not recognize additional options, above and beyond those which
 are handled by and required by C<new>.
+
+=head2 exists(%opts)
+
+Returns true if the environment defined by the options exist.
 
 =head2 create(%opts)
 
