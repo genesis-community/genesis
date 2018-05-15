@@ -1672,7 +1672,8 @@ OPTIONS
       --exodus      Lookup data from the genesis exodus data for the last deployment.
       --exodus-for  Lookup data from the genesis exodus data for a different enviroment.
                     Takes an argument of the form "env-name/deployment-type"
-      --defined     Exit with 0 if key defined in specified source, 1 otherwise.
+      --defined     Exit with 0 if key defined in specified source, 9 otherwise.  No
+                    output is produced, making it useful in 'if lookup ... ; then'
 
 $GLOBAL_USAGE
 EOF
@@ -1716,9 +1717,9 @@ sub {
 		$v = $env->lookup($key, $default);
 	}
 
-	if (ref($v) eq "NotFound") {
-		exit 1 if ($options{defined});
-	} elsif  (defined($v)) {
+	if ($options{defined}) {
+		exit (ref($v) eq "NotFound") ? 4 : 0;
+	} elsif (defined($v)) {
 		$v = encode_json($v) if ref($v);
 		print "$v\n";
 	}
