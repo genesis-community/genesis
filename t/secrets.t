@@ -198,12 +198,12 @@ EOF
 
 	have_secret "$v/auto-generated-certs-a/ca:certificate";
 	my $x509 = qx(safe get $v/auto-generated-certs-a/ca:certificate | openssl x509 -inform pem -text);
-	like $x509, qr/Issuer: CN=ca.auto-generated-certs-a/m, "CA cert is self-signed";
-	like $x509, qr/Subject: CN=ca.auto-generated-certs-a/m, "CA cert is self-signed";
+	like $x509, qr/Issuer: CN=ca\.n\d+\.auto-generated-certs-a/m, "CA cert is self-signed";
+	like $x509, qr/Subject: CN=ca\.n\d+\.auto-generated-certs-a/m, "CA cert is self-signed";
 
 	have_secret "$v/auto-generated-certs-a/server:certificate";
 	$x509 = qx(safe get $v/auto-generated-certs-a/server:certificate | openssl x509 -inform pem -text);
-	like $x509, qr/Issuer: CN=ca\.auto-generated-certs-a/m, "server cert is signed by the CA";
+	like $x509, qr/Issuer: CN=ca\.n\d+\.auto-generated-certs-a/m, "server cert is signed by the CA";
 	like $x509, qr/Subject: CN=server\.example\.com/m, "server cert has correct CN";
 	like $x509, qr/DNS:$_/m, "server cert has SAN for $_"
 	  for qw/server\.example\.com \*\.server\.example\.com \*\.system\.cf\.example\.com/;
@@ -220,7 +220,7 @@ EOF
 
 	have_secret "$v/auto-generated-certs-b/server:certificate";
 	$x509 = qx(safe get $v/auto-generated-certs-b/server:certificate | openssl x509 -inform pem -text);
-	like $x509, qr/Issuer: CN=ca\.auto-generated-certs-b/m, "server B cert is signed by the CA from auto-generated-certs-b";
+	like $x509, qr/Issuer: CN=ca\.n\d+\.auto-generated-certs-b/m, "server B cert is signed by the CA from auto-generated-certs-b";
 
 	$cmd = Expect->new();
 	$cmd->log_stdout($ENV{GENESIS_TRACE} ? 1 : 0);

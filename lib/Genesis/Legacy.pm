@@ -277,11 +277,12 @@ sub cert_commands {
 	my $force_rotate = ($options{scope}||'') eq 'force';
 	my $missing_only = ($options{scope}||'') eq 'add';
 	for my $path (sort keys %$certs) {
+		my $rand = sprintf("%09d", rand(1000000000));
 		my @cmd = (
 			"x509",
 			"issue",
 			"secret/$options{prefix}/$path/ca",
-			"--name", "ca.$path",
+			"--name", "ca.n$rand.$path",
 			"--ca");
 		push @cmd, "--no-clobber", "--quiet" if !$force_rotate; # All CA certs are considered kept
 		push @cmds, \@cmd;
