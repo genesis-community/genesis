@@ -404,3 +404,12 @@ param_entry() {
 	fi
 }
 export -f param_entry
+
+param_comment() {
+	local __line __varname=$1; shift
+	eval "$__varname+=\"\\n\""
+	for __line in "$@" ; do
+		eval "$__varname+=\"  # \$__line\\n\""
+	done
+}
+export -f param_comment
