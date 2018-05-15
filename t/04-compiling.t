@@ -23,7 +23,7 @@ sub again {
 	put_file("$tmp/test-genesis-kit/ci/pipe.yml", "concourse: is fun\n");
 
 	# git init it
-	system("cd $tmp/test-genesis-kit && git init &>/dev/null && git add .");
+	system("cd $tmp/test-genesis-kit && git init >/dev/null 2>&1 && git add .");
 }
 
 sub quietly(&) {
