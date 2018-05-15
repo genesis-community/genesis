@@ -91,7 +91,6 @@ export -f exodus
 
 # have_exodus_data_for env/type - return true if exodus data exists
 have_exodus_data_for() {
-  # TODO: Depreciate for lookup --exodus-for $1 --defined $2
   local __env=${1:?have_exodus_data_for() must provide an environment/type}
   safe exists "secret/exodus/${__env}"
   return $?
@@ -99,7 +98,6 @@ have_exodus_data_for() {
 export -f have_exodus_data_for
 
 have_exodus_data() {
-  # TODO: Depreciate for lookup --exodus --defined $1
   have_exodus_data_for "$GENESIS_ENVIRONMENT/$GENESIS_TYPE"
   return $?
 }
@@ -136,6 +134,11 @@ lookup() {
 }
 export -f lookup
 
+deployed() {
+  lookup --exodus dated --defined
+  return $?
+}
+export -f deployed
 
 typeof() {
   local __key=${1:?typeof() - must specify a key to look up}
