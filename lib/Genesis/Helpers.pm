@@ -161,11 +161,11 @@ export -f typeof
 ###
 
 bosh() {
-  if [[ -z "${GENESIS_BOSH_COMMAND}" ]]; then
+  if [[ -z "${GENESIS_BOSH_COMMAND:-}" ]]; then
     echo >&2 "BOSH CLI command not specified - this is a bug in Genesis, or you are running $0 outside of Genesis"
     exit 1
   fi
-  if [[ -z "${BOSH_ENVIRONMENT}" || -z "${BOSH_CA_CERT}" ]]; then
+  if [[ -z "${BOSH_ENVIRONMENT:-}" || -z "${BOSH_CA_CERT:-}" ]]; then
     echo >&2 "Environment not found for BOSH Director -- please ensure you've configured your BOSH alias used by this environment"
     exit 1
   fi
