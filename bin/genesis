@@ -1718,7 +1718,7 @@ sub {
 	}
 
 	if ($options{defined}) {
-		exit (ref($v) eq "NotFound") ? 4 : 0;
+		exit(ref($v) eq "NotFound" ? 4 : 0);
 	} elsif (defined($v)) {
 		$v = encode_json($v) if ref($v);
 		print "$v\n";
