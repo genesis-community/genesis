@@ -230,6 +230,7 @@ sub run_hook {
 	                       stderr => '&2' },
 		'cd "$1"; source .helper; hook=$2; shift 2; ./hooks/$hook "$@"',
 		$self->path, $hook, @args);
+	debug("the kit '$hook' hook exited $rc");
 
 	if ($hook eq 'new') {
 		if ($rc != 0) {
