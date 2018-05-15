@@ -1,10 +1,6 @@
 Authoring Genesis Kits
 ======================
 
-<style type="text/css">
-.ni { color: firebrick; font-weight: bold; }
-</style>
-
 This document serves as both and introduction to and a reference
 for authoring Genesis Kits.  This document takes precedence over
 any other document that purports to document the internal
