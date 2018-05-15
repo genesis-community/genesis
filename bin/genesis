@@ -547,6 +547,35 @@ sub {
 });
 
 # }}}
+# genesis man - peruse the kit manual pages {{{
+
+command("man", <<EOF,
+genesis v$Genesis::VERSION$Genesis::BUILD
+USAGE: genesis man env-name[.yml]
+
+OPTIONS
+$GLOBAL_USAGE
+EOF
+sub {
+	my %options;
+	options(\@_, \%options, qw/
+	/);
+	usage(1) if @_ != 1;
+	check_prereqs;
+
+	my ($name) = @_;
+	my $env = Genesis::Top->new('.')->load_env($name);
+
+	my $man = $env->kit->path('MANUAL.md');
+	if (-f $man) {
+		run({ interactive => 1 }, 'less "$1"', $man);
+		exit 0;
+	}
+	explain("#Y{%s} has no MANUAL.md", $env->kit->id);
+	exit 1;
+});
+
+# }}}
 # genesis ping - see if the genesis binary is a real thing. {{{
 
 command("ping", <<EOF,
