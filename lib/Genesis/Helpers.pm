@@ -161,12 +161,14 @@ export -f typeof
 ###
 
 bosh() {
-  [[ -z "${GENESIS_BOSH_COMMAND}" ]] \
-    && echo >&2 "BOSH CLI command not specified - this is a bug in Genesis, or you are running $0 outside of Genesis" \
-    && exit 1
-  [[ -z "${BOSH_ENVIRONMENT}" || -z "${BOSH_CA_CERT}" || -z "${BOSH_CLIENT}" || -z "${BOSH_CLIENT_SECRET}" ]] \
-    && echo >&2 "Environment not found for BOSH Director -- please ensure you've configured your BOSH alias used by this environment" \
-    && exit 1
+  if [[ -z "${GENESIS_BOSH_COMMAND}" ]]; then
+    echo >&2 "BOSH CLI command not specified - this is a bug in Genesis, or you are running $0 outside of Genesis"
+    exit 1
+  fi
+  if [[ -z "${BOSH_ENVIRONMENT}" || -z "${BOSH_CA_CERT}" ]]; then
+    echo >&2 "Environment not found for BOSH Director -- please ensure you've configured your BOSH alias used by this environment"
+    exit 1
+  fi
   ${GENESIS_BOSH_COMMAND} "$@"
   return $?
 }
