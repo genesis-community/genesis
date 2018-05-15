@@ -656,9 +656,7 @@ EOF
 	# Compare the raw exodus data
 	#
 	runs_ok('safe exists "secret/exodus/standalone/thing"', 'exodus entry created in vault');
-	# this doesn't work and I have no idea why - so we're using the simple qx()
-	# my ($pass, $rc, $out) = runs_ok('safe get "secret/exodus/standalone/thing" | spruce json');
-	my $out = qx(safe get "secret/exodus/standalone/thing" | spruce json);
+	my ($pass, $rc, $out) = runs_ok('safe get "secret/exodus/standalone/thing" | spruce json #');
 	my $exodus = load_json($out);
 	cmp_deeply($exodus, {
 				dated => re(qr/\d\d\d\d-\d\d-\d\d \d\d:\d\d:\d\d \+0000/),
