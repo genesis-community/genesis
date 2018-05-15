@@ -771,8 +771,8 @@ sub {
 
 	# let the user know
 	explain("New environment $env->{name} provisioned!");
-    explain("\nTo deploy, run this:\n");
-    explain("  #C{genesis deploy '%s'\n\n}", $env->{name});
+	explain("\nTo deploy, run this:\n");
+	explain("  #C{genesis deploy '%s'}\n\n", $env->{name});
 });
 
 
