@@ -99,7 +99,7 @@ sub _colorize {
 	return $msg if envset('NOCOLOR');
 
 	my @fmt = ();
-	push @fmt, 3 if $c =~ /i/i;
+	push @fmt, 3 if $c =~ /i/i && !$ENV{TMUX}; # TMUX doesn't support italics
 	push @fmt, 4 if $c =~ /u/i;
 	my ($fg, $bg) = grep {$_ !~ /^[ui]$/i} split(//, $c);
 
