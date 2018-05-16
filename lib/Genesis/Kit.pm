@@ -168,10 +168,10 @@ sub run_hook {
 	$ENV{GENESIS_IS_HELPING_YOU} = 'yes';
 
 	die "Unrecognized hook '$hook'\n"
-		unless grep { $_ eq $hook } qw/new blueprint secrets info addon check post-deploy
+		unless grep { $_ eq $hook } qw/new blueprint secrets info addon check pre-deploy post-deploy
 		                               prereqs subkit/;
 
-	if (grep { $_ eq $hook } qw/new secrets info addon check prereqs blueprint post-deploy/) {
+	if (grep { $_ eq $hook } qw/new secrets info addon check prereqs blueprint pre-deploy post-deploy/) {
 		# env is REQUIRED
 		bug("The 'env' option to run_hook is required for the '$hook' hook!!")
 			unless $opts{env};
@@ -217,8 +217,13 @@ sub run_hook {
 	} elsif ($hook eq 'check') {
 		$ENV{GENESIS_CLOUD_CONFIG} = $opts{env}->{ccfile} || '';
 
+	} elsif ($hook eq 'pre-deploy') {
+		$ENV{GENESIS_MANIFEST_FILE}      = $opts{manifest};
+		$ENV{GENESIS_PREDEPLOY_DATAFILE} = $opts{datafile};
+
 	} elsif ($hook eq 'post-deploy') {
 		$ENV{GENESIS_DEPLOY_RC} = defined $opts{rc} ? $opts{rc} : 255;
+		$ENV{GENESIS_PREDEPLOY_DATAFILE} = $opts{datafile};
 
 	##### LEGACY HOOKS
 	} elsif ($hook eq 'subkit') {
@@ -226,7 +231,7 @@ sub run_hook {
 	}
 
 	chmod 0755, $self->path("hooks/$hook");
-	my ($out, $rc) = run({ interactive => scalar $hook =~ m/^(addon|new|info|check|secrets|post-deploy)$/,
+	my ($out, $rc) = run({ interactive => scalar $hook =~ m/^(addon|new|info|check|secrets|post-deploy|pre-deploy)$/,
 	                       stderr => '&2' },
 		'cd "$1"; source .helper; hook=$2; shift 2; ./hooks/$hook "$@"',
 		$self->path, $hook, @args);
@@ -262,11 +267,8 @@ sub run_hook {
 		return split(/\s+/, $out);
 	}
 
-	if ($hook eq 'check') {
-		return $rc == 0 ? 1 : 0;
-	}
-
-	if ($hook eq 'secrets' && $opts{action} eq 'check') {
+	if ($hook eq 'check' || $hook eq 'pre-deploy' ||
+	    ($hook eq 'secrets' && $opts{action} eq 'check')) {
 		return $rc == 0 ? 1 : 0;
 	}
 

@@ -8,6 +8,7 @@ use Genesis::BOSH;
 
 use POSIX qw/strftime/;
 use Digest::file qw/digest_file_hex/;
+use Digest::SHA  qw/hmac_sha256_base64/;
 
 sub new {
 	my ($class, %opts) = @_;
@@ -539,6 +540,19 @@ sub deploy {
 	my $ok;
 	$self->write_manifest("$self->{__tmp}/manifest.yml", redact => 0);
 
+	my $pre_data_file = "";
+	if ($self->has_hook('pre-deploy')) {
+		my $name = substr(Digest::SHA::hmac_sha256_base64(rand),0,rand(35)+5);
+		$name =~ s/[^A-Za-z0-9_-]/\./g;
+		$pre_data_file = "$self->{__tmp}/$name";
+		$ok = $self->run_hook('pre-deploy',
+		                      manifest => "$self->{__tmp}/manifest.yml",
+		                      datafile => $pre_data_file);
+		die "Cannot continue with deployment!\n" unless $ok;
+
+		$pre_data_file = "" unless -f $pre_data_file;
+	}
+
 	if ($self->needs_bosh_create_env) {
 		debug("deploying this environment via `bosh create-env`, locally");
 		$ok = Genesis::BOSH->create_env(
@@ -569,7 +583,7 @@ sub deploy {
 	# bail out early if the deployment failed;
 	# don't update the cached manifests
 	if (!$ok) {
-		$self->run_hook('post-deploy', rc => 1)
+		$self->run_hook('post-deploy', rc => 1, datafile => $pre_data_file)
 			if $self->has_hook('post-deploy');
 		return
 	}
@@ -578,6 +592,16 @@ sub deploy {
 	my $manifest_path=$self->path(".genesis/manifests/$self->{name}.yml");
 	$self->write_manifest($manifest_path, redact => 1);
 	debug("written redacted manifest to $manifest_path");
+
+	$self->run_hook('post-deploy', rc => 0, datafile => $pre_data_file)
+		if $self->has_hook('post-deploy');
+
+	if ($pre_data_file &&
+	    substr($pre_data_file,0,length($self->{__tmp})) eq $self->{__tmp} &&
+	    -f $pre_data_file) {
+		unlink $pre_data_file
+			or debug "Could not remove pre-deploy datafile $pre_data_file";
+	}
 
 	# track exodus data in the vault
 	my $exodus = $self->exodus;
@@ -589,8 +613,6 @@ sub deploy {
 		'safe', 'set', "secret/exodus/$self->{name}/".$self->{top}->type,
 		               map { "$_=$exodus->{$_}" } keys %$exodus);
 
-	$self->run_hook('post-deploy', rc => 0)
-		if $self->has_hook('post-deploy');
 	return $ok;
 }
 
