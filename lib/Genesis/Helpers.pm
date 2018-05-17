@@ -169,7 +169,7 @@ bosh() {
     echo >&2 "Environment not found for BOSH Director -- please ensure you've configured your BOSH alias used by this environment"
     exit 1
   fi
-  ${GENESIS_BOSH_COMMAND} "$@"
+  command ${GENESIS_BOSH_COMMAND} "$@"
   return $?
 }
 export -f bosh
