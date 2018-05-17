@@ -426,6 +426,11 @@ The following hooks are currently recognized by Genesis:
   against a deployed environment.  This includes things like
   visiting deployed web user interfaces, logging into APIs, etc.
 
+- `pre-deploy` - Runs prior to a deployment attempt, and serves two purposes:
+	to perform any final validation to see if the deployment can proceed, and
+	to collect data that can be sent to the post-deploy hook for actions that
+	need to take place after deployment.
+
 - `post-deploy` - Runs after a deployment attempts, whether
   successful or not.  This is useful for giving the operator hints
   about their next steps, including what addons to try.

@@ -104,6 +104,11 @@ sub path {
 	my ($self, @rest) = @_;
 	$self->{top}->path(@rest);
 }
+sub tmppath {
+	my ($self, $relative) = @_;
+	return $relative ? "$self->{__tmp}/$relative"
+	                 :  $self->{__tmp};
+}
 
 sub _default_prefix {
 	my ($self) = @_;
@@ -536,8 +541,13 @@ sub run_hook {
 sub deploy {
 	my ($self, %opts) = @_;
 
-	my $ok;
 	$self->write_manifest("$self->{__tmp}/manifest.yml", redact => 0);
+
+	my ($ok, $predeploy_data);
+	if ($self->has_hook('pre-deploy')) {
+		($ok, $predeploy_data) = $self->run_hook('pre-deploy');
+		die "Cannot continue with deployment!\n" unless $ok;
+	}
 
 	if ($self->needs_bosh_create_env) {
 		debug("deploying this environment via `bosh create-env`, locally");
@@ -569,7 +579,7 @@ sub deploy {
 	# bail out early if the deployment failed;
 	# don't update the cached manifests
 	if (!$ok) {
-		$self->run_hook('post-deploy', rc => 1)
+		$self->run_hook('post-deploy', rc => 1, data => $predeploy_data)
 			if $self->has_hook('post-deploy');
 		return
 	}
@@ -579,18 +589,19 @@ sub deploy {
 	$self->write_manifest($manifest_path, redact => 1, prune => 0);
 	debug("written redacted manifest to $manifest_path");
 
+	$self->run_hook('post-deploy', rc => 0, data => $predeploy_data)
+		if $self->has_hook('post-deploy');
+
 	# track exodus data in the vault
 	my $exodus = $self->exodus;
 	$exodus->{manifest_sha1} = digest_file_hex($manifest_path, 'SHA-1');
 	$exodus->{bosh} = $self->bosh_target;
 	debug("setting exodus data in the Vault, for use later by other deployments");
 	$ok = run(
-		{ onfailure => "Could not save $self->{name} metadata to the Vault" },
+		{ onfailure => "Successfully deployed, but could not save $self->{name} metadata to the Vault" },
 		'safe', 'set', "secret/exodus/$self->{name}/".$self->{top}->type,
 		               map { "$_=$exodus->{$_}" } keys %$exodus);
 
-	$self->run_hook('post-deploy', rc => 0)
-		if $self->has_hook('post-deploy');
 	return $ok;
 }
 
@@ -833,6 +844,11 @@ parameter.
 =head2 kit()
 
 Retrieve the Genesis::Kit object for this environment.
+
+=head2 tmppath($relative)
+
+Retrieve a temporary work path the given C<$relative> path for this environment.
+If no relative path is given, it returns the temporary root directory.
 
 =head2 type()
 
