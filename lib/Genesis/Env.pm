@@ -576,7 +576,7 @@ sub deploy {
 
 	# deployment succeeded; update the cache
 	my $manifest_path=$self->path(".genesis/manifests/$self->{name}.yml");
-	$self->write_manifest($manifest_path, redact => 1);
+	$self->write_manifest($manifest_path, redact => 1, prune => 0);
 	debug("written redacted manifest to $manifest_path");
 
 	# track exodus data in the vault

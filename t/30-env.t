@@ -676,7 +676,7 @@ EOF
 
 	is($env->last_deployed_lookup("something","goose"), "REDACTED", "Cached manifest contains redacted vault details");
 	is($env->last_deployed_lookup("fancy.status","none"), "online", "Cached manifest contains non-redacted params");
-	is($env->last_deployed_lookup("params.env","none"), "none", "Cached manifest doesn't contain pruned params");
+	is($env->last_deployed_lookup("params.env","none"), "standalone", "Cached manifest contains pruned params");
 	cmp_deeply($env->exodus_lookup("",{}), {
 				dated => $exodus->{dated},
 				deployer => $ENV{USER},
