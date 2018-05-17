@@ -218,12 +218,15 @@ sub run_hook {
 		$ENV{GENESIS_CLOUD_CONFIG} = $opts{env}->{ccfile} || '';
 
 	} elsif ($hook eq 'pre-deploy') {
-		$ENV{GENESIS_MANIFEST_FILE}      = $opts{manifest};
-		$ENV{GENESIS_PREDEPLOY_DATAFILE} = $opts{datafile};
+		$ENV{GENESIS_PREDEPLOY_DATAFILE} = $opts{env}->tmppath("data");
 
 	} elsif ($hook eq 'post-deploy') {
 		$ENV{GENESIS_DEPLOY_RC} = defined $opts{rc} ? $opts{rc} : 255;
-		$ENV{GENESIS_PREDEPLOY_DATAFILE} = $opts{datafile};
+		if ($opts{data}) {
+			my $fn = $opts{env}->tmppath("data");
+			mkfile_or_fail($fn, $opts{data});
+			$ENV{GENESIS_PREDEPLOY_DATAFILE} = $fn;
+		}
 
 	##### LEGACY HOOKS
 	} elsif ($hook eq 'subkit') {
@@ -267,8 +270,22 @@ sub run_hook {
 		return split(/\s+/, $out);
 	}
 
-	if ($hook eq 'check' || $hook eq 'pre-deploy' ||
-	    ($hook eq 'secrets' && $opts{action} eq 'check')) {
+	if ($hook eq 'pre-deploy') {
+		my $contents;
+		my $fn = $opts{env}->tmppath("data");
+		if ( -f $fn ) {
+			$contents = slurp($fn);
+			unlink $fn;
+		}
+		return (($rc ? 1 : 0), $contents);
+	}
+
+	if ($hook eq 'post-deploy') {
+		unlink $opts{env}->tmppath("data")
+			if -f $opts{env}->tmppath("data");
+	}
+
+	if ($hook eq 'check' || ($hook eq 'secrets' && $opts{action} eq 'check')) {
 		return $rc == 0 ? 1 : 0;
 	}
 

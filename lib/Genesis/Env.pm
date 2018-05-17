@@ -8,7 +8,6 @@ use Genesis::BOSH;
 
 use POSIX qw/strftime/;
 use Digest::file qw/digest_file_hex/;
-use Digest::SHA  qw/hmac_sha256_base64/;
 
 sub new {
 	my ($class, %opts) = @_;
@@ -104,6 +103,11 @@ sub type { $_[0]->{top}->type; }
 sub path {
 	my ($self, @rest) = @_;
 	$self->{top}->path(@rest);
+}
+sub tmppath {
+	my ($self, $relative) = @_;
+	return $relative ? "$self->{__tmp}/$relative"
+	                 :  $self->{__tmp};
 }
 
 sub _default_prefix {
@@ -537,20 +541,12 @@ sub run_hook {
 sub deploy {
 	my ($self, %opts) = @_;
 
-	my $ok;
 	$self->write_manifest("$self->{__tmp}/manifest.yml", redact => 0);
 
-	my $pre_data_file = "";
+	my ($ok, $predeploy_data);
 	if ($self->has_hook('pre-deploy')) {
-		my $name = substr(Digest::SHA::hmac_sha256_base64(rand),0,rand(35)+5);
-		$name =~ s/[^A-Za-z0-9_-]/\./g;
-		$pre_data_file = "$self->{__tmp}/$name";
-		$ok = $self->run_hook('pre-deploy',
-		                      manifest => "$self->{__tmp}/manifest.yml",
-		                      datafile => $pre_data_file);
+		($ok, $predeploy_data) = $self->run_hook('pre-deploy');
 		die "Cannot continue with deployment!\n" unless $ok;
-
-		$pre_data_file = "" unless -f $pre_data_file;
 	}
 
 	if ($self->needs_bosh_create_env) {
@@ -583,7 +579,7 @@ sub deploy {
 	# bail out early if the deployment failed;
 	# don't update the cached manifests
 	if (!$ok) {
-		$self->run_hook('post-deploy', rc => 1, datafile => $pre_data_file)
+		$self->run_hook('post-deploy', rc => 1, data => $predeploy_data)
 			if $self->has_hook('post-deploy');
 		return
 	}
@@ -593,15 +589,8 @@ sub deploy {
 	$self->write_manifest($manifest_path, redact => 1);
 	debug("written redacted manifest to $manifest_path");
 
-	$self->run_hook('post-deploy', rc => 0, datafile => $pre_data_file)
+	$self->run_hook('post-deploy', rc => 0, data => $predeploy_data)
 		if $self->has_hook('post-deploy');
-
-	if ($pre_data_file &&
-	    substr($pre_data_file,0,length($self->{__tmp})) eq $self->{__tmp} &&
-	    -f $pre_data_file) {
-		unlink $pre_data_file
-			or debug "Could not remove pre-deploy datafile $pre_data_file";
-	}
 
 	# track exodus data in the vault
 	my $exodus = $self->exodus;
@@ -609,7 +598,7 @@ sub deploy {
 	$exodus->{bosh} = $self->bosh_target;
 	debug("setting exodus data in the Vault, for use later by other deployments");
 	$ok = run(
-		{ onfailure => "Could not save $self->{name} metadata to the Vault" },
+		{ onfailure => "Successfully deployed, but could not save $self->{name} metadata to the Vault" },
 		'safe', 'set', "secret/exodus/$self->{name}/".$self->{top}->type,
 		               map { "$_=$exodus->{$_}" } keys %$exodus);
 
@@ -855,6 +844,11 @@ parameter.
 =head2 kit()
 
 Retrieve the Genesis::Kit object for this environment.
+
+=head2 tmppath($relative)
+
+Retrieve a temporary work path the given C<$relative> path for this environment.
+If no relative path is given, it returns the temporary root directory.
 
 =head2 type()
 
