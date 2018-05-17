@@ -91,7 +91,7 @@ sub create_env {
 sub download_cloud_config {
 	my ($class, $env, $path) = @_;
 	explain "Downloading cloud config from '#M{$env}' BOSH director...";
-	_bosh({ interactive => 1, onfailure => "Could not download cloud-config from '#M{$env}' BOSH director" },
+	_bosh({ interactive => 1, onfailure => "Could not download cloud-config from $env BOSH director" },
 		'bosh -e "$1" cloud-config > "$2"', $env, $path);
 
 	die "No cloud-config defined on '#M{$env}' BOSH director\n"
@@ -133,7 +133,7 @@ sub run_errand {
 			unless $opts{$o};
 	}
 
-	_bosh({ interactive => 1, onfailure => "Failed to run errand '$opts{errand}' ($opts{deployment} deployment on '#M{$env}' BOSH)" },
+	_bosh({ interactive => 1, onfailure => "Failed to run errand '$opts{errand}' ($opts{deployment} deployment on $env BOSH director)" },
 		'bosh', '-n', '-e', $env, '-d', $opts{deployment}, 'run-errand', $opts{errand});
 
 	return 1;
