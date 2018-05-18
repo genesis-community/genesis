@@ -222,11 +222,9 @@ sub run_hook {
 
 	} elsif ($hook eq 'post-deploy') {
 		$ENV{GENESIS_DEPLOY_RC} = defined $opts{rc} ? $opts{rc} : 255;
-		if ($opts{data}) {
-			my $fn = $opts{env}->tmppath("data");
-			mkfile_or_fail($fn, $opts{data});
-			$ENV{GENESIS_PREDEPLOY_DATAFILE} = $fn;
-		}
+		my $fn = $opts{env}->tmppath("data");
+		mkfile_or_fail($fn, $opts{data}) if ($opts{data});
+		$ENV{GENESIS_PREDEPLOY_DATAFILE} = $fn;
 
 	##### LEGACY HOOKS
 	} elsif ($hook eq 'subkit') {
