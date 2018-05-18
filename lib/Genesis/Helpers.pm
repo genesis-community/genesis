@@ -370,7 +370,7 @@ prompt_for() {
 			exit $__rc
 		fi
 		if [[ $__type =~ ^multi- ]] ; then
-			local __i
+			local __i=0
 			eval "unset $__var"
 			eval "while IFS= read -r -d '' \"${__var}[__i++]\"; do :; done < \"$__tmpfile\""
 			eval "$__var=(\"\${${__var}[@]:1}\")"
