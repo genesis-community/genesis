@@ -624,16 +624,104 @@ sub check_secrets {
 	my ($self) = @_;
 
 	if ($self->has_hook('secrets')) {
-		$self->run_hook('secrets', action => 'check',
+		my $ok = $self->run_hook('secrets', action => 'check',
 		                           vault  => $self->{prefix});
-		return 1; # FIXME
+		return $ok;
 	} else {
-		my $rc = Genesis::Legacy::check_secrets($self->kit,
+		binmode(STDOUT, "encoding(UTF-8)");
+		my $ok = 1;
+
+		my $meta = $self->kit->metadata;
+		my $features = [($self->features)];
+
+		explain "#M{Retrieving secrets for $self->{prefix}...}";
+
+		my $secrets = {};
+		for (lines(run('safe paths --keys "$1"', "secret/$self->{prefix}"))) {
+			$secrets->{$_} = 1;
+		}
+		my @missing=();
+
+		explain "\n#C{[Checking generated credentials]}";
+		my @creds = Genesis::Legacy::safe_commands(
+			$self, 
+			Genesis::Legacy::active_credentials($meta, $features),
 			env       => $self,
 			prefix    => $self->{prefix},
-			features  => [$self->features]);
-		return $rc == 0;
+			features  => $features);
+		if (@creds) {
+			push @missing, _check_secret($_, $secrets) for (@creds);
+		} else {
+			explain "  #GI{No credentials to check}";
+		}
+
+		explain "\n#C{[Checking generated certificates]}";
+		my @certs = Genesis::Legacy::cert_commands(
+			Genesis::Legacy::active_certificates($meta, $features),
+			env       => $self,
+			prefix    => $self->{prefix},
+			features  => $features);
+		if (@certs) {
+			push @missing, _check_secret($_, $secrets) for (@certs);
+		} else {
+			explain "  #GI{No certificates to check}";
+		}
+		explain "";
+
+		return @missing == 0;
 	}
+}
+
+sub _check_secret {
+	my ($cmd, $secrets) = @_;
+	my @keys;
+
+	my $type = $cmd->[0];
+	my $path = $cmd->[2];
+	if ($type eq 'x509') {
+		if (grep {$_ eq '--signed-by'} @$cmd) {
+			$type = "certificate";
+			@keys = qw(certificate combined key);
+		} else {
+			$type = "CA certificate";
+			@keys = qw(certificate combined crl key serial);
+		}
+	} elsif ($type eq 'rsa') {
+		@keys = qw(private public);
+	} elsif ($type eq 'ssh') {
+		@keys = qw(private public fingerprint);
+	} elsif ($type eq 'dhparam') {
+		@keys = qw(dhparam-pem);
+	} elsif ($type eq 'gen') {
+		$type = 'random';
+		my $path_offset = $cmd->[1] eq '-l' ? 3 : 2;
+		$path_offset += 2 if $cmd->[$path_offset] eq '--policy';
+		$path = $cmd->[$path_offset];
+		@keys = ($cmd->[$path_offset + 1]);
+	} elsif ($type eq 'fmt') {
+		$type = 'random/formatted';
+		@keys = ($cmd->[4]);
+	} else {
+		die "Unrecognized credential or certificate command: '".join(" ", @$cmd)."'\n";
+	}
+	my @missing = grep {! $secrets->{"$path:$_"}} @keys;
+	if ($type =~ /^random/) { # these are at the key level, not the path level
+		if (@missing) {
+			explain("  #R{\x{2718}}  %s [%s:#C{%s}]", $path, $_, $type) for (@missing);
+		} else {
+			explain("  #G{\x{2714}}  %s [%s:#C{%s}]", $path, $_, $type) for (grep {$secrets->{"$path:$_"}} @keys);
+		}
+
+	} else {
+		if (@missing) {
+			explain("  #R{\x{2718}}  %s [#C{%s}]", $path, $type);
+			explain("     #R{\x{2718}}  :%s", $_) for (@missing);
+		} else {
+			explain("  #G{\x{2714}}  %s [#C{%s}]", $path,$type);
+		}
+	}
+
+	return map {["[$type]", "$path:$_"]} @missing;
 }
 
 sub rotate_secrets {

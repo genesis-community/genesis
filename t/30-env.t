@@ -703,4 +703,90 @@ EOF
 	teardown_vault();
 };
 
+
+subtest 'new env and check' => sub{
+	local $ENV{GENESIS_BOSH_COMMAND};
+	fake_bosh;
+	my $vault_target = vault_ok;
+
+	my $name = "far-fetched";
+	my $top = Genesis::Top->create(workdir, 'sample');
+	my $kit = $top->link_dev_kit('t/src/creator')->find_kit('dev');
+	mkfile_or_fail $top->path("pre-existing.yml"), "I'm already here";
+
+	# create the environment
+	dies_ok {$top->create_env('', $kit)} "can't create a unnamed env";
+	dies_ok {$top->create_env("nothing")} "can't create a env without a kit";
+	dies_ok {$top->create_env("pre-existing", $kit)} "can't overwrite a pre-existing env";
+
+	my $env;
+	lives_ok {$env = $top->create_env($name, $kit)} "successfully create an env with a dev kit";
+	eq_or_diff get_file($env->path($env->{file})), <<EOF, "Created env file contains correct info";
+---
+kit:
+  name:    dev
+  version: latest
+  features:
+    - (( replace ))
+    - bonus
+
+params:
+  env:   far-fetched
+  vault: far/fetched/sample
+
+  static: junk
+EOF
+
+	stdout_is(sub {ok $env->check_secrets, "check_secrets shows all secrets okay"}, <<EOF,
+Retrieving secrets for far/fetched/sample...
+
+[Checking generated credentials]
+  ✔  secret/far/fetched/sample/crazy/thing [id:random]
+  ✔  secret/far/fetched/sample/crazy/thing [token:random]
+  ✔  secret/far/fetched/sample/something/ssh [ssh]
+  ✔  secret/far/fetched/sample/users/admin [password:random]
+  ✔  secret/far/fetched/sample/users/bob [password:random]
+  ✔  secret/far/fetched/sample/work/signing_key [rsa]
+
+[Checking generated certificates]
+  ✔  secret/far/fetched/sample/my-cert/ca [CA certificate]
+  ✔  secret/far/fetched/sample/my-cert/server [certificate]
+  ✔  secret/far/fetched/sample/ssl/ca [CA certificate]
+  ✔  secret/far/fetched/sample/ssl/server [certificate]
+
+EOF
+		"check_secrets gives meaninful output on success");
+
+	qx(safe export > /tmp/out.json);
+
+	qx(safe rm -rf secret/far/fetched/sample/users);
+	qx(safe rm secret/far/fetched/sample/ssl/ca:key secret/far/fetched/sample/ssl/ca:certificate);
+	qx(safe rm secret/far/fetched/sample/crazy/thing:token);
+
+	stdout_is(sub {ok !$env->check_secrets, "check_secrets shows missing secrets and keys"}, <<EOF,
+Retrieving secrets for far/fetched/sample...
+
+[Checking generated credentials]
+  ✔  secret/far/fetched/sample/crazy/thing [id:random]
+  ✘  secret/far/fetched/sample/crazy/thing [token:random]
+  ✔  secret/far/fetched/sample/something/ssh [ssh]
+  ✘  secret/far/fetched/sample/users/admin [password:random]
+  ✘  secret/far/fetched/sample/users/bob [password:random]
+  ✔  secret/far/fetched/sample/work/signing_key [rsa]
+
+[Checking generated certificates]
+  ✔  secret/far/fetched/sample/my-cert/ca [CA certificate]
+  ✔  secret/far/fetched/sample/my-cert/server [certificate]
+  ✘  secret/far/fetched/sample/ssl/ca [CA certificate]
+     ✘  :certificate
+     ✘  :key
+  ✔  secret/far/fetched/sample/ssl/server [certificate]
+
+EOF
+		"check_secrets gives meaninful output on failure");
+	
+
+	teardown_vault();
+};
+
 done_testing;
