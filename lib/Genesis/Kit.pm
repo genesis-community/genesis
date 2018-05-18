@@ -277,7 +277,7 @@ sub run_hook {
 			$contents = slurp($fn);
 			unlink $fn;
 		}
-		return (($rc ? 1 : 0), $contents);
+		return (($rc == 0 ? 1 : 0), $contents);
 	}
 
 	if ($hook eq 'post-deploy') {
