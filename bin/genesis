@@ -130,15 +130,13 @@ sub multi_line_prompt_handler {
 	my ($prompt, %opts) = @_;
 	validate_prompt_opts("multi-line", \%opts, qw(label min max validation msg));
 	my $results = prompt_for_list('line',$prompt,$opts{label},$opts{min},$opts{max},$opts{validation},$opts{msg});
-	return "" unless scalar @$results;
-	return join("\0", '' , @$results);
+	return join("\0", @$results, '');
 }
 sub multi_block_prompt_handler {
 	my ($prompt, %opts) = @_;
 	validate_prompt_opts("multi-block", \%opts, qw(label min max msg));
 	my $results = prompt_for_list('block',$prompt,$opts{label},$opts{min},$opts{max},undef,$opts{msg});
-	return "" unless scalar @$results;
-	return join("\0", '' , @$results);
+	return join("\0", @$results, '');
 }
 sub multi_select_prompt_handler {
 	my ($prompt, %opts) = @_;

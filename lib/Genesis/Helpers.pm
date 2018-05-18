@@ -359,8 +359,8 @@ prompt_for() {
 		[[ $__rc -ne 0 ]] && echo "Error encountered - cannot continue" && exit $__rc
 	else
 		local __tmpfile
-		__tmpfile=$(mktemp)
-		[[ $? -ne 0 ]] && echo >&2 "Failed to create tmpdir: $__tmpfile" && exit 2
+		__tmpfile=$(mktemp);
+		[[ $? -ne 0 ]] && echo >&2 "Failed to create tmpfile: $__tmpfile" && exit 2
 		genesis ui-prompt-for "$__type" "$__tmpfile" "$@"
 		local __rc="$?"
 		if [[ $__rc -ne 0 ]] ; then
@@ -370,10 +370,11 @@ prompt_for() {
 			exit $__rc
 		fi
 		if [[ $__type =~ ^multi- ]] ; then
+			eval "unset $__var; ${__var}=()"
 			local __i=0
-			eval "unset $__var"
-			eval "while IFS= read -r -d '' \"${__var}[__i++]\"; do :; done < \"$__tmpfile\""
-			eval "$__var=(\"\${${__var}[@]:1}\")"
+			while IFS= read -rd '' block; do
+				eval "${__var}+=( \"\$block\" )"
+			done < $__tmpfile
 		else
 			eval "$__var=\$(<\"$__tmpfile\")"
 		fi
