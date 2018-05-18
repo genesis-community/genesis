@@ -1,0 +1,44 @@
+---
+name: Sample Kit
+authors:
+  Someone Here <me@example.com>
+  Enthusiastic Contributor <iwannahelp@youwith.it>
+docs:   https://incredible.example.com
+code:   https://repo.example.com/incredible/thing
+
+certificates:
+  base:
+    my-cert:
+      ca: { valid_for: 10y }
+      server: { valid_for: 1y, names: [ "locker" ] }
+
+  bonus:
+    ssl:
+      ca: { valid_for: 10y }
+      server: { valid_for: 1y, names: [ "bonus.ci" ] }
+
+  extra:
+    another_ssl:
+      ca: { valid_for: 10y }
+      server: { valid_for: 1y, names: [ "something" ] }
+
+credentials:
+  base:
+    something/ssh: ssh 2048 fixed
+
+    work/signing_key: rsa 2048 fixed
+
+    users/admin:
+      password: random 64
+
+    users/bob:
+      password: random 16
+
+  bonus:
+    crazy/thing:
+      id: random 32 fixed
+      token: random 16 allowed-chars ABCDEFGHIJKLMNOPQRSTUVWXYZ0987654321
+
+  extra:
+    regular:
+      secret: random 4

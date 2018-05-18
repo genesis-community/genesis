@@ -310,64 +310,6 @@ sub cert_commands {
 	return @cmds;
 }
 
-sub check_secret {
-	my ($cmd, %options) = @_;
-	my (@keys);
-	my $type = $cmd->[0];
-	my $path = $cmd->[2];
-	if ($type eq 'x509') {
-		if (grep {$_ eq '--signed-by'} @$cmd) {
-			$type = "certificate";
-			@keys = qw(certificate combined key);
-		} else {
-			$type = "CA certificate";
-			@keys = qw(certificate combined crl key serial);
-		}
-	} elsif ($type eq 'rsa') {
-		@keys = qw(private public);
-	} elsif ($type eq 'ssh') {
-		@keys = qw(private public fingerprint);
-	} elsif ($type eq 'dhparam') {
-		@keys = qw(dhparam-pem);
-	} elsif ($type eq 'gen') {
-		$type = 'random';
-		my $path_offset = $cmd->[1] eq '-l' ? 3 : 2;
-		$path_offset += 2 if $cmd->[$path_offset] eq '--policy';
-		$path = $cmd->[$path_offset];
-		@keys = ($cmd->[$path_offset + 1]);
-	} elsif ($type eq 'fmt') {
-		$type = 'random/formatted';
-		@keys = ($cmd->[4]);
-	} else {
-		die "Unrecognized credential or certificate command: '".join(" ", @$cmd)."'\n";
-	}
-	return map {["[$type]", "$path:$_"]} grep {!safe_path_exists("$path:$_")} @keys;
-}
-sub check_secrets {
-	my ($self, %options) = @_;
-	my $meta = $self->metadata;
-
-	$options{env} or die "check_secrets() was not given an 'env' option.\n";
-
-	my @missing = ();
-	for (safe_commands($self, active_credentials($meta, $options{features}||{}),%options)) {
-		push @missing, check_secret($_, %options);
-	}
-	for (cert_commands(active_certificates($meta, $options{features}||{}),%options)) {
-		push @missing, check_secret($_, %options);
-	}
-	if (@missing) {
-		my $suf = scalar(@missing) == 1 ? '' : 's';
-		printf "Missing %d credential%s or certificate%s:\n  * %s\n",
-			scalar(@missing), $suf, $suf,
-			join ("\n  * ", map {join " ", @$_} @missing);
-		return 1;
-	} else {
-		explain "  credentials and certificates present. [#G{OK}]";
-		return 0;
-	}
-}
-
 # generate (and optionally rotate) credentials.
 #
 ## just rotate credentials
