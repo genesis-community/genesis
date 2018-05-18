@@ -51,7 +51,7 @@ storage "inmem" {}
 EOF
 ) >$HOME/log 2>&1 &
 vault_pid=$!
-printf >&2 "\rStarting Vault ${version} CLI on port $port (pid: $vault_pid)..."
+[ -n "${DEBUG_TESTS:-}" ] && printf >&2 "\rStarting Vault ${version} CLI on port $port (pid: $vault_pid)..."
 waitfor=600
 while ! lsof -a -p $vault_pid -i tcp:$port -s TCP:listen -nP >/dev/null 2>&1; do
 	if [[ $waitfor -gt 0 ]]; then
@@ -69,6 +69,6 @@ if ! safe exists "secret/handshake" ;  then
   bail "\nFAILED - failed to unseal vault\n"
 fi
 
-printf >&2 "done.\n"
+[ -n "${DEBUG_TESTS:-}" ] && printf >&2 "done.\n"
 echo $vault_pid
 exit 0
