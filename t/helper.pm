@@ -311,7 +311,8 @@ sub vault_ok {
 
 sub teardown_vault {
 	if (defined $VAULT_PID) {
-		print STDERR "\nShutting down vault (pid: $VAULT_PID)\n";
+		print STDERR "\nShutting down vault (pid: $VAULT_PID)\n"
+			if defined $ENV{DEBUG_TESTS} and $ENV{DEBUG_TESTS} =~ m/^(1|y|yes|true)$/i;
 		kill 'TERM', $VAULT_PID;
 		$VAULT_PID = undef;
 	}
