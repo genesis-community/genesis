@@ -384,10 +384,14 @@ prompt_for() {
 export -f prompt_for
 
 param_entry() {
-	local __disabled="" __varname="$1" __key="$2" __opt="$3" ; shift 3
+	local __disabled=""
+  local __varname="${1:?param_entry - missing variable name}"
+  local     __key="${2:?param_entry - missing key}"
+  local     __opt="${3:-}"
+  shift 3 || true
 	if [[ "$__opt" == "-d" ]] ; then
 		__disabled="# "
-		__opt=$1 ; shift
+		__opt="${1:-}" ; shift || true
 	fi
 	if [[ "$__opt" == "-a" ]] ; then
 		if [[ "${#@}" -eq 0 ]] ; then
