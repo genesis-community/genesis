@@ -2112,6 +2112,7 @@ sub main {
 		debug "#G{genesis} callback...";
 	} else {
 		debug "#G{genesis} starting up...";
+		$ENV{GENESIS_CALLER_DIR} = Cwd::getcwd();
 	}
 
 	$ENV{GENESIS_INDEX} = "https://genesis.starkandwayne.com" unless $ENV{GENESIS_INDEX};
