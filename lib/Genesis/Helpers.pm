@@ -77,15 +77,16 @@ export -f genesis
 #
 exodus() {
   # movement of the people
-  # TODO: Depreciate for lookup --exodus or lookup --exodus-for
-  local __target __key
-  __target="--exodus"
+  local __env __key
+  __env="$GENESIS_ENVIRONMENT/$GENESIS_TYPE"
   __key=${1:?exodus() must provide at least an exodus key}
   if [[ -n ${2:-} ]]; then
     __key=$2
-    __target="--exodus-for \"$1\""
+    __env=$1
   fi
-  lookup $GENESIS_ENVIRONMENT $__target "$__key"
+  if safe exists "secret/exodus/${__env}:${__key}"; then
+    safe get "secret/exodus/${__env}:${__key}"
+  fi
 }
 export -f exodus
 
