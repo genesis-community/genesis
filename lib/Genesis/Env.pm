@@ -595,7 +595,7 @@ sub deploy {
 	# track exodus data in the vault
 	my $exodus = $self->exodus;
 	$exodus->{manifest_sha1} = digest_file_hex($manifest_path, 'SHA-1');
-	$exodus->{bosh} = $self->bosh_target;
+	$exodus->{bosh} = $self->bosh_target || "(none)";
 	debug("setting exodus data in the Vault, for use later by other deployments");
 	$ok = run(
 		{ onfailure => "Successfully deployed, but could not save $self->{name} metadata to the Vault" },

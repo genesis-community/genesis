@@ -1009,8 +1009,13 @@ sub {
 			strfuzzytime($exodus->{dated}, "#C{%~} #K{(%I:%M%p on %b %d, %Y %Z)}"));
 		explain("  #I{           by} #C{%s}",
 			$exodus->{deployer} || $unknown);
-		explain("  #I{      to BOSH} #C{%s}",
-			$exodus->{bosh}) if $exodus->{bosh};
+		if ($exodus->{bosh}) {
+			if ($exodus->{bosh} eq "(none)") {
+				explain("  #I{      as BOSH} #C{create-env}");
+			} else {
+				explain("  #I{      to BOSH} #C{%s}",$exodus->{bosh});
+			}
+		}
 		explain("  #I{ based on kit} #C{%s}#C{/%s}",
 			$exodus->{kit_name}||$unknown, $exodus->{kit_version}||$unknown);
 		explain("  #I{        using} #C{Genesis v%s}",
