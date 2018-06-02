@@ -1,7 +1,7 @@
 FROM starkandwayne/concourse:latest-rc
 
 RUN apt-get update \
- && apt-get install -y \
+ && DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true apt-get install -y \
       libexpect-perl \
       expect \
       libtest-deep-perl \
