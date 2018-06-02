@@ -1112,6 +1112,7 @@ EOF
               repository: $pipeline->{pipeline}{task}{image}
               tag:        $pipeline->{pipeline}{task}{version}
           params:
+            GENESIS_HONOR_ENV:    1
             CI_NO_REDACT:         $pipeline->{pipeline}{unredacted}
             CURRENT_ENV:          $env
             PREVIOUS_ENV:         $passed
@@ -1186,11 +1187,12 @@ EOF
               repository: $pipeline->{pipeline}{task}{image}
               tag:        $pipeline->{pipeline}{task}{version}
           params:
-            CI_NO_REDACT:       $pipeline->{pipeline}{unredacted}
-            CURRENT_ENV:        $env
-            ERRAND_NAME:        $errand_name
+            GENESIS_HONOR_ENV:    1
+            CI_NO_REDACT:         $pipeline->{pipeline}{unredacted}
+            CURRENT_ENV:          $env
+            ERRAND_NAME:          $errand_name
 
-            BOSH_ENVIRONMENT:   $pipeline->{pipeline}{boshes}{$env}{url}
+            BOSH_ENVIRONMENT:     $pipeline->{pipeline}{boshes}{$env}{url}
             BOSH_CA_CERT: |
 EOF
 			for (split /\n/, $pipeline->{pipeline}{boshes}{$env}{ca_cert}) {
@@ -1199,12 +1201,12 @@ EOF
 EOF
 			}
 			print $OUT <<EOF;
-            BOSH_CLIENT:        $pipeline->{pipeline}{boshes}{$env}{username}
-            BOSH_CLIENT:        $pipeline->{pipeline}{boshes}{$env}{username}
-            BOSH_CLIENT_SECRET: $pipeline->{pipeline}{boshes}{$env}{password}
+            BOSH_CLIENT:          $pipeline->{pipeline}{boshes}{$env}{username}
+            BOSH_CLIENT:          $pipeline->{pipeline}{boshes}{$env}{username}
+            BOSH_CLIENT_SECRET:   $pipeline->{pipeline}{boshes}{$env}{password}
 EOF
 			print $OUT <<EOF if $pipeline->{pipeline}{debug};
-            DEBUG:              $pipeline->{pipeline}{debug}
+            DEBUG:                $pipeline->{pipeline}{debug}
 EOF
 			print $OUT <<EOF;
 
@@ -1232,16 +1234,17 @@ EOF
             path: $genesis_bindir/.genesis/bin/genesis
             args: [ci-generate-cache]
           params:
-            CI_NO_REDACT:    $pipeline->{pipeline}{unredacted}
-            CURRENT_ENV:     $env
-            WORKING_DIR:     out/git
-            OUT_DIR:         cache-out/git
-            GIT_BRANCH:      (( grab pipeline.git.branch ))
-            GIT_PRIVATE_KEY: (( grab pipeline.git.private_key ))
+            GENESIS_HONOR_ENV:    1
+            CI_NO_REDACT:         $pipeline->{pipeline}{unredacted}
+            CURRENT_ENV:          $env
+            WORKING_DIR:          out/git
+            OUT_DIR:              cache-out/git
+            GIT_BRANCH:           (( grab pipeline.git.branch ))
+            GIT_PRIVATE_KEY:      (( grab pipeline.git.private_key ))
 EOF
 
 		print $OUT <<EOF if $pipeline->{pipeline}{debug};
-            DEBUG:       $pipeline->{pipeline}{debug}
+            DEBUG:                $pipeline->{pipeline}{debug}
 EOF
 		print $OUT <<EOF;
           platform: linux

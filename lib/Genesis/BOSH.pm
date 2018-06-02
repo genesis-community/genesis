@@ -11,8 +11,8 @@ sub _bosh {
 	my $opts = (ref($args[0]) eq 'HASH') ? shift @args : {};
 	$opts->{env} ||= {};
 
-	# Clear out the BOSH env vars unless we're under Concourse
-	unless ($ENV{BUILD_PIPELINE_NAME}) {
+	# Clear out the BOSH env vars unless we shouldn't
+	unless ($ENV{GENESIS_HONOR_ENV}) {
 		$opts->{env}{HTTPS_PROXY} = ''; # bosh dislikes this env var
 		$opts->{env}{https_proxy} = ''; # bosh dislikes this env var
 

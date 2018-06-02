@@ -59,6 +59,7 @@ jobs:
           CACHE_DIR: client-aws-1-preprod-cache
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-preprod
+          GENESIS_HONOR_ENV: 1
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -97,6 +98,7 @@ jobs:
         params:
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-preprod
+          GENESIS_HONOR_ENV: 1
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -195,6 +197,7 @@ jobs:
           CACHE_DIR: client-aws-1-prod-cache
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-prod
+          GENESIS_HONOR_ENV: 1
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -233,6 +236,7 @@ jobs:
         params:
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-prod
+          GENESIS_HONOR_ENV: 1
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -301,6 +305,7 @@ jobs:
           CACHE_DIR: client-aws-1-sandbox-cache
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-sandbox
+          GENESIS_HONOR_ENV: 1
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -339,6 +344,7 @@ jobs:
         params:
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-sandbox
+          GENESIS_HONOR_ENV: 1
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -625,6 +631,7 @@ jobs:
           CACHE_DIR: client-aws-1-preprod-cache
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-preprod
+          GENESIS_HONOR_ENV: 1
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -665,6 +672,7 @@ jobs:
         params:
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-preprod
+          GENESIS_HONOR_ENV: 1
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -769,6 +777,7 @@ jobs:
           CACHE_DIR: client-aws-1-prod-cache
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-prod
+          GENESIS_HONOR_ENV: 1
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -809,6 +818,7 @@ jobs:
         params:
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-prod
+          GENESIS_HONOR_ENV: 1
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -883,6 +893,7 @@ jobs:
           CACHE_DIR: client-aws-1-sandbox-cache
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-sandbox
+          GENESIS_HONOR_ENV: 1
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -923,6 +934,7 @@ jobs:
         params:
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-sandbox
+          GENESIS_HONOR_ENV: 1
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -1220,6 +1232,7 @@ jobs:
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-preprod
           DEBUG: 1
+          GENESIS_HONOR_ENV: 1
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -1265,6 +1278,7 @@ jobs:
           CURRENT_ENV: client-aws-1-preprod
           DEBUG: 1
           ERRAND_NAME: a-testing-errand-for-the-ages
+          GENESIS_HONOR_ENV: 1
         platform: linux
         run:
           args:
@@ -1287,6 +1301,7 @@ jobs:
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-preprod
           DEBUG: 1
+          GENESIS_HONOR_ENV: 1
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -1386,6 +1401,7 @@ jobs:
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-prod
           DEBUG: 1
+          GENESIS_HONOR_ENV: 1
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -1431,6 +1447,7 @@ jobs:
           CURRENT_ENV: client-aws-1-prod
           DEBUG: 1
           ERRAND_NAME: a-testing-errand-for-the-ages
+          GENESIS_HONOR_ENV: 1
         platform: linux
         run:
           args:
@@ -1453,6 +1470,7 @@ jobs:
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-prod
           DEBUG: 1
+          GENESIS_HONOR_ENV: 1
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -1522,6 +1540,7 @@ jobs:
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-sandbox
           DEBUG: 1
+          GENESIS_HONOR_ENV: 1
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -1567,6 +1586,7 @@ jobs:
           CURRENT_ENV: client-aws-1-sandbox
           DEBUG: 1
           ERRAND_NAME: a-testing-errand-for-the-ages
+          GENESIS_HONOR_ENV: 1
         platform: linux
         run:
           args:
@@ -1589,6 +1609,7 @@ jobs:
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-sandbox
           DEBUG: 1
+          GENESIS_HONOR_ENV: 1
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -1890,6 +1911,7 @@ jobs:
           CI_NO_REDACT: 1
           CURRENT_ENV: client-aws-1-preprod
           DEBUG: 1
+          GENESIS_HONOR_ENV: 1
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -1937,6 +1959,7 @@ jobs:
           CURRENT_ENV: client-aws-1-preprod
           DEBUG: 1
           ERRAND_NAME: run-something-good
+          GENESIS_HONOR_ENV: 1
         platform: linux
         run:
           args:
@@ -1961,6 +1984,7 @@ jobs:
           CI_NO_REDACT: 1
           CURRENT_ENV: client-aws-1-preprod
           DEBUG: 1
+          GENESIS_HONOR_ENV: 1
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -2116,6 +2140,7 @@ jobs:
           CI_NO_REDACT: 1
           CURRENT_ENV: client-aws-1-prod
           DEBUG: 1
+          GENESIS_HONOR_ENV: 1
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -2163,6 +2188,7 @@ jobs:
           CURRENT_ENV: client-aws-1-prod
           DEBUG: 1
           ERRAND_NAME: run-something-good
+          GENESIS_HONOR_ENV: 1
         platform: linux
         run:
           args:
@@ -2187,6 +2213,7 @@ jobs:
           CI_NO_REDACT: 1
           CURRENT_ENV: client-aws-1-prod
           DEBUG: 1
+          GENESIS_HONOR_ENV: 1
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -2307,6 +2334,7 @@ jobs:
           CI_NO_REDACT: 1
           CURRENT_ENV: client-aws-1-sandbox
           DEBUG: 1
+          GENESIS_HONOR_ENV: 1
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -2354,6 +2382,7 @@ jobs:
           CURRENT_ENV: client-aws-1-sandbox
           DEBUG: 1
           ERRAND_NAME: run-something-good
+          GENESIS_HONOR_ENV: 1
         platform: linux
         run:
           args:
@@ -2378,6 +2407,7 @@ jobs:
           CI_NO_REDACT: 1
           CURRENT_ENV: client-aws-1-sandbox
           DEBUG: 1
+          GENESIS_HONOR_ENV: 1
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -2767,6 +2797,7 @@ jobs:
           CACHE_DIR: client-aws-1-sandbox-cache
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-sandbox
+          GENESIS_HONOR_ENV: 1
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -2805,6 +2836,7 @@ jobs:
         params:
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-sandbox
+          GENESIS_HONOR_ENV: 1
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
