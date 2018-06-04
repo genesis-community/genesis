@@ -599,7 +599,8 @@ sub deploy {
 	debug("setting exodus data in the Vault, for use later by other deployments");
 	$ok = run(
 		{ onfailure => "Successfully deployed, but could not save $self->{name} metadata to the Vault" },
-		'safe', 'set', "secret/exodus/$self->{name}/".$self->{top}->type,
+		'safe', 'rm',  "secret/exodus/$self->{name}/".$self->{top}->type,
+		  '--', 'set', "secret/exodus/$self->{name}/".$self->{top}->type,
 		               map { "$_=$exodus->{$_}" } keys %$exodus);
 
 	return $ok;
