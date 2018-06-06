@@ -131,8 +131,10 @@ sub csprintf {
 }
 sub explain {
 	return if envset "QUIET";
-	{ local $ENV{NOCOLOR} = "yes" unless -t STDOUT;
-	        print csprintf(@_); }
+	my $out = envset("EXPLAIN_TO_STDERR") ? *STDERR : *STDOUT;
+
+	{ local $ENV{NOCOLOR} = "yes" unless -t $out;
+	        print $out csprintf(@_); }
 	print "\n";
 }
 
