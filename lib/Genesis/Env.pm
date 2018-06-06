@@ -305,7 +305,7 @@ sub _manifest {
 		pushd $self->path;
 		debug("running spruce merge of all files, with evaluation, to generate a manifest");
 		my $out = run({ onfailure => "Unable to merge $self->{name} manifest", stderr => 0 },
-			'spruce', 'merge', $self->_yaml_files);
+			'spruce', 'merge', '--go-patch', $self->_yaml_files);
 		popd;
 
 		debug("saving #W{%s} manifest to $path", $opts{redact} ? 'redacted' : 'unredacted');
