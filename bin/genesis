@@ -847,7 +847,6 @@ sub {
 			or bail "$options{'cloud-config'}: no such file or directory";
 		$env->use_cloud_config($cc);
 	} elsif (!$env->needs_bosh_create_env) {
-		explain "Downloading #W{cloud-config} from '#M{%s}')", $env->bosh_target;
 		$env->download_cloud_config;
 	}
 
@@ -1699,30 +1698,36 @@ Looks up data from the environment file (or alterative source: see options below
 If the key is empty string, it will return all data from the source.
 
 OPTIONS
-      --merged      Lookup data from a fully merged manifest for the environment.
-      --deployed    Lookup data from the manifest of the last deployment.
-      --exodus      Lookup data from the genesis exodus data for the last deployment.
-      --exodus-for  Lookup data from the genesis exodus data for a different enviroment.
-                    Takes an argument of the form "env-name/deployment-type"
-      --defined     Exit with 0 if key defined in specified source, 9 otherwise.  No
-                    output is produced, making it useful in 'if lookup ... ; then'
+      --merged        Lookup data from a fully merged manifest for the environment.
+      --deployed      Lookup data from the manifest of the last deployment.
+      --exodus        Lookup data from the genesis exodus data for the last deployment.
+      --exodus-for    Lookup data from the genesis exodus data for a different enviroment.
+                      Takes an argument of the form "env-name/deployment-type"
+      --defined       Exit with 0 if key defined in specified source, 9 otherwise.  No
+                      output is produced, making it useful in 'if lookup ... ; then'
+      --cloud-config  Specify the cloud config for --merged lookups.  If not specified,it
+                      will fetch the cloud config from the BOSH director.
 
 $GLOBAL_USAGE
 EOF
 sub {
 	my %options;
 	options(\@_, \%options, qw/
-		--exodus
-		--exodus-for=s
-		--deployed
-		--merged
-		--defined
+		exodus
+		exodus-for=s
+		deployed
+		merged
+		defined|defines
+		cloud-config=s
 	/);
 	usage(1) if @_ < 2 or @_ > 3;
 	check_prereqs;
 	$options{exodus} = 1 if $options{'exodus-for'};
 	usage(1,"#R{[ERROR]} Can only specify one of --merged, --deployed, or --exodus(-for)")
 		if ((grep {$_ =~ /^(exodus|deployed|merged)$/} keys(%options)) > 1);
+
+	usage(1,"#R{[ERROR]} --cloud-config option only applicable to the --merged option")
+		if $options{'cloud-config'} && ! $options{merged};
 
 	my ($name, $key, $default) = @_;
 	# Legacy support -- previous versions used key/name order
@@ -1740,6 +1745,13 @@ sub {
 		die "Circular reference detected while trying to lookup merged manifest of $name\n"
 			if envset("GENESIS__LOOKUP_MERGED_MANIFEST");
 		$ENV{GENESIS__LOOKUP_MERGED_MANIFEST}="1";
+		if ($options{'cloud-config'}) {
+			my $cc = Cwd::abs_path($options{'cloud-config'})
+				or bail "$options{'cloud-config'}: no such file or directory";
+			$env->use_cloud_config($cc);
+		} elsif (!$env->needs_bosh_create_env) {
+			$env->download_cloud_config;
+		}
 		$v = $env->manifest_lookup($key,$default);
 	} elsif ($options{deployed}) {
 		$v = $env->last_deployed_lookup($key,$default);
