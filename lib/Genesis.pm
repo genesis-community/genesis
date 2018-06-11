@@ -134,8 +134,7 @@ sub explain {
 	my $out = envset("EXPLAIN_TO_STDERR") ? *STDERR : *STDOUT;
 
 	{ local $ENV{NOCOLOR} = "yes" unless -t $out;
-	        print $out csprintf(@_); }
-	print "\n";
+	        print $out csprintf(@_)."\n"; }
 }
 
 sub debug {
