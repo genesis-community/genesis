@@ -220,9 +220,25 @@ sub _lookup {
 
 	return $what if $key eq '';
 
-	for (split /\./, $key) {
-		return $default if !exists $what->{$_};
-		$what = $what->{$_};
+	for (split /[\[\.]/, $key) {
+		if (/^(\d+)\]$/) {
+			return $default unless ref($what) eq "ARRAY" && scalar(@$what) > $1;
+			$what = $what->[$1];
+		} elsif (/^([^\[\=]*)=([^\]]*)]$/) {
+			return $default unless ref($what) eq "ARRAY";
+			my $found=0;
+			for (my $i = 0; $i < scalar(@$what); $i++) {
+				if (ref($what->[$i]) eq 'HASH' && defined($what->[$i]{$1}) && ($what->[$i]{$1} eq $2)) {
+					$what = $what->[$i];
+					$found=1;
+					last;
+				}
+			}
+			return $default unless $found;
+		} else {
+			return $default if !exists $what->{$_};
+			$what = $what->{$_};
+		}
 	}
 	return $what;
 }
