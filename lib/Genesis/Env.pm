@@ -224,7 +224,7 @@ sub _lookup {
 		if (/^(\d+)\]$/) {
 			return $default unless ref($what) eq "ARRAY" && scalar(@$what) > $1;
 			$what = $what->[$1];
-		} elsif (/^([^\[\=]*)=([^\]]*)]$/) {
+		} elsif (/^(.*?)=(.*?)]$/) {
 			return $default unless ref($what) eq "ARRAY";
 			my $found=0;
 			for (my $i = 0; $i < scalar(@$what); $i++) {
