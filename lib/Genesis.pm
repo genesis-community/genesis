@@ -22,6 +22,7 @@ our @EXPORT = qw/
 
 	csprintf
 	explain debug trace error
+	vaulted
 	bail
 
 	bug
@@ -152,6 +153,10 @@ sub trace {
 	{ local $ENV{NOCOLOR} = "yes" unless -t STDOUT;
 	        print STDERR csprintf(@_); }
 	print STDERR "\n";
+}
+
+sub vaulted {
+	return !! $ENV{GENESIS_TARGET_VAULT};
 }
 
 sub error {
