@@ -198,10 +198,6 @@ sub process_params {
 	return \@answers;
 }
 
-sub safe_path_exists {
-	return run({ passfail => 1 }, qw(safe exists), $_[0]);
-}
-
 sub dereference_param {
 	my ($env, $key) = @_;
 	my $val = $env->lookup($key, undef);

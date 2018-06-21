@@ -40,6 +40,7 @@ our @EXPORT = qw/
 	ordify
 
 	run lines bosh curl
+	safe_path_exists
 
 	slurp
 	mkfile_or_fail mkdir_or_fail
@@ -64,6 +65,10 @@ sub envset {
 sub envdefault {
 	my ($var, $default) = @_;
 	return defined $ENV{$var} ? $ENV{$var} : $default;
+}
+
+sub safe_path_exists {
+	return run({ passfail => 1 }, qw(safe exists), $_[0]);
 }
 
 my $__is_highcolour = $ENV{TERM} && $ENV{TERM} =~ /256color/;
