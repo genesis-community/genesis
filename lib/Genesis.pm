@@ -396,6 +396,7 @@ sub curl {
 	my $status = "";
 	my $status_line = "";
 
+	debug 'Running cURL: `'.'curl -isL $url '.join(' ',@flags).'`';
 	my @data = lines(run({ stderr => 0 }, 'curl', '-isL', $url, @flags));
 
 	unless (scalar(@data) && $? == 0) {
