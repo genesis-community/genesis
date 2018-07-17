@@ -973,7 +973,8 @@ sub {
 	$env->has_hook('addon')
 		or bail "#R{Kit %s does not provide an addon hook!}", $env->kit->id;
 
-	explain "Running #G{%s} addon for #C{%s}", $script, $env->name;
+	{local $ENV{EXPLAIN_TO_STDERR}=1; explain "Running #G{%s} addon for #C{%s}", $script, $env->name;}
+
 	$env->run_hook('addon', script => $script, args => \@args)
 		or exit 1;
 });
