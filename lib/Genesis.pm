@@ -404,17 +404,18 @@ sub curl {
 		run({ interactive => 1 }, 'curl', '-L', $url, @flags);
 		return 599, "Unable to execute curl command", "";
 	}
-	while (my $line = shift @data) {
+	my $in_header;
+	my $line;
+	while ($line = shift @data) {
 		if ($line =~ m/^HTTP\/\d+\.\d+\s+((\d+)(\s+.*)?)$/) {
+			$in_header = 1;
 			$status_line = $1;
 			$status = $2;
 		}
-		# curl -iL will output a second set of headers if following links
-		if ($line =~ /^\s+$/ && $status !~ /^3\d\d$/) {
-			last;
-		}
+		last unless $in_header;
+		$in_header=0 if ($line =~ /^\s+$/);
 	}
-	return $status, $status_line, join("\n", @data);
+	return $status, $status_line, join("\n", $line, @data);
 }
 
 sub slurp {
