@@ -200,7 +200,13 @@ sub process_params {
 
 sub dereference_param {
 	my ($env, $key) = @_;
-	my $val = $env->lookup($key, undef);
+
+	my $default = undef;
+	if ($key =~ m/^maybe:/) {
+		$key =~ s/^maybe://;
+		$default = "";
+	}
+	my $val = $env->lookup($key, $default);
 	die "Unable to resolve '$key' for ".$env->name.". This must be defined in the environment YAML.\n"
 		unless defined $val;
 	return $val;
@@ -291,7 +297,7 @@ sub cert_commands {
 			my $cn = $c->{names}[0];
 			$c->{valid_for} ||= "1y";
 
-			my @name_flags = map {( "--name", dereference_params($_, $options{env}) )} @{$c->{names}};
+			my @name_flags = map {( "--name", $_ )} grep { $_ } map { dereference_params($_, $options{env}) } @{$c->{names}};
 			my @cmd = (
 				"x509",
 				"issue",
