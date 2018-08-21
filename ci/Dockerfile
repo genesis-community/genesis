@@ -10,6 +10,7 @@ RUN apt-get update \
       libtest-output-perl \
       spruce \
       safe \
+      shellcheck \
  && git config --global user.name "Concourse BOT" \
  && git config --global user.email concourse-bot@starkandwayne.com \
  && curl -Lo /tmp/vault.zip https://releases.hashicorp.com/vault/0.9.6/vault_0.9.6_linux_amd64.zip \
