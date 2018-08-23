@@ -1621,7 +1621,7 @@ sub {
 
 	my $action = ($pipeline->{pipeline}{public} ? 'expose' : 'hide');
 	run({ interactive => 1, onfailure => "Could not $action pipeline $pipeline->{pipeline}{name}" },
-		'fly -t $1 '.$action.'-pipleine -p $2',
+		'fly -t $1 '.$action.'-pipeline -p $2',
 		$options{target}, $pipeline->{pipeline}{name});
 
 	exit 0;
