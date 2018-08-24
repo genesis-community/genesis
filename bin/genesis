@@ -524,7 +524,6 @@ $GLOBAL_USAGE
   #G{yamls}             Print a list of the YAML files used for a single environment.
 
 #U{PIPELINE MANAGEMENT COMMANDS:}
-  ci                Interactively setup Concourse deployment pipeline.
   repipe            Configure a Concourse pipeline for automating deployments.
   describe          Describe a Concourse pipeline, in words.
   graph             Draw a Concourse pipeline.
