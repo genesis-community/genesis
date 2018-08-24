@@ -627,7 +627,7 @@ sub {
 	check_prereqs;
 
 	# FIXME: update .genesis/config with new version info
-	Genesis::Top->new('.')->embed($0);
+	Genesis::Top->new('.')->embed($ENV{GENESIS_CALLBACK_BIN} || $0);
 });
 # }}}
 # genesis init - initialize a new Genesis repository {{{
