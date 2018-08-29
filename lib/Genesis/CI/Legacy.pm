@@ -1128,6 +1128,7 @@ EOF
 		# don't supply bosh creds if we're create-env, because no one to talk to
 		unless ($E->needs_bosh_create_env) {
 			print $OUT <<EOF;
+            GENESIS_CLOUD_CONFIG: ../$alias-cloud-config/cloud-config.yml
             BOSH_ENVIRONMENT:     $pipeline->{pipeline}{boshes}{$env}{url}
             BOSH_CA_CERT: |
 EOF
@@ -1157,6 +1158,11 @@ EOF
           inputs:
             - { name: $alias-changes } # deploy from latest changes
 EOF
+		unless ($E->needs_bosh_create_env) {
+			print $OUT <<EOF;
+            - { name: $alias-cloud-config } # use latest cloud config to deploy
+EOF
+		}
 		print $OUT <<EOF if $passed;
             - { name: $alias-cache }
 EOF
