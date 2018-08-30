@@ -31,10 +31,7 @@ $Genesis::VERSION = "(development)";
 $Genesis::BUILD = "";
 
 our $USER_AGENT_STRING = "genesis/$Genesis::VERSION";
-$ENV{GENESIS_CALLBACK_BIN} ||= __FILE__;
-if ($ENV{GENESIS_CALLBACK_BIN} !~ m{^/}) {
-	$ENV{GENESIS_CALLBACK_BIN} = "@{[getcwd()]}/$ENV{GENESIS_CALLBACK_BIN}";
-}
+$ENV{GENESIS_CALLBACK_BIN} ||= abs_path(__FILE__);
 
 
 $ENV{HTTPS_PROXY}=$ENV{BOSH_ALL_PROXY} if ($ENV{BOSH_ALL_PROXY});
@@ -1825,8 +1822,6 @@ sub {
 	#   VAULT_ADDR                 - URL of the Vault to use for credentials retrieval
 	#   VAULT_SKIP_VERIFY          - Whether or not to enforce SSL/TLS validation
 	#
-	#   GENESIS_CLOUD_CONFIG       - File path to the cloud config to be used in deployment
-	#
 	#   GIT_BRANCH                 - Name of the git branch to push commits to. post-deploy
 	#   GIT_PRIVATE_KEY            - Private Key to use for pushing commits, post-deploy
 	#
@@ -1850,7 +1845,7 @@ sub {
 	my $env = Genesis::Top->new('.')->load_env($ENV{CURRENT_ENV});
 
 	push(@undefined, grep { !$ENV{$_} }
-		qw/BOSH_ENVIRONMENT BOSH_CA_CERT GENESIS_CLOUD_CONFIG
+		qw/BOSH_ENVIRONMENT BOSH_CA_CERT
 		   BOSH_CLIENT BOSH_CLIENT_SECRET/) unless $env->needs_bosh_create_env;
 
 	if (@undefined) {
@@ -1873,7 +1868,7 @@ sub {
 	# don't set up a bosh alias if we're a create-env based deploy, no need, no data
 	unless ($env->needs_bosh_create_env) {
 		Genesis::BOSH->alias($env->bosh_target);
-		$env->use_cloud_config($ENV{GENESIS_CLOUD_CONFIG});
+		$env->download_cloud_config();
 	}
   # we need a method of issue tokens with a temporary lifetime, so approle/secret is used
 	vault_auth(vault       => $ENV{VAULT_ADDR},

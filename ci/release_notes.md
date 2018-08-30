@@ -4,10 +4,8 @@
   checking for HTTP/x.x connections. We've losened it to look for HTTP/x.x or
   HTTP/x.
 
-- Genesis concourse pipelines now properly use the fetched cloud configuration
-  resource in deployments. Previously, pipelines would fail to deploy because
-  the cloud-config resource was not listed as an input.
+- Genesis concourse pipelines now downloads the cloud configuration from the
+  bosh director. Previously, pipelines would fail to deploy because the deploy
+  didn't have a cloud-config to base spruce merges off of.
 
-- Genesis now ensures that `GENESIS_CALLBACK_BIN` is a fully-qualified path. If
-  a relative path is given, it resolves the current working directory and
-  prepends that to the relative path. 
+- Genesis now ensures that `GENESIS_CALLBACK_BIN` is a fully-qualified path.
