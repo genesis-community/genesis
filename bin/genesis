@@ -1873,6 +1873,7 @@ sub {
 	# don't set up a bosh alias if we're a create-env based deploy, no need, no data
 	unless ($env->needs_bosh_create_env) {
 		Genesis::BOSH->alias($env->bosh_target);
+		$env->use_cloud_config($ENV{GENESIS_CLOUD_CONFIG});
 	}
   # we need a method of issue tokens with a temporary lifetime, so approle/secret is used
 	vault_auth(vault       => $ENV{VAULT_ADDR},
@@ -1895,8 +1896,6 @@ vaults:
 EOF
 
 	target_vault("ci-deploy");
-
-	$env->use_cloud_config($ENV{GENESIS_CLOUD_CONFIG});
 
 	$env->deploy(redact => !envset('CI_NO_REDACT'))
 		or exit 1;
