@@ -114,6 +114,7 @@ use strict;
 use warnings;
 
 use MIME::Base64 qw/decode_base64/;
+use Cwd qw/abs_path/;
 use FindBin;
 
 # Genesis Extraction and Execution Stub Engine (GEESE)
@@ -134,7 +135,7 @@ die "You have no \$HOME.  Please set one and re-run.\n"
 my $root = "$ENV{HOME}/.geese";
 mkdir $root unless -d $root;
 
-$ENV{GENESIS_CALLBACK_BIN} = __FILE__;
+$ENV{GENESIS_CALLBACK_BIN} = abs_path(__FILE__);
 $ENV{GENESIS_V1_PATH_OVERRIDE} = __FILE__;
 $ENV{GENESIS_V1_BIN} = "$root/genesis-v1";
 

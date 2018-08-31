@@ -407,7 +407,7 @@ sub curl {
 	my $in_header;
 	my $line;
 	while ($line = shift @data) {
-		if ($line =~ m/^HTTP\/\d+\.\d+\s+((\d+)(\s+.*)?)$/) {
+		if ($line =~ m/^HTTP\/\d+(?:\.\d)?\s+((\d+)(\s+.*)?)$/) {
 			$in_header = 1;
 			$status_line = $1;
 			$status = $2;

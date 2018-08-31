@@ -221,8 +221,8 @@ pipeline:
     stanza: here
 
   vault:
-    app:    concourse
-    user:   my-name    #defaults to the name of pipeline
+    secret: this-is-a-super-secret
+    role:   this-is-a-vault-app-role
     url:    https://127.0.0.1:8200
     verify: yes
 
@@ -313,13 +313,13 @@ pipeline:
 - **pipeline.vault.url** - The URL of your Vault installation,
   i.e. `https://vault.example.com`.  This is **required**.
 
-- **pipeline.vault.app** - The Application ID, used for Concourse
-  authentication.  Defaults to `concourse`, which is usually
-  sufficient.
+- **pipeline.vault.role** - The AppRole GUID of a given Vault
+  AppRole, used to generate temporary tokens for Vault accessing
+  during deploys. This is **required**.
 
-- **pipeline.vault.user** - The User ID, used for Concourse
-  authentication.  Defaults to the name of the pipeline (i.e.
-  **pipeline.name**) which is usually sifficient.
+- **pipeline.vault.secret** - The secret key GUID of a given Vault
+  AppRole, used to authenticate the AppRole to vault. This is
+  **required**.
 
 - **pipeline.vault.verify** - Instruct Concourse to validate the
   Vault TLS certificate (if using `https://` for your Vault).

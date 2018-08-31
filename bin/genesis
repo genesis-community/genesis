@@ -31,7 +31,7 @@ $Genesis::VERSION = "(development)";
 $Genesis::BUILD = "";
 
 our $USER_AGENT_STRING = "genesis/$Genesis::VERSION";
-$ENV{GENESIS_CALLBACK_BIN} ||= __FILE__;
+$ENV{GENESIS_CALLBACK_BIN} ||= abs_path(__FILE__);
 
 
 $ENV{HTTPS_PROXY}=$ENV{BOSH_ALL_PROXY} if ($ENV{BOSH_ALL_PROXY});
@@ -1868,12 +1868,29 @@ sub {
 	# don't set up a bosh alias if we're a create-env based deploy, no need, no data
 	unless ($env->needs_bosh_create_env) {
 		Genesis::BOSH->alias($env->bosh_target);
+		$env->download_cloud_config();
 	}
-
+  # we need a method of issue tokens with a temporary lifetime, so approle/secret is used
 	vault_auth(vault       => $ENV{VAULT_ADDR},
 	           skip_verify => envset("VAULT_SKIP_VERIFY"),
 	           role_id     => $ENV{VAULT_ROLE_ID},
 	           secret_id   => $ENV{VAULT_SECRET_ID});
+
+  # write .saferc file so that safe commands execute properly
+	open my $OUT, ">", "$ENV{HOME}/.saferc"
+		or die "Failed to write .saferc information: $!\n";
+
+	print $OUT <<EOF;
+version: 1
+current: ci-deploy
+vaults:
+  ci-deploy:
+    url: $ENV{VAULT_ADDR}
+    token: $ENV{VAULT_TOKEN}
+    skip_verify: @{[envset("VAULT_SKIP_VERIFY") ? "true" : "false"]}
+EOF
+
+	target_vault("ci-deploy");
 
 	$env->deploy(redact => !envset('CI_NO_REDACT'))
 		or exit 1;
