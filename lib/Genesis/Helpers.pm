@@ -196,10 +196,52 @@ export -f bosh_cpi
 ###
 export __cloud_config_ok="yes"
 
+# Support function for cloud_config_needs static_ips
+__ip2dec() {
+	local __acc=0 IFS='.' __b __ip="$1"
+	# shellcheck disable=SC2068
+	for __b in ${__ip[@]} ; do
+		(( __acc = (__acc << 8) + __b ))
+	done
+	unset IFS
+	echo $__acc
+}
+export -f __ip2dec
+
 cloud_config_needs() {
   local __type=${1:?cloud_config_needs() - must specify a type}; shift
   local __name
 
+	# Special check for static_ips
+	if [[ "${__type}" == "static_ips" ]] ; then
+		local __network=${1:?cloud_config_needs(static_ips) - must supply network name}; shift
+		local __count=${1:?cloud_config_needs(static_ips) - must supply static_ip count} ; shift
+
+		local __ips __sum=0 __f __x __l
+		__ips=$(spruce json "$GENESIS_CLOUD_CONFIG" | \
+			jq -r --arg network "$__network" '.networks[]| select(.name == $network) | .subnets[] | .static[]')
+
+		while read -r range ; do
+			read -r __f __x __l < <(echo "$range")
+			[[ -z "$__f" ]] && continue # blank line
+			if [[ -z "$__x" && -z "$__l" ]] ; then
+				(( __sum++ )) # Single ip
+			elif [[ "$__x" == '-' ]] ; then
+				(( __sum += $(__ip2dec "$__l") - $(__ip2dec "$__f") + 1 )) # Range
+			else
+				__cloud_config_error_messages+=( "could not parse static_ips for network $__network" )
+				__cloud_config_ok=no
+				break
+			fi
+		done < <(echo "${__ips}")
+		if [[ "$__sum" -lt "$__count" ]] ; then
+				__cloud_config_error_messages+=( "network $__network needs $__count static IP addresses, has $__sum" )
+				__cloud_config_ok=no
+		fi
+		return
+	fi
+
+	# Generic pattern
   case "${__type}" in
   vm_type|vm_types)            __type=vm_types;      __name=vm_type      ;;
   vm_extension|vm_extensions)  __type=vm_extensions; __name=vm_extension ;;
@@ -372,10 +414,10 @@ prompt_for() {
 		fi
 		if [[ $__type =~ ^multi- ]] ; then
 			eval "unset $__var; ${__var}=()"
-			local __i=0
+			# shellcheck disable=SC2034
 			while IFS= read -rd '' block; do
 				eval "${__var}+=( \"\$block\" )"
-			done < $__tmpfile
+			done < "$__tmpfile"
 		else
 			eval "$__var=\$(<\"$__tmpfile\")"
 		fi
@@ -416,6 +458,7 @@ export -f param_entry
 param_comment() {
 	local __line __varname=$1; shift
 	eval "$__varname+=\"\\n\""
+	# shellcheck disable=SC2034
 	for __line in "$@" ; do
 		eval "$__varname+=\"  # \$__line\\n\""
 	done

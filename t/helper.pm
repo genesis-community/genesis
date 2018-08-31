@@ -5,6 +5,7 @@ use Cwd ();
 use Config;
 use File::Temp qw/tempdir/;
 use File::Basename qw/dirname/;
+use JSON::PP;
 
 $ENV{PERL5LIB} = "$ENV{PWD}/lib";
 
