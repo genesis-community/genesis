@@ -610,7 +610,9 @@ pipeline:
     repo:        (( param "Please specify the name of the Git repository" ))
     branch:      master
     private_key: (( param "Please generate an SSH Deployment Key and install it into Github (with write privileges)" ))
-
+  vault:
+    role:   (( vault "secret/exodus/ci/genesis_pipelines:approle_id" ))
+    secret: (( vault "secret/exodus/ci/genesis_pipelines:approle_secret" ))
 EOF
 
 	if ($pipeline->{pipeline}{slack}) {
@@ -1119,8 +1121,8 @@ EOF
             CACHE_DIR:            $alias-cache
             GIT_BRANCH:           (( grab pipeline.git.branch ))
             GIT_PRIVATE_KEY:      (( grab pipeline.git.private_key ))
-            VAULT_ROLE_ID:        $pipeline->{pipeline}{vault}{role}
-            VAULT_SECRET_ID:      $pipeline->{pipeline}{vault}{secret}
+            VAULT_ROLE_ID:        (( grab pipeline.vault.role ))
+            VAULT_SECRET_ID:      (( grab pipeline.vault.secret ))
             VAULT_ADDR:           $pipeline->{pipeline}{vault}{url}
             VAULT_SKIP_VERIFY:    ${\(!$pipeline->{pipeline}{vault}{verify})}
             BOSH_NON_INTERACTIVE: true
