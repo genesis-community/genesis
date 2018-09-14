@@ -609,9 +609,20 @@ pipeline:
     branch:      master
     private_key: (( param "Please generate an SSH Deployment Key and install it into Github (with write privileges)" ))
   vault:
+EOF
+
+	# programmatically determine if we should pull pipeline vault creds from vault, or operator needs to specify.
+	if (safe_path_exists "secret/exodus/ci/genesis-pipelines") {
+		print $OUT <<'EOF';
     role:   (( vault "secret/exodus/ci/genesis-pipelines:approle-id" ))
     secret: (( vault "secret/exodus/ci/genesis-pipelines:approle-secret" ))
 EOF
+	} else {
+		print $OUT <<'EOF';
+    role:   (( param "Please run the 'setup-approle' addon in the Concourse kit for this environment, or specify your own AppRole ID." ))
+    secret: (( param "Please run the 'setup-approle' addon in the Concourse kit for this environment, or specify your own AppRole secret." ))
+EOF
+	}
 
 	if ($pipeline->{pipeline}{slack}) {
 		print $OUT <<'EOF';
