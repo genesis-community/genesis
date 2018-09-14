@@ -221,8 +221,6 @@ pipeline:
     stanza: here
 
   vault:
-    secret: this-is-a-super-secret
-    role:   this-is-a-vault-app-role
     url:    https://127.0.0.1:8200
     verify: yes
 
@@ -314,12 +312,17 @@ pipeline:
   i.e. `https://vault.example.com`.  This is **required**.
 
 - **pipeline.vault.role** - The AppRole GUID of a given Vault
-  AppRole, used to generate temporary tokens for Vault accessing
-  during deploys. This is **required**.
+  AppRole, used to generate temporary tokens for Vault-accessing
+  during deploys. This field is optional, provided that the
+  `setup-approle` Genesis addon was executed on the targeted
+  Concourse. If you'd prefer to manage your own AppRole and policy,
+  you may fill out this field.
 
 - **pipeline.vault.secret** - The secret key GUID of a given Vault
-  AppRole, used to authenticate the AppRole to vault. This is
-  **required**.
+  AppRole, used to authenticate the AppRole to vault. Like the above
+  field, it is optional provided that the `setup-approle` addon was
+  executed on the targeted Concourse. If you'd prefer to manage your
+  own AppRole and policy, you may fill out this field.
 
 - **pipeline.vault.verify** - Instruct Concourse to validate the
   Vault TLS certificate (if using `https://` for your Vault).
