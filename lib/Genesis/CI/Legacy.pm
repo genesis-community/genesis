@@ -609,8 +609,8 @@ pipeline:
     branch:      master
     private_key: (( param "Please generate an SSH Deployment Key and install it into Github (with write privileges)" ))
   vault:
-    role:   (( vault "secret/exodus/ci/genesis_pipelines:approle-id" ))
-    secret: (( vault "secret/exodus/ci/genesis_pipelines:approle-secret" ))
+    role:   (( vault "secret/exodus/ci/genesis-pipelines:approle-id" ))
+    secret: (( vault "secret/exodus/ci/genesis-pipelines:approle-secret" ))
 EOF
 
 	if ($pipeline->{pipeline}{slack}) {
