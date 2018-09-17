@@ -77,8 +77,10 @@ EOF
 }
 
 my $has_shellcheck = !system('command shellcheck -V >/dev/null 2>&1');
-printf STDERR "\n\n\e[33mSKIPPING 'Validate hooks helper script' tests due to missing 'shellcheck' command\e[0m\n\n"
-	unless $has_shellcheck;
+printf STDERR "\n\n\e[33m%s\e[0m\n%s\n\n",
+	"SKIPPING 'Validate hooks helper script' tests due to missing 'shellcheck' command",
+	"See https://github.com/koalaman/shellcheck/blob/master/README.md for installation and usage instructions"
+		unless ($has_shellcheck);
 
 subtest 'Validate hooks helper script' => sub {
 
@@ -128,8 +130,8 @@ subtest 'Validate hooks helper script' => sub {
 			}
 
 			push (@msg, sprintf(
-					"[%s] %s:\n%s\n%s^--- [line %d, column %d]",
-					uc($err->{level}), $err->{message},
+					"[SC%s - %s] %s:\n%s\n%s^--- [line %d, column %d]",
+					$err->{code}, uc($err->{level}), $err->{message},
 					$line,
 					" " x ($coln-1), $linen, $coln
 			));

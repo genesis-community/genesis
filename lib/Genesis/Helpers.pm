@@ -199,6 +199,8 @@ export __cloud_config_ok="yes"
 # Support function for cloud_config_needs static_ips
 __ip2dec() {
 	local __acc=0 IFS='.' __b __ip="$1"
+	# this doesn't work if __ip[@] is quoted (using IFS to split on .) - shellcheck warns that it's not quoted
+	# https://github.com/koalaman/shellcheck/wiki/SC2068
 	# shellcheck disable=SC2068
 	for __b in ${__ip[@]} ; do
 		(( __acc = (__acc << 8) + __b ))
@@ -414,9 +416,11 @@ prompt_for() {
 		fi
 		if [[ $__type =~ ^multi- ]] ; then
 			eval "unset $__var; ${__var}=()"
+			# __block is escaped in eval, shellcheck thinks its unused
+			# https://github.com/koalaman/shellcheck/wiki/SC2034
 			# shellcheck disable=SC2034
-			while IFS= read -rd '' block; do
-				eval "${__var}+=( \"\$block\" )"
+			while IFS= read -rd '' __block; do
+				eval "${__var}+=( \"\$__block\" )"
 			done < "$__tmpfile"
 		else
 			eval "$__var=\$(<\"$__tmpfile\")"
@@ -458,6 +462,8 @@ export -f param_entry
 param_comment() {
 	local __line __varname=$1; shift
 	eval "$__varname+=\"\\n\""
+	# __line is escaped in eval, shellcheck thinks its unused
+	# https://github.com/koalaman/shellcheck/wiki/SC2034
 	# shellcheck disable=SC2034
 	for __line in "$@" ; do
 		eval "$__varname+=\"  # \$__line\\n\""
