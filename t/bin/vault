@@ -21,14 +21,16 @@ case $OSTYPE in
 	;;
 esac
 
-if [[ ! -f t/vaults/vault-${version} ]]; then
-	printf >&2 "\rDownloading Vault ${version} CLI..."
+cmd="t/vaults/vault-${version}-${platform}"
+
+if [[ ! -f "$cmd" ]]; then
+	printf >&2 "\rDownloading Vault ${version} CLI for $platform ..."
 	curl --fail -sLk > t/tmp/archive.zip \
 		https://releases.hashicorp.com/vault/${version}/vault_${version}_${platform}_${arch}.zip \
 		|| bail "\nFAILED - could not download of vault ${version}"
 
 	unzip -d t/tmp t/tmp/archive.zip > /dev/null 2>&1
-	mv t/tmp/vault t/vaults/vault-${version}
+	mv t/tmp/vault "$cmd"
 	printf >&2 "DONE\n\n"
 fi
 
@@ -41,7 +43,7 @@ port=8200
 while lsof -nP -i ":$port" | grep ":$port\s*(LISTEN)" >/dev/null 2>&1 ; do
   [[ $((++port)) -gt 8300 ]] && bail "No free ports available for dev vault server"
 done
-./t/vaults/vault-${version} server -config <(cat <<EOF
+$cmd server -config <(cat <<EOF
 disable_mlock = 1
 listener "tcp" {
   address     = "127.0.0.1:$port"
