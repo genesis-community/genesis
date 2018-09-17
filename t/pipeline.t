@@ -70,8 +70,8 @@ jobs:
           OUT_DIR: out/git
           PREVIOUS_ENV: client-aws-1-sandbox
           VAULT_ADDR: https://127.0.0.1:8200
-          VAULT_ROLE_ID: null
-          VAULT_SECRET_ID: null
+          VAULT_ROLE_ID: this-is-a-role
+          VAULT_SECRET_ID: this-is-a-secret
           VAULT_SKIP_VERIFY: null
           WORKING_DIR: client-aws-1-preprod-changes
         platform: linux
@@ -208,8 +208,8 @@ jobs:
           OUT_DIR: out/git
           PREVIOUS_ENV: client-aws-1-preprod
           VAULT_ADDR: https://127.0.0.1:8200
-          VAULT_ROLE_ID: null
-          VAULT_SECRET_ID: null
+          VAULT_ROLE_ID: this-is-a-role
+          VAULT_SECRET_ID: this-is-a-secret
           VAULT_SKIP_VERIFY: null
           WORKING_DIR: client-aws-1-prod-changes
         platform: linux
@@ -316,8 +316,8 @@ jobs:
           OUT_DIR: out/git
           PREVIOUS_ENV: null
           VAULT_ADDR: https://127.0.0.1:8200
-          VAULT_ROLE_ID: null
-          VAULT_SECRET_ID: null
+          VAULT_ROLE_ID: this-is-a-role
+          VAULT_SECRET_ID: this-is-a-secret
           VAULT_SKIP_VERIFY: null
           WORKING_DIR: client-aws-1-sandbox-changes
         platform: linux
@@ -642,8 +642,8 @@ jobs:
           OUT_DIR: out/git
           PREVIOUS_ENV: client-aws-1-sandbox
           VAULT_ADDR: https://127.0.0.1:8200
-          VAULT_ROLE_ID: null
-          VAULT_SECRET_ID: null
+          VAULT_ROLE_ID: this-is-a-role
+          VAULT_SECRET_ID: this-is-a-secret
           VAULT_SKIP_VERIFY: null
           WORKING_DIR: client-aws-1-preprod-changes
         platform: linux
@@ -788,8 +788,8 @@ jobs:
           OUT_DIR: out/git
           PREVIOUS_ENV: client-aws-1-preprod
           VAULT_ADDR: https://127.0.0.1:8200
-          VAULT_ROLE_ID: null
-          VAULT_SECRET_ID: null
+          VAULT_ROLE_ID: this-is-a-role
+          VAULT_SECRET_ID: this-is-a-secret
           VAULT_SKIP_VERIFY: null
           WORKING_DIR: client-aws-1-prod-changes
         platform: linux
@@ -904,8 +904,8 @@ jobs:
           OUT_DIR: out/git
           PREVIOUS_ENV: null
           VAULT_ADDR: https://127.0.0.1:8200
-          VAULT_ROLE_ID: null
-          VAULT_SECRET_ID: null
+          VAULT_ROLE_ID: this-is-a-role
+          VAULT_SECRET_ID: this-is-a-secret
           VAULT_SKIP_VERIFY: null
           WORKING_DIR: client-aws-1-sandbox-changes
         platform: linux
@@ -1243,8 +1243,8 @@ jobs:
           OUT_DIR: out/git
           PREVIOUS_ENV: client-aws-1-sandbox
           VAULT_ADDR: https://127.0.0.1:8200
-          VAULT_ROLE_ID: null
-          VAULT_SECRET_ID: null
+          VAULT_ROLE_ID: this-is-a-role
+          VAULT_SECRET_ID: this-is-a-secret
           VAULT_SKIP_VERIFY: null
           WORKING_DIR: preprod-changes
         platform: linux
@@ -1412,8 +1412,8 @@ jobs:
           OUT_DIR: out/git
           PREVIOUS_ENV: client-aws-1-preprod
           VAULT_ADDR: https://127.0.0.1:8200
-          VAULT_ROLE_ID: null
-          VAULT_SECRET_ID: null
+          VAULT_ROLE_ID: this-is-a-role
+          VAULT_SECRET_ID: this-is-a-secret
           VAULT_SKIP_VERIFY: null
           WORKING_DIR: prod-changes
         platform: linux
@@ -1551,8 +1551,8 @@ jobs:
           OUT_DIR: out/git
           PREVIOUS_ENV: null
           VAULT_ADDR: https://127.0.0.1:8200
-          VAULT_ROLE_ID: null
-          VAULT_SECRET_ID: null
+          VAULT_ROLE_ID: this-is-a-role
+          VAULT_SECRET_ID: this-is-a-secret
           VAULT_SKIP_VERIFY: null
           WORKING_DIR: sandbox-changes
         platform: linux
@@ -1922,8 +1922,8 @@ jobs:
           OUT_DIR: out/git
           PREVIOUS_ENV: client-aws-1-sandbox
           VAULT_ADDR: http://myvault.myorg.com:5999
-          VAULT_ROLE_ID: role-uuid-here
-          VAULT_SECRET_ID: secret-uuid-here
+          VAULT_ROLE_ID: this-is-a-role
+          VAULT_SECRET_ID: this-is-a-secret
           VAULT_SKIP_VERIFY: 1
           WORKING_DIR: client-aws-1-preprod-changes
         platform: linux
@@ -2151,8 +2151,8 @@ jobs:
           OUT_DIR: out/git
           PREVIOUS_ENV: client-aws-1-preprod
           VAULT_ADDR: http://myvault.myorg.com:5999
-          VAULT_ROLE_ID: role-uuid-here
-          VAULT_SECRET_ID: secret-uuid-here
+          VAULT_ROLE_ID: this-is-a-role
+          VAULT_SECRET_ID: this-is-a-secret
           VAULT_SKIP_VERIFY: 1
           WORKING_DIR: client-aws-1-prod-changes
         platform: linux
@@ -2345,8 +2345,8 @@ jobs:
           OUT_DIR: out/git
           PREVIOUS_ENV: null
           VAULT_ADDR: http://myvault.myorg.com:5999
-          VAULT_ROLE_ID: role-uuid-here
-          VAULT_SECRET_ID: secret-uuid-here
+          VAULT_ROLE_ID: this-is-a-role
+          VAULT_SECRET_ID: this-is-a-secret
           VAULT_SKIP_VERIFY: 1
           WORKING_DIR: client-aws-1-sandbox-changes
         platform: linux
@@ -2808,8 +2808,8 @@ jobs:
           OUT_DIR: out/git
           PREVIOUS_ENV: null
           VAULT_ADDR: http://myvault.myorg.com:5999
-          VAULT_ROLE_ID: role-uuid-here
-          VAULT_SECRET_ID: secret-uuid-here
+          VAULT_ROLE_ID: this-is-a-role
+          VAULT_SECRET_ID: this-is-a-secret
           VAULT_SKIP_VERIFY: 1
           WORKING_DIR: client-aws-1-sandbox-changes
         platform: linux

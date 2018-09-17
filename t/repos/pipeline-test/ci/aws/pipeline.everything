@@ -51,8 +51,8 @@ pipeline:
     bosh-lite: bosh-warden-boshlite-ubuntu-trusty-go_agent
 
   vault:
-    role:   role-uuid-here
-    secret: secret-uuid-here
+    role: this-is-a-role
+    secret: this-is-a-secret
     url:  http://myvault.myorg.com:5999
     verify: no
 
