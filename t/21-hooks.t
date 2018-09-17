@@ -76,6 +76,71 @@ EOF
 	$stack_scale = $top->load_env('stack-scale');
 }
 
+my $has_shellcheck = !system('command shellcheck -V >/dev/null 2>&1');
+printf STDERR "\n\n\e[33m%s\e[0m\n%s\n\n",
+	"SKIPPING 'Validate hooks helper script' tests due to missing 'shellcheck' command",
+	"See https://github.com/koalaman/shellcheck/blob/master/README.md for installation and usage instructions"
+		unless ($has_shellcheck);
+
+subtest 'Validate hooks helper script' => sub {
+
+	plan skip_all => "Cannot validate hooks helper because shellcheck is not installed"
+	unless $has_shellcheck;
+
+	use Genesis::Helpers;
+
+	my $helper_script = $tmp . "/helpers.sh";
+	lives_ok { Genesis::Helpers->write($helper_script); } "Can write the helper script to file";
+	my $out = qx{
+		shellcheck $helper_script  -s bash -f json \\
+		| jq -cr '.[] | select(.level == "error" or .level == "warning")'
+	};
+
+	my @msg = ();
+	if ($out ne "") {
+		my (@lines, $offset);
+		if ($INC{'Genesis/Helpers.pm'}) {
+			open my $handle, '<', $INC{'Genesis/Helpers.pm'};
+			chomp(@lines = <$handle>);
+			close $handle;
+			my $i=0;
+			foreach (@lines) {
+				$i++;
+				if ($_ eq '__DATA__') {
+					$offset = $i;
+					last;
+				}
+			}
+		}
+
+		my $startline = qx(grep -n '^__DATA__\$' "${INC{'Genesis/Helpers.pm'}}" | awk -F: '{print \$1}');
+		foreach (split($/, $out)) {
+			my $err   = decode_json($_);
+			my $linen = $offset + $err->{line};
+			my $coln  = $err->{column};
+			my $line  = $lines[$linen-1];
+			my $i = 0;
+			while ($i < $coln) {
+				if (substr($line,$i,1) eq "\t") {
+					substr($line, $i, 1) = "  "; # replace tab with 2 spaces
+					$i++;
+					$coln -= 6; # realign column (tabs count as 8 spaces in shellcheck)
+				}
+				$i++;
+			}
+
+			push (@msg, sprintf(
+					"[SC%s - %s] %s:\n%s\n%s^--- [line %d, column %d]",
+					$err->{code}, uc($err->{level}), $err->{message},
+					$line,
+					" " x ($coln-1), $linen, $coln
+			));
+		}
+	}
+	ok($out eq "", "$INC{'Genesis/Helpers.pm'} script should not contain any errors or warnings") or
+		diag "\n".join("\n\n", @msg);
+};
+
 subtest 'invalid or nonexistent hooks' => sub {
 	again();
 

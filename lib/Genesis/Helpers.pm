@@ -196,10 +196,59 @@ export -f bosh_cpi
 ###
 export __cloud_config_ok="yes"
 
+# Support function for cloud_config_needs static_ips
+__ip2dec() {
+	local __acc=0 IFS='.' __b __ip="$1"
+	# this doesn't work if __ip[@] is quoted (using IFS to split on .) - shellcheck warns that it's not quoted
+	# https://github.com/koalaman/shellcheck/wiki/SC2068
+	# shellcheck disable=SC2068
+	for __b in ${__ip[@]} ; do
+		(( __acc = (__acc << 8) + __b ))
+	done
+	unset IFS
+	echo $__acc
+}
+export -f __ip2dec
+
 cloud_config_needs() {
   local __type=${1:?cloud_config_needs() - must specify a type}; shift
   local __name
 
+	# Special check for static_ips
+	if [[ "${__type}" == "static_ips" ]] ; then
+		local __network=${1:?cloud_config_needs(static_ips) - must supply network name}; shift
+		local __count=${1:?cloud_config_needs(static_ips) - must supply static_ip count} ; shift
+
+		local __ips __sum=0 __f __x __l
+		__ips=$(spruce json "$GENESIS_CLOUD_CONFIG" | \
+			jq -r --arg network "$__network" '.networks[]| select(.name == $network) | .subnets[] | .static[]')
+
+		while read -r __range ; do
+			[[ -z "$__range" ]] && continue # blank line
+			if echo "$__range" | grep -q '^\s*[\.0-9]*\(\s*-\s*[0-9\.]*\)\{0,1\}\s*$' ; then
+				read -r __f __x __l < <(
+					echo "$__range" | \
+					sed 's/^[[:space:]]*\([^-[:space:]]*\)[[:space:]]*\(\(-\)[[:space:]]*\(.*\) \)\{0,1\}/\1 \3 \4/' | \
+					sed -e 's/[[:space:]]$//' )
+				if [[ -z "$__x" && -z "$__l" ]] ; then
+					(( __sum++ )) # Single ip
+				elif [[ "$__x" == '-' ]] ; then
+					(( __sum += $(__ip2dec "$__l") - $(__ip2dec "$__f") + 1 )) # Range
+				fi
+			else
+				__cloud_config_error_messages+=( "could not parse static_ips for network $__network" )
+				__cloud_config_ok=no
+				break
+			fi
+		done < <(echo "${__ips}")
+		if [[ "$__sum" -lt "$__count" ]] ; then
+				__cloud_config_error_messages+=( "network $__network needs $__count static IP addresses, has $__sum" )
+				__cloud_config_ok=no
+		fi
+		return
+	fi
+
+	# Generic pattern
   case "${__type}" in
   vm_type|vm_types)            __type=vm_types;      __name=vm_type      ;;
   vm_extension|vm_extensions)  __type=vm_extensions; __name=vm_extension ;;
@@ -372,10 +421,12 @@ prompt_for() {
 		fi
 		if [[ $__type =~ ^multi- ]] ; then
 			eval "unset $__var; ${__var}=()"
-			local __i=0
-			while IFS= read -rd '' block; do
-				eval "${__var}+=( \"\$block\" )"
-			done < $__tmpfile
+			# __block is escaped in eval, shellcheck thinks its unused
+			# https://github.com/koalaman/shellcheck/wiki/SC2034
+			# shellcheck disable=SC2034
+			while IFS= read -rd '' __block; do
+				eval "${__var}+=( \"\$__block\" )"
+			done < "$__tmpfile"
 		else
 			eval "$__var=\$(<\"$__tmpfile\")"
 		fi
@@ -416,6 +467,9 @@ export -f param_entry
 param_comment() {
 	local __line __varname=$1; shift
 	eval "$__varname+=\"\\n\""
+	# __line is escaped in eval, shellcheck thinks its unused
+	# https://github.com/koalaman/shellcheck/wiki/SC2034
+	# shellcheck disable=SC2034
 	for __line in "$@" ; do
 		eval "$__varname+=\"  # \$__line\\n\""
 	done
