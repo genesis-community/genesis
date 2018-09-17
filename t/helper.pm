@@ -62,6 +62,53 @@ sub get_file($) {
 	return $contents;
 }
 
+sub semver {
+	my ($v) = @_;
+	if ($v && $v =~ m/^v?(\d+)(?:\.(\d+)(?:\.(\d+)(?:[\.-]rc[\.-]?(\d+))?)?)?$/i) {
+		return wantarray ? ($1, $2 || 0, $3 || 0, (defined $4 ? $4 - 100000 : 0))
+										 : [$1, $2 || 0, $3 || 0, (defined $4 ? $4 - 100000 : 0)];
+	}
+	return;
+}
+
+sub by_semver ($$) { # sort block -- needs prototype
+	my ($a, $b) = @_;
+	my @a = semver($a);
+	my @b = semver($b);
+	return 0 unless @a && @b;
+	while (@a) {
+		return 1 if $a[0] > $b[0];
+		return -1 if $a[0] < $b[0];
+		shift @a;
+		shift @b;
+	}
+	return 0;
+}
+
+sub new_enough {
+	my ($v, $min) = @_;
+	return 0 unless semver($v) && semver($min);
+	return by_semver($v, $min) >= 0;
+}
+
+
+our $BOSH_CMD;
+sub bosh_cmd {
+	unless ($BOSH_CMD) {
+		my $best = "0.0.0";
+		foreach my $boshcmd (qw(bosh2 boshv2 bosh)) {
+			my ($version, undef) = qx/$boshcmd -v 2>&1 | grep version | head -n1/;
+			if ($version =~ /version (\S+?)-.*/) {
+				if (new_enough($1, $best)) {
+					$BOSH_CMD = $boshcmd;
+					$best = $1
+				}
+			}
+		}
+	}
+	return $BOSH_CMD;
+}
+
 sub fake_bosh {
 	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($script) = @_;
@@ -267,7 +314,9 @@ sub output_ok($$;$) {
 
 sub bosh2_cli_ok {
 	local $Test::Builder::Level = $Test::Builder::Level + 1;
-	runs_ok "bosh2 help", "the BOSH2 golang CLI works ok"
+	my $cmd = bosh_cmd;
+	isnt $cmd, "", "A 'bosh' command was found";
+	runs_ok "$cmd create-release --help", "the BOSH2 golang CLI works ok"
 		or die "There seems to be something wrong with your bosh2 CLI.\n";
 }
 
