@@ -223,13 +223,18 @@ cloud_config_needs() {
 		__ips=$(spruce json "$GENESIS_CLOUD_CONFIG" | \
 			jq -r --arg network "$__network" '.networks[]| select(.name == $network) | .subnets[] | .static[]')
 
-		while read -r range ; do
-			read -r __f __x __l < <(echo "$range")
-			[[ -z "$__f" ]] && continue # blank line
-			if [[ -z "$__x" && -z "$__l" ]] ; then
-				(( __sum++ )) # Single ip
-			elif [[ "$__x" == '-' ]] ; then
-				(( __sum += $(__ip2dec "$__l") - $(__ip2dec "$__f") + 1 )) # Range
+		while read -r __range ; do
+			[[ -z "$__range" ]] && continue # blank line
+			if echo "$__range" | grep -q '^\s*[\.0-9]*\(\s*-\s*[0-9\.]*\)\{0,1\}\s*$' ; then
+				read -r __f __x __l < <(
+					echo "$__range" | \
+					sed 's/^[[:space:]]*\([^-[:space:]]*\)[[:space:]]*\(\(-\)[[:space:]]*\(.*\) \)\{0,1\}/\1 \3 \4/' | \
+					sed -e 's/[[:space:]]$//' )
+				if [[ -z "$__x" && -z "$__l" ]] ; then
+					(( __sum++ )) # Single ip
+				elif [[ "$__x" == '-' ]] ; then
+					(( __sum += $(__ip2dec "$__l") - $(__ip2dec "$__f") + 1 )) # Range
+				fi
 			else
 				__cloud_config_error_messages+=( "could not parse static_ips for network $__network" )
 				__cloud_config_ok=no
