@@ -1,5 +1,5 @@
-While Genesis was designed to be distributed with no perl dependencies besides
-a version of perl that was released within the last decade, testing it does
+While Genesis was designed to be distributed with no Perl dependencies besides
+a version of Perl that was released within the last decade, testing it does
 require some CPAN modules and further configurations.
 
 Furthermore, testing Genesis also requires the same system dependencies on
