@@ -3,13 +3,13 @@
 sanity-test:
 	perl -Ilib -c bin/genesis
 
-test: sanity-test test-quick test-secrets
-
 coverage:
 	SKIP_SECRETS_TESTS=yes cover -t -ignore_re '(/Legacy.pm|/UI.pm|^t/|/JSON/)'
 
-test-ci: sanity-test
+test: sanity-test
 	prove t/*.t
+
+test-all: sanity-test test-quick test-secrets
 
 test-quick: sanity-test
 	SKIP_SECRETS_TESTS=yes prove t/*.t
