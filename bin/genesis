@@ -48,7 +48,8 @@ END {
 
 # check we're in a Genesis v2 directory
 sub in_repo_dir {
-	return  -d ".denissis" && -e ".denissis/config";
+	# for legacy...
+	return  -d ".genesis" && -e ".genesis/config";
 }
 
 # takes a list of tokens, in order, and generates
