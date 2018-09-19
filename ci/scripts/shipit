@@ -61,7 +61,7 @@ fi
 ######
 header "Compiling the release..."
 pushd ${REPO_ROOT}
-make shipit
+make shipit VERSION=${VERSION}
 popd
 
 
