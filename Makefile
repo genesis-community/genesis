@@ -22,9 +22,16 @@ test-isolated: sanity-test
 	for x in t/*.t; do git clean -xdf t; prove -lv $$x; done
 
 release:
-	@if [[ -z $$VERSION ]]; then echo >&2 "No VERSION specified in environment; try \`make VERSION=2.0 release'"; exit 1; fi
-	@echo "Cutting new Genesis release (v$$VERSION)"
-	./pack $$VERSION
+	@if [[ -z $(VERSION) ]]; then echo >&2 "No VERSION specified in environment; try \`make VERSION=2.0 release'"; exit 1; fi
+	@echo "Cutting new Genesis release (v$(VERSION))"
+	./pack $(VERSION)
+
+shipit:
+	rm -rf artifacts
+	mkdir -p artifacts
+	./pack $(VERSION)
+	mv genesis-$(VERSION) artifacts/genesis
+	artifacts/genesis -v | grep $(VERSION)
 
 dev-release:
 	@echo "Cutting new **DEVELOPER** Genesis release"

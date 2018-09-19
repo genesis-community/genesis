@@ -1,44 +1,45 @@
 ---
 meta:
-  name: genesis
-  target: sw
-  url: https://ci.starkandwayne.com
-  image: starkandwayne/genesis_ci
+  name:    genesis
+  release: Genesis
+  target:  genesis@pipes
+  url:     https://pipes.starkandwayne.com
+
+  # we build our own image in this pipeline, and
+  # use it, instead of standard concourse images.
+  image:
+    name: starkandwayne/genesis_ci
 
   aws:
-    access_key: (( vault "secret/pipelines/genesis/aws:access_key" ))
-    secret_key: (( vault "secret/pipelines/genesis/aws:secret_key" ))
+    access_key: (( vault "secret/pipelines/aws/cf-community:access" ))
+    secret_key: (( vault "secret/pipelines/aws/cf-community:secret" ))
+
+  git:
+    name:  Stark & Wayne CI Bot
+    email: ci@starkandwayne.com
 
   github:
     owner: starkandwayne
     repo:  genesis
-    private_key:  (( vault "secret/pipelines/genesis/github:private" ))
-    access_token: (( vault "secret/pipelines/genesis/github:access_token" ))
-  slack:
-    webhook: (( vault "secret/pipelines/genesis/slack:webhook" ))
-    channel: "#genesis"
+    private_key:  (( vault "secret/pipelines/github/starkandwayne/ci-bot:private" ))
+    access_token: (( vault "secret/pipelines/github/starkandwayne/ci-bot:access_token" ))
 
   dockerhub:
-    email: (( vault "secret/pipelines/genesis/dockerhub:email" ))
-    username: (( vault "secret/pipelines/genesis/dockerhub:username" ))
-    password: (( vault "secret/pipelines/genesis/dockerhub:password" ))
+    email:    (( vault "secret/pipelines/dockerfiles/dockerhub:email" ))
+    username: (( vault "secret/pipelines/dockerfiles/dockerhub:username" ))
+    password: (( vault "secret/pipelines/dockerfiles/dockerhub:password" ))
     repository: starkandwayne/genesis
+
+  shout:
+    url:      http://10.200.131.1:7109
+    username: ops
+    password: (( vault "secret/buffalo/lab/concourse/shout/ops:password" ))
 
 groups:
 - name: generate-ci-image
   jobs:
   - genesis-ci-docker-image
 jobs:
-- name: test
-  plan:
-  - name: testing
-    do:
-    - name: run_tests
-      config:
-        params:
-          GITHUB_USER: starkandwayne-bot
-          GITHUB_AUTH_TOKEN: (( grab meta.github.access_token ))
-- (( append ))
 - name: genesis-ci-docker-image
   plan:
   - get: dockerfile
@@ -58,7 +59,7 @@ resources:
     email:    (( grab meta.dockerhub.email ))
     username: (( grab meta.dockerhub.username ))
     password: (( grab meta.dockerhub.password ))
-    repository: (( grab meta.image ))
+    repository: (( grab meta.image.name ))
 - name: dockerfile
   type: git
   source:

@@ -1,21 +1,52 @@
 #!/bin/bash
+#
+# ci/scripts/test
+#
+# Script for running tests against a Go software package
+#
+# author:  James Hunt <james@niftylogic.com>
 
-set -e
+set -eu
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-cd ${REPO_ROOT}
+header() {
+  echo
+  echo "###############################################"
+  echo
+  echo $*
+  echo
+}
 
-if [[ ! -d ${BIN_DIR} ]]; then
-	echo "${BIN_DIR} does not exist as a directory inside ${REPO_ROOT}"
-	exit 1
+######
+######
+######
+header "Checking the Concourse Pipeline Environment"
+envok=0
+checkenv() {
+  local name=$1
+  local val=$2
+
+  if [[ -z "$val" ]]; then
+    echo >&2 "The $name variable must be set."
+    envok=1
+  fi
+}
+checkenv REPO_ROOT "${REPO_ROOT:-}"
+if [[ $envok != 0 ]]; then
+  echo >&2 "Is your Concourse Pipeline misconfigured?"
+  exit 1
 fi
 
-export PERL5LIB=${BIN_DIR}/../lib;
-for file in $(cd ${BIN_DIR} && ls ${BINARIES}); do
-	echo 'Verifying that `'${file}'` is a valid bash script'
-	${BIN_DIR}/$file -h >/dev/null 2>&1
-done
+######
+######
+######
+header "Running tests"
+pushd ${REPO_ROOT}
+make test
+popd
 
-# customization for running genesis tests
-make test-ci
-
+echo
+echo
+echo
+echo "SUCCESS"
 exit 0

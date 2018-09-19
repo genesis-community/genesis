@@ -8,6 +8,7 @@ t/repos/compiled-kit-test/new-env.yml
 *.tgz
 
 /genesis-*
+/artifacts
 *.swp
 
 /cover_db
