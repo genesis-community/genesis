@@ -30,7 +30,7 @@ use Genesis::CI::Legacy; # but we'd rather not...
 $Genesis::VERSION = "(development)";
 $Genesis::BUILD = "";
 
-our $USER_AGENT_STRING = "genesis/$Genesis::VERSION";
+our $USER_AGENT_STRING = "denissis/$Genesis::VERSION";
 $ENV{GENESIS_CALLBACK_BIN} ||= abs_path(__FILE__);
 
 
@@ -48,7 +48,7 @@ END {
 
 # check we're in a Genesis v2 directory
 sub in_repo_dir {
-	return  -d ".genesis" && -e ".genesis/config";
+	return  -d ".denissis" && -e ".denissis/config";
 }
 
 # takes a list of tokens, in order, and generates
@@ -76,7 +76,7 @@ sub expand_tokens {
 
 ###########################################################################
 
-# genesis prompt support routines: *_prompt_handlers {{{
+# denissis prompt support routines: *_prompt_handlers {{{
 
 sub validate_prompt_opts {
 	my ($type,$opts,@valid_opts) = @_;
@@ -245,7 +245,7 @@ sub commit_changes {
 	# prior to pushing. Rebasing inside the concourse resource will not work,
 	# as we are changing files that are not watched by the resources. This may
 	# cause conflicts as older commits try to change more and more things that
-	# have already been updated in the .genesis/manifests directory.
+	# have already been updated in the .denissis/manifests directory.
 	#
 	my $tmp = workdir;
 	mkdir_or_fail( "$tmp/home/.ssh", 0700);
@@ -496,11 +496,11 @@ sub command {
 
 ###########################################################################
 
-# genesis help - print the help screen. {{{
+# denissis help - print the help screen. {{{
 
 command("help", <<EOF,
-genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE: genesis [OPTIONS] COMMAND [MORE OPTIONS]
+denissis v$Genesis::VERSION$Genesis::BUILD
+USAGE: denissis [OPTIONS] COMMAND [MORE OPTIONS]
 
 OPTIONS
 $GLOBAL_USAGE
@@ -516,8 +516,8 @@ $GLOBAL_USAGE
   #G{do}                Run an addon script provided by the Kit.  Try `do list`
 
 #U{INFORMATIVE COMMANDS:}
-  #C{ping}              See if the genesis binary is a real thing.
-  #C{version}           Print the version of genesis
+  #C{ping}              See if the denissis binary is a real thing.
+  #C{version}           Print the version of denissis
   #C{help}              As you can guess, prints this out.
   #G{info}              Prints out kit-specific information for a given environment.
   #G{lookup}            Find a key set in environment manifests.
@@ -537,18 +537,18 @@ $GLOBAL_USAGE
 
 Those commands listed in #G{green} operate on a single specified environment.  Those that
 are in #C{cyan} can (or in some cases must) be run outside a Genesis repository.
-See `genesis COMMAND -h' for more specific, per-command usage information.
+See `denissis COMMAND -h' for more specific, per-command usage information.
 EOF
 sub {
 	usage(0);
 });
 
 # }}}
-# genesis man - peruse the kit manual pages {{{
+# denissis man - peruse the kit manual pages {{{
 
 command("man", <<EOF,
-genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE: genesis man env-name[.yml]
+denissis v$Genesis::VERSION$Genesis::BUILD
+USAGE: denissis man env-name[.yml]
 
 OPTIONS
 $GLOBAL_USAGE
@@ -573,11 +573,11 @@ sub {
 });
 
 # }}}
-# genesis ping - see if the genesis binary is a real thing. {{{
+# denissis ping - see if the denissis binary is a real thing. {{{
 
 command("ping", <<EOF,
-genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE: genesis ping
+denissis v$Genesis::VERSION$Genesis::BUILD
+USAGE: denissis ping
 
 OPTIONS
 $GLOBAL_USAGE
@@ -592,11 +592,11 @@ sub {
 });
 
 # }}}
-# genesis version - Print the version of Genesis. {{{
+# denissis version - Print the version of Genesis. {{{
 
 command("version", <<EOF,
-genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE: genesis version
+denissis v$Genesis::VERSION$Genesis::BUILD
+USAGE: denissis version
 
 OPTIONS
 $GLOBAL_USAGE
@@ -610,11 +610,11 @@ sub {
 });
 
 # }}}
-# genesis embed - embed Genesis in the repository {{{
+# denissis embed - embed Genesis in the repository {{{
 
 command("embed", <<EOF,
-genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE: genesis embed
+denissis v$Genesis::VERSION$Genesis::BUILD
+USAGE: denissis embed
 
 OPTIONS
 $GLOBAL_USAGE
@@ -626,15 +626,15 @@ sub {
 	usage(1) if @_;
 	check_prereqs;
 
-	# FIXME: update .genesis/config with new version info
+	# FIXME: update .denissis/config with new version info
 	Genesis::Top->new('.')->embed($ENV{GENESIS_CALLBACK_BIN} || $0);
 });
 # }}}
-# genesis init - initialize a new Genesis repository {{{
+# denissis init - initialize a new Genesis repository {{{
 
 command("init", <<EOF,
-genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE: genesis init [-k KIT/VERSION] [-d directory] [name]
+denissis v$Genesis::VERSION$Genesis::BUILD
+USAGE: denissis init [-k KIT/VERSION] [-d directory] [name]
 
 OPTIONS
 $GLOBAL_USAGE
@@ -724,11 +724,11 @@ sub {
 });
 
 # }}}
-# genesis new - create a new Genesis deployment environment (YAML file) {{{
+# denissis new - create a new Genesis deployment environment (YAML file) {{{
 
 command("new", <<EOF,
-genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE: genesis new [--vault target] env-name[.yml]
+denissis v$Genesis::VERSION$Genesis::BUILD
+USAGE: denissis new [--vault target] env-name[.yml]
 
 OPTIONS
 $GLOBAL_USAGE
@@ -741,7 +741,7 @@ $GLOBAL_USAGE
                      after secret/
 
       --no-secrets   Do not generate secrets in the Vault.  You will have to
-                     manually run `genesis secrets` yourself.
+                     manually run `denissis secrets` yourself.
 
   -k, --kit          Name (and optionally, version) of the Genesis Kit to
                      use for this environment.  I.e.: shield/6.3.0
@@ -779,10 +779,10 @@ sub {
 		}
 		if ($options{kit} eq 'dev') {
 			die "No dev/ kit found in current working directory.\n".
-			    "(did you forget to `genesis decompile-kit` first?)\n";
+			    "(did you forget to `denissis decompile-kit` first?)\n";
 		}
 		die "Kit '$options{kit}' not found in compiled kit cache.\n".
-		    "Do you need to `genesis download $options{kit}`?\n";
+		    "Do you need to `denissis download $options{kit}`?\n";
 	}
 
 	# check version prereqs
@@ -798,17 +798,17 @@ sub {
 	# let the user know
 	explain("New environment $env->{name} provisioned!");
 	explain("\nTo deploy, run this:\n");
-	explain("  #C{genesis deploy '%s'}\n\n", $env->{name});
+	explain("  #C{denissis deploy '%s'}\n\n", $env->{name});
 });
 
 
 
 # }}}
-# genesis check - generate the manifest and run the check hook {{{
+# denissis check - generate the manifest and run the check hook {{{
 
 command("check", <<EOF,
-genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE: genesis check <options> env-name[.yml]
+denissis v$Genesis::VERSION$Genesis::BUILD
+USAGE: denissis check <options> env-name[.yml]
 
 Runs checks against the cloud config, environment files and vault secrets to
 determine if a manifest can be successfully built.  Partial checks can also be
@@ -860,11 +860,11 @@ sub {
 });
 
 # }}}
-# genesis deploy - Pull in Cloud Config, Generate a manifest, deploy {{{
+# denissis deploy - Pull in Cloud Config, Generate a manifest, deploy {{{
 
 command("deploy", <<EOF,
-genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE: genesis deploy <options> env-name[.yml]
+denissis v$Genesis::VERSION$Genesis::BUILD
+USAGE: denissis deploy <options> env-name[.yml]
 
 OPTIONS
 $GLOBAL_USAGE
@@ -950,11 +950,11 @@ sub {
 	$env->deploy(%options);
 });
 # }}}
-# genesis do - run a kit addon {{{
+# denissis do - run a kit addon {{{
 
 command("do", <<EOF,
-genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE: genesis do <options> env-name[.yml] action [args ...]
+denissis v$Genesis::VERSION$Genesis::BUILD
+USAGE: denissis do <options> env-name[.yml] action [args ...]
 
 OPTIONS
 $GLOBAL_USAGE
@@ -978,11 +978,11 @@ sub {
 		or exit 1;
 });
 # }}}
-# genesis info - get deployment environment information from  a kit{{{
+# denissis info - get deployment environment information from  a kit{{{
 
 command("info", <<EOF,
-genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE: genesis info <options> env-name[.yml]
+denissis v$Genesis::VERSION$Genesis::BUILD
+USAGE: denissis info <options> env-name[.yml]
 
 OPTIONS
 $GLOBAL_USAGE
@@ -1049,11 +1049,11 @@ sub {
 });
 
 # }}}
-# genesis check-secrets - Check required credentials for an environment. {{{
+# denissis check-secrets - Check required credentials for an environment. {{{
 
 command("check-secrets", <<EOF,
-genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE: genesis check-secrets [--vault target] deployment-env.yml
+denissis v$Genesis::VERSION$Genesis::BUILD
+USAGE: denissis check-secrets [--vault target] deployment-env.yml
 
 Checks that all required secrets are present.  Returns a exit code of 1 if any
 are missing, and lists them, otherwise states all secrets are present and exits
@@ -1079,11 +1079,11 @@ sub {
 	target_vault($options{vault});
 	$env->check_secrets() or exit 1;
 }); # }}}
-# genesis add-secrets - Generate missing credentials for an environment. {{{
+# denissis add-secrets - Generate missing credentials for an environment. {{{
 
 command("add-secrets", <<EOF,
-genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE: genesis add-secrets [--vault target] deployment-env.yml
+denissis v$Genesis::VERSION$Genesis::BUILD
+USAGE: denissis add-secrets [--vault target] deployment-env.yml
 
 Generates any missing secrets required by the deployment.  Useful to generate
 credentials after upgrading kits.
@@ -1110,11 +1110,11 @@ sub {
 });
 
 # }}}
-# genesis rotate-secrets - Rotate required credentials for an environment. {{{
+# denissis rotate-secrets - Rotate required credentials for an environment. {{{
 
 command("rotate-secrets", <<EOF,
-genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE: genesis rotate-secrets [--force] [--vault target] deployment-env.yml
+denissis v$Genesis::VERSION$Genesis::BUILD
+USAGE: denissis rotate-secrets [--force] [--vault target] deployment-env.yml
 
 Generates new secrets for your deployment. If any credentials were marked by
 the kit as `fixed', they are not updated unless the `--force` option was also
@@ -1148,11 +1148,11 @@ sub {
 });
 
 # }}}
-# genesis secrets - Generate / Rotate required credentials for an environment. {{{
+# denissis secrets - Generate / Rotate required credentials for an environment. {{{
 
 command("secrets", <<EOF,
-genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE: genesis secrets [check|add|rotate [--force]] [--vault target] deployment-env.yml
+denissis v$Genesis::VERSION$Genesis::BUILD
+USAGE: denissis secrets [check|add|rotate [--force]] [--vault target] deployment-env.yml
 
 Checks, adds or rotates secrets for your deployment.
 
@@ -1163,7 +1163,7 @@ Checks, adds or rotates secrets for your deployment.
 			This functionality is replaced by the command check-secrets
 
   * add:    Generates any missing secrets required by the deployment.  Useful
-			to generate credentials after upgrading kits or if `genesis new
+			to generate credentials after upgrading kits or if `denissis new
 			--no-secrets` was used to create the deployment.
 
 			This functionality is replaced by the command add-secrets
@@ -1220,11 +1220,11 @@ sub {
 });
 
 # }}}
-# genesis yamls - Print a list of the YAML files used for a single environment. {{{
+# denissis yamls - Print a list of the YAML files used for a single environment. {{{
 
 command("yamls", <<EOF,
-genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE: genesis yamls [--include-kit] deployment-env.yml
+denissis v$Genesis::VERSION$Genesis::BUILD
+USAGE: denissis yamls [--include-kit] deployment-env.yml
 
 OPTIONS
       --include-kit This is also include the files that will be merges from the kit.
@@ -1247,15 +1247,15 @@ sub {
 
 
 # }}}
-# genesis create-kit - Create the structure for a new kit {{{
+# denissis create-kit - Create the structure for a new kit {{{
 
 command("create-kit", <<EOF,
-genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE: genesis create-kit -d|--dev -n NAME [FEATURE ...]
+denissis v$Genesis::VERSION$Genesis::BUILD
+USAGE: denissis create-kit -d|--dev -n NAME [FEATURE ...]
 
 OPTIONS
 $GLOBAL_USAGE
-  -d, --dev       create kit in ./dev directory instead of <name>-genesis-kit
+  -d, --dev       create kit in ./dev directory instead of <name>-denissis-kit
   -n, --name      Name of the kit archive.
 EOF
 sub {
@@ -1267,18 +1267,18 @@ sub {
 	usage(2) unless $options{name};
 	check_prereqs(no_repo_needed => ! $options{dev}); # only require repo if in dev mode
 
-	my $dir = abs_path($options{dev} ? "dev" : "$options{name}-genesis-kit");
+	my $dir = abs_path($options{dev} ? "dev" : "$options{name}-denissis-kit");
 	Genesis::Kit::Compiler->new($dir)->scaffold($options{name});
 
 	explain("\n#G{Created new Genesis kit '}#C{$options{name}}#G{' in }#C{$dir}");
 });
 
 # }}}
-# genesis compile-kit - Create a distributable kit archive from dev/. {{{
+# denissis compile-kit - Create a distributable kit archive from dev/. {{{
 
 command("compile-kit", <<EOF,
-genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE: genesis compile-kit -v VERSION [-n NAME] [-d|--dev]
+denissis v$Genesis::VERSION$Genesis::BUILD
+USAGE: denissis compile-kit -v VERSION [-n NAME] [-d|--dev]
 
 OPTIONS
 $GLOBAL_USAGE
@@ -1287,15 +1287,15 @@ $GLOBAL_USAGE
 
   -n, --name    Name of the kit archive.  If not provided, will take the name
                 of the current (or specified with -C) directory before the
-                suffix of -genesis-kit (standalone mode) or -deployments
+                suffix of -denissis-kit (standalone mode) or -deployments
                 (dev mode).
 
   -d, --dev     Compile based off of a dev-kit (./dev). If not specified,
-                genesis will compile based off of ./<name>-genesis-kit.
-                Automatically set if run from inside a genesis deployments directory.
+                denissis will compile based off of ./<name>-denissis-kit.
+                Automatically set if run from inside a denissis deployments directory.
 
   -f, --force   Proceed with compilation even if there are unstaged or uncommitted
-                changes in the working directory.  Normally, genesis will refuse
+                changes in the working directory.  Normally, denissis will refuse
                 to continue when this happens.
 EOF
 sub {
@@ -1317,7 +1317,7 @@ sub {
 			$dir = "$pwd/dev";
 			$options{dev} = 1;
 
-		} elsif ($pwd =~ /\/([^\/]*)-genesis-kit(\/)?$/) {
+		} elsif ($pwd =~ /\/([^\/]*)-denissis-kit(\/)?$/) {
 			# Building from a Genesis Kit source repo
 			$options{name} = $1;
 			$dir = $pwd;
@@ -1335,8 +1335,8 @@ sub {
 			bail "$dir does not exist -- cannot continue compiling dev kit.\n" unless -d $dir;
 		} else {
 			$dir = ($options{cwd} || ".");
-			$dir .= "/$options{name}-genesis-kit"
-				if (! -f "$dir/kit.yml" && -d "/$options{name}-genesis-kit");
+			$dir .= "/$options{name}-denissis-kit"
+				if (! -f "$dir/kit.yml" && -d "/$options{name}-denissis-kit");
 		}
 	}
 
@@ -1355,11 +1355,11 @@ sub {
 });
 
 # }}}
-# genesis decompile-kit - Unpack a kit archive to dev/. {{{
+# denissis decompile-kit - Unpack a kit archive to dev/. {{{
 
 command("decompile-kit", <<EOF,
-genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE: genesis decompile-kit [NAME/VERSION | path/to/kit.tar.gz]
+denissis v$Genesis::VERSION$Genesis::BUILD
+USAGE: denissis decompile-kit [NAME/VERSION | path/to/kit.tar.gz]
 
 OPTIONS
 $GLOBAL_USAGE
@@ -1381,7 +1381,7 @@ sub {
 	my $file = $_[0];
 	if (! -f $file) {
 		(my $stem = $file) =~ s|/|-|;
-		$file = $top->path(".genesis/kits/$stem.tar.gz");
+		$file = $top->path(".denissis/kits/$stem.tar.gz");
 	}
 	if (! -f $file) {
 		die "Unable to find Kit archive $_[0]\n";
@@ -1398,10 +1398,10 @@ sub {
 });
 
 # }}}
-# genesis list-kits - list kit versions available locally or remotely {{{
+# denissis list-kits - list kit versions available locally or remotely {{{
 command("list-kits", <<EOF,
-genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE: genesis list-kits [-r|--remote|--updates|-u] [<options>] [--filter <re pattern>|<name>]
+denissis v$Genesis::VERSION$Genesis::BUILD
+USAGE: denissis list-kits [-r|--remote|--updates|-u] [<options>] [--filter <re pattern>|<name>]
 
 Lists the kits available locally or remotely.  If filter is specified, use it
 as a regular expression to filter the kits returned.
@@ -1513,11 +1513,11 @@ sub {
 });
 
 # }}}
-# genesis manifest - Compile a deployment manifest. {{{
+# denissis manifest - Compile a deployment manifest. {{{
 
 command("manifest", <<EOF,
-genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE: genesis manifest [--no-redact] [--cloud-config path.yml] deployment-env.yml
+denissis v$Genesis::VERSION$Genesis::BUILD
+USAGE: denissis manifest [--no-redact] [--cloud-config path.yml] deployment-env.yml
 
 OPTIONS
 $GLOBAL_USAGE
@@ -1562,11 +1562,11 @@ sub {
 });
 
 # }}}
-# genesis repipe - Deploy a Concourse CI/CD deployment pipeline. {{{
+# denissis repipe - Deploy a Concourse CI/CD deployment pipeline. {{{
 
 command(["repipe", "push"], <<EOF,
-genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE genesis repipe [pipeline-layout]
+denissis v$Genesis::VERSION$Genesis::BUILD
+USAGE denissis repipe [pipeline-layout]
 
 OPTIONS
 $GLOBAL_USAGE
@@ -1626,11 +1626,11 @@ sub {
 	exit 0;
 });
 # }}}
-# genesis graph - Draw a Concourse CI/CD deployment pipeline. {{{
+# denissis graph - Draw a Concourse CI/CD deployment pipeline. {{{
 
 command("graph", <<EOF,
-genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE genesis graph [pipeline-layout] | dot -Tpng > pipe.png
+denissis v$Genesis::VERSION$Genesis::BUILD
+USAGE denissis graph [pipeline-layout] | dot -Tpng > pipe.png
 
 Note: This command outputs a directed, acyclic graph (a DAG) in the
       Graphviz language (http://www.graphviz.org/).  If you want a
@@ -1660,11 +1660,11 @@ sub {
 	exit 0;
 });
 # }}}
-# genesis describe - Describe a Concourse CI/CD deployment pipeline. {{{
+# denissis describe - Describe a Concourse CI/CD deployment pipeline. {{{
 
 command("describe", <<EOF,
-genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE genesis describe [pipeline-layout]
+denissis v$Genesis::VERSION$Genesis::BUILD
+USAGE denissis describe [pipeline-layout]
 
 OPTIONS
 $GLOBAL_USAGE
@@ -1688,11 +1688,11 @@ sub {
 	exit 0;
 });
 # }}}
-# genesis lookup - Find a key set in environment manifests. {{{
+# denissis lookup - Find a key set in environment manifests. {{{
 
 command("lookup", <<EOF,
-genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE genesis lookup [--merged|--deployed|--exodus|--exodus-for env/type] env-name key [default-value|--defined]
+denissis v$Genesis::VERSION$Genesis::BUILD
+USAGE denissis lookup [--merged|--deployed|--exodus|--exodus-for env/type] env-name key [default-value|--defined]
 
 Looks up data from the environment file (or alterative source: see options below)
 If the key is empty string, it will return all data from the source.
@@ -1700,8 +1700,8 @@ If the key is empty string, it will return all data from the source.
 OPTIONS
       --merged        Lookup data from a fully merged manifest for the environment.
       --deployed      Lookup data from the manifest of the last deployment.
-      --exodus        Lookup data from the genesis exodus data for the last deployment.
-      --exodus-for    Lookup data from the genesis exodus data for a different enviroment.
+      --exodus        Lookup data from the denissis exodus data for the last deployment.
+      --exodus-for    Lookup data from the denissis exodus data for a different enviroment.
                       Takes an argument of the form "env-name/deployment-type"
       --defined       Exit with 0 if key defined in specified source, 9 otherwise.  No
                       output is produced, making it useful in 'if lookup ... ; then'
@@ -1770,11 +1770,11 @@ sub {
 	exit 0;
 });
 # }}}
-# genesis download - Download a Genesis Kit from the Internet. {{{
+# denissis download - Download a Genesis Kit from the Internet. {{{
 
 command("download", <<EOF,
-genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE genesis download NAME[/VERSION] [...]
+denissis v$Genesis::VERSION$Genesis::BUILD
+USAGE denissis download NAME[/VERSION] [...]
 
 OPTIONS
 $GLOBAL_USAGE
@@ -1796,16 +1796,16 @@ sub {
 	}
 });
 # }}}
-# genesis ci-pipeline-deploy - Deploy via the CI/CD Pipeline {{{
+# denissis ci-pipeline-deploy - Deploy via the CI/CD Pipeline {{{
 command("ci-pipeline-deploy", <<EOF,
-genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE genesis ci-pipeline-deploy
+denissis v$Genesis::VERSION$Genesis::BUILD
+USAGE denissis ci-pipeline-deploy
 
 OPTIONS
 $GLOBAL_USAGE
 EOF
 sub {
-	explain("[#G{genesis} ci-pipeline-deploy] v#G{$Genesis::VERSION}\n");
+	explain("[#G{denissis} ci-pipeline-deploy] v#G{$Genesis::VERSION}\n");
 
 	my %options;
 	options(\@_, \%options, qw/
@@ -1858,10 +1858,10 @@ sub {
 
 	if ($ENV{PREVIOUS_ENV}) {
 		run({ onfailure => "Failed to run `$_`", interactive => 1 }, $_) for (
-			"rm -rf .genesis/config .genesis/kits .genesis/cached",
-			"cp -R '../$ENV{CACHE_DIR}/.genesis/cached' .genesis/cached",
-			"cp -R '../$ENV{CACHE_DIR}/.genesis/config' .genesis/config",
-			"cp -R '../$ENV{CACHE_DIR}/.genesis/kits' .genesis/kits"
+			"rm -rf .denissis/config .denissis/kits .denissis/cached",
+			"cp -R '../$ENV{CACHE_DIR}/.denissis/cached' .denissis/cached",
+			"cp -R '../$ENV{CACHE_DIR}/.denissis/config' .denissis/config",
+			"cp -R '../$ENV{CACHE_DIR}/.denissis/kits' .denissis/kits"
 		);
 	}
 
@@ -1899,26 +1899,26 @@ EOF
 		## rm cache dir
 		## copy previous env cache dir
 		# leaving as system calls for Concourse so output shows up in log
-		system("rm -rf .genesis/config .genesis/kits .genesis/cached") == 0 or exit 1;
-		system("git checkout .genesis/config"); # ignore failure for git checkout so that
-		system("git checkout .genesis/kits");   # we don't cause problems if these files dont
-		system("git checkout .genesis/cached"); # yet exist in the working tree (but did in the cache tree)
+		system("rm -rf .denissis/config .denissis/kits .denissis/cached") == 0 or exit 1;
+		system("git checkout .denissis/config"); # ignore failure for git checkout so that
+		system("git checkout .denissis/kits");   # we don't cause problems if these files dont
+		system("git checkout .denissis/cached"); # yet exist in the working tree (but did in the cache tree)
 	}
 	popd;
 	commit_changes($ENV{WORKING_DIR}, $ENV{OUT_DIR}, $ENV{GIT_BRANCH}, $ENV{GIT_PRIVATE_KEY},
 		"deployed to $ENV{CURRENT_ENV}");
 });
 # }}}
-# genesis ci-generate-cache - Generate cache for an environment via the CI/CD Pipeline {{{
+# denissis ci-generate-cache - Generate cache for an environment via the CI/CD Pipeline {{{
 command("ci-generate-cache", <<EOF,
-genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE genesis ci-generate-cache
+denissis v$Genesis::VERSION$Genesis::BUILD
+USAGE denissis ci-generate-cache
 
 OPTIONS
 $GLOBAL_USAGE
 EOF
 sub {
-	explain("[#G{genesis} ci-generate-cache] v#G{$Genesis::VERSION}\n");
+	explain("[#G{denissis} ci-generate-cache] v#G{$Genesis::VERSION}\n");
 
 	my %options;
 	options(\@_, \%options, qw/
@@ -1946,25 +1946,25 @@ sub {
 	}
 
 	pushd $ENV{WORKING_DIR};
-	mkdir_or_fail(".genesis/cached/$ENV{CURRENT_ENV}");
+	mkdir_or_fail(".denissis/cached/$ENV{CURRENT_ENV}");
 	for (expand_tokens(split /\-/, $ENV{CURRENT_ENV})) {
-		copy_or_fail("$_.yml", ".genesis/cached/$ENV{CURRENT_ENV}/$_.yml") if -f "$_.yml";
+		copy_or_fail("$_.yml", ".denissis/cached/$ENV{CURRENT_ENV}/$_.yml") if -f "$_.yml";
 	}
 	popd;
 	commit_changes($ENV{WORKING_DIR}, $ENV{OUT_DIR}, $ENV{GIT_BRANCH}, $ENV{GIT_PRIVATE_KEY}, "generated cache for $ENV{CURRENT_ENV}");
 });
 # }}}
-# genesis ci-pipeline-run-errand - Run arbitrary errands via the CI/CD Pipeline {{{
+# denissis ci-pipeline-run-errand - Run arbitrary errands via the CI/CD Pipeline {{{
 
 command("ci-pipeline-run-errand", <<EOF,
-genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE genesis ci-pipeline-run-errand
+denissis v$Genesis::VERSION$Genesis::BUILD
+USAGE denissis ci-pipeline-run-errand
 
 OPTIONS
 $GLOBAL_USAGE
 EOF
 sub {
-	explain("[#G{genesis} ci-pipeline-run-errand] v#G{$Genesis::VERSION}\n");
+	explain("[#G{denissis} ci-pipeline-run-errand] v#G{$Genesis::VERSION}\n");
 
 	my %options;
 	options(\@_, \%options, qw/
@@ -1999,11 +1999,11 @@ sub {
 	exit 0;
 });
 # }}}
-# genesis ui-describe - Provides colored explanatory test {{{
+# denissis ui-describe - Provides colored explanatory test {{{
 
 command("ui-describe", <<EOF,
-genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE genesis ui-describe "string" ... [options...]
+denissis v$Genesis::VERSION$Genesis::BUILD
+USAGE denissis ui-describe "string" ... [options...]
 
 Prints each string, separated by a new line.  Supports color blocks by the
 wrapping of a block of text with #x{block}, where x is one of:
@@ -2033,10 +2033,10 @@ sub {
 	explain("%s", $_) for (@_);
 });
 # }}}
-# genesis ui-prompt-for - Provides prompts in support of hooks/new script {{{
+# denissis ui-prompt-for - Provides prompts in support of hooks/new script {{{
 command("ui-prompt-for", <<EOF,
-genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE genesis ui-prompt-for <type> <path> [options...] [<prompt>]
+denissis v$Genesis::VERSION$Genesis::BUILD
+USAGE denissis ui-prompt-for <type> <path> [options...] [<prompt>]
 
 <type> is one of:
     line:          prompt for a single line of text
@@ -2116,10 +2116,10 @@ sub {
 	exit 0
 });
 # }}}
-# genesis ui-semver - Provides semver in support of hook scripts {{{
+# denissis ui-semver - Provides semver in support of hook scripts {{{
 command("ui-semver", <<EOF,
-genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE genesis ui-semver [version] ge [min]
+denissis v$Genesis::VERSION$Genesis::BUILD
+USAGE denissis ui-semver [version] ge [min]
 
 Note: non-semantic versions (i.e. "latest", confusingly enough)
 are never valid for either side of a version assertion.
@@ -2143,13 +2143,13 @@ sub {
 
 sub main {
 	if (envset 'GENESIS_IS_HELPING_YOU') {
-		debug "#G{genesis} callback...";
+		debug "#G{denissis} callback...";
 	} else {
-		debug "#G{genesis} starting up...";
+		debug "#G{denissis} starting up...";
 		$ENV{GENESIS_CALLER_DIR} = Cwd::getcwd();
 	}
 
-	$ENV{GENESIS_INDEX} = "https://genesis.starkandwayne.com" unless $ENV{GENESIS_INDEX};
+	$ENV{GENESIS_INDEX} = "https://denissis.starkandwayne.com" unless $ENV{GENESIS_INDEX};
 
 	# Check if we're in a v1 repo
 	my $path = abs_path(getcwd);
