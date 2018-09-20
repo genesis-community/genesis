@@ -97,7 +97,7 @@ brew install genesis spruce safe bosh-cli vault git
 
 `genesis` requires Perl. But Perl is everywhere.
 
-You will need to setup Git:
+You will need to set up Git:
 
 ```
 git config --global user.name "Your Name"
