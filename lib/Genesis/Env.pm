@@ -507,31 +507,39 @@ sub exodus {
 	return _flatten({}, undef, $self->manifest_lookup('exodus', {}));
 }
 
+sub lookup_bosh_target {
+	my ($self) = @_;
+	return undef if $self->needs_bosh_create_env;
+
+	my ($bosh, $source);
+	if ($bosh = $ENV{GENESIS_BOSH_ENVIRONMENT}) {
+			$source = "GENESIS_BOSH_ENVIRONMENT environment variable";
+
+	} elsif ($bosh = $self->lookup('params.bosh')) {
+			$source = "params.bosh in $self->{name} environment file";
+
+	} elsif ($bosh = $self->lookup('params.env')) {
+			$source = "params.env in $self->{name} environment file because no params.bosh was present";
+
+	} else {
+		die "Could not find the `params.bosh' or `params.env' key in $self->{name} environment file!\n";
+	}
+
+	return wantarray ? ($bosh, $source) : $bosh;
+}
+
 sub bosh_target {
-	my ($self, $passive) = @_;
+	my ($self) = @_;
 	return undef if $self->needs_bosh_create_env;
 
 	unless ($self->{__bosh_target}) {
-		my ($bosh, $source);
-		if ($bosh = $ENV{GENESIS_BOSH_ENVIRONMENT}) {
-				$source = "GENESIS_BOSH_ENVIRONMENT environment variable";
-
-		} elsif ($bosh = $self->lookup('params.bosh')) {
-				$source = "params.bosh in $self->{name} environment file";
-
-		} elsif ($bosh = $self->lookup('params.env')) {
-				$source = "params.env in $self->{name} environment file because no params.bosh was present";
-
-		} else {
-			die "Could not find the `params.bosh' or `params.env' key in $self->{name} environment file!\n";
-		}
-
-		return $bosh if $passive; # Don't cache if we didn't verify connectivity;
+		my ($bosh, $source) = $self->lookup_bosh_target;
 
 		Genesis::BOSH->ping($bosh)
 			or die csprintf("Could not reach BOSH Director '#M{$bosh}'\n  - specified via $source\n\nDid you create an alias and login to it?\n");
 		$self->{__bosh_target} = $bosh;
 	}
+
 	return $self->{__bosh_target};
 }
 
