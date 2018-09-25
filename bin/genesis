@@ -1867,7 +1867,7 @@ sub {
 
 	# don't set up a bosh alias if we're a create-env based deploy, no need, no data
 	unless ($env->needs_bosh_create_env) {
-		Genesis::BOSH->alias($env->bosh_target);
+		Genesis::BOSH->alias($env->bosh_target("passive"));
 		$env->download_cloud_config();
 	}
   # we need a method of issue tokens with a temporary lifetime, so approle/secret is used
