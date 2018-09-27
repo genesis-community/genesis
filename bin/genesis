@@ -943,7 +943,7 @@ sub {
 	if (!$env->needs_bosh_create_env && !$env->cloud_config) {
 		explain "#Y{! No cloud config detected -- this may be a Genesis bug}";
 	}
-	check_environment($env, secrets => 1)
+	check_environment($env, check_secrets => 1)
 		or bail "! Kit #R{preflight checks failed}; deployment operation #R{halted}.";
 
 	explain "- Preflight #G{ok}, initiating BOSH deploy...";
