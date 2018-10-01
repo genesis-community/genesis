@@ -40,6 +40,7 @@ our @EXPORT = qw/
 	ordify
 
 	run lines bosh curl
+	read_json_from
 	safe_path_exists
 
 	slurp
@@ -383,6 +384,13 @@ sub lines {
 	my ($out, $rc) = @_;
 	return $rc ? () : split $/, $out;
 }
+
+sub read_json_from {
+	my ($out, $rc) = @_;
+	die "command failed to produce json: $out" unless $rc eq 0;
+	return load_json($out);
+}
+
 
 sub curl {
 	my ($method, $url, $headers, $data, $skip_verify, $creds) = @_;
@@ -785,6 +793,15 @@ This is best used with C<run()>, like this:
 
     my @lines = lines(run('some command'));
 
+==head2 read_json_from($out, $rc)
+
+Ignore C<$rc>, and parses C<$out> as JSON, returning the resulting structure.
+This is best used with C<run()>, like this:
+
+    my $data = read_json_from(run('some command that outputs json'));
+
+It will die if C<$out> is not JSON, with whatever message JSON::PP generates when
+encountering non-JSON content.
 
 =head2 curl($method, $url, $headers, $data, $skip_verify, $creds)
 
