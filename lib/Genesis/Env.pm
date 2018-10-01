@@ -5,6 +5,7 @@ use warnings;
 use Genesis;
 use Genesis::Legacy; # but we'd rather not
 use Genesis::BOSH;
+use Genesis::UI;
 
 use POSIX qw/strftime/;
 use Digest::file qw/digest_file_hex/;
@@ -653,7 +654,6 @@ sub check_secrets {
 		                           vault  => $self->{prefix});
 		return $ok;
 	} else {
-		binmode(STDOUT, "encoding(UTF-8)");
 		my $ok = 1;
 
 		my $meta = $self->kit->metadata;
@@ -732,18 +732,14 @@ sub _check_secret {
 	my @missing = grep {! $secrets->{"$path:$_"}} @keys;
 	if ($type =~ /^random/) { # these are at the key level, not the path level
 		if (@missing) {
-			explain("  #R{\x{2718}}  %s [%s:#C{%s}]", $path, $_, $type) for (@missing);
+			bullet("bad", sprintf("%s [%s:#C{%s}]", $path, $_, $type))  for (@missing);
 		} else {
-			explain("  #G{\x{2714}}  %s [%s:#C{%s}]", $path, $_, $type) for (grep {$secrets->{"$path:$_"}} @keys);
+			bullet("good", sprintf("%s [%s:#C{%s}]", $path, $_, $type)) for (grep {$secrets->{"$path:$_"}} @keys);
 		}
 
 	} else {
-		if (@missing) {
-			explain("  #R{\x{2718}}  %s [#C{%s}]", $path, $type);
-			explain("     #R{\x{2718}}  :%s", $_) for (@missing);
-		} else {
-			explain("  #G{\x{2714}}  %s [#C{%s}]", $path,$type);
-		}
+		bullet(@missing ? "bad" : "good", sprintf("%s [#C{%s}]", $path, $type));
+		bullet("bad", ":$_", indent => 5) for (@missing);
 	}
 
 	return map {["[$type]", "$path:$_"]} @missing;

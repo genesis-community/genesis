@@ -8,9 +8,11 @@ our @EXPORT = qw/
 	prompt_for_line
 	prompt_for_list
 	prompt_for_block
+	bullet
 /;
 
 use Genesis;
+
 
 sub __prompt_for_line {
 	my ($prompt,$validation,$err_msg,$default,$allow_blank) = @_;
@@ -106,7 +108,6 @@ sub __prompt_for_line {
 		return "" if ($in eq "" && $allow_blank);
 		my $err="";
 		if ($in eq "") {
-			return "" if $allow_blank;
 			$err= "#R{No default:} you must specify a non-empty string";
 		} else {
 			$err = &$validate($in,$err_msg) if defined($validate);
@@ -114,7 +115,7 @@ sub __prompt_for_line {
 		}
 
 		no warnings "numeric";
-		return (($in eq $in + 0) ? $in + 0 : $in) unless $err;
+		return (($in eq $in + 0) ? $in + 0 : $in) unless $err; # detaint numbers
 		use warnings "numeric";
 		error($err);
 	}
@@ -275,6 +276,33 @@ sub prompt_for_list {
 sub prompt_for_block {
 	printf("\n");
 	return __prompt_for_block(@_);
+}
+
+sub bullet { # [type,] msg, [{option: value, ...}]
+	my $msg = shift;
+	(my $type, $msg) = ($msg, shift) if (scalar(@_) % 2 > 0);
+	my (%opts) = @_;
+
+	$opts{symbol} ||= $type eq "good"  ? "\x{2714} " :
+										$type eq "bad"   ? "\x{2718} " :
+										$type eq "empty" ? "  "        :
+																			 "\x{2022}" ;
+
+	$opts{color}  ||= $type eq "good"  ? "G" :
+										$type eq "bad"   ? "R" :
+																			 "-"  ;
+
+	$opts{box} = 0 unless exists($opts{box});
+	$opts{indent} = 2 unless exists($opts{indent});
+
+	binmode(STDOUT, "encoding(UTF-8)");
+	explain("%*.*s%s#%s{%s}%s %s",
+	        $opts{indent},$opts{indent},"",
+	              $opts{box} ? "[" : "",
+	                 $opts{color},
+	                    $opts{symbol},
+	                       $opts{box} ? "]" : "",
+	                          $msg);
 }
 
 1;
