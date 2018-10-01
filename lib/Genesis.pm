@@ -116,8 +116,8 @@ sub _colorize {
 		my $i = 0;
 		my $msgc = "";
 		foreach my $char (split //, $msg) {
-			my $fr = $fg eq "*" ? $rainbow[$i%6] : $fg;
-			my $br = $bg eq "*" ? $rainbow[($i+3)%6] : $bg;
+			my $fr = $fg && $fg eq "*" ? $rainbow[$i%6] : $fg;
+			my $br = $bg && $bg eq "*" ? $rainbow[($i+3)%6] : $bg;
 			$msgc = $msgc . _color($fr,$br)."$char";
 			if ($char =~ m/\S/) {
 				$i++;
@@ -133,7 +133,7 @@ sub csprintf {
 	my ($fmt, @args) = @_;
 	return '' unless $fmt;
 	my $s = sprintf($fmt, @args);
-	$s =~ s/(#[IUKRGYBMPCW*]{1,4})\{(.*?)(\})/_colorize($1, $2)/egi;
+	$s =~ s/(#[-IUKRGYBMPCW*]{1,4})\{(.*?)(\})/_colorize($1, $2)/egi;
 	return $s;
 }
 sub explain {
