@@ -434,3 +434,19 @@ pipeline:
 - **pipeline.task.version** - The version of the Docker image to
   use for running tasks.  This defaults to `latest`, which should
   work well for most implementations.
+
+### Pipeline Configuration
+
+If you need to edit and make changes to your deployment pipeline, simply add the changes you need to the bottom of your ci.yml located in your *-deployments repo. For example, if we have a pipeline we need to edit the 'check_every:' parameter of a resource named git we can add the block below under our pipeline layouts:
+
+**ci.yml**
+```
+layouts:
+  test-sandbox-ops: |+
+    auto *test-sandbox *test-staging
+    test-sandbox -> test-staging
+
+resources:
+- name: git
+  check_every: 15m
+```
