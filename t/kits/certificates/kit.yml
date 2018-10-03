@@ -28,7 +28,7 @@ certificates:
         - '*.system.${params.base_domain}'
 
     fixed:
-      ca: { valid_for: 1y }
+      ca: { valid_for: 5y }
       server:
         fixed: true
         valid_for: 1y
@@ -37,7 +37,8 @@ certificates:
 
   certs-b:
     auto-generated-certs-b:
-      ca: { valid_for: 1y }
+      ca:
+        names: [ca.asdf.com, 127.1.2.3]
       server:
         valid_for: 4m
         names: [ asdf.com, www.asdf.com ]
