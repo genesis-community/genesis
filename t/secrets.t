@@ -245,6 +245,29 @@ EOF
 	have_secret "$v/auto-generated-certs-a/ca:certificate";
 	my $ca = secret "$v/auto-generated-certs-a/ca:certificate";
 
+	sub get_cert_validity {
+		use Time::Piece;
+		my ($info) = @_;
+		my $pattern = "%b%n%d %H:%M:%S %Y";
+		my @i = $info =~ qr/Not Before:\s(.*\s+\d{4})\s+([^\n\r]*)\s+Not After\s+:\s(.*\s+\d{4})\s+([^\n\r]*)/m;
+		return undef unless $i[1] eq $i[3]; # ensure timezones are the same
+		return (Time::Piece->strptime($i[2], $pattern) - Time::Piece->strptime($i[0], $pattern));
+	}
+
+	# Check correct TTL
+	my $fixed_ca = qx(safe get $v/fixed/ca:certificate | openssl x509 -inform pem -text);
+	is get_cert_validity($fixed_ca), (5*365*24*3600), "CA cert has a 5 year validity period";
+
+	# Check CA alternative names and default TTL
+	my $auto_b_ca = qx(safe get $v/auto-generated-certs-b/ca:certificate | openssl x509 -inform pem -text);
+	like $auto_b_ca, qr/Issuer: CN\s*=\s*ca\.n\d+\.auto-generated-certs-b/m, "CA cert is self-signed";
+	like $auto_b_ca, qr/Subject: CN\s*=\s*ca\.n\d+\.auto-generated-certs-b/m, "CA cert is self-signed";
+	like $auto_b_ca, qr/Subject Alternative Name:\s+DNS:ca\.n\d+\.auto-generated-certs-b,\s+DNS:ca.asdf.com,\s+IP Address:127.1.2.3\s*$/sm,
+	               "CA has correct Subject Alternative Names";
+
+	is get_cert_validity($auto_b_ca), (365*24*3600), "CA cert has a default 1 year validity period";
+
+
 	have_secret "$v/fixed/server:certificate";
 	my $fixed_cert = secret "$v/fixed/server:certificate";
 
