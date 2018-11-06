@@ -9,6 +9,7 @@ our @EXPORT = qw/
 	prompt_for_list
 	prompt_for_block
 	bullet
+	die_unless_controlling_terminal
 /;
 
 use Genesis;
@@ -303,6 +304,12 @@ sub bullet { # [type,] msg, [{option: value, ...}]
 	                    $opts{symbol},
 	                       $opts{box} ? "]" : "",
 	                          $msg);
+}
+
+sub die_unless_controlling_terminal {
+	my ($method) = @_;
+	return if -t STDIN && -t STDOUT;
+	bail("Method %s was called from a non-controlling terminal but it requires user input.", $method);
 }
 
 1;
