@@ -166,7 +166,7 @@ sub prompt_for_choices {
 	my $num_choices = scalar(@{$choices});
 	for my $i (0 .. $#$choices) {
 		$labels->[$i] ||= $choices->[$i];
-		$prompt .= "\n  ".($i+1).") ".$labels->[$i];
+		$prompt .= "\n  ".($i+1).") ".(ref($labels->[$i]) eq "ARRAY" ? $labels->[$i][0] : $labels->[$i]);
 	}
 	my $line_prompt = "choice";
 	$min ||= 0;
@@ -198,7 +198,7 @@ sub prompt_for_choices {
 		}
 		push @ll, $choices->[$v-1];
 		$chosen{$v} = 1;
-		print(csprintf("\033[1A%s%s > #C{%s}\n",ordify(scalar(@ll)), $line_prompt, $labels->[$v-1]));
+		print(csprintf("\033[1A%s%s > #C{%s}\n",ordify(scalar(@ll)), $line_prompt, (ref($labels->[$v-1]) eq "ARRAY" ? $labels->[$v-1][1] : $labels->[$v-1])));
 		last if scalar(@ll) == $max;
 	}
 	return \@ll;
@@ -211,7 +211,7 @@ sub prompt_for_choice {
 	my $num_choices = scalar(@{$choices});
 	print "\n$prompt";
 	for my $i (0 .. $#$choices) {
-		my $label = (ref($labels) eq 'ARRAY' &&  $labels->[$i]) ? $labels->[$i] : $choices->[$i];
+		my $label = (ref($labels) eq 'ARRAY' && $labels->[$i]) ? (ref($labels->[$i]) eq 'ARRAY' ? $labels->[$i][0] : $labels->[$i]) : $choices->[$i];
 		print "\n  ".($i+1).") ".$label;
 		if ($default && $default eq $choices->[$i]) {
 			print csprintf(" #G{(default)}");
@@ -225,7 +225,7 @@ sub prompt_for_choice {
 		$err_msg || "enter a number between 1 and $num_choices",
 		$default_choice);
 
-	print(csprintf("\033[1ASelect choice > #C{%s}\n", (ref($labels) eq 'ARRAY' &&  $labels->[$c-1]) ? $labels->[$c-1] : $choices->[$c-1]));
+	print(csprintf("\033[1ASelect choice > #C{%s}\n", (ref($labels) eq 'ARRAY' &&  $labels->[$c-1]) ? (ref($labels->[$c-1]) eq 'ARRAY' ? $labels->[$c-1][1] : $labels->[$c-1]) : $choices->[$c-1]));
 	return $choices->[$c-1];
 }
 
@@ -362,7 +362,11 @@ them.
 If your C<$choices> are not strings, or if you want to provide the user with
 more human-friendly representation (colors, additional details, etc), you can
 provide alternative label strings for each choice in C<$labels>, associated by
-corresponding index number.
+corresponding index number.  Furthermore, you can provide each label as an
+array of two labels: first one is the one displayed on the choice list, and
+the second one is what gets displayed on the select line after the user has
+entered a value.  This is useful for when you are displaying complex strings
+(ie tabular data) that you don't want displayed on the select line.
 
 Specifying C<$min> and or C<$max> can allow you to present choices for
 scenarios such as optionally picking one of a selection ($max = 1), or
@@ -381,7 +385,11 @@ entering a blank choice.
 If your C<$choices> are not strings, or if you want to provide the user with
 more human-friendly representation (colors, additional details, etc), you can
 provide alternative label strings for each choice in C<$labels>, associated by
-corresponding index number.
+corresponding index number.  Furthermore, you can provide each label as an
+array of two labels: first one is the one displayed on the choice list, and
+the second one is what gets displayed on the select line after the user has
+entered a value.  This is useful for when you are displaying complex strings
+(ie tabular data) that you don't want displayed on the select line.
 
 The C<$default> value is specified as the choice, not the label, so if you're
 specifying alternative labels, be wary of that distinction.  The label of the
