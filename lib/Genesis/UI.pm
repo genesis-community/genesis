@@ -234,13 +234,14 @@ sub prompt_for_line {
 	if ($prompt) {
 		print "\n$prompt";
 		my $padding = ($prompt =~ /\s$/) ? "" : " ";
-		print(csprintf("%s", "${padding}#g{(default: $default)}")) if defined($default);
-	} elsif (defined($default) && defined($label)) {
+		print(csprintf("%s", "${padding}#g{(default: $default)}")) if (defined($default) && $default ne '');
+	} elsif (defined($default) && defined($label) && $default ne '') {
 		my $padding = ($label =~ /\s$/) ? "" : " ";
 		$label .= csprintf("%s", "${padding}#g{(default: $default)}");
 	}
 	print "\n";
-	return __prompt_for_line(defined($label) ? $label : "", $validation, $err_msg, $default);
+	my $allow_blank = (defined($default) && $default eq "");
+	return __prompt_for_line(defined($label) ? $label : "", $validation, $err_msg, $default, $allow_blank);
 }
 
 sub prompt_for_list {
@@ -410,7 +411,8 @@ If a default value is desired, it will be returned if the user enters a blank
 line.  The default will be displayed to the user at the end of the prompt if
 one was given, or otherwise at the end of the label if it was given.  The user
 entering a blank line would be reprompted to enter a value if C<$default> is
-not provided.
+undefined. If default is empty string, the default prompt will not be
+displayed, but will allow an empty response as valid.
 
 The most powerful aspect of this function is the ability to validate the input
 against several known formats:
