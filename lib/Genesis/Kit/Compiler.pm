@@ -54,14 +54,34 @@ sub validate {
 			error "Kit Metadata file kit.yml specifies both `author' and `authors': pick one.";
 			$rc = 0;
 		}
+		if ($meta->{authors} && (ref($meta->{authors}||'') ne 'ARRAY')) {
+			error "Kit Metadata file kit.yml expects `authors' to be an array, not a %s,", lc(ref($meta->{authors}) || "string");
+			$rc = 0;
+		}
 
 		# genesis versions must be semver
-		if (exists $meta->{genesis_min_version}) {
-			if (!semver($meta->{genesis_min_version})) {
-				error "Kit Metadata specifies minimum Genesis version '$meta->{genesis_min_version}', which is not a semantic version (x.y.z).";
+		if (exists $meta->{genesis_version_min}) {
+			if (!semver($meta->{genesis_version_min})) {
+				error "Kit Metadata specifies minimum Genesis version '$meta->{genesis_version_min}', which is not a semantic version (x.y.z).";
 				$rc = 0;
 			}
 		}
+
+		# check for errant top-level keys - params, subkits and features have been discontinued.
+		my @valid_keys = qw/name version description code docs author authors genesis_version_min certificates credentials/;
+		my @errant_keys = ();
+		for my $key (sort keys %$meta) {
+			push(@errant_keys, $key) unless grep {$_ eq $key} @valid_keys;
+		}
+		if (@errant_keys) {
+			error (
+				"Kit Metadata file kit.yml contains invalid top-level key%s: %s\n  Valid keys are: %s\n",
+				scalar(@errant_keys) == 1 ? '' : 's',
+				join(", ",@errant_keys), join(", ", @valid_keys)
+			);
+			$rc = 0;
+		}
+
 	}
 
 	return $rc;
@@ -91,13 +111,13 @@ sub _prepare {
 }
 
 sub compile {
-	my ($self, $name, $version, $outdir) = @_;
+	my ($self, $name, $version, $outdir, %opts) = @_;
 
-	$self->validate or return undef;
+	$self->validate || $opts{force} or return undef;
 	$self->_prepare("$name-$version");
 
-	run({ onfailure => 'Unable to update kit.yml with version "$version"', stderr => 0 },
-		'echo "version: ${1}" | spruce merge "${2}/kit.yml" - > "${3}/${4}/kit.yml"',
+	run({ onfailure => "Unable to update kit.yml with version '$version'", stderr => 0 },
+		'cat "${2}/kit.yml" | sed -e "s/^version:.*/version: ${1}/" > "${3}/${4}/kit.yml"',
 		$version, $self->{root}, $self->{work}, $self->{relpath});
 
 	run({ onfailure => 'Unable to compile final kit tarball' },
@@ -133,7 +153,7 @@ docs:    https://github.com/cloudfoundry-community/$name-boshrelease
 code:    https://github.com/genesis-community/$name-genesis-kit
 
 # 2.6.0 was our last big feature bump
-genesis_min_version: 2.6.0
+genesis_version_min: 2.6.0
 DONE
 
 # }}}

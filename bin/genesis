@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-# vim:ft=perl:noet:ts=4:sts=4:sw=4:fdm=marker
+# vim:ft=perl:noet:ts=2:sts=2:sw=2:fdm=marker:fdl=0
 use strict;
 use warnings;
 
@@ -1295,8 +1295,9 @@ $GLOBAL_USAGE
                 Automatically set if run from inside a genesis deployments directory.
 
   -f, --force   Proceed with compilation even if there are unstaged or uncommitted
-                changes in the working directory.  Normally, genesis will refuse
-                to continue when this happens.
+                changes in the working directory, or if the validation of the contents
+                fails.  Normally, Genesis will refuse to continue when this
+                happens.
 EOF
 sub {
 	my %options;
@@ -1348,7 +1349,7 @@ sub {
 	}
 
 	my $cc = Genesis::Kit::Compiler->new($dir);
-	my $tar = $cc->compile($options{name}, $options{version}, ".")
+	my $tar = $cc->compile($options{name}, $options{version}, ".", force => $options{force})
 		or bail "Unable to compile v$options{version} of $options{name} Genesis Kit.\n";
 
 	explain("Compiled #G{$options{name}} v#C{$options{version}} at $tar");
