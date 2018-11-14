@@ -85,12 +85,16 @@ To build the full BOSH manifest for an environment:
 
 To rotate credentials for an environment:
 
-    genesis secrets us-east-prod
+    genesis rotate-secrets us-east-prod
     genesis deploy us-east-prod
 
 To update the Concourse Pipeline for this repo:
 
     genesis repipe
+
+To check for updates for this kit:
+
+    genesis list-kits -u
 
 To download a new version of the kit, and deploy it:
 

@@ -179,6 +179,8 @@ sub run_hook {
 		$ENV{GENESIS_ROOT}         = $opts{env}->path;
 		$ENV{GENESIS_ENVIRONMENT}  = $opts{env}->name;
 		$ENV{GENESIS_TYPE}         = $opts{env}->type;
+		$ENV{GENESIS_TARGET_VAULT} = $opts{env}->vault->url;
+		$ENV{GENESIS_VERIFY_VAULT} = $opts{env}->vault->verify || "";
 		$ENV{GENESIS_VAULT_PREFIX} = $opts{env}->prefix;
 
 		unless (grep { $_ eq $hook } qw/new prereqs/) {
@@ -209,6 +211,7 @@ sub run_hook {
 
 	} elsif ($hook eq 'secrets') {
 		$ENV{GENESIS_SECRET_ACTION} = $opts{action};
+		$ENV{GENESIS_SECRETS_DATAFILE} = $opts{env}->tmppath("secrets");
 
 	} elsif ($hook eq 'addon') {
 		$ENV{GENESIS_ADDON_SCRIPT} = $opts{script};
@@ -232,6 +235,7 @@ sub run_hook {
 	}
 
 	chmod 0755, $self->path("hooks/$hook");
+	debug ("Running hook now in ".$self->path);
 	my ($out, $rc) = run({ interactive => scalar $hook =~ m/^(addon|new|info|check|secrets|post-deploy|pre-deploy)$/,
 	                       stderr => '&2' },
 		'cd "$1"; source .helper; hook=$2; shift 2; ./hooks/$hook "$@"',
@@ -268,6 +272,26 @@ sub run_hook {
 		return split(/\s+/, $out);
 	}
 
+	if ($hook eq 'secrets') {
+		my ($secrets, $contents);
+		my $fn = $opts{env}->tmppath("secrets");
+		return (!$rc) unless -f $fn;
+
+		my ($version_line, $rc1) = run({stderr => '&1' }, 'head -n1 "$1"', $fn);
+		die "'secrets' hook generated invalid secrets metadata -- please contact the kit author"
+			if ($rc1 > 0 || $version_line !~ /# genesis secrets v([0-9]+) *$/);
+		my $version = $1;
+		if ($version == 1) {
+			# V1 uses slurped json stanzas starting on the second line
+			($contents, $rc1) = run({stderr => '&1' }, 'tail -n +2 "$1" | jq -scM', $fn);
+			die "'secrets' hook generated invalid secrets metadata:\n\nError:\n$contents"
+				if $rc1 > 0;
+		} else {
+			die "'secrets' hook is using an unknown version '$version' of metadata -- please contact the kit author"
+		}
+		return (!$rc, load_json($contents))
+	}
+
 	if ($hook eq 'pre-deploy') {
 		my $contents;
 		my $fn = $opts{env}->tmppath("data");
@@ -283,7 +307,7 @@ sub run_hook {
 			if -f $opts{env}->tmppath("data");
 	}
 
-	if ($hook eq 'check' || ($hook eq 'secrets' && $opts{action} eq 'check')) {
+	if ($hook eq 'check') {
 		return $rc == 0 ? 1 : 0;
 	}
 
@@ -296,6 +320,21 @@ sub run_hook {
 sub metadata {
 	my ($self) = @_;
 	return $self->{__metadata} ||= load_yaml_file($self->path('kit.yml'));
+}
+
+sub feature_compatibility {
+	# Assume feature compatibility with specified min genesis version.
+	my ($self,$version) = @_;
+	my $id = $self->id;
+	my $kit_min = $self->metadata->{genesis_version_min};
+	trace("Kit min version: %s", $kit_min || "undefined");
+	use Data::Dumper;
+	trace("Kit metadata: %s", Dumper($self->metadata));
+	$kit_min = '0.0.0' unless ($kit_min && semver($kit_min));
+
+	bug("Invalid base version provided to Genesis::Kit::feature_compatibility") unless semver($version);
+	trace("Comparing %s kit min to %s feature base", $kit_min, $version);
+	return new_enough($kit_min,$version);
 }
 
 sub check_prereqs {

@@ -22,37 +22,6 @@ sub new {
 }
 
 # }}}
-# attach - builder for vault based on loaded environment {{{
-sub attach {
-	my ($class, $target_url, $insecure) = @_;
-
-	bail "#R{[ERROR]} Expecting vault target '$target_url' to be a url"
-		unless _target_is_url($target_url);
-
-	($target_url, my @targets) = _get_targets($target_url);
-	if (scalar(@targets) <1) {
-		bail "#R{[ERROR]} Safe target for #M{%s} not found.  Please run\n\n".
-				 "  #C{safe target <name> \"%s\"%s\n\n".
-				 "then authenticate against it using the correct auth method before\n".
-				 "re-attempting this command.",
-				 $target_url, $target_url,($insecure?" -k":"");
-	}
-	if (scalar(@targets) >1) {
-		bail "#R{[ERROR]} Multiple safe targets found for #M{%s}:\n%s\n".
-				 "\nYour ~/.saferc file cannot have more than one target for the given url.\n" .
-				 "Please remove any duplicate targets before re-attempting this command.",
-				 $target_url, join("", map {" - #C{$_}\n"} @targets);
-	}
-
-	my $vault = $class->new($target_url, $targets[0], !$insecure);
-	printf STDERR csprintf("\n#yi{Verifying availability of selected vault...}");
-	my $status = $vault->status;
-	error("#%s{%s}\n", $status eq "ok"?"G":"R", $status);
-	bail("#R{[ERROR]} Could not connect to vault") unless $status eq "ok";
-	return $vault->set_as_current;
-}
-
-# }}}
 # target - builder for vault based on locally available vaults {{{
 sub target {
 	my ($class,$target) = @_;
@@ -112,9 +81,50 @@ sub target {
 	}
 
 	my $vault = (grep {$_->{url} eq $url} $class->all)[0];
-	printf STDERR csprintf("\n#yi{Verifying availability of selected vault...}");
+	printf STDERR csprintf("\n#yi{Verifying availability of selected vault...}")
+		unless in_callback || under_test;
 	my $status = $vault->status;
-	error("#%s{%s}\n", $status eq "ok"?"G":"R", $status);
+	error("#%s{%s}\n", $status eq "ok"?"G":"R", $status)
+		unless in_callback || under_test;
+	bail("#R{[ERROR]} Could not connect to vault") unless $status eq "ok";
+	return $vault->set_as_current;
+}
+
+# }}}
+# attach - builder for vault based on loaded environment {{{
+sub attach {
+	my ($class, $target_url, $insecure) = @_;
+
+	# Allow vault target and insecure to be specified by ENV variables.
+	$target_url = $ENV{substr($target_url,1)} if substr($target_url,0,1) eq '$';
+	$insecure = $ENV{substr($insecure,1)} if substr($insecure,0,1) eq '$';
+
+	bail "#R{[ERROR]} No vault target specified"
+		unless $target_url;
+	bail "#R{[ERROR]} Expecting vault target '$target_url' to be a url"
+		unless _target_is_url($target_url);
+
+	($target_url, my @targets) = _get_targets($target_url);
+	if (scalar(@targets) <1) {
+		bail "#R{[ERROR]} Safe target for #M{%s} not found.  Please run\n\n".
+				 "  #C{safe target <name> \"%s\"%s\n\n".
+				 "then authenticate against it using the correct auth method before\n".
+				 "re-attempting this command.",
+				 $target_url, $target_url,($insecure?" -k":"");
+	}
+	if (scalar(@targets) >1) {
+		bail "#R{[ERROR]} Multiple safe targets found for #M{%s}:\n%s\n".
+				 "\nYour ~/.saferc file cannot have more than one target for the given url.\n" .
+				 "Please remove any duplicate targets before re-attempting this command.",
+				 $target_url, join("", map {" - #C{$_}\n"} @targets);
+	}
+
+	my $vault = $class->new($target_url, $targets[0], !$insecure);
+	printf STDERR csprintf("\nUsing vault at #C{%s}.\n#yi{Verifying availability...}", $vault->url)
+	  unless envset "GENESIS_TESTING";
+	my $status = $vault->status;
+	error("#%s{%s}\n", $status eq "ok"?"G":"R", $status)
+		unless envset "GENESIS_TESTING";
 	bail("#R{[ERROR]} Could not connect to vault") unless $status eq "ok";
 	return $vault->set_as_current;
 }
@@ -128,7 +138,8 @@ sub rebind {
 	bail("Cannot rebind to vault in callback due to missing environment variables!")
 		unless $ENV{GENESIS_TARGET_VAULT};
 
-	my $vault = (grep {$_->url eq $ENV{GENESIS_TARGET_VAULT}} @all_vaults)[0];
+	my $vault = (grep {$_->url eq $ENV{GENESIS_TARGET_VAULT}} $class->all())[0];
+	trace "Rebinding to $ENV{GENESIS_TARGET_VAULT}: Matches %s", $vault && $vault->{name} || "<undef>";
 	return unless $vault;
 	return $vault->set_as_current;
 }
@@ -323,16 +334,15 @@ sub token {
 # }}}
 # set_as_current - set this vault as the current Genesis vault {{{
 sub set_as_current {
-	my $self = shift;
-	$ENV{GENESIS_TARGET_VAULT} = $self->url;
-	$ENV{GENESIS_VERIFY_VAULT} = $self->verify ? "1" : "0";
-	$current_vault = $self;
+	$current_vault = shift;
 }
 
 # }}}
+# }}}
 
-## Private helper functions {{{
+### Private helper functions {{{
 
+# _target_is_url - determine if target is in valid URL form {{{
 sub _target_is_url {
 	my $target = lc(shift);
 	return 0 unless $target =~ qr(^https?://([^:/]+)(?::([0-9]+))?$);
@@ -343,6 +353,8 @@ sub _target_is_url {
 	return 0;
 }
 
+# }}}
+# _get_targets - find all matching safe targets for the provided name or url {{{
 sub _get_targets {
 	my $target = shift;
 	unless (_target_is_url($target)) {
@@ -355,7 +367,6 @@ sub _get_targets {
 }
 
 # }}}
-
 # }}}
 
 1;
@@ -368,7 +379,13 @@ Genesis::Vault
 
 This module provides utilities for interacting with a Vault through safe.
 
-=head1 FUNCTIONS
+=head1 Class Methods
+
+=head2 new($url,$name,$verify)
+
+Returns a blessed Genesis::Vault object based on the URL, target name and TLS verify values provided.
+
+B<NOTE:> This should not be called directly, as it provides no
 
 =head2 target($url)
 
@@ -380,7 +397,7 @@ Perl hashref structure.  This leverages C<spruce>, so it can only be used on
 YAML documents with top-level maps.  In practice, this limitation is hardly
 a problem.
 
-=head2 Load($yaml)
+=head2 load($yaml)
 
 Interprets its argument as a string of YAML, and parses it into a Perl
 hashref structure.  This leverages C<spruce>, so it can only be used on

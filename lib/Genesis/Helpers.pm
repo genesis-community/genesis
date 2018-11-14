@@ -10,7 +10,7 @@ sub write {
 
 	if (!$SCRIPT) {
 		$SCRIPT = do { local $/, <DATA> };
-		close($data);
+		close(DATA);
 	}
 
 	print $fh $SCRIPT;
@@ -44,7 +44,7 @@ __DATA__
 if [[ "${GENESIS_TRACE}" == "y" ]] ; then
   echo >&2 "TRACE> Helper script environment variables:"
   export >&2
-fi 
+fi
 
 __bail() {
   local rc=1
@@ -61,6 +61,15 @@ genesis() {
   return $?
 }
 export -f genesis
+
+__bullet() {
+	if [[ $1 == 'x' ]] ; then
+		perl -e 'binmode STDOUT, ":utf8"; printf "\e[31;1m\x{2718} \e[0m"'
+	elif [[ $1 == '√' ]] ; then
+		perl -e 'binmode STDOUT, ":utf8"; printf "\e[32;1m\x{2714} \e[0m"'
+	fi
+}
+export -f __bullet
 
 ###
 ###   Exodus Data Exfiltration Functions
@@ -91,8 +100,8 @@ exodus() {
     __key=$2
     __env=$1
   fi
-  if safe exists "secret/exodus/${__env}:${__key}"; then
-    safe get "secret/exodus/${__env}:${__key}"
+  if safe -T "$GENESIS_TARGET_VAULT" exists "secret/exodus/${__env}:${__key}"; then
+    safe -T "$GENESIS_TARGET_VAULT" get "secret/exodus/${__env}:${__key}"
   fi
 }
 export -f exodus
@@ -100,7 +109,7 @@ export -f exodus
 # have_exodus_data_for env/type - return true if exodus data exists
 have_exodus_data_for() {
   local __env=${1:?have_exodus_data_for() must provide an environment/type}
-  safe exists "secret/exodus/${__env}"
+  safe -T "$GENESIS_TARGET_VAULT" exists "secret/exodus/${__env}"
   return $?
 }
 export -f have_exodus_data_for
@@ -238,15 +247,18 @@ cloud_config_needs() {
         elif [[ "$__x" == '-' ]] ; then
           (( __sum += $(__ip2dec "$__l") - $(__ip2dec "$__f") + 1 )) # Range
         fi
+        __cloud_config_error_messages+=( "  $(__bullet '√') network '$__network' has valid static ips #G{('$__range')} ")
       else
-        __cloud_config_error_messages+=( "could not parse static_ips for network $__network" )
+        __cloud_config_error_messages+=( "  $(__bullet 'x') network '$__network' has valid static ips #R{(parse error on '$__range')} ")
         __cloud_config_ok=no
         break
       fi
     done < <(echo "${__ips}")
     if [[ "$__sum" -lt "$__count" ]] ; then
-        __cloud_config_error_messages+=( "network $__network needs $__count static IP addresses, has $__sum" )
-        __cloud_config_ok=no
+      __cloud_config_error_messages+=( "  $(__bullet 'x') network '$__network' has sufficient static ips #R{(found $__sum, need $__count)} ")
+      __cloud_config_ok=no
+    else
+      __cloud_config_error_messages+=( "  $(__bullet '√') network '$__network' has sufficient static ips #G{(found $__sum, need $__count)} ")
     fi
     return
   fi
@@ -269,7 +281,9 @@ cloud_config_needs() {
       jq -r "if (.${__type}[] | select(.name == \"$__want\")) then 1 else 0 end")
     if [[ -z "$__have" ]]; then
       __cloud_config_ok=no
-      __cloud_config_error_messages+=( "no #Y{$__name} named '#Y{$__want}' found, which is required" )
+			__cloud_config_error_messages+=( "  $(__bullet "x") $__name '#Y{$__want}' exists" )
+		else
+			__cloud_config_error_messages+=( "  $(__bullet "√") $__name '#Y{$__want}' exists" )
     fi
   done
 }
@@ -281,13 +295,12 @@ check_cloud_config() {
   # Usage:
   #   check_cloud_config || exit 1  # exit if errors found
   #   check_cloud_config && describe "  cloud config [#G{OK}] # report ok if no errors
+  describe "  #C{[Checking cloud config]}"
+  local __e
+  for __e in "${__cloud_config_error_messages[@]}"; do
+    describe "${__e}"
+  done
   if [[ ${__cloud_config_ok} != "yes" ]]; then
-    describe "#R{Errors were encountered} in your cloud-config:"
-    local __e
-    for __e in "${__cloud_config_error_messages[@]}"; do
-      describe " - ${__e}"
-    done
-    echo
     return 1
   fi
 }
@@ -474,3 +487,132 @@ param_comment() {
   done
 }
 export -f param_comment
+
+new_genesis_config() {
+	local skip=true
+	[[ -n $GENESIS_VERIFY_VAULT && $GENESIS_VERIFY_VAULT -gt 0 ]] && skip=false
+	cat<<EOF
+
+genesis:
+  env:                 "$GENESIS_ENVIRONMENT"
+  vault_url:           "$GENESIS_TARGET_VAULT"
+  vault_skip_validate: $skip
+EOF
+	if [[ -n "$GENESIS_VAULT_PREFIX" ]] ; then
+		cat <<EOF
+  secrets_path:        "$GENESIS_VAULT_PREFIX"
+EOF
+	fi
+	echo ""
+}
+export -f new_genesis_config
+
+export GENESIS_SECRET_HOOKS_VERSION=""
+secret() {
+  [[ -z "$GENESIS_SECRETS_DATAFILE" ]] &&\
+    __bail "GENESIS_SECRETS_DATAFILE environment variable not set - cannot use 'secret' helper"
+  if [[ "$1" == 'version' ]] ; then
+    GENESIS_SECRET_HOOKS_VERSION=$2
+    echo "# genesis secrets v$2" > $GENESIS_SECRETS_DATAFILE
+    return 0;
+  fi
+
+  case "$GENESIS_SECRET_HOOKS_VERSION" in
+    1.0)
+      local __cmd __path
+      __cmd="$1" ; __path="$2" ; shift 2
+
+      (
+        jq -ncM --arg cmd "$__cmd" --arg path "$__path" '{"type": $cmd, "path": $path}'
+
+        case "$__cmd" in
+          ssh|rsa|dhparam)
+            if [[ "$__path" = *:* ]] ; then
+              echo >&2 "[ERROR] Cannot specify key name in path for $__cmd-type secrets"
+              exit 1
+            fi
+            jq -ncM  --arg bits "$1" '{"bits": $bits }'
+            [[ "$2" == "fixed" ]] && jq -ncM '{"fixed":true}'
+          ;;
+
+          random)
+            local __attr
+            if [[ "$__path" = *:* ]] ; then
+              __attr="${__path##*:}"
+              __path="${__path%%:*}"
+              jq -ncM --arg path "$__path" '{"path": $path}'
+            else
+              __attr="password"
+              # FIXME: Should we just error if no attribute is provided?
+            fi
+            jq -ncM --arg attr "$__attr" --arg len "$1" '{"attr": $attr, "length": $len}'
+            shift
+            local __fmt __at __fixed
+            if [[ "$1" == "fmt" ]] ; then
+              __fmt="$2"; shift 2
+              if [[ "$1" == "at" ]] ; then
+                __at="$2"; shift 2
+              else
+                __at="${__attr}-${__fmt}"
+              fi
+              jq -ncM --arg fmt "$__fmt" --arg at "$__at" '{"format": $fmt, "fmt_attr": $at}'
+            fi
+            if [[ $1 == "allowed-chars" ]] ; then
+              jq -ncM --arg chars "$2" '{"policy": $chars}'
+              shift 2;
+            fi
+            [[ "$1" == "fixed" ]] && jq -ncM '{"fixed":true}'
+            ;;
+
+          x509)
+            local __ttl __ca
+            declare -a __cert_sans; __cert_sans=()
+            declare -a __args;      __args=()
+            __ttl="1y"
+            __fixed="$([[ "$__path" = *"/ca" ]] && echo "1" || echo "")" # default, ca's are fixed
+            while [[ ${#@} -gt 0 ]] ; do
+              case "$1" in
+                -t|--valid-for) __ttl="$2"; shift 2 ;;
+                -i|--signed-by) __ca="$2" ; shift 2 ;;
+                -f|--fixed)     __fixed="1" ; shift ;;
+                --no-fixed)     __fixed=""  ; shift ;;
+                -n|--name)      __cert_sans+=("$2"); shift 2;;
+                --) shift ; args+=("$@");  break ;;
+                -*) echo "Unsupported x509 option '$1'" ; exit 1 ;;
+                *) args+=("$1") ; shift ;;
+              esac
+              if [[ ${#args[@]} -gt 0 ]]; then
+                echo >&2 "[ERROR] Unexpected argument to x509 secret specification: ${__args[*]}"
+                exit 1
+              fi
+            done
+            jq -ncM --arg ttl "$__ttl" '{"ttl": $ttl}'
+            if [[ ${#__cert_sans[@]} -gt 0 ]] ; then
+              ( for __n in "${__cert_sans[@]}" ; do echo $__n | jq -R '.'; done ) | jq -s '{"names": .}'
+            fi
+
+            [[ -n "$__ca" ]]    && jq -ncM --arg ca "$__ca" '{"ca": $ca}'
+            [[ -n "$__fixed" ]] && jq -ncM '{"fixed":true}'
+
+            ;;
+
+          *)
+            echo >&2 "[ERROR] Unknown secret type '$__cmd': expecting one of ssh, rsa, dhparam, random or x509"
+            exit 1
+            ;;
+
+        esac
+      ) | jq -scM add >> $GENESIS_SECRETS_DATAFILE
+      ;;
+
+  "")
+    echo >&2 "[ERROR] Version of secret hook not specified: use 'secret version #.#'"
+    exit 1
+    ;;
+  *)
+    echo >&2 "[ERROR] Unknown version of secret hook '$GENESIS_SECRET_HOOKS_VERSION': expecting one of: 1.0"
+    exit 1
+    ;;
+  esac
+}
+export -f secret

@@ -19,6 +19,7 @@ POSIX::tzset();
 use base 'Exporter';
 our @EXPORT = qw/
 	envset envdefault
+	in_callback under_test
 
 	csprintf
 	explain debug trace error
@@ -68,8 +69,22 @@ sub envdefault {
 	return defined $ENV{$var} ? $ENV{$var} : $default;
 }
 
+sub in_callback {
+	envset('GENESIS_IS_HELPING_YOU');
+}
+
+sub under_test {
+	envset('GENESIS_TESTING');
+}
+
+sub vaulted {
+	return !! Genesis::Vault->current
+}
+
 sub safe_path_exists {
-	return run({ passfail => 1 }, qw(safe exists), $_[0]);
+	bug("Cannot verify path exists in safe without a vault being selected first")
+		unless Genesis::Vault->current;
+	return Genesis::Vault->current->has($_[0]);
 }
 
 my $__is_highcolour = $ENV{TERM} && $ENV{TERM} =~ /256color/;
@@ -159,10 +174,6 @@ sub trace {
 	{ local $ENV{NOCOLOR} = "yes" unless -t STDOUT;
 	        print STDERR csprintf(@_); }
 	print STDERR "\n";
-}
-
-sub vaulted {
-	return !! $ENV{GENESIS_TARGET_VAULT};
 }
 
 sub error {
