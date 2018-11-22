@@ -219,7 +219,7 @@ sub runs_ok($;$) {
 		return wantarray ? (0, $exit, $err) : 0;
 	}
 	pass $msg;
-	return wantarray ? (1, $exit, $err) : 1;
+	return wantarray ? (1, 0, $err) : 1;
 }
 
 sub run_fails($$;$) {

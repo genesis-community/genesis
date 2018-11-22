@@ -6,6 +6,7 @@ use lib 'lib';
 use lib 't';
 use helper;
 use Test::Deep;
+use Test::Output;
 use Archive::Tar;
 
 use_ok 'Genesis::Kit::Compiler';
@@ -100,7 +101,34 @@ code:    https://www.genesisproject.io
 EOF
 ok($cc->validate, "validation should be happy with authors instead of author in kit.yml");
 
+again();
+put_file("$tmp/test-genesis-kit/kit.yml", <<EOF);
+name:    test
+authors: [jhunt, dbell]
+author:  ghost
+code:    https://www.genesisproject.io
+EOF
+quietly { ok(!$cc->validate, "validation should fail if both author and authors in kit.yml") };
+
+again();
+put_file("$tmp/test-genesis-kit/kit.yml", <<EOF);
+name:    test
+authors: |-
+  jhunt
+  dbell
+code:    https://www.genesisproject.io
+EOF
+quietly { ok(!$cc->validate, "validation should fail if authors is not a list in kit.yml") };
+
 ##################################
+
+again();
+put_file("$tmp/test-genesis-kit/kit.yml", <<EOF);
+name:    test
+authors: [jhunt, dbell]
+code:    https://www.genesisproject.io
+EOF
+ok($cc->validate, "validation should be happy with authors instead of author in kit.yml");
 
 again();
 put_file("$tmp/test-genesis-kit/kit.yml", <<EOF);
@@ -108,9 +136,92 @@ name:   test
 author: jhunt
 code:   https://www.genesisproject.io
 
-genesis_min_version: latest
+genesis_version_min: latest
 EOF
 quietly { ok(!$cc->validate, "validation should fail when genesis_min_version is malformed") };
+
+again();
+put_file("$tmp/test-genesis-kit/kit.yml", <<EOF);
+name:   test
+author: jhunt
+code:   https://www.genesisproject.io
+
+genesis_min_version: 2.6.0
+EOF
+quietly { ok(!$cc->validate, "validation should fail when genesis_version_min is incorrectly called genesis_min_version") };
+
+##################################
+#
+again();
+put_file("$tmp/test-genesis-kit/kit.yml", <<EOF);
+name:        test
+version:     1.2.3
+author:      jhunt
+code:        https://www.github.com/starkandwayne/genesis/
+docs:        https://www.genesisproject.io
+description: |-
+  This is a test kit to ensure that known top-level keys in kit.yml are accepted
+
+genesis_version_min: 2.6.0
+
+credentials:
+  base:
+    broker:
+      password: random 64
+
+certificates:
+  base: {}
+EOF
+ok($cc->validate, "validation should be happy with all known top-level keys.");
+
+
+again();
+put_file("$tmp/test-genesis-kit/kit.yml", <<EOF);
+name:        test
+version:     1.2.3
+by:          jhunt
+github:      https://www.github.com/starkandwayne/genesis/
+homepage:    https://www.genesisproject.io
+descriptoin: |-
+  This is a test kit to ensure that unknown top-level keys in kit.yml are rejected
+
+subkits:
+  # Needs to go first so that it blobstore job is deleted properly
+  - prompt: Are you deploying on Azure?
+    subkit: azure
+    default: no
+
+  - prompt: What database backend will you use for uaadb, ccdb, and diegob?
+    type: database backend
+    choices:
+      - subkit: db-external-mysql
+        label: An MySQL databases (e.g. RDS)
+      - subkit: db-external-postgres
+        label: A Postgres databases deployed externally (e.g. RDS)
+      - subkit: db-internal-postgres
+        label: Please give me a single-point-of-failure Postgres
+
+params:
+  base:
+    - ask: What is the base domain
+      param: base_domain
+      description: |
+        Domain of your base.
+      example: all-your-bosh-are-belong-to-us.com
+
+secrets:
+  base:
+    broker:
+      password: random 64
+
+EOF
+
+stderr_like {
+		ok(!$cc->validate, "validation should fail when there are unknown top-level keys")
+	}
+	qr/.*Kit Metadata file kit.yml contains invalid top-level keys: by, descriptoin, github, homepage, params, secrets, subkits\n  Valid keys are: name, version, description, code, docs, author, authors, genesis_version_min, certificates, credentials\n/sm,
+	"invalid top-level keys should be reported";
+ok($cc->compile("test", "1.2.3", $tmp, force => 1), "compiling an invalid kit should be allowed with force option");
 
 ##################################
 
@@ -172,6 +283,5 @@ lives_ok { $meta = load_yaml($tar->get_content('test-1.2.3/kit.yml')); }
 	"compiled kit tarball should contain a valid kit.yml file";
 is($meta->{version}, '1.2.3',
 	"compiled kit tarball should contain the correct version in kit.yml metadata");
-
 
 done_testing;
