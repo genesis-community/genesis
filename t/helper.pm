@@ -15,6 +15,7 @@ sub import {
 	$TOPDIR = Cwd::getcwd();
 	$TOPDIR =~ s|/[^/]*$|| until -f "${TOPDIR}/bin/genesis";
 
+	$ENV{GENESIS_TOPDIR} = $TOPDIR;
 	$ENV{PATH} = "${TOPDIR}/bin:$ENV{PATH}";
 	$ENV{OFFLINE} = 'y';
 
@@ -24,8 +25,11 @@ sub import {
 		         or $glob eq 'import';
 		*{$caller . "::$glob"} = \&{"helper::$glob"};
 	}
-	for my $var (qw(TOPDIR)) {
+	for my $var (qw(TOPDIR VAULT_URL)) {
 		*{$caller . "::$var"} = \${"helper::$var"};
+	}
+	for my $var (qw(VAULT_URL)) {
+		*{$caller . "::$var"} = \%{"helper::$var"};
 	}
 
 	runs_ok("genesis ping") or die "`genesis ping` failed...\n";
@@ -334,37 +338,46 @@ sub have_env($;$) {
 	ok -f "$env.yml", $msg;
 }
 
-my $VAULT_PID;
+my %VAULT_PID;
+our %VAULT_URL;
+our $VAULT_URL;
 sub vault_ok {
+	my $target = shift || "genesis-ci-unit-tests";
 	local $Test::Builder::Level = $Test::Builder::Level + 1;
-	my $target = 'genesis-ci-unit-tests';
-	if (defined $VAULT_PID) {
+	if (defined $VAULT_PID{$target}) {
 		pass "vault already running.";
 		return $target;
 	}
 
 	$ENV{HOME} = "$ENV{PWD}/t/tmp/home";
-	my $pid = qx(./t/bin/vault) or do {
+	my $pid = qx(./t/bin/vault $target) or do {
 		fail "failed to spin a vault server.";
 		die "Cannot continue\n";
 	};
 
 	chomp($pid);
-	$VAULT_PID = $pid;
+	$VAULT_PID{$target} = $pid;
 	kill -0, $pid or do {
 		fail "failed to spin a vault server: couldn't signal pid $pid.";
 		die "Cannot continue\n";
 	};
 	pass "vault running [pid $pid]";
+	chomp($VAULT_URL = `safe env --json | jq -r '.VAULT_ADDR'`);
+	$VAULT_URL{$target} = $VAULT_URL;  # track the latest
 	return $target;
 }
 
 sub teardown_vault {
-	if (defined $VAULT_PID) {
-		print STDERR "\nShutting down vault (pid: $VAULT_PID)\n"
+	my @targets = @_ || keys %VAULT_PID;
+	for my $target (@targets) {
+		if (defined $VAULT_PID{$target}) {
+			print STDERR "\nShutting down vault '$target' (pid: $VAULT_PID{$target})\n"
 			if defined $ENV{DEBUG_TESTS} and $ENV{DEBUG_TESTS} =~ m/^(1|y|yes|true)$/i;
-		kill 'TERM', $VAULT_PID;
-		$VAULT_PID = undef;
+			kill 'TERM', $VAULT_PID{$target};
+			$VAULT_PID{$target} = undef;
+			$VAULT_URL{$target} = undef;
+			$VAULT_URL = undef;
+		}
 	}
 }
 

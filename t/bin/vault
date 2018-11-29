@@ -3,10 +3,16 @@ set -e
 
 bail() {
 	printf >&2 $*
+	popd >/dev/null 2>&1
 	exit 2
 }
 
-mkdir -p t/tmp/home t/vaults
+export HOME="${GENESIS_TOPDIR}/t/tmp/home"
+export VAULTS_DIR="${GENESIS_TOPDIR}/t/vaults"
+[[ -d $HOME ]] || mkdir -p "$HOME"
+[[ -d $VAULTS_DIR ]] || mkdir -p "$VAULTS_DIR"
+touch "$HOME/.vault_token"  # Hack around safe init issue
+pushd "${GENESIS_TOPDIR}" >/dev/null 2>&1
 
 version="0.9.3"
 platform=
@@ -17,11 +23,12 @@ case $OSTYPE in
 (linux*)  platform=linux  ;;
 (*)
 	echo >&2 "UNRECOGNIZED OSTYPE '$OSTYPE'"
+	popd >/dev/null 2>&1
 	exit 1
 	;;
 esac
 
-cmd="t/vaults/vault-${version}-${platform}"
+cmd="${VAULTS_DIR}/vault-${version}-${platform}"
 
 if [[ ! -f "$cmd" ]]; then
 	printf >&2 "\rDownloading Vault ${version} CLI for $platform ..."
@@ -34,11 +41,7 @@ if [[ ! -f "$cmd" ]]; then
 	printf >&2 "DONE\n\n"
 fi
 
-old_home=$HOME
-export HOME=${PWD}/t/tmp/home
-touch $HOME/.vault_token  # Hack around safe init issue
 
-rm -rf t/tmp/home ; mkdir -p t/tmp/home
 port=8200
 while lsof -nP -i ":$port" | grep ":$port\s*(LISTEN)" >/dev/null 2>&1 ; do
   [[ $((++port)) -gt 8300 ]] && bail "No free ports available for dev vault server"
@@ -53,7 +56,7 @@ storage "inmem" {}
 EOF
 ) >$HOME/log 2>&1 &
 vault_pid=$!
-[ -n "${DEBUG_TESTS:-}" ] && printf >&2 "\rStarting Vault ${version} CLI on port $port (pid: $vault_pid)..."
+[ -n "${DEBUG_TESTS:-}" ] && printf >&2 "\rStarting Vault ${version} CLI on port $port as '$target' (pid: $vault_pid)..."
 waitfor=600
 while ! lsof -a -p $vault_pid -i tcp:$port -s TCP:listen -nP >/dev/null 2>&1; do
 	if [[ $waitfor -gt 0 ]]; then
@@ -73,4 +76,5 @@ fi
 
 [ -n "${DEBUG_TESTS:-}" ] && printf >&2 "done.\n"
 echo $vault_pid
+popd >/dev/null 2>&1
 exit 0
