@@ -694,32 +694,38 @@ sub {
 	$top->embed($0);
 
 	my $root = $top->path;
+	my $pwd = Cwd::abs_path(Cwd::getcwd());
+	my $human_root = (substr($root, 0, length($pwd) + 1) eq $pwd . '/')
+		? '.' . substr($root, length($pwd))
+		: (substr($root, 0, length($ENV{HOME}) + 1) eq $ENV{HOME} . '/')
+		? "~" . substr($root, length($pwd)) : $root;
+
 	pushd($root);
 	if ($options{'link-dev-kit'}) {
 		debug("Kit: linking dev to $abs_target");
 		symlink_or_fail($abs_target, "./dev");
-		$kit_desc = "linked to kit at #C{$abs_target}.";
+		$kit_desc = "\n - linked to kit at #C{$abs_target}.";
 
 	} elsif ($options{kit}) {
 		debug("Kit: installing kit $options{kit}");
-		explain "Downloading Genesis kit #M{$options{kit}} (#Y{latest} version)...";
+		explain "Downloading Genesis kit #M{$options{kit}} (#Y{latest} version)...\n";
 		my (undef, $version) = $top->download_kit($options{kit});
-		$kit_desc = "using the #C{$options{kit}/$version} kit.";
+		$kit_desc = "\n - using the #C{$options{kit}/$version} kit.";
 
 	} else {
 		debug("Kit: creating empty ./dev kit directory");
 		mkdir_or_fail("./dev");
-		$kit_desc = "with an empty development kit in #C{$root/.dev}.";
+		$kit_desc = "\n - with an empty development kit in #C{$human_root/dev}";
 	}
 
-	run({ onfailure => "Failed to initialize a git repository in $root/" },
+	run({ onfailure => "Failed to initialize a git repository in $human_root/" },
 		'git init && git add .');
 
-	run({ onfailure => "Failed to commit initial Genesis repository in $root/" },
+	run({ onfailure => "Failed to commit initial Genesis repository in $human_root/" },
 		'git commit -m "Initial Genesis Repo"');
 
 	popd;
-	explain "\nInitialized empty Genesis repository in #C{%s}\n%s\n", $root, $kit_desc;
+	explain "Initialized empty Genesis repository in #C{%s}%s%s\n", $human_root, $vault_desc, $kit_desc;
 	exit 0;
 });
 

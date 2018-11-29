@@ -730,15 +730,16 @@ kit:
     - (( replace ))
     - bonus
 
-params:
-  env:   far-fetched
-  vault: far/fetched/sample
+genesis:
+  env:          "far-fetched"
+  secrets_path: "far/fetched/sample"
 
+params:
   static: junk
 EOF
 
 	stdout_is(sub {ok $env->check_secrets, "check_secrets shows all secrets okay"}, <<EOF,
-Retrieving secrets for far/fetched/sample...
+Retrieving secrets for far/fetched/sample...ok
 
 [Checking generated credentials]
   ✔  secret/far/fetched/sample/crazy/thing [id:random]
@@ -764,7 +765,7 @@ EOF
 	qx(safe rm secret/far/fetched/sample/crazy/thing:token);
 
 	stdout_is(sub {ok !$env->check_secrets, "check_secrets shows missing secrets and keys"}, <<EOF,
-Retrieving secrets for far/fetched/sample...
+Retrieving secrets for far/fetched/sample...ok
 
 [Checking generated credentials]
   ✔  secret/far/fetched/sample/crazy/thing [id:random]

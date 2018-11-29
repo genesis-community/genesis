@@ -735,12 +735,13 @@ sub purge_secrets {
 
 	die_unless_controlling_terminal($self);
 
-	explain "#Ry{[WARNING]} The following existing secrets will be removed:";
+	explain "#Yr{[WARNING]} The following pre-existing secrets will need to be removed:";
 	bullet $_ for (@paths);
 	my $response = prompt_for_line(undef, "Type 'yes' to remove these secrets","");
 	if ($response eq 'yes') {
-		explain "\nDeleting existing secrets under '#C{%s}'...", $self->prefix;
+		{local $/ = ''; explain "\nDeleting existing secrets under '#C{%s}'...", $self->prefix;}
 		$self->vault->query('rm',$_) for (@paths);
+		explain "#G{done}\n"
 	} else {
 		explain "\nAborted! Keeping all existing secrets under '#C{%s}'.", $self->prefix;
 		return 0;

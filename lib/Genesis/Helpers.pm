@@ -62,14 +62,14 @@ genesis() {
 }
 export -f genesis
 
-__bullet() {
+bullet() {
 	if [[ $1 == 'x' ]] ; then
 		perl -e 'binmode STDOUT, ":utf8"; printf "\e[31;1m\x{2718} \e[0m"'
 	elif [[ $1 == '√' ]] ; then
 		perl -e 'binmode STDOUT, ":utf8"; printf "\e[32;1m\x{2714} \e[0m"'
 	fi
 }
-export -f __bullet
+export -f bullet
 
 ###
 ###   Exodus Data Exfiltration Functions
@@ -247,18 +247,18 @@ cloud_config_needs() {
         elif [[ "$__x" == '-' ]] ; then
           (( __sum += $(__ip2dec "$__l") - $(__ip2dec "$__f") + 1 )) # Range
         fi
-        __cloud_config_error_messages+=( "  $(__bullet '√') network '$__network' has valid static ips #G{('$__range')} ")
+        __cloud_config_error_messages+=( "  $(bullet '√') network '$__network' has valid static ips #G{('$__range')} ")
       else
-        __cloud_config_error_messages+=( "  $(__bullet 'x') network '$__network' has valid static ips #R{(parse error on '$__range')} ")
+        __cloud_config_error_messages+=( "  $(bullet 'x') network '$__network' has valid static ips #R{(parse error on '$__range')} ")
         __cloud_config_ok=no
         break
       fi
     done < <(echo "${__ips}")
     if [[ "$__sum" -lt "$__count" ]] ; then
-      __cloud_config_error_messages+=( "  $(__bullet 'x') network '$__network' has sufficient static ips #R{(found $__sum, need $__count)} ")
+      __cloud_config_error_messages+=( "  $(bullet 'x') network '$__network' has sufficient static ips #R{(found $__sum, need $__count)} ")
       __cloud_config_ok=no
     else
-      __cloud_config_error_messages+=( "  $(__bullet '√') network '$__network' has sufficient static ips #G{(found $__sum, need $__count)} ")
+      __cloud_config_error_messages+=( "  $(bullet '√') network '$__network' has sufficient static ips #G{(found $__sum, need $__count)} ")
     fi
     return
   fi
@@ -281,9 +281,9 @@ cloud_config_needs() {
       jq -r "if (.${__type}[] | select(.name == \"$__want\")) then 1 else 0 end")
     if [[ -z "$__have" ]]; then
       __cloud_config_ok=no
-			__cloud_config_error_messages+=( "  $(__bullet "x") $__name '#Y{$__want}' exists" )
+			__cloud_config_error_messages+=( "  $(bullet "x") $__name '#Y{$__want}' exists" )
 		else
-			__cloud_config_error_messages+=( "  $(__bullet "√") $__name '#Y{$__want}' exists" )
+			__cloud_config_error_messages+=( "  $(bullet "√") $__name '#Y{$__want}' exists" )
     fi
   done
 }

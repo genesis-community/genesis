@@ -156,7 +156,7 @@ sub explain {
 	my $out = envset("EXPLAIN_TO_STDERR") ? *STDERR : *STDOUT;
 
 	{ local $ENV{NOCOLOR} = "yes" unless -t $out;
-	        print $out csprintf(@_)."\n"; }
+	        print $out csprintf(@_)."$/"; }
 }
 
 sub debug {
@@ -179,13 +179,13 @@ sub trace {
 sub error {
 	my @err = @_;
 	unshift @err, "%s" if $#err == 0;
-	print STDERR csprintf(@err) . "\n";
+	print STDERR csprintf(@err) . "$/";
 }
 
 sub bail {
 	my @err = @_;
 	unshift @err, "%s" if $#err == 0;
-	$! = 1; die csprintf(@_)."\n";
+	$! = 1; die csprintf(@_)."$/";
 }
 
 sub bug {
