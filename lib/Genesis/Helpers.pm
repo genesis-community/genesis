@@ -489,18 +489,14 @@ param_comment() {
 export -f param_comment
 
 new_genesis_config() {
-	local skip=true
-	[[ -n $GENESIS_VERIFY_VAULT && $GENESIS_VERIFY_VAULT -gt 0 ]] && skip=false
 	cat<<EOF
 
 genesis:
-  env:                 "$GENESIS_ENVIRONMENT"
-  vault_url:           "$GENESIS_TARGET_VAULT"
-  vault_skip_validate: $skip
+  env:          "$GENESIS_ENVIRONMENT"
 EOF
 	if [[ -n "$GENESIS_VAULT_PREFIX" ]] ; then
 		cat <<EOF
-  secrets_path:        "$GENESIS_VAULT_PREFIX"
+  secrets_path: "$GENESIS_VAULT_PREFIX"
 EOF
 	fi
 	echo ""

@@ -690,7 +690,13 @@ sub {
 	run({ onfailure => 'Please setup git - git config --global user.email your@email.com -' },
 		'git config user.email');
 
-	my $top = Genesis::Top->create('.', $name, directory => $options{directory});
+	my $top = Genesis::Top->create('.', $name, %options);
+	my $vault_desc = "\n - using default safe target for the system";
+	if ($top->vault) {
+		$vault_desc = "\n - using vault at #C{".$top->vault->url."}";
+		$vault_desc .= " #Y{(insecure)}" unless $top->vault->tls;
+		$vault_desc .= " #Y{(noverify)}" if $top->vault->tls && $top->vault->insecure;
+	}
 	$top->embed($0);
 
 	my $root = $top->path;

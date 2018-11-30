@@ -65,16 +65,8 @@ sub load {
 			or die "Unable to locate kit for '$env->{name}' environment.\n";
 
 	# determine our vault and secret prefix
-	if (in_callback && $ENV{GENESIS_TARGET_VAULT}) {
-		$env->{vault} = Genesis::Vault->rebind();
-	} else {
-		bail("\n#R{[ERROR]} Environment file #C{$env->{file}} missing `genesis.vault_url`}")
-			unless $env->lookup('genesis.vault_url','');
-		$env->{vault} = Genesis::Vault->attach(
-			scalar($env->lookup('genesis.vault_url','')),
-			scalar($env->lookup('genesis.vault_skip_validate',''))
-		);
-	}
+	bail("\n#R{[ERROR]} No vault specified or configured.")
+		unless $env->vault;
 	my ($prefix,$prefix_key) = $env->lookup(
 		['genesis.secrets_prefix','params.vault_prefix','params.vault'],
 		$env->_default_prefix
@@ -107,7 +99,8 @@ sub create {
 		if -f $env->path($env->{file});
 
 	# target vault and purge secrets that may already exist
-	$env->{vault}  = Genesis::Vault->target($opts{vault});
+	bail("\n#R{[ERROR]} No vault specified or configured.")
+		unless $env->vault;
 	$env->{prefix} = $opts{prefix} || $env->_default_prefix;
 	$env->purge_secrets(); # TBD: should we allow them to continue without purging?
 
@@ -131,10 +124,10 @@ sub file   { $_[0]->{file};   }
 sub prefix { $_[0]->{prefix} || $_[0]->_default_prefix; }
 sub kit    { $_[0]->{kit}    || bug("Incompletely initialized environment '".$_[0]->name."': no kit specified"); }
 sub top    { $_[0]->{top}    || bug("Incompletely initialized environment '".$_[0]->name."': no top specified"); }
-sub vault  { $_[0]->{vault}  || bug("Incompletely initialized environment '".$_[0]->name."': no vault specified"); }
 
 # delegations
-sub type { $_[0]->top->type; }
+sub type   { $_[0]->top->type; }
+sub vault  { $_[0]->top->vault; }
 
 sub path {
 	my ($self, @rest) = @_;
