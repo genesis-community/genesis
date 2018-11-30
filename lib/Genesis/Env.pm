@@ -50,7 +50,7 @@ sub load {
 	bail("#R{[ERROR]} Environment file $env->{file} does not exist.")
 		unless -f $env->path($env->{file});
 
-	unless (in_callback) {
+	unless (in_callback || envset("GENESIS_LEGACY")) {
 		my ($env_name, $env_key) = $env->lookup(['genesis.env','params.env']);
 		bail("\n#R{[ERROR]} Environment file #C{$env->{file}} environment name mismatch: #C{$env_key: $env_name}")
 			unless $env->{name} eq $env_name;

@@ -194,6 +194,18 @@ sub default {
 sub current {
 	return $current_vault
 }
+
+# }}}
+# clear_all - clear all cached data {{{
+sub clear_all {
+	for (@all_vaults) {
+		delete($_->{_env});
+	}
+	@all_vaults=();
+	$default_vault=undef;
+	$current_vault=undef;
+	return $_[0]; # chaining Genesis::Vault
+}
 # }}}
 # }}}
 

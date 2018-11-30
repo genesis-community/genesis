@@ -25,7 +25,11 @@ sub create {
 	my ($class, $path, $name, %opts) = @_;
 	debug("creating a new Genesis deployments repo named '$name' at $path...");
 
-	$name =~ s/-deployments//;
+	# TODO: $opts{kit} does get passed in, and future versions will only allow one kit type per deployment
+	# Need to determine how this gets added to the configuration and how it impacts the current use of deployment type
+	# Probably becomes deployment-name and kit becomes the type (or drop type and use kit)
+
+	$name =~ s/-deployments?//;
 	$name =~ m/^[a-z][a-z0-9_-]+$/
 		or die "Invalid Genesis repo name '$name'\n";
 	debug("generating a new Genesis repo, named $name");
