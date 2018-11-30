@@ -54,6 +54,8 @@ our @EXPORT = qw/
 	load_yaml load_yaml_file
 
 	pushd popd
+
+	tcp_listening
 /;
 
 use File::Temp qw/tempdir/;
@@ -542,6 +544,14 @@ sub pushd {
 sub popd {
 	@DIRSTACK or die "popd called when we don't have anything on the directory stack; please file a bug\n";
 	chdir_or_fail(pop @DIRSTACK);
+}
+
+sub tcp_listening {
+	my ($host,$port) = @_;
+	run(
+		{passfail => 1},
+		"(</dev/tcp/$host/$port) >/dev/null 2>&1"
+	)
 }
 
 1;

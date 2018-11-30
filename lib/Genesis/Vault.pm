@@ -320,6 +320,13 @@ sub ping {
 sub status {
 	my $self = shift;
 
+	# See if the url is reachable to start with
+	$self->url =~ qr(^http(s?)://(.*?)(?::([0-9]*))?$) or
+		bail("Invalid vault target URL #C{%s}: expecting http(s)://ip-or-domain(:port)", $self->url);
+	my $ip = $2;
+	my $port = $3 || ($1 eq "s" ? 443 : 80);
+	return "unreachable" unless tcp_listening($ip,$port);
+
 	return "unauthenticated" if $self->token eq "";
 	my ($out,$rc) = $self->query({stderr => "&1"}, "vault", "status");
 	if ($rc != 0) {
