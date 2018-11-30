@@ -11,8 +11,14 @@ use Genesis::Vault;
 use Cwd ();
 
 sub new {
-	my ($class, $root) = @_;
-	bless({ root => Cwd::abs_path($root) }, $class);
+	my ($class, $root, %opts) = @_;
+	my $top = bless({ root => Cwd::abs_path($root) }, $class);
+	if ($opts{vault}) {
+		bail("#R{[ERROR]} Cannot specify #C{--vault %s}: Deployment already has an associated secrets provider", $opts{vault})
+			if $top->has_vault;
+		$top->set_vault(target => $opts{vault}, session_only => 1)
+	}
+	return $top;
 }
 
 sub create {

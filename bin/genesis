@@ -657,6 +657,7 @@ sub {
 	my %options;
 	options(\@_, \%options, qw/
 		kit|k=s
+		vault=s
 		directory|d=s
 		link-dev-kit|L=s
 	/);
@@ -807,24 +808,28 @@ sub {
 
 command("new", <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE: genesis new [--vault target] env-name[.yml]
+USAGE: genesis new env-name[.yml] [<options...>]
 
 OPTIONS
 $GLOBAL_USAGE
-      --vault        The name of a `safe' target (a Vault) to store newly
-                     generated credentials in.
-
       --prefix       By default, the vault path is secret/<env-name>/<kit>
                      where <env-name> has had any - converted to / and
                      <kit> is the kit name.  Use this option to change the part
                      after secret/
 
-      --no-secrets   Do not generate secrets in the Vault.  You will have to
-                     manually run `genesis secrets` yourself.
-
   -k, --kit          Name (and optionally, version) of the Genesis Kit to
                      use for this environment.  I.e.: shield/6.3.0
                      Defaults to latest.
+
+LEGACY OPTIONS:
+      --vault        The name of a `safe' target (a Vault) to store newly
+                     generated credentials in.  Only accepted if the deployment
+                     repository does not have a vault specified.
+
+      --no-secrets   Do not generate secrets in the Vault.  You will have to
+                     manually run `genesis secrets` yourself.  This option is
+                     accepted but no longer has any effect.
+
 EOF
 sub {
 	my %options = (
@@ -842,7 +847,7 @@ sub {
 	check_prereqs;
 
 	# get our context
-	my $top = Genesis::Top->new('.'); # FIXME: drop chdir from -C handling eventually
+	my $top = Genesis::Top->new('.', vault => $options{vault}); # FIXME: drop chdir from -C handling eventually
 
 	my $name = $_[0];
 	die "No environment name specified!\n"
@@ -1138,6 +1143,11 @@ with 0.
 OPTIONS
 $GLOBAL_USAGE
 
+LEGACY OPTIONS
+      --vault        The name of a `safe' target (a Vault) to check for the
+                     generated credentials.  Only accepted if the deployment
+                     repository does not have a vault specified.
+
 EOF
 sub {
 	my %options;
@@ -1155,7 +1165,7 @@ sub {
 
 command("add-secrets", <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE: genesis add-secrets deployment-env.yml
+USAGE: genesis add-secrets [--vault target] deployment-env.yml
 
 Generates any missing secrets required by the deployment.  Useful to generate
 credentials after upgrading kits.
@@ -1163,17 +1173,24 @@ credentials after upgrading kits.
 OPTIONS
 $GLOBAL_USAGE
 
+LEGACY OPTIONS
+	  --vault        The name of a `safe' target (a Vault) to store newly
+	                 generated credentials in.  This option is only accepted if
+                   the deployment repository does not have a secrets-provider
+                   set - see 'genesis secrets-provider'.
+
 EOF
 sub {
 	my %options;
 	options(\@_, \%options, qw/
+		vault=s
 	/);
 
 	my ($name) = @_;
 	usage(1) if @_ != 1;
 
 	check_prereqs;
-	my $env = Genesis::Top->new(".")->load_env($name);
+	my $env = Genesis::Top->new(".", vault => $options{vault})->load_env($name);
 	$env->add_secrets();
 });
 
@@ -1191,22 +1208,29 @@ specified.
 OPTIONS
 $GLOBAL_USAGE
   -f, --force        Rotate *ALL* credentials, including any credentials that
-					 the kit defined as `fixed'. This is very dangerous.  Only
-					 applies to `rotate`.  This will still not rotate CA
-					 certificates.
+                     the kit defined as `fixed'. This is very dangerous.  Only
+                     applies to `rotate`.  This will still not rotate CA
+                     certificates.
+
+LEGACY OPTIONS
+      --vault        The name of a `safe' target (a Vault) to store newly
+                     generated credentials in.  This option is only accepted if
+                     the deployment repository does not have a secrets-provider
+                     set - see 'genesis secrets-provider'.
 
 EOF
 sub {
 	my %options;
 	options(\@_, \%options, qw/
 		force|force-rotate-all|f
+		vault=s
 	/);
 
 	my ($name) = @_;
 	usage(1) if @_ != 1;
 
 	check_prereqs;
-	my $env = Genesis::Top->new(".")->load_env($name);
+	my $env = Genesis::Top->new(".", vault => $options{vault})->load_env($name);
 	$env->rotate_secrets(force => $options{force});
 });
 
@@ -1215,7 +1239,7 @@ sub {
 
 command("secrets", <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE: genesis secrets [check|add|rotate [--force]] deployment-env.yml
+USAGE: genesis secrets [check|add|rotate [--force]] [--vault <vault>] deployment-env.yml
 
 Checks, adds or rotates secrets for your deployment.
 
@@ -1223,28 +1247,33 @@ Note: This has been DEPRECATED and will be removed in a Genesis v2.7.  Please
       use check-secrets, add-secrets or rotate-secrets as replacements.
 
   * check:  Checks that all required secrets are present.  Returns a exit code
-			of 1 if any are missing, and lists them, otherwise states all
-			secrets are present and exits with 0.
+            of 1 if any are missing, and lists them, otherwise states all
+            secrets are present and exits with 0.
 
-			This functionality is replaced by the command check-secrets
+            This functionality is replaced by the command check-secrets
 
   * add:    Generates any missing secrets required by the deployment.  Useful
-			to generate credentials after upgrading kits or if `genesis new
-			--no-secrets` was used to create the deployment.
+            to generate credentials after upgrading kits or if `genesis new
+            --no-secrets` was used to create the deployment.
 
-			This functionality is replaced by the command add-secrets
+            This functionality is replaced by the command add-secrets
 
   * rotate: Generates new secrets for your deployment. If any credentials were
-			marked by the kit as `fixed', they are not updated unless the
-			`--force` option was also specified.
+            marked by the kit as `fixed', they are not updated unless the
+            `--force` option was also specified.
 
-			This functionality is replaced by the command rotate-secrets
+            This functionality is replaced by the command rotate-secrets
 
 OPTIONS
 $GLOBAL_USAGE
   -f, --force        Rotate *ALL* credentials, including any credentials that
-					 the kit defined as `fixed'. This is very dangerous.  Only
-					 applies to `rotate`
+                     the kit defined as `fixed'. This is very dangerous.  Only
+                     applies to `rotate`
+
+      --vault        The name of a `safe' target (a Vault) where the secrets
+                     are stored.  This option is only accepted if the deployment
+                     repository does not have a secrets-provider set - see
+                     'genesis secrets-provider'.
 
 EOF
 sub {
@@ -1268,7 +1297,7 @@ sub {
 	}
 
 	check_prereqs;
-	my $top = Genesis::Top->new(".");
+	my $top = Genesis::Top->new(".", vault => $options{vault});
 	my $env = $top->load_env($name);
 
 	if ($action eq "check") {
@@ -1633,20 +1662,26 @@ USAGE genesis repipe [pipeline-layout]
 
 OPTIONS
 $GLOBAL_USAGE
-  -y, --yes        Do not ask any questions, assume 'y' for any that would
-                   normally be asked.  Allows automation to repipe without
-                   requiring human intervention or expect-style scripting.
+  -y, --yes          Do not ask any questions, assume 'y' for any that would
+                     normally be asked.  Allows automation to repipe without
+                     requiring human intervention or expect-style scripting.
 
-  -t, --target     The name of your Concourse target (per `fly targets'),
-                   if it differs from the pipeline layout name.
+  -t, --target       The name of your Concourse target (per `fly targets'),
+                     if it differs from the pipeline layout name.
 
-  -n, --dry-run    Generate the Concourse Pipeline configuration, but
-                   refrain from actually deploying it to Concourse.
-                   Instead, just print the YAML.
+  -n, --dry-run      Generate the Concourse Pipeline configuration, but
+                     refrain from actually deploying it to Concourse.
+                     Instead, just print the YAML.
 
-  -c, --config     Path to the pipeline configuration file, which specifies
-                   Git parameters, notification settings, pipeline layouts,
-                   etc.  Defaults to 'ci.yml'
+  -c, --config       Path to the pipeline configuration file, which specifies
+                     Git parameters, notification settings, pipeline layouts,
+                     etc.  Defaults to 'ci.yml'
+
+LEGACY OPTIONS:
+      --vault        The name of a `safe' target (a Vault) to store newly
+                     generated credentials in.  Only accepted if the deployment
+                     repository does not have a vault specified.
+
 EOF
 sub {
 	my %options;
@@ -1655,18 +1690,17 @@ sub {
 		dry-run|n
 		target|t=s
 		config|c=s
+		vault=s
 	/);
 	check_prereqs;
 
 	my $layout = $_[0] || "default";
 	$options{target} ||= $layout;
 	$options{config} ||= 'ci.yml';
-	my $top = Genesis::Top->new('.');
-
-	# FIXME: What vault do pipelines use?
+	my $top = Genesis::Top->new('.', vault=>$options{vault});
+	bail("#R{[ERROR]} No vault specified or configured.") unless $top->vault;
 
 	my $pipeline = Genesis::CI::Legacy::parse($options{config}, $layout, $top);
-	error "GOT TO HERE!";
 	my $yaml = Genesis::CI::Legacy::generate_pipeline_concourse_yaml($pipeline, $top);
 	if ($options{'dry-run'}) {
 		print $yaml;
