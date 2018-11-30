@@ -1,4 +1,4 @@
-#!/usr/bin/env perl
+#!/usr/bin/perl
 # vim:ft=perl:ts=4:sts=4:sw=4
 use strict;
 use warnings;
