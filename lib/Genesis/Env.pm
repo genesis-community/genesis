@@ -27,7 +27,7 @@ sub new {
 
 	# environment names must be valid.
 	eval { $class->validate_name($opts{name}) }
-		or die "Bad environment name '$opts{name}': $@\n" if $@;
+		or die "Bad environment name '$opts{name}': $@\n";
 
 	# make sure .genesis is good to go
 	die "No deployment type specified in .genesis/config!\n"
@@ -879,6 +879,7 @@ sub validate_name {
 
 	die "names must not contain sequential hyphens (i.e. '--').\n"
 		if $name =~ m/--/;
+	1
 }
 
 sub _slice {
