@@ -70,7 +70,7 @@ safe target "$target" http://127.0.0.1:$port >/dev/null 2>&1
 safe auth token <<<"dummy" > /dev/null 2>&1 # Another Hack around safe init issue
 root_token=$(safe init --json | jq -r '.root_token')
 safe auth token <<<${root_token} >/dev/null 2>&1
-if ! safe exists "secret/handshake" ;  then 
+if ! safe exists "secret/handshake" ;  then
   bail "\nFAILED - failed to unseal vault\n"
 fi
 

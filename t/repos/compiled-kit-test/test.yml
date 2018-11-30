@@ -2,3 +2,6 @@
 kit:
   name:    compiled
   version: 0.0.1
+
+params:
+  name: env-compiled-kit-test

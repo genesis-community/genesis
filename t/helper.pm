@@ -8,6 +8,7 @@ use File::Basename qw/dirname/;
 use JSON::PP;
 
 $ENV{PERL5LIB} = "$ENV{PWD}/lib";
+$ENV{GENESIS_TESTING} = "yes";
 
 our $TOPDIR;
 sub import {

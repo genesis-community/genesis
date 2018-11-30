@@ -6,6 +6,8 @@ use lib 't';
 use helper;
 use Test::Differences;
 
+$ENV{GENESIS_LEGACY}=1;
+
 my $tmp = workdir;
 ok -d "t/repos/subkit-test", "subkit-test repo exists" or die;
 chdir "t/repos/subkit-test" or die;

@@ -6,10 +6,12 @@ use lib 'lib';
 use lib 't';
 use helper;
 use Test::Deep;
+use Test::Output;
 use Cwd ();
 
 use_ok 'Genesis::Top';
 use Genesis;
+my $vault_target = vault_ok();
 
 subtest 'kit location' => sub {
 	my $tmp = workdir();
@@ -78,32 +80,42 @@ subtest 'init' => sub {
 	# without a directory override
 	$tmp = workdir;
 	ok ! -f "$tmp/jumpbox-deployments/.genesis/config", "No .genesis/config in new Top";
-	$top = Genesis::Top->create($tmp, 'jumpbox');
+	$top = Genesis::Top->create($tmp, 'jumpbox', vault=>$VAULT_URL);
 	ok -f "$tmp/jumpbox-deployments/.genesis/config", ".genesis created in correct top dir";
 	ok -f $top->path('.genesis/config'), "Top->create should create a new .genesis/config";
 	is $top->type, 'jumpbox', 'an initialized top has a type';
+	is $top->vault->url, $VAULT_URL, 'specifies the correct vault url';
+	cmp_deeply $top->config, {
+		genesis_version => ignore,
+		deployment_type => 'jumpbox',
+		secrets_provider => {
+			url => $VAULT_URL,
+			insecure => bool(0)
+		}
+	}, ".genesis/config contains correct information";
 
 	# with a directory override
 	$tmp = workdir;
-	$top = Genesis::Top->create($tmp, 'jumpbox', directory => 'something-else');
+	$top = Genesis::Top->create($tmp, 'jumpbox', directory => 'something-else', vault=>$VAULT_URL);
 	ok -f Cwd::abs_path("$tmp/something-else/.genesis/config"), ".genesis created in correct top dir";
 	ok -f $top->path('.genesis/config'), "Top->create should create a new .genesis/config";
 	is $top->type, 'jumpbox', 'an initialized top has a type';
+	is $top->vault->url, $VAULT_URL, 'specifies the correct vault url';
 
 	# overwrite tests
 	$tmp = workdir;
-	lives_ok { Genesis::Top->create($tmp, 'test') } "it should be okay to init once";
-	throws_ok { Genesis::Top->create($tmp, 'test') } qr/cowardly refusing/i,
+	lives_ok { Genesis::Top->create($tmp, 'test', vault=>$VAULT_URL) } "it should be okay to init once";
+	throws_ok { Genesis::Top->create($tmp, 'test', vault=>$VAULT_URL) } qr/cowardly refusing/i,
 		"it is not okay to init twice";
 
 	# name validation
-	throws_ok { Genesis::Top->create($tmp, '!@#$ing-deployments') } qr/invalid genesis repo name/i,
+	throws_ok { Genesis::Top->create($tmp, '!@#$ing-deployments', vault=>$VAULT_URL) } qr/invalid genesis repo name/i,
 		"it is not okay to swear in genesis repo names";
 };
 
 subtest 'embedding stuff' => sub {
 	my $tmp = workdir;
-	my $top = Genesis::Top->create($tmp, 'thing');
+	my $top = Genesis::Top->create($tmp, 'thing', vault=>$VAULT_URL);
 	put_file("$tmp/not-genesis", <<EOF);
 #!/bin/bash
 echo "this is not genesis"
@@ -136,4 +148,119 @@ subtest 'downloading kits' => sub {
 	ok( defined $top->find_kit('bosh', '0.2.0'), "top downloaded bosh-0.2.0 as requested");
 };
 
+subtest 'manage secrets provider' => sub {
+	my $tmp = workdir();
+
+	my $reset = sub {
+		system("rm -rf $tmp/.genesis; mkdir -p $tmp/.genesis");
+		mkfile_or_fail("$tmp/.genesis/config", $_[0]);
+	};
+
+	$reset->(<<EOF);
+---
+deployment_type: test
+genesis_version: 99.99.99
+EOF
+
+	# Check that top uses the system vault if no vault present in config
+	my $top = Genesis::Top->new($tmp);
+	ok(! $top->has_vault, "legacy top correctly identifies not having a vault");
+	my $v;
+	lives_ok {$v = $top->vault} "legacy top does not error when asked for a vault";
+	ok(ref($v) eq "Genesis::Vault", "legacy top retuns a vault when asked");
+	ok($v->name eq $vault_target, "legacy top returns the system default vault");
+
+	my $other_vault_name = "genesis-ci-unit-tests-extra";
+	my $other_vault = vault_ok($other_vault_name);
+	Genesis::Vault->clear_all();
+
+	# Check that top picks up the changed system vault if no vault present in config
+	$top = Genesis::Top->new($tmp);
+	ok(! $top->has_vault, "legacy top still correctly identifies not having a vault");
+	lives_ok {$v = $top->vault} "legacy top still does not error when asked for a vault";
+	ok(ref($v) eq "Genesis::Vault", "legacy top still retuns a vault when asked");
+	ok($v->name eq $other_vault_name, "legacy top returns the new system default vault");
+
+	# Check that you can override a vault if none present in config
+	lives_ok {$top = Genesis::Top->new($tmp, vault => $other_vault_name)} "allows vault to be overridden if absent from config";
+	is(ref($top->vault), "Genesis::Vault", "overridden vault is a Genesis::Vault");
+	is($top->vault->{name}, $other_vault_name, "overridden vault is the expected vault");
+
+	# Check that vault can be changed and set in config when no vault is in config
+	is($top->set_vault(target => $VAULT_URL{$vault_target}), undef, "top can set its registered vault when it doesn't have one");
+	is($top->{_config}, undef, "top clears its configuration after saving its new vault");
+	is($top->{_vault}, undef, "top clears its vault after saving its new vault");
+	is($top->vault->{name}, $vault_target, "top targets the expected vault");
+	yaml_is(get_file("$tmp/.genesis/config"), <<EOF, ".genesis/config contains the correct information");
+---
+genesis_version: 99.99.99
+deployment_type: test
+secrets_provider:
+  url: $VAULT_URL{$vault_target}
+  insecure: false
+EOF
+	cmp_deeply($top->config, {
+			"deployment_type" => "test",
+			"genesis_version" => "99.99.99",
+			"secrets_provider" => {
+				"url" => $VAULT_URL{$vault_target},
+				"insecure" => bool(0)
+			}
+		}, "repo .genesis/config contains the updated information"
+	);
+
+	# Check that vault can be temporarily changed and set in config
+	is($top->set_vault(target => $VAULT_URL{$other_vault_name}, session_only => 1), undef, "top can set its registered vault when it doesn't have one");
+	isnt($top->{_config}, undef, "top doesn't clears its configuration after setting a temporary vault");
+	isnt($top->{_vault}, undef, "top clears its vault after saving its new vault");
+	is($top->vault->{name}, $other_vault_name, "top targets the expected vault");
+	yaml_is(get_file("$tmp/.genesis/config"), <<EOF, ".genesis/config contains the correct information");
+---
+genesis_version: 99.99.99
+deployment_type: test
+secrets_provider:
+  url: $VAULT_URL{$vault_target}
+  insecure: false
+EOF
+	cmp_deeply($top->config, {
+			"deployment_type" => "test",
+			"genesis_version" => "99.99.99",
+			"secrets_provider" => {
+				"url" => $VAULT_URL{$vault_target},
+				"insecure" => bool(0)
+			}
+		}, "repo .genesis/config hasn't changed"
+	);
+
+	# Check that vault can be changed and set in config when a vault is already in config
+	is($top->set_vault(target => $VAULT_URL{$other_vault_name}), undef, "top can set its registered vault when it already has one");
+	is($top->{_config}, undef, "top clears its configuration after saving its new vault");
+	is($top->{_vault}, undef, "top clears its vault after saving its new vault");
+	is($top->vault->{name}, $other_vault_name, "top targets the expected vault");
+	yaml_is(get_file("$tmp/.genesis/config"), <<EOF, ".genesis/config contains the correct information");
+---
+genesis_version: 99.99.99
+deployment_type: test
+secrets_provider:
+  url: $VAULT_URL{$other_vault_name}
+  insecure: false
+EOF
+	cmp_deeply($top->config, {
+			"deployment_type" => "test",
+			"genesis_version" => "99.99.99",
+			"secrets_provider" => {
+				"url" => $VAULT_URL{$other_vault_name},
+				"insecure" => bool(0)
+			}
+		}, "repo .genesis/config contains the updated information"
+	);
+
+	my $new_vault;
+	my ($ansi_ltred, $ansi_ltcyan, $ansi_reset) = ("\e[1;31m", "\e[1;36m", "\e[0m");
+	throws_ok {$new_vault = Genesis::Top->new($tmp, vault => $other_vault_name)}
+		qr"\[.*m\[ERROR\]\[0m Cannot specify \[.*m--vault ${other_vault_name}\[0m: Deployment already has an associated secrets provider",
+		"does not allow vault to be overridden if present in config, and gives correct error message";
+};
+
+teardown_vault();
 done_testing;

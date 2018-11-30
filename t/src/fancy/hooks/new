@@ -9,9 +9,9 @@ if [[ ${HOOK_SHOULD_CREATE_ENV_FILE:-yes} = "no" ]]; then
   exit 0
 fi
 
-root=$1
-env=$2
-prefix=$3
+root=$GENESIS_ROOT
+env=$GENESIS_ENVIRONMENT
+prefix=$GENESIS_VAULT_PREFIX
 
 cat >$root/$env.yml <<EOF
 ---
@@ -20,16 +20,20 @@ kit:
   name:    $GENESIS_KIT_NAME
   version: $GENESIS_KIT_VERSION
   features: []
+EOF
+new_genesis_config >> $root/$env.yml
 
+cat >> $root/$env.yml <<EOF
 params:
   GENESIS_KIT_NAME: $GENESIS_KIT_NAME
   GENESIS_KIT_VERSION: $GENESIS_KIT_VERSION
   GENESIS_ROOT: $GENESIS_ROOT
   GENESIS_ENVIRONMENT: $GENESIS_ENVIRONMENT
   GENESIS_VAULT_PREFIX: $GENESIS_VAULT_PREFIX
+  GENESIS_TARGET_VAULT: "$GENESIS_TARGET_VAULT"
+  GENESIS_VERIFY_VAULT: $GENESIS_VERIFY_VAULT
 
   root: $root
-  env: $env
   prefix: $prefix
   extra: ${4:-(none)}
 EOF

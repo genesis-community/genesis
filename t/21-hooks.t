@@ -12,6 +12,7 @@ use Test::Output;
 use_ok 'Genesis::Kit';
 use Genesis::Kit::Dev;
 use Genesis::Top;
+use Genesis::Vault;
 
 my $tmp = workdir;
 my $top;  # Genesis::Top
@@ -27,10 +28,12 @@ my $us_west_1_prod;
 my $snw_lab_dev;
 my $stack_scale;
 
+my $vault_target = vault_ok;
+
 sub again {
 	system("rm -rf $tmp; mkdir -p $tmp");
 	fake_bosh;
-	$top    = Genesis::Top->create($tmp, 'thing');
+	$top    = Genesis::Top->create($tmp, 'thing', vault=>$VAULT_URL);
 	$root   = $top->path;
 	$simple = Genesis::Kit::Dev->new("t/src/simple");
 	$fancy  = Genesis::Kit::Dev->new("t/src/fancy");
@@ -42,7 +45,7 @@ sub again {
 kit:
   name:    dev
   version: latest
-params:
+genesis:
   env: us-west-1-prod
 EOF
 	$us_west_1_prod = $top->load_env('us-west-1-prod');
@@ -58,7 +61,7 @@ kit:
     - uniform
     - charlie
     - kilo
-params:
+genesis:
   env: snw-lab-dev
 EOF
 	$snw_lab_dev = $top->load_env('snw-lab-dev');
@@ -70,7 +73,7 @@ kit:
   version: latest
   subkits:
     - do-thing
-params:
+genesis:
   env: stack-scale
 EOF
 	$stack_scale = $top->load_env('stack-scale');
@@ -156,6 +159,8 @@ subtest 'invalid or nonexistent hooks' => sub {
 subtest 'new hook' => sub {
 	again();
 
+	my $vault = Genesis::Vault::default();
+
 	ok $simple->run_hook('new', env => $us_west_1_prod),
 	   "[simple] running the 'new' hook should succeed";
 
@@ -167,9 +172,9 @@ kit:
   name:     dev
   version:  latest
   features: []
-params:
+genesis:
   env:   us-west-1-prod
-  vault: us/west/1/prod/thing
+  secrets_path: us/west/1/prod/thing
 EOF
 		"[simple] the 'new' hook should populate the env yaml file properly";
 
@@ -185,15 +190,19 @@ kit:
   name:     dev
   version:  latest
   features: []
+genesis:
+  env: snw-lab-dev
+  secrets_path: snw/lab/dev/thing
 params:
   GENESIS_KIT_NAME:     dev
   GENESIS_KIT_VERSION:  latest
   GENESIS_ENVIRONMENT:  snw-lab-dev
   GENESIS_VAULT_PREFIX: snw/lab/dev/thing
   GENESIS_ROOT:         $root
+  GENESIS_TARGET_VAULT: "$VAULT_URL"
+  GENESIS_VERIFY_VAULT: 1
 
   root:   $root
-  env:    snw-lab-dev
   prefix: snw/lab/dev/thing
   extra:  (none)
 EOF
@@ -204,7 +213,7 @@ EOF
 		local $ENV{HOOK_SHOULD_FAIL} = 'yes';
 		throws_ok {
 			$fancy->run_hook('new',
-				env => Genesis::Env->new(top => $top, name => 'env-should-fail'));
+				env => Genesis::Env->new(top => $top, name => 'env-should-fail', vault => $vault));
 		} qr/could not create/i;
 
 		ok ! -f "$root/env-should-fail.yml",
@@ -215,7 +224,7 @@ EOF
 		local $ENV{HOOK_SHOULD_CREATE_ENV_FILE} = 'no';
 		throws_ok {
 			$fancy->run_hook('new',
-				env => Genesis::Env->new(top => $top, name => 'env-should-fail'));
+				env => Genesis::Env->new(top => $top, name => 'env-should-fail', vault => $vault));
 		} qr/could not create/i;
 
 		ok ! -f "$root/env-should-fail.yml",
@@ -270,7 +279,6 @@ subtest 'secrets hook' => sub {
 	my ($rc, $s, $value);
 
 	again();
-	vault_ok();
 
 	## secrets check
 	qx(safe rm secret/snw/lab/dev/thing/args secret/snw/lab/dev/thing/env);
@@ -339,8 +347,6 @@ EOF
 	is secret("$s:GENESIS_ENVIRONMENT"),   'snw-lab-dev',       'rotate:GENESIS_ENVIRONMENT';
 	is secret("$s:GENESIS_VAULT_PREFIX"),  'snw/lab/dev/thing', 'rotate:GENESIS_VAULT_PREFIX';
 	is secret("$s:GENESIS_SECRET_ACTION"), 'rotate',            'rotate:GENESIS_SECRET_ACTION';
-
-	teardown_vault();
 };
 
 subtest 'check hook' => sub {
@@ -445,4 +451,5 @@ subtest 'LEGACY subkit hook' => sub {
 	}
 };
 
+teardown_vault();
 done_testing;

@@ -1,6 +1,8 @@
 kit:
   subkits:
   - create-env
-params:
+genesis:
   env: create-env-sandbox
+
+params:
   domain: create-env.example.com

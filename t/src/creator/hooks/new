@@ -3,7 +3,6 @@ set -eu
 
 dir="$GENESIS_ROOT"
 name="$GENESIS_ENVIRONMENT"
-prefix="$GENESIS_VAULT_PREFIX"
 
 ymlfile="$dir/$name.yml"
 
@@ -15,11 +14,11 @@ kit:
   features:
     - (( replace ))
     - bonus
+EOF
 
+new_genesis_config >> "$ymlfile"
+cat >>"$ymlfile" -- <<EOF
 params:
-  env:   $name
-  vault: $prefix
-
   static: junk
 EOF
 exit 0

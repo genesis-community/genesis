@@ -1,16 +1,13 @@
 #!/bin/bash
 
-root=$1
-env=$2
-vault=$3
+root=$GENESIS_ROOT
+env=$GENESIS_ENVIRONMENT
 
 cat >$root/$env.yml <<EOF
 kit:
   name:    $GENESIS_KIT_NAME
   version: $GENESIS_KIT_VERSION
   features: []
-params:
-  env:   $env
-  vault: $vault
 EOF
+new_genesis_config >> $root/$env.yml
 exit 0

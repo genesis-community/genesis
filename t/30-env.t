@@ -56,7 +56,9 @@ subtest 'name validation' => sub {
 };
 
 subtest 'loading' => sub {
-	my $top = Genesis::Top->create(workdir, 'thing');
+	my $vault_target = vault_ok;
+	Genesis::Vault->clear_all();
+	my $top = Genesis::Top->create(workdir, 'thing', vault=>$VAULT_URL);
 	$top->link_dev_kit('t/src/simple');
 	put_file $top->path("standalone.yml"), <<EOF;
 ---
@@ -65,7 +67,7 @@ kit:
   version: latest
   features: []
 
-params:
+genesis:
   env: standalone
 EOF
 
@@ -73,6 +75,7 @@ EOF
 	         "should be able to load the `standalone' environment.";
 	lives_ok { $top->load_env('standalone.yml') }
 	         "should be able to load an environment by filename.";
+	teardown_vault();
 };
 
 subtest 'env-to-env relation' => sub {
@@ -152,7 +155,9 @@ subtest 'env-to-env relation' => sub {
 };
 
 subtest 'environment metadata' => sub {
-	my $top = Genesis::Top->create(workdir, 'thing');
+	my $vault_target = vault_ok;
+	Genesis::Vault->clear_all();
+	my $top = Genesis::Top->create(workdir, 'thing', vault=>$VAULT_URL);
 	$top->download_kit('bosh/0.2.0');
 	put_file $top->path("standalone.yml"), <<EOF;
 ---
@@ -163,8 +168,10 @@ kit:
     - vsphere
     - proto
 
+genesis:
+  env:       standalone
+
 params:
-  env:     standalone
   state:   awesome
   running: yes
   false:   ~
@@ -175,10 +182,14 @@ EOF
 	is($env->file, "standalone.yml", "an environment should know its file path");
 	is($env->deployment, "standalone-thing", "an environment should know its deployment name");
 	is($env->kit->id, "bosh/0.2.0", "an environment can ask the kit for its kit name/version");
+
+	teardown_vault();
 };
 
 subtest 'parameter lookup' => sub {
-	my $top = Genesis::Top->create(workdir, 'thing');
+	my $vault_target = vault_ok;
+	Genesis::Vault->clear_all();
+	my $top = Genesis::Top->create(workdir, 'thing', vault=>$VAULT_URL);
 	$top->download_kit('bosh/0.2.0');
 	put_file $top->path("standalone.yml"), <<EOF;
 ---
@@ -189,8 +200,10 @@ kit:
     - vsphere
     - proto
 
+genesis:
+  env:       standalone
+
 params:
-  env:     standalone
   state:   awesome
   running: yes
   false:   ~
@@ -228,8 +241,8 @@ kit:
   features:
     - vsphere
 
-params:
-  env:     regular-deploy
+genesis:
+  env:       regular-deploy
 EOF
 	lives_ok { $env = $top->load_env('regular-deploy') }
 	         "Genesis::Env should be able to load the `regular-deploy' environment.";
@@ -237,10 +250,14 @@ EOF
 	ok(!$env->has_feature('proto'), "regular-deploy env does not have the proto feature");
 	ok(!$env->needs_bosh_create_env(),
 		"environments without the 'proto' feature enabled do not require bosh create-env");
+
+	teardown_vault();
 };
 
 subtest 'manifest generation' => sub {
-	my $top = Genesis::Top->create(workdir, 'thing');
+	my $vault_target = vault_ok;
+	Genesis::Vault->clear_all();
+	my $top = Genesis::Top->create(workdir, 'thing', vault=>$VAULT_URL);
 	$top->link_dev_kit('t/src/fancy');
 	put_file $top->path('standalone.yml'), <<EOF;
 ---
@@ -252,8 +269,8 @@ kit:
     - tango
     - foxtrot
 
-params:
-  env: standalone
+genesis:
+  env:       standalone
 EOF
 
 	my $env = $top->load_env('standalone');
@@ -292,6 +309,7 @@ EOF
 		fancy  => ignore,
 		addons => ignore,
 		exodus => ignore,
+		genesis=> ignore,
 		kit    => ignore,
 		meta   => ignore,
 		params => ignore
@@ -300,10 +318,14 @@ EOF
 	ok $env->manifest_lookup('addons.foxtrot'), "env manifest defines addons.foxtrot";
 	is $env->manifest_lookup('addons.bravo', 'MISSING'), 'MISSING',
 		"env manifest doesn't define addons.bravo";
+
+	teardown_vault();
 };
 
 subtest 'manifest pruning' => sub {
-	my $top = Genesis::Top->create(workdir, 'thing');
+	my $vault_target = vault_ok;
+	Genesis::Vault->clear_all();
+	my $top = Genesis::Top->create(workdir, 'thing', vault=>$VAULT_URL);
 	$top->link_dev_kit('t/src/fancy');
 	put_file $top->path(".cloud.yml"), <<EOF;
 ---
@@ -324,7 +346,7 @@ kit:
   version: latest
   features:
     - papa    # for pruning tests
-params:
+genesis:
   env: standalone
 EOF
 	my $env = $top->load_env('standalone')->use_cloud_config($top->path('.cloud.yml'));
@@ -339,6 +361,7 @@ EOF
 		pipeline    => ignore,
 		params      => ignore,
 		exodus      => ignore,
+		genesis     => ignore,
 		kit         => superhashof({ name => 'dev' }),
 
 		# cloud-config
@@ -371,10 +394,13 @@ EOF
 		fancy  => ignore,
 		addons => ignore,
 	}, "written manifest doesn't contain the pruned keys (no cloud-config)");
+	teardown_vault();
 };
 
 subtest 'manifest pruning (bosh create-env)' => sub {
-	my $top = Genesis::Top->create(workdir, 'thing');
+	my $vault_target = vault_ok;
+	Genesis::Vault->clear_all();
+	my $top = Genesis::Top->create(workdir, 'thing', vault=>$VAULT_URL);
 	$top->link_dev_kit('t/src/fancy');
 	put_file $top->path(".cloud.yml"), <<EOF;
 ---
@@ -390,7 +416,7 @@ kit:
   features:
     - papa     # for pruning tests
     - proto
-params:
+genesis:
   env: proto
 EOF
 	my $env = $top->load_env('proto')->use_cloud_config($top->path('.cloud.yml'));
@@ -406,6 +432,7 @@ EOF
 		pipeline    => ignore,
 		params      => ignore,
 		exodus      => ignore,
+		genesis     => ignore,
 		kit         => superhashof({ name => 'dev' }),
 
 		# BOSH stuff
@@ -458,10 +485,14 @@ EOF
 		azs            => ignore,
 		vm_extensions  => ignore,
 	}, "written manifest for bosh-create-env doesn't contain the pruned keys (includes cloud-config)");
+
+	teardown_vault();
 };
 
 subtest 'exodus data' => sub {
-	my $top = Genesis::Top->create(workdir, 'thing');
+	my $vault_target = vault_ok;
+	Genesis::Vault->clear_all();
+	my $top = Genesis::Top->create(workdir, 'thing', vault=>$VAULT_URL);
 	$top->link_dev_kit('t/src/fancy');
 	put_file $top->path('standalone.yml'), <<EOF;
 ---
@@ -470,7 +501,7 @@ kit:
   version: latest
   features:
     - echo    # for pruning tests
-params:
+genesis:
   env: standalone
 EOF
 	put_file $top->path(".cloud.yml"), <<EOF;
@@ -552,25 +583,28 @@ EOF
 				subnet => '10.0.2.0/24',
 			}
 		]
-	}, "exodus data can be correctly unflattened")
+	}, "exodus data can be correctly unflattened");
+
+	teardown_vault();
 };
 
 subtest 'bosh targeting' => sub {
 	local $ENV{GENESIS_BOSH_COMMAND};
 	fake_bosh;
 
-	my $env;
-	my $top = Genesis::Top->create(workdir, 'thing')->link_dev_kit('t/src/fancy');
+	my $vault_target = vault_ok;
+	Genesis::Vault->clear_all();
+	my $top = Genesis::Top->create(workdir, 'thing', vault=>$VAULT_URL)->link_dev_kit('t/src/fancy');
 	put_file $top->path('standalone.yml'), <<EOF;
 ---
 kit:
   name:    dev
   version: latest
-params:
-  env: standalone
+genesis:
+  env:       standalone
 EOF
 
-	$env = $top->load_env('standalone');
+	my $env = $top->load_env('standalone');
 	is $env->bosh_target, "standalone", "without a params.bosh, params.env is the BOSH target";
 
 	put_file $top->path('standalone.yml'), <<EOF;
@@ -578,8 +612,10 @@ EOF
 kit:
   name:    dev
   version: latest
-params:
+genesis:
   env: standalone
+
+params:
   bosh: override-me
 EOF
 
@@ -592,27 +628,28 @@ EOF
 		$env = $top->load_env('standalone'); # reload otherwise its cached by the previous call
 		is $env->bosh_target, "https://127.0.0.86:25555", "the \$GENESIS_BOSH_ENVIRONMENT overrides all";
 	}
+
+	teardown_vault();
 };
 
 subtest 'cloud_config_and_deployment' => sub{
 	local $ENV{GENESIS_BOSH_COMMAND};
 	fake_bosh;
 	my $vault_target = vault_ok;
+	Genesis::Vault->clear_all();
 	`safe set --quiet secret/code word='penguin'`;
 
-	my $env;
-	my $top = Genesis::Top->create(workdir, 'thing')->link_dev_kit('t/src/fancy');
+	my $top = Genesis::Top->create(workdir, 'thing', vault=>$VAULT_URL)->link_dev_kit('t/src/fancy');
 	put_file $top->path('standalone.yml'), <<EOF;
 ---
 kit:
   name:    dev
   version: latest
-params:
+genesis:
   env: standalone
 EOF
 
-	$env = $top->load_env('standalone');
-	
+	my $env = $top->load_env('standalone');
 	lives_ok { $env->download_cloud_config(); }
 		"download_cloud_config runs correctly";
 
@@ -677,7 +714,7 @@ EOF
 	is($env->last_deployed_lookup("something","goose"), "REDACTED", "Cached manifest contains redacted vault details");
 	is($env->last_deployed_lookup("fancy.status","none"), "online", "Cached manifest contains non-redacted params");
 	is($env->last_deployed_lookup("params.env","none"), "standalone", "Cached manifest contains pruned params");
-	cmp_deeply($env->exodus_lookup("",{}), {
+	cmp_deeply(scalar($env->exodus_lookup("",{})), {
 				dated => $exodus->{dated},
 				deployer => $ENV{USER},
 				bosh => "standalone",
@@ -708,9 +745,10 @@ subtest 'new env and check' => sub{
 	local $ENV{GENESIS_BOSH_COMMAND};
 	fake_bosh;
 	my $vault_target = vault_ok;
+	Genesis::Vault->clear_all();
 
 	my $name = "far-fetched";
-	my $top = Genesis::Top->create(workdir, 'sample');
+	my $top = Genesis::Top->create(workdir, 'sample', vault=>$VAULT_URL);
 	my $kit = $top->link_dev_kit('t/src/creator')->find_kit('dev');
 	mkfile_or_fail $top->path("pre-existing.yml"), "I'm already here";
 
@@ -720,7 +758,8 @@ subtest 'new env and check' => sub{
 	dies_ok {$top->create_env("pre-existing", $kit)} "can't overwrite a pre-existing env";
 
 	my $env;
-	lives_ok {$env = $top->create_env($name, $kit)} "successfully create an env with a dev kit";
+	local $ENV{NOCOLOR} = "yes";
+	lives_ok {$env = $top->create_env($name, $kit, vault => $vault_target)} "successfully create an env with a dev kit";
 	eq_or_diff get_file($env->path($env->{file})), <<EOF, "Created env file contains correct info";
 ---
 kit:
@@ -785,7 +824,6 @@ Retrieving secrets for far/fetched/sample...ok
 
 EOF
 		"check_secrets gives meaninful output on failure");
-	
 
 	teardown_vault();
 };

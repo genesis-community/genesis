@@ -21,7 +21,7 @@ reprovision kit => 'ask-params';
 
 my $cmd = Expect->new();
 $cmd->log_stdout($log_expect_stdout);
-$cmd->spawn("genesis new with-subkit --vault $vault_target");
+$cmd->spawn("genesis new with-subkit");
 expect_ok "extra questions subkit", $cmd, [
 	'Should we ask additional questions?', sub {
 		my $fh = shift;
@@ -598,7 +598,7 @@ EOF
 
 $cmd = Expect->new();
 $cmd->log_stdout($log_expect_stdout);
-$cmd->spawn("genesis new without-subkit --vault $vault_target");
+$cmd->spawn("genesis new without-subkit");
 expect_ok $cmd, ['Should we ask additional questions', sub {
 	my $fh = shift;
 	$fh->send("no\n");
