@@ -736,6 +736,73 @@ sub {
 });
 
 # }}}
+# genesis secrets-provider - set, clear or get the secret provider information {{
+
+command("secrets-provider", <<EOF,
+genesis v$Genesis::VERSION$Genesis::BUILD
+USAGE: genesis secrets-provider [-i|-interactive|-c|--clear] [target]
+
+ARGUMENTS
+  target              Set the secrets provider to the specified target, which
+                      can either be a full url including protocol, or an alias.
+                      This target must be known to the local system.  If this is
+                      omitted, the current secrets provider information is
+                      displayed.
+
+OPTIONS
+$GLOBAL_USAGE
+  -i, --interactive   Set the provider interactively from a list of known secrets
+                      providers.
+
+  -c, --clear         Remove existing provider -- this will restore legacy
+                      behaviour of using the system-targeted vault.
+
+EOF
+sub {
+	my %options;
+	options(\@_, \%options, qw/
+		interactive|i
+		clear|c
+	/);
+	usage(1) if @_ > 1; # target is optional
+	check_prereqs();
+
+	delete $options{$_} for grep {$_ !~ /^(interactive|clear)$/} keys %options;
+	$options{target} = shift if scalar(@_);
+	bail("You can only specify one of target, -i|--interactive or -c|--clear")
+		if scalar(keys %options) > 1;
+
+	my $ui_nl = $options{interactive} ? "" : "\n";
+
+	my $top = Genesis::Top->new('.');
+	my $err;
+	if (scalar(keys %options)) {
+		$err = $top->set_vault(%options);
+		error "$ui_nl$err\nCurrent vault was not changed.\n\n" if $err;
+	}
+
+	explain("${ui_nl}Secrets provider for #C{%s} deployment at #M{%s}:", $top->type, $top->path);
+	my %vault_info = $top->vault_status;
+	if (%vault_info) {
+		explain(
+			"         Type: #G{%s}\n".
+			"          URL: #G{%s} %s\n".
+			"  Local Alias: #%s{%s}\n".
+			"       Status: #%s{%s}\n",
+			"Safe/Vault", $vault_info{url}, $vault_info{security},
+			$vault_info{alias_error} ? "R" : "G",
+			$vault_info{alias} ? $vault_info{alias} : "$vault_info{alias_error}",
+			$vault_info{status} eq "ok" ? "G" : "R",
+			$vault_info{status}
+		);
+	} else {
+		explain "\n#Y{Not set - legacy mode enabled (will use current safe target on system)}\n";
+	}
+
+	exit defined($err) ? 1 : 0;
+});
+
+# }}}
 # genesis new - create a new Genesis deployment environment (YAML file) {{{
 
 command("new", <<EOF,

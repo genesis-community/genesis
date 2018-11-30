@@ -24,7 +24,9 @@ sub new {
 # }}}
 # target - builder for vault based on locally available vaults {{{
 sub target {
-	my ($class,$target) = @_;
+	my ($class,$target,%opts) = @_;
+
+	$opts{default_vault} ||= $class->default;
 
 	my $url;
 	if ($target) {
@@ -53,10 +55,10 @@ sub target {
 			push(@choices, $_->{url});
 			push(@labels, [csprintf(
 			"#%s{%-*.*s}   #R{%-10.10s} #%s{%s}",
-			  $_->{name} eq $class->default->{name} ? "G" : "-",
+			  $_->{name} eq $opts{default_vault}->{name} ? "G" : "-",
 			     $w, $w, $_->{name},
 			                  $_->{url} =~ /^https/ ? ($_->{verify} ? "" : "(noverify)") : "(insecure)",
-			                             $_->{name} eq $class->default->{name} ? "Y" : "-",
+			                             $_->{name} eq $opts{default_vault}->{name} ? "Y" : "-",
 			                                $_->{url}
 			),$_->{name}]);
 		}
@@ -75,12 +77,12 @@ sub target {
 		$url = prompt_for_choice(
 			$msg,
 			\@choices,
-			$uses{$class->default->{url}} == 1 ? $class->default->{url} : undef,
+			$uses{$opts{default_vault}->{url}} == 1 ? $opts{default_vault}->{url} : undef,
 			\@labels
 		)
 	}
 
-	my $vault = (grep {$_->{url} eq $url} $class->all)[0];
+	my $vault = ($class->matching(url => $url))[0];
 	printf STDERR csprintf("\n#yi{Verifying availability of selected vault...}")
 		unless in_callback || under_test;
 	my $status = $vault->status;
@@ -153,6 +155,28 @@ sub all {
 									@{ read_json_from(run("safe targets --json")) };
 	}
 	return @all_vaults;
+}
+
+# }}}
+# find_by_target - return all vaults matching url associated with specified target alias or url {{{
+sub find_by_target {
+	my ($class, $target) = @_;
+	my ($url, @aliases) = _get_targets($target);
+	return map {$class->matching(name => $_)} @aliases;
+}
+
+# }}}
+# matching - return vaults that match properties in given hash
+sub matching {
+	my ($class, %filter) = @_;
+	my @matches = $class->all;
+	use Data::Dumper;
+	debug("initial matches:\n".Dumper(@matches));
+	for my $quality (keys %filter) {
+		@matches = grep {$_->{$quality} eq $filter{$quality}} @matches;
+		debug("after filter $quality == $filter{$quality}:\n".Dumper(@matches));
+	}
+	return @matches;
 }
 
 # }}}

@@ -84,6 +84,14 @@ To rotate credentials for an environment:
     genesis rotate-secrets us-east-prod
     genesis deploy us-east-prod
 
+To change the secrets provider for the environments in this repo:
+
+    genesis secrets-provider --url https://example.com:8200 --insecure
+
+... or clear it to use safe's currently targeted vault:
+
+    genesis secrets-provider --clear
+
 To update the Concourse Pipeline for this repo:
 
     genesis repipe
