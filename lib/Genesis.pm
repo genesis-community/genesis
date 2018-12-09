@@ -7,8 +7,10 @@ our $BUILD   = "";
 
 our $GITHUB  = "https://github.com/starkandwayne/genesis";
 
+use Data::Dumper;
 use File::Basename qw/basename dirname/;
 use POSIX qw/strftime/;
+use Symbol qw/qualify_to_ref/;
 use Time::Seconds;
 use Time::Piece;
 use Cwd ();
@@ -22,12 +24,11 @@ our @EXPORT = qw/
 	in_callback under_test
 
 	csprintf
-	explain debug trace error
+	explain waiting_on
+	debug trace dump_var
+	error	bail bug
+
 	vaulted
-	bail
-
-	bug
-
 	workdir
 
 	semver
@@ -153,29 +154,48 @@ sub csprintf {
 	$s =~ s/(#[-IUKRGYBMPCW*]{1,4})\{(.*?)(\})/_colorize($1, $2)/egi;
 	return $s;
 }
-sub explain {
-	return if envset "QUIET";
-	my $out = envset("EXPLAIN_TO_STDERR") ? *STDERR : *STDOUT;
 
-	{ local $ENV{NOCOLOR} = "yes" unless -t $out;
-	        print $out csprintf(@_)."$/"; }
+sub explain {
+	explain STDOUT @_;
+}
+
+sub waiting_on {
+	waiting_on STDOUT @_;
 }
 
 sub debug {
-	return unless envset "GENESIS_DEBUG"
-	           or envset "GENESIS_TRACE";
-	print STDERR "DEBUG> ";
-	{ local $ENV{NOCOLOR} = "yes" unless -t STDOUT;
-	        print STDERR csprintf(@_); }
-	print STDERR "\n";
+	return unless envset("GENESIS_DEBUG") || envset("GENESIS_TRACE");
+	_log("DEBUG", csprintf(@_), "Wm")
+}
+
+
+sub dump_var {
+	return unless envset("GENESIS_DEBUG") || envset("GENESIS_TRACE");
+	local $Data::Dumper::Deparse = 1;
+	local $Data::Dumper::Terse   = 1;
+	my (undef, $file, $ln) = caller;
+	my $sub = (caller(1))[3];
+	my (%vars) = @_;
+	_log("VALUE", csprintf("#M{$_} = ").Dumper($vars{$_}) .csprintf("#Ki{# in $sub [$file:L$ln]}"), "Wb") for (keys %vars);
 }
 
 sub trace {
 	return unless envset "GENESIS_TRACE";
-	print STDERR "TRACE> ";
-	{ local $ENV{NOCOLOR} = "yes" unless -t STDOUT;
-	        print STDERR csprintf(@_); }
-	print STDERR "\n";
+	_log("TRACE", csprintf(@_), "Wc")
+}
+
+sub _log {
+	my ($label, $content, $colors) = @_;
+	my ($gt,$gtc) = (">",$colors);
+	unless (envset "NOCOLOR") {
+		$gt = "";
+		$gtc = substr($colors,1,1);
+		$label = " $label ";
+	}
+	my $prompt = csprintf("#%s{%s}#%s{%s}", "$colors",$label,$gtc,$gt);
+	my $out = join("\n".(" "x(length($label)+2)),split(/\n/,$content));
+
+	printf STDERR "%s %s\n", $prompt, $out;
 }
 
 sub error {
@@ -367,22 +387,18 @@ sub run {
 	my $rc = $? >>8;
 	if ($rc) {
 		trace("command exited with status %x (rc %d)", $rc, $rc >> 8);
-		if (defined($out)) {
-			trace("#R{==== <output> ==================================}");
-			trace($out);
-			trace("#R{==== </output> =================================}");
-		}
+		dump_var output => $out if (defined($out));
 		if ($opts{onfailure}) {
 			bail("#R{%s} (run failed)%s", $opts{onfailure}, defined($out) ? ":\n$out" :'');
 		}
 	} else {
 		trace("command exited #G{0}");
 		if (defined($out)) {
-			trace("==== <output> ==================================");
-			trace($out =~ m/[\x00-\x1f\x7f-\xff]/
-				? "[".length($out)."b of binary data omited from trace]"
-				: $out);
-			trace("==== </output> =================================");
+			if ($out =~ m/[\x00-\x08\x0b-\x0c\x0e\x1f\x7f-\xff]/) {
+				trace "[".length($out)."b of binary data omited from trace]";
+			} else {
+				dump_var output => $out;
+			}
 		}
 	}
 	return unless defined(wantarray);
@@ -552,6 +568,23 @@ sub tcp_listening {
 		{passfail => 1},
 		"(</dev/tcp/$host/$port) >/dev/null 2>&1"
 	)
+}
+
+# Because x FH args... translates to FH->x args, it is required to monkey-patch
+# IO:File to facilitate printing to different streams instead of STDOUT.  With
+# this in place, the Genesis functions just become wrappers.
+package IO::File;
+
+sub explain(*;@) {
+	my $self = shift;
+	return if Genesis::envset "QUIET";
+	print $self Genesis::csprintf(@_)."\n";
+}
+
+sub waiting_on(*;@) {
+	my $self = shift;
+	return if Genesis::envset "QUIET";
+	print $self Genesis::csprintf(@_);
 }
 
 1;

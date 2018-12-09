@@ -54,7 +54,7 @@ sub load {
 		my ($env_name, $env_key) = $env->lookup(['genesis.env','params.env']);
 		bail("\n#R{[ERROR]} Environment file #C{$env->{file}} environment name mismatch: #C{$env_key: $env_name}")
 			unless $env->{name} eq $env_name;
-		error "\n#Y{[WARNING]} Environment file $env->{file} uses #C{params.env} to specify environment name.\nThis has been moved to #C{genesis.env} -- please update your file to remove this warning."
+		error "\n#Y{[WARNING]} Environment file $env->{file} uses #C{params.env} to specify environment name.\nThis has been moved to #C{genesis.env} -- please update your file to remove this warning.\n"
 			if $env_key eq 'params.env' || $env->defines('params.env');
 	}
 
@@ -732,11 +732,11 @@ sub purge_secrets {
 	bullet $_ for (@paths);
 	my $response = prompt_for_line(undef, "Type 'yes' to remove these secrets","");
 	if ($response eq 'yes') {
-		{local $/ = ''; explain "\nDeleting existing secrets under '#C{%s}'...", $self->prefix;}
+		waiting_on "\nDeleting existing secrets under '#C{%s}'...", $self->prefix;
 		$self->vault->query('rm',$_) for (@paths);
 		explain "#G{done}\n"
 	} else {
-		explain "\nAborted! Keeping all existing secrets under '#C{%s}'.", $self->prefix;
+		explain "\nAborted!\nKeeping all existing secrets under '#C{%s}'.", $self->prefix;
 		return 0;
 	}
 	return 1;

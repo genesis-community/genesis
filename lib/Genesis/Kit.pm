@@ -327,9 +327,8 @@ sub feature_compatibility {
 	my ($self,$version) = @_;
 	my $id = $self->id;
 	my $kit_min = $self->metadata->{genesis_version_min};
-	trace("Kit min version: %s", $kit_min || "undefined");
-	use Data::Dumper;
-	trace("Kit metadata: %s", Dumper($self->metadata));
+	dump_var kit_min_version => $kit_min || "undefined";
+	dump_var kit_metadata =>$self->metadata;
 	$kit_min = '0.0.0' unless ($kit_min && semver($kit_min));
 
 	bug("Invalid base version provided to Genesis::Kit::feature_compatibility") unless semver($version);

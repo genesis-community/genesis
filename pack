@@ -149,10 +149,11 @@ if ($fh) {
 }
 
 if ($want ne $have) {
-	system("rm -rf $root/*");
+	system("/bin/bash", "-c", "rm -rf $root/*");
+	my $action = $have ? "updating" : "installing";
 
 	# extract the payload
-	print STDERR "(inflating genesis runtime...)\n";
+	print STDERR "[1;30m[$action genesis runtime][0m\n";
 	open my $tar, "|-", "tar -xzf - -C $root"
 		or die "Failed to do stuff\n";
 	while (<DATA>) {
