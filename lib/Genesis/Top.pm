@@ -224,7 +224,7 @@ sub vault_status {
 		? ($info->{insecure} ? "#Y{(noverify)}" : "")
 		: "#Y{(insecure)}";
 
-	my @candidates = Genesis::Vault->matching(url => $info->{url});
+	my @candidates = Genesis::Vault->find(url => $info->{url});
 	if (! scalar(@candidates)) {
 		$info->{alias_error} = "No alias for this URL found on local system";
 		$info->{status} = qq(Run 'safe target "$info->{url}" "}#Ri{<alias>}#R{") . ($info->{insecure} ? " -k" : "") . "' to create an alias for this URL";

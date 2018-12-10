@@ -46,11 +46,11 @@ sub target {
 
 		die_unless_controlling_terminal("${class}::target");
 
-		my $w = (sort {$b<=>$a} map {length($_->{name})} $class->all)[0];
+		my $w = (sort {$b<=>$a} map {length($_->{name})} $class->find)[0];
 
 		my (%uses,@labels,@choices);
-		$uses{$_->{url}}++ for $class->all;
-		for ($class->all) {
+		$uses{$_->{url}}++ for $class->find;
+		for ($class->find) {
 			next unless $uses{$_->{url}} == 1;
 			push(@choices, $_->{url});
 			push(@labels, [csprintf(
@@ -82,7 +82,7 @@ sub target {
 		)
 	}
 
-	my $vault = ($class->matching(url => $url))[0];
+	my $vault = ($class->find(url => $url))[0];
 	printf STDERR csprintf("\n#yi{Verifying availability of selected vault...}")
 		unless in_callback || under_test;
 	my $status = $vault->status;
@@ -95,33 +95,33 @@ sub target {
 # }}}
 # attach - builder for vault based on loaded environment {{{
 sub attach {
-	my ($class, $target_url, $insecure) = @_;
+	my ($class, $url, $insecure) = @_;
 
 	# Allow vault target and insecure to be specified by ENV variables.
-	$target_url = $ENV{substr($target_url,1)} if substr($target_url,0,1) eq '$';
+	$url = $ENV{substr($url,1)} if substr($url,0,1) eq '$';
 	$insecure = $ENV{substr($insecure,1)} if substr($insecure,0,1) eq '$';
 
 	bail "#R{[ERROR]} No vault target specified"
-		unless $target_url;
-	bail "#R{[ERROR]} Expecting vault target '$target_url' to be a url"
-		unless _target_is_url($target_url);
+		unless $url;
+	bail "#R{[ERROR]} Expecting vault target '$url' to be a url"
+		unless _target_is_url($url);
 
-	($target_url, my @targets) = _get_targets($target_url);
+	($url, my @targets) = _get_targets($url);
 	if (scalar(@targets) <1) {
 		bail "#R{[ERROR]} Safe target for #M{%s} not found.  Please run\n\n".
 				 "  #C{safe target <name> \"%s\"%s\n\n".
 				 "then authenticate against it using the correct auth method before\n".
 				 "re-attempting this command.",
-				 $target_url, $target_url,($insecure?" -k":"");
+				 $url, $url,($insecure?" -k":"");
 	}
 	if (scalar(@targets) >1) {
 		bail "#R{[ERROR]} Multiple safe targets found for #M{%s}:\n%s\n".
 				 "\nYour ~/.saferc file cannot have more than one target for the given url.\n" .
 				 "Please remove any duplicate targets before re-attempting this command.",
-				 $target_url, join("", map {" - #C{$_}\n"} @targets);
+				 $url, join("", map {" - #C{$_}\n"} @targets);
 	}
 
-	my $vault = $class->new($target_url, $targets[0], !$insecure);
+	my $vault = $class->new($url, $targets[0], !$insecure);
 	printf STDERR csprintf("\nUsing vault at #C{%s}.\n#yi{Verifying availability...}", $vault->url)
 	  unless envset "GENESIS_TESTING";
 	my $status = $vault->status;
@@ -140,21 +140,26 @@ sub rebind {
 	bail("Cannot rebind to vault in callback due to missing environment variables!")
 		unless $ENV{GENESIS_TARGET_VAULT};
 
-	my $vault = (grep {$_->url eq $ENV{GENESIS_TARGET_VAULT}} $class->all())[0];
+	my $vault = ($class->find(url => $ENV{GENESIS_TARGET_VAULT}))[0];
 	trace "Rebinding to $ENV{GENESIS_TARGET_VAULT}: Matches %s", $vault && $vault->{name} || "<undef>";
 	return unless $vault;
 	return $vault->set_as_current;
 }
 
 # }}}
-# all - return all known local vaults {{{
-sub all {
-	unless (@all_vaults) {
-		@all_vaults = map {Genesis::Vault->new($_->{url},$_->{name},$_->{verify})}
-									sort {$a->{name} cmp $b->{name}}
-									@{ read_json_from(run("safe targets --json")) };
+# find - return vaults that match filter (defaults to all) {{{
+sub find {
+	my ($class, %filter) = @_;
+	@all_vaults = (
+		map {Genesis::Vault->new($_->{url},$_->{name},$_->{verify})}
+		sort {$a->{name} cmp $b->{name}}
+		@{ read_json_from(run("safe targets --json")) }
+	) unless @all_vaults;
+	my @matches = @all_vaults;
+	for my $quality (keys %filter) {
+		@matches = grep {$_->{$quality} eq $filter{$quality}} @matches;
 	}
-	return @all_vaults;
+	return @matches;
 }
 
 # }}}
@@ -162,21 +167,7 @@ sub all {
 sub find_by_target {
 	my ($class, $target) = @_;
 	my ($url, @aliases) = _get_targets($target);
-	return map {$class->matching(name => $_)} @aliases;
-}
-
-# }}}
-# matching - return vaults that match properties in given hash
-sub matching {
-	my ($class, %filter) = @_;
-	my @matches = $class->all;
-	use Data::Dumper;
-	debug("initial matches:\n".Dumper(@matches));
-	for my $quality (keys %filter) {
-		@matches = grep {$_->{$quality} eq $filter{$quality}} @matches;
-		debug("after filter $quality == $filter{$quality}:\n".Dumper(@matches));
-	}
-	return @matches;
+	return map {$class->find(name => $_)} @aliases;
 }
 
 # }}}
@@ -184,7 +175,7 @@ sub matching {
 sub default {
 	unless ($default_vault) {
 		my $json = read_json_from(run("safe target --json"));
-		$default_vault = Genesis::Vault->new($json->{url},$json->{name},$json->{verify});
+		$default_vault = (Genesis::Vault->find(name => $json->{name}))[0];
 	}
 	return $default_vault;
 }
@@ -318,13 +309,6 @@ sub keys {
 }
 
 # }}}
-# ping - check if the vault is reachable and accessable {{{
-sub ping {
-	my ($self) = @_;
-	return $self->has('secret/handshake');
-}
-
-# }}}
 # status - returns status of vault: sealed, unreachable, invalid authentication or ok {{{
 sub status {
 	my $self = shift;
@@ -343,7 +327,7 @@ sub status {
 		return "sealed" if $1 == 2;
 		return "unreachable";
 	}
-	return "invalid authentication" unless $self->ping;
+	return "invalid authentication" unless $self->has('secret/handshake');
 	return "ok"
 }
 
@@ -398,11 +382,11 @@ sub _target_is_url {
 sub _get_targets {
 	my $target = shift;
 	unless (_target_is_url($target)) {
-		my $target_vault = (grep {$_->{name} eq $target} Genesis::Vault->all)[0];
+		my $target_vault = (Genesis::Vault->find(name => $target))[0];
 		return (undef) unless $target_vault;
 		$target = $target_vault->{url};
 	}
-	my @names = map {$_->{name}} grep {$_->{url} eq $target} Genesis::Vault->all;
+	my @names = map {$_->{name}} Genesis::Vault->find(url => $target);
 	return ($target, @names);
 }
 
