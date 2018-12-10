@@ -726,7 +726,7 @@ sub purge_secrets {
 	my @paths = $self->vault->paths("secret/".$self->prefix);
 	return 1 unless (scalar(@paths));
 
-	die_unless_controlling_terminal($self);
+	die_unless_controlling_terminal;
 
 	explain "#Yr{[WARNING]} The following pre-existing secrets will need to be removed:";
 	bullet $_ for (@paths);

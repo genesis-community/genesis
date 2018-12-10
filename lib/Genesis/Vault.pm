@@ -44,7 +44,7 @@ sub target {
 		}
 	} else {
 
-		die_unless_controlling_terminal("${class}::target");
+		die_unless_controlling_terminal;
 
 		my $w = (sort {$b<=>$a} map {length($_->{name})} $class->find)[0];
 

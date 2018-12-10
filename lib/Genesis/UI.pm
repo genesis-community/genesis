@@ -308,9 +308,8 @@ sub bullet { # [type,] msg, [{option: value, ...}]
 }
 
 sub die_unless_controlling_terminal {
-	my ($method) = @_;
 	return if -t STDIN && -t STDOUT;
-	bail("Method %s was called from a non-controlling terminal but it requires user input.", $method);
+	bail("Method #C{%s} was called from a non-controlling terminal but it requires user input.", (caller(1))[3]);
 }
 
 1;
