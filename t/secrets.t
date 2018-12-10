@@ -7,6 +7,8 @@ use lib 't';
 use helper;
 use Cwd qw(abs_path);
 
+$ENV{NOCOLOR} = 1;
+
 subtest 'secrets' => sub {
 	plan skip_all => 'skipping secrets tests because SKIP_SECRETS_TESTS was set'
 		if $ENV{SKIP_SECRETS_TESTS};
