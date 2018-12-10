@@ -241,18 +241,15 @@ sub get {
 		);
 		return undef;
 	}
-	my ($out,$rc);
-	eval {
-		($out,$rc) = read_json_from($self->query('export', $path))->{$path};
-	};
-	if ($@) {
+	my ($json,$rc,$err) = read_json_from($self->query('export', $path));
+	if ($rc || $err) {
 		debug(
 			"#R{[ERROR]} Could not read all key/value pairs from #C{%s} in vault at #M{%s}:%s\nexit code: %s",
-			$path,$self->{url},$@,$rc
+			$path,$self->{url},$err,$rc
 		);
 		return {};
 	}
-	return $out;
+	return $json->{$path};
 }
 
 # }}}

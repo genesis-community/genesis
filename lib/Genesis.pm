@@ -416,10 +416,13 @@ sub lines {
 
 sub read_json_from {
 	my ($out, $rc) = @_;
-	die "command failed to produce json: $out" unless $rc eq 0;
-	return load_json($out);
+	local $@;
+	my $json = eval {load_json($out)};
+	my $err = $@;
+	return  ($json,$rc,$err) if (wantarray);
+	die $err if $err && $err ne "";
+	return $json;
 }
-
 
 sub curl {
 	my ($method, $url, $headers, $data, $skip_verify, $creds) = @_;
@@ -847,15 +850,21 @@ This is best used with C<run()>, like this:
 
     my @lines = lines(run('some command'));
 
-==head2 read_json_from($out, $rc)
+=head2 read_json_from($out, $rc)
 
 Ignore C<$rc>, and parses C<$out> as JSON, returning the resulting structure.
-This is best used with C<run()>, like this:
+It is primarily intended to wrap C<run()>, like this:
 
     my $data = read_json_from(run('some command that outputs json'));
 
-It will die if C<$out> is not JSON, with whatever message JSON::PP generates when
-encountering non-JSON content.
+If called in scalar context, it will return the json if it was parseable, or
+otherwise die with whatever message JSON::PP generates when encountering
+non-JSON content.
+
+If called in list context, it will return the json (if successfully read), the
+C<$rc> of the command, and any error encountered when trying to parse the json.
+This is to allow the caller to handle any error in the call or the parse
+themselves.
 
 =head2 curl($method, $url, $headers, $data, $skip_verify, $creds)
 
