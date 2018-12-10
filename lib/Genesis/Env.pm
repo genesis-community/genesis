@@ -830,14 +830,14 @@ sub _check_secret {
 	}
 	my @missing = grep {! $secrets->{"$path:$_"}} @keys;
 	if ($type =~ /^random/) { # these are at the key level, not the path level
-		if (@missing) {
+		if (scalar(@missing)) {
 			bullet("bad", sprintf("%s [%s:#C{%s}]", $path, $_, $type))  for (@missing);
 		} else {
 			bullet("good", sprintf("%s [%s:#C{%s}]", $path, $_, $type)) for (grep {$secrets->{"$path:$_"}} @keys);
 		}
 
 	} else {
-		bullet(@missing ? "bad" : "good", sprintf("%s [#C{%s}]", $path, $type));
+		bullet(scalar(@missing) ? "bad" : "good", sprintf("%s [#C{%s}]", $path, $type));
 		bullet("bad", ":$_", indent => 5) for (@missing);
 	}
 
@@ -879,7 +879,8 @@ sub validate_name {
 
 	die "names must not contain sequential hyphens (i.e. '--').\n"
 		if $name =~ m/--/;
-	1
+
+	1; # name is valid
 }
 
 sub _slice {
@@ -1269,17 +1270,17 @@ If default is a code reference, it will be executed and the result will be
 returned if and only if the default value is needed (ie no matching key is
 found). This allows for short circuit evaluation of the default.
 
-==head2 manifest_lookup($key, [$default])
+=head2 manifest_lookup($key, [$default])
 
 Similar to C<lookup>, but uses the merged manifest as the source of the data.
 
-==head2 last_deployed_lookup($key, [$default])
+=head2 last_deployed_lookup($key, [$default])
 
 Similar to C<lookup>, but uses the last deployed (redacted) manifest for the
 environment.  Raises an error if there hasn't been a cached manifest for the
 environment.
 
-==head2 exodus_lookup($key, [$default])
+=head2 exodus_lookup($key, [$default])
 
 Similar to C<lookup>, but uses the exodus data stored in Vault for the
 environment.  Raises an error if there hasn't been a successful deployment for

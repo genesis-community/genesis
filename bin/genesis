@@ -31,9 +31,7 @@ $Genesis::VERSION = "(development)";
 $Genesis::BUILD = "";
 
 our $USER_AGENT_STRING = "genesis/$Genesis::VERSION";
-$ENV{GENESIS_CALLBACK_BIN} ||= abs_path(__FILE__);;
-
-
+$ENV{GENESIS_CALLBACK_BIN} ||= abs_path(__FILE__);
 $ENV{HTTPS_PROXY}=$ENV{BOSH_ALL_PROXY} if ($ENV{BOSH_ALL_PROXY});
 
 my $END_HOOKS = [];
