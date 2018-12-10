@@ -273,26 +273,6 @@ sub run_hook {
 		return split(/\s+/, $out);
 	}
 
-	if ($hook eq 'secrets') {
-		my ($secrets, $contents);
-		my $fn = $opts{env}->tmppath("secrets");
-		return (!$rc) unless -f $fn;
-
-		my ($version_line, $rc1) = run({stderr => '&1' }, 'head -n1 "$1"', $fn);
-		die "'secrets' hook generated invalid secrets metadata -- please contact the kit author"
-			if ($rc1 > 0 || $version_line !~ /# genesis secrets v([0-9]+) *$/);
-		my $version = $1;
-		if ($version == 1) {
-			# V1 uses slurped json stanzas starting on the second line
-			($contents, $rc1) = run({stderr => '&1' }, 'tail -n +2 "$1" | jq -scM', $fn);
-			die "'secrets' hook generated invalid secrets metadata:\n\nError:\n$contents"
-				if $rc1 > 0;
-		} else {
-			die "'secrets' hook is using an unknown version '$version' of metadata -- please contact the kit author"
-		}
-		return (!$rc, load_json($contents))
-	}
-
 	if ($hook eq 'pre-deploy') {
 		my $contents;
 		my $fn = $opts{env}->tmppath("data");
@@ -308,7 +288,7 @@ sub run_hook {
 			if -f $opts{env}->tmppath("data");
 	}
 
-	if ($hook eq 'check') {
+	if ($hook eq 'check' || ($hook eq 'secrets' && $opts{action} eq 'check')) {
 		return $rc == 0 ? 1 : 0;
 	}
 
