@@ -46,6 +46,20 @@ if [[ "${GENESIS_TRACE}" == "y" ]] ; then
   export >&2
 fi
 
+genesis() {
+	[[ -z "${GENESIS_CALLBACK_BIN}" ]] \
+		&& echo >&2 "Genesis command not specified - this is a bug in Genesis, or you are running $0 outside of Genesis" \
+		&& exit 2
+	command ${GENESIS_CALLBACK_BIN} "$@"
+	return $?
+}
+export -f genesis
+
+describe() {
+	genesis ui-describe -- "$@"
+}
+export -f describe
+
 __bail() {
   local rc=1
   [[ "$1" == "--rc" ]] && rc="$2" && shift 2
@@ -54,13 +68,10 @@ __bail() {
 }
 export -f __bail
 
-genesis() {
-  [[ -z "${GENESIS_CALLBACK_BIN}" ]] && \
-    __bail"Genesis command not specified - this is a bug in Genesis, or you are running $0 outside of Genesis"
-  ${GENESIS_CALLBACK_BIN} "$@"
-  return $?
-}
-export -f genesis
+if [[ -z "$SAFE_TARGET" || "$SAFE_TARGET" != "$GENESIS_TARGET_VAULT" ]] ; then
+	__bail "Safe target not associated with Genesis Vault -- this is a bug in Genesis, or you are running $0 outside of Genesis"
+fi
+
 
 bullet() {
 	if [[ $1 == 'x' ]] ; then
@@ -100,8 +111,8 @@ exodus() {
     __key=$2
     __env=$1
   fi
-  if safe -T "$GENESIS_TARGET_VAULT" exists "secret/exodus/${__env}:${__key}"; then
-    safe -T "$GENESIS_TARGET_VAULT" get "secret/exodus/${__env}:${__key}"
+  if safe "$GENESIS_TARGET_VAULT" exists "secret/exodus/${__env}:${__key}"; then
+    safe "$GENESIS_TARGET_VAULT" get "secret/exodus/${__env}:${__key}"
   fi
 }
 export -f exodus
@@ -109,7 +120,7 @@ export -f exodus
 # have_exodus_data_for env/type - return true if exodus data exists
 have_exodus_data_for() {
   local __env=${1:?have_exodus_data_for() must provide an environment/type}
-  safe -T "$GENESIS_TARGET_VAULT" exists "secret/exodus/${__env}"
+  safe "$GENESIS_TARGET_VAULT" exists "secret/exodus/${__env}"
   return $?
 }
 export -f have_exodus_data_for
@@ -408,11 +419,6 @@ validate_features() {
   fi
 }
 export -f validate_features
-
-describe() {
-  genesis ui-describe -- "$@"
-}
-export -f describe
 
 prompt_for() {
   local __var="$1" __type="$2"; shift 2;

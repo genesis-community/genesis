@@ -179,7 +179,7 @@ sub run_hook {
 		$ENV{GENESIS_ROOT}         = $opts{env}->path;
 		$ENV{GENESIS_ENVIRONMENT}  = $opts{env}->name;
 		$ENV{GENESIS_TYPE}         = $opts{env}->type;
-		$ENV{GENESIS_TARGET_VAULT} = $opts{env}->vault->url;
+		$ENV{GENESIS_TARGET_VAULT} = $ENV{SAFE_TARGET} = $opts{env}->vault->url;
 		$ENV{GENESIS_VERIFY_VAULT} = $opts{env}->vault->verify || "";
 		$ENV{GENESIS_VAULT_PREFIX} = $opts{env}->prefix;
 
@@ -199,6 +199,7 @@ sub run_hook {
 	} elsif ($hook eq 'subkit') {
 		bug("The 'features' option to run_hook is required for the '$hook' hook!!")
 			unless $opts{features};
+		$ENV{GENESIS_TARGET_VAULT} = $ENV{SAFE_TARGET} = Genesis::Vault->current || Genesis::Vault->default; #for legacy
 	}
 
 	my @args;

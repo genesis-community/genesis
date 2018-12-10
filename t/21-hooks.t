@@ -30,6 +30,9 @@ my $stack_scale;
 
 my $vault_target = vault_ok;
 
+# Compensate for not running through bin/genesis
+$ENV{GENESIS_CALLBACK_BIN} = "$ENV{GENESIS_TOPDIR}/bin/genesis";
+
 sub again {
 	system("rm -rf $tmp; mkdir -p $tmp");
 	fake_bosh;
