@@ -567,10 +567,19 @@ sub popd {
 
 sub tcp_listening {
 	my ($host,$port) = @_;
+	my ($ping_count,$ping_delay,$ping_timeout) = (3,0.1,10);
+
+	# Check if host is reachable
+	run(
+		{passfail => 1}, 'ping -c "$1" -i "$2" -t "$3" "$4" >/dev/null',
+		$ping_count, $ping_delay, $ping_timeout, $host
+	) or return 0;
+
+	# Check if host is listening on given port
 	run(
 		{passfail => 1},
-		"(</dev/tcp/$host/$port) >/dev/null 2>&1"
-	)
+		"(</dev/tcp/$host/$port) >/dev/null"
+	);
 }
 
 # Because x FH args... translates to FH->x args, it is required to monkey-patch
