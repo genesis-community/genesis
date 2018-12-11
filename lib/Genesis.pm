@@ -25,7 +25,7 @@ our @EXPORT = qw/
 
 	csprintf
 	explain waiting_on
-	debug trace dump_var
+	debug trace dump_var dump_stack
 	error	bail bug
 
 	vaulted
@@ -178,6 +178,32 @@ sub dump_var {
 	my (%vars) = @_;
 	_log("VALUE", csprintf("#M{$_} = ").Dumper($vars{$_}) .csprintf("#Ki{# in $sub [$file:L$ln]}"), "Wb") for (keys %vars);
 }
+
+sub dump_stack {
+	return unless envset("GENESIS_DEBUG") || envset("GENESIS_TRACE");
+	my $depth=0;
+	my ($package,$file,$line,$sub,@stack,@info);
+	my ($sub_size, $line_size, $file_size) = (10,4,4);
+
+  while (@info = caller($depth++)) {
+		$sub = $info[3];
+		$sub_size  = (sort {$b <=> $a} ($sub_size, length($sub )))[0];
+		if ($file) {
+			push @stack, [$line,$sub,$file];
+			$line_size = (sort {$b <=> $a} ($line_size,length($line)))[0];
+			$file_size = (sort {$b <=> $a} ($file_size,length($file)))[0];
+		}
+		$file = $info[1];
+		$line = $info[2];
+	}
+
+	print STDERR "\n"; # Ensures that the header lines up at the cost of a blank line
+	my $header = csprintf("#Wku{%*s}  #Wku{%-*s}  #Wku{%-*s}\n", $line_size, "Line", $sub_size, "Subroutine", $file_size, "File");
+	_log("STACK", $header.join("\n",map {
+		csprintf("#w{%*s}  #Y{%-*s}  #Ki{%s}", $line_size, $_->[0], $sub_size, $_->[1], $_->[2])
+	} @stack), "kY");
+}
+
 
 sub trace {
 	return unless envset "GENESIS_TRACE";
