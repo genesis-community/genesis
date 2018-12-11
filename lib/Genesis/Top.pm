@@ -42,8 +42,13 @@ sub create {
 	my $self = $class->new($path);
 	$self->mkdir(".genesis");
 
+	# Register vault
+	my $vault = Genesis::Vault->target($opts{vault});
+
 	# Write new configuration
-	$self->_write_config($name, $Genesis::VERSION, Genesis::Vault->target($opts{vault}));
+	$self->_write_config($name, $Genesis::VERSION, $vault);
+	$self->config; #read config
+	$self->{_vault} = $vault;
 
 	$self->mkfile("README.md", # {{{
 <<EOF);
