@@ -5,6 +5,8 @@ use warnings;
 use lib 't';
 use helper;
 
+vault_ok();
+
 my $tmp = workdir 'yamls-deployments';
 chdir $tmp or die;
 
@@ -52,4 +54,5 @@ output_ok "genesis yamls sw-openstack-east-prod.yml", <<EOF, "yaml ordering os c
 EOF
 
 chdir $TOPDIR;
+teardown_vault;
 done_testing;

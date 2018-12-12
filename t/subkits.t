@@ -7,6 +7,7 @@ use helper;
 use Test::Differences;
 
 $ENV{GENESIS_LEGACY}=1;
+vault_ok;
 
 my $tmp = workdir;
 ok -d "t/repos/subkit-test", "subkit-test repo exists" or die;
@@ -54,4 +55,5 @@ eq_or_diff get_file("$tmp/errors"), <<EOF, "manifest generate fails with too man
 You selected too many subkits for your blobstore. Should be only one of 'webdav', 's3'
 EOF
 
+teardown_vault;
 done_testing;

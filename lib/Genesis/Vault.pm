@@ -88,6 +88,7 @@ sub target {
 	my $status = $vault->status;
 	error("#%s{%s}\n", $status eq "ok"?"G":"R", $status)
 		unless in_callback || under_test;
+	debug "Vault status: $status";
 	bail("#R{[ERROR]} Could not connect to vault") unless $status eq "ok";
 	return $vault->set_as_current;
 }
@@ -125,6 +126,7 @@ sub attach {
 	printf STDERR csprintf("\nUsing vault at #C{%s}.\n#yi{Verifying availability...}", $vault->url)
 	  unless envset "GENESIS_TESTING";
 	my $status = $vault->status;
+	debug "Vault status: $status";
 	error("#%s{%s}\n", $status eq "ok"?"G":"R", $status)
 		unless envset "GENESIS_TESTING";
 	bail("#R{[ERROR]} Could not connect to vault") unless $status eq "ok";

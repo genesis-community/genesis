@@ -183,7 +183,8 @@ sub vault {
 				$self->config->{secrets_provider}{insecure}
 			);
 		} else {
-			$self->{_vault} = Genesis::Vault::default->set_as_current();
+			$self->{_vault} = Genesis::Vault::default;
+			$self->{_vault}->set_as_current() if $self->{_vault};
 		}
 	}
 	return $self->{_vault};
