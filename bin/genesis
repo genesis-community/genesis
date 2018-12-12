@@ -739,7 +739,7 @@ sub {
 
 command("secrets-provider", <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE: genesis secrets-provider [-i|-interactive|-c|--clear] [target]
+USAGE: genesis secrets-provider [-i|--interactive|-c|--clear] [target]
 
 ARGUMENTS
   target              Set the secrets provider to the specified target, which

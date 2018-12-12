@@ -67,11 +67,11 @@ sub target {
 		my @invalid_urls = grep {$uses{$_} > 1} keys(%uses);
 
 		if (scalar(@invalid_urls)) {
-			$msg .= "\n".
-				"Note: One or more vault targets have been omitted because they are alias for\n".
+			$msg .= csprintf("\n".
+				"#Y{Note:} One or more vault targets have been omitted because they are alias for\n".
 				"      the same URL, which is incompatible with Genesis's distributed model.\n".
 				"      If you need one of the omitted targets, please ensure there is only one\n".
-				"      target alias that uses its URL.\n"
+				"      target alias that uses its URL.\n");
 		}
 
 		$url = prompt_for_choice(
@@ -256,6 +256,7 @@ sub set {
 		return $value;
 	} else {
 		# Interactive - you must supply the prompt before hand
+		die_unless_controlling_terminal;
 		my ($out,$rc) = $self->query({interactive => 1},'set', $path, $key);
 		bail(
 			"#R{[ERROR]} Could not write #C{%s:%s} to vault at #M{%s}",
@@ -327,7 +328,7 @@ sub status {
 		return "sealed" if $1 == 2;
 		return "unreachable";
 	}
-	return "invalid authentication" unless $self->has('secret/handshake');
+	return "uninitialized" unless $self->has('secret/handshake');
 	return "ok"
 }
 
