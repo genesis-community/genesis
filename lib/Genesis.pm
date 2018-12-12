@@ -593,7 +593,7 @@ sub popd {
 
 sub tcp_listening {
 	my ($host,$port) = @_;
-	my ($ping_count,$ping_delay,$ping_timeout) = (3,0.1,10);
+	my ($ping_count,$ping_delay,$ping_timeout) = (2,0.2,10);
 
 	# Check if host is reachable
 	run(
