@@ -64,16 +64,16 @@ sub load {
 		scalar($env->lookup('kit.version')))
 			or die "Unable to locate kit for '$env->{name}' environment.\n";
 
-	# determine our vault and secret prefix
+	# determine our vault and secret path
 	bail("\n#R{[ERROR]} No vault specified or configured.")
 		unless $env->vault;
-	my ($prefix,$prefix_key) = $env->lookup(
-		['genesis.secrets_prefix','params.vault_prefix','params.vault'],
-		$env->_default_prefix
+	my ($secrets_path,$src_key) = $env->lookup(
+		['genesis.secrets_path','params.vault_prefix','params.vault'],
+		$env->_default_secrets_path
 	);
-	$env->{prefix} = $prefix;
-	error "\n#Y{[WARNING]} Environment file $env->{file} uses #C{$prefix_key} to specify secrets prefix in Vault.\nThis has been moved to #C{genesis.secrets_prefix} -- please update your file to remove this warning."
-		if defined($prefix_key) && $prefix_key ne 'genesis.secrets_prefix';
+	$env->{secrets_path} = $secrets_path;
+	error "\n#Y{[WARNING]} Environment file $env->{file} uses #C{$src_key} to specify secrets path in Vault.\nThis has been moved to #C{genesis.secrets_path} -- please update your file to remove this warning."
+		if defined($src_key) && $src_key ne 'genesis.secrets_path';
 
 	return $env;
 }
@@ -92,7 +92,7 @@ sub create {
 			unless $opts{$_};
 	}
 
-	my $env = $class->new(_slice(\%opts, qw(name top kit prefix)));
+	my $env = $class->new(_slice(\%opts, qw(name top kit secrets_path)));
 
 	# environment must not already exist...
 	die "Environment file $env->{file} already exists.\n"
@@ -101,7 +101,7 @@ sub create {
 	# target vault and purge secrets that may already exist
 	bail("\n#R{[ERROR]} No vault specified or configured.")
 		unless $env->vault;
-	$env->{prefix} = $opts{prefix} || $env->_default_prefix;
+	$env->{secrets_path} = $opts{secrets_path} || $env->_default_secrets_path;
 	$env->purge_secrets(); # TBD: should we allow them to continue without purging?
 
 	## initialize the environment
@@ -121,9 +121,9 @@ sub create {
 # public accessors
 sub name   { $_[0]->{name};   }
 sub file   { $_[0]->{file};   }
-sub prefix { $_[0]->{prefix} || $_[0]->_default_prefix; }
 sub kit    { $_[0]->{kit}    || bug("Incompletely initialized environment '".$_[0]->name."': no kit specified"); }
 sub top    { $_[0]->{top}    || bug("Incompletely initialized environment '".$_[0]->name."': no top specified"); }
+sub secrets_path { $_[0]->{secrets_path} || $_[0]->_default_secrets_path; }
 
 # delegations
 sub type   { $_[0]->top->type; }
@@ -140,10 +140,10 @@ sub tmppath {
 }
 
 sub vault_path {
-	"secret/" . $_[0]->prefix;
+	"secret/" . $_[0]->secrets_path;
 }
 
-sub _default_prefix {
+sub _default_secrets_path {
 	my ($self) = @_;
 	my $p = $self->name;         # start with env name
 	$p =~ s|-|/|g;               # swap hyphens for slashes
@@ -444,7 +444,7 @@ sub cached_manifest_info {
 
 sub _yaml_files {
 	my ($self) = @_;
-	my $prefix = $self->_default_prefix;
+	my $vault_path = $self->vault_path;
 	my $type   = $self->{top}->type;
 
 	my @cc;
@@ -459,11 +459,11 @@ sub _yaml_files {
 		trace("[env $self->{name}] in_yaml_files(): IS a create-env, skipping cloud-config");
 	}
 
-	if ($self->kit->feature_compatibility('2.6.11')) {
+	if ($self->kit->feature_compatibility('2.6.13')) {
 		mkfile_or_fail("$self->{__tmp}/init.yml", 0644, <<EOF);
 ---
 meta:
-  vault: (( concat "secret/" genesis.secrets_prefix || "$prefix" ))
+  vault: $vault_path
 exodus:  {}
 genesis: {}
 params:  {}
@@ -473,7 +473,7 @@ EOF
 		mkfile_or_fail("$self->{__tmp}/init.yml", 0644, <<EOF);
 ---
 meta:
-  vault: (( concat "secret/" genesis.secrets_prefix || params.vault || "$prefix" ))
+  vault: $vault_path
 exodus: {}
 genesis: {}
 params:
@@ -710,11 +710,11 @@ sub add_secrets { # WIP - majorly broken right now.  sorry bout that.
 
 	if ($self->has_hook('secrets')) {
 		$self->run_hook('secrets', action => $opts{recreate} ? 'new' : 'add',
-		                           vault  => $self->{prefix});
+		                           vault  => $self->secrets_path);
 	} else {
 		Genesis::Legacy::vaultify_secrets($self->kit,
 			env       => $self,
-			prefix    => $self->{prefix},
+			prefix    => $self->secrets_path,
 			scope     => $opts{recreate} ? 'force' : 'add',
 			features  => [$self->features]);
 	}
@@ -723,7 +723,7 @@ sub add_secrets { # WIP - majorly broken right now.  sorry bout that.
 sub purge_secrets {
 	my ($self, %opts) = @_;
 
-	my @paths = $self->vault->paths("secret/".$self->prefix);
+	my @paths = $self->vault->paths("secret/".$self->secrets_path);
 	return 1 unless (scalar(@paths));
 
 	die_unless_controlling_terminal;
@@ -732,11 +732,11 @@ sub purge_secrets {
 	bullet $_ for (@paths);
 	my $response = prompt_for_line(undef, "Type 'yes' to remove these secrets","");
 	if ($response eq 'yes') {
-		waiting_on "\nDeleting existing secrets under '#C{%s}'...", $self->prefix;
+		waiting_on "\nDeleting existing secrets under '#C{%s}'...", $self->secrets_path;
 		$self->vault->query('rm',$_) for (@paths);
 		explain "#G{done}\n"
 	} else {
-		explain "\nAborted!\nKeeping all existing secrets under '#C{%s}'.", $self->prefix;
+		explain "\nAborted!\nKeeping all existing secrets under '#C{%s}'.", $self->secrets_path;
 		return 0;
 	}
 	return 1;
@@ -748,7 +748,7 @@ sub check_secrets {
 	$opts{indent} ||= ''; # Used when imbedded under another function such as check or deploy
 	if ($self->has_hook('secrets')) {
 		my ($ok,$secrets) = $self->run_hook(
-			'secrets', action => 'check', vault  => $self->{prefix}
+			'secrets', action => 'check', vault  => $self->secrets_path
 		);
 		return $ok;
 	} else {
@@ -757,7 +757,7 @@ sub check_secrets {
 		my $meta = $self->kit->metadata;
 		my $features = [($self->features)];
 
-		print csprintf("%s#yi{Retrieving secrets for $self->{prefix}...}", $opts{indent});
+		print csprintf("%s#yi{Retrieving secrets for %s...}", $opts{indent}, $self->secrets_path);
 
 		my $secrets = {};
 		for ($self->vault->keys($self->vault_path)) {
@@ -771,7 +771,7 @@ sub check_secrets {
 			$self,
 			Genesis::Legacy::active_credentials($meta, $features),
 			env       => $self,
-			prefix    => $self->{prefix},
+			prefix    => $self->secrets_path,
 			features  => $features);
 		if (@creds) {
 			push @missing, _check_secret($_, $secrets) for (@creds);
@@ -783,7 +783,7 @@ sub check_secrets {
 		my @certs = Genesis::Legacy::cert_commands(
 			Genesis::Legacy::active_certificates($meta, $features),
 			env       => $self,
-			prefix    => $self->{prefix},
+			prefix    => $self->secrets_path,
 			features  => $features);
 		if (@certs) {
 			push @missing, _check_secret($_, $secrets) for (@certs);
@@ -849,11 +849,11 @@ sub rotate_secrets {
 
 	if ($self->has_hook('secrets')) {
 		$self->run_hook('secrets', action => 'rotate',
-		                           vault  => $self->{prefix});
+		                           vault  => $self->secrets_path);
 	} else {
 		Genesis::Legacy::vaultify_secrets($self->kit,
 			env       => $self,
-			prefix    => $self->{prefix},
+			prefix    => $self->secrets_path,
 			scope     => $opts{force} ? 'force' : '',
 			features  => [$self->features]);
 	}
@@ -925,8 +925,8 @@ things like the `new` hook:
        kit  => $top->find_kit('some-kit', 'latest'),
     );
 
-It can optionally take the `vault` and `prefix` option to specify the vault name
-and environment vault prefix (without the secret/ preamble) respectively
+It can optionally take the `vault` and `secrets_path` option to specify the vault name
+and environment vault secrets_path (without the secret/ prefix) respectively
 
 You can also avail yourself of the C<new> constructor, which does a lot of
 the validation, but won't access the environment files directly:
@@ -959,7 +959,7 @@ The Genesis::Top object that represents the root working directory of the
 deployments repository.  This is used to fetch things like deployment
 configuration, kits, etc.  This option is B<required>.
 
-=item B<prefix>
+=item B<secrets_path>
 
 A path in the Genesis Vault, under which secrets for this environment should
 be stored.  Normally, you don't need to specify this.  When an environment
@@ -1055,11 +1055,12 @@ of the environment name and the root directory repository type (i.e.
 C<bosh>, C<concourse>, etc.)
 
 
-=head2 prefix()
+=head2 secrets_path()
 
-Retrieve the Vault prefix that this environment should store its secrets
-under, based off of either its name (by default) or its C<params.vault>
-parameter.
+Retrieve the Vault secrets_path that this environment should store its secrets
+under, based off of either its name (by default) or its C<genesis.secrets_path>
+parameter.  Legacy environments may also have this specified by C<params.vault>
+or C<params.vault_prefix>
 
 =head2 kit()
 

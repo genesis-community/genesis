@@ -397,7 +397,7 @@ sub run_param_hook {
 		{interactive => 1, env => {
 			GENESIS => $ENV{GENESIS_CALLBACK_BIN},
 			GENESIS_ENVIRONMENT_NAME => $env->{name},
-			GENESIS_VAULT_PREFIX => $env->{prefix} }},
+			GENESIS_VAULT_PREFIX => $env->{secrets_path} }},
 		$hook, "$dir/in", "$dir/out", @features
 	);
 	die "\nNew environment creation cancelled.\n" if $rc == 130;
@@ -420,7 +420,7 @@ sub new_environment {
 	my @features = prompt_for_env_features($self);
 	my $params = process_params($k,
 		env          => $self,
-		vault_prefix => $self->{prefix},
+		vault_prefix => $self->{secrets_path},
 		features     => \@features,
 	);
 	$params = run_param_hook($self, $params, @features);
@@ -462,7 +462,7 @@ sub new_environment {
 
 params:
   env:   $self->{name}
-  vault: $self->{prefix}
+  vault: $self->{secrets_path}
 EOF
 	if (defined($ENV{GENESIS_BOSH_ENVIRONMENT})) {
 		print $fh <<EOF;

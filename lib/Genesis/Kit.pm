@@ -181,7 +181,8 @@ sub run_hook {
 		$ENV{GENESIS_TYPE}         = $opts{env}->type;
 		$ENV{GENESIS_TARGET_VAULT} = $ENV{SAFE_TARGET} = $opts{env}->vault->url;
 		$ENV{GENESIS_VERIFY_VAULT} = $opts{env}->vault->verify || "";
-		$ENV{GENESIS_VAULT_PREFIX} = $opts{env}->prefix;
+
+		$ENV{GENESIS_VAULT_PREFIX} = $ENV{GENESIS_SECRETS_PATH} = $opts{env}->secrets_path;
 
 		unless (grep { $_ eq $hook } qw/new prereqs/) {
 			$ENV{GENESIS_REQUESTED_FEATURES} = join(' ', $opts{env}->features);
@@ -203,11 +204,11 @@ sub run_hook {
 	}
 
 	my @args;
-	if ($hook eq 'new') {
+	if ($hook eq 'new' && ! $self->feature_compatibility('2.6.13')) {
 		@args = (
-			$ENV{GENESIS_ROOT},           # deprecate!
-			$ENV{GENESIS_ENVIRONMENT},    # deprecate!
-			$ENV{GENESIS_VAULT_PREFIX},   # deprecate!
+			$ENV{GENESIS_ROOT},           # deprecated in 2.6.13!
+			$ENV{GENESIS_ENVIRONMENT},    # deprecated in 2.6.13!
+			$ENV{GENESIS_VAULT_PREFIX},   # deprecated in 2.6.13!
 		);
 
 	} elsif ($hook eq 'secrets') {

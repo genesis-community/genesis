@@ -810,7 +810,7 @@ USAGE: genesis new env-name[.yml] [<options...>]
 
 OPTIONS
 $GLOBAL_USAGE
-      --prefix       By default, the vault path is secret/<env-name>/<kit>
+	-P, --secrets-path By default, the vault path is secret/<env-name>/<kit>
                      where <env-name> has had any - converted to / and
                      <kit> is the kit name.  Use this option to change the part
                      after secret/
@@ -824,6 +824,8 @@ LEGACY OPTIONS:
                      generated credentials in.  Only accepted if the deployment
                      repository does not have a vault specified.
 
+      --prefix       Old name of --secrets-path option.
+
       --no-secrets   Do not generate secrets in the Vault.  You will have to
                      manually run `genesis secrets` yourself.  This option is
                      accepted but no longer has any effect.
@@ -835,7 +837,7 @@ sub {
 	);
 	options(\@_, \%options, qw/
 		vault=s
-		prefix=s
+		secrets-path|prefix|P=s
 		secrets!
 		kit|k=s
 	/);
@@ -872,7 +874,7 @@ sub {
 
 	# create the environment
 	explain("Setting up new environment #C{$name}...");
-	my $env = $top->create_env($name, $kit, vault => $options{vault}, prefix => $options{prefix});
+	my $env = $top->create_env($name, $kit, vault => $options{vault}, secrets_path => $options{"secrets-path"});
 
 	# let the user know
 	explain("New environment $env->{name} provisioned!");

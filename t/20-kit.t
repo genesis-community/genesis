@@ -26,7 +26,7 @@ sub new {
 sub features { @{$_[0]{f}}; }
 sub name { "mock-env"; }
 sub type { "mock-type"; }
-sub prefix { "mock/env"; }
+sub secrets_path { "mock/env"; }
 sub needs_bosh_create_env { 0; }
 sub lookup_bosh_target { wantarray ? ('a-bosh', 'params.bosh') : 'a-bosh'; }
 sub bosh_target { 'a-bosh'; }
