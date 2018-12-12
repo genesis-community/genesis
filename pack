@@ -132,7 +132,8 @@ use FindBin;
 die "You have no \$HOME.  Please set one and re-run.\n"
 	unless $ENV{HOME};
 
-my $root = "$ENV{HOME}/.geese";
+$ENV{GENESIS_HOME} ||= $ENV{HOME};
+my $root = "$ENV{GENESIS_HOME}/.geese";
 mkdir $root unless -d $root;
 
 $ENV{GENESIS_CALLBACK_BIN} = abs_path(__FILE__);
