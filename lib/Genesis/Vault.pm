@@ -74,6 +74,9 @@ sub target {
 				"      target alias that uses its URL.\n");
 		}
 
+		bail("#R{[ERROR]} There are no valid vault targets found on this system.")
+			unless scalar(@choices);
+
 		$url = prompt_for_choice(
 			$msg,
 			\@choices,

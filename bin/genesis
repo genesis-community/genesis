@@ -19,6 +19,7 @@ use POSIX qw/strftime/;
 use Cwd qw/getcwd abs_path/;
 use FindBin;
 use Data::Dumper;
+use Encode;
 
 use Genesis;
 use Genesis::UI;
@@ -2278,6 +2279,7 @@ sub main {
 	my ($cmd, @args);
 	while (@_ > 0) {
 		my $arg = shift @_;
+		$arg = decode($ENV{LANG},$arg) if $ENV{LANG};
 		if ($cmd || $arg =~ m/^-+/) {
 			push @args, $arg;
 			push @args, shift @_ if $arg eq '-C';

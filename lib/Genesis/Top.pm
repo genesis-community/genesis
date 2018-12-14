@@ -9,6 +9,7 @@ use Genesis::Kit::Dev;
 use Genesis::Vault;
 
 use Cwd ();
+use File::Path qw/rmtree/;
 
 sub new {
 	my ($class, $root, %opts) = @_;
@@ -23,34 +24,35 @@ sub new {
 
 sub create {
 	my ($class, $path, $name, %opts) = @_;
-	debug("creating a new Genesis deployments repo named '$name' at $path...");
+	debug("creating a new Genesis deployments repository named '$name' at $path...");
 
 	# TODO: $opts{kit} does get passed in, and future versions will only allow one kit type per deployment
 	# Need to determine how this gets added to the configuration and how it impacts the current use of deployment type
 	# Probably becomes deployment-name and kit becomes the type (or drop type and use kit)
 
 	$name =~ s/-deployments?//;
-	$name =~ m/^[a-z][a-z0-9_-]+$/
-		or die "Invalid Genesis repo name '$name'\n";
+	bail "#R{[ERROR]} Invalid Genesis deployment repository name '$name'"
+		unless $name =~ m/^[a-z][a-z0-9_-]+$/;
+
 	debug("generating a new Genesis repo, named $name");
 
 	my $dir = $opts{directory} || "${name}-deployments";
+	bail "#R{[ERROR]} Repository directory name must only contain alpha-numeric characters, periods, hyphens and underscores"
+		if $dir =~ /([^\w\.-])/;
+
 	$path .= "/$dir";
-	die "Cowardly refusing to create new deployments repository `$dir': one already exists.\n"
+	bail "#R{[ERROR]} Cannot create new deployments repository `$dir': already exists!"
 		if -e $path;
 
 	my $self = $class->new($path);
 	$self->mkdir(".genesis");
 
-	# Register vault
-	my $vault = Genesis::Vault->target($opts{vault});
+	eval { # to delete path if creation fails
 
-	# Write new configuration
-	$self->_write_config($name, $Genesis::VERSION, $vault);
-	$self->config; #read config
-	$self->{_vault} = $vault;
+		# Write new configuration
+		$self->_write_config($name, $Genesis::VERSION, Genesis::Vault->target($opts{vault}));
 
-	$self->mkfile("README.md", # {{{
+		$self->mkfile("README.md", # {{{
 <<EOF);
 $name deployments
 ==============================
@@ -168,6 +170,13 @@ what is being deployed, and how.
 EOF
 
 # }}}
+
+	};
+	if ($@) {
+		debug("removing incomplete Genesis deployments repository at #C{$path} due to failed creation");
+		rmtree $path;
+		die $@;
+	}
 
 	return $self;
 }
@@ -407,9 +416,10 @@ genesis_version: $version$vault_info
 EOF
 # }}}
 
-	# clear out old data
+	# reload config and vault
 	$self->{_config} = undef;
-	$self->{_vault} = undef;
+	$self->{_vault} = $vault;
+	$self->config;
 }
 
 sub find_kit {

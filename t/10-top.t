@@ -96,8 +96,12 @@ subtest 'init' => sub {
 
 	# with a directory override
 	$tmp = workdir;
-	$top = Genesis::Top->create($tmp, 'jumpbox', directory => 'something-else', vault=>$VAULT_URL);
-	ok -f Cwd::abs_path("$tmp/something-else/.genesis/config"), ".genesis created in correct top dir";
+	use utf8;
+	my $dir = "être_réel.my-dep";
+	throws_ok {Genesis::Top->create($tmp, 'jumpbox', directory => '../bad', vault=>$VAULT_URL)} qr/repository directory name must only contain alpha-numeric characters, periods, hyphens and underscores/i, "Doesn't accept slashes in directory names";
+	throws_ok {Genesis::Top->create($tmp, 'jumpbox', directory => 'also bad', vault=>$VAULT_URL)} qr/repository directory name must only contain alpha-numeric characters, periods, hyphens and underscores/i, "Doesn't accept spaces in directory names";
+	lives_ok  {$top = Genesis::Top->create($tmp, 'jumpbox', directory => $dir, vault=>$VAULT_URL)} "Accepts underscore, period, dashes and accents in directory name";
+	ok -f Cwd::abs_path("$tmp/$dir/.genesis/config"), ".genesis created in correct top dir";
 	ok -f $top->path('.genesis/config'), "Top->create should create a new .genesis/config";
 	is $top->type, 'jumpbox', 'an initialized top has a type';
 	is $top->vault->url, $VAULT_URL, 'specifies the correct vault url';
@@ -105,11 +109,11 @@ subtest 'init' => sub {
 	# overwrite tests
 	$tmp = workdir;
 	lives_ok { Genesis::Top->create($tmp, 'test', vault=>$VAULT_URL) } "it should be okay to init once";
-	throws_ok { Genesis::Top->create($tmp, 'test', vault=>$VAULT_URL) } qr/cowardly refusing/i,
+	throws_ok { Genesis::Top->create($tmp, 'test', vault=>$VAULT_URL) } qr/cannot create new deployments repository `test-deployments': already exists!/i,
 		"it is not okay to init twice";
 
 	# name validation
-	throws_ok { Genesis::Top->create($tmp, '!@#$ing-deployments', vault=>$VAULT_URL) } qr/invalid genesis repo name/i,
+	throws_ok { Genesis::Top->create($tmp, '!@#$ing-deployments', vault=>$VAULT_URL) } qr/invalid Genesis deployment repository name '!@#\$ing'/i,
 		"it is not okay to swear in genesis repo names";
 };
 
@@ -188,8 +192,9 @@ EOF
 
 	# Check that vault can be changed and set in config when no vault is in config
 	is($top->set_vault(target => $VAULT_URL{$vault_target}), undef, "top can set its registered vault when it doesn't have one");
-	is($top->{_config}, undef, "top clears its configuration after saving its new vault");
-	is($top->{_vault}, undef, "top clears its vault after saving its new vault");
+	is($top->{_config}{secrets_provider}{url},$VAULT_URL{$vault_target} , "top updates its configuration after saving its new vault");
+	is(ref($top->{_vault}), "Genesis::Vault", "top has a vault after saving its new vault");
+	is($top->{_vault}->url, $VAULT_URL{$vault_target}, "top has the correct vault after saving its new vault");
 	is($top->vault->{name}, $vault_target, "top targets the expected vault");
 	yaml_is(get_file("$tmp/.genesis/config"), <<EOF, ".genesis/config contains the correct information");
 ---
@@ -234,8 +239,9 @@ EOF
 
 	# Check that vault can be changed and set in config when a vault is already in config
 	is($top->set_vault(target => $VAULT_URL{$other_vault_name}), undef, "top can set its registered vault when it already has one");
-	is($top->{_config}, undef, "top clears its configuration after saving its new vault");
-	is($top->{_vault}, undef, "top clears its vault after saving its new vault");
+	is($top->{_config}{secrets_provider}{url},$VAULT_URL{$other_vault_name} , "top updates its configuration after saving its new vault");
+	is(ref($top->{_vault}), "Genesis::Vault", "top has a vault after saving its new vault");
+	is($top->{_vault}->url, $VAULT_URL{$other_vault_name}, "top has the correct vault after saving its new vault");
 	is($top->vault->{name}, $other_vault_name, "top targets the expected vault");
 	yaml_is(get_file("$tmp/.genesis/config"), <<EOF, ".genesis/config contains the correct information");
 ---
