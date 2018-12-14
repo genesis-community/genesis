@@ -60,6 +60,12 @@ Secrets provider for concourse deployment at /path/to/concourse-deployments:
   be edited by hand.  If there is a use-case for need to change this file
   manually, please open an issue.
 
+- You must have at least one safe target with a unique url.  Normally, when
+  initially deploying your first BOSH and Vault using genesis, you will stand
+  up a local vault using `safe local -m`, then once the permanent Vault is in
+  place, you will move your secrets to that Vault, and then update your
+  registered secrets provider to point to the permanent Vault.
+
   More information on the design of and reason for this change can be found at
   https://trello.com/c/n4WhOC6p
 
@@ -130,6 +136,9 @@ domain names that can be used as the host.
 - Added `bullet` hooks helper to print green checkmark (`bullet "√"`) or red X
   (`bullet "x"`) in the same style that `genesis check-secrets` uses.
 
+- `prompt_for line` helper can now accept an empty response by using the
+  `--default ''` option.
+
 - Improved `cloud_config_needs`:
 
   - Now uses same green checkmark/red x that check-secrets uses. _(uses
@@ -157,7 +166,6 @@ domain names that can be used as the host.
     `GENESIS_SECRETS_PATH` environment variables respectively.
 
   - `params.env` will no longer be provided in the environment file stack.
-
 
 # Bug Fixes
 

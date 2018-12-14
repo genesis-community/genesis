@@ -168,7 +168,6 @@ sub debug {
 	_log("DEBUG", csprintf(@_), "Wm")
 }
 
-
 sub dump_var {
 	return unless envset("GENESIS_DEBUG") || envset("GENESIS_TRACE");
 	local $Data::Dumper::Deparse = 1;
@@ -203,7 +202,6 @@ sub dump_stack {
 		csprintf("#w{%*s}  #Y{%-*s}  #Ki{%s}", $line_size, $_->[0], $sub_size, $_->[1], $_->[2])
 	} @stack), "kY");
 }
-
 
 sub trace {
 	return unless envset "GENESIS_TRACE";
