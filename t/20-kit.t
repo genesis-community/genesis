@@ -11,22 +11,27 @@ use_ok 'Genesis';
 use_ok 'Genesis::Kit';
 use_ok 'Genesis::Kit::Compiled';
 use_ok 'Genesis::Kit::Dev';
+use_ok 'Genesis::Vault';
 use Genesis::Kit::Compiler;
 
 package mockenv;
 
 sub new {
 	my ($class, @features) = @_;
-	bless { f => \@features }, $class;
+	bless {
+		f => \@features,
+		vault => Genesis::Vault->new(url => "https://localhost:8999", name => "mockvault")
+	}, $class;
 }
 sub features { @{$_[0]{f}}; }
 sub name { "mock-env"; }
 sub type { "mock-type"; }
-sub prefix { "mock/env"; }
+sub secrets_path { "mock/env"; }
 sub needs_bosh_create_env { 0; }
 sub lookup_bosh_target { wantarray ? ('a-bosh', 'params.bosh') : 'a-bosh'; }
 sub bosh_target { 'a-bosh'; }
 sub path { "some/path/some/where".($_[1]?"/$_[1]":""); }
+sub vault { $_[0]->{vault} }
 
 package main;
 

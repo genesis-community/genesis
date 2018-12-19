@@ -10,7 +10,7 @@ sub write {
 
 	if (!$SCRIPT) {
 		$SCRIPT = do { local $/, <DATA> };
-		close($data);
+		close(DATA);
 	}
 
 	print $fh $SCRIPT;
@@ -44,16 +44,43 @@ __DATA__
 if [[ "${GENESIS_TRACE}" == "y" ]] ; then
   echo >&2 "TRACE> Helper script environment variables:"
   export >&2
-fi 
+fi
 
 genesis() {
-  [[ -z "${GENESIS_CALLBACK_BIN}" ]] \
-    && echo >&2 "Genesis command not specified - this is a bug in Genesis, or you are running $0 outside of Genesis" \
-    && exit 1
-  ${GENESIS_CALLBACK_BIN} "$@"
-  return $?
+	[[ -z "${GENESIS_CALLBACK_BIN}" ]] \
+		&& echo >&2 "Genesis command not specified - this is a bug in Genesis, or you are running $0 outside of Genesis" \
+		&& exit 2
+	command ${GENESIS_CALLBACK_BIN} "$@"
+	return $?
 }
 export -f genesis
+
+describe() {
+	genesis ui-describe -- "$@"
+}
+export -f describe
+
+__bail() {
+  local rc=1
+  [[ "$1" == "--rc" ]] && rc="$2" && shift 2
+  describe "$@" >&2
+  exit $rc
+}
+export -f __bail
+
+if [[ -z "$SAFE_TARGET" || "$SAFE_TARGET" != "$GENESIS_TARGET_VAULT" ]] ; then
+	__bail "Safe target not associated with Genesis Vault -- this is a bug in Genesis, or you are running $0 outside of Genesis"
+fi
+
+
+bullet() {
+	if [[ $1 == 'x' ]] ; then
+		perl -e 'binmode STDOUT, ":utf8"; printf "\e[31;1m\x{2718} \e[0m"'
+	elif [[ $1 == '√' ]] ; then
+		perl -e 'binmode STDOUT, ":utf8"; printf "\e[32;1m\x{2714} \e[0m"'
+	fi
+}
+export -f bullet
 
 ###
 ###   Exodus Data Exfiltration Functions
@@ -84,8 +111,8 @@ exodus() {
     __key=$2
     __env=$1
   fi
-  if safe exists "secret/exodus/${__env}:${__key}"; then
-    safe get "secret/exodus/${__env}:${__key}"
+  if safe "$GENESIS_TARGET_VAULT" exists "secret/exodus/${__env}:${__key}"; then
+    safe "$GENESIS_TARGET_VAULT" get "secret/exodus/${__env}:${__key}"
   fi
 }
 export -f exodus
@@ -93,7 +120,7 @@ export -f exodus
 # have_exodus_data_for env/type - return true if exodus data exists
 have_exodus_data_for() {
   local __env=${1:?have_exodus_data_for() must provide an environment/type}
-  safe exists "secret/exodus/${__env}"
+  safe "$GENESIS_TARGET_VAULT" exists "secret/exodus/${__env}"
   return $?
 }
 export -f have_exodus_data_for
@@ -162,32 +189,28 @@ export -f typeof
 ###
 
 bosh() {
-  if [[ -z "${GENESIS_BOSH_COMMAND:-}" ]]; then
-    echo >&2 "BOSH CLI command not specified - this is a bug in Genesis, or you are running $0 outside of Genesis"
-    exit 1
-  fi
-  if [[ -z "${BOSH_ENVIRONMENT:-}" || -z "${BOSH_CA_CERT:-}" ]]; then
-    echo >&2 "Environment not found for BOSH Director -- please ensure you've configured your BOSH alias used by this environment"
-    exit 1
-  fi
+  [[ -z "${GENESIS_BOSH_COMMAND:-}" ]] && \
+    __bail "BOSH CLI command not specified - this is a bug in Genesis, or you are running $0 outside of Genesis"
+  [[ -z "${BOSH_ENVIRONMENT:-}" || -z "${BOSH_CA_CERT:-}" ]] && \
+    __bail "Environment not found for BOSH Director -- please ensure you've configured your BOSH alias used by this environment"
   command ${GENESIS_BOSH_COMMAND} "$@"
   return $?
 }
 export -f bosh
 
 bosh_cpi() {
-  local __have_env __error
+  local __have_env
   __have_env="$(bosh env --json | jq -r '.Tables[0].Rows[0].cpi')"
-  if [[ "$?" != "0" ]] ; then
-    __error="failed to communicate with BOSH director:"$'\n'"${__have_env}"
-  elif [[ -z "${__have_env}" ]] ; then
-    __error="no response from BOSH director"
-  else
-		echo "${__have_env%_cpi}"
-    return 0
-  fi
-  echo >&2 "Cannot determine CPI from BOSH director: unknown target: ${__error}"
-  exit 2
+  [[ "$?" != "0" ]] && \
+    __bail "Cannot determine CPI from BOSH director: unknown target" \
+           "failed to communicate with BOSH director:" \
+           "${__have_env}"
+  [[ -z "${__have_env}" ]] && \
+    __bail "Cannot determine CPI from BOSH director: unknown target" \
+           "no response from BOSH director"
+
+  echo "${__have_env%_cpi}"
+  return 0
 }
 export -f bosh_cpi
 
@@ -198,15 +221,15 @@ export __cloud_config_ok="yes"
 
 # Support function for cloud_config_needs static_ips
 __ip2dec() {
-	local __acc=0 IFS='.' __b __ip="$1"
-	# this doesn't work if __ip[@] is quoted (using IFS to split on .) - shellcheck warns that it's not quoted
-	# https://github.com/koalaman/shellcheck/wiki/SC2068
-	# shellcheck disable=SC2068
-	for __b in ${__ip[@]} ; do
-		(( __acc = (__acc << 8) + __b ))
-	done
-	unset IFS
-	echo $__acc
+  local __acc=0 IFS='.' __b __ip="$1"
+  # this doesn't work if __ip[@] is quoted (using IFS to split on .) - shellcheck warns that it's not quoted
+  # https://github.com/koalaman/shellcheck/wiki/SC2068
+  # shellcheck disable=SC2068
+  for __b in ${__ip[@]} ; do
+    (( __acc = (__acc << 8) + __b ))
+  done
+  unset IFS
+  echo $__acc
 }
 export -f __ip2dec
 
@@ -214,50 +237,53 @@ cloud_config_needs() {
   local __type=${1:?cloud_config_needs() - must specify a type}; shift
   local __name
 
-	# Special check for static_ips
-	if [[ "${__type}" == "static_ips" ]] ; then
-		local __network=${1:?cloud_config_needs(static_ips) - must supply network name}; shift
-		local __count=${1:?cloud_config_needs(static_ips) - must supply static_ip count} ; shift
+  # Special check for static_ips
+  if [[ "${__type}" == "static_ips" ]] ; then
+    local __network=${1:?cloud_config_needs(static_ips) - must supply network name}; shift
+    local __count=${1:?cloud_config_needs(static_ips) - must supply static_ip count} ; shift
 
-		local __ips __sum=0 __f __x __l
-		__ips=$(spruce json "$GENESIS_CLOUD_CONFIG" | \
-			jq -r --arg network "$__network" '.networks[]| select(.name == $network) | .subnets[] | .static[]')
+    local __ips __sum=0 __f __x __l
+    __ips=$(spruce json "$GENESIS_CLOUD_CONFIG" | \
+      jq -r --arg network "$__network" '.networks[]| select(.name == $network) | .subnets[] | .static[]')
 
-		while read -r __range ; do
-			[[ -z "$__range" ]] && continue # blank line
-			if echo "$__range" | grep -q '^\s*[\.0-9]*\(\s*-\s*[0-9\.]*\)\{0,1\}\s*$' ; then
-				read -r __f __x __l < <(
-					echo "$__range" | \
-					sed 's/^[[:space:]]*\([^-[:space:]]*\)[[:space:]]*\(\(-\)[[:space:]]*\(.*\) \)\{0,1\}/\1 \3 \4/' | \
-					sed -e 's/[[:space:]]$//' )
-				if [[ -z "$__x" && -z "$__l" ]] ; then
-					(( __sum++ )) # Single ip
-				elif [[ "$__x" == '-' ]] ; then
-					(( __sum += $(__ip2dec "$__l") - $(__ip2dec "$__f") + 1 )) # Range
-				fi
-			else
-				__cloud_config_error_messages+=( "could not parse static_ips for network $__network" )
-				__cloud_config_ok=no
-				break
-			fi
-		done < <(echo "${__ips}")
-		if [[ "$__sum" -lt "$__count" ]] ; then
-				__cloud_config_error_messages+=( "network $__network needs $__count static IP addresses, has $__sum" )
-				__cloud_config_ok=no
-		fi
-		return
-	fi
+    while read -r __range ; do
+      [[ -z "$__range" ]] && continue # blank line
+      if echo "$__range" | grep -q '^\s*[\.0-9]*\(\s*-\s*[0-9\.]*\)\{0,1\}\s*$' ; then
+        read -r __f __x __l < <(
+          echo "$__range" | \
+          sed 's/^[[:space:]]*\([^-[:space:]]*\)[[:space:]]*\(\(-\)[[:space:]]*\(.*\) \)\{0,1\}/\1 \3 \4/' | \
+          sed -e 's/[[:space:]]$//' )
+        if [[ -z "$__x" && -z "$__l" ]] ; then
+          (( __sum++ )) # Single ip
+        elif [[ "$__x" == '-' ]] ; then
+          (( __sum += $(__ip2dec "$__l") - $(__ip2dec "$__f") + 1 )) # Range
+        fi
+        __cloud_config_error_messages+=( "  $(bullet '√') network '$__network' has valid static ips #G{('$__range')} ")
+      else
+        __cloud_config_error_messages+=( "  $(bullet 'x') network '$__network' has valid static ips #R{(parse error on '$__range')} ")
+        __cloud_config_ok=no
+        break
+      fi
+    done < <(echo "${__ips}")
+    if [[ "$__sum" -lt "$__count" ]] ; then
+      __cloud_config_error_messages+=( "  $(bullet 'x') network '$__network' has sufficient static ips #R{(found $__sum, need $__count)} ")
+      __cloud_config_ok=no
+    else
+      __cloud_config_error_messages+=( "  $(bullet '√') network '$__network' has sufficient static ips #G{(found $__sum, need $__count)} ")
+    fi
+    return
+  fi
 
-	# Generic pattern
+  # Generic pattern
   case "${__type}" in
   vm_type|vm_types)            __type=vm_types;      __name=vm_type      ;;
   vm_extension|vm_extensions)  __type=vm_extensions; __name=vm_extension ;;
   network|networks)            __type=networks;      __name=network      ;;
   disk_type|disk_types)        __type=disk_types;    __name=disk_type    ;;
   az|azs)                      __type=azs;           __name=az           ;;
-  *) echo >&2 "cloud_config_needs(): invalid cloud-config object type '$__type'; must be one of"
-     echo >&2 "                      'vm_type', 'vm_extension', 'disk_type', or 'az'"
-     exit 77 ;;
+  *) __bail --rc 77
+            "cloud_config_needs(): invalid cloud-config object type '$__type'; must be one of" \
+            "                      'vm_type', 'vm_extension', 'disk_type', or 'az'" ;;
   esac
 
   local __want __have
@@ -266,25 +292,26 @@ cloud_config_needs() {
       jq -r "if (.${__type}[] | select(.name == \"$__want\")) then 1 else 0 end")
     if [[ -z "$__have" ]]; then
       __cloud_config_ok=no
-      __cloud_config_error_messages+=( "no #Y{$__name} named '#Y{$__want}' found, which is required" )
+			__cloud_config_error_messages+=( "  $(bullet "x") $__name '#Y{$__want}' exists" )
+		else
+			__cloud_config_error_messages+=( "  $(bullet "√") $__name '#Y{$__want}' exists" )
     fi
   done
 }
 export -f cloud_config_needs
 
 check_cloud_config() {
-	# check_cloud_config - outputs errors found by cloud_config_needs.  Returns 1
-	# if any errors were found.
-	# Usage:
-	#   check_cloud_config || exit 1  # exit if errors found
-	#   check_cloud_config && describe "  cloud config [#G{OK}] # report ok if no errors
+  # check_cloud_config - outputs errors found by cloud_config_needs.  Returns 1
+  # if any errors were found.
+  # Usage:
+  #   check_cloud_config || exit 1  # exit if errors found
+  #   check_cloud_config && describe "  cloud config [#G{OK}] # report ok if no errors
+  describe "  #C{[Checking cloud config]}"
+  local __e
+  for __e in "${__cloud_config_error_messages[@]}"; do
+    describe "${__e}"
+  done
   if [[ ${__cloud_config_ok} != "yes" ]]; then
-    describe "#R{Errors were encountered} in your cloud-config:"
-    local __e
-    for __e in "${__cloud_config_error_messages[@]}"; do
-      describe " - ${__e}"
-    done
-    echo
     return 1
   fi
 }
@@ -300,9 +327,9 @@ cloud_config_has() {
   network|networks)            __type=networks;      __name=network      ;;
   disk_type|disk_types)        __type=disk_types;    __name=disk_type    ;;
   az|azs)                      __type=azs;           __name=az           ;;
-  *) echo >&2 "cloud_config_has(): invalid cloud-config object type '$__type'; must be one of"
-     echo >&2 "                    'vm_type', 'vm_extension', 'disk_type', or 'az'"
-     exit 77 ;;
+  *) __bail --rc 77
+            "cloud_config_needs(): invalid cloud-config object type '$__type'; must be one of" \
+            "                      'vm_type', 'vm_extension', 'disk_type', or 'az'" ;;
   esac
 
   __have=$(spruce json "$GENESIS_CLOUD_CONFIG" | \
@@ -387,91 +414,97 @@ export -f valid_features
 validate_features() {
   local __bad
   if ! valid_features "$@"; then
-    echo >&2 "$GENESIS_KIT_NAME/$GENESIS_KIT_VERSION does not understand the following feature flags:"
-    for __bad in $(invalid_features "$@"); do
-      echo >&2 " - $__bad"
-    done
-    exit 1
+    __bail "$GENESIS_KIT_NAME/$GENESIS_KIT_VERSION does not understand the following feature flags:" \
+      "$(for __bad in $(invalid_features "$@"); do echo " - $__bad"; done)"
   fi
 }
 export -f validate_features
 
-describe() {
-	genesis ui-describe -- "$@"
-}
-export -f describe
-
 prompt_for() {
-	local __var="$1" __type="$2"; shift 2;
-	if [[ "$__type" =~ ^secret- ]] ; then
-		genesis ui-prompt-for "$__type" "$__var" "$@"
-		local __rc="$?"
-		[[ $__rc -ne 0 ]] && echo "Error encountered - cannot continue" && exit $__rc
-	else
-		local __tmpfile
-		__tmpfile=$(mktemp);
-		[[ $? -ne 0 ]] && echo >&2 "Failed to create tmpfile: $__tmpfile" && exit 2
-		genesis ui-prompt-for "$__type" "$__tmpfile" "$@"
-		local __rc="$?"
-		if [[ $__rc -ne 0 ]] ; then
-			# error
-			echo "Error encountered - cannot continue";
-			rm -f "$__tmpfile"
-			exit $__rc
-		fi
-		if [[ $__type =~ ^multi- ]] ; then
-			eval "unset $__var; ${__var}=()"
-			# __block is escaped in eval, shellcheck thinks its unused
-			# https://github.com/koalaman/shellcheck/wiki/SC2034
-			# shellcheck disable=SC2034
-			while IFS= read -rd '' __block; do
-				eval "${__var}+=( \"\$__block\" )"
-			done < "$__tmpfile"
-		else
-			eval "$__var=\$(<\"$__tmpfile\")"
-		fi
-		rm -f "$__tmpfile"
-	fi
-	return 0
+  local __var="$1" __type="$2"; shift 2;
+  if [[ "$__type" =~ ^secret- ]] ; then
+    genesis ui-prompt-for "$__type" "$__var" "$@"
+    local __rc="$?"
+    [[ $__rc -ne 0 ]] && echo "Error encountered - cannot continue" && exit $__rc
+  else
+    local __tmpfile
+    __tmpfile=$(mktemp);
+    [[ $? -ne 0 ]] && echo >&2 "Failed to create tmpfile: $__tmpfile" && exit 2
+    genesis ui-prompt-for "$__type" "$__tmpfile" "$@"
+    local __rc="$?"
+    if [[ $__rc -ne 0 ]] ; then
+      # error
+      rm -f "$__tmpfile"
+      _bail --rc "$__rc" "Error encountered - cannot continue";
+    fi
+    if [[ $__type =~ ^multi- ]] ; then
+      eval "unset $__var; ${__var}=()"
+      # __block is escaped in eval, shellcheck thinks its unused
+      # https://github.com/koalaman/shellcheck/wiki/SC2034
+      # shellcheck disable=SC2034
+      while IFS= read -rd '' __block; do
+        eval "${__var}+=( \"\$__block\" )"
+      done < "$__tmpfile"
+    else
+      eval "$__var=\$(<\"$__tmpfile\")"
+    fi
+    rm -f "$__tmpfile"
+  fi
+  return 0
 }
 export -f prompt_for
 
 param_entry() {
-	local __disabled=""
+  local __disabled=""
   local __varname="${1:?param_entry - missing variable name}"
   local     __key="${2:?param_entry - missing key}"
   local     __opt="${3:-}"
   shift 3 || true
-	if [[ "$__opt" == "-d" ]] ; then
-		__disabled="# "
-		__opt="${1:-}" ; shift || true
-	fi
-	if [[ "$__opt" == "-a" ]] ; then
-		if [[ "${#@}" -eq 0 ]] ; then
-			eval "$__varname+=\"  $__disabled\$__key: []\\n\""
-		else
-			eval "$__varname+=\"  $__disabled\$__key:\\n\""
-			local __line
-			for __line in "$@" ; do
-				eval "$__varname+=\"    \$__disabled- \$__line\\n\""
-			done
-		fi
-	elif [[ -n "$__opt" ]] ; then
-		eval "$__varname+=\"  $__disabled\$__key: \$__opt\\n\""
-	else
-		eval "$__varname+=\"  $__disabled\$__key: \$$__key\\n\""
-	fi
+  if [[ "$__opt" == "-d" ]] ; then
+    __disabled="# "
+    __opt="${1:-}" ; shift || true
+  fi
+  if [[ "$__opt" == "-a" ]] ; then
+    if [[ "${#@}" -eq 0 ]] ; then
+      eval "$__varname+=\"  $__disabled\$__key: []\\n\""
+    else
+      eval "$__varname+=\"  $__disabled\$__key:\\n\""
+      local __line
+      for __line in "$@" ; do
+        eval "$__varname+=\"    \$__disabled- \$__line\\n\""
+      done
+    fi
+  elif [[ -n "$__opt" ]] ; then
+    eval "$__varname+=\"  $__disabled\$__key: \$__opt\\n\""
+  else
+    eval "$__varname+=\"  $__disabled\$__key: \$$__key\\n\""
+  fi
 }
 export -f param_entry
 
 param_comment() {
-	local __line __varname=$1; shift
-	eval "$__varname+=\"\\n\""
-	# __line is escaped in eval, shellcheck thinks its unused
-	# https://github.com/koalaman/shellcheck/wiki/SC2034
-	# shellcheck disable=SC2034
-	for __line in "$@" ; do
-		eval "$__varname+=\"  # \$__line\\n\""
-	done
+  local __line __varname=$1; shift
+  eval "$__varname+=\"\\n\""
+  # __line is escaped in eval, shellcheck thinks its unused
+  # https://github.com/koalaman/shellcheck/wiki/SC2034
+  # shellcheck disable=SC2034
+  for __line in "$@" ; do
+    eval "$__varname+=\"  # \$__line\\n\""
+  done
 }
 export -f param_comment
+
+new_genesis_config() {
+	cat<<EOF
+
+genesis:
+  env:          "$GENESIS_ENVIRONMENT"
+EOF
+	if [[ -n "$GENESIS_VAULT_PREFIX" ]] ; then
+		cat <<EOF
+  secrets_path: "$GENESIS_VAULT_PREFIX"
+EOF
+	fi
+	echo ""
+}
+export -f new_genesis_config

@@ -179,7 +179,10 @@ sub run_hook {
 		$ENV{GENESIS_ROOT}         = $opts{env}->path;
 		$ENV{GENESIS_ENVIRONMENT}  = $opts{env}->name;
 		$ENV{GENESIS_TYPE}         = $opts{env}->type;
-		$ENV{GENESIS_VAULT_PREFIX} = $opts{env}->prefix;
+		$ENV{GENESIS_TARGET_VAULT} = $ENV{SAFE_TARGET} = $opts{env}->vault->url;
+		$ENV{GENESIS_VERIFY_VAULT} = $opts{env}->vault->verify || "";
+
+		$ENV{GENESIS_VAULT_PREFIX} = $ENV{GENESIS_SECRETS_PATH} = $opts{env}->secrets_path;
 
 		unless (grep { $_ eq $hook } qw/new prereqs/) {
 			$ENV{GENESIS_REQUESTED_FEATURES} = join(' ', $opts{env}->features);
@@ -197,18 +200,20 @@ sub run_hook {
 	} elsif ($hook eq 'subkit') {
 		bug("The 'features' option to run_hook is required for the '$hook' hook!!")
 			unless $opts{features};
+		$ENV{GENESIS_TARGET_VAULT} = $ENV{SAFE_TARGET} = Genesis::Vault->current || Genesis::Vault->default; #for legacy
 	}
 
 	my @args;
-	if ($hook eq 'new') {
+	if ($hook eq 'new' && ! $self->feature_compatibility('2.6.13')) {
 		@args = (
-			$ENV{GENESIS_ROOT},           # deprecate!
-			$ENV{GENESIS_ENVIRONMENT},    # deprecate!
-			$ENV{GENESIS_VAULT_PREFIX},   # deprecate!
+			$ENV{GENESIS_ROOT},           # deprecated in 2.6.13!
+			$ENV{GENESIS_ENVIRONMENT},    # deprecated in 2.6.13!
+			$ENV{GENESIS_VAULT_PREFIX},   # deprecated in 2.6.13!
 		);
 
 	} elsif ($hook eq 'secrets') {
 		$ENV{GENESIS_SECRET_ACTION} = $opts{action};
+		$ENV{GENESIS_SECRETS_DATAFILE} = $opts{env}->tmppath("secrets");
 
 	} elsif ($hook eq 'addon') {
 		$ENV{GENESIS_ADDON_SCRIPT} = $opts{script};
@@ -232,6 +237,7 @@ sub run_hook {
 	}
 
 	chmod 0755, $self->path("hooks/$hook");
+	debug ("Running hook now in ".$self->path);
 	my ($out, $rc) = run({ interactive => scalar $hook =~ m/^(addon|new|info|check|secrets|post-deploy|pre-deploy)$/,
 	                       stderr => '&2' },
 		'cd "$1"; source .helper; hook=$2; shift 2; ./hooks/$hook "$@"',
@@ -296,6 +302,20 @@ sub run_hook {
 sub metadata {
 	my ($self) = @_;
 	return $self->{__metadata} ||= load_yaml_file($self->path('kit.yml'));
+}
+
+sub feature_compatibility {
+	# Assume feature compatibility with specified min genesis version.
+	my ($self,$version) = @_;
+	my $id = $self->id;
+	my $kit_min = $self->metadata->{genesis_version_min};
+	dump_var kit_min_version => $kit_min || "undefined";
+	dump_var kit_metadata =>$self->metadata;
+	$kit_min = '0.0.0' unless ($kit_min && semver($kit_min));
+
+	bug("Invalid base version provided to Genesis::Kit::feature_compatibility") unless semver($version);
+	trace("Comparing %s kit min to %s feature base", $kit_min, $version);
+	return new_enough($kit_min,$version);
 }
 
 sub check_prereqs {

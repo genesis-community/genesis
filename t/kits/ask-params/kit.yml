@@ -176,7 +176,7 @@ params:
         - apple
         - pumpkin
       default: apple
-      
+
     - param: need-a-url
       description: Give me your favorite site's URL
       ask: 'URL #1'

@@ -19,6 +19,7 @@ use POSIX qw/strftime/;
 use Cwd qw/getcwd abs_path/;
 use FindBin;
 use Data::Dumper;
+use Encode;
 
 use Genesis;
 use Genesis::UI;
@@ -32,8 +33,6 @@ $Genesis::BUILD = "";
 
 our $USER_AGENT_STRING = "genesis/$Genesis::VERSION";
 $ENV{GENESIS_CALLBACK_BIN} ||= abs_path(__FILE__);
-
-
 $ENV{HTTPS_PROXY}=$ENV{BOSH_ALL_PROXY} if ($ENV{BOSH_ALL_PROXY});
 
 my $END_HOOKS = [];
@@ -98,7 +97,11 @@ sub line_prompt_handler {
 		die "Cannot request both label and inline options to prompt_for line\n"
 			if defined($opts{label});
 		$opts{label} = $prompt;
-		$prompt=undef
+		$prompt=undef;
+	}
+	if (defined($opts{validation}) && !ref($opts{validation}) && $opts{validation} =~ /^vault_path/) {
+		my $vault = Genesis::Vault->current || Genesis::Vault->rebind();
+		bail("No vault selected!") unless $vault;
 	}
 	return prompt_for_line($prompt, $opts{label},$opts{default},$opts{validation},$opts{msg})
 }
@@ -129,6 +132,10 @@ sub select_prompt_handler {
 sub multi_line_prompt_handler {
 	my ($prompt, %opts) = @_;
 	validate_prompt_opts("multi-line", \%opts, qw(label min max validation msg));
+	if (defined($opts{validation}) && !ref($opts{validation}) && $opts{validation} =~ /^vault_path/) {
+		my $vault = Genesis::Vault->current || Genesis::Vault->rebind();
+		bail("No vault selected!") unless $vault;
+	}
 	my $results = prompt_for_list('line',$prompt,$opts{label},$opts{min},$opts{max},$opts{validation},$opts{msg});
 	return join("\0", @$results, '');
 }
@@ -156,9 +163,11 @@ sub secret_line_prompt_handler {
 	my ($prompt,%opts) = @_;
 	my $secret = delete $opts{secret};
 	validate_prompt_opts("secret-line", \%opts, qw(echo));
-	target_vault($ENV{GENESIS_TARGET_VAULT});
 	my ($path, $key) = split /:/, "secret/$secret";
-	run({ interactive => 1, onfailure => "Failed to save data to secret/$secret in Vault '$ENV{GENESIS_TARGET_VAULT}'" },
+	my $vault = Genesis::Vault->current || Genesis::Vault->rebind();
+	bail("No vault selected!") unless $vault;
+	$vault->query(
+		{ interactive => 1, onfailure => "Failed to save data to secret/$secret in vault" },
 		'safe prompt "$1" --  "$2" "$3" "$4"',
 		$prompt, ($opts{echo} ? "ask" : "set"), $path, $key);
 }
@@ -166,11 +175,14 @@ sub secret_block_prompt_handler {
 	my ($prompt,%opts) = @_;
 	my $secret = delete $opts{secret};
 	validate_prompt_opts("secret-block", \%opts, ());
-	target_vault($ENV{GENESIS_TARGET_VAULT});
 	my ($path, $key) = split /:/, "secret/$secret";
 	my $file = mkfile_or_fail(workdir()."/param", prompt_for_block($prompt));
-	run({ onfailure => "Failed to save data to secret/$secret in Vault '$ENV{GENESIS_TARGET_VAULT}'" },
-		'safe set "$1" "${2}@${3}"', $path, $key, $file);
+	my $vault = Genesis::Vault->current || Genesis::Vault->rebind();
+	bail("No vault selected!") unless $vault;
+	$vault->query(
+		{ onfailure => "Failed to save data to secret/$secret in vault" },
+		'set', $path, sprintf('%s@%s', $key, $file)
+	);
 }
 
 our $prompt_handlers = {
@@ -353,7 +365,7 @@ sub check_prereqs {
 	my $reqs = [
 		# Name,     Version, Command,                                 Pattern                   Source
 		["spruce", "1.14.0", "spruce -v      2>/dev/null",            qr(.*version\s+(\S+).*)i, "https://github.com/geofffranks/spruce/releases"],
-		["safe",    "0.8.1", "safe -v        2>&1 >/dev/null",        qr(safe v(\S+)),          "https://github.com/starkandwayne/safe/releases"],
+		["safe",    "0.9.9", "safe -v        2>&1 >/dev/null",        qr(safe v(\S+)),          "https://github.com/starkandwayne/safe/releases"],
 		["vault",   "0.9.0", "vault -v       2>/dev/null",            qr(.*vault v(\S+).*)i,    "https://www.vaultproject.io/downloads.html"],
 		["git",     "1.8.0", "git --version  2>/dev/null",            qr(.*version\s+(\S+).*)],
 		["jq",        "1.5", "jq --version   2>/dev/null",            qr(^jq-([\.0-9]+)),       "https://stedolan.github.io/jq/download/"],
@@ -381,44 +393,31 @@ sub check_environment {
 	my ($env,%opts) = @_;
 
 	my $ok = 1;
-	my $checks = "environmental parameter";
+	my $checks = "environmental parameters";
 	$checks = "cloud-config and $checks" if $env->cloud_config;
 	if ($env->has_hook('check')) {
-		explain "[#C{%s}] running $checks checks...", $env->name;
+		explain "\n[#M{%s}] running $checks checks...", $env->name;
 		$env->run_hook('check') or $ok = 0;
 	} else {
-		explain "[#C{%s}] #Y{%s does not define a 'check' hook; $checks checks will be skipped.}", $env->name, $env->kit->id;
+		explain "[#M{%s}] #Y{%s does not define a 'check' hook; $checks checks will be skipped.}", $env->name, $env->kit->id;
 	}
 
 	if ($opts{check_secrets}) {
-		explain "[#C{%s}] running credentials / certificates checks...", $env->name;
-		$env->check_secrets or $ok = 0;
+		explain "\n[#M{%s}] running credentials and certificates checks...", $env->name;
+		$env->check_secrets(indent => '  ') or $ok = 0;
 	}
 
 	if ($ok) {
 		if ($env->needs_bosh_create_env || $env->cloud_config) {
-			explain "[#C{%s}] running manifest viability checks...", $env->name;
+			explain "[#M{%s}] running manifest viability checks...", $env->name;
 			$env->manifest or $ok = 0;
 		} else {
-			explain "[#C{%s}] #Y{No cloud config provided - can't check manifest viability}", $env->name;
+			explain "[#M{%s}] #Y{No cloud config provided - can't check manifest viability}", $env->name;
 		}
 	}
 	return $ok;
 }
 
-
-sub target_vault {
-	my ($target) = @_;
-	$target ||= '-i';  # Default to interactive mode
-	run(
-		{ interactive => 1, onfailure => "Could not set safe target" },
-		'safe', 'target', $target);
-
-	# FIXME: safe now supports safe target --json, and once that gets released, we should totes use that.
-	$ENV{GENESIS_TARGET_VAULT} = run({ onfailure => "Could not set target Vault" } ,
-		'safe target 2>&1 | grep "$1" | sed -e "$2"',
-		'.*targeting .* at.*', 's/.*targeting \([^ ]*\) at.*/\1/');
-}
 
 ###########################################################################
 
@@ -657,6 +656,7 @@ sub {
 	my %options;
 	options(\@_, \%options, qw/
 		kit|k=s
+		vault=s
 		directory|d=s
 		link-dev-kit|L=s
 	/);
@@ -690,37 +690,116 @@ sub {
 	run({ onfailure => 'Please setup git - git config --global user.email your@email.com -' },
 		'git config user.email');
 
-	my $top = Genesis::Top->create('.', $name, directory => $options{directory});
+	my $top = Genesis::Top->create('.', $name, %options);
+	my $vault_desc = "\n - using default safe target for the system";
+	if ($top->vault) {
+		$vault_desc = "\n - using vault at #C{".$top->vault->url."}";
+		$vault_desc .= " #Y{(insecure)}" unless $top->vault->tls;
+		$vault_desc .= " #Y{(noverify)}" if $top->vault->tls && $top->vault->insecure;
+	}
 	$top->embed($0);
 
 	my $root = $top->path;
+	my $pwd = Cwd::abs_path(Cwd::getcwd());
+	my $human_root = (substr($root, 0, length($pwd) + 1) eq $pwd . '/')
+		? '.' . substr($root, length($pwd))
+		: (substr($root, 0, length($ENV{HOME}) + 1) eq $ENV{HOME} . '/')
+		? "~" . substr($root, length($pwd)) : $root;
+
 	pushd($root);
 	if ($options{'link-dev-kit'}) {
 		debug("Kit: linking dev to $abs_target");
 		symlink_or_fail($abs_target, "./dev");
-		$kit_desc = "linked to kit at #C{$abs_target}.";
+		$kit_desc = "\n - linked to kit at #C{$abs_target}.";
 
 	} elsif ($options{kit}) {
 		debug("Kit: installing kit $options{kit}");
-		explain "Downloading Genesis kit #M{$options{kit}} (#Y{latest} version)...";
+		explain "Downloading Genesis kit #M{$options{kit}} (#Y{latest} version)...\n";
 		my (undef, $version) = $top->download_kit($options{kit});
-		$kit_desc = "using the #C{$options{kit}/$version} kit.";
+		$kit_desc = "\n - using the #C{$options{kit}/$version} kit.";
 
 	} else {
 		debug("Kit: creating empty ./dev kit directory");
 		mkdir_or_fail("./dev");
-		$kit_desc = "with an empty development kit in #C{$root/.dev}.";
+		$kit_desc = "\n - with an empty development kit in #C{$human_root/dev}";
 	}
 
-	run({ onfailure => "Failed to initialize a git repository in $root/" },
+	run({ onfailure => "Failed to initialize a git repository in $human_root/" },
 		'git init && git add .');
 
-	run({ onfailure => "Failed to commit initial Genesis repository in $root/" },
+	run({ onfailure => "Failed to commit initial Genesis repository in $human_root/" },
 		'git commit -m "Initial Genesis Repo"');
 
 	popd;
-	explain "\nInitialized empty Genesis repository in #C{%s}\n%s\n", $root, $kit_desc;
+	explain "Initialized empty Genesis repository in #C{%s}%s%s\n", $human_root, $vault_desc, $kit_desc;
 	exit 0;
+});
+
+# }}}
+# genesis secrets-provider - set, clear or get the secret provider information {{
+
+command("secrets-provider", <<EOF,
+genesis v$Genesis::VERSION$Genesis::BUILD
+USAGE: genesis secrets-provider [-i|--interactive|-c|--clear] [target]
+
+ARGUMENTS
+  target              Set the secrets provider to the specified target, which
+                      can either be a full url including protocol, or an alias.
+                      This target must be known to the local system.  If this is
+                      omitted, the current secrets provider information is
+                      displayed.
+
+OPTIONS
+$GLOBAL_USAGE
+  -i, --interactive   Set the provider interactively from a list of known secrets
+                      providers.
+
+  -c, --clear         Remove existing provider -- this will restore legacy
+                      behaviour of using the system-targeted vault.
+
+EOF
+sub {
+	my %options;
+	options(\@_, \%options, qw/
+		interactive|i
+		clear|c
+	/);
+	usage(1) if @_ > 1; # target is optional
+	check_prereqs();
+
+	delete $options{$_} for grep {$_ !~ /^(interactive|clear)$/} keys %options;
+	$options{target} = shift if scalar(@_);
+	bail("You can only specify one of target, -i|--interactive or -c|--clear")
+		if scalar(keys %options) > 1;
+
+	my $ui_nl = $options{interactive} ? "" : "\n";
+
+	my $top = Genesis::Top->new('.');
+	my $err;
+	if (scalar(keys %options)) {
+		$err = $top->set_vault(%options);
+		error "$ui_nl$err\nCurrent vault was not changed.\n\n" if $err;
+	}
+
+	explain("${ui_nl}Secrets provider for #C{%s} deployment at #M{%s}:", $top->type, $top->path);
+	my %vault_info = $top->vault_status;
+	if (%vault_info) {
+		explain(
+			"         Type: #G{%s}\n".
+			"          URL: #G{%s} %s\n".
+			"  Local Alias: #%s{%s}\n".
+			"       Status: #%s{%s}\n",
+			"Safe/Vault", $vault_info{url}, $vault_info{security},
+			$vault_info{alias_error} ? "R" : "G",
+			$vault_info{alias} ? $vault_info{alias} : "$vault_info{alias_error}",
+			$vault_info{status} eq "ok" ? "G" : "R",
+			$vault_info{status}
+		);
+	} else {
+		explain "\n#Y{Not set - legacy mode enabled (will use current safe target on system)}\n";
+	}
+
+	exit defined($err) ? 1 : 0;
 });
 
 # }}}
@@ -728,24 +807,30 @@ sub {
 
 command("new", <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE: genesis new [--vault target] env-name[.yml]
+USAGE: genesis new env-name[.yml] [<options...>]
 
 OPTIONS
 $GLOBAL_USAGE
-      --vault        The name of a `safe' target (a Vault) to store newly
-                     generated credentials in.
-
-      --prefix       By default, the vault path is secret/<env-name>/<kit>
+	-P, --secrets-path By default, the vault path is secret/<env-name>/<kit>
                      where <env-name> has had any - converted to / and
                      <kit> is the kit name.  Use this option to change the part
                      after secret/
 
-      --no-secrets   Do not generate secrets in the Vault.  You will have to
-                     manually run `genesis secrets` yourself.
-
   -k, --kit          Name (and optionally, version) of the Genesis Kit to
                      use for this environment.  I.e.: shield/6.3.0
                      Defaults to latest.
+
+LEGACY OPTIONS:
+      --vault        The name of a `safe' target (a Vault) to store newly
+                     generated credentials in.  Only accepted if the deployment
+                     repository does not have a vault specified.
+
+      --prefix       Old name of --secrets-path option.
+
+      --no-secrets   Do not generate secrets in the Vault.  You will have to
+                     manually run `genesis secrets` yourself.  This option is
+                     accepted but no longer has any effect.
+
 EOF
 sub {
 	my %options = (
@@ -753,7 +838,7 @@ sub {
 	);
 	options(\@_, \%options, qw/
 		vault=s
-		prefix=s
+		secrets-path|prefix|P=s
 		secrets!
 		kit|k=s
 	/);
@@ -763,7 +848,7 @@ sub {
 	check_prereqs;
 
 	# get our context
-	my $top = Genesis::Top->new('.'); # FIXME: drop chdir from -C handling eventually
+	my $top = Genesis::Top->new('.', vault => $options{vault}); # FIXME: drop chdir from -C handling eventually
 
 	my $name = $_[0];
 	die "No environment name specified!\n"
@@ -788,12 +873,9 @@ sub {
 	# check version prereqs
 	$kit->check_prereqs or exit 86;
 
-	# target the vault
-	target_vault($options{vault});
-
 	# create the environment
 	explain("Setting up new environment #C{$name}...");
-	my $env = $top->create_env($name, $kit, prefix => $options{prefix});
+	my $env = $top->create_env($name, $kit, vault => $options{vault}, secrets_path => $options{"secrets-path"});
 
 	# let the user know
 	explain("New environment $env->{name} provisioned!");
@@ -851,10 +933,10 @@ sub {
 
 	my $ok = check_environment($env, check_secrets => $options{secrets});
 	if ($ok) {
-		explain "[#C{%s}] #G{All Checks Succeeded}", $env->name;
+		explain "\n[#M{%s}] #G{All Checks Succeeded}", $env->name;
 		exit 0;
 	} else {
-		explain "[#C{%s}] #R{PREFLIGHT FAILED}", $env->name;
+		explain "\n[#M{%s}] #R{PREFLIGHT FAILED}", $env->name;
 		exit 1;
 	}
 });
@@ -972,7 +1054,7 @@ sub {
 	$env->has_hook('addon')
 		or bail "#R{Kit %s does not provide an addon hook!}", $env->kit->id;
 
-	{local $ENV{EXPLAIN_TO_STDERR}=1; explain "Running #G{%s} addon for #C{%s}", $script, $env->name;}
+	explain STDERR "Running #G{%s} addon for #C{%s}", $script, $env->name;
 
 	$env->run_hook('addon', script => $script, args => \@args)
 		or exit 1;
@@ -1053,7 +1135,7 @@ sub {
 
 command("check-secrets", <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE: genesis check-secrets [--vault target] deployment-env.yml
+USAGE: genesis check-secrets deployment-env.yml
 
 Checks that all required secrets are present.  Returns a exit code of 1 if any
 are missing, and lists them, otherwise states all secrets are present and exits
@@ -1061,14 +1143,16 @@ with 0.
 
 OPTIONS
 $GLOBAL_USAGE
-	  --vault        The name of a `safe' target (a Vault) to store newly
-					 generated credentials in.
+
+LEGACY OPTIONS
+      --vault        The name of a `safe' target (a Vault) to check for the
+                     generated credentials.  Only accepted if the deployment
+                     repository does not have a vault specified.
 
 EOF
 sub {
 	my %options;
 	options(\@_, \%options, qw/
-		vault=s
 	/);
 
 	my ($name) = @_;
@@ -1076,7 +1160,6 @@ sub {
 
 	check_prereqs;
 	my $env = Genesis::Top->new(".")->load_env($name);
-	target_vault($options{vault});
 	$env->check_secrets() or exit 1;
 }); # }}}
 # genesis add-secrets - Generate missing credentials for an environment. {{{
@@ -1090,8 +1173,12 @@ credentials after upgrading kits.
 
 OPTIONS
 $GLOBAL_USAGE
+
+LEGACY OPTIONS
 	  --vault        The name of a `safe' target (a Vault) to store newly
-					 generated credentials in.
+	                 generated credentials in.  This option is only accepted if
+                   the deployment repository does not have a secrets-provider
+                   set - see 'genesis secrets-provider'.
 
 EOF
 sub {
@@ -1104,8 +1191,7 @@ sub {
 	usage(1) if @_ != 1;
 
 	check_prereqs;
-	my $env = Genesis::Top->new(".")->load_env($name);
-	target_vault($options{vault});
+	my $env = Genesis::Top->new(".", vault => $options{vault})->load_env($name);
 	$env->add_secrets();
 });
 
@@ -1114,7 +1200,7 @@ sub {
 
 command("rotate-secrets", <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE: genesis rotate-secrets [--force] [--vault target] deployment-env.yml
+USAGE: genesis rotate-secrets [--force] deployment-env.yml
 
 Generates new secrets for your deployment. If any credentials were marked by
 the kit as `fixed', they are not updated unless the `--force` option was also
@@ -1123,12 +1209,15 @@ specified.
 OPTIONS
 $GLOBAL_USAGE
   -f, --force        Rotate *ALL* credentials, including any credentials that
-					 the kit defined as `fixed'. This is very dangerous.  Only
-					 applies to `rotate`.  This will still not rotate CA
-					 certificates.
+                     the kit defined as `fixed'. This is very dangerous.  Only
+                     applies to `rotate`.  This will still not rotate CA
+                     certificates.
 
-	  --vault        The name of a `safe' target (a Vault) to store newly
-					 generated credentials in.
+LEGACY OPTIONS
+      --vault        The name of a `safe' target (a Vault) to store newly
+                     generated credentials in.  This option is only accepted if
+                     the deployment repository does not have a secrets-provider
+                     set - see 'genesis secrets-provider'.
 
 EOF
 sub {
@@ -1142,8 +1231,7 @@ sub {
 	usage(1) if @_ != 1;
 
 	check_prereqs;
-	my $env = Genesis::Top->new(".")->load_env($name);
-	target_vault($options{vault});
+	my $env = Genesis::Top->new(".", vault => $options{vault})->load_env($name);
 	$env->rotate_secrets(force => $options{force});
 });
 
@@ -1152,36 +1240,41 @@ sub {
 
 command("secrets", <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE: genesis secrets [check|add|rotate [--force]] [--vault target] deployment-env.yml
+USAGE: genesis secrets [check|add|rotate [--force]] [--vault <vault>] deployment-env.yml
 
 Checks, adds or rotates secrets for your deployment.
 
-  * check:  Checks that all required secrets are present.  Returns a exit code
-			of 1 if any are missing, and lists them, otherwise states all
-			secrets are present and exits with 0.
+Note: This has been DEPRECATED and will be removed in a Genesis v2.7.  Please
+      use check-secrets, add-secrets or rotate-secrets as replacements.
 
-			This functionality is replaced by the command check-secrets
+  * check:  Checks that all required secrets are present.  Returns a exit code
+            of 1 if any are missing, and lists them, otherwise states all
+            secrets are present and exits with 0.
+
+            This functionality is replaced by the command check-secrets
 
   * add:    Generates any missing secrets required by the deployment.  Useful
-			to generate credentials after upgrading kits or if `genesis new
-			--no-secrets` was used to create the deployment.
+            to generate credentials after upgrading kits or if `genesis new
+            --no-secrets` was used to create the deployment.
 
-			This functionality is replaced by the command add-secrets
+            This functionality is replaced by the command add-secrets
 
   * rotate: Generates new secrets for your deployment. If any credentials were
-			marked by the kit as `fixed', they are not updated unless the
-			`--force` option was also specified.
+            marked by the kit as `fixed', they are not updated unless the
+            `--force` option was also specified.
 
-			This functionality is replaced by the command rotate-secrets
+            This functionality is replaced by the command rotate-secrets
 
 OPTIONS
 $GLOBAL_USAGE
   -f, --force        Rotate *ALL* credentials, including any credentials that
-					 the kit defined as `fixed'. This is very dangerous.  Only
-					 applies to `rotate`
+                     the kit defined as `fixed'. This is very dangerous.  Only
+                     applies to `rotate`
 
-	  --vault        The name of a `safe' target (a Vault) to store newly
-					 generated credentials in.
+      --vault        The name of a `safe' target (a Vault) where the secrets
+                     are stored.  This option is only accepted if the deployment
+                     repository does not have a secrets-provider set - see
+                     'genesis secrets-provider'.
 
 EOF
 sub {
@@ -1205,9 +1298,8 @@ sub {
 	}
 
 	check_prereqs;
-	my $top = Genesis::Top->new(".");
+	my $top = Genesis::Top->new(".", vault => $options{vault});
 	my $env = $top->load_env($name);
-	target_vault($options{vault});
 
 	if ($action eq "check") {
 		$env->check_secrets()
@@ -1571,20 +1663,26 @@ USAGE genesis repipe [pipeline-layout]
 
 OPTIONS
 $GLOBAL_USAGE
-  -y, --yes        Do not ask any questions, assume 'y' for any that would
-                   normally be asked.  Allows automation to repipe without
-                   requiring human intervention or expect-style scripting.
+  -y, --yes          Do not ask any questions, assume 'y' for any that would
+                     normally be asked.  Allows automation to repipe without
+                     requiring human intervention or expect-style scripting.
 
-  -t, --target     The name of your Concourse target (per `fly targets'),
-                   if it differs from the pipeline layout name.
+  -t, --target       The name of your Concourse target (per `fly targets'),
+                     if it differs from the pipeline layout name.
 
-  -n, --dry-run    Generate the Concourse Pipeline configuration, but
-                   refrain from actually deploying it to Concourse.
-                   Instead, just print the YAML.
+  -n, --dry-run      Generate the Concourse Pipeline configuration, but
+                     refrain from actually deploying it to Concourse.
+                     Instead, just print the YAML.
 
-  -c, --config     Path to the pipeline configuration file, which specifies
-                   Git parameters, notification settings, pipeline layouts,
-                   etc.  Defaults to 'ci.yml'
+  -c, --config       Path to the pipeline configuration file, which specifies
+                     Git parameters, notification settings, pipeline layouts,
+                     etc.  Defaults to 'ci.yml'
+
+LEGACY OPTIONS:
+      --vault        The name of a `safe' target (a Vault) to store newly
+                     generated credentials in.  Only accepted if the deployment
+                     repository does not have a vault specified.
+
 EOF
 sub {
 	my %options;
@@ -1593,13 +1691,15 @@ sub {
 		dry-run|n
 		target|t=s
 		config|c=s
+		vault=s
 	/);
 	check_prereqs;
 
 	my $layout = $_[0] || "default";
 	$options{target} ||= $layout;
 	$options{config} ||= 'ci.yml';
-	my $top = Genesis::Top->new('.');
+	my $top = Genesis::Top->new('.', vault=>$options{vault});
+	bail("#R{[ERROR]} No vault specified or configured.") unless $top->vault;
 
 	my $pipeline = Genesis::CI::Legacy::parse($options{config}, $layout, $top);
 	my $yaml = Genesis::CI::Legacy::generate_pipeline_concourse_yaml($pipeline, $top);
@@ -1837,25 +1937,34 @@ sub {
 	#   BOSH_CLIENT_SECRET         - Password/Client-Secret to authenticate with
 
 	my @undefined = grep { !$ENV{$_} }
-		qw/CURRENT_ENV GIT_BRANCH GIT_PRIVATE_KEY
+		qw/CURRENT_ENV
+		   GIT_BRANCH GIT_PRIVATE_KEY
 		   OUT_DIR WORKING_DIR
 		   VAULT_ROLE_ID VAULT_SECRET_ID VAULT_ADDR/;
 	push @undefined, "CACHE_DIR" if ($ENV{PREVIOUS_ENV} && ! $ENV{CACHE_DIR});
+	__bail_on_missing_pipeline_environment_variables(@undefined);
 
+	# write .saferc file so that safe commands execute properly
+	open my $OUT, ">", "$ENV{HOME}/.saferc"
+		or die "Failed to write .saferc information: $!\n";
+
+	print $OUT <<EOF;
+version: 1
+current: ci-deploy
+vaults:
+	ci-deploy:
+		url: $ENV{VAULT_ADDR}
+		token: $ENV{VAULT_TOKEN}
+		skip_verify: @{[envset("VAULT_SKIP_VERIFY") ? "true" : "false"]}
+EOF
+
+	# Load the environment in order to check other required variables
 	pushd $ENV{WORKING_DIR};
-	my $env = Genesis::Top->new('.')->load_env($ENV{CURRENT_ENV});
-
+	my $env = Genesis::Env::read($ENV{CURRENT_ENV}, Genesis::Top->new('.'));
 	push(@undefined, grep { !$ENV{$_} }
 		qw/BOSH_ENVIRONMENT BOSH_CA_CERT
 		   BOSH_CLIENT BOSH_CLIENT_SECRET/) unless $env->needs_bosh_create_env;
-
-	if (@undefined) {
-		error("The following #R{required} environment variables have not been defined:");
-		error(" - \$#Y{$_}") for @undefined;
-		error("\n");
-		error("Please check your CI Pipeline configuration.");
-		exit 1;
-	}
+	__bail_on_missing_pipeline_environment_variables(@undefined);
 
 	if ($ENV{PREVIOUS_ENV}) {
 		run({ onfailure => "Failed to run `$_`", interactive => 1 }, $_) for (
@@ -1871,27 +1980,11 @@ sub {
 		Genesis::BOSH->alias(scalar $env->lookup_bosh_target);
 		$env->download_cloud_config();
 	}
-  # we need a method of issue tokens with a temporary lifetime, so approle/secret is used
+	# we need a method of issue tokens with a temporary lifetime, so approle/secret is used
 	vault_auth(vault       => $ENV{VAULT_ADDR},
 	           skip_verify => envset("VAULT_SKIP_VERIFY"),
 	           role_id     => $ENV{VAULT_ROLE_ID},
 	           secret_id   => $ENV{VAULT_SECRET_ID});
-
-  # write .saferc file so that safe commands execute properly
-	open my $OUT, ">", "$ENV{HOME}/.saferc"
-		or die "Failed to write .saferc information: $!\n";
-
-	print $OUT <<EOF;
-version: 1
-current: ci-deploy
-vaults:
-  ci-deploy:
-    url: $ENV{VAULT_ADDR}
-    token: $ENV{VAULT_TOKEN}
-    skip_verify: @{[envset("VAULT_SKIP_VERIFY") ? "true" : "false"]}
-EOF
-
-	target_vault("ci-deploy");
 
 	$env->deploy(redact => !envset('CI_NO_REDACT'))
 		or exit 1;
@@ -1909,6 +2002,17 @@ EOF
 	commit_changes($ENV{WORKING_DIR}, $ENV{OUT_DIR}, $ENV{GIT_BRANCH}, $ENV{GIT_PRIVATE_KEY},
 		"deployed to $ENV{CURRENT_ENV}");
 });
+
+sub __bail_on_missing_pipeline_environment_variables {
+	if (@_) {
+		error("The following #R{required} environment variables have not been defined:");
+		error(" - \$#Y{$_}") for @_;
+		error("\n");
+		error("Please check your CI Pipeline configuration.");
+		exit 1;
+	}
+
+}
 # }}}
 # genesis ci-generate-cache - Generate cache for an environment via the CI/CD Pipeline {{{
 command("ci-generate-cache", <<EOF,
@@ -2143,8 +2247,8 @@ sub {
 ###########################################################################
 
 sub main {
-	if (envset 'GENESIS_IS_HELPING_YOU') {
-		debug "#G{genesis} callback...";
+	if (in_callback) {
+		debug "#G{genesis} callback (using vault #C{'$ENV{GENESIS_TARGET_VAULT}'})...";
 	} else {
 		debug "#G{genesis} starting up...";
 		$ENV{GENESIS_CALLER_DIR} = Cwd::getcwd();
@@ -2175,6 +2279,7 @@ sub main {
 	my ($cmd, @args);
 	while (@_ > 0) {
 		my $arg = shift @_;
+		$arg = decode($ENV{LANG},$arg) if $ENV{LANG};
 		if ($cmd || $arg =~ m/^-+/) {
 			push @args, $arg;
 			push @args, shift @_ if $arg eq '-C';

@@ -14,9 +14,12 @@ my $intended_target;
 my $link_target;
 
 qx(rm -rf t/tmp; mkdir -p t/tmp);
+my $vault_target = vault_ok();    # this changes $HOME to ./t/tmp/home/
+system 'git config --global user.name "CI Testing"';
+system 'git config --global user.email ci@starkandwayne.com';
 chdir "t/tmp";
 
-runs_ok "genesis init random";
+runs_ok "genesis init random --vault $VAULT_URL";
 ok -d "random-deployments",                      "`genesis init` created the random-deployments/ directory";
 ok -d "random-deployments/.genesis",             "`genesis init` created the .genesis/ sub-directory";
 ok -f "random-deployments/.genesis/config",      "`genesis init` created the .genesis/config file";
@@ -26,7 +29,7 @@ ok -f "random-deployments/README.md",            "`genesis init` created a READM
 ok -d "random-deployments/dev",                  "`genesis init` created the dev/ directory, since -k was not given";
 
 qx(rm -rf *-deployments/);
-runs_ok "genesis init -k shield/0.1.0";
+runs_ok "genesis init -k shield/0.1.0 --vault '$vault_target'";
 ok -d "shield-deployments",                      "`genesis init` created the random-deployments/ directory";
 ok -d "shield-deployments/.genesis",             "`genesis init` created the .genesis/ sub-directory";
 ok -f "shield-deployments/.genesis/config",      "`genesis init` created the .genesis/config file";
@@ -43,10 +46,10 @@ chdir("shield-deployments");
 output_ok("git status --porcelain", "", "No untracked/changed files exist after a genesis init");
 chdir("..");
 
-run_fails "genesis init -k shield/0.1.0 -L ../kits/ask-params shouldfail", "`genesis init` fails when specifying both -k and -L";
+run_fails "genesis init -k shield/0.1.0 -L ../kits/ask-params shouldfail --vault $VAULT_URL", "`genesis init` fails when specifying both -k and -L";
 qx(rm -rf shouldfail-deployments) if -d "shouldfail-deployments";
 
-runs_ok "genesis init  -L ../kits/ask-params";
+runs_ok "genesis init  -L ../kits/ask-params --vault $VAULT_URL";
 $target_dir = "ask-params-deployments";
 ok -d "$target_dir", "`genesis init` with -L ask-params created the default directory";
 ok -d "$target_dir/.genesis",                       "`genesis init` created the .genesis/ sub-directory";
@@ -62,7 +65,7 @@ ok $link_target eq $intended_target,               "`genesis init` correctly lin
 ok get_file("$target_dir/.genesis/config") =~ /\ndeployment_type: ask-params($|\n)/s, "`genesis init` uses the correct deployment-type";
 qx(rm -rf $target_dir) if -d "$target_dir";
 
-runs_ok "genesis init  -L ../kits/ask-params mytest";
+runs_ok "genesis init  -L ../kits/ask-params mytest --vault $vault_target";
 $target_dir = "mytest-deployments";
 ok -d "$target_dir", "`genesis init` with -L ask-params created the my directory";
 ok -d "$target_dir/.genesis",                       "`genesis init` created the .genesis/ sub-directory";
@@ -78,10 +81,11 @@ ok $link_target eq $intended_target,               "`genesis init` correctly lin
 ok get_file("$target_dir/.genesis/config") =~ /\ndeployment_type: mytest($|\n)/s, "`genesis init` uses the correct deployment-type";
 qx(rm -rf $target_dir) if -d "$target_dir";
 
-run_fails "genesis init -L ../kits/notakit shouldfail", "`genesis init` fails when specifying a non-existing directory for -L argument";
+run_fails "genesis init -L ../kits/notakit shouldfail --vault $vault_target", "`genesis init` fails when specifying a non-existing directory for -L argument";
 qx(rm -rf shouldfail) if -d "shouldfail";
 
 mkdir "random-deployments";
-run_fails "genesis init random", "`genesis init` fails when the destination it would use already exists";
+run_fails "genesis init random --vault '$vault_target'", "`genesis init` fails when the destination it would use already exists";
 
+teardown_vault();
 done_testing

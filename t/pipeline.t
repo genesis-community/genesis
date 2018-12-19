@@ -6,6 +6,8 @@ use lib 't';
 use helper;
 
 my $tmp = workdir;
+vault_ok;
+local $ENV{GENESIS_LEGACY}=1; # Allow env name mismatches
 ok -d "t/repos/pipeline-test", "pipeline-test repo exists" or die;
 chdir "t/repos/pipeline-test" or die;
 
@@ -2985,5 +2987,5 @@ client-aws-1-sandbox
         `--> client-aws-1-prod
 EOF
 # }}}
-
+teardown_vault();
 done_testing;

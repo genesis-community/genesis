@@ -1,4 +1,4 @@
-#!/usr/bin/env perl
+#!/usr/bin/perl
 # vim:ft=perl:ts=4:sts=4:sw=4
 use strict;
 use warnings;
@@ -132,7 +132,8 @@ use FindBin;
 die "You have no \$HOME.  Please set one and re-run.\n"
 	unless $ENV{HOME};
 
-my $root = "$ENV{HOME}/.geese";
+$ENV{GENESIS_HOME} ||= $ENV{HOME};
+my $root = "$ENV{GENESIS_HOME}/.geese";
 mkdir $root unless -d $root;
 
 $ENV{GENESIS_CALLBACK_BIN} = abs_path(__FILE__);
@@ -149,10 +150,11 @@ if ($fh) {
 }
 
 if ($want ne $have) {
-	system("rm -rf $root/*");
+	system("/bin/bash", "-c", "rm -rf $root/*");
+	my $action = $have ? "updating" : "installing";
 
 	# extract the payload
-	print STDERR "(inflating genesis runtime...)\n";
+	print STDERR "[1;30m[$action genesis runtime][0m\n";
 	open my $tar, "|-", "tar -xzf - -C $root"
 		or die "Failed to do stuff\n";
 	while (<DATA>) {

@@ -22,7 +22,7 @@ sub validate_features {
 	$k ||= "dev";
 	$v = "latest" unless defined $v;
 
-	#### ---- 
+	#### ----
 	my $label = defined($self->metadata->{subkits}) ? "subkit" : "feature";
 	for my $sk (@features) {
 		die "You specified a feature without a name\n" unless $sk;
@@ -63,7 +63,10 @@ sub validate_features {
 }
 
 sub process_params {
+	# $self is a Genesis::Kit object
 	my ($self, %opts) = @_;
+	my $env = $opts{env} or die "process_params() was not given an 'env' option.\n";
+
 	# for legacy!
 	$opts{kit}     = $self->name;
 	$opts{version} = $self->version;
@@ -73,7 +76,7 @@ sub process_params {
 	my $resolveable_params = {
 		"params.vault_prefix" => $opts{vault_prefix}, # for backwards compatibility
 		"params.vault" => $opts{vault_prefix},
-		"params.env" => $opts{env}->name,
+		"params.env" => $env->name,
 	};
 	for my $feature ("base", @{$opts{features}}) {
 		next unless defined $opts{params}{$feature} && @{$opts{params}{$feature}};
@@ -146,9 +149,10 @@ sub process_params {
 				} else {
 					my ($path, $key) = split /:/, $vault_path;
 					if ($q->{type} =~ /^(boolean|string)$/) {
-						run({ interactive => 1, onfailure => "Failed to save data to $vault_path in Vault" },
-							'safe prompt "$1" -- "$2" "$3" "$4"',
-							$q->{ask}, ($q->{echo} ? "ask" : "set"), $path, $key);
+						$env->vault->query(
+							{ interactive => 1, onfailure => "Failed to save data to $vault_path in Vault" },
+							'prompt', $q->{ask}, '--', ($q->{echo} ? "ask" : "set"), $path, $key
+						);
 
 					} elsif ($q->{type} eq "multi-line") {
 						$answer = prompt_for_block($q->{ask});
@@ -158,9 +162,10 @@ sub process_params {
 						print $fh $answer;
 						close $fh;
 
-						run({ onfailure => "Failed to save data to $vault_path in Vault" },
-							'safe set "$1" "${2}@${3}/param"',
-							$path, $key, $tmpdir);
+						$env->vault->query(
+							{ onfailure => "Failed to save data to $vault_path in Vault" },
+							'set', $path, "${key}\@${tmpdir}/param"
+						);
 
 					} else {
 						$self->kit_bug("Unsupported parameter type '$q->{type}' for $q->{vault}!!");
@@ -345,15 +350,17 @@ sub cert_commands {
 #
 sub vaultify_secrets {
 	my ($self, %options) = @_;
-	$options{env} or die "vaultify_secrets() was not given an 'env' option.\n";
+	my $env = $options{env} or die "vaultify_secrets() was not given an 'env' option.\n";
 	my $meta = $self->metadata;
 
 	my $creds = active_credentials($meta, $options{features} || []);
 	if (%$creds) {
 		explain(" - auto-generating credentials (in secret/$options{prefix})...");
 		for (safe_commands $self, $creds, %options) {
-			run({ interactive => 1, onfailure => "Failure autogenerating credentials." },
-				'safe', @$_);
+			$env->vault->query(
+				{ interactive => 1, onfailure => "Failure autogenerating credentials." },
+				@$_
+			);
 		}
 	} else {
 		explain(" - no credentials need to be generated.");
@@ -363,8 +370,10 @@ sub vaultify_secrets {
 	if (%$certs) {
 		explain(" - auto-generating certificates (in secret/$options{prefix})...");
 		for (cert_commands $certs, %options) {
-			run({ interactive => 1, onfailure => "Failure autogenerating certificates." },
-				'safe', @$_);
+			$env->vault->query(
+				{ interactive => 1, onfailure => "Failure autogenerating certificates." },
+				@$_
+			);
 		}
 	} else {
 		explain(" - no certificates need to be generated.");
@@ -388,7 +397,7 @@ sub run_param_hook {
 		{interactive => 1, env => {
 			GENESIS => $ENV{GENESIS_CALLBACK_BIN},
 			GENESIS_ENVIRONMENT_NAME => $env->{name},
-			GENESIS_VAULT_PREFIX => $env->{prefix} }},
+			GENESIS_VAULT_PREFIX => $env->{secrets_path} }},
 		$hook, "$dir/in", "$dir/out", @features
 	);
 	die "\nNew environment creation cancelled.\n" if $rc == 130;
@@ -411,7 +420,7 @@ sub new_environment {
 	my @features = prompt_for_env_features($self);
 	my $params = process_params($k,
 		env          => $self,
-		vault_prefix => $self->{prefix},
+		vault_prefix => $self->{secrets_path},
 		features     => \@features,
 	);
 	$params = run_param_hook($self, $params, @features);
@@ -453,7 +462,7 @@ sub new_environment {
 
 params:
   env:   $self->{name}
-  vault: $self->{prefix}
+  vault: $self->{secrets_path}
 EOF
 	if (defined($ENV{GENESIS_BOSH_ENVIRONMENT})) {
 		print $fh <<EOF;

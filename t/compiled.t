@@ -29,7 +29,7 @@ version: 0.0.2
 EOF
 
 qx(rm -f new-env.yml);
-runs_ok "genesis new --vault $vault_target new-env";
+runs_ok "genesis new new-env";
 eq_or_diff get_file("new-env.yml"), <<EOF, "environment file is correctly generated";
 ---
 kit:

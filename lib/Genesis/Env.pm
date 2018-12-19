@@ -5,11 +5,14 @@ use warnings;
 use Genesis;
 use Genesis::Legacy; # but we'd rather not
 use Genesis::BOSH;
+use Genesis::UI;
+use Genesis::Vault;
 
 use POSIX qw/strftime/;
 use Digest::file qw/digest_file_hex/;
 
 sub new {
+	# Do not call directly, use create or load instead
 	my ($class, %opts) = @_;
 
 	# validate call
@@ -24,81 +27,107 @@ sub new {
 
 	# environment names must be valid.
 	eval { $class->validate_name($opts{name}) }
-		or die "Bad environment name '$opts{name}': $@\n" if $@;
+		or die "Bad environment name '$opts{name}': $@\n";
 
 	# make sure .genesis is good to go
 	die "No deployment type specified in .genesis/config!\n"
 		unless $opts{top}->type;
 
 	$opts{__tmp} = workdir;
-	my $self = bless(\%opts, $class);
-	$self->{prefix} ||= $self->_default_prefix;
-
-	return $self;
+	return bless(\%opts, $class);
 }
 
 sub load {
-	my $self = new(@_);
+	my ($class,%opts) = @_;
 
-	if (!-f $self->path("$self->{file}")) {
-		die "Environment file $self->{file} does not exist.\n";
+	for (qw(name top)) {
+		bug("No '$_' specified in call to Genesis::Env->load!!")
+			unless $opts{$_};
 	}
 
-	# determine our vault prefix
-	$self->{prefix} = $self->lookup('params.vault', $self->_default_prefix);
+	my $env = $class->new(_slice(\%opts, qw(name top)));
+
+	bail("#R{[ERROR]} Environment file $env->{file} does not exist.")
+		unless -f $env->path($env->{file});
+
+	unless (in_callback || envset("GENESIS_LEGACY")) {
+		my ($env_name, $env_key) = $env->lookup(['genesis.env','params.env']);
+		bail("\n#R{[ERROR]} Environment file #C{$env->{file}} environment name mismatch: #C{$env_key: $env_name}")
+			unless $env->{name} eq $env_name;
+		error "\n#Y{[WARNING]} Environment file $env->{file} uses #C{params.env} to specify environment name.\nThis has been moved to #C{genesis.env} -- please update your file to remove this warning.\n"
+			if $env_key eq 'params.env' || $env->defines('params.env');
+	}
 
 	# reconstitute our kit via top
-	$self->{kit} = $self->{top}->find_kit(
-		$self->lookup('kit.name'),
-		$self->lookup('kit.version'))
-			or die "Unable to locate kit for '$self->{name}' environment.\n";
+	$env->{kit} = $env->{top}->find_kit(
+		scalar($env->lookup('kit.name')),
+		scalar($env->lookup('kit.version')))
+			or die "Unable to locate kit for '$env->{name}' environment.\n";
 
-	return $self;
+	# determine our vault and secret path
+	bail("\n#R{[ERROR]} No vault specified or configured.")
+		unless $env->vault;
+	my ($secrets_path,$src_key) = $env->lookup(
+		['genesis.secrets_path','params.vault_prefix','params.vault'],
+		$env->_default_secrets_path
+	);
+	$env->{secrets_path} = $secrets_path;
+	error "\n#Y{[WARNING]} Environment file $env->{file} uses #C{$src_key} to specify secrets path in Vault.\nThis has been moved to #C{genesis.secrets_path} -- please update your file to remove this warning."
+		if defined($src_key) && $src_key ne 'genesis.secrets_path';
+
+	return $env;
 }
 
 sub exists {
-	my $self = new(@_);
-	return -f $self->path("$self->{file}");
+	my $env = new(@_);
+	return -f $env->path("$env->{file}");
 }
 
 sub create {
-	my $self = new(@_);
+	my ($class,%opts) = @_;
 
 	# validate call
-	for (qw(kit)) {
+	for (qw(name top kit)) {
 		bug("No '$_' specified in call to Genesis::Env->create!!")
-			unless $self->{$_};
+			unless $opts{$_};
 	}
+
+	my $env = $class->new(_slice(\%opts, qw(name top kit secrets_path)));
 
 	# environment must not already exist...
-	if (-f $self->path("$self->{file}")) {
-		die "Environment file $self->{file} already exists.\n";
-	}
+	die "Environment file $env->{file} already exists.\n"
+		if -f $env->path($env->{file});
+
+	# target vault and purge secrets that may already exist
+	bail("\n#R{[ERROR]} No vault specified or configured.")
+		unless $env->vault;
+	$env->{secrets_path} = $opts{secrets_path} || $env->_default_secrets_path;
+	$env->purge_secrets(); # TBD: should we allow them to continue without purging?
 
 	## initialize the environment
-	if ($self->has_hook('new')) {
-		$self->run_hook('new', root  => $self->path,      # where does the yaml go?
-		                       vault => $self->{prefix}); # where do the secrets go?
-
+	if ($env->has_hook('new')) {
+		$env->run_hook('new');
 	} else {
-		Genesis::Legacy::new_environment($self);
+		Genesis::Legacy::new_environment($env);
 	}
 
 	# generate all (missing) secrets ignoring any that exist
 	# from a previous 'new' attempt.
-	$self->add_secrets(recreate => 1);
+	$env->add_secrets();
 
-	return $self;
+	return $env;
 }
 
 # public accessors
 sub name   { $_[0]->{name};   }
 sub file   { $_[0]->{file};   }
-sub prefix { $_[0]->{prefix}; }
-sub kit    { $_[0]->{kit};    }
+sub kit    { $_[0]->{kit}    || bug("Incompletely initialized environment '".$_[0]->name."': no kit specified"); }
+sub top    { $_[0]->{top}    || bug("Incompletely initialized environment '".$_[0]->name."': no top specified"); }
+sub secrets_path { $_[0]->{secrets_path} || $_[0]->_default_secrets_path; }
 
 # delegations
-sub type { $_[0]->{top}->type; }
+sub type   { $_[0]->top->type; }
+sub vault  { $_[0]->top->vault; }
 
 sub path {
 	my ($self, @rest) = @_;
@@ -110,11 +139,15 @@ sub tmppath {
 	                 :  $self->{__tmp};
 }
 
-sub _default_prefix {
+sub vault_path {
+	"secret/" . $_[0]->secrets_path;
+}
+
+sub _default_secrets_path {
 	my ($self) = @_;
-	my $p = $self->{name};         # start with env name
-	$p =~ s|-|/|g;                 # swap hyphens for slashes
-	$p .= "/".$self->{top}->type;  # append '/type'
+	my $p = $self->name;         # start with env name
+	$p =~ s|-|/|g;               # swap hyphens for slashes
+	$p .= "/".$self->top->type;  # append '/type'
 	return $p;
 }
 
@@ -139,9 +172,9 @@ sub cloud_config {
 sub features {
 	my ($self) = @_;
 	if ($self->defines('kit.features')) {
-		return @{ $self->lookup('kit.features') };
+		return @{ scalar($self->lookup('kit.features')) };
 	} else {
-		return @{ $self->lookup('kit.subkits', []) };
+		return @{ scalar($self->lookup('kit.subkits', [])) };
 	}
 }
 
@@ -215,17 +248,17 @@ sub actual_environment_files {
 		$self->potential_environment_files;
 }
 
-sub _lookup {
-	my ($what, $key, $default) = @_;
+sub _lookup_key {
+	my ($what, $key) = @_;
 
-	return $what if $key eq '';
+	return (1,$what) if $key eq '';
 
 	for (split /[\[\.]/, $key) {
 		if (/^(\d+)\]$/) {
-			return $default unless ref($what) eq "ARRAY" && scalar(@$what) > $1;
+			return (0,undef) unless ref($what) eq "ARRAY" && scalar(@$what) > $1;
 			$what = $what->[$1];
 		} elsif (/^(.*?)=(.*?)]$/) {
-			return $default unless ref($what) eq "ARRAY";
+			return (0,undef) unless ref($what) eq "ARRAY";
 			my $found=0;
 			for (my $i = 0; $i < scalar(@$what); $i++) {
 				if (ref($what->[$i]) eq 'HASH' && defined($what->[$i]{$1}) && ($what->[$i]{$1} eq $2)) {
@@ -234,18 +267,38 @@ sub _lookup {
 					last;
 				}
 			}
-			return $default unless $found;
+			return (0, undef) unless $found;
 		} else {
-			return $default if !exists $what->{$_};
+			return (0, undef) if !exists $what->{$_};
 			$what = $what->{$_};
 		}
 	}
-	return $what;
+	return (1, $what);
 }
+sub _lookup {
+	my ($what, $keys, $default) = @_;
+	$keys = [$keys] unless ref($keys) eq 'ARRAY';
+	my $found = 0;
+	my ($key,$value);
+	for (@{$keys}) {
+		($found,$value) = _lookup_key($what,$_);
+		if ($found) {
+			$key = $_;
+			last;
+		}
+	}
+	unless ($found) {
+		$key = undef;
+		$value = (ref($default) eq 'CODE') ? $default->() : $default;
+	}
+	return wantarray ? ($value,$key) : $value;
+}
+
 sub lookup {
 	my ($self, $key, $default) = @_;
 	return _lookup($self->params, $key, $default);
 }
+
 
 sub manifest_lookup {
 	my ($self, $key, $default) = @_;
@@ -270,13 +323,13 @@ sub exodus_lookup {
 	$for ||= "$self->{name}/".$self->{top}->type;
 	my $path="secret/exodus/$for";
 	debug "Checking if $path path exists...";
-	my (undef, $rc) = run('safe exists "$1"', $path);
-	return $default if $rc;
+	return $default unless $self->vault->has($path);
 	debug "Exodus data exists, retrieving it and converting to json";
-	my $out = run(
-		{ onfailure => "Could not get $for exodus data from the Vault" },
-		'safe get "$1" | spruce json', $path);
-	my $exodus = _unflatten(load_json($out));
+	my $out;
+	eval {$out = $self->vault->get($path);};
+	bail "Could not get $for exodus data from the Vault" if $@;
+
+	my $exodus = _unflatten($out);
 	return _lookup($exodus, $key, $default);
 }
 
@@ -316,11 +369,17 @@ sub _manifest {
 		trace("[env $self->{name}] in _manifest(): cwd is ".Cwd::cwd);
 		trace("[env $self->{name}] in _manifest(): merging $_")
 			for $self->_yaml_files;
-		local $ENV{REDACT} = $opts{redact} ? 'yes' : ''; # for spruce
 
 		pushd $self->path;
 		debug("running spruce merge of all files, with evaluation, to generate a manifest");
-		my $out = run({ onfailure => "Unable to merge $self->{name} manifest", stderr => 0 },
+		my $out = run({
+				onfailure => "Unable to merge $self->{name} manifest",
+				stderr => "&1",
+				env => {
+					%{$self->vault->env()},              # specify correct vault for spruce to target
+					REDACT => $opts{redact} ? 'yes' : '' # spruce redaction flag
+				}
+			},
 			'spruce', 'merge', '--go-patch', $self->_yaml_files);
 		popd;
 
@@ -342,7 +401,7 @@ sub manifest {
 
 	my (undef, $path) = $self->_manifest(redact => $opts{redact});
 	if ($opts{prune}) {
-		my @prune = qw/meta pipeline params kit exodus compilation/;
+		my @prune = qw/meta pipeline params kit genesis exodus compilation/;
 
 		if (!$self->needs_bosh_create_env) {
 			# bosh create-env needs these, so we only prune them
@@ -356,7 +415,11 @@ sub manifest {
 
 		debug("pruning top-level keys from #W{%s} manifest...", $opts{redact} ? 'redacted' : 'unredacted');
 		debug("  - removing #C{%s} key...", $_) for @prune;
-		return run({ onfailure => "Failed to merge $self->{name} manifest", stderr => 0 },
+		return run({
+				onfailure => "Failed to merge $self->{name} manifest",
+				stderr => "&1",
+				env => $self->vault->env # to target desired vault
+			},
 			'spruce', 'merge', (map { ('--prune', $_) } @prune), $path)."\n";
 	} else {
 		debug("not pruning #W{%s} manifest.", $opts{redact} ? 'redacted' : 'unredacted');
@@ -381,7 +444,7 @@ sub cached_manifest_info {
 
 sub _yaml_files {
 	my ($self) = @_;
-	my $prefix = $self->_default_prefix;
+	my $vault_path = $self->vault_path;
 	my $type   = $self->{top}->type;
 
 	my @cc;
@@ -396,15 +459,29 @@ sub _yaml_files {
 		trace("[env $self->{name}] in_yaml_files(): IS a create-env, skipping cloud-config");
 	}
 
-	mkfile_or_fail("$self->{__tmp}/init.yml", 0644, <<EOF);
+	if ($self->kit->feature_compatibility('2.6.13')) {
+		mkfile_or_fail("$self->{__tmp}/init.yml", 0644, <<EOF);
 ---
 meta:
-  vault: (( concat "secret/" params.vault || "$prefix" ))
+  vault: $vault_path
+exodus:  {}
+genesis: {}
+params:  {}
+name:    (( concat genesis.env "-$type" ))
+EOF
+	} else {
+		mkfile_or_fail("$self->{__tmp}/init.yml", 0644, <<EOF);
+---
+meta:
+  vault: $vault_path
 exodus: {}
+genesis: {}
 params:
-  name: (( concat params.env "-$type" ))
+  env:  (( grab genesis.env ))
+  name: (( concat genesis.env || params.env "-$type" ))
 name: (( grab params.name ))
 EOF
+	}
 
 	my $now = strftime("%Y-%m-%d %H:%M:%S +0000", gmtime());
 	mkfile_or_fail("$self->{__tmp}/fin.yml", 0644, <<EOF);
@@ -417,6 +494,7 @@ exodus:
   kit_version: (( grab kit.version || "unknown" ))
   vault_base:  (( grab meta.vault ))
 EOF
+		# TODO: In BOSH refactor, add the bosh director to the exodus data
 
 	return (
 		"$self->{__tmp}/init.yml",
@@ -504,25 +582,22 @@ sub _unflatten {
 
 sub exodus {
 	my ($self) = @_;
-	return _flatten({}, undef, $self->manifest_lookup('exodus', {}));
+	return _flatten({}, undef, scalar($self->manifest_lookup('exodus', {})));
 }
 
 sub lookup_bosh_target {
 	my ($self) = @_;
 	return undef if $self->needs_bosh_create_env;
 
-	my ($bosh, $source);
+	my ($bosh, $source,$key);
 	if ($bosh = $ENV{GENESIS_BOSH_ENVIRONMENT}) {
 			$source = "GENESIS_BOSH_ENVIRONMENT environment variable";
 
-	} elsif ($bosh = $self->lookup('params.bosh')) {
-			$source = "params.bosh in $self->{name} environment file";
-
-	} elsif ($bosh = $self->lookup('params.env')) {
-			$source = "params.env in $self->{name} environment file because no params.bosh was present";
+	} elsif (($bosh,$key) = $self->lookup(['params.bosh','genesis.env','params.env'])) {
+			$source = "$key in $self->{name} environment file";
 
 	} else {
-		die "Could not find the `params.bosh' or `params.env' key in $self->{name} environment file!\n";
+		die "Could not find the 'params.bosh','genesis.env' or 'params.env' key in $self->{name} environment file!\n";
 	}
 
 	return wantarray ? ($bosh, $source) : $bosh;
@@ -548,7 +623,7 @@ sub deployment {
 	if ($self->defines('params.name')) {
 		return $self->lookup('params.name');
 	}
-	return $self->lookup('params.env') . '-' . $self->{top}->type;
+	return $self->lookup(['genesis.env','params.env']) . '-' . $self->{top}->type;
 }
 
 sub has_hook {
@@ -621,9 +696,9 @@ sub deploy {
 	$exodus->{manifest_sha1} = digest_file_hex($manifest_path, 'SHA-1');
 	$exodus->{bosh} = $self->bosh_target || "(none)";
 	debug("setting exodus data in the Vault, for use later by other deployments");
-	$ok = run(
+	$ok = $self->vault->query(
 		{ onfailure => "Successfully deployed, but could not save $self->{name} metadata to the Vault" },
-		'safe', 'rm',  "secret/exodus/$self->{name}/".$self->{top}->type, "-f",
+		'rm',  "secret/exodus/$self->{name}/".$self->{top}->type, "-f",
 		  '--', 'set', "secret/exodus/$self->{name}/".$self->{top}->type,
 		               map { "$_=$exodus->{$_}" } keys %$exodus);
 
@@ -635,44 +710,68 @@ sub add_secrets { # WIP - majorly broken right now.  sorry bout that.
 
 	if ($self->has_hook('secrets')) {
 		$self->run_hook('secrets', action => $opts{recreate} ? 'new' : 'add',
-		                           vault  => $self->{prefix});
+		                           vault  => $self->secrets_path);
 	} else {
 		Genesis::Legacy::vaultify_secrets($self->kit,
 			env       => $self,
-			prefix    => $self->{prefix},
+			prefix    => $self->secrets_path,
 			scope     => $opts{recreate} ? 'force' : 'add',
 			features  => [$self->features]);
 	}
 }
 
-sub check_secrets {
-	my ($self) = @_;
+sub purge_secrets {
+	my ($self, %opts) = @_;
 
+	my @paths = $self->vault->paths("secret/".$self->secrets_path);
+	return 1 unless (scalar(@paths));
+
+	die_unless_controlling_terminal;
+
+	explain "#Yr{[WARNING]} The following pre-existing secrets will need to be removed:";
+	bullet $_ for (@paths);
+	my $response = prompt_for_line(undef, "Type 'yes' to remove these secrets","");
+	if ($response eq 'yes') {
+		waiting_on "\nDeleting existing secrets under '#C{%s}'...", $self->secrets_path;
+		$self->vault->query('rm',$_) for (@paths);
+		explain "#G{done}\n"
+	} else {
+		explain "\nAborted!\nKeeping all existing secrets under '#C{%s}'.", $self->secrets_path;
+		return 0;
+	}
+	return 1;
+}
+
+sub check_secrets {
+	my ($self,%opts) = @_;
+
+	$opts{indent} ||= ''; # Used when imbedded under another function such as check or deploy
 	if ($self->has_hook('secrets')) {
-		my $ok = $self->run_hook('secrets', action => 'check',
-		                           vault  => $self->{prefix});
+		my ($ok,$secrets) = $self->run_hook(
+			'secrets', action => 'check', vault  => $self->secrets_path
+		);
 		return $ok;
 	} else {
-		binmode(STDOUT, "encoding(UTF-8)");
 		my $ok = 1;
 
 		my $meta = $self->kit->metadata;
 		my $features = [($self->features)];
 
-		explain "#M{Retrieving secrets for $self->{prefix}...}";
+		print csprintf("%s#yi{Retrieving secrets for %s...}", $opts{indent}, $self->secrets_path);
 
 		my $secrets = {};
-		for (lines(run('safe paths --keys "$1"', "secret/$self->{prefix}"))) {
+		for ($self->vault->keys($self->vault_path)) {
 			$secrets->{$_} = 1;
 		}
+		explain '#G{ok}';
 		my @missing=();
 
-		explain "\n#C{[Checking generated credentials]}";
+		explain "\n%s#C{[Checking generated credentials]}", $opts{indent};
 		my @creds = Genesis::Legacy::safe_commands(
-			$self, 
+			$self,
 			Genesis::Legacy::active_credentials($meta, $features),
 			env       => $self,
-			prefix    => $self->{prefix},
+			prefix    => $self->secrets_path,
 			features  => $features);
 		if (@creds) {
 			push @missing, _check_secret($_, $secrets) for (@creds);
@@ -680,11 +779,11 @@ sub check_secrets {
 			explain "  #GI{No credentials to check}";
 		}
 
-		explain "\n#C{[Checking generated certificates]}";
+		explain "\n%s#C{[Checking generated certificates]}", $opts{indent};
 		my @certs = Genesis::Legacy::cert_commands(
 			Genesis::Legacy::active_certificates($meta, $features),
 			env       => $self,
-			prefix    => $self->{prefix},
+			prefix    => $self->secrets_path,
 			features  => $features);
 		if (@certs) {
 			push @missing, _check_secret($_, $secrets) for (@certs);
@@ -731,19 +830,15 @@ sub _check_secret {
 	}
 	my @missing = grep {! $secrets->{"$path:$_"}} @keys;
 	if ($type =~ /^random/) { # these are at the key level, not the path level
-		if (@missing) {
-			explain("  #R{\x{2718}}  %s [%s:#C{%s}]", $path, $_, $type) for (@missing);
+		if (scalar(@missing)) {
+			bullet("bad", sprintf("%s [%s:#C{%s}]", $path, $_, $type))  for (@missing);
 		} else {
-			explain("  #G{\x{2714}}  %s [%s:#C{%s}]", $path, $_, $type) for (grep {$secrets->{"$path:$_"}} @keys);
+			bullet("good", sprintf("%s [%s:#C{%s}]", $path, $_, $type)) for (grep {$secrets->{"$path:$_"}} @keys);
 		}
 
 	} else {
-		if (@missing) {
-			explain("  #R{\x{2718}}  %s [#C{%s}]", $path, $type);
-			explain("     #R{\x{2718}}  :%s", $_) for (@missing);
-		} else {
-			explain("  #G{\x{2714}}  %s [#C{%s}]", $path,$type);
-		}
+		bullet(scalar(@missing) ? "bad" : "good", sprintf("%s [#C{%s}]", $path, $type));
+		bullet("bad", ":$_", indent => 5) for (@missing);
 	}
 
 	return map {["[$type]", "$path:$_"]} @missing;
@@ -754,11 +849,11 @@ sub rotate_secrets {
 
 	if ($self->has_hook('secrets')) {
 		$self->run_hook('secrets', action => 'rotate',
-		                           vault  => $self->{prefix});
+		                           vault  => $self->secrets_path);
 	} else {
 		Genesis::Legacy::vaultify_secrets($self->kit,
 			env       => $self,
-			prefix    => $self->{prefix},
+			prefix    => $self->secrets_path,
 			scope     => $opts{force} ? 'force' : '',
 			features  => [$self->features]);
 	}
@@ -784,6 +879,15 @@ sub validate_name {
 
 	die "names must not contain sequential hyphens (i.e. '--').\n"
 		if $name =~ m/--/;
+
+	1; # name is valid
+}
+
+sub _slice {
+	my ($hash_ref, @keys) = @_;
+	my %slice;
+	$slice{$_} = $hash_ref->{$_} for (@keys);
+	return %slice;
 }
 
 1;
@@ -821,6 +925,9 @@ things like the `new` hook:
        kit  => $top->find_kit('some-kit', 'latest'),
     );
 
+It can optionally take the `vault` and `secrets_path` option to specify the vault name
+and environment vault secrets_path (without the secret/ prefix) respectively
+
 You can also avail yourself of the C<new> constructor, which does a lot of
 the validation, but won't access the environment files directly:
 
@@ -852,7 +959,7 @@ The Genesis::Top object that represents the root working directory of the
 deployments repository.  This is used to fetch things like deployment
 configuration, kits, etc.  This option is B<required>.
 
-=item B<prefix>
+=item B<secrets_path>
 
 A path in the Genesis Vault, under which secrets for this environment should
 be stored.  Normally, you don't need to specify this.  When an environment
@@ -948,11 +1055,12 @@ of the environment name and the root directory repository type (i.e.
 C<bosh>, C<concourse>, etc.)
 
 
-=head2 prefix()
+=head2 secrets_path()
 
-Retrieve the Vault prefix that this environment should store its secrets
-under, based off of either its name (by default) or its C<params.vault>
-parameter.
+Retrieve the Vault secrets_path that this environment should store its secrets
+under, based off of either its name (by default) or its C<genesis.secrets_path>
+parameter.  Legacy environments may also have this specified by C<params.vault>
+or C<params.vault_prefix>
 
 =head2 kit()
 
@@ -1126,10 +1234,19 @@ C<lookup>.
 =head2 lookup($key, [$default])
 
 Retrieve the value an environment has set for C<$key> (in any of its files),
-or C<$default> if the key hasn't been defined.
+or C<$default> if the key hasn't been defined.  If C<$key> is an array
+reference, each key in the array is checked until it finds one that has been
+defined.  If called in a list context (including inside a function call), it
+will return a list of the value, and the matching key (which will be undefined
+if no key is found)
 
     my $v = $env->lookup('kit.version', 'latest');
     print "using version $v...\n";
+
+To get just the found value when calling within a function, wrap the call with
+`scalar(...)`:
+
+    debug "Kit name: %s", scalar($env->lookup('kit.name'));
 
 This can be combined with calls to C<defines> to avoid having to specify a
 default value when you don't want to:
@@ -1150,17 +1267,21 @@ the only way to pull data out of a list.
 
 If the key is an empty string, it will return the entire data structure.
 
-==head2 manifest_lookup($key, [$default])
+If default is a code reference, it will be executed and the result will be
+returned if and only if the default value is needed (ie no matching key is
+found). This allows for short circuit evaluation of the default.
+
+=head2 manifest_lookup($key, [$default])
 
 Similar to C<lookup>, but uses the merged manifest as the source of the data.
 
-==head2 last_deployed_lookup($key, [$default])
+=head2 last_deployed_lookup($key, [$default])
 
 Similar to C<lookup>, but uses the last deployed (redacted) manifest for the
 environment.  Raises an error if there hasn't been a cached manifest for the
 environment.
 
-==head2 exodus_lookup($key, [$default])
+=head2 exodus_lookup($key, [$default])
 
 Similar to C<lookup>, but uses the exodus data stored in Vault for the
 environment.  Raises an error if there hasn't been a successful deployment for

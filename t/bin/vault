@@ -1,12 +1,19 @@
 #!/bin/bash
-set -e
+set -ue
 
 bail() {
 	printf >&2 $*
 	exit 2
 }
 
-mkdir -p t/tmp/home t/vaults
+[[ -n "$GENESIS_TOPDIR" ]] || bail "No GENESIS_TOPDIR defined -- cannot start vault"
+
+export HOME="${GENESIS_TOPDIR}/t/tmp/home"
+export VAULTS_DIR="${GENESIS_TOPDIR}/t/vaults"
+[[ -d $HOME ]] || mkdir -p "$HOME"
+[[ -d $VAULTS_DIR ]] || mkdir -p "$VAULTS_DIR"
+touch "$HOME/.vault_token"  # Hack around safe init issue
+cd "${GENESIS_TOPDIR}" >/dev/null 2>&1
 
 version="0.9.3"
 platform=
@@ -16,12 +23,11 @@ case $OSTYPE in
 (darwin*) platform=darwin ;;
 (linux*)  platform=linux  ;;
 (*)
-	echo >&2 "UNRECOGNIZED OSTYPE '$OSTYPE'"
-	exit 1
+	bail "UNRECOGNIZED OSTYPE '$OSTYPE'"
 	;;
 esac
 
-cmd="t/vaults/vault-${version}-${platform}"
+cmd="${VAULTS_DIR}/vault-${version}-${platform}"
 
 if [[ ! -f "$cmd" ]]; then
 	printf >&2 "\rDownloading Vault ${version} CLI for $platform ..."
@@ -34,11 +40,7 @@ if [[ ! -f "$cmd" ]]; then
 	printf >&2 "DONE\n\n"
 fi
 
-old_home=$HOME
-export HOME=${PWD}/t/tmp/home
-touch $HOME/.vault_token  # Hack around safe init issue
 
-rm -rf t/tmp/home ; mkdir -p t/tmp/home
 port=8200
 while lsof -nP -i ":$port" | grep ":$port\s*(LISTEN)" >/dev/null 2>&1 ; do
   [[ $((++port)) -gt 8300 ]] && bail "No free ports available for dev vault server"
@@ -53,7 +55,7 @@ storage "inmem" {}
 EOF
 ) >$HOME/log 2>&1 &
 vault_pid=$!
-[ -n "${DEBUG_TESTS:-}" ] && printf >&2 "\rStarting Vault ${version} CLI on port $port (pid: $vault_pid)..."
+[ -n "${DEBUG_TESTS:-}" ] && printf >&2 "\rStarting Vault ${version} CLI on port $port as '$target' (pid: $vault_pid)..."
 waitfor=600
 while ! lsof -a -p $vault_pid -i tcp:$port -s TCP:listen -nP >/dev/null 2>&1; do
 	if [[ $waitfor -gt 0 ]]; then
@@ -67,7 +69,7 @@ safe target "$target" http://127.0.0.1:$port >/dev/null 2>&1
 safe auth token <<<"dummy" > /dev/null 2>&1 # Another Hack around safe init issue
 root_token=$(safe init --json | jq -r '.root_token')
 safe auth token <<<${root_token} >/dev/null 2>&1
-if ! safe exists "secret/handshake" ;  then 
+if ! safe exists "secret/handshake" ;  then
   bail "\nFAILED - failed to unseal vault\n"
 fi
 

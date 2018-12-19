@@ -7,8 +7,10 @@ our $BUILD   = "";
 
 our $GITHUB  = "https://github.com/starkandwayne/genesis";
 
+use Data::Dumper;
 use File::Basename qw/basename dirname/;
 use POSIX qw/strftime/;
+use Symbol qw/qualify_to_ref/;
 use Time::Seconds;
 use Time::Piece;
 use Cwd ();
@@ -19,14 +21,14 @@ POSIX::tzset();
 use base 'Exporter';
 our @EXPORT = qw/
 	envset envdefault
+	in_callback under_test
 
 	csprintf
-	explain debug trace error
+	explain waiting_on
+	debug trace dump_var dump_stack
+	error	bail bug
+
 	vaulted
-	bail
-
-	bug
-
 	workdir
 
 	semver
@@ -40,6 +42,7 @@ our @EXPORT = qw/
 	ordify
 
 	run lines bosh curl
+	read_json_from
 	safe_path_exists
 
 	slurp
@@ -52,6 +55,8 @@ our @EXPORT = qw/
 	load_yaml load_yaml_file
 
 	pushd popd
+
+	tcp_listening
 /;
 
 use File::Temp qw/tempdir/;
@@ -67,8 +72,22 @@ sub envdefault {
 	return defined $ENV{$var} ? $ENV{$var} : $default;
 }
 
+sub in_callback {
+	envset('GENESIS_IS_HELPING_YOU');
+}
+
+sub under_test {
+	envset('GENESIS_TESTING');
+}
+
+sub vaulted {
+	return !! Genesis::Vault->current
+}
+
 sub safe_path_exists {
-	return run({ passfail => 1 }, qw(safe exists), $_[0]);
+	bug("Cannot verify path exists in safe without a vault being selected first")
+		unless Genesis::Vault->current;
+	return Genesis::Vault->current->has($_[0]);
 }
 
 my $__is_highcolour = $ENV{TERM} && $ENV{TERM} =~ /256color/;
@@ -115,8 +134,8 @@ sub _colorize {
 		my $i = 0;
 		my $msgc = "";
 		foreach my $char (split //, $msg) {
-			my $fr = $fg eq "*" ? $rainbow[$i%6] : $fg;
-			my $br = $bg eq "*" ? $rainbow[($i+3)%6] : $bg;
+			my $fr = $fg && $fg eq "*" ? $rainbow[$i%6] : $fg;
+			my $br = $bg && $bg eq "*" ? $rainbow[($i+3)%6] : $bg;
 			$msgc = $msgc . _color($fr,$br)."$char";
 			if ($char =~ m/\S/) {
 				$i++;
@@ -132,48 +151,87 @@ sub csprintf {
 	my ($fmt, @args) = @_;
 	return '' unless $fmt;
 	my $s = sprintf($fmt, @args);
-	$s =~ s/(#[IUKRGYBMPCW*]{1,4})\{(.*?)(\})/_colorize($1, $2)/egi;
+	$s =~ s/(#[-IUKRGYBMPCW*]{1,4})\{(.*?)(\})/_colorize($1, $2)/egi;
 	return $s;
 }
-sub explain {
-	return if envset "QUIET";
-	my $out = envset("EXPLAIN_TO_STDERR") ? *STDERR : *STDOUT;
 
-	{ local $ENV{NOCOLOR} = "yes" unless -t $out;
-	        print $out csprintf(@_)."\n"; }
+sub explain {
+	explain STDOUT @_;
+}
+
+sub waiting_on {
+	waiting_on STDOUT @_;
 }
 
 sub debug {
-	return unless envset "GENESIS_DEBUG"
-	           or envset "GENESIS_TRACE";
-	print STDERR "DEBUG> ";
-	{ local $ENV{NOCOLOR} = "yes" unless -t STDOUT;
-	        print STDERR csprintf(@_); }
-	print STDERR "\n";
+	return unless envset("GENESIS_DEBUG") || envset("GENESIS_TRACE");
+	_log("DEBUG", csprintf(@_), "Wm")
+}
+
+sub dump_var {
+	return unless envset("GENESIS_DEBUG") || envset("GENESIS_TRACE");
+	local $Data::Dumper::Deparse = 1;
+	local $Data::Dumper::Terse   = 1;
+	my (undef, $file, $ln) = caller;
+	my $sub = (caller(1))[3];
+	my (%vars) = @_;
+	_log("VALUE", csprintf("#M{$_} = ").Dumper($vars{$_}) .csprintf("#Ki{# in $sub [$file:L$ln]}"), "Wb") for (keys %vars);
+}
+
+sub dump_stack {
+	return unless envset("GENESIS_DEBUG") || envset("GENESIS_TRACE");
+	my $depth=0;
+	my ($package,$file,$line,$sub,@stack,@info);
+	my ($sub_size, $line_size, $file_size) = (10,4,4);
+
+  while (@info = caller($depth++)) {
+		$sub = $info[3];
+		$sub_size  = (sort {$b <=> $a} ($sub_size, length($sub )))[0];
+		if ($file) {
+			push @stack, [$line,$sub,$file];
+			$line_size = (sort {$b <=> $a} ($line_size,length($line)))[0];
+			$file_size = (sort {$b <=> $a} ($file_size,length($file)))[0];
+		}
+		$file = $info[1];
+		$line = $info[2];
+	}
+
+	print STDERR "\n"; # Ensures that the header lines up at the cost of a blank line
+	my $header = csprintf("#Wku{%*s}  #Wku{%-*s}  #Wku{%-*s}\n", $line_size, "Line", $sub_size, "Subroutine", $file_size, "File");
+	_log("STACK", $header.join("\n",map {
+		csprintf("#w{%*s}  #Y{%-*s}  #Ki{%s}", $line_size, $_->[0], $sub_size, $_->[1], $_->[2])
+	} @stack), "kY");
 }
 
 sub trace {
 	return unless envset "GENESIS_TRACE";
-	print STDERR "TRACE> ";
-	{ local $ENV{NOCOLOR} = "yes" unless -t STDOUT;
-	        print STDERR csprintf(@_); }
-	print STDERR "\n";
+	_log("TRACE", csprintf(@_), "Wc")
 }
 
-sub vaulted {
-	return !! $ENV{GENESIS_TARGET_VAULT};
+sub _log {
+	my ($label, $content, $colors) = @_;
+	my ($gt,$gtc) = (">",$colors);
+	unless (envset "NOCOLOR") {
+		$gt = "";
+		$gtc = substr($colors,1,1);
+		$label = " $label ";
+	}
+	my $prompt = csprintf("#%s{%s}#%s{%s}", "$colors",$label,$gtc,$gt);
+	my $out = join("\n".(" "x(length($label)+2)),split(/\n/,$content));
+
+	printf STDERR "%s %s\n", $prompt, $out;
 }
 
 sub error {
 	my @err = @_;
 	unshift @err, "%s" if $#err == 0;
-	print STDERR csprintf(@err) . "\n";
+	print STDERR csprintf(@err) . "$/";
 }
 
 sub bail {
 	my @err = @_;
 	unshift @err, "%s" if $#err == 0;
-	$! = 1; die csprintf(@_)."\n";
+	$! = 1; die csprintf(@_)."$/";
 }
 
 sub bug {
@@ -353,22 +411,18 @@ sub run {
 	my $rc = $? >>8;
 	if ($rc) {
 		trace("command exited with status %x (rc %d)", $rc, $rc >> 8);
-		if (defined($out)) {
-			trace("#R{==== <output> ==================================}");
-			trace($out);
-			trace("#R{==== </output> =================================}");
-		}
+		dump_var output => $out if (defined($out));
 		if ($opts{onfailure}) {
 			bail("#R{%s} (run failed)%s", $opts{onfailure}, defined($out) ? ":\n$out" :'');
 		}
 	} else {
 		trace("command exited #G{0}");
 		if (defined($out)) {
-			trace("==== <output> ==================================");
-			trace($out =~ m/[\x00-\x1f\x7f-\xff]/
-				? "[".length($out)."b of binary data omited from trace]"
-				: $out);
-			trace("==== </output> =================================");
+			if ($out =~ m/[\x00-\x08\x0b-\x0c\x0e\x1f\x7f-\xff]/) {
+				trace "[".length($out)."b of binary data omited from trace]";
+			} else {
+				dump_var output => $out;
+			}
 		}
 	}
 	return unless defined(wantarray);
@@ -382,6 +436,16 @@ sub run {
 sub lines {
 	my ($out, $rc) = @_;
 	return $rc ? () : split $/, $out;
+}
+
+sub read_json_from {
+	my ($out, $rc) = @_;
+	local $@;
+	my $json = eval {load_json($out)};
+	my $err = $@;
+	return  ($json,$rc,$err) if (wantarray);
+	die $err if $err && $err ne "";
+	return $json;
 }
 
 sub curl {
@@ -523,6 +587,44 @@ sub pushd {
 sub popd {
 	@DIRSTACK or die "popd called when we don't have anything on the directory stack; please file a bug\n";
 	chdir_or_fail(pop @DIRSTACK);
+}
+
+sub tcp_listening {
+	my ($host,$port) = @_;
+	my ($ping_count,$ping_delay,$ping_timeout) = (2,0.2,10);
+
+	# Check if host is reachable (if ping is available)
+	if (run({passfail => 1}, 'which','ping')) {
+		run(
+			{passfail => 1}, 'ping -c "$1" -i "$2" -t "$3" "$4" >/dev/null',
+			$ping_count, $ping_delay, $ping_timeout, $host
+		) or return 0;
+	} else {
+		debug "ping not found -- cannot short-circuit check for $host being reachable";
+	}
+
+	# Check if host is listening on given port
+	run(
+		{passfail => 1},
+		"(</dev/tcp/$host/$port) >/dev/null"
+	);
+}
+
+# Because x FH args... translates to FH->x args, it is required to monkey-patch
+# IO:File to facilitate printing to different streams instead of STDOUT.  With
+# this in place, the Genesis functions just become wrappers.
+package IO::File;
+
+sub explain(*;@) {
+	my $self = shift;
+	return if Genesis::envset "QUIET";
+	print $self Genesis::csprintf(@_)."\n";
+}
+
+sub waiting_on(*;@) {
+	my $self = shift;
+	return if Genesis::envset "QUIET";
+	print $self Genesis::csprintf(@_);
 }
 
 1;
@@ -785,6 +887,21 @@ This is best used with C<run()>, like this:
 
     my @lines = lines(run('some command'));
 
+=head2 read_json_from($out, $rc)
+
+Ignore C<$rc>, and parses C<$out> as JSON, returning the resulting structure.
+It is primarily intended to wrap C<run()>, like this:
+
+    my $data = read_json_from(run('some command that outputs json'));
+
+If called in scalar context, it will return the json if it was parseable, or
+otherwise die with whatever message JSON::PP generates when encountering
+non-JSON content.
+
+If called in list context, it will return the json (if successfully read), the
+C<$rc> of the command, and any error encountered when trying to parse the json.
+This is to allow the caller to handle any error in the call or the parse
+themselves.
 
 =head2 curl($method, $url, $headers, $data, $skip_verify, $creds)
 

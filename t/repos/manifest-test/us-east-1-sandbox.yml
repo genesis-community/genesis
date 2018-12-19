@@ -1,6 +1,6 @@
 ---
+genesis:
+  env: us-east-1-sandbox
 params:
   site: us-east-1
-  env:  sandbox
-
   domain: sb.us-east-1.example.com

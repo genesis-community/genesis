@@ -1,4 +1,5 @@
 ---
+genesis:
+  env: test-env
 params:
   site: test
-  env:  env

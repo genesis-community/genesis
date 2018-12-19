@@ -6,40 +6,53 @@ use Genesis;
 use Genesis::Env;
 use Genesis::Kit::Compiled;
 use Genesis::Kit::Dev;
+use Genesis::Vault;
 
 use Cwd ();
+use File::Path qw/rmtree/;
 
 sub new {
-	my ($class, $root) = @_;
-	bless({ root => Cwd::abs_path($root) }, $class);
+	my ($class, $root, %opts) = @_;
+	my $top = bless({ root => Cwd::abs_path($root) }, $class);
+	if ($opts{vault}) {
+		bail("#R{[ERROR]} Cannot specify #C{--vault %s}: Deployment already has an associated secrets provider", $opts{vault})
+			if $top->has_vault;
+		$top->set_vault(target => $opts{vault}, session_only => 1)
+	}
+	return $top;
 }
 
 sub create {
 	my ($class, $path, $name, %opts) = @_;
-	debug("creating a new Genesis deployments repo named '$name' at $path...");
+	debug("creating a new Genesis deployments repository named '$name' at $path...");
 
-	$name =~ s/-deployments//;
-	$name =~ m/^[a-z][a-z0-9_-]+$/
-		or die "Invalid Genesis repo name '$name'\n";
+	# TODO: $opts{kit} does get passed in, and future versions will only allow one kit type per deployment
+	# Need to determine how this gets added to the configuration and how it impacts the current use of deployment type
+	# Probably becomes deployment-name and kit becomes the type (or drop type and use kit)
+
+	$name =~ s/-deployments?//;
+	bail "#R{[ERROR]} Invalid Genesis deployment repository name '$name'"
+		unless $name =~ m/^[a-z][a-z0-9_-]+$/;
+
 	debug("generating a new Genesis repo, named $name");
 
 	my $dir = $opts{directory} || "${name}-deployments";
+	bail "#R{[ERROR]} Repository directory name must only contain alpha-numeric characters, periods, hyphens and underscores"
+		if $dir =~ /([^\w\.-])/;
+
 	$path .= "/$dir";
-	die "Cowardly refusing to create new deployments repository `$dir': one already exists.\n"
+	bail "#R{[ERROR]} Cannot create new deployments repository `$dir': already exists!"
 		if -e $path;
 
 	my $self = $class->new($path);
 	$self->mkdir(".genesis");
 
-	$self->mkfile(".genesis/config", # {{{
-<<EOF);
----
-genesis: $Genesis::VERSION
-deployment_type: $name
-EOF
+	eval { # to delete path if creation fails
 
-# }}}
-	$self->mkfile("README.md", # {{{
+		# Write new configuration
+		$self->_write_config($name, $Genesis::VERSION, Genesis::Vault->target($opts{vault}));
+
+		$self->mkfile("README.md", # {{{
 <<EOF);
 $name deployments
 ==============================
@@ -85,12 +98,24 @@ To build the full BOSH manifest for an environment:
 
 To rotate credentials for an environment:
 
-    genesis secrets us-east-prod
+    genesis rotate-secrets us-east-prod
     genesis deploy us-east-prod
+
+To change the secrets provider for the environments in this repo:
+
+    genesis secrets-provider --url https://example.com:8200 --insecure
+
+... or clear it to use safe's currently targeted vault:
+
+    genesis secrets-provider --clear
 
 To update the Concourse Pipeline for this repo:
 
     genesis repipe
+
+To check for updates for this kit:
+
+    genesis list-kits -u
 
 To download a new version of the kit, and deploy it:
 
@@ -146,7 +171,92 @@ EOF
 
 # }}}
 
+	};
+	if ($@) {
+		debug("removing incomplete Genesis deployments repository at #C{$path} due to failed creation");
+		rmtree $path;
+		die $@;
+	}
+
 	return $self;
+}
+
+sub vault {
+	my ($self) = @_;
+	unless ($self->{_vault}) {
+		if (in_callback && $ENV{GENESIS_TARGET_VAULT}) {
+			$self->{_vault} = Genesis::Vault->rebind();
+		} elsif ($self->has_vault) {
+			$self->{_vault} = Genesis::Vault->attach(
+				$self->config->{secrets_provider}{url},
+				$self->config->{secrets_provider}{insecure}
+			);
+		} else {
+			$self->{_vault} = Genesis::Vault::default;
+			$self->{_vault}->set_as_current() if $self->{_vault};
+		}
+	}
+	return $self->{_vault};
+}
+
+sub has_vault {
+	my ($self) = @_;
+	defined($self->config->{secrets_provider});
+}
+
+sub set_vault {
+	my ($self,%opts) = @_;
+	my $new_vault;
+	if ($opts{interactive}) {
+		my $current_vault = $self->config->{secrets_provider};
+		if ($current_vault) {
+			$current_vault = (Genesis::Vault->find_by_target($current_vault->{url}))[0];
+		}
+		$new_vault = Genesis::Vault->target(undef, default_vault => $current_vault);
+	} elsif ($opts{target}) {
+		my @candidates = Genesis::Vault->find_by_target($opts{target});
+		return "#R{[Error]} No vault found that matches $opts{target}." unless @candidates;
+		return "#R{[Error]} Target $opts{target} has URL that is not unique across the known vaults on this system."
+			if scalar(@candidates) > 1;
+		$new_vault = $candidates[0];
+	} elsif ($opts{clear}) {
+		$new_vault = undef;
+	} else {
+		bug "#R{[Error]} Invalid call to Genesis::Top->set_vault"
+	}
+	$self->{_vault} = $new_vault;
+	$self->_write_config($self->type,$self->version,$new_vault)
+		unless $opts{session_only};
+	return;
+}
+
+sub vault_status {
+	my ($self) = @_;
+	return () unless $self->has_vault;
+
+	my $info = $self->config->{secrets_provider};
+	$info->{security} = ($info->{url} =~ /^https/)
+		? ($info->{insecure} ? "#Y{(noverify)}" : "")
+		: "#Y{(insecure)}";
+
+	my @candidates = Genesis::Vault->find(url => $info->{url});
+	if (! scalar(@candidates)) {
+		$info->{alias_error} = "No alias for this URL found on local system";
+		$info->{status} = qq(Run 'safe target "$info->{url}" "}#Ri{<alias>}#R{") . ($info->{insecure} ? " -k" : "") . "' to create an alias for this URL";
+		return %$info;
+	}
+
+	if (scalar(@candidates) > 1) {
+		$info->{alias_error} = "Multiple aliases for this URL found on local system";
+		$info->{status} = "Remove all but one of the following safe targets: ".join(", ", map {$_->{name}} @candidates);
+		return %$info;
+	}
+
+	my $vault = $candidates[0];
+	local $ENV{QUIET} = 1;
+	$info->{alias} = $vault->name;
+	$info->{status} = $vault->status;
+	return %$info;
 }
 
 sub link_dev_kit {
@@ -212,12 +322,17 @@ sub mkdir {
 
 sub config {
 	my ($self) = @_;
-	return $self->{__config} ||= load_yaml_file($self->path(".genesis/config"));
+	return $self->{_config} ||= load_yaml_file($self->path(".genesis/config"));
 }
 
 sub type {
 	my ($self) = @_;
 	return $self->config->{deployment_type};
+}
+
+sub version {
+	my ($self) = @_;
+	return $self->config->{genesis_version} || $self->config->{version} || "Unknown";
 }
 
 sub has_dev_kit {
@@ -274,6 +389,37 @@ sub _semver {
 		     + ($4 || 0) * 1;
 	}
 	return 0;
+}
+
+sub _write_config {
+	my ($self, $type, $version, $vault) = @_;
+	my $vault_info = "";
+	if ($vault) {
+		my $vault_url = $vault->url;
+		my $vault_skip_validate: = $vault->verify ? "false" : "true";
+		$vault_info =
+		  <<EOF; # {{{
+
+secrets_provider:
+  url:      "$vault_url"
+  insecure: $vault_skip_validate
+EOF
+# }}}
+	}
+	$self->mkfile(".genesis/config",
+	  <<EOF); # {{{
+---
+# This file is generated by Genesis - do not edit manually.
+
+deployment_type: $type
+genesis_version: $version$vault_info
+EOF
+# }}}
+
+	# reload config and vault
+	$self->{_config} = undef;
+	$self->{_vault} = $vault;
+	$self->config;
 }
 
 sub find_kit {

@@ -87,6 +87,7 @@ subtest 'output utilities' => sub {
 
 	{
 		local $ENV{GENESIS_DEBUG} = 'y';
+		local $ENV{NOCOLOR} = 1;
 		stderr_is(sub {
 			explain("this is an explanation");
 			  debug("this is debugging");
@@ -98,6 +99,7 @@ subtest 'output utilities' => sub {
 
 	{
 		local $ENV{GENESIS_TRACE} = 'y';
+		local $ENV{NOCOLOR} = 1;
 		stderr_is(sub {
 			explain("this is an explanation");
 			  debug("this is debugging");

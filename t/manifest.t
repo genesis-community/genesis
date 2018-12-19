@@ -6,10 +6,11 @@ use lib 't';
 use helper;
 use Test::Differences;
 
+vault_ok();
+
 my $tmp = workdir;
 ok -d "t/repos/manifest-test", "manifest-test repo exists" or die;
 chdir "t/repos/manifest-test" or die;
-
 bosh2_cli_ok;
 
 runs_ok "genesis manifest -c cloud.yml us-east-1-sandbox >$tmp/manifest.yml";
@@ -22,7 +23,7 @@ jobs:
   templates:
   - name: bar
     release: foo
-name: sandbox-manifest-test
+name: us-east-1-sandbox-manifest-test
 releases:
 - name: foo
   version: 1.2.3-rc.1
@@ -33,12 +34,12 @@ eq_or_diff get_file("$tmp/manifest.yml"), <<EOF, "manifest generated for us-west
 jobs:
 - name: thing
   properties:
-    domain: sandbox.us-west-1.example.com
-    endpoint: https://sandbox.us-west-1.example.com:8443
+    domain: us-west-1-sandbox.us-west-1.example.com
+    endpoint: https://us-west-1-sandbox.us-west-1.example.com:8443
   templates:
   - name: bar
     release: foo
-name: sandbox-manifest-test
+name: us-west-1-sandbox-manifest-test
 releases:
 - name: foo
   version: 1.2.3-rc.1
@@ -115,15 +116,15 @@ cached_value: is_present
 jobs:
 - name: thing
   properties:
-    domain: sandbox.us-west-1.example.com
-    endpoint: https://sandbox.us-west-1.example.com:8443
+    domain: us-west-1-sandbox.us-west-1.example.com
+    endpoint: https://us-west-1-sandbox.us-west-1.example.com:8443
   templates:
   - name: bar
     release: foo
-name: sandbox-manifest-test
+name: us-west-1-sandbox-manifest-test
 releases:
 - name: foo
   version: 1.2.3-rc.1
 EOF
-
+teardown_vault();
 done_testing;
