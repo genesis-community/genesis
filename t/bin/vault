@@ -1,18 +1,19 @@
 #!/bin/bash
-set -e
+set -ue
 
 bail() {
 	printf >&2 $*
-	popd >/dev/null 2>&1
 	exit 2
 }
+
+[[ -n "$GENESIS_TOPDIR" ]] || bail "No GENESIS_TOPDIR defined -- cannot start vault"
 
 export HOME="${GENESIS_TOPDIR}/t/tmp/home"
 export VAULTS_DIR="${GENESIS_TOPDIR}/t/vaults"
 [[ -d $HOME ]] || mkdir -p "$HOME"
 [[ -d $VAULTS_DIR ]] || mkdir -p "$VAULTS_DIR"
 touch "$HOME/.vault_token"  # Hack around safe init issue
-pushd "${GENESIS_TOPDIR}" >/dev/null 2>&1
+cd "${GENESIS_TOPDIR}" >/dev/null 2>&1
 
 version="0.9.3"
 platform=
@@ -22,9 +23,7 @@ case $OSTYPE in
 (darwin*) platform=darwin ;;
 (linux*)  platform=linux  ;;
 (*)
-	echo >&2 "UNRECOGNIZED OSTYPE '$OSTYPE'"
-	popd >/dev/null 2>&1
-	exit 1
+	bail "UNRECOGNIZED OSTYPE '$OSTYPE'"
 	;;
 esac
 
@@ -76,5 +75,4 @@ fi
 
 [ -n "${DEBUG_TESTS:-}" ] && printf >&2 "done.\n"
 echo $vault_pid
-popd >/dev/null 2>&1
 exit 0
