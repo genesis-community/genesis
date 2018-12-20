@@ -697,7 +697,7 @@ sub {
 		$vault_desc .= " #Y{(insecure)}" unless $top->vault->tls;
 		$vault_desc .= " #Y{(noverify)}" if $top->vault->tls && $top->vault->insecure;
 	}
-	$top->embed($0);
+	$top->embed($ENV{GENESIS_CALLBACK_BIN} || $0);
 
 	my $root = $top->path;
 	my $pwd = Cwd::abs_path(Cwd::getcwd());
