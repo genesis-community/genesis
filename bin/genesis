@@ -1029,7 +1029,8 @@ sub {
 		or bail "! Kit #R{preflight checks failed}; deployment operation #R{halted}.";
 
 	explain "- Preflight #G{ok}, initiating BOSH deploy...";
-	$env->deploy(%options);
+	my $ok = $env->deploy(%options);
+	exit ($ok ? 0 : 1);
 });
 # }}}
 # genesis do - run a kit addon {{{

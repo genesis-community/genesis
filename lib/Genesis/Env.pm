@@ -672,6 +672,12 @@ sub deploy {
 			flags      => \@bosh_opts);
 	}
 
+	# Don't do post-deploy stuff if just doing a dry run
+	if ($opts{"dry-run"}) {
+		explain "Dry-run deploymnent complete.  Post-deployment activities will be skipped.";
+		return $ok;
+	}
+
 	unlink "$self->{__tmp}/manifest.yml"
 		or debug "Could not remove unredacted manifest $self->{__tmp}/manifest.yml";
 
@@ -680,7 +686,7 @@ sub deploy {
 	if (!$ok) {
 		$self->run_hook('post-deploy', rc => 1, data => $predeploy_data)
 			if $self->has_hook('post-deploy');
-		return
+		return $ok;
 	}
 
 	# deployment succeeded; update the cache
