@@ -8,6 +8,8 @@ RUN apt-get update \
       libtest-differences-perl \
       libtest-exception-perl \
       libtest-output-perl \
+      libtest-tcp-perl \
+      iputils-ping \
       spruce \
       safe \
       shellcheck \
