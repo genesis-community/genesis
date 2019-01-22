@@ -1014,7 +1014,7 @@ sub {
 	}
 
 	if ($env->needs_bosh_create_env) {
-		explain "Preparing to deploy #C{%s}as a #C{create-env} deployment\n", $env->name;
+		explain "Preparing to deploy #C{%s} as a #C{create-env} deployment\n", $env->name;
 	} else {
 		explain "Preparing to deploy #C{%s} to '#M{%s}' BOSH director.\n", $env->name, $env->bosh_target;
 		explain "- Fetching cloud config from '#M{%s}'", $env->bosh_target;
