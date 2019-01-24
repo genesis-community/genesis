@@ -221,6 +221,7 @@ sub query {
 	$opts->{env} ||= {};
 	$opts->{env}{DEBUG} = "";                 # safe DEBUG is disruptive
 	$opts->{env}{SAFE_TARGET} = $self->{url}; # set the safe target
+	dump_stack();
 	return run($opts, 'safe', @_);
 }
 
@@ -245,7 +246,14 @@ sub get {
 		);
 		return {};
 	}
-	return $json->{$path};
+	return $json->{$path} if (ref($json) eq 'HASH') && defined($json->{$path});
+	if (ref($json) eq "ARRAY" and scalar(@$json) == 1) {
+		if ($json->[0]{export_version}||0 == 2) {
+			return $json->[0]{data}{$path}{versions}[-1]{value};
+		}
+	}
+	bail "Safe version incompatibility - cannot export path $path";
+
 }
 
 # }}}
