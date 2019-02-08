@@ -216,7 +216,7 @@ sub _log {
 	my ($label, $content, $colors) = @_;
 	my ($gt,$gtc) = (">",$colors);
 	unless (envset "NOCOLOR") {
-		$gt = "";
+		$gt = "⮀";
 		$gtc = substr($colors,1,1);
 		$label = " $label ";
 	}
