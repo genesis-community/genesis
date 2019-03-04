@@ -95,6 +95,18 @@ brew tap cloudfoundry/tap
 brew install genesis spruce safe bosh-cli vault git
 ```
 
+On Centos 7 / Amazon Linux
+
+```
+# Install Dependencies
+sudo yum install -y perl perl-Data-Dumper perl-Time-Local perl-Time-Piece \
+  perl-local-lib perl-Carp perl-PathTools perl-Digest perl-File-Temp perl-Socket
+
+# Grab latest url from releases page
+wget https://github.com/starkandwayne/genesis/releases/download/${GENESIS_VERSION}/genesis
+chmod 0755 genesis
+```
+
 `genesis` requires Perl. But Perl is everywhere.
 
 You will need to set up Git:
