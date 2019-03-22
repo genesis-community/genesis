@@ -166,8 +166,8 @@ jobs:
     plan:
       - do:
         - aggregate:
-            - { get: git,     trigger: true,  passed: [testflight] }
-            - { get: version, trigger: true, params: {pre: rc} }
+            - { get: git,     trigger: true, passed: [testflight] }
+            - { get: version, trigger: true, passed: [major,minor,shipit], params: {pre: rc} }
         - task: release-notes
           config:
             platform: linux
