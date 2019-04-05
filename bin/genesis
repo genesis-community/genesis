@@ -431,6 +431,21 @@ sub usage {
 	exit $rc;
 }
 
+sub deprecated {
+	my %opts = @_;
+	printf STDERR csprintf(
+		"\n#bY{[DEPRECATED]} The `%s` command has been deprecated, and will be\n".
+		"removed in a future version of Genesis\n",
+		 $opts{cmd} || $COMMAND
+	);
+	print STDERR csprintf(
+		"It has been replaced by `%s`\n",
+		$opts{replacement}
+	) if $opts{replacement};
+	print STDERR "\n";
+}
+
+
 our $GLOBAL_USAGE = <<EOF;
   -h, --help        Show this help screen.
   -D, --debug       Enable debugging, printing helpful message about what
@@ -1302,6 +1317,7 @@ sub {
 	my $top = Genesis::Top->new(".", vault => $options{vault});
 	my $env = $top->load_env($name);
 
+	deprecated cmd => "secret $action", replacement => "${action}-secrets";
 	if ($action eq "check") {
 		$env->check_secrets()
 			or exit 1;
