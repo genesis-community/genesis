@@ -547,7 +547,7 @@ $GLOBAL_USAGE
   #C{compile-kit}       Create a distributable kit archive from dev.
   #C{decompile-kit}     Unpack a kit archive to dev.
   #C{list-kits}         List local or remote Genesis kits.
-  download          Download a Genesis Kit from the Internet.
+  fetch-kit         Download one or more Genesis kits from the Internet.
 
 Those commands listed in #G{green} operate on a single specified environment.  Those that
 are in #C{cyan} can (or in some cases must) be run outside a Genesis repository.
@@ -882,7 +882,7 @@ sub {
 			    "(did you forget to `genesis decompile-kit` first?)\n";
 		}
 		die "Kit '$options{kit}' not found in compiled kit cache.\n".
-		    "Do you need to `genesis download $options{kit}`?\n";
+		    "Do you need to `genesis fetch-kit $options{kit}`?\n";
 	}
 
 	# check version prereqs
@@ -1888,11 +1888,15 @@ sub {
 	exit 0;
 });
 # }}}
-# genesis download - Download a Genesis Kit from the Internet. {{{
+# genesis fetch-kit - Download a Genesis Kit from the Internet. {{{
 
-command("download", <<EOF,
+command("fetch-kit", <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE genesis download NAME[/VERSION] [...]
+USAGE genesis fetch-kit [NAME]|[[NAME/VERSION]|[VERSION] ...
+
+Fetch the specified kit version for this deployent.  With no arguments, it will
+update all local kits.  If you have a single local kit, you can specify a list
+of versions of that kit to be fetched.
 
 OPTIONS
 $GLOBAL_USAGE
@@ -1901,17 +1905,51 @@ sub {
 	my %options;
 	options(\@_, \%options, qw/
 	/);
-	usage(1) if @_ < 1;
 	check_prereqs;
 
+	my @kits = @_;
 	my $top = Genesis::Top->new('.');
-	for (@_) {
+	my @possible_kits = keys %{$top->compiled_kits};
+
+	unless (scalar(@kits)) {
+		bail "No local kits found; you must specify the name of the kit to fetch"
+		  unless scalar(@possible_kits);
+		@kits = @possible_kits;
+	}
+
+	for (@kits) {
 		my ($name,$version) = $_ =~ m/^([^\/]*)(?:\/(.*))?$/;
-		explain("Attempting to download Genesis kit #M{$name (%s)}...", $version ? "v$version" : "latest version" );
-		($name,$version) = $top->download_kit($_)
-			or bail "Failed to download Genesis Kit #C{$_}";
+		if (!$version && semver($name)) {
+			bail "No local kits found; you must specify the name of the kit to fetch"
+				unless scalar(@possible_kits);
+			bail "More than one local kit found; please specify the kit to fetch"
+			  if scalar(@possible_kits) > 1;
+			$version = $name;
+			$version =~ s/^v//;
+			$name = $possible_kits[0];
+		}
+
+		my $kitsig = join('/', grep {$_} ($name, $version));
+		explain("Attempting to retrieve Genesis kit #M{$name (%s)}...", $version ? "v$version" : "latest version" );
+		($name,$version) = $top->download_kit($kitsig)
+			or bail "Failed to download Genesis Kit #C{$kitsig}";
 		explain "Downloaded version #C{$version} of the #C{$name} kit";
 	}
+});
+
+command("download", <<EOF,
+genesis v$Genesis::VERSION$Genesis::BUILD
+USAGE genesis download [NAME]|[[NAME/VERSION]|[VERSION] ...
+
+Download kit -- Deprecated: use fetch-kit instead.
+
+OPTIONS
+$GLOBAL_USAGE
+EOF
+sub {
+	usage(0) if grep {$_ =~ /-h|--help/} @_;
+	deprecated replacement => "fetch-kit";
+	return $COMMAND{"fetch-kit"}(@_);
 });
 # }}}
 # genesis ci-pipeline-deploy - Deploy via the CI/CD Pipeline {{{

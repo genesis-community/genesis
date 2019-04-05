@@ -103,6 +103,9 @@ domain names that can be used as the host.
   `params.env` will continue to be supported (see below in Kit Authorship
   Improvments)
 
+- `genesis download` is now `genesis fetch-kit`, and supports fetching new
+  versions of local kits without having to specify any arguments.
+
 - Cleaned up check and deployment interface to move towards a more standardized
   output.
 
