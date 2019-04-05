@@ -158,7 +158,7 @@ sub find {
 	@all_vaults = (
 		map {Genesis::Vault->new($_->{url},$_->{name},$_->{verify})}
 		sort {$a->{name} cmp $b->{name}}
-		@{ read_json_from(run("safe targets --json")) }
+		@{ read_json_from(run({envs => {SAFE_TARGET => ""}}, "safe targets --json")) }
 	) unless @all_vaults;
 	my @matches = @all_vaults;
 	for my $quality (keys %filter) {
@@ -179,7 +179,7 @@ sub find_by_target {
 # default - return the default vault (targeted by system) {{{
 sub default {
 	unless ($default_vault) {
-		my $json = read_json_from(run("safe target --json"));
+		my $json = read_json_from(run({envs => {SAFE_TARGET => ""}},"safe target --json"));
 		$default_vault = (Genesis::Vault->find(name => $json->{name}))[0];
 	}
 	return $default_vault;
@@ -247,6 +247,8 @@ sub get {
 		return {};
 	}
 	return $json->{$path} if (ref($json) eq 'HASH') && defined($json->{$path});
+
+	# Safe 1.1.0 is backwards compatible, but leaving this in for futureproofing
 	if (ref($json) eq "ARRAY" and scalar(@$json) == 1) {
 		if ($json->[0]{export_version}||0 == 2) {
 			return $json->[0]{data}{$path}{versions}[-1]{value};
