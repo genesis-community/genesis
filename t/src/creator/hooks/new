@@ -16,7 +16,7 @@ kit:
     - bonus
 EOF
 
-new_genesis_config >> "$ymlfile"
+genesis_config_block >> "$ymlfile"
 cat >>"$ymlfile" -- <<EOF
 params:
   static: junk

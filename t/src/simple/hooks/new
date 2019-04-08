@@ -9,5 +9,5 @@ kit:
   version: $GENESIS_KIT_VERSION
   features: []
 EOF
-new_genesis_config >> $root/$env.yml
+genesis_config_block >> $root/$env.yml
 exit 0

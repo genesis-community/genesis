@@ -494,7 +494,8 @@ param_comment() {
 }
 export -f param_comment
 
-new_genesis_config() {
+# Helper to inject new Genesis configuration (v2.6.13+)
+genesis_config_block() {
 	cat<<EOF
 
 genesis:
@@ -505,6 +506,11 @@ EOF
   secrets_path: "$GENESIS_VAULT_PREFIX"
 EOF
 	fi
+	if [[ -n "$GENESIS_MIN_VERSION" ]] ; then
+		cat <<EOF
+  min_version:  "$GENESIS_MIN_VERSION"
+EOF
+	fi
 	echo ""
 }
-export -f new_genesis_config
+export -f genesis_config_block

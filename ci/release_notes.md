@@ -133,7 +133,7 @@ domain names that can be used as the host.
   so Genesis will auto-populate the `params.env` for them, ensuring that any
   reliance on this does not break existing kits.
 
-- Added `new_genesis_config` helper to print the `genesis:` block to standard
+- Added `genesis_config_block` helper to print the `genesis:` block to standard
   output, so it can be redirected into the environment file being constructed
   by the `new` hook.  Use this instead of constructing it yourself to ensure
   future compatability without having to update your kit (further changes in

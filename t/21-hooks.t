@@ -177,6 +177,7 @@ kit:
   features: []
 genesis:
   env:   us-west-1-prod
+  min_version: "2.6.0"
   secrets_path: us/west/1/prod/thing
 EOF
 		"[simple] the 'new' hook should populate the env yaml file properly";
@@ -195,6 +196,7 @@ kit:
   features: []
 genesis:
   env: snw-lab-dev
+  min_version: "2.6.0"
   secrets_path: snw/lab/dev/thing
 params:
   GENESIS_KIT_NAME:     dev
