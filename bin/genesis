@@ -507,6 +507,7 @@ $GLOBAL_USAGE
   #C{init}              Initialize a new Genesis deployment.
   #G{new}               Create a new Genesis deployment environment.
   #G{check}             Check a deployment manifest for errors, without deploying it.
+  secrets-provider  Check or set the secrets provider for the Genesis deployment.
   #G{check-secrets}     Check for missing credentials (passwords, keys, etc.).
   #G{add-secrets}       Generate missing credentials (passwords, keys, etc.).
   #G{rotate-secrets}    Rrotate credentials (passwords, keys, etc.).

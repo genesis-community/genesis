@@ -170,10 +170,14 @@ sub debug {
 
 sub dump_var {
 	return unless envset("GENESIS_DEBUG") || envset("GENESIS_TRACE");
+	my $scope = 0;
+	if ($_[0] =~ '^-\d+$') {
+		$scope = -(shift);
+	}
 	local $Data::Dumper::Deparse = 1;
 	local $Data::Dumper::Terse   = 1;
-	my (undef, $file, $ln) = caller;
-	my $sub = (caller(1))[3];
+	my (undef, $file, $ln) = caller($scope);
+	my $sub = (caller($scope+1))[3];
 	my (%vars) = @_;
 	_log("VALUE", csprintf("#M{$_} = ").Dumper($vars{$_}) .csprintf("#Ki{# in $sub [$file:L$ln]}"), "Wb") for (keys %vars);
 }
@@ -212,7 +216,7 @@ sub _log {
 	my ($label, $content, $colors) = @_;
 	my ($gt,$gtc) = (">",$colors);
 	unless (envset "NOCOLOR") {
-		$gt = "";
+		$gt = "⮀";
 		$gtc = substr($colors,1,1);
 		$label = " $label ";
 	}
@@ -411,7 +415,7 @@ sub run {
 	my $rc = $? >>8;
 	if ($rc) {
 		trace("command exited with status %x (rc %d)", $rc, $rc >> 8);
-		dump_var output => $out if (defined($out));
+		dump_var -1, run_output => $out if (defined($out));
 		if ($opts{onfailure}) {
 			bail("#R{%s} (run failed)%s", $opts{onfailure}, defined($out) ? ":\n$out" :'');
 		}
@@ -421,7 +425,7 @@ sub run {
 			if ($out =~ m/[\x00-\x08\x0b-\x0c\x0e\x1f\x7f-\xff]/) {
 				trace "[".length($out)."b of binary data omited from trace]";
 			} else {
-				dump_var output => $out;
+				dump_var -1, run_output => $out;
 			}
 		}
 	}
