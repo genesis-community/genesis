@@ -364,7 +364,7 @@ sub check_prereqs {
 	my $bosh_min_version = "2.0.1";
 	my $reqs = [
 		# Name,     Version, Command,                                 Pattern                   Source
-		["spruce", "1.14.0", "spruce -v      2>/dev/null",            qr(.*version\s+(\S+).*)i, "https://github.com/geofffranks/spruce/releases"],
+		["spruce", "1.19.3", "spruce -v      2>/dev/null",            qr(.*version\s+(\S+).*)i, "https://github.com/geofffranks/spruce/releases"],
 		["safe",    "1.1.0", "safe -v        2>&1 >/dev/null",        qr(safe v(\S+)),          "https://github.com/starkandwayne/safe/releases"],
 		["vault",   "0.9.0", "vault -v       2>/dev/null",            qr(.*vault v(\S+).*)i,    "https://www.vaultproject.io/downloads.html"],
 		["git",     "1.8.0", "git --version  2>/dev/null",            qr(.*version\s+(\S+).*)],
