@@ -145,8 +145,19 @@ sub rebind {
 	bail("Cannot rebind to vault in callback due to missing environment variables!")
 		unless $ENV{GENESIS_TARGET_VAULT};
 
-	my $vault = ($class->find(url => $ENV{GENESIS_TARGET_VAULT}))[0];
-	trace "Rebinding to $ENV{GENESIS_TARGET_VAULT}: Matches %s", $vault && $vault->{name} || "<undef>";
+	my $vault;
+	if (is_valid_uri($ENV{GENESIS_TARGET_VAULT})) {
+		$vault = ($class->find(url => $ENV{GENESIS_TARGET_VAULT}))[0];
+		bail("Cannot rebind to vault at address '$ENV{GENESIS_TARGET_VAULT}` - not found in .saferc")
+			unless $vault;
+		trace "Rebinding to $ENV{GENESIS_TARGET_VAULT}: Matches %s", $vault && $vault->{name} || "<undef>";
+	} else {
+		# Check if its a named vault and if it matches the default (legacy mode)
+		if ($ENV{GENESIS_TARGET_VAULT} eq $class->default->{name}) {
+			$vault = $class->default()->ref_by_name();
+			trace "Rebinding to default vault `$ENV{GENESIS_TARGET_VAULT}` (legacy mode)";
+		}
+	}
 	return unless $vault;
 	return $vault->set_as_current;
 }
@@ -158,7 +169,7 @@ sub find {
 	@all_vaults = (
 		map {Genesis::Vault->new($_->{url},$_->{name},$_->{verify})}
 		sort {$a->{name} cmp $b->{name}}
-		@{ read_json_from(run({envs => {SAFE_TARGET => ""}}, "safe targets --json")) }
+		@{ read_json_from(run({env => {VAULT_ADDR => "", SAFE_TARGET => ""}}, "safe targets --json")) }
 	) unless @all_vaults;
 	my @matches = @all_vaults;
 	for my $quality (keys %filter) {
@@ -179,7 +190,7 @@ sub find_by_target {
 # default - return the default vault (targeted by system) {{{
 sub default {
 	unless ($default_vault) {
-		my $json = read_json_from(run({envs => {SAFE_TARGET => ""}},"safe target --json"));
+		my $json = read_json_from(run({env => {VAULT_ADDR => "", SAFE_TARGET => ""}},"safe target --json"));
 		$default_vault = (Genesis::Vault->find(name => $json->{name}))[0];
 	}
 	return $default_vault;
@@ -218,11 +229,13 @@ sub tls    { $_[0]->{url} =~ "^https://"; }
 sub query {
 	my $self = shift;
 	my $opts = ref($_[0]) eq "HASH" ? shift : {};
+	my @cmd = @_;
+	unshift(@cmd, 'safe') unless $cmd[0] eq 'safe';
 	$opts->{env} ||= {};
 	$opts->{env}{DEBUG} = "";                 # safe DEBUG is disruptive
-	$opts->{env}{SAFE_TARGET} = $self->{url}; # set the safe target
+	$opts->{env}{SAFE_TARGET} = $self->ref; # set the safe target
 	dump_stack();
-	return run($opts, 'safe', @_);
+	return run($opts, @cmd);
 }
 
 # }}}
@@ -369,6 +382,20 @@ sub env {
 sub token {
 	my $self = shift;
 	return $self->env->{VAULT_TOKEN};
+}
+
+# }}}
+# ref - the reference to be used when identifying the vault (name or url) {{{
+sub ref {
+	my $self = shift;
+	return $self->{$self->{ref_by} || 'url'};
+}
+
+# }}}
+# ref_by_name - use the name of the vault as its reference (legacy mode) {{{
+sub ref_by_name {
+	$_[0]->{ref_by} = 'name';
+	$_[0];
 }
 
 # }}}

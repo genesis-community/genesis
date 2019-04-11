@@ -168,8 +168,7 @@ sub secret_line_prompt_handler {
 	bail("No vault selected!") unless $vault;
 	$vault->query(
 		{ interactive => 1, onfailure => "Failed to save data to secret/$secret in vault" },
-		'safe prompt "$1" --  "$2" "$3" "$4"',
-		$prompt, ($opts{echo} ? "ask" : "set"), $path, $key);
+		'prompt', $prompt, '--', ($opts{echo} ? "ask" : "set"), $path, $key);
 }
 sub secret_block_prompt_handler {
 	my ($prompt,%opts) = @_;
