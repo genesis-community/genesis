@@ -109,6 +109,9 @@ domain names that can be used as the host.
 - Cleaned up check and deployment interface to move towards a more standardized
   output.
 
+- BOSH connection checks now first check if the host and port are reachable
+  and listening rather than hanging while attempting to connect.
+
 # Kit Authorship Improvements
 
 - Improved validation when compiling kits.

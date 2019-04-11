@@ -1,6 +1,9 @@
 package helper;
+use lib 't';
 use Test::More;
 use Test::Exception;
+use Test::TCP;
+use IO::Socket::IP ();
 use Cwd ();
 use Config;
 use File::Temp qw/tempdir/;
@@ -14,8 +17,21 @@ our $TOPDIR;
 sub import {
 	my ($class, @args) = @_;
 	$TOPDIR = Cwd::getcwd();
-	$TOPDIR =~ s|/[^/]*$|| until -f "${TOPDIR}/bin/genesis";
+	$TOPDIR =~ s|/[^/]*$|| until (-f "${TOPDIR}/bin/genesis" && -d "${TOPDIR}/t/")  || $TOPDIR eq "";
+	unless (-f "${TOPDIR}/bin/genesis" && -d "${TOPDIR}/t/") {
+		print "Could not find bin/genesis under the current directory. Cannot continue\n";
+		exit 2
+	}
 
+	# Clear out t/tmp each test
+	if ( -d "${TOPDIR}/t/tmp") {
+		`rm -rf ${TOPDIR}/t/tmp`;
+		$? eq "0" or die "Failed to clear test work directory";
+	}
+	`mkdir -p ${TOPDIR}/t/tmp/home`;
+	$? eq "0" or die "Failed to create test work and home directory";
+
+	$ENV{HOME} = "${TOPDIR}/t/tmp/home";
 	$ENV{GENESIS_TOPDIR} = $TOPDIR;
 	$ENV{PATH} = "${TOPDIR}/bin:$ENV{PATH}";
 	$ENV{OFFLINE} = 'y';
@@ -43,6 +59,15 @@ sub workdir {
 	my $path = join '/', $WORKDIR, @_;
 	qx(mkdir -p $path);
 	return $path;
+}
+
+sub mkdir_or_fail {
+	my ($dir) = @_;
+	unless (-d $dir) {;
+		`mkdir -p "$dir"`;
+		$? eq "0" or die "Failed to create directory $dir";
+	}
+	return $dir;
 }
 
 sub put_file($$) {
@@ -128,6 +153,66 @@ EOF
 	put_file("$tmp/fake-bosh", $script);
 	chmod(0755, "$tmp/fake-bosh");
 	$ENV{GENESIS_BOSH_COMMAND} = "$tmp/fake-bosh";
+}
+
+sub fake_bosh_directors {
+	my $config="environments:\n";
+	my @directors = ();
+	for my $info (@_) {
+		if (ref($info) ne "HASH") {
+			$info = {
+				alias => $info
+			};
+		}
+		$config .= "- url: " . ($info->{schema} || "https") .
+		               '://' . ($info->{host}   || "127.0.0.1") .
+		               (defined($info->{port}) ? ':'.$info->{port} : ''). "\n".
+		           "  ca_cert: |-\n" .
+		           "    -----BEGIN CERTIFICATE-----\n".
+		           "    MIIExxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n".
+		          ("    xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n" x 24).
+		           "    xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx=\n".
+		           "    -----END CERTIFICATE-----\n".
+		           "  alias: ".$info->{alias}."\n".
+		           "  username: ".($info->{username} || 'noname')."\n".
+		           "  password: ".($info->{password} || 'nopassword')."\n";
+
+		push @directors, Test::TCP->new(
+			listen => 0,
+			auto_start => 1,
+			port => $info->{port} || 25555,
+			code => sub {
+				my $port = shift;
+				my $sock =  IO::Socket::IP->new(
+					LocalPort => $port,
+					LocalAddr => $info->{host} || "127.0.0.1",
+					Proto     => 'tcp',
+					Listen    => 5,
+					Type      => IO::Socket::IP::SOCK_STREAM,
+					V6Only    => 1,
+					(($^O eq 'MSWin32') ? () : (ReuseAddr => 1)),
+				) or die "Cannot open server socket: $!";
+
+				while (my $remote = $sock->accept) {
+					while (my $line = <$remote>) {
+						note "new request";
+						my ($remote, $line, $sock) = @_;
+						print {$remote} $line;
+						exit 0 if $line eq "quit\n";
+					}
+				}
+
+				undef $sock;
+			}
+		);
+	}
+	mkdir_or_fail("$ENV{HOME}/.bosh");
+	put_file( "$ENV{HOME}/.bosh/config",$config);
+	return @directors;
+}
+sub fake_bosh_director {
+	my ($director) = fake_bosh_directors({alias => $_[0], port => $_[1]});
+	return $director;
 }
 
 sub spruce_fmt($$) {
@@ -350,11 +435,13 @@ sub vault_ok {
 		return $target;
 	}
 
-	$ENV{HOME} = "$ENV{PWD}/t/tmp/home";
-	my $pid = qx(./t/bin/vault $target) or do {
-		fail "failed to spin a vault server.";
+	my $pid = qx($ENV{GENESIS_TOPDIR}/t/bin/vault $target);
+	my $rc = $? >> 8;
+	if ($rc > 0 || $pid eq "") {
+		fail "failed to spin a vault server: pid='$pid' rc=$rc";
 		die "Cannot continue\n";
 	};
+	fail "expected numeric value for Vault pid, but got this:\n$pid\n" unless $pid =~ /^[0-9]+$/;
 
 	chomp($pid);
 	$VAULT_PID{$target} = $pid;

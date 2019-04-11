@@ -23,7 +23,6 @@ use helper;
 bosh2_cli_ok;
 my ($pass, $rc, $out);
 
-qx(rm -rf t/tmp; mkdir -p t/tmp);
 # Need to run on a packed version to get v1 code
 ($pass, $rc, $out) = runs_ok "GENESIS_PACK_PATH=t/tmp ./pack", "`./pack runs successfully";
 matches($out, qr|bin/genesis syntax OK|, "Genesis compiled correctly");

@@ -13,8 +13,6 @@ use Genesis;
 sub bosh_runs_as {
 	my ($expect, $output) = @_;
 	$output = $output ? "echo \"$output\"" : "";
-
-
 	fake_bosh(<<EOF);
 $output
 [[ "\$@" == "$expect" ]] && exit 0;
@@ -42,11 +40,13 @@ subtest '_bosh helper magic' => sub {
 
 subtest 'bosh ping' => sub {
 	local $ENV{GENESIS_BOSH_COMMAND};
+	my $director = fake_bosh_director('the-target');
 	bosh_runs_as("-e the-target env");
-	ok Genesis::BOSH->ping('the-target'), "bosh env should ping ok";
+	ok Genesis::BOSH->ping('the-target'), "bosh env on alias should ping ok";
 
 	bosh_runs_as("-e https://127.0.0.1:25555 env");
-	ok Genesis::BOSH->ping('https://127.0.0.1:25555'), "bosh env should ping ok";
+	ok Genesis::BOSH->ping('https://127.0.0.1:25555'), "bosh env on url should ping ok";
+	$director->stop();
 };
 
 subtest 'bosh create-env' => sub {

@@ -590,6 +590,10 @@ EOF
 
 subtest 'bosh targeting' => sub {
 	local $ENV{GENESIS_BOSH_COMMAND};
+	my ($director1,$director2) = fake_bosh_directors(
+		{alias => 'standalone'},
+		{alias => 'override-me', port => 26666},
+	);
 	fake_bosh;
 
 	my $vault_target = vault_ok;
@@ -624,16 +628,21 @@ EOF
 
 	{
 		$env = $top->load_env('standalone');
-		local $ENV{GENESIS_BOSH_ENVIRONMENT} = "https://127.0.0.86:25555";
+		local $ENV{GENESIS_BOSH_ENVIRONMENT} = "https://127.0.0.1:26666";
 		$env = $top->load_env('standalone'); # reload otherwise its cached by the previous call
-		is $env->bosh_target, "https://127.0.0.86:25555", "the \$GENESIS_BOSH_ENVIRONMENT overrides all";
+		is $env->bosh_target, "https://127.0.0.1:26666", "the \$GENESIS_BOSH_ENVIRONMENT overrides all";
 	}
 
+	$director1->stop();
+	$director2->stop();
 	teardown_vault();
 };
 
 subtest 'cloud_config_and_deployment' => sub{
 	local $ENV{GENESIS_BOSH_COMMAND};
+	my ($director1) = fake_bosh_directors(
+		{alias => 'standalone'},
+	);
 	fake_bosh;
 	my $vault_target = vault_ok;
 	Genesis::Vault->clear_all();
@@ -737,9 +746,9 @@ EOF
 				}
 			}, "exodus data was written by deployment");
 
+	$director1->stop();
 	teardown_vault();
 };
-
 
 subtest 'new env and check' => sub{
 	local $ENV{GENESIS_BOSH_COMMAND};
