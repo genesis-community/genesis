@@ -13,7 +13,6 @@ my $target_dir;
 my $intended_target;
 my $link_target;
 
-qx(rm -rf t/tmp; mkdir -p t/tmp);
 my $vault_target = vault_ok();    # this changes $HOME to ./t/tmp/home/
 system 'git config --global user.name "CI Testing"';
 system 'git config --global user.email ci@starkandwayne.com';

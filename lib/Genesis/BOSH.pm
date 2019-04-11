@@ -38,7 +38,7 @@ sub _bosh {
 	return run($opts, @args);
 }
 
-sub environment_variables {
+sub config {
 	my ($class, $alias) = @_;
 
 	return {} unless -f "$ENV{HOME}/.bosh/config";
@@ -46,28 +46,63 @@ sub environment_variables {
 		or return {};
 
 	for my $e (@{ $bosh->{environments} || []  }) {
-		next unless $e->{alias} eq $alias;
-		return {
-			BOSH_ENVIRONMENT   => $e->{url},
-			BOSH_CA_CERT       => $e->{ca_cert},
-			BOSH_CLIENT        => $e->{username},
-			BOSH_CLIENT_SECRET => $e->{password},
-		};
+		return $e if $e->{alias} eq $alias;
 	}
 
 	return {};
+}
+
+sub environment_variables {
+	my ($class, $alias) = @_;
+
+	my $e = $class->config($alias);
+	return {} unless %$e;
+	return {
+		BOSH_ENVIRONMENT   => $e->{url},
+		BOSH_CA_CERT       => $e->{ca_cert},
+		BOSH_CLIENT        => $e->{username},
+		BOSH_CLIENT_SECRET => $e->{password},
+	}
 }
 
 my $reping;
 sub ping {
 	my ($class, $env) = @_;
 	# TODO: once using vault-stored bosh targetting, we don't need to do this anymore
-	local $ENV{EXPLAIN_TO_STDERR}=1;
-	explain "Checking availability of the '#M{$env}' BOSH director..."
+	debug "Checking BOSH at '$env' for connectivity";
+	waiting_on STDERR "Checking availability of the '#M{$env}' BOSH director..."
 		unless $reping || envset "GENESIS_TESTING";
 	$reping = 1;
-	debug "Checking BOSH at '$env' for connectivity";
-	return _bosh({ passfail => 1 }, 'bosh', '-e', $env, 'env');
+
+	my ($host,$port);
+	if ($env =~ qr(^http(s?)://(.*?)(?::([0-9]*))?$)) {
+		$host = $2;
+		$port = $3 || 25555;
+	} else {
+		my $config = $class->config($env);
+		bail("#R{error!}\n\nCannot find bosh environment '#M{$env}' in the local ~/.bosh/config\n")
+			unless %$config;
+
+		$config->{url} =~ qr(^http(s?)://(.*?)(?::([0-9]*))?$) or
+			bail("#R{error!}\n\nInvalid BOSH director URL #C{%s}: expecting http(s)://ip-or-domain(:port)\n", $config->{url});
+		$host = $2;
+		$port = $3 || 25555;
+	}
+
+	unless (tcp_listening($host,$port)) {
+		error "#R{unreachable!}\n"
+			unless $reping || envset "GENESIS_TESTING";
+		return 0;
+	}
+	my ($out,$rc) = _bosh('bosh', '-e', $env, 'env');
+	if ($rc) {
+		error "#R{error!}\n\n$out\n"
+			unless $reping || envset "GENESIS_TESTING";
+		return 0;
+	}
+	explain STDERR "#G{ok}"
+		unless $reping || envset "GENESIS_TESTING";
+	return 1;
 }
 
 sub env {

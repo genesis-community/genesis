@@ -611,7 +611,7 @@ sub bosh_target {
 		my ($bosh, $source) = $self->lookup_bosh_target;
 
 		Genesis::BOSH->ping($bosh)
-			or die csprintf("Could not reach BOSH Director '#M{$bosh}'\n  - specified via $source\n\nDid you create an alias and login to it?\n");
+			or bail("\n#R{[ERROR]} Could not connect to BOSH Director '#M{$bosh}'\n  - specified via $source\n");
 		$self->{__bosh_target} = $bosh;
 	}
 
