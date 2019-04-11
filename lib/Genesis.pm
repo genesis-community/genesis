@@ -275,7 +275,9 @@ sub by_semver ($$) { # sort block -- needs prototype
 	my @a = semver($a);
 	my @b = semver($b);
 	return 0 unless @a && @b;
-	while (@a) {
+	while (@a || @b) {
+		$a[0] ||= 0;
+		$b[0] ||= 0;
 		return 1 if $a[0] > $b[0];
 		return -1 if $a[0] < $b[0];
 		shift @a;

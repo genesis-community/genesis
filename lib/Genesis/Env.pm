@@ -54,15 +54,33 @@ sub load {
 		my ($env_name, $env_key) = $env->lookup(['genesis.env','params.env']);
 		bail("\n#R{[ERROR]} Environment file #C{$env->{file}} environment name mismatch: #C{$env_key: $env_name}")
 			unless $env->{name} eq $env_name;
-		error "\n#Y{[WARNING]} Environment file $env->{file} uses #C{params.env} to specify environment name.\nThis has been moved to #C{genesis.env} -- please update your file to remove this warning.\n"
-			if $env_key eq 'params.env' || $env->defines('params.env');
+		# Deferring Deprecation warning until future version
+		# error "\n#Y{[WARNING]} Environment file $env->{file} uses #C{params.env} to specify environment name.\nThis has been moved to #C{genesis.env} -- please update your file to remove this warning.\n"
+		# 	if $env_key eq 'params.env' || $env->defines('params.env');
 	}
 
 	# reconstitute our kit via top
-	$env->{kit} = $env->{top}->find_kit(
-		scalar($env->lookup('kit.name')),
-		scalar($env->lookup('kit.version')))
-			or die "Unable to locate kit for '$env->{name}' environment.\n";
+	my $kit_name = $env->lookup('kit.name');
+	my $kit_version = $env->lookup('kit.version');
+	$env->{kit} = $env->{top}->find_kit($kit_name, $kit_version)
+			or bail "Unable to locate v$kit_version of `$kit_name` kit for '$env->{name}' environment.";
+
+	my $min_version = $env->lookup(['genesis.min_version','params.genesis_version_min'],'');
+	$min_version =~ s/^v//i;
+	if ($min_version) {
+		if ($Genesis::VERSION eq "(development)") {
+			warn(
+				"#Y{[WARNING]} Environment `$env->{name}` requires Genesis v$min_version or higher.\n".
+				"This version of Genesis is a development version and its feature availability cannot\n".
+				"be verified -- unexpected behaviour may occur.\n"
+			);
+		} elsif (! new_enough($Genesis::VERSION, $min_version)) {
+			bail(
+				"#R{[ERROR]} Environment `$env->{name}` requires Genesis v$min_version or higher.\n".
+				"You are currently using Genesis v$Genesis::VERSION.\n"
+			);
+		}
+	}
 
 	# determine our vault and secret path
 	bail("\n#R{[ERROR]} No vault specified or configured.")
@@ -72,8 +90,9 @@ sub load {
 		$env->_default_secrets_path
 	);
 	$env->{secrets_path} = $secrets_path;
-	error "\n#Y{[WARNING]} Environment file $env->{file} uses #C{$src_key} to specify secrets path in Vault.\nThis has been moved to #C{genesis.secrets_path} -- please update your file to remove this warning.\n"
-		if defined($src_key) && $src_key ne 'genesis.secrets_path';
+	# Deferring Deprecation warning until future version
+	# error "\n#Y{[WARNING]} Environment file $env->{file} uses #C{$src_key} to specify secrets path in Vault.\nThis has been moved to #C{genesis.secrets_path} -- please update your file to remove this warning.\n"
+	# 	if defined($src_key) && $src_key ne 'genesis.secrets_path';
 
 	return $env;
 }

@@ -184,6 +184,10 @@ sub run_hook {
 
 		$ENV{GENESIS_VAULT_PREFIX} = $ENV{GENESIS_SECRETS_PATH} = $opts{env}->secrets_path;
 
+		if ($hook eq "new") {
+			$ENV{GENESIS_MIN_VERSION} = $self->metadata->{genesis_version_min} || ""
+		}
+
 		unless (grep { $_ eq $hook } qw/new prereqs/) {
 			$ENV{GENESIS_REQUESTED_FEATURES} = join(' ', $opts{env}->features);
 			if ($opts{env}->needs_bosh_create_env) {
