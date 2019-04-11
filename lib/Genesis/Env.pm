@@ -72,7 +72,7 @@ sub load {
 		$env->_default_secrets_path
 	);
 	$env->{secrets_path} = $secrets_path;
-	error "\n#Y{[WARNING]} Environment file $env->{file} uses #C{$src_key} to specify secrets path in Vault.\nThis has been moved to #C{genesis.secrets_path} -- please update your file to remove this warning."
+	error "\n#Y{[WARNING]} Environment file $env->{file} uses #C{$src_key} to specify secrets path in Vault.\nThis has been moved to #C{genesis.secrets_path} -- please update your file to remove this warning.\n"
 		if defined($src_key) && $src_key ne 'genesis.secrets_path';
 
 	return $env;

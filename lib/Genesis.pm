@@ -714,6 +714,18 @@ Debug messages are all prefix with the string "TRACE> ".
 C<trace> is for extra-verbose internal messages that might help a Genesis
 core contributor figure out why Genesis is being bad in the wild.
 
+=head2 dump_var([$scope,] name=>value [, name2=value2, ...])
+
+Dumps one or more named values to standard error if C<$GENESIS_TRACE> or
+C<$GENESIS_TRACE> environment variables have been set to "truthy".  Optional
+scope level of -1 or less will report the corresponding stack level as the
+source of the output, defaults to the calling scope.
+
+=head2 dump_stack()
+
+Dumps the current stack to standard error if C<$GENESIS_TRACE> or
+C<$GENESIS_TRACE> environment variables have been set to "truthy".
+
 =head2 error($fmt, ...)
 
 Print an error to standard error, but do not interrupt the flow of
