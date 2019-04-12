@@ -3,6 +3,12 @@
 use strict;
 use warnings;
 
+#use utf8;
+use Encode (); # Convert input to UTF-8
+for (@ARGV) {
+	$_ = Encode::encode("UTF-8",$_,Encode::LEAVE_SRC);
+}
+
 # Ensure code exits and cleans up workdirs
 $SIG{INT} = $SIG{TERM} = sub { die };
 
@@ -349,7 +355,7 @@ sub check_version {
 	return "Could not determine version of $name from `#M{$cmd}`: Got '#C{$version}'"
 		unless $v && semver($v);
 
-	return "$name v{$v} is installed, but Genesis requires #R{at least $min} -- please upgrade via #B{$url}"
+	return "$name v${v} is installed, but Genesis requires #R{at least $min} -- please upgrade via #B{$url}"
 		unless new_enough($v, $min);
 
 	debug("#G{Version $v} of #C{$name} meets or exceeds minimum of #w{$min}");
@@ -710,7 +716,7 @@ sub {
 	if ($top->vault) {
 		$vault_desc = "\n - using vault at #C{".$top->vault->url."}";
 		$vault_desc .= " #Y{(insecure)}" unless $top->vault->tls;
-		$vault_desc .= " #Y{(noverify)}" if $top->vault->tls && $top->vault->insecure;
+		$vault_desc .= " #Y{(noverify)}" if $top->vault->tls && ! $top->vault->verify;
 	}
 	$top->embed($ENV{GENESIS_CALLBACK_BIN} || $0);
 

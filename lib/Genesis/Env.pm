@@ -98,7 +98,9 @@ sub load {
 }
 
 sub exists {
-	my $env = new(@_);
+	my $env;
+	eval { $env = new(@_) };
+	return undef unless $env;
 	return -f $env->path("$env->{file}");
 }
 
