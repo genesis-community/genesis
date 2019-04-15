@@ -514,3 +514,25 @@ EOF
 	echo ""
 }
 export -f genesis_config_block
+
+edit_environment() {
+	local __file __tmpdir __editor
+	__file="${1:?'No environment file specified'}"
+	__tmpdir="$(mktemp -d -t "$GENESIS_KIT_NAME-$GENESIS_KIT_VERSION")"
+	[[ -n $EDITOR ]] || EDITOR="vim"
+	if $GENESIS_CALLBACK_BIN man "$(basename "$__file")" > "$__tmpdir/manual.md" ; then
+		__editor="$(basename $EDITOR)"
+		if [[ $__editor =~ ^.*vim?$ ]] ; then
+		  $EDITOR -O "$__file" "$__tmpdir/manual.md"
+		elif [[ $__editor == "emacs" ]] ; then
+		  $EDITOR -nw "$__file" -f split-window-horizontally "$__tmpdir/manual.md" -f other-window
+		else
+			$EDITOR "$__file"
+		fi
+		rm "$__tmpdir/manual.md"
+		rmdir "$__tmpdir"
+	else
+		$EDITOR "$__file"
+	fi
+}
+export -f edit_environment
