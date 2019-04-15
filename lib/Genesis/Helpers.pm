@@ -111,8 +111,8 @@ exodus() {
     __key=$2
     __env=$1
   fi
-  if safe "$GENESIS_TARGET_VAULT" exists "secret/exodus/${__env}:${__key}"; then
-    safe "$GENESIS_TARGET_VAULT" get "secret/exodus/${__env}:${__key}"
+  if safe exists "secret/exodus/${__env}:${__key}"; then
+    safe get "secret/exodus/${__env}:${__key}"
   fi
 }
 export -f exodus
@@ -120,7 +120,7 @@ export -f exodus
 # have_exodus_data_for env/type - return true if exodus data exists
 have_exodus_data_for() {
   local __env=${1:?have_exodus_data_for() must provide an environment/type}
-  safe "$GENESIS_TARGET_VAULT" exists "secret/exodus/${__env}"
+  safe exists "secret/exodus/${__env}"
   return $?
 }
 export -f have_exodus_data_for
