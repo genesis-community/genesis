@@ -7,6 +7,8 @@ prime example.  Previously, Genesis drove the entire interaction,
 based on a YAML-based set of questions specified in the `kit.yml`
 metadata file.  Now, we have `hooks/new`.
 
+Jump to the bottom for additions as of v2.6.13
+
 If it exists, the `new` hook is executed whenever an operator
 tries to configure a brand new Genesis environment via `genesis
 new`.  It is the hook's job to prompt the user for whatever
@@ -402,3 +404,70 @@ Then we reference the Vault path in the final environment file:
 ```
 
 Easy, _and_ Secure!
+
+# Genesis v2.6.13 Additions
+
+Genesis v2.6.13 introduces many changes to kit authoring and the environment
+files that are generated.
+
+## Deprecations
+
+### Position Arguments
+
+The positional arguments to the `new` hook have been deprecated for any kit
+that specifies a minimum genesis version of 2.6.13 or higher.  These
+positional arguments are defined as:
+
+```
+root=$1      # absolute path to deployments directory
+name=$2      # name of the new environment
+prefix=$3    # vault prefix for storing secrets
+```
+
+These arguments are now available in environment variables: `root` is provided
+by `$GENESIS_ROOT`, `name` is in `$GENESIS_ENVIRONMENT` and `prefix` is
+available in `$GENESIS_VAULT_PREFIX` (backwards compatibility) or
+`$GENESIS_SECRETS_PATH`
+
+## Helpers
+
+### `genesis_config_block` Helper
+
+As of 2.6.13, the top-level `genesis` key has been added.  This change moves
+`env` from `params` to `genesis`, renames `params.vault` and the older
+`params.vault_prefix` to `genesis.secrets_path`, as well as defines a new
+`genesis.min_version`
+
+In future versions, we should expect more values being added/moved to this top
+level key, which separates the concerns of the Genesis ecosystem from those
+pertaining specifically to the kit, which will continue to use the `params`
+key.
+
+These new and future changes are the impedus for standardizing a way to
+generate the block of YAML for genesis configuration.  This is encapsulated in
+the	`genesis_config_block` helper.  Calling this will print out the following
+block (currently), which can be redirected to the environment file:
+
+```
+genesis:
+  env:          "$GENESIS_ENVIRONMENT"
+  secrets_path: "$GENESIS_SECRETS_PATH"
+  min_version:  "$GENESIS_MIN_VERSION"
+```
+
+The `env` is always output, but `secrets_path` and `min_version` are only
+output if the corresponding environment variable is set.  The
+`$GENESIS_MIN_VERSION` variable is automatically set if the kit has a
+`genesis_version_min` but can be directly set if needed.
+
+### `offer_environment_editor` Helper
+
+It is highly recommended that all kits allow the user to edit the environment
+file generated between querying done to generate the file, and running the
+secrets generation.  This helper automates this, including the prompt for
+editing.  On editors that support it, it will also show the manual for the kit
+on a right-side split window.
+
+It is recommended that this helper be used, so that in future versions of
+Genesis, it may become a feature of Genesis itself to present the editor, so
+this becomes a no-op.

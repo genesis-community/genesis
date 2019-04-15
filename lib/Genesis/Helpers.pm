@@ -501,9 +501,9 @@ genesis_config_block() {
 genesis:
   env:          "$GENESIS_ENVIRONMENT"
 EOF
-	if [[ -n "$GENESIS_VAULT_PREFIX" ]] ; then
+	if [[ -n "$GENESIS_SECRETS_PATH" ]] ; then
 		cat <<EOF
-  secrets_path: "$GENESIS_VAULT_PREFIX"
+  secrets_path: "$GENESIS_SECRETS_PATH"
 EOF
 	fi
 	if [[ -n "$GENESIS_MIN_VERSION" ]] ; then
@@ -514,3 +514,28 @@ EOF
 	echo ""
 }
 export -f genesis_config_block
+
+offer_environment_editor() {
+	local __file __tmpdir __editor __edit_query __editor_cmd
+	prompt_for __edit_query boolean \
+	  "Would you like to edit the '$GENESIS_ENVIRONMENT.yml' environment file?" \
+		--inline
+
+	if [[ $__edit_query == 'true' ]] ; then
+		__file="$GENESIS_ROOT/$GENESIS_ENVIRONMENT.yml"
+		__tmpdir="$(mktemp -d -t "$GENESIS_KIT_NAME-$GENESIS_KIT_VERSION")"
+		[[ -n $EDITOR ]] || EDITOR="vim"
+		if $GENESIS_CALLBACK_BIN -C $GENESIS_ROOT man "$(basename "$__file")" > "$__tmpdir/manual.md" ; then
+			__editor="$(basename $EDITOR)"
+			[[ $__editor =~ ^.*vim?$ ]] && \
+				__editor_cmd="$EDITOR -O '$__file' '$__tmpdir/manual.md'"
+			[[ $__editor == "emacs" ]] && \
+				__editor_cmd="$EDITOR -nw '$__file' -f split-window-horizontally '$__tmpdir/manual.md' -f other-window"
+		fi
+		[[ -n "$__editor_cmd" ]] || __editor_cmd="$EDITOR '$__file'"
+		env -i HOME="$HOME" SHELL="$(which bash)" USER="$USER" COLORTERM="$COLORTERM" TERM="$TERM" bash -l -c "$__editor_cmd"
+		[[ -f $__tmpdir/manual.md ]] && rm "$__tmpdir/manual.md"
+		rmdir "$__tmpdir"
+	fi
+}
+export -f offer_environment_editor
