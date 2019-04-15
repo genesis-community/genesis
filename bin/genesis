@@ -830,16 +830,27 @@ command("new", <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis new env-name[.yml] [<options...>]
 
+Creates a new environment in the current (or specified) deployment repository,
+filled with your answers to questions the kit prompts for, and then generates
+the required secret credentials and certificates.
+
+Note: if secrets already exist for an environment under the secrets path (see
+below), you will be prompted to purge them prior to creating the new
+environment.  If you want to keep them, use safe to move them to another path,
+create the new environment, then move back the secrets you need to keep.
+
 OPTIONS
 $GLOBAL_USAGE
-	-P, --secrets-path By default, the vault path is secret/<env-name>/<kit>
+  -P, --secrets-path By default, the vault path is secret/<env-name>/<kit>
                      where <env-name> has had any - converted to / and
                      <kit> is the kit name.  Use this option to change the part
                      after secret/
 
   -k, --kit          Name (and optionally, version) of the Genesis Kit to
                      use for this environment.  I.e.: shield/6.3.0
-                     Defaults to latest.
+                     Defaults to latest.  This kit must be locally present (see
+                     `genesis list-kits`).  To use the dev kit, specify
+                     'dev/latest'
 
 LEGACY OPTIONS:
       --vault        The name of a `safe' target (a Vault) to store newly

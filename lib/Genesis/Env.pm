@@ -123,7 +123,7 @@ sub create {
 	bail("\n#R{[ERROR]} No vault specified or configured.")
 		unless $env->vault;
 	$env->{secrets_path} = $opts{secrets_path} || $env->_default_secrets_path;
-	$env->purge_secrets(); # TBD: should we allow them to continue without purging?
+	$env->purge_secrets() || bail "Cannot continue with existing secrets for this environment";
 
 	## initialize the environment
 	if ($env->has_hook('new')) {
