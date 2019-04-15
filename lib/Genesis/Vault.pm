@@ -368,7 +368,7 @@ sub env {
 		$self->{_env} = read_json_from(
 			run({
 					stderr =>'/dev/null',
-					env => {SAFE_TARGET => $self->{url} }
+					env => {SAFE_TARGET => $self->ref }
 				},'safe', 'env', '--json')
 		);
 		$self->{_env}{VAULT_SKIP_VERIFY} ||= "";
