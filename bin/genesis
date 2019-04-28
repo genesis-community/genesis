@@ -2278,9 +2278,10 @@ sub {
 		invert
 		echo
 	));
-	usage(1) if @_ < 2 || @_ > 3; # prompt is optional, type and path are not
+	usage(1) if @_ < 2; # prompt is optional, type and path are not
 	check_prereqs(no_repo_needed => 1);
-	my ($type,$path,$prompt) = @_;
+	my ($type,$path,@prompt_lines) = @_;
+	my $prompt = join("\n",@prompt_lines);
 	my $use_vault = ($type =~ /^secret-*/);
 	$options{secret} = $path if ($use_vault);
 
