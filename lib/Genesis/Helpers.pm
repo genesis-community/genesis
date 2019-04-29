@@ -523,7 +523,8 @@ offer_environment_editor() {
 
 	if [[ $__edit_query == 'true' ]] ; then
 		__file="$GENESIS_ROOT/$GENESIS_ENVIRONMENT.yml"
-		__tmpdir="$(mktemp -d -t "$GENESIS_KIT_NAME-$GENESIS_KIT_VERSION")"
+		__tmpdir="$(mktemp -d)/$GENESIS_KIT_NAME-$GENESIS_KIT_VERSION"
+		mkdir -p "$__tmpdir"
 		[[ -n $EDITOR ]] || EDITOR="vim"
 		if $GENESIS_CALLBACK_BIN -C $GENESIS_ROOT man "$(basename "$__file")" > "$__tmpdir/manual.md" ; then
 			__editor="$(basename $EDITOR)"
@@ -536,6 +537,7 @@ offer_environment_editor() {
 		env -i HOME="$HOME" SHELL="$(which bash)" USER="$USER" COLORTERM="$COLORTERM" TERM="$TERM" bash -l -c "$__editor_cmd"
 		[[ -f $__tmpdir/manual.md ]] && rm "$__tmpdir/manual.md"
 		rmdir "$__tmpdir"
+		rmdir "$(dirname "$__tmpdir")"
 	fi
 }
 export -f offer_environment_editor
