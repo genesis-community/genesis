@@ -665,6 +665,9 @@ $GLOBAL_USAGE
   -L, --link-dev-kit  Instead of using a kit or initializing an empty dev
                       directory, this will link the specified directory to the
                       dev directory.
+      --vault         Name of a 'safe' target (a Vault) to store newly generated
+                      credentials in. If not specified, it will be interactively 
+                      prompted for.
   -d, --directory     By default, the directory in which the Genesis deployment
                       will be created in will be named ./<name>-deployments.
                       Use this option to change it to something else.
