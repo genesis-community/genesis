@@ -2035,7 +2035,7 @@ EOF
 
 	# Load the environment in order to check other required variables
 	pushd $ENV{WORKING_DIR};
-	my $env = Genesis::Env::read($ENV{CURRENT_ENV}, Genesis::Top->new('.'));
+	my $env = Genesis::Top->new('.')->load_env($ENV{CURRENT_ENV});
 	push(@undefined, grep { !$ENV{$_} }
 		qw/BOSH_ENVIRONMENT BOSH_CA_CERT
 		   BOSH_CLIENT BOSH_CLIENT_SECRET/) unless $env->needs_bosh_create_env;
