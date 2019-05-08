@@ -2019,6 +2019,12 @@ sub {
 	push @undefined, "CACHE_DIR" if ($ENV{PREVIOUS_ENV} && ! $ENV{CACHE_DIR});
 	__bail_on_missing_pipeline_environment_variables(@undefined);
 
+        # we need a method of issue tokens with a temporary lifetime, so approle/secret is used
+        vault_auth(vault       => $ENV{VAULT_ADDR},
+                   skip_verify => envset("VAULT_SKIP_VERIFY"),
+                   role_id     => $ENV{VAULT_ROLE_ID},
+                   secret_id   => $ENV{VAULT_SECRET_ID});
+
 	# write .saferc file so that safe commands execute properly
 	open my $OUT, ">", "$ENV{HOME}/.saferc"
 		or die "Failed to write .saferc information: $!\n";
@@ -2027,10 +2033,10 @@ sub {
 version: 1
 current: ci-deploy
 vaults:
-	ci-deploy:
-		url: $ENV{VAULT_ADDR}
-		token: $ENV{VAULT_TOKEN}
-		skip_verify: @{[envset("VAULT_SKIP_VERIFY") ? "true" : "false"]}
+  ci-deploy:
+    url: $ENV{VAULT_ADDR}
+    token: $ENV{VAULT_TOKEN}
+    skip_verify: @{[envset("VAULT_SKIP_VERIFY") ? "true" : "false"]}
 EOF
 
 	# Load the environment in order to check other required variables
@@ -2055,11 +2061,6 @@ EOF
 		Genesis::BOSH->alias(scalar $env->lookup_bosh_target);
 		$env->download_cloud_config();
 	}
-	# we need a method of issue tokens with a temporary lifetime, so approle/secret is used
-	vault_auth(vault       => $ENV{VAULT_ADDR},
-	           skip_verify => envset("VAULT_SKIP_VERIFY"),
-	           role_id     => $ENV{VAULT_ROLE_ID},
-	           secret_id   => $ENV{VAULT_SECRET_ID});
 
 	$env->deploy(redact => !envset('CI_NO_REDACT'))
 		or exit 1;
