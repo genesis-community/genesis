@@ -2349,7 +2349,7 @@ sub main {
 	}
 
 	if ($in_version == 1) {
-		bail("This reposititory is a Genesis v1 repository.  Compatibility with v1 repos has\nbeen discontinued as of v2.7.0");
+		bail("This repository is a Genesis v1 repository.  Compatibility with v1 repos has\nbeen discontinued as of v2.7.0");
 	}
 	my ($cmd, @args);
 	while (@_ > 0) {
