@@ -2349,9 +2349,7 @@ sub main {
 	}
 
 	if ($in_version == 1) {
-		# Set GENESIS_V1_PATH env var to shadow the obscure location
-		($ENV{GENESIS_V2_VERSION} = $Genesis::VERSION) =~ s/^\((.*)\)$/$1/;
-		exec $ENV{GENESIS_V1_BIN}, @_;
+		bail("This reposititory is a Genesis v1 repository.  Compatibility with v1 repos has\nbeen discontinued as of v2.7.0");
 	}
 	my ($cmd, @args);
 	while (@_ > 0) {
@@ -2388,5 +2386,3 @@ sub main {
 }
 
 main(@ARGV);
-
-__DATA__

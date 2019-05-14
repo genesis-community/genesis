@@ -37,8 +37,8 @@ mkdir "global";
 qx(touch global/deployment.yml);
 
 mkdir "bin";
-($pass, $rc, $out) = runs_ok "$bin version", "`genesis version` in legacy mode works";
-matches $out, qr|^genesis v1\.x\.x \([0-9a-f]*\) - embedded in 2.*|m,"`genesis version` in legacy mode reports v1.x.x version";
+($pass, $rc, $out) = run_fails "$bin version", "`genesis version` doesn't work in v1 repository";
+matches $out, qr|This reposititory is a Genesis v1 repository.  Compatibility with v1 repos has.*been discontinued as of v2.7.0|ms,"Error message presented in v1 repository";
 
 # Test packaged executable in v2 mode
 qx(rm global/deployment.yml && rmdir global);
