@@ -63,8 +63,8 @@ use File::Temp qw/tempdir/;
 use JSON::PP qw//;
 
 sub envset {
-	my ($var) = @_;
-	return (defined $ENV{$var} and $ENV{$var} =~ m/^(1|y|yes|true)$/i);
+	my $var = shift;
+	(defined $ENV{$var} and scalar($ENV{$var} =~ m/^(1|y|yes|true)$/i)) ? 1 : 0;
 }
 
 sub envdefault {
