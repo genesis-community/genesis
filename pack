@@ -18,7 +18,7 @@ die "Perl compilation failed, not packing\n" if $?;
 system 'rm -rf pkg/ pkg.tar.gz && mkdir pkg';
 die "Could not create a clean package staging area\n" if $?;
 
-system 'cp -a bin/genesis-v1 lib pkg/';
+system 'cp -a lib pkg/';
 die "Could not copy library into the package staging area\n" if $?;
 
 # ---
@@ -37,7 +37,7 @@ if ($VERSION) {
 	$stub_out .= "dev-$sha1";
 }
 
-if (qx(git status --porcelain bin/genesis bin/genesis-v1 lib/)) {
+if (qx(git status --porcelain bin/genesis lib/)) {
 	$sha1 .= '+';
 	$stub_out .= '-dirty';
 }
@@ -137,8 +137,6 @@ my $root = "$ENV{GENESIS_HOME}/.geese";
 mkdir $root unless -d $root;
 
 $ENV{GENESIS_CALLBACK_BIN} = abs_path(__FILE__);
-$ENV{GENESIS_V1_PATH_OVERRIDE} = __FILE__;
-$ENV{GENESIS_V1_BIN} = "$root/genesis-v1";
 
 # check the checksum to see if we should untar
 my ($fh, $want, $have) = (undef, "", "");
