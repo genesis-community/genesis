@@ -457,6 +457,11 @@ sub read_json_from {
 
 sub curl {
 	my ($method, $url, $headers, $data, $skip_verify, $creds) = @_;
+	my $header_opt = "i";
+	if ($method eq "HEAD") {
+		$header_opt = 'I';
+		$method = "GET";
+	}
 	my @flags = ("-X", $method);
 	push @flags, "-H", "$_: $headers->{$_}" for (keys %$headers);
 	push @flags, "-d", $data                if  $data;
@@ -467,8 +472,8 @@ sub curl {
 	my $status = "";
 	my $status_line = "";
 
-	debug 'Running cURL: `'.'curl -isL $url '.join(' ',@flags).'`';
-	my @data = lines(run({ stderr => 0 }, 'curl', '-isL', $url, @flags));
+	debug 'Running cURL: `'.'curl -'.$header_opt.'sL $url '.join(' ',@flags).'`';
+	my @data = lines(run({ stderr => 0 }, 'curl', '-'.$header_opt.'sL', $url, @flags));
 
 	unless (scalar(@data) && $? == 0) {
 		# curl again to get stdout/err into concourse for debugging
@@ -476,6 +481,7 @@ sub curl {
 		return 599, "Unable to execute curl command", "";
 	}
 	my $in_header;
+	my @header_data;
 	my $line;
 	while ($line = shift @data) {
 		if ($line =~ m/^HTTP\/\d+(?:\.\d)?\s+((\d+)(\s+.*)?)$/) {
@@ -484,9 +490,12 @@ sub curl {
 			$status = $2;
 		}
 		last unless $in_header;
+		push @header_data, $line;
 		$in_header=0 if ($line =~ /^\s+$/);
 	}
-	return $status, $status_line, join("\n", $line, @data);
+	unshift @data, $line if defined($line);
+	unshift @data, @header_data if $header_opt eq 'I';
+	return $status, $status_line, join("\n", @data);
 }
 
 sub slurp {
