@@ -236,7 +236,7 @@ sub error {
 sub bail {
 	my @err = @_;
 	unshift @err, "%s" if $#err == 0;
-	$! = 1; die csprintf(@_)."$/";
+	$! = 1; die csprintf(@err)."$/";
 }
 
 sub bug {
