@@ -50,6 +50,7 @@ our @EXPORT = qw/
 	chdir_or_fail chmod_or_fail
 	symlink_or_fail
 	copy_or_fail
+	humanize_path
 
 	load_json
 	load_yaml load_yaml_file
@@ -559,6 +560,15 @@ sub chmod_or_fail {
 	-e $path or die "$path: $!\n";
 	chmod $mode, $path
 		or die "Could not change mode of $path: $!\n";
+}
+
+sub humanize_path {
+	my $path = shift;
+	my $pwd = Cwd::abs_path($ENV{GENESIS_CALLER_DIR} || Cwd::getcwd());
+	(substr($path, 0, length($pwd) + 1) eq $pwd . '/')
+		? '.' . substr($path, length($pwd))
+		: (substr($path, 0, length($ENV{HOME}) + 1) eq $ENV{HOME} . '/')
+		? "~" . substr($path, length($ENV{HOME})) : $path;
 }
 
 sub load_json {
