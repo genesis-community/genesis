@@ -758,7 +758,7 @@ subtest 'new env and check' => sub{
 
 	my $name = "far-fetched";
 	my $top = Genesis::Top->create(workdir, 'sample', vault=>$VAULT_URL);
-	my $kit = $top->link_dev_kit('t/src/creator')->find_kit('dev');
+	my $kit = $top->link_dev_kit('t/src/creator')->local_kit_version('dev');
 	mkfile_or_fail $top->path("pre-existing.yml"), "I'm already here";
 
 	# create the environment

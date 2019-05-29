@@ -11,6 +11,7 @@ use_ok 'Genesis';
 use_ok 'Genesis::Kit';
 use_ok 'Genesis::Kit::Compiled';
 use_ok 'Genesis::Kit::Dev';
+use_ok 'Genesis::Kit::Provider::GenesisCommunity';
 use_ok 'Genesis::Vault';
 use Genesis::Kit::Compiler;
 
@@ -169,55 +170,66 @@ subtest 'legacy kit support' => sub {
 };
 
 subtest 'kit urls' => sub {
-	my ($url, $version);
+	my ($kit, $url, $version);
+	my $provider = Genesis::Kit::Provider->init();
 
-	lives_ok { ($url, $version) = Genesis::Kit->url('bosh') } "The BOSH kit has a valid download url";
+	lives_ok { $kit = $provider->kit_version_info('bosh') } "The latest BOSH kit can be found";
+	lives_ok { $url = $kit->{url} } "The BOSH kit has a download url";
 	like $url, qr{^https://github.com/genesis-community/bosh-genesis-kit/releases/download/},
 		"The BOSH kit url is on Github";
 
-	lives_ok { ($url, $version) = Genesis::Kit->url('bosh', '0.2.0') } "The BOSH kit has a valid download url";
+	lives_ok { $kit = $provider->kit_version_info('bosh', '0.2.0') } "The BOSH kit v0.2.0 can be found";
+	lives_ok { $url = $kit->{url} } "The BOSH kit has a download url";
+	lives_ok { $version = $kit->{version} } "The BOSH kit has a download url";
 	is $version, '0.2.0', 'bosh-0.2.0 is v0.2.0';
 	is $url, 'https://github.com/genesis-community/bosh-genesis-kit/releases/download/v0.2.0/bosh-0.2.0.tar.gz',
 		"The BOSH kit url points to the 0.2.0 release";
 
-	dies_ok { Genesis::Kit->url('bosh', '0.0.781') } "Non-existent versions of kits do not have download urls";
+	dies_ok { $provider->kit_version_info('bosh', '0.0.781')->{url} } "Non-existent versions of kits do not exists";
 };
 
-subtest 'kit downloadable' => sub {
+subtest 'available kits' => sub {
 	my (@kits,@expected);
 
-	lives_ok { @kits = Genesis::Kit->downloadable() } "Can get a list of downloadable kits from Github";
+	my $kit_provider = Genesis::Kit::Provider::GenesisCommunity->init();
+
+	lives_ok { @kits = $kit_provider->kit_names } "Can get a list of downloadable kits from Github";
 	@expected = qw(blacksmith bosh cf concourse jumpbox shield vault);
 	cmp_deeply(\@kits, supersetof(@expected),
 		"Downloadable kits includes at least the core kits known at the time of this writing.");
 	
-	lives_ok { @kits = Genesis::Kit->downloadable('^b.*h$') } "Can filter on a regex pattern";
+	lives_ok { @kits = $kit_provider->kit_names('^b.*h$') } "Can filter on a regex pattern";
 	@expected = qw(bosh blacksmith);
 	cmp_deeply(\@kits, supersetof(@expected), "Can filter on anchors to get bosh and blacksmith");
 	my @bad = grep {$_ !~ /^b.*h$/} @kits;
 	ok scalar(@bad) == 0, "No erroneous element were found in the filter";
 
-	lives_ok { @kits = Genesis::Kit->downloadable('^cf$') } "Can filter on explicit name";
+	lives_ok { @kits = $kit_provider->kit_names('^cf$') } "Can filter on explicit name";
 	ok @kits == 1 && $kits[0] eq 'cf', "Found one and only one match to 'cf' genesis kit";
 };
 
 subtest 'kit versions' => sub {
-	my (%versions,@versions);
+	my (@version_info,@versions);
 
-	lives_ok { %versions = Genesis::Kit->versions('jumpbox') } "The Jumpbox kit has versions";
-	@versions = keys %versions;
+	my $kit_provider = Genesis::Kit::Provider::GenesisCommunity->init();
+
+	lives_ok { @version_info = $kit_provider->kit_versions('jumpbox') } "The Jumpbox kit has versions";
+	@versions = map {$_->{version}} @version_info;
 	my @bad = grep {$_ !~ /^(\d+)(?:\.(\d+)(?:\.(\d+)(?:[\.-]rc[\.-]?(\d+))?)?)?/} @versions;
 	ok scalar(@versions) > 0 && scalar(@bad) == 0, "Returned good semver versions and no bad ones";
 
 	my %struct = (body       => ignore(),
 	              date       => re('\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ'),
 	              draft      => re('^1?$'),
-	              prerelease => re('^1?$'));
-	cmp_deeply( [values %versions], array_each(\%struct), "Each version contains desired details");
+	              prerelease => re('^1?$'),
+	              version    => re('^(\d+)(?:\.(\d+)(?:\.(\d+)(?:[\.-]rc[\.-]?(\d+))?)?)?'),
+	              url        => re('https://github.com/genesis-community/jumpbox-genesis-kit/releases/download/[^/]*/jumpbox-[^/]*.tar.gz')
+	             );
+	cmp_deeply( [@version_info], array_each(\%struct), "Each version contains desired details");
 
 	my @latest_two = (reverse sort by_semver @versions)[0..1];
-	lives_ok { %versions = Genesis::Kit->versions('jumpbox',latest => 2) } "get the latest 2 versions";
-	@versions = keys %versions;
+	lives_ok { @version_info = $kit_provider->kit_versions('jumpbox',latest => 2) } "get the latest 2 versions";
+	@versions = map {$_->{version}} @version_info;
 	cmp_bag(\@versions, \@latest_two);
 	
 };

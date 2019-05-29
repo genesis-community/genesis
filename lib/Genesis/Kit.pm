@@ -7,115 +7,20 @@ use Genesis::Legacy; # but we'd rather not
 use Genesis::Helpers;
 use Genesis::BOSH;
 
-### Class Methods
+### Class Methods {{{
 
-sub downloadable {
-	my ($class, $filter) = @_;
-	$filter ||= '';
-	if (substr($filter,-1,1) eq '$') {
-		substr($filter,-1,1,'');
-	} else {
-		$filter .= '.*';
-	}
-
-	my $creds = "";
-	if ($ENV{GITHUB_USER} && $ENV{GITHUB_AUTH_TOKEN}) {
-		$creds = "$ENV{GITHUB_USER}:$ENV{GITHUB_AUTH_TOKEN}";
-	}
-	my ($code, $msg, $data) = curl("GET", "https://api.github.com/users/genesis-community/repos", undef, undef, 0, $creds);
-	if ($code == 404) {
-		die "Could not find Genesis Community organization on Github; are you able to route to the Internet?\n";
-	}
-	if ($code == 403) {
-		die "Access forbidden trying to reach Github; throttling may be in effect.  Set your GITHUB_USER and GITHUB_AUTH_TOKEN to prevent throttling.\n";
-	}
-	if ($code != 200) {
-		die "Could not read Genesis Community organization's reposotories; Github returned a ".$msg."\n";
-	}
-
-	my $repositories;
-	eval { $repositories = load_json($data); 1 }
-		or die "Failed to read repository information from Github: $@\n";
-
-	if (!@$repositories) {
-		die "No repositories found in the Genesis Community organition at https://github.com/genesis-community/repos.\n";
-	}
-
-	return map {(my $k = $_) =~ s/-genesis-kit$//; $k}
-         grep {$_ =~ qr/$filter-genesis-kit/}
-         map {$_->{name}} @$repositories;
+# new - abstract class only, expects derived class to specify new body {{{
+sub new {
+	my ($class,$provider) = @_;
+	bug "#R{[ERROR]} Attempt to initialize abstract class Genesis::Kit"
+		if ($class == __PACKAGE__);
 }
+# }}}
+# }}}
 
-sub releases {
-	my ($class, $name, $test) = @_;
+### Instance Methods {{{
 
-	my $creds = "";
-	if ($ENV{GITHUB_USER} && $ENV{GITHUB_AUTH_TOKEN}) {
-		$creds = "$ENV{GITHUB_USER}:$ENV{GITHUB_AUTH_TOKEN}";
-	}
-	my ($code, $msg, $data) = curl("GET", "https://api.github.com/repos/genesis-community/$name-genesis-kit/releases", undef, undef, 0, $creds);
-	if ($code == 404) {
-		die "Could not find Genesis Kit $name on Github; does https://github.com/genesis-community/$name-genesis-kit/releases exist?\n";
-	}
-	if ($code == 403) {
-		die "Access forbidden trying to reach Github; throttling may be in effect.  Set your GITHUB_USER and GITHUB_AUTH_TOKEN to prevent throttling.\n";
-	}
-	if ($code != 200) {
-		die "Could not find Genesis Kit $name release information; Github returned a ".$msg."\n";
-	}
-
-	my $releases;
-	eval { $releases = load_json($data); 1 }
-		or die "Failed to read releases information from Github: $@\n";
-
-	if (!@$releases && !$test) {
-		die "No released versions of Genesis Kit $name found at https://github.com/genesis-community/$name-genesis-kit/releases.\n";
-	}
-	return @$releases;
-}
-
-sub url {
-	my ($class, $name, $version) = @_;
-
-	for (map { @{$_->{assets} || []} } $class->releases($name)) {
-		if (!$version or $version eq 'latest') {
-			next unless $_->{name} =~ m/^\Q$name\E-(.*)\.(tar\.gz|tgz)$/;
-			$version = $1;
-		} else {
-			next unless $_->{name} eq "$name-$version.tar.gz"
-			         or $_->{name} eq "$name-$version.tgz";
-		}
-		return ($_->{browser_download_url}, $version);
-	}
-
-	die "$name/$version tarball asset not found on Github.  Oops.\n";
-}
-
-sub versions {
-	my ($class, $name, %opts) = @_;
-
-	my @releases =
-    grep {!$_->{draft}      || $opts{'drafts'}}
-    grep {!$_->{prerelease} || $opts{'prerelease'}}
-    $class->releases($name, 1);
-
-	if (defined $opts{latest}) {
-		my $latest = $opts{latest} || 1;
-		my @versions = (reverse sort by_semver (map {$_->{tag_name}} @releases))[0..($latest-1)];
-		@releases = grep {my $v = $_->{tag_name}; grep {$_ eq $v} @versions} @releases;
-	}
-	return map {
-		(my $v = $_->{tag_name}) =~ s/^v//;
-		($v => {
-			body => $_->{body},
-			draft=> !!$_->{draft},
-			prerelease => !!$_->{prerelease},
-			date => $_->{published_at} || $_->{created_at}
-		})} @releases;
-}
-
-# Instance methods
-
+# path - {{{
 sub path {
 	my ($self, $path) = @_;
 	$self->extract;
@@ -128,6 +33,8 @@ sub path {
 	return "$self->{root}/$path";
 }
 
+# }}}
+# glob - {{{
 sub glob {
 	my ($self, $glob, $absolute) = @_;
 	$glob =~ s|^/+||;
@@ -149,12 +56,16 @@ sub glob {
 	return @l;
 }
 
+# }}}
+# has_hook - {{{
 sub has_hook {
 	my ($self, $hook) = @_;
 	trace("checking the kit for a(n) '$hook' hook");
 	return -f $self->path("hooks/$hook");
 }
 
+# }}}
+# run_hook - {{{
 sub run_hook {
 	my ($self, $hook, %opts) = @_;
 
@@ -317,11 +228,15 @@ sub run_hook {
 	return 1;
 }
 
+# }}}
+# metadata - {{{
 sub metadata {
 	my ($self) = @_;
 	return $self->{__metadata} ||= load_yaml_file($self->path('kit.yml'));
 }
 
+# }}}
+# feature_compatibility - {{{
 sub feature_compatibility {
 	# Assume feature compatibility with specified min genesis version.
 	my ($self,$version) = @_;
@@ -336,6 +251,8 @@ sub feature_compatibility {
 	return new_enough($kit_min,$version);
 }
 
+# }}}
+# check_prereqs - {{{
 sub check_prereqs {
 	my ($self) = @_;
 	my $id = $self->id;
@@ -362,6 +279,8 @@ sub check_prereqs {
 	return 1;
 }
 
+# }}}
+# source_yaml_files - {{{
 sub source_yaml_files {
 	my ($self, $env, $absolute) = @_;
 
@@ -381,6 +300,8 @@ sub source_yaml_files {
 
 	return @files;
 }
+# }}}
+# }}}
 
 1;
 
@@ -396,47 +317,10 @@ tarballs (Genesis::Kit::Compiled) or dev/ directories (Genesis::Kit::Dev).
 
 =head1 CLASS METHODS
 
-=head2 downloadable($filter)
+=head2 new()
 
-Lists the known downloadable compiled kits on the Genesis Community Github
-organization.  If a filter is given, it will be used to limit the kit names to
-match that filter as a regular expression.
-
-An error will be thrown if it cannot reach the github api endpoint for
-genesis-community organization, if the response is not valid JSON, or for
-any other communication error.
-
-=head2 releases($name)
-
-Returns the list of releases for a given repository under the Genesis Community
-Github organization.  This is the full response from Github, converted from
-JSON, and includes all the information for all releases under the given
-repository.  This is primarily a low-level function for C<url> and C<versions>
-
-An error will be thrown if it cannot reach the github api endpoint for
-genesis-community organization, if the repository does not exist,  if the
-response is not valid JSON, or for any other communication error.
-
-=head2 versions($name)
-
-Returns a hash of tag,name,draft,prerelease,body and timestamp for each version
-for the named repository under the Genesis Community Github organization.
-
-An error will be thrown if it cannot reach the github api endpoint for
-genesis-community organization, if the repository does not exist,  if the
-response is not valid JSON, or for any other communication error.
-
-=head2 url($name, $version)
-
-Determines the download URL for this kit, by consulting Github.
-Right now, this is limited to just the C<genesis-community> organization.
-
-If you omit C<$version>, or set it to "latest", the most recent released
-version on Github will be used.  Otherwise, the URL for the given version
-will be used.
-
-An error will be thrown if the version in question does not exist on Github.
-
+This is an abstract method, placeholder for derived classes to provide their
+own constructors.
 
 =head1 INSTANCE METHODS
 
@@ -522,3 +406,4 @@ CLI alias and authenticates to the BOSH director, transparently pulling
 secrets from the Vault.
 
 =cut
+# vim: fdm=marker:foldlevel=1:noet
