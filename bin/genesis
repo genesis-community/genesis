@@ -724,12 +724,7 @@ sub {
 	$top->embed($ENV{GENESIS_CALLBACK_BIN} || $0);
 
 	my $root = $top->path;
-	my $pwd = Cwd::abs_path(Cwd::getcwd());
-	my $human_root = (substr($root, 0, length($pwd) + 1) eq $pwd . '/')
-		? '.' . substr($root, length($pwd))
-		: (substr($root, 0, length($ENV{HOME}) + 1) eq $ENV{HOME} . '/')
-		? "~" . substr($root, length($pwd)) : $root;
-
+	my $human_root = humanize_path($root);
 	pushd($root);
 	if ($options{'link-dev-kit'}) {
 		debug("Kit: linking dev to $abs_target");
