@@ -21,6 +21,7 @@ use JSON::PP qw/encode_json/;
 use Getopt::Long qw/GetOptionsFromArray :config no_ignore_case bundling/;
 use File::Temp qw/tempdir tempfile/;
 use File::Basename qw/dirname basename/;
+use File::Path qw/rmtree/;
 use POSIX qw/strftime/;
 use Cwd qw/getcwd abs_path/;
 use FindBin;
@@ -30,8 +31,9 @@ use Encode;
 use Genesis;
 use Genesis::UI;
 use Genesis::Top;
-use Genesis::Kit::Compiler;
 use Genesis::Kit;
+use Genesis::Kit::Compiler;
+use Genesis::Kit::Provider;
 use Genesis::CI::Legacy; # but we'd rather not...
 
 $Genesis::VERSION = "(development)";
@@ -432,7 +434,7 @@ sub usage {
 	my ($rc, $msg, $cmd) = @_;
 	$cmd = $COMMAND unless $cmd;
 	error "$msg\n" if $msg;
-	error $USAGE{$cmd} if $USAGE{$cmd};
+	error $USAGE{$cmd} if ($USAGE{$cmd});
 	exit $rc;
 }
 
@@ -527,6 +529,7 @@ $GLOBAL_USAGE
   #C{init}              Initialize a new Genesis deployment.
   #G{new}               Create a new Genesis deployment environment.
   #G{check}             Check a deployment manifest for errors, without deploying it.
+  kit-provider      Check or set the kit provider for the Genesis deployment.
   secrets-provider  Check or set the secrets provider for the Genesis deployment.
   #G{check-secrets}     Check for missing credentials (passwords, keys, etc.).
   #G{add-secrets}       Generate missing credentials (passwords, keys, etc.).
@@ -625,7 +628,7 @@ sub {
 	my %options;
 	options(\@_, \%options, qw/
 	/);
-	usage(1) if @_;
+	usage(1, "Too many arguments: ".join(', ',@_)) if @_;
 	print "Genesis v$Genesis::VERSION$Genesis::BUILD\n";
 });
 
@@ -666,7 +669,7 @@ $GLOBAL_USAGE
                       directory, this will link the specified directory to the
                       dev directory.
       --vault         Name of a 'safe' target (a Vault) to store newly generated
-                      credentials in. If not specified, it will be interactively 
+                      credentials in. If not specified, it will be interactively
                       prompted for.
   -d, --directory     By default, the directory in which the Genesis deployment
                       will be created in will be named ./<name>-deployments.
@@ -675,9 +678,12 @@ $GLOBAL_USAGE
   name                If the name argument is not specified, it will default to
                       the same name as the kit.  You must specify either name
                       or kit.
+
+${\Genesis::Kit::Provider->opts_help()}
 EOF
 sub {
 	my %options;
+	Genesis::Kit::Provider->parse_opts(\@_, \%options);
 	options(\@_, \%options, qw/
 		kit|k=s
 		vault=s
@@ -726,36 +732,43 @@ sub {
 	my $root = $top->path;
 	my $human_root = humanize_path($root);
 	pushd($root);
-	if ($options{'link-dev-kit'}) {
-		debug("Kit: linking dev to $abs_target");
-		symlink_or_fail($abs_target, "./dev");
-		$kit_desc = "\n - linked to kit at #C{$abs_target}.";
+	eval {
+		if ($options{'link-dev-kit'}) {
+			debug("Kit: linking dev to $abs_target");
+			symlink_or_fail($abs_target, "./dev");
+			$kit_desc = "\n - linked to kit at #C{$abs_target}.";
 
-	} elsif ($options{kit}) {
-		debug("Kit: installing kit $options{kit}");
-		explain "Downloading Genesis kit #M{$options{kit}} (#Y{latest} version)...\n";
-		my (undef, $version) = $top->download_kit($options{kit});
-		$kit_desc = "\n - using the #C{$options{kit}/$version} kit.";
+		} elsif ($options{kit}) {
+			debug("Kit: installing kit $options{kit}");
+			explain "Downloading Genesis kit #M{$options{kit}} (#Y{latest} version)...\n";
+			my (undef, $version) = $top->download_kit($options{kit});
+			$kit_desc = "\n - using the #C{$options{kit}/$version} kit.";
 
-	} else {
-		debug("Kit: creating empty ./dev kit directory");
-		mkdir_or_fail("./dev");
-		$kit_desc = "\n - with an empty development kit in #C{$human_root/dev}";
-	}
+		} else {
+			debug("Kit: creating empty ./dev kit directory");
+			mkdir_or_fail("./dev");
+			$kit_desc = "\n - with an empty development kit in #C{$human_root/dev}";
+		}
 
-	run({ onfailure => "Failed to initialize a git repository in $human_root/" },
-		'git init && git add .');
+		run({ onfailure => "Failed to initialize a git repository in $human_root/" },
+			'git init && git add .');
 
-	run({ onfailure => "Failed to commit initial Genesis repository in $human_root/" },
-		'git commit -m "Initial Genesis Repo"');
-
+		run({ onfailure => "Failed to commit initial Genesis repository in $human_root/" },
+			'git commit -m "Initial Genesis Repo"');
+	};
+	my $err = $@;
 	popd;
+	if ($err) {
+		debug("removing incomplete Genesis deployments repository at #C{$root} due to failed creation");
+		rmtree $root;
+		die $err;
+	}
 	explain "Initialized empty Genesis repository in #C{%s}%s%s\n", $human_root, $vault_desc, $kit_desc;
 	exit 0;
 });
 
 # }}}
-# genesis secrets-provider - set, clear or get the secret provider information {{
+# genesis secrets-provider - set, clear or get the secret provider information {{{
 
 command("secrets-provider", <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
@@ -819,6 +832,82 @@ sub {
 	}
 
 	exit defined($err) ? 1 : 0;
+});
+
+# }}}
+# genesis kit-provider - set, clear or get the kit provider information {{{
+
+command("kit-provider", <<EOF,
+genesis v$Genesis::VERSION$Genesis::BUILD
+USAGE: genesis kit-provider [-d|--default] [<provider-options>]
+
+Without any options, will display the current kit provider information, its
+status and its kits (version counts are included with the --verbose option)
+
+With --kit-provider-* options, will set the kit provider to a new provider
+specified by those options.  See Kit Provider options below for more details.
+
+OPTIONS
+$GLOBAL_USAGE
+  -d, --default       Use default genesis-community provider
+
+${\Genesis::Kit::Provider->opts_help()}
+
+EOF
+sub {
+	my %options;
+	Genesis::Kit::Provider->parse_opts(\@_, \%options);
+	options(\@_, \%options, qw/
+		default|d
+		verbose|v
+	/);
+  my $verbose = delete($options{verbose});
+	if (delete($options{default})) {
+		$options{'kit-provider'} = 'genesis-community';
+	}
+	usage(1) if @_ > 0;
+	check_prereqs();
+
+	my $top = Genesis::Top->new('.');
+	my $err;
+	my $kit_provider_lookup = "current";
+	if (scalar(grep {$_ =~ /^kit-provider/} keys %options)) {
+		$err = $top->set_kit_provider(%options);
+		if ($err) {
+			error "\n#R{[ERROR]} Current kit provider was not changed - reason:\n\n$err\n";
+			exit 1;
+		}
+		$kit_provider_lookup = "new";
+	}
+
+	waiting_on("\nCollecting informaion on %s kit provider for #C{%s} deployment at #M{%s} ...", $kit_provider_lookup, $top->type, humanize_path($top->path));
+	my %info;
+	eval {
+		%info = $top->kit_provider_info($verbose);
+	};
+	explain("done.\n");
+	bail "#R{[ERROR]} $@\n" if $@;
+
+	explain("         Type: #M{%s}\n", $info{type});
+	explain("%13s: #C{%s}", $_, $info{$_}) for (@{$info{extras} || []});
+	explain("\n       Status: #%s{%s}\n", $info{status} eq "ok" ? "G" : "R", $info{status});
+
+	my $kit_list;
+	if (ref($info{kits}) eq "HASH" && scalar(keys(%{$info{kits}}))) {
+		my $width = (sort {$b <=> $a} map {length($_)} keys %{$info{kits}})[0];
+		$kit_list = join("\n               ",
+										 map {
+											 sprintf("#%s{%-${width}s} [%s]", $_ eq $top->type ? 'G' : '-', $_, $info{kits}->{$_})
+										} sort keys(%{$info{kits}})
+								);
+	} elsif (ref($info{kits}) eq "ARRAY" && scalar(@{$info{kits}})) {
+		$kit_list = join("\n               ", map {sprintf("#%s{%s}", $_ eq $top->type ? 'G' : '-', $_)} @{$info{kits}});
+	} elsif (ref($info{kits}) eq "" && ($info{kits} || "") =~ /^[1-9][0-9]*$/) {
+		$kit_list = $info{kits} . "kit" . ($info{kits} == 1 ? "" : "s");
+	} else {
+		$kit_list = "#Yi{None}";
+	}
+	explain("         Kits: %s\n\n", $kit_list) if $info{status} eq "ok";
 });
 
 # }}}
@@ -886,7 +975,7 @@ sub {
 
 	# determine the kit to use (dev or compiled)
 	$options{kit} ||= '';
-	my $kit = $top->find_kit(split '/', $options{kit});
+	my $kit = $top->local_kit_version($options{kit});
 	if (!$kit) {
 		if (!$options{kit}) {
 			die "Unable to determine the correct version of the Genesis Kit to use.\n".
@@ -1540,6 +1629,7 @@ $GLOBAL_USAGE
 
 Remote and updates supports further options
       --prereleases     Include pre-release versions of kits
+      --drafts          Include draft versions of the kits
       --[no-]details    Determines if release date and details are shown.
                         Defaults to show for --updated, not show for others.
 EOF
@@ -1560,20 +1650,27 @@ sub {
 		if $options{remote} && $options{updates};
 	check_prereqs(no_repo_needed => $options{remote});
 
+	my $top = Genesis::Top->new('.');
+
 	my (%kits, %latest);
 	$options{details} = $options{updates} unless defined $options{details};
 	if ($options{remote}) {
-		my @kit_names = ($name ? ($name) : Genesis::Kit->downloadable($options{filter}));
+		my @kit_names = ($name ? ($name) : $top->remote_kit_names($options{filter}));
 		for my $kit (@kit_names) {
-			$kits{$kit} = {Genesis::Kit->versions($kit, latest=>$options{latest}, prerelease=>$options{prereleases})};
+			my %versions;
+			$versions{$_->{version}} = $_
+				for ($top->remote_kit_versions($kit, latest=>$options{latest}, include_prereleases=>$options{prereleases}, include_drafts=>$options{drafts}));
+			$kits{$kit} = \%versions;
 		}
 
 	} elsif ($options{updates}) {
-		my $available_kits = Genesis::Top->new('.')->compiled_kits;
+		my $available_kits = $top->local_kits;
 		for my $k (keys %$available_kits) {
 			$kits{$k} = {};
 			$latest{$k} = (reverse sort by_semver keys(%{$available_kits->{$k}}))[0];
-			my %versions = Genesis::Kit->versions($k, latest=>$options{latest}, prerelease=>$options{prereleases});
+			my %versions;
+			$versions{$_->{version}} = $_
+				for ($top->remote_kit_versions($k, latest=>$options{latest}, include_prereleases=>$options{prereleases}, include_drafts=>$options{drafts}));
 			for my $v (reverse sort by_semver keys(%versions)) {
 				last if $latest{$k} && by_semver($v,$latest{$k}) < 1;
 				$kits{$k}{$v} = $versions{$v};
@@ -1581,17 +1678,14 @@ sub {
 		}
 
 	} else {
-		my $available_kits = Genesis::Top->new('.')->compiled_kits;
+		my $available_kits = $top->local_kits;
 		for my $k (keys %$available_kits) {
 			next if $name && $name ne $k;
 			$kits{$k} ||= {};
 			my @versions = keys %{$available_kits->{$k}};
-			@versions = grep {$_} (reverse sort by_semver @versions)[0..(($options{latest} || 1)-1)]
+			@versions = reverse grep {$_} (reverse sort by_semver @versions)[0..(($options{latest} || 1)-1)]
 				if defined $options{latest};
-			my %details = $options{details}
-				? Genesis::Kit->versions($k, prerelease=>1, draft=>1)
-				: ();
-			$kits{$k}{$_} = ($details{$_} || {}) for (@versions);
+			$kits{$k}{$_} = {} for (@versions); # local kits don't have details - TODO: Package them with release notes
 		}
 	}
 
@@ -1924,7 +2018,7 @@ sub {
 
 	my @kits = @_;
 	my $top = Genesis::Top->new('.');
-	my @possible_kits = keys %{$top->compiled_kits};
+	my @possible_kits = keys %{$top->local_kits};
 
 	unless (scalar(@kits)) {
 		bail "No local kits found; you must specify the name of the kit to fetch"
@@ -2007,18 +2101,18 @@ sub {
 	#   BOSH_CLIENT_SECRET         - Password/Client-Secret to authenticate with
 
 	my @undefined = grep { !$ENV{$_} }
-		qw/CURRENT_ENV
-		   GIT_BRANCH GIT_PRIVATE_KEY
-		   OUT_DIR WORKING_DIR
-		   VAULT_ROLE_ID VAULT_SECRET_ID VAULT_ADDR/;
+	qw/CURRENT_ENV
+	GIT_BRANCH GIT_PRIVATE_KEY
+	OUT_DIR WORKING_DIR
+	VAULT_ROLE_ID VAULT_SECRET_ID VAULT_ADDR/;
 	push @undefined, "CACHE_DIR" if ($ENV{PREVIOUS_ENV} && ! $ENV{CACHE_DIR});
 	__bail_on_missing_pipeline_environment_variables(@undefined);
 
-        # we need a method of issue tokens with a temporary lifetime, so approle/secret is used
-        vault_auth(vault       => $ENV{VAULT_ADDR},
-                   skip_verify => envset("VAULT_SKIP_VERIFY"),
-                   role_id     => $ENV{VAULT_ROLE_ID},
-                   secret_id   => $ENV{VAULT_SECRET_ID});
+	# we need a method of issue tokens with a temporary lifetime, so approle/secret is used
+	vault_auth(vault       => $ENV{VAULT_ADDR},
+	           skip_verify => envset("VAULT_SKIP_VERIFY"),
+	           role_id     => $ENV{VAULT_ROLE_ID},
+	           secret_id   => $ENV{VAULT_SECRET_ID});
 
 	# write .saferc file so that safe commands execute properly
 	open my $OUT, ">", "$ENV{HOME}/.saferc"

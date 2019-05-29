@@ -9,9 +9,10 @@ use Genesis::Helpers;
 sub new {
 	my ($class, %opts) = @_;
 	bless({
-		name    => $opts{name},
-		version => $opts{version},
-		archive => $opts{archive},
+		name     => $opts{name},
+		version  => $opts{version},
+		archive  => $opts{archive},
+		provider => $opts{provider},
 	}, $class);
 }
 

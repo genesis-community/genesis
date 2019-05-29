@@ -62,7 +62,7 @@ sub load {
 	# reconstitute our kit via top
 	my $kit_name = $env->lookup('kit.name');
 	my $kit_version = $env->lookup('kit.version');
-	$env->{kit} = $env->{top}->find_kit($kit_name, $kit_version)
+	$env->{kit} = $env->{top}->local_kit_version($kit_name, $kit_version)
 			or bail "Unable to locate v$kit_version of `$kit_name` kit for '$env->{name}' environment.";
 
 	my $min_version = $env->lookup(['genesis.min_version','params.genesis_version_min'],'');
@@ -949,7 +949,7 @@ things like the `new` hook:
     my $env = Genesis::Env->create(
        top  => $top,
        name => 'us-west-1-preprod',
-       kit  => $top->find_kit('some-kit', 'latest'),
+       kit  => $top->local_kit_version('some-kit', 'latest'),
     );
 
 It can optionally take the `vault` and `secrets_path` option to specify the vault name
