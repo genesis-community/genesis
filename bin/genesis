@@ -18,7 +18,7 @@ use JSON::PP qw/encode_json/;
 # dependencies have to be placed in lib/
 
 # core modules
-use Getopt::Long qw/GetOptionsFromArray :config no_ignore_case bundling/;
+use Getopt::Long qw/GetOptionsFromArray/;
 use File::Temp qw/tempdir tempfile/;
 use File::Basename qw/dirname basename/;
 use File::Path qw/rmtree/;
@@ -468,6 +468,7 @@ EOF
 sub options {
 	my ($args, $options, @spec) = @_;
 	$options->{color} = 1 unless exists $options->{color};
+	Getopt::Long::Configure(qw(no_pass_through permute auto_abbrev no_ignore_case bundling));
 	GetOptionsFromArray($args, $options,
 		(qw/
 			help|h

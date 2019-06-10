@@ -4,7 +4,7 @@ use warnings;
 
 use Genesis;
 use Genesis::Helpers;
-use Getopt::Long qw/GetOptionsFromArray :config pass_through no_auto_abbrev no_ignore_case bundling/;
+use Getopt::Long qw/GetOptionsFromArray/;
 
 ### Class Methods {{{
 
@@ -79,8 +79,13 @@ EOF
 # parse_opts - parses options based on the type of kit provider specified {{{
 sub parse_opts {
 	my ($class,$args,$kit_opts) = @_;
+  Getopt::Long::Configure(qw(pass_through permute no_auto_abbrev no_ignore_case bundling));
 
-	GetOptionsFromArray($args, $kit_opts, qw/kit-provider=s/);
+	# Make sure to stop once a '--' is encountered.
+	my $opt_args = [];
+	while (scalar(@$args) && $args->[0] ne '--') {push(@$opt_args, shift(@$args))};
+
+	GetOptionsFromArray($opt_args, $kit_opts, qw/kit-provider=s/);
 	my $type = $kit_opts->{'kit-provider'};
 
 	my @extra_opts = ();
@@ -94,7 +99,10 @@ sub parse_opts {
 		bail("Unknown kit provider type '$type'");
 	}
 
-	GetOptionsFromArray($args, $kit_opts, @extra_opts) if scalar(@extra_opts);
+	GetOptionsFromArray($opt_args, $kit_opts, @extra_opts) if scalar(@extra_opts);
+
+	# Shove the non-opts back into the args passed in
+	while (scalar(@$opt_args)) {unshift(@$args,pop(@$opt_args))};
 
 	return 1;
 }
