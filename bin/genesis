@@ -2360,7 +2360,14 @@ sub main {
 	my ($cmd, @args);
 	while (@_ > 0) {
 		my $arg = shift @_;
-		$arg = decode($ENV{LANG},$arg) if $ENV{LANG};
+
+		if ($ENV{LANG}) {
+			eval {$arg = decode($ENV{LANG},$arg)};
+			if ($@) {
+				warn "#Y{[WARNING]} Environment variable \$LANG contains invalid value.  Some output may be garbled as a result";
+			}
+		}
+
 		if ($cmd || $arg =~ m/^-+/) {
 			push @args, $arg;
 			push @args, shift @_ if $arg eq '-C';
