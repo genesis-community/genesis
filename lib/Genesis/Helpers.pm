@@ -233,6 +233,7 @@ __ip2dec() {
 }
 export -f __ip2dec
 
+declare -a __checked_cloud_config
 cloud_config_needs() {
   local __type=${1:?cloud_config_needs() - must specify a type}; shift
   local __name
@@ -286,15 +287,19 @@ cloud_config_needs() {
             "                      'vm_type', 'vm_extension', 'disk_type', or 'az'" ;;
   esac
 
-  local __want __have
+  local __want __have __token
   for __want in "$@"; do
-    __have=$(spruce json "$GENESIS_CLOUD_CONFIG" | \
-      jq -r "if (.${__type}[] | select(.name == \"$__want\")) then 1 else 0 end")
-    if [[ -z "$__have" ]]; then
-      __cloud_config_ok=no
-			__cloud_config_error_messages+=( "  $(bullet "x") $__name '#Y{$__want}' exists" )
-		else
-			__cloud_config_error_messages+=( "  $(bullet "√") $__name '#Y{$__want}' exists" )
+    __token="$__name:$__want"
+    if ! (IFS=$'\n'; echo "${__checked_cloud_config[*]}") | grep '^'$__token'$' >/dev/null 2>&1 ; then
+      __checked_cloud_config+=($__token)
+      __have=$(spruce json "$GENESIS_CLOUD_CONFIG" | \
+        jq -r "if (.${__type}[] | select(.name == \"$__want\")) then 1 else 0 end")
+      if [[ -z "$__have" ]]; then
+        __cloud_config_ok=no
+        __cloud_config_error_messages+=( "  $(bullet "x") $__name '#Y{$__want}' exists" )
+      else
+        __cloud_config_error_messages+=( "  $(bullet "√") $__name '#Y{$__want}' exists" )
+      fi
     fi
   done
 }
@@ -307,10 +312,7 @@ check_cloud_config() {
   #   check_cloud_config || exit 1  # exit if errors found
   #   check_cloud_config && describe "  cloud config [#G{OK}] # report ok if no errors
   describe "  #C{[Checking cloud config]}"
-  local __e
-  for __e in "${__cloud_config_error_messages[@]}"; do
-    describe "${__e}"
-  done
+  describe "${__cloud_config_error_messages[@]}"
   if [[ ${__cloud_config_ok} != "yes" ]]; then
     return 1
   fi
