@@ -70,8 +70,11 @@ sub ping {
 	my ($class, $env) = @_;
 	# TODO: once using vault-stored bosh targetting, we don't need to do this anymore
 	debug "Checking BOSH at '$env' for connectivity";
-	waiting_on STDERR "Checking availability of the '#M{$env}' BOSH director..."
-		unless $reping || envset "GENESIS_TESTING";
+	my $waiting=0;
+	unless ($reping || envset "GENESIS_TESTING") {;
+		waiting_on STDERR "Checking availability of the '#M{$env}' BOSH director...";
+		$waiting=1;
+	}
 	$reping = 1;
 
 	my ($host,$port);
@@ -90,18 +93,15 @@ sub ping {
 	}
 
 	unless (tcp_listening($host,$port)) {
-		error "#R{unreachable!}\n"
-			unless $reping || envset "GENESIS_TESTING";
+		error "#R{unreachable!}\n" if $waiting;
 		return 0;
 	}
 	my ($out,$rc) = _bosh('bosh', '-e', $env, 'env');
 	if ($rc) {
-		error "#R{error!}\n\n$out\n"
-			unless $reping || envset "GENESIS_TESTING";
+		error "#R{error!}\n\n$out\n" if $waiting;
 		return 0;
 	}
-	explain STDERR "#G{ok}"
-		unless $reping || envset "GENESIS_TESTING";
+	explain STDERR "#G{ok}" if $waiting;
 	return 1;
 }
 
@@ -126,12 +126,12 @@ sub create_env {
 
 sub download_cloud_config {
 	my ($class, $env, $path) = @_;
-	explain STDERR "Downloading cloud config from '#M{$env}' BOSH director...";
+	waiting_on STDERR "Downloading cloud config from '#M{$env}' BOSH director...";
 	_bosh({ interactive => 1, onfailure => "Could not download cloud-config from $env BOSH director" },
 		'bosh -e "$1" cloud-config > "$2"', $env, $path);
 
-	die "No cloud-config defined on '#M{$env}' BOSH director\n"
-		unless -s $path;
+	bail "#R{error!}  No cloud-config defined on '#M{$env}' BOSH director\n" unless (-s $path);
+	explain STDERR "#G{ok}";
 	return 1;
 }
 
