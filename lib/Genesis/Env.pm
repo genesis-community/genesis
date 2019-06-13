@@ -50,6 +50,13 @@ sub load {
 	bail("#R{[ERROR]} Environment file $env->{file} does not exist.")
 		unless -f $env->path($env->{file});
 
+	bail("#R{[ERROR]} Both #C{kit.features} and deprecated #C{kit.subkits} were found during the environment\n".
+			 "build-out using the following files:\n#M{  %s}\n\n".
+			 "This can cause conflicts and unexpected behaviour.  Please replace all occurrences of\n".
+			 "#C{subkits} with #C{features} under the #C{kit} toplevel key.\n",
+			 join("\n  ",$env->actual_environment_files)
+	) if ($env->defines('kit.features') && $env->defines('kit.subkits'));
+
 	unless (in_callback || envset("GENESIS_LEGACY")) {
 		my ($env_name, $env_key) = $env->lookup(['genesis.env','params.env']);
 		bail("\n#R{[ERROR]} Environment file #C{$env->{file}} environment name mismatch: #C{$env_key: $env_name}")
