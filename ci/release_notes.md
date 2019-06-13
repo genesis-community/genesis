@@ -75,3 +75,19 @@ However, with BOSH no longer supporting v1-style manifests, it seemed a good
 time to remove this obsolete funtionality and shrink down the package.  If you
 still need this, any version from v2.5.x or v2.6.x will work for you, as the
 v1 embedded in those versions haven't changed.
+
+# Improvements
+
+- cloud_config_needs will only check for a specific resource once, regardless
+  of how many times the kit request a check for it. - Fixes #339
+
+- Instead of not allowing Genesis to run if you have a bad $LANG env var set,
+  Genesis will warn you that you may experience garbled output on non-ascii
+  characters.
+
+# Bug Fixes
+
+- No longer allows mixed usage of `kit.features` and deprecated `kit.subkits`.
+  Occurrances of this were rare, but caused anything defined under subkits to
+  be ignored without warning.  This now causes an error.
+
