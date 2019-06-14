@@ -41,8 +41,11 @@ sub opts {
 sub opts_help {
 
 	<<EOF
-  GenesisCommunity Kit Provider Options:
-    This provider doesn't take any further options.
+  Kit Provider `genesis-community`:
+
+    This is a singleton kit provider type that points to the Genesis Community
+    collection of kits hosted on github.com/genesis-community - it is the
+    default provider type and doesn't take any further options.
 EOF
 }
 # }}}
