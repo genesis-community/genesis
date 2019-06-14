@@ -881,7 +881,7 @@ sub {
 		$kit_provider_lookup = "new";
 	}
 
-	waiting_on("\nCollecting informaion on %s kit provider for #C{%s} deployment at #M{%s} ...", $kit_provider_lookup, $top->type, humanize_path($top->path));
+	waiting_on("\nCollecting information on %s kit provider for #C{%s} deployment at #M{%s} ...", $kit_provider_lookup, $top->type, humanize_path($top->path));
 	my %info;
 	eval {
 		%info = $top->kit_provider_info($verbose);

@@ -22,7 +22,7 @@ There are further options, which can be shown using --help.
 ```
 genesis kit-provider
 
-Collecting informaion on current kit provider for concourse deployment at ./work/concourse-deployments ...done.
+Collecting information on current kit provider for concourse deployment at ./work/concourse-deployments ...done.
 
          Type: github
 
@@ -72,9 +72,9 @@ separate file after that) and passing control to that script when a v1 repo
 was detected.
 
 However, with BOSH no longer supporting v1-style manifests, it seemed a good
-time to remove this obsolete funtionality and shrink down the package.  If you
-still need this, any version from v2.5.x or v2.6.x will work for you, as the
-v1 embedded in those versions haven't changed.
+time to remove this obsolete functionality and shrink down the package.  If
+you still need this, any version from v2.5.x or v2.6.x will work for you, as
+the v1 embedded in those versions haven't changed.
 
 # Improvements
 
@@ -88,6 +88,7 @@ v1 embedded in those versions haven't changed.
 # Bug Fixes
 
 - No longer allows mixed usage of `kit.features` and deprecated `kit.subkits`.
-  Occurrances of this were rare, but caused anything defined under subkits to
-  be ignored without warning.  This now causes an error.
+  Occurrences of this were rare, but caused anything defined under `subkits`
+  to be ignored without warning.  This now fails fast with an instructive
+  error message.
 
