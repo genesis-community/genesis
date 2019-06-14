@@ -56,6 +56,7 @@ sub opts_help {
 	my ($class,%config) = @_;
 	bug("%s->new is calling %s->new illegally",$class, __PACKAGE__)
 		if ($class ne __PACKAGE__);
+	use Genesis::Kit::Provider::GenesisCommunity;
 	use Genesis::Kit::Provider::Github;
 
 	<<EOF
@@ -71,6 +72,7 @@ are available.
         The type of kit provider you want to use.  Each provider has further
         options it accepts.
 
+${\Genesis::Kit::Provider::GenesisCommunity->opts_help()}
 ${\Genesis::Kit::Provider::Github->opts_help()}
 EOF
 }

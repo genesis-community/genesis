@@ -66,7 +66,11 @@ sub opts {
 # opts_help - specifies the new/update options understood by this provider {{{
 sub opts_help {
 	<<EOF
-  Github Kit Provider `github` - supports the following options:
+  Kit Provider `github`:
+
+    This is a generic kit provider type for kits backed by Github or Github
+    Enterprise, allowing you to specify the domain url and organization to
+    target your specific provider location.  It supports the following options:
 
     --kit-provider-name <value> (optional, defaults to "Custom Github-based kit provider")
         Provide an understandable label that will be used to refer to this
