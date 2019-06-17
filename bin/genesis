@@ -855,6 +855,7 @@ specified by those options.  See Kit Provider options below for more details.
 OPTIONS
 $GLOBAL_USAGE
   -d, --default       Use default genesis-community provider
+  -v, --verbose       Show details of the kits the current kit provider supports.
 
 ${\Genesis::Kit::Provider->opts_help()}
 
