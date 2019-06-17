@@ -434,7 +434,7 @@ sub usage {
 	my ($rc, $msg, $cmd) = @_;
 	$cmd = $COMMAND unless $cmd;
 	error "$msg\n" if $msg;
-	error $USAGE{$cmd} if ($USAGE{$cmd});
+	error $USAGE{$cmd} if $USAGE{$cmd};
 	exit $rc;
 }
 
