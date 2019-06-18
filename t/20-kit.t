@@ -187,7 +187,7 @@ subtest 'kit downloadable' => sub {
 	my (@kits,@expected);
 
 	lives_ok { @kits = Genesis::Kit->downloadable() } "Can get a list of downloadable kits from Github";
-	@expected = qw(blacksmith bosh cf concourse jumpbox logsearch shield vault);
+	@expected = qw(blacksmith bosh cf concourse jumpbox shield vault);
 	cmp_deeply(\@kits, supersetof(@expected),
 		"Downloadable kits includes at least the core kits known at the time of this writing.");
 	
