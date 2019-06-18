@@ -152,7 +152,7 @@ sub csprintf {
 	my ($fmt, @args) = @_;
 	return '' unless $fmt;
 	my $s = sprintf($fmt, @args);
-	$s =~ s/(#[-IUKRGYBMPCW*]{1,4})\{(.*?)(\})/_colorize($1, $2)/egi;
+	$s =~ s/(#[-IUKRGYBMPCW*]{1,4})\{(.*?)(\})/_colorize($1, $2)/isgem;
 	return $s;
 }
 
