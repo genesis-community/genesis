@@ -109,7 +109,7 @@ jobs:
     serial: true
     plan:
     - do:
-      - aggregate:
+      - in_parallel:
           - { get: git,     trigger: true,  passed: [testflight] }
           - { get: version, trigger: true }
       - task: release-notes
@@ -161,7 +161,7 @@ jobs:
     serial: true
     plan:
     - do:
-      - aggregate:
+      - in_parallel:
           - { get: git,     trigger: true,  passed: [pre] }
           - { get: version, trigger: false, passed: [pre], params: {pre: rc} }
       - put: version
@@ -229,7 +229,7 @@ jobs:
     plan:
     - do:
       - name: inputs
-        aggregate:
+        in_parallel:
           - { get: version, passed: [rc], params: {bump: final} }
           - { get: git,     passed: [rc] }
       - name: release
@@ -278,7 +278,7 @@ jobs:
           bump: patch
 
       - name: notify
-        aggregate:
+        in_parallel:
         - put: notify
           params:
             method: announce

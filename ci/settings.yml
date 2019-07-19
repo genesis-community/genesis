@@ -11,29 +11,29 @@ meta:
     name: starkandwayne/genesis_ci
 
   aws:
-    access_key: (( vault "secret/pipelines/aws/cf-community:access" ))
-    secret_key: (( vault "secret/pipelines/aws/cf-community:secret" ))
+    access_key: ((aws.access_key_id))
+    secret_key: ((aws.secret_access_key))
 
   git:
     name:  Stark & Wayne CI Bot
     email: ci@starkandwayne.com
 
   github:
-    owner: starkandwayne
+    owner: genesis-community
     repo:  genesis
-    private_key:  (( vault "secret/pipelines/github/starkandwayne/ci-bot:private" ))
-    access_token: (( vault "secret/pipelines/github/starkandwayne/ci-bot:access_token" ))
+    private_key:  ((github.private_key))
+    access_token: ((github.access_token))
 
   dockerhub:
-    email:    (( vault "secret/pipelines/dockerfiles/dockerhub:email" ))
-    username: (( vault "secret/pipelines/dockerfiles/dockerhub:username" ))
-    password: (( vault "secret/pipelines/dockerfiles/dockerhub:password" ))
+    email:    ((docker.email))
+    username: ((docker.username))
+    password: ((docker.password))
     repository: starkandwayne/genesis
 
   shout:
-    url:      http://10.200.131.1:7109
-    username: ops
-    password: (( vault "secret/buffalo/lab/concourse/shout/ops:password" ))
+    url:      ((shout.url))
+    username: ((shout.username))
+    password: ((shout.password))
 
 groups:
 - name: generate-ci-image
