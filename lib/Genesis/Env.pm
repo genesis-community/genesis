@@ -695,7 +695,7 @@ sub deploy {
 
 	# Don't do post-deploy stuff if just doing a dry run
 	if ($opts{"dry-run"}) {
-		explain "Dry-run deploymnent complete.  Post-deployment activities will be skipped.";
+		explain "Dry-run deployment complete.  Post-deployment activities will be skipped.";
 		return $ok;
 	}
 
