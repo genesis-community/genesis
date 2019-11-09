@@ -530,7 +530,7 @@ $GLOBAL_USAGE
   secrets-provider  Check or set the secrets provider for the Genesis deployment.
   #G{check-secrets}     Check for missing credentials (passwords, keys, etc.).
   #G{add-secrets}       Generate missing credentials (passwords, keys, etc.).
-  #G{rotate-secrets}    Rrotate credentials (passwords, keys, etc.).
+  #G{rotate-secrets}    Rotate credentials (passwords, keys, etc.).
   #G{manifest}          Generate a redacted BOSH deployment manifest for an environment.
   #G{deploy}            Generate a real manifest using Vault + Cloud Config, and deploy it to BOSH.
   #G{do}                Run an addon script provided by the Kit.  Try `do list`
