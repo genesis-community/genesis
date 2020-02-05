@@ -66,6 +66,22 @@ kit:
     - kilo
 genesis:
   env: snw-lab-dev
+params:
+  api_vm_type: small
+  bbs_vm_type: minimal
+  cell_vm_type: small-highmem
+  diego_vm_type: small
+  doppler_vm_type: minimal
+  errand_vm_type: none
+  loggregator_vm_type: small
+  nats_vm_type: minimal
+  router_vm_type: small
+  postgres_vm_type: large
+  blobstore_vm_type: large
+  syslogger_vm_type: imaginary
+  uaa_vm_type: large
+  crazy_vm_type: none
+
 EOF
 	$snw_lab_dev = $top->load_env('snw-lab-dev');
 
@@ -368,6 +384,60 @@ EOF
 		local $ENV{HOOK_SHOULD_FAIL} = 'yes';
 		ok !$fancy->run_hook('check', env => $snw_lab_dev),
 			"check hooks return non-zero when they fail";
+	}
+
+	{
+		local $ENV{NOCOLOR} = 'yes';
+		$snw_lab_dev->use_cloud_config("$ENV{GENESIS_TOPDIR}/t/cc/sample-lab.yml");
+
+		our ($out, $err, $rc);
+
+		local $ENV{HOOK_SHOULD_CHECK_CC} = 'passes';
+		lives_ok {
+			($out,$err) = output_from(sub {
+				$rc = $fancy->run_hook('check', env => $snw_lab_dev);
+			})
+		} "check hook does not error out when checking cloud-config - values present";
+		ok $rc, "check hook returns true when checking cloud-config - values present";
+		is $out, <<EOF, "check hook contains single values when checking cloud-config - values present";
+  [Checking cloud config]
+  ✔  vm_type 'small' exists
+  ✔  vm_type 'minimal' exists
+  ✔  vm_type 'small-highmem' exists
+  ✔  vm_type 'large' exists
+  ✔  disk_type 'blobstore' exists
+  ✔  disk_type 'postgres' exists
+  ✔  network 'cf-db' exists
+  ✔  network 'cf-core' exists
+  ✔  network 'cf-edge' exists
+  ✔  network 'cf-runtime' exists
+  cloud config [OK]
+EOF
+		is $err, "", "check hook contains no errors when checking cloud-config - values present";
+
+		local $ENV{HOOK_SHOULD_CHECK_CC} = 'failed';
+		lives_ok {
+			($out,$err) = output_from(sub {
+				$rc = $fancy->run_hook('check', env => $snw_lab_dev);
+			})
+		} "check hook does not error out when checking cloud-config - values absent";
+		ok $rc, "check hook returns true when checking cloud-config - values absent";
+		is $out, <<EOF, "check hook contains single values when checking cloud-config - values absent";
+  [Checking cloud config]
+  ✔  vm_type 'small' exists
+  ✔  vm_type 'minimal' exists
+  ✘  vm_type 'none' exists
+  ✘  vm_type 'imaginary' exists
+  ✔  vm_type 'large' exists
+  ✘  network 'unspecified' exists
+  ✔  network 'default' exists
+  ✔  disk_type '5GB' exists
+  ✘  disk_type '15GB' exists
+  cloud config [FAILED]
+EOF
+		is $err, "", "check hook contains no errors when checking cloud-config - values absent";
+
+		$snw_lab_dev->use_cloud_config("");
 	}
 };
 

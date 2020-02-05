@@ -1,0 +1,230 @@
+---
+# cloud-config for sample-lab
+
+networks:
+  # 10.64.0.0/30    (4 hosts)    10.64.0.0 - 10.64.0.3
+  - name: bosh
+    type: manual
+    subnets:
+      - range:   10.64.0.0/23
+        gateway: 10.64.0.1
+        azs: ["z1"]
+        dns: ["10.64.2.2","10.64.2.3"]
+        cloud_properties: {"name":"VM Network"}
+        reserved:
+          - 10.64.0.4 - 10.64.1.254
+        static: [] # 1 (1)
+        # - 10.64.0.0
+
+  # 10.64.0.4/30    (4 hosts)    10.64.0.4 - 10.64.0.7
+  - name: cf-db
+    type: manual
+    subnets:
+      - range:   10.64.0.0/23
+        gateway: 10.64.0.1
+        azs: ["z1"]
+        dns: ["10.64.2.2","10.64.2.3"]
+        cloud_properties: {"name":"VM Network"}
+        reserved:
+          - 10.64.0.1 - 10.64.0.3
+          - 10.64.0.8 - 10.64.1.254
+        static: # 1 (1)
+          - 10.64.0.4
+
+  # 10.64.0.8/30    (4 hosts)    10.64.0.8 - 10.64.0.11
+  - name: shield
+    type: manual
+    subnets:
+      - range:   10.64.0.0/23
+        gateway: 10.64.0.1
+        azs: ["z1"]
+        dns: ["10.64.2.2","10.64.2.3"]
+        cloud_properties: {"name":"VM Network"}
+        reserved:
+          - 10.64.0.1 - 10.64.0.7
+          - 10.64.0.12 - 10.64.1.254
+        static: # 1 (1)
+          - 10.64.0.8
+
+  # 10.64.0.12/30    (4 hosts)    10.64.0.12 - 10.64.0.15
+  - name: vault
+    type: manual
+    subnets:
+      - range:   10.64.0.0/23
+        gateway: 10.64.0.1
+        azs: ["z1"]
+        dns: ["10.64.2.2","10.64.2.3"]
+        cloud_properties: {"name":"VM Network"}
+        reserved:
+          - 10.64.0.1 - 10.64.0.11
+          - 10.64.0.16 - 10.64.1.254
+        static: # 3 (3)
+          - 10.64.0.12 - 10.64.0.14
+
+  # 10.64.0.16/29    (8 hosts)    10.64.0.16 - 10.64.0.23
+  - name: compilation
+    type: manual
+    subnets:
+      - range:   10.64.0.0/23
+        gateway: 10.64.0.1
+        azs: ["z1"]
+        dns: ["10.64.2.2","10.64.2.3"]
+        cloud_properties: {"name":"VM Network"}
+        reserved:
+          - 10.64.0.1 - 10.64.0.15
+          - 10.64.0.24 - 10.64.1.254
+        static: []
+
+  # 10.64.0.24/29    (8 hosts)    10.64.0.24 - 10.64.0.31
+  - name: concourse
+    type: manual
+    subnets:
+      - range:   10.64.0.0/23
+        gateway: 10.64.0.1
+        azs: ["z1"]
+        dns: ["10.64.2.2","10.64.2.3"]
+        cloud_properties: {"name":"VM Network"}
+        reserved:
+          - 10.64.0.1 - 10.64.0.23
+          - 10.64.0.32 - 10.64.1.254
+        static: # 2 (2)
+          - 10.64.0.24 - 10.64.0.25
+
+  # 10.64.0.32/27    (32 hosts)    10.64.0.32 - 10.64.0.63
+  - name: cf-edge
+    type: manual
+    subnets:
+      - range:   10.64.0.0/23
+        gateway: 10.64.0.1
+        azs: ["z1"]
+        dns: ["10.64.2.2","10.64.2.3"]
+        cloud_properties: {"name":"VM Network"}
+        reserved:
+          - 10.64.0.1 - 10.64.0.31
+          - 10.64.0.64 - 10.64.1.254
+        static: # 5 (5)
+          - 10.64.0.32 - 10.64.0.46
+
+  # 10.64.0.64/27    (32 hosts)    10.64.0.64 - 10.64.0.95
+  - name: cf-runtime
+    type: manual
+    subnets:
+      - range:   10.64.0.0/23
+        gateway: 10.64.0.1
+        azs: ["z1"]
+        dns: ["10.64.2.2","10.64.2.3"]
+        cloud_properties: {"name":"VM Network"}
+        reserved:
+          - 10.64.0.1 - 10.64.0.63
+          - 10.64.0.96 - 10.64.1.254
+        static: []
+
+  # 10.64.1.100/30    (4 hosts)    10.64.1.100 - 10.64.1.103
+  - name: jumpbox
+    type: manual
+    subnets:
+      - range:   10.64.0.0/23
+        gateway: 10.64.0.1
+        azs: ["z1"]
+        dns: ["10.64.2.2","10.64.2.3"]
+        cloud_properties: {"name":"VM Network"}
+        reserved:
+          - 10.64.0.1 - 10.64.1.99
+          - 10.64.1.104 - 10.64.1.254
+        static: # 1 (1)
+          - 10.64.1.100
+
+  # 10.64.0.128/26    (64 hosts)    10.64.0.128 - 10.64.0.191
+  - name: cf-core
+    type: manual
+    subnets:
+      - range:   10.64.0.0/23
+        gateway: 10.64.0.1
+        azs: ["z1"]
+        dns: ["10.64.2.2","10.64.2.3"]
+        cloud_properties: {"name":"VM Network"}
+        reserved:
+          - 10.64.0.1 - 10.64.0.127
+          - 10.64.0.192 - 10.64.1.254
+        static: # 10 (10)
+          - 10.64.0.128 - 10.64.0.137
+
+  # 10.64.0.192/26    (64 hosts)    10.64.0.192 - 10.64.0.255
+  - name: base
+    type: manual
+    subnets:
+      - range:   10.64.0.0/23
+        gateway: 10.64.0.1
+        azs: ["z1"]
+        dns: ["10.64.2.2","10.64.2.3"]
+        cloud_properties: {"name":"VM Network"}
+        reserved:
+          - 10.64.0.1 - 10.64.0.191
+          - 10.64.1.0 - 10.64.1.254
+        static: # 10% (6)
+          - 10.64.0.192 - 10.64.0.197
+
+  - name: default
+    type: manual
+    subnets:
+      - range: 10.64.0.0/23
+        gateway: 10.64.0.1
+        azs: ["z1"]
+        dns: ["10.64.2.2","10.64.2.3"]
+        cloud_properties: {"name":"VM Network"}
+        reserved:
+          - 10.64.0.1 - 10.64.0.255
+          - 10.64.1.108 - 10.64.1.254
+        static: # (1)
+          - 10.64.1.107
+
+
+azs:
+  - {"name": "z1","cloud_properties": {"datacenters": [{"name": "Sample-Lab","clusters": [{"cluster1": {}}]}]}}
+
+compilation:
+   az: "z1"
+   network: "compilation"
+   reuse_compilation_vms: true
+   vm_type: "large"
+   workers: 5
+
+disk_types:
+  - {"name": "default","disk_size": 2048}
+  - {"name": "consul","disk_size": 2048}
+  - {"name": "concourse","disk_size": 10240}
+  - {"name": "postgres","disk_size": 4096}
+  - {"name": "blobstore","disk_size": 4096}
+  - {"name": "vault","disk_size": 1024}
+  - {"name": "bosh","disk_size": 65536}
+  - {"name": "shield","disk_size": 2048}
+  - {"name": "jumpbox","disk_size": 51200}
+  - {"name": "prometheus","disk_size": 51200}
+  - {"name":   "5GB", "disk_size":   5120}
+  - {"name":  "10GB", "disk_size":  10240}
+  - {"name": "100GB", "disk_size": 102400}
+
+vm_extensions:
+  - {"name": "cf-elb"}
+  - {"name": "ssh-elb"}
+  - {"name": "50GB_ephemeral_disk"}
+  - {"name": "100GB_ephemeral_disk"}
+  - {"name": "cf-router-network-properties"}
+  - {"name": "cf-tcp-router-network-properties"}
+  - {"name": "diego-ssh-proxy-network-properties"}
+
+vm_types:
+  - {"name": "minimal","cloud_properties": {"cpu": 1,"disk": 10240,"ram": 4096}}
+  - {"name": "small","cloud_properties": {"cpu": 2,"disk": 10240,"ram": 8192}}
+  - {"name": "small-highmem","cloud_properties": {"cpu": 4,"disk": 10240,"ram": 8192}}
+  - {"name": "default","cloud_properties": {"cpu": 1,"disk": 8192,"ram": 2048}}
+  - {"name": "compilation","cloud_properties": {"cpu": 2,"disk": 32768,"ram": 2048}}
+  - {"name": "medium","cloud_properties": {"cpu": 1,"disk": 16384,"ram": 2048}}
+  - {"name": "large","cloud_properties": {"cpu": 2,"disk": 32768,"ram": 2048}}
+  - {"name": "haproxy","cloud_properties": {"cpu": 1,"disk": 8192,"ram": 2048}}
+  - {"name": "blacksmith","cloud_properties": {"cpu": 1,"disk": 10240,"ram": 2048}}
+  - {"name": "jumpbox","cloud_properties": {"cpu": 2,"disk": 10240,"ram": 4096}}
+  - {"name": "concourse-worker","cloud_properties": {"cpu": 2,"disk": 65536,"ram": 4096}}
+  - {"name": "bosh","cloud_properties": {"cpu": 2,"disk": 24576,"ram": 6144}}
+
+
