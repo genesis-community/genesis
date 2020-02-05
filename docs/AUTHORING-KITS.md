@@ -342,7 +342,7 @@ your `kit.yml`:
 credentials:
   base:
     users/admin:
-      password: gen 40
+      password: random 40
 ```
 
 Then, from the template files in the kit, you can use it like
