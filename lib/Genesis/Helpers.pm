@@ -74,10 +74,18 @@ fi
 
 
 bullet() {
-	if [[ $1 == 'x' ]] ; then
-		perl -e 'binmode STDOUT, ":utf8"; printf "\e[31;1m\x{2718} \e[0m"'
-	elif [[ $1 == '√' ]] ; then
-		perl -e 'binmode STDOUT, ":utf8"; printf "\e[32;1m\x{2714} \e[0m"'
+	if [[ "$NOCOLOR" =~ ^(1|yes|true)$ ]] ; then
+		if [[ $1 == 'x' ]] ; then
+			perl -e 'binmode STDOUT, ":utf8"; printf "\x{2718} "'
+		elif [[ $1 == '√' ]] ; then
+			perl -e 'binmode STDOUT, ":utf8"; printf "\x{2714} "'
+		fi
+	else
+		if [[ $1 == 'x' ]] ; then
+			perl -e 'binmode STDOUT, ":utf8"; printf "\e[31;1m\x{2718} \e[0m"'
+		elif [[ $1 == '√' ]] ; then
+			perl -e 'binmode STDOUT, ":utf8"; printf "\e[32;1m\x{2714} \e[0m"'
+		fi
 	fi
 }
 export -f bullet
