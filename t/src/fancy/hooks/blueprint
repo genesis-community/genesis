@@ -21,7 +21,7 @@ declare -a manifests
 manifests=( base.yml )
 
 for want in ${GENESIS_REQUESTED_FEATURES}; do
-  manifests+=( addons/$want.yml )
+  manifests+=( "addons/$want.yml" )
 done
 
 if want_feature foxtrot && \
@@ -39,7 +39,7 @@ if want_feature alpha; then
 fi
 
 if [[ ${HOOK_SHOULD_BE_AIRY:-no} = "yes" ]]; then
-  for x in ${manifests[@]}; do
+  for x in "${manifests[@]}"; do
     echo; echo "  $x"; echo; echo
   done
 else
