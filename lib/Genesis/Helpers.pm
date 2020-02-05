@@ -234,9 +234,15 @@ __ip2dec() {
 export -f __ip2dec
 
 declare -a __checked_cloud_config
+__checked_cloud_config=( '' )
 cloud_config_needs() {
   local __type=${1:?cloud_config_needs() - must specify a type}; shift
   local __name
+	local __unbound_check=0
+	if [[ $- =~ 'u' ]] ; then
+		set +u
+		__unbound_check=1
+	fi
 
   # Special check for static_ips
   if [[ "${__type}" == "static_ips" ]] ; then
@@ -291,7 +297,7 @@ cloud_config_needs() {
   for __want in "$@"; do
     __token="$__name:$__want"
     if ! (IFS=$'\n'; echo "${__checked_cloud_config[*]}") | grep '^'$__token'$' >/dev/null 2>&1 ; then
-      __checked_cloud_config+=($__token)
+      __checked_cloud_config+=("$__token")
       __have=$(spruce json "$GENESIS_CLOUD_CONFIG" | \
         jq -r "if (.${__type}[] | select(.name == \"$__want\")) then 1 else 0 end")
       if [[ -z "$__have" ]]; then
@@ -302,6 +308,8 @@ cloud_config_needs() {
       fi
     fi
   done
+
+  [[ "$__unbound_check" = '1' ]] && set -u
 }
 export -f cloud_config_needs
 
