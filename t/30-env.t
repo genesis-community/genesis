@@ -688,8 +688,8 @@ standalone
 -d
 standalone-thing
 deploy
-$env->{__tmp}/manifest.yml
 --no-redact
+$env->{__tmp}/manifest.yml
 EOF
 		"Deploy should call BOSH with the correct options");
 
@@ -747,6 +747,71 @@ EOF
 			}, "exodus data was written by deployment");
 
 	$director1->stop();
+	teardown_vault();
+};
+subtest 'bosh variables' => sub {
+	local $ENV{GENESIS_BOSH_COMMAND};
+	my ($director1) = fake_bosh_directors(
+		{alias => 'standalone'},
+	);
+	fake_bosh;
+	my $vault_target = vault_ok;
+	Genesis::Vault->clear_all();
+	my $top = Genesis::Top->create(workdir, 'thing', vault=>$VAULT_URL)->link_dev_kit('t/src/fancy');
+	put_file $top->path("standalone.yml"), <<EOF;
+---
+kit:
+  name:    dev
+  version: latest
+  features: []
+
+genesis:
+  env: standalone
+
+params:
+  bosh-variables:
+    something:       valueable
+    cc:              (( grab cc-stuff ))
+    collection:      (( join " " params.extras ))
+    deployment_name: (( grab name ))
+  extras:
+    - 1
+    - 2
+    - 3
+
+EOF
+
+	my $env = $top->load_env('standalone');
+	lives_ok { $env->download_cloud_config(); }
+		"download_cloud_config runs correctly";
+
+	put_file $env->{ccfile}, <<EOF;
+---
+cc-stuff: cloud-config-data
+EOF
+
+	my $varsfile = $env->vars_file();
+	stdout_is(sub {$env->deploy()}, <<EOF, "Deploy should call BOSH with the correct options, including vars file");
+bosh
+-e
+standalone
+-d
+standalone-thing
+deploy
+--no-redact
+-l
+$varsfile
+$env->{__tmp}/manifest.yml
+EOF
+
+	eq_or_diff get_file($env->vars_file), <<EOF, "download_cloud_config calls BOSH correctly";
+cc: cloud-config-data
+collection: 1 2 3
+deployment_name: standalone-thing
+something: valueable
+
+EOF
+
 	teardown_vault();
 };
 

@@ -16,13 +16,13 @@ bosh2_cli_ok;
 
 runs_ok "genesis manifest -c cloud.yml test-env >$tmp/manifest.yml";
 eq_or_diff get_file("$tmp/manifest.yml"), <<EOF, "manifest generated based on compile kit";
-name: env-compiled-kit-test
+name: test-env-compiled-kit-test
 version: 0.0.1
 EOF
 
 runs_ok "genesis manifest -c cloud.yml test-env-upgrade >$tmp/manifest.yml";
 eq_or_diff get_file("$tmp/manifest.yml"), <<EOF, "manifest generated based on compile kit";
-name: env-compiled-kit-test
+name: test-env-upgrade-compiled-kit-test
 properties:
   added: stuff
 version: 0.0.2

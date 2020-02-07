@@ -61,8 +61,12 @@ subtest 'bosh create-env' => sub {
 	throws_ok { Genesis::BOSH->create_env("manifest.yml") }
 		qr/missing 'state' option/i;
 
+	bosh_runs_as("create-env --state state.json -l path/to/vars-file.yml manifest.yml");
+	ok Genesis::BOSH->create_env("manifest.yml", state => "state.json", vars_file => "path/to/vars-file.yml"),
+		"create_env with state file and vars-file should work";
+
 	local $ENV{BOSH_NON_INTERACTIVE} = 'yes';
-	bosh_runs_as("create-env --state state.json -n manifest.yml");
+	bosh_runs_as("-n create-env --state state.json manifest.yml");
 	ok Genesis::BOSH->create_env("manifest.yml", state => "state.json"),
 		"create_env honors BOSH_NON_INTERACTIVE";
 };
@@ -83,11 +87,18 @@ subtest 'bosh cloud-config' => sub {
 
 subtest 'bosh deploy' => sub {
 	local $ENV{GENESIS_BOSH_COMMAND};
-	bosh_runs_as("-e my-env -d my-dep deploy manifest.yml --some --flags");
+	bosh_runs_as("-e my-env -d my-dep deploy --some --flags manifest.yml");
 	lives_ok { Genesis::BOSH->deploy("my-env", manifest   => 'manifest.yml',
 	                                           deployment => 'my-dep',
 	                                           flags      => ['--some', '--flags']); }
 		"deploy should pass through options and flags properly";
+
+	bosh_runs_as("-e my-env -d my-dep deploy --some --flags -l path/to/vars-file.yml manifest.yml");
+	lives_ok { Genesis::BOSH->deploy("my-env", manifest   => 'manifest.yml',
+	                                           deployment => 'my-dep',
+	                                           vars_file  => "path/to/vars-file.yml",
+	                                           flags      => ['--some', '--flags']); }
+		"deploy should pass through vars-file, options and flags properly";
 
 	throws_ok { Genesis::BOSH->deploy } qr/missing bosh environment name/i;
 	throws_ok { Genesis::BOSH->deploy("an-env") }
