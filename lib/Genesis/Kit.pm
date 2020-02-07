@@ -232,7 +232,14 @@ sub run_hook {
 # metadata - {{{
 sub metadata {
 	my ($self) = @_;
-	return $self->{__metadata} ||= load_yaml_file($self->path('kit.yml'));
+	if (! $self->{__metadata}) {
+		if (! -f $self->path('kit.yml')) {
+			debug "#Y[WARNING] Kit %s is missing it's kit.yml file -- cannot load metadata", $self->name;
+			return {}
+		}
+		$self->{__metadata} = load_yaml_file($self->path('kit.yml'));
+	}
+	return $self->{__metadata};
 }
 
 # }}}
