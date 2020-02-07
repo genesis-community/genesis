@@ -70,7 +70,9 @@ sub load {
 	my $kit_name = $env->lookup('kit.name');
 	my $kit_version = $env->lookup('kit.version');
 	$env->{kit} = $env->{top}->local_kit_version($kit_name, $kit_version)
-			or bail "Unable to locate v$kit_version of `$kit_name` kit for '$env->{name}' environment.";
+		or bail "Unable to locate v$kit_version of `$kit_name` kit for '$env->{name}' environment.";
+	$env->{kit}->check_prereqs()
+		or bail "Cannot use the selected kit.\n";
 
 	my $min_version = $env->lookup(['genesis.min_version','params.genesis_version_min'],'');
 	$min_version =~ s/^v//i;
