@@ -449,7 +449,6 @@ meta:
 exodus:  {}
 genesis: {}
 params:  {}
-name:    (( concat genesis.env "-$type" ))
 EOF
 	} else {
 		mkfile_or_fail("$self->{__tmp}/init.yml", 0644, <<EOF);
@@ -461,13 +460,13 @@ genesis: {}
 params:
   env:  (( grab genesis.env ))
   name: (( concat genesis.env || params.env "-$type" ))
-name: (( grab params.name ))
 EOF
 	}
 
 	my $now = strftime("%Y-%m-%d %H:%M:%S +0000", gmtime());
 	mkfile_or_fail("$self->{__tmp}/fin.yml", 0644, <<EOF);
 ---
+name: (( concat genesis.env || params.env "-$type" ))
 exodus:
   version:     $Genesis::VERSION
   dated:       $now
