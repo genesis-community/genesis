@@ -118,10 +118,13 @@ sub create_env {
 	bug("Missing 'state' option in call to create_env()!!")
 		unless $opts{state};
 
+	$opts{flags} ||= [];
+	push(@{$opts{flags}}, '--state', $opts{state});
+	push(@{$opts{flags}}, '-l', $opts{vars_file}) if ($opts{vars_file});
+
 	return _bosh({ interactive => 1, passfail => 1 },
-		'bosh', 'create-env', '--state', $opts{state},
-		$ENV{BOSH_NON_INTERACTIVE} ? '-n' : (),
-		$manifest);
+		'bosh', $ENV{BOSH_NON_INTERACTIVE} ? '-n' : (),
+		'create-env',  @{$opts{flags}}, $manifest);
 }
 
 sub download_cloud_config {
@@ -144,13 +147,13 @@ sub deploy {
 		bug("Missing '$o' option in call to deploy()!!")
 			unless $opts{$o};
 	}
-
+	$opts{flags} ||= [];
+	push(@{$opts{flags}}, "-l", $opts{vars_file}) if ($opts{vars_file});
 
 	return _bosh({ interactive => 1, passfail => 1 },
 		'bosh', '-e', $env, '-d', $opts{deployment},
 		$ENV{BOSH_NON_INTERACTIVE} ? '-n' : (),
-		'deploy', $opts{manifest}, @{ $opts{flags} || [] });
-
+		'deploy', @{$opts{flags}}, $opts{manifest});
 }
 
 sub alias {

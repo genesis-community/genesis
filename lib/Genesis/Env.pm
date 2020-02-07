@@ -6,6 +6,7 @@ use Genesis;
 use Genesis::Legacy; # but we'd rather not
 use Genesis::BOSH;
 use Genesis::UI;
+use Genesis::IO qw/DumpYAML/;
 use Genesis::Vault;
 
 use POSIX qw/strftime/;
@@ -470,6 +471,26 @@ sub cached_manifest_info {
 	return (wantarray ? ($mpath, $exists, $sha1) : $mpath);
 }
 
+sub vars_file {
+	my ($self, $file) = @_;
+
+	# Check if manifest currently has params.variable-values hash, and if so,
+	# build a variables.yml file in temp directory and return a path to it
+	# (return undef otherwise)
+
+	return $self->{_vars_file} if ($self->{_vars_file} && -f $self->{_vars_file});
+
+	my $vars = $self->manifest_lookup('params.bosh-variables');
+	if ($vars && ref($vars) eq "HASH" && scalar(keys %$vars) > 0) {
+		my $vars_file = "$self->{__tmp}/bosh-vars.yml";
+		DumpYAML($vars_file,$vars);
+		dump_var "BOSH Variables File" => $vars_file, "Contents" => slurp($vars_file);
+		return $self->{_vars_file} = $vars_file;
+	} else {
+		return undef
+	}
+}
+
 sub _yaml_files {
 	my ($self) = @_;
 	my $vault_path = $self->vault_path;
@@ -680,6 +701,7 @@ sub deploy {
 		debug("deploying this environment via `bosh create-env`, locally");
 		$ok = Genesis::BOSH->create_env(
 			"$self->{__tmp}/manifest.yml",
+			vars_file => $self->vars_file,
 			state => $self->path(".genesis/manifests/$self->{name}-state.yml"));
 
 	} else {
@@ -695,6 +717,7 @@ sub deploy {
 		debug("deploying this environment to our BOSH director");
 		$ok = Genesis::BOSH->deploy(
 			$self->bosh_target,
+			vars_file => $self->vars_file,
 			manifest   => "$self->{__tmp}/manifest.yml",
 			deployment => $self->deployment,
 			flags      => \@bosh_opts);
