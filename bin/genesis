@@ -856,6 +856,7 @@ OPTIONS
 $GLOBAL_USAGE
   -d, --default       Use default genesis-community provider
   -v, --verbose       Show details of the kits the current kit provider supports.
+      --export-config Export the current kit provider information.
 
 ${\Genesis::Kit::Provider->opts_help()}
 
@@ -866,7 +867,12 @@ sub {
 	options(\@_, \%options, qw/
 		default|d
 		verbose|v
+		export-config
 	/);
+	my $cfg_export = delete($options{'export-config'});
+	bail "Option #M{--export-config} cannot be used with any other options"
+		if ($cfg_export && scalar(keys(%options)));
+
   my $verbose = delete($options{verbose});
 	if (delete($options{default})) {
 		$options{'kit-provider'} = 'genesis-community';
@@ -884,6 +890,11 @@ sub {
 			exit 1;
 		}
 		$kit_provider_lookup = "new";
+	}
+
+	if ($cfg_export) {
+		printf "%s\n", JSON::PP::encode_json({$top->kit_provider->config});
+		exit 0
 	}
 
 	waiting_on("\nCollecting information on %s kit provider for #C{%s} deployment at #M{%s} ...", $kit_provider_lookup, $top->type, humanize_path($top->path));
