@@ -126,5 +126,62 @@ releases:
 - name: foo
   version: 1.2.3-rc.1
 EOF
+
+# Test -C option
+my $alt_dir =  $tmp."/elsewhere";
+mkdir $alt_dir;
+chdir $alt_dir;
+my $configdir = "$TOPDIR/t/repos/manifest-test";
+
+
+runs_ok "genesis -C $configdir manifest -c init-cloud.yml create-env-sandbox >manifest.yml 2>error.txt";
+eq_or_diff get_file("error.txt"), <<EOF, "manifest for bosh-init/create-env scenario warns that a cloud config file was provided (-C option) ";
+\e[1;33m[Warning]\e[0m The specified cloud-config will be ignored as create-env environments do not use them.
+EOF
+eq_or_diff get_file("manifest.yml"), <<EOF, "manifest for bosh-int/create-env scenario ignores provided cloud config file, and doesn't prune cloud-y datastructures (-C option)";
+azs:
+- name: z1
+disk_pools:
+- name: pool-1
+disk_types:
+- name: persistent-1
+jobs:
+- name: thing
+  properties:
+    domain: create-env.example.com
+    endpoint: https://create-env.example.com:8443
+  templates:
+  - name: bar
+    release: foo
+name: create-env-sandbox-manifest-test
+networks:
+- name: mynet
+releases:
+- name: foo
+  version: 1.2.3-rc.1
+resource_pools:
+- name: small
+vm_extensions:
+- vm_ext_1
+EOF
+
+$ENV{PREVIOUS_ENV} = "us-cache-test";
+runs_ok "genesis -C $configdir/us-west-1-sandbox.yml manifest -c init-cloud.yml  >manifest.yml";
+eq_or_diff get_file("manifest.yml"), <<EOF, "manifest is generated using cached files if PREVIOUS_ENV variable is set (-C option with yml)";
+cached_value: is_present
+jobs:
+- name: thing
+  properties:
+    domain: us-west-1-sandbox.us-west-1.example.com
+    endpoint: https://us-west-1-sandbox.us-west-1.example.com:8443
+  templates:
+  - name: bar
+    release: foo
+name: us-west-1-sandbox-manifest-test
+releases:
+- name: foo
+  version: 1.2.3-rc.1
+EOF
+chdir $TOPDIR;
 teardown_vault();
 done_testing;
