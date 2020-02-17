@@ -4,6 +4,7 @@ use warnings;
 
 use Genesis;
 use Genesis::Helpers;
+use Genesis::Top;
 use Getopt::Long qw/GetOptionsFromArray/;
 
 ### Class Methods {{{
@@ -32,7 +33,21 @@ sub init {
 	bug("%s->init is calling %s->init illegally",$class, __PACKAGE__)
 		if ($class ne __PACKAGE__);
 
-	if (!defined($opts{'kit-provider'}) || $opts{'kit-provider'} eq "genesis-community") {
+	if (defined($opts{'kit-provider-config'})) {
+		my $provider;
+		if (-d $opts{'kit-provider-config'} && -f $opts{'kit-provider-config'}.'/.genesis/config') {
+			# Pointing at existing genesis repo
+			$provider = Genesis::Top->new($opts{'kit-provider-config'})->kit_provider();
+		} elsif (-f $opts{'kit-provider-config'} ) {
+			# specific yaml file
+			my $config = Genesis::IO->LoadFile($opts{'kit-provider-config'});
+			$provider = Genesis::Kit::Provider->new(%$config);
+		} else {
+			bail("Unable to read kit-provider config: expecting either a Genesis deployment repo or a YAML/JSON file");
+		}
+		# TODO: Allow other options to update/override config values
+		return $provider;
+	} elsif (!defined($opts{'kit-provider'}) || $opts{'kit-provider'} eq "genesis-community") {
 		use Genesis::Kit::Provider::GenesisCommunity;
 		return Genesis::Kit::Provider::GenesisCommunity->init(%opts);
 	} elsif ($opts{'kit-provider'} eq 'github') {
@@ -71,6 +86,11 @@ are available.
     --kit-provider <type> (optional, defaults to "genesis-community")
         The type of kit provider you want to use.  Each provider has further
         options it accepts.
+
+    --kit-provider-config <file> (optional)
+        Instead of specifying all the separate kit provider options, you can
+        specify an existing configuration to use, or an existing Genesis
+        deployment repository.
 
 ${\Genesis::Kit::Provider::GenesisCommunity->opts_help()}
 ${\Genesis::Kit::Provider::Github->opts_help()}
