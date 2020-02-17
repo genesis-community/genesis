@@ -506,7 +506,24 @@ sub options {
 
 	$ENV{GENESIS_BOSH_ENVIRONMENT} = delete($options->{environment})
 		if $options->{environment};
-	chdir_or_fail(delete($options->{cwd})) if $options->{cwd};
+
+	if ($options->{cwd}) {
+		my $cwd = abs_path(delete($options->{cwd}));
+		if ( -f $cwd ) {
+			unshift(@$args, basename($cwd));
+			$cwd = dirname($cwd);
+		}
+		if (-d $cwd) {
+			while (! -d $cwd."/.genesis") {
+				$cwd = dirname($cwd);
+				bail "Cannot find genesis deployment repo base directory under $options->{cwd}"
+				  if $cwd eq "/";
+			}
+			chdir_or_fail($cwd)
+		} else {
+			bail "Cannot locate directory '$cwd' specified by -C option"
+		}
+	}
 }
 
 sub command {
