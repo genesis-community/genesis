@@ -39,6 +39,8 @@ sub opts {
 # }}}
 # opts_help - specifies the new/update options understood by this provider {{{
 sub opts_help {
+	my ($self,%config) = @_;
+	return '' unless grep {$_ eq 'genesis-community'} (@{$config{valid_types}});
 
 	<<EOF
   Kit Provider `genesis-community`:
@@ -46,6 +48,7 @@ sub opts_help {
     This is a singleton kit provider type that points to the Genesis Community
     collection of kits hosted on github.com/genesis-community - it is the
     default provider type and doesn't take any further options.
+
 EOF
 }
 # }}}

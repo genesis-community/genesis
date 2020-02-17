@@ -35,7 +35,7 @@ sub init {
 }
 
 # }}}
-# new - create a default genesis-community kit provider {{{
+# new - create a default github kit provider {{{
 sub new {
 	my ($class, %config) = @_;
 	my $credentials;
@@ -59,12 +59,15 @@ sub opts {
 		kit-provider-domain=s
 		kit-provider-org=s
 		kit-provider-tls=s
+		kit-provider-access-token=s
 		/;
 }
 
 # }}}
 # opts_help - specifies the new/update options understood by this provider {{{
 sub opts_help {
+	my ($self,%config) = @_;
+	return '' unless grep {$_ eq 'github'} (@{$config{valid_types}});
 	<<EOF
   Kit Provider `github`:
 

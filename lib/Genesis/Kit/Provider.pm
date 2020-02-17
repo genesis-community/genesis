@@ -74,12 +74,14 @@ sub opts_help {
 	use Genesis::Kit::Provider::GenesisCommunity;
 	use Genesis::Kit::Provider::Github;
 
+	$config{type_default_msg} ||= '(optional, defaults to "genesis-community")';
+	$config{valid_types} ||= [qw(genesis-community github)];
+
 	<<EOF
 KIT PROVIDERS
 
-By default, kits are available from the Genesis Community Github organizations,
-which requires no further options.  However, the following kit provider types
-are available.
+While the Genesis Community Github organization is the primary source, kits are
+available from various kit providers, each requiring their specific options.
 
   General Kit Provider Options:
 
@@ -92,8 +94,9 @@ are available.
         specify an existing configuration to use, or an existing Genesis
         deployment repository.
 
-${\Genesis::Kit::Provider::GenesisCommunity->opts_help()}
-${\Genesis::Kit::Provider::Github->opts_help()}
+${\Genesis::Kit::Provider::GenesisCommunity->opts_help(%config)
+}${\Genesis::Kit::Provider::Github->opts_help(%config)
+}
 EOF
 }
 
