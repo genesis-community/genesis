@@ -556,3 +556,30 @@ offer_environment_editor() {
   fi
 }
 export -f offer_environment_editor
+
+credhub() {
+	which credhub >/dev/null 2>&1 || __bail "Cannot continue -- missing 'credhub' cli command"
+	local __tmpdir __exodus __bosh_ca_cert __ch_ca_cert __ch_pw __ch_url __ch_user __old_home
+	__tmpdir="__credhub-$$"
+	__old_home="$HOME"
+	if [[ ! -d $__tmpdir ]] ; then
+		mkdir -p $__tmpdir
+		__exodus="$(safe get secret/exodus/$GENESIS_CREDHUB_EXODUS_SOURCE | spruce json | jq -r .)"
+		__bosh_ca_cert="$(echo "$__exodus" | jq -r '.ca_cert')"
+		__ch_ca_cert="$(echo "$__exodus"   | jq -r '.credhub_ca_cert')"
+		__ch_pw="$(echo "$__exodus"        | jq -r '.credhub_password')"
+		__ch_url="$(echo "$__exodus"       | jq -r '.credhub_url')"
+		__ch_user="$(echo "$__exodus"      | jq -r '.credhub_username')"
+
+		HOME="$__tmpdir"
+		command credhub api "$__ch_url" --ca-cert <(echo "$__bosh_ca_cert"; echo "$__ch_ca_cert") >&2 || __bail "Unable to target BOSH credhub"
+		command credhub login -u "$__ch_user" -p "$__ch_pw" >&2 || __bail "Unable to login to BOSH credhub"
+	fi
+	HOME="$__tmpdir"
+	output="$(command credhub "$@")"
+	rc="$?"
+	[[ $rc -eq 0 ]] || __bail --rc $rc "Failed to execute #M{credhub $@}: $output"
+	HOME=$__old_home
+	echo "$output"
+}
+export -f credhub

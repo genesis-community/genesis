@@ -100,6 +100,17 @@ sub run_hook {
 		}
 
 		unless (grep { $_ eq $hook } qw/new prereqs/) {
+			my $credhub_src=$opts{env}->lookup(['genesis.credhub-exodus-env','params.bosh','genesis.env']);
+			my $credhub_path = $credhub_src;
+			if ($credhub_src =~ /\/\w+$/) {
+				$credhub_path  =~ s/\/([^\/]*)$/-$1/;
+			} else {
+				$credhub_src .= "/bosh";
+				$credhub_path .= "-bosh";
+			}
+			$ENV{GENESIS_CREDHUB_EXODUS_SOURCE} = $credhub_src;
+			$ENV{GENESIS_CREDHUB_ROOT}=sprintf("%s/%s-%s", $credhub_path, $opts{env}->name, $opts{env}->type);
+
 			$ENV{GENESIS_REQUESTED_FEATURES} = join(' ', $opts{env}->features);
 			if ($opts{env}->needs_bosh_create_env) {
 				$ENV{GENESIS_USE_CREATE_ENV} = 'yes';
@@ -108,7 +119,7 @@ sub run_hook {
 				for my $var (keys %$bosh) {
 					$ENV{$var} = $bosh->{$var};
 				}
-				$ENV{BOSH_DEPLOYMENT} = $opts{env}->name . '-' . $opts{env}->type;
+				$ENV{BOSH_DEPLOYMENT} = sprintf("%s-%s", $opts{env}->name, $opts{env}->type);
 			}
 		}
 
@@ -240,6 +251,13 @@ sub metadata {
 		$self->{__metadata} = load_yaml_file($self->path('kit.yml'));
 	}
 	return $self->{__metadata};
+}
+
+# }}}
+# uses_credhub - does this kit use credhub instead of vault {{{
+sub uses_credhub {
+	my ($self) = @_;
+	return defined($self->metadata->{secret_store}) && $self->metadata->{uses_credhub} eq "credhub";
 }
 
 # }}}
