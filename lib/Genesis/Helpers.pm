@@ -578,7 +578,7 @@ credhub() {
 	HOME="$__tmpdir"
 	output="$(command credhub "$@")"
 	rc="$?"
-	[[ $rc -eq 0 ]] || __bail --rc $rc "Failed to execute #M{credhub $@}: $output"
+	[[ $rc -eq 0 ]] || __bail --rc $rc "Failed to execute #M{credhub $*}: $output"
 	HOME=$__old_home
 	echo "$output"
 }

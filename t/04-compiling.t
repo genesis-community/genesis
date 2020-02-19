@@ -268,7 +268,7 @@ EOF
 stderr_like {
 		ok(!$cc->validate, "validation should fail when there are unknown top-level keys")
 	}
-	qr/.*Kit Metadata file kit.yml contains invalid top-level keys: by, descriptoin, github, homepage, params, secrets, subkits\n  Valid keys are: name, version, description, code, docs, author, authors, genesis_version_min, certificates, credentials\n/sm,
+	qr/.*Kit Metadata file kit.yml contains invalid top-level keys: by, descriptoin, github, homepage, params, secrets, subkits\n  Valid keys are: name, version, description, code, docs, author, authors, genesis_version_min, secrets_store, credentials, certificates\n/sm,
 	"invalid top-level keys should be reported";
 ok($cc->compile("test", "1.2.3", $tmp, force => 1), "compiling an invalid kit should be allowed with force option");
 

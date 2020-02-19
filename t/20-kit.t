@@ -30,6 +30,7 @@ sub type { "mock-type"; }
 sub secrets_path { "mock/env"; }
 sub needs_bosh_create_env { 0; }
 sub lookup_bosh_target { wantarray ? ('a-bosh', 'params.bosh') : 'a-bosh'; }
+sub lookup { "a-value" }
 sub bosh_target { 'a-bosh'; }
 sub path { "some/path/some/where".($_[1]?"/$_[1]":""); }
 sub vault { $_[0]->{vault} }
