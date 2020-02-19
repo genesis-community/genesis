@@ -169,6 +169,29 @@ subtest 'legacy kit support' => sub {
 	           "legacy kits with subkits should return all relevant yaml files");
 };
 
+subtest 'genesis-community kit provider configuration' => sub {
+	my (%info);
+
+	my $kit_provider = Genesis::Kit::Provider::GenesisCommunity->init();
+	cmp_deeply({$kit_provider->config()}, {
+			type => 'genesis-community',
+		}, "GenesisCommunity kit provider has correct config");
+	lives_ok { %info = $kit_provider->status() } "GenesisCommunity kit provider is reachable";
+	cmp_deeply({%info}, {
+		'type'   => 'genesis-community',
+		'Source' => "Genesis Community organization on Github",
+		'extras' => ['Source'],
+		'kits'   => supersetof(qw/bosh cf jumpbox vault/),
+		'status' => "ok"
+	}, "GenesisCommunity kit provider contains correct provider status information");
+
+	$kit_provider = Genesis::Kit::Provider->init();
+	cmp_deeply({$kit_provider->config()}, {
+			type => 'genesis-community',
+		}, "Default kit provider is the GenesisCommunity kit provider");
+
+};
+
 subtest 'kit urls' => sub {
 	my ($kit, $url, $version);
 	my $provider = Genesis::Kit::Provider->init();

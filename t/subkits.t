@@ -25,7 +25,7 @@ properties:
       secret: haha
     type: s3
 EOF
-eq_or_diff get_file("$tmp/manifest-errors"), <<EOF, "errors from manifest generated with webdav subkit";
+eq_or_diff get_file("$tmp/manifest-errors"), <<EOF, "errors from manifest generated with use-s3 subkit";
 EOF
 
 runs_ok "genesis manifest -c cloud.yml use-webdav 2>$tmp/manifest-errors >$tmp/manifest.yml";
