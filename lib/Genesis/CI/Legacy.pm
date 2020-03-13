@@ -119,7 +119,7 @@ sub parse_pipeline {
 	}
 	for (keys %{$p->{pipeline}}) {
 		push @errors, "Unrecognized `pipeline.$_' key found."
-			unless m/^(name|public|tagged|errands|vault|git|slack|hipchat|stride|email|boshes|task|layout|layouts|debug|stemcells|skip_upkeep|locker|unredacted)$/;
+			unless m/^(name|public|tagged|errands|vault|git|slack|hipchat|stride|email|boshes|task|layout|layouts|groups|debug|stemcells|skip_upkeep|locker|unredacted)$/;
 	}
 	for (qw(name vault git boshes)) {
 		push @errors, "`pipeline.$_' is required."
@@ -335,6 +335,27 @@ sub parse_pipeline {
 						unless m/^(stemcells|url|ca_cert|username|password|alias)$/;
 				}
 			}
+		}
+	}
+
+	# validate groups
+	if (exists $p->{pipeline}{groups}) {
+		if (ref($p->{pipeline}{groups}) eq 'HASH') {
+			my @envsaliases = keys %{$p->{pipeline}{boshes}};
+			push(@envsaliases, map { $p->{pipeline}{boshes}{$_}{alias} } keys %{$p->{pipeline}{boshes}});
+			@envsaliases = grep { defined($_) and $_ ne '' } @envsaliases;
+			for my $group (keys %{$p->{pipeline}{groups}}) {
+				if (ref($p->{pipeline}{groups}{$group}) ne 'ARRAY') {
+					push @errors, "`pipeline.groups.$group' must be an array.";
+				}
+				for my $job (@{$p->{pipeline}{groups}{$group}}) {
+					if ( ! ( grep /^$job$/, @{envsaliases} ) ) {
+						push @errors, "`pipeline.groups.$job' is invalid, must be a bosh env name or alias.";
+					}
+				}
+			}
+		} else {
+			push @errors, "`pipeline.groups' must be a map.";
 		}
 	}
 
@@ -682,12 +703,44 @@ EOF
 	# CONCOURSE: groups, and resource configuration {{{
 	print $OUT <<EOF;
 groups:
+EOF
+	if (ref($pipeline->{pipeline}{groups}) eq 'HASH') {
+		foreach my $group (sort(keys %{$pipeline->{pipeline}{groups}})) {
+			print $OUT <<EOF;
+  - name: $group
+    jobs:
+EOF
+			foreach my $job (sort(@{$pipeline->{pipeline}{groups}{$group}})) {
+				if ( grep ( /^$job$/, @{$pipeline->{envs}} ) ) {
+					my $jobalias = $pipeline->{aliases}{$job};
+					print $OUT "    - $jobalias-".$top->type."\n";
+					if (! $auto{$job}) {
+						print $OUT "    - notify-$jobalias-".$top->type."-changes\n";
+			  	}
+				} else {
+					print $OUT "    - $job-".$top->type."\n";
+					my $autoname = "";
+					for my $env (@{$pipeline->{envs}}) {
+						if ( grep /^$job$/,$pipeline->{pipeline}->{boshes}{$env}{alias} ) {
+							$autoname = $env;
+						}
+					}
+					if (! $auto{$autoname} ) {
+						print $OUT "    - notify-$job-".$top->type."-changes\n";
+					}
+				} 
+			}
+		}
+	} else {
+		print $OUT <<EOF;
   - name: $pipeline->{pipeline}{name}
     jobs:
 EOF
-	print $OUT "    - $_\n" for sort map { "$pipeline->{aliases}{$_}-" . $top->type } @{$pipeline->{envs}};
-	print $OUT "    - notify-$_-changes\n" for sort map { "$pipeline->{aliases}{$_}-" . $top->type }
+
+		print $OUT "    - $_\n" for sort map { "$pipeline->{aliases}{$_}-" . $top->type } @{$pipeline->{envs}};
+		print $OUT "    - notify-$_-changes\n" for sort map { "$pipeline->{aliases}{$_}-" . $top->type }
 		grep { ! $auto{$_} } @{$pipeline->{envs}};
+	}
 
 	print $OUT <<EOF;
 
