@@ -276,62 +276,16 @@ sub actual_environment_files {
 		$self->potential_environment_files;
 }
 
-sub _lookup_key {
-	my ($what, $key) = @_;
-
-	return (1,$what) if $key eq '';
-
-	for (split /[\[\.]/, $key) {
-		if (/^(\d+)\]$/) {
-			return (0,undef) unless ref($what) eq "ARRAY" && scalar(@$what) > $1;
-			$what = $what->[$1];
-		} elsif (/^(.*?)=(.*?)]$/) {
-			return (0,undef) unless ref($what) eq "ARRAY";
-			my $found=0;
-			for (my $i = 0; $i < scalar(@$what); $i++) {
-				if (ref($what->[$i]) eq 'HASH' && defined($what->[$i]{$1}) && ($what->[$i]{$1} eq $2)) {
-					$what = $what->[$i];
-					$found=1;
-					last;
-				}
-			}
-			return (0, undef) unless $found;
-		} else {
-			return (0, undef) if !exists $what->{$_};
-			$what = $what->{$_};
-		}
-	}
-	return (1, $what);
-}
-sub _lookup {
-	my ($what, $keys, $default) = @_;
-	$keys = [$keys] unless ref($keys) eq 'ARRAY';
-	my $found = 0;
-	my ($key,$value);
-	for (@{$keys}) {
-		($found,$value) = _lookup_key($what,$_);
-		if ($found) {
-			$key = $_;
-			last;
-		}
-	}
-	unless ($found) {
-		$key = undef;
-		$value = (ref($default) eq 'CODE') ? $default->() : $default;
-	}
-	return wantarray ? ($value,$key) : $value;
-}
-
 sub lookup {
 	my ($self, $key, $default) = @_;
-	return _lookup($self->params, $key, $default);
+	return struct_lookup($self->params, $key, $default);
 }
 
 
 sub manifest_lookup {
 	my ($self, $key, $default) = @_;
 	my ($manifest, undef) = $self->_manifest(redact => 0);
-	return _lookup($manifest, $key, $default);
+	return struct_lookup($manifest, $key, $default);
 }
 
 sub last_deployed_lookup {
@@ -343,7 +297,7 @@ sub last_deployed_lookup {
 		{ onfailure => "Could not read last deployed manifest for $self->{name}" },
 		'spruce json $1', $last_deployment);
 	my $manifest = load_json($out);
-	return _lookup($manifest, $key, $default);
+	return struct_lookup($manifest, $key, $default);
 }
 
 sub exodus_lookup {
@@ -358,7 +312,7 @@ sub exodus_lookup {
 	bail "Could not get $for exodus data from the Vault: $@" if $@;
 
 	my $exodus = _unflatten($out);
-	return _lookup($exodus, $key, $default);
+	return struct_lookup($exodus, $key, $default);
 }
 
 sub defines {

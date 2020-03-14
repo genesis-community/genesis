@@ -58,6 +58,8 @@ our @EXPORT = qw/
 
 	pushd popd
 
+	struct_lookup
+
 	tcp_listening
 /;
 
@@ -666,6 +668,54 @@ sub tcp_listening {
 		"(</dev/tcp/$host/$port) >/dev/null"
 	);
 }
+
+sub _lookup_key {
+	my ($what, $key) = @_;
+
+	return (1,$what) if $key eq '';
+
+	for (split /[\[\.]/, $key) {
+		if (/^(\d+)\]$/) {
+			return (0,undef) unless ref($what) eq "ARRAY" && scalar(@$what) > $1;
+			$what = $what->[$1];
+		} elsif (/^(.*?)=(.*?)]$/) {
+			return (0,undef) unless ref($what) eq "ARRAY";
+			my $found=0;
+			for (my $i = 0; $i < scalar(@$what); $i++) {
+				if (ref($what->[$i]) eq 'HASH' && defined($what->[$i]{$1}) && ($what->[$i]{$1} eq $2)) {
+					$what = $what->[$i];
+					$found=1;
+					last;
+				}
+			}
+			return (0, undef) unless $found;
+		} else {
+			return (0, undef) if !exists $what->{$_};
+			$what = $what->{$_};
+		}
+	}
+	return (1, $what);
+}
+sub struct_lookup {
+	my ($what, $keys, $default) = @_;
+	$keys = [$keys] unless ref($keys) eq 'ARRAY';
+	my $found = 0;
+	my ($key,$value);
+	for (@{$keys}) {
+		($found,$value) = _lookup_key($what,$_);
+		if ($found) {
+			$key = $_;
+			last;
+		}
+	}
+	unless ($found) {
+		$key = undef;
+		$value = (ref($default) eq 'CODE') ? $default->() : $default;
+	}
+	return wantarray ? ($value,$key) : $value;
+}
+
+
 
 # Because x FH args... translates to FH->x args, it is required to monkey-patch
 # IO:File to facilitate printing to different streams instead of STDOUT.  With
