@@ -21,6 +21,9 @@ die "Could not create a clean package staging area\n" if $?;
 system 'cp -a lib pkg/';
 die "Could not copy library into the package staging area\n" if $?;
 
+system 'for f in $(find pkg/lib -name ".*.sw?") ; do rm "$f"; done';
+die "Could not remove swap files in the package staging area\n" if $?;
+
 # ---
 # Version Handling
 # ---
