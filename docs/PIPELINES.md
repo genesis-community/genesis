@@ -270,6 +270,22 @@ pipeline:
       auto *sandbox *preprod
       on-prem-1-sandbox -> on-prem-1-preprod -> on-prem-1-prod
       on-prem-2-sandbox -> on-prem-2-preprod -> on-prem-2-prod
+  
+  groups:
+    default:
+    - sandbox
+    - preprod
+    - prod
+
+    onprem1:
+    - on-prem-1-sandbox
+    - on-prem-1-preprod
+    - on-prem-1-prod
+
+    onprem2:
+    - on-prem-2-sandbox
+    - on-prem-2-preprod
+    - on-prem-2-prod
 ```
 
 ### Pipeline YAML Field Guide
@@ -434,6 +450,9 @@ pipeline:
 - **pipeline.task.version** - The version of the Docker image to
   use for running tasks.  This defaults to `latest`, which should
   work well for most implementations.
+
+- pipeline.groups - Groups jobs together under a header and show them on 
+different tabs in the user interface. It does not change functionality of the pipeline.
 
 ### Pipeline Configuration
 
