@@ -138,12 +138,14 @@ sub kit_names {
 		my $status = $self->check;
 		bail $status."\n" if $status;
 
+		waiting_on STDERR "Retrieving list of available kits from #C{%s} ... ",$self->label;
 		my ($code, $msg, $data) = curl("GET", $self->repos_url, undef, undef, 0, $self->{credentials});
 		my $results;
 		eval {
 			$results = load_json($data);
 			1
-		} or bail("Failed to read repository information from %s: %s", $self->label, $@);
+		} or bail("#R{error!}\nFailed to read repository information from %s: %s", $self->label, $@);
+		explain '#G{done.}';
 
 		$self->{_kits} = [
 			map  {(my $k = $_) =~ s/-genesis-kit$//; $k}
@@ -185,9 +187,11 @@ sub kit_releases {
 		bail "$status"."\n" if $status;
 
 		my ($msg,$data);
+		waiting_on STDERR "Retrieving list of available releases for #M{%s} kit on #C{%s} ... ",$name,$self->label;
 		($code, $msg, $data) = curl("GET", $url, undef, undef, 0, $self->{credentials});
-		bail("Could not find Genesis Kit %s release information; Github rsponded with a %s status:\n%s",$name,$code,$msg)
-		unless $code == 200;
+		bail("#R{error!}\nCould not find Genesis Kit %s release information; Github rsponded with a %s status:\n%s",$name,$code,$msg)
+			unless $code == 200;
+		explain "#G{done.}";
 
 		my $results;
 		eval {
@@ -272,7 +276,7 @@ sub fetch_kit_version {
 		unless $code == 200;
 
 	my $file = "$path/$name-$version.tar.gz";
-	mkfile_or_fail($file, 0400, $data);
+	mkfile_or_fail($file, 0644, $data);
 	debug("downloaded kit #M{%s}/#C{%s}: %s bytes", $name, $version, length($data));
 
 	return ($name,$version,$file);
@@ -284,7 +288,7 @@ sub latest_version_of {
 	bail("Missing name for retrieving kit releases") unless $name;
 	my $version = (
 		grep {$_->{url}}
-		$self->kit_versions($name, include_drafts => $opts{include_drafts}, include_prerelease => $opts{include_prereleases})
+		$self->kit_versions($name, latest => 1, include_drafts => $opts{include_drafts}, include_prerelease => $opts{include_prereleases})
 	)[0];
 	return $version && $version->{version};
 }

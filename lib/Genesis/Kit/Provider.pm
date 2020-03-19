@@ -138,6 +138,11 @@ sub parse_opts {
 
 ### Instance Methods {{{
 
+# label - unified access for identifying name for this provider in human-readable form {{{
+sub label {
+	$_[0]->{label};
+}
+# }}}
 # config - provides the config hash used to specify this provider (abstract) {{{
 sub config {
 	my ($self) = @_;
