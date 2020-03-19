@@ -4,7 +4,10 @@ use warnings;
 
 use base 'Genesis::Kit::Provider';
 use Genesis;
+use Genesis::UI;
 use Genesis::Helpers;
+
+use Digest::SHA1 qw/sha1_hex/;
 
 use constant {
 	DEFAULT_DOMAIN => 'github.com',
@@ -145,7 +148,7 @@ sub kit_names {
 			$results = load_json($data);
 			1
 		} or bail("#R{error!}\nFailed to read repository information from %s: %s", $self->label, $@);
-		explain '#G{done.}';
+		explain STDERR '#G{done.}';
 
 		$self->{_kits} = [
 			map  {(my $k = $_) =~ s/-genesis-kit$//; $k}
@@ -191,7 +194,7 @@ sub kit_releases {
 		($code, $msg, $data) = curl("GET", $url, undef, undef, 0, $self->{credentials});
 		bail("#R{error!}\nCould not find Genesis Kit %s release information; Github rsponded with a %s status:\n%s",$name,$code,$msg)
 			unless $code == 200;
-		explain "#G{done.}";
+		explain STDERR "#G{done.}";
 
 		my $results;
 		eval {
@@ -271,12 +274,30 @@ sub fetch_kit_version {
 	my $url = $version_info->{url};
 	bail "Version $name/$version does not have a downloadable release\n" unless $url;
 
+	waiting_on STDERR "Downloading v%s of #M{%s} kit from #C{%s} ... ",$version,$name,$self->label;
 	my ($code, $msg, $data) = curl("GET", $url);
-	bail "Failed to download %s/%s from %s: returned a %s status code\n", $name, $version, $self->label, $code
+	bail "#R{error!}\nFailed to download %s/%s from %s: returned a %s status code\n", $name, $version, $self->label, $code
 		unless $code == 200;
-
+	explain STDERR "#G{done.}";
 	my $file = "$path/$name-$version.tar.gz";
-	mkfile_or_fail($file, 0644, $data);
+	if (-f $file) {
+		my $old_data;
+		open(my $fh, '<', $file) or bail "#R{[ERROR]} Existing copy of kit $name/$version exists, but could not be read";
+		{ local $/; $old_data = <$fh>; }
+		close $fh;
+		if (sha1_hex($data) eq sha1_hex($old_data)) {
+			bail "#Y{[WARNING]} Exact same kit already exists under .genesis/kits - no change.\n";
+		} else {
+			error "#R{[ERROR]} Kit $name/$version already exists, but is different!";
+			die_unless_controlling_terminal;
+			my $overwrite = prompt_for_boolean("Do you want to overwrite the existing file with the content downloaded from\n$self->{label}",0);
+			bail "Aborted!\n" unless $overwrite;
+			chmod_or_fail(0600, $file);
+		}
+	}
+	mkfile_or_fail($file, 0400, $data);
+
+	# TODO: Add to gt
 	debug("downloaded kit #M{%s}/#C{%s}: %s bytes", $name, $version, length($data));
 
 	return ($name,$version,$file);
