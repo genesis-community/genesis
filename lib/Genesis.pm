@@ -59,6 +59,7 @@ our @EXPORT = qw/
 	pushd popd
 
 	struct_lookup
+	uniq
 
 	tcp_listening
 /;
@@ -715,6 +716,13 @@ sub struct_lookup {
 	return wantarray ? ($value,$key) : $value;
 }
 
+sub uniq {
+	my (@items,%check);
+	for (@_) {
+		push @items, $_ unless $check{$_}++;
+	}
+	@items
+}
 
 
 # Because x FH args... translates to FH->x args, it is required to monkey-patch
