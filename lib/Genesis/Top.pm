@@ -265,7 +265,7 @@ sub set_vault {
 			$current_vault = (Genesis::Vault->find_by_target($current_vault->{url}))[0];
 		}
 		$new_vault = Genesis::Vault->target(undef, default_vault => $current_vault);
-	} elsif ($opts{target}) {
+	} elsif (exists($opts{target})) {
 		my @candidates = Genesis::Vault->find_by_target($opts{target});
 		return "#R{[Error]} No vault found that matches $opts{target}." unless @candidates;
 		return "#R{[Error]} Target $opts{target} has URL that is not unique across the known vaults on this system."
@@ -486,7 +486,7 @@ sub _write_config {
 	if ($changes{vault}) {
 		$vault_url = $changes{vault}->url;
 		$vault_skip_validate = $changes{vault}->verify ? "false" : "true";
-	} elsif ($self->config()->{secrets_provider}{url}) {
+	} elsif (!exists($changes{vault}) && $self->config()->{secrets_provider}{url}) {
 		$vault_url = $self->config()->{secrets_provider}{url};
 		$vault_skip_validate = $self->config()->{secrets_provider}{insecure} ? "true" : "false";
 	}
@@ -505,7 +505,7 @@ EOF
 		$kit_info =
 		  <<EOF; # {{{
 
-kit_provider: 
+kit_provider:
 EOF
 		my %kit_config = $kit_provider->config;
 		for (keys %kit_config) {
