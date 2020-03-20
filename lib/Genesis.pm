@@ -256,6 +256,7 @@ sub _log {
 
 sub error {
 	my @err = @_;
+	binmode(STDOUT, "encoding(UTF-8)");
 	unshift @err, "%s" if $#err == 0;
 	print STDERR csprintf(@err) . "$/";
 }
@@ -412,6 +413,7 @@ sub run {
 	my (@args) = @_;
 	my %opts = %{((ref($args[0]) eq 'HASH') ? shift @args: {})};
 	$opts{stderr} = '&1' unless exists $opts{stderr};
+	$opts{stderr} = '/dev/null' if defined($opts{stderr}) && $opts{stderr} eq '0';
 
 	my $prog = shift @args;
 	if ($prog !~ /\$\{?[\@0-9]/ && scalar(@args) > 0) {
@@ -622,7 +624,7 @@ sub load_json {
 
 sub load_yaml_file {
 	my ($file) = @_;
-	my ($out, $rc) = run({ stderr => 0 }, 'spruce json "$1"', $file);
+	my ($out, $rc) = run({ stderr => '&1' }, 'spruce json "$1"', $file);
 	return $rc ? undef : load_json($out);
 }
 
