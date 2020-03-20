@@ -288,7 +288,7 @@ sub bullet { # [type,] msg, [{option: value, ...}]
 	$opts{symbol} ||= $type eq "good"  ? "\x{2714} " :
 										$type eq "bad"   ? "\x{2718} " :
 										$type eq "empty" ? "  "        :
-																			 "\x{2022}" ;
+																			 "\x{2022} " ;
 
 	$opts{color}  ||= $type eq "good"  ? "G" :
 										$type eq "bad"   ? "R" :
@@ -298,13 +298,16 @@ sub bullet { # [type,] msg, [{option: value, ...}]
 	$opts{indent} = 2 unless exists($opts{indent});
 
 	binmode(STDOUT, "encoding(UTF-8)");
-	explain("%*.*s%s#%s{%s}%s %s",
-	        $opts{indent},$opts{indent},"",
-	              $opts{box} ? "[" : "",
-	                 $opts{color},
-	                    $opts{symbol},
-	                       $opts{box} ? "]" : "",
-	                          $msg);
+	my $out=sprintf("%*.*s%s#%s{%s}%s %s",
+	                 $opts{indent},$opts{indent},"",
+	                       $opts{box} ? "[" : "",
+	                          $opts{color},
+	                             $opts{symbol},
+	                                $opts{box} ? "]" : "",
+	                                   $msg);
+	return $out if ($opts{inline});
+	explain $out;
+	1;
 }
 
 sub die_unless_controlling_terminal {
