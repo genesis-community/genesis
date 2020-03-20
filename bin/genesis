@@ -420,8 +420,10 @@ sub check_environment {
 
 	if ($ok) {
 		if ($env->needs_bosh_create_env || $env->cloud_config) {
-			explain "[#M{%s}] running manifest viability checks...", $env->name;
-			$env->manifest or $ok = 0;
+			if ($opts{check_manifest}) {
+				explain "[#M{%s}] running manifest viability checks...", $env->name;
+				$env->manifest or $ok = 0;
+			}
 		} else {
 			explain "[#M{%s}] #Y{No cloud config provided - can't check manifest viability}", $env->name;
 		}
@@ -1066,11 +1068,12 @@ $GLOBAL_USAGE
 
 EOF
 sub {
-	my %options = (secrets => 1);
+	my %options = (manifest => 1, secrets => 1);
 	options(\@_, \%options, qw/
 		cloud-config:s
 		no-cloud-config
 		secrets!
+		manifest!
 	/);
 	usage(1) if @_ != 1;
 
@@ -1088,7 +1091,7 @@ sub {
 		$env->download_cloud_config;
 	}
 
-	my $ok = check_environment($env, check_secrets => $options{secrets});
+	my $ok = check_environment($env, check_manifest => $options{manifest}, check_secrets => $options{secrets});
 	if ($ok) {
 		explain "\n[#M{%s}] #G{All Checks Succeeded}", $env->name;
 		exit 0;
