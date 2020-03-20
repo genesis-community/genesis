@@ -7,7 +7,7 @@ use Genesis;
 use Genesis::UI;
 use Genesis::Helpers;
 
-use Digest::SHA1 qw/sha1_hex/;
+use Digest::SHA qw/sha1_hex/;
 
 use constant {
 	DEFAULT_DOMAIN => 'github.com',
