@@ -187,14 +187,14 @@ EOF
 
 # }}}
 
-};
-if ($@) {
-	debug("removing incomplete Genesis deployments repository at #C{$path} due to failed creation");
-	rmtree $path;
-	die $@;
-}
+	};
+	if ($@) {
+		debug("removing incomplete Genesis deployments repository at #C{$path} due to failed creation");
+		rmtree $path;
+		die $@;
+	}
 
-return $self;
+	return $self;
 }
 
 sub kit_provider {

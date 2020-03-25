@@ -152,8 +152,8 @@ author:  $user <$email>
 docs:    https://github.com/cloudfoundry-community/$name-boshrelease
 code:    https://github.com/genesis-community/$name-genesis-kit
 
-# 2.6.0 was our last big feature bump
-genesis_version_min: 2.6.0
+# 2.7.0 was our last big feature bump
+genesis_version_min: 2.7.0
 DONE
 
 # }}}
@@ -268,17 +268,23 @@ set -eu
 # Genesis Kit `new' Hook
 #
 
-cat <<EOF >\$GENESIS_ROOT/\$GENESIS_ENVIRONMENT.yml
+(
+cat <<EOF
 kit:
   name:    \$GENESIS_KIT_NAME
   version: \$GENESIS_KIT_VERSION
   features:
     - (( replace ))
 
-params:
-  env:   \$GENESIS_ENVIRONMENT
-  vault: \$GENESIS_VAULT_PREFIX
 EOF
+
+genesis_config_block
+
+cat <<EOF
+params: {}
+EOF
+) >\$GENESIS_ROOT/\$GENESIS_ENVIRONMENT.yml
+
 exit 0
 DONE
 

@@ -31,7 +31,7 @@ subtest 'kit location' => sub {
 		/);
 		mkfile_or_fail("$tmp/.genesis/config", <<EOF);
 ---
-genesis: 2.6.0
+genesis_version: 2.7.0
 deployment_type: foo
 EOF
 	};
