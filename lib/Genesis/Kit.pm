@@ -240,12 +240,25 @@ sub run_hook {
 		@args = @{ $opts{features} };
 	}
 
-	chmod 0755, $self->path("hooks/$hook");
+	my $hook_exec = $self->path("hooks/$hook");
+	my $hook_name = $hook;
+	if (envset('GENESIS_TRACE')) {
+		open my $file, '<', $hook_exec;
+		my $firstLine = <$file>;
+		close $file;
+		if ($firstLine =~ /(^#!\s*\/bin\/bash(?:$| .*$))/) {
+			run('(echo "$1"; echo "set -x"; cat "$2") > "$3"', $1, $hook_exec, "$hook_exec-trace");
+			$hook_exec .= '-trace';
+			$hook_name .= '-trace';
+		}
+	}
+	chmod 0755, $hook_exec;
+
 	debug ("Running hook now in ".$self->path);
 	my ($out, $rc) = run({ interactive => scalar $hook =~ m/^(addon|new|info|check|secrets|post-deploy|pre-deploy)$/,
 	                       stderr => '&2' },
 		'cd "$1"; source .helper; hook=$2; shift 2; ./hooks/$hook "$@"',
-		$self->path, $hook, @args);
+		$self->path, $hook_name, @args);
 	debug("the kit '$hook' hook exited $rc");
 
 	if ($hook eq 'new') {
