@@ -470,7 +470,7 @@ sub options {
 	GetOptionsFromArray($args, $options,
 		(qw/
 			help|h
-			debug|D
+			debug|D+
 			trace|T+
 			quiet|q
 			cwd|C=s
@@ -490,6 +490,7 @@ sub options {
 
 	$ENV{GENESIS_DEBUG}  = 'y' if $debug || envset "DEBUG";
 	$ENV{GENESIS_TRACE}  = 'y' if $trace;
+	$ENV{GENESIS_TSTAMP} = 'y' if $debug > 1;
 
 	# spruce debugging
 	$ENV{DEBUG}          = 'y' if $trace > 1;
