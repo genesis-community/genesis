@@ -11,8 +11,9 @@ use Data::Dumper;
 use File::Basename qw/basename dirname/;
 use POSIX qw/strftime/;
 use Symbol qw/qualify_to_ref/;
-use Time::Seconds;
+use Time::HiRes qw/gettimeofday/;
 use Time::Piece;
+use Time::Seconds;
 use Cwd ();
 
 $ENV{TZ} = "UTC";
@@ -216,6 +217,10 @@ sub trace {
 sub _log {
 	my ($label, $content, $colors) = @_;
 	my ($gt,$gtc) = (">",$colors);
+	if (envset('GENESIS_TSTAMP')) {
+		my ($s,$us) = gettimeofday;
+		$label = sprintf "%s.%03d %s", localtime($s)->strftime("%H:%M:%S"), $us / 1000, $label;
+	}
 	unless (envset "NOCOLOR") {
 		$gt = "⮀";
 		$gtc = substr($colors,1,1);
@@ -406,6 +411,7 @@ sub run {
 	}
 
 	my @cmd = ($shell, "-c", $prog, @args);
+	my $start_time = gettimeofday();
 	my $out;
 	if ($opts{interactive}) {
 		system @cmd;
@@ -415,6 +421,7 @@ sub run {
 		$out =~ s/\s+$//;
 		close $pipe;
 	}
+	trace("command duratiton: %s", Time::Seconds->new(sprintf ("%0.3f", gettimeofday() - $start_time))->pretty());
 	my $rc = $? >>8;
 	if ($rc) {
 		trace("command exited with status %x (rc %d)", $rc, $rc >> 8);
