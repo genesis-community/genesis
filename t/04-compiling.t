@@ -13,18 +13,19 @@ use_ok 'Genesis::Kit::Compiler';
 use Genesis;
 
 my $tmp = workdir();
-my $cc = Genesis::Kit::Compiler->new("$tmp/test-genesis-kit");
+my $kitdir = $tmp."/test-genesis-kit";
+my $cc = Genesis::Kit::Compiler->new($kitdir);
 
 sub again {
-	system("rm -rf $tmp/test-genesis-kit; mkdir -p $tmp/test-genesis-kit/hooks");
+	system("rm -rf $kitdir; mkdir -p $kitdir");
 	$cc->scaffold("test");
 
 	# add some extra files
-	system("mkdir -p $tmp/test-genesis-kit/ci");
-	put_file("$tmp/test-genesis-kit/ci/pipe.yml", "concourse: is fun\n");
+	system("mkdir -p $kitdir/ci");
+	put_file("$kitdir/ci/pipe.yml", "concourse: is fun\n");
 
 	# git init it
-	system("cd $tmp/test-genesis-kit && git init >/dev/null 2>&1 && git add .");
+	system("cd $kitdir && git init >/dev/null 2>&1 && git add .");
 }
 
 sub quietly(&) {
@@ -36,10 +37,58 @@ sub quietly(&) {
 ##################################
 
 again();
-system("rm -f $tmp/README.md");
+system("rm -f $kitdir/README.md");
 throws_ok { $cc->scaffold; } qr/cowardly refusing/,
 	"scaffold() cowardly refuses to overwrite the target directory";
-ok !-f "$tmp/README.md", "scaffold() should not have re-created missing README";
+ok !-f "$kitdir/README.md", "scaffold() should not have re-created missing README";
+
+##################################
+
+again();
+
+my $new_hook_file = $kitdir . "/hooks/new";
+ok -f $new_hook_file, "basic hooks/new script exists";
+if (-f $new_hook_file) {
+	my $out = qx{
+		shellcheck $new_hook_file -s bash -f json \\
+		| jq -cr '.[] | select(.level == "error" or .level == "warning")'
+	};
+
+	my @msg = ();
+	if ($out ne "") {
+
+		my @lines;
+		open my $handle, '<', $new_hook_file;
+		chomp(@lines = <$handle>);
+		close $handle;
+
+		foreach (split($/, $out)) {
+			my $err   = decode_json($_);
+			my $linen = $err->{line};
+			my $coln  = $err->{column};
+			my $line  = $lines[$linen-1];
+			my $i = 0;
+			while ($i < $coln) {
+				if (substr($line,$i,1) eq "\t") {
+					substr($line, $i, 1) = "  "; # replace tab with 2 spaces
+					$i++;
+					$coln -= 6; # realign column (tabs count as 8 spaces in shellcheck)
+				}
+				$i++;
+			}
+
+			push (@msg, sprintf(
+					"[SC%s - %s] %s:\n%s\n%s^--- [line %d, column %d]",
+					$err->{code}, uc($err->{level}), $err->{message},
+					$line,
+					" " x ($coln-1), $linen, $coln
+			));
+		}
+	}
+
+	ok($out eq "", "hooks/new script should not contain any errors or warnings") or
+		diag "\n".join("\n\n", @msg);
+}
 
 ##################################
 
@@ -49,25 +98,25 @@ ok($cc->validate, "validate should succeed when kit.yml defines all the things")
 ##################################
 
 again();
-unlink("$tmp/test-genesis-kit/kit.yml");
+unlink("$kitdir/kit.yml");
 quietly { ok(!$cc->validate, "validation should fail when kit.yml is missing") };
 
 ##################################
 
 again();
-system("rm -rf $tmp/test-genesis-kit");
+system("rm -rf $kitdir");
 quietly { ok(!$cc->validate, "validation should fail when the root directory is missing") };
 
 ##################################
 
 again();
-put_file("$tmp/test-genesis-kit/kit.yml", "---\n[]");
+put_file("$kitdir/kit.yml", "---\n[]");
 quietly { ok(!$cc->validate, "validation should fail when kit.yml is a list") };
 
 ##################################
 
 again();
-put_file("$tmp/test-genesis-kit/kit.yml", "---\n{}");
+put_file("$kitdir/kit.yml", "---\n{}");
 quietly { ok(!$cc->validate, "validation should fail when kit.yml is empty") };
 
 ##################################
@@ -89,12 +138,12 @@ sub remove {
 }
 for my $field (qw(name code author)) {
 	again();
-	remove("$tmp/test-genesis-kit/kit.yml", qr/^$field:/);
+	remove("$kitdir/kit.yml", qr/^$field:/);
 	quietly { ok(!$cc->validate, "validation should fail when $field is omitted from kit.yml") };
 }
 
 again();
-put_file("$tmp/test-genesis-kit/kit.yml", <<EOF);
+put_file("$kitdir/kit.yml", <<EOF);
 name:    test
 authors: [jhunt, dbell]
 code:    https://www.genesisproject.io
@@ -102,7 +151,7 @@ EOF
 ok($cc->validate, "validation should be happy with authors instead of author in kit.yml");
 
 again();
-put_file("$tmp/test-genesis-kit/kit.yml", <<EOF);
+put_file("$kitdir/kit.yml", <<EOF);
 name:    test
 authors: [jhunt, dbell]
 author:  ghost
@@ -111,7 +160,7 @@ EOF
 quietly { ok(!$cc->validate, "validation should fail if both author and authors in kit.yml") };
 
 again();
-put_file("$tmp/test-genesis-kit/kit.yml", <<EOF);
+put_file("$kitdir/kit.yml", <<EOF);
 name:    test
 authors: |-
   jhunt
@@ -123,7 +172,7 @@ quietly { ok(!$cc->validate, "validation should fail if authors is not a list in
 ##################################
 
 again();
-put_file("$tmp/test-genesis-kit/kit.yml", <<EOF);
+put_file("$kitdir/kit.yml", <<EOF);
 name:    test
 authors: [jhunt, dbell]
 code:    https://www.genesisproject.io
@@ -131,7 +180,7 @@ EOF
 ok($cc->validate, "validation should be happy with authors instead of author in kit.yml");
 
 again();
-put_file("$tmp/test-genesis-kit/kit.yml", <<EOF);
+put_file("$kitdir/kit.yml", <<EOF);
 name:   test
 author: jhunt
 code:   https://www.genesisproject.io
@@ -141,7 +190,7 @@ EOF
 quietly { ok(!$cc->validate, "validation should fail when genesis_min_version is malformed") };
 
 again();
-put_file("$tmp/test-genesis-kit/kit.yml", <<EOF);
+put_file("$kitdir/kit.yml", <<EOF);
 name:   test
 author: jhunt
 code:   https://www.genesisproject.io
@@ -153,7 +202,7 @@ quietly { ok(!$cc->validate, "validation should fail when genesis_version_min is
 ##################################
 #
 again();
-put_file("$tmp/test-genesis-kit/kit.yml", <<EOF);
+put_file("$kitdir/kit.yml", <<EOF);
 name:        test
 version:     1.2.3
 author:      jhunt
@@ -176,7 +225,7 @@ ok($cc->validate, "validation should be happy with all known top-level keys.");
 
 
 again();
-put_file("$tmp/test-genesis-kit/kit.yml", <<EOF);
+put_file("$kitdir/kit.yml", <<EOF);
 name:        test
 version:     1.2.3
 by:          jhunt
@@ -226,13 +275,13 @@ ok($cc->compile("test", "1.2.3", $tmp, force => 1), "compiling an invalid kit sh
 ##################################
 
 again();
-system("mkdir $tmp/test-genesis-kit/hooks/info");
+system("mkdir $kitdir/hooks/info");
 quietly { ok(!$cc->validate, "validation should fail if one of the hook scripts isn't a file") };
 
 ##################################
 
 again();
-system("chmod 644 $tmp/test-genesis-kit/hooks/new");
+system("chmod 644 $kitdir/hooks/new");
 quietly { ok(!$cc->validate, "validation should fail if one of the hook scripts isn't executable") };
 
 ##################################
@@ -257,24 +306,24 @@ cmp_deeply(\%files, {
 	'test-1.2.3/' => superhashof({ mode => 0755 }),
 	'test-1.2.3/README.md' => {
 		'mode' => 0644,
-		'size' => -s "$tmp/test-genesis-kit/README.md",
+		'size' => -s "$kitdir/README.md",
 	},
 	'test-1.2.3/kit.yml' => superhashof({ 'mode' => 0644 }),
 
 	'test-1.2.3/manifests/' => superhashof({ mode => 0755 }),
 	'test-1.2.3/manifests/test.yml' => {
 		'mode' => 0644,
-		'size' => -s "$tmp/test-genesis-kit/manifests/test.yml",
+		'size' => -s "$kitdir/manifests/test.yml",
 	},
 
 	'test-1.2.3/hooks/' => superhashof({ mode => 0755 }),
 	'test-1.2.3/hooks/blueprint' => {
 		'mode' => 0755,
-		'size' => -s "$tmp/test-genesis-kit/hooks/blueprint",
+		'size' => -s "$kitdir/hooks/blueprint",
 	},
 	'test-1.2.3/hooks/new' => {
 		'mode' => 0755,
-		'size' => -s "$tmp/test-genesis-kit/hooks/new",
+		'size' => -s "$kitdir/hooks/new",
 	}
 }, "compiled kit tarball should contain just the files we want");
 
