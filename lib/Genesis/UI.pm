@@ -286,13 +286,13 @@ sub bullet { # [type,] msg, [{option: value, ...}]
 	my (%opts) = @_;
 
 	$opts{symbol} ||= $type eq "good"  ? "\x{2714} " :
-										$type eq "bad"   ? "\x{2718} " :
-										$type eq "empty" ? "  "        :
-																			 "\x{2022} " ;
+	                  $type eq "bad"   ? "\x{2718} " :
+	                  $type eq "empty" ? "  "        :
+                                       "\x{2022} " ;
 
 	$opts{color}  ||= $type eq "good"  ? "G" :
-										$type eq "bad"   ? "R" :
-																			 "-"  ;
+	                  $type eq "bad"   ? "R" :
+	                                     "-"  ;
 
 	$opts{box} = 0 unless exists($opts{box});
 	$opts{indent} = 2 unless exists($opts{indent});
