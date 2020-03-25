@@ -149,11 +149,30 @@ sub _colorize {
 	}
 }
 
+my $in_csprint_debug=0;
 sub csprintf {
 	my ($fmt, @args) = @_;
 	return '' unless $fmt;
-	my $s = sprintf($fmt, @args);
-	$s =~ s/(#[-IUKRGYBMPCW*]{1,4})\{(.*?)(\})/_colorize($1, $2)/isgem;
+	my $s;
+	eval {
+		our @trap_warnings = qw/uninitialized/;
+		push @trap_warnings, qw/missing redundant/ if $^V ge v5.21.0;
+		use warnings FATAL => @trap_warnings;
+		$s = sprintf($fmt, @args);
+	};
+	if ($@) {
+		die $@ unless ($@ =~ /^(Missing|Redundant) argument|Use of uninitialized value/);
+		$s = sprintf($fmt, @args); # run again because the error didn't set it
+		if (!$in_csprint_debug) {
+			$in_csprint_debug = 1;
+			debug("Got warning in csprintf: $@");
+			dump_var(template => $fmt, arguments => \@args);
+			dump_stack();
+			$in_csprint_debug = 0;
+		}
+	}
+
+	$s =~ s/(#[-IUKRGYBMPCW*]{1,4})\{(.*?)(\})/_colorize($1, $2)/egism;
 	return $s;
 }
 
@@ -246,6 +265,9 @@ sub bail {
 
 sub bug {
 	my (@msg) = @_;
+
+	trace "Dying due to bug ".csprintf(@msg);
+	dump_stack;
 
 	if ($Genesis::VERSION =~ /dev/) {
 		$! = 2; die csprintf(@msg)."\n".
