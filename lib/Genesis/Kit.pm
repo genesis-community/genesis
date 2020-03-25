@@ -151,17 +151,17 @@ sub glob {
 
 sub has_hook {
 	my ($self, $hook) = @_;
-	debug("checking the kit for a(n) '$hook' hook");
+	trace("checking the kit for a(n) '$hook' hook");
 	return -f $self->path("hooks/$hook");
 }
 
 sub run_hook {
 	my ($self, $hook, %opts) = @_;
 
-	debug("running the kit '$hook' hook");
 	die "No '$hook' hook script found\n"
 		unless $self->has_hook($hook);
 
+	trace ("running the kit '$hook' hook");
 	local %ENV = %ENV;
 	$ENV{GENESIS_KIT_NAME}     = $self->name;
 	$ENV{GENESIS_KIT_VERSION}  = $self->version;
@@ -249,12 +249,13 @@ sub run_hook {
 	debug("the kit '$hook' hook exited $rc");
 
 	if ($hook eq 'new') {
-		if ($rc != 0) {
-			die "Could not create new env $args[1] (in $args[0]): 'new' hook exited $rc\n";
-		}
-		if (! -f "$args[0]/$args[1].yml") {
-			die "Could not create new env $args[1] (in $args[0]): 'new' hook did not create $args[1].yml\n";
-		}
+		bail("#R{[ERROR]} Could not create new env #C{%s} (in %s): 'new' hook exited %d",
+				 $ENV{GENESIS_ENVIRONMENT}, humanize_path($ENV{GENESIS_ROOT}), $rc)
+			unless ($rc == 0);
+
+		bail("#R{[ERROR]} Could not create new env #C{%s} (in %s): 'new' hook did not create #M{%1\$s}",
+				 $ENV{GENESIS_ENVIRONMENT}, humanize_path($ENV{GENESIS_ROOT}))
+			unless -f sprintf("%s/%s.yml", $ENV{GENESIS_ROOT}, $ENV{GENESIS_ENVIRONMENT});
 		return 1;
 	}
 
