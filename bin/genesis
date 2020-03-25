@@ -482,21 +482,24 @@ sub options {
 
 	usage(0) if $options->{help};
 
-	$ENV{QUIET}         = 'y' if  $options->{quiet};
-	$ENV{GENESIS_DEBUG} = 'y' if  $options->{debug} || envset "DEBUG";
-	$ENV{GENESIS_TRACE} = 'y' if  $options->{trace};
-	$ENV{NOCOLOR}       = 'y' if !$options->{color};
+	$ENV{QUIET}          = 'y' if  delete($options->{quiet});
+	$ENV{NOCOLOR}        = 'y' if !delete($options->{color});
+
+	my $debug = delete($options->{debug}) || 0;
+	my $trace = delete($options->{trace}) || 0;
+
+	$ENV{GENESIS_DEBUG}  = 'y' if $debug || envset "DEBUG";
+	$ENV{GENESIS_TRACE}  = 'y' if $trace;
 
 	# spruce debugging
-	$options->{trace} ||= 0;
-	$ENV{DEBUG}         = 'y' if  $options->{trace} > 1;
-	$ENV{TRACE}         = 'y' if  $options->{trace} > 2;
+	$ENV{DEBUG}          = 'y' if $trace > 1;
+	$ENV{TRACE}          = 'y' if $trace > 2;
 
 	debug("bosh env: ".($options->{environment} || "(defined in environment file)"));
 
-	$ENV{GENESIS_BOSH_ENVIRONMENT} = $options->{environment}
+	$ENV{GENESIS_BOSH_ENVIRONMENT} = delete($options->{environment})
 		if $options->{environment};
-	chdir_or_fail($options->{cwd}) if $options->{cwd};
+	chdir_or_fail(delete($options->{cwd})) if $options->{cwd};
 }
 
 sub command {
