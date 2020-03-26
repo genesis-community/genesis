@@ -268,9 +268,11 @@ sub check_prereqs {
 	return 1 unless $min && semver($min);
 
 	if (!semver($Genesis::VERSION)) {
-		error("#Y{WARNING:} Using a development version of Genesis.");
-		error("Cannot determine if it meets or exceeds the minimum version");
-		error("requirement (v$min) for $id.");
+		unless (under_test && !envset 'GENESIS_TESTING_DEV_VERSION_DETECTION') {
+			error("#Y{WARNING:} Using a development version of Genesis.");
+			error("Cannot determine if it meets or exceeds the minimum version");
+			error("requirement (v$min) for $id.");
+		}
 		return 1;
 	}
 

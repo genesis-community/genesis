@@ -29,6 +29,7 @@ ok ! -f "failed-env.yml",
 	"environment file should not be created, when prereqs fails";
 
 $ENV{SHOULD_FAIL} = '';
+$ENV{GENESIS_TESTING_DEV_VERSION_DETECTION} = 'y';
 reprovision kit =>'version-prereq', compiled => 1;
 ($pass, $rc, $msg) = runs_ok "genesis new using-dev-genesis";
 matches $msg, qr{
