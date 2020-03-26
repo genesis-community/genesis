@@ -494,7 +494,7 @@ sub read_json_from {
 	local $@;
 	my $json;
 	unless ($rc) {
-		eval {load_json($out)};
+		eval {$json = load_json($out)};
 		$err = $@; # previous error was non-fatal, so override
 	}
 	return ($json,$rc,$err) if (wantarray);
