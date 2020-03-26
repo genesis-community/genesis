@@ -351,7 +351,7 @@ genesis:
 EOF
 	my $env = $top->load_env('standalone')->use_cloud_config($top->path('.cloud.yml'));
 
-	cmp_deeply(load_yaml($env->manifest(prune => 0)), {
+	cmp_deeply(scalar load_yaml($env->manifest(prune => 0)), {
 		name   => ignore,
 		fancy  => ignore,
 		addons => ignore,
@@ -376,7 +376,7 @@ EOF
 
 	}, "unpruned manifest should have all the top-level keys");
 
-	cmp_deeply(load_yaml($env->manifest(prune => 1)), {
+	cmp_deeply(scalar load_yaml($env->manifest(prune => 1)), {
 		name   => ignore,
 		fancy  => ignore,
 		addons => ignore,
@@ -422,7 +422,7 @@ EOF
 	my $env = $top->load_env('proto')->use_cloud_config($top->path('.cloud.yml'));
 	ok $env->needs_bosh_create_env, "'proto' test env needs create-env";
 
-	cmp_deeply(load_yaml($env->manifest(prune => 0)), {
+	cmp_deeply(scalar load_yaml($env->manifest(prune => 0)), {
 		name   => ignore,
 		fancy  => ignore,
 		addons => ignore,
@@ -449,7 +449,7 @@ EOF
 
 	}, "unpruned proto-style manifest should have all the top-level keys");
 
-	cmp_deeply(load_yaml($env->manifest(prune => 1)), {
+	cmp_deeply(scalar load_yaml($env->manifest(prune => 1)), {
 		name   => ignore,
 		fancy  => ignore,
 		addons => ignore,

@@ -485,16 +485,19 @@ sub run {
 }
 
 sub lines {
-	my ($out, $rc) = @_;
+	my ($out, $rc, $err) = @_;
 	return $rc ? () : split $/, $out;
 }
 
 sub read_json_from {
-	my ($out, $rc) = @_;
+	my ($out, $rc, $err) = @_;
 	local $@;
-	my $json = eval {load_json($out)};
-	my $err = $@;
-	return  ($json,$rc,$err) if (wantarray);
+	my $json;
+	unless ($rc) {
+		eval {load_json($out)};
+		$err = $@; # previous error was non-fatal, so override
+	}
+	return ($json,$rc,$err) if (wantarray);
 	die $err if $err && $err ne "";
 	return $json;
 }
@@ -638,8 +641,9 @@ sub load_json {
 
 sub load_yaml_file {
 	my ($file) = @_;
-	my ($out, $rc) = run({ stderr => '&1' }, 'spruce json "$1"', $file);
-	return $rc ? undef : load_json($out);
+	my ($out, $rc, $err) = run({ stderr => 0 }, 'spruce json "$1"', $file);
+	my $json = load_json($out) if $rc == 0;
+	return (wantarray) ? ($json,$rc,$err) : $json;
 }
 
 sub load_yaml {
@@ -1031,14 +1035,14 @@ and exit code are returned in a list, otherwise just the output.
     my ($out, $rc, $err) = run('spruce json "$1" | jq -r "$2"', $_, $filter);
 
 
-=head2 lines($out, $rc)
+=head2 lines($out, $rc, $err)
 
 Ignore C<$rc>, and split C<$out> on newlines, returning the resulting list.
 This is best used with C<run()>, like this:
 
     my @lines = lines(run('some command'));
 
-=head2 read_json_from($out, $rc)
+=head2 read_json_from($out, $rc, $err)
 
 Ignore C<$rc>, and parses C<$out> as JSON, returning the resulting structure.
 It is primarily intended to wrap C<run()>, like this:
