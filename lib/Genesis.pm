@@ -500,6 +500,10 @@ sub read_json_from {
 
 sub curl {
 	my ($method, $url, $headers, $data, $skip_verify, $creds) = @_;
+
+	bug("No url provided to Genesis::curl") unless $url;
+	bug("No methhod provided to Genesis::curl") unless $method;
+
 	my $header_opt = "i";
 	if ($method eq "HEAD") {
 		$header_opt = 'I';
@@ -946,18 +950,19 @@ of bells and whistles.
 You can operate this in three modes:
 
     # Single string, embedded arguments
-    my ($out, $rc) = run("safe read a/b/c | spruce json");
+    my ($out, $rc, $err) = run("safe read a/b/c | spruce json");
 
     # Pre-tokenized array of arguments
-    my ($out, $rc) = run('spruce', 'merge', '--skip-eval, @files);
+    my ($out, $rc, $err) = run('spruce', 'merge', '--skip-eval, @files);
 
     # Complicated pipeline, pre-tokenized arguments
-    my ($out, $rc) = run('spruce merge "$1" - "$2" < "$3.yml"',
-                            $file1, $file2, $file3);
+    my ($out, $rc, $err) = run('spruce merge "$1" - "$2" < "$3.yml"',
+                               $file1, $file2, $file3);
 
-In all cases, the output of the command (including STDERR) is returned,
-along with the exit code (without the other bits that normally accompany
-C<$?>).
+In all cases, the output of the command (including STDERR) is returned, along
+with the exit code (without the other bits that normally accompany C<$?>).  If
+you specify C<{stderr => 0}> as an option, the stderr will be made available
+as a third returned value
 
 The third form is recommended as it properly encapsulates/tokenizes the
 arguments to prevent accidental expansion or splitting due to quoting and
@@ -1002,7 +1007,12 @@ generally don't need to set this unless you are doing something strange.
 A shell-specific redirection destination for standard error.  This gets
 appended to the idiom "2>".  Normally, standard error is redirected back
 into standard output.  If you pass this explicitly as C<undef>, standard
-error will B<not> be redirected for you, at all.
+error will B<not> be redirected for you, at all, and will be written directly
+to the terminal.
+
+As a special case, if you specify 0 instead, stderr will be returned as a
+separate third argument, assuming you call C<run> in an list context.  If you
+run it in a scalar context, stderr will be retunred instead of stdout.
 
 =over
 
@@ -1015,7 +1025,7 @@ and exit code are returned in a list, otherwise just the output.
     my $rc = $? >> 8;
 
     # list contex
-    my ($out, $rc) = run('spruce json "$1" | jq -r "$2"', $_, $filter);
+    my ($out, $rc, $err) = run('spruce json "$1" | jq -r "$2"', $_, $filter);
 
 
 =head2 lines($out, $rc)
@@ -1044,9 +1054,9 @@ themselves.
 =head2 curl($method, $url, $headers, $data, $skip_verify, $creds)
 
 Runs the C<curl> command, with the appropriate credentials, and returns the
-status code, status line, and output data to the caller:
+status code, status line, and output data and headers to the caller:
 
-    my ($st, $line, $response) = curl(GET => 'https://example.com');
+    my ($st, $line, $response, $headers) = curl(GET => 'https://example.com');
     if ($st != 200) {
       die "request failed: $line\n";
     }
