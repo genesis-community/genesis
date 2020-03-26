@@ -257,7 +257,7 @@ sub _log {
 
 sub error {
 	my @err = @_;
-	binmode(STDOUT, "encoding(UTF-8)");
+	binmode(STDERR, "encoding(UTF-8)");
 	unshift @err, "%s" if $#err == 0;
 	print STDERR csprintf(@err) . "$/";
 }
