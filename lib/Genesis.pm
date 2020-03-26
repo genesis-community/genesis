@@ -195,9 +195,8 @@ sub debug {
 sub dump_var {
 	return unless envset("GENESIS_DEBUG") || envset("GENESIS_TRACE");
 	my $scope = 0;
-	if ($_[0] =~ '^-\d+$') {
-		$scope = -(shift);
-	}
+	$scope = abs(shift) if ($_[0] =~ '^-?\d+$');
+
 	local $Data::Dumper::Deparse = 1;
 	local $Data::Dumper::Terse   = 1;
 	my (undef, $file, $ln) = caller($scope);
@@ -208,11 +207,13 @@ sub dump_var {
 
 sub dump_stack {
 	return unless envset("GENESIS_DEBUG") || envset("GENESIS_TRACE");
-	my $depth=0;
+	my $scope = 0;
+	$scope = abs(shift) if ($_[0] =~ '^-?\d+$');
+
 	my ($package,$file,$line,$sub,@stack,@info);
 	my ($sub_size, $line_size, $file_size) = (10,4,4);
 
-  while (@info = caller($depth++)) {
+  while (@info = caller($scope++)) {
 		$sub = $info[3];
 		$sub_size  = (sort {$b <=> $a} ($sub_size, length($sub )))[0];
 		if ($file) {
@@ -256,6 +257,7 @@ sub _log {
 
 sub error {
 	my @err = @_;
+	binmode(STDOUT, "encoding(UTF-8)");
 	unshift @err, "%s" if $#err == 0;
 	print STDERR csprintf(@err) . "$/";
 }
@@ -269,8 +271,8 @@ sub bail {
 sub bug {
 	my (@msg) = @_;
 
-	trace "Dying due to bug ".csprintf(@msg);
-	dump_stack;
+	trace "Dying due to bug: ".csprintf(@msg);
+	dump_stack(1);
 
 	if ($Genesis::VERSION =~ /dev/) {
 		$! = 2; die csprintf(@msg)."\n".
@@ -413,6 +415,9 @@ sub run {
 	my %opts = %{((ref($args[0]) eq 'HASH') ? shift @args: {})};
 	$opts{stderr} = '&1' unless exists $opts{stderr};
 
+	my $err_file = $opts{stderr} = workdir().sprintf("/run-%09d.stderr",rand(1000000000))
+		if (defined($opts{stderr}) && $opts{stderr} eq '0' && !$opts{interactive});
+
 	my $prog = shift @args;
 	if ($prog !~ /\$\{?[\@0-9]/ && scalar(@args) > 0) {
 		$prog .= ' "$@"'; # old style of passing in args as array, need to wrap for shell call
@@ -447,13 +452,18 @@ sub run {
 		close $pipe;
 	}
 	trace("command duratiton: %s", Time::Seconds->new(sprintf ("%0.3f", gettimeofday() - $start_time))->pretty());
+
+	my $err = slurp($err_file) if ($err_file && -f $err_file);
 	my $rc = $? >>8;
 	if ($rc) {
-		trace("command exited with status %x (rc %d)", $rc, $rc >> 8);
+		trace("command exited with status %x (rc %d)", $?, $rc);
 		dump_var -1, run_output => $out if (defined($out));
-		if ($opts{onfailure}) {
-			bail("#R{%s} (run failed)%s", $opts{onfailure}, defined($out) ? ":\n$out" :'');
-		}
+		dump_var -1, run_stderr => $err if (defined($err));
+		bail("#R{%s} (run failed)%s%s",
+		     $opts{onfailure},
+		     defined($err) ? "\n\nSTDERR:\n$err" : '',
+		     defined($out) ? "\n\nSTDOUT:\n$out" : ''
+		) if ($opts{onfailure});
 	} else {
 		trace("command exited #G{0}");
 		if (defined($out)) {
@@ -463,32 +473,41 @@ sub run {
 				dump_var -1, run_output => $out;
 			}
 		}
+		dump_var -1, run_stderr => $err if (defined($err));
 	}
+
 	return unless defined(wantarray);
-	return
-		$opts{passfail}    ? $rc == 0 :
-		$opts{interactive} ? (wantarray ? (undef, $rc) : $rc) :
-		$opts{onfailure}   ? $out
-		                   : (wantarray ? ($out,  $rc) : $out);
+	return ($rc == 0) if $opts{passfail};
+	return (wantarray ? (undef, $rc) : $rc) if $opts{interactive};
+	return $out if $opts{onfailure};
+	return ($out,  $rc, $err) if wantarray;
+	return ($rc > 0 && defined($err) ? $err : $out);
 }
 
 sub lines {
-	my ($out, $rc) = @_;
+	my ($out, $rc, $err) = @_;
 	return $rc ? () : split $/, $out;
 }
 
 sub read_json_from {
-	my ($out, $rc) = @_;
+	my ($out, $rc, $err) = @_;
 	local $@;
-	my $json = eval {load_json($out)};
-	my $err = $@;
-	return  ($json,$rc,$err) if (wantarray);
+	my $json;
+	unless ($rc) {
+		eval {load_json($out)};
+		$err = $@; # previous error was non-fatal, so override
+	}
+	return ($json,$rc,$err) if (wantarray);
 	die $err if $err && $err ne "";
 	return $json;
 }
 
 sub curl {
 	my ($method, $url, $headers, $data, $skip_verify, $creds) = @_;
+
+	bug("No url provided to Genesis::curl") unless $url;
+	bug("No methhod provided to Genesis::curl") unless $method;
+
 	my $header_opt = "i";
 	if ($method eq "HEAD") {
 		$header_opt = 'I';
@@ -504,21 +523,18 @@ sub curl {
 	my $status = "";
 	my $status_line = "";
 
-	debug 'Running cURL: `'.'curl -'.$header_opt.'sL $url '.join(' ',@flags).'`';
-	my @data = lines(run({ stderr => 0 }, 'curl', '-'.$header_opt.'sL', $url, @flags));
+	debug 'Running cURL: `'.'curl -'.$header_opt.'sSL $url '.join(' ',@flags).'`';
+	my ($out, $rc, $err) = run({ stderr => 0 }, 'curl', '-'.$header_opt.'sSL', $url, @flags);
+	return (599, "Error executing curl command", $err) if ($rc);
 
-	unless (scalar(@data) && $? == 0) {
-		# curl again to get stdout/err into concourse for debugging
-		run({ interactive => 1 }, 'curl', '-L', $url, @flags);
-		return 599, "Unable to execute curl command", "";
-	}
+	my @data = lines($out,$rc);
 	my $in_header;
 	my @header_data;
 	my $line;
 	while ($line = shift @data) {
 		if ($line =~ m/^HTTP\/\d+(?:\.\d)?\s+((\d+)(\s+.*)?)$/) {
 			$in_header = 1;
-			$status_line = $1;
+			chomp($status_line = $1);
 			$status = $2;
 		}
 		last unless $in_header;
@@ -526,8 +542,11 @@ sub curl {
 		$in_header=0 if ($line =~ /^\s+$/);
 	}
 	unshift @data, $line if defined($line);
-	unshift @data, @header_data if $header_opt eq 'I';
-	return $status, $status_line, join("\n", @data);
+
+	dump_var header => join($/,@header_data);
+	return  $status, $status_line, join($/, @header_data, @data)
+		if ($header_opt eq 'I');
+	return $status, $status_line, join($/, @data), join($/, @header_data);
 }
 
 sub slurp {
@@ -622,8 +641,9 @@ sub load_json {
 
 sub load_yaml_file {
 	my ($file) = @_;
-	my ($out, $rc) = run({ stderr => 0 }, 'spruce json "$1"', $file);
-	return $rc ? undef : load_json($out);
+	my ($out, $rc, $err) = run({ stderr => 0 }, 'spruce json "$1"', $file);
+	my $json = load_json($out) if $rc == 0;
+	return (wantarray) ? ($json,$rc,$err) : $json;
 }
 
 sub load_yaml {
@@ -829,13 +849,15 @@ core contributor figure out why Genesis is being bad in the wild.
 
 Dumps one or more named values to standard error if C<$GENESIS_TRACE> or
 C<$GENESIS_TRACE> environment variables have been set to "truthy".  Optional
-scope level of -1 or less will report the corresponding stack level as the
-source of the output, defaults to the calling scope.
+scope level will report the corresponding stack level adjustment as the
+source of the output, defaults to the calling scope (can be positive or negative)
 
-=head2 dump_stack()
+=head2 dump_stack([$scope])
 
 Dumps the current stack to standard error if C<$GENESIS_TRACE> or
-C<$GENESIS_TRACE> environment variables have been set to "truthy".
+C<$GENESIS_TRACE> environment variables have been set to "truthy".  Optional
+scope level will start that much below the calling scope (can be expressed as
+positive or negative)
 
 =head2 error($fmt, ...)
 
@@ -935,18 +957,19 @@ of bells and whistles.
 You can operate this in three modes:
 
     # Single string, embedded arguments
-    my ($out, $rc) = run("safe read a/b/c | spruce json");
+    my ($out, $rc, $err) = run("safe read a/b/c | spruce json");
 
     # Pre-tokenized array of arguments
-    my ($out, $rc) = run('spruce', 'merge', '--skip-eval, @files);
+    my ($out, $rc, $err) = run('spruce', 'merge', '--skip-eval, @files);
 
     # Complicated pipeline, pre-tokenized arguments
-    my ($out, $rc) = run('spruce merge "$1" - "$2" < "$3.yml"',
-                            $file1, $file2, $file3);
+    my ($out, $rc, $err) = run('spruce merge "$1" - "$2" < "$3.yml"',
+                               $file1, $file2, $file3);
 
-In all cases, the output of the command (including STDERR) is returned,
-along with the exit code (without the other bits that normally accompany
-C<$?>).
+In all cases, the output of the command (including STDERR) is returned, along
+with the exit code (without the other bits that normally accompany C<$?>).  If
+you specify C<{stderr => 0}> as an option, the stderr will be made available
+as a third returned value
 
 The third form is recommended as it properly encapsulates/tokenizes the
 arguments to prevent accidental expansion or splitting due to quoting and
@@ -991,7 +1014,12 @@ generally don't need to set this unless you are doing something strange.
 A shell-specific redirection destination for standard error.  This gets
 appended to the idiom "2>".  Normally, standard error is redirected back
 into standard output.  If you pass this explicitly as C<undef>, standard
-error will B<not> be redirected for you, at all.
+error will B<not> be redirected for you, at all, and will be written directly
+to the terminal.
+
+As a special case, if you specify 0 instead, stderr will be returned as a
+separate third argument, assuming you call C<run> in an list context.  If you
+run it in a scalar context, stderr will be retunred instead of stdout.
 
 =over
 
@@ -1004,17 +1032,17 @@ and exit code are returned in a list, otherwise just the output.
     my $rc = $? >> 8;
 
     # list contex
-    my ($out, $rc) = run('spruce json "$1" | jq -r "$2"', $_, $filter);
+    my ($out, $rc, $err) = run('spruce json "$1" | jq -r "$2"', $_, $filter);
 
 
-=head2 lines($out, $rc)
+=head2 lines($out, $rc, $err)
 
 Ignore C<$rc>, and split C<$out> on newlines, returning the resulting list.
 This is best used with C<run()>, like this:
 
     my @lines = lines(run('some command'));
 
-=head2 read_json_from($out, $rc)
+=head2 read_json_from($out, $rc, $err)
 
 Ignore C<$rc>, and parses C<$out> as JSON, returning the resulting structure.
 It is primarily intended to wrap C<run()>, like this:
@@ -1033,9 +1061,9 @@ themselves.
 =head2 curl($method, $url, $headers, $data, $skip_verify, $creds)
 
 Runs the C<curl> command, with the appropriate credentials, and returns the
-status code, status line, and output data to the caller:
+status code, status line, and output data and headers to the caller:
 
-    my ($st, $line, $response) = curl(GET => 'https://example.com');
+    my ($st, $line, $response, $headers) = curl(GET => 'https://example.com');
     if ($st != 200) {
       die "request failed: $line\n";
     }
