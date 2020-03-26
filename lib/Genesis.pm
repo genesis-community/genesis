@@ -413,7 +413,9 @@ sub run {
 	my (@args) = @_;
 	my %opts = %{((ref($args[0]) eq 'HASH') ? shift @args: {})};
 	$opts{stderr} = '&1' unless exists $opts{stderr};
-	$opts{stderr} = '/dev/null' if defined($opts{stderr}) && $opts{stderr} eq '0';
+
+	my $err_file = $opts{stderr} = workdir().sprintf("/run-%09d.stderr",rand(1000000000))
+		if (defined($opts{stderr}) && $opts{stderr} eq '0' && !$opts{interactive});
 
 	my $prog = shift @args;
 	if ($prog !~ /\$\{?[\@0-9]/ && scalar(@args) > 0) {
@@ -449,13 +451,18 @@ sub run {
 		close $pipe;
 	}
 	trace("command duratiton: %s", Time::Seconds->new(sprintf ("%0.3f", gettimeofday() - $start_time))->pretty());
+
+	my $err = slurp($err_file) if ($err_file && -f $err_file);
 	my $rc = $? >>8;
 	if ($rc) {
-		trace("command exited with status %x (rc %d)", $rc, $rc >> 8);
+		trace("command exited with status %x (rc %d)", $?, $rc);
 		dump_var -1, run_output => $out if (defined($out));
-		if ($opts{onfailure}) {
-			bail("#R{%s} (run failed)%s", $opts{onfailure}, defined($out) ? ":\n$out" :'');
-		}
+		dump_var -1, run_stderr => $err if (defined($err));
+		bail("#R{%s} (run failed)%s%s",
+		     $opts{onfailure},
+		     defined($err) ? "\n\nSTDERR:\n$err" : '',
+		     defined($out) ? "\n\nSTDOUT:\n$out" : ''
+		) if ($opts{onfailure});
 	} else {
 		trace("command exited #G{0}");
 		if (defined($out)) {
@@ -465,13 +472,15 @@ sub run {
 				dump_var -1, run_output => $out;
 			}
 		}
+		dump_var -1, run_stderr => $err if (defined($err));
 	}
+
 	return unless defined(wantarray);
-	return
-		$opts{passfail}    ? $rc == 0 :
-		$opts{interactive} ? (wantarray ? (undef, $rc) : $rc) :
-		$opts{onfailure}   ? $out
-		                   : (wantarray ? ($out,  $rc) : $out);
+	return ($rc == 0) if $opts{passfail};
+	return (wantarray ? (undef, $rc) : $rc) if $opts{interactive};
+	return $out if $opts{onfailure};
+	return ($out,  $rc, $err) if wantarray;
+	return ($rc > 0 && defined($err) ? $err : $out);
 }
 
 sub lines {
@@ -506,21 +515,18 @@ sub curl {
 	my $status = "";
 	my $status_line = "";
 
-	debug 'Running cURL: `'.'curl -'.$header_opt.'sL $url '.join(' ',@flags).'`';
-	my @data = lines(run({ stderr => 0 }, 'curl', '-'.$header_opt.'sL', $url, @flags));
+	debug 'Running cURL: `'.'curl -'.$header_opt.'sSL $url '.join(' ',@flags).'`';
+	my ($out, $rc, $err) = run({ stderr => 0 }, 'curl', '-'.$header_opt.'sSL', $url, @flags);
+	return (599, "Error executing curl command", $err) if ($rc);
 
-	unless (scalar(@data) && $? == 0) {
-		# curl again to get stdout/err into concourse for debugging
-		run({ interactive => 1 }, 'curl', '-L', $url, @flags);
-		return 599, "Unable to execute curl command", "";
-	}
+	my @data = lines($out,$rc);
 	my $in_header;
 	my @header_data;
 	my $line;
 	while ($line = shift @data) {
 		if ($line =~ m/^HTTP\/\d+(?:\.\d)?\s+((\d+)(\s+.*)?)$/) {
 			$in_header = 1;
-			$status_line = $1;
+			chomp($status_line = $1);
 			$status = $2;
 		}
 		last unless $in_header;
@@ -528,8 +534,11 @@ sub curl {
 		$in_header=0 if ($line =~ /^\s+$/);
 	}
 	unshift @data, $line if defined($line);
-	unshift @data, @header_data if $header_opt eq 'I';
-	return $status, $status_line, join("\n", @data);
+
+	dump_var header => join($/,@header_data);
+	return  $status, $status_line, join($/, @header_data, @data)
+		if ($header_opt eq 'I');
+	return $status, $status_line, join($/, @data), join($/, @header_data);
 }
 
 sub slurp {
