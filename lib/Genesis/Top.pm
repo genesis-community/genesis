@@ -6,6 +6,7 @@ use Genesis;
 use Genesis::Env;
 use Genesis::Kit::Compiled;
 use Genesis::Kit::Dev;
+use Genesis::Kit::Provider;
 use Genesis::Vault;
 
 use Cwd ();
@@ -50,9 +51,14 @@ sub create {
 	eval { # to delete path if creation fails
 
 		# Write new configuration
-		$self->_write_config($name, $Genesis::VERSION, Genesis::Vault->target($opts{vault}));
+	$self->_write_config(
+		type         => $name,
+		version      => $Genesis::VERSION,
+		vault        => Genesis::Vault->target($opts{vault}),
+		kit_provider => Genesis::Kit::Provider->init(%opts)
+	);
 
-		$self->mkfile("README.md", # {{{
+	$self->mkfile("README.md", # {{{
 <<EOF);
 $name deployments
 ==============================
@@ -86,48 +92,58 @@ Quickstart
 
 To create a new environment (called us-east-prod-$name):
 
-    genesis new us-east-prod
+  genesis new us-east-prod
 
 To build the full BOSH manifest for an environment:
 
-    genesis manifest us-east-prod
+  genesis manifest us-east-prod
 
 ... and then deploy it:
 
-    genesis deploy us-east-prod
+  genesis deploy us-east-prod
 
 To rotate credentials for an environment:
 
-    genesis rotate-secrets us-east-prod
-    genesis deploy us-east-prod
+  genesis rotate-secrets us-east-prod
+  genesis deploy us-east-prod
 
 To change the secrets provider for the environments in this repo:
 
-    genesis secrets-provider --url https://example.com:8200 --insecure
+  genesis secrets-provider --url https://example.com:8200 --insecure
 
 ... or clear it to use safe's currently targeted vault:
 
-    genesis secrets-provider --clear
+  genesis secrets-provider --clear
+
+By default, the provider for kits is https://github.com/genesis-community, but
+you can set this to another provider url via the `genesis kit-provider`
+command:
+
+  genesis kit-provider https://github.mycorp.com/mygenesiskits
+
+This requires that url to provide releases in the same manner as github does.
+You can see the current kit provider by calling it with no argument, or revert
+back to default with the `--clear` option.
 
 To update the Concourse Pipeline for this repo:
 
-    genesis repipe
+  genesis repipe
 
 To check for updates for this kit:
 
-    genesis list-kits -u
+  genesis list-kits -u
 
 To download a new version of the kit, and deploy it:
 
-    genesis download $name [version] # omitting version downloads the latest
+  genesis download $name [version] # omitting version downloads the latest
 
-    # update the environment yaml to use the desired kit version,
-    # this might be in a different file if using CI to propagate
-    # deployment upgrades (perhaps us.yml)
-    vi us-east-prod.yml
+  # update the environment yaml to use the desired kit version,
+  # this might be in a different file if using CI to propagate
+  # deployment upgrades (perhaps us.yml)
+  vi us-east-prod.yml
 
-    genesis deploy us-east-prod.yml     # or commit + git push to have
-                                        # CI run through the upgrades
+  genesis deploy us-east-prod.yml     # or commit + git push to have
+                                      # CI run through the upgrades
 
 See the [Deployment Pipeline Documentation][3] for more
 information on getting set up with Concourse deployment pipelines.
@@ -181,6 +197,41 @@ EOF
 	return $self;
 }
 
+sub kit_provider {
+
+	my ($self) = @_;
+	unless (exists($self->{_kit_provider})) {
+		$self->{_kit_provider} = Genesis::Kit::Provider->new(%{$self->config->{kit_provider} || {}});
+	}
+	return $self->{_kit_provider};
+}
+
+sub set_kit_provider {
+
+	my ($self, %opts) = @_;
+	my $new_provider;
+
+	# TODO: If needed, provide an interactive wizard to enter provider type and details
+	#	if ($opts{interactive}) {
+	#		$new_provider = Genesis::Kit::Provider->target(undef);
+	#	} else ...
+	eval {
+		waiting_on "\nSetting up new kit provider...";
+		$new_provider = Genesis::Kit::Provider->init(%opts);
+		explain "done.";
+		waiting_on "Writing configuration....";
+		$self->{_kit_provider} = $new_provider;
+		$self->_write_config(kit_provider => $new_provider);
+		explain "done.";
+	};
+	return $@;
+}
+
+sub kit_provider_info {
+	my $self = shift;
+	$self->kit_provider->status(@_);
+}
+
 sub vault {
 	my ($self) = @_;
 	unless ($self->{_vault}) {
@@ -226,7 +277,7 @@ sub set_vault {
 		bug "#R{[Error]} Invalid call to Genesis::Top->set_vault"
 	}
 	$self->{_vault} = $new_vault;
-	$self->_write_config($self->type,$self->version,$new_vault)
+	$self->_write_config(vault => $new_vault)
 		unless $opts{session_only};
 	return;
 }
@@ -285,25 +336,6 @@ sub embed {
 	return 1;
 }
 
-sub download_kit {
-	my ($self, $spec) = @_;
-
-	my ($name, $version) = $spec =~ m{(.*)/(.*)} ? ($1, $2)
-	                                             : ($spec, 'latest');
-
-	(my $url, $version) = Genesis::Kit->url($name, $version);
-
-	mkdir_or_fail($self->path(".genesis"));
-	mkdir_or_fail($self->path(".genesis/kits"));
-	my ($code, $msg, $data) = curl("GET", $url);
-	if ($code != 200) {
-		die "Failed to download $name/$version from $url: Github returned an HTTP ".$msg."\n";
-	}
-	mkfile_or_fail($self->path(".genesis/kits/$name-$version.tar.gz"), 0400, $data);
-	debug("downloaded kit #M{$name}/#C{$version}");
-
-	return ($name,$version);
-}
 
 sub path {
 	my ($self, $relative) = @_;
@@ -323,6 +355,7 @@ sub mkdir {
 
 sub config {
 	my ($self) = @_;
+	return {} unless -f $self->path(".genesis/config");
 	return $self->{_config} ||= load_yaml_file($self->path(".genesis/config"));
 }
 
@@ -369,35 +402,95 @@ sub create_env {
 	);
 }
 
-sub compiled_kits {
+sub local_kits {
 	my ($self) = @_;
 
 	my %kits;
 	for (glob("$self->{root}/.genesis/kits/*")) {
 		next unless m{/([^/]*)-(\d+(\.\d+(\.\d+([.-]rc[.-]?\d+)?)?)?).t(ar.)?gz$};
-		$kits{$1}{$2} = $_;
+		$kits{$1}{$2} = Genesis::Kit::Compiled->new(
+			name     => $1,
+			version  => $2,
+			archive  => $_,
+			provider => $self->kit_provider()
+		);
 	}
 
 	return \%kits;
 }
 
-sub _semver {
-	my ($v) = @_;
-	if ($v =~  m/^(\d+)(?:\.(\d+)(?:\.(\d+)(?:[.-]rc[.-]?(\d+))?)?)?$/) {
-		return  $1       * 1000000000
-		     + ($2 || 0) * 1000000
-		     + ($3 || 0) * 1000
-		     + ($4 || 0) * 1;
-	}
-	return 0;
+sub local_kit_version {
+	my ($self, $name, $version) = @_;
+
+	($name, $version) = ($1, $2)
+		if (!defined($version) && defined($name) && $name =~ m{(.*)/(.*)});
+
+	# local_kit_version('dev') or local_kit_version() with a dev kit present
+	return Genesis::Kit::Dev->new($self->path("dev"))
+		if ((!$name && !$version) || ($name && $name eq 'dev')) && $self->has_dev_kit;
+	return undef if ($name and $name eq 'dev');
+
+	#    local_kit_version() without a dev/ directory
+	# or local_kit_version($name, $version)
+	my $kits = $self->local_kits();
+
+	# we either need a $name, or only one kit type
+	# (i.e. we can autodetect $name for the caller)
+	$name = (keys %$kits)[0] if (!$name && keys(%$kits) == 1);
+	return undef unless $kits->{$name};
+
+	$version = (reverse sort by_semver keys %{$kits->{$name}})[0]
+		if (!defined($version) || $version eq 'latest');
+	return $kits->{$name}{$version};
 }
 
+sub remote_kit_names {
+	my $self = shift;
+	$self->kit_provider->kit_names(@_);
+}
+
+sub remote_kit_versions {
+	my $self = shift;
+	$self->kit_provider->kit_versions(@_);
+}
+
+sub remote_kit_version_info {
+	my ($self, $name, $version) = @_;
+	($name, $version) = ($1, $2)
+		if (!defined($version) && defined($name) && $name =~ m{(.*)/(.*)});
+	$version = $self->kit_provider->latest_version_of($name) unless $version && $version ne 'latest';
+  $self->kit_provider->kit_versions($name, version => $version);
+}
+
+sub download_kit {
+	my ($self, $name, $version) = @_;
+	($name, $version) = ($1, $2)
+		if (!defined($version) && defined($name) && $name =~ m{(.*)/(.*)});
+	$version = $self->kit_provider->latest_version_of($name) unless $version && $version ne 'latest';
+
+	mkdir_or_fail($self->path(".genesis"));
+	mkdir_or_fail($self->path(".genesis/kits"));
+
+	$self->kit_provider->fetch_kit_version($name,$version,$self->path(".genesis/kits"));
+}
+
+
 sub _write_config {
-	my ($self, $type, $version, $vault) = @_;
+	my ($self, %changes) = @_;
+	my $type         = $changes{type}         || $self->type;
+	my $version      = $changes{version}      || $self->version;
+	my $kit_provider = $changes{kit_provider} || $self->kit_provider;
+
 	my $vault_info = "";
-	if ($vault) {
-		my $vault_url = $vault->url;
-		my $vault_skip_validate: = $vault->verify ? "false" : "true";
+	my ($vault_url, $vault_skip_validate);
+	if ($changes{vault}) {
+		$vault_url = $changes{vault}->url;
+		$vault_skip_validate = $changes{vault}->verify ? "false" : "true";
+	} elsif ($self->config()->{secrets_provider}{url}) {
+		$vault_url = $self->config()->{secrets_provider}{url};
+		$vault_skip_validate = $self->config()->{secrets_provider}{insecure} ? "true" : "false";
+	}
+	if ($vault_url) {
 		$vault_info =
 		  <<EOF; # {{{
 
@@ -407,67 +500,36 @@ secrets_provider:
 EOF
 # }}}
 	}
+	my $kit_info = "";
+	if ($kit_provider && ref($kit_provider) ne "Genesis::Kit::Provider::GenesisCommunity") {
+		$kit_info =
+		  <<EOF; # {{{
+
+kit_provider: 
+EOF
+		my %kit_config = $kit_provider->config;
+		for (keys %kit_config) {
+			$kit_info .= qq(  ${_}: "$kit_config{$_}"\n);
+		}
+
+# }}}
+	}
+
 	$self->mkfile(".genesis/config",
 	  <<EOF); # {{{
 ---
 # This file is generated by Genesis - do not edit manually.
 
 deployment_type: $type
-genesis_version: $version$vault_info
+genesis_version: $version$vault_info$kit_info
 EOF
 # }}}
 
 	# reload config and vault
 	$self->{_config} = undef;
-	$self->{_vault} = $vault;
+	$self->{_vault} = $changes{vault};
+	$self->{_kit_provider} = $kit_provider;
 	$self->config;
-}
-
-sub find_kit {
-	my ($self, $name, $version) = @_;
-
-	# find_kit('dev')
-	if ($name and $name eq 'dev') {
-		return $self->has_dev_kit ? Genesis::Kit::Dev->new($self->path("dev"))
-		                          : undef;
-	}
-
-	# find_kit() with a dev/ directory
-	if (!$name and !$version and $self->has_dev_kit) {
-		return Genesis::Kit::Dev->new($self->path("dev"));
-	}
-
-	#    find_kit() without a dev/ directory
-	# or find_kit($name, $version)
-	my $kits = $self->compiled_kits();
-
-	# we either need a $name, or only one kit type
-	# (i.e. we can autodetect $name for the caller)
-	if (!$name) {
-		return undef unless (keys %$kits) == 1;
-		$name = (keys %$kits)[0];
-
-	} else {
-		return undef unless exists $kits->{$name};
-	}
-
-	if (defined $version and $version ne 'latest') {
-		return exists $kits->{$name}{$version}
-		     ? Genesis::Kit::Compiled->new(
-		         name    => $name,
-		         version => $version,
-		         archive => $kits->{$name}{$version})
-		     : undef;
-	}
-
-	my @versions = reverse sort { $a->[1] <=> $b->[1] }
-	                       map  { [$_, _semver($_)] }
-	                       keys %{$kits->{$name}};
-	$version = $versions[0][0];
-	return Genesis::Kit::Compiled->new(
-		name    => $name,
-		version => $version,
-		archive => $kits->{$name}{$version});
 }
 
 1;
@@ -577,7 +639,7 @@ their compiled tarball paths.  For example:
       },
     }
 
-=head2 find_kit([$name, [$version]])
+=head2 local_kit_version([$name || $spec, [$version]])
 
 Looks through the list of compiled kits and returns the correct Genesis::Kit
 object for the requested name/version combination.  Returns C<undef> if no
@@ -595,28 +657,31 @@ the named kit will be done to determine the latest version, per semver.
 Some examples may help to clarify:
 
     # find the 1.0 concourse kit:
-    $top->find_kit(concourse => '1.0');
+    $top->local_kit_version(concourse => '1.0');
 
     # find the latest concourse kit:
-    $top->find_kit(concourse => 'latest');
+    $top->local_kit_version(concourse => 'latest');
 
     # find the latest version of whatever kit we have
-    $top->find_kit(undef, 'latest');
+    $top->local_kit_version(undef, 'latest');
 
     # find version 2.0 of whatever kit we have
-    $top->find_kit(undef, '2.0');
+    $top->local_kit_version(undef, '2.0');
+
+    # find using kit spec string
+    $top->local_kit_version('concourse/1.0.3');
 
     # explicitly use the dev/ kit
-    $top->find_kit('dev');
+    $top->local_kit_version('dev');
 
     # use whatever makes the most sense.
-    $top->find_kit();
+    $top->local_kit_version();
 
 Note that if you omit C<$name>, there is a semantic difference between
 passing C<$version> as "latest" and not passing it (or passing it as
 C<undef>, explicitly).  In the former case (version = "latest"), the latest
 version of the singleton compiled kit is returned.  In the latter case,
-C<find_kit> will check for a dev/ directory and use that if available.
+C<local_kit_version> will check for a dev/ directory and use that if available.
 
 =head2 load_env($name)
 

@@ -10,6 +10,7 @@ use Test::Output;
 use Cwd ();
 
 use_ok 'Genesis::Top';
+use_ok 'Genesis::Kit::Compiled';
 use Genesis;
 my $vault_target = vault_ok();
 
@@ -28,50 +29,100 @@ subtest 'kit location' => sub {
 			unversioned.tar.gz
 			unversioned.tgz
 		/);
+		mkfile_or_fail("$tmp/.genesis/config", <<EOF);
+---
+genesis_version: 2.7.0
+deployment_type: foo
+EOF
 	};
 	my $top = Genesis::Top->new($tmp);
 
 	$again->();
 	ok(!$top->has_dev_kit, "roots without dev/ should not report having a dev kit");
-	cmp_deeply($top->compiled_kits, {
+	cmp_deeply($top->local_kits, {
 			foo => {
-				'0.9.5' => $top->path(".genesis/kits/foo-0.9.5.tar.gz"),
-				'0.9.6' => $top->path(".genesis/kits/foo-0.9.6.tar.gz"),
-				'1.0.0' => $top->path(".genesis/kits/foo-1.0.0.tar.gz"),
-				'1.0.1' => $top->path(".genesis/kits/foo-1.0.1.tgz"),
+				'0.9.5' => bless({
+					'archive'  => $top->path(".genesis/kits/foo-0.9.5.tar.gz"),
+					'name'     => 'foo',
+					'version'  => '0.9.5',
+					'provider' => isa("Genesis::Kit::Provider")
+				}, "Genesis::Kit::Compiled"),
+				'0.9.6' => bless({
+					'archive'  => $top->path(".genesis/kits/foo-0.9.6.tar.gz"),
+					'name'     => 'foo',
+					'version'  => '0.9.6',
+					'provider' => isa("Genesis::Kit::Provider")
+				}, "Genesis::Kit::Compiled"),
+				'1.0.0' => bless({
+					'archive'  => $top->path(".genesis/kits/foo-1.0.0.tar.gz"),
+					'name'     => 'foo',
+					'version'  => '1.0.0',
+					'provider' => isa("Genesis::Kit::Provider")
+				}, "Genesis::Kit::Compiled"),
+				'1.0.1' => bless({
+					'archive'  => $top->path(".genesis/kits/foo-1.0.1.tgz"),
+					'name'     => 'foo',
+					'version'  => '1.0.1',
+					'provider' => isa("Genesis::Kit::Provider")
+				}, "Genesis::Kit::Compiled"),
 			},
 			bar => {
-				'3.4.5' => $top->path(".genesis/kits/bar-3.4.5.tar.gz"),
+				'3.4.5' => bless({
+					'archive'  => $top->path(".genesis/kits/bar-3.4.5.tar.gz"),
+					'name'     => 'bar',
+					'version'  => '3.4.5',
+					'provider' => isa("Genesis::Kit::Provider")
+				}, "Genesis::Kit::Compiled"),
 			},
 		}, "roots should list out all of their compiled kits");
 
 	$again->();
-	ok( defined $top->find_kit(foo => '1.0.0'), "test root dir should have foo-1.0.0 kit");
-	ok(!defined $top->find_kit(foo => '9.8.7'), "test root dir should not have foo-9.8.7 kit");
-	ok(!defined $top->find_kit(quxx => undef), "test root dir should not have any quux kit");
-	ok( defined $top->find_kit(foo => '1.0.1'), "roots should recognize .tgz kits");
-	ok( defined $top->find_kit(foo => 'latest'), "root should find latest kit versions");
-	is($top->find_kit(foo => 'latest')->{version}, '1.0.1', "the latest foo kit should be 1.0.1");
-	is($top->find_kit(foo => undef)->{version}, '1.0.1', "an undef version should count as 'latest'");
-	ok(!defined $top->find_kit(undef => 'latest'), "kit name should be required if more than one kit exists");
-	ok(!defined $top->find_kit(undef => '1.0.0'), "kit name should be requried if more than one kit exists, regardless of version uniqueness");
+	ok( defined $top->local_kit_version(foo => '1.0.0'), "test root dir should have foo-1.0.0 kit");
+	ok(!defined $top->local_kit_version(foo => '9.8.7'), "test root dir should not have foo-9.8.7 kit");
+	ok(!defined $top->local_kit_version(quxx => undef), "test root dir should not have any quux kit");
+	ok( defined $top->local_kit_version(foo => '1.0.1'), "roots should recognize .tgz kits");
+	ok( defined $top->local_kit_version(foo => 'latest'), "root should find latest kit versions");
+	is($top->local_kit_version(foo => 'latest')->{version}, '1.0.1', "the latest foo kit should be 1.0.1");
+	is($top->local_kit_version(foo => undef)->{version}, '1.0.1', "an undef version should count as 'latest'");
+	ok(!defined $top->local_kit_version(undef => 'latest'), "kit name should be required if more than one kit exists");
+	ok(!defined $top->local_kit_version(undef => '1.0.0'), "kit name should be requried if more than one kit exists, regardless of version uniqueness");
 
 	$again->();
 	system("rm -f $tmp/.genesis/kits/bar-*gz");
-	cmp_deeply($top->compiled_kits, {
+	cmp_deeply($top->local_kits, {
 			foo => {
-				'0.9.5' => $top->path(".genesis/kits/foo-0.9.5.tar.gz"),
-				'0.9.6' => $top->path(".genesis/kits/foo-0.9.6.tar.gz"),
-				'1.0.0' => $top->path(".genesis/kits/foo-1.0.0.tar.gz"),
-				'1.0.1' => $top->path(".genesis/kits/foo-1.0.1.tgz"),
+				'0.9.5' => bless({
+					'archive'  => $top->path(".genesis/kits/foo-0.9.5.tar.gz"),
+					'name'     => 'foo',
+					'version'  => '0.9.5',
+					'provider' => isa("Genesis::Kit::Provider")
+				}, "Genesis::Kit::Compiled"),
+				'0.9.6' => bless({
+					'archive'  => $top->path(".genesis/kits/foo-0.9.6.tar.gz"),
+					'name'     => 'foo',
+					'version'  => '0.9.6',
+					'provider' => isa("Genesis::Kit::Provider")
+				}, "Genesis::Kit::Compiled"),
+				'1.0.0' => bless({
+					'archive'  => $top->path(".genesis/kits/foo-1.0.0.tar.gz"),
+					'name'     => 'foo',
+					'version'  => '1.0.0',
+					'provider' => isa("Genesis::Kit::Provider")
+				}, "Genesis::Kit::Compiled"),
+				'1.0.1' => bless({
+					'archive'  => $top->path(".genesis/kits/foo-1.0.1.tgz"),
+					'name'     => 'foo',
+					'version'  => '1.0.1',
+					'provider' => isa("Genesis::Kit::Provider")
+				}, "Genesis::Kit::Compiled"),
 			},
 		}, "root should only have `foo' kit");
-	ok( defined $top->find_kit(undef, 'latest'), "root should find latest kit version of only kit");
-	ok( defined $top->find_kit(undef, '0.9.6'), "root should find 0.9.6 kit version of only kit");
-	is($top->find_kit(undef, 'latest')->{version}, '1.0.1', "the latest foo kit should be 1.0.1");
-	is($top->find_kit(undef, 'latest')->{name}, 'foo', "the only kit should be 'foo'");
-	is($top->find_kit(undef, '0.9.6')->{version}, '0.9.6', "specific version of the kit are returned");
-	is($top->find_kit(undef, '0.9.6')->{name}, 'foo', "the only kit should be 'foo' (0.9.6)");
+	ok( defined $top->local_kit_version(undef, 'latest'), "root should find latest kit version of only kit");
+	ok( defined $top->local_kit_version(undef, '0.9.6'), "root should find 0.9.6 kit version of only kit");
+	is($top->local_kit_version(undef, 'latest')->{version}, '1.0.1', "the latest foo kit should be 1.0.1");
+	is($top->local_kit_version(undef, 'latest')->{name}, 'foo', "the only kit should be 'foo'");
+	is($top->local_kit_version(undef, '0.9.6')->{version}, '0.9.6', "specific version of the kit are returned");
+	is($top->local_kit_version(undef, '0.9.6')->{name}, 'foo', "the only kit should be 'foo' (0.9.6)");
 };
 
 subtest 'init' => sub {
@@ -146,10 +197,10 @@ subtest 'downloading kits' => sub {
 	my $top = Genesis::Top->new($tmp);
 
 	$again->();
-	ok(!defined $top->find_kit('bosh'), "bosh kit shouldn't exist (before download)");
+	ok(!defined $top->local_kit_version('bosh'), "bosh kit shouldn't exist (before download)");
 	$top->download_kit("bosh/0.2.0");
-	ok( defined $top->find_kit('bosh'), "bosh kit should exist after we download");
-	ok( defined $top->find_kit('bosh', '0.2.0'), "top downloaded bosh-0.2.0 as requested");
+	ok( defined $top->local_kit_version('bosh'), "bosh kit should exist after we download");
+	ok( defined $top->local_kit_version('bosh', '0.2.0'), "top downloaded bosh-0.2.0 as requested");
 };
 
 subtest 'manage secrets provider' => sub {
