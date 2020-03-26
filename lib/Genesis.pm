@@ -195,9 +195,8 @@ sub debug {
 sub dump_var {
 	return unless envset("GENESIS_DEBUG") || envset("GENESIS_TRACE");
 	my $scope = 0;
-	if ($_[0] =~ '^-\d+$') {
-		$scope = -(shift);
-	}
+	$scope = abs(shift) if ($_[0] =~ '^-?\d+$');
+
 	local $Data::Dumper::Deparse = 1;
 	local $Data::Dumper::Terse   = 1;
 	my (undef, $file, $ln) = caller($scope);
@@ -208,11 +207,13 @@ sub dump_var {
 
 sub dump_stack {
 	return unless envset("GENESIS_DEBUG") || envset("GENESIS_TRACE");
-	my $depth=0;
+	my $scope = 0;
+	$scope = abs(shift) if ($_[0] =~ '^-?\d+$');
+
 	my ($package,$file,$line,$sub,@stack,@info);
 	my ($sub_size, $line_size, $file_size) = (10,4,4);
 
-  while (@info = caller($depth++)) {
+  while (@info = caller($scope++)) {
 		$sub = $info[3];
 		$sub_size  = (sort {$b <=> $a} ($sub_size, length($sub )))[0];
 		if ($file) {
@@ -270,8 +271,8 @@ sub bail {
 sub bug {
 	my (@msg) = @_;
 
-	trace "Dying due to bug ".csprintf(@msg);
-	dump_stack;
+	trace "Dying due to bug: ".csprintf(@msg);
+	dump_stack(1);
 
 	if ($Genesis::VERSION =~ /dev/) {
 		$! = 2; die csprintf(@msg)."\n".
@@ -844,13 +845,15 @@ core contributor figure out why Genesis is being bad in the wild.
 
 Dumps one or more named values to standard error if C<$GENESIS_TRACE> or
 C<$GENESIS_TRACE> environment variables have been set to "truthy".  Optional
-scope level of -1 or less will report the corresponding stack level as the
-source of the output, defaults to the calling scope.
+scope level will report the corresponding stack level adjustment as the
+source of the output, defaults to the calling scope (can be positive or negative)
 
-=head2 dump_stack()
+=head2 dump_stack([$scope])
 
 Dumps the current stack to standard error if C<$GENESIS_TRACE> or
-C<$GENESIS_TRACE> environment variables have been set to "truthy".
+C<$GENESIS_TRACE> environment variables have been set to "truthy".  Optional
+scope level will start that much below the calling scope (can be expressed as
+positive or negative)
 
 =head2 error($fmt, ...)
 
