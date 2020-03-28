@@ -225,6 +225,7 @@ export -f __ip2dec
 
 declare -a __checked_cloud_config
 __checked_cloud_config=( '' )
+__in_cloudconfig_check=''
 cloud_config_needs() {
   local __type=${1:?cloud_config_needs() - must specify a type}; shift
   local __name
@@ -232,6 +233,11 @@ cloud_config_needs() {
   if [[ $- =~ 'u' ]] ; then
     set +u
     __unbound_check=1
+  fi
+
+  if [[ -z "$__in_cloudconfig_check" ]] ; then
+    describe "  #C{[Checking cloud config]}"
+    __in_cloudconfig_check=1
   fi
 
   # Special check for static_ips
@@ -268,7 +274,10 @@ cloud_config_needs() {
     else
       __cloud_config_error_messages+=( "  #G{(+)} network '$__network' has sufficient static ips #G{(found $__sum, need $__count)} ")
     fi
-    return
+    if [[ -n "$__in_cloudconfig_check" ]] ; then
+      describe "${__cloud_config_error_messages[@]}"
+      __cloud_config_error_messages=()
+    fi
   fi
 
   # Generic pattern
@@ -298,6 +307,10 @@ cloud_config_needs() {
       fi
     fi
   done
+  if [[ -n "$__in_cloudconfig_check" ]] ; then
+    describe "${__cloud_config_error_messages[@]}"
+    __cloud_config_error_messages=( )
+  fi
 
   [[ "$__unbound_check" = '1' ]] && set -u
 }
@@ -309,8 +322,10 @@ check_cloud_config() {
   # Usage:
   #   check_cloud_config || exit 1  # exit if errors found
   #   check_cloud_config && describe "  cloud config [#G{OK}] # report ok if no errors
-  describe "  #C{[Checking cloud config]}"
-  describe "${__cloud_config_error_messages[@]}"
+  if [[ -z "$__in_cloudconfig_check" ]] ;then
+    describe "  #C{[Checking cloud config]}"
+    describe "${__cloud_config_error_messages[@]}"
+  fi
   if [[ ${__cloud_config_ok} != "yes" ]]; then
     return 1
   fi
