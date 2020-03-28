@@ -152,6 +152,19 @@ sub _colorize {
 		return $prefix._color($fg,$bg)."$msg\e[0m";
 	}
 }
+sub _glyphize {
+	my ($c,$glyph) = @_;
+	my %glyphs = (
+		'(-)' => "✘ ", # \x{2718}
+		'(+)' => "✔ ", # \x{2714}
+		'(*)' => "\x{2022}",
+		'>' => "⮀",
+	);
+
+	$glyph = $glyphs{$glyph} if !envset('GENESIS_NO_UTF8') && defined($glyphs{$glyph});
+	return $glyph unless $c;
+	return _colorize($c, $glyph);
+	}
 
 my $in_csprint_debug=0;
 sub csprintf {
@@ -176,11 +189,8 @@ sub csprintf {
 		}
 	}
 
+	$s =~ s/(#[-IUKRGYBMPCW*]{0,4})@\{(.*?)(\})/_glyphize($1, $2)/egism;
 	$s =~ s/(#[-IUKRGYBMPCW*]{1,4})\{(.*?)(\})/_colorize($1, $2)/egism;
-	unless (envset 'NOUTF8') {
-		$s =~ s/\[\+\]/\x{2714} /;
-		$s =~ s/\[-\]/\x{2718} /;
-	}
 	return $s;
 }
 
@@ -250,10 +260,11 @@ sub _log {
 		$label = sprintf "%s.%03d %s", localtime($s)->strftime("%H:%M:%S"), $us / 1000, $label;
 	}
 	unless (envset "NOCOLOR") {
-		$gt = "⮀";
+		$gt = csprintf("#\@{>}");
 		$gtc = substr($colors,1,1);
-		$label = " $label ";
+		$label = " $label " unless envset('GENESIS_NO_UTF8');
 	}
+	$colors = substr($colors,1,1) if envset('GENESIS_NO_UTF8');
 	my $prompt = csprintf("#%s{%s}#%s{%s}", "$colors",$label,$gtc,$gt);
 	my $out = join("\n".(" "x(length($label)+2)),split(/\n/,$content));
 

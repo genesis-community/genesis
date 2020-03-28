@@ -72,24 +72,6 @@ if [[ -z "$SAFE_TARGET" || "$SAFE_TARGET" != "$GENESIS_TARGET_VAULT" ]] ; then
 	__bail "Safe target not associated with Genesis Vault -- this is a bug in Genesis, or you are running $0 outside of Genesis"
 fi
 
-
-bullet() {
-	if [[ "$NOCOLOR" =~ ^(1|yes|true)$ ]] ; then
-		if [[ $1 == 'x' ]] ; then
-			perl -e 'binmode STDOUT, ":utf8"; printf "[-]"'
-		elif [[ $1 == '√' ]] ; then
-			perl -e 'binmode STDOUT, ":utf8"; printf "[+]"'
-		fi
-	else
-		if [[ $1 == 'x' ]] ; then
-			perl -e 'binmode STDOUT, ":utf8"; printf "\e[31;1m[-]\e[0m"'
-		elif [[ $1 == '√' ]] ; then
-			perl -e 'binmode STDOUT, ":utf8"; printf "\e[32;1m[+]\e[0m"'
-		fi
-	fi
-}
-export -f bullet
-
 ###
 ###   Exodus Data Exfiltration Functions
 ###
@@ -246,11 +228,11 @@ __checked_cloud_config=( '' )
 cloud_config_needs() {
   local __type=${1:?cloud_config_needs() - must specify a type}; shift
   local __name
-	local __unbound_check=0
-	if [[ $- =~ 'u' ]] ; then
-		set +u
-		__unbound_check=1
-	fi
+  local __unbound_check=0
+  if [[ $- =~ 'u' ]] ; then
+    set +u
+    __unbound_check=1
+  fi
 
   # Special check for static_ips
   if [[ "${__type}" == "static_ips" ]] ; then
@@ -273,18 +255,18 @@ cloud_config_needs() {
         elif [[ "$__x" == '-' ]] ; then
           (( __sum += $(__ip2dec "$__l") - $(__ip2dec "$__f") + 1 )) # Range
         fi
-        __cloud_config_error_messages+=( "  $(bullet '√') network '$__network' has valid static ips #G{('$__range')} ")
+        __cloud_config_error_messages+=( "  #G@{(+)} network '$__network' has valid static ips #G{('$__range')} ")
       else
-        __cloud_config_error_messages+=( "  $(bullet 'x') network '$__network' has valid static ips #R{(parse error on '$__range')} ")
+        __cloud_config_error_messages+=( "  #R@{(-)} network '$__network' has valid static ips #R{(parse error on '$__range')} ")
         __cloud_config_ok=no
         break
       fi
     done < <(echo "${__ips}")
     if [[ "$__sum" -lt "$__count" ]] ; then
-      __cloud_config_error_messages+=( "  $(bullet 'x') network '$__network' has sufficient static ips #R{(found $__sum, need $__count)} ")
+      __cloud_config_error_messages+=( "  #R@{(-)} network '$__network' has sufficient static ips #R{(found $__sum, need $__count)} ")
       __cloud_config_ok=no
     else
-      __cloud_config_error_messages+=( "  $(bullet '√') network '$__network' has sufficient static ips #G{(found $__sum, need $__count)} ")
+      __cloud_config_error_messages+=( "  #G{(+)} network '$__network' has sufficient static ips #G{(found $__sum, need $__count)} ")
     fi
     return
   fi
@@ -310,9 +292,9 @@ cloud_config_needs() {
         jq -r "if (.${__type}[] | select(.name == \"$__want\")) then 1 else 0 end")
       if [[ -z "$__have" ]]; then
         __cloud_config_ok=no
-        __cloud_config_error_messages+=( "  $(bullet "x") $__name '#Y{$__want}' exists" )
+        __cloud_config_error_messages+=( "  #G@{(-)} $__name '#Y{$__want}' exists" )
       else
-        __cloud_config_error_messages+=( "  $(bullet "√") $__name '#Y{$__want}' exists" )
+        __cloud_config_error_messages+=( "  #R@{(+)} $__name '#Y{$__want}' exists" )
       fi
     fi
   done
@@ -534,28 +516,28 @@ EOF
 export -f genesis_config_block
 
 offer_environment_editor() {
-	local __file __tmpdir __editor __edit_query __editor_cmd
-	prompt_for __edit_query boolean \
-	  "Would you like to edit the '$GENESIS_ENVIRONMENT.yml' environment file?" \
-		--inline
+  local __file __tmpdir __editor __edit_query __editor_cmd
+  prompt_for __edit_query boolean \
+    "Would you like to edit the '$GENESIS_ENVIRONMENT.yml' environment file?" \
+    --inline
 
-	if [[ $__edit_query == 'true' ]] ; then
-		__file="$GENESIS_ROOT/$GENESIS_ENVIRONMENT.yml"
-		__tmpdir="$(mktemp -d)/$GENESIS_KIT_NAME-$GENESIS_KIT_VERSION"
-		mkdir -p "$__tmpdir"
-		[[ -n $EDITOR ]] || EDITOR="vim"
-		if $GENESIS_CALLBACK_BIN -C $GENESIS_ROOT man "$(basename "$__file")" > "$__tmpdir/manual.md" ; then
-			__editor="$(basename $EDITOR)"
-			[[ $__editor =~ ^.*vim?$ ]] && \
-				__editor_cmd="$EDITOR -O '$__file' '$__tmpdir/manual.md'"
-			[[ $__editor == "emacs" ]] && \
-				__editor_cmd="$EDITOR -nw '$__file' -f split-window-horizontally '$__tmpdir/manual.md' -f other-window"
-		fi
-		[[ -n "$__editor_cmd" ]] || __editor_cmd="$EDITOR '$__file'"
-		env -i HOME="$HOME" SHELL="$(which bash)" USER="$USER" COLORTERM="$COLORTERM" TERM="$TERM" bash -l -c "$__editor_cmd"
-		[[ -f $__tmpdir/manual.md ]] && rm "$__tmpdir/manual.md"
-		rmdir "$__tmpdir"
-		rmdir "$(dirname "$__tmpdir")"
-	fi
+  if [[ $__edit_query == 'true' ]] ; then
+    __file="$GENESIS_ROOT/$GENESIS_ENVIRONMENT.yml"
+    __tmpdir="$(mktemp -d)/$GENESIS_KIT_NAME-$GENESIS_KIT_VERSION"
+    mkdir -p "$__tmpdir"
+    [[ -n $EDITOR ]] || EDITOR="vim"
+    if $GENESIS_CALLBACK_BIN -C $GENESIS_ROOT man "$(basename "$__file")" > "$__tmpdir/manual.md" ; then
+      __editor="$(basename $EDITOR)"
+      [[ $__editor =~ ^.*vim?$ ]] && \
+        __editor_cmd="$EDITOR -O '$__file' '$__tmpdir/manual.md'"
+      [[ $__editor == "emacs" ]] && \
+        __editor_cmd="$EDITOR -nw '$__file' -f split-window-horizontally '$__tmpdir/manual.md' -f other-window"
+    fi
+    [[ -n "$__editor_cmd" ]] || __editor_cmd="$EDITOR '$__file'"
+    env -i HOME="$HOME" SHELL="$(which bash)" USER="$USER" COLORTERM="$COLORTERM" TERM="$TERM" bash -l -c "$__editor_cmd"
+    [[ -f $__tmpdir/manual.md ]] && rm "$__tmpdir/manual.md"
+    rmdir "$__tmpdir"
+    rmdir "$(dirname "$__tmpdir")"
+  fi
 }
 export -f offer_environment_editor
