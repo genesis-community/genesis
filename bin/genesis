@@ -1629,24 +1629,21 @@ sub {
 	check_prereqs;
 
 	my $top = Genesis::Top->new('.');
-	if ($top->has_dev_kit && !$options{force}) {
-		die "dev/ directory already exists (and --force not specified).  Bailing out.\n";
-	}
+	bail "#R{[ERROR]} dev/ directory already exists (and --force not specified).  Bailing out.\n"
+		if ($top->has_dev_kit && !$options{force});
 
 	my $file = $_[0];
 	if (! -f $file) {
 		(my $stem = $file) =~ s|/|-|;
 		$file = $top->path(".genesis/kits/$stem.tar.gz");
-	}
-	if (! -f $file) {
-		die "Unable to find Kit archive $_[0]\n";
+		bail("#R{[ERROR]} Unable to find Kit archive %s\n", $_[0]) if (! -f $file);
 	}
 
 	explain "Uncompressing compiled kit archive #G{$file} into #C{dev/}";
 
 	# Test the kit
 	my ($out,$rc) = run("tar -ztf \$1 |cut -d'/' -f1 | uniq", $file);
-	bail "#R{ERROR} #C{$file} does not look like a valid compiled kit"
+	bail "#R{[ERROR]} #C{$file} does not look like a valid compiled kit"
 		unless $rc == 0 && scalar(split $/, $out) == 1;
 	run('rm -rf ./dev && mkdir ./dev && tar -xzf "$1" --strip-components=1 -C ./dev/',
 		$file);
@@ -2054,6 +2051,9 @@ EOF
 sub {
 	my %options;
 	options(\@_, \%options, qw/
+		force|f
+		to=s
+		as-dev
 	/);
 	check_prereqs;
 
@@ -2067,6 +2067,9 @@ sub {
 		@kits = @possible_kits;
 	}
 
+	bail("#R{[ERROR]} Cannot specify multiple kits to fetch with --as-dev option")
+		if (@kits > 1 && $options{'as-dev'});
+
 	for (@kits) {
 		my ($name,$version) = $_ =~ m/^([^\/]*)(?:\/(.*))?$/;
 		if (!$version && semver($name)) {
@@ -2079,12 +2082,32 @@ sub {
 			$name = $possible_kits[0];
 		}
 
+		bail "#R{[ERROR]} dev/ directory already exists (and --force not specified).  Bailing out.\n"
+			 if ($top->has_dev_kit && $options{'as-dev'} && !$options{force});
+
 		my $kitsig = join('/', grep {$_} ($name, $version));
 		explain("Attempting to retrieve Genesis kit #M{$name (%s)}...", $version ? "v$version" : "latest version" );
-		($name,$version) = $top->download_kit($kitsig)
+		($name,$version,my $target) = $top->download_kit($kitsig,%options)
 			or bail "Failed to download Genesis Kit #C{$kitsig}";
-		explain "Downloaded version #C{$version} of the #C{$name} kit\n";
+
+		if ($options{'as-dev'}) {
+			my ($out,$rc) = run("tar -ztf \$1 |cut -d'/' -f1 | uniq", $target);
+			bail("#R{ERROR} #C{%s} does not look like a valid compiled kit", $target)
+				unless $rc == 0 && scalar(split $/, $out) == 1;
+			run(
+				'rm -rf "$2" && mkdir "$2" && tar -xzf "$1" --strip-components=1 -C "$2"',
+				$target, $top->path('dev')
+			);
+		}
+
+		my $target_str = $options{to} ? " to ".humanize_path($target) : '';
+		$target_str .= " and decompiled it into ".humanize_path($top->path('dev'))
+			if $options{'as-dev'};
+		explain "Downloaded version #C{$version} of the #C{$name} kit%s\n",$target_str;
 	}
+
+
+	# Test the kit
 });
 
 command("download", <<EOF,

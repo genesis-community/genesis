@@ -253,7 +253,7 @@ sub kit_versions {
 # }}}
 # fetch_kit_version - fetches a tarball for the named kit and version from this provide {{{
 sub fetch_kit_version {
-	my ($self, $name, $version, $path) = @_;
+	my ($self, $name, $version, $path, $force) = @_;
 
 	if (!defined($version) || $version eq 'latest') {
 		# Better to call `latest_version` prior to this, but this is a safety valve.
@@ -281,19 +281,18 @@ sub fetch_kit_version {
 	explain STDERR "#G{done.}";
 	my $file = "$path/$name-$version.tar.gz";
 	if (-f $file) {
-		my $old_data;
-		open(my $fh, '<', $file) or bail "#R{[ERROR]} Existing copy of kit $name/$version exists, but could not be read";
-		{ local $/; $old_data = <$fh>; }
-		close $fh;
-		if (sha1_hex($data) eq sha1_hex($old_data)) {
-			bail "#Y{[WARNING]} Exact same kit already exists under .genesis/kits - no change.\n";
-		} else {
-			error "#R{[ERROR]} Kit $name/$version already exists, but is different!";
-			die_unless_controlling_terminal;
-			my $overwrite = prompt_for_boolean("Do you want to overwrite the existing file with the content downloaded from\n$self->{label}",0);
-			bail "Aborted!\n" unless $overwrite;
-			chmod_or_fail(0600, $file);
+		if (! $force) {
+			my $old_data = slurp($file);
+			if (sha1_hex($data) eq sha1_hex($old_data)) {
+				bail "#Y{[WARNING]} Exact same kit already exists under #C{%s} - no change.\n", humanize_path($path);
+			} else {
+				error "#R{[ERROR]} Kit $name/$version already exists, but is different!";
+				die_unless_controlling_terminal;
+				my $overwrite = prompt_for_boolean("Do you want to overwrite the existing file with the content downloaded from\n$self->{label}",0);
+				bail "Aborted!\n" unless $overwrite;
+			}
 		}
+		chmod_or_fail(0600, $file);
 	}
 	mkfile_or_fail($file, 0400, $data);
 
