@@ -257,7 +257,7 @@ sub metadata {
 # uses_credhub - does this kit use credhub instead of vault {{{
 sub uses_credhub {
 	my ($self) = @_;
-	return defined($self->metadata->{secret_store}) && $self->metadata->{uses_credhub} eq "credhub";
+	return defined($self->metadata->{secret_store}) && $self->metadata->{secret_store} eq "credhub";
 }
 
 # }}}

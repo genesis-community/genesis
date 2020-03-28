@@ -72,7 +72,7 @@ sub validate {
 		if ($meta->{secrets_store}) {
 			if ($meta->{secrets_store} eq "credhub") {
 				#no-op: valid, no further keys
-			} elsif ($meta->{secrets_store} eq "credhub") {
+			} elsif ($meta->{secrets_store} eq "vault") {
 				push @valid_keys, "credentials", "certificates"
 			} else {
 				error "Kit Metadata specifies invalid secrets_store: expecting one of 'vault' or 'credhub'";
