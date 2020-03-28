@@ -68,7 +68,18 @@ sub validate {
 		}
 
 		# check for errant top-level keys - params, subkits and features have been discontinued.
-		my @valid_keys = qw/name version description code docs author authors genesis_version_min certificates credentials/;
+		my @valid_keys = qw/name version description code docs author authors genesis_version_min secrets_store/;
+		if ($meta->{secrets_store}) {
+			if ($meta->{secrets_store} eq "credhub") {
+				#no-op: valid, no further keys
+			} elsif ($meta->{secrets_store} eq "vault") {
+				push @valid_keys, "credentials", "certificates"
+			} else {
+				error "Kit Metadata specifies invalid secrets_store: expecting one of 'vault' or 'credhub'";
+			}
+		} else {
+			push @valid_keys, "credentials", "certificates"
+		}
 		my @errant_keys = ();
 		for my $key (sort keys %$meta) {
 			push(@errant_keys, $key) unless grep {$_ eq $key} @valid_keys;
