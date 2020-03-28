@@ -463,15 +463,23 @@ sub remote_kit_version_info {
 }
 
 sub download_kit {
-	my ($self, $name, $version) = @_;
-	($name, $version) = ($1, $2)
-		if (!defined($version) && defined($name) && $name =~ m{(.*)/(.*)});
+	my ($self, $id, %opts) = @_;
+	my ($name, $version) = ($1, $2) if $id =~ m/([^\/]+)(?:\/(.*))?/;
 	$version = $self->kit_provider->latest_version_of($name) unless $version && $version ne 'latest';
 
-	mkdir_or_fail($self->path(".genesis"));
-	mkdir_or_fail($self->path(".genesis/kits"));
+	my $target;
+	if ($opts{to}) {
+		$target = $opts{to};
+		bail("#R{[ERROR]} #C{%s} is not a directory", $opts{to}) unless -d $opts{to};
+		bail "#R{[ERROR]} #C{%s} is not writable", $opts{to} unless -w $opts{to};
+	} elsif ($opts{'as-dev'}) {
+		$target = workdir;
+	} else {
+		$target = $self->path(".genesis/kits");
+		mkdir_or_fail($target);
+	}
 
-	$self->kit_provider->fetch_kit_version($name,$version,$self->path(".genesis/kits"));
+	$self->kit_provider->fetch_kit_version($name,$version,$target,$opts{force});
 }
 
 

@@ -221,7 +221,7 @@ sub kit_versions {
 # }}}
 # fetch_kit_version - fetches a tarball for the named kit and version from this provide (abstract) {{{
 sub fetch_kit_version {
-	my ($self, $name, $version, $path) = @_;
+	my ($self, $name, $version, $path, $force) = @_;
 	bug("Abstract Method: Expecting %s class to define concrete '%' method", ref($self), 'fetch_kit_version');
 	# Input expected:
 	#		$name:    <kit name>
