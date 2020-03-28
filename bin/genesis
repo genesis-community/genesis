@@ -429,6 +429,16 @@ sub check_environment {
 	return $ok;
 }
 
+sub extract_kit_to_dev {
+	my ($top,$file) = @_;
+	my ($out,$rc) = run("tar -ztf \"\$1\" | awk '{print \$NF}' | cut -d'/' -f1 | uniq", $file);
+	bail("#R{ERROR} #C{%s} does not look like a valid compiled kit", $file)
+		unless $rc == 0 && scalar(split $/, $out) == 1;
+	run(
+		'rm -rf "$2" && mkdir "$2" && tar -xzf "$1" --strip-components=1 -C "$2"',
+		$file, $top->path('dev')
+	);
+}
 
 ###########################################################################
 
@@ -1637,13 +1647,7 @@ sub {
 	}
 
 	explain "Uncompressing compiled kit archive #G{$file} into #C{dev/}";
-
-	# Test the kit
-	my ($out,$rc) = run("tar -ztf \$1 |cut -d'/' -f1 | uniq", $file);
-	bail "#R{[ERROR]} #C{$file} does not look like a valid compiled kit"
-		unless $rc == 0 && scalar(split $/, $out) == 1;
-	run('rm -rf ./dev && mkdir ./dev && tar -xzf "$1" --strip-components=1 -C ./dev/',
-		$file);
+	extract_kit_to_dev($top,$file);
 });
 
 # }}}
@@ -2087,15 +2091,7 @@ sub {
 		($name,$version,my $target) = $top->download_kit($kitsig,%options)
 			or bail "Failed to download Genesis Kit #C{$kitsig}";
 
-		if ($options{'as-dev'}) {
-			my ($out,$rc) = run("tar -ztf \$1 |cut -d'/' -f1 | uniq", $target);
-			bail("#R{ERROR} #C{%s} does not look like a valid compiled kit", $target)
-				unless $rc == 0 && scalar(split $/, $out) == 1;
-			run(
-				'rm -rf "$2" && mkdir "$2" && tar -xzf "$1" --strip-components=1 -C "$2"',
-				$target, $top->path('dev')
-			);
-		}
+		extract_kit_to_dev($top,$target) if ($options{'as-dev'});
 
 		my $target_str = $options{to} ? " to ".humanize_path($target) : '';
 		$target_str .= " and decompiled it into ".humanize_path($top->path('dev'))
