@@ -4,6 +4,7 @@ use strict;
 use warnings;
 
 #use utf8;
+use open ':std', ':encoding(UTF-8)';
 use Encode (); # Convert input to UTF-8
 for (@ARGV) {
 	$_ = Encode::encode("UTF-8",$_,Encode::LEAVE_SRC);

@@ -56,7 +56,7 @@ genesis() {
 export -f genesis
 
 describe() {
-	genesis ui-describe -- "$@"
+	/usr/bin/perl -I$HOME/.geese/lib -MGenesis -e 'binmode STDOUT, ":utf8"; explain($_) for @ARGV' "$@"
 }
 export -f describe
 
@@ -76,15 +76,15 @@ fi
 bullet() {
 	if [[ "$NOCOLOR" =~ ^(1|yes|true)$ ]] ; then
 		if [[ $1 == 'x' ]] ; then
-			perl -e 'binmode STDOUT, ":utf8"; printf "\x{2718} "'
+			perl -e 'binmode STDOUT, ":utf8"; printf "[-]"'
 		elif [[ $1 == '√' ]] ; then
-			perl -e 'binmode STDOUT, ":utf8"; printf "\x{2714} "'
+			perl -e 'binmode STDOUT, ":utf8"; printf "[+]"'
 		fi
 	else
 		if [[ $1 == 'x' ]] ; then
-			perl -e 'binmode STDOUT, ":utf8"; printf "\e[31;1m\x{2718} \e[0m"'
+			perl -e 'binmode STDOUT, ":utf8"; printf "\e[31;1m[-]\e[0m"'
 		elif [[ $1 == '√' ]] ; then
-			perl -e 'binmode STDOUT, ":utf8"; printf "\e[32;1m\x{2714} \e[0m"'
+			perl -e 'binmode STDOUT, ":utf8"; printf "\e[32;1m[+]\e[0m"'
 		fi
 	fi
 }

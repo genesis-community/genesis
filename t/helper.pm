@@ -9,6 +9,7 @@ use Config;
 use File::Temp qw/tempdir/;
 use File::Basename qw/dirname/;
 use JSON::PP;
+use open ':std', ':encoding(UTF-8)';
 
 $ENV{PERL5LIB} = "$ENV{PWD}/lib";
 $ENV{GENESIS_TESTING} = "yes";

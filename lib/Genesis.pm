@@ -15,6 +15,7 @@ use Time::HiRes qw/gettimeofday/;
 use Time::Piece;
 use Time::Seconds;
 use Cwd ();
+use utf8;
 
 $ENV{TZ} = "UTC";
 POSIX::tzset();
@@ -176,6 +177,10 @@ sub csprintf {
 	}
 
 	$s =~ s/(#[-IUKRGYBMPCW*]{1,4})\{(.*?)(\})/_colorize($1, $2)/egism;
+	unless (envset 'NOUTF8') {
+		$s =~ s/\[\+\]/\x{2714} /;
+		$s =~ s/\[-\]/\x{2718} /;
+	}
 	return $s;
 }
 
@@ -257,7 +262,6 @@ sub _log {
 
 sub error {
 	my @err = @_;
-	binmode(STDERR, "encoding(UTF-8)");
 	unshift @err, "%s" if $#err == 0;
 	print STDERR csprintf(@err) . "$/";
 }

@@ -6,6 +6,7 @@ use Expect;
 use lib 't';
 use helper;
 use Cwd qw(abs_path);
+use utf8;
 
 $ENV{NOCOLOR} = 1;
 

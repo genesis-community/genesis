@@ -2,12 +2,14 @@
 use strict;
 use warnings;
 
+
 use lib 'lib';
 use lib 't';
 use helper;
 use Test::Exception;
 use Test::Deep;
 use Test::Output;
+use utf8;
 
 use_ok 'Genesis::Kit';
 use Genesis::Kit::Dev;

@@ -297,7 +297,6 @@ sub bullet { # [type,] msg, [{option: value, ...}]
 	$opts{box} = 0 unless exists($opts{box});
 	$opts{indent} = 2 unless exists($opts{indent});
 
-	binmode(STDOUT, "encoding(UTF-8)");
 	my $out=sprintf("%*.*s%s#%s{%s}%s %s",
 	                 $opts{indent},$opts{indent},"",
 	                       $opts{box} ? "[" : "",
