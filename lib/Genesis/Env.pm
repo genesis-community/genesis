@@ -12,6 +12,7 @@ use Genesis::Vault;
 
 use POSIX qw/strftime/;
 use Digest::file qw/digest_file_hex/;
+use Time::Seconds;
 
 sub new {
 	# Do not call directly, use create or load instead
@@ -49,8 +50,7 @@ sub load {
 
 	my $env = $class->new(_slice(\%opts, qw(name top)));
 
-	bail("#R{[ERROR]} Environment file $env->{file} does not exist.")
-		unless -f $env->path($env->{file});
+	bail("#R{[ERROR]} Environment file $env->{file} does not exist.") unless -f $env->path($env->{file});
 
 	bail("#R{[ERROR]} Both #C{kit.features} and deprecated #C{kit.subkits} were found during the environment\n".
 			 "build-out using the following files:\n#M{  %s}\n\n".
@@ -93,26 +93,23 @@ sub load {
 		}
 	}
 
+	# Check for v2.7.0 features
+	unless ($env->kit->feature_compatibility("2.7.0")) {
+		bail("#R{[ERROR]} Kit #M{%s} is not compatible with #C{secrets_mount} feature\n".
+		     "        Please upgrade to a newer release or remove params.secrets_mount from #M{%s}",
+		     $env->kit->id, $env->{file})
+			if ($env->secrets_mount ne $env->default_secrets_mount);
+		bail("#R{[ERROR]} Kit #M{%s} is not compatible with #C{exodus_mount} feature\n".
+		     "        Please upgrade to a newer release or remove params.exodus_mount from #M{%s}",
+		     $env->kit->id, $env->{file})
+			if ($env->exodus_mount ne $env->default_exodus_mount);
+	}
+
 	# determine our vault and secret path
 	bail("\n#R{[ERROR]} No vault specified or configured.")
 		unless $env->vault;
-	my ($secrets_path,$src_key) = $env->lookup(
-		['genesis.secrets_path','params.vault_prefix','params.vault'],
-		$env->_default_secrets_path
-	);
-	$env->{secrets_path} = $secrets_path;
-	# Deferring Deprecation warning until future version
-	# error "\n#Y{[WARNING]} Environment file $env->{file} uses #C{$src_key} to specify secrets path in Vault.\nThis has been moved to #C{genesis.secrets_path} -- please update your file to remove this warning.\n"
-	# 	if defined($src_key) && $src_key ne 'genesis.secrets_path';
 
 	return $env;
-}
-
-sub exists {
-	my $env;
-	eval { $env = new(@_) };
-	return undef unless $env;
-	return -f $env->path("$env->{file}");
 }
 
 sub create {
@@ -124,18 +121,26 @@ sub create {
 			unless $opts{$_};
 	}
 
-	my $env = $class->new(_slice(\%opts, qw(name top kit secrets_path)));
+	my $env = $class->new(_slice(\%opts, qw(name top kit)));
 
 	# environment must not already exist...
 	die "Environment file $env->{file} already exists.\n"
 		if -f $env->path($env->{file});
 
-	# target vault and purge secrets that may already exist
+	# Setup minimum parameters (normally from the env file) to be able to build
+	# the env file.
+	$env->{__params} = {
+		genesis => {
+			env => $opts{name},
+			_slice(\%opts, qw(secrets_path secrets_mount exodus_mount ci_mount bosh_env root_ca_path credhub_env))}
+	};
+
+	# target vault and remove secrets that may already exist
 	bail("\n#R{[ERROR]} No vault specified or configured.")
 		unless $env->vault;
+
 	if (! $env->kit->uses_credhub) {
-		$env->{secrets_path} = $opts{secrets_path} || $env->_default_secrets_path;
-		$env->purge_secrets() || bail "Cannot continue with existing secrets for this environment";
+		$env->remove_secrets(all => 1) || bail "Cannot continue with existing secrets for this environment";
 	}
 
 	## initialize the environment
@@ -145,21 +150,159 @@ sub create {
 		Genesis::Legacy::new_environment($env);
 	}
 
-	# generate all (missing) secrets ignoring any that exist
-	# from a previous 'new' attempt.
+	# Load the environment from the file to pick up hierarchy, and generate secrets
+	$env = $class->load(name =>$env->name, top => $env->top);
 	if (! $env->kit->uses_credhub) {
-		$env->add_secrets();
+		if (! $env->add_secrets(verbose=>1)) {
+			$env->remove_secrets(all => 1, 'no-prompt' => 1);
+			unlink $env->file;
+			return undef;
+		}
 	}
-
 	return $env;
 }
 
+sub exists {
+	my $env;
+	eval { $env = new(@_) };
+	return undef unless $env;
+	return -f $env->path("$env->{file}");
+}
+
+
 # public accessors
-sub name   { $_[0]->{name};   }
-sub file   { $_[0]->{file};   }
-sub kit    { $_[0]->{kit}    || bug("Incompletely initialized environment '".$_[0]->name."': no kit specified"); }
-sub top    { $_[0]->{top}    || bug("Incompletely initialized environment '".$_[0]->name."': no top specified"); }
-sub secrets_path { $_[0]->{secrets_path} || $_[0]->_default_secrets_path; }
+sub name          { $_[0]->{name};   }
+sub file          { $_[0]->{file};   }
+sub kit           { $_[0]->{kit}    || bug("Incompletely initialized environment '".$_[0]->name."': no kit specified"); }
+sub top           { $_[0]->{top}    || bug("Incompletely initialized environment '".$_[0]->name."': no top specified"); }
+
+sub root_ca_path {
+	my $self = shift;
+	unless (exists($self->{root_ca_path})) {
+		$self->{root_ca_path} = $self->lookup('genesis.root_ca_path','');
+		$self->{root_ca_path} =~ s/\/$// if $self->{root_ca_path};
+	}
+	return $self->{root_ca_path};
+}
+
+# }}}
+sub default_secrets_mount { '/secret/'; }
+sub secrets_mount {
+	my $self = shift;
+	($self->{__secrets_mount} = $self->lookup('genesis.secrets_mount', $self->default_secrets_mount)) =~ s#^/?(.*?)/?$#/$1/#
+		unless $self->{__secrets_mount};
+	return $self->{__secrets_mount};
+}
+sub default_secrets_slug {
+	(my $p = $_[0]->name) =~ s|-|/|g;
+	return $p."/".$_[0]->top->type;
+}
+sub secrets_slug {
+	my $self = shift;
+	unless ($self->{__secrets_slug}) {
+		my ($secrets_path,$src_key) = $self->lookup(
+			['genesis.secrets_path','params.vault_prefix','params.vault'],
+			$self->default_secrets_slug
+		);
+		# Deferring Deprecation warning until future version
+		# error "\n#Y{[WARNING]} Environment file $env->{file} uses #C{$src_key} to specify secrets path in Vault.\nThis has been moved to #C{genesis.secrets_path} -- please update your file to remove this warning.\n"
+		# 	if defined($src_key) && $src_key ne 'genesis.secrets_path';
+		($self->{__secrets_slug} = $secrets_path) =~ s#^/?(.*?)/?$#$1#;
+	}
+	return $self->{__secrets_slug};
+}
+sub secrets_base {
+	my $self = shift;
+	$self->{__secrets_base} = $self->secrets_mount . $self->secrets_slug . '/'
+		unless ($self->{__secrets_base});
+	return $self->{__secrets_base};
+}
+
+sub default_exodus_mount { $_[0]->secrets_mount . 'exodus/'; }
+sub exodus_mount {
+	my $self = shift;
+	($self->{__secrets_exodus_mount} = $self->lookup('genesis.exodus_mount', $self->default_exodus_mount)) =~ s#^/?(.*?)/?$#/$1/#
+		unless ($self->{__secrets_exodus_mount});
+	return $self->{__secrets_exodus_mount};
+}
+sub exodus_base {
+	my $self = shift;
+	$self->{__secrets_exodus_base} = sprintf("%s%s/%s/", $self->exodus_mount, $self->name, $self->type)
+		unless ($self->{__secrets_exodus_base});
+	return $self->{__secrets_exodus_base};
+}
+
+sub default_ci_mount     { $_[0]->secrets_mount . 'ci/'; }
+sub ci_mount {
+	my $self = shift;
+	($self->{__secrets_ci_mount} = $self->lookup('genesis.ci_mount', $self->default_ci_mount)) =~ s#^/?(.*?)/?$#/$1/#
+		unless ($self->{__secrets_ci_mount});
+	return $self->{__secrets_ci_mount};
+}
+sub ci_base {
+	my $self = shift;
+	$self->{__secrets_ci_base} = sprintf("%s%s/%s/", $self->ci_mount, $self->type, $self->name)
+		unless ($self->{__secrets_ci_base});
+	return $self->{__secrets_ci_base};
+}
+
+sub setup_hook_env_vars {
+	my ($self, $hook) = @_;
+
+	$ENV{GENESIS_ROOT}         = $self->path;
+	$ENV{GENESIS_ENVIRONMENT}  = $self->name;
+	$ENV{GENESIS_TYPE}         = $self->type;
+	$ENV{GENESIS_TARGET_VAULT} = $ENV{SAFE_TARGET} = $self->vault->ref;
+	$ENV{GENESIS_VERIFY_VAULT} = $self->vault->verify || "";
+
+	# Genesis v2.7.0 Secrets management
+	for my $target (qw/secrets exodus ci/) {
+		for my $target_type (qw/mount base/) {
+			my $method = "${target}_${target_type}";
+			$ENV{uc("GENESIS_${target}_${target_type}")} = $self->$method();
+		}
+		my $method = "${target}_mount";
+		my $default_method = "default_$method";
+		$ENV{uc("GENESIS_${target}_MOUNT_OVERRIDE")} = ($self->$method ne $self->$default_method) ? "true" : "";
+	}
+	$ENV{GENESIS_VAULT_PREFIX} = # deprecated in v2.7.0
+	$ENV{GENESIS_SECRETS_PATH} = # deprecated in v2.7.0
+	$ENV{GENESIS_SECRETS_SLUG} = $self->secrets_slug;
+	$ENV{GENESIS_SECRETS_SLUG_OVERRIDE} = $self->secrets_slug ne $self->default_secrets_slug ? "true" : "";
+
+	# Credhub support
+	my ($credhub_src,$credhub_src_key) = $self->lookup(
+		['genesis.credhub_env','genesis.bosh_env','params.bosh','genesis.env','params.env']
+	);
+
+	my $credhub_path = $credhub_src;
+	$ENV{GENESIS_CREDHUB_EXODUS_SOURCE_OVERRIDE} =
+		($hook eq 'new' && ($credhub_src_key || "") eq 'genesis.credhub-exodus-env') ?
+		$credhub_src : "";
+	if ($credhub_src =~ /\/\w+$/) {
+		$credhub_path  =~ s/\/([^\/]*)$/-$1/;
+	} else {
+		$credhub_src .= "/bosh";
+		$credhub_path .= "-bosh";
+	}
+	$ENV{GENESIS_CREDHUB_EXODUS_SOURCE} = $credhub_src;
+	$ENV{GENESIS_CREDHUB_ROOT}=sprintf("%s/%s-%s", $credhub_path, $self->name, $self->type);
+
+	unless (grep { $_ eq $hook } qw/new prereqs/) {
+		$ENV{GENESIS_REQUESTED_FEATURES} = join(' ', $self->features);
+	}
+	if ($self->needs_bosh_create_env) {
+		$ENV{GENESIS_USE_CREATE_ENV} = 'yes';
+	} else {
+		$ENV{GENESIS_BOSH_ENVIRONMENT} =
+		$ENV{BOSH_ALIAS} = scalar $self->lookup_bosh_target;
+		my $bosh = Genesis::BOSH->environment_variables($ENV{BOSH_ALIAS});
+		$ENV{$_} = $bosh->{$_} for (keys %$bosh);
+		$ENV{BOSH_DEPLOYMENT} = sprintf("%s-%s", $self->name, $self->type);
+	}
+
+	$ENV{GENESIS_ENV_ROOT_CA_PATH} = $self->root_ca_path;
+}
 
 # delegations
 sub type   { $_[0]->top->type; }
@@ -173,18 +316,6 @@ sub tmppath {
 	my ($self, $relative) = @_;
 	return $relative ? "$self->{__tmp}/$relative"
 	                 :  $self->{__tmp};
-}
-
-sub vault_path {
-	"secret/" . $_[0]->secrets_path;
-}
-
-sub _default_secrets_path {
-	my ($self) = @_;
-	my $p = $self->name;         # start with env name
-	$p =~ s|-|/|g;               # swap hyphens for slashes
-	$p .= "/".$self->top->type;  # append '/type'
-	return $p;
 }
 
 sub use_cloud_config {
@@ -466,8 +597,8 @@ sub vars_file {
 }
 
 sub _yaml_files {
-	my ($self) = @_;
-	my $vault_path = $self->vault_path;
+	my ($self, $no_eval) = @_;
+	(my $vault_path = $self->secrets_base) =~ s#/?$##; # backwards compatibility
 	my $type   = $self->{top}->type;
 
 	my @cc;
@@ -617,11 +748,11 @@ sub lookup_bosh_target {
 	if ($bosh = $ENV{GENESIS_BOSH_ENVIRONMENT}) {
 			$source = "GENESIS_BOSH_ENVIRONMENT environment variable";
 
-	} elsif (($bosh,$key) = $self->lookup(['params.bosh','genesis.env','params.env'])) {
+	} elsif (($bosh,$key) = $self->lookup(['genesis.bosh_env','params.bosh','genesis.env','params.env'])) {
 			$source = "$key in $self->{name} environment file";
 
 	} else {
-		die "Could not find the 'params.bosh','genesis.env' or 'params.env' key in $self->{name} environment file!\n";
+		die "Could not find the 'genesis.bosh_env', 'params.bosh', 'genesis.env' or 'params.env' key in $self->{name} environment file!\n";
 	}
 
 	return wantarray ? ($bosh, $source) : $bosh;
@@ -730,8 +861,8 @@ sub deploy {
 	debug("setting exodus data in the Vault, for use later by other deployments");
 	$ok = $self->vault->query(
 		{ onfailure => "Successfully deployed, but could not save $self->{name} metadata to the Vault" },
-		'rm',  "secret/exodus/$self->{name}/".$self->{top}->type, "-f",
-		  '--', 'set', "secret/exodus/$self->{name}/".$self->{top}->type,
+		'rm',  $self->exodus_base, "-f",
+		  '--', 'set', $self->exodus_base,
 		               map { "$_=$exodus->{$_}" } keys %$exodus);
 
 	return $ok;
@@ -747,7 +878,7 @@ sub dereferenced_kit_metadata {
 # Valid options:
 #   --verbose: boolean, default is 0
 #   --filter: (regex) matching pattern, defaults to /.*/
-sub add_secrets { # WIP - majorly broken right now.  sorry bout that.
+sub add_secrets {
 	my ($self, %opts) = @_;
 
 	#Credhub check
@@ -757,42 +888,19 @@ sub add_secrets { # WIP - majorly broken right now.  sorry bout that.
 	}
 
 	if ($self->has_hook('secrets')) {
-		$self->run_hook('secrets', action => $opts{recreate} ? 'new' : 'add',
-		                           vault  => $self->secrets_path);
+		$self->run_hook('secrets', action => 'add',
+		                           vault  => $self->secrets_path); #FIXME (use full path 'secrets_base')
 	} else {
-		Genesis::Legacy::vaultify_secrets($self->kit,
-			env       => $self,
-			prefix    => $self->secrets_path,
-			scope     => $opts{recreate} ? 'force' : 'add',
-			features  => [$self->features]);
+		# Determine secret_store from kit - assume vault for now (credhub ignored)
+		my $store = $self->vault->connect_and_validate;
+		my $ok = $store->process_kit_secret_plans(
+			'add',
+			$self,
+			sub{$self->_secret_processing_updates_callback('add',{level=>$opts{verbose}?'full':'line'},@_)},
+			_slice(\%opts, qw/filter/)
+		);
+		return $ok;
 	}
-}
-
-sub purge_secrets {
-	my ($self, %opts) = @_;
-
-	#Credhub check
-	if ($self->kit->uses_credhub) {
-		explain "#Yi{Credhub-based kit - no local secrets removal permitted}";
-		return 1;
-	}
-	my @paths = $self->vault->paths("secret/".$self->secrets_path);
-	return 1 unless (scalar(@paths));
-
-	die_unless_controlling_terminal;
-
-	explain "#Yr{[WARNING]} The following pre-existing secrets will need to be removed:";
-	bullet $_ for (@paths);
-	my $response = prompt_for_line(undef, "Type 'yes' to remove these secrets","");
-	if ($response eq 'yes') {
-		waiting_on "\nDeleting existing secrets under '#C{%s}'...", $self->secrets_path;
-		$self->vault->query('rm',$_) for (@paths);
-		explain "#G{done}\n"
-	} else {
-		explain "\nAborted!\nKeeping all existing secrets under '#C{%s}'.", $self->secrets_path;
-		return 0;
-	}
-	return 1;
 }
 
 sub check_secrets {
@@ -804,103 +912,22 @@ sub check_secrets {
 		return 1;
 	}
 
-	$opts{indent} ||= ''; # Used when imbedded under another function such as check or deploy
 	if ($self->has_hook('secrets')) {
 		my ($ok,$secrets) = $self->run_hook(
-			'secrets', action => 'check', vault  => $self->secrets_path
+			'secrets', action => 'check', vault  => $self->secrets_path  #FIXME (use full path 'secrets_base')
 		);
 		return $ok;
 	} else {
-		my $ok = 1;
-
-		my $meta = $self->kit->metadata;
-		my $features = [($self->features)];
-
-		print csprintf("%s#yi{Retrieving secrets for %s...}", $opts{indent}, $self->secrets_path);
-
-		my $secrets = {};
-		for ($self->vault->keys($self->vault_path)) {
-			$secrets->{$_} = 1;
-		}
-		explain '#G{ok}';
-		my @missing=();
-
-		explain "\n%s#C{[Checking generated credentials]}", $opts{indent};
-		my @creds = Genesis::Legacy::safe_commands(
+		# Determine secret_store from kit - assume vault for now (credhub ignored)
+		my $store = $self->vault->connect_and_validate;
+		my $ok = $store->validate_kit_secrets(
+			$opts{validate} ? 'validate' : 'check',
 			$self,
-			Genesis::Legacy::active_credentials($meta, $features),
-			env       => $self,
-			prefix    => $self->secrets_path,
-			features  => $features);
-		if (@creds) {
-			push @missing, _check_secret($_, $secrets) for (@creds);
-		} else {
-			explain "  #GI{No credentials to check}";
-		}
-
-		explain "\n%s#C{[Checking generated certificates]}", $opts{indent};
-		my @certs = Genesis::Legacy::cert_commands(
-			Genesis::Legacy::active_certificates($meta, $features),
-			env       => $self,
-			prefix    => $self->secrets_path,
-			features  => $features);
-		if (@certs) {
-			push @missing, _check_secret($_, $secrets) for (@certs);
-		} else {
-			explain "  #GI{No certificates to check}";
-		}
-		explain "";
-
-		return @missing == 0;
+			sub{$self->_secret_processing_updates_callback('check',{level=>($opts{verbose}?'full':'line')},@_)},
+			_slice(\%opts, qw/filter/)
+		);
+		return $ok;
 	}
-}
-
-sub _check_secret {
-	my ($cmd, $secrets) = @_;
-	my @keys;
-
-	my $type = $cmd->[0];
-	my $path = $cmd->[2];
-	if ($type eq 'x509') {
-		if (grep {$_ eq '--signed-by'} @$cmd) {
-			$type = "certificate";
-			@keys = qw(certificate combined key);
-		} else {
-			$type = "CA certificate";
-			@keys = qw(certificate combined crl key serial);
-		}
-	} elsif ($type eq 'rsa') {
-		@keys = qw(private public);
-	} elsif ($type eq 'ssh') {
-		@keys = qw(private public fingerprint);
-	} elsif ($type eq 'dhparam') {
-		@keys = qw(dhparam-pem);
-	} elsif ($type eq 'gen') {
-		$type = 'random';
-		my $path_offset = $cmd->[1] eq '-l' ? 3 : 2;
-		$path_offset += 2 if $cmd->[$path_offset] eq '--policy';
-		$path = $cmd->[$path_offset];
-		@keys = ($cmd->[$path_offset + 1]);
-	} elsif ($type eq 'fmt') {
-		$type = 'random/formatted';
-		@keys = ($cmd->[4]);
-	} else {
-		die "Unrecognized credential or certificate command: '".join(" ", @$cmd)."'\n";
-	}
-	my @missing = grep {! $secrets->{"$path:$_"}} @keys;
-	if ($type =~ /^random/) { # these are at the key level, not the path level
-		if (scalar(@missing)) {
-			bullet("bad", sprintf("%s [%s:#C{%s}]", $path, $_, $type))  for (@missing);
-		} else {
-			bullet("good", sprintf("%s [%s:#C{%s}]", $path, $_, $type)) for (grep {$secrets->{"$path:$_"}} @keys);
-		}
-
-	} else {
-		bullet(scalar(@missing) ? "bad" : "good", sprintf("%s [#C{%s}]", $path, $type));
-		bullet("bad", ":$_", indent => 5) for (@missing);
-	}
-
-	return map {["[$type]", "$path:$_"]} @missing;
 }
 
 sub rotate_secrets {
@@ -912,17 +939,179 @@ sub rotate_secrets {
 		return 1;
 	}
 
+	my $action = $opts{'renew'} ? 'renew' : 'recreate';
 	if ($self->has_hook('secrets')) {
-		$self->run_hook('secrets', action => 'rotate',
-		                           vault  => $self->secrets_path);
+		$self->run_hook('secrets', action => $action,
+		                           vault  => $self->secrets_path); #FIXME (use full path 'secrets_base')
 	} else {
-		Genesis::Legacy::vaultify_secrets($self->kit,
-			env       => $self,
-			prefix    => $self->secrets_path,
-			scope     => $opts{force} ? 'force' : '',
-			features  => [$self->features]);
+		# Determine secret_store from kit - assume vault for now (credhub ignored)
+		my $store = $self->vault->connect_and_validate;
+		my $processing_opts = {
+			no_prompt => $opts{'no-prompt'},
+			level=>$opts{verbose}?'full':'line'
+		};
+		my $ok = $store->process_kit_secret_plans(
+			$action.($opts{failed} ? '-failed' : ''),
+			$self,
+			sub{$self->_secret_processing_updates_callback($action,$processing_opts,@_)},
+			_slice(\%opts, qw/filter no-prompt/)
+		);
+		return $ok;
 	}
 }
+
+sub remove_secrets {
+	my ($self, %opts) = @_;
+
+	#Credhub check
+	if ($self->kit->uses_credhub) {
+		explain "#Yi{Credhub-based kit - no local secrets removal permitted}";
+		return 1;
+	}
+
+
+	# Determine secret_store from kit - assume vault for now (credhub ignored)
+	my $store = $self->vault->connect_and_validate;
+	my @generated_paths;
+	if ($opts{all}) { # ignores --failed or --filter (which should have been trapped at the cli parser
+		my @paths = $self->vault->paths($self->secrets_base);
+		return 2 unless scalar(@paths);
+
+		unless ($opts{'no-prompt'}) {
+			die_unless_controlling_terminal
+			explain "#Yr{[WARNING]} This will delete all %s secrets under '#C{%s}', including\n".
+			             "          non-generated values set by 'genesis new' or manually created",
+				 scalar(@paths), $self->secrets_base;
+			while (1) {
+				my $response = prompt_for_line(undef, "Type 'yes' to remove these secrets, 'list' to list them; anything else will abort","");
+				print "\n";
+				if ($response eq 'list') {
+					# TODO: check and color-code generated vs manual entries
+					my $prefix_len = length($self->secrets_base);
+					bullet $_ for (map {substr($_, $prefix_len)} @paths);
+				} elsif ($response eq 'yes') {
+					last;
+				} else {
+					explain "\nAborted!\nKeeping all existing secrets under '#C{%s}'.\n", $self->secrets_base;
+					return 0;
+				}
+			}
+		}
+		waiting_on "Deleting existing secrets under '#C{%s}'...", $self->secrets_base;
+		my ($out,$rc) = $self->vault->query('rm', '-rf', $self->secrets_base);
+		bail "#R{error!}\n%s", $out if ($rc);
+		explain "#G{done}\n";
+		return 1;
+	}
+
+	my $processing_opts = {
+		level=>$opts{verbose}?'full':'line'
+	};
+	my $ok = $store->process_kit_secret_plans(
+		'remove'.($opts{failed} ? '-failed' : ''),
+		$self,
+		sub{$self->_secret_processing_updates_callback('remove',$processing_opts,@_)},
+		_slice(\%opts, qw/filter no-prompt/)
+	);
+	return $ok;
+}
+
+sub _secret_processing_updates_callback {
+	my ($self,$action,$opts,$state,%args) = @_;
+	my $indent = $opts->{indent} || '  ';
+	my $level = $opts->{level} || 'full';
+	$level = 'full' unless -t STDOUT;
+
+	$args{result} ||= '';
+	(my $actioned = $action) =~ s/e?$/ed/;
+	$actioned = 'found' if $actioned eq 'checked';
+	(my $actioning = $action) =~ s/e?$/ing/;
+
+	if ($state eq 'done-item') {
+		my $map = { error => "#R{failed!}",
+		            'check/ok' =>  "#G{found.}",
+		            'validate/ok' =>  "#G{valid.}",
+		            ok =>  "#G{done.}",
+		            'recreate/skipped' => '#Y{skipped}',
+		            skipped => "#Y{exists!}",
+		            missing => "#R{missing!}" };
+		push(@{$self->{__secret_processing_updates_callback__items}{$args{result}} ||= []},
+		     $self->{__secret_processing_updates_callback__item});
+
+		explain $map->{"$action/$args{result}"} || $map->{$args{result}} || $args{result}
+			if $args{result} && ($level eq 'full' || !( $args{result} eq 'ok' || ($args{result} eq 'skipped' && $action eq 'add')));
+		if ($args{msg}) {
+			my @lines = grep {$level eq 'full' || $_ =~ /^\[#R/} split("\n",$args{msg});
+			my $pad = " " x (length($self->{__secret_processing_updates_callback__total})*2+4);
+			explain "  $pad%s\n", join("\n  $pad", @lines) if @lines;
+		}
+		waiting_on "\r[2K" unless $level eq 'full';
+
+	} elsif ($state eq 'start-item') {
+		$self->{__secret_processing_updates_callback__idx}++;
+		my $w = length($self->{__secret_processing_updates_callback__total});
+		waiting_on "  [%*d/%*d] #C{%s} #wi{%s} ... ",
+			$w, $self->{__secret_processing_updates_callback__idx},
+			$w, $self->{__secret_processing_updates_callback__total},
+			$args{path},
+			$args{label} . ($level eq 'line' ? '' : " - $args{details}");
+
+	} elsif ($state eq 'empty') {
+		explain "%s - nothing to %s!\n",
+			$args{msg} || "No kit secrets found",
+			$action;
+		return 1;
+
+	} elsif ($state eq 'abort') {
+		error($args{msg}) if $args{msg};
+		return;
+
+	} elsif ($state eq 'init') {
+		$self->{__secret_processing_updates_callback__start} = time();
+		$self->{__secret_processing_updates_callback__total} = $args{total};
+		$self->{__secret_processing_updates_callback__idx} = 0;
+		$self->{__secret_processing_updates_callback__items} = {};
+		my $msg_action = $args{action} || sprintf("%s %s secrets", ucfirst($actioning), $args{total});
+		explain "\n%s for #M{%s} under path '#C{%s}':", $msg_action, $self->name, $self->secrets_base;
+
+	} elsif ($state eq 'wait') {
+		$self->{__secret_processing_updates_callback__startwait} = time();
+		waiting_on "%s ... ", $args{msg};
+
+	} elsif ($state eq 'wait-done') {
+		explain("%s #Ki{- %s}",
+			$args{result} eq 'ok' ? "#G{done.}" : "#R{error!}",
+			Time::Seconds->new(time() - $self->{__secret_processing_updates_callback__startwait})->pretty()
+		) if ($args{result} && ($args{result} eq 'error' || $level eq 'full'));
+		error("#R{[ERROR]} Encountered error: %s", $args{msg}) if ($args{result} eq 'error');
+		waiting_on "\r[2K" unless $level eq 'full';
+
+	} elsif ($state eq 'completed') {
+		my @extra_errors = @{$args{errors} || []};
+		my $err_count = scalar(@{$self->{__secret_processing_updates_callback__items}{error} || []})
+			+ scalar(@extra_errors)
+			+ ($action =~ /^(check|validate)$/ ?
+				scalar(@{$self->{__secret_processing_updates_callback__items}{missing} || []}) : 0);
+		explain "%s - Duration: %s [%d %s/%d skipped/%d errors]\n",
+			$err_count ? "Failed" : "Completed",
+			Time::Seconds->new(time() - $self->{__secret_processing_updates_callback__start})->pretty(),
+			scalar(@{$self->{__secret_processing_updates_callback__items}{ok} || []}), $actioned,
+			scalar(@{$self->{__secret_processing_updates_callback__items}{skipped} || []}),
+			$err_count;
+		return !$err_count;
+	} elsif ($state eq 'prompt') {
+		die_unless_controlling_terminal
+		my $title = '';
+		if ($args{class}) {
+			$title = sprintf("\r[2K\n#%s{[%s]} ", $args{class} eq 'warning' ? "Y" : '-', uc($args{class}));
+		}
+		explain "%s%s", $title, $args{msg};
+		return prompt_for_line(undef, $args{prompt}, $args{default} || "");
+	} else {
+		bug "_secret_processing_updates_callback encountered an unknown state '$state'";
+	}
+}
+
 
 sub validate_name {
 	my ($class, $name) = @_;
@@ -951,8 +1140,21 @@ sub validate_name {
 sub _slice {
 	my ($hash_ref, @keys) = @_;
 	my %slice;
-	$slice{$_} = $hash_ref->{$_} for (@keys);
-	return %slice;
+	for (@keys) {
+		if (exists($hash_ref->{$_})) {
+			$slice{$_} = $hash_ref->{$_};
+		} elsif ($_ =~ '_') {
+			my $__ = _u2d($_);
+			$slice{$_} = $hash_ref->{$__} if exists($hash_ref->{$__});
+		}
+	}
+	return %slice
+}
+
+sub _u2d {
+	my $str = shift;
+	$str =~ s/_/-/g;
+	$str
 }
 
 1;

@@ -573,7 +573,8 @@ $GLOBAL_USAGE
   secrets-provider  Check or set the secrets provider for the Genesis deployment.
   #G{check-secrets}     Check for missing credentials (passwords, keys, etc.).
   #G{add-secrets}       Generate missing credentials (passwords, keys, etc.).
-  #G{rotate-secrets}    Rotate credentials (passwords, keys, etc.).
+  #G{rotate-secrets}    Rotate or renew credentials (passwords, keys, etc.).
+  #G{remove-secrets}    Remove credentials (passwords, keys, etc.).
   #G{manifest}          Generate a redacted BOSH deployment manifest for an environment.
   #G{deploy}            Generate a real manifest using Vault + Cloud Config, and deploy it to BOSH.
   #G{do}                Run an addon script provided by the Kit.  Try `do list`
@@ -980,16 +981,45 @@ create the new environment, then move back the secrets you need to keep.
 
 OPTIONS
 $GLOBAL_USAGE
-  -P, --secrets-path By default, the vault path is secret/<env-name>/<kit>
-                     where <env-name> has had any - converted to / and
-                     <kit> is the kit name.  Use this option to change the part
-                     after secret/
+  -k, --kit           Name (and optionally, version) of the Genesis Kit to
+                      use for this environment.  I.e.: shield/6.3.0
+                      Defaults to latest.  This kit must be locally present (see
+                      'genesis list-kits').  To use the dev kit, specify
+                      'dev/latest'
 
-  -k, --kit          Name (and optionally, version) of the Genesis Kit to
-                     use for this environment.  I.e.: shield/6.3.0
-                     Defaults to latest.  This kit must be locally present (see
-                     `genesis list-kits`).  To use the dev kit, specify
-                     'dev/latest'
+      --credhub-env   The name of the credhub deployment (for kits that use
+                      credhub).  By default, it will use the bosh env as the
+                      source of the credhub exodus data, which in turn defaults
+                      to the deployment environment's name.  If the deployment
+                      that contains the credhub's exodus data is not a bosh
+                      deployment, you must also specify the deployment type:
+                      ie: some-other-env/bucc
+
+  -P, --secrets-path  By default, the secrets path is secret/<env-name>/<kit>
+                      where <env-name> has had any - converted to / and
+                      <kit> is the kit name.  Use this option to change the part
+                      after 'secret/'
+
+      --secrets-mount If you need secrets stored in another location other than
+                      'secret/', you can specify it with this option.  You can
+                      specify '/' if your secrets provider allows access to the
+                      root level, and you can specify a deeper subdirectory if
+                      you only have access to such a branch.
+
+      --exodus-mount  Similar to --secrets-mount, you can specify a different
+                      base path for the exodus data.  It is highly recommended
+                      you do not specify '/' for this, nor is it required that
+                      it be under the secrets mount location.  By default, it
+                      will use '<secrets-mount>/exodus/'
+
+      --ci-mount      For kits that provide secrets to concourse, this allows
+                      to specify an alternative location for the base secrets
+                      to be put.  By default, it is set to the same as secrets
+                      mount.
+
+      --root-ca-path  Specify a vault path to a root CA certificate that will be
+                      used to sign all generated certs that don't specify a
+                      signatory CA certificate.
 
 LEGACY OPTIONS:
       --vault        The name of a `safe' target (a Vault) to store newly
@@ -1011,15 +1041,20 @@ sub {
 		vault=s
 		secrets-path|prefix|P=s
 		secrets!
+		secrets-mount=s
+		exodus-mount=s
+		ci-mount=s
+		credhub-env=s
+		root-ca-path=s
 		kit|k=s
 	/);
 	usage(1) if @_ != 1;
 	warn "The --no-secrets flag is deprecated, and no longer honored.\n"
-		if !$options{secrets};
+		if !delete($options{secrets});
 	check_prereqs;
 
 	# get our context
-	my $top = Genesis::Top->new('.', vault => $options{vault}); # FIXME: drop chdir from -C handling eventually
+	my $top = Genesis::Top->new('.', vault => delete($options{vault})); # FIXME: drop chdir from -C handling eventually
 
 	my $name = $_[0];
 	die "No environment name specified!\n"
@@ -1027,7 +1062,7 @@ sub {
 
 	# determine the kit to use (dev or compiled)
 	$options{kit} ||= '';
-	my $kit = $top->local_kit_version($options{kit});
+	my $kit = $top->local_kit_version(delete($options{kit}));
 	if (!$kit) {
 		if (!$options{kit}) {
 			die "Unable to determine the correct version of the Genesis Kit to use.\n".
@@ -1041,12 +1076,19 @@ sub {
 		    "Do you need to `genesis fetch-kit $options{kit}`?\n";
 	}
 
+	# Check if root ca path exists if specified
+	if ($options{'root-ca-path'}) {
+		bail "No CA certificate found in vault under '#C{%s}'", $options{'root-ca-path'}
+			unless $top->vault->query('x509', 'validate', '-A', $options{'root-ca-path'});
+	}
+
 	# check version prereqs
 	$kit->check_prereqs or exit 86;
 
 	# create the environment
 	explain("Setting up new environment #C{$name}...");
-	my $env = $top->create_env($name, $kit, vault => $options{vault}, secrets_path => $options{"secrets-path"});
+	my $env = $top->create_env($name, $kit, %options);
+	bail "Failed to create environment $name" unless $env;
 
 	# let the user know
 	explain("New environment $env->{name} provisioned!");
@@ -1316,16 +1358,27 @@ with 0.
 
 OPTIONS
 $GLOBAL_USAGE
+      --validate    Validate secrets comply with the kit parameters
+                    (takes longer than just confirming existence)
+  -v, --verbose     List each item, not just failures and warnings.
+  -F, --filter s    A string or regular expression filter to match secret paths against:
+                      - a string for an exact match to a secret
+                      - an re pattern with optional negation or case insensitivity:
+                        /.*/ca\$/ - only paths ending in ca
+                        !/loggregator/ - anything without loggregator in the path
+                        /^my-?thing//i - path starts with mything/ or my-thing/, ignoring case
 
 LEGACY OPTIONS
-      --vault        The name of a `safe' target (a Vault) to check for the
-                     generated credentials.  Only accepted if the deployment
-                     repository does not have a vault specified.
-
+      --vault       The name of a `safe' target (a Vault) to check for the
+                    generated credentials.  Only accepted if the deployment
+                    repository does not have a vault specified.
 EOF
 sub {
 	my %options;
 	options(\@_, \%options, qw/
+		validate
+		verbose|v
+		filter|F=s
 	/);
 
 	my ($name) = @_;
@@ -1333,7 +1386,7 @@ sub {
 
 	check_prereqs;
 	my $env = Genesis::Top->new(".")->load_env($name);
-	$env->check_secrets() or exit 1;
+	$env->check_secrets(%options) or exit 1;
 }); # }}}
 # genesis add-secrets - Generate missing credentials for an environment. {{{
 
@@ -1346,17 +1399,26 @@ credentials after upgrading kits.
 
 OPTIONS
 $GLOBAL_USAGE
+  -v, --verbose     List each item as it is processed, not just failures and warnings.
+  -F, --filter s    A string or regular expression filter to match secret paths against:
+                      - a string for an exact match to a secret
+                      - an re pattern with optional negation or case insensitivity:
+                        /.*/ca\$/ - only paths ending in ca
+                        !/loggregator/ - anything without loggregator in the path
+                        /^my-?thing//i - path starts with mything/ or my-thing/, ignoring case
 
 LEGACY OPTIONS
-	  --vault        The name of a `safe' target (a Vault) to store newly
-	                 generated credentials in.  This option is only accepted if
-                   the deployment repository does not have a secrets-provider
-                   set - see 'genesis secrets-provider'.
+      --vault       The name of a `safe' target (a Vault) to store newly
+                    generated credentials in.  This option is only accepted if
+                    the deployment repository does not have a secrets-provider
+                    set - see 'genesis secrets-provider'.
 
 EOF
 sub {
 	my %options;
 	options(\@_, \%options, qw/
+		filter|F=s
+		verbose|v
 		vault=s
 	/);
 
@@ -1365,38 +1427,52 @@ sub {
 
 	check_prereqs;
 	my $env = Genesis::Top->new(".", vault => $options{vault})->load_env($name);
-	$env->add_secrets();
+	$env->add_secrets(%options);
 });
 
 # }}}
 # genesis rotate-secrets - Rotate required credentials for an environment. {{{
-
 command("rotate-secrets", <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE: genesis rotate-secrets [--force] deployment-env.yml
+USAGE: genesis rotate-secrets [opts] deployment-env.yml
 
-Generates new secrets for your deployment. If any credentials were marked by
-the kit as `fixed', they are not updated unless the `--force` option was also
-specified.
+Generates fresh secrets for your deployment. If any secrets are marked by the
+kit as `fixed', they are not updated.
 
 OPTIONS
 $GLOBAL_USAGE
-  -f, --force        Rotate *ALL* credentials, including any credentials that
-                     the kit defined as `fixed'. This is very dangerous.  Only
-                     applies to `rotate`.  This will still not rotate CA
-                     certificates.
+  -v, --verbose     List each item as it is processed, not just failures and warnings.
+  -X, --failed      Only rotate secrets that have errors.
+      --renew       Renew secrets that have expiry (currently this only applies
+                    to x509 certs).  Renewed x509 certs will still be valid for
+                    certs previously signed by it; its TTL will just be updated.
+  -F, --filter s    A string or regular expression filter to match secret paths against:
+                      - a string for an exact match to a secret
+                      - an re pattern with optional negation or case insensitivity:
+                        /.*/ca\$/ - only paths ending in ca
+                        !/loggregator/ - anything without loggregator in the path
+                        /^my-?thing//i - path starts with mything/ or my-thing/, ignoring case
+  -y, --no-prompt   Don't prompt for confirmation
 
 LEGACY OPTIONS
-      --vault        The name of a `safe' target (a Vault) to store newly
-                     generated credentials in.  This option is only accepted if
-                     the deployment repository does not have a secrets-provider
-                     set - see 'genesis secrets-provider'.
-
+      --vault       The name of a `safe' target (a Vault) to store newly
+                    generated credentials in.  This option is only accepted if
+                    the deployment repository does not have a secrets-provider
+                    set - see 'genesis secrets-provider'.
+  -f, --force       Used to rotate *ALL* secrets, including any credentials that
+                    the kit defined as `fixed'. This was very dangerous.
+                    Instead, use `remove-secrets` to remove specific secrets
+                    and the `add-secrets` to add them back.
 EOF
 sub {
 	my %options;
 	options(\@_, \%options, qw/
 		force|force-rotate-all|f
+		verbose|v
+		filter|F=s
+		renew
+		failed|X
+		no-prompt|y
 		vault=s
 	/);
 
@@ -1405,7 +1481,62 @@ sub {
 
 	check_prereqs;
 	my $env = Genesis::Top->new(".", vault => $options{vault})->load_env($name);
-	$env->rotate_secrets(force => $options{force});
+
+	bail "--force option no longer valid. See `genesis rotate-secrets -h` for more details"
+		if (delete($options{force}));
+	$env->rotate_secrets(%options);
+});
+
+# }}}
+# genesis remove-secrets - Remove credentials from an environment. {{{
+command("remove-secrets", <<EOF,
+genesis v$Genesis::VERSION$Genesis::BUILD
+USAGE: genesis rotate-secrets [opts] deployment-env.yml
+
+Generates fresh secrets for your deployment. If any secrets are marked by the
+kit as `fixed', they are not updated.
+
+OPTIONS
+$GLOBAL_USAGE
+  -v, --verbose     List each item as it is processed, not just failures and warnings.
+  -X, --failed      Only delete secrets that have errors.
+  -A, --all         Remove all secrets under this deployments secrets base path.
+  -F, --filter s    A string or regular expression filter to match secret paths against:
+                      - a string for an exact match to a secret
+                      - an re pattern with optional negation or case insensitivity:
+                        /.*/ca\$/ - only paths ending in ca
+                        !/loggregator/ - anything without loggregator in the path
+                        /^my-?thing//i - path starts with mything/ or my-thing/, ignoring case
+  -y, --no-prompt   Don't prompt for confirmation
+
+LEGACY OPTIONS
+      --vault       The name of a `safe' target (a Vault) to store newly
+                    generated credentials in.  This option is only accepted if
+                    the deployment repository does not have a secrets-provider
+                    set - see 'genesis secrets-provider'.
+
+EOF
+sub {
+	my %options;
+	options(\@_, \%options, qw/
+		verbose|v
+		filter|F=s
+		all|A
+		failed|X
+		no-prompt|y
+		vault=s
+	/);
+
+	my ($name) = @_;
+	usage(1) if @_ != 1;
+
+	check_prereqs;
+	my $env = Genesis::Top->new(".", vault => $options{vault})->load_env($name);
+
+	bail "Cannot use --filter or --failed at the same time as the --all option."
+		if (exists($options{filter}) || $options{failed}) && $options{all};
+
+	$env->remove_secrets(%options) or exit 1;
 });
 
 # }}}
@@ -1418,36 +1549,36 @@ USAGE: genesis secrets [check|add|rotate [--force]] [--vault <vault>] deployment
 Checks, adds or rotates secrets for your deployment.
 
 Note: This has been DEPRECATED and will be removed in a Genesis v2.7.  Please
-      use check-secrets, add-secrets or rotate-secrets as replacements.
+			use check-secrets, add-secrets or rotate-secrets as replacements.
 
-  * check:  Checks that all required secrets are present.  Returns a exit code
-            of 1 if any are missing, and lists them, otherwise states all
-            secrets are present and exits with 0.
+	* check:  Checks that all required secrets are present.  Returns a exit code
+						of 1 if any are missing, and lists them, otherwise states all
+						secrets are present and exits with 0.
 
-            This functionality is replaced by the command check-secrets
+						This functionality is replaced by the command check-secrets
 
-  * add:    Generates any missing secrets required by the deployment.  Useful
-            to generate credentials after upgrading kits or if `genesis new
-            --no-secrets` was used to create the deployment.
+	* add:    Generates any missing secrets required by the deployment.  Useful
+						to generate credentials after upgrading kits or if `genesis new
+						--no-secrets` was used to create the deployment.
 
-            This functionality is replaced by the command add-secrets
+						This functionality is replaced by the command add-secrets
 
-  * rotate: Generates new secrets for your deployment. If any credentials were
-            marked by the kit as `fixed', they are not updated unless the
-            `--force` option was also specified.
+	* rotate: Generates new secrets for your deployment. If any credentials were
+						marked by the kit as `fixed', they are not updated unless the
+						`--force` option was also specified.
 
-            This functionality is replaced by the command rotate-secrets
+						This functionality is replaced by the command rotate-secrets
 
 OPTIONS
 $GLOBAL_USAGE
-  -f, --force        Rotate *ALL* credentials, including any credentials that
-                     the kit defined as `fixed'. This is very dangerous.  Only
-                     applies to `rotate`
+	-f, --force        Rotate *ALL* credentials, including any credentials that
+										 the kit defined as `fixed'. This is very dangerous.  Only
+										 applies to `rotate`
 
-      --vault        The name of a `safe' target (a Vault) where the secrets
-                     are stored.  This option is only accepted if the deployment
-                     repository does not have a secrets-provider set - see
-                     'genesis secrets-provider'.
+			--vault        The name of a `safe' target (a Vault) where the secrets
+										 are stored.  This option is only accepted if the deployment
+										 repository does not have a secrets-provider set - see
+										 'genesis secrets-provider'.
 
 EOF
 sub {
@@ -1487,7 +1618,6 @@ sub {
 
 # }}}
 # genesis yamls - Print a list of the YAML files used for a single environment. {{{
-
 command("yamls", <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis yamls [--include-kit] deployment-env.yml
