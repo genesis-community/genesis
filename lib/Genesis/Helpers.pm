@@ -56,7 +56,7 @@ genesis() {
 export -f genesis
 
 describe() {
-	/usr/bin/perl -I$HOME/.geese/lib -MGenesis -e 'binmode STDOUT, ":utf8"; explain($_) for @ARGV' "$@"
+  /usr/bin/perl -I$GENESIS_LIB -MGenesis -e 'binmode STDOUT, ":encoding(UTF-8)"; explain("%s",$_) for @ARGV' "$@"
 }
 export -f describe
 

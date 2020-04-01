@@ -1,6 +1,7 @@
 package Genesis::Env;
 use strict;
 use warnings;
+use utf8;
 
 use Genesis;
 use Genesis::Legacy; # but we'd rather not
