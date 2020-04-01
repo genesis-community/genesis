@@ -285,10 +285,10 @@ sub bullet { # [type,] msg, [{option: value, ...}]
 	(my $type, $msg) = ($msg, shift) if (scalar(@_) % 2 > 0);
 	my (%opts) = @_;
 
-	$opts{symbol} ||= $type eq "good"  ? "\x{2714} " :
-	                  $type eq "bad"   ? "\x{2718} " :
-	                  $type eq "empty" ? "  "        :
-                                       "\x{2022} " ;
+	$opts{symbol} ||= $type eq "good"  ? '#@{+}' :
+	                  $type eq "bad"   ? '#@{-}' :
+	                  $type eq "empty" ? '#@{ }' :
+                                       '#@{*}' ;
 
 	$opts{color}  ||= $type eq "good"  ? "G" :
 	                  $type eq "bad"   ? "R" :
