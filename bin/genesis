@@ -1737,13 +1737,6 @@ sub {
 		}
 	}
 
-	if (!$options{force}) {
-		my ($changes, undef) = run('git status --porcelain');
-		bail "\n#R{ERROR}: Unstaged / uncommited changes found in working directory.\n".
-		     "Please either #C{stash} or #C{commit} those changes before compiling your kit.\n"
-			if $changes;
-	}
-
 	my $cc = Genesis::Kit::Compiler->new($dir);
 	my $tar = $cc->compile($options{name}, $options{version}, ".", force => $options{force})
 		or bail "Unable to compile v$options{version} of $options{name} Genesis Kit.\n";
