@@ -1670,6 +1670,7 @@ $GLOBAL_USAGE
   -r, --remote          List the remote kits available from the Genesis
                         Community Github organization
       --latest[=N]      List only the latest (N) versions -- N defaults to 1
+      --filter <re>     Filter kits to the given regular expression pattern
 
 Remote and updates supports further options
       --prereleases     Include pre-release versions of kits
@@ -1685,6 +1686,7 @@ sub {
 		latest:i
 		prereleases
 		details!
+		filter=s
 	/);
 	usage(1) if @_ > 1;
 	my $name = $_[0];
