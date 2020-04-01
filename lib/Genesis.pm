@@ -1,6 +1,8 @@
 package Genesis;
 use strict;
 use warnings;
+no warnings 'utf8';
+use utf8;
 
 our $VERSION = "(development)";
 our $BUILD   = "";

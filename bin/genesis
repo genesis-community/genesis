@@ -2,13 +2,8 @@
 # vim:ft=perl:noet:ts=2:sts=2:sw=2:fdm=marker:fdl=0
 use strict;
 use warnings;
-
-#use utf8;
-use open ':std', ':encoding(UTF-8)';
-use Encode (); # Convert input to UTF-8
-for (@ARGV) {
-	$_ = Encode::encode("UTF-8",$_,Encode::LEAVE_SRC);
-}
+no warnings 'utf8';
+use utf8;
 
 # Ensure code exits and cleans up workdirs
 $SIG{INT} = $SIG{TERM} = sub { die };
@@ -42,6 +37,7 @@ $Genesis::BUILD = "";
 
 our $USER_AGENT_STRING = "genesis/$Genesis::VERSION";
 $ENV{GENESIS_CALLBACK_BIN} ||= abs_path(__FILE__);
+$ENV{GENESIS_LIB} ||= "$ENV{HOME}/.geese/lib";
 $ENV{HTTPS_PROXY}=$ENV{BOSH_ALL_PROXY} if ($ENV{BOSH_ALL_PROXY});
 
 my $END_HOOKS = [];
@@ -2501,13 +2497,15 @@ sub main {
 		bail("This repository is a Genesis v1 repository.  Compatibility with v1 repos has\nbeen discontinued as of v2.7.0");
 	}
 	my ($cmd, @args);
+	my $no_warn = 1;
 	while (@_ > 0) {
 		my $arg = shift @_;
 
 		if ($ENV{LANG}) {
 			eval {$arg = decode($ENV{LANG},$arg)};
-			if ($@) {
+			if ($@ && $no_warn) {
 				warn "#Y{[WARNING]} Environment variable \$LANG contains invalid value.  Some output may be garbled as a result";
+				$no_warn = 0;
 			}
 		}
 
