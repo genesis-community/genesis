@@ -4,6 +4,7 @@ use warnings;
 
 use Genesis;
 use Genesis::UI;
+use JSON::PP qw/decode_json/;
 
 ### Class Variables {{{
 my (@all_vaults, $default_vault, $current_vault);
@@ -17,7 +18,8 @@ sub new {
 	return bless({
 			url    => $url,
 			name   => $name,
-			verify => $verify ? 1 : 0 # Cleans out JSON::Boolean types
+			verify => $verify ? 1 : 0, # Cleans out JSON::Boolean types
+			id     => sprintf("%s-%06d",$name,rand(1000000))
 		}, $class);
 }
 
@@ -86,14 +88,7 @@ sub target {
 	}
 
 	my $vault = ($class->find(url => $url))[0];
-	printf STDERR csprintf("\n#yi{Verifying availability of selected vault...}")
-		unless in_callback || under_test;
-	my $status = $vault->status;
-	error("#%s{%s}\n", $status eq "ok"?"G":"R", $status)
-		unless in_callback || under_test;
-	debug "Vault status: $status";
-	bail("#R{[ERROR]} Could not connect to vault: status is $status") unless $status eq "ok";
-	return $vault->set_as_current;
+	return $vault->connect_and_validate()
 }
 
 # }}}
@@ -126,14 +121,7 @@ sub attach {
 	}
 
 	my $vault = $class->new($url, $targets[0], !$insecure);
-	printf STDERR csprintf("\nUsing vault at #C{%s}.\n#yi{Verifying availability...}", $vault->url)
-	  unless envset "GENESIS_TESTING";
-	my $status = $vault->status;
-	debug "Vault status: $status";
-	error("#%s{%s}\n", $status eq "ok"?"G":"R", $status)
-		unless envset "GENESIS_TESTING";
-	bail("#R{[ERROR]} Could not connect to vault: status is $status") unless $status eq "ok";
-	return $vault->set_as_current;
+	return $vault->connect_and_validate;
 }
 
 # }}}
@@ -219,12 +207,28 @@ sub clear_all {
 ### Instance Methods {{{
 
 # public accessors: url, name, verify, tls {{{
-sub url    { $_[0]->{url};    }
-sub name   { $_[0]->{name};   }
-sub verify { $_[0]->{verify}; }
-sub tls    { $_[0]->{url} =~ "^https://"; }
+sub url     { $_[0]->{url};    }
+sub name    { $_[0]->{name};   }
+sub verify  { $_[0]->{verify}; }
+sub tls     { $_[0]->{url} =~ "^https://"; }
 
 #}}}
+# connect_and_validate - connect to the vault and validate that its connected {{{
+sub connect_and_validate {
+	my ($self) = @_;
+	unless ($self->is_current) {
+		printf STDERR csprintf("\n#yi{Verifying availability of selected vault...}")
+			unless in_callback || under_test;
+		my $status = $self->status;
+		error("#%s{%s}\n", $status eq "ok"?"G":"R", $status)
+			unless in_callback || under_test;
+		debug "Vault status: $status";
+		bail("#R{[ERROR]} Could not connect to vault: status is $status") unless $status eq "ok";
+	}
+	return $self->set_as_current;
+}
+
+# }}}
 # query - make safe calls against this vault {{{
 sub query {
 	my $self = shift;
@@ -234,7 +238,6 @@ sub query {
 	$opts->{env} ||= {};
 	$opts->{env}{DEBUG} = "";                 # safe DEBUG is disruptive
 	$opts->{env}{SAFE_TARGET} = $self->ref; # set the safe target
-	dump_stack();
 	return run($opts, @cmd);
 }
 
@@ -403,6 +406,291 @@ sub ref_by_name {
 sub set_as_current {
 	$current_vault = shift;
 }
+sub is_current {
+  $current_vault && $current_vault->{id} eq $_[0]->{id};
+}
+
+# }}}
+# process_kit_secret_plans - perform actions on the kit secrets: add,recreate,renew,check,remove {{{
+sub process_kit_secret_plans {
+	my ($self, $action, $env, $update, %opts) = @_;
+
+	my $process_failed = $action =~ s/^(recreate|renew|remove)-failed$/$1/;
+	bug("#R{[Error]} Unknown action '$action' for processing kit secrets")
+		if ($action !~ /^(add|recreate|renew|remove)$/);
+
+	$update->('wait', msg => "Parsing kit secrets descriptions");
+	my @plans = parse_kit_secret_plans(
+		$env->dereferenced_kit_metadata,
+		[$env->features],
+		root_ca_path => $env->root_ca_path,
+		%opts)
+	;
+
+	my @errors = map {my ($p,$t,$m) = describe_kit_secret_plan(%$_); sprintf "%s: %s", $p, $m} grep {$_->{type} eq 'error'} @plans;
+	$update->('wait-done', result => (@errors ? 'error' : 'ok'), msg => join("\n", @errors));
+	return if (@errors);
+
+	if ($process_failed) {
+		@plans = $self->_get_failed_secret_plans($action, $env, $update, @plans);
+		return $update->('empty', msg => sprintf "No failed secrets found%s.", $opts{filter} ? " matching provided filter" : "")
+			unless scalar(@plans);
+	}
+	#Filter out any path that has no plan - only x509 has support for renew
+	#TODO: make this generalized if other things are supported in the future
+	@plans = grep {$_->{type} eq 'x509'} @plans if $action eq 'renew';
+	return $update->('empty') unless scalar(@plans);
+
+	if ($action =~ /^(remove|recreate|renew)$/ && !$opts{'no-prompt'}) {
+		(my $actioned = $action) =~ s/e?$/ed/;
+		my $permission = $update->('prompt',
+			class => 'warning',
+			msg => "The following secrets will be ${actioned}:\n  ". join("\n  ",
+				map {bullet $_, inline => 1}
+				map {_get_plan_paths($_)}
+				@plans
+			),
+			prompt => "Type 'yes' to $action these secrets");
+		return $update->('abort', msg => "\nAborted!\n")
+			if $permission ne 'yes';
+	}
+
+	my ($result, $err, $idx);
+	$update->('init', total => scalar(@plans));
+	if ($opts{batch}) {
+		bug "Batch processing of secret plans not supported yet!";
+		my @command = _generate_secret_command($action, $env->secrets_base, 1, %$_);
+	} else {
+		for (@plans) {
+			my ($path, $label, $details) = describe_kit_secret_plan(%$_);
+			$update->('start-item', path => $path, label => $label, details => $details);
+			my $now_t = Time::Piece->new(); # To prevent clock jitter
+			my @command = _generate_secret_command($action, $env->secrets_base, 0, %$_);
+			my ($out, $rc) = $self->query(@command);
+
+			if ($out =~ /refusing to .* as it is already present/) {
+				$update->('done-item', result => 'skipped')
+			} elsif ( $action eq 'renew' && $out =~ /Renewed x509 cert.*expiry set to (.*)$/) {
+				my $expires = $1;
+				eval {
+					(my $exp_gmt = $1) =~ s/UTC/GMT/;
+					my $expires_t = Time::Piece->strptime($exp_gmt, "%b %d %Y %H:%M %Z");
+					my $days = sprintf("%.0f",($expires_t - $now_t)->days());
+					$update->('done-item', result => 'ok', msg => _checkbox(1)."Expiry updated to $expires ($days days)");
+				};
+				$update->('done-item', result => 'ok', msg => "Expiry updated to $expires") if $@;
+			} elsif (!$out) {
+				$update->('done-item', result => 'ok')
+			} else {
+				$update->('done-item', result => 'error', msg => $out);
+			}
+			last if ($rc);
+		}
+	}
+	return $update->('completed');
+}
+
+# }}}
+# validate_kit_secrets - validate kit secrets {{{
+sub validate_kit_secrets {
+	my ($self, $action, $env, $update, %opts) = @_;
+	bug("#R{[Error]} Unknown action '$action' for checking kit secrets")
+		if ($action !~ /^(check|validate)$/);
+
+	$update->('wait', msg => "Parsing kit secrets descriptions");
+	my @plans = parse_kit_secret_plans(
+		$env->dereferenced_kit_metadata,
+		[$env->features],
+		root_ca_path => $env->root_ca_path,
+		%opts);
+
+	my @errors = map {my ($p,$t,$m) = describe_kit_secret_plan(%$_); sprintf "%s: %s", $p, $m} grep {$_->{type} eq 'error'} @plans;
+	$update->('wait-done', result => (@errors ? 'error' : 'ok'), msg => join("\n", @errors));
+	return if (@errors);
+
+	$update->('wait', msg => "Retrieving all existing secrets");
+	my ($secret_contents,$err) =$self->all_secrets_for($env);
+	$update->('wait-done', result => ($err ? 'error' : 'ok'), msg => $err);
+	return if $err;
+
+	$update->('init', total => scalar(@plans));
+	for my $plan (@plans) {
+		my ($path, $label, $details) = describe_kit_secret_plan(%$plan);
+		$update->('start-item', path => $path, label => $label, details => $details);
+		my ($result, $msg) = _validate_kit_secret($action,$plan,$secret_contents,$env->secrets_base,\@plans);
+		$update->('done-item', result => $result, msg => $msg);
+	}
+	return $update->('completed');
+}
+
+# }}}
+# all_secrets_under - return hash for all secrets under the given path {{{
+sub all_secrets_for {
+	my ($self, $env) = @_;
+
+	my ($secret_contents,$err);
+	my $root_path = $env->secrets_base;
+	debug "Turning off debug and trace output while retrieving secrets";
+	local $ENV{GENESIS_TRACE}='';
+	local $ENV{GENESIS_DEBUG}='';
+	my @cmd = ('export', $env->secrets_base);
+	my $root_ca_path = $env->root_ca_path;
+	push @cmd, $root_ca_path if $root_ca_path;
+	my $raw_secrets = $self->query(@cmd);
+	return ({}, "Root CA certificate not found")
+		if $raw_secrets =~ /^!! no secret exists at path \`$root_ca_path\`/;
+	return ({})
+		if $raw_secrets =~ /^!! no secret exists at path/;
+	eval {
+		$secret_contents = decode_json($raw_secrets);
+	};
+	$err = "Could not retrieve existing secrets for $root_path" if $@;
+	return($secret_contents, $err);
+}
+
+# }}}
+# }}}
+
+### Private Methods {{{
+# _expected_kit_secret_keys - list keys expected for a given kit secret {{{
+sub _expected_kit_secret_keys {
+	my (%plan) = @_;
+	my @keys;
+	my $type = $plan{type};
+	if ($type eq 'x509') {
+		@keys = qw(certificate combined key);
+		push(@keys, qw(crl serial)) if $plan{is_ca};
+	} elsif ($type eq 'rsa') {
+		@keys = qw(private public);
+	} elsif ($type eq 'ssh') {
+		@keys = qw(private public fingerprint);
+	} elsif ($type eq 'dhparam') {
+		@keys = qw(dhparam-pem);
+	} elsif ($type eq 'random') {
+		my (undef,$key) = split(":",$plan{path});
+		@keys = ($key);
+		push(@keys, $plan{destination} || "$key-".$plan{format})
+			if $plan{format};
+	}
+	return @keys;
+}
+
+# }}}
+# _get_failed_secret_plans - list the plans for failed secrets {{{
+sub _get_failed_secret_plans {
+	my ($self, $scope, $env, $update, @plans) = @_;
+	$update->('wait', msg => "Retrieving all existing secrets");
+	my ($secret_contents,$err) =$self->all_secrets_for($env);
+	$update->('wait-done', result => ($err ? 'error' : 'ok'), msg => $err);
+	return () if $err;
+
+	my @failed;
+	my ($total, $idx) = (scalar(@plans), 0);
+	$update->('init', action => "Checking for failed".($scope eq 'recreate' ? ' or missing' : '')." secrets", total => scalar(@plans));
+	for my $plan (@plans) {
+		my ($path, $label, $details) = describe_kit_secret_plan(%$plan);
+		$update->('start-item', path => $path, label => $label, details => $details);
+		my ($result, $msg) = _validate_kit_secret('validate',$plan,$secret_contents,$env->secrets_base, \@plans);
+		if ($result eq 'error' || ($result eq 'missing' && $scope eq 'recreate')) {
+			$update->('done-item', result => $result, msg => $msg) ;
+			push @failed, $plan;
+		} else {
+			$update->('done-item', result => 'ok')
+		}
+	}
+	return @failed;
+}
+# }}}
+# }}}
+
+### Public helper functions {{{
+
+# parse_kit_secret_plans - get the list of secrets specified by the kit {{{
+sub parse_kit_secret_plans {
+  my ($metadata, $features, %opts) = @_;
+	trace "Parsing plans for kit secrets";
+	my $plans = _get_kit_secrets($metadata, $features, %opts);
+
+	# Sort the plans in order of application (check for cyclical ca relations)
+	my $groups = {};
+	push(@{$groups->{$plans->{$_}{type}} ||= []}, $_) for (sort(CORE::keys(%$plans)));
+
+	my @ordered_plans = _process_x509_plans(
+		$plans,
+		delete($groups->{x509}),
+		$opts{root_ca_path},
+		$opts{validate});
+
+	# Add in all the other types that don't require prerequesites
+	for my $type (sort(CORE::keys %$groups)) {
+		for my $path (sort @{$groups->{$type}}) {
+			my $ok = 1;
+			if ($opts{validate}) {
+				my $validate_sub = "_validate_${type}_plan";
+				$ok = (\&{$validate_sub})->($plans,$path,\@ordered_plans) if exists(&{$validate_sub});
+			}
+			push @ordered_plans, $plans->{$path} if $ok;
+		}
+	}
+
+	if ($opts{filter}) {
+		$opts{filter} =~ '^((!)?/)?(.*?)(/(i)?)?$';
+		my ($match,$pattern,$reopt) = (($2 || '') ne '!', $3, ($5 || ''));
+		$pattern = "^$pattern\$" if (!$1 || !$4);
+		my $re; eval "\$re = qr/\$pattern/$reopt";
+		@ordered_plans = grep {$match ? $_->{path} =~ $re : $_->{path} !~ $re} (@ordered_plans);
+	}
+	trace "Completed parsing plans for kit secrets";
+	return @ordered_plans;
+}
+
+# }}}
+# describe_kit_secret_plan - get a printable slug for the a kit secret plan {{{
+sub describe_kit_secret_plan {
+	my (%plan) = @_;
+	my ($path,$type,@features);
+	$path = $plan{path};
+	if ($plan{type} eq 'x509') {
+		$type = "X509 certificate";
+		@features = (
+			$plan{is_ca} ? 'CA' : undef,
+			$plan{self_signed}
+			  ? ($plan{self_signed} == 2 ? 'explicitly self-signed' : 'self-signed')
+				: ($plan{signed_by} ? "signed by '$plan{signed_by}'" : undef )
+		);
+	} elsif ($plan{type} eq 'random') {
+		$type = "random password";
+		@features = (
+			$plan{size} . ' bytes',
+			$plan{fixed} ? 'fixed' : undef
+		)
+	} elsif ($plan{type} eq 'dhparams') {
+		$type = "Diffie-Hellman key exchange parameters";
+		@features = (
+			$plan{size} . ' bits',
+			$plan{fixed} ? 'fixed' : undef
+		);
+	} elsif ($plan{type} =~ /^(ssh|rsa)$/) {
+		$type = uc($plan{type})." public/private keypair";
+		@features = (
+			$plan{size} . ' bits',
+			$plan{fixed} ? 'fixed' : undef
+		);
+	} elsif ($plan{type} eq 'error') {
+		$type = "ERROR";
+		@features = (
+			$plan{error},
+		);
+		debug("Error encountered in secret plan $path:");
+		dump_var plan => \%plan;
+	} else {
+		$type = "ERROR";
+		@features = (
+			"Unsupported secret type '%s'"
+		);
+	}
+	return ($path,$type,join (", ", grep {$_} @features));
+}
 
 # }}}
 # }}}
@@ -434,8 +722,662 @@ sub _get_targets {
 }
 
 # }}}
-# }}}
+# _get_kit_secrets - get the raw secrets from the kit.yml file {{{
+sub _get_kit_secrets {
+	my ($meta, $features, %opts) = @_;
 
+	my $plans = {};
+	for my $feature ('base', @{$features || []}) {
+		if ($meta->{certificates}{$feature}) {
+			for my $path (CORE::keys %{ $meta->{certificates}{$feature} }) {
+				if ($path =~ ':') {
+					$plans->{$path} = {type=>'error', error=>"Bad Request:\n- Path cannot contain colons"};
+					next;
+				}
+				my $data = $meta->{certificates}{$feature}{$path};
+				if (CORE::ref($data) eq 'HASH') {
+					for my $k (CORE::keys %$data) {
+						my $ext_path = "$path/$k";
+						$plans->{$ext_path} = $data->{$k};
+						if (CORE::ref($plans->{$ext_path}) eq 'HASH') {
+							$plans->{$ext_path}{type} = "x509";
+							$plans->{$ext_path}{base_path} = $path;
+						} else {
+							$plans->{$ext_path} = {type => 'error', error => "Badly formed x509 request:\nExpecting hash map, got '$plans->{$ext_path}'"};
+						}
+						# In-the-wild POC conflict fix for cf-genesis-kit v1.8.0-v1.10.x
+						$plans->{$ext_path}{signed_by} = "application/certs/ca"
+							if ($plans->{$ext_path}{signed_by} || '') eq "base.application/certs.ca";
+					}
+				} else {
+					$plans->{$path} = {type => 'error', error => "Badly formed x509 request:\n- expecting certificate specification in the form of a hash map"};
+				}
+			}
+		}
+		if ($meta->{credentials}{$feature}) {
+			for my $path (CORE::keys %{ $meta->{credentials}{$feature} }) {
+				if ($path =~ ':') {
+					$plans->{$path} = {type=>'error', error=>"Bad credential request:\n- Path cannot contain colons"};
+					next;
+				}
+				my $data = $meta->{credentials}{$feature}{$path};
+				if (CORE::ref($data) eq "HASH") {
+					for my $k (CORE::keys %$data) {
+						if ($k =~ ':') {
+							$plans->{"$path:$k"} = {type=>'error', error=>"Bad credential request:\n- Key cannot contain colons"};
+							next;
+						}
+						my $cmd = $data->{$k};
+						if ($cmd =~ m/^random\s+(\d+)(\s+fmt\s+(\S+)(\s+at\s+(\S+))?)?(\s+allowed-chars\s+(\S+))?(\s+fixed)?$/) {
+							$plans->{"$path:$k"} = {
+								type=> 'random',
+								size => $1,
+								format => $3,
+								destination => $5,
+								valid_chars => $7,
+								fixed => (!!$8)
+							};
+						} else {
+							$plans->{"$path:$k"} = {type => "error", error => "Bad crecential request:\n- Bad generate-password format '$cmd'"};
+						}
+					}
+				} elsif ($data =~ m/^(ssh|rsa)\s+(\d+)(\s+fixed)?$/) {
+					$plans->{$path} = {type => $1, size=> $2, fixed => (!!$3) };
+				} elsif ($data =~ m/^dhparams?\s+(\d+)(\s+fixed)?$/) {
+					$plans->{$path} = {type => 'dhparams', size => $1, fixed => (!!$2) }
+				} elsif ($data =~ m/^random .?$/) {
+					$plans->{$path} = {type => 'error', error => "Bad credential request:\n- Random password request for a path must be specified per key in a hashmap"};
+				} else {
+					$plans->{$path} = {type => 'error', error => "Bad credential request:\n- Unrecognized request '$data'"};
+				}
+			}
+		}
+	}
+	$plans->{$_}{path} = $_ for CORE::keys %$plans;
+	return $plans;
+}
+
+# }}}
+# _generate_secret_command - create safe command list that can be run standalone or as part of a batch {{{
+sub _generate_secret_command {
+	my ($action,$root_path, $batch, %plan) = @_;
+	my @cmd;
+	if ($action eq 'remove') {
+		@cmd = ('rm', '-f', $root_path.$plan{path});
+		if ($plan{type} eq 'random' && $plan{format}) {
+			my ($secret_path,$secret_key) = split(":", $plan{path},2);
+			my $fmt_path = sprintf("%s:%s", $root_path.$secret_path, $plan{destination} ? $plan{destination} : $secret_key.'-'.$plan{format});
+			push @cmd, '--', 'rm', '-f', $fmt_path;
+		}
+	} elsif ($plan{type} eq 'x509') {
+		my %action_map = (add      => 'issue',
+			                recreate => 'issue',
+			                renew    => 'renew');
+		my @names = @{$plan{names} || []};
+		push(@names, sprintf("ca.n%09d.%s", rand(1000000000),$plan{base_path})) if $plan{is_ca} && ! scalar(@names);
+		@cmd = (
+			'x509',
+			$action_map{$action},
+			$root_path.$plan{path},
+			'--ttl', $plan{valid_for} || ($plan{is_ca} ? '10y' : '1y'),
+		);
+		push(@cmd, '--signed-by', ($plan{signed_by_abs_path} ? '' : $root_path).$plan{signed_by}) if $plan{signed_by};
+		if ($action_map{$action} eq 'issue') {
+			push(@cmd, '--ca') if $plan{is_ca};
+			push(@cmd, '--name', $_) for (@names);
+			if (CORE::ref($plan{usage}) eq 'ARRAY') {
+				push(@cmd, '--key-usage', $_) for (@{$plan{usage}} ? @{$plan{usage}} : qw/no/);
+			}
+		}
+	} elsif ($action eq 'renew') {
+		# Nothing else supports renew -- return empty action
+		debug "No safe command for renew $plan{type}";
+		return ();
+	} elsif ($plan{type} eq 'random') {
+		@cmd = ('gen', $plan{size},);
+		my ($path, $key) = split(':',$plan{path});
+		push(@cmd, '--policy', $plan{valid_chars}) if $plan{valid_chars};
+		push(@cmd, $root_path.$path, $key);
+		if ($plan{format}) {
+			my $dest = $plan{destination} || "$key-".$plan{format};
+			push(@cmd, '--no-clobber') if $action eq 'add' || ($action eq 'recreate' && $plan{fixed});
+			push(@cmd, '--', 'fmt', $plan{format}, $root_path.$path, $key, $dest);
+		}
+	} elsif ($plan{type} eq 'dhparams') {
+		@cmd = ('dhparam', $plan{size}, $root_path.$plan{path});
+	} elsif (grep {$_ eq $plan{type}} (qw/ssh rsa/)) {
+		@cmd = ($plan{type}, $plan{size}, $root_path.$plan{path});
+	} else {
+		@cmd = (@cmd, 'prompt', 'bad request');
+		debug "Requested to create safe path for an bad plan";
+		dump_var plan => \%plan;
+	}
+	push(@cmd, '--no-clobber') if $action eq 'add' || ($plan{fixed} && $action eq 'recreate');
+	push(@cmd, '--', 'prompt', "completed: $plan{type}|$plan{path}") if $batch; # for notification when batched.
+	debug "safe command: ".join(" ", @cmd);
+	dump_var plan => \%plan;
+	return @cmd;
+}
+
+# }}}
+# _process_x509_plans - determine signing changes, add defaults and specify build order {{{
+sub _process_x509_plans {
+	my ($plans, $paths, $root_ca_path, $validate) = @_;
+
+	my @paths = @{$paths || []};
+	my $base_cas = {};
+	for (grep {$_ =~ /\/ca$/ || ($plans->{$_}{is_ca}||'') =~ 1} @paths) {
+		$plans->{$_}{is_ca} = 1;
+		push(@{$base_cas->{$plans->{$_}{base_path}} ||= []}, $_);
+	}
+
+	for my $base_path (CORE::keys %$base_cas) {
+		next unless my $count = scalar(@{$base_cas->{$base_path}});
+		my ($base_ca, $err);
+		if ($count == 1) {
+			# Use the ca for the base path
+			$base_ca = $base_cas->{$base_path}[0];
+		} elsif (grep {$_ eq "$base_path/ca"} @{$base_cas->{$base_path}}) {
+			# Use the default ca if there's more than one
+			$base_ca = "$base_path/ca";
+		} else {
+			# Ambiguous - flag this further down
+			$err = "Unspecified/ambiguous signing CA";
+		}
+
+		my @signable_certs = grep {!$plans->{$_}{is_ca}
+		                        &&  $plans->{$_}{base_path} eq $base_path
+		                        && !$plans->{$_}{signed_by}
+		                          } @paths;
+		for (@signable_certs) {
+			if ($err) {
+				$plans->{$_}{type} = "error";
+				$plans->{$_}{error} = "Ambiguous or missing signing CA"
+			} else {
+				$plans->{$_}{signed_by} = $base_ca;
+			}
+		}
+	}
+
+	my $signers = {};
+	for (@paths) {
+		my $signer = $plans->{$_}{signed_by} || '';
+		push (@{$signers->{$signer} ||= []}, $_);
+	}
+	$signers->{$_} = [sort @{$signers->{$_}}] for (CORE::keys %$signers);
+	_sign_unsigned_x509_plans($signers->{''}, $plans, $root_ca_path );
+
+	my @ordered_plans;
+	my $target = '';
+	while (1) {
+		_sign_x509_plans($target,$signers,$plans,\@ordered_plans,$validate);
+		$target = _next_signer($signers);
+		last unless $target;
+	}
+
+	# Find unresolved signage paths
+	for (grep {$plans->{$_}{type} eq 'x509' && !$plans->{$_}{__processed}} sort(CORE::keys %$plans)) {
+		$plans->{$_}{type} = "error";
+		$plans->{$_}{error} = "Could not find associated signing CA";
+		push(@ordered_plans, $plans->{$_})
+	}
+
+	return @ordered_plans;
+}
+
+# }}}
+# _sign_unsigned_x509_plans - sign unsigned plans with the root CA if present, otherwise self-signed {{{
+sub _sign_unsigned_x509_plans {
+	my ($cert_paths, $plans, $root_ca) = @_;
+	for my $path (@{$cert_paths||[]}) {
+		next unless $plans->{$path}{type} eq 'x509' && !$plans->{$path}{signed_by};
+		if ($root_ca) {
+			$plans->{$path}{signed_by} = $root_ca;
+			$plans->{$path}{signed_by_abs_path} = 1;
+		} else {
+			$plans->{$path}{self_signed} = 1;
+		}
+	}
+}
+
+# }}}
+# _sign_x509_plans - process the certs in order of signer {{{
+sub _sign_x509_plans {
+	my ($signer,$certs_by_signer,$src_plans,$ordered_plans,$validate) = @_;
+	if ($signer) {
+		if (! grep {$_->{path} eq $signer} (@$ordered_plans)) {
+			my ($idx) = grep {$certs_by_signer->{$signer}[$_] eq $signer} ( 0 .. scalar(@{$certs_by_signer->{$signer}})-1);
+			if (defined($idx)) {
+				# I'm signing myself - must be a CA
+				unshift(@{$certs_by_signer->{$signer}}, splice(@{$certs_by_signer->{$signer}}, $idx, 1));
+				$src_plans->{$signer}{self_signed} = 2; #explicitly self-signed
+				$src_plans->{$signer}{signed_by} = "";
+				$src_plans->{$signer}{is_ca} = 1;
+			}
+		}
+	}
+	while (my $cert = shift(@{$certs_by_signer->{$signer}})) {
+		if (grep {$_->{path} eq $cert} (@$ordered_plans)) {
+			# Cert has been added already - bail
+			$src_plans->{$cert} ||= {};
+			$src_plans->{$cert}{type}  = 'error';
+			$src_plans->{$cert}{error} = 'Cyclical CA signage detected';
+			return;
+		}
+		$src_plans->{$cert}{__processed} = 1;
+		push(@$ordered_plans, $src_plans->{$cert})
+			if ((!$validate) || _validate_x509_plan($src_plans,$cert,$ordered_plans));
+		_sign_x509_plans($cert,$certs_by_signer,$src_plans,$ordered_plans,$validate)
+			if scalar(@{$certs_by_signer->{$cert} || []});
+	}
+}
+
+# }}}
+# _next_signer - determine next signer so none are orphaned {{{
+sub _next_signer {
+	my $signers = shift;
+	my @available_targets = grep {scalar(@{$signers->{$_}})} sort(CORE::keys %$signers);
+	while (@available_targets) {
+		my $candidate = shift @available_targets;
+		# Dont use a signer if its signed by a remaining signer
+		next if grep {$_ eq $candidate} map { @{$signers->{$_}} } @available_targets;
+		return $candidate;
+	}
+	return undef;
+}
+
+# }}}
+# _validate_x509_plan - check the cert plan is valid {{{
+sub _validate_x509_plan {
+	my ($plans,$cert_name, $ordered_plans) = @_;
+
+	my %cert = %{$plans->{$cert_name}};
+	my $err = "";
+	$err .= "\n- Invalid valid_for argument: expecting <positive_number>[ymdh], got $cert{valid_for}"
+		unless !$cert{valid_for} || ($cert{valid_for} || '') =~ /^[1-9][0-9]*[ymdh]$/;
+	if ($cert{names}) {
+		if (CORE::ref($cert{names}) eq 'HASH') {
+			$err .= "\n- Invalid names argument: expecting an array of one or more strings, got a hashmap";
+		} elsif (CORE::ref($cert{names}) eq '') {
+			$err .= "\n- Invalid names argument: expecting an array of one or more strings, got the string '$cert{names}'"
+		} elsif (CORE::ref($cert{names}) eq 'ARRAY') {
+			if (! scalar @{$cert{names}}) {
+				$err .= "\n- Invalid names argument: expecting an array of one or more strings, got an empty list";
+			} elsif (grep {!$_} @{$cert{names}}) {
+				$err .= "\n- Invalid names argument: cannot have an empty name entry";
+			} elsif (grep {CORE::ref($_) ne ""} @{$cert{names}}) {
+				$err .= "\n- Invalid names argument: cannot have an entry that is not a string";
+			}
+		}
+	}
+	if ($cert{usage}) {
+		if (CORE::ref($cert{usage}) eq 'ARRAY') {
+			my %valid_keys = map {$_, 1} _x509_key_usage();
+			my @invalid_keys = grep {!$valid_keys{$_}} @{$cert{usage}};
+			$err .= sprintf("\n- Invalid usage argument - unknown usage keys: '%s'\n  Valid keys are: '%s'",
+											join("', '", sort @invalid_keys), join("', '", sort(CORE::keys %valid_keys)))
+				if (@invalid_keys);
+		} else {
+			$err .= "\n- Invalid usage argument: expecting an array of one or more strings, got ".
+			        (CORE::ref($cert{usage}) ? lc('a '.CORE::ref($cert{usage})) : "the string '$cert{usage}'");
+		}
+	}
+	$err .= "\n- Invalid is_ca argument: expecting boolean value, got '$cert{is_ca}'"
+		unless (!defined($cert{is_ca}) || $cert{is_ca} =~ /^1?$/);
+	if ($cert{signed_by}) {
+		$err .= "\n- Invalid signed_by argument: expecting relative vault path string, got '$cert{signed_by}'"
+			unless ($cert{signed_by} =~ /^[a-z0-9_-]+(\/[a-z0-9_-]+)+$/);
+		$err .= "\n- CA Common Name Conflict - can't share CN '".@{$cert{names}}[0]."' with signing CA"
+			if (
+				(CORE::ref($plans->{$cert{signed_by}})||'' eq "HASH") &&
+				$plans->{$cert{signed_by}}{names} &&
+				CORE::ref($cert{names}) eq 'ARRAY' &&
+				CORE::ref($plans->{$cert{signed_by}}{names}) eq 'ARRAY' &&
+				@{$cert{names}}[0] eq @{$plans->{$cert{signed_by}}{names}}[0]
+			);
+	}
+	if ($err) {
+		$plans->{$cert_name} = {%cert, type => 'error', error => "Bad X509 certificate request: $err"};
+		push @$ordered_plans, $plans->{$cert_name};
+		return undef;
+	}
+	return 1;
+}
+
+# }}}
+# _validate_ssh_plan - check the ssh plan is valid {{{
+sub _validate_ssh_plan {
+	my ($plans,$path, $ordered_plans) = @_;
+	my %plan = %{$plans->{$path}};
+	my $err = "";
+	$err .= "\n- Invalid size argument: expecting 1024-16384, got $plan{size}"
+		if ($plan{size} !~ /^\d+$/ || $plan{size} < 1024 ||  $plan{size} > 16384);
+
+	if ($err) {
+		push @$ordered_plans, {%plan, type => 'error', error => "Bad SSH request: $err"};
+		return undef;
+	}
+	return 1;
+}
+
+# }}}
+# _validate_kit_secret - list keys expected for a given kit secret {{{
+sub _validate_kit_secret {
+	my ($scope,$plan,$secret_values,$root_path,$plans) = @_;
+
+	# Existance
+	my ($path,$key) = split(':', $root_path.$plan->{path});
+	$path =~ s#^/?(.*?)/?$#$1#;
+	$path =~ s#/{2,}#/#g;
+	my $values = $secret_values->{$path};
+	return ('missing') unless defined($values)
+	                       && CORE::ref($values) eq 'HASH'
+	                       && (!defined($key) || defined($values->{$key}));
+
+	my @keys = _expected_kit_secret_keys(%$plan);
+	return (
+		'error',
+		sprintf("Cannot process secret type '%s': unknown type",$plan->{type})
+	) unless @keys;
+
+	my $errors = join("\n", map {sprintf("%smissing key ':%s'", _checkbox(0), $_)} grep {! exists($values->{$_})} @keys);
+	return ('missing',$errors) if $errors;
+	return ('ok') unless $scope eq 'validate';
+
+	my ($msg,%results);
+	if ($plan->{type} eq 'x509') {
+		my $key  = $values->{key};
+		my $cert = $values->{certificate};
+		my ($keyModulus) = run('openssl rsa -in <(echo "$1") -modulus  -noout', $key) =~ /Modulus=(\S*)/;
+		my $certInfo = run('openssl x509 -in <(echo "$1") -text -fingerprint -modulus -noout', $cert);
+		my ($issuerCN, $since, $expires, $subjectCN, $fingerprint, $modulus) =
+			$certInfo =~ /Issuer: CN=(\S*).*Not Before: ([^\n]*).*Not After : ([^\n]*).*Subject: CN=([^\r\n]+?)\s*[\r\n]+.*Fingerprint=(\S*).*Modulus=(\S*)/ms;
+		my $is_ca = $certInfo =~ /X509v3 Basic Constraints:.*(CA:TRUE).*Signature Algorithm/ms;
+
+		# CN and SANs
+		my (undef, $sanInfo) = $certInfo =~ /\n( *)X509v3 Subject Alternative Name:\s*?((?:[\n\r]+\1.*)+)/;
+		my @SANs = ($sanInfo || '') =~ /(?:IP Address|DNS):([^,\n\r]+)/g;
+		@SANs =  map {s/\s*$//; $_} @SANs;
+
+		my $cn_str = ${$plan->{names}}[0];
+		if ($cn_str) {
+			$results{cn} = $subjectCN eq $cn_str;
+			$cn_str = "'$cn_str'";
+		} else {
+			my $default_cn_re = qr/^ca\.n[0-9]{9}\.$plan->{base_path}/;
+			$results{cn} = $subjectCN =~ $default_cn_re;
+			$cn_str = $results{cn} ? "'$subjectCN'" : "matches default ca.n#########.$plan->{base_path}";
+		}
+		my (%sans,%desired_sans);
+		@sans{grep {$_ ne $subjectCN} @SANs}=();
+		@desired_sans{@{$plan->{names}}[1 .. scalar @{$plan->{names}}-1]}=();
+		my @extra_sans = sort(grep {!exists $desired_sans{$_}} CORE::keys %sans);
+		my @missing_sans = sort(grep {!exists $sans{$_}} CORE::keys %desired_sans);
+		$results{sans} = !scalar(@extra_sans) && !scalar(@missing_sans);
+		my $sans_str = " (".join('; ',(@missing_sans ? "missing: ".join(", ", @missing_sans):(), @extra_sans? "extra: ".join(", ", @extra_sans) : ())).")";
+		$sans_str = ": ".join(", ", @SANs) if $sans_str eq " ()";
+
+		# Signage and Modulus Agreement
+		$results{is_ca} = !!$is_ca if $plan->{is_ca};
+		my ($subjectKeyID) = $certInfo =~ /X509v3 Subject Key Identifier: *[\n\r]+\s+([A-F0-9:]+)\s*$/m;
+		my ($authKeyID)    = $certInfo =~ /X509v3 Authority Key Identifier: *[\n\r]+\s+keyid:([A-F0-9:]+)\s*$/m;
+		my $signed_by_str;
+		my $self_signed = (!$plan->{signed_by} || $plan->{signed_by} eq $plan->{path});
+		if ($self_signed) {
+			$results{self_signed} = ($subjectKeyID && $authKeyID)
+				? $subjectKeyID eq $authKeyID
+				: $issuerCN eq $subjectCN;
+		} else {
+			my $signer_path = $plan->{signed_by_abs_path} ? $plan->{signed_by} : $root_path.$plan->{signed_by};
+			$signer_path =~ s#^/##;
+			my $ca_cert = $secret_values->{$signer_path}{certificate};
+			if ($ca_cert) {
+				my $caSubjectKeyID;
+				if ($authKeyID) {
+					# Try to use the subject and authority key identifiers if they exist
+					my $caInfo = run('openssl x509 -in <(echo "$1") -text -noout', $ca_cert);
+					($caSubjectKeyID) = $caInfo =~ /X509v3 Subject Key Identifier: *[\r\n]+\s+([A-F0-9:]+)\s*$/m;
+				}
+				if ($caSubjectKeyID) {
+					$results{signed} = $authKeyID eq $caSubjectKeyID;
+					$signed_by_str = '';
+				} else {
+					# Otherwise try to validate the full chain if we have access all the certs
+					my $ca_plan;
+					my $full_cert_chain='';
+					while (1) {
+						last unless $signer_path && defined($secret_values->{$signer_path});
+						$full_cert_chain =  $secret_values->{$signer_path}{certificate}.$full_cert_chain;
+						($ca_plan) = grep {$root_path.$_->{path} eq '/'.$signer_path} @$plans;
+						last unless ($ca_plan && $ca_plan->{signed_by});
+
+						($signer_path = $ca_plan->{signed_by_abs_path}
+							? $ca_plan->{signed_by}
+							: $root_path.$ca_plan->{signed_by}
+						) =~ s#^/##
+					}
+
+					my $out = run(
+						'openssl verify -verbose -CAfile <(echo "$1") <(echo "$2")',
+						$full_cert_chain, $values->{certificate}
+					);
+					if ($out =~ /error \d+ at \d+ depth lookup/) {
+						#fine, we'll check via safe itself - last resort because it takes time
+						my $signer_path = $plan->{signed_by_abs_path} ? $plan->{signed_by} : $root_path.$plan->{signed_by};
+						$signer_path =~ s#^/##;
+						my ($safe_out,$rc) = Genesis::Vault::current->query('x509','validate','--signed-by', $signer_path, $root_path.$plan->{path});
+						$results{signed} = $rc == 0 && $safe_out =~ qr/$plan->{path} checks out/;
+					} else {
+						$results{signed} = $out =~ /: OK$/;
+					}
+					$signed_by_str = $results{signed} ? '' :
+						$subjectCN eq $issuerCN ? " (maybe self-signed?)" : "  (signed by CN '$issuerCN')"
+				}
+			} else {
+				$results{signed} = 0;
+				$signed_by_str = " (specified CA not found - ".
+					($subjectCN eq $issuerCN ?
+				               "maybe self-signed?)" : "found signed by CN '$issuerCN')");
+			}
+		}
+		$results{modulus_agreement} = $modulus eq $keyModulus;
+
+		my $now_t = Time::Piece->new();
+		my $since_t   = Time::Piece->strptime($since,   "%b %d %H:%M:%S %Y %Z");
+		my $expires_t = Time::Piece->strptime($expires, "%b %d %H:%M:%S %Y %Z");
+		my $valid_str;
+		if ($since_t < $now_t) {
+			if ($now_t < $expires_t) {
+				$valid_str = sprintf("expires in %.0f days (%s)",  ($expires_t - $now_t)->days(), $expires);
+			} else {
+				$valid_str = sprintf("expired %.0f days ago (%s)", ($now_t - $expires_t)->days(), $expires);
+			}
+		} else {
+			$valid_str = "not yet valid (starts $since)";
+		}
+		$results{valid} = $valid_str =~ /^expires/;
+
+
+		my ($usage, $usage_str);
+		if (defined($plan->{usage})) {
+			$usage = ($plan->{usage});
+			$usage_str = "Specified key usage";
+			if (!scalar @$usage) {
+				$usage_str = "No key usage";
+			}
+		} elsif ($plan->{is_ca}) {
+			$usage = [qw/server_auth client_auth crl_sign key_cert_sign/];
+			$usage_str = "Default CA key usage";
+		} else {
+			$usage = [qw/server_auth client_auth/];
+			$usage_str = "Default key usage";
+		}
+
+		my $usage_results = _x509_key_usage($certInfo,$usage);
+		$results{usage} = !defined($usage_results->{extra}) && !defined($usage_results->{missing});
+		my @extra_usage = @{$usage_results->{extra}||[]};
+		my @missing_usage = @{$usage_results->{missing}||[]};
+		my $usage_err_str = " (". join('; ',(
+				@missing_usage ? "missing: ".join(", ", @missing_usage):(),
+				@extra_usage   ? "extra: "  .join(", ", @extra_usage  ):()
+		)).")";
+		if ($usage_err_str eq " ()") {
+			$usage_str .= ": ".join(", ", @$usage) if @$usage;
+		} else {
+			$usage_str .= $usage_err_str;
+		}
+
+		$msg .= sprintf("%s%sCA Certificate\n",    _checkbox($is_ca), $plan->{is_ca} ? '' : 'Not a ') if $is_ca || $plan->{is_ca};
+		$msg .= $self_signed ?
+						sprintf("%sSelf-Signed\n",         _checkbox($results{self_signed})) :
+						sprintf("%sSigned by %s%s\n",      _checkbox($results{signed}), $plan->{signed_by}, $signed_by_str);
+		$msg .= sprintf("%sValid: %s\n",           _checkbox($results{valid}), $valid_str);
+		$msg .= sprintf("%sModulus Agreement\n",   _checkbox($results{modulus_agreement}));
+		$msg .= sprintf("%sSubject Name %s%s\n",   _checkbox($results{cn}), $cn_str, $results{cn} ? '' : " (found '$subjectCN')");
+		$msg .= sprintf("%sSubject Alt Names%s\n", _checkbox($results{sans}), $sans_str);
+		$msg .= sprintf("%s%s\n", _checkbox($results{usage}), $usage_str);
+	} elsif ($plan->{type} eq 'dhparam') {
+		# TODO: figure out how to validate
+	} elsif ($plan->{type} eq 'ssh') {
+		my ($rendered_public,$priv_rc) = run('ssh-keygen -y -f /dev/stdin <<<"$1"', $values->{private});
+		$results{priv} = !$priv_rc;
+		$msg .= sprintf("%sValid private key\n",   _checkbox(!$priv_rc));
+		my ($pub_sig,$pub_rc) = run('ssh-keygen -B -f /dev/stdin <<<"$1"', $values->{public});
+		$results{priv} = !$pub_rc;
+		$msg .= sprintf("%sValid public key\n",    _checkbox(!$pub_rc));
+		if (!$priv_rc) {
+			my ($rendered_sig,$rendered_rc) = run('ssh-keygen -B -f /dev/stdin <<<"$1"', $rendered_public);
+			$results{agree} = $rendered_sig eq $pub_sig;
+			$msg .= sprintf("%sPublic/Private key Agreement\n",      _checkbox($results{agree}));
+		}
+		if (!$pub_rc) {
+			my ($bits) = $pub_sig =~ /^\s*([0-9]*)/;
+			$results{size} = ($bits == $plan->{size});
+			$msg .= sprintf("%s%s bits%s\n",        _checkbox($results{size}), $plan->{size}, $results{size} ? '' : " ( found $bits bits)" );
+		}
+	} elsif ($plan->{type} eq 'rsa') {
+		my ($priv_modulus,$priv_rc) = run('openssl rsa -noout -modulus -in <(echo "$1")', $values->{private});
+		$results{priv} = !$priv_rc;
+		$msg .= sprintf("%sValid private key\n",   _checkbox(!$priv_rc));
+		my ($pub_modulus,$pub_rc) = run('openssl rsa -noout -modulus -in <(echo "$1") -pubin', $values->{public});
+		$results{priv} = !$pub_rc;
+		$msg .= sprintf("%sValid public key\n",    _checkbox(!$pub_rc));
+		if (!$pub_rc) {
+			my ($pub_info, $pub_rc2) = run('openssl rsa -noout -text -inform PEM -in <(echo "$1") -pubin', $values->{public});
+			my ($bits) = ($pub_rc2) ? () : $pub_info =~ /Key:\s*\(([0-9]*) bit\)/;
+			$results{size} = (($bits || 0) == $plan->{size});
+			$msg .= sprintf("%s%s bit%s\n",        _checkbox($results{size}), $plan->{size},
+				$results{size} ? '' : ($bits ? " (found $bits bits)" : " (could not read size)"));
+			if (!$priv_rc) {
+				$results{agree} = $priv_modulus eq $pub_modulus;
+				$msg .= sprintf("%sPublic/Private key agreement\n",      _checkbox($results{agree}));
+			}
+		}
+	} elsif ($plan->{type} eq 'random') {
+		$results{length} = $plan->{size} == length($values->{$key});
+		my $length_str = $results{length} ? '' : " - got ". length($values->{$key});
+		$msg .= sprintf("%s%s characters%s\n", _checkbox($results{length}), $plan->{size}, $length_str );
+		if ($plan->{valid_chars}) {
+			(my $valid_chars = $plan->{valid_chars}) =~ s/^\^/\\^/;
+			$results{valid_chars} = $values->{$key} =~ /^[$valid_chars]*$/;
+			$msg .= sprintf("%sOnly uses characters '%s'%s\n",
+				_checkbox($results{valid_chars}), $valid_chars,
+				$results{valid_chars} ? '' : " (found invalid characters in '$values->{$key}')");
+		}
+		if ($plan->{format}) {
+			my ($secret_path,$secret_key) = split(":", $plan->{path},2);
+			my $fmt_key = $plan->{destination} ? $plan->{destination} : $secret_key.'-'.$plan->{format};
+			$results{formatted} = exists $values->{$fmt_key};
+			$msg .= sprintf("%sFormatted as %s in ':%s'%s\n",
+				_checkbox($results{formatted}), $plan->{format}, $fmt_key,
+				$results{formatted} ? '' : " ( not found )");
+		}
+
+		# TODO: check other aspects... (valid_chars, fmt, etc)
+	}
+	return ((grep {!$results{$_}} CORE::keys %results) ? "error" : "ok", $msg);
+}
+
+# }}}
+# _x509_key_usage - specify allowed usage values, and map openssl identifiers to tokens  {{{
+sub _x509_key_usage {
+	my ($openssl_text, $check) = @_;
+
+	my %keyUsageLookup = (
+		"Digital Signature" =>  "digital_signature",
+		"Non Repudiation" =>    "non_repudiation",
+		"Content Commitment" => "content_commitment", #Newer version of non_repudiation
+		"Key Encipherment" =>   "key_encipherment",
+		"Data Encipherment" =>  "data_encipherment",
+		"Key Agreement" =>      "key_agreement",
+		"Certificate Sign" =>   "key_cert_sign",
+		"CRL Sign" =>           "crl_sign",
+		"Encipher Only" =>      "encipher_only",
+		"Decipher Only" =>      "decipher_only",
+	);
+
+	my %extendedKeyUsageLookup = (
+		"TLS Web Client Authentication" => "client_auth",
+		"TLS Web Server Authentication" => "server_auth",
+		"Code Signing" =>                  "code_signing",
+		"E-mail Protection" =>             "email_protection",
+		"Time Stamping" =>                 "timestamping"
+	);
+
+	return uniq(values %keyUsageLookup, values %extendedKeyUsageLookup)
+		unless defined($openssl_text);
+
+	my %found = ();
+	my ($specified_keys) = $openssl_text =~ /X509v3 Key Usage:.*[\n\r]+\s*([^\n\r]+)/;
+	my ($specified_ext)  = $openssl_text =~ /X509v3 Extended Key Usage:.*[\n\r]\s*+([^\n\r]+)/;
+
+	if ($specified_keys) {
+		my @keys =  split(/,\s+/,$specified_keys);
+		chomp @keys;
+		$found{$_} = 1 for (grep {$_} map {$keyUsageLookup{$_}} @keys);
+	}
+	if ($specified_ext) {
+		my @keys =  split(/,\s+/,$specified_ext);
+		chomp @keys;
+		$found{$_} = 1 for (grep {$_} map {$extendedKeyUsageLookup{$_}} @keys);
+	}
+	return CORE::keys(%found) unless (CORE::ref($check) eq "ARRAY");
+	$found{$_}-- for uniq(@$check);
+	if ( exists($found{non_repudiation}) && exists($found{content_commitment}) &&
+	     (abs($found{non_repudiation} + $found{content_commitment}) < 1)) {
+		# if both non_repudiation and content_commitment are found and/or requested,
+		# then as long is the total sum is less than |1|, it is considered requested
+		# and found (ie not both requested and none found or both found and none requested)
+		$found{non_repudiation} = $found{content_commitment} = 0;
+	}
+	my @extra   = sort(grep {$found{$_} > 0} CORE::keys %found);
+	my @missing = sort(grep {$found{$_} < 0} CORE::keys %found);
+
+	return {
+		extra =>   (@extra   ? \@extra   : undef),
+		missing => (@missing ? \@missing : undef)
+	}
+}
+
+#}}}
+# _get_plan_paths - list all paths for the given plan {{{
+sub _get_plan_paths {
+	my $plan = shift;
+	my @paths = $plan->{path};
+	if ($plan->{type} eq 'random' && $plan->{format}) {
+		my ($path,$key) = split(':',$plan->{path},2);
+		push @paths, $path.":".($plan->{destination} ? $plan->{destination} : $key.'-'.$plan->{format})." (paired with $plan->{path})";
+	}
+	return @paths;
+}
+
+#}}}
+## _checkbox - make a checkbox {{{
+sub _checkbox {
+	return bullet($_[0] ? 'good' : 'bad', '', box => 1, inline => 1, indent => 0);
+}
+# }}}
+# }}}
 1;
 
 =head1 NAME
