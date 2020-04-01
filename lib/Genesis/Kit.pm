@@ -254,11 +254,15 @@ sub metadata {
 }
 
 # }}}
-# uses_credhub - does this kit use credhub instead of vault {{{
-sub uses_credhub {
+# secret_store - what secret_store does this kit use ('vault','credhub') {{{
+sub secret_store {
 	my ($self) = @_;
-	return defined($self->metadata->{secret_store}) && $self->metadata->{secret_store} eq "credhub";
+	$self->metadata->{secret_store} ? $self->metadata->{secret_store} : 'vault';
 }
+
+# }}}
+# uses_credhub - does this kit use credhub instead of vault {{{
+sub uses_credhub { return $_[0]->secret_store eq "credhub"; }
 
 # }}}
 # feature_compatibility - {{{
