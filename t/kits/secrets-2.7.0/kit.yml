@@ -1,0 +1,94 @@
+---
+name: secrets-2.7.0
+version: 0.0.1
+author: dbell@starkandwayne.com
+code: https://github.com/genesis-community/genesis
+
+genesis_version_min: 2.7.0
+
+credentials:
+  base:
+    rsa: rsa 4096 fixed
+    rsa-default: rsa 2048
+
+    ssh: ssh 1024
+    ssh-default: ssh 2048 fixed
+
+    passwords:
+      permanent:  random 128 fixed
+      word:       random 64 allowed-chars 01 fixed
+      alt:        random 32 fmt base64
+      uncrypted:  random 1024 fmt bcrypt at crypted
+
+certificates:
+  base:
+    top-level:
+      top:
+        is_ca: true
+        valid_for: '${params.default_ca_ttl}'
+      server:
+        valid_for: 6m
+        names:
+        - server.example.com
+        - 'system.${params.base_domain}'
+        - 10.10.10.10
+        - '*.server.example.com'
+        - '*.system.${params.base_domain}'
+
+    secondary:
+      ca:
+        signed_by: top-level/top
+        names:
+          - secondary.ca
+      server:
+        names:
+          - secondary.server
+        usage:
+          - client_auth
+          - server_auth
+
+    fixed:
+      ca:
+        valid_for: 5y
+        fixed: true
+
+      server:
+        fixed: true
+        valid_for: ${params.default_cert_ttl}
+        names:
+          - "a really long name with DNS: in it"
+
+    openVPN/certs:
+      root:
+        is_ca: true
+        signed_by: openVPN/certs/root #self-signed
+        valid_for: ${params.default_ca_ttl}
+        names:
+          - ca.openvpn
+        usage:
+          - crl_sign
+          - key_cert_sign
+
+      server:
+        names:
+          - server.openvpn
+        valid_for: 180d
+        usage:
+          - server_auth
+          - digital_signature
+          - key_encipherment
+
+    haproxy:
+      ca:
+        valid_for: 1y
+        names:     [ "haProxyCA" ]
+      ssl:
+        valid_for: 1y
+        names:     [ "*.${params.base_domain}",
+                     "*.system.${params.base_domain}",
+                     "*.run.${params.base_domain}",
+                     "*.uaa.system.${params.base_domain}",
+                     "*.login.system.${params.base_domain}" ]
+        usage:     [ client_auth,
+                     server_auth ]
+

@@ -1,0 +1,10 @@
+--- {}
+kit:
+  name: secrets
+  version: latest
+  features: []
+
+params:
+  default_cert_ttl: 2y
+  default_ca_ttl: 10y
+  base_domain: example.genesisproject.io

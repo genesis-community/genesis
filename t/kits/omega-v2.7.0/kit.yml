@@ -1,0 +1,49 @@
+name:     Omega
+version:  2.0.0
+author:   Dennis J. Bell <dbell@starkandwayne.com>
+homepage: omega.starkandwayne.com
+github:   https://github.com/genesis-community/omega-genesis-kit
+
+genesis_version_min: 2.7.0
+
+description: |
+  This kit is designed to exercise as much of the Genesis codebase
+  as is robotically possible.  It does not purport to provide any
+  sort of useful functionality to operators, nor is it required to
+  make any real sense.
+
+credentials:
+  base:
+    test/random:
+      username: random 32
+      password: random 109
+      limited:  random 16 allowed-chars a-z
+
+
+    test/ssh/strong: ssh 4096
+    test/ssh/meh:    ssh 2048
+    test/ssh/weak:   ssh 1024
+
+    test/rsa/strong: rsa 4096
+    test/rsa/meh:    rsa 2048
+    test/rsa/weak:   rsa 1024
+
+    test/fmt/sha512/default:
+      random: random 8 fmt crypt-sha512
+    test/fmt/sha512/at:
+      random: random 8 fmt crypt-sha512 at cryptonomicon
+
+    test/fixed/random:
+      username: random 32 fixed
+    test/fixed/ssh: ssh 2048 fixed
+    test/fixed/rsa: rsa 2048 fixed
+
+  gh-oauth:
+    auth/github/oauth:
+      shared_secret: random 128
+      fixed:         random 128 fixed
+
+  cf-uaa:
+    auth/cf/uaa:
+      shared_secret: random 128
+      fixed:         random 128 fixed

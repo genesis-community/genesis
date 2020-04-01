@@ -1,6 +1,7 @@
 #!perl
 use strict;
 use warnings;
+use utf8;
 
 use lib 'lib';
 use lib 't';
@@ -147,7 +148,6 @@ subtest 'init' => sub {
 
 	# with a directory override
 	$tmp = workdir;
-	use utf8;
 	my $dir = "être_réel.my-dep";
 	throws_ok {Genesis::Top->create($tmp, 'jumpbox', directory => '../bad', vault=>$VAULT_URL)} qr/repository directory name must only contain alpha-numeric characters, periods, hyphens and underscores/i, "Doesn't accept slashes in directory names";
 	throws_ok {Genesis::Top->create($tmp, 'jumpbox', directory => 'also bad', vault=>$VAULT_URL)} qr/repository directory name must only contain alpha-numeric characters, periods, hyphens and underscores/i, "Doesn't accept spaces in directory names";
