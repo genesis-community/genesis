@@ -71,11 +71,12 @@ sub process_params {
 	$opts{kit}     = $self->name;
 	$opts{version} = $self->version;
 	$opts{params}  = $self->metadata->{params} || {};
+	$opts{secrets_base} = $env->secrets_base;
 
 	my @answers;
 	my $resolveable_params = {
-		"params.vault_prefix" => $opts{vault_prefix}, # for backwards compatibility
-		"params.vault" => $opts{vault_prefix},
+		"params.vault_prefix" => $env->secrets_slug, # for backwards compatibility
+		"params.vault" => $env->secrets_slug,
 		"params.env" => $env->name,
 	};
 	for my $feature ("base", @{$opts{features}}) {
@@ -103,7 +104,7 @@ sub process_params {
 				if ($q->{param}) {
 					print csprintf("#y{Required parameter:} #W{$q->{param}}\n\n");
 				} else {
-					$vault_path = "secret/$opts{vault_prefix}/$q->{vault}";
+					$vault_path = "$opts{secrets_base}$q->{vault}";
 					print csprintf("#y{Secret data required} -- will be stored in Vault under #W{$vault_path}\n\n");
 				}
 				chomp $q->{description};
@@ -412,6 +413,8 @@ sub run_param_hook {
 
 sub new_environment {
 	my ($self) = @_;
+	$self->setup_hook_env_vars('new');
+
 	my ($k, $kit, $version) = ($self->{kit}, $self->{kit}->name, $self->{kit}->version);
 	my $meta = $k->metadata;
 
@@ -420,7 +423,6 @@ sub new_environment {
 	my @features = prompt_for_env_features($self);
 	my $params = process_params($k,
 		env          => $self,
-		vault_prefix => $self->{secrets_path},
 		features     => \@features,
 	);
 	$params = run_param_hook($self, $params, @features);
@@ -458,28 +460,42 @@ sub new_environment {
 	print $fh "  features:\n";
 	print $fh "    - (( replace ))\n";
 	print $fh "    - $_\n" foreach (@features);
-	print $fh <<EOF;
 
-params:
-  env:   $self->{name}
-  vault: $self->{secrets_path}
-EOF
-	if (defined($ENV{GENESIS_BOSH_ENVIRONMENT})) {
-		print $fh <<EOF;
-  bosh:  $ENV{GENESIS_BOSH_ENVIRONMENT}
-EOF
-	}
+	# genesis block
+	my $genesis_out = '';
+	$genesis_out .= sprintf "  env:                %s\n",$self->name;
+	$genesis_out .= sprintf "  bosh_env:           %s\n", $ENV{BOSH_ALIAS}
+		if $ENV{BOSH_ALIAS} && ($ENV{BOSH_ALIAS} ne $ENV{GENESIS_ENVIRONMENT});
+	$genesis_out .= sprintf "  min_version:        %s\n",$ENV{GENESIS_MIN_VERSION}
+		if $ENV{GENESIS_MIN_VERSION};
+	$genesis_out .= sprintf "  secrets_path:       %s\n",$ENV{GENESIS_SECRETS_SLUG}
+		if $ENV{GENESIS_SECRETS_SLUG_OVERRIDE};
+	$genesis_out .= sprintf "  root_ca_path:       %s\n",$ENV{GENESIS_ENV_ROOT_CA_PATH}
+		if $ENV{GENESIS_ENV_ROOT_CA_PATH};
+	$genesis_out .= sprintf "  secrets_mount:      %s\n",$ENV{GENESIS_SECRETS_MOUNT}
+		if $ENV{GENESIS_SECRETS_MOUNT_OVERRIDE};
+	$genesis_out .= sprintf "  exodus_mount:       %s\n",$ENV{GENESIS_EXODUS_MOUNT}
+		if $ENV{GENESIS_EXODUS_MOUNT_OVERRIDE};
+	$genesis_out .= sprintf "  ci_mount:           %s\n",$ENV{GENESIS_CI_MOUNT}
+		if $ENV{GENESIS_CI_MOUNT_OVERRIDE};
+	$genesis_out .= sprintf "  credhub_exodus_env: %s\n",$ENV{GENESIS_CREDHUB_EXODUS_SOURCE_OVERRIDE}
+		if $ENV{GENESIS_CREDHUB_EXODUS_SOURCE_OVERRIDE};
 
+	my $overpad = [sort {length($a) <=> length($b)} ($genesis_out =~ /:\s+/g)]->[0];
+	$genesis_out =~ s/$overpad/: /g;
+	print  $fh "\ngenesis:\n$genesis_out";
+
+	my $params_out = '';
 	for my $param (@$params) {
-		print $fh "\n";
+		$params_out .= "\n";
 		my $indent = "  # ";
 		if (defined $param->{comment}) {
 			for my $line (split /\n/, $param->{comment}) {
-				print $fh "${indent}$line\n";
+				$params_out .= "${indent}$line\n";
 			}
 		}
 		if (defined $param->{example}) {
-			print $fh "${indent}(e.g. $param->{example})\n";
+			$params_out .= "${indent}(e.g. $param->{example})\n";
 		}
 
 		$indent = $param->{default} ? "  #" : "  ";
@@ -490,7 +506,7 @@ EOF
 			# this helps us not run into issues resolving the operator
 			my $v = $val->{$k};
 			if (defined $v && ! ref($v) && $v =~ m/^\(\(.*\)\)$/) {
-				print $fh "${indent}$k: $v\n";
+				$params_out .= "${indent}$k: $v\n";
 				next;
 			}
 			my $tmpdir = workdir;
@@ -503,15 +519,17 @@ EOF
 				chomp $line;
 				next unless $line;
 				next if $line eq "---";
-				print $fh "${indent}$line\n";
+				$params_out .= "${indent}$line\n";
 			}
 			close $spruce;
 			die "Unable to convert JSON to spruce-compatible YAML. This is a bug\n"
 				if $? >> 8;
 		}
 	}
+	$params_out ||= " {}\n";
+	print $fh "\nparams:$params_out";
 	close $fh;
-	explain("Created #C{$file} environment file");
+	explain("Created #C{$file} environment file\n");
 }
 
 sub prompt_for_env_features {

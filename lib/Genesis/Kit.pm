@@ -83,45 +83,15 @@ sub run_hook {
 		                               prereqs subkit/;
 
 	if (grep { $_ eq $hook } qw/new secrets info addon check prereqs blueprint pre-deploy post-deploy/) {
-		# env is REQUIRED
-		bug("The 'env' option to run_hook is required for the '$hook' hook!!")
-			unless $opts{env};
-
-		$ENV{GENESIS_ROOT}         = $opts{env}->path;
-		$ENV{GENESIS_ENVIRONMENT}  = $opts{env}->name;
-		$ENV{GENESIS_TYPE}         = $opts{env}->type;
-		$ENV{GENESIS_TARGET_VAULT} = $ENV{SAFE_TARGET} = $opts{env}->vault->ref;
-		$ENV{GENESIS_VERIFY_VAULT} = $opts{env}->vault->verify || "";
-
-		$ENV{GENESIS_VAULT_PREFIX} = $ENV{GENESIS_SECRETS_PATH} = $opts{env}->secrets_path;
 
 		if ($hook eq "new") {
 			$ENV{GENESIS_MIN_VERSION} = $self->metadata->{genesis_version_min} || ""
 		}
 
-		unless (grep { $_ eq $hook } qw/new prereqs/) {
-			my $credhub_src=$opts{env}->lookup(['genesis.credhub-exodus-env','params.bosh','genesis.env']);
-			my $credhub_path = $credhub_src;
-			if ($credhub_src =~ /\/\w+$/) {
-				$credhub_path  =~ s/\/([^\/]*)$/-$1/;
-			} else {
-				$credhub_src .= "/bosh";
-				$credhub_path .= "-bosh";
-			}
-			$ENV{GENESIS_CREDHUB_EXODUS_SOURCE} = $credhub_src;
-			$ENV{GENESIS_CREDHUB_ROOT}=sprintf("%s/%s-%s", $credhub_path, $opts{env}->name, $opts{env}->type);
-
-			$ENV{GENESIS_REQUESTED_FEATURES} = join(' ', $opts{env}->features);
-			if ($opts{env}->needs_bosh_create_env) {
-				$ENV{GENESIS_USE_CREATE_ENV} = 'yes';
-			} else {
-				my $bosh = Genesis::BOSH->environment_variables(scalar $opts{env}->lookup_bosh_target);
-				for my $var (keys %$bosh) {
-					$ENV{$var} = $bosh->{$var};
-				}
-				$ENV{BOSH_DEPLOYMENT} = sprintf("%s-%s", $opts{env}->name, $opts{env}->type);
-			}
-		}
+		trace ('getting env info');
+		bug("The 'env' option to run_hook is required for the '$hook' hook!!") unless $opts{env};
+		$opts{env}->setup_hook_env_vars($hook);
+		trace ('got env info');
 
 	} elsif ($hook eq 'subkit') {
 		bug("The 'features' option to run_hook is required for the '$hook' hook!!")
@@ -311,7 +281,7 @@ sub check_prereqs {
 }
 
 # }}}
-# source_yaml_files - {{{
+# source_yaml_files - list the yaml files that will be merged in order for manifest {{{
 sub source_yaml_files {
 	my ($self, $env, $absolute) = @_;
 
