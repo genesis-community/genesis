@@ -141,14 +141,14 @@ sub kit_names {
 		my $status = $self->check;
 		bail $status."\n" if $status;
 
-		waiting_on STDERR "Retrieving list of available kits from #C{%s} ... ",$self->label;
+		waiting_on "Retrieving list of available kits from #C{%s} ... ",$self->label;
 		my ($code, $msg, $data) = curl("GET", $self->repos_url, undef, undef, 0, $self->{credentials});
 		my $results;
 		eval {
 			$results = load_json($data);
 			1
 		} or bail("#R{error!}\nFailed to read repository information from %s: %s", $self->label, $@);
-		explain STDERR '#G{done.}';
+		explain '#G{done.}';
 
 		$self->{_kits} = [
 			map  {(my $k = $_) =~ s/-genesis-kit$//; $k}
@@ -188,13 +188,14 @@ sub kit_releases {
 			}
 		}
 		bail "$status"."\n" if $status;
+		trace "About to get releases from Github";
 
 		my ($msg,$data);
-		waiting_on STDERR "Retrieving list of available releases for #M{%s} kit on #C{%s} ... ",$name,$self->label;
+		waiting_on "Retrieving list of available releases for #M{%s} kit on #C{%s} ... ",$name,$self->label;
 		($code, $msg, $data) = curl("GET", $url, undef, undef, 0, $self->{credentials});
 		bail("#R{error!}\nCould not find Genesis Kit %s release information; Github rsponded with a %s status:\n%s",$name,$code,$msg)
 			unless $code == 200;
-		explain STDERR "#G{done.}";
+		explain "#G{done.}";
 
 		my $results;
 		eval {
@@ -274,11 +275,11 @@ sub fetch_kit_version {
 	my $url = $version_info->{url};
 	bail "Version $name/$version does not have a downloadable release\n" unless $url;
 
-	waiting_on STDERR "Downloading v%s of #M{%s} kit from #C{%s} ... ",$version,$name,$self->label;
+	waiting_on "Downloading v%s of #M{%s} kit from #C{%s} ... ",$version,$name,$self->label;
 	my ($code, $msg, $data) = curl("GET", $url);
 	bail "#R{error!}\nFailed to download %s/%s from %s: returned a %s status code\n", $name, $version, $self->label, $code
 		unless $code == 200;
-	explain STDERR "#G{done.}";
+	explain "#G{done.}";
 	my $file = "$path/$name-$version.tar.gz";
 	if (-f $file) {
 		if (! $force) {

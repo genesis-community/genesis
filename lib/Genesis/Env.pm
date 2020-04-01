@@ -80,16 +80,16 @@ sub load {
 	$min_version =~ s/^v//i;
 	if ($min_version) {
 		if ($Genesis::VERSION eq "(development)") {
-			warn(
+			error(
 				"#Y{[WARNING]} Environment `$env->{name}` requires Genesis v$min_version or higher.\n".
 				"This version of Genesis is a development version and its feature availability cannot\n".
 				"be verified -- unexpected behaviour may occur.\n"
-			);
+			) unless (under_test && !envset 'GENESIS_TESTING_DEV_VERSION_DETECTION');
 		} elsif (! new_enough($Genesis::VERSION, $min_version)) {
 			bail(
 				"#R{[ERROR]} Environment `$env->{name}` requires Genesis v$min_version or higher.\n".
 				"You are currently using Genesis v$Genesis::VERSION.\n"
-			);
+			) unless (under_test && !envset 'GENESIS_TESTING_DEV_VERSION_DETECTION');
 		}
 	}
 

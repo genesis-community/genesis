@@ -1618,7 +1618,7 @@ sub {
 	my $tar = $cc->compile($options{name}, $options{version}, ".", force => $options{force})
 		or bail "Unable to compile v$options{version} of $options{name} Genesis Kit.\n";
 
-	explain("Compiled #G{$options{name}} v#C{$options{version}} at $tar");
+	explain("Compiled #G{$options{name}} v#C{$options{version}} at $tar\n");
 });
 
 # }}}
