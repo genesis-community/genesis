@@ -289,6 +289,11 @@ sub lookup {
 	return struct_lookup($self->params, $key, $default);
 }
 
+sub lookup_noeval {
+	my ($self, $key, $default) = @_;
+	my ($unevaled_manifest, undef) = $self-> _manifest(no_eval=>1);
+	return struct_lookup($unevaled_manifest, $key, $default);
+}
 
 sub manifest_lookup {
 	my ($self, $key, $default) = @_;
@@ -341,7 +346,6 @@ sub params {
 		my $out = run({ onfailure => "Unable to merge $self->{name} environment files", stderr => 0 },
 			'spruce merge --skip-eval "$@" | spruce json',
 				map { $self->path($_) } $self->actual_environment_files());
-
 		$self->{__params} = load_json($out);
 	}
 	return $self->{__params};
@@ -350,18 +354,25 @@ sub params {
 sub _manifest {
 	my ($self, %opts) = @_;
 	trace "[env $self->{name}] in _manifest(): Redact %s", defined($opts{redact}) ? "'$opts{redact}'" : '#C{(undef)}';
-	my $which = $opts{redact} ? '__redacted' : '__unredacted';
+	my $which = $opts{no_eval} ? '__noeval' : $opts{redact} ? '__redacted' : '__unredacted';
 	my $path = "$self->{__tmp}/$which.yml";
 
 	trace("[env $self->{name}] in _manifest(): looking for the '$which' cached manifest");
 	if (!$self->{$which}) {
 		trace("[env $self->{name}] in _manifest(): cache MISS; generating");
 		trace("[env $self->{name}] in _manifest(): cwd is ".Cwd::cwd);
-		trace("[env $self->{name}] in _manifest(): merging $_")
-			for $self->_yaml_files;
+
+		my @merge_files = $self->_yaml_files($opts{no_eval});
+		trace("[env $self->{name}] in _manifest(): merging $_") for @merge_files;
 
 		pushd $self->path;
-		debug("running spruce merge of all files, with evaluation, to generate a manifest");
+		my $no_eval;
+		if ($opts{no_eval}) {
+			$no_eval = '--skip-eval';
+			debug("running spruce merge of all files, without evaluation or cloudconfig, for parameter dereferencing");
+		} else {
+			debug("running spruce merge of all files, with evaluation, to generate a manifest");
+		}
 		my $out = run({
 				onfailure => "Unable to merge $self->{name} manifest",
 				stderr => "&1",
@@ -370,12 +381,14 @@ sub _manifest {
 					REDACT => $opts{redact} ? 'yes' : '' # spruce redaction flag
 				}
 			},
-			'spruce', 'merge', '--go-patch', $self->_yaml_files);
+			grep {$_} ('spruce', 'merge', '--go-patch', $no_eval, @merge_files));
 		popd;
 
-		debug("saving #W{%s} manifest to $path", $opts{redact} ? 'redacted' : 'unredacted');
+		debug("saving #W{%s} manifest to $path", $opts{no_eval} ? 'unevaled' : $opts{redact} ? 'redacted' : 'unredacted');
 		mkfile_or_fail($path, 0400, $out);
 		$self->{$which} = load_yaml($out);
+	} else {
+		trace("[env $self->{name}] in _manifest(): cache HIT!");
 	}
 	return $self->{$which}, $path;
 }
@@ -458,15 +471,17 @@ sub _yaml_files {
 	my $type   = $self->{top}->type;
 
 	my @cc;
-	if (!$self->needs_bosh_create_env) {
+	if ($self->needs_bosh_create_env) {
+		trace("[env $self->{name}] in_yaml_files(): IS a create-env, skipping cloud-config");
+	} elsif ($no_eval) {
+		trace("[env $self->{name}] in_yaml_files(): skipping eval, no need for cloud-config");
+	} else {
 		trace("[env $self->{name}] in _yaml_files(): not a create-env, we need cloud-config");
 		die "No cloud-config specified for this environment\n"
 			unless $self->{ccfile};
 
 		trace("[env $self->{name}] in _yaml_files(): cloud-config at $self->{ccfile}");
 		push @cc, $self->{ccfile};
-	} else {
-		trace("[env $self->{name}] in_yaml_files(): IS a create-env, skipping cloud-config");
 	}
 
 	if ($self->kit->feature_compatibility('2.6.13')) {
@@ -516,7 +531,7 @@ EOF
 
 sub kit_files {
 	my ($self, $absolute) = @_;
-	return $self->{kit}->source_yaml_files($self, $absolute),
+	return $self->kit->source_yaml_files($self, $absolute),
 }
 
 sub _flatten {
@@ -722,6 +737,16 @@ sub deploy {
 	return $ok;
 }
 
+sub dereferenced_kit_metadata {
+	my ($self) = shift;
+	return $self->kit->dereferenced_metadata(sub {$self->lookup_noeval(@_)}, 1);
+}
+
+
+# add_secrets - add the required secrets {{{
+# Valid options:
+#   --verbose: boolean, default is 0
+#   --filter: (regex) matching pattern, defaults to /.*/
 sub add_secrets { # WIP - majorly broken right now.  sorry bout that.
 	my ($self, %opts) = @_;
 
