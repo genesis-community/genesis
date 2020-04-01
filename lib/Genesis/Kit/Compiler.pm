@@ -3,6 +3,9 @@ use strict;
 use warnings;
 
 use Genesis;
+use Genesis::IO;
+use Genesis::Kit::Dev;
+use Genesis::Vault;
 
 sub new {
 	my ($class, $root) = @_;
@@ -13,89 +16,138 @@ sub new {
 }
 
 sub validate {
-	my ($self) = @_;
+	my ($self,$name,$version) = @_;
 
-	my $rc = 1;
 	if (!-d $self->{root}) {
-		error "Kit source directory '$self->{root}' not found.";
+		error "\n#R{[ERROR]} Kit source directory '$self->{root}' not found.\n";
 		return 0;
 	}
 
+	my @errors;
+	my @yml_errors;
+	my ($meta,$msg);
+	if (-f "$self->{root}/kit.yml") {
+		eval {$meta = load_yaml_file("$self->{root}/kit.yml"); };
+		if ($@ || !$meta) {
+			push @yml_errors, "is not a well-formed YAML file with a map root.";
+		} else {
+			for my $key (qw(name version code)) {
+				next if $meta->{$key};
+				push @yml_errors, "does not define '$key'";
+			}
+			push @yml_errors, "specifies name '$meta->{name}', expecting '$name'"
+				if ($meta->{name} && $meta->{name} ne $name);
+			push @yml_errors, "does not identify the author(s) via 'author' or 'authors'"
+				if (!$meta->{author} && !$meta->{authors});
+			push @yml_errors, "specifies both 'author' and 'authors': pick one."
+				if ($meta->{author} && $meta->{authors});
+			push @yml_errors, sprintf("expects 'authors' to be an array, not a %s.", lc(ref($meta->{authors}) || "string"))
+				if ($meta->{authors} && (ref($meta->{authors}||'') ne 'ARRAY'));
+
+			# genesis versions must be semver
+			push @yml_errors, "specifies minimum Genesis version '$meta->{genesis_version_min}', which is not a semantic version (x.y.z)."
+				if (exists $meta->{genesis_version_min} && !semver($meta->{genesis_version_min}));
+
+			# check for errant top-level keys - params, subkits and features have been discontinued.
+			my @valid_keys = qw/name version description code docs author authors genesis_version_min secrets_store/;
+			if (!defined($meta->{secrets_store}) || $meta->{secrets_store} eq 'vault') {
+				push @valid_keys, "credentials", "certificates";
+			} elsif ($meta->{secrets_store} ne "credhub") {
+				push @yml_errors, "specifies invalid secrets_store: expecting one of 'vault' or 'credhub'";
+			}
+
+			my @errant_keys = ();
+			for my $key (sort keys %$meta) {
+				push(@errant_keys, $key) unless grep {$_ eq $key} @valid_keys;
+			}
+			if (@errant_keys) {
+				push @yml_errors, sprintf(
+					"contains invalid top-level key%s: %s;\nvalid keys are: %s",
+					scalar(@errant_keys) == 1 ? '' : 's',
+					join(", ",@errant_keys), join(", ", @valid_keys)
+				);
+			}
+		}
+	} else {
+		push @yml_errors, "does not exist.";
+	}
+	if (@yml_errors) {
+		push @errors, "#Wk{Kit Metadata file }#Ck{kit.yml}#Wk{:}\n  - ".
+			join("\n  - ", map {join("\n    ", split("\n", $_))} @yml_errors);
+	}
+
+	# Check if any defined secrets have errors
+	if ($meta && (!defined($meta->{secrets_store}) || $meta->{secrets_store} eq 'vault')) {
+		my @all_features = grep {$_ ne 'base'} sort uniq(
+			keys(%{$meta->{credentials}  || {}}),
+			keys(%{$meta->{certificates} || {}})
+		);
+
+		my $kit = Genesis::Kit::Dev->new($self->{root});
+		my @plans = Genesis::Vault::parse_kit_secret_plans(
+			$kit->dereferenced_metadata(sub {$self->_lookup_test_params(@_)}),
+			\@all_features,
+			validate => 1
+		);
+		my @secrets_errors = grep {$_->{type} eq 'error'} @plans;
+		if (scalar @secrets_errors) {
+			my $msg =
+				"#Wk{Secrets specifications in }#Ck{kit.yml}#Wk{:}\n".
+				join("\n  ", map {
+					my ($head,$extra) = split(
+						": *\n", join("\n    ", (split("\n", $_->{error}))), 2
+					);
+					sprintf("\n  #R{%s for }#C{%s}%s", $head, $_->{path}, $extra ? ":\n".$extra : '');
+				} @secrets_errors);
+
+			if (grep {$msg =~ qr/\$\{$_\}/} @{$kit->{__deref_miss}||[]}) {
+				$msg .= "\n\n  Some of the errors above are due to unresolved param dereferencing.  ";
+				$msg .= (-f $self->{root}.'/ci/test_params.yml') ? "Update the" : "Create a";
+				$msg .= "\n  ci/test_params.yml file in the kit directory to contain these parameters.";
+			}
+			push @errors, $msg;
+		}
+	}
+
+	# Hooks validation
+	my @hook_errors;
 	for my $hook (qw(new secrets blueprint info addon check)) {
 		next unless -e "$self->{root}/hooks/$hook";
 		if (!-f "$self->{root}/hooks/$hook") {
-			error "Hook script hooks/$hook is not a regular file.";
-			$rc = 0;
+			push @hook_errors, "#C{hooks/$hook} is not a regular file.";
 		} elsif (!-x "$self->{root}/hooks/$hook") {
-			error "Hook script hooks/$hook is not executable.";
-			$rc = 0;
+			push @hook_errors, "#C{hooks/$hook} is not executable.";
 		}
 	}
+	push @errors, "#Wk{Hook scripts:}\n  - ".join("\n  - ", @hook_errors)
+		if @hook_errors;
 
-	if (! -f "$self->{root}/kit.yml") {
-		error "Kit Metadata file kit.yml does not exist.";
-		$rc = 0;
-	} else {
-		my $meta = eval { load_yaml_file("$self->{root}/kit.yml") };
-		if ($@) {
-			error "Kit Metadata file kit.yml is not well-formed YAML: $@";
-			$rc = 0;
-		}
-		for my $key (qw(name code)) {
-			next if $meta->{$key};
-			error "Kit Metadata file kit.yml does not define `$key'";
-			$rc = 0;
-		}
-		if (!$meta->{author} && !$meta->{authors}) {
-			error "Kit Metadata file kit.yml does not identify the author(s) via `author' or `authors'";
-			$rc = 0;
-		}
-		if ($meta->{author} && $meta->{authors}) {
-			error "Kit Metadata file kit.yml specifies both `author' and `authors': pick one.";
-			$rc = 0;
-		}
-		if ($meta->{authors} && (ref($meta->{authors}||'') ne 'ARRAY')) {
-			error "Kit Metadata file kit.yml expects `authors' to be an array, not a %s,", lc(ref($meta->{authors}) || "string");
-			$rc = 0;
-		}
+	my ($changes, undef) = run('cd "$1" >/dev/null && git status --porcelain', $self->{root});
+	push @errors, "#Wk{Git repository status:}\n".
+	              "  Unstaged / uncommited changes found in working directory:\n".
+	              join("\n", map {"    #Y{$_}"} split("\n",$changes)) .
+	              "\n\n  Please either #C{stash} or #C{commit} those changes before compiling your kit.\n"
+		if $changes;
 
-		# genesis versions must be semver
-		if (exists $meta->{genesis_version_min}) {
-			if (!semver($meta->{genesis_version_min})) {
-				error "Kit Metadata specifies minimum Genesis version '$meta->{genesis_version_min}', which is not a semantic version (x.y.z).";
-				$rc = 0;
-			}
-		}
-
-		# check for errant top-level keys - params, subkits and features have been discontinued.
-		my @valid_keys = qw/name version description code docs author authors genesis_version_min secrets_store/;
-		if ($meta->{secrets_store}) {
-			if ($meta->{secrets_store} eq "credhub") {
-				#no-op: valid, no further keys
-			} elsif ($meta->{secrets_store} eq "vault") {
-				push @valid_keys, "credentials", "certificates"
-			} else {
-				error "Kit Metadata specifies invalid secrets_store: expecting one of 'vault' or 'credhub'";
-			}
-		} else {
-			push @valid_keys, "credentials", "certificates"
-		}
-		my @errant_keys = ();
-		for my $key (sort keys %$meta) {
-			push(@errant_keys, $key) unless grep {$_ eq $key} @valid_keys;
-		}
-		if (@errant_keys) {
-			error (
-				"Kit Metadata file kit.yml contains invalid top-level key%s: %s\n  Valid keys are: %s\n",
-				scalar(@errant_keys) == 1 ? '' : 's',
-				join(", ",@errant_keys), join(", ", @valid_keys)
-			);
-			$rc = 0;
-		}
-
+	if (@errors) {
+		my $msg = join("\n  ", split("\n", join("\n\n", @errors)));
+		$msg =~ s/^\s+$//gm;
+		error "\n#R{[ERROR] Encountered issues while processing kit }#M{%s/%s}#R{:}\n\n  %s\n",
+			$name, $version, $msg;
+		return 0;
 	}
+	return 1;
+}
 
-	return $rc;
+sub _lookup_test_params {
+	my ($self, $key, $default) = @_;
+	unless (defined $self->{__test_params}) {
+		my $test_params_file = $self->{root}.'/ci/test_params.yml';
+		$self->{__test_params} = (-f $test_params_file)
+			? LoadFile($test_params_file)
+			: {};
+	}
+	return struct_lookup($self->{__test_params}, $key, $default);
 }
 
 sub _prepare {
@@ -124,7 +176,10 @@ sub _prepare {
 sub compile {
 	my ($self, $name, $version, $outdir, %opts) = @_;
 
-	$self->validate || $opts{force} or return undef;
+	bail "Version %s is not semantic-compliant", $version
+		if !semver($version);
+
+	$self->validate($name,$version) || $opts{force} or return undef;
 	$self->_prepare("$name-$version");
 
 	run({ onfailure => "Unable to update kit.yml with version '$version'", stderr => 0 },

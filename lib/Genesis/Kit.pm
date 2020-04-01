@@ -302,6 +302,77 @@ sub source_yaml_files {
 	return @files;
 }
 # }}}
+# dereferenced_metadata - fill in kit metadata with source parameters {{{
+sub dereferenced_metadata {
+	my ($self, $lookup, $fatal) = @_;
+	unless (defined($self->{__deref_metadata})) {
+		$self->{__deref_cache} = {};
+		$self->{__deref_metadata} = $self->_deref_metadata($self->metadata,$lookup);
+	}
+	if ($fatal && scalar @{$self->{__deref_miss}||[]}) {
+		bail "Could not dereference the following values specified in the metadata:\n  - ".
+		     join("\n  - ", @{$self->{__deref_miss}});
+	}
+	$self->{__deref_metadata};
+}
+
+# }}}
+# }}}
+
+### Private Methods {{{
+
+# _deref_metadata - recursively dereference metadata structure {{
+sub _deref_metadata {
+	my ($self,$metadata, $lookup) = @_;
+	if (ref $metadata eq 'ARRAY') {
+		return [
+			(map {$self->_deref_metadata($_,$lookup)} @$metadata)
+		];
+	} elsif (ref $metadata eq 'HASH') {
+		my %h = ();
+		$h{$_} = $self->_deref_metadata($metadata->{$_},$lookup) for keys %$metadata;
+		return \%h;
+	} elsif (ref(\$metadata) eq 'SCALAR' && defined($metadata)) {
+		$metadata =~ s/\$\{(.*?)(?:\|\|(.*?))?\}/$self->_dereference_param($lookup, $1, $2)/ge;
+		return $metadata;
+	} else {
+		return $metadata;
+	}
+}
+
+# }}}
+# _dereference_param - derefernce a referenced parameter {{{
+sub _dereference_param {
+	my ($self,$lookup,$key,$default) = @_;
+	trace "Dereferencing kit param: %s [default: %s]", $key, defined($default) ? $default : 'null';
+	if (defined(($self->{__deref_cache}||{})->{$key})) {
+		trace "Genesis::Kit->_dereference_param: cache hit '%s'=>'%s'", $key, $self->{__deref_cache}{$key};
+		return $self->{__deref_cache}{$key};
+	}
+	if ($key =~ m/^maybe:/) {
+		$key =~ s/^maybe://;
+		$default = "";
+	}
+	my $val = $lookup->($key, $default);
+	while (defined($val) && $val =~ /\(\( grab \s*(\S*?)(?:\s*\|\|\s*(.*?))?\s*\)\)/) {
+		$key = $1;
+		my $remainder = $2;
+		$remainder =~ /^"([^"]*)"$/;
+		$default = $1 if defined($1);
+		trace "Dereferencing kit param [intermediary]: %s [default: %s]", $key, defined($default) ? $default : 'null';
+		$val = $lookup->($key, $default);
+		$val = "(( grab $remainder ))" if $remainder && !$val;
+	}
+	if (!defined($val)) {
+		push @{($self->{__deref_miss}||=[])}, $key;
+		return "\${$key}"
+	}
+	trace "Dereference: got %s", $val;
+	($self->{__deref_cache}||={})->{$key} = $val;
+	return $val; # TODO: maybe change unquoted ~ to undef, and remove quotes from default
+}
+
+# }}}
 # }}}
 
 1;
