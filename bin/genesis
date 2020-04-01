@@ -472,10 +472,16 @@ our $GLOBAL_USAGE = <<EOF;
   -T, --trace       Even more debugging, including debugging inside called
                     tools (like spruce and bosh).
   -C, --cwd         Effective working directory.  Defaults to '.'
-  -e, --environment Which BOSH environment (aka director) to use.  If not
-                    specified, it will use the value in params.bosh or
-                    params.env in that order.  Can also be provided using either
-                    \$GENESIS_BOSH_ENVIRONMENT or \$BOSH_ENVIRONMENT env variables.
+  -e, --bosh-env    Which BOSH environment (aka director) to use.  If not
+                    specified, it will use the value in genesis.bosh or
+                    genesis.env in that order.  Can also be provided using
+                    either \$GENESIS_BOSH_ENVIRONMENT or \$BOSH_ENVIRONMENT env
+                    variables.
+
+                    For legacy reasons, --environment is also supported for
+                    this option, but is deprecated.
+
+
 EOF
 sub options {
 	my ($args, $options, @spec) = @_;
@@ -488,7 +494,7 @@ sub options {
 			trace|T+
 			quiet|q
 			cwd|C=s
-			environment|e=s
+			environment|bosh-env|e=s
 			color!
 		/,
 		@spec))
