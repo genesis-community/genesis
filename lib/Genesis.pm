@@ -522,6 +522,7 @@ sub read_json_from {
 
 sub curl {
 	my ($method, $url, $headers, $data, $skip_verify, $creds) = @_;
+	$headers ||= {};
 
 	bug("No url provided to Genesis::curl") unless $url;
 	bug("No methhod provided to Genesis::curl") unless $method;
