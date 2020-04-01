@@ -1,0 +1,28 @@
+#!/bin/bash
+set -eu
+
+dir="$GENESIS_ROOT"
+name="$GENESIS_ENVIRONMENT"
+
+ymlfile="$dir/$name.yml"
+
+prompt_for base_domain line \
+	"What is your base domain?"
+echo ""
+
+cat >"$ymlfile" -- <<EOF
+---
+kit:
+  name:    $GENESIS_KIT_NAME
+  version: $GENESIS_KIT_VERSION
+  features:
+    - (( replace ))
+    - bonus
+EOF
+
+genesis_config_block >> "$ymlfile"
+cat >>"$ymlfile" -- <<EOF
+params:
+  base_domain: $base_domain
+EOF
+exit 0

@@ -1,0 +1,53 @@
+#!/bin/bash
+set -eu
+
+dir="$GENESIS_ROOT"
+name="$GENESIS_ENVIRONMENT"
+ymlfile="$dir/$name.yml"
+
+cat >"$ymlfile" -- <<EOF
+---
+kit:
+  name:     $GENESIS_KIT_NAME
+  version:  $GENESIS_KIT_VERSION
+  features:
+    - (( replace ))
+EOF
+
+authentication_method=''
+prompt_for authentication_method select \
+	"How would you like to perform authentication?" \
+	-o "[gh-oath]Github OAuth2 (Organization-based Authentication)" \
+	-o "[cf-uaa]Cloud Foundry UAA" \
+	-o "[basic]HTTP Basic Auth over TLS/SSL" \
+	--default "basic"
+
+echo "    - $authentication_method" >> "$ymlfile"
+
+use_toolbelt=''
+prompt_for use_toolbelt boolean \
+	"Would you like to load the most excellent Toolbelt add-on?" \
+	--default "Y"
+
+if [[ $use_toolbelt == "true" ]] ; then
+	echo "    - toolbelt" >> "$ymlfile"
+fi
+
+backup_strategy=''
+prompt_for backup_strategy select \
+  "How would you like to perform backups of this deployment?" \
+	-o "[shield]Using the super awesome SHIELD backup system" \
+	-o "[s3-backups]Simple S3-bucket Backups" \
+	-o "[]I do not wish to perform backups" \
+	--default shield
+
+if [[ -n $backup_strategy ]] ; then
+	echo "    - $backup_strategy" >> "$ymlfile"
+fi
+
+genesis_config_block >> "$ymlfile"
+cat >>"$ymlfile" -- <<EOF
+params: {}
+
+EOF
+exit 0

@@ -1,7 +1,6 @@
-#!perl
+#!/usr/bin/perl
 use strict;
 use warnings;
-
 use utf8;
 
 use lib 'lib';
@@ -184,8 +183,61 @@ EOF
 	is($env->file, "standalone.yml", "an environment should know its file path");
 	is($env->deployment, "standalone-thing", "an environment should know its deployment name");
 	is($env->kit->id, "bosh/0.2.0", "an environment can ask the kit for its kit name/version");
+	is($env->secrets_mount, '/secret/', "default secret mount used when none provided");
+	is($env->secrets_slug, 'standalone/thing', "default secret slug generated correctly");
+	is($env->secrets_base, '/secret/standalone/thing/', "default secret base path generated correctly");
+	is($env->exodus_mount, '/secret/exodus/', "default exodus mount used when none provided");
+	is($env->exodus_base, '/secret/exodus/standalone/thing/', "correctly evaluates exodus base path");
+	is($env->ci_mount, '/secret/ci/', "default ci mount used when none provided");
+	is($env->ci_base, '/secret/ci/thing/standalone/', "correctly evaluates ci base path");
+
+	put_file $top->path("standalone-with-another.yml"), <<EOF;
+---
+kit:
+  features:
+    - ((append))
+    - extras
+
+genesis:
+  env:       standalone-with-another
+  secrets_mount: genesis/secrets
+  exodus_mount:  genesis/exodus
+EOF
+	local $ENV{NOCOLOR} = 'y';
+	throws_ok { $env = $top->load_env('standalone-with-another.yml');} 
+		qr/\[ERROR\] Kit bosh\/0.2.0 is not compatible with secrets_mount feature\n\s+Please upgrade to a newer release or remove params.secrets_mount from standalone-with-another.yml/,
+		"Outdated kits bail when using v2.7.0 features";
+
+=comment
+	# This needs a kit that is v2.7.0 compatible
+	put_file $top->path("standalone-with-another.yml"), <<EOF;
+---
+kit:
+  features:
+    - ((append))
+    - extras
+
+genesis:
+  env:       standalone-with-another
+  secrets_mount: genesis/secrets
+  exodus_mount:  genesis/exodus
+EOF
+	$env = $top->load_env('standalone-with-another.yml');
+	is($env->name, "standalone-with-another", "an environment should know its name");
+	is($env->file, "standalone-with-another.yml", "an environment should know its file path");
+	is($env->deployment, "standalone-with-another-thing", "an environment should know its deployment name");
+	is($env->kit->id, "bosh/0.2.0", "an environment can inherit its kit name/version");
+	is($env->secrets_mount, '/genesis/secrets/', "specified secret mount used when  provided");
+	is($env->secrets_slug, 'standalone/with/another/thing', "default secret slug generated correctly");
+	is($env->secrets_base, '/genesis/secrets/standalone/with/another/thing/', "default secret base path generated correctly");
+	is($env->exodus_mount, '/genesis/exodus/', "specified exodus mount used when provided");
+	is($env->exodus_base, '/genesis/exodus/standalone-with-another/thing/', "correctly evaluates exodus base path");
+	is($env->ci_mount, '/genesis/secrets/ci/', "default ci mount used when none provided but secrets_mount is");
+	is($env->ci_base, '/genesis/secrets/ci/thing/standalone-with-another/', "correctly evaluates ci base path");
+=cut
 
 	teardown_vault();
+
 };
 
 subtest 'parameter lookup' => sub {
@@ -519,7 +571,7 @@ EOF
 			kit_name      => 'dev',
 			kit_version   => 'latest',
 			'addons[0]'    => 'echo',
-			vault_base    => 'secret/standalone/thing',
+			vault_base    => '/secret/standalone/thing',
 
 			'hello.world' => 'i see you',
 
@@ -712,7 +764,7 @@ EOF
 				kit_name => "dev",
 				kit_version => "latest",
 				bosh => "standalone",
-				vault_base => "secret/standalone/thing",
+				vault_base => "/secret/standalone/thing",
 				version => '(development)',
 				manifest_sha1 => $sha1,
 				'hello.world' => 'i see you',
@@ -731,7 +783,7 @@ EOF
 				bosh => "standalone",
 				kit_name => "dev",
 				kit_version => "latest",
-				vault_base => "secret/standalone/thing",
+				vault_base => "/secret/standalone/thing",
 				version => '(development)',
 				manifest_sha1 => $sha1,
 				hello => {
@@ -753,6 +805,7 @@ EOF
 };
 subtest 'bosh variables' => sub {
 	local $ENV{GENESIS_BOSH_COMMAND};
+
 	my ($director1) = fake_bosh_directors(
 		{alias => 'standalone'},
 	);
@@ -835,7 +888,32 @@ subtest 'new env and check' => sub{
 
 	my $env;
 	local $ENV{NOCOLOR} = "yes";
-	lives_ok {$env = $top->create_env($name, $kit, vault => $vault_target)} "successfully create an env with a dev kit";
+	local $ENV{PRY} = "1";
+	write_bosh_config $name;
+	my $out;
+	lives_ok {
+		$out = combined_from {$env = $top->create_env($name, $kit, vault => $vault_target)}
+	} "successfully create an env with a dev kit";
+
+	$out =~ s/(Duration:|-) \d+ seconds/$1 XXX seconds/g;
+	eq_or_diff $out, <<EOF, "creating environment provides secret generation output";
+Parsing kit secrets descriptions ... done. - XXX seconds
+
+Adding 10 secrets for far-fetched under path '/secret/far/fetched/sample/':
+  [ 1/10] my-cert/ca X509 certificate - CA, self-signed ... done.
+  [ 2/10] my-cert/server X509 certificate - signed by 'my-cert/ca' ... done.
+  [ 3/10] ssl/ca X509 certificate - CA, self-signed ... done.
+  [ 4/10] ssl/server X509 certificate - signed by 'ssl/ca' ... done.
+  [ 5/10] crazy/thing:id random password - 32 bytes, fixed ... done.
+  [ 6/10] crazy/thing:token random password - 16 bytes ... done.
+  [ 7/10] users/admin:password random password - 64 bytes ... done.
+  [ 8/10] users/bob:password random password - 16 bytes ... done.
+  [ 9/10] work/signing_key RSA public/private keypair - 2048 bits, fixed ... done.
+  [10/10] something/ssh SSH public/private keypair - 2048 bits, fixed ... done.
+Completed - Duration: XXX seconds [10 added/0 skipped/0 errors]
+
+EOF
+
 	eq_or_diff get_file($env->path($env->{file})), <<EOF, "Created env file contains correct info";
 ---
 kit:
@@ -846,32 +924,35 @@ kit:
     - bonus
 
 genesis:
-  env:          "far-fetched"
-  secrets_path: "far/fetched/sample"
+  env:                far-fetched
 
 params:
   static: junk
 EOF
 
-	stdout_is(sub {ok $env->check_secrets, "check_secrets shows all secrets okay"}, <<EOF,
-Retrieving secrets for far/fetched/sample...ok
+	$out = combined_from {
+		ok $env->check_secrets(verbose => 1), "check_secrets shows all secrets okay"
+	};
+	$out =~ s/(Duration:|-) \d+ seconds/$1 XXX seconds/g;
 
-[Checking generated credentials]
-  ✔  secret/far/fetched/sample/crazy/thing [id:random]
-  ✔  secret/far/fetched/sample/crazy/thing [token:random]
-  ✔  secret/far/fetched/sample/something/ssh [ssh]
-  ✔  secret/far/fetched/sample/users/admin [password:random]
-  ✔  secret/far/fetched/sample/users/bob [password:random]
-  ✔  secret/far/fetched/sample/work/signing_key [rsa]
+	eq_or_diff $out, <<EOF, "check_secrets gives meaninful output on success";
+Parsing kit secrets descriptions ... done. - XXX seconds
+Retrieving all existing secrets ... done. - XXX seconds
 
-[Checking generated certificates]
-  ✔  secret/far/fetched/sample/my-cert/ca [CA certificate]
-  ✔  secret/far/fetched/sample/my-cert/server [certificate]
-  ✔  secret/far/fetched/sample/ssl/ca [CA certificate]
-  ✔  secret/far/fetched/sample/ssl/server [certificate]
+Checking 10 secrets for far-fetched under path '/secret/far/fetched/sample/':
+  [ 1/10] my-cert/ca X509 certificate - CA, self-signed ... found.
+  [ 2/10] my-cert/server X509 certificate - signed by 'my-cert/ca' ... found.
+  [ 3/10] ssl/ca X509 certificate - CA, self-signed ... found.
+  [ 4/10] ssl/server X509 certificate - signed by 'ssl/ca' ... found.
+  [ 5/10] crazy/thing:id random password - 32 bytes, fixed ... found.
+  [ 6/10] crazy/thing:token random password - 16 bytes ... found.
+  [ 7/10] users/admin:password random password - 64 bytes ... found.
+  [ 8/10] users/bob:password random password - 16 bytes ... found.
+  [ 9/10] work/signing_key RSA public/private keypair - 2048 bits, fixed ... found.
+  [10/10] something/ssh SSH public/private keypair - 2048 bits, fixed ... found.
+Completed - Duration: XXX seconds [10 found/0 skipped/0 errors]
 
 EOF
-		"check_secrets gives meaninful output on success");
 
 	qx(safe export > /tmp/out.json);
 
@@ -879,27 +960,32 @@ EOF
 	qx(safe rm secret/far/fetched/sample/ssl/ca:key secret/far/fetched/sample/ssl/ca:certificate);
 	qx(safe rm secret/far/fetched/sample/crazy/thing:token);
 
-	stdout_is(sub {ok !$env->check_secrets, "check_secrets shows missing secrets and keys"}, <<EOF,
-Retrieving secrets for far/fetched/sample...ok
+	$out = combined_from {
+		ok !$env->check_secrets(verbose=>1), "check_secrets shows missing secrets and keys"
+	};
+	$out =~ s/(Duration:|-) \d+ seconds/$1 XXX seconds/g;
 
-[Checking generated credentials]
-  ✔  secret/far/fetched/sample/crazy/thing [id:random]
-  ✘  secret/far/fetched/sample/crazy/thing [token:random]
-  ✔  secret/far/fetched/sample/something/ssh [ssh]
-  ✘  secret/far/fetched/sample/users/admin [password:random]
-  ✘  secret/far/fetched/sample/users/bob [password:random]
-  ✔  secret/far/fetched/sample/work/signing_key [rsa]
+	matches_utf8 $out, <<EOF,  "check_secrets gives meaninful output on failure";
+Parsing kit secrets descriptions ... done. - XXX seconds
+Retrieving all existing secrets ... done. - XXX seconds
 
-[Checking generated certificates]
-  ✔  secret/far/fetched/sample/my-cert/ca [CA certificate]
-  ✔  secret/far/fetched/sample/my-cert/server [certificate]
-  ✘  secret/far/fetched/sample/ssl/ca [CA certificate]
-     ✘  :certificate
-     ✘  :key
-  ✔  secret/far/fetched/sample/ssl/server [certificate]
+Checking 10 secrets for far-fetched under path '/secret/far/fetched/sample/':
+  [ 1/10] my-cert/ca X509 certificate - CA, self-signed ... found.
+  [ 2/10] my-cert/server X509 certificate - signed by 'my-cert/ca' ... found.
+  [ 3/10] ssl/ca X509 certificate - CA, self-signed ... missing!
+          [✘ ] missing key ':certificate'
+          [✘ ] missing key ':key'
+
+  [ 4/10] ssl/server X509 certificate - signed by 'ssl/ca' ... found.
+  [ 5/10] crazy/thing:id random password - 32 bytes, fixed ... found.
+  [ 6/10] crazy/thing:token random password - 16 bytes ... missing!
+  [ 7/10] users/admin:password random password - 64 bytes ... missing!
+  [ 8/10] users/bob:password random password - 16 bytes ... missing!
+  [ 9/10] work/signing_key RSA public/private keypair - 2048 bits, fixed ... found.
+  [10/10] something/ssh SSH public/private keypair - 2048 bits, fixed ... found.
+Failed - Duration: XXX seconds [6 found/0 skipped/4 errors]
 
 EOF
-		"check_secrets gives meaninful output on failure");
 
 	teardown_vault();
 };

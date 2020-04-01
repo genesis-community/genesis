@@ -452,10 +452,10 @@ kit:
     - (( replace ))
     - subkit-params
 
-params:
-  env:   with-subkit
-  vault: with/subkit/ask-params
+genesis:
+  env: with-subkit
 
+params:
   # This is used to autocalculate many domain-based values of your Cloud Foundry.
   # Changing it will have widespread changes throughout the installation. If you change
   # this, make sure to audit the domains available in your system org, as well as
@@ -625,10 +625,10 @@ kit:
   features:
     - (( replace ))
 
-params:
-  env:   without-subkit
-  vault: without/subkit/ask-params
+genesis:
+  env: without-subkit
 
+params:
   # This is used to autocalculate many domain-based values of your Cloud Foundry.
   # Changing it will have widespread changes throughout the installation. If you change
   # this, make sure to audit the domains available in your system org, as well as

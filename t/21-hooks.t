@@ -1,7 +1,7 @@
 #!perl
 use strict;
 use warnings;
-
+use utf8;
 
 use lib 'lib';
 use lib 't';
@@ -9,7 +9,6 @@ use helper;
 use Test::Exception;
 use Test::Deep;
 use Test::Output;
-use utf8;
 
 use_ok 'Genesis::Kit';
 use Genesis::Kit::Dev;
@@ -182,24 +181,24 @@ subtest 'new hook' => sub {
 
 	my $vault = Genesis::Vault::default();
 
+	write_bosh_config $us_west_1_prod->name, $snw_lab_dev->name;
+
 	ok $simple->run_hook('new', env => $us_west_1_prod),
 	   "[simple] running the 'new' hook should succeed";
 
 	ok -f "$root/us-west-1-prod.yml",
 	   "[simple] the 'new' hook should create the env yaml file";
 
-	yaml_is get_file("$root/us-west-1-prod.yml"), <<EOF,
+	yaml_is <<EOF, get_file("$root/us-west-1-prod.yml"),
 kit:
   name:     dev
   version:  latest
   features: []
 genesis:
-  env:   us-west-1-prod
+  env:         us-west-1-prod
   min_version: "2.6.0"
-  secrets_path: us/west/1/prod/thing
 EOF
 		"[simple] the 'new' hook should populate the env yaml file properly";
-
 
 	ok $fancy->run_hook('new', env => $snw_lab_dev),
 	   "[fancy] running the 'new' hook should succeed";
@@ -207,7 +206,7 @@ EOF
 	ok -f "$root/snw-lab-dev.yml",
 	   "[fancy] the 'new' hook should create the env yaml file";
 
-	yaml_is get_file("$root/snw-lab-dev.yml"), <<EOF,
+	yaml_is <<EOF, get_file("$root/snw-lab-dev.yml"),
 kit:
   name:     dev
   version:  latest
@@ -215,7 +214,6 @@ kit:
 genesis:
   env: snw-lab-dev
   min_version: "2.6.0"
-  secrets_path: snw/lab/dev/thing
 params:
   GENESIS_KIT_NAME:     dev
   GENESIS_KIT_VERSION:  latest
@@ -234,9 +232,13 @@ EOF
 
 	{
 		local $ENV{HOOK_SHOULD_FAIL} = 'yes';
+		my $env =  Genesis::Env->new(top => $top, name => 'env-should-fail', vault => $vault);
+		$env->{__params} = {
+			genesis => {env => $env->name} # compensate for not using Genesis::Env#create
+		};
+		
 		throws_ok {
-			$fancy->run_hook('new',
-				env => Genesis::Env->new(top => $top, name => 'env-should-fail', vault => $vault));
+			$fancy->run_hook('new', env => $env);
 		} qr/could not create/i;
 
 		ok ! -f "$root/env-should-fail.yml",
@@ -245,9 +247,12 @@ EOF
 
 	{
 		local $ENV{HOOK_SHOULD_CREATE_ENV_FILE} = 'no';
+		my $env = Genesis::Env->new(top => $top, name => 'env-should-fail', vault => $vault);
+		$env->{__params} = {
+			genesis => {env => $env->name} # compensate for not using Genesis::Env#create
+		};
 		throws_ok {
-			$fancy->run_hook('new',
-				env => Genesis::Env->new(top => $top, name => 'env-should-fail', vault => $vault));
+			$fancy->run_hook('new', env => $env );
 		} qr/could not create/i;
 
 		ok ! -f "$root/env-should-fail.yml",
@@ -401,18 +406,18 @@ EOF
 			})
 		} "check hook does not error out when checking cloud-config - values present";
 		ok $rc, "check hook returns true when checking cloud-config - values present";
-		is $out, <<EOF, "check hook contains single values when checking cloud-config - values present";
+		matches_utf8 $out, <<EOF, "check hook contains single values when checking cloud-config - values present";
   [Checking cloud config]
-  ✔  vm_type 'small' exists
-  ✔  vm_type 'minimal' exists
-  ✔  vm_type 'small-highmem' exists
-  ✔  vm_type 'large' exists
-  ✔  disk_type 'blobstore' exists
-  ✔  disk_type 'postgres' exists
-  ✔  network 'cf-db' exists
-  ✔  network 'cf-core' exists
-  ✔  network 'cf-edge' exists
-  ✔  network 'cf-runtime' exists
+    [✔ ] vm_type 'small' exists
+    [✔ ] vm_type 'minimal' exists
+    [✔ ] vm_type 'small-highmem' exists
+    [✔ ] vm_type 'large' exists
+    [✔ ] disk_type 'blobstore' exists
+    [✔ ] disk_type 'postgres' exists
+    [✔ ] network 'cf-db' exists
+    [✔ ] network 'cf-core' exists
+    [✔ ] network 'cf-edge' exists
+    [✔ ] network 'cf-runtime' exists
   cloud config [OK]
 EOF
 		is $err, "", "check hook contains no errors when checking cloud-config - values present";
@@ -424,21 +429,44 @@ EOF
 			})
 		} "check hook does not error out when checking cloud-config - values absent";
 		ok $rc, "check hook returns true when checking cloud-config - values absent";
-		is $out, <<EOF, "check hook contains single values when checking cloud-config - values absent";
+		matches_utf8 $out, <<EOF, "check hook contains single values when checking cloud-config - values absent";
   [Checking cloud config]
-  ✔  vm_type 'small' exists
-  ✔  vm_type 'minimal' exists
-  ✘  vm_type 'none' exists
-  ✘  vm_type 'imaginary' exists
-  ✔  vm_type 'large' exists
-  ✘  network 'unspecified' exists
-  ✔  network 'default' exists
-  ✔  disk_type '5GB' exists
-  ✘  disk_type '15GB' exists
+    [✔ ] vm_type 'small' exists
+    [✔ ] vm_type 'minimal' exists
+    [✘ ] vm_type 'none' exists
+    [✘ ] vm_type 'imaginary' exists
+    [✔ ] vm_type 'large' exists
+    [✘ ] network 'unspecified' exists
+    [✔ ] network 'default' exists
+    [✔ ] disk_type '5GB' exists
+    [✘ ] disk_type '15GB' exists
   cloud config [FAILED]
 EOF
 		is $err, "", "check hook contains no errors when checking cloud-config - values absent";
 
+		{
+			local $ENV{GENESIS_NO_UTF8} = '1';
+			lives_ok {
+				($out,$err) = output_from(sub {
+					$rc = $fancy->run_hook('check', env => $snw_lab_dev);
+				})
+			} "check hook does not error out when checking cloud-config - values absent(no utf8)";
+			ok $rc, "check hook returns true when checking cloud-config - values absent(no utf8)";
+			eq_or_diff $out, <<EOF, "check hook contains single values when checking cloud-config - values absent(no utf8)";
+  [Checking cloud config]
+    [+] vm_type 'small' exists
+    [+] vm_type 'minimal' exists
+    [-] vm_type 'none' exists
+    [-] vm_type 'imaginary' exists
+    [+] vm_type 'large' exists
+    [-] network 'unspecified' exists
+    [+] network 'default' exists
+    [+] disk_type '5GB' exists
+    [-] disk_type '15GB' exists
+  cloud config [FAILED]
+EOF
+			is $err, "", "check hook contains no errors when checking cloud-config - values absent";
+		}
 		$snw_lab_dev->use_cloud_config("");
 	}
 };

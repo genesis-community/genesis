@@ -38,9 +38,10 @@ kit:
   features:
     - (( replace ))
 
-params:
-  env:   new-env
-  vault: new/env/compiled-kit-test
+genesis:
+  env: new-env
+
+params: {}
 EOF
 qx(rm -f new.yml new-env.yml);
 

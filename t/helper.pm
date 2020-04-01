@@ -2,14 +2,16 @@ package helper;
 use lib 't';
 use Test::More;
 use Test::Exception;
+use Test::Differences;
 use Test::TCP;
 use IO::Socket::IP ();
 use Cwd ();
 use Config;
+use Encode;
 use File::Temp qw/tempdir/;
 use File::Basename qw/dirname/;
 use JSON::PP;
-use open ':std', ':encoding(UTF-8)';
+unified_diff;
 
 $ENV{PERL5LIB} = "$ENV{PWD}/lib";
 $ENV{GENESIS_TESTING} = "yes";
@@ -36,6 +38,7 @@ sub import {
 	$ENV{GENESIS_TOPDIR} = $TOPDIR;
 	$ENV{PATH} = "${TOPDIR}/bin:$ENV{PATH}";
 	$ENV{OFFLINE} = 'y';
+	$ENV{GENESIS_LIB} = "$ENV{GENESIS_TOPDIR}/lib";
 
 	my $caller = caller;
 	for my $glob (sort keys %helper::) {
@@ -156,10 +159,14 @@ EOF
 	$ENV{GENESIS_BOSH_COMMAND} = "$tmp/fake-bosh";
 }
 
-sub fake_bosh_directors {
+sub write_bosh_config {
+	my $orig_home=`echo ~\$USER`;
+	if ($ENV{HOME} eq $orig_home) {
+		die 'Refusing to over-write real .bosh/config!';
+	}
 	my $config="environments:\n";
-	my @directors = ();
-	for my $info (@_) {
+	my @args = (@_);
+	for my $info (@args) {
 		if (ref($info) ne "HASH") {
 			$info = {
 				alias => $info
@@ -178,6 +185,22 @@ sub fake_bosh_directors {
 		           "  username: ".($info->{username} || 'noname')."\n".
 		           "  password: ".($info->{password} || 'nopassword')."\n";
 
+	}
+	mkdir_or_fail("$ENV{HOME}/.bosh");
+	put_file( "$ENV{HOME}/.bosh/config",$config);
+}
+
+
+sub fake_bosh_directors {
+	write_bosh_config(@_);
+	my @directors = ();
+	my @args = (@_);
+	for my $info (@args) {
+		if (ref($info) ne "HASH") {
+			$info = {
+				alias => $info
+			};
+		}
 		push @directors, Test::TCP->new(
 			listen => 0,
 			auto_start => 1,
@@ -207,8 +230,6 @@ sub fake_bosh_directors {
 			}
 		);
 	}
-	mkdir_or_fail("$ENV{HOME}/.bosh");
-	put_file( "$ENV{HOME}/.bosh/config",$config);
 	return @directors;
 }
 sub fake_bosh_director {
@@ -363,6 +384,7 @@ sub doesnt_match($$$) {
 	}
 }
 
+
 sub expects_ok($;$) {
 	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($cmd, $msg) = @_;
@@ -373,6 +395,13 @@ sub expect_fails($;$) {
 	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($cmd, $msg) = @_;
 	return run_fails "${TOPDIR}/t/expect/$cmd", $msg;
+}
+
+sub matches_utf8 {
+	local $Test::Builder::Level = $Test::Builder::Level + 1;
+	my ($output, $expected, $msg) = @_;
+
+	return eq_or_diff $output, encode_utf8($expected), $msg;
 }
 
 sub output_ok($$;$) {
@@ -401,6 +430,12 @@ sub output_ok($$;$) {
 	}
 	pass $msg;
 	return 0;
+}
+
+sub quietly(&) {
+	local *STDERR;
+	open(STDERR, '>', '/dev/null') or die "failed to quiet stderr!";
+	return $_[0]->();
 }
 
 sub bosh2_cli_ok {
@@ -527,16 +562,14 @@ sub yaml_is($$$) {
 
 sub expect_exit {
 	local $Test::Builder::Level = $Test::Builder::Level + 1;
-	my ($cmd, $rc, $msg) = @_;
+	my ($cmd, $expected_rc, $msg) = @_;
 	$cmd->expect(300, 'eof');
 	$cmd->soft_close();
-	if ($rc) {
-		is $cmd->exitstatus() >> 8, $rc, $msg;
-		diag "NOTE: exitstatus() returned from expect was not shifted, exit code 1, indicates SIGHUP, not rc 1"
-			if $cmd->exitstat() != 0;
-	} else {
-		is $cmd->exitstatus(), 0, $msg;
-	}
+	my ($rc,$sig) = ref($expected_rc) eq 'ARRAY' ? @{$expected_rc} : ($expected_rc||0,0);
+	my $real_sig = $cmd->exitstatus() & 255;
+	my $real_rc  = $cmd->exitstatus() >> 8;
+	is $real_rc,  $rc,  $msg;
+	is $real_sig, $sig, sprintf("%s (Got signal %s with %s coredump)",$msg, $real_sig & 127, $real_sig & 128 ? '' : 'no');
 }
 
 sub expect_ok {
