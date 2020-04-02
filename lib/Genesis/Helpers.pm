@@ -301,9 +301,9 @@ cloud_config_needs() {
         jq -r "if (.${__type}[] | select(.name == \"$__want\")) then 1 else 0 end")
       if [[ -z "$__have" ]]; then
         __cloud_config_ok=no
-        __cloud_config_error_messages+=( "    [#G@{-}] $__name '#Y{$__want}' exists" )
+        __cloud_config_error_messages+=( "    [#R@{-}] $__name '#Y{$__want}' exists" )
       else
-        __cloud_config_error_messages+=( "    [#R@{+}] $__name '#Y{$__want}' exists" )
+        __cloud_config_error_messages+=( "    [#G@{+}] $__name '#Y{$__want}' exists" )
       fi
     fi
   done
