@@ -90,7 +90,7 @@ sub __prompt_for_line {
 			$validate = sub() {
 				# Revisit this when https://github.com/starkandwayne/safe/issues/121 is resolved; for
 				# now, assume there can only be one colon separating the path from the key.
-				return "$_[0] is missing a key - expecting secret/<path>:<key>" unless $_[0] =~ qr(^[^:]+:[^:]+$);
+				return "$_[0] is missing a key - expecting <path>:<key>" unless $_[0] =~ qr(^[^:]+:[^:]+$);
 				return "" unless vaulted();
 				return (safe_path_exists $_[0]) ? "" : ($_[1] ? $_[1] :"$_[0] not found in vault");
 			}

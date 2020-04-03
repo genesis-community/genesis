@@ -187,7 +187,7 @@ EOF
 	is($env->secrets_slug, 'standalone/thing', "default secret slug generated correctly");
 	is($env->secrets_base, '/secret/standalone/thing/', "default secret base path generated correctly");
 	is($env->exodus_mount, '/secret/exodus/', "default exodus mount used when none provided");
-	is($env->exodus_base, '/secret/exodus/standalone/thing/', "correctly evaluates exodus base path");
+	is($env->exodus_base, '/secret/exodus/standalone/thing', "correctly evaluates exodus base path");
 	is($env->ci_mount, '/secret/ci/', "default ci mount used when none provided");
 	is($env->ci_base, '/secret/ci/thing/standalone/', "correctly evaluates ci base path");
 
