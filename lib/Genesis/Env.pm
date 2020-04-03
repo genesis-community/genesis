@@ -106,6 +106,7 @@ sub load {
 	}
 
 	# determine our vault and secret path
+	$ENV{GENESIS_SECRETS_MOUNT} = $env->secrets_mount();
 	bail("\n#R{[ERROR]} No vault specified or configured.")
 		unless $env->vault;
 
@@ -132,7 +133,7 @@ sub create {
 	$env->{__params} = {
 		genesis => {
 			env => $opts{name},
-			_slice(\%opts, qw(secrets_path secrets_mount exodus_mount ci_mount bosh_env root_ca_path credhub_env))}
+			_slice(\%opts, qw(secrets_path secrets_mount exodus_mount ci_mount root_ca_path credhub_env))}
 	};
 
 	# target vault and remove secrets that may already exist
@@ -225,9 +226,13 @@ sub exodus_mount {
 		unless ($self->{__secrets_exodus_mount});
 	return $self->{__secrets_exodus_mount};
 }
+sub exodus_slug {
+	sprintf("%s/%s", $_[0]->name, $_[0]->type);
+}
+
 sub exodus_base {
 	my $self = shift;
-	$self->{__secrets_exodus_base} = sprintf("%s%s/%s/", $self->exodus_mount, $self->name, $self->type)
+	$self->{__secrets_exodus_base} = sprintf("%s%s", $self->exodus_mount, $self->exodus_slug)
 		unless ($self->{__secrets_exodus_base});
 	return $self->{__secrets_exodus_base};
 }
@@ -256,6 +261,8 @@ sub setup_hook_env_vars {
 	$ENV{GENESIS_VERIFY_VAULT} = $self->vault->verify || "";
 
 	# Genesis v2.7.0 Secrets management
+	# This provides GENESIS_{SECRETS,EXODUS,CI}_{MOUNT,BASE}
+	# as well as GENESIS_{SECRETS,EXODUS,CI}_MOUNT_OVERRIDE
 	for my $target (qw/secrets exodus ci/) {
 		for my $target_type (qw/mount base/) {
 			my $method = "${target}_${target_type}";
@@ -446,8 +453,8 @@ sub last_deployed_lookup {
 
 sub exodus_lookup {
 	my ($self, $key, $default,$for) = @_;
-	$for ||= "$self->{name}/".$self->{top}->type;
-	my $path="secret/exodus/$for";
+	$for ||= $self->exodus_slug;
+	my $path =  $self->exodus_mount().$for;
 	debug "Checking if $path path exists...";
 	return $default unless $self->vault->has($path);
 	debug "Exodus data exists, retrieving it and converting to json";
@@ -1192,8 +1199,17 @@ things like the `new` hook:
        kit  => $top->local_kit_version('some-kit', 'latest'),
     );
 
-It can optionally take the `vault` and `secrets_path` option to specify the vault name
-and environment vault secrets_path (without the secret/ prefix) respectively
+It can optionally take the following options to modify the default `vault`
+behaviour:
+  * secrets_mount - the mount point for secrets (default: /secrets/)
+  * exodus_mount  - the mount point for exodus data (default: $secrets_mount/exodus)
+  * ci_mount      - the mount point for ci secrets (default: $secrets_mount/ci)
+  * secrets_path  - the path under the secrets_mount for the environment secrets
+                    (defaults to env-name-split-by-hyphens/deployment-type)
+  * root_ca_path  - specified a path to a common root CA to sign all otherwise
+                    self-signed certificates
+  * credhub_env   - used to specify the environment that provides the credhub
+                    login credentials (defaults to bosh environment)
 
 You can also avail yourself of the C<new> constructor, which does a lot of
 the validation, but won't access the environment files directly:

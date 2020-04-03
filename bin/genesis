@@ -167,24 +167,42 @@ sub multi_select_prompt_handler {
 sub secret_line_prompt_handler {
 	my ($prompt,%opts) = @_;
 	my $secret = delete $opts{secret};
+	my $env = delete $opts{env};
 	validate_prompt_opts("secret-line", \%opts, qw(echo));
-	my ($path, $key) = split /:/, "secret/$secret";
-	my $vault = Genesis::Vault->current || Genesis::Vault->rebind();
+
+	my $vault;
+	if ($env && $env->kit->feature_compatibility('2.7.0-rc4')) {
+		$secret = $env->secrets_base.$secret unless $secret =~ /^\//;
+		$vault = $env->vault;
+	} else {
+		$secret = "secret/$secret";
+		$vault = Genesis::Vault->current || Genesis::Vault->rebind();
+	}
+	my ($path, $key) = split /:/, $secret;
 	bail("No vault selected!") unless $vault;
 	$vault->query(
-		{ interactive => 1, onfailure => "Failed to save data to secret/$secret in vault" },
+		{ interactive => 1, onfailure => "Failed to save data to #C{$secret} in vault" },
 		'prompt', $prompt, '--', ($opts{echo} ? "ask" : "set"), $path, $key);
 }
 sub secret_block_prompt_handler {
 	my ($prompt,%opts) = @_;
 	my $secret = delete $opts{secret};
+	my $env = delete $opts{env};
 	validate_prompt_opts("secret-block", \%opts, ());
-	my ($path, $key) = split /:/, "secret/$secret";
 	my $file = mkfile_or_fail(workdir()."/param", prompt_for_block($prompt));
-	my $vault = Genesis::Vault->current || Genesis::Vault->rebind();
+
+	my $vault;
+	if ($env && $env->kit->feature_compatibility('2.7.0-rc4')) {
+		$secret = $env->secrets_base.$secret unless $secret =~ /^\//;
+		$vault = $env->vault;
+	} else {
+		$secret = "secret/$secret";
+		$vault = Genesis::Vault->current || Genesis::Vault->rebind();
+	}
+	my ($path, $key) = split /:/, $secret;
 	bail("No vault selected!") unless $vault;
 	$vault->query(
-		{ onfailure => "Failed to save data to secret/$secret in vault" },
+		{ onfailure => "Failed to save data to #C{$secret} in vault" },
 		'set', $path, sprintf('%s@%s', $key, $file)
 	);
 }
@@ -241,8 +259,9 @@ sub vault_auth {
 	run({ onfailure => "Failed to authenticate to the Vault at $options{vault}\n:`vault status` said" },
 		"vault status");
 
-	run({ onfailure => "Failed to retrieve secret/handshake from the Vault at $options{vault}" },
-		"vault read secret/handshake");
+	my $secrets_mount = $options{secret_mount} || '/secret/';
+	run({ onfailure => "Failed to retrieve ${secrets_mount}/handshake from the Vault at $options{vault}" },
+		"vault read ${secrets_mount}/handshake");
 }
 
 sub commit_changes {
@@ -2219,10 +2238,11 @@ sub {
 	__bail_on_missing_pipeline_environment_variables(@undefined);
 
 	# we need a method of issue tokens with a temporary lifetime, so approle/secret is used
-	vault_auth(vault       => $ENV{VAULT_ADDR},
-	           skip_verify => envset("VAULT_SKIP_VERIFY"),
-	           role_id     => $ENV{VAULT_ROLE_ID},
-	           secret_id   => $ENV{VAULT_SECRET_ID});
+	vault_auth(vault         => $ENV{VAULT_ADDR},
+	           skip_verify   => envset("VAULT_SKIP_VERIFY"),
+	           role_id       => $ENV{VAULT_ROLE_ID},
+	           secret_id     => $ENV{VAULT_SECRET_ID},
+	           secrets_mount => $ENV{SECRETS_MOUNT});
 
 	# write .saferc file so that safe commands execute properly
 	open my $OUT, ">", "$ENV{HOME}/.saferc"
@@ -2429,12 +2449,19 @@ USAGE genesis ui-prompt-for <type> <path> [options...] [<prompt>]
     secret-line:   prompt for a single line of test, stores it in vault
     secret-block:  prompt for a block of text, stores it in vault
 
-<path> is either a file path, or a vault path exlcuding the secret/ prefix (for secret-* types)
+<path> is either a file path, or a relative or absolute vault path (for secret-* types)
 
 Note: With multi-* types, the first entry in the file is blank, to indicate
-     that there is at least one entry -- an empty list will not contain any
-     fields.  This is to distinguish between a single empty string and no
-     entries at all.
+      that there is at least one entry -- an empty list will not contain any
+      fields.  This is to distinguish between a single empty string and no
+      entries at all.
+
+      For vault paths, relative paths don't start with a / and are relative to
+      the environment's secrets base path (secrets_mount+secrets_path).
+      Absolute vault paths start with a '/'  This changed in v2.7.0; prior to
+      this version, all paths were relative to '/secret/' and the new behaviour
+      is only available for kits that specify a genesis version min of
+      2.7.0-rc4
 
 OPTIONS
   -i, --inline          Place the cursor immediately after the prompt instead of on
@@ -2483,10 +2510,15 @@ sub {
 	my ($type,$path,@prompt_lines) = @_;
 	my $prompt = join("\n",@prompt_lines);
 	my $use_vault = ($type =~ /^secret-*/);
-	$options{secret} = $path if ($use_vault);
+	if ($use_vault) {
+		$options{secret} = $path;
+		eval {
+			$options{env} = Genesis::Top::new($ENV{GENESIS_CALLER_DIR})->load_env($ENV{GENESIS_ENVIRONMENT});
+		};
+		bail "#R{[ERROR]} Cannot prompt for secrets outside a kit hook" if $@;
+	}
 
-	delete @options{qw(color debug trace quiet cwd offline environment)};  # clean out global options
-	die csprintf(
+	bail(
 		"#R{ERROR:} cannot prompt for %s: unknown type, expecting one of: %s\n",
 		$type,
 		join(", ", (sort keys %$prompt_handlers))

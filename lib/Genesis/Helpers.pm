@@ -96,21 +96,27 @@ exodus() {
   # movement of the people
   local __env __key
   __env="$GENESIS_ENVIRONMENT/$GENESIS_TYPE"
-  __key=${1:?exodus() must provide at least an exodus key}
+	__key=${1:?exodus() must provide at least an exodus key}
   if [[ -n ${2:-} ]]; then
     __key=$2
     __env=$1
   fi
-  if safe exists "secret/exodus/${__env}:${__key}"; then
-    safe get "secret/exodus/${__env}:${__key}"
-  fi
+	if [[ "$__key" == "--all" ]] ; then
+		if safe exists "${GENESIS_EXODUS_MOUNT}${__env}"; then
+			safe get ${GENESIS_EXODUS_MOUNT}${__env} | spruce json | jq -r .
+		fi
+	else
+		if safe exists "${GENESIS_EXODUS_MOUNT}${__env}:${__key}"; then
+			safe get "${GENESIS_EXODUS_MOUNT}${__env}:${__key}"
+		fi
+	fi
 }
 export -f exodus
 
 # have_exodus_data_for env/type - return true if exodus data exists
 have_exodus_data_for() {
   local __env=${1:?have_exodus_data_for() must provide an environment/type}
-  safe exists "secret/exodus/${__env}"
+  safe exists "#{GENESIS_EXODUS_MOUNT}${__env}"
   return $?
 }
 export -f have_exodus_data_for
@@ -594,7 +600,7 @@ credhub() {
 	__old_home="$HOME"
 	if [[ ! -d $__tmpdir ]] ; then
 		mkdir -p $__tmpdir
-		__exodus="$(safe get secret/exodus/$GENESIS_CREDHUB_EXODUS_SOURCE | spruce json | jq -r .)"
+		__exodus="$(exodus $GENESIS_CREDHUB_EXODUS_SOURCE --all)"
 		__bosh_ca_cert="$(echo "$__exodus" | jq -r '.ca_cert')"
 		__ch_ca_cert="$(echo "$__exodus"   | jq -r '.credhub_ca_cert')"
 		__ch_pw="$(echo "$__exodus"        | jq -r '.credhub_password')"

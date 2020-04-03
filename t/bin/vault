@@ -15,7 +15,7 @@ export VAULTS_DIR="${GENESIS_TOPDIR}/t/vaults"
 touch "$HOME/.vault_token"  # Hack around safe init issue
 cd "${GENESIS_TOPDIR}" >/dev/null 2>&1
 
-version="0.9.3"
+version="${GENESIS_TEST_VAULT_VERSION:-1.0.2}"
 platform=
 target="${1:-genesis-ci-unit-tests}"
 arch=amd64
@@ -65,7 +65,7 @@ while ! lsof -a -p $vault_pid -i tcp:$port -s TCP:listen -nP >/dev/null 2>&1; do
 		bail "\nFAILED - timed out waiting for vault server to start\n"
 	fi
 done
-safe target "$target" http://127.0.0.1:$port >/dev/null 2>&1
+safe target "$target" http://127.0.0.1:$port --no-strongbox >/dev/null 2>&1
 safe auth token <<<"dummy" > /dev/null 2>&1 # Another Hack around safe init issue
 root_token=$(safe init --json | jq -r '.root_token')
 safe auth token <<<${root_token} >/dev/null 2>&1

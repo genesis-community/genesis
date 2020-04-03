@@ -262,6 +262,7 @@ sub get {
 		);
 		return {};
 	}
+	$path =~ s/^\///; # Trim leading / as safe doesn't honour it
 	return $json->{$path} if (ref($json) eq 'HASH') && defined($json->{$path});
 
 	# Safe 1.1.0 is backwards compatible, but leaving this in for futureproofing
@@ -344,6 +345,7 @@ sub keys {
 # status - returns status of vault: sealed, unreachable, invalid authentication or ok {{{
 sub status {
 	my $self = shift;
+	my $secrets_mount = $ENV{GENESIS_SECRETS_MOUNT} || "/secret/";
 
 	# See if the url is reachable to start with
 	$self->url =~ qr(^http(s?)://(.*?)(?::([0-9]*))?$) or
@@ -359,7 +361,7 @@ sub status {
 		return "sealed" if $1 == 2;
 		return "unreachable";
 	}
-	return "uninitialized" unless $self->has('secret/handshake');
+	return "uninitialized" unless $self->has($secrets_mount.'handshake');
 	return "ok"
 }
 
@@ -1605,7 +1607,9 @@ correctly initialized with safe.
 
 This may be a basic vault that was stood up manually -- to resolve this, simply
 run `safe set secret/handshake knock=knock` once you're sure your talking to
-the correct vault
+the correct vault.  If you are using a different secret mount in your
+environments, replace '/secret/' with the same mount that your environments
+use.
 
 =item ok
 
