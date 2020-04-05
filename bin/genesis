@@ -1200,7 +1200,7 @@ $GLOBAL_USAGE
                          per instance group.
 
 Can specify one of the follow three:
-      --dry-run          Build the manifest and validate it against the current
+  -n, --dry-run          Build the manifest and validate it against the current
                          state of the BOSH director for this deployment, but
                          doesn't change anything.
 
@@ -1212,7 +1212,6 @@ EOF
 sub {
 	my %options = (redact => ! -t STDOUT);
 	options(\@_, \%options, qw/
-		non-interactive|n
 		yes|y
 		redact!
 		fix
@@ -1225,17 +1224,6 @@ sub {
 	usage(1) if @_ != 1;
 	check_prereqs;
 	my $env = Genesis::Top->new('.')->load_env($_[0]);
-
-	if ($options{'non-interactive'}) {
-		explain "\n#yr{%s}", "="x71;
-		explain "\e[5m#Yr{ WARNING: }#wr{the }#Wr{--non-interactive|-n}#wr{ options has been deprecated.        }";
-		explain "#wr{ The }#Wr{-n}#wr{ flag will become an alias for }#Wr{--dry-run}#wr{ in Genesis v2.7,       }";
-		explain "#wr{ which will hang on a prompt to proceed before checking if deployable. }";
-		explain "#wr{ You are encouraged to move over to }#Wr{--yes|-y}#wr{ for auto-confirmation.    }";
-		explain "#yr{%s}\n", "="x71;
-		delete $options{'non-interactive'};
-		$options{yes} = 1;
-	}
 
 	if (scalar(grep {$_} ($options{fix}, $options{recreate}, $options{'dry-run'})) > 1) {
 		usage(1,"Can only specify one of --dry-run, --fix or --recreate");
