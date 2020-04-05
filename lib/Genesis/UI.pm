@@ -9,6 +9,7 @@ our @EXPORT = qw/
 	prompt_for_list
 	prompt_for_block
 	bullet
+	in_controlling_terminal
 	die_unless_controlling_terminal
 /;
 
@@ -309,9 +310,18 @@ sub bullet { # [type,] msg, [{option: value, ...}]
 	1;
 }
 
+sub in_controlling_terminal {
+	-t STDIN && -t STDOUT;
+}
+
 sub die_unless_controlling_terminal {
-	return if -t STDIN && -t STDOUT;
-	bail("Method #C{%s} was called from a non-controlling terminal but it requires user input.", (caller(1))[3]);
+	return if in_controlling_terminal;
+	trace "Terminating due to not being in a controlling terminal";
+	dump_stack(1);
+	bail(@_ ? @_ : (
+		"Method #C{%s} was called from a non-controlling terminal but it requires user input.",
+		(caller(1))[3]||'main'
+	));
 }
 
 1;

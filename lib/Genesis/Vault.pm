@@ -46,7 +46,8 @@ sub target {
 		}
 	} else {
 
-		die_unless_controlling_terminal;
+		die_unless_controlling_terminal
+			"#R{[ERROR]} Cannot interactively select vault unless in a controlling terminal - terminating!";
 
 		my $w = (sort {$b<=>$a} map {length($_->{name})} $class->find)[0];
 
@@ -288,7 +289,8 @@ sub set {
 		return $value;
 	} else {
 		# Interactive - you must supply the prompt before hand
-		die_unless_controlling_terminal;
+		die_unless_controlling_terminal
+			"#R{[ERROR]} Cannot interactively provide secrets unless in a controlling terminal - terminating!";
 		my ($out,$rc) = $self->query({interactive => 1},'set', $path, $key);
 		bail(
 			"#R{[ERROR]} Could not write #C{%s:%s} to vault at #M{%s}",
