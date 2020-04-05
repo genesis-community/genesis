@@ -985,7 +985,11 @@ sub remove_secrets {
 		return 2 unless scalar(@paths);
 
 		unless ($opts{'no-prompt'}) {
-			die_unless_controlling_terminal
+			die_unless_controlling_terminal "#R{[ERROR] %s", join("\n",
+				"Cannot prompt for confirmation to remove all secrets outside a",
+				"controlling terminal.  Use #C{-y|--no-prompt} option to provide confirmation",
+				"to bypass this limitation."
+			);
 			explain "#Yr{[WARNING]} This will delete all %s secrets under '#C{%s}', including\n".
 			             "          non-generated values set by 'genesis new' or manually created",
 				 scalar(@paths), $self->secrets_base;
@@ -1107,12 +1111,16 @@ sub _secret_processing_updates_callback {
 			$err_count;
 		return !$err_count;
 	} elsif ($state eq 'prompt') {
-		die_unless_controlling_terminal
 		my $title = '';
 		if ($args{class}) {
 			$title = sprintf("\r[2K\n#%s{[%s]} ", $args{class} eq 'warning' ? "Y" : '-', uc($args{class}));
 		}
 		explain "%s%s", $title, $args{msg};
+		die_unless_controlling_terminal "#R{[ERROR] %s", join("\n",
+			"Cannot prompt for confirmation to $action secrets outside a",
+			"controlling terminal.  Use #C{-y|--no-prompt} option to provide confirmation",
+			"to bypass this limitation."
+		);
 		return prompt_for_line(undef, $args{prompt}, $args{default} || "");
 	} else {
 		bug "_secret_processing_updates_callback encountered an unknown state '$state'";
