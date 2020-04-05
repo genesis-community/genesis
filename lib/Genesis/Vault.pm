@@ -436,7 +436,7 @@ sub process_kit_secret_plans {
 	return if (@errors);
 
 	if ($process_failed) {
-		@plans = $self->_get_failed_secret_plans($action, $env, $update, @plans);
+		@plans = $self->_get_failed_secret_plans($action, $env, $update, $opts{fail_on_warn}, @plans);
 		return $update->('empty', msg => sprintf "No failed secrets found%s.", $opts{filter} ? " matching provided filter" : "")
 			unless scalar(@plans);
 	}
@@ -445,7 +445,7 @@ sub process_kit_secret_plans {
 	@plans = grep {$_->{type} eq 'x509'} @plans if $action eq 'renew';
 	return $update->('empty') unless scalar(@plans);
 
-	if ($action =~ /^(remove|recreate|renew)$/ && !$opts{'no-prompt'}) {
+	if ($action =~ /^(remove|recreate|renew)$/ && !$opts{'no_prompt'}) {
 		(my $actioned = $action) =~ s/e?$/ed/;
 		my $permission = $update->('prompt',
 			class => 'warning',
@@ -521,7 +521,7 @@ sub validate_kit_secrets {
 	for my $plan (@plans) {
 		my ($path, $label, $details) = describe_kit_secret_plan(%$plan);
 		$update->('start-item', path => $path, label => $label, details => $details);
-		my ($result, $msg) = _validate_kit_secret($action,$plan,$secret_contents,$env->secrets_base,\@plans);
+		my ($result, $msg) = _validate_kit_secret($action,$plan,$secret_contents,$env->secrets_base,\@plans,$opts{fail_on_warn});
 		$update->('done-item', result => $result, msg => $msg);
 	}
 	return $update->('completed');
@@ -582,7 +582,7 @@ sub _expected_kit_secret_keys {
 # }}}
 # _get_failed_secret_plans - list the plans for failed secrets {{{
 sub _get_failed_secret_plans {
-	my ($self, $scope, $env, $update, @plans) = @_;
+	my ($self, $scope, $env, $update, $fail_on_warn, @plans) = @_;
 	$update->('wait', msg => "Retrieving all existing secrets");
 	my ($secret_contents,$err) =$self->all_secrets_for($env);
 	$update->('wait-done', result => ($err ? 'error' : 'ok'), msg => $err);
@@ -594,14 +594,15 @@ sub _get_failed_secret_plans {
 	for my $plan (@plans) {
 		my ($path, $label, $details) = describe_kit_secret_plan(%$plan);
 		$update->('start-item', path => $path, label => $label, details => $details);
-		my ($result, $msg) = _validate_kit_secret('validate',$plan,$secret_contents,$env->secrets_base, \@plans);
+		my ($result, $msg) = _validate_kit_secret('validate',$plan,$secret_contents,$env->secrets_base, \@plans,$fail_on_warn);
 		if ($result eq 'error' || ($result eq 'missing' && $scope eq 'recreate')) {
-			$update->('done-item', result => $result, msg => $msg) ;
+			$update->('done-item', result => $result, action => 'validate', msg => $msg) ;
 			push @failed, $plan;
 		} else {
-			$update->('done-item', result => 'ok')
+			$update->('done-item', result => 'ok', action => 'validate')
 		}
 	}
+	$update->('notify', msg => sprintf("Found %s failed secrets", scalar(@failed)));
 	return @failed;
 }
 # }}}
@@ -1203,6 +1204,7 @@ sub _validate_kit_secret {
 
 
 		my ($usage, $usage_str);
+		my $usage_type = 'error';
 		if (defined($plan->{usage})) {
 			$usage = ($plan->{usage});
 			$usage_str = "Specified key usage";
@@ -1210,15 +1212,17 @@ sub _validate_kit_secret {
 				$usage_str = "No key usage";
 			}
 		} elsif ($plan->{is_ca}) {
+			$usage_type = 'warn';
 			$usage = [qw/server_auth client_auth crl_sign key_cert_sign/];
 			$usage_str = "Default CA key usage";
 		} else {
+			$usage_type = 'warn';
 			$usage = [qw/server_auth client_auth/];
 			$usage_str = "Default key usage";
 		}
 
 		my $usage_results = _x509_key_usage($certInfo,$usage);
-		$results{usage} = !defined($usage_results->{extra}) && !defined($usage_results->{missing});
+		$results{usage} = (!defined($usage_results->{extra}) && !defined($usage_results->{missing})) ? 'ok' : $usage_type;
 		my @extra_usage = @{$usage_results->{extra}||[]};
 		my @missing_usage = @{$usage_results->{missing}||[]};
 		my $usage_err_str = " (". join('; ',(
@@ -1239,7 +1243,7 @@ sub _validate_kit_secret {
 		$msg .= sprintf("%sModulus Agreement\n",   _checkbox($results{modulus_agreement}));
 		$msg .= sprintf("%sSubject Name %s%s\n",   _checkbox($results{cn}), $cn_str, $results{cn} ? '' : " (found '$subjectCN')");
 		$msg .= sprintf("%sSubject Alt Names%s\n", _checkbox($results{sans}), $sans_str);
-		$msg .= sprintf("%s%s\n", _checkbox($results{usage}), $usage_str);
+		$msg .= sprintf("%s%s\n",                  _checkbox($results{usage}), $usage_str);
 	} elsif ($plan->{type} eq 'dhparam') {
 		# TODO: figure out how to validate
 	} elsif ($plan->{type} eq 'ssh') {
@@ -1299,7 +1303,9 @@ sub _validate_kit_secret {
 
 		# TODO: check other aspects... (valid_chars, fmt, etc)
 	}
-	return ((grep {!$results{$_}} CORE::keys %results) ? "error" : "ok", $msg);
+	my %priority = ('error' => 0, 'warn' => 1, 'ok' => 2);
+	my @results_levels = sort {$priority{$a}<=>$priority{$b}} uniq('ok', map {$_ ? ($_ =~ /^(warn)$/ ? $_ : 'ok') : 'error'} values %results);
+	return ($results_levels[0], $msg);
 }
 
 # }}}
@@ -1378,7 +1384,7 @@ sub _get_plan_paths {
 #}}}
 ## _checkbox - make a checkbox {{{
 sub _checkbox {
-	return bullet($_[0] ? 'good' : 'bad', '', box => 1, inline => 1, indent => 0);
+	return bullet($_[0] eq 'warn' ? 'warn' : ($_[0] && $_[0] ne 'error' ? 'good' : 'bad'), '', box => 1, inline => 1, indent => 0);
 }
 # }}}
 # }}}

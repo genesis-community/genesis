@@ -286,24 +286,27 @@ sub bullet { # [type,] msg, [{option: value, ...}]
 	(my $type, $msg) = ($msg, shift) if (scalar(@_) % 2 > 0);
 	my (%opts) = @_;
 
-	$opts{symbol} ||= $type eq "good"  ? '#@{+}' :
-	                  $type eq "bad"   ? '#@{-}' :
-	                  $type eq "empty" ? '#@{ }' :
+	$opts{symbol} ||= $type eq 'good'  ? '#@{+}' :
+	                  $type eq 'bad'   ? '#@{-}' :
+	                  $type eq 'warn'  ? '#@{!}' :
+	                  $type eq 'empty' ? '#@{ }' :
                                        '#@{*}' ;
 
-	$opts{color}  ||= $type eq "good"  ? "G" :
-	                  $type eq "bad"   ? "R" :
-	                                     "-"  ;
+	$opts{color}  ||= $type eq 'good'  ? 'G' :
+	                  $type eq 'bad'   ? 'R' :
+	                  $type eq 'warn'  ? 'Y' :
+	                                     '-'  ;
 
-	$opts{box} = 0 unless exists($opts{box});
 	$opts{indent} = 2 unless exists($opts{indent});
+	my ($lbox,$rbox) = !$opts{box} ? ('','') :
+		(ref($opts{box}) eq 'ARRAY' ? @{$opts{box}} : ('[',']'));
 
-	my $out=sprintf("%*.*s%s#%s{%s}%s %s",
-	                 $opts{indent},$opts{indent},"",
-	                       $opts{box} ? "[" : "",
+	my $out=sprintf('%*.*s%s#%s{%s}%s %s',
+	                 $opts{indent},$opts{indent},'',
+	                       $lbox,
 	                          $opts{color},
 	                             $opts{symbol},
-	                                $opts{box} ? "]" : "",
+	                                $rbox,
 	                                   $msg);
 	return $out if ($opts{inline});
 	explain $out;

@@ -1386,6 +1386,7 @@ $GLOBAL_USAGE
                         /.*/ca\$/ - only paths ending in ca
                         !/loggregator/ - anything without loggregator in the path
                         /^my-?thing//i - path starts with mything/ or my-thing/, ignoring case
+  --fail-on-warn    Any warning when validating are considered errors.
 
 LEGACY OPTIONS
       --vault       The name of a `safe' target (a Vault) to check for the
@@ -1398,6 +1399,7 @@ sub {
 		validate
 		verbose|v
 		filter|F=s
+		fail-on-warn
 	/);
 
 	my ($name) = @_;
@@ -1465,6 +1467,8 @@ $GLOBAL_USAGE
       --renew       Renew secrets that have expiry (currently this only applies
                     to x509 certs).  Renewed x509 certs will still be valid for
                     certs previously signed by it; its TTL will just be updated.
+  --fail-on-warn    Any warning when validating are considered errors when selecting
+                    failed secrets in conjuction with the -X|--fail-on-warn option.
   -F, --filter s    A string or regular expression filter to match secret paths against:
                       - a string for an exact match to a secret
                       - an re pattern with optional negation or case insensitivity:
@@ -1492,6 +1496,7 @@ sub {
 		renew
 		failed|X
 		no-prompt|y
+		fail-on-warn
 		vault=s
 	/);
 
@@ -1519,6 +1524,8 @@ OPTIONS
 $GLOBAL_USAGE
   -v, --verbose     List each item as it is processed, not just failures and warnings.
   -X, --failed      Only delete secrets that have errors.
+  --fail-on-warn    Any warning when validating are considered errors when selecting
+                    failed secrets in conjuction with the -X|--fail-on-warn option.
   -A, --all         Remove all secrets under this deployments secrets base path.
   -F, --filter s    A string or regular expression filter to match secret paths against:
                       - a string for an exact match to a secret
@@ -1542,6 +1549,7 @@ sub {
 		filter|F=s
 		all|A
 		failed|X
+		fail-on-warn
 		no-prompt|y
 		vault=s
 	/);
