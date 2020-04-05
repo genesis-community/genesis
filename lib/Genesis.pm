@@ -163,6 +163,7 @@ sub _glyphize {
 		'*' => "\x{2022}",
 		' ' => '  ',
 		'>' => "⮀",
+		'!' => "\x{26A0} ",
 	);
 
 	$glyph = $glyphs{$glyph} if !envset('GENESIS_NO_UTF8') && defined($glyphs{$glyph});

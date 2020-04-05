@@ -96,8 +96,8 @@ EOF
 Parsing kit secrets descriptions ... done. - XXX seconds
 Retrieving all existing secrets ... done. - XXX seconds
 
-Checking 18 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/deployments/dev/azure/us1/':
-  [ 1/18] fixed/ca X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... found.
+Validating 18 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/deployments/dev/azure/us1/':
+  [ 1/18] fixed/ca X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... valid.
           [✔ ] CA Certificate
           [✔ ] Signed by /secret/genesis-2.7.0/root_ca
           [✔ ] Valid: expires in 1825 days (<timestamp>)
@@ -106,7 +106,7 @@ Checking 18 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/deploy
           [✔ ] Subject Alt Names: ca.n<random>.fixed
           [✔ ] Default CA key usage: server_auth, client_auth, crl_sign, key_cert_sign
 
-  [ 2/18] fixed/server X509 certificate - signed by 'fixed/ca' ... found.
+  [ 2/18] fixed/server X509 certificate - signed by 'fixed/ca' ... valid.
           [✔ ] Signed by fixed/ca
           [✔ ] Valid: expires in 90 days (<timestamp>)
           [✔ ] Modulus Agreement
@@ -114,7 +114,7 @@ Checking 18 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/deploy
           [✔ ] Subject Alt Names: a really long name with DNS: in it
           [✔ ] Default key usage: server_auth, client_auth
 
-  [ 3/18] haproxy/ca X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... found.
+  [ 3/18] haproxy/ca X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... valid.
           [✔ ] CA Certificate
           [✔ ] Signed by /secret/genesis-2.7.0/root_ca
           [✔ ] Valid: expires in 365 days (<timestamp>)
@@ -123,7 +123,7 @@ Checking 18 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/deploy
           [✔ ] Subject Alt Names: haProxyCA
           [✔ ] Default CA key usage: server_auth, client_auth, crl_sign, key_cert_sign
 
-  [ 4/18] haproxy/ssl X509 certificate - signed by 'haproxy/ca' ... found.
+  [ 4/18] haproxy/ssl X509 certificate - signed by 'haproxy/ca' ... valid.
           [✔ ] Signed by haproxy/ca
           [✔ ] Valid: expires in 365 days (<timestamp>)
           [✔ ] Modulus Agreement
@@ -131,7 +131,7 @@ Checking 18 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/deploy
           [✔ ] Subject Alt Names: *.demo.genesisproject.io, *.system.demo.genesisproject.io, *.run.demo.genesisproject.io, *.uaa.system.demo.genesisproject.io, *.login.system.demo.genesisproject.io
           [✔ ] Specified key usage: client_auth, server_auth
 
-  [ 5/18] top-level/top X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... found.
+  [ 5/18] top-level/top X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... valid.
           [✔ ] CA Certificate
           [✔ ] Signed by /secret/genesis-2.7.0/root_ca
           [✔ ] Valid: expires in 1825 days (<timestamp>)
@@ -140,7 +140,7 @@ Checking 18 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/deploy
           [✔ ] Subject Alt Names: ca.n<random>.top-level
           [✔ ] Default CA key usage: server_auth, client_auth, crl_sign, key_cert_sign
 
-  [ 6/18] secondary/ca X509 certificate - CA, signed by 'top-level/top' ... found.
+  [ 6/18] secondary/ca X509 certificate - CA, signed by 'top-level/top' ... valid.
           [✔ ] CA Certificate
           [✔ ] Signed by top-level/top
           [✔ ] Valid: expires in 3650 days (<timestamp>)
@@ -149,7 +149,7 @@ Checking 18 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/deploy
           [✔ ] Subject Alt Names: secondary.ca
           [✔ ] Default CA key usage: server_auth, client_auth, crl_sign, key_cert_sign
 
-  [ 7/18] secondary/server X509 certificate - signed by 'secondary/ca' ... found.
+  [ 7/18] secondary/server X509 certificate - signed by 'secondary/ca' ... valid.
           [✔ ] Signed by secondary/ca
           [✔ ] Valid: expires in 365 days (<timestamp>)
           [✔ ] Modulus Agreement
@@ -157,7 +157,7 @@ Checking 18 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/deploy
           [✔ ] Subject Alt Names: secondary.server
           [✔ ] Specified key usage: client_auth, server_auth
 
-  [ 8/18] top-level/server X509 certificate - signed by 'top-level/top' ... found.
+  [ 8/18] top-level/server X509 certificate - signed by 'top-level/top' ... valid.
           [✔ ] Signed by top-level/top
           [✔ ] Valid: expires in 180 days (<timestamp>)
           [✔ ] Modulus Agreement
@@ -165,7 +165,7 @@ Checking 18 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/deploy
           [✔ ] Subject Alt Names: server.example.com, system.demo.genesisproject.io, *.server.example.com, *.system.demo.genesisproject.io, 10.10.10.10
           [✔ ] Default key usage: server_auth, client_auth
 
-  [ 9/18] openVPN/certs/root X509 certificate - CA, explicitly self-signed ... found.
+  [ 9/18] openVPN/certs/root X509 certificate - CA, explicitly self-signed ... valid.
           [✔ ] CA Certificate
           [✔ ] Self-Signed
           [✔ ] Valid: expires in 1825 days (<timestamp>)
@@ -174,7 +174,7 @@ Checking 18 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/deploy
           [✔ ] Subject Alt Names: ca.openvpn
           [✔ ] Specified key usage: crl_sign, key_cert_sign
 
-  [10/18] openVPN/certs/server X509 certificate - signed by 'openVPN/certs/root' ... found.
+  [10/18] openVPN/certs/server X509 certificate - signed by 'openVPN/certs/root' ... valid.
           [✔ ] Signed by openVPN/certs/root
           [✔ ] Valid: expires in 180 days (<timestamp>)
           [✔ ] Modulus Agreement
@@ -182,46 +182,46 @@ Checking 18 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/deploy
           [✔ ] Subject Alt Names: server.openvpn
           [✔ ] Specified key usage: server_auth, digital_signature, key_encipherment
 
-  [11/18] passwords:alt random password - 32 bytes ... found.
+  [11/18] passwords:alt random password - 32 bytes ... valid.
           [✔ ] 32 characters
           [✔ ] Formatted as base64 in ':alt-base64'
 
-  [12/18] passwords:permanent random password - 128 bytes, fixed ... found.
+  [12/18] passwords:permanent random password - 128 bytes, fixed ... valid.
           [✔ ] 128 characters
 
-  [13/18] passwords:uncrypted random password - 1024 bytes ... found.
+  [13/18] passwords:uncrypted random password - 1024 bytes ... valid.
           [✔ ] 1024 characters
           [✔ ] Formatted as bcrypt in ':crypted'
 
-  [14/18] passwords:word random password - 64 bytes, fixed ... found.
+  [14/18] passwords:word random password - 64 bytes, fixed ... valid.
           [✔ ] 64 characters
           [✔ ] Only uses characters '01'
 
-  [15/18] rsa RSA public/private keypair - 4096 bits, fixed ... found.
+  [15/18] rsa RSA public/private keypair - 4096 bits, fixed ... valid.
           [✔ ] Valid private key
           [✔ ] Valid public key
           [✔ ] 4096 bit
           [✔ ] Public/Private key agreement
 
-  [16/18] rsa-default RSA public/private keypair - 2048 bits ... found.
+  [16/18] rsa-default RSA public/private keypair - 2048 bits ... valid.
           [✔ ] Valid private key
           [✔ ] Valid public key
           [✔ ] 2048 bit
           [✔ ] Public/Private key agreement
 
-  [17/18] ssh SSH public/private keypair - 1024 bits ... found.
+  [17/18] ssh SSH public/private keypair - 1024 bits ... valid.
           [✔ ] Valid private key
           [✔ ] Valid public key
           [✔ ] Public/Private key Agreement
           [✔ ] 1024 bits
 
-  [18/18] ssh-default SSH public/private keypair - 2048 bits, fixed ... found.
+  [18/18] ssh-default SSH public/private keypair - 2048 bits, fixed ... valid.
           [✔ ] Valid private key
           [✔ ] Valid public key
           [✔ ] Public/Private key Agreement
           [✔ ] 2048 bits
 
-Completed - Duration: XXX seconds [18 found/0 skipped/0 errors]
+Completed - Duration: XXX seconds [18 validated/0 skipped/0 errors]
 
 EOF
 
@@ -294,8 +294,8 @@ EOF
 Parsing kit secrets descriptions ... done. - XXX seconds
 Retrieving all existing secrets ... done. - XXX seconds
 
-Checking 18 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/deployments/dev/azure/us1/':
-  [ 1/18] fixed/ca X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... found.
+Validating 18 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/deployments/dev/azure/us1/':
+  [ 1/18] fixed/ca X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... valid.
           [✔ ] CA Certificate
           [✔ ] Signed by /secret/genesis-2.7.0/root_ca
           [✔ ] Valid: expires in 1825 days (<timestamp>)
@@ -304,7 +304,7 @@ Checking 18 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/deploy
           [✔ ] Subject Alt Names: ca.n<random>.fixed
           [✔ ] Default CA key usage: server_auth, client_auth, crl_sign, key_cert_sign
 
-  [ 2/18] fixed/server X509 certificate - signed by 'fixed/ca' ... found.
+  [ 2/18] fixed/server X509 certificate - signed by 'fixed/ca' ... valid.
           [✔ ] Signed by fixed/ca
           [✔ ] Valid: expires in 90 days (<timestamp>)
           [✔ ] Modulus Agreement
@@ -312,7 +312,7 @@ Checking 18 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/deploy
           [✔ ] Subject Alt Names: a really long name with DNS: in it
           [✔ ] Default key usage: server_auth, client_auth
 
-  [ 3/18] haproxy/ca X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... found.
+  [ 3/18] haproxy/ca X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... valid.
           [✔ ] CA Certificate
           [✔ ] Signed by /secret/genesis-2.7.0/root_ca
           [✔ ] Valid: expires in 365 days (<timestamp>)
@@ -329,7 +329,7 @@ Checking 18 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/deploy
           [✔ ] Subject Alt Names: *.demo.genesisproject.io, *.system.demo.genesisproject.io, *.run.demo.genesisproject.io, *.uaa.system.demo.genesisproject.io, *.login.system.demo.genesisproject.io
           [✔ ] Specified key usage: client_auth, server_auth
 
-  [ 5/18] top-level/top X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... found.
+  [ 5/18] top-level/top X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... valid.
           [✔ ] CA Certificate
           [✔ ] Signed by /secret/genesis-2.7.0/root_ca
           [✔ ] Valid: expires in 1825 days (<timestamp>)
@@ -338,7 +338,7 @@ Checking 18 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/deploy
           [✔ ] Subject Alt Names: ca.n<random>.top-level
           [✔ ] Default CA key usage: server_auth, client_auth, crl_sign, key_cert_sign
 
-  [ 6/18] secondary/ca X509 certificate - CA, signed by 'top-level/top' ... found.
+  [ 6/18] secondary/ca X509 certificate - CA, signed by 'top-level/top' ... valid.
           [✔ ] CA Certificate
           [✔ ] Signed by top-level/top
           [✔ ] Valid: expires in 3650 days (<timestamp>)
@@ -355,7 +355,7 @@ Checking 18 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/deploy
           [✔ ] Subject Alt Names: secondary.server
           [✔ ] Specified key usage: client_auth, server_auth
 
-  [ 8/18] top-level/server X509 certificate - signed by 'top-level/top' ... found.
+  [ 8/18] top-level/server X509 certificate - signed by 'top-level/top' ... valid.
           [✔ ] Signed by top-level/top
           [✔ ] Valid: expires in 180 days (<timestamp>)
           [✔ ] Modulus Agreement
@@ -363,7 +363,7 @@ Checking 18 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/deploy
           [✔ ] Subject Alt Names: server.example.com, system.demo.genesisproject.io, *.server.example.com, *.system.demo.genesisproject.io, 10.10.10.10
           [✔ ] Default key usage: server_auth, client_auth
 
-  [ 9/18] openVPN/certs/root X509 certificate - CA, explicitly self-signed ... found.
+  [ 9/18] openVPN/certs/root X509 certificate - CA, explicitly self-signed ... valid.
           [✔ ] CA Certificate
           [✔ ] Self-Signed
           [✔ ] Valid: expires in 1825 days (<timestamp>)
@@ -372,7 +372,7 @@ Checking 18 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/deploy
           [✔ ] Subject Alt Names: ca.openvpn
           [✔ ] Specified key usage: crl_sign, key_cert_sign
 
-  [10/18] openVPN/certs/server X509 certificate - signed by 'openVPN/certs/root' ... found.
+  [10/18] openVPN/certs/server X509 certificate - signed by 'openVPN/certs/root' ... valid.
           [✔ ] Signed by openVPN/certs/root
           [✔ ] Valid: expires in 180 days (<timestamp>)
           [✔ ] Modulus Agreement
@@ -380,46 +380,46 @@ Checking 18 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/deploy
           [✔ ] Subject Alt Names: server.openvpn
           [✔ ] Specified key usage: server_auth, digital_signature, key_encipherment
 
-  [11/18] passwords:alt random password - 32 bytes ... found.
+  [11/18] passwords:alt random password - 32 bytes ... valid.
           [✔ ] 32 characters
           [✔ ] Formatted as base64 in ':alt-base64'
 
-  [12/18] passwords:permanent random password - 128 bytes, fixed ... found.
+  [12/18] passwords:permanent random password - 128 bytes, fixed ... valid.
           [✔ ] 128 characters
 
-  [13/18] passwords:uncrypted random password - 1024 bytes ... found.
+  [13/18] passwords:uncrypted random password - 1024 bytes ... valid.
           [✔ ] 1024 characters
           [✔ ] Formatted as bcrypt in ':crypted'
 
-  [14/18] passwords:word random password - 64 bytes, fixed ... found.
+  [14/18] passwords:word random password - 64 bytes, fixed ... valid.
           [✔ ] 64 characters
           [✔ ] Only uses characters '01'
 
-  [15/18] rsa RSA public/private keypair - 4096 bits, fixed ... found.
+  [15/18] rsa RSA public/private keypair - 4096 bits, fixed ... valid.
           [✔ ] Valid private key
           [✔ ] Valid public key
           [✔ ] 4096 bit
           [✔ ] Public/Private key agreement
 
-  [16/18] rsa-default RSA public/private keypair - 2048 bits ... found.
+  [16/18] rsa-default RSA public/private keypair - 2048 bits ... valid.
           [✔ ] Valid private key
           [✔ ] Valid public key
           [✔ ] 2048 bit
           [✔ ] Public/Private key agreement
 
-  [17/18] ssh SSH public/private keypair - 1024 bits ... found.
+  [17/18] ssh SSH public/private keypair - 1024 bits ... valid.
           [✔ ] Valid private key
           [✔ ] Valid public key
           [✔ ] Public/Private key Agreement
           [✔ ] 1024 bits
 
-  [18/18] ssh-default SSH public/private keypair - 2048 bits, fixed ... found.
+  [18/18] ssh-default SSH public/private keypair - 2048 bits, fixed ... valid.
           [✔ ] Valid private key
           [✔ ] Valid public key
           [✔ ] Public/Private key Agreement
           [✔ ] 2048 bits
 
-Failed - Duration: XXX seconds [16 found/0 skipped/2 errors]
+Failed - Duration: XXX seconds [16 validated/0 skipped/2 errors]
 
 EOF
 
@@ -476,7 +476,8 @@ Checking for failed or missing secrets for $env_name under path '$secrets_mount$
 <clear-line>  [16/18] rsa-default RSA public/private keypair ... <cr>
 <clear-line>  [17/18] ssh SSH public/private keypair ... <cr>
 <clear-line>  [18/18] ssh-default SSH public/private keypair ... <cr>
-<clear-line><cr>
+<clear-line>Found 4 failed secrets
+<cr>
 <clear-line>
 [WARNING] The following secrets will be recreated:
     • haproxy/ssl
@@ -512,7 +513,7 @@ EOF
       $cmd = Expect->new();
       $cmd->log_stdout(1);
       $cmd->spawn("GENESIS_NO_UTF8=1 genesis check-secrets $env_name --validate");
-      expect_ok $cmd, "[16 found/0 skipped/2 errors]";
+      expect_ok $cmd, "[16 validated/0 skipped/2 errors]";
       expect_exit $cmd, 1, "genesis check-secrets after rotate failed - expect fixed secrets still errored";
     };
     $out =~ s/\e\[2K/<clear-line>/g;
@@ -524,7 +525,7 @@ EOF
 Parsing kit secrets descriptions ... <cr>
 <clear-line>Retrieving all existing secrets ... <cr>
 <clear-line>
-Checking 18 secrets for $env_name under path '$secrets_mount$secrets_path/':
+Validating 18 secrets for $env_name under path '$secrets_mount$secrets_path/':
   [ 1/18] fixed/ca X509 certificate ... <cr>
 <clear-line>  [ 2/18] fixed/server X509 certificate ... <cr>
 <clear-line>  [ 3/18] haproxy/ca X509 certificate ... <cr>
@@ -549,7 +550,7 @@ Checking 18 secrets for $env_name under path '$secrets_mount$secrets_path/':
 <clear-line>  [16/18] rsa-default RSA public/private keypair ... <cr>
 <clear-line>  [17/18] ssh SSH public/private keypair ... <cr>
 <clear-line>  [18/18] ssh-default SSH public/private keypair ... <cr>
-<clear-line>Failed - Duration: XXX seconds [16 found/0 skipped/2 errors]
+<clear-line>Failed - Duration: XXX seconds [16 validated/0 skipped/2 errors]
 
 EOF
     ($secrets_new, $err2) = $env->vault->all_secrets_for($env);
@@ -589,19 +590,19 @@ Parsing kit secrets descriptions ... done. - XXX seconds
 Retrieving all existing secrets ... done. - XXX seconds
 
 Checking for failed secrets for $env_name under path '$secrets_mount$secrets_path/':
-  [ 1/18] fixed/ca X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... done.
-  [ 2/18] fixed/server X509 certificate - signed by 'fixed/ca' ... done.
-  [ 3/18] haproxy/ca X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... done.
-  [ 4/18] haproxy/ssl X509 certificate - signed by 'haproxy/ca' ... done.
-  [ 5/18] top-level/top X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... done.
-  [ 6/18] secondary/ca X509 certificate - CA, signed by 'top-level/top' ... done.
-  [ 7/18] secondary/server X509 certificate - signed by 'secondary/ca' ... done.
-  [ 8/18] top-level/server X509 certificate - signed by 'top-level/top' ... done.
-  [ 9/18] openVPN/certs/root X509 certificate - CA, explicitly self-signed ... done.
-  [10/18] openVPN/certs/server X509 certificate - signed by 'openVPN/certs/root' ... done.
-  [11/18] passwords:alt random password - 32 bytes ... done.
-  [12/18] passwords:permanent random password - 128 bytes, fixed ... done.
-  [13/18] passwords:uncrypted random password - 1024 bytes ... done.
+  [ 1/18] fixed/ca X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... valid.
+  [ 2/18] fixed/server X509 certificate - signed by 'fixed/ca' ... valid.
+  [ 3/18] haproxy/ca X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... valid.
+  [ 4/18] haproxy/ssl X509 certificate - signed by 'haproxy/ca' ... valid.
+  [ 5/18] top-level/top X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... valid.
+  [ 6/18] secondary/ca X509 certificate - CA, signed by 'top-level/top' ... valid.
+  [ 7/18] secondary/server X509 certificate - signed by 'secondary/ca' ... valid.
+  [ 8/18] top-level/server X509 certificate - signed by 'top-level/top' ... valid.
+  [ 9/18] openVPN/certs/root X509 certificate - CA, explicitly self-signed ... valid.
+  [10/18] openVPN/certs/server X509 certificate - signed by 'openVPN/certs/root' ... valid.
+  [11/18] passwords:alt random password - 32 bytes ... valid.
+  [12/18] passwords:permanent random password - 128 bytes, fixed ... valid.
+  [13/18] passwords:uncrypted random password - 1024 bytes ... valid.
   [14/18] passwords:word random password - 64 bytes, fixed ... failed!
           [+] 64 characters
           [-] Only uses characters '01' (found invalid characters in '<[12]{64}>')
@@ -610,9 +611,10 @@ Checking for failed secrets for $env_name under path '$secrets_mount$secrets_pat
           [+] Valid private key
           [-] Valid public key
 
-  [16/18] rsa-default RSA public/private keypair - 2048 bits ... done.
-  [17/18] ssh SSH public/private keypair - 1024 bits ... done.
-  [18/18] ssh-default SSH public/private keypair - 2048 bits, fixed ... done.
+  [16/18] rsa-default RSA public/private keypair - 2048 bits ... valid.
+  [17/18] ssh SSH public/private keypair - 1024 bits ... valid.
+  [18/18] ssh-default SSH public/private keypair - 2048 bits, fixed ... valid.
+Found 2 failed secrets
 
 Removing 2 secrets for $env_name under path '$secrets_mount$secrets_path/':
   [1/2] passwords:word random password - 64 bytes, fixed ... done.
@@ -818,7 +820,7 @@ EOF
       $cmd = Expect->new();
       $cmd->log_stdout(1);
       $cmd->spawn("genesis check-secrets $env_name --validate");
-      expect_ok $cmd, "[18 found/0 skipped/0 errors]";
+      expect_ok $cmd, "[18 validated/0 skipped/0 errors]";
       expect_exit $cmd, 0, "genesis check-secrets --validate without verbosity";
     };
     $out =~ s/\e\[2K/<clear-line>/g;
@@ -829,7 +831,7 @@ EOF
 Parsing kit secrets descriptions ... <cr>
 <clear-line>Retrieving all existing secrets ... <cr>
 <clear-line>
-Checking 18 secrets for $env_name under path '$secrets_mount$secrets_path/':
+Validating 18 secrets for $env_name under path '$secrets_mount$secrets_path/':
   [ 1/18] fixed/ca X509 certificate ... <cr>
 <clear-line>  [ 2/18] fixed/server X509 certificate ... <cr>
 <clear-line>  [ 3/18] haproxy/ca X509 certificate ... <cr>
@@ -848,7 +850,7 @@ Checking 18 secrets for $env_name under path '$secrets_mount$secrets_path/':
 <clear-line>  [16/18] rsa-default RSA public/private keypair ... <cr>
 <clear-line>  [17/18] ssh SSH public/private keypair ... <cr>
 <clear-line>  [18/18] ssh-default SSH public/private keypair ... <cr>
-<clear-line>Completed - Duration: XXX seconds [18 found/0 skipped/0 errors]
+<clear-line>Completed - Duration: XXX seconds [18 validated/0 skipped/0 errors]
 
 EOF
 
@@ -960,18 +962,18 @@ EOF
 		$cmd = Expect->new();
 		$cmd->log_stdout(1);
 		$cmd->spawn("genesis check-secrets $env_name --validate");
-		expect_ok $cmd, "[18 found/0 skipped/0 errors]";
-		expect_exit $cmd, 0, "genesis creates a new environment and auto-generates certificates - default secrets stuff";
+		expect_ok $cmd, "[18 validated/0 skipped/0 errors]";
+		expect_exit $cmd, 0, "genesis check-secrets after rotate-secrets with filter";
 	};
 	$out =~ s/\e\[2K/<clear-line>/g;
   $out =~ s/\r\n/\n/g;
 	$out =~ s/\r/<cr>\n/g;
 	$out =~ s/(Duration:|-) \d+ seconds/$1 XXX seconds/g;
-	matches_utf8 $out,<<EOF, "genesis rotate-secrets reports rotated filtered secrets, but not fixed ones";
+	matches_utf8 $out,<<EOF, "genesis check-secrets after rotate-secrets with filter: all reports good";
 Parsing kit secrets descriptions ... <cr>
 <clear-line>Retrieving all existing secrets ... <cr>
 <clear-line>
-Checking 18 secrets for $env_name under path '$secrets_mount$secrets_path/':
+Validating 18 secrets for $env_name under path '$secrets_mount$secrets_path/':
   [ 1/18] fixed/ca X509 certificate ... <cr>
 <clear-line>  [ 2/18] fixed/server X509 certificate ... <cr>
 <clear-line>  [ 3/18] haproxy/ca X509 certificate ... <cr>
@@ -990,27 +992,30 @@ Checking 18 secrets for $env_name under path '$secrets_mount$secrets_path/':
 <clear-line>  [16/18] rsa-default RSA public/private keypair ... <cr>
 <clear-line>  [17/18] ssh SSH public/private keypair ... <cr>
 <clear-line>  [18/18] ssh-default SSH public/private keypair ... <cr>
-<clear-line>Completed - Duration: XXX seconds [18 found/0 skipped/0 errors]
+<clear-line>Completed - Duration: XXX seconds [18 validated/0 skipped/0 errors]
 
 EOF
 
 	# Knock out some endpoints
 	$v = $secrets_mount.$secrets_path;
+	runs_ok(
+		"safe x509 issue -i $v/openVPN/certs/root -n  *.run.live.genesisproject.io -n something -n *.live.genesisproject.io -t 18d -u server_auth -u timestamping $v/haproxy/ssl",
+		"regenerated haproxy/ssl for testing"
+	);
+	runs_ok(
+		"safe x509 issue -i $v/fixed/ca -n 'a really long name with DNS: in it' -t 3m -u no $v/fixed/server",
+		"regenerated fixed/server for testing"
+	);
 	runs_ok("safe set $v/ssh public=\"\$(safe get $v/ssh-default:public)\"", "copied ssh-defaul:public to ssh:public for testing");
 	runs_ok("safe rm -f $v/rsa-default:private", "removed rsa-default:private for testing");
 	runs_ok("safe rm -f $v/top-level/top:certificate", "removed top-level/top:certificate for testing");
   runs_ok("safe gen -l 64 -p 12 $v/passwords:word", "regenerated passwords:word for testing");
 	runs_ok("safe ssh 1024 $v/rsa", "regenerated rsa for testing");
-	runs_ok(
-		"safe x509 issue -i $v/openVPN/certs/root -n  *.run.live.genesisproject.io -n something -n *.live.genesisproject.io -t 18d -u server_auth -u timestamping $v/haproxy/ssl",
-		"regenerated haproxy/ssl for testing"
-	);
 
 	$out = combined_from {
 		$cmd = Expect->new();
 		$cmd->log_stdout(1);
 		$cmd->spawn("genesis check-secrets $env_name --validate");
-		#expect_ok $cmd, /\[\d+ found\/\d+ skipped\/\d+ errors\]/;
 		expect_exit $cmd, [1,0], "genesis creates a new environment and auto-generates certificates - default secrets stuff";
 	};
 	#diag @{[grep {$_ =~ 'Duration'} split($/,$out)]}[0];
@@ -1020,13 +1025,16 @@ EOF
 	$out =~ s/ca\.n\d{9}\./ca.n<random>./g;
 	$out =~ s/(Duration:|-) \d+ seconds/$1 XXX seconds/g;
 	$out =~ s/'[12]{64}'/'<[12]{64}>'/g;
-	matches_utf8 $out,<<EOF, "genesis rotate-secrets reports rotated filtered secrets, but not fixed ones";
+	matches_utf8 $out,<<EOF, "genesis check-secrets after modifiction to cause failures";
 Parsing kit secrets descriptions ... <cr>
 <clear-line>Retrieving all existing secrets ... <cr>
 <clear-line>
-Checking 18 secrets for $env_name under path '$secrets_mount$secrets_path/':
+Validating 18 secrets for $env_name under path '$secrets_mount$secrets_path/':
   [ 1/18] fixed/ca X509 certificate ... <cr>
-<clear-line>  [ 2/18] fixed/server X509 certificate ... <cr>
+<clear-line>  [ 2/18] fixed/server X509 certificate ... warning!
+          [⚠ ] Default key usage (missing: client_auth, server_auth)
+
+<cr>
 <clear-line>  [ 3/18] haproxy/ca X509 certificate ... <cr>
 <clear-line>  [ 4/18] haproxy/ssl X509 certificate ... failed!
           [✘ ] Signed by haproxy/ca
@@ -1071,10 +1079,12 @@ Checking 18 secrets for $env_name under path '$secrets_mount$secrets_path/':
 
 <cr>
 <clear-line>  [18/18] ssh-default SSH public/private keypair ... <cr>
-<clear-line>Failed - Duration: XXX seconds [10 found/0 skipped/8 errors]
+<clear-line>Failed - Duration: XXX seconds [9 validated/0 skipped/8 errors/1 warnings]
 
 EOF
 
+	chdir $TOPDIR;
+	teardown_vault;
 }	;
 
 subtest 'secrets-base' => sub {

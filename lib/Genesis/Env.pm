@@ -900,10 +900,13 @@ sub add_secrets {
 	} else {
 		# Determine secret_store from kit - assume vault for now (credhub ignored)
 		my $store = $self->vault->connect_and_validate;
+		my $processing_opts = {
+			level=>$opts{verbose}?'full':'line'
+		};
 		my $ok = $store->process_kit_secret_plans(
 			'add',
 			$self,
-			sub{$self->_secret_processing_updates_callback('add',{level=>$opts{verbose}?'full':'line'},@_)},
+			sub{$self->_secret_processing_updates_callback('add',$processing_opts,@_)},
 			get_opts(\%opts, qw/filter/)
 		);
 		return $ok;
@@ -927,11 +930,16 @@ sub check_secrets {
 	} else {
 		# Determine secret_store from kit - assume vault for now (credhub ignored)
 		my $store = $self->vault->connect_and_validate;
+		my $action = $opts{validate} ? 'validate' : 'check';
+		my $processing_opts = {
+			no_prompt => $opts{'no-prompt'},
+			level=>$opts{verbose}?'full':'line'
+		};
 		my $ok = $store->validate_kit_secrets(
-			$opts{validate} ? 'validate' : 'check',
+			$action,
 			$self,
-			sub{$self->_secret_processing_updates_callback('check',{level=>($opts{verbose}?'full':'line')},@_)},
-			get_ops(\%opts, qw/filter/)
+			sub{$self->_secret_processing_updates_callback($action,$processing_opts,@_)},
+			get_opts(\%opts, qw/filter fail_on_warn/)
 		);
 		return $ok;
 	}
@@ -961,7 +969,7 @@ sub rotate_secrets {
 			$action.($opts{failed} ? '-failed' : ''),
 			$self,
 			sub{$self->_secret_processing_updates_callback($action,$processing_opts,@_)},
-			get_opts(\%opts, qw/filter no-prompt/)
+			get_opts(\%opts, qw/filter no_prompt fail_on_warn/)
 		);
 		return $ok;
 	}
@@ -1022,7 +1030,7 @@ sub remove_secrets {
 		'remove'.($opts{failed} ? '-failed' : ''),
 		$self,
 		sub{$self->_secret_processing_updates_callback('remove',$processing_opts,@_)},
-		get_opts(\%opts, qw/filter no-prompt/)
+		get_opts(\%opts, qw/filter no_prompt/)
 	);
 	return $ok;
 }
@@ -1033,6 +1041,7 @@ sub _secret_processing_updates_callback {
 	my $level = $opts->{level} || 'full';
 	$level = 'full' unless -t STDOUT;
 
+	$action = $args{action} if $args{action};
 	$args{result} ||= '';
 	(my $actioned = $action) =~ s/e?$/ed/;
 	$actioned = 'found' if $actioned eq 'checked';
@@ -1042,6 +1051,7 @@ sub _secret_processing_updates_callback {
 		my $map = { error => "#R{failed!}",
 		            'check/ok' =>  "#G{found.}",
 		            'validate/ok' =>  "#G{valid.}",
+		            'validate/warn' => "#Y{warning!}",
 		            ok =>  "#G{done.}",
 		            'recreate/skipped' => '#Y{skipped}',
 		            skipped => "#Y{exists!}",
@@ -1051,8 +1061,9 @@ sub _secret_processing_updates_callback {
 
 		explain $map->{"$action/$args{result}"} || $map->{$args{result}} || $args{result}
 			if $args{result} && ($level eq 'full' || !( $args{result} eq 'ok' || ($args{result} eq 'skipped' && $action eq 'add')));
+
 		if ($args{msg}) {
-			my @lines = grep {$level eq 'full' || $_ =~ /^\[#R/} split("\n",$args{msg});
+			my @lines = grep {$level eq 'full' || $_ =~ /^\[#[YR]/} split("\n",$args{msg});
 			my $pad = " " x (length($self->{__secret_processing_updates_callback__total})*2+4);
 			explain "  $pad%s\n", join("\n  $pad", @lines) if @lines;
 		}
@@ -1099,16 +1110,18 @@ sub _secret_processing_updates_callback {
 
 	} elsif ($state eq 'completed') {
 		my @extra_errors = @{$args{errors} || []};
+		my $warn_count = scalar(@{$self->{__secret_processing_updates_callback__items}{warn} || []});
 		my $err_count = scalar(@{$self->{__secret_processing_updates_callback__items}{error} || []})
 			+ scalar(@extra_errors)
 			+ ($action =~ /^(check|validate)$/ ?
 				scalar(@{$self->{__secret_processing_updates_callback__items}{missing} || []}) : 0);
-		explain "%s - Duration: %s [%d %s/%d skipped/%d errors]\n",
+		explain "%s - Duration: %s [%d %s/%d skipped/%d errors%s]\n",
 			$err_count ? "Failed" : "Completed",
 			Time::Seconds->new(time() - $self->{__secret_processing_updates_callback__start})->pretty(),
 			scalar(@{$self->{__secret_processing_updates_callback__items}{ok} || []}), $actioned,
 			scalar(@{$self->{__secret_processing_updates_callback__items}{skipped} || []}),
-			$err_count;
+			$err_count,
+			$warn_count ? "/$warn_count warnings" : '';
 		return !$err_count;
 	} elsif ($state eq 'prompt') {
 		my $title = '';
@@ -1122,6 +1135,8 @@ sub _secret_processing_updates_callback {
 			"to bypass this limitation."
 		);
 		return prompt_for_line(undef, $args{prompt}, $args{default} || "");
+	} elsif ($state eq 'notify') {
+		explain $args{msg};
 	} else {
 		bug "_secret_processing_updates_callback encountered an unknown state '$state'";
 	}
