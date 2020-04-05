@@ -48,7 +48,7 @@ sub load {
 			unless $opts{$_};
 	}
 
-	my $env = $class->new(_slice(\%opts, qw(name top)));
+	my $env = $class->new(get_opts(\%opts, qw(name top)));
 
 	bail("#R{[ERROR]} Environment file $env->{file} does not exist.") unless -f $env->path($env->{file});
 
@@ -122,7 +122,7 @@ sub create {
 			unless $opts{$_};
 	}
 
-	my $env = $class->new(_slice(\%opts, qw(name top kit)));
+	my $env = $class->new(get_opts(\%opts, qw(name top kit)));
 
 	# environment must not already exist...
 	die "Environment file $env->{file} already exists.\n"
@@ -133,7 +133,7 @@ sub create {
 	$env->{__params} = {
 		genesis => {
 			env => $opts{name},
-			_slice(\%opts, qw(secrets_path secrets_mount exodus_mount ci_mount root_ca_path credhub_env))}
+			get_opts(\%opts, qw(secrets_path secrets_mount exodus_mount ci_mount root_ca_path credhub_env))}
 	};
 
 	# target vault and remove secrets that may already exist
@@ -904,7 +904,7 @@ sub add_secrets {
 			'add',
 			$self,
 			sub{$self->_secret_processing_updates_callback('add',{level=>$opts{verbose}?'full':'line'},@_)},
-			_slice(\%opts, qw/filter/)
+			get_opts(\%opts, qw/filter/)
 		);
 		return $ok;
 	}
@@ -931,7 +931,7 @@ sub check_secrets {
 			$opts{validate} ? 'validate' : 'check',
 			$self,
 			sub{$self->_secret_processing_updates_callback('check',{level=>($opts{verbose}?'full':'line')},@_)},
-			_slice(\%opts, qw/filter/)
+			get_ops(\%opts, qw/filter/)
 		);
 		return $ok;
 	}
@@ -961,7 +961,7 @@ sub rotate_secrets {
 			$action.($opts{failed} ? '-failed' : ''),
 			$self,
 			sub{$self->_secret_processing_updates_callback($action,$processing_opts,@_)},
-			_slice(\%opts, qw/filter no-prompt/)
+			get_opts(\%opts, qw/filter no-prompt/)
 		);
 		return $ok;
 	}
@@ -1018,7 +1018,7 @@ sub remove_secrets {
 		'remove'.($opts{failed} ? '-failed' : ''),
 		$self,
 		sub{$self->_secret_processing_updates_callback('remove',$processing_opts,@_)},
-		_slice(\%opts, qw/filter no-prompt/)
+		get_opts(\%opts, qw/filter no-prompt/)
 	);
 	return $ok;
 }
@@ -1142,26 +1142,6 @@ sub validate_name {
 		if $name =~ m/--/;
 
 	1; # name is valid
-}
-
-sub _slice {
-	my ($hash_ref, @keys) = @_;
-	my %slice;
-	for (@keys) {
-		if (exists($hash_ref->{$_})) {
-			$slice{$_} = $hash_ref->{$_};
-		} elsif ($_ =~ '_') {
-			my $__ = _u2d($_);
-			$slice{$_} = $hash_ref->{$__} if exists($hash_ref->{$__});
-		}
-	}
-	return %slice
-}
-
-sub _u2d {
-	my $str = shift;
-	$str =~ s/_/-/g;
-	$str
 }
 
 1;

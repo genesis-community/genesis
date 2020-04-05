@@ -63,6 +63,7 @@ our @EXPORT = qw/
 
 	struct_lookup
 	uniq
+	get_opts
 
 	tcp_listening
 /;
@@ -762,6 +763,27 @@ sub uniq {
 	}
 	@items
 }
+
+sub get_opts {
+	my ($hash_ref, @keys) = @_;
+	my %slice;
+	for (@keys) {
+		if (exists($hash_ref->{$_})) {
+			$slice{$_} = $hash_ref->{$_};
+		} elsif ($_ =~ '_') {
+			my $__ = _u2d($_);
+			$slice{$_} = $hash_ref->{$__} if exists($hash_ref->{$__});
+		}
+	}
+	return %slice
+}
+
+sub _u2d {
+	my $str = shift;
+	$str =~ s/_/-/g;
+	$str
+}
+
 
 
 # Because x FH args... translates to FH->x args, it is required to monkey-patch
