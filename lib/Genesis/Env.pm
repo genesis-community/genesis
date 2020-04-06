@@ -918,7 +918,7 @@ sub check_secrets {
 
 	#Credhub check
 	if ($self->kit->uses_credhub) {
-		explain "#Yi{Credhub-based kit - no local secrets validation required}";
+		explain "#Yi{Credhub-based kit - no local secrets validation required}\n";
 		return 1;
 	}
 
