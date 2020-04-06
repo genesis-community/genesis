@@ -692,22 +692,12 @@ sub popd {
 
 sub tcp_listening {
 	my ($host,$port) = @_;
-	my ($ping_count,$ping_delay,$ping_timeout) = (2,0.2,10);
-
-	# Check if host is reachable (if ping is available)
-	if (run({passfail => 1}, 'which','ping')) {
-		run(
-			{passfail => 1}, 'ping -c "$1" -i "$2" -t "$3" "$4" >/dev/null',
-			$ping_count, $ping_delay, $ping_timeout, $host
-		) or return 0;
-	} else {
-		debug "ping not found -- cannot short-circuit check for $host being reachable";
-	}
+	my $timeout = $ENV{GENESIS_NETWORK_TIMEOUT} || 10;
 
 	# Check if host is listening on given port
 	run(
 		{passfail => 1},
-		"(</dev/tcp/$host/$port) >/dev/null"
+		"timeout ${timeout}s bash -c '(</dev/tcp/$host/$port) >/dev/null 2>&1'"
 	);
 }
 
