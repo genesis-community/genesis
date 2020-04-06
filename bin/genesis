@@ -1311,6 +1311,9 @@ sub {
 	my ($name, $script, @args) = @_;
 	my $env = Genesis::Top->new('.')->load_env($name);
 
+	$env->kit->check_prereqs
+		or bail "Cannot use the kit specified by %s.\n", $env->name;
+
 	$env->has_hook('addon')
 		or bail "#R{Kit %s does not provide an addon hook!}", $env->kit->id;
 
