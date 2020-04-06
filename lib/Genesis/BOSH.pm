@@ -178,6 +178,14 @@ sub run_errand {
 	return 1;
 }
 
+sub stemcells {
+	my ($class, $env) = @_;
+	return lines(_bosh(
+		q<bosh -e "$1" stemcells --json | jq -r '.Tables[0].Rows[] | "\(.os)@\(.version)"'>,
+		$env
+	));
+}
+
 1;
 
 =head1 NAME
