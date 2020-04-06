@@ -72,6 +72,8 @@ This release completely overhauled the `add-secrets`, `rotate-secrets` and `chec
 
 - Validation of secrets beyond simply presence is now supported with `--validate` option on `check-secrets`, with validation against the secrets specifications in the kit as well as its internal integrity, expiration, signature chain, etc...
 
+- Deploy now validates secrets, but this can be downgraded to just checking presence using --no-validate.
+
 - X509 secrets can be renewed instead of recreated using the `rotate-secrets --renew` option.  This keeps the same keys, ensuring the preservation of the signature chain integrity, but renews the expiration period.
 
 - New `-F|--filter <str>` option to the `*-secrets` commands allows you to select a subset of secrets to act upon, either a specific secret path, or a regular expression that matches secrets paths.  This allows actions to be applied surgically instead of en-masse.
@@ -114,7 +116,7 @@ By default, this will expect the bosh environment for the deployment, but you ca
 
 Improved Functionality for X509 Certificates:
 
-- More flexible signing chain specification.  By default (and prevously only method), a certificate named 'ca' will be the signing CA certificate for all sibling certificates for the given secrets path under `certificates:` key in `kit.yml`.   Alternatively, you can specify an alternatively named certificate as the default ca for the cohorts using the `is_ca` boolean property.  Finally, you can explicitly state another path as the signing CA certificate (relative to environment's base secrets path) by using the `signed-by:` property.  This allows multiple levels of CA signature chains.
+- More flexible signing chain specification.  By default (and previously only method), a certificate named 'ca' will be the signing CA certificate for all sibling certificates for the given secrets path under `certificates:` key in `kit.yml`.   Alternatively, you can specify an alternatively named certificate as the default ca for the cohorts using the `is_ca` boolean property.  Finally, you can explicitly state another path as the signing CA certificate (relative to environment's base secrets path) by using the `signed-by:` property.  This allows multiple levels of CA signature chains.
 
 - As mentioned above, the user can specify a root CA certificate to be used to sign all base CAs for the kit that would otherwise be self-signed.  If you want to have an explicitly self-signed CA certificate even with the presence of a root CA, you can ensure a CA is self-signed by providing its secrets path as its `signed-by:` property.
 
@@ -154,6 +156,15 @@ When Genesis v2 came out, it included full backwards compatibility with Genesis 
 
 However, with BOSH no longer supporting v1-style manifests, it seemed a good time to remove this obsolete functionality and shrink down the package.  If you still need this, any version from v2.5.x or v2.6.x will work for you, as the v1 embedded in those versions haven't changed.
 
+----
+
+# Removed Deprecated Features
+
+In addition to removing Genesis v1 support, this release removes the following deprecations:
+
+- `genesis secrets * ...` commands have been removed;  you now must use `genesis *-secrets` equivalents.
+
+- -n|--non-interactive option to `genesis deploy` has been removed:  use the `-y` option instead.
 ----
 
 # Other Minor Improvements
