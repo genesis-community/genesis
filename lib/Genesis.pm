@@ -129,7 +129,6 @@ sub _color {
 
 sub _colorize {
 	my ($c, $msg) = @_;
-	$c = substr($c, 1);
 	return $msg if envset('NOCOLOR');
 
 	my @fmt = ();
@@ -194,8 +193,8 @@ sub csprintf {
 		}
 	}
 
-	$s =~ s/(#[-IUKRGYBMPCW*]{0,4})@\{(.*?)(\})/_glyphize($1, $2)/egism;
-	$s =~ s/(#[-IUKRGYBMPCW*]{1,4})\{(.*?)(\})/_colorize($1, $2)/egism;
+	$s =~ s/#([-IUKRGYBMPCW*]{0,4})@\{([^{}]*(?:{[^}]+}[^{}]*)*)\}/_glyphize($1, $2)/egism;
+	$s =~ s/#([-IUKRGYBMPCW*]{1,4})\{([^{}]*(?:{[^}]+}[^{}]*)*)\}/_colorize($1, $2)/egism;
 	return $s;
 }
 
