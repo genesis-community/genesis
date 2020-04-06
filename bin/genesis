@@ -428,14 +428,14 @@ sub check_environment {
 		explain "[#M{%s}] #Y{%s does not define a 'check' hook; $checks checks will be skipped.}", $env->name, $env->kit->id;
 	}
 
-	if ($opts{check_secrets}) {
-		explain "\n[#M{%s}] running credentials and certificates checks...", $env->name;
+	if (!exists($opts{check_secrets}) || $opts{check_secrets}) {
+		explain "\n[#M{%s}] running secrets checks...", $env->name;
 		$env->check_secrets(indent => '  ') or $ok = 0;
 	}
 
 	if ($ok) {
 		if ($env->needs_bosh_create_env || $env->cloud_config) {
-			if ($opts{check_manifest}) {
+			if (!exists($opts{check_manifest}) || $opts{check_manifest}) {
 				explain "[#M{%s}] running manifest viability checks...", $env->name;
 				$env->manifest or $ok = 0;
 			}
@@ -443,6 +443,34 @@ sub check_environment {
 			explain "[#M{%s}] #Y{No cloud config provided - can't check manifest viability}", $env->name;
 		}
 	}
+
+	if ($ok && (!exists($opts{check_stemcells}) || $opts{check_stemcells}) && !$env->needs_bosh_create_env) {
+
+		explain "[#M{%s}] running stemcell checks...", $env->name;
+		my @stemcells = Genesis::BOSH->stemcells($env->bosh_target);
+		my $present = $env->manifest_lookup('stemcells');
+		for my $stemcell_info (@$present) {
+			my ($alias, $os, $version) = @$stemcell_info{qw/alias os version/};
+			my $found = grep {$_ eq "$os\@$version"} @stemcells;
+			explain ("%sStemcell #C{%s} (%s v%s) %s",
+				bullet($found ? 'good' : 'bad', '', box => 1, inline => 1),
+				$alias, $os, $version,
+				$found ? '#G{present.)' : '#R{missing!}'
+			);
+			$ok = 0 unless $found;
+		}
+		if (!$ok) {
+			#TODO: if exodus data for bosh deployment indicates a version of the kit where
+			#      https://github.com/genesis-community/bosh-genesis-kit/issues/70 is resolved,
+			#      spit out the commands that allow the user to upload the specific missing verions:
+			#      genesis -C path/to/bosh-env-file.yml do upload-stemcells os1/version1 os2/version2 ...
+			explain "\n".
+				"  Missing stemcells can be uploaded using:\n".
+				"  #G{genesis -C <path/to/bosh-env-file.yml> do upload-stemcells}";
+		}
+		print "\n";
+	}
+
 	return $ok;
 }
 
@@ -1141,12 +1169,13 @@ $GLOBAL_USAGE
 
 EOF
 sub {
-	my %options = (manifest => 1, secrets => 1);
+	my %options = (stemcells => 0, manifest => 1, secrets => 1);
 	options(\@_, \%options, qw/
 		cloud-config:s
 		no-cloud-config
 		secrets!
 		manifest!
+		stemcells!
 	/);
 	usage(1) if @_ != 1;
 
@@ -1164,7 +1193,7 @@ sub {
 		$env->download_cloud_config;
 	}
 
-	my $ok = check_environment($env, check_manifest => $options{manifest}, check_secrets => $options{secrets});
+	my $ok = check_environment($env, get_opts(\%options, qw/check_manifest check_secrets check_stemcells/));
 	if ($ok) {
 		explain "\n[#M{%s}] #G{All Checks Succeeded}", $env->name;
 		exit 0;
@@ -1233,23 +1262,21 @@ sub {
 		$ENV{BOSH_NON_INTERACTIVE} = 'true';
 		delete $options{yes};
 	}
-
+	
+	explain "Preparing to deploy #C{%s}:\n  - based on kit #c{%s}", $env->name, $env->kit->id;
 	if ($env->needs_bosh_create_env) {
-		explain "Preparing to deploy #C{%s} as a #C{create-env} deployment\n", $env->name;
+		explain "  - as a #M{create-env} deployment\n";
 	} else {
-		explain "Preparing to deploy #C{%s} to '#M{%s}' BOSH director.\n", $env->name, $env->bosh_target;
-		explain "- Fetching cloud config from '#M{%s}'", $env->bosh_target;
+		explain "  - to '#M{%s}' BOSH director.\n", scalar($env->lookup_bosh_target);
 		$env->download_cloud_config();
+		explain "#Y{! No cloud config detected -- this may be a Genesis bug}"
+			unless $env->cloud_config;
 	}
 
-	explain "- Running preflight checks against [#C{%s}]:", $env->name;
-	if (!$env->needs_bosh_create_env && !$env->cloud_config) {
-		explain "#Y{! No cloud config detected -- this may be a Genesis bug}";
-	}
-	check_environment($env, check_secrets => 1)
-		or bail "! Kit #R{preflight checks failed}; deployment operation #R{halted}.";
+	check_environment($env)
+		or bail "#R{Preflight checks failed}; deployment operation #R{halted}.";
 
-	explain "- Preflight #G{ok}, initiating BOSH deploy...";
+	explain "Preflight #G{ok}, initiating BOSH deploy...";
 	my $ok = $env->deploy(%options);
 	exit ($ok ? 0 : 1);
 });
