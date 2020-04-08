@@ -289,7 +289,8 @@ sub source_yaml_files {
 	if ($self->has_hook('blueprint')) {
 		@files = $self->run_hook('blueprint', env => $env);
 		if ($absolute) {
-			@files = map { $self->path($_) } @files;
+			my $env_path = $env->path();
+			@files = map { $_ =~ qr(^$env_path) ? $_ : $self->path($_) } @files;
 		}
 
 	} else {
