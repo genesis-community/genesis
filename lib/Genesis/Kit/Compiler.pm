@@ -362,7 +362,7 @@ DONE
 shopt -s nullglob
 set -eu
 
-# Genesis Kit `blueprint' Hook
+# Genesis Kit \'blueprint\' Hook
 #
 # This script outputs the list of merge files needed to support the desired
 # feature set selected by the environment parameter file.  As generated, it
@@ -372,16 +372,42 @@ set -eu
 # function (takes a feature as a string, returns exit code 0 if present, non-
 # zero exit code otherwise).
 
-
-validate_features your-list of-features \
-                  go-here
-
 declare -a manifests
+
+# Normally, your first manifest block is named after the kit, but it is also
+# common to be named "manifest/base.yml"
 manifests+=( manifests/$name.yml )
 
+### Option 1: validate and process your list of features
+#
+# validate_features your-list of-features \
+#                   go-here
+#
+# # Once your features are validated, assemble them in order
+# if want_feature "feature_name" ; then
+#   manifest+=( \
+#     manifests/feature_name.yml \
+#     releases/feature_name.yml \
+#   )
+# fi
+
+### Option 2: Allow repo-provided files as features
+#             This allows users to specify the order in which manifest blocks
+#             are assembled, so if specific blocks must come first, pre-process
+#             them above
+#
+# for __feature in \${GENESIS_REQUESTED_FEATURES; do
+#   if [[ -f "\$GENESIS_ROOT/ops/\$__feature.yml" ]] ; then
+#     manifests+=( "\$GENESIS_ROOT/ops/\$__feature.yml" )
+#   else
+#     # Process remaining features another way...
+#   fi
+# done
+
+# Option 3: Bulk assemblage - assemble all files in order of natural sort
 for dir in features/*; do
-	if want_feature \$basename(\$dir); then
-		manifests+=( \$dir/*.yml )
+	if want_feature "\$(basename "\$dir")"; then
+		manifests+=( "\$dir/*.yml" )
 	fi
 done
 echo \${manifests[@]}

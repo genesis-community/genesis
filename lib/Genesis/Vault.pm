@@ -816,8 +816,8 @@ sub _generate_secret_command {
 		}
 	} elsif ($plan{type} eq 'x509') {
 		my %action_map = (add      => 'issue',
-			                recreate => 'issue',
-			                renew    => 'renew');
+		                  recreate => 'issue',
+		                  renew    => 'renew');
 		my @names = @{$plan{names} || []};
 		push(@names, sprintf("ca.n%09d.%s", rand(1000000000),$plan{base_path})) if $plan{is_ca} && ! scalar(@names);
 		@cmd = (
