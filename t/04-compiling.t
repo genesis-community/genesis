@@ -28,7 +28,14 @@ sub again {
 	put_file("$kitdir/ci/pipe.yml", "concourse: is fun\n");
 
 	# git init it
-	system("cd $kitdir && git init >/dev/null 2>&1 && git add . && git commit -m 'committed' > /dev/null 2>&1");
+	system(join(" && ",
+		"cd $kitdir",
+		'git init >/dev/null 2>&1',
+		'git config user.email "testing@genesisproject.io"',
+		'git config user.name "Testing Genesis"',
+		'git add .',
+		'git commit -m "committed" > /dev/null 2>&1'
+	));
 }
 
 sub commit_changes {

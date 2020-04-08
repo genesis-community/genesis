@@ -1310,7 +1310,7 @@ EOF
 
 	have_secret "$v/auto-generated-certs-b/server:certificate";
 	$x509 = qx(safe get $v/auto-generated-certs-b/server:certificate | openssl x509 -inform pem -text);
-	like $x509, qr/Issuer: CN\s*=ca\.asdf\.com/m, "server B cert is signed by the CA from auto-generated-certs-b";
+	like $x509, qr/Issuer: CN\s*=\s*ca\.asdf\.com/m, "server B cert is signed by the CA from auto-generated-certs-b";
 
 	$cmd = Expect->new();
 	$cmd->log_stdout($ENV{GENESIS_TRACE} ? 1 : 0);

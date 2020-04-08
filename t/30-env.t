@@ -758,6 +758,8 @@ EOF
 	runs_ok('safe exists "secret/exodus/standalone/thing"', 'exodus entry created in vault');
 	my ($pass, $rc, $out) = runs_ok('safe get "secret/exodus/standalone/thing" | spruce json #');
 	my $exodus = load_json($out);
+	local %ENV = %ENV;
+	$ENV{USER} ||= 'unknown';
 	cmp_deeply($exodus, {
 				dated => re(qr/\d\d\d\d-\d\d-\d\d \d\d:\d\d:\d\d \+0000/),
 				deployer => $ENV{USER},
