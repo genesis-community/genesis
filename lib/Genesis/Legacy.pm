@@ -240,8 +240,8 @@ sub run_param_hook {
 	my $rc = run(
 		{interactive => 1, env => {
 			GENESIS => $ENV{GENESIS_CALLBACK_BIN},
-			GENESIS_ENVIRONMENT_NAME => $env->{name},
-			GENESIS_VAULT_PREFIX => $env->{secrets_path} }},
+			GENESIS_ENVIRONMENT_NAME => $env->name,
+			GENESIS_VAULT_PREFIX => $env->secrets_slug }},
 		$hook, "$dir/in", "$dir/out", @features
 	);
 	die "\nNew environment creation cancelled.\n" if $rc == 130;

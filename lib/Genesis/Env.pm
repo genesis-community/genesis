@@ -895,8 +895,7 @@ sub add_secrets {
 	}
 
 	if ($self->has_hook('secrets')) {
-		$self->run_hook('secrets', action => 'add',
-		                           vault  => $self->secrets_path); #FIXME (use full path 'secrets_base')
+		$self->run_hook('secrets', action => 'add')
 	} else {
 		# Determine secret_store from kit - assume vault for now (credhub ignored)
 		my $store = $self->vault->connect_and_validate;
@@ -923,10 +922,7 @@ sub check_secrets {
 	}
 
 	if ($self->has_hook('secrets')) {
-		my ($ok,$secrets) = $self->run_hook(
-			'secrets', action => 'check', vault  => $self->secrets_path  #FIXME (use full path 'secrets_base')
-		);
-		return $ok;
+		$self->run_hook('secrets', action => 'check');
 	} else {
 		# Determine secret_store from kit - assume vault for now (credhub ignored)
 		my $store = $self->vault->connect_and_validate;
@@ -956,8 +952,7 @@ sub rotate_secrets {
 
 	my $action = $opts{'renew'} ? 'renew' : 'recreate';
 	if ($self->has_hook('secrets')) {
-		$self->run_hook('secrets', action => $action,
-		                           vault  => $self->secrets_path); #FIXME (use full path 'secrets_base')
+		$self->run_hook('secrets', action => $action);
 	} else {
 		# Determine secret_store from kit - assume vault for now (credhub ignored)
 		my $store = $self->vault->connect_and_validate;
@@ -983,7 +978,6 @@ sub remove_secrets {
 		explain "#Yi{Credhub-based kit - no local secrets removal permitted}";
 		return 1;
 	}
-
 
 	# Determine secret_store from kit - assume vault for now (credhub ignored)
 	my $store = $self->vault->connect_and_validate;
@@ -1023,16 +1017,20 @@ sub remove_secrets {
 		return 1;
 	}
 
-	my $processing_opts = {
-		level=>$opts{verbose}?'full':'line'
-	};
-	my $ok = $store->process_kit_secret_plans(
-		'remove'.($opts{failed} ? '-failed' : ''),
-		$self,
-		sub{$self->_secret_processing_updates_callback('remove',$processing_opts,@_)},
-		get_opts(\%opts, qw/filter no_prompt/)
-	);
-	return $ok;
+	if ($self->has_hook('secrets')) {
+		$self->run_hook('secrets', action => 'remove');
+	} else {
+		my $processing_opts = {
+			level=>$opts{verbose}?'full':'line'
+		};
+		my $ok = $store->process_kit_secret_plans(
+			'remove'.($opts{failed} ? '-failed' : ''),
+			$self,
+			sub{$self->_secret_processing_updates_callback('remove',$processing_opts,@_)},
+			get_opts(\%opts, qw/filter no_prompt/)
+		);
+		return $ok;
+	}
 }
 
 sub _secret_processing_updates_callback {
