@@ -1142,7 +1142,7 @@ sub {
 	$kit->check_prereqs or exit 86;
 
 	# create the environment
-	explain("Setting up new environment #C{$name}...");
+	explain("\nSetting up new environment #C{$name} based on kit %s ...", $kit->id);
 	my $env = $top->create_env($name, $kit, %options);
 	bail "Failed to create environment $name" unless $env;
 
