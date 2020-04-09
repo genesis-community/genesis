@@ -483,6 +483,12 @@ sub process_kit_secret_plans {
 					$update->('done-item', result => 'ok', msg => _checkbox(1)."Expiry updated to $expires ($days days)");
 				};
 				$update->('done-item', result => 'ok', msg => "Expiry updated to $expires") if $@;
+			} elsif ($_->{type} eq 'dhparams' && $out && !$rc) {
+				if ($out =~ /Generating DH parameters.*This is going to take a long time.*\+\+\*\+\+\s*$/s) {
+					$update->('done-item', result => 'ok')
+				} else {
+					$update->('done-item', result => 'error', msg => $out);
+				}
 			} elsif (!$out) {
 				$update->('done-item', result => 'ok')
 			} else {
