@@ -181,7 +181,7 @@ sub run_errand {
 sub stemcells {
 	my ($class, $env) = @_;
 	return lines(_bosh(
-		q<bosh -e "$1" stemcells --json | jq -r '.Tables[0].Rows[] | "\(.os)@\(.version)"'>,
+		q<bosh -e "$1" stemcells --json | jq -r '.Tables[0].Rows[] | "\(.os)@\(.version)" | sub("[^0-9]+$";"")'>,
 		$env
 	));
 }

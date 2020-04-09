@@ -449,14 +449,22 @@ sub check_environment {
 
 		explain "[#M{%s}] running stemcell checks...", $env->name;
 		my @stemcells = Genesis::BOSH->stemcells($env->bosh_target);
-		my $present = $env->manifest_lookup('stemcells');
-		for my $stemcell_info (@$present) {
+		my $required = $env->manifest_lookup('stemcells');
+		for my $stemcell_info (@$required) {
 			my ($alias, $os, $version) = @$stemcell_info{qw/alias os version/};
+			my $wants_latest = $version eq 'latest';
+			if ($wants_latest) {
+				($version) = sort {$b <=> $a} map {$_->[1]} grep {$_->[0] eq $os} map {[split('@', $_)]} @stemcells;
+			}
 			my $found = grep {$_ eq "$os\@$version"} @stemcells;
-			explain ("%sStemcell #C{%s} (%s v%s) %s",
+			explain ("%sStemcell #C{%s} (%s/%s) %s",
 				bullet($found ? 'good' : 'bad', '', box => 1, inline => 1),
-				$alias, $os, $version,
-				$found ? '#G{present.)' : '#R{missing!}'
+				$alias, $os, $wants_latest ? 'latest' : "v$version",
+				$wants_latest ? (
+					$found ? "#G{will use v$version}" : '#R{ - no stemcells available!}'
+				) : (
+					$found ? '#G{present.)' : '#R{missing!}'
+				)
 			);
 			$ok = 0 unless $found;
 		}
