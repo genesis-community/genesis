@@ -648,6 +648,14 @@ EOF
 	mkfile_or_fail("$self->{__tmp}/fin.yml", 0644, <<EOF);
 ---
 name: (( concat genesis.env || params.env "-$type" ))
+genesis:
+  secrets_path:  ${\($self->secrets_slug)}
+  secrets_mount: ${\($self->secrets_mount)}
+  exodus_path:   ${\($self->exodus_slug)}
+  exodus_mount:  ${\($self->exodus_mount)}
+  ci_mount:      ${\($self->ci_mount)}
+  bosh_env:      ${\($self->lookup_bosh_target || $self->name)}
+
 exodus:
   version:     $Genesis::VERSION
   dated:       $now
@@ -656,7 +664,7 @@ exodus:
   kit_version: (( grab kit.version || "unknown" ))
   vault_base:  (( grab meta.vault ))
 EOF
-		# TODO: In BOSH refactor, add the bosh director to the exodus data
+	# TODO: In BOSH refactor, add the bosh director to the exodus data
 
 	return (
 		"$self->{__tmp}/init.yml",
