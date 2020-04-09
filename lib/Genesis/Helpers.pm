@@ -573,6 +573,11 @@ offer_environment_editor() {
     --inline
 
   if [[ $__edit_query == 'true' ]] ; then
+    local __unbound_check=0
+    if [[ $- =~ 'u' ]] ; then
+      set +u
+      __unbound_check=1
+    fi
     __file="$GENESIS_ROOT/$GENESIS_ENVIRONMENT.yml"
     __tmpdir="$(mktemp -d)/$GENESIS_KIT_NAME-$GENESIS_KIT_VERSION"
     mkdir -p "$__tmpdir"
@@ -589,6 +594,7 @@ offer_environment_editor() {
     [[ -f $__tmpdir/manual.md ]] && rm "$__tmpdir/manual.md"
     rmdir "$__tmpdir"
     rmdir "$(dirname "$__tmpdir")"
+    [[ "$__unbound_check" = '1' ]] && set -u
   fi
 }
 export -f offer_environment_editor
