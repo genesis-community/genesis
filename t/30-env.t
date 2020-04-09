@@ -825,12 +825,13 @@ kit:
 genesis:
   env: standalone
 
+bosh-variables:
+  something:       valueable
+  cc:              (( grab cc-stuff ))
+  collection:      (( join " " params.extras ))
+  deployment_name: (( grab name ))
+
 params:
-  bosh-variables:
-    something:       valueable
-    cc:              (( grab cc-stuff ))
-    collection:      (( join " " params.extras ))
-    deployment_name: (( grab name ))
   extras:
     - 1
     - 2

@@ -542,7 +542,7 @@ sub manifest {
 
 	my (undef, $path) = $self->_manifest(redact => $opts{redact});
 	if ($opts{prune}) {
-		my @prune = qw/meta pipeline params kit genesis exodus compilation/;
+		my @prune = qw/meta pipeline params bosh-variables kit genesis exodus compilation/;
 
 		if (!$self->needs_bosh_create_env) {
 			# bosh create-env needs these, so we only prune them
@@ -592,7 +592,7 @@ sub vars_file {
 
 	return $self->{_vars_file} if ($self->{_vars_file} && -f $self->{_vars_file});
 
-	my $vars = $self->manifest_lookup('params.bosh-variables');
+	my $vars = $self->manifest_lookup('bosh-variables');
 	if ($vars && ref($vars) eq "HASH" && scalar(keys %$vars) > 0) {
 		my $vars_file = "$self->{__tmp}/bosh-vars.yml";
 		DumpYAML($vars_file,$vars);
