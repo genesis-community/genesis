@@ -478,7 +478,7 @@ Checking for failed or missing secrets for $env_name under path '$secrets_mount$
 <clear-line>Found 4 failed secrets
 <cr>
 <clear-line>
-[WARNING] The following secrets will be recreated:
+[WARNING] The following secrets will be recreated under path '$secrets_mount$secrets_path/':
     • haproxy/ssl
     • secondary/server
     • passwords:word
@@ -637,7 +637,7 @@ EOF
 Parsing kit secrets descriptions ... <cr>
 <clear-line><cr>
 <clear-line>
-[WARNING] The following secrets will be removed:
+[WARNING] The following secrets will be removed under path '$secrets_mount$secrets_path/':
     • top-level/top
     • top-level/server
     • openVPN/certs/root
@@ -757,7 +757,7 @@ EOF
 Parsing kit secrets descriptions ... done. - XXX seconds
 <cr>
 <clear-line>
-[WARNING] The following secrets will be renewed:
+[WARNING] The following secrets will be renewed under path '$secrets_mount$secrets_path/':
     • fixed/ca
     • haproxy/ca
     • secondary/ca

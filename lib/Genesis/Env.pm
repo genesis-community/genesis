@@ -1061,7 +1061,7 @@ sub remove_secrets {
 				"controlling terminal.  Use #C{-y|--no-prompt} option to provide confirmation",
 				"to bypass this limitation."
 			);
-			explain "#Yr{[WARNING]} This will delete all %s secrets under '#C{%s}', including\n".
+			explain "\n#Yr{[WARNING]} This will delete all %s secrets under '#C{%s}', including\n".
 			             "          non-generated values set by 'genesis new' or manually created",
 				 scalar(@paths), $self->secrets_base;
 			while (1) {

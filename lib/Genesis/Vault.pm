@@ -449,10 +449,14 @@ sub process_kit_secret_plans {
 		(my $actioned = $action) =~ s/e?$/ed/;
 		my $permission = $update->('prompt',
 			class => 'warning',
-			msg => "The following secrets will be ${actioned}:\n  ". join("\n  ",
-				map {bullet $_, inline => 1}
-				map {_get_plan_paths($_)}
-				@plans
+			msg => sprintf(
+				"The following secrets will be ${actioned} under path '#C{%s}':\n  %s",
+				$env->secrets_base,
+				join("\n  ",
+					map {bullet $_, inline => 1}
+					map {_get_plan_paths($_)}
+					@plans
+				)
 			),
 			prompt => "Type 'yes' to $action these secrets");
 		return $update->('abort', msg => "\nAborted!\n")
