@@ -113,6 +113,71 @@ sub load {
 	return $env;
 }
 
+# from_envvars -- builds a pseudo-env based on the current env vars - used for hooks callbacks {{{
+sub from_envvars {
+	my ($class,$top) = @_;
+
+	bail "Can only assemble environment from environment variables in a kit hook callback"
+		unless envset 'GENESIS_IS_HELPING_YOU';
+
+	for (qw(ENVIRONMENT KIT_NAME KIT_VERSION)) {
+		bug("No 'GENESIS_$_' found in enviornmental variables - cannot assemble environemnt!!")
+			unless $ENV{'GENESIS_'.$_};
+	}
+
+	my $env = $class->new(name => $ENV{GENESIS_ENVIRONMENT}, top => $top);
+
+	# reconstitute our kit via top
+	my $kit_name = $ENV{GENESIS_KIT_NAME};
+	my $kit_version = $ENV{GENESIS_KIT_VERSION};
+	$env->{kit} = $env->{top}->local_kit_version($kit_name, $kit_version)
+		or bail "Unable to locate v$kit_version of `$kit_name` kit for '$env->{name}' environment.";
+
+	my $min_version = $ENV{GENESIS_MIN_VERSION} || $env->kit->metadata('genesis_version_min');
+	$min_version =~ s/^v//i;
+	if ($min_version) {
+		if ($Genesis::VERSION eq "(development)") {
+			error(
+				"#Y{[WARNING]} Environment `$env->{name}` requires Genesis v$min_version or higher.\n".
+				"This version of Genesis is a development version and its feature availability cannot\n".
+				"be verified -- unexpected behaviour may occur.\n"
+			) unless (under_test && !envset 'GENESIS_TESTING_DEV_VERSION_DETECTION');
+		} elsif (! new_enough($Genesis::VERSION, $min_version)) {
+			bail(
+				"#R{[ERROR]} Environment `$env->{name}` requires Genesis v$min_version or higher.\n".
+				"You are currently using Genesis v$Genesis::VERSION.\n"
+			) unless (under_test && !envset 'GENESIS_TESTING_DEV_VERSION_DETECTION');
+		}
+	}
+
+	# Check for v2.7.0 features
+	unless ($env->kit->feature_compatibility("2.7.0")) {
+		bail("#R{[ERROR]} Kit #M{%s} is not compatible with #C{secrets_mount} feature\n".
+		     "        Please upgrade to a newer release or remove params.secrets_mount from #M{%s}",
+		     $env->kit->id, $env->{file})
+			if ($env->secrets_mount ne $env->default_secrets_mount);
+		bail("#R{[ERROR]} Kit #M{%s} is not compatible with #C{exodus_mount} feature\n".
+		     "        Please upgrade to a newer release or remove params.exodus_mount from #M{%s}",
+		     $env->kit->id, $env->{file})
+			if ($env->exodus_mount ne $env->default_exodus_mount);
+	}
+
+	# features
+	$env->{'__features'} = split(' ',$ENV{GENESIS_REQUESTED_FEATURES})
+		if $ENV{GENESIS_REQUESTED_FEATURES};
+
+	# determine our vault and secret path
+	for (qw(secrets_mount secrets_slug exodus_mount ci_mount root_ca_path)) {
+		$env->{'__'.$_} = $ENV{'GENESIS_'.uc($_)};
+	}
+	bail("\n#R{[ERROR]} No vault specified or configured.")
+		unless $env->vault;
+
+	$env->{is_from_envvars} =1;
+	return $env;
+}
+
+# }}}
 sub create {
 	my ($class,%opts) = @_;
 
@@ -189,66 +254,59 @@ sub root_ca_path {
 # }}}
 sub default_secrets_mount { '/secret/'; }
 sub secrets_mount {
-	my $self = shift;
-	($self->{__secrets_mount} = $self->lookup('genesis.secrets_mount', $self->default_secrets_mount)) =~ s#^/?(.*?)/?$#/$1/#
-		unless $self->{__secrets_mount};
-	return $self->{__secrets_mount};
+	$_[0]->_memoize('__secrets_mount', sub{
+		(my $mount = $_[0]->lookup('genesis.secrets_mount', $_[0]->default_secrets_mount)) =~ s#^/?(.*?)/?$#/$1/#;
+		return $mount
+	});
 }
 sub default_secrets_slug {
 	(my $p = $_[0]->name) =~ s|-|/|g;
 	return $p."/".$_[0]->top->type;
 }
 sub secrets_slug {
-	my $self = shift;
-	unless ($self->{__secrets_slug}) {
-		my ($secrets_path,$src_key) = $self->lookup(
+	$_[0]->_memoize('__secrets_slug', sub {
+		my $slug = $_[0]->lookup(
 			['genesis.secrets_path','params.vault_prefix','params.vault'],
-			$self->default_secrets_slug
+			$_[0]->default_secrets_slug
 		);
-		# Deferring Deprecation warning until future version
-		# error "\n#Y{[WARNING]} Environment file $env->{file} uses #C{$src_key} to specify secrets path in Vault.\nThis has been moved to #C{genesis.secrets_path} -- please update your file to remove this warning.\n"
-		# 	if defined($src_key) && $src_key ne 'genesis.secrets_path';
-		($self->{__secrets_slug} = $secrets_path) =~ s#^/?(.*?)/?$#$1#;
-	}
-	return $self->{__secrets_slug};
+		$slug =~ s#^/?(.*?)/?$#$1#;
+		return $slug
+	});
 }
 sub secrets_base {
-	my $self = shift;
-	$self->{__secrets_base} = $self->secrets_mount . $self->secrets_slug . '/'
-		unless ($self->{__secrets_base});
-	return $self->{__secrets_base};
+	$_[0]->_memoize('__secrets_base', sub {
+		$_[0]->secrets_mount . $_[0]->secrets_slug . '/'
+	});
 }
 
 sub default_exodus_mount { $_[0]->secrets_mount . 'exodus/'; }
 sub exodus_mount {
-	my $self = shift;
-	($self->{__secrets_exodus_mount} = $self->lookup('genesis.exodus_mount', $self->default_exodus_mount)) =~ s#^/?(.*?)/?$#/$1/#
-		unless ($self->{__secrets_exodus_mount});
-	return $self->{__secrets_exodus_mount};
+	$_[0]->_memoize('__exodus_mount', sub {
+		(my $mount = $_[0]->lookup('genesis.exodus_mount', $_[0]->default_exodus_mount)) =~ s#^/?(.*?)/?$#/$1/#;
+		return $mount;
+	});
 }
 sub exodus_slug {
 	sprintf("%s/%s", $_[0]->name, $_[0]->type);
 }
 
 sub exodus_base {
-	my $self = shift;
-	$self->{__secrets_exodus_base} = sprintf("%s%s", $self->exodus_mount, $self->exodus_slug)
-		unless ($self->{__secrets_exodus_base});
-	return $self->{__secrets_exodus_base};
+	$_[0]->_memoize('__exodus_base', sub {
+		$_[0]->exodus_mount . $_[0]->exodus_slug
+	});
 }
 
-sub default_ci_mount     { $_[0]->secrets_mount . 'ci/'; }
+sub default_ci_mount { $_[0]->secrets_mount . 'ci/'; }
 sub ci_mount {
-	my $self = shift;
-	($self->{__secrets_ci_mount} = $self->lookup('genesis.ci_mount', $self->default_ci_mount)) =~ s#^/?(.*?)/?$#/$1/#
-		unless ($self->{__secrets_ci_mount});
-	return $self->{__secrets_ci_mount};
+	$_[0]->_memoize('__ci_mount', sub {
+		(my $mount = $_[0]->lookup('genesis.ci_mount', $_[0]->default_ci_mount)) =~ s#^/?(.*?)/?$#/$1/#;
+		return $mount;
+	});
 }
 sub ci_base {
-	my $self = shift;
-	$self->{__secrets_ci_base} = sprintf("%s%s/%s/", $self->ci_mount, $self->type, $self->name)
-		unless ($self->{__secrets_ci_base});
-	return $self->{__secrets_ci_base};
+	$_[0]->_memoize('__ci_base', sub {
+		sprintf("%s%s/%s/", $_[0]->ci_mount, $_[0]->type, $_[0]->name)
+	});
 }
 
 sub setup_hook_env_vars {
@@ -276,6 +334,7 @@ sub setup_hook_env_vars {
 	$ENV{GENESIS_SECRETS_PATH} = # deprecated in v2.7.0
 	$ENV{GENESIS_SECRETS_SLUG} = $self->secrets_slug;
 	$ENV{GENESIS_SECRETS_SLUG_OVERRIDE} = $self->secrets_slug ne $self->default_secrets_slug ? "true" : "";
+	$ENV{GENESIS_ROOT_CA_PATH} = $self->root_ca_path;
 
 	# Credhub support
 	my ($credhub_src,$credhub_src_key) = $self->lookup(
@@ -344,12 +403,10 @@ sub cloud_config {
 }
 
 sub features {
-	my ($self) = @_;
-	if ($self->defines('kit.features')) {
-		return @{ scalar($self->lookup('kit.features')) };
-	} else {
-		return @{ scalar($self->lookup('kit.subkits', [])) };
-	}
+	my $ref = $_[0]->_memoize('__features', sub {
+		scalar($_[0]->lookup(['kit.features', 'kit.subkits'], []));
+	});
+	return @$ref;
 }
 
 sub has_feature {
@@ -790,10 +847,14 @@ sub bosh_target {
 
 sub deployment {
 	my ($self) = @_;
-	if ($self->defines('params.name')) {
-		return $self->lookup('params.name');
+	unless ($self->{__deployment}) {
+		if ($self->defines('params.name')) {
+			$self->{__deployment}=$self->lookup('params.name');
+		} else {
+			$self->{__deployment}=$self->lookup(['genesis.env','params.env']) . '-' . $self->{top}->type;
+		}
 	}
-	return $self->lookup(['genesis.env','params.env']) . '-' . $self->{top}->type;
+	return $self->{__deployment}
 }
 
 sub has_hook {
@@ -1176,6 +1237,12 @@ sub validate_name {
 		if $name =~ m/--/;
 
 	1; # name is valid
+}
+
+sub _memoize {
+	my ($self, $token, $initialize) = @_;
+	return $self->{$token} if defined($self->{$token});
+	$self->{$token} = $initialize->($self);
 }
 
 1;

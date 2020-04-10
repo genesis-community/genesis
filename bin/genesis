@@ -2576,9 +2576,12 @@ sub {
 	if ($use_vault) {
 		$options{secret} = $path;
 		eval {
-			$options{env} = Genesis::Top::new($ENV{GENESIS_CALLER_DIR})->load_env($ENV{GENESIS_ENVIRONMENT});
+			$options{env} = Genesis::Top->new($ENV{GENESIS_CALLER_DIR})->load_env($ENV{GENESIS_ENVIRONMENT});
 		};
-		bail "#R{[ERROR]} Cannot prompt for secrets outside a kit hook" if $@;
+		if ($@) {
+			debug "Failed in ui-prompt-for attempting to load environment:\n$@";
+			bail "#R{[ERROR]} Cannot prompt for secrets outside a kit hook";
+		}
 	}
 
 	bail(

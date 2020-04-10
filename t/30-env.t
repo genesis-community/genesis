@@ -264,6 +264,7 @@ params:
 EOF
 
 	my $env;
+	$ENV{NOCOLOR}=1;
 	throws_ok { $top->load_env('enoent');   } qr/enoent.yml does not exist/;
 	throws_ok { $top->load_env('e-no-ent'); } qr/does not exist/;
 

@@ -376,11 +376,15 @@ sub has_dev_kit {
 
 sub load_env {
 	my ($self, $name) = @_;
+	$name =~ s/.yml$//;
 	debug("loading environment #C{%s}", $name);
-	return Genesis::Env->load(
-		top  => $self,
-		name => $name,
-	);
+	if ($self->has_env($name)) {
+		return Genesis::Env->load(top  => $self, name => $name);
+	} elsif (envset('GENESIS_IS_HELPING_YOU') && $name eq $ENV{'GENESIS_ENVIRONMENT'}) {
+		return Genesis::Env->from_envvars($self);
+	} else {
+		bail "#R{[ERROR]} Environment file #C{%s} does not exist", humanize_path($self->path($name.".yml"));
+	}
 }
 
 sub has_env {
