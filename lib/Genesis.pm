@@ -645,13 +645,23 @@ sub chmod_or_fail {
 sub humanize_path {
 	my $path = shift;
 	my $pwd = Cwd::abs_path($ENV{GENESIS_CALLER_DIR} || Cwd::getcwd());
+	$path = "$pwd/$path" unless $path =~ /^\//;
+	while ($path =~ s/\/[^\/]*\/\.\.\//\//) {};
+	while ($path =~ s/\/\.\//\//) {};
+
+	my $rel_path;
+	my @path_bits = split('/',$path);
+	my @pwd_bits = split('/',$pwd);
+	my $i=-1; while ($i < $#path_bits && $i < $#pwd_bits && $path_bits[++$i] eq $pwd_bits[$i]) {};
+	$rel_path = join('/', (map {'..'} ($i .. $#pwd_bits)), @path_bits[$i .. $#path_bits]);
+
 	my $new_path = (substr($path, 0, length($pwd) + 1) eq $pwd . '/')
 		? '.' . substr($path, length($pwd))
 		: (substr($path, 0, length($ENV{HOME}) + 1) eq $ENV{HOME} . '/')
 		? "~" . substr($path, length($ENV{HOME})) : $path;
 	while ($new_path =~ s/\/[^\/]*\/\.\.\//\//) {};
 	$new_path =~ s/^\.\/\.\.\//..\//;
-	$new_path;
+	($rel_path && length($rel_path) < length($new_path)) ? $rel_path : $new_path;
 }
 
 sub load_json {
