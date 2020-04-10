@@ -899,7 +899,7 @@ subtest 'new env and check' => sub{
 		$out = combined_from {$env = $top->create_env($name, $kit, vault => $vault_target)}
 	} "successfully create an env with a dev kit";
 
-	$out =~ s/(Duration:|-) \d+ seconds/$1 XXX seconds/g;
+	$out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds/$1 XXX seconds/g;
 	eq_or_diff $out, <<EOF, "creating environment provides secret generation output";
 Parsing kit secrets descriptions ... done. - XXX seconds
 
@@ -937,7 +937,7 @@ EOF
 	$out = combined_from {
 		ok $env->check_secrets(verbose => 1), "check_secrets shows all secrets okay"
 	};
-	$out =~ s/(Duration:|-) \d+ seconds/$1 XXX seconds/g;
+	$out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds/$1 XXX seconds/g;
 
 	eq_or_diff $out, <<EOF, "check_secrets gives meaninful output on success";
 Parsing kit secrets descriptions ... done. - XXX seconds
@@ -967,7 +967,7 @@ EOF
 	$out = combined_from {
 		ok !$env->check_secrets(verbose=>1), "check_secrets shows missing secrets and keys"
 	};
-	$out =~ s/(Duration:|-) \d+ seconds/$1 XXX seconds/g;
+	$out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds/$1 XXX seconds/g;
 
 	matches_utf8 $out, <<EOF,  "check_secrets gives meaninful output on failure";
 Parsing kit secrets descriptions ... done. - XXX seconds
