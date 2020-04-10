@@ -126,6 +126,7 @@ sub from_envvars {
 	}
 
 	my $env = $class->new(name => $ENV{GENESIS_ENVIRONMENT}, top => $top);
+	$env->{is_from_envvars} =1;
 
 	# reconstitute our kit via top
 	my $kit_name = $ENV{GENESIS_KIT_NAME};
@@ -150,6 +151,15 @@ sub from_envvars {
 		}
 	}
 
+	# features
+	$env->{'__features'} = split(' ',$ENV{GENESIS_REQUESTED_FEATURES})
+		if $ENV{GENESIS_REQUESTED_FEATURES};
+
+	# determine our vault and secret path
+	for (qw(secrets_mount secrets_slug exodus_mount ci_mount root_ca_path)) {
+		$env->{'__'.$_} = $ENV{'GENESIS_'.uc($_)};
+	}
+
 	# Check for v2.7.0 features
 	unless ($env->kit->feature_compatibility("2.7.0")) {
 		bail("#R{[ERROR]} Kit #M{%s} is not compatible with #C{secrets_mount} feature\n".
@@ -162,18 +172,9 @@ sub from_envvars {
 			if ($env->exodus_mount ne $env->default_exodus_mount);
 	}
 
-	# features
-	$env->{'__features'} = split(' ',$ENV{GENESIS_REQUESTED_FEATURES})
-		if $ENV{GENESIS_REQUESTED_FEATURES};
-
-	# determine our vault and secret path
-	for (qw(secrets_mount secrets_slug exodus_mount ci_mount root_ca_path)) {
-		$env->{'__'.$_} = $ENV{'GENESIS_'.uc($_)};
-	}
 	bail("\n#R{[ERROR]} No vault specified or configured.")
 		unless $env->vault;
 
-	$env->{is_from_envvars} =1;
 	return $env;
 }
 
