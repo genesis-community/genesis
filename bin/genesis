@@ -452,14 +452,18 @@ sub check_environment {
 		my $required = $env->manifest_lookup('stemcells');
 		for my $stemcell_info (@$required) {
 			my ($alias, $os, $version) = @$stemcell_info{qw/alias os version/};
-			my $wants_latest = $version eq 'latest';
+			my ($wants_latest,$major_version) = $version =~ /^((?:(\d+)\.)?latest)$/;
 			if ($wants_latest) {
-				($version) = sort {$b <=> $a} map {$_->[1]} grep {$_->[0] eq $os} map {[split('@', $_)]} @stemcells;
+				($version) = sort {$b <=> $a} map {$_->[1]}
+				             grep {!$major_version || $major_version eq int($_->[1])}
+				             grep {$_->[0] eq $os}
+				             map {[split('@', $_)]} @stemcells;
 			}
+			$version ||= ''; # in case nothing was found
 			my $found = grep {$_ eq "$os\@$version"} @stemcells;
 			explain ("%sStemcell #C{%s} (%s/%s) %s",
 				bullet($found ? 'good' : 'bad', '', box => 1, inline => 1),
-				$alias, $os, $wants_latest ? 'latest' : "v$version",
+				$alias, $os, $wants_latest ? $wants_latest : "v$version",
 				$wants_latest ? (
 					$found ? "#G{will use v$version}" : '#R{ - no stemcells available!}'
 				) : (
