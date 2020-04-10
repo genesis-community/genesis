@@ -471,7 +471,6 @@ sub process_kit_secret_plans {
 			my $now_t = Time::Piece->new(); # To prevent clock jitter
 			my @command = _generate_secret_command($action, $env->secrets_base, 0, %$_);
 			my ($out, $rc) = $self->query(@command);
-
 			if ($out =~ /refusing to .* as it is already present/) {
 				$update->('done-item', result => 'skipped')
 			} elsif ( $action eq 'renew' && $out =~ /Renewed x509 cert.*expiry set to (.*)$/) {
@@ -484,7 +483,7 @@ sub process_kit_secret_plans {
 				};
 				$update->('done-item', result => 'ok', msg => "Expiry updated to $expires") if $@;
 			} elsif ($_->{type} eq 'dhparams' && $out && !$rc) {
-				if ($out =~ /Generating DH parameters.*This is going to take a long time.*\+\+\*\+\+\s*$/s) {
+				if ($out =~ /Generating DH parameters.*This is going to take a long time.*\+\+\*\+\+\*\s*$/s) {
 					$update->('done-item', result => 'ok')
 				} else {
 					$update->('done-item', result => 'error', msg => $out);
@@ -574,7 +573,7 @@ sub _expected_kit_secret_keys {
 		@keys = qw(private public);
 	} elsif ($type eq 'ssh') {
 		@keys = qw(private public fingerprint);
-	} elsif ($type eq 'dhparam') {
+	} elsif ($type eq 'dhparams') {
 		@keys = qw(dhparam-pem);
 	} elsif ($type eq 'random') {
 		my (undef,$key) = split(":",$plan{path});
@@ -1250,8 +1249,17 @@ sub _validate_kit_secret {
 		$msg .= sprintf("%sSubject Name %s%s\n",   _checkbox($results{cn}), $cn_str, $results{cn} ? '' : " (found '$subjectCN')");
 		$msg .= sprintf("%sSubject Alt Names%s\n", _checkbox($results{sans}), $sans_str);
 		$msg .= sprintf("%s%s\n",                  _checkbox($results{usage}), $usage_str);
-	} elsif ($plan->{type} eq 'dhparam') {
-		# TODO: figure out how to validate
+
+	} elsif ($plan->{type} eq 'dhparams') {
+		my $pem  = $values->{'dhparam-pem'};
+		my $pemInfo = run('openssl dhparam -in <(echo "$1") -text -check -noout', $pem);
+		my ($size) = $pemInfo =~ /DH Parameters: \((\d+) bit\)/;
+		my $pem_ok = $pemInfo =~ /DH parameters appear to be ok\./;
+		$results{size} = $size == $plan->{size};
+		$results{valid} = $pem_ok;
+		$msg .= sprintf("%sValid\n",     _checkbox($results{valid}));
+		$msg .= sprintf("%s%s bits%s\n", _checkbox($results{size}), $plan->{size}, $results{size} ? '' : " ( found $size bits)" );
+
 	} elsif ($plan->{type} eq 'ssh') {
 		my ($rendered_public,$priv_rc) = run('ssh-keygen -y -f /dev/stdin <<<"$1"', $values->{private});
 		$results{priv} = !$priv_rc;
@@ -1269,6 +1277,7 @@ sub _validate_kit_secret {
 			$results{size} = ($bits == $plan->{size});
 			$msg .= sprintf("%s%s bits%s\n",        _checkbox($results{size}), $plan->{size}, $results{size} ? '' : " ( found $bits bits)" );
 		}
+
 	} elsif ($plan->{type} eq 'rsa') {
 		my ($priv_modulus,$priv_rc) = run('openssl rsa -noout -modulus -in <(echo "$1")', $values->{private});
 		$results{priv} = !$priv_rc;
@@ -1287,6 +1296,7 @@ sub _validate_kit_secret {
 				$msg .= sprintf("%sPublic/Private key agreement\n",      _checkbox($results{agree}));
 			}
 		}
+
 	} elsif ($plan->{type} eq 'random') {
 		$results{length} = $plan->{size} == length($values->{$key});
 		my $length_str = $results{length} ? '' : " - got ". length($values->{$key});

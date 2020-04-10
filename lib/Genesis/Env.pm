@@ -1078,11 +1078,16 @@ sub _secret_processing_updates_callback {
 	} elsif ($state eq 'start-item') {
 		$self->{__secret_processing_updates_callback__idx}++;
 		my $w = length($self->{__secret_processing_updates_callback__total});
-		waiting_on "  [%*d/%*d] #C{%s} #wi{%s} ... ",
+		my $long_warning='';
+		if ($args{label} eq "Diffie-Hellman key exchange parameters" && $action =~ /^(add|recreate)$/) {
+			$long_warning = ($level eq 'line' ? " - " : "; ")."#Yi{may take a very long time}"
+		}
+		waiting_on "  [%*d/%*d] #C{%s} #wi{%s}%s ... ",
 			$w, $self->{__secret_processing_updates_callback__idx},
 			$w, $self->{__secret_processing_updates_callback__total},
 			$args{path},
-			$args{label} . ($level eq 'line' ? '' : " - $args{details}");
+			$args{label} . ($level eq 'line' ? '' : " - $args{details}"),
+			$long_warning;
 
 	} elsif ($state eq 'empty') {
 		explain "%s - nothing to %s!\n",
