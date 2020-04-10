@@ -127,7 +127,7 @@ sub __prompt_for_block {
 	my ($prompt) = @_;
 	$prompt = "$prompt (Enter <CTRL-D> to end)";
 	(my $line = $prompt) =~ s/./-/g;
-	print "\n$prompt\n$line\n";
+	print csprintf("%s","\n$prompt\n$line\n");
 	my @data = <STDIN>;
 	return join("", @data);
 }
@@ -150,7 +150,7 @@ sub prompt_for_boolean {
 		$val_prompt = $prompt;
 		print "\n";
 	} else {
-		print "\n$prompt\n";
+		print csprintf("%s","\n$prompt\n");
 	}
 	while (1) {
 		my $answer = __prompt_for_line($val_prompt,undef,undef,$default,'allow_blank');
@@ -210,10 +210,10 @@ sub prompt_for_choice {
 
 	my $default_choice;
 	my $num_choices = scalar(@{$choices});
-	print "\n$prompt";
+	print csprintf("%s","\n$prompt");
 	for my $i (0 .. $#$choices) {
 		my $label = (ref($labels) eq 'ARRAY' && $labels->[$i]) ? (ref($labels->[$i]) eq 'ARRAY' ? $labels->[$i][0] : $labels->[$i]) : $choices->[$i];
-		print "\n  ".($i+1).") ".$label;
+		print csprintf("%s","\n  ".($i+1).") ".$label);
 		if ($default && $default eq $choices->[$i]) {
 			print csprintf(" #G{(default)}");
 			$default_choice = $i+1;
@@ -233,7 +233,7 @@ sub prompt_for_choice {
 sub prompt_for_line {
 	my ($prompt,$label,$default,$validation,$err_msg) = @_;
 	if ($prompt) {
-		print "\n$prompt";
+		print csprintf("%s","\n$prompt");
 		my $padding = ($prompt =~ /\s$/) ? "" : " ";
 		print(csprintf("%s", "${padding}#g{(default: $default)}")) if (defined($default) && $default ne '');
 	} elsif (defined($default) && defined($label) && $default ne '') {
