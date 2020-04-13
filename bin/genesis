@@ -40,6 +40,8 @@ $ENV{GENESIS_CALLBACK_BIN} ||= abs_path(__FILE__);
 $ENV{GENESIS_LIB} ||= "$ENV{HOME}/.geese/lib";
 $ENV{HTTPS_PROXY}=$ENV{BOSH_ALL_PROXY} if ($ENV{BOSH_ALL_PROXY});
 
+my ($COMMAND, %COMMAND, %USAGE, %PROPS);
+
 my $END_HOOKS = [];
 sub at_exit {
 	my ($fn) = @_;
@@ -53,6 +55,10 @@ END {
 # check we're in a Genesis v2 directory
 sub in_repo_dir {
 	return  -d ".genesis" && -e ".genesis/config";
+}
+
+sub in_kit_dir {
+	return -f "kit.yml" && Cwd::abs_path('.') =~ /-genesis-kit$/;
 }
 
 # takes a list of tokens, in order, and generates
@@ -401,8 +407,27 @@ sub check_prereqs {
 	# check that we has a bosh (v2)
 	push @errors, check_bosh_version($bosh_min_version);
 
-	push @errors, "This command needs to be run from a Genesis v2 deployment repo, or specify one using -C <dir> option"
-		unless (in_repo_dir || $conditions{no_repo_needed});
+	if (command_scope(\%conditions, ['repo','env'])) {
+		push @errors, csprintf(
+			"The '#B{%s %s}' command needs to be run from a Genesis deployment\n    ".
+			"repo, or specify one using -C <dir> option",humanize_bin(), $COMMAND )
+			unless in_repo_dir;
+	} elsif (command_scope(\%conditions, ['kit'])) {
+		push @errors, csprintf(
+			"The '#B{%s %s}' command needs to be run from a Genesis kit repo,\n    ".
+			"or specify one using -C <dir> option",humanize_bin(), $COMMAND )
+			unless in_kit_dir;
+	} elsif (command_scope(\%conditions, ['kit_or_dev'])) {
+		push @errors, csprintf(
+			"The '#B{%s %s}' command needs to be run from a Genesis kit repo or a\n    ".
+			"deployment repo with a dev kit, or specify one using -C <dir> option",humanize_bin(), $COMMAND )
+			unless in_kit_dir || (in_repo_dir && -d 'dev');
+	} elsif (command_scope(\%conditions, 'empty')) {
+		push @errors, csprintf(
+			"The '#B{%s %s}' command cannot be run from a Genesis deployment\n    ".
+			"or kit repo, or specify one using -C <dir> option",humanize_bin(), $COMMAND )
+			if in_repo_dir || in_kit_dir;
+	}
 
 	debug "Terminal encoding: '%s'", $ENV{LANG} || '<undefined>';
 
@@ -411,6 +436,7 @@ sub check_prereqs {
 		error;
 		error "Encountered the following errors:";
 		error "  - $_" for @errors;
+		error "";
 		exit 2;
 	}
 }
@@ -500,8 +526,6 @@ sub extract_kit_to_dev {
 
 ###########################################################################
 
-my ($COMMAND, %COMMAND, %USAGE);
-
 sub usage {
 	my ($rc, $msg, $cmd) = @_;
 	$cmd = $COMMAND unless $cmd;
@@ -577,36 +601,100 @@ sub options {
 	$ENV{TRACE}          = 'y' if $trace > 2;
 
 	debug("bosh env: ".($options->{environment} || "(defined in environment file)"));
-
 	$ENV{GENESIS_BOSH_ENVIRONMENT} = delete($options->{environment})
 		if $options->{environment};
 
 	if ($options->{cwd}) {
-		my $cwd = abs_path(delete($options->{cwd}));
+		my $requested_cwd = delete($options->{cwd});
+		my $cwd = abs_path($requested_cwd);
+		bail("#R{[ERROR]} Path '%s' specified in -C option does not exist", $requested_cwd,)
+			unless $cwd;
+
 		if ( -f $cwd ) {
+			bail("#R{[ERROR]} #B{%s %s} cannot be called with a -C option pointing to a file", __FILE__, $COMMAND)
+				unless command_scope($options,'env');
 			unshift(@$args, basename($cwd));
 			$cwd = dirname($cwd);
 		}
-		if (-d $cwd) {
-			while (! -d $cwd."/.genesis") {
-				$cwd = dirname($cwd);
-				bail "Cannot find genesis deployment repo base directory under $options->{cwd}"
-				  if $cwd eq "/";
+		chdir_or_fail($cwd);
+	}
+
+	check_prereqs(%$options) unless delete($options->{no_check_prereqs});
+}
+
+# command_scope will return true if the scope specified matches in order of the
+# array order.  If an item in the array for scope is an array ref itself, it is
+# a 2-value array, the first item is an array of options and the second item is
+# an array of scope values.  If the options all match, then the only valid
+# scopes are the list of specified scopes.  Valid option expressions are:
+#   opt_name - matches boolean true
+#  !opt_name - matches boolean false
+#   opt_name=value - true if option 'opt_name' is set to the given value 'value'
+#  !opt_name=value - true if option 'opt_name' is any other value than 'value'
+# if needed, support for regex or value comparisons can be easily added in the
+# future
+#
+# TODO:  Support complex requests such as:
+#   command_scope(['all' => [<list of scopes>]], %opts) : all scopes specified must be applicable
+#     - work-around: command_scope('scope1') && command_scope('scope2') && ...
+#   command_scope(['any' => [<list of scopes>]], %opts) : any scopes specified must be applicable
+#     - default if arrays is specified
+#   command_scope(['none' => [<list of scopes>]], %opts) : no scope specified must be applicable
+#     - work around: (!any)
+#   command_scope(['not' => [<list of scopes>]], %opts) : all of these scopes specified must not be applicable
+#     - work around: (!all)
+#   command_scope(['any_other' => [<list of scopes>]], %opts) : at least one scope OTHER than those specified must be applicable
+#     - no work around at this time
+#   command_scope(['any_but' => [<list of scopes>]], %opts) : at least one scope excluding any specified must be applicable
+#     - other & !any
+#
+sub command_scope {
+	my ($options,$scopes) = @_;
+	my $command_scope = $PROPS{$COMMAND}{scope} or return 0; # no scope required
+	$command_scope = [$command_scope] unless ref($command_scope) eq 'ARRAY';
+	$options ||= {};
+
+	for my $scope (ref($scopes) eq 'ARRAY' ? @$scopes : ($scopes)) {
+		for my $scope_fragment (@$command_scope) {
+			if (ref($scope_fragment) eq 'ARRAY') {
+				bug('Incorrectly defined scope for command $COMMAND') unless scalar(@$scope_fragment) == 2;
+				my ($opt_names, $opt_scopes) = @$scope_fragment;
+				$opt_names = [$opt_names] unless ref($opt_names) eq 'ARRAY';
+				$opt_scopes = [$opt_scopes] unless ref($opt_scopes) eq 'ARRAY';
+				my $match = 1;
+				for my $opt_name (@$opt_names) {
+					(my $negate,$opt_name,my $value) = $opt_name =~ m/^(!)?([^=]*)(?:=(.*))?$/;
+					my $check = defined($value)
+						? defined($options->{$opt_name}) && $options->{$opt_name} eq $value
+						: $options->{$opt_name};
+					$match = $match && ($check xor $negate);
+				}
+				if ($match) {
+					return scalar(grep {$scope eq $_} @$opt_scopes)
+				}
+			} else {
+				return 1 if ($scope eq $scope_fragment);
 			}
-			chdir_or_fail($cwd)
-		} else {
-			bail "Cannot locate directory '$cwd' specified by -C option"
 		}
 	}
+	return;
 }
 
 sub command {
-	my ($name, $usage, $fn) = @_;
+	my $name = shift;
+	my $props = shift if ref($_[0]) eq 'HASH';
+	my ($usage, $fn) = @_;
+
 	if (ref($name) ne 'ARRAY') {
 		$name = [$name];
 	}
+	$props ||= {};
+	my $default_props = {
+		scope => 'any' # valid values: env, repo, empty, any, kit_or_repo
+	};
 	for my $cmd (@$name) {
 		$USAGE{$cmd}   = $usage;
+		$PROPS{$cmd}   = {%$default_props, %$props};
 		$COMMAND{$cmd} = sub {
 			$COMMAND = $cmd;
 			$fn->(@_);
@@ -655,9 +743,9 @@ $GLOBAL_USAGE
 #U{KIT MANAGEMENT COMMANDS:}
   #C{create-kit}        Create a new kit with default scaffolding.
   #C{compile-kit}       Create a distributable kit archive from dev.
-  #C{decompile-kit}     Unpack a kit archive to dev.
+  #G{decompile-kit}     Unpack a kit archive to dev.
   #C{list-kits}         List local or remote Genesis kits.
-  fetch-kit         Download one or more Genesis kits from the Internet.
+  #G{fetch-kit}         Download one or more Genesis kits from the Internet.
 
 Those commands listed in #G{green} operate on a single specified environment.  Those that
 are in #C{cyan} can (or in some cases must) be run outside a Genesis repository.
@@ -670,7 +758,7 @@ sub {
 # }}}
 # genesis man - peruse the kit manual pages {{{
 
-command("man", <<EOF,
+command("man", {scope => ['repo','env']}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis man env-name[.yml]
 
@@ -682,7 +770,6 @@ sub {
 	options(\@_, \%options, qw/
 	/);
 	usage(1) if @_ != 1;
-	check_prereqs;
 
 	my ($name) = @_;
 	my $env = Genesis::Top->new('.')->load_env($name);
@@ -711,7 +798,6 @@ sub {
 	options(\@_, \%options, qw/
 	/);
 	usage(1) if @_;
-	check_prereqs(no_repo_needed => 1);
 	print "PING!\n";
 });
 
@@ -736,7 +822,7 @@ sub {
 # }}}
 # genesis embed - embed Genesis in the repository {{{
 
-command("embed", <<EOF,
+command("embed", {scope => 'repo'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis embed
 
@@ -748,7 +834,6 @@ sub {
 	options(\@_, \%options, qw/
 	/);
 	usage(1) if @_;
-	check_prereqs;
 
 	# FIXME: update .genesis/config with new version info
 	Genesis::Top->new('.')->embed($ENV{GENESIS_CALLBACK_BIN} || $0);
@@ -756,7 +841,7 @@ sub {
 # }}}
 # genesis init - initialize a new Genesis repository {{{
 
-command("init", <<EOF,
+command("init", {scope => 'empty'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis init [-k KIT/VERSION] [-d directory] [name]
 
@@ -792,7 +877,6 @@ sub {
 		link-dev-kit|L=s
 	/);
 	usage(1) if @_ > 1; # name is now optional if kit specified
-	check_prereqs(no_repo_needed => 1);
 
 	my $abs_target;
 	my $kit_desc = "";
@@ -871,7 +955,7 @@ sub {
 # }}}
 # genesis secrets-provider - set, clear or get the secret provider information {{{
 
-command("secrets-provider", <<EOF,
+command("secrets-provider", {scope => 'repo'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis secrets-provider [-i|--interactive|-c|--clear] [target]
 
@@ -898,7 +982,6 @@ sub {
 		clear|c
 	/);
 	usage(1) if @_ > 1; # target is optional
-	check_prereqs();
 
 	delete $options{$_} for grep {$_ !~ /^(interactive|clear)$/} keys %options;
 	$options{target} = shift if scalar(@_);
@@ -938,7 +1021,7 @@ sub {
 # }}}
 # genesis kit-provider - set, clear or get the kit provider information {{{
 
-command("kit-provider", <<EOF,
+command("kit-provider", {scope => 'repo'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis kit-provider [-d|--default] [<provider-options>]
 
@@ -974,7 +1057,6 @@ sub {
 		$options{'kit-provider'} = 'genesis-community';
 	}
 	usage(1) if @_ > 0;
-	check_prereqs();
 
 	my $top = Genesis::Top->new('.');
 	my $err;
@@ -1026,7 +1108,7 @@ sub {
 # }}}
 # genesis new - create a new Genesis deployment environment (YAML file) {{{
 
-command("new", <<EOF,
+command("new", {scope => 'env'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis new env-name[.yml] [<options...>]
 
@@ -1111,7 +1193,6 @@ sub {
 	usage(1) if @_ != 1;
 	warn "The --no-secrets flag is deprecated, and no longer honored.\n"
 		if !delete($options{secrets});
-	check_prereqs;
 
 	# get our context
 	my $top = Genesis::Top->new('.', vault => delete($options{vault})); # FIXME: drop chdir from -C handling eventually
@@ -1161,7 +1242,7 @@ sub {
 # }}}
 # genesis check - generate the manifest and run the check hook {{{
 
-command("check", <<EOF,
+command("check", {scope => 'env'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis check <options> env-name[.yml]
 
@@ -1191,8 +1272,6 @@ sub {
 		stemcells!
 	/);
 	usage(1) if @_ != 1;
-
-	check_prereqs;
 	my $env = Genesis::Top->new('.')->load_env($_[0]);
 
 	if ($options{'no-cloud-config'}) {
@@ -1219,7 +1298,7 @@ sub {
 # }}}
 # genesis deploy - Pull in Cloud Config, Generate a manifest, deploy {{{
 
-command("deploy", <<EOF,
+command("deploy", {scope => 'env'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis deploy <options> env-name[.yml]
 
@@ -1274,7 +1353,6 @@ sub {
 		fail-on-warn
 	/);
 	usage(1) if @_ != 1;
-	check_prereqs;
 	my $env = Genesis::Top->new('.')->load_env($_[0]);
 
 	if (scalar(grep {$_} ($options{fix}, $options{recreate}, $options{'dry-run'})) > 1) {
@@ -1306,7 +1384,7 @@ sub {
 # }}}
 # genesis do - run a kit addon {{{
 
-command("do", <<EOF,
+command("do", {scope => 'env'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis do <options> env-name[.yml] action [args ...]
 
@@ -1318,7 +1396,6 @@ sub {
 	options(\@_, \%options, qw/
 	/);
 	usage(1) if @_ < 2;
-	check_prereqs;
 
 	my ($name, $script, @args) = @_;
 	my $env = Genesis::Top->new('.')->load_env($name);
@@ -1337,7 +1414,7 @@ sub {
 # }}}
 # genesis info - get deployment environment information from  a kit{{{
 
-command("info", <<EOF,
+command("info", {scope => 'env'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis info <options> env-name[.yml]
 
@@ -1349,7 +1426,6 @@ sub {
 	options(\@_, \%options, qw/
 	/);
 	usage(1) if @_ != 1;
-	check_prereqs;
 
 	my ($name) = @_;
 	my $env = Genesis::Top->new('.')->load_env($name);
@@ -1408,7 +1484,7 @@ sub {
 # }}}
 # genesis check-secrets - Check required credentials for an environment. {{{
 
-command("check-secrets", <<EOF,
+command("check-secrets", {scope => 'env'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis check-secrets deployment-env.yml
 
@@ -1442,17 +1518,13 @@ sub {
 		filter|F=s
 		fail-on-warn
 	/);
-
-	my ($name) = @_;
 	usage(1) if @_ != 1;
+	Genesis::Top->new(".")->load_env(shift)->check_secrets(%options) or exit 1;
 
-	check_prereqs;
-	my $env = Genesis::Top->new(".")->load_env($name);
-	$env->check_secrets(%options) or exit 1;
 }); # }}}
 # genesis add-secrets - Generate missing credentials for an environment. {{{
 
-command("add-secrets", <<EOF,
+command("add-secrets", {scope => 'env'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis add-secrets [--vault target] deployment-env.yml
 
@@ -1483,18 +1555,14 @@ sub {
 		verbose|v
 		vault=s
 	/);
-
-	my ($name) = @_;
 	usage(1) if @_ != 1;
+	Genesis::Top->new(".", vault => $options{vault})->load_env(shift)->add_secrets(%options);
 
-	check_prereqs;
-	my $env = Genesis::Top->new(".", vault => $options{vault})->load_env($name);
-	$env->add_secrets(%options);
 });
 
 # }}}
 # genesis rotate-secrets - Rotate required credentials for an environment. {{{
-command("rotate-secrets", <<EOF,
+command("rotate-secrets", {scope => 'env'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis rotate-secrets [opts] deployment-env.yml
 
@@ -1541,20 +1609,17 @@ sub {
 		vault=s
 	/);
 
-	my ($name) = @_;
 	usage(1) if @_ != 1;
-
-	check_prereqs;
-	my $env = Genesis::Top->new(".", vault => $options{vault})->load_env($name);
-
 	bail "--force option no longer valid. See `genesis rotate-secrets -h` for more details"
 		if (delete($options{force}));
-	$env->rotate_secrets(%options);
+
+	Genesis::Top->new(".", vault => $options{vault})->load_env(shift)->rotate_secrets(%options);
+
 });
 
 # }}}
 # genesis remove-secrets - Remove credentials from an environment. {{{
-command("remove-secrets", <<EOF,
+command("remove-secrets", {scope => 'env'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis rotate-secrets [opts] deployment-env.yml
 
@@ -1595,21 +1660,16 @@ sub {
 		vault=s
 	/);
 
-	my ($name) = @_;
 	usage(1) if @_ != 1;
-
-	check_prereqs;
-	my $env = Genesis::Top->new(".", vault => $options{vault})->load_env($name);
-
 	bail "Cannot use --filter or --failed at the same time as the --all option."
 		if (exists($options{filter}) || $options{failed}) && $options{all};
 
-	$env->remove_secrets(%options) or exit 1;
+	Genesis::Top->new(".", vault => $options{vault})->load_env(shift)->remove_secrets(%options) or exit 1;
 });
 
 # }}}
 # genesis yamls - Print a list of the YAML files used for a single environment. {{{
-command("yamls", <<EOF,
+command("yamls", {scope => 'env'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis yamls [-k|--include-kit] deployment-env.yml
 
@@ -1650,7 +1710,7 @@ sub {
 # }}}
 # genesis create-kit - Create the structure for a new kit {{{
 
-command("create-kit", <<EOF,
+command("create-kit", {scope => [{'dev' => 'repo'}, 'empty']}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis create-kit -d|--dev -n NAME [FEATURE ...]
 
@@ -1666,7 +1726,6 @@ sub {
 		dev|d
 	/);
 	usage(2) unless $options{name};
-	check_prereqs(no_repo_needed => ! $options{dev}); # only require repo if in dev mode
 
 	my $dir = abs_path($options{dev} ? "dev" : "$options{name}-genesis-kit");
 	Genesis::Kit::Compiler->new($dir)->scaffold($options{name});
@@ -1677,7 +1736,7 @@ sub {
 # }}}
 # genesis compile-kit - Create a distributable kit archive from dev/. {{{
 
-command("compile-kit", <<EOF,
+command("compile-kit", {scope => [[['processed','dev'] => 'repo'],[['processed','name'] => 'kit'], ['processed' => 'kit_or_dev'], 'undef']}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis compile-kit -v VERSION [-n NAME] [-d|--dev]
 
@@ -1701,7 +1760,7 @@ $GLOBAL_USAGE
                 happens.
 EOF
 sub {
-	my %options;
+	my %options = (no_check_prereqs => 1);
 	options(\@_, \%options, qw/
 		dev|d
 		name|n=s
@@ -1727,9 +1786,9 @@ sub {
 				if $options{dev};
 		}
 	}
+	check_prereqs(processed => 1, %options);
 	usage(1, "Missing name option, cannot determine from `pwd`") unless $options{name};
-	usage(1) unless $options{version};
-	check_prereqs(no_repo_needed => 1);
+	usage(1, 'Missing version option: -v <major>.<minor>.<patch>') unless $options{version};
 
 	unless ($dir) {
 		if ($options{dev}) {
@@ -1752,7 +1811,7 @@ sub {
 # }}}
 # genesis decompile-kit - Unpack a kit archive to dev/. {{{
 
-command("decompile-kit", <<EOF,
+command("decompile-kit", {scope => 'repo'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis decompile-kit [NAME/VERSION | path/to/kit.tar.gz]
 
@@ -1785,7 +1844,7 @@ sub {
 
 # }}}
 # genesis list-kits - list kit versions available locally or remotely {{{
-command("list-kits", <<EOF,
+command("list-kits", {scope => [['remote' => 'any'], 'repo']}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis list-kits [-r|--remote|--updates|-u] [<options>] [--filter <re pattern>|<name>]
 
@@ -1822,7 +1881,6 @@ sub {
 		if ($name && $options{filter});
 	usage(1,"#R{[ERROR]} Cannot specify both --remote|-r and --updates|-u.")
 		if $options{remote} && $options{updates};
-	check_prereqs(no_repo_needed => $options{remote});
 
 	my $top = Genesis::Top->new('.');
 
@@ -1908,7 +1966,7 @@ sub {
 # }}}
 # genesis manifest - Compile a deployment manifest. {{{
 
-command("manifest", <<EOF,
+command("manifest", {scope => 'env'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis manifest [--no-redact] [--cloud-config path.yml] deployment-env.yml
 
@@ -1957,7 +2015,7 @@ sub {
 # }}}
 # genesis repipe - Deploy a Concourse CI/CD deployment pipeline. {{{
 
-command(["repipe", "push"], <<EOF,
+command(["repipe", "push"], {scope => 'repo'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE genesis repipe [pipeline-layout]
 
@@ -2029,7 +2087,7 @@ sub {
 # }}}
 # genesis graph - Draw a Concourse CI/CD deployment pipeline. {{{
 
-command("graph", <<EOF,
+command("graph", {scope => 'repo'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE genesis graph [pipeline-layout] | dot -Tpng > pipe.png
 
@@ -2063,7 +2121,7 @@ sub {
 # }}}
 # genesis describe - Describe a Concourse CI/CD deployment pipeline. {{{
 
-command("describe", <<EOF,
+command("describe", {scope => 'repo'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE genesis describe [pipeline-layout]
 
@@ -2091,7 +2149,7 @@ sub {
 # }}}
 # genesis lookup - Find a key set in environment manifests. {{{
 
-command("lookup", <<EOF,
+command("lookup", {scope => ['env', ['exodus-for' => 'repo']]}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE genesis lookup [--merged|--deployed|--exodus|--exodus-for env/type] env-name key [default-value|--defined]
 
@@ -2173,7 +2231,7 @@ sub {
 # }}}
 # genesis fetch-kit - Download a Genesis Kit from the Internet. {{{
 
-command("fetch-kit", <<EOF,
+command("fetch-kit", {scope => 'repo'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE genesis fetch-kit [NAME]|[[NAME/VERSION]|[VERSION] ...
 
@@ -2238,7 +2296,7 @@ sub {
 	# Test the kit
 });
 
-command("download", <<EOF,
+command("download", {scope => 'repo'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE genesis download [NAME]|[[NAME/VERSION]|[VERSION] ...
 
@@ -2254,7 +2312,7 @@ sub {
 });
 # }}}
 # genesis ci-pipeline-deploy - Deploy via the CI/CD Pipeline {{{
-command("ci-pipeline-deploy", <<EOF,
+command("ci-pipeline-deploy", {scope => 'pipeline'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE genesis ci-pipeline-deploy
 
@@ -2268,7 +2326,6 @@ sub {
 	options(\@_, \%options, qw/
 	/);
 	usage(1) if @_;
-	check_prereqs(no_repo_needed => 1);
 
 	# environment variables we should have
 	#   CURRENT_ENV                - Name of the current environment
@@ -2373,7 +2430,7 @@ sub __bail_on_missing_pipeline_environment_variables {
 }
 # }}}
 # genesis ci-generate-cache - Generate cache for an environment via the CI/CD Pipeline {{{
-command("ci-generate-cache", <<EOF,
+command("ci-generate-cache", {scope => 'pipeline'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE genesis ci-generate-cache
 
@@ -2387,7 +2444,6 @@ sub {
 	options(\@_, \%options, qw/
 	/);
 	usage(1) if @_;
-	check_prereqs(no_repo_needed => 1);
 
 	# environment variables we should have
 	#   CURRENT_ENV - Name of the current environment
@@ -2419,7 +2475,7 @@ sub {
 # }}}
 # genesis ci-pipeline-run-errand - Run arbitrary errands via the CI/CD Pipeline {{{
 
-command("ci-pipeline-run-errand", <<EOF,
+command("ci-pipeline-run-errand", {scope => 'pipeline'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE genesis ci-pipeline-run-errand
 
@@ -2433,7 +2489,6 @@ sub {
 	options(\@_, \%options, qw/
 	/);
 	usage(1) if @_;
-	check_prereqs(no_repo_needed => 1);
 
 	# environment variables we should have
 	#   CURRENT_ENV - Name of the current environment
@@ -2569,7 +2624,6 @@ sub {
 		echo
 	));
 	usage(1) if @_ < 2; # prompt is optional, type and path are not
-	check_prereqs(no_repo_needed => 1);
 	my ($type,$path,@prompt_lines) = @_;
 	my $prompt = join("\n",@prompt_lines);
 	my $use_vault = ($type =~ /^secret-*/);

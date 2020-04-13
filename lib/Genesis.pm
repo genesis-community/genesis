@@ -55,6 +55,7 @@ our @EXPORT = qw/
 	symlink_or_fail
 	copy_or_fail
 	humanize_path
+	humanize_bin
 
 	load_json
 	load_yaml load_yaml_file
@@ -662,6 +663,13 @@ sub humanize_path {
 	while ($new_path =~ s/\/[^\/]*\/\.\.\//\//) {};
 	$new_path =~ s/^\.\/\.\.\//..\//;
 	($rel_path && length($rel_path) < length($new_path)) ? $rel_path : $new_path;
+}
+
+sub humanize_bin {
+	my $bin = basename($ENV{GENESIS_CALLBACK_BIN});
+	chomp(my $path_bin = `which $bin`);
+	return $bin	if ($path_bin eq $ENV{GENESIS_CALLBACK_BIN});
+	return humanize_path($bin);
 }
 
 sub load_json {
