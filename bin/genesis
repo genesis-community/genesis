@@ -1649,10 +1649,12 @@ sub {
 # genesis remove-secrets - Remove credentials from an environment. {{{
 command("remove-secrets", {scope => 'env'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE: genesis rotate-secrets [opts] deployment-env.yml
+USAGE: genesis remove-secrets [opts] deployment-env.yml
 
-Generates fresh secrets for your deployment. If any secrets are marked by the
-kit as `fixed', they are not updated.
+Removes the generated secrets for the specified environment. If the --all
+option is specified, it will remove all screts under the environment's secrets
+base path, including any manually put there (such as by the 'genesis new'
+command)
 
 OPTIONS
 $GLOBAL_USAGE
