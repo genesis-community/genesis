@@ -2730,17 +2730,12 @@ sub main {
 		$in_version = 2;
 	} else {
 		while ($path ne "") {
-			if (-d "$path/global" && -e "$path/global/deployment.yml") {
-				$in_version = 1;
-				last;
-			}
+			bail("This repository is a Genesis v1 repository.  Compatibility with v1 repos has\nbeen discontinued as of v2.7.0")
+				if (-d "$path/global" && -e "$path/global/deployment.yml");
 			$path =~ s/\/[^\/]*$//;
 		}
 	}
 
-	if ($in_version == 1) {
-		bail("This repository is a Genesis v1 repository.  Compatibility with v1 repos has\nbeen discontinued as of v2.7.0");
-	}
 	my ($cmd, @args);
 	my $no_warn = 1;
 	while (@_ > 0) {
