@@ -734,6 +734,7 @@ $GLOBAL_USAGE
   #G{info}              Prints out kit-specific information for a given environment.
   #G{lookup}            Find a key set in environment manifests.
   #G{yamls}             Print a list of the YAML files used for a single environment.
+  #G{man}               Print the manual for the specified environment or kit name/version.
 
 #U{PIPELINE MANAGEMENT COMMANDS:}
   repipe            Configure a Concourse pipeline for automating deployments.
@@ -760,7 +761,14 @@ sub {
 
 command("man", {scope => ['repo','env']}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE: genesis man env-name[.yml]
+USAGE: genesis man (env-name|kit-name|kit-version|kit-name/version)
+
+Produces the manual for the kit specified.  If an environment is specified, it
+will be for the version of the kit used by that environment.  Otherwise, it
+will be for the name and/or version of the kit specified.  If no name is
+specified, it will be for the de-facto kit for this repo, or error if there
+isn't one.  If no version is specified, it will be for the latest version found
+locally.
 
 OPTIONS
 $GLOBAL_USAGE
@@ -769,17 +777,37 @@ sub {
 	my %options;
 	options(\@_, \%options, qw/
 	/);
-	usage(1) if @_ != 1;
 
 	my ($name) = @_;
-	my $env = Genesis::Top->new('.')->load_env($name);
+	my $top = Genesis::Top->new('.');
+	my @possible_kits = keys %{$top->local_kits};
 
-	my $man = $env->kit->path('MANUAL.md');
+	bail "No local kits found; you must specify the name of the kit to fetch"
+		unless scalar(@possible_kits);
+
+	my $kit;
+	if ($name && $top->has_env($name)) {
+		$kit = $top->load_env($name)->kit;
+	} else {
+		my ($kit_name,$version) = ($name||'') =~ m/^([^\/]*)(?:\/(.*))?$/;
+		if (!$version && semver($name)) {
+			bail "More than one local kit found; please specify the kit to get the manual for"
+				if scalar(@possible_kits) > 1;
+			$version = $name;
+			$version =~ s/^v//;
+			$name = $possible_kits[0];
+		}
+		$kit = $top->local_kit_version($name, $version);
+	}
+
+	error "Displaying manual for kit #C{%s}...", $kit->id;
+
+	my $man = $kit->path('MANUAL.md');
 	if (-f $man) {
 		run({ interactive => 1 }, 'less "$1"', $man);
 		exit 0;
 	}
-	explain("#Y{%s} has no MANUAL.md", $env->kit->id);
+	explain("#Y{%s} has no MANUAL.md", $kit->id);
 	exit 1;
 });
 
