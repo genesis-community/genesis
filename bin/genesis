@@ -40,7 +40,7 @@ $ENV{GENESIS_CALLBACK_BIN} ||= abs_path(__FILE__);
 $ENV{GENESIS_LIB} ||= "$ENV{HOME}/.geese/lib";
 $ENV{HTTPS_PROXY}=$ENV{BOSH_ALL_PROXY} if ($ENV{BOSH_ALL_PROXY});
 
-my ($COMMAND, %COMMAND, %USAGE, %PROPS);
+my ($COMMAND, %RUN, %USAGE, %PROPS);
 
 my $END_HOOKS = [];
 sub at_exit {
@@ -680,6 +680,15 @@ sub command_scope {
 	return;
 }
 
+sub get_command {
+	my $name = shift;
+	return $name if exists $RUN{$name};
+	for my $cmd (keys %PROPS) {
+		return $cmd if defined($PROPS{$cmd}{alias}) && $PROPS{$cmd}{alias} eq $name;
+	}
+	usage(2,"#R{[ERROR]} Unrecognized command '$name'", "help");
+}
+
 sub command {
 	my $name = shift;
 	my $props = shift if ref($_[0]) eq 'HASH';
@@ -695,7 +704,7 @@ sub command {
 	for my $cmd (@$name) {
 		$USAGE{$cmd}   = $usage;
 		$PROPS{$cmd}   = {%$default_props, %$props};
-		$COMMAND{$cmd} = sub {
+		$RUN{$cmd} = sub {
 			$COMMAND = $cmd;
 			$fn->(@_);
 		};
@@ -759,7 +768,7 @@ sub {
 # }}}
 # genesis man - peruse the kit manual pages {{{
 
-command("man", {scope => ['repo','env']}, <<EOF,
+command("kit-manual", {alias => 'man', scope => ['repo','env']}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis man (env-name|kit-name|kit-version|kit-name/version)
 
@@ -983,7 +992,7 @@ sub {
 # }}}
 # genesis secrets-provider - set, clear or get the secret provider information {{{
 
-command("secrets-provider", {scope => 'repo'}, <<EOF,
+command("secrets-provider", {alias => 'sp', scope => 'repo'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis secrets-provider [-i|--interactive|-c|--clear] [target]
 
@@ -1049,7 +1058,7 @@ sub {
 # }}}
 # genesis kit-provider - set, clear or get the kit provider information {{{
 
-command("kit-provider", {scope => 'repo'}, <<EOF,
+command("kit-provider", {alias => 'kp', scope => 'repo'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis kit-provider [-d|--default] [<provider-options>]
 
@@ -1391,7 +1400,7 @@ sub {
 		$ENV{BOSH_NON_INTERACTIVE} = 'true';
 		delete $options{yes};
 	}
-	
+
 	explain "Preparing to deploy #C{%s}:\n  - based on kit #c{%s}", $env->name, $env->kit->id;
 	if ($env->needs_bosh_create_env) {
 		explain "  - as a #M{create-env} deployment\n";
@@ -1442,7 +1451,7 @@ sub {
 # }}}
 # genesis info - get deployment environment information from  a kit{{{
 
-command("info", {scope => 'env'}, <<EOF,
+command("info", {alias => 'i', scope => 'env'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis info <options> env-name[.yml]
 
@@ -1512,7 +1521,7 @@ sub {
 # }}}
 # genesis check-secrets - Check required credentials for an environment. {{{
 
-command("check-secrets", {scope => 'env'}, <<EOF,
+command("check-secrets", {alias => 'cs', scope => 'env'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis check-secrets deployment-env.yml
 
@@ -1552,7 +1561,7 @@ sub {
 }); # }}}
 # genesis add-secrets - Generate missing credentials for an environment. {{{
 
-command("add-secrets", {scope => 'env'}, <<EOF,
+command("add-secrets", {alias => 'as', scope => 'env'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis add-secrets [--vault target] deployment-env.yml
 
@@ -1590,7 +1599,7 @@ sub {
 
 # }}}
 # genesis rotate-secrets - Rotate required credentials for an environment. {{{
-command("rotate-secrets", {scope => 'env'}, <<EOF,
+command("rotate-secrets", {alias => 'rot', scope => 'env'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis rotate-secrets [opts] deployment-env.yml
 
@@ -1647,7 +1656,7 @@ sub {
 
 # }}}
 # genesis remove-secrets - Remove credentials from an environment. {{{
-command("remove-secrets", {scope => 'env'}, <<EOF,
+command("remove-secrets", {alias => 'rms', scope => 'env'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis remove-secrets [opts] deployment-env.yml
 
@@ -1699,7 +1708,7 @@ sub {
 
 # }}}
 # genesis yamls - Print a list of the YAML files used for a single environment. {{{
-command("yamls", {scope => 'env'}, <<EOF,
+command("yamls", {alias => 'yml', scope => 'env'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis yamls [-k|--include-kit] deployment-env.yml
 
@@ -2338,7 +2347,7 @@ EOF
 sub {
 	usage(0) if grep {$_ =~ /-h|--help/} @_;
 	deprecated replacement => "fetch-kit";
-	return $COMMAND{"fetch-kit"}(@_);
+	return $RUN{"fetch-kit"}(@_);
 });
 # }}}
 # genesis ci-pipeline-deploy - Deploy via the CI/CD Pipeline {{{
@@ -2756,23 +2765,15 @@ sub main {
 	if ($cmd) {
 		trace("running command '$cmd'");
 		trace("arguments are [".join(', ', @args)."]");
-		if (exists $COMMAND{$cmd}) {
-			$COMMAND{$cmd}(@args);
-			exit 0;
-		}
-		error "unrecognized command '$cmd'";
-		usage(2, "", "help");
-	}
-	if (@args and $args[0] =~ m/^(-h|--help)$/) {
-		$COMMAND{help}();
+		$RUN{get_command($cmd)}(@args);
 		exit 0;
 	}
 	if (@args and scalar(@args) == 1 && $args[0] =~ m/^(-v|--version)$/) {
-		$COMMAND{version}();
+		$RUN{version}();
 		exit 0;
 	}
-	$COMMAND{help}();
-	exit 2;
+	$RUN{help}();
+	exit((@args and $args[0] =~ m/^(-h|--help)$/) ? 0 : 2);
 }
 
 main(@ARGV);
