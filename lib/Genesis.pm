@@ -471,7 +471,7 @@ sub run {
 		$out =~ s/\s+$//;
 		close $pipe;
 	}
-	trace("command duratiton: %s", Time::Seconds->new(sprintf ("%0.3f", gettimeofday() - $start_time))->pretty());
+	trace("command duration: %s", Time::Seconds->new(sprintf ("%0.3f", gettimeofday() - $start_time))->pretty());
 
 	my $err = slurp($err_file) if ($err_file && -f $err_file);
 	my $rc = $? >>8;
