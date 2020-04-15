@@ -58,7 +58,7 @@ subtest 'secrets-v2.7.0' => sub {
 	# Feature: Specify CA signer
 	# Feature: Specify certificate key usage
 	my $v = "$secrets_mount$secrets_path";
-	($pass, $rc, $out) = runs_ok("genesis check-secrets $env_name", "genesis check-secrets runs without error");
+	($pass, $rc, $out) = runs_ok("genesis check-secrets $env_name -lm", "genesis check-secrets runs without error");
 	$out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds/$1 XXX seconds/g;
 	matches_utf8 $out, <<EOF, "genesis new correctly created secrets of the correct type and location";
 Parsing kit secrets descriptions ... done. - XXX seconds
@@ -88,7 +88,7 @@ Completed - Duration: XXX seconds [18 found/0 skipped/0 errors]
 EOF
 
 	# Feature: Validate secrets, including signer and key usage
-	($pass, $rc, $out) = runs_ok("genesis check-secrets $env_name --validate", "genesis check-secrets --validate runs without error (default secrets stuff)");
+	($pass, $rc, $out) = runs_ok("genesis check-secrets $env_name --level invalid", "genesis check-secrets --level invalid runs without error (default secrets stuff)");
 	$out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds/$1 XXX seconds/g;
 	$out =~ s/expires in (\d+) days \(([^\)]+)\)/expires in $1 days (<timestamp>)/g;
 	$out =~ s/ca\.n\d{9}\./ca.n<random>./g;
@@ -235,7 +235,7 @@ EOF
   my ($secrets_old, $err) = $env->vault->all_secrets_for($env);
   my @secret_paths = map {my $p = $_ ; map {[$p, $_]} keys %{$secrets_old->{$_}}} keys %$secrets_old;
 
-	($pass,$rc,$out) = runs_ok "genesis rotate-secrets $env_name -y --filter '/(/ca\$|passwords:)/'", "can rotate certs according to filter";
+	($pass,$rc,$out) = runs_ok "genesis rotate-secrets $env_name -y '/(/ca\$|passwords:)/'", "can rotate certs according to filter";
 	$out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds/$1 XXX seconds/g;
 	matches_utf8 $out,<<'EOF', "genesis rotate-secrets reports rotated filtered secrets, but not fixed ones";
 Parsing kit secrets descriptions ... done. - XXX seconds
@@ -285,7 +285,7 @@ EOF
 	);
 	cmp_deeply(\@different, bag(@expected), "Only the expected secrets changed (including top-level/top crl and serial)");
 
-	($pass,$rc,$out) = run_fails "genesis check-secrets $env_name --validate", "rotation does not rotate certs signed by changed cas";
+	($pass,$rc,$out) = run_fails "genesis check-secrets $env_name", "rotation does not rotate certs signed by changed cas";
 	$out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds/$1 XXX seconds/g;
 	$out =~ s/expires in (\d+) days \(([^\)]+)\)/expires in $1 days (<timestamp>)/g;
 	$out =~ s/ca\.n\d{9}\./ca.n<random>./g;
@@ -432,7 +432,7 @@ EOF
 
 	$cmd = Expect->new();
 	$cmd->log_stdout(0);
-	$cmd->spawn("genesis rotate-secrets  $env_name --failed ");
+	$cmd->spawn("genesis rotate-secrets $env_name --invalid ");
 	(undef, my $error, undef, $out) = $cmd->expect(300,"Type 'yes' to recreate these secrets >");
 
   is($error, undef, "No error or timeout encountered waiting to be asked to recreate secrets");
@@ -511,7 +511,7 @@ EOF
     $out = combined_from {
       $cmd = Expect->new();
       $cmd->log_stdout(1);
-      $cmd->spawn("GENESIS_NO_UTF8=1 genesis check-secrets $env_name --validate");
+      $cmd->spawn("GENESIS_NO_UTF8=1 genesis check-secrets $env_name -li");
       expect_ok $cmd, "[16 validated/0 skipped/2 errors]";
       expect_exit $cmd, 1, "genesis check-secrets after rotate failed - expect fixed secrets still errored";
     };
@@ -520,7 +520,7 @@ EOF
     $out =~ s/\r/<cr>\n/g;
     $out =~ s/'[12]{64}'/'<[12]{64}>'/g;
     $out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds/$1 XXX seconds/g;
-    matches_utf8 $out,<<EOF, "genesis rotate-secrets reports rotated filtered secrets, but not fixed ones";
+    matches_utf8 $out,<<EOF, "genesis rotate-secrets reports rotated secrets repaired, but not the 'fixed' ones";
 Parsing kit secrets descriptions ... <cr>
 <clear-line>Retrieving all existing secrets ... <cr>
 <clear-line>
@@ -581,7 +581,7 @@ EOF
   # Feature: Remove secrets
   # Feature: Remove secrets - can remove fixed secrets
   # Feature: Remove secrets - can remove failed secrets
-  ($pass,$rc,$out) = runs_ok "GENESIS_NO_UTF8=1 genesis remove-secrets $env_name -y -X", "Remove all failed secrets";
+  ($pass,$rc,$out) = runs_ok "GENESIS_NO_UTF8=1 genesis remove-secrets $env_name -y -I", "Remove all failed secrets";
   $out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds/$1 XXX seconds/g;
   $out =~ s/'[12]{64}'/'<[12]{64}>'/g;
   eq_or_diff $out, <<EOF, "genesis add-secrets reports existing secrets";
@@ -625,7 +625,7 @@ EOF
   # Feature: Remove secrets - can remove based on filter (interactive mode)
 	$cmd = Expect->new();
 	$cmd->log_stdout(0);
-	$cmd->spawn("genesis remove-secrets  $env_name -F /t/");
+	$cmd->spawn("genesis remove-secrets $env_name /t/");
 	(undef, $error, undef, $out) = $cmd->expect(300,"Type 'yes' to remove these secrets >");
 
   is($error, undef, "No error or timeout encountered waiting to be asked to recreate secrets");
@@ -676,7 +676,7 @@ Removing 9 secrets for $env_name under path '$secrets_mount$secrets_path/':
 <clear-line>Completed - Duration: XXX seconds [9 removed/0 skipped/0 errors]
 
 EOF
-    ($pass, $rc, $out) = run_fails("genesis check-secrets $env_name", "genesis check-secrets confirms removed secrets");
+    ($pass, $rc, $out) = run_fails("genesis check-secrets $env_name -l missing", "genesis check-secrets -l missing confirms removed secrets");
     $out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds/$1 XXX seconds/g;
     matches_utf8 $out, <<EOF, "genesis remove-secrets removed the desired secrets";
 Parsing kit secrets descriptions ... done. - XXX seconds
@@ -744,7 +744,7 @@ EOF
 
   $cmd = Expect->new();
   $cmd->log_stdout(0);
-  $cmd->spawn("genesis rotate-secrets $env_name --renew -v -F '/(/ca\$|passwords:)/'");
+  $cmd->spawn("genesis rotate-secrets $env_name --renew -v '/(/ca\$|passwords:)/'");
   (undef, $error, undef, $out) = $cmd->expect(300,"Type 'yes' to renew these secrets >");
 
   is($error, undef, "No error or timeout encountered waiting to be asked to renew secrets");
@@ -818,9 +818,9 @@ EOF
     $out = combined_from {
       $cmd = Expect->new();
       $cmd->log_stdout(1);
-      $cmd->spawn("genesis check-secrets $env_name --validate");
+      $cmd->spawn("genesis check-secrets $env_name --level i");
       expect_ok $cmd, "[18 validated/0 skipped/0 errors]";
-      expect_exit $cmd, 0, "genesis check-secrets --validate without verbosity";
+      expect_exit $cmd, 0, "genesis check-secrets --level i without verbosity";
     };
     $out =~ s/\e\[2K/<clear-line>/g;
     $out =~ s/\r\n/\n/g;
@@ -877,7 +877,7 @@ EOF
 	ok !defined($properties->{genesis}{secrets_mount}), "environment doesn't specify default secrets mount";
 	ok !defined($properties->{genesis}{secrets_path}),  "environment doesn't specify default secrets path";
 
-	($pass, $rc, $out) = runs_ok("genesis check-secrets $env_name", "genesis check-secrets runs without error");
+	($pass, $rc, $out) = runs_ok("genesis check-secrets -lm $env_name", "genesis check-secrets runs without error");
   $out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds/$1 XXX seconds/g;
 	matches_utf8 $out, <<EOF, "genesis new correctly created secrets of the correct type and location";
 Parsing kit secrets descriptions ... done. - XXX seconds
@@ -910,7 +910,7 @@ EOF
 	($secrets_old, $err) = $env->vault->all_secrets_for($env);
 	@secret_paths = map {my $p = $_ ; map {[$p, $_]} keys %{$secrets_old->{$_}}} keys %$secrets_old;
 
-	($pass,$rc,$out) = runs_ok "genesis rotate-secrets $env_name -y --filter '/(/server|-default)\$/'", "can rotate certs according to filter";
+	($pass,$rc,$out) = runs_ok "genesis rotate-secrets $env_name -y '/(/server|-default)\$/'", "can rotate certs according to filter";
   $out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds/$1 XXX seconds/g;
 	matches_utf8 $out,<<EOF, "genesis rotate-secrets reports rotated filtered secrets, but not fixed ones";
 Parsing kit secrets descriptions ... done. - XXX seconds
@@ -960,7 +960,7 @@ EOF
 	$out = combined_from {
 		$cmd = Expect->new();
 		$cmd->log_stdout(1);
-		$cmd->spawn("genesis check-secrets $env_name --validate");
+		$cmd->spawn("genesis check-secrets $env_name -lp");
 		expect_ok $cmd, "[18 validated/0 skipped/0 errors]";
 		expect_exit $cmd, 0, "genesis check-secrets after rotate-secrets with filter";
 	};
@@ -1014,7 +1014,7 @@ EOF
 	$out = combined_from {
 		$cmd = Expect->new();
 		$cmd->log_stdout(1);
-		$cmd->spawn("genesis check-secrets $env_name --validate");
+		$cmd->spawn("genesis check-secrets $env_name --level problematic");
 		expect_exit $cmd, [1,0], "genesis creates a new environment and auto-generates certificates - default secrets stuff";
 	};
 	#diag @{[grep {$_ =~ 'Duration'} split($/,$out)]}[0];
@@ -1199,7 +1199,7 @@ subtest 'secrets-base' => sub {
 	}
 
 	# Test that nothing is missing
-	my ($pass,$rc,$msg) = runs_ok "genesis check-secrets us-east-sandbox --verbose";
+	my ($pass,$rc,$msg) = runs_ok "genesis check-secrets -vlm us-east-sandbox";
 	unlike $msg, qr/\.\.\. missing/, "No secrets should be missing";
 	unlike $msg, qr/\.\.\. error/, "No secrets should be errored";
 	matches $msg, qr/\.\.\. found/, "Found secrets should be reported";
@@ -1210,7 +1210,7 @@ subtest 'secrets-base' => sub {
 	  runs_ok "safe delete -f $v/$_", "removed $v/$_  for testing";
 	  no_secret "$v/$_", "$v/$_ should not exist";
 	}
-	($pass,$rc,$msg) = run_fails "genesis check-secrets us-east-sandbox", 1;
+	($pass,$rc,$msg) = run_fails "genesis check-secrets -vlm us-east-sandbox", 1;
   $msg =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds/$1 XXX seconds/g;
 	eq_or_diff $msg, <<EOF, "Only deleted secrets are missing";
 Parsing kit secrets descriptions ... done. - XXX seconds
@@ -1324,7 +1324,7 @@ EOF
 	$v = "secret/west/us/sandbox/certificates";
 	runs_ok "safe delete -Rf $v", "clean up certs for rotation testing";
 	no_secret "$v/auto-generated-certs-a/ca:certificate";
-	($pass,$rc,$msg) = run_fails "genesis check-secrets west-us-sandbox", 1;
+	($pass,$rc,$msg) = run_fails "genesis check-secrets -lm west-us-sandbox", 1;
 	$msg =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds/$1 XXX seconds/g;
 	eq_or_diff $msg, <<'EOF', "Removed certs should be missing";
 Parsing kit secrets descriptions ... done. - XXX seconds

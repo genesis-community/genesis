@@ -950,11 +950,6 @@ sub dereferenced_kit_metadata {
 	return $self->kit->dereferenced_metadata(sub {$self->lookup_noeval(@_)}, 1);
 }
 
-
-# add_secrets - add the required secrets {{{
-# Valid options:
-#   --verbose: boolean, default is 0
-#   --filter: (regex) matching pattern, defaults to /.*/
 sub add_secrets {
 	my ($self, %opts) = @_;
 
@@ -976,7 +971,7 @@ sub add_secrets {
 			'add',
 			$self,
 			sub{$self->_secret_processing_updates_callback('add',$processing_opts,@_)},
-			get_opts(\%opts, qw/filter/)
+			get_opts(\%opts, qw/paths/)
 		);
 		return $ok;
 	}
@@ -1005,7 +1000,7 @@ sub check_secrets {
 			$action,
 			$self,
 			sub{$self->_secret_processing_updates_callback($action,$processing_opts,@_)},
-			get_opts(\%opts, qw/filter fail_on_warn/)
+			get_opts(\%opts, qw/paths validate/)
 		);
 		return $ok;
 	}
@@ -1031,10 +1026,10 @@ sub rotate_secrets {
 			level=>$opts{verbose}?'full':'line'
 		};
 		my $ok = $store->process_kit_secret_plans(
-			$action.($opts{failed} ? '-failed' : ''),
+			$action,
 			$self,
 			sub{$self->_secret_processing_updates_callback($action,$processing_opts,@_)},
-			get_opts(\%opts, qw/filter no_prompt fail_on_warn/)
+			get_opts(\%opts, qw/paths no_prompt interactive invalid/)
 		);
 		return $ok;
 	}
@@ -1052,7 +1047,7 @@ sub remove_secrets {
 	# Determine secret_store from kit - assume vault for now (credhub ignored)
 	my $store = $self->vault->connect_and_validate;
 	my @generated_paths;
-	if ($opts{all}) { # ignores --failed or --filter (which should have been trapped at the cli parser
+	if ($opts{all}) {
 		my @paths = $self->vault->paths($self->secrets_base);
 		return 2 unless scalar(@paths);
 
@@ -1094,10 +1089,10 @@ sub remove_secrets {
 			level=>$opts{verbose}?'full':'line'
 		};
 		my $ok = $store->process_kit_secret_plans(
-			'remove'.($opts{failed} ? '-failed' : ''),
+			'remove',
 			$self,
 			sub{$self->_secret_processing_updates_callback('remove',$processing_opts,@_)},
-			get_opts(\%opts, qw/filter no_prompt/)
+			get_opts(\%opts, qw/paths no_prompt interactive invalid/)
 		);
 		return $ok;
 	}
@@ -1122,6 +1117,7 @@ sub _secret_processing_updates_callback {
 		            'validate/warn' => "#Y{warning!}",
 		            ok =>  "#G{done.}",
 		            'recreate/skipped' => '#Y{skipped}',
+		            'remove/skipped' => '#Y{skipped}',
 		            skipped => "#Y{exists!}",
 		            missing => "#R{missing!}" };
 		push(@{$self->{__secret_processing_updates_callback__items}{$args{result}} ||= []},
@@ -1196,6 +1192,16 @@ sub _secret_processing_updates_callback {
 			$err_count,
 			$warn_count ? "/$warn_count warnings" : '';
 		return !$err_count;
+	} elsif ($state eq 'inline-prompt') {
+		die_unless_controlling_terminal "#R{[ERROR] %s", join("\n",
+			"Cannot prompt for confirmation to $action secrets outside a",
+			"controlling terminal.  Use #C{-y|--no-prompt} option to provide confirmation",
+			"to bypass this limitation."
+		);
+		print "[s\n[u[B[A[s"; # make sure there is room for a newline, then restore and save the current cursor
+		my $response = Genesis::UI::__prompt_for_line($args{prompt}, $args{validation}, $args{err_msg}, $args{default}, !$args{default});
+		print "[u[0K";
+		return $response;
 	} elsif ($state eq 'prompt') {
 		my $title = '';
 		if ($args{class}) {

@@ -418,8 +418,8 @@ sub is_current {
 # process_kit_secret_plans - perform actions on the kit secrets: add,recreate,renew,check,remove {{{
 sub process_kit_secret_plans {
 	my ($self, $action, $env, $update, %opts) = @_;
+	$opts{invalid} ||= 0;
 
-	my $process_failed = $action =~ s/^(recreate|renew|remove)-failed$/$1/;
 	bug("#R{[Error]} Unknown action '$action' for processing kit secrets")
 		if ($action !~ /^(add|recreate|renew|remove)$/);
 
@@ -428,24 +428,27 @@ sub process_kit_secret_plans {
 		$env->dereferenced_kit_metadata,
 		[$env->features],
 		root_ca_path => $env->root_ca_path,
-		%opts)
-	;
+		paths => $opts{paths});
 
 	my @errors = map {my ($p,$t,$m) = describe_kit_secret_plan(%$_); sprintf "%s: %s", $p, $m} grep {$_->{type} eq 'error'} @plans;
 	$update->('wait-done', result => (@errors ? 'error' : 'ok'), msg => join("\n", @errors));
 	return if (@errors);
 
-	if ($process_failed) {
-		@plans = $self->_get_failed_secret_plans($action, $env, $update, $opts{fail_on_warn}, @plans);
-		return $update->('empty', msg => sprintf "No failed secrets found%s.", $opts{filter} ? " matching provided filter" : "")
-			unless scalar(@plans);
+	if ($opts{invalid}) {
+		@plans = $self->_get_failed_secret_plans($action, $env, $update, $opts{invalid} == 2, @plans);
+		return $update->('empty', msg => sprintf(
+				"No %s secrets found%s.",
+				($opts{invalid} == 2) ? "invalid" : "problematic",
+				@{$opts{paths}} ? " under the specified paths/filters" : ""
+			)
+		) unless scalar(@plans);
 	}
 	#Filter out any path that has no plan - only x509 has support for renew
 	#TODO: make this generalized if other things are supported in the future
 	@plans = grep {$_->{type} eq 'x509'} @plans if $action eq 'renew';
 	return $update->('empty') unless scalar(@plans);
 
-	if ($action =~ /^(remove|recreate|renew)$/ && !$opts{'no_prompt'}) {
+	if ($action =~ /^(remove|recreate|renew)$/ && !$opts{no_prompt} && !$opts{interactive}) {
 		(my $actioned = $action) =~ s/e?$/ed/;
 		my $permission = $update->('prompt',
 			class => 'warning',
@@ -472,6 +475,16 @@ sub process_kit_secret_plans {
 		for (@plans) {
 			my ($path, $label, $details) = describe_kit_secret_plan(%$_);
 			$update->('start-item', path => $path, label => $label, details => $details);
+			if ($opts{interactive}) {
+				my $confirm = $update->('inline-prompt',
+					prompt => sprintf("%s [y/n/q]?", $action),
+				);
+				if ($confirm ne 'y') {
+					$update->('done-item', result => 'skipped');
+					return $update->('abort', msg => "#Y{Quit!}\n") if ($confirm eq 'q');
+					next;
+				}
+			}
 			my $now_t = Time::Piece->new(); # To prevent clock jitter
 			my @command = _generate_secret_command($action, $env->secrets_base, 0, %$_);
 			my ($out, $rc) = $self->query(@command);
@@ -507,6 +520,7 @@ sub process_kit_secret_plans {
 # validate_kit_secrets - validate kit secrets {{{
 sub validate_kit_secrets {
 	my ($self, $action, $env, $update, %opts) = @_;
+	$opts{validate} ||= 0;
 	bug("#R{[Error]} Unknown action '$action' for checking kit secrets")
 		if ($action !~ /^(check|validate)$/);
 
@@ -515,7 +529,7 @@ sub validate_kit_secrets {
 		$env->dereferenced_kit_metadata,
 		[$env->features],
 		root_ca_path => $env->root_ca_path,
-		%opts);
+		paths => $opts{paths});
 
 	my @errors = map {my ($p,$t,$m) = describe_kit_secret_plan(%$_); sprintf "%s: %s", $p, $m} grep {$_->{type} eq 'error'} @plans;
 	$update->('wait-done', result => (@errors ? 'error' : 'ok'), msg => join("\n", @errors));
@@ -530,7 +544,7 @@ sub validate_kit_secrets {
 	for my $plan (@plans) {
 		my ($path, $label, $details) = describe_kit_secret_plan(%$plan);
 		$update->('start-item', path => $path, label => $label, details => $details);
-		my ($result, $msg) = _validate_kit_secret($action,$plan,$secret_contents,$env->secrets_base,\@plans,$opts{fail_on_warn});
+		my ($result, $msg) = _validate_kit_secret($action,$plan,$secret_contents,$env->secrets_base,\@plans,$opts{validate} > 1);
 		$update->('done-item', result => $result, msg => $msg);
 	}
 	return $update->('completed');
@@ -591,7 +605,7 @@ sub _expected_kit_secret_keys {
 # }}}
 # _get_failed_secret_plans - list the plans for failed secrets {{{
 sub _get_failed_secret_plans {
-	my ($self, $scope, $env, $update, $fail_on_warn, @plans) = @_;
+	my ($self, $scope, $env, $update, $include_warnings, @plans) = @_;
 	$update->('wait', msg => "Retrieving all existing secrets");
 	my ($secret_contents,$err) =$self->all_secrets_for($env);
 	$update->('wait-done', result => ($err ? 'error' : 'ok'), msg => $err);
@@ -603,7 +617,7 @@ sub _get_failed_secret_plans {
 	for my $plan (@plans) {
 		my ($path, $label, $details) = describe_kit_secret_plan(%$plan);
 		$update->('start-item', path => $path, label => $label, details => $details);
-		my ($result, $msg) = _validate_kit_secret('validate',$plan,$secret_contents,$env->secrets_base, \@plans,$fail_on_warn);
+		my ($result, $msg) = _validate_kit_secret('validate',$plan,$secret_contents,$env->secrets_base, \@plans,$include_warnings);
 		if ($result eq 'error' || ($result eq 'missing' && $scope eq 'recreate')) {
 			$update->('done-item', result => $result, action => 'validate', msg => $msg) ;
 			push @failed, $plan;
@@ -623,7 +637,7 @@ sub _get_failed_secret_plans {
 sub parse_kit_secret_plans {
   my ($metadata, $features, %opts) = @_;
 	trace "Parsing plans for kit secrets";
-	my $plans = _get_kit_secrets($metadata, $features, %opts);
+	my $plans = _get_kit_secrets($metadata, $features);
 
 	# Sort the plans in order of application (check for cyclical ca relations)
 	my $groups = {};
@@ -647,12 +661,42 @@ sub parse_kit_secret_plans {
 		}
 	}
 
-	if ($opts{filter}) {
-		$opts{filter} =~ '^((!)?/)?(.*?)(/(i)?)?$';
-		my ($match,$pattern,$reopt) = (($2 || '') ne '!', $3, ($5 || ''));
-		$pattern = "^$pattern\$" if (!$1 || !$4);
-		my $re; eval "\$re = qr/\$pattern/$reopt";
-		@ordered_plans = grep {$match ? $_->{path} =~ $re : $_->{path} !~ $re} (@ordered_plans);
+	if ($opts{paths}) {
+		my @explicit_paths;
+		my @filtered_paths = map {$_->{path}} @ordered_plans; # start will all possible paths
+		for my $filter (@{$opts{paths}}) { #and each filter with previous results
+			if (grep {$_->{path} eq $filter} @ordered_plans) { # explicit path
+				push @explicit_paths, $filter;
+				next;
+			}
+			my @or_paths;
+			while (defined $filter) {
+				my @paths;
+				($filter, my $remainder) = $filter =~ /(.*?)(?:\|\|(.*))?$/; # or
+				debug "Parsing left half of an or-filter: $filter || $remainder" if $remainder;
+
+				if ($filter =~ /(.*?)=(.*)$/) { # plan properties
+					my ($key,$value) = ($1,$2);
+					@paths = map {$_->{path}} grep {defined($_->{$key}) && $_->{key} eq $value} @ordered_plans;
+					debug "Parsing plan properties filter: $key = '$value'";
+
+				} elsif ($filter =~ m'^(!)?/(.*?)/(i)?$') { # path regex
+					my ($match,$pattern,$reopt) = (($1 || '') ne '!', $2, ($3 || ''));
+					debug "Parsing plan path regex filter: path %s~ /%s/%s", $match?'=':'!', $pattern, $reopt;
+					my $re; eval "\$re = qr/\$pattern/$reopt";
+					@paths = map {$_->{path}} grep {$match ? $_->{path} =~ $re : $_->{path} !~ $re} @ordered_plans;
+
+				} else {
+					bail "\n#R{[ERROR]} Could not understand path filter of '%s'", $filter;
+				}
+				@or_paths = uniq(@or_paths, @paths); # join together the results of successive 'or's
+				$filter = $remainder;
+			}
+			my %and_paths = map {($_,1)} @filtered_paths;
+			@filtered_paths = grep {$and_paths{$_}} @or_paths; #and together each feature
+		}
+		my %filter_map = map {($_,1)} (@filtered_paths, @explicit_paths);
+		@ordered_plans = grep {$filter_map{$_->{path}}} (@ordered_plans);
 	}
 	trace "Completed parsing plans for kit secrets";
 	return @ordered_plans;
@@ -738,7 +782,7 @@ sub _get_targets {
 # }}}
 # _get_kit_secrets - get the raw secrets from the kit.yml file {{{
 sub _get_kit_secrets {
-	my ($meta, $features, %opts) = @_;
+	my ($meta, $features) = @_;
 
 	my $plans = {};
 	for my $feature ('base', @{$features || []}) {
@@ -1040,7 +1084,7 @@ sub _validate_x509_plan {
 		unless (!defined($cert{is_ca}) || $cert{is_ca} =~ /^1?$/);
 	if ($cert{signed_by}) {
 		$err .= "\n- Invalid signed_by argument: expecting relative vault path string, got '$cert{signed_by}'"
-			unless ($cert{signed_by} =~ /^[a-z0-9_-]+(\/[a-z0-9_-]+)+$/);
+			unless ($cert{signed_by} =~ /^[a-z0-9_-]+(\/[a-z0-9_-]+)+$/i);
 		$err .= "\n- CA Common Name Conflict - can't share CN '".@{$cert{names}}[0]."' with signing CA"
 			if (
 				(CORE::ref($plans->{$cert{signed_by}})||'' eq "HASH") &&
@@ -1077,7 +1121,7 @@ sub _validate_ssh_plan {
 # }}}
 # _validate_kit_secret - list keys expected for a given kit secret {{{
 sub _validate_kit_secret {
-	my ($scope,$plan,$secret_values,$root_path,$plans) = @_;
+	my ($scope,$plan,$secret_values,$root_path,$plans,$include_missing) = @_;
 
 	# Existance
 	my ($path,$key) = split(':', $root_path.$plan->{path});

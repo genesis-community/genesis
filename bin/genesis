@@ -1518,24 +1518,25 @@ sub {
 
 command("check-secrets", {alias => 'cs', scope => 'env'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE: genesis check-secrets deployment-env.yml
+USAGE: genesis check-secrets deployment-env.yml [path1 path2 ...]
 
 Checks that all required secrets are present.  Returns a exit code of 1 if any
 are missing, and lists them, otherwise states all secrets are present and exits
-with 0.
+with 0.   A list of secret paths can be specified, otherwise all secrets
+specified by the kit will be checked.
 
 OPTIONS
 $GLOBAL_USAGE
-      --validate    Validate secrets comply with the kit parameters
-                    (takes longer than just confirming existence)
   -v, --verbose     List each item, not just failures and warnings.
-  -F, --filter s    A string or regular expression filter to match secret paths against:
-                      - a string for an exact match to a secret
-                      - an re pattern with optional negation or case insensitivity:
-                        /.*/ca\$/ - only paths ending in ca
-                        !/loggregator/ - anything without loggregator in the path
-                        /^my-?thing//i - path starts with mything/ or my-thing/, ignoring case
-  --fail-on-warn    Any warning when validating are considered errors.
+  -l, --level=X     Set the level of validation.  Values are:
+                      (m)issing: only check on presence and error if missing
+                      (i)nvalid: validate secrets against the kit specifications
+                                 and error if invalid (default)
+                      (p)roblem: validate secrets and error if they are invalid
+                                 or problematic.
+                    Lower levels include previous, so for example, 'invalid'
+                    includes 'missing'.  Levels can be specified by initial or
+                    entire word.
 
 LEGACY OPTIONS
       --vault       The name of a `safe' target (a Vault) to check for the
@@ -1545,36 +1546,43 @@ EOF
 sub {
 	my %options;
 	options(\@_, \%options, qw/
-		validate
 		verbose|v
-		filter|F=s
-		fail-on-warn
+		level|l=s
 	/);
-	usage(1) if @_ != 1;
-	Genesis::Top->new(".")->load_env(shift)->check_secrets(%options) or exit 1;
+	usage(1) if @_ < 1;
+	my ($name,@paths) = @_;
+	my $level = delete($options{level}) || 'i';
+	my $validation_level;
+	if ($level =~ /^m(issing)?/) {
+		$options{validate}=0;
+	} elsif ($level =~ /^i(nvalid)?/) {
+		$options{validate}=1;
+	} elsif ($level =~ /^p(roblem(atic)?)?/) {
+		$options{validate}=2;
+	} else {
+		bail "#R{[ERROR]} Invalid -l|--level value: expecting one of #g{missing}, #g{invalid} or".
+		     "        #g{problem} (or respective short form#g{m}, #g{i} or #g{p} short forms) - got '#R{%s}'", $level
+	}
+	Genesis::Top->new(".")->load_env($name)->check_secrets(paths=>\@paths,%options)
+		or exit 1;
+});
 
-}); # }}}
+# }}}
 # genesis add-secrets - Generate missing credentials for an environment. {{{
-
 command("add-secrets", {alias => 'as', scope => 'env'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE: genesis add-secrets [--vault target] deployment-env.yml
+USAGE: genesis add-secrets [opts] deployment-env.yml [path1 path2 ...]
 
 Generates any missing secrets required by the deployment.  Useful to generate
-credentials after upgrading kits.
+credentials after upgrading kits.   A list of secret paths can be specified, or
+it applies to all secrets if no path is specified.
 
 OPTIONS
 $GLOBAL_USAGE
-  -v, --verbose     List each item as it is processed, not just failures and warnings.
-  -F, --filter s    A string or regular expression filter to match secret paths against:
-                      - a string for an exact match to a secret
-                      - an re pattern with optional negation or case insensitivity:
-                        /.*/ca\$/ - only paths ending in ca
-                        !/loggregator/ - anything without loggregator in the path
-                        /^my-?thing//i - path starts with mything/ or my-thing/, ignoring case
+  -v, --verbose     List each item as it is processed.
 
 LEGACY OPTIONS
-      --vault       The name of a `safe' target (a Vault) to store newly
+      --vault <str> The name of a `safe' target (a Vault) to store newly
                     generated credentials in.  This option is only accepted if
                     the deployment repository does not have a secrets-provider
                     set - see 'genesis secrets-provider'.
@@ -1583,40 +1591,37 @@ EOF
 sub {
 	my %options;
 	options(\@_, \%options, qw/
-		filter|F=s
 		verbose|v
 		vault=s
 	/);
-	usage(1) if @_ != 1;
-	Genesis::Top->new(".", vault => $options{vault})->load_env(shift)->add_secrets(%options);
-
+	usage(1) if @_ < 1;
+	my ($name,@paths) = @_;
+	Genesis::Top->new(".", vault => $options{vault})->load_env($name)->add_secrets(paths=>\@paths,%options);
 });
 
 # }}}
 # genesis rotate-secrets - Rotate required credentials for an environment. {{{
 command("rotate-secrets", {alias => 'rot', scope => 'env'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE: genesis rotate-secrets [opts] deployment-env.yml
+USAGE: genesis rotate-secrets [opts] deployment-env.yml [path1 path2 ...]
 
-Generates fresh secrets for your deployment. If any secrets are marked by the
-kit as `fixed', they are not updated.
+Recreate (or renew) secrets for your deployment. If any secrets are marked by
+the kit as `fixed', they are not updated.  A list of secret paths can be
+specified, or it applies to all secrets if no path is specified.
 
 OPTIONS
 $GLOBAL_USAGE
-  -v, --verbose     List each item as it is processed, not just failures and warnings.
-  -X, --failed      Only rotate secrets that have errors.
       --renew       Renew secrets that have expiry (currently this only applies
                     to x509 certs).  Renewed x509 certs will still be valid for
                     certs previously signed by it; its TTL will just be updated.
-  --fail-on-warn    Any warning when validating are considered errors when selecting
-                    failed secrets in conjuction with the -X|--fail-on-warn option.
-  -F, --filter s    A string or regular expression filter to match secret paths against:
-                      - a string for an exact match to a secret
-                      - an re pattern with optional negation or case insensitivity:
-                        /.*/ca\$/ - only paths ending in ca
-                        !/loggregator/ - anything without loggregator in the path
-                        /^my-?thing//i - path starts with mything/ or my-thing/, ignoring case
+  -v, --verbose     List each item as it is processed, not just failures and warnings.
+  -I, --invalid     Rotate secrets that are invalid (expired, missing, or don't
+                    match the kit specification)
+  -P, --probematic  Rotate secrets that are either invalid, or valid for
+                    deployment, but are not in compliance with the kit
+                    specification or may soon expire.
   -y, --no-prompt   Don't prompt for confirmation
+  -i, --interactive Ask before rotating each secret.
 
 LEGACY OPTIONS
       --vault       The name of a `safe' target (a Vault) to store newly
@@ -1631,49 +1636,46 @@ EOF
 sub {
 	my %options;
 	options(\@_, \%options, qw/
-		force|force-rotate-all|f
 		verbose|v
-		filter|F=s
 		renew
-		failed|X
+		invalid|I
+		problematic|problem|P
 		no-prompt|y
-		fail-on-warn
+		interactive|i
 		vault=s
+		force|force-rotate-all|f
 	/);
 
-	usage(1) if @_ != 1;
+	usage(1) if @_ < 1;
+	my ($name, @paths) = @_;
 	bail "--force option no longer valid. See `genesis rotate-secrets -h` for more details"
 		if (delete($options{force}));
 
-	Genesis::Top->new(".", vault => $options{vault})->load_env(shift)->rotate_secrets(%options);
-
+	$options{invalid} = 2 if delete($options{problematic});
+	Genesis::Top->new(".", vault => $options{vault})->load_env($name)->rotate_secrets(paths => \@paths,%options)
+		or exit 1;
 });
 
 # }}}
 # genesis remove-secrets - Remove credentials from an environment. {{{
 command("remove-secrets", {alias => 'rms', scope => 'env'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE: genesis remove-secrets [opts] deployment-env.yml
+USAGE: genesis remove-secrets [opts] deployment-env.yml [path1 path2 ...]
 
 Removes the generated secrets for the specified environment. If the --all
 option is specified, it will remove all screts under the environment's secrets
 base path, including any manually put there (such as by the 'genesis new'
-command)
+command).  Otherwise, secrets can be specified on the command line to further
+limit the scope of what will be removed (all generated secrets if no path is specified).
 
 OPTIONS
 $GLOBAL_USAGE
   -v, --verbose     List each item as it is processed, not just failures and warnings.
-  -X, --failed      Only delete secrets that have errors.
-  --fail-on-warn    Any warning when validating are considered errors when selecting
-                    failed secrets in conjuction with the -X|--fail-on-warn option.
+  -I, --invalid     Remove any secrets that are invalid
+  -P, --problem     Remove any secrets that are invalid or problematic.
   -A, --all         Remove all secrets under this deployments secrets base path.
-  -F, --filter s    A string or regular expression filter to match secret paths against:
-                      - a string for an exact match to a secret
-                      - an re pattern with optional negation or case insensitivity:
-                        /.*/ca\$/ - only paths ending in ca
-                        !/loggregator/ - anything without loggregator in the path
-                        /^my-?thing//i - path starts with mything/ or my-thing/, ignoring case
   -y, --no-prompt   Don't prompt for confirmation
+  -i, --interactive Ask for confirmation on each secret path removal.
 
 LEGACY OPTIONS
       --vault       The name of a `safe' target (a Vault) to store newly
@@ -1686,19 +1688,26 @@ sub {
 	my %options;
 	options(\@_, \%options, qw/
 		verbose|v
-		filter|F=s
 		all|A
-		failed|X
-		fail-on-warn
+		invalid|I
+		problematic|problem|P
 		no-prompt|y
+		interactive|i
 		vault=s
 	/);
 
-	usage(1) if @_ != 1;
-	bail "Cannot use --filter or --failed at the same time as the --all option."
-		if (exists($options{filter}) || $options{failed}) && $options{all};
+	usage(1, 'Missing environment name or file') if @_ < 1;
+	my ($name, @paths) = @_;
+	if ( $options{all}) {
+		bail "Cannot specify secret paths when using the --all option."
+			if @paths;
+		bail "Cannot use --invalid, --problematic, or --interactive at the same time as the --all option."
+			if $options{problematic} || $options{invalid} || $options{interactive};
+	}
 
-	Genesis::Top->new(".", vault => $options{vault})->load_env(shift)->remove_secrets(%options) or exit 1;
+	$options{invalid} = 2 if delete($options{problematic});
+	Genesis::Top->new(".", vault => $options{vault})->load_env($name)->remove_secrets(paths => \@paths,%options)
+		or exit 1;
 });
 
 # }}}
