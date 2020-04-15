@@ -456,7 +456,7 @@ sub check_environment {
 
 	if (!exists($opts{check_secrets}) || $opts{check_secrets}) {
 		explain "\n[#M{%s}] running secrets checks...", $env->name;
-		my %check_opts=(indent => '  ', get_opts(\%opts, qw/validate fail_on_warn/));
+		my %check_opts=(indent => '  ', validate => 1);
 		$env->check_secrets(%check_opts) or $ok = 0;
 	}
 
@@ -1295,6 +1295,10 @@ OPTIONS
                                 director (default behavour).
   --[no-]secrets                Determines if the secrets checks are run.
                                 Runs by default.
+  --[no-]manifest               Determines if the secrets checks are run.
+                                Runs by default.
+  --[no-]stemcells              Determines if the secrets checks are run.
+                                DOES NOT run by default.
 
 $GLOBAL_USAGE
 
@@ -1322,7 +1326,7 @@ sub {
 		$env->download_cloud_config;
 	}
 
-	my $ok = check_environment($env, validate => 1, get_opts(\%options, qw/check_manifest check_secrets check_stemcells/));
+	my $ok = check_environment($env, map {("check_$_" => $options{$_})} qw/manifest secrets stemcells/);
 	if ($ok) {
 		explain "\n[#M{%s}] #G{All Checks Succeeded}", $env->name;
 		exit 0;
@@ -1357,13 +1361,6 @@ $GLOBAL_USAGE
       --max-in-flight #  Override the default number of maximum VMs in flight
                          per instance group.
 
-      --no-validate      Only check that secrets exist, don't validate that they
-                         are valid and conform to the specification provided by
-                         the kit.  (Not recommended, but may be needed for
-                         legacy environments)
-
-      --fail-on-warn     Any warnings found during validation will be considered
-                         fatal and will terminate the deploy.
 
 Can specify one of the follow three:
   -n, --dry-run          Build the manifest and validate it against the current
@@ -1376,7 +1373,7 @@ Can specify one of the follow three:
 
 EOF
 sub {
-	my %options = (validate => 1, redact => ! -t STDOUT);
+	my %options = (redact => ! -t STDOUT);
 	options(\@_, \%options, qw/
 		yes|y
 		redact!
@@ -1386,8 +1383,6 @@ sub {
 		skip-drain=s@
 		canaries=i
 		max-in-flight=i
-		validate!
-		fail-on-warn
 	/);
 	usage(1) if @_ != 1;
 	my $env = Genesis::Top->new('.')->load_env($_[0]);
@@ -1411,7 +1406,7 @@ sub {
 			unless $env->cloud_config;
 	}
 
-	check_environment($env, get_opts(\%options, qw/validate fail_on_warn/))
+	check_environment($env)
 		or bail "#R{Preflight checks failed}; deployment operation #R{halted}.";
 
 	explain "Preflight #G{ok}, initiating BOSH deploy...";
