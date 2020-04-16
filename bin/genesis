@@ -58,7 +58,7 @@ sub in_repo_dir {
 }
 
 sub in_kit_dir {
-	return -f "kit.yml" && Cwd::abs_path('.') =~ /-genesis-kit$/;
+	return -f "kit.yml";
 }
 
 # takes a list of tokens, in order, and generates
