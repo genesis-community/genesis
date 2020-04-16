@@ -1065,7 +1065,7 @@ sub remove_secrets {
 				print "\n";
 				if ($response eq 'list') {
 					# TODO: check and color-code generated vs manual entries
-					my $prefix_len = length($self->secrets_base);
+					my $prefix_len = length($self->secrets_base)-1;
 					bullet $_ for (map {substr($_, $prefix_len)} @paths);
 				} elsif ($response eq 'yes') {
 					last;
