@@ -59,9 +59,10 @@ sub load {
 			 join("\n  ",$env->actual_environment_files)
 	) if ($env->defines('kit.features') && $env->defines('kit.subkits'));
 
+	my $env_src;
 	unless (in_callback || envset("GENESIS_LEGACY")) {
-		my ($env_name, $env_key) = $env->lookup(['genesis.env','params.env']);
-		bail("\n#R{[ERROR]} Environment file #C{$env->{file}} environment name mismatch: #C{$env_key: $env_name}")
+		(my $env_name, $env_src) = $env->lookup(['genesis.env','params.env']);
+		bail("\n#R{[ERROR]} Environment file #C{$env->{file}} environment name mismatch: #C{$env_src $env_name}")
 			unless $env->{name} eq $env_name;
 		# Deferring Deprecation warning until future version
 		# error "\n#Y{[WARNING]} Environment file $env->{file} uses #C{params.env} to specify environment name.\nThis has been moved to #C{genesis.env} -- please update your file to remove this warning.\n"
@@ -94,7 +95,12 @@ sub load {
 	}
 
 	# Check for v2.7.0 features
-	unless ($env->kit->feature_compatibility("2.7.0")) {
+	if ($env->kit->feature_compatibility("2.7.0")) {
+		bail("#R{[ERROR]} Kit #M{%s} requires environment file to specify #m{genesis.env}\n".
+		     "        but #C{%s} is using #m%s.  Please update your environment file".
+		     $env->kit->id, $env->name, $env_src)
+			if ($env_src && $env_src ne 'genesis.env');
+	} else {
 		bail("#R{[ERROR]} Kit #M{%s} is not compatible with #C{secrets_mount} feature\n".
 		     "        Please upgrade to a newer release or remove params.secrets_mount from #M{%s}",
 		     $env->kit->id, $env->{file})
