@@ -112,7 +112,7 @@ To safeguard operational use cases, and prevent confusion for kit
 authors, Genesis v2 is explicit about when it does and
 doesn't use `dev/`.  These are the ground rules:
 
-  1. If `kit.name` is set to "dev", **only** Genesis uses the
+  1. If `kit.name` is set to "dev", Genesis uses **only** the
      `dev/` kit directory, and complains if it is absent.
   2. If `kit.name` is not set to "dev", and a `dev/` kit
      directory is present, issue a loud and obnoxious warning
