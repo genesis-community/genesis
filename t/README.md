@@ -14,7 +14,7 @@ On OSX:
   * `brew install cloudfoundry/tap/bosh-cli` 
     # alternatively, add the tap and install bosh-cli
   * `brew install jq`
-  * install install from https://www.vaultproject.io/downloads.html
+  * install vault from https://www.vaultproject.io/downloads.html
 
 On Linux:
   * The most straight-forward method of installing under linux is to install
