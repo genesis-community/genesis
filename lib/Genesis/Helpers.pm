@@ -73,6 +73,11 @@ __bail() {
 }
 export -f __bail
 
+# Make __bail available as bail because internal functions shouldn't be useed by helpers
+bailfunc="$(declare -f "__bail")"
+eval "${bailfunc/__bail/bail}"
+export -f bail
+
 if [[ -z "$SAFE_TARGET" || "$SAFE_TARGET" != "$GENESIS_TARGET_VAULT" ]] ; then
 	__bail "Safe target not associated with Genesis Vault -- this is a bug in Genesis, or you are running $0 outside of Genesis"
 fi
@@ -194,6 +199,8 @@ bosh() {
     __bail "BOSH CLI command not specified - this is a bug in Genesis, or you are running $0 outside of Genesis"
   [[ -z "${BOSH_ENVIRONMENT:-}" || -z "${BOSH_CA_CERT:-}" ]] && \
     __bail "Environment not found for BOSH Director -- please ensure you've configured your BOSH alias used by this environment"
+  [[ -n "$GENESIS_SHOW_BOSH_CMD" ]] && \
+    describe  >&2 "#M{BOSH>} $GENESIS_BOSH_COMMAND $*"
   command ${GENESIS_BOSH_COMMAND} "$@"
   return $?
 }
