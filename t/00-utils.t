@@ -237,8 +237,9 @@ subtest 'fs utilities' => sub {
 
 	chdir '/'; is humanize_path($ENV{HOME}.'/dir'), '~/dir', "humanize_path shows path relative to \$HOME";
 	is humanize_path($ENV{HOME}.'/big/long/path/to/nonexistant.file'), '~/big/long/path/to/nonexistant.file', "humanize_path shows long path relative to \$HOME";
-	chdir $here; is humanize_path($here.'/dir'), './dir', "humanize_path shows path relative to pwd";
-	is humanize_path($here.'/big/long/../../path/to/nonexistant.file'), './path/to/nonexistant.file', "humanize_path shows long path relative to pwd";
+	chdir $here; is humanize_path($here.'/dir'), 'dir', "humanize_path shows path relative to pwd";
+	qx(cp `which prove` "$here/"); is humanize_path($here.'/prove'), './prove', "humanize_path shows executable in cwd with leading './'";
+	is humanize_path($here.'/big/long/../../path/to/nonexistant.file'), 'path/to/nonexistant.file', "humanize_path shows long path relative to pwd";
 	is humanize_path($here.'/../diff_repo/some_file.yml'), '../diff_repo/some_file.yml', "humanize_path shows uptree path relative to pwd";
 	is humanize_path($tmp), $tmp, "humanize_path shows full path when not relative to \$HOME or pwd";
 };

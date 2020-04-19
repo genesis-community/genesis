@@ -654,7 +654,9 @@ sub humanize_path {
 	my @path_bits = split('/',$path);
 	my @pwd_bits = split('/',$pwd);
 	my $i=-1; while ($i < $#path_bits && $i < $#pwd_bits && $path_bits[++$i] eq $pwd_bits[$i]) {};
+	$i++ if $path_bits[$i] && $pwd_bits[$i] && $path_bits[$i] eq $pwd_bits[$i];
 	$rel_path = join('/', (map {'..'} ($i .. $#pwd_bits)), @path_bits[$i .. $#path_bits]);
+	$rel_path = "./$rel_path" if -x $path && ! -d $path && $rel_path !~ /(^\.|\/)/;
 
 	my $new_path = (substr($path, 0, length($pwd) + 1) eq $pwd . '/')
 		? '.' . substr($path, length($pwd))
@@ -666,10 +668,13 @@ sub humanize_path {
 }
 
 sub humanize_bin {
+	return "" unless $ENV{GENESIS_CALLBACK_BIN};
 	my $bin = basename($ENV{GENESIS_CALLBACK_BIN});
 	chomp(my $path_bin = `which $bin`);
-	return $bin	if ($path_bin eq $ENV{GENESIS_CALLBACK_BIN});
-	return humanize_path($bin);
+	debug "bin:       %s\npath_bin:  %s\nhumanized: %s",
+	       $bin,          $path_bin,     humanize_path($ENV{GENESIS_CALLBACK_BIN});
+	return $bin if ($path_bin eq $ENV{GENESIS_CALLBACK_BIN});
+	return humanize_path($ENV{GENESIS_CALLBACK_BIN});
 }
 
 sub load_json {

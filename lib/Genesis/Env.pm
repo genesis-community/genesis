@@ -322,6 +322,11 @@ sub setup_hook_env_vars {
 	$ENV{GENESIS_ROOT}         = $self->path;
 	$ENV{GENESIS_ENVIRONMENT}  = $self->name;
 	$ENV{GENESIS_TYPE}         = $self->type;
+	$ENV{GENESIS_CALL}         = humanize_bin();
+	$ENV{GENESIS_CALL}        .= sprintf(" -C '%s'", humanize_path($self->path))
+		if ($ENV{GENESIS_CALLER_DIR} && $self->path ne $ENV{GENESIS_CALLER_DIR});
+
+	# Vault ENV VARS
 	$ENV{GENESIS_TARGET_VAULT} = $ENV{SAFE_TARGET} = $self->vault->ref;
 	$ENV{GENESIS_VERIFY_VAULT} = $self->vault->verify || "";
 

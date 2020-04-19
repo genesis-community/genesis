@@ -60,6 +60,11 @@ describe() {
 }
 export -f describe
 
+humanize_path() {
+	/usr/bin/perl -I$GENESIS_LIB -MGenesis -e 'binmode STDOUT, ":encoding(UTF-8)"; print humanize_path("$ARGV[0]")' "$1"
+}
+export -f humanize_path
+
 __bail() {
   local rc=1
   [[ "$1" == "--rc" ]] && rc="$2" && shift 2
