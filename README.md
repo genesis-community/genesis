@@ -118,66 +118,48 @@ git config --global user.email your@email.com
 
 ## Using Genesis
 
+For information on how to use Genesis, see:
+
+```
+genesis help
+```
+
 Here are a few thoughts on the Genesis CLI.
-
-Global options should be recognized for all commands:
-
-  - `-D` / `--debug` - Enable debugging mode, wherein Genesis
-    prints messages to standard error, detailing what tasks it is
-    doing, what commands it is running, return values, etc.
-  - `-T` / `--trace` - Enable debugging mode in all called
-    utilities, like `spruce` and `bosh`, where available.
-  - `-C PATH` - Perform all operations from `PATH` as the current
-    working directory.
-  - `-y` / `--yes` - Answer "yes" to all questions, automatically,
-    on behalf of the user.  This means, for example, running `bosh
-    -n`, instead of just `bosh`.
 
 Initialize a Genesis repo:
 
 ```
+# Using latest kit version
 genesis init --kit shield
+# Using a specific kit version
 genesis init --kit shield/1.2.3
 ```
 
-Create a new deployment named us-west-1-sandbox:
+Create a new deployment named `us-west-1-sandbox`:
 
 ```
 genesis new us-west-1-sandbox
 ```
 
-Generate a manifest for an environment:
+Generate a manifest for `my-sandbox` deployment or environment:
 
 ```
 # Using the live the cloud-config from the BOSH director
 genesis manifest my-sandbox
-# or, using the local file cached-cloud-config.yml:
+# or, using the local cached-cloud-config.yml:
 genesis manifest -c cached-cloud-config.yml
 ```
 
-Deploy a deployment, manually:
+Start `us-west-1-sandbox` deployment manually:
 
 ```
 genesis deploy us-west-1-sandbox
 ```
 
-Rotate credentials for a deployment:
+Rotate credentials for `us-west-1-sandbox` deployment:
 
 ```
-genesis secrets us-west-1-sandbox
-```
-
-Summarize the current state of deployments and what kits they are
-using:
-
-```
-genesis summary
-```
-
-Download version 1.3.4 of the SHIELD kit:
-
-```
-genesis download shield 1.3.4
+genesis rotate-secrets us-west-1-sandbox
 ```
 
 Deploy the Genesis CI/CD pipeline configuration to Concourse:
@@ -197,12 +179,6 @@ embedding in documentation and putting on your blog:
 
 ```
 genesis graph pipelines/aws
-```
-
-Embed the calling Genesis script in the Genesis repo:
-
-```
-genesis embed
 ```
 
 ## Transitioning to Genesis v2
