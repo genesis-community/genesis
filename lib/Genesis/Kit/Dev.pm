@@ -22,7 +22,7 @@ sub kit_bug {
 }
 
 sub id {
-	return "(dev kit)";
+	return sprintf("%s/%s (dev)", $_[0]->metadata->{name} || 'unknown', $_[0]->metadata->{version} || 'in-development');
 }
 
 sub name {

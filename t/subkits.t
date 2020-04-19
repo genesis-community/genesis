@@ -42,7 +42,7 @@ EOF
 
 run_fails "genesis manifest -c cloud.yml use-the-wrong-thing >$tmp/errors 2>&1", undef;
 eq_or_diff get_file("$tmp/errors"), <<EOF, "manifest generate fails with an invalid blobstore subkit";
-No subkit 'magic' found in kit (dev kit).
+No subkit 'magic' found in kit unknown/in-development (dev).
 EOF
 
 run_fails "genesis manifest -c cloud.yml use-nothing >$tmp/errors 2>&1", undef;

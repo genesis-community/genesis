@@ -152,7 +152,7 @@ subtest 'dev kits' => sub {
 	my $dev = decompile_kit(test => '0.0.1');
 	is($dev->name, "dev", "dev kits are all named 'dev'");
 	is($dev->version, "latest", "dev kits are always at latest");
-	is($dev->id, "(dev kit)", "dev kits should report their ID as dev, all the time");
+	is($dev->id, "simple/in-development (dev)", "dev kits should report their ID as dev, all the time");
 	for my $f (qw(kit.yml manifest.yml hooks/new hooks/blueprint)) {
 		ok(-f $dev->path($f), "[dev :: test-0.0.1] $f file should exist in dev kit");
 	}

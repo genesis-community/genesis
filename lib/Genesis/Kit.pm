@@ -74,6 +74,7 @@ sub run_hook {
 
 	trace ("running the kit '$hook' hook");
 	local %ENV = %ENV;
+	$ENV{GENESIS_KIT_ID}       = $self->id;
 	$ENV{GENESIS_KIT_NAME}     = $self->name;
 	$ENV{GENESIS_KIT_VERSION}  = $self->version;
 	$ENV{GENESIS_KIT_HOOK}     = $hook;
