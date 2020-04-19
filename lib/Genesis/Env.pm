@@ -1137,10 +1137,11 @@ sub _secret_processing_updates_callback {
 		explain $map->{"$action/$args{result}"} || $map->{$args{result}} || $args{result}
 			if $args{result} && ($level eq 'full' || !( $args{result} eq 'ok' || ($args{result} eq 'skipped' && $action eq 'add')));
 
-		if ($args{msg}) {
+		if (defined($args{msg})) {
 			my @lines = grep {$level eq 'full' || $_ =~ /^\[#[YR]/} split("\n",$args{msg});
 			my $pad = " " x (length($self->{__secret_processing_updates_callback__total})*2+4);
-			explain "  $pad%s\n", join("\n  $pad", @lines) if @lines;
+			explain "  $pad%s", join("\n  $pad", @lines) if @lines;
+			explain "" if $level eq 'full' || scalar @lines;
 		}
 		waiting_on "\r[2K" unless $level eq 'full';
 
@@ -1155,7 +1156,7 @@ sub _secret_processing_updates_callback {
 			$w, $self->{__secret_processing_updates_callback__idx},
 			$w, $self->{__secret_processing_updates_callback__total},
 			$args{path},
-			$args{label} . ($level eq 'line' ? '' : " - $args{details}"),
+			$args{label} . ($level eq 'line' || !$args{details} ? '' : " - $args{details}"),
 			$long_warning;
 
 	} elsif ($state eq 'empty') {
@@ -1226,7 +1227,11 @@ sub _secret_processing_updates_callback {
 		);
 		return prompt_for_line(undef, $args{prompt}, $args{default} || "");
 	} elsif ($state eq 'notify') {
-		explain $args{msg};
+		if ($args{nonl}) {
+			waiting_on $args{msg};
+		} else {
+			explain $args{msg};
+		}
 	} else {
 		bug "_secret_processing_updates_callback encountered an unknown state '$state'";
 	}

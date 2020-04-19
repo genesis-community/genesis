@@ -468,25 +468,41 @@ sub process_kit_secret_plans {
 
 	my ($result, $err, $idx);
 	$update->('init', total => scalar(@plans));
-	if ($opts{batch}) {
-		bug "Batch processing of secret plans not supported yet!";
-		my @command = _generate_secret_command($action, $env->secrets_base, 1, %$_);
-	} else {
-		for (@plans) {
-			my ($path, $label, $details) = describe_kit_secret_plan(%$_);
-			$update->('start-item', path => $path, label => $label, details => $details);
-			if ($opts{interactive}) {
-				my $confirm = $update->('inline-prompt',
-					prompt => sprintf("%s [y/n/q]?", $action),
-				);
-				if ($confirm ne 'y') {
+	for (@plans) {
+		my ($path, $label, $details) = describe_kit_secret_plan(%$_);
+		$update->('start-item', path => $path, label => $label, details => $details);
+		if ($opts{interactive}) {
+			my $confirm = $update->('inline-prompt',
+				prompt => sprintf("%s [y/n/q]?", $action),
+			);
+			if ($confirm ne 'y') {
+				$update->('done-item', result => 'skipped');
+				return $update->('abort', msg => "#Y{Quit!}\n") if ($confirm eq 'q');
+				next;
+			}
+		}
+		my $now_t = Time::Piece->new(); # To prevent clock jitter
+		my @command = _generate_secret_command($action, $env->secrets_base, %$_);
+		if ($_->{type} eq "provided") {
+			if ($action eq 'add' || ($action eq 'recreate' && $_->{fixed})) {
+				my $path = $env->secrets_base.$_->{path};
+				my (undef, $missing) = $self->query('exists',$path);
+				if (!$missing) {
 					$update->('done-item', result => 'skipped');
-					return $update->('abort', msg => "#Y{Quit!}\n") if ($confirm eq 'q');
 					next;
 				}
 			}
-			my $now_t = Time::Piece->new(); # To prevent clock jitter
-			my @command = _generate_secret_command($action, $env->secrets_base, 0, %$_);
+			if (!@command) {
+				$update->('done-item', result => 'error', msg => "Cannot prompt for user input from a non-controlling terminal");
+				last;
+			}
+
+			$update->("notify", msg => "#Yi{user input required:\n}");
+			my ($out,$rc) = $self->query({interactive => 1}, @command);
+			$update->('notify', msg=> "\nsaving user input ... ", nonl => 1);
+			$update->('done-item', result => ($rc ? 'error': 'ok'));
+			last if $rc;
+		} else {
 			my ($out, $rc) = $self->query(@command);
 			if ($out =~ /refusing to .* as it is already present/) {
 				$update->('done-item', result => 'skipped')
@@ -545,7 +561,7 @@ sub validate_kit_secrets {
 		my ($path, $label, $details) = describe_kit_secret_plan(%$plan);
 		$update->('start-item', path => $path, label => $label, details => $details);
 		my ($result, $msg) = _validate_kit_secret($action,$plan,$secret_contents,$env->secrets_base,\@plans,$opts{validate} > 1);
-		$update->('done-item', result => $result, msg => $msg);
+		$update->('done-item', result => $result, msg => $msg, action => ($plan->{type} eq 'provided' ? 'check' : $action));
 	}
 	return $update->('completed');
 }
@@ -593,7 +609,7 @@ sub _expected_kit_secret_keys {
 		@keys = qw(private public fingerprint);
 	} elsif ($type eq 'dhparams') {
 		@keys = qw(dhparam-pem);
-	} elsif ($type eq 'random') {
+	} elsif ($type =~ /^(random|provided)$/) {
 		my (undef,$key) = split(":",$plan{path});
 		@keys = ($key);
 		push(@keys, $plan{destination} || "$key-".$plan{format})
@@ -663,13 +679,16 @@ sub parse_kit_secret_plans {
 
 	if ($opts{paths}) {
 		my @explicit_paths;
-		my @filtered_paths = map {$_->{path}} @ordered_plans; # start will all possible paths
+		my @filtered_paths;
+		my $filtered = 0;
 		for my $filter (@{$opts{paths}}) { #and each filter with previous results
 			if (grep {$_->{path} eq $filter} @ordered_plans) { # explicit path
 				push @explicit_paths, $filter;
 				next;
 			}
 			my @or_paths;
+			@filtered_paths = map {$_->{path}} @ordered_plans # start will all possible paths
+				unless $filtered++; # initialize on first use
 			while (defined $filter) {
 				my @paths;
 				($filter, my $remainder) = $filter =~ /(.*?)(?:\|\|(.*))?$/; # or
@@ -696,7 +715,7 @@ sub parse_kit_secret_plans {
 			@filtered_paths = grep {$and_paths{$_}} @or_paths; #and together each feature
 		}
 		my %filter_map = map {($_,1)} (@filtered_paths, @explicit_paths);
-		@ordered_plans = grep {$filter_map{$_->{path}}} (@ordered_plans);
+		@ordered_plans = grep { $filter_map{$_->{path}} } (@ordered_plans);
 	}
 	trace "Completed parsing plans for kit secrets";
 	return @ordered_plans;
@@ -741,10 +760,15 @@ sub describe_kit_secret_plan {
 		);
 		debug("Error encountered in secret plan $path:");
 		dump_var plan => \%plan;
+	} elsif ($plan{type} eq 'provided') {
+		$type = "user-provided";
+		@features = (
+			$plan{prompt}
+		);
 	} else {
 		$type = "ERROR";
 		@features = (
-			"Unsupported secret type '%s'"
+			"Unsupported secret type '$plan{type}'"
 		);
 	}
 	return ($path,$type,join (", ", grep {$_} @features));
@@ -850,15 +874,59 @@ sub _get_kit_secrets {
 				}
 			}
 		}
+		if ($meta->{provided}{$feature}) {
+			if (CORE::ref($meta->{provided}{$feature}) eq 'HASH') {
+				for my $path (CORE::keys %{ $meta->{provided}{$feature} }) {
+					if ($path =~ ':') {
+						$plans->{$path} = {type=>'error', error=>"Bad provided secret description:\n- Path cannot contain colons"};
+						next;
+					}
+					my $data = $meta->{provided}{$feature}{$path};
+					if (CORE::ref($data) eq "HASH") {
+						my $type = $data->{type} || 'generic';
+						if ($type eq 'generic') {
+							if (!defined($data->{keys}) || CORE::ref($data->{keys}) ne 'HASH') {
+								$plans->{$path} = {type=>'error', error=>"Bad generic provided secret description:\n- Missing 'keys' hash"};
+								next;
+							}
+							for my $k (CORE::keys %{$data->{keys}}) {
+								if ($k =~ ':') {
+									$plans->{"$path:$k"} = {type=>'error', error=>"Bad generic provided secret description:\n- Key cannot contain colons"};
+									next;
+								}
+								$plans->{"$path:$k"} = {
+									type      => 'provided',
+									sensitive => (defined($data->{keys}{$k}{sensitive}) ? !!$data->{keys}{$k}{sensitive} : 1),
+									multiline => (!!$data->{keys}{$k}{multiline}),
+									prompt    => $data->{keys}{$k}{prompt} || "Value for $path $k"
+								};
+							}
+						} else {
+							$plans->{$path} = {type => 'error', error => "Bad provided secrets description:\n- Unrecognized type '$type'; expecting one of: generic"};
+						}
+					} elsif (CORE::ref($data)) {
+						my $reftype = lc(CORE::ref($data));
+						$plans->{$path} = {type => 'error', error => "Bad provided secrets path:\n- Expecting hashmap, got $reftype"};
+					} else {
+						$plans->{$path} = {type => 'error', error => "Bad provided secrets path:\n- Expecting hashmap, '$data'"};
+					}
+				}
+			} elsif (CORE::ref($meta->{provided}{$feature})) {
+				my $reftype = lc(CORE::ref($meta->{provided}{$feature}));
+				$plans->{$feature} = {type => 'error', error => "Bad provided secrets feature block:\n- Expecting hashmap of paths, got $reftype"};
+			} else {
+				$plans->{$feature} = {type => 'error', error => "Bad provided secrets feature block:\n- Expecting hashmap of paths, got '$meta->{provided}{$feature}'"};
+			}
+		}
 	}
 	$plans->{$_}{path} = $_ for CORE::keys %$plans;
 	return $plans;
 }
 
 # }}}
-# _generate_secret_command - create safe command list that can be run standalone or as part of a batch {{{
+# _generate_secret_command - create safe command list that performs the requested action on the secret endpoint {{{
 sub _generate_secret_command {
-	my ($action,$root_path, $batch, %plan) = @_;
+	my ($action,$root_path, %plan) = @_;
 	my @cmd;
 	if ($action eq 'remove') {
 		@cmd = ('rm', '-f', $root_path.$plan{path});
@@ -905,13 +973,20 @@ sub _generate_secret_command {
 		@cmd = ('dhparam', $plan{size}, $root_path.$plan{path});
 	} elsif (grep {$_ eq $plan{type}} (qw/ssh rsa/)) {
 		@cmd = ($plan{type}, $plan{size}, $root_path.$plan{path});
+	} elsif ($plan{type} eq 'provided') {
+		if (in_controlling_terminal) {
+			my $op = $plan{sensitive} ? 'set' : 'ask';
+			push (@cmd, 'prompt', $plan{prompt}, '--', $op, split(':', $root_path.$plan{path}));
+		}
+		debug "safe command: ".join(" ", @cmd);
+		dump_var plan => \%plan;
+		return @cmd;
 	} else {
-		@cmd = (@cmd, 'prompt', 'bad request');
+		push(@cmd, 'prompt', 'bad request');
 		debug "Requested to create safe path for an bad plan";
 		dump_var plan => \%plan;
 	}
-	push(@cmd, '--no-clobber') if $action eq 'add' || ($plan{fixed} && $action eq 'recreate');
-	push(@cmd, '--', 'prompt', "completed: $plan{type}|$plan{path}") if $batch; # for notification when batched.
+	push(@cmd, '--no-clobber') if ($action eq 'add' || ($plan{fixed} && $action eq 'recreate'));
 	debug "safe command: ".join(" ", @cmd);
 	dump_var plan => \%plan;
 	return @cmd;
@@ -1141,6 +1216,7 @@ sub _validate_kit_secret {
 	my $errors = join("\n", map {sprintf("%smissing key ':%s'", _checkbox(0), $_)} grep {! exists($values->{$_})} @keys);
 	return ('missing',$errors) if $errors;
 	return ('ok') unless $scope eq 'validate';
+	return ('ok', '') if $plan->{type} eq 'provided';
 
 	my ($msg,%results);
 	if ($plan->{type} eq 'x509') {

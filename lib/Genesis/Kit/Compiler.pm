@@ -45,13 +45,18 @@ sub validate {
 				if ($meta->{authors} && (ref($meta->{authors}||'') ne 'ARRAY'));
 
 			# genesis versions must be semver
-			push @yml_errors, "specifies minimum Genesis version '$meta->{genesis_version_min}', which is not a semantic version (x.y.z)."
-				if (exists $meta->{genesis_version_min} && !semver($meta->{genesis_version_min}));
+			if (exists $meta->{genesis_version_min}) {
+				if (!semver($meta->{genesis_version_min})) {
+					push @yml_errors, "specifies minimum Genesis version '$meta->{genesis_version_min}', which is not a semantic version (x.y.z).";
+				} elsif (semver($Genesis::VERSION) && ! new_enough $Genesis::VERSION, $meta->{genesis_version_min}) {
+					push @yml_errors, "This Genesis (v$Genesis::VERSION) does not meet minimum Genesis version of v$meta->{genesis_version_min}"
+				}
+			}
 
 			# check for errant top-level keys - params, subkits and features have been discontinued.
 			my @valid_keys = qw/name version description code docs author authors genesis_version_min secrets_store/;
 			if (!defined($meta->{secrets_store}) || $meta->{secrets_store} eq 'vault') {
-				push @valid_keys, "credentials", "certificates";
+				push @valid_keys, "credentials", "certificates", "provided";
 			} elsif ($meta->{secrets_store} ne "credhub") {
 				push @yml_errors, "specifies invalid secrets_store: expecting one of 'vault' or 'credhub'";
 			}
@@ -80,7 +85,8 @@ sub validate {
 	if ($meta && (!defined($meta->{secrets_store}) || $meta->{secrets_store} eq 'vault')) {
 		my @all_features = grep {$_ ne 'base'} sort uniq(
 			keys(%{$meta->{credentials}  || {}}),
-			keys(%{$meta->{certificates} || {}})
+			keys(%{$meta->{certificates} || {}}),
+			keys(%{$meta->{provided}     || {}})
 		);
 
 		my $kit = Genesis::Kit::Dev->new($self->{root});

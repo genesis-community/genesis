@@ -313,7 +313,7 @@ eq_or_diff($out, <<'EOF', "validate should report when genesis_min_version is us
 
   Kit Metadata file kit.yml:
     - contains invalid top-level key: genesis_min_version;
-      valid keys are: name, version, description, code, docs, author, authors, genesis_version_min, secrets_store, credentials, certificates
+      valid keys are: name, version, description, code, docs, author, authors, genesis_version_min, secrets_store, credentials, certificates, provided
 
 EOF
 
@@ -468,7 +468,7 @@ eq_or_diff($out, <<'EOF', "validate should report when unknown top-level keys ar
     - does not define 'code'
     - does not identify the author(s) via 'author' or 'authors'
     - contains invalid top-level keys: by, descriptoin, github, homepage, params, secrets, subkits;
-      valid keys are: name, version, description, code, docs, author, authors, genesis_version_min, secrets_store, credentials, certificates
+      valid keys are: name, version, description, code, docs, author, authors, genesis_version_min, secrets_store, credentials, certificates, provided
 
 EOF
 
@@ -483,7 +483,7 @@ eq_or_diff($out, <<'EOF', "validate should report errors even when force is used
     - does not define 'code'
     - does not identify the author(s) via 'author' or 'authors'
     - contains invalid top-level keys: by, descriptoin, github, homepage, params, secrets, subkits;
-      valid keys are: name, version, description, code, docs, author, authors, genesis_version_min, secrets_store, credentials, certificates
+      valid keys are: name, version, description, code, docs, author, authors, genesis_version_min, secrets_store, credentials, certificates, provided
 
 EOF
 
@@ -608,6 +608,38 @@ credentials:
       this: gen 64
     something: completely different
 
+provided:
+  base:
+    handy/secrets:
+      type: generic
+      keys:
+        test:
+          sensitive: false
+          prompt: "A test password"
+        super_secret:
+          sensitive: true
+          prompt: "you know what to do"
+        basic: {}
+
+  errors:
+    bad-keys:
+      keys:
+        test:me: {}
+    bad-key-hash:
+      keys: [a, b, c]
+    'bad:path':
+      keys: {test_me: {}}
+    broken-type:
+      type: xtreme
+    broken-structure:
+      not-a-secret:
+        prompt: "Why does no one ask for me"
+        sensitive: false
+    broken-content:
+      - this-password
+      - that-password
+
+  not-valid: "this isn't a hash"
 
 EOF
 system("mkdir $kitdir/ci") unless -d "$kitdir/ci";
@@ -653,7 +685,7 @@ eq_or_diff($out, <<'EOF', "validate should report all errors in the kit");
     - does not define 'code'
     - specifies name 'testing', expecting 'test'
     - contains invalid top-level keys: code repo, params, url;
-      valid keys are: name, version, description, code, docs, author, authors, genesis_version_min, secrets_store, credentials, certificates
+      valid keys are: name, version, description, code, docs, author, authors, genesis_version_min, secrets_store, credentials, certificates, provided
 
   Secrets specifications in kit.yml:
 
@@ -677,8 +709,29 @@ eq_or_diff($out, <<'EOF', "validate should report all errors in the kit");
       - Invalid is_ca argument: expecting boolean value, got 'CA'
       - Invalid signed_by argument: expecting relative vault path string, got '${params.root_ca}'
 
+    Bad generic provided secret description for bad-key-hash:
+      - Missing 'keys' hash
+
+    Bad generic provided secret description for bad-keys:test:me:
+      - Key cannot contain colons
+
+    Bad provided secret description for bad:path:
+      - Path cannot contain colons
+
     Badly formed x509 request for bad_request:
       - expecting certificate specification in the form of a hash map
+
+    Bad provided secrets path for broken-content:
+      - Expecting hashmap, got array
+
+    Bad generic provided secret description for broken-structure:
+      - Missing 'keys' hash
+
+    Bad provided secrets description for broken-type:
+      - Unrecognized type 'xtreme'; expecting one of: generic
+
+    Bad provided secrets feature block for not-valid:
+      - Expecting hashmap of paths, got 'this isn't a hash'
 
     Bad credential request for password:
       - Unrecognized request 'random 64'
