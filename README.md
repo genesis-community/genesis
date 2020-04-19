@@ -1,13 +1,13 @@
 Genesis - A BOSH Deployment Paradigm
 ==================================
 
-## Genesis v2.0
+## Genesis v2
 
-Genesis v2.0 is the first version of Genesis to fully support BOSH v2. It is primarily geared
+Genesis v2 is the first version of Genesis to fully support BOSH v2. It is primarily geared
 to deployments that make use of Cloud Config, and Runtime Config. The BOSH v2 CLI is also a
 requirement of Genesis v2.
 
-Genesis v2.0 builds upon the previous generation of Genesis, eliminating
+Genesis v2 builds upon the previous generation of Genesis, eliminating
 the vast majority of YAML files all over the place, leading to confusion and
 questions like "Where do I put property X - properties.yml, networking.yml, or credentials.yml?"
 
@@ -69,12 +69,12 @@ in non-production environments, before going to production.
 
 ### Flexible Deployment Pipelines
 
-The pipeline strategy of Genesis v2.0 is much more flexible than the previous approach. Operators
+The pipeline strategy of Genesis v2 is much more flexible than the previous approach. Operators
 are able to define what environments should trigger, which should not, as well as which environments
 are gateways to deploying in later environments. Stemcell management is built-in, as are locking
 mechanisms to ensure that your BOSH isn't upgraded while it's in the middle of deploying something.
 
-For a full run-down on Genesis v2.0 + deployment pipelines, see our [pipeline documentation](docs/PIPELINES.md)
+For a full run-down on Genesis v2 + deployment pipelines, see our [pipeline documentation](docs/PIPELINES.md)
 
 ## Installation
 
@@ -216,7 +216,7 @@ for compatibility.
 
 ## Design Notes + Genesis Developer Resources
 
-Genesis v2.0 design documentation that was previously found here has moved.
+Genesis v2 design documentation that was previously found here has moved.
 
   - [Design Notes](docs/DESIGN.md)
   - [Pipelines](docs/PIPELINES.md)
