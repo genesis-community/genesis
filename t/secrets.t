@@ -235,7 +235,7 @@ EOF
   my ($secrets_old, $err) = $env->vault->all_secrets_for($env);
   my @secret_paths = map {my $p = $_ ; map {[$p, $_]} keys %{$secrets_old->{$_}}} keys %$secrets_old;
 
-	($pass,$rc,$out) = runs_ok "genesis rotate-secrets $env_name -y '/(/ca\$|passwords:)/'", "can rotate certs according to filter";
+	($pass,$rc,$out) = runs_ok "genesis rotate-secrets $env_name -y  '//ca\$/\|\|/^passwords:/'", "can rotate certs according to filter";
 	$out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds/$1 XXX seconds/g;
 	matches_utf8 $out,<<'EOF', "genesis rotate-secrets reports rotated filtered secrets, but not fixed ones";
 Parsing kit secrets descriptions ... done. - XXX seconds
@@ -581,7 +581,7 @@ EOF
   # Feature: Remove secrets
   # Feature: Remove secrets - can remove fixed secrets
   # Feature: Remove secrets - can remove failed secrets
-  ($pass,$rc,$out) = runs_ok "GENESIS_NO_UTF8=1 genesis remove-secrets $env_name -y -I", "Remove all failed secrets";
+  ($pass,$rc,$out) = runs_ok "GENESIS_NO_UTF8=1 genesis remove-secrets $env_name -y -I", "Remove all invalid secrets";
   $out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds/$1 XXX seconds/g;
   $out =~ s/'[12]{64}'/'<[12]{64}>'/g;
   eq_or_diff $out, <<EOF, "genesis add-secrets reports existing secrets";
@@ -676,6 +676,21 @@ Removing 9 secrets for $env_name under path '$secrets_mount$secrets_path/':
 <clear-line>Completed - Duration: XXX seconds [9 removed/0 skipped/0 errors]
 
 EOF
+
+		# Lets delete another pair explicitly
+  ($pass,$rc,$out) = runs_ok "GENESIS_NO_UTF8=1 genesis remove-secrets $env_name -y haproxy/ssl secondary/server", "Remove all invalid secrets";
+  $out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds/$1 XXX seconds/g;
+  $out =~ s/'[12]{64}'/'<[12]{64}>'/g;
+  eq_or_diff $out, <<EOF, "genesis add-secrets reports existing secrets";
+Parsing kit secrets descriptions ... done. - XXX seconds
+
+Removing 2 secrets for c-azure-us1-dev under path \'/secret/genesis-2.7.0/deployments/dev/azure/us1/\':
+  [1/2] haproxy/ssl X509 certificate - signed by \'haproxy/ca\' ... done.
+  [2/2] secondary/server X509 certificate - signed by \'secondary/ca\' ... done.
+Completed - Duration: XXX seconds [2 removed/0 skipped/0 errors]
+
+EOF
+
     ($pass, $rc, $out) = run_fails("genesis check-secrets $env_name -l missing", "genesis check-secrets -l missing confirms removed secrets");
     $out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds/$1 XXX seconds/g;
     matches_utf8 $out, <<EOF, "genesis remove-secrets removed the desired secrets";
@@ -686,10 +701,10 @@ Checking 18 secrets for $env_name under path '$secrets_mount$secrets_path/':
   [ 1/18] fixed/ca X509 certificate - CA, signed by '$root_ca_path' ... found.
   [ 2/18] fixed/server X509 certificate - signed by 'fixed/ca' ... found.
   [ 3/18] haproxy/ca X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... found.
-  [ 4/18] haproxy/ssl X509 certificate - signed by 'haproxy/ca' ... found.
+  [ 4/18] haproxy/ssl X509 certificate - signed by 'haproxy/ca' ... missing!
   [ 5/18] top-level/top X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... missing!
   [ 6/18] secondary/ca X509 certificate - CA, signed by 'top-level/top' ... found.
-  [ 7/18] secondary/server X509 certificate - signed by 'secondary/ca' ... found.
+  [ 7/18] secondary/server X509 certificate - signed by 'secondary/ca' ... missing!
   [ 8/18] top-level/server X509 certificate - signed by 'top-level/top' ... missing!
   [ 9/18] openVPN/certs/root X509 certificate - CA, explicitly self-signed ... missing!
   [10/18] openVPN/certs/server X509 certificate - signed by 'openVPN/certs/root' ... missing!
@@ -701,7 +716,7 @@ Checking 18 secrets for $env_name under path '$secrets_mount$secrets_path/':
   [16/18] rsa-default RSA public/private keypair - 2048 bits ... missing!
   [17/18] ssh SSH public/private keypair - 1024 bits ... found.
   [18/18] ssh-default SSH public/private keypair - 2048 bits, fixed ... missing!
-Failed - Duration: XXX seconds [7 found/0 skipped/11 errors]
+Failed - Duration: XXX seconds [5 found/0 skipped/13 errors]
 
 EOF
   } else {
@@ -719,10 +734,10 @@ Adding 18 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/deployme
   [ 1/18] fixed/ca X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... exists!
   [ 2/18] fixed/server X509 certificate - signed by 'fixed/ca' ... exists!
   [ 3/18] haproxy/ca X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... exists!
-  [ 4/18] haproxy/ssl X509 certificate - signed by 'haproxy/ca' ... exists!
+  [ 4/18] haproxy/ssl X509 certificate - signed by 'haproxy/ca' ... done.
   [ 5/18] top-level/top X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... done.
   [ 6/18] secondary/ca X509 certificate - CA, signed by 'top-level/top' ... exists!
-  [ 7/18] secondary/server X509 certificate - signed by 'secondary/ca' ... exists!
+  [ 7/18] secondary/server X509 certificate - signed by 'secondary/ca' ... done.
   [ 8/18] top-level/server X509 certificate - signed by 'top-level/top' ... done.
   [ 9/18] openVPN/certs/root X509 certificate - CA, explicitly self-signed ... done.
   [10/18] openVPN/certs/server X509 certificate - signed by 'openVPN/certs/root' ... done.
@@ -734,7 +749,7 @@ Adding 18 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/deployme
   [16/18] rsa-default RSA public/private keypair - 2048 bits ... done.
   [17/18] ssh SSH public/private keypair - 1024 bits ... exists!
   [18/18] ssh-default SSH public/private keypair - 2048 bits, fixed ... done.
-Completed - Duration: XXX seconds [11 added/7 skipped/0 errors]
+Completed - Duration: XXX seconds [13 added/5 skipped/0 errors]
 
 EOF
 
@@ -766,7 +781,7 @@ EOF
 
   if ($pass && !$error) {
     $cmd->send("yes\n");
-    expect_exit $cmd, 0, "genesis rotate-secrets based on filter (anything with a t) succeeded";
+    expect_exit $cmd, 0, "genesis rotate-secrets --renew based on filter () succeeded";
     $out = $cmd->before;
     $out =~ s/\e\[2K/<clear-line>/g;
     $out =~ s/\r\n/\n/g;

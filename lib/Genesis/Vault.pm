@@ -677,7 +677,7 @@ sub parse_kit_secret_plans {
 		}
 	}
 
-	if ($opts{paths}) {
+	if ($opts{paths} && @{$opts{paths}}) {
 		my @explicit_paths;
 		my @filtered_paths;
 		my $filtered = 0;
@@ -897,8 +897,9 @@ sub _get_kit_secrets {
 								$plans->{"$path:$k"} = {
 									type      => 'provided',
 									sensitive => (defined($data->{keys}{$k}{sensitive}) ? !!$data->{keys}{$k}{sensitive} : 1),
-									multiline => (!!$data->{keys}{$k}{multiline}),
-									prompt    => $data->{keys}{$k}{prompt} || "Value for $path $k"
+									# not supported yet, but planned: multiline => (!!$data->{keys}{$k}{multiline}),
+									prompt    => $data->{keys}{$k}{prompt} || "Value for $path $k",
+									fixed     => (!!$data->{keys}{$k}{fixed})
 								};
 							}
 						} else {
