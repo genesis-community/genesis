@@ -1352,6 +1352,7 @@ sub _validate_kit_secret {
 		}
 
 		my $usage_results = _x509_key_usage($certInfo,$usage);
+		$usage_type='warn' unless ($usage_results->{found}); # no enforcement if no keys specified
 		$results{usage} = (!defined($usage_results->{extra}) && !defined($usage_results->{missing})) ? 'ok' : $usage_type;
 		my @extra_usage = @{$usage_results->{extra}||[]};
 		my @missing_usage = @{$usage_results->{missing}||[]};
@@ -1492,6 +1493,7 @@ sub _x509_key_usage {
 		chomp @keys;
 		$found{$_} = 1 for (grep {$_} map {$extendedKeyUsageLookup{$_}} @keys);
 	}
+	my @found = sort(grep {$found{$_}} CORE::keys %found);
 	return CORE::keys(%found) unless (CORE::ref($check) eq "ARRAY");
 	$found{$_}-- for uniq(@$check);
 	if ( exists($found{non_repudiation}) && exists($found{content_commitment}) &&
@@ -1506,7 +1508,8 @@ sub _x509_key_usage {
 
 	return {
 		extra =>   (@extra   ? \@extra   : undef),
-		missing => (@missing ? \@missing : undef)
+		missing => (@missing ? \@missing : undef),
+		found =>   (@found   ? \@found   : undef)
 	}
 }
 
