@@ -199,7 +199,7 @@ bosh() {
     __bail "BOSH CLI command not specified - this is a bug in Genesis, or you are running $0 outside of Genesis"
   [[ -z "${BOSH_ENVIRONMENT:-}" || -z "${BOSH_CA_CERT:-}" ]] && \
     __bail "Environment not found for BOSH Director -- please ensure you've configured your BOSH alias used by this environment"
-  [[ -n "$GENESIS_SHOW_BOSH_CMD" ]] && \
+  [[ -n "${GENESIS_SHOW_BOSH_CMD:-}" ]] && \
     describe  >&2 "#M{BOSH>} $GENESIS_BOSH_COMMAND $*"
   command ${GENESIS_BOSH_COMMAND} "$@"
   return $?
