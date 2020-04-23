@@ -64,9 +64,6 @@ sub load {
 		(my $env_name, $env_src) = $env->lookup(['genesis.env','params.env']);
 		bail("\n#R{[ERROR]} Environment file #C{$env->{file}} environment name mismatch: #C{$env_src $env_name}")
 			unless $env->{name} eq $env_name;
-		# Deferring Deprecation warning until future version
-		# error "\n#Y{[WARNING]} Environment file $env->{file} uses #C{params.env} to specify environment name.\nThis has been moved to #C{genesis.env} -- please update your file to remove this warning.\n"
-		# 	if $env_key eq 'params.env' || $env->defines('params.env');
 	}
 
 	# reconstitute our kit via top
@@ -96,8 +93,9 @@ sub load {
 
 	# Check for v2.7.0 features
 	if ($env->kit->feature_compatibility("2.7.0")) {
-		bail("#R{[ERROR]} Kit #M{%s} requires environment file to specify #m{genesis.env}\n".
-		     "        but #C{%s} is using #m%s.  Please update your environment file".
+		error("#R{[WARNING]} Kit #M{%s} requires environment file to specify #m{genesis.env}\n".
+		     "        but #C{%s} is using #m{%s}.  Please update your environment file as this\n".
+		     "will be removed in a later version of Genesis",
 		     $env->kit->id, $env->name, $env_src)
 			if ($env_src && $env_src ne 'genesis.env');
 	} else {
@@ -716,8 +714,9 @@ EOF
 	my $now = strftime("%Y-%m-%d %H:%M:%S +0000", gmtime());
 	mkfile_or_fail("$self->{__tmp}/fin.yml", 0644, <<EOF);
 ---
-name: (( concat genesis.env || params.env "-$type" ))
+name: (( concat genesis.env "-$type" ))
 genesis:
+  env:           ${\(scalar $self->lookup(['genesis.env','params.env'], $self->name))}
   secrets_path:  ${\($self->secrets_slug)}
   secrets_mount: ${\($self->secrets_mount)}
   exodus_path:   ${\($self->exodus_slug)}
