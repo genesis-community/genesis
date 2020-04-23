@@ -139,7 +139,8 @@ $ENV{GENESIS_HOME} ||= $ENV{HOME};
 my $root = "$ENV{GENESIS_HOME}/.geese";
 mkdir $root unless -d $root;
 
-$ENV{GENESIS_CALLBACK_BIN} = abs_path(__FILE__);
+use FindBin;
+$ENV{GENESIS_CALLBACK_BIN} = $FindBin::Bin.'/'.$FindBin::Script;
 
 # check the checksum to see if we should untar
 my ($fh, $want, $have) = (undef, "", "");

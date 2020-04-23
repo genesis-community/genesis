@@ -36,8 +36,10 @@ $Genesis::VERSION = "(development)";
 $Genesis::BUILD = "";
 
 our $USER_AGENT_STRING = "genesis/$Genesis::VERSION";
-$ENV{GENESIS_CALLBACK_BIN} ||= abs_path(__FILE__);
-$ENV{GENESIS_LIB} ||= "$ENV{HOME}/.geese/lib";
+
+use FindBin;
+$ENV{GENESIS_CALLBACK_BIN} ||= $FindBin::Bin.'/'.$FindBin::Script;
+$ENV{GENESIS_LIB} ||= $FindBin::Bin.'/lib';
 $ENV{HTTPS_PROXY}=$ENV{BOSH_ALL_PROXY} if ($ENV{BOSH_ALL_PROXY});
 
 my ($COMMAND, %RUN, %USAGE, %PROPS);

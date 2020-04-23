@@ -331,7 +331,7 @@ sub embed {
 	debug("embedding `genesis' binary installed at $bin...");
 
 	$self->mkdir(".genesis/bin");
-	copy_or_fail($bin, $self->path(".genesis/bin/genesis"));
+	copy_or_fail(Cwd::abs_path($bin), $self->path(".genesis/bin/genesis"));
 	chmod_or_fail(0755, $self->path(".genesis/bin/genesis"));
 	return 1;
 }

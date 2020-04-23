@@ -673,7 +673,7 @@ sub humanize_bin {
 	chomp(my $path_bin = `which $bin`);
 	debug "bin:       %s\npath_bin:  %s\nhumanized: %s",
 	       $bin,          $path_bin,     humanize_path($ENV{GENESIS_CALLBACK_BIN});
-	return $bin if ($path_bin eq $ENV{GENESIS_CALLBACK_BIN});
+	return $bin if ($path_bin && Cwd::abs_path($path_bin) eq Cwd::abs_path($ENV{GENESIS_CALLBACK_BIN}));
 	return humanize_path($ENV{GENESIS_CALLBACK_BIN});
 }
 
