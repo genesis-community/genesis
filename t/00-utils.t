@@ -14,7 +14,7 @@ use Time::Piece;
 
 use_ok 'Genesis';
 use Cwd ();
-
+my $start_dir = Cwd::getcwd;
 subtest 'bug reporting utilities' => sub {
 	local $Genesis::VERSION = '2.6.0';
 	throws_ok { bug("an example bug"); } qr{
@@ -225,6 +225,7 @@ subtest 'fs utilities' => sub {
 	dies_ok { symlink_or_fail("$tmp/e/no/ent", "$tmp/void") }
 		"symlink_or_fail should fail if it cannot succeed";
 
+	chdir $tmp;
 	my $here = Cwd::getcwd;
 	chdir $here; lives_ok { chdir_or_fail("$tmp/dir"); }  "chdir_or_fail(dir) should not fail";
 	chdir $here; dies_ok  { chdir_or_fail("$tmp/file"); } "chdir_or_fail(file) should fail";
@@ -331,5 +332,5 @@ subtest 'fuzzy time' => sub {
 		"can change input and output format of strfuzzytime.";
 	
 };
-
+chdir $start_dir;
 done_testing;
