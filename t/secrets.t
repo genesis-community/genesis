@@ -102,16 +102,15 @@ Validating 18 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/depl
           [✔ ] Signed by /secret/genesis-2.7.0/root_ca
           [✔ ] Valid: expires in 1825 days (<timestamp>)
           [✔ ] Modulus Agreement
-          [✔ ] Subject Name 'ca.n<random>.fixed'
-          [✔ ] Subject Alt Names: ca.n<random>.fixed
           [✔ ] Default CA key usage: server_auth, client_auth, crl_sign, key_cert_sign
 
   [ 2/18] fixed/server X509 certificate - signed by 'fixed/ca' ... valid.
+          [✔ ] Not a CA Certificate
           [✔ ] Signed by fixed/ca
           [✔ ] Valid: expires in 90 days (<timestamp>)
           [✔ ] Modulus Agreement
           [✔ ] Subject Name 'a really long name with DNS: in it'
-          [✔ ] Subject Alt Names: a really long name with DNS: in it
+          [✔ ] Subject Alt Names: 'a really long name with DNS: in it'
           [✔ ] Default key usage: server_auth, client_auth
 
   [ 3/18] haproxy/ca X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... valid.
@@ -120,15 +119,16 @@ Validating 18 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/depl
           [✔ ] Valid: expires in 365 days (<timestamp>)
           [✔ ] Modulus Agreement
           [✔ ] Subject Name 'haProxyCA'
-          [✔ ] Subject Alt Names: haProxyCA
+          [✔ ] Subject Alt Names: 'haProxyCA'
           [✔ ] Default CA key usage: server_auth, client_auth, crl_sign, key_cert_sign
 
   [ 4/18] haproxy/ssl X509 certificate - signed by 'haproxy/ca' ... valid.
+          [✔ ] Not a CA Certificate
           [✔ ] Signed by haproxy/ca
           [✔ ] Valid: expires in 365 days (<timestamp>)
           [✔ ] Modulus Agreement
           [✔ ] Subject Name '*.demo.genesisproject.io'
-          [✔ ] Subject Alt Names: *.demo.genesisproject.io, *.system.demo.genesisproject.io, *.run.demo.genesisproject.io, *.uaa.system.demo.genesisproject.io, *.login.system.demo.genesisproject.io
+          [✔ ] Subject Alt Names: '*.demo.genesisproject.io', '*.system.demo.genesisproject.io', '*.run.demo.genesisproject.io', '*.uaa.system.demo.genesisproject.io', '*.login.system.demo.genesisproject.io'
           [✔ ] Specified key usage: client_auth, server_auth
 
   [ 5/18] top-level/top X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... valid.
@@ -136,8 +136,6 @@ Validating 18 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/depl
           [✔ ] Signed by /secret/genesis-2.7.0/root_ca
           [✔ ] Valid: expires in 1825 days (<timestamp>)
           [✔ ] Modulus Agreement
-          [✔ ] Subject Name 'ca.n<random>.top-level'
-          [✔ ] Subject Alt Names: ca.n<random>.top-level
           [✔ ] Default CA key usage: server_auth, client_auth, crl_sign, key_cert_sign
 
   [ 6/18] secondary/ca X509 certificate - CA, signed by 'top-level/top' ... valid.
@@ -146,23 +144,25 @@ Validating 18 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/depl
           [✔ ] Valid: expires in 3650 days (<timestamp>)
           [✔ ] Modulus Agreement
           [✔ ] Subject Name 'secondary.ca'
-          [✔ ] Subject Alt Names: secondary.ca
+          [✔ ] Subject Alt Names: 'secondary.ca'
           [✔ ] Default CA key usage: server_auth, client_auth, crl_sign, key_cert_sign
 
   [ 7/18] secondary/server X509 certificate - signed by 'secondary/ca' ... valid.
+          [✔ ] Not a CA Certificate
           [✔ ] Signed by secondary/ca
           [✔ ] Valid: expires in 365 days (<timestamp>)
           [✔ ] Modulus Agreement
           [✔ ] Subject Name 'secondary.server'
-          [✔ ] Subject Alt Names: secondary.server
+          [✔ ] Subject Alt Names: 'secondary.server'
           [✔ ] Specified key usage: client_auth, server_auth
 
   [ 8/18] top-level/server X509 certificate - signed by 'top-level/top' ... valid.
+          [✔ ] Not a CA Certificate
           [✔ ] Signed by top-level/top
           [✔ ] Valid: expires in 180 days (<timestamp>)
           [✔ ] Modulus Agreement
           [✔ ] Subject Name 'server.example.com'
-          [✔ ] Subject Alt Names: server.example.com, system.demo.genesisproject.io, *.server.example.com, *.system.demo.genesisproject.io, 10.10.10.10
+          [✔ ] Subject Alt Names: 'server.example.com', 'system.demo.genesisproject.io', '10.10.10.10', '*.server.example.com', '*.system.demo.genesisproject.io'
           [✔ ] Default key usage: server_auth, client_auth
 
   [ 9/18] openVPN/certs/root X509 certificate - CA, explicitly self-signed ... valid.
@@ -171,15 +171,16 @@ Validating 18 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/depl
           [✔ ] Valid: expires in 1825 days (<timestamp>)
           [✔ ] Modulus Agreement
           [✔ ] Subject Name 'ca.openvpn'
-          [✔ ] Subject Alt Names: ca.openvpn
+          [✔ ] Subject Alt Names: 'ca.openvpn'
           [✔ ] Specified key usage: crl_sign, key_cert_sign
 
   [10/18] openVPN/certs/server X509 certificate - signed by 'openVPN/certs/root' ... valid.
+          [✔ ] Not a CA Certificate
           [✔ ] Signed by openVPN/certs/root
           [✔ ] Valid: expires in 180 days (<timestamp>)
           [✔ ] Modulus Agreement
           [✔ ] Subject Name 'server.openvpn'
-          [✔ ] Subject Alt Names: server.openvpn
+          [✔ ] Subject Alt Names: 'server.openvpn'
           [✔ ] Specified key usage: server_auth, digital_signature, key_encipherment
 
   [11/18] passwords:alt random password - 32 bytes ... valid.
@@ -200,14 +201,14 @@ Validating 18 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/depl
   [15/18] rsa RSA public/private keypair - 4096 bits, fixed ... valid.
           [✔ ] Valid private key
           [✔ ] Valid public key
-          [✔ ] 4096 bit
           [✔ ] Public/Private key agreement
+          [✔ ] 4096 bit
 
   [16/18] rsa-default RSA public/private keypair - 2048 bits ... valid.
           [✔ ] Valid private key
           [✔ ] Valid public key
-          [✔ ] 2048 bit
           [✔ ] Public/Private key agreement
+          [✔ ] 2048 bit
 
   [17/18] ssh SSH public/private keypair - 1024 bits ... valid.
           [✔ ] Valid private key
@@ -299,16 +300,15 @@ Validating 18 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/depl
           [✔ ] Signed by /secret/genesis-2.7.0/root_ca
           [✔ ] Valid: expires in 1825 days (<timestamp>)
           [✔ ] Modulus Agreement
-          [✔ ] Subject Name 'ca.n<random>.fixed'
-          [✔ ] Subject Alt Names: ca.n<random>.fixed
           [✔ ] Default CA key usage: server_auth, client_auth, crl_sign, key_cert_sign
 
   [ 2/18] fixed/server X509 certificate - signed by 'fixed/ca' ... valid.
+          [✔ ] Not a CA Certificate
           [✔ ] Signed by fixed/ca
           [✔ ] Valid: expires in 90 days (<timestamp>)
           [✔ ] Modulus Agreement
           [✔ ] Subject Name 'a really long name with DNS: in it'
-          [✔ ] Subject Alt Names: a really long name with DNS: in it
+          [✔ ] Subject Alt Names: 'a really long name with DNS: in it'
           [✔ ] Default key usage: server_auth, client_auth
 
   [ 3/18] haproxy/ca X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... valid.
@@ -317,15 +317,16 @@ Validating 18 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/depl
           [✔ ] Valid: expires in 365 days (<timestamp>)
           [✔ ] Modulus Agreement
           [✔ ] Subject Name 'haProxyCA'
-          [✔ ] Subject Alt Names: haProxyCA
+          [✔ ] Subject Alt Names: 'haProxyCA'
           [✔ ] Default CA key usage: server_auth, client_auth, crl_sign, key_cert_sign
 
-  [ 4/18] haproxy/ssl X509 certificate - signed by 'haproxy/ca' ... failed!
+  [ 4/18] haproxy/ssl X509 certificate - signed by 'haproxy/ca' ... invalid!
+          [✔ ] Not a CA Certificate
           [✘ ] Signed by haproxy/ca
           [✔ ] Valid: expires in 365 days (<timestamp>)
           [✔ ] Modulus Agreement
           [✔ ] Subject Name '*.demo.genesisproject.io'
-          [✔ ] Subject Alt Names: *.demo.genesisproject.io, *.system.demo.genesisproject.io, *.run.demo.genesisproject.io, *.uaa.system.demo.genesisproject.io, *.login.system.demo.genesisproject.io
+          [✔ ] Subject Alt Names: '*.demo.genesisproject.io', '*.system.demo.genesisproject.io', '*.run.demo.genesisproject.io', '*.uaa.system.demo.genesisproject.io', '*.login.system.demo.genesisproject.io'
           [✔ ] Specified key usage: client_auth, server_auth
 
   [ 5/18] top-level/top X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... valid.
@@ -333,8 +334,6 @@ Validating 18 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/depl
           [✔ ] Signed by /secret/genesis-2.7.0/root_ca
           [✔ ] Valid: expires in 1825 days (<timestamp>)
           [✔ ] Modulus Agreement
-          [✔ ] Subject Name 'ca.n<random>.top-level'
-          [✔ ] Subject Alt Names: ca.n<random>.top-level
           [✔ ] Default CA key usage: server_auth, client_auth, crl_sign, key_cert_sign
 
   [ 6/18] secondary/ca X509 certificate - CA, signed by 'top-level/top' ... valid.
@@ -343,23 +342,25 @@ Validating 18 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/depl
           [✔ ] Valid: expires in 3650 days (<timestamp>)
           [✔ ] Modulus Agreement
           [✔ ] Subject Name 'secondary.ca'
-          [✔ ] Subject Alt Names: secondary.ca
+          [✔ ] Subject Alt Names: 'secondary.ca'
           [✔ ] Default CA key usage: server_auth, client_auth, crl_sign, key_cert_sign
 
-  [ 7/18] secondary/server X509 certificate - signed by 'secondary/ca' ... failed!
+  [ 7/18] secondary/server X509 certificate - signed by 'secondary/ca' ... invalid!
+          [✔ ] Not a CA Certificate
           [✘ ] Signed by secondary/ca
           [✔ ] Valid: expires in 365 days (<timestamp>)
           [✔ ] Modulus Agreement
           [✔ ] Subject Name 'secondary.server'
-          [✔ ] Subject Alt Names: secondary.server
+          [✔ ] Subject Alt Names: 'secondary.server'
           [✔ ] Specified key usage: client_auth, server_auth
 
   [ 8/18] top-level/server X509 certificate - signed by 'top-level/top' ... valid.
+          [✔ ] Not a CA Certificate
           [✔ ] Signed by top-level/top
           [✔ ] Valid: expires in 180 days (<timestamp>)
           [✔ ] Modulus Agreement
           [✔ ] Subject Name 'server.example.com'
-          [✔ ] Subject Alt Names: server.example.com, system.demo.genesisproject.io, *.server.example.com, *.system.demo.genesisproject.io, 10.10.10.10
+          [✔ ] Subject Alt Names: 'server.example.com', 'system.demo.genesisproject.io', '10.10.10.10', '*.server.example.com', '*.system.demo.genesisproject.io'
           [✔ ] Default key usage: server_auth, client_auth
 
   [ 9/18] openVPN/certs/root X509 certificate - CA, explicitly self-signed ... valid.
@@ -368,15 +369,16 @@ Validating 18 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/depl
           [✔ ] Valid: expires in 1825 days (<timestamp>)
           [✔ ] Modulus Agreement
           [✔ ] Subject Name 'ca.openvpn'
-          [✔ ] Subject Alt Names: ca.openvpn
+          [✔ ] Subject Alt Names: 'ca.openvpn'
           [✔ ] Specified key usage: crl_sign, key_cert_sign
 
   [10/18] openVPN/certs/server X509 certificate - signed by 'openVPN/certs/root' ... valid.
+          [✔ ] Not a CA Certificate
           [✔ ] Signed by openVPN/certs/root
           [✔ ] Valid: expires in 180 days (<timestamp>)
           [✔ ] Modulus Agreement
           [✔ ] Subject Name 'server.openvpn'
-          [✔ ] Subject Alt Names: server.openvpn
+          [✔ ] Subject Alt Names: 'server.openvpn'
           [✔ ] Specified key usage: server_auth, digital_signature, key_encipherment
 
   [11/18] passwords:alt random password - 32 bytes ... valid.
@@ -397,14 +399,14 @@ Validating 18 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/depl
   [15/18] rsa RSA public/private keypair - 4096 bits, fixed ... valid.
           [✔ ] Valid private key
           [✔ ] Valid public key
-          [✔ ] 4096 bit
           [✔ ] Public/Private key agreement
+          [✔ ] 4096 bit
 
   [16/18] rsa-default RSA public/private keypair - 2048 bits ... valid.
           [✔ ] Valid private key
           [✔ ] Valid public key
-          [✔ ] 2048 bit
           [✔ ] Public/Private key agreement
+          [✔ ] 2048 bit
 
   [17/18] ssh SSH public/private keypair - 1024 bits ... valid.
           [✔ ] Valid private key
@@ -432,15 +434,15 @@ EOF
 
 	$cmd = Expect->new();
 	$cmd->log_stdout(0);
-	$cmd->spawn("genesis rotate-secrets $env_name --invalid ");
+	$cmd->spawn("genesis rotate-secrets $env_name --problematic ");
 	(undef, my $error, undef, $out) = $cmd->expect(300,"Type 'yes' to recreate these secrets >");
 
-  is($error, undef, "No error or timeout encountered waiting to be asked to recreate secrets");
+  is($error, undef, "No error or timeout encountered waiting to be asked to recreate problematic secrets");
 	$out =~ s/\e\[2K/<clear-line>/g;
 	$out =~ s/\r\n/\n/g;
 	$out =~ s/\r/<cr>\n/g;
   $out =~ s/'[12]{64}'/'<[12]{64}>'/g;
-	$pass = matches_utf8 $out, <<EOF, "genesis lists the expected failed secrets to be recreated";
+	$pass = matches_utf8 $out, <<EOF, "genesis lists the expected problematic secrets to be recreated";
 Parsing kit secrets descriptions ... <cr>
 <clear-line>Retrieving all existing secrets ... <cr>
 <clear-line>
@@ -448,13 +450,13 @@ Checking for failed or missing secrets for $env_name under path '$secrets_mount$
   [ 1/18] fixed/ca X509 certificate ... <cr>
 <clear-line>  [ 2/18] fixed/server X509 certificate ... <cr>
 <clear-line>  [ 3/18] haproxy/ca X509 certificate ... <cr>
-<clear-line>  [ 4/18] haproxy/ssl X509 certificate ... failed!
+<clear-line>  [ 4/18] haproxy/ssl X509 certificate ... invalid!
           [✘ ] Signed by haproxy/ca
 
 <cr>
 <clear-line>  [ 5/18] top-level/top X509 certificate ... <cr>
 <clear-line>  [ 6/18] secondary/ca X509 certificate ... <cr>
-<clear-line>  [ 7/18] secondary/server X509 certificate ... failed!
+<clear-line>  [ 7/18] secondary/server X509 certificate ... invalid!
           [✘ ] Signed by secondary/ca
 
 <cr>
@@ -464,18 +466,18 @@ Checking for failed or missing secrets for $env_name under path '$secrets_mount$
 <clear-line>  [11/18] passwords:alt random password ... <cr>
 <clear-line>  [12/18] passwords:permanent random password ... <cr>
 <clear-line>  [13/18] passwords:uncrypted random password ... <cr>
-<clear-line>  [14/18] passwords:word random password ... failed!
-          [✘ ] Only uses characters '01' (found invalid characters in '<[12]{64}>')
+<clear-line>  [14/18] passwords:word random password ... warning!
+          [⚠ ] Only uses characters '01' (found invalid characters in '<[12]{64}>')
 
 <cr>
-<clear-line>  [15/18] rsa RSA public/private keypair ... failed!
+<clear-line>  [15/18] rsa RSA public/private keypair ... invalid!
           [✘ ] Valid public key
 
 <cr>
 <clear-line>  [16/18] rsa-default RSA public/private keypair ... <cr>
 <clear-line>  [17/18] ssh SSH public/private keypair ... <cr>
 <clear-line>  [18/18] ssh-default SSH public/private keypair ... <cr>
-<clear-line>Found 4 failed secrets
+<clear-line>Found 4 invalid or problematic secrets
 <cr>
 <clear-line>
 [WARNING] The following secrets will be recreated under path '$secrets_mount$secrets_path/':
@@ -538,18 +540,18 @@ Validating 18 secrets for $env_name under path '$secrets_mount$secrets_path/':
 <clear-line>  [11/18] passwords:alt random password ... <cr>
 <clear-line>  [12/18] passwords:permanent random password ... <cr>
 <clear-line>  [13/18] passwords:uncrypted random password ... <cr>
-<clear-line>  [14/18] passwords:word random password ... failed!
-          [-] Only uses characters '01' (found invalid characters in '<[12]{64}>')
+<clear-line>  [14/18] passwords:word random password ... warning!
+          [!] Only uses characters '01' (found invalid characters in '<[12]{64}>')
 
 <cr>
-<clear-line>  [15/18] rsa RSA public/private keypair ... failed!
+<clear-line>  [15/18] rsa RSA public/private keypair ... invalid!
           [-] Valid public key
 
 <cr>
 <clear-line>  [16/18] rsa-default RSA public/private keypair ... <cr>
 <clear-line>  [17/18] ssh SSH public/private keypair ... <cr>
 <clear-line>  [18/18] ssh-default SSH public/private keypair ... <cr>
-<clear-line>Failed - Duration: XXX seconds [16 validated/0 skipped/2 errors]
+<clear-line>Failed - Duration: XXX seconds [16 validated/0 skipped/1 errors/1 warnings]
 
 EOF
     ($secrets_new, $err2) = $env->vault->all_secrets_for($env);
@@ -581,7 +583,7 @@ EOF
   # Feature: Remove secrets
   # Feature: Remove secrets - can remove fixed secrets
   # Feature: Remove secrets - can remove failed secrets
-  ($pass,$rc,$out) = runs_ok "GENESIS_NO_UTF8=1 genesis remove-secrets $env_name -y -I", "Remove all invalid secrets";
+  ($pass,$rc,$out) = runs_ok "GENESIS_NO_UTF8=1 genesis remove-secrets $env_name -y -P", "Remove all invalid secrets";
   $out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds/$1 XXX seconds/g;
   $out =~ s/'[12]{64}'/'<[12]{64}>'/g;
   eq_or_diff $out, <<EOF, "genesis add-secrets reports existing secrets";
@@ -602,18 +604,18 @@ Checking for failed secrets for $env_name under path '$secrets_mount$secrets_pat
   [11/18] passwords:alt random password - 32 bytes ... valid.
   [12/18] passwords:permanent random password - 128 bytes, fixed ... valid.
   [13/18] passwords:uncrypted random password - 1024 bytes ... valid.
-  [14/18] passwords:word random password - 64 bytes, fixed ... failed!
+  [14/18] passwords:word random password - 64 bytes, fixed ... warning!
           [+] 64 characters
-          [-] Only uses characters '01' (found invalid characters in '<[12]{64}>')
+          [!] Only uses characters '01' (found invalid characters in '<[12]{64}>')
 
-  [15/18] rsa RSA public/private keypair - 4096 bits, fixed ... failed!
+  [15/18] rsa RSA public/private keypair - 4096 bits, fixed ... invalid!
           [+] Valid private key
           [-] Valid public key
 
   [16/18] rsa-default RSA public/private keypair - 2048 bits ... valid.
   [17/18] ssh SSH public/private keypair - 1024 bits ... valid.
   [18/18] ssh-default SSH public/private keypair - 2048 bits, fixed ... valid.
-Found 2 failed secrets
+Found 2 invalid or problematic secrets
 
 Removing 2 secrets for $env_name under path '$secrets_mount$secrets_path/':
   [1/2] passwords:word random password - 64 bytes, fixed ... done.
@@ -1023,7 +1025,7 @@ EOF
 	runs_ok("safe set $v/ssh public=\"\$(safe get $v/ssh-default:public)\"", "copied ssh-defaul:public to ssh:public for testing");
 	runs_ok("safe rm -f $v/rsa-default:private", "removed rsa-default:private for testing");
 	runs_ok("safe rm -f $v/top-level/top:certificate", "removed top-level/top:certificate for testing");
-  runs_ok("safe gen -l 64 -p 12 $v/passwords:word", "regenerated passwords:word for testing");
+  runs_ok("safe gen -l 46 -p 12 $v/passwords:word", "regenerated passwords:word for testing");
 	runs_ok("safe ssh 1024 $v/rsa", "regenerated rsa for testing");
 
 	$out = combined_from {
@@ -1037,8 +1039,9 @@ EOF
 	$out =~ s/\r\n/\n/g;
 	$out =~ s/\r/<cr>\n/g;
 	$out =~ s/ca\.n\d{9}\./ca.n<random>./g;
+	$out =~ s/expires in (\d+) days \(([^\)]+)\)/expires in $1 days (<timestamp>)/g;
   $out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds/$1 XXX seconds/g;
-	$out =~ s/'[12]{64}'/'<[12]{64}>'/g;
+	$out =~ s/'[12]{46}'/'<[12]{46}>'/g;
 	matches_utf8 $out,<<EOF, "genesis check-secrets after modifiction to cause failures";
 Parsing kit secrets descriptions ... <cr>
 <clear-line>Retrieving all existing secrets ... <cr>
@@ -1050,10 +1053,11 @@ Validating 18 secrets for $env_name under path '$secrets_mount$secrets_path/':
 
 <cr>
 <clear-line>  [ 3/18] haproxy/ca X509 certificate ... <cr>
-<clear-line>  [ 4/18] haproxy/ssl X509 certificate ... failed!
+<clear-line>  [ 4/18] haproxy/ssl X509 certificate ... invalid!
           [✘ ] Signed by haproxy/ca
-          [✘ ] Subject Name '*.live.genesisproject.io' (found '*.run.live.genesisproject.io')
-          [✘ ] Subject Alt Names (missing: *.login.system.live.genesisproject.io, *.run.live.genesisproject.io, *.system.live.genesisproject.io, *.uaa.system.live.genesisproject.io; extra: *.live.genesisproject.io, something)
+          [⚠ ] Valid: expires in 18 days (<timestamp>)
+          [⚠ ] Subject Name '*.live.genesisproject.io' (found '*.run.live.genesisproject.io')
+          [⚠ ] Subject Alt Names (missing: *.login.system.live.genesisproject.io, *.system.live.genesisproject.io, *.uaa.system.live.genesisproject.io; extra: something)
           [✘ ] Specified key usage (missing: client_auth; extra: timestamping)
 
 <cr>
@@ -1061,12 +1065,12 @@ Validating 18 secrets for $env_name under path '$secrets_mount$secrets_path/':
           [✘ ] missing key ':certificate'
 
 <cr>
-<clear-line>  [ 6/18] secondary/ca X509 certificate ... failed!
+<clear-line>  [ 6/18] secondary/ca X509 certificate ... invalid!
           [✘ ] Signed by top-level/top (specified CA not found - found signed by CN 'ca.n<random>.top-level')
 
 <cr>
 <clear-line>  [ 7/18] secondary/server X509 certificate ... <cr>
-<clear-line>  [ 8/18] top-level/server X509 certificate ... failed!
+<clear-line>  [ 8/18] top-level/server X509 certificate ... invalid!
           [✘ ] Signed by top-level/top (specified CA not found - found signed by CN 'ca.n<random>.top-level')
 
 <cr>
@@ -1075,11 +1079,12 @@ Validating 18 secrets for $env_name under path '$secrets_mount$secrets_path/':
 <clear-line>  [11/18] passwords:alt random password ... <cr>
 <clear-line>  [12/18] passwords:permanent random password ... <cr>
 <clear-line>  [13/18] passwords:uncrypted random password ... <cr>
-<clear-line>  [14/18] passwords:word random password ... failed!
-          [✘ ] Only uses characters '01' (found invalid characters in '<[12]{64}>')
+<clear-line>  [14/18] passwords:word random password ... warning!
+          [⚠ ] 64 characters - got 46
+          [⚠ ] Only uses characters '01' (found invalid characters in '<[12]{46}>')
 
 <cr>
-<clear-line>  [15/18] rsa RSA public/private keypair ... failed!
+<clear-line>  [15/18] rsa RSA public/private keypair ... invalid!
           [✘ ] Valid public key
 
 <cr>
@@ -1087,13 +1092,13 @@ Validating 18 secrets for $env_name under path '$secrets_mount$secrets_path/':
           [✘ ] missing key ':private'
 
 <cr>
-<clear-line>  [17/18] ssh SSH public/private keypair ... failed!
+<clear-line>  [17/18] ssh SSH public/private keypair ... invalid!
           [✘ ] Public/Private key Agreement
-          [✘ ] 1024 bits ( found 2048 bits)
+          [⚠ ] 1024 bits (found 2048 bits)
 
 <cr>
 <clear-line>  [18/18] ssh-default SSH public/private keypair ... <cr>
-<clear-line>Failed - Duration: XXX seconds [9 validated/0 skipped/8 errors/1 warnings]
+<clear-line>Failed - Duration: XXX seconds [9 validated/0 skipped/7 errors/2 warnings]
 
 EOF
 

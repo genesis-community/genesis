@@ -1122,7 +1122,8 @@ sub _secret_processing_updates_callback {
 	(my $actioning = $action) =~ s/e?$/ing/;
 
 	if ($state eq 'done-item') {
-		my $map = { error => "#R{failed!}",
+		my $map = { 'validate/error' => "#R{invalid!}",
+		            error => "#R{failed!}",
 		            'check/ok' =>  "#G{found.}",
 		            'validate/ok' =>  "#G{valid.}",
 		            'validate/warn' => "#Y{warning!}",
@@ -1203,6 +1204,8 @@ sub _secret_processing_updates_callback {
 			scalar(@{$self->{__secret_processing_updates_callback__items}{skipped} || []}),
 			$err_count,
 			$warn_count ? "/$warn_count warnings" : '';
+		$err_count += $warn_count
+			if (($opts->{invalid}||0) == 2 || ($opts->{validate}||0) == 2);
 		return !$err_count;
 	} elsif ($state eq 'inline-prompt') {
 		die_unless_controlling_terminal "#R{[ERROR] %s", join("\n",

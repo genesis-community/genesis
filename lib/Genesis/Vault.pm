@@ -560,7 +560,7 @@ sub validate_kit_secrets {
 	for my $plan (@plans) {
 		my ($path, $label, $details) = describe_kit_secret_plan(%$plan);
 		$update->('start-item', path => $path, label => $label, details => $details);
-		my ($result, $msg) = _validate_kit_secret($action,$plan,$secret_contents,$env->secrets_base,\@plans,$opts{validate} > 1);
+		my ($result, $msg) = _validate_kit_secret($action,$plan,$secret_contents,$env->secrets_base,\@plans);
 		$update->('done-item', result => $result, msg => $msg, action => ($plan->{type} eq 'provided' ? 'check' : $action));
 	}
 	return $update->('completed');
@@ -633,15 +633,15 @@ sub _get_failed_secret_plans {
 	for my $plan (@plans) {
 		my ($path, $label, $details) = describe_kit_secret_plan(%$plan);
 		$update->('start-item', path => $path, label => $label, details => $details);
-		my ($result, $msg) = _validate_kit_secret('validate',$plan,$secret_contents,$env->secrets_base, \@plans,$include_warnings);
-		if ($result eq 'error' || ($result eq 'missing' && $scope eq 'recreate')) {
+		my ($result, $msg) = _validate_kit_secret('validate',$plan,$secret_contents,$env->secrets_base, \@plans);
+		if ($result eq 'error' || ($result eq 'warn' && $include_warnings) || ($result eq 'missing' && $scope eq 'recreate')) {
 			$update->('done-item', result => $result, action => 'validate', msg => $msg) ;
 			push @failed, $plan;
 		} else {
 			$update->('done-item', result => 'ok', action => 'validate')
 		}
 	}
-	$update->('notify', msg => sprintf("Found %s failed secrets", scalar(@failed)));
+	$update->('notify', msg => sprintf("Found %s invalid%s secrets", scalar(@failed), $include_warnings ? " or problematic" : ""));
 	return @failed;
 }
 # }}}
@@ -1197,7 +1197,7 @@ sub _validate_ssh_plan {
 # }}}
 # _validate_kit_secret - list keys expected for a given kit secret {{{
 sub _validate_kit_secret {
-	my ($scope,$plan,$secret_values,$root_path,$plans,$include_missing) = @_;
+	my ($scope,$plan,$secret_values,$root_path,$plans) = @_;
 
 	# Existance
 	my ($path,$key) = split(':', $root_path.$plan->{path});
@@ -1219,235 +1219,345 @@ sub _validate_kit_secret {
 	return ('ok') unless $scope eq 'validate';
 	return ('ok', '') if $plan->{type} eq 'provided';
 
-	my ($msg,%results);
-	if ($plan->{type} eq 'x509') {
-		my $key  = $values->{key};
-		my $cert = $values->{certificate};
-		my ($keyModulus) = run('openssl rsa -in <(echo "$1") -modulus  -noout', $key) =~ /Modulus=(\S*)/;
-		my $certInfo = run('openssl x509 -in <(echo "$1") -text -fingerprint -modulus -noout', $cert);
-		my ($issuerCN, $since, $expires, $subjectCN, $fingerprint, $modulus) =
-			$certInfo =~ /Issuer: CN\s*=\s*(\S*).*Not Before: ([^\n]*).*Not After : ([^\n]*).*Subject: CN\s*=\s*([^\r\n]+?)\s*[\r\n]+.*Fingerprint=(\S*).*Modulus=(\S*)/ms;
-		my $is_ca = $certInfo =~ /X509v3 Basic Constraints:.*(CA:TRUE).*Signature Algorithm/ms;
+	my $validate_sub=sprintf("_validate_%s_secret", $plan->{type});
+	return () unless (exists(&{$validate_sub}));
+	my ($results, @validations) = (\&{$validate_sub})->($path, $key, $plan, $secret_values, $plans, $root_path);
 
-		# CN and SANs
-		my (undef, $sanInfo) = $certInfo =~ /\n( *)X509v3 Subject Alternative Name:\s*?((?:[\n\r]+\1.*)+)/;
-		my @SANs = ($sanInfo || '') =~ /(?:IP Address|DNS):([^,\n\r]+)/g;
-		@SANs =  map {s/\s*$//; $_} @SANs;
+	my $show_all_messages = 1;
+	my %priority = ('error' => 0, 'warn' => 1, 'ok' => 2);
+	my @results_levels = sort {$priority{$a}<=>$priority{$b}} 
+	                     uniq('ok', map {$_ ? ($_ =~ /^(error|warn)$/ ? $_ : 'ok') : 'error'}
+	                                map {$_->[0]}
+	                                values %$results);
+	return (
+		$results_levels[0],
+		join("\n", map {_checkbox($_->[0]).$_->[1]}
+		           grep {$show_all_messages || $priority{$_->[0]} <= $priority{$results_levels[0]}}
+		           map {$results->{$_}}
+		           grep {exists $results->{$_}}
+		           @validations));
+}
 
-		my $cn_str = ${$plan->{names}}[0];
-		if ($cn_str) {
-			$results{cn} = $subjectCN eq $cn_str;
-			$cn_str = "'$cn_str'";
-		} else {
-			my $default_cn_re = qr/^ca\.n[0-9]{9}\.$plan->{base_path}/;
-			$results{cn} = $subjectCN =~ $default_cn_re;
-			$cn_str = $results{cn} ? "'$subjectCN'" : "matches default ca.n#########.$plan->{base_path}";
-		}
-		my (%sans,%desired_sans);
-		@sans{grep {$_ ne $subjectCN} @SANs}=();
-		@desired_sans{@{$plan->{names}}[1 .. scalar @{$plan->{names}}-1]}=();
-		my @extra_sans = sort(grep {!exists $desired_sans{$_}} CORE::keys %sans);
-		my @missing_sans = sort(grep {!exists $sans{$_}} CORE::keys %desired_sans);
-		$results{sans} = !scalar(@extra_sans) && !scalar(@missing_sans);
-		my $sans_str = " (".join('; ',(@missing_sans ? "missing: ".join(", ", @missing_sans):(), @extra_sans? "extra: ".join(", ", @extra_sans) : ())).")";
-		$sans_str = ": ".join(", ", @SANs) if $sans_str eq " ()";
+# }}}
+# _validate_x509_secret - validate an x509 secret value {{{
+sub _validate_x509_secret {
 
-		# Signage and Modulus Agreement
-		$results{is_ca} = !!$is_ca if $plan->{is_ca};
-		my ($subjectKeyID) = $certInfo =~ /X509v3 Subject Key Identifier: *[\n\r]+\s+([A-F0-9:]+)\s*$/m;
-		my ($authKeyID)    = $certInfo =~ /X509v3 Authority Key Identifier: *[\n\r]+\s+keyid:([A-F0-9:]+)\s*$/m;
-		my $signed_by_str;
-		my $self_signed = (!$plan->{signed_by} || $plan->{signed_by} eq $plan->{path});
-		if ($self_signed) {
-			$results{self_signed} = ($subjectKeyID && $authKeyID)
-				? $subjectKeyID eq $authKeyID
-				: $issuerCN eq $subjectCN;
-		} else {
-			my $signer_path = $plan->{signed_by_abs_path} ? $plan->{signed_by} : $root_path.$plan->{signed_by};
-			$signer_path =~ s#^/##;
-			my $ca_cert = $secret_values->{$signer_path}{certificate};
-			if ($ca_cert) {
-				my $caSubjectKeyID;
-				if ($authKeyID) {
-					# Try to use the subject and authority key identifiers if they exist
-					my $caInfo = run('openssl x509 -in <(echo "$1") -text -noout', $ca_cert);
-					($caSubjectKeyID) = $caInfo =~ /X509v3 Subject Key Identifier: *[\r\n]+\s+([A-F0-9:]+)\s*$/m;
+	my ($path, $path_key, $plan, $all_secrets, $all_plans, $root_path) = @_;
+	my $values = $all_secrets->{$path};
+	my %results;
+
+	# Get Cert Info
+	my $key  = $values->{key};
+	my $cert = $values->{certificate};
+	my ($keyModulus) = run('openssl rsa -in <(echo "$1") -modulus  -noout', $key) =~ /Modulus=(\S*)/;
+	my $certInfo = run('openssl x509 -in <(echo "$1") -text -fingerprint -modulus -noout', $cert);
+	my ($issuerCN, $since, $expires, $subjectCN, $fingerprint, $modulus) =
+		$certInfo =~ /Issuer: CN\s*=\s*(\S*).*Not Before: ([^\n]*).*Not After : ([^\n]*).*Subject: CN\s*=\s*([^\r\n]+?)\s*[\r\n]+.*Fingerprint=(\S*).*Modulus=(\S*)/ms;
+	my $is_ca = $certInfo =~ /X509v3 Basic Constraints:.*(CA:TRUE).*Signature Algorithm/ms;
+	my (undef, $sanInfo) = $certInfo =~ /\n( *)X509v3 Subject Alternative Name:\s*?((?:[\n\r]+\1.*)+)/;
+	my @SANs = ($sanInfo || '') =~ /(?:IP Address|DNS):([^,\n\r]+)/g;
+	@SANs =  map {s/\s*$//; $_} @SANs;
+
+	# Validate CN if kit requests on explicitly
+	my $cn_str = ${$plan->{names}}[0];
+	if ($cn_str) {
+		my $match = $subjectCN eq $cn_str;
+		$results{cn} = [
+			$match ? 'ok' : 'warn',
+			sprintf("Subject Name '%s'%s", $cn_str, $match ? '' : " (found '$subjectCN')")
+		];
+	}
+
+	# Validate SAN
+	my (%sans,%desired_sans);
+	@sans{grep {@{$plan->{names}} || $_ ne $subjectCN} @SANs}=();
+	@desired_sans{@{$plan->{names}}}=();
+	my @extra_sans = sort(grep {!exists $desired_sans{$_}} CORE::keys %sans);
+	my @missing_sans = sort(grep {!exists $sans{$_}} CORE::keys %desired_sans);
+	if (!scalar(@extra_sans) && !scalar(@missing_sans)) {
+		$results{san} = ['ok', 'Subject Alt Names: '.(@SANs ? join(", ",map {"'$_'"} @{$plan->{names}}) : '#i{none}')]
+			if scalar(%sans);
+	} else {
+		$results{san} = ['warn', 'Subject Alt Names ('. join('; ',(
+		  @missing_sans ? "missing: ".join(", ", @missing_sans):(),
+		  @extra_sans? "extra: ".join(", ", @extra_sans) : ()
+		)).")"];
+	}
+
+	# Signage and Modulus Agreement
+	if ($plan->{is_ca}) {
+		$results{is_ca} = [ !!$is_ca, "CA Certificate" ];
+	} else {
+		$results{is_ca} = [ !$is_ca ? 'ok' : 'warn', 'Not a CA Certificate' ];
+	}
+
+	my ($subjectKeyID) = $certInfo =~ /X509v3 Subject Key Identifier: *[\n\r]+\s+([A-F0-9:]+)\s*$/m;
+	my ($authKeyID)    = $certInfo =~ /X509v3 Authority Key Identifier: *[\n\r]+\s+keyid:([A-F0-9:]+)\s*$/m;
+	my $signed_by_str;
+	my $self_signed = (!$plan->{signed_by} || $plan->{signed_by} eq $plan->{path});
+	if ($self_signed) {
+		$results{self_signed} = [
+			($subjectKeyID && $authKeyID)	? $subjectKeyID eq $authKeyID : $issuerCN eq $subjectCN,
+			"Self-Signed"
+		];
+	} else {
+		my $signer_path = $plan->{signed_by_abs_path} ? $plan->{signed_by} : $root_path.$plan->{signed_by};
+		$signer_path =~ s#^/##;
+		my $ca_cert = $all_secrets->{$signer_path}{certificate};
+		if ($ca_cert) {
+			my $caSubjectKeyID;
+			if ($authKeyID) {
+				# Try to use the subject and authority key identifiers if they exist
+				my $caInfo = run('openssl x509 -in <(echo "$1") -text -noout', $ca_cert);
+				($caSubjectKeyID) = $caInfo =~ /X509v3 Subject Key Identifier: *[\r\n]+\s+([A-F0-9:]+)\s*$/m;
+			}
+			if ($caSubjectKeyID) {
+				$results{signed} = [
+					$authKeyID eq $caSubjectKeyID,
+					"Signed by ".$plan->{signed_by}
+				];
+			} else {
+				# Otherwise try to validate the full chain if we have access all the certs
+				my $ca_plan;
+				my $full_cert_chain='';
+				while (1) {
+					last unless $signer_path && defined($all_secrets->{$signer_path});
+					$full_cert_chain =  $all_secrets->{$signer_path}{certificate}.$full_cert_chain;
+					($ca_plan) = grep {$root_path.$_->{path} eq '/'.$signer_path} @$all_plans;
+					last unless ($ca_plan && $ca_plan->{signed_by});
+
+					($signer_path = $ca_plan->{signed_by_abs_path}
+						? $ca_plan->{signed_by}
+						: $root_path.$ca_plan->{signed_by}
+					) =~ s#^/##
 				}
-				if ($caSubjectKeyID) {
-					$results{signed} = $authKeyID eq $caSubjectKeyID;
-					$signed_by_str = '';
+
+				my $out = run(
+					'openssl verify -verbose -CAfile <(echo "$1") <(echo "$2")',
+					$full_cert_chain, $values->{certificate}
+				);
+				my $signed;
+				if ($out =~ /error \d+ at \d+ depth lookup/) {
+					#fine, we'll check via safe itself - last resort because it takes time
+					my $signer_path = $plan->{signed_by_abs_path} ? $plan->{signed_by} : $root_path.$plan->{signed_by};
+					$signer_path =~ s#^/##;
+					my ($safe_out,$rc) = Genesis::Vault::current->query('x509','validate','--signed-by', $signer_path, $root_path.$plan->{path});
+					$signed = $rc == 0 && $safe_out =~ qr/$plan->{path} checks out/;
 				} else {
-					# Otherwise try to validate the full chain if we have access all the certs
-					my $ca_plan;
-					my $full_cert_chain='';
-					while (1) {
-						last unless $signer_path && defined($secret_values->{$signer_path});
-						$full_cert_chain =  $secret_values->{$signer_path}{certificate}.$full_cert_chain;
-						($ca_plan) = grep {$root_path.$_->{path} eq '/'.$signer_path} @$plans;
-						last unless ($ca_plan && $ca_plan->{signed_by});
-
-						($signer_path = $ca_plan->{signed_by_abs_path}
-							? $ca_plan->{signed_by}
-							: $root_path.$ca_plan->{signed_by}
-						) =~ s#^/##
-					}
-
-					my $out = run(
-						'openssl verify -verbose -CAfile <(echo "$1") <(echo "$2")',
-						$full_cert_chain, $values->{certificate}
-					);
-					if ($out =~ /error \d+ at \d+ depth lookup/) {
-						#fine, we'll check via safe itself - last resort because it takes time
-						my $signer_path = $plan->{signed_by_abs_path} ? $plan->{signed_by} : $root_path.$plan->{signed_by};
-						$signer_path =~ s#^/##;
-						my ($safe_out,$rc) = Genesis::Vault::current->query('x509','validate','--signed-by', $signer_path, $root_path.$plan->{path});
-						$results{signed} = $rc == 0 && $safe_out =~ qr/$plan->{path} checks out/;
-					} else {
-						$results{signed} = $out =~ /: OK$/;
-					}
-					$signed_by_str = $results{signed} ? '' :
-						$subjectCN eq $issuerCN ? " (maybe self-signed?)" : "  (signed by CN '$issuerCN')"
+					$signed = $out =~ /: OK$/;
 				}
-			} else {
-				$results{signed} = 0;
-				$signed_by_str = " (specified CA not found - ".
-					($subjectCN eq $issuerCN ?
-				               "maybe self-signed?)" : "found signed by CN '$issuerCN')");
-			}
-		}
-		$results{modulus_agreement} = $modulus eq $keyModulus;
-
-		my $now_t = Time::Piece->new();
-		my $since_t   = Time::Piece->strptime($since,   "%b %d %H:%M:%S %Y %Z");
-		my $expires_t = Time::Piece->strptime($expires, "%b %d %H:%M:%S %Y %Z");
-		my $valid_str;
-		if ($since_t < $now_t) {
-			if ($now_t < $expires_t) {
-				$valid_str = sprintf("expires in %.0f days (%s)",  ($expires_t - $now_t)->days(), $expires);
-			} else {
-				$valid_str = sprintf("expired %.0f days ago (%s)", ($now_t - $expires_t)->days(), $expires);
+				$results{signed} = [
+					$signed,
+					sprintf("Signed by %s%s", $plan->{signed_by}, $signed ? '' : (
+						$subjectCN eq $issuerCN ? " (maybe self-signed?)" : "  (signed by CN '$issuerCN')"
+					))
+				];
 			}
 		} else {
-			$valid_str = "not yet valid (starts $since)";
+			$results{signed} = [
+				'error',
+				sprintf("Signed by %s (specified CA not found - %s)", $plan->{signed_by},
+					($subjectCN eq $issuerCN ? "maybe self-signed?" : "found signed by CN '$issuerCN'")
+				)
+			];
 		}
-		$results{valid} = $valid_str =~ /^expires/;
+	}
 
+	$results{modulus_agreement} = [$modulus eq $keyModulus, "Modulus Agreement"];
 
-		my ($usage, $usage_str);
-		my $usage_type = 'error';
-		if (defined($plan->{usage})) {
-			$usage = ($plan->{usage});
-			$usage_str = "Specified key usage";
-			if (!scalar @$usage) {
-				$usage_str = "No key usage";
-			}
-		} elsif ($plan->{is_ca}) {
-			$usage_type = 'warn';
-			$usage = [qw/server_auth client_auth crl_sign key_cert_sign/];
-			$usage_str = "Default CA key usage";
+	# Validate TTL
+	my $now_t = Time::Piece->new();
+	my $since_t   = Time::Piece->strptime($since,   "%b %d %H:%M:%S %Y %Z");
+	my $expires_t = Time::Piece->strptime($expires, "%b %d %H:%M:%S %Y %Z");
+	my $valid_str;
+	my $days_left;
+	if ($since_t < $now_t) {
+		if ($now_t < $expires_t) {
+			$days_left = ($expires_t - $now_t)->days();
+			$valid_str = sprintf("expires in %.0f days (%s)",  ($expires_t - $now_t)->days(), $expires);
 		} else {
-			$usage_type = 'warn';
-			$usage = [qw/server_auth client_auth/];
-			$usage_str = "Default key usage";
+			$valid_str = sprintf("expired %.0f days ago (%s)", ($now_t - $expires_t)->days(), $expires);
 		}
+	} else {
+		$valid_str = "not yet valid (starts $since)";
+	}
+	$results{valid} = [$valid_str =~ /^expires/ ? ($days_left > 30 ? 'ok' : 'warn') : 'error', "Valid: ".$valid_str];
 
-		my $usage_results = _x509_key_usage($certInfo,$usage);
-		$usage_type='warn' unless ($usage_results->{found}); # no enforcement if no keys specified
-		$results{usage} = (!defined($usage_results->{extra}) && !defined($usage_results->{missing})) ? 'ok' : $usage_type;
+	# Validate Usage
+	my ($usage, $usage_str);
+	my $usage_type = 'warn'; # set to 'error' for mismatch enforement
+	if (defined($plan->{usage})) {
+		$usage = ($plan->{usage});
+		$usage_str = "Specified key usage";
+		if (!scalar @$usage) {
+			$usage_str = "No key usage";
+		}
+	} elsif ($plan->{is_ca}) {
+		$usage_type = 'warn';
+		$usage = [qw/server_auth client_auth crl_sign key_cert_sign/];
+		$usage_str = "Default CA key usage";
+	} else {
+		$usage_type = 'warn';
+		$usage = [qw/server_auth client_auth/];
+		$usage_str = "Default key usage";
+	}
+
+	my $usage_results = _x509_key_usage($certInfo,$usage);
+	$usage_type = 'warn' unless ($usage_results->{found}); # no enforcement if no keys specified
+	if (!defined($usage_results->{extra}) && !defined($usage_results->{missing})) {
+		$results{usage} = [
+			'ok',
+			$usage_str . (@$usage ? ": ".join(", ", @$usage) : '')
+		];
+	} else {
 		my @extra_usage = @{$usage_results->{extra}||[]};
 		my @missing_usage = @{$usage_results->{missing}||[]};
 		my $usage_err_str = " (". join('; ',(
 				@missing_usage ? "missing: ".join(", ", @missing_usage):(),
 				@extra_usage   ? "extra: "  .join(", ", @extra_usage  ):()
 		)).")";
-		if ($usage_err_str eq " ()") {
-			$usage_str .= ": ".join(", ", @$usage) if @$usage;
-		} else {
-			$usage_str .= $usage_err_str;
-		}
-
-		$msg .= sprintf("%s%sCA Certificate\n",    _checkbox($is_ca), $plan->{is_ca} ? '' : 'Not a ') if $is_ca || $plan->{is_ca};
-		$msg .= $self_signed ?
-						sprintf("%sSelf-Signed\n",         _checkbox($results{self_signed})) :
-						sprintf("%sSigned by %s%s\n",      _checkbox($results{signed}), $plan->{signed_by}, $signed_by_str);
-		$msg .= sprintf("%sValid: %s\n",           _checkbox($results{valid}), $valid_str);
-		$msg .= sprintf("%sModulus Agreement\n",   _checkbox($results{modulus_agreement}));
-		$msg .= sprintf("%sSubject Name %s%s\n",   _checkbox($results{cn}), $cn_str, $results{cn} ? '' : " (found '$subjectCN')");
-		$msg .= sprintf("%sSubject Alt Names%s\n", _checkbox($results{sans}), $sans_str);
-		$msg .= sprintf("%s%s\n",                  _checkbox($results{usage}), $usage_str);
-
-	} elsif ($plan->{type} eq 'dhparams') {
-		my $pem  = $values->{'dhparam-pem'};
-		my $pemInfo = run('openssl dhparam -in <(echo "$1") -text -check -noout', $pem);
-		my ($size) = $pemInfo =~ /DH Parameters: \((\d+) bit\)/;
-		my $pem_ok = $pemInfo =~ /DH parameters appear to be ok\./;
-		$results{size} = $size == $plan->{size};
-		$results{valid} = $pem_ok;
-		$msg .= sprintf("%sValid\n",     _checkbox($results{valid}));
-		$msg .= sprintf("%s%s bits%s\n", _checkbox($results{size}), $plan->{size}, $results{size} ? '' : " ( found $size bits)" );
-
-	} elsif ($plan->{type} eq 'ssh') {
-		my ($rendered_public,$priv_rc) = run('ssh-keygen -y -f /dev/stdin <<<"$1"', $values->{private});
-		$results{priv} = !$priv_rc;
-		$msg .= sprintf("%sValid private key\n",   _checkbox(!$priv_rc));
-		my ($pub_sig,$pub_rc) = run('ssh-keygen -B -f /dev/stdin <<<"$1"', $values->{public});
-		$results{priv} = !$pub_rc;
-		$msg .= sprintf("%sValid public key\n",    _checkbox(!$pub_rc));
-		if (!$priv_rc) {
-			my ($rendered_sig,$rendered_rc) = run('ssh-keygen -B -f /dev/stdin <<<"$1"', $rendered_public);
-			$results{agree} = $rendered_sig eq $pub_sig;
-			$msg .= sprintf("%sPublic/Private key Agreement\n",      _checkbox($results{agree}));
-		}
-		if (!$pub_rc) {
-			my ($bits) = $pub_sig =~ /^\s*([0-9]*)/;
-			$results{size} = ($bits == $plan->{size});
-			$msg .= sprintf("%s%s bits%s\n",        _checkbox($results{size}), $plan->{size}, $results{size} ? '' : " ( found $bits bits)" );
-		}
-
-	} elsif ($plan->{type} eq 'rsa') {
-		my ($priv_modulus,$priv_rc) = run('openssl rsa -noout -modulus -in <(echo "$1")', $values->{private});
-		$results{priv} = !$priv_rc;
-		$msg .= sprintf("%sValid private key\n",   _checkbox(!$priv_rc));
-		my ($pub_modulus,$pub_rc) = run('openssl rsa -noout -modulus -in <(echo "$1") -pubin', $values->{public});
-		$results{priv} = !$pub_rc;
-		$msg .= sprintf("%sValid public key\n",    _checkbox(!$pub_rc));
-		if (!$pub_rc) {
-			my ($pub_info, $pub_rc2) = run('openssl rsa -noout -text -inform PEM -in <(echo "$1") -pubin', $values->{public});
-			my ($bits) = ($pub_rc2) ? () : $pub_info =~ /Key:\s*\(([0-9]*) bit\)/;
-			$results{size} = (($bits || 0) == $plan->{size});
-			$msg .= sprintf("%s%s bit%s\n",        _checkbox($results{size}), $plan->{size},
-				$results{size} ? '' : ($bits ? " (found $bits bits)" : " (could not read size)"));
-			if (!$priv_rc) {
-				$results{agree} = $priv_modulus eq $pub_modulus;
-				$msg .= sprintf("%sPublic/Private key agreement\n",      _checkbox($results{agree}));
-			}
-		}
-
-	} elsif ($plan->{type} eq 'random') {
-		$results{length} = $plan->{size} == length($values->{$key});
-		my $length_str = $results{length} ? '' : " - got ". length($values->{$key});
-		$msg .= sprintf("%s%s characters%s\n", _checkbox($results{length}), $plan->{size}, $length_str );
-		if ($plan->{valid_chars}) {
-			(my $valid_chars = $plan->{valid_chars}) =~ s/^\^/\\^/;
-			$results{valid_chars} = $values->{$key} =~ /^[$valid_chars]*$/;
-			$msg .= sprintf("%sOnly uses characters '%s'%s\n",
-				_checkbox($results{valid_chars}), $valid_chars,
-				$results{valid_chars} ? '' : " (found invalid characters in '$values->{$key}')");
-		}
-		if ($plan->{format}) {
-			my ($secret_path,$secret_key) = split(":", $plan->{path},2);
-			my $fmt_key = $plan->{destination} ? $plan->{destination} : $secret_key.'-'.$plan->{format};
-			$results{formatted} = exists $values->{$fmt_key};
-			$msg .= sprintf("%sFormatted as %s in ':%s'%s\n",
-				_checkbox($results{formatted}), $plan->{format}, $fmt_key,
-				$results{formatted} ? '' : " ( not found )");
-		}
-
-		# TODO: check other aspects... (valid_chars, fmt, etc)
+		$results{usage} = [
+			$usage_type,
+			$usage_str . $usage_err_str
+		];
 	}
-	my %priority = ('error' => 0, 'warn' => 1, 'ok' => 2);
-	my @results_levels = sort {$priority{$a}<=>$priority{$b}} uniq('ok', map {$_ ? ($_ =~ /^(warn)$/ ? $_ : 'ok') : 'error'} values %results);
-	return ($results_levels[0], $msg);
+
+	return (\%results, qw/is_ca self_signed signed valid modulus_agreement cn san usage/);
+}
+
+# }}}
+# _validate_dhparans_secret - validate an x509 secret value {{{
+sub _validate_dhparams_secret {
+
+	my ($path, $path_key, $plan, $all_secrets, $all_plans, $root_path) = @_;
+	my $values = $all_secrets->{$path};
+
+	my $pem  = $values->{'dhparam-pem'};
+	my $pemInfo = run('openssl dhparam -in <(echo "$1") -text -check -noout', $pem);
+	my ($size) = $pemInfo =~ /DH Parameters: \((\d+) bit\)/;
+	my $pem_ok = $pemInfo =~ /DH parameters appear to be ok\./;
+	my $size_ok = $size == $plan->{size};
+
+	return ({
+		valid => [$pem_ok, "Valid"],
+		size  => [$size_ok, sprintf("%s bits%s", $plan->{size}, $size_ok ? '' : " (found $size bits)" )]
+	}, qw/valid size/);
+}
+
+# }}}
+# _validate_ssh_secret - validate an SSH secret value {{{
+sub _validate_ssh_secret {
+
+	my ($path, $path_key, $plan, $all_secrets, $all_plans, $root_path) = @_;
+	my $values = $all_secrets->{$path};
+	my %results;
+
+	my ($rendered_public,$priv_rc) = run('ssh-keygen -y -f /dev/stdin <<<"$1"', $values->{private});
+	$results{priv} = [
+		!$priv_rc,
+		"Valid private key"
+	];
+
+	my ($pub_sig,$pub_rc) = run('ssh-keygen -B -f /dev/stdin <<<"$1"', $values->{public});
+	$results{pub} = [
+		!$pub_rc,
+		"Valid public key"
+	];
+
+	if (!$priv_rc) {
+		my ($rendered_sig,$rendered_rc) = run('ssh-keygen -B -f /dev/stdin <<<"$1"', $rendered_public);
+		$results{agree} = [
+			$rendered_sig eq $pub_sig,
+			"Public/Private key Agreement"
+		];
+	}
+	if (!$pub_rc) {
+		my ($bits) = $pub_sig =~ /^\s*([0-9]*)/;
+		$results{size} = [
+			$bits == $plan->{size} ? 'ok' : 'warn',
+			sprintf("%s bits%s", $plan->{size}, ($bits == $plan->{size}) ? '' : " (found $bits bits)" )
+		];
+	}
+
+	return (\%results, qw/priv pub agree size/)
+}
+
+# }}}
+# _validate_RSA_secret - validate an RSA secret value {{{
+sub _validate_rsa_secret {
+
+	my ($path, $path_key, $plan, $all_secrets, $all_plans, $root_path) = @_;
+	my $values = $all_secrets->{$path};
+	my %results;
+
+	my ($priv_modulus,$priv_rc) = run('openssl rsa -noout -modulus -in <(echo "$1")', $values->{private});
+	$results{priv} = [
+		!$priv_rc,
+		"Valid private key"
+	];
+
+	my ($pub_modulus,$pub_rc) = run('openssl rsa -noout -modulus -in <(echo "$1") -pubin', $values->{public});
+	$results{pub} = [
+		!$pub_rc,
+		"Valid public key"
+	];
+
+	if (!$pub_rc) {
+		my ($pub_info, $pub_rc2) = run('openssl rsa -noout -text -inform PEM -in <(echo "$1") -pubin', $values->{public});
+		my ($bits) = ($pub_rc2) ? () : $pub_info =~ /Key:\s*\(([0-9]*) bit\)/;
+		my $size_ok = ($bits || 0) == $plan->{size};
+		$results{size} = [
+			$size_ok ? 'ok' : 'warn',
+			sprintf("%s bit%s", $plan->{size}, $size_ok ? '' : ($bits ? " (found $bits bits)" : " (could not read size)"))
+		];
+		if (!$priv_rc) {
+			$results{agree} = [
+				$priv_modulus eq $pub_modulus,
+				"Public/Private key agreement"
+			];
+		}
+	}
+
+	return (\%results, qw/priv pub agree size/)
+}
+
+# }}}
+# _validate_random_secret - validate randomly generated string secret value {{{
+sub _validate_random_secret {
+
+	my ($path, $key, $plan, $all_secrets, $all_plans, $root_path) = @_;
+	my $values = $all_secrets->{$path};
+	my %results;
+
+	my $length_ok =  $plan->{size} == length($values->{$key});
+	$results{length} = [
+		$length_ok ? 'ok' : 'warn',
+		sprintf("%s characters%s",  $plan->{size}, $length_ok ? '' : " - got ". length($values->{$key}))
+	];
+
+	if ($plan->{valid_chars}) {
+		(my $valid_chars = $plan->{valid_chars}) =~ s/^\^/\\^/;
+		my $valid_chars_ok = $values->{$key} =~ /^[$valid_chars]*$/;
+		$results{valid_chars} = [
+			$valid_chars_ok ? 'ok' : 'warn',
+			sprintf("Only uses characters '%s'%s", $valid_chars,
+				$valid_chars_ok ? '' : " (found invalid characters in '$values->{$key}')"
+			)
+		];
+	}
+
+	if ($plan->{format}) {
+		my ($secret_path,$secret_key) = split(":", $plan->{path},2);
+		my $fmt_key = $plan->{destination} ? $plan->{destination} : $secret_key.'-'.$plan->{format};
+		$results{formatted} = [
+			exists($values->{$fmt_key}),
+			sprintf("Formatted as %s in ':%s'%s", $plan->{format}, $fmt_key,
+				exists($values->{$fmt_key}) ? '' : " ( not found )"
+			)
+		];
+	}
+
+	return (\%results, qw/length valid_chars formatted/);
 }
 
 # }}}
