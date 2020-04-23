@@ -1058,7 +1058,7 @@ Validating 18 secrets for $env_name under path '$secrets_mount$secrets_path/':
           [⚠ ] Valid: expires in 18 days (<timestamp>)
           [⚠ ] Subject Name '*.live.genesisproject.io' (found '*.run.live.genesisproject.io')
           [⚠ ] Subject Alt Names (missing: *.login.system.live.genesisproject.io, *.system.live.genesisproject.io, *.uaa.system.live.genesisproject.io; extra: something)
-          [✘ ] Specified key usage (missing: client_auth; extra: timestamping)
+          [⚠ ] Specified key usage (missing: client_auth; extra: timestamping)
 
 <cr>
 <clear-line>  [ 5/18] top-level/top X509 certificate ... missing!
