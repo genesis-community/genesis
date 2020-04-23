@@ -138,8 +138,9 @@ sub from_envvars {
 	$env->{kit} = $env->{top}->local_kit_version($kit_name, $kit_version)
 		or bail "Unable to locate v$kit_version of `$kit_name` kit for '$env->{name}' environment.";
 
-	my $min_version = $ENV{GENESIS_MIN_VERSION} || $env->kit->metadata('genesis_version_min');
+	my $min_version = $ENV{GENESIS_MIN_VERSION} || $env->kit->metadata->{'genesis_version_min'} || '';
 	$min_version =~ s/^v//i;
+
 	if ($min_version) {
 		if ($Genesis::VERSION eq "(development)") {
 			error(
