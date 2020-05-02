@@ -90,7 +90,7 @@ To see what files are currently in play for an environment, you can run
 Quickstart
 ----------
 
-To create a new environment (called us-east-prod-$name):
+To create a new environment (called `us-east-prod-$name`):
 
     genesis new us-east-prod
 
