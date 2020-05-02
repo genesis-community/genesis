@@ -109,34 +109,34 @@ Quickstart
 
 To create a new environment (called us-east-prod-$name):
 
-  genesis new us-east-prod
+    genesis new us-east-prod
 
 To build the full BOSH manifest for an environment:
 
-  genesis manifest us-east-prod
+    genesis manifest us-east-prod
 
 ... and then deploy it:
 
-  genesis deploy us-east-prod
+    genesis deploy us-east-prod
 
 To rotate credentials for an environment:
 
-  genesis rotate-secrets us-east-prod
-  genesis deploy us-east-prod
+    genesis rotate-secrets us-east-prod
+    genesis deploy us-east-prod
 
 To change the secrets provider for the environments in this repo:
 
-  genesis secrets-provider --url https://example.com:8200 --insecure
+    genesis secrets-provider --url https://example.com:8200 --insecure
 
 ... or clear it to use safe's currently targeted vault:
 
-  genesis secrets-provider --clear
+    genesis secrets-provider --clear
 
 By default, the provider for kits is https://github.com/genesis-community, but
 you can set this to another provider url via the `genesis kit-provider`
 command:
 
-  genesis kit-provider https://github.mycorp.com/mygenesiskits
+    genesis kit-provider https://github.mycorp.com/mygenesiskits
 
 This requires that url to provide releases in the same manner as github does.
 You can see the current kit provider by calling it with no argument, or revert
@@ -144,23 +144,23 @@ back to default with the `--clear` option.
 
 To update the Concourse Pipeline for this repo:
 
-  genesis repipe
+    genesis repipe
 
 To check for updates for this kit:
 
-  genesis list-kits -u
+    genesis list-kits -u
 
 To download a new version of the kit, and deploy it:
 
-  genesis download $name [version] # omitting version downloads the latest
+    genesis download $name [version] # omitting version downloads the latest
 
-  # update the environment yaml to use the desired kit version,
-  # this might be in a different file if using CI to propagate
-  # deployment upgrades (perhaps us.yml)
-  vi us-east-prod.yml
+    # update the environment yaml to use the desired kit version,
+    # this might be in a different file if using CI to propagate
+    # deployment upgrades (perhaps us.yml)
+    vi us-east-prod.yml
 
-  genesis deploy us-east-prod.yml     # or commit + git push to have
-                                      # CI run through the upgrades
+    genesis deploy us-east-prod.yml     # or commit + git push to have
+                                        # CI run through the upgrades
 
 See the [Deployment Pipeline Documentation][3] for more
 information on getting set up with Concourse deployment pipelines.
