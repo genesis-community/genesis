@@ -456,8 +456,8 @@ export -f valid_features
 validate_features() {
   local __bad
   if ! valid_features "$@"; then
-    __bail "$GENESIS_KIT_NAME/$GENESIS_KIT_VERSION does not understand the following feature flags:" \
-      "$(for __bad in $(invalid_features "$@"); do echo " - $__bad"; done)"
+    __bail "#R{[ERROR]} $GENESIS_KIT_ID does not understand the following feature flags:" \
+      "$(for __bad in $(invalid_features "$@"); do echo " - $__bad"; done; echo)"
   fi
 }
 export -f validate_features
