@@ -366,7 +366,7 @@ sub status {
 		return "sealed" if $1 == 2;
 		return "unreachable";
 	}
-	return "uninitialized" unless $self->has($secrets_mount.'handshake');
+	return "uninitialized" unless $self->has($secrets_mount.'handshake') || $self->has('/secret/handshake');
 	return "ok"
 }
 
