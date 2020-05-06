@@ -68,10 +68,12 @@ sub environment_variables {
 my $reping;
 sub ping {
 	my ($class, $env) = @_;
+	return 1 if $ENV{GENESIS_BOSH_VERIFIED} eq $env;
+
 	# TODO: once using vault-stored bosh targetting, we don't need to do this anymore
 	debug "Checking BOSH at '$env' for connectivity";
 	my $waiting=0;
-	unless ($reping || envset "GENESIS_TESTING") {;
+	unless ($reping || in_callback || envset "GENESIS_TESTING") {;
 		waiting_on STDERR "Checking availability of the '#M{$env}' BOSH director...";
 		$waiting=1;
 	}
@@ -92,8 +94,9 @@ sub ping {
 		$port = $3 || 25555;
 	}
 
-	unless (tcp_listening($host,$port)) {
-		error "#R{unreachable!}\n" if $waiting;
+	my $status = tcp_listening($host,$port);
+	unless ($status eq 'ok') {
+		error "#R{unreachable - $status!}\n" if $waiting;
 		return 0;
 	}
 	my ($out,$rc) = _bosh('bosh', '-e', $env, 'env');
@@ -102,6 +105,7 @@ sub ping {
 		return 0;
 	}
 	explain STDERR "#G{ok}" if $waiting;
+	$ENV{GENESIS_BOSH_VERIFIED} = $env;
 	return 1;
 }
 

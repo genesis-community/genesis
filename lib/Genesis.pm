@@ -11,6 +11,7 @@ our $GITHUB  = "https://github.com/starkandwayne/genesis";
 
 use Data::Dumper;
 use File::Basename qw/basename dirname/;
+use IO::Socket;
 use POSIX qw/strftime/;
 use Symbol qw/qualify_to_ref/;
 use Time::HiRes qw/gettimeofday/;
@@ -717,10 +718,16 @@ sub tcp_listening {
 	my $timeout = $ENV{GENESIS_NETWORK_TIMEOUT} || 10;
 
 	# Check if host is listening on given port
-	run(
-		{passfail => 1},
-		"timeout ${timeout}s bash -c '(</dev/tcp/$host/$port) >/dev/null 2>&1'"
-	);
+	eval {
+		local $SIG{ALRM} = sub {die "timeout\n"; };
+		alarm $timeout;
+		my $socket = IO::Socket::INET->new(PeerAddr => $host, PeerPort => $port, Proto => 'tcp');
+		die "failed\n" unless $socket;
+		$socket->close();
+		alarm 0;
+	};
+	return ($@ eq "timeout\n" ? "timeout" : "failed") if ($@);
+	return 'ok';
 }
 
 sub _lookup_key {
