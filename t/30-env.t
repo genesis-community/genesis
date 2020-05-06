@@ -745,6 +745,10 @@ standalone-thing
 deploy
 --no-redact
 $env->{__tmp}/manifest.yml
+
+Deployment successful.  Preparing metadata for export...
+Done.
+
 EOF
 		"Deploy should call BOSH with the correct options");
 
@@ -861,6 +865,10 @@ deploy
 -l
 $varsfile
 $env->{__tmp}/manifest.yml
+
+Deployment successful.  Preparing metadata for export...
+Done.
+
 EOF
 
 	eq_or_diff get_file($env->vars_file), <<EOF, "download_cloud_config calls BOSH correctly";

@@ -274,7 +274,7 @@ EOF
 			secret/genesis-2.7.0/deployments/dev/azure/us1/passwords:alt
 			secret/genesis-2.7.0/deployments/dev/azure/us1/passwords:alt-base64
 			secret/genesis-2.7.0/deployments/dev/azure/us1/passwords:uncrypted
-			secret/genesis-2.7.0/deployments/dev/azure/us1/passwords:crypted), 
+			secret/genesis-2.7.0/deployments/dev/azure/us1/passwords:crypted),
 
 			# This following crl and serial seem to be bumped by safe when something they signed is rotated.
 		qw(
