@@ -348,23 +348,10 @@ sub setup_hook_env_vars {
 	$ENV{GENESIS_ROOT_CA_PATH} = $self->root_ca_path;
 
 	# Credhub support
-	my ($credhub_src,$credhub_src_key) = $self->lookup(
-		['genesis.credhub_env','genesis.bosh_env','params.bosh','genesis.env','params.env']
-	);
+	my %credhub_env = $self->credhub_connection_env;
+	$ENV{$_} = $credhub_env{$_} for keys %credhub_env;
 
-	my $credhub_path = $credhub_src;
-	$ENV{GENESIS_CREDHUB_EXODUS_SOURCE_OVERRIDE} =
-		($hook eq 'new' && ($credhub_src_key || "") eq 'genesis.credhub-exodus-env') ?
-		$credhub_src : "";
-	if ($credhub_src =~ /\/\w+$/) {
-		$credhub_path  =~ s/\/([^\/]*)$/-$1/;
-	} else {
-		$credhub_src .= "/bosh";
-		$credhub_path .= "-bosh";
-	}
-	$ENV{GENESIS_CREDHUB_EXODUS_SOURCE} = $credhub_src;
-	$ENV{GENESIS_CREDHUB_ROOT}=sprintf("%s/%s-%s", $credhub_path, $self->name, $self->type);
-
+	# BOSH support
 	unless (grep { $_ eq $hook } qw/new prereqs/) {
 		$ENV{GENESIS_REQUESTED_FEATURES} = join(' ', $self->features);
 	}
@@ -379,6 +366,29 @@ sub setup_hook_env_vars {
 	}
 
 	$ENV{GENESIS_ENV_ROOT_CA_PATH} = $self->root_ca_path;
+}
+
+sub credhub_connection_env {
+	my $self = shift;
+	my ($credhub_src,$credhub_src_key) = $self->lookup(
+		['genesis.credhub_env','genesis.bosh_env','params.bosh','genesis.env','params.env']
+	);
+	my %env=();
+
+	my $credhub_path = $credhub_src;
+	$env{GENESIS_CREDHUB_EXODUS_SOURCE_OVERRIDE} =
+		(($credhub_src_key || "") eq 'genesis.credhub-exodus-env') ? $credhub_src : "";
+
+	if ($credhub_src =~ /\/\w+$/) {
+		$credhub_path  =~ s/\/([^\/]*)$/-$1/;
+	} else {
+		$credhub_src .= "/bosh";
+		$credhub_path .= "-bosh";
+	}
+	$env{GENESIS_CREDHUB_EXODUS_SOURCE} = $credhub_src;
+	$env{GENESIS_CREDHUB_ROOT}=sprintf("%s/%s-%s", $credhub_path, $self->name, $self->type);
+
+	return %env;
 }
 
 # delegations
@@ -821,7 +831,66 @@ sub _unflatten {
 
 sub exodus {
 	my ($self) = @_;
-	return _flatten({}, undef, scalar($self->manifest_lookup('exodus', {})));
+	my $exodus = _flatten({}, undef, scalar($self->manifest_lookup('exodus', {})));
+	my $vars_file = $self->vars_file;
+	return $exodus unless ($vars_file || $self->kit->uses_credhub);
+
+	#interpolate bosh vars first
+	if ($vars_file) {
+		for my $key (keys %$exodus) {
+			if ($exodus->{$key} =~ /^\(\((.*)\)\)$/) {
+				$exodus->{$key} = $self->manifest_lookup("bosh-variables.$1", $exodus->{$key});
+			}
+		}
+	}
+
+	my @int_keys = grep {$exodus->{$_} =~ /^\(\(.*\)\)$/} keys %$exodus;
+	if ($self->kit->uses_credhub && @int_keys) {
+		# Get credhub info
+		my %credhub_env = $self->credhub_connection_env;
+		my $credhub_exodus = $self->exodus_lookup("", {}, $credhub_env{GENESIS_CREDHUB_EXODUS_SOURCE});
+		my @missing = grep {!exists($credhub_exodus->{$_})} qw/ca_cert credhub_url credhub_ca_cert credhub_password credhub_username/;
+		bail("#R{[ERROR]} %s exodus data missing required credhub connection information: %s\nRedeploying it may help.",
+			$credhub_env{GENESIS_CREDHUB_EXODUS_SOURCE}, join (', ', @missing))
+			if @missing;
+
+		local %ENV=%ENV;
+		$ENV{HOME} = $self->{__tmp};
+		if (! -d $self->{__tmp}."/.credhub") {
+			waiting_on "Connecting to Credhub to extract secrets...";
+			my ($out, $rc, $err) = run(
+				'credhub', 'api', $credhub_exodus->{credhub_url},
+				'--ca-cert', $credhub_exodus->{ca_cert}."\n".$credhub_exodus->{credhub_ca_cert},
+			);
+			if ($rc) {
+				bail "#R{failed!\n\n[ERROR]} Could not target credhub specified by $credhub_env{GENESIS_CREDHUB_EXODUS_SOURCE}\n$err";
+			}
+			($out, $rc, $err) = run(
+				"credhub", "login",
+				"-u", $credhub_exodus->{credhub_username},
+				"-p", $credhub_exodus->{credhub_password}
+			);
+			if ($rc) {
+				bail "#R{failed!\n\n[ERROR]} Could not log into credhub specified by $credhub_env{GENESIS_CREDHUB_EXODUS_SOURCE}\n$err";
+			}
+			explain "#G{ok}";
+		}
+		for my $target (@int_keys) {
+			my ($secret,$key) = ($exodus->{$target} =~ /^\(\(([^\.]*)(?:\.(.*))?\)\)$/);
+			next unless $secret;
+			my @keys; @keys = ("-k", $key) if defined($key);
+			my ($out, $rc, $err) = run(
+				"credhub", "get", "-n", $credhub_env{GENESIS_CREDHUB_ROOT}."/$secret", @keys, "-q"
+			);
+			if ($rc) {
+				error("#R{[ERROR]} Could not retrieve %s under %s:\n%s",
+				  $key ? "$secret.$key" : $secret, $credhub_env{GENESIS_CREDHUB_ROOT}, $err
+				);
+			}
+			$exodus->{$target} = $out;
+		}
+	}
+	return $exodus;
 }
 
 sub lookup_bosh_target {
@@ -943,16 +1012,23 @@ sub deploy {
 		if $self->has_hook('post-deploy');
 
 	# track exodus data in the vault
+	explain "\n#G{Deployment successful.}  Preparing metadata for export...";
 	my $exodus = $self->exodus;
+
 	$exodus->{manifest_sha1} = digest_file_hex($manifest_path, 'SHA-1');
 	$exodus->{bosh} = $self->bosh_target || "(none)";
 	debug("setting exodus data in the Vault, for use later by other deployments");
 	$ok = $self->vault->query(
-		{ onfailure => "Successfully deployed, but could not save $self->{name} metadata to the Vault" },
+		{ onfailure => "#R{Failed to export $self->{name} metadata.}\n".
+		               "Deployment was still successful, but metadata used by addons and other kits is outdated.\n".
+		               "This may be resolved by deploying again, or it maybe a permissions issue while trying to\n".
+		               "write to vault path '".$self->exodus_base."'\n"
+		},
 		'rm',  $self->exodus_base, "-f",
 		  '--', 'set', $self->exodus_base,
 		               map { "$_=$exodus->{$_}" } keys %$exodus);
 
+	explain "Done.\n";
 	return $ok;
 }
 
