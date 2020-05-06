@@ -244,7 +244,7 @@ sub vault {
 			);
 		} else {
 			if ($self->{_vault} = Genesis::Vault::default) {
-				$self->{_vault}->set_as_current()->ref_by_name();
+				$self->{_vault}->connect_and_validate()->ref_by_name();
 			}
 		}
 	}
