@@ -219,6 +219,10 @@ export -f bosh
 
 bosh_cpi() {
   local __have_env
+	if [[ -n "${GENESIS_TESTING_BOSH_CPI:-}" ]] ; then
+		echo "$GENESIS_TESTING_BOSH_CPI"
+		return 0
+	fi
   __have_env="$(bosh env --json | jq -r '.Tables[0].Rows[0].cpi')"
   [[ "$?" != "0" ]] && \
     __bail "Cannot determine CPI from BOSH director - failed to communicate with BOSH director:" \
