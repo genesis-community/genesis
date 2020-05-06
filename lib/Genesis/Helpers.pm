@@ -199,6 +199,17 @@ bosh() {
     __bail "BOSH CLI command not specified - this is a bug in Genesis, or you are running $0 outside of Genesis"
   [[ -z "${BOSH_ENVIRONMENT:-}" || -z "${BOSH_CA_CERT:-}" ]] && \
     __bail "Environment not found for BOSH Director -- please ensure you've configured your BOSH alias used by this environment"
+
+
+	if [[ -z "${GENESIS_BOSH_VERIFIED:-}" || "$GENESIS_BOSH_VERIFIED" != "${BOSH_ALIAS:-}" ]] ; then
+		# Genesis has not yet validate the BOSH director's availability, so we need to
+		if /usr/bin/perl -I$GENESIS_LIB -MGenesis::BOSH -e 'exit(Genesis::BOSH->ping($ENV{BOSH_ALIAS})?0:1)' ; then
+			GENESIS_BOSH_VERIFIED="$BOSH_ALIAS"
+		else
+			__bail "" "#R{[ERROR]} Could not connect to BOSH director '#M{$BOSH_ALIAS}' (#M{$BOSH_ENVIRONMENT})"
+		fi
+	fi
+
   [[ -n "${GENESIS_SHOW_BOSH_CMD:-}" ]] && \
     describe  >&2 "#M{BOSH>} $GENESIS_BOSH_COMMAND $*"
   command ${GENESIS_BOSH_COMMAND} "$@"
@@ -210,12 +221,10 @@ bosh_cpi() {
   local __have_env
   __have_env="$(bosh env --json | jq -r '.Tables[0].Rows[0].cpi')"
   [[ "$?" != "0" ]] && \
-    __bail "Cannot determine CPI from BOSH director: unknown target" \
-           "failed to communicate with BOSH director:" \
+    __bail "Cannot determine CPI from BOSH director - failed to communicate with BOSH director:" \
            "${__have_env}"
   [[ -z "${__have_env}" ]] && \
-    __bail "Cannot determine CPI from BOSH director: unknown target" \
-           "no response from BOSH director"
+    __bail "Cannot determine CPI from BOSH director - no response from BOSH director"
 
   echo "${__have_env%_cpi}"
   return 0

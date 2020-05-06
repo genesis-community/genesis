@@ -354,7 +354,8 @@ sub status {
 		bail("Invalid vault target URL #C{%s}: expecting http(s)://ip-or-domain(:port)", $self->url);
 	my $ip = $2;
 	my $port = $3 || ($1 eq "s" ? 443 : 80);
-	return "unreachable" unless tcp_listening($ip,$port);
+	my $status = tcp_listening($ip,$port);
+	return "unreachable - $status" unless $status eq 'ok';
 
 	return "unauthenticated" if $self->token eq "";
 	my ($out,$rc) = $self->query({stderr => "&1"}, "vault", "status");
