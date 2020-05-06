@@ -218,13 +218,15 @@ sub tls     { $_[0]->{url} =~ "^https://"; }
 sub connect_and_validate {
 	my ($self) = @_;
 	unless ($self->is_current) {
-		printf STDERR csprintf("\n#yi{Verifying availability of selected vault...}")
+		printf STDERR csprintf("\n#yi{Verifying availability of vault '%s' (%s)...}", $self->name, $self->url)
 			unless in_callback || under_test;
 		my $status = $self->status;
 		error("#%s{%s}\n", $status eq "ok"?"G":"R", $status)
 			unless in_callback || under_test;
 		debug "Vault status: $status";
-		bail("#R{[ERROR]} Could not connect to vault: status is $status") unless $status eq "ok";
+		bail("#R{[ERROR]} Could not connect to vault%s",
+			(in_callback || under_test) ? sprintf(" '%s' (%s): status is %s)", $self->name, $self->url,$status):""
+		) unless $status eq "ok";
 	}
 	return $self->set_as_current;
 }
