@@ -589,6 +589,7 @@ sub _manifest {
 		} else {
 			debug("running spruce merge of all files, with evaluation, to generate a manifest");
 		}
+		setup_hook_env_vars; # For merging genesis environment variables
 		my $out = run({
 				onfailure => "Unable to merge $self->{name} manifest",
 				stderr => "&1",
