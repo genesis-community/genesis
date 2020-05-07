@@ -1370,8 +1370,10 @@ Can specify one of the follow three:
                          doesn't change anything.
 
       --recreate         Recreate all VMs instead of just applying changes to them.
+                         This requires the VMs to be responsive; use --fix if they
+                         are not.
 
-      --fix              Only recreate VMs that are unresponsive.
+      --fix              Recreate unresponsive VMs instead of raising an error.
 
 EOF
 sub {
