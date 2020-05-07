@@ -6,6 +6,8 @@
 * When testing availability of the vault, it specifies the alias and url of
   the vault instead of specifying "selected vault"
 
+* Clarify usage of --recreate and --fix options for deploy
+
 # Bug Fixes
 
 * Universal support for timeout detection when attempting to connect to remote
@@ -20,4 +22,10 @@
 
 * Fixed bug where non-standard secrets mount would report the vault was
   uninitialized.
+
+# Kit Authoring Improvements
+
+* Kit manifests can now use the same environment variables used by the hooks
+  script, via spruce, to perform actions such as:
+  `(( vault $GENESIS_EXODUS_MOUNT params.cf_deployment_name ":admin_password" ))`
 
