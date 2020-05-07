@@ -500,11 +500,24 @@ sub process_kit_secret_plans {
 				last;
 			}
 
+			my $interactive = 1;
 			$update->("notify", msg => "#Yi{user input required:\n}");
-			my ($out,$rc) = $self->query({interactive => 1}, @command);
-			$update->('notify', msg=> "\nsaving user input ... ", nonl => 1);
-			$update->('done-item', result => ($rc ? 'error': 'ok'));
-			last if $rc;
+			if (CORE::ref($command[0]) eq 'CODE') {
+				my $precommand = shift @command;
+				my @precommand_args;
+				while (my $arg = shift @command) {
+					last if $arg eq '--';
+					push @precommand_args, $arg;
+				}
+				$interactive = $precommand->(@precommand_args);
+			}
+			if (@command) {
+				$update->('notify', msg=> "\nsaving user input ... ", nonl => 1) if ! $interactive;
+				my ($out,$rc) = $self->query({interactive => $interactive}, @command);
+				$update->('notify', msg=> "\nsaving user input ... ", nonl => 1) if $interactive;
+				$update->('done-item', result => ($rc ? 'error': 'ok'));
+				last if $rc;
+			}
 		} else {
 			my ($out, $rc) = $self->query(@command);
 			if ($out =~ /refusing to .* as it is already present/) {
@@ -697,9 +710,9 @@ sub parse_kit_secret_plans {
 				($filter, my $remainder) = $filter =~ /(.*?)(?:\|\|(.*))?$/; # or
 				debug "Parsing left half of an or-filter: $filter || $remainder" if $remainder;
 
-				if ($filter =~ /(.*?)=(.*)$/) { # plan properties
-					my ($key,$value) = ($1,$2);
-					@paths = map {$_->{path}} grep {defined($_->{$key}) && $_->{key} eq $value} @ordered_plans;
+				if ($filter =~ /(.*?)(!)?=(.*)$/) { # plan properties
+					my ($key,$negate,$value) = ($1,$2,$3);
+					@paths = map {$_->{path}} grep {defined($_->{$key}) && ($negate ? $_->{$key} ne $value : $_->{$key} eq $value)} @ordered_plans;
 					debug "Parsing plan properties filter: $key = '$value'";
 
 				} elsif ($filter =~ m'^(!)?/(.*?)/(i)?$') { # path regex
@@ -899,8 +912,9 @@ sub _get_kit_secrets {
 								}
 								$plans->{"$path:$k"} = {
 									type      => 'provided',
+									subtype   => $data->{keys}{$k}{type},
 									sensitive => (defined($data->{keys}{$k}{sensitive}) ? !!$data->{keys}{$k}{sensitive} : 1),
-									# not supported yet, but planned: multiline => (!!$data->{keys}{$k}{multiline}),
+									multiline => (!!$data->{keys}{$k}{multiline}),
 									prompt    => $data->{keys}{$k}{prompt} || "Value for $path $k",
 									fixed     => (!!$data->{keys}{$k}{fixed})
 								};
@@ -979,8 +993,13 @@ sub _generate_secret_command {
 		@cmd = ($plan{type}, $plan{size}, $root_path.$plan{path});
 	} elsif ($plan{type} eq 'provided') {
 		if (in_controlling_terminal) {
-			my $op = $plan{sensitive} ? 'set' : 'ask';
-			push (@cmd, 'prompt', $plan{prompt}, '--', $op, split(':', $root_path.$plan{path}));
+			if ($plan{multiline}) {
+				my $file=workdir().'/secret_contents';
+				push (@cmd, sub {use Genesis::UI; print "[2A"; mkfile_or_fail($file,prompt_for_block @_); 0}, $plan{prompt}, '--', 'set', split(':', $root_path.$plan{path}."\@$file", 2))
+			} else {
+				my $op = $plan{sensitive} ? 'set' : 'ask';
+				push (@cmd, 'prompt', $plan{prompt}, '--', $op, split(':', $root_path.$plan{path}));
+			}
 		}
 		debug "safe command: ".join(" ", @cmd);
 		dump_var plan => \%plan;
@@ -1226,7 +1245,7 @@ sub _validate_kit_secret {
 	return () unless (exists(&{$validate_sub}));
 	my ($results, @validations) = (\&{$validate_sub})->($path, $key, $plan, $secret_values, $plans, $root_path);
 
-	my $show_all_messages = 1;
+	my $show_all_messages = ! envset("GENESIS_HIDE_PROBLEMATIC_SECRETS");
 	my %priority = ('error' => 0, 'warn' => 1, 'ok' => 2);
 	my @results_levels = sort {$priority{$a}<=>$priority{$b}} 
 	                     uniq('ok', map {$_ ? ($_ =~ /^(error|warn)$/ ? $_ : 'ok') : 'error'}
