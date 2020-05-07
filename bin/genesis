@@ -1619,7 +1619,7 @@ $GLOBAL_USAGE
   -v, --verbose     List each item as it is processed, not just failures and warnings.
   -I, --invalid     Rotate secrets that are invalid (expired, missing, or don't
                     match the kit specification)
-  -P, --probematic  Rotate secrets that are either invalid, or valid for
+  -P, --problematic Rotate secrets that are either invalid, or valid for
                     deployment, but are not in compliance with the kit
                     specification or may soon expire.
   -y, --no-prompt   Don't prompt for confirmation
