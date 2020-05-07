@@ -458,7 +458,7 @@ sub check_environment {
 
 	if (!exists($opts{check_secrets}) || $opts{check_secrets}) {
 		explain "\n[#M{%s}] running secrets checks...", $env->name;
-		my %check_opts=(indent => '  ', validate => 1);
+		my %check_opts=(indent => '  ', validate => ! envset("GENESIS_TESTING_CHECK_SECRETS_PRESENCE_ONLY"));
 		$env->check_secrets(%check_opts) or $ok = 0;
 	}
 
