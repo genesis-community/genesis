@@ -350,7 +350,11 @@ sub check_bosh_version {
 		my ($version, undef) = run("$boshcmd -v 2>&1 | grep version | head -n1");
 		if ($version =~ /version (\S+?)-.*/) {
 			if (new_enough($1, $min)) {
-				$ENV{GENESIS_BOSH_COMMAND} = $boshcmd;
+				# Try to get the full path if possible
+				$ENV{GENESIS_BOSH_COMMAND} = `command -v $boshcmd`;
+				$ENV{GENESIS_BOSH_COMMAND} = `which $boshcmd` if $? > 0;
+				$ENV{GENESIS_BOSH_COMMAND} = "\\$boshcmd" if $? > 0;
+				chomp $ENV{GENESIS_BOSH_COMMAND};
 				debug("#G{Version $1} of #C{$boshcmd} meets or exceeds minimum of #W{$min}");
 				return ();
 			}
