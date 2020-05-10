@@ -256,7 +256,9 @@ sub run_param_hook {
 
 sub new_environment {
 	my ($self) = @_;
-	$self->setup_hook_env_vars('new');
+	local %ENV = %ENV;
+	my %env = $self->get_environment_variables('new');
+	$ENV{$_} = $env{$_} for (keys %env);
 
 	my ($k, $kit, $version) = ($self->{kit}, $self->{kit}->name, $self->{kit}->version);
 	my $meta = $k->metadata;

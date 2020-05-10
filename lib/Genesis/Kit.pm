@@ -92,7 +92,8 @@ sub run_hook {
 
 		trace ('getting env info');
 		bug("The 'env' option to run_hook is required for the '$hook' hook!!") unless $opts{env};
-		$opts{env}->setup_hook_env_vars($hook);
+		my %env_vars = $opts{env}->get_environment_variables($hook);
+		$ENV{$_} = $env_vars{$_} for (keys %env_vars);
 		trace ('got env info');
 
 	} elsif ($hook eq 'subkit') {
