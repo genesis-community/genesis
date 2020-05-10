@@ -315,19 +315,21 @@ sub ci_base {
 	});
 }
 
-sub setup_hook_env_vars {
+sub get_environment_variables {
 	my ($self, $hook) = @_;
 
-	$ENV{GENESIS_ROOT}         = $self->path;
-	$ENV{GENESIS_ENVIRONMENT}  = $self->name;
-	$ENV{GENESIS_TYPE}         = $self->type;
-	$ENV{GENESIS_CALL}         = humanize_bin();
-	$ENV{GENESIS_CALL}        .= sprintf(" -C '%s'", humanize_path($self->path))
+	my %env;
+
+	$env{GENESIS_ROOT}         = $self->path;
+	$env{GENESIS_ENVIRONMENT}  = $self->name;
+	$env{GENESIS_TYPE}         = $self->type;
+	$env{GENESIS_CALL}         = humanize_bin();
+	$env{GENESIS_CALL}        .= sprintf(" -C '%s'", humanize_path($self->path))
 		if ($ENV{GENESIS_CALLER_DIR} && $self->path ne $ENV{GENESIS_CALLER_DIR});
 
 	# Vault ENV VARS
-	$ENV{GENESIS_TARGET_VAULT} = $ENV{SAFE_TARGET} = $self->vault->ref;
-	$ENV{GENESIS_VERIFY_VAULT} = $self->vault->verify || "";
+	$env{GENESIS_TARGET_VAULT} = $env{SAFE_TARGET} = $self->vault->ref;
+	$env{GENESIS_VERIFY_VAULT} = $self->vault->verify || "";
 
 	# Genesis v2.7.0 Secrets management
 	# This provides GENESIS_{SECRETS,EXODUS,CI}_{MOUNT,BASE}
@@ -335,37 +337,38 @@ sub setup_hook_env_vars {
 	for my $target (qw/secrets exodus ci/) {
 		for my $target_type (qw/mount base/) {
 			my $method = "${target}_${target_type}";
-			$ENV{uc("GENESIS_${target}_${target_type}")} = $self->$method();
+			$env{uc("GENESIS_${target}_${target_type}")} = $self->$method();
 		}
 		my $method = "${target}_mount";
 		my $default_method = "default_$method";
-		$ENV{uc("GENESIS_${target}_MOUNT_OVERRIDE")} = ($self->$method ne $self->$default_method) ? "true" : "";
+		$env{uc("GENESIS_${target}_MOUNT_OVERRIDE")} = ($self->$method ne $self->$default_method) ? "true" : "";
 	}
-	$ENV{GENESIS_VAULT_PREFIX} = # deprecated in v2.7.0
-	$ENV{GENESIS_SECRETS_PATH} = # deprecated in v2.7.0
-	$ENV{GENESIS_SECRETS_SLUG} = $self->secrets_slug;
-	$ENV{GENESIS_SECRETS_SLUG_OVERRIDE} = $self->secrets_slug ne $self->default_secrets_slug ? "true" : "";
-	$ENV{GENESIS_ROOT_CA_PATH} = $self->root_ca_path;
+	$env{GENESIS_VAULT_PREFIX} = # deprecated in v2.7.0
+	$env{GENESIS_SECRETS_PATH} = # deprecated in v2.7.0
+	$env{GENESIS_SECRETS_SLUG} = $self->secrets_slug;
+	$env{GENESIS_SECRETS_SLUG_OVERRIDE} = $self->secrets_slug ne $self->default_secrets_slug ? "true" : "";
+	$env{GENESIS_ROOT_CA_PATH} = $self->root_ca_path;
 
 	# Credhub support
 	my %credhub_env = $self->credhub_connection_env;
-	$ENV{$_} = $credhub_env{$_} for keys %credhub_env;
+	$env{$_} = $credhub_env{$_} for keys %credhub_env;
 
 	# BOSH support
 	unless (grep { $_ eq $hook } qw/new prereqs/) {
-		$ENV{GENESIS_REQUESTED_FEATURES} = join(' ', $self->features);
+		$env{GENESIS_REQUESTED_FEATURES} = join(' ', $self->features);
 	}
 	if ($self->needs_bosh_create_env) {
-		$ENV{GENESIS_USE_CREATE_ENV} = 'yes';
+		$env{GENESIS_USE_CREATE_ENV} = 'yes';
 	} else {
-		$ENV{GENESIS_BOSH_ENVIRONMENT} =
-		$ENV{BOSH_ALIAS} = scalar $self->lookup_bosh_target;
-		my $bosh = Genesis::BOSH->environment_variables($ENV{BOSH_ALIAS});
-		$ENV{$_} = $bosh->{$_} for (keys %$bosh);
-		$ENV{BOSH_DEPLOYMENT} = sprintf("%s-%s", $self->name, $self->type);
+		$env{GENESIS_BOSH_ENVIRONMENT} =
+		$env{BOSH_ALIAS} = scalar $self->lookup_bosh_target;
+		my $bosh = Genesis::BOSH->environment_variables($env{BOSH_ALIAS});
+		$env{$_} = $bosh->{$_} for (keys %$bosh);
+		$env{BOSH_DEPLOYMENT} = sprintf("%s-%s", $self->name, $self->type);
 	}
 
-	$ENV{GENESIS_ENV_ROOT_CA_PATH} = $self->root_ca_path;
+	$env{GENESIS_ENV_ROOT_CA_PATH} = $self->root_ca_path;
+	return %env
 }
 
 sub credhub_connection_env {
@@ -589,12 +592,12 @@ sub _manifest {
 		} else {
 			debug("running spruce merge of all files, with evaluation, to generate a manifest");
 		}
-		setup_hook_env_vars; # For merging genesis environment variables
 		my $out = run({
 				onfailure => "Unable to merge $self->{name} manifest",
 				stderr => "&1",
 				env => {
-					%{$self->vault->env()},              # specify correct vault for spruce to target
+					$self->get_environment_variables('manifest'),
+					%{$self->vault->env()},               # specify correct vault for spruce to target
 					REDACT => $opts{redact} ? 'yes' : '' # spruce redaction flag
 				}
 			},
