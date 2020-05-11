@@ -35,17 +35,18 @@ sub lookup { "a-value" }
 sub bosh_target { 'a-bosh'; }
 sub path { "some/path/some/where".($_[1]?"/$_[1]":""); }
 sub vault { $_[0]->{vault} }
-sub setup_hook_env_vars {
+sub get_environment_variables {
 	my $self = shift;
-	$ENV{GENESIS_ROOT}         = $self->path;
-	$ENV{GENESIS_ENVIRONMENT}  = $self->name;
-	$ENV{GENESIS_TYPE}         = $self->type;
-	$ENV{GENESIS_TARGET_VAULT} = $ENV{SAFE_TARGET} = $self->vault->ref;
-	$ENV{GENESIS_VERIFY_VAULT} = $self->vault->verify || "";
+	my %env;
+	$env{GENESIS_ROOT}         = $self->path;
+	$env{GENESIS_ENVIRONMENT}  = $self->name;
+	$env{GENESIS_TYPE}         = $self->type;
+	$env{GENESIS_TARGET_VAULT} = $env{SAFE_TARGET} = $self->vault->ref;
+	$env{GENESIS_VERIFY_VAULT} = $self->vault->verify || "";
 
-	$ENV{HOOK_ENV_VARS}='setup';
-	$ENV{GENESIS_VAULT_PREFIX} = $ENV{GENESIS_SECRETS_PATH} = secrets_path;
-	1;
+	$env{HOOK_ENV_VARS}='setup';
+	$env{GENESIS_VAULT_PREFIX} = $env{GENESIS_SECRETS_PATH} = secrets_path;
+	return %env;
 }
 
 package main;
