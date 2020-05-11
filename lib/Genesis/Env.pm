@@ -60,11 +60,9 @@ sub load {
 	) if ($env->defines('kit.features') && $env->defines('kit.subkits'));
 
 	my $env_src;
-	unless (in_callback || envset("GENESIS_LEGACY")) {
-		(my $env_name, $env_src) = $env->lookup(['genesis.env','params.env']);
-		bail("\n#R{[ERROR]} Environment file #C{$env->{file}} environment name mismatch: #C{$env_src $env_name}")
-			unless $env->{name} eq $env_name;
-	}
+	(my $env_name, $env_src) = $env->lookup(['genesis.env','params.env']);
+	bail("\n#R{[ERROR]} Environment file #C{$env->{file}} environment name mismatch: #C{$env_src $env_name}")
+		unless $env->{name} eq $env_name || in_callback || envset("GENESIS_LEGACY");
 
 	# reconstitute our kit via top
 	my $kit_name = $env->lookup('kit.name');
@@ -108,6 +106,9 @@ sub load {
 		     $env->kit->id, $env->{file})
 			if ($env->exodus_mount ne $env->default_exodus_mount);
 	}
+
+	# check bosh alias
+	$env->lookup_bosh_target;
 
 	# determine our vault and secret path
 	$ENV{GENESIS_SECRETS_MOUNT} = $env->secrets_mount();
@@ -900,19 +901,30 @@ sub exodus {
 sub lookup_bosh_target {
 	my ($self) = @_;
 	return undef if $self->needs_bosh_create_env;
+	unless ($self->{bosh_env}) {
+		my ($bosh, $source,$key);
+		if ($bosh = $ENV{GENESIS_BOSH_ENVIRONMENT}) {
+				$source = "GENESIS_BOSH_ENVIRONMENT environment variable";
 
-	my ($bosh, $source,$key);
-	if ($bosh = $ENV{GENESIS_BOSH_ENVIRONMENT}) {
-			$source = "GENESIS_BOSH_ENVIRONMENT environment variable";
+		} elsif (($bosh,$key) = $self->lookup(['genesis.bosh_env','params.bosh','genesis.env','params.env'])) {
+				$source = "$key in $self->{name} environment file";
 
-	} elsif (($bosh,$key) = $self->lookup(['genesis.bosh_env','params.bosh','genesis.env','params.env'])) {
-			$source = "$key in $self->{name} environment file";
+		} else {
+			die "Could not find the 'genesis.bosh_env', 'params.bosh', 'genesis.env' or 'params.env' key in $self->{name} environment file!\n";
+		}
 
-	} else {
-		die "Could not find the 'genesis.bosh_env', 'params.bosh', 'genesis.env' or 'params.env' key in $self->{name} environment file!\n";
+		# Check for v2.7.0 features
+		if ($source =~ 'params.bosh' && $self->kit->feature_compatibility("2.7.0") && !in_callback && ! envset("GENESIS_LEGACY")) {
+			error("\n#R{[WARNING]} Kit #M{%s} is built for Genesis 2.7.0 or higher, which requires BOSH\n" .
+						"          environment to be specified under #m{genesis.bosh_env} in your environment file\n".
+						"          but #C{%s} is using #m{params.bosh}.  Please update your environment file as this\n".
+						"          legacy support will be removed in a later version of Genesis\n",
+						$self->kit->id, $self->name );
+		}
+		$self->{bosh_env} = $bosh;
+		$self->{bosh_env_src} = $source;
 	}
-
-	return wantarray ? ($bosh, $source) : $bosh;
+	return wantarray ? ($self->{bosh_env}, $self->{bosh_env_src}) : $self->{bosh_env};
 }
 
 sub bosh_target {

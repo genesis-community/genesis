@@ -229,13 +229,14 @@ params:
 EOF
 		"[fancy] the 'new' hook should populate the env yaml file properly";
 
-
 	{
 		local $ENV{HOOK_SHOULD_FAIL} = 'yes';
-		my $env =  Genesis::Env->new(top => $top, name => 'env-should-fail', vault => $vault);
-		$env->{__params} = {
-			genesis => {env => $env->name} # compensate for not using Genesis::Env#create
-		};
+		my $name = 'env-should-fail';
+		my $env =  Genesis::Env->new(
+			top => $top, name => $name,
+			kit => $fancy, vault => $vault,
+			__params => {genesis => {env => $name}} # compensate for not using Genesis::Env#create
+		);
 		
 		throws_ok {
 			$fancy->run_hook('new', env => $env);
@@ -247,10 +248,12 @@ EOF
 
 	{
 		local $ENV{HOOK_SHOULD_CREATE_ENV_FILE} = 'no';
-		my $env = Genesis::Env->new(top => $top, name => 'env-should-fail', vault => $vault);
-		$env->{__params} = {
-			genesis => {env => $env->name} # compensate for not using Genesis::Env#create
-		};
+		my $name = 'env-should-fail';
+		my $env = Genesis::Env->new(
+			top => $top, name => $name,
+			kit => $fancy, vault => $vault,
+			__params => {genesis => {env => $name}} # compensate for not using Genesis::Env#create
+		);
 		throws_ok {
 			$fancy->run_hook('new', env => $env );
 		} qr/could not create/i;

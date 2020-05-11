@@ -44,7 +44,7 @@ subtest 'secrets-v2.7.0' => sub {
 	expect_ok $cmd, [ "What is your base domain?", sub { $_[0]->send("demo.genesisproject.io\n"); }];
 	expect_exit $cmd, 0, "genesis creates a new environment and auto-generates certificates - set secrets stuff to non-standard";
 
-	my ($pass,$rc,$out) = runs_ok("genesis lookup $env_name .");
+	my ($pass,$rc,$out) = runs_ok("genesis lookup $env_name . 2>/dev/null");
 	my $properties;
 	lives_ok {$properties = decode_json($out)} "genesis lookup on environment returns parsable json";
 
