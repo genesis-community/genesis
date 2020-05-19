@@ -350,14 +350,15 @@ sub get_environment_variables {
 	$env{GENESIS_SECRETS_SLUG_OVERRIDE} = $self->secrets_slug ne $self->default_secrets_slug ? "true" : "";
 	$env{GENESIS_ROOT_CA_PATH} = $self->root_ca_path;
 
+	unless (grep { $_ eq $hook } qw/new prereqs subkit features/) {
+		$env{GENESIS_REQUESTED_FEATURES} = join(' ', $self->features);
+	}
+
 	# Credhub support
 	my %credhub_env = $self->credhub_connection_env;
 	$env{$_} = $credhub_env{$_} for keys %credhub_env;
 
 	# BOSH support
-	unless (grep { $_ eq $hook } qw/new prereqs/) {
-		$env{GENESIS_REQUESTED_FEATURES} = join(' ', $self->features);
-	}
 	if ($self->needs_bosh_create_env) {
 		$env{GENESIS_USE_CREATE_ENV} = 'yes';
 	} else {
@@ -429,7 +430,11 @@ sub cloud_config {
 
 sub features {
 	my $ref = $_[0]->_memoize('__features', sub {
-		scalar($_[0]->lookup(['kit.features', 'kit.subkits'], []));
+		my $self = shift;
+		my $features = scalar($self->lookup(['kit.features', 'kit.subkits'], []));
+		$features = $self->kit->run_hook('features',features => $features)
+			if $self->kit->has_hook('features');
+		$features;
 	});
 	return @$ref;
 }

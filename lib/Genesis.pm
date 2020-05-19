@@ -446,7 +446,7 @@ sub run {
 
 	local %ENV = %ENV; # To get local scope for duration of this call
 	for (keys %{$opts{env} || {}}) {
-		$ENV{$_} = $opts{env}{$_};
+		$ENV{$_} = $opts{env}{$_}||"";
 		trace("#M{Setting: }#B{$_}='#C{$ENV{$_}}'");
 	}
 	my $shell = $opts{shell} || '/bin/bash';
