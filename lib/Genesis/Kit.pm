@@ -82,7 +82,7 @@ sub run_hook {
 
 	die "Unrecognized hook '$hook'\n"
 		unless grep { $_ eq $hook } qw/new blueprint secrets info addon check pre-deploy post-deploy
-		                               prereqs subkit/;
+		                               prereqs features subkit/;
 
 	if (grep { $_ eq $hook } qw/new secrets info addon check prereqs blueprint pre-deploy post-deploy/) {
 
@@ -96,7 +96,7 @@ sub run_hook {
 		$ENV{$_} = $env_vars{$_} for (keys %env_vars);
 		trace ('got env info');
 
-	} elsif ($hook eq 'subkit') {
+	} elsif (grep { $_ eq $hook}  qw/features subkit/) {
 		bug("The 'features' option to run_hook is required for the '$hook' hook!!")
 			unless $opts{features};
 		$ENV{GENESIS_TARGET_VAULT} = $ENV{SAFE_TARGET} = (Genesis::Vault->current || Genesis::Vault->default)->ref; #for legacy
@@ -129,6 +129,9 @@ sub run_hook {
 		my $fn = $opts{env}->tmppath("data");
 		mkfile_or_fail($fn, $opts{data}) if ($opts{data});
 		$ENV{GENESIS_PREDEPLOY_DATAFILE} = $fn;
+
+	} elsif ($hook eq 'features') {
+		$ENV{GENESIS_REQUESTED_FEATURES} = join(" ", @{ $opts{features} });
 
 	##### LEGACY HOOKS
 	} elsif ($hook eq 'subkit') {
