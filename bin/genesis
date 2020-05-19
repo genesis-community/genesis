@@ -40,7 +40,6 @@ our $USER_AGENT_STRING = "genesis/$Genesis::VERSION";
 use FindBin;
 $ENV{GENESIS_CALLBACK_BIN} ||= $FindBin::Bin.'/'.$FindBin::Script;
 $ENV{GENESIS_LIB} ||= $FindBin::Bin.'/lib';
-$ENV{HTTPS_PROXY}=$ENV{BOSH_ALL_PROXY} if ($ENV{BOSH_ALL_PROXY});
 
 my ($COMMAND, %RUN, %USAGE, %PROPS);
 
