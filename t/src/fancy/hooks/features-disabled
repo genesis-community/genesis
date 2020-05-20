@@ -1,0 +1,24 @@
+#!/bin/bash
+
+if [[ ${HOOK_SHOULD_FAIL:-no} = "yes" ]]; then
+	set -u
+	echo "$garblerflaven"
+  exit 42;
+fi
+
+if [[ ${HOOK_NO_FEATURES:-no} = "yes" ]]; then
+	exit 0
+fi
+
+(
+if want_feature always-first; then
+	echo "always-first"
+fi
+for feature in $GENESIS_REQUESTED_FEATURES; do
+	[[ "$feature" == "always-first" ]] || echo "$feature"
+done
+if ! want_feature shazzam; then
+	echo no-shazzam
+fi
+
+) | uniq
