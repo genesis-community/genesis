@@ -99,6 +99,14 @@ EOF
 	$stack_scale = $top->load_env('stack-scale');
 }
 
+sub enable_features_hook {
+	my $kit = shift;
+	my $disabled = $kit->path('hooks/features-disabled');
+	my $enabled  = $kit->path('hooks/features');
+	qx(mv $disabled $enabled);
+}
+
+
 my $has_shellcheck = !system('command shellcheck -V >/dev/null 2>&1');
 printf STDERR "\n\n\e[33m%s\e[0m\n%s\n\n",
 	"SKIPPING 'Validate hooks helper script' tests due to missing 'shellcheck' command",
@@ -527,9 +535,75 @@ EOF
 	}
 };
 
+subtest 'feature hook' => sub {
+	again();
+
+	put_file "$root/fun-times.yml", <<EOF;
+---
+kit:
+  name:    dev
+  version: latest
+  subkits:
+    - a-thing
+    - always-first
+    - bob
+
+genesis:
+  env: fun-times
+EOF
+
+	my $fun_times = $top->load_env('fun-times');
+	$fun_times->{kit} = $fancy;
+	delete($fun_times->{__features});
+	cmp_deeply([$fun_times->features], [qw[
+			a-thing
+			always-first
+			bob
+		]], "[fancy] the 'features' are reported as-is when features hook isn't present");
+
+
+	enable_features_hook($fancy);
+	$fun_times->{kit} = $fancy;
+	delete($fun_times->{__features});
+	cmp_deeply([$fancy->run_hook('features', features => scalar($fun_times->lookup(['kit.features', 'kit.subkits'])))], [qw[
+			always-first
+			a-thing
+			bob
+			no-shazzam
+		]], "[fancy] features hook augments features - set 1");
+
+	delete($fun_times->{__features});
+
+	cmp_deeply(join('/',$fun_times->features), join('/',qw[
+			always-first
+			a-thing
+			bob
+			no-shazzam
+		]), "[fancy] the 'features' are augmented when features hook is present - set 1");
+
+	$fun_times = $top->load_env('fun-times');
+	$fun_times->{kit} = $fancy;
+	cmp_deeply([$fancy->run_hook('features', features => [qw(shazzam)])], [qw[
+			shazzam
+		]], "[fancy] features hook augments features - set 2");
+
+	{
+		local $ENV{HOOK_SHOULD_FAIL} = 'yes';
+		throws_ok { $fancy->run_hook('features', features => scalar($fun_times->lookup(['kit.features', 'kit.subkits']))); }
+			qr/Could not run feature hook in kit fancy\/in-development \(dev\): \.\/hooks\/features: line 5: garblerflaven: unbound variable/i;
+	}
+
+	{
+		local $ENV{HOOK_NO_FEATURES} = 'yes';
+		cmp_deeply([$fancy->run_hook('features', features => scalar($fun_times->lookup(['kit.features', 'kit.subkits'])))], [],
+			"[fancy] the 'features' hook can remove all featuress");
+	}
+};
+
 subtest 'LEGACY prereqs hook' => sub {
 	ok 1;
 };
+
 
 subtest 'LEGACY subkit hook' => sub {
 	again();
@@ -542,7 +616,7 @@ subtest 'LEGACY subkit hook' => sub {
 	{
 		local $ENV{HOOK_SHOULD_FAIL} = 'yes';
 		throws_ok { $legacy->run_hook('subkit', features => [$stack_scale->features]); }
-			qr/could not determine which auxiliary subkits/i;
+			qr/Could not run feature hook in kit legacy\/in-development \(dev\)/i;
 	}
 
 	{

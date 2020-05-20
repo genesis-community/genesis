@@ -432,7 +432,7 @@ sub features {
 	my $ref = $_[0]->_memoize('__features', sub {
 		my $self = shift;
 		my $features = scalar($self->lookup(['kit.features', 'kit.subkits'], []));
-		$features = $self->kit->run_hook('features',features => $features)
+		$features = [$self->kit->run_hook('features',features => $features)]
 			if $self->kit->has_hook('features');
 		$features;
 	});

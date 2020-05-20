@@ -153,8 +153,10 @@ sub run_hook {
 	chmod 0755, $hook_exec;
 
 	debug ("Running hook now in ".$self->path);
-	my ($out, $rc) = run({ interactive => scalar $hook =~ m/^(addon|new|info|check|secrets|post-deploy|pre-deploy)$/,
-	                       stderr => '&2' },
+	my ($out, $rc, $err) = run({
+			interactive => scalar $hook =~ m/^(addon|new|info|check|secrets|post-deploy|pre-deploy)$/,
+			stderr => 0,
+		},
 		'cd "$1"; source .helper; hook=$2; shift 2; ./hooks/$hook "$@"',
 		$self->path, $hook_name, @args);
 	debug("the kit '$hook' hook exited $rc");
@@ -182,10 +184,9 @@ sub run_hook {
 		return @manifests;
 	}
 
-	if ($hook eq 'subkit') {
-		if ($rc != 0) {
-			die "Could not determine which auxiliary subkits (if any) needed to be activated\n";
-		}
+	if (grep { $_ eq $hook}  qw/features subkit/) {
+		bail("#R{[ERROR]} Could not run feature hook in kit %s: %s ", $self->id, $err)
+			unless $rc == 0;
 		$out =~ s/^\s+//;
 		return split(/\s+/, $out);
 	}
