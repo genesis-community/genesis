@@ -1042,7 +1042,7 @@ sub deploy {
 	$ok = $self->vault->query(
 		{ onfailure => "#R{Failed to export $self->{name} metadata.}\n".
 		               "Deployment was still successful, but metadata used by addons and other kits is outdated.\n".
-		               "This may be resolved by deploying again, or it maybe a permissions issue while trying to\n".
+		               "This may be resolved by deploying again, or it may be a permissions issue while trying to\n".
 		               "write to vault path '".$self->exodus_base."'\n"
 		},
 		'rm',  $self->exodus_base, "-f",
