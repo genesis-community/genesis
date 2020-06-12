@@ -169,7 +169,7 @@ sub _prepare {
 		{ onfailure => 'Unable to determine what files to clean up before compiling the kit' },
 		'git -C "$1" clean -xdn', $self->{root});
 
-	my @files = map { "$self->{work}/$self->{relpath}/$_" } qw(ci .git .gitignore);
+	my @files = map { "$self->{work}/$self->{relpath}/$_" } qw(ci .git .gitignore spec devtools);
 	for (split /\s+/, $out) {
 		s/^would remove //i;
 		push @files, "$self->{work}/$self->{relpath}/$_";
