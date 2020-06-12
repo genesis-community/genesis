@@ -967,9 +967,8 @@ sub {
 
 		} elsif ($options{kit}) {
 			debug("Kit: installing kit $options{kit}");
-			explain "Downloading Genesis kit #M{$options{kit}} (#Y{latest} version)...\n";
-			my (undef, $version) = $top->download_kit($options{kit});
-			$kit_desc = "\n - using the #C{$options{kit}/$version} kit.";
+			my ($kit_name, $kit_version) = $top->download_kit($options{kit});
+			$kit_desc = "\n - using the #C{$kit_name/$kit_version} kit.";
 
 		} else {
 			debug("Kit: creating empty ./dev kit directory");
@@ -990,7 +989,7 @@ sub {
 		rmtree $root;
 		die $err;
 	}
-	explain "Initialized empty Genesis repository in #C{%s}%s%s\n", $human_root, $vault_desc, $kit_desc;
+	explain "\nInitialized empty Genesis repository in #C{%s}%s%s\n", $human_root, $vault_desc, $kit_desc;
 	exit 0;
 });
 

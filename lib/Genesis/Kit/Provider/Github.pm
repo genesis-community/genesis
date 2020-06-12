@@ -190,19 +190,28 @@ sub kit_releases {
 		bail "$status"."\n" if $status;
 		trace "About to get releases from Github";
 
-		my ($msg,$data);
-		waiting_on "Retrieving list of available releases for #M{%s} kit on #C{%s} ... ",$name,$self->label;
-		($code, $msg, $data) = curl("GET", $url, undef, undef, 0, $self->{credentials});
-		bail("#R{error!}\nCould not find Genesis Kit %s release information; Github rsponded with a %s status:\n%s",$name,$code,$msg)
-			unless $code == 200;
-		explain "#G{done.}";
+		my ($msg,$data,$headers,@results);
+		waiting_on STDERR "Retrieving list of available releases for #M{%s} kit on #C{%s} ...",$name,$self->label;
+		while (1) {
+			($code, $msg, $data, $headers) = curl("GET", $url, undef, undef, 0, $self->{credentials});
+			bail("#R{error!}\nCould not find Genesis Kit %s release information; Github rsponded with a %s status:\n%s",$name,$code,$msg)
+				unless $code == 200;
 
-		my $results;
-		eval {
-			$results = load_json($data);
-			1 
-		} or bail("Failed to read releases information from Github: %s\n",$@);
-		$self->{_releases}{$name} = $results;
+			my $results;
+			eval {
+				$results = load_json($data);
+				1;
+			} or bail("Failed to read releases information from Github: %s\n",$@);
+			push(@results, @{$results});
+
+			my ($links) = grep {$_ =~ s/^Link: //} split(/[\r\n]+/, $headers);
+			last unless $links;
+			$url = (grep {$_ =~ s/^<(.*)>; rel="next"/$1/} split(', ', $links))[0];
+			last unless $url;
+			waiting_on STDERR '.';
+		}
+		explain STDERR "#G{ done.}";
+		$self->{_releases}{$name} = \@results;
 	}
 
 	return @{$self->{_releases}{$name}};
@@ -384,8 +393,10 @@ sub repos_url {
 # }}}
 # releases_url - The url required to fetch the list of releases for a given kit on this provider {{{
 sub releases_url {
-	my ($self, $name) = @_;
-	sprintf("%s/repos/%s/%s-genesis-kit/releases",$self->base_url,$self->{organization},$name);
+	my ($self, $name, $page) = @_;
+	my $url = sprintf("%s/repos/%s/%s-genesis-kit/releases",$self->base_url,$self->{organization},$name);
+	$url .= "?page=$page" if $page;
+	return $url;
 }
 # }}}
 # base_url - the base url under which all requests are made {{{
