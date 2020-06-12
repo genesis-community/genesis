@@ -159,11 +159,10 @@ sub run_hook {
 		},
 		'cd "$1"; source .helper; hook=$2; shift 2; ./hooks/$hook "$@"',
 		$self->path, $hook_name, @args);
-	debug("the kit '$hook' hook exited $rc");
 
 	if ($hook eq 'new') {
-		bail("#R{[ERROR]} Could not create new env #C{%s} (in %s): 'new' hook exited %d",
-				 $ENV{GENESIS_ENVIRONMENT}, humanize_path($ENV{GENESIS_ROOT}), $rc)
+		bail("#R{[ERROR]} Could not create new env #C{%s} (in %s): 'new' hook exited %d:\n%s",
+				 $ENV{GENESIS_ENVIRONMENT}, humanize_path($ENV{GENESIS_ROOT}), $rc, $err)
 			unless ($rc == 0);
 
 		bail("#R{[ERROR]} Could not create new env #C{%s} (in %s): 'new' hook did not create #M{%1\$s}",
@@ -173,14 +172,12 @@ sub run_hook {
 	}
 
 	if ($hook eq 'blueprint') {
-		if ($rc != 0) {
-			die "Could not determine which YAML files to merge: 'blueprint' hook exited $rc\n";
-		}
+		bail "#R{[ERROR]} Could not determine which YAML files to merge: 'blueprint' hook exited with %d:\n%s", $rc, $err
+			if ($rc != 0);
 		$out =~ s/^\s+//;
 		my @manifests = split(/\s+/, $out);
-		if (!@manifests) {
-			die "Could not determine which YAML files to merge: 'blueprint' specified no files\n";
-		}
+		bail "#R{[ERROR]} Could not determine which YAML files to merge: 'blueprint' specified no files"
+			unless @manifests;
 		return @manifests;
 	}
 
@@ -210,9 +207,8 @@ sub run_hook {
 		return $rc == 0 ? 1 : 0;
 	}
 
-	if ($rc != 0) {
-		die "Could not run '$hook' hook successfully\n";
-	}
+	bail "#R{[ERROR]} Could not run '%s' hook successfully - exited with %d:\n%s", $hook, $rc, $err
+		if $rc != 0;
 	return 1;
 }
 
