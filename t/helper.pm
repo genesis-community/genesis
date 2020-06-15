@@ -146,17 +146,123 @@ sub bosh_cmd {
 sub fake_bosh {
 	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($script) = @_;
-	$script ||= <<'EOF';
-#!/bin/bash
-echo "bosh"
-for x in "$@" ; do printf "%s\n" "$x"; done
-exit 0
+  unless ($script) {
+    my $contents = '{"cmd": "<<<$@>>>"}\n';
+    $contents =~ s/\n/\\n/g;
+    $contents =~ s/\r/\\r/g;
+    $contents =~ s/'/'\\''/g;
+    $contents =~ s/"/\\"/g;
+    my $json=<<EOF;
+{
+  "Tables": [
+      {
+          "Content": "config",
+          "Header": {
+              "content": "Content",
+              "created_at": "Created At",
+              "id": "ID",
+              "name": "Name",
+              "type": "Type"
+          },
+          "Rows": [
+              {
+                  "content": "$contents",
+                  "created_at": "2020-06-10 16:50:02 UTC",
+                  "id": "18",
+                  "name": "default",
+                  "type": "cloud"
+              }
+          ],
+          "Notes": []
+      }
+  ],
+  "Blocks": null,
+  "Lines": [
+      "Succeeded"
+  ]
+}
 EOF
+    my $json_printout = join("\n", map {(my $l = $_) =~ s/'/'\\''/g; "    echo '$l'"} split("\n", $json));
+    $script=<<EOF;
+#!/bin/bash
+args="\$(echo "bosh \$*" | sed -e 's/"/"\\""/g')"
+if [[ \$args =~ \\ --json(\\ |\$) ]] ; then
+  (
+$json_printout
+  ) | sed -e "s/<<<\\\$@>>>/\$args/"
+else
+  echo "bosh"
+  for x in "\$@" ; do printf "%s\\n" "\$x"; done
+fi
+  exit 0
+EOF
+  }
 
 	my $tmp = workdir;
 	put_file("$tmp/fake-bosh", $script);
 	chmod(0755, "$tmp/fake-bosh");
 	$ENV{GENESIS_BOSH_COMMAND} = "$tmp/fake-bosh";
+}
+
+sub bosh_runs_as {
+	my ($expect, $output) = @_;
+	$output = $output ? join("\n", map {"echo '$_'"} split("\n", $output)) : "";
+	fake_bosh(<<EOF);
+$output
+[[ "\$@" == "$expect" ]] && exit 0;
+echo >&2 "got  '\$@\'"
+echo >&2 "want '$expect'"
+exit 2
+EOF
+}
+
+sub bosh_outputs_json {
+	my ($cmd,$contents) = @_;
+	$contents = '{"cmd": "<<<$@>>>"}\n' unless defined($contents);
+	$contents =~ s/\n/\\n/g;
+	$contents =~ s/\r/\\r/g;
+	$contents =~ s/'/'\\''/g;
+	$contents =~ s/"/\\"/g;
+	$cmd =~ s/"/\\"/g;
+	my $json=<<EOF;
+{
+    "Tables": [
+        {
+            "Content": "config",
+            "Header": {
+                "content": "Content",
+                "created_at": "Created At",
+                "id": "ID",
+                "name": "Name",
+                "type": "Type"
+            },
+            "Rows": [
+                {
+                    "content": "$contents",
+                    "created_at": "2020-06-10 16:50:02 UTC",
+                    "id": "18",
+                    "name": "default",
+                    "type": "cloud"
+                }
+            ],
+            "Notes": []
+        }
+    ],
+    "Blocks": null,
+    "Lines": [
+        "Ran as '<<<\$@>>>'",
+        "Expected '$cmd'",
+        "Succeeded"
+    ]
+}
+EOF
+	$output=<<EOF;
+	args="\$(echo "\$*" | sed -e 's/"/"\\""/g')"
+EOF
+	$output.="(\n";
+	$output.= join("\n", map {(my $l = $_) =~ s/'/'\\''/g; "echo '$l'"} split("\n", $json));
+	$output.="\n) | sed -e \"s/<<<\\\$@>>>/\$args/\"";
+	fake_bosh($output);
 }
 
 sub write_bosh_config {

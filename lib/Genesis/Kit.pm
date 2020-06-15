@@ -119,7 +119,7 @@ sub run_hook {
 		@args = @{$opts{args} || []};
 
 	} elsif ($hook eq 'check') {
-		$ENV{GENESIS_CLOUD_CONFIG} = $opts{env}->{ccfile} || '';
+		# Nothing special needed
 
 	} elsif ($hook eq 'pre-deploy') {
 		$ENV{GENESIS_PREDEPLOY_DATAFILE} = $opts{env}->tmppath("data");

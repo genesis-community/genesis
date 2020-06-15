@@ -131,12 +131,48 @@ sub create_env {
 		'create-env',  @{$opts{flags}}, $manifest);
 }
 
-sub download_cloud_config {
-	my ($class, $env, $path) = @_;
-	waiting_on STDERR "Downloading cloud config from '#M{$env}' BOSH director...";
-	_bosh({ interactive => 1, onfailure => "Could not download cloud-config from $env BOSH director" },
-		'bosh -e "$1" cloud-config > "$2"', $env, $path);
 
+sub download_config {
+	my ($class, $env, $path, $type, $name) = @_;
+	$name ||= "default";
+	my $label = $name eq "default" ? "$type config" : "$type config '$name'";
+
+	my ($out,$rc,$err) = _bosh(
+		{ interactive => 0},
+		'bosh -e "$1" config --type "$2" --name "$3" --json',
+		$env, $type, $name
+	);
+
+	my $json = eval {JSON::PP::decode_json($out)};
+	my $json_err = $@;
+	if ($json_err) {
+		chomp $json_err;
+		$json_err =~ s/ at lib\/Genesis\/BOSH.*//sm;
+	}
+
+	if ($rc || $json_err) {
+		my $msg = $err;
+		$msg = "#R{$json_err:}\n\n[36m$out[0m" if ($json_err && !$msg);
+		$msg ||= join("\n", grep {$_ !~ /^Exit code/} grep {$_ !~ /^Using environment/} @{$json->{Lines}});
+		$msg ||= "Could not understand 'BOSH config' json output:\n\n[36m$out[0m";
+		$msg = "No $label found" if $msg eq 'No config';
+		die $msg."\n";
+	}
+
+	bug("BOSH returned multiple entries for $label - Genesis doesn't know how to process this")
+		if (@{$json->{Tables}} != 1 || @{$json->{Tables}[0]{Rows}} != 1);
+
+	my $config = $json->{Tables}[0]{Rows}[0]{content};
+	die "No $label contents\n" unless defined($config);
+
+	mkfile_or_fail($path,$config);
+	return 1
+}
+
+sub download_cloud_config {
+	my ($class, $env, $path,) = @_;
+	waiting_on STDERR "Downloading cloud config from '#M{$env}' BOSH director...";
+	$class->download_config($env,$path,"cloud","default");
 	bail "#R{error!}  No cloud-config defined on '#M{$env}' BOSH director\n" unless (-s $path);
 	explain STDERR "#G{ok}";
 	return 1;

@@ -10,18 +10,6 @@ use Test::Output;
 use_ok "Genesis::BOSH";
 use Genesis;
 
-sub bosh_runs_as {
-	my ($expect, $output) = @_;
-	$output = $output ? "echo \"$output\"" : "";
-	fake_bosh(<<EOF);
-$output
-[[ "\$@" == "$expect" ]] && exit 0;
-echo >&2 "got  '\$@\'"
-echo >&2 "want '$expect'"
-exit 2
-EOF
-}
-
 subtest '_bosh helper magic' => sub {
 	local $ENV{GENESIS_BOSH_COMMAND};
 	bosh_runs_as('foo');
@@ -75,11 +63,11 @@ subtest 'bosh cloud-config' => sub {
 	my $out = workdir;
 
 	local $ENV{GENESIS_BOSH_COMMAND};
-	bosh_runs_as('-e "some-env" cloud-config', "{} # cloud-config");
+	bosh_outputs_json('-e "some-env" config --type cloud --name default --json',"() # cloud-config");
 	ok Genesis::BOSH->download_cloud_config('some-env', "$out/cloud.yml"),
 		"download_cloud_config should work";
 
-	bosh_runs_as('-e "some-env" cloud-config');
+	bosh_outputs_json('-e "some-env" config --type cloud --name default --json',"");
 	throws_ok { Genesis::BOSH->download_cloud_config('some-env', "$out/cloud.yml") }
 		qr/no cloud-config defined/i,
 		"without cloud-config output, download_cloud_config should fail";

@@ -717,15 +717,12 @@ EOF
 	lives_ok { $env->download_cloud_config(); }
 		"download_cloud_config runs correctly";
 
-	ok -f $env->{ccfile}, "download_cloud_config created cc file";
-	eq_or_diff get_file($env->{ccfile}), <<EOF, "download_cloud_config calls BOSH correctly";
-bosh
--e
-standalone
-cloud-config
+	ok -f $env->cloud_config, "download_cloud_config created cc file";
+	eq_or_diff get_file($env->cloud_config), <<EOF, "download_cloud_config calls BOSH correctly";
+{"cmd": "bosh -e standalone config --type cloud --name default --json"}
 EOF
 
-	put_file $env->{ccfile}, <<EOF;
+	put_file $env->cloud_config, <<EOF;
 ---
 something: (( vault "secret/code:word" ))
 EOF
@@ -812,11 +809,11 @@ EOF
 };
 subtest 'bosh variables' => sub {
 	local $ENV{GENESIS_BOSH_COMMAND};
+	fake_bosh;
 
 	my ($director1) = fake_bosh_directors(
 		{alias => 'standalone'},
 	);
-	fake_bosh;
 	my $vault_target = vault_ok;
 	Genesis::Vault->clear_all();
 	my $top = Genesis::Top->create(workdir, 'thing', vault=>$VAULT_URL)->link_dev_kit('t/src/fancy');
@@ -843,12 +840,11 @@ params:
     - 3
 
 EOF
-
 	my $env = $top->load_env('standalone');
 	lives_ok { $env->download_cloud_config(); }
 		"download_cloud_config runs correctly";
 
-	put_file $env->{ccfile}, <<EOF;
+	put_file $env->cloud_config, <<EOF;
 ---
 cc-stuff: cloud-config-data
 EOF

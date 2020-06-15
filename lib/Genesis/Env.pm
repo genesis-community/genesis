@@ -216,6 +216,19 @@ sub create {
 		$env->remove_secrets(all => 1) || bail "Cannot continue with existing secrets for this environment";
 	}
 
+	# BOSH configs
+	my $bosh_target;
+	if ($env->kit->name =~ /^bosh$/) {
+		# bosh envs are assumed to be create-env unless -e is specified
+		$bosh_target = $ENV{GENESIS_BOSH_ENVIRONMENT};
+	} else {
+		$bosh_target = $ENV{GENESIS_BOSH_ENVIRONMENT} || $opts{name};
+	}
+
+	if ($bosh_target) {
+		$env->download_configs();
+	}
+
 	## initialize the environment
 	if ($env->has_hook('new')) {
 		$env->run_hook('new');
@@ -410,23 +423,65 @@ sub tmppath {
 	                 :  $self->{__tmp};
 }
 
-sub use_cloud_config {
-	my ($self, $path) = @_;
-	$self->{ccfile} = $path;
+sub download_configs {
+	my ($self, @configs) = @_;
+	my $director = $self->bosh_target;
+	@configs = qw/cloud runtime/ unless @configs;
+
+	explain STDERR "Downloading configs from '#M{$director}' BOSH director...";
+	my $err;
+	for (@configs) {
+		my $file = "$self->{__tmp}/$_.yml";
+		my ($type,$name) = split('@',$_);
+		$name ||= 'default';
+		my $label = $name eq "default" ? "$type config" : "$type config '$name'";
+		waiting_on STDERR bullet('empty',$label."...", inline=>1, box => 1);
+		eval {Genesis::BOSH->download_config($director,$file,$type,$name)};
+		if ($@) {
+			$err = $@;
+			explain STDERR "\r".bullet('bad',$label.join("\n      ", ("...failed!","",split("\n",$err),"")), box => 1, inline => 1);
+		} else {
+			$self->use_config($file,$type,$name);
+			explain STDERR "[2K\r".bullet('good',$label, box => 1, inline => 1);
+		}
+	}
+	bail "\n#R{[ERROR]} Could not fetch requested configs from ".$self->bosh_target."\n"
+	  if $err;
 	return $self;
 }
 
-sub download_cloud_config {
-	my ($self) = @_;
-	my $ccfile = "$self->{__tmp}/cloud.yml";
-	Genesis::BOSH->download_cloud_config($self->bosh_target,$ccfile)
-		or die "Could not fetch cloud config from ".$self->bosh_target."\n";
-	$self->use_cloud_config($ccfile);
+sub use_config {
+	my ($self,$file,$type,$name) = @_;
+	$self->{_configs} ||= {};
+	my $label = $type || 'cloud';
+	my $env_var = "GENESIS_".uc($type)."_CONFIG";
+	if ($name && $name ne 'default') {
+		$label .= "/$name";
+		$env_var .= "_$name";
+	}
+	$self->{_configs}{$label} = $file;
+	$ENV{$env_var} = $file;
+	return $self;
 }
 
-sub cloud_config {
-	return $_[0]->{ccfile} || '';
+sub config_file {
+	my ($self, $type, $name) = @_;
+	my $label = $type||'cloud';
+	my $env_var = "GENESIS_".uc($type)."_CONFIG";
+	if ($name && $name ne 'default') {
+		$label .= "/$name";
+		$env_var .= "_$name";
+	}
+	return $self->{_configs}{$label} || $ENV{$env_var} || '';
 }
+
+# Legacy non-generic config methods
+sub download_cloud_config { $_[0]->download_configs('cloud'); }
+sub use_cloud_config { $_[0]->use_config($_[1],'cloud'); }
+sub cloud_config { return $_[0]->config_file('cloud'); }
+sub download_runtime_config { $_[0]->download_configs('runtime'); }
+sub use_runtime_config { $_[0]->use_config($_[1],'runtime'); }
+sub runtime_config { return $_[0]->config_file('runtime'); }
 
 sub features {
 	my $ref = $_[0]->_memoize('__features', sub {
@@ -703,11 +758,11 @@ sub _yaml_files {
 		trace("[env $self->{name}] in_yaml_files(): skipping eval, no need for cloud-config");
 	} else {
 		trace("[env $self->{name}] in _yaml_files(): not a create-env, we need cloud-config");
+		my $ccfile =  $self->config_file('cloud');
 		die "No cloud-config specified for this environment\n"
-			unless $self->{ccfile};
-
-		trace("[env $self->{name}] in _yaml_files(): cloud-config at $self->{ccfile}");
-		push @cc, $self->{ccfile};
+			unless $ccfile;
+		trace("[env $self->{name}] in _yaml_files(): cloud-config at $ccfile");
+		push @cc, $ccfile;
 	}
 
 	if ($self->kit->feature_compatibility('2.6.13')) {
@@ -989,7 +1044,11 @@ sub deploy {
 			state => $self->path(".genesis/manifests/$self->{name}-state.yml"));
 
 	} else {
-		$self->download_cloud_config unless $self->{ccfile};
+		my @configs = ();
+		for (qw/cloud runtime/) {
+			push(@configs, $_) unless $self->config_file($_);
+		}
+		$self->download_configs(@configs) if @configs;
 
 		my @bosh_opts;
 		push @bosh_opts, "--$_"             for grep { $opts{$_} } qw/fix recreate dry-run/;

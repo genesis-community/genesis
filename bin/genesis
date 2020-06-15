@@ -570,6 +570,14 @@ our $GLOBAL_USAGE = <<EOF;
                     For legacy reasons, --environment is also supported for
                     this option, but is deprecated.
 
+  --cloud-config    Specify a local YAML file to use at the cloud config.  If
+                    not specified but needed, it will be fetched from the BOSH
+                    director. (Shortform: -c, --cc)
+
+  --runtime-config  Specify a local YAML file to use at the runtime config.  If
+                    not specified but needed, it will be fetched from the BOSH
+                    director. (Shortform: --rc)
+
 
 EOF
 sub options {
@@ -585,6 +593,8 @@ sub options {
 			cwd|C=s
 			environment|bosh-env|e=s
 			color!
+			cloud-config|cc|c=s
+			runtime-config|rc=s
 		/,
 		@spec))
 			or usage(1);
@@ -622,6 +632,16 @@ sub options {
 			$cwd = dirname($cwd);
 		}
 		chdir_or_fail($cwd);
+	}
+	if ($options->{'cloud-config'}) {
+		$options->{'cloud-config'} = Cwd::abs_path($options->{'cloud-config'})
+			or bail "$options->{'cloud-config'}: no such file or directory";
+		$ENV{GENESIS_CLOUD_CONFIG} = $options->{'cloud-config'};
+	}
+	if ($options->{'runtime-config'}) {
+		$options->{'runtime-config'} = Cwd::abs_path($options->{'runtime-config'})
+			or bail "$options->{'runtime-config'}: no such file or directory";
+		$ENV{GENESIS_RUNTIME_CONFIG} = $options->{'runtime-config'};
 	}
 
 	check_prereqs(%$options) unless delete($options->{no_check_prereqs});
@@ -1293,16 +1313,13 @@ performed as per the options below.  Run with the -q|--quiet flag will result
 in no output except exit-code 0 on success, 1 otherwise.
 
 OPTIONS
-  --[no-]cloud-config [<path>]  Determines if the cloud-config checks are run.
-                                If a path is given, use that file as the cloud-
-                                config, otherwise fetch it from the BOSH
-                                director (default behavour).
-  --[no-]secrets                Determines if the secrets checks are run.
-                                Runs by default.
-  --[no-]manifest               Determines if the secrets checks are run.
-                                Runs by default.
-  --[no-]stemcells              Determines if the secrets checks are run.
-                                DOES NOT run by default.
+  --no-cloud-config Do not run cloud config tests.
+  --[no-]secrets    Determines if the secrets checks are run.
+                    Runs by default.
+  --[no-]manifest   Determines if the secrets checks are run.
+                    Runs by default.
+  --[no-]stemcells  Determines if the secrets checks are run.
+                    DOES NOT run by default.
 
 $GLOBAL_USAGE
 
@@ -1310,7 +1327,6 @@ EOF
 sub {
 	my %options = (stemcells => 0, manifest => 1, secrets => 1);
 	options(\@_, \%options, qw/
-		cloud-config:s
 		no-cloud-config
 		secrets!
 		manifest!
@@ -1323,11 +1339,9 @@ sub {
 		bail "Cannot specify --no-cloud-config and --cloud-config"
 			if defined $options{'cloud-config'};
 	} elsif ($options{'cloud-config'}) {
-		my $cc = Cwd::abs_path($options{'cloud-config'})
-			or bail "$options{'cloud-config'}: no such file or directory";
-		$env->use_cloud_config($cc);
+		$env->use_cloud_config($options{'cloud-config'});
 	} elsif (!$env->needs_bosh_create_env) {
-		$env->download_cloud_config;
+		$env->download_cloud_config unless $options{'cloud-config'}
 	}
 
 	my $ok = check_environment($env, map {("check_$_" => $options{$_})} qw/manifest secrets stemcells/);
@@ -1407,7 +1421,7 @@ sub {
 		explain "  - as a #M{create-env} deployment\n";
 	} else {
 		explain "  - to '#M{%s}' BOSH director.\n", scalar($env->lookup_bosh_target);
-		$env->download_cloud_config();
+		$env->download_configs();
 		explain "#Y{! No cloud config detected -- this may be a Genesis bug}"
 			unless $env->cloud_config;
 	}
@@ -2017,12 +2031,10 @@ sub {
 
 command("manifest", {scope => 'env'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE: genesis manifest [--no-redact] [--cloud-config path.yml] deployment-env.yml
+USAGE: genesis manifest <options> deployment-env.yml
 
 OPTIONS
 $GLOBAL_USAGE
-
-  -c, --cloud-config PATH   Path to your downloaded BOSH cloud-config
 
       --[no-]redact         Determines if vault values are fetched or redacted.
                             By default, the manifest will be redacted unless
@@ -2034,7 +2046,6 @@ EOF
 sub {
 	my %options = (redact => ! -t STDOUT, prune => 1);
 	options(\@_, \%options, qw/
-		cloud-config|c=s
 		redact!
 		prune!
 	/);
@@ -2045,18 +2056,14 @@ sub {
 	my $env = $top->load_env($_[0]);
 
 	if ($env->needs_bosh_create_env) {
-		if ($options{'cloud-config'}) {
-			error "#Y{[Warning]} The specified cloud-config will be ignored as create-env environments do not use them.";
-			delete $options{'cloud-config'};
-		}
+		error "#Y{[Warning]} The specified cloud-config will be ignored as create-env environments do not use them."
+			if delete $options{'cloud-config'};
+	} elsif ($options{'cloud-config'}) {
+		$env->use_cloud_config($options{'cloud-config'});
 	} else {
-		unless ($options{'cloud-config'}) {
-			$options{'cloud-config'} = workdir."/cloud.yml";
-			Genesis::BOSH->download_cloud_config($env->bosh_target, $options{'cloud-config'});
-		}
+		$env->download_cloud_config();
 	}
 
-	$env->use_cloud_config($options{'cloud-config'});
 	print $env->manifest(redact => $options{redact},
 	                     prune  => $options{prune});
 });
@@ -2213,8 +2220,6 @@ OPTIONS
                       Takes an argument of the form "env-name/deployment-type"
       --defined       Exit with 0 if key defined in specified source, 9 otherwise.  No
                       output is produced, making it useful in 'if lookup ... ; then'
-      --cloud-config  Specify the cloud config for --merged lookups.  If not specified,it
-                      will fetch the cloud config from the BOSH director.
 
 $GLOBAL_USAGE
 EOF
@@ -2226,16 +2231,12 @@ sub {
 		deployed
 		merged
 		defined|defines
-		cloud-config=s
 	/);
 	usage(1) if @_ < 2 or @_ > 3;
 	check_prereqs;
 	$options{exodus} = 1 if $options{'exodus-for'};
 	usage(1,"#R{[ERROR]} Can only specify one of --merged, --deployed, or --exodus(-for)")
 		if ((grep {$_ =~ /^(exodus|deployed|merged)$/} keys(%options)) > 1);
-
-	usage(1,"#R{[ERROR]} --cloud-config option only applicable to the --merged option")
-		if $options{'cloud-config'} && ! $options{merged};
 
 	my ($name, $key, $default) = @_;
 	# Legacy support -- previous versions used key/name order
@@ -2254,9 +2255,7 @@ sub {
 			if envset("GENESIS__LOOKUP_MERGED_MANIFEST");
 		$ENV{GENESIS__LOOKUP_MERGED_MANIFEST}="1";
 		if ($options{'cloud-config'}) {
-			my $cc = Cwd::abs_path($options{'cloud-config'})
-				or bail "$options{'cloud-config'}: no such file or directory";
-			$env->use_cloud_config($cc);
+			$env->use_cloud_config($options{'cloud-config'});
 		} elsif (!$env->needs_bosh_create_env) {
 			$env->download_cloud_config;
 		}

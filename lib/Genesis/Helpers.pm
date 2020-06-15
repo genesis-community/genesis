@@ -388,6 +388,22 @@ cloud_config_has() {
 }
 export -f cloud_config_has
 
+export __cc_data=
+ccq() {
+	[[ -z "${GENESIS_CLOUD_CONFIG+x}" ]] && bail "Cloud config contents not available - cannot continue"
+	[[ -z "${__cc_data}" ]] && __cc_data="$(spruce json "$GENESIS_CLOUD_CONFIG")"
+	echo "$__cc_data" | jq -r "$@"
+}
+export -f ccq
+
+export __rc_data=
+rcq() {
+	[[ -z "${GENESIS_RUNTIME_CONFIG+x}" ]] && bail "Runtime config contents not available - cannot continue"
+	[[ -z "${__rc_data}" ]] && __rc_data="$(spruce json "$GENESIS_RUNTIME_CONFIG")"
+	echo "$__rc_data" | jq -r "$@"
+}
+export -f rcq
+
 ###
 ###   Feature Flag Functions
 ###
