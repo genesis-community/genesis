@@ -666,3 +666,11 @@ credhub() {
 	echo "$output"
 }
 export -f credhub
+
+move_secrets_to_credhub() {
+  local value src="$1" dst="$2"
+  value="$(safe get "${GENESIS_SECRETS_BASE}$src")"
+  credhub set -n "/$GENESIS_CREDHUB_ROOT/$dst" -t value -v "$value"
+  safe rm "${GENESIS_SECRETS_BASE}$src"
+}
+export -f move_secrets_to_credhub
