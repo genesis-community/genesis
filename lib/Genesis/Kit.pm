@@ -347,12 +347,19 @@ sub dereferenced_metadata {
 sub _deref_metadata {
 	my ($self,$metadata, $lookup) = @_;
 	if (ref $metadata eq 'ARRAY') {
-		return [
-			(map {$self->_deref_metadata($_,$lookup)} @$metadata)
-		];
+		# Have to strip out maybe's
+		my @results;
+		for (@$metadata) {
+			eval {push @results, $self->_deref_metadata($_,$lookup)};
+			die $@ if ($@ && $@ ne "metadata not found\n");
+		}
+		return [@results];
 	} elsif (ref $metadata eq 'HASH') {
 		my %h = ();
-		$h{$_} = $self->_deref_metadata($metadata->{$_},$lookup) for keys %$metadata;
+		for (keys %$metadata) {
+			eval {$h{$_} = $self->_deref_metadata($metadata->{$_},$lookup)};
+			die $@ if ($@ && $@ ne "metadata not found\n");
+		}
 		return \%h;
 	} elsif (ref(\$metadata) eq 'SCALAR' && defined($metadata)) {
 		$metadata =~ s/\$\{(.*?)(?:\|\|(.*?))?\}/$self->_dereference_param($lookup, $1, $2)/ge;
@@ -373,9 +380,10 @@ sub _dereference_param {
 	}
 	if ($key =~ m/^maybe:/) {
 		$key =~ s/^maybe://;
-		$default = "";
+		$default = bless({},"missing_value");
 	}
 	my $val = $lookup->($key, $default);
+	die "metadata not found\n" if (ref($val) eq "missing_value");
 	while (defined($val) && $val =~ /\(\( grab \s*(\S*?)(?:\s*\|\|\s*(.*?))?\s*\)\)/) {
 		$key = $1;
 		my $remainder = $2;
