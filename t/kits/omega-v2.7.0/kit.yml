@@ -5,6 +5,9 @@ homepage: omega.starkandwayne.com
 github:   https://github.com/genesis-community/omega-genesis-kit
 
 genesis_version_min: 2.7.0
+required_configs:
+  cloud:
+    - blueprint
 
 description: |
   This kit is designed to exercise as much of the Genesis codebase

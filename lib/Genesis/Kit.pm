@@ -238,6 +238,24 @@ sub secrets_store {
 sub uses_credhub { return $_[0]->secrets_store eq "credhub"; }
 
 # }}}
+# required_configs - what configs does this kit require from BOSH? {{{
+sub required_configs {
+	my ($self,$hook) = @_;
+	my $required_configs = $self->metadata->{required_configs};
+	return($hook eq 'new' ? () : ('config')) unless $required_configs;
+	return @{$required_configs} if ref($required_configs) eq 'ARRAY';
+	my @configs;
+	for my $config (keys %{$required_configs}) {
+		if (ref($required_configs->{$config}) eq 'ARRAY') {
+			push(@configs, $config) if !defined($hook) || grep {$_ eq $hook} @{$required_configs->{$config}}
+		} else {
+			push(@configs, $config) if $required_configs->{$config};
+		}
+	}
+	return @configs;
+}
+
+# }}}
 # feature_compatibility - {{{
 sub feature_compatibility {
 	# Assume feature compatibility with specified min genesis version.

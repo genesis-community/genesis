@@ -880,7 +880,6 @@ EOF
 
 subtest 'new env and check' => sub{
 	local $ENV{GENESIS_BOSH_COMMAND};
-	fake_bosh;
 	my $vault_target = vault_ok;
 	Genesis::Vault->clear_all();
 
@@ -897,7 +896,10 @@ subtest 'new env and check' => sub{
 	my $env;
 	local $ENV{NOCOLOR} = "yes";
 	local $ENV{PRY} = "1";
-	write_bosh_config $name;
+	my ($director1) = fake_bosh_directors(
+		{alias => $name},
+	);
+	fake_bosh;
 	my $out;
 	lives_ok {
 		$out = combined_from {$env = $top->create_env($name, $kit, vault => $vault_target)}
@@ -995,6 +997,7 @@ Failed - Duration: XXX seconds [6 found/0 skipped/4 errors]
 
 EOF
 
+	$director1->stop();
 	teardown_vault();
 };
 

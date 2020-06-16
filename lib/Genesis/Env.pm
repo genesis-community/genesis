@@ -224,10 +224,10 @@ sub create {
 	} else {
 		$bosh_target = $ENV{GENESIS_BOSH_ENVIRONMENT} || $opts{name};
 	}
-
-	if ($bosh_target) {
-		$env->download_configs();
-	}
+	my @required_configs = grep {
+		!$env->config_file($_)
+	} ($env->kit->required_configs('new'));
+	$env->download_configs(@required_configs) if ($bosh_target && @required_configs);
 
 	## initialize the environment
 	if ($env->has_hook('new')) {
@@ -445,7 +445,9 @@ sub download_configs {
 			explain STDERR "[2K\r".bullet('good',$label, box => 1, inline => 1);
 		}
 	}
-	bail "\n#R{[ERROR]} Could not fetch requested configs from ".$self->bosh_target."\n"
+	explain STDERR "";
+
+	bail "#R{[ERROR]} Could not fetch requested configs from ".$self->bosh_target."\n"
 	  if $err;
 	return $self;
 }
@@ -456,7 +458,7 @@ sub use_config {
 	my $label = $type || 'cloud';
 	my $env_var = "GENESIS_".uc($type)."_CONFIG";
 	if ($name && $name ne 'default') {
-		$label .= "/$name";
+		$label .= "@$name";
 		$env_var .= "_$name";
 	}
 	$self->{_configs}{$label} = $file;
@@ -469,7 +471,7 @@ sub config_file {
 	my $label = $type||'cloud';
 	my $env_var = "GENESIS_".uc($type)."_CONFIG";
 	if ($name && $name ne 'default') {
-		$label .= "/$name";
+		$label .= "@$name";
 		$env_var .= "_$name";
 	}
 	return $self->{_configs}{$label} || $ENV{$env_var} || '';
@@ -993,7 +995,6 @@ sub bosh_target {
 
 	unless ($self->{__bosh_target}) {
 		my ($bosh, $source) = $self->lookup_bosh_target;
-
 		Genesis::BOSH->ping($bosh)
 			or bail("\n#R{[ERROR]} Could not connect to BOSH Director '#M{$bosh}'\n  - specified via $source\n");
 		$self->{__bosh_target} = $bosh;
@@ -1045,7 +1046,7 @@ sub deploy {
 
 	} else {
 		my @configs = ();
-		for (qw/cloud runtime/) {
+		for ($self->kit->required_configs('blueprint')) {
 			push(@configs, $_) unless $self->config_file($_);
 		}
 		$self->download_configs(@configs) if @configs;

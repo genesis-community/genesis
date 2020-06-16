@@ -54,7 +54,7 @@ sub validate {
 			}
 
 			# check for errant top-level keys - params, subkits and features have been discontinued.
-			my @valid_keys = qw/name version description code docs author authors genesis_version_min secrets_store/;
+			my @valid_keys = qw/name version description code docs author authors genesis_version_min secrets_store required_configs/;
 			if (!defined($meta->{secrets_store}) || $meta->{secrets_store} eq 'vault') {
 				push @valid_keys, "credentials", "certificates", "provided";
 			} elsif ($meta->{secrets_store} ne "credhub") {
