@@ -161,9 +161,15 @@ sub from_envvars {
 	$env->{'__features'} = split(' ',$ENV{GENESIS_REQUESTED_FEATURES})
 		if $ENV{GENESIS_REQUESTED_FEATURES};
 
+	# bosh and credhub env overrides
+	$env->{__bosh_target} = $env->{__params}{genesis}{bosh_env} = $ENV{GENESIS_BOSH_ENVIRONMENT}
+		if ($ENV{GENESIS_BOSH_ENVIRONMENT});
+	$env->{__params}{genesis}{credhub_env} = $ENV{GENESIS_CREDHUB_EXODUS_SOURCE}
+		if ($ENV{GENESIS_CREDHUB_EXODUS_SOURCE});
+
 	# determine our vault and secret path
 	for (qw(secrets_mount secrets_slug exodus_mount ci_mount root_ca_path)) {
-		$env->{'__'.$_} = $ENV{'GENESIS_'.uc($_)};
+		$env->{'__'.$_} = $env->{__params}{genesis}{$_} = $ENV{'GENESIS_'.uc($_)};
 	}
 
 	# Check for v2.7.0 features
@@ -224,6 +230,13 @@ sub create {
 	} else {
 		$bosh_target = $ENV{GENESIS_BOSH_ENVIRONMENT} || $opts{name};
 	}
+
+	# bosh and credhub env overrides
+	$env->{__params}{genesis}{bosh_env} = $ENV{GENESIS_BOSH_ENVIRONMENT}
+		if ($ENV{GENESIS_BOSH_ENVIRONMENT});
+	$env->{__params}{genesis}{credhub_env} = $ENV{GENESIS_CREDHUB_EXODUS_SOURCE}
+		if ($ENV{GENESIS_CREDHUB_EXODUS_SOURCE});
+
 	my @required_configs = grep {
 		!$env->config_file($_)
 	} ($env->kit->required_configs('new'));
@@ -395,7 +408,7 @@ sub credhub_connection_env {
 
 	my $credhub_path = $credhub_src;
 	$env{GENESIS_CREDHUB_EXODUS_SOURCE_OVERRIDE} =
-		(($credhub_src_key || "") eq 'genesis.credhub-exodus-env') ? $credhub_src : "";
+		(($credhub_src_key || "") eq 'genesis.credhub_env') ? $credhub_src : "";
 
 	if ($credhub_src =~ /\/\w+$/) {
 		$credhub_path  =~ s/\/([^\/]*)$/-$1/;
