@@ -207,8 +207,10 @@ sub run_hook {
 		return $rc == 0 ? 1 : 0;
 	}
 
-	bail "#R{[ERROR]} Could not run '%s' hook successfully - exited with %d:\n%s", $hook, $rc, $err
-		if $rc != 0;
+	if ($rc != 0) {
+		bail "#R{[ERROR]} Could not run '%s' hook successfully - exited with %d:\n%s", $hook, $rc, $err if $err;
+		bail "#R{[ERROR]} Could not run '%s' hook successfully - exited with %d", $hook, $rc;
+	}
 	return 1;
 }
 
@@ -387,8 +389,12 @@ sub _dereference_param {
 	while (defined($val) && $val =~ /\(\( grab \s*(\S*?)(?:\s*\|\|\s*(.*?))?\s*\)\)/) {
 		$key = $1;
 		my $remainder = $2;
-		$remainder =~ /^"([^"]*)"$/;
-		$default = $1 if defined($1);
+		if ($remainder && $remainder =~ /^"([^"]*)"$/) {
+			$default = $1;
+			$remainder = "";
+		} else {
+			$default = undef;
+		}
 		trace "Dereferencing kit param [intermediary]: %s [default: %s]", $key, defined($default) ? $default : 'null';
 		$val = $lookup->($key, $default);
 		$val = "(( grab $remainder ))" if $remainder && !$val;
