@@ -237,10 +237,7 @@ sub create {
 	$env->{__params}{genesis}{credhub_env} = $ENV{GENESIS_CREDHUB_EXODUS_SOURCE}
 		if ($ENV{GENESIS_CREDHUB_EXODUS_SOURCE});
 
-	my @required_configs = grep {
-		!$env->config_file($_)
-	} ($env->kit->required_configs('new'));
-	$env->download_configs(@required_configs) if ($bosh_target && @required_configs);
+	$env->download_required_configs('new') if ($bosh_target);
 
 	## initialize the environment
 	if ($env->has_hook('new')) {
@@ -463,6 +460,15 @@ sub download_configs {
 	bail "#R{[ERROR]} Could not fetch requested configs from ".$self->bosh_target."\n"
 	  if $err;
 	return $self;
+}
+
+sub download_required_configs {
+	my ($self, @hooks) = @_;
+	my @configs;
+	for ($self->kit->required_configs(@hooks)) {
+		push(@configs, $_) unless $self->config_file($_);
+	}
+	return $self->download_configs(@configs)
 }
 
 sub use_config {
@@ -1058,11 +1064,7 @@ sub deploy {
 			state => $self->path(".genesis/manifests/$self->{name}-state.yml"));
 
 	} else {
-		my @configs = ();
-		for ($self->kit->required_configs('blueprint')) {
-			push(@configs, $_) unless $self->config_file($_);
-		}
-		$self->download_configs(@configs) if @configs;
+		$self->download_required_configs('blueprint');
 
 		my @bosh_opts;
 		push @bosh_opts, "--$_"             for grep { $opts{$_} } qw/fix recreate dry-run/;

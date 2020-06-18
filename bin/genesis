@@ -1428,7 +1428,7 @@ sub {
 		explain "  - as a #M{create-env} deployment\n";
 	} else {
 		explain "  - to '#M{%s}' BOSH director.\n", scalar($env->lookup_bosh_target);
-		$env->download_configs();
+		$env->download_required_configs('blueprint','check');
 		explain "#Y{! No cloud config detected -- this may be a Genesis bug}"
 			unless $env->cloud_config;
 	}
