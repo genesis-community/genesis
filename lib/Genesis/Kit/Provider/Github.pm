@@ -276,17 +276,23 @@ sub fetch_kit_version {
 
 	my $version_info = (
 		grep {$_->{version} eq $version}
-		grep {$_->{url}}
 		$self->kit_versions($name, include_drafts => 1, include_prereleases => 1)
 	)[0];
-	bail "Version $name/$version was not found" unless $version_info && ref($version_info) eq 'HASH';
-	
+	bail(
+		"\n#R{[ERROR]} Version %s/%s was not found\n",
+		$name, $version
+	) unless $version_info && ref($version_info) eq 'HASH';
+
 	my $url = $version_info->{url};
-	bail "Version $name/$version does not have a downloadable release\n" unless $url;
+	bail(
+		"\n#R{[ERROR]} Version %s/%s was found but is missing its resource url.".
+		"\n        It may have been revoked (see release notes below):\n\n%s\n",
+		$name, $version, $version_info->{body}
+	) unless $url;
 
 	waiting_on "Downloading v%s of #M{%s} kit from #C{%s} ... ",$version,$name,$self->label;
 	my ($code, $msg, $data) = curl("GET", $url);
-	bail "#R{error!}\nFailed to download %s/%s from %s: returned a %s status code\n", $name, $version, $self->label, $code
+	bail "\n#R{error!}\nFailed to download %s/%s from %s: returned a %s status code\n", $name, $version, $self->label, $code
 		unless $code == 200;
 	explain "#G{done.}";
 	my $file = "$path/$name-$version.tar.gz";

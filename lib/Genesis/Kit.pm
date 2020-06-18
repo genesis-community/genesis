@@ -161,19 +161,27 @@ sub run_hook {
 		$self->path, $hook_name, @args);
 
 	if ($hook eq 'new') {
-		bail("#R{[ERROR]} Could not create new env #C{%s} (in %s): 'new' hook exited %d:\n%s",
-				 $ENV{GENESIS_ENVIRONMENT}, humanize_path($ENV{GENESIS_ROOT}), $rc, $err)
-			unless ($rc == 0);
+		bail(
+			"#R{[ERROR]} Could not create new env #C{%s} (in %s): 'new' hook exited %d:".
+			"\n\n#u{stdout:}\n%s\n\n#u{stderr:}\n%s",
+			$ENV{GENESIS_ENVIRONMENT}, humanize_path($ENV{GENESIS_ROOT}),
+			$rc, $out, $err || "#i{No stderr provided}"
+		)	unless ($rc == 0);
 
-		bail("#R{[ERROR]} Could not create new env #C{%s} (in %s): 'new' hook did not create #M{%1\$s}",
-				 $ENV{GENESIS_ENVIRONMENT}, humanize_path($ENV{GENESIS_ROOT}))
-			unless -f sprintf("%s/%s.yml", $ENV{GENESIS_ROOT}, $ENV{GENESIS_ENVIRONMENT});
+		bail(
+			"#R{[ERROR]} Could not create new env #C{%s} (in %s): 'new' hook did not create #M{%1\$s}",
+			$ENV{GENESIS_ENVIRONMENT}, humanize_path($ENV{GENESIS_ROOT})
+		)	unless -f sprintf("%s/%s.yml", $ENV{GENESIS_ROOT}, $ENV{GENESIS_ENVIRONMENT});
+
 		return 1;
 	}
 
 	if ($hook eq 'blueprint') {
-		bail "#R{[ERROR]} Could not determine which YAML files to merge: 'blueprint' hook exited with %d:\n%s", $rc, $err
-			if ($rc != 0);
+		bail(
+			"#R{[ERROR]} Could not determine which YAML files to merge: 'blueprint' hook exited with %d:".
+			"\n\n#u{stdout:}\n%s\n\n#u{stderr:}\n%s\n",
+			$rc, $out, $err || "#i{No stderr provided}"
+		) if ($rc != 0);
 		$out =~ s/^\s+//;
 		my @manifests = split(/\s+/, $out);
 		bail "#R{[ERROR]} Could not determine which YAML files to merge: 'blueprint' specified no files"
@@ -182,8 +190,11 @@ sub run_hook {
 	}
 
 	if (grep { $_ eq $hook}  qw/features subkit/) {
-		bail("#R{[ERROR]} Could not run feature hook in kit %s: %s ", $self->id, $err)
-			unless $rc == 0;
+		bail(
+			"#R{[ERROR]} Could not run feature hook in kit %s:".
+			"\n\n#u{stdout:}\n%s\n\n#u{stderr:}\n%s\n",
+			$self->id, $out, $err || "#i{No stderr provided}"
+		) unless $rc == 0;
 		$out =~ s/^\s+//;
 		return split(/\s+/, $out);
 	}
@@ -207,10 +218,11 @@ sub run_hook {
 		return $rc == 0 ? 1 : 0;
 	}
 
-	if ($rc != 0) {
-		bail "#R{[ERROR]} Could not run '%s' hook successfully - exited with %d:\n%s", $hook, $rc, $err if $err;
-		bail "#R{[ERROR]} Could not run '%s' hook successfully - exited with %d", $hook, $rc;
-	}
+	bail(
+		"#R{[ERROR]} Could not run '%s' hook successfully - exited with %d:".
+		"\n\n#u{stdout:}\n%s\n\n#u{stderr:}\n%s\n",
+		$hook, $rc, $out, $err || "#i{No stderr provided}"
+	) if $rc != 0;
 	return 1;
 }
 
