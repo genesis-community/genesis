@@ -18,7 +18,7 @@ for feature in $GENESIS_REQUESTED_FEATURES; do
 	[[ "$feature" == "always-first" ]] || echo "$feature"
 done
 if ! want_feature shazzam; then
-	echo no-shazzam
+	echo +no-shazzam
 fi
 
 ) | uniq

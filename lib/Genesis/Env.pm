@@ -509,6 +509,12 @@ sub features {
 	my $ref = $_[0]->_memoize('__features', sub {
 		my $self = shift;
 		my $features = scalar($self->lookup(['kit.features', 'kit.subkits'], []));
+		$self->{__explicit_features} = $features;
+		my @derived_features = grep {$_ =~ /^\+/} $features;
+		bail(
+			"#R{[ERROR]} Evironment #C{%s} cannot explicitly specify derived features:\n  - %s",
+			$self->name, join("\n  - ",@derived_features)
+		) if @derived_features;
 		$features = [$self->kit->run_hook('features',features => $features)]
 			if $self->kit->has_hook('features');
 		$features;

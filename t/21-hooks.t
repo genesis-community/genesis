@@ -552,6 +552,27 @@ genesis:
   env: fun-times
 EOF
 
+	put_file $fancy->path('hooks/blueprint'), <<EOF;
+#!/bin/bash
+set -eu
+
+validate_features always-first a-thing bob shazzam
+
+declare -a manifests
+manifests=( base.yml )
+
+for want in \${GENESIS_REQUESTED_FEATURES}; do
+	if [[ \$want == '+no-shazzam' ]] ; then
+		manifests+=( "addons/without-shazzam" )
+	else
+		manifests+=( "addons/\$want.yml" )
+	fi
+done
+
+echo "\${manifests[@]}"
+exit 0
+EOF
+
 	my $fun_times = $top->load_env('fun-times');
 	$fun_times->{kit} = $fancy;
 	delete($fun_times->{__features});
@@ -561,7 +582,6 @@ EOF
 			bob
 		]], "[fancy] the 'features' are reported as-is when features hook isn't present");
 
-
 	enable_features_hook($fancy);
 	$fun_times->{kit} = $fancy;
 	delete($fun_times->{__features});
@@ -569,8 +589,18 @@ EOF
 			always-first
 			a-thing
 			bob
-			no-shazzam
+			+no-shazzam
 		]], "[fancy] features hook augments features - set 1");
+
+	my @manifests;
+	lives_ok {@manifests = $fancy->run_hook('blueprint',env=>$fun_times)} "[fancy] blueprint hook works with derived features";
+	cmp_deeply([@manifests], [
+		"base.yml",
+		"addons/always-first.yml",
+		"addons/a-thing.yml",
+		"addons/bob.yml",
+		"addons/without-shazzam"
+	], "[fancy] blueprint hook contains the correct manifests for normal and derived features");
 
 	delete($fun_times->{__features});
 
@@ -578,7 +608,7 @@ EOF
 			always-first
 			a-thing
 			bob
-			no-shazzam
+			+no-shazzam
 		]), "[fancy] the 'features' are augmented when features hook is present - set 1");
 
 	$fun_times = $top->load_env('fun-times');
@@ -590,7 +620,7 @@ EOF
 	{
 		local $ENV{HOOK_SHOULD_FAIL} = 'yes';
 		throws_ok { $fancy->run_hook('features', features => scalar($fun_times->lookup(['kit.features', 'kit.subkits']))); }
-			qr/Could not run feature hook in kit fancy\/in-development \(dev\): \.\/hooks\/features: line 5: garblerflaven: unbound variable/i;
+			qr/Could not run feature hook in kit fancy\/in-development \(dev\):.*\.\/hooks\/features: line 5: garblerflaven: unbound variable/ims;
 	}
 
 	{

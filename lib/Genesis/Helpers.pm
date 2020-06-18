@@ -446,6 +446,7 @@ invalid_features() {
   local __have
   declare -a __invalid
   for __have in $GENESIS_REQUESTED_FEATURES; do
+    [[ "$__have" =~ ^\+ ]] && continue
     __found='';
     for __valid in "$@"; do
       [[ "$__have" == "$__valid" ]] && __found=1 && break
@@ -463,6 +464,7 @@ valid_features() {
   local __found
   local __valid
   for __have in $GENESIS_REQUESTED_FEATURES; do
+    [[ "$__have" =~ ^\+ ]] && continue
     __found=''
     for __valid in "$@"; do
       [[ "${__have}" = "${__valid}" ]] && __found=1 && break
