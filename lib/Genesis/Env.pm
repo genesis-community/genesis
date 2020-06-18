@@ -468,7 +468,8 @@ sub download_required_configs {
 	for ($self->kit->required_configs(@hooks)) {
 		push(@configs, $_) unless $self->config_file($_);
 	}
-	return $self->download_configs(@configs)
+	$self->download_configs(@configs) if @configs;
+	return $self
 }
 
 sub use_config {
@@ -1041,6 +1042,7 @@ sub has_hook {
 
 sub run_hook {
 	my ($self, $hook, %opts) = @_;
+	$self->download_required_configs($hook);
 	debug "Started run_hook '$hook'";
 	return $self->kit->run_hook($hook, %opts, env => $self);
 }
