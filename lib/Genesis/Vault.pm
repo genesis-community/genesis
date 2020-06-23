@@ -5,6 +5,7 @@ use warnings;
 use Genesis;
 use Genesis::UI;
 use JSON::PP qw/decode_json/;
+use UUID::Tiny ();
 
 ### Class Variables {{{
 my (@all_vaults, $default_vault, $current_vault);
@@ -520,7 +521,12 @@ sub process_kit_secret_plans {
 			}
 		} else {
 			my ($out, $rc) = $self->query(@command);
-			if ($out =~ /refusing to .* as it is already present/) {
+			$out = join("\n", grep {
+					my (undef, $key) = split(':',$path);
+					$_ !~ /^$key: [a-f0-9]{8}(-[a-f0-9]{4}){4}[a-f0-9]{8}$/;
+				} split("\n", $out )) if ( $_->{type} eq 'uuid');
+			if ($out =~ /refusing to .* as it is already present/ ||
+			    $out =~ /refusing to .* as the following keys would be clobbered:/) {
 				$update->('done-item', result => 'skipped')
 			} elsif ( $action eq 'renew' && $out =~ /Renewed x509 cert.*expiry set to (.*)$/) {
 				my $expires = $1;
@@ -625,7 +631,7 @@ sub _expected_kit_secret_keys {
 		@keys = qw(private public fingerprint);
 	} elsif ($type eq 'dhparams') {
 		@keys = qw(dhparam-pem);
-	} elsif ($type =~ /^(random|provided)$/) {
+	} elsif ($type =~ /^(random|provided|uuid)$/) {
 		my (undef,$key) = split(":",$plan{path});
 		@keys = ($key);
 		push(@keys, $plan{destination} || "$key-".$plan{format})
@@ -713,7 +719,7 @@ sub parse_kit_secret_plans {
 				if ($filter =~ /(.*?)(!)?=(.*)$/) { # plan properties
 					my ($key,$negate,$value) = ($1,$2,$3);
 					@paths = map {$_->{path}} grep {defined($_->{$key}) && ($negate ? $_->{$key} ne $value : $_->{$key} eq $value)} @ordered_plans;
-					debug "Parsing plan properties filter: $key = '$value'";
+					debug "Parsing plan properties filter: $key = '$value' => ".join(", ",@paths);
 
 				} elsif ($filter =~ m'^(!)?/(.*?)/(i)?$') { # path regex
 					my ($match,$pattern,$reopt) = (($1 || '') ne '!', $2, ($3 || ''));
@@ -757,6 +763,28 @@ sub describe_kit_secret_plan {
 			$plan{size} . ' bytes',
 			$plan{fixed} ? 'fixed' : undef
 		)
+	} elsif ($plan{type} eq 'uuid') {
+		$type = "UUID";
+		my $namespace = $plan{namespace} ? "ns:$plan{namespace}" : undef;
+		$namespace =~ s/^ns:NS_/ns:@/ if $namespace;
+		if ($plan{version} =~ /^(v1|time)/i) {
+			@features = ('random:time based (v1)')
+		} elsif ($plan{version} =~ /^(v3|md5)/i) {
+			@features = (
+				'static:md5-hash (v3)',
+				"'$plan{name}'",
+				$namespace
+			);
+		} elsif ($plan{version} =~ /^(v4|random)/i) {
+			@features = ('random:system RNG based (v4)')
+		} elsif ($plan{version} =~ /^(v5|sha1)/i) {
+			@features = (
+				'static:sha1-hash (v5)',
+				"'$plan{name}'",
+				$namespace,
+			);
+		}
+		push(@features, 'fixed') if $plan{fixed};
 	} elsif ($plan{type} eq 'dhparams') {
 		$type = "Diffie-Hellman key exchange parameters";
 		@features = (
@@ -866,17 +894,45 @@ sub _get_kit_secrets {
 							next;
 						}
 						my $cmd = $data->{$k};
-						if ($cmd =~ m/^random\s+(\d+)(\s+fmt\s+(\S+)(\s+at\s+(\S+))?)?(\s+allowed-chars\s+(\S+))?(\s+fixed)?$/) {
-							$plans->{"$path:$k"} = {
-								type=> 'random',
-								size => $1,
-								format => $3,
-								destination => $5,
-								valid_chars => $7,
-								fixed => (!!$8)
-							};
+						if ($cmd =~ m/^random\b/) {
+							if ($cmd =~ m/^random\s+(\d+)(\s+fmt\s+(\S+)(\s+at\s+(\S+))?)?(\s+allowed-chars\s+(\S+))?(\s+fixed)?$/) {
+								$plans->{"$path:$k"} = {
+									type        => 'random',
+									size        => $1,
+									format      => $3,
+									destination => $5,
+									valid_chars => $7,
+									fixed       => (!!$8)
+								};
+							} else {
+								$plans->{"$path:$k"} = {
+									type  => "error",
+									error => "Bad random password request:\n".
+									         "- Expected usage: random <size> [fmt <format> [at <key>]] ".
+									         "[allowed-chars <chars>] [fixed]\n".
+									         "  Got: $cmd"
+								};
+							}
+						} elsif ($cmd =~ m/^uuid\b/) {
+							if ($cmd =~ m/^uuid(?:\s+(v[1345]|time|md5|random|sha1))?(?:\s+namespace (?:([a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12})|(dns|url|oid|x500)))?(?:\s+name (.*?))?(\s+fixed)?$/i) {
+								$plans->{"$path:$k"} = {
+									type      => 'uuid',
+									version   => uc($1||"v4"),
+									namespace => $2 || ($3 ? "NS_".uc($3) : undef),
+									name      => $4,
+									fixed     => (!!$5)
+								};
+							} else {
+								$plans->{"$path:$k"} = {
+									type  => "error",
+									error => "Bad UUID request:\n".
+									         "- Expected usage: uuid [v1|time|v3|md5|v4|random|v5|sha1] ".
+									         "[namespace (dns|url|oid|x500|<UUID namespace>] [name <name>] [fixed]\n".
+									         "  Got: $cmd"
+								};
+							}
 						} else {
-							$plans->{"$path:$k"} = {type => "error", error => "Bad crecential request:\n- Bad generate-password format '$cmd'"};
+							$plans->{"$path:$k"} = {type => "error", error => "Bad credential request:\n- Bad generate-password format '$cmd'"};
 						}
 					}
 				} elsif ($data =~ m/^(ssh|rsa)\s+(\d+)(\s+fixed)?$/) {
@@ -885,6 +941,8 @@ sub _get_kit_secrets {
 					$plans->{$path} = {type => 'dhparams', size => $1, fixed => (!!$2) }
 				} elsif ($data =~ m/^random .?$/) {
 					$plans->{$path} = {type => 'error', error => "Bad credential request:\n- Random password request for a path must be specified per key in a hashmap"};
+				} elsif ($data =~ m/^uuid .?$/) {
+					$plans->{$path} = {type => 'error', error => "Bad credential request:\n- UUID request for a path must be specified per key in a hashmap"};
 				} else {
 					$plans->{$path} = {type => 'error', error => "Bad credential request:\n- Unrecognized request '$data'"};
 				}
@@ -1004,6 +1062,14 @@ sub _generate_secret_command {
 		debug "safe command: ".join(" ", @cmd);
 		dump_var plan => \%plan;
 		return @cmd;
+	} elsif ($plan{type} eq 'uuid') {
+		my $version=(\&{"UUID::Tiny::UUID_".$plan{version}})->();
+		my $ns=(\&{"UUID::Tiny::UUID_".$plan{namespace}})->() if ($plan{namespace}||'') =~ m/^NS_/;
+		$ns ||= $plan{namespace};
+		my $uuid = UUID::Tiny::create_uuid_as_string($version, $ns, $plan{name});
+		#error "UUID: $uuid ($plan{path})";
+		my ($path, $key) = split(':',$plan{path});
+		@cmd = ('set', $root_path.$path, "$key=$uuid");
 	} else {
 		push(@cmd, 'prompt', 'bad request');
 		debug "Requested to create safe path for an bad plan";
@@ -1217,6 +1283,32 @@ sub _validate_ssh_plan {
 }
 
 # }}}
+# _validate_uuid_plan - check the ssh plan is valid {{{
+sub _validate_uuid_plan {
+	my ($plans,$path, $ordered_plans) = @_;
+	my %plan = %{$plans->{$path}};
+	my $err = "";
+	my $version = $plan{version};
+	if ($version =~ m/^(v3|v5|md5|sha1)$/i) {
+		if (! defined($plan{name})) {
+			$err .= "\n- $version UUIDs require a name argument to be specified"
+		}
+	} else {
+		my @errors;
+		push (@errors, 'name') if defined($plan{name});
+		push (@errors, 'namespace') if defined($plan{namespace});
+		if (@errors) {
+			$err .= "\n- $version UUIDs cannot take ".join(" or ", @errors)." argument".(@errors > 1 ? 's' : '');
+		}
+	}
+	if ($err) {
+		push @$ordered_plans, {%plan, type => 'error', error => "Bad UUID request: $err"};
+		return undef;
+	}
+	return 1;
+}
+
+# }}}
 # _validate_kit_secret - list keys expected for a given kit secret {{{
 sub _validate_kit_secret {
 	my ($scope,$plan,$secret_values,$root_path,$plans) = @_;
@@ -1242,9 +1334,9 @@ sub _validate_kit_secret {
 	return ('ok', '') if $plan->{type} eq 'provided';
 
 	my $validate_sub=sprintf("_validate_%s_secret", $plan->{type});
-	return () unless (exists(&{$validate_sub}));
-	my ($results, @validations) = (\&{$validate_sub})->($path, $key, $plan, $secret_values, $plans, $root_path);
+	return ('ok', '') unless (exists(&{$validate_sub}));
 
+	my ($results, @validations) = (\&{$validate_sub})->($path, $key, $plan, $secret_values, $plans, $root_path);
 	my $show_all_messages = ! envset("GENESIS_HIDE_PROBLEMATIC_SECRETS");
 	my %priority = ('error' => 0, 'warn' => 1, 'ok' => 2);
 	my @results_levels = sort {$priority{$a}<=>$priority{$b}} 
@@ -1293,7 +1385,7 @@ sub _validate_x509_secret {
 	# Validate SAN
 	my (%sans,%desired_sans);
 	@sans{grep {@{$plan->{names}} || $_ ne $subjectCN} @SANs}=();
-	@desired_sans{@{$plan->{names}}}=();
+	@desired_sans{ @{$plan->{names}} }=();
 	my @extra_sans = sort(grep {!exists $desired_sans{$_}} CORE::keys %sans);
 	my @missing_sans = sort(grep {!exists $sans{$_}} CORE::keys %desired_sans);
 	if (!scalar(@extra_sans) && !scalar(@missing_sans)) {
@@ -1581,6 +1673,35 @@ sub _validate_random_secret {
 
 	return (\%results, qw/length valid_chars formatted/);
 }
+# _validate_uuid_secret - validate UUID secret value {{{
+sub _validate_uuid_secret {
+
+	my ($path, $key, $plan, $all_secrets, $all_plans, $root_path) = @_;
+	my $values = $all_secrets->{$path};
+	my %results;
+	my @validations = qw/valid/;
+
+	my $version = $plan->{version};
+	if (UUID::Tiny::is_uuid_string $values->{$key}) {
+		$results{valid} = ['ok', "Valid UUID string"];
+		push @validations, '';
+		if ($version =~ m/^(v3|md5|v5|sha1)$/i) {
+			my $v=(\&{"UUID::Tiny::UUID_$version"})->();
+			my $ns=(\&{"UUID::Tiny::UUID_".$plan->{namespace}})->() if ($plan->{namespace}||'') =~ m/^NS_/;
+			$ns ||= $plan->{namespace};
+			my $uuid = UUID::Tiny::create_uuid_as_string($v, $ns, $plan->{name});
+			$results{hash} = [
+				$uuid eq $values->{$key},
+				"Correct for given name and namespace".($uuid eq $values->{$key} ? '' : ": expected $uuid, got $values->{$key}")
+			];
+			push @validations, 'hash';
+		}
+	} else {
+		$results{valid} = ['error', "valid UUID: expecting xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxx, got ".$values->{$key}];
+	}
+
+	return (\%results, @validations);
+}
 
 # }}}
 # _x509_key_usage - specify allowed usage values, and map openssl identifiers to tokens  {{{
@@ -1658,7 +1779,7 @@ sub _get_plan_paths {
 }
 
 #}}}
-## _checkbox - make a checkbox {{{
+# _checkbox - make a checkbox {{{
 sub _checkbox {
 	return bullet($_[0] eq 'warn' ? 'warn' : ($_[0] && $_[0] ne 'error' ? 'good' : 'bad'), '', box => 1, inline => 1, indent => 0);
 }

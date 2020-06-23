@@ -20,6 +20,19 @@ credentials:
       alt:        random 32 fmt base64
       uncrypted:  random 1024 fmt bcrypt at crypted
 
+    uuids:
+      base:       uuid
+      time:       uuid v1
+      time-2:     uuid time
+      md5:        uuid v3 name test value
+      md5-2:      uuid md5 namespace url name example.com
+      md5-2f:     uuid md5 namespace 6ba7b811-9dad-11d1-80b4-00c04fd430c8 name example.com fixed
+      random:     uuid v4
+      random-2:   uuid random fixed
+      sha1:       uuid v5 namespace 00112233-abcd-ef99-dead-b4a24ff300da name some long fixed name
+      sha1-2:     uuid v5 namespace 00000000-0000-0000-0000-000000000000 name Supercalifragilisticexpialidocious
+      sha1-2f:    uuid v5 name Supercalifragilisticexpialidocious fixed
+
 certificates:
   base:
     top-level:

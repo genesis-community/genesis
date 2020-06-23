@@ -596,9 +596,16 @@ certificates:
 
 credentials:
   base:
-    good_ssh: ssh 2048 fixed
+    good_ssh:  ssh 2048 fixed
     passwords:
-      secret: random 64
+      secret:  random 64
+    uuids:
+      random:  uuid
+      v4:      uuid random
+      time:    uuid v1 fixed
+      md5:     uuid v3 name bobby
+      sha1:    uuid sha1 namespace url name example.com
+      custom:  uuid md5 namespace 01234567-0101-2468-4455-abcdef123456 name something really cool fixed
 
   errors:
     bad_ssh: ssh 24
@@ -606,7 +613,12 @@ credentials:
     'secret:passwords': random 32 fixed
     passwords:
       this: gen 64
+      that: random 99 alt-chars asdfghjkl as test
     something: completely different
+    uuids:
+      bogus:   uuid v2
+      extra:   uuid namespace dns name something.internal
+      missing: uuid v5
 
 provided:
   base:
@@ -736,7 +748,11 @@ eq_or_diff($out, <<'EOF', "validate should report all errors in the kit");
     Bad credential request for password:
       - Unrecognized request 'random 64'
 
-    Bad crecential request for passwords:this:
+    Bad random password request for passwords:that:
+      - Expected usage: random <size> [fmt <format> [at <key>]] [allowed-chars <chars>] [fixed]
+        Got: random 99 alt-chars asdfghjkl as test
+
+    Bad credential request for passwords:this:
       - Bad generate-password format 'gen 64'
 
     Bad credential request for secret:passwords:
@@ -745,8 +761,18 @@ eq_or_diff($out, <<'EOF', "validate should report all errors in the kit");
     Bad credential request for something:
       - Unrecognized request 'completely different'
 
+    Bad UUID request for uuids:bogus:
+      - Expected usage: uuid [v1|time|v3|md5|v4|random|v5|sha1] [namespace (dns|url|oid|x500|<UUID namespace>] [name <name>] [fixed]
+        Got: uuid v2
+
     Bad SSH request for bad_ssh:
       - Invalid size argument: expecting 1024-16384, got 24
+
+    Bad UUID request for uuids:extra:
+      - V4 UUIDs cannot take name or namespace arguments
+
+    Bad UUID request for uuids:missing:
+      - V5 UUIDs require a name argument to be specified
 
     Some of the errors above are due to unresolved param dereferencing.  Update the
     ci/test_params.yml file in the kit directory to contain these parameters.
