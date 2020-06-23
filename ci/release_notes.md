@@ -1,5 +1,20 @@
 # Improvements
 
+* Add new secret type of UUID
+
+  In kit.yml, you can now generate UUIDs of all types.  By default, you just
+  need to specify the type 'uuid' for a path and key (similar to how 'random'
+  works.  The full syntax is:
+
+  `uuid [v1|time|v3|md5|v4|random|v5|sha1] [namespace (<UUID>|dns|url|oid|x500)] [name <string>] [fixed]`
+
+  With no arguments, a v4/random UUID is generated.  If v3/md5 or v5/sha1 is
+  specified, it takes a name and optional namespace argument to build the
+  hash, which will always generate the same value for the same input
+  arguments, unlike the other versions.  The name can be any string, and the
+  namespace can be the pre-defined namespaces of dns, url, oid or x500, or any
+  arbitrary UUID string.
+
 * Expanded config support.  Kits can now specify which configs are required
   and for what hook scripts.  This allows for custom cloud and runtime configs
   to be validated and used for information.  Furthermore, cloud config can now
@@ -41,6 +56,12 @@
   environments credhub area.  Do not include the secrets base before the
   `src_path`, or the bosh env/deployment prefix before the `dst_path`.
 
+* Derived features are features that are artificially created by the
+  hooks/features script to facilitate absent of other features or a specific
+  combination of features, so that secrets can be better specified (ie a
+  secret that only exists if a feature ISN'T specified)  They must start with
+  a `+`, are not checked with the validation features, and cannot be
+  explicitly stated in an environment file.
 
 # Bug Fixes
 
