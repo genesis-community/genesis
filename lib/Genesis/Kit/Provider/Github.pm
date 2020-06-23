@@ -204,7 +204,7 @@ sub kit_releases {
 			} or bail("Failed to read releases information from Github: %s\n",$@);
 			push(@results, @{$results});
 
-			my ($links) = grep {$_ =~ s/^Link: //} split(/[\r\n]+/, $headers);
+			my ($links) = grep {$_ =~ s/^Link: //i} split(/[\r\n]+/, $headers);
 			last unless $links;
 			$url = (grep {$_ =~ s/^<(.*)>; rel="next"/$1/} split(', ', $links))[0];
 			last unless $url;
