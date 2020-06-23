@@ -498,7 +498,7 @@ sub check_environment {
 				$wants_latest ? (
 					$found ? "#G{will use v$version}" : '#R{ - no stemcells available!}'
 				) : (
-					$found ? '#G{present.)' : '#R{missing!}'
+					$found ? '#G{present.}' : '#R{missing!}'
 				)
 			);
 			$ok = 0 unless $found;
