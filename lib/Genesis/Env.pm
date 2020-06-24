@@ -464,6 +464,7 @@ sub download_configs {
 
 sub download_required_configs {
 	my ($self, @hooks) = @_;
+	return $self if $self->needs_bosh_create_env;
 	my @configs;
 	for ($self->kit->required_configs(@hooks)) {
 		push(@configs, $_) unless $self->config_file($_);
@@ -1048,7 +1049,11 @@ sub has_hook {
 
 sub run_hook {
 	my ($self, $hook, %opts) = @_;
-	$self->download_required_configs($hook);
+	my @config_hooks = ($hook);
+	push(@config_hooks, "addon-".$opts{script})
+		if ($hook eq 'addon');
+
+	$self->download_required_configs(@config_hooks);
 	debug "Started run_hook '$hook'";
 	return $self->kit->run_hook($hook, %opts, env => $self);
 }
