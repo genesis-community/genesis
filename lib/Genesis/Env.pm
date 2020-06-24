@@ -498,6 +498,17 @@ sub config_file {
 	return $self->{_configs}{$label} || $ENV{$env_var} || '';
 }
 
+sub configs {
+	my @env_configs = map {
+		$_ =~ m/GENESIS_([A-Z0-9_-]+)_CONFIG(?:_(.*))?$/;
+		lc($1).($2 && $2 ne 'default' ? "$2" : '');
+	} grep {
+		/GENESIS_[A-Z0-9_-]+_CONFIG(_.*)?$/;
+	} keys %ENV;
+	my @configs = (sort uniq(keys %{$_[0]->{_configs}}, @env_configs));
+	return @configs # can't just return the above because scalar/list context crazies
+}
+
 # Legacy non-generic config methods
 sub download_cloud_config { $_[0]->download_configs('cloud'); }
 sub use_cloud_config { $_[0]->use_config($_[1],'cloud'); }
