@@ -577,13 +577,29 @@ our $GLOBAL_USAGE = <<EOF;
                     For legacy reasons, --environment is also supported for
                     this option, but is deprecated.
 
+  -c, --config <s>  Specify a YAML file to be used as a config instead of
+                    fetching it from the BOSH director.  This option can be
+                    specified multiple times for different configurations.
+                    The syntax for specifying the config is:
+
+                    [<type>[@<name>]=]<path>
+
+                    The type defaults to 'cloud', and name defaults to 'default'
+                    if not given.  In this way, it maintains its backwards
+                    compatibility of the original `-c` option for specifying
+                    the cloud config file.
+
   --cloud-config    Specify a local YAML file to use at the cloud config.  If
                     not specified but needed, it will be fetched from the BOSH
-                    director. (Shortform: -c, --cc)
+                    director. (Shortform: --cc)
+
+                    This is deprecated: use -c|--config <path> instead.
 
   --runtime-config  Specify a local YAML file to use at the runtime config.  If
                     not specified but needed, it will be fetched from the BOSH
                     director. (Shortform: --rc)
+
+                    This is deprecated: use -c|--config runtime=<path> instead.
 
 
 EOF
@@ -644,19 +660,19 @@ sub options {
 	if ($options->{'cloud-config'}) {
 		$options->{config} ||= [];
 		push @{$options->{config}},delete($options->{'cloud-config'});
-		error "#Y{[WARNING]} --cloud-config <x> option is obsolete, use -c cc=<x> in the future. See -h for more info";
+		error "#Y{[WARNING]} --cloud-config <x> option is obsolete, use -c cloud=<x> in the future. See -h for more info";
 	}
 	if ($options->{'runtime-config'}) {
 		$options->{config} ||= [];
 		push @{$options->{config}}, 'rc='.delete($options->{'runtime-config'});
-		error "#Y{[WARNING]} --cloud-config <x> option is obsolete, use -c rc=<x> in the future. See -h for more info";
+		error "#Y{[WARNING]} --cloud-config <x> option is obsolete, use -c runtime=<x> in the future. See -h for more info";
 	}
 	if ($options->{config} && ref($options->{config}) eq 'ARRAY') {
 		my %configs;
 		for (@{$options->{config}}) {
-			my ($type,$name,$path) = $_ =~ m/^(?:(cc|rc|[a-z0-9_-]*-config)(?:@([^=]*))?=)?(.*)$/;
-			$type = 'cloud-config' if !defined($type) || $type eq 'cc';
-			$type = 'runtime-config'  if $type eq 'rc';
+			my ($type,$name,$path) = $_ =~ m/^(?:(cc|rc|[a-z0-9_-]*?)(?:@([^=]*))?=)?(.*)$/;
+			$type = 'cloud' if !defined($type) || $type eq 'cc';
+			$type = 'runtime'  if $type eq 'rc';
 			$type =~ s/-config$//;
 			$path = Cwd::abs_path($path)
 				or bail "$path: no such file or directory";
