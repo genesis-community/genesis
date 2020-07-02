@@ -798,7 +798,10 @@ sub _yaml_files {
 		trace("[env $self->{name}] in_yaml_files(): skipping eval, no need for cloud-config");
 	} else {
 		trace("[env $self->{name}] in _yaml_files(): not a create-env, we need cloud-config");
+
+		$self->download_required_configs('blueprint');
 		my $ccfile =  $self->config_file('cloud');
+
 		die "No cloud-config specified for this environment\n"
 			unless $ccfile;
 		trace("[env $self->{name}] in _yaml_files(): cloud-config at $ccfile");
