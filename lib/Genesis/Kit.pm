@@ -153,19 +153,17 @@ sub run_hook {
 	chmod 0755, $hook_exec;
 
 	debug ("Running hook now in ".$self->path);
+	my $interactive = scalar($hook =~ m/^(addon|new|info|check|secrets|post-deploy|pre-deploy)$/) ? 1 : 0;
 	my ($out, $rc, $err) = run({
-			interactive => scalar $hook =~ m/^(addon|new|info|check|secrets|post-deploy|pre-deploy)$/,
-			stderr => 0,
+			interactive => $interactive, stderr => $interactive ? undef : 0,
 		},
 		'cd "$1"; source .helper; hook=$2; shift 2; ./hooks/$hook "$@"',
 		$self->path, $hook_name, @args);
 
 	if ($hook eq 'new') {
 		bail(
-			"#R{[ERROR]} Could not create new env #C{%s} (in %s): 'new' hook exited %d:".
-			"\n\n#u{stdout:}\n%s\n\n#u{stderr:}\n%s",
-			$ENV{GENESIS_ENVIRONMENT}, humanize_path($ENV{GENESIS_ROOT}),
-			$rc, $out, $err || "#i{No stderr provided}"
+			"#R{[ERROR]} Could not create new env #C{%s} (in %s): 'new' hook exited %d",
+			$ENV{GENESIS_ENVIRONMENT}, humanize_path($ENV{GENESIS_ROOT}), $rc,
 		)	unless ($rc == 0);
 
 		bail(
@@ -180,8 +178,10 @@ sub run_hook {
 		bail(
 			"#R{[ERROR]} Could not determine which YAML files to merge: 'blueprint' hook exited with %d:".
 			"\n\n#u{stdout:}\n%s\n\n#u{stderr:}\n%s\n",
-			$rc, $out, $err || "#i{No stderr provided}"
+			$rc, $out||"#i{No stdout provided}", $err||"#i{No stderr provided}"
 		) if ($rc != 0);
+
+		error $err if ($err);
 		$out =~ s/^\s+//;
 		my @manifests = split(/\s+/, $out);
 		bail "#R{[ERROR]} Could not determine which YAML files to merge: 'blueprint' specified no files"
@@ -193,13 +193,17 @@ sub run_hook {
 		bail(
 			"#R{[ERROR]} Could not run feature hook in kit %s:".
 			"\n\n#u{stdout:}\n%s\n\n#u{stderr:}\n%s\n",
-			$self->id, $out, $err || "#i{No stderr provided}"
+			$self->id, $out||"#i{No stdout provided}", $err||"#i{No stderr provided}"
 		) unless $rc == 0;
 		$out =~ s/^\s+//;
 		return split(/\s+/, $out);
 	}
 
 	if ($hook eq 'pre-deploy') {
+		bail(
+			"#R{[ERROR]} Cannot continue with deployment: 'pre-deploy' hook for #C{%s} evironment exited %d.",
+			$ENV{GENESIS_ENVIRONMENT}, $rc,
+		) unless ($rc == 0);
 		my $contents;
 		my $fn = $opts{env}->tmppath("data");
 		if ( -f $fn ) {
@@ -214,15 +218,23 @@ sub run_hook {
 			if -f $opts{env}->tmppath("data");
 	}
 
-	if ($hook eq 'check' || ($hook eq 'secrets' && $opts{action} eq 'check')) {
-		return $rc == 0 ? 1 : 0;
-	}
+	return ($rc == 0 ? 1 : 0) if (
+		$hook eq 'addon' ||
+		$hook eq 'check' ||
+		($hook eq 'secrets' && $opts{action} eq 'check')
+	);
 
-	bail(
-		"#R{[ERROR]} Could not run '%s' hook successfully - exited with %d:".
-		"\n\n#u{stdout:}\n%s\n\n#u{stderr:}\n%s\n",
-		$hook, $rc, $out, $err || "#i{No stderr provided}"
-	) if $rc != 0;
+	if ($rc != 0) {
+		if (defines($out)) {
+			bail(
+				"#R{[ERROR]} Could not run '%s' hook successfully - exited with %d:".
+				"\n\n#u{stdout:}\n%s\n\n#u{stderr:}\n%s\n",
+				$hook, $rc, $out||"#i{No stdout provided}", $err||"#i{No stderr provided}"
+			);
+		} else {
+			bail("#R{[ERROR]} Could not run '%s' hook successfully - exited with %d", $hook, $rc);
+		}
+	}
 	return 1;
 }
 
