@@ -1460,7 +1460,9 @@ sub {
 		explain "  - as a #M{create-env} deployment\n";
 	} else {
 		explain "  - to '#M{%s}' BOSH director.\n", scalar($env->lookup_bosh_target);
-		$env->download_required_configs('blueprint','check');
+		my @hooks = qw(blueprint check);
+		push @hooks, grep {$env->kit->has_hook($_)} qw(pre-deploy post-deploy);
+		$env->download_required_configs(@hooks);
 		explain "#Y{! No cloud config detected -- this may be a Genesis bug}"
 			unless $env->cloud_config;
 	}
@@ -1497,6 +1499,8 @@ sub {
 	$env->has_hook('addon')
 		or bail "#R{Kit %s does not provide an addon hook!}", $env->kit->id;
 
+	$env->download_required_configs('addon', "addon-$script");
+
 	explain STDERR "Running #G{%s} addon for #C{%s}", $script, $env->name;
 
 	$env->run_hook('addon', script => $script, args => \@args)
@@ -1520,6 +1524,9 @@ sub {
 
 	my ($name) = @_;
 	my $env = Genesis::Top->new('.')->load_env($name);
+
+	my @hooks = grep {$env->kit->has_hook($_)} qw(info);
+	$env->download_required_configs(@hooks);
 
 	explain "\n#c{%s}\n\n#C{%s Deployment for Environment '}#M{%s}#C{'}\n",
 		"="x80, uc($env->type), $env->name;
@@ -1790,7 +1797,7 @@ sub {
 	my @files;
 	my $local_label = "./";
 	my $kit_label   = "";
-	my $env = Genesis::Top->new('.')->load_env($_[0]);
+	my $env = Genesis::Top->new('.')->load_env($_[0])->download_required_configs('blueprint');
 	if ($options{'include-kit'}) {
 		$kit_label = "#G{".$env->kit->id.":} ";
 		$local_label = sprintf("%*s", length($kit_label), "#C{local:} ");
@@ -2103,7 +2110,7 @@ sub {
 	}
 
 	print $env
-		->download_required_configs()
+		->download_required_configs('blueprint')
 		->manifest(redact => $options{redact}, prune => $options{prune});
 });
 
