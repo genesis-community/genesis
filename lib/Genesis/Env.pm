@@ -850,6 +850,7 @@ exodus:
   kit_name:    (( grab kit.name    || "unknown" ))
   kit_version: (( grab kit.version || "unknown" ))
   vault_base:  (( grab meta.vault ))
+  features:    (( join "," kit.features ))
 EOF
 	# TODO: In BOSH refactor, add the bosh director to the exodus data
 

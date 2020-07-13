@@ -1568,6 +1568,16 @@ sub {
 			explain "\n  #Y{[WARNING]} No local cashed deployment manifest found for this environment,\n"
 				  . "            perhaps you need to perform a #C{git pull}."
 		}
+		if ($exodus->{features}) {
+			my @features = split(',',$exodus->{features});
+			my $msg = "\n       #I{Features} ";
+			if (@features) {
+				$msg .= "#C{".join("}\n                #C{",@features)."}";
+			} else {
+				$msg .= "#Ci{None}";
+			}
+			explain $msg;
+		}
 		if ($env->has_hook('info')) {
 			explain "\n#c{%s}\n", "-"x80;
 			$env->run_hook('info');
