@@ -225,7 +225,7 @@ sub run_hook {
 	);
 
 	if ($rc != 0) {
-		if (defines($out)) {
+		if (defined($out)) {
 			bail(
 				"#R{[ERROR]} Could not run '%s' hook successfully - exited with %d:".
 				"\n\n#u{stdout:}\n%s\n\n#u{stderr:}\n%s\n",

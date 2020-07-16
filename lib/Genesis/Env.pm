@@ -813,6 +813,8 @@ sub _yaml_files {
 ---
 meta:
   vault: $vault_path
+kit:
+  features: []
 exodus:  {}
 genesis: {}
 params:  {}
@@ -822,6 +824,8 @@ EOF
 ---
 meta:
   vault: $vault_path
+kit:
+  features: []
 exodus: {}
 genesis: {}
 params:

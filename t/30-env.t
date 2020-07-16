@@ -573,6 +573,7 @@ EOF
 			kit_version   => 'latest',
 			'addons[0]'    => 'echo',
 			vault_base    => '/secret/standalone/thing',
+			features      => 'echo',
 
 			'hello.world' => 'i see you',
 
@@ -767,6 +768,7 @@ EOF
 				deployer => $ENV{USER},
 				kit_name => "dev",
 				kit_version => "latest",
+				features => '',
 				bosh => "standalone",
 				vault_base => "/secret/standalone/thing",
 				version => '(development)',
@@ -787,6 +789,7 @@ EOF
 				bosh => "standalone",
 				kit_name => "dev",
 				kit_version => "latest",
+				features => '',
 				vault_base => "/secret/standalone/thing",
 				version => '(development)',
 				manifest_sha1 => $sha1,
