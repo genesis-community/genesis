@@ -269,7 +269,7 @@ sub required_configs {
 	my ($self,@hooks) = @_;
 	my $required_configs = $self->metadata->{required_configs};
 	unless ($required_configs) {
-		return ('cloud') if (grep {$_ eq 'blueprint'} @hooks);
+		return ('cloud') if (grep {$_ eq 'manifest'} @hooks);
 		return ('cloud') if (grep {$_ eq 'check'} @hooks) && !$ENV{GENESIS_CONFIG_NO_CHECK};
 		return ();
 	}

@@ -12,7 +12,7 @@ description: |
 
 required_configs:
   cloud:
-    - blueprint
+    - manifest
 
 subkits:
   # you have to choose an auth subkit

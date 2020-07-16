@@ -1460,7 +1460,7 @@ sub {
 		explain "  - as a #M{create-env} deployment\n";
 	} else {
 		explain "  - to '#M{%s}' BOSH director.\n", scalar($env->lookup_bosh_target);
-		my @hooks = qw(blueprint check);
+		my @hooks = qw(blueprint manifest check);
 		push @hooks, grep {$env->kit->has_hook($_)} qw(pre-deploy post-deploy);
 		$env->download_required_configs(@hooks);
 		explain "#Y{! No cloud config detected -- this may be a Genesis bug}"
@@ -2120,7 +2120,7 @@ sub {
 	}
 
 	print $env
-		->download_required_configs('blueprint')
+		->download_required_configs('blueprint', 'manifest')
 		->manifest(redact => $options{redact}, prune => $options{prune});
 });
 
