@@ -99,7 +99,9 @@ sub run_hook {
 	} elsif (grep { $_ eq $hook}  qw/features subkit/) {
 		bug("The 'features' option to run_hook is required for the '$hook' hook!!")
 			unless $opts{features};
-		$ENV{GENESIS_TARGET_VAULT} = $ENV{SAFE_TARGET} = (Genesis::Vault->current || Genesis::Vault->default)->ref; #for legacy
+		my $vault = (Genesis::Vault->current || Genesis::Vault->default);
+		bail "Cannot determine secrets provider - is you local safe configured?" unless $vault;
+		$ENV{GENESIS_TARGET_VAULT} = $ENV{SAFE_TARGET} = $vault->ref; #for legacy
 	}
 
 	my @args;
