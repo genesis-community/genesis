@@ -422,7 +422,7 @@ version:     1.2.3
 by:          jhunt
 github:      https://www.github.com/starkandwayne/genesis/
 homepage:    https://www.genesisproject.io
-descriptoin: |-
+description: |-
   This is a test kit to ensure that unknown top-level keys in kit.yml are rejected
 
 subkits:
@@ -467,7 +467,7 @@ eq_or_diff($out, <<'EOF', "validate should report when unknown top-level keys ar
   Kit Metadata file kit.yml:
     - does not define 'code'
     - does not identify the author(s) via 'author' or 'authors'
-    - contains invalid top-level keys: by, descriptoin, github, homepage, params, secrets, subkits;
+    - contains invalid top-level keys: by, description, github, homepage, params, secrets, subkits;
       valid keys are: name, version, description, code, docs, author, authors, genesis_version_min, secrets_store, credentials, certificates, provided
 
 EOF
@@ -482,7 +482,7 @@ eq_or_diff($out, <<'EOF', "validate should report errors even when force is used
   Kit Metadata file kit.yml:
     - does not define 'code'
     - does not identify the author(s) via 'author' or 'authors'
-    - contains invalid top-level keys: by, descriptoin, github, homepage, params, secrets, subkits;
+    - contains invalid top-level keys: by, description, github, homepage, params, secrets, subkits;
       valid keys are: name, version, description, code, docs, author, authors, genesis_version_min, secrets_store, credentials, certificates, provided
 
 EOF
