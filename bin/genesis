@@ -1546,8 +1546,8 @@ sub {
 				explain("  #I{      to BOSH} #C{%s}",$exodus->{bosh});
 			}
 		}
-		explain("  #I{ based on kit} #C{%s}#C{/%s}",
-			$exodus->{kit_name}||$unknown, $exodus->{kit_version}||$unknown);
+		explain("  #I{ based on kit} #C{%s}#C{/%s}%s",
+			$exodus->{kit_name}||$unknown, $exodus->{kit_version}||$unknown, ($exodus->{kit_is_dev} ? " #Y{(dev)}" : ''));
 		explain("  #I{        using} #C{Genesis v%s}",
 			$exodus->{version} ||$unknown);
 

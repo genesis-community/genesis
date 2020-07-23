@@ -851,8 +851,9 @@ exodus:
   version:     $Genesis::VERSION
   dated:       $now
   deployer:    (( grab \$CONCOURSE_USERNAME || \$USER || "unknown" ))
-  kit_name:    (( grab kit.name    || "unknown" ))
-  kit_version: (( grab kit.version || "unknown" ))
+  kit_name:    ${\($self->kit->metadata->{name} || 'unknown')}
+  kit_version: ${\($self->kit->metadata->{version} || '0.0.0-rc0')}
+  kit_is_dev:  ${\(ref($self->kit) eq "Genesis::Kit::Dev" ? 'true' : 'false')}
   vault_base:  (( grab meta.vault ))
   features:    (( join "," kit.features ))
 EOF
