@@ -1283,7 +1283,7 @@ sub _validate_ssh_plan {
 }
 
 # }}}
-# _validate_uuid_plan - check the ssh plan is valid {{{
+# _validate_uuid_plan - check the uuid plan is valid {{{
 sub _validate_uuid_plan {
 	my ($plans,$path, $ordered_plans) = @_;
 	my %plan = %{$plans->{$path}};

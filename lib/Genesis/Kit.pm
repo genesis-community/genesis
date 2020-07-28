@@ -151,8 +151,8 @@ sub run_hook {
 	$ENV{GENESIS_IS_HELPING_YOU} = 'yes';
 	debug ("Running hook now in ".$self->path);
 	my $interactive = scalar($hook =~ m/^(addon|new|info|check|secrets|post-deploy|pre-deploy)$/) ? 1 : 0;
-	my ($out, $rc, $err) = run({
-			interactive => $interactive, stderr => $interactive ? undef : 0,
+	my ($out, $rc) = run({
+			interactive => $interactive, stderr => undef
 		},
 		'cd "$1"; source .helper; hook=$2; shift 2; ./hooks/$hook "$@"',
 		$self->path, $hook_name, @args);
@@ -174,11 +174,10 @@ sub run_hook {
 	if ($hook eq 'blueprint') {
 		bail(
 			"#R{[ERROR]} Could not determine which YAML files to merge: 'blueprint' hook exited with %d:".
-			"\n\n#u{stdout:}\n%s\n\n#u{stderr:}\n%s\n",
-			$rc, $out||"#i{No stdout provided}", $err||"#i{No stderr provided}"
+			"\n\n#u{stdout:}\n%s\n\n",
+			$rc, $out||"#i{No stdout provided}"
 		) if ($rc != 0);
 
-		error $err if ($err);
 		$out =~ s/^\s+//;
 		my @manifests = split(/\s+/, $out);
 		bail "#R{[ERROR]} Could not determine which YAML files to merge: 'blueprint' specified no files"
@@ -189,8 +188,8 @@ sub run_hook {
 	if (grep { $_ eq $hook}  qw/features subkit/) {
 		bail(
 			"#R{[ERROR]} Could not run feature hook in kit %s:".
-			"\n\n#u{stdout:}\n%s\n\n#u{stderr:}\n%s\n",
-			$self->id, $out||"#i{No stdout provided}", $err||"#i{No stderr provided}"
+			"\n\n#u{stdout:}\n%s\n\n",
+			$self->id, $out||"#i{No stdout provided}"
 		) unless $rc == 0;
 		$out =~ s/^\s+//;
 		return split(/\s+/, $out);
@@ -225,8 +224,8 @@ sub run_hook {
 		if (defined($out)) {
 			bail(
 				"#R{[ERROR]} Could not run '%s' hook successfully - exited with %d:".
-				"\n\n#u{stdout:}\n%s\n\n#u{stderr:}\n%s\n",
-				$hook, $rc, $out||"#i{No stdout provided}", $err||"#i{No stderr provided}"
+				"\n\n#u{stdout:}\n%s\n\n",
+				$hook, $rc, $out||"#i{No stdout provided}"
 			);
 		} else {
 			bail("#R{[ERROR]} Could not run '%s' hook successfully - exited with %d", $hook, $rc);
@@ -250,7 +249,7 @@ sub metadata {
 }
 
 # }}}
-# secrets_store - what secret_store does this kit use ('vault','credhub') {{{
+# secrets_store - what secrets_store does this kit use ('vault','credhub') {{{
 sub secrets_store {
 	my ($self) = @_;
 	$self->metadata->{secrets_store} ? $self->metadata->{secrets_store} : 'vault';
