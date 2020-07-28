@@ -461,10 +461,10 @@ sub check_environment {
 		explain "[#M{%s}] #Y{%s does not define a 'check' hook; $checks checks will be skipped.}", $env->name, $env->kit->id;
 	}
 
-	if (!exists($opts{check_secrets}) || $opts{check_secrets}) {
+	if ($env->kit->secrets_store eq 'vault' && (!exists($opts{check_secrets}) || $opts{check_secrets})) {
 		explain "\n[#M{%s}] running secrets checks...", $env->name;
 		my %check_opts=(indent => '  ', validate => ! envset("GENESIS_TESTING_CHECK_SECRETS_PRESENCE_ONLY"));
-		$env->check_secrets(%check_opts) or $ok = 0;
+		$ok = $env->check_secrets(%check_opts);
 	}
 
 	if ($ok) {
