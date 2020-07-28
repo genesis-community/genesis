@@ -416,6 +416,14 @@ sub credhub_connection_env {
 	$env{GENESIS_CREDHUB_EXODUS_SOURCE} = $credhub_src;
 	$env{GENESIS_CREDHUB_ROOT}=sprintf("%s/%s-%s", $credhub_path, $self->name, $self->type);
 
+	if ($credhub_src) {
+		my $credhub_info = $self->exodus_lookup('.',{},$credhub_src);
+		$env{CREDHUB_SERVER} = $credhub_info->{credhub_url};
+		$env{CREDHUB_CLIENT} = $credhub_info->{credhub_username};
+		$env{CREDHUB_SECRET} = $credhub_info->{credhub_password};
+		$env{CREDHUB_CA_CERT} = $credhub_info->{ca_cert} . $credhub_info->{credhub_ca_cert};
+	}
+
 	return %env;
 }
 
@@ -969,26 +977,7 @@ sub exodus {
 			if @missing;
 
 		local %ENV=%ENV;
-		$ENV{HOME} = $self->{__tmp};
-		if (! -d $self->{__tmp}."/.credhub") {
-			waiting_on "Connecting to Credhub to extract secrets...";
-			my ($out, $rc, $err) = run(
-				'credhub', 'api', $credhub_exodus->{credhub_url},
-				'--ca-cert', $credhub_exodus->{ca_cert}."\n".$credhub_exodus->{credhub_ca_cert},
-			);
-			if ($rc) {
-				bail "#R{failed!\n\n[ERROR]} Could not target credhub specified by $credhub_env{GENESIS_CREDHUB_EXODUS_SOURCE}\n$err";
-			}
-			($out, $rc, $err) = run(
-				"credhub", "login",
-				"-u", $credhub_exodus->{credhub_username},
-				"-p", $credhub_exodus->{credhub_password}
-			);
-			if ($rc) {
-				bail "#R{failed!\n\n[ERROR]} Could not log into credhub specified by $credhub_env{GENESIS_CREDHUB_EXODUS_SOURCE}\n$err";
-			}
-			explain "#G{ok}";
-		}
+		$ENV{$_} = $credhub_env{$_} for (grep {$_ =~ /^CREDHUB_/} keys(%credhub_env));
 		for my $target (@int_keys) {
 			my ($secret,$key) = ($exodus->{$target} =~ /^\(\(([^\.]*)(?:\.(.*))?\)\)$/);
 			next unless $secret;
