@@ -391,9 +391,10 @@ sub check_version {
 	return; # no error
 }
 
+our $already_checked=0;
 sub check_prereqs {
 	my %conditions = @_;
-	return 1 if envset("GENESIS_IS_HELPING_YOU");
+	return 1 if envset("GENESIS_IS_HELPING_YOU") || $already_checked;
 
 	my $bosh_min_version = "5.0.1";
 	my $reqs = [
@@ -444,6 +445,7 @@ sub check_prereqs {
 		error "";
 		exit 2;
 	}
+	$already_checked=1;
 }
 
 sub check_environment {
