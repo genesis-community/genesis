@@ -620,7 +620,7 @@ EOF
 	{
 		local $ENV{HOOK_SHOULD_FAIL} = 'yes';
 		throws_ok { $fancy->run_hook('features', env => $fun_times, features => scalar($fun_times->lookup(['kit.features', 'kit.subkits']))); }
-			qr/Could not run feature hook in kit fancy\/in-development \(dev\):.*\.\/hooks\/features: line 5: garblerflaven: unbound variable/ims;
+			qr/Could not run feature hook in kit fancy\/in-development \(dev\):/ims;
 	}
 
 	{

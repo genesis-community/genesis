@@ -425,11 +425,13 @@ sub credhub_connection_env {
 	$env{GENESIS_CREDHUB_ROOT}=sprintf("%s/%s-%s", $credhub_path, $self->name, $self->type);
 
 	if ($credhub_src) {
-		my $credhub_info = $self->exodus_lookup('.',{},$credhub_src);
-		$env{CREDHUB_SERVER} = $credhub_info->{credhub_url};
-		$env{CREDHUB_CLIENT} = $credhub_info->{credhub_username};
-		$env{CREDHUB_SECRET} = $credhub_info->{credhub_password};
-		$env{CREDHUB_CA_CERT} = $credhub_info->{ca_cert} . $credhub_info->{credhub_ca_cert};
+		my $credhub_info = $self->exodus_lookup('.',undef,$credhub_src);
+		if ($credhub_info) {
+			$env{CREDHUB_SERVER} = $credhub_info->{credhub_url};
+			$env{CREDHUB_CLIENT} = $credhub_info->{credhub_username};
+			$env{CREDHUB_SECRET} = $credhub_info->{credhub_password};
+			$env{CREDHUB_CA_CERT} = $credhub_info->{ca_cert} . $credhub_info->{credhub_ca_cert};
+		}
 	}
 
 	return %env;
