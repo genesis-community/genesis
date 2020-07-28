@@ -388,14 +388,16 @@ sub get_environment_variables {
 	$env{$_} = $credhub_env{$_} for keys %credhub_env;
 
 	# BOSH support
-	if ($self->needs_bosh_create_env) {
-		$env{GENESIS_USE_CREATE_ENV} = 'yes';
-	} else {
-		$env{GENESIS_BOSH_ENVIRONMENT} =
-		$env{BOSH_ALIAS} = scalar $self->lookup_bosh_target;
-		my $bosh = Genesis::BOSH->environment_variables($env{BOSH_ALIAS});
-		$env{$_} = $bosh->{$_} for (keys %$bosh);
-		$env{BOSH_DEPLOYMENT} = sprintf("%s-%s", $self->name, $self->type);
+	if ($hook ne "features") {
+		if ($self->needs_bosh_create_env) {
+			$env{GENESIS_USE_CREATE_ENV} = 'yes';
+		} else {
+			$env{GENESIS_BOSH_ENVIRONMENT} =
+			$env{BOSH_ALIAS} = scalar $self->lookup_bosh_target;
+			my $bosh = Genesis::BOSH->environment_variables($env{BOSH_ALIAS});
+			$env{$_} = $bosh->{$_} for (keys %$bosh);
+			$env{BOSH_DEPLOYMENT} = sprintf("%s-%s", $self->name, $self->type);
+		}
 	}
 
 	$env{GENESIS_ENV_ROOT_CA_PATH} = $self->root_ca_path;
@@ -541,7 +543,7 @@ sub features {
 			"#R{[ERROR]} Evironment #C{%s} cannot explicitly specify derived features:\n  - %s",
 			$self->name, join("\n  - ",@derived_features)
 		) if @derived_features;
-		$features = [$self->kit->run_hook('features',features => $features)]
+		$features = [$self->kit->run_hook('features',env => $self, features => $features)]
 			if $self->kit->has_hook('features');
 		$features;
 	});

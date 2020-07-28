@@ -72,45 +72,32 @@ sub run_hook {
 	die "No '$hook' hook script found\n"
 		unless $self->has_hook($hook);
 
-	trace ("running the kit '$hook' hook");
+	trace ("preparing to run the '$hook' kit hook");
 	local %ENV = %ENV;
 	$ENV{GENESIS_KIT_ID}       = $self->id;
 	$ENV{GENESIS_KIT_NAME}     = $self->name;
 	$ENV{GENESIS_KIT_VERSION}  = $self->version;
 	$ENV{GENESIS_KIT_HOOK}     = $hook;
-	$ENV{GENESIS_IS_HELPING_YOU} = 'yes';
 
 	die "Unrecognized hook '$hook'\n"
 		unless grep { $_ eq $hook } qw/new blueprint secrets info addon check pre-deploy post-deploy
 		                               prereqs features subkit/;
 
-	if (grep { $_ eq $hook } qw/new secrets info addon check prereqs blueprint pre-deploy post-deploy/) {
-
-		if ($hook eq "new") {
-			$ENV{GENESIS_MIN_VERSION} = $self->metadata->{genesis_version_min} || ""
-		}
-
-		trace ('getting env info');
+	if (grep { $_ eq $hook } qw/new secrets info addon check prereqs blueprint pre-deploy post-deploy features/) {
 		bug("The 'env' option to run_hook is required for the '$hook' hook!!") unless $opts{env};
 		my %env_vars = $opts{env}->get_environment_variables($hook);
 		$ENV{$_} = $env_vars{$_} for (keys %env_vars);
 		trace ('got env info');
-
-	} elsif (grep { $_ eq $hook}  qw/features subkit/) {
-		bug("The 'features' option to run_hook is required for the '$hook' hook!!")
-			unless $opts{features};
-		my $vault = (Genesis::Vault->current || Genesis::Vault->default);
-		bail "Cannot determine secrets provider - is you local safe configured?" unless $vault;
-		$ENV{GENESIS_TARGET_VAULT} = $ENV{SAFE_TARGET} = $vault->ref; #for legacy
 	}
 
 	my @args;
-	if ($hook eq 'new' && ! $self->feature_compatibility('2.6.13')) {
+	if ($hook eq 'new') {
+		$ENV{GENESIS_MIN_VERSION} = $self->metadata->{genesis_version_min} || "";
 		@args = (
 			$ENV{GENESIS_ROOT},           # deprecated in 2.6.13!
 			$ENV{GENESIS_ENVIRONMENT},    # deprecated in 2.6.13!
 			$ENV{GENESIS_VAULT_PREFIX},   # deprecated in 2.6.13!
-		);
+		) unless $self->feature_compatibility('2.6.13');
 
 	} elsif ($hook eq 'secrets') {
 		$ENV{GENESIS_SECRET_ACTION} = $opts{action};
@@ -133,11 +120,18 @@ sub run_hook {
 		$ENV{GENESIS_PREDEPLOY_DATAFILE} = $fn;
 
 	} elsif ($hook eq 'features') {
+		bug("The 'features' option to run_hook is required for the '$hook' hook!!")
+			unless $opts{features};
 		$ENV{GENESIS_REQUESTED_FEATURES} = join(" ", @{ $opts{features} });
 
 	##### LEGACY HOOKS
 	} elsif ($hook eq 'subkit') {
 		@args = @{ $opts{features} };
+		bug("The 'features' option to run_hook is required for the '$hook' hook!!")
+			unless $opts{features};
+		my $vault = (Genesis::Vault->current || Genesis::Vault->default);
+		bail "Cannot determine secrets provider - is you local safe configured?" unless $vault;
+		$ENV{GENESIS_TARGET_VAULT} = $ENV{SAFE_TARGET} = $vault->ref; #for legacy
 	}
 
 	my $hook_exec = $self->path("hooks/$hook");
@@ -154,6 +148,7 @@ sub run_hook {
 	}
 	chmod 0755, $hook_exec;
 
+	$ENV{GENESIS_IS_HELPING_YOU} = 'yes';
 	debug ("Running hook now in ".$self->path);
 	my $interactive = scalar($hook =~ m/^(addon|new|info|check|secrets|post-deploy|pre-deploy)$/) ? 1 : 0;
 	my ($out, $rc, $err) = run({

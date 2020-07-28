@@ -585,7 +585,7 @@ EOF
 	enable_features_hook($fancy);
 	$fun_times->{kit} = $fancy;
 	delete($fun_times->{__features});
-	cmp_deeply([$fancy->run_hook('features', features => scalar($fun_times->lookup(['kit.features', 'kit.subkits'])))], [qw[
+	cmp_deeply([$fancy->run_hook('features', env => $fun_times, features => scalar($fun_times->lookup(['kit.features', 'kit.subkits'])))], [qw[
 			always-first
 			a-thing
 			bob
@@ -613,19 +613,19 @@ EOF
 
 	$fun_times = $top->load_env('fun-times');
 	$fun_times->{kit} = $fancy;
-	cmp_deeply([$fancy->run_hook('features', features => [qw(shazzam)])], [qw[
+	cmp_deeply([$fancy->run_hook('features', env => $fun_times, features => [qw(shazzam)])], [qw[
 			shazzam
 		]], "[fancy] features hook augments features - set 2");
 
 	{
 		local $ENV{HOOK_SHOULD_FAIL} = 'yes';
-		throws_ok { $fancy->run_hook('features', features => scalar($fun_times->lookup(['kit.features', 'kit.subkits']))); }
+		throws_ok { $fancy->run_hook('features', env => $fun_times, features => scalar($fun_times->lookup(['kit.features', 'kit.subkits']))); }
 			qr/Could not run feature hook in kit fancy\/in-development \(dev\):.*\.\/hooks\/features: line 5: garblerflaven: unbound variable/ims;
 	}
 
 	{
 		local $ENV{HOOK_NO_FEATURES} = 'yes';
-		cmp_deeply([$fancy->run_hook('features', features => scalar($fun_times->lookup(['kit.features', 'kit.subkits'])))], [],
+		cmp_deeply([$fancy->run_hook('features', env => $fun_times, features => scalar($fun_times->lookup(['kit.features', 'kit.subkits'])))], [],
 			"[fancy] the 'features' hook can remove all featuress");
 	}
 };
