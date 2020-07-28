@@ -1376,6 +1376,7 @@ sub {
 	/);
 	usage(1) if @_ != 1;
 	my $env = Genesis::Top->new('.')->load_env($_[0]);
+	$env->with_vault() if $options{secrets} || $options{manifest};
 
 	if ($options{'no-config'}) {
 		$ENV{GENESIS_CONFIG_NO_CHECK}=1;
@@ -1383,6 +1384,10 @@ sub {
 			if defined $options{'config'};
 		bail "Cannot specify --no-config without also specifying --no-manifest"
 			if $options{'manifest'};
+	} else {
+		my @hooks = qw/check/;
+		push(@hooks, 'manifest', 'blueprint') if $options{manifest};
+		$env->download_required_configs(@hooks);
 	}
 
 	my $ok = check_environment($env, map {("check_$_" => $options{$_})} qw/manifest secrets stemcells/);
@@ -1446,7 +1451,7 @@ sub {
 		max-in-flight=i
 	/);
 	usage(1) if @_ != 1;
-	my $env = Genesis::Top->new('.')->load_env($_[0]);
+	my $env = Genesis::Top->new('.')->load_env($_[0])->with_vault();
 
 	if (scalar(grep {$_} ($options{fix}, $options{recreate}, $options{'dry-run'})) > 1) {
 		usage(1,"Can only specify one of --dry-run, --fix or --recreate");
@@ -1493,7 +1498,7 @@ sub {
 	usage(1) if @_ < 2;
 
 	my ($name, $script, @args) = @_;
-	my $env = Genesis::Top->new('.')->load_env($name);
+	my $env = Genesis::Top->new('.')->load_env($name)->with_vault();
 
 	$env->kit->check_prereqs
 		or bail "Cannot use the kit specified by %s.\n", $env->name;
@@ -1525,7 +1530,7 @@ sub {
 	usage(1) if @_ != 1;
 
 	my ($name) = @_;
-	my $env = Genesis::Top->new('.')->load_env($name);
+	my $env = Genesis::Top->new('.')->load_env($name)->with_vault();
 
 	my @hooks = grep {$env->kit->has_hook($_)} qw(info);
 	$env->download_required_configs(@hooks);
@@ -1641,7 +1646,7 @@ sub {
 		bail "#R{[ERROR]} Invalid -l|--level value: expecting one of #g{missing}, #g{invalid} or".
 		     "        #g{problem} (or respective short form#g{m}, #g{i} or #g{p} short forms) - got '#R{%s}'", $level
 	}
-	Genesis::Top->new(".")->load_env($name)->check_secrets(paths=>\@paths,%options)
+	Genesis::Top->new(".")->load_env($name)->with_vault()->check_secrets(paths=>\@paths,%options)
 		or exit 1;
 });
 
@@ -1674,7 +1679,7 @@ sub {
 	/);
 	usage(1) if @_ < 1;
 	my ($name,@paths) = @_;
-	Genesis::Top->new(".", vault => $options{vault})->load_env($name)->add_secrets(paths=>\@paths,%options);
+	Genesis::Top->new(".", vault => $options{vault})->load_env($name)->with_vault()->add_secrets(paths=>\@paths,%options);
 });
 
 # }}}
@@ -1730,7 +1735,7 @@ sub {
 		if (delete($options{force}));
 
 	$options{invalid} = 2 if delete($options{problematic});
-	Genesis::Top->new(".", vault => $options{vault})->load_env($name)->rotate_secrets(paths => \@paths,%options)
+	Genesis::Top->new(".", vault => $options{vault})->load_env($name)->with_vault()->rotate_secrets(paths => \@paths,%options)
 		or exit 1;
 });
 
@@ -1784,7 +1789,7 @@ sub {
 	}
 
 	$options{invalid} = 2 if delete($options{problematic});
-	Genesis::Top->new(".", vault => $options{vault})->load_env($name)->remove_secrets(paths => \@paths,%options)
+	Genesis::Top->new(".", vault => $options{vault})->load_env($name)->with_vault()->remove_secrets(paths => \@paths,%options)
 		or exit 1;
 });
 
@@ -2111,7 +2116,8 @@ sub {
 	check_prereqs;
 	my $env = Genesis::Top
 		->new('.')
-		->load_env($_[0]);
+		->load_env($_[0])
+		->with_vault();
 
 	if ($env->needs_bosh_create_env && scalar($env->configs)) {
 		error(
@@ -2482,7 +2488,7 @@ EOF
 
 	# Load the environment in order to check other required variables
 	pushd $ENV{WORKING_DIR};
-	my $env = Genesis::Top->new('.')->load_env($ENV{CURRENT_ENV});
+	my $env = Genesis::Top->new('.')->load_env($ENV{CURRENT_ENV})->with_vault()->with_bosh();
 	push(@undefined, grep { !$ENV{$_} }
 		qw/BOSH_ENVIRONMENT BOSH_CA_CERT
 		   BOSH_CLIENT BOSH_CLIENT_SECRET/) unless $env->needs_bosh_create_env;
@@ -2613,7 +2619,7 @@ sub {
 		exit 1;
 	}
 
-	my $env = Genesis::Top->new('.')->load_env($ENV{CURRENT_ENV});
+	my $env = Genesis::Top->new('.')->load_env($ENV{CURRENT_ENV})->with_vault()->with_bosh();
 	Genesis::BOSH->alias(scalar $env->lookup_bosh_target);
 	Genesis::BOSH->run_errand($env->bosh_target, $env->deployment, $ENV{ERRAND_NAME});
 	exit 0;

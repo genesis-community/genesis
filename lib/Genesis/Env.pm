@@ -107,15 +107,21 @@ sub load {
 			if ($env->exodus_mount ne $env->default_exodus_mount);
 	}
 
-	# check bosh alias
-	$env->lookup_bosh_target;
+	return $env
+}
 
-	# determine our vault and secret path
-	$ENV{GENESIS_SECRETS_MOUNT} = $env->secrets_mount();
+sub with_bosh {
+	my $self = shift;
+	$self->bosh_target;
+	return $self;
+}
+
+sub with_vault {
+	my $self = shift;
+	$ENV{GENESIS_SECRETS_MOUNT} = $self->secrets_mount();
 	bail("\n#R{[ERROR]} No vault specified or configured.")
-		unless $env->vault;
-
-	return $env;
+		unless $self->vault;
+	return $self;
 }
 
 # from_envvars -- builds a pseudo-env based on the current env vars - used for hooks callbacks {{{
@@ -353,7 +359,7 @@ sub get_environment_variables {
 
 	# Vault ENV VARS
 	$env{GENESIS_TARGET_VAULT} = $env{SAFE_TARGET} = $self->vault->ref;
-	$env{GENESIS_VERIFY_VAULT} = $self->vault->verify || "";
+	$env{GENESIS_VERIFY_VAULT} = $self->vault->connect_and_validate->verify || "";
 
 	# Genesis v2.7.0 Secrets management
 	# This provides GENESIS_{SECRETS,EXODUS,CI}_{MOUNT,BASE}
@@ -477,7 +483,7 @@ sub download_required_configs {
 	for ($self->kit->required_configs(@hooks)) {
 		push(@configs, $_) unless $self->config_file($_);
 	}
-	$self->download_configs(@configs) if @configs;
+	$self->with_bosh->download_configs(@configs) if @configs;
 	return $self
 }
 
