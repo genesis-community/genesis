@@ -552,9 +552,10 @@ sub has_feature {
 
 sub needs_bosh_create_env {
 	my ($self) = @_;
-	return $self->has_feature('proto')      ||
-	       $self->has_feature('bosh-init')  ||
-	       $self->has_feature('create-env');
+
+	# needs_bosh_create_env doesn't use derived features, so check the explicit features
+	my $features = scalar($self->lookup(['kit.features', 'kit.subkits'], []));
+	return scalar(grep {$_ =~ /^(proto|bosh-init|create-env)$/} @$features) ? 1 : 0;
 }
 
 sub relate {
