@@ -525,6 +525,19 @@ sub configs {
 	return @configs # can't just return the above because scalar/list context crazies
 }
 
+sub connect_required_endpoints {
+	my ($self, @hooks) = @_;
+	my @endpoints;
+	push(@endpoints, $self->kit->required_connectivity($_)) for (@hooks);
+	for (uniq(@endpoints)) {
+		$self->with_vault   if $_ eq 'vault';
+		$self->with_bosh    if $_ eq 'bosh';
+		$self->with_credhub if $_ eq 'credhub';
+		bail("#R{[ERROR]} Unknown connectivity endpoint type #Y{%s} in kit #m{%s}", $_, $self->kit->id);
+	}
+	return $self
+}
+
 # Legacy non-generic config methods
 sub download_cloud_config { $_[0]->download_configs('cloud'); }
 sub use_cloud_config { $_[0]->use_config($_[1],'cloud'); }
@@ -1071,6 +1084,7 @@ sub run_hook {
 	push(@config_hooks, "addon-".$opts{script})
 		if ($hook eq 'addon');
 
+	$self->connect_required_endpoints(@config_hooks);
 	$self->download_required_configs(@config_hooks);
 	debug "Started run_hook '$hook'";
 	return $self->kit->run_hook($hook, %opts, env => $self);

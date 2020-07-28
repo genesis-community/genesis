@@ -293,6 +293,34 @@ sub required_configs {
 }
 
 # }}}
+# required_connectivity - what connectivity does this kit require to do its job? {{{
+sub required_connectivity {
+	my ($self,@hooks) = @_;
+	my $required_conns = $self->metadata->{required_connectivity};
+	return () unless ($required_conns);
+	return @{$required_conns} if ref($required_conns) eq 'ARRAY';
+
+	my @conns;
+	for my $conn (keys %{$required_conns}) {
+		if (ref($required_conns->{$conn}) eq 'ARRAY') {
+			my $needed;
+			if (@hooks) {
+				for my $hook (@{$required_conns->{$conn}}) {
+					$needed = scalar(grep {$_ eq $hook} @hooks);
+					last if $needed;
+				}
+			} else {
+				$needed = 1;
+			};
+			push(@conns, $conn) if $needed;
+		} else {
+			push(@conns, $conn) if $required_conns->{$conn};
+		}
+	}
+	return @conns;
+}
+
+# }}}
 # feature_compatibility - {{{
 sub feature_compatibility {
 	# Assume feature compatibility with specified min genesis version.
