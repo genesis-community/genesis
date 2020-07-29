@@ -16,6 +16,28 @@
   Features are now stored in exodus on successful deploy, and reported by
   the info command.
 
+- *BREAKING CHANGE* Hooks now use `CREDHUB_*` environment variables to
+  connect to credhub.  This required your BOSH to be deployed with
+  bosh-genesis-kit v1.15.1 or later - please upgrade your bosh prior to
+  deploying any kits that use Credhub (cf, cf-app-autoscaler)
+
+- Decouple vault/bosh with loading of env
+
+  Not all genesis commands need vault or bosh, but it was being
+  proactively connected any time the env was loaded.
+
+# Kit Development Improvements
+
+- Add ability to require connections to kit hooks
+
+  Normally, hook don't need bosh or vault, but if they do, the kit can
+  specify which hook needs vault or bosh (or in the future credhub) so
+  the connection can be validated before the hooks are run (similar to the
+  required_configs behaviour)
+
+- Allow feature hook to access the same environment variables and helper
+  script that the other hooks use.
+
 # Bug Fixes
 
 - When safe was not configured with any targets, the error that occurred in
@@ -26,10 +48,14 @@
 
 - Improve hook standard error handling.
 
-  Previous improvements stopped stderr from being output directly to
-  screen.  This has been fixed so that STDERR will be written directly to
-  screen when in interactive mode, and will still be output by blueprint
-  even when its not fatal.
+  Previous improvements stopped STDERR from being output directly to
+  screen.  This has been reverted so that STDERR would be output directly to
+  the terminal in real time.
+
+- Resolve recursion issue with feature hook checking if bosh create-env is
+  specified, which needs to check features, which runs feature hook...
+
+- Prevent double check_prereq calls
 
 # Minimum Dependencies
 
