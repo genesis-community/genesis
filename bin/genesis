@@ -2488,7 +2488,7 @@ EOF
 
 	# Load the environment in order to check other required variables
 	pushd $ENV{WORKING_DIR};
-	my $env = Genesis::Top->new('.')->load_env($ENV{CURRENT_ENV})->with_vault()->with_bosh();
+	my $env = Genesis::Top->new('.')->load_env($ENV{CURRENT_ENV})->with_vault();
 	push(@undefined, grep { !$ENV{$_} }
 		qw/BOSH_ENVIRONMENT BOSH_CA_CERT
 		   BOSH_CLIENT BOSH_CLIENT_SECRET/) unless $env->needs_bosh_create_env;
@@ -2506,7 +2506,7 @@ EOF
 	# don't set up a bosh alias if we're a create-env based deploy, no need, no data
 	unless ($env->needs_bosh_create_env) {
 		Genesis::BOSH->alias(scalar $env->lookup_bosh_target);
-		$env->download_cloud_config();
+		$env->with_bosh->download_cloud_config();
 	}
 
 	$env->deploy(redact => !envset('CI_NO_REDACT'))
