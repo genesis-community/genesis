@@ -1236,12 +1236,8 @@ jobs:
           DEBUG: 1
           GENESIS_HONOR_ENV: 1
           GIT_BRANCH: master
-          GIT_PRIVATE_KEY: |
-            -----BEGIN RSA PRIVATE KEY-----
-            lol. you didn't really think that
-            we'd put the key here, in a test,
-            did you?!
-            -----END RSA PRIVATE KEY-----
+          GIT_PASSWORD: weneedareplacement!
+          GIT_USERNAME: fleemco
           OUT_DIR: out/git
           PREVIOUS_ENV: client-aws-1-sandbox
           VAULT_ADDR: https://127.0.0.1:8200
@@ -1305,12 +1301,8 @@ jobs:
           DEBUG: 1
           GENESIS_HONOR_ENV: 1
           GIT_BRANCH: master
-          GIT_PRIVATE_KEY: |
-            -----BEGIN RSA PRIVATE KEY-----
-            lol. you didn't really think that
-            we'd put the key here, in a test,
-            did you?!
-            -----END RSA PRIVATE KEY-----
+          GIT_PASSWORD: weneedareplacement!
+          GIT_USERNAME: fleemco
           OUT_DIR: cache-out/git
           WORKING_DIR: out/git
         platform: linux
@@ -1405,12 +1397,8 @@ jobs:
           DEBUG: 1
           GENESIS_HONOR_ENV: 1
           GIT_BRANCH: master
-          GIT_PRIVATE_KEY: |
-            -----BEGIN RSA PRIVATE KEY-----
-            lol. you didn't really think that
-            we'd put the key here, in a test,
-            did you?!
-            -----END RSA PRIVATE KEY-----
+          GIT_PASSWORD: weneedareplacement!
+          GIT_USERNAME: fleemco
           OUT_DIR: out/git
           PREVIOUS_ENV: client-aws-1-preprod
           VAULT_ADDR: https://127.0.0.1:8200
@@ -1474,12 +1462,8 @@ jobs:
           DEBUG: 1
           GENESIS_HONOR_ENV: 1
           GIT_BRANCH: master
-          GIT_PRIVATE_KEY: |
-            -----BEGIN RSA PRIVATE KEY-----
-            lol. you didn't really think that
-            we'd put the key here, in a test,
-            did you?!
-            -----END RSA PRIVATE KEY-----
+          GIT_PASSWORD: weneedareplacement!
+          GIT_USERNAME: fleemco
           OUT_DIR: cache-out/git
           WORKING_DIR: out/git
         platform: linux
@@ -1544,12 +1528,8 @@ jobs:
           DEBUG: 1
           GENESIS_HONOR_ENV: 1
           GIT_BRANCH: master
-          GIT_PRIVATE_KEY: |
-            -----BEGIN RSA PRIVATE KEY-----
-            lol. you didn't really think that
-            we'd put the key here, in a test,
-            did you?!
-            -----END RSA PRIVATE KEY-----
+          GIT_PASSWORD: weneedareplacement!
+          GIT_USERNAME: fleemco
           OUT_DIR: out/git
           PREVIOUS_ENV: null
           VAULT_ADDR: https://127.0.0.1:8200
@@ -1613,12 +1593,8 @@ jobs:
           DEBUG: 1
           GENESIS_HONOR_ENV: 1
           GIT_BRANCH: master
-          GIT_PRIVATE_KEY: |
-            -----BEGIN RSA PRIVATE KEY-----
-            lol. you didn't really think that
-            we'd put the key here, in a test,
-            did you?!
-            -----END RSA PRIVATE KEY-----
+          GIT_PASSWORD: weneedareplacement!
+          GIT_USERNAME: fleemco
           OUT_DIR: cache-out/git
           WORKING_DIR: out/git
         platform: linux
@@ -1685,26 +1661,18 @@ resources:
 - name: git
   source:
     branch: master
-    private_key: |
-      -----BEGIN RSA PRIVATE KEY-----
-      lol. you didn't really think that
-      we'd put the key here, in a test,
-      did you?!
-      -----END RSA PRIVATE KEY-----
-    uri: git@github.com:someco/something-deployments
+    password: weneedareplacement!
+    uri: github.mycorp.com/myproj/mystuff/myrepo.git
+    username: fleemco
   type: git
 - name: preprod-changes
   source:
     branch: master
     paths:
     - ./client-aws-1-preprod.yml
-    private_key: |
-      -----BEGIN RSA PRIVATE KEY-----
-      lol. you didn't really think that
-      we'd put the key here, in a test,
-      did you?!
-      -----END RSA PRIVATE KEY-----
-    uri: git@github.com:someco/something-deployments
+    password: weneedareplacement!
+    uri: github.mycorp.com/myproj/mystuff/myrepo.git
+    username: fleemco
   type: git
 - name: preprod-cache
   source:
@@ -1716,13 +1684,9 @@ resources:
     - .genesis/cached/client-aws-1-sandbox/client.yml
     - .genesis/cached/client-aws-1-sandbox/client-aws.yml
     - .genesis/cached/client-aws-1-sandbox/client-aws-1.yml
-    private_key: |
-      -----BEGIN RSA PRIVATE KEY-----
-      lol. you didn't really think that
-      we'd put the key here, in a test,
-      did you?!
-      -----END RSA PRIVATE KEY-----
-    uri: git@github.com:someco/something-deployments
+    password: weneedareplacement!
+    uri: github.mycorp.com/myproj/mystuff/myrepo.git
+    username: fleemco
   type: git
 - name: preprod-cloud-config
   source:
@@ -1751,13 +1715,9 @@ resources:
     branch: master
     paths:
     - ./client-aws-1-prod.yml
-    private_key: |
-      -----BEGIN RSA PRIVATE KEY-----
-      lol. you didn't really think that
-      we'd put the key here, in a test,
-      did you?!
-      -----END RSA PRIVATE KEY-----
-    uri: git@github.com:someco/something-deployments
+    password: weneedareplacement!
+    uri: github.mycorp.com/myproj/mystuff/myrepo.git
+    username: fleemco
   type: git
 - name: prod-cache
   source:
@@ -1769,13 +1729,9 @@ resources:
     - .genesis/cached/client-aws-1-preprod/client.yml
     - .genesis/cached/client-aws-1-preprod/client-aws.yml
     - .genesis/cached/client-aws-1-preprod/client-aws-1.yml
-    private_key: |
-      -----BEGIN RSA PRIVATE KEY-----
-      lol. you didn't really think that
-      we'd put the key here, in a test,
-      did you?!
-      -----END RSA PRIVATE KEY-----
-    uri: git@github.com:someco/something-deployments
+    password: weneedareplacement!
+    uri: github.mycorp.com/myproj/mystuff/myrepo.git
+    username: fleemco
   type: git
 - name: prod-cloud-config
   source:
@@ -1810,13 +1766,9 @@ resources:
     - ./client-aws.yml
     - ./client-aws-1.yml
     - ./client-aws-1-sandbox.yml
-    private_key: |
-      -----BEGIN RSA PRIVATE KEY-----
-      lol. you didn't really think that
-      we'd put the key here, in a test,
-      did you?!
-      -----END RSA PRIVATE KEY-----
-    uri: git@github.com:someco/something-deployments
+    password: weneedareplacement!
+    uri: github.mycorp.com/myproj/mystuff/myrepo.git
+    username: fleemco
   type: git
 - name: sandbox-cloud-config
   source:
@@ -3725,12 +3677,8 @@ jobs:
           CURRENT_ENV: client-aws-1-sandbox
           GENESIS_HONOR_ENV: 1
           GIT_BRANCH: master
-          GIT_PRIVATE_KEY: |
-            -----BEGIN RSA PRIVATE KEY-----
-            lol. you didn't really think that
-            we'd put the key here, in a test,
-            did you?!
-            -----END RSA PRIVATE KEY-----
+          GIT_PASSWORD: weneedareplacement!
+          GIT_USERNAME: fleemco
           OUT_DIR: out/git
           PREVIOUS_ENV: null
           VAULT_ADDR: http://myvault.myorg.com:5999
@@ -3764,12 +3712,8 @@ jobs:
           CURRENT_ENV: client-aws-1-sandbox
           GENESIS_HONOR_ENV: 1
           GIT_BRANCH: master
-          GIT_PRIVATE_KEY: |
-            -----BEGIN RSA PRIVATE KEY-----
-            lol. you didn't really think that
-            we'd put the key here, in a test,
-            did you?!
-            -----END RSA PRIVATE KEY-----
+          GIT_PASSWORD: weneedareplacement!
+          GIT_USERNAME: fleemco
           OUT_DIR: cache-out/git
           WORKING_DIR: out/git
         platform: linux
@@ -3833,13 +3777,9 @@ resources:
 - name: git
   source:
     branch: master
-    private_key: |
-      -----BEGIN RSA PRIVATE KEY-----
-      lol. you didn't really think that
-      we'd put the key here, in a test,
-      did you?!
-      -----END RSA PRIVATE KEY-----
-    uri: git@github.com:someco/something-deployments
+    password: weneedareplacement!
+    uri: https://github.com/someco/something-deployments.git
+    username: fleemco
   type: git
 - name: client-aws-1-sandbox-changes
   source:
@@ -3852,13 +3792,9 @@ resources:
     - ./client-aws.yml
     - ./client-aws-1.yml
     - ./client-aws-1-sandbox.yml
-    private_key: |
-      -----BEGIN RSA PRIVATE KEY-----
-      lol. you didn't really think that
-      we'd put the key here, in a test,
-      did you?!
-      -----END RSA PRIVATE KEY-----
-    uri: git@github.com:someco/something-deployments
+    password: weneedareplacement!
+    uri: https://github.com/someco/something-deployments.git
+    username: fleemco
   type: git
 - name: client-aws-1-sandbox-cloud-config
   source:

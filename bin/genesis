@@ -272,7 +272,7 @@ sub vault_auth {
 }
 
 sub commit_changes {
-	my ($indir, $outdir, $branch, $key, $message) = @_;
+	my ($indir, $outdir, $branch, $message) = @_;
 
 	# the below copying of files into new repos from older repos is all
 	# done in the name of avoiding merge conflicts, or weird errors when
@@ -290,22 +290,33 @@ sub commit_changes {
 	# have already been updated in the .genesis/manifests directory.
 	#
 	my $tmp = workdir;
-	mkdir_or_fail( "$tmp/home/.ssh", 0700);
-	mkfile_or_fail("$tmp/home/.ssh/key", 0600, $key);
-	mkfile_or_fail("$tmp/home/.ssh/config", <<EOF);
+	if ($ENV{GIT_PRIVATE_KEY}) {
+		mkdir_or_fail( "$tmp/home/.ssh", 0700);
+		mkfile_or_fail("$tmp/home/.ssh/key", 0600, $ENV{GIT_PRIVATE_KEY});
+		mkfile_or_fail("$tmp/home/.ssh/config", <<EOF);
 Host *
   StrictHostKeyChecking no
   UserKnownHostsFile /dev/null
   LogLevel QUIET
   IdentityFile $tmp/home/.ssh/key
 EOF
+		$ENV{GIT_SSH_COMMAND}     = "ssh -F $tmp/home/.ssh/config";
+	};
+	if ($ENV{GIT_USERNAME}) {
+		mkdir_or_fail( "$tmp/home", 0700);
+		mkfile_or_fail("$tmp/home/credential-helper.sh", 0755, <<'EOF');
+#!/bin/bash
+echo username=$GIT_USERNAME
+echo password=$GIT_PASSWORD
+EOF
+		run('git', 'config', 'credential.helper', "$tmp/home/credential-helper.sh");
+	}
 
 	$ENV{GIT_AUTHOR_NAME}   ||= 'Concourse Bot';
 	$ENV{GIT_AUTHOR_EMAIL}  ||= 'concourse@pipeline';
 	$ENV{GIT_COMMITTER_NAME}  = $ENV{GIT_AUTHOR_NAME};
 	$ENV{GIT_COMMITTER_EMAIL} = $ENV{GIT_AUTHOR_EMAIL};
 	$ENV{GIT_ASKPASS}         = "/bin/false";
-	$ENV{GIT_SSH_COMMAND}     = "ssh -F $tmp/home/.ssh/config";
 	$ENV{HOME}                = "$tmp/home";
 
 	# no need to fetch or pull from origin/$branch, as the git resource in the pipeline should
@@ -2445,7 +2456,9 @@ sub {
 	#   VAULT_SKIP_VERIFY          - Whether or not to enforce SSL/TLS validation
 	#
 	#   GIT_BRANCH                 - Name of the git branch to push commits to. post-deploy
-	#   GIT_PRIVATE_KEY            - Private Key to use for pushing commits, post-deploy
+	#   GIT_PRIVATE_KEY            - Private Key to use for pushing commits, post-deploy, ssh
+	#   GIT_USERNAME               - Username to use for pushing commits, post-deploy, https
+	#   GIT_PASSWORD               - Password to use for pushing commits, post-deploy, https
 	#
 	#   WORKING_DIR - Path to the directory to deploy/work from
 	#   OUT_DIR     - Path to the directory to output to
@@ -2459,11 +2472,14 @@ sub {
 
 	my @undefined = grep { !$ENV{$_} }
 	qw/CURRENT_ENV
-	GIT_BRANCH GIT_PRIVATE_KEY
+	GIT_BRANCH
 	OUT_DIR WORKING_DIR
 	VAULT_ROLE_ID VAULT_SECRET_ID VAULT_ADDR/;
 	push @undefined, "CACHE_DIR" if ($ENV{PREVIOUS_ENV} && ! $ENV{CACHE_DIR});
 	__bail_on_missing_pipeline_environment_variables(@undefined);
+
+	bail("The pipeline must specify either GIT_PRIVATE_KEY, or GIT_USERNAME and GIT_PASSWORD")
+		unless $ENV{GIT_PRIVATE_KEY} || ($ENV{GIT_USERNAME} && $ENV{GIT_PASSWORD});
 
 	# we need a method of issue tokens with a temporary lifetime, so approle/secret is used
 	vault_auth(vault         => $ENV{VAULT_ADDR},
@@ -2522,7 +2538,7 @@ EOF
 		system("git checkout .genesis/cached"); # yet exist in the working tree (but did in the cache tree)
 	}
 	popd;
-	commit_changes($ENV{WORKING_DIR}, $ENV{OUT_DIR}, $ENV{GIT_BRANCH}, $ENV{GIT_PRIVATE_KEY},
+	commit_changes($ENV{WORKING_DIR}, $ENV{OUT_DIR}, $ENV{GIT_BRANCH},
 		"deployed to $ENV{CURRENT_ENV}");
 });
 
@@ -2556,21 +2572,18 @@ sub {
 	# environment variables we should have
 	#   CURRENT_ENV - Name of the current environment
 	#   GIT_BRANCH                 - Name of the git branch to push commits to. post-deploy
-	#   GIT_PRIVATE_KEY            - Private Key to use for pushing commits, post-deploy
+	#   GIT_PRIVATE_KEY            - Private Key to use for pushing commits, post-deploy, ssh
+	#   GIT_USERNAME               - Username to use for pushing commits, post-deploy, https
+	#   GIT_PASSWORD               - Password to use for pushing commits, post-deploy, https
 	#   WORKING_DIR - Path to the directory to deploy/work from
 	#   OUT_DIR     - Path to the directory to output to
 	#
 	my @undefined = grep { !$ENV{$_} }
-		qw/CURRENT_ENV GIT_BRANCH GIT_PRIVATE_KEY
+		qw/CURRENT_ENV GIT_BRANCH
 		   WORKING_DIR OUT_DIR/;
-	if (@undefined) {
-		error "The following #R{required} environment variables have not been defined:";
-		error " - \$#Y{$_}" for @undefined;
-		error;
-		error;
-		error "Please check your CI Pipeline configuration.";
-		exit 1;
-	}
+	__bail_on_missing_pipeline_environment_variables(@undefined);
+	bail("The pipeline must specify either GIT_PRIVATE_KEY, or GIT_USERNAME and GIT_PASSWORD")
+		unless $ENV{GIT_PRIVATE_KEY} || ($ENV{GIT_USERNAME} && $ENV{GIT_PASSWORD});
 
 	pushd $ENV{WORKING_DIR};
 	mkdir_or_fail(".genesis/cached/$ENV{CURRENT_ENV}");
@@ -2578,7 +2591,7 @@ sub {
 		copy_or_fail("$_.yml", ".genesis/cached/$ENV{CURRENT_ENV}/$_.yml") if -f "$_.yml";
 	}
 	popd;
-	commit_changes($ENV{WORKING_DIR}, $ENV{OUT_DIR}, $ENV{GIT_BRANCH}, $ENV{GIT_PRIVATE_KEY}, "generated cache for $ENV{CURRENT_ENV}");
+	commit_changes($ENV{WORKING_DIR}, $ENV{OUT_DIR}, $ENV{GIT_BRANCH}, "generated cache for $ENV{CURRENT_ENV}");
 });
 # }}}
 # genesis ci-pipeline-run-errand - Run arbitrary errands via the CI/CD Pipeline {{{
@@ -2610,14 +2623,7 @@ sub {
 		qw/CURRENT_ENV ERRAND_NAME
 		   BOSH_ENVIRONMENT BOSH_CA_CERT
 		   BOSH_CLIENT BOSH_CLIENT_SECRET/;
-	if (@undefined) {
-		error "The following #R{required} environment variables have not been defined:";
-		error " - \$#Y{$_}" for @undefined;
-		error;
-		error;
-		error "Please check your CI Pipeline configuration.";
-		exit 1;
-	}
+	__bail_on_missing_pipeline_environment_variables(@undefined);
 
 	my $env = Genesis::Top->new('.')->load_env($ENV{CURRENT_ENV})->with_vault()->with_bosh();
 	Genesis::BOSH->alias(scalar $env->lookup_bosh_target);

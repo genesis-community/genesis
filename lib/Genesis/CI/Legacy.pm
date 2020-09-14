@@ -146,15 +146,37 @@ sub parse_pipeline {
 	if (ref($p->{pipeline}{git}) ne 'HASH') {
 		push @errors, "`pipeline.git' must be a map.";
 	} else {
-		# required subkeys
-		for (qw(owner repo private_key)) {
-			push @errors, "`pipeline.git.$_' is required."
-				unless $p->{pipeline}{git}{$_};
-		}
-		# allowed subkeys
-		for (keys %{$p->{pipeline}{git}}) {
-			push @errors, "Unrecognized `pipeline.git.$_' key found."
-				unless m/^(host|owner|repo|private_key)$/;
+		# Git can either use ssh keys or username/password
+		if ($p->{pipeline}{git}{private_key}) {
+			if ($p->{pipeline}{git}{username} || $p->{pipeline}{git}{password}) {
+				push @errors, "'pipeline.git' cannot specify both 'private_key' and 'username/password'.";
+			} elsif ($p->{pipeline}{git}{uri}) {
+				for (qw(host owner repo)) {
+					push @errors, "Cannot specify 'pipeline.git.$_' key if specifying 'pipeline.git.url'."
+						if $p->{pipeline}{git}{$_};
+				}
+			} else {
+				push @errors, "Must specify either 'uri', or 'owner' and 'repo' under 'pipeline.git'."
+					unless ($p->{pipeline}{git}{owner} && $p->{pipeline}{git}{repo});
+				$p->{pipeline}{git}{uri} = sprintf("git@%s:%s/%s",
+					($p->{pipeline}{git}{host} || 'github.com'),
+					$p->{pipeline}{git}{owner}, $p->{pipeline}{git}{repo});
+			}
+		} elsif ($p->{pipeline}{git}{username} || $p->{pipeline}{git}{password}) {
+			if ($p->{pipeline}{git}{uri}) {
+				for (qw(host owner repo)) {
+					push @errors, "Cannot specify 'pipeline.git.$_' key if specifying 'pipeline.git.url'."
+					if $p->{pipeline}{git}{$_};
+				}
+			} else {
+				push @errors, "Must specify either 'uri', or 'owner' and 'repo' under 'pipeline.git'."
+				unless ($p->{pipeline}{git}{owner} && $p->{pipeline}{git}{repo});
+				$p->{pipeline}{git}{uri} = sprintf("https://%s/%s/%s.git",
+					($p->{pipeline}{git}{host} || 'github.com'),
+					$p->{pipeline}{git}{owner}, $p->{pipeline}{git}{repo});
+			}
+		} else {
+			push @errors, "'pipeline.git' must specify either 'private_key', or  'username' and 'password'.";
 		}
 	}
 
@@ -618,17 +640,19 @@ sub generate_pipeline_concourse_yaml {
 	my %auto = map { $_ => 1 } @{$pipeline->{auto}};
 
 	# CONCOURSE: pipeline (+params) {{{
-	print $OUT <<'EOF';
+	my $git_credentials;
+	if ($pipeline->{pipeline}{git}{private_key}) {
+		$git_credentials = "    private_key: |-\n      ".join("\n      ",split("\n",$pipeline->{pipeline}{git}{private_key}));
+	} else {
+		$git_credentials = "    username:    $pipeline->{pipeline}{git}{username}\n    password:    $pipeline->{pipeline}{git}{password}";
+	}
+	print $OUT <<"EOF";
 ---
 pipeline:
   git:
-    user:        git
-    host:        github.com
-    uri:         (( concat pipeline.git.user "@" pipeline.git.host ":" pipeline.git.owner "/" pipeline.git.repo ))
-    owner:       (( param "Please specify the name of the user / organization that owns the Git repository" ))
-    repo:        (( param "Please specify the name of the Git repository" ))
+    uri:         $pipeline->{pipeline}{git}{uri}
     branch:      master
-    private_key: (( param "Please generate an SSH Deployment Key and install it into Github (with write privileges)" ))
+$git_credentials
   vault:
 EOF
 
@@ -742,6 +766,15 @@ EOF
 		grep { ! $auto{$_} } @{$pipeline->{envs}};
 	}
 
+	my ($git_resource_creds,$git_env_creds);
+	if ($pipeline->{pipeline}{git}{private_key}) {
+		$git_resource_creds = "      private_key: (( grab pipeline.git.private_key ))";
+		$git_env_creds = "            GIT_PRIVATE_KEY:      (( grab pipeline.git.private_key ))";
+	} else {
+		$git_resource_creds = "      username:    (( grab pipeline.git.username ))\n      password:    (( grab pipeline.git.password ))";
+		$git_env_creds = "            GIT_USERNAME:         (( grab pipeline.git.username ))\n            GIT_PASSWORD:         (( grab pipeline.git.password || \"\" ))";
+	}
+
 	print $OUT <<EOF;
 
 resources:
@@ -749,7 +782,7 @@ resources:
     type: git
     source:
       branch:      (( grab pipeline.git.branch ))
-      private_key: (( grab pipeline.git.private_key ))
+$git_resource_creds
       uri:         (( grab pipeline.git.uri ))
 EOF
    # }}}
@@ -1182,12 +1215,12 @@ EOF
             PREVIOUS_ENV:         $passed
             CACHE_DIR:            $alias-cache
             GIT_BRANCH:           (( grab pipeline.git.branch ))
-            GIT_PRIVATE_KEY:      (( grab pipeline.git.private_key ))
+$git_env_creds
+            BOSH_NON_INTERACTIVE: true
             VAULT_ROLE_ID:        (( grab pipeline.vault.role ))
             VAULT_SECRET_ID:      (( grab pipeline.vault.secret ))
             VAULT_ADDR:           $pipeline->{pipeline}{vault}{url}
             VAULT_SKIP_VERIFY:    ${\(!$pipeline->{pipeline}{vault}{verify})}
-            BOSH_NON_INTERACTIVE: true
 EOF
 		# don't supply bosh creds if we're create-env, because no one to talk to
 		unless ($E->needs_bosh_create_env) {
@@ -1304,7 +1337,7 @@ EOF
             WORKING_DIR:          out/git
             OUT_DIR:              cache-out/git
             GIT_BRANCH:           (( grab pipeline.git.branch ))
-            GIT_PRIVATE_KEY:      (( grab pipeline.git.private_key ))
+$git_env_creds
 EOF
 
 		print $OUT <<EOF if $pipeline->{pipeline}{debug};

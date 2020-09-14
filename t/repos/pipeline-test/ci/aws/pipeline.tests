@@ -52,14 +52,9 @@ pipeline:
       client-aws-1-sandbox -> client-aws-1-preprod -> client-aws-1-prod
 
   git:
-    owner: someco
-    repo:  something-deployments
-    private_key: |
-      -----BEGIN RSA PRIVATE KEY-----
-      lol. you didn't really think that
-      we'd put the key here, in a test,
-      did you?!
-      -----END RSA PRIVATE KEY-----
+    uri: github.mycorp.com/myproj/mystuff/myrepo.git
+    username: fleemco
+    password: weneedareplacement!
 
   slack:
     channel: '#botspam'

@@ -35,12 +35,8 @@ pipeline:
   git:
     owner: someco
     repo:  something-deployments
-    private_key: |
-      -----BEGIN RSA PRIVATE KEY-----
-      lol. you didn't really think that
-      we'd put the key here, in a test,
-      did you?!
-      -----END RSA PRIVATE KEY-----
+    username: fleemco
+    password: weneedareplacement!
 
   slack:
     channel: '#botspam'

@@ -62,8 +62,7 @@ pipeline:
       client-aws-1-sandbox -> client-aws-1-preprod -> client-aws-1-prod
 
   git:
-    owner: someco
-    repo:  something-deployments
+    uri: git@github.com:someco/something-deployments
     private_key: |
       -----BEGIN RSA PRIVATE KEY-----
       lol. you didn't really think that
