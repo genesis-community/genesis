@@ -3,6 +3,7 @@ use strict;
 use warnings;
 
 use Genesis;
+use Genesis::UI;
 use Socket qw/inet_ntoa/;
 
 sub boolean_to_yaml {
@@ -385,8 +386,7 @@ sub parse_pipeline {
 }
 
 sub parse {
-	my ($file, $layout, $top) = @_;
-	$layout ||= 'default';
+	my ($file, $top, $layout) = @_;
 
 	my ($pipeline, @errors) = parse_pipeline($file, $top);
 	if (@errors) {
@@ -395,6 +395,16 @@ sub parse {
 		exit 1;
 	}
 
+	unless ($layout) {
+		my @layouts = keys %{$pipeline->{pipeline}{layouts}};
+		if (scalar(@layouts) == 1) {
+			$layout = $layouts[0];
+		} elsif (grep {$_ eq 'default'} @layouts) {
+			$layout = 'default';
+		} else {
+			$layout = prompt_for_choice("There is more than one layout, please pick the one you want to use:", $layout);
+		}
+	}
 	my $src = $pipeline->{pipeline}{layouts}{$layout}
 		or die "No such layout `${layout}'\n";
 
@@ -551,7 +561,7 @@ sub parse {
 	}
 	$P->{triggers} = $triggers;
 
-	return $P;
+	return ($P, $layout);
 }
 
 sub pipeline_tree {

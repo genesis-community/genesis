@@ -2184,13 +2184,13 @@ sub {
 	/);
 	check_prereqs;
 
-	my $layout = $_[0] || "default";
-	$options{target} ||= $layout;
 	$options{config} ||= 'ci.yml';
+	my $layout = $_[0];
 	my $top = Genesis::Top->new('.', vault=>$options{vault});
 	bail("#R{[ERROR]} No vault specified or configured.") unless $top->vault;
 
-	my $pipeline = Genesis::CI::Legacy::parse($options{config}, $layout, $top);
+	(my $pipeline, $layout) = Genesis::CI::Legacy::parse($options{config}, $top, $layout);
+	$options{target} ||= $layout;
 	my $yaml = Genesis::CI::Legacy::generate_pipeline_concourse_yaml($pipeline, $top);
 	if ($options{'dry-run'}) {
 		print $yaml;
@@ -2240,11 +2240,11 @@ sub {
 	/);
 	check_prereqs;
 
-	my $layout = $_[0] || "default";
+	my $layout = $_[0];
 	$options{config} ||= 'ci.yml';
 	my $top = Genesis::Top->new('.');
 
-	my $pipeline = Genesis::CI::Legacy::parse($options{config}, $layout, $top);
+	(my $pipeline, $layout) = Genesis::CI::Legacy::parse($options{config}, $top, $layout);
 	my $dot = Genesis::CI::Legacy::generate_pipeline_graphviz_source($pipeline);
 	print "$dot\n";
 	exit 0;
@@ -2269,11 +2269,11 @@ sub {
 	/);
 	check_prereqs;
 
-	my $layout = $_[0] || "default";
+	my $layout = $_[0];
 	$options{config} ||= 'ci.yml';
 	my $top = Genesis::Top->new('.');
 
-	my $pipeline = Genesis::CI::Legacy::parse($options{config}, $layout, $top);
+	(my $pipeline, $layout) = Genesis::CI::Legacy::parse($options{config}, $top, $layout);
 	Genesis::CI::Legacy::generate_pipeline_human_description($pipeline);
 	exit 0;
 });
