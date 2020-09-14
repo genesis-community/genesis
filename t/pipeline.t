@@ -644,6 +644,7 @@ jobs:
           OUT_DIR: out/git
           PREVIOUS_ENV: client-aws-1-sandbox
           VAULT_ADDR: https://127.0.0.1:8200
+          VAULT_NAMESPACE: henchco
           VAULT_ROLE_ID: this-is-a-role
           VAULT_SECRET_ID: this-is-a-secret
           VAULT_SKIP_VERIFY: null
@@ -790,6 +791,7 @@ jobs:
           OUT_DIR: out/git
           PREVIOUS_ENV: client-aws-1-preprod
           VAULT_ADDR: https://127.0.0.1:8200
+          VAULT_NAMESPACE: henchco
           VAULT_ROLE_ID: this-is-a-role
           VAULT_SECRET_ID: this-is-a-secret
           VAULT_SKIP_VERIFY: null
@@ -906,6 +908,7 @@ jobs:
           OUT_DIR: out/git
           PREVIOUS_ENV: null
           VAULT_ADDR: https://127.0.0.1:8200
+          VAULT_NAMESPACE:  henchco
           VAULT_ROLE_ID: this-is-a-role
           VAULT_SECRET_ID: this-is-a-secret
           VAULT_SKIP_VERIFY: null

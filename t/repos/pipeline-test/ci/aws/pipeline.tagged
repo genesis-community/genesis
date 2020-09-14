@@ -32,6 +32,7 @@ pipeline:
     url: https://127.0.0.1:8200
     role: this-is-a-role
     secret: this-is-a-secret
+    namespace: henchco
   skip_upkeep: true
 
   layouts:

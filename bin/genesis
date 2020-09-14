@@ -236,39 +236,27 @@ our $prompt_handlers = {
 
 
 ###########################################################################
-
 sub vault_auth {
-	my %options = @_;
-	for (qw/vault skip_verify secret_id role_id/) {
-		next if exists $options{$_} and defined $options{$_};
-		die "vault_auth() requires the '$_' argument; please file a bug.\n";
+	for (qw/VAULT_ADDR VAULT_ROLE_ID VAULT_SECRET_ID/) {
+		next if exists $ENV{$_} and defined $ENV{$_};
+		die "vault_auth() requires the '$_' environment variable; please file a bug.\n";
 	}
 
-	my ($code, $msg, $data) = curl "POST", "$options{vault}/v1/auth/approle/login", {
-			'Content-type' => 'application/json',
-		},
-		encode_json({
-			role_id => $options{role_id},
-			secret_id  => $options{secret_id},
-		}), $options{skip_verify};
+	my @cmd = ('safe', 'target', $ENV{VAULT_ADDR}, 'deployments-vault');
+	push(@cmd, '-k') if envset("VAULT_SKIP_VERIFY");
+	push(@cmd, '-n', $ENV{VAULT_NAMESPACE}) if $ENV{VAULT_NAMESPACE};
+	push(@cmd, '--no-strongbox') if envset("VAULT_NO_STRONGBOX");
+	run({onfailure => "Could not target deployment vault with safe:"}, @cmd);
 
-	if ($code != 200) {
-		die "Failed to authenticate to the Vault at $options{vault} using role ID $options{role_id}:\n".
-			"HTTP $msg\n$data\n";
-	}
-	my $output;
-	eval { $output = load_json($data); 1 }
-		or die "Invalid JSON received from the Vault at $options{vault}\n($data)\n";
-	exists $output->{auth} and exists $output->{auth}{client_token}
-		or die "No Client Token found in response from the Vault at $options{vault}\n($data)\n";
-
-	$ENV{VAULT_TOKEN} = $output->{auth}{client_token};
-	run({ onfailure => "Failed to authenticate to the Vault at $options{vault}\n:`vault status` said" },
-		"vault status");
-
-	my $secrets_mount = $options{secret_mount} || '/secret/';
-	run({ onfailure => "Failed to retrieve ${secrets_mount}/handshake from the Vault at $options{vault}" },
-		"vault read ${secrets_mount}/handshake");
+	run(
+		{onfailure => "Could not authenticate with app role to deployment vault with safe:"},
+		'safe auth approle < <(echo $VAULT_ROLE_ID; echo $VAULT_SECRET_ID)'
+	);
+	my $secrets_mount = $ENV{SECRETS_MOUNT} || '/secret';
+	run(
+		{onfailure => "Failed to retrieve ${secrets_mount}/handshake from deployment vault with safe:"},
+		"safe get ${secrets_mount}/handshake"
+	);
 }
 
 sub commit_changes {
@@ -2481,26 +2469,7 @@ sub {
 	bail("The pipeline must specify either GIT_PRIVATE_KEY, or GIT_USERNAME and GIT_PASSWORD")
 		unless $ENV{GIT_PRIVATE_KEY} || ($ENV{GIT_USERNAME} && $ENV{GIT_PASSWORD});
 
-	# we need a method of issue tokens with a temporary lifetime, so approle/secret is used
-	vault_auth(vault         => $ENV{VAULT_ADDR},
-	           skip_verify   => envset("VAULT_SKIP_VERIFY"),
-	           role_id       => $ENV{VAULT_ROLE_ID},
-	           secret_id     => $ENV{VAULT_SECRET_ID},
-	           secrets_mount => $ENV{SECRETS_MOUNT});
-
-	# write .saferc file so that safe commands execute properly
-	open my $OUT, ">", "$ENV{HOME}/.saferc"
-		or die "Failed to write .saferc information: $!\n";
-
-	print $OUT <<EOF;
-version: 1
-current: ci-deploy
-vaults:
-  ci-deploy:
-    url: $ENV{VAULT_ADDR}
-    token: $ENV{VAULT_TOKEN}
-    skip_verify: @{[envset("VAULT_SKIP_VERIFY") ? "true" : "false"]}
-EOF
+	vault_auth();
 
 	# Load the environment in order to check other required variables
 	pushd $ENV{WORKING_DIR};

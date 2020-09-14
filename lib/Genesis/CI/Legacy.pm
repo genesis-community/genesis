@@ -139,7 +139,7 @@ sub parse_pipeline {
 		# allowed subkeys
 		for (keys %{$p->{pipeline}{vault}}) {
 			push @errors, "Unrecognized `pipeline.vault.$_' key found."
-				unless m/^(url|role|secret|verify)$/;
+				unless m/^(url|role|secret|verify|no-strongbox|namespace)$/;
 		}
 	}
 
@@ -1232,6 +1232,11 @@ $git_env_creds
             VAULT_ADDR:           $pipeline->{pipeline}{vault}{url}
             VAULT_SKIP_VERIFY:    ${\(!$pipeline->{pipeline}{vault}{verify})}
 EOF
+		print $OUT "            VAULT_NO_STRONGBOX:   1\n"
+			if $pipeline->{pipeline}{vault}{'no-strongbox'};
+		print $OUT "            VAULT_NAMESPACE:      $pipeline->{pipeline}{vault}{namespace}\n"
+			if $pipeline->{pipeline}{vault}{namespace};
+
 		# don't supply bosh creds if we're create-env, because no one to talk to
 		unless ($E->needs_bosh_create_env) {
 			print $OUT <<EOF;
