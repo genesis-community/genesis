@@ -143,10 +143,14 @@ export -f have_exodus_data
 ### USAGE: new_enough $have $minimum
 ###
 new_enough() {
+  check_errors="$(printf %s\\n "$-" | grep 'e' 2>/dev/null)";
+  set +e
   local __have=${1:?new_enough() requires an actual version as the first argument}
   local __min=${2:?new_enough() requires an actual version as the second argument}
   genesis ui-semver "$__have" ge "$__min"
-  return $?
+  rc=$?
+  [[ -z "$check_errors" ]] || set -e
+  return $rc # stop -e in the calling scope from failing
 }
 export -f new_enough
 
