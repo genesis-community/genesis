@@ -47,11 +47,11 @@ if [[ "${GENESIS_TRACE}" == "y" ]] ; then
 fi
 
 genesis() {
-	[[ -z "${GENESIS_CALLBACK_BIN}" ]] \
-		&& echo >&2 "Genesis command not specified - this is a bug in Genesis, or you are running $0 outside of Genesis" \
-		&& exit 2
-	command ${GENESIS_CALLBACK_BIN} "$@"
-	return $?
+  [[ -z "${GENESIS_CALLBACK_BIN}" ]] \
+    && echo >&2 "Genesis command not specified - this is a bug in Genesis, or you are running $0 outside of Genesis" \
+    && exit 2
+  command ${GENESIS_CALLBACK_BIN} "$@"
+  return $?
 }
 export -f genesis
 
@@ -61,7 +61,7 @@ describe() {
 export -f describe
 
 humanize_path() {
-	/usr/bin/perl -I$GENESIS_LIB -MGenesis -e 'binmode STDOUT, ":encoding(UTF-8)"; print humanize_path("$ARGV[0]")' "$1"
+  /usr/bin/perl -I$GENESIS_LIB -MGenesis -e 'binmode STDOUT, ":encoding(UTF-8)"; print humanize_path("$ARGV[0]")' "$1"
 }
 export -f humanize_path
 
@@ -79,7 +79,7 @@ eval "${bailfunc/__bail/bail}"
 export -f bail
 
 if [[ -z "$SAFE_TARGET" || "$SAFE_TARGET" != "$GENESIS_TARGET_VAULT" ]] ; then
-	__bail "Safe target not associated with Genesis Vault -- this is a bug in Genesis, or you are running $0 outside of Genesis"
+  __bail "Safe target not associated with Genesis Vault -- this is a bug in Genesis, or you are running $0 outside of Genesis"
 fi
 
 ###
@@ -106,20 +106,20 @@ exodus() {
   # movement of the people
   local __env __key
   __env="$GENESIS_ENVIRONMENT/$GENESIS_TYPE"
-	__key=${1:?exodus() must provide at least an exodus key}
+  __key=${1:?exodus() must provide at least an exodus key}
   if [[ -n ${2:-} ]]; then
     __key=$2
     __env=$1
   fi
-	if [[ "$__key" == "--all" ]] ; then
-		if safe exists "${GENESIS_EXODUS_MOUNT}${__env}"; then
-			safe get ${GENESIS_EXODUS_MOUNT}${__env} | spruce json | jq -r .
-		fi
-	else
-		if safe exists "${GENESIS_EXODUS_MOUNT}${__env}:${__key}"; then
-			safe get "${GENESIS_EXODUS_MOUNT}${__env}:${__key}"
-		fi
-	fi
+  if [[ "$__key" == "--all" ]] ; then
+    if safe exists "${GENESIS_EXODUS_MOUNT}${__env}"; then
+      safe get ${GENESIS_EXODUS_MOUNT}${__env} | spruce json | jq -r .
+    fi
+  else
+    if safe exists "${GENESIS_EXODUS_MOUNT}${__env}:${__key}"; then
+      safe get "${GENESIS_EXODUS_MOUNT}${__env}:${__key}"
+    fi
+  fi
 }
 export -f exodus
 
@@ -201,14 +201,14 @@ bosh() {
     __bail "Environment not found for BOSH Director -- please ensure you've configured your BOSH alias used by this environment"
 
 
-	if [[ -z "${GENESIS_BOSH_VERIFIED:-}" || "$GENESIS_BOSH_VERIFIED" != "${BOSH_ALIAS:-}" ]] ; then
-		# Genesis has not yet validate the BOSH director's availability, so we need to
-		if /usr/bin/perl -I$GENESIS_LIB -MGenesis::BOSH -e 'exit(Genesis::BOSH->ping($ENV{BOSH_ALIAS})?0:1)' ; then
-			GENESIS_BOSH_VERIFIED="$BOSH_ALIAS"
-		else
-			__bail "" "#R{[ERROR]} Could not connect to BOSH director '#M{$BOSH_ALIAS}' (#M{$BOSH_ENVIRONMENT})"
-		fi
-	fi
+  if [[ -z "${GENESIS_BOSH_VERIFIED:-}" || "$GENESIS_BOSH_VERIFIED" != "${BOSH_ALIAS:-}" ]] ; then
+    # Genesis has not yet validate the BOSH director's availability, so we need to
+    if /usr/bin/perl -I$GENESIS_LIB -MGenesis::BOSH -e 'exit(Genesis::BOSH->ping($ENV{BOSH_ALIAS})?0:1)' ; then
+      GENESIS_BOSH_VERIFIED="$BOSH_ALIAS"
+    else
+      __bail "" "#R{[ERROR]} Could not connect to BOSH director '#M{$BOSH_ALIAS}' (#M{$BOSH_ENVIRONMENT})"
+    fi
+  fi
 
   [[ -n "${GENESIS_SHOW_BOSH_CMD:-}" ]] && \
     describe  >&2 "#M{BOSH>} $GENESIS_BOSH_COMMAND $*"
@@ -219,10 +219,10 @@ export -f bosh
 
 bosh_cpi() {
   local __have_env
-	if [[ -n "${GENESIS_TESTING_BOSH_CPI:-}" ]] ; then
-		echo "$GENESIS_TESTING_BOSH_CPI"
-		return 0
-	fi
+  if [[ -n "${GENESIS_TESTING_BOSH_CPI:-}" ]] ; then
+    echo "$GENESIS_TESTING_BOSH_CPI"
+    return 0
+  fi
   __have_env="$(bosh env --json | jq -r '.Tables[0].Rows[0].cpi')"
   [[ "$?" != "0" ]] && \
     __bail "Cannot determine CPI from BOSH director - failed to communicate with BOSH director:" \
@@ -390,17 +390,17 @@ export -f cloud_config_has
 
 export __cc_data=
 ccq() {
-	[[ -z "${GENESIS_CLOUD_CONFIG+x}" ]] && bail "Cloud config contents not available - cannot continue"
-	[[ -z "${__cc_data}" ]] && __cc_data="$(spruce json "$GENESIS_CLOUD_CONFIG")"
-	echo "$__cc_data" | jq -r "$@"
+  [[ -z "${GENESIS_CLOUD_CONFIG+x}" ]] && bail "Cloud config contents not available - cannot continue"
+  [[ -z "${__cc_data}" ]] && __cc_data="$(spruce json "$GENESIS_CLOUD_CONFIG")"
+  echo "$__cc_data" | jq -r "$@"
 }
 export -f ccq
 
 export __rc_data=
 rcq() {
-	[[ -z "${GENESIS_RUNTIME_CONFIG+x}" ]] && bail "Runtime config contents not available - cannot continue"
-	[[ -z "${__rc_data}" ]] && __rc_data="$(spruce json "$GENESIS_RUNTIME_CONFIG")"
-	echo "$__rc_data" | jq -r "$@"
+  [[ -z "${GENESIS_RUNTIME_CONFIG+x}" ]] && bail "Runtime config contents not available - cannot continue"
+  [[ -z "${__rc_data}" ]] && __rc_data="$(spruce json "$GENESIS_RUNTIME_CONFIG")"
+  echo "$__rc_data" | jq -r "$@"
 }
 export -f rcq
 
@@ -560,52 +560,52 @@ export -f param_comment
 
 # Helper to inject new Genesis configuration (v2.6.13+)
 genesis_config_block() {
-	cat<<EOF
+  cat<<EOF
 
 genesis:
   env:                $GENESIS_ENVIRONMENT
 EOF
-	if [[ "$BOSH_ALIAS" != "$GENESIS_ENVIRONMENT" ]] ; then
-		cat <<EOF
+  if [[ "$BOSH_ALIAS" != "$GENESIS_ENVIRONMENT" ]] ; then
+    cat <<EOF
   bosh_env:           $BOSH_ALIAS
 EOF
-	fi
-	if [[ -n "$GENESIS_MIN_VERSION" ]] ; then
-		cat <<EOF
+  fi
+  if [[ -n "$GENESIS_MIN_VERSION" ]] ; then
+    cat <<EOF
   min_version:        $GENESIS_MIN_VERSION
 EOF
-	fi
-	if [[ -n "$GENESIS_SECRETS_SLUG_OVERRIDE" ]] ; then
-		cat <<EOF
+  fi
+  if [[ -n "$GENESIS_SECRETS_SLUG_OVERRIDE" ]] ; then
+    cat <<EOF
   secrets_path:       $GENESIS_SECRETS_SLUG
 EOF
-	fi
-	if [[ -n "$GENESIS_ENV_ROOT_CA_PATH" ]] ; then
-		cat <<EOF
+  fi
+  if [[ -n "$GENESIS_ENV_ROOT_CA_PATH" ]] ; then
+    cat <<EOF
   root_ca_path:       $GENESIS_ENV_ROOT_CA_PATH
 EOF
-	fi
-	if [[ -n "$GENESIS_SECRETS_MOUNT_OVERRIDE" ]] ; then
-		cat <<EOF
+  fi
+  if [[ -n "$GENESIS_SECRETS_MOUNT_OVERRIDE" ]] ; then
+    cat <<EOF
   secrets_mount:      $GENESIS_SECRETS_MOUNT
 EOF
-	fi
-	if [[ -n "$GENESIS_EXODUS_MOUNT_OVERRIDE" ]] ; then
-		cat <<EOF
+  fi
+  if [[ -n "$GENESIS_EXODUS_MOUNT_OVERRIDE" ]] ; then
+    cat <<EOF
   exodus_mount:       $GENESIS_EXODUS_MOUNT
 EOF
-	fi
-	if [[ -n "$GENESIS_CI_MOUNT_OVERRIDE" ]] ; then
-		cat <<EOF
+  fi
+  if [[ -n "$GENESIS_CI_MOUNT_OVERRIDE" ]] ; then
+    cat <<EOF
   ci_mount:           $GENESIS_CI_MOUNT
 EOF
-	fi
-	if [[ -n "$GENESIS_CREDHUB_EXODUS_SOURCE_OVERRIDE" ]] ; then
-		cat <<EOF
+  fi
+  if [[ -n "$GENESIS_CREDHUB_EXODUS_SOURCE_OVERRIDE" ]] ; then
+    cat <<EOF
   credhub_exodus_env: $GENESIS_CREDHUB_EXODUS_SOURCE_OVERRIDE
 EOF
-	fi
-	echo ""
+  fi
+  echo ""
 }
 export -f genesis_config_block
 
