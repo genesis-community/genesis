@@ -20,7 +20,7 @@ sub yaml_bool {
 sub _gen_notifications {
 	my ($pipeline, $message, $alias) = @_;
 	$alias = "" unless defined $alias;
-	my $notification = "aggregate: [\n";
+	my $notification = "in_parallel: [\n";
 	if ($pipeline->{pipeline}{slack}) {
 		$notification .= <<EOF;
 {
@@ -1104,7 +1104,7 @@ EOF
     public: true
     serial: true
     plan:
-    - aggregate:
+    - in_parallel:
       - { get: $alias-changes, trigger: true }
 EOF
 			unless ($E->needs_bosh_create_env) {
@@ -1187,7 +1187,7 @@ EOF
 EOF
 		}
 		print $OUT <<EOF;
-      - aggregate:
+      - in_parallel:
 EOF
 		# only add cloud/runtime config on true-triggers, otherwise it goes in notifications
 		# also make sure that we are not deploying with create-env (no cloud/runtime config for that scenario)
