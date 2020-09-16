@@ -663,6 +663,7 @@ pipeline:
     uri:         $pipeline->{pipeline}{git}{uri}
     branch:      master
 $git_credentials
+    config: {}
   vault:
 EOF
 
@@ -790,6 +791,7 @@ EOF
 resources:
   - name: git
     type: git
+    .: (( inject pipeline.git.config ))
     source:
       branch:      (( grab pipeline.git.branch ))
 $git_resource_creds
@@ -809,6 +811,7 @@ EOF
 		print $OUT <<EOF;
   - name: ${alias}-changes
     type: git
+    .: (( inject pipeline.git.config ))
     source:
       .: (( inject resources.git.source ))
       paths:
@@ -836,6 +839,7 @@ EOF
 
   - name: ${alias}-cache
     type: git
+    .: (( inject pipeline.git.config ))
     source:
       .: (( inject resources.git.source ))
       paths:
