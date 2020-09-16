@@ -663,7 +663,8 @@ pipeline:
     uri:         $pipeline->{pipeline}{git}{uri}
     branch:      master
 $git_credentials
-    config: {}
+    config:
+      icon: github
   vault:
 EOF
 
@@ -862,6 +863,7 @@ EOF
 
   - name: ${alias}-cloud-config
     type: bosh-config
+    icon: script-text
     $tag_yaml
     source:
       target: $pipeline->{pipeline}{boshes}{$env}{url}
@@ -879,6 +881,7 @@ EOF
 
   - name: ${alias}-runtime-config
     type: bosh-config
+    icon: script-text
     $tag_yaml
     source:
       target: $pipeline->{pipeline}{boshes}{$env}{url}
@@ -910,6 +913,7 @@ EOF
 				print $OUT <<EOF;
   - name: ${alias}-bosh-lock
     type: locker
+    icon: shield-lock-outline
     $tag_yaml
     source:
       locker_uri: (( grab pipeline.locker.url ))
@@ -923,6 +927,7 @@ EOF
 			print $OUT <<EOF;
   - name: ${alias}-deployment-lock
     type: locker
+    icon: shield-lock-outline
     $tag_yaml
     source:
       locker_uri: (( grab pipeline.locker.url ))
@@ -941,6 +946,7 @@ EOF
 		print $OUT <<'EOF';
   - name: slack
     type: slack-notification
+    icon: slack
     source:
       url: (( grab pipeline.slack.webhook ))
 
@@ -950,6 +956,7 @@ EOF
 		print $OUT <<'EOF';
   - name: hipchat
     type: hipchat-notification
+    icon: bell-ring
     source:
       hipchat_server_url: (( grab pipeline.hipchat.url ))
       room_id:  (( grab pipeline.hipchat.room_id ))
@@ -960,6 +967,7 @@ EOF
 		print $OUT <<'EOF';
   - name: stride
     type: stride-notification
+    icon: bell-ring
     source:
       client_id: (( grab pipeline.stride.client_id ))
       client_secret: (( grab pipeline.stride.client_secret ))
@@ -970,6 +978,7 @@ EOF
 		print $OUT <<'EOF';
   - name: build-email-changes-staged
     type: script
+    icon: email-outline
     source:
       filename: run
       body: |
@@ -986,6 +995,7 @@ EOF
 
   - name: email
     type: email
+    icon: email-send-outline
     source:
       to:   (( grab pipeline.email.to ))
       from: (( grab pipeline.email.from ))
