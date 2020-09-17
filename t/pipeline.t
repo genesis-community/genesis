@@ -27,7 +27,7 @@ jobs:
 - name: client-aws-1-preprod-pipeline-test
   plan:
   - do:
-    - aggregate:
+    - in_parallel:
       - get: client-aws-1-preprod-cloud-config
         trigger: true
       - get: client-aws-1-preprod-runtime-config
@@ -123,7 +123,7 @@ jobs:
         repository: cache-out/git
       put: client-aws-1-prod-cache
     on_failure:
-      aggregate:
+      in_parallel:
       - params:
           channel: '#botspam'
           icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
@@ -132,7 +132,7 @@ jobs:
           username: runwaybot
         put: slack
     on_success:
-      aggregate:
+      in_parallel:
       - params:
           channel: '#botspam'
           icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
@@ -143,7 +143,7 @@ jobs:
   serial: true
 - name: notify-client-aws-1-prod-pipeline-test-changes
   plan:
-  - aggregate:
+  - in_parallel:
     - get: client-aws-1-prod-changes
       trigger: true
     - get: client-aws-1-prod-cloud-config
@@ -154,7 +154,7 @@ jobs:
       passed:
       - client-aws-1-preprod-pipeline-test
       trigger: true
-  - aggregate:
+  - in_parallel:
     - params:
         channel: '#botspam'
         icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
@@ -167,7 +167,7 @@ jobs:
 - name: client-aws-1-prod-pipeline-test
   plan:
   - do:
-    - aggregate:
+    - in_parallel:
       - get: client-aws-1-prod-changes
         passed:
         - notify-client-aws-1-prod-pipeline-test-changes
@@ -258,7 +258,7 @@ jobs:
         repository: cache-out/git
       put: git
     on_failure:
-      aggregate:
+      in_parallel:
       - params:
           channel: '#botspam'
           icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
@@ -266,7 +266,7 @@ jobs:
           username: runwaybot
         put: slack
     on_success:
-      aggregate:
+      in_parallel:
       - params:
           channel: '#botspam'
           icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
@@ -278,7 +278,7 @@ jobs:
 - name: client-aws-1-sandbox-pipeline-test
   plan:
   - do:
-    - aggregate:
+    - in_parallel:
       - get: client-aws-1-sandbox-cloud-config
         trigger: true
       - get: client-aws-1-sandbox-runtime-config
@@ -369,7 +369,7 @@ jobs:
         repository: cache-out/git
       put: client-aws-1-preprod-cache
     on_failure:
-      aggregate:
+      in_parallel:
       - params:
           channel: '#botspam'
           icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
@@ -378,7 +378,7 @@ jobs:
           username: runwaybot
         put: slack
     on_success:
-      aggregate:
+      in_parallel:
       - params:
           channel: '#botspam'
           icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
@@ -417,7 +417,8 @@ resource_types:
     repository: cfcommunity/locker-resource
   type: docker-image
 resources:
-- name: git
+- icon: github
+  name: git
   source:
     branch: master
     private_key: |
@@ -428,7 +429,8 @@ resources:
       -----END RSA PRIVATE KEY-----
     uri: git@github.com:someco/something-deployments
   type: git
-- name: client-aws-1-preprod-changes
+- icon: github
+  name: client-aws-1-preprod-changes
   source:
     branch: master
     paths:
@@ -441,7 +443,8 @@ resources:
       -----END RSA PRIVATE KEY-----
     uri: git@github.com:someco/something-deployments
   type: git
-- name: client-aws-1-preprod-cache
+- icon: github
+  name: client-aws-1-preprod-cache
   source:
     branch: master
     paths:
@@ -459,7 +462,8 @@ resources:
       -----END RSA PRIVATE KEY-----
     uri: git@github.com:someco/something-deployments
   type: git
-- name: client-aws-1-preprod-cloud-config
+- icon: script-text
+  name: client-aws-1-preprod-cloud-config
   source:
     ca_cert: |
       ----- BEGIN CERTIFICATE -----
@@ -470,7 +474,8 @@ resources:
     config: cloud
     target: https://preprod.example.com:25555
   type: bosh-config
-- name: client-aws-1-preprod-runtime-config
+- icon: script-text
+  name: client-aws-1-preprod-runtime-config
   source:
     ca_cert: |
       ----- BEGIN CERTIFICATE -----
@@ -481,7 +486,8 @@ resources:
     config: runtime
     target: https://preprod.example.com:25555
   type: bosh-config
-- name: client-aws-1-prod-changes
+- icon: github
+  name: client-aws-1-prod-changes
   source:
     branch: master
     paths:
@@ -494,7 +500,8 @@ resources:
       -----END RSA PRIVATE KEY-----
     uri: git@github.com:someco/something-deployments
   type: git
-- name: client-aws-1-prod-cache
+- icon: github
+  name: client-aws-1-prod-cache
   source:
     branch: master
     paths:
@@ -512,7 +519,8 @@ resources:
       -----END RSA PRIVATE KEY-----
     uri: git@github.com:someco/something-deployments
   type: git
-- name: client-aws-1-prod-cloud-config
+- icon: script-text
+  name: client-aws-1-prod-cloud-config
   source:
     ca_cert: |
       ----- BEGIN CERTIFICATE -----
@@ -523,7 +531,8 @@ resources:
     config: cloud
     target: https://prod.example.com:25555
   type: bosh-config
-- name: client-aws-1-prod-runtime-config
+- icon: script-text
+  name: client-aws-1-prod-runtime-config
   source:
     ca_cert: |
       ----- BEGIN CERTIFICATE -----
@@ -534,7 +543,8 @@ resources:
     config: runtime
     target: https://prod.example.com:25555
   type: bosh-config
-- name: client-aws-1-sandbox-changes
+- icon: github
+  name: client-aws-1-sandbox-changes
   source:
     branch: master
     paths:
@@ -553,7 +563,8 @@ resources:
       -----END RSA PRIVATE KEY-----
     uri: git@github.com:someco/something-deployments
   type: git
-- name: client-aws-1-sandbox-cloud-config
+- icon: script-text
+  name: client-aws-1-sandbox-cloud-config
   source:
     ca_cert: |
       ----- BEGIN CERTIFICATE -----
@@ -564,7 +575,8 @@ resources:
     config: cloud
     target: https://sandbox.example.com:25555
   type: bosh-config
-- name: client-aws-1-sandbox-runtime-config
+- icon: script-text
+  name: client-aws-1-sandbox-runtime-config
   source:
     ca_cert: |
       ----- BEGIN CERTIFICATE -----
@@ -575,7 +587,8 @@ resources:
     config: runtime
     target: https://sandbox.example.com:25555
   type: bosh-config
-- name: slack
+- icon: slack
+  name: slack
   source:
     url: http://127.0.0.1:1337
   type: slack-notification
@@ -595,7 +608,7 @@ jobs:
 - name: client-aws-1-preprod-pipeline-test
   plan:
   - do:
-    - aggregate:
+    - in_parallel:
       - get: client-aws-1-preprod-cloud-config
         tags:
         - client-aws-1-preprod
@@ -700,7 +713,7 @@ jobs:
         repository: cache-out/git
       put: client-aws-1-prod-cache
     on_failure:
-      aggregate:
+      in_parallel:
       - params:
           channel: '#botspam'
           icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
@@ -709,7 +722,7 @@ jobs:
           username: runwaybot
         put: slack
     on_success:
-      aggregate:
+      in_parallel:
       - params:
           channel: '#botspam'
           icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
@@ -720,7 +733,7 @@ jobs:
   serial: true
 - name: notify-client-aws-1-prod-pipeline-test-changes
   plan:
-  - aggregate:
+  - in_parallel:
     - get: client-aws-1-prod-changes
       trigger: true
     - get: client-aws-1-prod-cloud-config
@@ -735,7 +748,7 @@ jobs:
       passed:
       - client-aws-1-preprod-pipeline-test
       trigger: true
-  - aggregate:
+  - in_parallel:
     - params:
         channel: '#botspam'
         icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
@@ -748,7 +761,7 @@ jobs:
 - name: client-aws-1-prod-pipeline-test
   plan:
   - do:
-    - aggregate:
+    - in_parallel:
       - get: client-aws-1-prod-changes
         passed:
         - notify-client-aws-1-prod-pipeline-test-changes
@@ -844,7 +857,7 @@ jobs:
         repository: cache-out/git
       put: git
     on_failure:
-      aggregate:
+      in_parallel:
       - params:
           channel: '#botspam'
           icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
@@ -852,7 +865,7 @@ jobs:
           username: runwaybot
         put: slack
     on_success:
-      aggregate:
+      in_parallel:
       - params:
           channel: '#botspam'
           icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
@@ -864,7 +877,7 @@ jobs:
 - name: client-aws-1-sandbox-pipeline-test
   plan:
   - do:
-    - aggregate:
+    - in_parallel:
       - get: client-aws-1-sandbox-cloud-config
         tags:
         - client-aws-1-sandbox
@@ -964,7 +977,7 @@ jobs:
         repository: cache-out/git
       put: client-aws-1-preprod-cache
     on_failure:
-      aggregate:
+      in_parallel:
       - params:
           channel: '#botspam'
           icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
@@ -973,7 +986,7 @@ jobs:
           username: runwaybot
         put: slack
     on_success:
-      aggregate:
+      in_parallel:
       - params:
           channel: '#botspam'
           icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
@@ -1012,7 +1025,8 @@ resource_types:
     repository: cfcommunity/locker-resource
   type: docker-image
 resources:
-- name: git
+- icon: github
+  name: git
   source:
     branch: master
     private_key: |
@@ -1023,7 +1037,8 @@ resources:
       -----END RSA PRIVATE KEY-----
     uri: git@github.com:someco/something-deployments
   type: git
-- name: client-aws-1-preprod-changes
+- icon: github
+  name: client-aws-1-preprod-changes
   source:
     branch: master
     paths:
@@ -1036,7 +1051,8 @@ resources:
       -----END RSA PRIVATE KEY-----
     uri: git@github.com:someco/something-deployments
   type: git
-- name: client-aws-1-preprod-cache
+- icon: github
+  name: client-aws-1-preprod-cache
   source:
     branch: master
     paths:
@@ -1054,7 +1070,8 @@ resources:
       -----END RSA PRIVATE KEY-----
     uri: git@github.com:someco/something-deployments
   type: git
-- name: client-aws-1-preprod-cloud-config
+- icon: script-text
+  name: client-aws-1-preprod-cloud-config
   source:
     ca_cert: |
       ----- BEGIN CERTIFICATE -----
@@ -1067,7 +1084,8 @@ resources:
   tags:
     - client-aws-1-preprod
   type: bosh-config
-- name: client-aws-1-preprod-runtime-config
+- icon: script-text
+  name: client-aws-1-preprod-runtime-config
   source:
     ca_cert: |
       ----- BEGIN CERTIFICATE -----
@@ -1080,7 +1098,8 @@ resources:
   tags:
     - client-aws-1-preprod
   type: bosh-config
-- name: client-aws-1-prod-changes
+- icon: github
+  name: client-aws-1-prod-changes
   source:
     branch: master
     paths:
@@ -1093,7 +1112,8 @@ resources:
       -----END RSA PRIVATE KEY-----
     uri: git@github.com:someco/something-deployments
   type: git
-- name: client-aws-1-prod-cache
+- icon: github
+  name: client-aws-1-prod-cache
   source:
     branch: master
     paths:
@@ -1111,7 +1131,8 @@ resources:
       -----END RSA PRIVATE KEY-----
     uri: git@github.com:someco/something-deployments
   type: git
-- name: client-aws-1-prod-cloud-config
+- icon: script-text
+  name: client-aws-1-prod-cloud-config
   source:
     ca_cert: |
       ----- BEGIN CERTIFICATE -----
@@ -1124,7 +1145,8 @@ resources:
   tags:
     - client-aws-1-prod
   type: bosh-config
-- name: client-aws-1-prod-runtime-config
+- icon: script-text
+  name: client-aws-1-prod-runtime-config
   source:
     ca_cert: |
       ----- BEGIN CERTIFICATE -----
@@ -1137,7 +1159,8 @@ resources:
   tags:
     - client-aws-1-prod
   type: bosh-config
-- name: client-aws-1-sandbox-changes
+- icon: github
+  name: client-aws-1-sandbox-changes
   source:
     branch: master
     paths:
@@ -1156,7 +1179,8 @@ resources:
       -----END RSA PRIVATE KEY-----
     uri: git@github.com:someco/something-deployments
   type: git
-- name: client-aws-1-sandbox-cloud-config
+- icon: script-text
+  name: client-aws-1-sandbox-cloud-config
   source:
     ca_cert: |
       ----- BEGIN CERTIFICATE -----
@@ -1169,7 +1193,8 @@ resources:
   tags:
     - client-aws-1-sandbox
   type: bosh-config
-- name: client-aws-1-sandbox-runtime-config
+- icon: script-text
+  name: client-aws-1-sandbox-runtime-config
   source:
     ca_cert: |
       ----- BEGIN CERTIFICATE -----
@@ -1182,7 +1207,8 @@ resources:
   tags:
     - client-aws-1-sandbox
   type: bosh-config
-- name: slack
+- icon: slack
+  name: slack
   source:
     url: http://127.0.0.1:1337
   type: slack-notification
@@ -1202,7 +1228,7 @@ jobs:
 - name: preprod-pipeline-test
   plan:
   - do:
-    - aggregate:
+    - in_parallel:
       - get: preprod-cloud-config
         trigger: true
       - get: preprod-runtime-config
@@ -1321,7 +1347,7 @@ jobs:
         repository: cache-out/git
       put: prod-cache
     on_failure:
-      aggregate:
+      in_parallel:
       - params:
           channel: '#botspam'
           icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
@@ -1330,7 +1356,7 @@ jobs:
           username: runwaybot
         put: slack
     on_success:
-      aggregate:
+      in_parallel:
       - params:
           channel: '#botspam'
           icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
@@ -1341,7 +1367,7 @@ jobs:
   serial: true
 - name: notify-prod-pipeline-test-changes
   plan:
-  - aggregate:
+  - in_parallel:
     - get: prod-changes
       trigger: true
     - get: prod-cloud-config
@@ -1352,7 +1378,7 @@ jobs:
       passed:
       - preprod-pipeline-test
       trigger: true
-  - aggregate:
+  - in_parallel:
     - params:
         channel: '#botspam'
         icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
@@ -1365,7 +1391,7 @@ jobs:
 - name: prod-pipeline-test
   plan:
   - do:
-    - aggregate:
+    - in_parallel:
       - get: prod-changes
         passed:
         - notify-prod-pipeline-test-changes
@@ -1479,7 +1505,7 @@ jobs:
         repository: cache-out/git
       put: git
     on_failure:
-      aggregate:
+      in_parallel:
       - params:
           channel: '#botspam'
           icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
@@ -1487,7 +1513,7 @@ jobs:
           username: runwaybot
         put: slack
     on_success:
-      aggregate:
+      in_parallel:
       - params:
           channel: '#botspam'
           icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
@@ -1499,7 +1525,7 @@ jobs:
 - name: sandbox-pipeline-test
   plan:
   - do:
-    - aggregate:
+    - in_parallel:
       - get: sandbox-cloud-config
         trigger: true
       - get: sandbox-runtime-config
@@ -1613,7 +1639,7 @@ jobs:
         repository: cache-out/git
       put: preprod-cache
     on_failure:
-      aggregate:
+      in_parallel:
       - params:
           channel: '#botspam'
           icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
@@ -1622,7 +1648,7 @@ jobs:
           username: runwaybot
         put: slack
     on_success:
-      aggregate:
+      in_parallel:
       - params:
           channel: '#botspam'
           icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
@@ -1661,14 +1687,16 @@ resource_types:
     repository: cfcommunity/locker-resource
   type: docker-image
 resources:
-- name: git
+- icon: github
+  name: git
   source:
     branch: master
     password: weneedareplacement!
     uri: github.mycorp.com/myproj/mystuff/myrepo.git
     username: fleemco
   type: git
-- name: preprod-changes
+- icon: github
+  name: preprod-changes
   source:
     branch: master
     paths:
@@ -1677,7 +1705,8 @@ resources:
     uri: github.mycorp.com/myproj/mystuff/myrepo.git
     username: fleemco
   type: git
-- name: preprod-cache
+- icon: github
+  name: preprod-cache
   source:
     branch: master
     paths:
@@ -1691,7 +1720,8 @@ resources:
     uri: github.mycorp.com/myproj/mystuff/myrepo.git
     username: fleemco
   type: git
-- name: preprod-cloud-config
+- icon: script-text
+  name: preprod-cloud-config
   source:
     ca_cert: |
       ----- BEGIN CERTIFICATE -----
@@ -1702,7 +1732,8 @@ resources:
     config: cloud
     target: https://preprod.example.com:25555
   type: bosh-config
-- name: preprod-runtime-config
+- icon: script-text
+  name: preprod-runtime-config
   source:
     ca_cert: |
       ----- BEGIN CERTIFICATE -----
@@ -1713,7 +1744,8 @@ resources:
     config: runtime
     target: https://preprod.example.com:25555
   type: bosh-config
-- name: prod-changes
+- icon: github
+  name: prod-changes
   source:
     branch: master
     paths:
@@ -1722,7 +1754,8 @@ resources:
     uri: github.mycorp.com/myproj/mystuff/myrepo.git
     username: fleemco
   type: git
-- name: prod-cache
+- icon: github
+  name: prod-cache
   source:
     branch: master
     paths:
@@ -1736,7 +1769,8 @@ resources:
     uri: github.mycorp.com/myproj/mystuff/myrepo.git
     username: fleemco
   type: git
-- name: prod-cloud-config
+- icon: script-text
+  name: prod-cloud-config
   source:
     ca_cert: |
       ----- BEGIN CERTIFICATE -----
@@ -1747,7 +1781,8 @@ resources:
     config: cloud
     target: https://prod.example.com:25555
   type: bosh-config
-- name: prod-runtime-config
+- icon: script-text
+  name: prod-runtime-config
   source:
     ca_cert: |
       ----- BEGIN CERTIFICATE -----
@@ -1758,7 +1793,8 @@ resources:
     config: runtime
     target: https://prod.example.com:25555
   type: bosh-config
-- name: sandbox-changes
+- icon: github
+  name: sandbox-changes
   source:
     branch: master
     paths:
@@ -1773,7 +1809,8 @@ resources:
     uri: github.mycorp.com/myproj/mystuff/myrepo.git
     username: fleemco
   type: git
-- name: sandbox-cloud-config
+- icon: script-text
+  name: sandbox-cloud-config
   source:
     ca_cert: |
       ----- BEGIN CERTIFICATE -----
@@ -1784,7 +1821,8 @@ resources:
     config: cloud
     target: https://sandbox.example.com:25555
   type: bosh-config
-- name: sandbox-runtime-config
+- icon: script-text
+  name: sandbox-runtime-config
   source:
     ca_cert: |
       ----- BEGIN CERTIFICATE -----
@@ -1795,7 +1833,8 @@ resources:
     config: runtime
     target: https://sandbox.example.com:25555
   type: bosh-config
-- name: slack
+- icon: slack
+  name: slack
   source:
     url: http://127.0.0.1:1337
   type: slack-notification
@@ -1829,7 +1868,7 @@ jobs:
       put: client-aws-1-preprod-deployment-lock
       tags:
       - client-aws-1-preprod
-    - aggregate:
+    - in_parallel:
       - get: client-aws-1-preprod-cloud-config
         tags:
         - client-aws-1-preprod
@@ -1982,7 +2021,7 @@ jobs:
         tags:
         - client-aws-1-preprod
     on_failure:
-      aggregate:
+      in_parallel:
       - params:
           channel: '#botspam'
           icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
@@ -1998,7 +2037,7 @@ jobs:
           notify: false
         put: hipchat
     on_success:
-      aggregate:
+      in_parallel:
       - params:
           channel: '#botspam'
           icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
@@ -2015,7 +2054,7 @@ jobs:
   serial: true
 - name: notify-client-aws-1-prod-pipeline-test-changes
   plan:
-  - aggregate:
+  - in_parallel:
     - get: client-aws-1-prod-changes
       trigger: true
     - get: client-aws-1-prod-cloud-config
@@ -2030,7 +2069,7 @@ jobs:
       passed:
       - client-aws-1-preprod-pipeline-test
       trigger: true
-  - aggregate:
+  - in_parallel:
     - params:
         channel: '#botspam'
         icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
@@ -2064,7 +2103,7 @@ jobs:
       put: client-aws-1-prod-deployment-lock
       tags:
       - client-aws-1-prod
-    - aggregate:
+    - in_parallel:
       - get: client-aws-1-prod-changes
         passed:
         - notify-client-aws-1-prod-pipeline-test-changes
@@ -2208,7 +2247,7 @@ jobs:
         tags:
         - client-aws-1-prod
     on_failure:
-      aggregate:
+      in_parallel:
       - params:
           channel: '#botspam'
           icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
@@ -2223,7 +2262,7 @@ jobs:
           notify: false
         put: hipchat
     on_success:
-      aggregate:
+      in_parallel:
       - params:
           channel: '#botspam'
           icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
@@ -2257,7 +2296,7 @@ jobs:
       - client-aws-1-sandbox
       tags:
       - client-aws-1-sandbox
-    - aggregate:
+    - in_parallel:
       - get: client-aws-1-sandbox-cloud-config
         tags:
         - client-aws-1-sandbox
@@ -2405,7 +2444,7 @@ jobs:
         tags:
         - client-aws-1-sandbox
     on_failure:
-      aggregate:
+      in_parallel:
       - params:
           channel: '#botspam'
           icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
@@ -2421,7 +2460,7 @@ jobs:
           notify: false
         put: hipchat
     on_success:
-      aggregate:
+      in_parallel:
       - params:
           channel: '#botspam'
           icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
@@ -2466,7 +2505,8 @@ resource_types:
     repository: cfcommunity/locker-resource
   type: docker-image
 resources:
-- name: git
+- icon: github
+  name: git
   source:
     branch: master
     private_key: |
@@ -2477,7 +2517,8 @@ resources:
       -----END RSA PRIVATE KEY-----
     uri: git@github.com:someco/something-deployments
   type: git
-- name: client-aws-1-preprod-changes
+- icon: github
+  name: client-aws-1-preprod-changes
   source:
     branch: master
     paths:
@@ -2490,7 +2531,8 @@ resources:
       -----END RSA PRIVATE KEY-----
     uri: git@github.com:someco/something-deployments
   type: git
-- name: client-aws-1-preprod-cache
+- icon: github
+  name: client-aws-1-preprod-cache
   source:
     branch: master
     paths:
@@ -2508,7 +2550,8 @@ resources:
       -----END RSA PRIVATE KEY-----
     uri: git@github.com:someco/something-deployments
   type: git
-- name: client-aws-1-preprod-cloud-config
+- icon: script-text
+  name: client-aws-1-preprod-cloud-config
   source:
     ca_cert: |
       ----- BEGIN CERTIFICATE -----
@@ -2521,7 +2564,8 @@ resources:
   tags:
   - client-aws-1-preprod
   type: bosh-config
-- name: client-aws-1-preprod-runtime-config
+- icon: script-text
+  name: client-aws-1-preprod-runtime-config
   source:
     ca_cert: |
       ----- BEGIN CERTIFICATE -----
@@ -2534,7 +2578,8 @@ resources:
   tags:
   - client-aws-1-preprod
   type: bosh-config
-- name: client-aws-1-preprod-bosh-lock
+- icon: shield-lock-outline
+  name: client-aws-1-preprod-bosh-lock
   source:
     bosh_lock: https://preprod.bosh-lite.com:25555
     ca_cert: null
@@ -2545,7 +2590,8 @@ resources:
   tags:
   - client-aws-1-preprod
   type: locker
-- name: client-aws-1-preprod-deployment-lock
+- icon: shield-lock-outline
+  name: client-aws-1-preprod-deployment-lock
   source:
     ca_cert: null
     lock_name: client-aws-1-preprod-pipeline-test
@@ -2556,7 +2602,8 @@ resources:
   tags:
   - client-aws-1-preprod
   type: locker
-- name: client-aws-1-prod-changes
+- icon: github
+  name: client-aws-1-prod-changes
   source:
     branch: master
     paths:
@@ -2569,7 +2616,8 @@ resources:
       -----END RSA PRIVATE KEY-----
     uri: git@github.com:someco/something-deployments
   type: git
-- name: client-aws-1-prod-cache
+- icon: github
+  name: client-aws-1-prod-cache
   source:
     branch: master
     paths:
@@ -2587,7 +2635,8 @@ resources:
       -----END RSA PRIVATE KEY-----
     uri: git@github.com:someco/something-deployments
   type: git
-- name: client-aws-1-prod-cloud-config
+- icon: script-text
+  name: client-aws-1-prod-cloud-config
   source:
     ca_cert: |
       ----- BEGIN CERTIFICATE -----
@@ -2600,7 +2649,8 @@ resources:
   tags:
   - client-aws-1-prod
   type: bosh-config
-- name: client-aws-1-prod-runtime-config
+- icon: script-text
+  name: client-aws-1-prod-runtime-config
   source:
     ca_cert: |
       ----- BEGIN CERTIFICATE -----
@@ -2613,7 +2663,8 @@ resources:
   tags:
   - client-aws-1-prod
   type: bosh-config
-- name: client-aws-1-prod-bosh-lock
+- icon: shield-lock-outline
+  name: client-aws-1-prod-bosh-lock
   source:
     bosh_lock: https://prod.bosh-lite.com:25555
     ca_cert: null
@@ -2624,7 +2675,8 @@ resources:
   tags:
   - client-aws-1-prod
   type: locker
-- name: client-aws-1-prod-deployment-lock
+- icon: shield-lock-outline
+  name: client-aws-1-prod-deployment-lock
   source:
     ca_cert: null
     lock_name: client-aws-1-prod-pipeline-test
@@ -2635,7 +2687,8 @@ resources:
   tags:
   - client-aws-1-prod
   type: locker
-- name: client-aws-1-sandbox-changes
+- icon: github
+  name: client-aws-1-sandbox-changes
   source:
     branch: master
     paths:
@@ -2654,7 +2707,8 @@ resources:
       -----END RSA PRIVATE KEY-----
     uri: git@github.com:someco/something-deployments
   type: git
-- name: client-aws-1-sandbox-cloud-config
+- icon: script-text
+  name: client-aws-1-sandbox-cloud-config
   source:
     ca_cert: |
       ----- BEGIN CERTIFICATE -----
@@ -2667,7 +2721,8 @@ resources:
   tags:
   - client-aws-1-sandbox
   type: bosh-config
-- name: client-aws-1-sandbox-runtime-config
+- icon: script-text
+  name: client-aws-1-sandbox-runtime-config
   source:
     ca_cert: |
       ----- BEGIN CERTIFICATE -----
@@ -2680,7 +2735,8 @@ resources:
   tags:
   - client-aws-1-sandbox
   type: bosh-config
-- name: client-aws-1-sandbox-bosh-lock
+- icon: shield-lock-outline
+  name: client-aws-1-sandbox-bosh-lock
   source:
     bosh_lock: https://sandbox.bosh-lite.com:25555
     ca_cert: null
@@ -2691,7 +2747,8 @@ resources:
   tags:
   - client-aws-1-sandbox
   type: locker
-- name: client-aws-1-sandbox-deployment-lock
+- icon: shield-lock-outline
+  name: client-aws-1-sandbox-deployment-lock
   source:
     ca_cert: null
     lock_name: client-aws-1-sandbox-pipeline-test
@@ -2702,11 +2759,13 @@ resources:
   tags:
   - client-aws-1-sandbox
   type: locker
-- name: slack
+- icon: slack
+  name: slack
   source:
     url: http://127.0.0.1:1337
   type: slack-notification
-- name: hipchat
+- icon: bell-ring
+  name: hipchat
   source:
     hipchat_server_url: http://api.hipchat.com
     room_id: 1234
@@ -2752,7 +2811,7 @@ jobs:
       put: client-aws-1-preprod-deployment-lock
       tags:
       - client-aws-1-preprod
-    - aggregate:
+    - in_parallel:
       - get: client-aws-1-preprod-cloud-config
         tags:
         - client-aws-1-preprod
@@ -2905,7 +2964,7 @@ jobs:
         tags:
         - client-aws-1-preprod
     on_failure:
-      aggregate:
+      in_parallel:
       - params:
           channel: '#botspam'
           icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
@@ -2921,7 +2980,7 @@ jobs:
           notify: false
         put: hipchat
     on_success:
-      aggregate:
+      in_parallel:
       - params:
           channel: '#botspam'
           icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
@@ -2938,7 +2997,7 @@ jobs:
   serial: true
 - name: notify-client-aws-1-prod-pipeline-test-changes
   plan:
-  - aggregate:
+  - in_parallel:
     - get: client-aws-1-prod-changes
       trigger: true
     - get: client-aws-1-prod-cloud-config
@@ -2953,7 +3012,7 @@ jobs:
       passed:
       - client-aws-1-preprod-pipeline-test
       trigger: true
-  - aggregate:
+  - in_parallel:
     - params:
         channel: '#botspam'
         icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
@@ -2987,7 +3046,7 @@ jobs:
       put: client-aws-1-prod-deployment-lock
       tags:
       - client-aws-1-prod
-    - aggregate:
+    - in_parallel:
       - get: client-aws-1-prod-changes
         passed:
         - notify-client-aws-1-prod-pipeline-test-changes
@@ -3131,7 +3190,7 @@ jobs:
         tags:
         - client-aws-1-prod
     on_failure:
-      aggregate:
+      in_parallel:
       - params:
           channel: '#botspam'
           icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
@@ -3146,7 +3205,7 @@ jobs:
           notify: false
         put: hipchat
     on_success:
-      aggregate:
+      in_parallel:
       - params:
           channel: '#botspam'
           icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
@@ -3180,7 +3239,7 @@ jobs:
       - client-aws-1-sandbox
       tags:
       - client-aws-1-sandbox
-    - aggregate:
+    - in_parallel:
       - get: client-aws-1-sandbox-cloud-config
         tags:
         - client-aws-1-sandbox
@@ -3328,7 +3387,7 @@ jobs:
         tags:
         - client-aws-1-sandbox
     on_failure:
-      aggregate:
+      in_parallel:
       - params:
           channel: '#botspam'
           icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
@@ -3344,7 +3403,7 @@ jobs:
           notify: false
         put: hipchat
     on_success:
-      aggregate:
+      in_parallel:
       - params:
           channel: '#botspam'
           icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
@@ -3389,7 +3448,8 @@ resource_types:
     repository: cfcommunity/locker-resource
   type: docker-image
 resources:
-- name: git
+- icon: github
+  name: git
   source:
     branch: master
     private_key: |
@@ -3400,7 +3460,8 @@ resources:
       -----END RSA PRIVATE KEY-----
     uri: git@github.com:someco/something-deployments
   type: git
-- name: client-aws-1-preprod-changes
+- icon: github
+  name: client-aws-1-preprod-changes
   source:
     branch: master
     paths:
@@ -3413,7 +3474,8 @@ resources:
       -----END RSA PRIVATE KEY-----
     uri: git@github.com:someco/something-deployments
   type: git
-- name: client-aws-1-preprod-cache
+- icon: github
+  name: client-aws-1-preprod-cache
   source:
     branch: master
     paths:
@@ -3431,7 +3493,8 @@ resources:
       -----END RSA PRIVATE KEY-----
     uri: git@github.com:someco/something-deployments
   type: git
-- name: client-aws-1-preprod-cloud-config
+- icon: script-text
+  name: client-aws-1-preprod-cloud-config
   source:
     ca_cert: |
       ----- BEGIN CERTIFICATE -----
@@ -3444,7 +3507,8 @@ resources:
   tags:
   - client-aws-1-preprod
   type: bosh-config
-- name: client-aws-1-preprod-runtime-config
+- icon: script-text
+  name: client-aws-1-preprod-runtime-config
   source:
     ca_cert: |
       ----- BEGIN CERTIFICATE -----
@@ -3457,7 +3521,8 @@ resources:
   tags:
   - client-aws-1-preprod
   type: bosh-config
-- name: client-aws-1-preprod-bosh-lock
+- icon: shield-lock-outline
+  name: client-aws-1-preprod-bosh-lock
   source:
     bosh_lock: https://preprod.bosh-lite.com:25555
     ca_cert: null
@@ -3468,7 +3533,8 @@ resources:
   tags:
   - client-aws-1-preprod
   type: locker
-- name: client-aws-1-preprod-deployment-lock
+- icon: shield-lock-outline
+  name: client-aws-1-preprod-deployment-lock
   source:
     ca_cert: null
     lock_name: client-aws-1-preprod-pipeline-test
@@ -3479,7 +3545,8 @@ resources:
   tags:
   - client-aws-1-preprod
   type: locker
-- name: client-aws-1-prod-changes
+- icon: github
+  name: client-aws-1-prod-changes
   source:
     branch: master
     paths:
@@ -3492,7 +3559,8 @@ resources:
       -----END RSA PRIVATE KEY-----
     uri: git@github.com:someco/something-deployments
   type: git
-- name: client-aws-1-prod-cache
+- icon: github
+  name: client-aws-1-prod-cache
   source:
     branch: master
     paths:
@@ -3510,7 +3578,8 @@ resources:
       -----END RSA PRIVATE KEY-----
     uri: git@github.com:someco/something-deployments
   type: git
-- name: client-aws-1-prod-cloud-config
+- icon: script-text
+  name: client-aws-1-prod-cloud-config
   source:
     ca_cert: |
       ----- BEGIN CERTIFICATE -----
@@ -3523,7 +3592,8 @@ resources:
   tags:
   - client-aws-1-prod
   type: bosh-config
-- name: client-aws-1-prod-runtime-config
+- icon: script-text
+  name: client-aws-1-prod-runtime-config
   source:
     ca_cert: |
       ----- BEGIN CERTIFICATE -----
@@ -3536,7 +3606,8 @@ resources:
   tags:
   - client-aws-1-prod
   type: bosh-config
-- name: client-aws-1-prod-bosh-lock
+- icon: shield-lock-outline
+  name: client-aws-1-prod-bosh-lock
   source:
     bosh_lock: https://prod.bosh-lite.com:25555
     ca_cert: null
@@ -3547,7 +3618,8 @@ resources:
   tags:
   - client-aws-1-prod
   type: locker
-- name: client-aws-1-prod-deployment-lock
+- icon: shield-lock-outline
+  name: client-aws-1-prod-deployment-lock
   source:
     ca_cert: null
     lock_name: client-aws-1-prod-pipeline-test
@@ -3558,7 +3630,8 @@ resources:
   tags:
   - client-aws-1-prod
   type: locker
-- name: client-aws-1-sandbox-changes
+- icon: github
+  name: client-aws-1-sandbox-changes
   source:
     branch: master
     paths:
@@ -3577,7 +3650,8 @@ resources:
       -----END RSA PRIVATE KEY-----
     uri: git@github.com:someco/something-deployments
   type: git
-- name: client-aws-1-sandbox-cloud-config
+- icon: script-text
+  name: client-aws-1-sandbox-cloud-config
   source:
     ca_cert: |
       ----- BEGIN CERTIFICATE -----
@@ -3590,7 +3664,8 @@ resources:
   tags:
   - client-aws-1-sandbox
   type: bosh-config
-- name: client-aws-1-sandbox-runtime-config
+- icon: script-text
+  name: client-aws-1-sandbox-runtime-config
   source:
     ca_cert: |
       ----- BEGIN CERTIFICATE -----
@@ -3603,7 +3678,8 @@ resources:
   tags:
   - client-aws-1-sandbox
   type: bosh-config
-- name: client-aws-1-sandbox-bosh-lock
+- icon: shield-lock-outline
+  name: client-aws-1-sandbox-bosh-lock
   source:
     bosh_lock: https://sandbox.bosh-lite.com:25555
     ca_cert: null
@@ -3614,7 +3690,8 @@ resources:
   tags:
   - client-aws-1-sandbox
   type: locker
-- name: client-aws-1-sandbox-deployment-lock
+- icon: shield-lock-outline
+  name: client-aws-1-sandbox-deployment-lock
   source:
     ca_cert: null
     lock_name: client-aws-1-sandbox-pipeline-test
@@ -3625,11 +3702,13 @@ resources:
   tags:
   - client-aws-1-sandbox
   type: locker
-- name: slack
+- icon: slack
+  name: slack
   source:
     url: http://127.0.0.1:1337
   type: slack-notification
-- name: hipchat
+- icon: bell-ring
+  name: hipchat
   source:
     hipchat_server_url: http://api.hipchat.com
     room_id: 1234
@@ -3649,7 +3728,7 @@ jobs:
 - name: client-aws-1-sandbox-pipeline-test
   plan:
   - do:
-    - aggregate:
+    - in_parallel:
       - get: client-aws-1-sandbox-cloud-config
         trigger: true
       - get: client-aws-1-sandbox-runtime-config
@@ -3729,7 +3808,7 @@ jobs:
         repository: cache-out/git
       put: git
     on_failure:
-      aggregate:
+      in_parallel:
       - params:
           channel: '#botspam'
           icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
@@ -3738,7 +3817,7 @@ jobs:
           username: runwaybot
         put: slack
     on_success:
-      aggregate:
+      in_parallel:
       - params:
           channel: '#botspam'
           icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
@@ -3777,14 +3856,16 @@ resource_types:
     repository: cfcommunity/locker-resource
   type: docker-image
 resources:
-- name: git
+- icon: github
+  name: git
   source:
     branch: master
     password: weneedareplacement!
     uri: https://github.com/someco/something-deployments.git
     username: fleemco
   type: git
-- name: client-aws-1-sandbox-changes
+- icon: github
+  name: client-aws-1-sandbox-changes
   source:
     branch: master
     paths:
@@ -3799,7 +3880,8 @@ resources:
     uri: https://github.com/someco/something-deployments.git
     username: fleemco
   type: git
-- name: client-aws-1-sandbox-cloud-config
+- icon: script-text
+  name: client-aws-1-sandbox-cloud-config
   source:
     ca_cert: |
       ----- BEGIN CERTIFICATE -----
@@ -3810,7 +3892,8 @@ resources:
     config: cloud
     target: https://sandbox.bosh-lite.com:25555
   type: bosh-config
-- name: client-aws-1-sandbox-runtime-config
+- icon: script-text
+  name: client-aws-1-sandbox-runtime-config
   source:
     ca_cert: |
       ----- BEGIN CERTIFICATE -----
@@ -3821,7 +3904,8 @@ resources:
     config: runtime
     target: https://sandbox.bosh-lite.com:25555
   type: bosh-config
-- name: slack
+- icon: slack
+  name: slack
   source:
     url: http://127.0.0.1:1337
   type: slack-notification
