@@ -60,8 +60,9 @@ sub glob {
 # has_hook - {{{
 sub has_hook {
 	my ($self, $hook) = @_;
+	return $self->{__hook_check}{$hook} if exists($self->{_hook_check}{$hook});
 	trace("checking the kit for a(n) '$hook' hook");
-	return -f $self->path("hooks/$hook");
+	$self->{__hook_check}{$hook} = -f $self->path("hooks/$hook");
 }
 
 # }}}
@@ -74,14 +75,17 @@ sub run_hook {
 
 	trace ("preparing to run the '$hook' kit hook");
 	local %ENV = %ENV;
-	$ENV{GENESIS_KIT_ID}       = $self->id;
-	$ENV{GENESIS_KIT_NAME}     = $self->name;
-	$ENV{GENESIS_KIT_VERSION}  = $self->version;
-	$ENV{GENESIS_KIT_HOOK}     = $hook;
+
+	$ENV{GENESIS_KIT_NAME}    = $self->name;
+	$ENV{GENESIS_KIT_VERSION} = $self->version;
+	$ENV{GENESIS_KIT_HOOK}    = $hook;
+	$ENV{GENESIS_KIT_ID}      = ($hook eq 'kit') ?
+	                              sprintf("%s/%s",$self->name, $self->version) :
+	                              $self->id;
 
 	die "Unrecognized hook '$hook'\n"
 		unless grep { $_ eq $hook } qw/new blueprint secrets info addon check pre-deploy post-deploy
-		                               prereqs features subkit/;
+		                               prereqs features subkit kit/;
 
 	if (grep { $_ eq $hook } qw/new secrets info addon check prereqs blueprint pre-deploy post-deploy features/) {
 		bug("The 'env' option to run_hook is required for the '$hook' hook!!") unless $opts{env};
@@ -151,8 +155,8 @@ sub run_hook {
 	$ENV{GENESIS_IS_HELPING_YOU} = 'yes';
 	debug ("Running hook now in ".$self->path);
 	my $interactive = scalar($hook =~ m/^(addon|new|info|check|secrets|post-deploy|pre-deploy)$/) ? 1 : 0;
-	my ($out, $rc) = run({
-			interactive => $interactive, stderr => undef
+	my ($out, $rc, $err) = run({
+			interactive => $interactive, stderr => ($hook eq 'kit') ? 0 : undef
 		},
 		'cd "$1"; source .helper; hook=$2; shift 2; ./hooks/$hook "$@"',
 		$self->path, $hook_name, @args);
@@ -209,6 +213,17 @@ sub run_hook {
 		return (($rc == 0 ? 1 : 0), $contents);
 	}
 
+	if ($hook eq 'kit') {
+		my $contents;
+		eval { $contents = load_yaml($out); };
+		bail (
+			"#R{[ERROR]} Cannot load kit metadata - error in kit hook%s%s",
+			$out ? ":\n\n---STDOUT---\n$out" : "",
+			$err ? ":\n\n---STDERR---\n$err" : ""
+		) if ($@);
+		return $contents;
+	}
+
 	if ($hook eq 'post-deploy') {
 		unlink $opts{env}->tmppath("data")
 			if -f $opts{env}->tmppath("data");
@@ -239,6 +254,9 @@ sub run_hook {
 sub metadata {
 	my ($self) = @_;
 	if (! $self->{__metadata}) {
+		if ($self->has_hook('kit')) {
+			return $self->{__metadata} = $self->run_hook('kit');
+		}
 		if (! -f $self->path('kit.yml')) {
 			debug "#Y[WARNING] Kit %s is missing it's kit.yml file -- cannot load metadata", $self->name;
 			return {}
