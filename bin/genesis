@@ -1461,6 +1461,14 @@ sub {
 		delete $options{yes};
 	}
 
+	if ($env->needs_bosh_create_env) {
+		my @bad_opts = grep {$_ =~ /(yes|fix|recreate|dry-run)/} keys %options;
+		bail(
+			"#R{[ERROR]} The following options cannot be specified for #M{create-env}: %s",
+			join(", ", @bad_opts)
+		) if @bad_opts;
+	}
+
 	explain "Preparing to deploy #C{%s}:\n  - based on kit #c{%s}", $env->name, $env->kit->id;
 	if ($env->needs_bosh_create_env) {
 		explain "  - as a #M{create-env} deployment\n";
