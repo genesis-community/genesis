@@ -2196,11 +2196,12 @@ sub {
 		exit 0;
 	}
 
-	run(
-		{ interactive => 1, onfailure => "Could not pause pipeline $pipeline->{pipeline}{name}" },
+	my ($out,$rc) = run(
 		'fly -t $1 pause-pipeline -p $2',
 		$options{target}, $pipeline->{pipeline}{name}
 	);
+	bail("Could not pause #c{%s} pipeline: $out", $pipeline->{pipeline}{name})
+		unless $rc == 0 || $out =~ /pipeline '.*' not found/;
 
 	my $yes = $options{yes} ? ' -n ' : '';
 	my $dir = workdir;
