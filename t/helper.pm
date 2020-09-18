@@ -577,7 +577,7 @@ sub vault_ok {
 		return $target;
 	}
 
-	my $pid = qx($ENV{GENESIS_TOPDIR}/t/bin/vault $target);
+	my $pid = qx(SAFE_TARGET= $ENV{GENESIS_TOPDIR}/t/bin/vault $target);
 	my $rc = $? >> 8;
 	if ($rc > 0 || $pid eq "") {
 		fail "failed to spin a vault server: pid='$pid' rc=$rc";
@@ -592,7 +592,7 @@ sub vault_ok {
 		die "Cannot continue\n";
 	};
 	pass "vault running [pid $pid]";
-	chomp($VAULT_URL = `safe env --json | jq -r '.VAULT_ADDR'`);
+	chomp($VAULT_URL = `SAFE_TARGET=$target safe env --json | jq -r '.VAULT_ADDR'`);
 	$VAULT_URL{$target} = $VAULT_URL;  # track the latest
 	return $target;
 }

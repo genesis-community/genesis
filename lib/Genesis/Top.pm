@@ -21,7 +21,17 @@ sub new {
 		$top->set_vault(target => $opts{vault}, session_only => 1)
 	}
 	$ENV{GENESIS_ROOT}=$top->path();
-	$ENV{GENESIS_TARGET_VAULT} = $ENV{SAFE_TARGET} = $top->vault->ref();
+	my $vault;
+	if ($top->config->{secrets_provider}{url}) {
+		($vault) = Genesis::Vault->find(url=>$top->config->{secrets_provider}{url});
+		bail(
+			"#R{[ERROR]} Cannot find unique vault configuration at #C{%s} in your .saferc",
+			$top->config->{secrets_provider}{url}
+		) unless $vault;
+	} else {
+		$vault = Genesis::Vault->default;
+	}
+	$ENV{GENESIS_TARGET_VAULT} = $ENV{SAFE_TARGET} = $vault->ref;
 	return $top;
 }
 
@@ -255,7 +265,7 @@ sub vault {
 
 sub has_vault {
 	my ($self) = @_;
-	defined($self->config->{secrets_provider});
+	defined($self->config->{secrets_provider}) && ref($self->config->{secrets_provider}) eq 'HASH' && scalar(%{$self->config->{secrets_provider}});
 }
 
 sub set_vault {
