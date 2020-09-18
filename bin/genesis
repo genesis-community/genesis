@@ -2155,6 +2155,8 @@ $GLOBAL_USAGE
                      Git parameters, notification settings, pipeline layouts,
                      etc.  Defaults to 'ci.yml'
 
+  -P, --paused       Keep the pipeline paused after repiping.
+
 LEGACY OPTIONS:
       --vault        The name of a `safe' target (a Vault) to store newly
                      generated credentials in.  Only accepted if the deployment
@@ -2169,6 +2171,7 @@ sub {
 		target|t=s
 		config|c=s
 		vault=s
+		paused|P
 	/);
 	check_prereqs;
 
@@ -2185,6 +2188,12 @@ sub {
 		exit 0;
 	}
 
+	run(
+		{ interactive => 1, onfailure => "Could not pause pipeline $pipeline->{pipeline}{name}" },
+		'fly -t $1 pause-pipeline -p $2',
+		$options{target}, $pipeline->{pipeline}{name}
+	);
+
 	my $yes = $options{yes} ? ' -n ' : '';
 	my $dir = workdir;
 	mkfile_or_fail("${dir}/pipeline.yml", $yaml);
@@ -2192,9 +2201,11 @@ sub {
 		'fly -t $1 set-pipeline '.$yes.' -p $2 -c $3/pipeline.yml',
 		$options{target}, $pipeline->{pipeline}{name}, $dir);
 
-	run({ interactive => 1, onfailure => "Could not unpause pipeline $pipeline->{pipeline}{name}" },
+	run(
+		{ interactive => 1, onfailure => "Could not unpause pipeline $pipeline->{pipeline}{name}" },
 		'fly -t $1 unpause-pipeline -p $2',
-		$options{target}, $pipeline->{pipeline}{name});
+		$options{target}, $pipeline->{pipeline}{name}
+	) unless ($options{paused});
 
 	my $action = ($pipeline->{pipeline}{public} ? 'expose' : 'hide');
 	run({ interactive => 1, onfailure => "Could not $action pipeline $pipeline->{pipeline}{name}" },
