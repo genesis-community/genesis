@@ -20,6 +20,8 @@ sub new {
 			if $top->has_vault;
 		$top->set_vault(target => $opts{vault}, session_only => 1)
 	}
+	$ENV{GENESIS_ROOT}=$top->path();
+	$ENV{GENESIS_TARGET_VAULT} = $ENV{SAFE_TARGET} = $top->vault->ref();
 	return $top;
 }
 
