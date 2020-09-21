@@ -1462,7 +1462,7 @@ sub {
 	}
 
 	if ($env->needs_bosh_create_env) {
-		my @bad_opts = grep {$_ =~ /(yes|fix|recreate|dry-run)/} keys %options;
+		my @bad_opts = grep {$_ =~ /(fix|recreate|dry-run)/} keys %options;
 		bail(
 			"#R{[ERROR]} The following options cannot be specified for #M{create-env}: %s",
 			join(", ", @bad_opts)
