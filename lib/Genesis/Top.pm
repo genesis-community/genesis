@@ -31,7 +31,11 @@ sub new {
 	} else {
 		$vault = Genesis::Vault->default;
 	}
-	$ENV{GENESIS_TARGET_VAULT} = $ENV{SAFE_TARGET} = $vault->ref;
+	if ($vault) {
+		$ENV{GENESIS_TARGET_VAULT} = $ENV{SAFE_TARGET} = $vault->ref;
+	} else {
+		debug "#R{WARNING} - could not find any #M{safe} target.  This may cause consequences later on";
+	}
 	return $top;
 }
 
