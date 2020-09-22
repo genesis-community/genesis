@@ -1454,14 +1454,13 @@ sub {
 	if (scalar(grep {$_} ($options{fix}, $options{recreate}, $options{'dry-run'})) > 1) {
 		usage(1,"Can only specify one of --dry-run, --fix or --recreate");
 	}
-
 	if ($options{yes}) {
 		$ENV{BOSH_NON_INTERACTIVE} = 'true';
 		delete $options{yes};
 	}
 
 	if ($env->needs_bosh_create_env) {
-		my @bad_opts = grep {$_ =~ /(fix|recreate|dry-run)/} keys %options;
+		my @bad_opts = grep {$options{$_}} (qw/fix recreate dry-run/);
 		bail(
 			"#R{[ERROR]} The following options cannot be specified for #M{create-env}: %s",
 			join(", ", @bad_opts)
