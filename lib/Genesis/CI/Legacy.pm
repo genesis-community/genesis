@@ -120,7 +120,7 @@ sub parse_pipeline {
 	}
 	for (keys %{$p->{pipeline}}) {
 		push @errors, "Unrecognized `pipeline.$_' key found."
-			unless m/^(name|public|tagged|errands|vault|git|slack|hipchat|stride|email|boshes|task|layout|layouts|groups|debug|stemcells|skip_upkeep|locker|unredacted)$/;
+			unless m/^(name|public|tagged|errands|vault|git|slack|hipchat|stride|email|boshes|task|layout|layouts|groups|debug|stemcells|skip_upkeep|locker|unredacted|notifications)$/;
 	}
 	for (qw(name vault git boshes)) {
 		push @errors, "`pipeline.$_' is required."
@@ -312,6 +312,13 @@ sub parse_pipeline {
 			}
 		} else {
 			push @errors, "`pipeline.task' must be a map.";
+		}
+	}
+
+	# validate (optional) pipeline.notifications
+	if (exists $p->{pipeline}{notifications}) {
+		if (ref($p->{pipeline}{notifications}) || $p->{pipeline}{notifications} !~ /^(inline|parallel|grouped)$/) {
+			push @errors, "pipeline.notifications must be one of parallel, grouped or inline (default)";
 		}
 	}
 
@@ -642,6 +649,10 @@ sub generate_pipeline_graphviz_source {
 sub generate_pipeline_concourse_yaml {
 	my ($pipeline, $top) = @_;
 
+	$pipeline->{pipeline}{notifications} ||= 'inline';
+	my $group_notifications = $pipeline->{pipeline}{notifications} eq 'grouped';
+	my $inline_notifications = $pipeline->{pipeline}{notifications} eq 'inline';
+
 	my $dir = workdir;
 	open my $OUT, ">", "$dir/guts.yml"
 		or die "Failed to generate Concourse Pipeline YAML configuration: $!\n";
@@ -741,6 +752,7 @@ EOF
 groups:
 EOF
 	if (ref($pipeline->{pipeline}{groups}) eq 'HASH') {
+		my @group_notifications;
 		foreach my $group (sort(keys %{$pipeline->{pipeline}{groups}})) {
 			print $OUT <<EOF;
   - name: $group
@@ -751,8 +763,13 @@ EOF
 					my $jobalias = $pipeline->{aliases}{$job};
 					print $OUT "    - $jobalias-".$top->type."\n";
 					if (! $auto{$job}) {
-						print $OUT "    - notify-$jobalias-".$top->type."-changes\n";
-			  	}
+						my $job_entry = "notify-$jobalias-".$top->type."-changes";
+						if ($group_notifications) {
+							push @group_notifications, $job_entry;
+						} else {
+							print $OUT "    - $job_entry\n";
+						}
+					}
 				} else {
 					print $OUT "    - $job-".$top->type."\n";
 					my $autoname = "";
@@ -761,11 +778,23 @@ EOF
 							$autoname = $env;
 						}
 					}
-					if (! $auto{$autoname} ) {
-						print $OUT "    - notify-$job-".$top->type."-changes\n";
+					if (! $auto{$autoname}) {
+						my $job_entry = "notify-$job-".$top->type."-changes";
+						if ($group_notifications) {
+							push @group_notifications, $job_entry;
+						} else {
+							print $OUT "    - $job_entry\n";
+						}
 					}
-				} 
+				}
 			}
+		}
+		if ($group_notifications && @group_notifications) {
+			print $OUT <<EOF;
+  - name: notifications
+    jobs:
+EOF
+			print $OUT "    - $_\n" for (uniq(@group_notifications));
 		}
 	} else {
 		print $OUT <<EOF;
@@ -774,6 +803,10 @@ EOF
 EOF
 
 		print $OUT "    - $_\n" for sort map { "$pipeline->{aliases}{$_}-" . $top->type } @{$pipeline->{envs}};
+		print $OUT <<EOF if $group_notifications;
+  - name: notifications
+    jobs:
+EOF
 		print $OUT "    - notify-$_-changes\n" for sort map { "$pipeline->{aliases}{$_}-" . $top->type }
 		grep { ! $auto{$_} } @{$pipeline->{envs}};
 	}
@@ -1078,10 +1111,10 @@ EOF
 		#    too look at our cache
 		my $cache_yaml = "";
 		if ($pipeline->{triggers}{$env}) {
-			if ($trigger eq "true") {
-				$cache_yaml = "- { get: $alias-cache, passed: [$passed_alias], trigger: true }";
+			if ($trigger eq "true" || !$inline_notifications) {
+				$cache_yaml = sprintf("- { get: $alias-cache, passed: [%s], trigger: %s }", $passed_alias, $trigger)
 			} else {
-				$cache_yaml = "- { get: $alias-cache, passed: [notify-$alias-$deployment_suffix-changes], trigger: false }";
+				$cache_yaml = sprintf("- { get: $alias-cache, passed: [notify-%s-%s-changes], trigger: false }", $alias, $deployment_suffix);
 			}
 		}
 		my $notify_cache = $pipeline->{triggers}{$env} ?
@@ -1089,9 +1122,9 @@ EOF
 
 		# 7) If we don't auto-trigger, we should use passed as our notify resource
 		#    otherwise, use the live value
-        my $changes_yaml = $trigger eq "true" ?
-			"- { get: $alias-changes, trigger: true }" :
-			"- { get: $alias-changes, trigger: false, passed: [notify-$alias-$deployment_suffix-changes]}";
+		my $changes_yaml = ($trigger eq "true" || !$inline_notifications) ?
+			sprintf("- { get: %s-changes, trigger: %s }", $alias, $trigger) :
+			sprintf("- { get: %s-changes, trigger: false, passed: [notify-%s-%s-changes]}", $alias, $alias, $deployment_suffix);
 
 		# 8) Build notifications for non-automatic deployments that sense changes
 		my $changes_staged_notification = _gen_notifications($pipeline,

@@ -260,7 +260,7 @@ sub vault_auth {
 }
 
 sub commit_changes {
-	my ($indir, $outdir, $branch, $message) = @_;
+	my ($indir, $outdir, $branch, $message, $filter) = @_;
 
 	# the below copying of files into new repos from older repos is all
 	# done in the name of avoiding merge conflicts, or weird errors when
@@ -307,8 +307,6 @@ EOF
 	$ENV{GIT_ASKPASS}         = "/bin/false";
 	$ENV{HOME}                = "$tmp/home";
 
-	# no need to fetch or pull from origin/$branch, as the git resource in the pipeline should
-	# have the latest data from origin, we just need to reset to the newest applicable ref
 	run({ onfailure   => "Could not reset to the newest applicable ref in git",
 		  interactive => 1,
 		  env => { HOME => "$tmp/home" } },
@@ -322,6 +320,7 @@ EOF
 	popd;
 	my @changes = map { chomp; s/^...//; $_; } @output;
 	for my $file (@changes) {
+		next if $filter && ref($filter) && ref($filter) =~ /^regexp$/i && $file !~ $filter;
 		mkdir_or_fail(dirname("$outdir/$file"));
 		run({ onfailure => "Could not copy changed files to output directory" },
 			'cp -R "$1" "$2"', "$indir/$file", "$outdir/$file");
@@ -2514,8 +2513,24 @@ sub {
 		$env->with_bosh->download_cloud_config();
 	}
 
-	$env->deploy(redact => !envset('CI_NO_REDACT'))
-		or exit 1;
+	my $result;
+	eval {
+		$result = $env->deploy(redact => !envset('CI_NO_REDACT'));
+	};
+
+	if ($@ || !$result) {
+		error "#R{Deployment failed!}\n%s", $@ || "";
+		# Make sure to commit the state file in the case of failure
+		if ($env->needs_bosh_create_env) {
+			popd;
+			commit_changes(
+				$ENV{WORKING_DIR}, $ENV{OUT_DIR}, $ENV{GIT_BRANCH},
+				"pushing state file for $ENV{CURRENT_ENV} after failed deploy",
+				qr{^.genesis/manifest/.*\.state$}
+			);
+		}
+		exit 1;
+	}
 
 	if ($ENV{PREVIOUS_ENV}) {
 		## rm cache dir

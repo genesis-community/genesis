@@ -1,0 +1,79 @@
+---
+pipeline:
+  name: aws-1
+  public: yes
+  tagged: on
+  errands: [run-something-good]
+  debug: true
+  unredacted: yes
+  notifications: parallel
+
+  task:
+    image:   custom/concourse-image
+    version: rc1
+
+  vault:
+    url: https://127.0.0.1:8200
+
+  locker:
+    url: https://127.0.0.1:8910
+    username: locker
+    password: locker
+
+  boshes:
+    client-aws-1-sandbox:
+      stemcells: [bosh-lite]
+      url:      https://sandbox.bosh-lite.com:25555
+      ca_cert: |
+        ----- BEGIN CERTIFICATE -----
+        cert-goes-here
+        ----- END CERTIFICATE -----
+      username: sb-admin
+      password: PaeM2Eip
+    client-aws-1-preprod:
+      stemcells: [bosh-lite]
+      url:      https://preprod.bosh-lite.com:25555
+      ca_cert: |
+        ----- BEGIN CERTIFICATE -----
+        cert-goes-here
+        ----- END CERTIFICATE -----
+      username: pp-admin
+      password: Ahti2eeth3aewohnee1Phaec
+    client-aws-1-prod:
+      stemcells: [bosh-lite]
+      url:      https://prod.bosh-lite.com:25555
+      ca_cert: |
+        ----- BEGIN CERTIFICATE -----
+        cert-goes-here
+        ----- END CERTIFICATE -----
+      username: pr-admin
+      password: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
+  stemcells:
+    bosh-lite: bosh-warden-boshlite-ubuntu-trusty-go_agent
+
+  vault:
+    role: this-is-a-role
+    secret: this-is-a-secret
+    url:  http://myvault.myorg.com:5999
+    verify: no
+
+  layouts:
+    default: |
+      auto *sandbox
+      client-aws-1-sandbox -> client-aws-1-preprod -> client-aws-1-prod
+
+  git:
+    uri: git@github.com:someco/something-deployments
+    private_key: |
+      -----BEGIN RSA PRIVATE KEY-----
+      lol. you didn't really think that
+      we'd put the key here, in a test,
+      did you?!
+      -----END RSA PRIVATE KEY-----
+
+  slack:
+    channel: '#botspam'
+    webhook: http://127.0.0.1:1337
+  hipchat:
+    room_id: 1234
+    token: abcdefg
