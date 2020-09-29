@@ -308,7 +308,10 @@ sub parse_pipeline {
 			# allowed subkeys
 			for (keys %{$p->{pipeline}{task}}) {
 				push @errors, "Unrecognized `pipeline.task.$_' key found."
-					unless m/^(image|version)$/;
+					unless m/^(image|version|privileged)$/;
+			}
+			if (exists($p->{pipeline}{task}{privileged}) && ref($p->{pipeline}{task}{privileged}) ne "ARRAY") {
+				push @errors, "`pipeline.task.privileged` must be an array.";
 			}
 		} else {
 			push @errors, "`pipeline.task' must be a map.";
@@ -445,6 +448,7 @@ sub parse {
 
 	$P->{pipeline}{task}{image}   ||= 'starkandwayne/concourse';
 	$P->{pipeline}{task}{version} ||= 'latest';
+	$P->{pipeline}{task}{privileged} ||= [];
 
 	# NOTE that source-level mucking about via regexen obliterates
 	# all of the line and column information we would expect from
@@ -1330,7 +1334,12 @@ EOF
           params:
             repository: out/git
 EOF
-
+		my $privileged = (grep {$_ eq "$alias-$deployment_suffix"} $pipeline->{pipeline}{task}{privileged});
+		if ($privileged) {
+			print $OUT <<EOF;
+        privileged: true
+EOF
+		}
 		# CONCOURSE: run optional errands as tasks - non-create-env only (otherwise no bosh to run the errand) {{{
 		unless ($E->needs_bosh_create_env) {
 			for my $errand_name (@{$pipeline->{pipeline}{errands}}) {

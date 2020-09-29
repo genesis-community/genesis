@@ -451,6 +451,9 @@ pipeline:
   use for running tasks.  This defaults to `latest`, which should
   work well for most implementations.
 
+- **pipeline.task.privileged** - A list of environments that require the
+  bosh-deployment tasks to be run in privileged mode.  Defaults to empty list.
+
 - pipeline.groups - Groups jobs together under a header and show them on 
 different tabs in the user interface. It does not change functionality of the pipeline.
 
