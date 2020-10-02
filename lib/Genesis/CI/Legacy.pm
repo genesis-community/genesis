@@ -3,6 +3,7 @@ use strict;
 use warnings;
 
 use Genesis;
+use Genesis::Top;
 use Genesis::UI;
 use Socket qw/inet_ntoa/;
 
@@ -120,7 +121,7 @@ sub parse_pipeline {
 	}
 	for (keys %{$p->{pipeline}}) {
 		push @errors, "Unrecognized `pipeline.$_' key found."
-			unless m/^(name|public|tagged|errands|vault|git|slack|hipchat|stride|email|boshes|task|layout|layouts|groups|debug|stemcells|skip_upkeep|locker|unredacted|notifications)$/;
+			unless m/^(name|public|tagged|errands|vault|git|slack|hipchat|stride|email|boshes|task|layout|layouts|groups|debug|stemcells|skip_upkeep|locker|unredacted|notifications|auto-update)$/;
 	}
 	for (qw(name vault git boshes)) {
 		push @errors, "`pipeline.$_' is required."
@@ -178,6 +179,18 @@ sub parse_pipeline {
 			}
 		} else {
 			push @errors, "'pipeline.git' must specify either 'private_key', or  'username' and 'password'.";
+		}
+		$p->{pipeline}{git}{commits} = {} unless (exists $p->{pipeline}{git}{commits});
+		if (ref($p->{pipeline}{git}{commits}) ne "HASH") {
+			push @errors, "'pipeline.git.commits' must be a map.";
+		} else {
+			# allowed subkeys
+			for (keys %{$p->{pipeline}{git}{commits}}) {
+				push @errors, "Unrecognized `pipeline.git.commits.$_' key found."
+					unless m/^(user_name|user_email)$/;
+			}
+			$p->{pipeline}{git}{commits}{user_name} ||= 'Concourse Bot';
+			$p->{pipeline}{git}{commits}{user_email} ||= 'concourse@pipeline';
 		}
 	}
 
@@ -389,6 +402,43 @@ sub parse_pipeline {
 			}
 		} else {
 			push @errors, "`pipeline.groups' must be a map.";
+		}
+	}
+
+	# validate auto-update
+	if (exists $p->{pipeline}{'auto-update'}) {
+		if (ref($p->{pipeline}{'auto-update'}) eq 'HASH') {
+
+			push @errors, "Missing required `pipeline.auto-update.file` key"
+				unless $p->{pipeline}{'auto-update'}{file};
+
+			for (keys %{$p->{pipeline}{'auto-update'}}) {
+				push @errors, "Unrecognized `pipeline.auto-update.$_' key found."
+					unless m/^(file|kit|org|(github_|kit_|)auth_token|api_url|label)$/;
+			}
+
+			# Populate missing information
+			unless (defined($p->{pipeline}{'auto-update'}{api_url})) {
+				my $api_url = $top->kit_provider()->base_url;
+				if (defined($api_url)) {
+					$p->{pipeline}{'auto-update'}{api_url} = $api_url
+						unless $api_url eq 'https://api.github.com';
+				} else {
+					push @errors, "Cannot determine kit provider API url -- please specify in `pipeline.auto-update.api_url' explicitly."
+				}
+			}
+			unless (defined($p->{pipeline}{'auto-update'}{kit})) {
+				my @kits = keys(%{$top->local_kits});
+				if (scalar(@kits) != 1) {
+					push @errors, "Expecting a single local kit, found ${\(scalar(@kits))} - please specify kit name in `pipeline.auto-update.kit`."
+				} else {
+					$p->{pipeline}{'auto-update'}{kit} = $kits[0];
+				}
+			}
+			$p->{pipeline}{'auto-update'}{org} = $top->kit_provider()->{organization}
+				unless defined($p->{pipeline}{'auto-update'}{org});
+		} else {
+			push @errors, "`pipeline.auto-update' must be a map.";
 		}
 	}
 
@@ -665,6 +715,11 @@ sub generate_pipeline_concourse_yaml {
 	my %auto = map { $_ => 1 } @{$pipeline->{auto}};
 
 	# CONCOURSE: pipeline (+params) {{{
+	print $OUT <<"EOF";
+---
+pipeline:
+EOF
+	# -- pipeline.git {{{
 	my $git_credentials;
 	if ($pipeline->{pipeline}{git}{private_key}) {
 		$git_credentials = "    private_key: |-\n      ".join("\n      ",split("\n",$pipeline->{pipeline}{git}{private_key}));
@@ -672,30 +727,33 @@ sub generate_pipeline_concourse_yaml {
 		$git_credentials = "    username:    $pipeline->{pipeline}{git}{username}\n    password:    $pipeline->{pipeline}{git}{password}";
 	}
 	print $OUT <<"EOF";
----
-pipeline:
   git:
     uri:         $pipeline->{pipeline}{git}{uri}
     branch:      master
 $git_credentials
     config:
       icon: github
-  vault:
+    commits:
+      user_name:  $pipeline->{pipeline}{git}{commits}{user_name}
+      user_email: $pipeline->{pipeline}{git}{commits}{user_email}
 EOF
-
+  # }}}
+	# -- pipeline.vault {{{
 	# programmatically determine if we should pull pipeline vault creds from vault, or operator needs to specify.
 	if (safe_path_exists "secret/exodus/ci/genesis-pipelines") {
 		print $OUT <<'EOF';
+  vault:
     role:   (( vault "secret/exodus/ci/genesis-pipelines:approle-id" ))
     secret: (( vault "secret/exodus/ci/genesis-pipelines:approle-secret" ))
 EOF
 	} else {
 		print $OUT <<'EOF';
+  vault:
     role:   (( param "Please run the 'setup-approle' addon in the Concourse kit for this environment, or specify your own AppRole ID." ))
     secret: (( param "Please run the 'setup-approle' addon in the Concourse kit for this environment, or specify your own AppRole secret." ))
 EOF
-	}
-
+	} # }}}
+	# -- pipeline.slack {{{
 	if ($pipeline->{pipeline}{slack}) {
 		print $OUT <<'EOF';
   slack:
@@ -704,7 +762,8 @@ EOF
     username: runwaybot
     icon:     http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
 EOF
-	}
+	} # }}}
+	# -- pipeline.hipchat {{{
 	if ($pipeline->{pipeline}{hipchat}) {
 		print $OUT <<'EOF';
   hipchat:
@@ -714,7 +773,8 @@ EOF
     notify:   false
     username: runwaybot
 EOF
-	}
+	} # }}}
+	# -- pipeline.stride {{{
 	if ($pipeline->{pipeline}{stride}) {
 		print $OUT <<'EOF';
   stride:
@@ -723,7 +783,8 @@ EOF
     cloud_id: (( param "Please specify the Stride cloud ID that Concourse should send notifications to" ))
     conversation: (( param "Please specify the Stride conversation name that Concourse should send notifications to" ))
 EOF
-	}
+	} # }}}
+	# -- pipeline.email {{{
 	if ($pipeline->{pipeline}{email}) {
 		print $OUT <<'EOF';
   email:
@@ -735,7 +796,8 @@ EOF
       host:     (( param "Please specify the FQDN or IP address of your Mail Server (SMTP) host." ))
       port:     587
 EOF
-	}
+	} # }}}
+	# -- pipeline.locker {{{
 	if ($pipeline->{pipeline}{locker}{url}) {
 		print $OUT <<'EOF';
   locker:
@@ -749,7 +811,19 @@ EOF
     skip_ssl_validation: true
 
 EOF
-	}
+	} # }}}
+	# -- pipeline.auto-update {{{
+	if (defined($pipeline->{pipeline}{'auto-update'}{file})) {
+		print $OUT <<"EOF";
+  auto-update:
+    file:    (( param "Please provide the file that specifies the kit version" ))
+    kit:     $pipeline->{pipeline}{'auto-update'}{kit}
+    org:     $pipeline->{pipeline}{'auto-update'}{org}
+EOF
+		if ($pipeline->{pipeline}{'auto-update'}{api_url}) {
+			print $OUT "    api_url: $pipeline->{pipeline}{'auto-update'}{api_url}\n";
+		}
+	} # }}}
 	# }}}
 	# CONCOURSE: groups, and resource configuration {{{
 	print $OUT <<EOF;
@@ -814,7 +888,13 @@ EOF
 		print $OUT "    - notify-$_-changes\n" for sort map { "$pipeline->{aliases}{$_}-" . $top->type }
 		grep { ! $auto{$_} } @{$pipeline->{envs}};
 	}
-
+	if (defined($pipeline->{pipeline}{'auto-update'}{file})) {
+		print $OUT <<EOF;
+  - name: genesis-updates
+    jobs:
+    - update-genesis-assets
+EOF
+	}
 	my ($git_resource_creds,$git_env_creds);
 	if ($pipeline->{pipeline}{git}{private_key}) {
 		$git_resource_creds = "      private_key: (( grab pipeline.git.private_key ))";
@@ -1042,10 +1122,33 @@ EOF
         username: (( grab pipeline.email.smtp.username ))
         password: (( grab pipeline.email.smtp.password ))
 EOF
+	} # }}}
+# CONCOURSE: genesis-assets resource configuration {{{
+	if (defined($pipeline->{pipeline}{'auto-update'}{file})) {
+		print $OUT <<EOF
+  - name: kit-release
+    icon: package-variant
+    type: github-release
+    check_every: 24h
+    source:
+      user:         (( grab pipeline.auto-update.org ))
+      repository:   (( concat pipeline.auto-update.kit "-genesis-kit" ))
+      access_token: (( grab pipeline.auto-update.kit_auth_token || pipeline.auto-update.auth_token || "" ))
+  - name: genesis-release
+    type: github-release
+    icon: leaf
+    check_every: 24h
+    source:
+      user:         "genesis-community"
+      repository:   "genesis"
+      access_token: (( grab pipeline.auto-update.genesis_auth_token || pipeline.auto-update.auth_token || "" ))
+EOF
 	}
+
 	# }}}
 	# CONCOURSE: resource types {{{
 	print $OUT <<'EOF';
+
 resource_types:
   - name: script
     type: docker-image
@@ -1273,15 +1376,19 @@ EOF
             GENESIS_HONOR_ENV:    1
             CI_NO_REDACT:         $pipeline->{pipeline}{unredacted}
             CURRENT_ENV:          $env
-            PREVIOUS_ENV:         $passed
+            PREVIOUS_ENV:         ${\($passed || '""')}
             CACHE_DIR:            $alias-cache
+            OUT_DIR:              out/git
+            WORKING_DIR:          $alias-changes # work out of latest changes for this environment
             GIT_BRANCH:           (( grab pipeline.git.branch ))
+            GIT_AUTHOR_NAME:      $pipeline->{pipeline}{git}{commits}{user_name}
+            GIT_AUTHOR_EMAIL:     $pipeline->{pipeline}{git}{commits}{user_email}
 $git_env_creds
             BOSH_NON_INTERACTIVE: true
             VAULT_ROLE_ID:        (( grab pipeline.vault.role ))
             VAULT_SECRET_ID:      (( grab pipeline.vault.secret ))
             VAULT_ADDR:           $pipeline->{pipeline}{vault}{url}
-            VAULT_SKIP_VERIFY:    ${\(!$pipeline->{pipeline}{vault}{verify})}
+            VAULT_SKIP_VERIFY:    ${\($pipeline->{pipeline}{vault}{verify} ? 'false' : 'true')}
 EOF
 		print $OUT "            VAULT_NO_STRONGBOX:   1\n"
 			if $pipeline->{pipeline}{vault}{'no-strongbox'};
@@ -1292,6 +1399,8 @@ EOF
 		unless ($E->needs_bosh_create_env) {
 			print $OUT <<EOF;
             BOSH_ENVIRONMENT:     $pipeline->{pipeline}{boshes}{$env}{url}
+            BOSH_CLIENT:          $pipeline->{pipeline}{boshes}{$env}{username}
+            BOSH_CLIENT_SECRET:   $pipeline->{pipeline}{boshes}{$env}{password}
             BOSH_CA_CERT: |
 EOF
 			for (split /\n/, $pipeline->{pipeline}{boshes}{$env}{ca_cert}) {
@@ -1299,18 +1408,11 @@ EOF
               $_
 EOF
 			}
-			print $OUT <<EOF;
-            BOSH_CLIENT:        $pipeline->{pipeline}{boshes}{$env}{username}
-            BOSH_CLIENT_SECRET: $pipeline->{pipeline}{boshes}{$env}{password}
-EOF
 		}
 		print $OUT <<EOF if $pipeline->{pipeline}{debug};
-            DEBUG:              $pipeline->{pipeline}{debug}
+            DEBUG:                $pipeline->{pipeline}{debug}
 EOF
 		print $OUT <<EOF;
-            WORKING_DIR:        $alias-changes # work out of latest changes for this environment
-            OUT_DIR:            out/git
-
 
           run:
             # run from inside the environment changes to get latest cache + regular data
@@ -1408,6 +1510,8 @@ EOF
             WORKING_DIR:          out/git
             OUT_DIR:              cache-out/git
             GIT_BRANCH:           (( grab pipeline.git.branch ))
+            GIT_AUTHOR_NAME:      $pipeline->{pipeline}{git}{commits}{user_name}
+            GIT_AUTHOR_EMAIL:     $pipeline->{pipeline}{git}{commits}{user_email}
 $git_env_creds
 EOF
 
@@ -1435,6 +1539,111 @@ EOF
 		}
 	# }}}
 	}
+
+	# CONCOURSE: update-genesis-asses job configuration {{{
+	if (defined($pipeline->{pipeline}{'auto-update'}{file})) {
+		print $OUT <<EOF;
+
+  - name: update-genesis-assets
+    plan:
+    - in_parallel:
+      - { get: git }
+      - { get: kit-release, trigger: true }
+      - { get: genesis-release }
+    - task: list-kits
+      config:
+        platform: linux
+        image_resource:
+          type: registry-image
+          source:
+            repository: $pipeline->{pipeline}{task}{image}
+            tag:        $pipeline->{pipeline}{task}{version}
+        inputs:
+        - name: git
+        params:
+          GENESIS_KIT_NAME: (( concat pipeline.auto-update.kit "-genesis-kit" ))
+        run:
+          dir: git
+          path: sh
+          args:
+          - -ce
+          - |
+            .genesis/bin/genesis list-kits \${GENESIS_KIT_NAME} -u
+    - task: update-genesis
+      config:
+        platform: linux
+        image_resource:
+          type: registry-image
+          source:
+            repository: $pipeline->{pipeline}{task}{image}
+            tag:        $pipeline->{pipeline}{task}{version}
+        inputs:
+        - name: git
+        - name: genesis-release
+        outputs:
+        - name: git
+        params:
+          KIT_VERSION_FILE: (( grab pipeline.auto-update.file ))
+          GENESIS_KIT_NAME: (( grab pipeline.auto-update.kit ))
+          CI_LABEL:         (( grab pipeline.auto-update.label || "concourse" ))
+          GITHUB_USER:      (( grab pipeline.git.commits.user_name ))
+          GITHUB_EMAIL:     (( grab pipeline.git.commits.user_email ))
+        run:
+          dir: git
+          path: sh
+          args:
+          - -ce
+          - |
+            chmod +x ../genesis-release/genesis
+            ../genesis-release/genesis embed
+            if ! git diff --stat --exit-code .genesis/bin/genesis; then
+              git config --global user.email "\${GITHUB_EMAIL}"
+              git config --global user.name "\${GITHUB_USER}"
+              git add .genesis/bin/genesis
+              git commit -m "[\${CI_LABEL}] bump genesis to \$(.genesis/bin/genesis version)"
+            fi
+    - task: fetch-kit
+      config:
+        platform: linux
+        image_resource:
+          type: registry-image
+          source:
+            repository: $pipeline->{pipeline}{task}{image}
+            tag:        $pipeline->{pipeline}{task}{version}
+        inputs:
+        - name: git
+        - name: kit-release
+        outputs:
+        - name: git
+        params:
+          KIT_VERSION_FILE:  (( grab pipeline.auto-update.file ))
+          GENESIS_KIT_NAME:  (( grab pipeline.auto-update.kit ))
+          CI_LABEL:          (( grab pipeline.auto-update.label || "concourse" ))
+          GITHUB_AUTH_TOKEN: (( grab pipeline.auto-update.kit_auth_token || pipeline.auto-update.auth_token || "" ))
+          GITHUB_USER:       (( grab pipeline.git.commits.user_name ))
+          GITHUB_EMAIL:      (( grab pipeline.git.commits.user_email ))
+        run:
+          dir: git
+          path: sh
+          args:
+          - -ce
+          - |
+            .genesis/bin/genesis fetch-kit \${GENESIS_KIT_NAME}/\$(cat ../kit-release/version)
+            sed -i'' "/^kit:/,/^  version:/{s/version.*/version: \$(cat ../kit-release/version)/}" \${KIT_VERSION_FILE}
+            if ! git diff --stat --exit-code .genesis/kits \${KIT_VERSION_FILE}; then
+              git config --global user.email "\${GITHUB_EMAIL}"
+              git config --global user.name "\${GITHUB_USER}"
+              git add .genesis/kits \${KIT_VERSION_FILE}
+              git commit -m "[\${CI_LABEL}] bump kit \${GENESIS_KIT_NAME} to version \$(cat ../kit-release/version)"
+            else
+              echo "No change detected - still using \${GENESIS_KIT_NAME}/\$(cat ../kit-release/version)
+            fi
+    - put: git
+      params:
+        repository: git
+        rebase: true
+EOF
+	} # }}}
 	close $OUT;
 
 	return run({ onfailure => 'Failed to merge Concourse pipeline definition', stderr => 0 },
