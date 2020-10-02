@@ -237,26 +237,21 @@ our $prompt_handlers = {
 
 ###########################################################################
 sub vault_auth {
-	for (qw/VAULT_ADDR VAULT_ROLE_ID VAULT_SECRET_ID/) {
-		next if exists $ENV{$_} and defined $ENV{$_};
-		die "vault_auth() requires the '$_' environment variable; please file a bug.\n";
-	}
+	my @missing_variables = grep {
+		!exists($ENV{$_}) || !defined($ENV{$_})
+	} qw/VAULT_ADDR VAULT_ROLE_ID VAULT_SECRET_ID/;
+	bail(
+		"Pipeline requires the following missing environment variables: %s",
+		join(", ", @missing_variables)
+	) if @missing_variables;
 
-	my @cmd = ('safe', 'target', $ENV{VAULT_ADDR}, 'deployments-vault');
-	push(@cmd, '-k') if envset("VAULT_SKIP_VERIFY");
-	push(@cmd, '-n', $ENV{VAULT_NAMESPACE}) if $ENV{VAULT_NAMESPACE};
-	push(@cmd, '--no-strongbox') if envset("VAULT_NO_STRONGBOX");
-	run({onfailure => "Could not target deployment vault with safe:"}, @cmd);
-
-	run(
-		{onfailure => "Could not authenticate with app role to deployment vault with safe:"},
-		'safe auth approle < <(echo $VAULT_ROLE_ID; echo $VAULT_SECRET_ID)'
-	);
-	my $secrets_mount = $ENV{SECRETS_MOUNT} || '/secret';
-	run(
-		{onfailure => "Failed to retrieve ${secrets_mount}/handshake from deployment vault with safe:"},
-		"safe get ${secrets_mount}/handshake"
-	);
+	Genesis::Vault->create(
+		$ENV{VAULT_ADDR},
+		'deployments-vault',
+		skip_verify => envset("VAULT_SKIP_VERIFY"),
+		namespace => $ENV{VAULT_NAMESPACE},
+		no_strongbox => envset("VAULT_NO_STRONGBOX")
+	)->connect_and_validate();
 }
 
 sub commit_changes {
@@ -398,7 +393,7 @@ sub check_prereqs {
 	my $reqs = [
 		# Name,     Version, Command,                                 Pattern                   Source
 		["spruce", "1.26.0", "spruce -v      2>/dev/null",            qr(.*version\s+(\S+).*)i, "https://github.com/geofffranks/spruce/releases"],
-		["safe",    "1.5.4", "safe -v        2>&1 >/dev/null",        qr(safe v(\S+)),          "https://github.com/starkandwayne/safe/releases"],
+		["safe",    "1.5.8", "safe -v        2>&1 >/dev/null",        qr(safe v(\S+)),          "https://github.com/starkandwayne/safe/releases"],
 		["vault",   "0.9.0", "vault -v       2>/dev/null",            qr(.*vault v(\S+).*)i,    "https://www.vaultproject.io/downloads.html"],
 		["git",     "1.8.0", "git --version  2>/dev/null",            qr(.*version\s+(\S+).*)],
 		["jq",        "1.5", "jq --version   2>/dev/null",            qr(^jq-([\.0-9]+)),       "https://stedolan.github.io/jq/download/"],

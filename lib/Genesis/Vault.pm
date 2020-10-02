@@ -15,13 +15,42 @@ my (@all_vaults, $default_vault, $current_vault);
 
 # new - raw instantiation of a vault object {{{
 sub new {
-	my ($class, $url, $name, $verify) = @_;
+	my ($class, $url, $name, $verify, $namespace) = @_;
 	return bless({
-			url    => $url,
-			name   => $name,
-			verify => $verify ? 1 : 0, # Cleans out JSON::Boolean types
-			id     => sprintf("%s-%06d",$name,rand(1000000))
+			url       => $url,
+			name      => $name,
+			verify    => $verify ? 1 : 0, # Cleans out JSON::Boolean types
+			namespace => $namespace,
+			id        => sprintf("%s-%06d",$name,rand(1000000))
 		}, $class);
+}
+
+# }}}
+# create - create a new safe target and target it {{{
+sub create {
+	my ($class, $url, $name, %opts) = @_;
+
+	my $default = $class->default(1);
+
+	my @cmd = ('safe', 'target', $url, $name);
+	push(@cmd, '-k') if $opts{skip_verify};
+	push(@cmd, '-n', $opts{namespace}) if $opts{namespace};
+	push(@cmd, '--no-strongbox') if $opts{no_strongbox};
+	my ($out,$rc,$err) = run({stderr => 0, env => {VAULT_ADDR => "", SAFE_TARGET => ""}}, @cmd);
+	run('safe','target',$default->{name}) if $default; # restore original system target if there was one
+	bail(
+		"Could not create new Safe target #C{%s} pointing at #M{%s}:\n %s",
+		$name, $url, $err
+	) if $rc;
+	my $vault = $class->new($url, $name, !$opts{skip_verify}, $opts{namespace});
+	for (0..scalar(@all_vaults)-1) {
+		if ($all_vaults[$_]->{name} eq $name) {
+			$all_vaults[$_] = $vault;
+			return $vault;
+		}
+	}
+	push(@all_vaults, $vault);
+	return $vault;
 }
 
 # }}}
@@ -179,7 +208,8 @@ sub find_by_target {
 # }}}
 # default - return the default vault (targeted by system) {{{
 sub default {
-	unless ($default_vault) {
+	my ($class,$refresh) = @_;
+	unless ($default_vault && !$refresh) {
 		my $json = read_json_from(run({env => {VAULT_ADDR => "", SAFE_TARGET => ""}},"safe target --json"));
 		$default_vault = (Genesis::Vault->find(name => $json->{name}))[0];
 	}
@@ -233,15 +263,69 @@ sub connect_and_validate {
 }
 
 # }}}
+# authenticate - attempt to log in with credentials available in environment variables {{{
+sub authenticate {
+	my $self = shift;
+	my $ref = $self->ref();
+	my $auth_types = [
+		{method => 'approle',  label => "AppRole",                     vars => [qw/VAULT_ROLE_ID VAULT_SECRET_ID/]},
+		{method => 'token',    label => "Vault Token",                 vars => [qw/VAULT_AUTH_TOKEN/]},
+		{method => 'userpass', label => "Username/Password",           vars => [qw/VAULT_USERNAME VAULT_PASSWORD/]},
+		{method => 'github',   label => "Github Peronal Access Token", vars => [qw/VAULT_GITHUB_TOKEN/]},
+	];
+
+	return $self if $self->authenticated;
+	my %failed;
+	for my $auth (@$auth_types) {
+		my @vars = @{$auth->{vars}};
+		if (scalar(grep {$ENV{$_}} @vars) == scalar(@vars)) {
+			debug "Attempting to authenticate with $auth->{label} to #M{$ref} vault";
+			my ($out, $rc) = $self->query(
+				'safe auth ${1} < <(echo "$2")', $auth->{method}, join("\n", map {$ENV{$_}} @vars)
+			);
+			return $self if $self->authenticated;
+			$failed{$auth->{method}} = 1;
+		}
+	}
+
+	# Last chance, check if we're already authenticated; otherwise bail.
+	# This also forces a update to the token, so we don't have to explicitly do that here.
+	return $self if $self->authenticated;
+	bail(
+		"#R{[ERROR]} Could not successfully authenticate against #M{$ref} vault with #C{safe}.\n\n".
+		"        Genesis can automatically authenticate with safe in the following ways:\n".
+		join("", map {
+			my $a=$_;
+			sprintf(
+				"        - #G{%s}, supplied by %s%s\n",
+				$a->{label},
+				join(' and ', map {"#y{\$$_}"} @{$a->{vars}}),
+				($failed{$a->{method}}) ? " #R{[present, but failed]}" : ""
+			)
+		} @{$auth_types})
+	);
+}
+
+# }}}
+# authenticated - returns true if authenticate {{{
+sub authenticated {
+	my $self = shift;
+	delete($self->{_env}); # Force a fresh token retrieval
+	return unless $self->token;
+	my ($auth,$rc,$err) = read_json_from($self->query({stderr => '/dev/null'},'safe auth status --json'));
+	return $rc == 0 && $auth->{valid};
+}
+
+# }}}
 # query - make safe calls against this vault {{{
 sub query {
 	my $self = shift;
 	my $opts = ref($_[0]) eq "HASH" ? shift : {};
 	my @cmd = @_;
-	unshift(@cmd, 'safe') unless $cmd[0] eq 'safe';
+	unshift(@cmd, 'safe') unless $cmd[0] eq 'safe' || $cmd[0] =~ /^safe /;
 	$opts->{env} ||= {};
-	$opts->{env}{DEBUG} = "";                 # safe DEBUG is disruptive
-	$opts->{env}{SAFE_TARGET} = $self->ref; # set the safe target
+	$opts->{env}{DEBUG} = ""; # safe DEBUG is disruptive
+	$opts->{env}{SAFE_TARGET} = $self->ref unless defined($opts->{env}{SAFE_TARGET});
 	return run($opts, @cmd);
 }
 
@@ -360,13 +444,15 @@ sub status {
 	my $status = tcp_listening($ip,$port);
 	return "unreachable - $status" unless $status eq 'ok';
 
-	return "unauthenticated" if $self->token eq "";
 	my ($out,$rc) = $self->query({stderr => "&1"}, "vault", "status");
 	if ($rc != 0) {
 		$out =~ /exit status ([0-9])/;
 		return "sealed" if $1 == 2;
 		return "unreachable";
 	}
+
+	eval {$self->auth} unless $self->authenticated;
+	return "unauthenticated" if $@ || $self->token eq "";
 	return "uninitialized" unless $self->has($secrets_mount.'handshake') || $self->has('/secret/handshake');
 	return "ok"
 }
@@ -1339,7 +1425,7 @@ sub _validate_kit_secret {
 	my ($results, @validations) = (\&{$validate_sub})->($path, $key, $plan, $secret_values, $plans, $root_path);
 	my $show_all_messages = ! envset("GENESIS_HIDE_PROBLEMATIC_SECRETS");
 	my %priority = ('error' => 0, 'warn' => 1, 'ok' => 2);
-	my @results_levels = sort {$priority{$a}<=>$priority{$b}} 
+	my @results_levels = sort {$priority{$a}<=>$priority{$b}}
 	                     uniq('ok', map {$_ ? ($_ =~ /^(error|warn)$/ ? $_ : 'ok') : 'error'}
 	                                map {$_->[0]}
 	                                values %$results);
