@@ -68,7 +68,7 @@ EOF
     config: {
       platform: linux,
       image_resource: {
-        type: docker-image,
+        type: registry-image,
         source: {
           repository: ubuntu,
         },
@@ -1151,37 +1151,37 @@ EOF
 
 resource_types:
   - name: script
-    type: docker-image
+    type: registry-image
     source:
       repository: cfcommunity/script-resource
 
   - name: email
-    type: docker-image
+    type: registry-image
     source:
       repository: pcfseceng/email-resource
 
   - name: slack-notification
-    type: docker-image
+    type: registry-image
     source:
       repository: cfcommunity/slack-notification-resource
 
   - name: hipchat-notification
-    type: docker-image
+    type: registry-image
     source:
       repository: cfcommunity/hipchat-notification-resource
 
   - name: stride-notification
-    type: docker-image
+    type: registry-image
     source:
       repository: starkandwayne/stride-notification-resource
 
   - name: bosh-config
-    type: docker-image
+    type: registry-image
     source:
       repository: cfcommunity/bosh-config-resource
 
   - name: locker
-    type: docker-image
+    type: registry-image
     source:
       repository: cfcommunity/locker-resource
 
@@ -1236,7 +1236,8 @@ EOF
 		# 8) Build notifications for non-automatic deployments that sense changes
 		my $changes_staged_notification = _gen_notifications($pipeline,
 			"Changes are staged to be deployed to $env-$deployment_suffix, " .
-			"please schedule + run a deploy via Concourse", "changes-staged");
+			"see notify-$alias-$deployment_suffix-changes job for change summary, " .
+			"then schedule and run a deploy via Concourse", "changes-staged");
 
 		# 9) Build notifications for failed deployments
 		my $deployment_failure_notification = _gen_notifications($pipeline,
@@ -1258,24 +1259,83 @@ EOF
     public: true
     serial: true
     plan:
-    - in_parallel:
-      - { get: $alias-changes, trigger: true }
+      - in_parallel:
+        - { get: $alias-changes, trigger: true }
+        $notify_cache
 EOF
 			unless ($E->needs_bosh_create_env) {
 				print $OUT <<EOF;
-      - get: $alias-cloud-config
-        $tag_yaml
-        trigger: true
-      - get: $alias-runtime-config
-        $tag_yaml
-        trigger: true
+        - get: $alias-cloud-config
+          $tag_yaml
+          trigger: true
+        - get: $alias-runtime-config
+          $tag_yaml
+          trigger: true
 EOF
 			}
 			print $OUT <<EOF;
-      $notify_cache
+      - task: show-pending-changes
+        $tag_yaml
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: $pipeline->{pipeline}{task}{image}
+              tag:        $pipeline->{pipeline}{task}{version}
+          params:
+            GENESIS_HONOR_ENV:    1
+            CI_NO_REDACT:         $pipeline->{pipeline}{unredacted}
+            CURRENT_ENV:          $env
+            PREVIOUS_ENV:         ${\($passed || '""')}
+            CACHE_DIR:            $alias-cache
+            OUT_DIR:              out/git
+            WORKING_DIR:          $alias-changes # work out of latest changes for this environment
+            GIT_BRANCH:           (( grab pipeline.git.branch ))
+            GIT_AUTHOR_NAME:      $pipeline->{pipeline}{git}{commits}{user_name}
+            GIT_AUTHOR_EMAIL:     $pipeline->{pipeline}{git}{commits}{user_email}
+$git_env_creds
+            BOSH_NON_INTERACTIVE: true
+            VAULT_ROLE_ID:        (( grab pipeline.vault.role ))
+            VAULT_SECRET_ID:      (( grab pipeline.vault.secret ))
+            VAULT_ADDR:           $pipeline->{pipeline}{vault}{url}
+            VAULT_SKIP_VERIFY:    ${\($pipeline->{pipeline}{vault}{verify} ? 'false' : 'true')}
 EOF
+		print $OUT "            VAULT_NO_STRONGBOX:   1\n"
+			if $pipeline->{pipeline}{vault}{'no-strongbox'};
+		print $OUT "            VAULT_NAMESPACE:      $pipeline->{pipeline}{vault}{namespace}\n"
+			if $pipeline->{pipeline}{vault}{namespace};
+
+		# don't supply bosh creds if we're create-env, because no one to talk to
+		unless ($E->needs_bosh_create_env) {
 			print $OUT <<EOF;
-    - $changes_staged_notification
+            BOSH_ENVIRONMENT:     $pipeline->{pipeline}{boshes}{$env}{url}
+            BOSH_CLIENT:          $pipeline->{pipeline}{boshes}{$env}{username}
+            BOSH_CLIENT_SECRET:   $pipeline->{pipeline}{boshes}{$env}{password}
+            BOSH_CA_CERT: |
+EOF
+			for (split /\n/, $pipeline->{pipeline}{boshes}{$env}{ca_cert}) {
+				print $OUT "              $_\n";
+			}
+		}
+		print $OUT <<EOF if $pipeline->{pipeline}{debug};
+            DEBUG:                $pipeline->{pipeline}{debug}
+EOF
+		print $OUT <<EOF;
+
+          run:
+            # run from inside the environment changes to get latest cache + regular data
+            # but use the executable from genesis
+            path: $genesis_bindir/.genesis/bin/genesis
+            args: [ci-show-changes]
+          inputs:
+            - { name: $alias-changes } # deploy from latest changes
+EOF
+		print $OUT <<EOF if $passed;
+            - { name: $alias-cache }
+EOF
+		print $OUT <<EOF;
+      - $changes_staged_notification
 EOF
 		}
 		# }}}
@@ -1368,7 +1428,7 @@ EOF
         config:
           platform: linux
           image_resource:
-            type: docker-image
+            type: registry-image
             source:
               repository: $pipeline->{pipeline}{task}{image}
               tag:        $pipeline->{pipeline}{task}{version}
@@ -1452,7 +1512,7 @@ EOF
         config:
           platform: linux
           image_resource:
-            type: docker-image
+            type: registry-image
             source:
               repository: $pipeline->{pipeline}{task}{image}
               tag:        $pipeline->{pipeline}{task}{version}
@@ -1521,7 +1581,7 @@ EOF
 		print $OUT <<EOF;
           platform: linux
           image_resource:
-            type: docker-image
+            type: registry-image
             source:
               repository: $pipeline->{pipeline}{task}{image}
               tag:        $pipeline->{pipeline}{task}{version}
@@ -1590,17 +1650,30 @@ EOF
           GITHUB_EMAIL:     (( grab pipeline.git.commits.user_email ))
         run:
           dir: git
-          path: sh
+          path: bash
           args:
           - -ce
           - |
             chmod +x ../genesis-release/genesis
-            ../genesis-release/genesis embed
-            if ! git diff --stat --exit-code .genesis/bin/genesis; then
-              git config --global user.email "\${GITHUB_EMAIL}"
-              git config --global user.name "\${GITHUB_USER}"
-              git add .genesis/bin/genesis
-              git commit -m "[\${CI_LABEL}] bump genesis to \$(.genesis/bin/genesis version)"
+            upstream="\$(../genesis-release/genesis -v 2>/dev/null | sed -e 's/Genesis v\\([^ ]*\\) .*/\\1/')"
+            current="\$(.genesis/bin/genesis -v 2>/dev/null | sed -e 's/Genesis v\\([^ ]*\\) .*/\\1/')"
+            if [[ -z "\$upstream" || ! "\$upstream" =~ ^[0-9]+(\.[0-9]+){2}(-rc[0-9]+)?\$ ]]; then
+              echo >&2 "Error: could not get upstream genesis version"
+              exit 1
+            fi
+            if [[ -z "\$current" || ! "\$current" =~ ^[0-9]+(\.[0-9]+){2}(-rc[0-9]+)?\$ ]]; then
+              echo >&2 "Error: could not get embedded genesis version"
+              exit 1
+            fi
+            if ../genesis-release/genesis ui-semver \$upstream ge \$current && \\
+             ! ../genesis-release/genesis ui-semver \$current ge \$upstream ; then
+              ../genesis-release/genesis embed
+              if ! git diff --stat --exit-code .genesis/bin/genesis; then
+                git config --global user.email "\${GITHUB_EMAIL}"
+                git config --global user.name "\${GITHUB_USER}"
+                git add .genesis/bin/genesis
+                git commit -m "[\${CI_LABEL}] bump genesis to \$(.genesis/bin/genesis version)"
+              fi
             fi
     - task: fetch-kit
       config:
@@ -1624,19 +1697,22 @@ EOF
           GITHUB_EMAIL:      (( grab pipeline.git.commits.user_email ))
         run:
           dir: git
-          path: sh
+          path: bash
           args:
           - -ce
           - |
-            .genesis/bin/genesis fetch-kit \${GENESIS_KIT_NAME}/\$(cat ../kit-release/version)
-            sed -i'' "/^kit:/,/^  version:/{s/version.*/version: \$(cat ../kit-release/version)/}" \${KIT_VERSION_FILE}
+            version="\$(cat ../kit-release/version)"
+            if ! .genesis/bin/genesis --no-color list-kits \${GENESIS_KIT_NAME} | grep "v\$version\\\$"; then
+              .genesis/bin/genesis fetch-kit \${GENESIS_KIT_NAME}/\$version
+            fi
+            sed -i'' "/^kit:/,/^  version:/{s/version.*/version: \$version/}" \${KIT_VERSION_FILE}
             if ! git diff --stat --exit-code .genesis/kits \${KIT_VERSION_FILE}; then
               git config --global user.email "\${GITHUB_EMAIL}"
               git config --global user.name "\${GITHUB_USER}"
               git add .genesis/kits \${KIT_VERSION_FILE}
-              git commit -m "[\${CI_LABEL}] bump kit \${GENESIS_KIT_NAME} to version \$(cat ../kit-release/version)"
+              git commit -m "[\${CI_LABEL}] bump kit \${GENESIS_KIT_NAME} to version \$version"
             else
-              echo "No change detected - still using \${GENESIS_KIT_NAME}/\$(cat ../kit-release/version)
+              echo "No change detected - still using \${GENESIS_KIT_NAME}/\$version"
             fi
     - put: git
       params:

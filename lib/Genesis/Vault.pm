@@ -451,8 +451,10 @@ sub status {
 		return "unreachable";
 	}
 
-	eval {$self->auth} unless $self->authenticated;
-	return "unauthenticated" if $@ || $self->token eq "";
+	eval {$self->authenticate} unless $self->authenticated;
+	my $exception = $@;
+	debug "Failed to authentication to vault: $exception" if $exception;
+	return "unauthenticated" if $exception || $self->token eq "";
 	return "uninitialized" unless $self->has($secrets_mount.'handshake') || $self->has('/secret/handshake');
 	return "ok"
 }

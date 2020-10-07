@@ -254,6 +254,19 @@ sub vault_auth {
 	)->connect_and_validate();
 }
 
+# genesis bail_on_missing_pipeline_environment_variables - provide consistent error message when missing pipeline environment variables {{{
+sub bail_on_missing_pipeline_environment_variables {
+	if (@_) {
+		error("The following #R{required} environment variables have not been defined:");
+		error(" - \$#Y{$_}") for @_;
+		error("\n");
+		error("Please check your CI Pipeline configuration.");
+		exit 1;
+	}
+
+}
+# }}}
+
 sub commit_changes {
 	my ($indir, $outdir, $branch, $message, $filter) = @_;
 
@@ -2477,7 +2490,7 @@ sub {
 	OUT_DIR WORKING_DIR
 	VAULT_ROLE_ID VAULT_SECRET_ID VAULT_ADDR/;
 	push @undefined, "CACHE_DIR" if ($ENV{PREVIOUS_ENV} && ! $ENV{CACHE_DIR});
-	__bail_on_missing_pipeline_environment_variables(@undefined);
+	bail_on_missing_pipeline_environment_variables(@undefined);
 
 	bail("The pipeline must specify either GIT_PRIVATE_KEY, or GIT_USERNAME and GIT_PASSWORD")
 		unless $ENV{GIT_PRIVATE_KEY} || ($ENV{GIT_USERNAME} && $ENV{GIT_PASSWORD});
@@ -2489,8 +2502,8 @@ sub {
 	my $env = Genesis::Top->new('.')->load_env($ENV{CURRENT_ENV})->with_vault();
 	push(@undefined, grep { !$ENV{$_} }
 		qw/BOSH_ENVIRONMENT BOSH_CA_CERT
-		   BOSH_CLIENT BOSH_CLIENT_SECRET/) unless $env->needs_bosh_create_env;
-	__bail_on_missing_pipeline_environment_variables(@undefined);
+			 BOSH_CLIENT BOSH_CLIENT_SECRET/) unless $env->needs_bosh_create_env;
+	bail_on_missing_pipeline_environment_variables(@undefined);
 
 	if ($ENV{PREVIOUS_ENV}) {
 		run({ onfailure => "Failed to run `$_`", interactive => 1 }, $_) for (
@@ -2540,16 +2553,99 @@ sub {
 		"deployed to $ENV{CURRENT_ENV}");
 });
 
-sub __bail_on_missing_pipeline_environment_variables {
-	if (@_) {
-		error("The following #R{required} environment variables have not been defined:");
-		error(" - \$#Y{$_}") for @_;
-		error("\n");
-		error("Please check your CI Pipeline configuration.");
-		exit 1;
+# }}}
+# genesis ci-show-changes - Show what changes would be deployed based on changes and upstream cache via the CI/CD Pipeline {{{
+command("ci-show-changes", {scope => 'pipeline'}, <<EOF,
+genesis v$Genesis::VERSION$Genesis::BUILD
+USAGE genesis ci-show-changes
+
+OPTIONS
+$GLOBAL_USAGE
+EOF
+sub {
+	explain("[#G{genesis} ci-pipeline-deploy] v#G{$Genesis::VERSION}\n");
+
+	my %options;
+	options(\@_, \%options, qw/
+	/);
+	usage(1) if @_;
+
+	# Same environment variables needed as with ci-pipeline-deploy
+	my @undefined = grep { !$ENV{$_} }
+	qw/CURRENT_ENV
+	GIT_BRANCH
+	OUT_DIR WORKING_DIR
+	VAULT_ROLE_ID VAULT_SECRET_ID VAULT_ADDR/;
+	push @undefined, "CACHE_DIR" if ($ENV{PREVIOUS_ENV} && ! $ENV{CACHE_DIR});
+	bail_on_missing_pipeline_environment_variables(@undefined);
+
+	bail("The pipeline must specify either GIT_PRIVATE_KEY, or GIT_USERNAME and GIT_PASSWORD")
+		unless $ENV{GIT_PRIVATE_KEY} || ($ENV{GIT_USERNAME} && $ENV{GIT_PASSWORD});
+
+	vault_auth();
+
+	# Load the environment in order to check other required variables
+	pushd $ENV{WORKING_DIR};
+	my $env = Genesis::Top->new('.')->load_env($ENV{CURRENT_ENV})->with_vault();
+	if ($env->needs_bosh_create_env) {
+		printf "Proto-BOSH environments do not contain a record of how they were last\n".
+					 "deployed, so no changes can be calculated and displayed.";
+		exit 0;
 	}
 
-}
+	push(@undefined, grep { !$ENV{$_} }
+		qw/BOSH_ENVIRONMENT BOSH_CA_CERT
+		   BOSH_CLIENT BOSH_CLIENT_SECRET/);
+	bail_on_missing_pipeline_environment_variables(@undefined);
+
+	if ($ENV{PREVIOUS_ENV}) {
+		run({ onfailure => "Failed to run `$_`", interactive => 1 }, $_) for (
+			"rm -rf .genesis/config .genesis/kits .genesis/cached",
+			"cp -R '../$ENV{CACHE_DIR}/.genesis/cached' .genesis/cached",
+			"cp -R '../$ENV{CACHE_DIR}/.genesis/config' .genesis/config",
+			"cp -R '../$ENV{CACHE_DIR}/.genesis/kits' .genesis/kits"
+		);
+	}
+
+	Genesis::BOSH->alias(scalar $env->lookup_bosh_target);
+
+	mkfile_or_fail "updates.yml", 0644, $env->with_bosh
+		->download_required_configs('blueprint', 'manifest')
+		->manifest(redact => 0, prune => 1);
+
+	mkfile_or_fail "dry-run.sh", 0755, <<'EOF';
+#!/bin/bash
+set -e
+deployment="${1}-${2}"
+new_manifest="$(cat ${3})"
+new_configs="$(bosh curl /configs | jq -r 'map(.content)[]' \
+                    | spruce merge --multi-doc -)"
+new_variables="$(echo "credhub_variables:"; bosh curl "/deployments/${deployment}/variables" \
+                    | jq -r 'map(.name)[]' \
+                    | xargs -L1 sh -c 'credhub get --output-json -n "${1}"' sh \
+                    | jq -r '"- \(.name)@\(.id)"')"
+
+current_manifest="$(bosh -d ${deployment} manifest)"
+current_configs="$(bosh curl /deployment_configs\?deployment=${deployment} \
+                        | jq 'map(.config.id)[]' \
+                        | xargs -L1 sh -c 'bosh curl "/configs/${1}"' sh \
+                        | jq -r '.content' \
+                        | spruce merge --multi-doc -)"
+current_variables="$(bosh int <(bosh curl "/deployments/${deployment}/variables" \
+                          | jq 'map("\(.name)@\(.id)") | {credhub_variables: .}'))"
+
+bosh diff-config --json \
+     --from-content <(bosh int <(printf "%s\n%s\n%s" "${current_configs}" "${current_manifest}" "${current_variables}")) \
+     --to-content <(bosh int <(printf "%s\n%s\n%s" "${new_configs}" "${new_manifest}" "${new_variables}")) \
+     | jq -r '.Tables[0].Rows[0].diff'
+EOF
+
+	my %credhub_env = $env->credhub_connection_env();
+	my (undef,$rc) = run( {interactive => 1, env => \%credhub_env}, './dry-run.sh', $env->name, $env->type, 'updates.yml');
+	bail "Failed to determine changes." if $rc;
+	popd;
+});
+
 # }}}
 # genesis ci-generate-cache - Generate cache for an environment via the CI/CD Pipeline {{{
 command("ci-generate-cache", {scope => 'pipeline'}, <<EOF,
@@ -2579,7 +2675,7 @@ sub {
 	my @undefined = grep { !$ENV{$_} }
 		qw/CURRENT_ENV GIT_BRANCH
 		   WORKING_DIR OUT_DIR/;
-	__bail_on_missing_pipeline_environment_variables(@undefined);
+	bail_on_missing_pipeline_environment_variables(@undefined);
 	bail("The pipeline must specify either GIT_PRIVATE_KEY, or GIT_USERNAME and GIT_PASSWORD")
 		unless $ENV{GIT_PRIVATE_KEY} || ($ENV{GIT_USERNAME} && $ENV{GIT_PASSWORD});
 
@@ -2621,7 +2717,7 @@ sub {
 		qw/CURRENT_ENV ERRAND_NAME
 		   BOSH_ENVIRONMENT BOSH_CA_CERT
 		   BOSH_CLIENT BOSH_CLIENT_SECRET/;
-	__bail_on_missing_pipeline_environment_variables(@undefined);
+	bail_on_missing_pipeline_environment_variables(@undefined);
 
 	my $env = Genesis::Top->new('.')->load_env($ENV{CURRENT_ENV})->with_vault()->with_bosh();
 	Genesis::BOSH->alias(scalar $env->lookup_bosh_target);
