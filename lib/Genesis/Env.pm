@@ -1161,7 +1161,7 @@ sub deploy {
 	$exodus->{manifest_sha1} = digest_file_hex($manifest_path, 'SHA-1');
 	$exodus->{bosh} = $self->bosh_target || "(none)";
 	debug("setting exodus data in the Vault, for use later by other deployments");
-	$ok = $self->vault->query(
+	$ok = $self->vault->authenticate->query(
 		{ onfailure => "#R{Failed to export $self->{name} metadata.}\n".
 		               "Deployment was still successful, but metadata used by addons and other kits is outdated.\n".
 		               "This may be resolved by deploying again, or it may be a permissions issue while trying to\n".
