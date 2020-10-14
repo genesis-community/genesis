@@ -1016,17 +1016,16 @@ EOF
 
 EOF
 		}
+		# Locker Resources
+		#
+		# There are two locker resources: one for the BOSH director being deployed
+		# to, and one for the deployment being done.  The BOSH director must be
+		# named for the BOSH director target for the current environment (not used
+		# if it's a proto-BOSH.  This is done so that the deployment lock for BOSH
+		# deployments matches the bosh lock for environments being deployed by it.
 		if ($pipeline->{pipeline}{locker}{url}) {
 			my $deployment_suffix = $top->type;
 			unless ($E->needs_bosh_create_env) {
-				my $bosh_lock = $env;
-				if ($pipeline->{pipeline}{boshes}{$env}{url} && $pipeline->{pipeline}{boshes}{$env}{url} =~ m|https?://(.*)?:(.*)|) {
-					my $addr = gethostbyname($1);
-					$bosh_lock = inet_ntoa($addr) . ":" . $2;
-				}
-
-				# <alias>-bosh-lock is used to prevent the parent bosh from upgrading while we deploy
-				# - not necessary for create-env
 				print $OUT <<EOF;
   - name: ${alias}-bosh-lock
     type: locker
@@ -1354,50 +1353,46 @@ EOF
       ensure:
         do:
 EOF
-			unless ($E->needs_bosh_create_env) {
-				# <alias>-bosh-lock is used to prevent the parent bosh from upgrading while we deploy
-				# - not necessary for create-env
-				print $OUT <<EOF;
+			# <alias>-bosh-lock is used to prevent the parent bosh from upgrading while we deploy
+			# - not necessary for create-env
+			print $OUT <<EOF unless ($E->needs_bosh_create_env);
         - put: ${alias}-bosh-lock
           $tag_yaml
           params:
             lock_op: unlock
             key: dont-upgrade-bosh-on-me
-            locked_by: ${alias}-${deployment_suffix}
+            locked_by: ${env}-${deployment_suffix}
 EOF
-			}
 			print $OUT <<EOF;
         - put: ${alias}-deployment-lock
           $tag_yaml
           params:
             lock_op: unlock
             key: i-need-to-deploy-myself
-            locked_by: ${alias}-${deployment_suffix}
+            locked_by: ${env}-${deployment_suffix}
 EOF
 		}
 		print $OUT <<EOF;
       do:
 EOF
 		if ($pipeline->{pipeline}{locker}{url}) {
-			unless ($E->needs_bosh_create_env) {
 				# <alias>-bosh-lock is used to prevent the parent bosh from upgrading while we deploy
 				# - not necessary for create-env
-				print $OUT <<EOF;
+			print $OUT <<EOF unless ($E->needs_bosh_create_env);
       - put: ${alias}-bosh-lock
         $tag_yaml
         params:
           lock_op: lock
           key: dont-upgrade-bosh-on-me
-          locked_by: ${alias}-${deployment_suffix}
+          locked_by: ${env}-${deployment_suffix}
 EOF
-			}
 			print $OUT <<EOF;
       - put: ${alias}-deployment-lock
         $tag_yaml
         params:
           lock_op: lock
           key: i-need-to-deploy-myself
-          locked_by: ${alias}-${deployment_suffix}
+          locked_by: ${env}-${deployment_suffix}
 EOF
 		}
 		print $OUT <<EOF;
