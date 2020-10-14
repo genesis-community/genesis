@@ -121,7 +121,7 @@ sub parse_pipeline {
 	}
 	for (keys %{$p->{pipeline}}) {
 		push @errors, "Unrecognized `pipeline.$_' key found."
-			unless m/^(name|public|tagged|errands|vault|git|slack|hipchat|stride|email|boshes|task|layout|layouts|groups|debug|stemcells|skip_upkeep|locker|unredacted|notifications|auto-update)$/;
+			unless m/^(name|public|tagged|errands|vault|git|slack|hipchat|stride|email|boshes|task|layout|layouts|groups|debug|locker|unredacted|notifications|auto-update)$/;
 	}
 	for (qw(name vault git boshes)) {
 		push @errors, "`pipeline.$_' is required."
@@ -378,7 +378,7 @@ sub parse_pipeline {
 				# allowed subkeys
 				for (keys %{$p->{pipeline}{boshes}{$env}}) {
 					push @errors, "Unrecognized `pipeline.boshes[$env].$_' key found."
-						unless m/^(stemcells|url|ca_cert|username|password|alias)$/;
+						unless m/^(url|ca_cert|username|password|alias)$/;
 				}
 			}
 		}

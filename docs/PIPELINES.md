@@ -224,10 +224,6 @@ pipeline:
     url:    https://127.0.0.1:8200
     verify: yes
 
-  stemcells:
-    bosh-lite: bosh-warden-boshlite-ubuntu-trusty-go_agent
-    aws: bosh-aws-xen-hvm-ubuntu-trusty-go_agent
-
   boshes:
     sandbox:
       alias:    sb # Optional
@@ -235,24 +231,18 @@ pipeline:
       ca_cert:  (( vault "secret/bosh/sandbox/ssl/ca:certificate" ))
       username: sb-admin
       password: (( vault "secret/bosh/sandbox/admin:password" ))
-      stemcells:
-      - bosh-lite
 
     preprod:
       url:      https://preprod.example.com:25555
       ca_cert:  (( vault "secret/bosh/preprod/ssl/ca:certificate" ))
       username: pp-admin
       password: (( vault "secret/bosh/preprod/admin:password" ))
-      stemcells:
-      - aws
 
     prod:
       url:      https://prod.example.com:25555
       ca_cert:  (( vault "secret/bosh/prod/ssl/ca:certificate" ))
       username: pr-admin
       password: (( vault "secret/bosh/prod/admin:password" ))
-      stemcells:
-      - aws
 
   smoke-tests: run-my-smoke-tests
   tagged: yes
