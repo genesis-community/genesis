@@ -3,7 +3,6 @@ pipeline:
   name: all
   boshes:
     base:
-      stemcells: [ bosh-lite ]
       url:      https://bosh.example.com:25555
       ca_cert: |
         ----- BEGIN CERTIFICATE -----
@@ -31,10 +30,6 @@ pipeline:
     url: https://127.0.0.1:8200
     role: this-is-a-role
     secret: this-is-a-secret
-
-  skip_upkeep: true
-  stemcells:
-    bosh-lite: bosh-warden-boshlite-ubuntu-trusty-go_agent
 
   layouts:
     default: |

@@ -33,7 +33,6 @@ pipeline:
     role: this-is-a-role
     secret: this-is-a-secret
     namespace: henchco
-  skip_upkeep: true
 
   layouts:
     default: |

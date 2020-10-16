@@ -2,7 +2,6 @@
 pipeline:
   name: aws-1
   public: yes
-  skip_upkeep: true
 
   task:
     image:   custom/concourse-image

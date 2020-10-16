@@ -3,7 +3,6 @@ pipeline:
   name: aws-1
   boshes:
     client-aws-1-sandbox:
-      stemcells: [bosh-lite]
       url:      https://sandbox.example.com:25555
       ca_cert: |
         ----- BEGIN CERTIFICATE -----
@@ -12,7 +11,6 @@ pipeline:
       username: sb-admin
       password: PaeM2Eip
     client-aws-1-preprod:
-      stemcells: [bosh-lite]
       url:      https://preprod.example.com:25555
       ca_cert: |
         ----- BEGIN CERTIFICATE -----
@@ -21,7 +19,6 @@ pipeline:
       username: pp-admin
       password: Ahti2eeth3aewohnee1Phaec
     client-aws-1-prod:
-      stemcells: [bosh-lite]
       url:      https://prod.example.com:25555
       ca_cert: |
         ----- BEGIN CERTIFICATE -----
@@ -29,14 +26,11 @@ pipeline:
         ----- END CERTIFICATE -----
       username: pr-admin
       password: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
-  stemcells:
-    bosh-lite: bosh-warden-boshlite-ubuntu-trusty-go_agent
 
   vault:
     url: https://127.0.0.1:8200
     role: this-is-a-role
     secret: this-is-a-secret
-  skip_upkeep: true
   layouts:
     default: |
       auto *sandbox *preprod

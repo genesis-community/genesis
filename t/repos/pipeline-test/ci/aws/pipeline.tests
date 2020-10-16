@@ -5,7 +5,6 @@ pipeline:
   boshes:
     client-aws-1-sandbox:
       alias: sandbox
-      stemcells: [bosh-lite]
       url:      https://sandbox.example.com:25555
       ca_cert: |
         ----- BEGIN CERTIFICATE -----
@@ -15,7 +14,6 @@ pipeline:
       password: PaeM2Eip
     client-aws-1-preprod:
       alias: preprod
-      stemcells: [bosh-lite]
       url:      https://preprod.example.com:25555
       ca_cert: |
         ----- BEGIN CERTIFICATE -----
@@ -25,7 +23,6 @@ pipeline:
       password: Ahti2eeth3aewohnee1Phaec
     client-aws-1-prod:
       alias: prod
-      stemcells: [bosh-lite]
       url:      https://prod.example.com:25555
       ca_cert: |
         ----- BEGIN CERTIFICATE -----
@@ -40,11 +37,6 @@ pipeline:
     secret: this-is-a-secret
 
   debug: true
-
-  stemcells:
-    bosh-lite: bosh-warden-boshlite-ubuntu-trusty-go_agent
-
-  skip_upkeep: true
 
   layouts:
     default: |

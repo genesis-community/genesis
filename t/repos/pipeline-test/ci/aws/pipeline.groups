@@ -21,7 +21,6 @@ pipeline:
 
   boshes:
     client-aws-1-sandbox:
-      stemcells: [bosh-lite]
       url:      https://sandbox.bosh-lite.com:25555
       ca_cert: |
         ----- BEGIN CERTIFICATE -----
@@ -30,7 +29,6 @@ pipeline:
       username: sb-admin
       password: PaeM2Eip
     client-aws-1-preprod:
-      stemcells: [bosh-lite]
       url:      https://preprod.bosh-lite.com:25555
       ca_cert: |
         ----- BEGIN CERTIFICATE -----
@@ -39,7 +37,6 @@ pipeline:
       username: pp-admin
       password: Ahti2eeth3aewohnee1Phaec
     client-aws-1-prod:
-      stemcells: [bosh-lite]
       url:      https://prod.bosh-lite.com:25555
       ca_cert: |
         ----- BEGIN CERTIFICATE -----
@@ -47,8 +44,6 @@ pipeline:
         ----- END CERTIFICATE -----
       username: pr-admin
       password: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
-  stemcells:
-    bosh-lite: bosh-warden-boshlite-ubuntu-trusty-go_agent
 
   vault:
     role: this-is-a-role

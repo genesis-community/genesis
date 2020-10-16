@@ -104,6 +104,7 @@ sub enable_features_hook {
 	my $disabled = $kit->path('hooks/features-disabled');
 	my $enabled  = $kit->path('hooks/features');
 	qx(mv $disabled $enabled);
+	delete $kit->{__hook_check}{features}
 }
 
 

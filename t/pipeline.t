@@ -43,7 +43,7 @@ jobs:
           source:
             repository: starkandwayne/concourse
             tag: latest
-          type: docker-image
+          type: registry-image
         inputs:
         - name: client-aws-1-preprod-changes
         - name: client-aws-1-preprod-cache
@@ -62,6 +62,8 @@ jobs:
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-preprod
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -74,7 +76,7 @@ jobs:
           VAULT_ADDR: https://127.0.0.1:8200
           VAULT_ROLE_ID: this-is-a-role
           VAULT_SECRET_ID: this-is-a-secret
-          VAULT_SKIP_VERIFY: null
+          VAULT_SKIP_VERIFY: false
           WORKING_DIR: client-aws-1-preprod-changes
         platform: linux
         run:
@@ -91,7 +93,7 @@ jobs:
           source:
             repository: starkandwayne/concourse
             tag: latest
-          type: docker-image
+          type: registry-image
         inputs:
         - name: out
         - name: client-aws-1-preprod-cache
@@ -101,6 +103,8 @@ jobs:
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-preprod
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -146,20 +150,65 @@ jobs:
   - in_parallel:
     - get: client-aws-1-prod-changes
       trigger: true
-    - get: client-aws-1-prod-cloud-config
-      trigger: true
-    - get: client-aws-1-prod-runtime-config
-      trigger: true
     - get: client-aws-1-prod-cache
       passed:
       - client-aws-1-preprod-pipeline-test
       trigger: true
+    - get: client-aws-1-prod-cloud-config
+      trigger: true
+    - get: client-aws-1-prod-runtime-config
+      trigger: true
+  - config:
+      image_resource:
+        source:
+          repository: starkandwayne/concourse
+          tag: latest
+        type: registry-image
+      inputs:
+      - name: client-aws-1-prod-changes
+      - name: client-aws-1-prod-cache
+      params:
+        BOSH_CA_CERT: |
+          ----- BEGIN CERTIFICATE -----
+          cert-goes-here
+          ----- END CERTIFICATE -----
+        BOSH_CLIENT: pr-admin
+        BOSH_CLIENT_SECRET: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
+        BOSH_ENVIRONMENT: https://prod.example.com:25555
+        BOSH_NON_INTERACTIVE: true
+        CACHE_DIR: client-aws-1-prod-cache
+        CI_NO_REDACT: 0
+        CURRENT_ENV: client-aws-1-prod
+        GENESIS_HONOR_ENV: 1
+        GIT_AUTHOR_EMAIL: concourse@pipeline
+        GIT_AUTHOR_NAME: Concourse Bot
+        GIT_BRANCH: master
+        GIT_PRIVATE_KEY: |
+          -----BEGIN RSA PRIVATE KEY-----
+          lol. you didn't really think that
+          we'd put the key here, in a test,
+          did you?!
+          -----END RSA PRIVATE KEY-----
+        OUT_DIR: out/git
+        PREVIOUS_ENV: client-aws-1-preprod
+        VAULT_ADDR: https://127.0.0.1:8200
+        VAULT_ROLE_ID: this-is-a-role
+        VAULT_SECRET_ID: this-is-a-secret
+        VAULT_SKIP_VERIFY: false
+        WORKING_DIR: client-aws-1-prod-changes
+      platform: linux
+      run:
+        args:
+        - ci-show-changes
+        path: client-aws-1-prod-cache/.genesis/bin/genesis
+    task: show-pending-changes
   - in_parallel:
     - params:
         channel: '#botspam'
         icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
         text: 'aws-1: Changes are staged to be deployed to client-aws-1-prod-pipeline-test,
-          please schedule + run a deploy via Concourse'
+          see notify-client-aws-1-prod-pipeline-test-changes job for change summary,
+          then schedule and run a deploy via Concourse'
         username: runwaybot
       put: slack
   public: true
@@ -181,7 +230,7 @@ jobs:
           source:
             repository: starkandwayne/concourse
             tag: latest
-          type: docker-image
+          type: registry-image
         inputs:
         - name: client-aws-1-prod-changes
         - name: client-aws-1-prod-cache
@@ -200,6 +249,8 @@ jobs:
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-prod
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -212,7 +263,7 @@ jobs:
           VAULT_ADDR: https://127.0.0.1:8200
           VAULT_ROLE_ID: this-is-a-role
           VAULT_SECRET_ID: this-is-a-secret
-          VAULT_SKIP_VERIFY: null
+          VAULT_SKIP_VERIFY: false
           WORKING_DIR: client-aws-1-prod-changes
         platform: linux
         run:
@@ -229,7 +280,7 @@ jobs:
           source:
             repository: starkandwayne/concourse
             tag: latest
-          type: docker-image
+          type: registry-image
         inputs:
         - name: out
         - name: client-aws-1-prod-cache
@@ -239,6 +290,8 @@ jobs:
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-prod
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -290,7 +343,7 @@ jobs:
           source:
             repository: starkandwayne/concourse
             tag: latest
-          type: docker-image
+          type: registry-image
         inputs:
         - name: client-aws-1-sandbox-changes
         outputs:
@@ -308,6 +361,8 @@ jobs:
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-sandbox
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -320,7 +375,7 @@ jobs:
           VAULT_ADDR: https://127.0.0.1:8200
           VAULT_ROLE_ID: this-is-a-role
           VAULT_SECRET_ID: this-is-a-secret
-          VAULT_SKIP_VERIFY: null
+          VAULT_SKIP_VERIFY: false
           WORKING_DIR: client-aws-1-sandbox-changes
         platform: linux
         run:
@@ -337,7 +392,7 @@ jobs:
           source:
             repository: starkandwayne/concourse
             tag: latest
-          type: docker-image
+          type: registry-image
         inputs:
         - name: out
         - name: client-aws-1-sandbox-changes
@@ -347,6 +402,8 @@ jobs:
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-sandbox
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -391,31 +448,31 @@ resource_types:
 - name: script
   source:
     repository: cfcommunity/script-resource
-  type: docker-image
+  type: registry-image
 - name: email
   source:
     repository: pcfseceng/email-resource
-  type: docker-image
+  type: registry-image
 - name: slack-notification
   source:
     repository: cfcommunity/slack-notification-resource
-  type: docker-image
+  type: registry-image
 - name: hipchat-notification
   source:
     repository: cfcommunity/hipchat-notification-resource
-  type: docker-image
+  type: registry-image
 - name: stride-notification
   source:
     repository: starkandwayne/stride-notification-resource
-  type: docker-image
+  type: registry-image
 - name: bosh-config
   source:
     repository: cfcommunity/bosh-config-resource
-  type: docker-image
+  type: registry-image
 - name: locker
   source:
     repository: cfcommunity/locker-resource
-  type: docker-image
+  type: registry-image
 resources:
 - icon: github
   name: git
@@ -628,7 +685,7 @@ jobs:
           source:
             repository: starkandwayne/concourse
             tag: latest
-          type: docker-image
+          type: registry-image
         inputs:
         - name: client-aws-1-preprod-changes
         - name: client-aws-1-preprod-cache
@@ -647,6 +704,8 @@ jobs:
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-preprod
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -660,7 +719,7 @@ jobs:
           VAULT_NAMESPACE: henchco
           VAULT_ROLE_ID: this-is-a-role
           VAULT_SECRET_ID: this-is-a-secret
-          VAULT_SKIP_VERIFY: null
+          VAULT_SKIP_VERIFY: false
           WORKING_DIR: client-aws-1-preprod-changes
         platform: linux
         run:
@@ -679,7 +738,7 @@ jobs:
           source:
             repository: starkandwayne/concourse
             tag: latest
-          type: docker-image
+          type: registry-image
         inputs:
         - name: out
         - name: client-aws-1-preprod-cache
@@ -689,6 +748,8 @@ jobs:
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-preprod
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -736,6 +797,10 @@ jobs:
   - in_parallel:
     - get: client-aws-1-prod-changes
       trigger: true
+    - get: client-aws-1-prod-cache
+      passed:
+      - client-aws-1-preprod-pipeline-test
+      trigger: true
     - get: client-aws-1-prod-cloud-config
       tags:
       - client-aws-1-prod
@@ -744,16 +809,60 @@ jobs:
       tags:
       - client-aws-1-prod
       trigger: true
-    - get: client-aws-1-prod-cache
-      passed:
-      - client-aws-1-preprod-pipeline-test
-      trigger: true
+  - config:
+      image_resource:
+        source:
+          repository: starkandwayne/concourse
+          tag: latest
+        type: registry-image
+      inputs:
+      - name: client-aws-1-prod-changes
+      - name: client-aws-1-prod-cache
+      params:
+        BOSH_CA_CERT: |
+          ----- BEGIN CERTIFICATE -----
+          cert-goes-here
+          ----- END CERTIFICATE -----
+        BOSH_CLIENT: pr-admin
+        BOSH_CLIENT_SECRET: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
+        BOSH_ENVIRONMENT: https://prod.example.com:25555
+        BOSH_NON_INTERACTIVE: true
+        CACHE_DIR: client-aws-1-prod-cache
+        CI_NO_REDACT: 0
+        CURRENT_ENV: client-aws-1-prod
+        GENESIS_HONOR_ENV: 1
+        GIT_AUTHOR_EMAIL: concourse@pipeline
+        GIT_AUTHOR_NAME: Concourse Bot
+        GIT_BRANCH: master
+        GIT_PRIVATE_KEY: |
+          -----BEGIN RSA PRIVATE KEY-----
+          lol. you didn't really think that
+          we'd put the key here, in a test,
+          did you?!
+          -----END RSA PRIVATE KEY-----
+        OUT_DIR: out/git
+        PREVIOUS_ENV: client-aws-1-preprod
+        VAULT_ADDR: https://127.0.0.1:8200
+        VAULT_NAMESPACE: henchco
+        VAULT_ROLE_ID: this-is-a-role
+        VAULT_SECRET_ID: this-is-a-secret
+        VAULT_SKIP_VERIFY: false
+        WORKING_DIR: client-aws-1-prod-changes
+      platform: linux
+      run:
+        args:
+        - ci-show-changes
+        path: client-aws-1-prod-cache/.genesis/bin/genesis
+    tags:
+    - client-aws-1-prod
+    task: show-pending-changes
   - in_parallel:
     - params:
         channel: '#botspam'
         icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
         text: 'aws-1: Changes are staged to be deployed to client-aws-1-prod-pipeline-test,
-          please schedule + run a deploy via Concourse'
+          see notify-client-aws-1-prod-pipeline-test-changes job for change summary,
+          then schedule and run a deploy via Concourse'
         username: runwaybot
       put: slack
   public: true
@@ -775,7 +884,7 @@ jobs:
           source:
             repository: starkandwayne/concourse
             tag: latest
-          type: docker-image
+          type: registry-image
         inputs:
         - name: client-aws-1-prod-changes
         - name: client-aws-1-prod-cache
@@ -794,6 +903,8 @@ jobs:
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-prod
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -807,7 +918,7 @@ jobs:
           VAULT_NAMESPACE: henchco
           VAULT_ROLE_ID: this-is-a-role
           VAULT_SECRET_ID: this-is-a-secret
-          VAULT_SKIP_VERIFY: null
+          VAULT_SKIP_VERIFY: false
           WORKING_DIR: client-aws-1-prod-changes
         platform: linux
         run:
@@ -826,7 +937,7 @@ jobs:
           source:
             repository: starkandwayne/concourse
             tag: latest
-          type: docker-image
+          type: registry-image
         inputs:
         - name: out
         - name: client-aws-1-prod-cache
@@ -836,6 +947,8 @@ jobs:
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-prod
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -893,7 +1006,7 @@ jobs:
           source:
             repository: starkandwayne/concourse
             tag: latest
-          type: docker-image
+          type: registry-image
         inputs:
         - name: client-aws-1-sandbox-changes
         outputs:
@@ -911,6 +1024,8 @@ jobs:
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-sandbox
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -924,7 +1039,7 @@ jobs:
           VAULT_NAMESPACE:  henchco
           VAULT_ROLE_ID: this-is-a-role
           VAULT_SECRET_ID: this-is-a-secret
-          VAULT_SKIP_VERIFY: null
+          VAULT_SKIP_VERIFY: false
           WORKING_DIR: client-aws-1-sandbox-changes
         platform: linux
         run:
@@ -943,7 +1058,7 @@ jobs:
           source:
             repository: starkandwayne/concourse
             tag: latest
-          type: docker-image
+          type: registry-image
         inputs:
         - name: out
         - name: client-aws-1-sandbox-changes
@@ -953,6 +1068,8 @@ jobs:
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-sandbox
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -999,31 +1116,31 @@ resource_types:
 - name: script
   source:
     repository: cfcommunity/script-resource
-  type: docker-image
+  type: registry-image
 - name: email
   source:
     repository: pcfseceng/email-resource
-  type: docker-image
+  type: registry-image
 - name: slack-notification
   source:
     repository: cfcommunity/slack-notification-resource
-  type: docker-image
+  type: registry-image
 - name: hipchat-notification
   source:
     repository: cfcommunity/hipchat-notification-resource
-  type: docker-image
+  type: registry-image
 - name: stride-notification
   source:
     repository: starkandwayne/stride-notification-resource
-  type: docker-image
+  type: registry-image
 - name: bosh-config
   source:
     repository: cfcommunity/bosh-config-resource
-  type: docker-image
+  type: registry-image
 - name: locker
   source:
     repository: cfcommunity/locker-resource
-  type: docker-image
+  type: registry-image
 resources:
 - icon: github
   name: git
@@ -1244,7 +1361,7 @@ jobs:
           source:
             repository: starkandwayne/concourse
             tag: latest
-          type: docker-image
+          type: registry-image
         inputs:
         - name: preprod-changes
         - name: preprod-cache
@@ -1264,6 +1381,8 @@ jobs:
           CURRENT_ENV: client-aws-1-preprod
           DEBUG: 1
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PASSWORD: weneedareplacement!
           GIT_USERNAME: fleemco
@@ -1272,7 +1391,7 @@ jobs:
           VAULT_ADDR: https://127.0.0.1:8200
           VAULT_ROLE_ID: this-is-a-role
           VAULT_SECRET_ID: this-is-a-secret
-          VAULT_SKIP_VERIFY: null
+          VAULT_SKIP_VERIFY: false
           WORKING_DIR: preprod-changes
         platform: linux
         run:
@@ -1289,7 +1408,7 @@ jobs:
           source:
             repository: starkandwayne/concourse
             tag: latest
-          type: docker-image
+          type: registry-image
         inputs:
         - name: out
         - name: preprod-cache
@@ -1318,7 +1437,7 @@ jobs:
           source:
             repository: starkandwayne/concourse
             tag: latest
-          type: docker-image
+          type: registry-image
         inputs:
         - name: out
         - name: preprod-cache
@@ -1329,6 +1448,8 @@ jobs:
           CURRENT_ENV: client-aws-1-preprod
           DEBUG: 1
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PASSWORD: weneedareplacement!
           GIT_USERNAME: fleemco
@@ -1370,20 +1491,62 @@ jobs:
   - in_parallel:
     - get: prod-changes
       trigger: true
-    - get: prod-cloud-config
-      trigger: true
-    - get: prod-runtime-config
-      trigger: true
     - get: prod-cache
       passed:
       - preprod-pipeline-test
       trigger: true
+    - get: prod-cloud-config
+      trigger: true
+    - get: prod-runtime-config
+      trigger: true
+  - config:
+      image_resource:
+        source:
+          repository: starkandwayne/concourse
+          tag: latest
+        type: registry-image
+      inputs:
+      - name: prod-changes
+      - name: prod-cache
+      params:
+        BOSH_CA_CERT: |
+          ----- BEGIN CERTIFICATE -----
+          cert-goes-here
+          ----- END CERTIFICATE -----
+        BOSH_CLIENT: pr-admin
+        BOSH_CLIENT_SECRET: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
+        BOSH_ENVIRONMENT: https://prod.example.com:25555
+        BOSH_NON_INTERACTIVE: true
+        CACHE_DIR: prod-cache
+        CI_NO_REDACT: 0
+        CURRENT_ENV: client-aws-1-prod
+        DEBUG: 1
+        GENESIS_HONOR_ENV: 1
+        GIT_AUTHOR_EMAIL: concourse@pipeline
+        GIT_AUTHOR_NAME: Concourse Bot
+        GIT_BRANCH: master
+        GIT_PASSWORD: weneedareplacement!
+        GIT_USERNAME: fleemco
+        OUT_DIR: out/git
+        PREVIOUS_ENV: client-aws-1-preprod
+        VAULT_ADDR: https://127.0.0.1:8200
+        VAULT_ROLE_ID: this-is-a-role
+        VAULT_SECRET_ID: this-is-a-secret
+        VAULT_SKIP_VERIFY: false
+        WORKING_DIR: prod-changes
+      platform: linux
+      run:
+        args:
+        - ci-show-changes
+        path: prod-cache/.genesis/bin/genesis
+    task: show-pending-changes
   - in_parallel:
     - params:
         channel: '#botspam'
         icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
         text: 'aws-1: Changes are staged to be deployed to client-aws-1-prod-pipeline-test,
-          please schedule + run a deploy via Concourse'
+          see notify-prod-pipeline-test-changes job for change summary, then schedule
+          and run a deploy via Concourse'
         username: runwaybot
       put: slack
   public: true
@@ -1405,7 +1568,7 @@ jobs:
           source:
             repository: starkandwayne/concourse
             tag: latest
-          type: docker-image
+          type: registry-image
         inputs:
         - name: prod-changes
         - name: prod-cache
@@ -1425,6 +1588,8 @@ jobs:
           CURRENT_ENV: client-aws-1-prod
           DEBUG: 1
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PASSWORD: weneedareplacement!
           GIT_USERNAME: fleemco
@@ -1433,7 +1598,7 @@ jobs:
           VAULT_ADDR: https://127.0.0.1:8200
           VAULT_ROLE_ID: this-is-a-role
           VAULT_SECRET_ID: this-is-a-secret
-          VAULT_SKIP_VERIFY: null
+          VAULT_SKIP_VERIFY: false
           WORKING_DIR: prod-changes
         platform: linux
         run:
@@ -1450,7 +1615,7 @@ jobs:
           source:
             repository: starkandwayne/concourse
             tag: latest
-          type: docker-image
+          type: registry-image
         inputs:
         - name: out
         - name: prod-cache
@@ -1479,7 +1644,7 @@ jobs:
           source:
             repository: starkandwayne/concourse
             tag: latest
-          type: docker-image
+          type: registry-image
         inputs:
         - name: out
         - name: prod-cache
@@ -1490,6 +1655,8 @@ jobs:
           CURRENT_ENV: client-aws-1-prod
           DEBUG: 1
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PASSWORD: weneedareplacement!
           GIT_USERNAME: fleemco
@@ -1537,7 +1704,7 @@ jobs:
           source:
             repository: starkandwayne/concourse
             tag: latest
-          type: docker-image
+          type: registry-image
         inputs:
         - name: sandbox-changes
         outputs:
@@ -1556,6 +1723,8 @@ jobs:
           CURRENT_ENV: client-aws-1-sandbox
           DEBUG: 1
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PASSWORD: weneedareplacement!
           GIT_USERNAME: fleemco
@@ -1564,7 +1733,7 @@ jobs:
           VAULT_ADDR: https://127.0.0.1:8200
           VAULT_ROLE_ID: this-is-a-role
           VAULT_SECRET_ID: this-is-a-secret
-          VAULT_SKIP_VERIFY: null
+          VAULT_SKIP_VERIFY: false
           WORKING_DIR: sandbox-changes
         platform: linux
         run:
@@ -1581,7 +1750,7 @@ jobs:
           source:
             repository: starkandwayne/concourse
             tag: latest
-          type: docker-image
+          type: registry-image
         inputs:
         - name: out
         - name: sandbox-changes
@@ -1610,7 +1779,7 @@ jobs:
           source:
             repository: starkandwayne/concourse
             tag: latest
-          type: docker-image
+          type: registry-image
         inputs:
         - name: out
         - name: sandbox-changes
@@ -1621,6 +1790,8 @@ jobs:
           CURRENT_ENV: client-aws-1-sandbox
           DEBUG: 1
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PASSWORD: weneedareplacement!
           GIT_USERNAME: fleemco
@@ -1661,31 +1832,31 @@ resource_types:
 - name: script
   source:
     repository: cfcommunity/script-resource
-  type: docker-image
+  type: registry-image
 - name: email
   source:
     repository: pcfseceng/email-resource
-  type: docker-image
+  type: registry-image
 - name: slack-notification
   source:
     repository: cfcommunity/slack-notification-resource
-  type: docker-image
+  type: registry-image
 - name: hipchat-notification
   source:
     repository: cfcommunity/hipchat-notification-resource
-  type: docker-image
+  type: registry-image
 - name: stride-notification
   source:
     repository: starkandwayne/stride-notification-resource
-  type: docker-image
+  type: registry-image
 - name: bosh-config
   source:
     repository: cfcommunity/bosh-config-resource
-  type: docker-image
+  type: registry-image
 - name: locker
   source:
     repository: cfcommunity/locker-resource
-  type: docker-image
+  type: registry-image
 resources:
 - icon: github
   name: git
@@ -1851,6 +2022,9 @@ groups:
   - client-aws-1-sandbox-pipeline-test
   - notify-client-aws-1-prod-pipeline-test-changes
   name: aws-1
+- jobs:
+  - update-genesis-assets
+  name: genesis-updates
 jobs:
 - name: client-aws-1-preprod-pipeline-test
   plan:
@@ -1889,7 +2063,7 @@ jobs:
           source:
             repository: custom/concourse-image
             tag: rc1
-          type: docker-image
+          type: registry-image
         inputs:
         - name: client-aws-1-preprod-changes
         - name: client-aws-1-preprod-cache
@@ -1909,6 +2083,8 @@ jobs:
           CURRENT_ENV: client-aws-1-preprod
           DEBUG: 1
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -1921,7 +2097,7 @@ jobs:
           VAULT_ADDR: http://myvault.myorg.com:5999
           VAULT_ROLE_ID: this-is-a-role
           VAULT_SECRET_ID: this-is-a-secret
-          VAULT_SKIP_VERIFY: 1
+          VAULT_SKIP_VERIFY: true
           WORKING_DIR: client-aws-1-preprod-changes
         platform: linux
         run:
@@ -1940,7 +2116,7 @@ jobs:
           source:
             repository: custom/concourse-image
             tag: rc1
-          type: docker-image
+          type: registry-image
         inputs:
         - name: out
         - name: client-aws-1-preprod-cache
@@ -1971,7 +2147,7 @@ jobs:
           source:
             repository: custom/concourse-image
             tag: rc1
-          type: docker-image
+          type: registry-image
         inputs:
         - name: out
         - name: client-aws-1-preprod-cache
@@ -1982,6 +2158,8 @@ jobs:
           CURRENT_ENV: client-aws-1-preprod
           DEBUG: 1
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -2058,6 +2236,10 @@ jobs:
   - in_parallel:
     - get: client-aws-1-prod-changes
       trigger: true
+    - get: client-aws-1-prod-cache
+      passed:
+      - client-aws-1-preprod-pipeline-test
+      trigger: true
     - get: client-aws-1-prod-cloud-config
       tags:
       - client-aws-1-prod
@@ -2066,23 +2248,68 @@ jobs:
       tags:
       - client-aws-1-prod
       trigger: true
-    - get: client-aws-1-prod-cache
-      passed:
-      - client-aws-1-preprod-pipeline-test
-      trigger: true
+  - config:
+      image_resource:
+        source:
+          repository: custom/concourse-image
+          tag: rc1
+        type: registry-image
+      inputs:
+      - name: client-aws-1-prod-changes
+      - name: client-aws-1-prod-cache
+      params:
+        BOSH_CA_CERT: |
+          ----- BEGIN CERTIFICATE -----
+          cert-goes-here
+          ----- END CERTIFICATE -----
+        BOSH_CLIENT: pr-admin
+        BOSH_CLIENT_SECRET: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
+        BOSH_ENVIRONMENT: https://prod.bosh-lite.com:25555
+        BOSH_NON_INTERACTIVE: true
+        CACHE_DIR: client-aws-1-prod-cache
+        CI_NO_REDACT: 1
+        CURRENT_ENV: client-aws-1-prod
+        DEBUG: 1
+        GENESIS_HONOR_ENV: 1
+        GIT_AUTHOR_EMAIL: concourse@pipeline
+        GIT_AUTHOR_NAME: Concourse Bot
+        GIT_BRANCH: master
+        GIT_PRIVATE_KEY: |
+          -----BEGIN RSA PRIVATE KEY-----
+          lol. you didn't really think that
+          we'd put the key here, in a test,
+          did you?!
+          -----END RSA PRIVATE KEY-----
+        OUT_DIR: out/git
+        PREVIOUS_ENV: client-aws-1-preprod
+        VAULT_ADDR: http://myvault.myorg.com:5999
+        VAULT_ROLE_ID: this-is-a-role
+        VAULT_SECRET_ID: this-is-a-secret
+        VAULT_SKIP_VERIFY: true
+        WORKING_DIR: client-aws-1-prod-changes
+      platform: linux
+      run:
+        args:
+        - ci-show-changes
+        path: client-aws-1-prod-cache/.genesis/bin/genesis
+    tags:
+    - client-aws-1-prod
+    task: show-pending-changes
   - in_parallel:
     - params:
         channel: '#botspam'
         icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
         text: 'aws-1: Changes are staged to be deployed to client-aws-1-prod-pipeline-test,
-          please schedule + run a deploy via Concourse'
+          see notify-client-aws-1-prod-pipeline-test-changes job for change summary,
+          then schedule and run a deploy via Concourse'
         username: runwaybot
       put: slack
     - params:
         color: gray
         from: runwaybot
         message: 'aws-1: Changes are staged to be deployed to client-aws-1-prod-pipeline-test,
-          please schedule + run a deploy via Concourse'
+          see notify-client-aws-1-prod-pipeline-test-changes job for change summary,
+          then schedule and run a deploy via Concourse'
         notify: false
       put: hipchat
   public: true
@@ -2118,7 +2345,7 @@ jobs:
           source:
             repository: custom/concourse-image
             tag: rc1
-          type: docker-image
+          type: registry-image
         inputs:
         - name: client-aws-1-prod-changes
         - name: client-aws-1-prod-cache
@@ -2138,6 +2365,8 @@ jobs:
           CURRENT_ENV: client-aws-1-prod
           DEBUG: 1
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -2150,7 +2379,7 @@ jobs:
           VAULT_ADDR: http://myvault.myorg.com:5999
           VAULT_ROLE_ID: this-is-a-role
           VAULT_SECRET_ID: this-is-a-secret
-          VAULT_SKIP_VERIFY: 1
+          VAULT_SKIP_VERIFY: true
           WORKING_DIR: client-aws-1-prod-changes
         platform: linux
         run:
@@ -2169,7 +2398,7 @@ jobs:
           source:
             repository: custom/concourse-image
             tag: rc1
-          type: docker-image
+          type: registry-image
         inputs:
         - name: out
         - name: client-aws-1-prod-cache
@@ -2200,7 +2429,7 @@ jobs:
           source:
             repository: custom/concourse-image
             tag: rc1
-          type: docker-image
+          type: registry-image
         inputs:
         - name: out
         - name: client-aws-1-prod-cache
@@ -2211,6 +2440,8 @@ jobs:
           CURRENT_ENV: client-aws-1-prod
           DEBUG: 1
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -2313,7 +2544,7 @@ jobs:
           source:
             repository: custom/concourse-image
             tag: rc1
-          type: docker-image
+          type: registry-image
         inputs:
         - name: client-aws-1-sandbox-changes
         outputs:
@@ -2332,6 +2563,8 @@ jobs:
           CURRENT_ENV: client-aws-1-sandbox
           DEBUG: 1
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -2344,7 +2577,7 @@ jobs:
           VAULT_ADDR: http://myvault.myorg.com:5999
           VAULT_ROLE_ID: this-is-a-role
           VAULT_SECRET_ID: this-is-a-secret
-          VAULT_SKIP_VERIFY: 1
+          VAULT_SKIP_VERIFY: true
           WORKING_DIR: client-aws-1-sandbox-changes
         platform: linux
         run:
@@ -2363,7 +2596,7 @@ jobs:
           source:
             repository: custom/concourse-image
             tag: rc1
-          type: docker-image
+          type: registry-image
         inputs:
         - name: out
         - name: client-aws-1-sandbox-changes
@@ -2394,7 +2627,7 @@ jobs:
           source:
             repository: custom/concourse-image
             tag: rc1
-          type: docker-image
+          type: registry-image
         inputs:
         - name: out
         - name: client-aws-1-sandbox-changes
@@ -2405,6 +2638,8 @@ jobs:
           CURRENT_ENV: client-aws-1-sandbox
           DEBUG: 1
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -2476,35 +2711,148 @@ jobs:
         put: hipchat
   public: true
   serial: true
+- name: update-genesis-assets
+  plan:
+  - in_parallel:
+    - get: git
+    - get: kit-release
+      trigger: true
+    - get: genesis-release
+  - config:
+      image_resource:
+        source:
+          repository: custom/concourse-image
+          tag: rc1
+        type: registry-image
+      inputs:
+      - name: git
+      params:
+        GENESIS_KIT_NAME: somekit-genesis-kit
+      platform: linux
+      run:
+        args:
+        - -ce
+        - |
+          .genesis/bin/genesis list-kits ${GENESIS_KIT_NAME} -u
+        dir: git
+        path: sh
+    task: list-kits
+  - config:
+      image_resource:
+        source:
+          repository: custom/concourse-image
+          tag: rc1
+        type: registry-image
+      inputs:
+      - name: git
+      - name: genesis-release
+      outputs:
+      - name: git
+      params:
+        CI_LABEL: CI
+        GITHUB_EMAIL: concourse@pipeline
+        GITHUB_USER: Concourse Bot
+      platform: linux
+      run:
+        args:
+        - -ce
+        - |
+          chmod +x ../genesis-release/genesis
+          upstream="$(../genesis-release/genesis -v 2>/dev/null | sed -e 's/Genesis v\([^ ]*\) .*/\1/')"
+          current="$(.genesis/bin/genesis -v 2>/dev/null | sed -e 's/Genesis v\([^ ]*\) .*/\1/')"
+          if [[ -z "$upstream" || ! "$upstream" =~ ^[0-9]+(.[0-9]+){2}(-rc[0-9]+)?$ ]]; then
+            echo >&2 "Error: could not get upstream genesis version"
+            exit 1
+          fi
+          if [[ -z "$current" || ! "$current" =~ ^[0-9]+(.[0-9]+){2}(-rc[0-9]+)?$ ]]; then
+            echo >&2 "Error: could not get embedded genesis version"
+            exit 1
+          fi
+          if ../genesis-release/genesis ui-semver $upstream ge $current && \
+           ! ../genesis-release/genesis ui-semver $current ge $upstream ; then
+            ../genesis-release/genesis embed
+            if ! git diff --stat --exit-code .genesis/bin/genesis; then
+              git config --global user.email "${GITHUB_EMAIL}"
+              git config --global user.name "${GITHUB_USER}"
+              git add .genesis/bin/genesis
+              git commit -m "[${CI_LABEL}] bump genesis to $(.genesis/bin/genesis version)"
+            fi
+          fi
+        dir: git
+        path: bash
+    task: update-genesis
+  - config:
+      image_resource:
+        source:
+          repository: custom/concourse-image
+          tag: rc1
+        type: registry-image
+      inputs:
+      - name: git
+      - name: kit-release
+      outputs:
+      - name: git
+      params:
+        CI_LABEL: CI
+        GENESIS_KIT_NAME: somekit
+        GITHUB_AUTH_TOKEN: borkborkbork
+        GITHUB_EMAIL: concourse@pipeline
+        GITHUB_USER: Concourse Bot
+        KIT_VERSION_FILE: client.yml
+      platform: linux
+      run:
+        args:
+        - -ce
+        - |
+          version="$(cat ../kit-release/version)"
+          if ! .genesis/bin/genesis --no-color list-kits ${GENESIS_KIT_NAME} | grep "v$version\$"; then
+            .genesis/bin/genesis fetch-kit ${GENESIS_KIT_NAME}/$version
+          fi
+          sed -i'' "/^kit:/,/^  version:/{s/version.*/version: $version/}" ${KIT_VERSION_FILE}
+          if ! git diff --stat --exit-code .genesis/kits ${KIT_VERSION_FILE}; then
+            git config --global user.email "${GITHUB_EMAIL}"
+            git config --global user.name "${GITHUB_USER}"
+            git add .genesis/kits ${KIT_VERSION_FILE}
+            git commit -m "[${CI_LABEL}] bump kit ${GENESIS_KIT_NAME} to version $version"
+          else
+            echo "No change detected - still using ${GENESIS_KIT_NAME}/$version"
+          fi
+        dir: git
+        path: bash
+    task: fetch-kit
+  - params:
+      rebase: true
+      repository: git
+    put: git
 resource_types:
 - name: script
   source:
     repository: cfcommunity/script-resource
-  type: docker-image
+  type: registry-image
 - name: email
   source:
     repository: pcfseceng/email-resource
-  type: docker-image
+  type: registry-image
 - name: slack-notification
   source:
     repository: cfcommunity/slack-notification-resource
-  type: docker-image
+  type: registry-image
 - name: hipchat-notification
   source:
     repository: cfcommunity/hipchat-notification-resource
-  type: docker-image
+  type: registry-image
 - name: stride-notification
   source:
     repository: starkandwayne/stride-notification-resource
-  type: docker-image
+  type: registry-image
 - name: bosh-config
   source:
     repository: cfcommunity/bosh-config-resource
-  type: docker-image
+  type: registry-image
 - name: locker
   source:
     repository: cfcommunity/locker-resource
-  type: docker-image
+  type: registry-image
 resources:
 - icon: github
   name: git
@@ -2772,6 +3120,23 @@ resources:
     room_id: 1234
     token: abcdefg
   type: hipchat-notification
+- check_every: 24h
+  icon: package-variant
+  name: kit-release
+  source:
+    access_token: borkborkbork
+    github_api_url: https://api.mygitservice.cc/
+    repository: somekit-genesis-kit
+    user: someorg
+  type: github-release
+- check_every: 24h
+  icon: leaf
+  name: genesis-release
+  source:
+    access_token: ""
+    repository: genesis
+    user: genesis-community
+  type: github-release
 EOF
 # }}}
 
@@ -2792,6 +3157,10 @@ jobs:
   - in_parallel:
     - get: client-aws-1-preprod-changes
       trigger: true
+    - get: client-aws-1-preprod-cache
+      passed:
+      - client-aws-1-sandbox-pipeline-test
+      trigger: true
     - get: client-aws-1-preprod-cloud-config
       tags:
       - client-aws-1-preprod
@@ -2800,23 +3169,68 @@ jobs:
       tags:
       - client-aws-1-preprod
       trigger: true
-    - get: client-aws-1-preprod-cache
-      passed:
-      - client-aws-1-sandbox-pipeline-test
-      trigger: true
+  - config:
+      image_resource:
+        source:
+          repository: custom/concourse-image
+          tag: rc1
+        type: registry-image
+      inputs:
+      - name: client-aws-1-preprod-changes
+      - name: client-aws-1-preprod-cache
+      params:
+        BOSH_CA_CERT: |
+          ----- BEGIN CERTIFICATE -----
+          cert-goes-here
+          ----- END CERTIFICATE -----
+        BOSH_CLIENT: pp-admin
+        BOSH_CLIENT_SECRET: Ahti2eeth3aewohnee1Phaec
+        BOSH_ENVIRONMENT: https://preprod.bosh-lite.com:25555
+        BOSH_NON_INTERACTIVE: true
+        CACHE_DIR: client-aws-1-preprod-cache
+        CI_NO_REDACT: 1
+        CURRENT_ENV: client-aws-1-preprod
+        DEBUG: 1
+        GENESIS_HONOR_ENV: 1
+        GIT_AUTHOR_EMAIL: concourse@pipeline
+        GIT_AUTHOR_NAME: Concourse Bot
+        GIT_BRANCH: master
+        GIT_PRIVATE_KEY: |
+          -----BEGIN RSA PRIVATE KEY-----
+          lol. you didn't really think that
+          we'd put the key here, in a test,
+          did you?!
+          -----END RSA PRIVATE KEY-----
+        OUT_DIR: out/git
+        PREVIOUS_ENV: client-aws-1-sandbox
+        VAULT_ADDR: http://myvault.myorg.com:5999
+        VAULT_ROLE_ID: this-is-a-role
+        VAULT_SECRET_ID: this-is-a-secret
+        VAULT_SKIP_VERIFY: true
+        WORKING_DIR: client-aws-1-preprod-changes
+      platform: linux
+      run:
+        args:
+        - ci-show-changes
+        path: client-aws-1-preprod-cache/.genesis/bin/genesis
+    tags:
+    - client-aws-1-preprod
+    task: show-pending-changes
   - in_parallel:
     - params:
         channel: '#botspam'
         icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
         text: 'aws-1: Changes are staged to be deployed to client-aws-1-preprod-pipeline-test,
-          please schedule + run a deploy via Concourse'
+          see notify-client-aws-1-preprod-pipeline-test-changes job for change summary,
+          then schedule and run a deploy via Concourse'
         username: runwaybot
       put: slack
     - params:
         color: gray
         from: runwaybot
         message: 'aws-1: Changes are staged to be deployed to client-aws-1-preprod-pipeline-test,
-          please schedule + run a deploy via Concourse'
+          see notify-client-aws-1-preprod-pipeline-test-changes job for change summary,
+          then schedule and run a deploy via Concourse'
         notify: false
       put: hipchat
   public: true
@@ -2850,7 +3264,7 @@ jobs:
           source:
             repository: custom/concourse-image
             tag: rc1
-          type: docker-image
+          type: registry-image
         inputs:
         - name: client-aws-1-preprod-changes
         - name: client-aws-1-preprod-cache
@@ -2870,6 +3284,8 @@ jobs:
           CURRENT_ENV: client-aws-1-preprod
           DEBUG: 1
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -2882,7 +3298,7 @@ jobs:
           VAULT_ADDR: http://myvault.myorg.com:5999
           VAULT_ROLE_ID: this-is-a-role
           VAULT_SECRET_ID: this-is-a-secret
-          VAULT_SKIP_VERIFY: 1
+          VAULT_SKIP_VERIFY: true
           WORKING_DIR: client-aws-1-preprod-changes
         platform: linux
         run:
@@ -2901,7 +3317,7 @@ jobs:
           source:
             repository: custom/concourse-image
             tag: rc1
-          type: docker-image
+          type: registry-image
         inputs:
         - name: out
         - name: client-aws-1-preprod-cache
@@ -2932,7 +3348,7 @@ jobs:
           source:
             repository: custom/concourse-image
             tag: rc1
-          type: docker-image
+          type: registry-image
         inputs:
         - name: out
         - name: client-aws-1-preprod-cache
@@ -2943,6 +3359,8 @@ jobs:
           CURRENT_ENV: client-aws-1-preprod
           DEBUG: 1
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -3019,6 +3437,10 @@ jobs:
   - in_parallel:
     - get: client-aws-1-prod-changes
       trigger: true
+    - get: client-aws-1-prod-cache
+      passed:
+      - client-aws-1-preprod-pipeline-test
+      trigger: true
     - get: client-aws-1-prod-cloud-config
       tags:
       - client-aws-1-prod
@@ -3027,23 +3449,68 @@ jobs:
       tags:
       - client-aws-1-prod
       trigger: true
-    - get: client-aws-1-prod-cache
-      passed:
-      - client-aws-1-preprod-pipeline-test
-      trigger: true
+  - config:
+      image_resource:
+        source:
+          repository: custom/concourse-image
+          tag: rc1
+        type: registry-image
+      inputs:
+      - name: client-aws-1-prod-changes
+      - name: client-aws-1-prod-cache
+      params:
+        BOSH_CA_CERT: |
+          ----- BEGIN CERTIFICATE -----
+          cert-goes-here
+          ----- END CERTIFICATE -----
+        BOSH_CLIENT: pr-admin
+        BOSH_CLIENT_SECRET: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
+        BOSH_ENVIRONMENT: https://prod.bosh-lite.com:25555
+        BOSH_NON_INTERACTIVE: true
+        CACHE_DIR: client-aws-1-prod-cache
+        CI_NO_REDACT: 1
+        CURRENT_ENV: client-aws-1-prod
+        DEBUG: 1
+        GENESIS_HONOR_ENV: 1
+        GIT_AUTHOR_EMAIL: concourse@pipeline
+        GIT_AUTHOR_NAME: Concourse Bot
+        GIT_BRANCH: master
+        GIT_PRIVATE_KEY: |
+          -----BEGIN RSA PRIVATE KEY-----
+          lol. you didn't really think that
+          we'd put the key here, in a test,
+          did you?!
+          -----END RSA PRIVATE KEY-----
+        OUT_DIR: out/git
+        PREVIOUS_ENV: client-aws-1-preprod
+        VAULT_ADDR: http://myvault.myorg.com:5999
+        VAULT_ROLE_ID: this-is-a-role
+        VAULT_SECRET_ID: this-is-a-secret
+        VAULT_SKIP_VERIFY: true
+        WORKING_DIR: client-aws-1-prod-changes
+      platform: linux
+      run:
+        args:
+        - ci-show-changes
+        path: client-aws-1-prod-cache/.genesis/bin/genesis
+    tags:
+    - client-aws-1-prod
+    task: show-pending-changes
   - in_parallel:
     - params:
         channel: '#botspam'
         icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
         text: 'aws-1: Changes are staged to be deployed to client-aws-1-prod-pipeline-test,
-          please schedule + run a deploy via Concourse'
+          see notify-client-aws-1-prod-pipeline-test-changes job for change summary,
+          then schedule and run a deploy via Concourse'
         username: runwaybot
       put: slack
     - params:
         color: gray
         from: runwaybot
         message: 'aws-1: Changes are staged to be deployed to client-aws-1-prod-pipeline-test,
-          please schedule + run a deploy via Concourse'
+          see notify-client-aws-1-prod-pipeline-test-changes job for change summary,
+          then schedule and run a deploy via Concourse'
         notify: false
       put: hipchat
   public: true
@@ -3077,7 +3544,7 @@ jobs:
           source:
             repository: custom/concourse-image
             tag: rc1
-          type: docker-image
+          type: registry-image
         inputs:
         - name: client-aws-1-prod-changes
         - name: client-aws-1-prod-cache
@@ -3097,6 +3564,8 @@ jobs:
           CURRENT_ENV: client-aws-1-prod
           DEBUG: 1
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -3109,7 +3578,7 @@ jobs:
           VAULT_ADDR: http://myvault.myorg.com:5999
           VAULT_ROLE_ID: this-is-a-role
           VAULT_SECRET_ID: this-is-a-secret
-          VAULT_SKIP_VERIFY: 1
+          VAULT_SKIP_VERIFY: true
           WORKING_DIR: client-aws-1-prod-changes
         platform: linux
         run:
@@ -3128,7 +3597,7 @@ jobs:
           source:
             repository: custom/concourse-image
             tag: rc1
-          type: docker-image
+          type: registry-image
         inputs:
         - name: out
         - name: client-aws-1-prod-cache
@@ -3159,7 +3628,7 @@ jobs:
           source:
             repository: custom/concourse-image
             tag: rc1
-          type: docker-image
+          type: registry-image
         inputs:
         - name: out
         - name: client-aws-1-prod-cache
@@ -3170,6 +3639,8 @@ jobs:
           CURRENT_ENV: client-aws-1-prod
           DEBUG: 1
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -3272,7 +3743,7 @@ jobs:
           source:
             repository: custom/concourse-image
             tag: rc1
-          type: docker-image
+          type: registry-image
         inputs:
         - name: client-aws-1-sandbox-changes
         outputs:
@@ -3291,6 +3762,8 @@ jobs:
           CURRENT_ENV: client-aws-1-sandbox
           DEBUG: 1
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -3303,7 +3776,7 @@ jobs:
           VAULT_ADDR: http://myvault.myorg.com:5999
           VAULT_ROLE_ID: this-is-a-role
           VAULT_SECRET_ID: this-is-a-secret
-          VAULT_SKIP_VERIFY: 1
+          VAULT_SKIP_VERIFY: true
           WORKING_DIR: client-aws-1-sandbox-changes
         platform: linux
         run:
@@ -3322,7 +3795,7 @@ jobs:
           source:
             repository: custom/concourse-image
             tag: rc1
-          type: docker-image
+          type: registry-image
         inputs:
         - name: out
         - name: client-aws-1-sandbox-changes
@@ -3353,7 +3826,7 @@ jobs:
           source:
             repository: custom/concourse-image
             tag: rc1
-          type: docker-image
+          type: registry-image
         inputs:
         - name: out
         - name: client-aws-1-sandbox-changes
@@ -3364,6 +3837,8 @@ jobs:
           CURRENT_ENV: client-aws-1-sandbox
           DEBUG: 1
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -3439,31 +3914,31 @@ resource_types:
 - name: script
   source:
     repository: cfcommunity/script-resource
-  type: docker-image
+  type: registry-image
 - name: email
   source:
     repository: pcfseceng/email-resource
-  type: docker-image
+  type: registry-image
 - name: slack-notification
   source:
     repository: cfcommunity/slack-notification-resource
-  type: docker-image
+  type: registry-image
 - name: hipchat-notification
   source:
     repository: cfcommunity/hipchat-notification-resource
-  type: docker-image
+  type: registry-image
 - name: stride-notification
   source:
     repository: starkandwayne/stride-notification-resource
-  type: docker-image
+  type: registry-image
 - name: bosh-config
   source:
     repository: cfcommunity/bosh-config-resource
-  type: docker-image
+  type: registry-image
 - name: locker
   source:
     repository: cfcommunity/locker-resource
-  type: docker-image
+  type: registry-image
 resources:
 - icon: github
   name: git
@@ -3791,7 +4266,7 @@ jobs:
           source:
             repository: custom/concourse-image
             tag: rc1
-          type: docker-image
+          type: registry-image
         inputs:
         - name: client-aws-1-preprod-changes
         - name: client-aws-1-preprod-cache
@@ -3811,6 +4286,8 @@ jobs:
           CURRENT_ENV: client-aws-1-preprod
           DEBUG: 1
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -3823,7 +4300,7 @@ jobs:
           VAULT_ADDR: http://myvault.myorg.com:5999
           VAULT_ROLE_ID: this-is-a-role
           VAULT_SECRET_ID: this-is-a-secret
-          VAULT_SKIP_VERIFY: 1
+          VAULT_SKIP_VERIFY: true
           WORKING_DIR: client-aws-1-preprod-changes
         platform: linux
         run:
@@ -3842,7 +4319,7 @@ jobs:
           source:
             repository: custom/concourse-image
             tag: rc1
-          type: docker-image
+          type: registry-image
         inputs:
         - name: out
         - name: client-aws-1-preprod-cache
@@ -3873,7 +4350,7 @@ jobs:
           source:
             repository: custom/concourse-image
             tag: rc1
-          type: docker-image
+          type: registry-image
         inputs:
         - name: out
         - name: client-aws-1-preprod-cache
@@ -3884,6 +4361,8 @@ jobs:
           CURRENT_ENV: client-aws-1-preprod
           DEBUG: 1
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -3960,6 +4439,10 @@ jobs:
   - in_parallel:
     - get: client-aws-1-prod-changes
       trigger: true
+    - get: client-aws-1-prod-cache
+      passed:
+      - client-aws-1-preprod-pipeline-test
+      trigger: true
     - get: client-aws-1-prod-cloud-config
       tags:
       - client-aws-1-prod
@@ -3968,23 +4451,68 @@ jobs:
       tags:
       - client-aws-1-prod
       trigger: true
-    - get: client-aws-1-prod-cache
-      passed:
-      - client-aws-1-preprod-pipeline-test
-      trigger: true
+  - config:
+      image_resource:
+        source:
+          repository: custom/concourse-image
+          tag: rc1
+        type: registry-image
+      inputs:
+      - name: client-aws-1-prod-changes
+      - name: client-aws-1-prod-cache
+      params:
+        BOSH_CA_CERT: |
+          ----- BEGIN CERTIFICATE -----
+          cert-goes-here
+          ----- END CERTIFICATE -----
+        BOSH_CLIENT: pr-admin
+        BOSH_CLIENT_SECRET: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
+        BOSH_ENVIRONMENT: https://prod.bosh-lite.com:25555
+        BOSH_NON_INTERACTIVE: true
+        CACHE_DIR: client-aws-1-prod-cache
+        CI_NO_REDACT: 1
+        CURRENT_ENV: client-aws-1-prod
+        DEBUG: 1
+        GENESIS_HONOR_ENV: 1
+        GIT_AUTHOR_EMAIL: concourse@pipeline
+        GIT_AUTHOR_NAME: Concourse Bot
+        GIT_BRANCH: master
+        GIT_PRIVATE_KEY: |
+          -----BEGIN RSA PRIVATE KEY-----
+          lol. you didn't really think that
+          we'd put the key here, in a test,
+          did you?!
+          -----END RSA PRIVATE KEY-----
+        OUT_DIR: out/git
+        PREVIOUS_ENV: client-aws-1-preprod
+        VAULT_ADDR: http://myvault.myorg.com:5999
+        VAULT_ROLE_ID: this-is-a-role
+        VAULT_SECRET_ID: this-is-a-secret
+        VAULT_SKIP_VERIFY: true
+        WORKING_DIR: client-aws-1-prod-changes
+      platform: linux
+      run:
+        args:
+        - ci-show-changes
+        path: client-aws-1-prod-cache/.genesis/bin/genesis
+    tags:
+    - client-aws-1-prod
+    task: show-pending-changes
   - in_parallel:
     - params:
         channel: '#botspam'
         icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
         text: 'aws-1: Changes are staged to be deployed to client-aws-1-prod-pipeline-test,
-          please schedule + run a deploy via Concourse'
+          see notify-client-aws-1-prod-pipeline-test-changes job for change summary,
+          then schedule and run a deploy via Concourse'
         username: runwaybot
       put: slack
     - params:
         color: gray
         from: runwaybot
         message: 'aws-1: Changes are staged to be deployed to client-aws-1-prod-pipeline-test,
-          please schedule + run a deploy via Concourse'
+          see notify-client-aws-1-prod-pipeline-test-changes job for change summary,
+          then schedule and run a deploy via Concourse'
         notify: false
       put: hipchat
   public: true
@@ -4020,7 +4548,7 @@ jobs:
           source:
             repository: custom/concourse-image
             tag: rc1
-          type: docker-image
+          type: registry-image
         inputs:
         - name: client-aws-1-prod-changes
         - name: client-aws-1-prod-cache
@@ -4040,6 +4568,8 @@ jobs:
           CURRENT_ENV: client-aws-1-prod
           DEBUG: 1
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -4052,7 +4582,7 @@ jobs:
           VAULT_ADDR: http://myvault.myorg.com:5999
           VAULT_ROLE_ID: this-is-a-role
           VAULT_SECRET_ID: this-is-a-secret
-          VAULT_SKIP_VERIFY: 1
+          VAULT_SKIP_VERIFY: true
           WORKING_DIR: client-aws-1-prod-changes
         platform: linux
         run:
@@ -4071,7 +4601,7 @@ jobs:
           source:
             repository: custom/concourse-image
             tag: rc1
-          type: docker-image
+          type: registry-image
         inputs:
         - name: out
         - name: client-aws-1-prod-cache
@@ -4102,7 +4632,7 @@ jobs:
           source:
             repository: custom/concourse-image
             tag: rc1
-          type: docker-image
+          type: registry-image
         inputs:
         - name: out
         - name: client-aws-1-prod-cache
@@ -4113,6 +4643,8 @@ jobs:
           CURRENT_ENV: client-aws-1-prod
           DEBUG: 1
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -4215,7 +4747,7 @@ jobs:
           source:
             repository: custom/concourse-image
             tag: rc1
-          type: docker-image
+          type: registry-image
         inputs:
         - name: client-aws-1-sandbox-changes
         outputs:
@@ -4234,6 +4766,8 @@ jobs:
           CURRENT_ENV: client-aws-1-sandbox
           DEBUG: 1
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -4246,7 +4780,7 @@ jobs:
           VAULT_ADDR: http://myvault.myorg.com:5999
           VAULT_ROLE_ID: this-is-a-role
           VAULT_SECRET_ID: this-is-a-secret
-          VAULT_SKIP_VERIFY: 1
+          VAULT_SKIP_VERIFY: true
           WORKING_DIR: client-aws-1-sandbox-changes
         platform: linux
         run:
@@ -4265,7 +4799,7 @@ jobs:
           source:
             repository: custom/concourse-image
             tag: rc1
-          type: docker-image
+          type: registry-image
         inputs:
         - name: out
         - name: client-aws-1-sandbox-changes
@@ -4296,7 +4830,7 @@ jobs:
           source:
             repository: custom/concourse-image
             tag: rc1
-          type: docker-image
+          type: registry-image
         inputs:
         - name: out
         - name: client-aws-1-sandbox-changes
@@ -4307,6 +4841,8 @@ jobs:
           CURRENT_ENV: client-aws-1-sandbox
           DEBUG: 1
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -4382,31 +4918,31 @@ resource_types:
 - name: script
   source:
     repository: cfcommunity/script-resource
-  type: docker-image
+  type: registry-image
 - name: email
   source:
     repository: pcfseceng/email-resource
-  type: docker-image
+  type: registry-image
 - name: slack-notification
   source:
     repository: cfcommunity/slack-notification-resource
-  type: docker-image
+  type: registry-image
 - name: hipchat-notification
   source:
     repository: cfcommunity/hipchat-notification-resource
-  type: docker-image
+  type: registry-image
 - name: stride-notification
   source:
     repository: starkandwayne/stride-notification-resource
-  type: docker-image
+  type: registry-image
 - name: bosh-config
   source:
     repository: cfcommunity/bosh-config-resource
-  type: docker-image
+  type: registry-image
 - name: locker
   source:
     repository: cfcommunity/locker-resource
-  type: docker-image
+  type: registry-image
 resources:
 - icon: github
   name: git
@@ -4735,7 +5271,7 @@ jobs:
           source:
             repository: custom/concourse-image
             tag: rc1
-          type: docker-image
+          type: registry-image
         inputs:
         - name: client-aws-1-preprod-changes
         - name: client-aws-1-preprod-cache
@@ -4755,6 +5291,8 @@ jobs:
           CURRENT_ENV: client-aws-1-preprod
           DEBUG: 1
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -4767,7 +5305,7 @@ jobs:
           VAULT_ADDR: http://myvault.myorg.com:5999
           VAULT_ROLE_ID: this-is-a-role
           VAULT_SECRET_ID: this-is-a-secret
-          VAULT_SKIP_VERIFY: 1
+          VAULT_SKIP_VERIFY: true
           WORKING_DIR: client-aws-1-preprod-changes
         platform: linux
         run:
@@ -4786,7 +5324,7 @@ jobs:
           source:
             repository: custom/concourse-image
             tag: rc1
-          type: docker-image
+          type: registry-image
         inputs:
         - name: out
         - name: client-aws-1-preprod-cache
@@ -4817,7 +5355,7 @@ jobs:
           source:
             repository: custom/concourse-image
             tag: rc1
-          type: docker-image
+          type: registry-image
         inputs:
         - name: out
         - name: client-aws-1-preprod-cache
@@ -4828,6 +5366,8 @@ jobs:
           CURRENT_ENV: client-aws-1-preprod
           DEBUG: 1
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -4904,6 +5444,10 @@ jobs:
   - in_parallel:
     - get: client-aws-1-prod-changes
       trigger: true
+    - get: client-aws-1-prod-cache
+      passed:
+      - client-aws-1-preprod-pipeline-test
+      trigger: true
     - get: client-aws-1-prod-cloud-config
       tags:
       - client-aws-1-prod
@@ -4912,23 +5456,68 @@ jobs:
       tags:
       - client-aws-1-prod
       trigger: true
-    - get: client-aws-1-prod-cache
-      passed:
-      - client-aws-1-preprod-pipeline-test
-      trigger: true
+  - config:
+      image_resource:
+        source:
+          repository: custom/concourse-image
+          tag: rc1
+        type: registry-image
+      inputs:
+      - name: client-aws-1-prod-changes
+      - name: client-aws-1-prod-cache
+      params:
+        BOSH_CA_CERT: |
+          ----- BEGIN CERTIFICATE -----
+          cert-goes-here
+          ----- END CERTIFICATE -----
+        BOSH_CLIENT: pr-admin
+        BOSH_CLIENT_SECRET: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
+        BOSH_ENVIRONMENT: https://prod.bosh-lite.com:25555
+        BOSH_NON_INTERACTIVE: true
+        CACHE_DIR: client-aws-1-prod-cache
+        CI_NO_REDACT: 1
+        CURRENT_ENV: client-aws-1-prod
+        DEBUG: 1
+        GENESIS_HONOR_ENV: 1
+        GIT_AUTHOR_EMAIL: concourse@pipeline
+        GIT_AUTHOR_NAME: Concourse Bot
+        GIT_BRANCH: master
+        GIT_PRIVATE_KEY: |
+          -----BEGIN RSA PRIVATE KEY-----
+          lol. you didn't really think that
+          we'd put the key here, in a test,
+          did you?!
+          -----END RSA PRIVATE KEY-----
+        OUT_DIR: out/git
+        PREVIOUS_ENV: client-aws-1-preprod
+        VAULT_ADDR: http://myvault.myorg.com:5999
+        VAULT_ROLE_ID: this-is-a-role
+        VAULT_SECRET_ID: this-is-a-secret
+        VAULT_SKIP_VERIFY: true
+        WORKING_DIR: client-aws-1-prod-changes
+      platform: linux
+      run:
+        args:
+        - ci-show-changes
+        path: client-aws-1-prod-cache/.genesis/bin/genesis
+    tags:
+    - client-aws-1-prod
+    task: show-pending-changes
   - in_parallel:
     - params:
         channel: '#botspam'
         icon_url: http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
         text: 'aws-1: Changes are staged to be deployed to client-aws-1-prod-pipeline-test,
-          please schedule + run a deploy via Concourse'
+          see notify-client-aws-1-prod-pipeline-test-changes job for change summary,
+          then schedule and run a deploy via Concourse'
         username: runwaybot
       put: slack
     - params:
         color: gray
         from: runwaybot
         message: 'aws-1: Changes are staged to be deployed to client-aws-1-prod-pipeline-test,
-          please schedule + run a deploy via Concourse'
+          see notify-client-aws-1-prod-pipeline-test-changes job for change summary,
+          then schedule and run a deploy via Concourse'
         notify: false
       put: hipchat
   public: true
@@ -4962,7 +5551,7 @@ jobs:
           source:
             repository: custom/concourse-image
             tag: rc1
-          type: docker-image
+          type: registry-image
         inputs:
         - name: client-aws-1-prod-changes
         - name: client-aws-1-prod-cache
@@ -4982,6 +5571,8 @@ jobs:
           CURRENT_ENV: client-aws-1-prod
           DEBUG: 1
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -4994,7 +5585,7 @@ jobs:
           VAULT_ADDR: http://myvault.myorg.com:5999
           VAULT_ROLE_ID: this-is-a-role
           VAULT_SECRET_ID: this-is-a-secret
-          VAULT_SKIP_VERIFY: 1
+          VAULT_SKIP_VERIFY: true
           WORKING_DIR: client-aws-1-prod-changes
         platform: linux
         run:
@@ -5013,7 +5604,7 @@ jobs:
           source:
             repository: custom/concourse-image
             tag: rc1
-          type: docker-image
+          type: registry-image
         inputs:
         - name: out
         - name: client-aws-1-prod-cache
@@ -5044,7 +5635,7 @@ jobs:
           source:
             repository: custom/concourse-image
             tag: rc1
-          type: docker-image
+          type: registry-image
         inputs:
         - name: out
         - name: client-aws-1-prod-cache
@@ -5055,6 +5646,8 @@ jobs:
           CURRENT_ENV: client-aws-1-prod
           DEBUG: 1
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -5157,7 +5750,7 @@ jobs:
           source:
             repository: custom/concourse-image
             tag: rc1
-          type: docker-image
+          type: registry-image
         inputs:
         - name: client-aws-1-sandbox-changes
         outputs:
@@ -5176,6 +5769,8 @@ jobs:
           CURRENT_ENV: client-aws-1-sandbox
           DEBUG: 1
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -5188,7 +5783,7 @@ jobs:
           VAULT_ADDR: http://myvault.myorg.com:5999
           VAULT_ROLE_ID: this-is-a-role
           VAULT_SECRET_ID: this-is-a-secret
-          VAULT_SKIP_VERIFY: 1
+          VAULT_SKIP_VERIFY: true
           WORKING_DIR: client-aws-1-sandbox-changes
         platform: linux
         run:
@@ -5207,7 +5802,7 @@ jobs:
           source:
             repository: custom/concourse-image
             tag: rc1
-          type: docker-image
+          type: registry-image
         inputs:
         - name: out
         - name: client-aws-1-sandbox-changes
@@ -5238,7 +5833,7 @@ jobs:
           source:
             repository: custom/concourse-image
             tag: rc1
-          type: docker-image
+          type: registry-image
         inputs:
         - name: out
         - name: client-aws-1-sandbox-changes
@@ -5249,6 +5844,8 @@ jobs:
           CURRENT_ENV: client-aws-1-sandbox
           DEBUG: 1
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
@@ -5324,31 +5921,31 @@ resource_types:
 - name: script
   source:
     repository: cfcommunity/script-resource
-  type: docker-image
+  type: registry-image
 - name: email
   source:
     repository: pcfseceng/email-resource
-  type: docker-image
+  type: registry-image
 - name: slack-notification
   source:
     repository: cfcommunity/slack-notification-resource
-  type: docker-image
+  type: registry-image
 - name: hipchat-notification
   source:
     repository: cfcommunity/hipchat-notification-resource
-  type: docker-image
+  type: registry-image
 - name: stride-notification
   source:
     repository: starkandwayne/stride-notification-resource
-  type: docker-image
+  type: registry-image
 - name: bosh-config
   source:
     repository: cfcommunity/bosh-config-resource
-  type: docker-image
+  type: registry-image
 - name: locker
   source:
     repository: cfcommunity/locker-resource
-  type: docker-image
+  type: registry-image
 resources:
 - icon: github
   name: git
@@ -5642,7 +6239,7 @@ jobs:
           source:
             repository: custom/concourse-image
             tag: rc1
-          type: docker-image
+          type: registry-image
         inputs:
         - name: client-aws-1-sandbox-changes
         outputs:
@@ -5660,6 +6257,8 @@ jobs:
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-sandbox
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PASSWORD: weneedareplacement!
           GIT_USERNAME: fleemco
@@ -5668,7 +6267,7 @@ jobs:
           VAULT_ADDR: http://myvault.myorg.com:5999
           VAULT_ROLE_ID: this-is-a-role
           VAULT_SECRET_ID: this-is-a-secret
-          VAULT_SKIP_VERIFY: 1
+          VAULT_SKIP_VERIFY: true
           WORKING_DIR: client-aws-1-sandbox-changes
         platform: linux
         run:
@@ -5685,7 +6284,7 @@ jobs:
           source:
             repository: custom/concourse-image
             tag: rc1
-          type: docker-image
+          type: registry-image
         inputs:
         - name: out
         - name: client-aws-1-sandbox-changes
@@ -5695,6 +6294,8 @@ jobs:
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-sandbox
           GENESIS_HONOR_ENV: 1
+          GIT_AUTHOR_EMAIL: concourse@pipeline
+          GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
           GIT_PASSWORD: weneedareplacement!
           GIT_USERNAME: fleemco
@@ -5732,31 +6333,31 @@ resource_types:
 - name: script
   source:
     repository: cfcommunity/script-resource
-  type: docker-image
+  type: registry-image
 - name: email
   source:
     repository: pcfseceng/email-resource
-  type: docker-image
+  type: registry-image
 - name: slack-notification
   source:
     repository: cfcommunity/slack-notification-resource
-  type: docker-image
+  type: registry-image
 - name: hipchat-notification
   source:
     repository: cfcommunity/hipchat-notification-resource
-  type: docker-image
+  type: registry-image
 - name: stride-notification
   source:
     repository: starkandwayne/stride-notification-resource
-  type: docker-image
+  type: registry-image
 - name: bosh-config
   source:
     repository: cfcommunity/bosh-config-resource
-  type: docker-image
+  type: registry-image
 - name: locker
   source:
     repository: cfcommunity/locker-resource
-  type: docker-image
+  type: registry-image
 resources:
 - icon: github
   name: git

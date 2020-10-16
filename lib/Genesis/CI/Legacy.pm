@@ -414,7 +414,7 @@ sub parse_pipeline {
 
 			for (keys %{$p->{pipeline}{'auto-update'}}) {
 				push @errors, "Unrecognized `pipeline.auto-update.$_' key found."
-					unless m/^(file|kit|org|(github_|kit_|)auth_token|api_url|label)$/;
+					unless m/^(file|kit|org|(github_|kit_|)auth_token|api_url|label|period)$/;
 			}
 
 			# Populate missing information
@@ -1025,8 +1025,7 @@ EOF
 		# deployments matches the bosh lock for environments being deployed by it.
 		if ($pipeline->{pipeline}{locker}{url}) {
 			my $deployment_suffix = $top->type;
-			unless ($E->needs_bosh_create_env) {
-				print $OUT <<EOF;
+			print $OUT <<EOF unless ($E->needs_bosh_create_env);
   - name: ${alias}-bosh-lock
     type: locker
     icon: shield-lock-outline
@@ -1039,7 +1038,6 @@ EOF
       ca_cert: (( grab pipeline.locker.ca_cert ))
       bosh_lock: $pipeline->{pipeline}{boshes}{$env}{url}
 EOF
-			}
 			print $OUT <<EOF;
   - name: ${alias}-deployment-lock
     type: locker
@@ -1124,19 +1122,24 @@ EOF
 	} # }}}
 # CONCOURSE: genesis-assets resource configuration {{{
 	if (defined($pipeline->{pipeline}{'auto-update'}{file})) {
-		print $OUT <<EOF
+		print $OUT <<EOF;
   - name: kit-release
     icon: package-variant
     type: github-release
-    check_every: 24h
+    check_every: (( grab pipeline.auto-update.period || "24h" ))
     source:
       user:         (( grab pipeline.auto-update.org ))
       repository:   (( concat pipeline.auto-update.kit "-genesis-kit" ))
       access_token: (( grab pipeline.auto-update.kit_auth_token || pipeline.auto-update.auth_token || "" ))
+EOF
+		print $OUT <<EOF if defined($pipeline->{pipeline}{'auto-update'}{api_url});
+      github_api_url: (( grab pipeline.auto-update.api_url ))
+EOF
+		print $OUT <<EOF;
   - name: genesis-release
     type: github-release
     icon: leaf
-    check_every: 24h
+    check_every: (( grab pipeline.auto-update.period || "24h" ))
     source:
       user:         "genesis-community"
       repository:   "genesis"
@@ -1286,7 +1289,7 @@ EOF
             GENESIS_HONOR_ENV:    1
             CI_NO_REDACT:         $pipeline->{pipeline}{unredacted}
             CURRENT_ENV:          $env
-            PREVIOUS_ENV:         ${\($passed || '""')}
+            PREVIOUS_ENV:         ${\($passed || '~')}
             CACHE_DIR:            $alias-cache
             OUT_DIR:              out/git
             WORKING_DIR:          $alias-changes # work out of latest changes for this environment
@@ -1431,7 +1434,7 @@ EOF
             GENESIS_HONOR_ENV:    1
             CI_NO_REDACT:         $pipeline->{pipeline}{unredacted}
             CURRENT_ENV:          $env
-            PREVIOUS_ENV:         ${\($passed || '""')}
+            PREVIOUS_ENV:         ${\($passed || '~')}
             CACHE_DIR:            $alias-cache
             OUT_DIR:              out/git
             WORKING_DIR:          $alias-changes # work out of latest changes for this environment
@@ -1638,8 +1641,6 @@ EOF
         outputs:
         - name: git
         params:
-          KIT_VERSION_FILE: (( grab pipeline.auto-update.file ))
-          GENESIS_KIT_NAME: (( grab pipeline.auto-update.kit ))
           CI_LABEL:         (( grab pipeline.auto-update.label || "concourse" ))
           GITHUB_USER:      (( grab pipeline.git.commits.user_name ))
           GITHUB_EMAIL:     (( grab pipeline.git.commits.user_email ))
