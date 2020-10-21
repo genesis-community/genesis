@@ -170,7 +170,7 @@ sub kit_names {
 }
 
 # }}}
-# releases - retrieves a list of releases for a kit {{{
+# kit_releases - retrieves a list of releases for a kit {{{
 sub kit_releases {
 	my ($self, $name) = @_;
 

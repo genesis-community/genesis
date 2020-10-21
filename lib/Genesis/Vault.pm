@@ -284,6 +284,7 @@ sub authenticate {
 				'safe auth ${1} < <(echo "$2")', $auth->{method}, join("\n", map {$ENV{$_}} @vars)
 			);
 			return $self if $self->authenticated;
+			debug "Authentication with $auth->{label} to #M{$ref} vault failed!";
 			$failed{$auth->{method}} = 1;
 		}
 	}

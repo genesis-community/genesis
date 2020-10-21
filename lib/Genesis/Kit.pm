@@ -60,7 +60,7 @@ sub glob {
 # has_hook - {{{
 sub has_hook {
 	my ($self, $hook) = @_;
-	return $self->{__hook_check}{$hook} if exists($self->{_hook_check}{$hook});
+	return $self->{__hook_check}{$hook} if exists($self->{__hook_check}{$hook});
 	trace("checking the kit for a(n) '$hook' hook");
 	$self->{__hook_check}{$hook} = -f $self->path("hooks/$hook");
 }

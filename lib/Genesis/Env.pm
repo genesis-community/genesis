@@ -273,10 +273,15 @@ sub exists {
 
 
 # public accessors
-sub name          { $_[0]->{name};   }
-sub file          { $_[0]->{file};   }
-sub kit           { $_[0]->{kit}    || bug("Incompletely initialized environment '".$_[0]->name."': no kit specified"); }
-sub top           { $_[0]->{top}    || bug("Incompletely initialized environment '".$_[0]->name."': no top specified"); }
+sub name   { $_[0]->{name};   }
+sub file   { $_[0]->{file};   }
+sub kit    { $_[0]->{kit}    || bug("Incompletely initialized environment '".$_[0]->name."': no kit specified"); }
+sub top    { $_[0]->{top}    || bug("Incompletely initialized environment '".$_[0]->name."': no top specified"); }
+
+# delegations
+sub type   { $_[0]->top->type; }
+sub vault  { $_[0]->top->vault; }
+
 
 sub root_ca_path {
 	my $self = shift;
@@ -427,19 +432,15 @@ sub credhub_connection_env {
 	if ($credhub_src) {
 		my $credhub_info = $self->exodus_lookup('.',undef,$credhub_src);
 		if ($credhub_info) {
-			$env{CREDHUB_SERVER} = $credhub_info->{credhub_url};
-			$env{CREDHUB_CLIENT} = $credhub_info->{credhub_username};
-			$env{CREDHUB_SECRET} = $credhub_info->{credhub_password};
-			$env{CREDHUB_CA_CERT} = $credhub_info->{ca_cert} . $credhub_info->{credhub_ca_cert};
+			$env{CREDHUB_SERVER} = $credhub_info->{credhub_url}||"";
+			$env{CREDHUB_CLIENT} = $credhub_info->{credhub_username}||"";
+			$env{CREDHUB_SECRET} = $credhub_info->{credhub_password}||"";
+			$env{CREDHUB_CA_CERT} = sprintf("%s%s",$credhub_info->{ca_cert}||"",$credhub_info->{credhub_ca_cert}||"");
 		}
 	}
 
 	return %env;
 }
-
-# delegations
-sub type   { $_[0]->top->type; }
-sub vault  { $_[0]->top->vault; }
 
 sub path {
 	my ($self, @rest) = @_;
