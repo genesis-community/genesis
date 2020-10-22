@@ -19,6 +19,9 @@ pipeline:
   task:
     image:   custom/concourse-image
     version: rc1
+    privileged:
+    - client-aws-1-sandbox
+    - client-aws-1-preprod
 
   vault:
     url: https://127.0.0.1:8200

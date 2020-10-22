@@ -2108,6 +2108,7 @@ jobs:
         params:
           repository: out/git
         put: git
+      privileged: true
       tags:
       - client-aws-1-preprod
       task: bosh-deploy
@@ -2588,6 +2589,7 @@ jobs:
         params:
           repository: out/git
         put: git
+      privileged: true
       tags:
       - client-aws-1-sandbox
       task: bosh-deploy

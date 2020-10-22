@@ -1494,7 +1494,7 @@ EOF
           params:
             repository: out/git
 EOF
-		my $privileged = (grep {$_ eq "$alias-$deployment_suffix"} $pipeline->{pipeline}{task}{privileged});
+		my $privileged = (grep {$_ eq "$alias"} @{$pipeline->{pipeline}{task}{privileged}});
 		if ($privileged) {
 			print $OUT <<EOF;
         privileged: true
