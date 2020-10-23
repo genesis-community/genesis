@@ -62,19 +62,20 @@ groups:
       - pre
       - rc
       - shipit
+  - name: version-control
+    jobs:
       - major
       - minor
+      - patch
 
 jobs:
   - name: testflight
     public: true
     serial: true
     plan:
-    - name: testing
-      do:
-      - { name: inputs, get: git, trigger: true }
-      - name: run_tests
-        task: testflight
+    - do:
+      - { get: git, trigger: true }
+      - task: testflight
         config:
           platform: linux
           image_resource:
@@ -181,6 +182,27 @@ jobs:
           ok:      no
           link:    (( grab meta.shout.links.build ))
 
+  - name: patch
+    public: true
+    plan:
+    - do:
+      - { get: version, trigger: false, params: {bump: patch} }
+      - { put: version,                 params: {file: version/number} }
+      on_success:
+        put: notify
+        params:
+          topic:   (( concat meta.shout.topic "-$BUILD_JOB_NAME" ))
+          message: patch version bump job '$BUILD_JOB_NAME' succeeded.
+          ok:      yes
+          link:    (( grab meta.shout.links.build ))
+      on_failure:
+        put: notify
+        params:
+          topic:   (( concat meta.shout.topic "-$BUILD_JOB_NAME" ))
+          message: patch version bump job '$BUILD_JOB_NAME' failed (which is unusual).
+          ok:      no
+          link:    (( grab meta.shout.links.build ))
+
   - name: minor
     public: true
     plan:
@@ -228,12 +250,10 @@ jobs:
     serial: true
     plan:
     - do:
-      - name: inputs
-        in_parallel:
+      - in_parallel:
           - { get: version, passed: [rc], params: {bump: final} }
           - { get: git,     passed: [rc] }
-      - name: release
-        task: release
+      - task: release
         config:
           image_resource:
             type: docker-image
@@ -260,25 +280,21 @@ jobs:
             GIT_NAME:     (( grab meta.git.name ))
             GIT_EMAIL:    (( grab meta.git.email ))
 
-      - name: upload-git
-        put: git
+      - put: git
         params:
           rebase: true
           repository: pushme/git
-      - name: github-release
-        put: github
+      - put: github
         params:
           name:   gh/name
           tag:    gh/tag
           body:   gh/notes.md
           globs: [gh/artifacts/*]
-      - name: version-bump
-        put: version
+      - put: version
         params:
           bump: patch
 
-      - name: notify
-        in_parallel:
+      - in_parallel:
         - put: notify
           params:
             method: announce
