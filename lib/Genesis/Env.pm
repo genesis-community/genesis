@@ -1093,6 +1093,24 @@ sub run_hook {
 	return $self->kit->run_hook($hook, %opts, env => $self);
 }
 
+sub shell {
+	my ($self, %opts) = @_;
+	if ($opts{hook}) {
+		my @config_hooks = ($opts{hook});
+
+		if ($opts{hook} =~ /^addon-/) {
+			$opts{hook_script} = $opts{hook};
+			push(@config_hooks, "addon");
+			$opts{hook} = "addon";
+		}
+
+		$self->connect_required_endpoints(@config_hooks);
+		$self->download_required_configs(@config_hooks);
+	}
+	explain "#Y{Started shell environment for }#C{%s}#Y{:}", $self->name;
+	return $self->kit->run_hook('shell', %opts, env => $self);
+}
+
 sub deploy {
 	my ($self, %opts) = @_;
 

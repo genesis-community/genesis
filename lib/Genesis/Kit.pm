@@ -70,8 +70,12 @@ sub has_hook {
 sub run_hook {
 	my ($self, $hook, %opts) = @_;
 
-	die "No '$hook' hook script found\n"
-		unless $self->has_hook($hook);
+	my $is_shell=($hook eq 'shell');
+	if ($is_shell) {
+		$hook=$opts{hook}||'shell';
+	} elsif (! $self->has_hook($hook)) {
+		bail("No '$hook' hook script found")
+	}
 
 	trace ("preparing to run the '$hook' kit hook");
 	local %ENV = %ENV;
@@ -85,7 +89,7 @@ sub run_hook {
 
 	die "Unrecognized hook '$hook'\n"
 		unless grep { $_ eq $hook } qw/new blueprint secrets info addon check pre-deploy post-deploy
-		                               prereqs features subkit kit/;
+		                               prereqs features subkit kit shell/;
 
 	if (grep { $_ eq $hook } qw/new secrets info addon check prereqs blueprint pre-deploy post-deploy features/) {
 		bug("The 'env' option to run_hook is required for the '$hook' hook!!") unless $opts{env};
@@ -138,28 +142,38 @@ sub run_hook {
 		$ENV{GENESIS_TARGET_VAULT} = $ENV{SAFE_TARGET} = $vault->ref; #for legacy
 	}
 
-	my $hook_exec = $self->path("hooks/$hook");
-	my $hook_name = $hook;
-	if (envset('GENESIS_TRACE')) {
-		open my $file, '<', $hook_exec;
-		my $firstLine = <$file>;
-		close $file;
-		if ($firstLine =~ /(^#!\s*\/bin\/bash(?:$| .*$))/) {
-			run('(echo "$1"; echo "set -x"; cat "$2") > "$3"', $1, $hook_exec, "$hook_exec-trace");
-			$hook_exec .= '-trace';
-			$hook_name .= '-trace';
+	my ($hook_name,$hook_exec);
+	if ($is_shell) {
+		@args = ();
+		$hook_exec =
+		$hook_name = $opts{shell} || '/bin/bash';
+	} else {
+		$hook_exec = $self->path("hooks/$hook");
+		$hook_name = $hook;
+		if (envset('GENESIS_TRACE')) {
+			open my $file, '<', $hook_exec;
+			my $firstLine = <$file>;
+			close $file;
+			if ($firstLine =~ /(^#!\s*\/bin\/bash(?:$| .*$))/) {
+				run('(echo "$1"; echo "set -x"; cat "$2") > "$3"', $1, $hook_exec, "$hook_exec-trace");
+				$hook_exec .= '-trace';
+				$hook_name .= '-trace';
+			}
 		}
+		chmod 0755, $hook_exec;
 	}
-	chmod 0755, $hook_exec;
 
 	$ENV{GENESIS_IS_HELPING_YOU} = 'yes';
 	debug ("Running hook now in ".$self->path);
-	my $interactive = scalar($hook =~ m/^(addon|new|info|check|secrets|post-deploy|pre-deploy)$/) ? 1 : 0;
+	my $interactive = ($is_shell || scalar($hook =~ m/^(addon|new|info|check|secrets|post-deploy|pre-deploy)$/)) ? 1 : 0;
 	my ($out, $rc, $err) = run({
 			interactive => $interactive, stderr => ($hook eq 'kit') ? 0 : undef
 		},
-		'cd "$1"; source .helper; hook=$2; shift 2; ./hooks/$hook "$@"',
-		$self->path, $hook_name, @args);
+		'cd "$1"; source .helper; hook=$2; shift 2; $hook "$@"',
+		$self->path, $hook_exec, @args
+	);
+
+	exit $rc if $is_shell;
 
 	if ($hook eq 'new') {
 		bail(

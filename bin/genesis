@@ -2912,6 +2912,33 @@ sub {
 	my ($have, undef, $min) = @_;
 	exit(new_enough($have, $min) ? 0 : 1);
 });
+
+# }}}
+# genesis env-shell - provide a shell with the environment variables for the genesis environment {{{
+command("env-shell", {alias => 'sh', scope => 'env'}, <<EOF,
+genesis v$Genesis::VERSION$Genesis::BUILD
+USAGE: genesis env-shell <options> env-name[.yml]
+
+OPTIONS
+$GLOBAL_USAGE
+
+  -s, --shell <shell>  Use the provided shell (default: /bin/bash)
+  -h, --hook <hook>    Pretend to be the specified hook for generating script
+                       environment
+
+
+EOF
+sub {
+	my %options = (redact => ! -t STDOUT);
+	options(\@_, \%options, qw/
+		shell|s=s
+		hook|h=s
+	/);
+	usage(1) if @_ != 1;
+	my $env = Genesis::Top->new('.')->load_env($_[0])->with_bosh()->with_vault();
+	$env->shell(%options);
+});
+
 # }}}
 
 ###########################################################################
