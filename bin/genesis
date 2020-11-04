@@ -1048,10 +1048,22 @@ sub {
 		}
 	}
 
-	run({ onfailure => 'Please setup git - git config --global user.name "Your Name" -' },
-		'git config user.name');
-	run({ onfailure => 'Please setup git - git config --global user.email your@email.com -' },
-		'git config user.email');
+	if ($ENV{GIT_AUTHOR_NAME}) {
+		$ENV{GIT_COMMITTER_NAME} ||= $ENV{GIT_AUTHOR_NAME};
+	} else {
+		run(
+			{ onfailure => 'Please setup git: git config --global user.name "Your Name" -or- export GIT_AUTHOR_NAME="Your Name"' },
+			'git config user.name'
+		);
+	}
+	if ($ENV{GIT_AUTHOR_EMAIL}) {
+		$ENV{GIT_COMMITTER_EMAIL} ||= $ENV{GIT_AUTHOR_EMAIL};
+	} else {
+		run(
+			{ onfailure => 'Please setup git: git config --global user.email your@email.com -or- export GIT_AUTHOR_EMAIL=your@email.com' },
+			'git config user.email'
+		);
+	}
 
 	my $top = Genesis::Top->create('.', $name, %options);
 	my $vault_desc = "\n - using default safe target for the system";
