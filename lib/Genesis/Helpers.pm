@@ -126,13 +126,13 @@ export -f exodus
 # have_exodus_data_for env/type - return true if exodus data exists
 have_exodus_data_for() {
   local __env=${1:?have_exodus_data_for() must provide an environment/type}
-  safe exists "#{GENESIS_EXODUS_MOUNT}${__env}"
+  safe exists "${GENESIS_EXODUS_MOUNT}${__env}"
   return $?
 }
 export -f have_exodus_data_for
 
 have_exodus_data() {
-  have_exodus_data_for "$GENESIS_ENVIRONMENT/$GENESIS_TYPE"
+  have_exodus_data_for "${GENESIS_ENVIRONMENT}/${GENESIS_TYPE}"
   return $?
 }
 export -f have_exodus_data

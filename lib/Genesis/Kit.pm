@@ -221,7 +221,7 @@ sub run_hook {
 		my $contents;
 		my $fn = $opts{env}->tmppath("data");
 		if ( -f $fn ) {
-			$contents = slurp($fn);
+			$contents = slurp($fn) if -s $fn;
 			unlink $fn;
 		}
 		return (($rc == 0 ? 1 : 0), $contents);
