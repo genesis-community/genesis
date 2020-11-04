@@ -254,7 +254,7 @@ sub vault_auth {
 	)->connect_and_validate();
 }
 
-# genesis bail_on_missing_pipeline_environment_variables - provide consistent error message when missing pipeline environment variables {{{
+# bail_on_missing_pipeline_environment_variables - provide consistent error message when missing pipeline environment variables {{{
 sub bail_on_missing_pipeline_environment_variables {
 	if (@_) {
 		error("The following #R{required} environment variables have not been defined:");

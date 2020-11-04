@@ -31,7 +31,7 @@ our @EXPORT = qw/
 	csprintf
 	explain waiting_on
 	debug trace dump_var dump_stack
-	error	bail bug
+	error bail bug
 
 	vaulted
 	workdir
