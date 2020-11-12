@@ -584,12 +584,17 @@ sub needs_bosh_create_env {
 
 sub relate {
 	my ($self, $them, $common_base, $unique_base) = @_;
+	return relate_by_name($self->{name}, ref($them) ? $them->{name} : $them, $common_base, $unique_base);
+}
+
+sub relate_by_name {
+	my ($name, $other, $common_base, $unique_base) = @_;
 	$common_base ||= '.';
 	$unique_base ||= '.';
-	$them ||= '';
+	$other ||= '';
 
-	my @a = split /-/, $self->{name};
-	my @b = split /-/, ref($them) ? $them->{name} : $them;
+	my @a = split /-/, $name;
+	my @b = split /-/, $other;
 	my @c = (); # common
 
 	while (@a and @b) {
@@ -612,8 +617,8 @@ sub relate {
 		push @unique, "$unique_base/".join('-', @acc).".yml";
 	}
 
-	trace("[env $self->{name}] in relate(): common $_") for @common;
-	trace("[env $self->{name}] in relate(): unique $_") for @unique;
+	trace("[env $name] in relate(): common $_") for @common;
+	trace("[env $name] in relate(): unique $_") for @unique;
 
 	return wantarray ? (@common, @unique)
 	                 : { common => \@common,

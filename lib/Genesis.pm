@@ -630,6 +630,8 @@ sub symlink_or_fail {
 sub copy_or_fail {
 	my ($from, $to) = @_;
 	-f $from or die "$from: $!\n";
+	$to.=($to =~ /\/$/?'':'/').basename($from) if -d $to;
+	trace("copying $from to $to");
 	open my $in,  "<", $from or die "Unable to open $from for reading: $!\n";
 	open my $out, ">", $to   or die "Unable to open $to for writing: $!\n";
 	print $out $_ while (<$in>);

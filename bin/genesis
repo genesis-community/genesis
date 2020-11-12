@@ -27,6 +27,7 @@ use Encode;
 use Genesis;
 use Genesis::UI;
 use Genesis::Top;
+use Genesis::Env;
 use Genesis::Kit;
 use Genesis::Kit::Compiler;
 use Genesis::Kit::Provider;
@@ -2710,13 +2711,15 @@ sub {
 	usage(1) if @_;
 
 	# environment variables we should have
-	#   CURRENT_ENV - Name of the current environment
-	#   GIT_BRANCH                 - Name of the git branch to push commits to. post-deploy
-	#   GIT_PRIVATE_KEY            - Private Key to use for pushing commits, post-deploy, ssh
-	#   GIT_USERNAME               - Username to use for pushing commits, post-deploy, https
-	#   GIT_PASSWORD               - Password to use for pushing commits, post-deploy, https
-	#   WORKING_DIR - Path to the directory to deploy/work from
-	#   OUT_DIR     - Path to the directory to output to
+	#   CURRENT_ENV     - Name of the current environment
+	#   GIT_BRANCH      - Name of the git branch to push commits to. post-deploy
+	#   GIT_PRIVATE_KEY - Private Key to use for pushing commits, post-deploy, ssh
+	#   GIT_USERNAME    - Username to use for pushing commits, post-deploy, https
+	#   GIT_PASSWORD    - Password to use for pushing commits, post-deploy, https
+	#   PREVIOUS_ENV    - Name of the previous env, or null if none
+	#   CACHE_DIR       - Path to the directory of the previous environment's cache
+	#   WORKING_DIR     - Path to the directory to deploy/work from
+	#   OUT_DIR         - Path to the directory to output to
 	#
 	my @undefined = grep { !$ENV{$_} }
 		qw/CURRENT_ENV GIT_BRANCH
@@ -2725,12 +2728,18 @@ sub {
 	bail("The pipeline must specify either GIT_PRIVATE_KEY, or GIT_USERNAME and GIT_PASSWORD")
 		unless $ENV{GIT_PRIVATE_KEY} || ($ENV{GIT_USERNAME} && $ENV{GIT_PASSWORD});
 
-	pushd $ENV{WORKING_DIR};
-	mkdir_or_fail(".genesis/cached/$ENV{CURRENT_ENV}");
-	for (expand_tokens(split /\-/, $ENV{CURRENT_ENV})) {
-		copy_or_fail("$_.yml", ".genesis/cached/$ENV{CURRENT_ENV}/$_.yml") if -f "$_.yml";
-	}
-	popd;
+	my $target_dir = "$ENV{WORKING_DIR}/.genesis/cached/$ENV{CURRENT_ENV}";
+	rmtree($target_dir) if -e $target_dir;
+	mkdir_or_fail($target_dir);
+	my $common_path = $ENV{PREVIOUS_ENV} ?
+		"$ENV{CACHE_DIR}/.genesis/cached/$ENV{PREVIOUS_ENV}" :
+		$ENV{WORKING_DIR};
+
+	my @cachables = grep {-f $_} Genesis::Env::relate_by_name(
+		$ENV{CURRENT_ENV}, $ENV{PREVIOUS_ENV} || '', $common_path, $ENV{WORKING_DIR}
+	);
+	copy_or_fail($_, "$target_dir/") for (@cachables);
+	return if envset("GENESIS_TESTING");
 	commit_changes($ENV{WORKING_DIR}, $ENV{OUT_DIR}, $ENV{GIT_BRANCH}, "generated cache for $ENV{CURRENT_ENV}");
 });
 # }}}

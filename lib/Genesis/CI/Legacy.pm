@@ -1565,6 +1565,8 @@ EOF
             GENESIS_HONOR_ENV:    1
             CI_NO_REDACT:         $pipeline->{pipeline}{unredacted}
             CURRENT_ENV:          $env
+            PREVIOUS_ENV:         ${\($passed || '~')}
+            CACHE_DIR:            $alias-cache
             WORKING_DIR:          out/git
             OUT_DIR:              cache-out/git
             GIT_BRANCH:           (( grab pipeline.git.branch ))
