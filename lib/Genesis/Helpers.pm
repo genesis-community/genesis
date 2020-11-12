@@ -73,13 +73,17 @@ __bail() {
 }
 export -f __bail
 
-# Make __bail available as bail because internal functions shouldn't be useed by helpers
+# Make __bail available as bail because internal functions shouldn't be used by non-helpers
 bailfunc="$(declare -f "__bail")"
 eval "${bailfunc/__bail/bail}"
 export -f bail
 
+# Protect safe calls if safe target is not set correctly
 if [[ -z "$SAFE_TARGET" || "$SAFE_TARGET" != "$GENESIS_TARGET_VAULT" ]] ; then
-  __bail "Safe target not associated with Genesis Vault -- this is a bug in Genesis, or you are running $0 outside of Genesis"
+  safe() {
+    __bail "Safe target not associated with Genesis Vault -- this is a bug in Genesis, or you are running $0 outside of Genesis"
+  }
+  export -f safe
 fi
 
 ###
