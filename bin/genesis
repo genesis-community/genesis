@@ -353,10 +353,16 @@ EOF
 	$ENV{GIT_ASKPASS}         = "/bin/false";
 	$ENV{HOME}                = "$tmp/home";
 
+	# What's Going On?
+	#   reset --hard : reset the repo to the current commit on branch
+	#   clean -df:     remove any untracked files (ie the new cached files)
+	#   checkout:      ensure we're on the named branch, to correctly push later
+	#   pull origin:   ensure we're up-to-date with any changes that may have
+	#                  happened during pipeline
 	run({ onfailure   => "Could not reset to the newest applicable ref in git",
 		  interactive => 1,
 		  env => { HOME => "$tmp/home" } },
-		'git reset --hard "origin/${1}" && git checkout "$1" &&  git pull origin "$1"',
+		'git reset --hard "origin/${1}" && git clean -df && git checkout "$1" &&  git pull origin "$1"',
 		$branch);
 	popd;
 
