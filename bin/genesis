@@ -2744,6 +2744,7 @@ sub {
 	my @undefined = grep { !$ENV{$_} }
 		qw/CURRENT_ENV GIT_BRANCH
 		   WORKING_DIR OUT_DIR/;
+	push(@undefined, 'CACHE_DIR') if $ENV{PREVIOUS_ENV} && ! $ENV{CACHE_DIR};
 	bail_on_missing_pipeline_environment_variables(@undefined);
 	bail("The pipeline must specify either GIT_PRIVATE_KEY, or GIT_USERNAME and GIT_PASSWORD")
 		unless $ENV{GIT_PRIVATE_KEY} || ($ENV{GIT_USERNAME} && $ENV{GIT_PASSWORD});
