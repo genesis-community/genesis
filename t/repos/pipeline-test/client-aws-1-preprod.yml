@@ -1,4 +1,7 @@
 ---
-params:
+genesis:
   env: preprod
+
+params:
+  source: preprod
   domain: preprod.thing.example.com

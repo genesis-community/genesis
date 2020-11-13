@@ -76,13 +76,18 @@ sub mkdir_or_fail {
 
 sub put_file($$) {
 	local $Test::Builder::Level = $Test::Builder::Level + 1;
-	my ($file, $contents) = @_;
+	my ($file, $mode, $contents) = @_;
+	if (! defined($contents)) {
+		$contents = $mode;
+		$mode = undef;
+	}
 	system("mkdir -p ".dirname($file));
 	open my $fh, ">", $file
 		or fail "failed to open '$file' for writing: $!";
 
 	print $fh $contents;
 	close $fh;
+	chmod $mode, $file if defined($mode);
 }
 
 sub get_file($) {

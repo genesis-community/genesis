@@ -13,6 +13,7 @@ chdir "t/repos/pipeline-test" or die;
 
 bosh2_cli_ok;
 
+subtest 'genesis repipe' => sub { # {{{
 runs_ok "genesis repipe --dry-run --config ci/aws/pipeline" and # {{{
 runs_ok "genesis repipe --dry-run --config ci/aws/pipeline >$tmp/pipeline.yml" and
 yaml_is get_file("$tmp/pipeline.yml"), <<'EOF', "pipeline generated for aws/pipeline (no smoke-tests, untagged)";
@@ -101,6 +102,7 @@ jobs:
         - name: cache-out
         params:
           CI_NO_REDACT: 0
+          CACHE_DIR: client-aws-1-preprod-cache
           CURRENT_ENV: client-aws-1-preprod
           GENESIS_HONOR_ENV: 1
           GIT_AUTHOR_EMAIL: concourse@pipeline
@@ -113,6 +115,7 @@ jobs:
             did you?!
             -----END RSA PRIVATE KEY-----
           OUT_DIR: cache-out/git
+          PREVIOUS_ENV: client-aws-1-sandbox
           WORKING_DIR: out/git
         platform: linux
         run:
@@ -287,6 +290,7 @@ jobs:
         outputs:
         - name: cache-out
         params:
+          CACHE_DIR: client-aws-1-prod-cache
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-prod
           GENESIS_HONOR_ENV: 1
@@ -300,6 +304,7 @@ jobs:
             did you?!
             -----END RSA PRIVATE KEY-----
           OUT_DIR: cache-out/git
+          PREVIOUS_ENV: client-aws-1-preprod
           WORKING_DIR: out/git
         platform: linux
         run:
@@ -745,6 +750,7 @@ jobs:
         outputs:
         - name: cache-out
         params:
+          CACHE_DIR: client-aws-1-preprod-cache
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-preprod
           GENESIS_HONOR_ENV: 1
@@ -758,6 +764,7 @@ jobs:
             did you?!
             -----END RSA PRIVATE KEY-----
           OUT_DIR: cache-out/git
+          PREVIOUS_ENV: client-aws-1-sandbox
           WORKING_DIR: out/git
         platform: linux
         run:
@@ -944,6 +951,7 @@ jobs:
         outputs:
         - name: cache-out
         params:
+          CACHE_DIR: client-aws-1-prod-cache
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-prod
           GENESIS_HONOR_ENV: 1
@@ -957,6 +965,7 @@ jobs:
             did you?!
             -----END RSA PRIVATE KEY-----
           OUT_DIR: cache-out/git
+          PREVIOUS_ENV: client-aws-1-preprod
           WORKING_DIR: out/git
         platform: linux
         run:
@@ -1444,6 +1453,7 @@ jobs:
         outputs:
         - name: cache-out
         params:
+          CACHE_DIR: preprod-cache
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-preprod
           DEBUG: 1
@@ -1454,6 +1464,7 @@ jobs:
           GIT_PASSWORD: weneedareplacement!
           GIT_USERNAME: fleemco
           OUT_DIR: cache-out/git
+          PREVIOUS_ENV: client-aws-1-sandbox
           WORKING_DIR: out/git
         platform: linux
         run:
@@ -1651,6 +1662,7 @@ jobs:
         outputs:
         - name: cache-out
         params:
+          CACHE_DIR: prod-cache
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-prod
           DEBUG: 1
@@ -1661,6 +1673,7 @@ jobs:
           GIT_PASSWORD: weneedareplacement!
           GIT_USERNAME: fleemco
           OUT_DIR: cache-out/git
+          PREVIOUS_ENV: client-aws-1-preprod
           WORKING_DIR: out/git
         platform: linux
         run:
@@ -2155,6 +2168,7 @@ jobs:
         outputs:
         - name: cache-out
         params:
+          CACHE_DIR: client-aws-1-preprod-cache
           CI_NO_REDACT: 1
           CURRENT_ENV: client-aws-1-preprod
           DEBUG: 1
@@ -2169,6 +2183,7 @@ jobs:
             did you?!
             -----END RSA PRIVATE KEY-----
           OUT_DIR: cache-out/git
+          PREVIOUS_ENV: client-aws-1-sandbox
           WORKING_DIR: out/git
         platform: linux
         run:
@@ -2437,6 +2452,7 @@ jobs:
         outputs:
         - name: cache-out
         params:
+          CACHE_DIR: client-aws-1-prod-cache
           CI_NO_REDACT: 1
           CURRENT_ENV: client-aws-1-prod
           DEBUG: 1
@@ -2451,6 +2467,7 @@ jobs:
             did you?!
             -----END RSA PRIVATE KEY-----
           OUT_DIR: cache-out/git
+          PREVIOUS_ENV: client-aws-1-preprod
           WORKING_DIR: out/git
         platform: linux
         run:
@@ -3357,6 +3374,7 @@ jobs:
         outputs:
         - name: cache-out
         params:
+          CACHE_DIR: client-aws-1-preprod-cache
           CI_NO_REDACT: 1
           CURRENT_ENV: client-aws-1-preprod
           DEBUG: 1
@@ -3371,6 +3389,7 @@ jobs:
             did you?!
             -----END RSA PRIVATE KEY-----
           OUT_DIR: cache-out/git
+          PREVIOUS_ENV: client-aws-1-sandbox
           WORKING_DIR: out/git
         platform: linux
         run:
@@ -3637,6 +3656,7 @@ jobs:
         outputs:
         - name: cache-out
         params:
+          CACHE_DIR: client-aws-1-prod-cache
           CI_NO_REDACT: 1
           CURRENT_ENV: client-aws-1-prod
           DEBUG: 1
@@ -3651,6 +3671,7 @@ jobs:
             did you?!
             -----END RSA PRIVATE KEY-----
           OUT_DIR: cache-out/git
+          PREVIOUS_ENV: client-aws-1-preprod
           WORKING_DIR: out/git
         platform: linux
         run:
@@ -4359,6 +4380,7 @@ jobs:
         outputs:
         - name: cache-out
         params:
+          CACHE_DIR: client-aws-1-preprod-cache
           CI_NO_REDACT: 1
           CURRENT_ENV: client-aws-1-preprod
           DEBUG: 1
@@ -4373,6 +4395,7 @@ jobs:
             did you?!
             -----END RSA PRIVATE KEY-----
           OUT_DIR: cache-out/git
+          PREVIOUS_ENV: client-aws-1-sandbox
           WORKING_DIR: out/git
         platform: linux
         run:
@@ -4641,6 +4664,7 @@ jobs:
         outputs:
         - name: cache-out
         params:
+          CACHE_DIR: client-aws-1-prod-cache
           CI_NO_REDACT: 1
           CURRENT_ENV: client-aws-1-prod
           DEBUG: 1
@@ -4655,6 +4679,7 @@ jobs:
             did you?!
             -----END RSA PRIVATE KEY-----
           OUT_DIR: cache-out/git
+          PREVIOUS_ENV: client-aws-1-preprod
           WORKING_DIR: out/git
         platform: linux
         run:
@@ -5364,6 +5389,7 @@ jobs:
         outputs:
         - name: cache-out
         params:
+          CACHE_DIR: client-aws-1-preprod-cache
           CI_NO_REDACT: 1
           CURRENT_ENV: client-aws-1-preprod
           DEBUG: 1
@@ -5378,6 +5404,7 @@ jobs:
             did you?!
             -----END RSA PRIVATE KEY-----
           OUT_DIR: cache-out/git
+          PREVIOUS_ENV: client-aws-1-sandbox
           WORKING_DIR: out/git
         platform: linux
         run:
@@ -5644,6 +5671,7 @@ jobs:
         outputs:
         - name: cache-out
         params:
+          CACHE_DIR: client-aws-1-prod-cache
           CI_NO_REDACT: 1
           CURRENT_ENV: client-aws-1-prod
           DEBUG: 1
@@ -5658,6 +5686,7 @@ jobs:
             did you?!
             -----END RSA PRIVATE KEY-----
           OUT_DIR: cache-out/git
+          PREVIOUS_ENV: client-aws-1-preprod
           WORKING_DIR: out/git
         platform: linux
         run:
@@ -6439,5 +6468,155 @@ client-aws-1-sandbox
         `--> client-aws-1-prod
 EOF
 # }}}
+}; # }}}
+
+subtest 'ci-generate-cache' => sub { # {{{
+
+  my $workdir=workdir();
+  `cp -R ../pipeline-test $workdir/sandbox`;
+  `cp -R ../pipeline-test $workdir/preprod`;
+  `cp -R ../pipeline-test $workdir/prod`;
+  `cp -R ../pipeline-test $workdir/prod-backup`;
+
+  chdir $workdir;
+  for my $src (qw/sandbox preprod prod prod-backup/) {
+    put_file "$src/client-aws-1-prod-backup.yml", <<EOF;
+
+---
+genesis:
+  env: prod-backup
+
+params:
+  source: prod-backup
+  domain: prod.thing.example.com
+EOF
+
+    for my $file (qw/client client-aws-1/) {
+      put_file "$src/${file}.yml", <<EOF;
+---
+params:
+  $file-source: $src
+EOF
+    }
+    for my $badfile (qw/client.yml.old client-vsphere.yml client-aws-1/) {
+      put_file "$src/${badfile}", <<EOF;
+---
+params:
+  $badfile-source: $src
+  bad-file: $badfile
+EOF
+    }
+  }
+  put_file "preprod/client-aws.yml", <<EOF;
+---
+params:
+  client-aws-source: preprod
+EOF
+
+  local $ENV;
+  $ENV{GENESIS_TESTING}=1;
+  $ENV{GIT_BRANCH}='master';
+  $ENV{GIT_PRIVATE_KEY}='dummy';
+  $ENV{OUT_DIR}='not-used-for-testing';
+
+  # Test 1: initial, no cache # {{{
+  $ENV{CURRENT_ENV}="client-aws-1-sandbox";
+  $ENV{WORKING_DIR}="sandbox";
+  runs_ok "genesis ci-generate-cache", "[sandbox] Can generate cache from deployment";
+  matches `ls -1a sandbox/.genesis/cached/ 2>&1 | sort`, <<EOF, "[sandbox] Correct cache directory is created";
+.
+..
+client-aws-1-sandbox
+EOF
+  matches `ls -1a sandbox/.genesis/cached/client-aws-1-sandbox/ 2>&1 | sort`, <<EOF, "[sandbox] Correct files are cached";
+.
+..
+client-aws-1-sandbox.yml
+client-aws-1.yml
+client.yml
+EOF
+  matches `grep 'source:' sandbox/.genesis/cached/client-aws-1-sandbox/*.yml`, <<EOF, "[sandbox] Cached files are from the correct source";
+sandbox/.genesis/cached/client-aws-1-sandbox/client-aws-1-sandbox.yml:  source: sandbox
+sandbox/.genesis/cached/client-aws-1-sandbox/client-aws-1.yml:  client-aws-1-source: sandbox
+sandbox/.genesis/cached/client-aws-1-sandbox/client.yml:  client-source: sandbox
+EOF
+  # }}}
+  # Test 2: first consumer of cache # {{{
+  $ENV{PREVIOUS_ENV}="client-aws-1-sandbox";
+  $ENV{CURRENT_ENV}="client-aws-1-preprod";
+  $ENV{CACHE_DIR}="sandbox";
+  $ENV{WORKING_DIR}="preprod";
+  runs_ok "genesis ci-generate-cache", "[preprod] Can generate cache from deployment";
+  matches `ls -1a preprod/.genesis/cached/ 2>&1 | sort`, <<EOF, "[preprod] Correct cache directory is created";
+.
+..
+client-aws-1-preprod
+EOF
+  matches `ls -1a preprod/.genesis/cached/client-aws-1-preprod/ 2>&1 | sort`, <<EOF, "[preprod] Correct files are cached";
+.
+..
+client-aws-1-preprod.yml
+client-aws-1.yml
+client.yml
+EOF
+  matches `grep 'source:' preprod/.genesis/cached/client-aws-1-preprod/*.yml`, <<EOF, "[preprod] Cached files are from the correct source";
+preprod/.genesis/cached/client-aws-1-preprod/client-aws-1-preprod.yml:  source: preprod
+preprod/.genesis/cached/client-aws-1-preprod/client-aws-1.yml:  client-aws-1-source: sandbox
+preprod/.genesis/cached/client-aws-1-preprod/client.yml:  client-source: sandbox
+EOF
+  # }}}
+  # Test 3: second consumer of cache # {{{
+  $ENV{PREVIOUS_ENV}="client-aws-1-preprod";
+  $ENV{CURRENT_ENV}="client-aws-1-prod";
+  $ENV{CACHE_DIR}="preprod";
+  $ENV{WORKING_DIR}="prod";
+  runs_ok "genesis ci-generate-cache", "[prod] Can generate cache from deployment";
+  matches `ls -1a prod/.genesis/cached/ 2>&1 | sort`, <<EOF, "[prod] Correct cache directory is created";
+.
+..
+client-aws-1-prod
+EOF
+  matches `ls -1a prod/.genesis/cached/client-aws-1-prod/ 2>&1 | sort`, <<EOF, "[prod] Correct files are cached";
+.
+..
+client-aws-1-prod.yml
+client-aws-1.yml
+client.yml
+EOF
+  matches `grep 'source:' prod/.genesis/cached/client-aws-1-prod/*.yml`, <<EOF, "[prod] Cached files are from the correct source";
+prod/.genesis/cached/client-aws-1-prod/client-aws-1-prod.yml:  source: prod
+prod/.genesis/cached/client-aws-1-prod/client-aws-1.yml:  client-aws-1-source: sandbox
+prod/.genesis/cached/client-aws-1-prod/client.yml:  client-source: sandbox
+EOF
+  # }}}
+  # Test 4: consumer of two-levels of cache # {{{
+  $ENV{PREVIOUS_ENV}="client-aws-1-sandbox";
+  $ENV{CURRENT_ENV}="client-aws-1-prod-backup";
+  $ENV{CACHE_DIR}="sandbox";
+  $ENV{WORKING_DIR}="prod-backup";
+  runs_ok "genesis ci-generate-cache", "[prod-backup] Can generate cache from deployment";
+  matches `ls -1a prod-backup/.genesis/cached/ 2>&1 | sort`, <<EOF, "[prod-backup] Correct cache directory is created";
+.
+..
+client-aws-1-prod-backup
+EOF
+  matches `ls -1a prod-backup/.genesis/cached/client-aws-1-prod-backup/ 2>&1 | sort`, <<EOF, "[prod-backup] Correct files are cached";
+.
+..
+client-aws-1-prod-backup.yml
+client-aws-1-prod.yml
+client-aws-1.yml
+client.yml
+EOF
+  matches `grep 'source:' prod-backup/.genesis/cached/client-aws-1-prod-backup/*.yml`, <<EOF, "[prod-backup] Cached files are from the correct source";
+prod-backup/.genesis/cached/client-aws-1-prod-backup/client-aws-1-prod-backup.yml:  source: prod-backup
+prod-backup/.genesis/cached/client-aws-1-prod-backup/client-aws-1-prod.yml:  source: prod
+prod-backup/.genesis/cached/client-aws-1-prod-backup/client-aws-1.yml:  client-aws-1-source: sandbox
+prod-backup/.genesis/cached/client-aws-1-prod-backup/client.yml:  client-source: sandbox
+EOF
+  # }}}
+}; # }}}
 teardown_vault();
 done_testing;
+
+# vim: fdm=marker:foldlevel=1:noet

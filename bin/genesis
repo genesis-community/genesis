@@ -2756,7 +2756,11 @@ sub {
 		"$ENV{CACHE_DIR}/.genesis/cached/$ENV{PREVIOUS_ENV}" :
 		$ENV{WORKING_DIR};
 
-	my @cachables = grep {-f $_} Genesis::Env::relate_by_name(
+	chomp(my $d=`pwd`);
+	my @cachables = grep {
+		debug "[ci-generate-cache] Testing cache candidate %s/%s: %s", $d,$_, -f $_ ? "#g{present}" : "#y{absent}";
+		-f $_;
+	} Genesis::Env::relate_by_name(
 		$ENV{CURRENT_ENV}, $ENV{PREVIOUS_ENV} || '', $common_path, $ENV{WORKING_DIR}
 	);
 	copy_or_fail($_, "$target_dir/") for (@cachables);

@@ -1,4 +1,7 @@
 ---
-params:
+genesis:
   env: prod
+
+params:
+  source: prod
   domain: prod.thing.example.com

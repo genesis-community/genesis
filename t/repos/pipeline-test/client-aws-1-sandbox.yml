@@ -1,4 +1,7 @@
 ---
-params:
+genesis:
   env: sandbox
+
+params:
+  source: sandbox
   domain: sandbox.thing.example.com
