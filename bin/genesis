@@ -295,12 +295,13 @@ sub propagate_previous_passed_files {
 	) for (@cachables);
 
   my $env = Genesis::Top->new($ENV{WORKING_DIR})->load_env($ENV{CURRENT_ENV});
-	my @missing =
-		grep {-f "$ENV{WORKING_DIR}/$_" && ! -f "$ENV{CACHE_DIR}/$_"}
-		map {(my $s = $_) =~ s/^\.\///; $s}
+	my @files = map {(my $s = $_) =~ s/^\.\///; $s}
 		grep {$_ !~ /^not-shared/}
 		$env->relate($ENV{PREVIOUS_ENV},'','not-shared');
-	return @missing
+	return {
+		missing => [grep {-f "$ENV{WORKING_DIR}/$_" && ! -f "$ENV{CACHE_DIR}/$_"} @files],
+		extra   => [grep {-f "$ENV{CACHE_DIR}/$_" && ! -f "$ENV{WORKING_DIR}/$_"} @files],
+	}
 }
 
 # }}}
@@ -2634,7 +2635,7 @@ sub {
 
 	vault_auth();
 
-	my @mismatches = propagate_previous_passed_files();
+	my $mismatches = propagate_previous_passed_files();
 
 	# Load the environment in order to check other required variables
 	pushd $ENV{WORKING_DIR};
@@ -2686,15 +2687,28 @@ EOF
 	my %credhub_env = $env->credhub_connection_env();
 	my (undef,$rc) = run( {interactive => 1, env => \%credhub_env}, './dry-run.sh', $env->name, $env->type, 'updates.yml');
 	bail "Failed to determine changes." if $rc;
-	if (@mismatches) {
-		bail(
+	if ($mismatches) {
+		my $msg =
 			"#Ru{POTENTIAL ISSUE:}\n".
 			"The $ENV{CURRENT_ENV} environment expected the $ENV{PREVIOUS_ENV} environment\n".
-			"to provide cached versions of the following files to update its own copies,\n".
-			"but they were not found.  This may lead to unstable deployments - please wait\n".
-			"until all pending upstream deployments are finished.  Files missing are:\n  - ".
-			join("\n  - ",@mismatches)
-		);
+			"to provide cached versions of files to update its own copies, but they were\n".
+			"not found, or found versions that were not expected.\n\n".
+			"There are multiple reasons this may happen, some of which are expected and\n".
+			"some may lead to unstable deployments.  If you have recently extracted some\n".
+			"values into hierarchal files, please wait until the change propagates from\n".
+			"all pending upstream deployments are finished.";
+
+		if (scalar($mismatches->{missing})) {
+			$msg .= "\n\n".
+			"Files missing from cache, but present in changes (will be ignored):\n  - ".
+			join("\n  - ",@{$mismatches->{missing}});
+		}
+		if (scalar($mismatches->{extra})) {
+			$msg .= "\n\n".
+			"Files not present in changes, but found in cache (will be applied):\n  - ".
+			join("\n  - ",@{$mismatches->{extra}});
+		}
+		bail($msg);
 	}
 	popd;
 });
