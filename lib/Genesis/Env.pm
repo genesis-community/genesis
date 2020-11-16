@@ -701,9 +701,53 @@ sub params {
 	my ($self) = @_;
 	if (!$self->{__params}) {
 		debug("running spruce merge of environment files, without evaluation, to find parameters");
-		my $out = run({ onfailure => "Unable to merge $self->{name} environment files", stderr => 0 },
-			'spruce merge --skip-eval "$@" | spruce json',
-				map { $self->path($_) } $self->actual_environment_files());
+		my @merge_files = map { $self->path($_) } $self->actual_environment_files();
+
+		my ($out, $rc, $err);
+		if (envset("GENESIS_UNEVALED_PARAMS")) {
+			$out = run({ onfailure => "Unable to merge $self->{name} environment files", stderr => undef },
+			'spruce merge --skip-eval "$@" | spruce json', @merge_files)
+		} else {
+			($out,$rc,$err) = run({stderr=>0},' spruce merge --multi-doc "$@"', @merge_files);
+			if ($rc) {
+				my $orig_errors = $err;
+				my $contents = '';
+				for my $content (map {slurp($_)} @merge_files) {
+					$contents .= "---\n" unless $contents =~ /^(?:\s*(?:#[^\n\r]*)*[\n\r]+)*---/s;
+					$contents .= $content;
+				}
+				my $uneval = read_json_from(run(
+					{ onfailure => "Unable to merge $self->{name} environment files", stderr => undef },
+					'spruce merge --skip-eval "$@" | spruce json', @merge_files
+				));
+				my @err_paths = map {$_ =~ /^ - \$\.([^:]*): /; $1} grep {/^ - \$\./} lines($err);
+				for my $err_path (@err_paths) {
+					my $val = struct_lookup($uneval, $err_path);
+					my $spruce_ops=join("|", qw/
+						calc cartesian-product concat defer empty file grab inject ips join
+						keys load param prune shuffle sort static_ips vault awsparam
+						awssecret base64
+					/);
+					(my $replacement = $val) =~ s/\(\( *($spruce_ops) /(( defer $1 /;
+					$contents =~ s/\Q$val\E/$replacement/sg;
+				}
+				my $premerge = mkfile_or_fail($self->tmppath('premerge.yml'),$contents);
+				($out,$rc,$err) = run({stderr => 0 }, 'spruce merge --multi-doc --go-patch "$1"', $premerge);
+				bail(
+					"Could not merge $self->{name} environment files:\n\n".
+					"$err\n\n".
+					"Efforts were made to work around resolving the following errors, but if\n".
+					"they caused the above errors, you may be able to partially resolve this\n".
+					"issue by using #C{export GENESIS_UNEVALED_PARAMS=1}:\n\n".
+					$orig_errors
+				) if $rc;
+			}
+			my $postmerge = mkfile_or_fail($self->tmppath("postmerge.yml"),$out);
+			$out = run({onfailure => "Unable to read json from merged $self->{name} environment files"},
+				'spruce json "$1"', $postmerge
+			);
+		}
+
 		$self->{__params} = load_json($out);
 	}
 	return $self->{__params};
@@ -740,7 +784,7 @@ sub _manifest {
 					REDACT => $opts{redact} ? 'yes' : '' # spruce redaction flag
 				}
 			},
-			grep {$_} ('spruce', 'merge', '--go-patch', $no_eval, @merge_files));
+			grep {$_} ('spruce', 'merge', '--multi-doc', '--go-patch', $no_eval, @merge_files));
 		popd;
 
 		debug("saving #W{%s} manifest to $path", $opts{no_eval} ? 'unevaled' : $opts{redact} ? 'redacted' : 'unredacted');

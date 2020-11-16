@@ -377,6 +377,138 @@ EOF
 	teardown_vault();
 };
 
+subtest 'multidoc env files' => sub {
+	my $vault_target = vault_ok;
+	Genesis::Vault->clear_all();
+	my $top = Genesis::Top->create(workdir, 'thing', vault=>$VAULT_URL);
+	$top->link_dev_kit('t/src/fancy');
+	put_file $top->path('standalone.yml'), <<'EOF';
+---
+kit:
+  name:    dev
+  version: latest
+  features:
+    - whiskey
+    - tango
+    - foxtrot
+
+params:
+  env:   standalone
+  secret: (( vault $GENESIS_SECRETS_BASE "test:secret" ))
+  network: (( grab networks[0].name ))
+  junk:    ((    vault    "secret/passcode" ))
+
+---
+genesis:
+  env:       (( grab params.env ))
+
+kit:
+  features:
+  - (( replace ))
+  - oscar
+---
+params:
+  env:  (( prune ))
+
+kit:
+  features:
+  - (( append ))
+  - kilo
+EOF
+
+	my $env = $top->load_env('standalone');
+	cmp_deeply([$env->params], [{
+		kit => {
+			features   => [ "oscar", "kilo" ],
+			name       => "dev",
+			version    => "latest"
+		},
+		genesis => {
+			env        => "standalone"
+		},
+		params => {
+			junk       => '(( vault "secret/passcode" ))',
+			network    => '(( grab networks.0.name ))',
+			secret     => '(( vault $GENESIS_SECRETS_BASE "test:secret" ))',
+		}
+	}], "env contains the parameters from all document pages");
+	cmp_deeply([$env->kit_files], [qw[
+		base.yml
+		addons/oscar.yml
+		addons/kilo.yml
+	]], "env gets the correct kit yaml files to merge");
+	cmp_deeply([$env->potential_environment_files], [qw[
+		./standalone.yml
+	]], "env formulates correct potential environment files to merge");
+	cmp_deeply([$env->actual_environment_files], [qw[
+		./standalone.yml
+	]], "env detects correct actual environment files to merge");
+
+	put_file $top->path('standalone.yml'), <<'EOF';
+---
+kit:
+  name:    dev
+  version: latest
+  features:
+    - whiskey
+    - tango
+    - foxtrot
+
+params:
+  env:   standalone
+
+---
+genesis:
+  env:       (( grab params.env ))
+
+kit:
+  features:
+  - (( replace ))
+  - oscar
+---
+params:
+  env:  (( prune ))
+
+kit:
+  features:
+  - (( append ))
+  - kilo
+EOF
+
+	# Get rid of the unparsable value that would prevent manifest generation
+	$env = $top->load_env('standalone');
+
+	my $mfile = $top->path(".manifest.yml");
+	my ($manifest, undef) = $env->_manifest(redact => 0);
+	$env->write_manifest($mfile, prune => 0);
+	ok -f $mfile, "env->write_manifest should actually write the file";
+	my $mcontents;
+	lives_ok { $mcontents = load_yaml_file($mfile) } 'written manifest (unpruned) is valid YAML';
+	cmp_deeply($mcontents, $manifest, "written manifest (unpruned) matches the raw unpruned manifest");
+	cmp_deeply($mcontents, {
+		name   => ignore,
+		fancy  => ignore,
+		addons => ignore,
+		meta   => ignore,
+		params => ignore,
+		exodus => ignore,
+		genesis=> superhashof({
+			env           => "standalone",
+		}),
+		kit    => {
+			name          => ignore,
+			version       => ignore,
+			features      => [ "oscar", "kilo" ],
+		},
+	}, "written manifest (unpruned) contains all the keys");
+
+	ok $env->manifest_lookup('addons.kilo'), "env manifest defines addons.kilo";
+	is $env->manifest_lookup('addons.foxtrot', 'MISSING'), 'MISSING',
+		"env manifest doesn't define addons.foxtrot";
+
+	teardown_vault();
+};
+
 subtest 'manifest pruning' => sub {
 	my $vault_target = vault_ok;
 	Genesis::Vault->clear_all();
