@@ -2623,7 +2623,7 @@ OPTIONS
 $GLOBAL_USAGE
 EOF
 sub {
-	explain("[#G{genesis} ci-pipeline-deploy] v#G{$Genesis::VERSION}\n");
+	explain("[#G{genesis} ci-show-changes] v#G{$Genesis::VERSION}\n");
 
 	my %options;
 	options(\@_, \%options, qw/
@@ -2696,7 +2696,10 @@ EOF
 	my %credhub_env = $env->credhub_connection_env();
 	my (undef,$rc) = run( {interactive => 1, env => \%credhub_env}, './dry-run.sh', $env->name, $env->type, 'updates.yml');
 	bail "Failed to determine changes." if $rc;
-	if ($mismatches) {
+
+	my @missing = @{$mismatches->{missing} || []};
+	my @extra   = @{$mismatches->{extra}   || []};
+	if (@missing || @extra) {
 		my $msg =
 			"#Ru{POTENTIAL ISSUE:}\n".
 			"The $ENV{CURRENT_ENV} environment expected the $ENV{PREVIOUS_ENV} environment\n".
@@ -2707,16 +2710,14 @@ EOF
 			"values into hierarchal files, please wait until the change propagates from\n".
 			"all pending upstream deployments are finished.";
 
-		if (scalar($mismatches->{missing})) {
-			$msg .= "\n\n".
+		$msg .= "\n\n".
 			"Files missing from cache, but present in changes (will be ignored):\n  - ".
-			join("\n  - ",@{$mismatches->{missing}});
-		}
-		if (scalar($mismatches->{extra})) {
-			$msg .= "\n\n".
+			join("\n  - ",@missing) if @missing;
+
+		$msg .= "\n\n".
 			"Files not present in changes, but found in cache (will be applied):\n  - ".
-			join("\n  - ",@{$mismatches->{extra}});
-		}
+			join("\n  - ",@extra) if @extra;
+
 		bail($msg);
 	}
 	popd;
