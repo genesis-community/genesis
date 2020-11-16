@@ -367,16 +367,25 @@ EOF
 		$branch);
 	popd;
 
-	# find and copy all potential changes to the outdir
+	# find and copy (or remove if appropriate) all potential changes to the outdir
 	pushd $indir;
 	my @output = lines(run('git status --porcelain'));
 	popd;
-	my @changes = map { chomp; s/^...//; $_; } @output;
-	for my $file (@changes) {
+	for my $change (@output) {
+		my ($action,$file)= $change =~ /^(..).(.*)$/;
 		next if $filter && ref($filter) && ref($filter) =~ /^regexp$/i && $file !~ $filter;
-		mkdir_or_fail(dirname("$outdir/$file"));
-		run({ onfailure => "Could not copy changed files to output directory" },
-			'cp -R "$1" "$2"', "$indir/$file", "$outdir/$file");
+		if ($action =~ /.D/) {
+			run(
+				{ onfailure => "Could not remove outdated file '$file' from output directory" },
+				'rm -f "$1"', $outdir/$file
+			);
+		} else {
+			mkdir_or_fail(dirname("$outdir/$file"));
+			run(
+				{ onfailure => "Could not copy changed files to output directory" },
+				'cp -Rv "$1" "$2"', "$indir/$file", "$outdir/$file"
+			);
+		}
 	}
 
 	# check if any changes actually exist in the outdir (potential changes may have alread
@@ -2750,7 +2759,9 @@ sub {
 		unless $ENV{GIT_PRIVATE_KEY} || ($ENV{GIT_USERNAME} && $ENV{GIT_PASSWORD});
 
 	my $target_dir = "$ENV{WORKING_DIR}/.genesis/cached/$ENV{CURRENT_ENV}";
-	rmtree($target_dir) if -e $target_dir;
+	my $bad_dir    = "$ENV{WORKING_DIR}/.genesis/cached/cached";
+	rmtree($_) for (grep {-e $_} ($target_dir,$bad_dir));
+
 	mkdir_or_fail($target_dir);
 	my $common_path = $ENV{PREVIOUS_ENV} ?
 		"$ENV{CACHE_DIR}/.genesis/cached/$ENV{PREVIOUS_ENV}" :
