@@ -737,24 +737,31 @@ sub _lookup_key {
 
 	return (1,$what) if $key eq '';
 
-	for (split /[\[\.]/, $key) {
-		if (/^(\d+)\]$/) {
-			return (0,undef) unless ref($what) eq "ARRAY" && scalar(@$what) > $1;
-			$what = $what->[$1];
-		} elsif (/^(.*?)=(.*?)]$/) {
-			return (0,undef) unless ref($what) eq "ARRAY";
-			my $found=0;
-			for (my $i = 0; $i < scalar(@$what); $i++) {
-				if (ref($what->[$i]) eq 'HASH' && defined($what->[$i]{$1}) && ($what->[$i]{$1} eq $2)) {
-					$what = $what->[$i];
-					$found=1;
-					last;
+	$key =~ s/\.\./.\0/;
+	for (split /[\[\.]+/, $key) {
+		if (ref($what) eq 'ARRAY') {
+			my ($k, $v) = (/^(?:(.*?)=)?(.*?)]?$/);
+			if ($v =~ /^(\d+)$/ && !defined($k) && eval {exists($what->[$v])}) {
+				$what = $what->[$v]
+			} else {
+				my @possible_keys = defined($k) ? ($k) : qw/name key id/;
+				my $found=0;
+				for my $k (@possible_keys) {
+					for (my $i = 0; $i < scalar(@$what); $i++) {
+						if (ref($what->[$i]) eq 'HASH' && defined($what->[$i]{$k}) && ($what->[$i]{$k} eq $v)) {
+							$what = $what->[$i];
+							$found=1;
+							last;
+						}
+					}
+					last if $found;
 				}
+				return (0, undef) unless $found;
 			}
-			return (0, undef) unless $found;
 		} else {
-			return (0, undef) if !exists $what->{$_};
-			$what = $what->{$_};
+			my $k = $_ eq "\0" ? "." : $_;
+			return (0, undef) unless eval {exists $what->{$k}};
+			$what = $what->{$k};
 		}
 	}
 	return (1, $what);
