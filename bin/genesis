@@ -378,7 +378,7 @@ EOF
 		if ($action =~ /.D/) {
 			run(
 				{ onfailure => "Could not remove outdated file '$file' from output directory" },
-				'rm -f "$1"', $outdir/$file
+				'rm -f "$1"', "$outdir/$file"
 			);
 		} else {
 			mkdir_or_fail(dirname("$outdir/$file"));
