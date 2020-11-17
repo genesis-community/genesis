@@ -2666,11 +2666,16 @@ sub {
 		->download_required_configs('blueprint', 'manifest')
 		->manifest(redact => 0, prune => 1);
 
+	my $vars = $env->manifest_lookup('bosh-variables') || {};
+	my $vars_file = "bosh-vars.yml";
+	DumpYAML($vars_file,$vars);
+
 	mkfile_or_fail "dry-run.sh", 0755, <<'EOF';
 #!/bin/bash
 set -e
 deployment="${1}-${2}"
 new_manifest="$(cat ${3})"
+vars_file="$4"
 new_configs="$(bosh curl /configs | jq -r 'map(.content)[]' \
                     | spruce merge --multi-doc -)"
 new_variables="$(echo "credhub_variables:"; bosh curl "/deployments/${deployment}/variables" \
@@ -2689,12 +2694,12 @@ current_variables="$(bosh int <(bosh curl "/deployments/${deployment}/variables"
 
 bosh diff-config --json \
      --from-content <(bosh int <(printf "%s\n%s\n%s" "${current_configs}" "${current_manifest}" "${current_variables}")) \
-     --to-content <(bosh int <(printf "%s\n%s\n%s" "${new_configs}" "${new_manifest}" "${new_variables}")) \
+     --to-content <(bosh int <(printf "%s\n%s\n%s" "${new_configs}" "${new_manifest}" "${new_variables}") -l ${vars_file}) \
      | jq -r '.Tables[0].Rows[0].diff'
 EOF
 
 	my %credhub_env = $env->credhub_connection_env();
-	my (undef,$rc) = run( {interactive => 1, env => \%credhub_env}, './dry-run.sh', $env->name, $env->type, 'updates.yml');
+	my (undef,$rc) = run( {interactive => 1, env => \%credhub_env}, './dry-run.sh', $env->name, $env->type, 'updates.yml', $vars_file);
 	bail "Failed to determine changes." if $rc;
 
 	my @missing = @{$mismatches->{missing} || []};
