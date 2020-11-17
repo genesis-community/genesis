@@ -2575,12 +2575,24 @@ sub {
 			 BOSH_CLIENT BOSH_CLIENT_SECRET/) unless $env->needs_bosh_create_env;
 	bail_on_missing_pipeline_environment_variables(@undefined);
 
-	# don't set up a bosh alias if we're a create-env based deploy, no need, no data
-	unless ($env->needs_bosh_create_env) {
+	explain "Preparing to deploy #C{%s}:\n  - based on kit #c{%s}", $env->name, $env->kit->id;
+	if ($env->needs_bosh_create_env) {
+		explain "  - as a #M{create-env} deployment\n";
+	} else {
+		explain "  - to '#M{%s}' BOSH director.\n", scalar($env->lookup_bosh_target);
+
 		Genesis::BOSH->alias(scalar $env->lookup_bosh_target);
-		$env->with_bosh->download_cloud_config();
+		my @hooks = qw(blueprint manifest check);
+		push @hooks, grep {$env->kit->has_hook($_)} qw(pre-deploy post-deploy);
+		$env->download_required_configs(@hooks);
+		explain "#Y{! No cloud config detected -- this may be a Genesis bug}"
+			unless $env->cloud_config;
 	}
 
+	check_environment($env)
+		or bail "#R{Preflight checks failed}; deployment operation #R{halted}.";
+
+	explain "Preflight #G{ok}, initiating BOSH deploy...";
 	my $result;
 	eval {
 		$result = $env->deploy(redact => !envset('CI_NO_REDACT'));
