@@ -26,6 +26,7 @@ use Encode;
 
 use Genesis;
 use Genesis::UI;
+use Genesis::IO;
 use Genesis::Top;
 use Genesis::Env;
 use Genesis::Kit;
