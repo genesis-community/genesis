@@ -337,7 +337,7 @@ cloud_config_needs() {
     if ! (IFS=$'\n'; echo "${__checked_cloud_config[*]}") | grep '^'$__token'$' >/dev/null 2>&1 ; then
       __checked_cloud_config+=("$__token")
       __have=$(spruce json "$GENESIS_CLOUD_CONFIG" | \
-        jq -r "if (.${__type}[] | select(.name == \"$__want\")) then 1 else 0 end")
+        jq -r "if ((.${__type}//[])[] | select(.name == \"$__want\")) then 1 else 0 end")
       if [[ -z "$__have" ]]; then
         __cloud_config_ok=no
         __cloud_config_error_messages+=( "    [#R@{-}] $__name '#Y{$__want}' exists" )
@@ -387,7 +387,7 @@ cloud_config_has() {
   esac
 
   __have=$(spruce json "$GENESIS_CLOUD_CONFIG" | \
-    jq -r "if (.${__type}[] | select(.name == \"$__want\")) then 1 else 0 end")
+    jq -r "if (.(${__type}//[])[] | select(.name == \"$__want\")) then 1 else 0 end")
   if [[ -n "$__have" ]]; then
     return 0
   else
