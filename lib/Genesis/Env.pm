@@ -713,7 +713,7 @@ sub params {
 				my $orig_errors = $err;
 				my $contents = '';
 				for my $content (map {slurp($_)} @merge_files) {
-					$contents .= "---\n$content";
+					$contents .= "\n---\n$content";
 				}
 				my $uneval = read_json_from(run(
 					{ onfailure => "Unable to merge $self->{name} environment files", stderr => undef },
