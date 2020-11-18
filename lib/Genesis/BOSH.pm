@@ -58,11 +58,17 @@ sub environment_variables {
 	my $e = $class->config($alias);
 	return {} unless %$e;
 	return {
+		BOSH_ENVIRONMENT   => $ENV{BOSH_ENVIRONMENT}   || $e->{url},
+		BOSH_CA_CERT       => $ENV{BOSH_CA_CERT}       || $e->{ca_cert},
+		BOSH_CLIENT        => $ENV{BOSH_CLIENT}        || $e->{username},
+		BOSH_CLIENT_SECRET => $ENV{BOSH_CLIENT_SECRET} || $e->{password},
+	} if (envset('GENESIS_HONOR_ENV'));
+	return {
 		BOSH_ENVIRONMENT   => $e->{url},
 		BOSH_CA_CERT       => $e->{ca_cert},
 		BOSH_CLIENT        => $e->{username},
 		BOSH_CLIENT_SECRET => $e->{password},
-	}
+	};
 }
 
 my $reping;
