@@ -679,7 +679,7 @@ sub exodus_lookup {
 	return $default unless $self->vault->has($path);
 	debug "Exodus data exists, retrieving it and converting to json";
 	my $out;
-	eval {$out = $self->vault->get($path);};
+	eval {$out = $self->vault->authenticate->get($path);};
 	bail "Could not get $for exodus data from the Vault: $@" if $@;
 
 	my $exodus = _unflatten($out);
