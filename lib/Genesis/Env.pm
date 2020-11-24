@@ -50,19 +50,24 @@ sub load {
 
 	my $env = $class->new(get_opts(\%opts, qw(name top)));
 
-	bail("#R{[ERROR]} Environment file $env->{file} does not exist.") unless -f $env->path($env->{file});
+	bail(
+		"#R{[ERROR]} Environment file $env->{file} does not exist."
+	) unless -f $env->path($env->{file});
 
-	bail("#R{[ERROR]} Both #C{kit.features} and deprecated #C{kit.subkits} were found during the environment\n".
-			 "build-out using the following files:\n#M{  %s}\n\n".
-			 "This can cause conflicts and unexpected behaviour.  Please replace all occurrences of\n".
-			 "#C{subkits} with #C{features} under the #C{kit} toplevel key.\n",
-			 join("\n  ",$env->actual_environment_files)
+	bail(
+		"#R{[ERROR]} Both #C{kit.features} and deprecated #C{kit.subkits} were found during\n".
+		"        the environment build-out using the following files:\n#M{          %s}\n\n".
+		"        This can cause conflicts and unexpected behaviour.  Please replace all\n".
+		"        occurrences of #C{subkits} with #C{features} under the #C{kit} toplevel key.\n",
+		join("\n          ",$env->actual_environment_files)
 	) if ($env->defines('kit.features') && $env->defines('kit.subkits'));
 
 	my $env_src;
 	(my $env_name, $env_src) = $env->lookup(['genesis.env','params.env']);
-	bail("\n#R{[ERROR]} Environment file #C{$env->{file}} environment name mismatch: #C{$env_src $env_name}")
-		unless $env->{name} eq $env_name || in_callback || envset("GENESIS_LEGACY");
+	#FIXME: if they are missing, error out with a better message
+	bail(
+		"\n#R{[ERROR]} Environment file #C{$env->{file}} environment name mismatch: #C{$env_src $env_name}"
+	) unless $env->{name} eq $env_name || in_callback || envset("GENESIS_LEGACY");
 
 	# reconstitute our kit via top
 	my $kit_name = $env->lookup('kit.name');
@@ -78,33 +83,36 @@ sub load {
 		if ($Genesis::VERSION eq "(development)") {
 			error(
 				"#Y{[WARNING]} Environment `$env->{name}` requires Genesis v$min_version or higher.\n".
-				"This version of Genesis is a development version and its feature availability cannot\n".
-				"be verified -- unexpected behaviour may occur.\n"
+				"          This version of Genesis is a development version and its feature availability cannot\n".
+				"          be verified -- unexpected behaviour may occur.\n"
 			) unless (under_test && !envset 'GENESIS_TESTING_DEV_VERSION_DETECTION');
 		} elsif (! new_enough($Genesis::VERSION, $min_version)) {
 			bail(
 				"#R{[ERROR]} Environment `$env->{name}` requires Genesis v$min_version or higher.\n".
-				"You are currently using Genesis v$Genesis::VERSION.\n"
+				"        You are currently using Genesis v$Genesis::VERSION.\n"
 			) unless (under_test && !envset 'GENESIS_TESTING_DEV_VERSION_DETECTION');
 		}
 	}
 
 	# Check for v2.7.0 features
 	if ($env->kit->feature_compatibility("2.7.0")) {
-		error("#R{[WARNING]} Kit #M{%s} requires environment file to specify #m{genesis.env}\n".
-		     "        but #C{%s} is using #m{%s}.  Please update your environment file as this\n".
-		     "will be removed in a later version of Genesis",
-		     $env->kit->id, $env->name, $env_src)
-			if ($env_src && $env_src ne 'genesis.env');
+		error(
+			"#R{[WARNING]} Kit #M{%s} requires environment file to specify #m{genesis.env}\n".
+			"          but #C{%s} is using #m{%s}.  Please update your environment file as this\n".
+			"          will be removed in a later version of Genesis",
+			$env->kit->id, $env->name, $env_src
+		) if ($env_src && $env_src ne 'genesis.env');
 	} else {
-		bail("#R{[ERROR]} Kit #M{%s} is not compatible with #C{secrets_mount} feature\n".
-		     "        Please upgrade to a newer release or remove params.secrets_mount from #M{%s}",
-		     $env->kit->id, $env->{file})
-			if ($env->secrets_mount ne $env->default_secrets_mount);
-		bail("#R{[ERROR]} Kit #M{%s} is not compatible with #C{exodus_mount} feature\n".
-		     "        Please upgrade to a newer release or remove params.exodus_mount from #M{%s}",
-		     $env->kit->id, $env->{file})
-			if ($env->exodus_mount ne $env->default_exodus_mount);
+		bail(
+			"#R{[ERROR]} Kit #M{%s} is not compatible with #C{secrets_mount} feature\n".
+			"        Please upgrade to a newer release or remove params.secrets_mount from #M{%s}",
+			$env->kit->id, $env->{file}
+		) if ($env->secrets_mount ne $env->default_secrets_mount);
+		bail(
+			"#R{[ERROR]} Kit #M{%s} is not compatible with #C{exodus_mount} feature\n".
+			"        Please upgrade to a newer release or remove params.exodus_mount from #M{%s}",
+			$env->kit->id, $env->{file}
+		) if ($env->exodus_mount ne $env->default_exodus_mount);
 	}
 
 	return $env
@@ -152,13 +160,13 @@ sub from_envvars {
 		if ($Genesis::VERSION eq "(development)") {
 			error(
 				"#Y{[WARNING]} Environment `$env->{name}` requires Genesis v$min_version or higher.\n".
-				"This version of Genesis is a development version and its feature availability cannot\n".
-				"be verified -- unexpected behaviour may occur.\n"
+				"          This version of Genesis is a development version and its feature availability\n".
+				"          cannot be verified -- unexpected behaviour may occur.\n"
 			) unless (under_test && !envset 'GENESIS_TESTING_DEV_VERSION_DETECTION');
 		} elsif (! new_enough($Genesis::VERSION, $min_version)) {
 			bail(
 				"#R{[ERROR]} Environment `$env->{name}` requires Genesis v$min_version or higher.\n".
-				"You are currently using Genesis v$Genesis::VERSION.\n"
+				"        You are currently using Genesis v$Genesis::VERSION.\n"
 			) unless (under_test && !envset 'GENESIS_TESTING_DEV_VERSION_DETECTION');
 		}
 	}
@@ -462,16 +470,20 @@ sub download_configs {
 	for (@configs) {
 		my $file = "$self->{__tmp}/$_.yml";
 		my ($type,$name) = split('@',$_);
-		$name ||= 'default';
-		my $label = $name eq "default" ? "$type config" : "$type config '$name'";
+		$name ||= '*';
+		my $label = $name eq "*" ? "all $type configs" : $name eq "default" ? "$type config" : "$type config '$name'";
 		waiting_on STDERR bullet('empty',$label."...", inline=>1, box => 1);
-		eval {Genesis::BOSH->download_config($director,$file,$type,$name)};
+		my $downloaded = eval {Genesis::BOSH->download_config($director,$file,$type,$name)};
 		if ($@) {
 			$err = $@;
-			explain STDERR "\r".bullet('bad',$label.join("\n      ", ("...failed!","",split("\n",$err),"")), box => 1, inline => 1);
+			explain STDERR "\r".bullet('bad',$label.join("\n      ", ('...failed!',"",split("\n",$err),"")), box => 1, inline => 1);
 		} else {
+			explain STDERR "[2K\r".bullet('good',$label.($name eq '*' ? ':' : ''), box => 1, inline => 1);
 			$self->use_config($file,$type,$name);
-			explain STDERR "[2K\r".bullet('good',$label, box => 1, inline => 1);
+			for (@$downloaded) {
+				$self->use_config($file,$_->{type},$_->{name});
+				explain STDERR bullet('good',$_->{label}, box => 1, inline => 1, indent => 7) if $name eq "*";
+			}
 		}
 	}
 	explain STDERR "";
@@ -497,8 +509,8 @@ sub use_config {
 	$self->{_configs} ||= {};
 	my $label = $type || 'cloud';
 	my $env_var = "GENESIS_".uc($type)."_CONFIG";
-	if ($name && $name ne 'default') {
-		$label .= "@$name";
+	if ($name && $name ne '*') {
+		$label .= "\@$name";
 		$env_var .= "_$name";
 	}
 	$self->{_configs}{$label} = $file;
@@ -510,8 +522,8 @@ sub config_file {
 	my ($self, $type, $name) = @_;
 	my $label = $type||'cloud';
 	my $env_var = "GENESIS_".uc($type)."_CONFIG";
-	if ($name && $name ne 'default') {
-		$label .= "@$name";
+	if ($name && $name ne '*') {
+		$label .= "\@$name";
 		$env_var .= "_$name";
 	}
 	return $self->{_configs}{$label} || $ENV{$env_var} || '';
@@ -520,11 +532,11 @@ sub config_file {
 sub configs {
 	my @env_configs = map {
 		$_ =~ m/GENESIS_([A-Z0-9_-]+)_CONFIG(?:_(.*))?$/;
-		lc($1).($2 && $2 ne 'default' ? "$2" : '');
+		lc($1).($2 && $2 ne '*' ? "\@$2" : '');
 	} grep {
 		/GENESIS_[A-Z0-9_-]+_CONFIG(_.*)?$/;
 	} keys %ENV;
-	my @configs = (sort uniq(keys %{$_[0]->{_configs}}, @env_configs));
+	my @configs = sort(uniq(keys %{$_[0]->{_configs}}, @env_configs));
 	return @configs # can't just return the above because scalar/list context crazies
 }
 
