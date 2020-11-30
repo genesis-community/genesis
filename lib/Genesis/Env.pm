@@ -64,7 +64,9 @@ sub load {
 
 	my $env_src;
 	(my $env_name, $env_src) = $env->lookup(['genesis.env','params.env']);
-	#FIXME: if they are missing, error out with a better message
+	bail(
+		"\n#R{[ERROR]} Environment file #C{$env->{file}} missing required #C{genesis.env} field"
+	) unless $env_name;
 	bail(
 		"\n#R{[ERROR]} Environment file #C{$env->{file}} environment name mismatch: #C{$env_src $env_name}"
 	) unless $env->{name} eq $env_name || in_callback || envset("GENESIS_LEGACY");
