@@ -2710,7 +2710,7 @@ current_variables="$(bosh int <(bosh curl "/deployments/${deployment}/variables"
 bosh diff-config --json \
      --from-content <(bosh int <(printf "%s\n%s\n%s" "${current_configs}" "${current_manifest}" "${current_variables}")) \
      --to-content <(bosh int <(printf "%s\n%s\n%s" "${new_configs}" "${new_manifest}" "${new_variables}") -l ${vars_file}) \
-     | jq -r '.Tables[0].Rows[0].diff'
+     | jq -r '.Tables[0].Rows[0] | if (.diff == "" ) then "[32;1mNo differences found.[0m" else .diff end'
 EOF
 
 	my %credhub_env = $env->credhub_connection_env();
