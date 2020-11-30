@@ -2689,21 +2689,23 @@ set -e
 deployment="${1}-${2}"
 new_manifest="$(cat ${3})"
 vars_file="$4"
-new_configs="$(bosh curl /configs | jq -r 'map(.content)[]' \
-                    | spruce merge --multi-doc -)"
-new_variables="$(echo "credhub_variables:"; bosh curl "/deployments/${deployment}/variables" \
-                    | jq -r 'map(.name)[]' \
-                    | xargs -L1 sh -c 'credhub get --output-json -n "${1}"' sh \
-                    | jq -r '"- \(.name)@\(.id)"')"
+new_configs="$(bosh curl /configs \
+             | jq -r 'map(select(.type != "cpi") | .content) | join("\n---\n")' \
+             | spruce merge --multi-doc -)"
+new_variables="$(echo "credhub_variables:" \
+               ; bosh curl "/deployments/${deployment}/variables" \
+               | jq -r 'map(.name)[]' \
+               | xargs -L1 sh -c 'credhub get --output-json -n "${1}"' sh \
+               | jq -r '"- \(.name)@\(.id)"')"
 
 current_manifest="$(bosh -d ${deployment} manifest)"
 current_configs="$(bosh curl /deployment_configs\?deployment=${deployment} \
-                        | jq 'map(.config.id)[]' \
-                        | xargs -L1 sh -c 'bosh curl "/configs/${1}"' sh \
-                        | jq -r '.content' \
-                        | spruce merge --multi-doc -)"
+                 | jq 'map(.config.id)[]' \
+                 | xargs -L1 sh -c 'bosh curl "/configs/${1}"' sh \
+                 | jq -r '.content' \
+                 | spruce merge --multi-doc -)"
 current_variables="$(bosh int <(bosh curl "/deployments/${deployment}/variables" \
-                          | jq 'map("\(.name)@\(.id)") | {credhub_variables: .}'))"
+                   | jq 'map("\(.name)@\(.id)") | {credhub_variables: .}'))"
 
 bosh diff-config --json \
      --from-content <(bosh int <(printf "%s\n%s\n%s" "${current_configs}" "${current_manifest}" "${current_variables}")) \
