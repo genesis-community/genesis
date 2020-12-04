@@ -1180,7 +1180,11 @@ sub deploy {
 
 	my ($ok, $predeploy_data);
 	if ($self->has_hook('pre-deploy')) {
-		($ok, $predeploy_data) = $self->run_hook('pre-deploy');
+		($ok, $predeploy_data) = $self->run_hook(
+			'pre-deploy',
+			manifest => "$self->{__tmp}/manifest.yml",
+			vars_file => $self->vars_file
+		);
 		die "Cannot continue with deployment!\n" unless $ok;
 	}
 

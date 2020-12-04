@@ -118,6 +118,8 @@ sub run_hook {
 
 	} elsif ($hook eq 'pre-deploy') {
 		$ENV{GENESIS_PREDEPLOY_DATAFILE} = $opts{env}->tmppath("data");
+		$ENV{GENESIS_MANIFEST_FILE} = $opts{manifest};
+		$ENV{GENESIS_BOSHVARS_FILE} = $opts{vars_file};
 
 	} elsif ($hook eq 'post-deploy') {
 		$ENV{GENESIS_DEPLOY_RC} = defined $opts{rc} ? $opts{rc} : 255;
