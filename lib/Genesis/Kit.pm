@@ -213,7 +213,7 @@ sub run_hook {
 
 	if ($hook eq 'pre-deploy') {
 		bail(
-			"#R{[ERROR]} Cannot continue with deployment: 'pre-deploy' hook for #C{%s} evironment exited %d.",
+			"#R{[ERROR]} Cannot continue with deployment: 'pre-deploy' hook for #C{%s} environment exited %d.",
 			$ENV{GENESIS_ENVIRONMENT}, $rc,
 		) unless ($rc == 0);
 		my $contents;
