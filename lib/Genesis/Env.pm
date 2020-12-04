@@ -570,7 +570,7 @@ sub features {
 		$self->{__explicit_features} = $features;
 		my @derived_features = grep {$_ =~ /^\+/} $features;
 		bail(
-			"#R{[ERROR]} Evironment #C{%s} cannot explicitly specify derived features:\n  - %s",
+			"#R{[ERROR]} Environment #C{%s} cannot explicitly specify derived features:\n  - %s",
 			$self->name, join("\n  - ",@derived_features)
 		) if @derived_features;
 		$features = [$self->kit->run_hook('features',env => $self, features => $features)]
