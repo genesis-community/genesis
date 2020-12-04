@@ -105,12 +105,17 @@ sub ping {
 		error "#R{unreachable - $status!}\n" if $waiting;
 		return 0;
 	}
-	my ($out,$rc) = _bosh('bosh', '-e', $env, 'env');
+	my ($out,$rc) = read_json_from(_bosh('bosh', '-e', $env, 'env', '--json'));
 	if ($rc) {
 		error "#R{error!}\n\n$out\n" if $waiting;
 		return 0;
 	}
-	explain STDERR "#G{ok}" if $waiting;
+	my $user = $out->{Tables}[0]{Rows}[0]{user};
+	if ($user eq "(not logged in)") {
+		error "#R{unauthenticated!}" if $waiting;
+		return 0;
+	}
+	explain STDERR "#G{ok - authenticated as $user}" if $waiting;
 	$ENV{GENESIS_BOSH_VERIFIED} = $env;
 	return 1;
 }
