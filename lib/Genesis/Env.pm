@@ -861,20 +861,23 @@ sub cached_manifest_info {
 }
 
 sub vars_file {
-	my ($self, $file) = @_;
+	my ($self,$redact) = @_;
 
 	# Check if manifest currently has params.variable-values hash, and if so,
 	# build a variables.yml file in temp directory and return a path to it
 	# (return undef otherwise)
+	$redact = $redact ? 1 : 0;
+	my $redacted = $redact ? '-redacted' : '';
 
-	return $self->{_vars_file} if ($self->{_vars_file} && -f $self->{_vars_file});
+	return $self->{_vars_file}{$redact} if ($self->{_vars_file}{$redact} && -f $self->{_vars_file}{$redact});
 
-	my $vars = $self->manifest_lookup('bosh-variables');
+	my ($manifest, undef) = $self->_manifest(redact => $redact);
+	my $vars = struct_lookup($manifest,'bosh-variables');
 	if ($vars && ref($vars) eq "HASH" && scalar(keys %$vars) > 0) {
-		my $vars_file = "$self->{__tmp}/bosh-vars.yml";
+		my $vars_file = "$self->{__tmp}/bosh-vars${redacted}.yml";
 		DumpYAML($vars_file,$vars);
 		dump_var "BOSH Variables File" => $vars_file, "Contents" => slurp($vars_file);
-		return $self->{_vars_file} = $vars_file;
+		return $self->{_vars_file}{$redact} = $vars_file;
 	} else {
 		return undef
 	}
@@ -1319,6 +1322,12 @@ sub deploy {
 	my $manifest_path=$self->path(".genesis/manifests/$self->{name}.yml");
 	$self->write_manifest($manifest_path, redact => 1, prune => 0);
 	debug("written redacted manifest to $manifest_path");
+
+	if ($self->vars_file('redacted')) {
+		my $vars_path = $self->path(".genesis/manifests/$self->{name}.vars");
+		copy_or_fail($self->vars_file('redacted'), $vars_path);
+		debug("written redacted bosh vars file to $vars_path");
+	}
 
 	$self->run_hook('post-deploy', rc => 0, data => $predeploy_data)
 		if $self->has_hook('post-deploy');
