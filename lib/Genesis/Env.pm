@@ -967,7 +967,10 @@ EOF
 
 sub kit_files {
 	my ($self, $absolute) = @_;
-	return $self->kit->source_yaml_files($self, $absolute),
+	$absolute = !!$absolute; #booleanify it.
+	$self->{__kit_files}{$absolute} = [$self->kit->source_yaml_files($self, $absolute)]
+		unless $self->{__kit_files}{$absolute};
+	return @{$self->{__kit_files}{$absolute}};
 }
 
 sub _flatten {
