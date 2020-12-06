@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!perl
 use strict;
 use warnings;
 use utf8;
@@ -836,6 +836,7 @@ subtest 'cloud_config_and_deployment' => sub{
 	my $vault_target = vault_ok;
 	Genesis::Vault->clear_all();
 	`safe set --quiet secret/code word='penguin'`;
+	`safe set --quiet secret/standalone/thing/admin password='drowssap'`;
 
 	my $top = Genesis::Top->create(workdir, 'thing', vault=>$VAULT_URL)->link_dev_kit('t/src/fancy');
 	put_file $top->path('standalone.yml'), <<EOF;
@@ -867,7 +868,8 @@ EOF
 	ok $manifest_file eq $env->path(".genesis/manifests/".$env->name.".yml"), "cached manifest path correctly determined";
 	ok ! $exists, "manifest file doesn't exist.";
 	ok ! defined($sha1), "sha1 sum for manifest not computed.";
-	stdout_is(sub {$env->deploy()}, <<EOF,
+	my ($stdout, $stderr) = output_from {$env->deploy(canaries => 2, "max-in-flight" => 5);};
+	eq_or_diff($stdout, <<EOF, "Deploy should call BOSH with the correct options");
 bosh
 -e
 standalone
@@ -875,13 +877,10 @@ standalone
 standalone-thing
 deploy
 --no-redact
+--canaries=2
+--max-in-flight=5
 $env->{__tmp}/manifest.yml
-
-Deployment successful.  Preparing metadata for export...
-Done.
-
 EOF
-		"Deploy should call BOSH with the correct options");
 
 	($manifest_file, $exists, $sha1) = $env->cached_manifest_info;
 	ok $manifest_file eq $env->path(".genesis/manifests/".$env->name.".yml"), "cached manifest path correctly determined";
@@ -978,6 +977,7 @@ params:
     - 3
 
 EOF
+	`safe set --quiet secret/standalone/thing/admin password='drowssap'`;
 	my $env = $top->load_env('standalone');
 	lives_ok { $env->download_cloud_config(); }
 		"download_cloud_config runs correctly";
@@ -988,7 +988,8 @@ cc-stuff: cloud-config-data
 EOF
 
 	my $varsfile = $env->vars_file();
-	stdout_is(sub {$env->deploy()}, <<EOF, "Deploy should call BOSH with the correct options, including vars file");
+	my ($stdout, $stderr) = output_from {eval {$env->deploy();}};
+	eq_or_diff($stdout, <<EOF, "Deploy should call BOSH with the correct options, including vars file");
 bosh
 -e
 standalone
@@ -999,10 +1000,6 @@ deploy
 -l
 $varsfile
 $env->{__tmp}/manifest.yml
-
-Deployment successful.  Preparing metadata for export...
-Done.
-
 EOF
 
 	eq_or_diff get_file($env->vars_file), <<EOF, "download_cloud_config calls BOSH correctly";

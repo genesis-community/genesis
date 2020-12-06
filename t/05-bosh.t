@@ -29,10 +29,10 @@ subtest '_bosh helper magic' => sub {
 subtest 'bosh ping' => sub {
 	local $ENV{GENESIS_BOSH_COMMAND};
 	my $director = fake_bosh_director('the-target');
-	bosh_runs_as("-e the-target env");
+	bosh_runs_as("-e the-target env --json");
 	ok Genesis::BOSH->ping('the-target'), "bosh env on alias should ping ok";
 
-	bosh_runs_as("-e https://127.0.0.1:25555 env");
+	bosh_runs_as("-e https://127.0.0.1:25555 env --json");
 	ok Genesis::BOSH->ping('https://127.0.0.1:25555'), "bosh env on url should ping ok";
 	$director->stop();
 };

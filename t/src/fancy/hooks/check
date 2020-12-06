@@ -50,5 +50,5 @@ if [[ ${HOOK_SHOULD_CHECK_CC:-no} != "no" ]]; then
 	exit 0
 fi
 
-echo "everything checks out!"
+echo >&2 "everything checks out!"
 exit 0

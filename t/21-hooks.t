@@ -322,7 +322,7 @@ subtest 'secrets hook' => sub {
 
 	## secrets check
 	qx(safe rm secret/snw/lab/dev/thing/args secret/snw/lab/dev/thing/env);
-	stdout_is(sub { $rc = $fancy->run_hook('secrets', env => $snw_lab_dev,
+	stderr_is(sub { $rc = $fancy->run_hook('secrets', env => $snw_lab_dev,
 	                                                  action => 'check') }, <<EOF,
 [admin:password] is missing
 EOF
@@ -343,7 +343,7 @@ EOF
 
 	## secrets add
 	qx(safe rm secret/snw/lab/dev/thing/args secret/snw/lab/dev/thing/env);
-	stdout_is(sub { $rc = $fancy->run_hook('secrets', env => $snw_lab_dev,
+	stderr_is(sub { $rc = $fancy->run_hook('secrets', env => $snw_lab_dev,
 	                                                  action => 'add') }, <<EOF,
 [admin:password] generating new administrator password
 EOF
@@ -362,7 +362,7 @@ EOF
 	is secret("$s:GENESIS_SECRET_ACTION"), 'add',               'add:GENESIS_SECRET_ACTION';
 
 	## secrets check (after an add)
-	stdout_is(sub { $rc = $fancy->run_hook('secrets', env => $snw_lab_dev,
+	stderr_is(sub { $rc = $fancy->run_hook('secrets', env => $snw_lab_dev,
 	                                                  action => 'check') }, <<EOF,
 all secrets and certs present!
 EOF
@@ -371,7 +371,7 @@ EOF
 
 
 	## secrets rotate
-	stdout_is(sub { $rc = $fancy->run_hook('secrets', env => $snw_lab_dev,
+	stderr_is(sub { $rc = $fancy->run_hook('secrets', env => $snw_lab_dev,
 	                                                  action => 'rotate') }, <<EOF,
 [admin:password] rotating administrator password
 EOF
@@ -393,7 +393,7 @@ subtest 'check hook' => sub {
 	again();
 
 	my $rc;
-	stdout_is(sub { $rc = $fancy->run_hook('check', env => $snw_lab_dev) }, <<EOF,
+	stderr_is(sub { $rc = $fancy->run_hook('check', env => $snw_lab_dev) }, <<EOF,
 everything checks out!
 EOF
 		"[fancy] check hook output should be correct");
