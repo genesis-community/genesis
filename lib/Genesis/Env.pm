@@ -467,7 +467,7 @@ sub download_configs {
 	my $director = $self->bosh_target;
 	@configs = qw/cloud runtime/ unless @configs;
 
-	explain STDERR "Downloading configs from '#M{$director}' BOSH director...";
+	explain STDERR "\nDownloading configs from '#M{$director}' BOSH director...";
 	my $err;
 	for (@configs) {
 		my $file = "$self->{__tmp}/$_.yml";
@@ -488,7 +488,6 @@ sub download_configs {
 			}
 		}
 	}
-	explain STDERR "";
 
 	bail "#R{[ERROR]} Could not fetch requested configs from ".$self->bosh_target."\n"
 	  if $err;
@@ -1274,6 +1273,8 @@ sub deploy {
 		die "Cannot continue with deployment!\n" unless $ok;
 	}
 
+	explain STDERR "\n[#M{%s}] all systems #G{ok}, initiating BOSH deploy...\n", $self->name;
+
 	if ($self->needs_bosh_create_env) {
 		debug("deploying this environment via `bosh create-env`, locally");
 		$ok = Genesis::BOSH->create_env(
@@ -1299,7 +1300,7 @@ sub deploy {
 
 	# Don't do post-deploy stuff if just doing a dry run
 	if ($opts{"dry-run"}) {
-		explain "Dry-run deployment complete.  Post-deployment activities will be skipped.";
+		explain STDERR "\n[#M{%s}] dry-run deployment complete; post-deployment activities will be skipped.";
 		return $ok;
 	}
 
@@ -1323,7 +1324,7 @@ sub deploy {
 		if $self->has_hook('post-deploy');
 
 	# track exodus data in the vault
-	explain "\n#G{Deployment successful.}  Preparing metadata for export...";
+	explain STDERR "\n[#M{%s}] #G{Deployment successful.}  Preparing metadata for export...", $self->name;
 	my $exodus = $self->exodus;
 
 	$exodus->{manifest_sha1} = digest_file_hex($manifest_path, 'SHA-1');
@@ -1339,7 +1340,7 @@ sub deploy {
 		  '--', 'set', $self->exodus_base,
 		               map { "$_=$exodus->{$_}" } keys %$exodus);
 
-	explain "Done.\n";
+	explain STDERR "\n[#M{%s}] #G{Done.}\n", $self->name;
 	return $ok;
 }
 
