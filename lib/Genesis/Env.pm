@@ -1172,10 +1172,96 @@ sub shell {
 	explain "#Y{Started shell environment for }#C{%s}#Y{:}", $self->name;
 	return $self->kit->run_hook('shell', %opts, env => $self);
 }
+sub check {
+	my ($self,%opts) = @_;
+
+	my $ok = 1;
+	my $checks = "environmental parameters";
+	$checks = "BOSH configs and $checks" if scalar($self->configs);
+
+	if ($self->has_hook('check')) {
+		explain STDERR "\n[#M{%s}] running $checks checks...", $self->name;
+		$self->run_hook('check') or $ok = 0;
+	} else {
+		explain STDERR "\n[#M{%s}] #Y{%s does not define a 'check' hook; $checks checks will be skipped.}", $self->name, $self->kit->id;
+	}
+
+	if ($self->kit->secrets_store eq 'vault' && (!exists($opts{check_secrets}) || $opts{check_secrets})) {
+		explain STDERR "\n[#M{%s}] running secrets checks...", $self->name;
+		my %check_opts=(indent => '  ', validate => ! envset("GENESIS_TESTING_CHECK_SECRETS_PRESENCE_ONLY"));
+		$ok = 0 unless $self->check_secrets(%check_opts);
+	}
+
+	if ($ok) {
+		if ($self->needs_bosh_create_env || $self->cloud_config) {
+			if (!exists($opts{check_manifest}) || $opts{check_manifest}) {
+				explain STDERR "\n[#M{%s}] running manifest viability checks...", $self->name;
+				$self->manifest or $ok = 0;
+			}
+		} else {
+			explain STDERR "\n[#M{%s}] #Y{No cloud config provided - can't check manifest viability}", $self->name;
+		}
+	}
+
+	# TODO: secrets check for Credhub (post manifest generation)
+
+	if ($ok && (!exists($opts{check_stemcells}) || $opts{check_stemcells}) && !$self->needs_bosh_create_env) {
+
+		explain STDERR "\n[#M{%s}] running stemcell checks...", $self->name;
+		my @stemcells = Genesis::BOSH->stemcells($self->bosh_target);
+		my $required = $self->manifest_lookup('stemcells');
+		my @missing;
+		for my $stemcell_info (@$required) {
+			my ($alias, $os, $version) = @$stemcell_info{qw/alias os version/};
+			my ($wants_latest,$major_version) = $version =~ /^((?:(\d+)\.)?latest)$/;
+			if ($wants_latest) {
+				($version) = sort {$b <=> $a} map {$_->[1]}
+				             grep {!$major_version || $major_version eq int($_->[1])}
+				             grep {$_->[0] eq $os}
+				             map {[split('@', $_)]} @stemcells;
+			}
+			$version ||= ''; # in case nothing was found
+			my $found = grep {$_ eq "$os\@$version"} @stemcells;
+			explain STDERR ("%sStemcell #C{%s} (%s/%s) %s",
+				bullet($found ? 'good' : 'bad', '', box => 1, inline => 1),
+				$alias, $os, $wants_latest ? $wants_latest : "v$version",
+				$wants_latest ? (
+					$found ? "#G{will use v$version}" : '#R{ - no stemcells available!}'
+				) : (
+					$found ? '#G{present.}' : '#R{missing!}'
+				)
+			);
+			push(@missing, "$os@".($wants_latest || $version)) unless $found;
+		}
+		$ok = 0 if scalar(@missing);
+		if (!$ok) {
+			#TODO: if exodus data for bosh deployment indicates a version of the kit where
+			#      https://github.com/genesis-community/bosh-genesis-kit/issues/70 is resolved,
+			#      spit out the commands that allow the user to upload the specific missing verions:
+			#      genesis -C path/to/bosh-env-file.yml do upload-stemcells os1/version1 os2/version2 ...
+			explain STDERR "\n".
+				"  Missing stemcells can be uploaded (if using BOSH kit v1.15.2 or higher):\n".
+				"  #G{genesis -C <path/to/bosh-env-file.yml> do upload-stemcells %s}",
+				join(' ',@missing);
+		}
+	}
+
+	return $ok;
+}
 
 sub deploy {
 	my ($self, %opts) = @_;
 
+	unless ($self->needs_bosh_create_env) {
+		my @hooks = qw(blueprint manifest check);
+		push @hooks, grep {$self->kit->has_hook($_)} qw(pre-deploy post-deploy);
+		$self->download_required_configs(@hooks);
+	}
+
+	$self->check()
+		or bail "#R{Preflight checks failed}; deployment operation #R{halted}.";
+
+	explain STDERR "\n[#M{%s}] generating manifest...", $self->name;
 	$self->write_manifest("$self->{__tmp}/manifest.yml", redact => 0);
 
 	my ($ok, $predeploy_data);
@@ -1196,14 +1282,11 @@ sub deploy {
 			state => $self->path(".genesis/manifests/$self->{name}-state.yml"));
 
 	} else {
-		$self->download_required_configs('blueprint');
-
 		my @bosh_opts;
 		push @bosh_opts, "--$_"             for grep { $opts{$_} } qw/fix recreate dry-run/;
 		push @bosh_opts, "--no-redact"      if  !$opts{redact};
 		push @bosh_opts, "--skip-drain=$_"  for @{$opts{'skip-drain'} || []};
-		push @bosh_opts, "--$_=$opts{$_}"   for grep { defined $opts{$_} }
-		                                          qw/canaries max-in-flight/;
+		push @bosh_opts, "--$_=$opts{$_}"   for grep { defined $opts{$_} } qw/canaries max-in-flight/;
 
 		debug("deploying this environment to our BOSH director");
 		$ok = Genesis::BOSH->deploy(
