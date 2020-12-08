@@ -112,6 +112,15 @@ sub ping {
 	}
 	my $user = $out->{Tables}[0]{Rows}[0]{user};
 	if ($user eq "(not logged in)") {
+		# Just because it says not logged in, doesn't mean you're not. It only
+		# checks the access token, not the refresh token.  So try something that
+		# does refresh the access token, then get the user after that.
+		($out,$rc) = _bosh('bosh', '-e', $env, 'stemcells', '--json');
+		($out,$rc) = read_json_from(_bosh('bosh', '-e', $env, 'env', '--json'));
+		$user = $out->{Tables}[0]{Rows}[0]{user};
+	}
+
+	if ($user eq "(not logged in)") {
 		error "#R{unauthenticated!}" if $waiting;
 		return 0;
 	}
