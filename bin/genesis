@@ -2393,9 +2393,9 @@ sub {
 			bail "More than one local kit found; please specify the kit to fetch"
 			  if scalar(@possible_kits) > 1;
 			$version = $name;
-			$version =~ s/^v//;
 			$name = $possible_kits[0];
 		}
+		$version =~ s/^v// if $version;
 
 		bail "#R{[ERROR]} dev/ directory already exists (and --force not specified).  Bailing out.\n"
 			 if ($top->has_dev_kit && $options{'as-dev'} && !$options{force});
