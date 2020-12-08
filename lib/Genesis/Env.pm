@@ -678,10 +678,10 @@ sub lookup {
 	return struct_lookup($self->params, $key, $default);
 }
 
-sub lookup_noeval {
+sub partial_manifest_lookup {
 	my ($self, $key, $default) = @_;
-	my ($unevaled_manifest, undef) = $self-> _manifest(no_eval=>1);
-	return struct_lookup($unevaled_manifest, $key, $default);
+	my ($partial_manifest, undef) = $self-> _manifest(partial=>1);
+	return struct_lookup($partial_manifest, $key, $default);
 }
 
 sub manifest_lookup {
@@ -786,20 +786,20 @@ sub params {
 sub _manifest {
 	my ($self, %opts) = @_;
 	trace "[env $self->{name}] in _manifest(): Redact %s", defined($opts{redact}) ? "'$opts{redact}'" : '#C{(undef)}';
-	my $which = $opts{no_eval} ? '__noeval' : $opts{redact} ? '__redacted' : '__unredacted';
+	my $which = ($opts{partial} ? '__partial' : "").($opts{redact} ? '__redacted' : '__unredacted');
 	my $path = "$self->{__tmp}/$which.yml";
 
 	trace("[env $self->{name}] in _manifest(): looking for the '$which' cached manifest");
 	if (!$self->{$which}) {
-		trace("[env $self->{name}] in _manifest(): cache MISS; generating");
-		trace("[env $self->{name}] in _manifest(): cwd is ".Cwd::cwd);
+		trace("[env $self->{name}] in ${which}_manifest(): cache MISS; generating");
+		trace("[env $self->{name}] in ${which}_manifest(): cwd is ".Cwd::cwd);
 
-		my @merge_files = $self->_yaml_files($opts{no_eval});
+		my @merge_files = $self->_yaml_files($opts{partial});
 		trace("[env $self->{name}] in _manifest(): merging $_") for @merge_files;
 
 		pushd $self->path;
 		my $no_eval;
-		if ($opts{no_eval}) {
+		if ($opts{partial}) {
 			$no_eval = '--skip-eval';
 			debug("running spruce merge of all files, without evaluation or cloudconfig, for parameter dereferencing");
 		} else {
@@ -821,7 +821,7 @@ sub _manifest {
 		mkfile_or_fail($path, 0400, $out);
 		$self->{$which} = load_yaml($out);
 	} else {
-		trace("[env $self->{name}] in _manifest(): cache HIT!");
+		trace("[env $self->{name}] in ${which}_manifest(): cache HIT!");
 	}
 	return $self->{$which}, $path;
 }
@@ -902,14 +902,14 @@ sub vars_file {
 }
 
 sub _yaml_files {
-	my ($self, $no_eval) = @_;
+	my ($self, $preprocess) = @_;
 	(my $vault_path = $self->secrets_base) =~ s#/?$##; # backwards compatibility
 	my $type   = $self->{top}->type;
 
 	my @cc;
 	if ($self->needs_bosh_create_env) {
 		trace("[env $self->{name}] in_yaml_files(): IS a create-env, skipping cloud-config");
-	} elsif ($no_eval) {
+	} elsif ($preprocess) {
 		trace("[env $self->{name}] in_yaml_files(): skipping eval, no need for cloud-config");
 	} else {
 		trace("[env $self->{name}] in _yaml_files(): not a create-env, we need cloud-config");
@@ -973,12 +973,19 @@ exodus:
   features:    (( join "," kit.features ))
 EOF
 	# TODO: In BOSH refactor, add the bosh director to the exodus data
-
+	my @environment_files;
+	if ($preprocess) {
+		my $preprocessed_file = "$self->{__tmp}/preprocessed.yml";
+		DumpYAML($preprocessed_file, $self->params());
+		push @environment_files, $preprocessed_file;
+	} else {
+		@environment_files = $self->actual_environment_files();
+	}
 	return (
 		"$self->{__tmp}/init.yml",
 		$self->kit_files(1), # absolute
 		@cc,
-		$self->actual_environment_files(),
+		@environment_files,
 		"$self->{__tmp}/fin.yml",
 	);
 }
@@ -1376,7 +1383,7 @@ sub deploy {
 
 sub dereferenced_kit_metadata {
 	my ($self) = shift;
-	return $self->kit->dereferenced_metadata(sub {$self->lookup_noeval(@_)}, 1);
+	return $self->kit->dereferenced_metadata(sub {$self->partial_manifest_lookup(@_)}, 1);
 }
 
 sub add_secrets {
