@@ -7,7 +7,7 @@ use Genesis;
 use Genesis::Legacy; # but we'd rather not
 use Genesis::BOSH;
 use Genesis::UI;
-use Genesis::IO qw/DumpYAML/;
+use Genesis::IO qw/DumpYAML LoadFile/;
 use Genesis::Vault;
 
 use POSIX qw/strftime/;
@@ -648,11 +648,29 @@ sub potential_environment_files {
 
 sub actual_environment_files {
 	my ($self) = @_;
+	unless ($self->{_actual_files}) {
+		my @files;
+		for my $file (grep {-f $self->path($_)} $self->potential_environment_files) {
+			push( @files, $self->_genesis_inherits($file, @files),$file);
+		};
+		$self->{_actual_files} = \@files;
+	}
+	return @{$self->{_actual_files}};
+}
 
-	# only return the constituent YAML files
-	# that actually exist on the filesystem.
-	return grep { -f $self->path($_) }
-		$self->potential_environment_files;
+sub _genesis_inherits {
+	my ($self,$file, @files) = @_;
+	my ($contents,$rc) = read_json_from(run('spruce merge --multi-doc --skip-eval $1|spruce json', $self->path($file)));
+	return () unless $contents->{genesis}{inherits};
+	bail "#R{[ERROR]} $file specifies 'genesis.inherits', but it is not a list"
+		unless ref($contents->{genesis}{inherits}) eq 'ARRAY';
+
+	my @new_files;
+	for my $inherited_file (map {"./$_.yml"} @{$contents->{genesis}{inherits}}) {
+		next if grep {$_ eq $inherited_file} @files;
+		push(@new_files, $self->_genesis_inherits($inherited_file,$file,@files,@new_files),$inherited_file);
+	}
+	return(@new_files);
 }
 
 sub lookup {
