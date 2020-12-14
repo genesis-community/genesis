@@ -660,15 +660,20 @@ sub actual_environment_files {
 
 sub _genesis_inherits {
 	my ($self,$file, @files) = @_;
-	my ($contents,$rc) = read_json_from(run('spruce merge --multi-doc --skip-eval $1|spruce json', $self->path($file)));
-	return () unless $contents->{genesis}{inherits};
-	bail "#R{[ERROR]} $file specifies 'genesis.inherits', but it is not a list"
-		unless ref($contents->{genesis}{inherits}) eq 'ARRAY';
+	my ($out,$rc,$err) = run({stderr => 0},'cat "$1" | spruce json', $self->path($file));
+	bail "Error processing json in $file!:\n$err" if $rc;
+	my @contents = map {load_json($_)} lines($out);
 
 	my @new_files;
-	for my $inherited_file (map {"./$_.yml"} @{$contents->{genesis}{inherits}}) {
-		next if grep {$_ eq $inherited_file} @files;
-		push(@new_files, $self->_genesis_inherits($inherited_file,$file,@files,@new_files),$inherited_file);
+	for my $contents (@contents) {
+		next unless $contents->{genesis}{inherits};
+		bail "#R{[ERROR]} $file specifies 'genesis.inherits', but it is not a list"
+			unless ref($contents->{genesis}{inherits}) eq 'ARRAY';
+
+		for my $inherited_file (map {"./$_.yml"} @{$contents->{genesis}{inherits}}) {
+			next if grep {$_ eq $inherited_file} @files;
+			push(@new_files, $self->_genesis_inherits($inherited_file,$file,@files,@new_files),$inherited_file);
+		}
 	}
 	return(@new_files);
 }
@@ -680,7 +685,7 @@ sub lookup {
 
 sub partial_manifest_lookup {
 	my ($self, $key, $default) = @_;
-	my ($partial_manifest, undef) = $self-> _manifest(partial=>1);
+	my ($partial_manifest, undef) = $self-> _manifest(partial=>1,no_warnings=>1);
 	return struct_lookup($partial_manifest, $key, $default);
 }
 
@@ -728,6 +733,60 @@ sub defines {
 	return 1;
 }
 
+sub adaptive_merge {
+	my ($self, @files) = @_;
+	my %opts = ref($files[0]) eq 'HASH' ? %{shift @files} : ();
+	my $json = !!delete($opts{json});
+	my ($out,$rc,$err) = run({stderr=>0, %opts},' spruce merge --multi-doc --go-patch "$@"', @files);
+	my $orig_errors;
+	if ($rc) {
+		$orig_errors = join("\n", grep {$_ !~ /^\s*$/} lines($err));
+		my $contents = '';
+		for my $content (map {slurp($_)} @files) {
+			$contents .= "\n" unless substr($contents,-1,1) eq "\n";
+			$contents .= "---\n" unless substr($content,0,3) eq "---";
+			$contents .= $content;
+		}
+		my $uneval = read_json_from(run(
+			{ onfailure => "Unable to merge files without evaluation", stderr => undef, %opts },
+			'spruce merge --multi-doc --skip-eval "$@" | spruce json', @files
+		));
+
+		my $attempt=0;
+		while ($attempt++ < 5 and $rc) {
+			my @err_paths = map {$_ =~ /^ - \$\.([^:]*): /; $1} grep {/^ - \$\./} lines($err);
+			for my $err_path (@err_paths) {
+				my $val = struct_lookup($uneval, $err_path);
+				my $spruce_ops=join("|", qw/
+					calc cartesian-product concat defer empty file grab inject ips join
+					keys load param prune shuffle sort static_ips vault awsparam
+					awssecret base64
+					/);
+				(my $replacement = $val) =~ s/\(\( *($spruce_ops) /(( defer $1 /;
+				$contents =~ s/\Q$val\E/$replacement/sg;
+			}
+			my $premerge = mkfile_or_fail($self->tmppath('premerge.yml'),$contents);
+			($out,$rc,$err) = run({stderr => 0, %opts }, 'spruce merge --multi-doc --go-patch "$1"', $premerge);
+		}
+
+		bail(
+			"Could not merge $self->{name} environment files:\n\n".
+			"$err\n\n".
+			"Efforts were made to work around resolving the following errors, but if\n".
+			"they caused the above errors, you may be able to partially resolve this\n".
+			"issue by using #C{export GENESIS_UNEVALED_PARAMS=1}:\n\n".
+			$orig_errors
+		) if $rc;
+	}
+	if ($json) {
+		my $postmerge = mkfile_or_fail($self->tmppath("postmerge.yml"),$out);
+		$out = run({onfailure => "Unable to read json from merged $self->{name} environment files"},
+			'spruce json "$1"', $postmerge
+		);
+	}
+	return wantarray ? ($out,$orig_errors) : $out;
+}
+
 sub params {
 	my ($self) = @_;
 	if (!$self->{__params}) {
@@ -737,47 +796,14 @@ sub params {
 		my ($out, $rc, $err);
 		if (envset("GENESIS_UNEVALED_PARAMS")) {
 			$out = run({ onfailure => "Unable to merge $self->{name} environment files", stderr => undef },
-			'spruce merge --skip-eval "$@" | spruce json', @merge_files)
+			'spruce merge --multi-doc --skip-eval "$@" | spruce json', @merge_files)
 		} else {
-			($out,$rc,$err) = run({stderr=>0},' spruce merge --multi-doc "$@"', @merge_files);
-			if ($rc) {
-				my $orig_errors = $err;
-				my $contents = '';
-				for my $content (map {slurp($_)} @merge_files) {
-					$contents .= "\n---\n$content";
-				}
-				my $uneval = read_json_from(run(
-					{ onfailure => "Unable to merge $self->{name} environment files", stderr => undef },
-					'spruce merge --skip-eval "$@" | spruce json', @merge_files
-				));
-				my @err_paths = map {$_ =~ /^ - \$\.([^:]*): /; $1} grep {/^ - \$\./} lines($err);
-				for my $err_path (@err_paths) {
-					my $val = struct_lookup($uneval, $err_path);
-					my $spruce_ops=join("|", qw/
-						calc cartesian-product concat defer empty file grab inject ips join
-						keys load param prune shuffle sort static_ips vault awsparam
-						awssecret base64
-					/);
-					(my $replacement = $val) =~ s/\(\( *($spruce_ops) /(( defer $1 /;
-					$contents =~ s/\Q$val\E/$replacement/sg;
-				}
-				my $premerge = mkfile_or_fail($self->tmppath('premerge.yml'),$contents);
-				($out,$rc,$err) = run({stderr => 0 }, 'spruce merge --multi-doc --go-patch "$1"', $premerge);
-				bail(
-					"Could not merge $self->{name} environment files:\n\n".
-					"$err\n\n".
-					"Efforts were made to work around resolving the following errors, but if\n".
-					"they caused the above errors, you may be able to partially resolve this\n".
-					"issue by using #C{export GENESIS_UNEVALED_PARAMS=1}:\n\n".
-					$orig_errors
-				) if $rc;
-			}
-			my $postmerge = mkfile_or_fail($self->tmppath("postmerge.yml"),$out);
-			$out = run({onfailure => "Unable to read json from merged $self->{name} environment files"},
-				'spruce json "$1"', $postmerge
-			);
+			my $env = {
+				%{$self->vault->env()},               # specify correct vault for spruce to target
+				REDACT => ''
+			};
+			$out = $self->adaptive_merge({json => 1, env => $env}, @merge_files);
 		}
-
 		$self->{__params} = load_json($out);
 	}
 	return $self->{__params};
@@ -798,26 +824,30 @@ sub _manifest {
 		trace("[env $self->{name}] in _manifest(): merging $_") for @merge_files;
 
 		pushd $self->path;
-		my $no_eval;
+		my $out;
+		my $env = {
+			$self->get_environment_variables('manifest'),
+			%{$self->vault->env()},               # specify correct vault for spruce to target
+			REDACT => $opts{redact} ? 'yes' : '' # spruce redaction flag
+		};
 		if ($opts{partial}) {
-			$no_eval = '--skip-eval';
 			debug("running spruce merge of all files, without evaluation or cloudconfig, for parameter dereferencing");
+			($out, my $warnings) = $self->adaptive_merge({env => $env}, @merge_files);
+			error "\nErrors encountered and bypassed during partial merge.  These operators have been left unresolved:\n$warnings\n"
+				if $warnings && ! $opts{no_warnings};
 		} else {
 			debug("running spruce merge of all files, with evaluation, to generate a manifest");
+			$out = run({
+					onfailure => "Unable to merge $self->{name} manifest",
+					stderr => "&1",
+					env => $env
+				},
+				'spruce', 'merge', '--multi-doc', '--go-patch', @merge_files
+			);
 		}
-		my $out = run({
-				onfailure => "Unable to merge $self->{name} manifest",
-				stderr => "&1",
-				env => {
-					$self->get_environment_variables('manifest'),
-					%{$self->vault->env()},               # specify correct vault for spruce to target
-					REDACT => $opts{redact} ? 'yes' : '' # spruce redaction flag
-				}
-			},
-			grep {$_} ('spruce', 'merge', '--multi-doc', '--go-patch', $no_eval, @merge_files));
 		popd;
 
-		debug("saving #W{%s} manifest to $path", $opts{no_eval} ? 'unevaled' : $opts{redact} ? 'redacted' : 'unredacted');
+		debug("saving #W{%s%s} manifest to $path", $opts{partial} ? 'partial ' : '',  $opts{redact} ? 'redacted' : 'unredacted');
 		mkfile_or_fail($path, 0400, $out);
 		$self->{$which} = load_yaml($out);
 	} else {
@@ -835,7 +865,7 @@ sub manifest {
 	$opts{prune} = 1 unless defined $opts{prune};
 
 
-	my (undef, $path) = $self->_manifest(redact => $opts{redact});
+	my (undef, $path) = $self->_manifest(get_opts(\%opts, qw/no_warnings partial redact/));
 	if ($opts{prune}) {
 		my @prune = qw/meta pipeline params bosh-variables kit genesis exodus compilation/;
 
@@ -856,7 +886,7 @@ sub manifest {
 				stderr => "&1",
 				env => $self->vault->env # to target desired vault
 			},
-			'spruce', 'merge', (map { ('--prune', $_) } @prune), $path)."\n";
+			'spruce', 'merge', '--skip-eval',  (map { ('--prune', $_) } @prune), $path)."\n";
 	} else {
 		debug("not pruning #W{%s} manifest.", $opts{redact} ? 'redacted' : 'unredacted');
 	}
@@ -902,15 +932,16 @@ sub vars_file {
 }
 
 sub _yaml_files {
-	my ($self, $preprocess) = @_;
+	my ($self,$partial) = @_;
 	(my $vault_path = $self->secrets_base) =~ s#/?$##; # backwards compatibility
 	my $type   = $self->{top}->type;
 
 	my @cc;
 	if ($self->needs_bosh_create_env) {
 		trace("[env $self->{name}] in_yaml_files(): IS a create-env, skipping cloud-config");
-	} elsif ($preprocess) {
+	} elsif ($partial) {
 		trace("[env $self->{name}] in_yaml_files(): skipping eval, no need for cloud-config");
+		push @cc, $self->config_file('cloud') if $self->config_file('cloud'); # use it if its given
 	} else {
 		trace("[env $self->{name}] in _yaml_files(): not a create-env, we need cloud-config");
 
@@ -974,18 +1005,11 @@ exodus:
 EOF
 	# TODO: In BOSH refactor, add the bosh director to the exodus data
 	my @environment_files;
-	if ($preprocess) {
-		my $preprocessed_file = "$self->{__tmp}/preprocessed.yml";
-		DumpYAML($preprocessed_file, $self->params());
-		push @environment_files, $preprocessed_file;
-	} else {
-		@environment_files = $self->actual_environment_files();
-	}
 	return (
 		"$self->{__tmp}/init.yml",
 		$self->kit_files(1), # absolute
 		@cc,
-		@environment_files,
+		$self->actual_environment_files(),
 		"$self->{__tmp}/fin.yml",
 	);
 }

@@ -2106,12 +2106,17 @@ $GLOBAL_USAGE
 
       --[no-]prune          Determines if the build metadata is pruned.  Defaults
                             to true.
+
+      --partial             Merge and resolve as much spruce operators as
+                            possible, but leave the operators that cause errors
+                            in their unresolved form.
 EOF
 sub {
 	my %options = (redact => ! -t STDOUT, prune => 1);
 	options(\@_, \%options, qw/
 		redact!
 		prune!
+    partial
 	/);
 	usage(1) if @_ != 1;
 	check_prereqs;
@@ -2130,7 +2135,7 @@ sub {
 
 	print $env
 		->download_required_configs('blueprint', 'manifest')
-		->manifest(redact => $options{redact}, prune => $options{prune});
+		->manifest(partial => $options{partial}, redact => $options{redact}, prune => $options{prune});
 });
 
 # }}}
