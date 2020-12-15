@@ -754,15 +754,41 @@ sub adaptive_merge {
 
 		my $attempt=0;
 		while ($attempt++ < 5 and $rc) {
-			my @err_paths = map {$_ =~ /^ - \$\.([^:]*): /; $1} grep {/^ - \$\./} lines($err);
-			for my $err_path (@err_paths) {
+			my @errs = map {$_ =~ /^ - \$\.([^:]*): (.*)$/; [$1,$2]} grep {/^ - \$\./} lines($err);
+			for my $err_details (@errs) {
+				my ($err_path, $err_msg) = @{$err_details};
 				my $val = struct_lookup($uneval, $err_path);
+				my $orig_err_path = $err_path;
+				WANDER: while (! $val) {
+					trace "[adaptive_merge] Couldn't find direct dereference error, bactracing $err_path";
+					bug "Internal error: Could not find line causing error '$err_msg' during adaptive merge."
+						unless $err_path =~ s/.[^\.]*$//;
+					$val = struct_lookup($uneval, $err_path) || next;
+					if (ref($val) eq "HASH") {
+						for my $sub_key (keys %$val) {
+							if ($val->{$sub_key} && $val->{$sub_key} =~ /\(\( *inject +([^\( ]*) *\)\)/) {
+								$err_path = $1;
+								trace "[adaptive_merge] Found inject on $sub_key, redirecting to $err_path";
+								$val = struct_lookup($uneval, $err_path);
+								next WANDER;
+							}
+						}
+						bug "Internal error: Could not find inject causing error '$err_msg' during adaptive merge.";
+					} else {
+						bug(
+							"Internal error: Could not resolve error '$err_msg' during adaptive merge - encountered a %s when a hash was expected",
+							ref($val) || 'scalar'
+						);
+					}
+				}
+
 				my $spruce_ops=join("|", qw/
 					calc cartesian-product concat defer empty file grab inject ips join
 					keys load param prune shuffle sort static_ips vault awsparam
 					awssecret base64
 					/);
 				(my $replacement = $val) =~ s/\(\( *($spruce_ops) /(( defer $1 /;
+				trace "[adaptive_merge] Resolving $orig_err_path" . ($err_path ne $orig_err_path ? (" => ". $err_path) : "");
 				$contents =~ s/\Q$val\E/$replacement/sg;
 			}
 			my $premerge = mkfile_or_fail($self->tmppath('premerge.yml'),$contents);
