@@ -2296,6 +2296,7 @@ If the key is empty string, it will return all data from the source.
 
 OPTIONS
       --merged        Lookup data from a fully merged manifest for the environment.
+      --partial       Lookup data from a partially merged manifest for the environment.
       --deployed      Lookup data from the manifest of the last deployment.
       --exodus        Lookup data from the genesis exodus data for the last deployment.
       --exodus-for    Lookup data from the genesis exodus data for a different enviroment.
@@ -2312,13 +2313,14 @@ sub {
 		exodus-for=s
 		deployed
 		merged
+		partial
 		defined|defines
 	/);
 	usage(1) if @_ < 2 or @_ > 3;
 	check_prereqs;
 	$options{exodus} = 1 if $options{'exodus-for'};
-	usage(1,"#R{[ERROR]} Can only specify one of --merged, --deployed, or --exodus(-for)")
-		if ((grep {$_ =~ /^(exodus|deployed|merged)$/} keys(%options)) > 1);
+	usage(1,"#R{[ERROR]} Can only specify one of --merged, --partial, --deployed, or --exodus(-for)")
+		if ((grep {$_ =~ /^(exodus|deployed|partial|merged)$/} keys(%options)) > 1);
 
 	my ($name, $key, $default) = @_;
 	# Legacy support -- previous versions used key/name order
@@ -2336,8 +2338,13 @@ sub {
 		die "Circular reference detected while trying to lookup merged manifest of $name\n"
 			if envset("GENESIS__LOOKUP_MERGED_MANIFEST");
 		$ENV{GENESIS__LOOKUP_MERGED_MANIFEST}="1";
-		$env->download_required_configs();
-		$v = $env->manifest_lookup($key,$default);
+		$env->download_required_configs('manifest');
+		$v = $env->partial_manifest_lookup($key,$default);
+	} elsif ($options{partial}) {
+		die "Circular reference detected while trying to lookup merged manifest of $name\n"
+			if envset("GENESIS__LOOKUP_MERGED_MANIFEST");
+		$ENV{GENESIS__LOOKUP_MERGED_MANIFEST}="1";
+		$v = $env->last_deployed_lookup($key,$default);
 	} elsif ($options{deployed}) {
 		$v = $env->last_deployed_lookup($key,$default);
 	} elsif ($options{exodus}) {
