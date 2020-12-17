@@ -749,7 +749,7 @@ sub adaptive_merge {
 		}
 		my $uneval = read_json_from(run(
 			{ onfailure => "Unable to merge files without evaluation", stderr => undef, %opts },
-			'spruce merge --multi-doc --skip-eval "$@" | spruce json', @files
+			'spruce merge --multi-doc --go-patch --skip-eval "$@" | spruce json', @files
 		));
 
 		my $attempt=0;
