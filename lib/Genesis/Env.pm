@@ -760,9 +760,9 @@ sub adaptive_merge {
 				my $val = struct_lookup($uneval, $err_path);
 				my $orig_err_path = $err_path;
 				WANDER: while (! $val) {
-					trace "[adaptive_merge] Couldn't find direct dereference error, bactracing $err_path";
+					trace "[adaptive_merge] Couldn't find direct dereference error, backtracing $err_path";
 					bug "Internal error: Could not find line causing error '$err_msg' during adaptive merge."
-						unless $err_path =~ s/.[^\.]*$//;
+						unless $err_path =~ s/.[^\.]+$//;
 					$val = struct_lookup($uneval, $err_path) || next;
 					if (ref($val) eq "HASH") {
 						for my $sub_key (keys %$val) {
@@ -773,13 +773,8 @@ sub adaptive_merge {
 								next WANDER;
 							}
 						}
-						bug "Internal error: Could not find inject causing error '$err_msg' during adaptive merge.";
-					} else {
-						bug(
-							"Internal error: Could not resolve error '$err_msg' during adaptive merge - encountered a %s when a hash was expected",
-							ref($val) || 'scalar'
-						);
 					}
+					$val = undef; # wasn't what we were looking for, look deeper...
 				}
 
 				my $spruce_ops=join("|", qw/
