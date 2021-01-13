@@ -715,7 +715,7 @@ sub exodus_lookup {
 	return $default unless $self->vault->has($path);
 	debug "Exodus data exists, retrieving it and converting to json";
 	my $out;
-	eval {$out = $self->vault->authenticate->get($path);};
+	eval {$out = $self->vault->get($path);};
 	bail "Could not get $for exodus data from the Vault: $@" if $@;
 
 	my $exodus = _unflatten($out);
@@ -1374,6 +1374,9 @@ sub deploy {
 			flags      => \@bosh_opts);
 	}
 
+	# Reauthenticate to vault, as deployment can take a long time
+	$self->vault->authenticate;
+
 	# Don't do post-deploy stuff if just doing a dry run
 	if ($opts{"dry-run"}) {
 		explain STDERR "\n[#M{%s}] dry-run deployment complete; post-deployment activities will be skipped.";
@@ -1412,7 +1415,7 @@ sub deploy {
 	$exodus->{manifest_sha1} = digest_file_hex($manifest_path, 'SHA-1');
 	$exodus->{bosh} = $self->bosh_target || "(none)";
 	debug("setting exodus data in the Vault, for use later by other deployments");
-	$ok = $self->vault->authenticate->query(
+	$ok = $self->vault->query(
 		{ onfailure => "#R{Failed to export $self->{name} metadata.}\n".
 		               "Deployment was still successful, but metadata used by addons and other kits is outdated.\n".
 		               "This may be resolved by deploying again, or it may be a permissions issue while trying to\n".
