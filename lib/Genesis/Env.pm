@@ -1144,7 +1144,7 @@ sub exodus {
 			my ($secret,$key) = ($exodus->{$target} =~ /^\(\(([^\.]*)(?:\.(.*))?\)\)$/);
 			next unless $secret;
 			my @keys; @keys = ("-k", $key) if defined($key);
-			my ($out, $rc, $err) = run(
+			my ($out, $rc, $err) = run({stderr => 0},
 				"credhub", "get", "-n", $credhub_env{GENESIS_CREDHUB_ROOT}."/$secret", @keys, "-q"
 			);
 			if ($rc) {
