@@ -292,6 +292,23 @@ sub top    { $_[0]->{top}    || bug("Incompletely initialized environment '".$_[
 sub type   { $_[0]->top->type; }
 sub vault  { $_[0]->top->vault; }
 
+# connect to and return a Credhub
+sub credhub {
+	my ($self) = @_;
+	unless ($self->{_credhub}) {
+		#TODO: Get credentials from Vault
+		my %credhub_conn = $self->credhub_connection_env;
+		$self->{_credhub} = Genesis::Credhub->attach(
+			$credhub_conn->{CREDHUB_SERVER}, #URL
+			$credhub_conn->{CREDHUB_CLIENT}, #USERNAME
+			$credhub_conn->{CREDHUB_SECRET}, #PASSWORD
+			$credhub_conn->{CREDHUB_CA_CERT}, #CA_CERT
+		);
+	}
+	return $self->{_credhub};
+}
+
+
 
 sub root_ca_path {
 	my $self = shift;
@@ -1480,7 +1497,13 @@ sub check_secrets {
 		$self->run_hook('secrets', action => 'check');
 	} else {
 		# Determine secret_store from kit - assume vault for now (credhub ignored)
-		my $store = $self->vault->connect_and_validate;
+		my $store;
+		if ($self->kit->uses_credhub) {
+			$store = $self->credhub->connect_and_validate;
+		} else {
+			$store = $self->vault->connect_and_validate;
+		}
+
 		my $action = $opts{validate} ? 'validate' : 'check';
 		my $processing_opts = {
 			no_prompt => $opts{'no-prompt'},
