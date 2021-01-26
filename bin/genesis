@@ -2717,7 +2717,9 @@ sub {
 	} Genesis::Env::relate_by_name(
 		$ENV{CURRENT_ENV}, $ENV{PREVIOUS_ENV} || '', $common_path, $ENV{WORKING_DIR}
 	);
+	push(@cachables, "$common_path/kit-overrides.yml") if -f "$common_path/kit-overrides.yml";
 	copy_or_fail($_, "$target_dir/") for (@cachables);
+	copy_tree_or_fail("$common_path/ops", "$target_dir") if -d "$common_path/ops";
 	return if envset("GENESIS_TESTING");
 	commit_changes($ENV{WORKING_DIR}, $ENV{OUT_DIR}, $ENV{GIT_BRANCH}, "generated cache for $ENV{CURRENT_ENV}");
 });

@@ -11,6 +11,7 @@ our $GITHUB  = "https://github.com/starkandwayne/genesis";
 
 use Data::Dumper;
 use File::Basename qw/basename dirname/;
+use File::Find ();
 use IO::Socket;
 use POSIX qw/strftime/;
 use Symbol qw/qualify_to_ref/;
@@ -55,6 +56,7 @@ our @EXPORT = qw/
 	chdir_or_fail chmod_or_fail
 	symlink_or_fail
 	copy_or_fail
+	copy_tree_or_fail
 	humanize_path
 	humanize_bin
 
@@ -638,6 +640,26 @@ sub copy_or_fail {
 	close $in;
 	close $out;
 }
+
+sub copy_tree_or_fail {
+	my ($from, $to) = @_;
+	-e $from or die "$from: No such file or directory\n";
+	(-d $to || ! -e $to) or die "$to: Exists and is not a directory";
+	mkdir_or_fail $to unless -d $to;
+	my @subfiles;
+	File::Find::find({wanted => sub {push @subfiles, $File::Find::name}},$from);
+	for (grep {$_ ne '.'} @subfiles) {
+		(my $src = $_) =~ s#^\./##;
+		(my $dst = "$to/$src") =~ s#/\./#/#g;
+		$dst =~ s#//#/#g;
+		if (-d $src) {
+			mkdir_or_fail "$dst"
+		} else {
+			copy_or_fail($src,$dst);
+		}
+	}
+}
+
 # chmod_or_fail 0755, $path; <-- don't quote the mode. make it an octal number.
 sub chmod_or_fail {
 	my ($mode, $path) = @_;

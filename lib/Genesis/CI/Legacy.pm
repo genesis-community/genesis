@@ -952,6 +952,12 @@ EOF
 		if ($pipeline->{triggers}{$env}) {
 			my $trigger = $pipeline->{triggers}{$env};
 			my $lineage = $E->relate($trigger, ".genesis/cached/$trigger");
+			unshift(
+				@{$lineage->{common}},
+				".genesis/cached/$trigger/ops/*",
+				".genesis/cached/$trigger/kit-overrides.yml"
+			);
+
 			print $OUT "        - ${_}\n" for @{ $lineage->{unique} };
 			print $OUT <<EOF;
 
@@ -972,6 +978,8 @@ EOF
         - .genesis/bin/genesis
         - .genesis/kits
         - .genesis/config
+        - ./ops/*
+        - ./kit-overrides.yml
 EOF
 			print $OUT "        - ${_}\n" for $E->potential_environment_files();
 		}

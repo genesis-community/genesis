@@ -513,6 +513,8 @@ resources:
     - .genesis/bin/genesis
     - .genesis/kits
     - .genesis/config
+    - .genesis/cached/client-aws-1-sandbox/ops/*
+    - .genesis/cached/client-aws-1-sandbox/kit-overrides.yml
     - .genesis/cached/client-aws-1-sandbox/client.yml
     - .genesis/cached/client-aws-1-sandbox/client-aws.yml
     - .genesis/cached/client-aws-1-sandbox/client-aws-1.yml
@@ -570,6 +572,8 @@ resources:
     - .genesis/bin/genesis
     - .genesis/kits
     - .genesis/config
+    - .genesis/cached/client-aws-1-preprod/ops/*
+    - .genesis/cached/client-aws-1-preprod/kit-overrides.yml
     - .genesis/cached/client-aws-1-preprod/client.yml
     - .genesis/cached/client-aws-1-preprod/client-aws.yml
     - .genesis/cached/client-aws-1-preprod/client-aws-1.yml
@@ -613,6 +617,8 @@ resources:
     - .genesis/bin/genesis
     - .genesis/kits
     - .genesis/config
+    - ./ops/*
+    - ./kit-overrides.yml
     - ./client.yml
     - ./client-aws.yml
     - ./client-aws-1.yml
@@ -1185,6 +1191,8 @@ resources:
     - .genesis/bin/genesis
     - .genesis/kits
     - .genesis/config
+    - .genesis/cached/client-aws-1-sandbox/ops/*
+    - .genesis/cached/client-aws-1-sandbox/kit-overrides.yml
     - .genesis/cached/client-aws-1-sandbox/client.yml
     - .genesis/cached/client-aws-1-sandbox/client-aws.yml
     - .genesis/cached/client-aws-1-sandbox/client-aws-1.yml
@@ -1246,6 +1254,8 @@ resources:
     - .genesis/bin/genesis
     - .genesis/kits
     - .genesis/config
+    - .genesis/cached/client-aws-1-preprod/ops/*
+    - .genesis/cached/client-aws-1-preprod/kit-overrides.yml
     - .genesis/cached/client-aws-1-preprod/client.yml
     - .genesis/cached/client-aws-1-preprod/client-aws.yml
     - .genesis/cached/client-aws-1-preprod/client-aws-1.yml
@@ -1293,6 +1303,8 @@ resources:
     - .genesis/bin/genesis
     - .genesis/kits
     - .genesis/config
+    - ./ops/*
+    - ./kit-overrides.yml
     - ./client.yml
     - ./client-aws.yml
     - ./client-aws-1.yml
@@ -1897,6 +1909,8 @@ resources:
     - .genesis/bin/genesis
     - .genesis/kits
     - .genesis/config
+    - .genesis/cached/client-aws-1-sandbox/ops/*
+    - .genesis/cached/client-aws-1-sandbox/kit-overrides.yml
     - .genesis/cached/client-aws-1-sandbox/client.yml
     - .genesis/cached/client-aws-1-sandbox/client-aws.yml
     - .genesis/cached/client-aws-1-sandbox/client-aws-1.yml
@@ -1946,6 +1960,8 @@ resources:
     - .genesis/bin/genesis
     - .genesis/kits
     - .genesis/config
+    - .genesis/cached/client-aws-1-preprod/ops/*
+    - .genesis/cached/client-aws-1-preprod/kit-overrides.yml
     - .genesis/cached/client-aws-1-preprod/client.yml
     - .genesis/cached/client-aws-1-preprod/client-aws.yml
     - .genesis/cached/client-aws-1-preprod/client-aws-1.yml
@@ -1985,6 +2001,8 @@ resources:
     - .genesis/bin/genesis
     - .genesis/kits
     - .genesis/config
+    - ./ops/*
+    - ./kit-overrides.yml
     - ./client.yml
     - ./client-aws.yml
     - ./client-aws-1.yml
@@ -2907,6 +2925,8 @@ resources:
     - .genesis/bin/genesis
     - .genesis/kits
     - .genesis/config
+    - .genesis/cached/client-aws-1-sandbox/ops/*
+    - .genesis/cached/client-aws-1-sandbox/kit-overrides.yml
     - .genesis/cached/client-aws-1-sandbox/client.yml
     - .genesis/cached/client-aws-1-sandbox/client-aws.yml
     - .genesis/cached/client-aws-1-sandbox/client-aws-1.yml
@@ -2992,6 +3012,8 @@ resources:
     - .genesis/bin/genesis
     - .genesis/kits
     - .genesis/config
+    - .genesis/cached/client-aws-1-preprod/ops/*
+    - .genesis/cached/client-aws-1-preprod/kit-overrides.yml
     - .genesis/cached/client-aws-1-preprod/client.yml
     - .genesis/cached/client-aws-1-preprod/client-aws.yml
     - .genesis/cached/client-aws-1-preprod/client-aws-1.yml
@@ -3063,6 +3085,8 @@ resources:
     - .genesis/bin/genesis
     - .genesis/kits
     - .genesis/config
+    - ./ops/*
+    - ./kit-overrides.yml
     - ./client.yml
     - ./client-aws.yml
     - ./client-aws-1.yml
@@ -3997,6 +4021,8 @@ resources:
     - .genesis/bin/genesis
     - .genesis/kits
     - .genesis/config
+    - .genesis/cached/client-aws-1-sandbox/ops/*
+    - .genesis/cached/client-aws-1-sandbox/kit-overrides.yml
     - .genesis/cached/client-aws-1-sandbox/client.yml
     - .genesis/cached/client-aws-1-sandbox/client-aws.yml
     - .genesis/cached/client-aws-1-sandbox/client-aws-1.yml
@@ -4082,6 +4108,8 @@ resources:
     - .genesis/bin/genesis
     - .genesis/kits
     - .genesis/config
+    - .genesis/cached/client-aws-1-preprod/ops/*
+    - .genesis/cached/client-aws-1-preprod/kit-overrides.yml
     - .genesis/cached/client-aws-1-preprod/client.yml
     - .genesis/cached/client-aws-1-preprod/client-aws.yml
     - .genesis/cached/client-aws-1-preprod/client-aws-1.yml
@@ -4153,6 +4181,8 @@ resources:
     - .genesis/bin/genesis
     - .genesis/kits
     - .genesis/config
+    - ./ops/*
+    - ./kit-overrides.yml
     - ./client.yml
     - ./client-aws.yml
     - ./client-aws-1.yml
@@ -5005,6 +5035,8 @@ resources:
     - .genesis/bin/genesis
     - .genesis/kits
     - .genesis/config
+    - .genesis/cached/client-aws-1-sandbox/ops/*
+    - .genesis/cached/client-aws-1-sandbox/kit-overrides.yml
     - .genesis/cached/client-aws-1-sandbox/client.yml
     - .genesis/cached/client-aws-1-sandbox/client-aws.yml
     - .genesis/cached/client-aws-1-sandbox/client-aws-1.yml
@@ -5090,6 +5122,8 @@ resources:
     - .genesis/bin/genesis
     - .genesis/kits
     - .genesis/config
+    - .genesis/cached/client-aws-1-preprod/ops/*
+    - .genesis/cached/client-aws-1-preprod/kit-overrides.yml
     - .genesis/cached/client-aws-1-preprod/client.yml
     - .genesis/cached/client-aws-1-preprod/client-aws.yml
     - .genesis/cached/client-aws-1-preprod/client-aws-1.yml
@@ -5161,6 +5195,8 @@ resources:
     - .genesis/bin/genesis
     - .genesis/kits
     - .genesis/config
+    - ./ops/*
+    - ./kit-overrides.yml
     - ./client.yml
     - ./client-aws.yml
     - ./client-aws-1.yml
@@ -6012,6 +6048,8 @@ resources:
     - .genesis/bin/genesis
     - .genesis/kits
     - .genesis/config
+    - .genesis/cached/client-aws-1-sandbox/ops/*
+    - .genesis/cached/client-aws-1-sandbox/kit-overrides.yml
     - .genesis/cached/client-aws-1-sandbox/client.yml
     - .genesis/cached/client-aws-1-sandbox/client-aws.yml
     - .genesis/cached/client-aws-1-sandbox/client-aws-1.yml
@@ -6097,6 +6135,8 @@ resources:
     - .genesis/bin/genesis
     - .genesis/kits
     - .genesis/config
+    - .genesis/cached/client-aws-1-preprod/ops/*
+    - .genesis/cached/client-aws-1-preprod/kit-overrides.yml
     - .genesis/cached/client-aws-1-preprod/client.yml
     - .genesis/cached/client-aws-1-preprod/client-aws.yml
     - .genesis/cached/client-aws-1-preprod/client-aws-1.yml
@@ -6168,6 +6208,8 @@ resources:
     - .genesis/bin/genesis
     - .genesis/kits
     - .genesis/config
+    - ./ops/*
+    - ./kit-overrides.yml
     - ./client.yml
     - ./client-aws.yml
     - ./client-aws-1.yml
@@ -6406,6 +6448,8 @@ resources:
     - .genesis/bin/genesis
     - .genesis/kits
     - .genesis/config
+    - ./ops/*
+    - ./kit-overrides.yml
     - ./client.yml
     - ./client-aws.yml
     - ./client-aws-1.yml
