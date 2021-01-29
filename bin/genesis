@@ -2076,7 +2076,7 @@ sub {
 				explain "\n#G{There are no updates available for the }#C{%s}#G{ kit.}", $kit;
 			}
 		} else {
-			explain "\n\e[4m#C{Kit: %s}", $kit;
+			explain "\n#Cu{Kit: %s}", $kit;
 			explain "#Y{  No versions found%s.}", ($options{updates} && $latest{$kit} ? " newer that v$latest{$kit}" : "")
 				unless keys(%{$kits{$kit}});
 		}
