@@ -496,7 +496,7 @@ resources:
   source:
     branch: master
     paths:
-    - ./client-aws-1-preprod.yml
+    - client-aws-1-preprod.yml
     private_key: |
       -----BEGIN RSA PRIVATE KEY-----
       lol. you didn't really think that
@@ -555,7 +555,7 @@ resources:
   source:
     branch: master
     paths:
-    - ./client-aws-1-prod.yml
+    - client-aws-1-prod.yml
     private_key: |
       -----BEGIN RSA PRIVATE KEY-----
       lol. you didn't really think that
@@ -617,12 +617,12 @@ resources:
     - .genesis/bin/genesis
     - .genesis/kits
     - .genesis/config
-    - ./ops/*
-    - ./kit-overrides.yml
-    - ./client.yml
-    - ./client-aws.yml
-    - ./client-aws-1.yml
-    - ./client-aws-1-sandbox.yml
+    - ops/*
+    - kit-overrides.yml
+    - client.yml
+    - client-aws.yml
+    - client-aws-1.yml
+    - client-aws-1-sandbox.yml
     private_key: |
       -----BEGIN RSA PRIVATE KEY-----
       lol. you didn't really think that
@@ -1174,7 +1174,7 @@ resources:
   source:
     branch: master
     paths:
-    - ./client-aws-1-preprod.yml
+    - client-aws-1-preprod.yml
     private_key: |
       -----BEGIN RSA PRIVATE KEY-----
       lol. you didn't really think that
@@ -1237,7 +1237,7 @@ resources:
   source:
     branch: master
     paths:
-    - ./client-aws-1-prod.yml
+    - client-aws-1-prod.yml
     private_key: |
       -----BEGIN RSA PRIVATE KEY-----
       lol. you didn't really think that
@@ -1303,12 +1303,12 @@ resources:
     - .genesis/bin/genesis
     - .genesis/kits
     - .genesis/config
-    - ./ops/*
-    - ./kit-overrides.yml
-    - ./client.yml
-    - ./client-aws.yml
-    - ./client-aws-1.yml
-    - ./client-aws-1-sandbox.yml
+    - ops/*
+    - kit-overrides.yml
+    - client.yml
+    - client-aws.yml
+    - client-aws-1.yml
+    - client-aws-1-sandbox.yml
     private_key: |
       -----BEGIN RSA PRIVATE KEY-----
       lol. you didn't really think that
@@ -1896,7 +1896,7 @@ resources:
   source:
     branch: master
     paths:
-    - ./client-aws-1-preprod.yml
+    - client-aws-1-preprod.yml
     password: weneedareplacement!
     uri: github.mycorp.com/myproj/mystuff/myrepo.git
     username: fleemco
@@ -1947,7 +1947,7 @@ resources:
   source:
     branch: master
     paths:
-    - ./client-aws-1-prod.yml
+    - client-aws-1-prod.yml
     password: weneedareplacement!
     uri: github.mycorp.com/myproj/mystuff/myrepo.git
     username: fleemco
@@ -2001,12 +2001,12 @@ resources:
     - .genesis/bin/genesis
     - .genesis/kits
     - .genesis/config
-    - ./ops/*
-    - ./kit-overrides.yml
-    - ./client.yml
-    - ./client-aws.yml
-    - ./client-aws-1.yml
-    - ./client-aws-1-sandbox.yml
+    - ops/*
+    - kit-overrides.yml
+    - client.yml
+    - client-aws.yml
+    - client-aws-1.yml
+    - client-aws-1-sandbox.yml
     password: weneedareplacement!
     uri: github.mycorp.com/myproj/mystuff/myrepo.git
     username: fleemco
@@ -2117,6 +2117,7 @@ jobs:
           GIT_AUTHOR_EMAIL: concourse@pipeline
           GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
+          GIT_GENESIS_ROOT: cf/legacy
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
             lol. you didn't really think that
@@ -2134,7 +2135,7 @@ jobs:
         run:
           args:
           - ci-pipeline-deploy
-          path: client-aws-1-preprod-cache/.genesis/bin/genesis
+          path: client-aws-1-preprod-cache/cf/legacy/.genesis/bin/genesis
       ensure:
         params:
           repository: out/git
@@ -2169,8 +2170,8 @@ jobs:
         run:
           args:
           - ci-pipeline-run-errand
-          dir: out/git
-          path: ../../client-aws-1-preprod-cache/.genesis/bin/genesis
+          dir: out/git/cf/legacy
+          path: ../../client-aws-1-preprod-cache/cf/legacy/.genesis/bin/genesis
       tags:
       - client-aws-1-preprod
       task: run-something-good-errand
@@ -2194,6 +2195,7 @@ jobs:
           GIT_AUTHOR_EMAIL: concourse@pipeline
           GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
+          GIT_GENESIS_ROOT: cf/legacy
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
             lol. you didn't really think that
@@ -2207,7 +2209,7 @@ jobs:
         run:
           args:
           - ci-generate-cache
-          path: client-aws-1-preprod-cache/.genesis/bin/genesis
+          path: client-aws-1-preprod-cache/cf/legacy/.genesis/bin/genesis
       tags:
       - client-aws-1-preprod
       task: generate-cache
@@ -2308,6 +2310,7 @@ jobs:
         GIT_AUTHOR_EMAIL: concourse@pipeline
         GIT_AUTHOR_NAME: Concourse Bot
         GIT_BRANCH: master
+        GIT_GENESIS_ROOT: cf/legacy
         GIT_PRIVATE_KEY: |
           -----BEGIN RSA PRIVATE KEY-----
           lol. you didn't really think that
@@ -2325,7 +2328,7 @@ jobs:
       run:
         args:
         - ci-show-changes
-        path: client-aws-1-prod-cache/.genesis/bin/genesis
+        path: client-aws-1-prod-cache/cf/legacy/.genesis/bin/genesis
     tags:
     - client-aws-1-prod
     task: show-pending-changes
@@ -2402,6 +2405,7 @@ jobs:
           GIT_AUTHOR_EMAIL: concourse@pipeline
           GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
+          GIT_GENESIS_ROOT: cf/legacy
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
             lol. you didn't really think that
@@ -2419,7 +2423,7 @@ jobs:
         run:
           args:
           - ci-pipeline-deploy
-          path: client-aws-1-prod-cache/.genesis/bin/genesis
+          path: client-aws-1-prod-cache/cf/legacy/.genesis/bin/genesis
       ensure:
         params:
           repository: out/git
@@ -2453,8 +2457,8 @@ jobs:
         run:
           args:
           - ci-pipeline-run-errand
-          dir: out/git
-          path: ../../client-aws-1-prod-cache/.genesis/bin/genesis
+          dir: out/git/cf/legacy
+          path: ../../client-aws-1-prod-cache/cf/legacy/.genesis/bin/genesis
       tags:
       - client-aws-1-prod
       task: run-something-good-errand
@@ -2478,6 +2482,7 @@ jobs:
           GIT_AUTHOR_EMAIL: concourse@pipeline
           GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
+          GIT_GENESIS_ROOT: cf/legacy
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
             lol. you didn't really think that
@@ -2491,7 +2496,7 @@ jobs:
         run:
           args:
           - ci-generate-cache
-          path: client-aws-1-prod-cache/.genesis/bin/genesis
+          path: client-aws-1-prod-cache/cf/legacy/.genesis/bin/genesis
       tags:
       - client-aws-1-prod
       task: generate-cache
@@ -2602,6 +2607,7 @@ jobs:
           GIT_AUTHOR_EMAIL: concourse@pipeline
           GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
+          GIT_GENESIS_ROOT: cf/legacy
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
             lol. you didn't really think that
@@ -2619,7 +2625,7 @@ jobs:
         run:
           args:
           - ci-pipeline-deploy
-          path: client-aws-1-sandbox-changes/.genesis/bin/genesis
+          path: client-aws-1-sandbox-changes/cf/legacy/.genesis/bin/genesis
       ensure:
         params:
           repository: out/git
@@ -2654,8 +2660,8 @@ jobs:
         run:
           args:
           - ci-pipeline-run-errand
-          dir: out/git
-          path: ../../client-aws-1-sandbox-changes/.genesis/bin/genesis
+          dir: out/git/cf/legacy
+          path: ../../client-aws-1-sandbox-changes/cf/legacy/.genesis/bin/genesis
       tags:
       - client-aws-1-sandbox
       task: run-something-good-errand
@@ -2678,6 +2684,7 @@ jobs:
           GIT_AUTHOR_EMAIL: concourse@pipeline
           GIT_AUTHOR_NAME: Concourse Bot
           GIT_BRANCH: master
+          GIT_GENESIS_ROOT: cf/legacy
           GIT_PRIVATE_KEY: |
             -----BEGIN RSA PRIVATE KEY-----
             lol. you didn't really think that
@@ -2690,7 +2697,7 @@ jobs:
         run:
           args:
           - ci-generate-cache
-          path: client-aws-1-sandbox-changes/.genesis/bin/genesis
+          path: client-aws-1-sandbox-changes/cf/legacy/.genesis/bin/genesis
       tags:
       - client-aws-1-sandbox
       task: generate-cache
@@ -2771,7 +2778,7 @@ jobs:
         - -ce
         - |
           .genesis/bin/genesis list-kits ${GENESIS_KIT_NAME} -u
-        dir: git
+        dir: git/cf/legacy
         path: sh
     task: list-kits
   - config:
@@ -2796,7 +2803,7 @@ jobs:
         - |
           chmod +x ../genesis-release/genesis
           upstream="$(../genesis-release/genesis -v 2>/dev/null | sed -e 's/Genesis v\([^ ]*\) .*/\1/')"
-          current="$(.genesis/bin/genesis -v 2>/dev/null | sed -e 's/Genesis v\([^ ]*\) .*/\1/')"
+          current="$('cf/legacy/.genesis/bin/genesis' -v 2>/dev/null | sed -e 's/Genesis v\([^ ]*\) .*/\1/')"
           if [[ -z "$upstream" || ! "$upstream" =~ ^[0-9]+(.[0-9]+){2}(-rc[0-9]+)?$ ]]; then
             echo >&2 "Error: could not get upstream genesis version"
             exit 1
@@ -2807,12 +2814,12 @@ jobs:
           fi
           if ../genesis-release/genesis ui-semver $upstream ge $current && \
            ! ../genesis-release/genesis ui-semver $current ge $upstream ; then
-            ../genesis-release/genesis embed
-            if ! git diff --stat --exit-code .genesis/bin/genesis; then
+            ../genesis-release/genesis -C 'cf/legacy' embed
+            if ! git diff --stat --exit-code 'cf/legacy/.genesis/bin/genesis'; then
               git config --global user.email "${GITHUB_EMAIL}"
               git config --global user.name "${GITHUB_USER}"
-              git add .genesis/bin/genesis
-              git commit -m "[${CI_LABEL}] bump genesis to $(.genesis/bin/genesis version)"
+              git add 'cf/legacy/.genesis/bin/genesis'
+              git commit -m "[${CI_LABEL}] bump genesis to $('cf/legacy/.genesis/bin/genesis' version) under cf/legacy"
             fi
           fi
         dir: git
@@ -2842,18 +2849,20 @@ jobs:
         - -ce
         - |
           version="$(cat ../kit-release/version)"
+          pushd 'cf/legacy' &> /dev/null
           if ! .genesis/bin/genesis --no-color list-kits ${GENESIS_KIT_NAME} | grep "v$version\$"; then
             .genesis/bin/genesis fetch-kit ${GENESIS_KIT_NAME}/$version
           fi
-          sed -i'' "/^kit:/,/^  version:/{s/version.*/version: $version/}" ${KIT_VERSION_FILE}
-          if ! git diff --stat --exit-code .genesis/kits ${KIT_VERSION_FILE}; then
-            git config --global user.email "${GITHUB_EMAIL}"
-            git config --global user.name "${GITHUB_USER}"
-            git add .genesis/kits ${KIT_VERSION_FILE}
-            git commit -m "[${CI_LABEL}] bump kit ${GENESIS_KIT_NAME} to version $version"
-          else
-            echo "No change detected - still using ${GENESIS_KIT_NAME}/$version"
+          sed -i'' "/^kit:/,/^  version:/{s/version.*/version: $version/}" "${KIT_VERSION_FILE}"
+          if git diff --stat --exit-code .genesis/kits "${KIT_VERSION_FILE}"; then
+            echo "No change detected - still using ${GENESIS_KIT_NAME}/$version under cf/legacy"
+            exit 0
           fi
+          git config --global user.email "${GITHUB_EMAIL}"
+          git config --global user.name "${GITHUB_USER}"
+          git add .genesis/kits "${KIT_VERSION_FILE}"
+          popd &> /dev/null
+          git commit -m "[${CI_LABEL}] bump kit ${GENESIS_KIT_NAME} to version $version under cf/legacy"
         dir: git
         path: bash
     task: fetch-kit
@@ -2908,7 +2917,7 @@ resources:
   source:
     branch: master
     paths:
-    - ./client-aws-1-preprod.yml
+    - cf/legacy/client-aws-1-preprod.yml
     private_key: |
       -----BEGIN RSA PRIVATE KEY-----
       lol. you didn't really think that
@@ -2922,14 +2931,14 @@ resources:
   source:
     branch: master
     paths:
-    - .genesis/bin/genesis
-    - .genesis/kits
-    - .genesis/config
-    - .genesis/cached/client-aws-1-sandbox/ops/*
-    - .genesis/cached/client-aws-1-sandbox/kit-overrides.yml
-    - .genesis/cached/client-aws-1-sandbox/client.yml
-    - .genesis/cached/client-aws-1-sandbox/client-aws.yml
-    - .genesis/cached/client-aws-1-sandbox/client-aws-1.yml
+    - cf/legacy/.genesis/bin/genesis
+    - cf/legacy/.genesis/kits
+    - cf/legacy/.genesis/config
+    - cf/legacy/.genesis/cached/client-aws-1-sandbox/ops/*
+    - cf/legacy/.genesis/cached/client-aws-1-sandbox/kit-overrides.yml
+    - cf/legacy/.genesis/cached/client-aws-1-sandbox/client.yml
+    - cf/legacy/.genesis/cached/client-aws-1-sandbox/client-aws.yml
+    - cf/legacy/.genesis/cached/client-aws-1-sandbox/client-aws-1.yml
     private_key: |
       -----BEGIN RSA PRIVATE KEY-----
       lol. you didn't really think that
@@ -2995,7 +3004,7 @@ resources:
   source:
     branch: master
     paths:
-    - ./client-aws-1-prod.yml
+    - cf/legacy/client-aws-1-prod.yml
     private_key: |
       -----BEGIN RSA PRIVATE KEY-----
       lol. you didn't really think that
@@ -3009,14 +3018,14 @@ resources:
   source:
     branch: master
     paths:
-    - .genesis/bin/genesis
-    - .genesis/kits
-    - .genesis/config
-    - .genesis/cached/client-aws-1-preprod/ops/*
-    - .genesis/cached/client-aws-1-preprod/kit-overrides.yml
-    - .genesis/cached/client-aws-1-preprod/client.yml
-    - .genesis/cached/client-aws-1-preprod/client-aws.yml
-    - .genesis/cached/client-aws-1-preprod/client-aws-1.yml
+    - cf/legacy/.genesis/bin/genesis
+    - cf/legacy/.genesis/kits
+    - cf/legacy/.genesis/config
+    - cf/legacy/.genesis/cached/client-aws-1-preprod/ops/*
+    - cf/legacy/.genesis/cached/client-aws-1-preprod/kit-overrides.yml
+    - cf/legacy/.genesis/cached/client-aws-1-preprod/client.yml
+    - cf/legacy/.genesis/cached/client-aws-1-preprod/client-aws.yml
+    - cf/legacy/.genesis/cached/client-aws-1-preprod/client-aws-1.yml
     private_key: |
       -----BEGIN RSA PRIVATE KEY-----
       lol. you didn't really think that
@@ -3082,15 +3091,15 @@ resources:
   source:
     branch: master
     paths:
-    - .genesis/bin/genesis
-    - .genesis/kits
-    - .genesis/config
-    - ./ops/*
-    - ./kit-overrides.yml
-    - ./client.yml
-    - ./client-aws.yml
-    - ./client-aws-1.yml
-    - ./client-aws-1-sandbox.yml
+    - cf/legacy/.genesis/bin/genesis
+    - cf/legacy/.genesis/kits
+    - cf/legacy/.genesis/config
+    - cf/legacy/ops/*
+    - cf/legacy/kit-overrides.yml
+    - cf/legacy/client.yml
+    - cf/legacy/client-aws.yml
+    - cf/legacy/client-aws-1.yml
+    - cf/legacy/client-aws-1-sandbox.yml
     private_key: |
       -----BEGIN RSA PRIVATE KEY-----
       lol. you didn't really think that
@@ -4004,7 +4013,7 @@ resources:
   source:
     branch: master
     paths:
-    - ./client-aws-1-preprod.yml
+    - client-aws-1-preprod.yml
     private_key: |
       -----BEGIN RSA PRIVATE KEY-----
       lol. you didn't really think that
@@ -4091,7 +4100,7 @@ resources:
   source:
     branch: master
     paths:
-    - ./client-aws-1-prod.yml
+    - client-aws-1-prod.yml
     private_key: |
       -----BEGIN RSA PRIVATE KEY-----
       lol. you didn't really think that
@@ -4181,12 +4190,12 @@ resources:
     - .genesis/bin/genesis
     - .genesis/kits
     - .genesis/config
-    - ./ops/*
-    - ./kit-overrides.yml
-    - ./client.yml
-    - ./client-aws.yml
-    - ./client-aws-1.yml
-    - ./client-aws-1-sandbox.yml
+    - ops/*
+    - kit-overrides.yml
+    - client.yml
+    - client-aws.yml
+    - client-aws-1.yml
+    - client-aws-1-sandbox.yml
     private_key: |
       -----BEGIN RSA PRIVATE KEY-----
       lol. you didn't really think that
@@ -5018,7 +5027,7 @@ resources:
   source:
     branch: master
     paths:
-    - ./client-aws-1-preprod.yml
+    - client-aws-1-preprod.yml
     private_key: |
       -----BEGIN RSA PRIVATE KEY-----
       lol. you didn't really think that
@@ -5105,7 +5114,7 @@ resources:
   source:
     branch: master
     paths:
-    - ./client-aws-1-prod.yml
+    - client-aws-1-prod.yml
     private_key: |
       -----BEGIN RSA PRIVATE KEY-----
       lol. you didn't really think that
@@ -5195,12 +5204,12 @@ resources:
     - .genesis/bin/genesis
     - .genesis/kits
     - .genesis/config
-    - ./ops/*
-    - ./kit-overrides.yml
-    - ./client.yml
-    - ./client-aws.yml
-    - ./client-aws-1.yml
-    - ./client-aws-1-sandbox.yml
+    - ops/*
+    - kit-overrides.yml
+    - client.yml
+    - client-aws.yml
+    - client-aws-1.yml
+    - client-aws-1-sandbox.yml
     private_key: |
       -----BEGIN RSA PRIVATE KEY-----
       lol. you didn't really think that
@@ -6031,7 +6040,7 @@ resources:
   source:
     branch: master
     paths:
-    - ./client-aws-1-preprod.yml
+    - client-aws-1-preprod.yml
     private_key: |
       -----BEGIN RSA PRIVATE KEY-----
       lol. you didn't really think that
@@ -6118,7 +6127,7 @@ resources:
   source:
     branch: master
     paths:
-    - ./client-aws-1-prod.yml
+    - client-aws-1-prod.yml
     private_key: |
       -----BEGIN RSA PRIVATE KEY-----
       lol. you didn't really think that
@@ -6208,12 +6217,12 @@ resources:
     - .genesis/bin/genesis
     - .genesis/kits
     - .genesis/config
-    - ./ops/*
-    - ./kit-overrides.yml
-    - ./client.yml
-    - ./client-aws.yml
-    - ./client-aws-1.yml
-    - ./client-aws-1-sandbox.yml
+    - ops/*
+    - kit-overrides.yml
+    - client.yml
+    - client-aws.yml
+    - client-aws-1.yml
+    - client-aws-1-sandbox.yml
     private_key: |
       -----BEGIN RSA PRIVATE KEY-----
       lol. you didn't really think that
@@ -6448,12 +6457,12 @@ resources:
     - .genesis/bin/genesis
     - .genesis/kits
     - .genesis/config
-    - ./ops/*
-    - ./kit-overrides.yml
-    - ./client.yml
-    - ./client-aws.yml
-    - ./client-aws-1.yml
-    - ./client-aws-1-sandbox.yml
+    - ops/*
+    - kit-overrides.yml
+    - client.yml
+    - client-aws.yml
+    - client-aws-1.yml
+    - client-aws-1-sandbox.yml
     password: weneedareplacement!
     uri: https://github.com/someco/something-deployments.git
     username: fleemco

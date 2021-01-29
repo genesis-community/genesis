@@ -70,6 +70,7 @@ pipeline:
 
   git:
     uri: git@github.com:someco/something-deployments
+    root: cf/legacy
     private_key: |
       -----BEGIN RSA PRIVATE KEY-----
       lol. you didn't really think that

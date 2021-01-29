@@ -670,7 +670,13 @@ sub _genesis_inherits {
 		bail "#R{[ERROR]} $file specifies 'genesis.inherits', but it is not a list"
 			unless ref($contents->{genesis}{inherits}) eq 'ARRAY';
 
-		for my $inherited_file (map {"./$_.yml"} @{$contents->{genesis}{inherits}}) {
+		for (@{$contents->{genesis}{inherits}}) {
+			my $cached_file;
+			if ($ENV{PREVIOUS_ENV}) {
+				$cached_file = ".genesis/cached/$ENV{PREVIOUS_ENV}/$_.yml";
+				$cached_file = undef unless -f $cached_file;
+			}
+			my $inherited_file = $cached_file || "./$_.yml";
 			next if grep {$_ eq $inherited_file} @files;
 			push(@new_files, $self->_genesis_inherits($inherited_file,$file,@files,@new_files),$inherited_file);
 		}

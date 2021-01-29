@@ -277,6 +277,13 @@ sub propagate_previous_passed_files {
 	bail "No CACHE_DIR set - cannot propagate passed values" unless $ENV{CACHE_DIR};
 	bail "No WORKING_DIR set - cannot propagate passed values" unless $ENV{WORKING_DIR};
 
+	my $workdir  = $ENV{WORKING_DIR};
+	my $cachedir = $ENV{CACHE_DIR};
+	if ($ENV{GIT_GENESIS_ROOT} ne "") {
+		$workdir  .= "/$ENV{GIT_GENESIS_ROOT}";
+		$cachedir .= "/$ENV{GIT_GENESIS_ROOT}";
+	}
+
 	my @cachables=(
 		".genesis/cached",
 		".genesis/config",
@@ -285,23 +292,23 @@ sub propagate_previous_passed_files {
 
 	explain "\n#C{Removing local cached files:}";
 	run(
-		{ onfailure => "#R{[ERROR]} Failed to remove 'ENV{WORKING_DIR}/$_'", interactive => 1 },
-		'rm', '-rvf', "$ENV{WORKING_DIR}/$_"
+		{ onfailure => "#R{[ERROR]} Failed to remove 'workdir/$_'", interactive => 1 },
+		'rm', '-rvf', "$workdir/$_"
 	) for (@cachables);
 
 	explain "\n#C{Copying over cached files from $ENV{PREVIOUS_ENV} environment:}";
 	run(
-		{ onfailure => "#R{[ERROR]} Failed to copy '$ENV{CACHE_DIR}/$_' to '$ENV{WORKING_DIR}/$_'", interactive => 1 },
-		'cp', '-Rv', "$ENV{CACHE_DIR}/$_", "$ENV{WORKING_DIR}/$_"
+		{ onfailure => "#R{[ERROR]} Failed to copy '$cachedir/$_' to '$workdir/$_'", interactive => 1 },
+		'cp', '-Rv', "$cachedir/$_", "$workdir/$_"
 	) for (@cachables);
 
-  my $env = Genesis::Top->new($ENV{WORKING_DIR})->load_env($ENV{CURRENT_ENV});
+  my $env = Genesis::Top->new($workdir)->load_env($ENV{CURRENT_ENV});
 	my @files = map {(my $s = $_) =~ s/^\.\///; $s}
 		grep {$_ !~ /^not-shared/}
 		$env->relate($ENV{PREVIOUS_ENV},'','not-shared');
 	return {
-		missing => [grep {-f "$ENV{WORKING_DIR}/$_" && ! -f "$ENV{CACHE_DIR}/$_"} @files],
-		extra   => [grep {-f "$ENV{CACHE_DIR}/$_" && ! -f "$ENV{WORKING_DIR}/$_"} @files],
+		missing => [grep {-f "$workdir/$_" && ! -f "$cachedir/$_"} @files],
+		extra   => [grep {-f "$cachedir/$_" && ! -f "$workdir/$_"} @files],
 	}
 }
 
@@ -372,16 +379,20 @@ EOF
 	pushd $indir;
 	my @output = lines(run('git status --porcelain'));
 	popd;
+	explain STDERR "Detected the following changes in repo:" if @output;
 	for my $change (@output) {
 		my ($action,$file)= $change =~ /^(..).(.*)$/;
 		next if $filter && ref($filter) && ref($filter) =~ /^regexp$/i && $file !~ $filter;
 		if ($action =~ /.D/) {
+			explain STDERR "  - #R{removed:} $file";
 			run(
 				{ onfailure => "Could not remove outdated file '$file' from output directory" },
 				'rm -f "$1"', "$outdir/$file"
 			);
 		} else {
 			mkdir_or_fail(dirname("$outdir/$file"));
+			explain STDERR "  - ".($action eq "??" ? "#G{added:}   " : "#Y{changed:} ").$file;
+
 			run(
 				{ onfailure => "Could not copy changed files to output directory" },
 				'cp -Rv "$1" "$2"', "$indir/$file", "$outdir/$file"
@@ -2477,6 +2488,7 @@ sub {
 	#   WORKING_DIR - Path to the directory to deploy/work from
 	#   OUT_DIR     - Path to the directory to output to
 	#   CACHE_DIR   - Path to the directory our cache is in (required if PREVIOUS_ENV is present
+	#   GIT_GENESIS_ROOT - Path under *_DIR where the genesis deployment actually is (defaults to .)
 	#
 	# and unless we're a create-env based deploy, we should also have:
 	#   BOSH_ENVIRONMENT           - URL of the BOSH director to deploy on
@@ -2485,10 +2497,7 @@ sub {
 	#   BOSH_CLIENT_SECRET         - Password/Client-Secret to authenticate with
 
 	my @undefined = grep { !$ENV{$_} }
-	qw/CURRENT_ENV
-	GIT_BRANCH
-	OUT_DIR WORKING_DIR
-	VAULT_ROLE_ID VAULT_SECRET_ID VAULT_ADDR/;
+		qw/CURRENT_ENV GIT_BRANCH OUT_DIR WORKING_DIR VAULT_ROLE_ID VAULT_SECRET_ID VAULT_ADDR/;
 	push @undefined, "CACHE_DIR" if ($ENV{PREVIOUS_ENV} && ! $ENV{CACHE_DIR});
 	bail_on_missing_pipeline_environment_variables(@undefined);
 
@@ -2500,8 +2509,11 @@ sub {
 	propagate_previous_passed_files();
 
 	# Load the environment in order to check other required variables
-	pushd $ENV{WORKING_DIR};
+	my $workdir = $ENV{WORKING_DIR};
+	$workdir.="/$ENV{GIT_GENESIS_ROOT}" if $ENV{GIT_GENESIS_ROOT} ne "";
+	pushd $workdir;
 	my $env = Genesis::Top->new('.')->load_env($ENV{CURRENT_ENV})->with_vault();
+
 	push(@undefined, grep { !$ENV{$_} }
 		qw/BOSH_ENVIRONMENT BOSH_CA_CERT
 			 BOSH_CLIENT BOSH_CLIENT_SECRET/) unless $env->needs_bosh_create_env;
@@ -2582,7 +2594,9 @@ sub {
 	my $mismatches = propagate_previous_passed_files();
 
 	# Load the environment in order to check other required variables
-	pushd $ENV{WORKING_DIR};
+	my $workdir = $ENV{WORKING_DIR};
+	$workdir.="/$ENV{GIT_GENESIS_ROOT}" if $ENV{GIT_GENESIS_ROOT} ne "";
+	pushd $workdir;
 	my $env = Genesis::Top->new('.')->load_env($ENV{CURRENT_ENV})->with_vault();
 	if ($env->needs_bosh_create_env) {
 		printf "Proto-BOSH environments do not contain a record of how they were last\n".
@@ -2701,21 +2715,27 @@ sub {
 	bail("The pipeline must specify either GIT_PRIVATE_KEY, or GIT_USERNAME and GIT_PASSWORD")
 		unless $ENV{GIT_PRIVATE_KEY} || ($ENV{GIT_USERNAME} && $ENV{GIT_PASSWORD});
 
-	my $target_dir = "$ENV{WORKING_DIR}/.genesis/cached/$ENV{CURRENT_ENV}";
-	my $bad_dir    = "$ENV{WORKING_DIR}/.genesis/cached/cached";
+	my $workdir  = $ENV{WORKING_DIR};
+	my $cachedir = $ENV{CACHE_DIR};
+	if ($ENV{GIT_GENESIS_ROOT} ne "") {
+		$workdir  .= "/$ENV{GIT_GENESIS_ROOT}";
+		$cachedir .= "/$ENV{GIT_GENESIS_ROOT}";
+	}
+	my $target_dir = "$workdir/.genesis/cached/$ENV{CURRENT_ENV}";
+	my $bad_dir    = "$workdir/.genesis/cached/cached";
 	rmtree($_) for (grep {-e $_} ($target_dir,$bad_dir));
 
 	mkdir_or_fail($target_dir);
 	my $common_path = $ENV{PREVIOUS_ENV} ?
-		"$ENV{CACHE_DIR}/.genesis/cached/$ENV{PREVIOUS_ENV}" :
-		$ENV{WORKING_DIR};
+		"$cachedir/.genesis/cached/$ENV{PREVIOUS_ENV}" :
+		$workdir;
 
 	chomp(my $d=`pwd`);
 	my @cachables = grep {
 		debug "[ci-generate-cache] Testing cache candidate %s/%s: %s", $d,$_, -f $_ ? "#g{present}" : "#y{absent}";
 		-f $_;
 	} Genesis::Env::relate_by_name(
-		$ENV{CURRENT_ENV}, $ENV{PREVIOUS_ENV} || '', $common_path, $ENV{WORKING_DIR}
+		$ENV{CURRENT_ENV}, $ENV{PREVIOUS_ENV} || '', $common_path, $workdir
 	);
 	push(@cachables, "$common_path/kit-overrides.yml") if -f "$common_path/kit-overrides.yml";
 	copy_or_fail($_, "$target_dir/") for (@cachables);

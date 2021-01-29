@@ -192,6 +192,7 @@ sub parse_pipeline {
 			$p->{pipeline}{git}{commits}{user_name} ||= 'Concourse Bot';
 			$p->{pipeline}{git}{commits}{user_email} ||= 'concourse@pipeline';
 		}
+		($p->{pipeline}{git}{root} ||= '.') =~ s#/*$##;
 	}
 
 	# validate locker
@@ -903,6 +904,7 @@ EOF
 		$git_resource_creds = "      username:    (( grab pipeline.git.username ))\n      password:    (( grab pipeline.git.password ))";
 		$git_env_creds = "            GIT_USERNAME:         (( grab pipeline.git.username ))\n            GIT_PASSWORD:         (( grab pipeline.git.password || \"\" ))";
 	}
+	my $git_genesis_root = $pipeline->{pipeline}{git}{root} ne '.' ? "            GIT_GENESIS_ROOT:     $pipeline->{pipeline}{git}{root}\n" : "";
 
 	print $OUT <<EOF;
 
@@ -917,6 +919,13 @@ $git_resource_creds
 EOF
    # }}}
 	# CONCOURSE: env-specific resource configuration {{{
+	my $path_root = $pipeline->{pipeline}{git}{root}."/";
+	$path_root = "" if $path_root eq "./";
+	my @base_paths = qw[
+		.genesis/bin/genesis
+		.genesis/kits
+		.genesis/config
+	];
 	for my $env (sort @{$pipeline->{envs}}) {
 		my $E = $top->load_env($env);
 		# YAML snippets, to make the print's less obnoxious {{{
@@ -952,13 +961,13 @@ EOF
 		if ($pipeline->{triggers}{$env}) {
 			my $trigger = $pipeline->{triggers}{$env};
 			my $lineage = $E->relate($trigger, ".genesis/cached/$trigger");
-			unshift(
-				@{$lineage->{common}},
+			my @unique = map {$_ =~ s#^./##; $_} @{$lineage->{unique}};
+			my @common = (
 				".genesis/cached/$trigger/ops/*",
-				".genesis/cached/$trigger/kit-overrides.yml"
+				".genesis/cached/$trigger/kit-overrides.yml",
+				map {$_ =~ s#^./##; $_} @{$lineage->{common}},
 			);
-
-			print $OUT "        - ${_}\n" for @{ $lineage->{unique} };
+			print $OUT "        - $path_root$_\n" for @unique;
 			print $OUT <<EOF;
 
   - name: ${alias}-cache
@@ -967,21 +976,14 @@ EOF
     source:
       .: (( inject resources.git.source ))
       paths:
-        - .genesis/bin/genesis
-        - .genesis/kits
-        - .genesis/config
 EOF
 			print $OUT "# $trigger -> $env\n";
-			print $OUT "        - ${_}\n" for @{ $lineage->{common} };
+			print $OUT "        - $path_root$_\n" for (@base_paths,@common);
 		} else {
-			print $OUT <<EOF;
-        - .genesis/bin/genesis
-        - .genesis/kits
-        - .genesis/config
-        - ./ops/*
-        - ./kit-overrides.yml
-EOF
-			print $OUT "        - ${_}\n" for $E->potential_environment_files();
+			print $OUT "        - $path_root$_\n" for (
+				@base_paths, "ops/*", "kit-overrides.yml",
+				map {$_ =~ s#^./##; $_} $E->potential_environment_files()
+			);
 		}
 		unless ($E->needs_bosh_create_env) {
 			print $OUT <<EOF;
@@ -1258,7 +1260,9 @@ EOF
 			"Concourse successfully deployed $env-$deployment_suffix", "success");
 
 		# 11) directory to find the genesis binary in (use previous env cache if present, else local-changes
-		my $genesis_bindir = $passed ? "$alias-cache" : "$alias-changes";
+		my $genesis_srcdir = my $genesis_bindir = $passed ? "$alias-cache" : "$alias-changes";
+		$genesis_bindir .= "/$pipeline->{pipeline}{git}{root}"
+		  if ($pipeline->{pipeline}{git}{root} ne ".");
 
 		# }}}
 
@@ -1304,7 +1308,7 @@ EOF
             GIT_BRANCH:           (( grab pipeline.git.branch ))
             GIT_AUTHOR_NAME:      $pipeline->{pipeline}{git}{commits}{user_name}
             GIT_AUTHOR_EMAIL:     $pipeline->{pipeline}{git}{commits}{user_email}
-$git_env_creds
+$git_genesis_root$git_env_creds
             BOSH_NON_INTERACTIVE: true
             VAULT_ROLE_ID:        (( grab pipeline.vault.role ))
             VAULT_SECRET_ID:      (( grab pipeline.vault.secret ))
@@ -1449,7 +1453,7 @@ EOF
             GIT_BRANCH:           (( grab pipeline.git.branch ))
             GIT_AUTHOR_NAME:      $pipeline->{pipeline}{git}{commits}{user_name}
             GIT_AUTHOR_EMAIL:     $pipeline->{pipeline}{git}{commits}{user_email}
-$git_env_creds
+$git_genesis_root$git_env_creds
             BOSH_NON_INTERACTIVE: true
             VAULT_ROLE_ID:        (( grab pipeline.vault.role ))
             VAULT_SECRET_ID:      (( grab pipeline.vault.secret ))
@@ -1544,15 +1548,18 @@ EOF
 			print $OUT <<EOF if $pipeline->{pipeline}{debug};
             DEBUG:                $pipeline->{pipeline}{debug}
 EOF
+			my $errand_subdir = ($pipeline->{pipeline}{git}{root} eq '.') ? "" :
+			  "/$pipeline->{pipeline}{git}{root}";
+
 			print $OUT <<EOF;
 
           run:
             path: ../../$genesis_bindir/.genesis/bin/genesis
-            dir:  out/git
+            dir:  out/git$errand_subdir
             args: [ci-pipeline-run-errand]
           inputs:
             - name: out
-            - name: $genesis_bindir
+            - name: $genesis_srcdir
 EOF
 			}
 		}
@@ -1563,7 +1570,7 @@ EOF
         config:
           inputs:
           - { name: out }
-          - { name: $genesis_bindir }
+          - { name: $genesis_srcdir }
           outputs:
           - { name: cache-out }
           run:
@@ -1584,7 +1591,7 @@ EOF
             GIT_BRANCH:           (( grab pipeline.git.branch ))
             GIT_AUTHOR_NAME:      $pipeline->{pipeline}{git}{commits}{user_name}
             GIT_AUTHOR_EMAIL:     $pipeline->{pipeline}{git}{commits}{user_email}
-$git_env_creds
+$git_genesis_root$git_env_creds
 EOF
 
 		print $OUT <<EOF if $pipeline->{pipeline}{debug};
@@ -1614,6 +1621,16 @@ EOF
 
 	# CONCOURSE: update-genesis-asses job configuration {{{
 	if (defined($pipeline->{pipeline}{'auto-update'}{file})) {
+		my $git_genesis_dir = 'git';
+		my $genesis_config_path = '';
+		my $path_prefix = '';
+		my $subdir_msg = '';
+		if ($pipeline->{pipeline}{git}{root} ne '.') {
+			$git_genesis_dir .= "/$pipeline->{pipeline}{git}{root}";
+			$genesis_config_path = " -C '$pipeline->{pipeline}{git}{root}'";
+			$path_prefix = "$pipeline->{pipeline}{git}{root}/";
+			$subdir_msg = " under $pipeline->{pipeline}{git}{root}";
+		}
 		print $OUT <<EOF;
 
   - name: update-genesis-assets
@@ -1635,7 +1652,7 @@ EOF
         params:
           GENESIS_KIT_NAME: (( concat pipeline.auto-update.kit "-genesis-kit" ))
         run:
-          dir: git
+          dir: $git_genesis_dir
           path: sh
           args:
           - -ce
@@ -1666,7 +1683,7 @@ EOF
           - |
             chmod +x ../genesis-release/genesis
             upstream="\$(../genesis-release/genesis -v 2>/dev/null | sed -e 's/Genesis v\\([^ ]*\\) .*/\\1/')"
-            current="\$(.genesis/bin/genesis -v 2>/dev/null | sed -e 's/Genesis v\\([^ ]*\\) .*/\\1/')"
+            current="\$('${path_prefix}.genesis/bin/genesis' -v 2>/dev/null | sed -e 's/Genesis v\\([^ ]*\\) .*/\\1/')"
             if [[ -z "\$upstream" || ! "\$upstream" =~ ^[0-9]+(\.[0-9]+){2}(-rc[0-9]+)?\$ ]]; then
               echo >&2 "Error: could not get upstream genesis version"
               exit 1
@@ -1677,12 +1694,12 @@ EOF
             fi
             if ../genesis-release/genesis ui-semver \$upstream ge \$current && \\
              ! ../genesis-release/genesis ui-semver \$current ge \$upstream ; then
-              ../genesis-release/genesis embed
-              if ! git diff --stat --exit-code .genesis/bin/genesis; then
+              ../genesis-release/genesis$genesis_config_path embed
+              if ! git diff --stat --exit-code '${path_prefix}.genesis/bin/genesis'; then
                 git config --global user.email "\${GITHUB_EMAIL}"
                 git config --global user.name "\${GITHUB_USER}"
-                git add .genesis/bin/genesis
-                git commit -m "[\${CI_LABEL}] bump genesis to \$(.genesis/bin/genesis version)"
+                git add '${path_prefix}.genesis/bin/genesis'
+                git commit -m "[\${CI_LABEL}] bump genesis to \$('$path_prefix.genesis/bin/genesis' version)$subdir_msg"
               fi
             fi
     - task: fetch-kit
@@ -1712,18 +1729,23 @@ EOF
           - -ce
           - |
             version="\$(cat ../kit-release/version)"
+EOF
+		print $OUT "            pushd '$pipeline->{pipeline}{git}{root}' &> /dev/null\n" unless $pipeline->{pipeline}{git}{root} eq '.';
+		print $OUT <<EOF;
             if ! .genesis/bin/genesis --no-color list-kits \${GENESIS_KIT_NAME} | grep "v\$version\\\$"; then
               .genesis/bin/genesis fetch-kit \${GENESIS_KIT_NAME}/\$version
             fi
-            sed -i'' "/^kit:/,/^  version:/{s/version.*/version: \$version/}" \${KIT_VERSION_FILE}
-            if ! git diff --stat --exit-code .genesis/kits \${KIT_VERSION_FILE}; then
-              git config --global user.email "\${GITHUB_EMAIL}"
-              git config --global user.name "\${GITHUB_USER}"
-              git add .genesis/kits \${KIT_VERSION_FILE}
-              git commit -m "[\${CI_LABEL}] bump kit \${GENESIS_KIT_NAME} to version \$version"
-            else
-              echo "No change detected - still using \${GENESIS_KIT_NAME}/\$version"
+            sed -i'' "/^kit:/,/^  version:/{s/version.*/version: \$version/}" "\${KIT_VERSION_FILE}"
+            if git diff --stat --exit-code '.genesis/kits' "\${KIT_VERSION_FILE}"; then
+              echo "No change detected - still using \${GENESIS_KIT_NAME}/\$version$subdir_msg"
             fi
+            git config --global user.email "\${GITHUB_EMAIL}"
+            git config --global user.name "\${GITHUB_USER}"
+            git add genesis/kits "\${KIT_VERSION_FILE}"
+EOF
+		print $OUT "            popd &> /dev/null\n" unless $pipeline->{pipeline}{git}{root} eq '.';
+		print $OUT <<EOF;
+            git commit -m "[\${CI_LABEL}] bump kit \${GENESIS_KIT_NAME} to version \$version$subdir_msg"
     - put: git
       params:
         repository: git
