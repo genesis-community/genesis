@@ -674,7 +674,7 @@ sub _genesis_inherits {
 			my $cached_file;
 			if ($ENV{PREVIOUS_ENV}) {
 				$cached_file = ".genesis/cached/$ENV{PREVIOUS_ENV}/$_.yml";
-				$cached_file = undef unless -f $cached_file;
+				$cached_file = undef unless -f $self->path($cached_file);
 			}
 			my $inherited_file = $cached_file || "./$_.yml";
 			next if grep {$_ eq $inherited_file} @files;
