@@ -642,15 +642,17 @@ sub copy_or_fail {
 }
 
 sub copy_tree_or_fail {
-	my ($from, $to) = @_;
+	my ($from, $to, $trim) = @_;
 	-e $from or die "$from: No such file or directory\n";
 	(-d $to || ! -e $to) or die "$to: Exists and is not a directory";
 	mkdir_or_fail $to unless -d $to;
 	my @subfiles;
+	$trim = '' unless defined($trim);
 	File::Find::find({wanted => sub {push @subfiles, $File::Find::name}},$from);
 	for (grep {$_ ne '.'} @subfiles) {
 		(my $src = $_) =~ s#^\./##;
-		(my $dst = "$to/$src") =~ s#/\./#/#g;
+		(my $dst = $_) =~ s ^$trim / ; #using nulls to mitigate trim character collition
+		$dst = "$to/$dst";
 		$dst =~ s#//#/#g;
 		if (-d $src) {
 			mkdir_or_fail "$dst"
