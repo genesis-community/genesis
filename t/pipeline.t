@@ -2854,13 +2854,13 @@ jobs:
             .genesis/bin/genesis fetch-kit ${GENESIS_KIT_NAME}/$version
           fi
           sed -i'' "/^kit:/,/^  version:/{s/version.*/version: $version/}" "${KIT_VERSION_FILE}"
-          if git diff --stat --exit-code .genesis/kits "${KIT_VERSION_FILE}"; then
+          if git diff --stat --exit-code '.genesis/kits' "${KIT_VERSION_FILE}"; then
             echo "No change detected - still using ${GENESIS_KIT_NAME}/$version under cf/legacy"
             exit 0
           fi
           git config --global user.email "${GITHUB_EMAIL}"
           git config --global user.name "${GITHUB_USER}"
-          git add .genesis/kits "${KIT_VERSION_FILE}"
+          git add '.genesis/kits' "${KIT_VERSION_FILE}"
           popd &> /dev/null
           git commit -m "[${CI_LABEL}] bump kit ${GENESIS_KIT_NAME} to version $version under cf/legacy"
         dir: git

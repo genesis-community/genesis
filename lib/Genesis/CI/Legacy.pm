@@ -1738,10 +1738,11 @@ EOF
             sed -i'' "/^kit:/,/^  version:/{s/version.*/version: \$version/}" "\${KIT_VERSION_FILE}"
             if git diff --stat --exit-code '.genesis/kits' "\${KIT_VERSION_FILE}"; then
               echo "No change detected - still using \${GENESIS_KIT_NAME}/\$version$subdir_msg"
+              exit 0
             fi
             git config --global user.email "\${GITHUB_EMAIL}"
             git config --global user.name "\${GITHUB_USER}"
-            git add genesis/kits "\${KIT_VERSION_FILE}"
+            git add '.genesis/kits' "\${KIT_VERSION_FILE}"
 EOF
 		print $OUT "            popd &> /dev/null\n" unless $pipeline->{pipeline}{git}{root} eq '.';
 		print $OUT <<EOF;
