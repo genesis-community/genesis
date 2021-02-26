@@ -279,7 +279,7 @@ sub propagate_previous_passed_files {
 
 	my $workdir  = $ENV{WORKING_DIR};
 	my $cachedir = $ENV{CACHE_DIR};
-	if ($ENV{GIT_GENESIS_ROOT} ne "") {
+	if (defined($ENV{GIT_GENESIS_ROOT}) && $ENV{GIT_GENESIS_ROOT} ne "") {
 		$workdir  .= "/$ENV{GIT_GENESIS_ROOT}";
 		$cachedir .= "/$ENV{GIT_GENESIS_ROOT}";
 	}
@@ -2517,7 +2517,7 @@ sub {
 
 	# Load the environment in order to check other required variables
 	my $workdir = $ENV{WORKING_DIR};
-	$workdir.="/$ENV{GIT_GENESIS_ROOT}" if $ENV{GIT_GENESIS_ROOT} ne "";
+	$workdir.="/$ENV{GIT_GENESIS_ROOT}" if (defined($ENV{GIT_GENESIS_ROOT}) && $ENV{GIT_GENESIS_ROOT} ne "");
 	pushd $workdir;
 	my $env = Genesis::Top->new('.')->load_env($ENV{CURRENT_ENV})->with_vault();
 
@@ -2602,7 +2602,7 @@ sub {
 
 	# Load the environment in order to check other required variables
 	my $workdir = $ENV{WORKING_DIR};
-	$workdir.="/$ENV{GIT_GENESIS_ROOT}" if $ENV{GIT_GENESIS_ROOT} ne "";
+	$workdir.="/$ENV{GIT_GENESIS_ROOT}" if (defined($ENV{GIT_GENESIS_ROOT}) && $ENV{GIT_GENESIS_ROOT} ne "");
 	pushd $workdir;
 	my $env = Genesis::Top->new('.')->load_env($ENV{CURRENT_ENV})->with_vault();
 	if ($env->needs_bosh_create_env) {
@@ -2724,7 +2724,7 @@ sub {
 
 	my $workdir  = $ENV{WORKING_DIR};
 	my $cachedir = $ENV{CACHE_DIR};
-	if ($ENV{GIT_GENESIS_ROOT} ne "") {
+	if (defined($ENV{GIT_GENESIS_ROOT}) && $ENV{GIT_GENESIS_ROOT} ne "") {
 		$workdir  .= "/$ENV{GIT_GENESIS_ROOT}";
 		$cachedir .= "/$ENV{GIT_GENESIS_ROOT}";
 	}
