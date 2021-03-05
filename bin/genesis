@@ -2662,6 +2662,22 @@ EOF
 
 	my @missing = @{$mismatches->{missing} || []};
 	my @extra   = @{$mismatches->{extra}   || []};
+	if (@extra) {
+		my @files_to_check = grep { $_ !~ /^remove\// } $env->relate($ENV{PREVIOUS_ENV}, 'remove');
+		my $differences = 0;
+		for (@files_to_check) {
+			next if ! -f "$ENV{CACHE_DIR}/$_" && ! -f "$ENV{WORKING_DIR}/$_";
+			if (! -f "$ENV{CACHE_DIR}/$_" || ! -f "$ENV{WORKING_DIR}/$_") {
+				$differences += 1; last;
+			}
+			my $cache_file = slurp("$ENV{CACHE_DIR}/$_");
+			my $work_file = slurp("$ENV{WORKING_DIR}/$_");
+			unless ($cache_file eq $work_file) { $differences += 1; last; };
+		}
+
+		@extra = () unless $differences;
+	}
+
 	if (@missing || @extra) {
 		my $msg =
 			"#Ru{POTENTIAL ISSUE:}\n".
