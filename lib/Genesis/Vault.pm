@@ -1121,7 +1121,8 @@ sub _generate_secret_command {
 			}
 		} elsif ($action_map{$action} eq 'renew') {
 			my ($cert_name) = @names;
-			push(@cmd, '--subject', "cn=$cert_name") if $cert_name;
+			push(@cmd, '--subject', "cn=$cert_name")
+				if $cert_name and envset("GENESIS_RENEW_SUBJECT");
 			push(@cmd, '--name', $_) for (@names);
 			my ($usage) = _get_x509_plan_usage(\%plan);
 			if (CORE::ref($usage) eq 'ARRAY') {
@@ -1864,7 +1865,7 @@ sub _get_plan_paths {
 # _get_x509_plan_usage - get the usage and its description for a given x509 plan {{{
 sub _get_x509_plan_usage {
 	my $plan = shift;
-	my ($usage, $usage_str) = 
+	my ($usage, $usage_str);
 	my $usage_type = 'warn'; # set to 'error' for mismatch enforcement
 	if (defined($plan->{usage})) {
 		$usage = ($plan->{usage});

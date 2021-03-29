@@ -909,7 +909,7 @@ EOF
 
   $cmd = Expect->new();
   $cmd->log_stdout(0);
-  $cmd->spawn("genesis rotate-secrets $env_name --renew -v '/(/ca\$|passwords:)/'");
+  $cmd->spawn("GENESIS_RENEW_SUBJECT=1 genesis rotate-secrets $env_name --renew -v '/(/ca\$|passwords:)/'");
   (undef, $error, undef, $out) = $cmd->expect(300,"Type 'yes' to renew these secrets >");
 
   is($error, undef, "No error or timeout encountered waiting to be asked to renew secrets");
