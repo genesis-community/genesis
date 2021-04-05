@@ -1369,7 +1369,7 @@ performed as per the options below.  Run with the -q|--quiet flag will result
 in no output except exit-code 0 on success, 1 otherwise.
 
 OPTIONS
-  --no-cloud-config Do not run cloud config tests.
+  --no-config Do not run cloud config tests.
   --[no-]secrets    Determines if the secrets checks are run.
                     Runs by default.
   --[no-]manifest   Determines if the secrets checks are run.
