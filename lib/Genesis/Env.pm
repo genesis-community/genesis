@@ -741,9 +741,10 @@ sub defines {
 
 sub adaptive_merge {
 	my ($self, @files) = @_;
+	pushd $self->path;
 	my %opts = ref($files[0]) eq 'HASH' ? %{shift @files} : ();
 	my $json = !!delete($opts{json});
-	my ($out,$rc,$err) = run({stderr=>0, %opts},' spruce merge --multi-doc --go-patch "$@"', @files);
+	my ($out,$rc,$err) = run({stderr=>0, %opts}, 'spruce merge --multi-doc --go-patch "$@"', @files);
 	my $orig_errors;
 	if ($rc) {
 		$orig_errors = join("\n", grep {$_ !~ /^\s*$/} lines($err));
@@ -811,6 +812,7 @@ sub adaptive_merge {
 			'spruce json "$1"', $postmerge
 		);
 	}
+	popd;
 	return wantarray ? ($out,$orig_errors) : $out;
 }
 
@@ -822,8 +824,10 @@ sub params {
 
 		my ($out, $rc, $err);
 		if (envset("GENESIS_UNEVALED_PARAMS")) {
+			pushd $self->path;
 			$out = run({ onfailure => "Unable to merge $self->{name} environment files", stderr => undef },
-			'spruce merge --multi-doc --skip-eval "$@" | spruce json', @merge_files)
+			'spruce merge --multi-doc --skip-eval "$@" | spruce json', @merge_files);
+			popd;
 		} else {
 			my $env = {
 				%{$self->vault->env()},               # specify correct vault for spruce to target
