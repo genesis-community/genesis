@@ -1119,6 +1119,14 @@ sub _generate_secret_command {
 			if (CORE::ref($plan{usage}) eq 'ARRAY') {
 				push(@cmd, '--key-usage', $_) for (@{$plan{usage}} ? @{$plan{usage}} : qw/no/);
 			}
+		} elsif ($action_map{$action} eq 'renew') {
+			my ($cert_name) = @names;
+			push(@cmd, '--subject', "cn=$cert_name") if $cert_name;
+			push(@cmd, '--name', $_) for (@names);
+			my ($usage) = _get_x509_plan_usage(\%plan);
+			if (CORE::ref($usage) eq 'ARRAY') {
+				push(@cmd, '--key-usage', $_) for (@{$usage} ? @{$usage} : qw/no/);
+			}
 		}
 	} elsif ($action eq 'renew') {
 		# Nothing else supports renew -- return empty action
@@ -1587,23 +1595,7 @@ sub _validate_x509_secret {
 	$results{valid} = [$valid_str =~ /^expires/ ? ($days_left > 30 ? 'ok' : 'warn') : 'error', "Valid: ".$valid_str];
 
 	# Validate Usage
-	my ($usage, $usage_str);
-	my $usage_type = 'warn'; # set to 'error' for mismatch enforement
-	if (defined($plan->{usage})) {
-		$usage = ($plan->{usage});
-		$usage_str = "Specified key usage";
-		if (!scalar @$usage) {
-			$usage_str = "No key usage";
-		}
-	} elsif ($plan->{is_ca}) {
-		$usage_type = 'warn';
-		$usage = [qw/server_auth client_auth crl_sign key_cert_sign/];
-		$usage_str = "Default CA key usage";
-	} else {
-		$usage_type = 'warn';
-		$usage = [qw/server_auth client_auth/];
-		$usage_str = "Default key usage";
-	}
+	my ($usage, $usage_str, $usage_type) = _get_x509_plan_usage($plan);
 
 	my $usage_results = _x509_key_usage($certInfo,$usage);
 	$usage_type = 'warn' unless ($usage_results->{found}); # no enforcement if no keys specified
@@ -1762,6 +1754,7 @@ sub _validate_random_secret {
 
 	return (\%results, qw/length valid_chars formatted/);
 }
+# }}}
 # _validate_uuid_secret - validate UUID secret value {{{
 sub _validate_uuid_secret {
 
@@ -1868,6 +1861,30 @@ sub _get_plan_paths {
 }
 
 #}}}
+# _get_x509_plan_usage - get the usage and its description for a given x509 plan {{{
+sub _get_x509_plan_usage {
+	my $plan = shift;
+	my ($usage, $usage_str) = 
+	my $usage_type = 'warn'; # set to 'error' for mismatch enforcement
+	if (defined($plan->{usage})) {
+		$usage = ($plan->{usage});
+		$usage_str = "Specified key usage";
+		if (!scalar @$usage) {
+			$usage_str = "No key usage";
+		}
+	} elsif ($plan->{is_ca}) {
+		$usage_type = 'warn';
+		$usage = [qw/server_auth client_auth crl_sign key_cert_sign/];
+		$usage_str = "Default CA key usage";
+	} else {
+		$usage_type = 'warn';
+		$usage = [qw/server_auth client_auth/];
+		$usage_str = "Default key usage";
+	}
+	return ($usage, $usage_str, $usage_type);
+}
+
+# }}}
 # _checkbox - make a checkbox {{{
 sub _checkbox {
 	return bullet($_[0] eq 'warn' ? 'warn' : ($_[0] && $_[0] ne 'error' ? 'good' : 'bad'), '', box => 1, inline => 1, indent => 0);

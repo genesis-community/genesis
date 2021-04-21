@@ -471,13 +471,13 @@ sub check_prereqs {
 
 	my $bosh_min_version = "5.0.1";
 	my $reqs = [
-		# Name,     Version, Command,                                 				   Pattern                   Source
-		["spruce", "1.26.0", "spruce -v      				  2>/dev/null",            qr(.*version\s+(\S+).*)i, "https://github.com/geofffranks/spruce/releases"],
-		["safe",    "1.5.8", "safe -v        				  2>&1 >/dev/null",        qr(safe v(\S+)),          "https://github.com/starkandwayne/safe/releases"],
-		["vault",   "0.9.0", "vault -v       				  2>/dev/null",            qr(.*vault v(\S+).*)i,    "https://www.vaultproject.io/downloads.html"],
-		["git",     "1.8.0", "git --version  				  2>/dev/null",            qr(.*version\s+(\S+).*)],
-		["jq",        "1.5", "jq --version   				  2>/dev/null",            qr(^jq-([\.0-9]+)),       "https://stedolan.github.io/jq/download/"],
-		["curl",   "7.30.0", "curl --version 				  2>/dev/null | head -n1", qr(^curl\s+(\S+))],
+		# Name,     Version, Command,                                 Pattern                   Source
+		["spruce", "1.26.0", "spruce -v      2>/dev/null",            qr(.*version\s+(\S+).*)i, "https://github.com/geofffranks/spruce/releases"],
+		["safe",    "1.5.9", "safe -v        2>&1 >/dev/null",        qr(safe v(\S+)),          "https://github.com/starkandwayne/safe/releases"],
+		["vault",   "0.9.0", "vault -v       2>/dev/null",            qr(.*vault v(\S+).*)i,    "https://www.vaultproject.io/downloads.html"],
+		["git",     "1.8.0", "git --version  2>/dev/null",            qr(.*version\s+(\S+).*)],
+		["jq",        "1.6", "jq --version   2>/dev/null",            qr(^jq-([\.0-9]+)),       "https://stedolan.github.io/jq/download/"],
+		["curl",   "7.30.0", "curl --version 2>/dev/null | head -n1", qr(^curl\s+(\S+))],
 		["perl",   "5.10.0", "/usr/bin/perl -v 2>/dev/null | head -n2 | grep version", qr/\(v([0-9\.]+)\)/],
 		["credhub", "2.7.0", "CREDHUB_SERVER='' credhub --version 2>/dev/null",        qr(CLI Version: (\S+)),   "https://github.com/cloudfoundry-incubator/credhub-cli/releases"],
 	];
@@ -1705,11 +1705,15 @@ Recreate (or renew) secrets for your deployment. If any secrets are marked by
 the kit as `fixed', they are not updated.  A list of secret paths can be
 specified, or it applies to all secrets if no path is specified.
 
+Renew differs from normal rotate, as it only applies to x509 certificates, and
+recreates the cert with updated data, keeping the original key.
+
 OPTIONS
 $GLOBAL_USAGE
-      --renew       Renew secrets that have expiry (currently this only applies
-                    to x509 certs).  Renewed x509 certs will still be valid for
-                    certs previously signed by it; its TTL will just be updated.
+      --renew       Recreate the x509 certificate with updated data, while keeping
+                    the original key.  This allows other certificates signed by
+                    the original certificate to still validate against the new
+                    certificate.
   -v, --verbose     List each item as it is processed, not just failures and warnings.
   -I, --invalid     Rotate secrets that are invalid (expired, missing, or don't
                     match the kit specification)
@@ -1875,7 +1879,10 @@ sub {
 # }}}
 # genesis compile-kit - Create a distributable kit archive from dev/. {{{
 
-command("compile-kit", {scope => [[['processed','dev'] => 'repo'],[['processed','name'] => 'kit'], ['processed' => 'kit_or_dev'], 'undef']}, <<EOF,
+command("compile-kit", {
+	alias => 'ck',
+	scope => [[['processed','dev'] => 'repo'],[['processed','name'] => 'kit'], ['processed' => 'kit_or_dev'], 'undef']
+	}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis compile-kit -v VERSION [-n NAME] [-d|--dev]
 
@@ -1983,7 +1990,7 @@ sub {
 
 # }}}
 # genesis list-kits - list kit versions available locally or remotely {{{
-command("list-kits", {scope => [['remote' => 'any'], 'repo']}, <<EOF,
+command("list-kits", {alias => 'lk', scope => [['remote' => 'any'], 'repo']}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis list-kits [-r|--remote|--updates|-u] [<options>] [--filter <re pattern>|<name>]
 
@@ -2376,7 +2383,7 @@ sub {
 # }}}
 # genesis fetch-kit - Download a Genesis Kit from the Internet. {{{
 
-command("fetch-kit", {scope => 'repo'}, <<EOF,
+command("fetch-kit", {alias => 'fk', scope => 'repo'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE genesis fetch-kit [NAME]|[[NAME/VERSION]|[VERSION] ...
 
