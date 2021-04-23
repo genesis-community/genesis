@@ -252,6 +252,10 @@ sub connect_and_validate {
 		printf STDERR csprintf("\n#yi{Verifying availability of vault '%s' (%s)...}", $self->name, $self->url)
 			unless in_callback || under_test;
 		my $status = $self->status;
+		if ($status eq 'unauthenticated') {
+			$self->authenticate;
+			$status = $self->initialized ? 'ok' : 'uninitialized';
+		}
 		error("#%s{%s}\n", $status eq "ok"?"G":"R", $status)
 			unless in_callback || under_test;
 		debug "Vault status: $status";
@@ -308,13 +312,21 @@ sub authenticate {
 }
 
 # }}}
-# authenticated - returns true if authenticate {{{
+# authenticated - returns true if authenticated {{{
 sub authenticated {
 	my $self = shift;
 	delete($self->{_env}); # Force a fresh token retrieval
 	return unless $self->token;
 	my ($auth,$rc,$err) = read_json_from($self->query({stderr => '/dev/null'},'safe auth status --json'));
 	return $rc == 0 && $auth->{valid};
+}
+
+# }}}
+# initialized - returns true if initialized for Genesis {{{
+sub initialized {
+	my $self = shift;
+	my $secrets_mount = $ENV{GENESIS_SECRETS_MOUNT} || "/secret/";
+	$self->has($secrets_mount.'handshake') || $self->has('/secret/handshake')
 }
 
 # }}}
@@ -432,10 +444,9 @@ sub keys {
 }
 
 # }}}
-# status - returns status of vault: sealed, unreachable, invalid authentication or ok {{{
+# status - returns status of vault: sealed, unreachable, unauthenticated, uninitialized or ok {{{
 sub status {
 	my $self = shift;
-	my $secrets_mount = $ENV{GENESIS_SECRETS_MOUNT} || "/secret/";
 
 	# See if the url is reachable to start with
 	$self->url =~ qr(^http(s?)://(.*?)(?::([0-9]*))?$) or
@@ -452,11 +463,8 @@ sub status {
 		return "unreachable";
 	}
 
-	eval {$self->authenticate} unless $self->authenticated;
-	my $exception = $@;
-	debug "Failed to authentication to vault: $exception" if $exception;
-	return "unauthenticated" if $exception || $self->token eq "";
-	return "uninitialized" unless $self->has($secrets_mount.'handshake') || $self->has('/secret/handshake');
+	return "unauthenticated" unless $self->authenticated;
+	return "uninitialized" unless $self->initialized;
 	return "ok"
 }
 

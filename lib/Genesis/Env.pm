@@ -1361,6 +1361,13 @@ sub deploy {
 
 	explain STDERR "\n[#M{%s}] all systems #G{ok}, initiating BOSH deploy...\n", $self->name;
 
+	# Prepare the output manifest files for the repo
+	my $manifest_file = $self->tmppath("out-manifest.yml");
+	my $vars_file = $self->tmppath("out-vars.yml");
+	$self->write_manifest($manifest_file, redact => 1, prune => 0);
+	copy_or_fail($self->vars_file('redacted'), $vars_file) if ($self->vars_file('redacted'));
+
+	# DEPLOY!!!
 	if ($self->needs_bosh_create_env) {
 		debug("deploying this environment via `bosh create-env`, locally");
 		$ok = Genesis::BOSH->create_env(
@@ -1384,45 +1391,38 @@ sub deploy {
 			flags      => \@bosh_opts);
 	}
 
-	# Reauthenticate to vault, as deployment can take a long time
-	$self->vault->authenticate;
-
 	# Don't do post-deploy stuff if just doing a dry run
 	if ($opts{"dry-run"}) {
 		explain STDERR "\n[#M{%s}] dry-run deployment complete; post-deployment activities will be skipped.";
 		return $ok;
 	}
 
+	if ($ok) {
+		# deployment succeeded; update the cache
+		mkdir_or_fail($self->path(".genesis/manifests")) unless -d $self->path(".genesis/manifests");
+		copy_or_fail($manifest_file, $self->path(".genesis/manifests/$self->{name}.yml"));
+		copy_or_fail($vars_file, $self->path(".genesis/manifests/$self->{name}.vars")) if -e $vars_file;
+	}
+
 	unlink "$self->{__tmp}/manifest.yml"
 		or debug "Could not remove unredacted manifest $self->{__tmp}/manifest.yml";
 
+	# Reauthenticate to vault, as deployment can take a long time
+	$self->vault->authenticate unless $self->vault->status eq 'sealed';
+
+	$self->run_hook('post-deploy', rc => ($ok ? 0 : 1), data => $predeploy_data)
+		if $self->has_hook('post-deploy');
+
 	# bail out early if the deployment failed;
 	# don't update the cached manifests
-	if (!$ok) {
-		$self->run_hook('post-deploy', rc => 1, data => $predeploy_data)
-			if $self->has_hook('post-deploy');
-		return $ok;
-	}
-
-	# deployment succeeded; update the cache
-	my $manifest_path=$self->path(".genesis/manifests/$self->{name}.yml");
-	$self->write_manifest($manifest_path, redact => 1, prune => 0);
-	debug("written redacted manifest to $manifest_path");
-
-	if ($self->vars_file('redacted')) {
-		my $vars_path = $self->path(".genesis/manifests/$self->{name}.vars");
-		copy_or_fail($self->vars_file('redacted'), $vars_path);
-		debug("written redacted bosh vars file to $vars_path");
-	}
-
-	$self->run_hook('post-deploy', rc => 0, data => $predeploy_data)
-		if $self->has_hook('post-deploy');
+	return unless $ok;
 
 	# track exodus data in the vault
 	explain STDERR "\n[#M{%s}] #G{Deployment successful.}  Preparing metadata for export...", $self->name;
+	$self->vault->authenticate unless $self->vault->authenticated;
 	my $exodus = $self->exodus;
 
-	$exodus->{manifest_sha1} = digest_file_hex($manifest_path, 'SHA-1');
+	$exodus->{manifest_sha1} = digest_file_hex($manifest_file, 'SHA-1');
 	$exodus->{bosh} = $self->bosh_target || "(none)";
 	debug("setting exodus data in the Vault, for use later by other deployments");
 	$ok = $self->vault->query(
