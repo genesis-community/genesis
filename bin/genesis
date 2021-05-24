@@ -312,6 +312,48 @@ sub propagate_previous_passed_files {
 	}
 }
 
+
+sub set_git_env {
+
+	my ($env_dir) = @_;
+
+	# We need this here so we can do a manual pull after the build/deploy, but
+	# prior to pushing. Rebasing inside the concourse resource will not work,
+	# as we are changing files that are not watched by the resources. This may
+	# cause conflicts as older commits try to change more and more things that
+	# have already been updated in the .genesis/manifests directory.
+	#
+	if ($ENV{GIT_PRIVATE_KEY}) {
+		mkdir_or_fail( "$env_dir/home/.ssh", 0700);
+		mkfile_or_fail("$env_dir/home/.ssh/key", 0600, $ENV{GIT_PRIVATE_KEY});
+		mkfile_or_fail("$env_dir/home/.ssh/config", <<EOF);
+Host *
+  StrictHostKeyChecking no
+  UserKnownHostsFile /dev/null
+  LogLevel QUIET
+  IdentityFile $env_dir/home/.ssh/key
+EOF
+		$ENV{GIT_SSH_COMMAND}     = "ssh -F $env_dir/home/.ssh/config";
+	};
+	if ($ENV{GIT_USERNAME}) {
+		mkdir_or_fail( "$env_dir/home", 0700);
+		mkfile_or_fail("$env_dir/home/credential-helper.sh", 0755, <<'EOF');
+#!/bin/bash
+echo username=$GIT_USERNAME
+echo password=$GIT_PASSWORD
+EOF
+		run('git', 'config', 'credential.helper', "$env_dir/home/credential-helper.sh");
+	}
+
+	$ENV{GIT_AUTHOR_NAME}   ||= 'Concourse Bot';
+	$ENV{GIT_AUTHOR_EMAIL}  ||= 'concourse@pipeline';
+	$ENV{GIT_COMMITTER_NAME}  = $ENV{GIT_AUTHOR_NAME};
+	$ENV{GIT_COMMITTER_EMAIL} = $ENV{GIT_AUTHOR_EMAIL};
+	$ENV{GIT_ASKPASS}         = "/bin/false";
+	$ENV{HOME}                = "$env_dir/home";
+
+}
+
 # }}}
 # commit_changes - commit changes back to genesis that incorporate the upstream values {{{
 sub commit_changes {
@@ -326,41 +368,8 @@ sub commit_changes {
 		'cp -R "$1" "$2"', $indir, $outdir) or exit 1;
 	pushd $outdir;
 
-	# We need this here so we can do a manual pull after the build/deploy, but
-	# prior to pushing. Rebasing inside the concourse resource will not work,
-	# as we are changing files that are not watched by the resources. This may
-	# cause conflicts as older commits try to change more and more things that
-	# have already been updated in the .genesis/manifests directory.
-	#
 	my $tmp = workdir;
-	if ($ENV{GIT_PRIVATE_KEY}) {
-		mkdir_or_fail( "$tmp/home/.ssh", 0700);
-		mkfile_or_fail("$tmp/home/.ssh/key", 0600, $ENV{GIT_PRIVATE_KEY});
-		mkfile_or_fail("$tmp/home/.ssh/config", <<EOF);
-Host *
-  StrictHostKeyChecking no
-  UserKnownHostsFile /dev/null
-  LogLevel QUIET
-  IdentityFile $tmp/home/.ssh/key
-EOF
-		$ENV{GIT_SSH_COMMAND}     = "ssh -F $tmp/home/.ssh/config";
-	};
-	if ($ENV{GIT_USERNAME}) {
-		mkdir_or_fail( "$tmp/home", 0700);
-		mkfile_or_fail("$tmp/home/credential-helper.sh", 0755, <<'EOF');
-#!/bin/bash
-echo username=$GIT_USERNAME
-echo password=$GIT_PASSWORD
-EOF
-		run('git', 'config', 'credential.helper', "$tmp/home/credential-helper.sh");
-	}
-
-	$ENV{GIT_AUTHOR_NAME}   ||= 'Concourse Bot';
-	$ENV{GIT_AUTHOR_EMAIL}  ||= 'concourse@pipeline';
-	$ENV{GIT_COMMITTER_NAME}  = $ENV{GIT_AUTHOR_NAME};
-	$ENV{GIT_COMMITTER_EMAIL} = $ENV{GIT_AUTHOR_EMAIL};
-	$ENV{GIT_ASKPASS}         = "/bin/false";
-	$ENV{HOME}                = "$tmp/home";
+	set_git_env($tmp);
 
 	# What's Going On?
 	#   reset --hard : reset the repo to the current commit on branch
@@ -2457,7 +2466,6 @@ sub {
 		explain "Downloaded version #C{$version} of the #C{$name} kit%s\n",$target_str;
 	}
 
-
 	# Test the kit
 });
 
@@ -2534,6 +2542,17 @@ sub {
 	$workdir.="/$ENV{GIT_GENESIS_ROOT}" if (defined($ENV{GIT_GENESIS_ROOT}) && $ENV{GIT_GENESIS_ROOT} ne "");
 	pushd $workdir;
 	my $env = Genesis::Top->new('.')->load_env($ENV{CURRENT_ENV})->with_vault();
+
+	if ($env->needs_bosh_create_env) {
+		# Make sure that state is up to date.
+		my $tmp = workdir;
+		set_git_env($tmp);
+		run({ onfailure   => "Could not reset to the latest state file from origin. State file may not exist, which occurs if the proto bosh has not been deployed once manually.",
+			interactive => 1,
+			env => { HOME => "$tmp/home" } },
+			'git checkout "origin/${1}" ".genesis/manifests/${2}-state.yml"',
+			$ENV{GIT_BRANCH}, $ENV{CURRENT_ENV});
+	}
 
 	push(@undefined, grep { !$ENV{$_} }
 		qw/BOSH_ENVIRONMENT BOSH_CA_CERT
