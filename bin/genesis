@@ -369,6 +369,8 @@ sub commit_changes {
 	pushd $outdir;
 
 	my $tmp = workdir;
+	# Make changes to environment by set_git_env local to this scope.
+	local %ENV;
 	set_git_env($tmp);
 
 	# What's Going On?
@@ -2544,8 +2546,9 @@ sub {
 	my $env = Genesis::Top->new('.')->load_env($ENV{CURRENT_ENV})->with_vault();
 
 	if ($env->needs_bosh_create_env) {
-		# Make sure that state is up to date.
+		# Make sure that state is up to date. Keep environment changes local to this scope.
 		my $tmp = workdir;
+		local %ENV;
 		set_git_env($tmp);
 		run({ onfailure   => "Could not reset to the latest state file from origin. State file may not exist, which occurs if the proto bosh has not been deployed once manually.",
 			interactive => 1,
