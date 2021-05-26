@@ -167,6 +167,7 @@ sub _glyphize {
 		' ' => '  ',
 		'>' => "⮀",
 		'!' => "\x{26A0} ",
+		'^-' => "\x{2B11} ",
 	);
 
 	$glyph = $glyphs{$glyph} if !envset('GENESIS_NO_UTF8') && defined($glyphs{$glyph});
@@ -215,49 +216,40 @@ sub debug {
 	_log("DEBUG", csprintf(@_), "Wm")
 }
 
+sub trace {
+	return unless envset "GENESIS_TRACE";
+	_log("TRACE", csprintf(@_), "Wc");
+	_log("TRACE", _get_scope(1));
+}
+
 sub dump_var {
 	return unless envset("GENESIS_DEBUG") || envset("GENESIS_TRACE");
 	my $scope = 0;
-	$scope = abs(shift) if ($_[0] =~ '^-?\d+$');
+	$scope = abs(shift) if (defined $_[0] && $_[0] =~ '^-?\d+$');
 
 	local $Data::Dumper::Deparse = 1;
 	local $Data::Dumper::Terse   = 1;
-	my (undef, $file, $ln) = caller($scope);
-	my $sub = (caller($scope+1))[3];
 	my (%vars) = @_;
-	_log("VALUE", csprintf("#M{$_} = ").Dumper($vars{$_}) .csprintf("#Ki{# in $sub [$file:L$ln]}"), "Wb") for (keys %vars);
+	_log("VALUE", csprintf("#M{$_} = ").Dumper($vars{$_}), "Wb") for (keys %vars);
+	_log("VALUE", _get_scope($scope+1));
 }
 
 sub dump_stack {
 	return unless envset("GENESIS_DEBUG") || envset("GENESIS_TRACE");
 	my $scope = 0;
-	$scope = abs(shift) if ($_[0] =~ '^-?\d+$');
+	$scope = abs(shift) if (defined $_[0] && $_[0] =~ '^-?\d+$');
 
-	my ($package,$file,$line,$sub,@stack,@info);
-	my ($sub_size, $line_size, $file_size) = (10,4,4);
-
-  while (@info = caller($scope++)) {
-		$sub = $info[3];
-		$sub_size  = (sort {$b <=> $a} ($sub_size, length($sub )))[0];
-		if ($file) {
-			push @stack, [$line,$sub,$file];
-			$line_size = (sort {$b <=> $a} ($line_size,length($line)))[0];
-			$file_size = (sort {$b <=> $a} ($file_size,length($file)))[0];
-		}
-		$file = $info[1];
-		$line = $info[2];
+	my @stack = _get_stack($scope+1);
+	my %sizes = (sub => 10, line => 4, file => 4);
+	for my $type (keys %sizes) {
+		$sizes{$type} = (sort {$b<=>$a} ($sizes{$type}, map {length($_->{$type})} @stack))[0];
 	}
 
 	print STDERR "\n"; # Ensures that the header lines up at the cost of a blank line
-	my $header = csprintf("#Wku{%*s}  #Wku{%-*s}  #Wku{%-*s}\n", $line_size, "Line", $sub_size, "Subroutine", $file_size, "File");
+	my $header = csprintf("#Wku{%*s}  #Wku{%-*s}  #Wku{%-*s}\n", $sizes{line}, "Line", $sizes{sub}, "Subroutine", $sizes{file}, "File");
 	_log("STACK", $header.join("\n",map {
-		csprintf("#w{%*s}  #Y{%-*s}  #Ki{%s}", $line_size, $_->[0], $sub_size, $_->[1], $_->[2])
+		csprintf("#w{%*s}  #Y{%-*s}  #Ki{%s}", $sizes{line}, $_->{line}, $sizes{sub}, $_->{sub}, $_->{file})
 	} @stack), "kY");
-}
-
-sub trace {
-	return unless envset "GENESIS_TRACE";
-	_log("TRACE", csprintf(@_), "Wc")
 }
 
 sub _log {
@@ -268,15 +260,45 @@ sub _log {
 		$label = sprintf "%s.%03d %s", localtime($s)->strftime("%H:%M:%S"), $us / 1000, $label;
 	}
 	unless (envset "NOCOLOR") {
-		$gt = csprintf("#\@{>}");
-		$gtc = substr($colors,1,1);
+		$gt = csprintf('#@{>}');
+		$gtc = substr($colors||'-',1,1);
 		$label = " $label " unless envset('GENESIS_NO_UTF8');
+	}
+	# undefined colors means don't print the label (used for follow-up log entries)
+	unless (defined $colors) {
+		$gt = " " x length($gt);
+		$label = " " x length($label);
+		$colors = "-";
+		$gtc = "-";
 	}
 	$colors = substr($colors,1,1) if envset('GENESIS_NO_UTF8');
 	my $prompt = csprintf("#%s{%s}#%s{%s}", "$colors",$label,$gtc,$gt);
 	my $out = join("\n".(" "x(length($label)+2)),split(/\n/,$content));
 
 	printf STDERR "%s %s\n", $prompt, $out;
+}
+
+sub _get_scope {
+	my ($scope) = @_;
+	my $out = "";
+	for (_get_stack($scope+1)) {
+		$out .= csprintf("#K\@{^-}#Ki{%s:L%d (in %s)\n}", $_->{file}, $_->{line}, $_->{sub});
+		last unless envset ("GENESIS_STACK_TRACE");
+	}
+	chomp $out;
+	return $out;
+}
+
+sub _get_stack {
+	my ($scope) = @_;
+
+	my ($file,$line,$sub,@stack,@info);
+  while (@info = caller($scope++)) {
+		$sub = $info[3];
+		push @stack, {line => $line, sub => $sub, file => $file} if ($file);
+		(undef, $file, $line) = @info;
+	}
+	return @stack;
 }
 
 sub error {
@@ -288,27 +310,31 @@ sub error {
 sub bail {
 	my @err = @_;
 	unshift @err, "%s" if $#err == 0;
+	if (envset("GENESIS_DEBUG") || envset("GENESIS_TRACE") || envset("GENESIS_STACK_TRACE")) {
+		_log "ERROR", csprintf(@err), 'Wr';
+		_log "ERROR", _get_scope(1);
+	}
+
 	$! = 1; die csprintf(@err)."$/";
 }
 
 sub bug {
 	my (@msg) = @_;
+	local %ENV;
+	$ENV{GENESIS_STACK_TRACE} = 1;
+	_log("FATAL", "Genesis defect encountered - please file a defect report with the following stack info", "Wr");
+	_log("FATAL", _get_scope(1));
 
-	trace "Dying due to bug: ".csprintf(@msg);
-	dump_stack(1);
-
+	my $msg = csprintf(@msg)."\n\n";
+	$msg .= csprintf("#R{This is most likely a bug in Genesis itself.}\n");
 	if ($Genesis::VERSION =~ /dev/) {
-		$! = 2; die csprintf(@msg)."\n".
-		            csprintf("This is a bug in Genesis itself.\n").
-		            csprintf("#Y{NOTE: This is a development build of Genesis.}\n").
-		            csprintf("      Please try to reproduce this behavior with an\n").
-		            csprintf("      officially-released version before submitting\n").
-		            csprintf("      issues to the Genesis Github Issue Tracker.\n\n");
+		$msg .= csprintf("$_\n") for (
+			"#Y{NOTE: This is a development build of Genesis, not an official release.}",
+			"      Please try to reproduce this behavior with an officially-released",
+			"      version before submitting issues to the Genesis Github repository.\n"
+		);
 	}
-
-	$! = 2; die csprintf(@msg)."\n".
-	            csprintf("#R{This is a bug in Genesis itself.}\n").
-	            csprintf("Please file an issue at #C{%s/issues}\n\n", $GITHUB);
+	$! = 2; die csprintf($msg);
 }
 
 my $WORKDIR;

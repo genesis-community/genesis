@@ -107,6 +107,7 @@ subtest 'output utilities' => sub {
 			  error("this is an error");
 			}, "DEBUG> this is debugging\n".
 			   "TRACE> this is trace (debugging's debugging)\n".
+			   "       ⬑ t/00-utils.t:L106 (in main::__ANON__)\n".
 			   "this is an error\n", "with GENESIS_TRACE, you get trace to standard error");
 	}
 };

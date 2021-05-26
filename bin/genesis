@@ -566,7 +566,14 @@ our $GLOBAL_USAGE = <<EOF;
                     Genesis is doing, to standard error.
 
   -T, --trace       Even more debugging, including debugging inside called
-                    tools (like spruce and bosh).
+                    tools (like spruce and bosh).  Any trace commands within
+                    the Genesis codebase will be printed, along with identifying
+                    the line they were encountered.
+
+  -S, --show-stack  Will show stack trace when displaying fatal error due to
+                    runtime conditions or bugs.  When -T|--trace is also
+                    specified, each trace will contain the full stack of where
+                    it was encountered.
 
   -C, --cwd         Effective working directory.  You can also specify the
                     environment YAML file to use, in which case the working
@@ -617,6 +624,7 @@ sub options {
 			help|h
 			debug|D+
 			trace|T+
+			show-stack|S
 			quiet|q
 			cwd|C=s
 			environment|bosh-env|e=s
@@ -639,6 +647,7 @@ sub options {
 	$ENV{GENESIS_DEBUG}  = 'y' if $debug || envset "DEBUG";
 	$ENV{GENESIS_TRACE}  = 'y' if $trace;
 	$ENV{GENESIS_TSTAMP} = 'y' if $debug > 1;
+	$ENV{GENESIS_STACK_TRACE} = "y" if delete($options->{'show-stack'});
 
 	# spruce debugging
 	$ENV{DEBUG}          = 'y' if $trace > 1;
