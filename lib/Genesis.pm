@@ -7,7 +7,7 @@ use utf8;
 our $VERSION = "(development)";
 our $BUILD   = "";
 
-our $GITHUB  = "https://github.com/starkandwayne/genesis";
+our $GITHUB  = "https://github.com/genesis-community/genesis";
 
 use Data::Dumper;
 use File::Basename qw/basename dirname/;
@@ -282,7 +282,7 @@ sub _get_scope {
 	my ($scope) = @_;
 	my $out = "";
 	for (_get_stack($scope+1)) {
-		$out .= csprintf("#K\@{^-}#Ki{%s:L%d (in %s)\n}", $_->{file}, $_->{line}, $_->{sub});
+		$out .= csprintf("#K\@{^-}#Ki{ %s:L%d (in %s)\n}", $_->{file}, $_->{line}, $_->{sub});
 		last unless envset ("GENESIS_STACK_TRACE");
 	}
 	chomp $out;
@@ -295,7 +295,7 @@ sub _get_stack {
 	my ($file,$line,$sub,@stack,@info);
   while (@info = caller($scope++)) {
 		$sub = $info[3];
-		push @stack, {line => $line, sub => $sub, file => $file} if ($file);
+		push @stack, {line => $line, sub => $sub, file => humanize_path($file)} if ($file);
 		(undef, $file, $line) = @info;
 	}
 	return @stack;
@@ -320,18 +320,19 @@ sub bail {
 
 sub bug {
 	my (@msg) = @_;
-	local %ENV;
-	$ENV{GENESIS_STACK_TRACE} = 1;
-	_log("FATAL", "Genesis defect encountered - please file a defect report with the following stack info", "Wr");
-	_log("FATAL", _get_scope(1));
 
 	my $msg = csprintf(@msg)."\n\n";
 	$msg .= csprintf("#R{This is most likely a bug in Genesis itself.}\n");
+	$msg .= csprintf("\nPlease file an issue on #Bu{%s/issues/new}\nwith the following stack info:\n", $GITHUB);
+	$msg .= csprintf("  #Ki{%s:L%d (in %s)\n}", $_->{file}, $_->{line}, $_->{sub}) for (_get_stack(1));
+
 	if ($Genesis::VERSION =~ /dev/) {
-		$msg .= csprintf("$_\n") for (
-			"#Y{NOTE: This is a development build of Genesis, not an official release.}",
+		$msg .= csprintf("#Y{%s}\n", $_) for (
+			"",
+			"NOTE: This is a development build of Genesis, not an official release.",
 			"      Please try to reproduce this behavior with an officially-released",
-			"      version before submitting issues to the Genesis Github repository.\n"
+			"      version before submitting issues to the Genesis Github repository.",
+			""
 		);
 	}
 	$! = 2; die csprintf($msg);
