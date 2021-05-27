@@ -17,11 +17,12 @@ use Cwd ();
 my $start_dir = Cwd::getcwd;
 subtest 'bug reporting utilities' => sub {
 	local $Genesis::VERSION = '2.6.0';
-	throws_ok { bug("an example bug"); } qr{
-			an \s+ example \s+ bug.*
-			a \s+ bug \s+ in \s+ genesis.*
-			file \s+ an \s+ issue .* https://github\.com/starkandwayne/genesis/issues
-		}six, "bug() reports all the necessary details";
+	quietly {
+		throws_ok { bug("an example bug"); } qr{
+				an \s+ example \s+ bug.*
+				a \s+ bug \s+ in \s+ Genesis.*
+			}six, "bug() reports all the necessary details";
+	};
 };
 
 subtest 'environment variable utilities' => sub {
@@ -107,7 +108,7 @@ subtest 'output utilities' => sub {
 			  error("this is an error");
 			}, "DEBUG> this is debugging\n".
 			   "TRACE> this is trace (debugging's debugging)\n".
-			   "       ⬑ t/00-utils.t:L106 (in main::__ANON__)\n".
+			   "       ⬑ t/00-utils.t:L107 (in main::__ANON__)\n".
 			   "this is an error\n", "with GENESIS_TRACE, you get trace to standard error");
 	}
 };

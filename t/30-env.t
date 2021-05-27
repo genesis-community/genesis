@@ -18,33 +18,42 @@ use Genesis;
 fake_bosh;
 
 subtest 'new() validation' => sub {
-	throws_ok { Genesis::Env->new() }
-		qr/no 'name' specified.*this is a bug/is;
+	quietly { throws_ok { Genesis::Env->new() }
+		qr/no 'name' specified.*this is most likely a bug/is;
+	};
 
-	throws_ok { Genesis::Env->new(name => 'foo') }
-		qr/no 'top' specified.*this is a bug/is;
+	quietly { throws_ok { Genesis::Env->new(name => 'foo') }
+		qr/no 'top' specified.*this is most likely a bug/is;
+	};
 };
 
 subtest 'name validation' => sub {
 	lives_ok { Genesis::Env->validate_name("my-new-env"); }
 		"my-new-env is a good enough name";
 
-	throws_ok { Genesis::Env->validate_name(""); }
+	quietly { throws_ok { Genesis::Env->validate_name(""); }
 		qr/must not be empty/i;
+	};
 
-	throws_ok { Genesis::Env->validate_name("my\tnew env\n"); }
+	quietly { throws_ok { Genesis::Env->validate_name("my\tnew env\n"); }
 		qr/must not contain whitespace/i;
+	};
 
-	throws_ok { Genesis::Env->validate_name("my-new-!@#%ing-env"); }
+	quietly { throws_ok { Genesis::Env->validate_name("my-new-!@#%ing-env"); }
 		qr/can only contain lowercase letters, numbers, and hyphens/i;
+	};
 
-	throws_ok { Genesis::Env->validate_name("-my-new-env"); }
+	quietly { throws_ok { Genesis::Env->validate_name("-my-new-env"); }
 		qr/must start with a .*letter/i;
-	throws_ok { Genesis::Env->validate_name("my-new-env-"); }
-		qr/must not end with a hyphen/i;
+	};
 
-	throws_ok { Genesis::Env->validate_name("my--new--env"); }
+	quietly { throws_ok { Genesis::Env->validate_name("my-new-env-"); }
+		qr/must not end with a hyphen/i;
+	};
+
+	quietly { throws_ok { Genesis::Env->validate_name("my--new--env"); }
 		qr/must not contain sequential hyphens/i;
+	};
 
 	for my $ok (qw(
 		env1
@@ -159,7 +168,7 @@ subtest 'environment metadata' => sub {
 	my $vault_target = vault_ok;
 	Genesis::Vault->clear_all();
 	my $top = Genesis::Top->create(workdir, 'thing', vault=>$VAULT_URL);
-	$top->download_kit('bosh/0.2.0');
+	quietly { $top->download_kit('bosh/0.2.0'); };
 	put_file $top->path("standalone.yml"), <<EOF;
 ---
 kit:
@@ -178,7 +187,8 @@ params:
   false:   ~
 EOF
 
-	my $env = $top->load_env('standalone');
+	my $env;
+	quietly { $env = $top->load_env('standalone'); };
 	is($env->name, "standalone", "an environment should know its name");
 	is($env->file, "standalone.yml", "an environment should know its file path");
 	is($env->deployment, "standalone-thing", "an environment should know its deployment name");
@@ -204,10 +214,10 @@ genesis:
   exodus_mount:  genesis/exodus
 EOF
 	local $ENV{NOCOLOR} = 'y';
-	throws_ok { $env = $top->load_env('standalone-with-another.yml');} 
+	quietly { throws_ok { $env = $top->load_env('standalone-with-another.yml');}
 		qr/\[ERROR\] Kit bosh\/0.2.0 is not compatible with secrets_mount feature\n\s+Please upgrade to a newer release or remove params.secrets_mount from standalone-with-another.yml/,
 		"Outdated kits bail when using v2.7.0 features";
-
+	};
 =comment
 	# This needs a kit that is v2.7.0 compatible
 	put_file $top->path("standalone-with-another.yml"), <<EOF;
@@ -244,7 +254,7 @@ subtest 'parameter lookup' => sub {
 	my $vault_target = vault_ok;
 	Genesis::Vault->clear_all();
 	my $top = Genesis::Top->create(workdir, 'thing', vault=>$VAULT_URL);
-	$top->download_kit('bosh/0.2.0');
+	quietly { $top->download_kit('bosh/0.2.0'); };
 	put_file $top->path("standalone.yml"), <<EOF;
 ---
 kit:
@@ -265,8 +275,8 @@ EOF
 
 	my $env;
 	$ENV{NOCOLOR}=1;
-	throws_ok { $top->load_env('enoent');   } qr/enoent.yml does not exist/;
-	throws_ok { $top->load_env('e-no-ent'); } qr/does not exist/;
+	quietly { throws_ok { $top->load_env('enoent');   } qr/enoent.yml does not exist/; };
+	quietly { throws_ok { $top->load_env('e-no-ent'); } qr/does not exist/; };
 
 	lives_ok { $env = $top->load_env('standalone') }
 	         "Genesis::Env should be able to load the `standalone' environment.";
@@ -849,8 +859,8 @@ genesis:
 EOF
 
 	my $env = $top->load_env('standalone');
-	lives_ok { $env->download_cloud_config(); }
-		"download_cloud_config runs correctly";
+	quietly { lives_ok { $env->download_cloud_config(); }
+		"download_cloud_config runs correctly"; };
 
 	ok -f $env->cloud_config, "download_cloud_config created cc file";
 	eq_or_diff get_file($env->cloud_config), <<EOF, "download_cloud_config calls BOSH correctly";
@@ -979,8 +989,8 @@ params:
 EOF
 	`safe set --quiet secret/standalone/thing/admin password='drowssap'`;
 	my $env = $top->load_env('standalone');
-	lives_ok { $env->download_cloud_config(); }
-		"download_cloud_config runs correctly";
+	quietly { lives_ok { $env->download_cloud_config(); }
+		"download_cloud_config runs correctly"; };
 
 	put_file $env->cloud_config, <<EOF;
 ---
@@ -1024,9 +1034,9 @@ subtest 'new env and check' => sub{
 	mkfile_or_fail $top->path("pre-existing.yml"), "I'm already here";
 
 	# create the environment
-	dies_ok {$top->create_env('', $kit)} "can't create a unnamed env";
-	dies_ok {$top->create_env("nothing")} "can't create a env without a kit";
-	dies_ok {$top->create_env("pre-existing", $kit)} "can't overwrite a pre-existing env";
+	quietly {dies_ok {$top->create_env('', $kit)} "can't create a unnamed env"; };
+	quietly {dies_ok {$top->create_env("nothing")} "can't create a env without a kit"; };
+	quietly {dies_ok {$top->create_env("pre-existing", $kit)} "can't overwrite a pre-existing env"; };
 
 	my $env;
 	local $ENV{NOCOLOR} = "yes";
