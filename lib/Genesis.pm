@@ -293,7 +293,7 @@ sub _get_stack {
 	my ($scope) = @_;
 
 	my ($file,$line,$sub,@stack,@info);
-  while (@info = caller($scope++)) {
+	while (@info = caller($scope++)) {
 		$sub = $info[3];
 		push @stack, {line => $line, sub => $sub, file => humanize_path($file)} if ($file);
 		(undef, $file, $line) = @info;
@@ -377,7 +377,7 @@ sub new_enough {
 
 sub strfuzzytime {
 	my ($datestring,$output_format, $input_format) = @_;
-  $input_format ||= "%Y-%m-%d %H:%M:%S %z";
+	$input_format ||= "%Y-%m-%d %H:%M:%S %z";
 
 	my $time = Time::Piece->strptime($datestring,$input_format);
 	my $delta = Time::Piece->new() - $time;
