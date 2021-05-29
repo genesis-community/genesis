@@ -105,20 +105,22 @@ sub decompile_kit {
 
 subtest 'kit utilities' => sub {
 	my $kit = kit('test', '1.0.0');
-	throws_ok { $kit->kit_bug('buggy behavior') }
+	quietly { throws_ok { $kit->kit_bug('buggy behavior') }
 		qr{
 			buggy \s+ behavior.*
 			a \s+ bug \s+ in \s+ the \s+ test/1\.0\.0 \s+ kit.*
 			file \s+ an \s+ issue \s+ at .* https://github\.com/.*/issues
 		}six, "kit_bug() reports the pertinent details for a compiled kit";
+	};
 
 	my $dev = decompile_kit('test', '1.0.0');
-	throws_ok { $dev->kit_bug('buggy behavior') }
+	quietly { throws_ok { $dev->kit_bug('buggy behavior') }
 		qr{
 			buggy \s+ behavior.*
 			a \s+ bug \s+ in \s+ your \s+ dev/ \s+ kit.*
 			contact .* author .* you
 		}six, "kit_bug() reports the pertinent details for a dev kit";
+	};
 };
 
 subtest 'compiled kits' => sub {
@@ -280,7 +282,7 @@ subtest 'version requirements' => sub {
 	local $Genesis::VERSION;
 
 	$Genesis::VERSION = '0.0.1';
-	ok !$kit->check_prereqs, 'v0.0.1 is too old for the t/src/simple kit prereq of 2.6.0';
+	quietly {ok !$kit->check_prereqs, 'v0.0.1 is too old for the t/src/simple kit prereq of 2.6.0';};
 
 	$Genesis::VERSION = '9.9.9';
 	ok $kit->check_prereqs, 'v9.9.9 is new enough for the t/src/simple kit prereq of 2.6.0';

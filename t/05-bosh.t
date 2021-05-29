@@ -43,11 +43,15 @@ subtest 'bosh create-env' => sub {
 	ok Genesis::BOSH->create_env("manifest.yml", state => "state.json"),
 		"create_env with state file should work";
 
-	throws_ok { Genesis::BOSH->create_env() }
-		qr/missing deployment manifest/i;
+	quietly {
+		throws_ok { Genesis::BOSH->create_env() }
+			qr/missing deployment manifest/i;
+  };
 
-	throws_ok { Genesis::BOSH->create_env("manifest.yml") }
-		qr/missing 'state' option/i;
+	quietly {
+		throws_ok { Genesis::BOSH->create_env("manifest.yml") }
+			qr/missing 'state' option/i;
+	};
 
 	bosh_runs_as("create-env --state state.json -l path/to/vars-file.yml manifest.yml");
 	ok Genesis::BOSH->create_env("manifest.yml", state => "state.json", vars_file => "path/to/vars-file.yml"),
@@ -68,9 +72,11 @@ subtest 'bosh cloud-config' => sub {
 		"download_cloud_config should work";
 
 	bosh_outputs_json('-e "some-env" config --type cloud --name default --json',"");
-	throws_ok { Genesis::BOSH->download_cloud_config('some-env', "$out/cloud.yml") }
-		qr/no cloud-config defined/i,
-		"without cloud-config output, download_cloud_config should fail";
+	quietly {
+		throws_ok { Genesis::BOSH->download_cloud_config('some-env', "$out/cloud.yml") }
+			qr/no cloud-config defined/i,
+			"without cloud-config output, download_cloud_config should fail";
+	};
 };
 
 subtest 'bosh deploy' => sub {
@@ -88,11 +94,15 @@ subtest 'bosh deploy' => sub {
 	                                           flags      => ['--some', '--flags']); }
 		"deploy should pass through vars-file, options and flags properly";
 
-	throws_ok { Genesis::BOSH->deploy } qr/missing bosh environment name/i;
-	throws_ok { Genesis::BOSH->deploy("an-env") }
-		qr/missing 'manifest' option/i;
-	throws_ok { Genesis::BOSH->deploy("an-env", manifest => 'manifest.yml') }
-		qr/missing 'deployment' option/i;
+	quietly { throws_ok { Genesis::BOSH->deploy } qr/missing bosh environment name/i; };
+	quietly {
+		throws_ok { Genesis::BOSH->deploy("an-env") }
+			qr/missing 'manifest' option/i;
+	};
+	quietly {
+		throws_ok { Genesis::BOSH->deploy("an-env", manifest => 'manifest.yml') }
+			qr/missing 'deployment' option/i;
+	};
 };
 
 subtest 'bosh alias' => sub {
@@ -108,11 +118,15 @@ subtest 'bosh run_errand' => sub {
 	                                               errand     => "smoke-tests") }
 		"run_errand works with env, deploytment, and errand name set";
 
-	throws_ok { Genesis::BOSH->run_errand } qr/missing bosh environment name/i;
-	throws_ok { Genesis::BOSH->run_errand("an-env") }
-		qr/missing 'deployment' option/i;
-	throws_ok { Genesis::BOSH->run_errand("an-env", deployment => 'my-dep') }
-		qr/missing 'errand' option/i;
+	quietly { throws_ok { Genesis::BOSH->run_errand } qr/missing bosh environment name/i; };
+	quietly {
+		throws_ok { Genesis::BOSH->run_errand("an-env") }
+			qr/missing 'deployment' option/i;
+	};
+	quietly {
+		throws_ok { Genesis::BOSH->run_errand("an-env", deployment => 'my-dep') }
+			qr/missing 'errand' option/i;
+	};
 };
 
 subtest 'environment variable management' => sub {
