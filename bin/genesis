@@ -6,7 +6,7 @@ no warnings 'utf8';
 use utf8;
 
 # Ensure code exits and cleans up workdirs
-$SIG{INT} = $SIG{TERM} = sub { die };
+$SIG{INT} = $SIG{TERM} = sub {bail("Genesis halted due to user interrupt")};
 
 # non-core modules
 use JSON::PP qw/encode_json/;
