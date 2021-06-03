@@ -559,8 +559,12 @@ sub deprecated {
 }
 
 
-our $GLOBAL_USAGE = <<EOF;
+our $BASE_USAGE = <<EOF;
   -h, --help        Show this help screen.
+
+      --[no]-color  Enable [or disable] color output
+
+  -q, --quiet       Suppress informative output (errors will still be displayed)
 
   -D, --debug       Enable debugging, printing helpful message about what
                     Genesis is doing, to standard error.
@@ -574,12 +578,16 @@ our $GLOBAL_USAGE = <<EOF;
                     runtime conditions or bugs.  When -T|--trace is also
                     specified, each trace will contain the full stack of where
                     it was encountered.
-
+EOF
+our $REPO_USAGE = <<EOF;
+$BASE_USAGE
   -C, --cwd         Effective working directory.  You can also specify the
                     environment YAML file to use, in which case the working
                     directory is the one containing the specified file.
                     Defaults to '.'
-
+EOF
+our $GLOBAL_USAGE = <<EOF;
+$REPO_USAGE
   -e, --bosh-env    Which BOSH environment (aka director) to use.  If not
                     specified, it will use the value in genesis.bosh or
                     genesis.env in that order.  Can also be provided using
@@ -617,24 +625,31 @@ our $GLOBAL_USAGE = <<EOF;
 EOF
 sub options {
 	my ($args, $options, @spec) = @_;
+	my $base_opt_type = (defined($spec[0]) && $spec[0] =~ /_USAGE$/) ? shift(@spec) : '';
+	my @global_spec = (qw/
+		help|h
+		debug|D+
+		trace|T+
+		show-stack|S
+		color!
+		quiet|q/);
+
+	if ($base_opt_type ne 'BASE_USAGE') {
+		push(@global_spec, (qw/
+			cwd|C=s/));
+
+		if ($base_opt_type ne 'REPO_USAGE') {
+			push(@global_spec, (qw/
+				environment|bosh-env|e=s
+				config|c=s@
+				cloud-config|cc=s
+				runtime-config|rc=s/));
+		}
+	}
+
 	$options->{color} = 1 unless exists $options->{color};
 	Getopt::Long::Configure(qw(no_pass_through permute auto_abbrev no_ignore_case bundling));
-	GetOptionsFromArray($args, $options,
-		(qw/
-			help|h
-			debug|D+
-			trace|T+
-			show-stack|S
-			quiet|q
-			cwd|C=s
-			environment|bosh-env|e=s
-			color!
-			config|c=s@
-			cloud-config|cc=s
-			runtime-config|rc=s
-		/,
-		@spec))
-			or usage(1);
+	GetOptionsFromArray($args, $options,(@global_spec,@spec)) or usage(1);
 
 	usage(0) if $options->{help};
 
@@ -800,7 +815,9 @@ genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis [OPTIONS] COMMAND [MORE OPTIONS]
 
 OPTIONS
-$GLOBAL_USAGE
+$BASE_USAGE
+#Ki{Each command may support further options.}
+
 #U{BASIC ENVIRONMENT MANAGEMENT COMMANDS:}
   #C{init}              Initialize a new Genesis deployment.
   #G{new}               Create a new Genesis deployment environment.
