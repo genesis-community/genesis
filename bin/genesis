@@ -1206,12 +1206,12 @@ sub {
 		exit 0
 	}
 
-	waiting_on("\nCollecting information on %s kit provider for #C{%s} deployment at #M{%s} ...", $kit_provider_lookup, $top->type, humanize_path($top->path));
+	explain("\nCollecting information on %s kit provider for #C{%s} deployment at #M{%s}", $kit_provider_lookup, $top->type, humanize_path($top->path));
 	my %info;
 	eval {
 		%info = $top->kit_provider_info($verbose);
 	};
-	explain("done.\n");
+	explain("Complete.\n");
 	bail "#R{[ERROR]} $@\n" if $@;
 
 	explain("         Type: #M{%s}\n", $info{type});

@@ -277,8 +277,9 @@ sub status {
 		my @kit_names = sort $self->kit_names;
 		if ($verbose) {
 			$kits = {};
+			waiting_on STDERR "\n";
 			for my $name (@kit_names) {
-				waiting_on('.');
+				waiting_on STDERR "  - ";
 				my @releases = $self->kit_releases($name);
 				my $num_drafts = scalar(grep {$_->{draft}} @releases);
 				my $num_prereleases = scalar(grep {!$_->{draft} && $_->{prerelease}} @releases);

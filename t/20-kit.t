@@ -266,7 +266,8 @@ subtest 'kit versions' => sub {
 	              draft      => re('^1?$'),
 	              prerelease => re('^1?$'),
 	              version    => re('^(\d+)(?:\.(\d+)(?:\.(\d+)(?:[\.-]rc[\.-]?(\d+))?)?)?'),
-	              url        => re('https://github.com/genesis-community/jumpbox-genesis-kit/releases/download/[^/]*/jumpbox-[^/]*.tar.gz')
+	              url        => re('https://github.com/genesis-community/jumpbox-genesis-kit/releases/download/[^/]*/jumpbox-[^/]*.tar.gz'),
+	              filename   => re('jumpbox-[^/]*.tar.gz')
 	             );
 	cmp_deeply( [@version_info], array_each(\%struct), "Each version contains desired details");
 
