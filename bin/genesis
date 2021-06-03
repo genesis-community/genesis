@@ -312,17 +312,19 @@ sub propagate_previous_passed_files {
 	}
 }
 
-
-sub set_git_env {
+# }}}
+# get_git_env - setup a git configuration in the 'home' directory under the given dir, and return env {{{
+sub get_git_env {
 
 	my ($env_dir) = @_;
+	my %env;
+	$env{HOME}                = "$env_dir/home";
+	$env{GIT_AUTHOR_NAME}     = $ENV{GIT_AUTHOR_NAME}  || 'Concourse Bot';
+	$env{GIT_AUTHOR_EMAIL}    = $ENV{GIT_AUTHOR_EMAIL} || 'concourse@pipeline';
+	$env{GIT_COMMITTER_NAME}  = $env{GIT_AUTHOR_NAME};
+	$env{GIT_COMMITTER_EMAIL} = $env{GIT_AUTHOR_EMAIL};
+	$env{GIT_ASKPASS}         = "/bin/false";
 
-	# We need this here so we can do a manual pull after the build/deploy, but
-	# prior to pushing. Rebasing inside the concourse resource will not work,
-	# as we are changing files that are not watched by the resources. This may
-	# cause conflicts as older commits try to change more and more things that
-	# have already been updated in the .genesis/manifests directory.
-	#
 	if ($ENV{GIT_PRIVATE_KEY}) {
 		mkdir_or_fail( "$env_dir/home/.ssh", 0700);
 		mkfile_or_fail("$env_dir/home/.ssh/key", 0600, $ENV{GIT_PRIVATE_KEY});
@@ -333,7 +335,7 @@ Host *
   LogLevel QUIET
   IdentityFile $env_dir/home/.ssh/key
 EOF
-		$ENV{GIT_SSH_COMMAND}     = "ssh -F $env_dir/home/.ssh/config";
+		$env{GIT_SSH_COMMAND}     = "ssh -F $env_dir/home/.ssh/config";
 	};
 	if ($ENV{GIT_USERNAME}) {
 		mkdir_or_fail( "$env_dir/home", 0700);
@@ -342,15 +344,10 @@ EOF
 echo username=$GIT_USERNAME
 echo password=$GIT_PASSWORD
 EOF
-		run('git', 'config', 'credential.helper', "$env_dir/home/credential-helper.sh");
+		run({env => \%env}, 'git', 'config', 'credential.helper', "$env_dir/home/credential-helper.sh");
 	}
 
-	$ENV{GIT_AUTHOR_NAME}   ||= 'Concourse Bot';
-	$ENV{GIT_AUTHOR_EMAIL}  ||= 'concourse@pipeline';
-	$ENV{GIT_COMMITTER_NAME}  = $ENV{GIT_AUTHOR_NAME};
-	$ENV{GIT_COMMITTER_EMAIL} = $ENV{GIT_AUTHOR_EMAIL};
-	$ENV{GIT_ASKPASS}         = "/bin/false";
-	$ENV{HOME}                = "$env_dir/home";
+	return wantarray ? %env : \%env;
 
 }
 
@@ -363,15 +360,20 @@ sub commit_changes {
 	# done in the name of avoiding merge conflicts, or weird errors when
 	# rebasing, and git discovers that there are no changes after you rebase
 
+	# remove any old directories if they are left over (only really happens when
+	# debugging a failed run)
+	run(
+		{onfailure => "#R{[ERROR]} Failed to remove remnant of previous changes commit"},
+		'rm -rf "$1"', $outdir
+	) if -d $outdir;
+
 	# create an output git repo based off of latest origin/$branch
 	run({ interactive => 1, passfail => 1},
 		'cp -R "$1" "$2"', $indir, $outdir) or exit 1;
 	pushd $outdir;
 
 	my $tmp = workdir;
-	# Make changes to environment by set_git_env local to this scope.
-	local %ENV;
-	set_git_env($tmp);
+	my $git_env = get_git_env($tmp);
 
 	# What's Going On?
 	#   reset --hard : reset the repo to the current commit on branch
@@ -381,14 +383,14 @@ sub commit_changes {
 	#                  happened during pipeline
 	run({ onfailure   => "Could not reset to the newest applicable ref in git",
 		  interactive => 1,
-		  env => { HOME => "$tmp/home" } },
+		  env => $git_env },
 		'git reset --hard "origin/${1}" && git clean -df && git checkout "$1" &&  git pull origin "$1"',
 		$branch);
 	popd;
 
 	# find and copy (or remove if appropriate) all potential changes to the outdir
 	pushd $indir;
-	my @output = lines(run('git status --porcelain'));
+	my @output = lines(run({env => $git_env}, 'git status --porcelain'));
 	popd;
 	explain STDERR "Detected the following changes in repo:" if @output;
 	for my $change (@output) {
@@ -414,10 +416,10 @@ sub commit_changes {
 	# check if any changes actually exist in the outdir (potential changes may have alread
 	# been tracked after $indir's commit, so they could disappear here), then commit them
 	pushd $outdir;
-	my ($output, undef) = run('git status --porcelain');
+	my ($output, undef) = run({env => $git_env}, 'git status --porcelain');
 	if ($output) {
 		run({ interactive => 1, # print output to Concourse log
-			  env => { HOME => "$tmp/home" } },
+			  env => $git_env },
 			'git add -A && '.
 			'git status && '.
 			'git --no-pager diff --cached && '.
@@ -2548,11 +2550,10 @@ sub {
 	if ($env->needs_bosh_create_env) {
 		# Make sure that state is up to date. Keep environment changes local to this scope.
 		my $tmp = workdir;
-		local %ENV;
-		set_git_env($tmp);
+		my $git_env = get_git_env($tmp);
 		run({ onfailure   => "Could not reset to the latest state file from origin. State file may not exist, which occurs if the proto bosh has not been deployed once manually.",
 			interactive => 1,
-			env => { HOME => "$tmp/home" } },
+			env => $git_env },
 			'git checkout "origin/${1}" ".genesis/manifests/${2}-state.yml"',
 			$ENV{GIT_BRANCH}, $ENV{CURRENT_ENV});
 	}
