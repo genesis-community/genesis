@@ -120,6 +120,9 @@ doesn't use `dev/`.  These are the ground rules:
 
 In dev-mode, the `kit.version` parameter is ignored.
 
+Genesis comes with `create-kit`, `compile-kit` and `decompile-kit` 
+commands which further enhance kit developer experience.
+
 Structure of a Kit
 ------------------
 
