@@ -831,6 +831,8 @@ $BASE_USAGE
   #G{manifest}          Generate a redacted BOSH deployment manifest for an environment.
   #G{deploy}            Generate a real manifest using Vault + Cloud Config, and deploy it to BOSH.
   #G{do}                Run an addon script provided by the Kit.  Try `do list`
+  embed             Embed this version of Genesis into the current Genesis deployment repository.
+  #C{update}            Downloads a newer version of Genesis or checks if one is available.
 
 #U{INFORMATIVE COMMANDS:}
   #C{ping}              See if the genesis binary is a real thing.
@@ -971,6 +973,153 @@ sub {
 	# FIXME: update .genesis/config with new version info
 	Genesis::Top->new('.')->embed($ENV{GENESIS_CALLBACK_BIN} || $0);
 });
+
+# }}}
+# genesis update - update the current version of Genesis {{{
+command("update", {alias => 'upgrade'}, <<EOF,
+genesis v$Genesis::VERSION$Genesis::BUILD
+USAGE: genesis update [-c|--check] [-v|--version VERSION] [-d|--details] [-f|--force]
+
+OPTIONS
+$BASE_USAGE
+  -c, --check       Check if a newer version (or the specified version) is
+                    available.
+
+  -v, --version <x> Install the specified version instead of the latest
+
+  -d, --details     Print the release notes of the versions between the current
+                    version and the latest (or the release notes of the
+                    specified version)
+
+  -f, --force       Replace the current genesis executable.  Otherwise,
+                    confirmation will be requested.
+
+EOF
+sub {
+	my %options;
+	options(\@_, \%options, qw/
+		BASE_USAGE
+		check|c
+		version|v=s
+		details|d
+		force|f
+	/);
+	usage(1) if @_;
+
+	use Genesis::Github;
+	my $gh = Genesis::Github->new();
+
+	my ($err,$label,@versions);
+	if ($options{version}) {
+		@versions = $gh->versions('genesis', version => $options{version});
+		if (! @versions) {
+			$err = csprintf("Genesis #C{v%s} does not exist", $options{version});
+		} elsif (! $versions[0]->{url}) {
+			$err = csprintf(
+				"Genesis #C{v%s} found, but the executable is no longer available",
+				$options{version}
+			)
+		} else {
+			$label = csprintf("Version #C{v%s}",$options{version});
+		}
+	} else {
+		@versions = grep {by_semver($_->{version}, $Genesis::VERSION) == 1} $gh->versions('genesis');
+		shift @versions while (@versions && ! defined($versions[0]->{url}));
+		if (@versions) {
+			$label = csprintf("A newer version (#C{v%s})", $versions[0]->{version});
+		} else {
+			$err = csprintf(
+				"No newer version of Genesis (currently #C{v%s}) is available",
+				$Genesis::VERSION
+			)
+		}
+	}
+
+	if ($err) {
+		if ($options{check}) {
+			explain "\n$err.\n";
+			exit 1
+		}
+		bail "#R{[ERROR]} $err - cannot update.";
+	}
+
+	my $extra_versions = scalar(@versions)-1;
+	explain "\n%s is available%s!\n",
+		$label,
+		($extra_versions > 0)
+			? sprintf(" (with %d preceeding release%s)",$extra_versions, ($extra_versions > 2 ? 's' : ''))
+			: '';
+
+	if ($options{details}) {
+		for my $version (@versions) {
+			my $c = ($version->{version} =~ /[\.-]rc[\.-]?(\d+)$/) ? "Y" : ($version->{prerelease} ? "y" : "G");
+			my $d = "";
+			if ($version->{date}) {
+				$d = "Published ".$version->{date};
+				$d .= " - \e[3mPre-release\e[0m"
+				if $version->{prerelease};
+				$d = " ($d)";
+			}
+			explain "  #%s{v%s%s}", $c, $version->{version}, $d;
+			if ($version->{body} && $options{details}) {
+				explain "    Release Notes:";
+				explain "      $_" for split $/, $version->{body};
+				explain "";
+			}
+		}
+	}
+	return 0 if $options{check};
+
+	my $tmpdir = workdir();
+	my $target = $ENV{GENESIS_CALLBACK_BIN};
+	my $version = $versions[0]->{version};
+
+	if (!$options{force}) {
+		die_unless_controlling_terminal;
+		my $overwrite = prompt_for_boolean(
+			csprintf(
+				"[AYour Genesis version is currently #C{v%s}, located at #M{%s}.\nDo you want to overwrite this file with #C{v%s}? [y|n]",
+				$Genesis::VERSION, $target, $version
+			),0);
+		bail "Aborted!\n" unless $overwrite;
+	}
+
+	explain "";
+	my (undef,undef,$file) = $gh->fetch_release('genesis',$version,$tmpdir);
+	my (undef,undef,$fmode,undef,$fuid, $fgid) = stat($target);
+
+	if (-w $target && $fuid == $> && $fgid == $)) {
+		copy_or_fail $file, $target;
+		chmod_or_fail($fmode,$file);
+	} else {
+		mkfile_or_fail($tmpdir."/update_genesis", 0777, <<EOF);
+#!/usr/bin/env bash
+cp "$file" "$target"
+chmod ${\(sprintf("%04o",$fmode))} "$target"
+chown $fuid:$fgid "$target"
+EOF
+		my (undef,$rc) = run({stderr => '/dev/null'}, 'sudo','-n','true');
+		explain(
+			"\n#Yi{Notice:} You will need to enter your password for sudo, as the Genesis\n".
+		  "executable is not in a location the current user has write-access to."
+		) if ($rc);
+		run({
+			onfailure => "#R{[ERROR]} Could not overwrite existing Genesis with #C{v$version}",
+			interactive =>1
+		}, 'sudo', "$tmpdir/update_genesis");
+	}
+
+	# Clean up tempdir before exec-ing to another process (if safe)
+	my @unexpected_contents = grep {
+		$_ !~ /^(genesis|install_genesis)$/
+	} lines(scalar(run('ls -1 "$1"',$tmpdir)));
+	run('rm', '-rf', $tmpdir) unless scalar(@unexpected_contents);
+
+	explain "Verifying new version of Genesis...";
+	exec {$target} $target, 'version';
+
+});
+
 # }}}
 # genesis init - initialize a new Genesis repository {{{
 
