@@ -190,7 +190,7 @@ sub versions {
 			$opts{version} = undef;
 		} else {
 			$opts{version} =~ s/^v//;
-			$opts{drafts} = $opts{prerelease} = 1;
+			$opts{include_drafts} = $opts{include_prereleases} = 1;
 		}
 	}
 
