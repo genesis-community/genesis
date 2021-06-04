@@ -16,9 +16,8 @@ On OSX:
   * `brew install jq`
   * install vault from https://www.vaultproject.io/downloads.html
 
-On Linux:
-  * The most straight-forward method of installing under linux is to install
-    the jumpbox script:
+On Linux (Ubuntu/Debian, Centos/Amazon Linux or OpenSUSE/SUSE Enterprise Linux):
+  * Install the jumpbox script:
 
   ```
   sudo curl -o /usr/local/bin/jumpbox \
