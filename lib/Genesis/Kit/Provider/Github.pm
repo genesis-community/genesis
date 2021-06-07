@@ -6,6 +6,7 @@ use base 'Genesis::Kit::Provider';
 use Genesis;
 use Genesis::UI;
 use Genesis::Helpers;
+use Genesis::Github;
 
 use Digest::SHA qw/sha1_hex/;
 
@@ -30,7 +31,7 @@ sub init {
 		unless $opts{"kit-provider-tls"} =~ /^(no|yes|skip)$/;
 	$class->new(
 		type         => 'github',
-		label         => $label,
+		label        => $label,
 		domain       => $opts{'kit-provider-domain'},
 		organization => $opts{'kit-provider-org'},
 		tls          => $opts{'kit-provider-tls'}
@@ -41,16 +42,13 @@ sub init {
 # new - create a default github kit provider {{{
 sub new {
 	my ($class, %config) = @_;
-	my $credentials;
-	if ($ENV{GITHUB_USER} && $ENV{GITHUB_AUTH_TOKEN}) {
-		$credentials = "$ENV{GITHUB_USER}:$ENV{GITHUB_AUTH_TOKEN}";
-	}
 	bless({
-		domain          => $config{domain} || DEFAULT_DOMAIN,
-		organization    => $config{organization},
-		credentials     => $credentials,
-		label           => $config{label} || DEFAULT_LABEL,
-		tls             => $config{tls} || DEFAULT_TLS,
+		label  => $config{label} || DEFAULT_LABEL,
+		remote => Genesis::Github->new(
+		            domain => $config{domain} || DEFAULT_DOMAIN,
+		            org    => $config{organization},
+		            tls    => $config{tls} || DEFAULT_TLS
+		          )
 	}, $class);
 }
 
@@ -102,38 +100,29 @@ EOF
 
 ### Instance Methods {{{
 
+# Delegation to remote object
+sub label        {$_[0]->{label};}
+sub remote       {$_[0]->{remote};}
+sub domain       {$_[0]->{remote}{domain};}
+sub organization {$_[0]->{remote}{org};}
+sub credentials  {$_[0]->{remote}{creds};}
+sub tls          {$_[0]->{remote}{tls};}
+sub check        {$_[0]->remote->check($_[1], $_[0]->label);}
+
 # config - provides the config hash used to specify this provider {{{
 sub config {
 	my ($self) = @_;
 	my $config = {
 		type         => 'github',
-		organization => $self->{organization},
+		organization => $self->organization,
 	};
-	$config->{label}   = $self->{label} unless $self->{label} eq DEFAULT_LABEL;
-	$config->{tls}    = $self->{tls} unless $self->{tls} eq DEFAULT_TLS;
-	$config->{domain} = $self->{domain} unless $self->{domain} eq DEFAULT_DOMAIN;
+	$config->{label}  = $self->label  unless $self->label  eq DEFAULT_LABEL;
+	$config->{tls}    = $self->tls    unless $self->tls    eq DEFAULT_TLS;
+	$config->{domain} = $self->domain unless $self->domain eq DEFAULT_DOMAIN;
 	return %$config;
 }
 # }}}
-# check - checks the availability of this provider {{{
-sub check {
-	my ($self, $url) = @_;
-	my $ref = $self->label();
-	my $status;
-	$url ||= $self->repos_url;
-	my ($code, $msg) = curl("HEAD", $url, undef, undef, 0, $self->{credentials});
-	if ($code == 404) {
-		$status =  "Could not find $ref; are you able to route to the Internet?\n";
-	} elsif ($code == 403) {
-		$status = "Access forbidden trying to reach $ref; throttling may be in effect.  Set your GITHUB_USER and GITHUB_AUTH_TOKEN to prevent throttling.\n";
-	} elsif ($code != 200) {
-		$status = "Could not read $ref at $url; returned ($code):\n ".$msg."\n";
-	}
-	return wantarray ? ($code,$status) : $status;
-}
-
-# }}}
-# kits - retrieves list of kit names available from this provider {{{
+# kit_names - retrieves list of kit names available from this provider {{{
 sub kit_names {
 	my ($self, $filter) = @_;
 
@@ -142,27 +131,16 @@ sub kit_names {
 		bail $status."\n" if $status;
 
 		waiting_on "Retrieving list of available kits from #C{%s} ... ",$self->label;
-		my ($code, $msg, $data) = curl("GET", $self->repos_url, undef, undef, 0, $self->{credentials});
-		my $results;
-		eval {
-			$results = load_json($data);
-			1
-		} or bail("#R{error!}\nFailed to read repository information from %s: %s", $self->label, $@);
-		explain '#G{done.}';
-
 		$self->{_kits} = [
 			map  {(my $k = $_) =~ s/-genesis-kit$//; $k}
-			grep {$_ =~ qr/.*-genesis-kit$/}
-			map  {$_->{name}}
-			@$results
+			@{$self->remote->repo_names(qr/.*-genesis-kit$/)}
 		]
 	}
 	my @kits = @{$self->{_kits}};
-
 	@kits = grep {$_ =~ qr/$filter/} @kits if $filter;
 	return @kits if scalar(@kits);
 
-	my $err = "No genesis kit repositories found on $self->{label}";
+	my $err = "No genesis kit repositories found on $self->label";
 	$err .= "that match the pattern /$filter/" if $filter;
 	$err .= "\nYou will need to provide your credentials via GITHUB_USER and GITHUB_AUTH_TOKEN to see private repositories"
 		unless $self->{credentials};
@@ -178,40 +156,19 @@ sub kit_releases {
 
 	$self->{_releases} ||= {};
 	unless (defined($self->{_releases}{$name})) {
-		my $url =	$self->releases_url($name);
-		my ($code, $status) = $self->check($url);
+		my $url = $self->remote->releases_url($name."-genesis-kit");
+		my ($code, $status) = $self->check($url,$self->label);
 		if ($code == 404) {
 			# Check if kit exists, for a better error message
-			my $kits = $self->kit_names;
-			if (! grep {$_ eq $name} ($self->kit_names)) {
-				$status = "No kit named #C{$name} exists under $self->{label}";
-			}
+			bail("No kit named #C{%s} exists under %s", $name, $self->label)
+				if (! grep {$_ eq $name} ($self->kit_names));
 		}
 		bail "$status"."\n" if $status;
 		trace "About to get releases from Github";
 
-		my ($msg,$data,$headers,@results);
 		waiting_on STDERR "Retrieving list of available releases for #M{%s} kit on #C{%s} ...",$name,$self->label;
-		while (1) {
-			($code, $msg, $data, $headers) = curl("GET", $url, undef, undef, 0, $self->{credentials});
-			bail("#R{error!}\nCould not find Genesis Kit %s release information; Github rsponded with a %s status:\n%s",$name,$code,$msg)
-				unless $code == 200;
-
-			my $results;
-			eval {
-				$results = load_json($data);
-				1;
-			} or bail("Failed to read releases information from Github: %s\n",$@);
-			push(@results, @{$results});
-
-			my ($links) = grep {$_ =~ s/^Link: //i} split(/[\r\n]+/, $headers);
-			last unless $links;
-			$url = (grep {$_ =~ s/^<(.*)>; rel="next"/$1/} split(', ', $links))[0];
-			last unless $url;
-			waiting_on STDERR '.';
-		}
+		$self->{_releases}{$name} = $self->remote->get_release_info($name."-genesis-kit", "Genesis Kit $name");
 		explain STDERR "#G{ done.}";
-		$self->{_releases}{$name} = \@results;
 	}
 
 	return @{$self->{_releases}{$name}};
@@ -221,47 +178,12 @@ sub kit_releases {
 # kit_versions - retrieves a list of versions for the given kit name {{{
 sub kit_versions {
 	my ($self, $name, %opts) = @_;
-
-	# If specific version is specified, normalize it, and don't filter out drafts
-	# or prereleases
-	if ($opts{version}) {
-		if ($opts{version} eq 'latest') {
-			$opts{latest} = 1;
-			$opts{version} = undef;
-		} else {
-			$opts{version} =~ s/^v//;
-			$opts{drafts} = $opts{prerelease} = 1;
-		}
-	}
-
-	my @releases =
-		grep {!$opts{version}   || $_->{tag_name} =~qr/^v?$opts{version}$/}
-		grep {!$_->{draft}      || $opts{'include_drafts'}}
-		grep {!$_->{prerelease} || $opts{'include_prereleases'}}
-		$self->kit_releases($name);
-
-	if (defined $opts{latest}) {
-		my $latest = $opts{latest} || 1;
-		my @versions = (reverse sort by_semver (map {$_->{tag_name}} @releases))[0..($latest-1)];
-		@releases = grep {my $v = $_->{tag_name}; grep {$_ eq $v} @versions} @releases;
-	}
-	return map {
-		my $r = $_;
-		(my $v = $r->{tag_name}) =~ s/^v//;
-		my $url = (map {$_->{browser_download_url}} grep {$_->{name} =~ /$name-$v\.t(ar\.)?gz/} @{$r->{assets}})[0];
-		scalar({
-			version => $v,
-			body => $r->{body},
-			draft=> !!$r->{draft},
-			prerelease => !!$r->{prerelease},
-			date => $r->{published_at} || $r->{created_at},
-			url => $url || ""
-		});
-	} @releases;
+	$opts{asset_filter} = qr/$name-[#version#]\.t(ar\.)?gz/;
+	return $self->remote->versions($name."-genesis-kit", %opts);
 }
 
 # }}}
-# fetch_kit_version - fetches a tarball for the named kit and version from this provide {{{
+# fetch_kit_version - fetches a tarball for the named kit and version from this provider {{{
 sub fetch_kit_version {
 	my ($self, $name, $version, $path, $force) = @_;
 
@@ -318,7 +240,7 @@ sub fetch_kit_version {
 	return ($name,$version,$file);
 }
 # }}}
-# latest_kit_version - The human-understandable label for messages and errors {{{
+# latest_version_of - The actual version for the latest release of the given kit name {{{
 sub latest_version_of {
 	my ($self, $name, %opts) = @_;
 	bail("Missing name for retrieving kit releases") unless $name;
@@ -339,11 +261,11 @@ sub status {
 	if ($code == 404) {
 		($code,$msg) = $self->check($self->base_url);
 		if ($code == 404) {
-			$msg = "Cannot find API endpoint for $self->{domain}";
+			$msg = "Cannot find API endpoint for ".$self->domain;
 		} else {
-			$msg = "Cannot find organization $self->{organization} on $self->{domain}";
+			$msg = sprintf("Cannot find organization %s on %s", $self->organization, $self->domain);
 		}
-	} elsif ($code == 403 && !$self->{credentials}) {
+	} elsif ($code == 403 && !$self->credentials) {
 		$msg = "Unable to access - throttling may be effect, or you may not have permission to access this organization.  Credentials may need to be set in environment vars GITHUB_USER & GITHUB_AUTH_TOKEN";
 	} elsif ($code != 200) {
 		$msg =~ s/^.*:/HTTP Error $code while accessing:/;
@@ -355,8 +277,9 @@ sub status {
 		my @kit_names = sort $self->kit_names;
 		if ($verbose) {
 			$kits = {};
+			waiting_on STDERR "\n";
 			for my $name (@kit_names) {
-				waiting_on('.');
+				waiting_on STDERR "  - ";
 				my @releases = $self->kit_releases($name);
 				my $num_drafts = scalar(grep {$_->{draft}} @releases);
 				my $num_prereleases = scalar(grep {!$_->{draft} && $_->{prerelease}} @releases);
@@ -373,10 +296,10 @@ sub status {
 	my $info = {
 		type      => 'github',
 		extras    => ["Name", "Domain", "Org", "Use TLS"],
-		"Name"    => $self->{label},
-		"Domain"  => $self->{domain},
-		"Org"     => $self->{organization},
-		"Use TLS" => $self->{tls},
+		"Name"    => $self->label,
+		"Domain"  => $self->domain,
+		"Org"     => $self->organization,
+		"Use TLS" => $self->tls,
 
 		status    => $msg || 'ok',
 		kits      => $kits
@@ -384,32 +307,6 @@ sub status {
 	return %$info;
 }
 
-# }}}
-# label - The human-understandable label for messages and errors {{{
-sub label {
-	$_[0]->{label};
-}
-
-# }}}
-# repos_url - The url required to fetch the repos for this provider {{{
-sub repos_url {
-	sprintf("%s/users/%s/repos", $_[0]->base_url, $_[0]->{organization})
-}
-
-# }}}
-# releases_url - The url required to fetch the list of releases for a given kit on this provider {{{
-sub releases_url {
-	my ($self, $name, $page) = @_;
-	my $url = sprintf("%s/repos/%s/%s-genesis-kit/releases",$self->base_url,$self->{organization},$name);
-	$url .= "?page=$page" if $page;
-	return $url;
-}
-# }}}
-# base_url - the base url under which all requests are made {{{
-sub base_url {
-	my ($self) = @_;
-	sprintf("%s://api.%s", ($self->{tls} eq 'no' ? "http" : "https"), $self->{domain});
-}
 # }}}
 
 # }}}

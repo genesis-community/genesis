@@ -16,17 +16,14 @@ sub init {
 # }}}
 # new - create a default genesis-community kit provider {{{
 sub new {
-	my ($class, %config) = @_;
-	my $credentials;
-	if ($ENV{GITHUB_USER} && $ENV{GITHUB_AUTH_TOKEN}) {
-		$credentials = "$ENV{GITHUB_USER}:$ENV{GITHUB_AUTH_TOKEN}";
-	}
+	my ($class) = @_;
 	bless({
-		domain        => "github.com",
-		organization  => "genesis-community",
-		credentials   => $credentials,
-		label         => "Genesis Community organization on Github",
-		tls           => "yes"
+		label  => "Genesis Community organization on Github",
+		remote => Genesis::Github->new(
+								domain => "github.com",
+								org    => "genesis-community",
+								tls    => "yes"
+							)
 	}, $class);
 }
 
@@ -72,7 +69,7 @@ sub status {
 	my $new_info = {
 		type      => 'genesis-community',
 		extras     => ["Source"],
-		"Source"   => $self->{label},
+		"Source"   => $self->label,
 		status    => $info{status},
 		kits      => $info{kits}
 	};
