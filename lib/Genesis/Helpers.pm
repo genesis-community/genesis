@@ -533,7 +533,7 @@ param_entry() {
   local     __opt="${3:-}"
   shift 3 || true
   if [[ "$__opt" == "-d" ]] ; then
-    __disabled="# "
+    __disabled="#"
     __opt="${1:-}" ; shift || true
   fi
   if [[ "$__opt" == "-a" ]] ; then
@@ -543,25 +543,44 @@ param_entry() {
       eval "$__varname+=\"  $__disabled\$__key:\\n\""
       local __line
       for __line in "$@" ; do
-        eval "$__varname+=\"    \$__disabled- \$__line\\n\""
+        if [[ "$(echo "$__line" | wc -l)" -gt 1 ]] ; then
+          __line="|-"$'\n'"$(echo "$__line" | sed -e "s/^\\(.\\)/  $__disabled  \\1/")"
+        fi
+        eval "$__varname+=\"  \$__disabled- \$__line\\n\""
       done
     fi
-  elif [[ -n "$__opt" ]] ; then
-    eval "$__varname+=\"  $__disabled\$__key: \$__opt\\n\""
   else
-    eval "$__varname+=\"  $__disabled\$__key: \$$__key\\n\""
+    if [[ -z "$__opt" ]] ; then
+      __opt="$(eval "echo \"\$$__key\"")"
+    fi
+    if [[ "$(echo "$__opt" | wc -l)" -gt 1 ]] ; then
+      __opt="|-"$'\n'"$(echo "$__opt" | sed -e "s/^\\(.\\)/  $__disabled  \\1/")"
+    fi
+    eval "$__varname+=\"  $__disabled\$__key: \$__opt\\n\""
   fi
 }
 export -f param_entry
 
 param_comment() {
-  local __line __varname=$1; shift
+  # Usage: param_comment <var> [-e] [line ...]
+  #
+  # Adds the lines specified to the contents of the variable passed by
+  # reference.  If `-e` is specified, also echos the lines to the users screen
+  # so it can be used as a preamble in front of a prompt for a value (see
+  # param_entry)
+
+  local __line __echo __varname=$1; shift
+  if [[ "$1" == '-e' ]] ; then
+    __echo="true"; shift
+  fi
   eval "$__varname+=\"\\n\""
+  [[ -n $__echo ]] && echo ""
   # __line is escaped in eval, shellcheck thinks its unused
   # https://github.com/koalaman/shellcheck/wiki/SC2034
   # shellcheck disable=SC2034
   for __line in "$@" ; do
     eval "$__varname+=\"  # \$__line\\n\""
+    [[ -n $__echo ]] && echo "$__line"
   done
 }
 export -f param_comment
