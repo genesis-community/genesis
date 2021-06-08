@@ -355,11 +355,11 @@ sub get {
 		);
 		return undef;
 	}
-	my ($json,$rc,$err) = read_json_from($self->query('export', $path));
+	my ($json,$rc,$err) = read_json_from($self->query({stderr => 0}, 'export', $path));
 	if ($rc || $err) {
 		debug(
 			"#R{[ERROR]} Could not read all key/value pairs from #C{%s} in vault at #M{%s}:%s\nexit code: %s",
-			$path,$self->{url},$err,$rc
+			$path,$self->{url},$err || '',$rc
 		);
 		return {};
 	}
