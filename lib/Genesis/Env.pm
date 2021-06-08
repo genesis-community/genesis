@@ -4,7 +4,6 @@ use warnings;
 use utf8;
 
 use Genesis;
-use Genesis::Legacy; # but we'd rather not
 use Genesis::BOSH;
 use Genesis::UI;
 use Genesis::IO qw/DumpYAML LoadFile/;
@@ -259,7 +258,11 @@ sub create {
 	if ($env->has_hook('new')) {
 		$env->run_hook('new');
 	} else {
-		Genesis::Legacy::new_environment($env);
+		bail(
+			"#R{[ERROR]} Kit %s is not supported in Genesis %s (no hooks/new script).\n".
+			"        Check for a newer version of this kit.",
+			$env->kit->id, $Genesis::VERSION
+		);
 	}
 
 	# Load the environment from the file to pick up hierarchy, and generate secrets

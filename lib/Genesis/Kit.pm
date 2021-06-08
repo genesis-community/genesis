@@ -3,7 +3,6 @@ use strict;
 use warnings;
 
 use Genesis;
-use Genesis::Legacy; # but we'd rather not
 use Genesis::Helpers;
 use Genesis::BOSH;
 
@@ -131,15 +130,6 @@ sub run_hook {
 		bug("The 'features' option to run_hook is required for the '$hook' hook!!")
 			unless $opts{features};
 		$ENV{GENESIS_REQUESTED_FEATURES} = join(" ", @{ $opts{features} });
-
-	##### LEGACY HOOKS
-	} elsif ($hook eq 'subkit') {
-		@args = @{ $opts{features} };
-		bug("The 'features' option to run_hook is required for the '$hook' hook!!")
-			unless $opts{features};
-		my $vault = (Genesis::Vault->current || Genesis::Vault->default);
-		bail "Cannot determine secrets provider - is you local safe configured?" unless $vault;
-		$ENV{GENESIS_TARGET_VAULT} = $ENV{SAFE_TARGET} = $vault->ref; #for legacy
 	}
 
 	my ($hook_name,$hook_exec);
@@ -398,21 +388,17 @@ sub check_prereqs {
 sub source_yaml_files {
 	my ($self, $env, $absolute) = @_;
 
-	my @files;
-	if ($self->has_hook('blueprint')) {
-		@files = $self->run_hook('blueprint', env => $env);
-		if ($absolute) {
-			my $env_path = $env->path();
-			@files = map { $_ =~ qr(^$env_path) ? $_ : $self->path($_) } @files;
-		}
+	bail(
+		"#R{[ERROR] Kit %s is not supported by Genesis %s (no hooks/blueprint script).\n".
+		"       Check for newer version of this kit.",
+		$self->id, $Genesis::VERSION
+	) unless ($self->has_hook('blueprint'));
 
-	} else {
-		my $features = [$env->features];
-		Genesis::Legacy::validate_features($self, @$features);
-		@files = $self->glob("base/*.yml", $absolute);
-		push @files, map { $self->glob("subkits/$_/*.yml", $absolute) } @$features;
+	my @files = $self->run_hook('blueprint', env => $env);
+	if ($absolute) {
+		my $env_path = $env->path();
+		@files = map { $_ =~ qr(^$env_path) ? $_ : $self->path($_) } @files;
 	}
-
 	return @files;
 }
 # }}}
@@ -557,9 +543,8 @@ B<GENESIS KIT HOOKS>, later, for more detail.
 
 =head2 source_yaml_files(\@features, $absolute)
 
-Determines, by way of either C<hooks/blueprint>, or the legacy subkit
-detection logic, which kit YAML files need to be merged together, and
-returns there paths.
+Determines, by way of either C<hooks/blueprint> which kit YAML files need to be
+merged together, and returns there paths.
 
 If you pass C<$absolute> as a true value, the paths returned by this
 function will be absolutely qualified to the Kit's Top object root.  This is

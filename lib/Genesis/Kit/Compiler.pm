@@ -118,7 +118,11 @@ sub validate {
 	# Hooks validation
 	my @hook_errors;
 	for my $hook (qw(new secrets blueprint info addon check)) {
-		next unless -e "$self->{root}/hooks/$hook";
+		if (!-e "$self->{root}/hooks/$hook") {
+			push(@hook_errors, "#C{hooks/$hook} is missing - this hook is not optional.")
+				if $hook =~ /^(new|blueprint)$/;
+			next;
+		}
 		if (!-f "$self->{root}/hooks/$hook") {
 			push @hook_errors, "#C{hooks/$hook} is not a regular file.";
 		} elsif (!-x "$self->{root}/hooks/$hook") {
