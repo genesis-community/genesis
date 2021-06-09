@@ -685,7 +685,7 @@ sub get_environment_variables {
 	$env{GENESIS_SECRETS_SLUG_OVERRIDE} = $self->secrets_slug ne $self->default_secrets_slug ? "true" : "";
 	$env{GENESIS_ROOT_CA_PATH} = $self->root_ca_path;
 
-	unless (grep { $_ eq ($hook||'') } qw/new prereqs features/) {
+	unless (grep { $_ eq ($hook||'') } qw/new features/) {
 		$env{GENESIS_REQUESTED_FEATURES} = join(' ', $self->features);
 	}
 

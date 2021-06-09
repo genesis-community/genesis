@@ -414,9 +414,9 @@ The following hooks are currently recognized by Genesis:
   config, and to ensure that generated certificates have the
   correct subject alternate names, per environment configuration.
 
-- `prereqs` - Validates the jumpbox environment, to ensure that
-  required tools are installed.  This hook is called before most
-  Genesis commands, including `new`, `manifest`, and `deploy`.
+- `prereqs` - Validates the environment, to ensure that required
+  tools are installed.  This hook is called before most Genesis
+  commands, including `new`, `manifest`, and `deploy`.
 
 - `secrets` - Manage Vault contents, in addition to the facilities
   provided by `kit.yml`.  This hook is fired after each of the

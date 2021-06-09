@@ -354,33 +354,39 @@ sub feature_compatibility {
 }
 
 # }}}
-# check_prereqs - {{{
+# check_prereqs - check that the {{{
 sub check_prereqs {
 	my ($self) = @_;
 	my $id = $self->id;
 
+	my $ok = 1;
 	my $min = $self->metadata->{genesis_version_min};
-	return 1 unless $min && semver($min);
-
-	if (!semver($Genesis::VERSION)) {
-		unless (under_test && !envset 'GENESIS_TESTING_DEV_VERSION_DETECTION') {
-			error("#Y{WARNING:} Using a development version of Genesis.");
-			error("Cannot determine if it meets or exceeds the minimum version");
-			error("requirement (v$min) for $id.");
+	if ($min && semver($min)) {
+		if (!semver($Genesis::VERSION)) {
+			unless (under_test && !envset 'GENESIS_TESTING_DEV_VERSION_DETECTION') {
+				error("#Y{WARNING:} Using a development version of Genesis.");
+				error("Cannot determine if it meets or exceeds the minimum version");
+				error("requirement (v$min) for $id.");
+			}
+		} elsif (!new_enough($Genesis::VERSION, $min)) {
+			error("#R{ERROR:} $id requires Genesis version $min,");
+			error("but this Genesis is version $Genesis::VERSION.");
+			error("");
+			error("Please upgrade Genesis.  Don't forget to run `genesis embed afterward,` to");
+			error("update the version embedded in your deployment repository.");
+			$ok = 0
 		}
-		return 1;
 	}
 
-	if (!new_enough($Genesis::VERSION, $min)) {
-		error("#R{ERROR:} $id requires Genesis version $min,");
-		error("but this Genesis is version $Genesis::VERSION.");
-		error("");
-		error("Please upgrade Genesis.  Don't forget to run `genesis embed afterward,` to");
-		error("update the version embedded in your deployment repository.");
-		return 0;
+	if ($self->has_hook('prereqs')) {
+		my ($out,$rc) = run_hook('prereqs');
+		if ($rc > 0) {
+			error("#R{[ERROR]} Prerequisite check for kit #C{$id} failed with exit code $rc");
+			$ok = 0;
+		}
 	}
 
-	return 1;
+	return $ok;
 }
 
 # }}}
