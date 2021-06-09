@@ -13,6 +13,9 @@ use POSIX qw/strftime/;
 use Digest::file qw/digest_file_hex/;
 use Time::Seconds;
 
+### Class Methods {{{
+
+# new - create a raw Genesis::Env object {{{
 sub new {
 	# Do not call directly, use create or load instead
 	my ($class, %opts) = @_;
@@ -39,6 +42,8 @@ sub new {
 	return bless(\%opts, $class);
 }
 
+# }}}
+# load - return an Genesis::Env object represented by a environment file {{{
 sub load {
 	my ($class,%opts) = @_;
 
@@ -119,20 +124,7 @@ sub load {
 	return $env
 }
 
-sub with_bosh {
-	my $self = shift;
-	$self->bosh_target;
-	return $self;
-}
-
-sub with_vault {
-	my $self = shift;
-	$ENV{GENESIS_SECRETS_MOUNT} = $self->secrets_mount();
-	bail("\n#R{[ERROR]} No vault specified or configured.")
-		unless $self->vault;
-	return $self;
-}
-
+# }}}
 # from_envvars -- builds a pseudo-env based on the current env vars - used for hooks callbacks {{{
 sub from_envvars {
 	my ($class,$top) = @_;
@@ -190,12 +182,12 @@ sub from_envvars {
 	# Check for v2.7.0 features
 	unless ($env->kit->feature_compatibility("2.7.0")) {
 		bail("#R{[ERROR]} Kit #M{%s} is not compatible with #C{secrets_mount} feature\n".
-		     "        Please upgrade to a newer release or remove params.secrets_mount from #M{%s}",
-		     $env->kit->id, $env->{file})
+				 "        Please upgrade to a newer release or remove params.secrets_mount from #M{%s}",
+				 $env->kit->id, $env->{file})
 			if ($env->secrets_mount ne $env->default_secrets_mount);
 		bail("#R{[ERROR]} Kit #M{%s} is not compatible with #C{exodus_mount} feature\n".
-		     "        Please upgrade to a newer release or remove params.exodus_mount from #M{%s}",
-		     $env->kit->id, $env->{file})
+				 "        Please upgrade to a newer release or remove params.exodus_mount from #M{%s}",
+				 $env->kit->id, $env->{file})
 			if ($env->exodus_mount ne $env->default_exodus_mount);
 	}
 
@@ -206,6 +198,7 @@ sub from_envvars {
 }
 
 # }}}
+# create - create a new Genesis::Env object from user input {{{
 sub create {
 	my ($class,%opts) = @_;
 
@@ -277,6 +270,8 @@ sub create {
 	return $env;
 }
 
+# }}}
+# exists - returns true if the given environment exists {{{
 sub exists {
 	my $env;
 	eval { $env = new(@_) };
@@ -284,312 +279,74 @@ sub exists {
 	return -f $env->path("$env->{file}");
 }
 
+#}}}
+#}}}
 
-# public accessors
+### Private Class Methods {{{
+
+# validate_name - ensure name is valid {{{
+sub validate_name {
+	my ($class, $name) = @_;
+
+	die "names must not be empty.\n"
+		if !$name;
+
+	die "names must not contain whitespace.\n"
+		if $name =~ m/\s/;
+
+	die "names can only contain lowercase letters, numbers, and hyphens.\n"
+		if $name !~ m/^[a-z0-9_-]+$/;
+
+	die "names must start with a (lowercase) letter.\n"
+		if $name !~ m/^[a-z]/;
+
+	die "names must not end with a hyphen.\n"
+		if $name =~ m/-$/;
+
+	die "names must not contain sequential hyphens (i.e. '--').\n"
+		if $name =~ m/--/;
+
+	1; # name is valid
+}
+
+# }}}
+# }}}
+
+### Instance Methods {{{
+
+# Public Accessors {{{
 sub name   { $_[0]->{name};   }
 sub file   { $_[0]->{file};   }
 sub kit    { $_[0]->{kit}    || bug("Incompletely initialized environment '".$_[0]->name."': no kit specified"); }
 sub top    { $_[0]->{top}    || bug("Incompletely initialized environment '".$_[0]->name."': no top specified"); }
 
-# delegations
+# }}}
+# Delegations {{{
 sub type   { $_[0]->top->type; }
 sub vault  { $_[0]->top->vault; }
-
-
-sub root_ca_path {
-	my $self = shift;
-	unless (exists($self->{root_ca_path})) {
-		$self->{root_ca_path} = $self->lookup('genesis.root_ca_path','');
-		$self->{root_ca_path} =~ s/\/$// if $self->{root_ca_path};
-	}
-	return $self->{root_ca_path};
-}
-
-# }}}
-sub default_secrets_mount { '/secret/'; }
-sub secrets_mount {
-	$_[0]->_memoize('__secrets_mount', sub{
-		(my $mount = $_[0]->lookup('genesis.secrets_mount', $_[0]->default_secrets_mount)) =~ s#^/?(.*?)/?$#/$1/#;
-		return $mount
-	});
-}
-sub default_secrets_slug {
-	(my $p = $_[0]->name) =~ s|-|/|g;
-	return $p."/".$_[0]->top->type;
-}
-sub secrets_slug {
-	$_[0]->_memoize('__secrets_slug', sub {
-		my $slug = $_[0]->lookup(
-			['genesis.secrets_path','params.vault_prefix','params.vault'],
-			$_[0]->default_secrets_slug
-		);
-		$slug =~ s#^/?(.*?)/?$#$1#;
-		return $slug
-	});
-}
-sub secrets_base {
-	$_[0]->_memoize('__secrets_base', sub {
-		$_[0]->secrets_mount . $_[0]->secrets_slug . '/'
-	});
-}
-
-sub default_exodus_mount { $_[0]->secrets_mount . 'exodus/'; }
-sub exodus_mount {
-	$_[0]->_memoize('__exodus_mount', sub {
-		(my $mount = $_[0]->lookup('genesis.exodus_mount', $_[0]->default_exodus_mount)) =~ s#^/?(.*?)/?$#/$1/#;
-		return $mount;
-	});
-}
-sub exodus_slug {
-	sprintf("%s/%s", $_[0]->name, $_[0]->type);
-}
-
-sub exodus_base {
-	$_[0]->_memoize('__exodus_base', sub {
-		$_[0]->exodus_mount . $_[0]->exodus_slug
-	});
-}
-
-sub default_ci_mount { $_[0]->secrets_mount . 'ci/'; }
-sub ci_mount {
-	$_[0]->_memoize('__ci_mount', sub {
-		(my $mount = $_[0]->lookup('genesis.ci_mount', $_[0]->default_ci_mount)) =~ s#^/?(.*?)/?$#/$1/#;
-		return $mount;
-	});
-}
-sub ci_base {
-	$_[0]->_memoize('__ci_base', sub {
-		sprintf("%s%s/%s/", $_[0]->ci_mount, $_[0]->type, $_[0]->name)
-	});
-}
-
-sub get_environment_variables {
-	my ($self, $hook) = @_;
-
-	my %env;
-
-	$env{GENESIS_ROOT}         = $self->path;
-	$env{GENESIS_ENVIRONMENT}  = $self->name;
-	$env{GENESIS_TYPE}         = $self->type;
-	$env{GENESIS_CALL}         = humanize_bin();
-	$env{GENESIS_CALL}        .= sprintf(" -C '%s'", humanize_path($self->path))
-		if ($ENV{GENESIS_CALLER_DIR} && $self->path ne $ENV{GENESIS_CALLER_DIR});
-
-	# Vault ENV VARS
-	$env{GENESIS_TARGET_VAULT} = $env{SAFE_TARGET} = $self->vault->ref;
-	$env{GENESIS_VERIFY_VAULT} = $self->vault->connect_and_validate->verify || "";
-
-	# Genesis v2.7.0 Secrets management
-	# This provides GENESIS_{SECRETS,EXODUS,CI}_{MOUNT,BASE}
-	# as well as GENESIS_{SECRETS,EXODUS,CI}_MOUNT_OVERRIDE
-	for my $target (qw/secrets exodus ci/) {
-		for my $target_type (qw/mount base/) {
-			my $method = "${target}_${target_type}";
-			$env{uc("GENESIS_${target}_${target_type}")} = $self->$method();
-		}
-		my $method = "${target}_mount";
-		my $default_method = "default_$method";
-		$env{uc("GENESIS_${target}_MOUNT_OVERRIDE")} = ($self->$method ne $self->$default_method) ? "true" : "";
-	}
-	$env{GENESIS_VAULT_PREFIX} = # deprecated in v2.7.0
-	$env{GENESIS_SECRETS_PATH} = # deprecated in v2.7.0
-	$env{GENESIS_SECRETS_SLUG} = $self->secrets_slug;
-	$env{GENESIS_SECRETS_SLUG_OVERRIDE} = $self->secrets_slug ne $self->default_secrets_slug ? "true" : "";
-	$env{GENESIS_ROOT_CA_PATH} = $self->root_ca_path;
-
-	unless (grep { $_ eq $hook } qw/new prereqs subkit features/) {
-		$env{GENESIS_REQUESTED_FEATURES} = join(' ', $self->features);
-	}
-
-	# Credhub support
-	my %credhub_env = $self->credhub_connection_env;
-	$env{$_} = $credhub_env{$_} for keys %credhub_env;
-
-	# BOSH support
-	if ($hook ne "features") {
-		if ($self->needs_bosh_create_env) {
-			$env{GENESIS_USE_CREATE_ENV} = 'yes';
-		} else {
-			$env{GENESIS_BOSH_ENVIRONMENT} =
-			$env{BOSH_ALIAS} = scalar $self->lookup_bosh_target;
-			my $bosh = Genesis::BOSH->environment_variables($env{BOSH_ALIAS});
-			$env{$_} = $bosh->{$_} for (keys %$bosh);
-			$env{BOSH_DEPLOYMENT} = sprintf("%s-%s", $self->name, $self->type);
-		}
-	}
-
-	$env{GENESIS_ENV_ROOT_CA_PATH} = $self->root_ca_path;
-	return %env
-}
-
-sub credhub_connection_env {
-	my $self = shift;
-	my ($credhub_src,$credhub_src_key) = $self->lookup(
-		['genesis.credhub_env','genesis.bosh_env','params.bosh','genesis.env','params.env']
-	);
-	my %env=();
-
-	my $credhub_path = $credhub_src;
-	$env{GENESIS_CREDHUB_EXODUS_SOURCE_OVERRIDE} =
-		(($credhub_src_key || "") eq 'genesis.credhub_env') ? $credhub_src : "";
-
-	if ($credhub_src =~ /\/\w+$/) {
-		$credhub_path  =~ s/\/([^\/]*)$/-$1/;
-	} else {
-		$credhub_src .= "/bosh";
-		$credhub_path .= "-bosh";
-	}
-	$env{GENESIS_CREDHUB_EXODUS_SOURCE} = $credhub_src;
-	$env{GENESIS_CREDHUB_ROOT}=sprintf("%s/%s-%s", $credhub_path, $self->name, $self->type);
-
-	if ($credhub_src) {
-		my $credhub_info = $self->exodus_lookup('.',undef,$credhub_src);
-		if ($credhub_info) {
-			$env{CREDHUB_SERVER} = $credhub_info->{credhub_url}||"";
-			$env{CREDHUB_CLIENT} = $credhub_info->{credhub_username}||"";
-			$env{CREDHUB_SECRET} = $credhub_info->{credhub_password}||"";
-			$env{CREDHUB_CA_CERT} = sprintf("%s%s",$credhub_info->{ca_cert}||"",$credhub_info->{credhub_ca_cert}||"");
-		}
-	}
-
-	return %env;
-}
-
 sub path {
 	my ($self, @rest) = @_;
 	$self->{top}->path(@rest);
 }
-sub tmppath {
-	my ($self, $relative) = @_;
-	return $relative ? "$self->{__tmp}/$relative"
-	                 :  $self->{__tmp};
-}
 
-sub download_configs {
-	my ($self, @configs) = @_;
-	my $director = $self->bosh_target;
-	@configs = qw/cloud runtime/ unless @configs;
+# }}}
 
-	explain STDERR "\nDownloading configs from '#M{$director}' BOSH director...";
-	my $err;
-	for (@configs) {
-		my $file = "$self->{__tmp}/$_.yml";
-		my ($type,$name) = split('@',$_);
-		$name ||= '*';
-		my $label = $name eq "*" ? "all $type configs" : $name eq "default" ? "$type config" : "$type config '$name'";
-		waiting_on STDERR bullet('empty',$label."...", inline=>1, box => 1);
-		my $downloaded = eval {Genesis::BOSH->download_config($director,$file,$type,$name)};
-		if ($@) {
-			$err = $@;
-			explain STDERR "\r".bullet('bad',$label.join("\n      ", ('...failed!',"",split("\n",$err),"")), box => 1, inline => 1);
+# Information Lookup
+# deployment - returns the deployment name (env name + env type) {{{
+sub deployment {
+	my ($self) = @_;
+	unless ($self->{__deployment}) {
+		if ($self->defines('params.name')) {
+			$self->{__deployment}=$self->lookup('params.name');
 		} else {
-			explain STDERR "[2K\r".bullet('good',$label.($name eq '*' ? ':' : ''), box => 1, inline => 1);
-			$self->use_config($file,$type,$name);
-			for (@$downloaded) {
-				$self->use_config($file,$_->{type},$_->{name});
-				explain STDERR bullet('good',$_->{label}, box => 1, inline => 1, indent => 7) if $name eq "*";
-			}
+			$self->{__deployment}=$self->lookup(['genesis.env','params.env']) . '-' . $self->{top}->type;
 		}
 	}
-
-	bail "#R{[ERROR]} Could not fetch requested configs from ".$self->bosh_target."\n"
-	  if $err;
-	return $self;
+	return $self->{__deployment}
 }
 
-sub download_required_configs {
-	my ($self, @hooks) = @_;
-	return $self if $self->needs_bosh_create_env;
-	my @configs;
-	for ($self->kit->required_configs(@hooks)) {
-		push(@configs, $_) unless $self->config_file($_);
-	}
-	$self->with_bosh->download_configs(@configs) if @configs;
-	return $self
-}
-
-sub use_config {
-	my ($self,$file,$type,$name) = @_;
-	$self->{_configs} ||= {};
-	my $label = $type || 'cloud';
-	my $env_var = "GENESIS_".uc($type)."_CONFIG";
-	if ($name && $name ne '*') {
-		$label .= "\@$name";
-		$env_var .= "_$name";
-	}
-	$self->{_configs}{$label} = $file;
-	$ENV{$env_var} = $file;
-	return $self;
-}
-
-sub config_file {
-	my ($self, $type, $name) = @_;
-	my $label = $type||'cloud';
-	my $env_var = "GENESIS_".uc($type)."_CONFIG";
-	if ($name && $name ne '*') {
-		$label .= "\@$name";
-		$env_var .= "_$name";
-	}
-	return $self->{_configs}{$label} || $ENV{$env_var} || '';
-}
-
-sub configs {
-	my @env_configs = map {
-		$_ =~ m/GENESIS_([A-Z0-9_-]+)_CONFIG(?:_(.*))?$/;
-		lc($1).($2 && $2 ne '*' ? "\@$2" : '');
-	} grep {
-		/GENESIS_[A-Z0-9_-]+_CONFIG(_.*)?$/;
-	} keys %ENV;
-	my @configs = sort(uniq(keys %{$_[0]->{_configs}}, @env_configs));
-	return @configs # can't just return the above because scalar/list context crazies
-}
-
-sub connect_required_endpoints {
-	my ($self, @hooks) = @_;
-	my @endpoints;
-	push(@endpoints, $self->kit->required_connectivity($_)) for (@hooks);
-	for (uniq(@endpoints)) {
-		$self->with_vault   if $_ eq 'vault';
-		$self->with_bosh    if $_ eq 'bosh';
-		$self->with_credhub if $_ eq 'credhub';
-		bail("#R{[ERROR]} Unknown connectivity endpoint type #Y{%s} in kit #m{%s}", $_, $self->kit->id);
-	}
-	return $self
-}
-
-# Legacy non-generic config methods
-sub download_cloud_config { $_[0]->download_configs('cloud'); }
-sub use_cloud_config { $_[0]->use_config($_[1],'cloud'); }
-sub cloud_config { return $_[0]->config_file('cloud'); }
-sub download_runtime_config { $_[0]->download_configs('runtime'); }
-sub use_runtime_config { $_[0]->use_config($_[1],'runtime'); }
-sub runtime_config { return $_[0]->config_file('runtime'); }
-
-sub features {
-	my $ref = $_[0]->_memoize('__features', sub {
-		my $self = shift;
-		my $features = scalar($self->lookup(['kit.features', 'kit.subkits'], []));
-		$self->{__explicit_features} = $features;
-		my @derived_features = grep {$_ =~ /^\+/} $features;
-		bail(
-			"#R{[ERROR]} Environment #C{%s} cannot explicitly specify derived features:\n  - %s",
-			$self->name, join("\n  - ",@derived_features)
-		) if @derived_features;
-		$features = [$self->kit->run_hook('features',env => $self, features => $features)]
-			if $self->kit->has_hook('features');
-		$features;
-	});
-	return @$ref;
-}
-
-sub has_feature {
-	my ($self, $feature) = @_;
-	for my $have ($self->features) {
-		return 1 if $feature eq $have;
-	}
-	return 0;
-}
-
+# }}}
+# needs_bosh_create_env - true if the deployment uses bosh create-env {{{
 sub needs_bosh_create_env {
 	my ($self) = @_;
 
@@ -598,11 +355,47 @@ sub needs_bosh_create_env {
 	return scalar(grep {$_ =~ /^(proto|bosh-init|create-env)$/} @$features) ? 1 : 0;
 }
 
+# }}}
+# tmppath - provide the path to the temporary file storage for this envionment {{{
+sub tmppath {
+	my ($self, $relative) = @_;
+	return $relative ? "$self->{__tmp}/$relative"
+	                 :  $self->{__tmp};
+}
+
+# }}}
+# potential_environment_files - list the heirarchal environment files possible for this env {{{
+sub potential_environment_files {
+	my ($self) = @_;
+
+	# ci pipelines need to pull cache for previous envs
+	my $env = $ENV{PREVIOUS_ENV} || '';
+	return $self->relate($env, ".genesis/cached/$env");
+}
+
+# }}}
+# actual_environment_files - list the heirarchal environment files that exist for this env {{{
+sub actual_environment_files {
+	my ($self) = @_;
+	unless ($self->{_actual_files}) {
+		my @files;
+		for my $file (grep {-f $self->path($_)} $self->potential_environment_files) {
+			push( @files, $self->_genesis_inherits($file, @files),$file);
+		};
+		$self->{_actual_files} = \@files;
+	}
+	return @{$self->{_actual_files}};
+}
+
+# }}}
+# relate - get hierarchal file relationships with another environment {{{
 sub relate {
 	my ($self, $them, $common_base, $unique_base) = @_;
 	return relate_by_name($self->{name}, ref($them) ? $them->{name} : $them, $common_base, $unique_base);
 }
 
+# }}}
+# relate_by_name - get hierarchal file relationships between named environments {{{
 sub relate_by_name {
 	my ($name, $other, $common_base, $unique_base) = @_;
 	$common_base ||= '.';
@@ -641,69 +434,99 @@ sub relate_by_name {
 	                     unique => \@unique };
 }
 
-sub potential_environment_files {
-	my ($self) = @_;
-
-	# ci pipelines need to pull cache for previous envs
-	my $env = $ENV{PREVIOUS_ENV} || '';
-	return $self->relate($env, ".genesis/cached/$env");
+# }}}
+# features - returns the list of features (specified and derived) {{{
+sub features {
+	my $ref = $_[0]->_memoize('__features', sub {
+		my $self = shift;
+		my $features = scalar($self->lookup(['kit.features', 'kit.subkits'], []));
+		$self->{__explicit_features} = $features;
+		my @derived_features = grep {$_ =~ /^\+/} $features;
+		bail(
+			"#R{[ERROR]} Environment #C{%s} cannot explicitly specify derived features:\n  - %s",
+			$self->name, join("\n  - ",@derived_features)
+		) if @derived_features;
+		$features = [$self->kit->run_hook('features',env => $self, features => $features)]
+			if $self->kit->has_hook('features');
+		$features;
+	});
+	return @$ref;
 }
 
-sub actual_environment_files {
-	my ($self) = @_;
-	unless ($self->{_actual_files}) {
-		my @files;
-		for my $file (grep {-f $self->path($_)} $self->potential_environment_files) {
-			push( @files, $self->_genesis_inherits($file, @files),$file);
-		};
-		$self->{_actual_files} = \@files;
+# }}}
+# has_feature - returns true if the environment requests the given feature {{{
+sub has_feature {
+	my ($self, $feature) = @_;
+	for my $have ($self->features) {
+		return 1 if $feature eq $have;
 	}
-	return @{$self->{_actual_files}};
+	return 0;
 }
 
-sub _genesis_inherits {
-	my ($self,$file, @files) = @_;
-	my ($out,$rc,$err) = run({stderr => 0},'cat "$1" | spruce json', $self->path($file));
-	bail "Error processing json in $file!:\n$err" if $rc;
-	my @contents = map {load_json($_)} lines($out);
+# }}}
+# params - get all the values from the hierarchal environment. {{{
+sub params {
+	my ($self) = @_;
+	if (!$self->{__params}) {
+		debug("running spruce merge of environment files, without evaluation, to find parameters");
+		my @merge_files = map { $self->path($_) } $self->actual_environment_files();
 
-	my @new_files;
-	for my $contents (@contents) {
-		next unless $contents->{genesis}{inherits};
-		bail "#R{[ERROR]} $file specifies 'genesis.inherits', but it is not a list"
-			unless ref($contents->{genesis}{inherits}) eq 'ARRAY';
-
-		for (@{$contents->{genesis}{inherits}}) {
-			my $cached_file;
-			if ($ENV{PREVIOUS_ENV}) {
-				$cached_file = ".genesis/cached/$ENV{PREVIOUS_ENV}/$_.yml";
-				$cached_file = undef unless -f $self->path($cached_file);
-			}
-			my $inherited_file = $cached_file || "./$_.yml";
-			next if grep {$_ eq $inherited_file} @files;
-			push(@new_files, $self->_genesis_inherits($inherited_file,$file,@files,@new_files),$inherited_file);
+		my ($out, $rc, $err);
+		if (envset("GENESIS_UNEVALED_PARAMS")) {
+			pushd $self->path;
+			$out = run({ onfailure => "Unable to merge $self->{name} environment files", stderr => undef },
+			'spruce merge --multi-doc --skip-eval "$@" | spruce json', @merge_files);
+			popd;
+		} else {
+			my $env = {
+				%{$self->vault->env()},               # specify correct vault for spruce to target
+				REDACT => ''
+			};
+			$out = $self->adaptive_merge({json => 1, env => $env}, @merge_files);
 		}
+		$self->{__params} = load_json($out);
 	}
-	return(@new_files);
+	return $self->{__params};
 }
 
+# }}}
+# defines - true if the given path is defined in the hierarchal environment parameters. {{{
+sub defines {
+	my ($self, $key) = @_;
+	my $what = $self->params();
+
+	for (split /\./, $key) {
+		return 0 unless exists $what->{$_};
+		$what = $what->{$_};
+	}
+	return 1;
+}
+
+# }}}
+# lookup - look up a value from the heirarchal evironment {{{
 sub lookup {
 	my ($self, $key, $default) = @_;
 	return struct_lookup($self->params, $key, $default);
 }
 
+# }}}
+# partial_manifest_lookup - look up a value from a best-effort merged manifest for this environment {{{
 sub partial_manifest_lookup {
 	my ($self, $key, $default) = @_;
 	my ($partial_manifest, undef) = $self-> _manifest(partial=>1,no_warnings=>1);
 	return struct_lookup($partial_manifest, $key, $default);
 }
 
+# }}}
+# manifest_lookup - look up a value from a completely merged manifest for this environment {{{
 sub manifest_lookup {
 	my ($self, $key, $default) = @_;
 	my ($manifest, undef) = $self->_manifest(redact => 0);
 	return struct_lookup($manifest, $key, $default);
 }
 
+# }}}
+# last_deployed_lookup - look up values from the last deployment of this environment {{{
 sub last_deployed_lookup {
 	my ($self, $key, $default) = @_;
 	my $last_deployment = $self->path(".genesis/manifests/".$self->{name}.".yml");
@@ -716,6 +539,8 @@ sub last_deployed_lookup {
 	return struct_lookup($manifest, $key, $default);
 }
 
+# }}}
+# exodus_lookup - lookup Exodus data from the last deployment of this (or named) deployment {{{
 sub exodus_lookup {
 	my ($self, $key, $default,$for) = @_;
 	$for ||= $self->exodus_slug;
@@ -731,17 +556,15 @@ sub exodus_lookup {
 	return struct_lookup($exodus, $key, $default);
 }
 
-sub defines {
-	my ($self, $key) = @_;
-	my $what = $self->params();
-
-	for (split /\./, $key) {
-		return 0 unless exists $what->{$_};
-		$what = $what->{$_};
-	}
-	return 1;
+# }}}
+# dereferenced_kit_metadata - get kit metadata that been filled with environment references {{{
+sub dereferenced_kit_metadata {
+	my ($self) = shift;
+	return $self->kit->dereferenced_metadata(sub {$self->partial_manifest_lookup(@_)}, 1);
 }
 
+# }}}
+# adaptive_merge - merge as much as possible, deferring anything unmergible {{{
 sub adaptive_merge {
 	my ($self, @files) = @_;
 	pushd $self->path;
@@ -819,77 +642,433 @@ sub adaptive_merge {
 	return wantarray ? ($out,$orig_errors) : $out;
 }
 
-sub params {
-	my ($self) = @_;
-	if (!$self->{__params}) {
-		debug("running spruce merge of environment files, without evaluation, to find parameters");
-		my @merge_files = map { $self->path($_) } $self->actual_environment_files();
+# }}}
+#
+# Environment Variables
+# get_environment_variables - returns a hash of all environment variables pertaining to this Genesis::Env object {{{
+sub get_environment_variables {
+	my ($self, $hook) = @_;
 
-		my ($out, $rc, $err);
-		if (envset("GENESIS_UNEVALED_PARAMS")) {
-			pushd $self->path;
-			$out = run({ onfailure => "Unable to merge $self->{name} environment files", stderr => undef },
-			'spruce merge --multi-doc --skip-eval "$@" | spruce json', @merge_files);
-			popd;
-		} else {
-			my $env = {
-				%{$self->vault->env()},               # specify correct vault for spruce to target
-				REDACT => ''
-			};
-			$out = $self->adaptive_merge({json => 1, env => $env}, @merge_files);
+	my %env;
+
+	$env{GENESIS_ROOT}         = $self->path;
+	$env{GENESIS_ENVIRONMENT}  = $self->name;
+	$env{GENESIS_TYPE}         = $self->type;
+	$env{GENESIS_CALL}         = humanize_bin();
+	$env{GENESIS_CALL}        .= sprintf(" -C '%s'", humanize_path($self->path))
+		if ($ENV{GENESIS_CALLER_DIR} && $self->path ne $ENV{GENESIS_CALLER_DIR});
+
+	# Vault ENV VARS
+	$env{GENESIS_TARGET_VAULT} = $env{SAFE_TARGET} = $self->vault->ref;
+	$env{GENESIS_VERIFY_VAULT} = $self->vault->connect_and_validate->verify || "";
+
+	# Genesis v2.7.0 Secrets management
+	# This provides GENESIS_{SECRETS,EXODUS,CI}_{MOUNT,BASE}
+	# as well as GENESIS_{SECRETS,EXODUS,CI}_MOUNT_OVERRIDE
+	for my $target (qw/secrets exodus ci/) {
+		for my $target_type (qw/mount base/) {
+			my $method = "${target}_${target_type}";
+			$env{uc("GENESIS_${target}_${target_type}")} = $self->$method();
 		}
-		$self->{__params} = load_json($out);
+		my $method = "${target}_mount";
+		my $default_method = "default_$method";
+		$env{uc("GENESIS_${target}_MOUNT_OVERRIDE")} = ($self->$method ne $self->$default_method) ? "true" : "";
 	}
-	return $self->{__params};
+	$env{GENESIS_VAULT_PREFIX} = # deprecated in v2.7.0
+	$env{GENESIS_SECRETS_PATH} = # deprecated in v2.7.0
+	$env{GENESIS_SECRETS_SLUG} = $self->secrets_slug;
+	$env{GENESIS_SECRETS_SLUG_OVERRIDE} = $self->secrets_slug ne $self->default_secrets_slug ? "true" : "";
+	$env{GENESIS_ROOT_CA_PATH} = $self->root_ca_path;
+
+	unless (grep { $_ eq $hook } qw/new prereqs subkit features/) {
+		$env{GENESIS_REQUESTED_FEATURES} = join(' ', $self->features);
+	}
+
+	# Credhub support
+	my %credhub_env = $self->credhub_connection_env;
+	$env{$_} = $credhub_env{$_} for keys %credhub_env;
+
+	# BOSH support
+	if ($hook ne "features") {
+		if ($self->needs_bosh_create_env) {
+			$env{GENESIS_USE_CREATE_ENV} = 'yes';
+		} else {
+			$env{GENESIS_BOSH_ENVIRONMENT} =
+			$env{BOSH_ALIAS} = scalar $self->lookup_bosh_target;
+			my $bosh = Genesis::BOSH->environment_variables($env{BOSH_ALIAS});
+			$env{$_} = $bosh->{$_} for (keys %$bosh);
+			$env{BOSH_DEPLOYMENT} = sprintf("%s-%s", $self->name, $self->type);
+		}
+	}
+
+	$env{GENESIS_ENV_ROOT_CA_PATH} = $self->root_ca_path;
+	return %env
 }
 
-sub _manifest {
-	my ($self, %opts) = @_;
-	trace "[env $self->{name}] in _manifest(): Redact %s", defined($opts{redact}) ? "'$opts{redact}'" : '#C{(undef)}';
-	my $which = ($opts{partial} ? '__partial' : "").($opts{redact} ? '__redacted' : '__unredacted');
-	my $path = "$self->{__tmp}/$which.yml";
+# }}}
+# credhub_connection_env - returns environment variables hash for connecting to this environment's Credhub {{{
+sub credhub_connection_env {
+	my $self = shift;
+	my ($credhub_src,$credhub_src_key) = $self->lookup(
+		['genesis.credhub_env','genesis.bosh_env','params.bosh','genesis.env','params.env']
+	);
+	my %env=();
 
-	trace("[env $self->{name}] in _manifest(): looking for the '$which' cached manifest");
-	if (!$self->{$which}) {
-		trace("[env $self->{name}] in ${which}_manifest(): cache MISS; generating");
-		trace("[env $self->{name}] in ${which}_manifest(): cwd is ".Cwd::cwd);
+	my $credhub_path = $credhub_src;
+	$env{GENESIS_CREDHUB_EXODUS_SOURCE_OVERRIDE} =
+		(($credhub_src_key || "") eq 'genesis.credhub_env') ? $credhub_src : "";
 
-		my @merge_files = $self->_yaml_files($opts{partial});
-		trace("[env $self->{name}] in _manifest(): merging $_") for @merge_files;
-
-		pushd $self->path;
-		my $out;
-		my $env = {
-			$self->get_environment_variables('manifest'),
-			%{$self->vault->env()},               # specify correct vault for spruce to target
-			REDACT => $opts{redact} ? 'yes' : '' # spruce redaction flag
-		};
-		if ($opts{partial}) {
-			debug("running spruce merge of all files, without evaluation or cloudconfig, for parameter dereferencing");
-			($out, my $warnings) = $self->adaptive_merge({env => $env}, @merge_files);
-			error "\nErrors encountered and bypassed during partial merge.  These operators have been left unresolved:\n$warnings\n"
-				if $warnings && ! $opts{no_warnings};
-		} else {
-			debug("running spruce merge of all files, with evaluation, to generate a manifest");
-			$out = run({
-					onfailure => "Unable to merge $self->{name} manifest",
-					stderr => "&1",
-					env => $env
-				},
-				'spruce', 'merge', '--multi-doc', '--go-patch', @merge_files
-			);
-		}
-		popd;
-
-		debug("saving #W{%s%s} manifest to $path", $opts{partial} ? 'partial ' : '',  $opts{redact} ? 'redacted' : 'unredacted');
-		mkfile_or_fail($path, 0400, $out);
-		$self->{$which} = load_yaml($out);
+	if ($credhub_src =~ /\/\w+$/) {
+		$credhub_path  =~ s/\/([^\/]*)$/-$1/;
 	} else {
-		trace("[env $self->{name}] in ${which}_manifest(): cache HIT!");
+		$credhub_src .= "/bosh";
+		$credhub_path .= "-bosh";
 	}
-	return $self->{$which}, $path;
+	$env{GENESIS_CREDHUB_EXODUS_SOURCE} = $credhub_src;
+	$env{GENESIS_CREDHUB_ROOT}=sprintf("%s/%s-%s", $credhub_path, $self->name, $self->type);
+
+	if ($credhub_src) {
+		my $credhub_info = $self->exodus_lookup('.',undef,$credhub_src);
+		if ($credhub_info) {
+			$env{CREDHUB_SERVER} = $credhub_info->{credhub_url}||"";
+			$env{CREDHUB_CLIENT} = $credhub_info->{credhub_username}||"";
+			$env{CREDHUB_SECRET} = $credhub_info->{credhub_password}||"";
+			$env{CREDHUB_CA_CERT} = sprintf("%s%s",$credhub_info->{ca_cert}||"",$credhub_info->{credhub_ca_cert}||"");
+		}
+	}
+
+	return %env;
 }
 
+# }}}
+#
+# Environment Dependencies
+# connect_required_endpoints - ensure external dependencies are reachable {{{
+sub connect_required_endpoints {
+	my ($self, @hooks) = @_;
+	my @endpoints;
+	push(@endpoints, $self->kit->required_connectivity($_)) for (@hooks);
+	for (uniq(@endpoints)) {
+		$self->with_vault   if $_ eq 'vault';
+		$self->with_bosh    if $_ eq 'bosh';
+		$self->with_credhub if $_ eq 'credhub';
+		bail("#R{[ERROR]} Unknown connectivity endpoint type #Y{%s} in kit #m{%s}", $_, $self->kit->id);
+	}
+	return $self
+}
+
+# }}}
+
+# Environment Dependencies - Vault
+# with_vault - ensure this environment is able to connect to the Vault server {{{
+sub with_vault {
+	my $self = shift;
+	$ENV{GENESIS_SECRETS_MOUNT} = $self->secrets_mount();
+	bail("\n#R{[ERROR]} No vault specified or configured.")
+		unless $self->vault;
+	return $self;
+}
+# }}}
+# root_ca_path - returns the root_ca_path, if provided by the environment file (env: GENESIS_ROOT_CA_PATH) {{{
+sub root_ca_path {
+	my $self = shift;
+	unless (exists($self->{root_ca_path})) {
+		$self->{root_ca_path} = $self->lookup('genesis.root_ca_path','');
+		$self->{root_ca_path} =~ s/\/$// if $self->{root_ca_path};
+	}
+	return $self->{root_ca_path};
+}
+
+# }}}
+# secrets_mount - returns the Vault path under which all secrets are stored (env: GENESIS_SECRETS_MOUNT) {{{
+sub default_secrets_mount { '/secret/'; }
+sub secrets_mount {
+	$_[0]->_memoize('__secrets_mount', sub{
+		(my $mount = $_[0]->lookup('genesis.secrets_mount', $_[0]->default_secrets_mount)) =~ s#^/?(.*?)/?$#/$1/#;
+		return $mount
+	});
+}
+
+# }}}
+# secrets_slug - returns the component of the Vault path under the mount that represents this environment (env: GENESIS_SECRETS_SLUG) {{{
+sub default_secrets_slug {
+	(my $p = $_[0]->name) =~ s|-|/|g;
+	return $p."/".$_[0]->top->type;
+}
+sub secrets_slug {
+	$_[0]->_memoize('__secrets_slug', sub {
+		my $slug = $_[0]->lookup(
+			['genesis.secrets_path','params.vault_prefix','params.vault'],
+			$_[0]->default_secrets_slug
+		);
+		$slug =~ s#^/?(.*?)/?$#$1#;
+		return $slug
+	});
+}
+
+# }}}
+# secrets_base - returns the full Vault path for secrets stored for this environment with / suffic (env: GENESIS_SECRETS_BASE) {{{
+sub secrets_base {
+	$_[0]->_memoize('__secrets_base', sub {
+		$_[0]->secrets_mount . $_[0]->secrets_slug . '/'
+	});
+}
+
+# }}}
+# exodus_mount - returns the Vault path under which all Exodus data is stored (env: GENESIS_EXODUS_MOUNT) {{{
+sub default_exodus_mount { $_[0]->secrets_mount . 'exodus/'; }
+sub exodus_mount {
+	$_[0]->_memoize('__exodus_mount', sub {
+		(my $mount = $_[0]->lookup('genesis.exodus_mount', $_[0]->default_exodus_mount)) =~ s#^/?(.*?)/?$#/$1/#;
+		return $mount;
+	});
+}
+
+# }}}
+# exodus_slug - returns the component of the Vault path under the Exodus mount for this evironments Exodus data {{{
+sub exodus_slug {
+	sprintf("%s/%s", $_[0]->name, $_[0]->type);
+}
+
+# }}}
+# exodus_base - returns the full Vault path of the Exodus data for this environment (env:  GENESIS_EXODUS_BASE) {{{
+sub exodus_base {
+	$_[0]->_memoize('__exodus_base', sub {
+		$_[0]->exodus_mount . $_[0]->exodus_slug
+	});
+}
+
+# }}}
+# ci_mount - returns the Vault path under which all CI secrets are stored (env: GENESIS_CI_MOUNT) {{{
+sub default_ci_mount { $_[0]->secrets_mount . 'ci/'; }
+sub ci_mount {
+	$_[0]->_memoize('__ci_mount', sub {
+		(my $mount = $_[0]->lookup('genesis.ci_mount', $_[0]->default_ci_mount)) =~ s#^/?(.*?)/?$#/$1/#;
+		return $mount;
+	});
+}
+
+# }}}
+# ci_base - returns the full Vault path under which the CI secrets for this environment are stored (env: GENESIS_CI_BASE) {{{
+sub ci_base {
+	$_[0]->_memoize('__ci_base', sub {
+		sprintf("%s%s/%s/", $_[0]->ci_mount, $_[0]->type, $_[0]->name)
+	});
+}
+
+# }}}
+
+# Environment Dependencies - BOSH and BOSH Config Files
+# with_bosh - ensure the BOSH director is available and authenticated {{{
+sub with_bosh {
+	my $self = shift;
+	$self->bosh_target;
+	return $self;
+}
+
+# }}}
+# bosh_target - return the bosh_target for this environment {{{
+sub bosh_target {
+	my ($self) = @_;
+	return undef if $self->needs_bosh_create_env;
+
+	unless ($self->{__bosh_target}) {
+		my ($bosh, $source) = $self->lookup_bosh_target;
+		Genesis::BOSH->ping($bosh)
+			or bail("\n#R{[ERROR]} Could not connect to BOSH Director '#M{$bosh}'\n  - specified via $source\n");
+		$self->{__bosh_target} = $bosh;
+	}
+
+	return $self->{__bosh_target};
+}
+
+# }}}
+# lookup_bosh_target - determine the bosh target alias for this environment {{{
+sub lookup_bosh_target {
+	my ($self) = @_;
+	return undef if $self->needs_bosh_create_env;
+	unless ($self->{bosh_env}) {
+		my ($bosh, $source,$key);
+		if ($bosh = $ENV{GENESIS_BOSH_ENVIRONMENT}) {
+				$source = "GENESIS_BOSH_ENVIRONMENT environment variable";
+
+		} elsif (($bosh,$key) = $self->lookup(['genesis.bosh_env','params.bosh','genesis.env','params.env'])) {
+				$source = "$key in $self->{name} environment file";
+
+		} else {
+			die "Could not find the 'genesis.bosh_env', 'params.bosh', 'genesis.env' or 'params.env' key in $self->{name} environment file!\n";
+		}
+
+		# Check for v2.7.0 features
+		if ($source =~ 'params.bosh' && $self->kit->feature_compatibility("2.7.0") && !in_callback && ! envset("GENESIS_LEGACY")) {
+			error("\n#R{[WARNING]} Kit #M{%s} is built for Genesis 2.7.0 or higher, which requires BOSH\n" .
+						"          environment to be specified under #m{genesis.bosh_env} in your environment file\n".
+						"          but #C{%s} is using #m{params.bosh}.  Please update your environment file as this\n".
+						"          legacy support will be removed in a later version of Genesis\n",
+						$self->kit->id, $self->name );
+		}
+		$self->{bosh_env} = $bosh;
+		$self->{bosh_env_src} = $source;
+	}
+	return wantarray ? ($self->{bosh_env}, $self->{bosh_env_src}) : $self->{bosh_env};
+}
+# }}}
+
+# Config Management
+# configs - return the list of configs being used by this environment. {{{
+sub configs {
+	my @env_configs = map {
+		$_ =~ m/GENESIS_([A-Z0-9_-]+)_CONFIG(?:_(.*))?$/;
+		lc($1).($2 && $2 ne '*' ? "\@$2" : '');
+	} grep {
+		/GENESIS_[A-Z0-9_-]+_CONFIG(_.*)?$/;
+	} keys %ENV;
+	my @configs = sort(uniq(keys %{$_[0]->{_configs}}, @env_configs));
+	return @configs # can't just return the above because scalar/list context crazies
+}
+
+# }}}
+# download_required_configs - determine what BOSH configs are needed and download them {{{
+sub download_required_configs {
+	my ($self, @hooks) = @_;
+	return $self if $self->needs_bosh_create_env;
+	my @configs;
+	for ($self->kit->required_configs(@hooks)) {
+		push(@configs, $_) unless $self->config_file($_);
+	}
+	$self->with_bosh->download_configs(@configs) if @configs;
+	return $self
+}
+
+# }}}
+# download_configs - download the specified BOSH configs from the director {{{
+sub download_configs {
+	my ($self, @configs) = @_;
+	my $director = $self->bosh_target;
+	@configs = qw/cloud runtime/ unless @configs;
+
+	explain STDERR "\nDownloading configs from '#M{$director}' BOSH director...";
+	my $err;
+	for (@configs) {
+		my $file = "$self->{__tmp}/$_.yml";
+		my ($type,$name) = split('@',$_);
+		$name ||= '*';
+		my $label = $name eq "*" ? "all $type configs" : $name eq "default" ? "$type config" : "$type config '$name'";
+		waiting_on STDERR bullet('empty',$label."...", inline=>1, box => 1);
+		my $downloaded = eval {Genesis::BOSH->download_config($director,$file,$type,$name)};
+		if ($@) {
+			$err = $@;
+			explain STDERR "\r".bullet('bad',$label.join("\n      ", ('...failed!',"",split("\n",$err),"")), box => 1, inline => 1);
+		} else {
+			explain STDERR "[2K\r".bullet('good',$label.($name eq '*' ? ':' : ''), box => 1, inline => 1);
+			$self->use_config($file,$type,$name);
+			for (@$downloaded) {
+				$self->use_config($file,$_->{type},$_->{name});
+				explain STDERR bullet('good',$_->{label}, box => 1, inline => 1, indent => 7) if $name eq "*";
+			}
+		}
+	}
+
+	bail "#R{[ERROR]} Could not fetch requested configs from ".$self->bosh_target."\n"
+	  if $err;
+	return $self;
+}
+
+# }}}
+# use_config - specify a local file to use for the given BOSH config {{{
+sub use_config {
+	my ($self,$file,$type,$name) = @_;
+	$self->{_configs} ||= {};
+	my $label = $type || 'cloud';
+	my $env_var = "GENESIS_".uc($type)."_CONFIG";
+	if ($name && $name ne '*') {
+		$label .= "\@$name";
+		$env_var .= "_$name";
+	}
+	$self->{_configs}{$label} = $file;
+	$ENV{$env_var} = $file;
+	return $self;
+}
+
+# }}}
+# config_file - retrieve the path of the local file (provided or downloaded) being used for the named BOSH config {{{
+sub config_file {
+	my ($self, $type, $name) = @_;
+	my $label = $type||'cloud';
+	my $env_var = "GENESIS_".uc($type)."_CONFIG";
+	if ($name && $name ne '*') {
+		$label .= "\@$name";
+		$env_var .= "_$name";
+	}
+	return $self->{_configs}{$label} || $ENV{$env_var} || '';
+}
+
+# }}}
+
+# Legacy non-generic config methods {{{
+sub download_cloud_config { $_[0]->download_configs('cloud'); }
+sub use_cloud_config { $_[0]->use_config($_[1],'cloud'); }
+sub cloud_config { return $_[0]->config_file('cloud'); }
+sub download_runtime_config { $_[0]->download_configs('runtime'); }
+sub use_runtime_config { $_[0]->use_config($_[1],'runtime'); }
+sub runtime_config { return $_[0]->config_file('runtime'); }
+# }}}
+
+# Kit Components
+# kit_files - get list of yaml files from the kit to be used to merge the manifest {{{
+sub kit_files {
+	my ($self, $absolute) = @_;
+	$absolute = !!$absolute; #booleanify it.
+	$self->{__kit_files}{$absolute} = [$self->kit->source_yaml_files($self, $absolute)]
+		unless $self->{__kit_files}{$absolute};
+	return @{$self->{__kit_files}{$absolute}};
+}
+
+# }}}
+# has_hook - true if the environment's kit provides the specified hook {{{
+sub has_hook {
+	my $self = shift;
+	return $self->kit->has_hook(@_);
+}
+
+# }}}
+# run_hook - runs the specified hook in the environment's kit {{{
+sub run_hook {
+	my ($self, $hook, %opts) = @_;
+	my @config_hooks = ($hook);
+	push(@config_hooks, "addon-".$opts{script})
+		if ($hook eq 'addon');
+
+	$self->connect_required_endpoints(@config_hooks);
+	$self->download_required_configs(@config_hooks);
+	debug "Started run_hook '$hook'";
+	return $self->kit->run_hook($hook, %opts, env => $self);
+}
+
+# }}}
+# shell - provide a bash shell with the hook environment variables and helper functions available {{{
+sub shell {
+	my ($self, %opts) = @_;
+	if ($opts{hook}) {
+		my @config_hooks = ($opts{hook});
+
+		if ($opts{hook} =~ /^addon-/) {
+			$opts{hook_script} = $opts{hook};
+			push(@config_hooks, "addon");
+			$opts{hook} = "addon";
+		}
+
+		$self->connect_required_endpoints(@config_hooks);
+		$self->download_required_configs(@config_hooks);
+	}
+	explain "#Y{Started shell environment for }#C{%s}#Y{:}", $self->name;
+	return $self->kit->run_hook('shell', %opts, env => $self);
+}
+
+# }}}
+
+# Manifest Management
+# manifest - return the contents of the environments merged manifest as a hash {{{
 sub manifest {
 	my ($self, %opts) = @_;
 
@@ -928,12 +1107,16 @@ sub manifest {
 	return slurp($path);
 }
 
+# }}}
+# write_manifest - write the manifest out to the specified file {{{
 sub write_manifest {
 	my ($self, $file, %opts) = @_;
 	my $out = $self->manifest(redact => $opts{redact}, prune => $opts{prune});
 	mkfile_or_fail($file, $out);
 }
 
+# }}}
+# cached_manifest_info - get the path, existance and sha1sum of the cached deployed manifest {{{
 sub cached_manifest_info {
 	my ($self) = @_;
 	my $mpath = $self->path(".genesis/manifests/".$self->name.".yml");
@@ -942,6 +1125,8 @@ sub cached_manifest_info {
 	return (wantarray ? ($mpath, $exists, $sha1) : $mpath);
 }
 
+# }}}
+# vars_file - create yml file and return path for bosh variables {{{
 sub vars_file {
 	my ($self,$redact) = @_;
 
@@ -965,301 +1150,10 @@ sub vars_file {
 	}
 }
 
-sub _yaml_files {
-	my ($self,$partial) = @_;
-	(my $vault_path = $self->secrets_base) =~ s#/?$##; # backwards compatibility
-	my $type   = $self->{top}->type;
+# }}}
 
-	my @cc;
-	if ($self->needs_bosh_create_env) {
-		trace("[env $self->{name}] in_yaml_files(): IS a create-env, skipping cloud-config");
-	} elsif ($partial) {
-		trace("[env $self->{name}] in_yaml_files(): skipping eval, no need for cloud-config");
-		push @cc, $self->config_file('cloud') if $self->config_file('cloud'); # use it if its given
-	} else {
-		trace("[env $self->{name}] in _yaml_files(): not a create-env, we need cloud-config");
-
-		$self->download_required_configs('blueprint');
-		my $ccfile =  $self->config_file('cloud');
-
-		die "No cloud-config specified for this environment\n"
-			unless $ccfile;
-		trace("[env $self->{name}] in _yaml_files(): cloud-config at $ccfile");
-		push @cc, $ccfile;
-	}
-
-	if ($self->kit->feature_compatibility('2.6.13')) {
-		mkfile_or_fail("$self->{__tmp}/init.yml", 0644, <<EOF);
----
-meta:
-  vault: $vault_path
-kit:
-  features: []
-exodus:  {}
-genesis: {}
-params:  {}
-EOF
-	} else {
-		mkfile_or_fail("$self->{__tmp}/init.yml", 0644, <<EOF);
----
-meta:
-  vault: $vault_path
-kit:
-  features: []
-exodus: {}
-genesis: {}
-params:
-  env:  (( grab genesis.env ))
-  name: (( concat genesis.env || params.env "-$type" ))
-EOF
-	}
-
-	my $now = strftime("%Y-%m-%d %H:%M:%S +0000", gmtime());
-	mkfile_or_fail("$self->{__tmp}/fin.yml", 0644, <<EOF);
----
-name: (( concat genesis.env "-$type" ))
-genesis:
-  env:           ${\(scalar $self->lookup(['genesis.env','params.env'], $self->name))}
-  secrets_path:  ${\($self->secrets_slug)}
-  secrets_mount: ${\($self->secrets_mount)}
-  exodus_path:   ${\($self->exodus_slug)}
-  exodus_mount:  ${\($self->exodus_mount)}
-  ci_mount:      ${\($self->ci_mount)}
-  bosh_env:      ${\($self->lookup_bosh_target || $self->name)}
-
-exodus:
-  version:     $Genesis::VERSION
-  dated:       $now
-  deployer:    (( grab \$CONCOURSE_USERNAME || \$USER || "unknown" ))
-  kit_name:    ${\($self->kit->metadata->{name} || 'unknown')}
-  kit_version: ${\($self->kit->metadata->{version} || '0.0.0-rc0')}
-  kit_is_dev:  ${\(ref($self->kit) eq "Genesis::Kit::Dev" ? 'true' : 'false')}
-  vault_base:  (( grab meta.vault ))
-  features:    (( join "," kit.features ))
-EOF
-	# TODO: In BOSH refactor, add the bosh director to the exodus data
-	my @environment_files;
-	return (
-		"$self->{__tmp}/init.yml",
-		$self->kit_files(1), # absolute
-		@cc,
-		$self->actual_environment_files(),
-		"$self->{__tmp}/fin.yml",
-	);
-}
-
-sub kit_files {
-	my ($self, $absolute) = @_;
-	$absolute = !!$absolute; #booleanify it.
-	$self->{__kit_files}{$absolute} = [$self->kit->source_yaml_files($self, $absolute)]
-		unless $self->{__kit_files}{$absolute};
-	return @{$self->{__kit_files}{$absolute}};
-}
-
-sub _flatten {
-	my ($final, $key, $val) = @_;
-
-	if (ref $val eq 'ARRAY') {
-		for (my $i = 0; $i < @$val; $i++) {
-			_flatten($final, $key ? "${key}[$i]" : "$i", $val->[$i]);
-		}
-
-	} elsif (ref $val eq 'HASH') {
-		for (keys %$val) {
-			_flatten($final, $key ? "$key.$_" : "$_", $val->{$_})
-		}
-
-	} else {
-		$final->{$key} = $val;
-	}
-
-	return $final;
-}
-
-sub _unflatten {
-	my ($data, $branch) = @_;
-
-	return $data unless ref($data) eq 'HASH'; # Catchall for scalar data coming in.
-
-	# Data must represent all array elements or all hash keys.
-	my ($elements, $keys) = ([],[]);
-	push @{($_ =~ /^\[\d+\](?:\.|\[|$)/) ? $elements : $keys}, $_ for (sort keys %$data);
-	die("Cannot unflatten data that contains both array elements and hash keys at same level "
-		 . ($branch ? "(at $branch)" : "(top level)") ."\n") if @$elements && @$keys;
-
-	if (@$elements) {
-		my @a_data;
-		for my $k (sort keys %$data) {
-			my ($i, $sk) = $k =~ /^\[(\d+)\](?:\.)?([^\.].*)?$/;
-			if (defined $sk) {
-				die "Array cannot have scalar and non-scalar values (at ${branch}[$i])"
-					if defined $a_data[$i] && ref($a_data[$i]) ne 'HASH';
-				$a_data[$i]->{$sk} = delete $data->{$k};
-			} else {
-				die "Array cannot have scalar and non-scalar values (at ${branch}[$i])"
-					if defined $a_data[$i];
-				$a_data[$i] = delete $data->{$k};
-			}
-		}
-		for my $i (0..$#a_data) {
-			$a_data[$i] = _unflatten($a_data[$i], ($branch||"")."[$i]");
-		}
-		return [@a_data];
-	} else {
-		my %h_data;
-		for my $k (sort keys %$data) {
-			my ($pk, $sk) = $k =~ /^([^\[\.]*)(?:\.)?([^\.].*?)?$/;
-			if (defined $sk) {
-				die "Hash cannot have scalar and non-scalar values (at ".join('.', grep $_, ($branch, "pk")).")"
-					if defined $h_data{$pk} && ref($h_data{$pk}) ne 'HASH';
-				$h_data{$pk}->{$sk} = delete $data->{$k};
-			} else {
-				die "Hash cannot have scalar and non-scalar values (at ".join('.', grep $_, ($branch, "pk")).")"
-					if defined $h_data{$pk};
-				$h_data{$pk} = delete $data->{$k};
-			}
-		}
-		for my $k (sort keys %h_data) {
-			$h_data{$k} = _unflatten($h_data{$k}, join('.', grep $_, ($branch, "$k")));
-		}
-		return {%h_data}
-	}
-}
-
-sub exodus {
-	my ($self) = @_;
-	my $exodus = _flatten({}, undef, scalar($self->manifest_lookup('exodus', {})));
-	my $vars_file = $self->vars_file;
-	return $exodus unless ($vars_file || $self->kit->uses_credhub);
-
-	#interpolate bosh vars first
-	if ($vars_file) {
-		for my $key (keys %$exodus) {
-			if ($exodus->{$key} =~ /^\(\((.*)\)\)$/) {
-				$exodus->{$key} = $self->manifest_lookup("bosh-variables.$1", $exodus->{$key});
-			}
-		}
-	}
-
-	my @int_keys = grep {$exodus->{$_} =~ /^\(\(.*\)\)$/} keys %$exodus;
-	if ($self->kit->uses_credhub && @int_keys) {
-		# Get credhub info
-		my %credhub_env = $self->credhub_connection_env;
-		my $credhub_exodus = $self->exodus_lookup("", {}, $credhub_env{GENESIS_CREDHUB_EXODUS_SOURCE});
-		my @missing = grep {!exists($credhub_exodus->{$_})} qw/ca_cert credhub_url credhub_ca_cert credhub_password credhub_username/;
-		bail("#R{[ERROR]} %s exodus data missing required credhub connection information: %s\nRedeploying it may help.",
-			$credhub_env{GENESIS_CREDHUB_EXODUS_SOURCE}, join (', ', @missing))
-			if @missing;
-
-		local %ENV=%ENV;
-		$ENV{$_} = $credhub_env{$_} for (grep {$_ =~ /^CREDHUB_/} keys(%credhub_env));
-		for my $target (@int_keys) {
-			my ($secret,$key) = ($exodus->{$target} =~ /^\(\(([^\.]*)(?:\.(.*))?\)\)$/);
-			next unless $secret;
-			my @keys; @keys = ("-k", $key) if defined($key);
-			my ($out, $rc, $err) = run({stderr => 0},
-				"credhub", "get", "-n", $credhub_env{GENESIS_CREDHUB_ROOT}."/$secret", @keys, "-q"
-			);
-			if ($rc) {
-				error("#R{[ERROR]} Could not retrieve %s under %s:\n%s",
-				  $key ? "$secret.$key" : $secret, $credhub_env{GENESIS_CREDHUB_ROOT}, $err
-				);
-			}
-			$exodus->{$target} = $out;
-		}
-	}
-	return $exodus;
-}
-
-sub lookup_bosh_target {
-	my ($self) = @_;
-	return undef if $self->needs_bosh_create_env;
-	unless ($self->{bosh_env}) {
-		my ($bosh, $source,$key);
-		if ($bosh = $ENV{GENESIS_BOSH_ENVIRONMENT}) {
-				$source = "GENESIS_BOSH_ENVIRONMENT environment variable";
-
-		} elsif (($bosh,$key) = $self->lookup(['genesis.bosh_env','params.bosh','genesis.env','params.env'])) {
-				$source = "$key in $self->{name} environment file";
-
-		} else {
-			die "Could not find the 'genesis.bosh_env', 'params.bosh', 'genesis.env' or 'params.env' key in $self->{name} environment file!\n";
-		}
-
-		# Check for v2.7.0 features
-		if ($source =~ 'params.bosh' && $self->kit->feature_compatibility("2.7.0") && !in_callback && ! envset("GENESIS_LEGACY")) {
-			error("\n#R{[WARNING]} Kit #M{%s} is built for Genesis 2.7.0 or higher, which requires BOSH\n" .
-						"          environment to be specified under #m{genesis.bosh_env} in your environment file\n".
-						"          but #C{%s} is using #m{params.bosh}.  Please update your environment file as this\n".
-						"          legacy support will be removed in a later version of Genesis\n",
-						$self->kit->id, $self->name );
-		}
-		$self->{bosh_env} = $bosh;
-		$self->{bosh_env_src} = $source;
-	}
-	return wantarray ? ($self->{bosh_env}, $self->{bosh_env_src}) : $self->{bosh_env};
-}
-
-sub bosh_target {
-	my ($self) = @_;
-	return undef if $self->needs_bosh_create_env;
-
-	unless ($self->{__bosh_target}) {
-		my ($bosh, $source) = $self->lookup_bosh_target;
-		Genesis::BOSH->ping($bosh)
-			or bail("\n#R{[ERROR]} Could not connect to BOSH Director '#M{$bosh}'\n  - specified via $source\n");
-		$self->{__bosh_target} = $bosh;
-	}
-
-	return $self->{__bosh_target};
-}
-
-sub deployment {
-	my ($self) = @_;
-	unless ($self->{__deployment}) {
-		if ($self->defines('params.name')) {
-			$self->{__deployment}=$self->lookup('params.name');
-		} else {
-			$self->{__deployment}=$self->lookup(['genesis.env','params.env']) . '-' . $self->{top}->type;
-		}
-	}
-	return $self->{__deployment}
-}
-
-sub has_hook {
-	my $self = shift;
-	return $self->kit->has_hook(@_);
-}
-
-sub run_hook {
-	my ($self, $hook, %opts) = @_;
-	my @config_hooks = ($hook);
-	push(@config_hooks, "addon-".$opts{script})
-		if ($hook eq 'addon');
-
-	$self->connect_required_endpoints(@config_hooks);
-	$self->download_required_configs(@config_hooks);
-	debug "Started run_hook '$hook'";
-	return $self->kit->run_hook($hook, %opts, env => $self);
-}
-
-sub shell {
-	my ($self, %opts) = @_;
-	if ($opts{hook}) {
-		my @config_hooks = ($opts{hook});
-
-		if ($opts{hook} =~ /^addon-/) {
-			$opts{hook_script} = $opts{hook};
-			push(@config_hooks, "addon");
-			$opts{hook} = "addon";
-		}
-
-		$self->connect_required_endpoints(@config_hooks);
-		$self->download_required_configs(@config_hooks);
-	}
-	explain "#Y{Started shell environment for }#C{%s}#Y{:}", $self->name;
-	return $self->kit->run_hook('shell', %opts, env => $self);
-}
+# Deployment
+# check - check the environment {{{
 sub check {
 	my ($self,%opts) = @_;
 
@@ -1337,6 +1231,8 @@ sub check {
 	return $ok;
 }
 
+# }}}
+# deploy - deploy the environment {{{
 sub deploy {
 	my ($self, %opts) = @_;
 
@@ -1442,11 +1338,58 @@ sub deploy {
 	return $ok;
 }
 
-sub dereferenced_kit_metadata {
-	my ($self) = shift;
-	return $self->kit->dereferenced_metadata(sub {$self->partial_manifest_lookup(@_)}, 1);
+# }}}
+# exodus - get the populated exodus data generated in the manifest {{{
+sub exodus {
+	my ($self) = @_;
+	my $exodus = _flatten({}, undef, scalar($self->manifest_lookup('exodus', {})));
+	my $vars_file = $self->vars_file;
+	return $exodus unless ($vars_file || $self->kit->uses_credhub);
+
+	#interpolate bosh vars first
+	if ($vars_file) {
+		for my $key (keys %$exodus) {
+			if ($exodus->{$key} =~ /^\(\((.*)\)\)$/) {
+				$exodus->{$key} = $self->manifest_lookup("bosh-variables.$1", $exodus->{$key});
+			}
+		}
+	}
+
+	my @int_keys = grep {$exodus->{$_} =~ /^\(\(.*\)\)$/} keys %$exodus;
+	if ($self->kit->uses_credhub && @int_keys) {
+		# Get credhub info
+		my %credhub_env = $self->credhub_connection_env;
+		my $credhub_exodus = $self->exodus_lookup("", {}, $credhub_env{GENESIS_CREDHUB_EXODUS_SOURCE});
+		my @missing = grep {!exists($credhub_exodus->{$_})} qw/ca_cert credhub_url credhub_ca_cert credhub_password credhub_username/;
+		bail("#R{[ERROR]} %s exodus data missing required credhub connection information: %s\nRedeploying it may help.",
+			$credhub_env{GENESIS_CREDHUB_EXODUS_SOURCE}, join (', ', @missing))
+			if @missing;
+
+		local %ENV=%ENV;
+		$ENV{$_} = $credhub_env{$_} for (grep {$_ =~ /^CREDHUB_/} keys(%credhub_env));
+		for my $target (@int_keys) {
+			my ($secret,$key) = ($exodus->{$target} =~ /^\(\(([^\.]*)(?:\.(.*))?\)\)$/);
+			next unless $secret;
+			my @keys; @keys = ("-k", $key) if defined($key);
+			my ($out, $rc, $err) = run({stderr => 0},
+				"credhub", "get", "-n", $credhub_env{GENESIS_CREDHUB_ROOT}."/$secret", @keys, "-q"
+			);
+			if ($rc) {
+				error("#R{[ERROR]} Could not retrieve %s under %s:\n%s",
+				  $key ? "$secret.$key" : $secret, $credhub_env{GENESIS_CREDHUB_ROOT}, $err
+				);
+			}
+			$exodus->{$target} = $out;
+		}
+	}
+	return $exodus;
 }
 
+# }}}
+
+
+# Secrets Processing
+# add_secrets - add any secrets missing from the environment {{{
 sub add_secrets {
 	my ($self, %opts) = @_;
 
@@ -1474,6 +1417,8 @@ sub add_secrets {
 	}
 }
 
+# }}}
+# check_secrets - check that the environment has no missing or invalid secrets {{{
 sub check_secrets {
 	my ($self,%opts) = @_;
 
@@ -1503,6 +1448,8 @@ sub check_secrets {
 	}
 }
 
+# }}}
+# rotate_secrets - generate new secrets for the environment {{{
 sub rotate_secrets {
 	my ($self, %opts) = @_;
 
@@ -1532,6 +1479,8 @@ sub rotate_secrets {
 	}
 }
 
+# }}}
+# remove_secrets - remove secrets from the environment {{{
 sub remove_secrets {
 	my ($self, %opts) = @_;
 
@@ -1595,6 +1544,89 @@ sub remove_secrets {
 	}
 }
 
+# }}}
+# }}}
+
+### Private Instance Methods {{{
+
+# _manifest - build or return cached manifest (with/out redaction and pruning) {{{
+sub _manifest {
+	my ($self, %opts) = @_;
+	trace "[env $self->{name}] in _manifest(): Redact %s", defined($opts{redact}) ? "'$opts{redact}'" : '#C{(undef)}';
+	my $which = ($opts{partial} ? '__partial' : "").($opts{redact} ? '__redacted' : '__unredacted');
+	my $path = "$self->{__tmp}/$which.yml";
+
+	trace("[env $self->{name}] in _manifest(): looking for the '$which' cached manifest");
+	if (!$self->{$which}) {
+		trace("[env $self->{name}] in ${which}_manifest(): cache MISS; generating");
+		trace("[env $self->{name}] in ${which}_manifest(): cwd is ".Cwd::cwd);
+
+		my @merge_files = $self->_yaml_files($opts{partial});
+		trace("[env $self->{name}] in _manifest(): merging $_") for @merge_files;
+
+		pushd $self->path;
+		my $out;
+		my $env = {
+			$self->get_environment_variables('manifest'),
+			%{$self->vault->env()},               # specify correct vault for spruce to target
+			REDACT => $opts{redact} ? 'yes' : '' # spruce redaction flag
+		};
+		if ($opts{partial}) {
+			debug("running spruce merge of all files, without evaluation or cloudconfig, for parameter dereferencing");
+			($out, my $warnings) = $self->adaptive_merge({env => $env}, @merge_files);
+			error "\nErrors encountered and bypassed during partial merge.  These operators have been left unresolved:\n$warnings\n"
+				if $warnings && ! $opts{no_warnings};
+		} else {
+			debug("running spruce merge of all files, with evaluation, to generate a manifest");
+			$out = run({
+					onfailure => "Unable to merge $self->{name} manifest",
+					stderr => "&1",
+					env => $env
+				},
+				'spruce', 'merge', '--multi-doc', '--go-patch', @merge_files
+			);
+		}
+		popd;
+
+		debug("saving #W{%s%s} manifest to $path", $opts{partial} ? 'partial ' : '',  $opts{redact} ? 'redacted' : 'unredacted');
+		mkfile_or_fail($path, 0400, $out);
+		$self->{$which} = load_yaml($out);
+	} else {
+		trace("[env $self->{name}] in ${which}_manifest(): cache HIT!");
+	}
+	return $self->{$which}, $path;
+}
+
+# }}}
+# _genesis_inherits - return the list of inherited files (recursive) {{{
+sub _genesis_inherits {
+	my ($self,$file, @files) = @_;
+	my ($out,$rc,$err) = run({stderr => 0},'cat "$1" | spruce json', $self->path($file));
+	bail "Error processing json in $file!:\n$err" if $rc;
+	my @contents = map {load_json($_)} lines($out);
+
+	my @new_files;
+	for my $contents (@contents) {
+		next unless $contents->{genesis}{inherits};
+		bail "#R{[ERROR]} $file specifies 'genesis.inherits', but it is not a list"
+			unless ref($contents->{genesis}{inherits}) eq 'ARRAY';
+
+		for (@{$contents->{genesis}{inherits}}) {
+			my $cached_file;
+			if ($ENV{PREVIOUS_ENV}) {
+				$cached_file = ".genesis/cached/$ENV{PREVIOUS_ENV}/$_.yml";
+				$cached_file = undef unless -f $self->path($cached_file);
+			}
+			my $inherited_file = $cached_file || "./$_.yml";
+			next if grep {$_ eq $inherited_file} @files;
+			push(@new_files, $self->_genesis_inherits($inherited_file,$file,@files,@new_files),$inherited_file);
+		}
+	}
+	return(@new_files);
+}
+
+# }}}
+# _secret_processing_updates_callback - callback for secrets processing UI {{{
 sub _secret_processing_updates_callback {
 	my ($self,$action,$opts,$state,%args) = @_;
 	my $indent = $opts->{indent} || '  ';
@@ -1726,37 +1758,175 @@ sub _secret_processing_updates_callback {
 	}
 }
 
+# }}}
+# _yaml_files - create genisis support yml files and return full ordered merge list {{{
+sub _yaml_files {
+	my ($self,$partial) = @_;
+	(my $vault_path = $self->secrets_base) =~ s#/?$##; # backwards compatibility
+	my $type   = $self->{top}->type;
 
-sub validate_name {
-	my ($class, $name) = @_;
+	my @cc;
+	if ($self->needs_bosh_create_env) {
+		trace("[env $self->{name}] in_yaml_files(): IS a create-env, skipping cloud-config");
+	} elsif ($partial) {
+		trace("[env $self->{name}] in_yaml_files(): skipping eval, no need for cloud-config");
+		push @cc, $self->config_file('cloud') if $self->config_file('cloud'); # use it if its given
+	} else {
+		trace("[env $self->{name}] in _yaml_files(): not a create-env, we need cloud-config");
 
-	die "names must not be empty.\n"
-		if !$name;
+		$self->download_required_configs('blueprint');
+		my $ccfile =  $self->config_file('cloud');
 
-	die "names must not contain whitespace.\n"
-		if $name =~ m/\s/;
+		die "No cloud-config specified for this environment\n"
+			unless $ccfile;
+		trace("[env $self->{name}] in _yaml_files(): cloud-config at $ccfile");
+		push @cc, $ccfile;
+	}
 
-	die "names can only contain lowercase letters, numbers, and hyphens.\n"
-		if $name !~ m/^[a-z0-9_-]+$/;
+	if ($self->kit->feature_compatibility('2.6.13')) {
+		mkfile_or_fail("$self->{__tmp}/init.yml", 0644, <<EOF);
+---
+meta:
+  vault: $vault_path
+kit:
+  features: []
+exodus:  {}
+genesis: {}
+params:  {}
+EOF
+	} else {
+		mkfile_or_fail("$self->{__tmp}/init.yml", 0644, <<EOF);
+---
+meta:
+  vault: $vault_path
+kit:
+  features: []
+exodus: {}
+genesis: {}
+params:
+  env:  (( grab genesis.env ))
+  name: (( concat genesis.env || params.env "-$type" ))
+EOF
+	}
 
-	die "names must start with a (lowercase) letter.\n"
-		if $name !~ m/^[a-z]/;
+	my $now = strftime("%Y-%m-%d %H:%M:%S +0000", gmtime());
+	mkfile_or_fail("$self->{__tmp}/fin.yml", 0644, <<EOF);
+---
+name: (( concat genesis.env "-$type" ))
+genesis:
+  env:           ${\(scalar $self->lookup(['genesis.env','params.env'], $self->name))}
+  secrets_path:  ${\($self->secrets_slug)}
+  secrets_mount: ${\($self->secrets_mount)}
+  exodus_path:   ${\($self->exodus_slug)}
+  exodus_mount:  ${\($self->exodus_mount)}
+  ci_mount:      ${\($self->ci_mount)}
+  bosh_env:      ${\($self->lookup_bosh_target || $self->name)}
 
-	die "names must not end with a hyphen.\n"
-		if $name =~ m/-$/;
-
-	die "names must not contain sequential hyphens (i.e. '--').\n"
-		if $name =~ m/--/;
-
-	1; # name is valid
+exodus:
+  version:     $Genesis::VERSION
+  dated:       $now
+  deployer:    (( grab \$CONCOURSE_USERNAME || \$USER || "unknown" ))
+  kit_name:    ${\($self->kit->metadata->{name} || 'unknown')}
+  kit_version: ${\($self->kit->metadata->{version} || '0.0.0-rc0')}
+  kit_is_dev:  ${\(ref($self->kit) eq "Genesis::Kit::Dev" ? 'true' : 'false')}
+  vault_base:  (( grab meta.vault ))
+  features:    (( join "," kit.features ))
+EOF
+	# TODO: In BOSH refactor, add the bosh director to the exodus data
+	my @environment_files;
+	return (
+		"$self->{__tmp}/init.yml",
+		$self->kit_files(1), # absolute
+		@cc,
+		$self->actual_environment_files(),
+		"$self->{__tmp}/fin.yml",
+	);
 }
 
+# }}}
+# _flatten - convert deep structure to single sequence of key:value {{{
+sub _flatten {
+	my ($final, $key, $val) = @_;
+
+	if (ref $val eq 'ARRAY') {
+		for (my $i = 0; $i < @$val; $i++) {
+			_flatten($final, $key ? "${key}[$i]" : "$i", $val->[$i]);
+		}
+
+	} elsif (ref $val eq 'HASH') {
+		for (keys %$val) {
+			_flatten($final, $key ? "$key.$_" : "$_", $val->{$_})
+		}
+
+	} else {
+		$final->{$key} = $val;
+	}
+
+	return $final;
+}
+
+# }}}
+# _unflatten - convert a flattened hashmap to a deep structure {{{
+sub _unflatten {
+	my ($data, $branch) = @_;
+
+	return $data unless ref($data) eq 'HASH'; # Catchall for scalar data coming in.
+
+	# Data must represent all array elements or all hash keys.
+	my ($elements, $keys) = ([],[]);
+	push @{($_ =~ /^\[\d+\](?:\.|\[|$)/) ? $elements : $keys}, $_ for (sort keys %$data);
+	die("Cannot unflatten data that contains both array elements and hash keys at same level "
+		 . ($branch ? "(at $branch)" : "(top level)") ."\n") if @$elements && @$keys;
+
+	if (@$elements) {
+		my @a_data;
+		for my $k (sort keys %$data) {
+			my ($i, $sk) = $k =~ /^\[(\d+)\](?:\.)?([^\.].*)?$/;
+			if (defined $sk) {
+				die "Array cannot have scalar and non-scalar values (at ${branch}[$i])"
+					if defined $a_data[$i] && ref($a_data[$i]) ne 'HASH';
+				$a_data[$i]->{$sk} = delete $data->{$k};
+			} else {
+				die "Array cannot have scalar and non-scalar values (at ${branch}[$i])"
+					if defined $a_data[$i];
+				$a_data[$i] = delete $data->{$k};
+			}
+		}
+		for my $i (0..$#a_data) {
+			$a_data[$i] = _unflatten($a_data[$i], ($branch||"")."[$i]");
+		}
+		return [@a_data];
+	} else {
+		my %h_data;
+		for my $k (sort keys %$data) {
+			my ($pk, $sk) = $k =~ /^([^\[\.]*)(?:\.)?([^\.].*?)?$/;
+			if (defined $sk) {
+				die "Hash cannot have scalar and non-scalar values (at ".join('.', grep $_, ($branch, "pk")).")"
+					if defined $h_data{$pk} && ref($h_data{$pk}) ne 'HASH';
+				$h_data{$pk}->{$sk} = delete $data->{$k};
+			} else {
+				die "Hash cannot have scalar and non-scalar values (at ".join('.', grep $_, ($branch, "pk")).")"
+					if defined $h_data{$pk};
+				$h_data{$pk} = delete $data->{$k};
+			}
+		}
+		for my $k (sort keys %h_data) {
+			$h_data{$k} = _unflatten($h_data{$k}, join('.', grep $_, ($branch, "$k")));
+		}
+		return {%h_data}
+	}
+}
+
+# }}}
+# _memoize - cache value to be returned on subsequent calls {{{
 sub _memoize {
 	my ($self, $token, $initialize) = @_;
 	return $self->{$token} if defined($self->{$token});
 	$self->{$token} = $initialize->($self);
 }
 
+# }}}
+# }}}
 1;
 
 =head1 NAME
@@ -2357,3 +2527,4 @@ missing ones (which is the default behavior for some reason).
 =back
 
 =cut
+# vim: fdm=marker:foldlevel=1:noet
