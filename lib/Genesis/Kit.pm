@@ -84,9 +84,9 @@ sub run_hook {
 	$ENV{GENESIS_KIT_VERSION} = $self->version;
 	$ENV{GENESIS_KIT_HOOK}    = $hook;
 
-	die "Unrecognized hook '$hook'\n"
-		unless grep { $_ eq $hook } qw/new blueprint secrets info addon check pre-deploy post-deploy
-		                               prereqs features subkit shell/;
+	die "Unrecognized hook '$hook'\n" unless grep {
+		$_ eq $hook
+	} qw/new blueprint secrets info addon check prereqs pre-deploy post-deploy features shell/;
 
 	if (grep { $_ eq $hook } qw/new secrets info addon check prereqs blueprint pre-deploy post-deploy features/) {
 		bug("The 'env' option to run_hook is required for the '$hook' hook!!") unless $opts{env};
@@ -193,7 +193,7 @@ sub run_hook {
 		return @manifests;
 	}
 
-	if (grep { $_ eq $hook}  qw/features subkit/) {
+	if (grep { $_ eq $hook}  qw/features/) {
 		bail(
 			"#R{[ERROR]} Could not run feature hook in kit %s:".
 			"\n\n#u{stdout:}\n%s\n\n",
@@ -421,7 +421,7 @@ sub dereferenced_metadata {
 
 ### Private Methods {{{
 
-# _deref_metadata - recursively dereference metadata structure {{
+# _deref_metadata - recursively dereference metadata structure {{{
 sub _deref_metadata {
 	my ($self,$metadata, $lookup) = @_;
 	if (ref $metadata eq 'ARRAY') {

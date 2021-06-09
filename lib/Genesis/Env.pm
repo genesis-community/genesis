@@ -53,73 +53,78 @@ sub load {
 	}
 
 	my $env = $class->new(get_opts(\%opts, qw(name top)));
+	my (@errors, @config_warnings, @deprecations);
+	while (1) {
+		push(@errors, sprintf(
+			"Environment file #C{%s} does not exist.",
+			$env->{file}
+		)) unless -f $env->path($env->{file});
+		last if @errors;
 
-	bail(
-		"#R{[ERROR]} Environment file $env->{file} does not exist."
-	) unless -f $env->path($env->{file});
+		push(@errors, "#ci{kit.subkits} has been superceeded by #ci{kit.features}")
+			if $env->defines('kit.subkits');
 
-	bail(
-		"#R{[ERROR]} Both #C{kit.features} and deprecated #C{kit.subkits} were found during\n".
-		"        the environment build-out using the following files:\n#M{          %s}\n\n".
-		"        This can cause conflicts and unexpected behaviour.  Please replace all\n".
-		"        occurrences of #C{subkits} with #C{features} under the #C{kit} toplevel key.\n",
-		join("\n          ",$env->actual_environment_files)
-	) if ($env->defines('kit.features') && $env->defines('kit.subkits'));
+		my ($env_name, $env_src) = $env->lookup(['genesis.env','params.env']);
+		push(@errors, "missing required #ci{genesis.env} field")
+			unless $env_name;
+		push(@errors, "#environment name mismatch: #ci{$env_src} specifies #ci{$env_name}")
+			unless $env->{name} eq $env_name || in_callback || envset("GENESIS_LEGACY");
 
-	my $env_src;
-	(my $env_name, $env_src) = $env->lookup(['genesis.env','params.env']);
-	bail(
-		"\n#R{[ERROR]} Environment file #C{$env->{file}} missing required #C{genesis.env} field"
-	) unless $env_name;
-	bail(
-		"\n#R{[ERROR]} Environment file #C{$env->{file}} environment name mismatch: #C{$env_src $env_name}"
-	) unless $env->{name} eq $env_name || in_callback || envset("GENESIS_LEGACY");
-
-	# reconstitute our kit via top
-	my $kit_name = $env->lookup('kit.name');
-	my $kit_version = $env->lookup('kit.version');
-	$env->{kit} = $env->{top}->local_kit_version($kit_name, $kit_version)
-		or bail "Unable to locate v$kit_version of `$kit_name` kit for '$env->{name}' environment.";
-	$env->kit->check_prereqs()
-		or bail "Cannot use the selected kit.\n";
-
-	my $min_version = $env->lookup(['genesis.min_version','params.genesis_version_min'],'');
-	$min_version =~ s/^v//i;
-	if ($min_version) {
-		if ($Genesis::VERSION eq "(development)") {
-			error(
-				"#Y{[WARNING]} Environment `$env->{name}` requires Genesis v$min_version or higher.\n".
-				"          This version of Genesis is a development version and its feature availability cannot\n".
-				"          be verified -- unexpected behaviour may occur.\n"
-			) unless (under_test && !envset 'GENESIS_TESTING_DEV_VERSION_DETECTION');
-		} elsif (! new_enough($Genesis::VERSION, $min_version)) {
-			bail(
-				"#R{[ERROR]} Environment `$env->{name}` requires Genesis v$min_version or higher.\n".
-				"        You are currently using Genesis v$Genesis::VERSION.\n"
-			) unless (under_test && !envset 'GENESIS_TESTING_DEV_VERSION_DETECTION');
+		# Deprecation Warnings
+		if ($env->defines('params.genesis_version_min')) {
+			push(@deprecations, "#ci{params.genesis_version_min} has been superceeded by #ci{genesis.min_version}");
+			$env->{__params}{genesis}{min_version} = delete($env->{__params}{params}{genesis_version_min});
 		}
+		if ($env->defines('params.bosh')) {
+			push(@deprecations, "#ci{params.bosh} has been superceeded by #ci{genesis.bosh_env}");
+			$env->{__params}{genesis}{bosh_env} = delete($env->{__params}{params}{bosh});
+		}
+
+		(my $min_version = $env->lookup('genesis.min_version','')) =~ s/^v//i;
+		if ($min_version) {
+			if ($Genesis::VERSION eq "(development)") {
+				push(@config_warnings, "using development version of Genesis, cannot confirm it meets minimum version of #ci{$min_version}");
+			} elsif (! new_enough($Genesis::VERSION, $min_version)) {
+				push(@errors, "genesis #Ri{v$Genesis::VERSION} does not meet minimum version of #ci{$min_version}");
+			}
+		}
+
+		my $kit_name = $env->lookup('kit.name')       or push(@errors, "Missing #ci{kit.name}");
+		my $kit_version = $env->lookup('kit.version') or push(@errors, "Missing #ci{kit.version}");
+		if ($kit_name && $kit_version) {
+			$env->{kit} = $env->{top}->local_kit_version($kit_name, $kit_version) or push(@errors, sprintf(
+				"Unable to locate v%s of #M{%s}` kit for #C{%s} environment.",
+				$kit_version, $kit_name, $env->name
+			));
+		}
+		last if @errors;
+		$env->kit->check_prereqs() or bail "Cannot use the selected kit.";
+
+		if (! $env->kit->feature_compatibility("2.7.0")) {
+			push(@errors, sprintf("kit #M{%s} is not compatible with #ci{secrets_mount} feature", $env->kit->id))
+				if ($env->secrets_mount ne $env->default_secrets_mount);
+			push(@errors, sprintf("kit #M{%s} is not compatible with #C{exodus_mount} feature", $env->kit->id))
+				if ($env->exodus_mount ne $env->default_exodus_mount);
+		}
+		last;
 	}
 
-	# Check for v2.7.0 features
-	if ($env->kit->feature_compatibility("2.7.0")) {
+	unless (under_test && !envset 'GENESIS_TESTING_DEV_VERSION_DETECTION') {
 		error(
-			"#R{[WARNING]} Kit #M{%s} requires environment file to specify #m{genesis.env}\n".
-			"          but #C{%s} is using #m{%s}.  Please update your environment file as this\n".
-			"          will be removed in a later version of Genesis",
-			$env->kit->id, $env->name, $env_src
-		) if ($env_src && $env_src ne 'genesis.env');
-	} else {
-		bail(
-			"#R{[ERROR]} Kit #M{%s} is not compatible with #C{secrets_mount} feature\n".
-			"        Please upgrade to a newer release or remove params.secrets_mount from #M{%s}",
-			$env->kit->id, $env->{file}
-		) if ($env->secrets_mount ne $env->default_secrets_mount);
-		bail(
-			"#R{[ERROR]} Kit #M{%s} is not compatible with #C{exodus_mount} feature\n".
-			"        Please upgrade to a newer release or remove params.exodus_mount from #M{%s}",
-			$env->kit->id, $env->{file}
-		) if ($env->exodus_mount ne $env->default_exodus_mount);
+			"#Y{[DEPRECATIONS]} Environment #C{%s} contains the following deprecation:\n  - %s\n",
+			$env->{file}, join("\n  - ",map {join("\n    ",split("\n",$_))} @deprecations)
+		) if (@deprecations);
+		error(
+			"#Y{[WARNINGS]} Environment #C{%s} contains the following configuration warnings:\n  - %s\n",
+			$env->{file}, join("\n  - ",map {join("\n    ",split("\n",$_))} @config_warnings)
+		) if (@config_warnings);
 	}
+
+	bail(
+		"#R{[ERROR]} Environment #C{%s} could not be loaded:\n  - %s\n\n".
+		"Please fix the above errors and try again.",
+		$env->{file}, join("\n  - ",map {join("\n    ",split("\n",$_))} @errors)
+	) if @errors;
 
 	return $env
 }
@@ -439,7 +444,7 @@ sub relate_by_name {
 sub features {
 	my $ref = $_[0]->_memoize('__features', sub {
 		my $self = shift;
-		my $features = scalar($self->lookup(['kit.features', 'kit.subkits'], []));
+		my $features = scalar($self->lookup('kit.features', []));
 		$self->{__explicit_features} = $features;
 		my @derived_features = grep {$_ =~ /^\+/} $features;
 		bail(
@@ -680,7 +685,7 @@ sub get_environment_variables {
 	$env{GENESIS_SECRETS_SLUG_OVERRIDE} = $self->secrets_slug ne $self->default_secrets_slug ? "true" : "";
 	$env{GENESIS_ROOT_CA_PATH} = $self->root_ca_path;
 
-	unless (grep { $_ eq $hook } qw/new prereqs subkit features/) {
+	unless (grep { $_ eq ($hook||'') } qw/new prereqs features/) {
 		$env{GENESIS_REQUESTED_FEATURES} = join(' ', $self->features);
 	}
 
