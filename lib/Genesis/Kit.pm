@@ -84,15 +84,17 @@ sub run_hook {
 	$ENV{GENESIS_KIT_VERSION} = $self->version;
 	$ENV{GENESIS_KIT_HOOK}    = $hook;
 
-	die "Unrecognized hook '$hook'\n" unless grep {
+	bug("Unrecognized hook '$hook'\n") unless grep {
 		$_ eq $hook
 	} qw/new blueprint secrets info addon check prereqs pre-deploy post-deploy features shell/;
 
-	if (grep { $_ eq $hook } qw/new secrets info addon check prereqs blueprint pre-deploy post-deploy features/) {
-		bug("The 'env' option to run_hook is required for the '$hook' hook!!") unless $opts{env};
+	if ($opts{env}) {
 		my %env_vars = $opts{env}->get_environment_variables($hook);
 		$ENV{$_} = $env_vars{$_} for (keys %env_vars);
 		trace ('got env info');
+	} else {
+		bug("The 'env' option to run_hook is required for the '$hook' hook!!")
+			if (grep { $_ eq $hook } qw/new secrets info addon check blueprint pre-deploy post-deploy features/);
 	}
 
 	my @args;
@@ -356,7 +358,7 @@ sub feature_compatibility {
 # }}}
 # check_prereqs - check that the {{{
 sub check_prereqs {
-	my ($self) = @_;
+	my ($self,$env) = @_;
 	my $id = $self->id;
 
 	my $ok = 1;
@@ -379,7 +381,7 @@ sub check_prereqs {
 	}
 
 	if ($self->has_hook('prereqs')) {
-		my ($out,$rc) = run_hook('prereqs');
+		my ($out,$rc) = run_hook('prereqs',env => $env);
 		if ($rc > 0) {
 			error("#R{[ERROR]} Prerequisite check for kit #C{$id} failed with exit code $rc");
 			$ok = 0;

@@ -98,7 +98,7 @@ sub load {
 			));
 		}
 		last if @errors;
-		$env->kit->check_prereqs() or bail "Cannot use the selected kit.";
+		$env->kit->check_prereqs($env) or bail "Cannot use the selected kit.";
 
 		if (! $env->kit->feature_compatibility("2.7.0")) {
 			push(@errors, sprintf("kit #M{%s} is not compatible with #ci{secrets_mount} feature", $env->kit->id))
