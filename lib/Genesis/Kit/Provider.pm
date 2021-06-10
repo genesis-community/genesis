@@ -16,10 +16,10 @@ sub new {
 		if ($class ne __PACKAGE__);
 
 	if (!%config || !defined($config{type}) || $config{type} eq "genesis_community") {
-		use Genesis::Kit::Provider::GenesisCommunity;
+		require Genesis::Kit::Provider::GenesisCommunity;
 		return Genesis::Kit::Provider::GenesisCommunity->new(%config);
 	} elsif ($config{type} eq 'github') {
-		use Genesis::Kit::Provider::Github;
+		require Genesis::Kit::Provider::Github;
 		return Genesis::Kit::Provider::Github->new(%config);
 	} else {
 		bail("Unknown kit provider type '$config{type}'");
@@ -48,10 +48,10 @@ sub init {
 		# TODO: Allow other options to update/override config values
 		return $provider;
 	} elsif (!defined($opts{'kit-provider'}) || $opts{'kit-provider'} eq "genesis-community") {
-		use Genesis::Kit::Provider::GenesisCommunity;
+		require Genesis::Kit::Provider::GenesisCommunity;
 		return Genesis::Kit::Provider::GenesisCommunity->init(%opts);
 	} elsif ($opts{'kit-provider'} eq 'github') {
-		use Genesis::Kit::Provider::Github;
+		require Genesis::Kit::Provider::Github;
 		return Genesis::Kit::Provider::Github->init(%opts);
 	} else {
 		bail("Unknown kit provider type '$opts{'kit-provider'}'");
@@ -71,8 +71,9 @@ sub opts_help {
 	my ($class,%config) = @_;
 	bug("%s->new is calling %s->new illegally",$class, __PACKAGE__)
 		if ($class ne __PACKAGE__);
-	use Genesis::Kit::Provider::GenesisCommunity;
-	use Genesis::Kit::Provider::Github;
+
+	require Genesis::Kit::Provider::GenesisCommunity;
+	require Genesis::Kit::Provider::Github;
 
 	$config{type_default_msg} ||= '(optional, defaults to "genesis-community")';
 	$config{valid_types} ||= [qw(genesis-community github)];
@@ -115,10 +116,10 @@ sub parse_opts {
 
 	my @extra_opts = ();
 	if (!$type || $type eq 'genesis-community') {
-		use Genesis::Kit::Provider::GenesisCommunity;
+		require Genesis::Kit::Provider::GenesisCommunity;
 		@extra_opts = Genesis::Kit::Provider::GenesisCommunity->opts();
 	} elsif ($type eq 'github') {
-		use Genesis::Kit::Provider::Github;
+		require Genesis::Kit::Provider::Github;
 		@extra_opts =  Genesis::Kit::Provider::Github->opts();
 	} else {
 		bail("Unknown kit provider type '$type'");
