@@ -247,7 +247,7 @@ sub run_hook {
 # }}}
 # metadata - {{{
 sub metadata {
-	my ($self) = @_;
+	my ($self,@keys) = @_;
 	if (! $self->{__metadata}) {
 		if (! -f $self->path('kit.yml')) {
 			debug "#Y[WARNING] Kit %s is missing it's kit.yml file -- cannot load metadata", $self->name;
@@ -265,7 +265,9 @@ sub metadata {
 				@kit_files
 		));
 	}
-	return $self->{__metadata};
+	return $self->{__metadata} unless @keys;
+	return $self->{__metadata}->{$keys[0]} if @keys == 1;
+	return get_opts($self->{__metadata}, @keys);
 }
 
 # }}}
@@ -597,4 +599,5 @@ CLI alias and authenticates to the BOSH director, transparently pulling
 secrets from the Vault.
 
 =cut
+
 # vim: fdm=marker:foldlevel=1:noet
