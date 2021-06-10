@@ -1539,7 +1539,7 @@ sub {
 	}
 
 	# check version prereqs
-	$kit->check_prereqs or exit 86;
+	$kit->check_prereqs() or exit 86;
 
 	# create the environment
 	explain("\nSetting up new environment #C{$name} based on kit %s ...", $kit->id);
@@ -1710,7 +1710,7 @@ sub {
 	my ($name, $script, @args) = @_;
 	my $env = Genesis::Top->new('.')->load_env($name)->with_vault();
 
-	$env->kit->check_prereqs
+	$env->kit->check_prereqs($env)
 		or bail "Cannot use the kit specified by %s.\n", $env->name;
 
 	$env->has_hook('addon')
