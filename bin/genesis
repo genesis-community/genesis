@@ -2191,6 +2191,24 @@ Remote and updates supports further options
                         Defaults to show for --updated, not show for others.
 EOF
 sub {
+
+	# Custom "not in a directory" error for list-kits because
+	# we want to be able to mention the subcommand's -r flag, which is
+	# very commonly needed in this situation.
+	my @args = @_;
+	if(!in_repo_dir
+		&& !(
+			grep( /^-r$/, @args )
+			|| grep( /^--remote$/, @args )
+			|| grep( /^-C$/, @args )
+			|| grep( /^--cwd$/, @args )
+		)) {
+		error "#R{GENESIS PRE-REQUISITES CHECKS FAILED!!}";
+		error "The '#B{genesis list-kits}' command needs to be run from a Genesis deployment\n".
+			"repo, or specify one using -C <dir> option. \nAlternatively, specify the -r flag to list available remote kits.";
+		exit 1;
+	}
+
 	my %options;
 	options(\@_, \%options, qw/
 		updates|u
