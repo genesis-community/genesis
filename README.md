@@ -22,7 +22,7 @@ Genesis v2 makes use of Vault as a back-end for storing credentials, most easily
 + managed via the [Vault kit](https://github.com/genesis-community/vault-genesis-kit), and
 the [safe CLI](https://github.com/starkandwayne/safe). Each kit will auto-generate credentials
 where appropriate, ensuring that each environment has unique and secure credentials. Secrets
-can be manually or automatically rotated at the drop of hat with the `genesis secrets` command.
+can be manually or automatically rotated at the drop of hat with the `genesis rotate-secrets` command.
 Kits will define certain credentials as fixed, indicating that they should not be rotated
 under normal circumstances, as that would have ill effects on the deployment (the CF db encryption
 key for example).
