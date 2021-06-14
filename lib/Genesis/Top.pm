@@ -520,8 +520,7 @@ sub _write_config {
 		$vault_skip_validate = $self->config()->{secrets_provider}{insecure} ? "true" : "false";
 	}
 	if ($vault_url) {
-		$vault_info =
-		  <<EOF; # {{{
+		$vault_info = <<EOF; # {{{
 
 secrets_provider:
   url:      "$vault_url"
@@ -531,8 +530,7 @@ EOF
 	}
 	my $kit_info = "";
 	if ($kit_provider && ref($kit_provider) ne "Genesis::Kit::Provider::GenesisCommunity") {
-		$kit_info =
-		  <<EOF; # {{{
+		$kit_info = <<EOF; # {{{
 
 kit_provider:
 EOF

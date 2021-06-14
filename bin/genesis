@@ -538,7 +538,6 @@ sub check_prereqs {
 	$already_checked=1;
 }
 
-
 sub extract_kit_to_dev {
 	my ($top,$file) = @_;
 	my ($out,$rc) = run("tar -ztf \"\$1\" | awk '{print \$NF}' | cut -d'/' -f1 | uniq", $file);

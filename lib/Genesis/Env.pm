@@ -48,10 +48,8 @@ sub new {
 sub load {
 	my ($class,%opts) = @_;
 
-	for (qw(name top)) {
-		bug("No '$_' specified in call to Genesis::Env->load!!")
-			unless $opts{$_};
-	}
+	bug("No '$_' specified in call to Genesis::Env->load!!")
+		for (grep {! $opts{$_}} qw/name top/);
 
 	my $env = $class->new(get_opts(\%opts, qw(name top)));
 	my (@errors, @config_warnings, @deprecations);
@@ -138,10 +136,8 @@ sub from_envvars {
 	bail "Can only assemble environment from environment variables in a kit hook callback"
 		unless envset 'GENESIS_IS_HELPING_YOU';
 
-	for (qw(ENVIRONMENT KIT_NAME KIT_VERSION)) {
-		bug("No 'GENESIS_$_' found in enviornmental variables - cannot assemble environemnt!!")
-			unless $ENV{'GENESIS_'.$_};
-	}
+	bug("No 'GENESIS_$_' found in enviornmental variables - cannot assemble environemnt!!")
+		for (grep {! $ENV{'GENESIS_'.$_}} qw(ENVIRONMENT KIT_NAME KIT_VERSION));
 
 	my $env = $class->new(name => $ENV{GENESIS_ENVIRONMENT}, top => $top);
 	$env->{is_from_envvars} =1;
@@ -192,12 +188,12 @@ sub from_envvars {
 	# Check for v2.7.0 features
 	unless ($env->kit->feature_compatibility("2.7.0")) {
 		bail("#R{[ERROR]} Kit #M{%s} is not compatible with #C{secrets_mount} feature\n".
-				 "        Please upgrade to a newer release or remove params.secrets_mount from #M{%s}",
-				 $env->kit->id, $env->{file})
+		     "        Please upgrade to a newer release or remove params.secrets_mount from #M{%s}",
+		     $env->kit->id, $env->{file})
 			if ($env->secrets_mount ne $env->default_secrets_mount);
 		bail("#R{[ERROR]} Kit #M{%s} is not compatible with #C{exodus_mount} feature\n".
-				 "        Please upgrade to a newer release or remove params.exodus_mount from #M{%s}",
-				 $env->kit->id, $env->{file})
+		     "        Please upgrade to a newer release or remove params.exodus_mount from #M{%s}",
+		     $env->kit->id, $env->{file})
 			if ($env->exodus_mount ne $env->default_exodus_mount);
 	}
 
@@ -236,6 +232,7 @@ sub create {
 	bail("\n#R{[ERROR]} No vault specified or configured.")
 		unless $env->vault;
 
+	# TODO: Remove credhub secrets
 	if (! $env->kit->uses_credhub) {
 		$env->remove_secrets(all => 1) || bail "Cannot continue with existing secrets for this environment";
 	}
@@ -314,21 +311,17 @@ sub _validate_env_name {
 
 ### Instance Methods {{{
 
-# Public Accessors {{{
+# Public Accessors: name, file, kit, top {{{
 sub name   { $_[0]->{name};   }
 sub file   { $_[0]->{file};   }
 sub kit    { $_[0]->{kit}    || bug("Incompletely initialized environment '".$_[0]->name."': no kit specified"); }
 sub top    { $_[0]->{top}    || bug("Incompletely initialized environment '".$_[0]->name."': no top specified"); }
 
 # }}}
-# Delegations {{{
+# Delegations: type, vault, path {{{
 sub type   { $_[0]->top->type; }
 sub vault  { $_[0]->top->vault; }
-sub path {
-	my ($self, @rest) = @_;
-	$self->{top}->path(@rest);
-}
-
+sub path   { shift->top->path(@_); }
 # }}}
 
 # Information Lookup
@@ -366,11 +359,8 @@ sub tmppath {
 # }}}
 # potential_environment_files - list the heirarchal environment files possible for this env {{{
 sub potential_environment_files {
-	my ($self) = @_;
-
-	# ci pipelines need to pull cache for previous envs
-	my $env = $ENV{PREVIOUS_ENV} || '';
-	return $self->relate($env, ".genesis/cached/$env");
+	my $env = $ENV{PREVIOUS_ENV} || ''; # ci pipelines need to pull cache for previous envs
+	return $_[0]->relate($env, ".genesis/cached/$env");
 }
 
 # }}}
@@ -429,9 +419,9 @@ sub relate_by_name {
 	trace("[env $name] in relate(): common $_") for @common;
 	trace("[env $name] in relate(): unique $_") for @unique;
 
-	return wantarray ? (@common, @unique)
-	                 : { common => \@common,
-	                     unique => \@unique };
+	return wantarray
+		? (@common, @unique)
+		: { common => \@common, unique => \@unique };
 }
 
 # }}}
@@ -643,7 +633,7 @@ sub adaptive_merge {
 }
 
 # }}}
-#
+
 # Environment Variables
 # get_environment_variables - returns a hash of all environment variables pertaining to this Genesis::Env object {{{
 sub get_environment_variables {
@@ -735,7 +725,7 @@ sub credhub_connection_env {
 }
 
 # }}}
-#
+
 # Environment Dependencies
 # connect_required_endpoints - ensure external dependencies are reachable {{{
 sub connect_required_endpoints {
@@ -762,6 +752,7 @@ sub with_vault {
 		unless $self->vault;
 	return $self;
 }
+
 # }}}
 # root_ca_path - returns the root_ca_path, if provided by the environment file (env: GENESIS_ROOT_CA_PATH) {{{
 sub root_ca_path {
@@ -770,6 +761,7 @@ sub root_ca_path {
 		$self->{root_ca_path} = $self->lookup('genesis.root_ca_path','');
 		$self->{root_ca_path} =~ s/\/$// if $self->{root_ca_path};
 	}
+
 	return $self->{root_ca_path};
 }
 
@@ -1018,12 +1010,14 @@ sub config_file {
 # }}}
 
 # Legacy non-generic config methods {{{
+# TODO: Remove these
 sub download_cloud_config { $_[0]->download_configs('cloud'); }
 sub use_cloud_config { $_[0]->use_config($_[1],'cloud'); }
 sub cloud_config { return $_[0]->config_file('cloud'); }
 sub download_runtime_config { $_[0]->download_configs('runtime'); }
 sub use_runtime_config { $_[0]->use_config($_[1],'runtime'); }
 sub runtime_config { return $_[0]->config_file('runtime'); }
+
 # }}}
 
 # Kit Components
@@ -1031,8 +1025,7 @@ sub runtime_config { return $_[0]->config_file('runtime'); }
 sub kit_files {
 	my ($self, $absolute) = @_;
 	$absolute = !!$absolute; #booleanify it.
-	$self->{__kit_files}{$absolute} = [$self->kit->source_yaml_files($self, $absolute)]
-		unless $self->{__kit_files}{$absolute};
+	$self->{__kit_files}{$absolute} ||= [$self->kit->source_yaml_files($self, $absolute)];
 	return @{$self->{__kit_files}{$absolute}};
 }
 
@@ -1165,6 +1158,7 @@ sub vars_file {
 # Deployment
 # check - check the environment {{{
 sub check {
+	# TODO: compare to genesis#check_environment
 	my ($self,%opts) = @_;
 
 	my $ok = 1;
