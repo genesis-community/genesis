@@ -630,6 +630,9 @@ offer_environment_editor() {
       __unbound_check=1
     fi
     __file="$GENESIS_ROOT/$GENESIS_ENVIRONMENT.yml"
+    # Shellcheck doesn't know that GENESIS_KIT_VERSION is always supplied.
+    # https://github.com/koalaman/shellcheck/wiki/SC2153
+    # shellcheck disable=SC2153
     __tmpdir="$(mktemp -d)/$GENESIS_KIT_NAME-$GENESIS_KIT_VERSION"
     mkdir -p "$__tmpdir"
     [[ -n $EDITOR ]] || EDITOR="vim"

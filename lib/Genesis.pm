@@ -31,7 +31,7 @@ our @EXPORT = qw/
 
 	csprintf
 	explain waiting_on
-	debug trace dump_var dump_stack
+	debug qtrace trace dump_var dump_stack
 	error bail bug
 
 	vaulted
@@ -220,6 +220,11 @@ sub trace {
 	return unless envset "GENESIS_TRACE";
 	_log("TRACE", csprintf(@_), "Wc");
 	_log("TRACE", _get_scope(1));
+}
+
+sub qtrace {
+	return unless envset "GENESIS_TRACE";
+	_log("TRACE", csprintf(@_), "Wc");
 }
 
 sub dump_var {
@@ -474,21 +479,27 @@ sub run {
 	}
 
 	local %ENV = %ENV; # To get local scope for duration of this call
-	for (keys %{$opts{env} || {}}) {
-		$ENV{$_} = $opts{env}{$_}||"";
-		trace("#M{Setting: }#B{$_}='#C{$ENV{$_}}'");
+	my $tracemsg = "";
+	if (scalar(keys %{$opts{env} || {}})) {
+		$tracemsg = "#M{Setting environment values:}";
+		for (keys %{$opts{env} || {}}) {
+			$ENV{$_} = $opts{env}{$_}||"";
+			$tracemsg .= csprintf("\n#B{$_}='#C{$ENV{$_}}'");
+		}
+		$tracemsg .= "\n\n";
 	}
 	my $shell = $opts{shell} || '/bin/bash';
 	if (!$opts{interactive} && $opts{stderr}) {
 		$prog .= " 2>$opts{stderr}";
 	}
-	trace("#M{From directory:} #C{%s}", Cwd::getcwd);
-	trace("#M{Executing:} `#C{$prog}`%s", ($opts{interactive} ? " #Y{(interactively)}" : ''));
+	$tracemsg .= csprintf("#M{From directory:} #C{%s}\n", Cwd::getcwd);
+	$tracemsg .= csprintf("#M{Executing:} `#C{$prog}`%s", ($opts{interactive} ? " #Y{(interactively)}" : ''));
 	if (@args) {
 		unshift @args, basename($shell);
-		trace("#M{ - with arguments:}");
-		trace("#M{%4s:} '#C{%s}'", $_, $args[$_]) for (1..$#args);
+		$tracemsg .= csprintf("\n#M{ - with arguments:}");
+		$tracemsg .= csprintf("\n#M{%4s:} '#C{%s}'", $_, $args[$_]) for (1..$#args);
 	}
+	trace($tracemsg);
 
 	my @cmd = ($shell, "-c", $prog, @args);
 	my $start_time = gettimeofday();
@@ -501,12 +512,11 @@ sub run {
 		$out =~ s/\s+$//;
 		close $pipe;
 	}
-	trace("command duration: %s", Time::Seconds->new(sprintf ("%0.3f", gettimeofday() - $start_time))->pretty());
+	qtrace("command duration: %s", Time::Seconds->new(sprintf ("%0.3f", gettimeofday() - $start_time))->pretty());
 
 	my $err = slurp($err_file) if ($err_file && -f $err_file);
 	my $rc = $? >>8;
 	if ($rc) {
-		trace("command exited with status %x (rc %d)", $?, $rc);
 		dump_var -1, run_output => $out if (defined($out));
 		dump_var -1, run_stderr => $err if (defined($err));
 		bail("#R{%s} (run failed)%s%s",
@@ -514,16 +524,17 @@ sub run {
 		     defined($err) ? "\n\nSTDERR:\n$err" : '',
 		     defined($out) ? "\n\nSTDOUT:\n$out" : ''
 		) if ($opts{onfailure});
+		trace("command exited with status %x (rc %d)", $?, $rc);
 	} else {
-		trace("command exited #G{0}");
 		if (defined($out)) {
 			if ($out =~ m/[\x00-\x08\x0b-\x0c\x0e\x1f\x7f-\xff]/) {
-				trace "[".length($out)."b of binary data omited from trace]";
+				qtrace "[".length($out)."b of binary data omited from debug]";
 			} else {
 				dump_var -1, run_output => $out;
 			}
 		}
 		dump_var -1, run_stderr => $err if (defined($err));
+		trace("command exited #G{0}");
 	}
 
 	return unless defined(wantarray);
@@ -574,7 +585,7 @@ sub curl {
 	my $status = "";
 	my $status_line = "";
 
-	debug 'Running cURL: `'.'curl -'.$header_opt.'sSL $url '.join(' ',@flags).'`';
+	trace 'Running cURL: `'.'curl -'.$header_opt.'sSL $url '.join(' ',@flags).'`';
 	my ($out, $rc, $err) = run({ stderr => 0 }, 'curl', '-'.$header_opt.'sSL', $url, @flags);
 	return (599, "Error executing curl command", $err) if ($rc);
 

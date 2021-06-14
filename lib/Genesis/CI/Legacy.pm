@@ -695,7 +695,6 @@ sub generate_pipeline_graphviz_source {
 		}
 	}
 
-
 	print $fh "}\n";
 	close $fh;
 	return $out;
