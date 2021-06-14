@@ -365,7 +365,7 @@ sub parse_pipeline {
 			my $E = eval { $top->load_env($env) };
 
 			# required sub-subkeys
-			if ($E && $E->needs_bosh_create_env) {
+			if ($E && $E->use_create_env) {
 				# allowed subkeys for a create-env deploy
 				for (keys %{$p->{pipeline}{boshes}{$env}}) {
 					push @errors, "Unrecognized `pipeline.boshes[$env].$_' key found."
@@ -984,7 +984,7 @@ EOF
 				map {$_ =~ s#^./##; $_} $E->potential_environment_files()
 			);
 		}
-		unless ($E->needs_bosh_create_env) {
+		unless ($E->use_create_env) {
 			print $OUT <<EOF;
 
   - name: ${alias}-cloud-config
@@ -1034,7 +1034,7 @@ EOF
 		# deployments matches the bosh lock for environments being deployed by it.
 		if ($pipeline->{pipeline}{locker}{url}) {
 			my $deployment_suffix = $top->type;
-			print $OUT <<EOF unless ($E->needs_bosh_create_env);
+			print $OUT <<EOF unless ($E->use_create_env);
   - name: ${alias}-bosh-lock
     type: locker
     icon: shield-lock-outline
@@ -1276,7 +1276,7 @@ EOF
         - { get: $alias-changes, trigger: true }
         $notify_cache
 EOF
-			unless ($E->needs_bosh_create_env) {
+			unless ($E->use_create_env) {
 				print $OUT <<EOF;
         - get: $alias-cloud-config
           $tag_yaml
@@ -1369,7 +1369,7 @@ EOF
 EOF
 			# <alias>-bosh-lock is used to prevent the parent bosh from upgrading while we deploy
 			# - not necessary for create-env
-			print $OUT <<EOF unless ($E->needs_bosh_create_env);
+			print $OUT <<EOF unless ($E->use_create_env);
         - put: ${alias}-bosh-lock
           $tag_yaml
           params:
@@ -1390,9 +1390,10 @@ EOF
       do:
 EOF
 		if ($pipeline->{pipeline}{locker}{url}) {
-				# <alias>-bosh-lock is used to prevent the parent bosh from upgrading while we deploy
-				# - not necessary for create-env
-			print $OUT <<EOF unless ($E->needs_bosh_create_env);
+
+			# <alias>-bosh-lock is used to prevent the parent bosh from upgrading while we deploy
+			# - not necessary for create-env
+			print $OUT <<EOF unless ($E->use_create_env);
       - put: ${alias}-bosh-lock
         $tag_yaml
         params:
@@ -1414,7 +1415,7 @@ EOF
 EOF
 		# only add cloud/runtime config on true-triggers, otherwise it goes in notifications
 		# also make sure that we are not deploying with create-env (no cloud/runtime config for that scenario)
-		if (! $E->needs_bosh_create_env && $trigger eq "true") {
+		if (! $E->use_create_env && $trigger eq "true") {
 			print $OUT <<EOF;
         - get: $alias-cloud-config
           $tag_yaml
@@ -1465,7 +1466,7 @@ EOF
 			if $pipeline->{pipeline}{vault}{namespace};
 
 		# don't supply bosh creds if we're create-env, because no one to talk to
-		unless ($E->needs_bosh_create_env) {
+		unless ($E->use_create_env) {
 			print $OUT <<EOF;
             BOSH_ENVIRONMENT:     $pipeline->{pipeline}{boshes}{$env}{url}
             BOSH_CLIENT:          $pipeline->{pipeline}{boshes}{$env}{username}
@@ -1511,8 +1512,9 @@ EOF
         privileged: true
 EOF
 		}
+
 		# CONCOURSE: run optional errands as tasks - non-create-env only (otherwise no bosh to run the errand) {{{
-		unless ($E->needs_bosh_create_env) {
+		unless ($E->use_create_env) {
 			for my $errand_name (@{$pipeline->{pipeline}{errands}}) {
 				print $OUT <<EOF;
         # run errands against the deployment

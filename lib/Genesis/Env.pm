@@ -4,7 +4,8 @@ use warnings;
 use utf8;
 
 use Genesis;
-use Genesis::BOSH;
+use Genesis::BOSH::Director;
+use Genesis::BOSH::CreateEnvProxy;
 use Genesis::UI;
 use Genesis::IO qw/DumpYAML LoadFile/;
 use Genesis::Vault;
@@ -174,8 +175,12 @@ sub from_envvars {
 		if $ENV{GENESIS_REQUESTED_FEATURES};
 
 	# bosh and credhub env overrides
-	$env->{__bosh_target} = $env->{__params}{genesis}{bosh_env} = $ENV{GENESIS_BOSH_ENVIRONMENT}
-		if ($ENV{GENESIS_BOSH_ENVIRONMENT});
+	if (envset 'GENESIS_USE_CREATE_ENV') {
+		$env->{__params}{genesis}{use_create_env} = 1;
+		$env->{__bosh} = Genesis::BOSH::CreateEnvProxy->new();
+	} else {
+		$env->{__bosh} = Genesis::BOSH::Director->from_envvars();
+	}
 	$env->{__params}{genesis}{credhub_env} = $ENV{GENESIS_CREDHUB_EXODUS_SOURCE}
 		if ($ENV{GENESIS_CREDHUB_EXODUS_SOURCE});
 
@@ -235,24 +240,14 @@ sub create {
 		$env->remove_secrets(all => 1) || bail "Cannot continue with existing secrets for this environment";
 	}
 
-	# BOSH configs
-	my $bosh_target;
-	if ($env->kit->name =~ /^bosh$/) {
-		# bosh envs are assumed to be create-env unless -e is specified
-		$bosh_target = $ENV{GENESIS_BOSH_ENVIRONMENT};
-	} else {
-		$bosh_target = $ENV{GENESIS_BOSH_ENVIRONMENT} || $opts{name};
-	}
-
 	# bosh and credhub env overrides
 	$env->{__params}{genesis}{bosh_env} = $ENV{GENESIS_BOSH_ENVIRONMENT}
 		if ($ENV{GENESIS_BOSH_ENVIRONMENT});
 	$env->{__params}{genesis}{credhub_env} = $ENV{GENESIS_CREDHUB_EXODUS_SOURCE}
 		if ($ENV{GENESIS_CREDHUB_EXODUS_SOURCE});
 
-	$env->download_required_configs('new') if ($bosh_target);
-
 	## initialize the environment
+	$env->download_required_configs('new');
 	if ($env->has_hook('new')) {
 		$env->run_hook('new');
 	} else {
@@ -337,27 +332,27 @@ sub path {
 # }}}
 
 # Information Lookup
-# deployment - returns the deployment name (env name + env type) {{{
-sub deployment {
-	my ($self) = @_;
-	unless ($self->{__deployment}) {
-		if ($self->defines('params.name')) {
-			$self->{__deployment}=$self->lookup('params.name');
-		} else {
-			$self->{__deployment}=$self->lookup(['genesis.env','params.env']) . '-' . $self->{top}->type;
-		}
-	}
-	return $self->{__deployment}
+# deployment_name - returns the deployment name (env name + env type) {{{
+sub deployment_name {
+	$_[0]->_memoize('__deployment', sub {
+		my $self = shift;
+		sprintf('%s-%s',$self->name,$self->top->type);
+	});
 }
 
 # }}}
-# needs_bosh_create_env - true if the deployment uses bosh create-env {{{
-sub needs_bosh_create_env {
-	my ($self) = @_;
+# is_bosh_director - returns true if the environment represents a BOSH director deployment {{{
+sub is_bosh_director {
+	my $self = shift;
+	$self->kit->name eq 'bosh' || $self->kit->metadata->{is_bosh_director};
+}
 
-	# needs_bosh_create_env doesn't use derived features, so check the explicit features
-	my $features = scalar($self->lookup(['kit.features', 'kit.subkits'], []));
-	return scalar(grep {$_ =~ /^(proto|bosh-init|create-env)$/} @$features) ? 1 : 0;
+# }}}
+# use_create_env - true if the deployment uses bosh create-env {{{
+sub use_create_env {
+	my ($self) = @_;
+	# Currently, we only support create-env deployments for bosh deployments.
+  return $self->is_bosh_director && ! defined($self->lookup('genesis.bosh_env',undef));
 }
 
 # }}}
@@ -694,19 +689,13 @@ sub get_environment_variables {
 	$env{$_} = $credhub_env{$_} for keys %credhub_env;
 
 	# BOSH support
-	if ($hook ne "features") {
-		if ($self->needs_bosh_create_env) {
-			$env{GENESIS_USE_CREATE_ENV} = 'yes';
-		} else {
-			$env{GENESIS_BOSH_ENVIRONMENT} =
-			$env{BOSH_ALIAS} = scalar $self->lookup_bosh_target;
-			my $bosh = Genesis::BOSH->environment_variables($env{BOSH_ALIAS});
-			$env{$_} = $bosh->{$_} for (keys %$bosh);
-			$env{BOSH_DEPLOYMENT} = sprintf("%s-%s", $self->name, $self->type);
-		}
+	$env{BOSH_ALIAS} = $self->bosh_env;
+	if ($self->{__bosh} || grep {$_ eq 'bosh'} ($self->kit->required_connectivity($hook))) {
+		my %bosh_env = $self->bosh->environment_variables;
+		$env{$_} = $bosh_env{$_} for keys %bosh_env;
 	}
+	$env{GENESIS_USE_CREATE_ENV} = 1 if $self->use_create_env;
 
-	$env{GENESIS_ENV_ROOT_CA_PATH} = $self->root_ca_path;
 	return %env
 }
 
@@ -866,58 +855,42 @@ sub ci_base {
 # Environment Dependencies - BOSH and BOSH Config Files
 # with_bosh - ensure the BOSH director is available and authenticated {{{
 sub with_bosh {
+	$_[0]->bosh->connect_and_validate;
+	$_[0];
+}
+
+# }}}
+# bosh_env - return the bosh_env for this environment {{{
+sub bosh_env {
 	my $self = shift;
-	$self->bosh_target;
-	return $self;
+	scalar($self->lookup('genesis.bosh_env', $self->is_bosh_director ? undef : $self->{name}));
 }
 
 # }}}
-# bosh_target - return the bosh_target for this environment {{{
-sub bosh_target {
-	my ($self) = @_;
-	return undef if $self->needs_bosh_create_env;
-
-	unless ($self->{__bosh_target}) {
-		my ($bosh, $source) = $self->lookup_bosh_target;
-		Genesis::BOSH->ping($bosh)
-			or bail("\n#R{[ERROR]} Could not connect to BOSH Director '#M{$bosh}'\n  - specified via $source\n");
-		$self->{__bosh_target} = $bosh;
-	}
-
-	return $self->{__bosh_target};
+# bosh - the Genesis::BOSH::Director (or ::CreateEnvProxy) associated with this environment {{{
+sub bosh {
+	scalar $_[0]->_memoize('__bosh', sub {
+		my $self = shift;
+		return Genesis::BOSH::CreateEnvProxy->new($self) if $self->use_create_env;
+		my ($bosh_alias,$bosh_dep_type) = split('/', $self->bosh_env);
+		debug "HERE";
+		my $bosh = Genesis::BOSH::Director->from_exodus(
+			$bosh_alias,
+			vault => $self->vault,
+			exodus_mount => $self->exodus_mount,
+			bosh_deployment_type => $bosh_dep_type,
+			deployment => $self->deployment_name,
+		) || Genesis::BOSH::Director->from_alias(
+			$bosh_alias,
+			deployment => $self->deployment_name
+		);
+		bail("#R{[ERROR]} Could not find BOSH director #M{%s}", $bosh_alias)
+			unless $bosh;
+		return $bosh;
+	});
 }
 
-# }}}
-# lookup_bosh_target - determine the bosh target alias for this environment {{{
-sub lookup_bosh_target {
-	my ($self) = @_;
-	return undef if $self->needs_bosh_create_env;
-	unless ($self->{bosh_env}) {
-		my ($bosh, $source,$key);
-		if ($bosh = $ENV{GENESIS_BOSH_ENVIRONMENT}) {
-				$source = "GENESIS_BOSH_ENVIRONMENT environment variable";
-
-		} elsif (($bosh,$key) = $self->lookup(['genesis.bosh_env','params.bosh','genesis.env','params.env'])) {
-				$source = "$key in $self->{name} environment file";
-
-		} else {
-			die "Could not find the 'genesis.bosh_env', 'params.bosh', 'genesis.env' or 'params.env' key in $self->{name} environment file!\n";
-		}
-
-		# Check for v2.7.0 features
-		if ($source =~ 'params.bosh' && $self->kit->feature_compatibility("2.7.0") && !in_callback && ! envset("GENESIS_LEGACY")) {
-			error("\n#R{[WARNING]} Kit #M{%s} is built for Genesis 2.7.0 or higher, which requires BOSH\n" .
-						"          environment to be specified under #m{genesis.bosh_env} in your environment file\n".
-						"          but #C{%s} is using #m{params.bosh}.  Please update your environment file as this\n".
-						"          legacy support will be removed in a later version of Genesis\n",
-						$self->kit->id, $self->name );
-		}
-		$self->{bosh_env} = $bosh;
-		$self->{bosh_env_src} = $source;
-	}
-	return wantarray ? ($self->{bosh_env}, $self->{bosh_env_src}) : $self->{bosh_env};
-}
-# }}}
+#}}}
 
 # Config Management
 # configs - return the list of configs being used by this environment. {{{
@@ -933,14 +906,39 @@ sub configs {
 }
 
 # }}}
-# download_required_configs - determine what BOSH configs are needed and download them {{{
+# required_configs - determine what BOSH configs are needed {{{
+sub required_configs {
+	my ($self, @hooks) = @_;
+	return () if $self->use_create_env;
+	my @deploy_hooks = $self->_memoize('__deploy_hooks', sub {
+		my $self = shift;
+		my @h = qw/blueprint check manifest/;
+		push @h, grep {$self->kit->has_hook($_)} qw(pre-deploy post-deploy);
+	});
+	my @expanded_hooks;
+	push(@expanded_hooks, ($_ eq 'deploy' ? @deploy_hooks : $_)) for (@hooks);
+	return $self->kit->required_configs(uniq(@expanded_hooks));
+}
+
+# }}}
+# missing_required_configs - determine what BOSH configs are missing {{{
+sub missing_required_configs {
+	my ($self, @hooks) = @_;
+	return grep {!$self->has_config($_)} $self->required_configs(@hooks);
+}
+
+# }}}
+# has_required_configs - determine what BOSH configs are needed {{{
+sub has_required_configs {
+	my ($self, @hooks) = @_;
+	return scalar($self->missing_required_configs(@hooks)) == 0;
+}
+
+# }}}
+# download_required_configs - determzoine what BOSH configs are needed and download them {{{
 sub download_required_configs {
 	my ($self, @hooks) = @_;
-	return $self if $self->needs_bosh_create_env;
-	my @configs;
-	for ($self->kit->required_configs(@hooks)) {
-		push(@configs, $_) unless $self->config_file($_);
-	}
+	my @configs = $self->missing_required_configs(@hooks);
 	$self->with_bosh->download_configs(@configs) if @configs;
 	return $self
 }
@@ -949,10 +947,9 @@ sub download_required_configs {
 # download_configs - download the specified BOSH configs from the director {{{
 sub download_configs {
 	my ($self, @configs) = @_;
-	my $director = $self->bosh_target;
 	@configs = qw/cloud runtime/ unless @configs;
 
-	explain STDERR "\nDownloading configs from '#M{$director}' BOSH director...";
+	explain STDERR "Downloading configs from #M{%s} BOSH director...", $self->bosh->{alias};
 	my $err;
 	for (@configs) {
 		my $file = "$self->{__tmp}/$_.yml";
@@ -960,7 +957,7 @@ sub download_configs {
 		$name ||= '*';
 		my $label = $name eq "*" ? "all $type configs" : $name eq "default" ? "$type config" : "$type config '$name'";
 		waiting_on STDERR bullet('empty',$label."...", inline=>1, box => 1);
-		my $downloaded = eval {Genesis::BOSH->download_config($director,$file,$type,$name)};
+		my $downloaded = eval {$self->with_bosh->bosh->download_config($file,$type,$name)};
 		if ($@) {
 			$err = $@;
 			explain STDERR "\r".bullet('bad',$label.join("\n      ", ('...failed!',"",split("\n",$err),"")), box => 1, inline => 1);
@@ -973,9 +970,12 @@ sub download_configs {
 			}
 		}
 	}
+	explain STDERR "";
 
-	bail "#R{[ERROR]} Could not fetch requested configs from ".$self->bosh_target."\n"
-	  if $err;
+	bail(
+		"#R{[ERROR]} Could not fetch requested configs from #M{%s} BOSH director at #c{%s}\n",
+		$self->bosh->{alias}, $self->bosh->{url}
+	) if $err;
 	return $self;
 }
 
@@ -993,6 +993,13 @@ sub use_config {
 	$self->{_configs}{$label} = $file;
 	$ENV{$env_var} = $file;
 	return $self;
+}
+
+# }}}
+# has_config - determine if the environment has the specific config file set {{{
+sub has_config {
+	my ($self, $type, $name) = @_;
+	!!$self->config_file($type,$name);
 }
 
 # }}}
@@ -1081,13 +1088,11 @@ sub manifest {
 	trace "[env $self->{name}] in manifest(): Redact %s", defined($opts{redact}) ? "'$opts{redact}'" : '#C{(undef)}';
 	trace "[env $self->{name}] in manifest(): Prune: %s", defined($opts{prune}) ? "'$opts{prune}'" : '#C{(undef)}';
 	$opts{prune} = 1 unless defined $opts{prune};
-
-
 	my (undef, $path) = $self->_manifest(get_opts(\%opts, qw/no_warnings partial redact/));
+
 	if ($opts{prune}) {
 		my @prune = qw/meta pipeline params bosh-variables kit genesis exodus compilation/;
-
-		if (!$self->needs_bosh_create_env) {
+		if (!$self->use_create_env) {
 			# bosh create-env needs these, so we only prune them
 			# when we are deploying via `bosh deploy`.
 			push(@prune, qw( resource_pools vm_types
@@ -1180,22 +1185,20 @@ sub check {
 	}
 
 	if ($ok) {
-		if ($self->needs_bosh_create_env || $self->cloud_config) {
-			if (!exists($opts{check_manifest}) || $opts{check_manifest}) {
-				explain STDERR "\n[#M{%s}] running manifest viability checks...", $self->name;
-				$self->manifest or $ok = 0;
-			}
-		} else {
-			explain STDERR "\n[#M{%s}] #Y{No cloud config provided - can't check manifest viability}", $self->name;
+		if ($self->missing_required_configs('manifest')) {
+			explain STDERR "[#M{%s}] #Y{Required BOSH configs not provided - can't check manifest viability}", $self->name;
+		} elsif (!exists($opts{check_manifest}) || $opts{check_manifest}) {
+			explain STDERR "[#M{%s}] running manifest viability checks...", $self->name;
+			$self->manifest or $ok = 0;
 		}
 	}
 
 	# TODO: secrets check for Credhub (post manifest generation)
 
-	if ($ok && (!exists($opts{check_stemcells}) || $opts{check_stemcells}) && !$self->needs_bosh_create_env) {
+	if ($ok && (!exists($opts{check_stemcells}) || $opts{check_stemcells}) && !$self->use_create_env) {
 
 		explain STDERR "\n[#M{%s}] running stemcell checks...", $self->name;
-		my @stemcells = Genesis::BOSH->stemcells($self->bosh_target);
+		my @stemcells = $self->bosh->stemcells;
 		my $required = $self->manifest_lookup('stemcells');
 		my @missing;
 		for my $stemcell_info (@$required) {
@@ -1241,7 +1244,7 @@ sub check {
 sub deploy {
 	my ($self, %opts) = @_;
 
-	unless ($self->needs_bosh_create_env) {
+	unless ($self->use_create_env) {
 		my @hooks = qw(blueprint manifest check);
 		push @hooks, grep {$self->kit->has_hook($_)} qw(pre-deploy post-deploy);
 		$self->download_required_configs(@hooks);
@@ -1272,12 +1275,16 @@ sub deploy {
 	copy_or_fail($self->vars_file('redacted'), $vars_file) if ($self->vars_file('redacted'));
 
 	# DEPLOY!!!
-	if ($self->needs_bosh_create_env) {
+	if ($self->use_create_env) {
 		debug("deploying this environment via `bosh create-env`, locally");
-		$ok = Genesis::BOSH->create_env(
+		my @bosh_opts;
+		push @bosh_opts, "--$_"             for grep { $opts{$_} } qw/recreate skip-drain/;
+		$ok = $self->bosh->create_env(
 			"$self->{__tmp}/manifest.yml",
 			vars_file => $self->vars_file,
-			state => $self->path(".genesis/manifests/$self->{name}-state.yml"));
+			state => $self->path(".genesis/manifests/$self->{name}-state.yml"),
+			store => $self->kit->secret_store eq 'credhub' ? $self->path(".genesis/manifests/$self->{name}-store.json") : undef
+		);
 
 	} else {
 		my @bosh_opts;
@@ -1287,12 +1294,11 @@ sub deploy {
 		push @bosh_opts, "--$_=$opts{$_}"   for grep { defined $opts{$_} } qw/canaries max-in-flight/;
 
 		debug("deploying this environment to our BOSH director");
-		$ok = Genesis::BOSH->deploy(
-			$self->bosh_target,
+		$ok = $self->bosh->deploy(
+			"$self->{__tmp}/manifest.yml",
 			vars_file => $self->vars_file,
-			manifest   => "$self->{__tmp}/manifest.yml",
-			deployment => $self->deployment,
-			flags      => \@bosh_opts);
+			flags      => \@bosh_opts
+		);
 	}
 
 	# Don't do post-deploy stuff if just doing a dry run
@@ -1327,9 +1333,10 @@ sub deploy {
 	my $exodus = $self->exodus;
 
 	$exodus->{manifest_sha1} = digest_file_hex($manifest_file, 'SHA-1');
-	$exodus->{bosh} = $self->bosh_target || "(none)";
+	$exodus->{bosh} = $self->bosh->{alias} || "(none)";
+	$exodus->{is_bosh} = $self->is_bosh_director?1:0;
 	debug("setting exodus data in the Vault, for use later by other deployments");
-	$ok = $self->vault->query(
+	$ok = $self->vault->authenticate->query(
 		{ onfailure => "#R{Failed to export $self->{name} metadata.}\n".
 		               "Deployment was still successful, but metadata used by addons and other kits is outdated.\n".
 		               "This may be resolved by deploying again, or it may be a permissions issue while trying to\n".
@@ -1771,7 +1778,7 @@ sub _yaml_files {
 	my $type   = $self->{top}->type;
 
 	my @cc;
-	if ($self->needs_bosh_create_env) {
+	if ($self->use_create_env) {
 		trace("[env $self->{name}] in_yaml_files(): IS a create-env, skipping cloud-config");
 	} elsif ($partial) {
 		trace("[env $self->{name}] in_yaml_files(): skipping eval, no need for cloud-config");
@@ -2348,7 +2355,7 @@ specified in its C<kit.features> parameter.
 Returns true if this environment has activated the feature C<$x> by way of
 C<kit.features>.
 
-=head2 needs_bosh_create_env()
+=head2 use_create_env()
 
 Returns true if this environment (based on its activated features) needs to
 be deployed via a C<bosh create-env> run, instead of the more normal C<bosh
