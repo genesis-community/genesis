@@ -907,6 +907,11 @@ sub {
 		$kit = $top->local_kit_version($name, $version);
 	}
 
+	if(!(defined $kit)) {
+		error "Kit not found: #C{%s}", $name;
+		exit 1;
+	}
+
 	error "Displaying manual for kit #C{%s}...", $kit->id;
 
 	my $man = $kit->path('MANUAL.md');
