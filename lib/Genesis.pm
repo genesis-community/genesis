@@ -47,7 +47,7 @@ our @EXPORT = qw/
 	strfuzzytime
 	ordify
 
-	run lines bosh curl
+	run lines curl
 	read_json_from
 	safe_path_exists
 

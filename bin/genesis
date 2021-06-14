@@ -32,6 +32,8 @@ use Genesis::Env;
 use Genesis::Kit;
 use Genesis::Kit::Compiler;
 use Genesis::Kit::Provider;
+use Genesis::BOSH;
+use Genesis::BOSH::Director;
 use Genesis::CI::Legacy; # but we'd rather not...
 
 $Genesis::VERSION = "(development)";
@@ -498,7 +500,8 @@ sub check_prereqs {
 	my @errors = grep {$_} map {check_version(@$_)} @$reqs;
 
 	# check that we has a bosh (v2)
-	push @errors, check_bosh_version($bosh_min_version);
+	eval {Genesis::BOSH->command($bosh_min_version)};
+	push @errors, $@ if $@;;
 
 	if (command_scope(\%conditions, ['repo','env'])) {
 		push @errors, csprintf(
@@ -604,11 +607,15 @@ $REPO_USAGE
   -e, --bosh-env    Which BOSH environment (aka director) to use.  If not
                     specified, it will use the value in genesis.bosh or
                     genesis.env in that order.  Can also be provided using
-                    either \$GENESIS_BOSH_ENVIRONMENT or \$BOSH_ENVIRONMENT env
-                    variables.
+                    either \$GENESIS_BOSH_ENVIRONMENT env variables.
 
-                    For legacy reasons, --environment is also supported for
-                    this option, but is deprecated.
+                    As of v2.8.0, the BOSH director information is read from
+                    Exodus data instead of the local .bosh/config, and as such,
+                    expect the deployment type of the bosh director to be
+                    'bosh'.  If this is not the case, you can specify the
+                    deployment type after the deployment name, separated by a
+                    '/' (ie c-aws-myenv/new-bosh).  This will inform the system
+                    where to find the Exodus data.
 
   -c, --config <s>  Specify a YAML file to be used as a config instead of
                     fetching it from the BOSH director.  This option can be
@@ -1692,7 +1699,7 @@ sub {
 		delete $options{yes};
 	}
 
-	if ($env->needs_bosh_create_env) {
+	if ($env->use_create_env) {
 		my @bad_opts = grep {$options{$_}} (qw/fix recreate dry-run/);
 		bail(
 			"#R{[ERROR]} The following options cannot be specified for #M{create-env}: %s",
@@ -1701,11 +1708,14 @@ sub {
 	}
 
 	explain "Preparing to deploy #C{%s}:\n  - based on kit #c{%s}", $env->name, $env->kit->id;
-	if ($env->needs_bosh_create_env) {
+	if ($env->use_create_env) {
 		explain "  - as a #M{create-env} deployment\n";
 	} else {
-		explain "  - to '#M{%s}' BOSH director.\n", scalar($env->lookup_bosh_target);
+		explain "  - to '#M{%s}' BOSH director at #c{%s}.\n", $env->bosh->{alias}, $env->bosh->{url};
 	}
+	$env
+		->with_bosh
+		->download_required_configs('deploy');
 
 	my $ok = $env->deploy(%options);
 	exit ($ok ? 0 : 1);
@@ -2380,7 +2390,7 @@ sub {
 		->load_env($_[0])
 		->with_vault();
 
-	if ($env->needs_bosh_create_env && scalar($env->configs)) {
+	if ($env->use_create_env && scalar($env->configs)) {
 		error(
 			"#Y{[WARNING]} The provided configs will be ignored, as create-env environments do\n".
 			"          not use them:\n".
@@ -2757,7 +2767,7 @@ sub {
 	pushd $workdir;
 	my $env = Genesis::Top->new('.')->load_env($ENV{CURRENT_ENV})->with_vault();
 
-	if ($env->needs_bosh_create_env) {
+	if ($env->use_create_env) {
 		# Make sure that state is up to date. Keep environment changes local to this scope.
 		my $tmp = workdir;
 		my $git_env = get_git_env($tmp);
@@ -2768,13 +2778,12 @@ sub {
 			$ENV{GIT_BRANCH}, $ENV{CURRENT_ENV});
 	}
 
-	push(@undefined, grep { !$ENV{$_} }
-		qw/BOSH_ENVIRONMENT BOSH_CA_CERT
-			 BOSH_CLIENT BOSH_CLIENT_SECRET/) unless $env->needs_bosh_create_env;
+	push(@undefined, grep { !$ENV{$_} } qw/BOSH_ENVIRONMENT BOSH_CA_CERT BOSH_CLIENT BOSH_CLIENT_SECRET/)
+		unless $env->use_create_env;
 	bail_on_missing_pipeline_environment_variables(@undefined);
 
 	explain "Preparing to deploy #C{%s}:\n  - based on kit #c{%s}", $env->name, $env->kit->id;
-	if ($env->needs_bosh_create_env) {
+	if ($env->use_create_env) {
 		explain "  - as a #M{create-env} deployment\n";
 	} else {
 		explain "  - to '#M{%s}' BOSH director.\n", scalar($env->lookup_bosh_target);
@@ -2783,13 +2792,15 @@ sub {
 
 	my $result;
 	eval {
-		$result = $env->deploy(redact => !envset('CI_NO_REDACT'));
+		$result = $env->with_bosh
+		              ->download_required_configs('deploy')
+		              ->deploy(redact => !envset('CI_NO_REDACT'));
 	};
 
 	if ($@ || !$result) {
 		error "#R{Deployment failed!}\n%s", $@ || "";
 		# Make sure to commit the state file in the case of failure
-		if ($env->needs_bosh_create_env) {
+		if ($env->use_create_env) {
 			popd;
 			commit_changes(
 				$ENV{WORKING_DIR}, $ENV{OUT_DIR}, $ENV{GIT_BRANCH},
@@ -2852,7 +2863,7 @@ sub {
 	$workdir.="/$ENV{GIT_GENESIS_ROOT}" if (defined($ENV{GIT_GENESIS_ROOT}) && $ENV{GIT_GENESIS_ROOT} ne "");
 	pushd $workdir;
 	my $env = Genesis::Top->new('.')->load_env($ENV{CURRENT_ENV})->with_vault();
-	if ($env->needs_bosh_create_env) {
+	if ($env->use_create_env) {
 		printf "Proto-BOSH environments do not contain a record of how they were last\n".
 					 "deployed, so no changes can be calculated and displayed.";
 		exit 0;
@@ -3046,8 +3057,7 @@ sub {
 	bail_on_missing_pipeline_environment_variables(@undefined);
 
 	my $env = Genesis::Top->new('.')->load_env($ENV{CURRENT_ENV})->with_vault()->with_bosh();
-	Genesis::BOSH->alias(scalar $env->lookup_bosh_target);
-	Genesis::BOSH->run_errand($env->bosh_target, $env->deployment, $ENV{ERRAND_NAME});
+	$env->bosh->run_errand($ENV{ERRAND_NAME});
 	exit 0;
 });
 # }}}

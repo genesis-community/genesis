@@ -4,7 +4,6 @@ use warnings;
 
 use Genesis;
 use Genesis::Helpers;
-use Genesis::BOSH;
 
 ### Class Methods {{{
 
