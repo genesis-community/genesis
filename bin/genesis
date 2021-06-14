@@ -1626,17 +1626,24 @@ command("deploy", {scope => 'env'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis deploy <options> env-name[.yml]
 
+
 OPTIONS
 $GLOBAL_USAGE
+
+Unless specified, the following options don't apply when deploying a create-
+env environment.
+
   -y, --yes              Do not ask any questions, assume 'y' for any that would
                          normally be asked.  Allows automation to deploy without
                          requiring human intervention or expect-style scripting.
+                         (Also valid for create-env environments)
 
       --[no-]redact      Determines if values are shown on the diff output.  By
                          default, the manifest will be redacted unless being
                          output to the live console.
       --skip-drain xxx   Skip running drain scripts for specific instance group.
-                         Can be specified multiple times.
+                         Can be specified multiple times. No instance group
+                         needs to be specified for create-env environments.
 
       --canaries #       Override the default number of canary VMs per instance
                          group.
@@ -1652,7 +1659,7 @@ Can specify one of the follow three:
 
       --recreate         Recreate all VMs instead of just applying changes to them.
                          This requires the VMs to be responsive; use --fix if they
-                         are not.
+                         are not. (Also valid for create-env environments)
 
       --fix              Recreate unresponsive VMs instead of raising an error.
 
