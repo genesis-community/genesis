@@ -25,3 +25,8 @@
   wrong options were set when attempting it.
 
 * Improve `genesis kit-provider -v` status output
+
+* Improve `genesis list-kits` hint to include -r flag.
+
+* Fix error when calling `genesis man` on a kit that does not exist.
+
