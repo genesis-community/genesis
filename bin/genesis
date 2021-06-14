@@ -849,6 +849,7 @@ $BASE_USAGE
   #G{remove-secrets}    Remove credentials (passwords, keys, etc.).
   #G{manifest}          Generate a redacted BOSH deployment manifest for an environment.
   #G{deploy}            Generate a real manifest using Vault + Cloud Config, and deploy it to BOSH.
+  #G{bosh}              Run a BOSH cli for the specific environment.
   #G{do}                Run an addon script provided by the Kit.  Try `do list`
   embed             Embed this version of Genesis into the current Genesis deployment repository.
   #C{update}            Downloads a newer version of Genesis or checks if one is available.
@@ -1706,6 +1707,67 @@ sub {
 
 	my $ok = $env->deploy(%options);
 	exit ($ok ? 0 : 1);
+});
+# }}}
+# bosh - run a bosh command against the BOSH director for the specified environment
+
+command("bosh", {scope => 'env'}, <<EOF,
+genesis v$Genesis::VERSION$Genesis::BUILD
+USAGE: genesis bosh [<options>] env-name[.yml] -- <bosh command and options>
+
+Runs the specified bosh command and options, without the need to specify the director or deployment name.
+
+OPTIONS
+$GLOBAL_USAGE
+  -d, --director         The specified environment is the desired BOSH director
+                         to target, and there is no associated deployment.
+                         Without this option, it will target the BOSH director
+                         used to deploy this environment, with the environment
+                         being the associated deployment.
+      --envs             Return an eval-able export of BOSH environment variables
+                         that will enable the bosh cli to target the desired
+                         deployment and associated BOSH director.
+
+EOF
+sub {
+	my %options = (redact => ! -t STDOUT);
+	options(\@_, \%options, qw/
+		director|d
+		envs
+	/);
+	usage unless @_;
+	my $env = Genesis::Top->new('.')->load_env(shift)->with_vault();
+
+	my $bosh;
+	if ($options{director}) {
+		my $exodus_data = eval {$env->vault->get($env->exodus_base)};
+		if ($exodus_data->{url} && $exodus_data->{admin_password}) {
+			$bosh = Genesis::BOSH::Director->from_exodus($env->name, exodus_data => $exodus_data);
+		} else {
+			$bosh = Genesis::BOSH::Director->from_alias($env->name);
+		}
+	} else {
+		bail("#R{[ERROR]} Environment %s is a 'create-env' environment, so it does\n".
+				 "			not have an associated BOSH Director.  Please use the #y{--director} option\n".
+				 "			if you are trying to target this environment for the BOSH director",
+				 $env->name
+		) if ($env->use_create_env);
+		$bosh = $env->bosh;
+	}
+	if ($options{envs}) {
+		my %bosh_envs = $bosh->environment_variables
+			unless in_controlling_terminal;
+		for (keys %bosh_envs) {
+			(my $escaped_value = $bosh_envs{$_}||"") =~ s/"/"\\""/g;
+			#$escaped_value =~ s/\n/\\/g;
+			explain 'export %s="%s"', $_, $escaped_value;
+		}
+		explain STDERR "Exported environmental variables for BOSH director %s", $bosh->{alias};
+		exit 0;
+	} else {
+		my (undef, $rc) = $bosh->execute({interactive => 1}, @_);
+		exit $rc;
+	}
 });
 # }}}
 # genesis do - run a kit addon {{{
