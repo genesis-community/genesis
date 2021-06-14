@@ -366,15 +366,15 @@ sub potential_environment_files {
 # }}}
 # actual_environment_files - list the heirarchal environment files that exist for this env {{{
 sub actual_environment_files {
-	my ($self) = @_;
-	unless ($self->{_actual_files}) {
+	my $ref = $_[0]->_memoize('__actual_files', sub {
+		my $self = shift;
 		my @files;
 		for my $file (grep {-f $self->path($_)} $self->potential_environment_files) {
 			push( @files, $self->_genesis_inherits($file, @files),$file);
 		};
-		$self->{_actual_files} = \@files;
-	}
-	return @{$self->{_actual_files}};
+		return \@files;
+	});
+	return @$ref;
 }
 
 # }}}
@@ -456,8 +456,8 @@ sub has_feature {
 # }}}
 # params - get all the values from the hierarchal environment. {{{
 sub params {
-	my ($self) = @_;
-	if (!$self->{__params}) {
+	my $ref = $_[0]->_memoize('__params', sub {
+		my ($self) = @_;
 		debug("running spruce merge of environment files, without evaluation, to find parameters");
 		my @merge_files = map { $self->path($_) } $self->actual_environment_files();
 
@@ -474,9 +474,9 @@ sub params {
 			};
 			$out = $self->adaptive_merge({json => 1, env => $env}, @merge_files);
 		}
-		$self->{__params} = load_json($out);
-	}
-	return $self->{__params};
+		load_json($out);
+	});
+	return $ref;
 }
 
 # }}}
