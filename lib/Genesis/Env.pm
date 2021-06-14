@@ -984,7 +984,7 @@ sub download_configs {
 sub use_config {
 	my ($self,$file,$type,$name) = @_;
 	$self->{_configs} ||= {};
-	my $label = $type || 'cloud';
+	my $label = $type ||= 'cloud';
 	my $env_var = "GENESIS_".uc($type)."_CONFIG";
 	if ($name && $name ne '*') {
 		$label .= "\@$name";
@@ -1006,7 +1006,7 @@ sub has_config {
 # config_file - retrieve the path of the local file (provided or downloaded) being used for the named BOSH config {{{
 sub config_file {
 	my ($self, $type, $name) = @_;
-	my $label = $type||'cloud';
+	my $label = $type ||= 'cloud';
 	my $env_var = "GENESIS_".uc($type)."_CONFIG";
 	if ($name && $name ne '*') {
 		$label .= "\@$name";
