@@ -32,7 +32,7 @@ sub new {
 	$opts{file} = "$opts{name}.yml";
 
 	# environment names must be valid.
-	eval { $class->validate_name($opts{name}) }
+	eval { $class->_validate_env_name($opts{name}) }
 		or die "Bad environment name '$opts{name}': $@\n";
 
 	# make sure .genesis is good to go
@@ -284,8 +284,8 @@ sub exists {
 
 ### Private Class Methods {{{
 
-# validate_name - ensure name is valid {{{
-sub validate_name {
+# _validate_env_name - ensure name is valid {{{
+sub _validate_env_name {
 	my ($class, $name) = @_;
 
 	die "names must not be empty.\n"
@@ -2066,7 +2066,7 @@ required.
 
 =head1 CLASS FUNCTIONS
 
-=head2 validate_name($name)
+=head2 _validate_env_name($name)
 
 Validates an environment name, according to the following rules:
 
