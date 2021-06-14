@@ -660,7 +660,7 @@ sub options {
 
 		if ($base_opt_type ne 'REPO_USAGE') {
 			push(@global_spec, (qw/
-				environment|bosh-env|e=s
+				bosh-env|e=s
 				config|c=s@
 				cloud-config|cc=s
 				runtime-config|rc=s/));
@@ -688,9 +688,9 @@ sub options {
 	$ENV{DEBUG}          = 'y' if $trace > 1;
 	$ENV{TRACE}          = 'y' if $trace > 2;
 
-	debug("bosh env: ".($options->{environment} || "(defined in environment file)"));
-	$ENV{GENESIS_BOSH_ENVIRONMENT} = delete($options->{environment})
-		if $options->{environment};
+	debug("bosh env: ".($options->{'bosh-env'} || "(defined in environment file)"));
+	$ENV{GENESIS_BOSH_ENVIRONMENT} = delete($options->{'bosh-env'})
+		if $options->{'bosh-env'};
 
 	if ($options->{cwd}) {
 		my $requested_cwd = delete($options->{cwd});
