@@ -748,6 +748,7 @@ sub connect_required_endpoints {
 sub with_vault {
 	my $self = shift;
 	$ENV{GENESIS_SECRETS_MOUNT} = $self->secrets_mount();
+	$ENV{GENESIS_EXODUS_MOUNT} = $self->exodus_mount();
 	bail("\n#R{[ERROR]} No vault specified or configured.")
 		unless $self->vault;
 	return $self;
