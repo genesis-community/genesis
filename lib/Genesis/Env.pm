@@ -904,7 +904,7 @@ sub configs {
 	} grep {
 		/GENESIS_[A-Z0-9_-]+_CONFIG(_.*)?$/;
 	} keys %ENV;
-	my @configs = sort(uniq(keys %{$_[0]->{_configs}}, @env_configs));
+	my @configs = sort(uniq(keys %{$_[0]->{__configs}}, @env_configs));
 	return @configs # can't just return the above because scalar/list context crazies
 }
 
@@ -986,14 +986,14 @@ sub download_configs {
 # use_config - specify a local file to use for the given BOSH config {{{
 sub use_config {
 	my ($self,$file,$type,$name) = @_;
-	$self->{_configs} ||= {};
+	$self->{__configs} ||= {};
 	my $label = $type ||= 'cloud';
 	my $env_var = "GENESIS_".uc($type)."_CONFIG";
 	if ($name && $name ne '*') {
 		$label .= "\@$name";
 		$env_var .= "_$name";
 	}
-	$self->{_configs}{$label} = $file;
+	$self->{__configs}{$label} = $file;
 	$ENV{$env_var} = $file;
 	return $self;
 }
@@ -1015,7 +1015,7 @@ sub config_file {
 		$label .= "\@$name";
 		$env_var .= "_$name";
 	}
-	return $self->{_configs}{$label} || $ENV{$env_var} || '';
+	return $self->{__configs}{$label} || $ENV{$env_var} || '';
 }
 
 # }}}
