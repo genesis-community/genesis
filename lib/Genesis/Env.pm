@@ -64,10 +64,12 @@ sub load {
 			if $env->defines('kit.subkits');
 
 		my ($env_name, $env_src) = $env->lookup(['genesis.env','params.env']);
-		push(@errors, "missing required #ci{genesis.env} field")
-			unless $env_name;
-		push(@errors, "#environment name mismatch: #ci{$env_src} specifies #ci{$env_name}")
-			unless $env->{name} eq $env_name || in_callback || envset("GENESIS_LEGACY");
+		if ($env_name) {
+			push(@errors, "#environment name mismatch: #ci{$env_src} specifies #ci{$env_name}")
+				unless $env->{name} eq $env_name || in_callback || envset("GENESIS_LEGACY");
+		} else {
+			push(@errors, "missing required #ci{genesis.env} field")
+		}
 
 		# Deprecation Warnings
 		if ($env->defines('params.genesis_version_min')) {
@@ -88,10 +90,18 @@ sub load {
 			}
 		}
 
-		my $kit_name = $env->lookup('kit.name')       or push(@errors, "Missing #ci{kit.name}");
-		my $kit_version = $env->lookup('kit.version') or push(@errors, "Missing #ci{kit.version}");
-		if ($kit_name && $kit_version) {
-			$env->{kit} = $env->{top}->local_kit_version($kit_name, $kit_version) or push(@errors, sprintf(
+		my $kit_name = $env->lookup('kit.name');
+		my $kit_version = $env->lookup('kit.version');
+		my $kit = $env->{top}->local_kit_version($kit_name, $kit_version);
+		if ($kit) {
+			$env->{kit} = $kit;
+		} elsif (!$kit_name) {
+			push(@errors, "Missing #ci{kit.name} and no local dev kit");
+			push(@errors, "Missing #ci{kit.version}") unless $kit_version;
+		} elsif (!$kit_version) {
+			push(@errors, "Missing #ci{kit.version}");
+		} else {
+			push(@errors, sprintf(
 				"Unable to locate v%s of #M{%s}` kit for #C{%s} environment.",
 				$kit_version, $kit_name, $env->name
 			));
@@ -100,9 +110,9 @@ sub load {
 		$env->kit->check_prereqs($env) or bail "Cannot use the selected kit.";
 
 		if (! $env->kit->feature_compatibility("2.7.0")) {
-			push(@errors, sprintf("kit #M{%s} is not compatible with #ci{secrets_mount} feature", $env->kit->id))
+			push(@errors, sprintf("kit #M{%s} is not compatible with #ci{secrets_mount} feature; check for newer kit version or remove feature.", $env->kit->id))
 				if ($env->secrets_mount ne $env->default_secrets_mount);
-			push(@errors, sprintf("kit #M{%s} is not compatible with #C{exodus_mount} feature", $env->kit->id))
+			push(@errors, sprintf("kit #M{%s} is not compatible with #C{exodus_mount} feature; check for newer kit version or remove feature.", $env->kit->id))
 				if ($env->exodus_mount ne $env->default_exodus_mount);
 		}
 		last;
