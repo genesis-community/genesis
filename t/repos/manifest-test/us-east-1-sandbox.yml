@@ -1,6 +1,10 @@
 ---
+kit:
+  name: dev
+  version: latest
 genesis:
   env: us-east-1-sandbox
+  bosh_env: us-common
 params:
   site: us-east-1
   domain: sb.us-east-1.example.com

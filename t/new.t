@@ -21,7 +21,7 @@ ok -d "new-deployments", "created initial deployments directory";
 chdir "new-deployments";
 
 
-reprovision kit => 'omega';
+reprovision kit => 'omega-v2.7.0';
 # Test base file propagation
 no_env "generate";
 no_env "generate-nominal";
@@ -38,9 +38,11 @@ kit:
     - basic
 
 genesis:
-  env: generate-nominal
+  env:            generate-nominal
+  min_version:    2.7.0
 
 params: {}
+
 EOF
 
 no_env "generate-full";
@@ -58,9 +60,11 @@ kit:
     - shield
 
 genesis:
-  env: generate-full
+  env:            generate-full
+  min_version:    2.7.0
 
 params: {}
+
 EOF
 
 expects_ok "new-omega generate-full-2";
@@ -77,9 +81,11 @@ kit:
     - shield
 
 genesis:
-  env: generate-full-2
+  env:            generate-full-2
+  min_version:    2.7.0
 
 params: {}
+
 EOF
 
 reprovision kit => 'omega-v2.7.0';
@@ -101,11 +107,11 @@ kit:
     - shield
 
 genesis:
-  env:                generate-full-3
-  bosh_env:           master-bosh
-  min_version:        2.7.0
-  secrets_path:       super-prod
-  secrets_mount:      /secret/genesis-stuff/
+  env:            generate-full-3
+  bosh_env:       master-bosh
+  min_version:    2.7.0
+  secrets_path:   super-prod
+  secrets_mount:  /secret/genesis-stuff/
 
 params: {}
 

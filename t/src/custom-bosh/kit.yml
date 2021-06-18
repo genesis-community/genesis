@@ -1,0 +1,12 @@
+---
+name:   fancy
+author: James Hunt <jhunt@starkandwayne.com>
+docs:   https://github.com/genesis-community/fancy-genesis-kit
+code:   https://github.com/genesis-community/fancy-genesis-kit
+
+genesis_version_min: 2.6.0
+is_bosh_director: true
+
+description: |
+  This kit provides all of the hooks that Genesis currently implements,
+  and honors environment variables to modify their behavior.

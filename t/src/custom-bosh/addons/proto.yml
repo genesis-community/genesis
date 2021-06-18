@@ -1,0 +1,9 @@
+---
+resource_pools: { from: 'proto add-on in kit' }
+vm_types:       { from: 'proto add-on in kit' }
+disk_pools:     { from: 'proto add-on in kit' }
+disk_types:     { from: 'proto add-on in kit' }
+networks:       { from: 'proto add-on in kit' }
+azs:            { from: 'proto add-on in kit' }
+vm_extensions:  { from: 'proto add-on in kit' }
+compilation:    { from: 'proto add-on in kit' }

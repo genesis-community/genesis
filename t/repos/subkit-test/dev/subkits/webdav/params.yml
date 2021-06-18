@@ -1,6 +1,0 @@
----
-properties:
-  blobstore:
-    type: webdav
-    config:
-      url: https://blobstore.internal

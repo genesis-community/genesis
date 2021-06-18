@@ -1,0 +1,54 @@
+#!/bin/bash
+set -eu
+
+if [[ ${HOOK_SHOULD_FAIL:-no} = "yes" ]]; then
+  echo >&2 "Fake Error: the hook was destined to fail"
+  echo     "Fake Output: this was printeded to standard out"
+  exit 1
+fi
+
+cc_ok=yes
+if [[ ${HOOK_SHOULD_CHECK_CC:-no} != "no" ]]; then
+
+	if [[ ${HOOK_SHOULD_CHECK_CC:-no} = "passes" ]]; then
+		for t in api bbs cell diego doppler loggregator nats router uaa; do
+			cloud_config_needs vm_type $(lookup params.${t}_vm_type $t)
+		done
+
+		cloud_config_needs vm_type   $(lookup params.blobstore_vm_type   blobstore)
+		cloud_config_needs disk_type $(lookup params.blobstore_disk_pool blobstore)
+
+		cloud_config_needs vm_type   $(lookup params.postgres_vm_type   postgres)
+		cloud_config_needs disk_type $(lookup params.postgres_disk_pool postgres)
+		cloud_config_needs network   $(lookup params.cf_db_network      cf-db)
+
+		cloud_config_needs network cf-core
+		cloud_config_needs network cf-edge
+		cloud_config_needs network cf-runtime
+	else # fails
+		for t in api  doppler errand loggregator nats router syslogger uaa crazy; do
+			cloud_config_needs vm_type $(lookup params.${t}_vm_type $t)
+		done
+
+		cloud_config_needs network unspecified
+		cloud_config_needs network default
+
+		cloud_config_needs disk_type 5GB
+		cloud_config_needs disk_type 15GB
+		cloud_config_needs disk_type 5GB
+		cloud_config_needs disk_type 15GB
+	fi
+
+
+  # Check if there were any errors reported from the above checks.
+  if check_cloud_config ; then
+    describe "  cloud config [#G{OK}]"
+  else
+    describe "  cloud config [#R{FAILED}]"
+    cc_ok=no
+  fi
+	exit 0
+fi
+
+echo "everything checks out!"
+exit 0

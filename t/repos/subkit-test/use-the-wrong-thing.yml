@@ -1,6 +1,0 @@
----
-kit:
-  subkits:
-  - magic
-params:
-  env: sandbox

@@ -29,7 +29,7 @@ sub features { @{$_[0]{f}}; }
 sub name { "mock-env"; }
 sub type { "mock-type"; }
 sub secrets_path { "mock/env"; }
-sub needs_bosh_create_env { 0; }
+sub use_create_env { 0; }
 sub lookup_bosh_target { wantarray ? ('a-bosh', 'params.bosh') : 'a-bosh'; }
 sub lookup { "a-value" }
 sub bosh_target { 'a-bosh'; }
@@ -174,19 +174,6 @@ subtest 'dev kits' => sub {
 	cmp_deeply([$kit->source_yaml_files(mockenv->new('bogus', 'features'))],
 	           [$kit->source_yaml_files(mockenv->new())],
 	           "simple kits ignore features they don't know about");
-};
-
-subtest 'legacy kit support' => sub {
-	my $kit = legacy_kit('legacy', '1.9.8', 't/src/legacy');
-
-	cmp_deeply([$kit->source_yaml_files(mockenv->new())],
-	           [re('\bbase/params.yml')],
-	           "legacy kits without subkits should return base yaml files only");
-
-	cmp_deeply([$kit->source_yaml_files(mockenv->new('do-thing'))],
-	           [re('\bbase/params.yml'),
-	            re('\bdo-thing/params.yml')],
-	           "legacy kits with subkits should return all relevant yaml files");
 };
 
 subtest 'genesis-community kit provider configuration' => sub {

@@ -1,0 +1,12 @@
+#!/bin/bash
+shopt -s nullglob
+set -eu
+
+ls base/*.yml
+if [[ -n "${GENESIS_USE_CREATE_ENV:-}" ]] ; then
+	if want_feature "bosh-init" ; then
+		echo "features/bosh-init/params.yml"
+	else
+		echo "features/create-env/params.yml"
+	fi
+fi

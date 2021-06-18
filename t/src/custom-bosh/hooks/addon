@@ -1,0 +1,14 @@
+#!/bin/bash
+set -eu
+
+if [[ ${HOOK_SHOULD_FAIL:-no} = "yes" ]]; then
+  echo >&2 "Fake Error: the hook was destined to fail"
+  echo     "Fake Output: this was printeded to standard out"
+  exit 1;
+fi
+
+echo "fancy:>> executing [$GENESIS_ADDON_SCRIPT]"
+for arg in "$@"; do
+  echo "  - [$arg]"
+done
+exit 0

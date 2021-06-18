@@ -3,16 +3,7 @@ name: secrettest
 version: 0.0.1
 
 description: Testing the asking of secrets
+genesis_version_min: 2.7.8
 
 credentials: {}
 certificates: {}
-params:
-  base:
-    - ask: What is the admin password?
-      description: Used to authenticate the admin user
-      vault: admin:password
-
-    - ask: "Enter your certificate:"
-      description: This is just going to be some multiline data.
-      vault: cert:pem
-      type: multi-line

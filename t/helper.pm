@@ -210,13 +210,28 @@ EOF
 }
 
 sub bosh_runs_as {
-	my ($expect, $output) = @_;
+	my ($expect, $output,%vars) = @_;
 	$output = $output ? join("\n", map {"echo '$_'"} split("\n", $output)) : "";
+	my $var_checks = '';
+	for $var (keys %vars) {
+		my $val = $vars{$var};
+		$var_checks .= (<<EOF);
+if [[ "\$$var" != "$val" ]] ; then
+	varfail=1
+	echo >&2 "$var: want '$val, got '\$$var'"
+fi
+EOF
+	}
 	fake_bosh(<<EOF);
 $output
-[[ "\$@" == "$expect" ]] && exit 0;
-echo >&2 "got  '\$@\'"
-echo >&2 "want '$expect'"
+varfail=0
+$var_checks
+[[ "\$@" == "$expect" && \$varfail == 0 ]] && exit 0;
+if [[  "\$@" == "$expect" ]] ; then
+  echo >&2 "Output:"
+  echo >&2 "got  '\$@\'"
+  echo >&2 "want '$expect'"
+fi
 exit 2
 EOF
 }
@@ -262,7 +277,7 @@ sub bosh_outputs_json {
 }
 EOF
 	$output=<<EOF;
-	args="\$(echo "\$*" | sed -e 's/"/"\\""/g')"
+	args="\$(echo "\$*" | sed -e 's/"/"\\""/g' | set -e 's#/#\/#g')"
 EOF
 	$output.="(\n";
 	$output.= join("\n", map {(my $l = $_) =~ s/'/'\\''/g; "echo '$l'"} split("\n", $json));
@@ -272,10 +287,7 @@ EOF
 
 sub write_bosh_config {
 	my $orig_home=`echo ~\$USER`;
-	if ($ENV{HOME} eq $orig_home) {
-		die 'Refusing to over-write real .bosh/config!';
-	}
-	my $config="environments:\n";
+	my $config="";
 	my @args = (@_);
 	for my $info (@args) {
 		if (ref($info) ne "HASH") {
@@ -283,22 +295,52 @@ sub write_bosh_config {
 				alias => $info
 			};
 		}
-		$config .= "- url: " . ($info->{schema} || "https") .
-		               '://' . ($info->{host}   || "127.0.0.1") .
-		               (defined($info->{port}) ? ':'.$info->{port} : ''). "\n".
-		           "  ca_cert: |-\n" .
-		           "    -----BEGIN CERTIFICATE-----\n".
-		           "    MIIExxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n".
-		          ("    xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n" x 24).
-		           "    xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx=\n".
-		           "    -----END CERTIFICATE-----\n".
-		           "  alias: ".$info->{alias}."\n".
-		           "  username: ".($info->{username} || 'noname')."\n".
-		           "  password: ".($info->{password} || 'nopassword')."\n";
-
+		my $url = sprintf("%s://%s%s",
+			($info->{schema} || "https"),
+			($info->{host}   || "127.0.0.1"),
+			(defined($info->{port}) ? ':'.$info->{port} : '')
+		);
+		if ($info->{config_type} eq 'file' || !defined($VAULT_URL)) {
+			$config .= "- url: $url\n".
+			           "  ca_cert: |-\n" .
+			           "    -----BEGIN CERTIFICATE-----\n".
+			           "    MIIExxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n".
+			          ("    xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n" x 24).
+			           "    xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx=\n".
+			           "    -----END CERTIFICATE-----\n".
+			           "  alias: ".$info->{alias}."\n".
+			           "  username: ".($info->{username} || 'noname')."\n".
+			           "  password: ".($info->{password} || 'nopassword')."\n";
+		} else {
+			# Store config in exodus data
+			my $exodus->{"secret/exodus/$info->{alias}/bosh"} = {
+				kit_name => 'bosh',
+				url => $url,
+				admin_username => ($info->{username} || 'noname'),
+				admin_password => ($info->{password} || 'nopassword'),
+				ca_cert => 
+					"-----BEGIN CERTIFICATE-----\n".
+					"MIIExxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n".
+					("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n" x 24).
+					"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx=\n".
+					"-----END CERTIFICATE-----"
+			};
+			{
+				my @cmd = ('/bin/bash', "-c", 'echo "$1" | jq -r . | safe import 2>&1', 'bash', JSON::PP::encode_json($exodus));
+				open my $pipe, "-|", @cmd;
+				$out = do { local $/; <$pipe> };
+				$out =~ s/\s+$//;
+				close $pipe;
+			}
+		}
 	}
-	mkdir_or_fail("$ENV{HOME}/.bosh");
-	put_file( "$ENV{HOME}/.bosh/config",$config);
+	if ($config) {
+		if ($ENV{HOME} eq $orig_home) {
+			die 'Refusing to over-write real .bosh/config!';
+		}
+		mkdir_or_fail("$ENV{HOME}/.bosh");
+		put_file( "$ENV{HOME}/.bosh/config","environments:\n$config");
+	}
 }
 
 
@@ -306,6 +348,7 @@ sub fake_bosh_directors {
 	write_bosh_config(@_);
 	my @directors = ();
 	my @args = (@_);
+	my $last_port=25555;
 	for my $info (@args) {
 		if (ref($info) ne "HASH") {
 			$info = {
@@ -315,7 +358,7 @@ sub fake_bosh_directors {
 		push @directors, Test::TCP->new(
 			listen => 0,
 			auto_start => 1,
-			port => $info->{port} || 25555,
+			port => $info->{port} || ($last_port++),
 			code => sub {
 				my $port = shift;
 				my $sock =  IO::Socket::IP->new(

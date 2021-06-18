@@ -5,7 +5,7 @@ spawn /bin/sh -c "exec 2>&1 ; genesis --no-color new [set argv]"
 
 set step "waiting for the question about authentication"
 expect {
-  "*How would you like to perform authentication?\r\n\r\n" { }
+  "*How would you like to perform authentication?\r\n" { }
   timeout { puts "Timed out [set step]\n"      ; exit 1 }
   eof     { puts "Unexpected EOF [set step]\n" ; exit 1 }
 }

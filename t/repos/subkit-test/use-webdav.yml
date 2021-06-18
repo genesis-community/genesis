@@ -1,6 +1,0 @@
----
-kit:
-  subkits:
-  - webdav
-params:
-  env: sandbox
