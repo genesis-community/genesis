@@ -1,0 +1,208 @@
+#!/bin/bash
+
+out="$GENESIS_ROOT/$GENESIS_ENVIRONMENT.yml"
+cat <<EOF > "$out"
+---
+kit:
+  name:     dev
+  version:  latest
+  features:
+    - (( replace ))
+EOF
+
+extra_prompts=
+prompt_for extra_prompts boolean \
+	"Should we ask additional questions?"
+
+if [[ $extra_prompts == 'true' ]] ; then
+	echo "    - subkit-params"  >> "$out"
+fi
+genesis_config_block >> "$out"
+
+param_comment params_out -e \
+	"This is used to autocalculate many domain-based values of your Cloud Foundry." \
+	"Changing it will have widespread changes throughout the installation. If you change" \
+	"this, make sure to audit the domains available in your system org, as well as" \
+	"the shared domains." \
+	"(e.g. bosh-lite.com)"
+prompt_for base_domain line \
+	"What is the base domain of your Cloud Foundry?"
+param_entry params_out base_domain
+
+param_comment params_out -e "Used to scale out the number of VMs performing various jobs"
+param_entry params_out cell_instances -d 3
+param_entry params_out router_instances -d 2
+param_entry params_out nats_instances -d 2
+
+param_comment params_out -e "Default VM type for cell nodes"
+param_entry params_out cell_vm_type -d small
+
+
+param_comment params_out -e "Enter a list of names. Anything will do"
+prompt_for allowed_users multi-line \
+	"What users will be accessing this deployment?" \
+	--label user
+param_entry params_out allowed_users -a "${allowed_users[@]}"
+
+param_comment params_out -e "Specify the availability zones your deployment is spread across"
+param_entry params_out availability_zones -d -a z1 z2 z3
+
+prompt_for the:password secret-line "What is the password?"
+
+if [[ $extra_prompts == 'true' ]] ; then
+
+	param_comment params_out -e "This value sets the port advertised for wss://doppler.<system_domain>"
+	param_entry params_out logger_port -d 4443
+
+	prompt_for fish_heads line "How many fish heads do you want?"
+	param_comment params_out -e \
+		"This value refers to the number of fish heads you earned in apple school." \
+		"(e.g. FIVE)"
+	param_entry params_out fish_heads
+
+	param_comment params_out -e "That Vizzini, he can fuss"
+	prompt_for fezzik_quote line "Are there rocks ahead?" \
+		--default "If there are, we all be dead"
+	param_entry params_out fezzik_quote
+
+	param_comment params_out -e "Defaults to yes"
+	prompt_for boolean_a boolean --default y "Is this a question?"
+	param_entry params_out "boolean-a" "$boolean_a"
+
+				type: boolean
+	param_comment params_out -e "Defaults to no"
+	prompt_for boolean_b boolean "Did you answer this?" --default no
+	param_entry params_out "boolean-b" "$boolean_b"
+
+	param_comment params_out -e "Defaults but answered."
+	prompt_for boolean_c boolean "Would you?" --default y
+	param_entry params_out "boolean-c" "$boolean_c"
+
+	param_comment params_out -e "No defaults"
+	prompt_for boolean_d boolean "Flip a coin; is it heads?"
+	param_entry params_out "boolean-d" "$boolean_d"
+
+	param_comment params_out -e "Enter a big paragraph here"
+	prompt_for biography block "What's your life story?"
+	param_entry params_out biography
+
+	param_comment params_out -e "You're an interesting person; tell us about your thoughts"
+	prompt_for blog multi-block "Fill in your blog posts" \
+		--label entry  --min 2
+	param_entry params_out blog -a "${blog[@]}"
+
+	param_comment params_out -e "The CIDR for your target network; pattern of #.#.#.#/#"
+	prompt_for validity_regex line "Specify ip/mask" \
+		--validation '/^((^|.)?([0-9]|[0-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])){4}\/[0-9]+$/'
+	param_entry params_out "validity-regex" "$validity_regex"
+
+	param_comment params_out -e "Order these languages in order of preference: c, lisp, ruby, perl, go"
+	prompt_for validity_list multi-line "Specify one per line" \
+		--label language \
+		--min 5 \
+		--max 5 \
+		--validation 'c,lisp,ruby,perl,go'
+	param_entry params_out "validity-list" -a "${validity_list[@]}"
+
+	param_comment params_out -e "Type any number except 1, 3, 5 or 7"
+	prompt_for not_in_list line "Give me a number" \
+		--validation '![1,3,5,7]'
+	param_entry params_out "not-in-list" "$not_in_list"
+
+	param_comment params_out -e "Don't use any words that have two consecutive identical letters"
+	prompt_for not_a_match line "An inflatable spherical object" \
+		--validation '!/(.)\1/'
+	param_entry params_out "not-a-match" "$not_a_match"
+
+	param_comment params_out -e "I need a number between -5 and 5"
+	prompt_for in_range line "Adjust treble baseline" \
+		--validation -5-5
+	param_entry params_out "in-a-range" "$in_range"
+
+	param_comment params_out -e "Super secure check to see if you're allowed to drink"
+	prompt_for age line "What is your age" --validation "21+"
+	param_entry params_out age
+
+	param_comment params_out -e "Okay, now enter your REAL age"
+	prompt_for real_age line "What is your real age" --validation 18+
+	param_entry params_out "real-age" "$real_age"
+
+	param_comment params_out -e "Lets mix some colors"
+	prompt_for colors multi-select "Select between 2 and 3 colors" \
+		--min 2 --max 3 \
+		-o red \
+		-o orange \
+		-o yellow \
+		-o green \
+		-o blue \
+		-o indigo \
+		-o violet
+	param_entry params_out "color-choices" -a "${colors[@]}"
+
+	param_comment params_out -e "Pairing on code is an important skill to develop"
+	prompt_for partner "select" "Select your partner" \
+		-o "[jbreiner] Julia Breiner" \
+		-o "[ijans]    Intan Jans" \
+		-o "[ispears]  Irma D. Spears" \
+		-o "[sudhir]   Sudhir Lykke"
+	param_entry params_out "pick-a-person" "$partner"
+
+	param_comment params_out -e "What's your favorite flavour of icecream?"
+	prompt_for flavour "select" "Ice Cream Choices:" \
+		-o chocolate \
+		-o vanilla \
+		-o strawberry \
+		--default chocolate
+	param_entry params_out "pick-icecream-default" "$flavour"
+
+	param_comment params_out -e "What's your favorite pie?"
+	prompt_for pie "select" "Pie Choices:" \
+		-o "chocolate cream" \
+		-o apple \
+		-o pumpkin \
+		--default apple
+	param_entry params_out pick-pie-notdefault "$pie"
+
+	param_comment params_out -e "Give me your favorite site's URL"
+	prompt_for url line 'URL #1' --validation url
+	param_entry params_out need-a-url "$url"
+
+	param_comment params_out -e "Give me your dev test URL with port"
+	prompt_for url line 'URL #2' --validation url
+	param_entry params_out need-a-url-and-port "$url"
+
+	param_comment params_out -e "Give me your banks URL and login creds"
+	prompt_for url line 'URL #3' --validation url
+	param_entry params_out need-a-https-url-and-query-param "$url"
+
+	param_comment params_out -e "Give me your password file URL"
+	prompt_for url line 'URL #4' --validation url
+	param_entry params_out need-a-file-url "$url"
+
+	param_comment params_out -e "Give me your favorite site's URL"
+	prompt_for url line 'URL #5' --validation url
+	param_entry params_out need-a-full-url "$url"
+
+	param_comment params_out -e "Give me a bad URL (not that kind)"
+	prompt_for url line 'URL #6' --validation url
+	param_entry params_out test-bad-URL-handling "$url"
+
+	param_comment params_out -e "Need a url"
+	prompt_for ipaddress line "IP Address" --validation ip
+	param_entry params_out ipaddress
+
+	param_comment params_out -e "Need your loopback IP address"
+	prompt_for ipaddress line "Loopback IP Address" --validation ip
+	param_entry params_out loopback-ipaddress "$ipaddress"
+
+	param_comment params_out -e "Listen on what IP address"
+	prompt_for ip line "Listening IP Address" --validation ip
+	param_entry params_out listen-on-ip "$ip"
+
+	param_comment params_out -e "Internal network mask"
+	prompt_for mask line "Network Mask" --validation ip
+	param_entry params_out mask
+fi
+
+printf "$(echo "params:$params_out" | sed -e 's/%/%%/g')" >> $out
+#cat $out

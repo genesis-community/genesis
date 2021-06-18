@@ -2,19 +2,6 @@
 name: certificatetest
 version: 0.0.1
 
-subkits:
-  - prompt: Generate all the certificates?
-    subkit: certs-b
-    default: yes
-
-params:
-  base:
-  - ask: "What is your base domain?"
-    param: base_domain
-    description: "base domain"
-
-secrets: {}
-
 certificates:
   base:
     auto-generated-certs-a:

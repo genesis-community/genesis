@@ -1,4 +1,11 @@
 ---
+kit:
+  name: dev
+  version: latest
+
+genesis:
+  bosh_env: us-common
+
 params:
   site: us-west-1
   # don't do this at home, kids

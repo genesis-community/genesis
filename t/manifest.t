@@ -12,6 +12,7 @@ my $tmp = workdir;
 ok -d "t/repos/manifest-test", "manifest-test repo exists" or die;
 chdir "t/repos/manifest-test" or die;
 bosh2_cli_ok;
+write_bosh_config "us-common";
 
 runs_ok "genesis manifest -c cloud.yml us-east-1-sandbox >$tmp/manifest.yml";
 eq_or_diff get_file("$tmp/manifest.yml"), <<EOF, "manifest generated for us-east-1/sandbox";
@@ -108,7 +109,7 @@ releases:
 - name: foo
   version: 1.2.3-rc.1
 resource_pools:
-- name: small
+- name: huge
 vm_extensions:
 - vm_ext_1
 EOF
@@ -166,7 +167,7 @@ releases:
 - name: foo
   version: 1.2.3-rc.1
 resource_pools:
-- name: small
+- name: huge
 vm_extensions:
 - vm_ext_1
 EOF

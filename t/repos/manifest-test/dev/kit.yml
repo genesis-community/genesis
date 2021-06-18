@@ -1,5 +1,10 @@
 ---
-params: {}
+name: manifest-test
+version: 0.0.1
+description: Test kit for Manifest scenarios
+author: dbell@starkandwayne.com
+
+is_bosh_director: true
+
 credentials: {}
 certificates: {}
-features: []

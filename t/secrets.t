@@ -26,7 +26,11 @@ subtest 'secrets-v2.7.0' => sub {
 
 	my $vault_target = vault_ok;
 	bosh2_cli_ok;
-
+	fake_bosh <<EOF;
+#/bin/bash
+echo "test_user"
+EOF
+	my @directors = fake_bosh_directors('c-azure-us1-dev', 'c-azure-us1-prod');
 	chdir workdir('genesis-2.7.0') or die;
 	reprovision init => 'something', kit => 'secrets-2.7.0';
 
@@ -35,10 +39,11 @@ subtest 'secrets-v2.7.0' => sub {
 	my $secrets_mount = 'secret/genesis-2.7.0/deployments';
 	my $secrets_path = 'dev/azure/us1';
 	local $ENV{SAFE_TARGET} = $vault_target;
+	runs_ok("safe cp -rf 'secret/exodus' 'secret/genesis-2.7.0/deployments/exodus'", "Can setup exodus data under secrets mount");
 	runs_ok("safe x509 issue -A --name 'root_ca.genesisproject.io' $root_ca_path", "Can create a base root ca");
 
 	my $cmd = Expect->new();
-	$cmd->log_stdout($ENV{GENESIS_TRACE} ? 1 : 0);
+	$cmd->log_stdout($ENV{GENESIS_EXPECT_TRACE} ? 1 : 0);
 	$cmd->spawn("genesis new $env_name --secrets-mount $secrets_mount --secrets-path /$secrets_path/ --root-ca-path $root_ca_path");
 
 	expect_ok $cmd, [ "What is your base domain?", sub { $_[0]->send("demo.genesisproject.io\n"); }];
@@ -1039,7 +1044,7 @@ EOF
 	$secrets_path = 'c/azure/us1/prod/secrets-2.7.0';
 
 	$cmd = Expect->new();
-	$cmd->log_stdout($ENV{GENESIS_TRACE} ? 1 : 0);
+	$cmd->log_stdout($ENV{GENESIS_EXPECT_TRACE} ? 1 : 0);
 	$cmd->spawn("genesis new $env_name");
 
 	expect_ok $cmd, [ "What is your base domain?", sub { $_[0]->send("live.genesisproject.io\n"); }];
@@ -1295,6 +1300,7 @@ Validating 29 secrets for $env_name under path '$secrets_mount$secrets_path/':
 EOF
 
 	chdir $TOPDIR;
+	$_->stop() for (@directors);
 	teardown_vault;
 }	;
 
@@ -1306,17 +1312,19 @@ subtest 'secrets-base' => sub {
 
 	my $vault_target = vault_ok;
 	bosh2_cli_ok;
+	my @directors = fake_bosh_directors qw/us-east-sandbox west-us-sandbox north-us-sandbox/;
 	chdir workdir('redis-deployments') or die;
 
-	reprovision init => 'redis',
-				kit => 'omega';
+	reprovision
+		init => 'redis',
+		kit => 'omega-v2.7.0';
 
 	diag "\rConnecting to the local vault (this may take a while)...";
 	expects_ok "new-omega us-east-sandbox";
 	system('safe tree');
 
 	my $sec;
-	my $v = "secret/us/east/sandbox/omega";
+	my $v = "secret/us/east/sandbox/omega-v2.7.0";
 
 	my $rotated = [qw[
 	  test/random:username
@@ -1428,7 +1436,7 @@ subtest 'secrets-base' => sub {
 Parsing kit secrets descriptions ... done. - XXX seconds
 Retrieving all existing secrets ... done. - XXX seconds
 
-Checking 16 secrets for us-east-sandbox under path '/secret/us/east/sandbox/omega/':
+Checking 16 secrets for us-east-sandbox under path '/$v/':
   [ 1/16] auth/cf/uaa:fixed random password - 128 bytes, fixed ... found.
   [ 2/16] auth/cf/uaa:shared_secret random password - 128 bytes ... found.
   [ 3/16] test/fixed/random:username random password - 32 bytes, fixed ... found.
@@ -1464,8 +1472,8 @@ EOF
 
 	reprovision kit => 'asksecrets';
 	my $cmd = Expect->new();
-	#$ENV{GENESIS_TRACE} = 'y';
-	$cmd->log_stdout($ENV{GENESIS_TRACE} ? 1 : 0);
+	#$ENV{GENESIS_EXPECT_TRACE} = 'y';
+	$cmd->log_stdout($ENV{GENESIS_EXPECT_TRACE} ? 1 : 0);
 	$cmd->spawn("genesis new east-us-sandbox");
 	$v = "secret/east/us/sandbox/asksecrets";
 	expect_ok $cmd, ['password .*\[hidden\]:', sub { $_[0]->send("my-password\n");}];
@@ -1474,7 +1482,7 @@ EOF
 		$_[0]->send("this\nis\nmulti\nline\ndata\n\x4");
 	}];
 	expect_exit $cmd, 0, "New environment with prompted secret succeeded";
-	#$ENV{GENESIS_TRACE} = '';
+	#$ENV{GENESIS_EXPECT_TRACE} = '';
 	system('safe tree');
 	have_secret "$v/admin:password";
 	is secret("$v/admin:password"), "my-password", "Admin password was stored properly";
@@ -1490,7 +1498,7 @@ EOF
 	reprovision kit => "certificates";
 
 	$cmd = Expect->new();
-	$cmd->log_stdout($ENV{GENESIS_TRACE} ? 1 : 0);
+	$cmd->log_stdout($ENV{GENESIS_EXPECT_TRACE} ? 1 : 0);
 	$cmd->spawn("genesis new west-us-sandbox");
 	$v = "secret/west/us/sandbox/certificates";
 	expect_ok $cmd, [ "Generate all the certificates?", sub { $_[0]->send("yes\n"); }];
@@ -1524,7 +1532,7 @@ EOF
 	like $x509, qr/Issuer: CN\s*=\s*ca\.asdf\.com/m, "server B cert is signed by the CA from auto-generated-certs-b";
 
 	$cmd = Expect->new();
-	$cmd->log_stdout($ENV{GENESIS_TRACE} ? 1 : 0);
+	$cmd->log_stdout($ENV{GENESIS_EXPECT_TRACE} ? 1 : 0);
 	$cmd->spawn("genesis new north-us-sandbox");
 	$v = "secret/north/us/sandbox/certificates";
 	expect_ok $cmd, [ "Generate all the certificates?", sub { $_[0]->send("no\n"); }];
@@ -1626,6 +1634,7 @@ EOF
 	isnt $cert, $new_cert, "Certificates are rotated normally";
 
 	chdir $TOPDIR;
+	$_->stop() for (@directors);
 	teardown_vault;
 };
 

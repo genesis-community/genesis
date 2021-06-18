@@ -1,4 +1,0 @@
-#!/bin/bash
-
-eval $HOOK_OUTPUT > $2
-exit $HOOK_EXIT

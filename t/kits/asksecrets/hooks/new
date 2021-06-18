@@ -1,0 +1,24 @@
+#!/bin/bash
+set -eu
+
+dir="$GENESIS_ROOT"
+name="$GENESIS_ENVIRONMENT"
+ymlfile="$dir/$name.yml"
+
+cat >"$ymlfile" -- <<EOF
+---
+kit:
+  name:     $GENESIS_KIT_NAME
+  version:  $GENESIS_KIT_VERSION
+  features:
+    - (( replace ))
+EOF
+genesis_config_block >> "$ymlfile"
+
+prompt_for admin:password secret-line \
+	"What is the admin password?"
+
+prompt_for cert:pem secret-block \
+	"Enter your certificate"
+
+exit 0

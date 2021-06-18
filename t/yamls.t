@@ -11,7 +11,7 @@ my $tmp = workdir 'yamls-deployments';
 chdir $tmp or die;
 
 subtest 'hierarchical inheritance' => sub {
-	reprovision kit => 'omega';
+	reprovision kit => 'omega-v2.7.0';
 
 	put_file "sw.yml", "--- {}";
 	put_file "sw-aws.yml", "--- {}";
@@ -28,32 +28,36 @@ subtest 'hierarchical inheritance' => sub {
 	put_file "sw-vsphere-west-1.yml", "--- {}";
 	put_file "sw-vsphere-west-dev.yml", "--- {}";
 	put_file "sw-openstack-east-prod.yml", "--- {genesis: {env: 'sw-openstack-east-prod'}}";
+	put_file "cloud.yml", "--- {}";
 
-	output_ok "genesis yamls sw-aws-east.yml", <<EOF, "yaml ordering is correct for a middle file";
+	output_ok "genesis yamls sw-aws-east.yml --config cloud=cloud.yml", <<EOF, "yaml ordering is correct for a middle file";
 ./sw.yml
 ./sw-aws.yml
 ./sw-aws-east.yml
 EOF
 
-	output_ok "genesis yamls sw-aws-east-dev", <<EOF, "yaml ordering is correct for the end file";
+	output_ok "genesis yamls sw-aws-east-dev --config cloud.yml", <<EOF, "yaml ordering is correct for the end file";
 ./sw.yml
 ./sw-aws.yml
 ./sw-aws-east.yml
 ./sw-aws-east-dev.yml
 EOF
 
-	output_ok "genesis yamls sw-vsphere-east-dev", <<EOF, "yaml ordering is correct for an alternative prefix";
+	output_ok "genesis yamls sw-vsphere-east-dev -c cloud.yml", <<EOF, "yaml ordering is correct for an alternative prefix";
 ./sw.yml
 ./sw-vsphere.yml
 ./sw-vsphere-east.yml
 ./sw-vsphere-east-dev.yml
 EOF
 
-	output_ok "genesis yamls sw-openstack-east-prod.yml", <<EOF, "yaml ordering os correct when there are missing intermediary yamls";
+	put_file "rt.yml", "--- {}";
+	output_ok "genesis yamls sw-openstack-east-prod.yml --config runtime=rt.yml --config cloud=cloud.yml", <<EOF, "yaml ordering os correct when there are missing intermediary yamls";
 ./sw.yml
 ./sw-openstack-east-prod.yml
 EOF
 };
+
+# TODO: Add support for v2 config tests, using hypen-terminated yml filenames.
 
 subtest 'explicit inheritance' => sub {
 	put_file "c.yml", "--- {genesis: {inherits: [ base, corp]}}";
@@ -63,7 +67,7 @@ subtest 'explicit inheritance' => sub {
 	put_file "yang.yml", "--- {genesis: {inherits: [yin]}}";
 	put_file "c-real-env.yml", "--- {genesis: {env: 'c-real-env', inherits: [yin]}}";
 
-	output_ok "genesis yamls c-real-env.yml", <<EOF, "yaml ordering for explicit inheritance";
+	output_ok "genesis yamls c-real-env.yml -c cloud.yml", <<EOF, "yaml ordering for explicit inheritance";
 ./base.yml
 ./corp.yml
 ./c.yml

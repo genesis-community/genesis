@@ -1,6 +1,8 @@
 kit:
-  subkits:
-  - bosh-init
+  name: dev
+  version: latest
+  features:
+  - bosh-init # old style
 genesis:
   env: bosh-init-sandbox
 params:

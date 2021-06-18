@@ -100,22 +100,22 @@ expect_ok "multi-line question", $cmd, [
 	}
 ];
 
-expect_ok "first blog entry", $cmd, [
+expect_ok "1st blog entry", $cmd, [
 	"Fill in your blog posts \\(leave entry empty to end\\\)[\r\n]{2,4}1st entry \\(Enter <CTRL-D> to end\\\)[\r\n]{1,2}---------------------------------[\r\n]{1,2}", sub {
 		$_[0]->send("A programmer started to cuss\nCos getting to sleep was a fuss\nAs he lay in his bed, going round in his head\nwas while (!asleep) sheep++\n\x4")
 	}
 ];
-expect_ok "second blog entry", $cmd, [
+expect_ok "2nd blog entry", $cmd, [
 	"2nd entry \\(Enter <CTRL-D> to end\\\)[\r\n]{1,2}---------------------------------[\r\n]{1,2}", sub {
 		$_[0]->send("\x4")
 	}
 ];
-expect_ok "second blog entry - retry", $cmd, [
+expect_ok "2nd blog entry - retry", $cmd, [
 	"ERROR:.* Insufficient items provided - at least 2 required.[\r\n]{2,4}2nd entry \\(Enter <CTRL-D> to end\\\)[\r\n]{1,2}---------------------------------[\r\n]{1,2}", sub {
 		$_[0]->send("A programmer's wife tells him: \"Run to the store and pick up a loaf of bread. If they have eggs, get a dozen.\"\nThe programmer comes home with 12 loaves of bread.\n\x4")
 	}
 ];
-expect_ok "third blog entry", $cmd, [
+expect_ok "3rd blog entry", $cmd, [
 	"3rd entry \\(Enter <CTRL-D> to end\\\)[\r\n]{1,2}---------------------------------[\r\n]{1,2}", sub {
 		$_[0]->send("\x4")
 	}
@@ -507,7 +507,7 @@ params:
   boolean-d: true
 
   # Enter a big paragraph here
-  biography: |
+  biography: |-
     this
     is
     multi
@@ -516,12 +516,12 @@ params:
 
   # You're an interesting person; tell us about your thoughts
   blog:
-  - |
+  - |-
     A programmer started to cuss
     Cos getting to sleep was a fuss
     As he lay in his bed, going round in his head
     was while (!asleep) sheep++
-  - |
+  - |-
     A programmer's wife tells him: "Run to the store and pick up a loaf of bread. If they have eggs, get a dozen."
     The programmer comes home with 12 loaves of bread.
 

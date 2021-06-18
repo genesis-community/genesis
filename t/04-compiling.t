@@ -518,6 +518,19 @@ eq_or_diff($out, <<'EOF', "validate should report errors even when force is used
     - hooks/new is not executable.
 
 EOF
+system("rm $kitdir/hooks/new");
+commit_changes;
+$out = combined_from {
+  ok(!$cc->validate("test","1.2.3"), "validation should fail if the new hook is missing");
+};
+eq_or_diff($out, <<'EOF', "validate should report errors even when force is used");
+
+[ERROR] Encountered issues while processing kit test/1.2.3:
+
+  Hook scripts:
+    - hooks/new is missing - this hook is not optional.
+
+EOF
 
 #### all the errors! ####
 
@@ -779,6 +792,7 @@ eq_or_diff($out, <<'EOF', "validate should report all errors in the kit");
 
   Hook scripts:
     - hooks/new is not executable.
+    - hooks/blueprint is missing - this hook is not optional.
     - hooks/info is not a regular file.
     - hooks/check is not executable.
 

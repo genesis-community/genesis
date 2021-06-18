@@ -27,7 +27,6 @@ my $legacy;
 # test environments, created on-the-fly
 my $us_west_1_prod;
 my $snw_lab_dev;
-my $stack_scale;
 
 my $vault_target = vault_ok;
 
@@ -86,17 +85,6 @@ params:
 EOF
 	$snw_lab_dev = $top->load_env('snw-lab-dev');
 
-	put_file "$root/stack-scale.yml", <<EOF;
----
-kit:
-  name:    dev
-  version: latest
-  subkits:
-    - do-thing
-genesis:
-  env: stack-scale
-EOF
-	$stack_scale = $top->load_env('stack-scale');
 }
 
 sub enable_features_hook {
@@ -190,7 +178,7 @@ subtest 'new hook' => sub {
 
 	my $vault = Genesis::Vault::default();
 
-	write_bosh_config $us_west_1_prod->name, $snw_lab_dev->name;
+	write_bosh_config $us_west_1_prod->name, $snw_lab_dev->name, 'env-should-fail';
 
 	ok $simple->run_hook('new', env => $us_west_1_prod),
 	   "[simple] running the 'new' hook should succeed";
@@ -240,12 +228,14 @@ EOF
 
 	{
 		local $ENV{HOOK_SHOULD_FAIL} = 'yes';
+
 		my $name = 'env-should-fail';
 		my $env =  Genesis::Env->new(
 			top => $top, name => $name,
 			kit => $fancy, vault => $vault,
 			__params => {genesis => {env => $name}} # compensate for not using Genesis::Env#create
 		);
+		$env->{__params}{genesis}{bosh_env} =  $snw_lab_dev->name;
 		
 		throws_ok {
 			$fancy->run_hook('new', env => $env);
@@ -407,7 +397,7 @@ EOF
 
 	{
 		local $ENV{NOCOLOR} = 'yes';
-		$snw_lab_dev->use_cloud_config("$ENV{GENESIS_TOPDIR}/t/cc/sample-lab.yml");
+		$snw_lab_dev->use_config("$ENV{GENESIS_TOPDIR}/t/cc/sample-lab.yml");
 
 		our ($out, $err, $rc);
 
@@ -479,7 +469,7 @@ EOF
 EOF
 			is $err, "", "check hook contains no errors when checking cloud-config - values absent";
 		}
-		$snw_lab_dev->use_cloud_config("");
+		$snw_lab_dev->use_config("");
 	}
 };
 
@@ -539,12 +529,13 @@ EOF
 subtest 'feature hook' => sub {
 	again();
 
+	write_bosh_config 'fun-times';
 	put_file "$root/fun-times.yml", <<EOF;
 ---
 kit:
   name:    dev
   version: latest
-  subkits:
+  features:
     - a-thing
     - always-first
     - bob
@@ -586,7 +577,7 @@ EOF
 	enable_features_hook($fancy);
 	$fun_times->{kit} = $fancy;
 	delete($fun_times->{__features});
-	cmp_deeply([$fancy->run_hook('features', env => $fun_times, features => scalar($fun_times->lookup(['kit.features', 'kit.subkits'])))], [qw[
+	cmp_deeply([$fancy->run_hook('features', env => $fun_times, features => scalar($fun_times->lookup('kit.features')))], [qw[
 			always-first
 			a-thing
 			bob
@@ -620,47 +611,14 @@ EOF
 
 	{
 		local $ENV{HOOK_SHOULD_FAIL} = 'yes';
-		throws_ok { $fancy->run_hook('features', env => $fun_times, features => scalar($fun_times->lookup(['kit.features', 'kit.subkits']))); }
+		throws_ok { $fancy->run_hook('features', env => $fun_times, features => scalar($fun_times->lookup('kit.features'))); }
 			qr/Could not run feature hook in kit fancy\/in-development \(dev\):/ims;
 	}
 
 	{
 		local $ENV{HOOK_NO_FEATURES} = 'yes';
-		cmp_deeply([$fancy->run_hook('features', env => $fun_times, features => scalar($fun_times->lookup(['kit.features', 'kit.subkits'])))], [],
+		cmp_deeply([$fancy->run_hook('features', env => $fun_times, features => scalar($fun_times->lookup('kit.features')))], [],
 			"[fancy] the 'features' hook can remove all featuress");
-	}
-};
-
-subtest 'LEGACY prereqs hook' => sub {
-	ok 1;
-};
-
-
-subtest 'LEGACY subkit hook' => sub {
-	again();
-
-	cmp_deeply([$legacy->run_hook('subkit', features => [$stack_scale->features])], [qw[
-			do-thing
-			forced-subkit
-		]], "[legacy] the 'subkit' hook can force new subkits");
-
-	{
-		local $ENV{HOOK_SHOULD_FAIL} = 'yes';
-		throws_ok { $legacy->run_hook('subkit', features => [$stack_scale->features]); }
-			qr/Could not run feature hook in kit legacy\/in-development \(dev\)/i;
-	}
-
-	{
-		local $ENV{HOOK_NO_SUBKITS} = 'yes';
-		cmp_deeply([$legacy->run_hook('subkit', features => [$stack_scale->features])], [],
-			"[legacy] the 'subkit' hook can remove all subkits");
-	}
-
-	{
-		local $ENV{HOOK_SHOULD_BE_AIRY} = 'yes';
-		cmp_deeply([$legacy->run_hook('subkit', features => [$stack_scale->features])], [qw[
-				do-thing
-			]], "[legacy] the 'subkit' hook ignores whitespace");
 	}
 };
 

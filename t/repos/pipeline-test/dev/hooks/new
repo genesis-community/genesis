@@ -1,0 +1,16 @@
+#!/bin/bash
+set -eu
+
+cat > "$GENESIS_ROOT/$GENESIS_ENVIRONMENT.yml" <<EOF
+---
+kit:
+  name:     pipeline-test
+  version:  0.0.1
+  features:
+    - (( replace ))
+
+genesis: {}
+
+params: {}
+EOF
+

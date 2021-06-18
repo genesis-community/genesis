@@ -1,7 +1,0 @@
----
-kit:
-  subkits:
-  - s3
-
-params:
-  env: sandbox

@@ -1,0 +1,20 @@
+#!/bin/bash
+set -eu
+
+if [[ ${HOOK_SHOULD_FAIL:-no} = "yes" ]]; then
+  echo >&2 "Fake Error: the hook was destined to fail"
+  echo     "Fake Output: this was printeded to standard out"
+  exit 1;
+fi
+
+echo "===[ your HOOK deployment ]======================"
+echo
+echo "   env name  : $GENESIS_ENVIRONMENT"
+echo "   deploying : $GENESIS_KIT_NAME/$GENESIS_KIT_VERSION"
+echo "   from      : $GENESIS_ROOT"
+echo "   vault at  : $GENESIS_VAULT_PREFIX"
+echo
+echo "   arguments : [${1:-(none)}]"
+echo
+echo "================================================="
+exit 0

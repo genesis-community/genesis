@@ -1,7 +1,0 @@
----
-properties:
-  blobstore:
-    type: s3
-    config:
-      aki: yup, we got one
-      secret: haha

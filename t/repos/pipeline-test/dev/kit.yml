@@ -1,5 +1,8 @@
 ---
-name: sample-kit
+name: pipeline-test
 version: 0.0.1
-code: https://genesisproject.io
-author: dbell
+description: Test kit for Pipeline scenarios
+author: dbell@starkandwayne.com
+
+credentials: {}
+certificates: {}
