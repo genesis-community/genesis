@@ -173,7 +173,7 @@ sub multi_select_prompt_handler {
 	}
 	my $results = prompt_for_choices($prompt,\@choices, $opts{min}, $opts{max}, \@labels, $opts{msg});
 	return "" unless scalar @$results;
-	return join("\0", '' , @$results);
+	return join("\0", @$results, '');
 }
 sub secret_line_prompt_handler {
 	my ($prompt,%opts) = @_;
