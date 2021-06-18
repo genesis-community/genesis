@@ -203,41 +203,83 @@ sub connect_and_validate {
 }
 
 # }}}
-# download_confg - download a configuration of the given (or default) type and name {{{
-sub download_config {
+# download_confgs - download configuration(s) of the given type (and optional name) {{{
+sub download_configs {
 	my ($self, $path, $type, $name) = @_;
-	$name ||= "default";
-	my $label = $name eq "default" ? "$type config" : "$type config '$name'";
+	$name ||= '*';
 
-	my ($out,$rc,$err) = $self->execute('config', '--type', $type, '--name', $name, '--json');
+	my @configs;
+	if ($name eq '*') {
+		my ($out,$rc,$err) = $self->execute({interactive => 0},
+			'configs -r=1 --type="$1" --json | jq -r \'.Tables[0].Rows[]| {"type": .type, "name": .name}\' | jq -sMc',
+			$type
+		);
 
-	my $json = eval {JSON::PP::decode_json($out)};
-	my $json_err = $@;
-	if ($json_err) {
-		chomp $json_err;
-		$json_err =~ s/ at lib\/Genesis\/BOSH.*//sm;
+		my $configs_list = eval {JSON::PP::decode_json($out) unless $rc};
+		chomp(my $json_err = $@ || '');
+		if ($rc || $json_err) {
+			$json_err =~ s/ at lib\/Genesis\/BOSH.*//sm if $json_err;
+			$err ||= $json_err || "bosh configs returned exit code $rc";
+			bail("#R{[ERROR]} Could not determine available #C{$type} configurations: $err");
+		}
+
+		for (@$configs_list) {
+			my $label = $_->{name} eq "default" ? "base $_->{type} config" : "$_->{type} config '$_->{name}'";
+			push @configs, {type => $_->{type}, name => $_->{name}, label => $label};
+		}
+	} else {
+		my $label = $name eq "default" ? "$type config" : "$type config '$name'";
+		push @configs, {type => $type, name => $name, label => $label};
 	}
 
-	if ($rc || $json_err) {
-		my $msg = $err;
-		$msg = "#R{$json_err:}\n\n[36m$out[0m" if ($json_err && !$msg);
-		$msg ||= join("\n", grep {$_ !~ /^Exit code/} grep {$_ !~ /^Using environment/} @{$json->{Lines}});
-		$msg ||= "Could not understand 'BOSH config' json output:\n\n[36m$out[0m";
-		$msg = "No $label found" if $msg eq 'No config';
-		die $msg."\n";
+	my @config_contents;
+	for (@configs) {
+		my ($out,$rc,$err) = $self->execute({ interactive => 0},
+			'config', '--type', $_->{type}, '--name', $_->{name}, '--json'
+		);
+
+		my $json = eval {JSON::PP::decode_json($out) unless $rc};
+		chomp(my $json_err = $@ || '');
+		if ($rc || $json_err) {
+			$json_err =~ s/ at lib\/Genesis\/BOSH.*//sm if $json_err;
+			$err ||= $json_err || "bosh configs returned exit code $rc";
+			bail("#R{[ERROR]} Could not determine available #C{$type} configurations: $err");
+		}
+
+		if ($rc || $json_err) {
+			my $msg = $err;
+			$msg = "#R{$json_err:}\n\n[36m$out[0m" if ($json_err && !$msg);
+			$msg ||= join("\n", grep {$_ !~ /^Exit code/} grep {$_ !~ /^Using environment/} @{$json->{Lines}});
+			$msg ||= "Could not understand 'BOSH config' json output:\n\n[36m$out[0m";
+			$msg = "No $_->{label} found" if $msg eq 'No config';
+			bail $msg;
+		}
+
+		bug("BOSH returned multiple entries for $_->label - Genesis doesn't know how to process this")
+			if (@{$json->{Tables}} != 1 || @{$json->{Tables}[0]{Rows}} != 1);
+
+		my $config = $json->{Tables}[0]{Rows}[0]{content};
+
+		bail "No $_->{label} contents." unless $config;
+		push @config_contents, $config;
 	}
-
-	bug("BOSH returned multiple entries for $label - Genesis doesn't know how to process this")
-		if (@{$json->{Tables}} != 1 || @{$json->{Tables}[0]{Rows}} != 1);
-
-	my $config = $json->{Tables}[0]{Rows}[0]{content};
-	bail("No $label contents") unless defined($config) && $config ne '';
-
-	return $config if $path eq '-';
-	mkfile_or_fail($path,$config);
-	return 1
+	my $config;
+	if (scalar(@config_contents) > 1) {
+		($config, my $rc, my $err) = run(
+			{interactive => 0, stderr=>0},
+			'spruce merge --multi-doc --go-patch <(echo "$1")',
+			join("\n---\n", @config_contents)
+		);
+		bail("Failed to converge the active $type configurations: $err") if $rc;
+	} else {
+		$config = $config_contents[0]
+	}
+	mkfile_or_fail($path,$config || "");
+	bail(
+		"#R{[ERROR]}  No matching $type configurations defined on '#M{%s}' BOSH director", $self->alias
+	) unless (-s $path);
+	return wantarray ? @configs : \@configs;
 }
-
 # }}}
 # deploy - deploy the given manifest as the deployment {{{
 sub deploy {
