@@ -1320,7 +1320,7 @@ EOF
 			if $pipeline->{pipeline}{vault}{namespace};
 
 		# don't supply bosh creds if we're create-env, because no one to talk to
-		unless ($E->needs_bosh_create_env) {
+		unless ($E->use_create_env) {
 			print $OUT <<EOF;
             BOSH_ENVIRONMENT:     $pipeline->{pipeline}{boshes}{$env}{url}
             BOSH_CLIENT:          $pipeline->{pipeline}{boshes}{$env}{username}
