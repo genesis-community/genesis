@@ -1827,6 +1827,7 @@ EOF
 	}
 
 	my $now = strftime("%Y-%m-%d %H:%M:%S +0000", gmtime());
+	my $bosh_target = $self->use_create_env ? "(none)" : ($self->bosh_env || $self->name);
 	mkfile_or_fail("$self->{__tmp}/fin.yml", 0644, <<EOF);
 ---
 name: (( concat genesis.env "-$type" ))
@@ -1836,8 +1837,9 @@ genesis:
   secrets_mount: ${\($self->secrets_mount)}
   exodus_path:   ${\($self->exodus_slug)}
   exodus_mount:  ${\($self->exodus_mount)}
-  ci_mount:      ${\($self->ci_mount)}
-  bosh_env:      ${\($self->lookup_bosh_target || $self->name)}
+  ci_mount:      ${\($self->ci_mount)}${\(
+  ($self->use_create_env || $self->bosh_env eq $self->name) ? "" :
+  "\n  bosh_env:      $bosh_target")}
 
 exodus:
   version:     $Genesis::VERSION
@@ -1847,6 +1849,7 @@ exodus:
   kit_version: ${\($self->kit->metadata->{version} || '0.0.0-rc0')}
   kit_is_dev:  ${\(ref($self->kit) eq "Genesis::Kit::Dev" ? 'true' : 'false')}
   vault_base:  (( grab meta.vault ))
+  bosh:        $bosh_target
   features:    (( join "," kit.features ))
 EOF
 	# TODO: In BOSH refactor, add the bosh director to the exodus data
