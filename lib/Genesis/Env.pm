@@ -950,14 +950,14 @@ sub download_configs {
 		$name ||= '*';
 		my $label = $name eq "*" ? "all $type configs" : $name eq "default" ? "$type config" : "$type config '$name'";
 		waiting_on STDERR bullet('empty',$label."...", inline=>1, box => 1);
-		my $downloaded = eval {$self->with_bosh->bosh->download_config($file,$type,$name)};
+		my @downloaded = eval {$self->with_bosh->bosh->download_configs($file,$type,$name)};
 		if ($@) {
 			$err = $@;
 			explain STDERR "\r".bullet('bad',$label.join("\n      ", ('...failed!',"",split("\n",$err),"")), box => 1, inline => 1);
 		} else {
 			explain STDERR "[2K\r".bullet('good',$label.($name eq '*' ? ':' : ''), box => 1, inline => 1);
 			$self->use_config($file,$type,$name);
-			for (@$downloaded) {
+			for (@downloaded) {
 				$self->use_config($file,$_->{type},$_->{name});
 				explain STDERR bullet('good',$_->{label}, box => 1, inline => 1, indent => 7) if $name eq "*";
 			}
