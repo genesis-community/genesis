@@ -430,30 +430,6 @@ sub commit_changes {
 }
 # }}}
 #
-sub check_bosh_version {
-	my ($min) = @_;
-	my $best = "0.0.0";
-	foreach my $boshcmd (qw(bosh2 boshv2 bosh)) {
-		my ($version, undef) = run("$boshcmd -v 2>&1 | grep version | head -n1");
-		if ($version =~ /version (\S+?)-.*/) {
-			if (new_enough($1, $min)) {
-				# Try to get the full path if possible
-				$ENV{GENESIS_BOSH_COMMAND} = `/usr/bin/env bash -c 'command -v $boshcmd 2>/dev/null' 2>/dev/null`;
-				$ENV{GENESIS_BOSH_COMMAND} = `which $boshcmd 2>/dev/null` if $? != 0;
-				$ENV{GENESIS_BOSH_COMMAND} = "\\$boshcmd" if $? != 0;
-				chomp $ENV{GENESIS_BOSH_COMMAND};
-				debug("#G{Version $1} of #C{$ENV{GENESIS_BOSH_COMMAND}} meets or exceeds minimum of #W{$min}");
-				return ();
-			}
-			$best = $1 if new_enough($1, $best); # Track the best we've found for error message
-		}
-	}
-	if ($best eq "0.0.0") {
-		return "#R{Missing `bosh2`} - install the BOSH (v2) CLI from #B{https://github.com/cloudfoundry/bosh-cli/releases}";
-	} else {
-		return "BOSH (v2) CLI v${best} is installed, but Genesis requires #R{at least $min} - upgrade your BOSH CLI, via #B{https://github.com/cloudfoundry/bosh-cli/releases}";
-	}
-}
 
 sub check_version {
 	my ($name, $min, $cmd, $regex, $url) = @_;
@@ -500,8 +476,8 @@ sub check_prereqs {
 	my @errors = grep {$_} map {check_version(@$_)} @$reqs;
 
 	# check that we has a bosh (v2)
-	eval {Genesis::BOSH->command($bosh_min_version)};
-	push @errors, $@ if $@;;
+	eval {$ENV{GENESIS_BOSH_COMMAND} = Genesis::BOSH->command($bosh_min_version)};
+	push @errors, $@ if $@;
 
 	if (command_scope(\%conditions, ['repo','env'])) {
 		push @errors, csprintf(
