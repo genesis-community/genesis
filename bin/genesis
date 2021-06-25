@@ -514,14 +514,23 @@ sub check_prereqs {
 	$already_checked=1;
 }
 
-sub extract_kit_to_dev {
-	my ($top,$file) = @_;
+sub decompile_kit {
+	my ($top,$file,$dir) = @_;
+	$dir ||= $top->path('dev');
+	bail(
+		"#R{[ERROR]} #C{%s} already exists, but does not appear to be a kit directory.\n".
+		"Cowardly refusing to continue...\n",
+		humanize_path($dir)
+	) unless ! -e $dir || (-d $dir && -f "$dir/kit.yml");
+
 	my ($out,$rc) = run("tar -ztf \"\$1\" | awk '{print \$NF}' | cut -d'/' -f1 | uniq", $file);
-	bail("#R{ERROR} #C{%s} does not look like a valid compiled kit", $file)
-		unless $rc == 0 && scalar(split $/, $out) == 1;
+	bail(
+		"#R{ERROR} #C{%s} does not look like a valid compiled kit\n",
+		humanize_path($file)
+	) unless $rc == 0 && scalar(split $/, $out) == 1;
 	run(
-		'rm -rf "$2" && mkdir "$2" && tar -xzf "$1" --strip-components=1 -C "$2"',
-		$file, $top->path('dev')
+		'rm -rf "$2" && mkdir -p "$2" && tar -xzf "$1" --strip-components=1 -C "$2"',
+		$file, $dir
 	);
 }
 
@@ -2227,35 +2236,61 @@ sub {
 # }}}
 # genesis decompile-kit - Unpack a kit archive to dev/. {{{
 
-command("decompile-kit", {scope => 'repo'}, <<EOF,
+command("decompile-kit", {alias => 'dk', scope => 'repo'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE: genesis decompile-kit [NAME/VERSION | path/to/kit.tar.gz]
+USAGE: genesis decompile-kit <options> [env|NAME/VERSION|path/to/kit.tar.gz]
 
 OPTIONS
 $GLOBAL_USAGE
-  -f, --force  Overwrite dev/, if it exists.
+  -d, --directory <x> Path to decompile kit into (defaults to dev)
+  -f, --force         Overwrite dev/, if it exists.
 EOF
 sub {
 	my %options;
 	options(\@_, \%options, qw/
+		directory|d=s
 		force|f
 	/);
 	usage(1) if @_ != 1;
 	check_prereqs;
 
 	my $top = Genesis::Top->new('.');
-	bail "#R{[ERROR]} dev/ directory already exists (and --force not specified).  Bailing out.\n"
-		if ($top->has_dev_kit && !$options{force});
+	(my $dir = $options{directory} || 'dev' ) =~ s#/*$#/#;
+	bail(
+		"#R{[ERROR]} #C{%s} directory already exists (and --force not specified).\n".
+		"Will not continue.",
+		humanize_path($dir)
+	) if ($dir eq 'dev/' && $top->has_dev_kit && !$options{force});
 
 	my $file = $_[0];
+	my $label = $file;
+	if (Genesis::Env->exists(name => $file, top => $top)) {
+		my $env = $top->load_env($file) or bail(
+			"#R{[ERROR]} #C{%s} should be an environment YAML file, but could not be loaded",
+			humanize_path($file)
+		);
+		bail(
+			"#R{[ERROR]} Environment #C{%s} is already using a dev kit, and we don't\n".
+			"        want to get into metaphysical absurities...\n",
+			$file
+		) if $env->kit->name eq 'dev';
+		$file = $env->kit->id;
+		$label = $file;
+	}
 	if (! -f $file) {
 		(my $stem = $file) =~ s|/|-|;
 		$file = $top->path(".genesis/kits/$stem.tar.gz");
 		bail("#R{[ERROR]} Unable to find Kit archive %s\n", $_[0]) if (! -f $file);
+	} else {
+		$label = humanize_path($file);
 	}
 
-	explain "Uncompressing compiled kit archive #G{$file} into #C{dev/}";
-	extract_kit_to_dev($top,$file);
+	explain(
+		"Uncompressing compiled kit archive #G{%s} into #C{%s/}\n",
+		$label,
+		humanize_path($dir)
+	);
+	decompile_kit($top,$file,$options{directory});
 });
 
 # }}}
@@ -2726,7 +2761,7 @@ sub {
 		($name,$version,my $target) = $top->download_kit($kitsig,%options)
 			or bail "Failed to download Genesis Kit #C{$kitsig}";
 
-		extract_kit_to_dev($top,$target) if ($options{'as-dev'});
+		decompile_kit($top,$target) if ($options{'as-dev'});
 
 		my $target_str = $options{to} ? " to ".humanize_path($target) : '';
 		$target_str .= " and decompiled it into ".humanize_path($top->path('dev'))
