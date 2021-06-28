@@ -1,6 +1,11 @@
 Genesis - A BOSH Deployment Paradigm
 ==================================
 
+Website: https://genesisproject.io 
+Slack: [genesisproject](https://join.slack.com/t/genesisprojectio/shared_invite/enQtMzk3NTIxMjY1ODk0LTQyNzFhNzkxNjhlYzY0ODAxYWFhYzIwYzMwNzY5N2Y3NDQ0ODBjMWViMzJlOGI5YWNiN2NiYzM4NDdkNzFlOWU)
+The #help channel is available for any questions about Genesis. 
+The #announcements channel mostly contains links and info about the monthly Genesis roadmap call, which anybody is welcome to join. 
+
 ## Genesis v2
 
 Genesis v2 is the first version of Genesis to fully support BOSH v2. It is primarily geared
