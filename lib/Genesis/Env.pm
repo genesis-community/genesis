@@ -175,6 +175,7 @@ sub from_envvars {
 			) unless (under_test && !envset 'GENESIS_TESTING_DEV_VERSION_DETECTION');
 		}
 	}
+	$env->{__min_version} = $min_version || '0.0.0';
 
 	# features
 	$env->{'__features'} = split(' ',$ENV{GENESIS_REQUESTED_FEATURES})
@@ -347,7 +348,8 @@ sub deployment_name {
 # is_bosh_director - returns true if the environment represents a BOSH director deployment {{{
 sub is_bosh_director {
 	my $self = shift;
-	$self->kit->name eq 'bosh' || $self->kit->metadata->{is_bosh_director};
+	$self->kit->id =~ /^bosh\// || $self->kit->metadata->{is_bosh_director};
+	# TODO: This is very fragile, rework for better diagnosis
 }
 
 # }}}
@@ -355,7 +357,23 @@ sub is_bosh_director {
 sub use_create_env {
 	my ($self) = @_;
 	# Currently, we only support create-env deployments for bosh deployments.
-  return $self->is_bosh_director && ! defined($self->lookup('genesis.bosh_env',undef));
+	return unless $self->is_bosh_director;
+
+	# Todo: environments based on v2.8.0 will use genesis.use_create_env
+	if ($self->kit->feature_compatibility("2.8.0") && $self->{__min) {
+		my $use_create_env = 'x';
+	}
+
+	my $bosh_target = $ENV{GENESIS_BOSH_ENVIRONMENT} || $self->lookup(['genesis.bosh_env','params.bosh'], undef) || $self->name));
+	return $bosh_target eq $self->name;
+}
+
+# }}}
+# feature_compatibility - returns true if the min version for the environment meets or exceeds the specified version {{{
+sub feature_compatibility {
+	my ($self,$version) = @_;
+	trace("Comparing %s environment specified version (%s) to %s feature base", $self->name, $self->{__min_version}, $version);
+	return new_enough($self->{__min_version},$version);
 }
 
 # }}}
@@ -1338,7 +1356,7 @@ sub deploy {
 	my $exodus = $self->exodus;
 
 	$exodus->{manifest_sha1} = digest_file_hex($manifest_file, 'SHA-1');
-	$exodus->{bosh} = $self->bosh->{alias} || "(none)";
+	$exodus->{bosh} = $self->bosh->{alias} || "~";
 	$exodus->{is_bosh} = $self->is_bosh_director?1:0;
 	debug("setting exodus data in the Vault, for use later by other deployments");
 	$ok = $self->vault->authenticate->query(
@@ -1827,7 +1845,7 @@ EOF
 	}
 
 	my $now = strftime("%Y-%m-%d %H:%M:%S +0000", gmtime());
-	my $bosh_target = $self->use_create_env ? "(none)" : ($self->bosh_env || $self->name);
+	my $bosh_target = $self->use_create_env ? "~" : ($self->bosh_env || $self->name);
 	mkfile_or_fail("$self->{__tmp}/fin.yml", 0644, <<EOF);
 ---
 name: (( concat genesis.env "-$type" ))
