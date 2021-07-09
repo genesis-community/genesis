@@ -1146,11 +1146,15 @@ genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis init [-k KIT/VERSION] [-d directory] [name]
 
 OPTIONS
-$GLOBAL_USAGE
+$REPO_USAGE
   -k, --kit           Name (and optionally, version) of the Genesis Kit to base
                       these deployments on.  I.e.: shield/6.3.0.  If you do not
                       specify a kit, a dev directory will be created for you to
                       develop a local kit into.
+
+                      You can also specify a path to a compiled kit to use that
+                      explicit kit, which will be copied into the .genesis/kits/
+                      directory
   -L, --link-dev-kit  Instead of using a kit or initializing an empty dev
                       directory, this will link the specified directory to the
                       dev directory.
@@ -1171,6 +1175,7 @@ sub {
 	my %options;
 	Genesis::Kit::Provider->parse_opts(\@_, \%options);
 	options(\@_, \%options, qw/
+		REPO_USAGE
 		kit|k=s
 		vault=s
 		directory|d=s
@@ -1186,12 +1191,16 @@ sub {
 		my $pwd = getcwd;
 		die "Link target '$options{'link-dev-kit'}' cannot be found from $pwd!\n" unless $abs_target;
 	}
+	my $name = shift;
+	my $kit_file;
+	if ($options{kit} =~ m|(?:.*/)?([^/])-\d+\.\d+\.\d+(?:-rc\d+)?\.tgz| && -f $options{kit}) {
+		$kit_file = $options{kit};
+		$name = $1 unless $name;
+	}
 
-	my ($name) = @_;
 	unless ($name) {
-		if ($options{kit}) {
+		if ($options{kit} && ! $kit_file) {
 			($name = $options{kit}) =~ s|/.*||;
-
 		} elsif ($options{'link-dev-kit'}) {
 			$name = basename($options{'link-dev-kit'});
 		} else {
@@ -1234,6 +1243,11 @@ sub {
 			debug("Kit: linking dev to $abs_target");
 			symlink_or_fail($abs_target, "./dev");
 			$kit_desc = "\n - linked to kit at #C{$abs_target}.";
+
+		} elsif ($kit_file) {
+			debug("Kit: using local kit file $kit_file");
+			copy_or_fail($kit_file, ".genesis/kits/");
+			$kit_desc = "\n - using locally provided compiled kit #C{$kit_file}.";
 
 		} elsif ($options{kit}) {
 			debug("Kit: installing kit $options{kit}");
