@@ -482,7 +482,7 @@ sub check_prereqs {
 	my %conditions = @_;
 	return 1 if envset("GENESIS_IS_HELPING_YOU") || $already_checked;
 
-	my $bosh_min_version = "5.0.1";
+	my $bosh_min_version = "6.4.4";
 	my $reqs = [
 		# Name,     Version, Command,                                 Pattern                   Source
 		["spruce", "1.26.0", "spruce -v      2>/dev/null",                             qr(.*version\s+(\S+).*)i, "https://github.com/geofffranks/spruce/releases"],
