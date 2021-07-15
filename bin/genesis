@@ -1193,7 +1193,8 @@ sub {
 	}
 	my $name = shift;
 	my $kit_file;
-	if ($options{kit} =~ m|(?:.*/)?([^/])-\d+\.\d+\.\d+(?:-rc\d+)?\.tgz| && -f $options{kit}) {
+	if ($options{kit} =~ m#(?:.*/)?([^/]+)-\d+\.\d+\.\d+(?:-rc\.?\d+)?\.t(?:ar\.)?gz#) {
+		bail ("Local compiled kit file $options{kit} not found") unless -f $options{kit};
 		$kit_file = $options{kit};
 		$name = $1 unless $name;
 	}
@@ -1203,11 +1204,10 @@ sub {
 			($name = $options{kit}) =~ s|/.*||;
 		} elsif ($options{'link-dev-kit'}) {
 			$name = basename($options{'link-dev-kit'});
-		} else {
-			printf STDERR "You must specify a deployment name if you don't specify a kit or a dev link target.\n";
-			usage(1);
 		}
 	}
+	usage(1, "You must specify a deployment name if you don't specify a kit or a dev link target.\n")
+		unless $name;
 
 	if ($ENV{GIT_AUTHOR_NAME}) {
 		$ENV{GIT_COMMITTER_NAME} ||= $ENV{GIT_AUTHOR_NAME};
@@ -1246,7 +1246,9 @@ sub {
 
 		} elsif ($kit_file) {
 			debug("Kit: using local kit file $kit_file");
-			copy_or_fail($kit_file, ".genesis/kits/");
+			my $target = $top->path(".genesis/kits");
+			mkdir_or_fail($target);
+			copy_or_fail($kit_file, $target);
 			$kit_desc = "\n - using locally provided compiled kit #C{$kit_file}.";
 
 		} elsif ($options{kit}) {
