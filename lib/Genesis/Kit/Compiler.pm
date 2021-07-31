@@ -45,12 +45,14 @@ sub validate {
 				if ($meta->{authors} && (ref($meta->{authors}||'') ne 'ARRAY'));
 
 			# genesis versions must be semver
+			my $min_version="0.0.0";
 			if (exists $meta->{genesis_version_min}) {
 				if (!semver($meta->{genesis_version_min})) {
 					push @yml_errors, "specifies minimum Genesis version '$meta->{genesis_version_min}', which is not a semantic version (x.y.z).";
 				} elsif (semver($Genesis::VERSION) && ! new_enough $Genesis::VERSION, $meta->{genesis_version_min}) {
 					push @yml_errors, "This Genesis (v$Genesis::VERSION) does not meet minimum Genesis version of v$meta->{genesis_version_min}"
 				}
+				$min_version = $meta->{genesis_version_min};
 			}
 
 			# check for errant top-level keys - params, subkits and features have been discontinued.
@@ -61,10 +63,19 @@ sub validate {
 				push @yml_errors, "specifies invalid secrets_store: expecting one of 'vault' or 'credhub'";
 			}
 
+			# v2.8.0 specs
+			if (exists $meta->{use_create_env}) {
+				push @yml_errors, "'use_create_env' requires a 'genesis_version_min' of at least 2.8.0"
+					unless (new_enough($min_version, "2.8.0"));
+				push @yml_errors, "'use_create_env' must be one of yes, no, or allow"
+					unless ($meta->{use_create_env} =~ /^(yes|no|allow)$/);
+			}
+
 			my @errant_keys = ();
 			for my $key (sort keys %$meta) {
 				push(@errant_keys, $key) unless grep {$_ eq $key} @valid_keys;
 			}
+			push @valid_keys, "use_create_env" if new_enough($min_version, "2.8.0");
 			if (@errant_keys) {
 				push @yml_errors, sprintf(
 					"contains invalid top-level key%s: %s;\nvalid keys are: %s",

@@ -296,8 +296,10 @@ EOF
 	ok($env->has_feature('vsphere'), "standalone env has the vsphere feature");
 	ok($env->has_feature('second-feature'), "standalone env has the second-feature feature");
 	ok(!$env->has_feature('xyzzy'), "standalone env doesn't have the xyzzy feature");
-	ok($env->use_create_env(),
-		"bosh environments without specifying bosh_env require bosh create-env");
+	throws_ok { $env->use_create_env() } qr/ERROR/;
+	throws_ok { $env->use_create_env() }
+		qr/\[ERROR\] This bosh environment does not use create-env \(proto\) or specify.*an alternative genesis.bosh_env/sm,
+		"bosh environments without specifying bosh_env require bosh create-env";
 
 	put_file $top->path("regular-deploy.yml"), <<EOF;
 ---
@@ -306,6 +308,7 @@ kit:
   version: 0.2.0
   features:
     - vsphere
+    - proto
 
 genesis:
   env:      regular-deploy
@@ -314,8 +317,10 @@ EOF
 	lives_ok { $env = $top->load_env('regular-deploy') }
 	         "Genesis::Env should be able to load the `regular-deploy' environment.";
 	ok($env->has_feature('vsphere'), "regular-deploy env has the vsphere feature");
-	ok(!$env->use_create_env(),
-		"bosh environments with genesis.bosh_env set do not require bosh create-env");
+	quietly { throws_ok { $env->use_create_env() }
+		qr/\[ERROR\] This bosh environment specifies an alternative bosh_env, but is\n        marked as a create-env \(proto\) environment./sm,
+		"bosh environments with bosh_env can't be a protobosh, or vice versa";
+	};
 
 	teardown_vault();
 };
@@ -614,9 +619,11 @@ kit:
   version: latest
   features:
     - papa     # for pruning tests
+    - proto
 genesis:
   env: proto
 EOF
+
 	my $env = $top->load_env('proto')->use_config($top->path('.cloud.yml'));
 	ok $env->use_create_env, "'proto' test env needs create-env";
 	cmp_deeply(scalar load_yaml($env->manifest(prune => 0)), {

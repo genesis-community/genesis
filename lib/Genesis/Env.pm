@@ -89,6 +89,7 @@ sub load {
 				push(@errors, "genesis #Ri{v$Genesis::VERSION} does not meet minimum version of #ci{$min_version}");
 			}
 		}
+		$env->{__min_version} = $min_version || '0.0.0';
 
 		my $kit_name = $env->lookup('kit.name');
 		my $kit_version = $env->lookup('kit.version');
@@ -355,17 +356,74 @@ sub is_bosh_director {
 # }}}
 # use_create_env - true if the deployment uses bosh create-env {{{
 sub use_create_env {
-	my ($self) = @_;
-	# Currently, we only support create-env deployments for bosh deployments.
-	return unless $self->is_bosh_director;
+	return $_[0]->_memoize('__use_create_env',sub {
+		my ($self) = @_;
+		my $is_bosh_director = $self->is_bosh_director;
 
-	# Todo: environments based on v2.8.0 will use genesis.use_create_env
-	if ($self->kit->feature_compatibility("2.8.0") && $self->{__min) {
-		my $use_create_env = 'x';
-	}
+		sub validate_create_env_state {
+			my ($is_create_env,$has_bosh_env,$kit_name,$is_bosh_kit) = @_;
+			bail(
+				"#R{[ERROR]} This #M{$kit_name} environment specifies an alternative bosh_env, but is\n".
+				"        marked as a create-env (proto) environment. Create-env deployments can't\n".
+				"        use a #C{genesis.bosh_env} value, so please remove it, or mark this\n".
+				"        environment as a non-create-env environment."
+			) if $is_create_env && $has_bosh_env;
+			bail(
+				"#R{[ERROR]} This #M{$kit_name} environment does not use create-env (proto) or specify\n".
+				"        an alternative #C{genesis.bosh_env} as a deploy target. Please provide\n".
+				"        the name of the BOSH environment that will deploy this environment, or\n".
+				"        mark this environment as a create-env environment."
+			) unless $is_create_env || $has_bosh_env || !$is_bosh_kit;
+		}
 
-	my $bosh_target = $ENV{GENESIS_BOSH_ENVIRONMENT} || $self->lookup(['genesis.bosh_env','params.bosh'], undef) || $self->name));
-	return $bosh_target eq $self->name;
+		my $bosh_target = ($ENV{GENESIS_BOSH_ENVIRONMENT} || $self->lookup(['genesis.bosh_env','params.bosh'], undef) || $self->name);
+		my $different_bosh_env =  $bosh_target ne $self->name;
+
+
+		if ($self->kit->feature_compatibility("2.8.0")) {
+			# Kits that are explicitly compatible with 2.8.0 can specify if they
+			# support or require create-env deployments.
+
+			my $uce = $self->kit->metadata('use_create_env');
+			if ($uce eq 'yes') {
+				bail(
+					"#R{[ERROR]} This kit only allows create-env deployments, but this environment\n".
+					"        specifies an alternative bosh_env.  Please remove the #C{genesis.bosh_env}\n".
+					"        entry from the environment file."
+				) if $different_bosh_env;
+				return 1;
+			};
+			if ($uce eq 'no') {
+				bail (
+					"#R{[ERROR]} BOSH environments must specify the name of the parent BOSH director\n".
+					"        that will deploy this enviornment under #C{genesis.bosh_env} in the\n".
+					"        file, because unlike other kits, it cannot derive its director from its\n".
+					"        environment name."
+				) if $is_bosh_director && !$different_bosh_env;
+				return 0 ;
+			}
+
+			if ($self->feature_compatibility("2.8.0")) {
+				my $is_create_env = $self->lookup('genesis.use_create_env');
+				validate_create_env_state($is_create_env,$different_bosh_env,$self->kit->{name},$is_bosh_director);
+				return $is_create_env;
+			} else {
+				# If the env is not up to date, a 2.8.0+ kit must catch offending
+				# outdated features that would indicate it wants create-env, so if it
+				# gets this far, it must not use create-env
+				return 0;
+			}
+		}
+
+		# Before 2.8.0, we only support create-env deployments for bosh deployments.
+		return 0 unless $is_bosh_director;
+
+		# Support pre-v2.8.0 create env schemes...
+		my $features = scalar($self->lookup(['kit.features', 'kit.subkits'], []));
+		my $create_env_feature_detected = scalar(grep {$_ =~ /^(proto|bosh-init|create-env)$/} @$features) ? 1 : 0;
+		validate_create_env_state($create_env_feature_detected,$different_bosh_env,"bosh",1);
+		return $create_env_feature_detected;
+	});
 }
 
 # }}}

@@ -1,7 +1,7 @@
 kit:
   name: dev
   version: latest
-  features: []
+  features: [ create-env ]
 genesis:
   env: create-env-sandbox
 params:
