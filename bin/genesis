@@ -44,6 +44,7 @@ our $USER_AGENT_STRING = "genesis/$Genesis::VERSION";
 use FindBin;
 $ENV{GENESIS_CALLBACK_BIN} ||= $FindBin::Bin.'/'.$FindBin::Script;
 $ENV{GENESIS_LIB} ||= $FindBin::Bin.'/lib';
+our $CALL = join(" ", map {$_ =~ / / ? "\"$_\"" : $_} ($0, @ARGV));
 
 my ($COMMAND, %RUN, %USAGE, %PROPS);
 
@@ -630,24 +631,30 @@ EOF
 sub options {
 	my ($args, $options, @spec) = @_;
 	my $base_opt_type = (defined($spec[0]) && $spec[0] =~ /_USAGE$/) ? shift(@spec) : '';
-	my @global_spec = (qw/
+	my @global_spec;
+
+	if ($base_opt_type ne 'BLANK_USAGE') {
+		push(@global_spec,(qw/
 		help|h
 		debug|D+
 		trace|T+
 		show-stack|S
 		color!
-		quiet|q/);
+		quiet|q/));
 
-	if ($base_opt_type ne 'BASE_USAGE') {
-		push(@global_spec, (qw/
-			cwd|C=s/));
-
-		if ($base_opt_type ne 'REPO_USAGE') {
+		if ($base_opt_type ne 'BASE_USAGE') {
+			# REPO_USAGE
 			push(@global_spec, (qw/
-				bosh-env|e=s
-				config|c=s@
-				cloud-config|cc=s
-				runtime-config|rc=s/));
+				cwd|C=s/));
+
+			if ($base_opt_type ne 'REPO_USAGE') {
+				# GLOBAL_USAGE
+				push(@global_spec, (qw/
+					bosh-env|e=s
+					config|c=s@
+					cloud-config|cc=s
+					runtime-config|rc=s/));
+			}
 		}
 	}
 
@@ -1717,33 +1724,56 @@ sub {
 
 command("bosh", {scope => 'env'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE: genesis bosh [<options>] env-name[.yml] -- <bosh command and options>
+USAGE: genesis bosh [<options>] env-name[.yml] <bosh command and options>
 
-Runs the specified bosh command and options, without the need to specify the director or deployment name.
+Runs the specified bosh command and options, without the need to specify the
+director or deployment name.  The options below must come BEFORE any bosh
+command and options, or they will be passed through to the bosh cli.
 
 OPTIONS
-$GLOBAL_USAGE
-  -d, --director         The specified environment is the desired BOSH director
-                         to target, and there is no associated deployment.
-                         Without this option, it will target the BOSH director
-                         used to deploy this environment, with the environment
-                         being the associated deployment.
-      --envs             Return an eval-able export of BOSH environment variables
-                         that will enable the bosh cli to target the desired
-                         deployment and associated BOSH director.
+  -h, --help         Show this help screen.
+
+  -C, --cwd          Effective working directory.  You can also specify the
+                     environment YAML file to use, in which case the working
+                     directory is the one containing the specified file.
+                     Defaults to '.'
+
+  -A, --as-director  The specified environment is the desired BOSH director
+                     to target, and there is no associated deployment.
+                     Without this option, it will target the BOSH director
+                     used to deploy this environment, with the environment
+                     being the associated deployment.
+
+      --connect      Intended to run inside an #C{eval "$(...)"} wrapper, this
+                     command will set the environment variables required to
+                     connect via the bosh cli, targeting the desired
+                     deployment and associated BOSH director.
 
 EOF
 sub {
 	my %options = (redact => ! -t STDOUT);
+	my @opts;
+	while (@_) {
+		my $entry = shift;
+		if ( $entry =~ /(--connect|--as-director|-A|--help|-h)/) {
+			push(@opts, $entry);
+		} elsif ( $entry =~ /(--cwd|-C)/) {
+			push(@opts, $entry, shift);
+		} else {
+			push(@opts, "--",$entry,@_);
+			last;
+		}
+	}
 	options(\@_, \%options, qw/
-		director|d
-		envs
+		BLANK_USAGE
+		as-director|A
+		connect
 	/);
 	usage unless @_;
 	my $env = Genesis::Top->new('.')->load_env(shift)->with_vault();
 
 	my $bosh;
-	if ($options{director}) {
+	if ($options{'as-director'}) {
 		my $exodus_data = eval {$env->vault->get($env->exodus_base)};
 		if ($exodus_data->{url} && $exodus_data->{admin_password}) {
 			$bosh = Genesis::BOSH::Director->from_exodus($env->name, exodus_data => $exodus_data);
@@ -1752,18 +1782,24 @@ sub {
 		}
 	} else {
 		bail("#R{[ERROR]} Environment %s is a 'create-env' environment, so it does\n".
-				 "			not have an associated BOSH Director.  Please use the #y{--director} option\n".
-				 "			if you are trying to target this environment for the BOSH director",
+				 "        not have an associated BOSH Director.  Please use the #y{--as-director} option\n".
+				 "        if you are trying to target this environment as the BOSH director",
 				 $env->name
 		) if ($env->use_create_env);
 		$bosh = $env->bosh;
 	}
-	if ($options{envs}) {
+	if ($options{connect}) {
+		if (in_controlling_terminal) {
+			explain "This command is expected to be run in the following manner:";
+			explain "  eval \"$($CALL)\"";
+			explain "";
+			explain "This will set the BOSH environment variables in the current shell";
+			exit 1;
+		}
 		my %bosh_envs = $bosh->environment_variables
 			unless in_controlling_terminal;
 		for (keys %bosh_envs) {
 			(my $escaped_value = $bosh_envs{$_}||"") =~ s/"/"\\""/g;
-			#$escaped_value =~ s/\n/\\/g;
 			explain 'export %s="%s"', $_, $escaped_value;
 		}
 		explain STDERR "Exported environmental variables for BOSH director %s", $bosh->{alias};
