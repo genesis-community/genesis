@@ -258,6 +258,9 @@ sub metadata {
 		} elsif ( -f "./kit-overrides.yml" ) {
 			push @kit_files, "./kit-overrides.yml";
 		}
+		if ($self->{__overrides} && ref($self->{__overrides}) eq 'ARRAY') {
+			push @kit_files, @{$self->{__overrides}};
+		}
 		$self->{__metadata} = read_json_from(run(
 				{onfailure => "#R{[ERROR] Could not read kit metadata"},
 				'spruce merge --go-patch --multi-doc "$@" | spruce json',
@@ -267,6 +270,21 @@ sub metadata {
 	return $self->{__metadata} unless @keys;
 	return $self->{__metadata}->{$keys[0]} if @keys == 1;
 	return get_opts($self->{__metadata}, @keys);
+}
+
+# }}}
+# apply_env_overrides - apply environment-specific override files to the kit {{{
+sub apply_env_overrides {
+	my ($self, @overrides) = @_;
+	$self->{__overrides} = [@overrides];
+	# Clear the loaded metadata
+	$self->{__metadata} = undef;
+}
+
+# }}}
+# env_override_files - return the list of environment kit overrides {{{
+sub env_override_files {
+	return @{$_[0]->{__overrides} || []};
 }
 
 # }}}

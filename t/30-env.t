@@ -1104,4 +1104,387 @@ EOF
 	teardown_vault();
 };
 
+# TODO
+subtest 'env_kit_overrides' => sub {
+	local $ENV{GENESIS_BOSH_COMMAND};
+	fake_bosh;
+
+	my ($director1) = fake_bosh_directors(
+		{alias => 'standalone'},
+	);
+	my $vault_target = vault_ok;
+	Genesis::Vault->clear_all();
+	Genesis::BOSH->set_command($ENV{GENESIS_BOSH_COMMAND});
+	my $top = Genesis::Top->create(workdir, 'thing', vault=>$VAULT_URL)->link_dev_kit('t/src/creator');
+	put_file $top->path("standalone.yml"), <<EOF; # Direct YAML
+---
+kit:
+  name:    dev
+  version: latest
+  features:
+  - bonus
+  overrides:
+    certificates:
+      base:
+        private-cert: # Additional cert signed by existing CA
+          server:
+            signed_by: "my-cert/ca"
+            valid_for: (( defer grab certificates.base.my-cert.server.valid_for )) # Grab from kit.yml
+            names: [ (( grab genesis.env )) ] # Grab from env file
+      bonus: ~ # Deletion
+    credentials:
+      bonus:
+        need-to-know:
+          secret: random 32 #New
+        crazy/thing:
+          token: random 48 allowed-chars ABCDEF0123456789 # Update
+
+genesis:
+  env: standalone
+
+params:
+  extras:
+    - 1
+    - 2
+    - 3
+
+EOF
+	my $env = $top->load_env('standalone');
+	ok ! $env->use_create_env(), "env does not use create-env";
+
+  # check env override count and content
+	my @override_files = $env->kit->env_override_files();
+	ok scalar(@override_files) == 1, "there is one environment kit override file";
+	ok $override_files[0] =~ /\/env-overrides-0.yml$/, "override file is named correctly";
+	eq_or_diff slurp($override_files[0]), <<EOF, "override contains expected values";
+certificates:
+  base:
+    private-cert:
+      server:
+        names:
+        - standalone
+        signed_by: my-cert/ca
+        valid_for: (( grab certificates.base.my-cert.server.valid_for ))
+  bonus: null
+credentials:
+  bonus:
+    crazy/thing:
+      token: random 48 allowed-chars ABCDEF0123456789
+    need-to-know:
+      secret: random 32
+
+EOF
+
+	local $ENV{NOCOLOR} = "yes";
+	my $out;
+	lives_ok {
+		$out = combined_from {$env->add_secrets() }
+	} "successfully add secrets with environment kit overrides";
+
+	$out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds?/$1 XXX seconds/g;
+	eq_or_diff $out, <<EOF, "environment kit overrides add the expected secrets";
+Parsing kit secrets descriptions ... done. - XXX seconds
+
+Adding 10 secrets for standalone under path '/secret/standalone/thing/':
+  [ 1/10] my-cert/ca X509 certificate - CA, self-signed ... done.
+  [ 2/10] my-cert/server X509 certificate - signed by 'my-cert/ca' ... done.
+  [ 3/10] private-cert/server X509 certificate - signed by 'my-cert/ca' ... done.
+  [ 4/10] crazy/thing:id random password - 32 bytes, fixed ... done.
+  [ 5/10] crazy/thing:token random password - 48 bytes ... done.
+  [ 6/10] need-to-know:secret random password - 32 bytes ... done.
+  [ 7/10] users/admin:password random password - 64 bytes ... done.
+  [ 8/10] users/bob:password random password - 16 bytes ... done.
+  [ 9/10] work/signing_key RSA public/private keypair - 2048 bits, fixed ... done.
+  [10/10] something/ssh SSH public/private keypair - 2048 bits, fixed ... done.
+Completed - Duration: XXX seconds [10 added/0 skipped/0 errors]
+
+EOF
+
+	lives_ok {
+		$out = combined_from {$env->check_secrets(verbose => 1, validate => 1) }
+	} "successfully check secrets with environment kit overrides";
+	$out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds?/$1 XXX seconds/g;
+	$out =~ s/expires in (\d+) days \(([^\)]+)\)/expires in $1 days (<timestamp>)/g;
+	matches_utf8 $out, <<EOF, "environment kit overrides create expected secrets - validation";
+Parsing kit secrets descriptions ... done. - XXX seconds
+Retrieving all existing secrets ... done. - XXX seconds
+
+Validating 10 secrets for standalone under path '/secret/standalone/thing/':
+  [ 1/10] my-cert/ca X509 certificate - CA, self-signed ... valid.
+          [✔ ] CA Certificate
+          [✔ ] Self-Signed
+          [✔ ] Valid: expires in 3650 days (<timestamp>)
+          [✔ ] Modulus Agreement
+          [✔ ] Default CA key usage: server_auth, client_auth, crl_sign, key_cert_sign
+
+  [ 2/10] my-cert/server X509 certificate - signed by 'my-cert/ca' ... valid.
+          [✔ ] Not a CA Certificate
+          [✔ ] Signed by my-cert/ca
+          [✔ ] Valid: expires in 365 days (<timestamp>)
+          [✔ ] Modulus Agreement
+          [✔ ] Subject Name 'locker'
+          [✔ ] Subject Alt Names: 'locker'
+          [✔ ] Default key usage: server_auth, client_auth
+
+  [ 3/10] private-cert/server X509 certificate - signed by 'my-cert/ca' ... valid.
+          [✔ ] Not a CA Certificate
+          [✔ ] Signed by my-cert/ca
+          [✔ ] Valid: expires in 365 days (<timestamp>)
+          [✔ ] Modulus Agreement
+          [✔ ] Subject Name 'standalone'
+          [✔ ] Subject Alt Names: 'standalone'
+          [✔ ] Default key usage: server_auth, client_auth
+
+  [ 4/10] crazy/thing:id random password - 32 bytes, fixed ... valid.
+          [✔ ] 32 characters
+
+  [ 5/10] crazy/thing:token random password - 48 bytes ... valid.
+          [✔ ] 48 characters
+          [✔ ] Only uses characters 'ABCDEF0123456789'
+
+  [ 6/10] need-to-know:secret random password - 32 bytes ... valid.
+          [✔ ] 32 characters
+
+  [ 7/10] users/admin:password random password - 64 bytes ... valid.
+          [✔ ] 64 characters
+
+  [ 8/10] users/bob:password random password - 16 bytes ... valid.
+          [✔ ] 16 characters
+
+  [ 9/10] work/signing_key RSA public/private keypair - 2048 bits, fixed ... valid.
+          [✔ ] Valid private key
+          [✔ ] Valid public key
+          [✔ ] Public/Private key agreement
+          [✔ ] 2048 bit
+
+  [10/10] something/ssh SSH public/private keypair - 2048 bits, fixed ... valid.
+          [✔ ] Valid private key
+          [✔ ] Valid public key
+          [✔ ] Public/Private key Agreement
+          [✔ ] 2048 bits
+
+Completed - Duration: XXX seconds [10 validated/0 skipped/0 errors]
+
+EOF
+
+	put_file $top->path("c.yml"), <<EOF; # Array entry: string
+---
+kit:
+  name:    dev
+  version: latest
+  features:
+  - bonus
+  overrides:
+    - |
+      genesis_version_min: 2.8.0
+      use_create_env: allow
+EOF
+
+	put_file $top->path("c-env.yml"), <<EOF; # Direct YAML
+---
+kit:
+  features:
+  - ((append))
+  - custom-proto
+  overrides:
+  - ((append))
+  - provided:
+      custom-proto:
+        iaas:
+          keys:
+            access_key:
+              sensitive: false
+              prompt:    IaaS Access Key
+            secret_key:
+              prompt:    IaaS Secret Key
+
+    certificates:
+      custom-proto:
+        some-ssl:
+          ca: {valid_for: 2y}
+          server: {names: [ "proto-ssl" ]}
+
+    credentials:
+      custom-proto:
+        proto-credentials:
+          token: random 24 fmt base64
+          seed:  random 64 fixed
+
+genesis:
+  env: c-env
+  min_version: 2.8.0
+  use_create_env: yes
+
+EOF
+
+	$env = $top->load_env('c-env');
+	ok $env->use_create_env(), "env uses create-env (v2.8.0 method)";
+
+  # check env override count and content
+	@override_files = $env->kit->env_override_files();
+	ok scalar(@override_files) == 2, "there is one environment kit override file";
+	ok $override_files[0] =~ /\/env-overrides-0.yml$/, "first override file is named correctly";
+	eq_or_diff slurp($override_files[0]), <<EOF, "first override contains expected values";
+genesis_version_min: 2.8.0
+use_create_env: allow
+EOF
+	ok $override_files[1] =~ /\/env-overrides-1.yml$/, "second override file is named correctly";
+	eq_or_diff slurp($override_files[1]), <<EOF, "first override contains expected values";
+certificates:
+  custom-proto:
+    some-ssl:
+      ca:
+        valid_for: 2y
+      server:
+        names:
+        - proto-ssl
+credentials:
+  custom-proto:
+    proto-credentials:
+      seed: random 64 fixed
+      token: random 24 fmt base64
+provided:
+  custom-proto:
+    iaas:
+      keys:
+        access_key:
+          prompt: IaaS Access Key
+          sensitive: false
+        secret_key:
+          prompt: IaaS Secret Key
+
+EOF
+
+  `safe set --quiet secret/c/env/thing/iaas access_key='knock-knock' secret_key='drowsapp'`;
+	local $ENV{NOCOLOR} = "yes";
+	lives_ok {
+		$out = combined_from {$env->add_secrets() }
+	} "successfully add secrets with environment kit overrides";
+
+	$out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds?/$1 XXX seconds/g;
+	eq_or_diff $out, <<EOF, "environment kit overrides add the expected secrets";
+Parsing kit secrets descriptions ... done. - XXX seconds
+
+Adding 16 secrets for c-env under path '/secret/c/env/thing/':
+  [ 1/16] my-cert/ca X509 certificate - CA, self-signed ... done.
+  [ 2/16] my-cert/server X509 certificate - signed by 'my-cert/ca' ... done.
+  [ 3/16] some-ssl/ca X509 certificate - CA, self-signed ... done.
+  [ 4/16] some-ssl/server X509 certificate - signed by 'some-ssl/ca' ... done.
+  [ 5/16] ssl/ca X509 certificate - CA, self-signed ... done.
+  [ 6/16] ssl/server X509 certificate - signed by 'ssl/ca' ... done.
+  [ 7/16] iaas:access_key user-provided - IaaS Access Key ... exists!
+  [ 8/16] iaas:secret_key user-provided - IaaS Secret Key ... exists!
+  [ 9/16] crazy/thing:id random password - 32 bytes, fixed ... done.
+  [10/16] crazy/thing:token random password - 16 bytes ... done.
+  [11/16] proto-credentials:seed random password - 64 bytes, fixed ... done.
+  [12/16] proto-credentials:token random password - 24 bytes ... done.
+  [13/16] users/admin:password random password - 64 bytes ... done.
+  [14/16] users/bob:password random password - 16 bytes ... done.
+  [15/16] work/signing_key RSA public/private keypair - 2048 bits, fixed ... done.
+  [16/16] something/ssh SSH public/private keypair - 2048 bits, fixed ... done.
+Completed - Duration: XXX seconds [14 added/2 skipped/0 errors]
+
+EOF
+
+	lives_ok {
+		$out = combined_from {$env->check_secrets(verbose => 1, validate => 1) }
+	} "successfully check secrets with environment kit overrides";
+	$out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds?/$1 XXX seconds/g;
+	$out =~ s/expires in (\d+) days \(([^\)]+)\)/expires in $1 days (<timestamp>)/g;
+	matches_utf8 $out, <<EOF, "environment kit overrides create expected secrets - validation";
+Parsing kit secrets descriptions ... done. - XXX seconds
+Retrieving all existing secrets ... done. - XXX seconds
+
+Validating 16 secrets for c-env under path '/secret/c/env/thing/':
+  [ 1/16] my-cert/ca X509 certificate - CA, self-signed ... valid.
+          [✔ ] CA Certificate
+          [✔ ] Self-Signed
+          [✔ ] Valid: expires in 3650 days (<timestamp>)
+          [✔ ] Modulus Agreement
+          [✔ ] Default CA key usage: server_auth, client_auth, crl_sign, key_cert_sign
+
+  [ 2/16] my-cert/server X509 certificate - signed by 'my-cert/ca' ... valid.
+          [✔ ] Not a CA Certificate
+          [✔ ] Signed by my-cert/ca
+          [✔ ] Valid: expires in 365 days (<timestamp>)
+          [✔ ] Modulus Agreement
+          [✔ ] Subject Name 'locker'
+          [✔ ] Subject Alt Names: 'locker'
+          [✔ ] Default key usage: server_auth, client_auth
+
+  [ 3/16] some-ssl/ca X509 certificate - CA, self-signed ... valid.
+          [✔ ] CA Certificate
+          [✔ ] Self-Signed
+          [✔ ] Valid: expires in 730 days (<timestamp>)
+          [✔ ] Modulus Agreement
+          [✔ ] Default CA key usage: server_auth, client_auth, crl_sign, key_cert_sign
+
+  [ 4/16] some-ssl/server X509 certificate - signed by 'some-ssl/ca' ... valid.
+          [✔ ] Not a CA Certificate
+          [✔ ] Signed by some-ssl/ca
+          [✔ ] Valid: expires in 365 days (<timestamp>)
+          [✔ ] Modulus Agreement
+          [✔ ] Subject Name 'proto-ssl'
+          [✔ ] Subject Alt Names: 'proto-ssl'
+          [✔ ] Default key usage: server_auth, client_auth
+
+  [ 5/16] ssl/ca X509 certificate - CA, self-signed ... valid.
+          [✔ ] CA Certificate
+          [✔ ] Self-Signed
+          [✔ ] Valid: expires in 3650 days (<timestamp>)
+          [✔ ] Modulus Agreement
+          [✔ ] Default CA key usage: server_auth, client_auth, crl_sign, key_cert_sign
+
+  [ 6/16] ssl/server X509 certificate - signed by 'ssl/ca' ... valid.
+          [✔ ] Not a CA Certificate
+          [✔ ] Signed by ssl/ca
+          [✔ ] Valid: expires in 365 days (<timestamp>)
+          [✔ ] Modulus Agreement
+          [✔ ] Subject Name 'bonus.ci'
+          [✔ ] Subject Alt Names: 'bonus.ci'
+          [✔ ] Default key usage: server_auth, client_auth
+
+  [ 7/16] iaas:access_key user-provided - IaaS Access Key ... found.
+
+  [ 8/16] iaas:secret_key user-provided - IaaS Secret Key ... found.
+
+  [ 9/16] crazy/thing:id random password - 32 bytes, fixed ... valid.
+          [✔ ] 32 characters
+
+  [10/16] crazy/thing:token random password - 16 bytes ... valid.
+          [✔ ] 16 characters
+          [✔ ] Only uses characters 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0987654321'
+
+  [11/16] proto-credentials:seed random password - 64 bytes, fixed ... valid.
+          [✔ ] 64 characters
+
+  [12/16] proto-credentials:token random password - 24 bytes ... valid.
+          [✔ ] 24 characters
+          [✔ ] Formatted as base64 in ':token-base64'
+
+  [13/16] users/admin:password random password - 64 bytes ... valid.
+          [✔ ] 64 characters
+
+  [14/16] users/bob:password random password - 16 bytes ... valid.
+          [✔ ] 16 characters
+
+  [15/16] work/signing_key RSA public/private keypair - 2048 bits, fixed ... valid.
+          [✔ ] Valid private key
+          [✔ ] Valid public key
+          [✔ ] Public/Private key agreement
+          [✔ ] 2048 bit
+
+  [16/16] something/ssh SSH public/private keypair - 2048 bits, fixed ... valid.
+          [✔ ] Valid private key
+          [✔ ] Valid public key
+          [✔ ] Public/Private key Agreement
+          [✔ ] 2048 bits
+
+Completed - Duration: XXX seconds [16 validated/0 skipped/0 errors]
+
+EOF
+	$director1->stop();
+	teardown_vault();
+};
+
 done_testing;

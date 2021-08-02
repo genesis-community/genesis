@@ -68,37 +68,6 @@ sub kit {
 	);
 }
 
-sub legacy_kit {
-	# This compiles and provides a legacy kit without directly using
-	# Genesis::Kit::Compiler->compile because that includes validation that fails
-	# against legacy keywords, such as subkit.
-	my ($name, $version, $path) = @_;
-
-	$version ||= 'latest';
-	$path ||= 't/src/simple-legacy';
-
-	my $tmp = workdir;
-	my $compiler = Genesis::Kit::Compiler->new($path);
-	# Genesis::Kit::Compiler->compile extraction without validation code {{{
-	$compiler->_prepare("$name-$version");
-
-	run({ onfailure => "Unable to update kit.yml with version '$version'", stderr => 0 },
-		'cat "${2}/kit.yml" | sed -e "s/^version:.*/version: ${1}/" > "${3}/${4}/kit.yml"',
-		$version, $compiler->{root}, $compiler->{work}, $compiler->{relpath});
-
-	run({ onfailure => 'Unable to compile final kit tarball' },
-		'tar -czf "$1/$3.tar.gz" -C "$2" "$3/"',
-		$tmp, $compiler->{work}, $compiler->{relpath});
-
-	# }}}
-	my $file = $compiler->{relpath}.".tar.gz";
-	return Genesis::Kit::Compiled->new(
-		name    => $name,
-		version => $version,
-		archive => "$tmp/$file"
-	);
-}
-
 sub decompile_kit {
 	return Genesis::Kit::Dev->new(kit(@_)->path);
 }

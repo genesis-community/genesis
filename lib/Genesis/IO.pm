@@ -20,7 +20,7 @@ sub DumpYAML {
 	my $i=1; while (-f "$file.$i.json") {$i++};
 	my $tmpfile = "$file.$i.json";
 	DumpJSON($tmpfile,$data);
-	run('cat "$1" | spruce merge - > $2; rm "$1"', $tmpfile, $file);
+	run('cat "$1" | spruce merge --skip-eval - > $2; rm "$1"', $tmpfile, $file);
 }
 
 sub LoadFile {

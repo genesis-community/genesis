@@ -96,6 +96,25 @@ sub load {
 		my $kit = $env->{top}->local_kit_version($kit_name, $kit_version);
 		if ($kit) {
 			$env->{kit} = $kit;
+			my $overrides = $env->lookup('kit.overrides');
+			if (defined($overrides)) {
+				$overrides = [ $overrides ] unless (ref($overrides) eq 'ARRAY');
+				my @override_files;
+
+				my $i=0;
+				my $override_dir = workdir;
+				for my $override (@$overrides) {
+					my $file="$override_dir/env-overrides-$i.yml";
+					$i+=1;
+					if (ref($override) eq "HASH") {
+						DumpYAML($file,$override);
+					} else {
+						mkfile_or_fail($file,$override);
+					}
+					push @override_files, $file;
+				}
+				$env->kit->apply_env_overrides(@override_files);
+			}
 		} elsif (!$kit_name) {
 			push(@errors, "Missing #ci{kit.name} and no local dev kit");
 			push(@errors, "Missing #ci{kit.version}") unless $kit_version;
@@ -158,6 +177,8 @@ sub from_envvars {
 	my $kit_version = $ENV{GENESIS_KIT_VERSION};
 	$env->{kit} = $env->{top}->local_kit_version($kit_name, $kit_version)
 		or bail "Unable to locate v$kit_version of `$kit_name` kit for '$env->{name}' environment.";
+	$env->kit->apply_env_overrides(split(' ',$ENV{GENESIS_ENV_KIT_OVERRIDE_FILES}))
+	  if defined $ENV{GENESIS_ENV_KIT_OVERRIDE_FILES};
 
 	my $min_version = $ENV{GENESIS_MIN_VERSION} || $env->kit->metadata->{'genesis_version_min'} || '';
 	$min_version =~ s/^v//i;
@@ -737,6 +758,11 @@ sub get_environment_variables {
 	# Vault ENV VARS
 	$env{GENESIS_TARGET_VAULT} = $env{SAFE_TARGET} = $self->vault->ref;
 	$env{GENESIS_VERIFY_VAULT} = $self->vault->connect_and_validate->verify || "";
+
+	# Kit ENV VARS
+	$env{GENESIS_KIT_NAME}               = $self->kit->name;
+	$env{GENESIS_KIT_VERSION}            = $self->kit->version;
+	$env{GENESIS_ENV_KIT_OVERRIDE_FILES} = join(' ', $self->kit->env_override_files);
 
 	# Genesis v2.7.0 Secrets management
 	# This provides GENESIS_{SECRETS,EXODUS,CI}_{MOUNT,BASE}
