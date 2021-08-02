@@ -180,7 +180,7 @@ sub from_envvars {
 	$env->kit->apply_env_overrides(split(' ',$ENV{GENESIS_ENV_KIT_OVERRIDE_FILES}))
 	  if defined $ENV{GENESIS_ENV_KIT_OVERRIDE_FILES};
 
-	my $min_version = $ENV{GENESIS_MIN_VERSION} || $env->kit->metadata->{'genesis_version_min'} || '';
+	my $min_version = $ENV{GENESIS_MIN_VERSION} || $env->lookup('genesis.min_version') || '';
 	$min_version =~ s/^v//i;
 
 	if ($min_version) {
@@ -206,6 +206,7 @@ sub from_envvars {
 	# bosh and credhub env overrides
 	if (envset 'GENESIS_USE_CREATE_ENV') {
 		$env->{__params}{genesis}{use_create_env} = 1;
+		$env->{__params}{genesis}{min_version} = "2.8.0"; #TODO: make this trackable
 		$env->{__bosh} = Genesis::BOSH::CreateEnvProxy->new();
 	} else {
 		$env->{__bosh} = Genesis::BOSH::Director->from_envvars();
@@ -425,7 +426,7 @@ sub use_create_env {
 			}
 
 			if ($self->feature_compatibility("2.8.0")) {
-				my $is_create_env = $self->lookup('genesis.use_create_env');
+				my $is_create_env = $self->lookup('genesis.use_create_env') ? 1 : 0;
 				validate_create_env_state($is_create_env,$different_bosh_env,$self->kit->{name},$is_bosh_director);
 				return $is_create_env;
 			} else {
