@@ -1,6 +1,68 @@
 TODO
 ====
 
+To-Do for v2.8.0+
+
+ 1. Bosh autoconnection via env vars (v2.8.0) √
+		- better proto handling
+			- how to detect and deal with proto environment √
+			- legacy support √
+ 2. Credhub add, check, rotate and remove secrets (v2.9.0)
+ 3. kit-overrides moves into environment file (2.8.0) √
+
+		Instead of using kit-overrides.yml to make local changes to the kit, you
+		can put kit.overrides.* entries in your environment file.  This works
+		better because different env files can use different kits, making a single
+		override file less effective or even broken.
+
+ 4. Use Cepler for pipelines (2.10.0)
+
+		https://github.com/bodymindarts/cepler
+
+ 5. Better inheritance system (convension over configuration) (2.9.0)
+		 5.1. Fix how genesis determines what is a env file or not
+
+					This is currently done by having a genesis.env or params.env set to
+					the same name as the file.	This has long been a contensious issue
+					of redundancy.
+
+					The new method would be `<anything>.yml` could be an env file, and
+					partial inherited files would be `<partial>-.yml` with the hyphen as
+					the last character.
+
+					But to do this in a backwards compatible way, the repo would have to
+					be marked as a v2 of genesis config.
+
+					A tool to scan and recommend file renames and edits is needed (and
+					ideally has runable output that would do at least the renames)
+
+ 6. `genesis update` to get latest genesis command (will be release in v2.7.x) (COMPLETED in 2.7.33) √
+ 7. auto commit after deploy (2.9.0) -
+		- this will be configurable via genesis config (and an option on init
+ 8. `genesis config` to manage .genesis/config file (2.9.0)
+ 9. `genesis remove` to "undeploy" a given environment.  Preferred over
+		`delete` because we're not deleting the environment file. (v2.8.x) -
+10. `genesis bosh` command
+		- better `bosh` arg handling	(remove need for --) √
+			- auto bosh targetting for proto envs (no need for -d option) X - safety
+				first
+		- fix or replace `bosh --envs` √
+
+Notes:
+  Subkits are removed completely as of 2.8.0 √
+	Kits without new or blueprint are not supported as of 2.8.0 √
+
+ToDo:
+	prereqs hook - what is it?  do we still need it?  any kits actually using
+	it?
+
+	lib/Genesis/Kit.pm:
+	-   if (grep { $_ eq $hook } qw/new secrets info addon check prereqs blueprint pre-deploy post-deploy features/) {
+	+   if (grep { $_ eq $hook } qw/new secrets info addon check blueprint pre-deploy post-deploy features/) {
+
+OLDER TODO's / NICE-TO-HAVES
+============================
+
 Priorities:
 * P1: Must be done before first release
 * P2: Highly desirable in the near future
@@ -20,51 +82,12 @@ These things need to be done. They cannot be ignored.
   replace the current executable.  Command not yet implemented (Low priority
   as the jumpbox kit should grab the latest version)
 
-- **Prompting users for Env data + Params**
-  1. (P3) Ensure that we have the ability to require versions of genesis + other utilities for a specific kit
-  2. (P3) Add --hooks and --hook-support-version option to `new kit` command;
-     --hooks will take a list of one or more of subkit, params;
-     --params-helper-version will cause the specified version of the
-     params_helper bash script to be included in the hooks directory
-  3. (P-) Allow `genesis rebuild env` or `genesis new env --rebuild` to read in
-     existing environment yaml file and use it to help build it from scratch
-     (existing values become new defaults, etc...)
-  4. (P3) Currently, if --no-secrets is an option to `genesis new`, any ask that
-     results in a value being stored to a vault path is skipped, and `genesis
-     secrets` does not include these questions when generating the creds and
-     certs.
-  5. (P3) Upgrade scenario may need to ask new values for things we already have
-     asked, or new parameters that weren't asked in previous versions of kits.
-  6. (P5) A third level param asking AFTER the secrets have been generated that use
-     those secrets.
+- (P3) Add --hooks to `create-kit` command;
+  --hooks will take a list of one or more of valid hook names;
 
-- **New bug() util** - Provide a small utility function, called
-  `bug` that will instruct the end user in how to provide a bug
-  report, in the event of an "impossible" situation that the devs
-  need to track down.
-  - Dennis
-  - Requires kit validation that author's 
-
-- **(P4) compile-kit -Wall** option - allow kit authors to compile
-  their kits in `-Wall` (warn all) mode, that will analyze the kit
-  and detect some questionable behavior.
-
-- Validation
-  - validate kit and subkit when compiling
-  - validate subkits when building manifests or deploying
-    - subkits must have params.yml
-    - subkit yml files must be parseable
-  - validate kit + kit metadata when building manifests, deploying, creating
-    or maybe just anything in general?
-    - must have params, certificates, credentials, subkits, etc.
-    - validate syntax of params, subkits, certificates, credentials
-      (some of this may already be done?)
-      - validates that certificates.*.server has a name param with 1 or more
-        list items.
-  - kit must have base/params.yml
-  - kit base/\*.yml must be parseable
-
-- (P2) docs on genesis-v2
+- (P-) Allow `genesis rebuild env` or `genesis new env --rebuild` to read in
+  existing environment yaml file and use it to help build it from scratch
+  (existing values become new defaults, etc...)
 
 - (P3) Support for turning off deployments when done (for alpha/testing env + cost savings)
   Add a flag to CI that will shut down the environment via bosh stop --hard, after
@@ -76,50 +99,16 @@ These things need to be done. They cannot be ignored.
   just need to write in the logic to parse out dependencies from the CI layout, and
   add locking/shutdown/startup steps in the pipelines.
 
-NICE-TO-HAVES
-=============
-
-These _feel_ like TODOs, and sometimes we _desperately_ want them to be
-TODOs, with the same gravitas and eye towards a fix.  But they are not.
-They would be nice, and might make someone life a lot easier, but they are
-just that: desired.
-
-- (P5) **Look up subkits from higher level yml**
-  When running `genesis new my-new-environment`, check in the `mergeable_yamls`
-  paths (`my.yml`, `my-new.yml`) for `kit.subkits` definitions to see what
-  choices were already made? How will this work with spruce merging and array appending
-  vs replacing vs everything else?
-
-- (P5-) **genesis dry** (or `dedupe`): given a set of YAML files (i.e. all
+- **genesis dry** (or `dedupe`): given a set of YAML files (i.e. all
   of the environment templates), analyze each for common
   sub-params, and hoist them to the highest (least specific)
   common prefix file.  It would also be nice to find anomalies
   like 'identical override' cases, and either fix or advise.
 
-- (P3) **genesis plan** - Take a plan file that defines network ranges
+- **genesis plan** - Take a plan file that defines network ranges
   and cloud properties per infrastructure and pops out a cloud
   config YAML file with all the bits filled out. (cf. netbuilder)
-
-- (P5) Ability to disable base param questions if a subkit is selected.  For
-  example, if selecting the 'azure' subkit, disable the base param for
-  availability_zones.
-
-- (P5) Ability to run another params-style hook that was generated after the
-  certificates have been added to the vault, so that things that rely on a ca
-  can be produced. (Alternatives is to add executables to kits that can be run
-  against a given environment.yml file.) ie jumpbox user certs that depend on 
-  the ca being available.
-
-- (P5) init -k url:repo/kit support for private/custom kit repos
-
-- (P5) Add test pre-detection for the following binaries: bosh2, jq, expect
-
-- (P5) Add test pre-detection for the following cpan libraries: Expect, Test::Differences, Test::More
-
-- (P5) Figure out why tests using tar don't pass on ubuntu
-
-## Update CI pipeline assumptions
-- replace using bosh aliases with the URL
+  -- Workaround: use cc-me
 
 ## Bake in Concourse pipeline vault policies
 - On genesis init, build the hcl file
