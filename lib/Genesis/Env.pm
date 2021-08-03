@@ -1390,7 +1390,7 @@ sub deploy {
 			"$self->{__tmp}/manifest.yml",
 			vars_file => $self->vars_file,
 			state => $self->path(".genesis/manifests/$self->{name}-state.yml"),
-			store => $self->kit->secret_store eq 'credhub' ? $self->path(".genesis/manifests/$self->{name}-store.json") : undef
+			store => $self->kit->secrets_store eq 'credhub' ? $self->path(".genesis/manifests/$self->{name}-store.json") : undef
 		);
 
 	} else {
@@ -1521,7 +1521,7 @@ sub add_secrets {
 	if ($self->has_hook('secrets')) {
 		$self->run_hook('secrets', action => 'add')
 	} else {
-		# Determine secret_store from kit - assume vault for now (credhub ignored)
+		# Determine secrets_store from kit - assume vault for now (credhub ignored)
 		my $store = $self->vault->connect_and_validate;
 		my $processing_opts = {
 			level=>$opts{verbose}?'full':'line'
@@ -1550,7 +1550,7 @@ sub check_secrets {
 	if ($self->has_hook('secrets')) {
 		$self->run_hook('secrets', action => 'check');
 	} else {
-		# Determine secret_store from kit - assume vault for now (credhub ignored)
+		# Determine secrets_store from kit - assume vault for now (credhub ignored)
 		my $store = $self->vault->connect_and_validate;
 		my $action = $opts{validate} ? 'validate' : 'check';
 		my $processing_opts = {
@@ -1582,7 +1582,7 @@ sub rotate_secrets {
 	if ($self->has_hook('secrets')) {
 		$self->run_hook('secrets', action => $action);
 	} else {
-		# Determine secret_store from kit - assume vault for now (credhub ignored)
+		# Determine secrets_store from kit - assume vault for now (credhub ignored)
 		my $store = $self->vault->connect_and_validate;
 		my $processing_opts = {
 			no_prompt => $opts{'no-prompt'},
@@ -1609,7 +1609,7 @@ sub remove_secrets {
 		return 1;
 	}
 
-	# Determine secret_store from kit - assume vault for now (credhub ignored)
+	# Determine secrets_store from kit - assume vault for now (credhub ignored)
 	my $store = $self->vault->connect_and_validate;
 	my @generated_paths;
 	if ($opts{all}) {
