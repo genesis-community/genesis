@@ -901,6 +901,7 @@ sub {
 	my ($name) = @_;
 	my $top = Genesis::Top->new('.');
 	my @possible_kits = keys %{$top->local_kits};
+	push @possible_kits, 'dev' if $top->has_dev_kit;
 
 	bail "No local kits found; you must specify the name of the kit to fetch"
 		unless scalar(@possible_kits);
@@ -908,6 +909,8 @@ sub {
 	my $kit;
 	if ($name && $top->has_env($name)) {
 		$kit = $top->load_env($name)->kit;
+	} elsif ($name eq 'dev') {
+		$kit = $top->local_kit_version('dev')
 	} else {
 		my ($kit_name,$version) = ($name||'') =~ m/^([^\/]*)(?:\/(.*))?$/;
 		if (!$version && semver($name)) {
