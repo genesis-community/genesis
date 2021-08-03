@@ -44,7 +44,7 @@ our $USER_AGENT_STRING = "genesis/$Genesis::VERSION";
 use FindBin;
 $ENV{GENESIS_CALLBACK_BIN} ||= $FindBin::Bin.'/'.$FindBin::Script;
 $ENV{GENESIS_LIB} ||= $FindBin::Bin.'/lib';
-our $CALL = join(" ", map {$_ =~ / / ? "\"$_\"" : $_} ($0, @ARGV));
+our $CALL = join(" ", map {$_ =~ / / ? "\"$_\"" : $_} (humanize_bin, @ARGV));
 
 my ($COMMAND, %RUN, %USAGE, %PROPS);
 
@@ -542,7 +542,7 @@ sub usage {
 	$cmd = $COMMAND unless $cmd;
 	error "$msg\n" if $msg;
 	error $USAGE{$cmd} if $USAGE{$cmd};
-	exit $rc;
+	exit($rc || 1);
 }
 
 sub deprecated {
@@ -1744,7 +1744,7 @@ OPTIONS
                      used to deploy this environment, with the environment
                      being the associated deployment.
 
-      --connect      Intended to run inside an #C{eval "$(...)"} wrapper, this
+      --connect      Intended to run inside an #C{eval "\$(...)"} wrapper, this
                      command will set the environment variables required to
                      connect via the bosh cli, targeting the desired
                      deployment and associated BOSH director.
@@ -1752,25 +1752,26 @@ OPTIONS
 EOF
 sub {
 	my %options = (redact => ! -t STDOUT);
-	my @opts;
+	my @args;
 	while (@_) {
 		my $entry = shift;
 		if ( $entry =~ /(--connect|--as-director|-A|--help|-h)/) {
-			push(@opts, $entry);
+			push(@args, $entry);
 		} elsif ( $entry =~ /(--cwd|-C)/) {
-			push(@opts, $entry, shift);
+			push(@args, $entry, shift);
 		} else {
-			push(@opts, "--",$entry,@_);
+			push(@args, "--",$entry,@_);
 			last;
 		}
 	}
-	options(\@_, \%options, qw/
+	options(\@args, \%options, qw/
 		BLANK_USAGE
+		cwd|C=s
 		as-director|A
 		connect
 	/);
-	usage unless @_;
-	my $env = Genesis::Top->new('.')->load_env(shift)->with_vault();
+	usage unless @args;
+	my $env = Genesis::Top->new('.')->load_env(shift(@args))->with_vault();
 
 	my $bosh;
 	if ($options{'as-director'}) {
@@ -1791,7 +1792,7 @@ sub {
 	if ($options{connect}) {
 		if (in_controlling_terminal) {
 			explain "This command is expected to be run in the following manner:";
-			explain "  eval \"$($CALL)\"";
+			explain "  eval \"\$($CALL)\"";
 			explain "";
 			explain "This will set the BOSH environment variables in the current shell";
 			exit 1;
@@ -1805,7 +1806,7 @@ sub {
 		explain STDERR "Exported environmental variables for BOSH director %s", $bosh->{alias};
 		exit 0;
 	} else {
-		my (undef, $rc) = $bosh->execute({interactive => 1}, @_);
+		my (undef, $rc) = $bosh->execute({interactive => 1}, @args);
 		exit $rc;
 	}
 });

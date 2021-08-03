@@ -979,7 +979,6 @@ sub bosh {
 		my $self = shift;
 		return Genesis::BOSH::CreateEnvProxy->new($self) if $self->use_create_env;
 		my ($bosh_alias,$bosh_dep_type) = split('/', $self->bosh_env);
-		debug "HERE";
 		my $bosh = Genesis::BOSH::Director->from_exodus(
 			$bosh_alias,
 			vault => $self->vault,
