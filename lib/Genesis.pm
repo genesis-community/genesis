@@ -483,8 +483,13 @@ sub run {
 	if (scalar(keys %{$opts{env} || {}})) {
 		$tracemsg = "#M{Setting environment values:}";
 		for (keys %{$opts{env} || {}}) {
-			$ENV{$_} = $opts{env}{$_}||"";
-			$tracemsg .= csprintf("\n#B{$_}='#C{$ENV{$_}}'");
+			if (defined($opts{env}{$_})) {
+				$ENV{$_} = $opts{env}{$_};
+				$tracemsg .= csprintf("\n#B{$_}='#C{$ENV{$_}}'");
+			} else {
+				my $was = delete $ENV{$_};
+				$tracemsg .= csprintf("\n#B{$_} unset - was '#C{$was}' ") if defined($was);
+			}
 		}
 		$tracemsg .= "\n\n";
 	}
