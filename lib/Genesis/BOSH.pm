@@ -16,10 +16,9 @@ sub _bosh {
 		$opts->{env}{HTTPS_PROXY} = ''; # bosh dislikes this env var
 		$opts->{env}{https_proxy} = ''; # bosh dislikes this env var
 
-		$opts->{env}{BOSH_ENVIRONMENT}   ||= ''; # ensure using ~/.bosh/config via alias
-		$opts->{env}{BOSH_CA_CERT}       ||= '';
-		$opts->{env}{BOSH_CLIENT}        ||= '';
-		$opts->{env}{BOSH_CLIENT_SECRET} ||= '';
+		for (qw/BOSH_ENVIRONMENT BOSH_CA_CERT BOSH_CLIENT BOSH_CLIENT_SECRET/) {
+			$opts->{env}{$_} = undef unless defined($opts->{env}{$_}); # ensure using ~/.bosh/config via alias
+		}
 	}
 
 	if ($args[0] =~ m/^bosh(\s|$)/) {
