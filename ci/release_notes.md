@@ -64,26 +64,36 @@
 
 ## Better Support for using BOSH create-env
 
-  * Starting in v2.8.0, kits that indicate that they are compatible with
-    v2.8.0 can support `use_create_env` as their method of indicating
-    their ability to use create-env instead of deploy for deployments.
+* Starting in v2.8.0, kits that indicate that they are compatible with
+  v2.8.0 can support `use_create_env` as their method of indicating
+  their ability to use create-env instead of deploy for deployments.
 
-    - Valid values are `yes` for this kit always uses create-env, `no` for
-      kits that cannot use create-env, and `allow` for kits that permit
-      either.
+  - Valid values are `yes` for this kit always uses create-env, `no` for
+    kits that cannot use create-env, and `allow` for kits that permit
+    either.
 
-    - The kit will have to detect `genesis.use_create_env` in the
-      environment to determine blueprint and other create-env kit
-      behaviour.  Genesis will manage the actual deployment and state file
-      associated with it.
+  - The kit will have to detect `genesis.use_create_env` in the
+    environment to determine blueprint and other create-env kit
+    behaviour.  Genesis will manage the actual deployment and state file
+    associated with it.
 
-  * Genesis properly handles both legacy features (create-env,bosh-init,
-    proto) and v2.8.0's `genesis.use_create_env` attribute to determine is
-    create-env is to be used.  It will also detect when an incompatible
-    mixture of using create-env and specifying a `genesis.bosh-env`
-    attribute, and fail with an appropriate error message.  A quick update
-    of the environment file by the user will resolve this issue when
-    encountered.
+* Genesis properly handles both legacy features (create-env,bosh-init,
+  proto) and v2.8.0's `genesis.use_create_env` attribute to determine is
+  create-env is to be used.  It will also detect when an incompatible
+  mixture of using create-env and specifying a `genesis.bosh-env`
+  attribute, and fail with an appropriate error message.  A quick update
+  of the environment file by the user will resolve this issue when
+  encountered.
+
+* Provide create-env deployments with diff/confirm
+
+  Since BOSH does not provide a confirmation after a diff on the
+  environment to be deployed, Genesis provides this based on a previous
+  deployment, assuming it was added to the repo.
+
+  If the exodus data from the previous deployment doesn't match the local
+  archived manifest, a warning will be stated, or in the case of running
+  under `-y`, the deploy will be aborted.
 
 ## Kit Overrides by Environment
 

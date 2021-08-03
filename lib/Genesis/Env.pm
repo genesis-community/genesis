@@ -1384,8 +1384,39 @@ sub deploy {
 	# DEPLOY!!!
 	if ($self->use_create_env) {
 		debug("deploying this environment via `bosh create-env`, locally");
+		my ($last_manifest_path,$last_exists,$old_sha1) = $self->cached_manifest_info;
+		my $old_exodus = $self->exodus_lookup("",{});
+		if ($last_exists) {
+			explain "Showing differences between previous deployment found in archive:\n";
+			if (! defined($old_exodus->{manifest_sha1})) {
+				explain "#y{[WARNING]} Cannot confirm local cached deployment manifest pertains to the\n"
+							. "          current deployment."
+			} elsif ($old_exodus->{manifest_sha1} ne $old_sha1) {
+				explain "#Y{[WARNING]} Latest deployment does not match the local cached deployment\n"
+							. "          manifest, perhaps you need to perform a #C{git pull}.\n"
+							. "          #R{This may mean your state file is also out of date!}"
+			}
+			my $rc = run({interactive => 1}, "spruce", "diff", $last_manifest_path, $manifest_file);
+			explain "#y{NOTE}: values from vault have been redacted, so differences are not shown.";
+		} else {
+			explain "No previous deployment of this environment found in the deployment archive."
+		}
+
+		if (in_controlling_terminal && !envset('BOSH_NON_INTERACTIVE')) {
+			my $confirm = prompt_for_boolean("Proceed with BOSH create-env for the #C{${\($self->name)}}? [y|n] ",1);
+			bail "Aborted!\n" unless $confirm;
+		} elsif ($last_exists && defined($old_exodus->{manifest_sha1}) && $old_exodus->{manifest_sha1} ne $old_sha1) {
+			bail(
+				"#R{[ERROR]} The local state file for #C{$self->{name}} may not be the\n"
+			. "        state file from the last deployment.  Cowardly refusing to\n"
+			. "        deploy -- run again without the -y argument to confirm."
+			);
+		} else {
+			print "\n";
+		}
+
 		my @bosh_opts;
-		push @bosh_opts, "--$_"             for grep { $opts{$_} } qw/recreate skip-drain/;
+		push @bosh_opts, "--$_" for grep { $opts{$_} } qw/recreate skip-drain/;
 		$ok = $self->bosh->create_env(
 			"$self->{__tmp}/manifest.yml",
 			vars_file => $self->vars_file,
