@@ -538,6 +538,11 @@ sub features {
 	my $ref = $_[0]->_memoize('__features', sub {
 		my $self = shift;
 		my $features = scalar($self->lookup('kit.features', []));
+		bail(
+			"#R{[ERROR]} Environment #C{%s} #G{kit.features} must be an array - got a #y{%s}.\n",
+			$self->name, defined($features) ? (lc(ref($features)) || 'string') : 'null'
+		) unless ref($features) eq 'ARRAY';
+
 		$self->{__explicit_features} = $features;
 		my @derived_features = grep {$_ =~ /^\+/} $features;
 		bail(
