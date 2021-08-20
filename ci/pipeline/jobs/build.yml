@@ -1,0 +1,38 @@
+jobs:
+- name: build
+  public: true
+  serial: false
+  plan:
+  - do:
+    - in_parallel:
+      - { get: version, params: {pre: rc} }
+      - { get: git, trigger: true, passed: [test] }
+      - { get: git-ci }
+
+    - task: build
+      file: git-ci/ci/tasks/build.yml
+
+    - put: build
+      params:
+        file: build/genesis-*
+        acl: public-read
+
+    - put: version
+      params: {file: version/number}
+
+    on_success:
+      put: notify
+      params:
+        topic:   (( concat meta.shout.topic "-$BUILD_JOB_NAME" ))
+        message: prerelease build for '$BUILD_JOB_NAME' succeeded.
+        ok:      yes
+        link:    (( grab meta.shout.links.build ))
+
+    on_failure:
+      put: notify
+      params:
+        topic:   (( concat meta.shout.topic "-$BUILD_JOB_NAME" ))
+        message: prerelease build for '$BUILD_JOB_NAME' failed.
+        ok:      no
+        link:    (( grab meta.shout.links.build ))
+

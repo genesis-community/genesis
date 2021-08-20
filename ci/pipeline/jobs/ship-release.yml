@@ -1,0 +1,68 @@
+jobs:
+- name: ship-release
+  public: true
+  serial: true
+  plan:
+  - do:
+    - in_parallel:
+      - { get: version, resource: version, passed: [prepare], params: {bump: final} }
+      - { get: git,                        passed: [prepare] }
+      - { get: git-ci }
+      - { get: release-notes} # Do not use `passed: [prepare]` because then it cannot be edited
+        #- { get: git-main } -- TODO: once using develop/main branches paradigm
+      - { get: git-latest-tag }
+
+    - task: build
+      file: git-ci/ci/tasks/build.yml
+
+    - task: release
+      file: git-ci/ci/tasks/release.yml
+      params:
+        DEVELOP_BRANCH:   (( grab meta.github.branch ))
+        RELEASE_BRANCH:   (( grab meta.github.branch )) # TODO: main-branch ))
+        RELEASE_ROOT:     gh
+        RELEASE_NOTES:    (( grab meta.github.release_notes.file ))
+        NOTIFICATION_OUT: notifications
+        GITHUB_OWNER:     (( grab meta.github.owner ))
+        GIT_EMAIL:        (( grab meta.git.email ))
+        GIT_NAME:         (( grab meta.git.name ))
+
+#    TODO: use the develop/main branches paradigm
+#    - put: git-main
+#      params:
+#        merge: false
+#        tag: gh/tag
+#        repository: git-main
+
+    - put: github
+      params:
+        name:   gh/name
+        tag:    gh/tag
+        body:   gh/notes.md
+        globs: [gh/artifacts/*]
+
+    - put: version
+      params:
+        bump: patch
+
+    - in_parallel:
+      - put: notify
+        params:
+          method: announce
+          file: notifications/message
+          link: (( concat meta.github.uri "/releases" ))
+
+    on_success:
+      put: notify
+      params:
+        topic:   (( concat meta.shout.topic "-$BUILD_JOB_NAME" ))
+        message: release job '$BUILD_JOB_NAME' succeeded.
+        ok:      yes
+        link:    (( grab meta.shout.links.build ))
+    on_failure:
+      put: notify
+      params:
+        topic:   (( concat meta.shout.topic "-$BUILD_JOB_NAME" ))
+        message: release job '$BUILD_JOB_NAME' failed.
+        ok:      no
+        link:    (( grab meta.shout.links.build ))

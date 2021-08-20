@@ -1,0 +1,14 @@
+resource_types:
+- name: shout-notification
+  type: docker-image
+  source:
+    repository: huntprod/shout-resource
+
+resources:
+- name: notify
+  type: shout-notification
+  source:
+    topic:    (( grab meta.shout.topic ))
+    url:      (( grab meta.shout.url ))
+    username: (( grab meta.shout.username ))
+    password: (( grab meta.shout.password ))

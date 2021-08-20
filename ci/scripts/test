@@ -1,52 +1,28 @@
 #!/bin/bash
-#
-# ci/scripts/test
-#
-# Script for running tests against a Go software package
-#
-# author:  James Hunt <james@niftylogic.com>
-
 set -eu
-DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+export REPO_ROOT=git
+export CI_ROOT=git-ci
 
 header() {
-  echo
-  echo "###############################################"
-  echo
-  echo $*
-  echo
+	echo
+	echo "================================================================================"
+	echo "$1"
+	echo "--------------------------------------------------------------------------------"
+	echo
 }
 
-######
-######
-######
-header "Checking the Concourse Pipeline Environment"
-envok=0
-checkenv() {
-  local name=$1
-  local val=$2
-
-  if [[ -z "$val" ]]; then
-    echo >&2 "The $name variable must be set."
-    envok=1
-  fi
+bail() {
+	echo >&2 "$*  Did you misconfigure Concourse?"
+	exit 2
 }
-checkenv REPO_ROOT "${REPO_ROOT:-}"
-if [[ $envok != 0 ]]; then
-  echo >&2 "Is your Concourse Pipeline misconfigured?"
-  exit 1
-fi
-
-######
-######
 ######
 header "Running tests"
 pushd ${REPO_ROOT}
-make test
+	make test
 popd
 
 echo
-echo
-echo
+echo "--------------------------------------------------------------------------------"
 echo "SUCCESS"
 exit 0

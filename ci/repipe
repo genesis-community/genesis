@@ -8,11 +8,35 @@
 # author:  James Hunt <james@niftylogic.com>
 #          Dennis Bell <dennis.j.bell@gmail.com>
 
+usage() {
+  rc=0
+  c=""
+  if [[ -z "${1:-""}" ]] ; then
+    msg="repipe - recreate the genesis kit release engineering pipeline"
+  else
+    msg="$1"
+    c=";31"
+    rc=1
+  fi
+  \cat >&2 <<EOF
+
+[1${c}m${msg}[0m
+
+USAGE: repipe [-n|-P]
+
+OPTIONS:
+  -n   No change, just a dry-run that outputs to stdout
+  -P   Will pause the pipeline after uploading it (default is to unpause)
+
+EOF
+  exit $rc
+}
+
 need_command() {
   local cmd=${1:?need_command() - no command name given}
   local url=${2:-}
 
-  if [[ ! -x "$(command -v $cmd)" ]]; then
+  if [[ ! -x "$(command -v "$cmd")" ]]; then
     echo >&2 "${cmd} is not installed."
     if [[ -n "$url" ]]; then
       echo >&2 "Please download it from ${url}"
@@ -21,27 +45,48 @@ need_command() {
   fi
 }
 
-cd $(dirname $BASH_SOURCE[0])
-echo "Working in $(pwd)"
+PAUSE="unpause"
+DRYRUN=""
+while [[ -n "${1:-""}" ]] ; do
+  case "${1:-""}" in
+    -P) PAUSE="pause" ; shift ;;
+    -n) DRYRUN="1"; shift ;;
+    -h) usage; exit 0;;
+    -*) usage "Unknown option '$1'";;
+    *)  usage "$0 does not take any arguments";;
+  esac
+done
+
+[[ -z "${GENESIS_CI_DIR:-""}" ]] && GENESIS_CI_DIR="$(dirname "${BASH_SOURCE[0]}")"
+cd "$GENESIS_CI_DIR"
+echo >&2 "Working in $(pwd)"
 need_command spruce "https://github.com/geofffranks/spruce/releases"
 need_command jq
+need_command fly
 
 # Allow for target-specific settings
-settings_file="$(ls -1 settings.yml ${CONCOURSE_TARGET:+"settings-${CONCOURSE_TARGET}.yml"} 2>/dev/null | tail -n1)"
-if [[ -z "$settings_file" ]]; then
+settings_file="settings.yml"
+target_settings_file="${CONCOURSE_TARGET:+"settings-${CONCOURSE_TARGET}.yml"}"
+if [[ -n $target_settings_file && -f $target_settings_file ]] ; then
+  settings_file="$target_settings_file"
+fi
+if [[ ! -f "$settings_file" ]]; then
   echo >&2 "Missing local settings in ci/settings.yml${CONCOURSE_TARGET:+" or ci/settings-${CONCOURSE_TARGET}.yml"}!"
   exit 1
 fi
-
 echo >&2 "Using settings found in ${settings_file}"
 
 set -e
 trap "rm -f .deploy.yml" QUIT TERM EXIT INT
-spruce merge pipeline.yml ${settings_file} > .deploy.yml
+spruce merge --fallback-append pipeline/base.yml pipeline/*/*.yml "${settings_file}" > .deploy.yml
 PIPELINE=$(spruce json .deploy.yml | jq -r '.meta.pipeline // ""')
 if [[ -z ${PIPELINE} ]]; then
   echo >&2 "Missing pipeline name in ci/settings.yml!"
   exit 1
+fi
+if [[ -n "$DRYRUN" ]] ; then
+	cat .deploy.yml
+	exit 0
 fi
 
 TARGET_FROM_SETTINGS=$(spruce json .deploy.yml | jq -r '.meta.target // ""')
@@ -69,6 +114,6 @@ if [[ ${EXPOSED} == "true" ]]; then
 fi
 
 set +x
-fly --target ${TARGET} set-pipeline       --pipeline ${PIPELINE} --config .deploy.yml
-fly --target ${TARGET} unpause-pipeline   --pipeline ${PIPELINE}
-fly --target ${TARGET} ${EXPOSE}-pipeline --pipeline ${PIPELINE}
+fly --target "${TARGET}" set-pipeline         --pipeline "${PIPELINE}" --config .deploy.yml
+fly --target "${TARGET}" "${PAUSE}-pipeline"  --pipeline "${PIPELINE}"
+fly --target "${TARGET}" "${EXPOSE}-pipeline" --pipeline "${PIPELINE}"

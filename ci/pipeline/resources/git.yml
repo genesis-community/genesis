@@ -1,0 +1,12 @@
+resources:
+  - name: git
+    type: git
+    source:
+      uri:         (( grab meta.github.uri ))
+      branch:      (( grab meta.github.branch ))
+      private_key: (( grab meta.github.private_key ))
+      ignore_paths: ["ci"]
+      commit_filter:
+        exclude:
+          - '^\[ci\] release v'
+          - '^WIP:'

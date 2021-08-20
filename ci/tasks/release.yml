@@ -1,0 +1,29 @@
+---
+platform: linux
+
+image_resource:
+  type: registry-image
+  source:
+    repository: starkandwayne/genesis-ci
+
+inputs:
+- name: version
+- name: git
+- name: git-ci
+- name: build
+- name: release-notes
+  optional: true
+
+outputs:
+- name: build
+
+params:
+  DEVELOP_BRANCH:    develop
+  RELEASE_BRANCH:    main
+  REPO_ROOT:         git
+  RELEASE_REPO_ROOT: git-main
+  RELEASE_ROOT:      gh
+  NOTIFICATION_OUT:  notifications
+
+run:
+  path: git-ci/ci/scripts/release

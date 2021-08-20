@@ -1,0 +1,78 @@
+---
+#
+# ci/pipeline.yml
+#
+# Pipeline structure file for a Generic Project pipeline
+#
+# DO NOT MAKE CHANGES TO THIS FILE.  Instead, modify
+# ci/settings.yml and override what needs overridden.
+# This uses spruce, so you have some options there.
+#
+# author:  James Hunt <james@niftylogic.com>
+# created: 2016-03-30
+
+meta:
+  name:     (( param "Please name your pipeline" ))
+  release:  (( concat meta.name " Release" ))
+  target:   (( param "Please identify the name of the target Concourse CI" ))
+  url:      (( param "Please specify the full url of the target Concourse CI" ))
+  pipeline: (( grab meta.name ))
+
+  git:
+    name:   (( param "Please provide the git name for automated commits" ))
+    email:  (( param "Please provide the git email for automated commits" ))
+
+  image:
+    name: starkandwayne/concourse
+    tag:  latest
+
+  aws:
+    bucket:     (( concat meta.pipeline "-pipeline" ))
+    region_name: us-east-1
+    access_key: (( param "Please set your AWS Access Key ID" ))
+    secret_key: (( param "Please set your AWS Secret Key ID" ))
+
+  github:
+    uri:          (( concat "git@github.com:" meta.github.owner "/" meta.github.repo ))
+    owner:        (( param "Please specify the name of the user / organization that owns the Github repository" ))
+    repo:         (( param "Please specify the name of the Github repository" ))
+    branch:       main
+    private_key:  (( param "Please generate an SSH Deployment Key for this repo and specify it here" ))
+    access_token: (( param "Please generate a Personal Access Token and specify it here" ))
+    release_notes:
+      repo:       "ci-release-notes"
+      branch:     "main"
+      file:       (( concat meta.name "-release-notes.md" ))
+      uri:        (( concat "git@github.com:"  meta.github.owner "/" meta.github.release_notes.repo ))
+      edit:       (( concat "https://github.com/" meta.github.owner "/"  meta.github.release_notes.repo "/edit/"  meta.github.release_notes.branch "/" meta.github.release_notes.file ))
+
+  shout:
+    topic:    (( concat meta.name "-pipeline" ))
+    url:      (( param "Please specify the Shout! endpoint" ))
+    username: (( param "Please specify the Shout! operations username" ))
+    password: (( param "Please specify the Shout! operations password" ))
+
+    metadata:
+      build-team-name:     $BUILD_TEAM_NAME
+      build-job-name:      $BUILD_JOB_NAME
+      build-pipeline-name: $BUILD_PIPELINE_NAME
+
+    links:
+      pipeline: (( concat meta.url "/teams/$BUILD_TEAM_NAME/pipelines/$BUILD_PIPELINE_NAME" ))
+      build:    (( concat meta.shout.links.pipeline "/jobs/$BUILD_JOB_NAME/builds/$BUILD_NAME" ))
+
+groups:
+  - name: (( grab meta.pipeline ))
+    jobs:
+      - test
+      - build
+      - ship-prerelease
+      - prepare
+      - ship-release
+  - name: version-control
+    jobs:
+      - major
+      - minor
+      - patch
+
+

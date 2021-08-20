@@ -1,0 +1,41 @@
+#!/bin/bash
+set -eu
+
+# Resource Directories
+export REPO_ROOT="git"
+export BUILD_ROOT="build"
+export CI_ROOT="git-ci"
+export VERSION_FROM="version/number"
+
+header() {
+	echo
+	echo "================================================================================"
+	echo "$1"
+	echo "--------------------------------------------------------------------------------"
+	echo
+}
+
+bail() {
+	echo >&2 "$*  Did you misconfigure Concourse?"
+	exit 2
+}
+
+header "Checking the Concourse Pipeline Environment"
+test -f "${VERSION_FROM}"     || bail "Version file (${VERSION_FROM}) not found."
+VERSION=$(cat "${VERSION_FROM}")
+test -n "${VERSION}"          || bail "Version file (${VERSION_FROM}) was empty."
+
+BUILD_DIR="$(cd "$BUILD_DIR" && pwd)"
+
+######
+header "Building Genesis v${VERSION} release..."
+pushd ${REPO_ROOT}
+	./pack "${VERSION}"
+	mv "genesis-${VERSION}" "$BUILD_DIR"
+	"$BUILD_DIR/genesis-${VERSION}" -v | grep "${VERSION}"
+popd
+
+echo
+echo "--------------------------------------------------------------------------------"
+echo "SUCCESS"
+exit 0

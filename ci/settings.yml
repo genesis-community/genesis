@@ -19,8 +19,9 @@ meta:
     email: ci@starkandwayne.com
 
   github:
-    owner: genesis-community
-    repo:  genesis
+    owner:        genesis-community
+    repo:         genesis
+    branch:       main
     private_key:  ((github.private_key))
     access_token: ((github.access_token))
 
@@ -35,6 +36,15 @@ meta:
     username: ((shout.username))
     password: ((shout.password))
 
+
+
+# TODO: docker-image push is insecure, so we must convert to registry-image.
+#       However, registry-image push doesn't build, so an additional build task
+#       is needed It is recommended by concourse to use oci-build-image, but
+#       another system might work better.  See
+#       https://github.com/concourse/registry-image-resource#comparison-to-docker-image-resource
+#       and https://github.com/concourse/oci-build-task#oci-build-task
+#
 groups:
 - name: generate-ci-image
   jobs:
@@ -46,6 +56,8 @@ jobs:
     trigger: true
   - get: snw-concourse-image
     trigger: true
+    params:
+      skip_download: true
   - put: genesis-ci
     params:
       build: dockerfile/ci
@@ -54,9 +66,8 @@ jobs:
 
 resources:
 - name: genesis-ci
-  type: docker-image
+  type: registry-image
   source:
-    email:    (( grab meta.dockerhub.email ))
     username: (( grab meta.dockerhub.username ))
     password: (( grab meta.dockerhub.password ))
     repository: (( grab meta.image.name ))
@@ -67,9 +78,8 @@ resources:
     paths:
     - ci/Dockerfile
 - name: snw-concourse-image
-  type: docker-image
+  type: registry-image
   source:
-    email:    (( grab meta.dockerhub.email ))
     username: (( grab meta.dockerhub.username ))
     password: (( grab meta.dockerhub.password ))
     repository: starkandwayne/concourse

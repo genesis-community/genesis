@@ -1,0 +1,10 @@
+resources:
+- name: git-latest-tag
+  type: git
+  check_every: 1h
+  source:
+    uri:         (( grab meta.github.uri ))
+    branch:      (( grab meta.github.branch ))
+    private_key: (( grab meta.github.private_key ))
+    tag_filter:  "^v[1-9\\.]*$"
+    disable_ci_skip: true

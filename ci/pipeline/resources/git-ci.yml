@@ -1,0 +1,9 @@
+resources:
+  - name: git-ci
+    type: git
+    source:
+      uri:         (( grab meta.github.uri ))
+      branch:      (( grab meta.github.branch ))
+      private_key: (( grab meta.github.private_key ))
+      paths:       [ci/*]
+      disable_ci_skip: true

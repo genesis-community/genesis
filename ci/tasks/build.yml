@@ -1,0 +1,22 @@
+---
+platform: linux
+
+image_resource:
+  type: registry-image
+  source:
+    repository: starkandwayne/genesis-ci
+
+inputs:
+- name: version
+- name: git
+- name: git-ci
+
+outputs:
+- name: build
+
+params:
+
+run:
+  path: git-ci/ci/scripts/build
+
+

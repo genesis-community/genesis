@@ -1,0 +1,21 @@
+jobs:
+- name: major
+  public: true
+  plan:
+  - do:
+    - { get: version, trigger: false, params: {bump: major} }
+    - { put: version,                 params: {file: version/number} }
+    on_success:
+      put: notify
+      params:
+        topic:   (( concat meta.shout.topic "-$BUILD_JOB_NAME" ))
+        message: major version bump job '$BUILD_JOB_NAME' succeeded.
+        ok:      no
+        link:    (( grab meta.shout.links.build ))
+    on_failure:
+      put: notify
+      params:
+        topic:   (( concat meta.shout.topic "-$BUILD_JOB_NAME" ))
+        message: major version bump job '$BUILD_JOB_NAME' failed (which is unusual).
+        ok:      no
+        link:    (( grab meta.shout.links.build ))

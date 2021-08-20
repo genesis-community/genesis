@@ -1,0 +1,24 @@
+---
+platform: linux
+
+image_resource:
+  type: docker-image
+  source:
+    repository: starkandwayne/genesis
+
+inputs:
+- name: git
+- name: git-ci
+- name: git-latest-tag
+- name: version
+- name: release-notes
+
+outputs:
+- name: release-notes
+
+params:
+  GITHUB_ACCESS_TOKEN: ((github.access_token))
+
+run:
+  path: git-ci/ci/scripts/generate-release-notes
+

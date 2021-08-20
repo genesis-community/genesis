@@ -1,0 +1,28 @@
+jobs:
+- name: test
+  public: true
+  serial: true
+  plan:
+  - do:
+    - in_parallel:
+      - { get: git, trigger: true }
+      - { get: git-ci,}
+
+    - task: test
+      file: git-ci/ci/tasks/test.yml
+
+    on_success:
+      put: notify
+      params:
+        topic:   (( concat meta.shout.topic "-$BUILD_JOB_NAME" ))
+        message: tests job '$BUILD_JOB_NAME' succeeded.
+        ok:      yes
+        link:    (( grab meta.shout.links.build ))
+
+    on_failure:
+      put: notify
+      params:
+        topic:   (( concat meta.shout.topic "-$BUILD_JOB_NAME" ))
+        message: tests job '$BUILD_JOB_NAME' failed.
+        ok:      no
+        link:    (( grab meta.shout.links.build ))
