@@ -6,5 +6,5 @@ resources:
     uri:         (( grab meta.github.uri ))
     branch:      (( grab meta.github.branch ))
     private_key: (( grab meta.github.private_key ))
-    tag_filter:  "^v[1-9\\.]*$"
+    tag_regex:   '^v[0-9]+\.[0-9]+\.[0-9]+$'
     disable_ci_skip: true
