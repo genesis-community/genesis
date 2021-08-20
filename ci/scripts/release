@@ -29,6 +29,10 @@ export VERSION_FROM="version/number"
 [[ "${PRERELEASE:-0}" =~ (0|f|false|n|no) ]] && PRERELEASE=""
 
 header "Checking the Concourse Pipeline Environment"
+test -f "${VERSION_FROM}"     || bail "Version file (${VERSION_FROM}) not found."
+VERSION=$(cat ${VERSION_FROM})
+test -n "${VERSION}"          || bail "Version file (${VERSION_FROM}) was empty."
+
 test -n "${DEVELOP_BRANCH:-}" || bail "DEVELOP_BRANCH must be set to the development Git repository branch."
 test -n "${RELEASE_BRANCH:-}" || bail "RELEASE_BRANCH must be set to the main Git repository branch."
 if [[ -z "${PRERELEASE}" ]] ; then
@@ -44,15 +48,11 @@ else
 	test -n "${RELEASE_ROOT:-}"      || bail "RELEASE_ROOT must be set to the output directory where release artifacts should go."
 	test -n "${RELEASE_NOTES:-}"     || bail "RELEASE_NOTES must be set to the filename of the release notes."
 	RELEASE_NOTES_PATH="${RELEASE_NOTES_ROOT}/${RELEASE_NOTES}"
-	test -f "${RELEASE_NOTES_PATH}" || \
-		bail "Release notes file (${RELEASE_NOTES_PATH}) not found."
+	test -f "${RELEASE_NOTES_PATH}"  || bail "Release notes file (${RELEASE_NOTES_PATH}) not found."
 fi
 
 test -n "${GITHUB_OWNER:-}"   || bail "GITHUB_OWNER must be set to the name of the Github user or organization that owns the Git repository."
 
-test -f "${VERSION_FROM}"     || bail "Version file (${VERSION_FROM}) not found."
-VERSION=$(cat ${VERSION_FROM})
-test -n "${VERSION}"          || bail "Version file (${VERSION_FROM}) was empty."
 
 ######
 header "Assembling Github Release Artifacts..."
