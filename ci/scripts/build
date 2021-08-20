@@ -25,7 +25,7 @@ test -f "${VERSION_FROM}"     || bail "Version file (${VERSION_FROM}) not found.
 VERSION=$(cat "${VERSION_FROM}")
 test -n "${VERSION}"          || bail "Version file (${VERSION_FROM}) was empty."
 
-BUILD_DIR="$(cd "$BUILD_DIR" && pwd)"
+BUILD_DIR="$(cd "$BUILD_ROOT" && pwd)"
 
 ######
 header "Building Genesis v${VERSION} release..."
