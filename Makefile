@@ -1,7 +1,7 @@
 .PHONY: sanity-test test test-quick test-secrets test-ci release dev-release clean coverage
 
 sanity-test:
-	perl -Ilib -c bin/genesis && perl -Ilib -- bin/genesis -D ping 2>&1| grep "DEBUG"
+	set -o pipefail; perl -Ilib -c bin/genesis && perl -Ilib -- bin/genesis -D ping 2>&1 | grep -v VALUE | grep -v "^      "
 
 coverage:
 	SKIP_SECRETS_TESTS=yes cover -t -ignore_re '(/Legacy.pm|/UI.pm|^t/|/JSON/)'

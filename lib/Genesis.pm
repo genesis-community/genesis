@@ -31,7 +31,7 @@ our @EXPORT = qw/
 
 	csprintf
 	explain waiting_on
-	debug qtrace trace dump_var dump_stack
+	debug debug_error qtrace trace dump_var dump_stack
 	error bail bug
 
 	vaulted
@@ -214,6 +214,11 @@ sub waiting_on {
 sub debug {
 	return unless envset("GENESIS_DEBUG") || envset("GENESIS_TRACE");
 	_log("DEBUG", csprintf(@_), "Wm")
+}
+
+sub debug_error {
+	return unless envset("GENESIS_DEBUG") || envset("GENESIS_TRACE");
+	_log("ERROR", csprintf(@_), "Wr")
 }
 
 sub trace {
