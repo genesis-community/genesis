@@ -464,13 +464,13 @@ sub check_prereqs {
 	my $bosh_min_version = "6.4.4";
 	my $reqs = [
 		# Name,     Version, Command,                                 Pattern                   Source
-		["spruce", "1.26.0", "spruce -v      2>/dev/null",                             qr(.*version\s+(\S+).*)i, "https://github.com/geofffranks/spruce/releases"],
-		["safe",    "1.6.1", "safe -v        2>&1 >/dev/null",                         qr(safe v(\S+)),          "https://github.com/starkandwayne/safe/releases"],
-		["vault",   "0.9.0", "vault -v       2>/dev/null",                             qr(.*vault v(\S+).*)i,    "https://www.vaultproject.io/downloads.html"],
+		["perl",   "5.10.0", "/usr/bin/perl -v 2>/dev/null | head -n2 | grep version", qr/\(v([0-9\.]+)\)/],
+		["curl",   "7.30.0", "curl --version 2>/dev/null | head -n1",                  qr(^curl\s+(\S+))],
 		["git",     "1.8.0", "git --version  2>/dev/null",                             qr(.*version\s+(\S+).*)],
 		["jq",        "1.6", "jq --version   2>/dev/null",                             qr(^jq-([\.0-9]+)),       "https://stedolan.github.io/jq/download/"],
-		["curl",   "7.30.0", "curl --version 2>/dev/null | head -n1",                  qr(^curl\s+(\S+))],
-		["perl",   "5.10.0", "/usr/bin/perl -v 2>/dev/null | head -n2 | grep version", qr/\(v([0-9\.]+)\)/],
+		["spruce", "1.28.0", "spruce -v      2>/dev/null",                             qr(.*version\s+(\S+).*)i, "https://github.com/geofffranks/spruce/releases"],
+		["safe",    "1.6.1", "safe -v        2>&1 >/dev/null",                         qr(safe v(\S+)),          "https://github.com/starkandwayne/safe/releases"],
+		["vault",   "0.9.0", "vault -v       2>/dev/null",                             qr(.*vault v(\S+).*)i,    "https://www.vaultproject.io/downloads.html"],
 		["credhub", "2.7.0", "CREDHUB_SERVER='' credhub --version 2>/dev/null",        qr(CLI Version: (\S+)),   "https://github.com/cloudfoundry-incubator/credhub-cli/releases"],
 	];
 
