@@ -52,7 +52,7 @@ else
 fi
 
 test -n "${GITHUB_OWNER:-}"   || bail "GITHUB_OWNER must be set to the name of the Github user or organization that owns the Git repository."
-echo "
+echo "Environment OK"
 
 ######
 header "Assembling Github Release Artifacts..."
