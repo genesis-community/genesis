@@ -35,7 +35,7 @@ test -n "${VERSION}"          || bail "Version file (${VERSION_FROM}) was empty.
 
 test -n "${DEVELOP_BRANCH:-}" || bail "DEVELOP_BRANCH must be set to the development Git repository branch."
 test -n "${RELEASE_BRANCH:-}" || bail "RELEASE_BRANCH must be set to the main Git repository branch."
-if [[ -z "${PRERELEASE}" ]] ; then
+if [[ -n "${PRERELEASE}" ]] ; then
 	RELEASE_NOTES_PATH="pre-release-notes"
 	cat <<EOF > "$RELEASE_NOTES_PATH"
 <!--- Release Notes for v${VERSION} -- Do not move --->
@@ -52,7 +52,7 @@ else
 fi
 
 test -n "${GITHUB_OWNER:-}"   || bail "GITHUB_OWNER must be set to the name of the Github user or organization that owns the Git repository."
-
+echo "
 
 ######
 header "Assembling Github Release Artifacts..."

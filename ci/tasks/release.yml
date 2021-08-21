@@ -15,7 +15,8 @@ inputs:
   optional: true
 
 outputs:
-- name: build
+- name: notifications
+- name: gh
 
 params:
   DEVELOP_BRANCH:    develop
