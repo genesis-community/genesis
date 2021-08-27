@@ -974,7 +974,7 @@ sub with_bosh {
 # bosh_env - return the bosh_env for this environment {{{
 sub bosh_env {
 	my $self = shift;
-	scalar($self->lookup('genesis.bosh_env', $self->is_bosh_director ? undef : $self->{name}));
+	$ENV{GENESIS_BOSH_ENVIRONMENT} || scalar($self->lookup('genesis.bosh_env', $self->is_bosh_director ? undef : $self->{name}));
 }
 
 # }}}
@@ -983,6 +983,13 @@ sub bosh {
 	scalar $_[0]->_memoize('__bosh', sub {
 		my $self = shift;
 		return Genesis::BOSH::CreateEnvProxy->new($self) if $self->use_create_env;
+
+		if (is_valid_uri($ENV{GENESIS_BOSH_ENVIRONMENT}) && $ENV{BOSH_CLIENT}) {
+			$ENV{BOSH_ENVIRONMENT} = $ENV{GENESIS_BOSH_ENVIRONMENT};
+			$ENV{BOSH_ALIAS} ||= scalar($self->lookup('genesis.bosh_env', $self->{name}));
+			return Genesis::BOSH::Director->from_environment();
+		}
+
 		my ($bosh_alias,$bosh_dep_type) = split('/', $self->bosh_env);
 		my $bosh = Genesis::BOSH::Director->from_exodus(
 			$bosh_alias,

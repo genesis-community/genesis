@@ -683,9 +683,9 @@ sub options {
 	$ENV{DEBUG}          = 'y' if $trace > 1;
 	$ENV{TRACE}          = 'y' if $trace > 2;
 
-	debug("bosh env: ".($options->{'bosh-env'} || "(defined in environment file)"));
-	$ENV{GENESIS_BOSH_ENVIRONMENT} = delete($options->{'bosh-env'})
-		if $options->{'bosh-env'};
+	$ENV{GENESIS_BOSH_ENVIRONMENT} = delete($options->{'bosh-env'}) if $options->{'bosh-env'};
+	$ENV{GENESIS_BOSH_ENVIRONMENT} ||= $ENV{BOSH_ENVIRONMENT} if $ENV{BOSH_ENVIRONMENT};
+	debug("bosh env: ". ($ENV{GENESIS_BOSH_ENVIRONMENT} || "<not defined> (will be taken from environment file if applicable)"));
 
 	if ($options->{cwd}) {
 		my $requested_cwd = delete($options->{cwd});

@@ -45,7 +45,7 @@ sub from_exodus {
 	} else {
 		$opts{vault} ||= (Genesis::Vault->current || Genesis::Vault->default);
 		if (!$opts{exodus_path}) {
-			$opts{exodus_path} = 
+			$opts{exodus_path} =
 				($opts{exodus_mount} || '/secret/exodus/').
 				$alias.'/'.
 				($opts{bosh_deployment_type} || 'bosh');
