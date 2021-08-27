@@ -10,7 +10,7 @@ jobs:
       params:
         topic:   (( concat meta.shout.topic "-$BUILD_JOB_NAME" ))
         message: major version bump job '$BUILD_JOB_NAME' succeeded.
-        ok:      no
+        ok:      yes
         link:    (( grab meta.shout.links.build ))
     on_failure:
       put: notify
