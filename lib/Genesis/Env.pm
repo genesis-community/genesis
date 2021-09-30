@@ -1377,7 +1377,7 @@ sub deploy {
 
 	} else {
 		my @bosh_opts;
-		push @bosh_opts, "--$_"             for grep { $opts{$_} } qw/fix recreate dry-run/;
+		push @bosh_opts, "--$_"             for grep { $opts{$_} } qw/fix fix-releases recreate dry-run/;
 		push @bosh_opts, "--no-redact"      if  !$opts{redact};
 		push @bosh_opts, "--skip-drain=$_"  for @{$opts{'skip-drain'} || []};
 		push @bosh_opts, "--$_=$opts{$_}"   for grep { defined $opts{$_} } qw/canaries max-in-flight/;
@@ -2289,6 +2289,10 @@ Do (or don't) redact the output of the C<bosh deploy> command.
 =item fix
 
 Sets the C<--fix> flag in the call to C<bosh deploy>.
+
+=item fix-releases
+
+Sets the C<--fix-releases> flag in the call to C<bosh deploy>.
 
 =item recreate
 

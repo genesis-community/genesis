@@ -1649,6 +1649,9 @@ Can specify one of the follow three:
 
       --fix              Recreate unresponsive VMs instead of raising an error.
 
+	  --fix-releases     Reupload releases in manifest and replace corrupt
+	                     or missing jobs/packages
+
 EOF
 sub {
 	my %options = (redact => ! -t STDOUT);
@@ -1656,6 +1659,7 @@ sub {
 		yes|y
 		redact!
 		fix
+		fix-releases
 		recreate
 		dry-run
 		skip-drain=s@
@@ -2215,7 +2219,7 @@ sub {
 	# very commonly needed in this situation.
 	my @args = @_;
 	# If not in repo, and haven't provided -C or -r flags:
-	if(!in_repo_dir && 
+	if(!in_repo_dir &&
 	   !(
 	      grep( /^-r$/, @args )
 	      || grep( /^--remote$/, @args )
