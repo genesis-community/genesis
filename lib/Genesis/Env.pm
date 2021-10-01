@@ -984,7 +984,7 @@ sub bosh {
 		my $self = shift;
 		return Genesis::BOSH::CreateEnvProxy->new($self) if $self->use_create_env;
 
-		if (is_valid_uri($ENV{GENESIS_BOSH_ENVIRONMENT}) && $ENV{BOSH_CLIENT}) {
+		if ($ENV{GENESIS_BOSH_ENVIRONMENT} && $ENV{BOSH_CLIENT} && is_valid_uri($ENV{GENESIS_BOSH_ENVIRONMENT})) {
 			$ENV{BOSH_ENVIRONMENT} = $ENV{GENESIS_BOSH_ENVIRONMENT};
 			$ENV{BOSH_ALIAS} ||= scalar($self->lookup('genesis.bosh_env', $self->{name}));
 			return Genesis::BOSH::Director->from_environment();

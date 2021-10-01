@@ -1735,7 +1735,8 @@ director or deployment name.  The options below must come BEFORE any bosh
 command and options, or they will be passed through to the bosh cli.
 
 OPTIONS
-  -h, --help         Show this help screen.
+  -h, --help         Show this help screen.  If you want to get the help for
+                     bosh, specify `-- -h`
 
   -C, --cwd          Effective working directory.  You can also specify the
                      environment YAML file to use, in which case the working
@@ -1773,9 +1774,13 @@ sub {
 		cwd|C=s
 		as-director|A
 		connect
+		help|h
 	/);
+
 	usage unless @args;
 	my $env = Genesis::Top->new('.')->load_env(shift(@args))->with_vault();
+
+	shift @args if ($args[0]||'') eq '--';
 
 	my $bosh;
 	if ($options{'as-director'}) {
