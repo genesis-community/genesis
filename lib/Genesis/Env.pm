@@ -209,7 +209,7 @@ sub from_envvars {
 		$env->{__params}{genesis}{min_version} = "2.8.0"; #TODO: make this trackable
 		$env->{__bosh} = Genesis::BOSH::CreateEnvProxy->new();
 	} else {
-		$env->{__bosh} = Genesis::BOSH::Director->from_envvars();
+		$env->{__bosh} = Genesis::BOSH::Director->from_environment();
 	}
 	$env->{__params}{genesis}{credhub_env} = $ENV{GENESIS_CREDHUB_EXODUS_SOURCE}
 		if ($ENV{GENESIS_CREDHUB_EXODUS_SOURCE});
