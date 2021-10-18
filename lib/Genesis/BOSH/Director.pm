@@ -134,6 +134,16 @@ sub from_environment {
 }
 
 # }}}
+# exodus_path - return the exodus path from which the connection details will be read {{{
+sub exodus_path {
+	my ($class, $alias, %opts) = @_;
+	return $opts{exodus_path} || (
+		($opts{exodus_mount} || '/secret/exodus/').
+		$alias.'/'.
+		($opts{bosh_deployment_type} || 'bosh')
+	);
+}
+# }}}
 # }}}
 
 ## Instance Methods {{{

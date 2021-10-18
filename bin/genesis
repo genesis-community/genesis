@@ -1783,8 +1783,10 @@ sub {
 	shift @args if ($args[0]||'') eq '--';
 
 	my $bosh;
+	my $bosh_exodus_path;
 	if ($options{'as-director'}) {
-		my $exodus_data = eval {$env->vault->get($env->exodus_base)};
+		$bosh_exodus_path=$env->exodus_base;
+		my $exodus_data = eval {$env->vault->get($bosh_exodus_path)};
 		if ($exodus_data->{url} && $exodus_data->{admin_password}) {
 			$bosh = Genesis::BOSH::Director->from_exodus($env->name, exodus_data => $exodus_data);
 		} else {
@@ -1796,8 +1798,15 @@ sub {
 				 "        if you are trying to target this environment as the BOSH director",
 				 $env->name
 		) if ($env->use_create_env);
+		$bosh_exodus_path=Genesis::BOSH::Director->exodus_path($env->name);
 		$bosh = $env->bosh;
 	}
+	bail(
+		"#R{[ERROR]} No BOSH connection details found.  This may be due to not having read access\n".
+		"        to the BOSH deployment's exodus data in vault (#M{%s}).",
+		$bosh_exodus_path
+	) unless $bosh;
+
 	if ($options{connect}) {
 		if (in_controlling_terminal) {
 			explain "This command is expected to be run in the following manner:";
