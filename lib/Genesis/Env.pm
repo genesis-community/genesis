@@ -138,15 +138,21 @@ sub load {
 		last;
 	}
 
-	unless (under_test && !envset 'GENESIS_TESTING_DEV_VERSION_DETECTION') {
-		error(
-			"#Y{[DEPRECATIONS]} Environment #C{%s} contains the following deprecation:\n  - %s\n",
-			$env->{file}, join("\n  - ",map {join("\n    ",split("\n",$_))} @deprecations)
-		) if (@deprecations);
-		error(
-			"#Y{[WARNINGS]} Environment #C{%s} contains the following configuration warnings:\n  - %s\n",
-			$env->{file}, join("\n  - ",map {join("\n    ",split("\n",$_))} @config_warnings)
-		) if (@config_warnings);
+	unless (under_test && !envset 'GENESIS_TESTING_DEV_VERSION_DETECTION' ) {
+		if (@deprecations && !envset("REPORTED_ENV_DEPRECATIONS")) {
+			error(
+				"#Y{[DEPRECATIONS]} Environment #C{%s} contains the following deprecation:\n  - %s\n",
+				$env->{file}, join("\n  - ",map {join("\n    ",split("\n",$_))} @deprecations)
+			);
+			$ENV{REPORTED_ENV_DEPRECATIONS}=1;
+		}
+		if (@config_warnings && !envset("REPORTED_ENV_CONFIG_WARNINGS")) {
+			error(
+				"#Y{[WARNINGS]} Environment #C{%s} contains the following configuration warnings:\n  - %s\n",
+				$env->{file}, join("\n  - ",map {join("\n    ",split("\n",$_))} @config_warnings)
+			);
+			$ENV{REPORTED_ENV_CONFIG_WARNINGS}=1
+		}
 	}
 
 	bail(
