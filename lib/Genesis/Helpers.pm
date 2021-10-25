@@ -203,15 +203,41 @@ export -f typeof
 ###
 
 bosh() {
-  [[ -z "${GENESIS_BOSH_COMMAND:-}" ]] && \
-    __bail "BOSH CLI command not specified - this is a bug in Genesis, or you are running $0 outside of Genesis"
-  [[ -z "${BOSH_ENVIRONMENT:-}" || -z "${BOSH_CA_CERT:-}" ]] && \
-    __bail "Environment not found for BOSH Director -- please ensure you've configured your BOSH alias used by this environment"
+  if [[ -f ${GENESIS_ROOT}/${GENESIS_ENVIRONMENT}.yml ]] ; then
+    command "${GENESIS_CALLBACK_BIN}" -C "$GENESIS_ROOT" bosh "$GENESIS_ENVIRONMENT" "$@"
+    rc="$?"
+    [[ "$rc" == "0" ]] && export GENESIS_BOSH_VERIFIED="$BOSH_ALIAS"
+    return "$rc"
+  fi
 
+  # Do things the old way if there is no environment yaml for any reason...
+  [[ -z "${GENESIS_BOSH_COMMAND:-}" ]] && \
+    __bail "" "#R{[ERROR]} BOSH CLI command not specified - this is a bug in Genesis, or you are running $0 outside of Genesis"
+
+  if [[ -z "${BOSH_ENVIRONMENT:-}" || -z "${BOSH_CA_CERT:-}" ]] ; then
+    # Try to get the env vars...
+    if [[ -n "${BOSH_ALIAS}" ]] ; then
+      perl_script="$(cat <<'      EOF'
+      my $bosh=(
+        Genesis::BOSH::Director->from_exodus($ENV{BOSH_ALIAS}) ||
+        Genesis::BOSH::Director->from_alias($ENV{BOSH_ALIAS})
+      );
+      print "echo 'Could not connect to $ENV{BOSH_ALIAS}'\n" unless $bosh;
+      my %vars = $bosh->environment_variables;
+      for (keys %vars) {
+        print "export $_=\"$val{$_}\"\n";
+      }
+      EOF
+      )"
+      eval "$(/usr/bin/perl -I$GENESIS_LIB -MGenesis::BOSH::Director -e "$perl_script")"
+    fi
+    [[ -z "${BOSH_ENVIRONMENT:-}" || -z "${BOSH_CA_CERT:-}" ]] && \
+      __bail "" "#R{[ERROR]} Environment not found for BOSH Director -- please ensure you've configured your BOSH alias used by this environment"
+  fi
 
   if [[ -z "${GENESIS_BOSH_VERIFIED:-}" || "$GENESIS_BOSH_VERIFIED" != "${BOSH_ALIAS:-}" ]] ; then
     # Genesis has not yet validate the BOSH director's availability, so we need to
-    if /usr/bin/perl -I$GENESIS_LIB -MGenesis::BOSH -e 'exit(Genesis::BOSH->ping($ENV{BOSH_ALIAS})?0:1)' ; then
+    if /usr/bin/perl -I$GENESIS_LIB -MGenesis::BOSH::Director -e 'exit(Genesis::BOSH::Director->from_environment()->connect_and_validate()?0:1)' ; then
       GENESIS_BOSH_VERIFIED="$BOSH_ALIAS"
     else
       __bail "" "#R{[ERROR]} Could not connect to BOSH director '#M{$BOSH_ALIAS}' (#M{$BOSH_ENVIRONMENT})"
