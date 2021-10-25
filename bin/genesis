@@ -1795,15 +1795,15 @@ sub {
 	} else {
 		bail("#R{[ERROR]} Environment %s is a 'create-env' environment, so it does\n".
 				 "        not have an associated BOSH Director.  Please use the #y{--as-director} option\n".
-				 "        if you are trying to target this environment as the BOSH director",
+				 "        if you are trying to target this environment as the BOSH director.\n",
 				 $env->name
 		) if ($env->use_create_env);
 		$bosh_exodus_path=Genesis::BOSH::Director->exodus_path($env->name);
-		$bosh = $env->bosh;
+		$bosh = $env->bosh; # This sets the deployment name.
 	}
 	bail(
 		"#R{[ERROR]} No BOSH connection details found.  This may be due to not having read access\n".
-		"        to the BOSH deployment's exodus data in vault (#M{%s}).",
+		"        to the BOSH deployment's exodus data in vault (#M{%s}).\n",
 		$bosh_exodus_path
 	) unless $bosh;
 

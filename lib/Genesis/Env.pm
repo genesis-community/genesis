@@ -993,6 +993,7 @@ sub bosh {
 		if ($ENV{GENESIS_BOSH_ENVIRONMENT} && $ENV{BOSH_CLIENT} && is_valid_uri($ENV{GENESIS_BOSH_ENVIRONMENT})) {
 			$ENV{BOSH_ENVIRONMENT} = $ENV{GENESIS_BOSH_ENVIRONMENT};
 			$ENV{BOSH_ALIAS} ||= scalar($self->lookup('genesis.bosh_env', $self->{name}));
+			$ENV{BOSH_DEPLOYMENT} ||= $self->deployment_name;
 			return Genesis::BOSH::Director->from_environment();
 		}
 
