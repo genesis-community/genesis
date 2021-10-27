@@ -16,6 +16,23 @@ sub new {
 	}, $class);
 }
 
+sub local_kits {
+	my ($class, $provider, $path) = @_;
+	$path ||= '.';
+
+	my %kits;
+	for (glob("$path/*")) {
+		next unless m{/([^/]*)-(\d+(\.\d+(\.\d+([.-]rc[.-]?\d+)?)?)?).t(ar.)?gz$};
+		$kits{$1}{$2} = $class->new(
+			name     => $1,
+			version  => $2,
+			archive  => $_,
+			provider => $provider
+		);
+	}
+	return \%kits;
+}
+
 sub kit_bug {
 	my ($self, @msg) = @_;
 	my @errs = (

@@ -2219,36 +2219,66 @@ command("compile-kit", {
 	scope => [[['processed','dev'] => 'repo'],[['processed','name'] => 'kit'], ['processed' => 'kit_or_dev'], 'undef']
 	}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE: genesis compile-kit -v VERSION [-n NAME] [-d|--dev]
+USAGE: genesis compile-kit <options>
 
 OPTIONS
 $GLOBAL_USAGE
 
-  -v, --version Version to package.
+  -v, --version <x> Specify the explicit version you want created.  If this
+                    version already exists locally or remotely, you must also
+                    specify --force to recreate it.
 
-  -n, --name    Name of the kit archive.  If not provided, will take the name
-                of the current (or specified with -C) directory before the
-                suffix of -genesis-kit (standalone mode) or -deployments
-                (dev mode).
+  -M, --major       If not specifying an explicit version, bump the current
+                    latest version's major value instead of the patch value
 
-  -d, --dev     Compile based off of a dev-kit (./dev). If not specified,
-                genesis will compile based off of ./<name>-genesis-kit.
-                Automatically set if run from inside a genesis deployments directory.
+  -m, --minor       If not specifying an explicit version, bump the current
+                    latest version's minor value instead of the patch value
 
-  -f, --force   Proceed with compilation even if there are unstaged or uncommitted
-                changes in the working directory, or if the validation of the contents
-                fails.  Normally, Genesis will refuse to continue when this
-                happens.
+  -F, --final       If not specifying an explicit version, an rc based on the
+                    next  version will be created.  If a non-rc version
+                    is desired, use the --final option.
+
+  -n, --name <x>    Name of the kit archive.  If not provided, will take the
+                    name of the current (or specified with -C) directory before
+                    the suffix of -genesis-kit (standalone mode) or
+                    -deployments (dev mode).
+
+  -t, --target <x>  Directory to place kit once compiled.  Defaults to current
+                    directory.  If the target has a .genesis directory under
+                    it, it will be placed in .genesis/kits directory.
+
+                    If using relative bumping, it will consider the existing
+                    kits in the target directory to determine latest version.
+
+  -d, --dev         Compile based off of a dev-kit (./dev). If not specified,
+                    genesis will compile based off of ./<name>-genesis-kit.
+                    Automatically set if run from inside a genesis deployments
+                    directory.
+
+  -f, --force       Proceed with compilation even if there are unstaged or
+                    uncommitted changes in the working directory, or if the
+                    validation of the contents fails.  Normally, Genesis will
+                    refuse to continue when this happens.
 EOF
 sub {
 	my %options = (no_check_prereqs => 1);
 	options(\@_, \%options, qw/
-		dev|d
-		name|n=s
 		version|v=s
+		major|M
+		minor|m
+		final|F
+		dev|d
+		target|t=s
+		name|n=s
 		force|f
 	/);
 	usage(1) if @_ != 0;
+
+	$options{target} ||= '.';
+	if (-f $options{target}."/.genesis/config") {
+		$options{target} .= "/.genesis/kits/";
+		mkdir_or_fail $options{target} unless -d $options{target};
+	}
 
 	my $dir;
 	unless ($options{name}) {
@@ -2269,7 +2299,60 @@ sub {
 	}
 	check_prereqs(processed => 1, %options);
 	usage(1, "Missing name option, cannot determine from `pwd`") unless $options{name};
-	usage(1, 'Missing version option: -v <major>.<minor>.<patch>') unless $options{version};
+
+	my $top = Genesis::Top->new('.');
+	my @remote_versions = map {$_->{version}} ($top->remote_kit_versions(
+		$options{name},
+		include_prereleases=>1,
+		include_drafts=>1
+	));
+	my $local_kits = Genesis::Kit::Compiled->local_kits($top->kit_provider, $options{target});
+	my @local_versions = grep { semver($_) } (keys %{$local_kits->{$options{name}}});
+
+	if ($options{version}) {
+		bail(
+			"#R{[ERROR]} Version #C{$options{version}} is not in a valid semver format"
+		) unless semver($options{version});
+		for my $opt (qw/final major minor/) {
+			bail(
+				"#R{[ERROR]} Cannot specify --version|-v if also specifying --final|-F, --major|-M or --minor|-m"
+			) if $options{$opt};
+		}
+		bail(
+			"#R{[ERROR]} Version #C{$options{version}} already exists: use --force to recreate\n".
+			"        a potentially different one locally."
+		) if (grep {$options{version} eq $_} (@remote_versions,@local_versions));
+
+	} else {
+		my $bump=2;
+		if ($options{major}) {
+			bail(
+				"#R{[ERROR]} Cannot specify both --major|-M and --minor|-m"
+			) if $options{minor};
+			$bump=0;
+		} elsif ($options{minor}) {
+			$bump=1;
+		}
+
+		my ($latest) = sort {by_semver($b,$a)} (@remote_versions, @local_versions);
+		my @semver = semver($latest);
+		if (@semver) {
+			my $locale=(grep {$latest eq $_} @local_versions) ? 'locally' : 'in remote kit source';
+			explain "Found latest version of #C{%s} for #M{%s} %s.", $latest, $options{name}, $locale;
+		} else {
+			@semver = (0,0,0,0) unless @semver;
+		}
+
+		# Determine latest semver
+		if ($bump == 2) {
+			$semver[$bump]++ unless $semver[3];
+		} else {
+			$semver[$bump]++;
+			$semver[$_] = 0 for ($bump+1 .. 3);
+		}
+		$options{version} = join('.',@semver[0 .. 2]);
+		$options{version} .= "-rc" . (++$semver[3] % -100000 + 100000) unless $options{final};
+	}
 
 	unless ($dir) {
 		if ($options{dev}) {
@@ -2281,12 +2364,12 @@ sub {
 				if (! -f "$dir/kit.yml" && -d "/$options{name}-genesis-kit");
 		}
 	}
-
+	explain "Preparing to compile #M{%s} kit %C{v%s}...", $options{name}, $options{version};
 	my $cc = Genesis::Kit::Compiler->new($dir);
-	my $tar = $cc->compile($options{name}, $options{version}, ".", force => $options{force})
+	my $tar = $cc->compile($options{name}, $options{version}, $options{target}, force => $options{force})
 		or bail "Unable to compile v$options{version} of $options{name} Genesis Kit.\n";
 
-	explain("Compiled #G{$options{name}} v#C{$options{version}} at $tar\n");
+	explain("Compiled #M{$options{name}} v#C{$options{version}} to #G{$options{target}/$tar}\n");
 });
 
 # }}}
@@ -2379,7 +2462,7 @@ sub {
 	# very commonly needed in this situation.
 	my @args = @_;
 	# If not in repo, and haven't provided -C or -r flags:
-	if(!in_repo_dir && 
+	if(!in_repo_dir &&
 	   !(
 	      grep( /^-r$/, @args )
 	      || grep( /^--remote$/, @args )

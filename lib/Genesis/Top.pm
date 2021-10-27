@@ -425,19 +425,10 @@ sub create_env {
 
 sub local_kits {
 	my ($self) = @_;
-
-	my %kits;
-	for (glob("$self->{root}/.genesis/kits/*")) {
-		next unless m{/([^/]*)-(\d+(\.\d+(\.\d+([.-]rc[.-]?\d+)?)?)?).t(ar.)?gz$};
-		$kits{$1}{$2} = Genesis::Kit::Compiled->new(
-			name     => $1,
-			version  => $2,
-			archive  => $_,
-			provider => $self->kit_provider()
-		);
-	}
-
-	return \%kits;
+	return Genesis::Kit::Compiled->local_kits(
+		$self->kit_provider(),
+		$self->path(".genesis/kits"),
+	);
 }
 
 sub local_kit_version {
