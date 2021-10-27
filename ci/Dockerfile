@@ -10,6 +10,10 @@ RUN apt-get update \
       libtest-output-perl \
       libtest-tcp-perl \
       iputils-ping \
-      shellcheck \
+ && curl -Lo shellcheck.tar.xz "https://github.com/koalaman/shellcheck/releases/download/v0.7.2/shellcheck-v0.7.2.linux.x86_64.tar.xz" \
+     && tar -xf shellcheck.tar.xz \
+     && mv shellcheck*/shellcheck /usr/bin/shellcheck \
+     && chmod 0755 /usr/bin/shellcheck \
+     && rm -rf shellcheck* \
  && git config --global user.name "Concourse BOT" \
  && git config --global user.email concourse-bot@starkandwayne.com
