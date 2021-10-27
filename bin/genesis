@@ -44,6 +44,7 @@ our $USER_AGENT_STRING = "genesis/$Genesis::VERSION";
 use FindBin;
 $ENV{GENESIS_CALLBACK_BIN} ||= $FindBin::Bin.'/'.$FindBin::Script;
 $ENV{GENESIS_LIB} ||= $FindBin::Bin.'/lib';
+$ENV{GENESIS_VERSION}=$Genesis::VERSION;
 our $CALL = join(" ", map {$_ =~ / / ? "\"$_\"" : $_} (humanize_bin, @ARGV));
 
 my ($COMMAND, %RUN, %USAGE, %PROPS);

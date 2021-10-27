@@ -715,3 +715,14 @@ move_secrets_to_credhub() {
   result="$(safe rm "${GENESIS_SECRETS_BASE}$src" 2>&1)"
 }
 export -f move_secrets_to_credhub
+
+version_check() {
+  local min_version
+  min_version="${1:?"${FUNCNAME[0]} called without specifying minimum version"}"
+  if ! [[ "$GENESIS_VERSION" =~ -dev$ ]] && ! new_enough "$GENESIS_VERSION" "$min_version" ; then
+    describe >&2 "" "#R{[ERROR]} Genesis v$min_version is required by $GENESIS_KIT_HOOK.  Please upgrade before continuing" ""
+    return 1
+  fi
+  return 0
+}
+export -f version_check
