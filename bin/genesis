@@ -1856,7 +1856,7 @@ sub {
 
 	$env->download_required_configs('addon', "addon-$script");
 
-	explain STDERR "Running #G{%s} addon for #C{%s}", $script, $env->name;
+	explain STDERR "Running #G{%s} addon for #C{%s} #M{%s} deployment", $script, $env->name, $env->type;
 
 	$env->run_hook('addon', script => $script, args => \@args)
 		or exit 1;
@@ -2364,7 +2364,7 @@ sub {
 				if (! -f "$dir/kit.yml" && -d "/$options{name}-genesis-kit");
 		}
 	}
-	explain "Preparing to compile #M{%s} kit %C{v%s}...", $options{name}, $options{version};
+	explain "Preparing to compile #M{%s} kit #C{v%s}...", $options{name}, $options{version};
 	my $cc = Genesis::Kit::Compiler->new($dir);
 	my $tar = $cc->compile($options{name}, $options{version}, $options{target}, force => $options{force})
 		or bail "Unable to compile v$options{version} of $options{name} Genesis Kit.\n";

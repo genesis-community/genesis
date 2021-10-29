@@ -50,7 +50,7 @@ genesis() {
   [[ -z "${GENESIS_CALLBACK_BIN}" ]] \
     && echo >&2 "Genesis command not specified - this is a bug in Genesis, or you are running $0 outside of Genesis" \
     && exit 2
-  command ${GENESIS_CALLBACK_BIN} "$@"
+  command "${GENESIS_CALLBACK_BIN}" -C "$GENESIS_ROOT" "$@"
   return $?
 }
 export -f genesis
