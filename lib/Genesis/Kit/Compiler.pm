@@ -51,6 +51,8 @@ sub validate {
 					push @yml_errors, "specifies minimum Genesis version '$meta->{genesis_version_min}', which is not a semantic version (x.y.z).";
 				} elsif (semver($Genesis::VERSION) && ! new_enough $Genesis::VERSION, $meta->{genesis_version_min}) {
 					push @yml_errors, "This Genesis (v$Genesis::VERSION) does not meet minimum Genesis version of v$meta->{genesis_version_min}"
+				} elsif (@{semver($meta->{genesis_version_min})}[3] != 0 && @{semver($version)}[3] == 0) {
+					push @yml_errors, "Can not specify rc minimum Genesis version for compiling non-rc kit versions"
 				}
 				$min_version = $meta->{genesis_version_min};
 			}

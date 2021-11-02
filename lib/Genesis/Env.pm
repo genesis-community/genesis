@@ -412,7 +412,7 @@ sub use_create_env {
 			# Kits that are explicitly compatible with 2.8.0 can specify if they
 			# support or require create-env deployments.
 
-			my $uce = $self->kit->metadata('use_create_env');
+			my $uce = $self->kit->metadata('use_create_env')||'';
 			if ($uce eq 'yes') {
 				bail(
 					"#R{[ERROR]} This kit only allows create-env deployments, but this environment\n".

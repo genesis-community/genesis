@@ -1192,7 +1192,7 @@ sub {
 	}
 	my $name = shift;
 	my $kit_file;
-	if ($options{kit} =~ m#(?:.*/)?([^/]+)-\d+\.\d+\.\d+(?:-rc\.?\d+)?\.t(?:ar\.)?gz#) {
+	if (($options{kit}||'') =~ m#(?:.*/)?([^/]+)-\d+\.\d+\.\d+(?:-rc\.?\d+)?\.t(?:ar\.)?gz#) {
 		bail ("Local compiled kit file $options{kit} not found") unless -f $options{kit};
 		$kit_file = $options{kit};
 		$name = $1 unless $name;
@@ -2313,7 +2313,7 @@ sub {
 		bail(
 			"#R{[ERROR]} Version #C{$options{version}} already exists: use --force to recreate\n".
 			"        a potentially different one locally."
-		) if (grep {$options{version} eq $_} (@remote_versions,@local_versions));
+		) if (grep {$options{version} eq $_} (@remote_versions,@local_versions)) && !$options{force};
 
 	} else {
 		my $bump=2;

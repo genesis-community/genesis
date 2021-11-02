@@ -172,7 +172,7 @@ export -f new_enough
 # be used instead.
 #
 lookup() {
-  genesis -C "$GENESIS_ROOT" lookup "$GENESIS_ENVIRONMENT" "$@"
+  genesis lookup "$GENESIS_ENVIRONMENT" "$@"
 }
 export -f lookup
 
@@ -185,7 +185,7 @@ export -f deployed
 typeof() {
   local __key=${1:?typeof() - must specify a key to look up}
   local __val
-  __val="$(genesis -C "$GENESIS_ROOT" lookup "$__key" "$GENESIS_ENVIRONMENT" "" |  sed -e 's/\(.\).*/\1/')"
+  __val="$(genesis  lookup "$__key" "$GENESIS_ENVIRONMENT" "" |  sed -e 's/\(.\).*/\1/')"
   if [[ $__val == "{" ]]; then
     echo "map"
   elif [[ $__val == "[" ]]; then
