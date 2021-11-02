@@ -32,6 +32,8 @@ my $vault_target = vault_ok;
 
 # Compensate for not running through bin/genesis
 $ENV{GENESIS_CALLBACK_BIN} = "$ENV{GENESIS_TOPDIR}/bin/genesis";
+$ENV{GENESIS_PREFIX_TYPE} = 'none';
+$ENV{GENESIS_COMMAND} = 'ping';
 
 sub again {
 	system("rm -rf $tmp; mkdir -p $tmp");
