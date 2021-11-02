@@ -790,15 +790,6 @@ sub command_scope {
 	return;
 }
 
-sub get_command {
-	my $name = shift;
-	return $name if exists $RUN{$name};
-	for my $cmd (keys %PROPS) {
-		return $cmd if defined($PROPS{$cmd}{alias}) && $PROPS{$cmd}{alias} eq $name;
-	}
-	usage(2,"#R{[ERROR]} Unrecognized command '$name'", "help");
-}
-
 sub command {
 	my $name = shift;
 	my $props = shift if ref($_[0]) eq 'HASH';
@@ -816,6 +807,7 @@ sub command {
 		$PROPS{$cmd}   = {%$default_props, %$props};
 		$RUN{$cmd} = sub {
 			$COMMAND = $cmd;
+			$ENV{GENESIS_COMMAND} = $cmd;
 			$fn->(@_);
 		};
 	}
@@ -3462,6 +3454,14 @@ sub {
 ###########################################################################
 
 sub main {
+	my %commands;
+	for (keys %RUN) {
+		$commands{$_} = $_;
+		if (defined($PROPS{$_}{alias})) {
+			$commands{$PROPS{$_}{alias}} = $_;
+		}
+	}
+
 	if (in_callback) {
 		debug "#G{genesis} callback (using vault #C{'$ENV{GENESIS_TARGET_VAULT}'})...";
 	} else {
@@ -3469,23 +3469,10 @@ sub main {
 		$ENV{GENESIS_CALLER_DIR} = Cwd::getcwd();
 	}
 
-	$ENV{GENESIS_INDEX} = "https://genesis.starkandwayne.com" unless $ENV{GENESIS_INDEX};
-
-	# Check if we're in a v1 repo
-	my $path = abs_path(getcwd);
-	my $in_version = 0;
-	if (in_repo_dir) {
-		$in_version = 2;
-	} else {
-		while ($path ne "") {
-			bail("This repository is a Genesis v1 repository.  Compatibility with v1 repos has\nbeen discontinued as of v2.7.0")
-				if (-d "$path/global" && -e "$path/global/deployment.yml");
-			$path =~ s/\/[^\/]*$//;
-		}
-	}
-
 	my ($cmd, @args);
 	my $no_warn = 1;
+	my $path = '.';
+	$ENV{GENESIS_PREFIX_TYPE}="none";
 	while (@_ > 0) {
 		my $arg = shift @_;
 
@@ -3498,17 +3485,46 @@ sub main {
 		}
 
 		if ($cmd || $arg =~ m/^-+/) {
-			push @args, $arg;
-			push @args, shift @_ if $arg eq '-C';
+			if ($arg eq '-C') {
+				bail(
+					"#R{[ERROR]} Cannot specify -C after environment name when using prefix style calls\n"
+				) if ($ENV{GENESIS_PREFIX_TYPE} =~ /file$/ );
+				$path = shift @_;
+			} else {
+				push @args, $arg;
+			}
 		} else {
-			$cmd = $arg;
+			if ($commands{$arg}) {
+				# argument matches a command (or alias) -- assume its a command
+				$cmd = $arg;
+			} else {
+				my $test_file = $path.'/'.$arg;
+				if ($arg =~ /\/$/) { # explicit path
+					bail ("#R{[ERROR]} Explicit path specified, but does not exist -- cannot continue") unless -d $test_file;
+					$ENV{GENESIS_PREFIX_TYPE} = 'explicit_path';
+					$path = $test_file
+				} elsif ($arg =~ /\.yml/) { # explicit file
+					bail ("#R{[ERROR]} Explicit environment file specified, but does not exist -- cannot continue") unless -f $test_file;
+					$ENV{GENESIS_PREFIX_TYPE} = 'explicit_file';
+					$path = $test_file;
+				} elsif (-f $test_file.".yml") {
+					$ENV{GENESIS_PREFIX_TYPE} = 'file';
+					$path = $test_file.".yml";
+				} elsif (-d $test_file) {
+					$ENV{GENESIS_PREFIX_TYPE} = 'path';
+					$path = $test_file;
+				} else {
+					usage(2, "#R{[ERROR]} Unrecognized command, path or file '$arg'", "help");
+				}
+			}
 		}
 	}
 
 	if ($cmd) {
+		unshift(@args, "-C", $path) unless $path eq '.';
 		trace("running command '$cmd'");
 		trace("arguments are [".join(', ', @args)."]");
-		$RUN{get_command($cmd)}(@args);
+		$RUN{$commands{$cmd}}(@args);
 		exit 0;
 	}
 	if (@args and scalar(@args) == 1 && $args[0] =~ m/^(-v|--version)$/) {
