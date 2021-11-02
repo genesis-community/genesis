@@ -158,12 +158,25 @@ sub deployment {
 }
 
 # }}}
+# alias - specify the name of the bosh director
+sub alias {
+	return $_[0]->{alias};
+}
+
+# }}}
+# url - give the full url, including the schema, host and port
+sub url {
+	my $self = shift;
+	return $self->{schema}."://".$self->{host}.":".$self->{port};
+}
+
+# }}}
 # environment_variables - retrieve BOSH environment variables for this BOSH director {{{
 sub environment_variables {
 	my ($self) = @_;
 	my %envs = (
 		BOSH_ALIAS         => $self->{alias},
-		BOSH_ENVIRONMENT   => $self->{schema}."://".$self->{host}.":".$self->{port},
+		BOSH_ENVIRONMENT   => $self->url,
 		BOSH_CA_CERT       => $self->{ca_cert},
 		BOSH_CLIENT        => $self->{client},
 		BOSH_CLIENT_SECRET => $self->{secret},

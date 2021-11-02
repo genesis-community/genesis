@@ -3002,10 +3002,10 @@ sub {
 
 	explain "Preparing to deploy #C{%s}:\n  - based on kit #c{%s}", $env->name, $env->kit->id;
 	if ($env->use_create_env) {
-		explain "  - as a #M{create-env} deployment\n";
+		explain("  - as a #M{create-env} deployment\n");
 	} else {
-		explain "  - to '#M{%s}' BOSH director.\n", scalar($env->lookup_bosh_target);
-		Genesis::BOSH->alias(scalar $env->lookup_bosh_target);
+		my $bosh = $env->bosh();
+		explain("  - to #M{%s} BOSH director at #Bu{%s}.\n", $bosh->alias, $bosh->url);
 	}
 
 	my $result;
@@ -3091,8 +3091,6 @@ sub {
 		qw/BOSH_ENVIRONMENT BOSH_CA_CERT
 		   BOSH_CLIENT BOSH_CLIENT_SECRET/);
 	bail_on_missing_pipeline_environment_variables(@undefined);
-
-	Genesis::BOSH->alias(scalar $env->lookup_bosh_target);
 
 	mkfile_or_fail "updates.yml", 0644, $env->with_bosh
 		->download_required_configs('blueprint', 'manifest')
