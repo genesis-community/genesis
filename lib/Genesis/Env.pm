@@ -172,7 +172,7 @@ sub from_envvars {
 	my ($class,$top) = @_;
 
 	bail "Can only assemble environment from environment variables in a kit hook callback"
-		unless ($ENV{GENESIS_KIT_HOOK}||'') eq 'new' && envset('GENESIS_IS_HELPING_YOU');
+		unless ($ENV{GENESIS_KIT_HOOK}||'') eq 'new' && in_callback();
 
 	bug("No 'GENESIS_$_' found in enviornmental variables - cannot assemble environemnt!!")
 		for (grep {! $ENV{'GENESIS_'.$_}} qw(ENVIRONMENT KIT_NAME KIT_VERSION ENVIRONMENT_PARAMS));
@@ -408,9 +408,7 @@ sub use_create_env {
 			) unless $is_create_env || $has_bosh_env || !$is_bosh_kit;
 		}
 
-		my $bosh_target = ($ENV{GENESIS_BOSH_ENVIRONMENT} || $self->lookup(['genesis.bosh_env','params.bosh'], undef) || $self->name);
-		my $different_bosh_env =  $bosh_target ne $self->name;
-
+		my $different_bosh_env = $self->bosh_env && ($self->bosh_env ne $self->name);
 
 		if ($self->kit->feature_compatibility("2.8.0")) {
 			# Kits that are explicitly compatible with 2.8.0 can specify if they
@@ -828,14 +826,15 @@ sub get_environment_variables {
 	$env{$_} = $credhub_env{$_} for keys %credhub_env;
 
 	# BOSH support
-	unless ($self->use_create_env) {
+	if ($self->use_create_env) {
+		$env{GENESIS_USE_CREATE_ENV} = 1;
+	} else {
 		$env{BOSH_ALIAS} = $self->bosh_env;
 		if ($self->{__bosh} || grep {$_ eq 'bosh'} ($self->kit->required_connectivity($hook))) {
 			my %bosh_env = $self->bosh->environment_variables;
 			$env{$_} = $bosh_env{$_} for keys %bosh_env;
 		}
 	}
-	$env{GENESIS_USE_CREATE_ENV} = 1 if $self->use_create_env;
 
 	return %env
 }
@@ -1009,7 +1008,8 @@ sub with_bosh {
 # bosh_env - return the bosh_env for this environment {{{
 sub bosh_env {
 	my $self = shift;
-	$ENV{GENESIS_BOSH_ENVIRONMENT} || scalar($self->lookup('genesis.bosh_env', $self->is_bosh_director ? undef : $self->{name}));
+	my $env_bosh_target = scalar($self->lookup('genesis.bosh_env', $self->is_bosh_director ? undef : $self->{name}));
+  # TODO? warn if GENESIS_BOSH_ENVIRONMENT is set and different
 }
 
 # }}}
@@ -1017,17 +1017,22 @@ sub bosh_env {
 sub bosh {
 	scalar $_[0]->_memoize('__bosh', sub {
 		my $self = shift;
+		my $bosh;
 		return Genesis::BOSH::CreateEnvProxy->new($self) if $self->use_create_env;
 
-		if ($ENV{GENESIS_BOSH_ENVIRONMENT} && $ENV{BOSH_CLIENT} && is_valid_uri($ENV{GENESIS_BOSH_ENVIRONMENT})) {
-			$ENV{BOSH_ENVIRONMENT} = $ENV{GENESIS_BOSH_ENVIRONMENT};
-			$ENV{BOSH_ALIAS} ||= scalar($self->lookup('genesis.bosh_env', $self->{name}));
-			$ENV{BOSH_DEPLOYMENT} ||= $self->deployment_name;
-			return Genesis::BOSH::Director->from_environment();
+		# If we're in a callback or under test, just reload from envirionemnt variables.
+		if (in_callback || under_test) {
+			if ($ENV{GENESIS_BOSH_ENVIRONMENT} && $ENV{BOSH_CLIENT} && is_valid_uri($ENV{GENESIS_BOSH_ENVIRONMENT})) {
+				$ENV{BOSH_ENVIRONMENT} = $ENV{GENESIS_BOSH_ENVIRONMENT};
+				$ENV{BOSH_ALIAS} ||= scalar($self->lookup('genesis.bosh_env', $self->{name}));
+				$ENV{BOSH_DEPLOYMENT} ||= $self->deployment_name;
+				$bosh = Genesis::BOSH::Director->from_environment();
+				return $bosh if $bosh;
+			}
 		}
 
 		my ($bosh_alias,$bosh_dep_type) = split('/', $self->bosh_env);
-		my $bosh = Genesis::BOSH::Director->from_exodus(
+		$bosh = Genesis::BOSH::Director->from_exodus(
 			$bosh_alias,
 			vault => $self->vault,
 			exodus_mount => $self->exodus_mount,
@@ -1039,6 +1044,30 @@ sub bosh {
 		);
 		bail("#R{[ERROR]} Could not find BOSH director #M{%s}", $bosh_alias)
 			unless $bosh;
+
+		error(
+			"#Y{[WARNING]} Calling shell has BOSH_ALIAS set to %s, but this environment\n".
+			"          specifies the #M{%s} BOSH director; ignoring \$BOSH_ALIAS set in shell",
+			$ENV{BOSH_ALIAS}, $bosh->alias
+		) if ($ENV{BOSH_ALIAS} && $ENV{BOSH_ALIAS} ne $bosh->{alias});
+
+		if ($ENV{BOSH_ENVIRONMENT}) {
+			if (is_valid_uri($ENV{BOSH_ENVIRONMENT})) {
+				error(
+					"#Y{[WARNING]} Calling shell has BOSH_ENVIRONMENT set to %s, but this environment\n".
+					"          specifies the BOSH director at #M{%s};\n".
+					"          ignoring \$BOSH_ENVIRONMENT set in shell",
+					$ENV{BOSH_ENVIRONMENT}, $bosh->url
+				) if ($ENV{BOSH_ENVIRONMENT} ne $bosh->url);
+			} else {
+				error(
+					"#Y{[WARNING]} Calling shell has BOSH_ENVIRONMENT set to %s, but this environment\n".
+					"          specifies the #M{%s} BOSH director; ignoring \$BOSH_ENVIRONMENT set in shell",
+					$ENV{BOSH_ENVIRONMENT}, $bosh->alias
+				) if ($ENV{BOSH_ENVIRONMENT} ne $bosh->alias);
+			}
+		}
+
 		return $bosh;
 	});
 }

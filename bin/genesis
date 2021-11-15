@@ -686,7 +686,6 @@ sub options {
 
 	$ENV{GENESIS_BOSH_ENVIRONMENT} = delete($options->{'bosh-env'}) if $options->{'bosh-env'};
 	$ENV{GENESIS_BOSH_ENVIRONMENT} ||= $ENV{BOSH_ENVIRONMENT} if $ENV{BOSH_ENVIRONMENT};
-	debug("bosh env: ". ($ENV{GENESIS_BOSH_ENVIRONMENT} || "<not defined> (will be taken from environment file if applicable)"));
 
 	if ($options->{cwd}) {
 		my $requested_cwd = delete($options->{cwd});
