@@ -397,7 +397,7 @@ sub load_env {
 	debug("loading environment #C{%s}", $name);
 	if ($self->has_env($name)) {
 		return Genesis::Env->load(top  => $self, name => $name);
-	} elsif (envset('GENESIS_IS_HELPING_YOU') && $name eq $ENV{'GENESIS_ENVIRONMENT'}) {
+	} elsif (in_callback() && $name eq $ENV{'GENESIS_ENVIRONMENT'}) {
 		return Genesis::Env->from_envvars($self);
 	} else {
 		bail "#R{[ERROR]} Environment file #C{%s} does not exist", humanize_path($self->path($name.".yml"));

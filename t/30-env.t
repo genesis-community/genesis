@@ -14,6 +14,7 @@ use Test::Differences;
 use_ok 'Genesis::Env';
 use Genesis::BOSH;
 use Genesis::Top;
+use Genesis::Env;
 use Genesis;
 
 fake_bosh;
@@ -219,33 +220,6 @@ EOF
 		qr/\[ERROR\] Environment standalone-with-another.yml could not be loaded:\n\s+- kit bosh\/0.2.0 is not compatible with secrets_mount feature; check for newer kit version or remove feature.\n\s+- kit bosh\/0.2.0 is not compatible with exodus_mount feature; check for newer kit version or remove feature./ms,
 		"Outdated kits bail when using v2.7.0 features";
 	};
-=comment
-	# This needs a kit that is v2.7.0 compatible
-	put_file $top->path("standalone-with-another.yml"), <<EOF;
----
-kit:
-  features:
-    - ((append))
-    - extras
-
-genesis:
-  env:           standalone-with-another
-  secrets_mount: genesis/secrets
-  exodus_mount:  genesis/exodus
-EOF
-	$env = $top->load_env('standalone-with-another.yml');
-	is($env->name, "standalone-with-another", "an environment should know its name");
-	is($env->file, "standalone-with-another.yml", "an environment should know its file path");
-	is($env->deployment_name, "standalone-with-another-thing", "an environment should know its deployment name");
-	is($env->kit->id, "bosh/0.2.0", "an environment can inherit its kit name/version");
-	is($env->secrets_mount, '/genesis/secrets/', "specified secret mount used when  provided");
-	is($env->secrets_slug, 'standalone/with/another/thing', "default secret slug generated correctly");
-	is($env->secrets_base, '/genesis/secrets/standalone/with/another/thing/', "default secret base path generated correctly");
-	is($env->exodus_mount, '/genesis/exodus/', "specified exodus mount used when provided");
-	is($env->exodus_base, '/genesis/exodus/standalone-with-another/thing/', "correctly evaluates exodus base path");
-	is($env->ci_mount, '/genesis/secrets/ci/', "default ci mount used when none provided but secrets_mount is");
-	is($env->ci_base, '/genesis/secrets/ci/thing/standalone-with-another/', "correctly evaluates ci base path");
-=cut
 
 	teardown_vault();
 
@@ -1104,7 +1078,6 @@ EOF
 	teardown_vault();
 };
 
-# TODO
 subtest 'env_kit_overrides' => sub {
 	local $ENV{GENESIS_BOSH_COMMAND};
 	fake_bosh;
@@ -1483,6 +1456,171 @@ Validating 16 secrets for c-env under path '/secret/c/env/thing/':
 Completed - Duration: XXX seconds [16 validated/0 skipped/0 errors]
 
 EOF
+	$director1->stop();
+	teardown_vault();
+};
+
+subtest 'load environment from env vars' => sub {
+	local $ENV{GENESIS_BOSH_COMMAND};
+	fake_bosh;
+
+	my ($director1) = fake_bosh_directors(
+		{alias => 'standalone'},
+	);
+	my $vault_target = vault_ok;
+	Genesis::Vault->clear_all();
+	Genesis::BOSH->set_command($ENV{GENESIS_BOSH_COMMAND});
+	my $top = Genesis::Top->create(workdir, 'thing', vault=>$VAULT_URL)->link_dev_kit('t/src/creator');
+	put_file $top->path("base.yml"), <<'EOF'; # Direct YAML
+---
+kit:
+  name:    dev
+  version: latest
+  features:
+    - whiskey
+    - tango
+    - foxtrot
+
+genesis:
+  env: base
+
+params:
+  secret: (( vault $GENESIS_SECRETS_BASE "test:secret" ))
+  network: (( grab networks[0].name ))
+  junk:    ((    vault    "secret/passcode" ))
+
+EOF
+
+put_file $top->path("base-extended.yml"), <<'EOF'; # Direct YAML
+
+kit:
+  features:
+  - (( replace ))
+  - alpha
+  - oscar
+  - kilo
+
+---
+
+genesis:
+  env:      base-extended
+  ci_base:   (( concat "/concourse/main/" genesis.env ))
+  ci_mount: "/concourse"
+  root_ca_path: "company/root-ca"
+  secrets_mount: /shhhh/
+  credhub_env: "root_vault/credhub"
+
+kit:
+  features:
+  - (( append ))
+  - november
+
+---
+genesis:
+  min_version: 2.8.0
+  use_create_env: true
+
+kit:
+  overrides:
+    genesis_version_min: 2.8.0
+    use_create_env: allow
+    certificates:
+      base:
+        private-cert: # Additional cert signed by existing CA
+          server:
+            signed_by: "my-cert/ca"
+            valid_for: (( defer grab certificates.base.my-cert.server.valid_for )) # Grab from kit.yml
+            names: [ (( grab genesis.env )) ] # Grab from env file
+      bonus: ~ # Deletion
+    credentials:
+      bonus:
+        need-to-know:
+          secret: random 32 #New
+        crazy/thing:
+          token: random 48 allowed-chars ABCDEF0123456789 # Update
+
+EOF
+
+	my $env = $top->load_env('base-extended')->with_bosh()->with_vault();
+	ok $env->use_create_env(), "env does use create-env";
+	my %evs; ok %evs = $env->get_environment_variables(), "env can provide environment variables";
+
+	# validate expected environment variables and values
+	cmp_deeply(\%evs, {
+		GENESIS_ROOT => $env->path,
+		GENESIS_ENVIRONMENT => $env->name,
+		GENESIS_TYPE => $top->type,
+		GENESIS_CALL_BIN => Genesis::humanize_bin(),
+		GENESIS_CALL => "",
+		GENESIS_CI_BASE => "/concourse/main/".$env->name."/",
+		GENESIS_CI_MOUNT => "/concourse/",
+		GENESIS_CI_MOUNT_OVERRIDE => "true",
+		GENESIS_CREDHUB_EXODUS_SOURCE => "root_vault/credhub",
+		GENESIS_CREDHUB_EXODUS_SOURCE_OVERRIDE => "root_vault/credhub", # Shouldn't this be boolean?
+		GENESIS_CREDHUB_ROOT => "root_vault-credhub/base-extended-thing",
+		GENESIS_ENV_KIT_OVERRIDE_FILES => re('/var/folders/.*/env-overrides-0.yml'),
+		GENESIS_EXODUS_BASE => "/shhhh/exodus/base-extended/thing",
+		GENESIS_EXODUS_MOUNT => "/shhhh/exodus/",
+		GENESIS_EXODUS_MOUNT_OVERRIDE => "",
+		GENESIS_KIT_NAME => "dev",
+		GENESIS_KIT_VERSION => "latest", # THIS IS NOT IDEAL
+		GENESIS_MIN_VERSION => '2.8.0',
+		GENESIS_REQUESTED_FEATURES => "alpha oscar kilo november",
+		GENESIS_ROOT_CA_PATH => "company/root-ca",
+		GENESIS_SECRETS_BASE => "/shhhh/base/extended/thing/",
+		GENESIS_SECRETS_MOUNT => "/shhhh/",
+		GENESIS_SECRETS_MOUNT_OVERRIDE => "true",
+		GENESIS_SECRETS_PATH => "base/extended/thing",
+		GENESIS_SECRETS_SLUG => "base/extended/thing",
+		GENESIS_SECRETS_SLUG_OVERRIDE => "",
+		GENESIS_TARGET_VAULT => re('http://127.0.0.1:82\d\d'),
+		GENESIS_USE_CREATE_ENV => "1",
+		GENESIS_VAULT_PREFIX => "base/extended/thing",
+		GENESIS_VERIFY_VAULT => "1",
+		SAFE_TARGET => re('http://127.0.0.1:82\d\d'),
+		GENESIS_ENVIRONMENT_PARAMS => re('^{.*}$')
+	}, "environment provides the correct environment variables and values");
+
+	# Remove env files
+	unlink $top->path($_) for (@{$env->{__actual_files}});
+
+	local %ENV = %ENV;
+	$ENV{$_} = $evs{$_} for (keys %evs);
+	dies_ok {my $env_from_evs=Genesis::Env->from_envvars($top)} "cannot load environment from env vars outside of callback";
+
+	$ENV{GENESIS_IS_HELPING_YOU} = 1;
+	$ENV{GENESIS_KIT_HOOK}="addon";
+	dies_ok {my $env_from_evs=Genesis::Env->from_envvars($top)} "cannot load environment from env vars during a non-new hook";
+
+	$ENV{GENESIS_KIT_HOOK}="new";
+	ok my $env_from_evs=Genesis::Env->from_envvars($top), "can load environment from env vars during a new hook";
+	ok $env_from_evs->use_create_env, "env from env vars uses create env.";
+	ok $env_from_evs->{is_from_envvars}, "env from env vars indicates so.";
+
+	my @old_properties = grep {$_ !~ /^(__actual_files)$/}  keys(%$env);
+	my @new_properties = grep {$_ !~ /^(is_from_envvars)$/} keys(%$env_from_evs);
+	cmp_set(\@new_properties, \@old_properties, "original and from_envvars environments have the same properties");
+
+
+	for my $property (@old_properties) {
+		if ($property eq '__bosh') {
+			eq_or_diff ref($env->{__bosh}), ref($env_from_evs->{__bosh}), "reconstituted correct bosh director";
+		} elsif ($property eq '__params') {
+			# Tweak some known acceptable differences
+			$env->{__params}{genesis}{use_create_env} = $env->{__params}{genesis}{use_create_env} ? 1 : 0;
+			cmp_deeply($env_from_evs->{__params},$env->{__params}, "reconstituted correct parameters");
+		} elsif ($property eq '__tmp') {
+			eq_or_diff dirname($env->{__tmp}), dirname($env_from_evs->{__tmp}), 'reconstituted similar tmp dirs';
+		} elsif ($property eq 'kit') {
+			eq_or_diff $env_from_evs->{path}, $env->{path}, 'reconstituted same kit';
+			cmp_deeply($env_from_evs->{kit}{__metadata}, $env->{kit}{__metadata}, 'reconstituted same kit configuration');
+		} elsif ($property eq '__features') {
+			cmp_set($env_from_evs->{__features}, $env->{__features}, 'reconstituted the same features');
+		} else {
+			eq_or_diff $env_from_evs->{$property}, $env->{$property}, "reconstituted the correct value for $property";
+		}
+	}
+
 	$director1->stop();
 	teardown_vault();
 };

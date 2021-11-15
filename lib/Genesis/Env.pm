@@ -10,6 +10,8 @@ use Genesis::UI;
 use Genesis::IO qw/DumpYAML LoadFile/;
 use Genesis::Vault;
 
+
+use JSON::PP qw/encode_json decode_json/;
 use POSIX qw/strftime/;
 use Digest::file qw/digest_file_hex/;
 use Time::Seconds;
@@ -170,13 +172,14 @@ sub from_envvars {
 	my ($class,$top) = @_;
 
 	bail "Can only assemble environment from environment variables in a kit hook callback"
-		unless envset 'GENESIS_IS_HELPING_YOU';
+		unless ($ENV{GENESIS_KIT_HOOK}||'') eq 'new' && envset('GENESIS_IS_HELPING_YOU');
 
 	bug("No 'GENESIS_$_' found in enviornmental variables - cannot assemble environemnt!!")
-		for (grep {! $ENV{'GENESIS_'.$_}} qw(ENVIRONMENT KIT_NAME KIT_VERSION));
+		for (grep {! $ENV{'GENESIS_'.$_}} qw(ENVIRONMENT KIT_NAME KIT_VERSION ENVIRONMENT_PARAMS));
 
 	my $env = $class->new(name => $ENV{GENESIS_ENVIRONMENT}, top => $top);
 	$env->{is_from_envvars} =1;
+	$env->{__params} = decode_json($ENV{GENESIS_ENVIRONMENT_PARAMS});
 
 	# reconstitute our kit via top
 	my $kit_name = $ENV{GENESIS_KIT_NAME};
@@ -186,7 +189,7 @@ sub from_envvars {
 	$env->kit->apply_env_overrides(split(' ',$ENV{GENESIS_ENV_KIT_OVERRIDE_FILES}))
 	  if defined $ENV{GENESIS_ENV_KIT_OVERRIDE_FILES};
 
-	my $min_version = $ENV{GENESIS_MIN_VERSION} || $env->lookup('genesis.min_version') || '';
+	my $min_version = $ENV{GENESIS_MIN_VERSION} || scalar($env->lookup('genesis.min_version', ''));
 	$min_version =~ s/^v//i;
 
 	if ($min_version) {
@@ -206,13 +209,13 @@ sub from_envvars {
 	$env->{__min_version} = $min_version || '0.0.0';
 
 	# features
-	$env->{'__features'} = split(' ',$ENV{GENESIS_REQUESTED_FEATURES})
+	$env->{'__features'} = [split(' ',$ENV{GENESIS_REQUESTED_FEATURES})]
 		if $ENV{GENESIS_REQUESTED_FEATURES};
 
 	# bosh and credhub env overrides
 	if (envset 'GENESIS_USE_CREATE_ENV') {
 		$env->{__params}{genesis}{use_create_env} = 1;
-		$env->{__params}{genesis}{min_version} = "2.8.0"; #TODO: make this trackable
+		$env->{__params}{genesis}{min_version} ||= $min_version;
 		$env->{__bosh} = Genesis::BOSH::CreateEnvProxy->new();
 	} else {
 		$env->{__bosh} = Genesis::BOSH::Director->from_environment();
@@ -221,8 +224,9 @@ sub from_envvars {
 		if ($ENV{GENESIS_CREDHUB_EXODUS_SOURCE});
 
 	# determine our vault and secret path
-	for (qw(secrets_mount secrets_slug exodus_mount ci_mount root_ca_path)) {
-		$env->{'__'.$_} = $env->{__params}{genesis}{$_} = $ENV{'GENESIS_'.uc($_)};
+	for (qw(secrets_mount secrets_base secrets_slug exodus_mount exodus_base ci_mount ci_base root_ca_path)) {
+		$env->{'__'.$_} = $env->{__params}{genesis}{$_} = $ENV{'GENESIS_'.uc($_)}
+			unless eval "\$env->$_" eq $ENV{'GENESIS_'.uc($_)};
 	}
 
 	# Check for v2.7.0 features
@@ -549,7 +553,6 @@ sub features {
 			$self->name, defined($features) ? (lc(ref($features)) || 'string') : 'null'
 		) unless ref($features) eq 'ARRAY';
 
-		$self->{__explicit_features} = $features;
 		my @derived_features = grep {$_ =~ /^\+/} $features;
 		bail(
 			"#R{[ERROR]} Environment #C{%s} cannot explicitly specify derived features:\n  - %s",
@@ -782,6 +785,13 @@ sub get_environment_variables {
 			: sprintf("%s %s '%s'", $env{GENESIS_CALL},$ENV{GENESIS_COMMAND}, $self->name);
 	}
 
+	# Full param json to reconstitution by from_envvars method.
+	$env{GENESIS_ENVIRONMENT_PARAMS} = encode_json($self->params);
+
+	# Genesis minimum version (if specified)
+	my $min_version = $self->lookup('genesis.min_version');
+	$env{GENESIS_MIN_VERSION} = $min_version if $min_version;
+
 	# Vault ENV VARS
 	$env{GENESIS_TARGET_VAULT} = $env{SAFE_TARGET} = $self->vault->ref;
 	$env{GENESIS_VERIFY_VAULT} = $self->vault->connect_and_validate->verify || "";
@@ -818,10 +828,12 @@ sub get_environment_variables {
 	$env{$_} = $credhub_env{$_} for keys %credhub_env;
 
 	# BOSH support
-	$env{BOSH_ALIAS} = $self->bosh_env;
-	if ($self->{__bosh} || grep {$_ eq 'bosh'} ($self->kit->required_connectivity($hook))) {
-		my %bosh_env = $self->bosh->environment_variables;
-		$env{$_} = $bosh_env{$_} for keys %bosh_env;
+	unless ($self->use_create_env) {
+		$env{BOSH_ALIAS} = $self->bosh_env;
+		if ($self->{__bosh} || grep {$_ eq 'bosh'} ($self->kit->required_connectivity($hook))) {
+			my %bosh_env = $self->bosh->environment_variables;
+			$env{$_} = $bosh_env{$_} for keys %bosh_env;
+		}
 	}
 	$env{GENESIS_USE_CREATE_ENV} = 1 if $self->use_create_env;
 
@@ -897,12 +909,12 @@ sub with_vault {
 # root_ca_path - returns the root_ca_path, if provided by the environment file (env: GENESIS_ROOT_CA_PATH) {{{
 sub root_ca_path {
 	my $self = shift;
-	unless (exists($self->{root_ca_path})) {
-		$self->{root_ca_path} = $self->lookup('genesis.root_ca_path','');
-		$self->{root_ca_path} =~ s/\/$// if $self->{root_ca_path};
+	unless (exists($self->{__root_ca_path})) {
+		$self->{__root_ca_path} = $self->lookup('genesis.root_ca_path','');
+		$self->{__root_ca_path} =~ s/\/$// if $self->{__root_ca_path};
 	}
 
-	return $self->{root_ca_path};
+	return $self->{__root_ca_path};
 }
 
 # }}}
@@ -978,7 +990,9 @@ sub ci_mount {
 # ci_base - returns the full Vault path under which the CI secrets for this environment are stored (env: GENESIS_CI_BASE) {{{
 sub ci_base {
 	$_[0]->_memoize('__ci_base', sub {
-		sprintf("%s%s/%s/", $_[0]->ci_mount, $_[0]->type, $_[0]->name)
+		my $default = sprintf("%s%s/%s/", $_[0]->ci_mount, $_[0]->type, $_[0]->name);
+		(my $base = $_[0]->lookup('genesis.ci_base', $default)) =~ s#^/?(.*?)/?$#/$1/#;
+		return $base
 	});
 }
 
