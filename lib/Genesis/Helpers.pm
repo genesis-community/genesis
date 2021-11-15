@@ -269,6 +269,11 @@ bosh_cpi() {
 }
 export -f bosh_cpi
 
+use_create_env() {
+	[[ "${GENESIS_USE_CREATE_ENV:-0}" == "1" ]]
+}
+export -f use_create_env
+
 ###
 ###   Cloud-Config Inspection Functions
 ###
