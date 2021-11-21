@@ -272,6 +272,24 @@ sub create {
 			get_opts(\%opts, qw(secrets_path secrets_mount exodus_mount ci_mount root_ca_path credhub_env))}
 	};
 
+	if ($env->kit->feature_compatibility("2.8.0")) {
+		# Kits that are explicitly compatible with 2.8.0 can specify if they
+		# support or require create-env deployments.
+		my $uce = $env->kit->metadata('use_create_env')||'';
+		if ($uce eq 'yes') {
+			$env->{__params}{genesis}{use_create_env} = 1;
+			$env->{__params}{genesis}{bosh_env} = $ENV{GENESIS_BOSH_ENVIRONMENT} || '--';
+		} elsif ($uce eq 'no') {
+			$env->{__params}{genesis}{use_create_env} = 0;
+			$env->{__params}{genesis}{bosh_env} = $ENV{GENESIS_BOSH_ENVIRONMENT} || $opts{name};
+		} else {
+			# Complicated state: the kit allows but does not require create-env.
+			$env->{__params}{genesis}{bosh_env} = $ENV{GENESIS_BOSH_ENVIRONMENT} || '--';
+		}
+	} elsif ($env->is_bosh_director()) {
+		# Prior to 2.8.0, only the bosh kit can use create_env.
+		$env->{__params}{genesis}{bosh_env} = $ENV{GENESIS_BOSH_ENVIRONMENT} || '--';
+	}
 	# target vault and remove secrets that may already exist
 	bail("\n#R{[ERROR]} No vault specified or configured.")
 		unless $env->vault;
@@ -288,7 +306,9 @@ sub create {
 		if ($ENV{GENESIS_CREDHUB_EXODUS_SOURCE});
 
 	## initialize the environment
-	$env->download_required_configs('new');
+	$env->download_required_configs('new')
+		unless $env->lookup('genesis.bosh_env') eq '--';
+
 	if ($env->has_hook('new')) {
 		$env->run_hook('new');
 	} else {
