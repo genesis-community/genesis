@@ -69,29 +69,6 @@ sub in_kit_dir {
 	return -f "kit.yml";
 }
 
-# takes a list of tokens, in order, and generates
-# all strictly ordered combinations of them.
-#
-# for example:
-#  [us, east, 1] -> [[us]
-#                    [us-east]
-#                    [us-east-1]]
-#
-sub expand_tokens {
-	my @tokens = @_;
-
-	my @l;
-	my @pre;
-
-	for (@tokens) {
-		push @pre, $_;
-		push @l, join '-', @pre;
-	}
-
-	return @l;
-}
-
-
 ###########################################################################
 
 # genesis prompt support routines: *_prompt_handlers {{{
@@ -729,6 +706,7 @@ sub options {
 		$options->{config} = {%configs} if %configs;
 	}
 
+	#TODO: no_check_prereqs is not a valid option in the parser above -- does anything use it?
 	check_prereqs(%$options) unless delete($options->{no_check_prereqs});
 }
 
@@ -1717,7 +1695,7 @@ sub {
 	exit ($ok ? 0 : 1);
 });
 # }}}
-# bosh - run a bosh command against the BOSH director for the specified environment
+# genesis bosh - run a bosh command against the BOSH director for the specified environment {{{
 
 command("bosh", {scope => 'env'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
@@ -1929,6 +1907,7 @@ sub {
 			}
 			explain $msg;
 		}
+
 		if ($env->has_hook('info')) {
 			explain "\n#c{%s}\n", "-"x80;
 			$env->run_hook('info');
@@ -2303,7 +2282,7 @@ sub {
 		include_drafts=>1
 	));
 	my $local_kits = Genesis::Kit::Compiled->local_kits($top->kit_provider, $options{target});
-	my @local_versions = grep { semver($_) } (keys %{$local_kits->{$options{name}}});
+	my @local_versions = grep { semver($_) } (keys %{ $local_kits->{$options{name}} });
 
 	if ($options{version}) {
 		bail(

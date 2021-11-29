@@ -101,6 +101,7 @@ sub from_alias {
 	my $bosh = load_yaml_file($config_home)
 		or return;
 
+	unless ($alias) {$ENV{GENESIS_TRACE}=1 && dump_stack;}
 	for my $e (@{ $bosh->{environments} || []  }) {
 		return $class->new(
 			$alias,
