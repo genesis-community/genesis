@@ -790,14 +790,17 @@ sub get_environment_variables {
 	$env{GENESIS_CALL}         = $env{GENESIS_CALL_BIN}.
 	                            ($is_alt_path ? sprintf(" -C '%s'", humanize_path($self->path)) : "");
 
+	# Require from the main module
+	bug('Missing \%::GENESIS_COMMANDS') unless %::GENESIS_COMMANDS;
+
+	my $env_ref = $self->name;
+	$env_ref .= '.yml' if (grep {$_ eq $self->name} (keys %main::GENESIS_COMMANDS));
+	$env_ref = humanize_path($self->path)."/$env_ref" if $is_alt_path;
+	$env_ref = "'$env_ref'" if $env_ref =~ / \(\)!\*\?/;
+
 	if ($ENV{GENESIS_COMMAND}) {
 		$env{GENESIS_PREFIX_TYPE} = $ENV{GENESIS_PREFIX_TYPE} || 'none';
-		$env{GENESIS_CALL_PREFIX}  = sprintf("%s '%s%s%s' %s",
-			$env{GENESIS_CALL_BIN},
-			($is_alt_path) ? humanize_path($self->path)."/" : '',
-			$self->name, $env{GENESIS_PREFIX_TYPE} eq 'explicit_file' ? ".yml" : "",
-			$ENV{GENESIS_COMMAND}
-		);
+		$env{GENESIS_CALL_PREFIX} = sprintf("%s %s %s", $env{GENESIS_CALL_BIN}, $env_ref, $ENV{GENESIS_COMMAND});
 		$env{GENESIS_CALL_FULL} = $env{GENESIS_PREFIX_TYPE} =~ /file$/
 			? $env{GENESIS_CALL_PREFIX}
 			: sprintf("%s %s '%s'", $env{GENESIS_CALL},$ENV{GENESIS_COMMAND}, $self->name);

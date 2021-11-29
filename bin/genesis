@@ -47,6 +47,7 @@ $ENV{GENESIS_LIB} ||= $FindBin::Bin.'/lib';
 $ENV{GENESIS_VERSION}=$Genesis::VERSION;
 our $CALL = join(" ", map {$_ =~ / / ? "\"$_\"" : $_} (humanize_bin, @ARGV));
 
+our %GENESIS_COMMANDS;
 my ($COMMAND, %RUN, %USAGE, %PROPS);
 
 my $END_HOOKS = [];
@@ -3455,13 +3456,11 @@ sub {
 # }}}
 
 ###########################################################################
-
 sub main {
-	my %commands;
 	for (keys %RUN) {
-		$commands{$_} = $_;
+		$GENESIS_COMMANDS{$_} = $_;
 		if (defined($PROPS{$_}{alias})) {
-			$commands{$PROPS{$_}{alias}} = $_;
+			$GENESIS_COMMANDS{$PROPS{$_}{alias}} = $_;
 		}
 	}
 
@@ -3497,7 +3496,7 @@ sub main {
 				push @args, $arg;
 			}
 		} else {
-			if ($commands{$arg}) {
+			if ($GENESIS_COMMANDS{$arg}) {
 				# argument matches a command (or alias) -- assume its a command
 				$cmd = $arg;
 			} else {
@@ -3527,7 +3526,7 @@ sub main {
 		unshift(@args, "-C", $path) unless $path eq '.';
 		trace("running command '$cmd'");
 		trace("arguments are [".join(', ', @args)."]");
-		$RUN{$commands{$cmd}}(@args);
+		$RUN{$GENESIS_COMMANDS{$cmd}}(@args);
 		exit 0;
 	}
 	if (@args and scalar(@args) == 1 && $args[0] =~ m/^(-v|--version)$/) {

@@ -204,7 +204,7 @@ export -f typeof
 
 bosh() {
   if [[ -f ${GENESIS_ROOT}/${GENESIS_ENVIRONMENT}.yml ]] ; then
-    command "${GENESIS_CALLBACK_BIN}" -C "$GENESIS_ROOT" bosh "$GENESIS_ENVIRONMENT" "$@"
+    command "${GENESIS_CALLBACK_BIN}" "${GENESIS_ROOT}/${GENESIS_ENVIRONMENT}.yml" bosh "$@"
     rc="$?"
     [[ "$rc" == "0" ]] && export GENESIS_BOSH_VERIFIED="$BOSH_ALIAS"
     return "$rc"
