@@ -1865,10 +1865,13 @@ sub {
 		explain("  #I{           by} #C{%s}",
 			$exodus->{deployer} || $unknown);
 		if ($exodus->{bosh}) {
-			if ($exodus->{bosh} eq "(none)") {
-				explain("  #I{      as BOSH} #C{create-env}");
+			if ($exodus->{bosh} eq "(none)" || $exodus->{bosh} eq '~' || $exodus->{use_create_env}) {
+				explain(
+					"  #I{     %s BOSH} #CI{create-env}",
+					(defined($exodus->{as_director}) && !$exodus->{as_director}) ? 'via' : ' as'
+				);
 			} else {
-				explain("  #I{      to BOSH} #C{%s}",$exodus->{bosh});
+				explain("  #I{      to BOSH} #CI{%s}",$exodus->{bosh});
 			}
 		}
 		explain("  #I{ based on kit} #C{%s}#C{/%s}%s%s",
