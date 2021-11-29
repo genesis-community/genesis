@@ -73,7 +73,7 @@ sub from_exodus {
 		);
 		return;
 	}
-	if ($exodus->{kit_name} ne 'bosh' && ! $exodus->{is_bosh}) {
+	if ($exodus->{kit_name} ne 'bosh' && ! $exodus->{is_bosh} && ! $exodus->{is_director}) {
 		trace(
 			"#R{[ERROR]} Exodus data %s does not appear to be for a BOSH deployment:\n".
 			"        Kit type is #M{%s}",

@@ -307,7 +307,7 @@ sub create {
 
 	## initialize the environment
 	$env->download_required_configs('new')
-		unless $env->lookup('genesis.bosh_env') eq '--';
+		unless $env->lookup('genesis.bosh_env','') eq '--';
 
 	if ($env->has_hook('new')) {
 		$env->run_hook('new');
@@ -789,10 +789,10 @@ sub get_environment_variables {
 	                            ($is_alt_path ? sprintf(" -C '%s'", humanize_path($self->path)) : "");
 
 	# Require from the main module
-	bug('Missing \%::GENESIS_COMMANDS') unless %::GENESIS_COMMANDS;
+	my @known_cmds = keys(%::GENESIS_COMMANDS) || ();
 
 	my $env_ref = $self->name;
-	$env_ref .= '.yml' if (grep {$_ eq $self->name} (keys %main::GENESIS_COMMANDS));
+	$env_ref .= '.yml' if (grep {$_ eq $self->name} @known_cmds);
 	$env_ref = humanize_path($self->path)."/$env_ref" if $is_alt_path;
 	$env_ref = "'$env_ref'" if $env_ref =~ / \(\)!\*\?/;
 
@@ -1569,8 +1569,6 @@ sub deploy {
 	my $exodus = $self->exodus;
 
 	$exodus->{manifest_sha1} = digest_file_hex($manifest_file, 'SHA-1');
-	$exodus->{bosh} = $self->bosh->{alias} || "~";
-	$exodus->{is_bosh} = $self->is_bosh_director?1:0;
 	debug("setting exodus data in the Vault, for use later by other deployments");
 	$ok = $self->vault->authenticate->query(
 		{ onfailure => "#R{Failed to export $self->{name} metadata.}\n".

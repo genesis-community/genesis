@@ -686,19 +686,20 @@ EOF
 --- {}
 # not really a cloud config, but close enough
 EOF
-
 	my $env = $top->load_env('standalone')->use_config($top->path('.cloud.yml'));
 	cmp_deeply($env->exodus, {
-			version       => ignore,
-			dated         => re(qr/\d\d\d\d-\d\d-\d\d \d\d:\d\d:\d\d/),
-			deployer      => ignore,
-			bosh          => 'standalone',
-			kit_name      => 'fancy',
-			kit_version   => '0.0.0-rc0',
-			kit_is_dev    => JSON::PP::true,
-			'addons[0]'   => 'echo',
-			vault_base    => '/secret/standalone/thing',
-			features      => 'echo',
+			version        => ignore,
+			dated          => re(qr/\d\d\d\d-\d\d-\d\d \d\d:\d\d:\d\d/),
+			deployer       => ignore,
+			bosh           => 'standalone',
+			is_director    => JSON::PP::false,
+			use_create_env => JSON::PP::false,
+			kit_name       => 'fancy',
+			kit_version    => '0.0.0-rc0',
+			kit_is_dev     => JSON::PP::true,
+			'addons[0]'    => 'echo',
+			vault_base     => '/secret/standalone/thing',
+			features       => 'echo',
 
 			'hello.world' => 'i see you',
 
@@ -843,7 +844,8 @@ EOF
 				kit_is_dev => 1,
 				features => '',
 				bosh => "standalone",
-				is_bosh => 0,
+				is_director => 0,
+				use_create_env => 0,
 				vault_base => "/secret/standalone/thing",
 				version => '(development)',
 				manifest_sha1 => $sha1,
@@ -861,7 +863,8 @@ EOF
 				dated => $exodus->{dated},
 				deployer => $ENV{USER},
 				bosh => "standalone",
-				is_bosh => 0,
+				is_director => 0,
+				use_create_env => 0,
 				kit_name => "fancy",
 				kit_version => "0.0.0-rc0",
 				kit_is_dev => 1,

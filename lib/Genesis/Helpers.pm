@@ -662,7 +662,12 @@ EOF
 	)"
 	echo ""
 	echo "genesis:"
-	echo "  env:            $GENESIS_ENVIRONMENT"
+	padding=""
+	if use_create_env || [[ -n $config_block ]] ; then
+		padding="           "
+	fi
+	echo "  env: ${padding}$GENESIS_ENVIRONMENT"
+
 	if use_create_env ; then
 		echo "  use_create_env: true"
 	fi
