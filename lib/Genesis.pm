@@ -464,6 +464,7 @@ sub parse_uri {
 }
 
 sub is_valid_uri {
+	return unless defined($_[0]);
 	my %components = parse_uri($_[0]);
 	return unless ($components{scheme}||"") =~ /^(https?|file)$/;
 	return unless $components{authority} || ($components{scheme} eq 'file' && $components{path});

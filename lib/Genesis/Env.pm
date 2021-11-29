@@ -906,7 +906,7 @@ sub connect_required_endpoints {
 	for (uniq(@endpoints)) {
 		$self->with_vault   if $_ eq 'vault';
 		$self->with_bosh    if $_ eq 'bosh';
-		$self->with_credhub if $_ eq 'credhub';
+		$self->with_credhub if $_ eq 'credhub'; # TODO: write this...!
 		bail("#R{[ERROR]} Unknown connectivity endpoint type #Y{%s} in kit #m{%s}", $_, $self->kit->id);
 	}
 	return $self
