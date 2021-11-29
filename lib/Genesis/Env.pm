@@ -434,8 +434,8 @@ sub use_create_env {
 			# Kits that are explicitly compatible with 2.8.0 can specify if they
 			# support or require create-env deployments.
 
-			my $uce = $self->kit->metadata('use_create_env')||'';
-			if ($uce eq 'yes') {
+			my $kuce = $self->kit->metadata('use_create_env')||'';
+			if ($kuce eq 'yes') {
 				bail(
 					"#R{[ERROR]} This kit only allows create-env deployments, but this environment\n".
 					"        specifies an alternative bosh_env.  Please remove the #C{genesis.bosh_env}\n".
@@ -443,7 +443,7 @@ sub use_create_env {
 				) if $different_bosh_env;
 				return 1;
 			};
-			if ($uce eq 'no') {
+			if ($kuce eq 'no') {
 				bail (
 					"#R{[ERROR]} BOSH environments must specify the name of the parent BOSH director\n".
 					"        that will deploy this enviornment under #C{genesis.bosh_env} in the\n".
@@ -453,16 +453,14 @@ sub use_create_env {
 				return 0 ;
 			}
 
-			if ($self->feature_compatibility("2.8.0")) {
-				my $is_create_env = $self->lookup('genesis.use_create_env') ? 1 : 0;
-				validate_create_env_state($is_create_env,$different_bosh_env,$self->kit->{name},$is_bosh_director);
-				return $is_create_env;
-			} else {
-				# If the env is not up to date, a 2.8.0+ kit must catch offending
-				# outdated features that would indicate it wants create-env, so if it
-				# gets this far, it must not use create-env
-				return 0;
-			}
+			my $euce = $self->lookup('genesis.use_create_env', undef);
+			my $is_create_env = (
+				$euce || (
+					! defined($euce) && $self->kit->id =~ /^bosh\// && grep {$_ eq 'proto'} $self->features
+			)) ? 1 : 0;
+
+			validate_create_env_state($is_create_env,$different_bosh_env,$self->kit->{name},$is_bosh_director);
+			return $is_create_env;
 		}
 
 		# Before 2.8.0, we only support create-env deployments for bosh deployments.
@@ -2075,15 +2073,17 @@ genesis:
   "\n  bosh_env:      $bosh_target")}
 
 exodus:
-  version:     $Genesis::VERSION
-  dated:       $now
-  deployer:    (( grab \$CONCOURSE_USERNAME || \$USER || "unknown" ))
-  kit_name:    ${\($self->kit->metadata->{name} || 'unknown')}
-  kit_version: ${\($self->kit->metadata->{version} || '0.0.0-rc0')}
-  kit_is_dev:  ${\(ref($self->kit) eq "Genesis::Kit::Dev" ? 'true' : 'false')}
-  vault_base:  (( grab meta.vault ))
-  bosh:        $bosh_target
-  features:    (( join "," kit.features ))
+  version:        $Genesis::VERSION
+  dated:          $now
+  deployer:       (( grab \$CONCOURSE_USERNAME || \$USER || "unknown" ))
+  kit_name:       ${\($self->kit->metadata->{name} || 'unknown')}
+  kit_version:    ${\($self->kit->metadata->{version} || '0.0.0-rc0')}
+  kit_is_dev:     ${\(ref($self->kit) eq "Genesis::Kit::Dev" ? 'true' : 'false')}
+  vault_base:     (( grab meta.vault ))
+  bosh:           $bosh_target
+  is_director:    ${\($self->is_bosh_director ? 'true' : 'false')}
+  use_create_env: ${\($self->use_create_env ? 'true' : 'false')}
+  features:       (( join "," kit.features ))
 EOF
 	# TODO: In BOSH refactor, add the bosh director to the exodus data
 	my @environment_files;

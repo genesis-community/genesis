@@ -660,15 +660,14 @@ EOF
 EOF
 	fi
 	)"
+	echo ""
+	echo "genesis:"
+	echo "  env:            $GENESIS_ENVIRONMENT"
+	if use_create_env ; then
+		echo "  use_create_env: true"
+	fi
 	if [[ -n $config_block ]] ; then
-		echo ""
-		echo "genesis:"
-		echo "  env:            $GENESIS_ENVIRONMENT"
 		echo "$config_block"
-	else
-		echo
-		echo "genesis:"
-		echo "  env: $GENESIS_ENVIRONMENT"
 	fi
 	echo ""
 }
