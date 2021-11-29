@@ -48,6 +48,9 @@ To-Do for v2.8.0+
 				first
 		- fix or replace `bosh --envs` √
 
+11. Store what is in .genesis/manifest in vault instead so that it gets
+		automatically committed and no longer needs to be redacted
+
 Notes:
   Subkits are removed completely as of 2.8.0 √
 	Kits without new or blueprint are not supported as of 2.8.0 √
