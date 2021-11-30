@@ -27,7 +27,7 @@ jobs:
       params:
         name:   gh/name
         tag:    gh/tag
-        body:   release-notes/notes.md
+        body:   gh/notes.md
         globs: [gh/artifacts/*]
 
     on_failure:
