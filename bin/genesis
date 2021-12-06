@@ -3455,7 +3455,7 @@ sub main {
 
 	my ($cmd, @args);
 	my $no_warn = 1;
-	my $path = '.';
+	my $path = '';
 	$ENV{GENESIS_PREFIX_TYPE}="none";
 	while (@_ > 0) {
 		my $arg = shift @_;
@@ -3474,6 +3474,7 @@ sub main {
 					"#R{[ERROR]} Cannot specify -C after environment name when using prefix style calls\n"
 				) if ($ENV{GENESIS_PREFIX_TYPE} =~ /file$/ );
 				$path = shift @_;
+				$ENV{GENESIS_PREFIX_TYPE} = "option_c"
 			} else {
 				push @args, $arg;
 			}
@@ -3482,21 +3483,23 @@ sub main {
 				# argument matches a command (or alias) -- assume its a command
 				$cmd = $arg;
 			} else {
-				my $test_file = $path.'/'.$arg;
-				if ($arg =~ /\/$/) { # explicit path
-					bail ("#R{[ERROR]} Explicit path specified, but does not exist -- cannot continue") unless -d $test_file;
-					$ENV{GENESIS_PREFIX_TYPE} = 'explicit_path';
-					$path = $test_file
-				} elsif ($arg =~ /\.yml/) { # explicit file
-					bail ("#R{[ERROR]} Explicit environment file specified, but does not exist -- cannot continue") unless -f $test_file;
-					$ENV{GENESIS_PREFIX_TYPE} = 'explicit_file';
-					$path = $test_file;
-				} elsif (-f $test_file.".yml") {
-					$ENV{GENESIS_PREFIX_TYPE} = 'file';
-					$path = $test_file.".yml";
-				} elsif (-d $test_file) {
-					$ENV{GENESIS_PREFIX_TYPE} = 'path';
-					$path = $test_file;
+				if ($arg =~ /\.yml/ || -f $arg.'.yml') {
+					bail(
+						"#R{[ERROR]} Cannot specify both -C and explicit file before the Genesis subcommand\n"
+					) if ($ENV{GENESIS_PREFIX_TYPE} eq 'option_c');
+					bail(
+						"#R{[ERROR]} Cannot specify multiple explicit file before the Genesis subcommand\n"
+					) if ($ENV{GENESIS_PREFIX_TYPE} =~ /file/);
+
+					if ($arg =~ /\.yml/) { # explicit file
+						bail("#R{[ERROR]} Explicit environment file specified, but does not exist.\n")
+							unless -f $arg;
+						$ENV{GENESIS_PREFIX_TYPE} = 'explicit_file';
+						$path = $arg;
+					} elsif (-f $arg.".yml") {
+						$ENV{GENESIS_PREFIX_TYPE} = 'file';
+						$path = $arg.".yml";
+					}
 				} else {
 					usage(2, "#R{[ERROR]} Unrecognized command, path or file '$arg'", "help");
 				}
@@ -3505,7 +3508,7 @@ sub main {
 	}
 
 	if ($cmd) {
-		unshift(@args, "-C", $path) unless $path eq '.';
+		unshift(@args, "-C", $path) if $path;
 		trace("running command '$cmd'");
 		trace("arguments are [".join(', ', @args)."]");
 		$RUN{$GENESIS_COMMANDS{$cmd}}(@args);
