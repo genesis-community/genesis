@@ -1561,7 +1561,7 @@ EOF
 		GENESIS_CREDHUB_EXODUS_SOURCE => "root_vault/credhub",
 		GENESIS_CREDHUB_EXODUS_SOURCE_OVERRIDE => "root_vault/credhub", # Shouldn't this be boolean?
 		GENESIS_CREDHUB_ROOT => "root_vault-credhub/base-extended-thing",
-		GENESIS_ENV_KIT_OVERRIDE_FILES => re(/\/(var\/folders|tmp)\/.*\/env-overrides-0.yml/),
+		GENESIS_ENV_KIT_OVERRIDE_FILES => re('\/(var\/folders|tmp)\/.*\/env-overrides-0.yml'),
 		GENESIS_EXODUS_BASE => "/shhhh/exodus/base-extended/thing",
 		GENESIS_EXODUS_MOUNT => "/shhhh/exodus/",
 		GENESIS_EXODUS_MOUNT_OVERRIDE => "",
