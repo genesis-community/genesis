@@ -108,6 +108,9 @@ sub organization {$_[0]->{remote}{org};}
 sub credentials  {$_[0]->{remote}{creds};}
 sub tls          {$_[0]->{remote}{tls};}
 sub check        {$_[0]->remote->check($_[1], $_[0]->label);}
+sub repos_url    {shift->remote->repos_url(@_);}
+sub releases_url {shift->remote->releases_url(@_);}
+sub base_url     {$_[0]->remote->base_url();}
 
 # config - provides the config hash used to specify this provider {{{
 sub config {
