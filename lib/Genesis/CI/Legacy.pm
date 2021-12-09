@@ -436,7 +436,7 @@ sub parse_pipeline {
 					$p->{pipeline}{'auto-update'}{kit} = $kits[0];
 				}
 			}
-			$p->{pipeline}{'auto-update'}{org} = $top->kit_provider()->{organization}
+			$p->{pipeline}{'auto-update'}{org} = $top->kit_provider()->organization
 				unless defined($p->{pipeline}{'auto-update'}{org});
 		} else {
 			push @errors, "`pipeline.auto-update' must be a map.";
