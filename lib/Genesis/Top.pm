@@ -12,6 +12,9 @@ use Genesis::Vault;
 use Cwd ();
 use File::Path qw/rmtree/;
 
+### Class Methods {{{
+
+# new - returns a new Genesis::Top Repository object {{{
 sub new {
 	my ($class, $root, %opts) = @_;
 	my $top = bless({ root => Cwd::abs_path($root) }, $class);
@@ -40,6 +43,8 @@ sub new {
 	return $top;
 }
 
+# }}}
+# create - create a new Genesis repository at the specified location {{{
 sub create {
 	my ($class, $path, $name, %opts) = @_;
 	debug("creating a new Genesis deployments repository named '$name' at $path...");
@@ -214,6 +219,13 @@ EOF
 	return $self;
 }
 
+# }}}
+# }}}
+
+### Instance Methods {{{
+
+# Kit Provider handling
+# kit_provider - return the kit provider for the Top object {{{
 sub kit_provider {
 
 	my ($self) = @_;
@@ -223,6 +235,8 @@ sub kit_provider {
 	return $self->{_kit_provider};
 }
 
+# }}}
+# set_kit_provider - set the kit provider {{{
 sub set_kit_provider {
 
 	my ($self, %opts) = @_;
@@ -244,11 +258,17 @@ sub set_kit_provider {
 	return $@;
 }
 
+# }}}
+# kit_provider_info - return that status of the kit provider {{{
 sub kit_provider_info {
 	my $self = shift;
 	$self->kit_provider->status(@_);
 }
 
+# }}}
+
+# Secrets provider handling
+# vault - initialize connectivity to the vault specified by the secrets provider {{{
 sub vault {
 	my ($self) = @_;
 	unless ($self->{_vault}) {
@@ -268,11 +288,15 @@ sub vault {
 	return $self->{_vault};
 }
 
+# }}}
+# has_vault - returns true if the configuration has a vault defined {{{
 sub has_vault {
 	my ($self) = @_;
 	defined($self->config->{secrets_provider}) && ref($self->config->{secrets_provider}) eq 'HASH' && scalar(%{$self->config->{secrets_provider}});
 }
 
+# }}}
+# set_vault - set the secret provider to the specified vault. {{{
 sub set_vault {
 	my ($self,%opts) = @_;
 	my $new_vault;
@@ -299,6 +323,8 @@ sub set_vault {
 	return;
 }
 
+# }}}
+# vault_status - get the status for the associated secret-provider vault {{{
 sub vault_status {
 	my ($self) = @_;
 	return () unless $self->has_vault;
@@ -328,6 +354,10 @@ sub vault_status {
 	return %$info;
 }
 
+# }}}
+
+# Repository management
+# link_dev_kit - build a symbolic link to the specified path as a dev kit {{{
 sub link_dev_kit {
 	my ($self, $path) = @_;
 	debug("linking dev kit '$path'");
@@ -343,6 +373,8 @@ sub link_dev_kit {
 	return $self;
 }
 
+# }}}
+# embed - embed the current version of genesis in the repository for CI pipeline usage {{{
 sub embed {
 	my ($self, $bin) = @_;
 	debug("embedding `genesis' binary installed at $bin...");
@@ -353,44 +385,61 @@ sub embed {
 	return 1;
 }
 
-
+# }}}
+# path - return the path of the repo, or absolute path of the specified relative path {{{
 sub path {
 	my ($self, $relative) = @_;
 	return $relative ? "$self->{root}/$relative"
 	                 :  $self->{root};
 }
 
+# }}}
+# mkfile - make a file with the given content relative to the root of the repo {{{
 sub mkfile {
 	my ($self, $file, @rest) = @_;
 	mkfile_or_fail($self->path($file), @rest);
 }
 
+# }}}
+# mkdir - make a directory relative to the root of the repo {{{
 sub mkdir {
 	my ($self, $dir, @rest) = @_;
 	mkdir_or_fail($self->path($dir), @rest);
 }
 
+# }}}
+# config - read the configuration of the repo {{{
 sub config {
 	my ($self) = @_;
 	return {} unless -f $self->path(".genesis/config");
 	return $self->{_config} ||= load_yaml_file($self->path(".genesis/config"));
 }
 
+# }}}
+# type - return the deployment type {{{
 sub type {
 	my ($self) = @_;
 	return $self->config->{deployment_type};
 }
 
+# }}}
+# version - return the version of Genesis that initialized the repo {{{
 sub version {
 	my ($self) = @_;
 	return $self->config->{genesis_version} || $self->config->{version} || "Unknown";
 }
 
+# }}}
+# has_dev_kit - returns true if the repo has an embedded dev kit {{{
 sub has_dev_kit {
 	my ($self) = @_;
 	return -d $self->path("dev");
 }
 
+# }}}
+
+# Environment handling
+# load_env - return a Genesis::Env object for the specified environment in the repo {{{
 sub load_env {
 	my ($self, $name) = @_;
 	$name =~ s/.yml$//;
@@ -404,6 +453,8 @@ sub load_env {
 	}
 }
 
+# }}}
+# has_env - returns true if the repo has an enviroment of the given name {{{
 sub has_env {
 	my ($self, $name) = @_;
 	return Genesis::Env->exists(
@@ -412,6 +463,8 @@ sub has_env {
 	);
 }
 
+# }}}
+# create_env - create a new environment of the given name in the repo {{{
 sub create_env {
 	my ($self, $name, $kit, %opts) = @_;
 	debug("setting up new environment #C{%s}", $name);
@@ -423,6 +476,10 @@ sub create_env {
 	);
 }
 
+# }}}
+
+# Kit handling
+# local_kits - return the list of the kits available locally {{{
 sub local_kits {
 	my ($self) = @_;
 	return Genesis::Kit::Compiled->local_kits(
@@ -431,6 +488,8 @@ sub local_kits {
 	);
 }
 
+# }}}
+# local_kit_version - return the Genesis::Kit object for the given name and version {{{
 sub local_kit_version {
 	my ($self, $name, $version) = @_;
 
@@ -456,16 +515,22 @@ sub local_kit_version {
 	return $kits->{$name}{$version};
 }
 
+# }}}
+# remote_kit_names - get available kit names from kit provider {{{
 sub remote_kit_names {
 	my $self = shift;
 	$self->kit_provider->kit_names(@_);
 }
 
+# }}}
+# remote_kit_versions - get versions available for a remote kit from the kit provider {{{
 sub remote_kit_versions {
 	my $self = shift;
 	$self->kit_provider->kit_versions(@_);
 }
 
+# }}}
+# remote_kit_version_info - return the metadata about the specified remote kit version {{{
 sub remote_kit_version_info {
 	my ($self, $name, $version) = @_;
 	($name, $version) = ($1, $2)
@@ -474,6 +539,8 @@ sub remote_kit_version_info {
   $self->kit_provider->kit_versions($name, version => $version);
 }
 
+# }}}
+# download_kit - install remote kit into the local repository {{{
 sub download_kit {
 	my ($self, $id, %opts) = @_;
 	my ($name, $version) = ($1, $2) if $id =~ m/([^\/]+)(?:\/(.*))?/;
@@ -494,7 +561,12 @@ sub download_kit {
 	$self->kit_provider->fetch_kit_version($name,$version,$target,$opts{force});
 }
 
+# }}}
+# }}}
 
+### Private Instance Methods {{{
+
+# _write_config - update the repo config {{{
 sub _write_config {
 	my ($self, %changes) = @_;
 	my $type         = $changes{type}         || $self->type;
@@ -549,6 +621,9 @@ EOF
 	$self->{_kit_provider} = $kit_provider;
 	$self->config;
 }
+
+# }}}
+# }}}
 
 1;
 
@@ -716,3 +791,4 @@ Creates a new Genesis::Env object, which will go through provisioning.
 This wraps a call to Genesis::Env->create().
 
 =cut
+# vim: fdm=marker:foldlevel=1:noet
