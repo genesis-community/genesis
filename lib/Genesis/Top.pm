@@ -227,12 +227,11 @@ EOF
 # Kit Provider handling
 # kit_provider - return the kit provider for the Top object {{{
 sub kit_provider {
-
-	my ($self) = @_;
-	unless (exists($self->{_kit_provider})) {
-		$self->{_kit_provider} = Genesis::Kit::Provider->new(%{$self->config->{kit_provider} || {}});
-	}
-	return $self->{_kit_provider};
+	my $ref = $_[0]->_memoize('__kit_provider', sub {
+		my ($self) = @_;
+		return Genesis::Kit::Provider->new(%{$self->config("kit_provider") || {}});
+	});
+	return $ref;
 }
 
 # }}}
@@ -251,7 +250,7 @@ sub set_kit_provider {
 		$new_provider = Genesis::Kit::Provider->init(%opts);
 		explain "done.";
 		waiting_on "Writing configuration....";
-		$self->{_kit_provider} = $new_provider;
+		$self->{__kit_provider} = $new_provider;
 		$self->_write_config(kit_provider => $new_provider);
 		explain "done.";
 	};
@@ -270,22 +269,22 @@ sub kit_provider_info {
 # Secrets provider handling
 # vault - initialize connectivity to the vault specified by the secrets provider {{{
 sub vault {
-	my ($self) = @_;
-	unless ($self->{_vault}) {
+	my $ref = $_[0]->_memoize('__vault', sub {
+		my ($self) = @_;
 		if (in_callback && $ENV{GENESIS_TARGET_VAULT}) {
-			$self->{_vault} = Genesis::Vault->rebind();
+			return Genesis::Vault->rebind();
 		} elsif ($self->has_vault) {
-			$self->{_vault} = Genesis::Vault->attach(
+			return Genesis::Vault->attach(
 				$self->config->{secrets_provider}{url},
 				$self->config->{secrets_provider}{insecure}
 			);
 		} else {
-			if ($self->{_vault} = Genesis::Vault::default) {
-				$self->{_vault}->connect_and_validate()->ref_by_name();
-			}
+			my $vault = Genesis::Vault::default;
+			return unless $vault;
+			return $vault->connect_and_validate()->ref_by_name();
 		}
-	}
-	return $self->{_vault};
+	});
+	return $ref;
 }
 
 # }}}
@@ -317,7 +316,7 @@ sub set_vault {
 	} else {
 		bug "#R{[Error]} Invalid call to Genesis::Top->set_vault"
 	}
-	$self->{_vault} = $new_vault;
+	$self->{__vault} = $new_vault;
 	$self->_write_config(vault => $new_vault)
 		unless $opts{session_only};
 	return;
@@ -410,9 +409,13 @@ sub mkdir {
 # }}}
 # config - read the configuration of the repo {{{
 sub config {
-	my ($self) = @_;
-	return {} unless -f $self->path(".genesis/config");
-	return $self->{_config} ||= load_yaml_file($self->path(".genesis/config"));
+	my ($self,$key) = @_;
+	my $ref = $self->_memoize('__config', sub {
+		my ($self) = @_;
+		return {} unless -f $self->path(".genesis/config");
+		return load_yaml_file($self->path(".genesis/config"));
+	});
+	return defined($key) ? $ref->{$key} : $ref;
 }
 
 # }}}
@@ -616,12 +619,19 @@ EOF
 # }}}
 
 	# reload config and vault
-	$self->{_config} = undef;
-	$self->{_vault} = $changes{vault};
-	$self->{_kit_provider} = $kit_provider;
+	$self->{__config} = undef;
+	$self->{__vault} = $changes{vault};
+	$self->{__kit_provider} = $kit_provider;
 	$self->config;
 }
 
+# }}}
+# _memoize - cache value to be returned on subsequent calls {{{
+sub _memoize {
+	my ($self, $token, $initialize) = @_;
+	return $self->{$token} if defined($self->{$token});
+	$self->{$token} = $initialize->($self);
+}
 # }}}
 # }}}
 
