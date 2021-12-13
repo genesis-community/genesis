@@ -4,7 +4,6 @@ use warnings;
 
 use Genesis;
 use Genesis::Helpers;
-use Genesis::Top;
 use Getopt::Long qw/GetOptionsFromArray/;
 
 ### Class Methods {{{
@@ -37,6 +36,7 @@ sub init {
 		my $provider;
 		if (-d $opts{'kit-provider-config'} && -f $opts{'kit-provider-config'}.'/.genesis/config') {
 			# Pointing at existing genesis repo
+			require Genesis::Top;
 			$provider = Genesis::Top->new($opts{'kit-provider-config'})->kit_provider();
 		} elsif (-f $opts{'kit-provider-config'} ) {
 			# specific yaml file

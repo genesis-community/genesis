@@ -137,8 +137,9 @@ subtest 'init' => sub {
 	ok -f $top->path('.genesis/config'), "Top->create should create a new .genesis/config";
 	is $top->type, 'jumpbox', 'an initialized top has a type';
 	is $top->vault->url, $VAULT_URL, 'specifies the correct vault url';
-	cmp_deeply $top->config, {
-		genesis_version => ignore,
+	cmp_deeply $top->config->_contents, {
+		creator_version => ignore,
+		version => 2,
 		deployment_type => 'jumpbox',
 		secrets_provider => {
 			url => $VAULT_URL,
@@ -243,9 +244,9 @@ EOF
 
 	# Check that vault can be changed and set in config when no vault is in config
 	is($top->set_vault(target => $VAULT_URL{$vault_target}), undef, "top can set its registered vault when it doesn't have one");
-	is($top->{_config}{secrets_provider}{url},$VAULT_URL{$vault_target} , "top updates its configuration after saving its new vault");
-	is(ref($top->{_vault}), "Genesis::Vault", "top has a vault after saving its new vault");
-	is($top->{_vault}->url, $VAULT_URL{$vault_target}, "top has the correct vault after saving its new vault");
+	is($top->config->get('secrets_provider.url'),$VAULT_URL{$vault_target} , "top updates its configuration after saving its new vault");
+	is(ref($top->{__vault}), "Genesis::Vault", "top has a vault after saving its new vault");
+	is($top->{__vault}->url, $VAULT_URL{$vault_target}, "top has the correct vault after saving its new vault");
 	is($top->vault->{name}, $vault_target, "top targets the expected vault");
 	yaml_is(get_file("$tmp/.genesis/config"), <<EOF, ".genesis/config contains the correct information");
 ---
@@ -255,7 +256,7 @@ secrets_provider:
   url: $VAULT_URL{$vault_target}
   insecure: false
 EOF
-	cmp_deeply($top->config, {
+	cmp_deeply($top->config->_contents, {
 			"deployment_type" => "test",
 			"genesis_version" => "99.99.99",
 			"secrets_provider" => {
@@ -267,8 +268,7 @@ EOF
 
 	# Check that vault can be temporarily changed and set in config
 	is($top->set_vault(target => $VAULT_URL{$other_vault_name}, session_only => 1), undef, "top can set its registered vault when it doesn't have one");
-	isnt($top->{_config}, undef, "top doesn't clears its configuration after setting a temporary vault");
-	isnt($top->{_vault}, undef, "top clears its vault after saving its new vault");
+	isnt($top->config->_contents, undef, "top doesn't clears its configuration after setting a temporary vault");
 	is($top->vault->{name}, $other_vault_name, "top targets the expected vault");
 	yaml_is(get_file("$tmp/.genesis/config"), <<EOF, ".genesis/config contains the correct information");
 ---
@@ -278,7 +278,7 @@ secrets_provider:
   url: $VAULT_URL{$vault_target}
   insecure: false
 EOF
-	cmp_deeply($top->config, {
+	cmp_deeply($top->config->_contents, {
 			"deployment_type" => "test",
 			"genesis_version" => "99.99.99",
 			"secrets_provider" => {
@@ -290,9 +290,9 @@ EOF
 
 	# Check that vault can be changed and set in config when a vault is already in config
 	is($top->set_vault(target => $VAULT_URL{$other_vault_name}), undef, "top can set its registered vault when it already has one");
-	is($top->{_config}{secrets_provider}{url},$VAULT_URL{$other_vault_name} , "top updates its configuration after saving its new vault");
-	is(ref($top->{_vault}), "Genesis::Vault", "top has a vault after saving its new vault");
-	is($top->{_vault}->url, $VAULT_URL{$other_vault_name}, "top has the correct vault after saving its new vault");
+	is($top->config->get('secrets_provider.url'),$VAULT_URL{$other_vault_name} , "top updates its configuration after saving its new vault");
+	is(ref($top->{__vault}), "Genesis::Vault", "top has a vault after saving its new vault");
+	is($top->{__vault}->url, $VAULT_URL{$other_vault_name}, "top has the correct vault after saving its new vault");
 	is($top->vault->{name}, $other_vault_name, "top targets the expected vault");
 	yaml_is(get_file("$tmp/.genesis/config"), <<EOF, ".genesis/config contains the correct information");
 ---
@@ -302,7 +302,7 @@ secrets_provider:
   url: $VAULT_URL{$other_vault_name}
   insecure: false
 EOF
-	cmp_deeply($top->config, {
+	cmp_deeply($top->config->_contents, {
 			"deployment_type" => "test",
 			"genesis_version" => "99.99.99",
 			"secrets_provider" => {

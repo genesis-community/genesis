@@ -51,6 +51,9 @@ To-Do for v2.8.0+
 11. Store what is in .genesis/manifest in vault instead so that it gets
 		automatically committed and no longer needs to be redacted
 
+12. Innate support for generic kit - sets the deployment type based on
+		repository directory name if kit type is "generic"
+
 Notes:
   Subkits are removed completely as of 2.8.0 √
 	Kits without new or blueprint are not supported as of 2.8.0 √

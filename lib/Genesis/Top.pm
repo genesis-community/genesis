@@ -8,6 +8,7 @@ use Genesis::Kit::Compiled;
 use Genesis::Kit::Dev;
 use Genesis::Kit::Provider;
 use Genesis::Vault;
+use Genesis::Config;
 
 use Cwd ();
 use File::Path qw/rmtree/;
@@ -18,6 +19,7 @@ use File::Path qw/rmtree/;
 sub new {
 	my ($class, $root, %opts) = @_;
 	my $top = bless({ root => Cwd::abs_path($root) }, $class);
+
 	if ($opts{vault}) {
 		bail("#R{[ERROR]} Cannot specify #C{--vault %s}: Deployment already has an associated secrets provider", $opts{vault})
 			if $top->has_vault;
@@ -25,11 +27,11 @@ sub new {
 	}
 	$ENV{GENESIS_ROOT}=$top->path();
 	my $vault;
-	if ($top->config->{secrets_provider}{url}) {
-		my @matches = Genesis::Vault->find(url=>$top->config->{secrets_provider}{url});
+	if ($top->config->get("secrets_provider.url")) {
+		my @matches = Genesis::Vault->find(url=>$top->config->get("secrets_provider.url"));
 		bail(
 			"#R{[ERROR]} Cannot find unique vault configuration at #C{%s} in your .saferc",
-			$top->config->{secrets_provider}{url}
+			$top->config->get("secrets_provider.url")
 		) if @matches > 1;
 		$vault = $matches[0];
 	} else {
@@ -70,15 +72,25 @@ sub create {
 	my $self = $class->new($path);
 	$self->mkdir(".genesis");
 
+	$self->{__kit_provider} = Genesis::Kit::Provider->init(%opts);
+	$self->{__vault} = Genesis::Vault->target($opts{vault});
+
 	eval { # to delete path if creation fails
 
 		# Write new configuration
-	$self->_write_config(
-		type         => $name,
-		version      => $Genesis::VERSION,
-		vault        => Genesis::Vault->target($opts{vault}),
-		kit_provider => Genesis::Kit::Provider->init(%opts)
-	);
+		$self->config->set('deployment_type',$name);
+		$self->config->set('version',2);
+		$self->config->set('creator_version', $Genesis::VERSION);
+
+		$self->config->set('secrets_provider', {
+			url => $self->vault->url,
+			insecure => $self->vault->verify ? Genesis::Config::FALSE : Genesis::Config::TRUE
+		});
+
+		$self->config->set('kit_provider', $self->kit_provider->config)
+			unless ref($self->kit_provider) eq "Genesis::Kit::Provider::GenesisCommunity";
+
+		$self->config->save;
 
 	$self->mkfile("README.md", # {{{
 <<EOF);
@@ -229,7 +241,7 @@ EOF
 sub kit_provider {
 	my $ref = $_[0]->_memoize('__kit_provider', sub {
 		my ($self) = @_;
-		return Genesis::Kit::Provider->new(%{$self->config("kit_provider") || {}});
+		return Genesis::Kit::Provider->new(%{$self->config->get("kit_provider", {})});
 	});
 	return $ref;
 }
@@ -251,7 +263,11 @@ sub set_kit_provider {
 		explain "done.";
 		waiting_on "Writing configuration....";
 		$self->{__kit_provider} = $new_provider;
-		$self->_write_config(kit_provider => $new_provider);
+		if (ref($self->kit_provider) eq "Genesis::Kit::Provider::GenesisCommunity") {
+			$self->config->clear('kit_provider',1)
+		} else {
+			$self->config->set('kit_provider', $self->kit_provider->config,1);
+		}
 		explain "done.";
 	};
 	return $@;
@@ -275,13 +291,13 @@ sub vault {
 			return Genesis::Vault->rebind();
 		} elsif ($self->has_vault) {
 			return Genesis::Vault->attach(
-				$self->config->{secrets_provider}{url},
-				$self->config->{secrets_provider}{insecure}
+				$self->config->get("secrets_provider.url"),
+				$self->config->get("secrets_provider.insecure")
 			);
 		} else {
 			my $vault = Genesis::Vault::default;
-			return unless $vault;
-			return $vault->connect_and_validate()->ref_by_name();
+			$vault->connect_and_validate()->ref_by_name() if $vault;
+			return $vault;
 		}
 	});
 	return $ref;
@@ -291,7 +307,7 @@ sub vault {
 # has_vault - returns true if the configuration has a vault defined {{{
 sub has_vault {
 	my ($self) = @_;
-	defined($self->config->{secrets_provider}) && ref($self->config->{secrets_provider}) eq 'HASH' && scalar(%{$self->config->{secrets_provider}});
+	defined($self->config->get("secrets_provider")) && ref($self->config->get("secrets_provider")) eq 'HASH' && scalar(%{$self->config->get("secrets_provider")});
 }
 
 # }}}
@@ -300,7 +316,7 @@ sub set_vault {
 	my ($self,%opts) = @_;
 	my $new_vault;
 	if ($opts{interactive}) {
-		my $current_vault = $self->config->{secrets_provider};
+		my $current_vault = $self->config->get("secrets_provider");
 		if ($current_vault) {
 			$current_vault = (Genesis::Vault->find_by_target($current_vault->{url}))[0];
 		}
@@ -317,8 +333,16 @@ sub set_vault {
 		bug "#R{[Error]} Invalid call to Genesis::Top->set_vault"
 	}
 	$self->{__vault} = $new_vault;
-	$self->_write_config(vault => $new_vault)
-		unless $opts{session_only};
+	return if $opts{session_only};
+
+	if ($new_vault) {
+		$self->config->set('secrets_provider', {
+			url => $new_vault->url,
+			insecure => $new_vault->verify ? Genesis::Config::FALSE : Genesis::Config::TRUE
+		}, 1);
+	} else {
+		$self->config->clear('secrets_provider',1);
+	}
 	return;
 }
 
@@ -328,7 +352,7 @@ sub vault_status {
 	my ($self) = @_;
 	return () unless $self->has_vault;
 
-	my $info = $self->config->{secrets_provider};
+	my $info = $self->config->get("secrets_provider");
 	$info->{security} = ($info->{url} =~ /^https/)
 		? ($info->{insecure} ? "#Y{(noverify)}" : "")
 		: "#Y{(insecure)}";
@@ -409,30 +433,52 @@ sub mkdir {
 # }}}
 # config - read the configuration of the repo {{{
 sub config {
-	my ($self,$key) = @_;
+	my ($self) = @_;
 	my $ref = $self->_memoize('__config', sub {
 		my ($self) = @_;
-		return {} unless -f $self->path(".genesis/config");
-		return load_yaml_file($self->path(".genesis/config"));
+		return Genesis::Config->new($self->path(".genesis/config"));
 	});
-	return defined($key) ? $ref->{$key} : $ref;
+	return $ref;
 }
 
 # }}}
 # type - return the deployment type {{{
 sub type {
 	my ($self) = @_;
-	return $self->config->{deployment_type};
+	return $self->config->get("deployment_type");
 }
 
 # }}}
-# version - return the version of Genesis that initialized the repo {{{
+# version - return the version of the cofiguration schema {{{
 sub version {
 	my ($self) = @_;
-	return $self->config->{genesis_version} || $self->config->{version} || "Unknown";
+	return $self->config->get("version") if ($self->config->get("version")||'') =~ /^\d+$/;
+	return 1;
 }
 
 # }}}
+# genesis_version - return the genesis version that initialized the repo {{{
+sub genesis_version {
+   my ($self) = @_;
+	 return $self->config->get("creator_version") if $self->config->get("creator_version");
+   return $self->config->get("genesis_version") if $self->config->get("genesis_version");
+   return $self->config->get("version") if $self->config->get("version") !~ /^\d+$/;
+   return "Unknown";
+}
+# }}}
+# warnings - return comma-separated list of the warnings that are configured for this environment {{{
+sub warnings {
+   my $self = @_;
+   return defined($self->config->get("warnings")) ? $self->config->get("warnings") : "deprecation,configuration,secrets";
+}
+
+# }}}
+# warn_on - return true if the repo is set to warn on the specified condition {{{
+sub warn_on {
+   my ($self,$type) = @_;
+   return scalar(grep {$type eq $_} split(/\s*,\s*/, $self->warnings));
+}
+#}}}
 # has_dev_kit - returns true if the repo has an embedded dev kit {{{
 sub has_dev_kit {
 	my ($self) = @_;
@@ -569,63 +615,6 @@ sub download_kit {
 
 ### Private Instance Methods {{{
 
-# _write_config - update the repo config {{{
-sub _write_config {
-	my ($self, %changes) = @_;
-	my $type         = $changes{type}         || $self->type;
-	my $version      = $changes{version}      || $self->version;
-	my $kit_provider = $changes{kit_provider} || $self->kit_provider;
-
-	my $vault_info = "";
-	my ($vault_url, $vault_skip_validate);
-	if ($changes{vault}) {
-		$vault_url = $changes{vault}->url;
-		$vault_skip_validate = $changes{vault}->verify ? "false" : "true";
-	} elsif (!exists($changes{vault}) && $self->config()->{secrets_provider}{url}) {
-		$vault_url = $self->config()->{secrets_provider}{url};
-		$vault_skip_validate = $self->config()->{secrets_provider}{insecure} ? "true" : "false";
-	}
-	if ($vault_url) {
-		$vault_info = <<EOF; # {{{
-
-secrets_provider:
-  url:      "$vault_url"
-  insecure: $vault_skip_validate
-EOF
-# }}}
-	}
-	my $kit_info = "";
-	if ($kit_provider && ref($kit_provider) ne "Genesis::Kit::Provider::GenesisCommunity") {
-		$kit_info = <<EOF; # {{{
-
-kit_provider:
-EOF
-		my %kit_config = $kit_provider->config;
-		for (keys %kit_config) {
-			$kit_info .= qq(  ${_}: "$kit_config{$_}"\n);
-		}
-
-# }}}
-	}
-
-	$self->mkfile(".genesis/config",
-	  <<EOF); # {{{
----
-# This file is generated by Genesis - do not edit manually.
-
-deployment_type: $type
-genesis_version: $version$vault_info$kit_info
-EOF
-# }}}
-
-	# reload config and vault
-	$self->{__config} = undef;
-	$self->{__vault} = $changes{vault};
-	$self->{__kit_provider} = $kit_provider;
-	$self->config;
-}
-
-# }}}
 # _memoize - cache value to be returned on subsequent calls {{{
 sub _memoize {
 	my ($self, $token, $initialize) = @_;

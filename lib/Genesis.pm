@@ -65,6 +65,7 @@ our @EXPORT = qw/
 
 	pushd popd
 
+	struct_set_value
 	struct_lookup
 	uniq
 	get_opts
@@ -839,6 +840,50 @@ sub _lookup_key {
 	}
 	return (1, $what);
 }
+sub struct_set_value {
+	my ($what, $key, $value, $clear) = @_;
+
+	$key =~ s/\.\./.\0/;
+	my @bits = split(/[\[\.]+/, $key);
+	my $path;
+
+	while (@bits) {
+		my $bit = shift(@bits);
+		if ($bit =~ /^(\d+)\]$/) {
+			my $idx = $1;
+			$path .="[$idx]";
+			bail(
+				"Type Mismatch: expected array at %s, got %s",
+				$path, lc(ref($what) || "scalar")
+			) unless ref($what) eq 'ARRAY';
+			if (@bits) {
+				$what->[$idx] = ($bits[0] =~ /^\d+\]$/) ? [] : {}
+					unless exists($what->[$idx]);
+				$what=$what->[$idx];
+			} elsif ($clear) {
+				#return delete $what->[$idx];
+			} else {
+				return $what->[$idx] = $value;
+			}
+		} else {
+			$path .= ($path ? "." : "") . $bit;
+			bail(
+				"Type Mismatch: expected hash at %s, got %s",
+				$path, lc(ref($what) || "scalar")
+			) unless ref($what) eq 'HASH';
+			if (@bits) {
+				$what->{$bit} = ($bits[0] =~ /^\d+\]$/) ? [] : {}
+					unless exists($what->{$bit});
+				$what=$what->{$bit};
+			} elsif ($clear) {
+				#return delete $what->{$bit};
+			} else {
+				return $what->{$bit} = $value;
+			}
+		}
+	}
+}
+
 sub struct_lookup {
 	my ($what, $keys, $default) = @_;
 	$keys = [$keys] unless ref($keys) eq 'ARRAY';
