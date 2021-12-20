@@ -5,7 +5,7 @@ use warnings;
 use Genesis;
 
 use JSON::PP ();
-use Digest::SHA1 ();
+use Digest::SHA qw/sha1_hex/;
 use File::Basename qw/dirname/;
 use POSIX qw/strftime/;
 
@@ -139,7 +139,7 @@ sub _load {
 }
 
 sub _signature {
-	Digest::SHA1::sha1_hex(JSON::PP->new->canonical->encode($_[0]->{contents}))
+	sha1_hex(JSON::PP->new->canonical->encode($_[0]->{contents}))
 }
 
 1;
