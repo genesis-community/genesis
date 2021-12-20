@@ -492,10 +492,10 @@ sub run {
 		for (keys %{$opts{env} || {}}) {
 			if (defined($opts{env}{$_})) {
 				$ENV{$_} = $opts{env}{$_};
-				$tracemsg .= csprintf("\n#B{$_}='#C{$ENV{$_}}'");
+				$tracemsg .= csprintf("\n#B{%s}='#C{%s}'",%_,$ENV{$_});
 			} else {
 				my $was = delete $ENV{$_};
-				$tracemsg .= csprintf("\n#B{$_} unset - was '#C{$was}' ") if defined($was);
+				$tracemsg .= csprintf("\n#B{%s} unset - was '#C{%s}' ",$_,$was) if defined($was);
 			}
 		}
 		$tracemsg .= "\n\n";
@@ -505,13 +505,13 @@ sub run {
 		$prog .= " 2>$opts{stderr}";
 	}
 	$tracemsg .= csprintf("#M{From directory:} #C{%s}\n", Cwd::getcwd);
-	$tracemsg .= csprintf("#M{Executing:} `#C{$prog}`%s", ($opts{interactive} ? " #Y{(interactively)}" : ''));
+	$tracemsg .= csprintf("#M{Executing:} `#C{%s}`%s", $prog, ($opts{interactive} ? " #Y{(interactively)}" : ''));
 	if (@args) {
 		unshift @args, basename($shell);
 		$tracemsg .= csprintf("\n#M{ - with arguments:}");
 		$tracemsg .= csprintf("\n#M{%4s:} '#C{%s}'", $_, $args[$_]) for (1..$#args);
 	}
-	trace($tracemsg);
+	trace("%s",$tracemsg);
 
 	my @cmd = ($shell, "-c", $prog, @args);
 	my $start_time = gettimeofday();
