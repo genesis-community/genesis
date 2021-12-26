@@ -6,6 +6,8 @@ no warnings 'utf8';
 use utf8;
 
 # Ensure code exits and cleans up workdirs
+$SIG{ __DIE__ } = sub {require Carp; $Carp::Verbose=1;  Carp::confess(@_) }
+	if ($ENV{GENESIS_DEV_MODE});
 $SIG{INT} = $SIG{TERM} = sub {bail("Genesis halted due to user interrupt")};
 
 # non-core modules
