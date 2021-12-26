@@ -3,23 +3,13 @@ TODO
 
 To-Do for v2.8.0+
 
- 1. Bosh autoconnection via env vars (v2.8.0) √
-		- better proto handling
-			- how to detect and deal with proto environment √
-			- legacy support √
- 2. Credhub add, check, rotate and remove secrets (v2.9.0)
- 3. kit-overrides moves into environment file (2.8.0) √
+ 1. Credhub add, check, rotate and remove secrets (v2.9.0)
 
-		Instead of using kit-overrides.yml to make local changes to the kit, you
-		can put kit.overrides.* entries in your environment file.  This works
-		better because different env files can use different kits, making a single
-		override file less effective or even broken.
-
- 4. Use Cepler for pipelines (2.10.0)
+ 2. Use Cepler for pipelines (2.10.0)
 
 		https://github.com/bodymindarts/cepler
 
- 5. Better inheritance system (convension over configuration) (2.9.0)
+ 3. Better inheritance system (convension over configuration) (2.9.0)
 		 5.1. Fix how genesis determines what is a env file or not
 
 					This is currently done by having a genesis.env or params.env set to
@@ -36,23 +26,31 @@ To-Do for v2.8.0+
 					A tool to scan and recommend file renames and edits is needed (and
 					ideally has runable output that would do at least the renames)
 
- 6. `genesis update` to get latest genesis command (will be release in v2.7.x) (COMPLETED in 2.7.33) √
- 7. auto commit after deploy (2.9.0) -
+ 4. auto commit after deploy (2.9.0) -
 		- this will be configurable via genesis config (and an option on init
- 8. `genesis config` to manage .genesis/config file (2.9.0)
- 9. `genesis remove` to "undeploy" a given environment.  Preferred over
+ 5. `genesis config` to manage .genesis/config file (2.9.0)
+ 6. `genesis remove` to "undeploy" a given environment.  Preferred over
 		`delete` because we're not deleting the environment file. (v2.8.x) -
-10. `genesis bosh` command
-		- better `bosh` arg handling	(remove need for --) √
-			- auto bosh targetting for proto envs (no need for -d option) X - safety
-				first
-		- fix or replace `bosh --envs` √
 
-11. Store what is in .genesis/manifest in vault instead so that it gets
+ 7. Store what is in .genesis/manifest in vault instead so that it gets
 		automatically committed and no longer needs to be redacted
 
-12. Innate support for generic kit - sets the deployment type based on
+ 8. Innate support for generic kit - sets the deployment type based on
 		repository directory name if kit type is "generic"
+
+ 9. New remote-compiled-kit provider:
+    Downloads kits from repo (as files or releases) instead of embedding in
+    repo.  Ensures kits aren't modified locally.
+
+10. Auto-download missing stemcells
+
+11. init-to-deploy mode:  Genesis bootstrap creates a local vault, creates a
+    new bosh repo, creates a new bosh via wizard, generates secrets, deploys,
+    initializes bosh-hosted vault, transfers secrets to bosh-hosted vault,
+    removes local vault.
+
+12.  Fix error on missing safe config/no vaults:
+     `Can't call method "env" on an undefined value at /Users/dbell/.geese/lib/Genesis/Env.pm line 610.`
 
 Notes:
   Subkits are removed completely as of 2.8.0 √
@@ -65,6 +63,14 @@ ToDo:
 	lib/Genesis/Kit.pm:
 	-   if (grep { $_ eq $hook } qw/new secrets info addon check prereqs blueprint pre-deploy post-deploy features/) {
 	+   if (grep { $_ eq $hook } qw/new secrets info addon check blueprint pre-deploy post-deploy features/) {
+
+CONFIG TODOS:
+=============
+
+- Auto-commit after deploy (defaults to yes after 2.9.0, no for legacy)
+- Save to safe instead of repo (defaults to yes after 2.9.0, no for legacy)
+- Inheritance system
+
 
 OLDER TODO's / NICE-TO-HAVES
 ============================
@@ -123,3 +129,27 @@ These things need to be done. They cannot be ignored.
   the ci.yml file.
 
 ## Add validation that any default supplied by kit passes validation?
+
+TODONES:
+========
+
+ 1. Bosh autoconnection via env vars (v2.8.0) √
+		- better proto handling
+			- how to detect and deal with proto environment √
+			- legacy support √
+
+ 3. kit-overrides moves into environment file (2.8.0) √
+
+		Instead of using kit-overrides.yml to make local changes to the kit, you
+		can put kit.overrides.* entries in your environment file.  This works
+		better because different env files can use different kits, making a single
+		override file less effective or even broken.
+
+ 6. `genesis update` to get latest genesis command (will be release in v2.7.x) (COMPLETED in 2.7.33) √
+
+10. `genesis bosh` command
+		- better `bosh` arg handling	(remove need for --) √
+			- auto bosh targetting for proto envs (no need for -d option) X - safety
+				first
+		- fix or replace `bosh --envs` √
+
