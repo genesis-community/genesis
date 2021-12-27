@@ -39,13 +39,67 @@ sub new {
 
 # Instance Methods {{{
 
+# exists - returns true if the configuration file exists on the filesystem {{{
 sub exists {
 	-f $_[0]->{path}
 }
 
+# }}}
+# loaded - returns true if the file has been initialized (loaded from or saved to disk) {{{
 sub loaded {
 	return 1 if defined($_[0]->{persistant_signature});
 }
+
+# }}}
+# changed - returns true if the local representation differs from the filesystem {{{
+sub changed {
+	my $self = shift;
+	($self->{persistant_signature}||'') ne $self->_signature;
+}
+
+# }}}
+# get - read a value from the configuration {{{
+sub get {
+	my ($self,$key,$default,$set_if_missing) = @_;
+
+	# Caching
+	return $self->{cache}{$key} if exists($self->{cache}{$key});
+
+	my ($value,$found) = struct_lookup($self->_contents,$key,$default);
+	if ($set_if_missing && ! defined($found)) {
+		$self->set($key,$value);
+		$found = $key;
+	}
+	$self->{cache}{$key} = $value if $found;
+	return $value;
+}
+
+# }}}
+# set - write a value to the configuration {{{
+sub set {
+	my ($self, $key, $value, $save) = @_;
+	# TODO: Validate key and value against schema
+
+	delete($self->{cache}{$_}) for (grep {$_ =~ /^$key($|[\.\[])/} keys(%{$self->{cache}}));
+	struct_set_value($self->_contents,$key,$value);
+	$self->save if $self->changed && ($save || $self->{autosave});
+	return $self->changed;
+}
+
+# }}}
+# clear - remove a key from the configuration {{{
+sub clear {
+	my ($self, $key, $save) = @_;
+	# TODO: Validate key and value against schema
+
+	delete($self->{cache}{$_}) for (grep {$_ =~ /^$key($|[\.\[])/} keys(%{$self->{cache}}));
+	struct_set_value($self->_contents,undef,1);
+	$self->save if $self->changed && ($save || $self->{autosave});
+	return $self->changed;
+}
+
+# }}}
+# save - save the configuration to the filesystem {{{
 sub save {
 	my ($self) = @_;
 
@@ -78,52 +132,20 @@ sub save {
 	$self->{persistant_signature} = $self->_signature;
 }
 
-sub changed {
-	my $self = shift;
-	($self->{persistant_signature}||'') ne $self->_signature;
-}
+# }}}
+# }}}
 
-sub set {
-	my ($self, $key, $value, $save) = @_;
-	# TODO: Validate key and value against schema
+### Instance Private Methods {{{
 
-	delete($self->{cache}{$_}) for (grep {$_ =~ /^$key($|[\.\[])/} keys(%{$self->{cache}}));
-	struct_set_value($self->_contents,$key,$value);
-	$self->save if $self->changed && ($save || $self->{autosave});
-	return $self->changed;
-}
-
-sub clear {
-	my ($self, $key, $save) = @_;
-	# TODO: Validate key and value against schema
-
-	delete($self->{cache}{$_}) for (grep {$_ =~ /^$key($|[\.\[])/} keys(%{$self->{cache}}));
-	struct_set_value($self->_contents,undef,1);
-	$self->save if $self->changed && ($save || $self->{autosave});
-	return $self->changed;
-}
-
-sub get {
-	my ($self,$key,$default,$set_if_missing) = @_;
-
-	# Caching
-	return $self->{cache}{$key} if exists($self->{cache}{$key});
-
-	my ($value,$found) = struct_lookup($self->_contents,$key,$default);
-	if ($set_if_missing && ! defined($found)) {
-		$self->set($key,$value);
-		$found = $key;
-	}
-	$self->{cache}{$key} = $value if $found;
-	return $value;
-}
-
+# _contents - the contents of the configuration object {{{
 sub _contents {
 	my ($self) = @_;
 	$self->_load() unless ($self->loaded) || (! $self->exists && exists($self->{contents}));
 	return $self->{contents}
 }
 
+# }}}
+# _load - load the contents of the configuration file from disk {{{
 sub _load {
 	my ($self) = @_;
 	if ($self->exists) {
@@ -138,8 +160,12 @@ sub _load {
 	}
 }
 
+# }}}
+# _signature - generate a signature for the current in-memory contents {{{
 sub _signature {
 	sha1_hex(JSON::PP->new->canonical->encode($_[0]->{contents}))
 }
-
+# }}}
+# }}}
 1;
+# vim: fdm=marker:foldlevel=1:noet
