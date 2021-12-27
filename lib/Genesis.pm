@@ -188,7 +188,11 @@ sub csprintf {
 		$s = sprintf($fmt, @args);
 	};
 	if ($@) {
-		die $@ unless ($@ =~ /^(Missing|Redundant) argument|Use of uninitialized value/);
+		require Carp;
+		$Carp::Verbose=1;
+		Carp::confess($@) unless ($@ =~ /^(Missing|Redundant) argument|Use of uninitialized value/);
+		Carp::cluck(@_) if ($ENV{GENESIS_DEV_MODE} || $ENV{GENESIS_TESTING});
+
 		$s = sprintf($fmt, @args); # run again because the error didn't set it
 		if (!$in_csprint_debug) {
 			$in_csprint_debug = 1;
@@ -492,7 +496,7 @@ sub run {
 		for (keys %{$opts{env} || {}}) {
 			if (defined($opts{env}{$_})) {
 				$ENV{$_} = $opts{env}{$_};
-				$tracemsg .= csprintf("\n#B{%s}='#C{%s}'",%_,$ENV{$_});
+				$tracemsg .= csprintf("\n#B{%s}='#C{%s}'",$_,$ENV{$_});
 			} else {
 				my $was = delete $ENV{$_};
 				$tracemsg .= csprintf("\n#B{%s} unset - was '#C{%s}' ",$_,$was) if defined($was);
