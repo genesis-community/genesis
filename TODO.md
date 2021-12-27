@@ -1,42 +1,92 @@
 TODO
 ====
 
+BIG ONE!!!  Secrets store special type:
+
+Use kit.yml to define secrets as classic vault, but have code to
+a) build a variables block to define the same secrets as credhub values
+b) copy the values from vault to credhub for deployment purposes
+
+This will allow the following benefits:
+1)  Instantly enable credhub imbeded secrets (no cleartext secrets for
+deployments)
+2) Move existing kits to use credhub instead of vault if desired by customer
+3) A hybrid mode where vault is used to manage secrets, but the secrets get
+staged to credhub just prior to deployment or restart (as updates to credhub
+secrets take effect on restart instead up requiring full deploys) # NEED TO
+CONFIRM THIS
+
+The best part is that nothing needs to be updated in kits to add this
+behaviour.
+
+Implementation
+--------------
+
+0) Some mechanism for an environment to indicate if it wants to use vault,
+vault-with-credhub-cache, or migrate(d)-to-credhub.  This last state may be a
+two-stage process with a genesis subcommand to do the migration, or it might
+migrate on detection of non-migration status (setting a value in vault
+post-migration)
+
+1) Some mechanism to read in kit.yml secrets definitions (extract this from
+Genesis::Vault)
+
+2) Some mechanism to render those definitions as a variable block.
+
+3) Some mechanism that replaces `(( vault ... ))` spruce operators with
+((variable)) operators.  This could be
+
+  * Build a local vault and target it, but each value in the vault will be a
+    ((variable)) representation.
+
+  * A pre-merge process to replace all vault ops with defer ops, then a post
+    merge process to replace all those vault ops with a determinable value
+
+  * a pre-merge process to replace all `(( vault ` strings with 
+    `(( concat "@GENESIS_TO_CREDHUB@:" ` strings then a simple post-merge regexp
+    replacement with `(( some-formulaic-render-of-vault-path-to-variable ))`
+
+4) A process to migrate vault entries referenced by kit.yml to credhub entries
+under /bosh-env/deployment-env/unique-identifier-of-secret.  As vault doesn't
+handle complex secrets (ie certificates), the secrets will all be scalar
+representations.
+
 To-Do for v2.8.0+
 
  1. Credhub add, check, rotate and remove secrets (v2.9.0)
 
  2. Use Cepler for pipelines (2.10.0)
 
-		https://github.com/bodymindarts/cepler
+    https://github.com/bodymindarts/cepler
 
  3. Better inheritance system (convension over configuration) (2.9.0)
-		 5.1. Fix how genesis determines what is a env file or not
+     5.1. Fix how genesis determines what is a env file or not
 
-					This is currently done by having a genesis.env or params.env set to
-					the same name as the file.	This has long been a contensious issue
-					of redundancy.
+          This is currently done by having a genesis.env or params.env set to
+          the same name as the file.  This has long been a contensious issue
+          of redundancy.
 
-					The new method would be `<anything>.yml` could be an env file, and
-					partial inherited files would be `<partial>-.yml` with the hyphen as
-					the last character.
+          The new method would be `<anything>.yml` could be an env file, and
+          partial inherited files would be `<partial>-.yml` with the hyphen as
+          the last character.
 
-					But to do this in a backwards compatible way, the repo would have to
-					be marked as a v2 of genesis config.
+          But to do this in a backwards compatible way, the repo would have to
+          be marked as a v2 of genesis config.
 
-					A tool to scan and recommend file renames and edits is needed (and
-					ideally has runable output that would do at least the renames)
+          A tool to scan and recommend file renames and edits is needed (and
+          ideally has runable output that would do at least the renames)
 
  4. auto commit after deploy (2.9.0) -
-		- this will be configurable via genesis config (and an option on init
+    - this will be configurable via genesis config (and an option on init
  5. `genesis config` to manage .genesis/config file (2.9.0)
  6. `genesis remove` to "undeploy" a given environment.  Preferred over
-		`delete` because we're not deleting the environment file. (v2.8.x) -
+    `delete` because we're not deleting the environment file. (v2.8.x) -
 
  7. Store what is in .genesis/manifest in vault instead so that it gets
-		automatically committed and no longer needs to be redacted
+    automatically committed and no longer needs to be redacted
 
  8. Innate support for generic kit - sets the deployment type based on
-		repository directory name if kit type is "generic"
+    repository directory name if kit type is "generic"
 
  9. New remote-compiled-kit provider:
     Downloads kits from repo (as files or releases) instead of embedding in
@@ -54,15 +104,15 @@ To-Do for v2.8.0+
 
 Notes:
   Subkits are removed completely as of 2.8.0 √
-	Kits without new or blueprint are not supported as of 2.8.0 √
+  Kits without new or blueprint are not supported as of 2.8.0 √
 
 ToDo:
-	prereqs hook - what is it?  do we still need it?  any kits actually using
-	it?
+  prereqs hook - what is it?  do we still need it?  any kits actually using
+  it?
 
-	lib/Genesis/Kit.pm:
-	-   if (grep { $_ eq $hook } qw/new secrets info addon check prereqs blueprint pre-deploy post-deploy features/) {
-	+   if (grep { $_ eq $hook } qw/new secrets info addon check blueprint pre-deploy post-deploy features/) {
+  lib/Genesis/Kit.pm:
+  -   if (grep { $_ eq $hook } qw/new secrets info addon check prereqs blueprint pre-deploy post-deploy features/) {
+  +   if (grep { $_ eq $hook } qw/new secrets info addon check blueprint pre-deploy post-deploy features/) {
 
 CONFIG TODOS:
 =============
@@ -134,22 +184,22 @@ TODONES:
 ========
 
  1. Bosh autoconnection via env vars (v2.8.0) √
-		- better proto handling
-			- how to detect and deal with proto environment √
-			- legacy support √
+    - better proto handling
+      - how to detect and deal with proto environment √
+      - legacy support √
 
  3. kit-overrides moves into environment file (2.8.0) √
 
-		Instead of using kit-overrides.yml to make local changes to the kit, you
-		can put kit.overrides.* entries in your environment file.  This works
-		better because different env files can use different kits, making a single
-		override file less effective or even broken.
+    Instead of using kit-overrides.yml to make local changes to the kit, you
+    can put kit.overrides.* entries in your environment file.  This works
+    better because different env files can use different kits, making a single
+    override file less effective or even broken.
 
  6. `genesis update` to get latest genesis command (will be release in v2.7.x) (COMPLETED in 2.7.33) √
 
 10. `genesis bosh` command
-		- better `bosh` arg handling	(remove need for --) √
-			- auto bosh targetting for proto envs (no need for -d option) X - safety
-				first
-		- fix or replace `bosh --envs` √
+    - better `bosh` arg handling  (remove need for --) √
+      - auto bosh targetting for proto envs (no need for -d option) X - safety
+        first
+    - fix or replace `bosh --envs` √
 

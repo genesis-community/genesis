@@ -381,9 +381,8 @@ sub top    { $_[0]->{top}    || bug("Incompletely initialized environment '".$_[
 
 # }}}
 # Delegations: type, vault, path {{{
-sub type   { $_[0]->top->type; }
-sub vault  { $_[0]->top->vault; }
-sub path   { shift->top->path(@_); }
+sub type    { $_[0]->top->type; }
+sub path    { shift->top->path(@_); }
 # }}}
 
 # Information Lookup
@@ -908,6 +907,21 @@ sub connect_required_endpoints {
 # }}}
 
 # Environment Dependencies - Vault
+
+# secrets_store - return the secrets store for the environment {{{
+sub secrets_store {
+	my $self = shift;
+	$self->top->secrets;
+}
+
+# }}}
+# sub exodus_store - return the exodus vault for the environment {{{
+sub exodus_store {
+	my $self = shift;
+	$self->top->exodus_store($self->exodus_mount,$self->exodus_base,$self->exodus_slug);
+}
+
+# }}}
 # with_vault - ensure this environment is able to connect to the Vault server {{{
 sub with_vault {
 	my $self = shift;
@@ -1559,7 +1573,7 @@ sub deploy {
 	# track exodus data in the vault
 	explain STDERR "\n[#M{%s}] #G{Deployment successful.}  Preparing metadata for export...", $self->name;
 	$self->vault->authenticate unless $self->vault->authenticated;
-	my $exodus = $self->exodus;
+	my $exodus = $self->exodus_data;
 
 	$exodus->{manifest_sha1} = digest_file_hex($manifest_file, 'SHA-1');
 	debug("setting exodus data in the Vault, for use later by other deployments");
@@ -1578,8 +1592,8 @@ sub deploy {
 }
 
 # }}}
-# exodus - get the populated exodus data generated in the manifest {{{
-sub exodus {
+# exodus_data - get the populated exodus data generated in the manifest {{{
+sub exodus_data {
 	my ($self) = @_;
 	my $exodus = _flatten({}, undef, scalar($self->manifest_lookup('exodus', {})));
 	my $vars_file = $self->vars_file;
