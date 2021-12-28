@@ -781,6 +781,7 @@ sub get_environment_variables {
 	                            ($is_alt_path ? sprintf(" -C '%s'", humanize_path($self->path)) : "");
 
 	# Require from the main module
+	%::GENESIS_COMMANDS || debug("No known genesis commands; initialization was not complete");
 	my @known_cmds = keys(%::GENESIS_COMMANDS) || ();
 
 	my $env_ref = $self->name;
