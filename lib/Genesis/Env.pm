@@ -382,6 +382,7 @@ sub top    { $_[0]->{top}    || bug("Incompletely initialized environment '".$_[
 # }}}
 # Delegations: type, vault, path {{{
 sub type    { $_[0]->top->type; }
+sub vault   { $_[0]->secrets_store; }
 sub path    { shift->top->path(@_); }
 # }}}
 
@@ -604,7 +605,7 @@ sub params {
 			popd;
 		} else {
 			my $env = {
-				%{$self->vault->env()},               # specify correct vault for spruce to target
+				%{$self->spruce_vault_env()},               # specify correct vault for spruce to target
 				REDACT => ''
 			};
 			$out = $self->adaptive_merge({json => 1, env => $env}, @merge_files);
@@ -889,6 +890,12 @@ sub credhub_connection_env {
 }
 
 # }}}
+# spruce_vault_env - spruce vault connection environment variables {{{
+sub spruce_vault_env {
+	return $_[0]->top->vault->env();
+}
+# }}}
+
 
 # Environment Dependencies
 # connect_required_endpoints - ensure external dependencies are reachable {{{
@@ -907,12 +914,31 @@ sub connect_required_endpoints {
 
 # }}}
 
-# Environment Dependencies - Vault
-
+# Environment Dependencies - Secrets Stores
 # secrets_store - return the secrets store for the environment {{{
 sub secrets_store {
-	my $self = shift;
-	$self->top->secrets;
+	shift->_memoize(sub {
+		my $self = shift;
+		if ($self->kit->uses_credhub) {
+			require Genesis::SecretsStore::Credhub;
+
+			return Genesis::SecretsStore::Credhub->new(
+				connection => $self->credhub_connection_env,
+				root       => scalar($self->lookup('genesis.secrets_path', $self->name."-".$self->type)),
+				mount      => scalar($self->lookup('genesis.secrets_mount', "/".$self->full_bosh_env."/")),
+			);
+		} else {
+			require Genesis::SecretsStore::Vault;
+
+			return Genesis::SecretsStore::Vault->new(
+				connection     => $self->top->vault,
+				name           => $self->name,
+				type           => $self->type,
+				slug_override  => scalar($self->lookup(['genesis.secrets_path','params.vault_prefix','params.vault'])),
+				mount_override => scalar($self->lookup('genesis.secrets_mount'))
+			);
+		}
+	});
 }
 
 # }}}
@@ -946,41 +972,12 @@ sub root_ca_path {
 }
 
 # }}}
-# secrets_mount - returns the Vault path under which all secrets are stored (env: GENESIS_SECRETS_MOUNT) {{{
-sub default_secrets_mount { '/secret/'; }
-sub secrets_mount {
-	$_[0]->_memoize(sub{
-		(my $mount = $_[0]->lookup('genesis.secrets_mount', $_[0]->default_secrets_mount)) =~ s#^/?(.*?)/?$#/$1/#;
-		return $mount
-	});
-}
+sub secrets_mount {$_[0]->secrets_store->mount}
+sub secrets_slug {$_[0]->secrets_store->slug}
+sub secrets_base {$_[0]->secrets_store->base}
+sub default_secrets_slug {$_[0]->secrets_store->default_slug}
+sub default_secrets_mount {$_[0]->secrets_store->default_mount}
 
-# }}}
-# secrets_slug - returns the component of the Vault path under the mount that represents this environment (env: GENESIS_SECRETS_SLUG) {{{
-sub default_secrets_slug {
-	(my $p = $_[0]->name) =~ s|-|/|g;
-	return $p."/".$_[0]->top->type;
-}
-sub secrets_slug {
-	$_[0]->_memoize(sub {
-		my $slug = $_[0]->lookup(
-			['genesis.secrets_path','params.vault_prefix','params.vault'],
-			$_[0]->default_secrets_slug
-		);
-		$slug =~ s#^/?(.*?)/?$#$1#;
-		return $slug
-	});
-}
-
-# }}}
-# secrets_base - returns the full Vault path for secrets stored for this environment with / suffic (env: GENESIS_SECRETS_BASE) {{{
-sub secrets_base {
-	$_[0]->_memoize(sub {
-		$_[0]->secrets_mount . $_[0]->secrets_slug . '/'
-	});
-}
-
-# }}}
 # exodus_mount - returns the Vault path under which all Exodus data is stored (env: GENESIS_EXODUS_MOUNT) {{{
 sub default_exodus_mount { $_[0]->secrets_mount . 'exodus/'; }
 sub exodus_mount {
@@ -1319,7 +1316,7 @@ sub manifest {
 		return run({
 				onfailure => "Failed to merge $self->{name} manifest",
 				stderr => "&1",
-				env => $self->vault->env # to target desired vault
+				env => $self->spruce_vault_env # to target desired vault
 			},
 			'spruce', 'merge', '--skip-eval',  (map { ('--prune', $_) } @prune), $path)."\n";
 	} else {
@@ -1822,7 +1819,7 @@ sub _manifest {
 		my $out;
 		my $env = {
 			$self->get_environment_variables('manifest'),
-			%{$self->vault->env()},               # specify correct vault for spruce to target
+			%{$self->spruce_vault_env()},        # specify correct vault for spruce to target
 			REDACT => $opts{redact} ? 'yes' : '' # spruce redaction flag
 		};
 		if ($opts{partial}) {
