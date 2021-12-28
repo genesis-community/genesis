@@ -687,7 +687,7 @@ EOF
 # not really a cloud config, but close enough
 EOF
 	my $env = $top->load_env('standalone')->use_config($top->path('.cloud.yml'));
-	cmp_deeply($env->exodus, {
+	cmp_deeply($env->exodus_data, {
 			version        => ignore,
 			dated          => re(qr/\d\d\d\d-\d\d-\d\d \d\d:\d\d:\d\d/),
 			deployer       => ignore,
