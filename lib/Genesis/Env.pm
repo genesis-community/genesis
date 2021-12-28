@@ -131,9 +131,9 @@ sub load {
 
 		if (! $env->kit->feature_compatibility("2.7.0")) {
 			push(@errors, sprintf("kit #M{%s} is not compatible with #ci{secrets_mount} feature; check for newer kit version or remove feature.", $env->kit->id))
-				if ($env->secrets_mount ne $env->default_secrets_mount);
+				if ($env->secrets_mount ne $env->default_secrets_mount); # TODO - make this store-aware
 			push(@errors, sprintf("kit #M{%s} is not compatible with #C{exodus_mount} feature; check for newer kit version or remove feature.", $env->kit->id))
-				if ($env->exodus_mount ne $env->default_exodus_mount);
+				if ($env->exodus_mount ne $env->default_exodus_mount); # TODO - make this separate from vault
 		}
 		last;
 	}
@@ -228,7 +228,7 @@ sub from_envvars {
 	}
 
 	# Check for v2.7.0 features
-	unless ($env->kit->feature_compatibility("2.7.0")) {
+	unless ($env->kit->feature_compatibility("2.7.0")) { # TODO - make work with secrets_store and exodus_store
 		bail("#R{[ERROR]} Kit #M{%s} is not compatible with #C{secrets_mount} feature\n".
 		     "        Please upgrade to a newer release or remove params.secrets_mount from #M{%s}",
 		     $env->kit->id, $env->{file})
@@ -267,7 +267,7 @@ sub create {
 	$env->{__params} = {
 		genesis => {
 			env => $opts{name},
-			get_opts(\%opts, qw(secrets_path secrets_mount exodus_mount ci_mount root_ca_path credhub_env))}
+			get_opts(\%opts, qw(secrets_path secrets_mount exodus_mount ci_mount root_ca_path credhub_env))} # TODO - make work with secrets_store and exodus_store
 	};
 
 	if ($env->kit->feature_compatibility("2.8.0")) {
@@ -667,10 +667,10 @@ sub exodus_lookup {
 	$for ||= $self->exodus_slug;
 	my $path =  $self->exodus_mount().$for;
 	debug "Checking if $path path exists...";
-	return $default unless $self->vault->has($path);
+	return $default unless $self->vault->has($path); # EXODUS
 	debug "Exodus data exists, retrieving it and converting to json";
 	my $out;
-	eval {$out = $self->vault->get($path);};
+	eval {$out = $self->vault->get($path);}; # EXODUS
 	bail "Could not get $for exodus data from the Vault: $@" if $@;
 
 	my $exodus = _unflatten($out);
@@ -807,7 +807,7 @@ sub get_environment_variables {
 
 	# Vault ENV VARS
 	$env{GENESIS_TARGET_VAULT} = $env{SAFE_TARGET} = $self->vault->ref;
-	$env{GENESIS_VERIFY_VAULT} = $self->vault->connect_and_validate->verify || "";
+	$env{GENESIS_VERIFY_VAULT} = $self->vault->connect_and_validate->verify || ""; #TODO - what does this mean???
 
 	# Kit ENV VARS
 	$env{GENESIS_KIT_NAME}               = $self->kit->name;
@@ -826,6 +826,8 @@ sub get_environment_variables {
 		my $default_method = "default_$method";
 		$env{uc("GENESIS_${target}_MOUNT_OVERRIDE")} = ($self->$method ne $self->$default_method) ? "true" : "";
 	}
+
+	# TODO: extract from secrets_store and exodus_store
 	$env{GENESIS_VAULT_PREFIX} = # deprecated in v2.7.0
 	$env{GENESIS_SECRETS_PATH} = # deprecated in v2.7.0
 	$env{GENESIS_SECRETS_SLUG} = $self->secrets_slug;
@@ -952,7 +954,7 @@ sub exodus_store {
 # with_vault - ensure this environment is able to connect to the Vault server {{{
 sub with_vault {
 	my $self = shift;
-	$ENV{GENESIS_SECRETS_MOUNT} = $self->secrets_mount();
+	$ENV{GENESIS_SECRETS_MOUNT} = $self->secrets_mount(); # TODO: Why is this being set
 	$ENV{GENESIS_EXODUS_MOUNT} = $self->exodus_mount();
 	bail("\n#R{[ERROR]} No vault specified or configured.")
 		unless $self->vault;
@@ -1558,8 +1560,8 @@ sub deploy {
 	unlink "$self->{__tmp}/manifest.yml"
 		or debug "Could not remove unredacted manifest $self->{__tmp}/manifest.yml";
 
-	# Reauthenticate to vault, as deployment can take a long time
-	$self->vault->authenticate unless $self->vault->status eq 'sealed';
+	# Reauthenticate to secret store, as deployment can take a long time
+	$self->secret_store->authenticate unless $self->secret_store->is_unavailable; #TODO ie: vault->status eq 'sealed';
 
 	$self->run_hook('post-deploy', rc => ($ok ? 0 : 1), data => $predeploy_data)
 		if $self->has_hook('post-deploy');
@@ -1570,12 +1572,12 @@ sub deploy {
 
 	# track exodus data in the vault
 	explain STDERR "\n[#M{%s}] #G{Deployment successful.}  Preparing metadata for export...", $self->name;
-	$self->vault->authenticate unless $self->vault->authenticated;
+	$self->vault->authenticate unless $self->vault->authenticated; # EXODUS
 	my $exodus = $self->exodus_data;
 
 	$exodus->{manifest_sha1} = digest_file_hex($manifest_file, 'SHA-1');
 	debug("setting exodus data in the Vault, for use later by other deployments");
-	$ok = $self->vault->authenticate->query(
+	$ok = $self->vault->authenticate->query( # EXODUS
 		{ onfailure => "#R{Failed to export $self->{name} metadata.}\n".
 		               "Deployment was still successful, but metadata used by addons and other kits is outdated.\n".
 		               "This may be resolved by deploying again, or it may be a permissions issue while trying to\n".
@@ -1654,12 +1656,12 @@ sub add_secrets {
 		$self->run_hook('secrets', action => 'add')
 	} else {
 		# Determine secrets_store from kit - assume vault for now (credhub ignored)
-		my $store = $self->vault->connect_and_validate;
+		my $store = $self->secrets_store;
 		my $processing_opts = {
 			level=>$opts{verbose}?'full':'line'
 		};
-		my $ok = $store->process_kit_secret_plans(
-			'add',
+		my $ok = $store->generate_secrets( # TODO process_kit_secret_plans(
+			#			'add',
 			$self,
 			sub{$self->_secret_processing_updates_callback('add',$processing_opts,@_)},
 			get_opts(\%opts, qw/paths/)
@@ -1683,14 +1685,13 @@ sub check_secrets {
 		$self->run_hook('secrets', action => 'check');
 	} else {
 		# Determine secrets_store from kit - assume vault for now (credhub ignored)
-		my $store = $self->vault->connect_and_validate;
+		my $store = $self->secrets_store;
 		my $action = $opts{validate} ? 'validate' : 'check';
 		my $processing_opts = {
 			no_prompt => $opts{'no-prompt'},
 			level=>$opts{verbose}?'full':'line'
 		};
-		my $ok = $store->validate_kit_secrets(
-			$action,
+		my $ok = $store->validate_secrets( #TODO: validate_kit_secrets(
 			$self,
 			sub{$self->_secret_processing_updates_callback($action,$processing_opts,@_)},
 			get_opts(\%opts, qw/paths validate/)
@@ -1715,16 +1716,16 @@ sub rotate_secrets {
 		$self->run_hook('secrets', action => $action);
 	} else {
 		# Determine secrets_store from kit - assume vault for now (credhub ignored)
-		my $store = $self->vault->connect_and_validate;
+		my $store = $self->secrets_store;
 		my $processing_opts = {
 			no_prompt => $opts{'no-prompt'},
 			level=>$opts{verbose}?'full':'line'
 		};
-		my $ok = $store->process_kit_secret_plans(
-			$action,
+		my $ok = $store->rotate(
+			#			$action,
 			$self,
 			sub{$self->_secret_processing_updates_callback($action,$processing_opts,@_)},
-			get_opts(\%opts, qw/paths no_prompt interactive invalid/)
+			get_opts(\%opts, qw/paths no_prompt interactive invalid renew/)
 		);
 		return $ok;
 	}
@@ -1742,10 +1743,10 @@ sub remove_secrets {
 	}
 
 	# Determine secrets_store from kit - assume vault for now (credhub ignored)
-	my $store = $self->vault->connect_and_validate;
+	my $store = $self->secrets_store;
 	my @generated_paths;
 	if ($opts{all}) {
-		my @paths = $self->vault->paths($self->secrets_base);
+		my @paths = $store->secrets; #TODO ie paths under($self->secrets_base);
 		return 2 unless scalar(@paths);
 
 		unless ($opts{'no-prompt'}) {
@@ -1756,13 +1757,13 @@ sub remove_secrets {
 			);
 			explain "\n#Yr{[WARNING]} This will delete all %s secrets under '#C{%s}', including\n".
 			             "          non-generated values set by 'genesis new' or manually created",
-				 scalar(@paths), $self->secrets_base;
+				 scalar(@paths), $store->label;
 			while (1) {
 				my $response = prompt_for_line(undef, "Type 'yes' to remove these secrets, 'list' to list them; anything else will abort","");
 				print "\n";
 				if ($response eq 'list') {
 					# TODO: check and color-code generated vs manual entries
-					my $prefix_len = length($self->secrets_base)-1;
+					my $prefix_len = length($store->base)-1;
 					bullet $_ for (map {substr($_, $prefix_len)} @paths);
 				} elsif ($response eq 'yes') {
 					last;
@@ -1772,8 +1773,8 @@ sub remove_secrets {
 				}
 			}
 		}
-		waiting_on "Deleting existing secrets under '#C{%s}'...", $self->secrets_base;
-		my ($out,$rc) = $self->vault->query('rm', '-rf', $self->secrets_base);
+		waiting_on "Deleting existing secrets under '#C{%s}'...", $store->base;
+		my ($out,$rc) = $store->remove_all_secrets; # TODO self->vault->query('rm', '-rf', $self->secrets_base);
 		bail "#R{error!}\n%s", $out if ($rc);
 		explain "#G{done}\n";
 		return 1;
@@ -1785,8 +1786,7 @@ sub remove_secrets {
 		my $processing_opts = {
 			level=>$opts{verbose}?'full':'line'
 		};
-		my $ok = $store->process_kit_secret_plans(
-			'remove',
+		my $ok = $store->remove_secrets( # TODO: process_kit_secret_plans(
 			$self,
 			sub{$self->_secret_processing_updates_callback('remove',$processing_opts,@_)},
 			get_opts(\%opts, qw/paths no_prompt interactive invalid/)
