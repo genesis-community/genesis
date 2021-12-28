@@ -1585,7 +1585,7 @@ EOF
 	}, "environment provides the correct environment variables and values");
 
 	# Remove env files
-	unlink $top->path($_) for (@{$env->{__actual_files}});
+	unlink $top->path($_) for (@{$env->{__actual_environment_files}});
 
 	local %ENV = %ENV;
 	$ENV{$_} = $evs{$_} for (keys %evs);
@@ -1600,7 +1600,7 @@ EOF
 	ok $env_from_evs->use_create_env, "env from env vars uses create env.";
 	ok $env_from_evs->{is_from_envvars}, "env from env vars indicates so.";
 
-	my @old_properties = grep {$_ !~ /^(__actual_files)$/}  keys(%$env);
+	my @old_properties = grep {$_ !~ /^(__actual_environment_files)$/}  keys(%$env);
 	my @new_properties = grep {$_ !~ /^(is_from_envvars)$/} keys(%$env_from_evs);
 	cmp_set(\@new_properties, \@old_properties, "original and from_envvars environments have the same properties");
 

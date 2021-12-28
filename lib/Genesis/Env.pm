@@ -388,7 +388,7 @@ sub path    { shift->top->path(@_); }
 # Information Lookup
 # deployment_name - returns the deployment name (env name + env type) {{{
 sub deployment_name {
-	$_[0]->_memoize('__deployment', sub {
+	$_[0]->_memoize(sub {
 		my $self = shift;
 		sprintf('%s-%s',$self->name,$self->top->type);
 	});
@@ -405,7 +405,7 @@ sub is_bosh_director {
 # }}}
 # use_create_env - true if the deployment uses bosh create-env {{{
 sub use_create_env {
-	return $_[0]->_memoize('__use_create_env',sub {
+	return $_[0]->_memoize(sub {
 		my ($self) = @_;
 		my $is_bosh_director = $self->is_bosh_director;
 
@@ -497,7 +497,7 @@ sub potential_environment_files {
 # }}}
 # actual_environment_files - list the heirarchal environment files that exist for this env {{{
 sub actual_environment_files {
-	my $ref = $_[0]->_memoize('__actual_files', sub {
+	my $ref = $_[0]->_memoize(sub {
 		my $self = shift;
 		my @files;
 		for my $file (grep {-f $self->path($_)} $self->potential_environment_files) {
@@ -558,7 +558,7 @@ sub relate_by_name {
 # }}}
 # features - returns the list of features (specified and derived) {{{
 sub features {
-	my $ref = $_[0]->_memoize('__features', sub {
+	my $ref = $_[0]->_memoize(sub {
 		my $self = shift;
 		my $features = scalar($self->lookup('kit.features', []));
 		bail(
@@ -591,7 +591,7 @@ sub has_feature {
 # }}}
 # params - get all the values from the hierarchal environment. {{{
 sub params {
-	my $ref = $_[0]->_memoize('__params', sub {
+	my $ref = $_[0]->_memoize(sub {
 		my ($self) = @_;
 		debug("running spruce merge of environment files, without evaluation, to find parameters");
 		my @merge_files = map { $self->path($_) } $self->actual_environment_files();
@@ -948,7 +948,7 @@ sub root_ca_path {
 # secrets_mount - returns the Vault path under which all secrets are stored (env: GENESIS_SECRETS_MOUNT) {{{
 sub default_secrets_mount { '/secret/'; }
 sub secrets_mount {
-	$_[0]->_memoize('__secrets_mount', sub{
+	$_[0]->_memoize(sub{
 		(my $mount = $_[0]->lookup('genesis.secrets_mount', $_[0]->default_secrets_mount)) =~ s#^/?(.*?)/?$#/$1/#;
 		return $mount
 	});
@@ -961,7 +961,7 @@ sub default_secrets_slug {
 	return $p."/".$_[0]->top->type;
 }
 sub secrets_slug {
-	$_[0]->_memoize('__secrets_slug', sub {
+	$_[0]->_memoize(sub {
 		my $slug = $_[0]->lookup(
 			['genesis.secrets_path','params.vault_prefix','params.vault'],
 			$_[0]->default_secrets_slug
@@ -974,7 +974,7 @@ sub secrets_slug {
 # }}}
 # secrets_base - returns the full Vault path for secrets stored for this environment with / suffic (env: GENESIS_SECRETS_BASE) {{{
 sub secrets_base {
-	$_[0]->_memoize('__secrets_base', sub {
+	$_[0]->_memoize(sub {
 		$_[0]->secrets_mount . $_[0]->secrets_slug . '/'
 	});
 }
@@ -983,7 +983,7 @@ sub secrets_base {
 # exodus_mount - returns the Vault path under which all Exodus data is stored (env: GENESIS_EXODUS_MOUNT) {{{
 sub default_exodus_mount { $_[0]->secrets_mount . 'exodus/'; }
 sub exodus_mount {
-	$_[0]->_memoize('__exodus_mount', sub {
+	$_[0]->_memoize(sub {
 		(my $mount = $_[0]->lookup('genesis.exodus_mount', $_[0]->default_exodus_mount)) =~ s#^/?(.*?)/?$#/$1/#;
 		return $mount;
 	});
@@ -998,7 +998,7 @@ sub exodus_slug {
 # }}}
 # exodus_base - returns the full Vault path of the Exodus data for this environment (env:  GENESIS_EXODUS_BASE) {{{
 sub exodus_base {
-	$_[0]->_memoize('__exodus_base', sub {
+	$_[0]->_memoize(sub {
 		$_[0]->exodus_mount . $_[0]->exodus_slug
 	});
 }
@@ -1007,7 +1007,7 @@ sub exodus_base {
 # ci_mount - returns the Vault path under which all CI secrets are stored (env: GENESIS_CI_MOUNT) {{{
 sub default_ci_mount { $_[0]->secrets_mount . 'ci/'; }
 sub ci_mount {
-	$_[0]->_memoize('__ci_mount', sub {
+	$_[0]->_memoize(sub {
 		(my $mount = $_[0]->lookup('genesis.ci_mount', $_[0]->default_ci_mount)) =~ s#^/?(.*?)/?$#/$1/#;
 		return $mount;
 	});
@@ -1016,7 +1016,7 @@ sub ci_mount {
 # }}}
 # ci_base - returns the full Vault path under which the CI secrets for this environment are stored (env: GENESIS_CI_BASE) {{{
 sub ci_base {
-	$_[0]->_memoize('__ci_base', sub {
+	$_[0]->_memoize(sub {
 		my $default = sprintf("%s%s/%s/", $_[0]->ci_mount, $_[0]->type, $_[0]->name);
 		(my $base = $_[0]->lookup('genesis.ci_base', $default)) =~ s#^/?(.*?)/?$#/$1/#;
 		return $base
@@ -1043,7 +1043,7 @@ sub bosh_env {
 # }}}
 # bosh - the Genesis::BOSH::Director (or ::CreateEnvProxy) associated with this environment {{{
 sub bosh {
-	scalar $_[0]->_memoize('__bosh', sub {
+	scalar $_[0]->_memoize(sub {
 		my $self = shift;
 		my $bosh;
 		return Genesis::BOSH::CreateEnvProxy->new($self) if $self->use_create_env;
@@ -1120,7 +1120,7 @@ sub configs {
 sub required_configs {
 	my ($self, @hooks) = @_;
 	return () if $self->use_create_env;
-	my @deploy_hooks = $self->_memoize('__deploy_hooks', sub {
+	my @deploy_hooks = $self->_memoize(sub {
 		my $self = shift;
 		my @h = qw/blueprint check manifest/;
 		push @h, grep {$self->kit->has_hook($_)} qw(pre-deploy post-deploy);
@@ -2178,7 +2178,8 @@ sub _unflatten {
 # }}}
 # _memoize - cache value to be returned on subsequent calls {{{
 sub _memoize {
-	my ($self, $token, $initialize) = @_;
+	my ($self, $initialize, @args) = @_;
+	(my $token = (caller(1))[3]) =~ s/^.*::/__/;
 	return $self->{$token} if defined($self->{$token});
 	$self->{$token} = $initialize->($self);
 }
