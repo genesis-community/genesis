@@ -621,13 +621,8 @@ sub params {
 # defines - true if the given path is defined in the hierarchal environment parameters. {{{
 sub defines {
 	my ($self, $key) = @_;
-	my $what = $self->params();
-
-	for (split /\./, $key) {
-		return 0 unless exists $what->{$_};
-		$what = $what->{$_};
-	}
-	return 1;
+	my (undef, $found) = struct_lookup($self->params(),$key);
+	return defined($found);
 }
 
 # }}}
