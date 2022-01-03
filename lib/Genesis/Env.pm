@@ -8,8 +8,6 @@ use Genesis::BOSH::Director;
 use Genesis::BOSH::CreateEnvProxy;
 use Genesis::UI;
 use Genesis::IO qw/DumpYAML LoadFile/;
-use Genesis::Vault;
-
 
 use JSON::PP qw/encode_json decode_json/;
 use POSIX qw/strftime/;
