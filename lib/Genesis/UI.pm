@@ -9,6 +9,7 @@ our @EXPORT = qw/
 	prompt_for_list
 	prompt_for_block
 	bullet
+	checkbox
 	in_controlling_terminal
 	die_unless_controlling_terminal
 /;
@@ -311,6 +312,9 @@ sub bullet { # [type,] msg, [{option: value, ...}]
 	return $out if ($opts{inline});
 	explain $out;
 	1;
+}
+sub checkbox {
+	return bullet($_[0] eq 'warn' ? 'warn' : ($_[0] && $_[0] ne 'error' ? 'good' : 'bad'), '', box => 1, inline => 1, indent => 0);
 }
 
 sub in_controlling_terminal {

@@ -275,8 +275,7 @@ sub metadata {
 # }}}
 # apply_env_overrides - apply environment-specific override files to the kit {{{
 sub apply_env_overrides {
-	my ($self, @overrides) = @_;
-	$self->{__overrides} = [@overrides];
+	my ($self, @overrides) = @_;	$self->{__overrides} = [@overrides];
 	# Clear the loaded metadata
 	$self->{__metadata} = undef;
 }
@@ -292,6 +291,16 @@ sub env_override_files {
 sub secrets_store {
 	my ($self) = @_;
 	$self->metadata->{secrets_store} ? $self->metadata->{secrets_store} : 'vault';
+}
+
+# }}}
+# secrets_source - specify where the definition of secrets is found: manifest or kit {{{
+# TODO:  maybe we can support both?  concern is how to support user-provided secrets in manifest
+sub secrets_source {
+	my ($self) = @_;
+	$self->metadata->{secrets_source} ? $self->metadata->{secrets_source} : (
+		$self->use_crethub ? 'manifest' : 'kit'
+	)
 }
 
 # }}}

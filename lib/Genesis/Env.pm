@@ -382,7 +382,7 @@ sub top    { $_[0]->{top}    || bug("Incompletely initialized environment '".$_[
 # }}}
 # Delegations: type, vault, path {{{
 sub type    { $_[0]->top->type; }
-sub vault   { $_[0]->secrets_store; }
+sub vault   { $_[0]->top->vault; } 
 sub path    { shift->top->path(@_); }
 # }}}
 
@@ -662,7 +662,7 @@ sub last_deployed_lookup {
 
 # }}}
 # exodus_lookup - lookup Exodus data from the last deployment of this (or named) deployment {{{
-sub exodus_lookup {
+sub exodus_lookup { # Belongs in the exodus secrets store
 	my ($self, $key, $default,$for) = @_;
 	$for ||= $self->exodus_slug;
 	my $path =  $self->exodus_mount().$for;
@@ -805,7 +805,7 @@ sub get_environment_variables {
 	my $min_version = $self->lookup('genesis.min_version');
 	$env{GENESIS_MIN_VERSION} = $min_version if $min_version;
 
-	# Vault ENV VARS
+	# Vault ENV VARS -- TODO: figure out how this works with secret_store refactor
 	$env{GENESIS_TARGET_VAULT} = $env{SAFE_TARGET} = $self->vault->ref;
 	$env{GENESIS_VERIFY_VAULT} = $self->vault->connect_and_validate->verify || ""; #TODO - what does this mean???
 
@@ -827,7 +827,7 @@ sub get_environment_variables {
 		$env{uc("GENESIS_${target}_MOUNT_OVERRIDE")} = ($self->$method ne $self->$default_method) ? "true" : "";
 	}
 
-	# TODO: extract from secrets_store and exodus_store
+	# TODO: extract from secrets_store and exodus_store -- TODO: refactor to secrets_store
 	$env{GENESIS_VAULT_PREFIX} = # deprecated in v2.7.0
 	$env{GENESIS_SECRETS_PATH} = # deprecated in v2.7.0
 	$env{GENESIS_SECRETS_SLUG} = $self->secrets_slug;
@@ -922,22 +922,20 @@ sub secrets_store {
 	shift->_memoize(sub {
 		my $self = shift;
 		if ($self->kit->uses_credhub) {
-			require Genesis::SecretsStore::Credhub;
-
-			return Genesis::SecretsStore::Credhub->new(
-				connection => $self->credhub_connection_env,
-				root       => scalar($self->lookup('genesis.secrets_path', $self->name."-".$self->type)),
-				mount      => scalar($self->lookup('genesis.secrets_mount', "/".$self->full_bosh_env."/")),
-			);
+			require Genesis::Env::SecretsStore::Credhub;
+			return Genesis::Env::SecretsStore::Credhub->new($self);
+			#				connection => $self->credhub_connection_env,
+			#		root       => scalar($self->lookup('genesis.secrets_path', $self->name."-".$self->type)),
+			#		mount      => scalar($self->lookup('genesis.secrets_mount', "/".$self->full_bosh_env."/")),
+			#);
 		} else {
-			require Genesis::SecretsStore::Vault;
-
-			return Genesis::SecretsStore::Vault->new(
-				connection     => $self->top->vault,
-				name           => $self->name,
-				type           => $self->type,
-				slug_override  => scalar($self->lookup(['genesis.secrets_path','params.vault_prefix','params.vault'])),
-				mount_override => scalar($self->lookup('genesis.secrets_mount'))
+			require Genesis::Env::SecretsStore::Vault;
+			return Genesis::Env::SecretsStore::Vault->new(
+				$self,
+				connection       => $self->vault, # TODO: make lazy-initialize $self->vault_proxy and use that instead
+				slug_override    => scalar($self->lookup(['genesis.secrets_path','params.vault_prefix','params.vault'])),
+				mount_override   => scalar($self->lookup('genesis.secrets_mount')),
+				root_ca_override => scalar($self->lookup('genesis.root_ca_path'))
 			);
 		}
 	});
@@ -952,7 +950,7 @@ sub exodus_store {
 
 # }}}
 # with_vault - ensure this environment is able to connect to the Vault server {{{
-sub with_vault {
+sub with_vault { # TODO: this belongs in the secret store
 	my $self = shift;
 	$ENV{GENESIS_SECRETS_MOUNT} = $self->secrets_mount(); # TODO: Why is this being set
 	$ENV{GENESIS_EXODUS_MOUNT} = $self->exodus_mount();
@@ -962,18 +960,7 @@ sub with_vault {
 }
 
 # }}}
-# root_ca_path - returns the root_ca_path, if provided by the environment file (env: GENESIS_ROOT_CA_PATH) {{{
-sub root_ca_path {
-	my $self = shift;
-	unless (exists($self->{__root_ca_path})) {
-		$self->{__root_ca_path} = $self->lookup('genesis.root_ca_path','');
-		$self->{__root_ca_path} =~ s/\/$// if $self->{__root_ca_path};
-	}
-
-	return $self->{__root_ca_path};
-}
-
-# }}}
+sub root_ca_path {$_[0]->secrets_store->root_ca_path}
 sub secrets_mount {$_[0]->secrets_store->mount}
 sub secrets_slug {$_[0]->secrets_store->slug}
 sub secrets_base {$_[0]->secrets_store->base}
@@ -1060,7 +1047,7 @@ sub bosh {
 		}
 
 		my ($bosh_alias,$bosh_dep_type) = split('/', $self->bosh_env);
-		$bosh = Genesis::BOSH::Director->from_exodus(
+		$bosh = Genesis::BOSH::Director->from_exodus( # TODO: use exodus secrets_store
 			$bosh_alias,
 			vault => $self->vault,
 			exodus_mount => $self->exodus_mount,
@@ -1561,7 +1548,7 @@ sub deploy {
 		or debug "Could not remove unredacted manifest $self->{__tmp}/manifest.yml";
 
 	# Reauthenticate to secret store, as deployment can take a long time
-	$self->secret_store->authenticate unless $self->secret_store->is_unavailable; #TODO ie: vault->status eq 'sealed';
+	$self->secrets_store->authenticate if $self->secrets_store->is_available; #TODO ie: vault->status eq 'sealed';
 
 	$self->run_hook('post-deploy', rc => ($ok ? 0 : 1), data => $predeploy_data)
 		if $self->has_hook('post-deploy');
@@ -1572,12 +1559,12 @@ sub deploy {
 
 	# track exodus data in the vault
 	explain STDERR "\n[#M{%s}] #G{Deployment successful.}  Preparing metadata for export...", $self->name;
-	$self->vault->authenticate unless $self->vault->authenticated; # EXODUS
+	$self->exodus_store->authenticate unless $self->exodus_store->is_authenticated; # EXODUS
 	my $exodus = $self->exodus_data;
 
 	$exodus->{manifest_sha1} = digest_file_hex($manifest_file, 'SHA-1');
 	debug("setting exodus data in the Vault, for use later by other deployments");
-	$ok = $self->vault->authenticate->query( # EXODUS
+	$ok = $self->exodus_store->authenticate->query( # TODO: EXODUS secrets store - remove_all_secrets
 		{ onfailure => "#R{Failed to export $self->{name} metadata.}\n".
 		               "Deployment was still successful, but metadata used by addons and other kits is outdated.\n".
 		               "This may be resolved by deploying again, or it may be a permissions issue while trying to\n".
@@ -1646,28 +1633,16 @@ sub exodus_data {
 sub add_secrets {
 	my ($self, %opts) = @_;
 
-	#Credhub check
-	if ($self->kit->uses_credhub) {
-		explain "#Yi{Credhub-based kit - no local secrets generation required}";
-		return 1;
-	}
-
+	my $ok;
 	if ($self->has_hook('secrets')) {
-		$self->run_hook('secrets', action => 'add')
+		$ok = $self->run_hook('secrets', action => 'add');
 	} else {
-		# Determine secrets_store from kit - assume vault for now (credhub ignored)
-		my $store = $self->secrets_store;
-		my $processing_opts = {
-			level=>$opts{verbose}?'full':'line'
-		};
-		my $ok = $store->generate_secrets( # TODO process_kit_secret_plans(
-			#			'add',
-			$self,
-			sub{$self->_secret_processing_updates_callback('add',$processing_opts,@_)},
-			get_opts(\%opts, qw/paths/)
+		$opts{filter} = delete($opts{paths}) if $opts{paths}; # renamed option
+		$ok = $self->secrets_store->generate(
+			get_opts(\%opts, qw/filter vebose/)
 		);
-		return $ok;
 	}
+	return $ok;
 }
 
 # }}}
@@ -1675,29 +1650,17 @@ sub add_secrets {
 sub check_secrets {
 	my ($self,%opts) = @_;
 
-	#Credhub check
-	if ($self->kit->uses_credhub) {
-		explain "#Yi{Credhub-based kit - no local secrets validation required}\n";
-		return 1;
-	}
-
+	my $ok;
 	if ($self->has_hook('secrets')) {
-		$self->run_hook('secrets', action => 'check');
+		$ok = $self->run_hook('secrets', action => 'check');
 	} else {
 		# Determine secrets_store from kit - assume vault for now (credhub ignored)
-		my $store = $self->secrets_store;
-		my $action = $opts{validate} ? 'validate' : 'check';
-		my $processing_opts = {
-			no_prompt => $opts{'no-prompt'},
-			level=>$opts{verbose}?'full':'line'
-		};
-		my $ok = $store->validate_secrets( #TODO: validate_kit_secrets(
-			$self,
-			sub{$self->_secret_processing_updates_callback($action,$processing_opts,@_)},
-			get_opts(\%opts, qw/paths validate/)
+		$opts{filter} = delete($opts{paths}) if $opts{paths}; # renamed option
+		$ok = $self->secrets_store->validate( 
+			get_opts(\%opts, qw/filter validate/)
 		);
-		return $ok;
 	}
+	return $ok;
 }
 
 # }}}
@@ -1705,30 +1668,16 @@ sub check_secrets {
 sub rotate_secrets {
 	my ($self, %opts) = @_;
 
-	#Credhub check
-	if ($self->kit->uses_credhub) {
-		explain "#Yi{Credhub-based kit - no local secrets rotation allowed}";
-		return 1;
-	}
-
-	my $action = $opts{'renew'} ? 'renew' : 'recreate';
+	my $ok;
 	if ($self->has_hook('secrets')) {
-		$self->run_hook('secrets', action => $action);
+		$ok = $self->run_hook('secrets', action => ($opts{'renew'} ? 'renew' : 'recreate'));
 	} else {
-		# Determine secrets_store from kit - assume vault for now (credhub ignored)
-		my $store = $self->secrets_store;
-		my $processing_opts = {
-			no_prompt => $opts{'no-prompt'},
-			level=>$opts{verbose}?'full':'line'
-		};
-		my $ok = $store->rotate(
-			#			$action,
-			$self,
-			sub{$self->_secret_processing_updates_callback($action,$processing_opts,@_)},
-			get_opts(\%opts, qw/paths no_prompt interactive invalid renew/)
+		$opts{filter} = delete($opts{paths}) if $opts{paths}; # renamed option
+		my $ok = $self->secret_store->regenerate(
+			get_opts(\%opts, qw/filter no_prompt interactive invalid renew/)
 		);
-		return $ok;
 	}
+	return $ok;
 }
 
 # }}}
@@ -1736,63 +1685,20 @@ sub rotate_secrets {
 sub remove_secrets {
 	my ($self, %opts) = @_;
 
-	#Credhub check
-	if ($self->kit->uses_credhub) {
-		explain "#Yi{Credhub-based kit - no local secrets removal permitted}";
-		return 1;
-	}
-
-	# Determine secrets_store from kit - assume vault for now (credhub ignored)
-	my $store = $self->secrets_store;
-	my @generated_paths;
 	if ($opts{all}) {
-		my @paths = $store->secrets; #TODO ie paths under($self->secrets_base);
-		return 2 unless scalar(@paths);
-
-		unless ($opts{'no-prompt'}) {
-			die_unless_controlling_terminal "#R{[ERROR] %s", join("\n",
-				"Cannot prompt for confirmation to remove all secrets outside a",
-				"controlling terminal.  Use #C{-y|--no-prompt} option to provide confirmation",
-				"to bypass this limitation."
-			);
-			explain "\n#Yr{[WARNING]} This will delete all %s secrets under '#C{%s}', including\n".
-			             "          non-generated values set by 'genesis new' or manually created",
-				 scalar(@paths), $store->label;
-			while (1) {
-				my $response = prompt_for_line(undef, "Type 'yes' to remove these secrets, 'list' to list them; anything else will abort","");
-				print "\n";
-				if ($response eq 'list') {
-					# TODO: check and color-code generated vs manual entries
-					my $prefix_len = length($store->base)-1;
-					bullet $_ for (map {substr($_, $prefix_len)} @paths);
-				} elsif ($response eq 'yes') {
-					last;
-				} else {
-					explain "\nAborted!\nKeeping all existing secrets under '#C{%s}'.\n", $self->secrets_base;
-					return 0;
-				}
-			}
-		}
-		waiting_on "Deleting existing secrets under '#C{%s}'...", $store->base;
-		my ($out,$rc) = $store->remove_all_secrets; # TODO self->vault->query('rm', '-rf', $self->secrets_base);
-		bail "#R{error!}\n%s", $out if ($rc);
-		explain "#G{done}\n";
-		return 1;
+		return $self->secrets_store->remove_all();
 	}
 
+	my $ok;
 	if ($self->has_hook('secrets')) {
-		$self->run_hook('secrets', action => 'remove');
+		$ok = $self->run_hook('secrets', action => 'remove');
 	} else {
-		my $processing_opts = {
-			level=>$opts{verbose}?'full':'line'
-		};
-		my $ok = $store->remove_secrets( # TODO: process_kit_secret_plans(
-			$self,
-			sub{$self->_secret_processing_updates_callback('remove',$processing_opts,@_)},
+		$opts{filter} = delete($opts{paths}) if $opts{paths}; # renamed option
+		$ok = $self->secrets_store->remove( 
 			get_opts(\%opts, qw/paths no_prompt interactive invalid/)
 		);
-		return $ok;
 	}
+	return $ok;
 }
 
 # }}}
