@@ -2290,6 +2290,7 @@ sub {
 	my @local_versions = grep { semver($_) } (keys %{ $local_kits->{$options{name}} });
 
 	if ($options{version}) {
+		$options{version} =~ s/^v//; # trim any leading 'v'
 		bail(
 			"#R{[ERROR]} Version #C{$options{version}} is not in a valid semver format"
 		) unless semver($options{version});
