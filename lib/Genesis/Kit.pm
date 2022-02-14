@@ -89,7 +89,10 @@ sub run_hook {
 
 	if ($opts{env}) {
 		my %env_vars = $opts{env}->get_environment_variables($hook);
+		# TODO: save manifest to environment variable so `lookup` can do quick
+		# lookups without re-entering genesis
 		$ENV{$_} = $env_vars{$_} for (keys %env_vars);
+
 		trace ('got env info');
 	} else {
 		bug("The 'env' option to run_hook is required for the '$hook' hook!!")
