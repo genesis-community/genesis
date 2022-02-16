@@ -369,10 +369,13 @@ sub create {
 # }}}
 # exists - returns true if the given environment exists {{{
 sub exists {
-	my $env;
-	eval { $env = new(@_) };
-	return undef unless $env;
-	return -f $env->path("$env->{file}");
+	my $ref = shift;
+	unless (ref($ref)) {
+		# called on the class, need a instance
+		eval{ $ref = $ref->new(@_) };
+		return undef unless $ref;
+	}
+	return -f $ref->path("$ref->{file}");
 }
 
 #}}}
