@@ -10,6 +10,7 @@ use Test::Exception;
 use Test::Deep;
 use Test::Output;
 use Test::Differences;
+use Cwd qw/cwd abs_path/;
 
 use_ok 'Genesis::Env';
 use Genesis::BOSH;
@@ -18,6 +19,9 @@ use Genesis::Env;
 use Genesis;
 
 fake_bosh;
+
+$ENV{GENESIS_CALLBACK_BIN} ||= abs_path('bin/genesis');
+$ENV{GENESIS_LIB} ||= abs_path('lib');
 
 subtest 'new() validation' => sub {
 	quietly { throws_ok { Genesis::Env->new() }
@@ -1554,7 +1558,7 @@ EOF
 		GENESIS_ENVIRONMENT => $env->name,
 		GENESIS_TYPE => $top->type,
 		GENESIS_CALL_BIN => Genesis::humanize_bin(),
-		GENESIS_CALL => "",
+		GENESIS_CALL => "genesis",
 		GENESIS_CI_BASE => "/concourse/main/".$env->name."/",
 		GENESIS_CI_MOUNT => "/concourse/",
 		GENESIS_CI_MOUNT_OVERRIDE => "true",
