@@ -98,7 +98,7 @@ sub run_hook {
 
 	my @args;
 	if ($hook eq 'new') {
-		$ENV{GENESIS_MIN_VERSION} = $self->metadata->{genesis_version_min} || "";
+		$ENV{GENESIS_MIN_VERSION} = $self->genesis_version_min;
 		@args = (
 			$ENV{GENESIS_ROOT},           # deprecated in 2.6.13!
 			$ENV{GENESIS_ENVIRONMENT},    # deprecated in 2.6.13!
@@ -364,14 +364,23 @@ sub feature_compatibility {
 	# Assume feature compatibility with specified min genesis version.
 	my ($self,$version) = @_;
 	my $id = $self->id;
-	my $kit_min = $self->metadata->{genesis_version_min};
-	dump_var kit_min_version => $kit_min || "undefined";
-	dump_var kit_metadata =>$self->metadata;
-	$kit_min = '0.0.0' unless ($kit_min && semver($kit_min));
+	my $kit_min = $self->genesis_version_min();
 
 	bug("Invalid base version provided to Genesis::Kit::feature_compatibility") unless semver($version);
 	trace("Comparing %s kit min to %s feature base", $kit_min, $version);
 	return new_enough($kit_min,$version);
+}
+
+# }}}
+# genesis_version_min -- minimum version of genesis required to be used for this kit
+sub genesis_version_min {
+	my ($self) = @_;
+
+	my $kit_min = $self->metadata->{genesis_version_min};
+	dump_var kit_min_version => $kit_min || "undefined";
+	dump_var kit_metadata =>$self->metadata;
+	$kit_min = '0.0.0' unless ($kit_min && semver($kit_min));
+	return $kit_min;
 }
 
 # }}}

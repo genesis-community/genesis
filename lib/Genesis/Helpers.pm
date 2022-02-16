@@ -627,7 +627,7 @@ if [[ "${BOSH_ALIAS:-}" != "${GENESIS_ENVIRONMENT:-}" && -n "${BOSH_ALIAS:-}" ]]
   bosh_env:       $BOSH_ALIAS
 EOF
 	fi
-	if [[ -n "${GENESIS_MIN_VERSION:-}" ]] ; then
+	if [[ -n "${GENESIS_MIN_VERSION:-}" && $GENESIS_MIN_VERSION != '0.0.0' ]] ; then
 		cat <<EOF
   min_version:    $GENESIS_MIN_VERSION
 EOF
