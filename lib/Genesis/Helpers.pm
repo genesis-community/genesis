@@ -270,6 +270,9 @@ bosh_cpi() {
 export -f bosh_cpi
 
 use_create_env() {
+	if ! new_enough "$GENESIS_MIN_VERSION" 2.8.0 ; then
+		return 1 # bosh kit is the only pre-v2.8.0 use-create-env kit, and it uses a different mechanism
+	fi
 	[[ "${GENESIS_USE_CREATE_ENV:-0}" == "1" ]]
 }
 export -f use_create_env
@@ -619,7 +622,7 @@ export -f param_comment
 # Helper to inject new Genesis configuration (v2.6.13+)
 genesis_config_block() {
 	config_block="$(
-if [[ "$BOSH_ALIAS" != "${GENESIS_ENVIRONMENT:-}" ]] ; then
+if [[ "${BOSH_ALIAS:-}" != "${GENESIS_ENVIRONMENT:-}" && -n "${BOSH_ALIAS:-}" ]] ; then
 		cat <<EOF
   bosh_env:       $BOSH_ALIAS
 EOF
@@ -663,6 +666,7 @@ EOF
 	echo ""
 	echo "genesis:"
 	padding=""
+
 	if use_create_env || [[ -n $config_block ]] ; then
 		padding="           "
 	fi

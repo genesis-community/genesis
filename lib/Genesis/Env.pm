@@ -257,6 +257,7 @@ sub create {
 	}
 
 	my $env = $class->new(get_opts(\%opts, qw(name top kit)));
+	my $create_env = $opts{'create-env'};
 
 	# environment must not already exist...
 	die "Environment file $env->{file} already exists.\n"
@@ -270,24 +271,62 @@ sub create {
 			get_opts(\%opts, qw(secrets_path secrets_mount exodus_mount ci_mount root_ca_path credhub_env))}
 	};
 
+	# The crazy-intricate create-env/bosh_env dance...
 	if ($env->kit->feature_compatibility("2.8.0")) {
 		# Kits that are explicitly compatible with 2.8.0 can specify if they
 		# support or require create-env deployments.
 		my $uce = $env->kit->metadata('use_create_env')||'';
 		if ($uce eq 'yes') {
+			bail(
+				"\n#R{[ERROR]} Kit %s requires use of create-env, but --no-create-env\n        option was specified",
+				$env->kit->id
+			) if defined($create_env) && !$create_env;
+			bail(
+				"\n#R{[ERROR]} Cannot specify a bosh environment for environments that use\n".
+				"        create-env deployment method"
+			) if defined($ENV{GENESIS_BOSH_ENVIRONMENT});
 			$env->{__params}{genesis}{use_create_env} = 1;
-			$env->{__params}{genesis}{bosh_env} = $ENV{GENESIS_BOSH_ENVIRONMENT} || '--';
+			$env->{__params}{genesis}{bosh_env} = '';
 		} elsif ($uce eq 'no') {
+			bail(
+				"\n#R{[ERROR]} Kit %s cannot use create-env, but --create-env option\n        was specified",
+				$env->kit->id
+			) if $create_env;
 			$env->{__params}{genesis}{use_create_env} = 0;
 			$env->{__params}{genesis}{bosh_env} = $ENV{GENESIS_BOSH_ENVIRONMENT} || $opts{name};
 		} else {
 			# Complicated state: the kit allows but does not require create-env.
-			$env->{__params}{genesis}{bosh_env} = $ENV{GENESIS_BOSH_ENVIRONMENT} || '--';
+			error(
+				"\n#y{[WARNING]} Kit %s supports both bosh and create-env deployment.\n".
+				"          No --create-env option specified, so using bosh deployment method.",
+				$env->kit->id
+			) unless defined($create_env);
+			bail(
+				"\n#R{[ERROR]} Cannot specify a bosh environment for environments that use\n".
+				"        create-env deployment method"
+			) if $create_env && defined($ENV{GENESIS_BOSH_ENVIRONMENT});
+			$env->{__params}{genesis}{use_create_env} = $create_env || 0;
+			$env->{__params}{genesis}{bosh_env} = $create_env ? '' : $ENV{GENESIS_BOSH_ENVIRONMENT} || $opts{name};
 		}
-	} elsif ($env->is_bosh_director()) {
-		# Prior to 2.8.0, only the bosh kit can use create_env.
-		$env->{__params}{genesis}{bosh_env} = $ENV{GENESIS_BOSH_ENVIRONMENT} || '--';
+	} else {
+		bail(
+			"\n#R{[ERROR]} Kit %s does not support the --[no-]create-env option",
+			$env->kit->id
+		) if defined($create_env);
+		if ($env->is_bosh_director()) { # Prior to 2.8.0, only the bosh kit can use create_env.
+			if ($ENV{GENESIS_BOSH_ENVIRONMENT}) {
+				$env->{__params}{genesis}{use_create_env} = 0;
+				$env->{__params}{genesis}{bosh_env} = $ENV{GENESIS_BOSH_ENVIRONMENT};
+			} else {
+				$env->{__params}{genesis}{use_create_env} = 1;
+				$env->{__params}{genesis}{bosh_env} = '';
+			}
+		} else {
+			$env->{__params}{genesis}{use_create_env} = 0;
+			$env->{__params}{genesis}{bosh_env} = $ENV{GENESIS_BOSH_ENVIRONMENT} || $opts{name};
+		}
 	}
+
 	# target vault and remove secrets that may already exist
 	bail("\n#R{[ERROR]} No vault specified or configured.")
 		unless $env->vault;
@@ -297,15 +336,13 @@ sub create {
 		$env->remove_secrets(all => 1) || bail "Cannot continue with existing secrets for this environment";
 	}
 
-	# bosh and credhub env overrides
-	$env->{__params}{genesis}{bosh_env} = $ENV{GENESIS_BOSH_ENVIRONMENT}
-		if ($ENV{GENESIS_BOSH_ENVIRONMENT});
+	# credhub env overrides
 	$env->{__params}{genesis}{credhub_env} = $ENV{GENESIS_CREDHUB_EXODUS_SOURCE}
 		if ($ENV{GENESIS_CREDHUB_EXODUS_SOURCE});
 
 	## initialize the environment
 	$env->download_required_configs('new')
-		unless $env->lookup('genesis.bosh_env','') eq '--';
+		unless $env->lookup('genesis.use_create_env','0');
 
 	if ($env->has_hook('new')) {
 		$env->run_hook('new');
@@ -413,20 +450,21 @@ sub use_create_env {
 		sub validate_create_env_state {
 			my ($is_create_env,$has_bosh_env,$kit_name,$is_bosh_kit) = @_;
 			bail(
-				"#R{[ERROR]} This #M{$kit_name} environment specifies an alternative bosh_env, but is\n".
+				"\n#R{[ERROR]} This #M{$kit_name} environment specifies an alternative bosh_env, but is\n".
 				"        marked as a create-env (proto) environment. Create-env deployments can't\n".
 				"        use a #C{genesis.bosh_env} value, so please remove it, or mark this\n".
-				"        environment as a non-create-env environment."
+				"        environment as a non-create-env environment.  It may be that bosh_env is\n".
+				"        configured in an inherited environment file."
 			) if $is_create_env && $has_bosh_env;
 			bail(
-				"#R{[ERROR]} This #M{$kit_name} environment does not use create-env (proto) or specify\n".
+				"\n#R{[ERROR]} This #M{$kit_name} environment does not use create-env (proto) or specify\n".
 				"        an alternative #C{genesis.bosh_env} as a deploy target. Please provide\n".
 				"        the name of the BOSH environment that will deploy this environment, or\n".
 				"        mark this environment as a create-env environment."
 			) unless $is_create_env || $has_bosh_env || !$is_bosh_kit;
 		}
 
-		my $different_bosh_env = $self->bosh_env && ($self->bosh_env ne $self->name);
+		my $different_bosh_env = $self->bosh_env && $self->bosh_env ne '--' && ($self->bosh_env ne $self->name);
 
 		if ($self->kit->feature_compatibility("2.8.0")) {
 			# Kits that are explicitly compatible with 2.8.0 can specify if they
@@ -435,7 +473,7 @@ sub use_create_env {
 			my $kuce = $self->kit->metadata('use_create_env')||'';
 			if ($kuce eq 'yes') {
 				bail(
-					"#R{[ERROR]} This kit only allows create-env deployments, but this environment\n".
+					"\n#R{[ERROR]} This kit only allows create-env deployments, but this environment\n".
 					"        specifies an alternative bosh_env.  Please remove the #C{genesis.bosh_env}\n".
 					"        entry from the environment file."
 				) if $different_bosh_env;
@@ -443,7 +481,7 @@ sub use_create_env {
 			};
 			if ($kuce eq 'no') {
 				bail (
-					"#R{[ERROR]} BOSH environments must specify the name of the parent BOSH director\n".
+					"\n#R{[ERROR]} BOSH environments must specify the name of the parent BOSH director\n".
 					"        that will deploy this enviornment under #C{genesis.bosh_env} in the\n".
 					"        file, because unlike other kits, it cannot derive its director from its\n".
 					"        environment name."
@@ -464,11 +502,19 @@ sub use_create_env {
 		# Before 2.8.0, we only support create-env deployments for bosh deployments.
 		return 0 unless $is_bosh_director;
 
+		# If creating a new bosh environment, we need to do some special handling.
+
 		# Support pre-v2.8.0 create env schemes...
-		my $features = scalar($self->lookup(['kit.features', 'kit.subkits'], []));
-		my $create_env_feature_detected = scalar(grep {$_ =~ /^(proto|bosh-init|create-env)$/} @$features) ? 1 : 0;
-		validate_create_env_state($create_env_feature_detected,$different_bosh_env,"bosh",1);
-		return $create_env_feature_detected;
+		my $euce;
+		if ($self->exists) {
+			my $features = scalar($self->lookup(['kit.features', 'kit.subkits'], []));
+			$euce = scalar(grep {$_ =~ /^(proto|bosh-init|create-env)$/} @$features) ? 1 : 0;
+		} else {
+			$euce = !$ENV{GENESIS_BOSH_ENVIRONMENT};
+		}
+		dump_var detected=>$euce, diff => $different_bosh_env;
+		validate_create_env_state($euce,$different_bosh_env,"bosh",1);
+		return $euce;
 	});
 }
 

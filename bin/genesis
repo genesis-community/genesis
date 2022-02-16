@@ -1433,6 +1433,14 @@ create the new environment, then move back the secrets you need to keep.
 
 OPTIONS
 $GLOBAL_USAGE
+  --[no-]create-env   For kits that allow but not require deployment using
+                      create-env, this will create the environment as indicated.
+                      It will result in an error if it conflicts with the
+                      deployment methods the kit does support, or if the kit is
+                      not compatible with v2.8.0 (ie earlier kits)
+                      It does not have to be specified if the kit only supports
+                      one deployment method.
+
   -k, --kit           Name (and optionally, version) of the Genesis Kit to
                       use for this environment.  I.e.: shield/6.3.0
                       Defaults to latest.  This kit must be locally present (see
@@ -1499,6 +1507,7 @@ sub {
 		credhub-env=s
 		root-ca-path=s
 		kit|k=s
+		create-env!
 	/);
 	usage(1) if @_ != 1;
 	warn "The --no-secrets flag is deprecated, and no longer honored.\n"
