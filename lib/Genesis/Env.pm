@@ -828,7 +828,8 @@ sub get_environment_variables {
 	                            ($is_alt_path ? sprintf(" -C '%s'", humanize_path($self->path)) : "");
 
 	# Require from the main module
-	my @known_cmds = keys(%::GENESIS_COMMANDS) || ();
+	%::GENESIS_COMMANDS = () unless keys(%::GENESIS_COMMANDS);
+	my @known_cmds = keys(%::GENESIS_COMMANDS);
 
 	my $env_ref = $self->name;
 	$env_ref .= '.yml' if (grep {$_ eq $self->name} @known_cmds);
