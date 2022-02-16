@@ -173,6 +173,7 @@ sub secret_line_prompt_handler {
 	}
 	my ($path, $key) = split /:/, $secret;
 	bail("No vault selected!") unless $vault;
+	print "\n";
 	$vault->query(
 		{ interactive => 1, onfailure => "Failed to save data to #C{$secret} in vault" },
 		'prompt', $prompt, '--', ($opts{echo} ? "ask" : "set"), $path, $key);
@@ -194,6 +195,7 @@ sub secret_block_prompt_handler {
 	}
 	my ($path, $key) = split /:/, $secret;
 	bail("No vault selected!") unless $vault;
+	print "\n";
 	$vault->query(
 		{ onfailure => "Failed to save data to #C{$secret} in vault" },
 		'set', $path, sprintf('%s@%s', $key, $file)
