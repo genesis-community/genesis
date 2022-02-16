@@ -34,6 +34,7 @@ chomp(my $sha1 = qx(git rev-parse HEAD));
 $sha1 = substr($sha1, 0, 10);
 
 if ($VERSION) {
+	$VERSION =~ s/^v//i;
 	$stub_out .= $VERSION;
 } else {
 	$VERSION = '2.x.x-dev';
@@ -122,7 +123,7 @@ use FindBin;
 
 # Genesis Extraction and Execution Stub Engine (GEESE)
 #
-# This perl script contains the entire runtime environment needed to execute 
+# This perl script contains the entire runtime environment needed to execute
 # Genesis.  It unpacks the compressed contents into your ~/.geese/ directory
 # then passes execution to the ~/.geese/genesis Perl script that was
 # extracted, using the libraries located in ~/.geese/lib.
