@@ -680,7 +680,11 @@ sub options {
 				unless command_scope($options,'env');
 			unshift(@$args, basename($cwd));
 			$cwd = dirname($cwd);
+		} elsif ($COMMAND eq 'new' && $cwd =~ /\.yml$/) {
+			unshift(@$args, basename($cwd));
+			$cwd = dirname($cwd);
 		}
+
 		chdir_or_fail($cwd);
 	}
 	if ($options->{'cloud-config'}) {
@@ -3497,7 +3501,7 @@ sub main {
 				# argument matches a command (or alias) -- assume its a command
 				$cmd = $arg;
 			} else {
-				if ($arg =~ /\.yml/ || -f $arg.'.yml') {
+				if ($arg =~ /\.yml/ || -f $arg.'.yml' || $_[0] eq 'new') {
 					bail(
 						"#R{[ERROR]} Cannot specify both -C and explicit file before the Genesis subcommand\n"
 					) if ($ENV{GENESIS_PREFIX_TYPE} eq 'option_c');
@@ -3507,12 +3511,14 @@ sub main {
 
 					if ($arg =~ /\.yml/) { # explicit file
 						bail("#R{[ERROR]} Explicit environment file specified, but does not exist.\n")
-							unless -f $arg;
+							unless -f $arg || $_[0] eq 'new';
 						$ENV{GENESIS_PREFIX_TYPE} = 'explicit_file';
 						$path = $arg;
-					} elsif (-f $arg.".yml") {
+					} elsif (-f $arg.".yml" || $_[0] eq 'new') {
 						$ENV{GENESIS_PREFIX_TYPE} = 'file';
 						$path = $arg.".yml";
+					} else {
+						usage(2, "#R{[ERROR]} Unrecognized command, path or file '$arg'", "help");
 					}
 				} else {
 					usage(2, "#R{[ERROR]} Unrecognized command, path or file '$arg'", "help");
