@@ -32,11 +32,11 @@ sub new {
 	$opts{file} = "$opts{name}.yml";
 
 	# environment names must be valid.
-	eval { $class->_validate_env_name($opts{name}) }
-		or die "Bad environment name '$opts{name}': $@\n";
+	my $err = _env_name_errors($opts{name});
+	bail("#R{[ERROR]} Bad environment name '$opts{name}': %s", $err) if $err;
 
 	# make sure .genesis is good to go
-	die "No deployment type specified in .genesis/config!\n"
+	bail("#R{[ERROR]} No deployment type specified in .genesis/config!\n")
 		unless $opts{top}->type;
 
 	$opts{__tmp} = workdir;
@@ -369,13 +369,15 @@ sub create {
 # }}}
 # exists - returns true if the given environment exists {{{
 sub exists {
-	my $ref = shift;
+	my ($ref,%args) = @_;
 	unless (ref($ref)) {
 		# called on the class, need a instance
-		eval{ $ref = $ref->new(@_) };
+		return undef if _env_name_errors($args{name});
+		eval{ $ref = $ref->new(%args) };
+		bug ("Failed to check existence of Genesis Environment: %s", $@) if $@;
 		return undef unless $ref;
 	}
-	return -f $ref->path("$ref->{file}");
+	return -f $ref->path($ref->{file});
 }
 
 #}}}
@@ -383,29 +385,35 @@ sub exists {
 
 ### Private Class Methods {{{
 
-# _validate_env_name - ensure name is valid {{{
-sub _validate_env_name {
-	my ($class, $name) = @_;
+# _env_name_errors - ensure name is valid {{{
+sub _env_name_errors {
+	my ($name) = @_;
 
-	die "names must not be empty.\n"
+	my @errors = ();
+
+	bug("Environment name expected to be a string, got a ", ref($name) || 'undefined value')
+		if !defined($name) || ref($name);
+
+	push(@errors,"names must not be empty.\n")
 		if !$name;
 
-	die "names must not contain whitespace.\n"
+	push(@errors,"names must not contain whitespace.\n")
 		if $name =~ m/\s/;
 
-	die "names can only contain lowercase letters, numbers, and hyphens.\n"
+	push(@errors,"names can only contain lowercase letters, numbers, and hyphens.\n")
 		if $name !~ m/^[a-z0-9_-]+$/;
 
-	die "names must start with a (lowercase) letter.\n"
+	push(@errors,"names must start with a (lowercase) letter.\n")
 		if $name !~ m/^[a-z]/;
 
-	die "names must not end with a hyphen.\n"
+	push(@errors,"names must not end with a hyphen.\n")
 		if $name =~ m/-$/;
 
-	die "names must not contain sequential hyphens (i.e. '--').\n"
+	push(@errors,"names must not contain sequential hyphens (i.e. '--').\n")
 		if $name =~ m/--/;
 
-	1; # name is valid
+	return '' unless scalar(@errors);
+	return join("\n  - ", '', @errors);
 }
 
 # }}}

@@ -8,6 +8,7 @@ use lib 't';
 use helper;
 use Test::Exception;
 use Test::Deep;
+use Test::More;
 use Test::Output;
 use Test::Differences;
 use Cwd qw/cwd abs_path/;
@@ -34,32 +35,49 @@ subtest 'new() validation' => sub {
 };
 
 subtest 'name validation' => sub {
-	lives_ok { Genesis::Env->_validate_env_name("my-new-env"); }
-		"my-new-env is a good enough name";
 
-	quietly { throws_ok { Genesis::Env->_validate_env_name(""); }
-		qr/must not be empty/i;
-	};
+	is(
+		Genesis::Env::_env_name_errors("my-new-env"),
+		'',
+		"my-new-env is a good enough name"
+	);
 
-	quietly { throws_ok { Genesis::Env->_validate_env_name("my\tnew env\n"); }
-		qr/must not contain whitespace/i;
-	};
+	like(
+		Genesis::Env::_env_name_errors(""),
+		qr/must not be empty/i,
+		'environment name cannot be empty'
+	);
 
-	quietly { throws_ok { Genesis::Env->_validate_env_name("my-new-!@#%ing-env"); }
-		qr/can only contain lowercase letters, numbers, and hyphens/i;
-	};
 
-	quietly { throws_ok { Genesis::Env->_validate_env_name("-my-new-env"); }
-		qr/must start with a .*letter/i;
-	};
+	like(
+		Genesis::Env::_env_name_errors("my\tnew env\n"),
+		qr/must not contain whitespace/i,
+		'environment name cannot contain whitespaces'
+	);
 
-	quietly { throws_ok { Genesis::Env->_validate_env_name("my-new-env-"); }
-		qr/must not end with a hyphen/i;
-	};
+	like(
+		Genesis::Env::_env_name_errors("my-new-!@#%ing-env"),
+		qr/can only contain lowercase letters, numbers, and hyphens/i,
+		'environment name cannot contain invalid characters'
+	);
 
-	quietly { throws_ok { Genesis::Env->_validate_env_name("my--new--env"); }
-		qr/must not contain sequential hyphens/i;
-	};
+	like(
+		Genesis::Env::_env_name_errors("-my-new-env"),
+		qr/must start with a .*letter/i,
+		'environment name must start with a letter'
+	);
+
+	like(
+		Genesis::Env::_env_name_errors("my-new-env-"),
+		qr/must not end with a hyphen/i,
+		'environment name cannot end with a hyphen'
+	);
+
+	like(
+		Genesis::Env::_env_name_errors("my--new--env"),
+		qr/must not contain sequential hyphens/i,
+		'environment name cannot contain sequential hyphens'
+	);
 
 	for my $ok (qw(
 		env1
@@ -67,7 +85,11 @@ subtest 'name validation' => sub {
 		this-is-a-really-long-hyphenated-name-oh-god-why-would-you-do-this-to-yourself
 		company-us_east_1-prod
 	)) {
-		lives_ok { Genesis::Env->_validate_env_name($ok); } "$ok is a valid env name";
+		is(
+			Genesis::Env::_env_name_errors($ok),
+			'',
+			"$ok is a valid env name"
+		);
 	}
 };
 
