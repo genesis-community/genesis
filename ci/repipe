@@ -22,11 +22,12 @@ usage() {
 
 [1${c}m${msg}[0m
 
-USAGE: repipe [-n|-P]
+USAGE: repipe [-n|-P] [--fly <path/to/fly>]
 
 OPTIONS:
-  -n   No change, just a dry-run that outputs to stdout
-  -P   Will pause the pipeline after uploading it (default is to unpause)
+  -n         No change, just a dry-run that outputs to stdout
+  -P         Will pause the pipeline after uploading it (default is to unpause)
+  --fly <x>  Path to fly command, otherwise will use $(type -p fly)
 
 EOF
   exit $rc
@@ -36,7 +37,7 @@ need_command() {
   local cmd=${1:?need_command() - no command name given}
   local url=${2:-}
 
-  if [[ ! -x "$(command -v "$cmd")" ]]; then
+  if [[ ! -x "$(type -p "$cmd")" ]]; then
     echo >&2 "${cmd} is not installed."
     if [[ -n "$url" ]]; then
       echo >&2 "Please download it from ${url}"
@@ -47,8 +48,17 @@ need_command() {
 
 PAUSE="unpause"
 DRYRUN=""
+fly=""
 while [[ -n "${1:-""}" ]] ; do
   case "${1:-""}" in
+    --fly)
+        fly=$2;
+        if [[ ! -x "$fly" ]] ; then
+          echo >&2 "File '$fly' does not seem to be executable.  Cannot use it as 'fly'"
+          exit 1
+        fi
+        fly="$(realpath "$fly")"
+        shift 2 ;;
     -P) PAUSE="pause" ; shift ;;
     -n) DRYRUN="1"; shift ;;
     -h) usage; exit 0;;
@@ -62,7 +72,11 @@ cd "$GENESIS_CI_DIR"
 echo >&2 "Working in $(pwd)"
 need_command spruce "https://github.com/geofffranks/spruce/releases"
 need_command jq
-need_command fly
+
+if [[ -z "$fly" ]] ; then
+  need_command fly;
+  fly="$(type -p fly)"
+fi
 
 # Allow for target-specific settings
 settings_file="settings.yml"
@@ -114,6 +128,6 @@ if [[ ${EXPOSED} == "true" ]]; then
 fi
 
 set +x
-fly --target "${TARGET}" set-pipeline         --pipeline "${PIPELINE}" --config .deploy.yml
-fly --target "${TARGET}" "${PAUSE}-pipeline"  --pipeline "${PIPELINE}"
-fly --target "${TARGET}" "${EXPOSE}-pipeline" --pipeline "${PIPELINE}"
+$fly --target "${TARGET}" set-pipeline         --pipeline "${PIPELINE}" --config .deploy.yml
+$fly --target "${TARGET}" "${PAUSE}-pipeline"  --pipeline "${PIPELINE}"
+$fly --target "${TARGET}" "${EXPOSE}-pipeline" --pipeline "${PIPELINE}"
