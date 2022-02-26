@@ -2,8 +2,8 @@
 meta:
   name:    genesis
   release: Genesis
-  target:  genesis@pipes
-  url:     https://pipes.starkandwayne.com
+  target:  cloudpipes/genesis
+  url:     https://cloudpipes.starkandwayne.com
 
   # we build our own image in this pipeline, and
   # use it, instead of standard concourse images.
