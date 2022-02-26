@@ -2768,7 +2768,7 @@ sub {
 
 command("lookup", {scope => ['env', ['exodus-for' => 'repo']]}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE genesis lookup [--merged|--deployed|--exodus|--exodus-for env/type] env-name key [default-value|--defined]
+USAGE genesis lookup [--merged|--deployed|--env|--exodus|--exodus-for env/type] env-name key [default-value|--defined]
 
 Looks up data from the environment file (or alterative source: see options below)
 If the key is empty string, it will return all data from the source.
@@ -2780,6 +2780,7 @@ OPTIONS
       --exodus        Lookup data from the genesis exodus data for the last deployment.
       --exodus-for    Lookup data from the genesis exodus data for a different enviroment.
                       Takes an argument of the form "env-name/deployment-type"
+      --env           Lookup environment variables used by Genesis for the given environment.
       --defined       Exit with 0 if key defined in specified source, 9 otherwise.  No
                       output is produced, making it useful in 'if lookup ... ; then'
 
@@ -2792,6 +2793,7 @@ sub {
 		exodus-for=s
 		deployed
 		merged
+		env
 		partial
 		defined|defines
 	/);
@@ -2799,7 +2801,7 @@ sub {
 	check_prereqs;
 	$options{exodus} = 1 if $options{'exodus-for'};
 	usage(1,"#R{[ERROR]} Can only specify one of --merged, --partial, --deployed, or --exodus(-for)")
-		if ((grep {$_ =~ /^(exodus|deployed|partial|merged)$/} keys(%options)) > 1);
+		if ((grep {$_ =~ /^(exodus|deployed|partial|merged|env)$/} keys(%options)) > 1);
 
 	my ($name, $key, $default) = @_;
 	# Legacy support -- previous versions used key/name order
@@ -2828,6 +2830,14 @@ sub {
 		$v = $env->last_deployed_lookup($key,$default);
 	} elsif ($options{exodus}) {
 		$v = $env->exodus_lookup($key,$default,$options{'exodus-for'})
+	} elsif ($options{env}) {
+		my %envvars = $env->get_environment_variables();
+		$key =~ s/^\.//;
+		if ($key) {
+			$v = exists($envvars{$key}) ? $envvars{$key} : $default;
+		} else {
+			$v = \%envvars;
+		}
 	} else {
 		$v = $env->lookup($key, $default);
 	}
