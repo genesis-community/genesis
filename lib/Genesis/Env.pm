@@ -1328,7 +1328,7 @@ sub shell {
 		$self->connect_required_endpoints(@config_hooks);
 		$self->download_required_configs(@config_hooks);
 	}
-	explain "#Y{Started shell environment for }#C{%s}#Y{:}", $self->name;
+	explain STDERR "#Y{Started shell environment for }#C{%s}#Y{:}", $self->name;
 	return $self->kit->run_hook('shell', %opts, env => $self);
 }
 

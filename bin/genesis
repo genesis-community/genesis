@@ -3447,6 +3447,8 @@ OPTIONS
 $GLOBAL_USAGE
 
   -s, --shell <shell>  Use the provided shell (default: /bin/bash)
+      --no-bosh        Don't connect to bosh
+      --no-vault       Don't connect to vault
   -h, --hook <hook>    Pretend to be the specified hook for generating script
                        environment
 
@@ -3456,10 +3458,14 @@ sub {
 	my %options = (redact => ! -t STDOUT);
 	options(\@_, \%options, qw/
 		shell|s=s
+		no-bosh
+		no-vault
 		hook|h=s
 	/);
 	usage(1) if @_ != 1;
-	my $env = Genesis::Top->new('.')->load_env($_[0])->with_bosh()->with_vault();
+	my $env = Genesis::Top->new('.')->load_env($_[0]);
+	$env->with_bosh() unless $options{'no-bosh'};
+	$env->with_vault() unless $options{'no-vault'};
 	$env->shell(%options);
 });
 
