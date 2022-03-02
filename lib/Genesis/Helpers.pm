@@ -622,7 +622,11 @@ export -f param_comment
 # Helper to inject new Genesis configuration (v2.6.13+)
 genesis_config_block() {
 	config_block="$(
-if [[ "${BOSH_ALIAS:-}" != "${GENESIS_ENVIRONMENT:-}" && -n "${BOSH_ALIAS:-}" ]] ; then
+	if [[ "${GENESIS_USE_CREATE_ENV:-}" == '1' ]] ; then
+		cat <<EOF
+  bosh_env:       ((prune))
+EOF
+	elif [[ "${BOSH_ALIAS:-}" != "${GENESIS_ENVIRONMENT:-}" && -n "${BOSH_ALIAS:-}" ]] ; then
 		cat <<EOF
   bosh_env:       $BOSH_ALIAS
 EOF
