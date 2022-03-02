@@ -900,6 +900,9 @@ sub get_environment_variables {
 	# BOSH support
 	if ($self->use_create_env) {
 		$env{GENESIS_USE_CREATE_ENV} = 1;
+		for my $bosh_env (qw/ALIAS ENVIRONMENT CA_CERT CLIENT CLIENT_SECRET DEPLOYMENT/) {
+			$env{"BOSH_$bosh_env"}=undef; # clear out any bosh variables
+		}
 	} else {
 		$env{BOSH_ALIAS} = $self->bosh_env;
 		if ($self->{__bosh} || grep {$_ eq 'bosh'} ($self->kit->required_connectivity($hook))) {

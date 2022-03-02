@@ -667,7 +667,7 @@ sub options {
 	$ENV{TRACE}          = 'y' if $trace > 2;
 
 	$ENV{GENESIS_BOSH_ENVIRONMENT} = delete($options->{'bosh-env'}) if $options->{'bosh-env'};
-	$ENV{GENESIS_BOSH_ENVIRONMENT} ||= $ENV{BOSH_ALIAS} || '';
+	$ENV{GENESIS_BOSH_ENVIRONMENT} ||= '';
 
 	if ($options->{cwd}) {
 		my $requested_cwd = delete($options->{cwd});
