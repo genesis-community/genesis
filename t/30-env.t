@@ -1607,7 +1607,13 @@ EOF
 		GENESIS_VAULT_PREFIX => "base/extended/thing",
 		GENESIS_VERIFY_VAULT => "1",
 		SAFE_TARGET => re('http://127.0.0.1:82\d\d'),
-		GENESIS_ENVIRONMENT_PARAMS => re('^{.*}$')
+		GENESIS_ENVIRONMENT_PARAMS => re('^{.*}$'),
+		BOSH_ALIAS => undef,
+		BOSH_CA_CERT => undef,
+		BOSH_CLIENT => undef,
+		BOSH_CLIENT_SECRET => undef,
+		BOSH_DEPLOYMENT => undef,
+		BOSH_ENVIRONMENT => undef
 	}, "environment provides the correct environment variables and values");
 
 	# Remove env files
