@@ -71,7 +71,7 @@ if [[ "$header" =~ $re ]] ; then
 	cat "${RELEASE_NOTES_PATH}"
 	cp "${RELEASE_NOTES_PATH}" "$RELEASE_ROOT/notes.md"
 else
-	echo "Failed to find release notes for v$VERSION in $RELEASE_NOTES_PATH.	Found this instead:"
+	echo "Failed to find release notes for v$VERSION in $RELEASE_NOTES_PATH.  Found this instead:"
 	echo
 	echo "$header"
 	cat "${RELEASE_NOTES_PATH}"
