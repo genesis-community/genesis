@@ -981,12 +981,14 @@ sub {
 # genesis update - update the current version of Genesis {{{
 command("update", {alias => 'upgrade'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
-USAGE: genesis update [-c|--check] [-v|--version VERSION] [-d|--details] [-f|--force]
+USAGE: genesis update [-c|--check] [-p|--pre] [-v|--version VERSION] [-d|--details] [-f|--force]
 
 OPTIONS
 $BASE_USAGE
   -c, --check       Check if a newer version (or the specified version) is
                     available.
+
+  -p, --pre         Include prereleases when searching for available updates.
 
   -v, --version <x> Install the specified version instead of the latest
 
@@ -1003,6 +1005,7 @@ sub {
 	options(\@_, \%options, qw/
 		BASE_USAGE
 		check|c
+		pre|p
 		version|v=s
 		details|d
 		force|f
@@ -1026,7 +1029,7 @@ sub {
 			$label = csprintf("Version #C{v%s}",$options{version});
 		}
 	} else {
-		@versions = grep {by_semver($_->{version}, $Genesis::VERSION) == 1} $gh->versions('genesis');
+		@versions = grep {by_semver($_->{version}, $Genesis::VERSION) == 1} $gh->versions('genesis', include_prereleases => $options{pre});
 		shift @versions while (@versions && ! defined($versions[0]->{url}));
 		if (@versions) {
 			$label = csprintf("A newer version (#C{v%s})", $versions[0]->{version});
