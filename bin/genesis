@@ -2402,7 +2402,7 @@ sub {
 
 	my $file = $_[0];
 	my $label = $file;
-	if (Genesis::Env->exists(name => $file, top => $top)) {
+	if ($file ne 'latest' && Genesis::Env->exists(name => $file, top => $top)) {
 		my $env = $top->load_env($file) or bail(
 			"#R{[ERROR]} #C{%s} should be an environment YAML file, but could not be loaded",
 			humanize_path($file)
@@ -2415,9 +2415,39 @@ sub {
 		$file = $env->kit->id;
 		$label = $file;
 	}
-	if (! -f $file) {
-		(my $stem = $file) =~ s|/|-|;
-		$file = $top->path(".genesis/kits/$stem.tar.gz");
+	if ($file eq 'latest' || ! -f $file) {
+		(my $stem = $file) =~ s|/v?|-|;
+		my $maybe_file = $top->path(".genesis/kits/$stem.tar.gz");
+		if ( -f $maybe_file ) {
+			$file = $maybe_file;
+		} elsif ($file !~ /\//) {
+			# figure out what they meant...
+			my $local_kits = $top->local_kits();
+			my $possible_name = $file;
+			(my $possible_version = $file) =~ s/^v//;
+			my @known_names = keys(%{$local_kits});
+			if (grep {$_ eq $possible_name} @known_names) {
+				# matches name; use latest version
+				my $version = (reverse sort by_semver keys(%{$local_kits->{$possible_name}}))[0];
+				$file = $top->path(".genesis/kits/${possible_name}-${version}.tar.gz");
+				$label = "$possible_name/$version (latest)" if -f $file;
+			} else {
+				my @possible_files = ();
+				for my $known_name (@known_names) {
+					$possible_version = (reverse sort by_semver keys(%{$local_kits->{$known_name}}))[0]
+						if $possible_name eq 'latest';
+					push(@possible_files, [$known_name, $possible_version, $top->path(".genesis/kits/${known_name}-${possible_version}.tar.gz")])
+						if $local_kits->{$known_name}{$possible_version};
+				}
+				@possible_files = grep {-f $_->[2]} @possible_files;
+				bail(
+					"#R{[ERROR]} There are multiple kits have the given version - please be explicit"
+				) if scalar(@possible_files) > 1;
+				$file = $possible_files[0][2];
+				$label = sprintf("%s/%s%s", $possible_files[0][0], $possible_files[0][1], $possible_name eq 'latest' ? " (latest)":'')
+					if -f $file;
+			}
+		}
 		bail("#R{[ERROR]} Unable to find Kit archive %s\n", $_[0]) if (! -f $file);
 	} else {
 		$label = humanize_path($file);
