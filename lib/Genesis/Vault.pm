@@ -1656,20 +1656,20 @@ sub _validate_ssh_secret {
 	my $values = $all_secrets->{$path};
 	my %results;
 
-	my ($rendered_public,$priv_rc) = run('ssh-keygen -y -f /dev/stdin <<<"$1"', $values->{private});
+	my ($rendered_public,$priv_rc) = run('mkfifo -m 600 ssh-genesis-fifo; echo "$1">ssh-genesis-fifo|ssh-keygen -y -f ssh-genesis-fifo; rm ssh-genesis-fifo', $values->{private});
 	$results{priv} = [
 		!$priv_rc,
 		"Valid private key"
 	];
 
-	my ($pub_sig,$pub_rc) = run('ssh-keygen -B -f /dev/stdin <<<"$1"', $values->{public});
+	my ($pub_sig,$pub_rc) = run('mkfifo -m 600 ssh-genesis-fifo; echo "$1">ssh-genesis-fifo|ssh-keygen -B -f ssh-genesis-fifo; rm ssh-genesis-fifo', $values->{public});
 	$results{pub} = [
 		!$pub_rc,
 		"Valid public key"
 	];
 
 	if (!$priv_rc) {
-		my ($rendered_sig,$rendered_rc) = run('ssh-keygen -B -f /dev/stdin <<<"$1"', $rendered_public);
+		my ($rendered_sig,$rendered_rc) = run('mkfifo -m 600 ssh-genesis-fifo; echo "$1">ssh-genesis-fifo|ssh-keygen -B -f ssh-genesis-fifo; rm ssh-genesis-fifo', $rendered_public);
 		$results{agree} = [
 			$rendered_sig eq $pub_sig,
 			"Public/Private key Agreement"
