@@ -139,7 +139,7 @@ sub attach {
 	($url, my @targets) = _get_targets($url);
 	if (scalar(@targets) <1) {
 		bail "#R{[ERROR]} Safe target for #M{%s} not found.  Please run\n\n".
-				 "  #C{safe target <name> \"%s\"%s\n\n".
+				 "  #C{safe target <name> \"%s\"%s}\n\n".
 				 "then authenticate against it using the correct auth method before\n".
 				 "re-attempting this command.",
 				 $url, $url,($insecure?" -k":"");
@@ -1655,21 +1655,25 @@ sub _validate_ssh_secret {
 	my ($path, $path_key, $plan, $all_secrets, $all_plans, $root_path) = @_;
 	my $values = $all_secrets->{$path};
 	my %results;
+	my $fifo_file="genesis-ssh-1.fifo";
 
-	my ($rendered_public,$priv_rc) = run('mkfifo -m 600 ssh-genesis-fifo; echo "$1">ssh-genesis-fifo|ssh-keygen -y -f ssh-genesis-fifo; rm ssh-genesis-fifo', $values->{private});
+	$fifo_file =~ s/-(\d+)\.fifo$/"-${\($1+1)}.fifo"/e while ( -e $fifo_file );
+	my ($rendered_public,$priv_rc) = run('mkfifo -m 600 "$2"; echo "$1">"$2"|ssh-keygen -y -f "$2"; rm "$2"', $values->{private}, $fifo_file);
 	$results{priv} = [
 		!$priv_rc,
 		"Valid private key"
 	];
 
-	my ($pub_sig,$pub_rc) = run('mkfifo -m 600 ssh-genesis-fifo; echo "$1">ssh-genesis-fifo|ssh-keygen -B -f ssh-genesis-fifo; rm ssh-genesis-fifo', $values->{public});
+	$fifo_file =~ s/-(\d+)\.fifo$/"-${\($1+1)}.fifo"/e while ( -e $fifo_file );
+	my ($pub_sig,$pub_rc) = run('mkfifo -m 600 "$2"; echo "$1">"$2"|ssh-keygen -B -f "$2"; rm "$2"', $values->{public}, $fifo_file);
 	$results{pub} = [
 		!$pub_rc,
 		"Valid public key"
 	];
 
 	if (!$priv_rc) {
-		my ($rendered_sig,$rendered_rc) = run('mkfifo -m 600 ssh-genesis-fifo; echo "$1">ssh-genesis-fifo|ssh-keygen -B -f ssh-genesis-fifo; rm ssh-genesis-fifo', $rendered_public);
+		$fifo_file =~ s/-(\d+)\.fifo$/"-${\($1+1)}.fifo"/e while ( -e $fifo_file );
+		my ($rendered_sig,$rendered_rc) = run('mkfifo -m 600 "$2"; echo "$1">"$2"|ssh-keygen -B -f "$2"; rm "$2"', $rendered_public, $fifo_file);
 		$results{agree} = [
 			$rendered_sig eq $pub_sig,
 			"Public/Private key Agreement"
