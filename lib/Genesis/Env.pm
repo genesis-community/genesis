@@ -1632,7 +1632,7 @@ sub deploy {
 		},
 		'rm',  $self->exodus_base, "-f",
 		  '--', 'set', $self->exodus_base,
-		               map { "$_=$exodus->{$_}" } keys %$exodus);
+		               map { "$_=$exodus->{$_}" } grep {defined($exodus->{$_})} keys %$exodus);
 
 	explain STDERR "\n[#M{%s}] #G{Done.}\n", $self->name;
 	return $ok;
@@ -1649,13 +1649,13 @@ sub exodus {
 	#interpolate bosh vars first
 	if ($vars_file) {
 		for my $key (keys %$exodus) {
-			if ($exodus->{$key} =~ /^\(\((.*)\)\)$/) {
+			if (defined($exodus->{$key}) && $exodus->{$key} =~ /^\(\((.*)\)\)$/) {
 				$exodus->{$key} = $self->manifest_lookup("bosh-variables.$1", $exodus->{$key});
 			}
 		}
 	}
 
-	my @int_keys = grep {$exodus->{$_} =~ /^\(\(.*\)\)$/} keys %$exodus;
+	my @int_keys = grep {$exodus->{$_} =~ /^\(\(.*\)\)$/} grep {defined($exodus->{$_})} keys %$exodus;
 	if ($self->kit->uses_credhub && @int_keys) {
 		# Get credhub info
 		my %credhub_env = $self->credhub_connection_env;
