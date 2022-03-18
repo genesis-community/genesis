@@ -508,6 +508,8 @@ sub run {
 	if (!$opts{interactive} && $opts{stderr}) {
 		$prog .= " 2>$opts{stderr}";
 	}
+	pushd($opts{dir}) if ($opts{dir});
+
 	$tracemsg .= csprintf("#M{From directory:} #C{%s}\n", Cwd::getcwd);
 	$tracemsg .= csprintf("#M{Executing:} `#C{%s}`%s", $prog, ($opts{interactive} ? " #Y{(interactively)}" : ''));
 	if (@args) {
@@ -552,6 +554,7 @@ sub run {
 		dump_var -1, run_stderr => $err if (defined($err));
 		trace("command exited #G{0}");
 	}
+	popd() if ($opts{dir});
 
 	return unless defined(wantarray);
 	return ($rc == 0) if $opts{passfail};

@@ -47,6 +47,7 @@ use FindBin;
 $ENV{GENESIS_CALLBACK_BIN} ||= $FindBin::Bin.'/'.$FindBin::Script;
 $ENV{GENESIS_LIB} ||= $FindBin::Bin.'/lib';
 $ENV{GENESIS_VERSION}=$Genesis::VERSION;
+$ENV{GENESIS_ORIGINATING_DIR}=Cwd::getcwd;
 our $CALL = join(" ", map {$_ =~ / / ? "\"$_\"" : $_} (humanize_bin, @ARGV));
 
 our %GENESIS_COMMANDS;
@@ -1815,7 +1816,7 @@ sub {
 		explain STDERR "Exported environmental variables for BOSH director %s", $bosh->{alias};
 		exit 0;
 	} else {
-		my (undef, $rc) = $bosh->execute({interactive => 1}, @args);
+		my (undef, $rc) = $bosh->execute({interactive => 1, dir => $ENV{GENESIS_ORIGINATING_DIR}}, @args);
 		exit $rc;
 	}
 });
