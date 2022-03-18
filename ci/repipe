@@ -180,27 +180,27 @@ echo >&2 "Using settings found in ${settings_file}"
 # --  Extract pipeline target information and compare -------------------------
 set -e
 trap "rm -f .deploy.yml" QUIT TERM EXIT INT
-spruce merge --fallback-append pipeline/base.yml pipeline/*/*.yml "${settings_file}" > .deploy.yml
-target=$(spruce json .deploy.yml | jq -r --arg t "${CONCOURSE_TARGET:-}" '.meta.target // $t')
+config="$(spruce merge --fallback-append pipeline/base.yml pipeline/*/*.yml "${settings_file}")"
+meta="$(spruce merge --skip-eval --cherry-pick meta <<<"$config" | spruce json)"
+spruce merge --skip-eval --prune meta <<<"$config" > .deploy.yml
+target=$(jq -r --arg t "${CONCOURSE_TARGET:-}" '.meta.target // $t' <<<"$meta")
 [[ -n "${target:-}" ]] || error "Settings file missing meta.target value"
 [[ -n "${CONCOURSE_TARGET:-}" && "$CONCOURSE_TARGET" != "$target" ]] && \
   error "Target '$target' from settings file conflicts with CONCOURSE_TARGET env var ('$CONCOURSE_TARGET')"
 
-pipeline_url="$(spruce json .deploy.yml | jq -r '.meta.url // ""')"
+pipeline_url="$(jq -r '.meta.url // ""' <<<"$meta")"
 target_url="$(spruce json ~/.flyrc | jq -r --arg t "$target" '.targets[$t].api')"
 [[ -n "${pipeline_url:-}" && "$pipeline_url" != "$target_url" ]] && \
   error "Target '$target' does not match the url specified in the pipeline: found '$target_url', got '$pipeline_url'"
 
-pipeline_team="$(spruce json .deploy.yml | jq -r '.meta.team // ""')"
+pipeline_team="$(jq -r '.meta.team // ""' <<<"$meta")"
 target_team="$(spruce json ~/.flyrc | jq -r --arg t "$target" '.targets[$t].team')"
 [[ -n "${pipeline_team:-}" && "$pipeline_team" != "$target_team" ]] && \
   error "Target '$target' does not match the team specified in the pipeline: found '$target_team', got '$pipeline_team'"
 
-pipeline=$(spruce json .deploy.yml | jq -r '.meta.pipeline // .meta.name')
+pipeline=$(jq -r '.meta.pipeline // .meta.name' <<<"$meta")
 [[ -z ${pipeline:-} ]] && error "Missing pipeline name in ci/settings.yml!"
 pipeline_url="$target_url/teams/$target_team/pipelines/$pipeline"
-
-
 
 # -- DO THE THINGS!!! ---------------------------------------------------------
 if (( OPEN >= 2 )) ; then
@@ -230,7 +230,7 @@ if (( VALIDATE > 0 )) ; then
   run_cmd "${cmd[@]}"
   exit 0
 else
-  [[ -z "$EXPOSE" ]] && EXPOSE=$(spruce json .deploy.yml | jq -r '.meta.exposed // false | if . then "expose" else "hide" end')
+  [[ -z "$EXPOSE" ]] && EXPOSE=$(jq -r '.meta.exposed // false | if . then "expose" else "hide" end' <<<"$meta")
   set_cmd=( "${cmd[@]}" set-pipeline --pipeline "${pipeline}" --config "${persistent_file:-".deploy.yml"}" )
   [[ -n "$YES" ]] && set_cmd+=( --non-interactive )
   preface_cmds upload
