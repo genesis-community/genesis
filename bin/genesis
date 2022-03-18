@@ -1701,7 +1701,7 @@ sub {
 		) if @bad_opts;
 	}
 
-	explain "Preparing to deploy #C{%s}:\n  - based on kit #c{%s}", $env->name, $env->kit->id;
+	explain "Preparing to deploy #C{%s}:\n  - based on kit #c{%s}\n  - using Genesis #c{%s}", $env->name, $env->kit->id, $Genesis::VERSION;
 	if ($env->use_create_env) {
 		explain "  - as a #M{create-env} deployment\n";
 	} else {
