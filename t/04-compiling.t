@@ -679,13 +679,13 @@ EOF
 
 unlink "$kitdir/hooks/new" if -f "$kitdir/hooks/new";
 put_file("$kitdir/hooks/new", <<EOF);
-#!/bin/bash
+#!/usr/bin/env bash
 set -ue
 echo "tada!"
 EOF
 
 put_file("$kitdir/hooks/blueprint", <<EOF);
-#!/bin/bash
+#!/usr/bin/env bash
 set -ue
 echo "something.yml"
 EOF
@@ -694,7 +694,7 @@ system("(cd $kitdir && git add hooks && git commit -m 'commited changes') >/dev/
 system("(cd $kitdir && git add ci && git rm -f hooks/blueprint) >/dev/null");
 
 put_file("$kitdir/hooks/check", <<EOF);
-#!/bin/bash
+#!/usr/bin/env bash
 set -ue
 exit 1
 EOF

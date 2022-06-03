@@ -349,7 +349,7 @@ DONE
 	mkdir_or_fail "$self->{root}/hooks";
 # hooks/new {{{
 	mkfile_or_fail "$self->{root}/hooks/new", <<DONE;
-#!/bin/bash
+#!/usr/bin/env bash
 shopt -s nullglob
 set -eu
 
@@ -381,7 +381,7 @@ DONE
 	chmod_or_fail 0755, "$self->{root}/hooks/new";
 # hooks/blueprint {{{
 	mkfile_or_fail "$self->{root}/hooks/blueprint", <<DONE;
-#!/bin/bash
+#!/usr/bin/env bash
 shopt -s nullglob
 set -eu
 

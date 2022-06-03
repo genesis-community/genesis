@@ -56,12 +56,12 @@ genesis() {
 export -f genesis
 
 describe() {
-  /usr/bin/perl -I$GENESIS_LIB -MGenesis -e 'binmode STDOUT, ":encoding(UTF-8)"; explain("%s",$_) for @ARGV' "$@"
+  /usr/bin/env perl -I$GENESIS_LIB -MGenesis -e 'binmode STDOUT, ":encoding(UTF-8)"; explain("%s",$_) for @ARGV' "$@"
 }
 export -f describe
 
 humanize_path() {
-  /usr/bin/perl -I$GENESIS_LIB -MGenesis -e 'binmode STDOUT, ":encoding(UTF-8)"; print humanize_path("$ARGV[0]")' "$1"
+  /usr/bin/env perl -I$GENESIS_LIB -MGenesis -e 'binmode STDOUT, ":encoding(UTF-8)"; print humanize_path("$ARGV[0]")' "$1"
 }
 export -f humanize_path
 
@@ -229,7 +229,7 @@ bosh() {
       }
       EOF
       )"
-      eval "$(/usr/bin/perl -I$GENESIS_LIB -MGenesis::BOSH::Director -e "$perl_script")"
+      eval "$(/usr/bin/env perl -I$GENESIS_LIB -MGenesis::BOSH::Director -e "$perl_script")"
     fi
     [[ -z "${BOSH_ENVIRONMENT:-}" || -z "${BOSH_CA_CERT:-}" ]] && \
       __bail "" "#R{[ERROR]} Environment not found for BOSH Director -- please ensure you've configured your BOSH alias used by this environment"
@@ -237,7 +237,7 @@ bosh() {
 
   if [[ -z "${GENESIS_BOSH_VERIFIED:-}" || "$GENESIS_BOSH_VERIFIED" != "${BOSH_ALIAS:-}" ]] ; then
     # Genesis has not yet validate the BOSH director's availability, so we need to
-    if /usr/bin/perl -I$GENESIS_LIB -MGenesis::BOSH::Director -e 'exit(Genesis::BOSH::Director->from_environment()->connect_and_validate()?0:1)' ; then
+    if /usr/bin/env perl -I$GENESIS_LIB -MGenesis::BOSH::Director -e 'exit(Genesis::BOSH::Director->from_environment()->connect_and_validate()?0:1)' ; then
       GENESIS_BOSH_VERIFIED="$BOSH_ALIAS"
     else
       __bail "" "#R{[ERROR]} Could not connect to BOSH director '#M{$BOSH_ALIAS}' (#M{$BOSH_ENVIRONMENT})"

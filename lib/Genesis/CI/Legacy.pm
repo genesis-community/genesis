@@ -1105,7 +1105,7 @@ EOF
     source:
       filename: run
       body: |
-        #!/bin/bash
+        #!/usr/bin/env bash
         mkdir -p email
         rm -rf email/*
         echo "X-Concourse-Site-Env: ${CI_SITE_ENV}" >>email/header

@@ -189,7 +189,7 @@ sub fake_bosh {
 EOF
     my $json_printout = join("\n", map {(my $l = $_) =~ s/'/'\\''/g; "    echo '$l'"} split("\n", $json));
     $script=<<EOF;
-#!/bin/bash
+#!/usr/bin/env bash
 args="\$(echo "bosh \$*" | sed -e 's/"/"\\""/g')"
 if [[ \$args =~ \\ --json(\\ |\$) ]] ; then
   (
@@ -326,7 +326,7 @@ sub write_bosh_config {
 					"-----END CERTIFICATE-----"
 			};
 			{
-				my @cmd = ('/bin/bash', "-c", 'echo "$1" | jq -r . | safe import 2>&1', 'bash', JSON::PP::encode_json($exodus));
+				my @cmd = ('/usr/bin/env bash', "-c", 'echo "$1" | jq -r . | safe import 2>&1', 'bash', JSON::PP::encode_json($exodus));
 				open my $pipe, "-|", @cmd;
 				$out = do { local $/; <$pipe> };
 				$out =~ s/\s+$//;

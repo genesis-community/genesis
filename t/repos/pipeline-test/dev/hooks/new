@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -eu
 
 cat > "$GENESIS_ROOT/$GENESIS_ENVIRONMENT.yml" <<EOF

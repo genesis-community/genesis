@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
 # vim:ft=perl:noet:ts=2:sts=2:sw=2:fdm=marker:fdl=0
 use strict;
 use warnings;
@@ -327,7 +327,7 @@ EOF
 	if ($ENV{GIT_USERNAME}) {
 		mkdir_or_fail( "$env_dir/home", 0700);
 		mkfile_or_fail("$env_dir/home/credential-helper.sh", 0755, <<'EOF');
-#!/bin/bash
+#!/usr/bin/env bash
 echo username=$GIT_USERNAME
 echo password=$GIT_PASSWORD
 EOF
@@ -448,7 +448,7 @@ sub check_prereqs {
 	my $bosh_min_version = "6.4.4";
 	my $reqs = [
 		# Name,     Version, Command,                                 Pattern                   Source
-		["perl",   "5.10.0", "/usr/bin/perl -v 2>/dev/null | head -n2 | grep version", qr/\(v([0-9\.]+)\)/],
+		["perl",   "5.10.0", "/usr/bin/env perl -v 2>/dev/null | head -n2 | grep version", qr/\(v([0-9\.]+)\)/],
 		["curl",   "7.30.0", "curl --version 2>/dev/null | head -n1",                  qr(^curl\s+(\S+))],
 		["git",     "1.8.0", "git --version  2>/dev/null",                             qr(.*version\s+(\S+).*)],
 		["jq",        "1.6", "jq --version   2>/dev/null",                             qr(^jq-([\.0-9]+)),       "https://stedolan.github.io/jq/download/"],
@@ -3142,7 +3142,7 @@ sub {
 	DumpYAML($vars_file,$vars);
 
 	mkfile_or_fail "dry-run.sh", 0755, <<'EOF';
-#!/bin/bash
+#!/usr/bin/env bash
 set -e
 deployment="${1}-${2}"
 new_manifest="$(cat ${3})"
@@ -3481,7 +3481,7 @@ USAGE: genesis env-shell <options> env-name[.yml]
 OPTIONS
 $GLOBAL_USAGE
 
-  -s, --shell <shell>  Use the provided shell (default: /bin/bash)
+  -s, --shell <shell>  Use the provided shell (default: /usr/bin/env bash)
       --no-bosh        Don't connect to bosh
       --no-vault       Don't connect to vault
   -h, --hook <hook>    Pretend to be the specified hook for generating script

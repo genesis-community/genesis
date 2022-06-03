@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # The point of this script is to exit 0 if all
 # required bits of functionality are present on

@@ -173,7 +173,7 @@ subtest 'embedding stuff' => sub {
 	my $tmp = workdir;
 	my $top = Genesis::Top->create($tmp, 'thing', vault=>$VAULT_URL);
 	put_file("$tmp/not-genesis", <<EOF);
-#!/bin/bash
+#!/usr/bin/env bash
 echo "this is not genesis"
 EOF
 	system("$tmp/not-genesis 2>/dev/null");

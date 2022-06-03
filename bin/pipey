@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #
 # pipey - a small proof-of-concept of pipeline caching
 # USAGE: ./pipey from-environment.yml to-environment.yml

@@ -547,7 +547,7 @@ genesis:
 EOF
 
 	put_file $fancy->path('hooks/blueprint'), <<EOF;
-#!/bin/bash
+#!/usr/bin/env bash
 set -eu
 
 validate_features always-first a-thing bob shazzam

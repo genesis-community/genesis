@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
 use strict;
 use warnings;
 use utf8;
@@ -27,7 +27,7 @@ subtest 'secrets-v2.7.0' => sub {
 	my $vault_target = vault_ok;
 	bosh2_cli_ok;
 	fake_bosh <<EOF;
-#/bin/bash
+#/usr/bin/env bash
 echo "test_user"
 EOF
 	my @directors = fake_bosh_directors('c-azure-us1-dev', 'c-azure-us1-prod');

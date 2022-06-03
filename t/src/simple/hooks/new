@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 root=$GENESIS_ROOT
 env=$GENESIS_ENVIRONMENT

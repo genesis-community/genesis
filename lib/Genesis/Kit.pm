@@ -137,7 +137,7 @@ sub run_hook {
 	if ($is_shell) {
 		@args = ();
 		$hook_exec =
-		$hook_name = $opts{shell} || '/bin/bash';
+		$hook_name = $opts{shell} || '/usr/bin/env bash';
 	} else {
 		$hook_exec = $self->path("hooks/$hook");
 		$hook_name = $hook;

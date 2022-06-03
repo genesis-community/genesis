@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 out="$GENESIS_ROOT/$GENESIS_ENVIRONMENT.yml"
 cat <<EOF > "$out"

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 if [[ ${HOOK_SHOULD_FAIL:-no} = "yes" ]]; then
 	set -u

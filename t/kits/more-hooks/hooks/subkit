@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # this hook is intentionally non-executable + a failure.
 # the test will run it, expect failure, chmod, run, expect more failure,

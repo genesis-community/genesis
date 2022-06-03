@@ -18,7 +18,7 @@ representing that environment.
 Let's look at a simple `new` hook:
 
 ```sh
-#!/bin/bash
+#!/usr/bin/env bash
 set -eu
 
 root=$1      # absolute path to deployments directory
@@ -58,7 +58,7 @@ TLS certificates to be used, instead of generated certs.
 Here's the first draft of the `new` hook, supporting the Vault HA:
 
 ```sh
-#!/bin/bash
+#!/usr/bin/env bash
 set -eu
 
 root=$1
