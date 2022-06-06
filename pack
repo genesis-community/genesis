@@ -9,7 +9,7 @@ use POSIX qw(strftime);
 
 ######################################################################
 
-system "perl -c -Ilib bin/genesis";
+system "perl -c -Ilib $(pwd)/bin/genesis";
 die "Perl compilation failed, not packing\n" if $?;
 
 # ---
