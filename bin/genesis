@@ -1658,6 +1658,9 @@ env environment.
       --max-in-flight #  Override the default number of maximum VMs in flight
                          per instance group.
 
+      --[no-]reactions   Determines if reactions specified in the environment
+                         file will be processed if present (default: yes)
+
 
 Can specify one of the follow three:
   -n, --dry-run          Build the manifest and validate it against the current
@@ -3031,7 +3034,7 @@ sub {
 	eval {
 		$result = $env->with_bosh
 		              ->download_required_configs('deploy')
-		              ->deploy(redact => !envset('CI_NO_REDACT'));
+		              ->deploy(redact => !envset('CI_NO_REDACT'), reactions => 1);
 	};
 
 	if ($@ || !$result) {
@@ -3256,6 +3259,7 @@ sub {
 	push(@cachables, "$common_path/kit-overrides.yml") if -f "$common_path/kit-overrides.yml";
 	copy_or_fail($_, "$target_dir/") for (@cachables);
 	copy_tree_or_fail("$common_path/ops", "$target_dir", "$common_path/") if -d "$common_path/ops";
+	copy_tree_or_fail("$common_path/bin", "$target_dir", "$common_path/") if -d "$common_path/bin";
 	return if envset("GENESIS_TESTING");
 	commit_changes($ENV{WORKING_DIR}, $ENV{OUT_DIR}, $ENV{GIT_BRANCH}, "generated cache for $ENV{CURRENT_ENV}");
 });

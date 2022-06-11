@@ -1,0 +1,10 @@
+---
+name:   reations
+author: Dennis Bell <dbell@starkandwayne.com>
+docs:   https://github.com/genesis-community/simple-genesis-kit
+code:   https://github.com/genesis-community/simple-genesis-kit
+
+genesis_version_min: 2.8.6-rc0
+
+description: |
+  This kit provides the kit to test pre and post reactions.

@@ -1554,14 +1554,31 @@ sub deploy {
 	explain STDERR "\n[#M{%s}] generating manifest...", $self->name;
 	$self->write_manifest("$self->{__tmp}/manifest.yml", redact => 0);
 
-	my ($ok, $predeploy_data);
+	my ($ok, $predeploy_data,$data_fn);
 	if ($self->has_hook('pre-deploy')) {
 		($ok, $predeploy_data) = $self->run_hook(
 			'pre-deploy',
-			manifest => "$self->{__tmp}/manifest.yml",
+			manifest  => $self->{__tmp}."/manifest.yml",
 			vars_file => $self->vars_file
 		);
 		die "Cannot continue with deployment!\n" unless $ok;
+		$data_fn = $self->tmppath("predeploy-data");
+		mkfile_or_fail($data_fn, $predeploy_data) if ($predeploy_data);
+	}
+
+	my $reaction_vars;
+
+	if ($self->_reactions) {
+		$self->_validate_reactions;
+		$reaction_vars = {
+			GENESIS_PREDEPLOY_DATAFILE => $data_fn,
+			GENESIS_MANIFEST_FILE => $self->{__tmp}."/manifest.yml",
+			GENESIS_BOSHVARS_FILE => $self->vars_file,
+			GENESIS_DEPLOY_OPTIONS => JSON::PP::encode_json(\%opts),
+			GENESIS_DEPLOY_DRYRUN => $opts{"dry-run"} ? "true" : "false"
+		};
+		$ok = $self->_process_reactions('pre-deploy', $reaction_vars);
+		bail( "#R{[ERROR]} Cannnot deploy: environment pre-deploy reaction failed!") unless $ok;
 	}
 
 	explain STDERR "\n[#M{%s}] all systems #G{ok}, initiating BOSH deploy...\n", $self->name;
@@ -1630,6 +1647,15 @@ sub deploy {
 		);
 	}
 
+	explain STDERR "\n[#M{%s}] #G{Deployment successful.}\n", $self->name if $ok;
+
+	if ($self->_reactions) {
+		$reaction_vars->{GENESIS_DEPLOY_RC} = ($ok ? 0 : 1);
+		$self->_process_reactions('post-deploy', $reaction_vars) or explain STDERR (
+			"#y{[WARNING]} Environment post-deploy reaction failed!  Manual intervention may be needed."
+		);
+	}
+
 	# Don't do post-deploy stuff if just doing a dry run
 	if ($opts{"dry-run"}) {
 		explain STDERR "\n[#M{%s}] dry-run deployment complete; post-deployment activities will be skipped.";
@@ -1657,7 +1683,7 @@ sub deploy {
 	return unless $ok;
 
 	# track exodus data in the vault
-	explain STDERR "\n[#M{%s}] #G{Deployment successful.}  Preparing metadata for export...", $self->name;
+	explain STDERR "\n[#M{%s}] Preparing metadata for export...", $self->name;
 	$self->vault->authenticate unless $self->vault->authenticated;
 	my $exodus = $self->exodus;
 
@@ -2262,6 +2288,93 @@ sub _unflatten {
 }
 
 # }}}
+
+# }}}
+# _reactions - list of reactions specified in the environment file. {{{
+sub _reactions {
+	return @{
+		$_[0]->_memoize(sub {
+				[sort keys (%{$_[0]->lookup("genesis.reactions",{})})]
+			})
+	};
+}
+
+# }}}
+# _validate_reactions - ensure user hasn't specified any in valid reation types {{{
+sub _validate_reactions {
+	my @valid_reactions = qw/pre-deploy post-deploy/;
+	my %reaction_validator; @reaction_validator{@valid_reactions} = ();
+	my @invalid_reactions = grep ! exists $reaction_validator{$_}, ( $_[0]->_reactions );
+	if (@invalid_reactions) {
+		bail "\n#R{[ERROR]} Unexpected reactions specified under #y{genesis.reactions}: #R{%s}\n".
+		     "        Valid values: #G{%s}",
+		     join(', ', @invalid_reactions), join(', ',@valid_reactions);
+	}
+	return;
+}
+
+# }}}
+# _process_reactions - handle the specified environment reaction scripts {{{
+sub _process_reactions {
+	my ($self, $reaction, $reaction_vars) = @_;
+	my $ok = 1;
+
+	if ($self->lookup("genesis.reactions.$reaction")) {
+		my %env_vars = $self->get_environment_variables('deploy');
+		my $actions = $self->lookup("genesis.reactions.$reaction");
+		explain STDERR '';
+		bail(
+			"#R{[ERROR]} Value of #C{genesis.reactions.%s} must be a list of one or more hashmaps",
+			$reaction
+		) if ref($actions) ne "ARRAY" || scalar(@{$actions}) == 0;
+
+		for my $action (@{$actions}) {
+			bail(
+				"#R{[ERROR]} Values in #C{genesis.reactions.i%s} list must be hashmaps",
+				$reaction
+			) if ref($action) ne "HASH";
+			my @action_type = grep {my $i = $_; grep {$_ eq $i} qw/script addon/} keys(%{$action});
+			bail(
+				"#R{[ERROR]} Values in #C{genesis.reactions.%s} must have one #C{script} or #C{addon} key",
+				$reaction
+			) unless scalar(@action_type) == 1;
+			my $script = $action->{$action_type[0]};
+			if ($action_type[0] eq "script") {
+				my @args = @{$action->{args}||[]};
+				my @cmd = ('bin/'.$action->{script}, @args);
+				explain STDERR "#M{[%s: }#mi{%s}#M{]} Running script \`#G{%s}\` with %s:\n",
+					$self->name, uc($reaction), $cmd[0], (
+						@args ? sprintf('arguments of [#C{%s}]', join(', ',map {"\"$_\""} @args)) : 'no arguments'
+					);
+				my ($out, $rc) = run({
+						dir => $env_vars{GENESIS_ROOT},
+						eval_var_args => 1,
+						interactive => 1,
+						env => {%env_vars,%{$reaction_vars}}
+					},
+					@cmd
+				);
+				$ok = $rc == 0;
+				if ($ok && defined($action->{var})) {
+					$reaction_vars->{$action->{var}} = $out;
+				}
+			} else {
+				bail(
+					"#R{Kit %s does not provide an addon hook!}",
+					$self->kit->id
+				) unless $self->has_hook('addon');
+
+				$self->download_required_configs('addon', "addon-$script");
+
+				explain STDERR "#M{[%s: }#mi{%s}#M{]} Running #G{%s} addon from kit #M{%s}:\n", $self->name, uc($reaction), $script, $self->kit->id;
+				$ok = $self->run_hook('addon', script => $script, args => $action->{args}, eval_var_args => 1, extra_vars => $reaction_vars);
+			}
+			explain STDERR '';
+			last unless $ok;
+		}
+	}
+	return $ok;
+}
 
 # }}}
 # }}}

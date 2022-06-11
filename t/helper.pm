@@ -56,6 +56,13 @@ sub import {
 	runs_ok("genesis ping") or die "`genesis ping` failed...\n";
 }
 
+sub reset_kit {
+	my $kit = shift;
+	$kit->{root} = undef;
+	$kit->{__hook_check} = undef;
+	$kit->{extract};
+}
+
 our $WORKDIR = undef;
 sub workdir {
 	$WORKDIR ||= tempdir(CLEANUP => 1);
@@ -74,7 +81,7 @@ sub mkdir_or_fail {
 	return $dir;
 }
 
-sub put_file($$) {
+sub put_file {
 	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($file, $mode, $contents) = @_;
 	if (! defined($contents)) {
