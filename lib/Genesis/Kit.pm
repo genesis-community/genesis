@@ -91,6 +91,16 @@ sub run_hook {
 		my %env_vars = $opts{env}->get_environment_variables($hook);
 		$ENV{$_} = $env_vars{$_} for (keys %env_vars);
 		trace ('got env info');
+		if ($opts{extra_vars}) {
+			trace ('got extra env info');
+			for (keys %{$opts{extra_vars}}) {
+				trace(
+					"Overwriting env var #M{%s} with #C{%s} (was #C{%s})",
+					$_, $opts{extra_vars}{$_}, $ENV{$_}
+				) if exists($ENV{$_});
+				$ENV{$_} = $opts{extra_vars}{$_}
+			}
+		}
 	} else {
 		bug("The 'env' option to run_hook is required for the '$hook' hook!!")
 			if (grep { $_ eq $hook } qw/new secrets info addon check blueprint pre-deploy post-deploy features/);
@@ -158,7 +168,7 @@ sub run_hook {
 	debug ("Running hook now in ".$self->path);
 	my $interactive = ($is_shell || scalar($hook =~ m/^(addon|new|info|check|secrets|post-deploy|pre-deploy)$/)) ? 1 : 0;
 	my ($out, $rc, $err) = run({
-			interactive => $interactive, stderr => undef
+			interactive => $interactive, stderr => undef, eval_var_args => $opts{eval_var_args}
 		},
 		'cd "$1"; source .helper; hook=$2; shift 2; $hook "$@"',
 		$self->path, $hook_exec, @args
