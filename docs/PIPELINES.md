@@ -1,6 +1,26 @@
 Pipelines
 =========
 
+- [Pipelines](#pipelines)
+  * [Propagation](#propagation)
+  * [Configuration](#configuration)
+    + [Schema](#schema)
+      - [Pipeline YAML Field Guide](#pipeline-yaml-field-guide)
+      - [Secrets](#secrets)
+      - [Git Integration](#git-integration)
+      - [Locker Integration](#locker-integration)
+      - [Auto-Update Genesis Assets](#auto-update-genesis-assets)
+      - [Notifications](#notifications)
+        * [Notification: Slack](#notification--slack)
+        * [Notification: Email](#notification--email)
+      - [BOSH Associations](#bosh-associations)
+      - [Task Configuration](#task-configuration)
+      - [Groups](#groups)
+      - [Pipeline Override Configuration](#pipeline-override-configuration)
+    + [Useful commands](#useful-commands)
+      - [Retrieve **bosh** configuration](#retrieve---bosh---configuration)
+      - [Retrieve **vault** configuration](#retrieve---vault---configuration)
+
 Concourse is an integral part of Genesis v2.  But rather than force operators
 to define the full structure of a Concourse deployment pipeline (which can get
 rather complex), we want to provide them a domain-specific language for
@@ -306,7 +326,7 @@ pipeline:
 #### Secrets
 
 - **pipeline.vault.url** - The URL of your Vault installation, i.e.
-  `https://vault.example.com`.  This is **required**.
+  `https://vault.example.com` or `https://10.4.1.7`.  This is **required**.
 
 - **pipeline.vault.role** - The AppRole GUID of a given Vault AppRole, used to
   generate temporary tokens for Vault-accessing during deploys. This field is
@@ -544,18 +564,69 @@ being deployed, or vice versa.
 
 If you need to edit and make changes to your deployment pipeline, simply add
 the changes you need to the bottom of your ci.yml located in your
-*-deployments repo. For example, if we have a pipeline we need to edit the
+*-deployments repo to be merged by spruce. 
+For example, if we have a pipeline we need to edit the
 'check_every:' parameter of a resource named git we can add the block below
-under our pipeline layouts:
+under our pipeline:
 
 **ci.yml**
 ```
-layouts:
-  test-sandbox-ops: |+
-    auto *test-sandbox *test-staging
-    test-sandbox -> test-staging
+  (...)
+  layouts:
+    test-sandbox-ops: |+
+      auto *test-sandbox *test-staging
+      test-sandbox -> test-staging
+
+  groups:
+    default:
+    - test-sandbox
+    - test-staging
 
 resources:
 - name: git
   check_every: 15m
 ```
+
+### Useful commands
+
+#### Retrieve **bosh** configuration
+In order to fill out the `pipeline.boshes.*` section first
+we need to know all of the informations.
+- get bosh url
+- get bosh username and password 
+- get bosh cert\
+All of those params are available under
+```bash
+cd my-bosh-deployment #[ex. deployments/bosh]
+genesis info [env]
+```
+`[env]` - name of the env/yaml file
+
+You should see that env `url` `username` `password` and `ca certificate`. Best approach is to put them into the Vault vs plaintext in `ci.yml`.\
+By convention they should be stored under something similar to:
+```bash
+secret/[env]/bosh/ssl/ca:certificate
+secret/[env]/bosh/users/[user]:password
+```
+Make sure crendtials are there before applying!
+
+#### Retrieve **vault** configuration
+To configure Vault access and:
+- get vault url
+- get vault role and secret
+```
+cd my-vault-deployment #[ex. deployments/vault]
+genesis info [env]
+```
+`[env]` - name of the env/yaml file
+
+If you don't have Vault installed via kit, try to get that information using `safe` CLI or `vault` CLI directly:
+```bash
+safe targets # shows all targets and `url`
+safe status # shows all servers under current target
+safe env # will get you url and `VAULT_TOKEN`
+```
+
+Once you get `VAULT_TOKEN` you can configure `approle` in it via API / `vault` CLI.\
+It is far more convenient to use the kit, but there is existing documentation from Vault how to proceed from that point:
+https://www.vaultproject.io/docs/auth/approle
