@@ -2194,7 +2194,8 @@ USAGE: genesis create-kit -d|--dev -n NAME [FEATURE ...]
 OPTIONS
 $GLOBAL_USAGE
   -d, --dev       create kit in ./dev directory instead of <name>-genesis-kit
-  -n, --name      Name of the kit archive.
+  -n, --name      Name of the kit archive. The suffix -genesis-kit will be
+                  appended to your <name> parameter.
 EOF
 sub {
 	my %options;

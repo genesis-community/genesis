@@ -334,7 +334,7 @@ update:
 
 stemcells:
   - alias:   default
-    os:      (( grab params.stemcell_os      || "ubuntu-trusty" ))
+    os:      (( grab params.stemcell_os      || "ubuntu-bionic" ))
     version: (( grab params.stemcell_version || "latest" ))
 
 releases:
