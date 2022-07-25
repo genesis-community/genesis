@@ -1,44 +1,204 @@
-Writing a `hooks/new` Kit Hook
-==============================
+# Writing a `hooks/new` Kit Hook
 
-Starting in Genesis v2.5.0, Kit authors have more control over the
-interaction with the user.  The `genesis new` interaction is a
-prime example.  Previously, Genesis drove the entire interaction,
+#### *NOTE:*
+> This document is meant to be maintained by documenting the latest genesis
+> codebase, which at the time of this last revision was 2.8.5. Important
+> information for older releases will be documented at the end of this document.
+
+Starting in *Genesis* v2.5.0, Kit authors have more control over the
+interactions with the user. The `genesis new` command is a
+prime example. Previously, *Genesis* drove the entire interaction
 based on a YAML-based set of questions specified in the `kit.yml`
-metadata file.  Now, we have `hooks/new`.
+metadata file.
 
-Jump to the bottom for additions as of v2.6.13
+This functionality now belongs to the ***new hook*** executable.
+The ***new hook*** can be written in any language, but
+the assumption is the code runs in a Unix/Linux-like environment.
+The *Genesis* convention is the ***new hook*** is written in *Bash*.
+The `genesis create-kit` command generates a skeleton ***new hook***
+*Bash* script and the `genesis new` command provides *Bash*
+helper functions to assist in writing the ***new hook*** script.
+The ***new hook*** is now required since *Genesis* 2.8.0.
 
-If it exists, the `new` hook is executed whenever an operator
-tries to configure a brand new Genesis environment via `genesis
-new`.  It is the hook's job to prompt the user for whatever
-information is needed, and create a well-formed YAML file
-representing that environment.
+## Features
+**TBD**
 
-Let's look at a simple `new` hook:
+### Parameters
+**TBD**
+
+### MANUAL.md file
+
+The interactions between *features* and their parameters can be confusing.
+It is required to document ***new hook*** potential behaviors in the
+**MANUAL.md** file including any environment or deployment nuances.
+It is recommended you write your "MANUAL.md" content first as your
+UI design guide for creating your ***new hook*** executable.
+Did I mention enough that you need to document the *features*,
+*parameters* and any nuances in the **`MANUAL.md`** file!.
+
+When the ***new hook***  executes, the operator
+is trying to configure a brand new *Genesis* environment via the `genesis
+new` command. It is the hook's job to prompt the user for whatever
+information is needed and create a well-formed environment deployment YAML file
+representing that environment's deployment.
+
+## Arguments Passed to the *New* Hook
+
+To provide an agnostic way to pass arguments
+to the ***new*** hook, environment variables are used.
+
+***TODO***: break into sections and add descriptions  
+***TODO***: Decide if we use a table or list or belongs in another file
+| Variable | Descriptions | Example |
+| -------- | ------------ | ------- |
+| BOSH_ALIAS | | "high-medium-low" |
+| GENESIS_BOSH_COMMAND | | "/opt/homebrew/bin/bosh" |
+| GENESIS_BOSH_ENVIRONMENT | | "" |
+| GENESIS_CALL | | "genesis" |
+| GENESIS_CALLBACK_BIN | | "/opt/homebrew/bin/genesis" |
+| GENESIS_CALLER_DIR | | "/Users/norm/Projects/concourse/junk/concourse-genesis-kit-deployments" |
+| GENESIS_CALL_BIN | | "genesis" |
+| GENESIS_CALL_FULL | | "genesis new 'high-medium-low'" |
+| GENESIS_CALL_PREFIX | | "genesis high-medium-low new" |
+| GENESIS_CI_BASE | | "/secret/ci/concourse-genesis-kit/high-medium-low/" |
+| GENESIS_CI_MOUNT | | "/secret/ci/" |
+| GENESIS_CI_MOUNT_OVERRIDE | | "" |
+| GENESIS_COMMAND | | "new" |
+| GENESIS_CREDHUB_EXODUS_SOURCE | | "high-medium-low/bosh" |
+| GENESIS_CREDHUB_EXODUS_SOURCE_OVERRIDE | | "" |
+| GENESIS_CREDHUB_ROOT | | "high-medium-low-bosh/high-medium-low-concourse-genesis-kit" |
+| GENESIS_ENVIRONMENT | | "high-medium-low" |
+| GENESIS_ENVIRONMENT_PARAMS | | "{\"genesis\":{\"env\":\"high-medium-low\",\"bosh_env\":\"high-medium-low\",\"use_create_env\":0}}" |
+| GENESIS_ENV_KIT_OVERRIDE_FILES | | "" |
+| GENESIS_EXODUS_BASE | | "/secret/exodus/high-medium-low/concourse-genesis-kit" |
+| GENESIS_EXODUS_MOUNT | | "/secret/exodus/" |
+| GENESIS_EXODUS_MOUNT_OVERRIDE | | "" |
+| GENESIS_HOME | | "/Users/norm" |
+| GENESIS_IS_HELPING_YOU | | "yes" |
+| GENESIS_KIT_HOOK | | "new" |
+| GENESIS_KIT_ID | | "concourse/3.13.0 (dev)" |
+| GENESIS_KIT_NAME | | "dev" |
+| GENESIS_KIT_VERSION | | "latest" |
+| GENESIS_LIB | | "/Users/norm/.geese/lib" |
+| GENESIS_MIN_VERSION | | "2.7.6" |
+| GENESIS_ORIGINATING_DIR | | "/Users/norm/Projects/concourse/junk/concourse-genesis-kit-deployments" |
+| GENESIS_PREFIX_TYPE | | "none" |
+| GENESIS_ROOT | absolute path to deployments directory | "/u/zed/Projects/concourse/junk/concourse-genesis-kit-deployments" |
+| GENESIS_ROOT_CA_PATH | | "" |
+| GENESIS_SECRETS_BASE | | "/secret/high/medium/low/concourse-genesis-kit/" |
+| GENESIS_SECRETS_MOUNT | | "/secret/" |
+| GENESIS_SECRETS_MOUNT_OVERRIDE | | "" |
+| GENESIS_SECRETS_PATH | | "high/medium/low/concourse-genesis-kit" |
+| GENESIS_SECRETS_SLUG | | "high/medium/low/concourse-genesis-kit" |
+| GENESIS_SECRETS_SLUG_OVERRIDE | | "" |
+| GENESIS_TARGET_VAULT | | "https://vault.lab.starkandwayne.com" |
+| GENESIS_TYPE | | "concourse-genesis-kit" |
+| GENESIS_VAULT_PREFIX | | "high/medium/low/concourse-genesis-kit" |
+| GENESIS_VERIFY_VAULT | | "" |
+| GENESIS_VERSION | | "2.8.5" |
+
+
+## A Simple ***New*** Hook Example
+
+Let's first look at a skeleton ***new*** hook created by `genesis create-kit`
+```sh
+#!/bin/bash
+shopt -s nullglob
+set -eu
+
+#
+# Genesis Kit `new' Hook
+#
+
+(
+cat <<EOF
+kit:
+  name:    $GENESIS_KIT_NAME
+  version: $GENESIS_KIT_VERSION
+  features:
+    - (( replace ))
+
+EOF
+
+genesis_config_block
+
+cat <<EOF
+params: {}
+EOF
+) >$GENESIS_ROOT/$GENESIS_ENVIRONMENT.yml
+
+exit 0
+```
+Things to note:
+- No questions, prompts, or explanations are required for your ***new hook***
+  executable.
+- Only the code for creating *Genesis* environment deployment YAML file is required
+- The usage of the `GENESIS_*` environment variables.
+- The *Genesis* environment deployment file consists of three sections.
+  - The kit section for general environmental information
+  - The *Genesis* configuration section contains your TBD
+  - The parameters section contains any deployment data.
+- The `Spruce` tool will be used to process all configuration deployment files
+  as implied by the syntax `(( replace ))`.
+- A *Bash* helper function is used to generate the *Genesis* configuration
+  section.
+- A subshell is being used to capture the output, so all the data is written to
+  `$GENESIS_ROOT/$GENESIS_ENVIRONMENT.yml`.
+
+You might think this ***new hook*** executable is not very useful, but it is
+exactly what is being used by the *Generic Genesis Kit*.
 
 ```sh
 #!/bin/bash
 set -eu
 
-root=$1      # absolute path to deployments directory
-name=$2      # name of the new environment
-prefix=$3    # vault prefix for storing secrets
+dir="$GENESIS_ROOT"
+name="$GENESIS_ENVIRONMENT"
 
-cat >$root/$name.yml <<EOF
+envfile="$dir/$name.yml"
+declare -a features
+features=()
+params=""
+
+describe "" \
+  "#G{Concourse CI/CD Genesis Kit}" \
+  "#G{---------------------------}" \
+  "" \
+  "Creating environment #C{$name} in #C{$dir}"
+
+root="$GENESIS_ROOT"
+name="GENESIS_ENVIRONMMENT
+vault_prefix="$GENESIS_SECRETS_PATH
+
+# Build environment file:
+cat >"$envfile" -- <<EOF
+---
 kit:
-  features: []
-
-params:
-  env:   $name
-  vault: $prefix
+  name:    $GENESIS_KIT_NAME
+  version: $GENESIS_KIT_VERSION
+  features:
+    - (( replace ))
 EOF
+for f in "${features[@]}" ; do
+  printf >>"$envfile" -- '    - %s\n' "$f"
+done
+
+genesis_config_block >>"$envfile"
+
+# Params
+if [[ -n "$params" ]] ; then
+  # shellcheck disable=2059 disable=2028
+  printf >>"$envfile" -- "$( echo "\nparams:\n$params" | sed -e 's/%/%%/g')"
+fi
+
+describe "" "Wrote configuration to #C{$envfile}." ""
+exit 0
 ```
 
 This hook is incredibly boring, but it illustrates two key
 points.
 
-First, the `new` hook receives three positional arguments: the
+First, the ***new*** hook is showing the common variables being used;: the
 absolute path to the deployments directory, the name of the new
 environment (hyphenated) and the slash-separated prefix to use by
 default in the Vault.
@@ -55,7 +215,7 @@ certificate, and provide two feature flags: one (called ha) to
 activate HA / clustering features, and another to enable custom
 TLS certificates to be used, instead of generated certs.
 
-Here's the first draft of the `new` hook, supporting the Vault HA:
+Here's the first draft of the ***new*** hook, supporting the Vault HA:
 
 ```sh
 #!/bin/bash
@@ -152,11 +312,11 @@ The Genesis `prompt_for` Helper
 -------------------------------
 
 Writing text-based UI widgets is kind of annoying, which is why
-Genesis provides hooks written in Bash with a set of helper
+Genesis provides hooks written in *Bash* with a set of helper
 functions.  Chief among those is `prompt_for`.
 
 `prompt_for` is the Swiss Army knife of asking questions in a
-`new` hook.  It can ask yes/no (boolean) questions.  It can ask
+***new*** hook.  It can ask yes/no (boolean) questions.  It can ask
 for a single string and validate it a variety of ways.  It can ask
 for lists of things, etc.
 
@@ -166,7 +326,7 @@ The basic usage of the helper function is
 prompt_for VARNAME type "Message to display to user" [OPTIONS]
 ```
 
-`VARNAME` is the name of a Bash variable, without the leading `$`
+`VARNAME` is the name of a `Bash variable`, without the leading `$`
 sigil, which will house the answer provided by the user.
 
 `type` identifies which type of prompt you want to display.  We'll
@@ -314,7 +474,7 @@ A More Full Example
 -------------------
 
 Now that we know all about `prompt_for`, let's add in the rest of
-our `new` hook, and ask the user if they want to supply their own
+our ***new*** hook, and ask the user if they want to supply their own
 certificate or not.
 
 We'll start with a boolean prompt, to see if they are interested.
@@ -405,7 +565,9 @@ Then we reference the Vault path in the final environment file:
 
 Easy, _and_ Secure!
 
-# Genesis v2.6.13 Additions
+# Previous Genesis Versions
+
+## Genesis New Hook Design Prior to v2.6.13
 
 Genesis v2.6.13 introduces many changes to kit authoring and the environment
 files that are generated.
@@ -414,7 +576,7 @@ files that are generated.
 
 ### Position Arguments
 
-The positional arguments to the `new` hook have been deprecated for any kit
+The positional arguments to the ***new*** hook have been deprecated for any kit
 that specifies a minimum genesis version of 2.6.13 or higher.  These
 positional arguments are defined as:
 
