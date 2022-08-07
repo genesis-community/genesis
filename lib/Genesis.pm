@@ -525,7 +525,8 @@ sub run {
 	if ($opts{interactive}) {
 		system @cmd;
 	} else {
-		open my $pipe, "-|", @cmd;
+		open my $pipe, "-|", @cmd
+		  or bail("Could not open pipe to run #C{%s}", join(' ',@cmd));
 		$out = do { local $/; <$pipe> };
 		$out =~ s/\s+$//;
 		close $pipe;
