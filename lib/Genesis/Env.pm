@@ -614,6 +614,31 @@ sub relate_by_name {
 }
 
 # }}}
+# format_yaml_files - return the list of all yaml files used to create the manifest {{{
+sub format_yaml_files {
+	my ($self, %options) = @_;
+	my $local_label = $options{'local-label'} || "./";
+	my $padding = $options{padding} || '';
+
+	my @files;
+	if ($options{'include-kit'}) {
+		my $kit_label   = $options{'kit-label'} || "#G{".$self->kit->id.":} ";
+		$local_label = sprintf("%*s", length($kit_label), "#C{local:} ");
+		my $env_path = $self->path();
+		for ($self->kit_files) {
+			if ($_ =~ qr/^$env_path\/(.*)$/) {
+				push @files, "$padding$local_label$1";
+			} else {
+				push @files, "$padding$kit_label#K{$_}";
+			}
+		}
+	}
+	push @files, map {(my $f = $_) =~ s/^\.\//$padding$local_label/; $f}
+		($self->actual_environment_files);
+	return @files;
+}
+
+# }}}
 # features - returns the list of features (specified and derived) {{{
 sub features {
 	my $ref = $_[0]->_memoize('__features', sub {
@@ -1444,10 +1469,22 @@ sub check {
 	}
 
 	if ($ok) {
+		if (envset("GENESIS_CHECK_YAML_ON_DEPLOY") || $opts{check_yamls}) {
+			if ($self->missing_required_configs('blueprint')) {
+				explain STDERR "\n[#M{%s}] #Y{Required BOSH configs not provided - can't check manifest viability}", $self->name;
+			} else {
+				explain STDERR "\n[#M{%s}] inspecting YAML files used to build manifest...", $self->name;
+				my @yaml_files = $self->format_yaml_files('include-kit' => 1, padding => '  ');
+				explain STDERR join("\n",@yaml_files);
+			}
+		}
+	}
+
+	if ($ok) {
 		if ($self->missing_required_configs('manifest')) {
-			explain STDERR "[#M{%s}] #Y{Required BOSH configs not provided - can't check manifest viability}", $self->name;
+			explain STDERR "\n[#M{%s}] #Y{Required BOSH configs not provided - can't check manifest viability}", $self->name;
 		} elsif (!exists($opts{check_manifest}) || $opts{check_manifest}) {
-			explain STDERR "[#M{%s}] running manifest viability checks...", $self->name;
+			explain STDERR "\n[#M{%s}] running manifest viability checks...", $self->name;
 			$self->manifest or $ok = 0;
 		}
 	}
