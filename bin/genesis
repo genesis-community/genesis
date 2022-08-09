@@ -1727,24 +1727,17 @@ director or deployment name.  The options below must come BEFORE any bosh
 command and options, or they will be passed through to the bosh cli.
 
 OPTIONS
-  -h, --help         Show this help screen.  If you want to get the help for
-                     bosh, specify `-- -h`
+$REPO_USAGE
+  -A, --as-director The specified environment is the desired BOSH director
+                    to target, and there is no associated deployment.
+                    Without this option, it will target the BOSH director
+                    used to deploy this environment, with the environment
+                    being the associated deployment.
 
-  -C, --cwd          Effective working directory.  You can also specify the
-                     environment YAML file to use, in which case the working
-                     directory is the one containing the specified file.
-                     Defaults to '.'
-
-  -A, --as-director  The specified environment is the desired BOSH director
-                     to target, and there is no associated deployment.
-                     Without this option, it will target the BOSH director
-                     used to deploy this environment, with the environment
-                     being the associated deployment.
-
-      --connect      Intended to run inside an #C{eval "\$(...)"} wrapper, this
-                     command will set the environment variables required to
-                     connect via the bosh cli, targeting the desired
-                     deployment and associated BOSH director.
+      --connect     Intended to run inside an #C{eval "\$(...)"} wrapper, this
+                    command will set the environment variables required to
+                    connect via the bosh cli, targeting the desired
+                    deployment and associated BOSH director.
 
 EOF
 sub {
@@ -1752,7 +1745,9 @@ sub {
 	my @args;
 	while (@_) {
 		my $entry = shift;
-		if ( $entry =~ /(--connect|--as-director|-A|--help|-h)/) {
+		if ( $entry =~ /^-[TSDhqA]+$/) {
+			push(@args, $entry);
+		} elsif ($entry =~ /^--(trace|show-stack|debug|help|color|no-color|quiet|connect|as-director)$/) {
 			push(@args, $entry);
 		} elsif ( $entry =~ /(--cwd|-C)/) {
 			push(@args, $entry, shift);
@@ -1762,11 +1757,9 @@ sub {
 		}
 	}
 	options(\@args, \%options, qw/
-		BLANK_USAGE
-		cwd|C=s
+		REPO_USAGE
 		as-director|A
 		connect
-		help|h
 	/);
 
 	usage unless @args;
