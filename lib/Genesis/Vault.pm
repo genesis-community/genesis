@@ -234,6 +234,24 @@ sub clear_all {
 	return $_[0]; # chaining Genesis::Vault
 }
 # }}}
+# find_single_match_or_bail - error out if there are duplicate vaults for a url {{{
+sub find_single_match_or_bail {
+
+	my ($class, $url, $current) = @_;
+	my @duplicates = map {
+		$_->name eq $current ? "#G{".$_->name." (current)}" : "#y{".$_->name."}"
+	} $class->find(url => $url);
+
+	bail(
+		"\n#R{[ERROR]} More than one target is specified for URL '%s'\n".
+		"        Please edit your ~/.saferc, and remove all but one of these:\n".
+		"        - %s\n".
+		"        (or alter the URLs to be unique)",
+		$url, join("\n        - ", @duplicates)
+	) if scalar(@duplicates) > 1;
+	return $duplicates[0]
+}
+# }}}
 # }}}
 
 ### Instance Methods {{{
@@ -339,7 +357,10 @@ sub query {
 	$opts->{env} ||= {};
 	$opts->{env}{DEBUG} = ""; # safe DEBUG is disruptive
 	$opts->{env}{SAFE_TARGET} = $self->ref unless defined($opts->{env}{SAFE_TARGET});
-	return run($opts, @cmd);
+	my ($out, $rc) = run($opts, @cmd);
+	Genesis::Vault->find_single_match_or_bail($self->url, $self->name)
+		if ($rc > 0 && $out =~ /^!!! More than one target for Vault at/);
+	return ($out, $rc)
 }
 
 # }}}

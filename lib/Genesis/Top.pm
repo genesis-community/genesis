@@ -28,14 +28,10 @@ sub new {
 	$ENV{GENESIS_ROOT}=$top->path();
 	my $vault;
 	if ($top->config->get("secrets_provider.url")) {
-		my @matches = Genesis::Vault->find(url=>$top->config->get("secrets_provider.url"));
-		bail(
-			"#R{[ERROR]} Cannot find unique vault configuration at #C{%s} in your .saferc",
-			$top->config->get("secrets_provider.url")
-		) if @matches > 1;
-		$vault = $matches[0];
+		$vault = Genesis::Vault->find_single_match_or_bail($top->config->get("secrets_provider.url"));
 	} else {
-		$vault = Genesis::Vault->default;
+		my $default = Genesis::Vault->default;
+		$vault = Genesis::Vault->find_single_match_or_bail($default->url, $default->name);
 	}
 	if ($vault) {
 		$ENV{GENESIS_TARGET_VAULT} = $ENV{SAFE_TARGET} = $vault->ref;
