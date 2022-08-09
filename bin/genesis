@@ -1315,11 +1315,11 @@ sub {
 
 	explain("${ui_nl}Secrets provider for #C{%s} deployment at #M{%s}:", $top->type, $top->path);
 	my %vault_info = $top->vault_status;
-	if ($vault_info{status} eq "unauthenticated") {
-		eval {$top->vault->authenticate}; # Try to auto-authenticate
-		%vault_info = $top->vault_status;
-	}
 	if (%vault_info) {
+		if ($vault_info{status} eq "unauthenticated") {
+			eval {$top->vault->authenticate}; # Try to auto-authenticate
+			%vault_info = $top->vault_status;
+		}
 		explain(
 			"         Type: #G{%s}\n".
 			"          URL: #G{%s} %s\n".
