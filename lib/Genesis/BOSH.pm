@@ -86,8 +86,8 @@ sub execute {
 	$env{$_} = $opts->{env}{$_} for (keys %{$opts->{env}||{}});
 	$opts->{env} = \%env;
 	unless ($ENV{GENESIS_HONOR_ENV}) {
-		$opts->{env}{HTTPS_PROXY} = ''; # bosh dislikes this env var
-		$opts->{env}{https_proxy} = ''; # bosh dislikes this env var
+		$opts->{env}{HTTPS_PROXY} = undef # bosh dislikes this env var
+		$opts->{env}{https_proxy} = undef # bosh dislikes this env var
 	}
 	my $noninteractive = envset('BOSH_NON_INTERACTIVE') ? ' -n' : '';
 
