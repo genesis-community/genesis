@@ -1131,11 +1131,23 @@ sub bosh {
 			}
 		}
 
-		my ($bosh_alias,$bosh_dep_type) = split('/', $self->bosh_env);
+		# bosh env can be <alias>[/<deployment-type>]@[http(s?)://<host>[:<port>]/][<mount>]
+		my ($bosh_alias,$bosh_dep_type,$bosh_exodus_vault,$bosh_exodus_mount) =
+			$self->bosh_env =~ m/^([^\/]+)(?:\/([^\@]+))?(?:@(?:(https?:\/\/[^\/]+)?\/)?(.*))?$/;
+
+		my $bosh_vault = $self->vault;
+		if ($bosh_exodus_vault) {
+			$bosh_vault = Genesis::Vault->find_single_match_or_bail($bosh_exodus_vault);
+			bail(
+				"#R{[ERROR]} Could not access vault #C{$bosh_exodus_vault} to retrieve BOSH director\n".
+				"        login credentials"
+			) unless $bosh_vault && $bosh_vault->connect_and_validate;
+		}
+
 		$bosh = Genesis::BOSH::Director->from_exodus(
 			$bosh_alias,
-			vault => $self->vault,
-			exodus_mount => $self->exodus_mount,
+			vault => $bosh_vault,
+			exodus_mount => $bosh_exodus_mount || $self->exodus_mount,
 			bosh_deployment_type => $bosh_dep_type,
 			deployment => $self->deployment_name,
 		) || Genesis::BOSH::Director->from_alias(
