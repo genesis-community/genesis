@@ -2,6 +2,8 @@ package Genesis::Top;
 use strict;
 use warnings;
 
+use base 'Genesis::Base';
+
 use Genesis;
 use Genesis::Env;
 use Genesis::Kit::Compiled;
@@ -235,7 +237,7 @@ EOF
 # Kit Provider handling
 # kit_provider - return the kit provider for the Top object {{{
 sub kit_provider {
-	my $ref = $_[0]->_memoize('__kit_provider', sub {
+	my $ref = $_[0]->_memoize(sub {
 		my ($self) = @_;
 		return Genesis::Kit::Provider->new(%{$self->config->get("kit_provider", {})});
 	});
@@ -281,7 +283,7 @@ sub kit_provider_info {
 # Secrets provider handling
 # vault - initialize connectivity to the vault specified by the secrets provider {{{
 sub vault {
-	my $ref = $_[0]->_memoize('__vault', sub {
+	my $ref = $_[0]->_memoize(sub {
 		my ($self) = @_;
 		if (in_callback && $ENV{GENESIS_TARGET_VAULT}) {
 			return Genesis::Vault->rebind();
@@ -430,7 +432,7 @@ sub mkdir {
 # config - read the configuration of the repo {{{
 sub config {
 	my ($self) = @_;
-	my $ref = $self->_memoize('__config', sub {
+	my $ref = $self->_memoize(sub {
 		my ($self) = @_;
 		return Genesis::Config->new($self->path(".genesis/config"));
 	});
@@ -606,17 +608,6 @@ sub download_kit {
 	$self->kit_provider->fetch_kit_version($name,$version,$target,$opts{force});
 }
 
-# }}}
-# }}}
-
-### Private Instance Methods {{{
-
-# _memoize - cache value to be returned on subsequent calls {{{
-sub _memoize {
-	my ($self, $token, $initialize) = @_;
-	return $self->{$token} if defined($self->{$token});
-	$self->{$token} = $initialize->($self);
-}
 # }}}
 # }}}
 

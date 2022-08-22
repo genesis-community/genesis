@@ -514,6 +514,12 @@ sub run {
 	$tracemsg .= csprintf("#M{Executing:} `#C{%s}`%s", $prog, ($opts{interactive} ? " #Y{(interactively)}" : ''));
 	if (@args) {
 		unshift @args, basename($shell);
+		if ($opts{eval_var_args}) {
+			@args = map {
+				s/(?<!\\)\$(?:{([^}]+)}|([A-Za-z0-9_]*))/my $v = $ENV{$1||$2}; defined($v) ? $v : ""/eg;
+				$_
+			} @args;
+		}
 		$tracemsg .= csprintf("\n#M{ - with arguments:}");
 		$tracemsg .= csprintf("\n#M{%4s:} '#C{%s}'", $_, $args[$_]) for (1..$#args);
 	}

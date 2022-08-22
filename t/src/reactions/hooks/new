@@ -1,0 +1,13 @@
+#!/bin/bash
+
+root=$GENESIS_ROOT
+env=$GENESIS_ENVIRONMENT
+
+cat >$root/$env.yml <<EOF
+kit:
+  name:    $GENESIS_KIT_NAME
+  version: $GENESIS_KIT_VERSION
+  features: []
+EOF
+genesis_config_block >> $root/$env.yml
+exit 0

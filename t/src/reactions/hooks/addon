@@ -1,0 +1,12 @@
+#!/bin/bash
+if [[ "$GENESIS_ADDON_SCRIPT" == "working-addon" ]] ; then
+  echo >&2 "This addon worked, with arguments of $*"
+  exit 0
+elif [[ "$GENESIS_ADDON_SCRIPT" == "broken-addon" ]] ; then
+  echo >&2 "This addon is broken, with arguments of $*"
+  exit 1
+else
+  echo >&2"Unknown addon: $GENESIS_ADDON_SCRIPT (arguments of $*)"
+	exit 2
+fi
+EOF

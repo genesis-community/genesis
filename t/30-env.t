@@ -24,6 +24,8 @@ fake_bosh;
 $ENV{GENESIS_CALLBACK_BIN} ||= abs_path('bin/genesis');
 $ENV{GENESIS_LIB} ||= abs_path('lib');
 
+=for comment
+
 subtest 'new() validation' => sub {
 	quietly { throws_ok { Genesis::Env->new() }
 		qr/no 'name' specified.*this is most likely a bug/is;
@@ -796,6 +798,7 @@ EOF
 	teardown_vault();
 };
 
+
 subtest 'cloud_config_and_deployment' => sub{
 	local $ENV{GENESIS_BOSH_COMMAND};
 	my ($director1) = fake_bosh_directors(
@@ -824,9 +827,12 @@ EOF
 	};
 
 	ok -f $env->config_file('cloud','genesis-test'), "download_cloud_config created cc file";
+	diag("Cloud config file: '".$env->config_file('cloud')."'");
 	eq_or_diff get_file($env->config_file('cloud','genesis-test')), <<EOF, "download_config calls BOSH correctly";
 {"cmd": "bosh config --type cloud --name genesis-test --json"}
 EOF
+
+	diag "This work: ".$env->config_file('cloud');
 
 	put_file $env->config_file('cloud'), <<EOF;
 ---
@@ -848,6 +854,8 @@ deploy
 --max-in-flight=5
 $env->{__tmp}/manifest.yml
 EOF
+
+diag "Got here?";
 
 	($manifest_file, $exists, $sha1) = $env->cached_manifest_info;
 	ok $manifest_file eq $env->path(".genesis/manifests/".$env->name.".yml"), "cached manifest path correctly determined";
@@ -915,6 +923,7 @@ EOF
 	$director1->stop();
 	teardown_vault();
 };
+
 subtest 'bosh variables' => sub {
 	local $ENV{GENESIS_BOSH_COMMAND};
 	fake_bosh;
@@ -953,7 +962,7 @@ EOF
 	my $env = $top->load_env('standalone');
 	quietly { lives_ok { $env->download_configs('cloud'); }
 		"download_cloud_config runs correctly";
-	}; 
+	};
 
 	put_file $env->config_file('cloud'), <<EOF;
 ---
@@ -1657,6 +1666,203 @@ EOF
 	}
 
 	$director1->stop();
+	teardown_vault();
+};
+=for comment
+=cut
+
+subtest 'pre and post deploy reactions' => sub {
+	local $ENV{GENESIS_BOSH_COMMAND};
+	local $ENV{NOCOLOR} = "yes";
+	fake_bosh(<<EOF);
+	echo 'BOSH Deploy ran successfully'
+	exit 0
+EOF
+
+	my ($director1) = fake_bosh_directors(
+		{alias => 'reactions'},
+	);
+
+	my $vault_target = vault_ok;
+	Genesis::Vault->clear_all();
+	Genesis::BOSH->set_command($ENV{GENESIS_BOSH_COMMAND});
+	my $top = Genesis::Top->create(workdir, 'thing', vault=>$VAULT_URL);
+	# Instead of linking, copy the reactions kit so it can be modified as needed
+	`cp -a t/src/reactions ${\($top->path('dev'))}`;
+
+	# Common cloud config
+	put_file $top->path(".cloud.yml"), <<EOF;
+--- {}
+# not really a cloud config, but close enough
+EOF
+
+
+	mkdir_or_fail $top->path('bin');
+	put_file $top->path("bin/pass-script.sh"), 0755, <<EOF;
+echo >&2 'This script passed'
+exit 0
+EOF
+	put_file $top->path("bin/fail-script.sh"), 0755, <<EOF;
+echo >&2 'This script failed'
+exit 1
+EOF
+
+	#  Test failed predeploy:
+	put_file $top->path("predeploy-reaction-fail.yml"), <<EOF;
+---
+kit:
+  name:    dev
+  version: latest
+  features: []
+
+genesis:
+  env:  predeploy-reaction-fail
+  bosh_env: reactions
+  reactions:
+    pre:
+    - addon: working-addon
+      args: [ 'this', 'that' ]
+    - script: fail-script.sh
+    post:
+    - script: pass-script.sh
+
+EOF
+	my $env = $top->load_env('predeploy-reaction-fail');
+	$env->use_config($top->path(".cloud.yml"));
+
+	my ($stdout,$stderr,$err) = (
+		output_from {dies_ok {$env->deploy()} 'deploy exits when invalid reactions defined'},
+		$@
+	);
+	eq_or_diff($err, <<EOF, "deploy error should specify incorrect reactions");
+
+[ERROR] Unexpected reactions specified under genesis.reactions: post, pre
+        Valid values: pre-deploy, post-deploy
+EOF
+
+	put_file $top->path("predeploy-reaction-fail.yml"), <<EOF;
+---
+kit:
+  name:    dev
+  version: latest
+  features: []
+
+genesis:
+  env:  predeploy-reaction-fail
+  bosh_env: reactions
+  reactions:
+    pre-deploy:
+    - addon: working-addon
+      args: [ 'this', 'that' ]
+    - script: fail-script.sh
+EOF
+	$env = $top->load_env('predeploy-reaction-fail');
+	$env->use_config($top->path(".cloud.yml"));
+
+	run('rm "'. $env->kit->path('hooks/addon') . '"');
+
+	($stdout,$stderr,$err) = (
+		output_from {dies_ok {$env->deploy()} "deploy exits when specified addon hook doesn't exist"},
+		$@
+	);
+	eq_or_diff($err, <<EOF, "deploy error should specify incorrect reactions");
+Kit reations/in-development (dev) does not provide an addon hook!
+EOF
+
+	reset_kit($env->kit);
+	($stdout,$stderr,$err) = (
+		output_from {dies_ok {$env->deploy()} "deploy exits when specified addon hook fails"},
+		$@
+	);
+	eq_or_diff($err, <<EOF, "deploy error should specify failed reactions");
+[ERROR] Cannnot deploy: environment pre-deploy reaction failed!
+EOF
+
+	my $fragment = <<'EOF';
+\[predeploy-reaction-fail: PRE-DEPLOY\] Running working-addon addon from kit reations/in-development \(dev\):
+
+This addon worked, with arguments of this that
+
+\[predeploy-reaction-fail: PRE-DEPLOY\] Running script `bin/fail-script.sh` with no arguments:
+
+This script failed
+EOF
+	like($stderr, qr/$fragment/ms, "deploy output should contain the correct pre-deploy output");
+
+	reset_kit($env->kit);
+	($stdout,$stderr,$err) = (
+		output_from {dies_ok {$env->deploy()} "deploy exits when specified addon hook doesn't exist"},
+		$@
+	);
+
+	put_file $top->path("postdeploy-reaction-fail.yml"), <<EOF;
+---
+kit:
+  name:    dev
+  version: latest
+  features: []
+
+genesis:
+  env:  postdeploy-reaction-fail
+  bosh_env: reactions
+  reactions:
+    pre-deploy:
+    - addon: working-addon
+      args: [ 'this', 'that' ]
+    - script: pass-script.sh
+    post-deploy:
+    - script: fail-script.sh
+EOF
+
+	$env = $top->load_env('postdeploy-reaction-fail');
+	$env->use_config($top->path(".cloud.yml"));
+
+	($stdout,$stderr,$err) = (
+		output_from {lives_ok {$env->deploy()} "deploy runs when pre-deploy reaction passes, but post-deploy reaction fails"},
+		$@
+	);
+
+	eq_or_diff($err, "", "no fatal error");
+
+	eq_or_diff($stderr, <<'EOF', "deploy output should contain the correct pre-deploy output");
+
+[postdeploy-reaction-fail] reations/in-development (dev) does not define a 'check' hook; BOSH configs and environmental parameters checks will be skipped.
+
+[postdeploy-reaction-fail] running secrets checks...
+
+[postdeploy-reaction-fail] running manifest viability checks...
+
+[postdeploy-reaction-fail] running stemcell checks...
+
+[postdeploy-reaction-fail] generating manifest...
+
+[postdeploy-reaction-fail: PRE-DEPLOY] Running working-addon addon from kit reations/in-development (dev):
+
+This addon worked, with arguments of this that
+
+[postdeploy-reaction-fail: PRE-DEPLOY] Running script `bin/pass-script.sh` with no arguments:
+
+This script passed
+
+
+[postdeploy-reaction-fail] all systems ok, initiating BOSH deploy...
+
+
+[postdeploy-reaction-fail] Deployment successful.
+
+
+[postdeploy-reaction-fail: POST-DEPLOY] Running script `bin/fail-script.sh` with no arguments:
+
+This script failed
+
+[WARNING] Environment post-deploy reaction failed!  Manual intervention may be needed.
+
+[postdeploy-reaction-fail] Preparing metadata for export...
+
+[postdeploy-reaction-fail] Done.
+
+EOF
+
 	teardown_vault();
 };
 
