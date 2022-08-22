@@ -715,7 +715,8 @@ sub options {
 		$options->{config} = {%configs} if %configs;
 	}
 
-	#TODO: no_check_prereqs is not a valid option in the parser above -- does anything use it?
+	# For commands that don't need prerequisites, such as 'version',
+	# set $options{no_check_prereqs} to truthy value before calling.
 	check_prereqs(%$options) unless delete($options->{no_check_prereqs});
 }
 
@@ -951,7 +952,7 @@ OPTIONS
 $GLOBAL_USAGE
 EOF
 sub {
-	my %options;
+	my %options = (no_check_prereqs => 1);
 	options(\@_, \%options, qw/
 	/);
 	usage(1, "Too many arguments: ".join(', ',@_)) if @_;
