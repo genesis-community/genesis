@@ -81,7 +81,7 @@ sub parse_commits {
 	@commits = grep {$_->{body} || $_->{subject} !~ /^Merge .* into .*/} @commits;
 
 	my $last_update;
-  my $updates=0;
+	my $updates=0;
 	unless ($ENV{NO_UPSTREAM_SYNC}) {
 		print STDERR "  - determining upstream synchronization\n";
 		@commits = grep {
@@ -107,7 +107,10 @@ sub parse_commits {
 	my $re=qr/(?:(?:\A|\n\n)\[([^\]\n]*)\]\n\n)/;
 	my ($header,$note,@data);
 	for my $commit (@commits) {
-		(undef, @data) = split($re, $commit->{body}||'');
+		$commit->{body} ||= '';
+		$commit->{body} =~ s/\r\n/\n/g; #Windows
+		$commit->{body} =~ s/\r/\n/g;   #Archaic Mac
+		(undef, @data) = split($re, $commit->{body});
 		print STDERR (@data ? "!" : ".");
 		while (@data) {
 			$commit->{used} = 1;
@@ -303,7 +306,7 @@ my $last_release = get_latest_commit_tag($last_release_path);
 header "Building Release Notes from commit messages since $last_release";
 my ($release_notes,$commits) = parse_commits($rc_path, $last_release_path);
 
-my $software_updates;
+my $software_updates = '';
 unless ($ENV{NO_RELEASE_VERSIONS}) {
 	header "Calculating Release Changes since $last_release";
 	$software_updates = calculate_software_updates($rc_path,$last_release_path);

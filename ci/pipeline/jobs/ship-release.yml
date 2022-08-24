@@ -9,7 +9,7 @@ jobs:
       - { get: git,                        passed: [prepare] }
       - { get: git-ci }
       - { get: release-notes} # Do not use `passed: [prepare]` because then it cannot be edited
-        #- { get: git-main } -- TODO: once using develop/main branches paradigm
+      - { get: git-main }
       - { get: git-latest-tag }
 
     - task: build
@@ -19,7 +19,7 @@ jobs:
       file: git-ci/ci/tasks/release.yml
       params:
         DEVELOP_BRANCH:   (( grab meta.github.branch ))
-        RELEASE_BRANCH:   (( grab meta.github.branch )) # TODO: main-branch ))
+        RELEASE_BRANCH:   (( grab meta.github.main-branch ))
         RELEASE_ROOT:     gh
         RELEASE_NOTES:    (( grab meta.github.release_notes.file ))
         NOTIFICATION_OUT: notifications
@@ -27,12 +27,11 @@ jobs:
         GIT_EMAIL:        (( grab meta.git.email ))
         GIT_NAME:         (( grab meta.git.name ))
 
-#    TODO: use the develop/main branches paradigm
-#    - put: git-main
-#      params:
-#        merge: false
-#        tag: gh/tag
-#        repository: git-main
+    - put: git-main
+      params:
+        merge: false
+        tag: gh/tag
+        repository: git-main
 
     - put: github
       params:

@@ -1,0 +1,9 @@
+resources:
+  - name: git-main
+    type: git
+    check_every: 1h
+    source:
+      uri:         (( grab meta.github.uri ))
+      branch:      (( grab meta.github.main-branch ))
+      private_key: (( grab meta.github.private_key ))
+

@@ -21,7 +21,8 @@ meta:
   github:
     owner:        genesis-community
     repo:         genesis
-    branch:       main
+    branch:       v2.8.x-dev
+    main-branch:  main
     private_key:  ((github.private_key))
     access_token: ((github.access_token))
 
