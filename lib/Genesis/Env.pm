@@ -1578,19 +1578,24 @@ sub deploy {
 		mkfile_or_fail($data_fn, $predeploy_data) if ($predeploy_data);
 	}
 
+	my $disable_reactions = delete($opts{'disable-reactions'});
 	my $reaction_vars;
 
 	if ($self->_reactions) {
-		$self->_validate_reactions;
-		$reaction_vars = {
-			GENESIS_PREDEPLOY_DATAFILE => $data_fn,
-			GENESIS_MANIFEST_FILE => $self->{__tmp}."/manifest.yml",
-			GENESIS_BOSHVARS_FILE => $self->vars_file,
-			GENESIS_DEPLOY_OPTIONS => JSON::PP::encode_json(\%opts),
-			GENESIS_DEPLOY_DRYRUN => $opts{"dry-run"} ? "true" : "false"
-		};
-		$ok = $self->_process_reactions('pre-deploy', $reaction_vars);
-		bail( "#R{[ERROR]} Cannnot deploy: environment pre-deploy reaction failed!") unless $ok;
+		if ($disable_reactions) {
+			explain STDERR "\n#y{[WARNING]} Reactions are disabled for this deploy"
+		} else {
+			$self->_validate_reactions;
+			$reaction_vars = {
+				GENESIS_PREDEPLOY_DATAFILE => $data_fn,
+				GENESIS_MANIFEST_FILE => $self->{__tmp}."/manifest.yml",
+				GENESIS_BOSHVARS_FILE => $self->vars_file,
+				GENESIS_DEPLOY_OPTIONS => JSON::PP::encode_json(\%opts),
+				GENESIS_DEPLOY_DRYRUN => $opts{"dry-run"} ? "true" : "false"
+			};
+			$ok = $self->_process_reactions('pre-deploy', $reaction_vars);
+			bail( "#R{[ERROR]} Cannnot deploy: environment pre-deploy reaction failed!") unless $ok;
+		}
 	}
 
 	explain STDERR "\n[#M{%s}] all systems #G{ok}, initiating BOSH deploy...\n", $self->name;
@@ -1661,7 +1666,7 @@ sub deploy {
 
 	explain STDERR "\n[#M{%s}] #G{Deployment successful.}\n", $self->name if $ok;
 
-	if ($self->_reactions) {
+	if ($self->_reactions && !$disable_reactions) {
 		$reaction_vars->{GENESIS_DEPLOY_RC} = ($ok ? 0 : 1);
 		$self->_process_reactions('post-deploy', $reaction_vars) or explain STDERR (
 			"#y{[WARNING]} Environment post-deploy reaction failed!  Manual intervention may be needed."

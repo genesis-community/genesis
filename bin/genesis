@@ -1681,6 +1681,7 @@ EOF
 sub {
 	my %options = (redact => ! -t STDOUT);
 	options(\@_, \%options, qw/
+		reactions!
 		yes|y
 		redact!
 		fix
@@ -1692,6 +1693,8 @@ sub {
 		max-in-flight=i
 	/);
 	usage(1) if @_ != 1;
+
+	$options{'disable-reactions'} = ! delete($options{reactions});
 	my $env = Genesis::Top->new('.')->load_env($_[0])->with_vault();
 
 	if (scalar(grep {$_} ($options{fix}, $options{recreate}, $options{'dry-run'})) > 1) {

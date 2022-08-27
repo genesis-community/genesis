@@ -24,8 +24,6 @@ fake_bosh;
 $ENV{GENESIS_CALLBACK_BIN} ||= abs_path('bin/genesis');
 $ENV{GENESIS_LIB} ||= abs_path('lib');
 
-=for comment
-
 subtest 'new() validation' => sub {
 	quietly { throws_ok { Genesis::Env->new() }
 		qr/no 'name' specified.*this is most likely a bug/is;
@@ -1668,8 +1666,6 @@ EOF
 	$director1->stop();
 	teardown_vault();
 };
-=for comment
-=cut
 
 subtest 'pre and post deploy reactions' => sub {
 	local $ENV{GENESIS_BOSH_COMMAND};
@@ -1698,8 +1694,14 @@ EOF
 
 
 	mkdir_or_fail $top->path('bin');
-	put_file $top->path("bin/pass-script.sh"), 0755, <<EOF;
+	put_file $top->path("bin/pass-script.sh"), 0755, <<'EOF';
 echo >&2 'This script passed'
+i=0
+if [[ $# -gt 0 ]] ; then
+  for a in "$@" ; do
+    echo >&2 "Argument $((++i)): '$a'"
+  done
+fi
 exit 0
 EOF
 	put_file $top->path("bin/fail-script.sh"), 0755, <<EOF;
@@ -1810,15 +1812,18 @@ genesis:
     - addon: working-addon
       args: [ 'this', 'that' ]
     - script: pass-script.sh
+      args:
+        - just a single arg with spaces
     post-deploy:
     - script: fail-script.sh
+    - script: pass-script.sh
 EOF
 
 	$env = $top->load_env('postdeploy-reaction-fail');
 	$env->use_config($top->path(".cloud.yml"));
 
 	($stdout,$stderr,$err) = (
-		output_from {lives_ok {$env->deploy()} "deploy runs when pre-deploy reaction passes, but post-deploy reaction fails"},
+		output_from {lives_ok {$env->deploy()} "deploy runs when pre-deploy reaction passes, but post-deploy reaction fails (and doesn't run remaining reactions after first failed reaction)"},
 		$@
 	);
 
@@ -1840,9 +1845,10 @@ EOF
 
 This addon worked, with arguments of this that
 
-[postdeploy-reaction-fail: PRE-DEPLOY] Running script `bin/pass-script.sh` with no arguments:
+[postdeploy-reaction-fail: PRE-DEPLOY] Running script `bin/pass-script.sh` with arguments of ["just a single arg with spaces"]:
 
 This script passed
+Argument 1: 'just a single arg with spaces'
 
 
 [postdeploy-reaction-fail] all systems ok, initiating BOSH deploy...
@@ -1862,6 +1868,40 @@ This script failed
 [postdeploy-reaction-fail] Done.
 
 EOF
+
+	($stdout,$stderr,$err) = (
+		output_from {lives_ok {$env->deploy('disable-reactions' => 1)} "deploy does not run reactions when disabled"},
+		$@
+	);
+
+	eq_or_diff($err, "", "no fatal error");
+
+	eq_or_diff($stderr, <<'EOF', "deploy output should contain the correct pre-deploy output");
+
+[postdeploy-reaction-fail] reations/in-development (dev) does not define a 'check' hook; BOSH configs and environmental parameters checks will be skipped.
+
+[postdeploy-reaction-fail] running secrets checks...
+
+[postdeploy-reaction-fail] running manifest viability checks...
+
+[postdeploy-reaction-fail] running stemcell checks...
+
+[postdeploy-reaction-fail] generating manifest...
+
+[WARNING] Reactions are disabled for this deploy
+
+[postdeploy-reaction-fail] all systems ok, initiating BOSH deploy...
+
+
+[postdeploy-reaction-fail] Deployment successful.
+
+
+[postdeploy-reaction-fail] Preparing metadata for export...
+
+[postdeploy-reaction-fail] Done.
+
+EOF
+
 
 	teardown_vault();
 };
