@@ -1662,20 +1662,26 @@ env environment.
       --[no-]reactions   Determines if reactions specified in the environment
                          file will be processed if present (default: yes)
 
+      --fix-releases     Reupload releases in manifest and replace corrupt
+                         or missing jobs/packages
+
+      --rpd              Recreates all persistant disks, even if the deployment
+                         is a no-op (alias for --recreate-persistent-disks)
+
 
 Can specify one of the follow three:
   -n, --dry-run          Build the manifest and validate it against the current
                          state of the BOSH director for this deployment, but
                          doesn't change anything.
 
-      --recreate         Recreate all VMs instead of just applying changes to them.
-                         This requires the VMs to be responsive; use --fix if they
-                         are not. (Also valid for create-env environments)
+      --recreate         Recreate all VMs instead of just applying changes to
+                         them. This requires the VMs to be responsive; use --fix
+                         if they are not.
 
       --fix              Recreate unresponsive VMs instead of raising an error.
 
-	  --fix-releases     Reupload releases in manifest and replace corrupt
-	                     or missing jobs/packages
+Note: only --recreate is valid for create-env environments.
+
 
 EOF
 sub {
@@ -1687,6 +1693,7 @@ sub {
 		fix
 		fix-releases
 		recreate
+		recreate-persistent-disks|rpd
 		dry-run
 		skip-drain=s@
 		canaries=i
@@ -1706,7 +1713,7 @@ sub {
 	}
 
 	if ($env->use_create_env) {
-		my @bad_opts = grep {$options{$_}} (qw/fix recreate dry-run/);
+		my @bad_opts = grep {$options{$_}} (qw/fix dry-run/);
 		bail(
 			"#R{[ERROR]} The following options cannot be specified for #M{create-env}: %s",
 			join(", ", @bad_opts)
