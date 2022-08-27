@@ -90,10 +90,11 @@ sub set {
 # clear - remove a key from the configuration {{{
 sub clear {
 	my ($self, $key, $save) = @_;
+	# TODO: Delete entire structure if key is undefined, or should that be an error?
 	# TODO: Validate key and value against schema
 
 	delete($self->{cache}{$_}) for (grep {$_ =~ /^$key($|[\.\[])/} keys(%{$self->{cache}}));
-	struct_set_value($self->_contents,undef,1);
+	struct_set_value($self->_contents,$key,1);
 	$self->save if $self->changed && ($save || $self->{autosave});
 	return $self->changed;
 }
