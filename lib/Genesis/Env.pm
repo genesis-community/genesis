@@ -1382,12 +1382,25 @@ sub manifest {
 	my ($self, %opts) = @_;
 
 	# prune by default.
+	my ($redact,$prune,$vars_only) = @opts{qw(redact prune vars_only)};
+	$prune = 1 unless defined $prune;
+
 	trace "[env $self->{name}] in manifest(): Redact %s", defined($opts{redact}) ? "'$opts{redact}'" : '#C{(undef)}';
 	trace "[env $self->{name}] in manifest(): Prune: %s", defined($opts{prune}) ? "'$opts{prune}'" : '#C{(undef)}';
-	$opts{prune} = 1 unless defined $opts{prune};
+
 	my (undef, $path) = $self->_manifest(get_opts(\%opts, qw/no_warnings partial redact/));
 
-	if ($opts{prune}) {
+	if ($vars_only) {
+		return run({
+				onfailure => "Failed to merge $self->{name} manifest",
+				stderr => "&1",
+				env => $self->vault->env # to target desired vault
+			},
+			'spruce json "$1" | jq \'."bosh-variables"\' | spruce merge --skip-eval', $path
+		)."\n"
+	}
+
+	if ($prune) {
 		my @prune = qw/meta pipeline params bosh-variables kit genesis exodus compilation/;
 		if (!$self->use_create_env) {
 			# bosh create-env needs these, so we only prune them
@@ -1399,7 +1412,7 @@ sub manifest {
 			                 vm_extensions));
 		}
 
-		debug("pruning top-level keys from #W{%s} manifest...", $opts{redact} ? 'redacted' : 'unredacted');
+		debug("pruning top-level keys from #W{%s} manifest...", $redact ? 'redacted' : 'unredacted');
 		debug("  - removing #C{%s} key...", $_) for @prune;
 		return run({
 				onfailure => "Failed to merge $self->{name} manifest",
@@ -1407,10 +1420,9 @@ sub manifest {
 				env => $self->vault->env # to target desired vault
 			},
 			'spruce', 'merge', '--skip-eval',  (map { ('--prune', $_) } @prune), $path)."\n";
-	} else {
-		debug("not pruning #W{%s} manifest.", $opts{redact} ? 'redacted' : 'unredacted');
 	}
 
+	debug("not pruning #W{%s} manifest.", $redact ? 'redacted' : 'unredacted');
 	return slurp($path);
 }
 

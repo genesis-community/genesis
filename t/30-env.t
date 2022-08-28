@@ -825,12 +825,9 @@ EOF
 	};
 
 	ok -f $env->config_file('cloud','genesis-test'), "download_cloud_config created cc file";
-	diag("Cloud config file: '".$env->config_file('cloud')."'");
 	eq_or_diff get_file($env->config_file('cloud','genesis-test')), <<EOF, "download_config calls BOSH correctly";
 {"cmd": "bosh config --type cloud --name genesis-test --json"}
 EOF
-
-	diag "This work: ".$env->config_file('cloud');
 
 	put_file $env->config_file('cloud'), <<EOF;
 ---
@@ -852,8 +849,6 @@ deploy
 --max-in-flight=5
 $env->{__tmp}/manifest.yml
 EOF
-
-diag "Got here?";
 
 	($manifest_file, $exists, $sha1) = $env->cached_manifest_info;
 	ok $manifest_file eq $env->path(".genesis/manifests/".$env->name.".yml"), "cached manifest path correctly determined";
