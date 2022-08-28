@@ -9,6 +9,6 @@ t/repos/compiled-kit-test/new-env.yml
 
 /genesis-*
 /artifacts
-*.swp
-
+.*.sw?
+.sw?
 /cover_db
