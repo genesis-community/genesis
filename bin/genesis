@@ -2602,26 +2602,39 @@ USAGE: genesis manifest <options> deployment-env.yml
 OPTIONS
 $GLOBAL_USAGE
 
-      --[no-]redact         Determines if vault values are fetched or redacted.
-                            By default, the manifest will be redacted unless
-                            being output to the live console.
+      --[no-]redact    Determines if vault values are fetched or redacted.
+                       By default, the manifest will be redacted unless
+                       being output to the live console.
 
-      --[no-]prune          Determines if the build metadata is pruned.  Defaults
-                            to true.
+      --[no-]prune     Determines if the build metadata is pruned.  Defaults
+                       to true.
 
-      --partial             Merge and resolve as much spruce operators as
-                            possible, but leave the operators that cause errors
-                            in their unresolved form.
+      --partial        Merge and resolve as much spruce operators as
+                       possible, but leave the operators that cause errors
+                       in their unresolved form.
+
+      --bosh-vars      Return the bosh-variables file instead of the manifest.
 EOF
 sub {
-	my %options = (redact => ! -t STDOUT, prune => 1);
+	my %options = ();
 	options(\@_, \%options, qw/
 		redact!
 		prune!
-    partial
+		partial
+		bosh-vars
 	/);
 	usage(1) if @_ != 1;
 	check_prereqs;
+
+	$options{redact} = ($options{'bosh-vars'} ? 0 : ! -t STDOUT)
+		unless defined($options{redact});
+	$options{prune}  = ($options{'bosh-vars'} ? 0 : 1)
+		unless defined($options{prune});
+
+	bail(
+		"\n#R{[ERROR]} Cannot specify --bosh-vars with --redact or --prune\n"
+	)	if ($options{'bosh-vars'} && ($options{prune} || $options{redact}));
+
 	my $env = Genesis::Top
 		->new('.')
 		->load_env($_[0])
@@ -2637,7 +2650,12 @@ sub {
 
 	print $env
 		->download_required_configs('blueprint', 'manifest')
-		->manifest(partial => $options{partial}, redact => $options{redact}, prune => $options{prune});
+		->manifest(
+			partial   => $options{partial},
+			redact    => $options{redact},
+			prune     => $options{prune},
+			vars_only => $options{'bosh-vars'}
+		);
 });
 
 # }}}
