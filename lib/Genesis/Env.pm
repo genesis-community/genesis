@@ -1396,7 +1396,7 @@ sub manifest {
 				stderr => "&1",
 				env => $self->vault->env # to target desired vault
 			},
-			'spruce json "$1" | jq \'."bosh-variables"\' | spruce merge --skip-eval', $path
+			'spruce json "$1" | jq \'."bosh-variables"//{}\' | spruce merge --skip-eval', $path
 		)."\n"
 	}
 
