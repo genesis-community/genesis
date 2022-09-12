@@ -1,10 +1,10 @@
 groups:
-- (( insert after version-controll ))
+- (( append ))
 - name: renew-token
   jobs:
   - renew-vault-token
 
-resource:
+resources:
 - name: weekly
   type: time
   icon: clock-outline
