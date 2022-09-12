@@ -9,7 +9,7 @@ resources:
   type: time
   icon: clock-outline
   source:
-    interval: 7d
+    interval: 168h # 1 week
 
 jobs:
 - name: renew-vault-token

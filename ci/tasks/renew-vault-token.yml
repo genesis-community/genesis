@@ -6,6 +6,9 @@ image_resource:
   source:
     repository: starkandwayne/genesis-ci
 
+inputs:
+  - name: git-ci
+
 params:
   VAULT_URI:   (( grab meta.vault.url ))
   VAULT_TOKEN: (( grab meta.vault.token ))
