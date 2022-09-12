@@ -17,6 +17,8 @@ jobs:
   plan:
   - get: weekly
     trigger: true
+  - get: git-ci
+    trigger: false
   - task: renew-vault-token
     file: git-ci/ci/tasks/renew-vault-token.yml
 
