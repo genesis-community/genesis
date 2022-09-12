@@ -1,0 +1,16 @@
+---
+platform: linux
+
+image_resource:
+  type: registry-image
+  source:
+    repository: starkandwayne/genesis-ci
+
+params:
+  VAULT_URI:   (( grab meta.vault.url ))
+  VAULT_TOKEN: (( grab meta.vault.token ))
+
+run:
+  path: git-ci/ci/scripts/renew-vault-token
+
+

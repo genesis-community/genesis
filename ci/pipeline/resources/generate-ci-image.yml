@@ -1,0 +1,20 @@
+resources:
+- name: genesis-ci
+  type: registry-image
+  source:
+    username: (( grab meta.dockerhub.username ))
+    password: (( grab meta.dockerhub.password ))
+    repository: (( grab meta.image.name ))
+- name: dockerfile
+  type: git
+  source:
+    .: (( inject resources.git.source ))
+    paths:
+    - ci/Dockerfile
+- name: snw-concourse-image
+  type: registry-image
+  source:
+    username: (( grab meta.dockerhub.username ))
+    password: (( grab meta.dockerhub.password ))
+    repository: starkandwayne/concourse
+    tag: latest-rc

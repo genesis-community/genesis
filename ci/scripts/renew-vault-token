@@ -1,0 +1,26 @@
+#!/bin/bash
+set -eu
+
+header() {
+	echo
+	echo "================================================================================"
+	echo "$1"
+	echo "--------------------------------------------------------------------------------"
+	echo
+}
+
+bail() {
+	echo >&2 "$*  Did you misconfigure Concourse?"
+	exit 2
+}
+test -n "${VAULT_URI:-}"      || bail "VAULT_URI must be set to an address for connecting to Vault."
+test -n "${VAULT_TOKEN:-}"    || bail "VAULT_TOKEN must be set to something; it will be used for connecting to Vault."
+
+header "Connecting to vault..."
+safe target da-vault "$VAULT_URI" -k
+echo "$VAULT_TOKEN" | safe auth token
+safe auth status
+
+header "Renewing genesis-ci token..."
+safe vault token renew | sed -e 's/\(^token *\)s.*/\1s.<redacted>/' -e 's/\(token_accessor *\).*/\1<redacted>/'
+safe auth status
