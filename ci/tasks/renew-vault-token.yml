@@ -10,8 +10,8 @@ inputs:
   - name: git-ci
 
 params:
-  VAULT_URI:   (( grab meta.vault.url ))
-  VAULT_TOKEN: (( grab meta.vault.token ))
+  VAULT_URI:   ((vault.url))
+  VAULT_TOKEN: ((vault.token))
 
 run:
   path: git-ci/ci/scripts/renew-vault-token
