@@ -63,37 +63,33 @@ EOF
 		$notification .= <<EOF;
 {
   do: [
-  { get: build-email-$alias },
   { task: write-email-body,
+    params: {
+      PIPELINE_NAME: (( grab pipeline.name ))
+    },
     config: {
       platform: linux,
       image_resource: {
         type: registry-image,
-        source: {
-          repository: ubuntu,
-        },
+        source: { repository: starkandwayne/concourse },
       },
-
-      inputs: [
-        { name: build-email-$alias },
-        { name: out },
-      ],
       outputs: [
         { name: email },
       ],
-
       run: {
-        path: build-email-$alias/run,
-        args: [],
+        path: bash,
+        args: [
+          "-exc",
+          "mkdir -p email ; rm -rf email/* ; echo \\\"\${PIPELINE_NAME}\\\" > email/subject ; echo \\\"$message\\\" > email/body",
+        ],
       },
     },
   },
 
   { put: email,
     params: {
-      body:    email/body,
-      headers: email/header,
       subject: email/subject,
+      body:    email/body,
     },
   }]
 }
@@ -274,8 +270,6 @@ sub parse_pipeline {
 		}
 		if ($p->{pipeline}{email}) {
 			# validate pipeline.email.*
-			# FIXME: fully implement and test email notifications
-			push @errors, "Email notifications are not fully implemented yet.";
 			if (ref($p->{pipeline}{email}) ne 'HASH') {
 				push @errors, "`pipeline.email' must be a map.";
 			} else {
@@ -1099,23 +1093,6 @@ EOF
 	}
 	if ($pipeline->{pipeline}{email}) {
 		print $OUT <<'EOF';
-  - name: build-email-changes-staged
-    type: script
-    icon: email-outline
-    source:
-      filename: run
-      body: |
-        #!/bin/bash
-        mkdir -p email
-        rm -rf email/*
-        echo "X-Concourse-Site-Env: ${CI_SITE_ENV}" >>email/header
-        head -n1 out/notif > email/subject
-        sed -e 's/\`\`\`//' out/notif > email/body
-  - name: build-email-success
-    .: (( inject resources.build-email-changes-staged ))
-  - name: build-email-failure
-    .: (( inject resources.build-email-changes-staged ))
-
   - name: email
     type: email
     icon: email-send-outline
