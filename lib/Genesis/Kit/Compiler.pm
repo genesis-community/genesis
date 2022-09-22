@@ -73,11 +73,11 @@ sub validate {
 					unless ($meta->{use_create_env} =~ /^(yes|no|allow)$/);
 			}
 
+			push @valid_keys, "use_create_env" if new_enough($min_version, "2.8.0");
 			my @errant_keys = ();
 			for my $key (sort keys %$meta) {
 				push(@errant_keys, $key) unless grep {$_ eq $key} @valid_keys;
 			}
-			push @valid_keys, "use_create_env" if new_enough($min_version, "2.8.0");
 			if (@errant_keys) {
 				push @yml_errors, sprintf(
 					"contains invalid top-level key%s: %s;\nvalid keys are: %s",

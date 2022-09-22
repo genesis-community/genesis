@@ -1134,8 +1134,7 @@ sub bosh {
 		}
 
 		# bosh env can be <alias>[/<deployment-type>]@[http(s?)://<host>[:<port>]/][<mount>]
-		my ($bosh_alias,$bosh_dep_type,$bosh_exodus_vault,$bosh_exodus_mount) =
-			$self->bosh_env =~ m/^([^\/]+)(?:\/([^\@]+))?(?:@(?:(https?:\/\/[^\/]+)?\/)?(.*))?$/;
+		my ($bosh_alias,$bosh_dep_type,$bosh_exodus_vault,$bosh_exodus_mount) = $self->_parse_bosh_env();
 
 		my $bosh_vault = $self->vault;
 		if ($bosh_exodus_vault) {
@@ -2403,6 +2402,13 @@ sub _process_reactions {
 		}
 	}
 	return $ok;
+}
+
+# }}}
+# _parse_bosh_env - parse the bosh env into its constituent parts {{{
+sub _parse_bosh_env {
+	my $self = shift;
+	return ($self->bosh_env =~ m/^([^\/\@]+)(?:\/([^\@]+))?(?:@(?:(https?:\/\/[^\/]+)?\/)?(.*))?$/);
 }
 
 # }}}
