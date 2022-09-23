@@ -862,6 +862,8 @@ sub get_environment_variables {
 	$env{GENESIS_ENVIRONMENT}  = $self->name;
 	$env{GENESIS_TYPE}         = $self->type;
 	$env{GENESIS_CALL_BIN}     = humanize_bin();
+
+	# Deprecated, use GENESIS_CALL_ENV instead, but drop the $GENESIS_ENVIRONMENT after the command
 	$env{GENESIS_CALL}         = $env{GENESIS_CALL_BIN}.
 	                            ($is_alt_path ? sprintf(" -C '%s'", humanize_path($self->path)) : "");
 
@@ -873,6 +875,9 @@ sub get_environment_variables {
 	$env_ref .= '.yml' if (grep {$_ eq $self->name} @known_cmds);
 	$env_ref = humanize_path($self->path)."/$env_ref" if $is_alt_path;
 	$env_ref = "'$env_ref'" if $env_ref =~ / \(\)!\*\?/;
+
+	$env{GENESIS_ENV_REF}  = $env_ref;
+	$env{GENESIS_CALL_ENV} = "$env{GENESIS_CALL_BIN} $env_ref";
 
 	if ($ENV{GENESIS_COMMAND}) {
 		$env{GENESIS_PREFIX_TYPE} = $ENV{GENESIS_PREFIX_TYPE} || 'none';
