@@ -60,6 +60,13 @@ describe() {
 }
 export -f describe
 
+titleize() {
+	if [[ $# -gt 0 ]] ; then
+		echo "$@" | /usr/bin/perl -e "while (<STDIN>) { s/([\\w']+)/\\u\\L\$1/g; print }"
+	fi
+}
+export -f titleize
+
 humanize_path() {
   /usr/bin/perl -I$GENESIS_LIB -MGenesis -e 'binmode STDOUT, ":encoding(UTF-8)"; print humanize_path("$ARGV[0]")' "$1"
 }
@@ -743,3 +750,59 @@ version_check() {
   return 0
 }
 export -f version_check
+
+# Support for extended addon hook scripts
+if [[ "$GENESIS_KIT_HOOK" == "addon" ]] ; then
+	print_addon_descriptions() {
+
+		local label short msg
+		describe "The following addons are defined for the #C{$GENESIS_KIT_ID} kit:"
+		while [[ "$#" -gt 0 ]]; do
+			label="$(echo "$1" | sed -e 's/\([^~]*\).*/\1/')"
+			short="$(echo "$1" | sed -e 's/\([^~]*\)\(~\(.*\)\)\{0,1\}/\3/')"
+			[[ -n "$short" ]] && short="|$short"
+			describe "" "  #Gu{$label$short}" "$(echo "$2" | sed -e 's/^/    /')"
+			shift 2;
+		done
+		(
+			shopt -s nullglob
+			for addon in hooks/addon-*; do
+				[[ -x "$addon" ]] || chmod +x "$addon"
+				msg="$($addon help | sed -e 's/^/    /')" || continue
+				label="$(echo "$addon" | sed -e 's/.*\/addon-\([^~]*\).*/\1/')"
+				short="$(echo "$addon" | sed -e 's/.*\/addon-\([^~]*\)\(~\(.*\)\)\{0,1\}/\3/')"
+				[[ -n "$short" ]] && short="|$short"
+				describe "" "  #Gu{$label$short}" "$msg"
+			done
+		)
+		echo ""
+	}
+	export -f print_addon_descriptions
+
+	run_extended_addon() {
+		addon=
+		if [[ -f "hooks/addon-$GENESIS_ADDON_SCRIPT" ]] ; then
+			addon="hooks/addon-$GENESIS_ADDON_SCRIPT"
+		else
+			addon="$(compgen -G "hooks/addon-$GENESIS_ADDON_SCRIPT"'~*')"
+			if [[ -z "$addon" ]] ; then
+				addon="$(compgen -G 'hooks/addon-*~'"$GENESIS_ADDON_SCRIPT")"
+				if [[ -n "$addon" ]] ; then
+					label="$(echo "$addon" | sed -e 's/.*\/addon-\([^~]*\).*/\1/')"
+					describe >&2 "[1ARunning #G{$label ($GENESIS_ADDON_SCRIPT)} addon for #C{$GENESIS_ENVIRONMENT} #M{$GENESIS_KIT_NAME} deployment"
+				fi
+			fi
+		fi
+
+		if [[ -n "$addon" && -f "$addon" ]] ; then
+			[[ -x "$addon" ]] || chmod +x "$addon"
+			"$addon" run "$@"
+			exit $?
+		else
+			echo "Unrecognized $(titleize $GENESIS_KIT_NAME) Genesis Kit addon."
+			list
+			exit 1
+		fi
+	}
+	export -f run_extended_addon
+fi
