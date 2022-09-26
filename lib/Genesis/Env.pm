@@ -463,16 +463,22 @@ sub use_create_env {
 		$self->_set_memo("processing");
 		my $is_bosh_director = $self->is_bosh_director;
 
+		sub clear_and_bail {
+			my $self = shift;
+			$self->_clear_memo('__use_create_env');
+			bail(@_);
+		}
+
 		sub validate_create_env_state {
-			my ($is_create_env,$has_bosh_env,$kit_name,$is_bosh_kit) = @_;
-			bail(
+			my ($self,$is_create_env,$has_bosh_env,$kit_name,$is_bosh_kit) = @_;
+			clear_and_bail($self,
 				"\n#R{[ERROR]} This #M{$kit_name} environment specifies an alternative bosh_env, but is\n".
 				"        marked as a create-env (proto) environment. Create-env deployments can't\n".
 				"        use a #C{genesis.bosh_env} value, so please remove it, or mark this\n".
 				"        environment as a non-create-env environment.  It may be that bosh_env is\n".
 				"        configured in an inherited environment file."
 			) if $is_create_env && $has_bosh_env;
-			bail(
+			clear_and_bail($self,
 				"\n#R{[ERROR]} This #M{$kit_name} environment does not use create-env (proto) or specify\n".
 				"        an alternative #C{genesis.bosh_env} as a deploy target. Please provide\n".
 				"        the name of the BOSH environment that will deploy this environment, or\n".
@@ -488,7 +494,7 @@ sub use_create_env {
 
 			my $kuce = $self->kit->metadata('use_create_env')||'';
 			if ($kuce eq 'yes') {
-				bail(
+				clear_and_bail($self,
 					"\n#R{[ERROR]} This kit only allows create-env deployments, but this environment\n".
 					"        specifies an alternative bosh_env.  Please remove the #C{genesis.bosh_env}\n".
 					"        entry from the environment file."
@@ -496,7 +502,7 @@ sub use_create_env {
 				return 1;
 			};
 			if ($kuce eq 'no') {
-				bail (
+				clear_and_bail($self,
 					"\n#R{[ERROR]} BOSH environments must specify the name of the parent BOSH director\n".
 					"        that will deploy this enviornment under #C{genesis.bosh_env} in the\n".
 					"        file, because unlike other kits, it cannot derive its director from its\n".
@@ -511,7 +517,7 @@ sub use_create_env {
 					! defined($euce) && $self->kit->id =~ /^bosh\// && grep {$_ eq 'proto' || $_ eq '+ocfp-mngt'} $self->features
 			)) ? 1 : 0;
 
-			validate_create_env_state($is_create_env,$different_bosh_env,$self->kit->{name},$is_bosh_director);
+			validate_create_env_state($self,$is_create_env,$different_bosh_env,$self->kit->{name},$is_bosh_director);
 			return $is_create_env;
 		}
 
@@ -529,7 +535,7 @@ sub use_create_env {
 			$euce = !$ENV{GENESIS_BOSH_ENVIRONMENT};
 		}
 		dump_var detected=>$euce, diff => $different_bosh_env;
-		validate_create_env_state($euce,$different_bosh_env,"bosh",1);
+		validate_create_env_state($self,$euce,$different_bosh_env,"bosh",1);
 		return $euce;
 	});
 }
