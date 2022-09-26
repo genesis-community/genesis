@@ -456,8 +456,11 @@ sub is_bosh_director {
 # }}}
 # use_create_env - true if the deployment uses bosh create-env {{{
 sub use_create_env {
+
+	return 'unknown' if $_[0]->_get_memo() && $_[0]->_get_memo() eq "processing";
 	return $_[0]->_memoize(sub {
 		my ($self) = @_;
+		$self->_set_memo("processing");
 		my $is_bosh_director = $self->is_bosh_director;
 
 		sub validate_create_env_state {
@@ -505,7 +508,7 @@ sub use_create_env {
 			my $euce = $self->lookup('genesis.use_create_env', undef);
 			my $is_create_env = (
 				$euce || (
-					! defined($euce) && $self->kit->id =~ /^bosh\// && grep {$_ eq 'proto'} $self->features
+					! defined($euce) && $self->kit->id =~ /^bosh\// && grep {$_ eq 'proto' || $_ eq '+ocfp-mngt'} $self->features
 			)) ? 1 : 0;
 
 			validate_create_env_state($is_create_env,$different_bosh_env,$self->kit->{name},$is_bosh_director);
