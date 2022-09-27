@@ -214,7 +214,7 @@ sub from_envvars {
 
 	# bosh and credhub env overrides
 	if (envset 'GENESIS_USE_CREATE_ENV') {
-		$env->{__params}{genesis}{use_create_env} = 1;
+		$env->{__params}{genesis}{use_create_env} = 'true';
 		$env->{__params}{genesis}{min_version} ||= $min_version;
 		$env->{__bosh} = Genesis::BOSH::CreateEnvProxy->new();
 	} else {
@@ -940,11 +940,12 @@ sub get_environment_variables {
 
 	# BOSH support
 	if ($self->use_create_env) {
-		$env{GENESIS_USE_CREATE_ENV} = 1;
+		$env{GENESIS_USE_CREATE_ENV} = $self->use_create_env eq 'unknown' ? 'unknown' : 'true';
 		for my $bosh_env (qw/ALIAS ENVIRONMENT CA_CERT CLIENT CLIENT_SECRET DEPLOYMENT/) {
 			$env{"BOSH_$bosh_env"}=undef; # clear out any bosh variables
 		}
 	} else {
+		$env{GENESIS_USE_CREATE_ENV} = "false";
 		$env{BOSH_ALIAS} = $self->bosh_env;
 		if ($self->{__bosh} || grep {$_ eq 'bosh'} ($self->kit->required_connectivity($hook))) {
 			my %bosh_env = $self->bosh->environment_variables;
