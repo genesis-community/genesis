@@ -1659,7 +1659,7 @@ EOF
 			eq_or_diff ref($env->{__bosh}), ref($env_from_evs->{__bosh}), "reconstituted correct bosh director";
 		} elsif ($property eq '__params') {
 			# Tweak some known acceptable differences
-			$env->{__params}{genesis}{use_create_env} = $env->{__params}{genesis}{use_create_env} ? 1 : 0;
+			$env->{__params}{genesis}{use_create_env} = $env->{__params}{genesis}{use_create_env} =~ /^(1|on|true|yes)$/i ? 'true' : 'false';
 			cmp_deeply($env_from_evs->{__params},$env->{__params}, "reconstituted correct parameters");
 		} elsif ($property eq '__tmp') {
 			eq_or_diff dirname($env->{__tmp}), dirname($env_from_evs->{__tmp}), 'reconstituted similar tmp dirs';
