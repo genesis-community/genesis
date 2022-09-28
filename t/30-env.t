@@ -1216,7 +1216,7 @@ Adding 10 secrets for standalone under path '/secret/standalone/thing/':
 Completed - Duration: XXX seconds [10 added/0 skipped/0 errors]
 
 EOF
-
+	sleep 2; # to allow x509 certs to start
 	lives_ok {
 		$out = combined_from {$env->check_secrets(verbose => 1, validate => 1) }
 	} "successfully check secrets with environment kit overrides";
@@ -1611,6 +1611,7 @@ EOF
 		GENESIS_KIT_NAME => "dev",
 		GENESIS_KIT_VERSION => "latest", # THIS IS NOT IDEAL
 		GENESIS_MIN_VERSION => '2.8.0',
+		GENESIS_MIN_VERSION_FOR_KIT => '2.8.0',
 		GENESIS_REQUESTED_FEATURES => "alpha oscar kilo november",
 		GENESIS_ROOT_CA_PATH => "company/root-ca",
 		GENESIS_SECRETS_BASE => "/shhhh/base/extended/thing/",

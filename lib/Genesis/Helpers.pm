@@ -277,10 +277,14 @@ bosh_cpi() {
 export -f bosh_cpi
 
 use_create_env() {
-	if ! new_enough "${GENESIS_MIN_VERSION:-0.0.0}" "2.8.6-rc1" ; then
-		return 1 # bosh kit is the only pre-v2.8.0 use-create-env kit, and it uses a different mechanism
+	if ! new_enough "${GENESIS_MIN_VERSION_FOR_KIT:-0.0.0}" "2.8.6-rc1" ; then
+		if [[ -z "${GENESIS_REQUESTED_FEATURES+x}" ]] ; then
+			return 1 # We don't know what features are requested, so assume not
+		fi
+		want_feature "proto" # bosh kit is the only pre-v2.8.0 use-create-env kit
+	else
+		[[ "${GENESIS_USE_CREATE_ENV:-false}" == "true" ]]
 	fi
-	[[ "${GENESIS_USE_CREATE_ENV:-false}" == "true" ]]
 }
 export -f use_create_env
 
