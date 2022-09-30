@@ -18,3 +18,20 @@ your interactions with the project.
 
 3. After review and approval, your Pull Request will be merged by
    a repository owner.
+
+## Test your changes
+
+In order to test your changes, you can use the following development workflow:
+
+- Clone this repo
+- Do some changes
+- Build a development `genesis` CLI running `make release VERSION=x.y.z`
+- Symlink the generated `genesis-x.y.z` (or `genesis-x.y.z-dirty` if you
+  didn't commit your code yet) file to `genesis` with
+  `ln -s genesis-x.y.z-dirty genesis` (to be done once only)
+- Add the current directory in your `PATH` with `export PATH=$PWD:$PATH` (to
+  be done only once per shell session) or just copy it to you `~/bin`
+  directory if it exists and is on your path
+- Go to some deployment directory, check the genesis CLI you'll be using with
+  `which genesis` and `genesis version`
+- Run the usual `genesis` CLI commands and verify it behaves as expected
