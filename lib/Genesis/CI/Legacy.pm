@@ -1300,13 +1300,7 @@ EOF
 		unless ($E->use_create_env) {
 			print $OUT <<EOF;
             BOSH_ENVIRONMENT:     $pipeline->{pipeline}{boshes}{$env}{url}
-            BOSH_CLIENT:          $pipeline->{pipeline}{boshes}{$env}{username}
-            BOSH_CLIENT_SECRET:   $pipeline->{pipeline}{boshes}{$env}{password}
-            BOSH_CA_CERT: |
 EOF
-			for (split /\n/, $pipeline->{pipeline}{boshes}{$env}{ca_cert}) {
-				print $OUT "              $_\n";
-			}
 		}
 		print $OUT <<EOF if $pipeline->{pipeline}{debug};
             DEBUG:                $pipeline->{pipeline}{debug}
@@ -1446,15 +1440,7 @@ EOF
 		unless ($E->use_create_env) {
 			print $OUT <<EOF;
             BOSH_ENVIRONMENT:     $pipeline->{pipeline}{boshes}{$env}{url}
-            BOSH_CLIENT:          $pipeline->{pipeline}{boshes}{$env}{username}
-            BOSH_CLIENT_SECRET:   $pipeline->{pipeline}{boshes}{$env}{password}
-            BOSH_CA_CERT: |
 EOF
-			for (split /\n/, $pipeline->{pipeline}{boshes}{$env}{ca_cert}) {
-				print $OUT <<EOF;
-              $_
-EOF
-			}
 		}
 		print $OUT <<EOF if $pipeline->{pipeline}{debug};
             DEBUG:                $pipeline->{pipeline}{debug}
@@ -1511,17 +1497,6 @@ EOF
             ERRAND_NAME:          $errand_name
 
             BOSH_ENVIRONMENT:     $pipeline->{pipeline}{boshes}{$env}{url}
-            BOSH_CA_CERT: |
-EOF
-			for (split /\n/, $pipeline->{pipeline}{boshes}{$env}{ca_cert}) {
-				print $OUT <<EOF;
-              $_
-EOF
-			}
-			print $OUT <<EOF;
-            BOSH_CLIENT:          $pipeline->{pipeline}{boshes}{$env}{username}
-            BOSH_CLIENT:          $pipeline->{pipeline}{boshes}{$env}{username}
-            BOSH_CLIENT_SECRET:   $pipeline->{pipeline}{boshes}{$env}{password}
 EOF
 			print $OUT <<EOF if $pipeline->{pipeline}{debug};
             DEBUG:                $pipeline->{pipeline}{debug}
