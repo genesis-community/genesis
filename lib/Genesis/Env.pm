@@ -1046,9 +1046,12 @@ sub secrets_mount {
 
 # }}}
 # secrets_slug - returns the component of the Vault path under the mount that represents this environment (env: GENESIS_SECRETS_SLUG) {{{
-sub default_secrets_slug {
+sub env_vault_slug {
 	(my $p = $_[0]->name) =~ s|-|/|g;
-	return $p."/".$_[0]->top->type;
+	return $p;
+}
+sub default_secrets_slug {
+	return $_[0]->env_vault_slug()."/".$_[0]->top->type;
 }
 sub secrets_slug {
 	$_[0]->_memoize(sub {
@@ -2225,10 +2228,13 @@ EOF
 name: (( concat genesis.env "-$type" ))
 genesis:
   env:           ${\(scalar $self->lookup(['genesis.env','params.env'], $self->name))}
-  secrets_path:  ${\($self->secrets_slug)}
+  vault_env:     ${\($self->env_vault_slug)}
   secrets_mount: ${\($self->secrets_mount)}
-  exodus_path:   ${\($self->exodus_slug)}
+  secrets_path:  ${\($self->secrets_slug)}
+  secrets_base:  ${\($self->secrets_base)}
   exodus_mount:  ${\($self->exodus_mount)}
+  exodus_path:   ${\($self->exodus_slug)}
+  exodus_base:   ${\($self->exodus_base)}
   ci_mount:      ${\($self->ci_mount)}${\(
   ($self->use_create_env || $self->bosh_env eq $self->name) ? "" :
   "\n  bosh_env:      $bosh_target")}
