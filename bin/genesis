@@ -3066,8 +3066,6 @@ sub {
 			$ENV{GIT_BRANCH}, $ENV{CURRENT_ENV});
 	}
 
-	push(@undefined, grep { !$ENV{$_} } qw/BOSH_ENVIRONMENT BOSH_CA_CERT BOSH_CLIENT BOSH_CLIENT_SECRET/)
-		unless $env->use_create_env;
 	bail_on_missing_pipeline_environment_variables(@undefined);
 
 	explain "Preparing to deploy #C{%s}:\n  - based on kit #c{%s}", $env->name, $env->kit->id;
@@ -3157,9 +3155,6 @@ sub {
 		exit 0;
 	}
 
-	push(@undefined, grep { !$ENV{$_} }
-		qw/BOSH_ENVIRONMENT BOSH_CA_CERT
-		   BOSH_CLIENT BOSH_CLIENT_SECRET/);
 	bail_on_missing_pipeline_environment_variables(@undefined);
 
 	mkfile_or_fail "updates.yml", 0644, $env->with_bosh
