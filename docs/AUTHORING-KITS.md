@@ -96,6 +96,25 @@ When activated, the `azure-blobstore` feature would bring in new
 YAML files that change the blobstore configuration, and rely on
 credentials for Azure, stored in the Vault.
 
+#### Implicit features
+
+Sometimes some features are implied by others being specified, or implied when
+some some other features are _not_ specified. In such cases, the use of
+_implicit features_, sometimes also referred to as _vitual features_, is
+recommended.
+
+Implicit features are prefixed with a `+` sign. For example, when no
+`external-db` feature is specified, this may imply that a `+internal-db`
+feature should be activated, that in turn would activate specific
+modifications to the deployment manifest, so that an internal database is
+defined and used.
+
+Activation rules for implicit features are implemented in the `features`
+script of a Kit. This script is responible for detecting the conditions in
+which some implicit feature should be activated. All activated implicit rules
+are outputed by the `features` script to its standard output, one per line.
+
+
 The Kit Development Environment
 -------------------------------
 
