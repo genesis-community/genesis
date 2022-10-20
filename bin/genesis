@@ -2270,6 +2270,7 @@ sub {
 	usage(1) if @_ != 0;
 
 	$options{target} ||= '.';
+	$options{target} =~ s#/*$#/#;
 	if (-f $options{target}."/.genesis/config") {
 		$options{target} .= "/.genesis/kits/";
 		mkdir_or_fail $options{target} unless -d $options{target};
@@ -2365,7 +2366,7 @@ sub {
 	my $tar = $cc->compile($options{name}, $options{version}, $options{target}, force => $options{force})
 		or bail "Unable to compile v$options{version} of $options{name} Genesis Kit.\n";
 
-	explain("Compiled #M{$options{name}} v#C{$options{version}} to #G{$options{target}/$tar}\n");
+	explain("Compiled #M{$options{name}} v#C{$options{version}} to #G{$options{target}$tar}\n");
 });
 
 # }}}
