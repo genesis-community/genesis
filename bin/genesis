@@ -2271,8 +2271,8 @@ sub {
 
 	$options{target} ||= '.';
 	$options{target} =~ s#/*$#/#;
-	if (-f $options{target}."/.genesis/config") {
-		$options{target} .= "/.genesis/kits/";
+	if (-f $options{target}.".genesis/config") {
+		$options{target} .= ".genesis/kits/";
 		mkdir_or_fail $options{target} unless -d $options{target};
 	}
 

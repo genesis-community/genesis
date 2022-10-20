@@ -2430,7 +2430,7 @@ sub _process_reactions {
 # _parse_bosh_env - parse the bosh env into its constituent parts {{{
 sub _parse_bosh_env {
 	my $self = shift;
-	return ($self->bosh_env =~ m/^([^\/\@]+)(?:\/([^\@]+))?(?:@(?:(https?:\/\/[^\/]+)?\/)?(.*))?$/);
+	return ($self->bosh_env =~ m/^([^\/\@]+)(?:\/([^\@]+))?(?:@(?:(https?:\/\/[^\/]+)?(?:\/|$))?(.*))?$/);
 }
 
 # }}}
