@@ -312,7 +312,9 @@ sub parse_pipeline {
 
 	# validate (optional) pipeline.task.*
 	if (exists $p->{pipeline}{task}) {
-		if (ref($p->{pipeline}{task}) eq 'HASH') {
+		if (ref($p->{pipeline}{task}) ne 'HASH') {
+			push @errors, "`pipeline.task' must be a map.";
+		} else {
 			# allowed subkeys
 			for (keys %{$p->{pipeline}{task}}) {
 				push @errors, "Unrecognized `pipeline.task.$_' key found."
@@ -321,8 +323,6 @@ sub parse_pipeline {
 			if (exists($p->{pipeline}{task}{privileged}) && ref($p->{pipeline}{task}{privileged}) ne "ARRAY") {
 				push @errors, "`pipeline.task.privileged` must be an array.";
 			}
-		} else {
-			push @errors, "`pipeline.task' must be a map.";
 		}
 	}
 
