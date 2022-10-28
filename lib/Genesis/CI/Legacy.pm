@@ -60,6 +60,16 @@ EOF
 EOF
 	}
 	if ($pipeline->{pipeline}{email}) {
+		my ($registry_prefix, $registry_creds) = ("", "");
+		if ($pipeline->{pipeline}{registry}{uri}) {
+			$registry_prefix = $pipeline->{pipeline}{registry}{uri} . "/";
+			if ($pipeline->{pipeline}{registry}{username}) {
+				$registry_creds = <<EOF
+          username: $pipeline->{pipeline}{registry}{username},
+          password: $pipeline->{pipeline}{registry}{password},
+EOF
+			}
+		}
 		$notification .= <<EOF;
 {
   do: [
@@ -71,7 +81,11 @@ EOF
       platform: linux,
       image_resource: {
         type: registry-image,
-        source: { repository: starkandwayne/concourse },
+        source: {
+${registry_creds}
+          repository: ${registry_prefix}$pipeline->{pipeline}{task}{image},
+          tag:        $pipeline->{pipeline}{task}{version}
+        },
       },
       outputs: [
         { name: email },
@@ -80,7 +94,7 @@ EOF
         path: bash,
         args: [
           "-exc",
-          "mkdir -p email ; rm -rf email/* ; echo \\\"\${PIPELINE_NAME}\\\" > email/subject ; echo \\\"$message\\\" > email/body",
+          "mkdir -p email ; rm -rf email/* ; echo \\\"\${PIPELINE_NAME}\\\" > email/subject ; echo \\\"${message}\\\" > email/body",
         ],
       },
     },
@@ -310,9 +324,24 @@ sub parse_pipeline {
 		}
 	}
 
+	# validate (optional) pipeline.registry.*
+	if (exists $p->{pipeline}{registry}) {
+		if (ref($p->{pipeline}{registry}) ne 'HASH') {
+			push @errors, "`pipeline.registry' must be a map.";
+		} else {
+			# allowed subkeys
+			for (keys %{$p->{pipeline}{registry}}) {
+				push @errors, "Unrecognized `pipeline.registry.$_' key found."
+					unless m/^(uri|username|password)$/;
+			}
+		}
+	}
+
 	# validate (optional) pipeline.task.*
 	if (exists $p->{pipeline}{task}) {
-		if (ref($p->{pipeline}{task}) eq 'HASH') {
+		if (ref($p->{pipeline}{task}) ne 'HASH') {
+			push @errors, "`pipeline.task' must be a map.";
+		} else {
 			# allowed subkeys
 			for (keys %{$p->{pipeline}{task}}) {
 				push @errors, "Unrecognized `pipeline.task.$_' key found."
@@ -321,8 +350,6 @@ sub parse_pipeline {
 			if (exists($p->{pipeline}{task}{privileged}) && ref($p->{pipeline}{task}{privileged}) ne "ARRAY") {
 				push @errors, "`pipeline.task.privileged` must be an array.";
 			}
-		} else {
-			push @errors, "`pipeline.task' must be a map.";
 		}
 	}
 
@@ -1134,50 +1161,66 @@ EOF
 	}
 
 	# }}}
+	my ($registry_prefix, $registry_creds) = ("", "");
+	if ($pipeline->{pipeline}{registry}{uri}) {
+		$registry_prefix = $pipeline->{pipeline}{registry}{uri} . "/";
+		if ($pipeline->{pipeline}{registry}{username}) {
+			$registry_creds = <<EOF
+      username: $pipeline->{pipeline}{registry}{username}
+      password: $pipeline->{pipeline}{registry}{password}
+EOF
+		}
+	}
 	# CONCOURSE: resource types {{{
-	print $OUT <<'EOF';
+	print $OUT <<EOF;
 
 resource_types:
   - name: script
     type: registry-image
     source:
-      repository: cfcommunity/script-resource
-
+      repository: ${registry_prefix}cfcommunity/script-resource
+${registry_creds}
   - name: email
     type: registry-image
     source:
-      repository: pcfseceng/email-resource
-
+      repository: ${registry_prefix}pcfseceng/email-resource
+${registry_creds}
   - name: slack-notification
     type: registry-image
     source:
-      repository: cfcommunity/slack-notification-resource
-
+      repository: ${registry_prefix}cfcommunity/slack-notification-resource
+${registry_creds}
   - name: hipchat-notification
     type: registry-image
     source:
-      repository: cfcommunity/hipchat-notification-resource
-
+      repository: ${registry_prefix}cfcommunity/hipchat-notification-resource
+${registry_creds}
   - name: stride-notification
     type: registry-image
     source:
-      repository: starkandwayne/stride-notification-resource
-
+      repository: ${registry_prefix}starkandwayne/stride-notification-resource
+${registry_creds}
   - name: bosh-config
     type: registry-image
     source:
-      repository: cfcommunity/bosh-config-resource
-
+      repository: ${registry_prefix}cfcommunity/bosh-config-resource
+${registry_creds}
   - name: locker
     type: registry-image
     source:
-      repository: cfcommunity/locker-resource
-
+      repository: ${registry_prefix}cfcommunity/locker-resource
+${registry_creds}
 EOF
 	# }}}
 	print $OUT <<EOF;
 jobs:
 EOF
+	if ($pipeline->{pipeline}{registry}{uri} && $pipeline->{pipeline}{registry}{username}) {
+		$registry_creds = <<EOF
+              username: $pipeline->{pipeline}{registry}{username}
+              password: $pipeline->{pipeline}{registry}{password}
+EOF
+	}
 	for my $env (sort @{$pipeline->{envs}}) {
 		my $E = $top->load_env($env);
 		# CONCOURSE: env-specific job configuration {{{
@@ -1271,7 +1314,8 @@ EOF
           image_resource:
             type: registry-image
             source:
-              repository: $pipeline->{pipeline}{task}{image}
+${registry_creds}
+              repository: ${registry_prefix}$pipeline->{pipeline}{task}{image}
               tag:        $pipeline->{pipeline}{task}{version}
           params:
             GENESIS_HONOR_ENV:    1
@@ -1417,7 +1461,8 @@ EOF
           image_resource:
             type: registry-image
             source:
-              repository: $pipeline->{pipeline}{task}{image}
+${registry_creds}
+              repository: ${registry_prefix}$pipeline->{pipeline}{task}{image}
               tag:        $pipeline->{pipeline}{task}{version}
           params:
             GENESIS_HONOR_ENV:    1
@@ -1502,7 +1547,8 @@ EOF
           image_resource:
             type: registry-image
             source:
-              repository: $pipeline->{pipeline}{task}{image}
+${registry_creds}
+              repository: ${registry_prefix}$pipeline->{pipeline}{task}{image}
               tag:        $pipeline->{pipeline}{task}{version}
           params:
             GENESIS_HONOR_ENV:    1
@@ -1580,7 +1626,8 @@ EOF
           image_resource:
             type: registry-image
             source:
-              repository: $pipeline->{pipeline}{task}{image}
+${registry_creds}
+              repository: ${registry_prefix}$pipeline->{pipeline}{task}{image}
               tag:        $pipeline->{pipeline}{task}{version}
       - put: git
         params:
@@ -1609,6 +1656,12 @@ EOF
 			$path_prefix = "$pipeline->{pipeline}{git}{root}/";
 			$subdir_msg = " under $pipeline->{pipeline}{git}{root}";
 		}
+		if ($pipeline->{pipeline}{registry}{uri} && $pipeline->{pipeline}{registry}{username}) {
+			$registry_creds = <<EOF
+            username: $pipeline->{pipeline}{registry}{username}
+            password: $pipeline->{pipeline}{registry}{password}
+EOF
+		}
 		print $OUT <<EOF;
 
   - name: update-genesis-assets
@@ -1623,7 +1676,8 @@ EOF
         image_resource:
           type: registry-image
           source:
-            repository: $pipeline->{pipeline}{task}{image}
+${registry_creds}
+            repository: ${registry_prefix}$pipeline->{pipeline}{task}{image}
             tag:        $pipeline->{pipeline}{task}{version}
         inputs:
         - name: git
@@ -1642,7 +1696,8 @@ EOF
         image_resource:
           type: registry-image
           source:
-            repository: $pipeline->{pipeline}{task}{image}
+${registry_creds}
+            repository: ${registry_prefix}$pipeline->{pipeline}{task}{image}
             tag:        $pipeline->{pipeline}{task}{version}
         inputs:
         - name: git
@@ -1686,7 +1741,8 @@ EOF
         image_resource:
           type: registry-image
           source:
-            repository: $pipeline->{pipeline}{task}{image}
+${registry_creds}
+            repository: ${registry_prefix}$pipeline->{pipeline}{task}{image}
             tag:        $pipeline->{pipeline}{task}{version}
         inputs:
         - name: git
