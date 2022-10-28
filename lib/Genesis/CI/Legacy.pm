@@ -71,7 +71,7 @@ EOF
       platform: linux,
       image_resource: {
         type: registry-image,
-        source: { repository: starkandwayne/concourse },
+        source: { repository: $pipeline->{pipeline}{task}{image} },
       },
       outputs: [
         { name: email },
