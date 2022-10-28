@@ -513,7 +513,8 @@ being deployed, or vice versa.
 #### Default Image Registry
 
 - **pipeline.registry.uri** - The URI of the default image registry tu use, for
-  fetching custom resource types.
+  fetching custom resource types. Whenever this is defined, it will be prepended
+  to any custom task image name defined by **pipeline.task.image**.
 
 - **pipeline.registry.username** - The username to use when accessing the image
   registry.

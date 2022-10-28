@@ -60,6 +60,16 @@ EOF
 EOF
 	}
 	if ($pipeline->{pipeline}{email}) {
+		my ($registry_prefix, $registry_creds) = ("", "");
+		if ($pipeline->{pipeline}{registry}{uri}) {
+			$registry_prefix = $pipeline->{pipeline}{registry}{uri} . "/";
+			if ($pipeline->{pipeline}{registry}{username}) {
+				$registry_creds = <<EOF
+          username: $pipeline->{pipeline}{registry}{username},
+          password: $pipeline->{pipeline}{registry}{password},
+EOF
+			}
+		}
 		$notification .= <<EOF;
 {
   do: [
@@ -71,7 +81,11 @@ EOF
       platform: linux,
       image_resource: {
         type: registry-image,
-        source: { repository: $pipeline->{pipeline}{task}{image} },
+        source: {
+${registry_creds}
+          repository: ${registry_prefix}$pipeline->{pipeline}{task}{image},
+          tag:        $pipeline->{pipeline}{task}{version}
+        },
       },
       outputs: [
         { name: email },
@@ -80,7 +94,7 @@ EOF
         path: bash,
         args: [
           "-exc",
-          "mkdir -p email ; rm -rf email/* ; echo \\\"\${PIPELINE_NAME}\\\" > email/subject ; echo \\\"$message\\\" > email/body",
+          "mkdir -p email ; rm -rf email/* ; echo \\\"\${PIPELINE_NAME}\\\" > email/subject ; echo \\\"${message}\\\" > email/body",
         ],
       },
     },
@@ -1201,6 +1215,12 @@ EOF
 	print $OUT <<EOF;
 jobs:
 EOF
+	if ($pipeline->{pipeline}{registry}{uri} && $pipeline->{pipeline}{registry}{username}) {
+		$registry_creds = <<EOF
+              username: $pipeline->{pipeline}{registry}{username}
+              password: $pipeline->{pipeline}{registry}{password}
+EOF
+	}
 	for my $env (sort @{$pipeline->{envs}}) {
 		my $E = $top->load_env($env);
 		# CONCOURSE: env-specific job configuration {{{
@@ -1294,7 +1314,8 @@ EOF
           image_resource:
             type: registry-image
             source:
-              repository: $pipeline->{pipeline}{task}{image}
+${registry_creds}
+              repository: ${registry_prefix}$pipeline->{pipeline}{task}{image}
               tag:        $pipeline->{pipeline}{task}{version}
           params:
             GENESIS_HONOR_ENV:    1
@@ -1440,7 +1461,8 @@ EOF
           image_resource:
             type: registry-image
             source:
-              repository: $pipeline->{pipeline}{task}{image}
+${registry_creds}
+              repository: ${registry_prefix}$pipeline->{pipeline}{task}{image}
               tag:        $pipeline->{pipeline}{task}{version}
           params:
             GENESIS_HONOR_ENV:    1
@@ -1525,7 +1547,8 @@ EOF
           image_resource:
             type: registry-image
             source:
-              repository: $pipeline->{pipeline}{task}{image}
+${registry_creds}
+              repository: ${registry_prefix}$pipeline->{pipeline}{task}{image}
               tag:        $pipeline->{pipeline}{task}{version}
           params:
             GENESIS_HONOR_ENV:    1
@@ -1603,7 +1626,8 @@ EOF
           image_resource:
             type: registry-image
             source:
-              repository: $pipeline->{pipeline}{task}{image}
+${registry_creds}
+              repository: ${registry_prefix}$pipeline->{pipeline}{task}{image}
               tag:        $pipeline->{pipeline}{task}{version}
       - put: git
         params:
@@ -1632,6 +1656,12 @@ EOF
 			$path_prefix = "$pipeline->{pipeline}{git}{root}/";
 			$subdir_msg = " under $pipeline->{pipeline}{git}{root}";
 		}
+		if ($pipeline->{pipeline}{registry}{uri} && $pipeline->{pipeline}{registry}{username}) {
+			$registry_creds = <<EOF
+            username: $pipeline->{pipeline}{registry}{username}
+            password: $pipeline->{pipeline}{registry}{password}
+EOF
+		}
 		print $OUT <<EOF;
 
   - name: update-genesis-assets
@@ -1646,7 +1676,8 @@ EOF
         image_resource:
           type: registry-image
           source:
-            repository: $pipeline->{pipeline}{task}{image}
+${registry_creds}
+            repository: ${registry_prefix}$pipeline->{pipeline}{task}{image}
             tag:        $pipeline->{pipeline}{task}{version}
         inputs:
         - name: git
@@ -1665,7 +1696,8 @@ EOF
         image_resource:
           type: registry-image
           source:
-            repository: $pipeline->{pipeline}{task}{image}
+${registry_creds}
+            repository: ${registry_prefix}$pipeline->{pipeline}{task}{image}
             tag:        $pipeline->{pipeline}{task}{version}
         inputs:
         - name: git
@@ -1709,7 +1741,8 @@ EOF
         image_resource:
           type: registry-image
           source:
-            repository: $pipeline->{pipeline}{task}{image}
+${registry_creds}
+            repository: ${registry_prefix}$pipeline->{pipeline}{task}{image}
             tag:        $pipeline->{pipeline}{task}{version}
         inputs:
         - name: git
