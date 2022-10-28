@@ -515,6 +515,12 @@ being deployed, or vice versa.
 - **pipeline.registry.uri** - The URI of the default image registry tu use, for
   fetching custom resource types.
 
+- **pipeline.registry.username** - The username to use when accessing the image
+  registry.
+
+- **pipeline.registry.password** - The password to use when accessing the image
+  registry.
+
 
 #### Groups
 

@@ -1147,9 +1147,15 @@ EOF
 	}
 
 	# }}}
-	my $registry_prefix = "";
+	my ($registry_prefix, $registry_creds) = ("", "");
 	if ($pipeline->{pipeline}{registry}{uri}) {
 		$registry_prefix = $pipeline->{pipeline}{registry}{uri} . "/";
+		if ($pipeline->{pipeline}{registry}{username}) {
+			$registry_creds = <<EOF
+      username: $pipeline->{pipeline}{registry}{username}
+      password: $pipeline->{pipeline}{registry}{password}
+EOF
+		}
 	}
 	# CONCOURSE: resource types {{{
 	print $OUT <<EOF;
@@ -1159,37 +1165,37 @@ resource_types:
     type: registry-image
     source:
       repository: ${registry_prefix}cfcommunity/script-resource
-
+${registry_creds}
   - name: email
     type: registry-image
     source:
       repository: ${registry_prefix}pcfseceng/email-resource
-
+${registry_creds}
   - name: slack-notification
     type: registry-image
     source:
       repository: ${registry_prefix}cfcommunity/slack-notification-resource
-
+${registry_creds}
   - name: hipchat-notification
     type: registry-image
     source:
       repository: ${registry_prefix}cfcommunity/hipchat-notification-resource
-
+${registry_creds}
   - name: stride-notification
     type: registry-image
     source:
       repository: ${registry_prefix}starkandwayne/stride-notification-resource
-
+${registry_creds}
   - name: bosh-config
     type: registry-image
     source:
       repository: ${registry_prefix}cfcommunity/bosh-config-resource
-
+${registry_creds}
   - name: locker
     type: registry-image
     source:
       repository: ${registry_prefix}cfcommunity/locker-resource
-
+${registry_creds}
 EOF
 	# }}}
 	print $OUT <<EOF;
