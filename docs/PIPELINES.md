@@ -510,6 +510,12 @@ being deployed, or vice versa.
 - **pipeline.task.privileged** - A list of environments that require the
   bosh-deployment tasks to be run in privileged mode.  Defaults to empty list.
 
+#### Default Image Registry
+
+- **pipeline.registry.uri** - The URI of the default image registry tu use, for
+  fetching custom resource types.
+
+
 #### Groups
 
 - pipeline.groups - Groups jobs together under a header and show them on

@@ -310,6 +310,19 @@ sub parse_pipeline {
 		}
 	}
 
+	# validate (optional) pipeline.registry.*
+	if (exists $p->{pipeline}{registry}) {
+		if (ref($p->{pipeline}{registry}) ne 'HASH') {
+			push @errors, "`pipeline.registry' must be a map.";
+		} else {
+			# allowed subkeys
+			for (keys %{$p->{pipeline}{registry}}) {
+				push @errors, "Unrecognized `pipeline.registry.$_' key found."
+					unless m/^(uri|username|password)$/;
+			}
+		}
+	}
+
 	# validate (optional) pipeline.task.*
 	if (exists $p->{pipeline}{task}) {
 		if (ref($p->{pipeline}{task}) ne 'HASH') {
@@ -1134,44 +1147,48 @@ EOF
 	}
 
 	# }}}
+	my $registry_prefix = "";
+	if ($pipeline->{pipeline}{registry}{uri}) {
+		$registry_prefix = $pipeline->{pipeline}{registry}{uri} . "/";
+	}
 	# CONCOURSE: resource types {{{
-	print $OUT <<'EOF';
+	print $OUT <<EOF;
 
 resource_types:
   - name: script
     type: registry-image
     source:
-      repository: cfcommunity/script-resource
+      repository: ${registry_prefix}cfcommunity/script-resource
 
   - name: email
     type: registry-image
     source:
-      repository: pcfseceng/email-resource
+      repository: ${registry_prefix}pcfseceng/email-resource
 
   - name: slack-notification
     type: registry-image
     source:
-      repository: cfcommunity/slack-notification-resource
+      repository: ${registry_prefix}cfcommunity/slack-notification-resource
 
   - name: hipchat-notification
     type: registry-image
     source:
-      repository: cfcommunity/hipchat-notification-resource
+      repository: ${registry_prefix}cfcommunity/hipchat-notification-resource
 
   - name: stride-notification
     type: registry-image
     source:
-      repository: starkandwayne/stride-notification-resource
+      repository: ${registry_prefix}starkandwayne/stride-notification-resource
 
   - name: bosh-config
     type: registry-image
     source:
-      repository: cfcommunity/bosh-config-resource
+      repository: ${registry_prefix}cfcommunity/bosh-config-resource
 
   - name: locker
     type: registry-image
     source:
-      repository: cfcommunity/locker-resource
+      repository: ${registry_prefix}cfcommunity/locker-resource
 
 EOF
 	# }}}
