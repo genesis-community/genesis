@@ -925,6 +925,7 @@ sub get_environment_variables {
 		my $default_method = "default_$method";
 		$env{uc("GENESIS_${target}_MOUNT_OVERRIDE")} = ($self->$method ne $self->$default_method) ? "true" : "";
 	}
+	$env{GENESIS_VAULT_ENV_SLUG} = $self->env_vault_slug;
 	$env{GENESIS_VAULT_PREFIX} = # deprecated in v2.7.0
 	$env{GENESIS_SECRETS_PATH} = # deprecated in v2.7.0
 	$env{GENESIS_SECRETS_SLUG} = $self->secrets_slug;

@@ -1622,6 +1622,7 @@ EOF
 		GENESIS_SECRETS_SLUG_OVERRIDE => "",
 		GENESIS_TARGET_VAULT => re('http://127.0.0.1:82\d\d'),
 		GENESIS_USE_CREATE_ENV => "true",
+		GENESIS_VAULT_ENV_SLUG => "base/extended",
 		GENESIS_VAULT_PREFIX => "base/extended/thing",
 		GENESIS_VERIFY_VAULT => "1",
 		SAFE_TARGET => re('http://127.0.0.1:82\d\d'),
