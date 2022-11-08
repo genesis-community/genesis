@@ -293,9 +293,9 @@ pipeline:
 - **pipeline.debug** - Turns on debug output when set to a YAML truthy value.
   Defaults to false.
 
-- **pipeline.smoke-tests** - The name of the BOSH smoke test errand to run
-  after a successful deployment / upgrade.  If not specified, no smoke
-  testing will be carried out.
+- **pipeline.errands** - An array of BOSH errand names, that will be run after a
+  successful deployment / upgrade. This is especially useful for running smoke
+  test errands.
 
 #### Secrets
 
