@@ -10,6 +10,7 @@ inputs:
 - name: version
 - name: git
 - name: git-ci
+- name: git-main
 - name: build
 - name: release-notes
   optional: true
