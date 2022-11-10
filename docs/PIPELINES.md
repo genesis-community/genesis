@@ -297,6 +297,12 @@ pipeline:
   successful deployment / upgrade. This is especially useful for running smoke
   test errands.
 
+- **pipeline.ocfp** - Enable OCFP conventions regarding BOSH _Cloud Config_ and
+  _Runtime Config_ names. Default is `false` and watches for changes on the
+  configs named `default`. When `true`, the watched configs are named after
+  their respective environment names.
+  See also the `pipeline.boshes.<env-name>.genesis_env` property.
+
 #### Secrets
 
 - **pipeline.vault.url** - The URL of your Vault installation, i.e.
@@ -495,6 +501,11 @@ being deployed, or vice versa.
 
 - **pipeline.boshes.&lt;env-name&gt;.password** - The password for the
   configured BOSH user account.  This is **required**.
+
+- **pipeline.boshes.&lt;env-name&gt;.genesis_env** - The Genesis environment
+  name of the BOSH server, for OCFP naming conventions to properly apply. Only
+  useful when `pipeline.ocfp` is set to `true`. Defaults to the `<env-name>`,
+  which is different only when deploying OCFP environment BOSH servers.
 
 
 #### Task Configuration

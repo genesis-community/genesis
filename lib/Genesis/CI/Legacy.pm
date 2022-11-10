@@ -131,7 +131,7 @@ sub parse_pipeline {
 	}
 	for (keys %{$p->{pipeline}}) {
 		push @errors, "Unrecognized `pipeline.$_' key found."
-			unless m/^(name|public|tagged|errands|vault|git|slack|hipchat|stride|email|boshes|task|layout|layouts|groups|debug|locker|unredacted|notifications|auto-update|registry)$/;
+			unless m/^(name|public|tagged|errands|ocfp|vault|git|slack|hipchat|stride|email|boshes|task|layout|layouts|groups|debug|locker|unredacted|notifications|auto-update|registry)$/;
 	}
 	for (qw(name vault git boshes)) {
 		push @errors, "`pipeline.$_' is required."
@@ -393,7 +393,11 @@ sub parse_pipeline {
 						unless m/^(alias)$/;
 				}
 			} else {
-				for (qw(url ca_cert username password)) {
+				my @required_bosh_props = qw(url ca_cert username password);
+				if (exists $p->{pipeline}{ocfp} && yaml_bool($p->{pipeline}{ocfp}, 0)) {
+					push @required_bosh_props, 'genesis_env';
+				}
+				for (@required_bosh_props) {
 					push @errors, "`pipeline.boshes[$env].$_' is required."
 						unless $p->{pipeline}{boshes}{$env}{$_};
 				}
@@ -502,6 +506,12 @@ sub parse {
 	$P->{envs} = [];     # list of all environment names seen in the
 	                     # configuration, to be used for validation.
 
+	$P->{aliases} = {};  # map of (env-name -> alias) so that the generated
+	                     # pipeline uses short human-readable aliases
+
+	$P->{genesis_envs} = {}  # map of (env-name -> bosh-env-name) for when they are
+	                         # not the same.
+
 	$P->{will_trigger} = {}; # map of (A -> [B, C, D]) triggers, where A triggers
 	                         # a deploy (or notification) of B, C, and D.  Note that
 	                         # the values are lists, because one environment
@@ -514,6 +524,7 @@ sub parse {
 	$P->{pipeline}{tagged}     = yaml_bool($P->{pipeline}{tagged}, 0);
 	$P->{pipeline}{public}     = yaml_bool($P->{pipeline}{public}, 0);
 	$P->{pipeline}{unredacted} = yaml_bool($P->{pipeline}{unredacted}, 0);
+	$P->{pipeline}{ocfp}       = yaml_bool($P->{pipeline}{ocfp}, 0);
 
 	# some default values, if the user didn't supply any
 	$P->{pipeline}{vault}{verify} = yaml_bool($P->{pipeline}{vault}{verify}, 1);
@@ -596,7 +607,8 @@ sub parse {
 		die "Unrecognized environment or configuration directive:  '$cmd'.\n";
 	}
 	$P->{envs} = [keys %envs];
-	$P->{aliases} = { map { $_ => ($P->{pipeline}{boshes}{$_}{alias} || $_) } keys %envs};
+	$P->{aliases} =      { map { $_ => ($P->{pipeline}{boshes}{$_}{alias}       || $_) } keys %envs};
+	$P->{genesis_envs} = { map { $_ => ($P->{pipeline}{boshes}{$_}{genesis_env} || $_) } keys %envs};
 
 	%envs = (); # we'll reuse envs for auto environment de-duplication
 	for my $pattern (@auto) {
@@ -1006,6 +1018,10 @@ EOF
 			);
 		}
 		unless ($E->use_create_env) {
+			my $config_name = 'default';
+			if ($P->{pipeline}{ocfp}) {
+				$config_name = $pipeline->{genesis_envs}{$env};
+			}
 			print $OUT <<EOF;
 
   - name: ${alias}-cloud-config
@@ -1025,6 +1041,7 @@ EOF
 			}
 			print $OUT <<EOF;
       config: cloud
+      name: $config_name
 
   - name: ${alias}-runtime-config
     type: bosh-config
@@ -1043,6 +1060,7 @@ EOF
 			}
 			print $OUT <<EOF;
       config: runtime
+      name: $config_name
 
 EOF
 		}
