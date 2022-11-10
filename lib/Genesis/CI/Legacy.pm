@@ -407,7 +407,7 @@ sub parse_pipeline {
 				# allowed subkeys
 				for (keys %{$p->{pipeline}{boshes}{$env}}) {
 					push @errors, "Unrecognized `pipeline.boshes[$env].$_' key found."
-						unless m/^(url|ca_cert|username|password|alias)$/;
+						unless m/^(url|ca_cert|username|password|alias|genesis_env)$/;
 				}
 			}
 		}
