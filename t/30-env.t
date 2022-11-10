@@ -1055,7 +1055,8 @@ kit:
     - bonus
 
 genesis:
-  env: $name
+  env:            $name
+  vault:          $VAULT_URL as $vault_target no-strongbox
 
 params:
   static: junk
@@ -1620,12 +1621,12 @@ EOF
 		GENESIS_SECRETS_PATH => "base/extended/thing",
 		GENESIS_SECRETS_SLUG => "base/extended/thing",
 		GENESIS_SECRETS_SLUG_OVERRIDE => "",
-		GENESIS_TARGET_VAULT => re('http://127.0.0.1:82\d\d'),
+		GENESIS_TARGET_VAULT => $vault_target,
 		GENESIS_USE_CREATE_ENV => "true",
 		GENESIS_VAULT_ENV_SLUG => "base/extended",
 		GENESIS_VAULT_PREFIX => "base/extended/thing",
 		GENESIS_VERIFY_VAULT => "1",
-		SAFE_TARGET => re('http://127.0.0.1:82\d\d'),
+		SAFE_TARGET => $vault_target,
 		GENESIS_ENVIRONMENT_PARAMS => re('^{.*}$'),
 		BOSH_ALIAS => undef,
 		BOSH_CA_CERT => undef,
@@ -1652,7 +1653,7 @@ EOF
 	ok $env_from_evs->{is_from_envvars}, "env from env vars indicates so.";
 
 	my @old_properties = grep {$_ !~ /^(__actual_files)$/}  keys(%$env);
-	my @new_properties = grep {$_ !~ /^(is_from_envvars)$/} keys(%$env_from_evs);
+	my @new_properties = grep {$_ !~ /^(__actual_files|is_from_envvars)$/} keys(%$env_from_evs);
 	cmp_set(\@new_properties, \@old_properties, "original and from_envvars environments have the same properties");
 
 

@@ -642,6 +642,11 @@ EOF
   bosh_env:       $BOSH_ALIAS
 EOF
 	fi
+	if [[ -n "${GENESIS_ENV_VAULT_DESCRIPTOR:-}" ]] ; then
+		cat <<EOF
+  vault:          $GENESIS_ENV_VAULT_DESCRIPTOR
+EOF
+	fi
 	if [[ -n "${GENESIS_MIN_VERSION:-}" && $GENESIS_MIN_VERSION != '0.0.0' ]] ; then
 		cat <<EOF
   min_version:    $GENESIS_MIN_VERSION

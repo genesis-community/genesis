@@ -224,6 +224,7 @@ sub from_envvars {
 		if ($ENV{GENESIS_CREDHUB_EXODUS_SOURCE});
 
 	# determine our vault and secret path
+	$env->{__params}{genesis}{vault} = $ENV{GENESIS_ENV_VAULT_DESCRIPTOR} if $ENV{GENESIS_ENV_VAULT_DESCRIPTOR};
 	for (qw(secrets_mount secrets_base secrets_slug exodus_mount exodus_base ci_mount ci_base root_ca_path)) {
 		$env->{'__'.$_} = $env->{__params}{genesis}{$_} = $ENV{'GENESIS_'.uc($_)}
 			unless eval "\$env->$_" eq $ENV{'GENESIS_'.uc($_)};
@@ -265,12 +266,23 @@ sub create {
 	die "Environment file $env->{file} already exists.\n"
 		if -f $env->path($env->{file});
 
+	# Sanitize the vault descriptor, if present
+	if ($opts{vault}) {
+		unless (grep {$_ =~ /^https?:\/\/[^\/]+/} (split(' ',$opts{vault}))) {
+			my $vault = (Genesis::Vault->find(name => $opts{vault}))[0];
+			bail(
+				"#R{[ERROR]} Cannot find a vault target with alias '$opts{vault}'"
+			) unless $vault;
+			$opts{vault} = $vault->build_descriptor();
+		}
+	}
+
 	# Setup minimum parameters (normally from the env file) to be able to build
 	# the env file.
 	$env->{__params} = {
 		genesis => {
 			env => $opts{name},
-			get_opts(\%opts, qw(secrets_path secrets_mount exodus_mount ci_mount root_ca_path credhub_env))}
+			get_opts(\%opts, qw(vault secrets_path secrets_mount exodus_mount ci_mount root_ca_path credhub_env))}
 	};
 
 	# The crazy-intricate create-env/bosh_env dance...
@@ -430,9 +442,8 @@ sub kit    { $_[0]->{kit}    || bug("Incompletely initialized environment '".$_[
 sub top    { $_[0]->{top}    || bug("Incompletely initialized environment '".$_[0]->name."': no top specified"); }
 
 # }}}
-# Delegations: type, vault, path {{{
+# Delegations: type, path {{{
 sub type   { $_[0]->top->type; }
-sub vault  { $_[0]->top->vault; }
 sub path   { shift->top->path(@_); }
 # }}}
 
@@ -712,7 +723,12 @@ sub params {
 # defines - true if the given path is defined in the hierarchal environment parameters. {{{
 sub defines {
 	my ($self, $key) = @_;
-	my (undef, $found) = struct_lookup($self->params(),$key);
+	my $found;
+	if (defined($self->{__params})) {
+		(undef, $found) = struct_lookup($self->params(),$key);
+	} else {
+		(undef, $found) = $self->lookup_unevaled($key);
+	}
 	return defined($found);
 }
 
@@ -721,6 +737,21 @@ sub defines {
 sub lookup {
 	my ($self, $key, $default) = @_;
 	return struct_lookup($self->params, $key, $default);
+}
+
+# }}}
+# lookup_unevaled - look up a value from the heirarchal evironment without evaluating operators {{{
+sub lookup_unevaled {
+	my ($self, $key, $default) = @_;
+	my @merge_files = map { $self->path($_) } $self->actual_environment_files();
+	return $default unless @merge_files;
+	pushd $self->path;
+	my $out = run({ onfailure => "Unable to merge $self->{name} environment files", stderr => undef },
+		'spruce merge --multi-doc --skip-eval "$@" | spruce json', @merge_files);
+	popd;
+	my $unevaled_params = load_json($out);
+
+	return struct_lookup($unevaled_params, $key, $default);
 }
 
 # }}}
@@ -904,6 +935,9 @@ sub get_environment_variables {
 	$env{GENESIS_MIN_VERSION} = $min_version if $min_version;
 
 	# Vault ENV VARS
+	if (my $descriptor = $self->lookup('genesis.vault')) {
+		$env{GENESIS_ENV_VAULT_DESCRIPTOR} = $descriptor;
+	}
 	$env{GENESIS_TARGET_VAULT} = $env{SAFE_TARGET} = $self->vault->ref;
 	$env{GENESIS_VERIFY_VAULT} = $self->vault->connect_and_validate->verify || "";
 
@@ -1013,6 +1047,34 @@ sub connect_required_endpoints {
 # }}}
 
 # Environment Dependencies - Vault
+# vault - get the vault instance for the environment, or default to the top level vault {{{
+sub vault {
+	my $ref = $_[0]->_memoize(sub {
+		my ($self) = @_;
+		my $vault_info = $self->get_ancestral_vault();
+		return $self->top->vault() unless $vault_info;
+
+		my $details = Genesis::Vault->parse_vault_descriptor($vault_info);
+
+		if (in_callback && $ENV{GENESIS_TARGET_VAULT} && $ENV{GENESIS_TARGET_VAULT} eq $details->{url}) {
+			return Genesis::Vault->rebind();
+		} 
+		my %filter = ();
+		$filter{verify} = ($details->{verify} && $details->{tls} ? 1 : 0 ) if $details->{tls};
+		$filter{namespace} = $details->{namespace} || '';
+		$filter{strongbox} = $details->{strongbox};
+
+		return Genesis::Vault->attach(
+			url => $details->{url},
+			tls => $details->{tls},
+			alias => $details->{alias},
+			%filter
+		);
+	});
+	return $ref;
+
+}
+# }}}
 # with_vault - ensure this environment is able to connect to the Vault server {{{
 sub with_vault {
 	my $self = shift;
@@ -1021,6 +1083,21 @@ sub with_vault {
 	bail("\n#R{[ERROR]} No vault specified or configured.")
 		unless $self->vault;
 	return $self;
+}
+
+# }}}
+# get_ancestral_vault {{{
+sub get_ancestral_vault {
+	my ($self) = @_;
+
+	my $vault_info = scalar($self->lookup_unevaled('genesis.vault', undef));
+	bail(
+		"#R{[ERROR]} Expecting #C{genesis.vault} to be a singular string value, not a ".lc(ref($vault_info))
+	) if ref($vault_info);
+	bail(
+		"#R{[ERROR]} Cannot use spruce operator to specify #C{genesis.vault_info}"
+	)	if $vault_info && $vault_info =~ /^\(\(/;
+	return $vault_info;
 }
 
 # }}}
@@ -1413,7 +1490,10 @@ sub manifest {
 		return run({
 				onfailure => "Failed to merge $self->{name} manifest",
 				stderr => "&1",
-				env => $self->vault->env # to target desired vault
+				env => {
+					$self->get_environment_variables('manifest'),
+					%{$self->vault->env()},               # specify correct vault for spruce to target
+				}
 			},
 			'spruce json "$1" | jq \'."bosh-variables"//{}\' | spruce merge --skip-eval', $path
 		)."\n"
@@ -1436,7 +1516,7 @@ sub manifest {
 		return run({
 				onfailure => "Failed to merge $self->{name} manifest",
 				stderr => "&1",
-				env => $self->vault->env # to target desired vault
+				env => $self->vault->env # to target desired vault, not likely needed on prune operation
 			},
 			'spruce', 'merge', '--skip-eval',  (map { ('--prune', $_) } @prune), $path)."\n";
 	}

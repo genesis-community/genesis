@@ -22,21 +22,20 @@ sub new {
 	my ($class, $root, %opts) = @_;
 	my $top = bless({ root => Cwd::abs_path($root) }, $class);
 
-	if ($opts{vault}) {
-		bail("#R{[ERROR]} Cannot specify #C{--vault %s}: Deployment already has an associated secrets provider", $opts{vault})
-			if $top->has_vault;
-		$top->set_vault(target => $opts{vault}, session_only => 1)
-	}
 	$ENV{GENESIS_ROOT}=$top->path();
-	my $vault;
-	if ($top->config->get("secrets_provider.url")) {
-		$vault = Genesis::Vault->find_single_match_or_bail($top->config->get("secrets_provider.url"));
-	} else {
-		my $default = Genesis::Vault->default;
-		$vault = Genesis::Vault->find_single_match_or_bail($default->url, $default->name);
+
+	if ($opts{vault}) {
+		# TODO: #ADDVAULT
+		# if ($opts{env}) {
+		#   $top->add_vault($opts{vault},$opts{env})
+		# } else {
+		debug ("Overriding vault %s with user specified %s for this session", $top->vault->name, $opts{vault})
+			if $top->has_vault;
+		$top->set_vault(target => $opts{vault}, session_only => 1);
+		#}
 	}
-	if ($vault) {
-		$ENV{GENESIS_TARGET_VAULT} = $ENV{SAFE_TARGET} = $vault->ref;
+	if ($top->vault()) {
+		$ENV{GENESIS_TARGET_VAULT} = $ENV{SAFE_TARGET} = $top->vault->name;
 	} else {
 		debug "#R{WARNING} - could not find any #M{safe} target.  This may cause consequences later on";
 	}
@@ -81,8 +80,11 @@ sub create {
 		$self->config->set('creator_version', $Genesis::VERSION);
 
 		$self->config->set('secrets_provider', {
-			url => $self->vault->url,
-			insecure => $self->vault->verify ? Genesis::Config::FALSE : Genesis::Config::TRUE
+			url       => $self->vault->url,
+			insecure  => $self->vault->verify    ? Genesis::Config::FALSE : Genesis::Config::TRUE,
+			namespace => $self->vault->namespace,
+			strongbox => $self->vault->strongbox ? Genesis::Config::TRUE  : Genesis::Config::FALSE,
+			alias     => $self->vault->name
 		});
 
 		$self->config->set('kit_provider', $self->kit_provider->config)
@@ -289,8 +291,13 @@ sub vault {
 			return Genesis::Vault->rebind();
 		} elsif ($self->has_vault) {
 			return Genesis::Vault->attach(
-				$self->config->get("secrets_provider.url"),
-				$self->config->get("secrets_provider.insecure")
+				# TODO: (#BETTERVAULTTARGET)
+				# capture and use a default name, namespace, and stronghold context: [namespace@]https?://<ip-or-domain>[:port] [as name] [no-verify] [no-stronghold]
+				# Until done, we'll just rely on user having set up a safe at the same domain in their .saferc file.
+				# as name will only be used if they don't already have a safe with that alias in that file
+				# On creation, user will be asked auth method, then will be able to authenticate
+				url    => $self->config->get("secrets_provider.url"),
+				verify => $self->config->get("secrets_provider.insecure") ? 0 : 1
 			);
 		} else {
 			my $vault = Genesis::Vault::default;
@@ -302,10 +309,19 @@ sub vault {
 }
 
 # }}}
+# repo_vault - returns the repository vault if specified in config, or env vault otherwise {{{
+# TODO: examine how this can work with multiple vaults (#ADDVAULT)
+sub repo_vault {
+	my $self = shift;
+	return Genesis::Vault::default unless $self->has_vault();
+	return $self->config->get("secrets_provider.insecure");
+}
+
+# }}}
 # has_vault - returns true if the configuration has a vault defined {{{
 sub has_vault {
 	my ($self) = @_;
-	defined($self->config->get("secrets_provider")) && ref($self->config->get("secrets_provider")) eq 'HASH' && scalar(%{$self->config->get("secrets_provider")});
+	defined($self->config->get("secrets_provider")) && ref($self->config->get("secrets_provider")) eq 'HASH' && scalar(%{$self->config->get("secrets_provider")}) > 0;
 }
 
 # }}}
@@ -320,6 +336,7 @@ sub set_vault {
 		}
 		$new_vault = Genesis::Vault->target(undef, default_vault => $current_vault);
 	} elsif (exists($opts{target})) {
+		# TODO: allow the creation of a new safe target by parsing target string (#BETTERVAULTTARGET)
 		my @candidates = Genesis::Vault->find_by_target($opts{target});
 		return "#R{[Error]} No vault found that matches $opts{target}." unless @candidates;
 		return "#R{[Error]} Target $opts{target} has URL that is not unique across the known vaults on this system."
@@ -327,6 +344,8 @@ sub set_vault {
 		$new_vault = $candidates[0];
 	} elsif ($opts{clear}) {
 		$new_vault = undef;
+	} elsif (ref($opts{vault}) eq "Genesis::Vault") {
+		$new_vault = $opts{vault}
 	} else {
 		bug "#R{[Error]} Invalid call to Genesis::Top->set_vault"
 	}
@@ -335,8 +354,11 @@ sub set_vault {
 
 	if ($new_vault) {
 		$self->config->set('secrets_provider', {
-			url => $new_vault->url,
-			insecure => $new_vault->verify ? Genesis::Config::FALSE : Genesis::Config::TRUE
+			url       => $new_vault->url,
+			insecure  => $new_vault->verify    ? Genesis::Config::FALSE : Genesis::Config::TRUE,
+			strongbox => $new_vault->strongbox ? Genesis::Config::TRUE  : Genesis::Config::FALSE,
+			namespace => $new_vault->namespace,
+			alias     => $new_vault->name
 		}, 1);
 	} else {
 		$self->config->clear('secrets_provider',1);
@@ -344,6 +366,10 @@ sub set_vault {
 	return;
 }
 
+# }}}
+# add_vault - TODO: #ADDVAULT add ability to support multiple vaults, default, base and per env {{{
+sub add_vault { 
+}
 # }}}
 # vault_status - get the status for the associated secret-provider vault {{{
 sub vault_status {
@@ -373,6 +399,13 @@ sub vault_status {
 	$info->{alias} = $vault->name;
 	$info->{status} = $vault->status;
 	return %$info;
+}
+
+# }}}
+# get_ancestral_vault {{{
+sub get_ancestral_vault {
+	my ($self, $env) = @_;
+	return Genesis::Env->new(name=>$env, top=>$self)->get_ancestral_vault();
 }
 
 # }}}

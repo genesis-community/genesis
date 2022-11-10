@@ -234,6 +234,7 @@ sub vault_auth {
 		join(", ", @missing_variables)
 	) if @missing_variables;
 
+	# TODO: This should be handled by repo or env vault yaml entries (#BETTERVAULTTARGET)
 	Genesis::Vault->create(
 		$ENV{VAULT_ADDR},
 		'deployments-vault',
@@ -1492,21 +1493,22 @@ $GLOBAL_USAGE
                       used to sign all generated certs that don't specify a
                       signatory CA certificate.
 
+      --vault         The name of a `safe' target (a Vault) to store newly
+                      generated credentials in.  Overrides the vault specified
+                      in the deployment repository for the environment.
+
 LEGACY OPTIONS:
-      --vault        The name of a `safe' target (a Vault) to store newly
-                     generated credentials in.  Only accepted if the deployment
-                     repository does not have a vault specified.
+      --prefix        Old name of --secrets-path option.
 
-      --prefix       Old name of --secrets-path option.
-
-      --no-secrets   Do not generate secrets in the Vault.  You will have to
-                     manually run `genesis secrets` yourself.  This option is
-                     accepted but no longer has any effect.
+      --no-secrets    Do not generate secrets in the Vault.  You will have to
+                      manually run `genesis secrets` yourself.  This option is
+                      accepted but no longer has any effect.
 
 EOF
 sub {
 	my %options = (
 		secrets => 1,
+		recreate => 0,
 	);
 	options(\@_, \%options, qw/
 		vault=s
@@ -1519,17 +1521,28 @@ sub {
 		root-ca-path=s
 		kit|k=s
 		create-env!
+		recreate!
 	/);
 	usage(1) if @_ != 1;
 	warn "The --no-secrets flag is deprecated, and no longer honored.\n"
 		if !delete($options{secrets});
 
-	# get our context
-	my $top = Genesis::Top->new('.', vault => delete($options{vault})); # FIXME: drop chdir from -C handling eventually
-
 	my $name = $_[0];
 	die "No environment name specified!\n" unless $name;
 	$name =~ s/\.yml$//;
+
+	my $top = Genesis::Top->new('.');
+	my $vault_desc = $options{vault} || $top->get_ancestral_vault($name) || '';
+	if ($vault_desc) {
+		if ( $vault_desc eq "?") {
+			$top->set_vault(interactive => 1);
+		} else {
+			my $vault = Genesis::Vault->get_vault_from_descriptor($vault_desc, $options{vault} ? '--vault option' : '');
+			$top->set_vault(vault => $vault);
+		}
+		$vault_desc = $top->vault->build_descriptor()
+	}
+
 
 	# determine the kit to use (dev or compiled)
 	my $kit_id=delete($options{kit}) || '';

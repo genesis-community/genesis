@@ -143,7 +143,10 @@ subtest 'init' => sub {
 		deployment_type => 'jumpbox',
 		secrets_provider => {
 			url => $VAULT_URL,
-			insecure => bool(0)
+			insecure => bool(0),
+			strongbox => bool(0),
+			namespace => "",
+			alias => $vault_target
 		}
 	}, ".genesis/config contains correct information";
 
@@ -255,13 +258,19 @@ deployment_type: test
 secrets_provider:
   url: $VAULT_URL{$vault_target}
   insecure: false
+  strongbox: false
+  namespace: ""
+  alias: $vault_target
 EOF
 	cmp_deeply($top->config->_contents, {
 			"deployment_type" => "test",
 			"genesis_version" => "99.99.99",
 			"secrets_provider" => {
 				"url" => $VAULT_URL{$vault_target},
-				"insecure" => bool(0)
+				"insecure" => bool(0),
+				"strongbox" => bool(0),
+				"namespace" => "",
+				"alias" => $vault_target,
 			}
 		}, "repo .genesis/config contains the updated information"
 	);
@@ -277,13 +286,19 @@ deployment_type: test
 secrets_provider:
   url: $VAULT_URL{$vault_target}
   insecure: false
+  strongbox: false
+  namespace: ""
+  alias: $vault_target
 EOF
 	cmp_deeply($top->config->_contents, {
 			"deployment_type" => "test",
 			"genesis_version" => "99.99.99",
 			"secrets_provider" => {
 				"url" => $VAULT_URL{$vault_target},
-				"insecure" => bool(0)
+				"insecure" => bool(0),
+				"strongbox" => bool(0),
+				"namespace" => "",
+				"alias" => $vault_target
 			}
 		}, "repo .genesis/config hasn't changed"
 	);
@@ -301,22 +316,28 @@ deployment_type: test
 secrets_provider:
   url: $VAULT_URL{$other_vault_name}
   insecure: false
+  strongbox: false
+  namespace: ""
+  alias: $other_vault_name
 EOF
 	cmp_deeply($top->config->_contents, {
 			"deployment_type" => "test",
 			"genesis_version" => "99.99.99",
 			"secrets_provider" => {
 				"url" => $VAULT_URL{$other_vault_name},
-				"insecure" => bool(0)
+				"insecure" => bool(0),
+				"strongbox" => bool(0),
+				"namespace" => "",
+				"alias" => $other_vault_name
 			}
 		}, "repo .genesis/config contains the updated information"
 	);
 
-	my $new_vault;
+	my $new_top;
 	my ($ansi_ltred, $ansi_ltcyan, $ansi_reset) = ("\e[1;31m", "\e[1;36m", "\e[0m");
-	throws_ok {$new_vault = Genesis::Top->new($tmp, vault => $other_vault_name)}
-		qr"\[.*m\[ERROR\]\[0m Cannot specify \[.*m--vault ${other_vault_name}\[0m: Deployment already has an associated secrets provider",
-		"does not allow vault to be overridden if present in config, and gives correct error message";
+	lives_ok {$new_top = Genesis::Top->new($tmp, vault => $vault_target)};
+	is(ref($new_top->vault), "Genesis::Vault", "Top vault is a vault object");
+	is($new_top->vault->{url}, $VAULT_URL{$vault_target}, "Other vault is used by top");
 };
 
 teardown_vault();

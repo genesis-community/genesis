@@ -219,7 +219,7 @@ params:
   GENESIS_ENVIRONMENT:  snw-lab-dev
   GENESIS_VAULT_PREFIX: snw/lab/dev/thing
   GENESIS_ROOT:         $root
-  GENESIS_TARGET_VAULT: "$VAULT_URL"
+  GENESIS_TARGET_VAULT: "$vault_target"
   GENESIS_VERIFY_VAULT: 1
 
   root:   $root

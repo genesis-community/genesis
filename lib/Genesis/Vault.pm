@@ -15,12 +15,13 @@ my (@all_vaults, $default_vault, $current_vault);
 
 # new - raw instantiation of a vault object {{{
 sub new {
-	my ($class, $url, $name, $verify, $namespace) = @_;
+	my ($class, $url, $name, $verify, $namespace, $strongbox) = @_;
 	return bless({
 			url       => $url,
 			name      => $name,
 			verify    => $verify ? 1 : 0, # Cleans out JSON::Boolean types
 			namespace => $namespace,
+			strongbox => !defined($strongbox) || $strongbox ? 1 : 0, # defaults to true
 			id        => sprintf("%s-%06d",$name,rand(1000000))
 		}, $class);
 }
@@ -69,6 +70,7 @@ sub target {
 					 $target;
 		}
 		if (scalar(@targets) >1) {
+			# TODO: check if one of the returned values matches the alias
 			bail "#R{[ERROR]} Multiple safe targets use url #M{%s}:\n%s\n".
 					 "\nYour ~/.saferc file cannot have more than one target for the given url.  Please".
 					 "remove any duplicate targets before re-attempting this command.",
@@ -125,38 +127,60 @@ sub target {
 # }}}
 # attach - builder for vault based on loaded environment {{{
 sub attach {
-	my ($class, $url, $insecure) = @_;
+	my ($class, %opts) = @_;
 
-	# Allow vault target and insecure to be specified by ENV variables.
-	$url = $ENV{substr($url,1)} if substr($url,0,1) eq '$';
-	$insecure = $ENV{substr($insecure,1)} if substr($insecure,0,1) eq '$';
+	for my $opt (keys %opts) {
+		# Allow vault options to be specified by ENV variables.
+		my $value = $opts{$opt};
+		next unless defined $value;
+		$opts{$opt} = $ENV{substr($value,1)} if substr($value,0,1) eq '$';
+	}
+
+	$opts{tls} = $opts{url} =~ /https:\/\// ? 1 : 0 if $opts{url} && !defined($opts{tls});
+
+	my $url = delete($opts{url});
+	my $alias = delete($opts{alias});
 
 	bail "#R{[ERROR]} No vault target specified"
 		unless $url;
 	bail "#R{[ERROR]} Expecting vault target '$url' to be a url"
 		unless _target_is_url($url);
 
-	($url, my @targets) = _get_targets($url);
+	my %filter = (
+		url       => $url,
+		namespace => $opts{namespace} || '',
+		strongbox => $opts{strongbox} || 0
+	);
+	$filter{verify} = (($opts{tls} && $opts{verify}) ? 1 : 0) if $opts{tls};
+
+	my @targets = Genesis::Vault->find(%filter);
 	if (scalar(@targets) <1) {
+		# TODO: If alias and url was given, and in a controlling terminal, create safe target
 		bail "#R{[ERROR]} Safe target for #M{%s} not found.  Please run\n\n".
 				 "  #C{safe target <name> \"%s\"%s}\n\n".
 				 "then authenticate against it using the correct auth method before\n".
 				 "re-attempting this command.",
-				 $url, $url,($insecure?" -k":"");
+				 $url, $url,($opts{verify}?"":" -k");
 	}
 	if (scalar(@targets) >1) {
-		bail "#R{[ERROR]} Multiple safe targets found for #M{%s}:\n%s\n".
-				 "\nYour ~/.saferc file cannot have more than one target for the given url.\n" .
-				 "Please remove any duplicate targets before re-attempting this command.",
-				 $url, join("", map {" - #C{$_}\n"} @targets);
+		my ($named_target) = grep {$_->name eq $alias} @targets;
+		if ($named_target) {
+			@targets = ($named_target)
+		} else {
+			bail(
+				"#R{[ERROR]} Multiple safe targets found for #M{%s}:\n%s\n".
+				"\nYour ~/.saferc file cannot have more than one target for the given url.\n" .
+				"Please remove any duplicate targets before re-attempting this command.",
+				$url, join("", map {" - #C{$_->name}\n"} @targets)
+			);
+		}
 	}
-
-	my $vault = $class->new($url, $targets[0], !$insecure);
-	return $vault->connect_and_validate;
+	return $targets[0]->connect_and_validate;
 }
 
 # }}}
 # rebind - builder for rebinding to a previously selected vault (for callbacks) {{{
+# TODO: Bind to alias, which encapuslates all the namespace, validation, strongbox, url, etc...
 sub rebind {
 	# Special builder with less checking for callback support
 	my ($class) = @_;
@@ -185,8 +209,9 @@ sub rebind {
 # find - return vaults that match filter (defaults to all) {{{
 sub find {
 	my ($class, %filter) = @_;
+
 	@all_vaults = (
-		map {Genesis::Vault->new($_->{url},$_->{name},$_->{verify})}
+		map {Genesis::Vault->new($_->{url},$_->{name},$_->{verify},$_->{namespace}||'',$_->{strongbox})}
 		sort {$a->{name} cmp $b->{name}}
 		@{ read_json_from(run({env => {VAULT_ADDR => "", SAFE_TARGET => ""}}, "safe targets --json")) }
 	) unless @all_vaults;
@@ -251,16 +276,114 @@ sub find_single_match_or_bail {
 	) if scalar(@matches) > 1;
 	return $matches[0]
 }
+
+# }}}
+# get_vault_from_descriptor - find unique vault from vault descriptor, or bail {{{
+sub get_vault_from_descriptor {
+
+	my ($class, $descriptor, $source) = @_;
+	my $filter = $class->parse_vault_descriptor($descriptor, $source);
+	my $alias = delete($filter->{alias});
+	my ($url) = delete(@{$filter}{qw/connect url port tls/});
+
+	my @matches =  $class->find(url => $url, %$filter);
+
+	# TODO: If none found, try by alias name?  Potential for mismatch though...
+	
+	if (@matches > 1) {
+		my @named_matches = grep {$_->name eq $alias} @matches;
+		@matches = @named_matches if @named_matches == 1;
+	}
+
+	return $matches[0] if @matches <= 1;
+
+	# Error processing
+	my ($alias_clause, $alias_msg) = ('','');
+	if ($alias) {
+		$alias_clause = "\n        (and none match the provided vault alias of '$alias').";
+		$alias_msg = ", or add/modify the alias of the desired target to '$alias'"
+	}
+
+	my $default = $class->default->name;
+	my $current = $ENV{GENESIS_TARGET_VAULT};
+
+	bail(
+		"\n#R{[ERROR]} More than one target is specified for URL '%s', $alias_clause\n\n".
+		"        Please edit your ~/.saferc, and remove all but one of these:\n".
+		"        - %s\n".
+		"        (or alter the URLs to be unique$alias_msg)",
+		$url, join("\n        - ", map {
+			$_->name eq ($current||'') 
+				? "#G{".$_->name." (current)}"
+				: $_->name eq ($default||'') 
+					? "#g{".$_->name." (default)}" 
+					: "#y{".$_->name."}"
+		} @matches)
+	);
+}
+
+# }}}
+# parse_vault_descriptor - Get all the components of the genesis.vault {{{
+sub parse_vault_descriptor {
+	my ($class, $vault_info, $source) = @_;
+	$source ||= 'genesis.vault';
+	my ($url, $verify, $alias, $namespace, $strongbox, $tls, $domain, $port);
+	$strongbox = 1;
+	$vault_info =~ s/ as ([^ ]*) / / and $alias = $1;
+	for my $clause (split(' ',$vault_info)) {
+		if ($clause =~ /^(no-)?strongbox$/) {
+			$strongbox = !$1;
+		} elsif ($clause =~ /^(no-)?verify/) {
+			$verify = !$1;
+		} elsif ($clause =~ /^(http(s)?:\/\/([^:]*)(?::([0-9]+))?)(?:\/(.*))?$/) {
+			$url = $1;
+			$tls = ($2||'' eq 's');
+			$domain = $4;
+			$port = $5;
+			$namespace = $6;
+		} else {
+			$ENV{GENESIS_TRACE}=1;
+			dump_stack();
+			bail(
+				"#R{[ERROR]} Unknown clause in #G{$source}: '#Y{$clause}'\n".
+				"        Expected http#Cu{s}://<domain-or-ip>#Cu{:<port>}#Cu{/<namespace>} #Cu{as <alias>} #Cu{[no-]verify} #Cu{[no-]strongbox}\n".
+				"        #i{Values in }#Cui{cyan}#i{ are optional}"
+			)
+		}
+	}
+	bail(
+		"#R{[ERROR] Missing connect clause in #G{$source}\n".
+		"        Expected http#Cu{s}://<domain-or-ip>#Cu{:<port>}#Cu{/<namespace>} #Cu{as <alias>} #Cu{[no-]verify} #Cu{[no-]strongbox}\n".
+		"        #i{Values in }#Cui{cyan}#i{ are optional}"
+	) unless $url;
+	$verify = $tls unless defined($verify);
+
+	return wantarray ? (
+		$url, $verify, $namespace, $alias, $strongbox
+	) : {
+		url => $url,
+		verify => $verify,
+		alias => $alias,
+		namespace => $namespace,
+		strongbox => $strongbox,
+		tls => $tls,
+		domain => $domain,
+		port => $port
+	};
+}
+
 # }}}
 # }}}
 
 ### Instance Methods {{{
 
 # public accessors: url, name, verify, tls {{{
-sub url     { $_[0]->{url};    }
-sub name    { $_[0]->{name};   }
-sub verify  { $_[0]->{verify}; }
-sub tls     { $_[0]->{url} =~ "^https://"; }
+sub url        { $_[0]->{url};       }
+sub name       { $_[0]->{name};      }
+sub verify     { $_[0]->{verify};    }
+sub namespace  { $_[0]->{namespace}; }
+sub strongbox  { $_[0]->{strongbox}; }
+sub tls        { $_[0]->{url} =~ "^https://"; }
 
 #}}}
 # connect_and_validate - connect to the vault and validate that its connected {{{
@@ -522,6 +645,17 @@ sub ref {
 sub ref_by_name {
 	$_[0]->{ref_by} = 'name';
 	$_[0];
+}
+# }}}
+# build_descriptor - builds a descriptor for the current vault {{{
+sub build_descriptor {
+	my ($self) = @_;
+	my $descriptor = $self->url;
+	$descriptor .= ("/".$self->namespace) if $self->namespace;
+	$descriptor .= " as ".$self->name;
+	$descriptor .= " no-verify" if $self->tls && !$self->verify;
+	$descriptor .= " no-strongbox" unless $self->strongbox;
+	return $descriptor;
 }
 
 # }}}
@@ -954,11 +1088,11 @@ sub _target_is_url {
 sub _get_targets {
 	my $target = shift;
 	unless (_target_is_url($target)) {
-		my $target_vault = (Genesis::Vault->find(name => $target))[0];
+		my $target_vault = (Genesis::Vault->find(name => $target, @_))[0];
 		return (undef) unless $target_vault;
 		$target = $target_vault->{url};
 	}
-	my @names = map {$_->{name}} Genesis::Vault->find(url => $target);
+	my @names = map {$_->{name}} Genesis::Vault->find(url => $target, @_);
 	return ($target, @names);
 }
 
