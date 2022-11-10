@@ -393,11 +393,7 @@ sub parse_pipeline {
 						unless m/^(alias)$/;
 				}
 			} else {
-				my @required_bosh_props = qw(url ca_cert username password);
-				if (exists $p->{pipeline}{ocfp} && yaml_bool($p->{pipeline}{ocfp}, 0)) {
-					push @required_bosh_props, 'genesis_env';
-				}
-				for (@required_bosh_props) {
+				for (qw(url ca_cert username password)) {
 					push @errors, "`pipeline.boshes[$env].$_' is required."
 						unless $p->{pipeline}{boshes}{$env}{$_};
 				}
