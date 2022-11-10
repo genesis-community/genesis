@@ -3326,16 +3326,10 @@ sub {
 
 	# environment variables we should have
 	#   CURRENT_ENV - Name of the current environment
-	#   BOSH_ENVIRONMENT   - URL of the BOSH director to deploy on
-	#   BOSH_CA_CERT       - CA Certificate for the BOSH director
-	#   BOSH_CLIENT        - Username or client ID (UAA-auth) to authenticate with
-	#   BOSH_CLIENT_SECRET - Password/Client-Secret to authenticate with
 	#   ERRAND_NAME - Name of the Smoke Test errand to run
 
 	my @undefined = grep { !$ENV{$_} }
-		qw/CURRENT_ENV ERRAND_NAME
-		   BOSH_ENVIRONMENT BOSH_CA_CERT
-		   BOSH_CLIENT BOSH_CLIENT_SECRET/;
+		qw/CURRENT_ENV ERRAND_NAME/;
 	bail_on_missing_pipeline_environment_variables(@undefined);
 
 	my $env = Genesis::Top->new('.')->load_env($ENV{CURRENT_ENV})->with_vault()->with_bosh();
