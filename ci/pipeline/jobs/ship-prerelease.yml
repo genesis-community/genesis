@@ -11,7 +11,7 @@ jobs:
       - { get: git-ci }
 
     - task: ship-prerelease
-      file: git-ci/ci/tasks/release.yml
+      file: git-ci/ci/tasks/prerelease.yml
       params:
         PRERELEASE:       1
         DEVELOP_BRANCH:   (( grab meta.github.branch ))
