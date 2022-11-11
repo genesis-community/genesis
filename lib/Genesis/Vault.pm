@@ -332,15 +332,15 @@ sub parse_vault_descriptor {
 	$vault_info =~ s/ as ([^ ]*) / / and $alias = $1;
 	for my $clause (split(' ',$vault_info)) {
 		if ($clause =~ /^(no-)?strongbox$/) {
-			$strongbox = !$1;
+			$strongbox = $1 ? 0 : 1;
 		} elsif ($clause =~ /^(no-)?verify/) {
-			$verify = !$1;
+			$verify = $1 ? 0 : 1;
 		} elsif ($clause =~ /^(http(s)?:\/\/([^:]*)(?::([0-9]+))?)(?:\/(.*))?$/) {
 			$url = $1;
 			$tls = ($2||'' eq 's');
-			$domain = $4;
-			$port = $5;
-			$namespace = $6;
+			$domain = $3;
+			$port = $4;
+			$namespace = $5;
 		} else {
 			$ENV{GENESIS_TRACE}=1;
 			dump_stack();
