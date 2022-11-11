@@ -283,9 +283,11 @@ sub get_vault_from_descriptor {
 
 	my ($class, $descriptor, $source) = @_;
 	my $filter = $class->parse_vault_descriptor($descriptor, $source);
-	my $alias = delete($filter->{alias});
-	my ($url) = delete(@{$filter}{qw/connect url port tls/});
+	my ($alias,$url) = delete(@{$filter}{qw/alias url domain port tls/});
 
+	bail(
+		"#R{[ERROR]} No url specified by vault descriptor"
+	) unless $url;
 	my @matches =  $class->find(url => $url, %$filter);
 
 	# TODO: If none found, try by alias name?  Potential for mismatch though...
