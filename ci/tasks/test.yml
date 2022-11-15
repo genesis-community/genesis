@@ -13,6 +13,8 @@ inputs:
 params:
   REPO_ROOT: git
   CI_ROOT: git-ci
+  GITHUB_USER: ((github.username))
+  GITHUB_AUTH_TOKEN:  ((github.access_token))
 
 run:
   path: "git/ci/scripts/test"
