@@ -146,12 +146,11 @@ sub attach {
 	bail "#R{[ERROR]} Expecting vault target '$url' to be a url"
 		unless _target_is_url($url);
 
-	my %filter = (
-		url       => $url,
-		namespace => $opts{namespace} || '',
-		strongbox => $opts{strongbox} || 0
-	);
+	my %filter = (url => $url);
 	$filter{verify} = (($opts{tls} && $opts{verify}) ? 1 : 0) if $opts{tls};
+	for (qw/namespace strongbox/) {
+		$filter{$_} = ($opts{$_}) if defined($opts{tls});
+	}
 
 	my @targets = Genesis::Vault->find(%filter);
 	if (scalar(@targets) <1) {
@@ -169,7 +168,9 @@ sub attach {
 		} else {
 			bail(
 				"#R{[ERROR]} Multiple safe targets found for #M{%s}:\n%s\n".
-				"\nYour ~/.saferc file cannot have more than one target for the given url.\n" .
+				"\nYour ~/.saferc file cannot have more than one target for the given url,\n".
+				"namespace, insecure or strongbox combination.  If you don't, it may be that\n".
+				"your selected secrets provider is out of date - please rerun #G{genesis sp -i}\n\n".
 				"Please remove any duplicate targets before re-attempting this command.",
 				$url, join("", map {" - #C{$_->name}\n"} @targets)
 			);

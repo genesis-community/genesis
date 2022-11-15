@@ -1066,7 +1066,6 @@ sub vault {
 
 		return Genesis::Vault->attach(
 			url => $details->{url},
-			tls => $details->{tls},
 			alias => $details->{alias},
 			%filter
 		);

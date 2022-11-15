@@ -290,15 +290,15 @@ sub vault {
 		if (in_callback && $ENV{GENESIS_TARGET_VAULT}) {
 			return Genesis::Vault->rebind();
 		} elsif ($self->has_vault) {
-			return Genesis::Vault->attach(
-				# TODO: (#BETTERVAULTTARGET)
-				# capture and use a default name, namespace, and stronghold context: [namespace@]https?://<ip-or-domain>[:port] [as name] [no-verify] [no-stronghold]
-				# Until done, we'll just rely on user having set up a safe at the same domain in their .saferc file.
-				# as name will only be used if they don't already have a safe with that alias in that file
-				# On creation, user will be asked auth method, then will be able to authenticate
+			my $namespace =  $self->config->get("namespace");
+			my $strongbox = $self->config->get("strongbox");
+			my %attach_opts = (
 				url    => $self->config->get("secrets_provider.url"),
 				verify => $self->config->get("secrets_provider.insecure") ? 0 : 1
 			);
+			$attach_opts{namespace} = $namespace if defined($namespace);
+			$attach_opts{strongbox} = ($strongbox ? 1: 0) if defined($strongbox);
+			return Genesis::Vault->attach(%attach_opts);
 		} else {
 			my $vault = Genesis::Vault::default;
 			$vault->connect_and_validate()->ref_by_name() if $vault;
