@@ -149,7 +149,7 @@ sub attach {
 	my %filter = (url => $url);
 	$filter{verify} = (($opts{tls} && $opts{verify}) ? 1 : 0) if $opts{tls};
 	for (qw/namespace strongbox/) {
-		$filter{$_} = ($opts{$_}) if defined($opts{tls});
+		$filter{$_} = $opts{$_} if defined($opts{$_});
 	}
 
 	my @targets = Genesis::Vault->find(%filter);
