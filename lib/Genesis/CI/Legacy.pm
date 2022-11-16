@@ -1357,19 +1357,6 @@ EOF
 			if $pipeline->{pipeline}{vault}{'no-strongbox'};
 		print $OUT "            VAULT_NAMESPACE:      $pipeline->{pipeline}{vault}{namespace}\n"
 			if $pipeline->{pipeline}{vault}{namespace};
-
-		# don't supply bosh creds if we're create-env, because no one to talk to
-		unless ($E->use_create_env) {
-			print $OUT <<EOF;
-            BOSH_ENVIRONMENT:     $pipeline->{pipeline}{boshes}{$env}{url}
-            BOSH_CLIENT:          $pipeline->{pipeline}{boshes}{$env}{username}
-            BOSH_CLIENT_SECRET:   $pipeline->{pipeline}{boshes}{$env}{password}
-            BOSH_CA_CERT: |
-EOF
-			for (split /\n/, $pipeline->{pipeline}{boshes}{$env}{ca_cert}) {
-				print $OUT "              $_\n";
-			}
-		}
 		print $OUT <<EOF if $pipeline->{pipeline}{debug};
             DEBUG:                $pipeline->{pipeline}{debug}
 EOF
@@ -1504,21 +1491,6 @@ EOF
 			if $pipeline->{pipeline}{vault}{'no-strongbox'};
 		print $OUT "            VAULT_NAMESPACE:      $pipeline->{pipeline}{vault}{namespace}\n"
 			if $pipeline->{pipeline}{vault}{namespace};
-
-		# don't supply bosh creds if we're create-env, because no one to talk to
-		unless ($E->use_create_env) {
-			print $OUT <<EOF;
-            BOSH_ENVIRONMENT:     $pipeline->{pipeline}{boshes}{$env}{url}
-            BOSH_CLIENT:          $pipeline->{pipeline}{boshes}{$env}{username}
-            BOSH_CLIENT_SECRET:   $pipeline->{pipeline}{boshes}{$env}{password}
-            BOSH_CA_CERT: |
-EOF
-			for (split /\n/, $pipeline->{pipeline}{boshes}{$env}{ca_cert}) {
-				print $OUT <<EOF;
-              $_
-EOF
-			}
-		}
 		print $OUT <<EOF if $pipeline->{pipeline}{debug};
             DEBUG:                $pipeline->{pipeline}{debug}
 EOF
@@ -1573,19 +1545,6 @@ ${registry_creds}
             CI_NO_REDACT:         $pipeline->{pipeline}{unredacted}
             CURRENT_ENV:          $env
             ERRAND_NAME:          $errand_name
-
-            BOSH_ENVIRONMENT:     $pipeline->{pipeline}{boshes}{$env}{url}
-            BOSH_CA_CERT: |
-EOF
-			for (split /\n/, $pipeline->{pipeline}{boshes}{$env}{ca_cert}) {
-				print $OUT <<EOF;
-              $_
-EOF
-			}
-			print $OUT <<EOF;
-            BOSH_CLIENT:          $pipeline->{pipeline}{boshes}{$env}{username}
-            BOSH_CLIENT:          $pipeline->{pipeline}{boshes}{$env}{username}
-            BOSH_CLIENT_SECRET:   $pipeline->{pipeline}{boshes}{$env}{password}
 EOF
 			print $OUT <<EOF if $pipeline->{pipeline}{debug};
             DEBUG:                $pipeline->{pipeline}{debug}
