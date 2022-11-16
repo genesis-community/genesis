@@ -512,7 +512,7 @@ sub parse {
 	$P->{aliases} = {};  # map of (env-name -> alias) so that the generated
 	                     # pipeline uses short human-readable aliases
 
-	$P->{genesis_envs} = {}  # map of (env-name -> bosh-env-name) for when they are
+	$P->{genesis_envs} = {}; # map of (env-name -> bosh-env-name) for when they are
 	                         # not the same.
 
 	$P->{will_trigger} = {}; # map of (A -> [B, C, D]) triggers, where A triggers
@@ -1022,7 +1022,7 @@ EOF
 		}
 		unless ($E->use_create_env) {
 			my $config_name = 'default';
-			if ($P->{pipeline}{ocfp}) {
+			if ($pipeline->{pipeline}{ocfp}) {
 				$config_name = $pipeline->{genesis_envs}{$env};
 			}
 			print $OUT <<EOF;
