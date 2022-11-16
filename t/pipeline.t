@@ -51,13 +51,6 @@ jobs:
         outputs:
         - name: out
         params:
-          BOSH_CA_CERT: |
-            ----- BEGIN CERTIFICATE -----
-            cert-goes-here
-            ----- END CERTIFICATE -----
-          BOSH_CLIENT: pp-admin
-          BOSH_CLIENT_SECRET: Ahti2eeth3aewohnee1Phaec
-          BOSH_ENVIRONMENT: https://preprod.example.com:25555
           BOSH_NON_INTERACTIVE: true
           CACHE_DIR: client-aws-1-preprod-cache
           CI_NO_REDACT: 0
@@ -171,13 +164,6 @@ jobs:
       - name: client-aws-1-prod-changes
       - name: client-aws-1-prod-cache
       params:
-        BOSH_CA_CERT: |
-          ----- BEGIN CERTIFICATE -----
-          cert-goes-here
-          ----- END CERTIFICATE -----
-        BOSH_CLIENT: pr-admin
-        BOSH_CLIENT_SECRET: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
-        BOSH_ENVIRONMENT: https://prod.example.com:25555
         BOSH_NON_INTERACTIVE: true
         CACHE_DIR: client-aws-1-prod-cache
         CI_NO_REDACT: 0
@@ -240,13 +226,6 @@ jobs:
         outputs:
         - name: out
         params:
-          BOSH_CA_CERT: |
-            ----- BEGIN CERTIFICATE -----
-            cert-goes-here
-            ----- END CERTIFICATE -----
-          BOSH_CLIENT: pr-admin
-          BOSH_CLIENT_SECRET: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
-          BOSH_ENVIRONMENT: https://prod.example.com:25555
           BOSH_NON_INTERACTIVE: true
           CACHE_DIR: client-aws-1-prod-cache
           CI_NO_REDACT: 0
@@ -354,13 +333,6 @@ jobs:
         outputs:
         - name: out
         params:
-          BOSH_CA_CERT: |
-            ----- BEGIN CERTIFICATE -----
-            cert-goes-here
-            ----- END CERTIFICATE -----
-          BOSH_CLIENT: sb-admin
-          BOSH_CLIENT_SECRET: PaeM2Eip
-          BOSH_ENVIRONMENT: https://sandbox.example.com:25555
           BOSH_NON_INTERACTIVE: true
           CACHE_DIR: client-aws-1-sandbox-cache
           CI_NO_REDACT: 0
@@ -536,6 +508,7 @@ resources:
     client: pp-admin
     client_secret: Ahti2eeth3aewohnee1Phaec
     config: cloud
+    name: default
     target: https://preprod.example.com:25555
   type: bosh-config
 - icon: script-text
@@ -548,6 +521,7 @@ resources:
     client: pp-admin
     client_secret: Ahti2eeth3aewohnee1Phaec
     config: runtime
+    name: default
     target: https://preprod.example.com:25555
   type: bosh-config
 - icon: github
@@ -595,6 +569,7 @@ resources:
     client: pr-admin
     client_secret: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
     config: cloud
+    name: default
     target: https://prod.example.com:25555
   type: bosh-config
 - icon: script-text
@@ -607,6 +582,7 @@ resources:
     client: pr-admin
     client_secret: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
     config: runtime
+    name: default
     target: https://prod.example.com:25555
   type: bosh-config
 - icon: github
@@ -641,6 +617,7 @@ resources:
     client: sb-admin
     client_secret: PaeM2Eip
     config: cloud
+    name: default
     target: https://sandbox.example.com:25555
   type: bosh-config
 - icon: script-text
@@ -653,6 +630,7 @@ resources:
     client: sb-admin
     client_secret: PaeM2Eip
     config: runtime
+    name: default
     target: https://sandbox.example.com:25555
   type: bosh-config
 - icon: slack
@@ -703,13 +681,6 @@ jobs:
         outputs:
         - name: out
         params:
-          BOSH_CA_CERT: |
-            ----- BEGIN CERTIFICATE -----
-            cert-goes-here
-            ----- END CERTIFICATE -----
-          BOSH_CLIENT: pp-admin
-          BOSH_CLIENT_SECRET: Ahti2eeth3aewohnee1Phaec
-          BOSH_ENVIRONMENT: https://preprod.example.com:25555
           BOSH_NON_INTERACTIVE: true
           CACHE_DIR: client-aws-1-preprod-cache
           CI_NO_REDACT: 0
@@ -832,13 +803,6 @@ jobs:
       - name: client-aws-1-prod-changes
       - name: client-aws-1-prod-cache
       params:
-        BOSH_CA_CERT: |
-          ----- BEGIN CERTIFICATE -----
-          cert-goes-here
-          ----- END CERTIFICATE -----
-        BOSH_CLIENT: pr-admin
-        BOSH_CLIENT_SECRET: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
-        BOSH_ENVIRONMENT: https://prod.example.com:25555
         BOSH_NON_INTERACTIVE: true
         CACHE_DIR: client-aws-1-prod-cache
         CI_NO_REDACT: 0
@@ -904,13 +868,6 @@ jobs:
         outputs:
         - name: out
         params:
-          BOSH_CA_CERT: |
-            ----- BEGIN CERTIFICATE -----
-            cert-goes-here
-            ----- END CERTIFICATE -----
-          BOSH_CLIENT: pr-admin
-          BOSH_CLIENT_SECRET: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
-          BOSH_ENVIRONMENT: https://prod.example.com:25555
           BOSH_NON_INTERACTIVE: true
           CACHE_DIR: client-aws-1-prod-cache
           CI_NO_REDACT: 0
@@ -1027,13 +984,6 @@ jobs:
         outputs:
         - name: out
         params:
-          BOSH_CA_CERT: |
-            ----- BEGIN CERTIFICATE -----
-            cert-goes-here
-            ----- END CERTIFICATE -----
-          BOSH_CLIENT: sb-admin
-          BOSH_CLIENT_SECRET: PaeM2Eip
-          BOSH_ENVIRONMENT: https://sandbox.example.com:25555
           BOSH_NON_INTERACTIVE: true
           CACHE_DIR: client-aws-1-sandbox-cache
           CI_NO_REDACT: 0
@@ -1214,6 +1164,7 @@ resources:
     client: pp-admin
     client_secret: Ahti2eeth3aewohnee1Phaec
     config: cloud
+    name: default
     target: https://preprod.example.com:25555
   tags:
     - client-aws-1-preprod
@@ -1228,6 +1179,7 @@ resources:
     client: pp-admin
     client_secret: Ahti2eeth3aewohnee1Phaec
     config: runtime
+    name: default
     target: https://preprod.example.com:25555
   tags:
     - client-aws-1-preprod
@@ -1277,6 +1229,7 @@ resources:
     client: pr-admin
     client_secret: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
     config: cloud
+    name: default
     target: https://prod.example.com:25555
   tags:
     - client-aws-1-prod
@@ -1291,6 +1244,7 @@ resources:
     client: pr-admin
     client_secret: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
     config: runtime
+    name: default
     target: https://prod.example.com:25555
   tags:
     - client-aws-1-prod
@@ -1327,6 +1281,7 @@ resources:
     client: sb-admin
     client_secret: PaeM2Eip
     config: cloud
+    name: default
     target: https://sandbox.example.com:25555
   tags:
     - client-aws-1-sandbox
@@ -1341,6 +1296,7 @@ resources:
     client: sb-admin
     client_secret: PaeM2Eip
     config: runtime
+    name: default
     target: https://sandbox.example.com:25555
   tags:
     - client-aws-1-sandbox
@@ -1389,13 +1345,6 @@ jobs:
         outputs:
         - name: out
         params:
-          BOSH_CA_CERT: |
-            ----- BEGIN CERTIFICATE -----
-            cert-goes-here
-            ----- END CERTIFICATE -----
-          BOSH_CLIENT: pp-admin
-          BOSH_CLIENT_SECRET: Ahti2eeth3aewohnee1Phaec
-          BOSH_ENVIRONMENT: https://preprod.example.com:25555
           BOSH_NON_INTERACTIVE: true
           CACHE_DIR: preprod-cache
           CI_NO_REDACT: 0
@@ -1434,13 +1383,6 @@ jobs:
         - name: out
         - name: preprod-cache
         params:
-          BOSH_CA_CERT: |
-            ----- BEGIN CERTIFICATE -----
-            cert-goes-here
-            ----- END CERTIFICATE -----
-          BOSH_CLIENT: pp-admin
-          BOSH_CLIENT_SECRET: Ahti2eeth3aewohnee1Phaec
-          BOSH_ENVIRONMENT: https://preprod.example.com:25555
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-preprod
           DEBUG: 1
@@ -1532,13 +1474,6 @@ jobs:
       - name: prod-changes
       - name: prod-cache
       params:
-        BOSH_CA_CERT: |
-          ----- BEGIN CERTIFICATE -----
-          cert-goes-here
-          ----- END CERTIFICATE -----
-        BOSH_CLIENT: pr-admin
-        BOSH_CLIENT_SECRET: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
-        BOSH_ENVIRONMENT: https://prod.example.com:25555
         BOSH_NON_INTERACTIVE: true
         CACHE_DIR: prod-cache
         CI_NO_REDACT: 0
@@ -1598,13 +1533,6 @@ jobs:
         outputs:
         - name: out
         params:
-          BOSH_CA_CERT: |
-            ----- BEGIN CERTIFICATE -----
-            cert-goes-here
-            ----- END CERTIFICATE -----
-          BOSH_CLIENT: pr-admin
-          BOSH_CLIENT_SECRET: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
-          BOSH_ENVIRONMENT: https://prod.example.com:25555
           BOSH_NON_INTERACTIVE: true
           CACHE_DIR: prod-cache
           CI_NO_REDACT: 0
@@ -1643,13 +1571,6 @@ jobs:
         - name: out
         - name: prod-cache
         params:
-          BOSH_CA_CERT: |
-            ----- BEGIN CERTIFICATE -----
-            cert-goes-here
-            ----- END CERTIFICATE -----
-          BOSH_CLIENT: pr-admin
-          BOSH_CLIENT_SECRET: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
-          BOSH_ENVIRONMENT: https://prod.example.com:25555
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-prod
           DEBUG: 1
@@ -1735,13 +1656,6 @@ jobs:
         outputs:
         - name: out
         params:
-          BOSH_CA_CERT: |
-            ----- BEGIN CERTIFICATE -----
-            cert-goes-here
-            ----- END CERTIFICATE -----
-          BOSH_CLIENT: sb-admin
-          BOSH_CLIENT_SECRET: PaeM2Eip
-          BOSH_ENVIRONMENT: https://sandbox.example.com:25555
           BOSH_NON_INTERACTIVE: true
           CACHE_DIR: sandbox-cache
           CI_NO_REDACT: 0
@@ -1780,13 +1694,6 @@ jobs:
         - name: out
         - name: sandbox-changes
         params:
-          BOSH_CA_CERT: |
-            ----- BEGIN CERTIFICATE -----
-            cert-goes-here
-            ----- END CERTIFICATE -----
-          BOSH_CLIENT: sb-admin
-          BOSH_CLIENT_SECRET: PaeM2Eip
-          BOSH_ENVIRONMENT: https://sandbox.example.com:25555
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-sandbox
           DEBUG: 1
@@ -1928,6 +1835,7 @@ resources:
     client: pp-admin
     client_secret: Ahti2eeth3aewohnee1Phaec
     config: cloud
+    name: default
     target: https://preprod.example.com:25555
   type: bosh-config
 - icon: script-text
@@ -1940,6 +1848,7 @@ resources:
     client: pp-admin
     client_secret: Ahti2eeth3aewohnee1Phaec
     config: runtime
+    name: default
     target: https://preprod.example.com:25555
   type: bosh-config
 - icon: github
@@ -1979,6 +1888,7 @@ resources:
     client: pr-admin
     client_secret: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
     config: cloud
+    name: default
     target: https://prod.example.com:25555
   type: bosh-config
 - icon: script-text
@@ -1991,6 +1901,7 @@ resources:
     client: pr-admin
     client_secret: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
     config: runtime
+    name: default
     target: https://prod.example.com:25555
   type: bosh-config
 - icon: github
@@ -2021,6 +1932,7 @@ resources:
     client: sb-admin
     client_secret: PaeM2Eip
     config: cloud
+    name: default
     target: https://sandbox.example.com:25555
   type: bosh-config
 - icon: script-text
@@ -2033,6 +1945,7 @@ resources:
     client: sb-admin
     client_secret: PaeM2Eip
     config: runtime
+    name: default
     target: https://sandbox.example.com:25555
   type: bosh-config
 - icon: slack
@@ -2101,13 +2014,6 @@ jobs:
         outputs:
         - name: out
         params:
-          BOSH_CA_CERT: |
-            ----- BEGIN CERTIFICATE -----
-            cert-goes-here
-            ----- END CERTIFICATE -----
-          BOSH_CLIENT: pp-admin
-          BOSH_CLIENT_SECRET: Ahti2eeth3aewohnee1Phaec
-          BOSH_ENVIRONMENT: https://preprod.bosh-lite.com:25555
           BOSH_NON_INTERACTIVE: true
           CACHE_DIR: client-aws-1-preprod-cache
           CI_NO_REDACT: 1
@@ -2154,13 +2060,6 @@ jobs:
         - name: out
         - name: client-aws-1-preprod-cache
         params:
-          BOSH_CA_CERT: |
-            ----- BEGIN CERTIFICATE -----
-            cert-goes-here
-            ----- END CERTIFICATE -----
-          BOSH_CLIENT: pp-admin
-          BOSH_CLIENT_SECRET: Ahti2eeth3aewohnee1Phaec
-          BOSH_ENVIRONMENT: https://preprod.bosh-lite.com:25555
           CI_NO_REDACT: 1
           CURRENT_ENV: client-aws-1-preprod
           DEBUG: 1
@@ -2294,13 +2193,6 @@ jobs:
       - name: client-aws-1-prod-changes
       - name: client-aws-1-prod-cache
       params:
-        BOSH_CA_CERT: |
-          ----- BEGIN CERTIFICATE -----
-          cert-goes-here
-          ----- END CERTIFICATE -----
-        BOSH_CLIENT: pr-admin
-        BOSH_CLIENT_SECRET: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
-        BOSH_ENVIRONMENT: https://prod.bosh-lite.com:25555
         BOSH_NON_INTERACTIVE: true
         CACHE_DIR: client-aws-1-prod-cache
         CI_NO_REDACT: 1
@@ -2389,13 +2281,6 @@ jobs:
         outputs:
         - name: out
         params:
-          BOSH_CA_CERT: |
-            ----- BEGIN CERTIFICATE -----
-            cert-goes-here
-            ----- END CERTIFICATE -----
-          BOSH_CLIENT: pr-admin
-          BOSH_CLIENT_SECRET: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
-          BOSH_ENVIRONMENT: https://prod.bosh-lite.com:25555
           BOSH_NON_INTERACTIVE: true
           CACHE_DIR: client-aws-1-prod-cache
           CI_NO_REDACT: 1
@@ -2441,13 +2326,6 @@ jobs:
         - name: out
         - name: client-aws-1-prod-cache
         params:
-          BOSH_CA_CERT: |
-            ----- BEGIN CERTIFICATE -----
-            cert-goes-here
-            ----- END CERTIFICATE -----
-          BOSH_CLIENT: pr-admin
-          BOSH_CLIENT_SECRET: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
-          BOSH_ENVIRONMENT: https://prod.bosh-lite.com:25555
           CI_NO_REDACT: 1
           CURRENT_ENV: client-aws-1-prod
           DEBUG: 1
@@ -2591,13 +2469,6 @@ jobs:
         outputs:
         - name: out
         params:
-          BOSH_CA_CERT: |
-            ----- BEGIN CERTIFICATE -----
-            cert-goes-here
-            ----- END CERTIFICATE -----
-          BOSH_CLIENT: sb-admin
-          BOSH_CLIENT_SECRET: PaeM2Eip
-          BOSH_ENVIRONMENT: https://sandbox.bosh-lite.com:25555
           BOSH_NON_INTERACTIVE: true
           CACHE_DIR: client-aws-1-sandbox-cache
           CI_NO_REDACT: 1
@@ -2644,13 +2515,6 @@ jobs:
         - name: out
         - name: client-aws-1-sandbox-changes
         params:
-          BOSH_CA_CERT: |
-            ----- BEGIN CERTIFICATE -----
-            cert-goes-here
-            ----- END CERTIFICATE -----
-          BOSH_CLIENT: sb-admin
-          BOSH_CLIENT_SECRET: PaeM2Eip
-          BOSH_ENVIRONMENT: https://sandbox.bosh-lite.com:25555
           CI_NO_REDACT: 1
           CURRENT_ENV: client-aws-1-sandbox
           DEBUG: 1
@@ -2957,6 +2821,7 @@ resources:
     client: pp-admin
     client_secret: Ahti2eeth3aewohnee1Phaec
     config: cloud
+    name: default
     target: https://preprod.bosh-lite.com:25555
   tags:
   - client-aws-1-preprod
@@ -2971,6 +2836,7 @@ resources:
     client: pp-admin
     client_secret: Ahti2eeth3aewohnee1Phaec
     config: runtime
+    name: default
     target: https://preprod.bosh-lite.com:25555
   tags:
   - client-aws-1-preprod
@@ -3044,6 +2910,7 @@ resources:
     client: pr-admin
     client_secret: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
     config: cloud
+    name: default
     target: https://prod.bosh-lite.com:25555
   tags:
   - client-aws-1-prod
@@ -3058,6 +2925,7 @@ resources:
     client: pr-admin
     client_secret: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
     config: runtime
+    name: default
     target: https://prod.bosh-lite.com:25555
   tags:
   - client-aws-1-prod
@@ -3118,6 +2986,7 @@ resources:
     client: sb-admin
     client_secret: PaeM2Eip
     config: cloud
+    name: default
     target: https://sandbox.bosh-lite.com:25555
   tags:
   - client-aws-1-sandbox
@@ -3132,6 +3001,7 @@ resources:
     client: sb-admin
     client_secret: PaeM2Eip
     config: runtime
+    name: default
     target: https://sandbox.bosh-lite.com:25555
   tags:
   - client-aws-1-sandbox
@@ -3231,13 +3101,6 @@ jobs:
       - name: client-aws-1-preprod-changes
       - name: client-aws-1-preprod-cache
       params:
-        BOSH_CA_CERT: |
-          ----- BEGIN CERTIFICATE -----
-          cert-goes-here
-          ----- END CERTIFICATE -----
-        BOSH_CLIENT: pp-admin
-        BOSH_CLIENT_SECRET: Ahti2eeth3aewohnee1Phaec
-        BOSH_ENVIRONMENT: https://preprod.bosh-lite.com:25555
         BOSH_NON_INTERACTIVE: true
         CACHE_DIR: client-aws-1-preprod-cache
         CI_NO_REDACT: 1
@@ -3323,13 +3186,6 @@ jobs:
         outputs:
         - name: out
         params:
-          BOSH_CA_CERT: |
-            ----- BEGIN CERTIFICATE -----
-            cert-goes-here
-            ----- END CERTIFICATE -----
-          BOSH_CLIENT: pp-admin
-          BOSH_CLIENT_SECRET: Ahti2eeth3aewohnee1Phaec
-          BOSH_ENVIRONMENT: https://preprod.bosh-lite.com:25555
           BOSH_NON_INTERACTIVE: true
           CACHE_DIR: client-aws-1-preprod-cache
           CI_NO_REDACT: 1
@@ -3374,13 +3230,6 @@ jobs:
         - name: out
         - name: client-aws-1-preprod-cache
         params:
-          BOSH_CA_CERT: |
-            ----- BEGIN CERTIFICATE -----
-            cert-goes-here
-            ----- END CERTIFICATE -----
-          BOSH_CLIENT: pp-admin
-          BOSH_CLIENT_SECRET: Ahti2eeth3aewohnee1Phaec
-          BOSH_ENVIRONMENT: https://preprod.bosh-lite.com:25555
           CI_NO_REDACT: 1
           CURRENT_ENV: client-aws-1-preprod
           DEBUG: 1
@@ -3513,13 +3362,6 @@ jobs:
       - name: client-aws-1-prod-changes
       - name: client-aws-1-prod-cache
       params:
-        BOSH_CA_CERT: |
-          ----- BEGIN CERTIFICATE -----
-          cert-goes-here
-          ----- END CERTIFICATE -----
-        BOSH_CLIENT: pr-admin
-        BOSH_CLIENT_SECRET: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
-        BOSH_ENVIRONMENT: https://prod.bosh-lite.com:25555
         BOSH_NON_INTERACTIVE: true
         CACHE_DIR: client-aws-1-prod-cache
         CI_NO_REDACT: 1
@@ -3605,13 +3447,6 @@ jobs:
         outputs:
         - name: out
         params:
-          BOSH_CA_CERT: |
-            ----- BEGIN CERTIFICATE -----
-            cert-goes-here
-            ----- END CERTIFICATE -----
-          BOSH_CLIENT: pr-admin
-          BOSH_CLIENT_SECRET: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
-          BOSH_ENVIRONMENT: https://prod.bosh-lite.com:25555
           BOSH_NON_INTERACTIVE: true
           CACHE_DIR: client-aws-1-prod-cache
           CI_NO_REDACT: 1
@@ -3656,13 +3491,6 @@ jobs:
         - name: out
         - name: client-aws-1-prod-cache
         params:
-          BOSH_CA_CERT: |
-            ----- BEGIN CERTIFICATE -----
-            cert-goes-here
-            ----- END CERTIFICATE -----
-          BOSH_CLIENT: pr-admin
-          BOSH_CLIENT_SECRET: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
-          BOSH_ENVIRONMENT: https://prod.bosh-lite.com:25555
           CI_NO_REDACT: 1
           CURRENT_ENV: client-aws-1-prod
           DEBUG: 1
@@ -3805,13 +3633,6 @@ jobs:
         outputs:
         - name: out
         params:
-          BOSH_CA_CERT: |
-            ----- BEGIN CERTIFICATE -----
-            cert-goes-here
-            ----- END CERTIFICATE -----
-          BOSH_CLIENT: sb-admin
-          BOSH_CLIENT_SECRET: PaeM2Eip
-          BOSH_ENVIRONMENT: https://sandbox.bosh-lite.com:25555
           BOSH_NON_INTERACTIVE: true
           CACHE_DIR: client-aws-1-sandbox-cache
           CI_NO_REDACT: 1
@@ -3856,13 +3677,6 @@ jobs:
         - name: out
         - name: client-aws-1-sandbox-changes
         params:
-          BOSH_CA_CERT: |
-            ----- BEGIN CERTIFICATE -----
-            cert-goes-here
-            ----- END CERTIFICATE -----
-          BOSH_CLIENT: sb-admin
-          BOSH_CLIENT_SECRET: PaeM2Eip
-          BOSH_ENVIRONMENT: https://sandbox.bosh-lite.com:25555
           CI_NO_REDACT: 1
           CURRENT_ENV: client-aws-1-sandbox
           DEBUG: 1
@@ -4053,6 +3867,7 @@ resources:
     client: pp-admin
     client_secret: Ahti2eeth3aewohnee1Phaec
     config: cloud
+    name: default
     target: https://preprod.bosh-lite.com:25555
   tags:
   - client-aws-1-preprod
@@ -4067,6 +3882,7 @@ resources:
     client: pp-admin
     client_secret: Ahti2eeth3aewohnee1Phaec
     config: runtime
+    name: default
     target: https://preprod.bosh-lite.com:25555
   tags:
   - client-aws-1-preprod
@@ -4140,6 +3956,7 @@ resources:
     client: pr-admin
     client_secret: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
     config: cloud
+    name: default
     target: https://prod.bosh-lite.com:25555
   tags:
   - client-aws-1-prod
@@ -4154,6 +3971,7 @@ resources:
     client: pr-admin
     client_secret: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
     config: runtime
+    name: default
     target: https://prod.bosh-lite.com:25555
   tags:
   - client-aws-1-prod
@@ -4214,6 +4032,7 @@ resources:
     client: sb-admin
     client_secret: PaeM2Eip
     config: cloud
+    name: default
     target: https://sandbox.bosh-lite.com:25555
   tags:
   - client-aws-1-sandbox
@@ -4228,6 +4047,7 @@ resources:
     client: sb-admin
     client_secret: PaeM2Eip
     config: runtime
+    name: default
     target: https://sandbox.bosh-lite.com:25555
   tags:
   - client-aws-1-sandbox
@@ -4335,13 +4155,6 @@ jobs:
         outputs:
         - name: out
         params:
-          BOSH_CA_CERT: |
-            ----- BEGIN CERTIFICATE -----
-            cert-goes-here
-            ----- END CERTIFICATE -----
-          BOSH_CLIENT: pp-admin
-          BOSH_CLIENT_SECRET: Ahti2eeth3aewohnee1Phaec
-          BOSH_ENVIRONMENT: https://preprod.bosh-lite.com:25555
           BOSH_NON_INTERACTIVE: true
           CACHE_DIR: client-aws-1-preprod-cache
           CI_NO_REDACT: 1
@@ -4386,13 +4199,6 @@ jobs:
         - name: out
         - name: client-aws-1-preprod-cache
         params:
-          BOSH_CA_CERT: |
-            ----- BEGIN CERTIFICATE -----
-            cert-goes-here
-            ----- END CERTIFICATE -----
-          BOSH_CLIENT: pp-admin
-          BOSH_CLIENT_SECRET: Ahti2eeth3aewohnee1Phaec
-          BOSH_ENVIRONMENT: https://preprod.bosh-lite.com:25555
           CI_NO_REDACT: 1
           CURRENT_ENV: client-aws-1-preprod
           DEBUG: 1
@@ -4525,13 +4331,6 @@ jobs:
       - name: client-aws-1-prod-changes
       - name: client-aws-1-prod-cache
       params:
-        BOSH_CA_CERT: |
-          ----- BEGIN CERTIFICATE -----
-          cert-goes-here
-          ----- END CERTIFICATE -----
-        BOSH_CLIENT: pr-admin
-        BOSH_CLIENT_SECRET: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
-        BOSH_ENVIRONMENT: https://prod.bosh-lite.com:25555
         BOSH_NON_INTERACTIVE: true
         CACHE_DIR: client-aws-1-prod-cache
         CI_NO_REDACT: 1
@@ -4619,13 +4418,6 @@ jobs:
         outputs:
         - name: out
         params:
-          BOSH_CA_CERT: |
-            ----- BEGIN CERTIFICATE -----
-            cert-goes-here
-            ----- END CERTIFICATE -----
-          BOSH_CLIENT: pr-admin
-          BOSH_CLIENT_SECRET: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
-          BOSH_ENVIRONMENT: https://prod.bosh-lite.com:25555
           BOSH_NON_INTERACTIVE: true
           CACHE_DIR: client-aws-1-prod-cache
           CI_NO_REDACT: 1
@@ -4670,13 +4462,6 @@ jobs:
         - name: out
         - name: client-aws-1-prod-cache
         params:
-          BOSH_CA_CERT: |
-            ----- BEGIN CERTIFICATE -----
-            cert-goes-here
-            ----- END CERTIFICATE -----
-          BOSH_CLIENT: pr-admin
-          BOSH_CLIENT_SECRET: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
-          BOSH_ENVIRONMENT: https://prod.bosh-lite.com:25555
           CI_NO_REDACT: 1
           CURRENT_ENV: client-aws-1-prod
           DEBUG: 1
@@ -4819,13 +4604,6 @@ jobs:
         outputs:
         - name: out
         params:
-          BOSH_CA_CERT: |
-            ----- BEGIN CERTIFICATE -----
-            cert-goes-here
-            ----- END CERTIFICATE -----
-          BOSH_CLIENT: sb-admin
-          BOSH_CLIENT_SECRET: PaeM2Eip
-          BOSH_ENVIRONMENT: https://sandbox.bosh-lite.com:25555
           BOSH_NON_INTERACTIVE: true
           CACHE_DIR: client-aws-1-sandbox-cache
           CI_NO_REDACT: 1
@@ -4870,13 +4648,6 @@ jobs:
         - name: out
         - name: client-aws-1-sandbox-changes
         params:
-          BOSH_CA_CERT: |
-            ----- BEGIN CERTIFICATE -----
-            cert-goes-here
-            ----- END CERTIFICATE -----
-          BOSH_CLIENT: sb-admin
-          BOSH_CLIENT_SECRET: PaeM2Eip
-          BOSH_ENVIRONMENT: https://sandbox.bosh-lite.com:25555
           CI_NO_REDACT: 1
           CURRENT_ENV: client-aws-1-sandbox
           DEBUG: 1
@@ -5067,6 +4838,7 @@ resources:
     client: pp-admin
     client_secret: Ahti2eeth3aewohnee1Phaec
     config: cloud
+    name: default
     target: https://preprod.bosh-lite.com:25555
   tags:
   - client-aws-1-preprod
@@ -5081,6 +4853,7 @@ resources:
     client: pp-admin
     client_secret: Ahti2eeth3aewohnee1Phaec
     config: runtime
+    name: default
     target: https://preprod.bosh-lite.com:25555
   tags:
   - client-aws-1-preprod
@@ -5154,6 +4927,7 @@ resources:
     client: pr-admin
     client_secret: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
     config: cloud
+    name: default
     target: https://prod.bosh-lite.com:25555
   tags:
   - client-aws-1-prod
@@ -5168,6 +4942,7 @@ resources:
     client: pr-admin
     client_secret: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
     config: runtime
+    name: default
     target: https://prod.bosh-lite.com:25555
   tags:
   - client-aws-1-prod
@@ -5228,6 +5003,7 @@ resources:
     client: sb-admin
     client_secret: PaeM2Eip
     config: cloud
+    name: default
     target: https://sandbox.bosh-lite.com:25555
   tags:
   - client-aws-1-sandbox
@@ -5242,6 +5018,7 @@ resources:
     client: sb-admin
     client_secret: PaeM2Eip
     config: runtime
+    name: default
     target: https://sandbox.bosh-lite.com:25555
   tags:
   - client-aws-1-sandbox
@@ -5350,13 +5127,6 @@ jobs:
         outputs:
         - name: out
         params:
-          BOSH_CA_CERT: |
-            ----- BEGIN CERTIFICATE -----
-            cert-goes-here
-            ----- END CERTIFICATE -----
-          BOSH_CLIENT: pp-admin
-          BOSH_CLIENT_SECRET: Ahti2eeth3aewohnee1Phaec
-          BOSH_ENVIRONMENT: https://preprod.bosh-lite.com:25555
           BOSH_NON_INTERACTIVE: true
           CACHE_DIR: client-aws-1-preprod-cache
           CI_NO_REDACT: 1
@@ -5401,13 +5171,6 @@ jobs:
         - name: out
         - name: client-aws-1-preprod-cache
         params:
-          BOSH_CA_CERT: |
-            ----- BEGIN CERTIFICATE -----
-            cert-goes-here
-            ----- END CERTIFICATE -----
-          BOSH_CLIENT: pp-admin
-          BOSH_CLIENT_SECRET: Ahti2eeth3aewohnee1Phaec
-          BOSH_ENVIRONMENT: https://preprod.bosh-lite.com:25555
           CI_NO_REDACT: 1
           CURRENT_ENV: client-aws-1-preprod
           DEBUG: 1
@@ -5540,13 +5303,6 @@ jobs:
       - name: client-aws-1-prod-changes
       - name: client-aws-1-prod-cache
       params:
-        BOSH_CA_CERT: |
-          ----- BEGIN CERTIFICATE -----
-          cert-goes-here
-          ----- END CERTIFICATE -----
-        BOSH_CLIENT: pr-admin
-        BOSH_CLIENT_SECRET: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
-        BOSH_ENVIRONMENT: https://prod.bosh-lite.com:25555
         BOSH_NON_INTERACTIVE: true
         CACHE_DIR: client-aws-1-prod-cache
         CI_NO_REDACT: 1
@@ -5632,13 +5388,6 @@ jobs:
         outputs:
         - name: out
         params:
-          BOSH_CA_CERT: |
-            ----- BEGIN CERTIFICATE -----
-            cert-goes-here
-            ----- END CERTIFICATE -----
-          BOSH_CLIENT: pr-admin
-          BOSH_CLIENT_SECRET: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
-          BOSH_ENVIRONMENT: https://prod.bosh-lite.com:25555
           BOSH_NON_INTERACTIVE: true
           CACHE_DIR: client-aws-1-prod-cache
           CI_NO_REDACT: 1
@@ -5683,13 +5432,6 @@ jobs:
         - name: out
         - name: client-aws-1-prod-cache
         params:
-          BOSH_CA_CERT: |
-            ----- BEGIN CERTIFICATE -----
-            cert-goes-here
-            ----- END CERTIFICATE -----
-          BOSH_CLIENT: pr-admin
-          BOSH_CLIENT_SECRET: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
-          BOSH_ENVIRONMENT: https://prod.bosh-lite.com:25555
           CI_NO_REDACT: 1
           CURRENT_ENV: client-aws-1-prod
           DEBUG: 1
@@ -5832,13 +5574,6 @@ jobs:
         outputs:
         - name: out
         params:
-          BOSH_CA_CERT: |
-            ----- BEGIN CERTIFICATE -----
-            cert-goes-here
-            ----- END CERTIFICATE -----
-          BOSH_CLIENT: sb-admin
-          BOSH_CLIENT_SECRET: PaeM2Eip
-          BOSH_ENVIRONMENT: https://sandbox.bosh-lite.com:25555
           BOSH_NON_INTERACTIVE: true
           CACHE_DIR: client-aws-1-sandbox-cache
           CI_NO_REDACT: 1
@@ -5883,13 +5618,6 @@ jobs:
         - name: out
         - name: client-aws-1-sandbox-changes
         params:
-          BOSH_CA_CERT: |
-            ----- BEGIN CERTIFICATE -----
-            cert-goes-here
-            ----- END CERTIFICATE -----
-          BOSH_CLIENT: sb-admin
-          BOSH_CLIENT_SECRET: PaeM2Eip
-          BOSH_ENVIRONMENT: https://sandbox.bosh-lite.com:25555
           CI_NO_REDACT: 1
           CURRENT_ENV: client-aws-1-sandbox
           DEBUG: 1
@@ -6080,6 +5808,7 @@ resources:
     client: pp-admin
     client_secret: Ahti2eeth3aewohnee1Phaec
     config: cloud
+    name: default
     target: https://preprod.bosh-lite.com:25555
   tags:
   - client-aws-1-preprod
@@ -6094,6 +5823,7 @@ resources:
     client: pp-admin
     client_secret: Ahti2eeth3aewohnee1Phaec
     config: runtime
+    name: default
     target: https://preprod.bosh-lite.com:25555
   tags:
   - client-aws-1-preprod
@@ -6167,6 +5897,7 @@ resources:
     client: pr-admin
     client_secret: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
     config: cloud
+    name: default
     target: https://prod.bosh-lite.com:25555
   tags:
   - client-aws-1-prod
@@ -6181,6 +5912,7 @@ resources:
     client: pr-admin
     client_secret: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
     config: runtime
+    name: default
     target: https://prod.bosh-lite.com:25555
   tags:
   - client-aws-1-prod
@@ -6241,6 +5973,7 @@ resources:
     client: sb-admin
     client_secret: PaeM2Eip
     config: cloud
+    name: default
     target: https://sandbox.bosh-lite.com:25555
   tags:
   - client-aws-1-sandbox
@@ -6255,6 +5988,7 @@ resources:
     client: sb-admin
     client_secret: PaeM2Eip
     config: runtime
+    name: default
     target: https://sandbox.bosh-lite.com:25555
   tags:
   - client-aws-1-sandbox
@@ -6327,13 +6061,6 @@ jobs:
         outputs:
         - name: out
         params:
-          BOSH_CA_CERT: |
-            ----- BEGIN CERTIFICATE -----
-            cert-goes-here
-            ----- END CERTIFICATE -----
-          BOSH_CLIENT: sb-admin
-          BOSH_CLIENT_SECRET: PaeM2Eip
-          BOSH_ENVIRONMENT: https://sandbox.bosh-lite.com:25555
           BOSH_NON_INTERACTIVE: true
           CACHE_DIR: client-aws-1-sandbox-cache
           CI_NO_REDACT: 0
@@ -6477,6 +6204,7 @@ resources:
     client: sb-admin
     client_secret: PaeM2Eip
     config: cloud
+    name: default
     target: https://sandbox.bosh-lite.com:25555
   type: bosh-config
 - icon: script-text
@@ -6489,6 +6217,7 @@ resources:
     client: sb-admin
     client_secret: PaeM2Eip
     config: runtime
+    name: default
     target: https://sandbox.bosh-lite.com:25555
   type: bosh-config
 - icon: slack
