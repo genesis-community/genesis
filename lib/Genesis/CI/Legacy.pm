@@ -64,9 +64,12 @@ EOF
 		if ($pipeline->{pipeline}{registry}{uri}) {
 			$registry_prefix = $pipeline->{pipeline}{registry}{uri} . "/";
 			if ($pipeline->{pipeline}{registry}{username}) {
+				my $escaped_registry_password = $pipeline->{pipeline}{registry}{password};
+				$escaped_registry_password =~ s/\\/\\\\/;
+				$escaped_registry_password =~ s/"/\\"/;
 				$registry_creds = <<EOF
           username: $pipeline->{pipeline}{registry}{username},
-          password: $pipeline->{pipeline}{registry}{password},
+          password: "$escaped_registry_password",
 EOF
 			}
 		}
@@ -1179,13 +1182,16 @@ EOF
 	}
 
 	# }}}
-	my ($registry_prefix, $registry_creds) = ("", "");
+	my ($registry_prefix, $registry_creds, $escaped_registry_password) = ("", "", "");
 	if ($pipeline->{pipeline}{registry}{uri}) {
 		$registry_prefix = $pipeline->{pipeline}{registry}{uri} . "/";
 		if ($pipeline->{pipeline}{registry}{username}) {
+			$escaped_registry_password = $pipeline->{pipeline}{registry}{password};
+			$escaped_registry_password =~ s/\\/\\\\/;
+			$escaped_registry_password =~ s/"/\\"/;
 			$registry_creds = <<EOF
       username: $pipeline->{pipeline}{registry}{username}
-      password: $pipeline->{pipeline}{registry}{password}
+      password: "$escaped_registry_password"
 EOF
 		}
 	}
@@ -1234,9 +1240,10 @@ EOF
 jobs:
 EOF
 	if ($pipeline->{pipeline}{registry}{uri} && $pipeline->{pipeline}{registry}{username}) {
+		# We redefine registry credentials with different indenting
 		$registry_creds = <<EOF
               username: $pipeline->{pipeline}{registry}{username}
-              password: $pipeline->{pipeline}{registry}{password}
+              password: "$escaped_registry_password"
 EOF
 	}
 	for my $env (sort @{$pipeline->{envs}}) {
@@ -1634,9 +1641,12 @@ EOF
 			$subdir_msg = " under $pipeline->{pipeline}{git}{root}";
 		}
 		if ($pipeline->{pipeline}{registry}{uri} && $pipeline->{pipeline}{registry}{username}) {
+			my $escaped_registry_password = $pipeline->{pipeline}{registry}{password};
+			$escaped_registry_password =~ s/\\/\\\\/;
+			$escaped_registry_password =~ s/"/\\"/;
 			$registry_creds = <<EOF
             username: $pipeline->{pipeline}{registry}{username}
-            password: $pipeline->{pipeline}{registry}{password}
+            password: "$escaped_registry_password"
 EOF
 		}
 		print $OUT <<EOF;
