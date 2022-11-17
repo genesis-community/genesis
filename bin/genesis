@@ -240,7 +240,8 @@ sub vault_auth {
 		'deployments-vault',
 		skip_verify => envset("VAULT_SKIP_VERIFY"),
 		namespace => $ENV{VAULT_NAMESPACE},
-		no_strongbox => envset("VAULT_NO_STRONGBOX")
+		no_strongbox => envset("VAULT_NO_STRONGBOX"),
+		mount => $ENV{VAULT_SECRETS_MOUNT}
 	)->connect_and_validate();
 }
 
@@ -3020,6 +3021,9 @@ sub {
 	#   VAULT_SECRET_ID            - Vault SecretID to authenticate to Vault with
 	#   VAULT_ADDR                 - URL of the Vault to use for credentials retrieval
 	#   VAULT_SKIP_VERIFY          - Whether or not to enforce SSL/TLS validation
+	#   VAULT_NAMESPACE            - Set for enterprise vaults that require namespaces
+	#   VAULT_NO_STRONGBOX         - Set true for non Genesis vault deployments
+	#   VAULT_SECRETS_MOUNT        - Set if vault secrets are not found under /secret
 	#
 	#   GIT_BRANCH                 - Name of the git branch to push commits to. post-deploy
 	#   GIT_PRIVATE_KEY            - Private Key to use for pushing commits, post-deploy, ssh

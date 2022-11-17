@@ -15,13 +15,15 @@ my (@all_vaults, $default_vault, $current_vault);
 
 # new - raw instantiation of a vault object {{{
 sub new {
-	my ($class, $url, $name, $verify, $namespace, $strongbox) = @_;
+	my ($class, $url, $name, $verify, $namespace, $strongbox, $mount) = @_;
+	$mount =~ s#^/*(.*[^/])/*$#/$1/# if $mount;
 	return bless({
 			url       => $url,
 			name      => $name,
 			verify    => $verify ? 1 : 0, # Cleans out JSON::Boolean types
 			namespace => $namespace,
 			strongbox => !defined($strongbox) || $strongbox ? 1 : 0, # defaults to true
+			mount     => $mount || '/secret/',
 			id        => sprintf("%s-%06d",$name,rand(1000000))
 		}, $class);
 }
@@ -43,7 +45,7 @@ sub create {
 		"Could not create new Safe target #C{%s} pointing at #M{%s}:\n %s",
 		$name, $url, $err
 	) if $rc;
-	my $vault = $class->new($url, $name, !$opts{skip_verify}, $opts{namespace});
+	my $vault = $class->new($url, $name, !$opts{skip_verify}, $opts{namespace}, $opts{mount});
 	for (0..scalar(@all_vaults)-1) {
 		if ($all_vaults[$_]->{name} eq $name) {
 			$all_vaults[$_] = $vault;
@@ -469,8 +471,8 @@ sub authenticated {
 # initialized - returns true if initialized for Genesis {{{
 sub initialized {
 	my $self = shift;
-	my $secrets_mount = $ENV{GENESIS_SECRETS_MOUNT} || "/secret/";
-	$self->has($secrets_mount.'handshake') || $self->has('/secret/handshake')
+	my $secrets_mount = $ENV{GENESIS_SECRETS_MOUNT} || $self->{mount};
+	$self->has($secrets_mount.'handshake') || ($secrets_mount ne '/secret/' && $self->has('/secret/handshake'))
 }
 
 # }}}
