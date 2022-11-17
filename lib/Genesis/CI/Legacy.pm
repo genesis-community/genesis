@@ -1360,6 +1360,8 @@ EOF
 			if $pipeline->{pipeline}{vault}{'no-strongbox'};
 		print $OUT "            VAULT_NAMESPACE:      $pipeline->{pipeline}{vault}{namespace}\n"
 			if $pipeline->{pipeline}{vault}{namespace};
+		print $OUT "            GENESIS_SECRETS_MOUNT:      $ENV{GENESIS_SECRETS_MOUNT}\n"
+			if $ENV{GENESIS_SECRETS_MOUNT};
 		print $OUT <<EOF if $pipeline->{pipeline}{debug};
             DEBUG:                $pipeline->{pipeline}{debug}
 EOF
@@ -1494,6 +1496,8 @@ EOF
 			if $pipeline->{pipeline}{vault}{'no-strongbox'};
 		print $OUT "            VAULT_NAMESPACE:      $pipeline->{pipeline}{vault}{namespace}\n"
 			if $pipeline->{pipeline}{vault}{namespace};
+		print $OUT "            GENESIS_SECRETS_MOUNT:      $ENV{GENESIS_SECRETS_MOUNT}\n"
+			if $ENV{GENESIS_SECRETS_MOUNT};
 		print $OUT <<EOF if $pipeline->{pipeline}{debug};
             DEBUG:                $pipeline->{pipeline}{debug}
 EOF
@@ -1557,6 +1561,8 @@ EOF
 				if $pipeline->{pipeline}{vault}{'no-strongbox'};
 			print $OUT "            VAULT_NAMESPACE:      $pipeline->{pipeline}{vault}{namespace}\n"
 				if $pipeline->{pipeline}{vault}{namespace};
+			print $OUT "            GENESIS_SECRETS_MOUNT:      $ENV{GENESIS_SECRETS_MOUNT}\n"
+				if $ENV{GENESIS_SECRETS_MOUNT};
 			print $OUT <<EOF if $pipeline->{pipeline}{debug};
             DEBUG:                $pipeline->{pipeline}{debug}
 EOF
