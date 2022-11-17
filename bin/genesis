@@ -3030,12 +3030,6 @@ sub {
 	#   OUT_DIR     - Path to the directory to output to
 	#   CACHE_DIR   - Path to the directory our cache is in (required if PREVIOUS_ENV is present
 	#   GIT_GENESIS_ROOT - Path under *_DIR where the genesis deployment actually is (defaults to .)
-	#
-	# and unless we're a create-env based deploy, we should also have:
-	#   BOSH_ENVIRONMENT           - URL of the BOSH director to deploy on
-	#   BOSH_CA_CERT               - CA Certificate for the BOSH director
-	#   BOSH_CLIENT                - Username or client ID (UAA-auth) to authenticate with
-	#   BOSH_CLIENT_SECRET         - Password/Client-Secret to authenticate with
 
 	my @undefined = grep { !$ENV{$_} }
 		qw/CURRENT_ENV GIT_BRANCH OUT_DIR WORKING_DIR VAULT_ROLE_ID VAULT_SECRET_ID VAULT_ADDR/;
