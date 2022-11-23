@@ -45,7 +45,7 @@ sub create {
 		"Could not create new Safe target #C{%s} pointing at #M{%s}:\n %s",
 		$name, $url, $err
 	) if $rc;
-	my $vault = $class->new($url, $name, !$opts{skip_verify}, $opts{namespace}, $opts{mount});
+	my $vault = $class->new($url, $name, !$opts{skip_verify}, $opts{namespace}, !$opts{no_strongbox}, $opts{mount});
 	for (0..scalar(@all_vaults)-1) {
 		if ($all_vaults[$_]->{name} eq $name) {
 			$all_vaults[$_] = $vault;
@@ -214,7 +214,7 @@ sub find {
 	my ($class, %filter) = @_;
 
 	@all_vaults = (
-		map {Genesis::Vault->new($_->{url},$_->{name},$_->{verify},$_->{namespace}||'',$_->{strongbox})}
+		map { Genesis::Vault->new($_->{url}, $_->{name}, $_->{verify}, $_->{namespace} || '', $_->{strongbox}, $_->{mount}) }
 		sort {$a->{name} cmp $b->{name}}
 		@{ read_json_from(run({env => {VAULT_ADDR => "", SAFE_TARGET => ""}}, "safe targets --json")) }
 	) unless @all_vaults;
