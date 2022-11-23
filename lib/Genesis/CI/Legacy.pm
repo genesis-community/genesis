@@ -1356,7 +1356,7 @@ $git_genesis_root$git_env_creds
             VAULT_ADDR:           $pipeline->{pipeline}{vault}{url}
             VAULT_SKIP_VERIFY:    ${\($pipeline->{pipeline}{vault}{verify} ? 'false' : 'true')}
 EOF
-		print $OUT "            VAULT_NO_STRONGBOX:   1\n"
+		print $OUT "            VAULT_NO_STRONGBOX:   \"true\"\n"
 			if $pipeline->{pipeline}{vault}{'no-strongbox'};
 		print $OUT "            VAULT_NAMESPACE:      $pipeline->{pipeline}{vault}{namespace}\n"
 			if $pipeline->{pipeline}{vault}{namespace};
@@ -1490,7 +1490,7 @@ $git_genesis_root$git_env_creds
             VAULT_ADDR:           $pipeline->{pipeline}{vault}{url}
             VAULT_SKIP_VERIFY:    ${\($pipeline->{pipeline}{vault}{verify} ? 'false' : 'true')}
 EOF
-		print $OUT "            VAULT_NO_STRONGBOX:   1\n"
+		print $OUT "            VAULT_NO_STRONGBOX:   \"true\"\n"
 			if $pipeline->{pipeline}{vault}{'no-strongbox'};
 		print $OUT "            VAULT_NAMESPACE:      $pipeline->{pipeline}{vault}{namespace}\n"
 			if $pipeline->{pipeline}{vault}{namespace};
@@ -1553,7 +1553,7 @@ ${registry_creds}
             VAULT_ADDR:           $pipeline->{pipeline}{vault}{url}
             VAULT_SKIP_VERIFY:    ${\($pipeline->{pipeline}{vault}{verify} ? 'false' : 'true')}
 EOF
-			print $OUT "            VAULT_NO_STRONGBOX:   1\n"
+			print $OUT "            VAULT_NO_STRONGBOX:   \"true\"\n"
 				if $pipeline->{pipeline}{vault}{'no-strongbox'};
 			print $OUT "            VAULT_NAMESPACE:      $pipeline->{pipeline}{vault}{namespace}\n"
 				if $pipeline->{pipeline}{vault}{namespace};
