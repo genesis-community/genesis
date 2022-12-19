@@ -6,11 +6,15 @@ use Genesis;
 use Genesis::Top;
 use Genesis::UI;
 use Socket qw/inet_ntoa/;
-use JSON::PP qw/encode_json/;
+use JSON::PP;
 
 sub string_to_yaml {
 	# Note: the resulting string MUST be surrounded by double quotes
-	return substr(encode_json($_[0]), 1, -1);
+	if (ref($_[0])) {
+		return JSON::PP->new->encode($_[0]);
+	} else {
+		return substr(JSON::PP->new->allow_nonref->encode($_[0]), 1, -1);
+	}
 }
 sub boolean_to_yaml {
 	return $_[0] ? "true" : "false";
@@ -27,16 +31,17 @@ sub _gen_notifications {
 	my ($pipeline, $message, $alias) = @_;
 	$alias = "" unless defined $alias;
 	my $notification = "in_parallel: [\n";
+	my $pipeline_name = $pipeline->{pipeline}{name};
 	my $message_as_yaml = string_to_yaml($message);
 	if ($pipeline->{pipeline}{slack}) {
 		$notification .= <<EOF;
 {
   put: "slack",
   params: {
-    channel: "(( grab pipeline.slack.channel ))",
-    username: "(( grab pipeline.slack.username ))",
-    icon_url: "(( grab pipeline.slack.icon ))",
-    text: "(( concat pipeline.name \": $message_as_yaml\" ))"
+    channel:  (( grab pipeline.slack.channel )),
+    username: (( grab pipeline.slack.username )),
+    icon_url: (( grab pipeline.slack.icon )),
+    text:     "$pipeline_name: $message_as_yaml"
   }
 },
 EOF
@@ -46,10 +51,10 @@ EOF
 {
   put: "hipchat",
   params: {
-    from: "(( grab pipeline.hipchat.username ))",
-    color: "gray",
-    message: "(( concat pipeline.name \": $message_as_yaml\" ))",
-    notify: "(( grab pipeline.hipchat.notify ))"
+    from:     (( grab pipeline.hipchat.username )),
+    color:   "gray",
+    message: "$pipeline_name: $message_as_yaml",
+    notify:  (( grab pipeline.hipchat.notify ))
   }
 },
 EOF
@@ -59,8 +64,8 @@ EOF
 {
   put: "stride",
   params: {
-    conversation: "(( grab pipeline.stride.conversation ))",
-    message: "(( concat pipeline.name \": $message_as_yaml\" ))"
+    conversation: (( grab pipeline.stride.conversation )),
+    message:      "$pipeline_name: $message_as_yaml"
   }
 },
 EOF

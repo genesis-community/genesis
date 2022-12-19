@@ -1388,6 +1388,10 @@ jobs:
           DEBUG: 1
           ERRAND_NAME: a-testing-errand-for-the-ages
           GENESIS_HONOR_ENV: 1
+          VAULT_ADDR: https://127.0.0.1:8200
+          VAULT_ROLE_ID: this-is-a-role
+          VAULT_SECRET_ID: this-is-a-secret
+          VAULT_SKIP_VERIFY: false
         platform: linux
         run:
           args:
@@ -1576,6 +1580,10 @@ jobs:
           DEBUG: 1
           ERRAND_NAME: a-testing-errand-for-the-ages
           GENESIS_HONOR_ENV: 1
+          VAULT_ADDR: https://127.0.0.1:8200
+          VAULT_ROLE_ID: this-is-a-role
+          VAULT_SECRET_ID: this-is-a-secret
+          VAULT_SKIP_VERIFY: false
         platform: linux
         run:
           args:
@@ -1699,6 +1707,10 @@ jobs:
           DEBUG: 1
           ERRAND_NAME: a-testing-errand-for-the-ages
           GENESIS_HONOR_ENV: 1
+          VAULT_ADDR: https://127.0.0.1:8200
+          VAULT_ROLE_ID: this-is-a-role
+          VAULT_SECRET_ID: this-is-a-secret
+          VAULT_SKIP_VERIFY: false
         platform: linux
         run:
           args:
@@ -2065,6 +2077,10 @@ jobs:
           DEBUG: 1
           ERRAND_NAME: run-something-good
           GENESIS_HONOR_ENV: 1
+          VAULT_ADDR: http://myvault.myorg.com:5999
+          VAULT_ROLE_ID: this-is-a-role
+          VAULT_SECRET_ID: this-is-a-secret
+          VAULT_SKIP_VERIFY: true
         platform: linux
         run:
           args:
@@ -2331,6 +2347,10 @@ jobs:
           DEBUG: 1
           ERRAND_NAME: run-something-good
           GENESIS_HONOR_ENV: 1
+          VAULT_ADDR: http://myvault.myorg.com:5999
+          VAULT_ROLE_ID: this-is-a-role
+          VAULT_SECRET_ID: this-is-a-secret
+          VAULT_SKIP_VERIFY: true
         platform: linux
         run:
           args:
@@ -2520,6 +2540,10 @@ jobs:
           DEBUG: 1
           ERRAND_NAME: run-something-good
           GENESIS_HONOR_ENV: 1
+          VAULT_ADDR: http://myvault.myorg.com:5999
+          VAULT_ROLE_ID: this-is-a-role
+          VAULT_SECRET_ID: this-is-a-secret
+          VAULT_SKIP_VERIFY: true
         platform: linux
         run:
           args:
@@ -3235,6 +3259,10 @@ jobs:
           DEBUG: 1
           ERRAND_NAME: run-something-good
           GENESIS_HONOR_ENV: 1
+          VAULT_ADDR: http://myvault.myorg.com:5999
+          VAULT_ROLE_ID: this-is-a-role
+          VAULT_SECRET_ID: this-is-a-secret
+          VAULT_SKIP_VERIFY: true
         platform: linux
         run:
           args:
@@ -3496,6 +3524,10 @@ jobs:
           DEBUG: 1
           ERRAND_NAME: run-something-good
           GENESIS_HONOR_ENV: 1
+          VAULT_ADDR: http://myvault.myorg.com:5999
+          VAULT_ROLE_ID: this-is-a-role
+          VAULT_SECRET_ID: this-is-a-secret
+          VAULT_SKIP_VERIFY: true
         platform: linux
         run:
           args:
@@ -3682,6 +3714,10 @@ jobs:
           DEBUG: 1
           ERRAND_NAME: run-something-good
           GENESIS_HONOR_ENV: 1
+          VAULT_ADDR: http://myvault.myorg.com:5999
+          VAULT_ROLE_ID: this-is-a-role
+          VAULT_SECRET_ID: this-is-a-secret
+          VAULT_SKIP_VERIFY: true
         platform: linux
         run:
           args:
@@ -4204,6 +4240,10 @@ jobs:
           DEBUG: 1
           ERRAND_NAME: run-something-good
           GENESIS_HONOR_ENV: 1
+          VAULT_ADDR: http://myvault.myorg.com:5999
+          VAULT_ROLE_ID: this-is-a-role
+          VAULT_SECRET_ID: this-is-a-secret
+          VAULT_SKIP_VERIFY: true
         platform: linux
         run:
           args:
@@ -4467,6 +4507,10 @@ jobs:
           DEBUG: 1
           ERRAND_NAME: run-something-good
           GENESIS_HONOR_ENV: 1
+          VAULT_ADDR: http://myvault.myorg.com:5999
+          VAULT_ROLE_ID: this-is-a-role
+          VAULT_SECRET_ID: this-is-a-secret
+          VAULT_SKIP_VERIFY: true
         platform: linux
         run:
           args:
@@ -4653,6 +4697,10 @@ jobs:
           DEBUG: 1
           ERRAND_NAME: run-something-good
           GENESIS_HONOR_ENV: 1
+          VAULT_ADDR: http://myvault.myorg.com:5999
+          VAULT_ROLE_ID: this-is-a-role
+          VAULT_SECRET_ID: this-is-a-secret
+          VAULT_SKIP_VERIFY: true
         platform: linux
         run:
           args:
@@ -5176,6 +5224,10 @@ jobs:
           DEBUG: 1
           ERRAND_NAME: run-something-good
           GENESIS_HONOR_ENV: 1
+          VAULT_ADDR: http://myvault.myorg.com:5999
+          VAULT_ROLE_ID: this-is-a-role
+          VAULT_SECRET_ID: this-is-a-secret
+          VAULT_SKIP_VERIFY: true
         platform: linux
         run:
           args:
@@ -5437,6 +5489,10 @@ jobs:
           DEBUG: 1
           ERRAND_NAME: run-something-good
           GENESIS_HONOR_ENV: 1
+          VAULT_ADDR: http://myvault.myorg.com:5999
+          VAULT_ROLE_ID: this-is-a-role
+          VAULT_SECRET_ID: this-is-a-secret
+          VAULT_SKIP_VERIFY: true
         platform: linux
         run:
           args:
@@ -5623,6 +5679,10 @@ jobs:
           DEBUG: 1
           ERRAND_NAME: run-something-good
           GENESIS_HONOR_ENV: 1
+          VAULT_ADDR: http://myvault.myorg.com:5999
+          VAULT_ROLE_ID: this-is-a-role
+          VAULT_SECRET_ID: this-is-a-secret
+          VAULT_SKIP_VERIFY: true
         platform: linux
         run:
           args:
