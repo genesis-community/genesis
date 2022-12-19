@@ -3049,7 +3049,7 @@ sub {
 
 	# Load the environment in order to check other required variables
 	my $workdir = $ENV{WORKING_DIR};
-	$workdir.="/$ENV{GIT_GENESIS_ROOT}" if (defined($ENV{GIT_GENESIS_ROOT}) && $ENV{GIT_GENESIS_ROOT} ne "");
+	$workdir .= "/$ENV{GIT_GENESIS_ROOT}" if (defined($ENV{GIT_GENESIS_ROOT}) && $ENV{GIT_GENESIS_ROOT} ne "");
 	pushd $workdir;
 	my $env = Genesis::Top->new('.')->load_env($ENV{CURRENT_ENV})->with_vault();
 
@@ -3126,12 +3126,29 @@ sub {
 	/);
 	usage(1) if @_;
 
-	# Same environment variables needed as with ci-pipeline-deploy
+	# environment variables we should have (same as with 'ci-pipeline-deploy')
+	#   CURRENT_ENV                - Name of the current environment
+	#
+	#   VAULT_ROLE_ID              - Vault RoleID to authenticate to Vault with
+	#   VAULT_SECRET_ID            - Vault SecretID to authenticate to Vault with
+	#   VAULT_ADDR                 - URL of the Vault to use for credentials retrieval
+	#   VAULT_SKIP_VERIFY          - Whether or not to enforce SSL/TLS validation
+	#   VAULT_NAMESPACE            - Set for enterprise vaults that require namespaces
+	#   VAULT_NO_STRONGBOX         - Set true for non Genesis vault deployments
+	#   VAULT_SECRETS_MOUNT        - Set if vault secrets are not found under /secret
+	#
+	#   GIT_BRANCH                 - Name of the git branch to push commits to. post-deploy
+	#   GIT_PRIVATE_KEY            - Private Key to use for pushing commits, post-deploy, ssh
+	#   GIT_USERNAME               - Username to use for pushing commits, post-deploy, https
+	#   GIT_PASSWORD               - Password to use for pushing commits, post-deploy, https
+	#
+	#   WORKING_DIR - Path to the directory to deploy/work from
+	#   OUT_DIR     - Path to the directory to output to
+	#   CACHE_DIR   - Path to the directory our cache is in (required if PREVIOUS_ENV is present
+	#   GIT_GENESIS_ROOT - Path under *_DIR where the genesis deployment actually is (defaults to .)
+
 	my @undefined = grep { !$ENV{$_} }
-	qw/CURRENT_ENV
-	GIT_BRANCH
-	OUT_DIR WORKING_DIR
-	VAULT_ROLE_ID VAULT_SECRET_ID VAULT_ADDR/;
+		qw/CURRENT_ENV GIT_BRANCH WORKING_DIR OUT_DIR VAULT_ROLE_ID VAULT_SECRET_ID VAULT_ADDR/;
 	push @undefined, "CACHE_DIR" if ($ENV{PREVIOUS_ENV} && ! $ENV{CACHE_DIR});
 	bail_on_missing_pipeline_environment_variables(@undefined);
 
@@ -3144,7 +3161,7 @@ sub {
 
 	# Load the environment in order to check other required variables
 	my $workdir = $ENV{WORKING_DIR};
-	$workdir.="/$ENV{GIT_GENESIS_ROOT}" if (defined($ENV{GIT_GENESIS_ROOT}) && $ENV{GIT_GENESIS_ROOT} ne "");
+	$workdir .= "/$ENV{GIT_GENESIS_ROOT}" if (defined($ENV{GIT_GENESIS_ROOT}) && $ENV{GIT_GENESIS_ROOT} ne "");
 	pushd $workdir;
 	my $env = Genesis::Top->new('.')->load_env($ENV{CURRENT_ENV})->with_vault();
 	if ($env->use_create_env) {
@@ -3323,12 +3340,22 @@ sub {
 	usage(1) if @_;
 
 	# environment variables we should have
-	#   CURRENT_ENV - Name of the current environment
-	#   ERRAND_NAME - Name of the Smoke Test errand to run
+	#   CURRENT_ENV         - Name of the current environment
+	#   ERRAND_NAME         - Name of the Smoke Test errand to run
+	#
+	#   VAULT_ROLE_ID       - Vault RoleID to authenticate to Vault with
+	#   VAULT_SECRET_ID     - Vault SecretID to authenticate to Vault with
+	#   VAULT_ADDR          - URL of the Vault to use for credentials retrieval
+	#   VAULT_SKIP_VERIFY   - Whether or not to enforce SSL/TLS validation
+	#   VAULT_NAMESPACE     - Set for enterprise vaults that require namespaces
+	#   VAULT_NO_STRONGBOX  - Set true for non Genesis vault deployments
+	#   VAULT_SECRETS_MOUNT - Set if vault secrets are not found under /secret
 
 	my @undefined = grep { !$ENV{$_} }
-		qw/CURRENT_ENV ERRAND_NAME/;
+		qw/CURRENT_ENV ERRAND_NAME VAULT_ROLE_ID VAULT_SECRET_ID VAULT_ADDR/;
 	bail_on_missing_pipeline_environment_variables(@undefined);
+
+	vault_auth();
 
 	my $env = Genesis::Top->new('.')->load_env($ENV{CURRENT_ENV})->with_vault()->with_bosh();
 	$env->bosh->run_errand($ENV{ERRAND_NAME});
