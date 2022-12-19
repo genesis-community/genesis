@@ -396,18 +396,14 @@ sub parse_pipeline {
 						unless m/^(alias)$/;
 				}
 			} else {
-				my @required_bosh_props = qw(url ca_cert username password);
-				if (exists $p->{pipeline}{ocfp} && yaml_bool($p->{pipeline}{ocfp}, 0)) {
-					push @required_bosh_props, 'genesis_env';
-				}
-				for (@required_bosh_props) {
+				for (qw(url ca_cert username password)) {
 					push @errors, "`pipeline.boshes[$env].$_' is required."
 						unless $p->{pipeline}{boshes}{$env}{$_};
 				}
 				# allowed subkeys
 				for (keys %{$p->{pipeline}{boshes}{$env}}) {
 					push @errors, "Unrecognized `pipeline.boshes[$env].$_' key found."
-						unless m/^(url|ca_cert|username|password|alias)$/;
+						unless m/^(url|ca_cert|username|password|alias|genesis_env)$/;
 				}
 			}
 		}
@@ -1360,7 +1356,7 @@ $git_genesis_root$git_env_creds
             VAULT_ADDR:           $pipeline->{pipeline}{vault}{url}
             VAULT_SKIP_VERIFY:    ${\($pipeline->{pipeline}{vault}{verify} ? 'false' : 'true')}
 EOF
-		print $OUT "            VAULT_NO_STRONGBOX:   1\n"
+		print $OUT "            VAULT_NO_STRONGBOX:   \"true\"\n"
 			if $pipeline->{pipeline}{vault}{'no-strongbox'};
 		print $OUT "            VAULT_NAMESPACE:      $pipeline->{pipeline}{vault}{namespace}\n"
 			if $pipeline->{pipeline}{vault}{namespace};
@@ -1494,7 +1490,7 @@ $git_genesis_root$git_env_creds
             VAULT_ADDR:           $pipeline->{pipeline}{vault}{url}
             VAULT_SKIP_VERIFY:    ${\($pipeline->{pipeline}{vault}{verify} ? 'false' : 'true')}
 EOF
-		print $OUT "            VAULT_NO_STRONGBOX:   1\n"
+		print $OUT "            VAULT_NO_STRONGBOX:   \"true\"\n"
 			if $pipeline->{pipeline}{vault}{'no-strongbox'};
 		print $OUT "            VAULT_NAMESPACE:      $pipeline->{pipeline}{vault}{namespace}\n"
 			if $pipeline->{pipeline}{vault}{namespace};
@@ -1557,7 +1553,7 @@ ${registry_creds}
             VAULT_ADDR:           $pipeline->{pipeline}{vault}{url}
             VAULT_SKIP_VERIFY:    ${\($pipeline->{pipeline}{vault}{verify} ? 'false' : 'true')}
 EOF
-			print $OUT "            VAULT_NO_STRONGBOX:   1\n"
+			print $OUT "            VAULT_NO_STRONGBOX:   \"true\"\n"
 				if $pipeline->{pipeline}{vault}{'no-strongbox'};
 			print $OUT "            VAULT_NAMESPACE:      $pipeline->{pipeline}{vault}{namespace}\n"
 				if $pipeline->{pipeline}{vault}{namespace};
