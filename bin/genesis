@@ -3180,7 +3180,8 @@ sub {
 	my $vars_file = "bosh-vars.yml";
 	DumpYAML($vars_file,$vars);
 
-	mkfile_or_fail "dry-run.sh", 0755, <<'EOF';
+	my $cmd = './dry-run';
+	mkfile_or_fail $cmd, 0755, <<'EOF';
 #!/bin/bash
 set -e
 deployment="${1}-${2}"
@@ -3210,8 +3211,13 @@ bosh diff-config --json \
      | jq -r '.Tables[0].Rows[0] | if (.diff == "" ) then "[32;1mNo differences found.[0m" else .diff end'
 EOF
 
-	my %credhub_env = $env->credhub_connection_env();
-	my (undef,$rc) = run( {interactive => 1, env => \%credhub_env}, './dry-run.sh', $env->name, $env->type, 'updates.yml', $vars_file);
+	my %envvars = $env->get_environment_variables();
+
+	if (envset('GENESIS_TRACE')) {
+		run( {interactive => 0}, "sed -e 's/set -e/set -ex/' $cmd > ${cmd}-trace");
+		$cmd.='-trace';
+	}
+	my (undef,$rc) = run( {interactive => 1, env => \%envvars}, $cmd, $env->name, $env->type, 'updates.yml', $vars_file);
 	bail "Failed to determine changes." if $rc;
 
 	my @missing = @{$mismatches->{missing} || []};
