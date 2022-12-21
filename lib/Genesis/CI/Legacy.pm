@@ -1787,7 +1787,7 @@ EOF
 	close $OUT;
 
 	return run({ onfailure => 'Failed to merge Concourse pipeline definition', stderr => 0 },
-		'spruce', 'merge', '--prune', 'meta', '--prune', 'pipeline', "$dir/guts.yml", $pipeline->{file});
+		'spruce', 'merge', '--multi-doc', '--go-patch', '--prune', 'meta', '--prune', 'pipeline', "$dir/guts.yml", $pipeline->{file});
 }
 
 1;
