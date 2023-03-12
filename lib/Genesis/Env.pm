@@ -314,11 +314,11 @@ sub create {
 				"\n#y{[WARNING]} Kit %s supports both bosh and create-env deployment.\n".
 				"          No --create-env option specified, so using bosh deployment method.",
 				$env->kit->id
-			) unless defined($create_env);
+			) unless defined($create_env) and ! $ENV{GENESIS_BOSH_ENVIRONMENT};
 			bail(
 				"\n#R{[ERROR]} Cannot specify a bosh environment for environments that use\n".
 				"        create-env deployment method"
-			) if $create_env && defined($ENV{GENESIS_BOSH_ENVIRONMENT});
+			) if $create_env && $ENV{GENESIS_BOSH_ENVIRONMENT};
 			$env->{__params}{genesis}{use_create_env} = $create_env || 0;
 			$env->{__params}{genesis}{bosh_env} = $create_env ? '' : $ENV{GENESIS_BOSH_ENVIRONMENT} || $opts{name};
 		}
