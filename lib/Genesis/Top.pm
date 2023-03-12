@@ -537,6 +537,7 @@ sub load_env {
 # has_env - returns true if the repo has an enviroment of the given name {{{
 sub has_env {
 	my ($self, $name) = @_;
+	$name =~ s/.yml$//;
 	return Genesis::Env->exists(
 		top => $self,
 		name => $name
