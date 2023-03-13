@@ -926,6 +926,72 @@ sub {
 });
 
 # }}}
+# genesis edit - edit the environment with the kit manual pages on the side {{{
+
+command("edit", {scope => ['env']}, <<EOF,
+genesis v$Genesis::VERSION$Genesis::BUILD
+USAGE: genesis edit <env-name>
+
+Open the environment file in your default editor.  If your editor is vim or
+emacs, it will also include the kit's manual pages open in a split window.
+
+OPTIONS
+$BASE_USAGE
+  -E, --editor         Specify the editor to use (defaults to EDITOR env var)
+                       Note that only vim and emacs will split screen with the
+                       kit manual
+
+  -k, --kit            Specify the kit/version for displaying the manual.  Used
+                       when the environment is intending to use a new version.
+EOF
+sub {
+	my %options;
+	options(\@_, \%options, qw/
+		kit|k=s
+		editor|E=s
+	/);
+
+	my ($name) = @_;
+	my $top = Genesis::Top->new('.');
+	my $env = $top->load_env($name);
+	my $kit;
+
+	if ($options{kit}) {
+		my @possible_kits = keys %{$top->local_kits};
+		push @possible_kits, 'dev' if $top->has_dev_kit;
+
+		bail "No local kits found; you must specify the name of the kit to fetch"
+			unless scalar(@possible_kits);
+
+		my ($kit_name,$version) = ($options{kit}) =~ m/^([^\/]*)(?:\/(.*))?$/;
+		if (!$version && semver($name)) {
+			bail "More than one local kit found; please specify the kit to get the manual for"
+				if scalar(@possible_kits) > 1;
+			$version = $name;
+			$version =~ s/^v//;
+			$name = $possible_kits[0];
+		}
+		$kit = $top->local_kit_version($name, $version);
+
+		if(!(defined $kit)) {
+			error "Kit not found: #C{%s}", $name;
+			exit 1;
+		}
+
+	} else {
+		$kit = $env->kit;
+	}
+	error "Editing environment $name (kit #C{%s})", $kit->id;
+
+	my $man = $kit->path('MANUAL.md');
+	explain("#Y{[WARNING]} #M{%s} has no MANUAL.md", $kit->id)
+		unless (-f $man);
+
+	$kit->run_hook('edit', env => $env, editor => $options{editor});
+	exit 0;
+});
+
+# }}}
 # genesis ping - see if the genesis binary is a real thing. {{{
 
 command("ping", <<EOF,
@@ -1308,6 +1374,9 @@ sub {
 		if scalar(keys %options) > 1;
 
 	my $ui_nl = $options{interactive} ? "" : "\n";
+
+	# FIXME:  If the vault is set in config, but it is an invalid vault target,
+	#         cannot fix with a call to genesis secrets-provider
 
 	my $top = Genesis::Top->new('.');
 	my $err;

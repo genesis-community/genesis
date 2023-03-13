@@ -703,10 +703,13 @@ EOF
 export -f genesis_config_block
 
 offer_environment_editor() {
+  local __edit_query="${1:-''}"
   local __file __tmpdir __editor __edit_query __editor_cmd
-  prompt_for __edit_query boolean \
-    "Would you like to edit the '$GENESIS_ENVIRONMENT.yml' environment file?" \
-    --inline
+  if [[ "$__edit_query" != 'true' ]] ; then
+    prompt_for __edit_query boolean \
+      "Would you like to edit the '$GENESIS_ENVIRONMENT.yml' environment file?" \
+      --inline
+  fi
 
   if [[ $__edit_query == 'true' ]] ; then
     local __unbound_check=0
@@ -729,7 +732,7 @@ offer_environment_editor() {
         __editor_cmd="$EDITOR -nw '$__file' -f split-window-horizontally '$__tmpdir/manual.md' -f other-window"
     fi
     [[ -n "$__editor_cmd" ]] || __editor_cmd="$EDITOR '$__file'"
-    env -i HOME="$HOME" SHELL="$(which bash)" USER="$USER" COLORTERM="$COLORTERM" TERM="$TERM" bash -l -c "$__editor_cmd"
+    env -i HOME="$HOME" SHELL="$(which bash)" USER="$USER" COLORTERM="$COLORTERM" TERM="$TERM" bash -l -c "cd \"$GENESIS_ROOT\" && $__editor_cmd"
     [[ -f $__tmpdir/manual.md ]] && rm "$__tmpdir/manual.md"
     rmdir "$__tmpdir"
     rmdir "$(dirname "$__tmpdir")"

@@ -69,8 +69,11 @@ sub run_hook {
 	my ($self, $hook, %opts) = @_;
 
 	my $is_shell=($hook eq 'shell');
+	my $is_edit=($hook eq 'edit');
 	if ($is_shell) {
 		$hook=$opts{hook}||'shell';
+	} elsif ($is_edit) {
+		$opts{editor} ||= $ENV{EDITOR}||'vim';
 	} elsif (! $self->has_hook($hook)) {
 		bail("No '$hook' hook script found")
 	}
@@ -85,7 +88,7 @@ sub run_hook {
 
 	bug("Unrecognized hook '$hook'\n") unless grep {
 		$_ eq $hook
-	} qw/new blueprint secrets info addon check prereqs pre-deploy post-deploy features shell/;
+	} qw/new blueprint secrets info addon check prereqs pre-deploy post-deploy features shell edit/;
 
 	if ($opts{env}) {
 		my %env_vars = $opts{env}->get_environment_variables($hook);
@@ -148,6 +151,20 @@ sub run_hook {
 		@args = ();
 		$hook_exec =
 		$hook_name = $opts{shell} || '/bin/bash';
+
+	} elsif ($is_edit) {
+		@args = ();
+		$hook_exec = $opts{env}->tmppath("edit-env");
+		$hook_name = $hook;
+		mkfile_or_fail($hook_exec, <<EOF);
+#/bin/bash
+set -ue
+offer_environment_editor true
+exit 0
+EOF
+		chmod 0755, $hook_exec;
+		$ENV{EDITOR}=$opts{editor};
+
 	} else {
 		$hook_exec = $self->path("hooks/$hook");
 		$hook_name = $hook;
@@ -166,7 +183,7 @@ sub run_hook {
 
 	$ENV{GENESIS_IS_HELPING_YOU} = 'yes';
 	debug ("Running hook now in ".$self->path);
-	my $interactive = ($is_shell || scalar($hook =~ m/^(addon|new|info|check|secrets|post-deploy|pre-deploy)$/)) ? 1 : 0;
+	my $interactive = ($is_shell || $is_edit || scalar($hook =~ m/^(addon|new|info|check|secrets|post-deploy|pre-deploy)$/)) ? 1 : 0;
 	my ($out, $rc, $err) = run({
 			interactive => $interactive, stderr => undef, eval_var_args => $opts{eval_var_args}
 		},
