@@ -17,7 +17,7 @@ sub command {
 
 	$min_version ||= '0.0.0';
 	my %versions;
-	foreach my $boshcmd (qw(bosh2 boshv2 bosh)) {
+	foreach my $boshcmd (qw(bosh-cli bosh2 boshv2 bosh)) {
 		my ($version, undef) = run("$boshcmd -v 2>&1 | grep version | head -n1");
 		trace("Version for $boshcmd: '$version'");
 		next unless defined($version) && $version =~ /version (\S+?)-.*/;
