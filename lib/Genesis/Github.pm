@@ -272,7 +272,7 @@ sub fetch_release {
 		}
 		chmod_or_fail(0600, $file);
 	}
-	mkfile_or_fail($file, 0400, $data);
+	mkfile_or_fail($file, 0444, $data);
 
 	# TODO: Add to gt
 	debug("downloaded release #M{%s}/#C{%s}: %s bytes", $name, $version, length($data));
