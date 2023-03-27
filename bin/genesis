@@ -2455,7 +2455,7 @@ sub {
 # }}}
 # genesis decompile-kit - Unpack a kit archive to dev/. {{{
 
-command("decompile-kit", {alias => 'dk', scope => 'repo'}, <<EOF,
+command("decompile-kit", {alias => 'dk', scope => ['env','repo']}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis decompile-kit <options> [env|NAME/VERSION|path/to/kit.tar.gz]
 
