@@ -2,8 +2,10 @@
 meta:
   name:    genesis
   release: Genesis
-  target:  cloudpipes/genesis
-  url:     https://cloudpipes.starkandwayne.com
+  target:  pipes/genesis
+  url:     https://pipes.scalecf.com
+
+  initial_version: 2.8.10
 
   # we build our own image in this pipeline, and
   # use it, instead of standard concourse images.
@@ -11,8 +13,11 @@ meta:
     name: starkandwayne/genesis_ci
 
   aws:
-    access_key: ((aws.access_key_id))
-    secret_key: ((aws.secret_access_key))
+    endpoint:    ((aws.endpoint))
+    access_key:  ((aws.access_key_id))
+    secret_key:  ((aws.secret_access_key))
+    insecure:    true
+    region_name: ~
 
   git:
     name:  Stark & Wayne CI Bot
