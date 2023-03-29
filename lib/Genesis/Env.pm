@@ -67,7 +67,7 @@ sub load {
 
 		my ($env_name, $env_src) = $env->lookup(['genesis.env','params.env']);
 		if ($env_name) {
-			push(@errors, "#environment name mismatch: #ci{$env_src} specifies #ci{$env_name}")
+			push(@errors, "environment name mismatch: #ci{$env_src} specifies #ri{$env_name}, expected #ci{$env->{name}}")
 				unless $env->{name} eq $env_name || in_callback || envset("GENESIS_LEGACY");
 		} else {
 			push(@errors, "missing required #ci{genesis.env} field")
