@@ -8,4 +8,4 @@ resources:
       secret_access_key:     (( grab meta.aws.secret_key ))
       region_name:           (( grab meta.aws.region_name ))
       bucket:                (( grab meta.aws.bucket ))
-      regexp:                (( concat meta.name "/build/(.*)\.tar.gz" ))
+      regexp:                (( concat meta.name "/build/genesis-(.*)" ))
