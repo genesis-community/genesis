@@ -1629,7 +1629,7 @@ sub _validate_x509_secret {
 	my ($keyModulus) = run('openssl rsa -in <(echo "$1") -modulus  -noout', $key) =~ /Modulus=(\S*)/;
 	my $certInfo = run('openssl x509 -in <(echo "$1") -text -fingerprint -modulus -noout', $cert);
 	my ($issuerCN, $since, $expires, $subjectCN, $fingerprint, $modulus) =
-		$certInfo =~ /Issuer: CN\s*=\s*(\S*).*Not Before: ([^\n]*).*Not After : ([^\n]*).*Subject: CN\s*=\s*([^\r\n]+?)\s*[\r\n]+.*Fingerprint=(\S*).*Modulus=(\S*)/ms;
+		$certInfo =~ /Issuer: (?:[^\r\n]+?, )?CN\s*=\s*([^\r\n]+).*Not Before: ([^\r\n]*).*Not After : ([^\n]*).*Subject: (?:[^\r\n]+?, )?CN\s*=\s*([^\r\n]+?)\s*[\r\n]+.*Fingerprint=(\S*).*Modulus=(\S*)/ms;
 	my $is_ca = $certInfo =~ /X509v3 Basic Constraints:.*(CA:TRUE).*Signature Algorithm/ms;
 	my (undef, $sanInfo) = $certInfo =~ /\n( *)X509v3 Subject Alternative Name:\s*?((?:[\n\r]+\1.*)+)/;
 	my @SANs = ($sanInfo || '') =~ /(?:IP Address|DNS):([^,\n\r]+)/g;
