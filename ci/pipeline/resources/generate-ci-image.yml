@@ -11,10 +11,10 @@ resources:
     .: (( inject resources.git.source ))
     paths:
     - ci/Dockerfile
-- name: snw-concourse-image
+- name: concourse-image
   type: registry-image
   source:
     username: (( grab meta.dockerhub.username ))
     password: (( grab meta.dockerhub.password ))
-    repository: starkandwayne/concourse
+    repository: registry.ops.scalecf.net/genesis-community/genesis-ci
     tag: latest-rc

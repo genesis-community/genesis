@@ -10,7 +10,7 @@ meta:
   # we build our own image in this pipeline, and
   # use it, instead of standard concourse images.
   image:
-    name: starkandwayne/genesis_ci
+    name: registry.ops.scalecf.net/genesis-community/genesis-ci
 
   aws:
     endpoint:    ((aws.endpoint))
@@ -20,8 +20,8 @@ meta:
     region_name: ~
 
   git:
-    name:  Stark & Wayne CI Bot
-    email: ci@starkandwayne.com
+    name:  Genesis CI Bot
+    email: genesis-ci@rubidiumstudios.com
 
   vault:
     url:       ((vault.url))
@@ -39,7 +39,7 @@ meta:
     email:    ((docker.email))
     username: ((docker.username))
     password: ((docker.password))
-    repository: starkandwayne/genesis
+    repository: registry.ops.scalecf.net/genesis-community/genesis
 
   shout:
     url:      ((shout.url))

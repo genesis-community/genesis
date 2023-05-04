@@ -23,7 +23,7 @@ meta:
     email:  (( param "Please provide the git email for automated commits" ))
 
   image:
-    name: starkandwayne/concourse
+    name: registry.ops.scalecf.net/genesis-community/concourse
     tag:  latest
 
   aws:

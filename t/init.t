@@ -14,8 +14,8 @@ my $intended_target;
 my $link_target;
 
 my $vault_target = vault_ok();    # this changes $HOME to ./t/tmp/home/
-system 'git config --global user.name "CI Testing"';
-system 'git config --global user.email ci@starkandwayne.com';
+system 'git config --global user.name "Genesis CI Testing"';
+system 'git config --global user.email genesis-ci@rubidiumstudios.com';
 chdir "t/tmp";
 
 runs_ok "genesis init random --vault $VAULT_URL";

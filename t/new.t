@@ -13,8 +13,8 @@ chdir $dir;
 
 bosh2_cli_ok;
 
-system 'git config --global user.name "CI Testing"';
-system 'git config --global user.email ci@starkandwayne.com';
+system 'git config --global user.name "Genesis CI Testing"';
+system 'git config --global user.email genesis-ci@rubidiumstudios.com';
 
 runs_ok "genesis init new --vault $vault_target";
 ok -d "new-deployments", "created initial deployments directory";

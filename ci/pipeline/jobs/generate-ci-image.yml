@@ -15,7 +15,7 @@ jobs:
   plan:
   - get: dockerfile
     trigger: true
-  - get: snw-concourse-image
+  - get: concourse-image
     trigger: true
     params:
       skip_download: true

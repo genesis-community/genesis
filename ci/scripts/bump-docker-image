@@ -44,10 +44,10 @@ popd
 
 # GIT!
 if [[ -z $(git config --global user.email) ]]; then
-  git config --global user.email "ci@starkandwayne.com"
+  git config --global user.email "genesis-ci@rubidiumstudios.com"
 fi
 if [[ -z $(git config --global user.name) ]]; then
-  git config --global user.name "CI Bot"
+  git config --global user.name "Genesis CI Bot"
 fi
 
 (cd ${REPO_ROOT}

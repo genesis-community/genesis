@@ -1,4 +1,4 @@
-FROM starkandwayne/genesis:latest
+FROM registry.ops.scalecf.net/genesis-community/genesis:latest
 
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true apt-get install -y \
