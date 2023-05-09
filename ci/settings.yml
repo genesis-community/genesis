@@ -11,6 +11,8 @@ meta:
   # use it, instead of standard concourse images.
   image:
     name: registry.ops.scalecf.net/genesis-community/genesis-ci
+    src-image: registry.ops.scalecf.net/genesis-community/genesis
+    src-tag: latest
 
   aws:
     endpoint:    ((aws.endpoint))

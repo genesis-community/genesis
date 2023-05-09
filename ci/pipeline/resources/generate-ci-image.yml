@@ -1,6 +1,6 @@
 resources:
 - name: genesis-ci
-  type: registry-image
+  type: docker-image
   source:
     username: (( grab meta.dockerhub.username ))
     password: (( grab meta.dockerhub.password ))
@@ -8,7 +8,10 @@ resources:
 - name: dockerfile
   type: git
   source:
-    .: (( inject resources.git.source ))
+    uri:         (( grab meta.github.uri ))
+    branch:      (( grab meta.github.branch ))
+    private_key: (( grab meta.github.private_key ))
+    disable_ci_skip: true
     paths:
     - ci/Dockerfile
 - name: concourse-image
@@ -16,5 +19,5 @@ resources:
   source:
     username: (( grab meta.dockerhub.username ))
     password: (( grab meta.dockerhub.password ))
-    repository: registry.ops.scalecf.net/genesis-community/genesis-ci
-    tag: latest-rc
+    repository: (( grab meta.image.src-image ))
+    tag: (( grab meta.image.src-tag ))
