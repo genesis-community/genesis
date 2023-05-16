@@ -2,8 +2,8 @@ resources:
 - name: genesis-ci
   type: docker-image
   source:
-    username: (( grab meta.dockerhub.username ))
-    password: (( grab meta.dockerhub.password ))
+    username: (( grab meta.image-registry.username ))
+    password: (( grab meta.image-registry.password ))
     repository: (( grab meta.image.name ))
 - name: dockerfile
   type: git
@@ -17,7 +17,7 @@ resources:
 - name: concourse-image
   type: registry-image
   source:
-    username: (( grab meta.dockerhub.username ))
-    password: (( grab meta.dockerhub.password ))
+    username: (( grab meta.image-registry.username ))
+    password: (( grab meta.image-registry.password ))
     repository: (( grab meta.image.src-image ))
     tag: (( grab meta.image.src-tag ))

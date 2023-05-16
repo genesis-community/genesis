@@ -37,7 +37,7 @@ meta:
     private_key:  ((github.private_key))
     access_token: ((github.access_token))
 
-  dockerhub:
+  image-registry:
     email:    ((docker.email))
     username: ((docker.username))
     password: ((docker.password))
