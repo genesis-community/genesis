@@ -6,7 +6,7 @@ image_resource:
     repository: registry.ops.scalecf.net/genesis-community/genesis-ci
 
 inputs:
-- name: git-main
+- name: git
 - name: git-ci
 
 outputs:
