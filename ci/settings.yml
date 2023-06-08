@@ -45,7 +45,7 @@ meta:
     ci-remote:    ((dockerhub.genesis-ci-image-path))
     rel-local:    ((docker.genesis-image-path))
     rel-remote:   ((dockerhub.genesis-image-path))
-    rel-tag:      ((dockerhub.genesis-image-tag))
+    rel-tag:      ((docker.genesis-image-tag))
     src:          ubuntu
     src-tag:      jammy
 

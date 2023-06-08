@@ -94,11 +94,9 @@ meta:
       build:    (( concat meta.shout.links.pipeline "/jobs/$BUILD_JOB_NAME/builds/$BUILD_NAME" ))
 
   dockerhub:
-    host:         ""
     email:        (( param "Please set your dockerhub email" ))
     username:     (( param "Please set your dockerhub username" ))
     password:     (( param "Please set your dockerhub password" ))
-    org:          (( grab meta.dockerhub.username ))
   
   image-registry: (( grab meta.dockerhub ))
 

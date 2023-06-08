@@ -4,4 +4,4 @@ resources:
   source:
     username:   (( grab meta.image-registry.username ))
     password:   (( grab meta.image-registry.password ))
-    repository: (( meta.image.rel-local ))
+    repository: (( grab meta.image.rel-local ))

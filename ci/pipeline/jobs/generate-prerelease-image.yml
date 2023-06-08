@@ -24,7 +24,7 @@ jobs:
     params:
       build: git/ci/dockerimage
       build_args:
-        GENESIS_VERSION=((.:genesis_version))
+        GENESIS_VERSION: "((.:genesis_version))"
       tag_file: version/number
       tag_prefix: dev
       additional_tags: genesis-prerelease-dev-tag/value
