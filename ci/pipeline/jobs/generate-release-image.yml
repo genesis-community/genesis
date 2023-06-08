@@ -29,9 +29,9 @@ jobs:
   - put: genesis-image
     get_params: {save: true}
     params:
-      build: git/ci/dockerimage
+      build: git-ci/ci/dockerimage
       build_args:
-        GENESIS_VERSION=((.:genesis_version))
+        GENESIS_VERSION: "((.:genesis_version))"
       tag_file: version/number
       tag_as_latest: true
   - put: genesis-image-dockerhub
