@@ -8,8 +8,36 @@
 # ci/settings.yml and override what needs overridden.
 # This uses spruce, so you have some options there.
 #
+# author:  Dennis Bell <dennis@rubidiumstudios.com>
+#
+# Based on original model by:
 # author:  James Hunt <james@niftylogic.com>
 # created: 2016-03-30
+#
+groups:
+- name: (( grab meta.pipeline ))
+  jobs:
+    - test
+    - build
+    - ship-prerelease
+    - prepare
+    - ship-release
+- name: version-control
+  jobs:
+    - major
+    - minor
+    - patch
+
+- name: generate-docker-images
+  jobs:
+  - generate-ci-image
+  - generate-release-image
+  - generate-prerelease-image
+
+- name: renew-token
+  jobs:
+  - renew-vault-token
+
 
 meta:
   name:     (( param "Please name your pipeline" ))
@@ -23,8 +51,12 @@ meta:
     email:  (( param "Please provide the git email for automated commits" ))
 
   image:
-    name: registry.ops.scalecf.net/genesis-community/concourse
-    tag:  latest
+    ci-local:   (( param "Please provide the full path to the local genesis-ci image" ))
+    ci-remote:  (( param "Please provide the full path to the remote genesis-ci image" ))
+    rel-local:  (( param "Please provide the full path to the local genesis image" ))
+    rel-remote: (( param "Please provide the full path to the remotegenesis image" ))
+    src:        (( param "Please provide the full path to the ubuntu image" ))
+    src-tag:    jammy
 
   aws:
     bucket:     (( concat meta.pipeline "-pipeline" ))
@@ -61,18 +93,13 @@ meta:
       pipeline: (( concat meta.url "/teams/$BUILD_TEAM_NAME/pipelines/$BUILD_PIPELINE_NAME" ))
       build:    (( concat meta.shout.links.pipeline "/jobs/$BUILD_JOB_NAME/builds/$BUILD_NAME" ))
 
-groups:
-  - name: (( grab meta.pipeline ))
-    jobs:
-      - test
-      - build
-      - ship-prerelease
-      - prepare
-      - ship-release
-  - name: version-control
-    jobs:
-      - major
-      - minor
-      - patch
+  dockerhub:
+    host:         ""
+    email:        (( param "Please set your dockerhub email" ))
+    username:     (( param "Please set your dockerhub username" ))
+    password:     (( param "Please set your dockerhub password" ))
+    org:          (( grab meta.dockerhub.username ))
+  
+  image-registry: (( grab meta.dockerhub ))
 
 

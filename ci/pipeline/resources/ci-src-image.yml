@@ -1,0 +1,8 @@
+resources:
+- name: ci-src-image
+  type: registry-image
+  source:
+    username:   (( grab meta.image-registry.username ))
+    password:   (( grab meta.image-registry.password ))
+    repository: (( grab meta.image.rel-local))
+    tag:        (( grab meta.image.rel-tag || "latest" ))

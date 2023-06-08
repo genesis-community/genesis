@@ -1,0 +1,7 @@
+resources:
+- name: genesis-ci-image
+  type: docker-image
+  source:
+    username:   (( grab meta.image-registry.username ))
+    password:   (( grab meta.image-registry.password ))
+    repository: (( grab meta.image.ci-local ))

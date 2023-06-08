@@ -6,21 +6,22 @@
 #       and https://github.com/concourse/oci-build-task#oci-build-task
 #
 
-groups:
-- name: generate-ci-image
-  jobs:
-  - genesis-ci-docker-image
 jobs:
-- name: genesis-ci-docker-image
+- name: generate-ci-image
   plan:
-  - get: dockerfile
+  - get: ci-dockerfile
     trigger: true
-  - get: concourse-image
+  - get: ci-src-image
     trigger: true
     params:
       skip_download: true
-  - put: genesis-ci
+  - put: genesis-ci-image
+    get_params: {save: true}
     params:
-      build: dockerfile/ci
+      build: dockerfile/ci/ci-dockerimage
+      tag_as_latest: true
+  - put: genesis-ci-dockerhub
+    params:
+      load: genesis-ci-image
       tag_as_latest: true
 

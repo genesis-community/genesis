@@ -1,0 +1,30 @@
+#!/bin/bash
+set -eu
+
+# Resource Directories
+export REPO_ROOT="git"
+
+header() {
+	echo
+	echo "================================================================================"
+	echo "$1"
+	echo "--------------------------------------------------------------------------------"
+	echo
+}
+
+bail() {
+	echo >&2 "$*  Did you misconfigure Concourse?"
+	exit 2
+}
+
+header "Getting the release version from last shipped release"
+
+version="$(git -C "$REPO_ROOT" describe --tag --abbrev=0 | sed -e 's/^v//')"
+echo "Found release version $version"
+mkdir -p version
+echo "$version" > version/number
+
+echo
+echo "--------------------------------------------------------------------------------"
+echo "SUCCESS"
+exit 0

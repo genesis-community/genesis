@@ -1,0 +1,39 @@
+# TODO: docker-image push is insecure, so we must convert to registry-image.
+#       However, registry-image push doesn't build, so an additional build task
+#       is needed It is recommended by concourse to use oci-build-image, but
+#       another system might work better.  See
+#       https://github.com/concourse/registry-image-resource#comparison-to-docker-image-resource
+#       and https://github.com/concourse/oci-build-task#oci-build-task
+#
+
+jobs:
+- name: generate-prerelease-image
+  plan:
+  - get: git
+    resource: git-ci
+  - get: version
+    trigger: true
+    passed: [ship-prerelease]
+  - get: genesis-prerelease-dev-tag
+
+  - load_var: genesis_version
+    file: version/number
+
+  - put: genesis-image
+    get_params: {save: true}
+    params:
+      build: git/ci/dockerimage
+      build_args:
+        GENESIS_VERSION=((.:genesis_version))
+      tag_file: version/number
+      tag_prefix: dev
+      additional_tags: genesis-prerelease-dev-tag/value
+      tag_as_latest: false
+  - put: genesis-image-dockerhub
+    params:
+      load: genesis-image
+      tag_file: version/number
+      tag_prefix: dev
+      additional_tags: genesis-prerelease-dev-tag/value
+      tag_as_latest: false
+

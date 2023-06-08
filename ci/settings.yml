@@ -9,22 +9,17 @@ meta:
 
   # we build our own image in this pipeline, and
   # use it, instead of standard concourse images.
-  image:
-    name: registry.ops.scalecf.net/genesis-community/genesis-ci
-    src-image: registry.ops.scalecf.net/genesis-community/genesis
-    src-tag: latest
-
   aws:
-    access_key:  ((cloudfoundry-community-aws.access_key_id))
-    secret_key:  ((cloudfoundry-community-aws.secret_access_key))
+    access_key:   ((cloudfoundry-community-aws.access_key_id))
+    secret_key:   ((cloudfoundry-community-aws.secret_access_key))
 
   git:
-    name:  Genesis CI Bot
-    email: genesis-ci@rubidiumstudios.com
+    name:         Genesis CI Bot
+    email:        genesis-ci@rubidiumstudios.com
 
   vault:
-    url:       ((vault.url))
-    token:     ((vault.token))
+    url:          ((vault.url))
+    token:        ((vault.token))
 
   github:
     owner:        genesis-community
@@ -35,13 +30,27 @@ meta:
     access_token: ((github.access_token))
 
   image-registry:
-    email:    ((docker.email))
-    username: ((docker.username))
-    password: ((docker.password))
-    repository: registry.ops.scalecf.net/genesis-community/genesis
+    host:         "registry.ops.scalecf.net/"
+    email:        ((docker.email))
+    username:     ((docker.username))
+    password:     ((docker.password))
+
+  dockerhub:
+    email:        ((dockerhub.email))
+    username:     ((dockerhub.username))
+    password:     ((dockerhub.password))
+
+  image:
+    ci-local:     ((docker.genesis-ci-image-path))
+    ci-remote:    ((dockerhub.genesis-ci-image-path))
+    rel-local:    ((docker.genesis-image-path))
+    rel-remote:   ((dockerhub.genesis-image-path))
+    rel-tag:      ((dockerhub.genesis-image-tag))
+    src:          ubuntu
+    src-tag:      jammy
 
   shout:
-    url:      ((shout.url))
-    username: ((shout.username))
-    password: ((shout.password))
+    url:          ((shout.url))
+    username:     ((shout.username))
+    password:     ((shout.password))
 

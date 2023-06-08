@@ -1,9 +1,3 @@
-groups:
-- (( append ))
-- name: renew-token
-  jobs:
-  - renew-vault-token
-
 resources:
 - name: weekly
   type: time

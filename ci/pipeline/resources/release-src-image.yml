@@ -1,0 +1,8 @@
+resources:
+- name: release-src-image
+  type: registry-image
+  source:
+    username:   (( grab meta.dockerhub.username ))
+    password:   (( grab meta.dockerhub.password ))
+    repository: (( grab meta.image.src ))
+    tag:        (( grab meta.image.src-tag ))

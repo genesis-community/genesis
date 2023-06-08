@@ -1,0 +1,20 @@
+platform: linux
+
+image_resource:
+  type: registry-image
+  source:
+    repository: registry.ops.scalecf.net/genesis-community/genesis-ci
+
+inputs:
+- name: git-main
+- name: git-ci
+
+outputs:
+- name: version
+
+params:
+
+run:
+  path: git-ci/ci/scripts/get-release-version
+
+

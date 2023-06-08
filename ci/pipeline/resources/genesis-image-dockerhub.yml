@@ -1,0 +1,7 @@
+resources:
+- name: genesis-image-dockerhub
+  type: docker-image
+  source:
+    username:   (( grab meta.dockerhub.username ))
+    password:   (( grab meta.dockerhub.password ))
+    repository: (( grab meta.image.rel-remote ))

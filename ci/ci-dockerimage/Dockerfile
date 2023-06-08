@@ -15,5 +15,5 @@ RUN apt-get update \
      && mv shellcheck*/shellcheck /usr/bin/shellcheck \
      && chmod 0755 /usr/bin/shellcheck \
      && rm -rf shellcheck* \
- && git config --global user.name "Concourse BOT" \
- && git config --global user.email concourse-bot@starkandwayne.com
+ && git config --global user.name "Genesis CI Bot" \
+ && git config --global user.email genesis-ci@rubidiumstudios.com
