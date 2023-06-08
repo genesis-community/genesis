@@ -33,7 +33,7 @@ jobs:
     params:
       load: genesis-image
       tag_file: version/number
-      tag_prefix: dev
+      tag_prefix: dev-
       additional_tags: genesis-prerelease-dev-tag/value
       tag_as_latest: false
 
