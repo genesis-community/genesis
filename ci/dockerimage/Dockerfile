@@ -22,7 +22,7 @@ RUN apt-get update \
     gotcha \
     jq \
     kubectl \
-    libreadline7 \
+    libreadline8 \
     libreadline-dev \
     libsqlite3-dev \
     libssl-dev \
@@ -45,7 +45,6 @@ RUN apt-get update \
     vim-common \
     unzip \
     zlib1g-dev \
-    zlibc \
  && rm -rf /var/lib/apt/lists/*
 
 ARG GENESIS_VERSION
