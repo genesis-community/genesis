@@ -2093,7 +2093,7 @@ sub _manifest {
 # _genesis_inherits - return the list of inherited files (recursive) {{{
 sub _genesis_inherits {
 	my ($self,$file, @files) = @_;
-	my ($out,$rc,$err) = run({stderr => 0},'cat "$1" | spruce json', $self->path($file));
+	my ($out,$rc,$err) = run({stderr => 0},'cat "$1" | spruce merge --skip-eval --go-patch --m | spruce json', $self->path($file));
 	bail "Error processing json in $file!:\n$err" if $rc;
 	my @contents = map {load_json($_)} lines($out);
 
