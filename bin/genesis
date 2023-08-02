@@ -10,21 +10,16 @@ $SIG{ __DIE__ } = sub {require Carp; $Carp::Verbose=1;  Carp::confess(@_) }
 	if ($ENV{GENESIS_DEV_MODE});
 $SIG{INT} = $SIG{TERM} = sub {bail("Genesis halted due to user interrupt")};
 
-# non-core modules
-use JSON::PP qw/encode_json/;
-# NOTE: if you add more non-core modules, they and all their non-core
-# dependencies have to be placed in lib/
-
 # core modules
 use Getopt::Long qw/GetOptionsFromArray/;
 use File::Temp qw/tempdir tempfile/;
 use File::Basename qw/dirname basename/;
 use File::Path qw/rmtree/;
-use POSIX qw/strftime/;
 use Cwd qw/getcwd abs_path/;
-use FindBin;
-use Data::Dumper;
 use Encode;
+
+use FindBin;
+use lib $ENV{GENESIS_LIB} || $FindBin::Bin.'/lib';
 
 use Genesis;
 use Genesis::UI;
@@ -38,12 +33,17 @@ use Genesis::BOSH;
 use Genesis::BOSH::Director;
 use Genesis::CI::Legacy; # but we'd rather not...
 
+# non-core modules
+use JSON::PP qw/encode_json/;
+# NOTE: if you add more non-core modules, they and all their non-core
+# dependencies have to be placed in lib/
+
+
 $Genesis::VERSION = "(development)";
 $Genesis::BUILD = "";
 
 our $USER_AGENT_STRING = "genesis/$Genesis::VERSION";
 
-use FindBin;
 $ENV{GENESIS_CALLBACK_BIN} ||= $FindBin::Bin.'/'.$FindBin::Script;
 $ENV{GENESIS_LIB} ||= $FindBin::Bin.'/lib';
 $ENV{GENESIS_VERSION}=$Genesis::VERSION;
@@ -790,7 +790,8 @@ sub command {
 	}
 	$props ||= {};
 	my $default_props = {
-		scope => 'any' # valid values: env, repo, empty, any, kit_or_repo
+		scope => 'any', # valid values: env, repo, empty, any, kit_or_repo
+		uses_vault => 1
 	};
 	for my $cmd (@$name) {
 		$USAGE{$cmd}   = $usage;
@@ -798,6 +799,7 @@ sub command {
 		$RUN{$cmd} = sub {
 			$COMMAND = $cmd;
 			$ENV{GENESIS_COMMAND} = $cmd;
+			$ENV{GENESIS_NO_VAULT} = 1 if $PROPS{$cmd}{no_vault};
 			$fn->(@_);
 		};
 	}
@@ -1030,7 +1032,7 @@ sub {
 # }}}
 # genesis embed - embed Genesis in the repository {{{
 
-command("embed", {scope => 'repo'}, <<EOF,
+command("embed", {no_vault => 1, scope => 'repo'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis embed
 
@@ -2265,7 +2267,7 @@ sub {
 # }}}
 # genesis create-kit - Create the structure for a new kit {{{
 
-command("create-kit", {scope => [{'dev' => 'repo'}, 'empty']}, <<EOF,
+command("create-kit", {no_vault => 1, scope => [{'dev' => 'repo'}, 'empty']}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis create-kit -d|--dev -n NAME [FEATURE ...]
 
@@ -2294,7 +2296,8 @@ sub {
 
 command("compile-kit", {
 	alias => 'ck',
-	scope => [[['processed','dev'] => 'repo'],[['processed','name'] => 'kit'], ['processed' => 'kit_or_dev'], 'undef']
+	scope => [[['processed','dev'] => 'repo'],[['processed','name'] => 'kit'], ['processed' => 'kit_or_dev'], 'undef'],
+	no_vault => 1
 	}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis compile-kit <options>
@@ -2455,7 +2458,7 @@ sub {
 # }}}
 # genesis decompile-kit - Unpack a kit archive to dev/. {{{
 
-command("decompile-kit", {alias => 'dk', scope => ['env','repo']}, <<EOF,
+command("decompile-kit", {alias => 'dk', no_vault => 1,scope => ['env','repo']}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis decompile-kit <options> [env|NAME/VERSION|path/to/kit.tar.gz]
 
@@ -2545,7 +2548,7 @@ sub {
 
 # }}}
 # genesis list-kits - list kit versions available locally or remotely {{{
-command("list-kits", {alias => 'lk', scope => [['remote' => 'any'], 'repo']}, <<EOF,
+command("list-kits", {alias => 'lk', no_vault => 1, scope => [['remote' => 'any'], 'repo']}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE: genesis list-kits [-r|--remote|--updates|-u] [<options>] [--filter <re pattern>|<name>]
 
@@ -2987,7 +2990,7 @@ sub {
 # }}}
 # genesis fetch-kit - Download a Genesis Kit from the Internet. {{{
 
-command("fetch-kit", {alias => 'fk', scope => 'repo'}, <<EOF,
+command("fetch-kit", {alias => 'fk', no_vault => 1, scope => 'repo'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE genesis fetch-kit [NAME]|[[NAME/VERSION]|[VERSION] ...
 
@@ -3051,7 +3054,7 @@ sub {
 	# Test the kit
 });
 
-command("download", {scope => 'repo'}, <<EOF,
+command("download", {no_vault => 1, scope => 'repo'}, <<EOF,
 genesis v$Genesis::VERSION$Genesis::BUILD
 USAGE genesis download [NAME]|[[NAME/VERSION]|[VERSION] ...
 

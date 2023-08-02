@@ -166,3 +166,20 @@ More:
 				By doing this, we don't need to use env vars for strongbox, namespace
 				and name in vault_auth (bin/genesis:line 237)
 
+
+TODO 2023-06-30:
+* Many genesis commands don't need to validate to vault, or conditionally
+  validate to vault, such as most of the kit commands.  Not having a vault or
+  being unable to connect to vault should not block these commands.
+  - Resolved: 2023-08-01
+
+* compile kit should:
+  a) detect if you're in a repo with a dev directory containing kit.yml and
+  assume -d option
+  b) Not error out if the kit name doesn't already exist when trying to
+  ascertain previous versions
+
+2023-07-18:
+
+* Genesis link-kit to allow for a dev kit to be linked to local directory,
+  like genesis init -L

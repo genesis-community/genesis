@@ -20,6 +20,8 @@ credentials:
       alt:        random 32 fmt base64
       uncrypted:  random 1024 fmt bcrypt at crypted
 
+    openVPN/dh_params: dhparams 2048
+
     uuids:
       base:       uuid
       time:       uuid v1

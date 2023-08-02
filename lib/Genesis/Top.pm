@@ -10,6 +10,7 @@ use Genesis::Kit::Compiled;
 use Genesis::Kit::Dev;
 use Genesis::Kit::Provider;
 use Genesis::Vault;
+use Genesis::NoVault;
 use Genesis::Config;
 
 use Cwd ();
@@ -36,7 +37,7 @@ sub new {
 	}
 	if ($top->vault()) {
 		$ENV{GENESIS_TARGET_VAULT} = $ENV{SAFE_TARGET} = $top->vault->name;
-	} else {
+	} elsif (!$ENV{GENESIS_NO_VAULT}) {
 		debug "#R{WARNING} - could not find any #M{safe} target.  This may cause consequences later on";
 	}
 	return $top;
@@ -286,12 +287,13 @@ sub kit_provider_info {
 # vault - initialize connectivity to the vault specified by the secrets provider {{{
 sub vault {
 	my $ref = $_[0]->_memoize(sub {
+		return Genesis::NoVault->new() if ($ENV{GENESIS_NO_VAULT});
 		my ($self) = @_;
 		if (in_callback && $ENV{GENESIS_TARGET_VAULT}) {
 			return Genesis::Vault->rebind();
 		} elsif ($self->has_vault) {
-			my $namespace =  $self->config->get("namespace");
-			my $strongbox = $self->config->get("strongbox");
+			my $namespace =  $self->config->get("secrets_provider.namespace");
+			my $strongbox = $self->config->get("secrets_provider.strongbox");
 			my %attach_opts = (
 				url    => $self->config->get("secrets_provider.url"),
 				verify => $self->config->get("secrets_provider.insecure") ? 0 : 1

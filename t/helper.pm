@@ -13,7 +13,6 @@ use File::Basename qw/dirname/;
 use JSON::PP;
 unified_diff;
 
-$ENV{PERL5LIB} = "$ENV{PWD}/lib";
 $ENV{GENESIS_TESTING} = "yes";
 
 our $TOPDIR;
@@ -52,7 +51,6 @@ sub import {
 	for my $var (qw(VAULT_URL)) {
 		*{$caller . "::$var"} = \%{"helper::$var"};
 	}
-
 	runs_ok("genesis ping") or die "`genesis ping` failed...\n";
 }
 

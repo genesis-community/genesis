@@ -792,7 +792,7 @@ sub process_kit_secret_plans {
 				};
 				$update->('done-item', result => 'ok', msg => "Expiry updated to $expires") if $@;
 			} elsif ($_->{type} eq 'dhparams' && $out && !$rc) {
-				if ($out =~ /Generating DH parameters.*This is going to take a long time.*\+\+\*\+\+\*\s*$/s) {
+				if ($out =~ /Generating DH parameters,.*\+\+\*\+\+\*\s*$/s) {
 					$update->('done-item', result => 'ok')
 				} else {
 					$update->('done-item', result => 'error', msg => $out);
@@ -1669,7 +1669,7 @@ sub _validate_x509_secret {
 	}
 
 	my ($subjectKeyID) = $certInfo =~ /X509v3 Subject Key Identifier: *[\n\r]+\s+([A-F0-9:]+)\s*$/m;
-	my ($authKeyID)    = $certInfo =~ /X509v3 Authority Key Identifier: *[\n\r]+\s+keyid:([A-F0-9:]+)\s*$/m;
+	my ($authKeyID)    = $certInfo =~ /X509v3 Authority Key Identifier: *[\n\r]+\s+(?:keyid:)?([A-F0-9:]+)\s*$/m;
 	my $signed_by_str;
 	my $self_signed = (!$plan->{signed_by} || $plan->{signed_by} eq $plan->{path});
 	if ($self_signed) {

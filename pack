@@ -140,9 +140,6 @@ $ENV{GENESIS_HOME} ||= $ENV{HOME};
 my $root = "$ENV{GENESIS_HOME}/.geese";
 mkdir $root unless -d $root;
 
-use FindBin;
-$ENV{GENESIS_CALLBACK_BIN} = $FindBin::Bin.'/'.$FindBin::Script;
-
 # check the checksum to see if we should untar
 my ($fh, $want, $have) = (undef, "", "");
 chomp($want = <DATA>);
@@ -168,7 +165,6 @@ if ($want ne $have) {
 }
 
 # run it!
-$ENV{PERL5LIB} = "$root/lib";
 chmod 0755, "$root/genesis";
 exec "$root/genesis", @ARGV;
 exit(1);

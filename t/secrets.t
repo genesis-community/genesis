@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!perl
 use strict;
 use warnings;
 use utf8;
@@ -69,37 +69,38 @@ EOF
 Parsing kit secrets descriptions ... done. - XXX seconds
 Retrieving all existing secrets ... done. - XXX seconds
 
-Checking 29 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/deployments/dev/azure/us1/':
-  [ 1/29] fixed/ca X509 certificate - CA, signed by '$root_ca_path' ... found.
-  [ 2/29] fixed/server X509 certificate - signed by 'fixed/ca' ... found.
-  [ 3/29] haproxy/ca X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... found.
-  [ 4/29] haproxy/ssl X509 certificate - signed by 'haproxy/ca' ... found.
-  [ 5/29] top-level/top X509 certificate - CA, signed by '$root_ca_path' ... found.
-  [ 6/29] secondary/ca X509 certificate - CA, signed by 'top-level/top' ... found.
-  [ 7/29] secondary/server X509 certificate - signed by 'secondary/ca' ... found.
-  [ 8/29] top-level/server X509 certificate - signed by 'top-level/top' ... found.
-  [ 9/29] openVPN/certs/root X509 certificate - CA, explicitly self-signed ... found.
-  [10/29] openVPN/certs/server X509 certificate - signed by 'openVPN/certs/root' ... found.
-  [11/29] passwords:alt random password - 32 bytes ... found.
-  [12/29] passwords:permanent random password - 128 bytes, fixed ... found.
-  [13/29] passwords:uncrypted random password - 1024 bytes ... found.
-  [14/29] passwords:word random password - 64 bytes, fixed ... found.
-  [15/29] rsa RSA public/private keypair - 4096 bits, fixed ... found.
-  [16/29] rsa-default RSA public/private keypair - 2048 bits ... found.
-  [17/29] ssh SSH public/private keypair - 1024 bits ... found.
-  [18/29] ssh-default SSH public/private keypair - 2048 bits, fixed ... found.
-  [19/29] uuids:base UUID - random:system RNG based (v4) ... found.
-  [20/29] uuids:md5 UUID - static:md5-hash (v3), 'test value' ... found.
-  [21/29] uuids:md5-2 UUID - static:md5-hash (v3), 'example.com', ns:\@URL ... found.
-  [22/29] uuids:md5-2f UUID - static:md5-hash (v3), 'example.com', ns:6ba7b811-9dad-11d1-80b4-00c04fd430c8, fixed ... found.
-  [23/29] uuids:random UUID - random:system RNG based (v4) ... found.
-  [24/29] uuids:random-2 UUID - random:system RNG based (v4), fixed ... found.
-  [25/29] uuids:sha1 UUID - static:sha1-hash (v5), 'some long fixed name', ns:00112233-abcd-ef99-dead-b4a24ff300da ... found.
-  [26/29] uuids:sha1-2 UUID - static:sha1-hash (v5), 'Supercalifragilisticexpialidocious', ns:00000000-0000-0000-0000-000000000000 ... found.
-  [27/29] uuids:sha1-2f UUID - static:sha1-hash (v5), 'Supercalifragilisticexpialidocious', fixed ... found.
-  [28/29] uuids:time UUID - random:time based (v1) ... found.
-  [29/29] uuids:time-2 UUID - random:time based (v1) ... found.
-Completed - Duration: XXX seconds [29 found/0 skipped/0 errors]
+Checking 30 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/deployments/dev/azure/us1/':
+  [ 1/30] fixed/ca X509 certificate - CA, signed by '$root_ca_path' ... found.
+  [ 2/30] fixed/server X509 certificate - signed by 'fixed/ca' ... found.
+  [ 3/30] haproxy/ca X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... found.
+  [ 4/30] haproxy/ssl X509 certificate - signed by 'haproxy/ca' ... found.
+  [ 5/30] top-level/top X509 certificate - CA, signed by '$root_ca_path' ... found.
+  [ 6/30] secondary/ca X509 certificate - CA, signed by 'top-level/top' ... found.
+  [ 7/30] secondary/server X509 certificate - signed by 'secondary/ca' ... found.
+  [ 8/30] top-level/server X509 certificate - signed by 'top-level/top' ... found.
+  [ 9/30] openVPN/certs/root X509 certificate - CA, explicitly self-signed ... found.
+  [10/30] openVPN/certs/server X509 certificate - signed by 'openVPN/certs/root' ... found.
+  [11/30] openVPN/dh_params Diffie-Hellman key exchange parameters - 2048 bits ... found.
+  [12/30] passwords:alt random password - 32 bytes ... found.
+  [13/30] passwords:permanent random password - 128 bytes, fixed ... found.
+  [14/30] passwords:uncrypted random password - 1024 bytes ... found.
+  [15/30] passwords:word random password - 64 bytes, fixed ... found.
+  [16/30] rsa RSA public/private keypair - 4096 bits, fixed ... found.
+  [17/30] rsa-default RSA public/private keypair - 2048 bits ... found.
+  [18/30] ssh SSH public/private keypair - 1024 bits ... found.
+  [19/30] ssh-default SSH public/private keypair - 2048 bits, fixed ... found.
+  [20/30] uuids:base UUID - random:system RNG based (v4) ... found.
+  [21/30] uuids:md5 UUID - static:md5-hash (v3), 'test value' ... found.
+  [22/30] uuids:md5-2 UUID - static:md5-hash (v3), 'example.com', ns:\@URL ... found.
+  [23/30] uuids:md5-2f UUID - static:md5-hash (v3), 'example.com', ns:6ba7b811-9dad-11d1-80b4-00c04fd430c8, fixed ... found.
+  [24/30] uuids:random UUID - random:system RNG based (v4) ... found.
+  [25/30] uuids:random-2 UUID - random:system RNG based (v4), fixed ... found.
+  [26/30] uuids:sha1 UUID - static:sha1-hash (v5), 'some long fixed name', ns:00112233-abcd-ef99-dead-b4a24ff300da ... found.
+  [27/30] uuids:sha1-2 UUID - static:sha1-hash (v5), 'Supercalifragilisticexpialidocious', ns:00000000-0000-0000-0000-000000000000 ... found.
+  [28/30] uuids:sha1-2f UUID - static:sha1-hash (v5), 'Supercalifragilisticexpialidocious', fixed ... found.
+  [29/30] uuids:time UUID - random:time based (v1) ... found.
+  [30/30] uuids:time-2 UUID - random:time based (v1) ... found.
+Completed - Duration: XXX seconds [30 found/0 skipped/0 errors]
 
 EOF
 
@@ -112,15 +113,15 @@ EOF
 Parsing kit secrets descriptions ... done. - XXX seconds
 Retrieving all existing secrets ... done. - XXX seconds
 
-Validating 29 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/deployments/dev/azure/us1/':
-  [ 1/29] fixed/ca X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... valid.
+Validating 30 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/deployments/dev/azure/us1/':
+  [ 1/30] fixed/ca X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... valid.
           [✔ ] CA Certificate
           [✔ ] Signed by /secret/genesis-2.7.0/root_ca
           [✔ ] Valid: expires in 1825 days (<timestamp>)
           [✔ ] Modulus Agreement
           [✔ ] Default CA key usage: server_auth, client_auth, crl_sign, key_cert_sign
 
-  [ 2/29] fixed/server X509 certificate - signed by 'fixed/ca' ... valid.
+  [ 2/30] fixed/server X509 certificate - signed by 'fixed/ca' ... valid.
           [✔ ] Not a CA Certificate
           [✔ ] Signed by fixed/ca
           [✔ ] Valid: expires in 90 days (<timestamp>)
@@ -129,7 +130,7 @@ Validating 29 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/depl
           [✔ ] Subject Alt Names: 'a really long name with DNS: in it'
           [✔ ] Default key usage: server_auth, client_auth
 
-  [ 3/29] haproxy/ca X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... valid.
+  [ 3/30] haproxy/ca X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... valid.
           [✔ ] CA Certificate
           [✔ ] Signed by /secret/genesis-2.7.0/root_ca
           [✔ ] Valid: expires in 365 days (<timestamp>)
@@ -138,7 +139,7 @@ Validating 29 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/depl
           [✔ ] Subject Alt Names: 'haProxyCA'
           [✔ ] Default CA key usage: server_auth, client_auth, crl_sign, key_cert_sign
 
-  [ 4/29] haproxy/ssl X509 certificate - signed by 'haproxy/ca' ... valid.
+  [ 4/30] haproxy/ssl X509 certificate - signed by 'haproxy/ca' ... valid.
           [✔ ] Not a CA Certificate
           [✔ ] Signed by haproxy/ca
           [✔ ] Valid: expires in 365 days (<timestamp>)
@@ -147,14 +148,14 @@ Validating 29 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/depl
           [✔ ] Subject Alt Names: '*.demo.genesisproject.io', '*.system.demo.genesisproject.io', '*.run.demo.genesisproject.io', '*.uaa.system.demo.genesisproject.io', '*.login.system.demo.genesisproject.io'
           [✔ ] Specified key usage: client_auth, server_auth
 
-  [ 5/29] top-level/top X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... valid.
+  [ 5/30] top-level/top X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... valid.
           [✔ ] CA Certificate
           [✔ ] Signed by /secret/genesis-2.7.0/root_ca
           [✔ ] Valid: expires in 1825 days (<timestamp>)
           [✔ ] Modulus Agreement
           [✔ ] Default CA key usage: server_auth, client_auth, crl_sign, key_cert_sign
 
-  [ 6/29] secondary/ca X509 certificate - CA, signed by 'top-level/top' ... valid.
+  [ 6/30] secondary/ca X509 certificate - CA, signed by 'top-level/top' ... valid.
           [✔ ] CA Certificate
           [✔ ] Signed by top-level/top
           [✔ ] Valid: expires in 3650 days (<timestamp>)
@@ -163,7 +164,7 @@ Validating 29 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/depl
           [✔ ] Subject Alt Names: 'secondary.ca'
           [✔ ] Default CA key usage: server_auth, client_auth, crl_sign, key_cert_sign
 
-  [ 7/29] secondary/server X509 certificate - signed by 'secondary/ca' ... valid.
+  [ 7/30] secondary/server X509 certificate - signed by 'secondary/ca' ... valid.
           [✔ ] Not a CA Certificate
           [✔ ] Signed by secondary/ca
           [✔ ] Valid: expires in 365 days (<timestamp>)
@@ -172,7 +173,7 @@ Validating 29 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/depl
           [✔ ] Subject Alt Names: 'secondary.server'
           [✔ ] Specified key usage: client_auth, server_auth
 
-  [ 8/29] top-level/server X509 certificate - signed by 'top-level/top' ... valid.
+  [ 8/30] top-level/server X509 certificate - signed by 'top-level/top' ... valid.
           [✔ ] Not a CA Certificate
           [✔ ] Signed by top-level/top
           [✔ ] Valid: expires in 180 days (<timestamp>)
@@ -181,7 +182,7 @@ Validating 29 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/depl
           [✔ ] Subject Alt Names: 'server.example.com', 'system.demo.genesisproject.io', '10.10.10.10', '*.server.example.com', '*.system.demo.genesisproject.io'
           [✔ ] Default key usage: server_auth, client_auth
 
-  [ 9/29] openVPN/certs/root X509 certificate - CA, explicitly self-signed ... valid.
+  [ 9/30] openVPN/certs/root X509 certificate - CA, explicitly self-signed ... valid.
           [✔ ] CA Certificate
           [✔ ] Self-Signed
           [✔ ] Valid: expires in 1825 days (<timestamp>)
@@ -190,7 +191,7 @@ Validating 29 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/depl
           [✔ ] Subject Alt Names: 'ca.openvpn'
           [✔ ] Specified key usage: crl_sign, key_cert_sign
 
-  [10/29] openVPN/certs/server X509 certificate - signed by 'openVPN/certs/root' ... valid.
+  [10/30] openVPN/certs/server X509 certificate - signed by 'openVPN/certs/root' ... valid.
           [✔ ] Not a CA Certificate
           [✔ ] Signed by openVPN/certs/root
           [✔ ] Valid: expires in 180 days (<timestamp>)
@@ -199,85 +200,89 @@ Validating 29 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/depl
           [✔ ] Subject Alt Names: 'server.openvpn'
           [✔ ] Specified key usage: server_auth, digital_signature, key_encipherment
 
-  [11/29] passwords:alt random password - 32 bytes ... valid.
+  [11/30] openVPN/dh_params Diffie-Hellman key exchange parameters - 2048 bits ... valid.
+          [✔ ] Valid
+          [✔ ] 2048 bits
+
+  [12/30] passwords:alt random password - 32 bytes ... valid.
           [✔ ] 32 characters
           [✔ ] Formatted as base64 in ':alt-base64'
 
-  [12/29] passwords:permanent random password - 128 bytes, fixed ... valid.
+  [13/30] passwords:permanent random password - 128 bytes, fixed ... valid.
           [✔ ] 128 characters
 
-  [13/29] passwords:uncrypted random password - 1024 bytes ... valid.
+  [14/30] passwords:uncrypted random password - 1024 bytes ... valid.
           [✔ ] 1024 characters
           [✔ ] Formatted as bcrypt in ':crypted'
 
-  [14/29] passwords:word random password - 64 bytes, fixed ... valid.
+  [15/30] passwords:word random password - 64 bytes, fixed ... valid.
           [✔ ] 64 characters
           [✔ ] Only uses characters '01'
 
-  [15/29] rsa RSA public/private keypair - 4096 bits, fixed ... valid.
+  [16/30] rsa RSA public/private keypair - 4096 bits, fixed ... valid.
           [✔ ] Valid private key
           [✔ ] Valid public key
           [✔ ] Public/Private key agreement
           [✔ ] 4096 bit
 
-  [16/29] rsa-default RSA public/private keypair - 2048 bits ... valid.
+  [17/30] rsa-default RSA public/private keypair - 2048 bits ... valid.
           [✔ ] Valid private key
           [✔ ] Valid public key
           [✔ ] Public/Private key agreement
           [✔ ] 2048 bit
 
-  [17/29] ssh SSH public/private keypair - 1024 bits ... valid.
+  [18/30] ssh SSH public/private keypair - 1024 bits ... valid.
           [✔ ] Valid private key
           [✔ ] Valid public key
           [✔ ] Public/Private key Agreement
           [✔ ] 1024 bits
 
-  [18/29] ssh-default SSH public/private keypair - 2048 bits, fixed ... valid.
+  [19/30] ssh-default SSH public/private keypair - 2048 bits, fixed ... valid.
           [✔ ] Valid private key
           [✔ ] Valid public key
           [✔ ] Public/Private key Agreement
           [✔ ] 2048 bits
 
-  [19/29] uuids:base UUID - random:system RNG based (v4) ... valid.
+  [20/30] uuids:base UUID - random:system RNG based (v4) ... valid.
           [✔ ] Valid UUID string
 
-  [20/29] uuids:md5 UUID - static:md5-hash (v3), 'test value' ... valid.
-          [✔ ] Valid UUID string
-          [✔ ] Correct for given name and namespace
-
-  [21/29] uuids:md5-2 UUID - static:md5-hash (v3), 'example.com', ns:\@URL ... valid.
+  [21/30] uuids:md5 UUID - static:md5-hash (v3), 'test value' ... valid.
           [✔ ] Valid UUID string
           [✔ ] Correct for given name and namespace
 
-  [22/29] uuids:md5-2f UUID - static:md5-hash (v3), 'example.com', ns:6ba7b811-9dad-11d1-80b4-00c04fd430c8, fixed ... valid.
+  [22/30] uuids:md5-2 UUID - static:md5-hash (v3), 'example.com', ns:\@URL ... valid.
           [✔ ] Valid UUID string
           [✔ ] Correct for given name and namespace
 
-  [23/29] uuids:random UUID - random:system RNG based (v4) ... valid.
-          [✔ ] Valid UUID string
-
-  [24/29] uuids:random-2 UUID - random:system RNG based (v4), fixed ... valid.
-          [✔ ] Valid UUID string
-
-  [25/29] uuids:sha1 UUID - static:sha1-hash (v5), 'some long fixed name', ns:00112233-abcd-ef99-dead-b4a24ff300da ... valid.
+  [23/30] uuids:md5-2f UUID - static:md5-hash (v3), 'example.com', ns:6ba7b811-9dad-11d1-80b4-00c04fd430c8, fixed ... valid.
           [✔ ] Valid UUID string
           [✔ ] Correct for given name and namespace
 
-  [26/29] uuids:sha1-2 UUID - static:sha1-hash (v5), 'Supercalifragilisticexpialidocious', ns:00000000-0000-0000-0000-000000000000 ... valid.
+  [24/30] uuids:random UUID - random:system RNG based (v4) ... valid.
+          [✔ ] Valid UUID string
+
+  [25/30] uuids:random-2 UUID - random:system RNG based (v4), fixed ... valid.
+          [✔ ] Valid UUID string
+
+  [26/30] uuids:sha1 UUID - static:sha1-hash (v5), 'some long fixed name', ns:00112233-abcd-ef99-dead-b4a24ff300da ... valid.
           [✔ ] Valid UUID string
           [✔ ] Correct for given name and namespace
 
-  [27/29] uuids:sha1-2f UUID - static:sha1-hash (v5), 'Supercalifragilisticexpialidocious', fixed ... valid.
+  [27/30] uuids:sha1-2 UUID - static:sha1-hash (v5), 'Supercalifragilisticexpialidocious', ns:00000000-0000-0000-0000-000000000000 ... valid.
           [✔ ] Valid UUID string
           [✔ ] Correct for given name and namespace
 
-  [28/29] uuids:time UUID - random:time based (v1) ... valid.
+  [28/30] uuids:sha1-2f UUID - static:sha1-hash (v5), 'Supercalifragilisticexpialidocious', fixed ... valid.
+          [✔ ] Valid UUID string
+          [✔ ] Correct for given name and namespace
+
+  [29/30] uuids:time UUID - random:time based (v1) ... valid.
           [✔ ] Valid UUID string
 
-  [29/29] uuids:time-2 UUID - random:time based (v1) ... valid.
+  [30/30] uuids:time-2 UUID - random:time based (v1) ... valid.
           [✔ ] Valid UUID string
 
-Completed - Duration: XXX seconds [29 validated/0 skipped/0 errors]
+Completed - Duration: XXX seconds [30 validated/0 skipped/0 errors]
 
 EOF
 
@@ -349,15 +354,15 @@ EOF
 Parsing kit secrets descriptions ... done. - XXX seconds
 Retrieving all existing secrets ... done. - XXX seconds
 
-Validating 29 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/deployments/dev/azure/us1/':
-  [ 1/29] fixed/ca X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... valid.
+Validating 30 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/deployments/dev/azure/us1/':
+  [ 1/30] fixed/ca X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... valid.
           [✔ ] CA Certificate
           [✔ ] Signed by /secret/genesis-2.7.0/root_ca
           [✔ ] Valid: expires in 1825 days (<timestamp>)
           [✔ ] Modulus Agreement
           [✔ ] Default CA key usage: server_auth, client_auth, crl_sign, key_cert_sign
 
-  [ 2/29] fixed/server X509 certificate - signed by 'fixed/ca' ... valid.
+  [ 2/30] fixed/server X509 certificate - signed by 'fixed/ca' ... valid.
           [✔ ] Not a CA Certificate
           [✔ ] Signed by fixed/ca
           [✔ ] Valid: expires in 90 days (<timestamp>)
@@ -366,7 +371,7 @@ Validating 29 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/depl
           [✔ ] Subject Alt Names: 'a really long name with DNS: in it'
           [✔ ] Default key usage: server_auth, client_auth
 
-  [ 3/29] haproxy/ca X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... valid.
+  [ 3/30] haproxy/ca X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... valid.
           [✔ ] CA Certificate
           [✔ ] Signed by /secret/genesis-2.7.0/root_ca
           [✔ ] Valid: expires in 365 days (<timestamp>)
@@ -375,7 +380,7 @@ Validating 29 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/depl
           [✔ ] Subject Alt Names: 'haProxyCA'
           [✔ ] Default CA key usage: server_auth, client_auth, crl_sign, key_cert_sign
 
-  [ 4/29] haproxy/ssl X509 certificate - signed by 'haproxy/ca' ... invalid!
+  [ 4/30] haproxy/ssl X509 certificate - signed by 'haproxy/ca' ... invalid!
           [✔ ] Not a CA Certificate
           [✘ ] Signed by haproxy/ca
           [✔ ] Valid: expires in 365 days (<timestamp>)
@@ -384,14 +389,14 @@ Validating 29 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/depl
           [✔ ] Subject Alt Names: '*.demo.genesisproject.io', '*.system.demo.genesisproject.io', '*.run.demo.genesisproject.io', '*.uaa.system.demo.genesisproject.io', '*.login.system.demo.genesisproject.io'
           [✔ ] Specified key usage: client_auth, server_auth
 
-  [ 5/29] top-level/top X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... valid.
+  [ 5/30] top-level/top X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... valid.
           [✔ ] CA Certificate
           [✔ ] Signed by /secret/genesis-2.7.0/root_ca
           [✔ ] Valid: expires in 1825 days (<timestamp>)
           [✔ ] Modulus Agreement
           [✔ ] Default CA key usage: server_auth, client_auth, crl_sign, key_cert_sign
 
-  [ 6/29] secondary/ca X509 certificate - CA, signed by 'top-level/top' ... valid.
+  [ 6/30] secondary/ca X509 certificate - CA, signed by 'top-level/top' ... valid.
           [✔ ] CA Certificate
           [✔ ] Signed by top-level/top
           [✔ ] Valid: expires in 3650 days (<timestamp>)
@@ -400,7 +405,7 @@ Validating 29 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/depl
           [✔ ] Subject Alt Names: 'secondary.ca'
           [✔ ] Default CA key usage: server_auth, client_auth, crl_sign, key_cert_sign
 
-  [ 7/29] secondary/server X509 certificate - signed by 'secondary/ca' ... invalid!
+  [ 7/30] secondary/server X509 certificate - signed by 'secondary/ca' ... invalid!
           [✔ ] Not a CA Certificate
           [✘ ] Signed by secondary/ca
           [✔ ] Valid: expires in 365 days (<timestamp>)
@@ -409,7 +414,7 @@ Validating 29 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/depl
           [✔ ] Subject Alt Names: 'secondary.server'
           [✔ ] Specified key usage: client_auth, server_auth
 
-  [ 8/29] top-level/server X509 certificate - signed by 'top-level/top' ... valid.
+  [ 8/30] top-level/server X509 certificate - signed by 'top-level/top' ... valid.
           [✔ ] Not a CA Certificate
           [✔ ] Signed by top-level/top
           [✔ ] Valid: expires in 180 days (<timestamp>)
@@ -418,7 +423,7 @@ Validating 29 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/depl
           [✔ ] Subject Alt Names: 'server.example.com', 'system.demo.genesisproject.io', '10.10.10.10', '*.server.example.com', '*.system.demo.genesisproject.io'
           [✔ ] Default key usage: server_auth, client_auth
 
-  [ 9/29] openVPN/certs/root X509 certificate - CA, explicitly self-signed ... valid.
+  [ 9/30] openVPN/certs/root X509 certificate - CA, explicitly self-signed ... valid.
           [✔ ] CA Certificate
           [✔ ] Self-Signed
           [✔ ] Valid: expires in 1825 days (<timestamp>)
@@ -427,7 +432,7 @@ Validating 29 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/depl
           [✔ ] Subject Alt Names: 'ca.openvpn'
           [✔ ] Specified key usage: crl_sign, key_cert_sign
 
-  [10/29] openVPN/certs/server X509 certificate - signed by 'openVPN/certs/root' ... valid.
+  [10/30] openVPN/certs/server X509 certificate - signed by 'openVPN/certs/root' ... valid.
           [✔ ] Not a CA Certificate
           [✔ ] Signed by openVPN/certs/root
           [✔ ] Valid: expires in 180 days (<timestamp>)
@@ -436,85 +441,89 @@ Validating 29 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/depl
           [✔ ] Subject Alt Names: 'server.openvpn'
           [✔ ] Specified key usage: server_auth, digital_signature, key_encipherment
 
-  [11/29] passwords:alt random password - 32 bytes ... valid.
+  [11/30] openVPN/dh_params Diffie-Hellman key exchange parameters - 2048 bits ... valid.
+          [✔ ] Valid
+          [✔ ] 2048 bits
+
+  [12/30] passwords:alt random password - 32 bytes ... valid.
           [✔ ] 32 characters
           [✔ ] Formatted as base64 in ':alt-base64'
 
-  [12/29] passwords:permanent random password - 128 bytes, fixed ... valid.
+  [13/30] passwords:permanent random password - 128 bytes, fixed ... valid.
           [✔ ] 128 characters
 
-  [13/29] passwords:uncrypted random password - 1024 bytes ... valid.
+  [14/30] passwords:uncrypted random password - 1024 bytes ... valid.
           [✔ ] 1024 characters
           [✔ ] Formatted as bcrypt in ':crypted'
 
-  [14/29] passwords:word random password - 64 bytes, fixed ... valid.
+  [15/30] passwords:word random password - 64 bytes, fixed ... valid.
           [✔ ] 64 characters
           [✔ ] Only uses characters '01'
 
-  [15/29] rsa RSA public/private keypair - 4096 bits, fixed ... valid.
+  [16/30] rsa RSA public/private keypair - 4096 bits, fixed ... valid.
           [✔ ] Valid private key
           [✔ ] Valid public key
           [✔ ] Public/Private key agreement
           [✔ ] 4096 bit
 
-  [16/29] rsa-default RSA public/private keypair - 2048 bits ... valid.
+  [17/30] rsa-default RSA public/private keypair - 2048 bits ... valid.
           [✔ ] Valid private key
           [✔ ] Valid public key
           [✔ ] Public/Private key agreement
           [✔ ] 2048 bit
 
-  [17/29] ssh SSH public/private keypair - 1024 bits ... valid.
+  [18/30] ssh SSH public/private keypair - 1024 bits ... valid.
           [✔ ] Valid private key
           [✔ ] Valid public key
           [✔ ] Public/Private key Agreement
           [✔ ] 1024 bits
 
-  [18/29] ssh-default SSH public/private keypair - 2048 bits, fixed ... valid.
+  [19/30] ssh-default SSH public/private keypair - 2048 bits, fixed ... valid.
           [✔ ] Valid private key
           [✔ ] Valid public key
           [✔ ] Public/Private key Agreement
           [✔ ] 2048 bits
 
-  [19/29] uuids:base UUID - random:system RNG based (v4) ... valid.
+  [20/30] uuids:base UUID - random:system RNG based (v4) ... valid.
           [✔ ] Valid UUID string
 
-  [20/29] uuids:md5 UUID - static:md5-hash (v3), 'test value' ... valid.
-          [✔ ] Valid UUID string
-          [✔ ] Correct for given name and namespace
-
-  [21/29] uuids:md5-2 UUID - static:md5-hash (v3), 'example.com', ns:@URL ... valid.
+  [21/30] uuids:md5 UUID - static:md5-hash (v3), 'test value' ... valid.
           [✔ ] Valid UUID string
           [✔ ] Correct for given name and namespace
 
-  [22/29] uuids:md5-2f UUID - static:md5-hash (v3), 'example.com', ns:6ba7b811-9dad-11d1-80b4-00c04fd430c8, fixed ... valid.
+  [22/30] uuids:md5-2 UUID - static:md5-hash (v3), 'example.com', ns:@URL ... valid.
           [✔ ] Valid UUID string
           [✔ ] Correct for given name and namespace
 
-  [23/29] uuids:random UUID - random:system RNG based (v4) ... valid.
-          [✔ ] Valid UUID string
-
-  [24/29] uuids:random-2 UUID - random:system RNG based (v4), fixed ... valid.
-          [✔ ] Valid UUID string
-
-  [25/29] uuids:sha1 UUID - static:sha1-hash (v5), 'some long fixed name', ns:00112233-abcd-ef99-dead-b4a24ff300da ... valid.
+  [23/30] uuids:md5-2f UUID - static:md5-hash (v3), 'example.com', ns:6ba7b811-9dad-11d1-80b4-00c04fd430c8, fixed ... valid.
           [✔ ] Valid UUID string
           [✔ ] Correct for given name and namespace
 
-  [26/29] uuids:sha1-2 UUID - static:sha1-hash (v5), 'Supercalifragilisticexpialidocious', ns:00000000-0000-0000-0000-000000000000 ... valid.
+  [24/30] uuids:random UUID - random:system RNG based (v4) ... valid.
+          [✔ ] Valid UUID string
+
+  [25/30] uuids:random-2 UUID - random:system RNG based (v4), fixed ... valid.
+          [✔ ] Valid UUID string
+
+  [26/30] uuids:sha1 UUID - static:sha1-hash (v5), 'some long fixed name', ns:00112233-abcd-ef99-dead-b4a24ff300da ... valid.
           [✔ ] Valid UUID string
           [✔ ] Correct for given name and namespace
 
-  [27/29] uuids:sha1-2f UUID - static:sha1-hash (v5), 'Supercalifragilisticexpialidocious', fixed ... valid.
+  [27/30] uuids:sha1-2 UUID - static:sha1-hash (v5), 'Supercalifragilisticexpialidocious', ns:00000000-0000-0000-0000-000000000000 ... valid.
           [✔ ] Valid UUID string
           [✔ ] Correct for given name and namespace
 
-  [28/29] uuids:time UUID - random:time based (v1) ... valid.
+  [28/30] uuids:sha1-2f UUID - static:sha1-hash (v5), 'Supercalifragilisticexpialidocious', fixed ... valid.
+          [✔ ] Valid UUID string
+          [✔ ] Correct for given name and namespace
+
+  [29/30] uuids:time UUID - random:time based (v1) ... valid.
           [✔ ] Valid UUID string
 
-  [29/29] uuids:time-2 UUID - random:time based (v1) ... valid.
+  [30/30] uuids:time-2 UUID - random:time based (v1) ... valid.
           [✔ ] Valid UUID string
 
-Failed - Duration: XXX seconds [27 validated/0 skipped/2 errors]
+Failed - Duration: XXX seconds [28 validated/0 skipped/2 errors]
 
 EOF
 
@@ -529,7 +538,7 @@ EOF
 	$cmd = Expect->new();
 	$cmd->log_stdout(0);
 	$cmd->spawn("genesis rotate-secrets $env_name --problematic ");
-	(undef, my $error, undef, $out) = $cmd->expect(300,"Type 'yes' to recreate these secrets >");
+	(undef, my $error, undef, $out) = $cmd->expect(600,"Type 'yes' to recreate these secrets >");
 
   is($error, undef, "No error or timeout encountered waiting to be asked to recreate problematic secrets");
 	$out =~ s/\e\[2K/<clear-line>/g;
@@ -541,47 +550,48 @@ Parsing kit secrets descriptions ... <cr>
 <clear-line>Retrieving all existing secrets ... <cr>
 <clear-line>
 Checking for failed or missing secrets for $env_name under path '$secrets_mount$secrets_path/':
-  [ 1/29] fixed/ca X509 certificate ... <cr>
-<clear-line>  [ 2/29] fixed/server X509 certificate ... <cr>
-<clear-line>  [ 3/29] haproxy/ca X509 certificate ... <cr>
-<clear-line>  [ 4/29] haproxy/ssl X509 certificate ... invalid!
+  [ 1/30] fixed/ca X509 certificate ... <cr>
+<clear-line>  [ 2/30] fixed/server X509 certificate ... <cr>
+<clear-line>  [ 3/30] haproxy/ca X509 certificate ... <cr>
+<clear-line>  [ 4/30] haproxy/ssl X509 certificate ... invalid!
           [✘ ] Signed by haproxy/ca
 
 <cr>
-<clear-line>  [ 5/29] top-level/top X509 certificate ... <cr>
-<clear-line>  [ 6/29] secondary/ca X509 certificate ... <cr>
-<clear-line>  [ 7/29] secondary/server X509 certificate ... invalid!
+<clear-line>  [ 5/30] top-level/top X509 certificate ... <cr>
+<clear-line>  [ 6/30] secondary/ca X509 certificate ... <cr>
+<clear-line>  [ 7/30] secondary/server X509 certificate ... invalid!
           [✘ ] Signed by secondary/ca
 
 <cr>
-<clear-line>  [ 8/29] top-level/server X509 certificate ... <cr>
-<clear-line>  [ 9/29] openVPN/certs/root X509 certificate ... <cr>
-<clear-line>  [10/29] openVPN/certs/server X509 certificate ... <cr>
-<clear-line>  [11/29] passwords:alt random password ... <cr>
-<clear-line>  [12/29] passwords:permanent random password ... <cr>
-<clear-line>  [13/29] passwords:uncrypted random password ... <cr>
-<clear-line>  [14/29] passwords:word random password ... warning!
+<clear-line>  [ 8/30] top-level/server X509 certificate ... <cr>
+<clear-line>  [ 9/30] openVPN/certs/root X509 certificate ... <cr>
+<clear-line>  [10/30] openVPN/certs/server X509 certificate ... <cr>
+<clear-line>  [11/30] openVPN/dh_params Diffie-Hellman key exchange parameters - may take a very long time ... <cr>
+<clear-line>  [12/30] passwords:alt random password ... <cr>
+<clear-line>  [13/30] passwords:permanent random password ... <cr>
+<clear-line>  [14/30] passwords:uncrypted random password ... <cr>
+<clear-line>  [15/30] passwords:word random password ... warning!
           [⚠ ] Only uses characters '01' (found invalid characters in '<[12]{64}>')
 
 <cr>
-<clear-line>  [15/29] rsa RSA public/private keypair ... invalid!
+<clear-line>  [16/30] rsa RSA public/private keypair ... invalid!
           [✘ ] Valid public key
 
 <cr>
-<clear-line>  [16/29] rsa-default RSA public/private keypair ... <cr>
-<clear-line>  [17/29] ssh SSH public/private keypair ... <cr>
-<clear-line>  [18/29] ssh-default SSH public/private keypair ... <cr>
-<clear-line>  [19/29] uuids:base UUID ... <cr>
-<clear-line>  [20/29] uuids:md5 UUID ... <cr>
-<clear-line>  [21/29] uuids:md5-2 UUID ... <cr>
-<clear-line>  [22/29] uuids:md5-2f UUID ... <cr>
-<clear-line>  [23/29] uuids:random UUID ... <cr>
-<clear-line>  [24/29] uuids:random-2 UUID ... <cr>
-<clear-line>  [25/29] uuids:sha1 UUID ... <cr>
-<clear-line>  [26/29] uuids:sha1-2 UUID ... <cr>
-<clear-line>  [27/29] uuids:sha1-2f UUID ... <cr>
-<clear-line>  [28/29] uuids:time UUID ... <cr>
-<clear-line>  [29/29] uuids:time-2 UUID ... <cr>
+<clear-line>  [17/30] rsa-default RSA public/private keypair ... <cr>
+<clear-line>  [18/30] ssh SSH public/private keypair ... <cr>
+<clear-line>  [19/30] ssh-default SSH public/private keypair ... <cr>
+<clear-line>  [20/30] uuids:base UUID ... <cr>
+<clear-line>  [21/30] uuids:md5 UUID ... <cr>
+<clear-line>  [22/30] uuids:md5-2 UUID ... <cr>
+<clear-line>  [23/30] uuids:md5-2f UUID ... <cr>
+<clear-line>  [24/30] uuids:random UUID ... <cr>
+<clear-line>  [25/30] uuids:random-2 UUID ... <cr>
+<clear-line>  [26/30] uuids:sha1 UUID ... <cr>
+<clear-line>  [27/30] uuids:sha1-2 UUID ... <cr>
+<clear-line>  [28/30] uuids:sha1-2f UUID ... <cr>
+<clear-line>  [29/30] uuids:time UUID ... <cr>
+<clear-line>  [30/30] uuids:time-2 UUID ... <cr>
 <clear-line>Found 4 invalid or problematic secrets
 <cr>
 <clear-line>
@@ -592,6 +602,7 @@ Checking for failed or missing secrets for $env_name under path '$secrets_mount$
     • rsa
 
 EOF
+
 
   if ($pass && !$error) {
     $cmd->send("yes\n");
@@ -619,7 +630,7 @@ EOF
       $cmd = Expect->new();
       $cmd->log_stdout(1);
       $cmd->spawn("GENESIS_NO_UTF8=1 genesis check-secrets $env_name -li");
-      expect_ok $cmd, "[27 validated/0 skipped/1 errors/1 warnings]";
+      expect_ok $cmd, "[28 validated/0 skipped/1 errors/1 warnings]";
       expect_exit $cmd, 1, "genesis check-secrets after rotate failed - expect fixed secrets still errored";
     };
     $out =~ s/\e\[2K/<clear-line>/g;
@@ -631,43 +642,44 @@ EOF
 Parsing kit secrets descriptions ... <cr>
 <clear-line>Retrieving all existing secrets ... <cr>
 <clear-line>
-Validating 29 secrets for $env_name under path '$secrets_mount$secrets_path/':
-  [ 1/29] fixed/ca X509 certificate ... <cr>
-<clear-line>  [ 2/29] fixed/server X509 certificate ... <cr>
-<clear-line>  [ 3/29] haproxy/ca X509 certificate ... <cr>
-<clear-line>  [ 4/29] haproxy/ssl X509 certificate ... <cr>
-<clear-line>  [ 5/29] top-level/top X509 certificate ... <cr>
-<clear-line>  [ 6/29] secondary/ca X509 certificate ... <cr>
-<clear-line>  [ 7/29] secondary/server X509 certificate ... <cr>
-<clear-line>  [ 8/29] top-level/server X509 certificate ... <cr>
-<clear-line>  [ 9/29] openVPN/certs/root X509 certificate ... <cr>
-<clear-line>  [10/29] openVPN/certs/server X509 certificate ... <cr>
-<clear-line>  [11/29] passwords:alt random password ... <cr>
-<clear-line>  [12/29] passwords:permanent random password ... <cr>
-<clear-line>  [13/29] passwords:uncrypted random password ... <cr>
-<clear-line>  [14/29] passwords:word random password ... warning!
+Validating 30 secrets for $env_name under path '$secrets_mount$secrets_path/':
+  [ 1/30] fixed/ca X509 certificate ... <cr>
+<clear-line>  [ 2/30] fixed/server X509 certificate ... <cr>
+<clear-line>  [ 3/30] haproxy/ca X509 certificate ... <cr>
+<clear-line>  [ 4/30] haproxy/ssl X509 certificate ... <cr>
+<clear-line>  [ 5/30] top-level/top X509 certificate ... <cr>
+<clear-line>  [ 6/30] secondary/ca X509 certificate ... <cr>
+<clear-line>  [ 7/30] secondary/server X509 certificate ... <cr>
+<clear-line>  [ 8/30] top-level/server X509 certificate ... <cr>
+<clear-line>  [ 9/30] openVPN/certs/root X509 certificate ... <cr>
+<clear-line>  [10/30] openVPN/certs/server X509 certificate ... <cr>
+<clear-line>  [11/30] openVPN/dh_params Diffie-Hellman key exchange parameters ... <cr>
+<clear-line>  [12/30] passwords:alt random password ... <cr>
+<clear-line>  [13/30] passwords:permanent random password ... <cr>
+<clear-line>  [14/30] passwords:uncrypted random password ... <cr>
+<clear-line>  [15/30] passwords:word random password ... warning!
           [!] Only uses characters '01' (found invalid characters in '<[12]{64}>')
 
 <cr>
-<clear-line>  [15/29] rsa RSA public/private keypair ... invalid!
+<clear-line>  [16/30] rsa RSA public/private keypair ... invalid!
           [-] Valid public key
 
 <cr>
-<clear-line>  [16/29] rsa-default RSA public/private keypair ... <cr>
-<clear-line>  [17/29] ssh SSH public/private keypair ... <cr>
-<clear-line>  [18/29] ssh-default SSH public/private keypair ... <cr>
-<clear-line>  [19/29] uuids:base UUID ... <cr>
-<clear-line>  [20/29] uuids:md5 UUID ... <cr>
-<clear-line>  [21/29] uuids:md5-2 UUID ... <cr>
-<clear-line>  [22/29] uuids:md5-2f UUID ... <cr>
-<clear-line>  [23/29] uuids:random UUID ... <cr>
-<clear-line>  [24/29] uuids:random-2 UUID ... <cr>
-<clear-line>  [25/29] uuids:sha1 UUID ... <cr>
-<clear-line>  [26/29] uuids:sha1-2 UUID ... <cr>
-<clear-line>  [27/29] uuids:sha1-2f UUID ... <cr>
-<clear-line>  [28/29] uuids:time UUID ... <cr>
-<clear-line>  [29/29] uuids:time-2 UUID ... <cr>
-<clear-line>Failed - Duration: XXX seconds [27 validated/0 skipped/1 errors/1 warnings]
+<clear-line>  [17/30] rsa-default RSA public/private keypair ... <cr>
+<clear-line>  [18/30] ssh SSH public/private keypair ... <cr>
+<clear-line>  [19/30] ssh-default SSH public/private keypair ... <cr>
+<clear-line>  [20/30] uuids:base UUID ... <cr>
+<clear-line>  [21/30] uuids:md5 UUID ... <cr>
+<clear-line>  [22/30] uuids:md5-2 UUID ... <cr>
+<clear-line>  [23/30] uuids:md5-2f UUID ... <cr>
+<clear-line>  [24/30] uuids:random UUID ... <cr>
+<clear-line>  [25/30] uuids:random-2 UUID ... <cr>
+<clear-line>  [26/30] uuids:sha1 UUID ... <cr>
+<clear-line>  [27/30] uuids:sha1-2 UUID ... <cr>
+<clear-line>  [28/30] uuids:sha1-2f UUID ... <cr>
+<clear-line>  [29/30] uuids:time UUID ... <cr>
+<clear-line>  [30/30] uuids:time-2 UUID ... <cr>
+<clear-line>Failed - Duration: XXX seconds [28 validated/0 skipped/1 errors/1 warnings]
 
 EOF
     ($secrets_new, $err2) = $env->vault->all_secrets_for($env);
@@ -707,41 +719,42 @@ Parsing kit secrets descriptions ... done. - XXX seconds
 Retrieving all existing secrets ... done. - XXX seconds
 
 Checking for failed secrets for $env_name under path '$secrets_mount$secrets_path/':
-  [ 1/29] fixed/ca X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... valid.
-  [ 2/29] fixed/server X509 certificate - signed by 'fixed/ca' ... valid.
-  [ 3/29] haproxy/ca X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... valid.
-  [ 4/29] haproxy/ssl X509 certificate - signed by 'haproxy/ca' ... valid.
-  [ 5/29] top-level/top X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... valid.
-  [ 6/29] secondary/ca X509 certificate - CA, signed by 'top-level/top' ... valid.
-  [ 7/29] secondary/server X509 certificate - signed by 'secondary/ca' ... valid.
-  [ 8/29] top-level/server X509 certificate - signed by 'top-level/top' ... valid.
-  [ 9/29] openVPN/certs/root X509 certificate - CA, explicitly self-signed ... valid.
-  [10/29] openVPN/certs/server X509 certificate - signed by 'openVPN/certs/root' ... valid.
-  [11/29] passwords:alt random password - 32 bytes ... valid.
-  [12/29] passwords:permanent random password - 128 bytes, fixed ... valid.
-  [13/29] passwords:uncrypted random password - 1024 bytes ... valid.
-  [14/29] passwords:word random password - 64 bytes, fixed ... warning!
+  [ 1/30] fixed/ca X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... valid.
+  [ 2/30] fixed/server X509 certificate - signed by 'fixed/ca' ... valid.
+  [ 3/30] haproxy/ca X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... valid.
+  [ 4/30] haproxy/ssl X509 certificate - signed by 'haproxy/ca' ... valid.
+  [ 5/30] top-level/top X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... valid.
+  [ 6/30] secondary/ca X509 certificate - CA, signed by 'top-level/top' ... valid.
+  [ 7/30] secondary/server X509 certificate - signed by 'secondary/ca' ... valid.
+  [ 8/30] top-level/server X509 certificate - signed by 'top-level/top' ... valid.
+  [ 9/30] openVPN/certs/root X509 certificate - CA, explicitly self-signed ... valid.
+  [10/30] openVPN/certs/server X509 certificate - signed by 'openVPN/certs/root' ... valid.
+  [11/30] openVPN/dh_params Diffie-Hellman key exchange parameters - 2048 bits ... valid.
+  [12/30] passwords:alt random password - 32 bytes ... valid.
+  [13/30] passwords:permanent random password - 128 bytes, fixed ... valid.
+  [14/30] passwords:uncrypted random password - 1024 bytes ... valid.
+  [15/30] passwords:word random password - 64 bytes, fixed ... warning!
           [+] 64 characters
           [!] Only uses characters '01' (found invalid characters in '<[12]{64}>')
 
-  [15/29] rsa RSA public/private keypair - 4096 bits, fixed ... invalid!
+  [16/30] rsa RSA public/private keypair - 4096 bits, fixed ... invalid!
           [+] Valid private key
           [-] Valid public key
 
-  [16/29] rsa-default RSA public/private keypair - 2048 bits ... valid.
-  [17/29] ssh SSH public/private keypair - 1024 bits ... valid.
-  [18/29] ssh-default SSH public/private keypair - 2048 bits, fixed ... valid.
-  [19/29] uuids:base UUID - random:system RNG based (v4) ... valid.
-  [20/29] uuids:md5 UUID - static:md5-hash (v3), 'test value' ... valid.
-  [21/29] uuids:md5-2 UUID - static:md5-hash (v3), 'example.com', ns:\@URL ... valid.
-  [22/29] uuids:md5-2f UUID - static:md5-hash (v3), 'example.com', ns:6ba7b811-9dad-11d1-80b4-00c04fd430c8, fixed ... valid.
-  [23/29] uuids:random UUID - random:system RNG based (v4) ... valid.
-  [24/29] uuids:random-2 UUID - random:system RNG based (v4), fixed ... valid.
-  [25/29] uuids:sha1 UUID - static:sha1-hash (v5), 'some long fixed name', ns:00112233-abcd-ef99-dead-b4a24ff300da ... valid.
-  [26/29] uuids:sha1-2 UUID - static:sha1-hash (v5), 'Supercalifragilisticexpialidocious', ns:00000000-0000-0000-0000-000000000000 ... valid.
-  [27/29] uuids:sha1-2f UUID - static:sha1-hash (v5), 'Supercalifragilisticexpialidocious', fixed ... valid.
-  [28/29] uuids:time UUID - random:time based (v1) ... valid.
-  [29/29] uuids:time-2 UUID - random:time based (v1) ... valid.
+  [17/30] rsa-default RSA public/private keypair - 2048 bits ... valid.
+  [18/30] ssh SSH public/private keypair - 1024 bits ... valid.
+  [19/30] ssh-default SSH public/private keypair - 2048 bits, fixed ... valid.
+  [20/30] uuids:base UUID - random:system RNG based (v4) ... valid.
+  [21/30] uuids:md5 UUID - static:md5-hash (v3), 'test value' ... valid.
+  [22/30] uuids:md5-2 UUID - static:md5-hash (v3), 'example.com', ns:\@URL ... valid.
+  [23/30] uuids:md5-2f UUID - static:md5-hash (v3), 'example.com', ns:6ba7b811-9dad-11d1-80b4-00c04fd430c8, fixed ... valid.
+  [24/30] uuids:random UUID - random:system RNG based (v4) ... valid.
+  [25/30] uuids:random-2 UUID - random:system RNG based (v4), fixed ... valid.
+  [26/30] uuids:sha1 UUID - static:sha1-hash (v5), 'some long fixed name', ns:00112233-abcd-ef99-dead-b4a24ff300da ... valid.
+  [27/30] uuids:sha1-2 UUID - static:sha1-hash (v5), 'Supercalifragilisticexpialidocious', ns:00000000-0000-0000-0000-000000000000 ... valid.
+  [28/30] uuids:sha1-2f UUID - static:sha1-hash (v5), 'Supercalifragilisticexpialidocious', fixed ... valid.
+  [29/30] uuids:time UUID - random:time based (v1) ... valid.
+  [30/30] uuids:time-2 UUID - random:time based (v1) ... valid.
 Found 2 invalid or problematic secrets
 
 Removing 2 secrets for $env_name under path '$secrets_mount$secrets_path/':
@@ -830,37 +843,38 @@ EOF
 Parsing kit secrets descriptions ... done. - XXX seconds
 Retrieving all existing secrets ... done. - XXX seconds
 
-Checking 29 secrets for $env_name under path '$secrets_mount$secrets_path/':
-  [ 1/29] fixed/ca X509 certificate - CA, signed by '$root_ca_path' ... found.
-  [ 2/29] fixed/server X509 certificate - signed by 'fixed/ca' ... found.
-  [ 3/29] haproxy/ca X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... found.
-  [ 4/29] haproxy/ssl X509 certificate - signed by 'haproxy/ca' ... missing!
-  [ 5/29] top-level/top X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... missing!
-  [ 6/29] secondary/ca X509 certificate - CA, signed by 'top-level/top' ... found.
-  [ 7/29] secondary/server X509 certificate - signed by 'secondary/ca' ... missing!
-  [ 8/29] top-level/server X509 certificate - signed by 'top-level/top' ... missing!
-  [ 9/29] openVPN/certs/root X509 certificate - CA, explicitly self-signed ... missing!
-  [10/29] openVPN/certs/server X509 certificate - signed by 'openVPN/certs/root' ... missing!
-  [11/29] passwords:alt random password - 32 bytes ... missing!
-  [12/29] passwords:permanent random password - 128 bytes, fixed ... missing!
-  [13/29] passwords:uncrypted random password - 1024 bytes ... missing!
-  [14/29] passwords:word random password - 64 bytes, fixed ... missing!
-  [15/29] rsa RSA public/private keypair - 4096 bits, fixed ... missing!
-  [16/29] rsa-default RSA public/private keypair - 2048 bits ... missing!
-  [17/29] ssh SSH public/private keypair - 1024 bits ... found.
-  [18/29] ssh-default SSH public/private keypair - 2048 bits, fixed ... missing!
-  [19/29] uuids:base UUID - random:system RNG based (v4) ... found.
-  [20/29] uuids:md5 UUID - static:md5-hash (v3), 'test value' ... found.
-  [21/29] uuids:md5-2 UUID - static:md5-hash (v3), 'example.com', ns:\@URL ... found.
-  [22/29] uuids:md5-2f UUID - static:md5-hash (v3), 'example.com', ns:6ba7b811-9dad-11d1-80b4-00c04fd430c8, fixed ... found.
-  [23/29] uuids:random UUID - random:system RNG based (v4) ... found.
-  [24/29] uuids:random-2 UUID - random:system RNG based (v4), fixed ... found.
-  [25/29] uuids:sha1 UUID - static:sha1-hash (v5), 'some long fixed name', ns:00112233-abcd-ef99-dead-b4a24ff300da ... found.
-  [26/29] uuids:sha1-2 UUID - static:sha1-hash (v5), 'Supercalifragilisticexpialidocious', ns:00000000-0000-0000-0000-000000000000 ... found.
-  [27/29] uuids:sha1-2f UUID - static:sha1-hash (v5), 'Supercalifragilisticexpialidocious', fixed ... found.
-  [28/29] uuids:time UUID - random:time based (v1) ... missing!
-  [29/29] uuids:time-2 UUID - random:time based (v1) ... missing!
-Failed - Duration: XXX seconds [14 found/0 skipped/15 errors]
+Checking 30 secrets for $env_name under path '$secrets_mount$secrets_path/':
+  [ 1/30] fixed/ca X509 certificate - CA, signed by '$root_ca_path' ... found.
+  [ 2/30] fixed/server X509 certificate - signed by 'fixed/ca' ... found.
+  [ 3/30] haproxy/ca X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... found.
+  [ 4/30] haproxy/ssl X509 certificate - signed by 'haproxy/ca' ... missing!
+  [ 5/30] top-level/top X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... missing!
+  [ 6/30] secondary/ca X509 certificate - CA, signed by 'top-level/top' ... found.
+  [ 7/30] secondary/server X509 certificate - signed by 'secondary/ca' ... missing!
+  [ 8/30] top-level/server X509 certificate - signed by 'top-level/top' ... missing!
+  [ 9/30] openVPN/certs/root X509 certificate - CA, explicitly self-signed ... missing!
+  [10/30] openVPN/certs/server X509 certificate - signed by 'openVPN/certs/root' ... missing!
+  [11/30] openVPN/dh_params Diffie-Hellman key exchange parameters - 2048 bits ... found.
+  [12/30] passwords:alt random password - 32 bytes ... missing!
+  [13/30] passwords:permanent random password - 128 bytes, fixed ... missing!
+  [14/30] passwords:uncrypted random password - 1024 bytes ... missing!
+  [15/30] passwords:word random password - 64 bytes, fixed ... missing!
+  [16/30] rsa RSA public/private keypair - 4096 bits, fixed ... missing!
+  [17/30] rsa-default RSA public/private keypair - 2048 bits ... missing!
+  [18/30] ssh SSH public/private keypair - 1024 bits ... found.
+  [19/30] ssh-default SSH public/private keypair - 2048 bits, fixed ... missing!
+  [20/30] uuids:base UUID - random:system RNG based (v4) ... found.
+  [21/30] uuids:md5 UUID - static:md5-hash (v3), 'test value' ... found.
+  [22/30] uuids:md5-2 UUID - static:md5-hash (v3), 'example.com', ns:\@URL ... found.
+  [23/30] uuids:md5-2f UUID - static:md5-hash (v3), 'example.com', ns:6ba7b811-9dad-11d1-80b4-00c04fd430c8, fixed ... found.
+  [24/30] uuids:random UUID - random:system RNG based (v4) ... found.
+  [25/30] uuids:random-2 UUID - random:system RNG based (v4), fixed ... found.
+  [26/30] uuids:sha1 UUID - static:sha1-hash (v5), 'some long fixed name', ns:00112233-abcd-ef99-dead-b4a24ff300da ... found.
+  [27/30] uuids:sha1-2 UUID - static:sha1-hash (v5), 'Supercalifragilisticexpialidocious', ns:00000000-0000-0000-0000-000000000000 ... found.
+  [28/30] uuids:sha1-2f UUID - static:sha1-hash (v5), 'Supercalifragilisticexpialidocious', fixed ... found.
+  [29/30] uuids:time UUID - random:time based (v1) ... missing!
+  [30/30] uuids:time-2 UUID - random:time based (v1) ... missing!
+Failed - Duration: XXX seconds [15 found/0 skipped/15 errors]
 
 EOF
   } else {
@@ -874,37 +888,38 @@ EOF
   matches_utf8 $out, <<EOF, "genesis add-secrets added the missing secrets";
 Parsing kit secrets descriptions ... done. - XXX seconds
 
-Adding 29 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/deployments/dev/azure/us1/':
-  [ 1/29] fixed/ca X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... exists!
-  [ 2/29] fixed/server X509 certificate - signed by 'fixed/ca' ... exists!
-  [ 3/29] haproxy/ca X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... exists!
-  [ 4/29] haproxy/ssl X509 certificate - signed by 'haproxy/ca' ... done.
-  [ 5/29] top-level/top X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... done.
-  [ 6/29] secondary/ca X509 certificate - CA, signed by 'top-level/top' ... exists!
-  [ 7/29] secondary/server X509 certificate - signed by 'secondary/ca' ... done.
-  [ 8/29] top-level/server X509 certificate - signed by 'top-level/top' ... done.
-  [ 9/29] openVPN/certs/root X509 certificate - CA, explicitly self-signed ... done.
-  [10/29] openVPN/certs/server X509 certificate - signed by 'openVPN/certs/root' ... done.
-  [11/29] passwords:alt random password - 32 bytes ... done.
-  [12/29] passwords:permanent random password - 128 bytes, fixed ... done.
-  [13/29] passwords:uncrypted random password - 1024 bytes ... done.
-  [14/29] passwords:word random password - 64 bytes, fixed ... done.
-  [15/29] rsa RSA public/private keypair - 4096 bits, fixed ... done.
-  [16/29] rsa-default RSA public/private keypair - 2048 bits ... done.
-  [17/29] ssh SSH public/private keypair - 1024 bits ... exists!
-  [18/29] ssh-default SSH public/private keypair - 2048 bits, fixed ... done.
-  [19/29] uuids:base UUID - random:system RNG based (v4) ... exists!
-  [20/29] uuids:md5 UUID - static:md5-hash (v3), 'test value' ... exists!
-  [21/29] uuids:md5-2 UUID - static:md5-hash (v3), 'example.com', ns:\@URL ... exists!
-  [22/29] uuids:md5-2f UUID - static:md5-hash (v3), 'example.com', ns:6ba7b811-9dad-11d1-80b4-00c04fd430c8, fixed ... exists!
-  [23/29] uuids:random UUID - random:system RNG based (v4) ... exists!
-  [24/29] uuids:random-2 UUID - random:system RNG based (v4), fixed ... exists!
-  [25/29] uuids:sha1 UUID - static:sha1-hash (v5), 'some long fixed name', ns:00112233-abcd-ef99-dead-b4a24ff300da ... exists!
-  [26/29] uuids:sha1-2 UUID - static:sha1-hash (v5), 'Supercalifragilisticexpialidocious', ns:00000000-0000-0000-0000-000000000000 ... exists!
-  [27/29] uuids:sha1-2f UUID - static:sha1-hash (v5), 'Supercalifragilisticexpialidocious', fixed ... exists!
-  [28/29] uuids:time UUID - random:time based (v1) ... done.
-  [29/29] uuids:time-2 UUID - random:time based (v1) ... done.
-Completed - Duration: XXX seconds [15 added/14 skipped/0 errors]
+Adding 30 secrets for c-azure-us1-dev under path '/secret/genesis-2.7.0/deployments/dev/azure/us1/':
+  [ 1/30] fixed/ca X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... exists!
+  [ 2/30] fixed/server X509 certificate - signed by 'fixed/ca' ... exists!
+  [ 3/30] haproxy/ca X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... exists!
+  [ 4/30] haproxy/ssl X509 certificate - signed by 'haproxy/ca' ... done.
+  [ 5/30] top-level/top X509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... done.
+  [ 6/30] secondary/ca X509 certificate - CA, signed by 'top-level/top' ... exists!
+  [ 7/30] secondary/server X509 certificate - signed by 'secondary/ca' ... done.
+  [ 8/30] top-level/server X509 certificate - signed by 'top-level/top' ... done.
+  [ 9/30] openVPN/certs/root X509 certificate - CA, explicitly self-signed ... done.
+  [10/30] openVPN/certs/server X509 certificate - signed by 'openVPN/certs/root' ... done.
+  [11/30] openVPN/dh_params Diffie-Hellman key exchange parameters - 2048 bits; may take a very long time ... exists!
+  [12/30] passwords:alt random password - 32 bytes ... done.
+  [13/30] passwords:permanent random password - 128 bytes, fixed ... done.
+  [14/30] passwords:uncrypted random password - 1024 bytes ... done.
+  [15/30] passwords:word random password - 64 bytes, fixed ... done.
+  [16/30] rsa RSA public/private keypair - 4096 bits, fixed ... done.
+  [17/30] rsa-default RSA public/private keypair - 2048 bits ... done.
+  [18/30] ssh SSH public/private keypair - 1024 bits ... exists!
+  [19/30] ssh-default SSH public/private keypair - 2048 bits, fixed ... done.
+  [20/30] uuids:base UUID - random:system RNG based (v4) ... exists!
+  [21/30] uuids:md5 UUID - static:md5-hash (v3), 'test value' ... exists!
+  [22/30] uuids:md5-2 UUID - static:md5-hash (v3), 'example.com', ns:\@URL ... exists!
+  [23/30] uuids:md5-2f UUID - static:md5-hash (v3), 'example.com', ns:6ba7b811-9dad-11d1-80b4-00c04fd430c8, fixed ... exists!
+  [24/30] uuids:random UUID - random:system RNG based (v4) ... exists!
+  [25/30] uuids:random-2 UUID - random:system RNG based (v4), fixed ... exists!
+  [26/30] uuids:sha1 UUID - static:sha1-hash (v5), 'some long fixed name', ns:00112233-abcd-ef99-dead-b4a24ff300da ... exists!
+  [27/30] uuids:sha1-2 UUID - static:sha1-hash (v5), 'Supercalifragilisticexpialidocious', ns:00000000-0000-0000-0000-000000000000 ... exists!
+  [28/30] uuids:sha1-2f UUID - static:sha1-hash (v5), 'Supercalifragilisticexpialidocious', fixed ... exists!
+  [29/30] uuids:time UUID - random:time based (v1) ... done.
+  [30/30] uuids:time-2 UUID - random:time based (v1) ... done.
+Completed - Duration: XXX seconds [15 added/15 skipped/0 errors]
 
 EOF
 
@@ -989,7 +1004,7 @@ EOF
       $cmd = Expect->new();
       $cmd->log_stdout(1);
       $cmd->spawn("genesis check-secrets $env_name --level i");
-      expect_ok $cmd, "[29 validated/0 skipped/0 errors]";
+      expect_ok $cmd, "[30 validated/0 skipped/0 errors]";
       expect_exit $cmd, 0, "genesis check-secrets --level i without verbosity";
     };
     $out =~ s/\e\[2K/<clear-line>/g;
@@ -1000,37 +1015,38 @@ EOF
 Parsing kit secrets descriptions ... <cr>
 <clear-line>Retrieving all existing secrets ... <cr>
 <clear-line>
-Validating 29 secrets for $env_name under path '$secrets_mount$secrets_path/':
-  [ 1/29] fixed/ca X509 certificate ... <cr>
-<clear-line>  [ 2/29] fixed/server X509 certificate ... <cr>
-<clear-line>  [ 3/29] haproxy/ca X509 certificate ... <cr>
-<clear-line>  [ 4/29] haproxy/ssl X509 certificate ... <cr>
-<clear-line>  [ 5/29] top-level/top X509 certificate ... <cr>
-<clear-line>  [ 6/29] secondary/ca X509 certificate ... <cr>
-<clear-line>  [ 7/29] secondary/server X509 certificate ... <cr>
-<clear-line>  [ 8/29] top-level/server X509 certificate ... <cr>
-<clear-line>  [ 9/29] openVPN/certs/root X509 certificate ... <cr>
-<clear-line>  [10/29] openVPN/certs/server X509 certificate ... <cr>
-<clear-line>  [11/29] passwords:alt random password ... <cr>
-<clear-line>  [12/29] passwords:permanent random password ... <cr>
-<clear-line>  [13/29] passwords:uncrypted random password ... <cr>
-<clear-line>  [14/29] passwords:word random password ... <cr>
-<clear-line>  [15/29] rsa RSA public/private keypair ... <cr>
-<clear-line>  [16/29] rsa-default RSA public/private keypair ... <cr>
-<clear-line>  [17/29] ssh SSH public/private keypair ... <cr>
-<clear-line>  [18/29] ssh-default SSH public/private keypair ... <cr>
-<clear-line>  [19/29] uuids:base UUID ... <cr>
-<clear-line>  [20/29] uuids:md5 UUID ... <cr>
-<clear-line>  [21/29] uuids:md5-2 UUID ... <cr>
-<clear-line>  [22/29] uuids:md5-2f UUID ... <cr>
-<clear-line>  [23/29] uuids:random UUID ... <cr>
-<clear-line>  [24/29] uuids:random-2 UUID ... <cr>
-<clear-line>  [25/29] uuids:sha1 UUID ... <cr>
-<clear-line>  [26/29] uuids:sha1-2 UUID ... <cr>
-<clear-line>  [27/29] uuids:sha1-2f UUID ... <cr>
-<clear-line>  [28/29] uuids:time UUID ... <cr>
-<clear-line>  [29/29] uuids:time-2 UUID ... <cr>
-<clear-line>Completed - Duration: XXX seconds [29 validated/0 skipped/0 errors]
+Validating 30 secrets for $env_name under path '$secrets_mount$secrets_path/':
+  [ 1/30] fixed/ca X509 certificate ... <cr>
+<clear-line>  [ 2/30] fixed/server X509 certificate ... <cr>
+<clear-line>  [ 3/30] haproxy/ca X509 certificate ... <cr>
+<clear-line>  [ 4/30] haproxy/ssl X509 certificate ... <cr>
+<clear-line>  [ 5/30] top-level/top X509 certificate ... <cr>
+<clear-line>  [ 6/30] secondary/ca X509 certificate ... <cr>
+<clear-line>  [ 7/30] secondary/server X509 certificate ... <cr>
+<clear-line>  [ 8/30] top-level/server X509 certificate ... <cr>
+<clear-line>  [ 9/30] openVPN/certs/root X509 certificate ... <cr>
+<clear-line>  [10/30] openVPN/certs/server X509 certificate ... <cr>
+<clear-line>  [11/30] openVPN/dh_params Diffie-Hellman key exchange parameters ... <cr>
+<clear-line>  [12/30] passwords:alt random password ... <cr>
+<clear-line>  [13/30] passwords:permanent random password ... <cr>
+<clear-line>  [14/30] passwords:uncrypted random password ... <cr>
+<clear-line>  [15/30] passwords:word random password ... <cr>
+<clear-line>  [16/30] rsa RSA public/private keypair ... <cr>
+<clear-line>  [17/30] rsa-default RSA public/private keypair ... <cr>
+<clear-line>  [18/30] ssh SSH public/private keypair ... <cr>
+<clear-line>  [19/30] ssh-default SSH public/private keypair ... <cr>
+<clear-line>  [20/30] uuids:base UUID ... <cr>
+<clear-line>  [21/30] uuids:md5 UUID ... <cr>
+<clear-line>  [22/30] uuids:md5-2 UUID ... <cr>
+<clear-line>  [23/30] uuids:md5-2f UUID ... <cr>
+<clear-line>  [24/30] uuids:random UUID ... <cr>
+<clear-line>  [25/30] uuids:random-2 UUID ... <cr>
+<clear-line>  [26/30] uuids:sha1 UUID ... <cr>
+<clear-line>  [27/30] uuids:sha1-2 UUID ... <cr>
+<clear-line>  [28/30] uuids:sha1-2f UUID ... <cr>
+<clear-line>  [29/30] uuids:time UUID ... <cr>
+<clear-line>  [30/30] uuids:time-2 UUID ... <cr>
+<clear-line>Completed - Duration: XXX seconds [30 validated/0 skipped/0 errors]
 
 EOF
 
@@ -1064,37 +1080,38 @@ EOF
 Parsing kit secrets descriptions ... done. - XXX seconds
 Retrieving all existing secrets ... done. - XXX seconds
 
-Checking 29 secrets for $env_name under path '$secrets_mount$secrets_path/':
-  [ 1/29] fixed/ca X509 certificate - CA, self-signed ... found.
-  [ 2/29] fixed/server X509 certificate - signed by 'fixed/ca' ... found.
-  [ 3/29] haproxy/ca X509 certificate - CA, self-signed ... found.
-  [ 4/29] haproxy/ssl X509 certificate - signed by 'haproxy/ca' ... found.
-  [ 5/29] top-level/top X509 certificate - CA, self-signed ... found.
-  [ 6/29] secondary/ca X509 certificate - CA, signed by 'top-level/top' ... found.
-  [ 7/29] secondary/server X509 certificate - signed by 'secondary/ca' ... found.
-  [ 8/29] top-level/server X509 certificate - signed by 'top-level/top' ... found.
-  [ 9/29] openVPN/certs/root X509 certificate - CA, explicitly self-signed ... found.
-  [10/29] openVPN/certs/server X509 certificate - signed by 'openVPN/certs/root' ... found.
-  [11/29] passwords:alt random password - 32 bytes ... found.
-  [12/29] passwords:permanent random password - 128 bytes, fixed ... found.
-  [13/29] passwords:uncrypted random password - 1024 bytes ... found.
-  [14/29] passwords:word random password - 64 bytes, fixed ... found.
-  [15/29] rsa RSA public/private keypair - 4096 bits, fixed ... found.
-  [16/29] rsa-default RSA public/private keypair - 2048 bits ... found.
-  [17/29] ssh SSH public/private keypair - 1024 bits ... found.
-  [18/29] ssh-default SSH public/private keypair - 2048 bits, fixed ... found.
-  [19/29] uuids:base UUID - random:system RNG based (v4) ... found.
-  [20/29] uuids:md5 UUID - static:md5-hash (v3), 'test value' ... found.
-  [21/29] uuids:md5-2 UUID - static:md5-hash (v3), 'example.com', ns:\@URL ... found.
-  [22/29] uuids:md5-2f UUID - static:md5-hash (v3), 'example.com', ns:6ba7b811-9dad-11d1-80b4-00c04fd430c8, fixed ... found.
-  [23/29] uuids:random UUID - random:system RNG based (v4) ... found.
-  [24/29] uuids:random-2 UUID - random:system RNG based (v4), fixed ... found.
-  [25/29] uuids:sha1 UUID - static:sha1-hash (v5), 'some long fixed name', ns:00112233-abcd-ef99-dead-b4a24ff300da ... found.
-  [26/29] uuids:sha1-2 UUID - static:sha1-hash (v5), 'Supercalifragilisticexpialidocious', ns:00000000-0000-0000-0000-000000000000 ... found.
-  [27/29] uuids:sha1-2f UUID - static:sha1-hash (v5), 'Supercalifragilisticexpialidocious', fixed ... found.
-  [28/29] uuids:time UUID - random:time based (v1) ... found.
-  [29/29] uuids:time-2 UUID - random:time based (v1) ... found.
-Completed - Duration: XXX seconds [29 found/0 skipped/0 errors]
+Checking 30 secrets for $env_name under path '$secrets_mount$secrets_path/':
+  [ 1/30] fixed/ca X509 certificate - CA, self-signed ... found.
+  [ 2/30] fixed/server X509 certificate - signed by 'fixed/ca' ... found.
+  [ 3/30] haproxy/ca X509 certificate - CA, self-signed ... found.
+  [ 4/30] haproxy/ssl X509 certificate - signed by 'haproxy/ca' ... found.
+  [ 5/30] top-level/top X509 certificate - CA, self-signed ... found.
+  [ 6/30] secondary/ca X509 certificate - CA, signed by 'top-level/top' ... found.
+  [ 7/30] secondary/server X509 certificate - signed by 'secondary/ca' ... found.
+  [ 8/30] top-level/server X509 certificate - signed by 'top-level/top' ... found.
+  [ 9/30] openVPN/certs/root X509 certificate - CA, explicitly self-signed ... found.
+  [10/30] openVPN/certs/server X509 certificate - signed by 'openVPN/certs/root' ... found.
+  [11/30] openVPN/dh_params Diffie-Hellman key exchange parameters - 2048 bits ... found.
+  [12/30] passwords:alt random password - 32 bytes ... found.
+  [13/30] passwords:permanent random password - 128 bytes, fixed ... found.
+  [14/30] passwords:uncrypted random password - 1024 bytes ... found.
+  [15/30] passwords:word random password - 64 bytes, fixed ... found.
+  [16/30] rsa RSA public/private keypair - 4096 bits, fixed ... found.
+  [17/30] rsa-default RSA public/private keypair - 2048 bits ... found.
+  [18/30] ssh SSH public/private keypair - 1024 bits ... found.
+  [19/30] ssh-default SSH public/private keypair - 2048 bits, fixed ... found.
+  [20/30] uuids:base UUID - random:system RNG based (v4) ... found.
+  [21/30] uuids:md5 UUID - static:md5-hash (v3), 'test value' ... found.
+  [22/30] uuids:md5-2 UUID - static:md5-hash (v3), 'example.com', ns:\@URL ... found.
+  [23/30] uuids:md5-2f UUID - static:md5-hash (v3), 'example.com', ns:6ba7b811-9dad-11d1-80b4-00c04fd430c8, fixed ... found.
+  [24/30] uuids:random UUID - random:system RNG based (v4) ... found.
+  [25/30] uuids:random-2 UUID - random:system RNG based (v4), fixed ... found.
+  [26/30] uuids:sha1 UUID - static:sha1-hash (v5), 'some long fixed name', ns:00112233-abcd-ef99-dead-b4a24ff300da ... found.
+  [27/30] uuids:sha1-2 UUID - static:sha1-hash (v5), 'Supercalifragilisticexpialidocious', ns:00000000-0000-0000-0000-000000000000 ... found.
+  [28/30] uuids:sha1-2f UUID - static:sha1-hash (v5), 'Supercalifragilisticexpialidocious', fixed ... found.
+  [29/30] uuids:time UUID - random:time based (v1) ... found.
+  [30/30] uuids:time-2 UUID - random:time based (v1) ... found.
+Completed - Duration: XXX seconds [30 found/0 skipped/0 errors]
 
 EOF
 
@@ -1153,7 +1170,7 @@ EOF
 		$cmd = Expect->new();
 		$cmd->log_stdout(1);
 		$cmd->spawn("genesis check-secrets $env_name -lp");
-		expect_ok $cmd, "[29 validated/0 skipped/0 errors]";
+		expect_ok $cmd, "[30 validated/0 skipped/0 errors]";
 		expect_exit $cmd, 0, "genesis check-secrets after rotate-secrets with filter";
 	};
 	$out =~ s/\e\[2K/<clear-line>/g;
@@ -1164,37 +1181,38 @@ EOF
 Parsing kit secrets descriptions ... <cr>
 <clear-line>Retrieving all existing secrets ... <cr>
 <clear-line>
-Validating 29 secrets for $env_name under path '$secrets_mount$secrets_path/':
-  [ 1/29] fixed/ca X509 certificate ... <cr>
-<clear-line>  [ 2/29] fixed/server X509 certificate ... <cr>
-<clear-line>  [ 3/29] haproxy/ca X509 certificate ... <cr>
-<clear-line>  [ 4/29] haproxy/ssl X509 certificate ... <cr>
-<clear-line>  [ 5/29] top-level/top X509 certificate ... <cr>
-<clear-line>  [ 6/29] secondary/ca X509 certificate ... <cr>
-<clear-line>  [ 7/29] secondary/server X509 certificate ... <cr>
-<clear-line>  [ 8/29] top-level/server X509 certificate ... <cr>
-<clear-line>  [ 9/29] openVPN/certs/root X509 certificate ... <cr>
-<clear-line>  [10/29] openVPN/certs/server X509 certificate ... <cr>
-<clear-line>  [11/29] passwords:alt random password ... <cr>
-<clear-line>  [12/29] passwords:permanent random password ... <cr>
-<clear-line>  [13/29] passwords:uncrypted random password ... <cr>
-<clear-line>  [14/29] passwords:word random password ... <cr>
-<clear-line>  [15/29] rsa RSA public/private keypair ... <cr>
-<clear-line>  [16/29] rsa-default RSA public/private keypair ... <cr>
-<clear-line>  [17/29] ssh SSH public/private keypair ... <cr>
-<clear-line>  [18/29] ssh-default SSH public/private keypair ... <cr>
-<clear-line>  [19/29] uuids:base UUID ... <cr>
-<clear-line>  [20/29] uuids:md5 UUID ... <cr>
-<clear-line>  [21/29] uuids:md5-2 UUID ... <cr>
-<clear-line>  [22/29] uuids:md5-2f UUID ... <cr>
-<clear-line>  [23/29] uuids:random UUID ... <cr>
-<clear-line>  [24/29] uuids:random-2 UUID ... <cr>
-<clear-line>  [25/29] uuids:sha1 UUID ... <cr>
-<clear-line>  [26/29] uuids:sha1-2 UUID ... <cr>
-<clear-line>  [27/29] uuids:sha1-2f UUID ... <cr>
-<clear-line>  [28/29] uuids:time UUID ... <cr>
-<clear-line>  [29/29] uuids:time-2 UUID ... <cr>
-<clear-line>Completed - Duration: XXX seconds [29 validated/0 skipped/0 errors]
+Validating 30 secrets for $env_name under path '$secrets_mount$secrets_path/':
+  [ 1/30] fixed/ca X509 certificate ... <cr>
+<clear-line>  [ 2/30] fixed/server X509 certificate ... <cr>
+<clear-line>  [ 3/30] haproxy/ca X509 certificate ... <cr>
+<clear-line>  [ 4/30] haproxy/ssl X509 certificate ... <cr>
+<clear-line>  [ 5/30] top-level/top X509 certificate ... <cr>
+<clear-line>  [ 6/30] secondary/ca X509 certificate ... <cr>
+<clear-line>  [ 7/30] secondary/server X509 certificate ... <cr>
+<clear-line>  [ 8/30] top-level/server X509 certificate ... <cr>
+<clear-line>  [ 9/30] openVPN/certs/root X509 certificate ... <cr>
+<clear-line>  [10/30] openVPN/certs/server X509 certificate ... <cr>
+<clear-line>  [11/30] openVPN/dh_params Diffie-Hellman key exchange parameters ... <cr>
+<clear-line>  [12/30] passwords:alt random password ... <cr>
+<clear-line>  [13/30] passwords:permanent random password ... <cr>
+<clear-line>  [14/30] passwords:uncrypted random password ... <cr>
+<clear-line>  [15/30] passwords:word random password ... <cr>
+<clear-line>  [16/30] rsa RSA public/private keypair ... <cr>
+<clear-line>  [17/30] rsa-default RSA public/private keypair ... <cr>
+<clear-line>  [18/30] ssh SSH public/private keypair ... <cr>
+<clear-line>  [19/30] ssh-default SSH public/private keypair ... <cr>
+<clear-line>  [20/30] uuids:base UUID ... <cr>
+<clear-line>  [21/30] uuids:md5 UUID ... <cr>
+<clear-line>  [22/30] uuids:md5-2 UUID ... <cr>
+<clear-line>  [23/30] uuids:md5-2f UUID ... <cr>
+<clear-line>  [24/30] uuids:random UUID ... <cr>
+<clear-line>  [25/30] uuids:random-2 UUID ... <cr>
+<clear-line>  [26/30] uuids:sha1 UUID ... <cr>
+<clear-line>  [27/30] uuids:sha1-2 UUID ... <cr>
+<clear-line>  [28/30] uuids:sha1-2f UUID ... <cr>
+<clear-line>  [29/30] uuids:time UUID ... <cr>
+<clear-line>  [30/30] uuids:time-2 UUID ... <cr>
+<clear-line>Completed - Duration: XXX seconds [30 validated/0 skipped/0 errors]
 
 EOF
 
@@ -1213,6 +1231,7 @@ EOF
 	runs_ok("safe rm -f $v/top-level/top:certificate", "removed top-level/top:certificate for testing");
   runs_ok("safe gen -l 46 -p 12 $v/passwords:word", "regenerated passwords:word for testing");
 	runs_ok("safe ssh 1024 $v/rsa", "regenerated rsa for testing");
+	sleep(5);
 
 	$out = combined_from {
 		$cmd = Expect->new();
@@ -1232,14 +1251,14 @@ EOF
 Parsing kit secrets descriptions ... <cr>
 <clear-line>Retrieving all existing secrets ... <cr>
 <clear-line>
-Validating 29 secrets for $env_name under path '$secrets_mount$secrets_path/':
-  [ 1/29] fixed/ca X509 certificate ... <cr>
-<clear-line>  [ 2/29] fixed/server X509 certificate ... warning!
+Validating 30 secrets for $env_name under path '$secrets_mount$secrets_path/':
+  [ 1/30] fixed/ca X509 certificate ... <cr>
+<clear-line>  [ 2/30] fixed/server X509 certificate ... warning!
           [⚠ ] Default key usage (missing: client_auth, server_auth)
 
 <cr>
-<clear-line>  [ 3/29] haproxy/ca X509 certificate ... <cr>
-<clear-line>  [ 4/29] haproxy/ssl X509 certificate ... invalid!
+<clear-line>  [ 3/30] haproxy/ca X509 certificate ... <cr>
+<clear-line>  [ 4/30] haproxy/ssl X509 certificate ... invalid!
           [✘ ] Signed by haproxy/ca
           [⚠ ] Valid: expires in 18 days (<timestamp>)
           [⚠ ] Subject Name '*.live.genesisproject.io' (found '*.run.live.genesisproject.io')
@@ -1247,55 +1266,56 @@ Validating 29 secrets for $env_name under path '$secrets_mount$secrets_path/':
           [⚠ ] Specified key usage (missing: client_auth; extra: timestamping)
 
 <cr>
-<clear-line>  [ 5/29] top-level/top X509 certificate ... missing!
+<clear-line>  [ 5/30] top-level/top X509 certificate ... missing!
           [✘ ] missing key ':certificate'
 
 <cr>
-<clear-line>  [ 6/29] secondary/ca X509 certificate ... invalid!
+<clear-line>  [ 6/30] secondary/ca X509 certificate ... invalid!
           [✘ ] Signed by top-level/top (specified CA not found - found signed by CN 'ca.n<random>.top-level')
 
 <cr>
-<clear-line>  [ 7/29] secondary/server X509 certificate ... <cr>
-<clear-line>  [ 8/29] top-level/server X509 certificate ... invalid!
+<clear-line>  [ 7/30] secondary/server X509 certificate ... <cr>
+<clear-line>  [ 8/30] top-level/server X509 certificate ... invalid!
           [✘ ] Signed by top-level/top (specified CA not found - found signed by CN 'ca.n<random>.top-level')
 
 <cr>
-<clear-line>  [ 9/29] openVPN/certs/root X509 certificate ... <cr>
-<clear-line>  [10/29] openVPN/certs/server X509 certificate ... <cr>
-<clear-line>  [11/29] passwords:alt random password ... <cr>
-<clear-line>  [12/29] passwords:permanent random password ... <cr>
-<clear-line>  [13/29] passwords:uncrypted random password ... <cr>
-<clear-line>  [14/29] passwords:word random password ... warning!
+<clear-line>  [ 9/30] openVPN/certs/root X509 certificate ... <cr>
+<clear-line>  [10/30] openVPN/certs/server X509 certificate ... <cr>
+<clear-line>  [11/30] openVPN/dh_params Diffie-Hellman key exchange parameters ... <cr>
+<clear-line>  [12/30] passwords:alt random password ... <cr>
+<clear-line>  [13/30] passwords:permanent random password ... <cr>
+<clear-line>  [14/30] passwords:uncrypted random password ... <cr>
+<clear-line>  [15/30] passwords:word random password ... warning!
           [⚠ ] 64 characters - got 46
           [⚠ ] Only uses characters '01' (found invalid characters in '<[12]{46}>')
 
 <cr>
-<clear-line>  [15/29] rsa RSA public/private keypair ... invalid!
+<clear-line>  [16/30] rsa RSA public/private keypair ... invalid!
           [✘ ] Valid public key
 
 <cr>
-<clear-line>  [16/29] rsa-default RSA public/private keypair ... missing!
+<clear-line>  [17/30] rsa-default RSA public/private keypair ... missing!
           [✘ ] missing key ':private'
 
 <cr>
-<clear-line>  [17/29] ssh SSH public/private keypair ... invalid!
+<clear-line>  [18/30] ssh SSH public/private keypair ... invalid!
           [✘ ] Public/Private key Agreement
           [⚠ ] 1024 bits (found 2048 bits)
 
 <cr>
-<clear-line>  [18/29] ssh-default SSH public/private keypair ... <cr>
-<clear-line>  [19/29] uuids:base UUID ... <cr>
-<clear-line>  [20/29] uuids:md5 UUID ... <cr>
-<clear-line>  [21/29] uuids:md5-2 UUID ... <cr>
-<clear-line>  [22/29] uuids:md5-2f UUID ... <cr>
-<clear-line>  [23/29] uuids:random UUID ... <cr>
-<clear-line>  [24/29] uuids:random-2 UUID ... <cr>
-<clear-line>  [25/29] uuids:sha1 UUID ... <cr>
-<clear-line>  [26/29] uuids:sha1-2 UUID ... <cr>
-<clear-line>  [27/29] uuids:sha1-2f UUID ... <cr>
-<clear-line>  [28/29] uuids:time UUID ... <cr>
-<clear-line>  [29/29] uuids:time-2 UUID ... <cr>
-<clear-line>Failed - Duration: XXX seconds [20 validated/0 skipped/7 errors/2 warnings]
+<clear-line>  [19/30] ssh-default SSH public/private keypair ... <cr>
+<clear-line>  [20/30] uuids:base UUID ... <cr>
+<clear-line>  [21/30] uuids:md5 UUID ... <cr>
+<clear-line>  [22/30] uuids:md5-2 UUID ... <cr>
+<clear-line>  [23/30] uuids:md5-2f UUID ... <cr>
+<clear-line>  [24/30] uuids:random UUID ... <cr>
+<clear-line>  [25/30] uuids:random-2 UUID ... <cr>
+<clear-line>  [26/30] uuids:sha1 UUID ... <cr>
+<clear-line>  [27/30] uuids:sha1-2 UUID ... <cr>
+<clear-line>  [28/30] uuids:sha1-2f UUID ... <cr>
+<clear-line>  [29/30] uuids:time UUID ... <cr>
+<clear-line>  [30/30] uuids:time-2 UUID ... <cr>
+<clear-line>Failed - Duration: XXX seconds [21 validated/0 skipped/7 errors/2 warnings]
 
 EOF
 
