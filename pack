@@ -140,6 +140,14 @@ $ENV{GENESIS_HOME} ||= $ENV{HOME};
 my $root = "$ENV{GENESIS_HOME}/.geese";
 mkdir $root unless -d $root;
 
+# TODO: need to separate tight loop callbacks (call .geese/genesis directly) vs
+#       calling/referencing this extractor in the case of embed, upgrade, and
+#       output command examples in info and post-deploy.  For now, just leave
+#       it to use the extractor as it doesn't impose that much overhead.
+
+use FindBin;
+$ENV{GENESIS_CALLBACK_BIN} = $FindBin::Bin.'/'.$FindBin::Script;
+
 # check the checksum to see if we should untar
 my ($fh, $want, $have) = (undef, "", "");
 chomp($want = <DATA>);
