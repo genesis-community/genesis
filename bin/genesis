@@ -2489,6 +2489,8 @@ sub {
 	my $label = $file;
 	$file = $1 if $file =~ /(.*)\.yml/; #.yml extension should be allowed
 	if ($label ne 'latest' && Genesis::Env->exists(name => $file, top => $top)) {
+		local %ENV = %ENV;
+		$ENV{GENESIS_UNEVALED_PARAMS} = 1; # To prevent the need of vault
 		my $env = $top->load_env($file) or bail(
 			"#R{[ERROR]} #C{%s} should be an environment YAML file, but could not be loaded",
 			humanize_path($file)
