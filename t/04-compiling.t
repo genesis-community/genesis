@@ -313,7 +313,7 @@ eq_or_diff($out, <<'EOF', "validate should report when genesis_min_version is us
 
   Kit Metadata file kit.yml:
     - contains invalid top-level key: genesis_min_version;
-      valid keys are: name, version, description, code, docs, author, authors, genesis_version_min, secrets_store, required_configs, credentials, certificates, provided
+      valid keys are: name, version, description, code, docs, author, authors, genesis_version_min, secrets_store, required_configs, exclude_paths, credentials, certificates, provided
 
 EOF
 
@@ -345,7 +345,7 @@ eq_or_diff($out, <<'EOF', "validate should report credentials and certificate fi
 
   Kit Metadata file kit.yml:
     - contains invalid top-level keys: certificates, credentials;
-      valid keys are: name, version, description, code, docs, author, authors, genesis_version_min, secrets_store, required_configs
+      valid keys are: name, version, description, code, docs, author, authors, genesis_version_min, secrets_store, required_configs, exclude_paths
 
 EOF
 
@@ -468,7 +468,7 @@ eq_or_diff($out, <<'EOF', "validate should report when unknown top-level keys ar
     - does not define 'code'
     - does not identify the author(s) via 'author' or 'authors'
     - contains invalid top-level keys: by, descriptoin, github, homepage, params, secrets, subkits;
-      valid keys are: name, version, description, code, docs, author, authors, genesis_version_min, secrets_store, required_configs, credentials, certificates, provided
+      valid keys are: name, version, description, code, docs, author, authors, genesis_version_min, secrets_store, required_configs, exclude_paths, credentials, certificates, provided
 
 EOF
 
@@ -483,7 +483,7 @@ eq_or_diff($out, <<'EOF', "validate should report errors even when force is used
     - does not define 'code'
     - does not identify the author(s) via 'author' or 'authors'
     - contains invalid top-level keys: by, descriptoin, github, homepage, params, secrets, subkits;
-      valid keys are: name, version, description, code, docs, author, authors, genesis_version_min, secrets_store, required_configs, credentials, certificates, provided
+      valid keys are: name, version, description, code, docs, author, authors, genesis_version_min, secrets_store, required_configs, exclude_paths, credentials, certificates, provided
 
 EOF
 
@@ -710,7 +710,7 @@ eq_or_diff($out, <<'EOF', "validate should report all errors in the kit");
     - does not define 'code'
     - specifies name 'testing', expecting 'test'
     - contains invalid top-level keys: code repo, params, url;
-      valid keys are: name, version, description, code, docs, author, authors, genesis_version_min, secrets_store, required_configs, credentials, certificates, provided
+      valid keys are: name, version, description, code, docs, author, authors, genesis_version_min, secrets_store, required_configs, exclude_paths, credentials, certificates, provided
 
   Secrets specifications in kit.yml:
 

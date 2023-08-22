@@ -43,6 +43,9 @@ sub validate {
 				if ($meta->{author} && $meta->{authors});
 			push @yml_errors, sprintf("expects 'authors' to be an array, not a %s.", lc(ref($meta->{authors}) || "string"))
 				if ($meta->{authors} && (ref($meta->{authors}||'') ne 'ARRAY'));
+			push @yml_errors, sprintf("expects 'exclude_paths' to be an array, not a %s.", lc(ref($meta->{exclude_paths}) || "string"))
+				if ($meta->{exclude_paths} && (ref($meta->{exclude_paths}||'') ne 'ARRAY'));
+
 
 			# genesis versions must be semver
 			my $min_version="0.0.0";
@@ -58,7 +61,7 @@ sub validate {
 			}
 
 			# check for errant top-level keys - params, subkits and features have been discontinued.
-			my @valid_keys = qw/name version description code docs author authors genesis_version_min secrets_store required_configs/;
+			my @valid_keys = qw/name version description code docs author authors genesis_version_min secrets_store required_configs exclude_paths/;
 			if (!defined($meta->{secrets_store}) || $meta->{secrets_store} eq 'vault') {
 				push @valid_keys, "credentials", "certificates", "provided";
 			} elsif ($meta->{secrets_store} ne "credhub") {
@@ -141,6 +144,7 @@ sub validate {
 		} elsif (!-x "$self->{root}/hooks/$hook") {
 			push @hook_errors, "#C{hooks/$hook} is not executable.";
 		}
+		#TODO: validate hooks that are bash or perl with shellcheck or perl -c
 	}
 	push @errors, "#Wk{Hook scripts:}\n  - ".join("\n  - ", @hook_errors)
 		if @hook_errors;
@@ -182,18 +186,25 @@ sub _prepare {
 		'rm -rf "$2/$3" && cp -a "$1" "$2/$3"',
 		$self->{root}, $self->{work}, $self->{relpath});
 
-	(my $out, undef) = run(
-		{ onfailure => 'Unable to determine what files to clean up before compiling the kit' },
-		'git -C "$1" clean -xdn', $self->{root});
-
 	my @files = map { "$self->{work}/$self->{relpath}/$_" } qw(ci .git .gitignore spec devtools);
-	for (split /\s+/, $out) {
-		s/^would remove //i;
-		push @files, "$self->{work}/$self->{relpath}/$_";
+
+	my $meta;
+	eval {$meta = load_yaml_file("$self->{root}/kit.yml"); };
+	if (! $@ && $meta && $meta->{exclude_paths} && ref($meta->{exclude_paths}) eq "ARRAY") {
+		for (@{$meta->{exclude_paths}}) {
+			next if /(?:^|\/)\.\.\//; # don't let kits delete out of scope
+			push(@files, "$self->{work}/$self->{relpath}/$_");
+		}
 	}
+
+	push @files, map {"$self->{work}/$self->{relpath}/$_"} lines(run(
+		{ onfailure => 'Unable to determine what files to clean up before compiling the kit' },
+		'git -C "$1" clean -xdn | sed -e "s/Would remove //"', $self->{root}
+	));
 	run(
 		{ onfailure => 'Unable to clean up work directory before compiling the kit' },
-		'rm -rf "$@"', @files);
+		'rm -rf "$@"', @files
+	);
 }
 
 sub compile {
