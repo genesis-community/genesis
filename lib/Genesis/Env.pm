@@ -1625,7 +1625,9 @@ sub check {
 			my ($alias, $os, $version) = @$stemcell_info{qw/alias os version/};
 			my ($wants_latest,$major_version) = $version =~ /^((?:(\d+)\.)?latest)$/;
 			if ($wants_latest) {
-				($version) = sort {$b <=> $a} map {$_->[1]}
+				($version) = map {$_ !~ /\./ ? "$_.0" : "$_"}
+				             reverse sort by_semver
+				             map {$_->[1]}
 				             grep {!$major_version || $major_version eq int($_->[1])}
 				             grep {$_->[0] eq $os}
 				             map {[split('@', $_)]} @stemcells;
