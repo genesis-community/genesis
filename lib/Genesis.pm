@@ -605,7 +605,13 @@ sub curl {
 	push @flags, "-H", "$_: $headers->{$_}" for (keys %$headers);
 	push @flags, "-d", $data                if  $data;
 	push @flags, "-k"                       if  ($skip_verify);
-	push @flags, "-u", $creds               if  ($creds);
+	if ($creds) {
+		if ($creds =~ "^Bearer ") {
+			push @flags, "-H", "Authorization: $creds"
+		} else {
+			push @flags, "-u", $creds
+		}
+	}
 	push @flags, "-v"                       if  (envset('GENESIS_DEBUG'));
 
 	my $status = "";

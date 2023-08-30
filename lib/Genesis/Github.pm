@@ -23,6 +23,8 @@ sub new {
 	my $creds;
 	if ($ENV{GITHUB_USER} && $ENV{GITHUB_AUTH_TOKEN}) {
 		$creds = "$ENV{GITHUB_USER}:$ENV{GITHUB_AUTH_TOKEN}";
+	} elsif ($ENV{GITHUB_AUTH_TOKEN}) {
+		$creds ="Bearer $ENV{GITHUB_AUTH_TOKEN}"
 	}
 	bless({
 		domain => $config{domain} || DEFAULT_DOMAIN,
