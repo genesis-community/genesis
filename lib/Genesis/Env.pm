@@ -1297,7 +1297,7 @@ sub configs {
 		/GENESIS_[A-Z0-9_-]+_CONFIG(_.*)?$/;
 	} keys %ENV;
 	my @configs = sort(uniq(keys %{$_[0]->{__configs}}, @env_configs));
-	return @configs # can't just return the above because scalar/list context crazies
+	return wantarray ? @configs : \@configs; # can't just return the above because scalar/list context crazies
 }
 
 # }}}
@@ -1334,7 +1334,9 @@ sub has_required_configs {
 sub download_required_configs {
 	my ($self, @hooks) = @_;
 	my @configs = $self->missing_required_configs(@hooks);
-	$self->with_bosh->download_configs(@configs) if @configs;
+	return $self unless @configs;
+	debug "Missing configs: ".join(', ', @configs);
+	$self->with_bosh->download_configs(@configs);
 	return $self
 }
 
