@@ -294,7 +294,7 @@ sub get_vault_from_descriptor {
 	my @matches =  $class->find(url => $url, %$filter);
 
 	# TODO: If none found, try by alias name?  Potential for mismatch though...
-	
+
 	if (@matches > 1) {
 		my @named_matches = grep {$_->name eq $alias} @matches;
 		@matches = @named_matches if @named_matches == 1;

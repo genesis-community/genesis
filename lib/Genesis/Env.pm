@@ -1062,7 +1062,7 @@ sub vault {
 
 		if (in_callback && $ENV{GENESIS_TARGET_VAULT} && $ENV{GENESIS_TARGET_VAULT} eq $details->{url}) {
 			return Genesis::Vault->rebind();
-		} 
+		}
 		my %filter = ();
 		$filter{verify} = ($details->{verify} && $details->{tls} ? 1 : 0 ) if $details->{tls};
 		$filter{namespace} = $details->{namespace} || '';

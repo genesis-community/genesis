@@ -25,7 +25,7 @@ sub new {
 	my ($class,$path,$autosave) = @_;
 
 	# TODO: specify a schema for validation
-	
+
 	return bless({
 			path => $path,
 			persistant_signature => undef,

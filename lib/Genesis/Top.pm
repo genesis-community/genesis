@@ -370,7 +370,7 @@ sub set_vault {
 
 # }}}
 # add_vault - TODO: #ADDVAULT add ability to support multiple vaults, default, base and per env {{{
-sub add_vault { 
+sub add_vault {
 }
 # }}}
 # vault_status - get the status for the associated secret-provider vault {{{
