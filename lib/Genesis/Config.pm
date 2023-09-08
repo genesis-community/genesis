@@ -63,6 +63,7 @@ sub get {
 	my ($self,$key,$default,$set_if_missing) = @_;
 
 	# Caching
+	$key ||= '';
 	return $self->{cache}{$key} if exists($self->{cache}{$key});
 
 	my ($value,$found) = struct_lookup($self->_contents,$key,$default);
