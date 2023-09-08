@@ -282,7 +282,7 @@ sub prompt_for_block {
 	return __prompt_for_block(@_);
 }
 
-my $has_tput;
+my $has_tput = $ENV{TERM} ? undef : 0; # tput doesn't work if $TERM isn't defined
 sub terminal_width {
 	return $ENV{GENESIS_OUTPUT_COLUMNS} if $ENV{GENESIS_OUTPUT_COLUMNS};
 	unless (defined($has_tput)) {
