@@ -142,25 +142,29 @@ sub load {
 
 	unless (under_test && !envset 'GENESIS_TESTING_DEV_VERSION_DETECTION' ) {
 		if (@deprecations && !envset("REPORTED_ENV_DEPRECATIONS")) {
-			error(
-				"#Y{[DEPRECATIONS]} Environment #C{%s} contains the following deprecation:\n  - %s\n",
-				$env->{file}, join("\n  - ",map {join("\n    ",split("\n",$_))} @deprecations)
-			);
+			error( wrap(
+				sprintf(
+					"Environment #C{%s} contains the following deprecation:\n[[- >>%s\n",
+					$env->{file}, join("\n[[- >>",map {join("\n    ",split("\n",$_))} @deprecations)
+				), terminal_width, "#Y{[DEPRECATIONS]} "
+			));
 			$ENV{REPORTED_ENV_DEPRECATIONS}=1;
 		}
 		if (@config_warnings && !envset("REPORTED_ENV_CONFIG_WARNINGS")) {
-			error(
-				"#Y{[WARNINGS]} Environment #C{%s} contains the following configuration warnings:\n  - %s\n",
-				$env->{file}, join("\n  - ",map {join("\n    ",split("\n",$_))} @config_warnings)
-			);
+			error( wrap(
+				sprintf(
+					"Environment #C{%s} contains the following configuration warnings:\n[[- >>%s\n",
+					$env->{file}, join("\n[[- >>",map {join("\n    ",split("\n",$_))} @config_warnings)
+				), terminal_width, "#Y{[WARNINGS]} "
+			));
 			$ENV{REPORTED_ENV_CONFIG_WARNINGS}=1
 		}
 	}
 
 	bail(
-		"#R{[ERROR]} Environment #C{%s} could not be loaded:\n  - %s\n\n".
+		"Environment #C{%s} could not be loaded:\n[[- >>%s\n\n".
 		"Please fix the above errors and try again.",
-		$env->{file}, join("\n  - ",map {join("\n    ",split("\n",$_))} @errors)
+		$env->{file}, join("\n[[- >>",map {join("\n    ",split("\n",$_))} @errors)
 	) if @errors;
 
 	return $env
@@ -2438,8 +2442,8 @@ sub _validate_reactions {
 	my %reaction_validator; @reaction_validator{@valid_reactions} = ();
 	my @invalid_reactions = grep ! exists $reaction_validator{$_}, ( $_[0]->_reactions );
 	if (@invalid_reactions) {
-		bail "\n#R{[ERROR]} Unexpected reactions specified under #y{genesis.reactions}: #R{%s}\n".
-		     "        Valid values: #G{%s}",
+		bail "Unexpected reactions specified under #y{genesis.reactions}: #R{%s}\n".
+		     "Valid values: #G{%s}",
 		     join(', ', @invalid_reactions), join(', ',@valid_reactions);
 	}
 	return;
