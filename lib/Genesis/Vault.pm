@@ -318,10 +318,10 @@ sub get_vault_from_descriptor {
 		"        - %s\n".
 		"        (or alter the URLs to be unique$alias_msg)",
 		$url, join("\n        - ", map {
-			$_->name eq ($current||'') 
+			$_->name eq ($current||'')
 				? "#G{".$_->name." (current)}"
-				: $_->name eq ($default||'') 
-					? "#g{".$_->name." (default)}" 
+				: $_->name eq ($default||'')
+					? "#g{".$_->name." (default)}"
 					: "#y{".$_->name."}"
 		} @matches)
 	);

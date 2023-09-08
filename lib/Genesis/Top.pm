@@ -25,6 +25,12 @@ sub new {
 
 	$ENV{GENESIS_ROOT}=$top->path();
 
+	if ($opts{no_vault}) {
+		debug "Top for $ENV{GENESIS_ROOT} requested with no vault support";
+		$top->_set_memo('__vault', Genesis::NoVault->new());
+		return $top;
+	}
+
 	if ($opts{vault}) {
 		# TODO: #ADDVAULT
 		# if ($opts{env}) {
@@ -408,6 +414,14 @@ sub vault_status {
 sub get_ancestral_vault {
 	my ($self, $env) = @_;
 	return Genesis::Env->new(name=>$env, top=>$self)->get_ancestral_vault();
+}
+
+sub reset_vault {
+	my $self = shift;
+	my $no_vault = defined($_[0]) && $_[0] eq 'no-vault';
+
+	$self->_clear_memo('__vault');
+	$ENV{GENESIS_NO_VAULT}=($no_vault ? '1' : '')
 }
 
 # }}}
