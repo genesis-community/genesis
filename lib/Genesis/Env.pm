@@ -1631,7 +1631,7 @@ sub check {
 			my ($alias, $os, $version) = @$stemcell_info{qw/alias os version/};
 			my ($wants_latest,$major_version) = $version =~ /^((?:(\d+)\.)?latest)$/;
 			if ($wants_latest) {
-				($version) = map {$_ !~ /\./ ? "$_.0" : "$_"}
+				($version) = map {$_ =~ /\./ ? "$_" : "$_.0"} # Make sure Major.Minor format in case where minor is 0
 				             reverse sort by_semver
 				             map {$_->[1]}
 				             grep {!$major_version || $major_version eq int($_->[1])}
