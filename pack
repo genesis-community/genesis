@@ -45,6 +45,8 @@ if (qx(git status --porcelain bin/genesis lib/)) {
 	$sha1 .= '+';
 	$stub_out .= '-dirty';
 }
+$stub_out = $ARGV[1] if $ARGV[1];
+
 my $BUILD = "($sha1) build ".strftime("%Y%m%d.%H%M%S", gmtime);
 
 # ---
@@ -125,8 +127,8 @@ use FindBin;
 #
 # This perl script contains the entire runtime environment needed to execute
 # Genesis.  It unpacks the compressed contents into your ~/.geese/ directory
-# then passes execution to the ~/.geese/genesis Perl script that was
-# extracted, using the libraries located in ~/.geese/lib.
+# then passes execution to the ~/.genesis/bin Perl script that was
+# extracted, using the libraries located in ~/.genesis/lib.
 #
 # Once extracted, further execution of this stub will use the previously
 # extracted library after checking that the checksum is identical.  This way,
@@ -137,10 +139,10 @@ die "You have no \$HOME.  Please set one and re-run.\n"
 	unless $ENV{HOME};
 
 $ENV{GENESIS_HOME} ||= $ENV{HOME};
-my $root = "$ENV{GENESIS_HOME}/.geese";
+my $root = "$ENV{GENESIS_HOME}/.genesis";
 mkdir $root unless -d $root;
 
-# TODO: need to separate tight loop callbacks (call .geese/genesis directly) vs
+# TODO: need to separate tight loop callbacks (call .genesis/genesis directly) vs
 #       calling/referencing this extractor in the case of embed, upgrade, and
 #       output command examples in info and post-deploy.  For now, just leave
 #       it to use the extractor as it doesn't impose that much overhead.
@@ -158,7 +160,7 @@ if ($fh) {
 }
 
 if ($want ne $have) {
-	system("/bin/bash", "-c", "rm -rf $root/*");
+	system("/bin/bash", "-c", "rm -rf $root/lib $root/checksum $root/genesis");
 	my $action = $have ? "updating" : "installing";
 
 	# extract the payload

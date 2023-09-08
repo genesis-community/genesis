@@ -901,7 +901,7 @@ sub get_environment_variables {
 	$env{GENESIS_ROOT}         = $self->path;
 	$env{GENESIS_ENVIRONMENT}  = $self->name;
 	$env{GENESIS_TYPE}         = $self->type;
-	$env{GENESIS_CALL_BIN}     = humanize_bin();
+	$env{GENESIS_CALL_BIN}     = $ENV{GENESIS_CALL_BIN} || humanize_bin();
 
 	# Deprecated, use GENESIS_CALL_ENV instead, but drop the $GENESIS_ENVIRONMENT after the command
 	$env{GENESIS_CALL}         = $env{GENESIS_CALL_BIN}.

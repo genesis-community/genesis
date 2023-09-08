@@ -28,8 +28,9 @@ use base 'Exporter';
 our @EXPORT = qw/
 	envset envdefault
 	in_callback under_test
+	in_repo_dir	in_kit_dir
 
-	csprintf
+	csprintf decolorize
 	explain waiting_on
 	debug debug_error qtrace trace dump_var dump_stack
 	error bail bug
@@ -92,6 +93,14 @@ sub in_callback {
 
 sub under_test {
 	envset('GENESIS_TESTING');
+}
+
+sub in_repo_dir {
+	return  -d ".genesis" && -e ".genesis/config";
+}
+
+sub in_kit_dir {
+	return -f "kit.yml";
 }
 
 sub vaulted {
@@ -202,10 +211,16 @@ sub csprintf {
 			$in_csprint_debug = 0;
 		}
 	}
-
 	$s =~ s/#([-IUKRGYBMPCW*]{0,4})@\{([^{}]*(?:{[^}]+}[^{}]*)*)\}/_glyphize($1, $2)/egism;
 	$s =~ s/#([-IUKRGYBMPCW*]{1,4})\{([^{}]*(?:{[^}]+}[^{}]*)*)\}/_colorize($1, $2)/egism;
 	return $s;
+}
+
+sub decolorize {
+	my $s = shift;
+	$s =~ s/#([-IUKRGYBMPCW*]{1,4})\@\{([^{}]*(?:{[^}]+}[^{}]*)*)\}/"#${1}{"._glyphize('',$2)."}"/egism;
+	$s =~ s/#([-IUKRGYBMPCW*]{1,4})\{([^{}]*(?:{[^}]+}[^{}]*)*)\}/$2/gism;
+	return $s
 }
 
 sub explain {

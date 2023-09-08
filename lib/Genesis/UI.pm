@@ -8,13 +8,14 @@ our @EXPORT = qw/
 	prompt_for_line
 	prompt_for_list
 	prompt_for_block
+	terminal_width
+	wrap
 	bullet
 	in_controlling_terminal
 	die_unless_controlling_terminal
 /;
 
 use Genesis;
-
 
 sub __prompt_for_line {
 	my ($prompt,$validation,$err_msg,$default,$allow_blank) = @_;
@@ -280,6 +281,59 @@ sub prompt_for_block {
 	printf("\n");
 	return __prompt_for_block(@_);
 }
+
+my $has_tput;
+sub terminal_width {
+	return $ENV{GENESIS_OUTPUT_COLUMNS} if $ENV{GENESIS_OUTPUT_COLUMNS};
+	unless (defined($has_tput)) {
+		my ($out, $rc) = run("type -p tput");
+		$has_tput = ($rc == 0) ? 1 : 0;
+	}
+
+	return ($ENV{GENESIS_OUTPUT_COLUMNS} || 80) unless $has_tput;
+	return (grep {/^[0-9]*$/} split("\n",`tput cols`))[0] || $ENV{GENESIS_OUTPUT_COLUMNS} || 80;
+}
+
+sub wrap {
+	my ($str, $width, $prefix, $indent, $continue_prefix) = @_;
+	$prefix ||= '';
+	$indent ||= length(decolorize($prefix));
+	$continue_prefix ||= '';
+	$continue_length =length(decolorize($continue_prefix));
+
+	my $results = "";
+	my $prefix_length;
+	$prefix_length = length(decolorize($prefix));
+	my $sep = $prefix . ' ' x ($indent - $prefix_length);
+	my ($sub_indent, $sub_prefix);
+	for my $block (split("\n", $str, -1)) {
+		if ($block =~ /^\[\[(.*?)>>(.*)$/) {
+			$sep = $sep . $1;
+			$sub_indent = length($1);
+			$block = $2;
+		} else {
+			$sub_indent = 0;
+		}
+		my @block_bits = split(/(\s+)/, $block);
+		my ($word, $next_sep);
+		my $line = "";
+		while (@block_bits) {
+			($word, $next_sep, @block_bits) = @block_bits;
+			if (length(decolorize($line . $sep . $word)) > $width && $line) {
+				$results .= $line . "\n";
+				$line = $continue_prefix . ' ' x ($indent + $sub_indent - $continue_length);
+				$sep = '';
+			}
+			$line .= $sep . $word;
+			$sep = $next_sep;
+		}
+		$results .= "$line\n";
+		$sep = ' ' x $indent;
+	}
+	chop $results;
+	return $results;
+}
+
 
 sub bullet { # [type,] msg, [{option: value, ...}]
 	my $msg = shift;
