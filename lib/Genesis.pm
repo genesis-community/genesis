@@ -339,17 +339,40 @@ sub error {
 }
 
 sub bail {
-	my @err = @_;
-	unshift @err, "%s" if $#err == 0;
-	if (envset("GENESIS_DEBUG") || envset("GENESIS_TRACE") || envset("GENESIS_STACK_TRACE")) {
-		_log "ERROR", csprintf(@err), 'Wr';
-		_log "ERROR", _get_scope(1);
-	}
+	my (@err) = @_;
 
-	$! = 1; die csprintf(@err)."$/";
+	my $fmt = "%s";
+	$fmt = shift(@err) if $#err > 0;
+
+	my $msg = sprintf($fmt,@err);
+	$msg =~ s/^(\n*)(.*?)\n*\z/$2/s;
+	my $blanks = $1 || "\n";
+
+	my ($c, $prefix,$sub_msg);
+	if (($c,$prefix,$sub_msg) = $msg =~ m/^#([^\{]*)\{([^\}]*)} (.*)/s) {
+		my $indent = ' ' x (length($prefix)+1);
+		$msg = $sub_msg;
+		$msg =~ s/\n$indent([^ ])/ $1/sg;
+	}
+	$c ||= 'R';
+	$prefix ||= '[ERROR]';
+	$msg =~ s/\n+\z//s;
+
+	require Genesis::UI;
+	my $err = Genesis::UI::wrap($msg, Genesis::UI::terminal_width(), "#$c\{$prefix} ", length($prefix)+1);
+
+	if (envset("GENESIS_DEBUG") || envset("GENESIS_TRACE") || envset("GENESIS_STACK_TRACE")) {
+		print STDERR "\n";
+		_log "ERROR", csprintf('%s', $msg), 'Wr';
+		_log "ERROR", _get_scope(1);
+		$! = 1; die "$/";
+	} else {
+		$! = 1; die csprintf("%s\n",$blanks.$err)."$/";
+	}
 }
 
 sub bug {
+	# TODO: Fix this to use terminal width
 	my (@msg) = @_;
 
 	my $msg = csprintf(@msg)."\n\n";
