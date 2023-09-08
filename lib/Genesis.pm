@@ -143,6 +143,7 @@ sub _color {
 
 sub _colorize {
 	my ($c, $msg) = @_;
+	return "" unless $msg;
 	return $msg if envset('NOCOLOR');
 
 	my @fmt = ();
