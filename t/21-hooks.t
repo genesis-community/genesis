@@ -31,10 +31,11 @@ my $snw_lab_dev;
 my $vault_target = vault_ok;
 
 # Compensate for not running through bin/genesis
-$ENV{GENESIS_CALLBACK_BIN} = "$ENV{GENESIS_TOPDIR}/bin/genesis";
-$ENV{GENESIS_PREFIX_TYPE} = 'none';
-$ENV{GENESIS_COMMAND} = 'ping';
-
+$ENV{GENESIS_CALLBACK_BIN}    = "$ENV{GENESIS_TOPDIR}/bin/genesis";
+$ENV{GENESIS_PREFIX_TYPE}     = 'none';
+$ENV{GENESIS_COMMAND}         = 'ping';
+$ENV{GENESIS_VERSION}         =$Genesis::VERSION;
+$ENV{GENESIS_ORIGINATING_DIR} = Cwd::getcwd;
 sub again {
 	system("rm -rf $tmp; mkdir -p $tmp");
 	fake_bosh;
@@ -201,7 +202,7 @@ EOF
 
 	ok $fancy->run_hook('new', env => $snw_lab_dev),
 	   "[fancy] running the 'new' hook should succeed";
-	
+
 	ok -f "$root/snw-lab-dev.yml",
 	   "[fancy] the 'new' hook should create the env yaml file";
 
@@ -238,7 +239,7 @@ EOF
 			__params => {genesis => {env => $name}} # compensate for not using Genesis::Env#create
 		);
 		$env->{__params}{genesis}{bosh_env} =  $snw_lab_dev->name;
-		
+
 		throws_ok {
 			$fancy->run_hook('new', env => $env);
 		} qr/could not create/i;

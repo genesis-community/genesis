@@ -50,9 +50,10 @@ $ENV{GENESIS_INDEX} = "no";
 $ENV{TERM} = "xterm";
 runs_ok "genesis manifest -c init-cloud.yml bosh-init-sandbox >$tmp/manifest.yml 2>$tmp/error.txt";
 eq_or_diff get_file("$tmp/error.txt"), <<EOF, "manifest for bosh-init/create-env scenario warns that a cloud config file was provided";
+
 \e[1;33m[WARNING]\e[0m The provided configs will be ignored, as create-env environments do
           not use them:
-            - \e[1;36mcloud\e[0m
+          - \e[1;36mcloud\e[0m
 EOF
 eq_or_diff get_file("$tmp/manifest.yml"), <<EOF, "manifest for bosh-init/create-env scenario ignores provided cloud config file, and doesn't prune cloud-y datastructures";
 azs:
@@ -83,9 +84,10 @@ EOF
 
 runs_ok "genesis manifest -c init-cloud.yml create-env-sandbox >$tmp/manifest.yml 2>$tmp/error.txt";
 eq_or_diff get_file("$tmp/error.txt"), <<EOF, "manifest for bosh-init/create-env scenario warns that a cloud config file was provided";
+
 \e[1;33m[WARNING]\e[0m The provided configs will be ignored, as create-env environments do
           not use them:
-            - \e[1;36mcloud\e[0m
+          - \e[1;36mcloud\e[0m
 EOF
 eq_or_diff get_file("$tmp/manifest.yml"), <<EOF, "manifest for bosh-int/create-env scenario ignores provided cloud config file, and doesn't prune cloud-y datastructures";
 azs:
@@ -141,9 +143,10 @@ my $configdir = "$TOPDIR/t/repos/manifest-test";
 
 runs_ok "genesis -C $configdir manifest -c init-cloud.yml create-env-sandbox >manifest.yml 2>error.txt";
 eq_or_diff get_file("error.txt"), <<EOF, "manifest for bosh-init/create-env scenario warns that a cloud config file was provided (-C option) ";
+
 \e[1;33m[WARNING]\e[0m The provided configs will be ignored, as create-env environments do
           not use them:
-            - \e[1;36mcloud\e[0m
+          - \e[1;36mcloud\e[0m
 EOF
 eq_or_diff get_file("manifest.yml"), <<EOF, "manifest for bosh-int/create-env scenario ignores provided cloud config file, and doesn't prune cloud-y datastructures (-C option)";
 azs:

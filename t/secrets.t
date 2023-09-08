@@ -289,7 +289,10 @@ EOF
 	# Feature: No --force on rotate
 	($pass,$rc,$out) = run_fails "genesis rotate-secrets --force $env_name -y", "genesis fails when --force option is used on rotate-secrets";
 	matches_utf8 $out, <<'EOF', "genesis reports no force option on rotate-secrets";
---force option no longer valid. See `genesis rotate-secrets -h` for more details
+
+[ERROR] --force option no longer valid. See `genesis rotate-secrets -h` for more
+        details
+
 EOF
 
   my $env = Genesis::Top->new('.')->load_env($env_name);

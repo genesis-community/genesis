@@ -243,7 +243,7 @@ genesis:
 EOF
 	local $ENV{NOCOLOR} = 'y';
 	quietly { throws_ok { $env = $top->load_env('standalone-with-another.yml');}
-		qr/\[ERROR\] Environment standalone-with-another.yml could not be loaded:\n\s+- kit bosh\/0.2.0 is not compatible with secrets_mount feature; check for newer kit version or remove feature.\n\s+- kit bosh\/0.2.0 is not compatible with exodus_mount feature; check for newer kit version or remove feature./ms,
+		qr/\[ERROR\] Environment standalone-with-another.yml could not be loaded:\n\s+- kit bosh\/0.2.0 is not compatible with secrets_mount feature; check for\n\s+newer kit version or remove feature.\n\s+- kit bosh\/0.2.0 is not compatible with exodus_mount feature; check for\n\s+newer kit version or remove feature./ms,
 		"Outdated kits bail when using v2.7.0 features";
 	};
 
@@ -276,7 +276,7 @@ EOF
 
 	my $env;
 	$ENV{NOCOLOR}=1;
-	quietly { throws_ok { $top->load_env('enoent');   } qr/enoent.yml does not exist/; };
+	quietly { throws_ok { $top->load_env('enoent');   } qr/enoent.yml\n\s+does not exist/; };
 	quietly { throws_ok { $top->load_env('e-no-ent'); } qr/does not exist/; };
 
 	lives_ok { $env = $top->load_env('standalone') }
@@ -298,7 +298,7 @@ EOF
 	ok(!$env->has_feature('xyzzy'), "standalone env doesn't have the xyzzy feature");
 	throws_ok { $env->use_create_env() } qr/ERROR/;
 	throws_ok { $env->use_create_env() }
-		qr/\[ERROR\] This bosh environment does not use create-env \(proto\) or specify.*an alternative genesis.bosh_env/sm,
+		qr/\[ERROR\] This bosh environment does not use create-env \(proto\) or specify an\n\s+alternative genesis.bosh_env/sm,
 		"bosh environments without specifying bosh_env require bosh create-env";
 
 	put_file $top->path("regular-deploy.yml"), <<EOF;
@@ -318,7 +318,7 @@ EOF
 	         "Genesis::Env should be able to load the `regular-deploy' environment.";
 	ok($env->has_feature('vsphere'), "regular-deploy env has the vsphere feature");
 	quietly { throws_ok { $env->use_create_env() }
-		qr/\[ERROR\] This bosh environment specifies an alternative bosh_env, but is\n        marked as a create-env \(proto\) environment./sm,
+		qr/\[ERROR\] This bosh environment specifies an alternative bosh_env, but is marked\n\s+as a create-env \(proto\) environment./sm,
 		"bosh environments with bosh_env can't be a protobosh, or vice versa";
 	};
 
@@ -1753,6 +1753,7 @@ EOF
 
 [ERROR] Unexpected reactions specified under genesis.reactions: post, pre
         Valid values: pre-deploy, post-deploy
+
 EOF
 
 	put_file $top->path("predeploy-reaction-fail.yml"), <<EOF;
@@ -1781,7 +1782,9 @@ EOF
 		$@
 	);
 	eq_or_diff($err, <<EOF, "deploy error should specify incorrect reactions");
-Kit reations/in-development (dev) does not provide an addon hook!
+
+[ERROR] Kit reations/in-development (dev) does not provide an addon hook!
+
 EOF
 
 	reset_kit($env->kit);
@@ -1790,7 +1793,9 @@ EOF
 		$@
 	);
 	eq_or_diff($err, <<EOF, "deploy error should specify failed reactions");
+
 [ERROR] Cannnot deploy: environment pre-deploy reaction failed!
+
 EOF
 
 	my $fragment = <<'EOF';

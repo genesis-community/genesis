@@ -153,8 +153,9 @@ subtest 'init' => sub {
 	# with a directory override
 	$tmp = workdir;
 	my $dir = "être_réel.my-dep";
-	throws_ok {Genesis::Top->create($tmp, 'jumpbox', directory => '../bad', vault=>$VAULT_URL)} qr/repository directory name must only contain alpha-numeric characters, periods, hyphens and underscores/i, "Doesn't accept slashes in directory names";
-	throws_ok {Genesis::Top->create($tmp, 'jumpbox', directory => 'also bad', vault=>$VAULT_URL)} qr/repository directory name must only contain alpha-numeric characters, periods, hyphens and underscores/i, "Doesn't accept spaces in directory names";
+	$ENV{NOCOLOR} = 1;
+	throws_ok {Genesis::Top->create($tmp, 'jumpbox', directory => '../bad', vault=>$VAULT_URL)} qr/\[ERROR\] Repository directory name must only contain alpha-numeric characters,\n *periods, hyphens and underscores/, "Doesn't accept slashes in directory names";
+	throws_ok {Genesis::Top->create($tmp, 'jumpbox', directory => 'also bad', vault=>$VAULT_URL)} qr/\[ERROR\] Repository directory name must only contain alpha-numeric characters,\n *periods, hyphens and underscores/, "Doesn't accept spaces in directory names";
 	lives_ok  {$top = Genesis::Top->create($tmp, 'jumpbox', directory => $dir, vault=>$VAULT_URL)} "Accepts underscore, period, dashes and accents in directory name";
 	ok -f Cwd::abs_path("$tmp/$dir/.genesis/config"), ".genesis created in correct top dir";
 	ok -f $top->path('.genesis/config'), "Top->create should create a new .genesis/config";
@@ -164,7 +165,7 @@ subtest 'init' => sub {
 	# overwrite tests
 	$tmp = workdir;
 	lives_ok { Genesis::Top->create($tmp, 'test', vault=>$VAULT_URL) } "it should be okay to init once";
-	throws_ok { Genesis::Top->create($tmp, 'test', vault=>$VAULT_URL) } qr/cannot create new deployments repository `test-deployments': already exists!/i,
+	throws_ok { Genesis::Top->create($tmp, 'test', vault=>$VAULT_URL) } qr/\[ERROR\] Cannot create new deployments repository `test-deployments': already\n *exists!/,
 		"it is not okay to init twice";
 
 	# name validation
