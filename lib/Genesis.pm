@@ -172,19 +172,24 @@ sub _colorize {
 sub _glyphize {
 	my ($c,$glyph) = @_;
 	my %glyphs = (
-		'-' => "✘ ", # \x{2718}
-		'+' => "✔ ", # \x{2714}
-		'*' => "\x{2022}",
-		' ' => '  ',
-		'>' => "⮀",
-		'!' => "\x{26A0} ",
-		'^-' => "\x{2B11} ",
+		'-'   => "✘ ", # \x{2718}
+		'+'   => "✔ ", # \x{2714}
+		'*'   => "\x{2022}",
+		' '   => '  ',
+		'>'   => "⮀",
+		'!'   => "\x{26A0} ",
+		'^-'  => "\x{2B11} ",
+		'O'   => "\x{25C7}",
+		'@'   => "\x{25C6}",
+		'[ ]' => "\x{25FB}",
+		'[x]' => "\x{25FC}",
+		'X'   => "\x{25FC}",
 	);
 
 	$glyph = $glyphs{$glyph} if !envset('GENESIS_NO_UTF8') && defined($glyphs{$glyph});
 	return $glyph unless $c;
 	return _colorize($c, $glyph);
-	}
+}
 
 my $in_csprint_debug=0;
 sub csprintf {
