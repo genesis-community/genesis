@@ -401,8 +401,12 @@ sub command_help { # {{{
 					|| (scalar(grep {$scope eq $_} @cmd_scopes) && $applicable_scopes{$scope}{i});
 				$label .= $icon;
 			}
-			$label .= " $cmd  ";
+			$label .= " #G{$cmd}  ";
 			my $summary = ($PROPS{$cmd}{summary} || '-- no summary provided -- ');
+			if ($PROPS{$cmd}{alias} || $PROPS{$cmd}{aliases}) {
+				my @aliases = grep {defined($_)} ($PROPS{$cmd}{alias}, @{$PROPS{$cmd}{aliases}||[]});
+				$summary .= " #G{(alias".(@aliases > 1 ? 'es' : '').": ".join(', ',@aliases).")}";
+			}
 			explain STDERR wrap($summary, terminal_width, $label, $cmd_width+3+$scope_width, $cont_prefix);
 		}
 	}

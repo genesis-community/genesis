@@ -1355,7 +1355,7 @@ define_command("ui-prompt-for", {
 # }}}
 # genesis env-shell - provide a shell with the environment variables for the genesis environment {{{
 define_command("env-shell", {
-	summary => "",
+	summary => "Provide a shell with the environment variables and helper scripts for the genesis environment",
 	usage => "<env> env-shell [<options...>]",
 	alias => 'sh',
 	function_group => Genesis::Commands::ENVIRONMENT,
