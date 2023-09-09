@@ -763,9 +763,18 @@ sub check_embedded_genesis { # {{{
 } # }}}
 
 sub check_version { # {{{
-	my ($name, $min, $cmd, $regex, $url) = @_;
+	my ($name, $min, $cmd, @remainder) = @_;
+	my ($version, $regex, $url, $path);
+	if ($cmd) {
+		($regex, $url, my $path_src) = @remainder;
+		($version) = run({ stderr => undef }, $cmd);
+		$path_src = (grep {$_ !~ /=/} split(" ", $cmd))[0] unless $path_src;
+		($path) = run({stderr => undef}, 'type -p $1', $path_src);
+	} else {
+		($version, $path, $url) = @remainder;
+	}
+
 	$url ||= "your platform package manager";
-	my ($version, undef) = run({ stderr => undef }, $cmd);
 
 	return "#R{Missing `$name`} -- install from #B{$url}"
 		if !$version || $version =~ /not found/;
@@ -775,14 +784,18 @@ sub check_version { # {{{
 		return;
 	}
 
-	$version =~ $regex; my $v = $1;
-	return "Could not determine version of $name from `#M{$cmd}`: Got '#C{$version}'"
-		unless $v && semver($v);
+	my $v = $version;
+	if ($regex) {
+		$version =~ $regex; $v = $1;
+		return "Could not determine version of $name from `#M{$cmd}`: Got '#C{$version}'"
+			unless $v && semver($v);
+	}
 
-	return "$name v${v} is installed, but Genesis requires #R{at least $min} -- please upgrade via #B{$url}"
+	$path = humanize_path($path);
+	return "$name v${v} is installed at $path, but Genesis requires #R{at least $min} -- please upgrade via #B{$url}"
 		unless new_enough($v, $min);
 
-	debug("#G{Version $v} of #C{$name} meets or exceeds minimum of #w{$min}");
+	debug("#G{Version $v} of #C{$name} ($path) meets or exceeds minimum of #w{$min}");
 	return; # no error
 } # }}}
 
@@ -792,9 +805,10 @@ sub check_prereqs { # {{{
 	bug "#R{[ERROR]} check_prereqs called before command selected" unless current_command;
 
 	my $bosh_min_version = "6.4.4";
+	my $perl_version = join('.',map {$_ =~ s/^0+(?=[0-9])//; $_}  ($] =~ m/(\d*)\.(\d{3})(\d{3})/));
 	my $reqs = [
 		# Name,     Version, Command,                                 Pattern                   Source
-		["perl",   "5.10.0", "/usr/bin/perl -v 2>/dev/null | head -n2 | grep version", qr/\(v([0-9\.]+)\)/],
+		["perl",   "5.10.0", "", $perl_version, $^X],
 		["curl",   "7.30.0", "curl --version 2>/dev/null | head -n1",                  qr(^curl\s+(\S+))],
 		["git",     "1.8.0", "git --version  2>/dev/null",                             qr(.*version\s+(\S+).*)],
 		["jq",        "1.6", "jq --version   2>/dev/null",                             qr(^jq-([\.0-9]+)),       "https://stedolan.github.io/jq/download/"],
