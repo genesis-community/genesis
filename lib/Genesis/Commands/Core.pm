@@ -130,6 +130,8 @@ EOF
 	} lines(scalar(run('ls -1 "$1"',$tmpdir)));
 	run('rm', '-rf', $tmpdir) unless scalar(@unexpected_contents);
 
+	# Clean up before upgrading/downgrading
+	delete(@ENV{'GENESIS_HOME','GENESIS_LIB','GENESIS_CALLBACK_BIN'});
 	explain "Verifying new version of Genesis...";
 	exec {$target} $target, 'version';
 }

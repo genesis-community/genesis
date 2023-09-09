@@ -14,6 +14,7 @@ $SIG{INT} = $SIG{TERM} = sub {bail("Genesis halted due to user interrupt")};
 
 use Encode;
 use FindBin;
+delete($ENV{GENESIS_LIB}) if $ENV{GENESIS_LIB} =~ '\.geese'; # Upgrade protection
 use lib $ENV{GENESIS_LIB} || $FindBin::Bin.'/lib';
 
 use Genesis;
