@@ -8,6 +8,10 @@ use MIME::Base64 qw(encode_base64);
 use POSIX qw(strftime);
 
 ######################################################################
+if (grep {/^(-h|--help)$/} @ARGV) {
+	printf STDERR "usage: ./pack [<version> [<output path/file>]]\n\n";
+	exit 0;
+}
 
 system "perl -c -Ilib bin/genesis";
 die "Perl compilation failed, not packing\n" if $?;
