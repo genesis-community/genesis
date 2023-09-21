@@ -4,6 +4,7 @@ use strict;
 use warnings;
 
 use Genesis;
+use Genesis::State;
 use Genesis::Commands;
 use Genesis::Top;
 use Genesis::Env;

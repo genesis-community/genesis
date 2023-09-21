@@ -3,6 +3,7 @@ use strict;
 use warnings;
 
 use Genesis;
+use Genesis::State;
 use Genesis::Helpers;
 
 ### Class Methods {{{

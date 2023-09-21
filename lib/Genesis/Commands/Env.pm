@@ -4,9 +4,10 @@ use strict;
 use warnings;
 
 use Genesis;
+use Genesis::State;
+use Genesis::Term;
 use Genesis::Commands;
 use Genesis::Top;
-use Genesis::UI;
 
 sub create {
 	command_usage(1) if @_ != 1;

@@ -4,6 +4,7 @@ use warnings;
 
 use base 'Genesis::Kit';
 use Genesis;
+use Genesis::Term;
 use Genesis::Helpers;
 
 sub new {

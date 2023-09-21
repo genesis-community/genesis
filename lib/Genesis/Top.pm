@@ -5,6 +5,7 @@ use warnings;
 use base 'Genesis::Base';
 
 use Genesis;
+use Genesis::State;
 use Genesis::Env;
 use Genesis::Kit::Compiled;
 use Genesis::Kit::Dev;

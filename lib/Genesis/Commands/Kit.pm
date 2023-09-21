@@ -4,8 +4,8 @@ use strict;
 use warnings;
 
 use Genesis;
+use Genesis::Term;
 use Genesis::Commands;
-use Genesis::UI;
 use Genesis::Kit::Compiler;
 
 use Cwd qw/getcwd/;

@@ -45,7 +45,9 @@ use File::Basename qw/dirname basename/;
 use Cwd qw/getcwd abs_path/;
 
 use Genesis;
-use Genesis::UI qw/wrap terminal_width/;
+use Genesis::State;
+use Genesis::Term qw/wrap terminal_width csprintf decolorize/;
+use Genesis::Log;
 
 our ($COMMAND, $CALLED, %RUN, %PROPS, %GENESIS_COMMANDS, @COMMANDS, @COMMAND_ARGS);
 our $COMMAND_OPTIONS = {};
@@ -79,22 +81,28 @@ our @global_options = ( # {{{
 		"color!" =>
 			"Enable [or disable] color output",
 
+		'log|L=s' =>
+			"Set the log level.  Valid values are NONE, ERROR, WARN, DEBUG, INFO, ".
+			"and TRACE.  Default is WARN",
+
 		"quiet|q" =>
 			"Suppress informative output (errors will still be displayed)",
 
-		"debug|D+" =>
+		"debug|D" =>
 			"Enable debugging, printing helpful message about what Genesis is doing, ".
-			"to standard error.",
+			"to standard error.\n\n".
+			"Deprecated; use --log=DEBUG instead.",
 
-		"trace|T+" =>
-			"Even more debugging, including debugging inside called tools (like ".
-			"spruce and bosh).  Any trace commands within the Genesis codebase will ".
-			"be printed, along with identifying the line they were encountered.",
+		"trace|T" =>
+			"Deeper level of debugging.  Any trace commands within the Genesis ".
+			"codebase will be printed, along with identifying the line they were ".
+			"encountered.\n\n".
+			"Deprecated; use --log=TRACE instead.",
 
-		"show-stack|S" =>
-			"Will show stack trace when displaying fatal error due to runtime ".
-			"conditions or bugs.  When #y{-T|--trace} is also specified, each trace ".
-			"will contain the full stack of where it was encountered.",
+		"show-stack|S+" =>
+			"Will show stack trace when displaying any log messages.  Specifying it ".
+			"twice will show only the current line, while specifying it once will ".
+			"show the whole stack.",
 	],
 	[
 	  "cwd|C=s" =>
@@ -591,17 +599,44 @@ sub set_top_path { # {{{
 
 sub build_command_environment { # {{{
 
+	# Logging
+	my $log_level = delete($COMMAND_OPTIONS->{log});
 	my $debug = delete($COMMAND_OPTIONS->{debug}) || 0;
 	my $trace = delete($COMMAND_OPTIONS->{trace}) || 0;
 
-	$ENV{GENESIS_DEBUG}  = 'y' if $debug || envset "DEBUG";
-	$ENV{GENESIS_TRACE}  = 'y' if $trace;
-	$ENV{GENESIS_TSTAMP} = 'y' if $debug > 1;
+	if ($log_level) {
+		error "#Y{[WARNING]} Option --log|-l takes precedence over -D and -T options"
+			if ($debug || $trace);
+		$log_level = Genesis::Log::find_log_level($log_level)
+	} else {
+		$log_level = 'DEBUG' if ($debug);
+		$log_level = 'TRACE' if ($trace);
+	}
+	$log_level ||= 'WARN';
+
+	$ENV{GENESIS_DEBUG}  = 'y' if Genesis::Log::meets_level($log_level, 'DEBUG');
+	$ENV{GENESIS_TRACE}  = 'y' if Genesis::Log::meets_level($log_level, 'TRACE');
+
+	my $stack_trace = delete($COMMAND_OPTIONS->{'show-stack'});
 	$ENV{GENESIS_STACK_TRACE} = "y" if delete($COMMAND_OPTIONS->{'show-stack'});
 
+	$Logger->configure_log(
+		'<STDERR>',
+		level => $log_level,
+		show_stack => ($stack_trace ? ($stack_trace == 1 ? 'full' : 'current') : undef)
+	);
+
 	# spruce debugging
-	$ENV{DEBUG}          = 'y' if $trace > 1;
-	$ENV{TRACE}          = 'y' if $trace > 2;
+	my $spruce_log = delete($COMMAND_OPTIONS->{'spruce-log'});
+	if ($spruce_log) {
+		my @spruce_log_levels = grep {$_ =~ qr/^$spruce_log.*/i} (qw[debug trace]);
+		bail "--spruce-log is expected to be one of TRACE or DEBUG"
+			if (scalar(@spruce_log_levels) != 0);
+
+		$spruce_log = $spruce_log_levels[0];
+		$ENV{DEBUG} = 'y' if $spruce_log ;
+		$ENV{TRACE} = 'y' if $spruce_log eq 'trace';
+	}
 
 	$ENV{GENESIS_BOSH_ENVIRONMENT} = delete($COMMAND_OPTIONS->{'bosh-env'}) if $COMMAND_OPTIONS->{'bosh-env'};
 	$ENV{GENESIS_BOSH_ENVIRONMENT} ||= '';
@@ -809,7 +844,7 @@ sub check_prereqs { # {{{
 	bug "#R{[ERROR]} check_prereqs called before command selected" unless current_command;
 
 	my $bosh_min_version = "6.4.4";
-	my $perl_version = join('.',map {$_ =~ s/^0+(?=[0-9])//; $_}  ($] =~ m/(\d*)\.(\d{3})(\d{3})/));
+	my $perl_version = join('.',map {$_+0}  ($] =~ m/(\d*)\.(\d{3})(\d{3})/));
 	my $reqs = [
 		# Name,     Version, Command,                                 Pattern                   Source
 		["perl",   "5.10.0", "", $perl_version, $^X],

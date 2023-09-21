@@ -126,7 +126,7 @@ subtest 'bosh deploy' => sub {
 		BOSH_ENVIRONMENT=>'https://127.0.0.1:25555',
 		BOSH_DEPLOYMENT=>'my-dep'
 	);
-	lives_ok { 
+	lives_ok {
 		get_bosh_director('some-env',deployment => 'my-dep')
 			->deploy('manifest.yml',
 			         vars_file  => "path/to/vars-file.yml",
@@ -160,7 +160,7 @@ subtest 'bosh run_errand' => sub {
 	} "run_errand works with env, deploytment, and errand name set";
 
 	quietly {throws_ok {
-		get_bosh_director('an-env')->run_errand("an-env") 
+		get_bosh_director('an-env')->run_errand("an-env")
 	} qr/No deployment name/i; };
 	quietly {throws_ok {
 		get_bosh_director('an-env',deployment=>'some-deployment')->run_errand()

@@ -21,13 +21,26 @@ use FindBin;
 use lib $ENV{GENESIS_LIB} || $FindBin::Bin.'/lib';
 
 use Genesis;
-use Genesis::Commands;
+use Genesis::State;
 use Genesis::Config;
-use Genesis::UI;
+use Genesis::Term;
+use Genesis::Log;
+use Genesis::Commands;
 
 $Genesis::VERSION = "(development)";
 $Genesis::BUILD = "";
 $Genesis::RC = Genesis::Config->new($ENV{HOME}."/.genesis/config");
+if (my $log_configs = $Genesis::RC->get('logs')) {
+	if (ref($log_configs) eq 'ARRAY') {
+		for (@$log_configs) {
+			my $file = delete($_->{file});
+			$file = Cwd::getcwd ."/$file" unless $file =~ /^[~\/]/;
+			$Logger->configure_log(humanize_path($file), %{$_});
+		}
+	} else {
+		bail "Configuration error - logs entry must be an array";
+	}
+}
 
 our $USER_AGENT_STRING = "genesis/$Genesis::VERSION";
 

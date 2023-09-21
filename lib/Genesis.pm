@@ -9,6 +9,10 @@ our $BUILD   = "";
 
 our $GITHUB  = "https://github.com/genesis-community/genesis";
 
+use Genesis::Log;
+use Genesis::Term;
+use Genesis::State;
+
 use Data::Dumper;
 use File::Basename qw/basename dirname/;
 use File::Find ();
@@ -21,19 +25,26 @@ use Time::Seconds;
 use Cwd ();
 use utf8;
 
-$ENV{TZ} = "UTC";
-POSIX::tzset();
+# Timezone hackage to workaround keeping local TZ;
+unless ($ENV{ORIG_TZ}) {
+	POSIX::tzset();
+	$ENV{ORIG_TZ}=(POSIX::tzname)[(localtime())[8]];
+	$ENV{TZ} = "UTC";
+	POSIX::tzset();
+}
 
 use base 'Exporter';
 our @EXPORT = qw/
-	envset envdefault
-	in_callback under_test
-	in_repo_dir	in_kit_dir
+	in_repo_dir in_kit_dir
 
-	csprintf decolorize
 	explain waiting_on
-	debug debug_error qtrace trace dump_var dump_stack
 	error bail bug
+
+	debug
+	trace
+	dump_stack
+	dump_var
+	qtrace
 
 	vaulted
 	workdir
@@ -72,28 +83,12 @@ our @EXPORT = qw/
 	get_opts
 
 	tcp_listening
+	die_unless_controlling_terminal
 /;
 
 use File::Temp qw/tempdir/;
 use JSON::PP qw//;
 
-sub envset {
-	my $var = shift;
-	(defined $ENV{$var} and scalar($ENV{$var} =~ m/^(1|y|yes|true)$/i)) ? 1 : 0;
-}
-
-sub envdefault {
-	my ($var, $default) = @_;
-	return defined $ENV{$var} ? $ENV{$var} : $default;
-}
-
-sub in_callback {
-	envset('GENESIS_IS_HELPING_YOU');
-}
-
-sub under_test {
-	envset('GENESIS_TESTING');
-}
 
 sub in_repo_dir {
 	return  -d ".genesis" && -e ".genesis/config";
@@ -113,121 +108,11 @@ sub safe_path_exists {
 	return Genesis::Vault->current->has($_[0]);
 }
 
-my $__is_highcolour = $ENV{TERM} && $ENV{TERM} =~ /256color/;
-sub _color {
-	my ($fg,$bg) = @_;
-	my @c = (  # NOTE: backgrounds only use the darker version unless highcolour terminal
-		'Kk',    # dark grey/black)
-		'Rr',    # light red/red
-		'Gg',    # light green/green
-		'Yy',    # yellow/amber
-		'Bb',    # light blue/blue
-		'MmPp',  # light magenta/magenta/light purple/purple
-		'Cc',    # light cyan/dark cyan
-		'Ww'     # light grey/white
-	);
-	my $fid = (grep {$c[$_] =~ qr/$fg/} 0..7 || ())[0] if $fg;
-	my $bid = (grep {$c[$_] =~ qr/$bg/} 0..7 || ())[0] if $bg;
-	return "" unless defined $fid || defined $bid;
-	my @cc;
-	if ($__is_highcolour) {
-		push(@cc, 38, 5, $fid + ($fg eq uc($fg) ? 8 : 0)) if defined $fid;
-		push(@cc, 48, 5, $bid + ($bg eq uc($bg) ? 8 : 0)) if defined $bid;
-	} else {
-		push @cc, "1" if $fg eq uc($fg);
-		push @cc, "3$fid" if defined $fid;
-		push @cc, "4$bid" if defined $bid;
-	}
-	return "\e[".join(";",@cc)."m";
-}
-
-sub _colorize {
-	my ($c, $msg) = @_;
-	return "" unless $msg;
-	return $msg if envset('NOCOLOR');
-
-	my @fmt = ();
-	push @fmt, 3 if $c =~ /i/i && !$ENV{TMUX}; # TMUX doesn't support italics
-	push @fmt, 4 if $c =~ /u/i;
-	my ($fg, $bg) = grep {$_ !~ /^[ui]$/i} split(//, $c);
-
-  my $prefix = (@fmt) ? "\e[".join(";", @fmt)."m" : "";
-	if (($fg && $fg eq "*") || ($bg && $bg eq "*")) {
-		my @rainbow = ('R','G','Y','B','M','C');
-		my $i = 0;
-		my $msgc = "";
-		foreach my $char (split //, $msg) {
-			my $fr = $fg && $fg eq "*" ? $rainbow[$i%6] : $fg;
-			my $br = $bg && $bg eq "*" ? $rainbow[($i+3)%6] : $bg;
-			$msgc = $msgc . _color($fr,$br)."$char";
-			if ($char =~ m/\S/) {
-				$i++;
-			}
-		}
-		return "$prefix$msgc\e[0m";
-	} else {
-		return $prefix._color($fg,$bg)."$msg\e[0m";
-	}
-}
-sub _glyphize {
-	my ($c,$glyph) = @_;
-	my %glyphs = (
-		'-'   => "✘ ", # \x{2718}
-		'+'   => "✔ ", # \x{2714}
-		'*'   => "\x{2022}",
-		' '   => '  ',
-		'>'   => "⮀",
-		'!'   => "\x{26A0} ",
-		'^-'  => "\x{2B11} ",
-		'O'   => "\x{25C7}",
-		'@'   => "\x{25C6}",
-		'[ ]' => "\x{25FB}",
-		'[x]' => "\x{25FC}",
-		'X'   => "\x{25FC}",
-	);
-
-	$glyph = $glyphs{$glyph} if !envset('GENESIS_NO_UTF8') && defined($glyphs{$glyph});
-	return $glyph unless $c;
-	return _colorize($c, $glyph);
-}
-
-my $in_csprint_debug=0;
-sub csprintf {
-	my ($fmt, @args) = @_;
-	return '' unless $fmt;
-	my $s;
-	eval {
-		our @trap_warnings = qw/uninitialized/;
-		push @trap_warnings, qw/missing redundant/ if $^V ge v5.21.0;
-		use warnings FATAL => @trap_warnings;
-		$s = sprintf($fmt, @args);
-	};
-	if ($@) {
-		require Carp;
-		$Carp::Verbose=1;
-		Carp::confess($@) unless ($@ =~ /^(Missing|Redundant) argument|Use of uninitialized value/);
-		Carp::cluck(@_) if ($ENV{GENESIS_DEV_MODE} || $ENV{GENESIS_TESTING});
-
-		$s = sprintf($fmt, @args); # run again because the error didn't set it
-		if (!$in_csprint_debug) {
-			$in_csprint_debug = 1;
-			debug("Got warning in csprintf: $@");
-			dump_var(template => $fmt, arguments => \@args);
-			dump_stack();
-			$in_csprint_debug = 0;
-		}
-	}
-	$s =~ s/#([-IUKRGYBMPCW*]{0,4})@\{([^{}]*(?:{[^}]+}[^{}]*)*)\}/_glyphize($1, $2)/egism;
-	$s =~ s/#([-IUKRGYBMPCW*]{1,4})\{([^{}]*(?:{[^}]+}[^{}]*)*)\}/_colorize($1, $2)/egism;
-	return $s;
-}
-
-sub decolorize {
-	my $s = shift;
-	$s =~ s/#([-IUKRGYBMPCW*]{1,4})\@\{([^{}]*(?:{[^}]+}[^{}]*)*)\}/"#${1}{"._glyphize('',$2)."}"/egism;
-	$s =~ s/#([-IUKRGYBMPCW*]{1,4})\{([^{}]*(?:{[^}]+}[^{}]*)*)\}/$2/gism;
-	return $s
-}
+sub debug      {$Genesis::Log::Logger->debug({offset => 1},@_);}
+sub trace      {$Genesis::Log::Logger->trace({offset => 1},@_);}
+sub qtrace     {$Genesis::Log::Logger->trace({show_stack => 'none', offset => 1},@_);}
+sub dump_var   {$Genesis::Log::Logger->dump_var({offset => 1},@_);}
+sub dump_stack {$Genesis::Log::Logger->dump_stack({offset => 1},@_);}
 
 sub explain {
 	explain STDOUT @_;
@@ -235,106 +120,6 @@ sub explain {
 
 sub waiting_on {
 	waiting_on STDOUT @_;
-}
-
-sub debug {
-	return unless envset("GENESIS_DEBUG") || envset("GENESIS_TRACE");
-	_log("DEBUG", csprintf(@_), "Wm")
-}
-
-sub debug_error {
-	return unless envset("GENESIS_DEBUG") || envset("GENESIS_TRACE");
-	_log("ERROR", csprintf(@_), "Wr")
-}
-
-sub trace {
-	return unless envset "GENESIS_TRACE";
-	_log("TRACE", csprintf(@_), "Wc");
-	_log("TRACE", _get_scope(1));
-}
-
-sub qtrace {
-	return unless envset "GENESIS_TRACE";
-	_log("TRACE", csprintf(@_), "Wc");
-}
-
-sub dump_var {
-	return unless envset("GENESIS_DEBUG") || envset("GENESIS_TRACE");
-	my $scope = 0;
-	$scope = abs(shift) if (defined $_[0] && $_[0] =~ '^-?\d+$');
-
-	local $Data::Dumper::Deparse = 1;
-	local $Data::Dumper::Terse   = 1;
-	my (%vars) = @_;
-	_log("VALUE", csprintf("#M{$_} = ").Dumper($vars{$_}), "Wb") for (keys %vars);
-	_log("VALUE", _get_scope($scope+1));
-}
-
-sub dump_stack {
-	return unless envset("GENESIS_DEBUG") || envset("GENESIS_TRACE");
-	my $scope = 0;
-	$scope = abs(shift) if (defined $_[0] && $_[0] =~ '^-?\d+$');
-
-	my @stack = _get_stack($scope+1);
-	my %sizes = (sub => 10, line => 4, file => 4);
-	for my $type (keys %sizes) {
-		$sizes{$type} = (sort {$b<=>$a} ($sizes{$type}, map {length($_->{$type})} @stack))[0];
-	}
-
-	print STDERR "\n"; # Ensures that the header lines up at the cost of a blank line
-	my $header = csprintf("#Wku{%*s}  #Wku{%-*s}  #Wku{%-*s}\n", $sizes{line}, "Line", $sizes{sub}, "Subroutine", $sizes{file}, "File");
-	_log("STACK", $header.join("\n",map {
-		csprintf("#w{%*s}  #Y{%-*s}  #Ki{%s}", $sizes{line}, $_->{line}, $sizes{sub}, $_->{sub}, $_->{file})
-	} @stack), "kY");
-}
-
-sub _log {
-	my ($label, $content, $colors) = @_;
-	my ($gt,$gtc) = (">",$colors);
-	if (envset('GENESIS_TSTAMP')) {
-		my ($s,$us) = gettimeofday;
-		$label = sprintf "%s.%03d %s", localtime($s)->strftime("%H:%M:%S"), $us / 1000, $label;
-	}
-	unless (envset "NOCOLOR") {
-		$gt = csprintf('#@{>}');
-		$gtc = substr($colors||'-',1,1);
-		$label = " $label " unless envset('GENESIS_NO_UTF8');
-	}
-	# undefined colors means don't print the label (used for follow-up log entries)
-	unless (defined $colors) {
-		$gt = " " x length($gt);
-		$label = " " x length($label);
-		$colors = "-";
-		$gtc = "-";
-	}
-	$colors = substr($colors,1,1) if envset('GENESIS_NO_UTF8');
-	my $prompt = csprintf("#%s{%s}#%s{%s}", "$colors",$label,$gtc,$gt);
-	my $out = join("\n".(" "x(length($label)+2)),split(/\n/,$content));
-
-	printf STDERR "%s %s\n", $prompt, $out;
-}
-
-sub _get_scope {
-	my ($scope) = @_;
-	my $out = "";
-	for (_get_stack($scope+1)) {
-		$out .= csprintf("#K\@{^-}#Ki{ %s:L%d (in %s)\n}", $_->{file}, $_->{line}, $_->{sub});
-		last unless envset ("GENESIS_STACK_TRACE");
-	}
-	chomp $out;
-	return $out;
-}
-
-sub _get_stack {
-	my ($scope) = @_;
-
-	my ($file,$line,$sub,@stack,@info);
-	while (@info = caller($scope++)) {
-		$sub = $info[3];
-		push @stack, {line => $line, sub => $sub, file => humanize_path($file)} if ($file);
-		(undef, $file, $line) = @info;
-	}
-	return @stack;
 }
 
 sub error {
@@ -363,13 +148,13 @@ sub bail {
 	$prefix ||= '[ERROR]';
 	$msg =~ s/\n+\z//s;
 
-	require Genesis::UI;
-	my $err = Genesis::UI::wrap($msg, Genesis::UI::terminal_width(), "#$c\{$prefix} ", length($prefix)+1);
+	require Genesis::Term;
+	my $err = Genesis::Term::wrap($msg, Genesis::Term::terminal_width(), "#$c\{$prefix} ", length($prefix)+1);
 
 	if (envset("GENESIS_DEBUG") || envset("GENESIS_TRACE") || envset("GENESIS_STACK_TRACE")) {
 		print STDERR "\n";
-		_log "ERROR", csprintf('%s', $msg), 'Wr';
-		_log "ERROR", _get_scope(1);
+		#_log "ERROR", csprintf('%s', $msg), 'Wr';
+		#_log "ERROR", _get_scope(1);
 		$! = 1; die "$/";
 	} else {
 		$! = 1; die csprintf("%s\n",$blanks.$err)."$/";
@@ -383,7 +168,7 @@ sub bug {
 	my $msg = csprintf(@msg)."\n\n";
 	$msg .= csprintf("#R{This is most likely a bug in Genesis itself.}\n");
 	$msg .= csprintf("\nPlease file an issue on #Bu{%s/issues/new}\nwith the following stack info:\n", $GITHUB);
-	$msg .= csprintf("  #Ki{%s:L%d (in %s)\n}", $_->{file}, $_->{line}, $_->{sub}) for (_get_stack(1));
+	$msg .= csprintf("  #Ki{%s:L%d%s\n}", $_->{file}||'', $_->{line}, $_->{sub} ? " (in $_->{sub})" : '') for (Genesis::Log::get_stack(1));
 
 	if ($Genesis::VERSION =~ /dev/) {
 		$msg .= csprintf("#Y{%s}\n", $_) for (
@@ -870,6 +655,18 @@ sub tcp_listening {
 	return ($@ eq "timeout\n" ? "timeout" : "failed") if ($@);
 	return 'ok';
 }
+
+sub die_unless_controlling_terminal {
+	return if in_controlling_terminal;
+	trace("Terminating due to not being in a controlling terminal");
+	dump_stack(1);
+	bail(@_ ? @_ : (
+		"Method #C{%s} was called from a non-controlling terminal but it requires user input.",
+		(caller(1))[3]||'main'
+	));
+}
+
+
 
 sub _lookup_key {
 	my ($what, $key) = @_;

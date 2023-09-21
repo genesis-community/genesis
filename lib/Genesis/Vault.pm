@@ -3,6 +3,9 @@ use strict;
 use warnings;
 
 use Genesis;
+use Genesis::State;
+use Genesis::Term;
+
 use Genesis::UI;
 use JSON::PP qw/decode_json/;
 use UUID::Tiny ();

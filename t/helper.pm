@@ -323,7 +323,7 @@ sub write_bosh_config {
 				url => $url,
 				admin_username => ($info->{username} || 'noname'),
 				admin_password => ($info->{password} || 'nopassword'),
-				ca_cert => 
+				ca_cert =>
 					"-----BEGIN CERTIFICATE-----\n".
 					"MIIExxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n".
 					("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n" x 24).

@@ -8,14 +8,10 @@ our @EXPORT = qw/
 	prompt_for_line
 	prompt_for_list
 	prompt_for_block
-	terminal_width
-	wrap
-	bullet
-	in_controlling_terminal
-	die_unless_controlling_terminal
 /;
 
 use Genesis;
+use Genesis::Term;
 
 sub __prompt_for_line {
 	my ($prompt,$validation,$err_msg,$default,$allow_blank) = @_;
@@ -282,104 +278,7 @@ sub prompt_for_block {
 	return __prompt_for_block(@_);
 }
 
-my $has_tput = $ENV{TERM} ? undef : 0; # tput doesn't work if $TERM isn't defined
-sub terminal_width {
-	return $ENV{GENESIS_OUTPUT_COLUMNS} if $ENV{GENESIS_OUTPUT_COLUMNS};
-	unless (defined($has_tput)) {
-		my ($out, $rc) = run("type -p tput");
-		$has_tput = ($rc == 0) ? 1 : 0;
-	}
 
-	return ($ENV{GENESIS_OUTPUT_COLUMNS} || 80) unless $has_tput;
-	return (grep {/^[0-9]*$/} split("\n",`tput cols`))[0] || $ENV{GENESIS_OUTPUT_COLUMNS} || 80;
-}
-
-sub wrap {
-	my ($str, $width, $prefix, $indent, $continue_prefix) = @_;
-	$prefix ||= '';
-	$indent ||= length(decolorize($prefix));
-	$continue_prefix ||= '';
-	$continue_length =length(decolorize($continue_prefix));
-
-	my $results = "";
-	my $prefix_length;
-	$prefix_length = length(decolorize($prefix));
-	my $sep = $prefix . ' ' x ($indent - $prefix_length);
-	my ($sub_indent, $sub_prefix);
-	for my $block (split("\n", $str, -1)) {
-		if ($block =~ /^\[\[(.*?)>>(.*)$/) {
-			$sep = $sep . $1;
-			$sub_indent = length($1);
-			$block = $2;
-		} else {
-			$sub_indent = 0;
-		}
-		my @block_bits = split(/(\s+)/, $block);
-		my ($word, $next_sep);
-		my $line = "";
-		while (@block_bits) {
-			($word, $next_sep, @block_bits) = @block_bits;
-			if (length(decolorize($line . $sep . $word)) > $width && $line) {
-				$results .= $line . "\n";
-				$line = $continue_prefix . ' ' x ($indent + $sub_indent - $continue_length);
-				$sep = '';
-			}
-			$line .= $sep . $word;
-			$sep = $next_sep;
-		}
-		$results .= "$line\n";
-		$sep = ' ' x $indent;
-	}
-	chop $results;
-	return $results;
-}
-
-
-sub bullet { # [type,] msg, [{option: value, ...}]
-	my $msg = shift;
-	(my $type, $msg) = ($msg, shift) if (scalar(@_) % 2 > 0);
-	my (%opts) = @_;
-
-	$opts{symbol} ||= $type eq 'good'  ? '#@{+}' :
-	                  $type eq 'bad'   ? '#@{-}' :
-	                  $type eq 'warn'  ? '#@{!}' :
-	                  $type eq 'empty' ? '#@{ }' :
-                                       '#@{*}' ;
-
-	$opts{color}  ||= $type eq 'good'  ? 'G' :
-	                  $type eq 'bad'   ? 'R' :
-	                  $type eq 'warn'  ? 'Y' :
-	                                     '-'  ;
-
-	$opts{indent} = 2 unless exists($opts{indent});
-	my ($lbox,$rbox) = !$opts{box} ? ('','') :
-		(ref($opts{box}) eq 'ARRAY' ? @{$opts{box}} : ('[',']'));
-
-	my $out=sprintf('%*.*s%s#%s{%s}%s %s',
-	                 $opts{indent},$opts{indent},'',
-	                       $lbox,
-	                          $opts{color},
-	                             $opts{symbol},
-	                                $rbox,
-	                                   $msg);
-	return $out if ($opts{inline});
-	explain $out;
-	1;
-}
-
-sub in_controlling_terminal {
-	-t STDIN && -t STDOUT;
-}
-
-sub die_unless_controlling_terminal {
-	return if in_controlling_terminal;
-	trace "Terminating due to not being in a controlling terminal";
-	dump_stack(1);
-	bail(@_ ? @_ : (
-		"Method #C{%s} was called from a non-controlling terminal but it requires user input.",
-		(caller(1))[3]||'main'
-	));
-}
 
 1;
 

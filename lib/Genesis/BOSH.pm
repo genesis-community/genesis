@@ -1,6 +1,7 @@
 package Genesis::BOSH;
 
 use Genesis;
+use Genesis::State;
 
 ## Class Variables {{{
 my ($bosh_cmd);

@@ -6,6 +6,8 @@ use utf8;
 use base 'Genesis::Base'; # for _memoize
 
 use Genesis;
+use Genesis::State;
+use Genesis::Term;
 use Genesis::BOSH::Director;
 use Genesis::BOSH::CreateEnvProxy;
 use Genesis::UI;

@@ -13,6 +13,9 @@ use Time::Seconds;
 use Time::Piece;
 
 use_ok 'Genesis';
+use_ok 'Genesis::State';
+use_ok 'Genesis::Log';
+use Genesis::Log; # use_ok fails to import $Logger;
 use Cwd ();
 my $start_dir = Cwd::getcwd;
 subtest 'bug reporting utilities' => sub {
@@ -87,6 +90,8 @@ subtest 'output utilities' => sub {
 	}
 
 	{
+		$Logger->configure_log('<STDERR>',level => 'DEBUG', no_color => 1, truncate => 1);
+		#Logger->configure_log('/Users/dennis.bell/.genesis/log.out',level => 'TRACE', no_color => 1);
 		local $ENV{GENESIS_DEBUG} = 'y';
 		local $ENV{NOCOLOR} = 1;
 		stderr_is(sub {
@@ -99,6 +104,7 @@ subtest 'output utilities' => sub {
 	}
 
 	{
+		$Logger->configure_log('<STDERR>',level => 'TRACE', no_color => 1);
 		local $ENV{GENESIS_TRACE} = 'y';
 		local $ENV{NOCOLOR} = 1;
 		stderr_is(sub {
@@ -108,8 +114,9 @@ subtest 'output utilities' => sub {
 			  error("this is an error");
 			}, "DEBUG> this is debugging\n".
 			   "TRACE> this is trace (debugging's debugging)\n".
-			   "       ⬑  t/00-utils.t:L107 (in main::__ANON__)\n".
+			   "       ⬑  t/00-utils.t:L113 (in main::__ANON__)\n".
 			   "this is an error\n", "with GENESIS_TRACE, you get trace to standard error");
+		$Logger->configure_log('<STDERR>',level => 'NONE');
 	}
 };
 

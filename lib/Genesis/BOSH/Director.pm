@@ -6,6 +6,7 @@ use utf8;
 
 use base 'Genesis::BOSH';
 use Genesis;
+use Genesis::State;
 use Genesis::Vault;
 
 ### Class Methods {{{
