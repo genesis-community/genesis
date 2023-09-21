@@ -692,7 +692,7 @@ define_command("remove-secrets", {
 # genesis init - initialize a new Genesis repository {{{
 define_command("init", {
 		summary => "Initialize a new Genesis deployment repository.",
-		usage => "init [-k KIT/VERSION|-L path/to/local/kit] [-d directory] [--vault target] [name]",
+		usage => "init [-k KIT/VERSION|-l path/to/local/kit] [-d directory] [--vault target] [name]",
 		description =>
 			"Create a new Genesis deployment repository, specific to the given kit type.",
 		function_group => Genesis::Commands::REPOSITORY,
@@ -707,7 +707,7 @@ define_command("init", {
 				"You can also specify a path to a compiled kit to use that explicit ".
 				"kit, which will be copied into the .genesis/kits/ directory",
 
-			"link-dev-kit|L=s" =>
+			"link-dev-kit|l=s" =>
 				"Instead of using a kit or initializing an empty dev directory, this ".
 				"will link the specified directory to the dev directory.",
 
