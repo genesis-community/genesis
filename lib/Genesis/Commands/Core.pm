@@ -4,13 +4,68 @@ use strict;
 use warnings;
 
 use Genesis;
+use Genesis::Term;
 use Genesis::Commands;
-use Genesis::UI;
+use JSON::PP qw/encode_json/;
+use POSIX qw/strftime mktime/;
 
 sub version {
-	# TODO: Support -j|--json flag for json version output
-	command_usage(1, "Too many arguments: ".join(', ',@_)) if @_;
-	print "genesis v$Genesis::VERSION$Genesis::BUILD\n";
+
+	unless (scalar(keys %{get_options()}, @_)) {
+		explain "Genesis v$Genesis::VERSION$Genesis::BUILD";
+		exit 0;
+	}
+
+	# validate arguments
+	my @valid_args = qw(
+		semver is_dev major minor patch rc is_rc
+		build_epoch build_code build_date commit is_dirty
+	);
+	if (@_) {
+		my %check_args;
+		@check_args{@valid_args} = (1) x scalar(@valid_args);
+		my @bad_args = grep {! $check_args{$_}} @_;
+		bail(
+		)	if (@bad_args);
+	}
+
+	my %version;
+	if ($Genesis::VERSION eq "(development)") {
+		$version{semver} = "0.0.0-rc.0";
+		$version{is_dev} = $JSON::PP::true;
+	} else {
+		$version{semver} = $Genesis::VERSION;
+		$version{is_dev} = $JSON::PP::false;
+	}
+
+	my $tz = $ENV{ORIG_TZ};
+	if (-l '/etc/localtime') {
+		($tz = readlink '/etc/localtime') =~ s#.*zoneinfo/##;
+	} elsif (-f '/etc/timezone') {
+		$tz = `cat /etc/timezone`
+	}
+
+	$ENV{TZ} = $tz;
+	POSIX::tzset();
+	@version{qw[major minor patch rc]} = map {defined($_) ? $_+0 : $_} $version{semver} =~ m/^(\d+)\.(\d+)\.(\d+)(?:-rc(?:\.)?(\d+))?$/;
+	$version{is_rc} = defined($version{rc}) ? $JSON::PP::true : $JSON::PP::false,
+	my ($commit, $dirty, $Y, $M, $d, $h, $m, $s) = $Genesis::BUILD =~ m/\(([a-f0-9]+)(\+)?\) build (\d{4})(\d\d)(\d\d)\.(\d\d)(\d\d)(\d\d)$/;
+	my $epoch = mktime($s||0,$m||0,$h||0, $d||1, ($M||1)-1, ($Y||1900)-1900,0,0,0) - mktime(0,0,0,1,0,70);
+	@version{qw[build_epoch build_code build_date commit is_dirty]} = (
+		$epoch,
+		"$Y$M$d.$h$m$s",
+		strftime("%Y-%b-%d %r %Z", localtime($epoch)),
+		$commit,
+		$dirty eq '+' ? $JSON::PP::true : $JSON::PP::false,
+	) if $Y;
+
+	if (get_options->{json}) {
+		%version = %version{@_} if @_;
+		explain encode_json(\%version);
+	} else {
+		explain ($_ =~ /^is_/ ? ($version{$_} ? 'true' : 'false') : $version{$_})
+			for (@_);
+	}
 }
 
 sub ping {

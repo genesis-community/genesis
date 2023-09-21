@@ -55,8 +55,56 @@ define_command('help', {
 # genesis version - Print the version of Genesis. {{{
 define_command("version", {
 		summary => "Print the version of Genesis",
+		description =>
+			"With no arguments, will print out a human-readable line specifying the ".
+			"version, commit hash and build code.  Alternatively, you can ask for ".
+			"one or more version components as arguments (listed below), printed ".
+			"either on separate lines, or in a json block with the #y{--json} option.",
+
 		function_group => Genesis::Commands::GENESIS,
-		skip_check_prereqs => 1
+		skip_check_prereqs => 1,
+		arguments => [
+			'semver' =>
+				"Provide the version in semantic format (dev versions are 0.0.0-rc.0)",
+
+			'is_dev' =>
+				"Outputs true if the genesis executable is a dev version, false otherwise",
+
+			'major' =>
+				'Provide the major version value (first semantic value)',
+
+			'minor' =>
+				"Provide the minor version value (second sematic value)",
+
+			'patch' =>
+				"Provide the patch value (third semantic value)",
+
+			'rc' =>
+				"Provide the release candidate value, or null if not applicable",
+
+			'is_rc' =>
+				"Outputs true if version is a release candidate, false otherwise",
+
+			'build_epoch' =>
+				"Build time expressed in epoch (seconds since midnight, Jan 1, 1970 UTC)",
+
+			'build_code' =>
+				"Build identifier code",
+
+			'build_date' =>
+				"Local time and date of the build for this version of Genesis",
+
+			'commit' =>
+				"Provide the git commit hash the verison was based on",
+
+			'is_dirty' =>
+				"Outputs true if version was built with uncommitted changes, false otherwise",
+		],
+		option_group => Genesis::Commands::BLANK_OPTIONS,
+		options => [
+			'json|j' =>
+				"Produce the version components in json format"
+		]
 		# TODO: add json|j option to get out json info
 });
 
