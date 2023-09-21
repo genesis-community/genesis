@@ -787,6 +787,7 @@ sub chmod_or_fail {
 sub humanize_path {
 	my $path = shift;
 	my $pwd = Cwd::abs_path($ENV{GENESIS_CALLER_DIR} || Cwd::getcwd());
+	$path = $ENV{HOME}.substr($path,1) if substr($path,0,1)  eq '~';
 	$path = "$pwd/$path" unless $path =~ /^\//;
 	while ($path =~ s/\/[^\/]*\/\.\.\//\//) {};
 	while ($path =~ s/\/\.\//\//) {};
@@ -812,7 +813,7 @@ sub humanize_bin {
 	return "" unless $ENV{GENESIS_CALLBACK_BIN};
 	my $bin = basename($ENV{GENESIS_CALLBACK_BIN});
 	chomp(my $path_bin = `which $bin`);
-	debug "bin:       %s\npath_bin:  %s\nhumanized: %s",
+	trace "bin:       %s\npath_bin:  %s\nhumanized: %s",
 	       $bin,          $path_bin,     humanize_path($ENV{GENESIS_CALLBACK_BIN});
 	return $bin if ($path_bin && Cwd::abs_path($path_bin) eq Cwd::abs_path($ENV{GENESIS_CALLBACK_BIN}));
 	return humanize_path($ENV{GENESIS_CALLBACK_BIN});
@@ -825,7 +826,7 @@ sub load_json {
 
 sub load_yaml_file {
 	my ($file) = @_;
-	my ($out, $rc, $err) = run({ stderr => 0 }, 'spruce json "$1"', $file);
+	my ($out, $rc, $err) = run({ stderr => 0 }, 'spruce json < "$1"', $file);
 	my $json = load_json($out) if $rc == 0;
 	return (wantarray) ? ($json,$rc,$err) : $json;
 }

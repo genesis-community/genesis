@@ -1653,7 +1653,7 @@ sub _validate_x509_secret {
 	my @missing_sans = sort(grep {!exists $sans{$_}} CORE::keys %desired_sans);
 	if (!scalar(@extra_sans) && !scalar(@missing_sans)) {
 		$results{san} = ['ok', 'Subject Alt Names: '.(@SANs ? join(", ",map {"'$_'"} @{$plan->{names}}) : '#i{none}')]
-			if scalar(%sans);
+			if scalar(CORE::keys %sans);
 	} else {
 		$results{san} = ['warn', 'Subject Alt Names ('. join('; ',(
 		  @missing_sans ? "missing: ".join(", ", @missing_sans):(),

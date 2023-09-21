@@ -1404,6 +1404,7 @@ Completed - Duration: XXX seconds [14 added/2 skipped/0 errors]
 
 EOF
 
+	sleep 5; # Lets make sure the certs aren't in the future!
 	lives_ok {
 		$out = combined_from {$env->check_secrets(verbose => 1, validate => 1) }
 	} "successfully check secrets with environment kit overrides";

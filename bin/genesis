@@ -36,7 +36,7 @@ $ENV{GENESIS_CALLBACK_BIN} ||= $FindBin::Bin.'/'.$FindBin::Script;
 $ENV{GENESIS_LIB}          ||= $FindBin::Bin.'/lib';
 $ENV{GENESIS_ORIGINATING_DIR}= Cwd::getcwd;
 $ENV{GENESIS_CALL_BIN}       = humanize_bin();
-$ENV{GENESIS_FULL_CALL}      = join(" ", map {$_ =~ / / ? "\"$_\"" : $_} (humanize_bin, @ARGV));
+$ENV{GENESIS_FULL_CALL}      = join(" ", map {$_ =~ / / ? "\"$_\"" : $_} ($ENV{GENESIS_CALL_BIN}, @ARGV));
 
 ### Genesis Core commands {{{
 # genesis help - get the basic help page for Genesis {{{

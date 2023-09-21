@@ -247,7 +247,7 @@ sub parse_options { # {{{
 		keys %{{ @{$PROPS{$COMMAND}{options} || []} }},
 		grep {/^[^\^]/} keys %{{ @{$PROPS{$COMMAND}{deprecated_options} || []} }} #ignore deprecated option references
 	);
-	debug "Options: ".join("\n         ",@base_spec,@opts_spec);
+	trace "Options: ".join("\n         ",@base_spec,@opts_spec);
 
 	# Workaround - genesis helper always injects -C option, but many commands
 	# don't use -C (not repo/env scoped)  Inject it and ignore it for those with
@@ -371,7 +371,7 @@ sub command_help { # {{{
 		empty => { o => 4,c => "y", i => "N",
 			d => "Cannot be run in an existing Genesis Environment or Kit repository.", },
 		pipeline => { o => 5, c => "R", i => "P",
-			d => "Can only be run in a Genesis Pipeline worker.", }
+			d => "Can only be run in a Genesis pipeline by task running on a Concourse worker.", }
 	);
 	my @scopes = (sort {$applicable_scopes{$a}{o} <=> $applicable_scopes{$b}{o}} keys %applicable_scopes);
 	my $scope_width = scalar(@scopes);

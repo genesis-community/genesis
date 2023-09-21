@@ -151,10 +151,9 @@ sub _contents {
 sub _load {
 	my ($self) = @_;
 	if ($self->exists) {
-		eval {
-			$self->{contents} = load_yaml_file($self->{path});
-		};
-		bail("Failed to load %s: %s", $self->{path}, $@) if ($@ || ! $self->{contents});
+		($self->{contents}, my $rc, my $err) = load_yaml_file($self->{path});
+		debug "Loaded ".$self->{path}." - $rc";
+		bail("Failed to load %s: %s", $self->{path}, $err) if ($rc || ! $self->{contents});
 		$self->{persistant_signature} = $self->_signature;
 	} else {
 		$self->{contents} = {};

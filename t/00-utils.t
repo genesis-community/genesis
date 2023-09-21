@@ -4,7 +4,7 @@ use warnings;
 
 use lib 'lib';
 use lib 't';
-use helper;
+use helper; # IF this dies, its because genesis ping is failing
 use POSIX;
 use Test::Exception;
 use Test::Differences;

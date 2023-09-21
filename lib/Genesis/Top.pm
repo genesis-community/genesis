@@ -329,7 +329,7 @@ sub repo_vault {
 # has_vault - returns true if the configuration has a vault defined {{{
 sub has_vault {
 	my ($self) = @_;
-	defined($self->config->get("secrets_provider")) && ref($self->config->get("secrets_provider")) eq 'HASH' && scalar(%{$self->config->get("secrets_provider")}) > 0;
+	defined($self->config->get("secrets_provider")) && ref($self->config->get("secrets_provider")) eq 'HASH' && scalar(keys %{$self->config->get("secrets_provider")}) > 0;
 }
 
 # }}}

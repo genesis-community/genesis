@@ -168,7 +168,9 @@ subtest 'bosh run_errand' => sub {
 };
 
 subtest 'environment variable management' => sub {
+	my $home = $ENV{HOME};
 	local %ENV;
+	$ENV{HOME}=$home; # Genesis always needs $HOME
 	for (qw/ENVIRONMENT CA_CERT CLIENT CLIENT_SECRET DEPLOYMENT ALIAS/) {
 		$ENV{"BOSH_$_"} = "calling_environment_$_";
 	}
