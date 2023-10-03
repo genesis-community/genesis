@@ -538,7 +538,7 @@ sub command_usage { # {{{
 			# description.  Right now, they're just undocumented
 		}
 	}
-	my $def_width = (sort {$b <=> $a} map {length(decolorize($_))} values(%options_def))[0] + 4;
+	my $def_width = (sort {$b <=> $a} map {csize($_)} values(%options_def))[0] + 4;
 
 	for my $source_details (@sources) {
 		my ($source,$options,$label) = @{$source_details};

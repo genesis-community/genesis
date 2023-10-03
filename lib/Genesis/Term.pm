@@ -22,7 +22,7 @@ our @EXPORT = qw/
 	terminal_width
 	wrap
 	in_controlling_terminal
-	csprintf
+	csprintf csize
 	bullet
 	decolorize
 /;
@@ -157,22 +157,28 @@ sub decolorize {
 	return $s
 }
 
+sub csize {
+	my $str = shift;
+	my $size = length(decolorize($str)) + length(join('', (map {'  '} $str =~ m/#E\{[^\}]+}/g)));
+}
+
 sub wrap {
 	my ($str, $width, $prefix, $indent, $continue_prefix) = @_;
 	$prefix ||= '';
-	$indent ||= length(decolorize($prefix));
+	$indent ||= csize($prefix);
 	$continue_prefix ||= '';
-	my $continue_length =length(decolorize($continue_prefix));
+	my $continue_length =csize($continue_prefix);
 
 	my $results = "";
 	my $prefix_length;
-	$prefix_length = length(decolorize($prefix));
-	my $sep = $prefix . ' ' x ($indent - $prefix_length);
+	$prefix_length = csize($prefix);
+	my $sep = $prefix;
+	$sep .= ' ' x ($indent - $prefix_length) if $indent > $prefix_length;
 	my ($sub_indent, $sub_prefix);
 	for my $block (split("\n", $str, -1)) {
 		if ($block =~ /^\[\[(.*?)>>(.*)$/) {
 			$sep = $sep . $1;
-			$sub_indent = length($1);
+			$sub_indent = csize($1);
 			$block = $2;
 		} else {
 			$sub_indent = 0;
@@ -182,7 +188,7 @@ sub wrap {
 		my $line = "";
 		while (@block_bits) {
 			($word, $next_sep, @block_bits) = @block_bits;
-			if (length(decolorize($line . $sep . $word)) > $width && $line) {
+			if (csize($line . $sep . $word) > $width && $line) {
 				$results .= $line . "\n";
 				$line = $continue_prefix . ' ' x ($indent + $sub_indent - $continue_length);
 				$sep = '';
