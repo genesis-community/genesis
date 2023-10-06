@@ -24,12 +24,14 @@ use Genesis;
 use Genesis::State;
 use Genesis::Config;
 use Genesis::Term;
-use Genesis::Log;
 use Genesis::Commands;
+use Genesis::Log;
 
 $Genesis::VERSION = "(development)";
 $Genesis::BUILD = "";
 $Genesis::RC = Genesis::Config->new($ENV{HOME}."/.genesis/config");
+
+Genesis::Log->new();
 if (my $log_configs = $Genesis::RC->get('logs')) {
 	if (ref($log_configs) eq 'ARRAY') {
 		for (@$log_configs) {

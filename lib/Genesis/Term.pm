@@ -31,7 +31,7 @@ my $has_tput = $ENV{TERM} ? undef : 0; # tput doesn't work if $TERM isn't define
 sub terminal_width {
 	return $ENV{GENESIS_OUTPUT_COLUMNS} if $ENV{GENESIS_OUTPUT_COLUMNS};
 	unless (defined($has_tput)) {
-		my $out = `type -p tput`;
+		my $out = `/bin/bash -c "type -p tput"`;
 		my $rc = $? >> 8;
 		$has_tput = ($rc == 0) ? 1 : 0;
 	}
@@ -69,7 +69,7 @@ sub _color {
 
 sub _colorize {
 	my ($c, $msg) = @_;
-	return "" unless $msg;
+	return "" unless length($msg);
 	return $msg if envset('NOCOLOR');
 
 	my @fmt = ();
@@ -117,6 +117,23 @@ sub _glyphize {
 	return _colorize($c, $glyph);
 }
 
+sub _emojify {
+	my $emoji = shift;
+	my %emojis = (
+		'crystal-ball' => "\x{1F52E}",
+		'stop-sign' => "\x{1F6D1}",
+		'collision' => "\x{1F4A5}",
+		'information' => "\x{2139}\x{FE0F} ",
+		'fire' => "\x{1F525}",
+		'magnifying-glass' => "\x{1F50E}",
+		'detective' => "\x{1F575}\x{FE0F} ",
+		'warning' => "\x{26A0}\x{FE0F} ",
+		'pancakes' => "\x{1F95E}"
+	);
+	return '' if envset('GENESIS_NO_UTF8');
+	return $emojis{$emoji} // '';
+}
+
 my $in_csprint_debug=0;
 sub csprintf {
 	my ($fmt, @args) = @_;
@@ -146,6 +163,7 @@ sub csprintf {
 	}
 	$s =~ s/#([-IUKRGYBMPCW*]{0,4})@\{([^{}]*(?:{[^}]+}[^{}]*)*)\}/_glyphize($1, $2)/egism;
 	$s =~ s/#([-IUKRGYBMPCW*]{1,4})\{([^{}]*(?:{[^}]+}[^{}]*)*)\}/_colorize($1, $2)/egism;
+	$s =~ s/#E\{([^\}]*)\}/_emojify($1)/egism;
 	return $s;
 }
 
@@ -153,6 +171,7 @@ sub decolorize {
 	my ($s) = @_;
 	$s =~ s/#([-IUKRGYBMPCW*]{1,4})\@\{([^{}]*(?:{[^}]+}[^{}]*)*)\}/"#${1}{"._glyphize('',$2)."}"/egism;
 	$s =~ s/#([-IUKRGYBMPCW*]{1,4})\{([^{}]*(?:{[^}]+}[^{}]*)*)\}/$2/gism;
+	$s =~ s/#E\{[^\}]+}//g; # remove any emojis
 	$s =~ s/\e[[0-9;]*m//g; # remove any already converted to ansi colors
 	return $s
 }
