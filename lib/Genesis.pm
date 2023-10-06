@@ -38,8 +38,9 @@ our @EXPORT = qw/
 	in_repo_dir in_kit_dir
 
 	explain waiting_on
-	error bail bug
+	error bail bug fatal warn
 
+	
 	debug
 	trace
 	dump_stack
@@ -108,33 +109,92 @@ sub safe_path_exists {
 	return Genesis::Vault->current->has($_[0]);
 }
 
-sub debug      {$Genesis::Log::Logger->debug({offset => 1},@_);}
-sub trace      {$Genesis::Log::Logger->trace({offset => 1},@_);}
-sub qtrace     {$Genesis::Log::Logger->trace({show_stack => 'none', offset => 1},@_);}
-sub dump_var   {$Genesis::Log::Logger->dump_var({offset => 1},@_);}
-sub dump_stack {$Genesis::Log::Logger->dump_stack({offset => 1},@_);}
+sub logger     {$Genesis::Log::Logger}
+sub fatal      {logger->fatal({offset => 1},@_);}
+sub error      {logger->error({offset => 1},@_);}
+sub warn       {logger->warn({offset => 1},@_);}
+sub info       {logger->info({offset => 1},@_);}
+sub debug      {logger->debug({offset => 1},@_);}
+sub trace      {logger->trace({offset => 1},@_);}
+sub qtrace     {logger->trace({show_stack => 'none', offset => 1},@_);}
+sub dump_var   {logger->dump_var({offset => 1},@_);}
+sub dump_stack {logger->dump_stack({offset => 1},@_);}
 
+$::is_waiting=0;
 sub explain {
 	explain STDOUT @_;
+	$::is_waiting=0;
 }
 
 sub waiting_on {
 	waiting_on STDOUT @_;
-}
-
-sub error {
-	my @err = @_;
-	unshift @err, "%s" if $#err == 0;
-	print STDERR csprintf(@err) . "$/";
+	$::is_waiting=1
 }
 
 sub bail {
-	my (@err) = @_;
+	# Get any prefix options (sent as hash references)
+	my $options = {};
+	while (ref($_[0]) eq 'HASH') {
+		my $more_options = shift;
+		$options->{offset} = $options->{offset}||0 + delete($more_options->{offset}) if $more_options->{offset};
+		@{$options}{keys %$more_options} = values %$more_options;
+	}
 
+	my $msg = fix_wrap(@_);
+
+	# Make sure there's a stderr log running and its level is at least fatal
+	logger->configure_log(level => "FATAL") unless (logger->is_logging("FATAL"));
+
+	# log a fatal message and exit
+	my $rc = delete($options->{exitcode}) // 1;
+	print STDERR "\n";
+	logger->fatal({offset=>1, show_stack => 'none'},$options, $msg);
+	print STDERR "\n";
+	exit $rc;
+}
+
+sub bug {
+
+	# Get any prefix options (sent as hash references)
+	my $options = {};
+	while (ref($_[0]) eq 'HASH') {
+		my $more_options = shift;
+		$options->{offset} = $options->{offset}||0 + delete($more_options->{offset}) if $more_options->{offset};
+		@{$options}{keys %$more_options} = values %$more_options;
+	}
+	my $msg = fix_wrap(@_);
+
+	$msg .= "\n\n".
+					"#R{This is most likely a bug in Genesis itself.}  ".
+					"Please file an issue on #Bu{$GITHUB/issues/new} with the following ".
+					"stack info:\n";
+	$msg .= csprintf("  #Ki{%s:L%d%s\n}", $_->{file}||'', $_->{line}, $_->{sub} ? " (in $_->{sub})" : '')
+		for (Genesis::Log::get_stack(1));
+
+	if ($Genesis::VERSION =~ /dev/) {
+		$msg .= "\n".
+			"[[#Y{NOTE:} >>This is a development build of Genesis, not an official ".
+			              "release.  Please try to reproduce this behavior with an ".
+			              "officially-released version before submitting issues to ".
+			              "the Genesis Github repository.\n"
+	}
+
+	# Make sure there's a stderr log running and its level is at least fatal
+	logger->configure_log(level => "FATAL") unless (logger->is_logging("FATAL"));
+
+	my $rc = delete($options->{exitcode}) // 1;
+	print STDERR "\n";
+	logger->fatal({offset=>1, show_stack => 'none'},$options, $msg);
+	print STDERR "\n";
+	exit $rc;
+}
+
+sub fix_wrap {
+	my @msg = @_;
 	my $fmt = "%s";
-	$fmt = shift(@err) if $#err > 0;
+	$fmt = shift(@msg) if $#msg > 0;
 
-	my $msg = sprintf($fmt,@err);
+	my $msg = sprintf($fmt,@msg);
 	$msg =~ s/^(\n*)(.*?)\n*\z/$2/s;
 	my $blanks = $1 || "\n";
 
@@ -143,43 +203,10 @@ sub bail {
 		my $indent = ' ' x (length($prefix)+1);
 		$msg = $sub_msg;
 		$msg =~ s/\n$indent([^ ])/ $1/sg;
+		$msg =~ s/\n /\n\n/g;
 	}
-	$c ||= 'R';
-	$prefix ||= '[ERROR]';
-	$msg =~ s/\n+\z//s;
 
-	require Genesis::Term;
-	my $err = Genesis::Term::wrap($msg, Genesis::Term::terminal_width(), "#$c\{$prefix} ", length($prefix)+1);
-
-	if (envset("GENESIS_DEBUG") || envset("GENESIS_TRACE") || envset("GENESIS_STACK_TRACE")) {
-		print STDERR "\n";
-		#_log "ERROR", csprintf('%s', $msg), 'Wr';
-		#_log "ERROR", _get_scope(1);
-		$! = 1; die "$/";
-	} else {
-		$! = 1; die csprintf("%s\n",$blanks.$err)."$/";
-	}
-}
-
-sub bug {
-	# TODO: Fix this to use terminal width
-	my (@msg) = @_;
-
-	my $msg = csprintf(@msg)."\n\n";
-	$msg .= csprintf("#R{This is most likely a bug in Genesis itself.}\n");
-	$msg .= csprintf("\nPlease file an issue on #Bu{%s/issues/new}\nwith the following stack info:\n", $GITHUB);
-	$msg .= csprintf("  #Ki{%s:L%d%s\n}", $_->{file}||'', $_->{line}, $_->{sub} ? " (in $_->{sub})" : '') for (Genesis::Log::get_stack(1));
-
-	if ($Genesis::VERSION =~ /dev/) {
-		$msg .= csprintf("#Y{%s}\n", $_) for (
-			"",
-			"NOTE: This is a development build of Genesis, not an official release.",
-			"      Please try to reproduce this behavior with an officially-released",
-			"      version before submitting issues to the Genesis Github repository.",
-			""
-		);
-	}
-	$! = 2; die csprintf($msg);
+	return $msg;
 }
 
 my $WORKDIR;
