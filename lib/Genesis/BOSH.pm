@@ -1,5 +1,7 @@
 package Genesis::BOSH;
 
+use File::Temp qw/tempfile/;
+
 use Genesis;
 use Genesis::State;
 
@@ -91,6 +93,9 @@ sub execute {
 		$opts->{env}{https_proxy} = undef; # bosh dislikes this env var
 	}
 	my $noninteractive = envset('BOSH_NON_INTERACTIVE') ? ' -n' : '';
+	$opts->{env}{BOSH_NON_INTERACTIVE} = undef;
+
+	my ($fh, $file);
 
 	my $bosh = ref($self)->command();
 	if ($cmd[0] =~ m/^bosh(\s|$)/) {
@@ -103,11 +108,40 @@ sub execute {
 
 	} else {
 		# ('deploy', $d)
+		my $allow_script_wrapper = !(grep {$_ eq $cmd[0]} (qw(
+			int
+		)));
 		unshift(@cmd, '-n') if $noninteractive;
-		unshift @cmd, $bosh;
+		unshift(@cmd, $bosh);
+
+		# Capture output if interactive using script command
+		if ($opts->{interactive} && $allow_script_wrapper) {
+			my $OS = "$^O";
+			($fh, $file) = tempfile('bosh-output-XXXXXXXX', TMPDIR => 1, UNLINK => 1);
+
+			if ($OS eq 'darwin') {
+				unshift(@cmd, "script", "-q", "$file");
+			} elsif ($OS eq 'linux') {
+				# Sometimes gnu just sucks...
+				my $subcmd = join(" ", map {$_ =~ m/\s/ ? "\"$_\"" : $_} @cmd);
+				# TODO: more rigorous wrapping of subcmd to deal with quotes and pipes
+				@cmd = ("script -q $file -c '$subcmd'");
+			}
+		}
 	}
 
-	return run($opts, @cmd);
+	$Genesis::Log::Logger->dump_var("bosh command" => \@cmd);
+	my @results = run($opts, @cmd);
+
+	if ($opts->{interactive} && ! $opts->{passfail} && $file) {
+		$results[0] = slurp($file);
+		$results[0] =~ s/^Script [^\n]+\n//m; # remove script header (linux)
+		if ($results[0] =~ s/\nScript done.*\[COMMAND_EXIT_CODE="(.*)"]$//m) {
+			$results[1] = $1;  # Linux stores command exit code in the script output
+		}
+		$Genesis::Log::Logger->dump_var("bosh results" => \@results);
+	}
+	return wantarray ? @results : $results[1];
 }
 
 # }}}

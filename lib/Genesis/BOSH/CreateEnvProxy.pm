@@ -29,8 +29,7 @@ sub create_env {
 	push(@{$opts{flags}}, '--vars-store', $opts{store}) if $opts{store};
 	push(@{$opts{flags}}, '-l', $opts{vars_file}) if ($opts{vars_file});
 
-	return $self->execute(
-		{ interactive => 1, passfail => 1 },
+	return $self->execute( { interactive => 1},
 		'bosh', 'create-env',  @{$opts{flags}}, $manifest
 	);
 }

@@ -319,8 +319,7 @@ sub deploy {
 	bug("Missing manifest in call to deploy()")
 		unless $manifest;
 
-	return $self->execute(
-		{interactive => 1, passfail => 1 },
+	return $self->execute( {interactive => 1},
 		'deploy', @{$opts{flags}}, $manifest
 	);
 }

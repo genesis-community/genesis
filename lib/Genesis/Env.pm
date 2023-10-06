@@ -1727,6 +1727,7 @@ sub deploy {
 	copy_or_fail($self->vars_file('redacted'), $vars_file) if ($self->vars_file('redacted'));
 
 	# DEPLOY!!!
+	my @results;
 	if ($self->use_create_env) {
 		debug("deploying this environment via `bosh create-env`, locally");
 		my ($last_manifest_path,$last_exists,$old_sha1) = $self->cached_manifest_info;
@@ -1762,7 +1763,7 @@ sub deploy {
 
 		my @bosh_opts;
 		push @bosh_opts, "--$_" for grep { $opts{$_} } qw/recreate skip-drain/;
-		$ok = $self->bosh->create_env(
+		@results = $self->bosh->create_env(
 			"$self->{__tmp}/manifest.yml",
 			vars_file => $self->vars_file,
 			state => $self->path(".genesis/manifests/$self->{name}-state.yml"),
@@ -1777,47 +1778,61 @@ sub deploy {
 		push @bosh_opts, "--$_=$opts{$_}"   for grep { defined $opts{$_} } qw/canaries max-in-flight/;
 
 		debug("deploying this environment to our BOSH director");
-		$ok = $self->bosh->deploy(
+		@results = $self->bosh->deploy(
 			"$self->{__tmp}/manifest.yml",
 			vars_file => $self->vars_file,
 			flags      => \@bosh_opts
 		);
 	}
+	$ok = !$results[1];
 
 	explain STDERR "\n[#M{%s}] #G{Deployment successful.}\n", $self->name if $ok;
 
 	if ($self->_reactions && !$disable_reactions) {
-		$reaction_vars->{GENESIS_DEPLOY_RC} = ($ok ? 0 : 1);
+		$reaction_vars->{GENESIS_DEPLOY_RC} = ($results[1]);
 		$self->_process_reactions('post-deploy', $reaction_vars) or explain STDERR (
 			"#y{[WARNING]} Environment post-deploy reaction failed!  Manual intervention may be needed."
 		);
 	}
 
 	# Don't do post-deploy stuff if just doing a dry run
-	if ($opts{"dry-run"}) {
-		explain STDERR "\n[#M{%s}] dry-run deployment complete; post-deployment activities will be skipped.";
-		return $ok;
+	unless ($opts{"dry-run"}) {
+		if ($ok) {
+			# deployment succeeded; update the cache
+			mkdir_or_fail($self->path(".genesis/manifests")) unless -d $self->path(".genesis/manifests");
+			copy_or_fail($manifest_file, $self->path(".genesis/manifests/$self->{name}.yml"));
+			copy_or_fail($vars_file, $self->path(".genesis/manifests/$self->{name}.vars")) if -e $vars_file;
+		}
+
+		unlink "$self->{__tmp}/manifest.yml"
+			or debug "Could not remove unredacted manifest $self->{__tmp}/manifest.yml";
+
+		# Reauthenticate to vault, as deployment can take a long time
+		$self->vault->authenticate unless $self->vault->status eq 'sealed';
+
+		$self->run_hook('post-deploy', rc => ($ok ? 0 : 1), data => $predeploy_data)
+			if $self->has_hook('post-deploy');
 	}
-
-	if ($ok) {
-		# deployment succeeded; update the cache
-		mkdir_or_fail($self->path(".genesis/manifests")) unless -d $self->path(".genesis/manifests");
-		copy_or_fail($manifest_file, $self->path(".genesis/manifests/$self->{name}.yml"));
-		copy_or_fail($vars_file, $self->path(".genesis/manifests/$self->{name}.vars")) if -e $vars_file;
-	}
-
-	unlink "$self->{__tmp}/manifest.yml"
-		or debug "Could not remove unredacted manifest $self->{__tmp}/manifest.yml";
-
-	# Reauthenticate to vault, as deployment can take a long time
-	$self->vault->authenticate unless $self->vault->status eq 'sealed';
-
-	$self->run_hook('post-deploy', rc => ($ok ? 0 : 1), data => $predeploy_data)
-		if $self->has_hook('post-deploy');
 
 	# bail out early if the deployment failed;
 	# don't update the cached manifests
-	return unless $ok;
+	if ($results[1] && $results[0]) {
+		my $last_bits_of_output = join "\n", map {decolorize($_)} (split(/\r?\n/,$results[0]))[-5..-1];
+		if ($last_bits_of_output =~ /Continue\?[^\n]*: [^\n]*[nN]o?\r?\n\s*Stopped\s*Exit code 1/sm) {
+			bail "User canceled deployment when prompted to continue."
+		} elsif ($last_bits_of_output =~ /Continue\?[^\n]*: [^\n]\s*Asking for confirmation:\s*  EOF\s*Exit code 1/sm) {
+			bail "User interrupted deployment at continue prompt."
+		} elsif ($last_bits_of_output =~ /\^C$/m) {
+			bail "User interrupted deployment (Ctrl-C)"
+		} else {
+			bail "Deployment failed."
+		}
+	}
+
+	if ($opts{"dry-run"}) {
+		explain STDERR "\n[#M{%s}] dry-run deployment complete; post-deployment activities will be skipped.", $self->name;
+		exit 0;
+	}
 
 	# track exodus data in the vault
 	explain STDERR "\n[#M{%s}] Preparing metadata for export...", $self->name;

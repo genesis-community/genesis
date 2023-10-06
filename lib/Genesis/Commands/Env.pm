@@ -258,7 +258,7 @@ sub deploy {
 	if (scalar(grep {$_} ($options{fix}, $options{recreate}, $options{'dry-run'})) > 1) {
 		command_usage(1,"Can only specify one of --dry-run, --fix or --recreate");
 	}
-	$ENV{BOSH_NON_INTERACTIVE} = delete $options{yes} ? 'true' : '';
+	$ENV{BOSH_NON_INTERACTIVE} = 'true' if delete $options{yes};
 
 	bail(
 		"The following options cannot be specified for #M{create-env}: %s",
@@ -403,7 +403,7 @@ sub bosh {
 		explain STDERR "Exported environmental variables for BOSH director %s", $bosh->{alias};
 		exit 0;
 	} else {
-		my (undef, $rc) = $bosh->execute({interactive => 1, dir => $ENV{GENESIS_ORIGINATING_DIR}}, @_);
+		my ($out, $rc) = $bosh->execute({interactive => 1, dir => $ENV{GENESIS_ORIGINATING_DIR}}, @_);
 		exit $rc;
 	}
 }
