@@ -621,14 +621,21 @@ sub humanize_path {
 	($rel_path && length($rel_path) < length($new_path)) ? $rel_path : $new_path;
 }
 
+my $humanized_bin;
 sub humanize_bin {
 	return "" unless $ENV{GENESIS_CALLBACK_BIN};
+	return $humanized_bin if $humanized_bin;
+
 	my $bin = basename($ENV{GENESIS_CALLBACK_BIN});
+	my $rel_bin = humanize_path($ENV{GENESIS_CALLBACK_BIN});
 	chomp(my $path_bin = `which $bin`);
 	trace "bin:       %s\npath_bin:  %s\nhumanized: %s",
-	       $bin,          $path_bin,     humanize_path($ENV{GENESIS_CALLBACK_BIN});
-	return $bin if ($path_bin && Cwd::abs_path($path_bin) eq Cwd::abs_path($ENV{GENESIS_CALLBACK_BIN}));
-	return humanize_path($ENV{GENESIS_CALLBACK_BIN});
+	       $bin,          $path_bin,     $rel_bin;
+	$humanized_bin =
+		($path_bin && Cwd::abs_path($path_bin) eq Cwd::abs_path($ENV{GENESIS_CALLBACK_BIN}))
+		? $bin
+		: $rel_bin;
+	return $humanized_bin;
 }
 
 sub load_json {
