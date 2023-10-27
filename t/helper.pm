@@ -560,6 +560,7 @@ sub matches_utf8 {
 	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($output, $expected, $msg) = @_;
 
+	#return eq_or_diff encode_utf8($output), encode_utf8($expected), $msg;
 	return eq_or_diff $output, encode_utf8($expected), $msg;
 }
 

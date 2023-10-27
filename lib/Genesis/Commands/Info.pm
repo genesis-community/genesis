@@ -12,7 +12,7 @@ use Genesis::Top;
 use Cwd      qw/getcwd abs_path/;
 use JSON::PP qw/encode_json/;
 
-sub info {
+sub information {
 	# TODO: Make use of terminal_width and wrap to make this look better
 
 	command_usage(1) if @_ != 1;
@@ -23,72 +23,95 @@ sub info {
 	my @hooks = grep {$env->kit->has_hook($_)} qw(info);
 	$env->download_required_configs(@hooks);
 
-	explain "\n#c{%s}\n\n#C{%s Deployment for Environment '}#M{%s}#C{'}\n",
-		"="x80, uc($env->type), $env->name;
+	my $out = sprintf(
+		"\n#c{%s}\n\n#C{%s Deployment for Environment '}#M{%s}#C{'}\n\n",
+		"=" x terminal_width, uc($env->type), $env->name
+	);
 
 	my $exodus = $env->exodus_lookup("",{});
 	my $unknown = csprintf("#YI{unknown}");
 	if ($exodus->{dated}) {
-		explain("  #I{Last deployed} %s",
-			strfuzzytime($exodus->{dated}, "#C{%~} #K{(%I:%M%p on %b %d, %Y %Z)}"));
-		explain("  #I{           by} #C{%s}",
-			$exodus->{deployer} || $unknown);
+		$out .= sprintf(
+			"  #I{Last deployed} %s\n".
+			"  #I{           by} #C{%s}\n",
+			strfuzzytime($exodus->{dated}, "#C{%~} #K{(%I:%M%p on %b %d, %Y %Z)}"),
+			$exodus->{deployer} || $unknown
+		);
 		if ($exodus->{bosh}) {
 			if ($exodus->{bosh} eq "(none)" || $exodus->{bosh} eq '~' || $exodus->{use_create_env}) {
-				explain(
-					"  #I{     %s BOSH} #CI{create-env}",
+				$out .= sprintf(
+					"  #I{     %s BOSH} #CI{create-env}\n",
 					(defined($exodus->{as_director}) && !$exodus->{as_director}) ? 'via' : ' as'
 				);
 			} else {
-				explain("  #I{      to BOSH} #CI{%s}",$exodus->{bosh});
+				$out .= sprintf("  #I{      to BOSH} #CI{%s}\n",$exodus->{bosh});
 			}
 		}
-		explain("  #I{ based on kit} #C{%s}#C{/%s}%s%s",
+		$out .= sprintf(
+			"  #I{ based on kit} #C{%s}#C{/%s}%s%s\n",
 			$exodus->{kit_name}||$unknown,
 			$exodus->{kit_version}||$unknown,
 			($exodus->{kit_is_dev} ? " #y{(dev)}" : ''),
 			($env->kit->version ne $exodus->{kit_version}||'' ? " -- #Y{local file specifies ${\($env->kit->id)}!}" : '')
 		);
-		explain("  #I{        using} #C{Genesis v%s}",
-			$exodus->{version} ||$unknown);
+		$out .= sprintf(
+			"  #I{        using} #C{Genesis v%s}\n",
+			$exodus->{version} ||$unknown
+		);
 
 		my ($manifest_path,$exists,$sha1) = $env->cached_manifest_info;
 		my $pwd = Cwd::abs_path(Cwd::getcwd);
 		$manifest_path =~ s#^$pwd/##;
 		if ($exists) {
 			if (! defined($exodus->{manifest_sha1})) {
-				explain "\n  #R{[ERROR]} Cannot confirm local cached deployment manifest pertains to this\n"
-						. "          deployment -- perform another deployment to correct this problem."
+				info $out;
+				$out = '';
+				error(
+					"\nCannot confirm local cached deployment manifest pertains to this ".
+					"deployment -- perform another deployment to correct this problem."
+				);
 			} elsif ($exodus->{manifest_sha1} ne $sha1) {
-				explain "\n  #Y{[WARNING]} Latest deployment does not match the local cached deployment\n"
-							. "             manifest, perhaps you need to perform a #C{git pull}."
+				info $out;
+				$out = '';
+				warning(
+					"\nLatest deployment does not match the local cached deployment ".
+					"manifest, perhaps you need to perform a #C{git pull}."
+				)
 			} else {
-				explain "  #I{with manifest} #C{%s} #K{(redacted)}", $manifest_path;
+				$out .= sprintf(
+					"  #I{with manifest} #C{%s} #K{(redacted)}\n",
+					$manifest_path
+				);
 			}
 		} else {
-			explain "\n  #Y{[WARNING]} No local cashed deployment manifest found for this environment,\n"
-					. "            perhaps you need to perform a #C{git pull}."
+			info $out;
+			$out = '';
+			warning(
+				"\nNo local cashed deployment manifest found for this environment, ".
+				"perhaps you need to perform a #C{git pull}."
+			)
 		}
 		if ($exodus->{features}) {
 			my @features = split(',',$exodus->{features});
-			my $msg = "\n       #I{Features} ";
+			$out .= "\n       #I{Features} ";
 			if (@features) {
-				$msg .= "#C{".join("}\n                #C{",@features)."}";
+				$out .= "#C{".join("}\n                #C{",@features)."}\n";
 			} else {
-				$msg .= "#Ci{None}";
+				$out .= "#Ci{None}\n";
 			}
-			explain $msg;
 		}
 
 		if ($env->has_hook('info')) {
-			explain "\n#c{%s}\n", "-"x80;
+			info "$out\n#c{%s}\n", "-" x terminal_width;
+			$out = '';
 			$env->run_hook('info');
 		}
 	} else {
-		explain "  #YI{No record of deployment found -- info available only after deployment!}"
+		info $out; $out = '';
+		error "#YI{No record of deployment found -- info available only after deployment!}"
 	}
 
-	explain "\n#c{%s}\n", "="x80;
+	info "$out\n#c{%s}\n", "=" x terminal_width;
 }
 
 sub lookup {
@@ -110,14 +133,16 @@ sub lookup {
 	my $env = $top->load_env($name);
 	my $v;
 	if (get_options->{merged}) {
-		die "Circular reference detected while trying to lookup merged manifest of $name\n"
-			if envset("GENESIS__LOOKUP_MERGED_MANIFEST");
+		bail(
+			"Circular reference detected while trying to lookup merged manifest of $name"
+		) if envset("GENESIS__LOOKUP_MERGED_MANIFEST");
 		$ENV{GENESIS__LOOKUP_MERGED_MANIFEST}="1";
 		$env->download_required_configs('manifest');
 		$v = $env->manifest_lookup($key,$default);
 	} elsif (get_options->{partial}) {
-		die "Circular reference detected while trying to lookup merged manifest of $name\n"
-			if envset("GENESIS__LOOKUP_MERGED_MANIFEST");
+		bail(
+			"Circular reference detected while trying to lookup merged manifest of $name"
+		) if envset("GENESIS__LOOKUP_MERGED_MANIFEST");
 		$ENV{GENESIS__LOOKUP_MERGED_MANIFEST}="1";
 		$v = $env->partial_manifest_lookup($key,$default);
 	} elsif (get_options->{deployed}) {
@@ -141,7 +166,7 @@ sub lookup {
 		exit(ref($v) eq "NotFound" ? 4 : 0);
 	} elsif (defined($v)) {
 		$v = encode_json($v) if ref($v);
-		print "$v\n";
+		output "$v\n";
 	}
 	exit 0;
 }
@@ -157,7 +182,7 @@ sub yamls {
 		->load_env($_[0])
 		->download_required_configs('blueprint');
 	my @files = $env->format_yaml_files(%{get_options()});
-	explain join("\n", @files)."\n";
+	output join("\n", @files)."\n";
 }
 
 sub kit_manual {
@@ -166,8 +191,9 @@ sub kit_manual {
 	my @possible_kits = keys %{$top->local_kits};
 	push @possible_kits, 'dev' if $top->has_dev_kit;
 
-	bail "No local kits found; you must specify the name of the kit to fetch"
-		unless scalar(@possible_kits);
+	bail(
+		"No local kits found; you must specify the name of the kit to fetch"
+	) unless scalar(@possible_kits);
 
 	my $kit;
 	$name ||= '';
@@ -194,14 +220,14 @@ sub kit_manual {
 		exit 1;
 	}
 
-	explain STDERR "Displaying manual for kit #C{%s}...\n", $kit->id;
+	info "Displaying manual for kit #C{%s}...\n", $kit->id;
 
 	my $man = $kit->path('MANUAL.md');
 	if (-f $man) {
 		run({ interactive => 1 }, 'less "$1"', $man);
 		exit 0;
 	}
-	explain STDERR "#Y{%s} has no MANUAL.md", $kit->id;
+	error "#Y{%s} has no MANUAL.md", $kit->id;
 	exit 1;
 }
 

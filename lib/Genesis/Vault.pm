@@ -70,21 +70,23 @@ sub target {
 	if ($target) {
 		($url, my @targets) = _get_targets($target);
 		if (scalar(@targets) <1) {
-			bail "#R{[ERROR]} Safe target \"#M{%s}\" not found.  Please create it\n".
+			bail "Safe target \"#M{%s}\" not found.  Please create it".
 					 "and authorize against it before re-attempting this command.",
 					 $target;
 		}
 		if (scalar(@targets) >1) {
 			# TODO: check if one of the returned values matches the alias
-			bail "#R{[ERROR]} Multiple safe targets use url #M{%s}:\n%s\n".
-					 "\nYour ~/.saferc file cannot have more than one target for the given url.  Please".
-					 "remove any duplicate targets before re-attempting this command.",
+			bail "Multiple safe targets use url #M{%s}:\n%s\n".
+					 "\n".
+					 "Your ~/.saferc file cannot have more than one target for the ".
+					 "given url.  Please remove any duplicate targets before ".
+					 "re-attempting this command.",
 					 $url, join("", map {" - #C{$_}\n"} @targets);
 		}
 	} else {
 
 		die_unless_controlling_terminal
-			"#R{[ERROR]} Cannot interactively select vault unless in a controlling terminal - terminating!";
+			"Cannot interactively select vault unless in a controlling terminal - terminating!";
 
 		my $w = (sort {$b<=>$a} map {length($_->{name})} $class->find)[0];
 
@@ -114,7 +116,7 @@ sub target {
 				"      target alias that uses its URL.\n");
 		}
 
-		bail("#R{[ERROR]} There are no valid vault targets found on this system.")
+		bail("There are no valid vault targets found on this system.")
 			unless scalar(@choices);
 
 		$url = prompt_for_choice(
@@ -146,9 +148,9 @@ sub attach {
 	my $url = delete($opts{url});
 	my $alias = delete($opts{alias});
 
-	bail "#R{[ERROR]} No vault target specified"
+	bail "No vault target specified"
 		unless $url;
-	bail "#R{[ERROR]} Expecting vault target '$url' to be a url"
+	bail "Expecting vault target '$url' to be a url"
 		unless _target_is_url($url);
 
 	my %filter = (url => $url);
@@ -160,9 +162,9 @@ sub attach {
 	my @targets = Genesis::Vault->find(%filter);
 	if (scalar(@targets) <1) {
 		# TODO: If alias and url was given, and in a controlling terminal, create safe target
-		bail "#R{[ERROR]} Safe target for #M{%s} not found.  Please run\n\n".
-				 "  #C{safe target <name> \"%s\"%s}\n\n".
-				 "then authenticate against it using the correct auth method before\n".
+		bail "Safe target for #M{%s} not found.  Please run\n\n".
+				 "  #G{safe target <name> \"%s\"%s}\n\n".
+				 "then authenticate against it using the correct auth method before ".
 				 "re-attempting this command.",
 				 $url, $url,($opts{verify}?"":" -k");
 	}
@@ -172,10 +174,13 @@ sub attach {
 			@targets = ($named_target)
 		} else {
 			bail(
-				"#R{[ERROR]} Multiple safe targets found for #M{%s}:\n%s\n".
-				"\nYour ~/.saferc file cannot have more than one target for the given url,\n".
-				"namespace, insecure or strongbox combination.  If you don't, it may be that\n".
-				"your selected secrets provider is out of date - please rerun #G{genesis sp -i}\n\n".
+				"Multiple safe targets found for #M{%s}:\n%s\n".
+				"\n".
+				"Your ~/.saferc file cannot have more than one target for the given ".
+				"url, namespace, insecure or strongbox combination.  If you don't, it ".
+				"may be that your selected secrets provider is out of date - please ".
+				"rerun #G{genesis sp -i}\n".
+				"\n".
 				"Please remove any duplicate targets before re-attempting this command.",
 				$url, join("", map {" - #C{$_->name}\n"} @targets)
 			);
@@ -272,11 +277,11 @@ sub find_single_match_or_bail {
 	my @matches =  $class->find(url => $url);
 
 	bail(
-		"\n#R{[ERROR]} More than one target is specified for URL '%s'\n".
-		"        Please edit your ~/.saferc, and remove all but one of these:\n".
-		"        - %s\n".
-		"        (or alter the URLs to be unique)",
-		$url, join("\n        - ", map {
+		"\nMore than one target is specified for URL '%s'\n".
+		"Please edit your ~/.saferc, and remove all but one of these:\n".
+		"  - %s\n".
+		"(or alter the URLs to be unique)",
+		$url, join("\n  - ", map {
 			$_->name eq ($current||'') ? "#G{".$_->name." (current)}" : "#y{".$_->name."}"
 		} @matches)
 	) if scalar(@matches) > 1;
@@ -292,7 +297,7 @@ sub get_vault_from_descriptor {
 	my ($alias,$url) = delete(@{$filter}{qw/alias url domain port tls/});
 
 	bail(
-		"#R{[ERROR]} No url specified by vault descriptor"
+		"No url specified by vault descriptor"
 	) unless $url;
 	my @matches =  $class->find(url => $url, %$filter);
 
@@ -308,7 +313,7 @@ sub get_vault_from_descriptor {
 	# Error processing
 	my ($alias_clause, $alias_msg) = ('','');
 	if ($alias) {
-		$alias_clause = "\n        (and none match the provided vault alias of '$alias').";
+		$alias_clause = ", (and none match the provided vault alias of '$alias').";
 		$alias_msg = ", or add/modify the alias of the desired target to '$alias'"
 	}
 
@@ -316,17 +321,17 @@ sub get_vault_from_descriptor {
 	my $current = $ENV{GENESIS_TARGET_VAULT};
 
 	bail(
-		"\n#R{[ERROR]} More than one target is specified for URL '%s', $alias_clause\n\n".
+		"\nMore than one target is specified for URL '%s'%s\n\n".
 		"        Please edit your ~/.saferc, and remove all but one of these:\n".
 		"        - %s\n".
-		"        (or alter the URLs to be unique$alias_msg)",
-		$url, join("\n        - ", map {
+		"        (or alter the URLs to be unique%s)",
+		$url,$alias_clause, join("\n        - ", map {
 			$_->name eq ($current||'')
 				? "#G{".$_->name." (current)}"
 				: $_->name eq ($default||'')
 					? "#g{".$_->name." (default)}"
 					: "#y{".$_->name."}"
-		} @matches)
+		} @matches), $alias_msg
 	);
 }
 
@@ -353,16 +358,16 @@ sub parse_vault_descriptor {
 			$ENV{GENESIS_TRACE}=1;
 			dump_stack();
 			bail(
-				"#R{[ERROR]} Unknown clause in #G{$source}: '#Y{$clause}'\n".
-				"        Expected http#Cu{s}://<domain-or-ip>#Cu{:<port>}#Cu{/<namespace>} #Cu{as <alias>} #Cu{[no-]verify} #Cu{[no-]strongbox}\n".
-				"        #i{Values in }#Cui{cyan}#i{ are optional}"
+				"Unknown clause in #G{$source}: '#Y{$clause}'\n".
+				"Expected http#Cu{s}://<domain-or-ip>#Cu{:<port>}#Cu{/<namespace>} #Cu{as <alias>} #Cu{[no-]verify} #Cu{[no-]strongbox}\n".
+				"#i{Values in }#Cui{cyan}#i{ are optional}"
 			)
 		}
 	}
 	bail(
-		"#R{[ERROR] Missing connect clause in #G{$source}\n".
-		"        Expected http#Cu{s}://<domain-or-ip>#Cu{:<port>}#Cu{/<namespace>} #Cu{as <alias>} #Cu{[no-]verify} #Cu{[no-]strongbox}\n".
-		"        #i{Values in }#Cui{cyan}#i{ are optional}"
+		"Missing connect clause in #G{$source}\n".
+		"Expected http#Cu{s}://<domain-or-ip>#Cu{:<port>}#Cu{/<namespace>} #Cu{as <alias>} #Cu{[no-]verify} #Cu{[no-]strongbox}\n".
+		"#i{Values in }#Cui{cyan}#i{ are optional}"
 	) unless $url;
 	$verify = $tls unless defined($verify);
 
@@ -398,17 +403,37 @@ sub tls        { $_[0]->{url} =~ "^https://"; }
 sub connect_and_validate {
 	my ($self) = @_;
 	unless ($self->is_current) {
-		printf STDERR csprintf("\n#yi{Verifying availability of vault '%s' (%s)...}", $self->name, $self->url)
-			unless in_callback || under_test;
+		my $log_id = info({pending => 1, delay => 2000 }, # don't show for 2 seconds (NYI)
+			"\n#yi{Verifying availability of vault '%s' (%s)...}",
+			$self->name, $self->url
+		) unless in_callback || under_test;
 		my $status = $self->status;
 		if ($status eq 'unauthenticated') {
 			$self->authenticate;
 			$status = $self->initialized ? 'ok' : 'uninitialized';
 		}
-		error("#%s{%s}\n", $status eq "ok"?"G":"R", $status)
+		# TODO: support delayed output:
+		#   Implement delay flag to logs
+		#   - Print logs after delay specified
+		#   - cancel_delayed_log(log_id) clear logs before delay expires by log_id
+		#   - have has_been_logged(log_id) for checking
+		#   - clear_delay(log_id) clears delay and logs entry
+		#
+		#   Issues: Perl can only handle one timeout (via alarm) at the same time
+		#   - see https://metacpan.org/pod/Time::Out
+		#
+		#  As it applies here:
+		#    if the $log_id hasn't been logged, cancel it and move on if ok, print
+		#    it immediately and add bad status
+		#    if it has been logged, just do what it currently does
+		#
+		#  Motive:  Don't print out the vault test if it quickly comes back, but
+		#  if it takes a long time, let user's know what its trying to do...
+		#
+		info ("#%s{%s}\n", $status eq "ok"?"G":"R", $status)
 			unless in_callback || under_test;
 		debug "Vault status: $status";
-		bail("#R{[ERROR]} Could not connect to vault%s",
+		bail("Could not connect to vault%s",
 			(in_callback || under_test) ? sprintf(" '%s' (%s): status is %s)", $self->name, $self->url,$status):""
 		) unless $status eq "ok";
 	}
@@ -446,8 +471,8 @@ sub authenticate {
 	# This also forces a update to the token, so we don't have to explicitly do that here.
 	return $self if $self->authenticated;
 	bail(
-		"#R{[ERROR]} Could not successfully authenticate against #M{$ref} vault with #C{safe}.\n\n".
-		"        Genesis can automatically authenticate with safe in the following ways:\n".
+		"Could not successfully authenticate against #M{$ref} vault with #C{safe}.\n\n".
+		"Genesis can automatically authenticate with safe in the following ways:\n".
 		join("", map {
 			my $a=$_;
 			sprintf(
@@ -532,7 +557,7 @@ sub set {
 	if (defined($value)) {
 		my ($out,$rc) = $self->query('set', $path, "${key}=${value}");
 		bail(
-			"#R{[ERROR]} Could not write #C{%s:%s} to vault at #M{%s}:\n%s",
+			"Could not write #C{%s:%s} to vault at #M{%s}:\n%s",
 			$path, $key,$self->{url},$out
 		) unless $rc == 0;
 		return $value;
@@ -542,7 +567,7 @@ sub set {
 			"#R{[ERROR]} Cannot interactively provide secrets unless in a controlling terminal - terminating!";
 		my ($out,$rc) = $self->query({interactive => 1},'set', $path, $key);
 		bail(
-			"#R{[ERROR]} Could not write #C{%s:%s} to vault at #M{%s}",
+			"Could not write #C{%s:%s} to vault at #M{%s}",
 			$path, $key,$self->{url}
 		) unless $rc == 0;
 		return $self->get($path,$key);
@@ -681,8 +706,9 @@ sub process_kit_secret_plans {
 	my ($self, $action, $env, $update, %opts) = @_;
 	$opts{invalid} ||= 0;
 
-	bug("#R{[Error]} Unknown action '$action' for processing kit secrets")
-		if ($action !~ /^(add|recreate|renew|remove)$/);
+	bug(
+		"Unknown action '$action' for processing kit secrets"
+	) if ($action !~ /^(add|recreate|renew|remove)$/);
 
 	$update->('wait', msg => "Parsing kit secrets descriptions");
 	my @plans = parse_kit_secret_plans(
@@ -816,8 +842,9 @@ sub process_kit_secret_plans {
 sub validate_kit_secrets {
 	my ($self, $action, $env, $update, %opts) = @_;
 	$opts{validate} ||= 0;
-	bug("#R{[Error]} Unknown action '$action' for checking kit secrets")
-		if ($action !~ /^(check|validate)$/);
+	bug(
+		"Unknown action '$action' for checking kit secrets"
+	) if ($action !~ /^(check|validate)$/);
 
 	$update->('wait', msg => "Parsing kit secrets descriptions");
 	my @plans = parse_kit_secret_plans(
@@ -985,7 +1012,7 @@ sub parse_kit_secret_plans {
 					@paths = map {$_->{path}} grep {$match ? $_->{path} =~ $re : $_->{path} !~ $re} @ordered_plans;
 
 				} else {
-					bail "\n#R{[ERROR]} Could not understand path filter of '%s'", $filter;
+					bail "\nCould not understand path filter of '%s'", $filter;
 				}
 				@or_paths = uniq(@or_paths, @paths); # join together the results of successive 'or's
 				$filter = $remainder;
@@ -1133,7 +1160,7 @@ sub _get_kit_secrets {
 							if ($plans->{$ext_path}{signed_by} || '') eq "base.application/certs.ca";
 					}
 				} else {
-					$plans->{$path} = {type => 'error', error => "Badly formed x509 request:\n- expecting certificate specification in the form of a hash map"};
+					$plans->{$path} = {type => 'error', error => "Badly formed x509 request:\n- Expecting certificate specification in the form of a hash map"};
 				}
 			}
 		}

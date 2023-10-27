@@ -66,10 +66,11 @@ EOF
 
 subtest 'bosh create-env' => sub {
 	local $ENV{GENESIS_BOSH_COMMAND};
+	my ($out, $rc);
 	bosh_runs_as("create-env --state state.json manifest.yml");
 	my $bosh = get_bosh_create_env();
-	ok $bosh->create_env("manifest.yml", state => "state.json"),
-		"create_env with state file should work";
+	($out,$rc) = $bosh->create_env("manifest.yml", state => "state.json");
+	ok !$rc, "create_env with state file should work";
 
 	quietly {
 		throws_ok { $bosh->create_env() }
@@ -83,14 +84,14 @@ subtest 'bosh create-env' => sub {
 
 	bosh_runs_as("create-env --state state.json -l path/to/vars-file.yml manifest.yml");
 	Genesis::BOSH->set_command($ENV{GENESIS_BOSH_COMMAND});
-	ok $bosh->create_env("manifest.yml", state => "state.json", vars_file => "path/to/vars-file.yml"),
-		"create_env with state file and vars-file should work";
+	($out, $rc) = $bosh->create_env("manifest.yml", state => "state.json", vars_file => "path/to/vars-file.yml");
+	ok !$rc, "create_env with state file and vars-file should work";
 
 	local $ENV{BOSH_NON_INTERACTIVE} = 'yes';
 	bosh_runs_as("-n create-env --state state.json manifest.yml");
 	Genesis::BOSH->set_command($ENV{GENESIS_BOSH_COMMAND});
-	ok $bosh->create_env("manifest.yml", state => "state.json"),
-		"create_env honors BOSH_NON_INTERACTIVE";
+	($out,$rc) = $bosh->create_env("manifest.yml", state => "state.json");
+	ok !$rc, "create_env honors BOSH_NON_INTERACTIVE";
 };
 
 subtest 'bosh cloud-config' => sub {

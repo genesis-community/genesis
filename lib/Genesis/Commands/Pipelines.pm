@@ -25,14 +25,16 @@ sub repipe {
 	option_defaults(config => 'ci.yml');
 	my $layout = $_[0];
 	my $top = Genesis::Top->new('.', vault=>get_options->{vault});
-	bail("#R{[ERROR]} No vault specified or configured.") unless $top->vault;
+	bail(
+		"No vault specified or configured."
+	) unless $top->vault;
 
 	(my $pipeline, $layout) = Genesis::CI::Legacy::parse(get_options->{config}, $top, $layout);
 
 	option_defaults(target => $layout);
 	my $yaml = Genesis::CI::Legacy::generate_pipeline_concourse_yaml($pipeline, $top);
 	if (get_options->{'dry-run'}) {
-		print $yaml;
+		output({raw => 1}, $yaml);
 		exit 0;
 	}
 
@@ -71,7 +73,7 @@ sub graph {
 
 	(my $pipeline, $layout) = Genesis::CI::Legacy::parse(get_options->{config}, $top, $layout);
 	my $dot = Genesis::CI::Legacy::generate_pipeline_graphviz_source($pipeline);
-	print "$dot\n";
+	output "$dot";
 	exit 0;
 }
 
@@ -88,7 +90,7 @@ sub describe {
 sub ci_pipeline_deploy {
 	command_usage(1) if @_;
 
-	explain("[#G{genesis} ci-pipeline-deploy] v#G{$Genesis::VERSION}\n");
+	info("[#G{genesis} ci-pipeline-deploy] v#G{$Genesis::VERSION}\n");
 
 	# TODO: support detection of required vars in the prepare_command step. (maybe
 	# show optional variables with a ? after them, or ?1a ?1b to show either/or
@@ -97,8 +99,10 @@ sub ci_pipeline_deploy {
 	push @undefined, "CACHE_DIR" if ($ENV{PREVIOUS_ENV} && ! $ENV{CACHE_DIR});
 	_bail_on_missing_pipeline_environment_variables(@undefined);
 
-	bail("The pipeline must specify either GIT_PRIVATE_KEY, or GIT_USERNAME and GIT_PASSWORD")
-		unless $ENV{GIT_PRIVATE_KEY} || ($ENV{GIT_USERNAME} && $ENV{GIT_PASSWORD});
+	bail(
+		"The pipeline must specify either GIT_PRIVATE_KEY, or GIT_USERNAME and ".
+		"GIT_PASSWORD"
+	) unless $ENV{GIT_PRIVATE_KEY} || ($ENV{GIT_USERNAME} && $ENV{GIT_PASSWORD});
 	# FIXME: Support Bearer Token
 
 	_vault_auth();
@@ -124,12 +128,12 @@ sub ci_pipeline_deploy {
 
 	_bail_on_missing_pipeline_environment_variables(@undefined); # FIXME -- is this needed?
 
-	explain "Preparing to deploy #C{%s}:\n  - based on kit #c{%s}", $env->name, $env->kit->id;
+	info "Preparing to deploy #C{%s}:\n  - based on kit #c{%s}", $env->name, $env->kit->id;
 	if ($env->use_create_env) {
-		explain("  - as a #M{create-env} deployment\n");
+		info("  - as a #M{create-env} deployment\n");
 	} else {
 		my $bosh = $env->bosh();
-		explain("  - to #M{%s} BOSH director at #Bu{%s}.\n", $bosh->alias, $bosh->url);
+		info("  - to #M{%s} BOSH director at #Bu{%s}.\n", $bosh->alias, $bosh->url);
 	}
 
 	my $result;
@@ -168,7 +172,7 @@ sub ci_pipeline_deploy {
 }
 
 sub ci_show_changes {
-	explain("[#G{genesis} ci-show-changes] v#G{$Genesis::VERSION}\n");
+	info("[#G{genesis} ci-show-changes] v#G{$Genesis::VERSION}\n");
 
 	command_usage(1) if @_;
 
@@ -177,8 +181,10 @@ sub ci_show_changes {
 	push @undefined, "CACHE_DIR" if ($ENV{PREVIOUS_ENV} && ! $ENV{CACHE_DIR});
 	_bail_on_missing_pipeline_environment_variables(@undefined);
 
-	bail("The pipeline must specify either GIT_PRIVATE_KEY, or GIT_USERNAME and GIT_PASSWORD")
-		unless $ENV{GIT_PRIVATE_KEY} || ($ENV{GIT_USERNAME} && $ENV{GIT_PASSWORD});
+	bail(
+		"The pipeline must specify either GIT_PRIVATE_KEY, or GIT_USERNAME and ".
+		"GIT_PASSWORD"
+	) unless $ENV{GIT_PRIVATE_KEY} || ($ENV{GIT_USERNAME} && $ENV{GIT_PASSWORD});
 
 	_vault_auth();
 
@@ -190,8 +196,10 @@ sub ci_show_changes {
 	pushd $workdir;
 	my $env = Genesis::Top->new('.')->load_env($ENV{CURRENT_ENV})->with_vault();
 	if ($env->use_create_env) {
-		printf "Proto-BOSH environments do not contain a record of how they were last\n".
-					 "deployed, so no changes can be calculated and displayed.";
+		info(
+			"Proto-BOSH environments do not contain a record of how they were last ".
+			"deployed, so no changes can be calculated and displayed."
+		);
 		exit 0;
 	}
 
@@ -288,7 +296,7 @@ EOF
 }
 
 sub ci_generate_cache {
-	explain("[#G{genesis} ci-generate-cache] v#G{$Genesis::VERSION}\n");
+	info("[#G{genesis} ci-generate-cache] v#G{$Genesis::VERSION}\n");
 
 	command_usage(1) if @_;
 
@@ -342,7 +350,7 @@ sub ci_generate_cache {
 }
 
 sub ci_pipeline_run_errand {
-	explain("[#G{genesis} ci-pipeline-run-errand] v#G{$Genesis::VERSION}\n");
+	info("[#G{genesis} ci-pipeline-run-errand] v#G{$Genesis::VERSION}\n");
 
 	command_usage(1) if @_;
 
@@ -424,13 +432,13 @@ sub _propagate_previous_passed_files {
 		".genesis/kits"
 	);
 
-	explain "\n#C{Removing local cached files:}";
+	info "\n#C{Removing local cached files:}";
 	run(
 		{ onfailure => "#R{[ERROR]} Failed to remove 'workdir/$_'", interactive => 1 },
 		'rm', '-rvf', "$workdir/$_"
 	) for (@cachables);
 
-	explain "\n#C{Copying over cached files from $ENV{PREVIOUS_ENV} environment:}";
+	info "\n#C{Copying over cached files from $ENV{PREVIOUS_ENV} environment:}";
 	run(
 		{ onfailure => "#R{[ERROR]} Failed to copy '$cachedir/$_' to '$workdir/$_'", interactive => 1 },
 		'cp', '-Rv', "$cachedir/$_", "$workdir/$_"
@@ -526,19 +534,19 @@ sub _commit_changes {
 	pushd $indir;
 	my @output = lines(run({env => $git_env}, 'git status --porcelain'));
 	popd;
-	explain STDERR "Detected the following changes in repo:" if @output;
+	info "Detected the following changes in repo:" if @output;
 	for my $change (@output) {
 		my ($action,$file)= $change =~ /^(..).(.*)$/;
 		next if $filter && ref($filter) && ref($filter) =~ /^regexp$/i && $file !~ $filter;
 		if ($action =~ /.D/) {
-			explain STDERR "  - #R{removed:} $file";
+			info "  - #R{removed:} $file";
 			run(
 				{ onfailure => "Could not remove outdated file '$file' from output directory" },
 				'rm -f "$1"', "$outdir/$file"
 			);
 		} else {
 			mkdir_or_fail(dirname("$outdir/$file"));
-			explain STDERR "  - ".($action eq "??" ? "#G{added:}   " : "#Y{changed:} ").$file;
+			info "  - ".($action eq "??" ? "#G{added:}   " : "#Y{changed:} ").$file;
 
 			run(
 				{ onfailure => "Could not copy changed files to output directory" },

@@ -46,7 +46,7 @@ use Cwd qw/getcwd abs_path/;
 
 use Genesis;
 use Genesis::State;
-use Genesis::Term qw/wrap terminal_width csprintf decolorize/;
+use Genesis::Term qw/wrap terminal_width csprintf decolorize csize/;
 use Genesis::Log;
 
 our ($COMMAND, $CALLED, %RUN, %PROPS, %GENESIS_COMMANDS, @COMMANDS, @COMMAND_ARGS);
@@ -207,28 +207,24 @@ sub current_command { # {{{
 sub prepare_command { # {{{
 	($CALLED, my @args) = @_;
 	$COMMAND = $GENESIS_COMMANDS{$CALLED};
+	trace "Preparing genesis command '$COMMAND'".($CALLED ne $COMMAND ? ' (called as $CALLED)':'');
 	parse_options(\@args);
 	shift @args if ($args[0]||'') eq '--';
+	set_logging_state();
 	@COMMAND_ARGS = @args;
 } # }}}
 
 sub run_command { # {{{
-	command_usage(2, "#R{[ERROR]} Unrecognized command '$COMMAND'", "help")
+	command_help("Unrecognized command '$COMMAND'")
 		unless defined($RUN{$GENESIS_COMMANDS{$COMMAND}});
 	if (defined(command_properties()->{deprecated})) {
-		explain STDERR "\n".wrap(
+		my $msg = 
 			"The #G{$COMMAND} command has been deprecated, and will be ".
-			"removed in a future version of Genesis.\n",
-			terminal_width,
-			"#bY{[DEPRECATED]} "
-		);
+			"removed in a future version of Genesis.";
 		if (my $replacement = command_properties()->{deprecated}) {
-			explain STDERR wrap(
-				"It has been replaced by #G{$replacement}",
-				terminal_width, "", 13
-			) if $replacement;
+			$msg .= "  It has been replaced by #G{$replacement}"
 		}
-		print STDERR "\n";
+		warning({label => "DEPRECATED"}, $msg);
 	}
 	$RUN{$GENESIS_COMMANDS{$COMMAND}}(@COMMAND_ARGS);
 } # }}}
@@ -240,7 +236,7 @@ sub has_command { # {{{
 
 sub command_properties { # {{{
 	my $cmd = $GENESIS_COMMANDS{$_[0]||''} || $COMMAND;
-	bug "#R{[ERROR]} No active or given command -- cannot return command_properties"
+	bug "No active or given command -- cannot return command_properties"
 		unless $cmd;
 
 	return $PROPS{$cmd};
@@ -255,7 +251,7 @@ sub parse_options { # {{{
 		keys %{{ @{$PROPS{$COMMAND}{options} || []} }},
 		grep {/^[^\^]/} keys %{{ @{$PROPS{$COMMAND}{deprecated_options} || []} }} #ignore deprecated option references
 	);
-	trace "Options: ".join("\n         ",@base_spec,@opts_spec);
+	trace "Supported Options:".join("\n  ",(''),@base_spec,@opts_spec);
 
 	# Workaround - genesis helper always injects -C option, but many commands
 	# don't use -C (not repo/env scoped)  Inject it and ignore it for those with
@@ -275,7 +271,10 @@ sub parse_options { # {{{
 		$PROPS{$COMMAND}{option_require_order} ? 'require_order' : 'permute'
 	);
 
-	GetOptionsFromArray($args, $COMMAND_OPTIONS, (@base_spec,@opts_spec)) or command_usage(1);
+	{
+		local $SIG{__WARN__} = sub { };
+		GetOptionsFromArray($args, $COMMAND_OPTIONS, (@base_spec,@opts_spec)) or command_usage(1);
+	}
 	@COMMAND_ARGS = (@_);
 
 	# Extract Core options
@@ -328,34 +327,35 @@ sub append_options { # {{{
 } # }}}
 
 sub command_help { # {{{
-	my ($rc, $msg) = @_;
+	my ($msg, $rc) = @_;
 	$rc = $msg ? 1 : 0 unless defined($rc);
+	$msg ||= ''; # TODO: a summary blurb about genesis
 
 	my $hr = "#${\($rc ? 'r' : 'K')}\{" . ("=" x terminal_width) ."}";
 	my $bc = $Genesis::BUILD =~ /\+\)/ ? 'R' : 'G';
 	my $ver = "#gi{genesis v$Genesis::VERSION}#${bc}i{$Genesis::BUILD}\n";
 
 	# TODO: use named colors that are dark/light aware.
-	explain STDERR $hr."\n";
+	
+	info "$hr\n";
+	
 	if ($rc) {
-		$msg ||= "#g{${\(humanize_bin)}} #G{$CALLED} was called incorrectly: $ENV{GENESIS_FULL_CALL}";
-		explain STDERR wrap($msg."\n", terminal_width, "#r{ERROR:} ", 7);
-	} else {
-		# git blurb on genesis
+		fatal {show_stack => 'default'}, "$msg\n"
 	}
 
-	explain STDERR wrap(
-		"#g{${\(humanize_bin)}} [<global options...>] #G{<command>} [<command options and args...>]\n"
-		,terminal_width,"#Wku{Usage:} ", 7
-	);
-
-	explain STDERR wrap(
-		"The following Genesis commands are grouped by function areas, and marked ".
-		"by the context they run against.  Some commands can run against multiple ".
-		"contexts; see the help (-h) for the command for how to use it in the".
-		"different contexts.\n",
-		terminal_width
-	);
+	my $out =
+		wrap(
+			"#g{${\(humanize_bin)}} [<global options...>] #G{<command>} [<command options and args...>]"
+			,terminal_width,"#Wku{Usage:} ", 7
+		)."\n".
+		"\n".
+		wrap(
+			"The following Genesis commands are grouped by function areas, and marked ".
+			"by the context they run against.  Some commands can run against multiple ".
+			"contexts; see the help (-h) for the command for how to use it in the".
+			"different contexts.", terminal_width
+		)."\n".
+		"\n";
 
 	my @commands = grep {defined($PROPS{$_}) && $PROPS{$_}{function_group}{order} >= 0} (commands);
 	push @commands, (grep {defined($PROPS{$_}) && $PROPS{$_}{function_group}{order} < 0} (commands))
@@ -384,18 +384,21 @@ sub command_help { # {{{
 	my @scopes = (sort {$applicable_scopes{$a}{o} <=> $applicable_scopes{$b}{o}} keys %applicable_scopes);
 	my $scope_width = scalar(@scopes);
 	my $cont_prefix = "#-k{".(' ' x $scope_width)."}";
-	explain STDERR "#i{Context:}";
+	$out .= "#ui{Context:}\n";
 	for my $scope (@scopes) {
 		my $label = "#-k{" . (' ' x ($applicable_scopes{$scope}{o} - 1)) . "}";
 		$label .=   "#$applicable_scopes{$scope}{c}k{$applicable_scopes{$scope}{i}}";
 		$label .=   "#-k{" . (' ' x (5 - $applicable_scopes{$scope}{o})) . "} ";
-		explain STDERR wrap("#i{$applicable_scopes{$scope}{d}}",terminal_width, $label, $scope_width + 1, $cont_prefix);
+		$out .= wrap(
+			"#i{$applicable_scopes{$scope}{d}}",
+			terminal_width, $label, $scope_width + 1, $cont_prefix
+		)."\n";
 	}
 
 	for my $order (sort {$a <=> $b} keys %function_groups) {
 		my $section = $function_groups{$order};
 		$section .= ' ' x (terminal_width() - length($section));
-		explain STDERR "\n#Wku{$section}";
+		$out .= "\n#Wku{$section}\n";
 		my $fixed_order = $order > 100 ? -($order - 100) : $order;
 		for my $cmd (grep {$PROPS{$_}{function_group}{order} == $fixed_order} @commands) {
 			my $scope_filter = $PROPS{$cmd}{scope};
@@ -415,18 +418,20 @@ sub command_help { # {{{
 				my @aliases = grep {defined($_)} ($PROPS{$cmd}{alias}, @{$PROPS{$cmd}{aliases}||[]});
 				$summary .= " #G{(alias".(@aliases > 1 ? 'es' : '').": ".join(', ',@aliases).")}";
 			}
-			explain STDERR wrap($summary, terminal_width, $label, $cmd_width+3+$scope_width, $cont_prefix);
+			$out .= wrap(
+				$summary, terminal_width, $label, $cmd_width+3+$scope_width, $cont_prefix
+			)."\n";
 		}
 	}
 
-
-	explain STDERR "\n$ver$hr\n";
+	$out .= "\n$ver$hr\n";
+	info({raw => 1}, $out);
 	exit $rc;
 } # }}}
 
 sub command_usage { # {{{
-	my ($rc, $msg, $called) = @_;
-	$called ||= $CALLED;
+	my ($rc, $msg) = @_;
+	my $called = $CALLED;
 	my $command = $GENESIS_COMMANDS{$called};
 
 	my $hr = "#${\($rc ? 'r' : 'K')}\{" . ("=" x terminal_width) ."}";
@@ -443,30 +448,37 @@ sub command_usage { # {{{
 	}
 	chomp $usage;
 
-	explain STDERR $hr."\n";
+	info "$hr";
+	my $out = '';
 	if ($rc) {
 		$msg ||= "#g{${\(humanize_bin)}} #G{$CALLED} was called incorrectly: $ENV{GENESIS_FULL_CALL}";
-		explain STDERR wrap($msg."\n", terminal_width, "#r{ERROR:} ", 7);
+		fatal {show_stack => 'default'}, "\n$msg\n";
+	} else {
+		$out .= "\n";
 	}
 
-	explain STDERR wrap($PROPS{$command}{summary} || '', terminal_width, "#G{$CALLED} - ")."\n" if $PROPS{$command}{summary};
-	explain STDERR wrap($usage,terminal_width,"#Wku{Usage:} ", 7);
+	$out .= wrap($PROPS{$command}{summary} || '', terminal_width, "#G{$CALLED} - ")."\n\n"
+		if $PROPS{$command}{summary};
 
-	explain STDERR "\n".wrap("#Gi{$called}#i{ is an alias to the }#Gi{$command}#i{ command}", terminal_width," #i{Note:} ", 7 )
-		unless $command eq $called;
+	$out .= wrap($usage,terminal_width,"#Wku{Usage:} ", 7)."\n";
+	$out .= "\n".wrap(
+		"#Gi{$called}#i{ is an alias to the }#Gi{$command}#i{ command}",
+		terminal_width," #i{Note:} ", 7
+	)."\n" unless $command eq $called;
+
 	# TODO: List all the aliases (or other aliases if alias was used)
 
 	if ($rc && !under_test) {
-		explain STDERR wrap(
+		$out .= wrap(
 			"\nTo see full description with arguments and option, run ".
 			"#g{${\(humanize_bin)}} #G{$called} #y{-h}",
 			terminal_width
-		);
-		explain STDERR "\n$ver$hr\n";
+		)."\n\n$ver$hr\n";
+		info $out;
 		exit $rc;
 	}
 
-	explain STDERR wrap("\n$PROPS{$command}{description}",terminal_width)
+	$out .= wrap("\n$PROPS{$command}{description}",terminal_width)."\n"
 		if ($PROPS{$command}{description});
 
 	my @sources = (
@@ -544,17 +556,17 @@ sub command_usage { # {{{
 		my ($source,$options,$label) = @{$source_details};
 		next unless (defined $options_order{$source});
 		($label = ($label ? $label.'s' : $source.' Options')) =~ s/.*/\u$&/; #title case;
-		explain STDERR "\n#Wku{$label}";
+		$out .= "\n#Wku{$label}\n";
 		for (@{$options_order{$source}}) {
 			if ($_ =~ /^-\d+-$/) {
 				if ($options_desc{$_}) {
-					explain STDERR "\n#i{".wrap($options_desc{$_},terminal_width)."}";
+					$out .= "\n#i{".wrap($options_desc{$_},terminal_width)."}\n";
 				} else {
-					print STDERR "\n";
+					$out .= "\n";
 				}
 				next;
 			}
-			explain STDERR "\n".wrap($options_desc{$_}, terminal_width, "  ".$options_def{$_}, $def_width);
+			$out .= "\n".wrap($options_desc{$_}, terminal_width, "  ".$options_def{$_}, $def_width)."\n";
 		}
 	}
 
@@ -563,13 +575,12 @@ sub command_usage { # {{{
 		my $extended_usage = $PROPS{$command}{extended_usage}->();
 		if ($extended_usage) {
 			$extended_usage =~ s/\s*$//s;
-			explain STDERR "\n#Wku{Extended Usage Information}";
-			explain STDERR "\n$extended_usage";
+			$out .= "\n#Wku{Extended Usage Information}\n";
+			$out .= "\n$extended_usage\n";
 		}
 	}
 
-	explain STDERR "\n$ver$hr\n";
-
+	info {raw => 1}, $out."\n$ver$hr\n";
 	exit ($rc || 0);
 } # }}}
 
@@ -578,12 +589,16 @@ sub set_top_path { # {{{
 	if ($COMMAND_OPTIONS->{cwd}) {
 		my $requested_cwd = delete($COMMAND_OPTIONS->{cwd});
 		my $cwd = abs_path($requested_cwd);
-		bail("#R{[ERROR]} Path '%s' specified in -C option does not exist", $requested_cwd,)
-			unless $cwd;
+		bail(
+			"Path '%s' specified in -C option does not exist",
+			$requested_cwd
+		) unless $cwd;
 
 		if ( -f $cwd ) {
-			bail("#R{[ERROR]} #B{%s %s} cannot be called with a -C option pointing to a file", __FILE__, $COMMAND)
-				unless has_scope('env');
+			bail(
+				"#B{%s %s} cannot be called with a -C option pointing to a file",
+				__FILE__, $COMMAND
+			) unless has_scope('env');
 			unshift(@COMMAND_ARGS, basename($cwd));
 			$cwd = dirname($cwd);
 		} elsif ($COMMAND eq 'new' && $cwd =~ /\.yml$/) {
@@ -597,22 +612,23 @@ sub set_top_path { # {{{
 	return;
 } # }}}
 
-sub build_command_environment { # {{{
+sub set_logging_state { # {{{
 
 	# Logging
 	my $log_level = delete($COMMAND_OPTIONS->{log});
 	my $debug = delete($COMMAND_OPTIONS->{debug}) || 0;
 	my $trace = delete($COMMAND_OPTIONS->{trace}) || 0;
 
+	# TODO: make this obsolete in 3.0.0
 	if ($log_level) {
-		error "#Y{[WARNING]} Option --log|-l takes precedence over -D and -T options"
+		warning "Option --log|-l takes precedence over -D and -T options"
 			if ($debug || $trace);
 		$log_level = Genesis::Log::find_log_level($log_level)
 	} else {
 		$log_level = 'DEBUG' if ($debug);
 		$log_level = 'TRACE' if ($trace);
 	}
-	$log_level ||= 'WARN';
+	$log_level ||= 'INFO';
 
 	$ENV{GENESIS_DEBUG}  = 'y' if Genesis::Log::meets_level($log_level, 'DEBUG');
 	$ENV{GENESIS_TRACE}  = 'y' if Genesis::Log::meets_level($log_level, 'TRACE');
@@ -621,10 +637,13 @@ sub build_command_environment { # {{{
 	$ENV{GENESIS_STACK_TRACE} = "y" if delete($COMMAND_OPTIONS->{'show-stack'});
 
 	$Logger->configure_log(
-		'<STDERR>',
 		level => $log_level,
+		style => $ENV{GENESIS_LOG_STYLE} // $Genesis::RC->get('output_style','plain'),
 		show_stack => ($stack_trace ? ($stack_trace == 1 ? 'full' : 'current') : undef)
 	);
+}
+
+sub build_command_environment  {
 
 	# spruce debugging
 	my $spruce_log = delete($COMMAND_OPTIONS->{'spruce-log'});
@@ -644,12 +663,12 @@ sub build_command_environment { # {{{
 	if ($COMMAND_OPTIONS->{'cloud-config'}) {
 		$COMMAND_OPTIONS->{config} ||= [];
 		push @{$COMMAND_OPTIONS->{config}},delete($COMMAND_OPTIONS->{'cloud-config'});
-		error "#Y{[WARNING]} --cloud-config <x> option is obsolete, use -c cloud=<x> in the future. See -h for more info";
+		warning "--cloud-config <x> option is obsolete, use -c cloud=<x> in the future. See -h for more info";
 	}
 	if ($COMMAND_OPTIONS->{'runtime-config'}) {
 		$COMMAND_OPTIONS->{config} ||= [];
 		push @{$COMMAND_OPTIONS->{config}}, 'rc='.delete($COMMAND_OPTIONS->{'runtime-config'});
-		error "#Y{[WARNING]} --cloud-config <x> option is obsolete, use -c runtime=<x> in the future. See -h for more info";
+		warning "--cloud-config <x> option is obsolete, use -c runtime=<x> in the future. See -h for more info";
 	}
 	if ($COMMAND_OPTIONS->{config} && ref($COMMAND_OPTIONS->{config}) eq 'ARRAY') {
 		my %configs;
@@ -782,14 +801,16 @@ sub check_embedded_genesis { # {{{
 	my $embedded_version = $1;
 	return if ($embedded_version eq $Genesis::VERSION);
 	if ($Genesis::RC->get('embedded_genesis','ignore') ne "use" || command_properties->{no_use_embedded_genesis}) {
-		explain STDERR "#y{WARNING:} Embedded genesis is $embedded_version, current version is $Genesis::VERSION\n";
+		warning(
+			"Embedded genesis is $embedded_version, current version is $Genesis::VERSION"
+		);
 		return;
 	}
 
-	explain STDERR "#Y{Running embedded Genesis ($embedded_version)...}\n";
+	info "#Y{Running embedded Genesis ($embedded_version)...}\n";
 	my $embedded_root = workdir();
 	open my $bin, "|-", "tar -xzf - -C $embedded_root"
-		or die "Failed to do stuff\n";
+		or bail("Could not use extract embedded Genesis");
 	print $bin $bincontents;
 	close $bin;
 
@@ -841,7 +862,7 @@ sub check_version { # {{{
 sub check_prereqs { # {{{
 	CORE::state $prereqs_checked = 0; # static variables
 	return 1 if envset("GENESIS_IS_HELPING_YOU") || $prereqs_checked;
-	bug "#R{[ERROR]} check_prereqs called before command selected" unless current_command;
+	bug "check_prereqs called before command selected" unless current_command;
 
 	my $bosh_min_version = "6.4.4";
 	my $perl_version = join('.',map {$_+0}  ($] =~ m/(\d*)\.(\d{3})(\d{3})/));

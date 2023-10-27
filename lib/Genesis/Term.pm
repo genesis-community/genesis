@@ -10,12 +10,6 @@ use Data::Dumper;
 use File::Basename qw/basename dirname/;
 use File::Find ();
 use IO::Socket;
-use POSIX qw/strftime/;
-use Symbol qw/qualify_to_ref/;
-use Time::HiRes qw/gettimeofday/;
-use Time::Piece;
-use Time::Seconds;
-use Cwd ();
 
 use base 'Exporter';
 our @EXPORT = qw/
@@ -104,6 +98,7 @@ sub _glyphize {
 		' '   => '  ',
 		'>'   => "⮀",
 		'!'   => "\x{26A0} ",
+		'x'   => "\x{2620} ",
 		'^-'  => "\x{2B11} ",
 		'O'   => "\x{25C7}",
 		'@'   => "\x{25C6}",
@@ -128,7 +123,12 @@ sub _emojify {
 		'magnifying-glass' => "\x{1F50E}",
 		'detective' => "\x{1F575}\x{FE0F} ",
 		'warning' => "\x{26A0}\x{FE0F} ",
-		'pancakes' => "\x{1F95E}"
+		'pancakes' => "\x{1F95E}",
+		'tap' => "\x{1F6B0}",
+		'memo' => "\x{1F4DD}",
+		'notes' => "\x{1F5D2}\x{FE0F} ",
+		'printer' => "\x{1F5A8}\x{FE0F} ",
+		'tada' => "\x{1F389}"
 	);
 	return '' if envset('GENESIS_NO_UTF8');
 	return $emojis{$emoji} // '';
@@ -182,7 +182,7 @@ sub csize {
 }
 
 sub wrap {
-	my ($str, $width, $prefix, $indent, $continue_prefix) = @_;
+	my ($str, $width, $prefix, $indent, $continue_prefix, $init_col) = @_;
 	$prefix ||= '';
 	$indent ||= csize($prefix);
 	$continue_prefix ||= '';
@@ -193,8 +193,20 @@ sub wrap {
 	$prefix_length = csize($prefix);
 	my $sep = $prefix;
 	$sep .= ' ' x ($indent - $prefix_length) if $indent > $prefix_length;
+	$sep = ' ' x ($init_col) if $init_col;
 	my ($sub_indent, $sub_prefix);
-	for my $block (split("\n", $str, -1)) {
+	my @blocks = split(/\r?\n/, $str, -1);
+	push @blocks, '' unless @blocks; # '' doesn't split
+	for my $block (@blocks) {
+		if ($width < 0) {
+			# Raw mode, just indent on newlines...
+			$results .= $sep . $block . "\n";
+			$sep = ' ' x $indent;
+			next
+		}
+
+		$block =~ s/^\[\[(.*?)>>\[\[(.*?)>>/\[\[$1$2>>/
+			while $block =~ m/^\[\[(.*?)>>\[\[(.*?)>>/;
 		if ($block =~ /^\[\[(.*?)>>(.*)$/) {
 			$sep = $sep . $1;
 			$sub_indent = csize($1);
@@ -202,7 +214,8 @@ sub wrap {
 		} else {
 			$sub_indent = 0;
 		}
-		my @block_bits = split(/(\s+)/, $block);
+		my @block_bits = split(/(\s+)/, $block, -1);
+		push(@block_bits, '','') unless @block_bits;
 		my ($word, $next_sep);
 		my $line = "";
 		while (@block_bits) {
@@ -215,10 +228,12 @@ sub wrap {
 			$line .= $sep . $word;
 			$sep = $next_sep;
 		}
+		$line = '' if $line eq (' ' x $indent);
 		$results .= "$line\n";
 		$sep = ' ' x $indent;
 	}
 	chop $results;
+	$results = substr($results,$init_col) if $init_col;
 	return $results;
 }
 
@@ -251,13 +266,62 @@ sub bullet { # [type,] msg, [{option: value, ...}]
 	                             $opts{symbol},
 	                                $rbox,
 	                                   $msg);
-	return $out if ($opts{inline});
-	explain $out;
+	return $out;
 	1;
 }
 
 sub in_controlling_terminal {
 	-t STDIN && -t STDOUT;
 }
+
+# TODO:
+# - table: 
+#   - takes a table definition in markdown
+#   - converts it to a array of column hashes ({header:string, data:array})
+#   - determines max (line length) and min width (longest word length including
+#     pre-padding) of each column
+#   - allocates min width + 3 (padding and bar) each column
+#   - remainder of terminal width (-1 for last bar) is spread across based on
+#     percent of max-min of each column
+#   - detects bar, automatically promoting preceeding row to header - error if
+#     more than one row?  support multiple header rows?
+#   - header is bold
+#   - allow coloring to alternate between data rows?
+#
+#   Motive: to render markdown tables from help docs and release notes, needed
+#           for help refactor phase 2
+#
+# - paint:
+#   - takes a string that contains color codes and allows the uncolored
+#     sections to be colorized with the given color.
+#   - paint("This is #C{very} important", "w") => "#w{This is }#C{very}#w{ important}"
+#
+#   - To be determined:
+#     - Does it paint over dashes (default color) -- ie with "#C{}" become
+#       "#CY{}" if painted with '-Y' or 'kY'
+#     - Can you apply italic and underline with it
+#
+#   Motive: To be able to paint blocks of output that may already contain
+#           stylizing, such as alternating color of table rows
+#
+# - markdown:
+#   - render markdown document
+#   - support for bullets, tables, numbering, headers, blockquotes
+#   - H1 is double underlined, bold
+#   - H2 is single underlined, bold
+#   - H3 is bold
+#   - H4 is italicized
+#
+#   - inline bold and italics supported with ** and * respectively (not __ and _)
+#   - bullets use + or -, not * 
+#   - code is indented 4 spaces and rendered as light grey on a dark grey
+#     background
+#
+#   - Paragraphs are separated with blank lines, and will be rerendered wrapped
+#     to terminal width. Internal <br> will be replaced with a newline without
+#     needing blank lines
+#
+#   Motive: render help docs and release notes created in markdown, needed for
+#           help refactor phase 2
 
 1;

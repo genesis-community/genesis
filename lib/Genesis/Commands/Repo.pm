@@ -29,12 +29,16 @@ sub init {
 		command_usage(1,"Cannot specify both a kit (-k) and a link to a kit (-L)") if $options{kit};
 		$abs_target = abs_path($options{'link-dev-kit'});
 		my $pwd = getcwd;
-		die "Link target '$options{'link-dev-kit'}' cannot be found from $pwd!\n" unless $abs_target;
+		bail(
+			"Link target '%s' cannot be found from $pwd!", $options{'link-dev-kit'}
+		) unless $abs_target;
 	}
 	my $name = shift;
 	my $kit_file;
 	if (($options{kit}||'') =~ m#(?:.*/)?([^/]+)-\d+\.\d+\.\d+(?:-rc\.?\d+)?\.t(?:ar\.)?gz#) {
-		bail ("Local compiled kit file $options{kit} not found") unless -f $options{kit};
+		bail (
+			"Local compiled kit file %s not found", $options{kit}
+		) unless -f $options{kit};
 		$kit_file = $options{kit};
 		$name = $1 unless $name;
 	}
@@ -113,9 +117,9 @@ sub init {
 	if ($err) {
 		debug("removing incomplete Genesis deployments repository at #C{$root} due to failed creation");
 		rmtree $root;
-		die $err;
+		bail $err;
 	}
-	explain "\nInitialized empty Genesis repository in #C{%s}%s%s\n", $human_root, $vault_desc, $kit_desc;
+	info "\nInitialized empty Genesis repository in #C{%s}%s%s\n", $human_root, $vault_desc, $kit_desc;
 	exit 0;
 }
 
@@ -136,17 +140,17 @@ sub secrets_provider {
 	my $err;
 	if (scalar(keys %options)) {
 		$err = $top->set_vault(%options);
-		error "$ui_nl$err\nCurrent vault was not changed.\n\n" if $err;
+		error "$ui_nl$err\nCurrent vault was not changed.\n" if $err;
 	}
 
-	explain("${ui_nl}Secrets provider for #C{%s} deployment at #M{%s}:", $top->type, $top->path);
+	info("${ui_nl}Secrets provider for #C{%s} deployment at #M{%s}:", $top->type, $top->path);
 	my %vault_info = $top->vault_status;
 	if (%vault_info) {
 		if ($vault_info{status} eq "unauthenticated") {
 			eval {$top->vault->authenticate}; # Try to auto-authenticate
 			%vault_info = $top->vault_status;
 		}
-		explain(
+		info(
 			"         Type: #G{%s}\n".
 			"          URL: #G{%s} %s\n".
 			"  Local Alias: #%s{%s}\n".
@@ -158,7 +162,7 @@ sub secrets_provider {
 			$vault_info{status}
 		);
 	} else {
-		explain "\n#Y{Not set - legacy mode enabled (will use current safe target on system)}\n";
+		info "\n#Y{Not set - legacy mode enabled (will use current safe target on system)}\n";
 	}
 
 	exit defined($err) ? 1 : 0;
@@ -191,21 +195,25 @@ sub kit_provider {
 	}
 
 	if ($cfg_export) {
-		printf "%s\n", JSON::PP::encode_json({$top->kit_provider->config});
+		output JSON::PP::encode_json({$top->kit_provider->config});
 		exit 0
 	}
 
-	explain("\nCollecting information on %s kit provider for #C{%s} deployment at #M{%s}", $kit_provider_lookup, $top->type, humanize_path($top->path));
+	info(
+		"\nCollecting information on %s kit provider for #C{%s} deployment at #M{%s}",
+		$kit_provider_lookup, $top->type, humanize_path($top->path)
+	);
 	my %info;
 	eval {
 		%info = $top->kit_provider_info($verbose);
 	};
-	explain("Complete.\n");
-	bail "#R{[ERROR]} $@\n" if $@;
+	info("Complete.\n");
 
-	explain("         Type: #M{%s}\n", $info{type});
-	explain("%13s: #C{%s}", $_, $info{$_}) for (@{$info{extras} || []});
-	explain("\n       Status: #%s{%s}\n", $info{status} eq "ok" ? "G" : "R", $info{status});
+	bail "$@" if $@;
+
+	info("         Type: #M{%s}\n", $info{type});
+	info("%13s: #C{%s}", $_, $info{$_}) for (@{$info{extras} || []});
+	info("\n       Status: #%s{%s}\n", $info{status} eq "ok" ? "G" : "R", $info{status});
 
 	my $kit_list;
 	if (ref($info{kits}) eq "HASH" && scalar(keys(%{$info{kits}}))) {
@@ -222,7 +230,7 @@ sub kit_provider {
 	} else {
 		$kit_list = "#Yi{None}";
 	}
-	explain("         Kits: %s\n\n", $kit_list) if $info{status} eq "ok";
+	info("         Kits: %s\n\n", $kit_list) if $info{status} eq "ok";
 }
 
 1;

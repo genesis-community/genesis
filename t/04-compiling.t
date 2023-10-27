@@ -18,6 +18,7 @@ my $kitdir = $tmp."/test-genesis-kit";
 my $cc = Genesis::Kit::Compiler->new($kitdir);
 my $out;
 $ENV{NOCOLOR} = 'y';
+$ENV{GENESIS_OUTPUT_COLUMNS} = 120;
 
 sub again {
 	system("rm -rf $kitdir; mkdir -p $kitdir");
@@ -120,8 +121,8 @@ eq_or_diff($out, <<'EOF', "validate should report the file kit.yml does not exis
 
 [ERROR] Encountered issues while processing kit test/1.2.3:
 
-  Kit Metadata file kit.yml:
-    - does not exist.
+        Kit Metadata file kit.yml:
+        - does not exist.
 
 EOF
 
@@ -135,7 +136,8 @@ $out = combined_from {
 $out =~ s/$tmp/<tempdir>/;
 eq_or_diff($out, <<'EOF', "validate should report the source directory is not found");
 
-[ERROR] Kit source directory '<tempdir>/test-genesis-kit' not found.
+[ERROR] Kit source directory '<tempdir>/test-genesis-kit'
+        not found.
 
 EOF
 
@@ -151,8 +153,8 @@ eq_or_diff($out, <<'EOF', "validate should report the kit.yml file is not a map.
 
 [ERROR] Encountered issues while processing kit test/1.2.3:
 
-  Kit Metadata file kit.yml:
-    - is not a well-formed YAML file with a map root.
+        Kit Metadata file kit.yml:
+        - is not a well-formed YAML file with a map root.
 
 EOF
 
@@ -168,11 +170,11 @@ eq_or_diff($out, <<'EOF', "validate should report that the required keys are mis
 
 [ERROR] Encountered issues while processing kit test/1.2.3:
 
-  Kit Metadata file kit.yml:
-    - does not define 'name'
-    - does not define 'version'
-    - does not define 'code'
-    - does not identify the author(s) via 'author' or 'authors'
+        Kit Metadata file kit.yml:
+        - does not define 'name'
+        - does not define 'version'
+        - does not define 'code'
+        - does not identify the author(s) via 'author' or 'authors'
 
 EOF
 
@@ -207,8 +209,8 @@ for my $field (qw(name version code author)) {
 
 [ERROR] Encountered issues while processing kit test/1.2.3:
 
-  Kit Metadata file kit.yml:
-    - does not $test_str
+        Kit Metadata file kit.yml:
+        - does not $test_str
 
 EOF
 }
@@ -243,8 +245,8 @@ eq_or_diff($out, <<'EOF', "validate should report when both author and authors i
 
 [ERROR] Encountered issues while processing kit test/1.2.3:
 
-  Kit Metadata file kit.yml:
-    - specifies both 'author' and 'authors': pick one.
+        Kit Metadata file kit.yml:
+        - specifies both 'author' and 'authors': pick one.
 
 EOF
 
@@ -265,8 +267,8 @@ eq_or_diff($out, <<'EOF', "validate should report when authors is not a list");
 
 [ERROR] Encountered issues while processing kit test/1.2.3:
 
-  Kit Metadata file kit.yml:
-    - expects 'authors' to be an array, not a string.
+        Kit Metadata file kit.yml:
+        - expects 'authors' to be an array, not a string.
 
 EOF
 
@@ -289,8 +291,8 @@ eq_or_diff($out, <<'EOF', "validate should report a non-semver-compliant genesis
 
 [ERROR] Encountered issues while processing kit test/1.2.3:
 
-  Kit Metadata file kit.yml:
-    - specifies minimum Genesis version 'latest', which is not a semantic version (x.y.z).
+        Kit Metadata file kit.yml:
+        - specifies minimum Genesis version 'latest', which is not a semantic version (x.y.z).
 
 EOF
 
@@ -311,9 +313,10 @@ eq_or_diff($out, <<'EOF', "validate should report when genesis_min_version is us
 
 [ERROR] Encountered issues while processing kit test/1.2.3:
 
-  Kit Metadata file kit.yml:
-    - contains invalid top-level key: genesis_min_version;
-      valid keys are: name, version, description, code, docs, author, authors, genesis_version_min, secrets_store, required_configs, exclude_paths, credentials, certificates, provided
+        Kit Metadata file kit.yml:
+        - contains invalid top-level key: genesis_min_version;
+          valid keys are: name, version, description, code, docs, author, authors, genesis_version_min, secrets_store,
+                          required_configs, exclude_paths, credentials, certificates, provided
 
 EOF
 
@@ -343,9 +346,10 @@ eq_or_diff($out, <<'EOF', "validate should report credentials and certificate fi
 
 [ERROR] Encountered issues while processing kit test/2.0.1:
 
-  Kit Metadata file kit.yml:
-    - contains invalid top-level keys: certificates, credentials;
-      valid keys are: name, version, description, code, docs, author, authors, genesis_version_min, secrets_store, required_configs, exclude_paths
+        Kit Metadata file kit.yml:
+        - contains invalid top-level keys: certificates, credentials;
+          valid keys are: name, version, description, code, docs, author, authors, genesis_version_min, secrets_store,
+                          required_configs, exclude_paths
 
 EOF
 
@@ -365,8 +369,8 @@ eq_or_diff($out, <<'EOF', "validate should report when secrets_store has an inva
 
 [ERROR] Encountered issues while processing kit test/2.0.1:
 
-  Kit Metadata file kit.yml:
-    - specifies invalid secrets_store: expecting one of 'vault' or 'credhub'
+        Kit Metadata file kit.yml:
+        - specifies invalid secrets_store: expecting one of 'vault' or 'credhub'
 
 EOF
 
@@ -400,11 +404,11 @@ eq_or_diff($out, <<'EOF', "validate should report uncommitted changes.");
 
 [ERROR] Encountered issues while processing kit test/1.2.3:
 
-  Git repository status:
-    Unstaged / uncommited changes found in working directory:
-       M kit.yml
+        Git repository status:
+        - Unstaged / uncommited changes found in working directory:
+             M kit.yml
 
-    Please either stash or commit those changes before compiling your kit.
+          Please either stash or commit those changes before compiling your kit.
 
 EOF
 commit_changes;
@@ -464,11 +468,12 @@ eq_or_diff($out, <<'EOF', "validate should report when unknown top-level keys ar
 
 [ERROR] Encountered issues while processing kit test/1.2.3:
 
-  Kit Metadata file kit.yml:
-    - does not define 'code'
-    - does not identify the author(s) via 'author' or 'authors'
-    - contains invalid top-level keys: by, descriptoin, github, homepage, params, secrets, subkits;
-      valid keys are: name, version, description, code, docs, author, authors, genesis_version_min, secrets_store, required_configs, exclude_paths, credentials, certificates, provided
+        Kit Metadata file kit.yml:
+        - does not define 'code'
+        - does not identify the author(s) via 'author' or 'authors'
+        - contains invalid top-level keys: by, descriptoin, github, homepage, params, secrets, subkits;
+          valid keys are: name, version, description, code, docs, author, authors, genesis_version_min, secrets_store,
+                          required_configs, exclude_paths, credentials, certificates, provided
 
 EOF
 
@@ -479,11 +484,12 @@ eq_or_diff($out, <<'EOF', "validate should report errors even when force is used
 
 [ERROR] Encountered issues while processing kit test/1.2.3:
 
-  Kit Metadata file kit.yml:
-    - does not define 'code'
-    - does not identify the author(s) via 'author' or 'authors'
-    - contains invalid top-level keys: by, descriptoin, github, homepage, params, secrets, subkits;
-      valid keys are: name, version, description, code, docs, author, authors, genesis_version_min, secrets_store, required_configs, exclude_paths, credentials, certificates, provided
+        Kit Metadata file kit.yml:
+        - does not define 'code'
+        - does not identify the author(s) via 'author' or 'authors'
+        - contains invalid top-level keys: by, descriptoin, github, homepage, params, secrets, subkits;
+          valid keys are: name, version, description, code, docs, author, authors, genesis_version_min, secrets_store,
+                          required_configs, exclude_paths, credentials, certificates, provided
 
 EOF
 
@@ -498,8 +504,8 @@ eq_or_diff($out, <<'EOF', "validate should report errors even when force is used
 
 [ERROR] Encountered issues while processing kit test/1.2.3:
 
-  Hook scripts:
-    - hooks/info is not a regular file.
+        Hook scripts:
+        - hooks/info is not a regular file.
 
 EOF
 ##################################
@@ -514,8 +520,8 @@ eq_or_diff($out, <<'EOF', "validate should report errors even when force is used
 
 [ERROR] Encountered issues while processing kit test/1.2.3:
 
-  Hook scripts:
-    - hooks/new is not executable.
+        Hook scripts:
+        - hooks/new is not executable.
 
 EOF
 system("rm $kitdir/hooks/new");
@@ -527,8 +533,8 @@ eq_or_diff($out, <<'EOF', "validate should report errors even when force is used
 
 [ERROR] Encountered issues while processing kit test/1.2.3:
 
-  Hook scripts:
-    - hooks/new is missing - this hook is not optional.
+        Hook scripts:
+        - hooks/new is missing - this hook is not optional.
 
 EOF
 
@@ -706,104 +712,108 @@ eq_or_diff($out, <<'EOF', "validate should report all errors in the kit");
 
 [ERROR] Encountered issues while processing kit test/1.2.3:
 
-  Kit Metadata file kit.yml:
-    - does not define 'code'
-    - specifies name 'testing', expecting 'test'
-    - contains invalid top-level keys: code repo, params, url;
-      valid keys are: name, version, description, code, docs, author, authors, genesis_version_min, secrets_store, required_configs, exclude_paths, credentials, certificates, provided
+        Kit Metadata file kit.yml:
+        - does not define 'code'
+        - specifies name 'testing', expecting 'test'
+        - contains invalid top-level keys: code repo, params, url;
+          valid keys are: name, version, description, code, docs, author, authors, genesis_version_min, secrets_store,
+                          required_configs, exclude_paths, credentials, certificates, provided
 
-  Secrets specifications in kit.yml:
+        Secrets specifications in kit.yml:
 
-    Bad X509 certificate request for bad-params/client:
-      - Invalid names argument: cannot have an empty name entry
-      - Invalid usage argument - unknown usage keys: 'take_over_the_world', 'tax shelter'
-        Valid keys are: 'client_auth', 'code_signing', 'content_commitment', 'crl_sign', 'data_encipherment', 'decipher_only', 'digital_signature', 'email_protection', 'encipher_only', 'key_agreement', 'key_cert_sign', 'key_encipherment', 'non_repudiation', 'server_auth', 'timestamping'
+        - Bad X509 certificate request for bad-params/client:
+          - Invalid names argument: cannot have an empty name entry
+          - Invalid usage argument - unknown usage keys: 'take_over_the_world', 'tax shelter'
+            Valid keys are: 'client_auth', 'code_signing', 'content_commitment', 'crl_sign', 'data_encipherment',
+                            'decipher_only', 'digital_signature', 'email_protection', 'encipher_only', 'key_agreement',
+                            'key_cert_sign', 'key_encipherment', 'non_repudiation', 'server_auth', 'timestamping'
 
-    Bad X509 certificate request for bad-params/server:
-      - Invalid names argument: expecting an array of one or more strings, got an empty list
+        - Bad X509 certificate request for bad-params/server:
+          - Invalid names argument: expecting an array of one or more strings, got an empty list
 
-    Bad X509 certificate request for bad_chain/ca:
-      - CA Common Name Conflict - can't share CN 'rootCA' with signing CA
+        - Bad X509 certificate request for bad_chain/ca:
+          - CA Common Name Conflict - can't share CN 'rootCA' with signing CA
 
-    Bad X509 certificate request for bad_chain/server:
-      - Invalid valid_for argument: expecting <positive_number>[ymdh], got forever
+        - Bad X509 certificate request for bad_chain/server:
+          - Invalid valid_for argument: expecting <positive_number>[ymdh], got forever
 
-    Bad X509 certificate request for bad-params/master:
-      - Invalid names argument: expecting an array of one or more strings, got the string 'this'
-      - Invalid usage argument: expecting an array of one or more strings, got the string 'client_auth'
-      - Invalid is_ca argument: expecting boolean value, got 'CA'
-      - Invalid signed_by argument: expecting relative vault path string, got '${params.root_ca}'
+        - Bad X509 certificate request for bad-params/master:
+          - Invalid names argument: expecting an array of one or more strings, got the string 'this'
+          - Invalid usage argument: expecting an array of one or more strings, got the string 'client_auth'
+          - Invalid is_ca argument: expecting boolean value, got 'CA'
+          - Invalid signed_by argument: expecting relative vault path string, got '${params.root_ca}'
 
-    Bad generic provided secret description for bad-key-hash:
-      - Missing 'keys' hash
+        - Bad generic provided secret description for bad-key-hash:
+          - Missing 'keys' hash
 
-    Bad generic provided secret description for bad-keys:test:me:
-      - Key cannot contain colons
+        - Bad generic provided secret description for bad-keys:test:me:
+          - Key cannot contain colons
 
-    Bad provided secret description for bad:path:
-      - Path cannot contain colons
+        - Bad provided secret description for bad:path:
+          - Path cannot contain colons
 
-    Badly formed x509 request for bad_request:
-      - expecting certificate specification in the form of a hash map
+        - Badly formed x509 request for bad_request:
+          - Expecting certificate specification in the form of a hash map
 
-    Bad provided secrets path for broken-content:
-      - Expecting hashmap, got array
+        - Bad provided secrets path for broken-content:
+          - Expecting hashmap, got array
 
-    Bad generic provided secret description for broken-structure:
-      - Missing 'keys' hash
+        - Bad generic provided secret description for broken-structure:
+          - Missing 'keys' hash
 
-    Bad provided secrets description for broken-type:
-      - Unrecognized type 'xtreme'; expecting one of: generic
+        - Bad provided secrets description for broken-type:
+          - Unrecognized type 'xtreme'; expecting one of: generic
 
-    Bad provided secrets feature block for not-valid:
-      - Expecting hashmap of paths, got 'this isn't a hash'
+        - Bad provided secrets feature block for not-valid:
+          - Expecting hashmap of paths, got 'this isn't a hash'
 
-    Bad credential request for password:
-      - Unrecognized request 'random 64'
+        - Bad credential request for password:
+          - Unrecognized request 'random 64'
 
-    Bad random password request for passwords:that:
-      - Expected usage: random <size> [fmt <format> [at <key>]] [allowed-chars <chars>] [fixed]
-        Got: random 99 alt-chars asdfghjkl as test
+        - Bad random password request for passwords:that:
+          - Expected usage: random <size> [fmt <format> [at <key>]] [allowed-chars <chars>] [fixed]
+            Got: random 99 alt-chars asdfghjkl as test
 
-    Bad credential request for passwords:this:
-      - Bad generate-password format 'gen 64'
+        - Bad credential request for passwords:this:
+          - Bad generate-password format 'gen 64'
 
-    Bad credential request for secret:passwords:
-      - Path cannot contain colons
+        - Bad credential request for secret:passwords:
+          - Path cannot contain colons
 
-    Bad credential request for something:
-      - Unrecognized request 'completely different'
+        - Bad credential request for something:
+          - Unrecognized request 'completely different'
 
-    Bad UUID request for uuids:bogus:
-      - Expected usage: uuid [v1|time|v3|md5|v4|random|v5|sha1] [namespace (dns|url|oid|x500|<UUID namespace>] [name <name>] [fixed]
-        Got: uuid v2
+        - Bad UUID request for uuids:bogus:
+          - Expected usage: uuid [v1|time|v3|md5|v4|random|v5|sha1] [namespace (dns|url|oid|x500|<UUID namespace>] [name
+            <name>] [fixed]
+            Got: uuid v2
 
-    Bad SSH request for bad_ssh:
-      - Invalid size argument: expecting 1024-16384, got 24
+        - Bad SSH request for bad_ssh:
+          - Invalid size argument: expecting 1024-16384, got 24
 
-    Bad UUID request for uuids:extra:
-      - V4 UUIDs cannot take name or namespace arguments
+        - Bad UUID request for uuids:extra:
+          - V4 UUIDs cannot take name or namespace arguments
 
-    Bad UUID request for uuids:missing:
-      - V5 UUIDs require a name argument to be specified
+        - Bad UUID request for uuids:missing:
+          - V5 UUIDs require a name argument to be specified
 
-    Some of the errors above are due to unresolved param dereferencing.  Update the
-    ci/test_params.yml file in the kit directory to contain these parameters.
+          Some of the errors above are due to unresolved param dereferencing.  Update the ci/test_params.yml file in the
+          kit directory to contain these parameters.
 
-  Hook scripts:
-    - hooks/new is not executable.
-    - hooks/blueprint is missing - this hook is not optional.
-    - hooks/info is not a regular file.
-    - hooks/check is not executable.
+        Hook scripts:
+        - hooks/new is not executable.
+        - hooks/blueprint is missing - this hook is not optional.
+        - hooks/info is not a regular file.
+        - hooks/check is not executable.
 
-  Git repository status:
-    Unstaged / uncommited changes found in working directory:
-      A  ci/test_params.yml
-      D  hooks/blueprint
-       M kit.yml
-      ?? hooks/check
+        Git repository status:
+        - Unstaged / uncommited changes found in working directory:
+            A  ci/test_params.yml
+            D  hooks/blueprint
+             M kit.yml
+            ?? hooks/check
 
-    Please either stash or commit those changes before compiling your kit.
+          Please either stash or commit those changes before compiling your kit.
 
 EOF
 

@@ -30,19 +30,7 @@ use Genesis::Log;
 $Genesis::VERSION = "(development)";
 $Genesis::BUILD = "";
 $Genesis::RC = Genesis::Config->new($ENV{HOME}."/.genesis/config");
-
-Genesis::Log->new();
-if (my $log_configs = $Genesis::RC->get('logs')) {
-	if (ref($log_configs) eq 'ARRAY') {
-		for (@$log_configs) {
-			my $file = delete($_->{file});
-			$file = Cwd::getcwd ."/$file" unless $file =~ /^[~\/]/;
-			$Logger->configure_log(humanize_path($file), %{$_});
-		}
-	} else {
-		bail "Configuration error - logs entry must be an array";
-	}
-}
+Genesis::Log->setup_from_configs($Genesis::RC->get("logs",[]));
 
 our $USER_AGENT_STRING = "genesis/$Genesis::VERSION";
 
@@ -64,7 +52,7 @@ define_command('help', {
 		],
 		skip_check_prereqs => 1,
 		no_vault => 1
-}, sub { command_help(0); });
+}, sub { command_help(); });
 
 # }}}
 # genesis version - Print the version of Genesis. {{{
@@ -455,7 +443,7 @@ define_command("info", {
 	function_group => Genesis::Commands::INFO,
 	scope => 'env',
 	option_group => Genesis::Commands::ENV_OPTIONS,
-});
+}, "Genesis::Commands::Info::information"); # info method already taken, so can't use default
 
 # }}}
 # genesis lookup - Find a key set in environment manifests. {{{
@@ -1330,7 +1318,7 @@ define_command("ui-describe", {
 		no_use_embedded_genesis => 1
 }, sub {
 	# TODO: Support wrap at terminal width option
-	explain("%s", $_) for (@_);
+	print csprintf("%s\n", $_) for (@_);
 });
 # }}}
 # genesis ui-prompt-for - Provides prompts in support of hooks/new script {{{
@@ -1462,7 +1450,10 @@ sub main {
 		if ($ENV{LANG}) {
 			eval {$arg = decode($ENV{LANG},$arg)};
 			if ($@ && $no_warn) {
-				warn "#Y{[WARNING]} Environment variable \$LANG contains invalid value.  Some output may be garbled as a result";
+				warning(
+					"Environment variable \$LANG contains invalid value.  Some output ".
+					"may be garbled as a result"
+				);
 				$no_warn = 0;
 			}
 		}
@@ -1482,27 +1473,28 @@ sub main {
 				# argument matches a command (or alias) -- assume its a command
 				$cmd = $arg;
 			} else {
-				if ($arg =~ /\.yml/ || -f $arg.'.yml' || $_[0] eq 'new') {
+				if ($arg =~ /\.yml/ || -f $arg.'.yml' || ($_[0]//'') eq 'new') {
 					bail(
-						"#R{[ERROR]} Cannot specify both -C and explicit file before the Genesis subcommand\n"
+						"Cannot specify both -C and explicit file before the Genesis subcommand"
 					) if ($ENV{GENESIS_PREFIX_TYPE} eq 'option_c');
 					bail(
-						"#R{[ERROR]} Cannot specify multiple explicit file before the Genesis subcommand\n"
+						"Cannot specify multiple explicit file before the Genesis subcommand"
 					) if ($ENV{GENESIS_PREFIX_TYPE} =~ /file/);
 
 					if ($arg =~ /\.yml/) { # explicit file
-						bail("#R{[ERROR]} Explicit environment file specified, but does not exist.\n")
-							unless -f $arg || $_[0] eq 'new';
+						bail(
+							"Explicit environment file specified, but does not exist."
+						) unless -f $arg || $_[0] eq 'new';
 						$ENV{GENESIS_PREFIX_TYPE} = 'explicit_file';
 						$path = $arg;
 					} elsif (-f $arg.".yml" || $_[0] eq 'new') {
 						$ENV{GENESIS_PREFIX_TYPE} = 'file';
 						$path = $arg.".yml";
 					} else {
-						command_help(2, "Unrecognized command, path or file '$arg'");
+						command_help("Unrecognized command, path or file '$arg'",2);
 					}
 				} else {
-					command_help(2, "Unrecognized command, path or file '$arg'");
+					command_help("Unrecognized command, path or file '$arg'",2);
 				}
 			}
 		}
@@ -1517,7 +1509,7 @@ sub main {
 			$cmd = 'help',
 			@args = (grep {$_ !~ /^(-h|--help)$/} @args);
 		} else {
-			command_help(2, 'No known command specified')
+			command_help('No known command specified',2)
 		}
 	}
 
@@ -1534,11 +1526,22 @@ sub main {
 			check_prereqs unless command_properties->{skip_check_prereqs};
 			run_command;
 		} else {
-			command_help(2, 'Unknown command: #G{$cmd}')
+			command_help('Unknown command: #G{$cmd}',2)
 		}
 		exit 0;
 	}
 }
 
-main(@ARGV);
+END {
+	my $rc = $?;
+	my $level = envset('QUIET') ? 'ERROR' : 'INFO';
+	logger->configure_log(
+		level => $level,
+		style => $ENV{GENESIS_LOG_STYLE} // $Genesis::RC->get('output_style','plain'),
+	) unless logger->is_logging($level);
+	trace("Genesis process $$ exited with an exit code of $rc") unless in_callback;
+	$? = $rc; # Have to set the exit code again before leaving...
+}
 
+main(@ARGV);
+# vim: fdm=marker:foldlevel=1:noet

@@ -6,6 +6,7 @@ RUN apt-get update \
       expect \
       libtest-deep-perl \
       libtest-differences-perl \
+      libtest-exit-perl \
       libtest-exception-perl \
       libtest-output-perl \
       libtest-tcp-perl \

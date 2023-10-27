@@ -11,11 +11,14 @@ use Genesis::Top;
 
 sub create {
 	command_usage(1) if @_ != 1;
-	warn "The --no-secrets flag is deprecated, and no longer honored.\n"
-		if has_option("secrets", 0);
+	warning(
+		"The --no-secrets flag is deprecated, and no longer honored."
+	) if has_option("secrets", 0);
 
 	my $name = $_[0];
-	bail "No environment name specified!\n" unless $name;
+	bail(
+		"No environment name specified!"
+	) unless $name;
 	$name =~ s/\.yml$//;
 
 	my $top = Genesis::Top->new('.');
@@ -35,36 +38,45 @@ sub create {
 	my $kit_id=delete(get_options->{kit}) || '';
 	my $kit = $top->local_kit_version($kit_id);
 	if (!$kit) {
-		if (!$kit_id) {
-			die "Unable to determine the correct version of the Genesis Kit to use.\n".
-			    "Perhaps you should specify it with the `--kit` flag.\n";
-		}
-		if ($kit_id eq 'dev') {
-			die "No dev/ kit found in current working directory.\n".
-			    "(did you forget to `genesis decompile-kit` first?)\n";
-		}
-		die "Kit '$kit_id' not found in compiled kit cache.\n".
-		    "Do you need to `genesis fetch-kit $kit_id`?\n";
+		bail(
+			"Unable to determine the correct version of the Genesis Kit to use.  ".
+			"Perhaps you should specify it with the `--kit` flag."
+		) if (!$kit_id);
+
+		bail(
+			"No dev/ kit found in current working directory.  ".
+			"Did you forget to `genesis decompile-kit` first?"
+		) if ($kit_id eq 'dev');
+
+		bail(
+			"Kit '$kit_id' not found in compiled kit cache.  ".
+			"Do you need to `genesis fetch-kit $kit_id`?"
+		);
 	}
 
 	# Check if root ca path exists if specified
 	if (get_options->{'root-ca-path'}) {
-		bail "No CA certificate found in vault under '#C{%s}'", get_options->{'root-ca-path'}
-			unless $top->vault->query('x509', 'validate', '-A', get_options->{'root-ca-path'});
+		bail(
+			"No CA certificate found in vault under '#C{%s}'",
+			get_options->{'root-ca-path'}
+		) unless $top->vault->query('x509', 'validate', '-A', get_options->{'root-ca-path'});
 	}
 
 	# check version prereqs
 	$kit->check_prereqs() or exit 86;
 
 	# create the environment
-	explain("\nSetting up new environment #C{$name} based on kit %s ...", $kit->id);
+	info("\nSetting up new environment #C{$name} based on kit %s ...", $kit->id);
 	my $env = $top->create_env($name, $kit, %{get_options()});
 	bail "Failed to create environment $name" unless $env;
 
 	# let the user know
-	explain("New environment $env->{name} provisioned!");
-	explain("\nTo deploy, run this:\n");
-	explain("  #C{genesis deploy '%s'}\n\n", $env->{name});
+	info(
+		"New environment $env->{name} provisioned!\n\n".
+		"To deploy, run this:\n\n".
+		"  #C{genesis deploy '%s'}\n",
+		$env->{name}
+	);
 }
 
 sub edit {
@@ -98,11 +110,13 @@ sub edit {
 	} else {
 		$kit = $env->kit;
 	}
-	error "Editing environment $name (kit #C{%s})", $kit->id;
+	info "Editing environment $name (kit #C{%s})", $kit->id;
 
 	my $man = $kit->path('MANUAL.md');
-	explain("#Y{[WARNING]} #M{%s} has no MANUAL.md", $kit->id)
-		unless (-f $man);
+	warning(
+		"#M{%s} has no MANUAL.md",
+		$kit->id
+	) unless (-f $man);
 
 	$kit->run_hook('edit', env => $env, editor => get_options->{editor});
 	exit 0;
@@ -121,8 +135,9 @@ sub check {
 
 	if (has_option('no-config',1)) {
 		$ENV{GENESIS_CONFIG_NO_CHECK}=1;
-		bail "Cannot specify --no-config without also specifying --no-manifest"
-			if get_options->{manifest};
+		bail(
+			"Cannot specify --no-config without also specifying --no-manifest"
+		) if get_options->{manifest};
 	} else {
 		my @hooks = qw/check/;
 		push(@hooks, 'manifest', 'blueprint') if has_option('manifest',1);
@@ -131,10 +146,10 @@ sub check {
 
 	my $ok = $env->check(map {("check_$_" => has_option($_,1))} qw/manifest secrets stemcells/);
 	if ($ok) {
-		explain "\n[#M{%s}] #G{All Checks Succeeded}", $env->name;
+		info "\n[#M{%s}] #G{All Checks Succeeded}", $env->name;
 		exit 0;
 	} else {
-		explain "\n[#M{%s}] #R{PREFLIGHT FAILED}", $env->name;
+		error "\n[#M{%s}] #R{PREFLIGHT FAILED}", $env->name;
 		exit 1;
 	}
 }
@@ -151,8 +166,11 @@ sub check_secrets {
 	} elsif ($level =~ /^p(roblem(atic)?)?/) {
 		$validation_level=2;
 	} else {
-		bail "#R{[ERROR]} Invalid -l|--level value: expecting one of #g{missing}, #g{invalid} or".
-		     "        #g{problem} (or respective short form#g{m}, #g{i} or #g{p} short forms) - got '#R{%s}'", $level
+		bail(
+			"Invalid -l|--level value: expecting one of #g{missing}, #g{invalid} or ".
+			"#g{problem} (or respective short form#g{m}, #g{i} or #g{p} short forms) ".
+			"- got '#R{%s}'", $level
+		)
 	}
 	Genesis::Top
 		->new(".")
@@ -175,8 +193,9 @@ sub add_secrets {
 sub rotate_secrets {
 	command_usage(1) if @_ < 1;
 	my ($name, @paths) = @_;
-	bail "--force option no longer valid. See `genesis rotate-secrets -h` for more details"
-		if get_options->{force};
+	bail(
+		"--force option no longer valid. See `genesis rotate-secrets -h` for more details"
+	) if get_options->{force};
 
 	get_options->{invalid} = 2 if delete(get_options->{problematic});
 	Genesis::Top
@@ -192,10 +211,12 @@ sub remove_secrets {
 	my %options = %{get_options()};
 	my ($name, @paths) = @_;
 	if ( $options{all}) {
-		bail "Cannot specify secret paths when using the --all option."
-			if @paths;
-		bail "Cannot use --invalid, --problematic, or --interactive at the same time as the --all option."
-			if $options{problematic} || $options{invalid} || $options{interactive};
+		bail(
+			"Cannot specify secret paths when using the --all option."
+		) if @paths;
+		bail(
+			"Cannot use --invalid, --problematic, or --interactive at the same time as the --all option."
+		) if $options{problematic} || $options{invalid} || $options{interactive};
 	}
 
 	$options{invalid} = 2 if delete($options{problematic});
@@ -225,12 +246,12 @@ sub manifest {
 		->with_vault();
 
 	if ($env->use_create_env && scalar($env->configs)) {
-		error( "\n".
-			wrap(
-				"The provided configs will be ignored, as create-env environments do ".
-				"not use them:\n[[- >>".join("\n[[- >>", map {"#C{$_}"} ($env->configs) ),
-				terminal_width, "#Y{[WARNING]} "
-		));
+		warning(
+			"\nThe provided configs will be ignored, as create-env environments do ".
+			"not use them:\n[[- >>".join(
+				"\n[[- >>", map {"#C{$_}"} ($env->configs)
+			)
+		);
 	}
 
 	print $env
@@ -265,11 +286,11 @@ sub deploy {
 		join(", ", @invalid_create_env_opts)
 	) if $env->use_create_env && @invalid_create_env_opts;
 
-	explain "Preparing to deploy #C{%s}:\n  - based on kit #c{%s}\n  - using Genesis #c{%s}", $env->name, $env->kit->id, $Genesis::VERSION;
+	info "Preparing to deploy #C{%s}:\n  - based on kit #c{%s}\n  - using Genesis #c{%s}", $env->name, $env->kit->id, $Genesis::VERSION;
 	if ($env->use_create_env) {
-		explain "  - as a #M{create-env} deployment\n";
+		info "  - as a #M{create-env} deployment\n";
 	} else {
-		explain "  - to '#M{%s}' BOSH director at #c{%s}.\n", $env->bosh->{alias}, $env->bosh->{url};
+		info "  - to '#M{%s}' BOSH director at #c{%s}.\n", $env->bosh->{alias}, $env->bosh->{url};
 	}
 	$env
 		->with_bosh
@@ -293,7 +314,7 @@ sub do {
 
 	$env->download_required_configs('addon', "addon-$script");
 
-	explain STDERR "Running #G{%s} addon for #C{%s} #M{%s} deployment", $script, $env->name, $env->type;
+	info "Running #G{%s} addon for #C{%s} #M{%s} deployment", $script, $env->name, $env->type;
 
 	$env->run_hook('addon', script => $script, args => \@args)
 		or exit 1;
@@ -311,21 +332,23 @@ sub lookup {
 	($name, $key) = ($key,$name) if !$top->has_env($name) && $top->has_env($key);
 
 	if (get_options->{"defined"}) {
-		command_usage(1, "#R{[ERROR]} Cannot specify default value with --defines option")
+		command_usage(1, "Cannot specify default value with --defines option")
 			if defined($default);
 		$default = bless({},"NotFound"); # Impossible to have this value in sources.
 	}
 	my $env = $top->load_env($name);
 	my $v;
 	if (get_options->{merged}) {
-		die "Circular reference detected while trying to lookup merged manifest of $name\n"
-			if envset("GENESIS__LOOKUP_MERGED_MANIFEST");
+		bail(
+			"Circular reference detected while trying to lookup merged manifest of $name"
+		) if envset("GENESIS__LOOKUP_MERGED_MANIFEST");
 		$ENV{GENESIS__LOOKUP_MERGED_MANIFEST}="1";
 		$env->download_required_configs('manifest');
 		$v = $env->manifest_lookup($key,$default);
 	} elsif (get_options->{partial}) {
-		die "Circular reference detected while trying to lookup merged manifest of $name\n"
-			if envset("GENESIS__LOOKUP_MERGED_MANIFEST");
+		bail(
+			"Circular reference detected while trying to lookup merged manifest of $name"
+		) if envset("GENESIS__LOOKUP_MERGED_MANIFEST");
 		$ENV{GENESIS__LOOKUP_MERGED_MANIFEST}="1";
 		$v = $env->partial_manifest_lookup($key,$default);
 	} elsif (get_options->{deployed}) {
@@ -371,36 +394,39 @@ sub bosh {
 			$bosh = Genesis::BOSH::Director->from_alias($env->name);
 		}
 	} else {
-		bail("#R{[ERROR]} Environment %s is a 'create-env' environment, so it does\n".
-				 "        not have an associated BOSH Director.  Please use the #y{--as-director} option\n".
-				 "        if you are trying to target this environment as the BOSH director.\n",
-				 $env->name
+		bail(
+			"Environment %s is a 'create-env' environment, so it does not have an ".
+			"associated BOSH Director.  Please use the #y{--as-director} option if ".
+			"you are trying to target this environment as the BOSH director.",
+			 $env->name
 		) if ($env->use_create_env);
 		$bosh_exodus_path=Genesis::BOSH::Director->exodus_path($env->name);
 		$bosh = $env->bosh; # This sets the deployment name.
 	}
 	bail(
-		"#R{[ERROR]} No BOSH connection details found.  This may be due to not having read access\n".
-		"        to the BOSH deployment's exodus data in vault (#M{%s}).\n",
+		"No BOSH connection details found.  This may be due to not having read ".
+		"access to the BOSH deployment's exodus data in vault (#M{%s}).",
 		$bosh_exodus_path
 	) unless $bosh;
 
 	if (get_options->{connect}) {
 		if (in_controlling_terminal) {
 			my $call = $::CALL; # Silence single-use warning
-			explain "This command is expected to be run in the following manner:";
-			explain "  eval \"\$($::CALL)\"";
-			explain "";
-			explain "This will set the BOSH environment variables in the current shell";
+			error(
+				"This command is expected to be run in the following manner:\n".
+				"  eval \"\$($::CALL)\"\n".
+				"\n".
+				"This will set the BOSH environment variables in the current shell"
+			);
 			exit 1;
 		}
 		my %bosh_envs = $bosh->environment_variables
 			unless in_controlling_terminal;
 		for (keys %bosh_envs) {
 			(my $escaped_value = $bosh_envs{$_}||"") =~ s/"/"\\""/g;
-			explain 'export %s="%s"', $_, $escaped_value;
+			output 'export %s="%s"', $_, $escaped_value;
 		}
-		explain STDERR "Exported environmental variables for BOSH director %s", $bosh->{alias};
+		info "Exported environmental variables for BOSH director %s", $bosh->{alias};
 		exit 0;
 	} else {
 		my ($out, $rc) = $bosh->execute({interactive => 1, dir => $ENV{GENESIS_ORIGINATING_DIR}}, @_);
@@ -409,17 +435,13 @@ sub bosh {
 }
 
 sub env_shell {
-	my %options = (redact => ! -t STDOUT);
-	options(\@_, \%options, qw/
-		shell|s=s
-		no-bosh
-		hook|H=s
-	/);
+
+	append_options(redact => ! -t STDOUT);
 	command_usage(1) if @_ != 1;
 	
 	my $env = Genesis::Top->new('.')->load_env($_[0])->with_vault();
-	$env->with_bosh() unless $options{'no-bosh'};
-	$env->shell(%options);
+	$env->with_bosh() unless get_options->{'no-bosh'};
+	$env->shell(%{get_options()});
 }
 
 1;

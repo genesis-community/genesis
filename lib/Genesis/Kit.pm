@@ -2,6 +2,8 @@ package Genesis::Kit;
 use strict;
 use warnings;
 
+use base 'Genesis::Base'; # for _memoize
+
 use Genesis;
 use Genesis::State;
 use Genesis::Helpers;
@@ -11,7 +13,7 @@ use Genesis::Helpers;
 # new - abstract class only, expects derived class to specify new body {{{
 sub new {
 	my ($class,$provider) = @_;
-	bug "#R{[ERROR]} Attempt to initialize abstract class Genesis::Kit"
+	bug "Attempt to initialize abstract class Genesis::Kit"
 		if ($class == __PACKAGE__);
 }
 # }}}
@@ -196,12 +198,12 @@ EOF
 
 	if ($hook eq 'new') {
 		bail(
-			"#R{[ERROR]} Could not create new env #C{%s} (in %s): 'new' hook exited %d",
+			"Could not create new env #C{%s} (in %s): 'new' hook exited %d",
 			$ENV{GENESIS_ENVIRONMENT}, humanize_path($ENV{GENESIS_ROOT}), $rc,
 		)	unless ($rc == 0);
 
 		bail(
-			"#R{[ERROR]} Could not create new env #C{%s} (in %s): 'new' hook did not create #M{%1\$s}",
+			"Could not create new env #C{%s} (in %s): 'new' hook did not create #M{%1\$s}",
 			$ENV{GENESIS_ENVIRONMENT}, humanize_path($ENV{GENESIS_ROOT})
 		)	unless -f sprintf("%s/%s.yml", $ENV{GENESIS_ROOT}, $ENV{GENESIS_ENVIRONMENT});
 
@@ -210,21 +212,22 @@ EOF
 
 	if ($hook eq 'blueprint') {
 		bail(
-			"#R{[ERROR]} Could not determine which YAML files to merge: 'blueprint' hook exited with %d:".
+			"Could not determine which YAML files to merge: 'blueprint' hook exited with %d:".
 			"\n\n#u{stdout:}\n%s\n\n",
 			$rc, $out||"#i{No stdout provided}"
 		) if ($rc != 0);
 
 		$out =~ s/^\s+//;
 		my @manifests = split(/\s+/, $out);
-		bail "#R{[ERROR]} Could not determine which YAML files to merge: 'blueprint' specified no files"
-			unless @manifests;
+		bail(
+			"Could not determine which YAML files to merge: 'blueprint' specified no files"
+		) unless @manifests;
 		return @manifests;
 	}
 
 	if (grep { $_ eq $hook}  qw/features/) {
 		bail(
-			"#R{[ERROR]} Could not run feature hook in kit %s:".
+			"Could not run feature hook in kit %s:".
 			"\n\n#u{stdout:}\n%s\n\n",
 			$self->id, $out||"#i{No stdout provided}"
 		) unless $rc == 0;
@@ -234,7 +237,7 @@ EOF
 
 	if ($hook eq 'pre-deploy') {
 		bail(
-			"#R{[ERROR]} Cannot continue with deployment: 'pre-deploy' hook for #C{%s} environment exited %d.",
+			"Cannot continue with deployment: 'pre-deploy' hook for #C{%s} environment exited %d.",
 			$ENV{GENESIS_ENVIRONMENT}, $rc,
 		) unless ($rc == 0);
 		my $contents;
@@ -260,12 +263,12 @@ EOF
 	if ($rc != 0) {
 		if (defined($out)) {
 			bail(
-				"#R{[ERROR]} Could not run '%s' hook successfully - exited with %d:".
+				"Could not run '%s' hook successfully - exited with %d:".
 				"\n\n#u{stdout:}\n%s\n\n",
 				$hook, $rc, $out||"#i{No stdout provided}"
 			);
 		} else {
-			bail("#R{[ERROR]} Could not run '%s' hook successfully - exited with %d", $hook, $rc);
+			bail("Could not run '%s' hook successfully - exited with %d", $hook, $rc);
 		}
 	}
 	return 1;
@@ -277,7 +280,10 @@ sub metadata {
 	my ($self,@keys) = @_;
 	if (! $self->{__metadata}) {
 		if (! -f $self->path('kit.yml')) {
-			debug "#Y[WARNING] Kit %s is missing it's kit.yml file -- cannot load metadata", $self->name;
+			warning({level => 'debug'},
+				"Kit %s is missing it's kit.yml file -- cannot load metadata",
+				$self->name
+			);
 			return {}
 		}
 		my @kit_files = ($self->path('kit.yml'));
@@ -402,13 +408,14 @@ sub feature_compatibility {
 # }}}
 # genesis_version_min -- minimum version of genesis required to be used for this kit
 sub genesis_version_min {
-	my ($self) = @_;
-
-	my $kit_min = $self->metadata->{genesis_version_min};
-	dump_var kit_min_version => $kit_min || "undefined";
-	dump_var kit_metadata =>$self->metadata;
-	$kit_min = '0.0.0' unless ($kit_min && semver($kit_min));
-	return $kit_min;
+	return $_[0]->_memoize('__genesis_version_min',sub{
+		my ($self) = @_;
+		my $kit_min = $self->metadata->{genesis_version_min};
+		dump_var kit_min_version => $kit_min || "undefined";
+		dump_var kit_metadata =>$self->metadata;
+		$kit_min = '0.0.0' unless ($kit_min && semver($kit_min));
+		return $kit_min;
+	})
 }
 
 # }}}
@@ -421,17 +428,21 @@ sub check_prereqs {
 	my $min = $self->metadata->{genesis_version_min};
 	if ($min && semver($min)) {
 		if (!semver($Genesis::VERSION)) {
-			unless (under_test && !envset 'GENESIS_TESTING_DEV_VERSION_DETECTION') {
-				error("#Y{WARNING:} Using a development version of Genesis.");
-				error("Cannot determine if it meets or exceeds the minimum version");
-				error("requirement (v$min) for $id.");
-			}
+			warning(
+				"#Y{Using a development version of Genesis.}\n".
+				"\n".
+				"Cannot determine if it meets or exceeds the minimum version ".
+				"requirement (v$min) for $id."
+			)	unless (under_test && !envset 'GENESIS_TESTING_DEV_VERSION_DETECTION');
 		} elsif (!new_enough($Genesis::VERSION, $min)) {
-			error("#R{ERROR:} $id requires Genesis version $min,");
-			error("but this Genesis is version $Genesis::VERSION.");
-			error("");
-			error("Please upgrade Genesis.  Don't forget to run `genesis embed afterward,` to");
-			error("update the version embedded in your deployment repository.");
+			error(
+				"$id requires Genesis version $min, but this Genesis is version ".
+				"$Genesis::VERSION.\n".
+				"\n".
+				"Please upgrade Genesis.  Don't forget to run \`genesis embed\` ".
+				"afterward, to update the version embedded in your deployment ".
+				"repository."
+			);
 			$ok = 0
 		}
 	}
@@ -439,7 +450,7 @@ sub check_prereqs {
 	if ($self->has_hook('prereqs')) {
 		my ($out,$rc) = run_hook('prereqs',env => $env);
 		if ($rc > 0) {
-			error("#R{[ERROR]} Prerequisite check for kit #C{$id} failed with exit code $rc");
+			error("Prerequisite check for kit #C{$id} failed with exit code $rc");
 			$ok = 0;
 		}
 	}
@@ -453,8 +464,8 @@ sub source_yaml_files {
 	my ($self, $env, $absolute) = @_;
 
 	bail(
-		"#R{[ERROR] Kit %s is not supported by Genesis %s (no hooks/blueprint script).\n".
-		"       Check for newer version of this kit.",
+		"Kit %s is not supported by Genesis %s (no hooks/blueprint script).  ".
+		"Check for newer version of this kit.",
 		$self->id, $Genesis::VERSION
 	) unless ($self->has_hook('blueprint'));
 

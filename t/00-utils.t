@@ -7,6 +7,7 @@ use lib 't';
 use helper; # IF this dies, its because genesis ping is failing
 use POSIX;
 use Test::Exception;
+use Test::Exit;
 use Test::Differences;
 use Test::Output;
 use Time::Seconds;
@@ -26,6 +27,39 @@ subtest 'bug reporting utilities' => sub {
 				a \s+ bug \s+ in \s+ Genesis.*
 			}six, "bug() reports all the necessary details";
 	};
+
+	local $ENV{GENESIS_IGNORE_EVAL}=1;
+	my ($stdout, $stderr) = output_from {
+		exits_nonzero {
+			bug("an example bug"); 
+		}, "Bug exits with a non-zero status"
+	};
+
+	matches($stdout, "", "bug() does not print to stdout");
+	matches($stderr, qr{
+		an \s+ example \s+ bug.*
+		a \s+ bug \s+ in \s+ Genesis.*
+		}six, "bug() reports all the necessary details"
+	);
+};
+
+subtest 'bailing' => sub {
+	local $Genesis::VERSION = '2.8.11';
+	local $ENV{NOCOLOR}=1;
+	local $ENV{GENESIS_LOG_STYLE}='plain';
+	throws_ok {
+		stderr_is(sub { bail("borked!"); }, qr/borked/, "bail() prints its message");
+	} qr/borked/;
+
+	local $ENV{GENESIS_IGNORE_EVAL}=1;
+	my ($stdout, $stderr) = output_from {
+		exits_nonzero {
+			bail("borked"); 
+		}, "Bail exits with a non-zero status"
+	};
+
+	matches($stdout, "", "bail() does not print to stdout");
+	matches($stderr, qr{\[FATAL\] borked},  "bail() prints its message");
 };
 
 subtest 'environment variable utilities' => sub {
@@ -63,68 +97,68 @@ subtest 'environment variable utilities' => sub {
 };
 
 subtest 'output utilities' => sub {
+	local $ENV{NOCOLOR}=1;
+	local $ENV{GENESIS_NO_UTF8}=1;
+	local $ENV{GENESIS_LOG_STYLE}='plain';
 	{
-		local *STDERR; open STDERR, ">", "/dev/null";
-		stdout_is(sub {
-			explain("this is an explanation");
-			  debug("this is debugging");
-			  trace("this is trace (debugging's debugging)");
-			  error("this is an error");
-		}, "this is an explanation\n", "only explain()s go to standard output");
+		my ($out, $err) = output_from {
+			 output("this is from 'output'");
+			  fatal({show_stack => 'none'}, "this is from 'fatal'");
+			  error("this is from 'error'");
+			warning("this is from 'warning'");
+			   info("this is from 'info'");
+			  debug("this is from 'debug'");
+			  trace("this is from 'trace'");
+		};
+		matches $out, "this is from 'output'\n", "only output()s go to standard output";
+		matches $err, "[FATAL] this is from 'fatal'\n[ERROR] this is from 'error'\n[WARNING] this is from 'warning'\nthis is from 'info'\n", "by default, only fatal to info are printed to standard error";
 	}
 
 	{
 		local $ENV{QUIET} = 'yes';
-		stdout_is(sub {
-			explain("this is an explanation");
-		}, "", "QUIET can shut up explain()");
+		$Genesis::Log::Logger = undef;
+		my $err = stderr_from {
+			info("this is info");
+		};
+		matches "$err", "", "QUIET can shut up info()";
 	}
 
 	{
-		stderr_is(sub {
-			explain("this is an explanation");
-			  debug("this is debugging");
-			  trace("this is trace (debugging's debugging)");
-			  error("this is an error");
-			}, "this is an error\n", "by default, only errors() are printed to standard error");
+		local $ENV{GENESIS_DEBUG} = 'y';
+		$Genesis::Log::Logger = undef;
+		my ($out, $err) = output_from {
+				fatal({show_stack => 'none'}, "this is from 'fatal'");
+				error("this is from 'error'");
+			warning("this is from 'warning'");
+				 info("this is from 'info'");
+				debug("this is from 'debug'");
+				trace("this is from 'trace'");
+		};
+		matches $out, "", "nothing to standard output without output()s";
+		matches $err, "[FATAL] this is from 'fatal'\n[ERROR] this is from 'error'\n[WARNING] this is from 'warning'\nthis is from 'info'\n[DEBUG] this is from 'debug'\n", "with GENESIS_DEBUG, debugging also goes to standard error";
 	}
 
 	{
-		$Logger->configure_log('<STDERR>',level => 'DEBUG', no_color => 1, truncate => 1);
-		#Logger->configure_log('/Users/dennis.bell/.genesis/log.out',level => 'TRACE', no_color => 1);
+		local $ENV{GENESIS_TRACE} = 'y';
 		local $ENV{GENESIS_DEBUG} = 'y';
 		local $ENV{NOCOLOR} = 1;
-		stderr_is(sub {
-			explain("this is an explanation");
-			  debug("this is debugging");
-			  trace("this is trace (debugging's debugging)");
-			  error("this is an error");
-			}, "DEBUG> this is debugging\n".
-			   "this is an error\n", "with GENESIS_DEBUG, debugging also goes to standard error");
+		$Genesis::Log::Logger = undef;
+		my ($out, $err) = output_from {
+			 output("this is from first 'output'");
+				fatal({show_stack => 'none'}, "this is from 'fatal'");
+				error("this is from 'error'");
+			warning("this is from 'warning'");
+				 info("this is from 'info'");
+				debug("this is from 'debug'");
+			 output("this is from last 'output'");
+				trace("this is from 'trace'");
+		};
+		matches $out, "this is from first 'output'\nthis is from last 'output'\n", "output()s go to standard output in the right order";
+		matches $err, "[FATAL] this is from 'fatal'\n[ERROR] this is from 'error'\n[WARNING] this is from 'warning'\nthis is from 'info'\n[DEBUG] this is from 'debug'\n[TRACE] this is from 'trace'\n        ^- t/00-utils.t:L154 (in main::__ANON__)\n", "with GENESIS_TRACE, you get trace to standard error";
 	}
-
-	{
-		$Logger->configure_log('<STDERR>',level => 'TRACE', no_color => 1);
-		local $ENV{GENESIS_TRACE} = 'y';
-		local $ENV{NOCOLOR} = 1;
-		stderr_is(sub {
-			explain("this is an explanation");
-			  debug("this is debugging");
-			  trace("this is trace (debugging's debugging)");
-			  error("this is an error");
-			}, "DEBUG> this is debugging\n".
-			   "TRACE> this is trace (debugging's debugging)\n".
-			   "       ⬑  t/00-utils.t:L113 (in main::__ANON__)\n".
-			   "this is an error\n", "with GENESIS_TRACE, you get trace to standard error");
-		$Logger->configure_log('<STDERR>',level => 'NONE');
-	}
+	$Genesis::Log::Logger = undef;
 };
 
-subtest 'bailing' => sub {
-	throws_ok {
-		stderr_is(sub { bail("borked!"); }, qr/borked/, "bail() prints its message");
-	} qr/borked/;
-};
 
 subtest 'uri parsing' => sub {
 	for my $ok (qw(
@@ -218,26 +252,41 @@ subtest 'fs utilities' => sub {
 	lives_ok { mkdir_or_fail("$tmp/dir") } "mkdir_or_fail should not fail";
 	ok -d "$tmp/dir",  "mkdir_or_fail should make a dir if it didn't fail";
 
-	dies_ok { mkfile_or_fail("$tmp/file/not/a/dir/file", "whatevs"); }
-		"mkfile_or_fail should fail if it cannot succeed";
+	local $ENV{GENESIS_IGNORE_EVAL}=1;
 
-	dies_ok { copy_or_fail("$tmp/e/no/ent", "$tmp/copy2") }
-		"copy_or_fail should fail if it cannot succeed";
+	my ($out,$err);
+	($out,$err) = output_from {
+		exits_nonzero {
+			mkfile_or_fail("$tmp/file/not/a/dir/file", "whatevs"); 
+		} "mkfile_or_fail should fail if it cannot succeed";
+	};
 
-	dies_ok { mkdir_or_fail("$tmp/file/not/a/dir"); }
-		"mkdir_or_fail should fail if it cannot succeed";
+	($out,$err) = output_from {
+		exits_nonzero {
+			copy_or_fail("$tmp/e/no/ent", "$tmp/copy2");
+		} "copy_or_fail should fail if it cannot succeed";
+	};
+
+	($out,$err) = output_from {
+		exits_nonzero {
+			mkdir_or_fail("$tmp/file/not/a/dir");
+		} "mkdir_or_fail should fail if it cannot succeed";
+	};
 
 	lives_ok { symlink_or_fail("$tmp/file", "$tmp/link"); } "symlink_or_fail shoud not fail";
 	sleep 0.1; # symlink() seems to have a race condition?
 	ok -l "$tmp/link", "symlink_or_fail should make a symbolic link if it didn't fail";
 
-	dies_ok { symlink_or_fail("$tmp/e/no/ent", "$tmp/void") }
-		"symlink_or_fail should fail if it cannot succeed";
+	($out,$err) = output_from {
+		exits_nonzero {
+			symlink_or_fail("$tmp/e/no/ent", "$tmp/void");
+		} "symlink_or_fail should fail if it cannot succeed";
+	};
 
 	chdir $tmp;
 	my $here = Cwd::getcwd;
-	chdir $here; lives_ok { chdir_or_fail("$tmp/dir"); }  "chdir_or_fail(dir) should not fail";
-	chdir $here; dies_ok  { chdir_or_fail("$tmp/file"); } "chdir_or_fail(file) should fail";
+	chdir $here; lives_ok      { chdir_or_fail("$tmp/dir"); }  "chdir_or_fail(dir) should not fail";
+	chdir $here; output_from { exits_nonzero { chdir_or_fail("$tmp/file"); } "chdir_or_fail(file) should fail"; };
 	chdir $here;
 
 	pushd("$tmp/dir"); is Cwd::getcwd, "$tmp/dir", "pushd put us where we wanted to go";

@@ -12,7 +12,7 @@ our @EXPORT = qw/
 
 sub envset {
 	my $var = shift;
-	(defined $ENV{$var} and scalar($ENV{$var} =~ m/^(1|y|yes|true)$/i)) ? 1 : 0;
+	(defined $ENV{$var} and scalar($ENV{$var} =~ m/^([1-9][0-9]*|y|yes|true)$/i)) ? 1 : 0;
 }
 
 sub envdefault {

@@ -195,7 +195,7 @@ sub connect_and_validate {
 	debug "Checking BOSH at '$self->{alias}' for connectivity";
 	my $waiting=0;
 	unless (in_callback || envset "GENESIS_TESTING") {;
-		waiting_on STDERR "Checking availability of the #M{%s} BOSH director...", $self->{alias};
+		info {pending=>1}, "Checking availability of the #M{%s} BOSH director...", $self->{alias};
 		$waiting=1;
 	}
 
@@ -203,25 +203,25 @@ sub connect_and_validate {
 	unless ($status eq 'ok') {
 		error "#R{unreachable - $status!}\n" if $waiting;
 		dump_stack;
-		bail("\n#R{[ERROR]} Unable to connect to #M{%s} BOSH director...", $self->{alias});
+		bail("Unable to connect to #M{%s} BOSH director...", $self->{alias});
 	}
 
 	my ($out,$rc,$err) = eval{$self->execute('env')};
 	($err,$rc) = ($@,70)if ($@); # 70 is EX_SOFTWARE in sysexits.h,denoting internal software error
 	if ($rc) {
 		error "#R{error!}" if $waiting;
-		bail("\n#R{[ERROR]} Unable to connect to #M{%s} BOSH director:\n%s", $self->{alias},$err);
+		bail("Unable to connect to #M{%s} BOSH director:\n%s", $self->{alias},$err);
 	}
 	if ($out =~ /\(not logged in\)/) {
 		error "#R{unauthorized!}" if $waiting;
 		bail(
-			"\n#R{[ERROR]} Unable to connect to #M{%s} BOSH director: no active session.\n".
-			"        Please log in and try again.",
+			"Unable to connect to #M{%s} BOSH director: no active session.  ".
+			"Please log in and try again.",
 			$self->{alias}
 		)
 	}
 	($self->{user}) = $out =~ /^(.*)\z/m;
-	explain STDERR "#G{ok} - authorized as #g{$self->{user}}" if $waiting;
+	info "#G{ok} - authorized as #g{$self->{user}}" if $waiting;
 	$self->{validated} = 1;
 	$ENV{GENESIS_BOSH_VERIFIED} = $self->{alias};
 	return $self;
@@ -245,7 +245,7 @@ sub download_configs {
 		if ($rc || $json_err) {
 			$json_err =~ s/ at lib\/Genesis\/BOSH.*//sm if $json_err;
 			$err ||= $json_err || "bosh configs returned exit code $rc";
-			bail("#R{[ERROR]} Could not determine available #C{$type} configurations: $err");
+			bail("Could not determine available #C{$type} configurations: $err");
 		}
 
 		for (@$configs_list) {
@@ -268,7 +268,7 @@ sub download_configs {
 		if ($rc || $json_err) {
 			$json_err =~ s/ at lib\/Genesis\/BOSH.*//sm if $json_err;
 			$err ||= $json_err || "bosh configs returned exit code $rc";
-			bail("#R{[ERROR]} Could not determine available #C{$type} configurations: $err");
+			bail("Could not determine available #C{$type} configurations: $err");
 		}
 
 		if ($rc || $json_err) {
@@ -301,7 +301,7 @@ sub download_configs {
 	}
 	mkfile_or_fail($path,$config || "");
 	bail(
-		"#R{[ERROR]}  No matching $type configurations defined on '#M{%s}' BOSH director", $self->alias
+		"No matching $type configurations defined on '#M{%s}' BOSH director", $self->alias
 	) unless (-s $path);
 	return wantarray ? @configs : \@configs;
 }

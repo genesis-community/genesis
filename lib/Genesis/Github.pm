@@ -103,7 +103,7 @@ sub repos {
 			eval {
 				$results = load_json($data);
 				1
-			} or bail("#R{error!}\nFailed to read repository information from #M{%s} org: %s", $self->label, $@);
+			} or bail("Failed to read repository information from #M{%s} org: %s", $self->label, $@);
 			last unless ref($results) eq "ARRAY" && scalar(@$results) > 0;
 			push @{$self->{_repos}}, @$results;
 			$page++;
@@ -127,9 +127,11 @@ sub repo_names {
 # }}}
 # releases - retrieves a list of releases for a repository {{{
 sub releases {
-	my ($self, $name) = @_;
+	my ($self, $name, $prefix) = @_;
 
 	bail("Missing repository name") unless $name;
+
+	$prefix //='';
 
 	$self->{_releases} ||= {};
 	unless (defined($self->{_releases}{$name})) {
@@ -143,9 +145,8 @@ sub releases {
 		bail "$status"."\n" if $status;
 		trace "About to get releases from Github";
 
-		waiting_on STDERR "Retrieving list of available releases for #M{%s} kit on #C{%s} ...",$name,$self->label;
+		info {pending=>1}, "%sRetrieving list of available releases for #M{%s} kit on #C{%s} ...",$prefix, $name,$self->label;
 		$self->{_releases}{$name} = $self->get_release_info($name);
-		explain STDERR "#G{ done.}";
 	}
 
 	return @{$self->{_releases}{$name}};
@@ -160,7 +161,7 @@ sub get_release_info {
 	my $url = $self->releases_url($name);
 	while (1) {
 		($code, $msg, $data, $headers) = curl("GET", $url, undef, undef, 0, $self->{creds});
-		bail("#R{error!}\nCould not find  %s release information; Github rsponded with a %s status:\n%s",$label,$code,$msg)
+		bail("Could not find  %s release information; Github rsponded with a %s status:\n%s",$label,$code,$msg)
 			unless $code == 200;
 
 		my $results;
@@ -174,8 +175,9 @@ sub get_release_info {
 		last unless $links;
 		$url = (grep {$_ =~ s/^<(.*)>; rel="next"/$1/} split(', ', $links))[0];
 		last unless $url;
-		waiting_on STDERR '.';
+		info {pending=>1}, '.';
 	}
+	info "#G{ done.}";
 	return \@results;
 }
 
@@ -242,31 +244,40 @@ sub fetch_release {
 		$self->versions($name, include_drafts => 1, include_prereleases => 1)
 	)[0];
 	bail(
-		"\n#R{[ERROR]} Release %s/%s was not found\n",
+		"Release %s/%s was not found",
 		$name, $version
 	) unless $version_info && ref($version_info) eq 'HASH';
 
 	my $url = $version_info->{url};
 	bail(
-		"\n#R{[ERROR]} Release %s/%s was found but is missing its resource url.".
-		"\n        It may have been revoked (see release notes below):\n\n%s\n",
+		"Release %s/%s was found but is missing its resource url.\n".
+		"It may have been revoked (see release notes below):\n\n%s\n",
 		$name, $version, $version_info->{body}
 	) unless $url;
 
-	waiting_on "Downloading v%s of #M{%s} from #C{%s} ... ",$version,$name,$self->label;
+	info({pending => 1},
+		"Downloading v%s of #M{%s} from #C{%s} ... ",
+		$version,$name,$self->label
+	);
 	my ($code, $msg, $data) = curl("GET", $url);
-	bail "\n#R{error!}\nFailed to download %s/%s from %s: returned a %s status code\n", $name, $version, $self->label, $code
-		unless $code == 200;
-	explain "#G{done.}";
+	bail(
+		"Failed to download %s/%s from %s: returned a %s status code\n",
+		$name, $version, $self->label, $code
+	) unless $code == 200;
+	info "#G{done.}";
 
 	my $file = "$path/$version_info->{filename}";
 	if (-f $file) {
 		if (! $force) {
 			my $old_data = slurp($file);
 			if (sha1_hex($data) eq sha1_hex($old_data)) {
-				bail "#Y{[WARNING]} Exact same release already exists under #C{%s} - no change.\n", humanize_path($path);
+				warning(
+					"Exact same release already exists under #C{%s} - no change.\n",
+					humanize_path($path)
+				);
+				exit 0
 			} else {
-				error "#R{[ERROR]} Release $name/$version already exists, but is different!";
+				error "Release $name/$version already exists, but is different!";
 				die_unless_controlling_terminal;
 				my $overwrite = prompt_for_boolean("Do you want to overwrite the existing file with the content downloaded from\n$self->{label}",0);
 				bail "Aborted!\n" unless $overwrite;

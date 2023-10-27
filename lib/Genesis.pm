@@ -18,7 +18,7 @@ use File::Basename qw/basename dirname/;
 use File::Find ();
 use IO::Socket;
 use POSIX qw/strftime/;
-use Symbol qw/qualify_to_ref/;
+#use Symbol qw/qualify_to_ref/;
 use Time::HiRes qw/gettimeofday/;
 use Time::Piece;
 use Time::Seconds;
@@ -37,15 +37,9 @@ use base 'Exporter';
 our @EXPORT = qw/
 	in_repo_dir in_kit_dir
 
-	explain waiting_on
-	error bail bug fatal warn
-
-	
-	debug
-	trace
-	dump_stack
-	dump_var
-	qtrace
+	logger
+	error bail bug fatal warning info output success
+	debug trace dump_stack dump_var qtrace
 
 	vaulted
 	workdir
@@ -109,10 +103,12 @@ sub safe_path_exists {
 	return Genesis::Vault->current->has($_[0]);
 }
 
-sub logger     {$Genesis::Log::Logger}
+sub logger     {$Genesis::Log::Logger//Genesis::Log->new()->configure_log()}
+sub output     {logger->output({offset => 1},@_);}
 sub fatal      {logger->fatal({offset => 1},@_);}
 sub error      {logger->error({offset => 1},@_);}
-sub warn       {logger->warn({offset => 1},@_);}
+sub warning    {logger->warning({offset => 1},@_);}
+sub success    {logger->warning({offset => 1, emoji => 'tada', colors => 'kg', label => 'DONE'}, @_);}
 sub info       {logger->info({offset => 1},@_);}
 sub debug      {logger->debug({offset => 1},@_);}
 sub trace      {logger->trace({offset => 1},@_);}
@@ -140,16 +136,21 @@ sub bail {
 		@{$options}{keys %$more_options} = values %$more_options;
 	}
 
-	my $msg = fix_wrap(@_);
+	my $msg = fix_wrap(@_)."\n";
 
 	# Make sure there's a stderr log running and its level is at least fatal
 	logger->configure_log(level => "FATAL") unless (logger->is_logging("FATAL"));
 
+	if ($^S && !envset("GENESIS_IGNORE_EVAL")) {
+		# die if in an eval;
+		logger->trace("Fatal exception caught: $msg");
+		$msg =~ 
+		die "\n".csprintf("%s",wrap($msg,terminal_width,"#r{[FATAL]} "))."\n";
+	}
+
 	# log a fatal message and exit
 	my $rc = delete($options->{exitcode}) // 1;
-	print STDERR "\n";
-	logger->fatal({offset=>1, show_stack => 'none'},$options, $msg);
-	print STDERR "\n";
+	logger->fatal({offset=>1, show_stack => 'none'},$options, "\n".$msg);
 	exit $rc;
 }
 
@@ -179,13 +180,17 @@ sub bug {
 			              "the Genesis Github repository.\n"
 	}
 
+	if ($^S && !envset("GENESIS_IGNORE_EVAL")) {
+		# die if in an eval;
+		logger->trace("Bug caught: $msg");
+		die "\n".csprintf("%s",wrap($msg,terminal_width,"#r{[FATAL]} ")."\n\n");
+	}
+
 	# Make sure there's a stderr log running and its level is at least fatal
 	logger->configure_log(level => "FATAL") unless (logger->is_logging("FATAL"));
 
 	my $rc = delete($options->{exitcode}) // 1;
-	print STDERR "\n";
-	logger->fatal({offset=>1, show_stack => 'none'},$options, $msg);
-	print STDERR "\n";
+	logger->fatal({offset=>1, show_stack => 'none'},$options, "\n".$msg."\n");
 	exit $rc;
 }
 
@@ -199,7 +204,7 @@ sub fix_wrap {
 	my $blanks = $1 || "\n";
 
 	my ($c, $prefix,$sub_msg);
-	if (($c,$prefix,$sub_msg) = $msg =~ m/^#([^\{]*)\{([^\}]*)} (.*)/s) {
+	if (($c,$prefix,$sub_msg) = $msg =~ m/^#([^\{]*)\{(\[[A-Z]*\])} (.*)/s) {
 		my $indent = ' ' x (length($prefix)+1);
 		$msg = $sub_msg;
 		$msg =~ s/\n$indent([^ ])/ $1/sg;
@@ -400,7 +405,7 @@ sub run {
 	if ($rc) {
 		dump_var -1, run_output => $out if (defined($out));
 		dump_var -1, run_stderr => $err if (defined($err));
-		bail("#R{%s} (run failed)%s%s",
+		bail({raw => 1}, "#R{%s} (run failed)%s%s",
 		     $opts{onfailure},
 		     defined($err) ? "\n\nSTDERR:\n$err" : '',
 		     defined($out) ? "\n\nSTDOUT:\n$out" : ''
@@ -409,7 +414,7 @@ sub run {
 	} else {
 		if (defined($out)) {
 			if ($out =~ m/[\x00-\x08\x0b-\x0c\x0e\x1f\x7f-\xff]/) {
-				qtrace "[".length($out)."b of binary data omited from debug]";
+				qtrace "[".length($out)."b of binary data omitted from debug]";
 			} else {
 				dump_var -1, run_output => $out;
 			}
@@ -441,7 +446,7 @@ sub read_json_from {
 		$err = $@; # previous error was non-fatal, so override
 	}
 	return ($json,$rc,$err) if (wantarray);
-	die $err if $err && $err ne "";
+	bail($err) if $err && $err ne "";
 	return $json;
 }
 
@@ -502,7 +507,7 @@ sub curl {
 sub slurp {
 	my ($file) = @_;
 	open my $fh, "<", $file
-		or die "failed to open '$file' for reading: $!\n";
+		or bail "failed to open '$file' for reading: $!\n";
 	my $contents = do { local $/; <$fh> };
 	close $fh;
 	return $contents;
@@ -523,10 +528,10 @@ sub mkfile_or_fail {
 	}
 
 	eval {
-		open my $fh, ">", $file or die "Unable to open $file for writing: $!";
+		open my $fh, ">", $file or bail "Unable to open $file for writing: $!";
 		print $fh $content;
 		close $fh;
-	} or die "Error creating file $file: $!\n";
+	} or bail "Error creating file $file: $!";
 	chmod_or_fail($mode, $file) if defined $mode;
 	return $file;
 }
@@ -544,24 +549,24 @@ sub mkdir_or_fail {
 sub chdir_or_fail {
 	my ($dir) = @_;
 	debug("changing current working directory to $dir/");
-	chdir $dir or die "Unable to change directory to $dir/: $!\n";
+	chdir $dir or bail "Unable to change directory to $dir/: $!";
 }
 
 sub symlink_or_fail {
 	my ($source, $dest) = @_;
-	-e $source or die "$source does not exist!\n";
-	-e $dest and die abs_path($dest)." already exists!";
+	-e $source or bail "$source does not exist!";
+	-e $dest and bail abs_path($dest)." already exists!";
 	trace("creating symbolic link $source -> $dest");
-	symlink($source, $dest) or die "Unable to link $source to $dest: $!\n";
+	symlink($source, $dest) or bail "Unable to link $source to $dest: $!\n";
 }
 
 sub copy_or_fail {
 	my ($from, $to) = @_;
-	-f $from or die "$from: $!\n";
+	-f $from or bail "$from: $!\n";
 	$to.=($to =~ /\/$/?'':'/').basename($from) if -d $to;
 	trace("copying $from to $to");
-	open my $in,  "<", $from or die "Unable to open $from for reading: $!\n";
-	open my $out, ">", $to   or die "Unable to open $to for writing: $!\n";
+	open my $in,  "<", $from or bail "Unable to open $from for reading: $!";
+	open my $out, ">", $to   or bail "Unable to open $to for writing: $!";
 	print $out $_ while (<$in>);
 	close $in;
 	close $out;
@@ -569,8 +574,8 @@ sub copy_or_fail {
 
 sub copy_tree_or_fail {
 	my ($from, $to, $trim) = @_;
-	-e $from or die "$from: No such file or directory\n";
-	(-d $to || ! -e $to) or die "$to: Exists and is not a directory";
+	-e $from or bail "$from: No such file or directory";
+	(-d $to || ! -e $to) or bail "$to: Exists and is not a directory";
 	mkdir_or_fail $to unless -d $to;
 	my @subfiles;
 	$trim = '' unless defined($trim);
@@ -591,9 +596,9 @@ sub copy_tree_or_fail {
 # chmod_or_fail 0755, $path; <-- don't quote the mode. make it an octal number.
 sub chmod_or_fail {
 	my ($mode, $path) = @_;
-	-e $path or die "$path: $!\n";
+	-e $path or bail "$path: $!";
 	chmod $mode, $path
-		or die "Could not change mode of $path: $!\n";
+		or bail "Could not change mode of $path: $!";
 }
 
 sub humanize_path {
@@ -655,7 +660,7 @@ sub load_yaml {
 
 	my $tmp = workdir();
 	open my $fh, ">", "$tmp/json.yml"
-		or die "Unable to create tempfile for YAML conversion: $!\n";
+		or bail "Unable to create tempfile for YAML conversion: $!";
 	print $fh $yaml;
 	close $fh;
 	return load_yaml_file("$tmp/json.yml")
@@ -669,7 +674,7 @@ sub pushd {
 	chdir_or_fail($dir);
 }
 sub popd {
-	@DIRSTACK or die "popd called when we don't have anything on the directory stack; please file a bug\n";
+	@DIRSTACK or bug "popd called when we don't have anything on the directory stack";
 	chdir_or_fail(pop @DIRSTACK);
 }
 
@@ -1220,3 +1225,4 @@ last call to C<pushd>.  This is similarly to shell pushd / popd builtins.
 
 
 =cut
+# vim: fdm=marker:foldlevel=1:noet

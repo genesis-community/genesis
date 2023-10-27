@@ -17,6 +17,31 @@ sub write {
 	close $fh;
 }
 
+sub log_from_script {
+
+	require Genesis;
+	require Genesis::Config;
+	require Genesis::Log;
+	$Genesis::RC ||= Genesis::Config->new($ENV{HOME}."/.genesis/config");
+	Genesis::Log->setup_from_configs($Genesis::RC->get("logs",[]));
+	
+	binmode STDOUT, ":encoding(UTF-8)";
+	binmode STDERR, ":encoding(UTF-8)";
+
+	my $log_cmd = \&Genesis::info;
+
+	if ($_[0] =~ /^@/) {
+		(my $log_level = shift) =~ s/^@//;
+		$log_cmd = 'Genesis'->can($log_level);
+		bug(
+			"$log_level is not a valid log command for Genesis"
+		) unless $log_cmd;
+	}
+	$log_cmd->({show_stack => 'none'},Genesis::fix_wrap(join("\n",@_)));
+	return;
+}
+
+
 1;
 
 =head1 NAME
@@ -56,9 +81,16 @@ genesis() {
 export -f genesis
 
 describe() {
-  /usr/bin/perl -I$GENESIS_LIB -MGenesis -e 'binmode STDOUT, ":encoding(UTF-8)"; explain("%s",$_) for @ARGV' "$@"
+  /usr/bin/perl -I$GENESIS_LIB -MGenesis::Term -e 'binmode STDOUT, ":encoding(UTF-8)"; printf csprintf("%s\n",$_) for @ARGV' "$@"
 }
+
 export -f describe
+
+genesis_log() {
+	/usr/bin/perl -I$GENESIS_LIB -MGenesis -e 'Genesis::log_from_script(@ARGV)' "$@"
+}
+
+export -f genesis_log
 
 titleize() {
 	if [[ $# -gt 0 ]] ; then
@@ -75,7 +107,7 @@ export -f humanize_path
 __bail() {
   local rc=1
   [[ "$1" == "--rc" ]] && rc="$2" && shift 2
-  describe "$@" >&2
+  genesis_log fatal "$@" >&2
   exit $rc
 }
 export -f __bail

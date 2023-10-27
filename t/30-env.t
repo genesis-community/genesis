@@ -243,7 +243,7 @@ genesis:
 EOF
 	local $ENV{NOCOLOR} = 'y';
 	quietly { throws_ok { $env = $top->load_env('standalone-with-another.yml');}
-		qr/\[ERROR\] Environment standalone-with-another.yml could not be loaded:\n\s+- kit bosh\/0.2.0 is not compatible with secrets_mount feature; check for\n\s+newer kit version or remove feature.\n\s+- kit bosh\/0.2.0 is not compatible with exodus_mount feature; check for\n\s+newer kit version or remove feature./ms,
+		qr/\[FATAL\] Environment standalone-with-another.yml could not be loaded:\n\s+- kit bosh\/0.2.0 is not compatible with secrets_mount feature; check for\n\s+newer kit version or remove feature.\n\s+- kit bosh\/0.2.0 is not compatible with exodus_mount feature; check for\n\s+newer kit version or remove feature./ms,
 		"Outdated kits bail when using v2.7.0 features";
 	};
 
@@ -296,9 +296,9 @@ EOF
 	ok($env->has_feature('vsphere'), "standalone env has the vsphere feature");
 	ok($env->has_feature('second-feature'), "standalone env has the second-feature feature");
 	ok(!$env->has_feature('xyzzy'), "standalone env doesn't have the xyzzy feature");
-	throws_ok { $env->use_create_env() } qr/ERROR/;
+	throws_ok { $env->use_create_env() } qr/FATAL/;
 	throws_ok { $env->use_create_env() }
-		qr/\[ERROR\] This bosh environment does not use create-env \(proto\) or specify an\n\s+alternative genesis.bosh_env/sm,
+		qr/\[FATAL\] This bosh environment does not use create-env \(proto\) or specify an\n\s+alternative genesis.bosh_env/sm,
 		"bosh environments without specifying bosh_env require bosh create-env";
 
 	put_file $top->path("regular-deploy.yml"), <<EOF;
@@ -318,7 +318,7 @@ EOF
 	         "Genesis::Env should be able to load the `regular-deploy' environment.";
 	ok($env->has_feature('vsphere'), "regular-deploy env has the vsphere feature");
 	quietly { throws_ok { $env->use_create_env() }
-		qr/\[ERROR\] This bosh environment specifies an alternative bosh_env, but is marked\n\s+as a create-env \(proto\) environment./sm,
+		qr/\[FATAL\] This bosh environment specifies an alternative bosh_env, but is marked\n\s+as a create-env \(proto\) environment./sm,
 		"bosh environments with bosh_env can't be a protobosh, or vice versa";
 	};
 
@@ -854,6 +854,7 @@ EOF
 	ok ! $exists, "manifest file doesn't exist.";
 	ok ! defined($sha1), "sha1 sum for manifest not computed.";
 	my ($stdout, $stderr) = output_from {$env->deploy(canaries => 2, "max-in-flight" => 5);};
+	$stdout =~ s/\r//g;  # Using script to wrap bosh calls injects <CR> characters for some reason?!
 	eq_or_diff($stdout, <<EOF, "Deploy should call BOSH with the correct options");
 bosh
 deploy
@@ -977,6 +978,7 @@ EOF
 
 	my $varsfile = $env->vars_file();
 	my ($stdout, $stderr) = output_from {eval {$env->deploy();}};
+	$stdout =~ s/\r//g;
 	eq_or_diff($stdout, <<EOF, "Deploy should call BOSH with the correct options, including vars file");
 bosh
 deploy
@@ -1097,7 +1099,7 @@ EOF
 	};
 	$out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds?/$1 XXX seconds/g;
 
-	matches_utf8 $out, <<EOF,  "check_secrets gives meaninful output on failure";
+	matches_utf8 encode_utf8($out), <<EOF,  "check_secrets gives meaninful output on failure";
 Parsing kit secrets descriptions ... done. - XXX seconds
 Retrieving all existing secrets ... done. - XXX seconds
 
@@ -1125,6 +1127,7 @@ EOF
 
 subtest 'env_kit_overrides' => sub {
 	local $ENV{GENESIS_BOSH_COMMAND};
+	local $ENV{GENESIS_OUTPUT_COLUMNS}=120;
 	fake_bosh;
 
 	my ($director1) = fake_bosh_directors(
@@ -1223,7 +1226,7 @@ EOF
 	} "successfully check secrets with environment kit overrides";
 	$out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds?/$1 XXX seconds/g;
 	$out =~ s/expires in (\d+) days \(([^\)]+)\)/expires in $1 days (<timestamp>)/g;
-	matches_utf8 $out, <<EOF, "environment kit overrides create expected secrets - validation";
+	matches_utf8 encode_utf8($out), <<EOF, "environment kit overrides create expected secrets - validation";
 Parsing kit secrets descriptions ... done. - XXX seconds
 Retrieving all existing secrets ... done. - XXX seconds
 
@@ -1410,7 +1413,7 @@ EOF
 	} "successfully check secrets with environment kit overrides";
 	$out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds?/$1 XXX seconds/g;
 	$out =~ s/expires in (\d+) days \(([^\)]+)\)/expires in $1 days (<timestamp>)/g;
-	matches_utf8 $out, <<EOF, "environment kit overrides create expected secrets - validation";
+	matches_utf8 encode_utf8($out), <<EOF, "environment kit overrides create expected secrets - validation";
 Parsing kit secrets descriptions ... done. - XXX seconds
 Retrieving all existing secrets ... done. - XXX seconds
 
@@ -1752,7 +1755,7 @@ EOF
 	);
 	eq_or_diff($err, <<EOF, "deploy error should specify incorrect reactions");
 
-[ERROR] Unexpected reactions specified under genesis.reactions: post, pre
+[FATAL] Unexpected reactions specified under genesis.reactions: post, pre
         Valid values: pre-deploy, post-deploy
 
 EOF
@@ -1784,7 +1787,7 @@ EOF
 	);
 	eq_or_diff($err, <<EOF, "deploy error should specify incorrect reactions");
 
-[ERROR] Kit reations/in-development (dev) does not provide an addon hook!
+[FATAL] Kit reactions/in-development (dev) does not provide an addon hook!
 
 EOF
 
@@ -1795,16 +1798,19 @@ EOF
 	);
 	eq_or_diff($err, <<EOF, "deploy error should specify failed reactions");
 
-[ERROR] Cannnot deploy: environment pre-deploy reaction failed!
+[FATAL] Cannnot deploy: environment pre-deploy reaction failed!
 
 EOF
 
+	local $ENV{GENESIS_OUTPUT_COLUMNS}=120;
 	my $fragment = <<'EOF';
-\[predeploy-reaction-fail: PRE-DEPLOY\] Running working-addon addon from kit reations/in-development \(dev\):
+\[predeploy-reaction-fail: PRE-DEPLOY\] Running working-addon addon from kit
+reactions/in-development \(dev\):
 
 This addon worked, with arguments of this that
 
-\[predeploy-reaction-fail: PRE-DEPLOY\] Running script `bin/fail-script.sh` with no arguments:
+\[predeploy-reaction-fail: PRE-DEPLOY\] Running script `bin/fail-script.sh` with
+no arguments:
 
 This script failed
 EOF
@@ -1850,9 +1856,15 @@ EOF
 
 	eq_or_diff($stderr, <<'EOF', "deploy output should contain the correct pre-deploy output");
 
-[postdeploy-reaction-fail] reations/in-development (dev) does not define a 'check' hook; BOSH configs and environmental parameters checks will be skipped.
+[postdeploy-reaction-fail] reactions/in-development (dev) does not define a 'check' hook; BOSH configs and
+environmental parameters checks will be skipped.
 
 [postdeploy-reaction-fail] running secrets checks...
+Parsing kit secrets descriptions ... done. - 0 seconds
+Retrieving all existing secrets ... done. - 0 seconds
+
+Validating 0 secrets for postdeploy-reaction-fail under path '/secret/postdeploy/reaction/fail/thing/':
+Completed - Duration: 0 seconds [0 validated/0 skipped/0 errors]
 
 [postdeploy-reaction-fail] running manifest viability checks...
 
@@ -1860,11 +1872,12 @@ EOF
 
 [postdeploy-reaction-fail] generating manifest...
 
-[postdeploy-reaction-fail: PRE-DEPLOY] Running working-addon addon from kit reations/in-development (dev):
+[postdeploy-reaction-fail: PRE-DEPLOY] Running working-addon addon from kit reactions/in-development (dev):
 
 This addon worked, with arguments of this that
 
-[postdeploy-reaction-fail: PRE-DEPLOY] Running script `bin/pass-script.sh` with arguments of ["just a single arg with spaces"]:
+[postdeploy-reaction-fail: PRE-DEPLOY] Running script `bin/pass-script.sh` with arguments of ["just a single arg with
+spaces"]:
 
 This script passed
 Argument 1: 'just a single arg with spaces'
@@ -1884,7 +1897,7 @@ This script failed
 
 [postdeploy-reaction-fail] Preparing metadata for export...
 
-[postdeploy-reaction-fail] Done.
+[DONE] postdeploy-reaction-fail deployed successfully.
 
 EOF
 
@@ -1897,9 +1910,15 @@ EOF
 
 	eq_or_diff($stderr, <<'EOF', "deploy output should contain the correct pre-deploy output");
 
-[postdeploy-reaction-fail] reations/in-development (dev) does not define a 'check' hook; BOSH configs and environmental parameters checks will be skipped.
+[postdeploy-reaction-fail] reactions/in-development (dev) does not define a 'check' hook; BOSH configs and
+environmental parameters checks will be skipped.
 
 [postdeploy-reaction-fail] running secrets checks...
+Parsing kit secrets descriptions ... done. - 0 seconds
+Retrieving all existing secrets ... done. - 0 seconds
+
+Validating 0 secrets for postdeploy-reaction-fail under path '/secret/postdeploy/reaction/fail/thing/':
+Completed - Duration: 0 seconds [0 validated/0 skipped/0 errors]
 
 [postdeploy-reaction-fail] running manifest viability checks...
 
@@ -1917,10 +1936,9 @@ EOF
 
 [postdeploy-reaction-fail] Preparing metadata for export...
 
-[postdeploy-reaction-fail] Done.
+[DONE] postdeploy-reaction-fail deployed successfully.
 
 EOF
-
 
 	teardown_vault();
 };

@@ -130,7 +130,7 @@ sub execute {
 		}
 	}
 
-	$Genesis::Log::Logger->dump_var("bosh command" => \@cmd);
+	dump_var("bosh command" => \@cmd);
 	my @results = run($opts, @cmd);
 
 	if ($opts->{interactive} && ! $opts->{passfail} && $file) {
@@ -141,6 +141,7 @@ sub execute {
 		}
 		$Genesis::Log::Logger->dump_var("bosh results" => \@results);
 	}
+	return !$results[1] if $opts->{passfail};
 	return wantarray ? @results : $results[1];
 }
 

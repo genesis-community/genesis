@@ -26,8 +26,9 @@ sub line_prompt_handler {
 	my ($prompt, %opts) = @_;
 	validate_prompt_opts("line", \%opts, qw(label default validation msg inline));
 	if ($opts{inline}) {
-		die "Cannot request both label and inline options to prompt_for line\n"
-			if defined($opts{label});
+		bail(
+			"Cannot request both label and inline options to prompt_for line"
+		) if defined($opts{label});
 		$opts{label} = $prompt;
 		$prompt=undef;
 	}
@@ -54,7 +55,9 @@ sub select_prompt_handler {
 	my ($prompt, %opts) = @_;
 	validate_prompt_opts("select", \%opts, qw(label default option));
 	my (@choices,@labels);
-	die "No options provided to prompt for select\n" unless $opts{option} && @{$opts{option}};
+	bail(
+		"No options provided to prompt for select"
+	) unless $opts{option} && @{$opts{option}};
 	for (@{$opts{option}}) {
 		$_ =~ m/^(\[(.*?)\]\s*)?(\S.*)$/;
 		push @labels, $3;
@@ -83,7 +86,9 @@ sub multi_select_prompt_handler {
 	my ($prompt, %opts) = @_;
 	validate_prompt_opts("multi-select", \%opts, qw(label min max option));
 	my (@choices,@labels);
-	die "No options provided to prompt for select\n" unless $opts{option} && @{$opts{option}};
+	bail(
+		"No options provided to prompt for select"
+	) unless $opts{option} && @{$opts{option}};
 	for (@{$opts{option}}) {
 		$_ =~ m/^(\[(.*?)\]\s*)?(\S.*)$/;
 		push @labels, $3;
@@ -174,7 +179,7 @@ sub ui_prompt_for {
 		};
 		if ($@) {
 			debug "Failed in ui-prompt-for attempting to load environment:\n$@";
-			bail "#R{[ERROR]} Cannot prompt for secrets outside a kit hook";
+			bail "Cannot prompt for secrets outside a kit hook";
 		}
 	}
 

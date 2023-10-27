@@ -411,7 +411,7 @@ EOF
 			})
 		} "check hook does not error out when checking cloud-config - values present";
 		ok $rc, "check hook returns true when checking cloud-config - values present";
-		matches_utf8 $out, <<EOF, "check hook contains single values when checking cloud-config - values present";
+		matches_utf8 encode_utf8($out), <<EOF, "check hook contains single values when checking cloud-config - values present";
   [Checking cloud config]
     [✔ ] vm_type 'small' exists
     [✔ ] vm_type 'minimal' exists
@@ -434,7 +434,7 @@ EOF
 			})
 		} "check hook does not error out when checking cloud-config - values absent";
 		ok $rc, "check hook returns true when checking cloud-config - values absent";
-		matches_utf8 $out, <<EOF, "check hook contains single values when checking cloud-config - values absent";
+		matches_utf8 encode_utf8($out), <<EOF, "check hook contains single values when checking cloud-config - values absent";
   [Checking cloud config]
     [✔ ] vm_type 'small' exists
     [✔ ] vm_type 'minimal' exists

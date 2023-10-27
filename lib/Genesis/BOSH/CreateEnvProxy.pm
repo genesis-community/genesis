@@ -45,7 +45,7 @@ sub connect_and_validate {
 # }}}
 # download_confgs - download configuration(s) of the given type (and optional name) {{{
 sub download_configs {
-	bail('#R{[ERROR]} create-env environments do not support configuration files');
+	bail('create-env environments do not support configuration files');
 }
 
 # }}}

@@ -133,7 +133,7 @@ sub kit_names {
 		my $status = $self->check;
 		bail $status."\n" if $status;
 
-		waiting_on "Retrieving list of available kits from #C{%s} ... ",$self->label;
+		info {pending=> 1}, "Retrieving list of available kits from #C{%s} ...",$self->label;
 		$self->{_kits} = [
 			map  {(my $k = $_) =~ s/-genesis-kit$//; $k}
 			@{$self->remote->repo_names(qr/.*-genesis-kit$/)}
@@ -141,7 +141,12 @@ sub kit_names {
 	}
 	my @kits = @{$self->{_kits}};
 	@kits = grep {$_ =~ qr/$filter/} @kits if $filter;
-	return @kits if scalar(@kits);
+	if (@kits) {
+		info "#G{ done.}";
+		return @kits
+	}
+
+	info "#R{failed.}";
 
 	my $err = "No genesis kit repositories found on $self->label";
 	$err .= "that match the pattern /$filter/" if $filter;
@@ -169,9 +174,9 @@ sub kit_releases {
 		bail "$status"."\n" if $status;
 		trace "About to get releases from Github";
 
-		waiting_on STDERR "Retrieving list of available releases for #M{%s} kit on #C{%s} ...",$name,$self->label;
+		info {pending=>1}, "Retrieving list of available releases for #M{%s} kit on #C{%s} ...",$name,$self->label;
 		$self->{_releases}{$name} = $self->remote->get_release_info($name."-genesis-kit", "Genesis Kit $name");
-		explain STDERR "#G{ done.}";
+		info "#G{ done.}";
 	}
 
 	return @{$self->{_releases}{$name}};
@@ -204,30 +209,36 @@ sub fetch_kit_version {
 		$self->kit_versions($name, include_drafts => 1, include_prereleases => 1)
 	)[0];
 	bail(
-		"\n#R{[ERROR]} Version %s/%s was not found\n",
+		"Version %s/%s was not found\n",
 		$name, $version
 	) unless $version_info && ref($version_info) eq 'HASH';
 
 	my $url = $version_info->{url};
 	bail(
-		"\n#R{[ERROR]} Version %s/%s was found but is missing its resource url.".
-		"\n        It may have been revoked (see release notes below):\n\n%s\n",
+		"Version %s/%s was found but is missing its resource url.".
+		"It may have been revoked (see release notes below):\n\n%s\n",
 		$name, $version, $version_info->{body}
 	) unless $url;
 
-	waiting_on "Downloading v%s of #M{%s} kit from #C{%s} ... ",$version,$name,$self->label;
+	info {pending=> 1}, "Downloading v%s of #M{%s} kit from #C{%s} ... ",$version,$name,$self->label;
 	my ($code, $msg, $data) = curl("GET", $url);
-	bail "\n#R{error!}\nFailed to download %s/%s from %s: returned a %s status code\n", $name, $version, $self->label, $code
-		unless $code == 200;
-	explain "#G{done.}";
+	bail(
+		"Failed to download %s/%s from %s: returned a %s status code\n",
+		$name, $version, $self->label, $code
+	) unless $code == 200;
+	info "#G{done.}";
 	my $file = "$path/$name-$version.tar.gz";
 	if (-f $file) {
 		if (! $force) {
 			my $old_data = slurp($file);
 			if (sha1_hex($data) eq sha1_hex($old_data)) {
-				bail "#Y{[WARNING]} Exact same kit already exists under #C{%s} - no change.\n", humanize_path($path);
+				warning(
+					"Exact same kit already exists under #C{%s} - no change.\n",
+					humanize_path($path)
+				);
+				exit 0;
 			} else {
-				error "#R{[ERROR]} Kit $name/$version already exists, but is different!";
+				error "Kit $name/$version already exists, but is different!";
 				die_unless_controlling_terminal;
 				my $overwrite = prompt_for_boolean("Do you want to overwrite the existing file with the content downloaded from\n$self->{label}",0);
 				bail "Aborted!\n" unless $overwrite;
@@ -280,9 +291,9 @@ sub status {
 		my @kit_names = sort $self->kit_names;
 		if ($verbose) {
 			$kits = {};
-			waiting_on STDERR "\n";
+			info {pending=>1}, "\n";
 			for my $name (@kit_names) {
-				waiting_on STDERR "  - ";
+				info {pending=>1}, "  - ";
 				my @releases = $self->kit_releases($name);
 				my $num_drafts = scalar(grep {$_->{draft}} @releases);
 				my $num_prereleases = scalar(grep {!$_->{draft} && $_->{prerelease}} @releases);

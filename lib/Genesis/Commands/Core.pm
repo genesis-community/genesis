@@ -12,7 +12,7 @@ use POSIX qw/strftime mktime/;
 sub version {
 
 	unless (scalar(keys %{get_options()}, @_)) {
-		explain "Genesis v$Genesis::VERSION$Genesis::BUILD";
+		output "Genesis v$Genesis::VERSION$Genesis::BUILD";
 		exit 0;
 	}
 
@@ -61,9 +61,9 @@ sub version {
 
 	if (get_options->{json}) {
 		%version = %version{@_} if @_;
-		explain encode_json(\%version);
+		output encode_json(\%version);
 	} else {
-		explain ($_ =~ /^is_/ ? ($version{$_} ? 'true' : 'false') : $version{$_})
+		output ($_ =~ /^is_/ ? ($version{$_} ? 'true' : 'false') : $version{$_})
 			for (@_);
 	}
 }
@@ -97,6 +97,12 @@ sub update {
 		shift @versions while (@versions && ! defined($versions[0]->{url}));
 		if (@versions) {
 			$label = csprintf("A newer version (#C{v%s})", $versions[0]->{version});
+		} elsif (get_options->{check}) {
+			success({label => 'SUCCESS'},
+				"\nYou are on the latest version of Genesis (currently #C{v%s}).\n",
+				$Genesis::VERSION
+			);
+			exit 0
 		} else {
 			$err = csprintf(
 				"No newer version of Genesis (currently #C{v%s}) is available",
@@ -107,18 +113,20 @@ sub update {
 
 	if ($err) {
 		if (get_options->{check}) {
-			explain "\n$err.\n";
+			error "$err.\n";
 			exit 1
 		}
-		bail "#R{[ERROR]} $err - cannot update.";
+		bail "$err - cannot update.";
 	}
 
 	my $extra_versions = scalar(@versions)-1;
-	explain "\n%s is available%s!\n",
+	my $summary = sprintf(
+		"\n%s is available%s!\n\n",
 		$label,
 		($extra_versions > 0)
 			? sprintf(" (with %d preceeding release%s)",$extra_versions, ($extra_versions > 2 ? 's' : ''))
-			: '';
+			: ''
+	);
 
 	if (get_options->{details}) {
 		for my $version (@versions) {
@@ -130,15 +138,16 @@ sub update {
 				if $version->{prerelease};
 				$d = " ($d)";
 			}
-			explain "  #%s{v%s%s}", $c, $version->{version}, $d;
+			$summary .= sprintf("  #%s{v%s%s}\n", $c, $version->{version}, $d);
 			if ($version->{body} && get_options->{details}) {
-				explain "    Release Notes:";
-				explain "      $_" for split $/, $version->{body};
-				explain "";
+				$summary .= "    Release Notes:\n";
+				$summary .= "      $_\n" for split $/, $version->{body};
+				$summary .= "\n";
 			}
 		}
 	}
-	return 0 if get_options->{check};
+	output $summary."\n";
+	return 1 if get_options->{check};
 
 	my $tmpdir = workdir();
 	my $target = $ENV{GENESIS_CALLBACK_BIN};
@@ -151,10 +160,9 @@ sub update {
 				"[AYour Genesis version is currently #C{v%s}, located at #M{%s}.\nDo you want to overwrite this file with #C{v%s}? [y|n]",
 				$Genesis::VERSION, $target, $version
 			),0);
-		bail "Aborted!\n" unless $overwrite;
+		bail "Aborted!" unless $overwrite;
 	}
 
-	explain "";
 	my (undef,undef,$file) = $gh->fetch_release('genesis',$version,$tmpdir);
 	my (undef,undef,$fmode,undef,$fuid, $fgid) = stat($target);
 
@@ -169,12 +177,12 @@ chmod ${\(sprintf("%04o",$fmode))} "$target"
 chown $fuid:$fgid "$target"
 EOF
 		my (undef,$rc) = run({stderr => '/dev/null'}, 'sudo','-n','true');
-		explain(
-			"\n#Yi{Notice:} You will need to enter your password for sudo, as the Genesis\n".
+		warning( {label => "NOTICE"},
+			"You will need to enter your password for sudo, as the Genesis ".
 		  "executable is not in a location the current user has write-access to."
 		) if ($rc);
 		run({
-			onfailure => "#R{[ERROR]} Could not overwrite existing Genesis with #C{v$version}",
+			onfailure => "Could not overwrite existing Genesis with #C{v$version}",
 			interactive =>1
 		}, 'sudo', "$tmpdir/update_genesis");
 	}
@@ -187,7 +195,7 @@ EOF
 
 	# Clean up before upgrading/downgrading
 	delete(@ENV{'GENESIS_HOME','GENESIS_LIB','GENESIS_CALLBACK_BIN'});
-	explain "Verifying new version of Genesis...";
+	output "Verifying new version of Genesis...";
 	exec {$target} $target, 'version';
 }
 

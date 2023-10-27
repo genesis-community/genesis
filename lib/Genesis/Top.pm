@@ -45,7 +45,7 @@ sub new {
 	if ($top->vault()) {
 		$ENV{GENESIS_TARGET_VAULT} = $ENV{SAFE_TARGET} = $top->vault->name;
 	} elsif (!$ENV{GENESIS_NO_VAULT}) {
-		debug "#R{WARNING} - could not find any #M{safe} target.  This may cause consequences later on";
+		debug {label => "WARNING"}, "Could not find any #M{safe} target.  This may cause consequences later on";
 	}
 	return $top;
 }
@@ -61,18 +61,21 @@ sub create {
 	# Probably becomes deployment-name and kit becomes the type (or drop type and use kit)
 
 	$name =~ s/-deployments?//;
-	bail "#R{[ERROR]} Invalid Genesis deployment repository name '$name'"
-		unless $name =~ m/^[a-z][a-z0-9_-]+$/;
+	bail(
+		"Invalid Genesis deployment repository name '$name'"
+	) unless $name =~ m/^[a-z][a-z0-9_-]+$/;
 
 	debug("generating a new Genesis repo, named $name");
 
 	my $dir = $opts{directory} || "${name}-deployments";
-	bail "#R{[ERROR]} Repository directory name must only contain alpha-numeric characters, periods, hyphens and underscores"
-		if $dir =~ /([^\w\.-])/;
+	bail(
+		"Repository directory name must only contain alpha-numeric characters, periods, hyphens and underscores"
+	) if $dir =~ /([^\w\.-])/;
 
 	$path .= "/$dir";
-	bail "#R{[ERROR]} Cannot create new deployments repository `$dir': already exists!"
-		if -e $path;
+	bail(
+		"Cannot create new deployments repository `$dir': already exists!"
+	) if -e $path;
 
 	my $self = $class->new($path);
 	$self->mkdir(".genesis");
@@ -266,17 +269,17 @@ sub set_kit_provider {
 	#		$new_provider = Genesis::Kit::Provider->target(undef);
 	#	} else ...
 	eval {
-		waiting_on "\nSetting up new kit provider...";
+		info {pending => 1}, "\nSetting up new kit provider...";
 		$new_provider = Genesis::Kit::Provider->init(%opts);
-		explain "done.";
-		waiting_on "Writing configuration....";
+		info "done.";
+		info {pending => 1}, "Writing configuration....";
 		$self->{__kit_provider} = $new_provider;
 		if (ref($self->kit_provider) eq "Genesis::Kit::Provider::GenesisCommunity") {
 			$self->config->clear('kit_provider',1)
 		} else {
 			$self->config->set('kit_provider', $self->kit_provider->config,1);
 		}
-		explain "done.";
+		info "done.";
 	};
 	return $@;
 }
@@ -356,7 +359,7 @@ sub set_vault {
 	} elsif (ref($opts{vault}) eq "Genesis::Vault") {
 		$new_vault = $opts{vault}
 	} else {
-		bug "#R{[Error]} Invalid call to Genesis::Top->set_vault"
+		bug "Invalid call to Genesis::Top->set_vault"
 	}
 	$self->{__vault} = $new_vault;
 	return if $opts{session_only};
@@ -546,7 +549,7 @@ sub load_env {
 	} elsif (in_callback() && $name eq $ENV{'GENESIS_ENVIRONMENT'}) {
 		return Genesis::Env->from_envvars($self);
 	} else {
-		bail "#R{[ERROR]} Environment file #C{%s} does not exist", humanize_path($self->path($name.".yml"));
+		bail "Environment file #C{%s} does not exist", humanize_path($self->path($name.".yml"));
 	}
 }
 
@@ -647,8 +650,12 @@ sub download_kit {
 	my $target;
 	if ($opts{to}) {
 		$target = $opts{to};
-		bail("#R{[ERROR]} #C{%s} is not a directory", $opts{to}) unless -d $opts{to};
-		bail "#R{[ERROR]} #C{%s} is not writable", $opts{to} unless -w $opts{to};
+		bail(
+			"#C{%s} is not a directory", $opts{to}
+		) unless -d $opts{to};
+		bail(
+			"#C{%s} is not writable", $opts{to}
+		) unless -w $opts{to};
 	} elsif ($opts{'as-dev'}) {
 		$target = workdir;
 	} else {

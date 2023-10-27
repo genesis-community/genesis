@@ -3,13 +3,17 @@ use strict;
 use warnings;
 
 use utf8;
+binmode STDOUT, 'utf8';
+binmode STDERR, 'utf8';
+
 #use open ':encoding(utf-8)';
 
 use Genesis::State;
 use Genesis::Term;
 
 use POSIX qw/strftime/;
-use Symbol qw/qualify_to_ref/;
+use Cwd ();
+#use Symbol qw/qualify_to_ref/;
 use Time::HiRes qw/gettimeofday/;
 use Time::Piece;
 use Time::Seconds;
@@ -36,6 +40,7 @@ sub new {
 		user => $user,
 		hostname => $hostname,
 		pid => $$,
+		capture_stack_min_level => 2,
 		version => ($Genesis::VERSION eq "(development)")
 			? "0.0.0-rc.0"
 			: $Genesis::VERSION #FIXME - include dirty indicator
@@ -48,22 +53,24 @@ sub configure_log {
 	my $log = (scalar(@_) % 2) ? shift : '<terminal>';
 	my %options = @_;
 	my @valid_levels = qw/ERROR WARN DEBUG INFO TRACE/;
-	my ($level, $level_label);
+	my ($level_ord, $level);
+	my $default_level = envset("QUIET") ? "ERROR" :  envset("GENESIS_TRACE") ? "TRACE" : envset("GENESIS_DEBUG") ? "DEBUG" : "INFO";
+	my $default_output_style = defined($Genesis::RC) ? $Genesis::RC->get('output_style','plain') : 'plain';
 
 	unless ($self->{logs}{$log}) {
 		$self->{logs}{$log} = {
-			level => 3,
-			level_label => 'INFO',
+			level       => $default_level,
+			level_ord   => level_ord($default_level),
 			show_stack  => 'none',
 			timestamp   => ($log eq '<terminal>' ? 0 : 1),
 			next_entry  =>  0,
-			style       => $ENV{GENESIS_LOG_STYLE}//'pointer'
+			style       => $ENV{GENESIS_LOG_STYLE}//$default_output_style
 		}
 	}
 	if ($options{level}) {
-		my $level_label = find_log_level($options{level});
-		$self->{logs}{$log}{level_label} = $level_label; ;
-		$self->{logs}{$log}{level} = level($level_label);
+		$level = find_log_level($options{level});
+		$self->{logs}{$log}{level} = $level; ;
+		$self->{logs}{$log}{level_ord} = level_ord($level);
 	}
 	$self->{logs}{$log}{show_stack} = $options{show_stack} if defined($options{show_stack});
 	$self->{logs}{$log}{timestamp} = $options{timestamp} if defined($options{timestamp});
@@ -74,7 +81,7 @@ sub configure_log {
 
 	# Clean up log, unless in callback or log is STDERR
 	unless ($log eq '<terminal>' || in_callback) {
-		if ($options{lifespan}//'' eq 'current') {
+		if (($options{lifespan}//'') eq 'current') {
 			(my $file = $log) =~ s/^~/$ENV{HOME}/;
 			open my $fh, '>', $file;
 			truncate $fh, 0;
@@ -83,6 +90,24 @@ sub configure_log {
 		# TODO: time based truncation
 	}
 	return $self;
+}
+
+sub setup_from_configs {
+	my ($class, $log_configs) = @_;
+
+	require Genesis;
+
+	if (ref($log_configs) eq 'ARRAY') {
+		for (@$log_configs) {
+			my $file = delete($_->{file});
+			$file = Cwd::getcwd ."/$file" unless $file =~ /^[~\/]/;
+			$class->new->configure_log(Genesis::humanize_path($file), %{$_});
+			# TODO: add suppress list so that we can set a level, but ingore specific output
+			# TODO: support an only-log-if-an-error-occurred setting... that adds and flushes the log in END step if rc > 0
+		}
+	} else {
+		Genesis::bail("Configuration error - logs entry must be an array");
+	}
 }
 
 sub is_logging {
@@ -96,19 +121,20 @@ sub is_logging {
 sub set_level {
 	my ($self,$level,$log) = @_;
 	$log ||= '<terminal>';
-	die "invalid log: $log\n" unless defined($self->{logs}{log});
+	die "invalid log: $log\n" unless defined($self->{logs}{$log});
 	$level = find_log_level($level);
-	@{$self->{logs}{$log}}{qw/level level_label/} = (level($level),$level);
+	@{$self->{logs}{$log}}{qw/level_ord level/} = (level_ord($level),$level);
 	return $self;
 }
 
-sub info   { shift->_log("INFO ", {colors => "Wc", pri => 6, emoji => 'information'}, @_) }
-sub debug  { shift->_log("DEBUG", {colors => "Wm", emoji => 'crystal-ball'}, @_) }
-sub warn   { shift->_log("WARN ", {colors => "ky", pri => 4, emoji => 'warning'}, @_) }
-sub error  { shift->_log("ERROR", {colors => "WR", pri => 3, emoji => 'collision'}, @_) }
-sub fatal  { shift->_log("FATAL", {colors => "Yr", pri => 0, emoji => 'stop-sign', show_stack => 'full'}, @_) }
-sub trace  { shift->_log("TRACE", {colors => "WG", emoji => 'detective', show_stack => 'current'}, @_); }
-sub qtrace { shift->_log("TRACE", {colors => "Wg", emoji => 'detective'}, @_); }
+sub output  { shift->_log("OUTPUT",  {colors => "kC", pri => 6, emoji => 'printer'}, @_) }
+sub info    { shift->_log("INFO",    {colors => "Wc", pri => 6, emoji => 'information'}, @_) }
+sub debug   { shift->_log("DEBUG",   {colors => "Wm", emoji => 'crystal-ball'}, @_) }
+sub warning { shift->_log("WARNING", {colors => "ky", pri => 4, emoji => 'warning'}, @_) }
+sub error   { shift->_log("ERROR",   {colors => "WR", pri => 3, emoji => 'collision'}, @_) }
+sub fatal   { shift->_log("FATAL",   {colors => "Yr", pri => 0, emoji => 'stop-sign', show_stack => 'full'}, @_) }
+sub trace   { shift->_log("TRACE",   {colors => "WG", emoji => 'detective', show_stack => 'current'}, @_); }
+sub qtrace  { shift->_log("TRACE",   {colors => "Wg", emoji => 'detective'}, @_); }
 
 sub dump_var {
 	my $self = shift;
@@ -121,16 +147,17 @@ sub dump_var {
 	}
 	# TODO: Too many ways to indicate offset - old version must be fixed in
 	# caller context
-	my $scope = $options->{offset} || 0;
+	my $scope = delete($options->{offset}) || 0;
 	$scope += abs(shift) if (defined $_[0] && $_[0] =~ '^-?\d+$');
 
 	require Data::Dumper;
+	local $Data::Dumper::Indent  = 1; # 2-space indent
 	local $Data::Dumper::Deparse = 1;
 	local $Data::Dumper::Terse   = 1;
 	my (%vars) = @_;
 	for (keys %vars) {
 		chomp (my $value = Data::Dumper::Dumper($vars{$_}));
-		$self->_log("VALUE", {colors => "WB", show_scope => 'current', emoji => 'magnifying-glass', offset => $scope}, "#M{%s} = %s", $_, $value);
+		$self->_log("VALUE", {colors => "WB", show_scope => 'current', emoji => 'magnifying-glass', offset => $scope, raw => 1}, $options, "#M{%s} = %s", $_, $value);
 	}
 }
 
@@ -156,6 +183,7 @@ sub dump_stack {
 	print STDERR "\n"; # Ensures that the header lines up at the cost of a blank line
 	$options->{colors} = 'kY';
 	$options->{emoji} = 'pancakes';
+	$options->{raw} = 1;
 	my $header = csprintf("#Wku{%*s}  #Wku{%-*s}  #Wku{%-*s}\n", $sizes{line}, "Line", $sizes{sub}, "Subroutine", $sizes{file}, "File");
 	$self->_log("STACK", $options, $header.join("\n",map {
 		csprintf("#w{%*s}  #Y{%-*s}  #Ki{%s}", $sizes{line}, $_->{line}, $sizes{sub}, $_->{sub}||'', $_->{file})
@@ -163,7 +191,7 @@ sub dump_stack {
 }
 
 sub _log {
-	my ($self, $label, @contents) = @_;
+	my ($self, $level, @contents) = @_;
 	my $options = {};
 	while (ref($contents[0]) eq 'HASH') {
 		my $more_options = shift @contents;
@@ -171,35 +199,58 @@ sub _log {
 		@{$options}{keys %$more_options} = values %$more_options;
 	}
 	unshift @contents, "%s" if scalar(@contents) == 1;
-	my $colors = $options->{colors} // '--';
-	(my $level = $options->{level} || $label) =~ s/^\s*(.*?)\s*$/$1/;
-	my $priority = $options->{pri} // 7;
+	$level = $options->{level}//$level;
+	my $label =  $options->{label} || $level;
 	$level =~ s/ +$//g;
 
 	my ($s,$us) = gettimeofday;
 	my $ts = sprintf "%s.%03dZ", gmtime($s)->strftime("%Y-%m-%dT%H:%M:%S"), $us / 1000;
 
-	my $show_stack = $options->{show_stack};
-	my @stack = ($level eq 'STACK') ? () :
+	my @stack = ($level eq 'STACK' || ! meets_level($level, $self->{capture_stack_min_level})) ? () :
 		get_stack(($options->{offset}||0)+2);
 
-	push @{$self->{buffer}}, [$level, $ts, $label, $colors, $options->{emoji}//'', $priority, \@contents, $show_stack, \@stack];
+	push @{$self->{buffer}}, {
+		level      => $level,
+		label      => $label,
+		colors     => $options->{colors} // '--',
+		emoji      => $options->{emoji}  // '',
+		priority   => $options->{pri}    // 7,
+		timestamp  => $ts,
+		contents   => \@contents,
+		pending    => $options->{pending},
+		reset      => $options->{reset},
+		show_stack => $options->{show_stack},
+		stack      => \@stack,
+		raw        => $options->{raw},
+	};
 
 	# Check if there are any logs for the given level
 	$self->flush_logs();
+	return;
 }
 
+my $flushing=0;
 sub flush_logs {
 	my $self = shift;
 	my $last_line = $#{$self->{buffer}};
 
+	return if $flushing; $flushing = 1;
+
+	my ($s,$us) = gettimeofday;
+	my $ms = $s * 1000 + int($us/1000);
+
 	for my $log (keys %{$self->{logs}}) {
 		my $config = $self->{logs}{$log};
 		for my $line_number ($config->{next_entry}..$last_line) {
-			my ($level, $ts, $label, $colors, $emoji, $priority, $contents, $show_stack, $stack)
-				= @{@{$self->{buffer}}[$line_number]};
+			my (
+					$level, $ts,      $label, $colors, $emoji, $priority, $contents, $show_stack, $stack, $pending, $reset, $raw
+			)	= @{@{$self->{buffer}}[$line_number]}{
+				qw/level   timestamp label   colors   emoji   priority   contents   show_stack   stack   pending   reset   raw/
+			};
 
 			next unless meets_level($config->{level},$level);
+
+			$reset = 1 if defined($config->{last_label}) && $config->{last_label} ne $label;
 
 			unshift(@$contents, "%s") unless scalar(@$contents > 1);
 			my ($template, @values) = @$contents;
@@ -212,7 +263,7 @@ sub flush_logs {
 				my ($prefix,$indent);
 
 				if ($log eq '<terminal>' && grep {$_ eq $level} (qw(OUTPUT INFO))) {
-					$prefix =  '';
+					$prefix = '';
 					$colors = '';
 				} elsif ($config->{style} eq 'fun') {
 					my $fg = substr($colors,1,1);
@@ -236,6 +287,8 @@ sub flush_logs {
 						#$ENV{GENESIS_ORIGINATING_DIR}//'-',
 						#$ENV{GENESIS_ROOT}//'-'
 					);
+					# RFC-5424 cannot wrap lines
+					$pending = undef;
 					$columns = 999;
 					$indent = "  ";
 				} else { # current default - if ($config->{style} eq 'pointer') {
@@ -253,28 +306,55 @@ sub flush_logs {
 
 				$indent ||=  ' ' x csize($prefix);
 				my $content = sprintf($template, @values);
-				my $out = wrap($content, $columns, $colors ? $prefix : $indent, length($indent));
+				my ($pre_pad, $post_pad) = ("","");
+				($pre_pad, $content)  = $content =~ m/\A([\r\n]*)(.*)\z/s;
+				($content, $post_pad) = $content =~ m/\A(.*?)([\r\n]*)\z/s unless $pending;
+
+				# Swallow up pure whitespace if not on terminal
+				my $last_waiting = $config->{waiting};
+				$config->{waiting} = 0;
+				next if ($log ne '<terminal>' && (!$last_waiting || $reset) && decolorize($content) =~ /\A\s*\z/);
+
+				my $start_column = $last_waiting && !$reset ? $last_waiting : 0;
+				my $out = wrap($content, $raw ? -1 : $columns, $colors ? $prefix : $indent, length($indent), undef, $start_column);
+
 				# TODO: rfc-5424 may need to have newlines converted into \n strings.
+				$reset = $reset && $last_waiting ? "\n" : '';
+				if ($pending) {
+					$config->{waiting} = (sort {$b <=> $a} (length($indent), length((split("\n",$out,-1))[-1])))[0];
+				}
 
 				# TODO: Support for logging STDOUT to all logs, not just STDOUT
 				my $fh;
 				if ($log eq '<terminal>') {
 					$fh = ($level eq "OUTPUT") ? *STDOUT : *STDERR;
-					binmode $fh, 'utf8';
+					if ($reset && $config->{waiting_fh}) {
+						my $waiting_fh = $config->{waiting_fh};
+						print $waiting_fh $reset;
+					}
+					$reset = '';
+					$config->{waiting_fh} = $pending ? $fh : undef;
 				} else {
 					my $file = $log;
 					$file =~ s/^~/$ENV{HOME}/;
 					open $fh, '>>:encoding(UTF-8)', $file
 						or die "Could not open $log for writing logs\n";
 				}
-				printf $fh "%s\n", csprintf("%s", $out);
+				$pre_pad =~ s/\A[\r\n]+// unless $log eq '<terminal>' || ($last_waiting && !$reset);
+				$post_pad =~ s/[\r\n]+\z// unless $log eq '<terminal>' || $pending;
+				$out .= "\n" unless $pending;
+				print $fh csprintf("%s", $reset.$pre_pad.$out.$post_pad);
+				$config->{last_label} = $label;
 
 				# Deal with stack
-				$show_stack =
-					(!defined($show_stack) && !defined($config->{show_stack})) ? 'none' :
-					(($show_stack||'') eq 'full' || ($config->{show_stack}||'') eq 'full') ? 'full' :
-					(($show_stack||'') eq 'current' || ($config->{show_stack}||'') eq 'current') ? 'current' :
-					'invalid';
+				$show_stack = $config->{show_stack} if ($show_stack//"default") eq "default";
+				$show_stack = ($pending || $show_stack eq 'none') 
+					? 'none'
+					: (($show_stack||'') eq 'full' || ($config->{show_stack}||'') eq 'full')     
+					? 'full'
+					: (($show_stack||'') eq 'current' || ($config->{show_stack}||'') eq 'current')
+					? 'current' 
+					: 'invalid' ;
 
 				unless ( $show_stack eq 'none' || $show_stack eq 'invalid') {
 					for (@$stack) {
@@ -289,34 +369,48 @@ sub flush_logs {
 		}
 		$config->{next_entry} = $last_line+1;
 	}
+	$flushing = 0;
+}
+
+sub replay{
+	my ($self,$level,$log) = @_;
+	$log //= '<terminal>';
+
+	my $original_level = $self->{logs}{$log}{level};
+	$self->set_level($level) if $level;
+	$self->{logs}{$log}{next_entry}=0;
+	$self->flush_logs();
+	$self->set_level($original_level) if $level;
+	return
 }
 
 ## Package functions
 
 sub _log_item_level_map {
 	return {
-		'NONE'   => 0,
-		'OUTPUT' => 0,
-		'FATAL'  => 1,
-		'ERROR'  => 1,
-		'WARN'   => 2,
-		'INFO'   => 3,
-		'DEBUG'  => 4,
-		'VALUE'  => 5,
-		'TRACE'  => 5,
-		'STACK'  => 5,
+		'NONE'    => 0,
+		'OUTPUT'  => 1,
+		'FATAL'   => 2,
+		'ERROR'   => 2,
+		'WARNING' => 3,
+		'INFO'    => 4,
+		'DEBUG'   => 5,
+		'VALUE'   => 6,
+		'TRACE'   => 6,
+		'STACK'   => 6,
 	}
 };
 
-sub level {
+sub level_ord {
 	return _log_item_level_map->{uc($_[0])}
 }
 
 sub log_levels {
 	return (
 		'NONE',
+		'OUTPUT',
 		'ERROR',
-		'WARN',
+		'WARNING',
 		'INFO',
 		'DEBUG',
 		'TRACE',
@@ -355,7 +449,7 @@ sub find_log_level {
 	my $log_level = shift;
 
 	$log_level = uc($log_level);
-	unless (level($log_level)) {
+	unless (level_ord($log_level)) {
 		my @log_levels = grep {$_ =~ qr/^$log_level.*/i} (log_levels());
 		if (scalar(@log_levels) == 1) {
 			$log_level = $log_levels[0];
@@ -367,7 +461,7 @@ sub find_log_level {
 		} else {
 			require Genesis;
 			Genesis::bail(
-				"No valid matchin $log_level: please specify one of ".join(", ",log_levels())
+				"Not a valid log level '$log_level': please specify one of ".join(", ",log_levels())
 			);
 		}
 	}
@@ -376,8 +470,8 @@ sub find_log_level {
 
 sub meets_level {
 	my ($level, $target) = @_;
-	$level = level($level) unless grep {$level eq $_} (values %{_log_item_level_map()});
-	$target = level($target) unless grep {$target eq $_} (values %{_log_item_level_map()});
+	$level = level_ord($level) unless grep {$level eq $_} (values %{_log_item_level_map()});
+	$target = level_ord($target) unless grep {$target eq $_} (values %{_log_item_level_map()});
 	return $level >= $target;
 }
 

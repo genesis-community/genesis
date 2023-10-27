@@ -19,7 +19,7 @@ sub validate {
 	my ($self,$name,$version) = @_;
 
 	if (!-d $self->{root}) {
-		error "\n#R{[ERROR]} Kit source directory '$self->{root}' not found.\n";
+		error "\nKit source directory '$self->{root}' not found.\n";
 		return 0;
 	}
 
@@ -83,7 +83,7 @@ sub validate {
 			}
 			if (@errant_keys) {
 				push @yml_errors, sprintf(
-					"contains invalid top-level key%s: %s;\nvalid keys are: %s",
+					"contains invalid top-level key%s: %s;\n[[valid keys are: >>%s",
 					scalar(@errant_keys) == 1 ? '' : 's',
 					join(", ",@errant_keys), join(", ", @valid_keys)
 				);
@@ -92,9 +92,12 @@ sub validate {
 	} else {
 		push @yml_errors, "does not exist.";
 	}
+
+	# TODO: Check hook scripts for validation. 
+
 	if (@yml_errors) {
-		push @errors, "#Wk{Kit Metadata file }#Ck{kit.yml}#Wk{:}\n  - ".
-			join("\n  - ", map {join("\n    ", split("\n", $_))} @yml_errors);
+		push @errors, "#Wk{Kit Metadata file }#Ck{kit.yml}#Wk{:}\n[[- >>".
+			join("\n[[- >>", map {join("\n[[  >>", split("\n", $_))} @yml_errors);
 	}
 
 	# Check if any defined secrets have errors
@@ -115,17 +118,22 @@ sub validate {
 		if (scalar @secrets_errors) {
 			my $msg =
 				"#Wk{Secrets specifications in }#Ck{kit.yml}#Wk{:}\n".
-				join("\n  ", map {
+				join("\n", map {
+					my $err = $_;
 					my ($head,$extra) = split(
-						": *\n", join("\n    ", (split("\n", $_->{error}))), 2
+						/: *\n/,
+						join(
+							"\n[[  >>",
+							map {s/^(\W+)/[[$1>>/; s/(Valid.*?: )/[[$1>>/;$_} split("\n", $err->{error})
+						)
 					);
-					sprintf("\n  #R{%s for }#C{%s}%s", $head, $_->{path}, $extra ? ":\n".$extra : '');
+					sprintf("\n[[- >>#R{%s for }#C{%s}%s", $head, $err->{path}, $extra ? ":\n".$extra : '');
 				} @secrets_errors);
 
 			if (grep {$msg =~ qr/\$\{$_\}/} @{$kit->{__deref_miss}||[]}) {
-				$msg .= "\n\n  Some of the errors above are due to unresolved param dereferencing.  ";
-				$msg .= (-f $self->{root}.'/ci/test_params.yml') ? "Update the" : "Create a";
-				$msg .= "\n  ci/test_params.yml file in the kit directory to contain these parameters.";
+				$msg .= "\n\n[[  >>Some of the errors above are due to unresolved param dereferencing.  ";
+				$msg .= (-f $self->{root}.'/ci/test_params.yml') ? "Update the " : "Create a ";
+				$msg .= "ci/test_params.yml file in the kit directory to contain these parameters.";
 			}
 			push @errors, $msg;
 		}
@@ -146,20 +154,20 @@ sub validate {
 		}
 		#TODO: validate hooks that are bash or perl with shellcheck or perl -c
 	}
-	push @errors, "#Wk{Hook scripts:}\n  - ".join("\n  - ", @hook_errors)
+	push @errors, "#Wk{Hook scripts:}\n[[- >>".join("\n[[- >>", @hook_errors)
 		if @hook_errors;
 
 	my ($changes, undef) = run('cd "$1" >/dev/null && git status --porcelain', $self->{root});
 	push @errors, "#Wk{Git repository status:}\n".
-	              "  Unstaged / uncommited changes found in working directory:\n".
-	              join("\n", map {"    #Y{$_}"} split("\n",$changes)) .
-	              "\n\n  Please either #C{stash} or #C{commit} those changes before compiling your kit.\n"
+	              "[[- >>Unstaged / uncommited changes found in working directory:\n".
+	              join("\n", map {"[[    >>#Y{$_}"} split("\n",$changes)) .
+	              "\n\n  Please either #C{stash} or #C{commit} those changes before compiling your kit."
 		if $changes;
 
 	if (@errors) {
-		my $msg = join("\n  ", split("\n", join("\n\n", @errors)));
+		my $msg = join("\n\n", @errors);
 		$msg =~ s/^\s+$//gm;
-		error "\n#R{[ERROR] Encountered issues while processing kit }#M{%s/%s}#R{:}\n\n  %s\n",
+		error "\n#R{Encountered issues while processing kit }#M{%s/%s}#R{:}\n\n%s\n",
 			$name, $version, $msg;
 		return 0;
 	}
@@ -234,7 +242,7 @@ sub scaffold {
 	my ($email, undef) = run('git config user.email'); $email ||= 'no-reply@example.com';
 
 	if (-f "$self->{root}/kit.yml") {
-		die "Found a kit.yml in $self->{root}; cowardly refusing to overwrite an existing kit.\n";
+		bail "Found a kit.yml in $self->{root}; cowardly refusing to overwrite an existing kit.";
 	}
 
 	mkdir_or_fail "$self->{root}";

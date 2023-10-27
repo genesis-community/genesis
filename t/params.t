@@ -375,7 +375,7 @@ expect_ok "URL parsing - bad url check 3 - invalid characters", $cmd, [
   }
 ];
 expect_ok "URL parsing - finish up", $cmd, [
-  "https://my.dev.local:5555/endpoint\\?badquery='this is not allowed' is not a valid URL[\r\n]{1,2}>", sub {
+  "https://my.dev.local:5555/endpoint\\?badquery='this is not[\r\n ]* allowed' is not a valid URL[\r\n]{1,2}>", sub {
     $_[0]->send("https://github.com/starkandwayne/genesis/blob/master/t/param-asking.t#L345\n");
   }
 ];
@@ -398,7 +398,7 @@ expect_ok "IP parsing - used leading zeros", $cmd, [
   "Specify the path", sub {
     fail "Invalid IP address not correctly identified: used leading zeros";
   }], [
-  "123.045.067.008 is not a valid IPv4 address: octets cannot be zero-padded[\r\n]{1,2}>", sub {
+  "123.045.067.008 is not a valid IPv4 address: octets cannot be[\r\n ]* zero-padded[\r\n]{1,2}>", sub {
     $_[0]->send("123.456.789.10\n");
   }
 ];

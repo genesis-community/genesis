@@ -17,6 +17,7 @@ use Genesis;
 use Genesis::Top;
 
 $ENV{NOCOLOR} = 1;
+$ENV{GENESIS_OUTPUT_COLUMNS}=999;
 
 subtest 'secrets-v2.7.0' => sub {
 	plan skip_all => 'skipping secrets tests because SKIP_SECRETS_TESTS was set'
@@ -290,8 +291,7 @@ EOF
 	($pass,$rc,$out) = run_fails "genesis rotate-secrets --force $env_name -y", "genesis fails when --force option is used on rotate-secrets";
 	matches_utf8 $out, <<'EOF', "genesis reports no force option on rotate-secrets";
 
-[ERROR] --force option no longer valid. See `genesis rotate-secrets -h` for more
-        details
+[FATAL] --force option no longer valid. See `genesis rotate-secrets -h` for more details
 
 EOF
 

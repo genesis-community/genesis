@@ -37,10 +37,10 @@ sub new {
 
 	# environment names must be valid.
 	my $err = _env_name_errors($opts{name});
-	bail("#R{[ERROR]} Bad environment name '$opts{name}': %s", $err) if $err;
+	bail("Bad environment name '$opts{name}': %s", $err) if $err;
 
 	# make sure .genesis is good to go
-	bail("#R{[ERROR]} No deployment type specified in .genesis/config!\n")
+	bail("No deployment type specified in .genesis/config!\n")
 		unless $opts{top}->type;
 
 	$opts{__tmp} = workdir;
@@ -144,21 +144,17 @@ sub load {
 
 	unless (under_test && !envset 'GENESIS_TESTING_DEV_VERSION_DETECTION' ) {
 		if (@deprecations && !envset("REPORTED_ENV_DEPRECATIONS")) {
-			error( wrap(
-				sprintf(
-					"Environment #C{%s} contains the following deprecation:\n[[- >>%s\n",
-					$env->{file}, join("\n[[- >>",map {join("\n    ",split("\n",$_))} @deprecations)
-				), terminal_width, "#Y{[DEPRECATIONS]} "
-			));
+			error({label => "DEPRECATIONS", colors => 'Y'},
+				"Environment #C{%s} contains the following deprecation:\n[[- >>%s\n",
+				$env->{file}, join("\n[[- >>",map {join("\n    ",split("\n",$_))} @deprecations)
+			);
 			$ENV{REPORTED_ENV_DEPRECATIONS}=1;
 		}
 		if (@config_warnings && !envset("REPORTED_ENV_CONFIG_WARNINGS")) {
-			error( wrap(
-				sprintf(
-					"Environment #C{%s} contains the following configuration warnings:\n[[- >>%s\n",
-					$env->{file}, join("\n[[- >>",map {join("\n    ",split("\n",$_))} @config_warnings)
-				), terminal_width, "#Y{[WARNINGS]} "
-			));
+			error( {label => "WARNINGS", colors => 'Y'},
+				"Environment #C{%s} contains the following configuration warnings:\n[[- >>%s\n",
+				$env->{file}, join("\n[[- >>",map {join("\n    ",split("\n",$_))} @config_warnings)
+			);
 			$ENV{REPORTED_ENV_CONFIG_WARNINGS}=1
 		}
 	}
@@ -200,15 +196,16 @@ sub from_envvars {
 
 	if ($min_version) {
 		if ($Genesis::VERSION eq "(development)") {
-			error(
-				"#Y{[WARNING]} Environment `$env->{name}` requires Genesis v$min_version or higher.\n".
-				"          This version of Genesis is a development version and its feature availability\n".
-				"          cannot be verified -- unexpected behaviour may occur.\n"
+			warning(
+				"Environment `$env->{name}` requires Genesis v$min_version or higher.\n".
+				"\n".
+				"This version of Genesis is a development version and its feature ".
+				"availability cannot be verified -- unexpected behaviour may occur."
 			) unless (under_test && !envset 'GENESIS_TESTING_DEV_VERSION_DETECTION');
 		} elsif (! new_enough($Genesis::VERSION, $min_version)) {
 			bail(
-				"#R{[ERROR]} Environment `$env->{name}` requires Genesis v$min_version or higher.\n".
-				"        You are currently using Genesis v$Genesis::VERSION.\n"
+				"Environment `$env->{name}` requires Genesis v$min_version or higher.  ".
+				"You are currently using Genesis v$Genesis::VERSION."
 			) unless (under_test && !envset 'GENESIS_TESTING_DEV_VERSION_DETECTION');
 		}
 	}
@@ -238,18 +235,21 @@ sub from_envvars {
 
 	# Check for v2.7.0 features
 	unless ($env->kit->feature_compatibility("2.7.0")) {
-		bail("#R{[ERROR]} Kit #M{%s} is not compatible with #C{secrets_mount} feature\n".
-		     "        Please upgrade to a newer release or remove params.secrets_mount from #M{%s}",
-		     $env->kit->id, $env->{file})
-			if ($env->secrets_mount ne $env->default_secrets_mount);
-		bail("#R{[ERROR]} Kit #M{%s} is not compatible with #C{exodus_mount} feature\n".
-		     "        Please upgrade to a newer release or remove params.exodus_mount from #M{%s}",
-		     $env->kit->id, $env->{file})
-			if ($env->exodus_mount ne $env->default_exodus_mount);
+		bail(
+			"Kit #M{%s} is not compatible with #C{secrets_mount} feature\n".
+			"Please upgrade to a newer release or remove params.secrets_mount from #M{%s}",
+			$env->kit->id, $env->{file}
+		) if ($env->secrets_mount ne $env->default_secrets_mount);
+		bail(
+			"Kit #M{%s} is not compatible with #C{exodus_mount} feature\n".
+			"Please upgrade to a newer release or remove params.exodus_mount from #M{%s}",
+			$env->kit->id, $env->{file}
+		) if ($env->exodus_mount ne $env->default_exodus_mount);
 	}
 
-	bail("\n#R{[ERROR]} No vault specified or configured.")
-		unless $env->vault;
+	bail(
+		"No vault specified or configured."
+	) unless $env->vault;
 
 	return $env;
 }
@@ -277,7 +277,7 @@ sub create {
 		unless (grep {$_ =~ /^https?:\/\/[^\/]+/} (split(' ',$opts{vault}))) {
 			my $vault = (Genesis::Vault->find(name => $opts{vault}))[0];
 			bail(
-				"#R{[ERROR]} Cannot find a vault target with alias '$opts{vault}'"
+				"Cannot find a vault target with alias '$opts{vault}'"
 			) unless $vault;
 			$opts{vault} = $vault->build_descriptor();
 		}
@@ -298,39 +298,39 @@ sub create {
 		my $uce = $env->kit->metadata('use_create_env')||'';
 		if ($uce eq 'yes') {
 			bail(
-				"\n#R{[ERROR]} Kit %s requires use of create-env, but --no-create-env\n        option was specified",
+				"Kit %s requires use of create-env, but --no-create-env option was specified",
 				$env->kit->id
 			) if defined($create_env) && !$create_env;
 			bail(
-				"\n#R{[ERROR]} Cannot specify a bosh environment for environments that use\n".
-				"        create-env deployment method"
+				"Cannot specify a bosh environment for environments that use ".
+				"create-env deployment method"
 			) if defined($ENV{GENESIS_BOSH_ENVIRONMENT});
 			$env->{__params}{genesis}{use_create_env} = 1;
 			$env->{__params}{genesis}{bosh_env} = '';
 		} elsif ($uce eq 'no') {
 			bail(
-				"\n#R{[ERROR]} Kit %s cannot use create-env, but --create-env option\n        was specified",
+				"Kit %s cannot use create-env, but --create-env option was specified",
 				$env->kit->id
 			) if $create_env;
 			$env->{__params}{genesis}{use_create_env} = 0;
 			$env->{__params}{genesis}{bosh_env} = $ENV{GENESIS_BOSH_ENVIRONMENT} || $opts{name};
 		} else {
 			# Complicated state: the kit allows but does not require create-env.
-			error(
-				"\n#y{[WARNING]} Kit %s supports both bosh and create-env deployment.\n".
-				"          No --create-env option specified, so using bosh deployment method.",
+			warning(
+				"Kit %s supports both bosh and create-env deployment.  No --create-env ".
+				"option specified, so using bosh deployment method.",
 				$env->kit->id
 			) unless defined($create_env) and ! $ENV{GENESIS_BOSH_ENVIRONMENT};
 			bail(
-				"\n#R{[ERROR]} Cannot specify a bosh environment for environments that use\n".
-				"        create-env deployment method"
+				"Cannot specify a bosh environment for environments that use ".
+				"create-env deployment method"
 			) if $create_env && $ENV{GENESIS_BOSH_ENVIRONMENT};
 			$env->{__params}{genesis}{use_create_env} = $create_env || 0;
 			$env->{__params}{genesis}{bosh_env} = $create_env ? '' : $ENV{GENESIS_BOSH_ENVIRONMENT} || $opts{name};
 		}
 	} else {
 		bail(
-			"\n#R{[ERROR]} Kit %s does not support the --[no-]create-env option",
+			"Kit %s does not support the --[no-]create-env option",
 			$env->kit->id
 		) if defined($create_env);
 		if ($env->is_bosh_director()) { # Prior to 2.8.0, only the bosh kit can use create_env.
@@ -348,7 +348,7 @@ sub create {
 	}
 
 	# target vault and remove secrets that may already exist
-	bail("\n#R{[ERROR]} No vault specified or configured.")
+	bail("No vault specified or configured.")
 		unless $env->vault;
 
 	# TODO: Remove credhub secrets
@@ -368,8 +368,8 @@ sub create {
 		$env->run_hook('new');
 	} else {
 		bail(
-			"#R{[ERROR]} Kit %s is not supported in Genesis %s (no hooks/new script).\n".
-			"        Check for a newer version of this kit.",
+			"Kit %s is not supported in Genesis %s (no hooks/new script).  Check for ".
+			"a newer version of this kit.",
 			$env->kit->id, $Genesis::VERSION
 		);
 	}
@@ -411,8 +411,10 @@ sub _env_name_errors {
 
 	my @errors = ();
 
-	bug("Environment name expected to be a string, got a ", ref($name) || 'undefined value')
-		if !defined($name) || ref($name);
+	bug(
+		"Environment name expected to be a string, got a %s",
+		ref($name) || 'undefined value'
+	) if !defined($name) || ref($name);
 
 	push(@errors,"names must not be empty.\n")
 		if !$name;
@@ -489,17 +491,17 @@ sub use_create_env {
 		sub validate_create_env_state {
 			my ($self,$is_create_env,$has_bosh_env,$kit_name,$is_bosh_kit) = @_;
 			clear_and_bail($self,
-				"\n#R{[ERROR]} This #M{$kit_name} environment specifies an alternative bosh_env, but is\n".
-				"        marked as a create-env (proto) environment. Create-env deployments can't\n".
-				"        use a #C{genesis.bosh_env} value, so please remove it, or mark this\n".
-				"        environment as a non-create-env environment.  It may be that bosh_env is\n".
-				"        configured in an inherited environment file."
+				"This #M{$kit_name} environment specifies an alternative bosh_env, but ".
+				"is marked as a create-env (proto) environment. Create-env deployments ".
+				"can't use a #C{genesis.bosh_env} value, so please remove it, or mark ".
+				"this environment as a non-create-env environment.  It may be that ".
+				"bosh_env is configured in an inherited environment file."
 			) if $is_create_env && $has_bosh_env;
 			clear_and_bail($self,
-				"\n#R{[ERROR]} This #M{$kit_name} environment does not use create-env (proto) or specify\n".
-				"        an alternative #C{genesis.bosh_env} as a deploy target. Please provide\n".
-				"        the name of the BOSH environment that will deploy this environment, or\n".
-				"        mark this environment as a create-env environment."
+				"This #M{$kit_name} environment does not use create-env (proto) or ".
+				"specify an alternative #C{genesis.bosh_env} as a deploy target.  ".
+				"Please provide the name of the BOSH environment that will deploy this ".
+				"environment, or mark this environment as a create-env environment."
 			) unless $is_create_env || $has_bosh_env || !$is_bosh_kit;
 		}
 
@@ -512,18 +514,18 @@ sub use_create_env {
 			my $kuce = $self->kit->metadata('use_create_env')||'';
 			if ($kuce eq 'yes') {
 				clear_and_bail($self,
-					"\n#R{[ERROR]} This kit only allows create-env deployments, but this environment\n".
-					"        specifies an alternative bosh_env.  Please remove the #C{genesis.bosh_env}\n".
-					"        entry from the environment file."
+					"This kit only allows create-env deployments, but this environment ".
+					"specifies an alternative bosh_env.  Please remove the ".
+					"#C{genesis.bosh_env} entry from the environment file."
 				) if $different_bosh_env;
 				return 1;
 			};
 			if ($kuce eq 'no') {
 				clear_and_bail($self,
-					"\n#R{[ERROR]} BOSH environments must specify the name of the parent BOSH director\n".
-					"        that will deploy this enviornment under #C{genesis.bosh_env} in the\n".
-					"        file, because unlike other kits, it cannot derive its director from its\n".
-					"        environment name."
+					"BOSH environments must specify the name of the parent BOSH director ".
+					"that will deploy this enviornment under #C{genesis.bosh_env} in the ".
+					"file, because unlike other kits, it cannot derive its director from ".
+					"its environment name."
 				) if $is_bosh_director && !$different_bosh_env;
 				return 0 ;
 			}
@@ -673,13 +675,13 @@ sub features {
 		my $self = shift;
 		my $features = scalar($self->lookup('kit.features', []));
 		bail(
-			"#R{[ERROR]} Environment #C{%s} #G{kit.features} must be an array - got a #y{%s}.\n",
+			"Environment #C{%s} #G{kit.features} must be an array - got a #y{%s}.",
 			$self->name, defined($features) ? (lc(ref($features)) || 'string') : 'null'
 		) unless ref($features) eq 'ARRAY';
 
 		my @derived_features = grep {$_ =~ /^\+/} $features;
 		bail(
-			"#R{[ERROR]} Environment #C{%s} cannot explicitly specify derived features:\n  - %s",
+			"Environment #C{%s} cannot explicitly specify derived features:\n  - %s",
 			$self->name, join("\n  - ",@derived_features)
 		) if @derived_features;
 		$features = [$self->kit->run_hook('features',env => $self, features => $features)]
@@ -715,7 +717,7 @@ sub params {
 			popd;
 		} else {
 			my $env = {
-				%{$self->vault->env()},               # specify correct vault for spruce to target
+				%{$self->vault->env()}, # specify correct vault for spruce to target
 				REDACT => ''
 			};
 			$out = $self->adaptive_merge({json => 1, env => $env}, @merge_files);
@@ -877,8 +879,8 @@ sub adaptive_merge {
 		bail(
 			"Could not merge $self->{name} environment files:\n\n".
 			"$err\n\n".
-			"Efforts were made to work around resolving the following errors, but if\n".
-			"they caused the above errors, you may be able to partially resolve this\n".
+			"Efforts were made to work around resolving the following errors, but if ".
+			"they caused the above errors, you may be able to partially resolve this ".
 			"issue by using #C{export GENESIS_UNEVALED_PARAMS=1}:\n\n".
 			$orig_errors
 		) if $rc;
@@ -1045,7 +1047,7 @@ sub connect_required_endpoints {
 		$self->with_vault   if $_ eq 'vault';
 		$self->with_bosh    if $_ eq 'bosh';
 		$self->with_credhub if $_ eq 'credhub'; # TODO: write this...!
-		bail("#R{[ERROR]} Unknown connectivity endpoint type #Y{%s} in kit #m{%s}", $_, $self->kit->id);
+		bail("Unknown connectivity endpoint type #Y{%s} in kit #m{%s}", $_, $self->kit->id);
 	}
 	return $self
 }
@@ -1085,7 +1087,7 @@ sub with_vault {
 	my $self = shift;
 	$ENV{GENESIS_SECRETS_MOUNT} = $self->secrets_mount();
 	$ENV{GENESIS_EXODUS_MOUNT} = $self->exodus_mount();
-	bail("\n#R{[ERROR]} No vault specified or configured.")
+	bail("No vault specified or configured.")
 		unless $self->vault;
 	return $self;
 }
@@ -1097,10 +1099,10 @@ sub get_ancestral_vault {
 
 	my $vault_info = scalar($self->lookup_unevaled('genesis.vault', undef));
 	bail(
-		"#R{[ERROR]} Expecting #C{genesis.vault} to be a singular string value, not a ".lc(ref($vault_info))
+		"Expecting #C{genesis.vault} to be a singular string value, not a ".lc(ref($vault_info))
 	) if ref($vault_info);
 	bail(
-		"#R{[ERROR]} Cannot use spruce operator to specify #C{genesis.vault_info}"
+		"Cannot use spruce operator to specify #C{genesis.vault_info}"
 	)	if $vault_info && $vault_info =~ /^\(\(/;
 	return $vault_info;
 }
@@ -1242,8 +1244,8 @@ sub bosh {
 		if ($bosh_exodus_vault) {
 			$bosh_vault = Genesis::Vault->find_single_match_or_bail($bosh_exodus_vault);
 			bail(
-				"#R{[ERROR]} Could not access vault #C{$bosh_exodus_vault} to retrieve BOSH director\n".
-				"        login credentials"
+				"Could not access vault #C{$bosh_exodus_vault} to retrieve BOSH ".
+				"director login credentials"
 			) unless $bosh_vault && $bosh_vault->connect_and_validate;
 		}
 
@@ -1257,27 +1259,30 @@ sub bosh {
 			$bosh_alias,
 			deployment => $self->deployment_name
 		);
-		bail("#R{[ERROR]} Could not find BOSH director #M{%s}", $bosh_alias)
-			unless $bosh;
+		bail(
+			"Could not find BOSH director #M{%s}", 
+			$bosh_alias
+		) unless $bosh;
 
-		error(
-			"#Y{[WARNING]} Calling shell has BOSH_ALIAS set to %s, but this environment\n".
-			"          specifies the #M{%s} BOSH director; ignoring \$BOSH_ALIAS set in shell",
+		warning(
+			"Calling shell has BOSH_ALIAS set to %s, but this environment specifies ".
+			"the #M{%s} BOSH director; ignoring \$BOSH_ALIAS set in shell",
 			$ENV{BOSH_ALIAS}, $bosh->alias
 		) if ($ENV{BOSH_ALIAS} && $ENV{BOSH_ALIAS} ne $bosh->{alias});
 
 		if ($ENV{BOSH_ENVIRONMENT}) {
 			if (is_valid_uri($ENV{BOSH_ENVIRONMENT})) {
-				error(
-					"#Y{[WARNING]} Calling shell has BOSH_ENVIRONMENT set to %s, but this environment\n".
-					"          specifies the BOSH director at #M{%s};\n".
-					"          ignoring \$BOSH_ENVIRONMENT set in shell",
+				warning(
+					"Calling shell has BOSH_ENVIRONMENT set to %s, but this environment ".
+					"specifies the BOSH director at #M{%s}; ignoring \$BOSH_ENVIRONMENT ".
+					"set in shell.",
 					$ENV{BOSH_ENVIRONMENT}, $bosh->url
 				) if ($ENV{BOSH_ENVIRONMENT} ne $bosh->url);
 			} else {
 				error(
-					"#Y{[WARNING]} Calling shell has BOSH_ENVIRONMENT set to %s, but this environment\n".
-					"          specifies the #M{%s} BOSH director; ignoring \$BOSH_ENVIRONMENT set in shell",
+					"Calling shell has BOSH_ENVIRONMENT set to %s, but this environment ".
+					"specifies the #M{%s} BOSH director; ignoring \$BOSH_ENVIRONMENT set ".
+					"in shell.",
 					$ENV{BOSH_ENVIRONMENT}, $bosh->alias
 				) if ($ENV{BOSH_ENVIRONMENT} ne $bosh->alias);
 			}
@@ -1348,31 +1353,42 @@ sub download_configs {
 	my ($self, @configs) = @_;
 	@configs = qw/cloud runtime/ unless @configs;
 
-	explain STDERR "Downloading configs from #M{%s} BOSH director...", $self->bosh->{alias};
+	info "Downloading configs from #M{%s} BOSH director...", $self->bosh->{alias};
 	my $err;
 	for (@configs) {
 		my $file = "$self->{__tmp}/$_.yml";
 		my ($type,$name) = split('@',$_);
 		$name ||= '*';
 		my $label = $name eq "*" ? "all $type configs" : $name eq "default" ? "$type config" : "$type config '$name'";
-		waiting_on STDERR bullet('empty',$label."...", inline=>1, box => 1);
+		info {pending => 1}, bullet('empty',$label."...", box => 1);
 		my @downloaded = eval {$self->with_bosh->bosh->download_configs($file,$type,$name)};
 		if ($@) {
 			$err = $@;
-			explain STDERR "\r".bullet('bad',$label.join("\n      ", ('...failed!',"",split("\n",$err),"")), box => 1, inline => 1);
+			info(
+				"\r".bullet(
+					'bad',$label.join("\n      ", ('...failed!',"",split("\n",$err),"")), 
+					box => 1
+				)
+			);
 		} else {
-			explain STDERR "[2K\r".bullet('good',$label.($name eq '*' ? ':' : ''), box => 1, inline => 1);
+			info(
+				"[2K\r".bullet(
+					'good',$label.($name eq '*' ? ':' : ''),
+					box => 1
+				)
+			);
 			$self->use_config($file,$type,$name);
 			for (@downloaded) {
 				$self->use_config($file,$_->{type},$_->{name});
-				explain STDERR bullet('good',$_->{label}, box => 1, inline => 1, indent => 7) if $name eq "*";
+				info(
+					bullet('good',$_->{label}, box => 1, indent => 7)
+				)if $name eq "*";
 			}
 		}
 	}
-	explain STDERR "";
 
 	bail(
-		"#R{[ERROR]} Could not fetch requested configs from #M{%s} BOSH director at #c{%s}\n",
+		"Could not fetch requested configs from #M{%s} BOSH director at #c{%s}\n",
 		$self->bosh->{alias}, $self->bosh->{url}
 	) if $err;
 	return $self;
@@ -1473,7 +1489,7 @@ sub shell {
 		$self->connect_required_endpoints(@config_hooks);
 		$self->download_required_configs(@config_hooks);
 	}
-	explain STDERR "#Y{Started shell environment for }#C{%s}#Y{:}", $self->name;
+	info "#Y{Started shell environment for }#C{%s}#Y{:}", $self->name;
 	return $self->kit->run_hook('shell', %opts, env => $self);
 }
 
@@ -1588,14 +1604,14 @@ sub check {
 	$checks = "BOSH configs and $checks" if scalar($self->configs);
 
 	if ($self->has_hook('check')) {
-		explain STDERR "\n[#M{%s}] running $checks checks...", $self->name;
+		info "\n[#M{%s}] running $checks checks...", $self->name;
 		$self->run_hook('check') or $ok = 0;
 	} else {
-		explain STDERR "\n[#M{%s}] #Y{%s does not define a 'check' hook; $checks checks will be skipped.}", $self->name, $self->kit->id;
+		info "\n[#M{%s}] #Y{%s does not define a 'check' hook; $checks checks will be skipped.}", $self->name, $self->kit->id;
 	}
 
 	if ($self->kit->secrets_store eq 'vault' && (!exists($opts{check_secrets}) || $opts{check_secrets})) {
-		explain STDERR "\n[#M{%s}] running secrets checks...", $self->name;
+		info "\n[#M{%s}] running secrets checks...", $self->name;
 		my %check_opts=(indent => '  ', validate => ! envset("GENESIS_TESTING_CHECK_SECRETS_PRESENCE_ONLY"));
 		$ok = 0 unless $self->check_secrets(%check_opts);
 	}
@@ -1603,20 +1619,20 @@ sub check {
 	if ($ok) {
 		if (envset("GENESIS_CHECK_YAML_ON_DEPLOY") || $opts{check_yamls}) {
 			if ($self->missing_required_configs('blueprint')) {
-				explain STDERR "\n[#M{%s}] #Y{Required BOSH configs not provided - can't check manifest viability}", $self->name;
+				info "[#M{%s}] #Y{Required BOSH configs not provided - can't check manifest viability}\n", $self->name;
 			} else {
-				explain STDERR "\n[#M{%s}] inspecting YAML files used to build manifest...", $self->name;
+				info "[#M{%s}] inspecting YAML files used to build manifest...", $self->name;
 				my @yaml_files = $self->format_yaml_files('include-kit' => 1, padding => '  ');
-				explain STDERR join("\n",@yaml_files);
+				info join("\n",@yaml_files)."\n";
 			}
 		}
 	}
 
 	if ($ok) {
 		if ($self->missing_required_configs('manifest')) {
-			explain STDERR "\n[#M{%s}] #Y{Required BOSH configs not provided - can't check manifest viability}", $self->name;
+			info "[#M{%s}] #Y{Required BOSH configs not provided - can't check manifest viability}", $self->name;
 		} elsif (!exists($opts{check_manifest}) || $opts{check_manifest}) {
-			explain STDERR "\n[#M{%s}] running manifest viability checks...", $self->name;
+			info "[#M{%s}] running manifest viability checks...", $self->name;
 			$self->manifest or $ok = 0;
 		}
 	}
@@ -1625,7 +1641,7 @@ sub check {
 
 	if ($ok && (!exists($opts{check_stemcells}) || $opts{check_stemcells}) && !$self->use_create_env) {
 
-		explain STDERR "\n[#M{%s}] running stemcell checks...", $self->name;
+		info "\n[#M{%s}] running stemcell checks...", $self->name;
 		my @stemcells = $self->bosh->stemcells;
 		my $required = $self->manifest_lookup('stemcells');
 		my @missing;
@@ -1642,8 +1658,9 @@ sub check {
 			}
 			$version ||= ''; # in case nothing was found
 			my $found = grep {$_ eq "$os\@$version"} @stemcells;
-			explain STDERR ("%sStemcell #C{%s} (%s/%s) %s",
-				bullet($found ? 'good' : 'bad', '', box => 1, inline => 1),
+			info(
+				"%sStemcell #C{%s} (%s/%s) %s",
+				bullet($found ? 'good' : 'bad', '', box => 1),
 				$alias, $os, $wants_latest ? $wants_latest : "v$version",
 				$wants_latest ? (
 					$found ? "#G{will use v$version}" : '#R{ - no stemcells available!}'
@@ -1659,7 +1676,7 @@ sub check {
 			#      https://github.com/genesis-community/bosh-genesis-kit/issues/70 is resolved,
 			#      spit out the commands that allow the user to upload the specific missing verions:
 			#      genesis -C path/to/bosh-env-file.yml do upload-stemcells os1/version1 os2/version2 ...
-			explain STDERR "\n".
+			info "\n".
 				"  Missing stemcells can be uploaded (if using BOSH kit v1.15.2 or higher):\n".
 				"  #G{genesis -C <path/to/bosh-env-file.yml> do upload-stemcells %s}",
 				join(' ',@missing);
@@ -1680,10 +1697,11 @@ sub deploy {
 		$self->download_required_configs(@hooks);
 	}
 
-	$self->check()
-		or bail "#R{Preflight checks failed}; deployment operation #R{halted}.";
+	bail(
+		"Preflight checks failed; deployment operation halted."
+	) unless $self->check();
 
-	explain STDERR "\n[#M{%s}] generating manifest...", $self->name;
+	info "\n[#M{%s}] generating manifest...", $self->name;
 	$self->write_manifest("$self->{__tmp}/manifest.yml", redact => 0);
 
 	my ($ok, $predeploy_data,$data_fn);
@@ -1693,7 +1711,7 @@ sub deploy {
 			manifest  => $self->{__tmp}."/manifest.yml",
 			vars_file => $self->vars_file
 		);
-		die "Cannot continue with deployment!\n" unless $ok;
+		bail "Cannot continue with deployment!\n" unless $ok;
 		$data_fn = $self->tmppath("predeploy-data");
 		mkfile_or_fail($data_fn, $predeploy_data) if ($predeploy_data);
 	}
@@ -1703,7 +1721,7 @@ sub deploy {
 
 	if ($self->_reactions) {
 		if ($disable_reactions) {
-			explain STDERR "\n#y{[WARNING]} Reactions are disabled for this deploy"
+			warning("\nReactions are disabled for this deploy");
 		} else {
 			$self->_validate_reactions;
 			$reaction_vars = {
@@ -1714,11 +1732,13 @@ sub deploy {
 				GENESIS_DEPLOY_DRYRUN => $opts{"dry-run"} ? "true" : "false"
 			};
 			$ok = $self->_process_reactions('pre-deploy', $reaction_vars);
-			bail( "#R{[ERROR]} Cannnot deploy: environment pre-deploy reaction failed!") unless $ok;
+			bail(
+				"Cannnot deploy: environment pre-deploy reaction failed!"
+			) unless $ok;
 		}
 	}
 
-	explain STDERR "\n[#M{%s}] all systems #G{ok}, initiating BOSH deploy...\n", $self->name;
+	info "\n[#M{%s}] all systems #G{ok}, initiating BOSH deploy...\n", $self->name;
 
 	# Prepare the output manifest files for the repo
 	my $manifest_file = $self->tmppath("out-manifest.yml");
@@ -1733,19 +1753,23 @@ sub deploy {
 		my ($last_manifest_path,$last_exists,$old_sha1) = $self->cached_manifest_info;
 		my $old_exodus = $self->exodus_lookup("",{});
 		if ($last_exists) {
-			explain "Showing differences between previous deployment found in archive:\n";
+			info "Showing differences between previous deployment found in archive:\n";
 			if (! defined($old_exodus->{manifest_sha1})) {
-				explain "#y{[WARNING]} Cannot confirm local cached deployment manifest pertains to the\n"
-							. "          current deployment."
+				warning(
+					"Cannot confirm local cached deployment manifest pertains to the ".
+					"current deployment."
+				);
 			} elsif ($old_exodus->{manifest_sha1} ne $old_sha1) {
-				explain "#Y{[WARNING]} Latest deployment does not match the local cached deployment\n"
-							. "          manifest, perhaps you need to perform a #C{git pull}.\n"
-							. "          #R{This may mean your state file is also out of date!}"
+				warning(
+					"Latest deployment does not match the local cached deployment ".
+					"manifest, perhaps you need to perform a #C{git pull}.  #R{This may ".
+					"mean your state file is also out of date!}"
+				)
 			}
 			my $rc = run({interactive => 1}, "spruce", "diff", $last_manifest_path, $manifest_file);
-			explain "#y{NOTE}: values from vault have been redacted, so differences are not shown.";
+			info "#y{NOTE}: values from vault have been redacted, so differences are not shown.";
 		} else {
-			explain "No previous deployment of this environment found in the deployment archive."
+			info "No previous deployment of this environment found in the deployment archive."
 		}
 
 		if (in_controlling_terminal && !envset('BOSH_NON_INTERACTIVE')) {
@@ -1753,9 +1777,9 @@ sub deploy {
 			bail "Aborted!\n" unless $confirm;
 		} elsif ($last_exists && defined($old_exodus->{manifest_sha1}) && $old_exodus->{manifest_sha1} ne $old_sha1) {
 			bail(
-				"#R{[ERROR]} The local state file for #C{$self->{name}} may not be the\n"
-			. "        state file from the last deployment.  Cowardly refusing to\n"
-			. "        deploy -- run again without the -y argument to confirm."
+				"The local state file for #C{$self->{name}} may not be the state file ".
+				"from the last deployment.  Cowardly refusing to deploy -- run again ".
+				"without the -y argument to confirm."
 			);
 		} else {
 			print "\n";
@@ -1786,12 +1810,12 @@ sub deploy {
 	}
 	$ok = !$results[1];
 
-	explain STDERR "\n[#M{%s}] #G{Deployment successful.}\n", $self->name if $ok;
+	info "\n[#M{%s}] #G{Deployment successful.}\n", $self->name if $ok;
 
 	if ($self->_reactions && !$disable_reactions) {
 		$reaction_vars->{GENESIS_DEPLOY_RC} = ($results[1]);
-		$self->_process_reactions('post-deploy', $reaction_vars) or explain STDERR (
-			"#y{[WARNING]} Environment post-deploy reaction failed!  Manual intervention may be needed."
+		$self->_process_reactions('post-deploy', $reaction_vars) or warning(
+			"Environment post-deploy reaction failed!  Manual intervention may be needed."
 		);
 	}
 
@@ -1830,18 +1854,18 @@ sub deploy {
 	}
 
 	if ($opts{"dry-run"}) {
-		explain STDERR "\n[#M{%s}] dry-run deployment complete; post-deployment activities will be skipped.", $self->name;
+		info "\n[#M{%s}] dry-run deployment complete; post-deployment activities will be skipped.", $self->name;
 		exit 0;
 	}
 
 	# track exodus data in the vault
-	explain STDERR "\n[#M{%s}] Preparing metadata for export...", $self->name;
+	info "\n[#M{%s}] Preparing metadata for export...", $self->name;
 	$self->vault->authenticate unless $self->vault->authenticated;
 	my $exodus = $self->exodus;
 
 	$exodus->{manifest_sha1} = digest_file_hex($manifest_file, 'SHA-1');
 	debug("setting exodus data in the Vault, for use later by other deployments");
-	$ok = $self->vault->authenticate->query(
+	$self->vault->authenticate->query(
 		{ onfailure => "#R{Failed to export $self->{name} metadata.}\n".
 		               "Deployment was still successful, but metadata used by addons and other kits is outdated.\n".
 		               "This may be resolved by deploying again, or it may be a permissions issue while trying to\n".
@@ -1851,7 +1875,7 @@ sub deploy {
 		  '--', 'set', $self->exodus_base,
 		               map { "$_=$exodus->{$_}" } grep {defined($exodus->{$_})} keys %$exodus);
 
-	explain STDERR "\n[#M{%s}] #G{Done.}\n", $self->name;
+	success "\n#M{%s} deployed successfully.\n", $self->name;
 	return $ok;
 }
 
@@ -1878,9 +1902,11 @@ sub exodus {
 		my %credhub_env = $self->credhub_connection_env;
 		my $credhub_exodus = $self->exodus_lookup("", {}, $credhub_env{GENESIS_CREDHUB_EXODUS_SOURCE});
 		my @missing = grep {!exists($credhub_exodus->{$_})} qw/ca_cert credhub_url credhub_ca_cert credhub_password credhub_username/;
-		bail("#R{[ERROR]} %s exodus data missing required credhub connection information: %s\nRedeploying it may help.",
-			$credhub_env{GENESIS_CREDHUB_EXODUS_SOURCE}, join (', ', @missing))
-			if @missing;
+		bail(
+			"%s exodus data missing required credhub connection information: %s\n".
+			"Redeploying it may help.",
+			$credhub_env{GENESIS_CREDHUB_EXODUS_SOURCE}, join (', ', @missing)
+		) if @missing;
 
 		local %ENV=%ENV;
 		$ENV{$_} = $credhub_env{$_} for (grep {$_ =~ /^CREDHUB_/} keys(%credhub_env));
@@ -1891,11 +1917,11 @@ sub exodus {
 			my ($out, $rc, $err) = run({stderr => 0},
 				"credhub", "get", "-n", $credhub_env{GENESIS_CREDHUB_ROOT}."/$secret", @keys, "-q"
 			);
-			if ($rc) {
-				error("#R{[ERROR]} Could not retrieve %s under %s:\n%s",
-				  $key ? "$secret.$key" : $secret, $credhub_env{GENESIS_CREDHUB_ROOT}, $err
-				);
-			}
+			error(
+				"Could not retrieve %s under %s:\n%s",
+				$key ? "$secret.$key" : $secret,
+				$credhub_env{GENESIS_CREDHUB_ROOT}, $err
+			) if $rc;
 			$exodus->{$target} = $out;
 		}
 	}
@@ -1912,7 +1938,7 @@ sub add_secrets {
 
 	#Credhub check
 	if ($self->kit->uses_credhub) {
-		explain "#Yi{Credhub-based kit - no local secrets generation required}";
+		warning {label => "NOTICE"}, "#Yi{Credhub-based kit - no local secrets generation required}";
 		return 1;
 	}
 
@@ -1941,7 +1967,7 @@ sub check_secrets {
 
 	#Credhub check
 	if ($self->kit->uses_credhub) {
-		explain "#Yi{Credhub-based kit - no local secrets validation required}\n";
+		warning {label => "NOTICE"}, "#Yi{Credhub-based kit - no local secrets validation required}\n";
 		return 1;
 	}
 
@@ -1972,7 +1998,7 @@ sub rotate_secrets {
 
 	#Credhub check
 	if ($self->kit->uses_credhub) {
-		explain "#Yi{Credhub-based kit - no local secrets rotation allowed}";
+		warning {label => "NOTICE"}, "#Yi{Credhub-based kit - no local secrets rotation allowed}";
 		return 1;
 	}
 
@@ -2003,7 +2029,7 @@ sub remove_secrets {
 
 	#Credhub check
 	if ($self->kit->uses_credhub) {
-		explain "#Yi{Credhub-based kit - no local secrets removal permitted}";
+		warning {label => "NOTICE"}, "#Yi{Credhub-based kit - no local secrets removal permitted}";
 		return 1;
 	}
 
@@ -2015,33 +2041,38 @@ sub remove_secrets {
 		return 2 unless scalar(@paths);
 
 		unless ($opts{'no-prompt'}) {
-			die_unless_controlling_terminal "#R{[ERROR] %s", join("\n",
-				"Cannot prompt for confirmation to remove all secrets outside a",
-				"controlling terminal.  Use #C{-y|--no-prompt} option to provide confirmation",
-				"to bypass this limitation."
+			die_unless_controlling_terminal(
+				"Cannot prompt for confirmation to remove all secrets outside a ".
+				"controlling terminal.  Use #C{-y|--no-prompt} option to provide ".
+				"confirmation to bypass this limitation."
 			);
-			explain "\n#Yr{[WARNING]} This will delete all %s secrets under '#C{%s}', including\n".
-			             "          non-generated values set by 'genesis new' or manually created",
-				 scalar(@paths), $self->secrets_base;
+			warning(
+				"This will delete all %s secrets under '#C{%s}', including ".
+				"non-generated values set by 'genesis new' or manually created",
+				 scalar(@paths), $self->secrets_base
+			 );
 			while (1) {
 				my $response = prompt_for_line(undef, "Type 'yes' to remove these secrets, 'list' to list them; anything else will abort","");
-				print "\n";
+				output "\n";
 				if ($response eq 'list') {
 					# TODO: check and color-code generated vs manual entries
 					my $prefix_len = length($self->secrets_base)-1;
-					bullet $_ for (map {substr($_, $prefix_len)} @paths);
+					output bullet $_ for (map {substr($_, $prefix_len)} @paths);
 				} elsif ($response eq 'yes') {
 					last;
 				} else {
-					explain "\nAborted!\nKeeping all existing secrets under '#C{%s}'.\n", $self->secrets_base;
+					fatal({label => "ABORT", show_stack => 'default'},
+						"Keeping all existing secrets under '#C{%s}'.\n",
+						$self->secrets_base
+					);
 					return 0;
 				}
 			}
 		}
-		waiting_on "Deleting existing secrets under '#C{%s}'...", $self->secrets_base;
+		output {pending => 1}, "Deleting existing secrets under '#C{%s}'...", $self->secrets_base;
 		my ($out,$rc) = $self->vault->query('rm', '-rf', $self->secrets_base);
-		bail "#R{error!}\n%s", $out if ($rc);
-		explain "#G{done}\n";
+		bail $out if ($rc);
+		success "#G{All applicable secrets removed.}\n";
 		return 1;
 	}
 
@@ -2125,8 +2156,9 @@ sub _genesis_inherits {
 	my @new_files;
 	for my $contents (@contents) {
 		next unless $contents->{genesis}{inherits};
-		bail "#R{[ERROR]} $file specifies 'genesis.inherits', but it is not a list"
-			unless ref($contents->{genesis}{inherits}) eq 'ARRAY';
+		bail(
+			"$file specifies 'genesis.inherits', but it is not a list"
+		) unless ref($contents->{genesis}{inherits}) eq 'ARRAY';
 
 		for (@{$contents->{genesis}{inherits}}) {
 			my $cached_file;
@@ -2170,16 +2202,16 @@ sub _secret_processing_updates_callback {
 		push(@{$self->{__secret_processing_updates_callback__items}{$args{result}} ||= []},
 		     $self->{__secret_processing_updates_callback__item});
 
-		explain $map->{"$action/$args{result}"} || $map->{$args{result}} || $args{result}
+		info $map->{"$action/$args{result}"} || $map->{$args{result}} || $args{result}
 			if $args{result} && ($level eq 'full' || !( $args{result} eq 'ok' || ($args{result} eq 'skipped' && $action eq 'add')));
 
 		if (defined($args{msg})) {
 			my @lines = grep {$level eq 'full' || $_ =~ /^\[#[YR]/} split("\n",$args{msg});
 			my $pad = " " x (length($self->{__secret_processing_updates_callback__total})*2+4);
-			explain "  $pad%s", join("\n  $pad", @lines) if @lines;
-			explain "" if $level eq 'full' || scalar @lines;
+			info("  %s%s", $pad, join("\n  $pad", @lines)) if @lines;
+			info("") if $level eq 'full' || scalar @lines;
 		}
-		waiting_on "\r[2K" unless $level eq 'full';
+		info({pending => 1}, "\r[2K") unless $level eq 'full';
 
 	} elsif ($state eq 'start-item') {
 		$self->{__secret_processing_updates_callback__idx}++;
@@ -2188,15 +2220,17 @@ sub _secret_processing_updates_callback {
 		if ($args{label} eq "Diffie-Hellman key exchange parameters" && $action =~ /^(add|recreate)$/) {
 			$long_warning = ($level eq 'line' ? " - " : "; ")."#Yi{may take a very long time}"
 		}
-		waiting_on "  [%*d/%*d] #C{%s} #wi{%s}%s ... ",
+		info({pending => 1},
+			"  [%*d/%*d] #C{%s} #wi{%s}%s ... ",
 			$w, $self->{__secret_processing_updates_callback__idx},
 			$w, $self->{__secret_processing_updates_callback__total},
 			$args{path},
 			$args{label} . ($level eq 'line' || !$args{details} ? '' : " - $args{details}"),
-			$long_warning;
+			$long_warning
+		);
 
 	} elsif ($state eq 'empty') {
-		explain "%s - nothing to %s!\n",
+		info "%s - nothing to %s!\n",
 			$args{msg} || "No kit secrets found",
 			$action;
 		return 1;
@@ -2211,19 +2245,19 @@ sub _secret_processing_updates_callback {
 		$self->{__secret_processing_updates_callback__idx} = 0;
 		$self->{__secret_processing_updates_callback__items} = {};
 		my $msg_action = $args{action} || sprintf("%s %s secrets", ucfirst($actioning), $args{total});
-		explain "\n%s for #M{%s} under path '#C{%s}':", $msg_action, $self->name, $self->secrets_base;
+		info "\n%s for #M{%s} under path '#C{%s}':", $msg_action, $self->name, $self->secrets_base;
 
 	} elsif ($state eq 'wait') {
 		$self->{__secret_processing_updates_callback__startwait} = time();
-		waiting_on "%s ... ", $args{msg};
+		info {pending => 1},  "%s ... ", $args{msg};
 
 	} elsif ($state eq 'wait-done') {
-		explain("%s #Ki{- %s}",
+		info("%s #Ki{- %s}",
 			$args{result} eq 'ok' ? "#G{done.}" : "#R{error!}",
 			Time::Seconds->new(time() - $self->{__secret_processing_updates_callback__startwait})->pretty()
 		) if ($args{result} && ($args{result} eq 'error' || $level eq 'full'));
-		error("#R{[ERROR]} Encountered error: %s", $args{msg}) if ($args{result} eq 'error');
-		waiting_on "\r[2K" unless $level eq 'full';
+		error("Encountered error: %s", $args{msg}) if ($args{result} eq 'error');
+		info {pending => 1}, "\r[2K" unless $level eq 'full';
 
 	} elsif ($state eq 'completed') {
 		my @extra_errors = @{$args{errors} || []};
@@ -2232,7 +2266,7 @@ sub _secret_processing_updates_callback {
 			+ scalar(@extra_errors)
 			+ ($action =~ /^(check|validate)$/ ?
 				scalar(@{$self->{__secret_processing_updates_callback__items}{missing} || []}) : 0);
-		explain "%s - Duration: %s [%d %s/%d skipped/%d errors%s]\n",
+		info "%s - Duration: %s [%d %s/%d skipped/%d errors%s]\n",
 			$err_count ? "Failed" : "Completed",
 			Time::Seconds->new(time() - $self->{__secret_processing_updates_callback__start})->pretty(),
 			scalar(@{$self->{__secret_processing_updates_callback__items}{ok} || []}), $actioned,
@@ -2243,10 +2277,10 @@ sub _secret_processing_updates_callback {
 			if (($opts->{invalid}||0) == 2 || ($opts->{validate}||0) == 2);
 		return !$err_count;
 	} elsif ($state eq 'inline-prompt') {
-		die_unless_controlling_terminal "#R{[ERROR] %s", join("\n",
-			"Cannot prompt for confirmation to $action secrets outside a",
-			"controlling terminal.  Use #C{-y|--no-prompt} option to provide confirmation",
-			"to bypass this limitation."
+		die_unless_controlling_terminal(
+			"Cannot prompt for confirmation to $action secrets outside a controlling ".
+			"terminal.  Use #C{-y|--no-prompt} option to provide confirmation to ".
+			"bypass this limitation."
 		);
 		print "[s\n[u[B[A[s"; # make sure there is room for a newline, then restore and save the current cursor
 		my $response = Genesis::UI::__prompt_for_line($args{prompt}, $args{validation}, $args{err_msg}, $args{default}, !$args{default});
@@ -2257,18 +2291,18 @@ sub _secret_processing_updates_callback {
 		if ($args{class}) {
 			$title = sprintf("\r[2K\n#%s{[%s]} ", $args{class} eq 'warning' ? "Y" : '-', uc($args{class}));
 		}
-		explain "%s%s", $title, $args{msg};
-		die_unless_controlling_terminal "#R{[ERROR] %s", join("\n",
-			"Cannot prompt for confirmation to $action secrets outside a",
-			"controlling terminal.  Use #C{-y|--no-prompt} option to provide confirmation",
-			"to bypass this limitation."
+		info "%s%s", $title, $args{msg};
+		die_unless_controlling_terminal(
+			"Cannot prompt for confirmation to $action secrets outside a controlling ".
+			"terminal.  Use #C{-y|--no-prompt} option to provide confirmation to ".
+			"bypass this limitation."
 		);
 		return prompt_for_line(undef, $args{prompt}, $args{default} || "");
 	} elsif ($state eq 'notify') {
 		if ($args{nonl}) {
-			waiting_on $args{msg};
+			info {pending => 1}, $args{msg};
 		} else {
-			explain $args{msg};
+			info $args{msg};
 		}
 	} else {
 		bug "_secret_processing_updates_callback encountered an unknown state '$state'";
@@ -2461,9 +2495,11 @@ sub _validate_reactions {
 	my %reaction_validator; @reaction_validator{@valid_reactions} = ();
 	my @invalid_reactions = grep ! exists $reaction_validator{$_}, ( $_[0]->_reactions );
 	if (@invalid_reactions) {
-		bail "Unexpected reactions specified under #y{genesis.reactions}: #R{%s}\n".
-		     "Valid values: #G{%s}",
-		     join(', ', @invalid_reactions), join(', ',@valid_reactions);
+		bail(
+			"Unexpected reactions specified under #y{genesis.reactions}: #R{%s}\n".
+			"Valid values: #G{%s}",
+			join(', ', @invalid_reactions), join(', ',@valid_reactions)
+		);
 	}
 	return;
 }
@@ -2477,27 +2513,27 @@ sub _process_reactions {
 	if ($self->lookup("genesis.reactions.$reaction")) {
 		my %env_vars = $self->get_environment_variables('deploy');
 		my $actions = $self->lookup("genesis.reactions.$reaction");
-		explain STDERR '';
+		info '';
 		bail(
-			"#R{[ERROR]} Value of #C{genesis.reactions.%s} must be a list of one or more hashmaps",
+			"Value of #C{genesis.reactions.%s} must be a list of one or more hashmaps",
 			$reaction
 		) if ref($actions) ne "ARRAY" || scalar(@{$actions}) == 0;
 
 		for my $action (@{$actions}) {
 			bail(
-				"#R{[ERROR]} Values in #C{genesis.reactions.i%s} list must be hashmaps",
+				"Values in #C{genesis.reactions.i%s} list must be hashmaps",
 				$reaction
 			) if ref($action) ne "HASH";
 			my @action_type = grep {my $i = $_; grep {$_ eq $i} qw/script addon/} keys(%{$action});
 			bail(
-				"#R{[ERROR]} Values in #C{genesis.reactions.%s} must have one #C{script} or #C{addon} key",
+				"Values in #C{genesis.reactions.%s} must have one #C{script} or #C{addon} key",
 				$reaction
 			) unless scalar(@action_type) == 1;
 			my $script = $action->{$action_type[0]};
 			if ($action_type[0] eq "script") {
 				my @args = @{$action->{args}||[]};
 				my @cmd = ('bin/'.$action->{script}, @args);
-				explain STDERR "#M{[%s: }#mi{%s}#M{]} Running script \`#G{%s}\` with %s:\n",
+				info "#M{[%s: }#mi{%s}#M{]} Running script \`#G{%s}\` with %s:\n",
 					$self->name, uc($reaction), $cmd[0], (
 						@args ? sprintf('arguments of [#C{%s}]', join(', ',map {"\"$_\""} @args)) : 'no arguments'
 					);
@@ -2521,10 +2557,10 @@ sub _process_reactions {
 
 				$self->download_required_configs('addon', "addon-$script");
 
-				explain STDERR "#M{[%s: }#mi{%s}#M{]} Running #G{%s} addon from kit #M{%s}:\n", $self->name, uc($reaction), $script, $self->kit->id;
+				info "#M{[%s: }#mi{%s}#M{]} Running #G{%s} addon from kit #M{%s}:\n", $self->name, uc($reaction), $script, $self->kit->id;
 				$ok = $self->run_hook('addon', script => $script, args => $action->{args}, eval_var_args => 1, extra_vars => $reaction_vars);
 			}
-			explain STDERR '';
+			info '';
 			last unless $ok;
 		}
 	}
