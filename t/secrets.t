@@ -65,7 +65,7 @@ EOF
 	# Feature: Specify certificate key usage
 	my $v = "$secrets_mount$secrets_path";
 	($pass, $rc, $out) = runs_ok("genesis check-secrets $env_name -lm", "genesis check-secrets runs without error");
-	$out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds?/$1 XXX seconds/g;
+	$out =~ s/(Duration:|-) (\d+ minutes?, )?\d+ seconds?/$1 XXX seconds/g;
 	matches_utf8 $out, <<EOF, "genesis new correctly created secrets of the correct type and location";
 Parsing kit secrets descriptions ... done. - XXX seconds
 Retrieving all existing secrets ... done. - XXX seconds
@@ -107,7 +107,7 @@ EOF
 
 	# Feature: Validate secrets, including signer and key usage
 	($pass, $rc, $out) = runs_ok("genesis check-secrets $env_name --level invalid", "genesis check-secrets --level invalid runs without error (default secrets stuff)");
-	$out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds?/$1 XXX seconds/g;
+	$out =~ s/(Duration:|-) (\d+ minutes?, )?\d+ seconds?/$1 XXX seconds/g;
 	$out =~ s/expires in (\d+) days \(([^\)]+)\)/expires in $1 days (<timestamp>)/g;
 	$out =~ s/ca\.n\d{9}\./ca.n<random>./g;
 	matches_utf8 $out, <<EOF, "genesis new correctly created secrets of the correct type and location (default secrets stuff)";
@@ -300,7 +300,7 @@ EOF
   my @secret_paths = map {my $p = $_ ; map {[$p, $_]} keys %{$secrets_old->{$_}}} keys %$secrets_old;
 
 	($pass,$rc,$out) = runs_ok "genesis rotate-secrets $env_name -y  '//ca\$/\|\|/^passwords:/'", "can rotate certs according to filter";
-	$out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds?/$1 XXX seconds/g;
+	$out =~ s/(Duration:|-) (\d+ minutes?, )?\d+ seconds?/$1 XXX seconds/g;
 	matches_utf8 $out,<<'EOF', "genesis rotate-secrets reports rotated filtered secrets, but not fixed ones";
 Parsing kit secrets descriptions ... done. - XXX seconds
 
@@ -350,7 +350,7 @@ EOF
 	cmp_deeply(\@different, bag(@expected), "Only the expected secrets changed (including top-level/top crl and serial)");
 
 	($pass,$rc,$out) = run_fails "genesis check-secrets $env_name", "rotation does not rotate certs signed by changed cas";
-	$out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds?/$1 XXX seconds/g;
+	$out =~ s/(Duration:|-) (\d+ minutes?, )?\d+ seconds?/$1 XXX seconds/g;
 	$out =~ s/expires in (\d+) days \(([^\)]+)\)/expires in $1 days (<timestamp>)/g;
 	$out =~ s/ca\.n\d{9}\./ca.n<random>./g;
 	matches_utf8 $out, <<'EOF', "genesis add-secrets reports existing secrets";
@@ -614,7 +614,7 @@ EOF
     $out =~ s/\e\[2K/<clear-line>/g;
     $out =~ s/\r\n/\n/g;
     $out =~ s/\r/<cr>\n/g;
-    $out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds?/$1 XXX seconds/g;
+    $out =~ s/(Duration:|-) (\d+ minutes?, )?\d+ seconds?/$1 XXX seconds/g;
     matches_utf8 $out, <<EOF, "genesis rotate-secrets rotates failed but skips fixed secrets";
  yes
 
@@ -640,7 +640,7 @@ EOF
     $out =~ s/\r\n/\n/g;
     $out =~ s/\r/<cr>\n/g;
     $out =~ s/'[12]{64}'/'<[12]{64}>'/g;
-    $out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds?/$1 XXX seconds/g;
+    $out =~ s/(Duration:|-) (\d+ minutes?, )?\d+ seconds?/$1 XXX seconds/g;
     matches_utf8 $out,<<EOF, "genesis rotate-secrets reports rotated secrets repaired, but not the 'fixed' ones";
 Parsing kit secrets descriptions ... <cr>
 <clear-line>Retrieving all existing secrets ... <cr>
@@ -715,7 +715,7 @@ EOF
   # Feature: Remove secrets - can remove fixed secrets
   # Feature: Remove secrets - can remove failed secrets
   ($pass,$rc,$out) = runs_ok "GENESIS_NO_UTF8=1 genesis remove-secrets $env_name -y -P", "Remove all invalid secrets";
-  $out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds?/$1 XXX seconds/g;
+  $out =~ s/(Duration:|-) (\d+ minutes?, )?\d+ seconds?/$1 XXX seconds/g;
   $out =~ s/'[12]{64}'/'<[12]{64}>'/g;
   eq_or_diff $out, <<EOF, "genesis add-secrets reports existing secrets";
 Parsing kit secrets descriptions ... done. - XXX seconds
@@ -806,7 +806,7 @@ EOF
     $out =~ s/\e\[2K/<clear-line>/g;
     $out =~ s/\r\n/\n/g;
     $out =~ s/\r/<cr>\n/g;
-    $out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds?/$1 XXX seconds/g;
+    $out =~ s/(Duration:|-) (\d+ minutes?, )?\d+ seconds?/$1 XXX seconds/g;
     matches_utf8 $out, <<EOF, "genesis rotate-secrets rotates filtered secrets";
  yes
 
@@ -828,7 +828,7 @@ EOF
 
 		# Lets delete another pair explicitly
   ($pass,$rc,$out) = runs_ok "GENESIS_NO_UTF8=1 genesis remove-secrets $env_name -y haproxy/ssl secondary/server", "Remove all invalid secrets";
-  $out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds?/$1 XXX seconds/g;
+  $out =~ s/(Duration:|-) (\d+ minutes?, )?\d+ seconds?/$1 XXX seconds/g;
   $out =~ s/'[12]{64}'/'<[12]{64}>'/g;
   eq_or_diff $out, <<EOF, "genesis add-secrets reports existing secrets";
 Parsing kit secrets descriptions ... done. - XXX seconds
@@ -841,7 +841,7 @@ Completed - Duration: XXX seconds [2 removed/0 skipped/0 errors]
 EOF
 
     ($pass, $rc, $out) = run_fails("genesis check-secrets $env_name -l missing", "genesis check-secrets -l missing confirms removed secrets");
-    $out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds?/$1 XXX seconds/g;
+    $out =~ s/(Duration:|-) (\d+ minutes?, )?\d+ seconds?/$1 XXX seconds/g;
     matches_utf8 $out, <<EOF, "genesis remove-secrets removed the desired secrets";
 Parsing kit secrets descriptions ... done. - XXX seconds
 Retrieving all existing secrets ... done. - XXX seconds
@@ -887,7 +887,7 @@ EOF
 
 
   ($pass, $rc, $out) = runs_ok("genesis add-secrets $env_name", "genesis add the removed secrets");
-  $out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds?/$1 XXX seconds/g;
+  $out =~ s/(Duration:|-) (\d+ minutes?, )?\d+ seconds?/$1 XXX seconds/g;
   matches_utf8 $out, <<EOF, "genesis add-secrets added the missing secrets";
 Parsing kit secrets descriptions ... done. - XXX seconds
 
@@ -939,7 +939,7 @@ EOF
   $out =~ s/\e\[2K/<clear-line>/g;
   $out =~ s/\r\n/\n/g;
   $out =~ s/\r/<cr>\n/g;
-  $out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds?/$1 XXX seconds/g;
+  $out =~ s/(Duration:|-) (\d+ minutes?, )?\d+ seconds?/$1 XXX seconds/g;
   $out =~ s/'[12]{64}'/'<[12]{64}>'/g;
   $pass = matches_utf8 $out, <<EOF, "genesis lists the expected failed secrets to be recreated";
 Parsing kit secrets descriptions ... done. - XXX seconds
@@ -960,7 +960,7 @@ EOF
     $out =~ s/\r\n/\n/g;
     $out =~ s/\r/<cr>\n/g;
     $out =~ s/updated to [^\(]* \(/updated to <date> (/g;
-    $out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds?/$1 XXX seconds/g;
+    $out =~ s/(Duration:|-) (\d+ minutes?, )?\d+ seconds?/$1 XXX seconds/g;
     matches_utf8 $out, <<EOF, "genesis rotate-secrets rotates filtered secrets";
  yes
 
@@ -1013,7 +1013,7 @@ EOF
     $out =~ s/\e\[2K/<clear-line>/g;
     $out =~ s/\r\n/\n/g;
     $out =~ s/\r/<cr>\n/g;
-    $out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds?/$1 XXX seconds/g;
+    $out =~ s/(Duration:|-) (\d+ minutes?, )?\d+ seconds?/$1 XXX seconds/g;
     matches_utf8 $out,<<EOF, "genesis rotate-secrets --renew didn't invalidate any signing chains";
 Parsing kit secrets descriptions ... <cr>
 <clear-line>Retrieving all existing secrets ... <cr>
@@ -1078,7 +1078,7 @@ EOF
 	ok !defined($properties->{genesis}{secrets_path}),  "environment doesn't specify default secrets path";
 
 	($pass, $rc, $out) = runs_ok("genesis check-secrets -lm $env_name", "genesis check-secrets runs without error");
-  $out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds?/$1 XXX seconds/g;
+  $out =~ s/(Duration:|-) (\d+ minutes?, )?\d+ seconds?/$1 XXX seconds/g;
 	matches_utf8 $out, <<EOF, "genesis new correctly created secrets of the correct type and location";
 Parsing kit secrets descriptions ... done. - XXX seconds
 Retrieving all existing secrets ... done. - XXX seconds
@@ -1123,7 +1123,7 @@ EOF
 	@secret_paths = map {my $p = $_ ; map {[$p, $_]} keys %{$secrets_old->{$_}}} keys %$secrets_old;
 
 	($pass,$rc,$out) = runs_ok "genesis rotate-secrets $env_name -y '/(/server|-default)\$/'", "can rotate certs according to filter";
-  $out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds?/$1 XXX seconds/g;
+  $out =~ s/(Duration:|-) (\d+ minutes?, )?\d+ seconds?/$1 XXX seconds/g;
 	matches_utf8 $out,<<EOF, "genesis rotate-secrets reports rotated filtered secrets, but not fixed ones";
 Parsing kit secrets descriptions ... done. - XXX seconds
 
@@ -1179,7 +1179,7 @@ EOF
 	$out =~ s/\e\[2K/<clear-line>/g;
   $out =~ s/\r\n/\n/g;
 	$out =~ s/\r/<cr>\n/g;
-  $out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds?/$1 XXX seconds/g;
+  $out =~ s/(Duration:|-) (\d+ minutes?, )?\d+ seconds?/$1 XXX seconds/g;
 	matches_utf8 $out,<<EOF, "genesis check-secrets after rotate-secrets with filter: all reports good";
 Parsing kit secrets descriptions ... <cr>
 <clear-line>Retrieving all existing secrets ... <cr>
@@ -1248,7 +1248,7 @@ EOF
 	$out =~ s/\r/<cr>\n/g;
 	$out =~ s/ca\.n\d{9}\./ca.n<random>./g;
 	$out =~ s/expires in (\d+) days \(([^\)]+)\)/expires in $1 days (<timestamp>)/g;
-  $out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds?/$1 XXX seconds/g;
+  $out =~ s/(Duration:|-) (\d+ minutes?, )?\d+ seconds?/$1 XXX seconds/g;
 	$out =~ s/'[12]{46}'/'<[12]{46}>'/g;
 	matches_utf8 $out,<<EOF, "genesis check-secrets after modifiction to cause failures";
 Parsing kit secrets descriptions ... <cr>
@@ -1454,7 +1454,7 @@ subtest 'secrets-base' => sub {
 	  no_secret "$v/$_", "$v/$_ should not exist";
 	}
 	($pass,$rc,$msg) = run_fails "genesis check-secrets -vlm us-east-sandbox", 1;
-  $msg =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds?/$1 XXX seconds/g;
+  $msg =~ s/(Duration:|-) (\d+ minutes?, )?\d+ seconds?/$1 XXX seconds/g;
 	eq_or_diff $msg, <<EOF, "Only deleted secrets are missing";
 Parsing kit secrets descriptions ... done. - XXX seconds
 Retrieving all existing secrets ... done. - XXX seconds
@@ -1568,7 +1568,7 @@ EOF
 	runs_ok "safe delete -Rf $v", "clean up certs for rotation testing";
 	no_secret "$v/auto-generated-certs-a/ca:certificate";
 	($pass,$rc,$msg) = run_fails "genesis check-secrets -lm west-us-sandbox", 1;
-	$msg =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds?/$1 XXX seconds/g;
+	$msg =~ s/(Duration:|-) (\d+ minutes?, )?\d+ seconds?/$1 XXX seconds/g;
 	eq_or_diff $msg, <<'EOF', "Removed certs should be missing";
 Parsing kit secrets descriptions ... done. - XXX seconds
 Retrieving all existing secrets ... done. - XXX seconds
@@ -1628,7 +1628,7 @@ EOF
 	$ca = secret "$v/auto-generated-certs-a/ca:certificate";
 	$cert = secret "$v/auto-generated-certs-a/server:certificate";
 	($pass,$rc,$msg) = runs_ok "genesis add-secrets west-us-sandbox", "genesis add-secrets doesn't rotate the CA";
-	$msg =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds?/$1 XXX seconds/g;
+	$msg =~ s/(Duration:|-) (\d+ minutes?, )?\d+ seconds?/$1 XXX seconds/g;
 	eq_or_diff $msg, <<'EOF', "genesis add-secrets reports existing secrets";
 Parsing kit secrets descriptions ... done. - XXX seconds
 

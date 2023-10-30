@@ -1908,17 +1908,18 @@ EOF
 
 	eq_or_diff($err, "", "no fatal error");
 
+	$stderr =~ s/\d+ seconds?/xxx seconds/g;
 	eq_or_diff($stderr, <<'EOF', "deploy output should contain the correct pre-deploy output");
 
 [postdeploy-reaction-fail] reactions/in-development (dev) does not define a 'check' hook; BOSH configs and
 environmental parameters checks will be skipped.
 
 [postdeploy-reaction-fail] running secrets checks...
-Parsing kit secrets descriptions ... done. - 0 seconds
-Retrieving all existing secrets ... done. - 0 seconds
+Parsing kit secrets descriptions ... done. - xxx seconds
+Retrieving all existing secrets ... done. - xxx seconds
 
 Validating 0 secrets for postdeploy-reaction-fail under path '/secret/postdeploy/reaction/fail/thing/':
-Completed - Duration: 0 seconds [0 validated/0 skipped/0 errors]
+Completed - Duration: xxx seconds [0 validated/0 skipped/0 errors]
 
 [postdeploy-reaction-fail] running manifest viability checks...
 
