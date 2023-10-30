@@ -136,8 +136,7 @@ $out = combined_from {
 $out =~ s/$tmp/<tempdir>/;
 eq_or_diff($out, <<'EOF', "validate should report the source directory is not found");
 
-[ERROR] Kit source directory '<tempdir>/test-genesis-kit'
-        not found.
+[ERROR] Kit source directory '<tempdir>/test-genesis-kit' not found.
 
 EOF
 
