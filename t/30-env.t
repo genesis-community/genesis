@@ -1915,11 +1915,11 @@ EOF
 environmental parameters checks will be skipped.
 
 [postdeploy-reaction-fail] running secrets checks...
-Parsing kit secrets descriptions ... done. - xxx seconds
-Retrieving all existing secrets ... done. - xxx seconds
+Parsing kit secrets descriptions ... done. - XXX seconds
+Retrieving all existing secrets ... done. - XXX seconds
 
 Validating 0 secrets for postdeploy-reaction-fail under path '/secret/postdeploy/reaction/fail/thing/':
-Completed - Duration: xxx seconds [0 validated/0 skipped/0 errors]
+Completed - Duration: XXX seconds [0 validated/0 skipped/0 errors]
 
 [postdeploy-reaction-fail] running manifest viability checks...
 
