@@ -1028,7 +1028,7 @@ subtest 'new env and check' => sub{
 		$out = combined_from {$env = $top->create_env($name, $kit, vault => $vault_target)}
 	} "successfully create an env with a dev kit";
 
-	$out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds?/$1 XXX seconds/g;
+	$out =~ s/(Duration:|-) (\d+ minutes?, )?\d+ seconds?/$1 XXX seconds/g;
 	eq_or_diff $out, <<EOF, "creating environment provides secret generation output";
 Parsing kit secrets descriptions ... done. - XXX seconds
 
@@ -1067,7 +1067,7 @@ EOF
 	$out = combined_from {
 		ok $env->check_secrets(verbose => 1), "check_secrets shows all secrets okay"
 	};
-	$out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds?/$1 XXX seconds/g;
+	$out =~ s/(Duration:|-) (\d+ minutes?, )?\d+ seconds?/$1 XXX seconds/g;
 
 	eq_or_diff $out, <<EOF, "check_secrets gives meaninful output on success";
 Parsing kit secrets descriptions ... done. - XXX seconds
@@ -1097,7 +1097,7 @@ EOF
 	$out = combined_from {
 		ok !$env->check_secrets(verbose=>1), "check_secrets shows missing secrets and keys"
 	};
-	$out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds?/$1 XXX seconds/g;
+	$out =~ s/(Duration:|-) (\d+ minutes?, )?\d+ seconds?/$1 XXX seconds/g;
 
 	matches_utf8 encode_utf8($out), <<EOF,  "check_secrets gives meaninful output on failure";
 Parsing kit secrets descriptions ... done. - XXX seconds
@@ -1202,7 +1202,7 @@ EOF
 		$out = combined_from {$env->add_secrets() }
 	} "successfully add secrets with environment kit overrides";
 
-	$out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds?/$1 XXX seconds/g;
+	$out =~ s/(Duration:|-) (\d+ minutes?, )?\d+ seconds?/$1 XXX seconds/g;
 	eq_or_diff $out, <<EOF, "environment kit overrides add the expected secrets";
 Parsing kit secrets descriptions ... done. - XXX seconds
 
@@ -1224,7 +1224,7 @@ EOF
 	lives_ok {
 		$out = combined_from {$env->check_secrets(verbose => 1, validate => 1) }
 	} "successfully check secrets with environment kit overrides";
-	$out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds?/$1 XXX seconds/g;
+	$out =~ s/(Duration:|-) (\d+ minutes?, )?\d+ seconds?/$1 XXX seconds/g;
 	$out =~ s/expires in (\d+) days \(([^\)]+)\)/expires in $1 days (<timestamp>)/g;
 	matches_utf8 encode_utf8($out), <<EOF, "environment kit overrides create expected secrets - validation";
 Parsing kit secrets descriptions ... done. - XXX seconds
@@ -1382,7 +1382,7 @@ EOF
 		$out = combined_from {$env->add_secrets() }
 	} "successfully add secrets with environment kit overrides";
 
-	$out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds?/$1 XXX seconds/g;
+	$out =~ s/(Duration:|-) (\d+ minutes?, )?\d+ seconds?/$1 XXX seconds/g;
 	eq_or_diff $out, <<EOF, "environment kit overrides add the expected secrets";
 Parsing kit secrets descriptions ... done. - XXX seconds
 
@@ -1411,7 +1411,7 @@ EOF
 	lives_ok {
 		$out = combined_from {$env->check_secrets(verbose => 1, validate => 1) }
 	} "successfully check secrets with environment kit overrides";
-	$out =~ s/(Duration:|-) (\d+ minutes, )?\d+ seconds?/$1 XXX seconds/g;
+	$out =~ s/(Duration:|-) (\d+ minutes?, )?\d+ seconds?/$1 XXX seconds/g;
 	$out =~ s/expires in (\d+) days \(([^\)]+)\)/expires in $1 days (<timestamp>)/g;
 	matches_utf8 encode_utf8($out), <<EOF, "environment kit overrides create expected secrets - validation";
 Parsing kit secrets descriptions ... done. - XXX seconds
@@ -1908,7 +1908,7 @@ EOF
 
 	eq_or_diff($err, "", "no fatal error");
 
-	$stderr =~ s/\d+ seconds?/xxx seconds/g;
+	$stderr =~ s/(Duration:|-) (\d+ minutes?, )?\d+ seconds?/$1 XXX seconds/g;
 	eq_or_diff($stderr, <<'EOF', "deploy output should contain the correct pre-deploy output");
 
 [postdeploy-reaction-fail] reactions/in-development (dev) does not define a 'check' hook; BOSH configs and
