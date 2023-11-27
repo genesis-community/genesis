@@ -87,7 +87,7 @@ describe() {
 export -f describe
 
 genesis_log() {
-	/usr/bin/perl -I$GENESIS_LIB -MGenesis -e 'Genesis::log_from_script(@ARGV)' "$@"
+	/usr/bin/perl -I$GENESIS_LIB -MGenesis::Helpers -e 'Genesis::Helpers::log_from_script(@ARGV)' "$@"
 }
 
 export -f genesis_log
@@ -107,7 +107,7 @@ export -f humanize_path
 __bail() {
   local rc=1
   [[ "$1" == "--rc" ]] && rc="$2" && shift 2
-  genesis_log fatal "$@" >&2
+  genesis_log @fatal "$@" >&2
   exit $rc
 }
 export -f __bail

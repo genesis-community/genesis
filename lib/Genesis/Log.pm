@@ -132,7 +132,7 @@ sub info    { shift->_log("INFO",    {colors => "Wc", pri => 6, emoji => 'inform
 sub debug   { shift->_log("DEBUG",   {colors => "Wm", emoji => 'crystal-ball'}, @_) }
 sub warning { shift->_log("WARNING", {colors => "ky", pri => 4, emoji => 'warning'}, @_) }
 sub error   { shift->_log("ERROR",   {colors => "WR", pri => 3, emoji => 'collision'}, @_) }
-sub fatal   { shift->_log("FATAL",   {colors => "Yr", pri => 0, emoji => 'stop-sign', show_stack => 'full'}, @_) }
+sub fatal   { shift->_log("FATAL",   {colors => "Yr", pri => 0, emoji => 'stop-sign'}, @_) }
 sub trace   { shift->_log("TRACE",   {colors => "WG", emoji => 'detective', show_stack => 'current'}, @_); }
 sub qtrace  { shift->_log("TRACE",   {colors => "Wg", emoji => 'detective'}, @_); }
 
@@ -340,20 +340,22 @@ sub flush_logs {
 					open $fh, '>>:encoding(UTF-8)', $file
 						or die "Could not open $log for writing logs\n";
 				}
-				$pre_pad =~ s/\A[\r\n]+// unless $log eq '<terminal>' || ($last_waiting && !$reset);
-				$post_pad =~ s/[\r\n]+\z// unless $log eq '<terminal>' || $pending;
+				$pre_pad =~ s/\A[\r\n]+// unless ($log eq '<terminal>' || ($last_waiting && !$reset));
+				$post_pad =~ s/[\r\n]+\z// unless ($log eq '<terminal>' || $pending);
 				$out .= "\n" unless $pending;
 				print $fh csprintf("%s", $reset.$pre_pad.$out.$post_pad);
 				$config->{last_label} = $label;
 
 				# Deal with stack
 				$show_stack = $config->{show_stack} if ($show_stack//"default") eq "default";
-				$show_stack = ($pending || $show_stack eq 'none') 
+				$show_stack = ($pending || $show_stack eq 'none')
 					? 'none'
-					: (($show_stack||'') eq 'full' || ($config->{show_stack}||'') eq 'full')     
+					: (($show_stack||'') eq 'full' || ($config->{show_stack}||'') eq 'full')
+					? 'full'
+					: ((($show_stack||'') eq 'fatal' || ($config->{show_stack}||'') eq 'fatal') && $level eq 'FATAL') 
 					? 'full'
 					: (($show_stack||'') eq 'current' || ($config->{show_stack}||'') eq 'current')
-					? 'current' 
+					? 'current'
 					: 'invalid' ;
 
 				unless ( $show_stack eq 'none' || $show_stack eq 'invalid') {
@@ -363,6 +365,7 @@ sub flush_logs {
 						print $fh csprintf("%s\n", $out);
 						last if $show_stack eq 'current';
 					}
+					print $fh "\n" if $log eq '<terminal>';
 				}
 				close $fh unless $log eq '<terminal>';
 			}
@@ -474,6 +477,5 @@ sub meets_level {
 	$target = level_ord($target) unless grep {$target eq $_} (values %{_log_item_level_map()});
 	return $level >= $target;
 }
-
 
 1;

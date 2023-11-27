@@ -652,7 +652,7 @@ sub set_logging_state { # {{{
 	$Logger->configure_log(
 		level => $log_level,
 		style => $ENV{GENESIS_LOG_STYLE} // $Genesis::RC->get('output_style','plain'),
-		show_stack => ($stack_trace ? ($stack_trace == 1 ? 'full' : 'current') : undef)
+		show_stack => ($stack_trace ? ($stack_trace == 1 ? 'full' : $stack_trace == 2 ? 'current' : 'fatal' ) : undef),
 	);
 }
 

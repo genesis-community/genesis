@@ -150,7 +150,7 @@ sub bail {
 
 	# log a fatal message and exit
 	my $rc = delete($options->{exitcode}) // 1;
-	logger->fatal({offset=>1, show_stack => 'none'},$options, "\n".$msg);
+	logger->fatal({offset=>1},$options, "\n".$msg);
 	exit $rc;
 }
 
