@@ -253,7 +253,8 @@ define_command("edit", {
 		"or emacs, it will also include the kit's manual pages open in a split window.",
 	function_group => Genesis::Commands::ENVIRONMENT,
 	scope => ['env'],
-	options => {
+	option_group => Genesis::Commands::REPO_OPTIONS,
+	options => [
 		'editor|e=s' =>
 			"Specify the editor to use (defaults to EDITOR env var)\n".
 			"Note that only vim and emacs will split screen with the kit manual",
@@ -261,7 +262,7 @@ define_command("edit", {
 		'kit|k=s' =>
 			"Specify the kit/version for displaying the manual.  Used when the ".
 			"environment is intending to use a new version."
-	}
+	]
 });
 
 # }}}
