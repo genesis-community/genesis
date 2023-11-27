@@ -183,3 +183,10 @@ TODO 2023-06-30:
 
 * Genesis link-kit to allow for a dev kit to be linked to local directory,
   like genesis init -L
+
+2023-11-16:
+
+* Pass in cpi for offline mode, just like cloud and runtime config
+* Fix specifying named runtime configs (currently only default)
+
+* Support multiple vaults.
