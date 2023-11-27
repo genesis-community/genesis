@@ -288,8 +288,9 @@ sub parse_options { # {{{
 	$ENV{QUIET}          = 'y' if  delete($COMMAND_OPTIONS->{quiet});
 
 	# Remove workaround options
+	dump_var 'Received Options' => $COMMAND_OPTIONS;
 	delete($COMMAND_OPTIONS->{no_cwd});
-	dump_var 'Options', $COMMAND_OPTIONS;
+	dump_var 'Received Arguments' => \@COMMAND_ARGS;
 	return;
 } # }}}
 
