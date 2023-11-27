@@ -166,7 +166,7 @@ sub lookup {
 		exit(ref($v) eq "NotFound" ? 4 : 0);
 	} elsif (defined($v)) {
 		$v = encode_json($v) if ref($v);
-		output "$v\n";
+		output {raw => 1}, "$v\n";
 	}
 	exit 0;
 }
