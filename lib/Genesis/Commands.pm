@@ -615,7 +615,7 @@ sub set_top_path { # {{{
 			) unless has_scope('env');
 			unshift(@COMMAND_ARGS, basename($cwd));
 			$cwd = dirname($cwd);
-		} elsif ($COMMAND eq 'new' && $cwd =~ /\.yml$/) {
+		} elsif ($COMMAND eq 'create' && $cwd =~ /\.yml$/) {
 			unshift(@COMMAND_ARGS, basename($cwd));
 			$cwd = dirname($cwd);
 		}
