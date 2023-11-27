@@ -5,6 +5,7 @@ use warnings;
 
 use Genesis;
 use Genesis::Term;
+use Genesis::UI;
 use Genesis::Commands;
 use JSON::PP qw/encode_json/;
 use POSIX qw/strftime mktime/;
