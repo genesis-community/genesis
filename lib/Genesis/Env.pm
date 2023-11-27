@@ -489,16 +489,16 @@ sub use_create_env {
 		}
 
 		sub validate_create_env_state {
-			my ($self,$is_create_env,$has_bosh_env,$kit_name,$is_bosh_kit) = @_;
+			my ($self,$is_create_env,$has_bosh_env,$env_type,$is_bosh_kit) = @_;
 			clear_and_bail($self,
-				"This #M{$kit_name} environment specifies an alternative bosh_env, but ".
+				"This #M{$env_type} environment specifies an alternative bosh_env, but ".
 				"is marked as a create-env (proto) environment. Create-env deployments ".
 				"can't use a #C{genesis.bosh_env} value, so please remove it, or mark ".
 				"this environment as a non-create-env environment.  It may be that ".
 				"bosh_env is configured in an inherited environment file."
 			) if $is_create_env && $has_bosh_env;
 			clear_and_bail($self,
-				"This #M{$kit_name} environment does not use create-env (proto) or ".
+				"This #M{$env_type} environment does not use create-env (proto) or ".
 				"specify an alternative #C{genesis.bosh_env} as a deploy target.  ".
 				"Please provide the name of the BOSH environment that will deploy this ".
 				"environment, or mark this environment as a create-env environment."
@@ -536,7 +536,7 @@ sub use_create_env {
 					! defined($euce) && $self->kit->id =~ /^bosh\// && grep {$_ eq 'proto'} $self->features
 			)) ? 1 : 0;
 
-			validate_create_env_state($self,$is_create_env,$different_bosh_env,$self->kit->{name},$is_bosh_director);
+			validate_create_env_state($self,$is_create_env,$different_bosh_env,$self->type,$is_bosh_director);
 			return $is_create_env;
 		}
 
@@ -755,7 +755,7 @@ sub lookup_unevaled {
 	return $default unless @merge_files;
 	pushd $self->path;
 	my $out = run({ onfailure => "Unable to merge $self->{name} environment files", stderr => undef },
-		'spruce merge --multi-doc --skip-eval "$@" | spruce json', @merge_files);
+		'spruce merge --multi-doc --go-patch --skip-eval "$@" | spruce json', @merge_files);
 	popd;
 	my $unevaled_params = load_json($out);
 
@@ -1266,7 +1266,7 @@ sub bosh {
 
 		warning(
 			"Calling shell has BOSH_ALIAS set to %s, but this environment specifies ".
-			"the #M{%s} BOSH director; ignoring \$BOSH_ALIAS set in shell",
+			"the #M{%s} BOSH director; ignoring \$BOSH_ALIAS set in shell\n",
 			$ENV{BOSH_ALIAS}, $bosh->alias
 		) if ($ENV{BOSH_ALIAS} && $ENV{BOSH_ALIAS} ne $bosh->{alias});
 
@@ -1275,14 +1275,14 @@ sub bosh {
 				warning(
 					"Calling shell has BOSH_ENVIRONMENT set to %s, but this environment ".
 					"specifies the BOSH director at #M{%s}; ignoring \$BOSH_ENVIRONMENT ".
-					"set in shell.",
+					"set in shell.\n",
 					$ENV{BOSH_ENVIRONMENT}, $bosh->url
 				) if ($ENV{BOSH_ENVIRONMENT} ne $bosh->url);
 			} else {
 				error(
 					"Calling shell has BOSH_ENVIRONMENT set to %s, but this environment ".
 					"specifies the #M{%s} BOSH director; ignoring \$BOSH_ENVIRONMENT set ".
-					"in shell.",
+					"in shell.\n",
 					$ENV{BOSH_ENVIRONMENT}, $bosh->alias
 				) if ($ENV{BOSH_ENVIRONMENT} ne $bosh->alias);
 			}
