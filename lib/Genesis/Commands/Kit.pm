@@ -6,6 +6,7 @@ use warnings;
 use Genesis;
 use Genesis::Term;
 use Genesis::Commands;
+use Genesis::Top;
 use Genesis::Kit::Compiler;
 
 use Cwd qw/getcwd/;
@@ -249,7 +250,7 @@ sub decompile_kit {
 	my $file = $_[0];
 	my $label = $file;
 	$file = $1 if $file =~ /(.*)\.yml/; #.yml extension should be allowed
-	if ($label ne 'latest' && Genesis::Env->exists(name => $file, top => $top)) {
+	if ($label ne 'latest' && $top->has_env($file)) {
 		local %ENV = %ENV;
 		$ENV{GENESIS_UNEVALED_PARAMS} = 1; # To prevent the need of vault
 		my $env = $top->load_env($file) or bail(
