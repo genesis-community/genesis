@@ -26,6 +26,7 @@ our @EXPORT = qw/
 	current_command
 	run_command
 	has_command
+	equivalent_commands
 	command_help
 	command_usage
 	command_properties
@@ -209,14 +210,12 @@ sub prepare_command { # {{{
 	$COMMAND = $GENESIS_COMMANDS{$CALLED};
 	trace "Preparing genesis command '$COMMAND'".($CALLED ne $COMMAND ? ' (called as $CALLED)':'');
 	parse_options(\@args);
-	shift @args if ($args[0]||'') eq '--';
 	set_logging_state();
-	@COMMAND_ARGS = @args;
 } # }}}
 
 sub run_command { # {{{
-	command_help("Unrecognized command '$COMMAND'")
-		unless defined($RUN{$GENESIS_COMMANDS{$COMMAND}});
+	command_help("Unrecognized command '$CALLED'")
+		unless defined($RUN{$COMMAND});
 	if (defined(command_properties()->{deprecated})) {
 		my $msg = 
 			"The #G{$COMMAND} command has been deprecated, and will be ".
@@ -226,12 +225,17 @@ sub run_command { # {{{
 		}
 		warning({label => "DEPRECATED"}, $msg);
 	}
-	$RUN{$GENESIS_COMMANDS{$COMMAND}}(@COMMAND_ARGS);
+	$RUN{$COMMAND}(@COMMAND_ARGS);
 } # }}}
 
 sub has_command { # {{{
 	my $cmd = shift;
 	return defined($GENESIS_COMMANDS{$cmd});
+} # }}}
+
+sub equivalent_commands { # {{{
+	my ($cmd1,$cmd2) = @_;
+	return $GENESIS_COMMANDS{$cmd1}//'' eq $GENESIS_COMMANDS{$cmd2}//'';
 } # }}}
 
 sub command_properties { # {{{
@@ -247,6 +251,7 @@ sub parse_options { # {{{
 	my $args = shift;
 	my $args_copy = [@$args];
 	my @base_spec = keys %{({map {@$_} @global_options[0..$PROPS{$COMMAND}{option_group}]})};
+
 	my @opts_spec = (
 		keys %{{ @{$PROPS{$COMMAND}{options} || []} }},
 		grep {/^[^\^]/} keys %{{ @{$PROPS{$COMMAND}{deprecated_options} || []} }} #ignore deprecated option references
@@ -275,7 +280,8 @@ sub parse_options { # {{{
 		local $SIG{__WARN__} = sub { };
 		GetOptionsFromArray($args, $COMMAND_OPTIONS, (@base_spec,@opts_spec)) or command_usage(1);
 	}
-	@COMMAND_ARGS = (@_);
+	shift @$args if ($args->[0]||'') eq '--';
+	@COMMAND_ARGS = (@$args);
 
 	# Extract Core options
 	$ENV{NOCOLOR}        = 'y' if !delete($COMMAND_OPTIONS->{color});
@@ -586,6 +592,13 @@ sub command_usage { # {{{
 
 sub set_top_path { # {{{
 	# Set up current repo and env file if specified
+	if (!$COMMAND_OPTIONS->{cwd} && scalar(@COMMAND_ARGS)) {
+		if (has_scope('env') &&  (-f $COMMAND_ARGS[0] || -f $COMMAND_ARGS[0].'.yml')) {
+			$COMMAND_OPTIONS->{cwd} = shift(@COMMAND_ARGS);
+		} elsif (equivalent_commands($COMMAND, 'create') && $COMMAND_ARGS[0] =~ /(.*)\/[^\/]+?(.yml)?$/ && -d $1) {
+			$COMMAND_OPTIONS->{cwd} = shift(@COMMAND_ARGS);
+		}
+	}
 	if ($COMMAND_OPTIONS->{cwd}) {
 		my $requested_cwd = delete($COMMAND_OPTIONS->{cwd});
 		my $cwd = abs_path($requested_cwd);
