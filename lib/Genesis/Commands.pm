@@ -671,6 +671,7 @@ sub build_command_environment  { # {{{
 		$ENV{TRACE} = 'y' if $spruce_log eq 'trace';
 	}
 
+	$ENV{GENESIS_EXECUTABLE_ENVS} = $Genesis::RC->get('executable_envs', 0);
 	$ENV{GENESIS_BOSH_ENVIRONMENT} = delete($COMMAND_OPTIONS->{'bosh-env'}) if $COMMAND_OPTIONS->{'bosh-env'};
 	$ENV{GENESIS_BOSH_ENVIRONMENT} ||= '';
 
