@@ -161,12 +161,26 @@ sub attach {
 
 	my @targets = Genesis::Vault->find(%filter);
 	if (scalar(@targets) <1) {
-		# TODO: If alias and url was given, and in a controlling terminal, create safe target
-		bail "Safe target for #M{%s} not found.  Please run\n\n".
-				 "  #G{safe target <name> \"%s\"%s}\n\n".
-				 "then authenticate against it using the correct auth method before ".
-				 "re-attempting this command.",
-				 $url, $url,($opts{verify}?"":" -k");
+		my @close_targets = Genesis::Vault->find(url => $filter{url});
+		if (@close_targets) {
+			my $msg = "Could not find matching safe target, but the following are similar:\n";
+			for my $target (@close_targets) {
+				$msg .= "\nAlias:     '$target->{name}'\n";
+				for my $property (qw/url namespace strongbox verify/) { # TODO: support name and mount in filter
+					$msg .= sprintf("%-11s'%s'", ucfirst($property.":"),$target->{$property});
+					$msg .= " (expected '$filter{$property}')" if ($filter{$property} ne $target->{$property});
+					$msg .= "\n";
+				}
+			}
+			bail $msg."\nAlter your ~/.saferc or .genesis/config to match, or add a matching target.\n";
+		} else {
+			# TODO: If alias and url was given, and in a controlling terminal, create safe target
+			bail "Safe target for #M{%s} not found.  Please run\n\n".
+					 "  #G{safe target <name> \"%s\"%s}\n\n".
+					 "then authenticate against it using the correct auth method before ".
+					 "re-attempting this command.",
+					 $url, $url,($opts{verify}?"":" -k");
+		}
 	}
 	if (scalar(@targets) >1) {
 		my ($named_target) = grep {$_->name eq $alias} @targets;
