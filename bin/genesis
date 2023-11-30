@@ -500,7 +500,29 @@ define_command("yamls", {
 	option_group => Genesis::Commands::ENV_OPTIONS,
 	options => [
 		'include-kit|k' =>
-			"This is also include the files that will be merges from the kit."
+			"This also includes the files that will be merges from the kit."
+	]
+});
+
+# }}}
+# genesis yamls - Print a list of the YAML files used for a single environment. {{{
+define_command("vault-paths", {
+	summary => "Print the list of vault paths used by the environment, and optionally what references each one.",
+	usage => '<env> yamls [-r|--references]',
+	alias => 'vp',
+	description =>
+		"List the vault paths used by the environment, including those in the kit, ".
+		"the environment file, and any used by included ops files.\n".
+		"\n".
+		"If the #y{-r|--references} option is specified, it will also include ".
+		"the YAML path of all references to those vault paths.",
+	function_group => Genesis::Commands::INFO,
+	scope => 'env',
+	option_group => Genesis::Commands::ENV_OPTIONS,
+	options => [
+		'references|r' =>
+			"Include all YAML references to the given vault paths as a list under ".
+			"each path."
 	]
 });
 

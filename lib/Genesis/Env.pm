@@ -15,6 +15,7 @@ use Genesis::IO qw/DumpYAML LoadFile/;
 
 use JSON::PP qw/encode_json decode_json/;
 use POSIX qw/strftime/;
+use Data::Dumper;
 use Digest::file qw/digest_file_hex/;
 use Time::Seconds;
 
@@ -669,6 +670,47 @@ sub format_yaml_files {
 }
 
 # }}}
+# vault_paths - list all secrets used in the manifest {{{
+sub vault_paths {
+	my $ref = $_[0]->_memoize(sub {
+		my $self = shift;
+		my @merge_files = $self->_yaml_files();
+		pushd $self->path;
+		my $env = {
+			$self->get_environment_variables('manifest'),
+			%{$self->vault->env()},               # specify correct vault for spruce to target
+			REDACT => '' # spruce redaction flag
+		};
+		my $out = run({
+				onfailure => "Unable to merge $self->{name} manifest",
+				stderr => "&1",
+				env => $env
+			},
+			'spruce', 'merge', '--skip-eval', '--multi-doc', '--go-patch', @merge_files
+		);
+		my $unevaled_manifest = $self->tmppath("unevaled_manifest.yml");
+		mkfile_or_fail($unevaled_manifest, $out);
+
+		my $json = read_json_from(run({
+				onfailure => "Unable to determine vault paths from $self->{name} manifest",
+				stderr => "&1",
+				env => $env
+			},
+			'spruce vaultinfo "$1" | spruce json', $unevaled_manifest
+		));
+
+		bail(
+			"Expecting spruce vaultinfo to return an array of secrets, got this instead:\n\n".
+			Dumper($json)
+		) unless ref($json) eq 'HASH' && ref($json->{secrets}) eq 'ARRAY' ;
+
+		my %secrets_map = map {($_->{key}, $_->{references})} @{$json->{secrets}};
+		return \%secrets_map;
+	});
+	return $ref;
+}
+
+# }}}
 # features - returns the list of features (specified and derived) {{{
 sub features {
 	my $ref = $_[0]->_memoize(sub {
@@ -1260,7 +1302,7 @@ sub bosh {
 			deployment => $self->deployment_name
 		);
 		bail(
-			"Could not find BOSH director #M{%s}", 
+			"Could not find BOSH director #M{%s}",
 			$bosh_alias
 		) unless $bosh;
 
@@ -1366,7 +1408,7 @@ sub download_configs {
 			$err = $@;
 			info(
 				"\r".bullet(
-					'bad',$label.join("\n      ", ('...failed!',"",split("\n",$err),"")), 
+					'bad',$label.join("\n      ", ('...failed!',"",split("\n",$err),"")),
 					box => 1
 				)
 			);
@@ -2312,26 +2354,31 @@ sub _secret_processing_updates_callback {
 # }}}
 # _yaml_files - create genisis support yml files and return full ordered merge list {{{
 sub _yaml_files {
-	my ($self,$partial) = @_;
+	my ($self,$skip_eval) = @_;
 	(my $vault_path = $self->secrets_base) =~ s#/?$##; # backwards compatibility
 	my $type   = $self->{top}->type;
 
 	my @cc;
 	if ($self->use_create_env) {
-		trace("[env $self->{name}] in_yaml_files(): IS a create-env, skipping cloud-config");
-	} elsif ($partial) {
-		trace("[env $self->{name}] in_yaml_files(): skipping eval, no need for cloud-config");
+		trace("[env $self->{name}] in _yaml_files(): IS a create-env, skipping cloud-config");
+	} elsif ($skip_eval) {
+		trace("[env $self->{name}] in _yaml_files(): skipping eval, no need for cloud-config");
 		push @cc, $self->config_file('cloud') if $self->config_file('cloud'); # use it if its given
 	} else {
 		trace("[env $self->{name}] in _yaml_files(): not a create-env, we need cloud-config");
 
-		$self->download_required_configs('blueprint');
-		my $ccfile =  $self->config_file('cloud');
-
-		die "No cloud-config specified for this environment\n"
-			unless $ccfile;
-		trace("[env $self->{name}] in _yaml_files(): cloud-config at $ccfile");
-		push @cc, $ccfile;
+		my @configs = $self->required_configs('blueprint');
+		if (@configs) {
+			$self->download_required_configs('blueprint') if $self->missing_required_configs('blueprint');
+			for (@configs) {
+				my $ccfile = $self->config_file($_);
+				bail(
+					"No cloud-config specified for this environment\n"
+				) unless $ccfile;
+				trace("[env $self->{name}] in _yaml_files(): cloud-config at $ccfile");
+				push @cc, $ccfile;
+			}
+		}
 	}
 
 	if ($self->kit->feature_compatibility('2.6.13')) {

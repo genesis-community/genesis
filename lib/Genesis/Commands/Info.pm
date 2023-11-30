@@ -185,6 +185,28 @@ sub yamls {
 	output join("\n", @files)."\n";
 }
 
+sub vault_paths {
+	option_defaults(
+		"references" => 0
+	);
+	command_usage(1) if @_ != 1;
+
+	my $env = Genesis::Top
+		->new('.')
+		->load_env($_[0])
+		->download_required_configs('blueprint');
+	my $vault_paths = $env->vault_paths();
+	my $msg = "";
+	for my $path (keys %$vault_paths) {
+		$msg .= "\n$path";
+		$msg .= ":\n  - ".join("\n  - ", @{$vault_paths->{$path}})
+			if (get_options->{references});
+	}
+	# TODO: Do we want to color code secret and exodus mounts and base paths?
+	output "$msg\n";
+}
+
+
 sub kit_manual {
 	my ($name) = @_;
 	my $top = Genesis::Top->new('.');
