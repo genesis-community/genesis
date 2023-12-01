@@ -698,13 +698,16 @@ sub vault_paths {
 			},
 			'spruce vaultinfo "$1" | spruce json', $unevaled_manifest
 		));
+		popd;
 
 		bail(
 			"Expecting spruce vaultinfo to return an array of secrets, got this instead:\n\n".
 			Dumper($json)
 		) unless ref($json) eq 'HASH' && ref($json->{secrets}) eq 'ARRAY' ;
 
-		my %secrets_map = map {($_->{key}, $_->{references})} @{$json->{secrets}};
+		my %secrets_map = map {
+			(($_->{key} =~ /^\// ? '':'/').$_->{key}, $_->{references})
+		} @{$json->{secrets}};
 		return \%secrets_map;
 	});
 	return $ref;

@@ -412,6 +412,12 @@ subtest 'multidoc env files' => sub {
 	Genesis::Vault->clear_all();
 	my $top = Genesis::Top->create(workdir, 'thing', vault=>$VAULT_URL);
 	$top->link_dev_kit('t/src/fancy');
+	put_file $top->path(".cloud.yml"), <<EOF;
+---
+networks:
+- name: dummy
+
+EOF
 	put_file $top->path('standalone.yml'), <<'EOF';
 ---
 kit:
@@ -426,7 +432,7 @@ params:
   env:   standalone
   secret: (( vault $GENESIS_SECRETS_BASE "test:secret" ))
   network: (( grab networks[0].name ))
-  junk:    ((    vault    "secret/passcode" ))
+  junk:    ((    vault    "secret/passcode:key" ))
 
 ---
 genesis:
@@ -447,6 +453,7 @@ kit:
 EOF
 
 	my $env = $top->load_env('standalone');
+	$env->use_config($top->path(".cloud.yml"));
 	cmp_deeply([$env->params], [{
 		kit => {
 			features   => [ "oscar", "kilo" ],
@@ -457,7 +464,7 @@ EOF
 			env        => "standalone"
 		},
 		params => {
-			junk       => '(( vault "secret/passcode" ))',
+			junk       => '(( vault "secret/passcode:key" ))',
 			network    => '(( grab networks.0.name ))',
 			secret     => '(( vault $GENESIS_SECRETS_BASE "test:secret" ))',
 		}
@@ -473,6 +480,14 @@ EOF
 	cmp_deeply([$env->actual_environment_files], [qw[
 		./standalone.yml
 	]], "env detects correct actual environment files to merge");
+	cmp_deeply($env->vault_paths, {
+    "/secret/standalone/thing/test:secret" => [
+      "params.secret"
+    ],
+    "/secret/passcode:key" => [
+      "params.junk"
+    ]
+	}, "env detects correct vault paths used");
 
 	put_file $top->path('standalone.yml'), <<'EOF';
 ---
@@ -522,6 +537,7 @@ EOF
 		meta   => ignore,
 		params => ignore,
 		exodus => ignore,
+		networks => ignore,
 		genesis=> superhashof({
 			env           => "standalone",
 		}),

@@ -131,6 +131,7 @@ EOF
 again();
 system("rm -rf $kitdir");
 $out = combined_from {
+  local $ENV{GENESIS_OUTPUT_COLUMNS} = 999; # tmpdir may be VERY long and cause wrapping
   ok(!$cc->validate('test','1.2.3'), "validation should fail when the root directory is missing");
 };
 $out =~ s/$tmp/<tempdir>/;

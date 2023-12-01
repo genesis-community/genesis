@@ -608,14 +608,14 @@ sub set_top_path { # {{{
 			$requested_cwd
 		) unless $cwd;
 
-		if ( -f $cwd ) {
+		if ( -f $cwd || -f "${cwd}.yml" ) {
 			bail(
-				"#B{%s %s} cannot be called with a -C option pointing to a file",
+				"#B{%s %s} cannot be called specifying a file as an argument",
 				__FILE__, $COMMAND
 			) unless has_scope('env');
 			unshift(@COMMAND_ARGS, basename($cwd));
 			$cwd = dirname($cwd);
-		} elsif ($COMMAND eq 'create' && $cwd =~ /\.yml$/) {
+		} elsif ($COMMAND eq 'create' && ! -d $cwd) {
 			unshift(@COMMAND_ARGS, basename($cwd));
 			$cwd = dirname($cwd);
 		}

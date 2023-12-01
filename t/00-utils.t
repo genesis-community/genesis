@@ -154,7 +154,7 @@ subtest 'output utilities' => sub {
 				trace("this is from 'trace'");
 		};
 		matches $out, "this is from first 'output'\nthis is from last 'output'\n", "output()s go to standard output in the right order";
-		matches $err, "[FATAL] this is from 'fatal'\n[ERROR] this is from 'error'\n[WARNING] this is from 'warning'\nthis is from 'info'\n[DEBUG] this is from 'debug'\n[TRACE] this is from 'trace'\n        ^- t/00-utils.t:L154 (in main::__ANON__)\n", "with GENESIS_TRACE, you get trace to standard error";
+		matches $err, "[FATAL] this is from 'fatal'\n[ERROR] this is from 'error'\n[WARNING] this is from 'warning'\nthis is from 'info'\n[DEBUG] this is from 'debug'\n[TRACE] this is from 'trace'\n        ^- t/00-utils.t:L154 (in main::__ANON__)\n\n", "with GENESIS_TRACE, you get trace to standard error";
 	}
 	$Genesis::Log::Logger = undef;
 };
