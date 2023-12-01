@@ -43,6 +43,12 @@ subtest 'bug reporting utilities' => sub {
 	);
 };
 
+subtest 'terminal control' => sub {
+	use_ok 'Genesis::Term';
+	local $ENV{GENESIS_OUTPUT_COLUMNS}=120;
+	is Genesis::Term::terminal_width, 120, "can set arbitrary terminal width";
+};
+
 subtest 'bailing' => sub {
 	local $Genesis::VERSION = '2.8.11';
 	local $ENV{NOCOLOR}=1;
@@ -154,7 +160,8 @@ subtest 'output utilities' => sub {
 				trace("this is from 'trace'");
 		};
 		matches $out, "this is from first 'output'\nthis is from last 'output'\n", "output()s go to standard output in the right order";
-		matches $err, "[FATAL] this is from 'fatal'\n[ERROR] this is from 'error'\n[WARNING] this is from 'warning'\nthis is from 'info'\n[DEBUG] this is from 'debug'\n[TRACE] this is from 'trace'\n        ^- t/00-utils.t:L154 (in main::__ANON__)\n\n", "with GENESIS_TRACE, you get trace to standard error";
+		$err =~ s#t/00-utils.t:L[0-9]* #t/00-utils.t:Lxxx #;
+		matches $err, "[FATAL] this is from 'fatal'\n[ERROR] this is from 'error'\n[WARNING] this is from 'warning'\nthis is from 'info'\n[DEBUG] this is from 'debug'\n[TRACE] this is from 'trace'\n        ^- t/00-utils.t:Lxxx (in main::__ANON__)\n\n", "with GENESIS_TRACE, you get trace to standard error";
 	}
 	$Genesis::Log::Logger = undef;
 };

@@ -15,6 +15,8 @@ use_ok 'Genesis::Kit::Compiled';
 use Genesis;
 my $vault_target = vault_ok();
 
+$ENV{GENESIS_OUTPUT_COLUMNS}=80;
+
 subtest 'kit location' => sub {
 	my $tmp = workdir();
 	my $again = sub {

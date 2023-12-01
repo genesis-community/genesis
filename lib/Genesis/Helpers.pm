@@ -293,6 +293,7 @@ export -f bosh
 bosh_cpi() {
   local __have_env
   if [[ -n "${GENESIS_TESTING_BOSH_CPI:-}" ]] ; then
+    genesis_log @TRACE "Using supplied CPI of '$GENESIS_TESTING_BOSH_CPI' instead of fetching from BOSH director" >&2
     echo "$GENESIS_TESTING_BOSH_CPI"
     return 0
   fi
