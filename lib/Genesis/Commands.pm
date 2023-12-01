@@ -134,6 +134,12 @@ our @global_options = ( # {{{
 			"The type defaults to 'cloud', and name defaults to 'default' if not ".
 			"given.  In this way, it maintains its backwards compatibility of the ".
 			"original #y{-c} option for specifying the cloud config file.",
+
+		"cpi=s" =>
+			"Specify the CPI explicitly.  Normally, this is determined from the BOSH ".
+			"director, but can be specified using this option if the BOSH director ".
+			"is not available."
+
 	]
 ); # }}}
 
@@ -660,6 +666,9 @@ sub build_command_environment  { # {{{
 	$ENV{GENESIS_EXECUTABLE_ENVS} = $Genesis::RC->get('executable_envs', 0);
 	$ENV{GENESIS_BOSH_ENVIRONMENT} = delete($COMMAND_OPTIONS->{'bosh-env'}) if $COMMAND_OPTIONS->{'bosh-env'};
 	$ENV{GENESIS_BOSH_ENVIRONMENT} ||= '';
+
+	# Set BOSH CPI for debugging/testing purposes - name is due to legacy usage by testkit Golang library
+	$ENV{GENESIS_TESTING_BOSH_CPI} = delete($COMMAND_OPTIONS->{'cpi'}) if $COMMAND_OPTIONS->{'cpi'};
 
 	if ($COMMAND_OPTIONS->{config} && ref($COMMAND_OPTIONS->{config}) eq 'ARRAY') {
 		my %configs;
