@@ -134,20 +134,6 @@ our @global_options = ( # {{{
 			"The type defaults to 'cloud', and name defaults to 'default' if not ".
 			"given.  In this way, it maintains its backwards compatibility of the ".
 			"original #y{-c} option for specifying the cloud config file.",
-
-		"cloud-config|cc=s" =>
-			"Specify a local YAML file to use at the cloud config.  If not specified ".
-			"but needed, it will be fetched from the BOSH director.\n".
-			"(Shortform: --cc)".
-			"\n".
-			"This is deprecated: use #y{-c|--config} <path> instead.",
-
-		"runtime-config|rc=s" =>
-			"Specify a local YAML file to use at the runtime config.  If not ".
-			"specified but needed, it will be fetched from the BOSH director.\n".
-			"(Shortform: --rc)".
-			"\n".
-			"This is deprecated: use #y{-c|--config} runtime=<path> instead."
 	]
 ); # }}}
 
@@ -675,16 +661,6 @@ sub build_command_environment  { # {{{
 	$ENV{GENESIS_BOSH_ENVIRONMENT} = delete($COMMAND_OPTIONS->{'bosh-env'}) if $COMMAND_OPTIONS->{'bosh-env'};
 	$ENV{GENESIS_BOSH_ENVIRONMENT} ||= '';
 
-	if ($COMMAND_OPTIONS->{'cloud-config'}) {
-		$COMMAND_OPTIONS->{config} ||= [];
-		push @{$COMMAND_OPTIONS->{config}},delete($COMMAND_OPTIONS->{'cloud-config'});
-		warning "--cloud-config <x> option is obsolete, use -c cloud=<x> in the future. See -h for more info";
-	}
-	if ($COMMAND_OPTIONS->{'runtime-config'}) {
-		$COMMAND_OPTIONS->{config} ||= [];
-		push @{$COMMAND_OPTIONS->{config}}, 'rc='.delete($COMMAND_OPTIONS->{'runtime-config'});
-		warning "--cloud-config <x> option is obsolete, use -c runtime=<x> in the future. See -h for more info";
-	}
 	if ($COMMAND_OPTIONS->{config} && ref($COMMAND_OPTIONS->{config}) eq 'ARRAY') {
 		my %configs;
 		for (@{$COMMAND_OPTIONS->{config}}) {
