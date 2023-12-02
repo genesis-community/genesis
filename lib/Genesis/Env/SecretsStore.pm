@@ -138,7 +138,7 @@ sub authenticate {
 }
 
 # }}}
-# is_authenticated - determine if already authenticated to the remote store service {{
+# is_authenticated - determine if already authenticated to the remote store service {{{
 sub is_authenticated {
 	bug("Abstract Method: Expecting %s class to define concrete '%' method", ref($_[0]), 'is_authenticated');
 	# Input expected:
@@ -160,6 +160,9 @@ sub is_available {
 }
 
 # }}}
+#
+# # Secrets Generation and Validation
+#
 # generate - generate secrets based on the environment {{{
 sub generate {
 	bug("Abstract Method: Expecting %s class to define concrete '%' method", ref($_[0]), 'generate');
@@ -202,6 +205,9 @@ sub validate {
 	#		sub{$self->_secret_processing_updates_callback($action,$processing_opts,@_)},
 	#   
 }
+
+# }}}
+# regenerate - regenerate secrets {{{
 sub regenerate {
 	bug("Abstract Method: Expecting %s class to define concrete '%' method", ref($_[0]), 'regenerate');
 	# Input expected:
@@ -230,6 +236,9 @@ sub regenerate {
 			#get_opts(\%opts, qw/filter no_prompt interactive invalid renew/)
 		#);
 }
+
+# }}}
+# remove - remove specific secrets as defined by a filter {{{
 sub remove {
 	bug("Abstract Method: Expecting %s class to define concrete '%' method", ref($_[0]), 'remove');
 	# Input expected:
@@ -243,6 +252,9 @@ sub remove {
 		#$self,
 		#sub{$self->_secret_processing_updates_callback('remove',$processing_opts,@_)},
 }
+
+# }}}
+# remove_all - remove all secrets under a given path {{{
 sub remove_all {
 	bug("Abstract Method: Expecting %s class to define concrete '%' method", ref($_[0]), 'remove_all');
 	# Input expected:
@@ -282,9 +294,11 @@ sub remove_all {
 		 #my ($out,$rc) = $store->remove_all_secrets;
 }
 
+# }}}
+
 ### Instance Methods {{{
 
-# path_separator - string used to separate secrets components
+# path_separator - string used to separate secrets components {{{
 sub path_separator {
 	'/'
 }
@@ -303,7 +317,7 @@ sub base {
 }
 
 # }}}
-# path - the full path for the secret (and optional key) in this secrets store
+# path - the full path for the secret (and optional key) in this secrets store {{{
 sub path {
 	my ($self,$secrets_path, $key) = @_;
 
