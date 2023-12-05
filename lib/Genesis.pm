@@ -74,6 +74,9 @@ our @EXPORT = qw/
 
 	struct_set_value
 	struct_lookup
+	in_array
+	compare_arrays
+	sentence_join
 	uniq
 	get_opts
 
@@ -214,9 +217,10 @@ sub fix_wrap {
 	return $msg;
 }
 
-my $WORKDIR;
+my $WORKDIR = $ENV{GENESIS_WORKDIR}||undef;
 sub workdir {
 	$WORKDIR ||= tempdir(CLEANUP => 1);
+	$ENV{GENESIS_WORKDIR} = $WORKDIR;
 	return tempdir(DIR => $WORKDIR);
 }
 
@@ -812,6 +816,30 @@ sub uniq {
 	@items
 }
 
+sub in_array {
+	my ($item, @arr) = @_;
+	return !!scalar(grep {$item eq $_} (@arr));
+}
+
+sub compare_arrays {
+	my ($arr1, $arr2) = @_;
+
+	my %matrix = ();
+	$matrix{$_} -=1 for @$arr1;
+	$matrix{$_} +=1 for @$arr2;
+
+	my @results;
+	for (@$arr1, @$arr2) { # This is On, probably a better way to do it.
+		next unless defined($matrix{$_});
+		push(@{$results[delete($matrix{$_})+1]}, $_);
+	}
+	return wantarray ? @results : \@results;
+}
+
+sub sentence_join {
+  join(' and ', grep {$_} (join(", ",@_[0...scalar(@_)-2]), @_[scalar(@_)-1]))
+}
+
 sub get_opts {
 	my ($hash_ref, @keys) = @_;
 	my %slice;
@@ -830,25 +858,6 @@ sub _u2d {
 	my $str = shift;
 	$str =~ s/_/-/g;
 	$str
-}
-
-
-
-# Because x FH args... translates to FH->x args, it is required to monkey-patch
-# IO:File to facilitate printing to different streams instead of STDOUT.  With
-# this in place, the Genesis functions just become wrappers.
-package IO::File;
-
-sub explain(*;@) {
-	my $self = shift;
-	return if Genesis::envset "QUIET";
-	print $self Genesis::csprintf(@_)."\n";
-}
-
-sub waiting_on(*;@) {
-	my $self = shift;
-	return if Genesis::envset "QUIET";
-	print $self Genesis::csprintf(@_);
 }
 
 1;

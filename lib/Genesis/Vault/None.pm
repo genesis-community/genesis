@@ -1,4 +1,4 @@
-package Genesis::NoVault;
+package Genesis::Vault::None;
 use strict;
 use warnings;
 

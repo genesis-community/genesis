@@ -11,7 +11,7 @@ use Genesis::Kit::Compiled;
 use Genesis::Kit::Dev;
 use Genesis::Kit::Provider;
 use Genesis::Vault;
-use Genesis::NoVault;
+use Genesis::Vault::None;
 use Genesis::Config;
 
 use Cwd ();
@@ -28,7 +28,7 @@ sub new {
 
 	if ($opts{no_vault}) {
 		debug "Top for $ENV{GENESIS_ROOT} requested with no vault support";
-		$top->_set_memo('__vault', Genesis::NoVault->new());
+		$top->_set_memo('__vault', Genesis::Vault::None->new());
 		return $top;
 	}
 
@@ -297,7 +297,7 @@ sub kit_provider_info {
 # vault - initialize connectivity to the vault specified by the secrets provider {{{
 sub vault {
 	my $ref = $_[0]->_memoize(sub {
-		return Genesis::NoVault->new() if ($ENV{GENESIS_NO_VAULT});
+		return Genesis::Vault::None->new() if ($ENV{GENESIS_NO_VAULT});
 		my ($self) = @_;
 		if (in_callback && $ENV{GENESIS_TARGET_VAULT}) {
 			return Genesis::Vault->rebind();
