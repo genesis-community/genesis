@@ -445,7 +445,7 @@ sub command_usage { # {{{
 	my $called = $CALLED;
 	my $command = $GENESIS_COMMANDS{$called};
 
-	my $hr = "#${\($rc ? 'r' : 'K')}\{" . ("=" x terminal_width) ."}";
+	my $hr = "#${\($rc ? 'K' : 'K')}\{" . ("=" x terminal_width) ."}";
 	my $bc = $Genesis::BUILD =~ /\+\)/ ? 'R' : 'G';
 	my $ver = "#gi{genesis v$Genesis::VERSION}#${bc}i{$Genesis::BUILD}\n";
 
@@ -459,15 +459,8 @@ sub command_usage { # {{{
 	}
 	chomp $usage;
 
-	info "$hr";
-	my $out = '';
-	if ($rc) {
-		$msg ||= "#g{${\(humanize_bin)}} #G{$CALLED} was called incorrectly: $ENV{GENESIS_FULL_CALL}";
-		fatal {show_stack => 'default'}, "\n$msg\n";
-	} else {
-		$out .= "\n";
-	}
-
+	info "\n$hr";
+	my $out = "";
 	$out .= wrap($PROPS{$command}{summary} || '', terminal_width, "#G{$CALLED} - ")."\n\n"
 		if $PROPS{$command}{summary};
 
@@ -484,8 +477,11 @@ sub command_usage { # {{{
 			"\nTo see full description with arguments and option, run ".
 			"#g{${\(humanize_bin)}} #G{$called} #y{-h}",
 			terminal_width
-		)."\n\n$ver$hr\n";
+		);
 		info $out;
+		$msg ||= "#g{${\(humanize_bin)}} #G{$CALLED} was called incorrectly: $ENV{GENESIS_FULL_CALL}";
+		fatal {show_stack => 'default'}, "\n#r{$msg}\n";
+		info "$ver$hr\n";
 		exit $rc;
 	}
 
