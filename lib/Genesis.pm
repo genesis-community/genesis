@@ -375,22 +375,33 @@ sub run {
 	}
 	pushd($opts{dir}) if ($opts{dir});
 
+	unshift @args, basename($shell) if @args;
+
+	my @trace_args;
+	my @cmd_args;
+	for (my $i = 0; $i < scalar(@args); $i++) {
+		my $cmd_arg = $args[$i];
+		my $trace_arg = undef;
+		if (ref($cmd_arg) eq 'HASH' && (scalar(keys %{$cmd_arg}) eq 1) && defined($cmd_arg->{redact})) {
+			$trace_arg = "<redacted>";
+			$cmd_arg = $cmd_arg->{redact};
+		}
+		$cmd_arg =~ s/(?<!\\)\$(?:{([^}]+)}|([A-Za-z0-9_]*))/my $v = $ENV{$1||$2}; defined($v) ? $v : ""/eg;
+
+		# Normal flow, assume arg is string-equivalent as before
+		push(@trace_args, $trace_arg//$cmd_arg);
+		push(@cmd_args,   $cmd_arg)
+	}
+
 	$tracemsg .= csprintf("#M{From directory:} #C{%s}\n", Cwd::getcwd);
 	$tracemsg .= csprintf("#M{Executing:} `#C{%s}`%s", $prog, ($opts{interactive} ? " #Y{(interactively)}" : ''));
-	if (@args) {
-		unshift @args, basename($shell);
-		if ($opts{eval_var_args}) {
-			@args = map {
-				s/(?<!\\)\$(?:{([^}]+)}|([A-Za-z0-9_]*))/my $v = $ENV{$1||$2}; defined($v) ? $v : ""/eg;
-				$_
-			} @args;
-		}
+	if (@trace_args) {
 		$tracemsg .= csprintf("\n#M{ - with arguments:}");
-		$tracemsg .= csprintf("\n#M{%4s:} '#C{%s}'", $_, $args[$_]) for (1..$#args);
+		$tracemsg .= csprintf("\n#M{%4s:} '#C{%s}'", $_, $trace_args[$_]) for (1..$#trace_args);
 	}
 	trace("%s",$tracemsg);
 
-	my @cmd = ($shell, "-c", $prog, @args);
+	my @cmd = ($shell, "-c", $prog, @cmd_args);
 	my $start_time = gettimeofday();
 	my $out;
 	if ($opts{interactive}) {
@@ -406,24 +417,24 @@ sub run {
 
 	my $err = slurp($err_file) if ($err_file && -f $err_file);
 	my $rc = $? >>8;
+	if (defined($out)) {
+		if ($out =~ m/[\x00-\x08\x0b-\x0c\x0e\x1f\x7f-\xff]/) {
+			qtrace "[%sb of binary data omitted from debug]", length($out);
+		} elsif ($opts{redact_output}) {
+			qtrace "[%sb of redacted data omitted from debug]", length($out);
+		} else {
+			dump_var -1, run_output => $out;
+		}
+	}
+	dump_var -1, run_stderr => $err if (defined($err));
 	if ($rc) {
-		dump_var -1, run_output => $out if (defined($out));
-		dump_var -1, run_stderr => $err if (defined($err));
 		bail({raw => 1}, "#R{%s} (run failed)%s%s",
 		     $opts{onfailure},
 		     defined($err) ? "\n\nSTDERR:\n$err" : '',
-		     defined($out) ? "\n\nSTDOUT:\n$out" : ''
+		     defined($out) ? "\n\nSTDOUT:\n".($opts{redact_output}?"<redacted>":$out) : ''
 		) if ($opts{onfailure});
 		trace("command exited with status %x (rc %d)", $?, $rc);
 	} else {
-		if (defined($out)) {
-			if ($out =~ m/[\x00-\x08\x0b-\x0c\x0e\x1f\x7f-\xff]/) {
-				qtrace "[".length($out)."b of binary data omitted from debug]";
-			} else {
-				dump_var -1, run_output => $out;
-			}
-		}
-		dump_var -1, run_stderr => $err if (defined($err));
 		trace("command exited #G{0}");
 	}
 	popd() if ($opts{dir});

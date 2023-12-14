@@ -535,7 +535,7 @@ sub query {
 sub get {
 	my ($self, $path, $key) = @_;
 	if (defined($key)) {
-		my ($out,$rc) = $self->query('get', "$path:$key");
+		my ($out,$rc) = $self->query({redact_output => 1}, 'get', "$path:$key");
 		return $out if $rc == 0;
 		debug(
 			"#R{[ERROR]} Could not read #C{%s:%s} from vault at #M{%s}",
@@ -543,7 +543,7 @@ sub get {
 		);
 		return undef;
 	}
-	my ($json,$rc,$err) = read_json_from($self->query({stderr => 0}, 'export', $path));
+	my ($json,$rc,$err) = read_json_from($self->query({stderr => 0, redact_output => 1}, 'export', $path));
 	if ($rc || $err) {
 		debug(
 			"#R{[ERROR]} Could not read all key/value pairs from #C{%s} in vault at #M{%s}:%s\nexit code: %s",

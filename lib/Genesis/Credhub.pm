@@ -49,6 +49,7 @@ sub get {
 sub data {
 	my ($self,$path) = @_;
 	return scalar(read_json_from(run({
+			redact_output => 1,
 			env => $self->env()
 		},
 		'credhub', 'get', '-j', '-n', $self->_full_path($path)
@@ -122,14 +123,15 @@ sub set {
 			"You must specify a HASH or an ARRAY as the value when creating a CredHub ".
 			"json value"
 		) unless ref($value) =~ /^(ARRAY|HASH)$/;
-		push @args, '-v', encode_json($value);
+		push @args, '-v', {redact => encode_json($value)};
 
 	} elsif ($type eq 'value') {
 		bail(
 			"You must specify a HASH or an ARRAY as the value when creating a CredHub ".
 			"json value"
 		) unless defined($value) and ref($value) eq '';
-		push @args, '-v', $value;
+		$value =~ s/\$/\${__dollar_symbol__}/g if $value =~ /\$/;
+		push @args, '-v', {redact => $value};
 
 	} else {
 		bail(
@@ -139,7 +141,10 @@ sub set {
 	}
 	unshift @args, "-n", $self->_full_path($path), "-t", $type;
 	my ($out,$rc, $err) =run({
-			env => $self->env()
+			env => {
+				%{$self->env()},
+				__dollar_symbol__ => '$'
+			}
 		},
 		'credhub', 'set', '-j', @args
 	);
