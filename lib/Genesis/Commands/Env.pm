@@ -320,62 +320,6 @@ sub do {
 		or exit 1;
 }
 
-sub lookup {
-	command_usage(1) if @_ < 2 or @_ > 3;
-	get_options->{exodus} = 1 if get_options->{'exodus-for'};
-	command_usage(1,"#R{[ERROR]} Can only specify one of --merged, --partial, --deployed, or --exodus(-for)")
-		if ((grep {$_ =~ /^(exodus|deployed|partial|merged|env)$/} keys(%{get_options()})) > 1);
-
-	my ($name, $key, $default) = @_;
-	# Legacy support -- previous versions used key/name order
-	my $top = Genesis::Top->new('.');
-	($name, $key) = ($key,$name) if !$top->has_env($name) && $top->has_env($key);
-
-	if (get_options->{"defined"}) {
-		command_usage(1, "Cannot specify default value with --defines option")
-			if defined($default);
-		$default = bless({},"NotFound"); # Impossible to have this value in sources.
-	}
-	my $env = $top->load_env($name);
-	my $v;
-	if (get_options->{merged}) {
-		bail(
-			"Circular reference detected while trying to lookup merged manifest of $name"
-		) if envset("GENESIS__LOOKUP_MERGED_MANIFEST");
-		$ENV{GENESIS__LOOKUP_MERGED_MANIFEST}="1";
-		$env->download_required_configs('manifest');
-		$v = $env->manifest_lookup($key,$default);
-	} elsif (get_options->{partial}) {
-		bail(
-			"Circular reference detected while trying to lookup merged manifest of $name"
-		) if envset("GENESIS__LOOKUP_MERGED_MANIFEST");
-		$ENV{GENESIS__LOOKUP_MERGED_MANIFEST}="1";
-		$v = $env->partial_manifest_lookup($key,$default);
-	} elsif (get_options->{deployed}) {
-		$v = $env->last_deployed_lookup($key,$default);
-	} elsif (get_options->{exodus}) {
-		$v = $env->exodus_lookup($key,$default,get_options->{'exodus-for'})
-	} elsif (get_options->{env}) {
-		my %envvars = $env->get_environment_variables();
-		$key =~ s/^\.//;
-		if ($key) {
-			$v = exists($envvars{$key}) ? $envvars{$key} :
-			     exists($ENV{$key}) ? $ENV{$key} : $default;
-		} else {
-			$v = {%ENV, %envvars};
-		}
-	} else {
-		$v = $env->lookup($key, $default);
-	}
-
-	if (get_options->{defined}) {
-		exit(ref($v) eq "NotFound" ? 4 : 0);
-	} elsif (defined($v)) {
-		$v = encode_json($v) if ref($v);
-		print "$v\n";
-	}
-	exit 0;
-}
 
 sub bosh {
 	append_options(redact => ! -t STDOUT);
@@ -443,5 +387,4 @@ sub env_shell {
 	$env->with_bosh() unless get_options->{'no-bosh'};
 	$env->shell(%{get_options()});
 }
-
 1;
