@@ -54,7 +54,7 @@ sub command {
 		$msg .= "\n  - $versions{$_} (#Y{v$_})" for (keys %versions);
 		bail $msg;
 	}
-	debug("Selecting #c{%s} (v%s) as BOSH cli for Genesis BOSH activities", $versions{$best}, $best);
+	debug("Selecting #C{%s} (#G{v%s}) as BOSH cli for Genesis BOSH activities", $versions{$best}, $best);
 	$bosh_cmd = $versions{$best};
 }
 

@@ -252,7 +252,8 @@ sub flush_logs {
 
 			$reset = 1 if defined($config->{last_label}) && $config->{last_label} ne $label;
 
-			unshift(@$contents, "%s") unless scalar(@$contents > 1);
+			unshift(@$contents, '' ) unless scalar(@$contents);
+			unshift(@$contents, "%s") if scalar(@$contents) == 1;
 			my ($template, @values) = @$contents;
 
 			do {

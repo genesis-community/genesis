@@ -900,7 +900,9 @@ sub check_prereqs { # {{{
 	# check that we has a bosh (v2)
 	require Genesis::BOSH;
 	eval {$ENV{GENESIS_BOSH_COMMAND} = Genesis::BOSH->command($bosh_min_version)};
-	push @errors, $@ if $@;
+	if ($@) {
+		push @errors, $@ =~ s/^\s*.*\[[^ ]*\][^ ]* //mr;
+	}
 
 	# Check Scope requirements
 	if (has_scope(['repo','env'])) {
@@ -928,14 +930,12 @@ sub check_prereqs { # {{{
 
 	debug "Terminal encoding: '%s'", $ENV{LANG} || '<undefined>';
 
-	if (@errors) {
-		error "#R{GENESIS PRE-REQUISITES CHECKS FAILED!!}";
-		error;
-		error "Encountered the following errors:";
-		error "  - $_" for @errors;
-		error "";
-		exit 2;
-	}
+	bail(
+		"#R{GENESIS PRE-REQUISITES CHECKS FAILED!!}\n".
+		"\n".
+		"Encountered the following errors:\n".
+		join("", map {"[[  - >>$_\n"} @errors)
+	) if (@errors);
 	$prereqs_checked=1;
 } # }}}
 
