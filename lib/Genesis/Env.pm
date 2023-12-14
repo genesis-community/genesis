@@ -1646,14 +1646,14 @@ sub check {
 	$checks = "BOSH configs and $checks" if scalar($self->configs);
 
 	if ($self->has_hook('check')) {
-		info "\n[#M{%s}] running $checks checks...", $self->name;
+		$self->_notify("running $checks checks...");
 		$self->run_hook('check') or $ok = 0;
 	} else {
-		info "\n[#M{%s}] #Y{%s does not define a 'check' hook; $checks checks will be skipped.}", $self->name, $self->kit->id;
+		$self->_notify("#Y{%s does not define a 'check' hook; $checks checks will be skipped.}", $self->kit->id);
 	}
 
 	if ($self->kit->secrets_store eq 'vault' && (!exists($opts{check_secrets}) || $opts{check_secrets})) {
-		info "\n[#M{%s}] running secrets checks...", $self->name;
+		$self->_notify("running secrets checks...");
 		my %check_opts=(indent => '  ', validate => ! envset("GENESIS_TESTING_CHECK_SECRETS_PRESENCE_ONLY"));
 		$ok = 0 unless $self->check_secrets(%check_opts);
 	}
@@ -1661,9 +1661,9 @@ sub check {
 	if ($ok) {
 		if (envset("GENESIS_CHECK_YAML_ON_DEPLOY") || $opts{check_yamls}) {
 			if ($self->missing_required_configs('blueprint')) {
-				info "[#M{%s}] #Y{Required BOSH configs not provided - can't check manifest viability}\n", $self->name;
+				$self->_notify("#Y{Required BOSH configs not provided - can't check manifest viability}");
 			} else {
-				info "[#M{%s}] inspecting YAML files used to build manifest...", $self->name;
+				$self->_notify("inspecting YAML files used to build manifest...");
 				my @yaml_files = $self->format_yaml_files('include-kit' => 1, padding => '  ');
 				info join("\n",@yaml_files)."\n";
 			}
@@ -1672,9 +1672,9 @@ sub check {
 
 	if ($ok) {
 		if ($self->missing_required_configs('manifest')) {
-			info "[#M{%s}] #Y{Required BOSH configs not provided - can't check manifest viability}", $self->name;
+			$self->_notify("#Y{Required BOSH configs not provided - can't check manifest viability}");
 		} elsif (!exists($opts{check_manifest}) || $opts{check_manifest}) {
-			info "[#M{%s}] running manifest viability checks...", $self->name;
+			$self->_notify("running manifest viability checks...");
 			$self->manifest or $ok = 0;
 		}
 	}
@@ -1683,7 +1683,7 @@ sub check {
 
 	if ($ok && (!exists($opts{check_stemcells}) || $opts{check_stemcells}) && !$self->use_create_env) {
 
-		info "\n[#M{%s}] running stemcell checks...", $self->name;
+		$self->_notify("running stemcell checks...");
 		my @stemcells = $self->bosh->stemcells;
 		my $required = $self->manifest_lookup('stemcells');
 		my @missing;
@@ -1780,8 +1780,6 @@ sub deploy {
 		}
 	}
 
-	info "\n[#M{%s}] all systems #G{ok}, initiating BOSH deploy...\n", $self->name;
-
 	# Prepare the output manifest files for the repo
 	my $manifest_file = $self->tmppath("out-manifest.yml");
 	my $vars_file = $self->tmppath("out-vars.yml");
@@ -1789,6 +1787,8 @@ sub deploy {
 	copy_or_fail($self->vars_file('redacted'), $vars_file) if ($self->vars_file('redacted'));
 
 	# DEPLOY!!!
+	$self->_notify("all systems #G{ok}, initiating BOSH deploy...");
+
 	my @results;
 	if ($self->use_create_env) {
 		debug("deploying this environment via `bosh create-env`, locally");
@@ -1846,13 +1846,13 @@ sub deploy {
 		debug("deploying this environment to our BOSH director");
 		@results = $self->bosh->deploy(
 			"$self->{__tmp}/manifest.yml",
-			vars_file => $self->vars_file,
+			vars_file => $vars_file,
 			flags      => \@bosh_opts
 		);
 	}
 	$ok = !$results[1];
 
-	info "\n[#M{%s}] #G{Deployment successful.}\n", $self->name if $ok;
+	$self->_notify("#G{Deployment successful.}") if $ok;
 
 	if ($self->_reactions && !$disable_reactions) {
 		$reaction_vars->{GENESIS_DEPLOY_RC} = ($results[1]);
@@ -1896,12 +1896,12 @@ sub deploy {
 	}
 
 	if ($opts{"dry-run"}) {
-		info "\n[#M{%s}] dry-run deployment complete; post-deployment activities will be skipped.", $self->name;
+		$self->_notify("dry-run deployment complete; post-deployment activities will be skipped.");
 		exit 0;
 	}
 
 	# track exodus data in the vault
-	info "\n[#M{%s}] Preparing metadata for export...", $self->name;
+	$self->_notify("Preparing metadata for export...");
 	$self->vault->authenticate unless $self->vault->authenticated;
 	my $exodus = $self->exodus;
 
@@ -1917,7 +1917,7 @@ sub deploy {
 		  '--', 'set', $self->exodus_base,
 		               map { "$_=$exodus->{$_}" } grep {defined($exodus->{$_})} keys %$exodus);
 
-	success "\n#M{%s} deployed successfully.\n", $self->name;
+	success "\n#M{%s}/#c{%s} deployed successfully.\n", $self->name, $self->type;
 	return $ok;
 }
 
@@ -2524,6 +2524,13 @@ sub _unflatten {
 }
 
 # }}}
+# _notify - print an environment-specific message {{{
+sub _notify {
+	my $self = shift;
+	my $msg = shift;
+	$msg = sprintf( $msg, @_) if scalar(@_);
+	info "\n[#M{%s}/#c{%s}] %s", $self->name, $self->type, $msg;
+}
 
 # }}}
 # _reactions - list of reactions specified in the environment file. {{{
@@ -2580,10 +2587,12 @@ sub _process_reactions {
 			if ($action_type[0] eq "script") {
 				my @args = @{$action->{args}||[]};
 				my @cmd = ('bin/'.$action->{script}, @args);
-				info "#M{[%s: }#mi{%s}#M{]} Running script \`#G{%s}\` with %s:\n",
-					$self->name, uc($reaction), $cmd[0], (
+				info (
+					"[#M{%s}/#c{%s}: #mi{%s}] Running script \`#G{%s}\` with %s:\n",
+					$self->name, $self->type, uc($reaction), $cmd[0], (
 						@args ? sprintf('arguments of [#C{%s}]', join(', ',map {"\"$_\""} @args)) : 'no arguments'
-					);
+					)
+				);
 				my ($out, $rc) = run({
 						dir => $env_vars{GENESIS_ROOT},
 						eval_var_args => 1,
@@ -2604,7 +2613,14 @@ sub _process_reactions {
 
 				$self->download_required_configs('addon', "addon-$script");
 
-				info "#M{[%s: }#mi{%s}#M{]} Running #G{%s} addon from kit #M{%s}:\n", $self->name, uc($reaction), $script, $self->kit->id;
+				info(
+					"[#M{%s}/#c{%s}: #mi{%s}] Running #G{%s} addon from kit #M{%s}:\n",
+					$self->name,
+					$self->type,
+					uc($reaction),
+					$script,
+					$self->kit->id
+				);
 				$ok = $self->run_hook('addon', script => $script, args => $action->{args}, eval_var_args => 1, extra_vars => $reaction_vars);
 			}
 			info '';
