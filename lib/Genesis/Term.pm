@@ -275,7 +275,7 @@ sub in_controlling_terminal {
 }
 
 # TODO:
-# - table: 
+# - table:
 #   - takes a table definition in markdown
 #   - converts it to a array of column hashes ({header:string, data:array})
 #   - determines max (line length) and min width (longest word length including
@@ -313,7 +313,7 @@ sub in_controlling_terminal {
 #   - H4 is italicized
 #
 #   - inline bold and italics supported with ** and * respectively (not __ and _)
-#   - bullets use + or -, not * 
+#   - bullets use + or -, not *
 #   - code is indented 4 spaces and rendered as light grey on a dark grey
 #     background
 #

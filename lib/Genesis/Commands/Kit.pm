@@ -138,7 +138,7 @@ sub list_kits {
 		exit 1;
 	}
 	check_prereqs();
-	
+
 	command_usage(1) if @_ > 1;
 	my $name = $_[0];
 	command_usage(1,"Cannot specify both --filter and name.")
@@ -233,7 +233,7 @@ sub list_kits {
 			$name ? " matching '$name'"
 			: ($options{filter} ? " matching pattern /$options{filter}/" : ''))
 
-	}	
+	}
 };
 
 sub decompile_kit {
@@ -347,7 +347,7 @@ sub fetch_kit {
 		my $kitsig = join('/', grep {$_} ($name, $version));
 		info(
 			"Attempting to retrieve Genesis kit #M{$name (%s)}...",
-			$version ? "v$version" : "latest version" 
+			$version ? "v$version" : "latest version"
 		);
 		($name,$version,my $target) = $top->download_kit($kitsig,%{get_options()})
 			or bail "Failed to download Genesis Kit #C{$kitsig}";
