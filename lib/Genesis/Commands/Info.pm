@@ -114,10 +114,11 @@ sub information {
 	info "$out\n#c{%s}\n", "=" x terminal_width;
 }
 
+
 sub lookup {
 	command_usage(1) if @_ < 2 or @_ > 3;
 	get_options->{exodus} = 1 if get_options->{'exodus-for'};
-	command_usage(1,"#R{[ERROR]} Can only specify one of --merged, --partial, --deployed, or --exodus(-for)")
+	command_usage(1,"Can only specify one of --merged, --partial, --deployed, or --exodus(-for)")
 		if ((grep {$_ =~ /^(exodus|deployed|partial|merged|env)$/} keys(%{get_options()})) > 1);
 
 	my ($name, $key, $default) = @_;
@@ -126,7 +127,7 @@ sub lookup {
 	($name, $key) = ($key,$name) if !$top->has_env($name) && $top->has_env($key);
 
 	if (get_options->{"defined"}) {
-		usage(1, "#R{[ERROR]} Cannot specify default value with --defines option")
+		command_usage(1, "Cannot specify default value with --defines option")
 			if defined($default);
 		$default = bless({},"NotFound"); # Impossible to have this value in sources.
 	}
@@ -154,7 +155,7 @@ sub lookup {
 		$key =~ s/^\.//;
 		if ($key) {
 			$v = exists($envvars{$key}) ? $envvars{$key} :
-					 exists($ENV{$key}) ? $ENV{$key} : $default;
+			     exists($ENV{$key}) ? $ENV{$key} : $default;
 		} else {
 			$v = {%ENV, %envvars};
 		}
