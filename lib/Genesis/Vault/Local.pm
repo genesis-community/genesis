@@ -50,11 +50,15 @@ sub new {
 	}, $class);
 	$local_vaults->{$alias} = $self;
 
-	my ($vault) = grep {$_->name eq $alias} Genesis::Vault->find_by_target($alias);
+	my ($vault) = grep {$_->name eq $alias} (Genesis::Vault->all_vaults);
 	bail(
 		"Failed to find vault alias after starting local vault."
 	)	unless ($vault);
 	$self->{vault} = $vault;
+	while ($vault->status ne "ok") {
+		trace "Waiting for local vault to become available...";
+		select(undef,undef,undef,0.25);
+	}
 
 	return $self;
 }
@@ -63,6 +67,7 @@ sub new {
 # shutdown_all - shutdown all local vaults
 sub shutdown_all {
 	for (keys %$local_vaults) {
+		debug "Shutting down $_ ...";
 		delete($local_vaults->{$_})->shutdown;
 	}
 }
@@ -76,20 +81,27 @@ sub shutdown {
 		my $signal = 'INT';
 		my $tries = 0;
 		while (_process_running($self->{vault_pid})) {
+			trace "Shutting down vault $self->{vault_pid} with $signal";
 			kill $signal => $self->{vault_pid};
-			select(undef, undef, undef, 0.25);
-			$signal = 'TERM' if ($tries+=1 > 4);
+			select(undef, undef, undef, 0.5);
+			$tries += 1;
+			$signal = 'TERM' if ($tries > 4);
 			$signal = 'KILL' if ($tries > 8);
 		}
 	}
 	if ($self->{safe_pid}) {
-		my $signal = 'INT';
+		my $signal = '';
 		my $tries = 0;
-		select(undef, undef, undef, 0.10);
+		select(undef, undef, undef, 0.20);
 		while (_process_running($self->{safe_pid})) {
-			kill $signal => $self->{vault_pid};
-			select(undef, undef, undef, 0.10);
-			$signal = 'KILL' if ($tries > 10);
+			if ($signal) {
+				trace "Shutting down safe $self->{safe_pid} with $signal";
+				kill $signal => $self->{vault_pid}
+			}
+			select(undef, undef, undef, 0.20);
+			$tries += 1;
+			$signal = 'TERM' if ($tries > 10);
+			$signal = 'KILL' if ($tries > 20);
 		}
 	}
 	trace(
@@ -107,7 +119,7 @@ sub AUTOLOAD {
 		return $self->{vault}->$command(@_)
 			if ($self->{vault} && $self->{vault}->can($command));
 	}
-	die sprintf(qq{Can't locate object method "%s" via package "%s" at %s line %d.\n}, 
+	die sprintf(qq{Can't locate object method "%s" via package "%s" at %s line %d.\n},
 		$command, __PACKAGE__, (caller)[1,2]);
 }
 
