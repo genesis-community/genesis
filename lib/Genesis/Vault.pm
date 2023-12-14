@@ -235,11 +235,7 @@ sub rebind {
 sub find {
 	my ($class, %filter) = @_;
 
-	@all_vaults = (
-		map { Genesis::Vault->new($_->{url}, $_->{name}, $_->{verify}, $_->{namespace} || '', $_->{strongbox}, $_->{mount}) }
-		sort {$a->{name} cmp $b->{name}}
-		@{ read_json_from(run({env => {VAULT_ADDR => "", SAFE_TARGET => ""}}, "safe targets --json")) }
-	) unless @all_vaults;
+	@all_vaults = all_vaults() unless @all_vaults;
 	my @matches = @all_vaults;
 	for my $quality (keys %filter) {
 		@matches = grep {$_->{$quality} eq $filter{$quality}} @matches;
@@ -253,6 +249,15 @@ sub find_by_target {
 	my ($class, $target) = @_;
 	my ($url, @aliases) = _get_targets($target);
 	return map {$class->find(name => $_)} @aliases;
+}
+# }}}
+# all_vaults - return all vaults known to safe {{{
+sub all_vaults {
+	return (
+		map { Genesis::Vault->new($_->{url}, $_->{name}, $_->{verify}, $_->{namespace} || '', $_->{strongbox}, $_->{mount}) }
+		sort {$a->{name} cmp $b->{name}}
+		@{ read_json_from(run({env => {VAULT_ADDR => "", SAFE_TARGET => ""}}, "safe targets --json")) }
+	);
 }
 
 # }}}
