@@ -881,7 +881,7 @@ sub check_prereqs { # {{{
 	my $perl_version = join('.',map {$_+0}  ($] =~ m/(\d*)\.(\d{3})(\d{3})/));
 	my $reqs = [
 		# Name,     Version, Command,                                 Pattern                   Source
-		["perl",   "5.10.0", "", $perl_version, $^X],
+		["perl",   "5.20.0", "", $perl_version, $^X],
 		["curl",   "7.30.0", "curl --version 2>/dev/null | head -n1",                  qr(^curl\s+(\S+))],
 		["git",     "1.8.0", "git --version  2>/dev/null",                             qr(.*version\s+(\S+).*)],
 		["jq",        "1.6", "jq --version   2>/dev/null",                             qr(^jq-([\.0-9]+)),       "https://stedolan.github.io/jq/download/"],
