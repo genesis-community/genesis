@@ -147,7 +147,6 @@ sub bail {
 	if ($^S && !envset("GENESIS_IGNORE_EVAL")) {
 		# die if in an eval;
 		logger->trace("Fatal exception caught: $msg");
-		$msg =~ 
 		die "\n".csprintf("%s",wrap($msg,terminal_width,"#r{[FATAL]} "))."\n";
 	}
 

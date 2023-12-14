@@ -209,7 +209,7 @@ sub run_command { # {{{
 	command_help("Unrecognized command '$CALLED'")
 		unless defined($RUN{$COMMAND});
 	if (defined(command_properties()->{deprecated})) {
-		my $msg = 
+		my $msg =
 			"The #G{$COMMAND} command has been deprecated, and will be ".
 			"removed in a future version of Genesis.";
 		if (my $replacement = command_properties()->{deprecated}) {
@@ -268,10 +268,22 @@ sub parse_options { # {{{
 		$PROPS{$COMMAND}{option_require_order} ? 'require_order' : 'permute'
 	);
 
+	my $parsing_ok = 1;
+	my @option_warnings = ();
 	{
-		local $SIG{__WARN__} = sub { };
-		GetOptionsFromArray($args, $COMMAND_OPTIONS, (@base_spec,@opts_spec)) or command_usage(1);
+		local $SIG{__WARN__} = sub { push @option_warnings, @_; };
+		$parsing_ok = GetOptionsFromArray($args, $COMMAND_OPTIONS, (@base_spec,@opts_spec));
 	}
+
+	unless ($parsing_ok) {
+		set_logging_state();
+		debug(
+			"[[Option Parsing Warning: >>%s",
+			join("", @option_warnings)
+		);
+		command_usage(1, join("\n", map {chomp; $_} @option_warnings) || "Error parsing options");
+	}
+
 	shift @$args if ($args->[0]||'') eq '--';
 	@COMMAND_ARGS = (@$args);
 
@@ -335,9 +347,9 @@ sub command_help { # {{{
 	my $ver = "#gi{genesis v$Genesis::VERSION}#${bc}i{$Genesis::BUILD}\n";
 
 	# TODO: use named colors that are dark/light aware.
-	
+
 	info "$hr\n";
-	
+
 	if ($rc) {
 		fatal {show_stack => 'default'}, "$msg\n"
 	}
