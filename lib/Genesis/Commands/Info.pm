@@ -133,6 +133,13 @@ sub lookup {
 	}
 	my $env = $top->load_env($name);
 	my $v;
+	if (get_options->{entomb}) {
+		bail(
+			"Cannot use --entombed option with --exodus, --exodus-for or --deployed",
+		) if scalar( grep {$_} (@{get_options()}{qw/exodus exodus-for deployed/}));
+		$env->entombed_secrets_enabled(1);
+	}
+
 	if (get_options->{merged}) {
 		bail(
 			"Circular reference detected while trying to lookup merged manifest of $name"
@@ -167,7 +174,7 @@ sub lookup {
 		exit(ref($v) eq "NotFound" ? 4 : 0);
 	} elsif (defined($v)) {
 		$v = encode_json($v) if ref($v);
-		output {raw => 1}, "$v\n";
+		output {raw => 1}, $v;
 	}
 	exit 0;
 }

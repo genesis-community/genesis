@@ -312,6 +312,11 @@ define_command("manifest", {
 			"Determines if vault values are fetched or redacted.  By default, the ".
 			"manifest will be redacted unless being output to the live console.",
 
+		'entomb' =>
+			"Will entomb valut secrets into the BOSH director's credhub as is done ".
+			"when deploying, providing a manifest that does not contain any clear ".
+			"text secrets",
+
 		'prune!' =>
 			"Determines if the build metadata is pruned.  Defaults to true.",
 
@@ -384,6 +389,14 @@ define_command("deploy", {
 
 		'max-in-flight=i' =>
 			"Override the default number of maximum VMs in flight per instance group.",
+
+		'entomb!' =>
+			"By default, deployments to BOSH directors will entomb vault secrets into ".
+			"the director's CredHub, then use CredHub variable operators to prevent ".
+			"secrets from being present in clear text in the manifest.  This can be ".
+			"prevented by specifying --no-entomb as an option, or by setting ".
+			"'entomb_secrets: false' in your #C{~/.genesis/config} file.  The option ".
+			"will override the configuration file setting.",
 	]
 });
 # }}}
@@ -450,7 +463,7 @@ define_command("info", {
 # genesis lookup - Find a key set in environment manifests. {{{
 define_command("lookup", {
 	summary => "Look up values from an environment's file, manifest, deployment, exodus or env state.",
-	usage => "<env> lookup [--merged|--deployed|--env|--exodus|] key [default-value|--defined]\n".
+	usage => "<env> lookup [--merged|--deployed|--env|--exodus|] key [default-value|--defined] [--entomb]\n".
 					 "lookup --exodus-for <env/type> key [default-value|--defined]",
 	alias => 'get',
 	description =>
@@ -474,6 +487,11 @@ define_command("lookup", {
 			"Takes an argument of the form 'env-name/deployment-type'",
 		"env" =>
 			"Lookup environment variables used by Genesis for the given environment.",
+		"entomb" =>
+			"Entomb the vault secrets in the BOSH director's credhub before ".
+			"rendering the manifest, so that if looking up a secret, return the ".
+			"reference to credhub instead.  Not applicable to exodus or deployed ".
+			"manifests",
 		"defined" =>
 			"Exit with 0 if key defined in specified source, 9 otherwise.  No output ".
 			"is produced, making it useful in 'if lookup ... ; then'"

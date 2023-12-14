@@ -254,24 +254,26 @@ sub manifest {
 		);
 	}
 
-	print $env
+	output {raw => 1}, $env
 		->download_required_configs('blueprint', 'manifest')
 		->manifest(
 			partial   => get_options->{partial},
 			redact    => get_options->{redact},
 			prune     => get_options->{prune},
-			vars_only => get_options->{'bosh-vars'}
+			vars_only => get_options->{'bosh-vars'},
+			entomb    => get_options->{entomb}
 		);
 }
 
 sub deploy {
 	option_defaults(
-		redact => ! -t STDOUT
+		redact => ! -t STDOUT,
+		entomb => $Genesis::RC->get('entomb_secrets',1)
 	);
 	command_usage(1) if @_ != 1;
 
 	my %options = %{get_options()};
-	my @invalid_create_env_opts = grep {$options{$_}} (qw/fix dry-run/);
+	my @invalid_create_env_opts = grep {$options{$_}} (qw/fix dry-run entomb/);
 
 	$options{'disable-reactions'} = ! delete($options{reactions});
 	my $env = Genesis::Top->new('.')->load_env($_[0])->with_vault();
@@ -285,6 +287,8 @@ sub deploy {
 		"The following options cannot be specified for #M{create-env}: %s",
 		join(", ", @invalid_create_env_opts)
 	) if $env->use_create_env && @invalid_create_env_opts;
+
+	$options{entomb} = 1 unless defined($options{entomb}) || $env->use_create_env;
 
 	info "Preparing to deploy #C{%s}:\n  - based on kit #c{%s}\n  - using Genesis #c{%s}", $env->name, $env->kit->id, $Genesis::VERSION;
 	if ($env->use_create_env) {

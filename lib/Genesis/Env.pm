@@ -10,6 +10,9 @@ use Genesis::State;
 use Genesis::Term;
 use Genesis::BOSH::Director;
 use Genesis::BOSH::CreateEnvProxy;
+use Genesis::Vault;
+use Genesis::Vault::Local;
+use Genesis::Vault::None;
 use Genesis::UI;
 use Genesis::IO qw/DumpYAML LoadFile/;
 use Genesis::Commands qw/current_command known_commands/;
@@ -18,6 +21,7 @@ use JSON::PP qw/encode_json decode_json/;
 use POSIX qw/strftime/;
 use Data::Dumper;
 use Digest::file qw/digest_file_hex/;
+use Digest::SHA qw/sha1_hex/;
 use Time::Seconds;
 
 ### Class Methods {{{
@@ -1062,7 +1066,7 @@ sub credhub_connection_env {
 		$credhub_path .= "-bosh";
 	}
 	$env{GENESIS_CREDHUB_EXODUS_SOURCE} = $credhub_src;
-	$env{GENESIS_CREDHUB_ROOT}=sprintf("%s/%s-%s", $credhub_path, $self->name, $self->type);
+	$env{GENESIS_CREDHUB_ROOT}=sprintf("/%s/%s-%s", $credhub_path, $self->name, $self->type);
 
 	if ($credhub_src) {
 		my $credhub_info = $self->exodus_lookup('.',undef,$credhub_src);
@@ -1243,6 +1247,27 @@ sub ci_base {
 	});
 }
 
+# }}}
+
+# Environment Dependencies - CredHub
+# credhub - get the credhub instance for the environment {{{
+sub credhub {
+	my $ref = $_[0]->_memoize(sub {
+		require Genesis::Credhub;
+		my ($self) = @_;
+		my %env = $self->credhub_connection_env;
+		my $credhub = Genesis::Credhub->new(
+			$self->deployment_name,
+			$env{GENESIS_CREDHUB_ROOT},
+			$env{CREDHUB_SERVER},
+			$env{CREDHUB_CLIENT},
+			$env{CREDHUB_SECRET},
+			$env{CREDHUB_CA_CERT}
+		);
+		return $credhub;
+	});
+	return $ref;
+}
 # }}}
 
 # Environment Dependencies - BOSH and BOSH Config Files
@@ -1543,13 +1568,15 @@ sub manifest {
 	my ($self, %opts) = @_;
 
 	# prune by default.
-	my ($redact,$prune,$vars_only) = @opts{qw(redact prune vars_only)};
+	my ($entomb,$redact,$prune,$vars_only) = @opts{qw(entomb redact prune vars_only)};
 	$prune = 1 unless defined $prune;
 
-	trace "[env $self->{name}] in manifest(): Redact %s", defined($opts{redact}) ? "'$opts{redact}'" : '#C{(undef)}';
-	trace "[env $self->{name}] in manifest(): Prune: %s", defined($opts{prune}) ? "'$opts{prune}'" : '#C{(undef)}';
+	trace "[env $self->{name}] in manifest(): Entomb: %s", defined($opts{entomb}) ? "'$opts{entomb}'" : '#C{(undef)}';
+	trace "[env $self->{name}] in manifest(): Redact: %s", defined($opts{redact}) ? "'$opts{redact}'" : '#C{(undef)}';
+	trace "[env $self->{name}] in manifest(): Prune:  %s", defined($opts{prune})  ? "'$opts{prune}'" : '#C{(undef)}';
 
-	my (undef, $path) = $self->_manifest(get_opts(\%opts, qw/no_warnings partial redact/));
+	$self->entombed_secrets_enabled($entomb);
+	my (undef, $path) = $self->_manifest(get_opts(\%opts, qw/no_warnings partial redact msg force_msg/));
 
 	if ($vars_only) {
 		(my $vars_path = $path) =~ s/.yml/__vars.yml/;
@@ -1764,8 +1791,12 @@ sub deploy {
 		"Preflight checks failed; deployment operation halted."
 	) unless $self->check();
 
-	info "\n[#M{%s}] generating manifest...", $self->name;
-	$self->write_manifest("$self->{__tmp}/manifest.yml", redact => 0);
+	$self->write_manifest(
+		"$self->{__tmp}/manifest.yml",
+		force_msg => "generating manifest...",
+		entomb => $opts{entomb},
+		redact => 0
+	);
 
 	my ($ok, $predeploy_data,$data_fn);
 	$self->_notify('generating BOSH vars file (#i{if applicable})...');
@@ -1806,7 +1837,7 @@ sub deploy {
 	# Prepare the output manifest files for the repo
 	my $manifest_file = $self->tmppath("out-manifest.yml");
 	my $vars_path = $self->tmppath("out-vars.yml");
-	$self->write_manifest($manifest_file, redact => 1, prune => 0);
+	$self->write_manifest($manifest_file, entomb => $opts{entomb}, redact => 1, prune => 0);
 	copy_or_fail($self->vars_file('redacted'), $vars_path) if ($self->vars_file('redacted'));
 
 	# DEPLOY!!!
@@ -2158,21 +2189,171 @@ sub remove_secrets {
 }
 
 # }}}
+# entombed_secrets_enabled - allow entombing of secrets from vault to credhub {{{
+sub entombed_secrets_enabled {
+	my $self = shift;
+	$self->{__entombed_secrets_enabled} = ($_[0] ? 1 : 0) if scalar(@_);
+	return $self->{__entombed_secrets_enabled};
+}
+
+# }}}
+# secrets_entombed - return the number of secrets entombed to credhub, -1 if not applicable {{{
+sub secrets_entombed {
+	return $_[0]->{__entombed}//-1;
+}
+# }}}
 # }}}
 
 ### Private Instance Methods {{{
 
+# _entomb_secrets - duplicate secrets into credhub, return json to setup {{{
+sub _entomb_secrets {
+	my ($self) = @_;
+
+	return $self->vault
+		if $self->use_create_env         # Create-env can't use credhub
+		|| $self->secrets_entombed == 0  # Entombed tried and failed
+		|| ! $self->entombed_secrets_enabled;
+
+	return Genesis::Vault::Local->new($self->name) if $self->secrets_entombed > 0;
+
+	$self->with_vault();
+	$self->_notify("entombing secrets into Credhub for enhanced security...");
+	info (
+		{pending => 1},
+		"[[  >>Determining vault paths used by manifest from %s...",
+		$self->vault->name
+	);
+	my $secret_paths = $self->vault_paths();
+	my $secrets_count = scalar(keys %$secret_paths);
+	if ($secrets_count) {
+		info "found %d paths.", $secrets_count;
+		my %secret_keys = ();
+
+		info (
+			{pending => 1},
+			"[[  >>Retrieving secrets from used vault paths...",
+		);
+		for (keys %$secret_paths) {
+			my ($s,$k) = split ":", $_, 2;
+			$s =~ s#^/?#/#; # make sure the secret path starts with a /
+			push(@{$secret_keys{$s}}, $k)
+		}
+		my %secret_values = %{
+			scalar(read_json_from(
+				$self->vault->query({redact_output => 1},"export", keys %secret_keys)
+			))
+		};
+		# BUG FIX for safe export on similar names
+		for (map {substr($_,1)} keys %secret_keys) {
+			$secret_values{$_} = $self->vault->get("/$_")
+				unless (defined($secret_values{$_}));
+		}
+		info ("#g{done!}");
+
+		my $local_vault = Genesis::Vault::Local->new($self->name);
+		my $credhub = $self->credhub();
+
+		#Design decision: use value-type credhub for each key, and only populate what is needed.
+		my $base_path = $self->secrets_base();
+		my $idx = 0;
+		my $w = length("$secrets_count");
+		my $entombment_prefix = ""; # can be set to another value to prevent conflicts if needed
+		info(
+			"[[  >>Copying Vault values to Credhub: #c{%s} => #B{%s}:",
+			$base_path, $credhub->base().$entombment_prefix? "/$entombment_prefix" : "/"
+		);
+		my $previous_lines=0;
+		my %results = (new => 0, failed => 0, altered => 0, 'exists' => 0);
+		for my $secret (sort keys %secret_keys) {
+			my $vault_label = $secret;
+			$vault_label =~ s/^$base_path(.*)/csprintf("#C{$1}")/e;
+			my $cred_path = $secret;
+			$cred_path =~ s/^$base_path//;
+			$cred_path =~ s#^/#_/#;
+			for my $key (sort @{$secret_keys{$secret}}) {
+				my $value = $secret_values{substr($secret,1)}{$key};
+				my $secret_sha = substr(sha1_hex("$cred_path--$key--".$value),0,8);
+				my $cred_name = "$entombment_prefix$cred_path--$key--$secret_sha";
+				my $credhub_var = "(($cred_name))";
+				my $existing = $credhub->get($cred_name);
+				my $action_color = "yi";
+				my $action = "exists";
+				unless ($existing && $existing eq $value) {
+					$credhub->set($cred_name, $value);
+					my $new_value = $credhub->get($cred_name);
+					if ($new_value ne $value) {
+						$action = "failed";
+						$action_color = "Yr";
+					} else {
+						$action = $existing ? "altered" : "new";
+						$action_color = $existing ? "ri" : "gi";
+					}
+				}
+				$local_vault->set($secret, $key, $credhub_var);
+				print "\r[A[2K" for (1..$previous_lines);
+				$results{$action} += 1;
+				my $msg = wrap(sprintf(
+					"[[    [%*d/%*d] >>%s:#c{%s} #Kk{[sha1: }#Wk{%s}#Kk{]} #G{=>} #B{%s} ...#%s{%s}",
+					$w, ++$idx, $w, $secrets_count, "#y{$vault_label}", $key, $secret_sha,
+					$credhub_var, $action_color, $action
+				), terminal_width);
+				info $msg;
+				$previous_lines=($existing && $existing eq $value) ? scalar(lines($msg)) : 0;
+			}
+		}
+		print "\r[A[2K" for (1..$previous_lines);
+		info(
+			"[[  >>$idx of $secrets_count secrets processed: %s new, %s already exist, %s altered, %s failed",
+			@results{('new','exists','altered','failed')}
+		);
+
+		bail(
+			"Failed to entomb one or more secrets into Credhub.  This may be due ".
+			"to a bug in Genesis, communication or authentication error with ".
+			"Credhub, or a value that Credhub can't support.\n\n".
+			"Please try again without the --entomb option if used, or if deploying, ".
+			"use the --no-entomb option, if this persists.\n\n".
+			"Please contact the Genesis team, or open a issue on ".
+			"#Bu{%s/issues/new}",
+			$Genesis::GITHUB
+		) if ($results{failed});
+
+		$self->{__entombed} = $idx;
+		return $local_vault;
+	} else {
+		info "[[  >>No vault paths in use.\n";
+		$self->{__entombed} = $secrets_count;
+		return $self->vault;
+	}
+}
+
+# }}}
 # _manifest - build or return cached manifest (with/out redaction and pruning) {{{
 sub _manifest {
 	my ($self, %opts) = @_;
+
+	my $vault_src = $self->_entomb_secrets();
+	my $vault_env = $vault_src->env();
+
+	my $redact = $opts{redact} && (!$self->entombed_secrets_enabled);
+
 	trace "[env $self->{name}] in _manifest(): Redact %s", defined($opts{redact}) ? "'$opts{redact}'" : '#C{(undef)}';
-	my $which = ($opts{partial} ? '__partial' : "").($opts{redact} ? '__redacted' : '__unredacted');
-	my $path = "$self->{__tmp}/$which.yml";
+	my $which =
+		(
+			($self->entombed_secrets_enabled && $self->secrets_entombed > 0) ? '__entombed'
+			: ($redact ? '__redacted' : '__unredacted')
+		).($opts{partial} ? '__partial' : "");
+	my $path = "$self->{__tmp}/manifest${which}.yml";
 
 	trace("[env $self->{name}] in _manifest(): looking for the '$which' cached manifest");
-	if (!$self->{$which}) {
+
+	$self->_notify($opts{force_msg}) if $opts{force_msg};
+	if (!$self->{$which."__manifest"}) {
 		trace("[env $self->{name}] in ${which}_manifest(): cache MISS; generating");
 		trace("[env $self->{name}] in ${which}_manifest(): cwd is ".Cwd::cwd);
+
+		$self->_notify($opts{msg}) if $opts{msg};
 
 		my @merge_files = $self->_yaml_files($opts{partial});
 		trace("[env $self->{name}] in _manifest(): merging $_") for @merge_files;
@@ -2181,8 +2362,8 @@ sub _manifest {
 		my $out;
 		my $env = {
 			$self->get_environment_variables('manifest'),
-			%{$self->vault->env()},               # specify correct vault for spruce to target
-			REDACT => $opts{redact} ? 'yes' : '' # spruce redaction flag
+			%$vault_env,                   # specify correct vault for spruce to target
+			REDACT => $redact ? 'yes' : '' # spruce redaction flag
 		};
 		if ($opts{partial}) {
 			debug("running spruce merge of all files, without evaluation or cloudconfig, for parameter dereferencing");
@@ -2201,13 +2382,18 @@ sub _manifest {
 		}
 		popd;
 
-		debug("saving #W{%s%s} manifest to $path", $opts{partial} ? 'partial ' : '',  $opts{redact} ? 'redacted' : 'unredacted');
+		$out =~ s/[\r\n ]*\z/\n/ms; # Ensure output is terminated with a newline, but no blank lines
+		debug(
+			"saving #W{%s} manifest to $path [%d bytes]",
+			join(" ",split("__", $which)),
+			length($out)
+		);
 		mkfile_or_fail($path, 0400, $out);
-		$self->{$which} = load_yaml($out);
+		$self->{$which."__manifest"} = load_yaml($out);
 	} else {
 		trace("[env $self->{name}] in ${which}_manifest(): cache HIT!");
 	}
-	return $self->{$which}, $path;
+	return $self->{$which."__manifest"}, $path;
 }
 
 # }}}

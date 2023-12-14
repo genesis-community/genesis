@@ -879,7 +879,6 @@ deploy
 --max-in-flight=5
 $env->{__tmp}/manifest.yml
 EOF
-
 	($manifest_file, $exists, $sha1) = $env->cached_manifest_info;
 	ok $manifest_file eq $env->path(".genesis/manifests/".$env->name.".yml"), "cached manifest path correctly determined";
 	ok $exists, "manifest file should exist.";
@@ -1009,7 +1008,6 @@ cc: cloud-config-data
 collection: 1 2 3
 deployment_name: standalone-thing
 something: valueable
-
 EOF
 
 	teardown_vault();
@@ -1623,7 +1621,7 @@ EOF
 		GENESIS_CI_MOUNT_OVERRIDE => "true",
 		GENESIS_CREDHUB_EXODUS_SOURCE => "root_vault/credhub",
 		GENESIS_CREDHUB_EXODUS_SOURCE_OVERRIDE => "root_vault/credhub", # Shouldn't this be boolean?
-		GENESIS_CREDHUB_ROOT => "root_vault-credhub/base-extended-thing",
+		GENESIS_CREDHUB_ROOT => "/root_vault-credhub/base-extended-thing",
 		GENESIS_ENV_REF => $env->name,
 		GENESIS_ENV_KIT_OVERRIDE_FILES => re('\/(var\/folders|tmp)\/.*\/env-overrides-0.yml'),
 		GENESIS_EXODUS_BASE => "/shhhh/exodus/base-extended/thing",
@@ -1820,13 +1818,13 @@ EOF
 
 	local $ENV{GENESIS_OUTPUT_COLUMNS}=120;
 	my $fragment = <<'EOF';
-\[predeploy-reaction-fail: PRE-DEPLOY\] Running working-addon addon from kit
+\[predeploy-reaction-fail/thing: PRE-DEPLOY\] Running working-addon addon from kit
 reactions/in-development \(dev\):
 
 This addon worked, with arguments of this that
 
-\[predeploy-reaction-fail: PRE-DEPLOY\] Running script `bin/fail-script.sh` with
-no arguments:
+\[predeploy-reaction-fail/thing: PRE-DEPLOY\] Running script `bin/fail-script.sh`
+with no arguments:
 
 This script failed
 EOF
@@ -1873,48 +1871,49 @@ EOF
 	$stderr =~ s/(Duration:|-) (\d+ minutes?, )?\d+ seconds?/$1 XXX seconds/g;
 	eq_or_diff($stderr, <<'EOF', "deploy output should contain the correct pre-deploy output");
 
-[postdeploy-reaction-fail] reactions/in-development (dev) does not define a 'check' hook; BOSH configs and
+[postdeploy-reaction-fail/thing] reactions/in-development (dev) does not define a 'check' hook; BOSH configs and
 environmental parameters checks will be skipped.
 
-[postdeploy-reaction-fail] running secrets checks...
+[postdeploy-reaction-fail/thing] running secrets checks...
 Parsing kit secrets descriptions ... done. - XXX seconds
 Retrieving all existing secrets ... done. - XXX seconds
 
 Validating 0 secrets for postdeploy-reaction-fail under path '/secret/postdeploy/reaction/fail/thing/':
 Completed - Duration: XXX seconds [0 validated/0 skipped/0 errors]
 
-[postdeploy-reaction-fail] running manifest viability checks...
 
-[postdeploy-reaction-fail] running stemcell checks...
+[postdeploy-reaction-fail/thing] running manifest viability checks...
 
-[postdeploy-reaction-fail] generating manifest...
+[postdeploy-reaction-fail/thing] running stemcell checks...
 
-[postdeploy-reaction-fail: PRE-DEPLOY] Running working-addon addon from kit reactions/in-development (dev):
+[postdeploy-reaction-fail/thing] generating manifest...
+
+[postdeploy-reaction-fail/thing] generating BOSH vars file (if applicable)...
+
+[postdeploy-reaction-fail/thing: PRE-DEPLOY] Running working-addon addon from kit reactions/in-development (dev):
 
 This addon worked, with arguments of this that
 
-[postdeploy-reaction-fail: PRE-DEPLOY] Running script `bin/pass-script.sh` with arguments of ["just a single arg with
-spaces"]:
+[postdeploy-reaction-fail/thing: PRE-DEPLOY] Running script `bin/pass-script.sh` with arguments of ["just a single
+arg with spaces"]:
 
 This script passed
 Argument 1: 'just a single arg with spaces'
 
 
-[postdeploy-reaction-fail] all systems ok, initiating BOSH deploy...
+[postdeploy-reaction-fail/thing] all systems ok, initiating BOSH deploy...
 
+[postdeploy-reaction-fail/thing] Deployment successful.
 
-[postdeploy-reaction-fail] Deployment successful.
-
-
-[postdeploy-reaction-fail: POST-DEPLOY] Running script `bin/fail-script.sh` with no arguments:
+[postdeploy-reaction-fail/thing: POST-DEPLOY] Running script `bin/fail-script.sh` with no arguments:
 
 This script failed
 
 [WARNING] Environment post-deploy reaction failed!  Manual intervention may be needed.
 
-[postdeploy-reaction-fail] Preparing metadata for export...
+[postdeploy-reaction-fail/thing] Preparing metadata for export...
 
-[DONE] postdeploy-reaction-fail deployed successfully.
+[DONE] postdeploy-reaction-fail/thing deployed successfully.
 
 EOF
 
@@ -1928,33 +1927,34 @@ EOF
 	$stderr =~ s/(Duration:|-) (\d+ minutes?, )?\d+ seconds?/$1 XXX seconds/g;
 	eq_or_diff($stderr, <<'EOF', "deploy output should contain the correct pre-deploy output");
 
-[postdeploy-reaction-fail] reactions/in-development (dev) does not define a 'check' hook; BOSH configs and
+[postdeploy-reaction-fail/thing] reactions/in-development (dev) does not define a 'check' hook; BOSH configs and
 environmental parameters checks will be skipped.
 
-[postdeploy-reaction-fail] running secrets checks...
+[postdeploy-reaction-fail/thing] running secrets checks...
 Parsing kit secrets descriptions ... done. - XXX seconds
 Retrieving all existing secrets ... done. - XXX seconds
 
 Validating 0 secrets for postdeploy-reaction-fail under path '/secret/postdeploy/reaction/fail/thing/':
 Completed - Duration: XXX seconds [0 validated/0 skipped/0 errors]
 
-[postdeploy-reaction-fail] running manifest viability checks...
 
-[postdeploy-reaction-fail] running stemcell checks...
+[postdeploy-reaction-fail/thing] running manifest viability checks...
 
-[postdeploy-reaction-fail] generating manifest...
+[postdeploy-reaction-fail/thing] running stemcell checks...
+
+[postdeploy-reaction-fail/thing] generating manifest...
+
+[postdeploy-reaction-fail/thing] generating BOSH vars file (if applicable)...
 
 [WARNING] Reactions are disabled for this deploy
 
-[postdeploy-reaction-fail] all systems ok, initiating BOSH deploy...
+[postdeploy-reaction-fail/thing] all systems ok, initiating BOSH deploy...
 
+[postdeploy-reaction-fail/thing] Deployment successful.
 
-[postdeploy-reaction-fail] Deployment successful.
+[postdeploy-reaction-fail/thing] Preparing metadata for export...
 
-
-[postdeploy-reaction-fail] Preparing metadata for export...
-
-[DONE] postdeploy-reaction-fail deployed successfully.
+[DONE] postdeploy-reaction-fail/thing deployed successfully.
 
 EOF
 
