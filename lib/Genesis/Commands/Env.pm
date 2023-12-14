@@ -245,11 +245,11 @@ sub manifest {
 		->load_env($_[0])
 		->with_vault();
 
-	if ($env->use_create_env && scalar($env->configs)) {
+	if ($env->use_create_env && scalar(@{$env->configs})) {
 		warning(
 			"\nThe provided configs will be ignored, as create-env environments do ".
 			"not use them:\n[[- >>".join(
-				"\n[[- >>", map {"#C{$_}"} ($env->configs)
+				"\n[[- >>", map {"#C{$_}"} (@{$env->configs})
 			)
 		);
 	}
