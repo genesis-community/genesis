@@ -25,6 +25,7 @@ sub new {
 # }}}
 
 ### Instance Methods {{{
+sub base {$_[0]->{base}};
 
 sub env {
 	my $self = shift;
@@ -161,7 +162,7 @@ sub paths {
 	my @filter = ();
 	if (!  defined($filter)) {
 		push(@filter, '-n', $self->{base}.'/');
-	} elsif ($filter && ref($filter) eq "") {
+	} elsif ($filter && ref($filter) ne "") {
 		push(@filter, '-n', $self->_full_path($filter));
 	}
 
@@ -182,20 +183,20 @@ sub keys {
 
 sub delete {
 	my ($self,$name) = @_;
-	return scalar(read_json_from(run({
+	return run({
 			env => $self->env()
 		},
-		'credhub', 'delete', '-j', '--name', $self->_full_path($name)
-	)));
+		'credhub', 'delete', '--name', $self->_full_path($name)
+	);
 }
 
 sub delete_all {
 	my ($self,$path) = @_;
-	return scalar(read_json_from(run({
+	return run({
 			env => $self->env()
 		},
-		'credhub', 'delete', '-j', '--path', $self->_full_path($path)
-	)));
+		'credhub', 'delete', '--path', $self->_full_path($path)
+	);
 }
 
 sub query {
