@@ -12,7 +12,7 @@ use POSIX qw/strftime mktime/;
 
 sub version {
 
-	unless (scalar(keys %{get_options()}, @_)) {
+	unless (scalar( @{[ keys(%{get_options()}), @_ ]} )) {
 		output "Genesis v$Genesis::VERSION$Genesis::BUILD";
 		exit 0;
 	}
