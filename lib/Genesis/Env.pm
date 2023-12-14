@@ -1552,41 +1552,55 @@ sub manifest {
 	my (undef, $path) = $self->_manifest(get_opts(\%opts, qw/no_warnings partial redact/));
 
 	if ($vars_only) {
-		return run({
-				onfailure => "Failed to merge $self->{name} manifest",
-				stderr => "&1",
-				env => {
-					$self->get_environment_variables('manifest'),
-					%{$self->vault->env()},               # specify correct vault for spruce to target
-				}
-			},
-			'spruce json "$1" | jq \'."bosh-variables"//{}\' | spruce merge --skip-eval', $path
-		)."\n"
+		(my $vars_path = $path) =~ s/.yml/__vars.yml/;
+		if (! -f $vars_path) {
+			run({
+					onfailure => "Failed to merge $self->{name} manifest",
+					stderr => "&1",
+					env => {
+						$self->get_environment_variables('manifest'),
+						%{$self->vault->env()},               # specify correct vault for spruce to target
+					}
+				},
+				'spruce json "$1" | jq \'."bosh-variables"//{}\' | spruce merge --skip-eval | sed -e :a -e \'/^\n*$/{$d;N;ba\' -e \'}\' > "$2"',
+				$path, $vars_path
+			)
+		}
+		return $vars_path if $opts{return_path};
+		return slurp($vars_path);
 	}
 
 	if ($prune) {
-		my @prune = qw/meta pipeline params bosh-variables kit genesis exodus compilation/;
-		if (!$self->use_create_env) {
-			# bosh create-env needs these, so we only prune them
-			# when we are deploying via `bosh deploy`.
-			push(@prune, qw( resource_pools vm_types
-			                 disk_pools disk_types
-			                 networks
-			                 azs
-			                 vm_extensions));
-		}
+		(my $pruned_path = $path) =~ s/.yml/__pruned.yml/;
+		if (! -f $pruned_path) {
+			my @prune = qw/meta pipeline params bosh-variables kit genesis exodus compilation/;
+			if (!$self->use_create_env) {
+				# bosh create-env needs these, so we only prune them
+				# when we are deploying via `bosh deploy`.
+				push(@prune, qw( resource_pools vm_types
+												 disk_pools disk_types
+												 networks
+												 azs
+												 vm_extensions));
+			}
 
-		debug("pruning top-level keys from #W{%s} manifest...", $redact ? 'redacted' : 'unredacted');
-		debug("  - removing #C{%s} key...", $_) for @prune;
-		return run({
-				onfailure => "Failed to merge $self->{name} manifest",
-				stderr => "&1",
-				env => $self->vault->env # to target desired vault, not likely needed on prune operation
-			},
-			'spruce', 'merge', '--skip-eval',  (map { ('--prune', $_) } @prune), $path)."\n";
+			debug("pruning top-level keys from #W{%s} manifest...", $redact ? 'redacted' : 'unredacted');
+			debug("  - removing #C{%s} key...", $_) for @prune;
+			my $out = run({
+					onfailure => "Failed to merge $self->{name} manifest",
+					stderr => "&1",
+					env => $self->vault->env # to target desired vault, not likely needed on prune operation
+				},
+				'spruce', 'merge', '--skip-eval',  (map { ('--prune', $_) } @prune), $path
+			);
+			mkfile_or_fail($pruned_path, 0600, $out);
+		}
+		return $pruned_path if $opts{return_path};
+		return slurp($pruned_path);
 	}
 
 	debug("not pruning #W{%s} manifest.", $redact ? 'redacted' : 'unredacted');
+	return $path if $opts{return_path};
 	return slurp($path);
 }
 
@@ -1594,7 +1608,7 @@ sub manifest {
 # write_manifest - write the manifest out to the specified file {{{
 sub write_manifest {
 	my ($self, $file, %opts) = @_;
-	my $out = $self->manifest(redact => $opts{redact}, prune => $opts{prune});
+	my $out = $self->manifest(%opts);
 	mkfile_or_fail($file, $out);
 }
 
@@ -1619,17 +1633,24 @@ sub vars_file {
 	$redact = $redact ? 1 : 0;
 	my $redacted = $redact ? '-redacted' : '';
 
-	return $self->{_vars_file}{$redact} if ($self->{_vars_file}{$redact} && -f $self->{_vars_file}{$redact});
+	return $self->{_vars_file}{$redact} # Return cached value, even negative cache
+		if (exists($self->{_vars_file}{$redact}) && (
+			!defined($self->{_vars_file}{$redact}) || -f $self->{_vars_file}{$redact})
+		);
 
-	my ($manifest, undef) = $self->_manifest(redact => $redact);
-	my $vars = struct_lookup($manifest,'bosh-variables');
-	if ($vars && ref($vars) eq "HASH" && scalar(keys %$vars) > 0) {
+	my $vars_src = $self->manifest(
+		return_path => 1,
+		vars_only => 1,
+		redact => $redact
+	);
+	chomp(my $vars = slurp($vars_src));
+	if ($vars ne "{}") {
 		my $vars_file = "$self->{__tmp}/bosh-vars${redacted}.yml";
-		DumpYAML($vars_file,$vars);
-		dump_var "BOSH Variables File" => $vars_file, "Contents" => slurp($vars_file);
+		copy_or_fail($vars_src, $vars_file);
+		dump_var "BOSH Variables File" => $vars_file, "Contents" => $vars;
 		return $self->{_vars_file}{$redact} = $vars_file;
 	} else {
-		return undef
+		return $self->{_vars_file}{$redact} = undef;
 	}
 }
 
@@ -1747,11 +1768,13 @@ sub deploy {
 	$self->write_manifest("$self->{__tmp}/manifest.yml", redact => 0);
 
 	my ($ok, $predeploy_data,$data_fn);
+	$self->_notify('generating BOSH vars file (#i{if applicable})...');
+	my $vars_file = $self->vars_file;
 	if ($self->has_hook('pre-deploy')) {
 		($ok, $predeploy_data) = $self->run_hook(
 			'pre-deploy',
 			manifest  => $self->{__tmp}."/manifest.yml",
-			vars_file => $self->vars_file
+			vars_file => $vars_file
 		);
 		bail "Cannot continue with deployment!\n" unless $ok;
 		$data_fn = $self->tmppath("predeploy-data");
@@ -1769,7 +1792,7 @@ sub deploy {
 			$reaction_vars = {
 				GENESIS_PREDEPLOY_DATAFILE => $data_fn,
 				GENESIS_MANIFEST_FILE => $self->{__tmp}."/manifest.yml",
-				GENESIS_BOSHVARS_FILE => $self->vars_file,
+				GENESIS_BOSHVARS_FILE => $vars_file,
 				GENESIS_DEPLOY_OPTIONS => JSON::PP::encode_json(\%opts),
 				GENESIS_DEPLOY_DRYRUN => $opts{"dry-run"} ? "true" : "false"
 			};
@@ -1782,9 +1805,9 @@ sub deploy {
 
 	# Prepare the output manifest files for the repo
 	my $manifest_file = $self->tmppath("out-manifest.yml");
-	my $vars_file = $self->tmppath("out-vars.yml");
+	my $vars_path = $self->tmppath("out-vars.yml");
 	$self->write_manifest($manifest_file, redact => 1, prune => 0);
-	copy_or_fail($self->vars_file('redacted'), $vars_file) if ($self->vars_file('redacted'));
+	copy_or_fail($self->vars_file('redacted'), $vars_path) if ($self->vars_file('redacted'));
 
 	# DEPLOY!!!
 	$self->_notify("all systems #G{ok}, initiating BOSH deploy...");
@@ -1831,7 +1854,7 @@ sub deploy {
 		push @bosh_opts, "--$_" for grep { $opts{$_} } qw/recreate skip-drain/;
 		@results = $self->bosh->create_env(
 			"$self->{__tmp}/manifest.yml",
-			vars_file => $self->vars_file,
+			vars_file => $vars_file,
 			state => $self->path(".genesis/manifests/$self->{name}-state.yml"),
 			store => $self->kit->secrets_store eq 'credhub' ? $self->path(".genesis/manifests/$self->{name}-store.json") : undef
 		);
@@ -1867,7 +1890,7 @@ sub deploy {
 			# deployment succeeded; update the cache
 			mkdir_or_fail($self->path(".genesis/manifests")) unless -d $self->path(".genesis/manifests");
 			copy_or_fail($manifest_file, $self->path(".genesis/manifests/$self->{name}.yml"));
-			copy_or_fail($vars_file, $self->path(".genesis/manifests/$self->{name}.vars")) if -e $vars_file;
+			copy_or_fail($vars_path, $self->path(".genesis/manifests/$self->{name}.vars")) if -e $vars_path;
 		}
 
 		unlink "$self->{__tmp}/manifest.yml"
