@@ -24,6 +24,7 @@ our @EXPORT = qw/
 	set_top_path
 	build_command_environment
 	current_command
+	known_commands
 	run_command
 	has_command
 	equivalent_commands
@@ -195,6 +196,10 @@ sub commands { # {{{
 
 sub current_command { # {{{
 	return $COMMAND;
+} # }}}
+
+sub known_commands { # list the known genesis commands specified by define_command {{{
+	return grep {$_ eq $GENESIS_COMMANDS{$_}} keys %GENESIS_COMMANDS;
 } # }}}
 
 sub prepare_command { # {{{

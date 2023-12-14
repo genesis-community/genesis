@@ -12,6 +12,7 @@ use Genesis::BOSH::Director;
 use Genesis::BOSH::CreateEnvProxy;
 use Genesis::UI;
 use Genesis::IO qw/DumpYAML LoadFile/;
+use Genesis::Commands qw/current_command known_commands/;
 
 use JSON::PP qw/encode_json decode_json/;
 use POSIX qw/strftime/;
@@ -960,12 +961,8 @@ sub get_environment_variables {
 	$env{GENESIS_CALL}         = $env{GENESIS_CALL_BIN}.
 	                            ($is_alt_path ? sprintf(" -C '%s'", humanize_path($self->path)) : "");
 
-	# Require from the main module
-	%::GENESIS_COMMANDS = () unless keys(%::GENESIS_COMMANDS);
-	my @known_cmds = keys(%::GENESIS_COMMANDS);
-
 	my $env_ref = $self->name;
-	$env_ref .= '.yml' if (grep {$_ eq $self->name} @known_cmds);
+	$env_ref .= '.yml' if (grep {$_ eq $self->name} known_commands);
 	$env_ref = humanize_path($self->path)."/$env_ref" if $is_alt_path;
 	$env_ref = "'$env_ref'" if $env_ref =~ / \(\)!\*\?/;
 
