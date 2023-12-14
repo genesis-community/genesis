@@ -305,7 +305,16 @@ sub flush_logs {
 				}
 
 				$indent ||=  ' ' x csize($prefix);
-				my $content = sprintf($template, @values);
+				my $content;
+				eval {
+					our @trap_warnings = qw/uninitialized/;
+					push @trap_warnings, qw/missing redundant/ if $^V ge v5.21.0;
+					use warnings FATAL => @trap_warnings;
+					$content = sprintf($template, @values);
+				};
+				if ($@) {
+					#TODO: log error without trigging another error in the log system...
+				}
 				my ($pre_pad, $post_pad) = ("","");
 				($pre_pad, $content)  = $content =~ m/\A([\r\n]*)(.*)\z/s;
 				($content, $post_pad) = $content =~ m/\A(.*?)([\r\n]*)\z/s unless $pending;
@@ -352,7 +361,7 @@ sub flush_logs {
 					? 'none'
 					: (($show_stack||'') eq 'full' || ($config->{show_stack}||'') eq 'full')
 					? 'full'
-					: ((($show_stack||'') eq 'fatal' || ($config->{show_stack}||'') eq 'fatal') && $level eq 'FATAL') 
+					: ((($show_stack||'') eq 'fatal' || ($config->{show_stack}||'') eq 'fatal') && $level eq 'FATAL')
 					? 'full'
 					: (($show_stack||'') eq 'current' || ($config->{show_stack}||'') eq 'current')
 					? 'current'
