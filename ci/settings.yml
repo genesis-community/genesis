@@ -1,11 +1,11 @@
 ---
 meta:
-  name:    genesis
+  name:    genesis-v2.8-maintenance
   release: Genesis
   target:  pipes/genesis
   url:     https://pipes.scalecf.net
 
-  initial_version: 2.8.10
+  initial_version: 2.8.12
 
   # we build our own image in this pipeline, and
   # use it, instead of standard concourse images.
@@ -25,7 +25,7 @@ meta:
     owner:        genesis-community
     repo:         genesis
     branch:       v2.8.x-dev
-    main-branch:  main
+    main-branch:  v2.8.x-main
     private_key:  ((github.private_key))
     access_token: ((github.access_token))
 
