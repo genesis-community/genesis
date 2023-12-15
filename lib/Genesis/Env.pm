@@ -998,6 +998,7 @@ sub get_environment_variables {
 	# Kit ENV VARS
 	$env{GENESIS_KIT_NAME}               = $self->kit->name;
 	$env{GENESIS_KIT_VERSION}            = $self->kit->version;
+	$env{GENESIS_KIT_PATH}               = $self->kit->path;
 	$env{GENESIS_ENV_KIT_OVERRIDE_FILES} = join(' ', $self->kit->env_override_files);
 	$env{GENESIS_MIN_VERSION_FOR_KIT}    = $self->kit->genesis_version_min();
 

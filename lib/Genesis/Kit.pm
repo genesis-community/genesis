@@ -87,8 +87,8 @@ sub run_hook {
 	$ENV{GENESIS_KIT_ID}      = $self->id;
 	$ENV{GENESIS_KIT_NAME}    = $self->name;
 	$ENV{GENESIS_KIT_VERSION} = $self->version;
-	$ENV{GENESIS_KIT_HOOK}    = $hook;
 	$ENV{GENESIS_KIT_PATH}    = $self->path;
+	$ENV{GENESIS_KIT_HOOK}    = $hook;
 
 	bug("Unrecognized hook '$hook'\n") unless grep {
 		$_ eq $hook
