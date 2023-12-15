@@ -23,7 +23,7 @@ sub command {
 	foreach my $boshcmd (qw(bosh-cli bosh2 boshv2 bosh)) {
 		my ($version, undef) = run("$boshcmd -v 2>&1 | grep version | head -n1");
 		trace("Version for $boshcmd: '$version'");
-		next unless defined($version) && $version =~ /version (\S+?)-.*/;
+		next unless defined($version) && $version =~ /version (\S+?)(-.*)?$/;
 		$version = $1;
 		my $cmd = `/usr/bin/env bash -c 'command -v $boshcmd 2>/dev/null' 2>/dev/null`;
 		$cmd = `which $boshcmd 2>/dev/null` if $? != 0;
