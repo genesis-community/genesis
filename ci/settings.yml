@@ -10,6 +10,7 @@ meta:
   # we build our own image in this pipeline, and
   # use it, instead of standard concourse images.
   aws:
+    bucket:       genesis-pipeline
     access_key:   ((cloudfoundry-community-aws.access_key_id))
     secret_key:   ((cloudfoundry-community-aws.secret_access_key))
 
