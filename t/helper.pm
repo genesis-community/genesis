@@ -142,7 +142,7 @@ sub bosh_cmd {
 		my $best = "0.0.0";
 		foreach my $boshcmd (qw(bosh2 boshv2 bosh)) {
 			my ($version, undef) = qx/$boshcmd -v 2>&1 | grep version | head -n1/;
-			if ($version =~ /version (\S+?)-.*/) {
+			if ($version =~ /version (\S+?)(-.*)?/) {
 				if (new_enough($1, $best)) {
 					$BOSH_CMD = $boshcmd;
 					$best = $1
