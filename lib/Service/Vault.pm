@@ -1,4 +1,4 @@
-package Genesis::Vault;
+package Service::Vault;
 use strict;
 use warnings;
 
@@ -159,9 +159,9 @@ sub attach {
 		$filter{$_} = $opts{$_} if defined($opts{$_});
 	}
 
-	my @targets = Genesis::Vault->find(%filter);
+	my @targets = Service::Vault->find(%filter);
 	if (scalar(@targets) <1) {
-		my @close_targets = Genesis::Vault->find(url => $filter{url});
+		my @close_targets = Service::Vault->find(url => $filter{url});
 		if (@close_targets) {
 			my $msg = "Could not find matching safe target, but the following are similar:\n";
 			for my $target (@close_targets) {
@@ -254,7 +254,7 @@ sub find_by_target {
 # all_vaults - return all vaults known to safe {{{
 sub all_vaults {
 	return (
-		map { Genesis::Vault->new($_->{url}, $_->{name}, $_->{verify}, $_->{namespace} || '', $_->{strongbox}, $_->{mount}) }
+		map { Service::Vault->new($_->{url}, $_->{name}, $_->{verify}, $_->{namespace} || '', $_->{strongbox}, $_->{mount}) }
 		sort {$a->{name} cmp $b->{name}}
 		@{ read_json_from(run({env => {VAULT_ADDR => "", SAFE_TARGET => ""}}, "safe targets --json")) }
 	);
@@ -266,7 +266,7 @@ sub default {
 	my ($class,$refresh) = @_;
 	unless ($default_vault && !$refresh) {
 		my $json = read_json_from(run({env => {VAULT_ADDR => "", SAFE_TARGET => ""}},"safe target --json"));
-		$default_vault = (Genesis::Vault->find(name => $json->{name}))[0];
+		$default_vault = (Service::Vault->find(name => $json->{name}))[0];
 	}
 	return $default_vault;
 }
@@ -286,7 +286,7 @@ sub clear_all {
 	@all_vaults=();
 	$default_vault=undef;
 	$current_vault=undef;
-	return $_[0]; # chaining Genesis::Vault
+	return $_[0]; # chaining Service::Vault
 }
 # }}}
 # find_single_match_or_bail - error out if there are duplicate vaults for a url {{{
@@ -1142,11 +1142,11 @@ sub _target_is_url {
 sub _get_targets {
 	my $target = shift;
 	unless (_target_is_url($target)) {
-		my $target_vault = (Genesis::Vault->find(name => $target, @_))[0];
+		my $target_vault = (Service::Vault->find(name => $target, @_))[0];
 		return (undef) unless $target_vault;
 		$target = $target_vault->{url};
 	}
-	my @names = map {$_->{name}} Genesis::Vault->find(url => $target, @_);
+	my @names = map {$_->{name}} Service::Vault->find(url => $target, @_);
 	return ($target, @names);
 }
 
@@ -1767,7 +1767,7 @@ sub _validate_x509_secret {
 					#fine, we'll check via safe itself - last resort because it takes time
 					my $signer_path = $plan->{signed_by_abs_path} ? $plan->{signed_by} : $root_path.$plan->{signed_by};
 					$signer_path =~ s#^/##;
-					my ($safe_out,$rc) = Genesis::Vault::current->query('x509','validate','--signed-by', $signer_path, $root_path.$plan->{path});
+					my ($safe_out,$rc) = Service::Vault::current->query('x509','validate','--signed-by', $signer_path, $root_path.$plan->{path});
 					$signed = $rc == 0 && $safe_out =~ qr/$plan->{path} checks out/;
 				} else {
 					$signed = $out =~ /: OK$/;
@@ -2114,7 +2114,7 @@ sub _checkbox {
 
 =head1 NAME
 
-Genesis::Vault
+Service::Vault
 
 =head1 DESCRIPTION
 
@@ -2124,20 +2124,20 @@ This module provides utilities for interacting with a Vault through safe.
 
 =head2 new($url,$name,$verify)
 
-Returns a blessed Genesis::Vault object based on the URL, target name and TLS verify values provided.
+Returns a blessed Service::Vault object based on the URL, target name and TLS verify values provided.
 
 B<NOTE:> This should not be called directly, as it provides no error checking or validations.
 
 =head2 target($target, %opts)
 
-Returns a C<Genesis::Vault> object representing the vault at the given target
+Returns a C<Service::Vault> object representing the vault at the given target
 or presents the user with an interactive prompt to specify a target.  This is
 intended to be used when setting up a deployment repo for the first time, or
 selecting a new vault for an existing deployment repo.
 
 In the case that the target is passed in, the target will be validated to
 ensure that it is known, a url or alias and that its url is unique (not being
-used by any other aliases); A C<Genesis::Vault> object for that target is
+used by any other aliases); A C<Service::Vault> object for that target is
 returned if it is valid, otherwise, an error will be raised.
 
 In the case that the target is not passed in, all unique-url aliases will be
@@ -2145,7 +2145,7 @@ presented for selection, with the current system target being shown as a
 default selection.  If there are aliases that share urls, a warning will be
 presented to the user that some invalid targets are not shown due to that.
 The user then enters the number corresponding to the desired target, and a
-C<Genesis::Vault> object corresponding to that slection is returned.  This
+C<Service::Vault> object corresponding to that slection is returned.  This
 requires that the caller is in a controlling terminal, otherwise the program
 will terminate.
 
@@ -2155,7 +2155,7 @@ C<%opts> can be the following values:
 
 =item default_vault
 
-A C<Genesis::Vault> that will be used as the default
+A C<Service::Vault> that will be used as the default
 vault selection in the interactive prompt.  If not provided, the current system
 target vault will be used.  Has no effect when not in interactive mode.
 
@@ -2167,7 +2167,7 @@ class.
 
 =head2 attach($url, $insecure)
 
-Returns a C<Genesis::Vault> object for the given url according to the user's
+Returns a C<Service::Vault> object for the given url according to the user's
 .saferc file.
 
 This will result in an error if the url is not known in the .saferc or if it
@@ -2186,7 +2186,7 @@ prior to running a hook, and only ensures that the vault is known to the system.
 =head2 find(%conditions)
 
 Without any conditions, this will return all system-defined safe targets as
-Genesis::Vault objects.  Specifying hash elemements of the property => value
+Service::Vault objects.  Specifying hash elemements of the property => value
 filters the selection to those that have that property value (compared as string)
 Valid properties are C<url>, C<name>, C<tls> and C<verify>.
 
@@ -2201,7 +2201,7 @@ there is no current system target.
 
 =head2 current
 
-This will return the Vault that was the last Vault targeted by Genesis::Vault
+This will return the Vault that was the last Vault targeted by Service::Vault
 methods of target, attach or rebind, or by the explicit set_as_current method
 on a Vault object.
 
@@ -2214,7 +2214,7 @@ to be picked up by Genesis during a run.
 
 =head1 Instance Methods
 
-Each C<Genesis::Vault> object is composed of the properties of url, its name
+Each C<Service::Vault> object is composed of the properties of url, its name
 (alias) as it is known on the local system, and its verify (binary opposite of
 skip-ssl-validation).  While these properties can be queried directly, it is
 better to use the accessor methods by the same name

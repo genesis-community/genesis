@@ -8,14 +8,15 @@ use base 'Genesis::Base'; # for _memoize
 use Genesis;
 use Genesis::State;
 use Genesis::Term;
-use Genesis::BOSH::Director;
-use Genesis::BOSH::CreateEnvProxy;
-use Genesis::Vault;
-use Genesis::Vault::Local;
-use Genesis::Vault::None;
 use Genesis::UI;
 use Genesis::IO qw/DumpYAML LoadFile/;
 use Genesis::Commands qw/current_command known_commands/;
+
+use Service::BOSH::Director;
+use Service::BOSH::CreateEnvProxy;
+use Service::Vault;
+use Service::Vault::Local;
+use Service::Vault::None;
 
 use JSON::PP qw/encode_json decode_json/;
 use POSIX qw/strftime/;
@@ -225,9 +226,9 @@ sub from_envvars {
 	if (envset 'GENESIS_USE_CREATE_ENV') {
 		$env->{__params}{genesis}{use_create_env} = 'true';
 		$env->{__params}{genesis}{min_version} ||= $min_version;
-		$env->{__bosh} = Genesis::BOSH::CreateEnvProxy->new();
+		$env->{__bosh} = Service::BOSH::CreateEnvProxy->new();
 	} else {
-		$env->{__bosh} = Genesis::BOSH::Director->from_environment();
+		$env->{__bosh} = Service::BOSH::Director->from_environment();
 	}
 	$env->{__params}{genesis}{credhub_env} = $ENV{GENESIS_CREDHUB_EXODUS_SOURCE}
 		if ($ENV{GENESIS_CREDHUB_EXODUS_SOURCE});
@@ -281,7 +282,7 @@ sub create {
 	# Sanitize the vault descriptor, if present
 	if ($opts{vault}) {
 		unless (grep {$_ =~ /^https?:\/\/[^\/]+/} (split(' ',$opts{vault}))) {
-			my $vault = (Genesis::Vault->find(name => $opts{vault}))[0];
+			my $vault = (Service::Vault->find(name => $opts{vault}))[0];
 			bail(
 				"Cannot find a vault target with alias '$opts{vault}'"
 			) unless $vault;
@@ -1109,17 +1110,17 @@ sub vault {
 		my $vault_info = $self->get_ancestral_vault();
 		return $self->top->vault() unless $vault_info;
 
-		my $details = Genesis::Vault->parse_vault_descriptor($vault_info);
+		my $details = Service::Vault->parse_vault_descriptor($vault_info);
 
 		if (in_callback && $ENV{GENESIS_TARGET_VAULT} && $ENV{GENESIS_TARGET_VAULT} eq $details->{url}) {
-			return Genesis::Vault->rebind();
+			return Service::Vault->rebind();
 		}
 		my %filter = ();
 		$filter{verify} = ($details->{verify} && $details->{tls} ? 1 : 0 ) if $details->{tls};
 		$filter{namespace} = $details->{namespace} || '';
 		$filter{strongbox} = $details->{strongbox};
 
-		return Genesis::Vault->attach(
+		return Service::Vault->attach(
 			url => $details->{url},
 			alias => $details->{alias},
 			%filter
@@ -1254,10 +1255,10 @@ sub ci_base {
 # credhub - get the credhub instance for the environment {{{
 sub credhub {
 	my $ref = $_[0]->_memoize(sub {
-		require Genesis::Credhub;
+		require Service::Credhub;
 		my ($self) = @_;
 		my %env = $self->credhub_connection_env;
-		my $credhub = Genesis::Credhub->new(
+		my $credhub = Service::Credhub->new(
 			$self->deployment_name,
 			$env{GENESIS_CREDHUB_ROOT},
 			$env{CREDHUB_SERVER},
@@ -1287,12 +1288,12 @@ sub bosh_env {
 }
 
 # }}}
-# bosh - the Genesis::BOSH::Director (or ::CreateEnvProxy) associated with this environment {{{
+# bosh - the Service::BOSH::Director (or ::CreateEnvProxy) associated with this environment {{{
 sub bosh {
 	scalar $_[0]->_memoize(sub {
 		my $self = shift;
 		my $bosh;
-		return Genesis::BOSH::CreateEnvProxy->new($self) if $self->use_create_env;
+		return Service::BOSH::CreateEnvProxy->new($self) if $self->use_create_env;
 
 		# If we're in a callback or under test, just reload from envirionemnt variables.
 		if (in_callback || under_test) {
@@ -1300,7 +1301,7 @@ sub bosh {
 				$ENV{BOSH_ENVIRONMENT} = $ENV{GENESIS_BOSH_ENVIRONMENT};
 				$ENV{BOSH_ALIAS} ||= scalar($self->lookup('genesis.bosh_env', $self->{name}));
 				$ENV{BOSH_DEPLOYMENT} ||= $self->deployment_name;
-				$bosh = Genesis::BOSH::Director->from_environment();
+				$bosh = Service::BOSH::Director->from_environment();
 				return $bosh if $bosh;
 			}
 		}
@@ -1310,20 +1311,20 @@ sub bosh {
 
 		my $bosh_vault = $self->vault;
 		if ($bosh_exodus_vault) {
-			$bosh_vault = Genesis::Vault->find_single_match_or_bail($bosh_exodus_vault);
+			$bosh_vault = Service::Vault->find_single_match_or_bail($bosh_exodus_vault);
 			bail(
 				"Could not access vault #C{$bosh_exodus_vault} to retrieve BOSH ".
 				"director login credentials"
 			) unless $bosh_vault && $bosh_vault->connect_and_validate;
 		}
 
-		$bosh = Genesis::BOSH::Director->from_exodus(
+		$bosh = Service::BOSH::Director->from_exodus(
 			$bosh_alias,
 			vault => $bosh_vault,
 			exodus_mount => $bosh_exodus_mount || $self->exodus_mount,
 			bosh_deployment_type => $bosh_dep_type,
 			deployment => $self->deployment_name,
-		) || Genesis::BOSH::Director->from_alias(
+		) || Service::BOSH::Director->from_alias(
 			$bosh_alias,
 			deployment => $self->deployment_name
 		);
@@ -2216,7 +2217,7 @@ sub _entomb_secrets {
 		|| $self->secrets_entombed == 0  # Entombed tried and failed
 		|| ! $self->entombed_secrets_enabled;
 
-	return Genesis::Vault::Local->new($self->name) if $self->secrets_entombed > 0;
+	return Service::Vault::Local->new($self->name) if $self->secrets_entombed > 0;
 
 	$self->with_vault();
 	$self->_notify("entombing secrets into Credhub for enhanced security...");
@@ -2252,7 +2253,7 @@ sub _entomb_secrets {
 		}
 		info ("#g{done!}");
 
-		my $local_vault = Genesis::Vault::Local->new($self->name);
+		my $local_vault = Service::Vault::Local->new($self->name);
 		my $credhub = $self->credhub();
 
 		#Design decision: use value-type credhub for each key, and only populate what is needed.

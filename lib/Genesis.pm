@@ -97,13 +97,13 @@ sub in_kit_dir {
 }
 
 sub vaulted {
-	return !! Genesis::Vault->current
+	return !! Service::Vault->current
 }
 
 sub safe_path_exists {
 	bug("Cannot verify path exists in safe without a vault being selected first")
-		unless Genesis::Vault->current;
-	return Genesis::Vault->current->has($_[0]);
+		unless Service::Vault->current;
+	return Service::Vault->current->has($_[0]);
 }
 
 sub logger     {$Genesis::Log::Logger//Genesis::Log->new()->configure_log()}

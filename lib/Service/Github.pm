@@ -1,4 +1,4 @@
-package Genesis::Github;
+package Service::Github;
 use strict;
 use warnings;
 

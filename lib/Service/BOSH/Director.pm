@@ -1,13 +1,13 @@
-package Genesis::BOSH::Director;
+package Service::BOSH::Director;
 
 use strict;
 use warnings;
 use utf8;
 
-use base 'Genesis::BOSH';
+use base 'Service::BOSH';
 use Genesis;
 use Genesis::State;
-use Genesis::Vault;
+use Service::Vault;
 
 ### Class Methods {{{
 
@@ -44,7 +44,7 @@ sub from_exodus {
 		$exodus = $opts{exodus_data};
 		$exodus_source = 'provided';
 	} else {
-		$opts{vault} ||= (Genesis::Vault->current || Genesis::Vault->default);
+		$opts{vault} ||= (Service::Vault->current || Service::Vault->default);
 		if (!$opts{exodus_path}) {
 			$opts{exodus_path} =
 				($opts{exodus_mount} || '/secret/exodus/').
@@ -154,7 +154,7 @@ sub exodus_path {
 sub deployment {
 	my $self = shift;
 	$self->{deployment} = shift if @_;
-	bug("Too many arguments to Genesis::BOSH::Director#deployment: expecting at most 1, got extra: ".join(', ',@_))
+	bug("Too many arguments to Service::BOSH::Director#deployment: expecting at most 1, got extra: ".join(', ',@_))
 	  if @_;
 	return $self->{deployment};
 }

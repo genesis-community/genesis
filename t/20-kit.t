@@ -12,7 +12,7 @@ use_ok 'Genesis::Kit';
 use_ok 'Genesis::Kit::Compiled';
 use_ok 'Genesis::Kit::Dev';
 use_ok 'Genesis::Kit::Provider::GenesisCommunity';
-use_ok 'Genesis::Vault';
+use_ok 'Service::Vault';
 use Genesis::Kit::Compiler;
 
 package mockenv;
@@ -22,7 +22,7 @@ sub new {
 	my ($class, @features) = @_;
 	bless {
 		f => \@features,
-		vault => Genesis::Vault->new(url => "https://localhost:8999", name => "mockvault")
+		vault => Service::Vault->new(url => "https://localhost:8999", name => "mockvault")
 	}, $class;
 }
 sub features { @{$_[0]{f}}; }

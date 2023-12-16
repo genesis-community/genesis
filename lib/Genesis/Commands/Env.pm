@@ -27,7 +27,7 @@ sub create {
 		if ( $vault_desc eq "?") {
 			$top->set_vault(interactive => 1);
 		} else {
-			my $vault = Genesis::Vault->get_vault_from_descriptor($vault_desc, get_options->{vault} ? '--vault option' : '');
+			my $vault = Service::Vault->get_vault_from_descriptor($vault_desc, get_options->{vault} ? '--vault option' : '');
 			$top->set_vault(vault => $vault);
 		}
 		$vault_desc = $top->vault->build_descriptor()
@@ -337,9 +337,9 @@ sub bosh {
 		$bosh_exodus_path=$env->exodus_base;
 		my $exodus_data = eval {$env->vault->get($bosh_exodus_path)};
 		if ($exodus_data->{url} && $exodus_data->{admin_password}) {
-			$bosh = Genesis::BOSH::Director->from_exodus($env->name, exodus_data => $exodus_data);
+			$bosh = Service::BOSH::Director->from_exodus($env->name, exodus_data => $exodus_data);
 		} else {
-			$bosh = Genesis::BOSH::Director->from_alias($env->name);
+			$bosh = Service::BOSH::Director->from_alias($env->name);
 		}
 	} else {
 		bail(
@@ -348,7 +348,7 @@ sub bosh {
 			"you are trying to target this environment as the BOSH director.",
 			 $env->name
 		) if ($env->use_create_env);
-		$bosh_exodus_path=Genesis::BOSH::Director->exodus_path($env->name);
+		$bosh_exodus_path=Service::BOSH::Director->exodus_path($env->name);
 		$bosh = $env->bosh; # This sets the deployment name.
 	}
 	bail(

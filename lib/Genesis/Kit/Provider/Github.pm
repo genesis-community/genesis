@@ -6,7 +6,7 @@ use base 'Genesis::Kit::Provider';
 use Genesis;
 use Genesis::UI;
 use Genesis::Helpers;
-use Genesis::Github;
+use Service::Github;
 
 use Digest::SHA qw/sha1_hex/;
 
@@ -44,7 +44,7 @@ sub new {
 	my ($class, %config) = @_;
 	bless({
 		label  => $config{label} || DEFAULT_LABEL,
-		remote => Genesis::Github->new(
+		remote => Service::Github->new(
 		            domain => $config{domain} || DEFAULT_DOMAIN,
 		            org    => $config{organization},
 		            tls    => $config{tls} || DEFAULT_TLS

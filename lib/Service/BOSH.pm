@@ -1,9 +1,9 @@
-package Genesis::BOSH;
+package Service::BOSH;
 
 use File::Temp qw/tempfile/;
 
 use Genesis;
-use Genesis::State;
+use Genesis::State qw/envset/;
 
 ## Class Variables {{{
 my ($bosh_cmd);

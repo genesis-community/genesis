@@ -19,7 +19,7 @@ sub new {
 	my ($class) = @_;
 	bless({
 		label  => "Genesis Community organization on Github",
-		remote => Genesis::Github->new(
+		remote => Service::Github->new(
 								domain => "github.com",
 								org    => "genesis-community",
 								tls    => "yes"

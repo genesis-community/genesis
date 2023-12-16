@@ -13,7 +13,7 @@ use Test::Output;
 use_ok 'Genesis::Kit';
 use Genesis::Kit::Dev;
 use Genesis::Top;
-use Genesis::Vault;
+use Service::Vault;
 
 my $tmp = workdir;
 my $top;  # Genesis::Top
@@ -179,7 +179,7 @@ subtest 'invalid or nonexistent hooks' => sub {
 subtest 'new hook' => sub {
 	again();
 
-	my $vault = Genesis::Vault::default();
+	my $vault = Service::Vault::default();
 
 	write_bosh_config $us_west_1_prod->name, $snw_lab_dev->name, 'env-should-fail';
 

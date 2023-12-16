@@ -1575,8 +1575,8 @@ sub main {
 
 END {
 	my $rc = $?;
-	require Genesis::Vault::Local;
-	Genesis::Vault::Local->shutdown_all();
+	require Service::Vault::Local;
+	Service::Vault::Local->shutdown_all();
 	my $level = envset('QUIET') ? 'ERROR' : 'INFO';
 	logger->configure_log(
 		level => $level,

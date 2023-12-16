@@ -77,8 +77,8 @@ sub ping {
 sub update {
 	command_usage(1) if @_;
 
-	require Genesis::Github;
-	my $gh = Genesis::Github->new();
+	require Service::Github;
+	my $gh = Service::Github->new();
 
 	my ($err,$label,@versions);
 	if (get_options->{version}) {

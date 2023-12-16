@@ -1,9 +1,9 @@
-package Genesis::Vault::Local;
+package Service::Vault::Local;
 
 use strict;
 use warnings;
 
-use Genesis::Vault;
+use Service::Vault;
 use Genesis::Log;
 use Genesis;
 
@@ -11,7 +11,7 @@ my $local_vaults = {};
 
 ### Class Methods {{{
 
-# new - create a local memory-backed vault, then return a Genesis::Vault pointer to it. {{{
+# new - create a local memory-backed vault, then return a Service::Vault pointer to it. {{{
 sub new {
 	my ($class, $name) = @_;
 
@@ -50,7 +50,7 @@ sub new {
 	}, $class);
 	$local_vaults->{$alias} = $self;
 
-	my ($vault) = grep {$_->name eq $alias} (Genesis::Vault->all_vaults);
+	my ($vault) = grep {$_->name eq $alias} (Service::Vault->all_vaults);
 	bail(
 		"Failed to find vault alias after starting local vault."
 	)	unless ($vault);
@@ -114,7 +114,7 @@ sub shutdown {
 sub AUTOLOAD {
 	my $command = our $AUTOLOAD;
 	$command    =~ s/.*://;
-	if (ref($_[0]) eq 'Genesis::Vault::Local') {
+	if (ref($_[0]) eq 'Service::Vault::Local') {
 		my $self = shift;
 		return $self->{vault}->$command(@_)
 			if ($self->{vault} && $self->{vault}->can($command));

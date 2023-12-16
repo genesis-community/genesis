@@ -898,8 +898,8 @@ sub check_prereqs { # {{{
 	} @$reqs;
 
 	# check that we has a bosh (v2)
-	require Genesis::BOSH;
-	eval {$ENV{GENESIS_BOSH_COMMAND} = Genesis::BOSH->command($bosh_min_version)};
+	require Service::BOSH;
+	eval {$ENV{GENESIS_BOSH_COMMAND} = Service::BOSH->command($bosh_min_version)};
 	if ($@) {
 		push @errors, $@ =~ s/^\s*.*\[[^ ]*\][^ ]* //mr;
 	}

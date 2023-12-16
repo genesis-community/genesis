@@ -1,4 +1,4 @@
-package Genesis::Credhub;
+package Service::Credhub;
 use strict;
 use warnings;
 
@@ -178,7 +178,7 @@ sub paths {
 }
 
 sub keys {
-	bug "Genesis::Credhub::keys method not supported";
+	bug "Service::Credhub::keys method not supported";
 }
 
 sub delete {

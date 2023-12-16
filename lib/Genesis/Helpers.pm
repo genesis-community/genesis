@@ -258,8 +258,8 @@ bosh() {
     if [[ -n "${BOSH_ALIAS}" ]] ; then
       perl_script="$(cat <<'      EOF'
       my $bosh=(
-        Genesis::BOSH::Director->from_exodus($ENV{BOSH_ALIAS}) ||
-        Genesis::BOSH::Director->from_alias($ENV{BOSH_ALIAS})
+        Service::BOSH::Director->from_exodus($ENV{BOSH_ALIAS}) ||
+        Service::BOSH::Director->from_alias($ENV{BOSH_ALIAS})
       );
       print "echo 'Could not connect to $ENV{BOSH_ALIAS}'\n" unless $bosh;
       my %vars = $bosh->environment_variables;
@@ -268,7 +268,7 @@ bosh() {
       }
       EOF
       )"
-      eval "$(/usr/bin/perl -I$GENESIS_LIB -MGenesis::BOSH::Director -e "$perl_script")"
+      eval "$(/usr/bin/perl -I$GENESIS_LIB -MService::BOSH::Director -e "$perl_script")"
     fi
     [[ -z "${BOSH_ENVIRONMENT:-}" || -z "${BOSH_CA_CERT:-}" ]] && \
       __bail "" "#R{[ERROR]} Environment not found for BOSH Director -- please ensure you've configured your BOSH alias used by this environment"
@@ -276,7 +276,7 @@ bosh() {
 
   if [[ -z "${GENESIS_BOSH_VERIFIED:-}" || "$GENESIS_BOSH_VERIFIED" != "${BOSH_ALIAS:-}" ]] ; then
     # Genesis has not yet validate the BOSH director's availability, so we need to
-    if /usr/bin/perl -I$GENESIS_LIB -MGenesis::BOSH::Director -e 'exit(Genesis::BOSH::Director->from_environment()->connect_and_validate()?0:1)' ; then
+    if /usr/bin/perl -I$GENESIS_LIB -MService::BOSH::Director -e 'exit(Service::BOSH::Director->from_environment()->connect_and_validate()?0:1)' ; then
       GENESIS_BOSH_VERIFIED="$BOSH_ALIAS"
     else
       __bail "" "#R{[ERROR]} Could not connect to BOSH director '#M{$BOSH_ALIAS}' (#M{$BOSH_ENVIRONMENT})"

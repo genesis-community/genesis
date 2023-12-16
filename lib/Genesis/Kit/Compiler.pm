@@ -5,7 +5,7 @@ use warnings;
 use Genesis;
 use Genesis::IO;
 use Genesis::Kit::Dev;
-use Genesis::Vault;
+use Service::Vault;
 
 sub new {
 	my ($class, $root) = @_;
@@ -109,7 +109,7 @@ sub validate {
 		);
 
 		my $kit = Genesis::Kit::Dev->new($self->{root});
-		my @plans = Genesis::Vault::parse_kit_secret_plans(
+		my @plans = Service::Vault::parse_kit_secret_plans(
 			$kit->dereferenced_metadata(sub {$self->_lookup_test_params(@_)}),
 			\@all_features,
 			validate => 1

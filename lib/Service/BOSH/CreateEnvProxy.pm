@@ -1,11 +1,11 @@
-package Genesis::BOSH::CreateEnvProxy;
+package Service::BOSH::CreateEnvProxy;
 
-use base 'Genesis::BOSH';
+use base 'Service::BOSH';
 use Genesis;
 
 ### Class Methods {{{
 
-# new - create a new Genesis::BOSH::CreateEnvProxy object {{{
+# new - create a new Service::BOSH::CreateEnvProxy object {{{
 sub new {
 	my ($class) = @_;
 	return bless({}, $class);

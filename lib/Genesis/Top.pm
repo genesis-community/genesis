@@ -10,8 +10,8 @@ use Genesis::Env;
 use Genesis::Kit::Compiled;
 use Genesis::Kit::Dev;
 use Genesis::Kit::Provider;
-use Genesis::Vault;
-use Genesis::Vault::None;
+use Service::Vault;
+use Service::Vault::None;
 use Genesis::Config;
 
 use Cwd ();
@@ -28,7 +28,7 @@ sub new {
 
 	if ($opts{no_vault}) {
 		debug "Top for $ENV{GENESIS_ROOT} requested with no vault support";
-		$top->_set_memo('__vault', Genesis::Vault::None->new());
+		$top->_set_memo('__vault', Service::Vault::None->new());
 		return $top;
 	}
 
@@ -81,7 +81,7 @@ sub create {
 	$self->mkdir(".genesis");
 
 	$self->{__kit_provider} = Genesis::Kit::Provider->init(%opts);
-	$self->{__vault} = Genesis::Vault->target($opts{vault});
+	$self->{__vault} = Service::Vault->target($opts{vault});
 
 	eval { # to delete path if creation fails
 
@@ -297,10 +297,10 @@ sub kit_provider_info {
 # vault - initialize connectivity to the vault specified by the secrets provider {{{
 sub vault {
 	my $ref = $_[0]->_memoize(sub {
-		return Genesis::Vault::None->new() if ($ENV{GENESIS_NO_VAULT});
+		return Service::Vault::None->new() if ($ENV{GENESIS_NO_VAULT});
 		my ($self) = @_;
 		if (in_callback && $ENV{GENESIS_TARGET_VAULT}) {
-			return Genesis::Vault->rebind();
+			return Service::Vault->rebind();
 		} elsif ($self->has_vault) {
 			my $namespace =  $self->config->get("secrets_provider.namespace");
 			my $strongbox = $self->config->get("secrets_provider.strongbox");
@@ -310,9 +310,9 @@ sub vault {
 			);
 			$attach_opts{namespace} = $namespace if defined($namespace);
 			$attach_opts{strongbox} = ($strongbox ? 1: 0) if defined($strongbox);
-			return Genesis::Vault->attach(%attach_opts);
+			return Service::Vault->attach(%attach_opts);
 		} else {
-			my $vault = Genesis::Vault::default;
+			my $vault = Service::Vault::default;
 			$vault->connect_and_validate()->ref_by_name() if $vault;
 			return $vault;
 		}
@@ -325,7 +325,7 @@ sub vault {
 # TODO: examine how this can work with multiple vaults (#ADDVAULT)
 sub repo_vault {
 	my $self = shift;
-	return Genesis::Vault::default unless $self->has_vault();
+	return Service::Vault::default unless $self->has_vault();
 	return $self->config->get("secrets_provider.insecure");
 }
 
@@ -344,19 +344,19 @@ sub set_vault {
 	if ($opts{interactive}) {
 		my $current_vault = $self->config->get("secrets_provider");
 		if ($current_vault) {
-			$current_vault = (Genesis::Vault->find_by_target($current_vault->{url}))[0];
+			$current_vault = (Service::Vault->find_by_target($current_vault->{url}))[0];
 		}
-		$new_vault = Genesis::Vault->target(undef, default_vault => $current_vault);
+		$new_vault = Service::Vault->target(undef, default_vault => $current_vault);
 	} elsif (exists($opts{target})) {
 		# TODO: allow the creation of a new safe target by parsing target string (#BETTERVAULTTARGET)
-		my @candidates = Genesis::Vault->find_by_target($opts{target});
+		my @candidates = Service::Vault->find_by_target($opts{target});
 		return "#R{[Error]} No vault found that matches $opts{target}." unless @candidates;
 		return "#R{[Error]} Target $opts{target} has URL that is not unique across the known vaults on this system."
 			if scalar(@candidates) > 1;
 		$new_vault = $candidates[0];
 	} elsif ($opts{clear}) {
 		$new_vault = undef;
-	} elsif (ref($opts{vault}) eq "Genesis::Vault") {
+	} elsif (ref($opts{vault}) eq "Service::Vault") {
 		$new_vault = $opts{vault}
 	} else {
 		bug "Invalid call to Genesis::Top->set_vault"
@@ -393,7 +393,7 @@ sub vault_status {
 		? ($info->{insecure} ? "#Y{(noverify)}" : "")
 		: "#Y{(insecure)}";
 
-	my @candidates = Genesis::Vault->find(url => $info->{url});
+	my @candidates = Service::Vault->find(url => $info->{url});
 	if (! scalar(@candidates)) {
 		$info->{alias_error} = "No alias for this URL found on local system";
 		$info->{status} = qq(Run 'safe target "$info->{url}" "}#Ri{<alias>}#R{") . ($info->{insecure} ? " -k" : "") . "' to create an alias for this URL";

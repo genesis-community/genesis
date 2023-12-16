@@ -1,4 +1,4 @@
-package Genesis::Vault::None;
+package Service::Vault::None;
 use strict;
 use warnings;
 

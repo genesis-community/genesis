@@ -7,20 +7,20 @@ use lib 't';
 use helper;
 use Test::Output;
 
-use_ok "Genesis::BOSH";
-use_ok "Genesis::BOSH::Director";
-use_ok "Genesis::BOSH::CreateEnvProxy";
+use_ok "Service::BOSH";
+use_ok "Service::BOSH::Director";
+use_ok "Service::BOSH::CreateEnvProxy";
 use Genesis;
 
 sub get_bosh_director {
 	my $alias = shift || 'bosh-director';
-	Genesis::BOSH->set_command($ENV{GENESIS_BOSH_COMMAND});
-	Genesis::BOSH::Director->new($alias,url => 'https://127.0.0.1', ca_cert=>"ca_cert", client=>'admin', secret=>'password', @_);
+	Service::BOSH->set_command($ENV{GENESIS_BOSH_COMMAND});
+	Service::BOSH::Director->new($alias,url => 'https://127.0.0.1', ca_cert=>"ca_cert", client=>'admin', secret=>'password', @_);
 }
 sub get_bosh_create_env {
 	my $alias = shift;
-	Genesis::BOSH->set_command($ENV{GENESIS_BOSH_COMMAND});
-	Genesis::BOSH::CreateEnvProxy->new(@_);
+	Service::BOSH->set_command($ENV{GENESIS_BOSH_COMMAND});
+	Service::BOSH::CreateEnvProxy->new(@_);
 }
 subtest 'BOSH Director object' => sub {
 	local $ENV{GENESIS_BOSH_COMMAND};
@@ -83,13 +83,13 @@ subtest 'bosh create-env' => sub {
 	};
 
 	bosh_runs_as("create-env --state state.json -l path/to/vars-file.yml manifest.yml");
-	Genesis::BOSH->set_command($ENV{GENESIS_BOSH_COMMAND});
+	Service::BOSH->set_command($ENV{GENESIS_BOSH_COMMAND});
 	($out, $rc) = $bosh->create_env("manifest.yml", state => "state.json", vars_file => "path/to/vars-file.yml");
 	ok !$rc, "create_env with state file and vars-file should work";
 
 	local $ENV{BOSH_NON_INTERACTIVE} = 'yes';
 	bosh_runs_as("-n create-env --state state.json manifest.yml");
-	Genesis::BOSH->set_command($ENV{GENESIS_BOSH_COMMAND});
+	Service::BOSH->set_command($ENV{GENESIS_BOSH_COMMAND});
 	($out,$rc) = $bosh->create_env("manifest.yml", state => "state.json");
 	ok !$rc, "create_env honors BOSH_NON_INTERACTIVE";
 };

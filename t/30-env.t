@@ -14,7 +14,7 @@ use Test::Differences;
 use Cwd qw/cwd abs_path/;
 
 use_ok 'Genesis::Env';
-use Genesis::BOSH;
+use Service::BOSH;
 use Genesis::Top;
 use Genesis::Env;
 use Genesis;
@@ -95,7 +95,7 @@ subtest 'name validation' => sub {
 
 subtest 'loading' => sub {
 	my $vault_target = vault_ok;
-	Genesis::Vault->clear_all();
+	Service::Vault->clear_all();
 	my $top = Genesis::Top->create(workdir, 'thing', vault=>$VAULT_URL);
 	$top->link_dev_kit('t/src/simple');
 	put_file $top->path("standalone.yml"), <<EOF;
@@ -194,7 +194,7 @@ subtest 'env-to-env relation' => sub {
 
 subtest 'environment metadata' => sub {
 	my $vault_target = vault_ok;
-	Genesis::Vault->clear_all();
+	Service::Vault->clear_all();
 	my $top = Genesis::Top->create(workdir, 'thing', vault=>$VAULT_URL);
 	quietly { $top->download_kit('bosh/0.2.0'); };
 	put_file $top->path("standalone.yml"), <<EOF;
@@ -253,7 +253,7 @@ EOF
 
 subtest 'parameter lookup' => sub {
 	my $vault_target = vault_ok;
-	Genesis::Vault->clear_all();
+	Service::Vault->clear_all();
 	my $top = Genesis::Top->create(workdir, 'thing', vault=>$VAULT_URL);
 	quietly { $top->download_kit('bosh/0.2.0'); };
 	put_file $top->path("standalone.yml"), <<EOF;
@@ -340,7 +340,7 @@ EOF
 
 subtest 'manifest generation' => sub {
 	my $vault_target = vault_ok;
-	Genesis::Vault->clear_all();
+	Service::Vault->clear_all();
 	write_bosh_config 'standalone';
 	my $top = Genesis::Top->create(workdir, 'thing', vault=>$VAULT_URL);
 	$top->link_dev_kit('t/src/fancy');
@@ -409,7 +409,7 @@ EOF
 
 subtest 'multidoc env files' => sub {
 	my $vault_target = vault_ok;
-	Genesis::Vault->clear_all();
+	Service::Vault->clear_all();
 	my $top = Genesis::Top->create(workdir, 'thing', vault=>$VAULT_URL);
 	$top->link_dev_kit('t/src/fancy');
 	put_file $top->path(".cloud.yml"), <<EOF;
@@ -557,7 +557,7 @@ EOF
 
 subtest 'manifest pruning' => sub {
 	my $vault_target = vault_ok;
-	Genesis::Vault->clear_all();
+	Service::Vault->clear_all();
 	my $top = Genesis::Top->create(workdir, 'thing', vault=>$VAULT_URL);
 	$top->link_dev_kit('t/src/fancy');
 	put_file $top->path(".cloud.yml"), <<EOF;
@@ -632,7 +632,7 @@ EOF
 
 subtest 'manifest pruning (custom bosh create-env)' => sub {
 	my $vault_target = vault_ok;
-	Genesis::Vault->clear_all();
+	Service::Vault->clear_all();
 	my $top = Genesis::Top->create(workdir, 'thing', vault=>$VAULT_URL);
 	$top->link_dev_kit('t/src/custom-bosh');
 	put_file $top->path(".cloud.yml"), <<EOF;
@@ -724,7 +724,7 @@ EOF
 
 subtest 'exodus data' => sub {
 	my $vault_target = vault_ok;
-	Genesis::Vault->clear_all();
+	Service::Vault->clear_all();
 	my $top = Genesis::Top->create(workdir, 'thing', vault=>$VAULT_URL);
 	$top->link_dev_kit('t/src/fancy');
 	put_file $top->path('standalone.yml'), <<EOF;
@@ -833,7 +833,7 @@ subtest 'cloud_config_and_deployment' => sub{
 	);
 	fake_bosh;
 	my $vault_target = vault_ok;
-	Genesis::Vault->clear_all();
+	Service::Vault->clear_all();
 	`safe set --quiet secret/code word='penguin'`;
 	`safe set --quiet secret/standalone/thing/admin password='drowssap'`;
 
@@ -847,7 +847,7 @@ genesis:
   env: standalone
 EOF
 
-	Genesis::BOSH->set_command($ENV{GENESIS_BOSH_COMMAND});
+	Service::BOSH->set_command($ENV{GENESIS_BOSH_COMMAND});
 	my $env = $top->load_env('standalone');
 	quietly { lives_ok { $env->download_configs('cloud@genesis-test'); }
 		"download_cloud_config runs correctly";
@@ -954,8 +954,8 @@ subtest 'bosh variables' => sub {
 		{alias => 'standalone'},
 	);
 	my $vault_target = vault_ok;
-	Genesis::Vault->clear_all();
-	Genesis::BOSH->set_command($ENV{GENESIS_BOSH_COMMAND});
+	Service::Vault->clear_all();
+	Service::BOSH->set_command($ENV{GENESIS_BOSH_COMMAND});
 	my $top = Genesis::Top->create(workdir, 'thing', vault=>$VAULT_URL)->link_dev_kit('t/src/fancy');
 	put_file $top->path("standalone.yml"), <<EOF;
 ---
@@ -1016,7 +1016,7 @@ EOF
 subtest 'new env and check' => sub{
 	local $ENV{GENESIS_BOSH_COMMAND};
 	my $vault_target = vault_ok;
-	Genesis::Vault->clear_all();
+	Service::Vault->clear_all();
 
 	my $name = "far-fetched";
 	write_bosh_config $name;
@@ -1036,7 +1036,7 @@ subtest 'new env and check' => sub{
 		{alias => $name},
 	);
 	fake_bosh;
-	Genesis::BOSH->set_command($ENV{GENESIS_BOSH_COMMAND});
+	Service::BOSH->set_command($ENV{GENESIS_BOSH_COMMAND});
 	my $out;
 	lives_ok {
 		$out = combined_from {$env = $top->create_env($name, $kit, vault => $vault_target)}
@@ -1148,8 +1148,8 @@ subtest 'env_kit_overrides' => sub {
 		{alias => 'standalone'},
 	);
 	my $vault_target = vault_ok;
-	Genesis::Vault->clear_all();
-	Genesis::BOSH->set_command($ENV{GENESIS_BOSH_COMMAND});
+	Service::Vault->clear_all();
+	Service::BOSH->set_command($ENV{GENESIS_BOSH_COMMAND});
 	my $top = Genesis::Top->create(workdir, 'thing', vault=>$VAULT_URL)->link_dev_kit('t/src/creator');
 	put_file $top->path("standalone.yml"), <<EOF; # Direct YAML
 ---
@@ -1531,8 +1531,8 @@ subtest 'load environment from env vars' => sub {
 		{alias => 'standalone'},
 	);
 	my $vault_target = vault_ok;
-	Genesis::Vault->clear_all();
-	Genesis::BOSH->set_command($ENV{GENESIS_BOSH_COMMAND});
+	Service::Vault->clear_all();
+	Service::BOSH->set_command($ENV{GENESIS_BOSH_COMMAND});
 	my $top = Genesis::Top->create(workdir, 'thing', vault=>$VAULT_URL)->link_dev_kit('t/src/creator');
 	put_file $top->path("base.yml"), <<'EOF'; # Direct YAML
 ---
@@ -1712,8 +1712,8 @@ EOF
 	);
 
 	my $vault_target = vault_ok;
-	Genesis::Vault->clear_all();
-	Genesis::BOSH->set_command($ENV{GENESIS_BOSH_COMMAND});
+	Service::Vault->clear_all();
+	Service::BOSH->set_command($ENV{GENESIS_BOSH_COMMAND});
 	my $top = Genesis::Top->create(workdir, 'thing', vault=>$VAULT_URL);
 	# Instead of linking, copy the reactions kit so it can be modified as needed
 	`cp -a t/src/reactions ${\($top->path('dev'))}`;

@@ -229,29 +229,29 @@ EOF
 	ok(! $top->has_vault, "legacy top correctly identifies not having a vault");
 	my $v;
 	lives_ok {$v = $top->vault} "legacy top does not error when asked for a vault";
-	ok(ref($v) eq "Genesis::Vault", "legacy top retuns a vault when asked");
+	ok(ref($v) eq "Service::Vault", "legacy top retuns a vault when asked");
 	ok($v->name eq $vault_target, "legacy top returns the system default vault");
 
 	my $other_vault_name = "genesis-ci-unit-tests-extra";
 	my $other_vault = vault_ok($other_vault_name);
-	Genesis::Vault->clear_all();
+	Service::Vault->clear_all();
 
 	# Check that top picks up the changed system vault if no vault present in config
 	$top = Genesis::Top->new($tmp);
 	ok(! $top->has_vault, "legacy top still correctly identifies not having a vault");
 	lives_ok {$v = $top->vault} "legacy top still does not error when asked for a vault";
-	ok(ref($v) eq "Genesis::Vault", "legacy top still retuns a vault when asked");
+	ok(ref($v) eq "Service::Vault", "legacy top still retuns a vault when asked");
 	ok($v->name eq $other_vault_name, "legacy top returns the new system default vault");
 
 	# Check that you can override a vault if none present in config
 	lives_ok {$top = Genesis::Top->new($tmp, vault => $other_vault_name)} "allows vault to be overridden if absent from config";
-	is(ref($top->vault), "Genesis::Vault", "overridden vault is a Genesis::Vault");
+	is(ref($top->vault), "Service::Vault", "overridden vault is a Service::Vault");
 	is($top->vault->{name}, $other_vault_name, "overridden vault is the expected vault");
 
 	# Check that vault can be changed and set in config when no vault is in config
 	is($top->set_vault(target => $VAULT_URL{$vault_target}), undef, "top can set its registered vault when it doesn't have one");
 	is($top->config->get('secrets_provider.url'),$VAULT_URL{$vault_target} , "top updates its configuration after saving its new vault");
-	is(ref($top->{__vault}), "Genesis::Vault", "top has a vault after saving its new vault");
+	is(ref($top->{__vault}), "Service::Vault", "top has a vault after saving its new vault");
 	is($top->{__vault}->url, $VAULT_URL{$vault_target}, "top has the correct vault after saving its new vault");
 	is($top->vault->{name}, $vault_target, "top targets the expected vault");
 	yaml_is(get_file("$tmp/.genesis/config"), <<EOF, ".genesis/config contains the correct information");
@@ -309,7 +309,7 @@ EOF
 	# Check that vault can be changed and set in config when a vault is already in config
 	is($top->set_vault(target => $VAULT_URL{$other_vault_name}), undef, "top can set its registered vault when it already has one");
 	is($top->config->get('secrets_provider.url'),$VAULT_URL{$other_vault_name} , "top updates its configuration after saving its new vault");
-	is(ref($top->{__vault}), "Genesis::Vault", "top has a vault after saving its new vault");
+	is(ref($top->{__vault}), "Service::Vault", "top has a vault after saving its new vault");
 	is($top->{__vault}->url, $VAULT_URL{$other_vault_name}, "top has the correct vault after saving its new vault");
 	is($top->vault->{name}, $other_vault_name, "top targets the expected vault");
 	yaml_is(get_file("$tmp/.genesis/config"), <<EOF, ".genesis/config contains the correct information");
@@ -339,7 +339,7 @@ EOF
 	my $new_top;
 	my ($ansi_ltred, $ansi_ltcyan, $ansi_reset) = ("\e[1;31m", "\e[1;36m", "\e[0m");
 	lives_ok {$new_top = Genesis::Top->new($tmp, vault => $vault_target)};
-	is(ref($new_top->vault), "Genesis::Vault", "Top vault is a vault object");
+	is(ref($new_top->vault), "Service::Vault", "Top vault is a vault object");
 	is($new_top->vault->{url}, $VAULT_URL{$vault_target}, "Other vault is used by top");
 };
 
