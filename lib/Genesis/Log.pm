@@ -314,6 +314,9 @@ sub flush_logs {
 					$content = sprintf($template, @values);
 				};
 				if ($@) {
+					require Data::Dumper;
+					$content = "ERROR: $@\n".Data::Dumper::Dumper({template => $template, values => \@values});
+					$show_stack = 'full';
 					#TODO: log error without trigging another error in the log system...
 				}
 				my ($pre_pad, $post_pad) = ("","");

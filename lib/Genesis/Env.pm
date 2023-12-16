@@ -2217,7 +2217,9 @@ sub _entomb_secrets {
 		|| $self->secrets_entombed == 0  # Entombed tried and failed
 		|| ! $self->entombed_secrets_enabled;
 
-	return Service::Vault::Local->new($self->name) if $self->secrets_entombed > 0;
+	# FIXME: Create returns existing local vault if already exists, but 'create' name doesn't match effect
+	# maybe find, find_by_target, target, attach or rebind is better?
+	return Service::Vault::Local->create($self->name) if $self->secrets_entombed > 0;
 
 	$self->with_vault();
 	$self->_notify("entombing secrets into Credhub for enhanced security...");
@@ -2253,7 +2255,7 @@ sub _entomb_secrets {
 		}
 		info ("#g{done!}");
 
-		my $local_vault = Service::Vault::Local->new($self->name);
+		my $local_vault = Service::Vault::Local->create($self->name);
 		my $credhub = $self->credhub();
 
 		#Design decision: use value-type credhub for each key, and only populate what is needed.
@@ -2263,8 +2265,9 @@ sub _entomb_secrets {
 		my $entombment_prefix = ""; # can be set to another value to prevent conflicts if needed
 		info(
 			"[[  >>Copying Vault values to Credhub: #c{%s} => #B{%s}:",
-			$base_path, $credhub->base().$entombment_prefix? "/$entombment_prefix" : "/"
+			$base_path, $credhub->base().($entombment_prefix ? "/$entombment_prefix" : "/")
 		);
+
 		my $previous_lines=0;
 		my %results = (new => 0, failed => 0, altered => 0, 'exists' => 0);
 		for my $secret (sort keys %secret_keys) {

@@ -3,16 +3,16 @@ package Service::Vault::Local;
 use strict;
 use warnings;
 
-use Service::Vault;
-use Genesis::Log;
 use Genesis;
+
+use base 'Service::Vault';
 
 my $local_vaults = {};
 
 ### Class Methods {{{
 
 # new - create a local memory-backed vault, then return a Service::Vault pointer to it. {{{
-sub new {
+sub create {
 	my ($class, $name) = @_;
 
 	# Start local vault in the background
@@ -42,20 +42,22 @@ sub new {
 
 	# Restore default vault target?
 
-	my $self = bless({
-		alias     => $alias,
-		logfile   => $logfile,
-		safe_pid  => $safe_process->{pid},
-		vault_pid => $vault_process->{pid}
-	}, $class);
-	$local_vaults->{$alias} = $self;
-
-	my ($vault) = grep {$_->name eq $alias} (Service::Vault->all_vaults);
+	my $vault_info = read_json_from(run({env => {SAFE_TARGET => undef}},
+			"safe targets --json | jq '.[] | select(.name==\"$alias\")'"
+	));
 	bail(
 		"Failed to find vault alias after starting local vault."
-	)	unless ($vault);
-	$self->{vault} = $vault;
-	while ($vault->status ne "ok") {
+	)	unless ($vault_info && ref($vault_info) eq 'HASH' && $vault_info->{url});
+
+	my $self = $class->SUPER::new(
+		@{$vault_info}{qw/url name verify namespace strongbox mount/}
+	);
+	$self->{logfile}   = $logfile;
+	$self->{safe_pid}  = $safe_process->{pid};
+	$self->{vault_pid} = $vault_process->{pid};
+	$local_vaults->{$alias} = $self;
+
+	while ($self->status ne "ok") {
 		trace "Waiting for local vault to become available...";
 		select(undef,undef,undef,0.25);
 	}
@@ -106,25 +108,14 @@ sub shutdown {
 	}
 	trace(
 		"Shut down local vault %s - Output:\n%s",
-		$self->{alias}, slurp($self->{logfile})
+		$self->{name}, slurp($self->{logfile})
 	);
+	$self->{safe_pid} = $self->{vault_pid} = undef;
 	return;
 }
 
-sub AUTOLOAD {
-	my $command = our $AUTOLOAD;
-	$command    =~ s/.*://;
-	if (ref($_[0]) eq 'Service::Vault::Local') {
-		my $self = shift;
-		return $self->{vault}->$command(@_)
-			if ($self->{vault} && $self->{vault}->can($command));
-	}
-	die sprintf(qq{Can't locate object method "%s" via package "%s" at %s line %d.\n},
-		$command, __PACKAGE__, (caller)[1,2]);
-}
-
 sub DESTROY {
-  # TODO: DO WE NEED THIS? : $_[0]->shutdown();
+	$_[0]->shutdown if $_[0]->{safe_pid};
 }
 # }}}
 
