@@ -14,7 +14,7 @@ use Genesis::Commands qw/current_command known_commands/;
 
 use Service::BOSH::Director;
 use Service::BOSH::CreateEnvProxy;
-use Service::Vault;
+use Service::Vault::Remote;
 use Service::Vault::Local;
 use Service::Vault::None;
 
@@ -1112,15 +1112,19 @@ sub vault {
 
 		my $details = Service::Vault->parse_vault_descriptor($vault_info);
 
-		if (in_callback && $ENV{GENESIS_TARGET_VAULT} && $ENV{GENESIS_TARGET_VAULT} eq $details->{url}) {
-			return Service::Vault->rebind();
-		}
+		return Service::Vault::Remote->rebind()
+			if (
+				in_callback &&
+				$ENV{GENESIS_TARGET_VAULT} &&
+				$ENV{GENESIS_TARGET_VAULT} eq $details->{url}
+			);
+		
 		my %filter = ();
 		$filter{verify} = ($details->{verify} && $details->{tls} ? 1 : 0 ) if $details->{tls};
 		$filter{namespace} = $details->{namespace} || '';
 		$filter{strongbox} = $details->{strongbox};
 
-		return Service::Vault->attach(
+		return Service::Vault::Remote->attach(
 			url => $details->{url},
 			alias => $details->{alias},
 			%filter

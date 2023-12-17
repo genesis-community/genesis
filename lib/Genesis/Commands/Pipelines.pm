@@ -9,7 +9,7 @@ use Genesis::Commands;
 use Genesis::Top;
 use Genesis::Env;
 use Genesis::CI::Legacy qw//;
-use Service::Vault;
+use Service::Vault::Remote;
 
 use File::Basename qw/dirname/;
 use File::Path qw/rmtree/;
@@ -389,7 +389,7 @@ sub _vault_auth {
 	) if @missing_variables;
 
 	# TODO: This should be handled by repo or env vault yaml entries (#BETTERVAULTTARGET)
-	Service::Vault->create(
+	Service::Vault::Remote->create(
 		$ENV{VAULT_ADDR},
 		'deployments-vault',
 		skip_verify => envset("VAULT_SKIP_VERIFY"),

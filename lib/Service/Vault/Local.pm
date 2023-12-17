@@ -11,13 +11,13 @@ my $local_vaults = {};
 
 ### Class Methods {{{
 
-# new - create a local memory-backed vault, then return a Service::Vault pointer to it. {{{
+# create - create a local memory-backed vault, then return a Service::Vault pointer to it. {{{
 sub create {
 	my ($class, $name) = @_;
 
 	# Start local vault in the background
-	my $alias = "local_vault_${name}_$$";
-	my $logfile ||= workdir."/$alias.out";
+	my $alias = _generate_alias($name);
+	my $logfile = workdir."/$alias.out";
 	return $local_vaults->{$alias} if $local_vaults->{$alias};
 
 	trace "Looking for existing safe $alias";
@@ -49,24 +49,62 @@ sub create {
 		"Failed to find vault alias after starting local vault."
 	)	unless ($vault_info && ref($vault_info) eq 'HASH' && $vault_info->{url});
 
-	my $self = $class->SUPER::new(
-		@{$vault_info}{qw/url name verify namespace strongbox mount/}
+	my $vault = $class->SUPER::new(
+		@{$vault_info}{qw(url name verify namespace strongbox mount)}
 	);
-	$self->{logfile}   = $logfile;
-	$self->{safe_pid}  = $safe_process->{pid};
-	$self->{vault_pid} = $vault_process->{pid};
-	$local_vaults->{$alias} = $self;
+	$vault->{logfile}   = $logfile;
+	$vault->{safe_pid}  = $safe_process->{pid};
+	$vault->{vault_pid} = $vault_process->{pid};
+	$local_vaults->{$alias} = $vault;
 
-	while ($self->status ne "ok") {
+	while ($vault->status ne "ok") {
 		trace "Waiting for local vault to become available...";
 		select(undef,undef,undef,0.25);
 	}
 
-	return $self;
+	return $vault;
 }
 
 # }}}
-# shutdown_all - shutdown all local vaults
+# rebind - connect to and return an already-running local vault {{{
+sub rebind {
+	my ($class, $name) = @_;
+  return unless $class->valid_local_vault($name);
+
+	my $alias = _generate_alias($name);
+	return $local_vaults->{$alias} if $local_vaults->{$alias};
+
+	my $vault_info = read_json_from(run({env => {SAFE_TARGET => undef}},
+			"safe targets --json | jq '.[] | select(.name==\"$alias\")'"
+	));
+	return unless ($vault_info && ref($vault_info) eq 'HASH' && $vault_info->{url});
+
+	my $pid = _get_safe_process($alias);
+	return unless defined($pid);
+
+	my $vault = $class->SUPER::new(
+		@{$vault_info}{qw(url name verify namespace strongbox mount)}
+	);
+	return unless $vault;
+	
+	$vault->{logfile}   = workdir."/$alias.out"; #FIXME: This just assumes this value -- should use lsof to detect correct value
+	$vault->{safe_pid}  = $pid;
+	$vault->{vault_pid} = _get_vault_process($pid);
+	$local_vaults->{$alias} = $vault;
+
+	return $vault;
+}
+
+# }}}
+# valid_local_vault - return true if the submitted name and optional url would be valid as a local vault {{{
+sub valid_local_vault {
+	my ($class, $name, $url) = @_;
+	$name =~ /^local_vault_(.*)_[0-9]+$/ && (!$url || $url =~ /localhost/);
+}
+
+
+# }}}
+# shutdown_all - shutdown all local vaults {{{
 sub shutdown_all {
 	for (keys %$local_vaults) {
 		debug "Shutting down $_ ...";
@@ -77,8 +115,27 @@ sub shutdown_all {
 # }}}
 
 ### Instance Methods {{{
+
+# pid - return the pid of the local vault instance {{{
+sub pid {
+	return $_[0]->{name} =~ /.*_([0-9]*)$/ ? $1 : undef;
+}
+
+# }}}
+
+# shutdown - shutdown the local vault (which should restore previous safe target) {{{
 sub shutdown {
 	my $self = shift;
+
+	# Don't shut down parent process provided local vault;
+	unless ($self->pid == $$) {
+		debug(
+			"Not shutting down local vault %s because it is owned by a different process",
+			$self->pid
+		);
+		return;
+	}
+
 	if ($self->{vault_pid}) {
 		my $signal = 'INT';
 		my $tries = 0;
@@ -114,13 +171,24 @@ sub shutdown {
 	return;
 }
 
+# }}}
+# DESTROY - perl descructor: will shutdown local vault if it hasn't been already shut down {{{
 sub DESTROY {
 	$_[0]->shutdown if $_[0]->{safe_pid};
 }
+
+# }}}
 # }}}
 
 
 ### Helper functions {{{
+sub _generate_alias {
+	my $name = shift;
+	my $pid = $name =~ /^local_vault_(.*)_([0-9]+)$/ ? $2 : $$;
+	$name =~ s/^local_vault_(.*)_[0-9]+$/$1/; # strip back to original name
+	return "local_vault_${name}_${pid}";
+}
+
 sub _get_safe_process {
 	my ($alias, $timeout) = @_;
 	return _get_process("\\s\\+[s]afe local -m --as $alias", $timeout);
@@ -157,3 +225,4 @@ sub _process_running {
 }
 # }}}
 1;
+# vim: fdm=marker:foldlevel=1:noet

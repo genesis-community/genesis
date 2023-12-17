@@ -10,7 +10,7 @@ use Genesis::Env;
 use Genesis::Kit::Compiled;
 use Genesis::Kit::Dev;
 use Genesis::Kit::Provider;
-use Service::Vault;
+use Service::Vault::Remote;
 use Service::Vault::None;
 use Genesis::Config;
 
@@ -81,7 +81,7 @@ sub create {
 	$self->mkdir(".genesis");
 
 	$self->{__kit_provider} = Genesis::Kit::Provider->init(%opts);
-	$self->{__vault} = Service::Vault->target($opts{vault});
+	$self->{__vault} = Service::Vault::Remote->target($opts{vault});
 
 	eval { # to delete path if creation fails
 
@@ -300,7 +300,7 @@ sub vault {
 		return Service::Vault::None->new() if ($ENV{GENESIS_NO_VAULT});
 		my ($self) = @_;
 		if (in_callback && $ENV{GENESIS_TARGET_VAULT}) {
-			return Service::Vault->rebind();
+			return Service::Vault::Remote->rebind();
 		} elsif ($self->has_vault) {
 			my $namespace =  $self->config->get("secrets_provider.namespace");
 			my $strongbox = $self->config->get("secrets_provider.strongbox");
@@ -310,7 +310,7 @@ sub vault {
 			);
 			$attach_opts{namespace} = $namespace if defined($namespace);
 			$attach_opts{strongbox} = ($strongbox ? 1: 0) if defined($strongbox);
-			return Service::Vault->attach(%attach_opts);
+			return Service::Vault::Remote->attach(%attach_opts);
 		} else {
 			my $vault = Service::Vault::default;
 			$vault->connect_and_validate()->ref_by_name() if $vault;
@@ -346,7 +346,7 @@ sub set_vault {
 		if ($current_vault) {
 			$current_vault = (Service::Vault->find_by_target($current_vault->{url}))[0];
 		}
-		$new_vault = Service::Vault->target(undef, default_vault => $current_vault);
+		$new_vault = Service::Vault::Remote->target(undef, default_vault => $current_vault);
 	} elsif (exists($opts{target})) {
 		# TODO: allow the creation of a new safe target by parsing target string (#BETTERVAULTTARGET)
 		my @candidates = Service::Vault->find_by_target($opts{target});
@@ -356,7 +356,7 @@ sub set_vault {
 		$new_vault = $candidates[0];
 	} elsif ($opts{clear}) {
 		$new_vault = undef;
-	} elsif (ref($opts{vault}) eq "Service::Vault") {
+	} elsif (ref($opts{vault}) eq "Service::Vault::Remote") {
 		$new_vault = $opts{vault}
 	} else {
 		bug "Invalid call to Genesis::Top->set_vault"

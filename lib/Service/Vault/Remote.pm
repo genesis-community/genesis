@@ -1,4 +1,4 @@
-package Service::Vault;
+package Service::Vault::Remote;
 use strict;
 use warnings;
 
@@ -10,225 +10,217 @@ use Genesis::UI;
 use JSON::PP qw/decode_json/;
 use UUID::Tiny ();
 
+use base 'Service::Vault';
+
 ### Class Variables {{{
 my (@all_vaults, $default_vault, $current_vault);
 # }}}
 
 ### Class Methods {{{
 
-# new - raw instantiation of a vault object {{{
-sub new {
-	my ($class, $url, $name, $verify, $namespace, $strongbox, $mount) = @_;
-	$mount =~ s#^/*(.*[^/])/*$#/$1/# if $mount;
-	return bless({
-			url       => $url,
-			name      => $name,
-			verify    => $verify ? 1 : 0, # Cleans out JSON::Boolean types
-			namespace => $namespace || '',
-			strongbox => !defined($strongbox) || $strongbox ? 1 : 0, # defaults to true
-			mount     => $mount || '/secret/',
-			id        => sprintf("%s-%06d",$name,rand(1000000))
-		}, $class);
-}
-
-# }}}
-# create - return all vaults known to safe {{{
+# create - create a new safe target and target it {{{
 sub create {
-  my $class = shift;
-  bug 'Cannot directly instantiate a Genesis::Vault - use a derived class'
-    if $class eq __PACKAGE__;
-	# FIXME:  Should subclasses call this to add a created vault to the @all_vaults class property?
-  bug "Expected $class to provide 'create' method, but it did not (or called SUPER)"
-    if $class eq __PACKAGE__;
-}
+	my ($class, $url, $name, %opts) = @_;
 
-# }}}
-# all_vaults - return all vaults known to safe {{{
-sub all_vaults {
-	my @available_vaults;
-	my @targets = sort {$a->{name} cmp $b->{name}} @{
-		read_json_from(run({env => {VAULT_ADDR => undef, SAFE_TARGET => undef}}, "safe targets --json"))
-	};
-	require Service::Vault::Local;
-	require Service::Vault::Remote;
-	for (@targets) {
-		if (Service::Vault::Local->valid_local_vault($_->{name})) {
-			push @available_vaults, (
-				Service::Vault::Local->rebind($_->{name})
-				|| Service::Vault::Local->create($_->{name})
-			);
-		} else {
-			push @available_vaults, Service::Vault::Remote->new(@{$_}{qw(
-				url name verify namespace strongbox mount
-			)})
+	my $default = $class->default(1);
+
+	my @cmd = ('safe', 'target', $url, $name);
+	push(@cmd, '-k') if $opts{skip_verify};
+	push(@cmd, '-n', $opts{namespace}) if $opts{namespace};
+	push(@cmd, '--no-strongbox') if $opts{no_strongbox};
+	my ($out,$rc,$err) = run({stderr => 0, env => {VAULT_ADDR => "", SAFE_TARGET => ""}}, @cmd);
+	run('safe','target',$default->{name}) if $default; # restore original system target if there was one
+	bail(
+		"Could not create new Safe target #C{%s} pointing at #M{%s}:\n %s",
+		$name, $url, $err
+	) if $rc;
+	my $vault = $class->new($url, $name, !$opts{skip_verify}, $opts{namespace}, !$opts{no_strongbox}, $opts{mount});
+	for (0..scalar(@all_vaults)-1) {
+		if ($all_vaults[$_]->{name} eq $name) {
+			$all_vaults[$_] = $vault;
+			return $vault;
 		}
 	}
-	return @available_vaults;
+	push(@all_vaults, $vault);
+	return $vault;
+}
+
+# }}}
+# target - builder for vault based on locally available vaults {{{
+sub target {
+	my ($class,$target,%opts) = @_;
+
+	$opts{default_vault} ||= $class->default;
+
+	my $url;
+	if ($target) {
+		($url, my @targets) = _get_targets($target);
+		if (scalar(@targets) <1) {
+			bail "Safe target \"#M{%s}\" not found.  Please create it".
+					 "and authorize against it before re-attempting this command.",
+					 $target;
+		}
+		if (scalar(@targets) >1) {
+			# TODO: check if one of the returned values matches the alias
+			bail "Multiple safe targets use url #M{%s}:\n%s\n".
+					 "\n".
+					 "Your ~/.saferc file cannot have more than one target for the ".
+					 "given url.  Please remove any duplicate targets before ".
+					 "re-attempting this command.",
+					 $url, join("", map {" - #C{$_}\n"} @targets);
+		}
+	} else {
+
+		die_unless_controlling_terminal
+			"Cannot interactively select vault unless in a controlling terminal - terminating!";
+
+		my $w = (sort {$b<=>$a} map {length($_->{name})} $class->find)[0];
+
+		my (%uses,@labels,@choices);
+		$uses{$_->{url}}++ for $class->find;
+		for ($class->find) {
+			next unless $uses{$_->{url}} == 1;
+			push(@choices, $_->{url});
+			push(@labels, [csprintf(
+			"#%s{%-*.*s}   #R{%-10.10s} #%s{%s}",
+			  $_->{name} eq $opts{default_vault}->{name} ? "G" : "-",
+			     $w, $w, $_->{name},
+			                  $_->{url} =~ /^https/ ? ($_->{verify} ? "" : "(noverify)") : "(insecure)",
+			                             $_->{name} eq $opts{default_vault}->{name} ? "Y" : "-",
+			                                $_->{url}
+			),$_->{name}]);
+		}
+
+		my $msg = csprintf("#u{Select Vault:}\n");
+		my @invalid_urls = grep {$uses{$_} > 1} keys(%uses);
+
+		if (scalar(@invalid_urls)) {
+			$msg .= csprintf("\n".
+				"#Y{Note:} One or more vault targets have been omitted because they are alias for\n".
+				"      the same URL, which is incompatible with Genesis's distributed model.\n".
+				"      If you need one of the omitted targets, please ensure there is only one\n".
+				"      target alias that uses its URL.\n");
+		}
+
+		bail("There are no valid vault targets found on this system.")
+			unless scalar(@choices);
+
+		$url = prompt_for_choice(
+			$msg,
+			\@choices,
+			$uses{$opts{default_vault}->{url}} == 1 ? $opts{default_vault}->{url} : undef,
+			\@labels
+		)
+	}
+
+	my $vault = ($class->find(url => $url))[0];
+	return $vault->connect_and_validate()
+}
+
+# }}}
+# attach - builder for vault based on loaded environment {{{
+sub attach {
+	my ($class, %opts) = @_;
+
+	for my $opt (keys %opts) {
+		# Allow vault options to be specified by ENV variables.
+		my $value = $opts{$opt};
+		next unless defined $value;
+		$opts{$opt} = $ENV{substr($value,1)} if substr($value,0,1) eq '$';
+	}
+
+	$opts{tls} = $opts{url} =~ /https:\/\// ? 1 : 0 if $opts{url} && !defined($opts{tls});
+
+	my $url = delete($opts{url});
+	my $alias = delete($opts{alias});
+
+	bail "No vault target specified"
+		unless $url;
+	bail "Expecting vault target '$url' to be a url"
+		unless _target_is_url($url);
+
+	my %filter = (url => $url);
+	$filter{verify} = (($opts{tls} && $opts{verify}) ? 1 : 0) if $opts{tls};
+	for (qw/namespace strongbox/) {
+		$filter{$_} = $opts{$_} if defined($opts{$_});
+	}
+
+	my @targets = Service::Vault->find(%filter);
+	if (scalar(@targets) <1) {
+		my @close_targets = Service::Vault->find(url => $filter{url});
+		if (@close_targets) {
+			my $msg = "Could not find matching safe target, but the following are similar:\n";
+			for my $target (@close_targets) {
+				$msg .= "\nAlias:     '$target->{name}'\n";
+				for my $property (qw/url namespace strongbox verify/) { # TODO: support name and mount in filter
+					$msg .= sprintf("%-11s'%s'", ucfirst($property.":"),$target->{$property});
+					$msg .= " (expected '$filter{$property}')" if ($filter{$property} ne $target->{$property});
+					$msg .= "\n";
+				}
+			}
+			bail $msg."\nAlter your ~/.saferc or .genesis/config to match, or add a matching target.\n";
+		} else {
+			# TODO: If alias and url was given, and in a controlling terminal, create safe target
+			bail "Safe target for #M{%s} not found.  Please run\n\n".
+					 "  #G{safe target <name> \"%s\"%s}\n\n".
+					 "then authenticate against it using the correct auth method before ".
+					 "re-attempting this command.",
+					 $url, $url,($opts{verify}?"":" -k");
+		}
+	}
+	if (scalar(@targets) >1) {
+		my ($named_target) = grep {$_->name eq $alias} @targets;
+		if ($named_target) {
+			@targets = ($named_target)
+		} else {
+			bail(
+				"Multiple safe targets found for #M{%s}:\n%s\n".
+				"\n".
+				"Your ~/.saferc file cannot have more than one target for the given ".
+				"url, namespace, insecure or strongbox combination.  If you don't, it ".
+				"may be that your selected secrets provider is out of date - please ".
+				"rerun #G{genesis sp -i}\n".
+				"\n".
+				"Please remove any duplicate targets before re-attempting this command.",
+				$url, join("", map {" - #C{$_->name}\n"} @targets)
+			);
+		}
+	}
+	return $targets[0]->connect_and_validate;
+}
+
+# }}}
+# rebind - builder for rebinding to a previously selected vault (for callbacks) {{{
+# TODO: Bind to alias, which encapuslates all the namespace, validation, strongbox, url, etc...
+sub rebind {
+	# Special builder with less checking for callback support
+	my ($class) = @_;
+
+	bail("Cannot rebind to vault in callback due to missing environment variables!")
+		unless $ENV{GENESIS_TARGET_VAULT};
+
+	my $vault;
+	if (is_valid_uri($ENV{GENESIS_TARGET_VAULT})) {
+		$vault = ($class->find(url => $ENV{GENESIS_TARGET_VAULT}))[0];
+		bail("Cannot rebind to vault at address '$ENV{GENESIS_TARGET_VAULT}` - not found in .saferc")
+			unless $vault;
+		trace "Rebinding to $ENV{GENESIS_TARGET_VAULT}: Matches %s", $vault && $vault->{name} || "<undef>";
+	} else {
+		# Check if its a named vault and if it matches the default (legacy mode)
+		if ($ENV{GENESIS_TARGET_VAULT} eq $class->default->{name}) {
+			$vault = $class->default()->ref_by_name();
+			trace "Rebinding to default vault `$ENV{GENESIS_TARGET_VAULT}` (legacy mode)";
+		}
+	}
+	return unless $vault;
+	return $vault->set_as_current;
 }
 
 # }}}
 # find - return vaults that match filter (defaults to all) {{{
 sub find {
 	my ($class, %filter) = @_;
-
-	@all_vaults = all_vaults() unless @all_vaults; #TODO: is it that important to cache this?  Does it save much time?
-	my @matches = @all_vaults;
-	for my $quality (keys %filter) {
-		@matches = grep {$_->{$quality} eq $filter{$quality}} @matches;
-	}
-	return @matches;
-}
-
-# }}}
-# find_by_target - return all vaults matching url associated with specified target alias or url {{{
-sub find_by_target {
-	my ($class, $target) = @_;
-	my ($url, @aliases) = _get_targets($target);
-	return map {$class->find(name => $_)} @aliases;
-}
-
-# }}}
-# default - return the default vault (targeted by system) {{{
-sub default {
-	my ($class,$refresh) = @_;
-	unless ($default_vault && !$refresh) {
-		my $json = read_json_from(run({env => {VAULT_ADDR => "", SAFE_TARGET => ""}},"safe target --json"));
-		$default_vault = (Service::Vault->find(name => $json->{name}))[0];
-	}
-	return $default_vault;
-}
-
-# }}}
-# current - return the last vault returned by attach, target, or rebind {{{
-sub current {
-	return $current_vault
-}
-
-# }}}
-# clear_all - clear all cached data {{{
-sub clear_all {
-	for (@all_vaults) {
-		delete($_->{_env});
-	}
-	@all_vaults=();
-	$default_vault=undef;
-	$current_vault=undef;
-	return $_[0]; # chaining Service::Vault
-}
-# }}}
-# find_single_match_or_bail - error out if there are duplicate vaults for a url {{{
-sub find_single_match_or_bail {
-
-	my ($class, $url, $current) = @_;
-	my @matches =  $class->find(url => $url);
-
-	bail(
-		"\nMore than one target is specified for URL '%s'\n".
-		"Please edit your ~/.saferc, and remove all but one of these:\n".
-		"  - %s\n".
-		"(or alter the URLs to be unique)",
-		$url, join("\n  - ", map {
-			$_->name eq ($current||'') ? "#G{".$_->name." (current)}" : "#y{".$_->name."}"
-		} @matches)
-	) if scalar(@matches) > 1;
-	return $matches[0]
-}
-
-# }}}
-# get_vault_from_descriptor - find unique vault from vault descriptor, or bail {{{
-sub get_vault_from_descriptor {
-
-	my ($class, $descriptor, $source) = @_;
-	my $filter = $class->parse_vault_descriptor($descriptor, $source);
-	my ($alias,$url) = delete(@{$filter}{qw/alias url domain port tls/});
-
-	bail(
-		"No url specified by vault descriptor"
-	) unless $url;
-	my @matches =  $class->find(url => $url, %$filter);
-
-	# TODO: If none found, try by alias name?  Potential for mismatch though...
-
-	if (@matches > 1) {
-		my @named_matches = grep {$_->name eq $alias} @matches;
-		@matches = @named_matches if @named_matches == 1;
-	}
-
-	return $matches[0] if @matches <= 1;
-
-	# Error processing
-	my ($alias_clause, $alias_msg) = ('','');
-	if ($alias) {
-		$alias_clause = ", (and none match the provided vault alias of '$alias').";
-		$alias_msg = ", or add/modify the alias of the desired target to '$alias'"
-	}
-
-	my $default = $class->default->name;
-	my $current = $ENV{GENESIS_TARGET_VAULT};
-
-	bail(
-		"\nMore than one target is specified for URL '%s'%s\n\n".
-		"        Please edit your ~/.saferc, and remove all but one of these:\n".
-		"        - %s\n".
-		"        (or alter the URLs to be unique%s)",
-		$url,$alias_clause, join("\n        - ", map {
-			$_->name eq ($current||'')
-				? "#G{".$_->name." (current)}"
-				: $_->name eq ($default||'')
-					? "#g{".$_->name." (default)}"
-					: "#y{".$_->name."}"
-		} @matches), $alias_msg
-	);
-}
-
-# }}}
-# parse_vault_descriptor - Get all the components of the genesis.vault {{{
-sub parse_vault_descriptor {
-	my ($class, $vault_info, $source) = @_;
-	$source ||= 'genesis.vault';
-	my ($url, $verify, $alias, $namespace, $strongbox, $tls, $domain, $port);
-	$strongbox = 1;
-	$vault_info =~ s/ as ([^ ]*) / / and $alias = $1;
-	for my $clause (split(' ',$vault_info)) {
-		if ($clause =~ /^(no-)?strongbox$/) {
-			$strongbox = $1 ? 0 : 1;
-		} elsif ($clause =~ /^(no-)?verify/) {
-			$verify = $1 ? 0 : 1;
-		} elsif ($clause =~ /^(http(s)?:\/\/([^:]*)(?::([0-9]+))?)(?:\/(.*))?$/) {
-			$url = $1;
-			$tls = ($2||'' eq 's');
-			$domain = $3;
-			$port = $4;
-			$namespace = $5;
-		} else {
-			$ENV{GENESIS_TRACE}=1;
-			dump_stack();
-			bail(
-				"Unknown clause in #G{$source}: '#Y{$clause}'\n".
-				"Expected http#Cu{s}://<domain-or-ip>#Cu{:<port>}#Cu{/<namespace>} #Cu{as <alias>} #Cu{[no-]verify} #Cu{[no-]strongbox}\n".
-				"#i{Values in }#Cui{cyan}#i{ are optional}"
-			)
-		}
-	}
-	bail(
-		"Missing connect clause in #G{$source}\n".
-		"Expected http#Cu{s}://<domain-or-ip>#Cu{:<port>}#Cu{/<namespace>} #Cu{as <alias>} #Cu{[no-]verify} #Cu{[no-]strongbox}\n".
-		"#i{Values in }#Cui{cyan}#i{ are optional}"
-	) unless $url;
-	$verify = $tls unless defined($verify);
-
-	return wantarray ? (
-		$url, $verify, $namespace, $alias, $strongbox
-	) : {
-		url => $url,
-		verify => $verify,
-		alias => $alias,
-		namespace => $namespace,
-		strongbox => $strongbox,
-		tls => $tls,
-		domain => $domain,
-		port => $port
-	};
+	return grep {ref($_) eq $class} $class->SUPER::find(%filter);
 }
 
 # }}}
@@ -236,246 +228,90 @@ sub parse_vault_descriptor {
 
 ### Instance Methods {{{
 
-# public accessors: url, name, verify, tls {{{
-sub url        { $_[0]->{url};       }
-sub name       { $_[0]->{name};      }
-sub verify     { $_[0]->{verify};    }
-sub namespace  { $_[0]->{namespace}; }
-sub strongbox  { $_[0]->{strongbox}; }
-sub tls        { $_[0]->{url} =~ "^https://"; }
-
-#}}}
 # connect_and_validate - connect to the vault and validate that its connected {{{
 sub connect_and_validate {
-	bug(
-		"Expected %s to provide 'connect_and_validate' method, but it did not (or called SUPER)",
-		ref($_[0])
-	);
-	# FIXME:  Should subclasses call this to set object as current?
+	my ($self) = @_;
+	unless ($self->is_current) {
+		my $log_id = info({pending => 1, delay => 2000 }, # don't show for 2 seconds (NYI)
+			"\n#yi{Verifying availability of vault '%s' (%s)...}",
+			$self->name, $self->url
+		) unless in_callback || under_test;
+		my $status = $self->status;
+		if ($status eq 'unauthenticated') {
+			$self->authenticate;
+			$status = $self->initialized ? 'ok' : 'uninitialized';
+		}
+		# TODO: support delayed output:
+		#   Implement delay flag to logs
+		#   - Print logs after delay specified
+		#   - cancel_delayed_log(log_id) clear logs before delay expires by log_id
+		#   - have has_been_logged(log_id) for checking
+		#   - clear_delay(log_id) clears delay and logs entry
+		#
+		#   Issues: Perl can only handle one timeout (via alarm) at the same time
+		#   - see https://metacpan.org/pod/Time::Out
+		#
+		#  As it applies here:
+		#    if the $log_id hasn't been logged, cancel it and move on if ok, print
+		#    it immediately and add bad status
+		#    if it has been logged, just do what it currently does
+		#
+		#  Motive:  Don't print out the vault test if it quickly comes back, but
+		#  if it takes a long time, let user's know what its trying to do...
+		#
+		info ("#%s{%s}\n", $status eq "ok"?"G":"R", $status)
+			unless in_callback || under_test;
+		debug "Vault status: $status";
+		bail("Could not connect to vault%s",
+			(in_callback || under_test) ? sprintf(" '%s' (%s): status is %s)", $self->name, $self->url,$status):""
+		) unless $status eq "ok";
+	}
+	return $self->set_as_current;
 }
 
 # }}}
 # authenticate - attempt to log in with credentials available in environment variables {{{
 sub authenticate {
-	bug(
-		"Expected %s to provide 'authenticate' method, but it did not (or called SUPER)",
-		ref($_[0])
+	my $self = shift;
+	my $ref = $self->ref();
+	my $auth_types = [
+		{method => 'approle',  label => "AppRole",                     vars => [qw/VAULT_ROLE_ID VAULT_SECRET_ID/]},
+		{method => 'token',    label => "Vault Token",                 vars => [qw/VAULT_AUTH_TOKEN/]},
+		{method => 'userpass', label => "Username/Password",           vars => [qw/VAULT_USERNAME VAULT_PASSWORD/]},
+		{method => 'github',   label => "Github Peronal Access Token", vars => [qw/VAULT_GITHUB_TOKEN/]},
+	];
+
+	return $self if $self->authenticated;
+	my %failed;
+	for my $auth (@$auth_types) {
+		my @vars = @{$auth->{vars}};
+		if (scalar(grep {$ENV{$_}} @vars) == scalar(@vars)) {
+			debug "Attempting to authenticate with $auth->{label} to #M{$ref} vault";
+			my ($out, $rc) = $self->query(
+				'safe auth ${1} < <(echo "$2")', $auth->{method}, join("\n", map {$ENV{$_}} @vars)
+			);
+			return $self if $self->authenticated;
+			debug "Authentication with $auth->{label} to #M{$ref} vault failed!";
+			$failed{$auth->{method}} = 1;
+		}
+	}
+
+	# Last chance, check if we're already authenticated; otherwise bail.
+	# This also forces a update to the token, so we don't have to explicitly do that here.
+	return $self if $self->authenticated;
+	bail(
+		"Could not successfully authenticate against #M{$ref} vault with #C{safe}.\n\n".
+		"Genesis can automatically authenticate with safe in the following ways:\n".
+		join("", map {
+			my $a=$_;
+			sprintf(
+				"        - #G{%s}, supplied by %s%s\n",
+				$a->{label},
+				join(' and ', map {"#y{\$$_}"} @{$a->{vars}}),
+				($failed{$a->{method}}) ? " #R{[present, but failed]}" : ""
+			)
+		} @{$auth_types})
 	);
-}
-
-# }}}
-# authenticated - returns true if authenticated {{{
-sub authenticated {
-	my $self = shift;
-	delete($self->{_env}); # Force a fresh token retrieval
-	return unless $self->token;
-	my ($auth,$rc,$err) = read_json_from($self->query({stderr => '/dev/null'},'safe auth status --json'));
-	return $rc == 0 && $auth->{valid};
-}
-
-# }}}
-# initialized - returns true if initialized for Genesis {{{
-sub initialized {
-	my $self = shift;
-	my $secrets_mount = $ENV{GENESIS_SECRETS_MOUNT} || $self->{mount};
-	$self->has($secrets_mount.'handshake') || ($secrets_mount ne '/secret/' && $self->has('/secret/handshake'))
-}
-
-# }}}
-# query - make safe calls against this vault {{{
-sub query {
-	my $self = shift;
-	my $opts = ref($_[0]) eq "HASH" ? shift : {};
-	my @cmd = @_;
-	unshift(@cmd, 'safe') unless $cmd[0] eq 'safe' || $cmd[0] =~ /^safe /;
-	$opts->{env} ||= {};
-	$opts->{env}{DEBUG} = ""; # safe DEBUG is disruptive
-	$opts->{env}{SAFE_TARGET} = $self->ref unless defined($opts->{env}{SAFE_TARGET});
-	return run($opts, @cmd);
-}
-
-# }}}
-# get - get a key or all keys under for a given path {{{
-sub get {
-	my ($self, $path, $key) = @_;
-	if (defined($key)) {
-		my ($out,$rc) = $self->query({redact_output => 1}, 'get', "$path:$key");
-		return $out if $rc == 0;
-		debug(
-			"#R{[ERROR]} Could not read #C{%s:%s} from vault at #M{%s}",
-			$path, $key,$self->{url}
-		);
-		return undef;
-	}
-	my ($json,$rc,$err) = read_json_from($self->query({stderr => 0, redact_output => 1}, 'export', $path));
-	if ($rc || $err) {
-		debug(
-			"#R{[ERROR]} Could not read all key/value pairs from #C{%s} in vault at #M{%s}:%s\nexit code: %s",
-			$path,$self->{url},$err || '',$rc
-		);
-		return {};
-	}
-	$path =~ s/^\///; # Trim leading / as safe doesn't honour it
-	return $json->{$path} if (ref($json) eq 'HASH') && defined($json->{$path});
-
-	# Safe 1.1.0 is backwards compatible, but leaving this in for futureproofing
-	if (ref($json) eq "ARRAY" and scalar(@$json) == 1) {
-		if ($json->[0]{export_version}||0 == 2) {
-			return $json->[0]{data}{$path}{versions}[-1]{value};
-		}
-	}
-	bail "Safe version incompatibility - cannot export path $path";
-
-}
-
-# }}}
-# set - write a secret to the vault (prompts for value if not given) {{{
-sub set {
-	my ($self, $path, $key, $value) = @_;
-	if (defined($value)) {
-		my ($out,$rc) = $self->query('set', $path, "${key}=${value}");
-		bail(
-			"Could not write #C{%s:%s} to vault at #M{%s}:\n%s",
-			$path, $key,$self->{url},$out
-		) unless $rc == 0;
-		return $value;
-	} else {
-		# Interactive - you must supply the prompt before hand
-		die_unless_controlling_terminal
-			"#R{[ERROR]} Cannot interactively provide secrets unless in a controlling terminal - terminating!";
-		my ($out,$rc) = $self->query({interactive => 1},'set', $path, $key);
-		bail(
-			"Could not write #C{%s:%s} to vault at #M{%s}",
-			$path, $key,$self->{url}
-		) unless $rc == 0;
-		return $self->get($path,$key);
-	}
-}
-
-# }}}
-# has - return true if vault has given key {{{
-sub has {
-	my ($self, $path, $key) = @_;
-	return $self->query({ passfail => 1 }, 'exists', defined($key) ? "$path:$key" : $path);
-}
-
-# }}}
-# paths - return all paths found under the given prefixes (or all if no prefix given) {{{
-sub paths {
-	my ($self, @prefixes) = @_;
-
-	# TODO: Once safe stops returning invalid pathts, the following will work:
-	# return lines($self->query('paths', @prefixes));
-	# instead, we have to do this less efficient routine
-	return lines($self->query('paths')) unless scalar(@prefixes);
-
-	my @all_paths=();
-	for my $prefix (@prefixes) {
-		my @paths = lines($self->query('paths', $prefix));
-		if (scalar(@paths) == 1 && $paths[0] eq $prefix) {
-			next unless $self->has($prefix);
-		}
-		push(@all_paths, @paths);
-	}
-	return @all_paths;
-}
-
-# }}}
-# keys - return all path:key pairs under the given prefixes (or all if no prefix given) {{{
-sub keys {
-	my ($self, @prefixes) = @_;
-	return lines($self->query('paths','--keys')) unless scalar(@prefixes);
-
-	my @all_paths=();
-	for my $prefix (@prefixes) {
-		my @paths = lines($self->query('paths', '--keys', $prefix));
-		next if (scalar(@paths) == 1 && $paths[0] eq $prefix);
-		push(@all_paths, @paths);
-	}
-	return @all_paths;
-}
-
-# }}}
-# status - returns status of vault: sealed, unreachable, unauthenticated, uninitialized or ok {{{
-sub status {
-	my $self = shift;
-
-	# See if the url is reachable to start with
-	$self->url =~ qr(^http(s?)://(.*?)(?::([0-9]*))?$) or
-		bail("Invalid vault target URL #C{%s}: expecting http(s)://ip-or-domain(:port)", $self->url);
-	my $ip = $2;
-	my $port = $3 || ($1 eq "s" ? 443 : 80);
-	my $status = tcp_listening($ip,$port);
-	return "unreachable - $status" unless $status eq 'ok';
-
-	my ($out,$rc) = $self->query({stderr => "&1"}, "vault", "status");
-	if ($rc != 0) {
-		$out =~ /exit status ([0-9])/;
-		return "sealed" if $1 == 2;
-		return "unreachable";
-	}
-
-	return "unauthenticated" unless $self->authenticated;
-	return "uninitialized" unless $self->initialized;
-	return "ok"
-}
-
-# }}}
-# env - return the environment variables needed to directly access the vault {{{
-sub env {
-	my $self = shift;
-	unless (defined $self->{_env}) {
-		$self->{_env} = read_json_from(
-			run({
-					stderr =>'/dev/null',
-					env => {SAFE_TARGET => $self->ref }
-				},'safe', 'env', '--json')
-		);
-		$self->{_env}{VAULT_SKIP_VERIFY} ||= "";
-		# die on missing VAULT_ADDR env?
-	}
-	return $self->{_env};
-}
-
-# }}}
-# token - the authentication token for the active vault {{{
-sub token {
-	my $self = shift;
-	return $self->env->{VAULT_TOKEN};
-}
-
-# }}}
-# ref - the reference to be used when identifying the vault (name or url) {{{
-sub ref {
-	my $self = shift;
-	return $self->{$self->{ref_by} || 'url'};
-}
-
-# }}}
-# ref_by_name - use the name of the vault as its reference (legacy mode) {{{
-sub ref_by_name {
-	$_[0]->{ref_by} = 'name';
-	$_[0];
-}
-# }}}
-# build_descriptor - builds a descriptor for the current vault {{{
-sub build_descriptor {
-	my ($self) = @_;
-	my $descriptor = $self->url;
-	$descriptor .= ("/".$self->namespace) if $self->namespace;
-	$descriptor .= " as ".$self->name;
-	$descriptor .= " no-verify" if $self->tls && !$self->verify;
-	$descriptor .= " no-strongbox" unless $self->strongbox;
-	return $descriptor;
-}
-
-# }}}
-# set_as_current - set this vault as the current Genesis vault {{{
-sub set_as_current {
-	$current_vault = shift;
-}
-sub is_current {
-  $current_vault && $current_vault->{id} eq $_[0]->{id};
 }
 
 # }}}
@@ -648,31 +484,6 @@ sub validate_kit_secrets {
 		$update->('done-item', result => $result, msg => $msg, action => ($plan->{type} eq 'provided' ? 'check' : $action));
 	}
 	return $update->('completed');
-}
-
-# }}}
-# all_secrets_under - return hash for all secrets under the given path {{{
-sub all_secrets_for {
-	my ($self, $env) = @_;
-
-	my ($secret_contents,$err);
-	my $root_path = $env->secrets_base;
-	debug "Turning off debug and trace output while retrieving secrets";
-	local $ENV{GENESIS_TRACE}='';
-	local $ENV{GENESIS_DEBUG}='';
-	my @cmd = ('export', $env->secrets_base);
-	my $root_ca_path = $env->root_ca_path;
-	push @cmd, $root_ca_path if $root_ca_path;
-	my $raw_secrets = $self->query(@cmd);
-	return ({}, "Root CA certificate not found")
-		if $raw_secrets =~ /^!! no secret exists at path \`$root_ca_path\`/;
-	return ({})
-		if $raw_secrets =~ /^!! no secret exists at path/;
-	eval {
-		$secret_contents = decode_json($raw_secrets);
-	};
-	$err = "Could not retrieve existing secrets for $root_path" if $@;
-	return($secret_contents, $err);
 }
 
 # }}}
