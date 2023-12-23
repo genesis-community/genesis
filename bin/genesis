@@ -18,7 +18,9 @@ $SIG{INT} = $SIG{TERM} = sub {bail("Genesis halted due to user interrupt")};
 
 use Encode;
 use FindBin;
-use lib $ENV{GENESIS_LIB} || $FindBin::Bin.'/lib';
+use lib $ENV{GENESIS_LIB}  ||  $FindBin::Bin.'/lib';
+$ENV{GENESIS_LIB}          ||= $FindBin::Bin.'/lib';
+$ENV{GENESIS_CALLBACK_BIN} ||= $FindBin::Bin.'/'.$FindBin::Script;
 
 use Genesis;
 use Genesis::State;
@@ -27,19 +29,11 @@ use Genesis::Term;
 use Genesis::Commands;
 use Genesis::Log;
 
-$Genesis::VERSION = "(development)";
+$Genesis::APP = 'genesis';
+$Genesis::VERSION = "2.9.0-rc10"; #"(development)";
 $Genesis::BUILD = "";
-$Genesis::RC = Genesis::Config->new($ENV{HOME}."/.genesis/config");
-Genesis::Log->setup_from_configs($Genesis::RC->get("logs",[]));
+Genesis::Init();
 
-our $USER_AGENT_STRING = "genesis/$Genesis::VERSION";
-
-$ENV{GENESIS_VERSION}=$Genesis::VERSION;
-$ENV{GENESIS_CALLBACK_BIN} ||= $FindBin::Bin.'/'.$FindBin::Script;
-$ENV{GENESIS_LIB}          ||= $FindBin::Bin.'/lib';
-$ENV{GENESIS_ORIGINATING_DIR}= Cwd::getcwd;
-$ENV{GENESIS_CALL_BIN}       = humanize_bin();
-$ENV{GENESIS_FULL_CALL}      = join(" ", map {$_ =~ / / ? "\"$_\"" : $_} ($ENV{GENESIS_CALL_BIN}, @ARGV));
 
 ### Genesis Core commands {{{
 # genesis help - get the basic help page for Genesis {{{

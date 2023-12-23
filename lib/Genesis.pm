@@ -4,6 +4,7 @@ use warnings;
 no warnings 'utf8';
 use utf8;
 
+our $APP     = "genesis";
 our $VERSION = "(development)";
 our $BUILD   = "";
 
@@ -84,9 +85,20 @@ our @EXPORT = qw/
 	die_unless_controlling_terminal
 /;
 
-use File::Temp qw/tempdir/;
-use JSON::PP qw//;
+sub Init {
+	my $version = shift // $Genesis::VERSION;
+	$Genesis::RC = Genesis::Config->new($ENV{HOME}."/.genesis/config");
+	Genesis::Log->setup_from_configs($Genesis::RC->get("logs",[]));
 
+	our $USER_AGENT_STRING = "genesis/$Genesis::VERSION";
+
+	$ENV{GENESIS_LIB}          ||= $ENV{HOME}."/.genesis/lib";
+	$ENV{GENESIS_CALLBACK_BIN} ||= $ENV{HOME}."/.genesis/genesis";
+	$ENV{GENESIS_VERSION}        = $version;
+	$ENV{GENESIS_ORIGINATING_DIR}= Cwd::getcwd;
+	$ENV{GENESIS_CALL_BIN}       = humanize_bin();
+	$ENV{GENESIS_FULL_CALL}      = join(" ", map {$_ =~ / / ? "\"$_\"" : $_} ($ENV{GENESIS_CALL_BIN}, @ARGV));
+}
 
 sub in_repo_dir {
 	return  -d ".genesis" && -e ".genesis/config";
