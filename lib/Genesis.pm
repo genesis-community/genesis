@@ -53,6 +53,8 @@ our @EXPORT = qw/
 	by_semver
 	new_enough
 
+	time_exec
+
 	parse_uri
 	is_valid_uri
 
@@ -661,6 +663,18 @@ sub humanize_bin {
 		? $bin
 		: $rel_bin;
 	return $humanized_bin;
+}
+
+sub time_exec {
+	my ($cmd, $args) = @_;
+	my @results = ();
+	my $start = gettimeofday();
+	eval { $cmd->($args); };
+	my $end = gettimeofday();
+	trace "\nTIME RUN: %0.6f\n\n", $end-$start;
+	my $err = @$;
+	die $err if $err;
+	return $end-$start;
 }
 
 sub load_json {
