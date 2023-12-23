@@ -40,7 +40,6 @@ sub _get_memo {
 }
 
 sub _get_token {
-
 	my ($self, $level) = @_;
 	$level = 1 unless defined($level);
 	my $caller;
@@ -53,4 +52,13 @@ sub _get_token {
 	}
 	bug("Could not find %s in stack; cannot determine memoization token", ref($self));
 }
+
+sub _get_token_for {
+	my ($self, $method) = @_;
+	my ($pkg,$sub) = $method =~ m/^(?:(.*)::)?([^:]*)$/;
+	return unless ($pkg || ref($self))->can($method);
+	return if $sub =~ /^__ANON__$/;
+	return "__$sub";
+}
+
 1;
