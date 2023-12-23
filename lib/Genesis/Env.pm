@@ -157,8 +157,8 @@ sub load {
 			$ENV{REPORTED_ENV_DEPRECATIONS}=1;
 		}
 		if (@config_warnings && !envset("REPORTED_ENV_CONFIG_WARNINGS")) {
-			error( {label => "WARNINGS", colors => 'Y'},
-				"Environment #C{%s} contains the following configuration warnings:\n[[- >>%s\n",
+			warning(
+				"\nEnvironment #C{%s} contains the following configuration warnings:\n[[- >>%s\n",
 				$env->{file}, join("\n[[- >>",map {join("\n    ",split("\n",$_))} @config_warnings)
 			);
 			$ENV{REPORTED_ENV_CONFIG_WARNINGS}=1
