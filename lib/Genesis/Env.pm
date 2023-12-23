@@ -2569,37 +2569,17 @@ sub _secret_processing_updates_callback {
 }
 
 # }}}
-# _yaml_files - create genisis support yml files and return full ordered merge list {{{
-sub _yaml_files {
-	my ($self,$skip_eval) = @_;
-	(my $vault_path = $self->secrets_base) =~ s#/?$##; # backwards compatibility
-	my $type   = $self->{top}->type;
 
-	my @cc;
-	if ($self->use_create_env) {
-		trace("[env $self->{name}] in _yaml_files(): IS a create-env, skipping cloud-config");
-	} elsif ($skip_eval) {
-		trace("[env $self->{name}] in _yaml_files(): skipping eval, no need for cloud-config");
-		push @cc, $self->config_file('cloud') if $self->config_file('cloud'); # use it if its given
-	} else {
-		trace("[env $self->{name}] in _yaml_files(): not a create-env, we need cloud-config");
+# _init_yaml_file
+sub _init_yaml_file {
+	my $self       = shift;
+	my $vault_path = $self->secrets_base =~ s#/?$##r; # backwards compatibility
+	my $type       = $self->type;
+	my $init_file  = $self->tmppath("init.yml");
 
-		my @configs = $self->required_configs('blueprint');
-		if (@configs) {
-			$self->download_required_configs('blueprint') if $self->missing_required_configs('blueprint');
-			for (@configs) {
-				my $ccfile = $self->config_file($_);
-				bail(
-					"No cloud-config specified for this environment\n"
-				) unless $ccfile;
-				trace("[env $self->{name}] in _yaml_files(): cloud-config at $ccfile");
-				push @cc, $ccfile;
-			}
-		}
-	}
 
 	if ($self->kit->feature_compatibility('2.6.13')) {
-		mkfile_or_fail("$self->{__tmp}/init.yml", 0644, <<EOF);
+		mkfile_or_fail($init_file, 0644, <<EOF);
 ---
 meta:
   vault: $vault_path
@@ -2610,7 +2590,7 @@ genesis: {}
 params:  {}
 EOF
 	} else {
-		mkfile_or_fail("$self->{__tmp}/init.yml", 0644, <<EOF);
+		mkfile_or_fail($init_file, 0644, <<EOF);
 ---
 meta:
   vault: $vault_path
@@ -2623,10 +2603,18 @@ params:
   name: (( concat genesis.env || params.env "-$type" ))
 EOF
 	}
+	return $init_file;
+}
+
+# _cap_yaml_file
+sub _cap_yaml_file {
+	my $self       = shift;
+	my $type       = $self->type;
+	my $cap_file  = $self->tmppath("fin.yml");
 
 	my $now = strftime("%Y-%m-%d %H:%M:%S +0000", gmtime());
 	my $bosh_target = $self->use_create_env ? "~" : ($self->bosh_env || $self->name);
-	mkfile_or_fail("$self->{__tmp}/fin.yml", 0644, <<EOF);
+	mkfile_or_fail($cap_file, 0644, <<EOF);
 ---
 name: (( concat genesis.env "-$type" ))
 genesis:
@@ -2655,14 +2643,47 @@ exodus:
   use_create_env: ${\($self->use_create_env ? 'true' : 'false')}
   features:       (( join "," kit.features ))
 EOF
-	# TODO: In BOSH refactor, add the bosh director to the exodus data
-	my @environment_files;
+}
+
+# _cc_yaml_files
+sub _cc_yaml_files {
+	my ($self,$skip_eval) = @_;
+
+	my @cc;
+	if ($self->use_create_env) {
+		trace("[env $self->{name}] in _yaml_files(): IS a create-env, skipping cloud-config");
+	} elsif ($skip_eval) {
+		trace("[env $self->{name}] in _yaml_files(): skipping eval, no need for cloud-config");
+		push @cc, $self->config_file('cloud') if $self->config_file('cloud'); # use it if its given
+	} else {
+		trace("[env $self->{name}] in _yaml_files(): not a create-env, we need cloud-config");
+
+		my @configs = $self->required_configs('blueprint');
+		if (@configs) {
+			$self->download_required_configs('blueprint') if $self->missing_required_configs('blueprint');
+			for (@configs) {
+				my $ccfile = $self->config_file($_);
+				bail(
+					"No cloud-config specified for this environment\n"
+				) unless $ccfile;
+				trace("[env $self->{name}] in _yaml_files(): cloud-config at $ccfile");
+				push @cc, $ccfile;
+			}
+		}
+	}
+	return @cc;
+}
+# _yaml_files - create genesis support yml files and return full ordered merge list {{{
+sub _yaml_files {
+	my ($self,$skip_eval) = @_;
+
+	my @cc = $self->_cc_yaml_files($skip_eval);
 	return (
-		"$self->{__tmp}/init.yml",
+		$self->_init_yaml_file(),
 		$self->kit_files(1), # absolute
 		@cc,
 		$self->actual_environment_files(),
-		"$self->{__tmp}/fin.yml",
+		$self->_cap_yaml_file(),
 	);
 }
 
