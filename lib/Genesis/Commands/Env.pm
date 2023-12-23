@@ -231,19 +231,35 @@ sub remove_secrets {
 sub manifest {
 	command_usage(1) if @_ != 1;
 
-	option_defaults(
-		redact => get_options->{'bosh-vars'} ? 0 : ! -t STDOUT,
-		prune  => get_options->{'bosh-vars'} ? 0 : 1
-	);
-
-	bail(
-		"\n#R{[ERROR]} Cannot specify --bosh-vars with --redact or --prune\n"
-	)	if (get_options->{'bosh-vars'} && (get_options->{prune} || get_options->{redact}));
+	my ($type,$subset) = @{get_options()}{qw(type subset)};
 
 	my $env = Genesis::Top
 		->new('.')
 		->load_env($_[0])
 		->with_vault();
+
+	my $valid_types = $env->manifest_provider->known_types;
+	my $valid_subsets = $env->manifest_provider->known_subsets;
+	if (get_options->{list}) {
+		output(
+			"Valid manifest types (defaults to default deployment manifest):\n".
+			join("", map {"  - $_\n"} map {$_ =~ s/_/-/gr} sort @$valid_types).
+			"\n".
+			"Valid subsets (defaults to full contents):\n".
+			join("", map {"  - $_\n"} map {$_ =~ s/_/-/gr} sort @$valid_subsets)
+		);
+		return 1;
+	}
+
+	bail(
+		"Unknown manifest type %s - use --list option to show valid types",
+		$type
+	) if ($type && ! in_array($type =~ s/-/_/gr, @$valid_types));
+
+	bail(
+		"Unknown manifest subset %s - use --list option to show valid subsets",
+		$subset
+	) if ($subset && ! in_array($subset =~ s/-/_/gr, @$valid_subsets));
 
 	if ($env->use_create_env && scalar(@{$env->configs})) {
 		warning(
@@ -254,15 +270,11 @@ sub manifest {
 		);
 	}
 
-	output {raw => 1}, $env
+	$type //= 'deployment';
+	my $manifest = $env
 		->download_required_configs('blueprint', 'manifest')
-		->manifest(
-			partial   => get_options->{partial},
-			redact    => get_options->{redact},
-			prune     => get_options->{prune},
-			vars_only => get_options->{'bosh-vars'},
-			entomb    => get_options->{entomb}
-		);
+		->manifest_provider->$type(notify=>1,subset=>$subset);
+	output {raw => 1}, slurp($manifest->file);
 }
 
 sub deploy {

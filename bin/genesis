@@ -302,24 +302,16 @@ define_command("manifest", {
 	scope => 'env',
 	option_group => Genesis::Commands::ENV_OPTIONS,
 	options => [
-		'redact!' =>
-			"Determines if vault values are fetched or redacted.  By default, the ".
-			"manifest will be redacted unless being output to the live console.",
+		'list|l' =>
+			"List the valid manifest types and subsets -- other options will be ignored",
 
-		'entomb' =>
-			"Will entomb valut secrets into the BOSH director's credhub as is done ".
-			"when deploying, providing a manifest that does not contain any clear ".
-			"text secrets",
+		'type|t=s' =>
+			"Will generate a manifest of the given type.  If no type given, it will ".
+			"produce the default deployment manifest.",
 
-		'prune!' =>
-			"Determines if the build metadata is pruned.  Defaults to true.",
-
-		'partial' =>
-			"Merge and resolve as much spruce operators as possible, but leave the ".
-			"operators that cause errors in their unresolved form.",
-
-		'bosh-vars' =>
-			"Return the bosh-variables file instead of the manifest.",
+		'subset|s=s' =>
+			"Will deterimine what subset of manifest content is returned.  By default ".
+			"the full manifest will be returned.",
 	]
 });
 

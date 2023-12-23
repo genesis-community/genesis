@@ -42,7 +42,7 @@ sub new {
 	return bless({
 		env        => $env,
 		manifests  => {},
-		deployment => 'unredacted'
+		deployment => undef
 	}, $class);
 }
 
@@ -57,7 +57,10 @@ sub set_deployment {
 }
 
 sub deployment {
-	$_[0]->can($_[0]->{deployment})->(@_)
+	my ($self) = @_; # do not use shift, as @_ is reused below
+	$self->{deployment} = $self->env->use_create_env ? 'unredacted' : 'entombed'
+		unless ($self->{deployment});
+	$self->can($self->{deployment})->(@_);
 }
 
 sub merge {
@@ -251,6 +254,21 @@ sub valid_subset {
 	return unless defined($subset);
 	return 1 if in_array($subset, keys %{$self->_subset_plans});
 	bug("Invalid subset '$subset' requested for manifest")
+}
+
+sub known_types {
+	# TODO - return hash with types and descriptions
+	# for each entry in %manifest_types - key is type, value->description is description
+	my @types = keys %$manifest_types;
+	@types = grep {$_ !~ /entombed/} @types
+		if ($_[0]->env->use_create_env);
+	return [@types]
+}
+
+sub known_subsets {
+	# TODO - return hash with subset and description
+	# embed descr in _subset_plans
+	return [keys %{$_[0]->_subset_plans}];
 }
 
 1;

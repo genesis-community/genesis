@@ -98,7 +98,7 @@ sub _entomb_secrets {
 					}
 				}
 				$local_vault->set($secret, $key, $credhub_var);
-				print "\r[A[2K" for (1..$previous_lines);
+				print STDERR "\r[A[2K" for (1..$previous_lines);
 				$results{$action} += 1;
 				my $msg = wrap(sprintf(
 					"[[    [%*d/%*d] >>%s:#c{%s} #Kk{[sha1: }#Wk{%s}#Kk{]} #G{=>} #B{%s} ...#%s{%s}",
@@ -109,7 +109,7 @@ sub _entomb_secrets {
 				$previous_lines=($existing && $existing eq $value) ? scalar(lines($msg)) : 0;
 			}
 		}
-		print "\r[A[2K" for (1..$previous_lines);
+		print STDERR "\r[A[2K" for (1..$previous_lines);
 		info(
 			"[[  >>$idx of $secrets_count secrets processed: %s new, %s already exist, %s altered, %s failed",
 			@results{('new','exists','altered','failed')}
