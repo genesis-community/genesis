@@ -14,16 +14,20 @@ use Genesis::Log;
 use Genesis::Term;
 use Genesis::State;
 
+use Cwd ();
 use Data::Dumper;
 use File::Basename qw/basename dirname/;
 use File::Find ();
+use File::Temp qw/tempdir/;
 use IO::Socket;
+use JSON::PP ();
 use POSIX qw/strftime/;
 #use Symbol qw/qualify_to_ref/;
 use Time::HiRes qw/gettimeofday/;
 use Time::Piece;
 use Time::Seconds;
-use Cwd ();
+
+
 use utf8;
 
 # Timezone hackage to workaround keeping local TZ;
@@ -131,17 +135,6 @@ sub qtrace     {logger->trace({show_stack => 'none', offset => 1},@_);}
 sub dump_var   {logger->dump_var({offset => 1},@_);}
 sub dump_stack {logger->dump_stack({offset => 1},@_);}
 
-$::is_waiting=0;
-sub explain {
-	explain STDOUT @_;
-	$::is_waiting=0;
-}
-
-sub waiting_on {
-	waiting_on STDOUT @_;
-	$::is_waiting=1
-}
-
 sub bail {
 	# Get any prefix options (sent as hash references)
 	my $options = {};
@@ -230,7 +223,8 @@ sub fix_wrap {
 
 my $WORKDIR = $ENV{GENESIS_WORKDIR}||undef;
 sub workdir {
-	$WORKDIR ||= tempdir(CLEANUP => 1);
+	return $WORKDIR if defined($WORKDIR);
+	$WORKDIR = tempdir(CLEANUP => 1);
 	$ENV{GENESIS_WORKDIR} = $WORKDIR;
 	return tempdir(DIR => $WORKDIR);
 }
@@ -557,7 +551,7 @@ sub mkfile_or_fail {
 		open my $fh, ">", $file or bail "Unable to open $file for writing: $!";
 		print $fh $content;
 		close $fh;
-	} or bail "Error creating file $file: $!";
+	} or bail "Error creating file $file: $@";
 	chmod_or_fail($mode, $file) if defined $mode;
 	return $file;
 }
