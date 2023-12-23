@@ -40,7 +40,7 @@ sub init {
 			$provider = Genesis::Top->new($opts{'kit-provider-config'})->kit_provider();
 		} elsif (-f $opts{'kit-provider-config'} ) {
 			# specific yaml file
-			my $config = Genesis::IO->LoadFile($opts{'kit-provider-config'});
+			my $config = load_yaml_file($opts{'kit-provider-config'});
 			$provider = Genesis::Kit::Provider->new(%$config);
 		} else {
 			bail("Unable to read kit-provider config: expecting either a Genesis deployment repo or a YAML/JSON file");

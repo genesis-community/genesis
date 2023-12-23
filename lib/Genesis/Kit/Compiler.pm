@@ -3,7 +3,6 @@ use strict;
 use warnings;
 
 use Genesis;
-use Genesis::IO;
 use Genesis::Kit::Dev;
 use Service::Vault;
 
@@ -179,7 +178,7 @@ sub _lookup_test_params {
 	unless (defined $self->{__test_params}) {
 		my $test_params_file = $self->{root}.'/ci/test_params.yml';
 		$self->{__test_params} = (-f $test_params_file)
-			? LoadFile($test_params_file)
+			? load_yaml_file($test_params_file)
 			: {};
 	}
 	return struct_lookup($self->{__test_params}, $key, $default);

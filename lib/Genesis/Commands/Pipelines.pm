@@ -211,7 +211,7 @@ sub ci_show_changes {
 
 	my $vars = $env->manifest_lookup('bosh-variables') || {};
 	my $vars_file = "bosh-vars.yml";
-	DumpYAML($vars_file,$vars);
+	save_to_yaml_file($vars,$vars_file);
 
 	my $cmd = './dry-run';
 	mkfile_or_fail $cmd, 0755, <<'EOF';

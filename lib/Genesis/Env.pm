@@ -9,7 +9,6 @@ use Genesis;
 use Genesis::State;
 use Genesis::Term;
 use Genesis::UI;
-use Genesis::IO qw/DumpYAML LoadFile/;
 use Genesis::Commands qw/current_command known_commands/;
 
 use Service::BOSH::Director;
@@ -118,7 +117,7 @@ sub load {
 					my $file="$override_dir/env-overrides-$i.yml";
 					$i+=1;
 					if (ref($override) eq "HASH") {
-						DumpYAML($file,$override);
+						save_to_yaml_file($override,$file);
 					} else {
 						mkfile_or_fail($file,$override);
 					}
