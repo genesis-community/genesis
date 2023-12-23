@@ -21,7 +21,6 @@ use JSON::PP qw/encode_json decode_json/;
 use POSIX qw/strftime/;
 use Data::Dumper;
 use Digest::file qw/digest_file_hex/;
-use Digest::SHA qw/sha1_hex/;
 use Time::Seconds;
 
 ### Class Methods {{{
@@ -677,29 +676,17 @@ sub format_yaml_files {
 # }}}
 # vault_paths - list all secrets used in the manifest {{{
 sub vault_paths {
-	my $ref = $_[0]->_memoize(sub {
+	my ($self, $suppress_notification) = @_;
+	# This might be doable without spruce using a flattened-lookup
+	my $ref = $self->_memoize(sub {
 		my $self = shift;
-		my @merge_files = $self->_yaml_files();
+		my $unevaled_manifest = $self->manifest_provider->unevaluated(
+			notify=>!$suppress_notification
+		)->file;
 		pushd $self->path;
-		my $env = {
-			$self->get_environment_variables('manifest'),
-			%{$self->vault->env()},               # specify correct vault for spruce to target
-			REDACT => '' # spruce redaction flag
-		};
-		my $out = run({
-				onfailure => "Unable to merge $self->{name} manifest",
-				stderr => "&1",
-				env => $env
-			},
-			'spruce', 'merge', '--skip-eval', '--multi-doc', '--go-patch', @merge_files
-		);
-		my $unevaled_manifest = $self->tmppath("unevaled_manifest.yml");
-		mkfile_or_fail($unevaled_manifest, $out);
-
 		my $json = read_json_from(run({
 				onfailure => "Unable to determine vault paths from $self->{name} manifest",
 				stderr => "&1",
-				env => $env
 			},
 			'spruce vaultinfo "$1" | spruce json', $unevaled_manifest
 		));
@@ -719,6 +706,28 @@ sub vault_paths {
 }
 
 # }}}
+sub manifest_provider {
+	return $_[0]->_memoize(sub {
+		require Genesis::Env::ManifestProvider;
+		Genesis::Env::ManifestProvider->new($_[0]);
+	});
+}
+
+sub prunable_keys {
+	return @{$_[0]->_memoize( sub {
+		my @keys = (qw(
+			meta pipeline params bosh-variables kit genesis exodus compilation
+		));
+		if (!$_[0]->use_create_env) {
+			# bosh create-env needs these, so we only prune them
+			# when we are deploying via `bosh deploy`.
+			push(@keys, (qw(
+				resource_pools vm_types disk_pools disk_types networks azs vm_extensions
+			)));
+		}
+		return \@keys;
+	})};
+}
 # features - returns the list of features (specified and derived) {{{
 sub features {
 	my $ref = $_[0]->_memoize(sub {
@@ -801,31 +810,21 @@ sub lookup {
 # lookup_unevaled - look up a value from the heirarchal evironment without evaluating operators {{{
 sub lookup_unevaled {
 	my ($self, $key, $default) = @_;
-	my @merge_files = map { $self->path($_) } $self->actual_environment_files();
-	return $default unless @merge_files;
-	pushd $self->path;
-	my $out = run({ onfailure => "Unable to merge $self->{name} environment files", stderr => undef },
-		'spruce merge --multi-doc --go-patch --skip-eval "$@" | spruce json', @merge_files);
-	popd;
-	my $unevaled_params = load_json($out);
-
-	return struct_lookup($unevaled_params, $key, $default);
+	return struct_lookup($self->manifest_provider->unevaluated_environment->data, $key, $default);
 }
 
 # }}}
 # partial_manifest_lookup - look up a value from a best-effort merged manifest for this environment {{{
 sub partial_manifest_lookup {
 	my ($self, $key, $default) = @_;
-	my ($partial_manifest, undef) = $self-> _manifest(partial=>1,no_warnings=>1);
-	return struct_lookup($partial_manifest, $key, $default);
+	return struct_lookup($self->manifest_provider->partial->data, $key, $default);
 }
 
 # }}}
 # manifest_lookup - look up a value from a completely merged manifest for this environment {{{
 sub manifest_lookup {
 	my ($self, $key, $default) = @_;
-	my ($manifest, undef) = $self->_manifest(redact => 0);
-	return struct_lookup($manifest, $key, $default);
+	return struct_lookup($self->manifest_provider->deployment->data, $key, $default);
 }
 
 # }}}
@@ -1568,83 +1567,6 @@ sub shell {
 # }}}
 
 # Manifest Management
-# manifest - return the contents of the environments merged manifest as a hash {{{
-sub manifest {
-	my ($self, %opts) = @_;
-
-	# prune by default.
-	my ($entomb,$redact,$prune,$vars_only) = @opts{qw(entomb redact prune vars_only)};
-	$prune = 1 unless defined $prune;
-
-	trace "[env $self->{name}] in manifest(): Entomb: %s", defined($opts{entomb}) ? "'$opts{entomb}'" : '#C{(undef)}';
-	trace "[env $self->{name}] in manifest(): Redact: %s", defined($opts{redact}) ? "'$opts{redact}'" : '#C{(undef)}';
-	trace "[env $self->{name}] in manifest(): Prune:  %s", defined($opts{prune})  ? "'$opts{prune}'" : '#C{(undef)}';
-
-	$self->entombed_secrets_enabled($entomb);
-	my (undef, $path) = $self->_manifest(get_opts(\%opts, qw/no_warnings partial redact msg force_msg/));
-
-	if ($vars_only) {
-		(my $vars_path = $path) =~ s/.yml/__vars.yml/;
-		if (! -f $vars_path) {
-			run({
-					onfailure => "Failed to merge $self->{name} manifest",
-					stderr => "&1",
-					env => {
-						$self->get_environment_variables('manifest'),
-						%{$self->vault->env()},               # specify correct vault for spruce to target
-					}
-				},
-				'spruce json "$1" | jq \'."bosh-variables"//{}\' | spruce merge --skip-eval | sed -e :a -e \'/^\n*$/{$d;N;ba\' -e \'}\' > "$2"',
-				$path, $vars_path
-			)
-		}
-		return $vars_path if $opts{return_path};
-		return slurp($vars_path);
-	}
-
-	if ($prune) {
-		(my $pruned_path = $path) =~ s/.yml/__pruned.yml/;
-		if (! -f $pruned_path) {
-			my @prune = qw/meta pipeline params bosh-variables kit genesis exodus compilation/;
-			if (!$self->use_create_env) {
-				# bosh create-env needs these, so we only prune them
-				# when we are deploying via `bosh deploy`.
-				push(@prune, qw( resource_pools vm_types
-												 disk_pools disk_types
-												 networks
-												 azs
-												 vm_extensions));
-			}
-
-			debug("pruning top-level keys from #W{%s} manifest...", $redact ? 'redacted' : 'unredacted');
-			debug("  - removing #C{%s} key...", $_) for @prune;
-			my $out = run({
-					onfailure => "Failed to merge $self->{name} manifest",
-					stderr => "&1",
-					env => $self->vault->env # to target desired vault, not likely needed on prune operation
-				},
-				'spruce', 'merge', '--skip-eval',  (map { ('--prune', $_) } @prune), $path
-			);
-			mkfile_or_fail($pruned_path, 0600, $out);
-		}
-		return $pruned_path if $opts{return_path};
-		return slurp($pruned_path);
-	}
-
-	debug("not pruning #W{%s} manifest.", $redact ? 'redacted' : 'unredacted');
-	return $path if $opts{return_path};
-	return slurp($path);
-}
-
-# }}}
-# write_manifest - write the manifest out to the specified file {{{
-sub write_manifest {
-	my ($self, $file, %opts) = @_;
-	my $out = $self->manifest(%opts);
-	mkfile_or_fail($file, $out);
-}
-
-# }}}
 # cached_manifest_info - get the path, existance and sha1sum of the cached deployed manifest {{{
 sub cached_manifest_info {
 	my ($self) = @_;
@@ -1658,32 +1580,16 @@ sub cached_manifest_info {
 # vars_file - create yml file and return path for bosh variables {{{
 sub vars_file {
 	my ($self,$redact) = @_;
+	my $manifest = $self->manifest_provider->deployment(subset=>'bosh_vars');
+	$manifest = $manifest->redacted if $redact;
+	$manifest->notify(sprintf(
+		"Generating %sBOSH variables file #i{(if applicable)}...",
+		$redact ? "redacted " : ""
+	));
 
-	# Check if manifest currently has params.variable-values hash, and if so,
-	# build a variables.yml file in temp directory and return a path to it
-	# (return undef otherwise)
-	$redact = $redact ? 1 : 0;
-	my $redacted = $redact ? '-redacted' : '';
-
-	return $self->{_vars_file}{$redact} # Return cached value, even negative cache
-		if (exists($self->{_vars_file}{$redact}) && (
-			!defined($self->{_vars_file}{$redact}) || -f $self->{_vars_file}{$redact})
-		);
-
-	my $vars_src = $self->manifest(
-		return_path => 1,
-		vars_only => 1,
-		redact => $redact
-	);
-	chomp(my $vars = slurp($vars_src));
-	if ($vars ne "{}") {
-		my $vars_file = "$self->{__tmp}/bosh-vars${redacted}.yml";
-		copy_or_fail($vars_src, $vars_file);
-		dump_var "BOSH Variables File" => $vars_file, "Contents" => $vars;
-		return $self->{_vars_file}{$redact} = $vars_file;
-	} else {
-		return $self->{_vars_file}{$redact} = undef;
-	}
+	return unless scalar(keys %{$manifest->data});
+	dump_var "BOSH Variables File" => $manifest->file, "Contents" => $manifest->data;
+	return $manifest->file;
 }
 
 # }}}
@@ -1728,7 +1634,7 @@ sub check {
 			$self->_notify("#Y{Required BOSH configs not provided - can't check manifest viability}");
 		} elsif (!exists($opts{check_manifest}) || $opts{check_manifest}) {
 			$self->_notify("running manifest viability checks...");
-			$self->manifest or $ok = 0;
+			$self->manifest_provider->unredacted->validate or $ok = 0;
 		}
 	}
 
@@ -1796,16 +1702,12 @@ sub deploy {
 		"Preflight checks failed; deployment operation halted."
 	) unless $self->check();
 
-	$self->write_manifest(
-		"$self->{__tmp}/manifest.yml",
-		force_msg => "generating manifest...",
-		entomb => $opts{entomb},
-		redact => 0
+	$self->manifest_provider->deployment(subset=>'pruned',notify=>1)->write_to(
+		"$self->{__tmp}/manifest.yml"
 	);
 
 	my ($ok, $predeploy_data,$data_fn);
-	$self->_notify('generating BOSH vars file (#i{if applicable})...');
-	my $vars_file = $self->vars_file;
+	my $vars_file = $self->vars_file();
 	if ($self->has_hook('pre-deploy')) {
 		($ok, $predeploy_data) = $self->run_hook(
 			'pre-deploy',
@@ -1842,7 +1744,7 @@ sub deploy {
 	# Prepare the output manifest files for the repo
 	my $manifest_file = $self->tmppath("out-manifest.yml");
 	my $vars_path = $self->tmppath("out-vars.yml");
-	$self->write_manifest($manifest_file, entomb => $opts{entomb}, redact => 1, prune => 0);
+	$self->manifest_provider->deployment->redacted->write_to($manifest_file);
 	copy_or_fail($self->vars_file('redacted'), $vars_path) if ($self->vars_file('redacted'));
 
 	# DEPLOY!!!
