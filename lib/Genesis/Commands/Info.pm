@@ -203,6 +203,7 @@ sub vault_paths {
 		->new('.')
 		->load_env($_[0])
 		->download_required_configs('blueprint');
+
 	my $vault_paths = $env->vault_paths();
 	my $msg = "";
 	for my $path (keys %$vault_paths) {
