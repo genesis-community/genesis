@@ -74,8 +74,8 @@ our @EXPORT = qw/
 	humanize_path
 	humanize_bin
 
-	load_json
-	load_yaml load_yaml_file
+	load_json load_json_file save_to_json_file
+	load_yaml load_yaml_file save_to_yaml_file
 
 	pushd popd
 
@@ -677,9 +677,20 @@ sub time_exec {
 	return $end-$start;
 }
 
+# Data handling
+
 sub load_json {
 	my ($json) = @_;
 	return JSON::PP->new->allow_nonref->decode($json);
+}
+
+sub load_json_file {
+	my ($file) = @_;
+	my $json = undef;
+	eval {
+		$json = load_json(slurp($file));
+	};
+	return (wantarray) ? ($json,$@ ? 1 : 0, $@) : $json
 }
 
 sub load_yaml_file {
@@ -700,6 +711,18 @@ sub load_yaml {
 	return load_yaml_file("$tmp/json.yml")
 }
 
+sub save_to_json_file {
+	my ($data, $file) = @_;
+	mkfile_or_fail($file, 0644, encode_json($data));
+}
+
+sub save_to_yaml_file {
+	my ($data, $file) = @_;
+	my $i=1; while (-f "$file.$i.json") {$i++};
+	my $tmpfile = "$file.$i.json";
+	save_to_json_file($data,$tmpfile);
+	run('spruce merge --skip-eval "$1" > $2; rm "$1"', $tmpfile, $file);
+}
 
 my @DIRSTACK;
 sub pushd {
