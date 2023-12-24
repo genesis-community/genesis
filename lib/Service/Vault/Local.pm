@@ -219,9 +219,11 @@ sub _get_process {
 
 sub _process_running {
 	my $pid = shift;
+	trace "Checking for process ID $pid...";
 	my $out = scalar(qx(ps -o 'pid,command' -p $pid | grep '^\\s*$pid'));
-	trace $out;
-	return $? == '0';
+	my $rc = $? >> 8;
+	trace "[rc: $rc] $out";
+	return $rc == '0';
 }
 # }}}
 1;

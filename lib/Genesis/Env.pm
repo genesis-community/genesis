@@ -824,7 +824,8 @@ sub partial_manifest_lookup {
 # manifest_lookup - look up a value from a completely merged manifest for this environment {{{
 sub manifest_lookup {
 	my ($self, $key, $default) = @_;
-	return struct_lookup($self->manifest_provider->deployment->data, $key, $default);
+	my $type = 'unredacted'; #TODO use vaultified if kit is credhub-based 
+	return struct_lookup($self->manifest_provider->$type->data, $key, $default);
 }
 
 # }}}
@@ -1692,17 +1693,18 @@ sub check {
 sub deploy {
 	my ($self, %opts) = @_;
 
-	unless ($self->use_create_env) {
+	if ($self->use_create_env) {
+		$self->manifest_provider->set_deployment('unredacted');
+	} else {
 		my @hooks = qw(blueprint manifest check);
 		push @hooks, grep {$self->kit->has_hook($_)} qw(pre-deploy post-deploy);
 		$self->download_required_configs(@hooks);
+		$self->manifest_provider->set_deployment($opts{entomb} ? 'entombed' : 'unredacted');
 	}
 
 	bail(
 		"Preflight checks failed; deployment operation halted."
 	) unless $self->check();
-
-	$self->manifest_provider->set_deployment($opts{entomb} ? 'entombed' : 'unredacted');
 
 	$self->manifest_provider->deployment(subset=>'pruned',notify=>1)->write_to(
 		"$self->{__tmp}/manifest.yml"

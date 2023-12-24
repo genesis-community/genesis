@@ -38,9 +38,12 @@ sub type {
 	$type =~ s/(?<=\w)([A-Z])/_\l$1/g;
 	$type;
 }
+sub label {
+	$_[0]->type =~ s/_/ /gr;
+}
 
 sub redacted {
-	bug("redacted: Not implemented for %s manifest types", $_[0]->type =~ s/_/ /gr);
+	bug("redacted: Not implemented for %s manifest types", $_[0]->label);
 }
 
 sub data {
@@ -87,7 +90,7 @@ sub has_file   {defined($_[0]->{file})}
 sub set_data   {$_[0]->{data} = $_[1]}
 sub set_file   {$_[0]->{file} = $_[1]}
 
-sub write_to   {copy_or_fail($_[1],0644,$_[0]->file)}
+sub write_to   {copy_or_fail($_[0]->file,$_[1])}
 sub reset      {$_[0]->{data} = $_[0]->{file} = undef; 1}
 
 sub is_subset  {defined($_[0]->{subset})};
@@ -95,8 +98,23 @@ sub is_subset  {defined($_[0]->{subset})};
 sub notify     {
 	$_[0]->{notice} = $_[1]//sprintf(
 		"Building #c{%s} manifest...",
-		$_[0]->type =~ s/_/ /gr
+		$_[0]->label
 	);
+}
+
+sub validate {
+	my $self = shift;
+	eval {
+		my $type = $self->type;
+		$self->builder->$type->data;
+	};
+	my $err = $@;
+	use Pry; pry if $err;
+	error(
+		"Failed to build %s manifest:\n\n%s",
+		$self->label, $err
+	) if $err;
+	return $err ? 0 : 1;
 }
 
 sub has_notice {defined($_[0]->{notice})}
@@ -108,7 +126,7 @@ sub _load_file { load_yaml_file($_[0]->file) }
 sub _save_data_to_file {
 	my ($self) = @_;
 	my $file = $self->{file}//$self->_generate_file_name();
-	save_yaml_file($self->{data},$file);
+	save_to_yaml_file($self->{data},$file);
 	$file;
 }
 

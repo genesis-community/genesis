@@ -20,7 +20,7 @@ sub source_files {
 
 sub redacted {
 	my $self = shift;
-	$self->builder->redacted(subset => $self->subset);
+	$self->builder->redacted(subset => $self->{subset});
 }
 
 sub merge_options {

@@ -57,10 +57,11 @@ sub set_deployment {
 }
 
 sub deployment {
-	my ($self) = @_; # do not use shift, as @_ is reused below
-	$self->{deployment} = $self->env->use_create_env ? 'unredacted' : 'entombed'
-		unless ($self->{deployment});
-	$self->can($self->{deployment})->(@_);
+	my $self = shift;
+
+	$self->{deployment} //= $self->env->use_create_env ? 'unredacted' : 'entombed';
+	my $deployment_type = $self->{deployment};
+	$self->$deployment_type(@_);
 }
 
 sub merge {
@@ -154,7 +155,9 @@ sub get_subset {
 		} elsif ($operator eq 'exclude') {
 			$data = $src; #will be decoupled and pruned down below
 		} elsif ($operator eq 'fetch') {
-			$data = $src->{$selection}
+			$data = exists($src->{$selection->{key}})
+			? $src->{$selection->{key}}
+			: $selection->{default};
 		} else {
 			bug("Invalid subset operator '$operator'")
 		}
@@ -171,18 +174,20 @@ sub get_subset {
 		my @cmd = undef;
 		if ($operator eq 'include') {
 			@cmd = (
-				'fin="$1";fout="$2"; shift 2; spruce --skip-eval "$@" "$fin" > "$fout"',
+				'fin="$1";fout="$2"; shift 2; spruce merge --skip-eval "$@" "$fin" > "$fout"',
 				$src, $file, map {('--cherry-pick', $_)} @{$selection}
 			);
 		} elsif ($operator eq 'exclude') {
 			@cmd = (
-				'fin="$1";fout="$2"; shift 2; spruce --skip-eval "$@" "$fin" > "$fout"',
+				'fin="$1";fout="$2"; shift 2; spruce merge --skip-eval "$@" "$fin" > "$fout"',
 				$src, $file, map {('--prune', $_)} @{$selection}
 			);
 		} elsif ($operator eq 'fetch') {
 			@cmd = (
-				'spruce json "$1" | jq '."'.{$selection}'".' | spruce merge --skip-eval > "$2"',
-				$src, $file
+				sprintf(
+					'spruce json "$1" | jq \'.%s//%s\' | spruce merge --skip-eval > "$2"',
+					$selection->{key}, JSON::PP->new->allow_nonref->encode($selection->{default})
+				), $src, $file
 			);
 		} else {
 			bug("Invalid subset operator '$operator'")
@@ -243,7 +248,7 @@ sub _subset_plans {
 	return $_[0]->_memoize( sub {
 		return { 
 			credhub_vars => { include => [qw(variables bosh-variables)]},
-			bosh_vars    => { fetch   => 'bosh-variables'},
+			bosh_vars    => { fetch   => {key => 'bosh-variables', default => {}}},
 			pruned       => { exclude => [$_[0]->env->prunable_keys]}
 		}
 	});

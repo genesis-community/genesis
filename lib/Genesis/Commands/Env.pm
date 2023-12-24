@@ -280,7 +280,7 @@ sub manifest {
 sub deploy {
 	option_defaults(
 		redact => ! -t STDOUT,
-		entomb => $Genesis::RC->get('entomb_secrets',1)
+		entomb => !!$Genesis::RC->get('entomb_secrets',1)
 	);
 	command_usage(1) if @_ != 1;
 
@@ -300,7 +300,8 @@ sub deploy {
 		join(", ", @invalid_create_env_opts)
 	) if $env->use_create_env && @invalid_create_env_opts;
 
-	$options{entomb} = 1 unless defined($options{entomb}) || $env->use_create_env;
+	$options{entomb} = 1 unless defined($options{entomb});
+	$options{entomb} = 0 if $env->use_create_env;
 
 	info "Preparing to deploy #C{%s}:\n  - based on kit #c{%s}\n  - using Genesis #c{%s}", $env->name, $env->kit->id, $Genesis::VERSION;
 	if ($env->use_create_env) {

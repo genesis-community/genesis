@@ -24,6 +24,7 @@ sub _entomb_secrets {
 		"[[  >>Determining vault paths used by manifest from %s...",
 		$src_vault->name
 	);
+	$self->builder->unevaluated(); # Prewarm cache
 	my $secret_paths = $self->env->vault_paths(suppress_notification=>1);
 	my $secrets_count = scalar(keys %$secret_paths);
 	if ($secrets_count) {
@@ -46,7 +47,7 @@ sub _entomb_secrets {
 		};
 		# BUG FIX for safe export on similar names
 		for (map {substr($_,1)} keys %secret_keys) {
-			$secret_values{$_} = $self->vault->get("/$_")
+			$secret_values{$_} = $src_vault->get("/$_")
 				unless (defined($secret_values{$_}));
 		}
 		info ("#g{done!}");

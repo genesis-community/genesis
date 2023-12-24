@@ -713,7 +713,7 @@ sub load_yaml {
 
 sub save_to_json_file {
 	my ($data, $file) = @_;
-	mkfile_or_fail($file, 0644, encode_json($data));
+	mkfile_or_fail($file, 0644, JSON::PP->new->allow_nonref->encode($data));
 }
 
 sub save_to_yaml_file {
