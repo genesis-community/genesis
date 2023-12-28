@@ -1722,7 +1722,7 @@ sub deploy {
 		my @hooks = qw(blueprint manifest check);
 		push @hooks, grep {$self->kit->has_hook($_)} qw(pre-deploy post-deploy);
 		$self->download_required_configs(@hooks);
-		$self->manifest_provider->set_deployment($opts{entomb} ? 'entombed' : 'unredacted');
+		$self->manifest_provider->set_deployment($opts{entomb} ? 'entombed' : 'unredacted') if exists($opts{entomb});
 	}
 
 	bail(
