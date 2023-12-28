@@ -832,6 +832,7 @@ sub lookup {
 # lookup_unevaled - look up a value from the heirarchal evironment without evaluating operators {{{
 sub lookup_unevaled {
 	my ($self, $key, $default) = @_;
+	return $default unless $self->actual_environment_files();
 	return struct_lookup($self->manifest_provider->unevaluated_environment->data, $key, $default);
 }
 
