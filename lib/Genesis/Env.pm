@@ -22,6 +22,7 @@ use JSON::PP qw/encode_json decode_json/;
 use POSIX qw/strftime/;
 use Data::Dumper;
 use Digest::file qw/digest_file_hex/;
+use Digest::SHA qw/sha1_hex/;
 use Time::Seconds;
 
 ### Class Methods {{{
@@ -462,6 +463,19 @@ sub path   { shift->top->path(@_); }
 # }}}
 
 # Information Lookup
+sub signature {
+	return $_[0]->_memoize( sub {
+		my ($self) = @_;
+		my $absfile = $self->path($self->file);
+		my $sig_string = sprintf("%s/%s@%s:%s",
+			$self->name,
+			$self->type,
+			$absfile,
+			(-f $absfile ? slurp($absfile) : '')
+		);
+		return substr(sha1_hex($sig_string),0,12)
+	});
+}
 # deployment_name - returns the deployment name (env name + env type) {{{
 sub deployment_name {
 	$_[0]->_memoize('__deployment', sub {

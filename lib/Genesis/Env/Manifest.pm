@@ -136,7 +136,14 @@ sub _generate_file_name {
 	my $type = $self->type;
 	my $subset = $self->{subset} ? "-".$self->{subset} : '';
 	#my $timestamp = strftime("%Y%m%d%H%M%S", gmtime);
-	sprintf "%s/manifest-%s-%s%s.yml", $path, $self->env->name, $type, $subset; #, $timestamp;
+	sprintf(
+		"%s/manifest-%s-%s-%s%s.yml",
+		$path,
+		$self->env->name,
+		$self->env->signature,
+		$type,
+		$subset
+	); #, $timestamp;
 }
 
 sub _merge {bug "Expected %s to define private _merge method", ref($_[0])}
