@@ -132,7 +132,7 @@ sub _save_data_to_file {
 
 sub _generate_file_name {
 	my ($self) = @_;
-	my $path = $self->builder->workdir;
+	my $path = $self->env->workpath();
 	my $type = $self->type;
 	my $subset = $self->{subset} ? "-".$self->{subset} : '';
 	#my $timestamp = strftime("%Y%m%d%H%M%S", gmtime);

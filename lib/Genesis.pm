@@ -223,12 +223,23 @@ sub fix_wrap {
 	return $msg;
 }
 
-my $WORKDIR = $ENV{GENESIS_WORKDIR}||undef;
+my $WORKDIRS = {};
 sub workdir {
-	return $WORKDIR if defined($WORKDIR);
-	$WORKDIR = tempdir(CLEANUP => 1);
-	$ENV{GENESIS_WORKDIR} = $WORKDIR;
-	return tempdir(DIR => $WORKDIR);
+	my $suffix = shift // '';
+	$suffix =~ s/^(.+)$/_\U$1/;
+	if ($suffix) {
+		$WORKDIRS->{$suffix} //= $ENV{"GENESIS_WORKDIR$suffix"} if $ENV{"GENESIS_WORKDIR$suffix"};
+		if (defined($WORKDIRS->{$suffix})) {
+			trace "Reusing temporary directory %s specified by \$GENESIS_WORKDIR%s", $WORKDIRS->{$suffix}, $suffix;
+			return $WORKDIRS->{$suffix} ;
+		}
+	}
+	# Provide a temporary directory inside of the autocleaning temporary
+	# directory so that the inside directory can be deleted and recreated
+	my $workdir = tempdir(DIR => tempdir(CLEANUP => 1));
+	trace "Provided temporary directory $workdir, which will be removed when this process ends";
+	return $workdir unless $suffix;
+	return $ENV{"GENESIS_WORKDIR$suffix"} = $WORKDIRS->{$suffix} = $workdir;
 }
 
 sub semver {

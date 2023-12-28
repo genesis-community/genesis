@@ -13,7 +13,7 @@ use Archive::Tar;
 use_ok 'Genesis::Kit::Compiler';
 use Genesis;
 
-my $tmp = workdir();
+my $tmp = workdir("TESTKIT");
 my $kitdir = $tmp."/test-genesis-kit";
 my $cc = Genesis::Kit::Compiler->new($kitdir);
 my $out;

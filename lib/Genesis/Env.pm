@@ -48,7 +48,7 @@ sub new {
 	bail("No deployment type specified in .genesis/config!\n")
 		unless $opts{top}->type;
 
-	$opts{__tmp} = workdir;
+	$opts{__tmp} = workdir('ENV');
 	return bless(\%opts, $class);
 }
 
@@ -573,8 +573,8 @@ sub feature_compatibility {
 }
 
 # }}}
-# tmppath - provide the path to the temporary file storage for this envionment {{{
-sub tmppath {
+# workpath - provide the path to the temporary file storage for this envionment {{{
+sub workpath {
 	my ($self, $relative) = @_;
 	return $relative ? "$self->{__tmp}/$relative"
 	                 :  $self->{__tmp};
@@ -592,6 +592,11 @@ sub potential_environment_files {
 sub actual_environment_files {
 	my $ref = $_[0]->_memoize('__actual_files', sub {
 		my $self = shift;
+		if ($self->{is_from_envvars} && ! -f $self->path($self->file)) {
+			my $tmpenv = $self->workpath("reconstructed-env.yml");
+			save_to_yaml_file($self->params,$tmpenv);
+			return [$tmpenv];
+		}
 		my @files;
 		for my $file (grep {-f $self->path($_)} $self->potential_environment_files) {
 			push( @files, $self->_genesis_inherits($file, @files),$file);
@@ -922,7 +927,7 @@ sub adaptive_merge {
 				trace "[adaptive_merge] Resolving $orig_err_path" . ($err_path ne $orig_err_path ? (" => ". $err_path) : "");
 				$contents =~ s/\Q$val\E/$replacement/sg;
 			}
-			my $premerge = mkfile_or_fail($self->tmppath('premerge.yml'),$contents);
+			my $premerge = mkfile_or_fail($self->workpath('premerge.yml'),$contents);
 			($out,$rc,$err) = run({stderr => 0, %opts }, 'spruce merge --multi-doc --go-patch "$1"', $premerge);
 		}
 
@@ -936,7 +941,7 @@ sub adaptive_merge {
 		) if $rc;
 	}
 	if ($json) {
-		my $postmerge = mkfile_or_fail($self->tmppath("postmerge.yml"),$out);
+		my $postmerge = mkfile_or_fail($self->workpath("postmerge.yml"),$out);
 		$out = run({onfailure => "Unable to read json from merged $self->{name} environment files"},
 			'spruce json "$1"', $postmerge
 		);
@@ -1719,7 +1724,7 @@ sub deploy {
 			vars_file => $vars_file
 		);
 		bail "Cannot continue with deployment!\n" unless $ok;
-		$data_fn = $self->tmppath("predeploy-data");
+		$data_fn = $self->workpath("predeploy-data");
 		mkfile_or_fail($data_fn, $predeploy_data) if ($predeploy_data);
 	}
 
@@ -1746,8 +1751,8 @@ sub deploy {
 	}
 
 	# Prepare the output manifest files for the repo
-	my $manifest_file = $self->tmppath("out-manifest.yml");
-	my $vars_path = $self->tmppath("out-vars.yml");
+	my $manifest_file = $self->workpath("out-manifest.yml");
+	my $vars_path = $self->workpath("out-vars.yml");
 	$self->manifest_provider->deployment->redacted->write_to($manifest_file);
 	copy_or_fail($self->vars_file('redacted'), $vars_path) if ($self->vars_file('redacted'));
 
@@ -2268,13 +2273,12 @@ sub _secret_processing_updates_callback {
 }
 
 # }}}
-
 # _init_yaml_file
 sub _init_yaml_file {
 	my $self       = shift;
 	my $vault_path = $self->secrets_base =~ s#/?$##r; # backwards compatibility
 	my $type       = $self->type;
-	my $init_file  = $self->tmppath("init.yml");
+	my $init_file  = $self->workpath("init.yml");
 
 
 	if ($self->kit->feature_compatibility('2.6.13')) {
@@ -2309,7 +2313,7 @@ EOF
 sub _cap_yaml_file {
 	my $self       = shift;
 	my $type       = $self->type;
-	my $cap_file  = $self->tmppath("fin.yml");
+	my $cap_file  = $self->workpath("fin.yml");
 
 	my $now = strftime("%Y-%m-%d %H:%M:%S +0000", gmtime());
 	my $bosh_target = $self->use_create_env ? "~" : ($self->bosh_env || $self->name);
@@ -2761,7 +2765,7 @@ or C<params.vault_prefix>
 
 Retrieve the Genesis::Kit object for this environment.
 
-=head2 tmppath($relative)
+=head2 workpath($relative)
 
 Retrieve a temporary work path the given C<$relative> path for this environment.
 If no relative path is given, it returns the temporary root directory.

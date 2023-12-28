@@ -124,7 +124,7 @@ sub run_hook {
 
 	} elsif ($hook eq 'secrets') {
 		$ENV{GENESIS_SECRET_ACTION} = $opts{action};
-		$ENV{GENESIS_SECRETS_DATAFILE} = $opts{env}->tmppath("secrets");
+		$ENV{GENESIS_SECRETS_DATAFILE} = $opts{env}->workpath("secrets");
 
 	} elsif ($hook eq 'addon') {
 		$ENV{GENESIS_ADDON_SCRIPT} = $opts{script};
@@ -134,13 +134,13 @@ sub run_hook {
 		# Nothing special needed
 
 	} elsif ($hook eq 'pre-deploy') {
-		$ENV{GENESIS_PREDEPLOY_DATAFILE} = $opts{env}->tmppath("data");
+		$ENV{GENESIS_PREDEPLOY_DATAFILE} = $opts{env}->workpath("data");
 		$ENV{GENESIS_MANIFEST_FILE} = $opts{manifest};
 		$ENV{GENESIS_BOSHVARS_FILE} = $opts{vars_file};
 
 	} elsif ($hook eq 'post-deploy') {
 		$ENV{GENESIS_DEPLOY_RC} = defined $opts{rc} ? $opts{rc} : 255;
-		my $fn = $opts{env}->tmppath("data");
+		my $fn = $opts{env}->workpath("data");
 		mkfile_or_fail($fn, $opts{data}) if ($opts{data});
 		$ENV{GENESIS_PREDEPLOY_DATAFILE} = $fn;
 
@@ -158,7 +158,7 @@ sub run_hook {
 
 	} elsif ($is_edit) {
 		@args = ();
-		$hook_exec = $opts{env}->tmppath("edit-env");
+		$hook_exec = $opts{env}->workpath("edit-env");
 		$hook_name = $hook;
 		mkfile_or_fail($hook_exec, <<EOF);
 #/bin/bash
@@ -242,7 +242,7 @@ EOF
 			$ENV{GENESIS_ENVIRONMENT}, $rc,
 		) unless ($rc == 0);
 		my $contents;
-		my $fn = $opts{env}->tmppath("data");
+		my $fn = $opts{env}->workpath("data");
 		if ( -f $fn ) {
 			$contents = slurp($fn) if -s $fn;
 			unlink $fn;
@@ -251,8 +251,8 @@ EOF
 	}
 
 	if ($hook eq 'post-deploy') {
-		unlink $opts{env}->tmppath("data")
-			if -f $opts{env}->tmppath("data");
+		unlink $opts{env}->workpath("data")
+			if -f $opts{env}->workpath("data");
 	}
 
 	return ($rc == 0 ? 1 : 0) if (
