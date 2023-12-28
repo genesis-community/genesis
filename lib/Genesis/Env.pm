@@ -707,6 +707,9 @@ sub vault_paths {
 		my $json = read_json_from(run({
 				onfailure => "Unable to determine vault paths from $self->{name} manifest",
 				stderr => "&1",
+				env => {
+					$self->get_environment_variables
+				}
 			},
 			'spruce vaultinfo "$1" | spruce json', $unevaled_manifest
 		));
