@@ -10,6 +10,7 @@ use Genesis::State;
 use Genesis::Term;
 use Genesis::UI;
 use Genesis::Commands qw/current_command known_commands/;
+use Genesis::Env::ManifestProvider;
 
 use Service::BOSH::Director;
 use Service::BOSH::CreateEnvProxy;
@@ -713,7 +714,6 @@ sub vault_paths {
 # }}}
 sub manifest_provider {
 	return $_[0]->_memoize(sub {
-		require Genesis::Env::ManifestProvider;
 		Genesis::Env::ManifestProvider->new($_[0]);
 	});
 }
