@@ -51,7 +51,8 @@ sub data {
 	my ($self,$path) = @_;
 	return scalar(read_json_from(run({
 			redact_output => 1,
-			env => $self->env()
+			env => $self->env(),
+			stderr => 0
 		},
 		'credhub', 'get', '-j', '-n', $self->_full_path($path)
 	)));
@@ -145,7 +146,8 @@ sub set {
 			env => {
 				%{$self->env()},
 				__dollar_symbol__ => '$'
-			}
+			},
+			stderr => 0
 		},
 		'credhub', 'set', '-j', @args
 	);
@@ -167,7 +169,8 @@ sub paths {
 	}
 
 	my $paths = read_json_from(run({
-			env => $self->env()
+			env => $self->env(),
+			stderr => 0
 		},
 		'credhub', 'find', '-j', @filter
 	));
@@ -184,7 +187,8 @@ sub keys {
 sub delete {
 	my ($self,$name) = @_;
 	return run({
-			env => $self->env()
+			env => $self->env(),
+			stderr => 0
 		},
 		'credhub', 'delete', '--name', $self->_full_path($name)
 	);
@@ -193,7 +197,8 @@ sub delete {
 sub delete_all {
 	my ($self,$path) = @_;
 	return run({
-			env => $self->env()
+			env => $self->env(),
+			stderr => 0
 		},
 		'credhub', 'delete', '--path', $self->_full_path($path)
 	);
@@ -209,7 +214,8 @@ sub query {
 		if defined $params{_data};
 	# TODO: extract uri-encoded query params out of %params
 	return scalar(read_json_from(run({
-			env => $self->env()
+			env => $self->env(),
+			stderr => 0
 		},
 		'credhub', 'curl', '--path', "$path", @args
 	)));
