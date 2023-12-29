@@ -223,8 +223,8 @@ sub get_subset {
 		} else {
 			bug("Invalid subset operator '$operator'")
 		}
-
 		my ($out, $rc, $err) = run(@cmd);
+		popd;
 
 		bail (
 			"Could not get subset %s from %s manifest: %s",
@@ -278,7 +278,7 @@ sub full_merge_env {
 
 sub _subset_plans {
 	return $_[0]->_memoize( sub {
-		return { 
+		return {
 			credhub_vars => { include => [qw(variables bosh-variables)]},
 			bosh_vars    => { fetch   => {key => 'bosh-variables', default => {}}},
 			pruned       => { exclude => [$_[0]->env->prunable_keys]}
