@@ -126,7 +126,6 @@ sub validate {
 		$self->builder->$type->data;
 	};
 	my $err = $@;
-	use Pry; pry if $err;
 	error(
 		"Failed to build %s manifest:\n\n%s",
 		$self->label, $err
