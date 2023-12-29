@@ -274,7 +274,9 @@ sub manifest {
 	my $manifest = $env
 		->download_required_configs('blueprint', 'manifest')
 		->manifest_provider->$type(notify=>1,subset=>$subset);
-	output {raw => 1}, slurp($manifest->file);
+	my $content = slurp($manifest->file) =~ s/\s*\z//msr;
+	print STDERR "\n";
+	output {raw => 1}, $content;
 }
 
 sub deploy {

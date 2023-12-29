@@ -1607,7 +1607,7 @@ sub vars_file {
 	my $manifest = $self->manifest_provider->deployment(subset=>'bosh_vars');
 	$manifest = $manifest->redacted if $redact;
 	$manifest->notify(sprintf(
-		"Generating %sBOSH variables file #i{(if applicable)}...",
+		"generating %sBOSH variables file #i{(if applicable)}...",
 		$redact ? "redacted " : ""
 	));
 
@@ -1634,6 +1634,8 @@ sub check {
 	} else {
 		$self->_notify("#Y{%s does not define a 'check' hook; $checks checks will be skipped.}", $self->kit->id);
 	}
+
+	my $kit_files = $self->manifest_provider->kit_files(); # pre-warm the cache
 
 	if ($self->kit->secrets_store eq 'vault' && (!exists($opts{check_secrets}) || $opts{check_secrets})) {
 		$self->_notify("running secrets checks...");
@@ -2229,6 +2231,7 @@ sub _secret_processing_updates_callback {
 		info "\n%s for #M{%s} under path '#C{%s}':", $msg_action, $self->name, $self->secrets_base;
 
 	} elsif ($state eq 'wait') {
+		$self->manifest_provider->{suppress_notification}=1;
 		$self->{__secret_processing_updates_callback__startwait} = time();
 		info {pending => 1},  "%s ... ", $args{msg};
 
@@ -2241,6 +2244,7 @@ sub _secret_processing_updates_callback {
 		info {pending => 1}, "\r[2K" unless $level eq 'full';
 
 	} elsif ($state eq 'completed') {
+		$self->manifest_provider->{suppress_notification}=0;
 		my @extra_errors = @{$args{errors} || []};
 		my $warn_count = scalar(@{$self->{__secret_processing_updates_callback__items}{warn} || []});
 		my $err_count = scalar(@{$self->{__secret_processing_updates_callback__items}{error} || []})

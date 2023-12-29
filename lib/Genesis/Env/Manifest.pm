@@ -42,6 +42,10 @@ sub label {
 	$_[0]->type =~ s/_/ /gr;
 }
 
+sub subset {
+	$_[0]->{subset} // '';
+}
+
 sub redacted {
 	bug("redacted: Not implemented for %s manifest types", $_[0]->label);
 }
@@ -108,9 +112,9 @@ sub reset {
 
 sub is_subset  {defined($_[0]->{subset})};
 
-sub notify     {
+sub notify {
 	$_[0]->{notice} = $_[1]//sprintf(
-		"Building #c{%s} manifest...",
+		"generating #c{%s} manifest...",
 		$_[0]->label
 	);
 }

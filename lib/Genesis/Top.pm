@@ -272,7 +272,7 @@ sub set_kit_provider {
 		info {pending => 1}, "\nSetting up new kit provider...";
 		$new_provider = Genesis::Kit::Provider->init(%opts);
 		info "done.";
-		info {pending => 1}, "Writing configuration....";
+		info {pending => 1}, "Writing configuration...";
 		$self->{__kit_provider} = $new_provider;
 		if (ref($self->kit_provider) eq "Genesis::Kit::Provider::GenesisCommunity") {
 			$self->config->clear('kit_provider',1)

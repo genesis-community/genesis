@@ -104,11 +104,13 @@ sub merge {
 	my %options = (%option_defaults,%$options);
 	$env_vars //= {};
 
-	$self->env->_notify($manifest->get_build_notice) if $manifest->has_notice;
-	
+	$self->env->_notify($manifest->get_build_notice)
+		if $manifest->has_notice && ! $self->{suppress_notification};
+
 	trace(
-		"%s - merging manifest\n\nSources:\n%s\n\nOptions:\n%s\n\nEnvironment:\n%s",
+		"%s - merging manifest in %s:\n\nSources:\n%s\n\nOptions:\n%s\n\nEnvironment:\n%s",
 		ref($manifest),
+		$manifest->_generate_file_name(),
 		join("\n", map {"  $_"} @$sources),
 		join("\n",
 			map {"  $_->[0]: $_->[1]"}
@@ -117,7 +119,7 @@ sub merge {
 		),
 		join("\n",
 			map {"  $_->[0]: $_->[1]"}
-			map {$options{$_} ? [$_,$options{$_}] : [$_,"#i{<null>}"]}
+			map {$env_vars->{$_} ? [$_,$env_vars->{$_}] : [$_,"#i{<null>}"]}
 			keys %$env_vars
 		)
 	);
@@ -151,7 +153,7 @@ sub merge {
 		}
 	}
 	popd;
-	$out =~ s/[\r\n ]*\z/\n/ms; # Ensure output is terminated with a newline, but no blank lines
+	$out =~ s/\s*\z//ms; # no terminating blank lines
 
 	my ($data, $file) = ();
 	unless ($errors) {
@@ -173,8 +175,8 @@ sub get_subset {
 	my $src_manifest = $self->can($manifest->type)->($self);
 
 	# The already-existant alternative source is already resolved at this point
-	$self->env->_notify($manifest->get_build_notice) if $manifest->has_notice;
-
+	$self->env->_notify($manifest->get_build_notice)
+		if $manifest->has_notice && ! $self->{suppress_notification};
 	my ($operator,$selection) = %{$self->_subset_plans()->{$subset}};
 	if ($req eq 'data') {
 		my $src = $src_manifest->data;
@@ -191,7 +193,7 @@ sub get_subset {
 			bug("Invalid subset operator '$operator'")
 		}
 		my $new_data = decode_json(encode_json($data)); # deep-copy made easy
-		
+
 		if ($operator eq 'exclude') {
 			delete($new_data->{$_}) for (@$selection);
 		}
@@ -241,7 +243,8 @@ sub initiation_file {
 sub kit_files {
 	# FIXME: this takes about 2 seconds, which is a noticable delay
 	return @{$_[0]->_memoize( sub {
-		$_[0]->env->_notify("Determining manifest fragments for merging....");
+		$_[0]->env->_notify("determining manifest fragments for merging...")
+			unless $_[0]->{suppress_notification};
 		return [$_[0]->env->kit_files('absolute')];
 	})};
 }

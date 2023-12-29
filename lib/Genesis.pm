@@ -732,7 +732,7 @@ sub save_to_yaml_file {
 	my $i=1; while (-f "$file.$i.json") {$i++};
 	my $tmpfile = "$file.$i.json";
 	save_to_json_file($data,$tmpfile);
-	run('spruce merge --skip-eval "$1" > $2; rm "$1"', $tmpfile, $file);
+	run('spruce merge --skip-eval "$1" | perl -I$GENESIS_LIB -MGenesis -e \'my $c=do{local $/;<STDIN>};$c=~s/\s*\z/\n/ms;print $c\' > $2; rm "$1"', $tmpfile, $file);
 }
 
 my @DIRSTACK;
