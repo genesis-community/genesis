@@ -37,6 +37,7 @@ my $manifest_types = {};
 	}
 }
 
+# Class Methods
 sub new {
 	my ($class, $env) = @_;
 	return bless({
@@ -44,6 +45,32 @@ sub new {
 		manifests  => {},
 		deployment => undef
 	}, $class);
+}
+
+sub known_types {
+	# TODO - return hash with types and descriptions
+	# for each entry in %manifest_types - key is type, value->description is description
+	my @types = keys %$manifest_types;
+	@types = grep {$_ !~ /entombed/} @types
+		if ($_[0]->env->use_create_env);
+	return [@types]
+}
+
+sub known_subsets {
+	# TODO - return hash with subset and description
+	# embed descr in _subset_plans
+	return [keys %{$_[0]->_subset_plans}];
+}
+
+# Instance Methods
+
+sub reset {
+	my ($self) = @_;
+	delete($self->{manifests}{$_})->reset for (keys %{$self->{manifests}});
+	delete($self->{$_}) for (grep {$_ =~ /^__/} keys %$self);
+	$self->{deployment}=undef;
+	unlink($_) for (glob $self->env->workpath()."/manifest-".$self->env->name."-*");
+	return $self;
 }
 
 sub env {$_[0]->{env}}
@@ -54,6 +81,7 @@ sub set_deployment {
 		"Manifest type $type is not deployable"
 	) unless $manifest_types->{$type} && $manifest_types->{$type}->deployable;
 	$self->{deployment} = $type;
+	return $self;
 }
 
 sub deployment {
@@ -64,6 +92,7 @@ sub deployment {
 	$self->$deployment_type(@_);
 }
 
+# Protected methods - should only be called by ManifestProvider and Manifest objects
 sub merge {
 	my ($self,$manifest,$sources,$options,$env_vars) = @_;
 
@@ -259,21 +288,6 @@ sub valid_subset {
 	return unless defined($subset);
 	return 1 if in_array($subset, keys %{$self->_subset_plans});
 	bug("Invalid subset '$subset' requested for manifest")
-}
-
-sub known_types {
-	# TODO - return hash with types and descriptions
-	# for each entry in %manifest_types - key is type, value->description is description
-	my @types = keys %$manifest_types;
-	@types = grep {$_ !~ /entombed/} @types
-		if ($_[0]->env->use_create_env);
-	return [@types]
-}
-
-sub known_subsets {
-	# TODO - return hash with subset and description
-	# embed descr in _subset_plans
-	return [keys %{$_[0]->_subset_plans}];
 }
 
 1;

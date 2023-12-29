@@ -91,7 +91,20 @@ sub set_data   {$_[0]->{data} = $_[1]}
 sub set_file   {$_[0]->{file} = $_[1]}
 
 sub write_to   {copy_or_fail($_[0]->file,$_[1])}
-sub reset      {$_[0]->{data} = $_[0]->{file} = undef; 1}
+sub reset {
+	my $self = shift;
+	trace(
+		"Resetting %s manifest to allow rebuild (data: %s, filename: %s, file: %s)",
+		$self->label,
+		$self->has_data ? 'yes' : 'no',
+		-f $self->_generate_file_name ? 'yes' : 'no',
+		$self->{file} ? 'yes' : 'no'
+	);
+
+	unlink $self->{file} if $self->{file} && -f $self->{file};
+	$self->{data} = $self->{file} = undef;
+	$self;
+}
 
 sub is_subset  {defined($_[0]->{subset})};
 
