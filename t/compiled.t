@@ -15,13 +15,13 @@ chdir "t/repos/compiled-kit-test" or die;
 
 bosh2_cli_ok;
 
-runs_ok "genesis manifest -c cloud.yml test-env >$tmp/manifest.yml";
+runs_ok "genesis manifest -c cloud.yml -t unredacted -s pruned test-env >$tmp/manifest.yml 2>/dev/null";
 eq_or_diff get_file("$tmp/manifest.yml"), <<EOF, "manifest generated based on compile kit";
 name: test-env-compiled-kit-test
 version: 0.0.1
 EOF
 
-runs_ok "genesis manifest -c cloud.yml test-env-upgrade >$tmp/manifest.yml";
+runs_ok "genesis manifest -c cloud.yml -t unredacted -s pruned test-env-upgrade >$tmp/manifest.yml 2>/dev/null";
 eq_or_diff get_file("$tmp/manifest.yml"), <<EOF, "manifest generated based on compile kit";
 name: test-env-upgrade-compiled-kit-test
 properties:

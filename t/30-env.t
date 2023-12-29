@@ -19,6 +19,8 @@ use Genesis::Top;
 use Genesis::Env;
 use Genesis;
 
+use Service::Vault::Local;
+
 fake_bosh;
 
 $ENV{GENESIS_CALLBACK_BIN} ||= abs_path('bin/genesis');
@@ -359,6 +361,7 @@ genesis:
 EOF
 
 	my $env = $top->load_env('standalone');
+	$env->manifest_provider->set_deployment('unredacted');
 	cmp_deeply([$env->kit_files], [qw[
 		base.yml
 		addons/whiskey.yml
@@ -372,20 +375,22 @@ EOF
 		./standalone.yml
 	]], "env detects correct actual environment files to merge");
 
-	dies_ok { $env->manifest; } "should not be able to merge an env without a cloud-config";
+	quietly {
+		dies_ok { $env->manifest_provider->deployment->data; } "should not be able to merge an env without a cloud-config";
+	};
 
 
 	put_file $top->path(".cloud.yml"), <<EOF;
 --- {}
 # not really a cloud config, but close enough
 EOF
-	lives_ok { $env->use_config($top->path(".cloud.yml"))->manifest; }
+	lives_ok { $env->use_config($top->path(".cloud.yml"))->manifest_provider->deployment->data; }
 		"should be able to merge an env with a cloud-config";
 
 	my $mfile = $top->path(".manifest.yml");
-	my ($manifest, undef) = $env->_manifest(redact => 0);
-	$env->write_manifest($mfile, prune => 0);
-	ok -f $mfile, "env->write_manifest should actually write the file";
+	my $manifest = $env->manifest_provider->deployment->data;
+	$env->manifest_provider->deployment->write_to($mfile);
+	ok -f $mfile, "write_to should actually write the file";
 	my $mcontents;
 	lives_ok { $mcontents = load_yaml_file($mfile) } 'written manifest (unpruned) is valid YAML';
 	cmp_deeply($mcontents, $manifest, "written manifest (unpruned) matches the raw unpruned manifest");
@@ -469,25 +474,27 @@ EOF
 			secret     => '(( vault $GENESIS_SECRETS_BASE "test:secret" ))',
 		}
 	}], "env contains the parameters from all document pages");
-	cmp_deeply([$env->kit_files], [qw[
+	quietly {cmp_deeply([$env->kit_files], [qw[
 		base.yml
 		addons/oscar.yml
 		addons/kilo.yml
-	]], "env gets the correct kit yaml files to merge");
+	]], "env gets the correct kit yaml files to merge");};
 	cmp_deeply([$env->potential_environment_files], [qw[
 		./standalone.yml
 	]], "env formulates correct potential environment files to merge");
 	cmp_deeply([$env->actual_environment_files], [qw[
 		./standalone.yml
 	]], "env detects correct actual environment files to merge");
-	cmp_deeply($env->vault_paths, {
-    "/secret/standalone/thing/test:secret" => [
-      "params.secret"
-    ],
-    "/secret/passcode:key" => [
-      "params.junk"
-    ]
-	}, "env detects correct vault paths used");
+	quietly {
+		cmp_deeply($env->vault_paths, {
+			"/secret/standalone/thing/test:secret" => [
+				"params.secret"
+			],
+			"/secret/passcode:key" => [
+				"params.junk"
+			]
+		}, "env detects correct vault paths used");
+	};
 
 	put_file $top->path('standalone.yml'), <<'EOF';
 ---
@@ -521,12 +528,19 @@ kit:
 EOF
 
 	# Get rid of the unparsable value that would prevent manifest generation
+	
 	$env = $top->load_env('standalone');
+	use Genesis;
+	$env->manifest_provider
+		->reset
+		->set_deployment('unredacted');
 
 	my $mfile = $top->path(".manifest.yml");
-	my ($manifest, undef) = $env->_manifest(redact => 0);
-	$env->write_manifest($mfile, prune => 0);
-	ok -f $mfile, "env->write_manifest should actually write the file";
+	my $manifest;
+	quietly {$manifest = $env->manifest_provider->deployment->data};
+	$env->manifest_provider->deployment->write_to($mfile);
+
+	ok -f $mfile, "write_to should actually write the file";
 	my $mcontents;
 	lives_ok { $mcontents = load_yaml_file($mfile) } 'written manifest (unpruned) is valid YAML';
 	cmp_deeply($mcontents, $manifest, "written manifest (unpruned) matches the raw unpruned manifest");
@@ -583,42 +597,47 @@ genesis:
   env: standalone
 EOF
 	my $env = $top->load_env('standalone')->use_config($top->path('.cloud.yml'));
+	$env->manifest_provider
+		->reset
+		->set_deployment('unredacted');
 
-	cmp_deeply(scalar load_yaml($env->manifest(prune => 0)), {
-		name   => ignore,
-		fancy  => ignore,
-		addons => ignore,
+	quietly {
+		cmp_deeply($env->manifest_provider->deployment->data(), {
+			name   => ignore,
+			fancy  => ignore,
+			addons => ignore,
 
-		# Genesis stuff
-		meta        => ignore,
-		pipeline    => ignore,
-		params      => ignore,
-		exodus      => ignore,
-		genesis     => ignore,
-		kit         => superhashof({ name => 'dev' }),
+			# Genesis stuff
+			meta        => ignore,
+			pipeline    => ignore,
+			params      => ignore,
+			exodus      => ignore,
+			genesis     => ignore,
+			kit         => superhashof({ name => 'dev' }),
 
-		# cloud-config
-		resource_pools => ignore,
-		vm_types       => ignore,
-		disk_pools     => ignore,
-		disk_types     => ignore,
-		networks       => ignore,
-		azs            => ignore,
-		vm_extensions  => ignore,
-		compilation    => ignore,
+			# cloud-config
+			resource_pools => ignore,
+			vm_types       => ignore,
+			disk_pools     => ignore,
+			disk_types     => ignore,
+			networks       => ignore,
+			azs            => ignore,
+			vm_extensions  => ignore,
+			compilation    => ignore,
 
-	}, "unpruned manifest should have all the top-level keys");
+		}, "unpruned manifest should have all the top-level keys");
+	};
 
-	cmp_deeply(scalar load_yaml($env->manifest(prune => 1)), {
+	cmp_deeply($env->manifest_provider->deployment(subset => 'pruned')->data(), {
 		name   => ignore,
 		fancy  => ignore,
 		addons => ignore,
 	}, "pruned manifest should not have all the top-level keys");
 
 	my $mfile = $top->path(".manifest.yml");
-	my ($manifest, undef) = $env->_manifest(redact => 0);
-	$env->write_manifest($mfile);
-	ok -f $mfile, "env->write_manifest should actually write the file";
+	my $manifest = $env->manifest_provider->deployment->data;
+	$env->manifest_provider->deployment(subset => 'pruned')->write_to($mfile);
+	ok -f $mfile, "write_to should actually write the file";
 	my $mcontents;
 	lives_ok { $mcontents = load_yaml_file($mfile) } 'written manifest is valid YAML';
 	cmp_deeply($mcontents, subhashof($manifest), "written manifest content matches unpruned manifest for values that weren't pruned");
@@ -654,8 +673,9 @@ genesis:
 EOF
 
 	my $env = $top->load_env('proto')->use_config($top->path('.cloud.yml'));
+	quietly {$env->manifest_provider->reset->set_deployment('unredacted')->deployment->data};
 	ok $env->use_create_env, "'proto' test env needs create-env";
-	cmp_deeply(scalar load_yaml($env->manifest(prune => 0)), {
+	cmp_deeply(scalar load_yaml_file($env->manifest_provider->deployment->file), {
 		name   => ignore,
 		fancy  => ignore,
 		addons => ignore,
@@ -682,7 +702,7 @@ EOF
 
 	}, "unpruned proto-style manifest should have all the top-level keys");
 
-	cmp_deeply(scalar load_yaml($env->manifest(prune => 1)), {
+	cmp_deeply(scalar load_yaml_file($env->manifest_provider->deployment(subset => 'pruned')->file), {
 		name   => ignore,
 		fancy  => ignore,
 		addons => ignore,
@@ -698,9 +718,9 @@ EOF
 	}, "pruned proto-style manifest should retain 'cloud-config' keys, since create-env needs them");
 
 	my $mfile = $top->path(".manifest-create-env.yml");
-	my ($manifest, undef) = $env->_manifest(redact => 0);
-	$env->write_manifest($mfile);
-	ok -f $mfile, "env->write_manifest should actually write the file";
+	my $manifest = $env->manifest_provider->deployment->data;
+	$env->manifest_provider->deployment(subset => 'pruned')->write_to($mfile);
+	ok -f $mfile, "write_to should actually write the file";
 	my $mcontents;
 	lives_ok { $mcontents = load_yaml_file($mfile) } 'written manifest for bosh-create-env is valid YAML';
 	cmp_deeply($mcontents, subhashof($manifest), "written manifest for bosh-create-env content matches unpruned manifest for values that weren't pruned");
@@ -742,7 +762,9 @@ EOF
 # not really a cloud config, but close enough
 EOF
 	my $env = $top->load_env('standalone')->use_config($top->path('.cloud.yml'));
-	cmp_deeply($env->exodus, {
+	quietly {$env->manifest_provider->reset->set_deployment('unredacted')->deployment->data()};
+	quietly {
+		cmp_deeply($env->exodus, {
 			version        => ignore,
 			dated          => re(qr/\d\d\d\d-\d\d-\d\d \d\d:\d\d:\d\d/),
 			deployer       => ignore,
@@ -766,6 +788,7 @@ EOF
 			'three.levels.works'            => 'now',
 			'three.levels.or.more.is.right' => 'on, man!',
 		}, "env manifest can provide exodus with flattened keys");
+	};
 
 	my $good_flattened = {
 		key => "value",
@@ -853,6 +876,7 @@ EOF
 		"download_cloud_config runs correctly";
 	};
 
+	quietly {$env->manifest_provider->reset->set_deployment('unredacted')->deployment->data};
 	ok -f $env->config_file('cloud','genesis-test'), "download_cloud_config created cc file";
 	eq_or_diff get_file($env->config_file('cloud','genesis-test')), <<EOF, "download_config calls BOSH correctly";
 {"cmd": "bosh config --type cloud --name genesis-test --json"}
@@ -863,6 +887,7 @@ EOF
 something: (( vault "secret/code:word" ))
 EOF
 
+	quietly {$env->manifest_provider->reset->set_deployment('unredacted')->deployment->data};
 	is($env->lookup("something","goose"), "goose", "Environment doesn't contain cloud config details");
 	is($env->manifest_lookup("something","goose"), "penguin", "Manifest contains cloud config details");
 	my ($manifest_file, $exists, $sha1) = $env->cached_manifest_info;
@@ -991,7 +1016,9 @@ EOF
 cc-stuff: cloud-config-data
 EOF
 
-	my $varsfile = $env->vars_file();
+	my $varsfile;
+	$env->manifest_provider->reset->set_deployment('unredacted');
+	quietly {$varsfile = $env->vars_file()};
 	my ($stdout, $stderr) = output_from {eval {$env->deploy();}};
 	$stdout =~ s/\r//g;
 	eq_or_diff($stdout, <<EOF, "Deploy should call BOSH with the correct options, including vars file");
@@ -1207,7 +1234,6 @@ credentials:
       token: random 48 allowed-chars ABCDEF0123456789
     need-to-know:
       secret: random 32
-
 EOF
 
 	local $ENV{NOCOLOR} = "yes";
@@ -1387,7 +1413,6 @@ provided:
           sensitive: false
         secret_key:
           prompt: IaaS Secret Key
-
 EOF
 
   `safe set --quiet secret/c/env/thing/iaas access_key='knock-knock' secret_key='drowsapp'`;
@@ -1671,10 +1696,9 @@ EOF
 	ok $env_from_evs->use_create_env, "env from env vars uses create env.";
 	ok $env_from_evs->{is_from_envvars}, "env from env vars indicates so.";
 
-	my @old_properties = grep {$_ !~ /^(__actual_files)$/}  keys(%$env);
-	my @new_properties = grep {$_ !~ /^(__actual_files|is_from_envvars)$/} keys(%$env_from_evs);
+	my @old_properties = grep {$_ !~ /^(__actual_files|__signature|__manifest_provider)$/} keys(%$env);
+	my @new_properties = grep {$_ !~ /^(__actual_files|__signature|__manifest_provider|is_from_envvars)$/} keys(%$env_from_evs);
 	cmp_set(\@new_properties, \@old_properties, "original and from_envvars environments have the same properties");
-
 
 	for my $property (@old_properties) {
 		if ($property eq '__bosh') {
@@ -1861,6 +1885,7 @@ EOF
 
 	$env = $top->load_env('postdeploy-reaction-fail');
 	$env->use_config($top->path(".cloud.yml"));
+	$env->manifest_provider->reset->set_deployment('unredacted');
 
 	($stdout,$stderr,$err) = (
 		output_from {lives_ok {$env->deploy()} "deploy runs when pre-deploy reaction passes, but post-deploy reaction fails (and doesn't run remaining reactions after first failed reaction)"},
@@ -1875,6 +1900,8 @@ EOF
 [postdeploy-reaction-fail/thing] reactions/in-development (dev) does not define a 'check' hook; BOSH configs and
 environmental parameters checks will be skipped.
 
+[postdeploy-reaction-fail/thing] determining manifest fragments for merging...
+
 [postdeploy-reaction-fail/thing] running secrets checks...
 Parsing kit secrets descriptions ... done. - XXX seconds
 Retrieving all existing secrets ... done. - XXX seconds
@@ -1887,9 +1914,9 @@ Completed - Duration: XXX seconds [0 validated/0 skipped/0 errors]
 
 [postdeploy-reaction-fail/thing] running stemcell checks...
 
-[postdeploy-reaction-fail/thing] generating manifest...
+[postdeploy-reaction-fail/thing] generating unredacted manifest...
 
-[postdeploy-reaction-fail/thing] generating BOSH vars file (if applicable)...
+[postdeploy-reaction-fail/thing] generating BOSH variables file (if applicable)...
 
 [postdeploy-reaction-fail/thing: PRE-DEPLOY] Running working-addon addon from kit reactions/in-development (dev):
 
@@ -1901,6 +1928,8 @@ arg with spaces"]:
 This script passed
 Argument 1: 'just a single arg with spaces'
 
+
+[postdeploy-reaction-fail/thing] generating redacted BOSH variables file (if applicable)...
 
 [postdeploy-reaction-fail/thing] all systems ok, initiating BOSH deploy...
 
@@ -1918,6 +1947,7 @@ This script failed
 
 EOF
 
+	$env->manifest_provider->reset->set_deployment('entombed');
 	($stdout,$stderr,$err) = (
 		output_from {lives_ok {$env->deploy('disable-reactions' => 1)} "deploy does not run reactions when disabled"},
 		$@
@@ -1931,6 +1961,8 @@ EOF
 [postdeploy-reaction-fail/thing] reactions/in-development (dev) does not define a 'check' hook; BOSH configs and
 environmental parameters checks will be skipped.
 
+[postdeploy-reaction-fail/thing] determining manifest fragments for merging...
+
 [postdeploy-reaction-fail/thing] running secrets checks...
 Parsing kit secrets descriptions ... done. - XXX seconds
 Retrieving all existing secrets ... done. - XXX seconds
@@ -1943,9 +1975,13 @@ Completed - Duration: XXX seconds [0 validated/0 skipped/0 errors]
 
 [postdeploy-reaction-fail/thing] running stemcell checks...
 
-[postdeploy-reaction-fail/thing] generating manifest...
+[postdeploy-reaction-fail/thing] generating entombed manifest...
 
-[postdeploy-reaction-fail/thing] generating BOSH vars file (if applicable)...
+[postdeploy-reaction-fail/thing] entombing secrets into Credhub for enhanced security...
+  Determining vault paths used by manifest from genesis-ci-unit-tests...  No vault paths in use.
+
+
+[postdeploy-reaction-fail/thing] generating BOSH variables file (if applicable)...
 
 [WARNING] Reactions are disabled for this deploy
 
@@ -1958,6 +1994,9 @@ Completed - Duration: XXX seconds [0 validated/0 skipped/0 errors]
 [DONE] postdeploy-reaction-fail/thing deployed successfully.
 
 EOF
+	logger->configure_log('/tmp/cleanup.out',level=>'T',show_stack =>'full',truncate=>1,no_color=>0);
+
+	Service::Vault::Local->shutdown_all();
 
 	teardown_vault();
 };

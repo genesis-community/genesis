@@ -13,9 +13,15 @@ ok -d "t/repos/manifest-test", "manifest-test repo exists" or die;
 chdir "t/repos/manifest-test" or die;
 bosh2_cli_ok;
 write_bosh_config "us-common";
+$ENV{NOCOLOR} = 1;
 
-runs_ok "genesis manifest -c cloud.yml us-east-1-sandbox >$tmp/manifest.yml";
+runs_ok "genesis manifest -c cloud.yml -t unredacted -s pruned us-east-1-sandbox >$tmp/manifest.yml";
 eq_or_diff get_file("$tmp/manifest.yml"), <<EOF, "manifest generated for us-east-1/sandbox";
+
+[us-east-1-sandbox/manifest-test] generating unredacted manifest...
+
+[us-east-1-sandbox/manifest-test] determining manifest fragments for merging...
+
 jobs:
 - name: thing
   properties:
@@ -30,8 +36,13 @@ releases:
   version: 1.2.3-rc.1
 EOF
 
-runs_ok "genesis manifest -c cloud.yml us-west-1-sandbox >$tmp/manifest.yml";
+runs_ok "genesis manifest -c cloud.yml -t unredacted -s pruned us-west-1-sandbox >$tmp/manifest.yml";
 eq_or_diff get_file("$tmp/manifest.yml"), <<EOF, "manifest generated for us-west-1/sandbox";
+
+[us-west-1-sandbox/manifest-test] generating unredacted manifest...
+
+[us-west-1-sandbox/manifest-test] determining manifest fragments for merging...
+
 jobs:
 - name: thing
   properties:
@@ -48,12 +59,17 @@ EOF
 
 $ENV{GENESIS_INDEX} = "no";
 $ENV{TERM} = "xterm";
-runs_ok "genesis manifest -c init-cloud.yml bosh-init-sandbox >$tmp/manifest.yml 2>$tmp/error.txt";
+runs_ok "genesis manifest -c init-cloud.yml -t unredacted -s pruned bosh-init-sandbox >$tmp/manifest.yml 2>$tmp/error.txt";
 eq_or_diff get_file("$tmp/error.txt"), <<EOF, "manifest for bosh-init/create-env scenario warns that a cloud config file was provided";
 
-\e[33m[WARNING]\e[0m The provided configs will be ignored, as create-env environments do
+[WARNING] The provided configs will be ignored, as create-env environments do
           not use them:
-          - \e[1;36mcloud\e[0m
+          - cloud
+
+[bosh-init-sandbox/manifest-test] generating unredacted manifest...
+
+[bosh-init-sandbox/manifest-test] determining manifest fragments for merging...
+
 EOF
 eq_or_diff get_file("$tmp/manifest.yml"), <<EOF, "manifest for bosh-init/create-env scenario ignores provided cloud config file, and doesn't prune cloud-y datastructures";
 azs:
@@ -82,12 +98,17 @@ vm_extensions:
 - vm_ext_1
 EOF
 
-runs_ok "genesis manifest -c init-cloud.yml create-env-sandbox >$tmp/manifest.yml 2>$tmp/error.txt";
+runs_ok "genesis manifest -c init-cloud.yml -t unredacted -s pruned create-env-sandbox >$tmp/manifest.yml 2>$tmp/error.txt";
 eq_or_diff get_file("$tmp/error.txt"), <<EOF, "manifest for bosh-init/create-env scenario warns that a cloud config file was provided";
 
-\e[33m[WARNING]\e[0m The provided configs will be ignored, as create-env environments do
+[WARNING] The provided configs will be ignored, as create-env environments do
           not use them:
-          - \e[1;36mcloud\e[0m
+          - cloud
+
+[create-env-sandbox/manifest-test] generating unredacted manifest...
+
+[create-env-sandbox/manifest-test] determining manifest fragments for merging...
+
 EOF
 eq_or_diff get_file("$tmp/manifest.yml"), <<EOF, "manifest for bosh-int/create-env scenario ignores provided cloud config file, and doesn't prune cloud-y datastructures";
 azs:
@@ -117,8 +138,13 @@ vm_extensions:
 EOF
 
 $ENV{PREVIOUS_ENV} = "us-cache-test";
-runs_ok "genesis manifest -c init-cloud.yml us-west-1-sandbox >$tmp/manifest.yml";
+runs_ok "genesis manifest -c init-cloud.yml -t unredacted -s pruned us-west-1-sandbox >$tmp/manifest.yml";
 eq_or_diff get_file("$tmp/manifest.yml"), <<EOF, "manifest is generated using cached files if PREVIOUS_ENV variable is set";
+
+[us-west-1-sandbox/manifest-test] generating unredacted manifest...
+
+[us-west-1-sandbox/manifest-test] determining manifest fragments for merging...
+
 cached_value: is_present
 jobs:
 - name: thing
@@ -140,13 +166,17 @@ mkdir $alt_dir;
 chdir $alt_dir;
 my $configdir = "$TOPDIR/t/repos/manifest-test";
 
-
-runs_ok "genesis -C $configdir manifest -c init-cloud.yml create-env-sandbox >manifest.yml 2>error.txt";
+runs_ok "genesis -C $configdir manifest -c init-cloud.yml -t unredacted -s pruned create-env-sandbox >manifest.yml 2>error.txt";
 eq_or_diff get_file("error.txt"), <<EOF, "manifest for bosh-init/create-env scenario warns that a cloud config file was provided (-C option) ";
 
-\e[33m[WARNING]\e[0m The provided configs will be ignored, as create-env environments do
+[WARNING] The provided configs will be ignored, as create-env environments do
           not use them:
-          - \e[1;36mcloud\e[0m
+          - cloud
+
+[create-env-sandbox/manifest-test] generating unredacted manifest...
+
+[create-env-sandbox/manifest-test] determining manifest fragments for merging...
+
 EOF
 eq_or_diff get_file("manifest.yml"), <<EOF, "manifest for bosh-int/create-env scenario ignores provided cloud config file, and doesn't prune cloud-y datastructures (-C option)";
 azs:
@@ -176,8 +206,13 @@ vm_extensions:
 EOF
 
 $ENV{PREVIOUS_ENV} = "us-cache-test";
-runs_ok "genesis -C $configdir/us-west-1-sandbox.yml manifest -c init-cloud.yml  >manifest.yml";
+runs_ok "genesis -C $configdir/us-west-1-sandbox.yml manifest -c init-cloud.yml -t unredacted -s pruned  >manifest.yml";
 eq_or_diff get_file("manifest.yml"), <<EOF, "manifest is generated using cached files if PREVIOUS_ENV variable is set (-C option with yml)";
+
+[us-west-1-sandbox/manifest-test] generating unredacted manifest...
+
+[us-west-1-sandbox/manifest-test] determining manifest fragments for merging...
+
 cached_value: is_present
 jobs:
 - name: thing
