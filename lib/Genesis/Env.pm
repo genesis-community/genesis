@@ -878,7 +878,7 @@ sub exodus_lookup {
 	eval {$out = $self->vault->get($path);};
 	bail "Could not get $for exodus data from the Vault: $@" if $@;
 
-	my $exodus = _unflatten($out);
+	my $exodus = unflatten($out);
 	return struct_lookup($exodus, $key, $default);
 }
 
@@ -1915,7 +1915,8 @@ sub deploy {
 # exodus - get the populated exodus data generated in the manifest {{{
 sub exodus {
 	my ($self) = @_;
-	my $exodus = _flatten({}, undef, scalar($self->manifest_lookup('exodus', {})));
+	# FIXME: May need to use an unentombed manifest...
+	my $exodus = flatten({}, undef, scalar($self->manifest_lookup('exodus', {})));
 	my $vars_file = $self->vars_file;
 	return $exodus unless ($vars_file || $self->kit->uses_credhub);
 
@@ -2410,80 +2411,6 @@ sub _yaml_files {
 		$self->actual_environment_files(),
 		$self->_cap_yaml_file(),
 	);
-}
-
-# }}}
-# _flatten - convert deep structure to single sequence of key:value {{{
-sub _flatten {
-	my ($final, $key, $val) = @_;
-
-	if (ref $val eq 'ARRAY') {
-		for (my $i = 0; $i < @$val; $i++) {
-			_flatten($final, $key ? "${key}[$i]" : "$i", $val->[$i]);
-		}
-
-	} elsif (ref $val eq 'HASH') {
-		for (keys %$val) {
-			_flatten($final, $key ? "$key.$_" : "$_", $val->{$_})
-		}
-
-	} else {
-		$final->{$key} = $val;
-	}
-
-	return $final;
-}
-
-# }}}
-# _unflatten - convert a flattened hashmap to a deep structure {{{
-sub _unflatten {
-	my ($data, $branch) = @_;
-
-	return $data unless ref($data) eq 'HASH'; # Catchall for scalar data coming in.
-
-	# Data must represent all array elements or all hash keys.
-	my ($elements, $keys) = ([],[]);
-	push @{($_ =~ /^\[\d+\](?:\.|\[|$)/) ? $elements : $keys}, $_ for (sort keys %$data);
-	die("Cannot unflatten data that contains both array elements and hash keys at same level "
-		 . ($branch ? "(at $branch)" : "(top level)") ."\n") if @$elements && @$keys;
-
-	if (@$elements) {
-		my @a_data;
-		for my $k (sort keys %$data) {
-			my ($i, $sk) = $k =~ /^\[(\d+)\](?:\.)?([^\.].*)?$/;
-			if (defined $sk) {
-				die "Array cannot have scalar and non-scalar values (at ${branch}[$i])"
-					if defined $a_data[$i] && ref($a_data[$i]) ne 'HASH';
-				$a_data[$i]->{$sk} = delete $data->{$k};
-			} else {
-				die "Array cannot have scalar and non-scalar values (at ${branch}[$i])"
-					if defined $a_data[$i];
-				$a_data[$i] = delete $data->{$k};
-			}
-		}
-		for my $i (0..$#a_data) {
-			$a_data[$i] = _unflatten($a_data[$i], ($branch||"")."[$i]");
-		}
-		return [@a_data];
-	} else {
-		my %h_data;
-		for my $k (sort keys %$data) {
-			my ($pk, $sk) = $k =~ /^([^\[\.]*)(?:\.)?([^\.].*?)?$/;
-			if (defined $sk) {
-				die "Hash cannot have scalar and non-scalar values (at ".join('.', grep $_, ($branch, "pk")).")"
-					if defined $h_data{$pk} && ref($h_data{$pk}) ne 'HASH';
-				$h_data{$pk}->{$sk} = delete $data->{$k};
-			} else {
-				die "Hash cannot have scalar and non-scalar values (at ".join('.', grep $_, ($branch, "pk")).")"
-					if defined $h_data{$pk};
-				$h_data{$pk} = delete $data->{$k};
-			}
-		}
-		for my $k (sort keys %h_data) {
-			$h_data{$k} = _unflatten($h_data{$k}, join('.', grep $_, ($branch, "$k")));
-		}
-		return {%h_data}
-	}
 }
 
 # }}}
