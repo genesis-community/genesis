@@ -17,7 +17,7 @@ sub _entomb_secrets {
 
 	return if $self->{entombed}; # don't do this more than once...
 
-	$self->env->_notify("entombing secrets into Credhub for enhanced security...");
+	$self->env->notify("entombing secrets into Credhub for enhanced security...");
 	my $src_vault = $self->env->vault;
 	info (
 		{pending => 1},

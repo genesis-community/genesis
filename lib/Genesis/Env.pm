@@ -1550,16 +1550,16 @@ sub check {
 	$checks = "BOSH configs and $checks" if scalar($self->configs);
 
 	if ($self->has_hook('check')) {
-		$self->_notify("running $checks checks...");
+		$self->notify("running $checks checks...");
 		$self->run_hook('check') or $ok = 0;
 	} else {
-		$self->_notify("#Y{%s does not define a 'check' hook; $checks checks will be skipped.}", $self->kit->id);
+		$self->notify("#Y{%s does not define a 'check' hook; $checks checks will be skipped.}", $self->kit->id);
 	}
 
 	my $kit_files = $self->manifest_provider->kit_files(); # pre-warm the cache
 
 	if ($self->kit->secrets_store eq 'vault' && (!exists($opts{check_secrets}) || $opts{check_secrets})) {
-		$self->_notify("running secrets checks...");
+		$self->notify("running secrets checks...");
 		my %check_opts=(indent => '  ', validate => ! envset("GENESIS_TESTING_CHECK_SECRETS_PRESENCE_ONLY"));
 		$ok = 0 unless $self->check_secrets(%check_opts);
 	}
@@ -1567,9 +1567,9 @@ sub check {
 	if ($ok) {
 		if (envset("GENESIS_CHECK_YAML_ON_DEPLOY") || $opts{check_yamls}) {
 			if ($self->missing_required_configs('blueprint')) {
-				$self->_notify("#Y{Required BOSH configs not provided - can't check manifest viability}");
+				$self->notify("#Y{Required BOSH configs not provided - can't check manifest viability}");
 			} else {
-				$self->_notify("inspecting YAML files used to build manifest...");
+				$self->notify("inspecting YAML files used to build manifest...");
 				my @yaml_files = $self->format_yaml_files('include-kit' => 1, padding => '  ');
 				info join("\n",@yaml_files)."\n";
 			}
@@ -1578,9 +1578,9 @@ sub check {
 
 	if ($ok) {
 		if ($self->missing_required_configs('manifest')) {
-			$self->_notify("#Y{Required BOSH configs not provided - can't check manifest viability}");
+			$self->notify("#Y{Required BOSH configs not provided - can't check manifest viability}");
 		} elsif (!exists($opts{check_manifest}) || $opts{check_manifest}) {
-			$self->_notify("running manifest viability checks...");
+			$self->notify("running manifest viability checks...");
 			$self->manifest_provider->unredacted->validate or $ok = 0;
 		}
 	}
@@ -1589,7 +1589,7 @@ sub check {
 
 	if ($ok && (!exists($opts{check_stemcells}) || $opts{check_stemcells}) && !$self->use_create_env) {
 
-		$self->_notify("running stemcell checks...");
+		$self->notify("running stemcell checks...");
 		my @stemcells = $self->bosh->stemcells;
 		my $required = $self->manifest_lookup('stemcells');
 		my @missing;
@@ -1698,7 +1698,7 @@ sub deploy {
 	copy_or_fail($self->vars_file('redacted'), $vars_path) if ($self->vars_file('redacted'));
 
 	# DEPLOY!!!
-	$self->_notify("all systems #G{ok}, initiating BOSH deploy...");
+	$self->notify("all systems #G{ok}, initiating BOSH deploy...");
 
 	my @results;
 	if ($self->use_create_env) {
@@ -1763,7 +1763,7 @@ sub deploy {
 	}
 	$ok = !$results[1];
 
-	$self->_notify("#G{Deployment successful.}") if $ok;
+	$self->notify("#G{Deployment successful.}") if $ok;
 
 	if ($self->_reactions && !$disable_reactions) {
 		$reaction_vars->{GENESIS_DEPLOY_RC} = ($results[1]);
@@ -1807,12 +1807,12 @@ sub deploy {
 	}
 
 	if ($opts{"dry-run"}) {
-		$self->_notify("dry-run deployment complete; post-deployment activities will be skipped.");
+		$self->notify("dry-run deployment complete; post-deployment activities will be skipped.");
 		exit 0;
 	}
 
 	# track exodus data in the vault
-	$self->_notify("Preparing metadata for export...");
+	$self->notify("Preparing metadata for export...");
 	$self->vault->authenticate unless $self->vault->authenticated;
 	my $exodus = $self->exodus;
 
@@ -2048,6 +2048,23 @@ sub remove_secrets {
 
 # }}}
 # }}}
+
+# Messaging
+# notify - print an environment-specific message {{{
+sub notify {
+	my $self = shift;
+	my ($target, $prefix,$postfix) = $_[0] =~ /^(error|warning|fatal|success)$/ 
+		? (shift,"","")
+		: ("info","[","]");
+	my $opts = ref($_[0]) eq 'HASH' ? shift : {};
+	my $msg = shift;
+	$msg = sprintf($msg, @_) if scalar(@_);
+
+	$self->can($target)->($opts, "\n%s#M{%s}/#c{%s}%s %s", $prefix, $self->name, $self->type, $postfix, $msg);
+}
+
+# }}}
+
 
 ### Private Instance Methods {{{
 
@@ -2332,15 +2349,6 @@ sub _yaml_files {
 		$self->actual_environment_files(),
 		$self->_cap_yaml_file(),
 	);
-}
-
-# }}}
-# _notify - print an environment-specific message {{{
-sub _notify {
-	my $self = shift;
-	my $msg = shift;
-	$msg = sprintf( $msg, @_) if scalar(@_);
-	info "\n[#M{%s}/#c{%s}] %s", $self->name, $self->type, $msg;
 }
 
 # }}}
