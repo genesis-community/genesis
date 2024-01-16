@@ -59,6 +59,7 @@ our @EXPORT = qw/
 	is_valid_uri
 
 	strfuzzytime
+	pretty_duration
 	ordify
 
 	run lines curl
@@ -98,6 +99,10 @@ sub Init {
 
 	our $USER_AGENT_STRING = "genesis/$Genesis::VERSION";
 
+	# Config vars
+	$ENV{GENESIS_SHOW_DURATION} //= $Genesis::RC->get("show_duration", 0);
+
+	# Systems Operations
 	$ENV{GENESIS_LIB}          ||= $ENV{HOME}."/.genesis/lib";
 	$ENV{GENESIS_CALLBACK_BIN} ||= $ENV{HOME}."/.genesis/genesis";
 	$ENV{GENESIS_VERSION}        = $version;
@@ -997,6 +1002,37 @@ sub _u2d {
 	my $str = shift;
 	$str =~ s/_/-/g;
 	$str
+}
+
+sub pretty_duration {
+	my ($duration, $good, $bad, $wrap, $prefix, $style) = @_;
+	return '' unless $ENV{GENESIS_SHOW_DURATION};
+	$wrap //= '()';
+	$prefix //= ' ';
+	$style //= '-';
+	my ($fmt, @values)
+		= $duration < 0.001
+		? ('%d µs', $duration * 1000000)
+		: $duration < 2
+		? ('%d ms', $duration * 1000)
+		: $duration < 10
+		? ('%0.1f s', $duration)
+		: $duration < 60
+		? ('%d s', $duration)
+		: $duration < 3600
+		? ('%d m %d s', $duration / 60, $duration % 60)
+		: ('%d h %d m', $duration / 3600, $duration / 60 % 60);
+	my $color = $good && $duration <= $good
+		? $style =~ s/^[\*kwrgbcmyp-]?/g/ir
+		: $bad && $duration >= $bad
+		? $style =~ s/^[\*kwrgbcmyp-]?/r/ir
+		: $style;
+
+	my ($start,$end) = (substr($wrap,0,1),substr($wrap, length($wrap)-1, 1));
+	return sprintf(
+		"#%s{%s%s}#%s{$fmt}#%s{%s}",
+		$style, $prefix, $start, $color, @values, $style, $end
+	);
 }
 
 1;
