@@ -3,6 +3,7 @@ use strict;
 use warnings;
 
 use Genesis;
+use Genesis::Term;
 use Genesis::UI;
 use JSON::PP qw/decode_json encode_json/;
 use UUID::Tiny ();
@@ -49,13 +50,15 @@ sub get {
 
 sub data {
 	my ($self,$path) = @_;
-	return scalar(read_json_from(run({
+	my ($out,$rc,$err) = run({
 			redact_output => 1,
 			env => $self->env(),
 			stderr => 0
 		},
 		'credhub', 'get', '-j', '-n', $self->_full_path($path)
-	)));
+	);
+	$err = decolorize($err) =~ s/\AWARNING: Two different login methods were detected.*?\n\n\n//sr;
+	return $rc ? {error => $err}: scalar(read_json_from($out,$rc,$err));
 }
 
 sub set {
@@ -229,6 +232,5 @@ sub _full_path {
 }
 
 # TODO: export, import
-
 # }}}
-1
+1;
