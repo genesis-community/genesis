@@ -11,6 +11,7 @@ use Genesis::Term;
 use Genesis::UI;
 use Genesis::Commands qw/current_command known_commands/;
 use Genesis::Env::ManifestProvider;
+use Genesis::Env::Secrets::Plan;
 
 use Service::BOSH::Director;
 use Service::BOSH::CreateEnvProxy;
@@ -853,6 +854,38 @@ sub exodus_lookup {
 sub dereferenced_kit_metadata {
 	my ($self) = shift;
 	return $self->kit->dereferenced_metadata(sub {$self->partial_manifest_lookup(@_)}, 1);
+}
+
+# }}}
+
+#	# Secrets Plan
+# get_secrets_store - get the vault store for the environment {{{
+sub get_secrets_store {
+	return $_[0]->_memoize(sub{
+		my $self = shift;
+		# TODO: Use a builder?
+		require Genesis::Env::Secrets::Store::Vault;
+		Genesis::Env::Secrets::Store::Vault->new(
+			$self, service => $self->vault
+		);
+	});
+}
+
+# }}}
+# get_secrets_plan - get the secrets plan {{{
+sub get_secrets_plan {
+	my ($self, %opts) = @_;
+	my $plan = $self->_memoize(sub {
+		Genesis::Env::Secrets::Plan
+			->new($_[0], $self->get_secrets_store(), $self->credhub)
+			->populate(
+				'Genesis::Env::Secrets::Parser::FromKit',
+				'Genesis::Env::Secrets::Parser::FromManifest',
+			)
+	});
+	$plan = $plan->filter(@{$opts{paths}//[]});
+	$plan->validate unless $opts{no_validate};
+	$plan
 }
 
 # }}}
@@ -1881,59 +1914,55 @@ sub exodus {
 sub add_secrets {
 	my ($self, %opts) = @_;
 
-	#Credhub check
-	if ($self->kit->uses_credhub) {
-		warning {label => "NOTICE"}, "#Yi{Credhub-based kit - no local secrets generation required}";
-		return 1;
+	$self->manifest_provider->kit_files(); #process blueprint
+	my $plan = $self->get_secrets_plan(%opts);
+
+	unless ($plan->secrets) {
+		if ($plan->filters) {
+			info("\nNo applicable secrets found - no need to continue.\n");
+		} else {
+			$self->notify(success => "doen't have any secrets to add.\n");
+		}
+		exit 0;
 	}
 
-	if ($self->has_hook('secrets')) {
-		$self->run_hook('secrets', action => 'add')
-	} else {
-		# Determine secrets_store from kit - assume vault for now (credhub ignored)
-		my $store = $self->vault->connect_and_validate;
-		my $processing_opts = {
-			level=>$opts{verbose}?'full':'line'
-		};
-		my $ok = $store->process_kit_secret_plans(
-			'add',
-			$self,
-			sub{$self->_secret_processing_updates_callback('add',$processing_opts,@_)},
-			get_opts(\%opts, qw/paths/)
-		);
-		return $ok;
-	}
+	kit_bug(
+		"Kits with secrets hook are no longer supported. Check for an upgraded version."
+	) if ($self->has_hook('secrets'));
+
+	return $plan->generate_secrets(
+		import    => $opts{import} && $self->kit->uses_credhub,
+		level     => $opts{verbose}?'full':'line'
+	);
 }
 
 # }}}
 # check_secrets - check that the environment has no missing or invalid secrets {{{
 sub check_secrets {
 	my ($self,%opts) = @_;
+	my ($action,$action_desc) = delete($opts{validate})
+		? ('validate_secrets','validated')
+		: ('check_secrets', 'checked');
+	
+	$self->manifest_provider->kit_files(); #process blueprint
+	my $plan = $self->get_secrets_plan(%opts);
 
-	#Credhub check
-	if ($self->kit->uses_credhub) {
-		warning {label => "NOTICE"}, "#Yi{Credhub-based kit - no local secrets validation required}\n";
-		return 1;
+	unless ($plan->secrets) {
+		if ($plan->filters) {
+			info("\nNo applicable secrets found - no need to continue.\n");
+		} else {
+			$self->notify(success => "doesn't have any secrets to be $action_desc.\n");
+		}
+		exit 0;
 	}
 
-	if ($self->has_hook('secrets')) {
-		$self->run_hook('secrets', action => 'check');
-	} else {
-		# Determine secrets_store from kit - assume vault for now (credhub ignored)
-		my $store = $self->vault->connect_and_validate;
-		my $action = $opts{validate} ? 'validate' : 'check';
-		my $processing_opts = {
-			no_prompt => $opts{'no-prompt'},
-			level=>$opts{verbose}?'full':'line'
-		};
-		my $ok = $store->validate_kit_secrets(
-			$action,
-			$self,
-			sub{$self->_secret_processing_updates_callback($action,$processing_opts,@_)},
-			get_opts(\%opts, qw/paths validate/)
-		);
-		return $ok;
-	}
+	kit_bug(
+		"Kits with secrets hook are no longer supported. Check for an upgraded version."
+	) if ($self->has_hook('secrets'));
+
+	return $plan->$action(
+		level => $opts{verbose}?'full':'line'
+	);
 }
 
 # }}}
@@ -1941,30 +1970,29 @@ sub check_secrets {
 sub rotate_secrets {
 	my ($self, %opts) = @_;
 
-	#Credhub check
-	if ($self->kit->uses_credhub) {
-		warning {label => "NOTICE"}, "#Yi{Credhub-based kit - no local secrets rotation allowed}";
-		return 1;
+	$self->manifest_provider->kit_files(); #process blueprint
+	my $plan = $self->get_secrets_plan(%opts);
+
+	unless ($plan->secrets) {
+		if ($plan->filters) {
+			info("\nNo applicable secrets found - no need to continue.\n");
+		} else {
+			$self->notify(success => "doen't have any secrets to add.\n");
+		}
+		exit 0;
 	}
 
-	my $action = $opts{'renew'} ? 'renew' : 'recreate';
-	if ($self->has_hook('secrets')) {
-		$self->run_hook('secrets', action => $action);
-	} else {
-		# Determine secrets_store from kit - assume vault for now (credhub ignored)
-		my $store = $self->vault->connect_and_validate;
-		my $processing_opts = {
-			no_prompt => $opts{'no-prompt'},
-			level=>$opts{verbose}?'full':'line'
-		};
-		my $ok = $store->process_kit_secret_plans(
-			$action,
-			$self,
-			sub{$self->_secret_processing_updates_callback($action,$processing_opts,@_)},
-			get_opts(\%opts, qw/paths no_prompt interactive invalid/)
-		);
-		return $ok;
-	}
+	kit_bug(
+		"Kits with secrets hook are no longer supported. Check for an upgraded version."
+	) if ($self->has_hook('secrets'));
+
+	return $plan->regenerate_secrets(
+		regen_x509_keys => $opts{'regen-x509-keys'},
+		no_prompt       => $opts{'no-prompt'},
+		invalid         => $opts{invalid},
+		interactive     => $opts{interactive},
+		level           => $opts{verbose}?'full':'line'
+	);
 }
 
 # }}}
@@ -1972,69 +2000,92 @@ sub rotate_secrets {
 sub remove_secrets {
 	my ($self, %opts) = @_;
 
-	#Credhub check
-	if ($self->kit->uses_credhub) {
-		warning {label => "NOTICE"}, "#Yi{Credhub-based kit - no local secrets removal permitted}";
-		return 1;
-	}
+	$self->manifest_provider->kit_files(); #process blueprint
+	my $plan = $self->get_secrets_plan(%opts);
 
 	# Determine secrets_store from kit - assume vault for now (credhub ignored)
 	my $store = $self->vault->connect_and_validate;
-	my @generated_paths;
 	if ($opts{all}) {
-		my @paths = $self->vault->paths($self->secrets_base);
-		return 2 unless scalar(@paths);
+		my @paths = $plan->store->store_paths();
+		return ({empty => 1}) unless scalar(@paths);
 
 		unless ($opts{'no-prompt'}) {
 			die_unless_controlling_terminal(
-				"Cannot prompt for confirmation to remove all secrets outside a ".
+				"\nCannot prompt for confirmation to remove all secrets outside a ".
 				"controlling terminal.  Use #C{-y|--no-prompt} option to provide ".
 				"confirmation to bypass this limitation."
 			);
 			warning(
-				"This will delete all %s secrets under '#C{%s}', including ".
-				"non-generated values set by 'genesis new' or manually created",
+				"\nThis will delete the following %s secrets under '#C{%s}', which may".
+				"include non-generated values set by 'genesis new' or manually created:\n",
 				 scalar(@paths), $self->secrets_base
 			 );
-			while (1) {
-				my $response = prompt_for_line(undef, "Type 'yes' to remove these secrets, 'list' to list them; anything else will abort","");
-				output "\n";
-				if ($response eq 'list') {
-					# TODO: check and color-code generated vs manual entries
-					my $prefix_len = length($self->secrets_base)-1;
-					output bullet $_ for (map {substr($_, $prefix_len)} @paths);
-				} elsif ($response eq 'yes') {
-					last;
+			my $prefix = $plan->store->base =~ s/^\///r;
+			for my $full_path (sort @paths) {
+				my $path = $full_path =~ s/^$prefix//r;
+				my $secret = $plan->secret_at($path);
+				if ($secret) {
+					info(bullet(sprintf(
+						"#C{%s} #i{%s}",
+						$path,
+						scalar($secret->describe),
+					)));
 				} else {
-					fatal({label => "ABORT", show_stack => 'default'},
-						"Keeping all existing secrets under '#C{%s}'.\n",
-						$self->secrets_base
-					);
-					return 0;
+					my @keys = keys %{$plan->store->store_data->{$full_path}};
+					for my $ext_path (map {$path.':'.$_} sort @keys) {
+						$secret = $plan->secret_at($ext_path);
+						if ($secret) {
+							info(bullet(sprintf(
+								"#C{%s}:#c{%s} #i{%s}",
+								split(":", $secret->path, 2),
+								scalar($secret->describe),
+							)));
+						} elsif ($secret = grep {$_->get('format') && $_->can('format_path') && ($_->format_path//'') eq $ext_path} ($plan->secrets)) {
+							info(bullet(sprintf(
+								"#C{%s}:#c{%s} #i{%s}",
+								split(":", $secret->format_path, 2),
+								scalar($secret->describe('format')),
+							)))
+						} else {
+							info(bullet(sprintf(
+								"#C{%s}:#c{%s} #%s{%s}",
+								split(":", $ext_path, 2),
+								"R", "not defined by kit"
+							)))
+						}
+					}
 				}
 			}
+			my $response = prompt_for_line(undef, "Type 'yes' to remove these secrets; anything else will abort","");
+			if ($response ne 'yes') {
+				return ({abort => 1}, sprintf(
+					"Keeping all existing secrets under '#C{%s}'.",
+					$plan->store->base
+				));
+			}
 		}
-		output {pending => 1}, "Deleting existing secrets under '#C{%s}'...", $self->secrets_base;
-		my ($out,$rc) = $self->vault->query('rm', '-rf', $self->secrets_base);
-		bail $out if ($rc);
-		success "#G{All applicable secrets removed.}\n";
-		return 1;
+		output {pending => 1}, "Deleting existing secrets under '#C{%s}'...", $plan->store->base;
+		my ($out,$rc) = $plan->store->service->query('rm', '-rf', $plan->store->base);
+		return ({error => 1}, $out) if ($rc);
+		return ({success => 1}, "#G{All applicable secrets removed.}");;
 	}
 
-	if ($self->has_hook('secrets')) {
-		$self->run_hook('secrets', action => 'remove');
-	} else {
-		my $processing_opts = {
-			level=>$opts{verbose}?'full':'line'
-		};
-		my $ok = $store->process_kit_secret_plans(
-			'remove',
-			$self,
-			sub{$self->_secret_processing_updates_callback('remove',$processing_opts,@_)},
-			get_opts(\%opts, qw/paths no_prompt interactive invalid/)
-		);
-		return $ok;
+	unless ($plan->secrets) {
+		# FIXME: this should get returned as a result to the calling proceedure
+		if ($plan->filters) {
+			info("\nNo applicable secrets found - no need to continue.\n");
+		} else {
+			$self->notify(success => "doen't have any secrets to add.\n");
+		}
+		exit 0;
 	}
+
+	return $plan->remove_secrets(
+		no_prompt       => $opts{'no-prompt'},
+		invalid         => $opts{invalid},
+		interactive     => $opts{interactive},
+		level           => $opts{verbose}?'full':'line'
+	);
 }
 
 # }}}
@@ -2085,143 +2136,6 @@ sub _genesis_inherits {
 		}
 	}
 	return(@new_files);
-}
-
-# }}}
-# _secret_processing_updates_callback - callback for secrets processing UI {{{
-sub _secret_processing_updates_callback {
-	my ($self,$action,$opts,$state,%args) = @_;
-	my $indent = $opts->{indent} || '  ';
-	my $level = $opts->{level} || 'full';
-	$level = 'full' unless -t STDOUT;
-
-	$action = $args{action} if $args{action};
-	$args{result} ||= '';
-	(my $actioned = $action) =~ s/e?$/ed/;
-	$actioned = 'found' if $actioned eq 'checked';
-	(my $actioning = $action) =~ s/e?$/ing/;
-
-	if ($state eq 'done-item') {
-		my $map = { 'validate/error' => "#R{invalid!}",
-		            error => "#R{failed!}",
-		            'check/ok' =>  "#G{found.}",
-		            'validate/ok' =>  "#G{valid.}",
-		            'validate/warn' => "#Y{warning!}",
-		            ok =>  "#G{done.}",
-		            'recreate/skipped' => '#Y{skipped}',
-		            'remove/skipped' => '#Y{skipped}',
-		            skipped => "#Y{exists!}",
-		            missing => "#R{missing!}" };
-		push(@{$self->{__secret_processing_updates_callback__items}{$args{result}} ||= []},
-		     $self->{__secret_processing_updates_callback__item});
-
-		info $map->{"$action/$args{result}"} || $map->{$args{result}} || $args{result}
-			if $args{result} && ($level eq 'full' || !( $args{result} eq 'ok' || ($args{result} eq 'skipped' && $action eq 'add')));
-
-		if (defined($args{msg})) {
-			my @lines = grep {$level eq 'full' || $_ =~ /^\[#[YR]/} split("\n",$args{msg});
-			my $pad = " " x (length($self->{__secret_processing_updates_callback__total})*2+4);
-			info("  %s%s", $pad, join("\n  $pad", @lines)) if @lines;
-			info("") if $level eq 'full' || scalar @lines;
-		}
-		info({pending => 1}, "\r[2K") unless $level eq 'full';
-
-	} elsif ($state eq 'start-item') {
-		$self->{__secret_processing_updates_callback__idx}++;
-		my $w = length($self->{__secret_processing_updates_callback__total});
-		my $long_warning='';
-		if ($args{label} eq "Diffie-Hellman key exchange parameters" && $action =~ /^(add|recreate)$/) {
-			$long_warning = ($level eq 'line' ? " - " : "; ")."#Yi{may take a very long time}"
-		}
-		info({pending => 1},
-			"  [%*d/%*d] #C{%s} #wi{%s}%s ... ",
-			$w, $self->{__secret_processing_updates_callback__idx},
-			$w, $self->{__secret_processing_updates_callback__total},
-			$args{path},
-			$args{label} . ($level eq 'line' || !$args{details} ? '' : " - $args{details}"),
-			$long_warning
-		);
-
-	} elsif ($state eq 'empty') {
-		info "%s - nothing to %s!\n",
-			$args{msg} || "No kit secrets found",
-			$action;
-		return 1;
-
-	} elsif ($state eq 'abort') {
-		error($args{msg}) if $args{msg};
-		return;
-
-	} elsif ($state eq 'init') {
-		$self->{__secret_processing_updates_callback__start} = time();
-		$self->{__secret_processing_updates_callback__total} = $args{total};
-		$self->{__secret_processing_updates_callback__idx} = 0;
-		$self->{__secret_processing_updates_callback__items} = {};
-		my $msg_action = $args{action} || sprintf("%s %s secrets", ucfirst($actioning), $args{total});
-		info "\n%s for #M{%s} under path '#C{%s}':", $msg_action, $self->name, $self->secrets_base;
-
-	} elsif ($state eq 'wait') {
-		$self->manifest_provider->{suppress_notification}=1;
-		$self->{__secret_processing_updates_callback__startwait} = time();
-		info {pending => 1},  "%s ... ", $args{msg};
-
-	} elsif ($state eq 'wait-done') {
-		info("%s #Ki{- %s}",
-			$args{result} eq 'ok' ? "#G{done.}" : "#R{error!}",
-			Time::Seconds->new(time() - $self->{__secret_processing_updates_callback__startwait})->pretty()
-		) if ($args{result} && ($args{result} eq 'error' || $level eq 'full'));
-		error("Encountered error: %s", $args{msg}) if ($args{result} eq 'error');
-		info {pending => 1}, "\r[2K" unless $level eq 'full';
-
-	} elsif ($state eq 'completed') {
-		$self->manifest_provider->{suppress_notification}=0;
-		my @extra_errors = @{$args{errors} || []};
-		my $warn_count = scalar(@{$self->{__secret_processing_updates_callback__items}{warn} || []});
-		my $err_count = scalar(@{$self->{__secret_processing_updates_callback__items}{error} || []})
-			+ scalar(@extra_errors)
-			+ ($action =~ /^(check|validate)$/ ?
-				scalar(@{$self->{__secret_processing_updates_callback__items}{missing} || []}) : 0);
-		info "%s - Duration: %s [%d %s/%d skipped/%d errors%s]\n",
-			$err_count ? "Failed" : "Completed",
-			Time::Seconds->new(time() - $self->{__secret_processing_updates_callback__start})->pretty(),
-			scalar(@{$self->{__secret_processing_updates_callback__items}{ok} || []}), $actioned,
-			scalar(@{$self->{__secret_processing_updates_callback__items}{skipped} || []}),
-			$err_count,
-			$warn_count ? "/$warn_count warnings" : '';
-		$err_count += $warn_count
-			if (($opts->{invalid}||0) == 2 || ($opts->{validate}||0) == 2);
-		return !$err_count;
-	} elsif ($state eq 'inline-prompt') {
-		die_unless_controlling_terminal(
-			"Cannot prompt for confirmation to $action secrets outside a controlling ".
-			"terminal.  Use #C{-y|--no-prompt} option to provide confirmation to ".
-			"bypass this limitation."
-		);
-		print "[s\n[u[B[A[s"; # make sure there is room for a newline, then restore and save the current cursor
-		my $response = Genesis::UI::__prompt_for_line($args{prompt}, $args{validation}, $args{err_msg}, $args{default}, !$args{default});
-		print "[u[0K";
-		return $response;
-	} elsif ($state eq 'prompt') {
-		my $title = '';
-		if ($args{class}) {
-			$title = sprintf("\r[2K\n#%s{[%s]} ", $args{class} eq 'warning' ? "Y" : '-', uc($args{class}));
-		}
-		info "%s%s", $title, $args{msg};
-		die_unless_controlling_terminal(
-			"Cannot prompt for confirmation to $action secrets outside a controlling ".
-			"terminal.  Use #C{-y|--no-prompt} option to provide confirmation to ".
-			"bypass this limitation."
-		);
-		return prompt_for_line(undef, $args{prompt}, $args{default} || "");
-	} elsif ($state eq 'notify') {
-		if ($args{nonl}) {
-			info {pending => 1}, $args{msg};
-		} else {
-			info $args{msg};
-		}
-	} else {
-		bug "_secret_processing_updates_callback encountered an unknown state '$state'";
-	}
 }
 
 # }}}

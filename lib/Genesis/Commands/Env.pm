@@ -157,37 +157,73 @@ sub check {
 sub check_secrets {
 	command_usage(1) if @_ < 1;
 	my ($name,@paths) = @_;
-	my $level = delete(get_options->{level}) || 'i';
-	my $validation_level;
-	if ($level =~ /^m(issing)?/) {
-		$validation_level=0;
-	} elsif ($level =~ /^i(nvalid)?/) {
-		$validation_level=1;
-	} elsif ($level =~ /^p(roblem(atic)?)?/) {
-		$validation_level=2;
-	} else {
-		bail(
-			"Invalid -l|--level value: expecting one of #g{missing}, #g{invalid} or ".
-			"#g{problem} (or respective short form#g{m}, #g{i} or #g{p} short forms) ".
-			"- got '#R{%s}'", $level
-		)
-	}
-	Genesis::Top
+
+	my $level = delete(get_options->{exists});
+	my $validation_level = $level ? 0 : 1;
+	my $env = Genesis::Top
 		->new(".")
 		->load_env($name)
-		->with_vault()
-		->check_secrets(paths=>\@paths,%{get_options()}, validate => $validation_level)
-		or exit 1;
+		->with_vault();
+
+	my ($results) = $env->check_secrets(
+		paths=>\@paths,
+		%{get_options()}
+		, validate => $validation_level
+	);
+
+	if ($results->{error}) {
+		$env->notify(fatal => "- invalid secrets detected.\n");
+		exit 1
+	}
+	if ($results->{missing}) {
+		$env->notify(fatal => "- missing secrets detected.\n");
+		exit 1
+	}
+	if ($results->{warn}) {
+		$env->notify(warning => "- all secrets valid, but warnings were encountered.\n");
+		exit 0;
+	}
+	$env->notify(success => ($level ? "checked" : "validated") ." secrets successfully!\n");
+	exit 0
 }
 
 sub add_secrets {
 	command_usage(1) if @_ < 1;
 	my ($name,@paths) = @_;
-	Genesis::Top
-		->new(".", vault => get_options->{vault})
+	my $env = Genesis::Top
+		->new(".")
 		->load_env($name)
-		->with_vault()
-		->add_secrets(paths=>\@paths,%{get_options()});
+		->with_vault();
+
+	my ($results) = $env->add_secrets(paths=>\@paths,%{get_options()});
+	if ($results->{error}) {
+		$env->notify(fatal => "- errors encountered while adding secrets");
+		exit 1
+	}
+	my $msg;
+	my @warnings = ();
+	push(@warnings, 'warnings were encountered') if $results->{warn};
+	push(@warnings, 'not all secrets could be imported from CredHub, so were generated instead')
+		if $results->{generated};
+
+	if ($results->{ok} || $results->{generated}) {
+		$msg = "- all ".($results->{skipped} ? 'missing ':'')."secrets were added";
+	} elsif ($results->{imported}) {
+		$msg = "- all ".($results->{skipped} ? 'missing ':'')."secrets were imported";
+	} elsif ($results->{skipped} == scalar($env->plan->secrets)) {
+		env->notify(success => " - all secrets already present, nothing to do!");
+		exit 0;
+	} else {
+		$env->notify(warning => "- no secrets were added.\n");
+		exit 0;
+	}
+
+	if (@warnings) {
+		$env->notify(warning => "$msg, but ".sentence_join(@warnings)."\n");
+	} else {
+		$env->notify(success => "$msg successfully!\n");
+	}
+	exit 0;
 }
 
 sub rotate_secrets {
@@ -198,12 +234,35 @@ sub rotate_secrets {
 	) if get_options->{force};
 
 	get_options->{invalid} = 2 if delete(get_options->{problematic});
-	Genesis::Top
-		->new(".", vault => get_options->{vault})
+	my $env = Genesis::Top
+		->new(".")
 		->load_env($name)
-		->with_vault()
-		->rotate_secrets(paths => \@paths,%{get_options()})
-		or exit 1;
+		->with_vault();
+
+	my ($results, $msg) = $env->rotate_secrets(paths => \@paths,%{get_options()});
+
+	bail($msg||"User aborted secrets rotation") if $results->{abort};
+
+	if ($results->{empty}) {
+		$env->notify($msg);
+		exit 0
+	}
+	if ($results->{error}) {
+		$env->notify(fatal => "- errors encountered while rotating secrets");
+		exit 1;
+	}
+	my @warnings = ();
+	push(@warnings, 'some rotations were skipped') if $results->{skipped};
+	push(@warnings, 'warnings were encountered') if $results->{warn};
+	if ($results->{skipped} && !$results->{ok} && !$results->{warn}) {
+		$env->notify(warning => "no secrets were rotated!\n");
+	} elsif (@warnings) {
+		$env->notify(warning => "$msg, but ".sentence_join(@warnings)."\n");
+	} else {
+		my $selective = @paths ? 'specified' : 'all';
+		$env->notify(success => "$selective $msg successfully!\n");
+	}
+	exit 0;
 }
 
 sub remove_secrets {
@@ -220,12 +279,38 @@ sub remove_secrets {
 	}
 
 	$options{invalid} = 2 if delete($options{problematic});
-	Genesis::Top
-		->new(".", vault => $options{vault})
+	my $env = Genesis::Top
+		->new(".")
 		->load_env($name)
-		->with_vault()
-		->remove_secrets(paths => \@paths,%options)
-		or exit 1;
+		->with_vault();
+
+	my ($results, $msg) = $env->remove_secrets(paths => \@paths,%options);
+
+	bail($msg||"User aborted secrets removal") if $results->{abort};
+
+	if ($results->{empty}) {
+		$env->notify($msg);
+		exit 0
+	}
+	if ($results->{error}) {
+		$env->notify(fatal => "- errors encountered while removing secrets");
+		exit 1;
+	}
+
+	my @warnings = ();
+	push(@warnings, 'some removals were skipped') if $results->{skipped};
+	push(@warnings, 'warnings were encountered') if $results->{warn};
+	if ($results->{missing} && !$results->{skipped} && !$results->{ok} && !$results->{warn}) {
+		$env->notify(success => "no secrets to remove.\n");
+	} elsif (($results->{skipped} || $results->{missing}) && !$results->{ok} && !$results->{warn}) {
+		$env->notify(warning => "no secrets were removed!\n");
+	} elsif (@warnings) {
+		$env->notify(warning => "$msg, but ".sentence_join(@warnings)."\n");
+	} else {
+		my $selective = @paths ? 'specified' : 'all';
+		$env->notify(success => "$selective $msg successfully!\n");
+	}
+	exit 0;
 }
 
 sub manifest {
