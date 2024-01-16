@@ -7,6 +7,7 @@ use base 'Genesis::Base';
 
 use Genesis;
 use JSON::PP qw/encode_json decode_json/;
+use Time::HiRes qw/gettimeofday/;
 
 ### Class Methods {{{
 # accessor methods for each Manifest type - dynamically built {{{
@@ -266,9 +267,13 @@ sub initiation_file {
 sub kit_files {
 	# FIXME: this takes about 2 seconds, which is a noticable delay
 	return @{$_[0]->_memoize( sub {
-		$_[0]->env->_notify("determining manifest fragments for merging...")
-			unless $_[0]->{suppress_notification};
-		return [$_[0]->env->kit_files('absolute')];
+		my $self = shift;
+		$self->env->notify({pending => 1}, "determining manifest fragments for merging...")
+			unless $self->{suppress_notification};
+		my $tstart = gettimeofday;
+		my $files = [$self->env->kit_files('absolute')];
+		info("#G{done}".pretty_duration(gettimeofday-$tstart,0.5,2));
+		return $files;
 	})};
 }
 
