@@ -90,6 +90,8 @@ sub run_hook {
 	$ENV{GENESIS_KIT_PATH}    = $self->path;
 	$ENV{GENESIS_KIT_HOOK}    = $hook;
 
+	# TODO: Remove secrets hooks
+
 	bug("Unrecognized hook '$hook'\n") unless grep {
 		$_ eq $hook
 	} qw/new blueprint secrets info addon check prereqs pre-deploy post-deploy features shell edit/;
@@ -150,49 +152,78 @@ sub run_hook {
 		$ENV{GENESIS_REQUESTED_FEATURES} = join(" ", @{ $opts{features} });
 	}
 
-	my ($hook_name,$hook_exec);
+	my ($hook_name,$hook_file,$hook_module) = ($hook,undef,undef);
 	if ($is_shell) {
 		@args = ();
-		$hook_exec =
+		$hook_file =
 		$hook_name = $opts{shell} || '/bin/bash';
 
 	} elsif ($is_edit) {
 		@args = ();
-		$hook_exec = $opts{env}->workpath("edit-env");
-		$hook_name = $hook;
-		mkfile_or_fail($hook_exec, <<EOF);
+		$hook_file = $opts{env}->workpath("edit-env");
+		mkfile_or_fail($hook_file, <<EOF);
 #/bin/bash
 set -ue
 offer_environment_editor true
 exit 0
 EOF
-		chmod 0755, $hook_exec;
+		chmod 0755, $hook_file;
 		$ENV{EDITOR}=$opts{editor};
 
 	} else {
-		$hook_exec = $self->path("hooks/$hook");
-		$hook_name = $hook;
-		if (envset('GENESIS_TRACE')) {
-			open my $file, '<', $hook_exec;
-			my $firstLine = <$file>;
-			close $file;
-			if ($firstLine =~ /(^#!\s*\/bin\/bash(?:$| .*$))/) {
-				run('(echo "$1"; echo "set -x"; cat "$2") > "$3"', $1, $hook_exec, "$hook_exec-trace");
-				$hook_exec .= '-trace';
-				$hook_name .= '-trace';
+		$hook_file = $self->path("hooks/${hook}.pm");
+		if (-f $hook_file && !envset('GENESIS_NO_MODULE_HOOKS')) {
+			open my $fh, '<', $hook_file;
+			my $line = <$fh>;
+			$line = <$fh> while ($line =~/^\s*(#.*)?$/);
+			close $fh;
+
+			if ($line =~ /^package (Genesis::Hook::[^ ]*)/) {
+				$hook_module = $1;
 			}
 		}
-		chmod 0755, $hook_exec;
+
+		unless ($hook_module) {
+			$hook_file = $self->path("hooks/$hook");
+			if (envset('GENESIS_TRACE')) {
+				open my $file, '<', $hook_file;
+				my $firstLine = <$file>;
+				close $file;
+				if ($firstLine =~ /(^#!\s*\/bin\/bash(?:$| .*$))/) {
+					run('(echo "$1"; echo "set -x"; cat "$2") > "$3"', $1, $hook_file, "$hook_file-trace");
+					$hook_file .= '-trace';
+					$hook_name .= '-trace';
+				}
+			}
+			chmod 0755, $hook_file;
+		}
+	}
+
+	debug ("Running hook now in ".$self->path);
+	if ($hook_module) {
+		eval {require $hook_file};
+		bail(
+			"Could not load Perl module %s to run hook %s in kit %s: %s",
+			$hook_file, $hook_name, $self->id, $@
+		) if $@;
+
+		my $hook_obj = $hook_module->init(env => $opts{env}, kit => $self);
+		# TODO: wrap in an eval, give better error messages
+		my $ok = $hook_obj->perform();
+		bail(
+			"Could not run '%s' hook successfully!",
+			$hook
+		) unless $ok;
+		return $hook_obj->results();
 	}
 
 	$ENV{GENESIS_IS_HELPING_YOU} = 'yes';
-	debug ("Running hook now in ".$self->path);
 	my $interactive = ($is_shell || $is_edit || scalar($hook =~ m/^(addon|new|info|check|secrets|post-deploy|pre-deploy)$/)) ? 1 : 0;
 	my ($out, $rc, $err) = run({
 			interactive => $interactive, stderr => undef, eval_var_args => $opts{eval_var_args}
 		},
 		'cd "$1"; source .helper; hook=$2; shift 2; $hook "$@"',
-		$self->path, $hook_exec, @args
+		$self->path, $hook_file, @args
 	);
 
 	exit $rc if $is_shell;
