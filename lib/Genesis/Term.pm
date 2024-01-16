@@ -17,7 +17,7 @@ our @EXPORT = qw/
 	wrap
 	in_controlling_terminal
 	csprintf csize
-	bullet
+	bullet checkbox
 	decolorize
 /;
 
@@ -269,6 +269,11 @@ sub bullet { # [type,] msg, [{option: value, ...}]
 	return $out;
 	1;
 }
+# checkbox - make a checkbox (convencience bullet subset) {{{
+sub checkbox {
+	return bullet($_[0] eq 'warn' ? 'warn' : ($_[0] && $_[0] ne 'error' ? 'good' : 'bad'), '', box => 1, inline => 1, indent => 0);
+}
+# }}}
 
 sub in_controlling_terminal {
 	-t STDIN && -t STDOUT;

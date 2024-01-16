@@ -1863,11 +1863,6 @@ sub _get_x509_plan_usage {
 }
 
 # }}}
-# _checkbox - make a checkbox {{{
-sub _checkbox {
-	return bullet($_[0] eq 'warn' ? 'warn' : ($_[0] && $_[0] ne 'error' ? 'good' : 'bad'), '', box => 1, inline => 1, indent => 0);
-}
-# }}}
 # }}}
 1;
 
