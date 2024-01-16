@@ -463,6 +463,7 @@ sub path   { shift->top->path(@_); }
 # }}}
 
 # Information Lookup
+# signature - unique 12-character id for the environment based on name, type and file {{{
 sub signature {
 	return $_[0]->_memoize( sub {
 		my ($self) = @_;
@@ -476,6 +477,7 @@ sub signature {
 		return substr(sha1_hex($sig_string),0,12)
 	});
 }
+# }}}
 # deployment_name - returns the deployment name (env name + env type) {{{
 sub deployment_name {
 	$_[0]->_memoize('__deployment', sub {
@@ -729,27 +731,6 @@ sub vault_paths {
 }
 
 # }}}
-sub manifest_provider {
-	return $_[0]->_memoize(sub {
-		Genesis::Env::ManifestProvider->new($_[0]);
-	});
-}
-
-sub prunable_keys {
-	return @{$_[0]->_memoize( sub {
-		my @keys = (qw(
-			meta pipeline params bosh-variables kit genesis exodus compilation
-		));
-		if (!$_[0]->use_create_env) {
-			# bosh create-env needs these, so we only prune them
-			# when we are deploying via `bosh deploy`.
-			push(@keys, (qw(
-				resource_pools vm_types disk_pools disk_types networks azs vm_extensions
-			)));
-		}
-		return \@keys;
-	})};
-}
 # features - returns the list of features (specified and derived) {{{
 sub features {
 	my $ref = $_[0]->_memoize(sub {
@@ -1497,6 +1478,31 @@ sub shell {
 # }}}
 
 # Manifest Management
+# manifest_provider - builder for making manifests in different ways {{{
+sub manifest_provider {
+	return $_[0]->_memoize(sub {
+		Genesis::Env::ManifestProvider->new($_[0]);
+	});
+}
+
+# }}}
+# prunable_keys - list the keys that can be pruned from a manifest and still be deployable {{{
+sub prunable_keys {
+	return @{$_[0]->_memoize( sub {
+		my @keys = (qw(
+			meta pipeline params bosh-variables kit genesis exodus compilation
+		));
+		if (!$_[0]->use_create_env) {
+			# bosh create-env needs these, so we only prune them
+			# when we are deploying via `bosh deploy`.
+			push(@keys, (qw(
+				resource_pools vm_types disk_pools disk_types networks azs vm_extensions
+			)));
+		}
+		return \@keys;
+	})};
+}
+# }}}
 # cached_manifest_info - get the path, existance and sha1sum of the cached deployed manifest {{{
 sub cached_manifest_info {
 	my ($self) = @_;
@@ -2219,7 +2225,7 @@ sub _secret_processing_updates_callback {
 }
 
 # }}}
-# _init_yaml_file
+# _init_yaml_file - build the initialization yaml file for merging and return the path to it {{{
 sub _init_yaml_file {
 	my $self       = shift;
 	my $vault_path = $self->secrets_base =~ s#/?$##r; # backwards compatibility
@@ -2255,7 +2261,8 @@ EOF
 	return $init_file;
 }
 
-# _cap_yaml_file
+# }}}
+# _cap_yaml_file - build the wrap-up yaml file for merging and return the path to it {{{
 sub _cap_yaml_file {
 	my $self       = shift;
 	my $type       = $self->type;
@@ -2294,7 +2301,8 @@ exodus:
 EOF
 }
 
-# _cc_yaml_files
+# }}}
+# _cc_yaml_files - return the list of cloud config files needed to merge manifests {{{
 sub _cc_yaml_files {
 	my ($self,$skip_eval) = @_;
 
@@ -2322,6 +2330,8 @@ sub _cc_yaml_files {
 	}
 	return @cc;
 }
+
+# }}}
 # _yaml_files - create genesis support yml files and return full ordered merge list {{{
 sub _yaml_files {
 	my ($self,$skip_eval) = @_;
