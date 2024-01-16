@@ -266,7 +266,7 @@ sub parse_options { # {{{
 	push @base_spec, "no_cwd|cwd|C=s" if $PROPS{$COMMAND}{option_group} < Genesis::Commands::REPO_OPTIONS;
 
 	# Clean out any special formatting noise
-	@opts_spec = grep {$_ ne '-section-break-'} @opts_spec;
+	@opts_spec = map {$_ =~ s/^~//r} grep {$_ ne '-section-break-'} @opts_spec;
 
 	$COMMAND_OPTIONS->{color} = 1 unless exists $COMMAND_OPTIONS->{color};
 
@@ -528,11 +528,12 @@ sub command_usage { # {{{
 			push @{$options_order{$source}}, $opt_def;
 			$options_desc{$opt_def} = $opt_desc;
 
-			$opt_def =~ /\^?([\|a-zA-Z0-9_-]*)([\?!\+=:].*)?$/;
+			$opt_def =~ /\^?(~?[\|a-zA-Z0-9_-]*)([\?!\+=:].*)?$/;
 			bug "$type definition for $COMMAND invalid: $opt_def" unless $1;
 			my ($ext,@flags) = ($2 || '', split(/\|/,$1));
+
 			my @short_flags = grep {/^.$/} @flags;
-			my @long_flags = grep {/^../} @flags;
+			my @long_flags = grep {$_ !~ /^~/} grep {/^../} @flags;
 			my $opt_color = $source eq 'legacy' ? 'r' : 'y';
 
 			if ($source =~ /^(args|vars)$/) {
