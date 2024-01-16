@@ -83,6 +83,8 @@ our @EXPORT = qw/
 
 	struct_set_value
 	struct_lookup
+	flatten
+	unflatten
 	in_array
 	compare_arrays
 	sentence_join
