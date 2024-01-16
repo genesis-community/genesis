@@ -8,7 +8,8 @@ use base 'Genesis::Base';
 use Genesis;
 use JSON::PP qw/encode_json decode_json/;
 
-# Dynamically build accessor methods
+### Class Methods {{{
+# accessor methods for each Manifest type - dynamically built {{{
 my $manifest_types = {};
 {
 	my $search   = __FILE__ =~ s/ManifestProvider.pm/Manifest\/[A-Z]*.pm/r;
@@ -36,8 +37,8 @@ my $manifest_types = {};
 		}
 	}
 }
-
-# Class Methods
+# }}}
+# new - return a new blank ManifestProvider {{{
 sub new {
 	my ($class, $env) = @_;
 	return bless({
@@ -47,6 +48,8 @@ sub new {
 	}, $class);
 }
 
+# }}}
+# known_types - return the list of known manifest type (dynamically determined) {{{
 sub known_types {
 	# TODO - return hash with types and descriptions
 	# for each entry in %manifest_types - key is type, value->description is description
@@ -56,25 +59,22 @@ sub known_types {
 	return [@types]
 }
 
+# }}}
+# known_subsets - return the list of subset names that can be requested {{{
 sub known_subsets {
 	# TODO - return hash with subset and description
 	# embed descr in _subset_plans
 	return [keys %{$_[0]->_subset_plans}];
 }
+# }}}
+# }}}
 
-# Instance Methods
-
-sub reset {
-	my ($self) = @_;
-	delete($self->{manifests}{$_})->reset for (keys %{$self->{manifests}});
-	delete($self->{$_}) for (grep {$_ =~ /^__/} keys %$self);
-	$self->{deployment}=undef;
-	unlink($_) for (glob $self->env->workpath()."/manifest-".$self->env->name."-*");
-	return $self;
-}
-
+### Public Instance Methods {{{
+# Accessors: env {{{
 sub env {$_[0]->{env}}
 
+# }}}
+# set_deployment - set the default deployment manifest {{{
 sub set_deployment {
 	my ($self,$type) = @_;
 	bug(
@@ -84,6 +84,8 @@ sub set_deployment {
 	return $self;
 }
 
+# }}}
+# deployment - return the manifest builder for the default deployment type {{{
 sub deployment {
 	my $self = shift;
 
@@ -92,7 +94,22 @@ sub deployment {
 	$self->$deployment_type(@_);
 }
 
-# Protected methods - should only be called by ManifestProvider and Manifest objects
+# }}}
+# reset - reset all stored and cached manifests {{{
+sub reset {
+	my ($self) = @_;
+	delete($self->{manifests}{$_})->reset for (keys %{$self->{manifests}});
+	delete($self->{$_}) for (grep {$_ =~ /^__/} keys %$self);
+	$self->{deployment}=undef;
+	unlink($_) for (glob $self->env->workpath()."/manifest-".$self->env->name."-*");
+	return $self;
+}
+
+# }}}
+# }}}
+
+### Protected Instancre Methods - should only be called by ManifestProvider and Manifest objects {{{
+# merge - create a merged manifest {{{
 sub merge {
 	my ($self,$manifest,$sources,$options,$env_vars) = @_;
 
@@ -104,7 +121,7 @@ sub merge {
 	my %options = (%option_defaults,%$options);
 	$env_vars //= {};
 
-	$self->env->_notify($manifest->get_build_notice)
+	$self->env->notify($manifest->get_build_notice)
 		if $manifest->has_notice && ! $self->{suppress_notification};
 
 	trace(
@@ -135,7 +152,7 @@ sub merge {
 
 	if ($options{eval} eq 'adaptive') {
 		# TODO - pass in options to adaptive merge
-		($out, $warnings) = $self->env->adaptive_merge({env => $env_vars}, @$sources);
+		($out, $warnings) = $self->_adaptive_merge({env => $env_vars}, @$sources);
 	} else {
 		my $descriptor = sprintf(
 			"%s manifest for %s/%s environment",
@@ -170,12 +187,14 @@ sub merge {
 	return ($data, $file, $warnings, $errors);
 }
 
+# }}}
+# get_subset - create a manifest based on the subset of an existing manifest {{{
 sub get_subset {
 	my ($self, $manifest, $subset, $req) = @_;
 	my $src_manifest = $self->can($manifest->type)->($self);
 
 	# The already-existant alternative source is already resolved at this point
-	$self->env->_notify($manifest->get_build_notice)
+	$self->env->notify($manifest->get_build_notice)
 		if $manifest->has_notice && ! $self->{suppress_notification};
 	my ($operator,$selection) = %{$self->_subset_plans()->{$subset}};
 	if ($req eq 'data') {
@@ -234,12 +253,16 @@ sub get_subset {
 	}
 }
 
+# }}}
+# initiation_file - create the initiation file for merging kit manifest, return path {{{
 sub initiation_file {
 	return $_[0]->_memoize( sub {
 		return $_[0]->env->_init_yaml_file();
 	});
 }
 
+# }}}
+# kit_files - return the list of files from the kit as per the blueprint {{{
 sub kit_files {
 	# FIXME: this takes about 2 seconds, which is a noticable delay
 	return @{$_[0]->_memoize( sub {
@@ -249,6 +272,8 @@ sub kit_files {
 	})};
 }
 
+# }}}
+# cloud_config_files - return the cloud config files needed for the manifest build {{{
 sub cloud_config_files {
 	my ($self, %options) = @_;
 	my $optional = $options{optional} ? 1 : 0;
@@ -258,34 +283,32 @@ sub cloud_config_files {
 	})};
 }
 
+# }}}
+# environment_files - return the local environment files for the manifest build {{{
 sub environment_files {
 	return @{$_[0]->_memoize( sub {
 		return [$_[0]->env->actual_environment_files()];
 	})};
 }
 
+# }}}
+# conclusion_file - create and return the file that conclused the files to build the manifest {{{
 sub conclusion_file {
 	return $_[0]->_memoize( sub {
 		return $_[0]->env->_cap_yaml_file();
 	});
 }
 
+# }}}
+# full_merge_env - return the full environment variables configuration for merging manifests {{{
 sub full_merge_env {
 	return $_[0]->_memoize( sub {
 		return {$_[0]->env->get_environment_variables('manifest')};
 	});
 }
 
-sub _subset_plans {
-	return $_[0]->_memoize( sub {
-		return {
-			credhub_vars => { include => [qw(variables bosh-variables)]},
-			bosh_vars    => { fetch   => {key => 'bosh-variables', default => {}}},
-			pruned       => { exclude => [$_[0]->env->prunable_keys]}
-		}
-	});
-};
-
+# }}}
+# valid_subset - returns true if the given subset, errors out otherwise {{{
 sub valid_subset {
 	my ($self, $subset) = @_;
 	return unless defined($subset);
@@ -293,4 +316,23 @@ sub valid_subset {
 	bug("Invalid subset '$subset' requested for manifest")
 }
 
+# }}}
+# }}}
+
+### Private Instance Methods {{{
+# _subset_plans - defines the available subsets {{{
+sub _subset_plans {
+	return $_[0]->_memoize( sub {
+		return {
+			credhub_vars => { include => [qw(variables bosh-variables)]},
+			bosh_vars    => { fetch   => {key => 'bosh-variables', default => {}} },
+			pruned       => { exclude => [$_[0]->env->prunable_keys]}
+		}
+	});
+};
+
+# }}}
+# }}}
+
 1;
+# vim: fdm=marker:foldlevel=1:noet
