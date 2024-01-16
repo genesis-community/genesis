@@ -337,6 +337,78 @@ sub _subset_plans {
 };
 
 # }}}
+# _adaptive_merge - merge as much as possible, deferring anything unmergible {{{
+sub _adaptive_merge {
+	my $self = shift;
+	my %opts = ref($_[0]) eq 'HASH' ? %{shift()} : ();
+	my @files = (@_);
+
+	my ($out,$rc,$err) = run({stderr=>0, %opts}, 'spruce merge --multi-doc --go-patch "$@"', @files);
+	return (wantarray ? ($out,$err) : $out) unless $rc;
+
+	my $orig_errors = join("\n", grep {$_ !~ /^\s*$/} lines($err));
+	my $contents = '';
+	for my $content (map {slurp($_)} @files) {
+		$contents .= "\n" unless substr($contents,-1,1) eq "\n";
+		$contents .= "---\n" unless substr($content,0,3) eq "---";
+		$contents .= $content;
+	}
+	my $uneval = read_json_from(run(
+		{ onfailure => "Unable to merge files without evaluation", stderr => undef, %opts },
+		'spruce merge --multi-doc --go-patch --skip-eval "$@" | spruce json', @files
+	));
+
+	my $attempt=0;
+	while ($attempt++ < 5 and $rc) {
+		my @errs = map {$_ =~ /^ - \$\.([^:]*): (.*)$/; [$1,$2]} grep {/^ - \$\./} lines($err);
+		for my $err_details (@errs) {
+			my ($err_path, $err_msg) = @{$err_details};
+			my $val = struct_lookup($uneval, $err_path);
+			my $orig_err_path = $err_path;
+			WANDER: while (! $val) {
+				trace "[adaptive_merge] Couldn't find direct dereference error, backtracing $err_path";
+				bug "Internal error: Could not find line causing error '$err_msg' during adaptive merge."
+					unless $err_path =~ s/.[^\.]+$//;
+				$val = struct_lookup($uneval, $err_path) || next;
+				if (ref($val) eq "HASH") {
+					for my $sub_key (keys %$val) {
+						if ($val->{$sub_key} && $val->{$sub_key} =~ /\(\( *inject +([^\( ]*) *\)\)/) {
+							$err_path = $1;
+							trace "[adaptive_merge] Found inject on $sub_key, redirecting to $err_path";
+							$val = struct_lookup($uneval, $err_path);
+							next WANDER;
+						}
+					}
+				}
+				$val = undef; # wasn't what we were looking for, look deeper...
+			}
+
+			my $spruce_ops=join("|", qw/
+				calc cartesian-product concat defer empty file grab inject ips join
+				keys load param prune shuffle sort static_ips vault awsparam
+				awssecret base64
+				/);
+			(my $replacement = $val) =~ s/\(\( *($spruce_ops) /(( defer $1 /;
+			trace "[adaptive_merge] Resolving $orig_err_path" . ($err_path ne $orig_err_path ? (" => ". $err_path) : "");
+			$contents =~ s/\Q$val\E/$replacement/sg;
+		}
+		my $premerge = mkfile_or_fail($self->env->workpath('premerge.yml'),$contents);
+		($out,$rc,$err) = run({stderr => 0, %opts }, 'spruce merge --multi-doc --go-patch "$1"', $premerge);
+	}
+
+	bail(
+		"Could not merge $self->{name} environment files:\n\n".
+		"$err\n\n".
+		"Efforts were made to work around resolving the following errors, but if ".
+		"they caused the above errors, you may be able to partially resolve this ".
+		"issue by using #C{export GENESIS_UNEVALED_PARAMS=1}:\n\n".
+		$orig_errors
+	) if $rc;
+
+	return (wantarray ? ($out,$orig_errors) : $out)
+}
+
+# }}}
 # }}}
 
 1;

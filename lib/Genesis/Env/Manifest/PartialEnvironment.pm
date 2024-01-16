@@ -14,7 +14,7 @@ sub source_files {
 
 sub merge_options {
 	return {
-		eval => 'partial'
+		eval => 'adaptive'
 	}
 }
 
