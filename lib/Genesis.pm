@@ -61,6 +61,7 @@ our @EXPORT = qw/
 	strfuzzytime
 	pretty_duration
 	ordify
+	count_nouns
 
 	run lines curl
 	read_json_from
@@ -1033,6 +1034,18 @@ sub pretty_duration {
 		"#%s{%s%s}#%s{$fmt}#%s{%s}",
 		$style, $prefix, $start, $color, @values, $style, $end
 	);
+}
+
+my $pluralize_exceptions = {
+};
+sub count_nouns {
+	my ($count, $noun) = @_;
+	return "$count $noun" if $count == 1;
+	return "$count ".$pluralize_exceptions->{$noun} if $pluralize_exceptions->{$noun};
+	return "$count ${noun}es" if $noun =~ /(ch|sh|x|ss)$/; # we will not be counting oxen...
+	return "$count ${noun}$1es" if $noun =~ /[aeiou]([sz])$/;
+	return "$count ${1}ies" if $noun =~ /^(.*[^aeiou])y$/;
+	return "$count ${noun}s";
 }
 
 1;
