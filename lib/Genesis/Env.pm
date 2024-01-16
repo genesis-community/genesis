@@ -785,27 +785,12 @@ sub has_feature {
 # }}}
 # params - get all the values from the hierarchal environment. {{{
 sub params {
-	my $ref = $_[0]->_memoize(sub {
-		my ($self) = @_;
-		debug("running spruce merge of environment files, without evaluation, to find parameters");
-		my @merge_files = map { $self->path($_) } $self->actual_environment_files();
-
-		my ($out, $rc, $err);
-		if (envset("GENESIS_UNEVALED_PARAMS")) {
-			pushd $self->path;
-			$out = run({ onfailure => "Unable to merge $self->{name} environment files", stderr => undef },
-			'spruce merge --multi-doc --skip-eval "$@" | spruce json', @merge_files);
-			popd;
-		} else {
-			my $env = {
-				%{$self->vault->env()}, # specify correct vault for spruce to target
-				REDACT => ''
-			};
-			$out = $self->adaptive_merge({json => 1, env => $env}, @merge_files);
-		}
-		load_json($out);
+	return $_[0]->_memoize(sub {
+		my $manifest_type = envset("GENESIS_UNEVALED_PARAMS")
+			? 'unevaluated_environment'
+			: 'partial_environment';
+		$_[0]->manifest_provider->$manifest_type->data;
 	});
-	return $ref;
 }
 
 # }}}
