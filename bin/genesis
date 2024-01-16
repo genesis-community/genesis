@@ -12,7 +12,7 @@ BEGIN {
 # Ensure code exits and cleans up workdirs
 $SIG{ __DIE__ } = sub {require Carp; $Carp::Verbose=1;  Carp::confess(@_) }
 	if ($ENV{GENESIS_DEV_MODE});
-$SIG{INT} = $SIG{TERM} = sub {bail("Genesis halted due to user interrupt")};
+$SIG{INT} = $SIG{TERM} = sub {print STDERR "\n";bail("Genesis halted due to user interrupt (Ctrl-C)")};
 
 # core modules
 
@@ -571,15 +571,9 @@ define_command("check-secrets", {
 		'verbose|v' =>
 			"List each item, not just failures and warnings.",
 
-		'level|l=s' =>
-			"Set the level of validation.  Values are:\n".
-			"[[  (m)issing: >>only check on presence and error if missing\n".
-			"[[  (i)nvalid: >>validate secrets against the kit specifications ".
-			                 "and error if invalid (default)\n".
-			"[[  (p)roblem: >>validate secrets and error if they are invalid or ".
-			                 "problematic.\n\n".
-			"Lower levels include previous, so for example, 'invalid' includes ".
-			"'missing'.  Levels can be specified by initial or entire word.",
+		'exists' =>
+			"Instead of validating the structure of each secret, just check that ".
+			"secret and its required keys exist",
 	],
 	deprecated_options => [
 		'vault' =>
@@ -604,7 +598,11 @@ define_command("add-secrets", {
 	option_group => Genesis::Commands::REPO_OPTIONS,
 	options => [
 		"verbose|v" =>
-			"List each item as it is processed."
+			"List each item as it is processed.",
+		"~import|import-from-credhub" =>
+			"Attempt to import the secret value from credhub if the secret ".
+			"definition originates from the manifest and the value exists in ".
+			"credhub.  (credhub-oriented kits such as cf and cf-app-autoscaler)"
 	],
 	deprecated_options => [
 		"vault=s" =>
@@ -620,27 +618,28 @@ define_command("add-secrets", {
 define_command("rotate-secrets", {
 	summary => "Regenerate secrets for the environment.",
 	usage => '<env> rotate-secrets [<options...>] [<path1> <...pathN>]',
-	aliases => ['rot','rs'],
+	aliases => ['rot','rs','regen'],
 	function_group => Genesis::Commands::ENVIRONMENT,
 	scope => 'env',
 	description =>
-		"Recreate (or renew) secrets for your deployment. If any secrets are ".
-		"marked by the kit as 'fixed', they are not updated.  A list of secret ".
-		"paths can be specified, or it applies to all secrets if no path is ".
-		"specified.\n".
-		"\n".
-		"Renew differs from normal rotate, as it only applies to x509 ".
-		"certificates, and recreates the cert with updated data, keeping the ".
-		"original key.",
+		"Regenerate secrets for your deployment. If any secrets are marked by the ".
+		"kit as 'fixed', they are not updated.  A list of secret paths can be ".
+		"specified, or it applies to all secrets if no path is specified.\n",
 	option_group => Genesis::Commands::REPO_OPTIONS,
 	options => [
 		'verbose|v' =>
 			"List each item as it is processed, not just failures and warnings.",
 
-		'renew' =>
-			"Recreate the x509 certificate with updated data, while keeping the ".
-			"original key.  This allows other certificates signed by the original ".
-			"certificate to still validate against the new certificate.",
+		'regen-x509-keys' =>
+			"Normally, when x509 certificates are renewed, Genesis retains the ".
+			"existing keys.  This is done to ensure compatibility with the previous ".
+			"certificates (and any certificates signed by that certificate) while ".
+			"updating the validity period.\n".
+			"\n".
+			"With this option specified, keys will be regenerated along with the ".
+			"certificate, meaning all certificates it signed will also have to be ".
+			"regenerated, and any deployments on certificate modulo pairing will ".
+			"need a three-step deployment.",
 
 		'invalid|I' =>
 			"Rotate secrets that are invalid (expired, missing, or don't match the ".
@@ -676,7 +675,7 @@ define_command("rotate-secrets", {
 define_command("remove-secrets", {
 	summary => "Remove certificates and credentials from the environment",
 	usage => "<env> remove-secrets [<options...>] [<path1> <...pathN>]",
-	alias => 'rms',
+	aliases => ['rms','ds'],
 	description =>
 		"Removes the generated secrets for the specified environment. If the --all ".
 		"option is specified, it will remove all screts under the environment's ".
@@ -705,7 +704,7 @@ define_command("remove-secrets", {
 
 		'interactive|i' =>
 			"Ask for confirmation on each secret path removal.",
-	],
+	], # FIXME Do we need a --force to remove fixed and x509 keys/serial?
 	deprecated_options => [
 		'vault=s' =>
 			"The name of a `safe' target (a Vault) that is storing the target ".
