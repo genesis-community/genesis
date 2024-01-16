@@ -688,10 +688,10 @@ sub time_exec {
 	my ($cmd, $args) = @_;
 	my @results = ();
 	my $start = gettimeofday();
-	eval { $cmd->($args); };
+	$cmd->($args);
+	my $err = @$;
 	my $end = gettimeofday();
 	trace "\nTIME RUN: %0.6f\n\n", $end-$start;
-	my $err = @$;
 	die $err if $err;
 	return $end-$start;
 }
