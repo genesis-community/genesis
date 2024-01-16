@@ -38,14 +38,41 @@ sub env {
 	};
 }
 
+sub preload {
+	my $self = shift;
+	my ($out,$rc,$err) = run({
+			redact_output => 1,
+			env => $self->env(),
+			stderr => 0
+		},
+		'credhub', 'export', '-j', '-p', $self->base
+	);
+	if ($rc) {
+		delete($self->{cached});
+	} else {
+		my $data = read_json_from($out, $rc, $err);
+		$self->{cached} = $rc ? {} : {(
+			map {($_->{Name} =~ s/$self->{base}\///r, $_->{Value})} @{$data->{Credentials}}
+		)};
+	}
+	return;
+}
+
 sub has {
-	return defined(shift->get(@_));
+	my ($self,$path,$key) = @_;
+	my $data = $self->data($path);
+	return "" if !defined($data) || ref($data) ne 'HASH' || $data->{error};
+	return defined($data->{value}) && ref($data->{value}) eq 'HASH' unless defined($key);
+	return defined($data->{value}{$key});
 }
 
 sub get {
 	my ($self,$path,$key) = @_;
-	my $results = $self->data($path);
-	return defined($key) ? $results->{value}->{$key} : $results->{value};
+	my $data = ($self->{cached} && exists($self->{cached}{$path}))
+		? {value => $self->{cached}{$path}}
+		: $self->data($path);
+	my $value = defined($key) ? $data->{value}->{$key} : $data->{value};
+	return wantarray ? ($value, $data->{error}) : $value;
 }
 
 sub data {
