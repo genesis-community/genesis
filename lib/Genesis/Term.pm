@@ -14,7 +14,7 @@ use IO::Socket;
 use base 'Exporter';
 our @EXPORT = qw/
 	terminal_width
-	wrap
+	wrap fix_wrap
 	in_controlling_terminal
 	csprintf csize
 	bullet checkbox
@@ -237,6 +237,25 @@ sub wrap {
 	return $results;
 }
 
+sub fix_wrap {
+	my @msg = @_;
+	my $fmt = "%s";
+	$fmt = shift(@msg) if $#msg > 0;
+
+	my $msg = sprintf($fmt,@msg);
+	$msg =~ s/^(\n*)(.*?)\n*\z/$2/s;
+	my $blanks = $1 || "\n";
+
+	my ($c, $prefix,$sub_msg);
+	if (($c,$prefix,$sub_msg) = $msg =~ m/^#([^\{]*)\{(\[[A-Z]*\])} (.*)/s) {
+		my $indent = ' ' x (length($prefix)+1);
+		$msg = $sub_msg;
+		$msg =~ s/\n$indent([^ ])/ $1/sg;
+		$msg =~ s/\n /\n\n/g;
+	}
+
+	return $msg;
+}
 
 sub bullet { # [type,] msg, [{option: value, ...}]
 	my $msg = shift;
