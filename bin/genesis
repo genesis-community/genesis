@@ -566,7 +566,7 @@ define_command("check-secrets", {
 		"otherwise all secrets specified by the kit will be checked.",
 	function_group => Genesis::Commands::ENVIRONMENT,
 	scope => 'env',
-	option_group => Genesis::Commands::REPO_OPTIONS,
+	option_group => Genesis::Commands::ENV_OPTIONS,
 	options => [
 		'verbose|v' =>
 			"List each item, not just failures and warnings.",
@@ -595,7 +595,7 @@ define_command("add-secrets", {
 		"be specified, or it applies to all secrets if no path is specified.",
 	function_group => Genesis::Commands::ENVIRONMENT,
 	scope => 'env',
-	option_group => Genesis::Commands::REPO_OPTIONS,
+	option_group => Genesis::Commands::ENV_OPTIONS,
 	options => [
 		"verbose|v" =>
 			"List each item as it is processed.",
@@ -625,7 +625,7 @@ define_command("rotate-secrets", {
 		"Regenerate secrets for your deployment. If any secrets are marked by the ".
 		"kit as 'fixed', they are not updated.  A list of secret paths can be ".
 		"specified, or it applies to all secrets if no path is specified.\n",
-	option_group => Genesis::Commands::REPO_OPTIONS,
+	option_group => Genesis::Commands::ENV_OPTIONS,
 	options => [
 		'verbose|v' =>
 			"List each item as it is processed, not just failures and warnings.",
@@ -685,7 +685,7 @@ define_command("remove-secrets", {
 		"(all generated secrets if no path is specified).",
 	function_group => Genesis::Commands::ENVIRONMENT,
 	scope => 'env',
-	option_group => Genesis::Commands::REPO_OPTIONS,
+	option_group => Genesis::Commands::ENV_OPTIONS,
 	options => [
 		'verbose|v' =>
 			"List each item as it is processed, not just failures and warnings.",
