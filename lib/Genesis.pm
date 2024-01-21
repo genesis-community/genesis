@@ -18,7 +18,7 @@ use Cwd ();
 use Data::Dumper;
 use File::Basename qw/basename dirname/;
 use File::Find ();
-use File::Temp qw/tempdir/;
+use File::Temp qw/tempdir tempfile/;
 use IO::Socket;
 use JSON::PP ();
 use POSIX qw/strftime/;
@@ -47,7 +47,7 @@ our @EXPORT = qw/
 	debug trace dump_stack dump_var qtrace
 
 	vaulted
-	workdir
+	workdir tmpfile
 
 	semver
 	by_semver
@@ -248,6 +248,15 @@ sub workdir {
 	trace "Provided temporary directory $workdir, which will be removed when this process ends";
 	return $workdir unless $suffix;
 	return $ENV{"GENESIS_WORKDIR$suffix"} = $WORKDIRS->{$suffix} = $workdir;
+}
+
+sub tmpfile {
+	my (%opts) = @_;
+	my $dir = $opts{dir} // workdir;
+	my $ext = $opts{ext} // '';
+	my $template = $opts{template} // 'tmp_XXXXXXXXXX';
+	my (undef, $filename) = tempfile($template, DIR => $dir, SUFFIX => $ext, OPEN => 0);
+	return $filename;
 }
 
 sub semver {
