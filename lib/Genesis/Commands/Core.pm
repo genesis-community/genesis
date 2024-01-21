@@ -67,11 +67,13 @@ sub version {
 		output ($_ =~ /^is_/ ? ($version{$_} ? 'true' : 'false') : $version{$_})
 			for (@_);
 	}
+	exit 0
 }
 
 sub ping {
 	command_usage(1) if @_;
 	print "PING!\n";
+	exit 0
 }
 
 sub update {
@@ -148,7 +150,7 @@ sub update {
 		}
 	}
 	output $summary."\n";
-	return 1 if get_options->{check};
+	exit 0 if get_options->{check};
 
 	my $tmpdir = workdir();
 	my $target = $ENV{GENESIS_CALLBACK_BIN};

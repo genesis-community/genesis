@@ -228,6 +228,7 @@ sub run_command { # {{{
 		warning({label => "DEPRECATED"}, $msg);
 	}
 	$RUN{$COMMAND}(@COMMAND_ARGS);
+	exit 0
 } # }}}
 
 sub has_command { # {{{
