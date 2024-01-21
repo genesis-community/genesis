@@ -964,8 +964,8 @@ sub compare_arrays {
 	$matrix{$_} -=1 for @$arr1;
 	$matrix{$_} +=1 for @$arr2;
 
-	my @results;
-	for (@$arr1, @$arr2) { # This is On, probably a better way to do it.
+	my @results = ([],[],[]);
+	for (@$arr1, @$arr2) { # This is O(n), probably a better way to do it while still keeping order
 		next unless defined($matrix{$_});
 		push(@{$results[delete($matrix{$_})+1]}, $_);
 	}
