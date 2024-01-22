@@ -75,7 +75,7 @@ sub populate {
 	}
 
 	# TODO: if there were any previous versions, make sure there are no path conflicts
-	
+
 	$self->_order_secrets(); # Note to self - this takes ~1ms, don't need to skip for efficiency when order doesn't matter.
 	$self->{paths} = { map {($_->path, $_)} @{$self->{secrets}} };
 	my %new_counts = map {($_,0-$initial_counts{$_})} keys %initial_counts;
@@ -132,7 +132,7 @@ sub filter {
 						($key eq 'path') ? $_->path :
 						($key eq 'type') ? $_->type :
 					  $_->has($key)    ? $_->get($key) : undef;
-					
+
 					if (!defined($check) && ($re || !$negate)) {
 						#if $check is not defined and the filter is a regex or a equality, there can't be a match
 						0
@@ -166,7 +166,7 @@ sub filter {
 	}
 	my %filter_map = map {($_,1)} (@filtered_paths, @explicit_paths);
 	my @filtered_secrets = grep { $filter_map{$_->{path}} } $self->secrets;
-	
+
 	my $filtered_plan = bless({
 		%$self,
 		parent  => $self,
@@ -194,7 +194,7 @@ sub validate {
 		count_nouns(scalar($self->errors),'secret definition'),
 		join("\n", map {"[[- >>".$_->describe} ($self->errors))
 	);
-} 
+}
 
 # }}}
 # check_secrets - check that the secrets are present {{{
@@ -631,7 +631,7 @@ sub _order_secrets {
 
 	my %signers = ();
 	push (@{$signers{$_->get(signed_by => '')}}, $_) for (@x509certs);
-	
+
 	$signers{$_} = [sort {$a->path cmp $b->path} @{$signers{$_}}]
 		for (keys %signers); #sorts each signers list of signees by path
 
@@ -656,7 +656,7 @@ sub _order_secrets {
 	push @ordered_secrets, $_->reject(
 		$_->label => "Could not find associated signing CA"
 	) for (grep {!$_->ordered} @x509certs);
-	
+
 	for my $error (@errored_secrets) { # Replace errored x509 with Invalid Secret for that path
 		my $err_path = $error->path;
 		my ($ordered_idx) = grep {$ordered_secrets[$_]->path eq $err_path} (0 ... $#ordered_secrets);
@@ -823,7 +823,7 @@ sub notify {
 		if ($action eq 'add' && $import_count + $gen_count > 0) {
 			if ($gen_count == 0) {
 				$imported_counts_msg = "%d imported/";
-				push @imported_counts, $import_count; 
+				push @imported_counts, $import_count;
 			} else {
 				$imported_counts_msg = "#y{%d of %d imported}/";
 				push @imported_counts, $import_count, $import_count + $gen_count;

@@ -177,7 +177,7 @@ sub _parse_credential_key {
 		"Provided credential definition" => "Key cannot contain colons",
 		$path.":".$key, $data, $feature
 	) if ($key =~ ':');
-	
+
 	my $ext_path = "$path:$key";
 	if ($data =~ m/^random\b/) {
 		if ($data =~ m/^random\s+(\d+)(\s+fmt\s+(\S+)(\s+at\s+(\S+))?)?(\s+allowed-chars\s+(\S+))?(\s+fixed)?$/) {
@@ -192,7 +192,7 @@ sub _parse_credential_key {
 			);
 		} else {
 			return _invalid_secret(
-				"Random password definition" => 
+				"Random password definition" =>
 					"Expected usage: random <size> [fmt <format> [at <key>]] [allowed-chars <chars>] [fixed]\n".
 					"Got: $data",
 				$ext_path, $data, $feature
@@ -246,7 +246,7 @@ sub _validate_feature_block {
 	return 0 unless exists $data->{$block}{$feature};
 	return 1 if ref($data->{$block}{$feature}) eq 'HASH';
 	push @$secrets, _invalid_secret(
-		"Secrets definition for $block/$feature" => 
+		"Secrets definition for $block/$feature" =>
 			"Expecting a hashmap, got "._ref_description($data->{$block}{$feature}),
 		"$block/$feature"
 	);

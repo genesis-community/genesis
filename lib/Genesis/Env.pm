@@ -1026,7 +1026,7 @@ sub vault {
 				$ENV{GENESIS_TARGET_VAULT} &&
 				$ENV{GENESIS_TARGET_VAULT} eq $details->{url}
 			);
-		
+
 		my %filter = ();
 		$filter{verify} = ($details->{verify} && $details->{tls} ? 1 : 0 ) if $details->{tls};
 		$filter{namespace} = $details->{namespace} || '';
@@ -1921,7 +1921,7 @@ sub check_secrets {
 	my ($action,$action_desc) = delete($opts{validate})
 		? ('validate_secrets','validated')
 		: ('check_secrets', 'checked');
-	
+
 	$self->manifest_provider->kit_files(); #process blueprint
 	my $plan = $self->get_secrets_plan(%opts);
 
@@ -2073,7 +2073,7 @@ sub remove_secrets {
 # notify - print an environment-specific message {{{
 sub notify {
 	my $self = shift;
-	my ($target, $prefix,$postfix) = $_[0] =~ /^(error|warning|fatal|success)$/ 
+	my ($target, $prefix,$postfix) = $_[0] =~ /^(error|warning|fatal|success)$/
 		? (shift,"","")
 		: ("info","[","]");
 	my $opts = ref($_[0]) eq 'HASH' ? shift : {};

@@ -1,5 +1,4 @@
-# Extends Genesis::Env::Secrets::Parser::FromManifest to support legacy CF
-# kits 
+# Extends Genesis::Env::Secrets::Parser::FromManifest to support legacy CF kits
 use Genesis::Secret::UserProvided;
 
 sub process_legacy_cf_secrets {
@@ -26,7 +25,7 @@ sub process_legacy_cf_secrets {
 		);
 	}
 
-	# Fix user-provided haproxy 
+	# Fix user-provided haproxy
 	if (in_array('haproxy', @$features) && in_array('tls', @$features) && ! in_array('self-signed', @$features)) {
 		push @$secrets, Genesis::Secret::UserProvided->new("haproxy_ssl:certificate",
 			prompt    => "HA Proxy SSL certificate",

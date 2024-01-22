@@ -181,7 +181,7 @@ sub generate {
 	bug("Abstract Method: Expecting %s class to define concrete '%' method", ref($_[0]), 'generate');
 	# Input expected:
 	#   options: determine how/what secrets are generated
-	#     filter:  filter for which secrets to add 
+	#     filter:  filter for which secrets to add
 	#     verbose: 1 is full output, 0 is progress-line style
 	#
 	# Output expected:
@@ -201,7 +201,7 @@ sub validate {
 	bug("Abstract Method: Expecting %s class to define concrete '%' method", ref($_[0]), 'validate');
 	# Input expected:
 	#   options: determine how/what secrets are validated
-	#     filter:   filter for which secrets to validate 
+	#     filter:   filter for which secrets to validate
 	#     verbose:  1 is full output, 0 is progress-line style with only failures reported
 	#     validate: 1 for full validation, 0 to just check existance
 	#
@@ -216,7 +216,7 @@ sub validate {
 	#			#TODO: validate_kit_secrets(
 	#			$self,
 	#		sub{$self->_secret_processing_updates_callback($action,$processing_opts,@_)},
-	#   
+	#
 }
 
 # }}}
@@ -225,7 +225,7 @@ sub regenerate {
 	bug("Abstract Method: Expecting %s class to define concrete '%' method", ref($_[0]), 'regenerate');
 	# Input expected:
 	#   options: determine how/what secrets are regenerated
-	#     filter:      filter for which secrets to regenerate 
+	#     filter:      filter for which secrets to regenerate
 	#     verbose:     1 is full output, 0 is progress-line style with only failures reported
 	#     validate:    1 for full validation, 0 to just check existance
 	#     no_prompt:   Don't prompt for confirmation to regenerate secrets

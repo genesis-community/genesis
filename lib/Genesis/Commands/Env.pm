@@ -483,10 +483,8 @@ sub bosh {
 }
 
 sub env_shell {
-
 	append_options(redact => ! -t STDOUT);
 	command_usage(1) if @_ != 1;
-	
 	my $env = Genesis::Top->new('.')->load_env($_[0])->with_vault();
 	$env->with_bosh() unless get_options->{'no-bosh'};
 	$env->shell(%{get_options()});

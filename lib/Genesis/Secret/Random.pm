@@ -97,7 +97,7 @@ sub all_paths {
 # _description - return label and features to build describe output {{{
 sub _description {
 	my ($self, $alternative) = @_;
-	return (defined($alternative) && $alternative eq 'format') 
+	return (defined($alternative) && $alternative eq 'format')
 	? (
 			$self->label,
 			$self->{definition}{format} . ' formatted value of '.$self->path,
@@ -117,7 +117,7 @@ sub _validate_constructor_opts {
   my @errors;
   my %orig_opts = %opts;
   my $args = {};
-  $args->{size} = delete($opts{size}) or 
+  $args->{size} = delete($opts{size}) or
     push @errors, "Requires a non-zero positive integer for 'size'";
   if ($args->{format} = delete($opts{format})) {
     $args->{destination} = delete($opts{destination}) if defined($opts{destination});
@@ -129,7 +129,6 @@ sub _validate_constructor_opts {
   return @errors
     ? (\%orig_opts, \@errors)
     : ($args)
-
 }
 
 # }}}
@@ -203,12 +202,9 @@ sub _get_safe_command_for_rotate {shift->__get_safe_command_for_generate('rotate
 # }}}
 sub _import_from_credhub {
 	my ($self,$value) = @_;
-	# TODO: Do we need to check if the ca cert is the ca cert associated?
 	$self->set_value($value);
 	$self->save;
-
 	return ('ok');
-	
 }
 #}}}
 

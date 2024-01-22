@@ -9,7 +9,7 @@ use Genesis::State qw/envset/;
 use Time::Piece;
 
 ### Construction arguments {{{
-# is_ca:     <boolean, optional: cert if a ca cert if true> 
+# is_ca:     <boolean, optional: cert if a ca cert if true>
 # base_path: <relative path that shares a ca>
 # signed_by: <optional: specifies signing ca path>
 # valid_for: <optional: integer, followed by [ymdh], for years, months, days or hours>
@@ -136,7 +136,7 @@ sub _description {
 }
 
 # }}}
-# _required_value_keys - list of required keys in value store {{{ 
+# _required_value_keys - list of required keys in value store {{{
 sub _required_value_keys {
 	my @keys = qw(certificate combined key);
 	push(@keys, qw(crl serial)) if$_[0] && $_[0]->get('is_ca');
@@ -197,7 +197,7 @@ sub _validate_constructor_opts {
 	}
 
 	if (defined($opts{is_ca})) {
-		push @errors, "Invalid is_ca argument: expecting boolean value, got '$opts{is_ca}'" 
+		push @errors, "Invalid is_ca argument: expecting boolean value, got '$opts{is_ca}'"
 		unless $opts{is_ca} =~ /^1?$/;
 		$args->{is_ca} = delete($opts{is_ca});
 	}

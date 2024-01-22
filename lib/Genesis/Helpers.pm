@@ -24,7 +24,7 @@ sub log_from_script {
 	require Genesis::Log;
 	$Genesis::RC ||= Genesis::Config->new($ENV{HOME}."/.genesis/config");
 	Genesis::Log->setup_from_configs($Genesis::RC->get("logs",[]));
-	
+
 	binmode STDOUT, ":encoding(UTF-8)";
 	binmode STDERR, ":encoding(UTF-8)";
 

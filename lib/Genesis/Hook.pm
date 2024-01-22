@@ -11,9 +11,9 @@ sub init {
 	bug(
 		"Missing environment argument for a perl-based kit hook call"
 	) unless $ops{env};
-	
+
 	my $hook = bless({%ops, type => $ENV{GENESIS_KIT_HOOK}},$class);
-	$hook->{features} = [$hook->env->features] 
+	$hook->{features} = [$hook->env->features]
 		unless $ENV{GENESIS_KIT_HOOK} eq 'feature';
 
 	trace({raw => 1},

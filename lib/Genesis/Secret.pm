@@ -5,12 +5,12 @@ use Genesis;
 use Genesis::State qw/envset/;
 use Genesis::Term qw/checkbox/;
 
-sub new { 
+sub new {
 	my ($class,$path,%opts) = @_;
 	bug 'Cannot directly instantiate a Genesis::Secret - use build to instantiate a derived class'
 		if $class eq __PACKAGE__;
 
-	my %src = 
+	my %src =
 		defined($opts{_ch_name}) ? (source => 'manifest', var_name => delete($opts{_ch_name})) :
 		defined($opts{_feature}) ? (source => 'kit',      feature  => delete($opts{_feature})) :
 		();
@@ -20,10 +20,10 @@ sub new {
 		$args->{_feature} = $src{feature}  if ($src{source}//'') eq 'kit';
 		return $class->reject(
 			$class->type(), "Errors in definition:".join("\n- ", '', @{$errors}),
-			$path, $args, 
+			$path, $args
 		);
 	} else {
-		my %src = 
+		my %src =
 		return bless({
 			path => $alt_path || $path,
 			definition => $args,
@@ -108,7 +108,7 @@ sub default_key   {undef}
 sub definition    {$_[0]->{definition}}
 sub value         {$_[0]->{value}||$_[0]->{stored_value}}
 sub has_value     {defined($_[0]->{stored_value})}
-sub missing       {!$_[0]->has_value} 
+sub missing       {!$_[0]->has_value}
 sub set_plan      {$_[0]->{plan} = $_[1]; $_[0]}
 sub plan          {$_[0]->{plan} || bail('Secret not in a plan -- cannot continue')}
 sub base_path     {$_[0]->plan->store->base}
@@ -171,7 +171,7 @@ sub validate_value {
 	my ($results, @validations) = $self->_validate_value();
 	my $show_all_messages = ! envset("GENESIS_HIDE_PROBLEMATIC_SECRETS");
 	my %priority = ('error' => 0, 'warn' => 1, 'ok' => 2);
-	my @results_levels = 
+	my @results_levels =
 		sort {$priority{$a}<=>$priority{$b}}
 		uniq('ok',
 			map {$_ ? ($_ =~ /^(error|warn)$/ ? $_ : 'ok') : 'error'}
@@ -221,14 +221,14 @@ sub import_from_credhub {
 	my ($value, $err) = $self->credhub->get(split(/\./,$self->var_name,2));
 	return ('error', $err) if $err;
 
-	return $self->_import_from_credhub($value); 
+	return $self->_import_from_credhub($value);
 }
 
 # _import_from_credhub - catch-all for secrets that don't implement _import_from_credhub
 sub _import_from_credhub {
 	my $self = shift;
 	return (
-		'error', 
+		'error',
 		sprintf("Cannot import %s secrets from CredHub - not implemented", $self->type)
 	)
 }

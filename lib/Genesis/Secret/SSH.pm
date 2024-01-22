@@ -11,7 +11,7 @@ use Genesis qw(run bug);
 # path:  <relative location in secrets-store under the base>
 # fixed: <boolean to specify if the secret can be overwritten>
 # }}}
- 
+
 ### Polymorphic Instance Methods {{{
 # label - specific label for this derived class {{{
 sub label {'SSH key pair'}
@@ -74,7 +74,7 @@ sub _validate_constructor_opts {
 }
 
 # }}}
-# _required_value_keys - list of required keys in value store {{{ 
+# _required_value_keys - list of required keys in value store {{{
 sub _required_value_keys {
 	qw/private public fingerprint/
 }

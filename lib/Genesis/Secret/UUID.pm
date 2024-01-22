@@ -29,7 +29,7 @@ sub generate_value {
 sub process_command_output {
 	my ($self, $action, $out) = @_;
 	return $out unless $action eq 'add';
-	join("\n", 
+	join("\n",
 		grep {
 			my (undef, $key) = split(':',$self->path);
 			$_ !~ /^$key: [a-f0-9]{8}(-[a-f0-9]{4}){4}[a-f0-9]{8}$/;
