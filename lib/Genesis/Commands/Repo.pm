@@ -133,10 +133,7 @@ sub secrets_provider {
 
 	my $ui_nl = $options{interactive} ? "" : "\n";
 
-	# FIXME:  If the vault is set in config, but it is an invalid vault target,
-	#         cannot fix with a call to genesis secrets-provider
-
-	my $top = Genesis::Top->new('.');
+	my $top = Genesis::Top->new('.', no_vault => 1);
 	my $err;
 	if (scalar(keys %options)) {
 		$err = $top->set_vault(%options);
@@ -234,3 +231,4 @@ sub kit_provider {
 }
 
 1;
+# vim: fdm=marker:foldlevel=0:noet
