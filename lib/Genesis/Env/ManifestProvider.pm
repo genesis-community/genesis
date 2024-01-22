@@ -322,6 +322,51 @@ sub valid_subset {
 }
 
 # }}}
+# vault_paths - list all secrets used in the manifest {{{
+sub vault_paths {
+	my ($self, %opts) = @_;
+
+	my $file = '';
+	if ($opts{data}) {
+		$file = tmpfile(
+			dir => $self->env->workpath,
+			ext => '.yml',
+			template => 'manifest-XXXXXXXX'
+		);
+		save_to_yaml_file($opts{data}, $file);
+	} elsif ($opts{file}) {
+		$file = $opts{file};
+	} elsif ($opts{manifest}) {
+		$file = $opts{manifest}->file
+	} else {
+		$file = $self->unevaluated(
+			notify=>!$opts{no_notification}
+		)->file;
+	}
+	pushd $self->env->path;
+	my $json = read_json_from(run({
+			onfailure => "Unable to determine vault paths from ".$self->env->name." manifest",
+			stderr => "&1",
+			env => {
+				$self->env->get_environment_variables
+			}
+		},
+		'spruce vaultinfo "$1" | spruce json', $file
+	));
+	popd;
+
+	bail(
+		"Expecting spruce vaultinfo to return an array of secrets, got this instead:\n\n".
+		Dumper($json)
+	) unless ref($json) eq 'HASH' && ref($json->{secrets}) eq 'ARRAY' ;
+
+	my %secrets_map = map {
+		(($_->{key} =~ /^\// ? '':'/').$_->{key}, $_->{references})
+	} @{$json->{secrets}};
+	return \%secrets_map;
+}
+
+# }}}
 # }}}
 
 ### Private Instance Methods {{{

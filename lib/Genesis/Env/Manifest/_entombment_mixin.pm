@@ -25,7 +25,7 @@ sub _entomb_secrets {
 		$src_vault->name
 	);
 	$self->builder->unevaluated(); # Prewarm cache
-	my $secret_paths = $self->env->vault_paths(suppress_notification=>1);
+	my $secret_paths = $self->get_vault_paths(no_notification=>1);
 	my $secrets_count = scalar(keys %$secret_paths);
 	if ($secrets_count) {
 		info "found %d paths.", $secrets_count;

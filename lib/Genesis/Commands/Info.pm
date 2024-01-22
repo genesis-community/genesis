@@ -201,12 +201,11 @@ sub vault_paths {
 
 	my $env = Genesis::Top
 		->new('.')
-		->load_env($_[0])
-		->download_required_configs('blueprint');
+		->load_env($_[0]);
 
 	my $vault_paths = $env->vault_paths();
 	my $msg = "";
-	for my $path (keys %$vault_paths) {
+	for my $path (sort keys %$vault_paths) {
 		$msg .= "\n$path";
 		$msg .= ":\n  - ".join("\n  - ", @{$vault_paths->{$path}})
 			if (get_options->{references});

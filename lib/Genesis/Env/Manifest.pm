@@ -161,6 +161,10 @@ sub _generate_file_name {
 	);
 }
 
+sub get_vault_paths {
+	shift->builder->vault_paths(@_);
+}
+
 sub _merge {bug "Expected %s to define private _merge method", ref($_[0])}
 
 sub _get_subset {

@@ -697,41 +697,6 @@ sub format_yaml_files {
 }
 
 # }}}
-# vault_paths - list all secrets used in the manifest {{{
-sub vault_paths {
-	my ($self, $suppress_notification) = @_;
-	# This might be doable without spruce using a flattened-lookup
-	my $ref = $self->_memoize(sub {
-		my $self = shift;
-		my $unevaled_manifest = $self->manifest_provider->unevaluated(
-			notify=>!$suppress_notification
-		)->file;
-		pushd $self->path;
-		my $json = read_json_from(run({
-				onfailure => "Unable to determine vault paths from $self->{name} manifest",
-				stderr => "&1",
-				env => {
-					$self->get_environment_variables
-				}
-			},
-			'spruce vaultinfo "$1" | spruce json', $unevaled_manifest
-		));
-		popd;
-
-		bail(
-			"Expecting spruce vaultinfo to return an array of secrets, got this instead:\n\n".
-			Dumper($json)
-		) unless ref($json) eq 'HASH' && ref($json->{secrets}) eq 'ARRAY' ;
-
-		my %secrets_map = map {
-			(($_->{key} =~ /^\// ? '':'/').$_->{key}, $_->{references})
-		} @{$json->{secrets}};
-		return \%secrets_map;
-	});
-	return $ref;
-}
-
-# }}}
 # features - returns the list of features (specified and derived) {{{
 sub features {
 	my $ref = $_[0]->_memoize(sub {
@@ -857,6 +822,13 @@ sub dereferenced_kit_metadata {
 }
 
 # }}}
+sub vault_paths {
+	my ($self, %opts) = @_;
+
+	$self->manifest_provider
+		->base_manifest(notify=>1)
+		->get_vault_paths;
+}
 
 #	# Secrets Plan
 # get_secrets_store - get the vault store for the environment {{{
