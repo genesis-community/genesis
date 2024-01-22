@@ -5,13 +5,13 @@ use warnings;
 
 use base 'Genesis::Env::Secrets::Parser';
 
+use Genesis;
 use Genesis::Secret::Invalid;
 use Genesis::Secret::RSA;
 use Genesis::Secret::Random;
 use Genesis::Secret::SSH;
 use Genesis::Secret::X509;
-
-use Genesis;
+use Genesis::Secret::UserProvided;
 
 # Instance Methods
 sub parse {
@@ -50,6 +50,13 @@ sub parse {
 			)
 		}
 	}
+
+	# Existing legacy kit support
+	if ($self->env->kit->id =~ /^cf\/2.*/) {
+		require Genesis::Env::Secrets::Parser::_legacy_cf_support_mixin;
+		process_legacy_cf_secrets(\@secrets, [$self->env->features]);
+	}
+
 	logger->info(
 		"#%s{found %s}", scalar(@secrets) ? 'G' : 'B', scalar(@secrets)
 	) if $opts{notify};
@@ -72,7 +79,7 @@ sub _parse_password {
 		format      => undef,
 		destination => undef,
 		valid_chars => $policy,
-		fixed       => 0,
+		fixed       => $opts{metadata}{fixed}?1:0,
 		_ch_name    => $path,
 	);
 }

@@ -76,12 +76,23 @@ sub _description {
 }
 
 # }}}
+# _import_from_credhub - process the credhub value in the context of this secret type {{{
+sub _import_from_credhub {
+	my ($self,$value) = @_;
+	$self->set_value($value);
+	$self->save;
+
+	return ('ok');
+
+}
+# }}}
 # }}}
 
 sub prompt_for_multiline_secret {
 	my ($file,$prompt) = @_;
 	require Genesis::UI;
-	print "[2A";
+	#print "[2A";
+	info ('User input required:');
 	mkfile_or_fail($file,Genesis::UI::prompt_for_block($prompt));
 	0;
 }
