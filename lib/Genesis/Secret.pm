@@ -300,6 +300,16 @@ sub promote_value_to_stored {
 	$self->{stored_value} = delete($self->{value});
 }
 
+sub _assemble_vault_operator {
+	my ($self, $path) = @_;
+	return sprintf(
+		"(( vault %s\"%s\" ))",
+		($path =~ /^\//) ? '' : 'meta.vault ',
+		$path =~ s/^\/?/\//r # needs to start with / if it doesn't
+	);
+}
+
+
 sub _required_value_keys {undef}
 1;
 # vim: fdm=marker:foldlevel=1:noet

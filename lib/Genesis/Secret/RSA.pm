@@ -16,6 +16,25 @@ use Genesis qw(run);
 # label - specific label for this derived class {{{
 sub label {'RSA key pair'}
 # }}}
+# vault_operator - get the vault operator string for the given key {{{
+sub vault_operator {
+	my ($self, $key) = @_;
+	my $path = $self->path;
+	if (!defined($key)) {
+		return {map {($_, $self->vault_operator($_))} qw/public_key private_key/};
+	} elsif ($key =~ /^public(_key)?$/) {
+		$path .= ':public'
+	} elsif ($key =~ /^private(_key)?$/) {
+		$path .= ':private';
+	} else {
+		bug(
+			"Invalid key for vault_operator on %s secret (%s): %s",
+			$self->type, $path, $key
+		)
+	}
+	return $self->_assemble_vault_operator($path);
+}
+# }}}
 # }}}
 
 ### Parent-called Support Instance Methods {{{

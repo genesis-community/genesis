@@ -26,6 +26,15 @@ sub is_command_interactive {
 	return scalar(grep {$action eq $_} qw/add rotate/);
 }
 # }}}
+# vault_operator - get the vault operator string for the given key {{{
+sub vault_operator {
+	my ($self, $req_key) = @_;
+	my ($path, $key) = split(":",$self->path,2);
+	$key //= $self->default_key;
+	$path .= ':'.$key;
+	return $self->_assemble_vault_operator($path);
+}
+# }}}
 # }}}
 
 ### Parent-called Support Instance Methods {{{

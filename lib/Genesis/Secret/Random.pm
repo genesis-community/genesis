@@ -51,9 +51,24 @@ sub has_format_value {exists($_[0]->{format_value})||exists($_[0]->{stored_forma
 
 #}}}
 # TODO: add calc_format_key if we ever want to be able to write new formatted value based on unformatted value
+
+# vault_operator - get the vault operator string for the given key {{{
+sub vault_operator {
+	my ($self, $req_key) = @_;
+	my ($path, $key) = split(":",$self->path,2);
+	$key //= $self->default_key;
+	$path .= ':'.$key;
+	return $self->_assemble_vault_operator($path);
+}
+# }}}
 #}}}
 
 ### Polymorphic Instance Methods {{{
+# default_key - default key to use if no key given {{{
+sub default_key {
+	'value'
+}
+# }}}
 # check_value - check that the secret is present (and its formatted version if applicable) {{{
 sub check_value {
 	my $self = shift;

@@ -4,7 +4,7 @@ use warnings;
 
 use base "Genesis::Secret";
 
-use Genesis qw/uniq run/;
+use Genesis qw/uniq run bug/;
 use Genesis::State qw/envset/;
 use Time::Piece;
 
@@ -76,6 +76,39 @@ sub read_names {
 	return uniq($subjectCN,@SANs);
 }
 
+# }}}
+# ca - return the ca secret for the certificate {{{
+sub ca {
+	my $self = shift;
+	return $self if $self->get('self_signed');
+	return $self->plan->secret_at($self->get('signed_by'));
+}
+
+# }}}
+# vault_operator - get the vault operator string for the given key {{{
+sub vault_operator {
+	my ($self, $key) = @_;
+	my $path = $self->path;
+	if (!defined($key)) {
+		return {map {($_, $self->vault_operator($_))} qw/ca certificate private_key/};
+	} elsif ($key eq 'certificate') {
+		$path .= ':certificate'
+	} elsif ($key eq 'private_key' || $key eq 'key') {
+		$path .= ':key';
+	} elsif ($key eq 'ca') {
+		my $ca_path = $self->get('signed_by');
+		if ($ca_path =~ /^\//) {
+			$path = "$ca_path:certificate"
+		} else {
+			return $self->ca->vault_operator('certificate')
+		}
+	} else {
+		bug(
+			"Invalid key for vault_operator on %s secret", $self->type
+		)
+	}
+	return $self->_assemble_vault_operator($path);
+}
 # }}}
 # }}}
 
