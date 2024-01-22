@@ -687,10 +687,9 @@ sub _next_x509_signer {
 # }}}
 # _order_x509_secrets - process the certs in order of signer {{{
 sub _order_x509_secrets {
-	my ($signer,$certs_by_signer,$src_certs,$ordered_certs,$errored_certs) = @_;
+	my ($signer_path,$certs_by_signer,$src_certs,$ordered_certs,$errored_certs) = @_;
 
-	if ($signer) { # Not implicitly self-signed or signed by root ca path
-		my $signer_path = $signer->path;
+	if ($signer_path) { # Not implicitly self-signed or signed by root ca path
 		my $signer_certs = $certs_by_signer->{$signer_path};
 		if (! grep {$_->path eq $signer_path} (@$ordered_certs)) { # Deal with self-signed cert
 			my ($idx) = grep {$signer_certs->[$_]->path eq $signer_path} ( 0 .. $#$signer_certs);
@@ -702,14 +701,14 @@ sub _order_x509_secrets {
 			}
 		}
 	}
-	while (my $cert = shift(@{$certs_by_signer->{$signer ? $signer->path : ''}})) {
+	while (my $cert = shift(@{$certs_by_signer->{$signer_path//''}})) {
 		if (grep {$_->path eq $cert->path} (@$ordered_certs)) {
 			push @$errored_certs, $cert->reject( $cert->label => 'Cyclical CA signage detected');
 			next;
 		}
 		$cert->ordered(1);
 		push @$ordered_certs, $cert;
-		_order_x509_secrets($cert,$certs_by_signer,$src_certs,$ordered_certs,$errored_certs)
+		_order_x509_secrets($cert->path,$certs_by_signer,$src_certs,$ordered_certs,$errored_certs)
 			if scalar(@{$certs_by_signer->{$cert->path} || []});
 	}
 }
