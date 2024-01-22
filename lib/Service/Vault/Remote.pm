@@ -54,7 +54,7 @@ sub target {
 
 	my $url;
 	if ($target) {
-		($url, my @targets) = _get_targets($target);
+		($url, my @targets) = Service::Vault::_get_targets($target);
 		if (scalar(@targets) <1) {
 			bail "Safe target \"#M{%s}\" not found.  Please create it".
 					 "and authorize against it before re-attempting this command.",
@@ -137,7 +137,7 @@ sub attach {
 	bail "No vault target specified"
 		unless $url;
 	bail "Expecting vault target '$url' to be a url"
-		unless _target_is_url($url);
+		unless Service::Vault::_target_is_url($url);
 
 	my %filter = (url => $url);
 	$filter{verify} = (($opts{tls} && $opts{verify}) ? 1 : 0) if $opts{tls};
