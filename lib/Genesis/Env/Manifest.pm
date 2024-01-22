@@ -51,6 +51,8 @@ sub redacted {
 	bug("redacted: Not implemented for %s manifest types", $_[0]->label);
 }
 
+sub manifest_lookup_target {$_[0]}
+
 sub data {
 	return $_[0]->_memoize('data', sub {
 		my $self = shift;
@@ -148,13 +150,15 @@ sub _save_data_to_file {
 }
 
 sub _generate_file_name {
-	my ($self) = @_;
+	my ($self,$transient_flag) = @_;
 	my $path = $self->env->workpath();
 	my $type = $self->type;
 	my $subset = $self->{subset} ? "-".$self->{subset} : '';
+	my $transient = $transient_flag ? "transient-" : "";
 	sprintf(
-		"%s/manifest-%s-%s-%s%s.yml",
+		"%s/%smanifest-%s-%s-%s%s.yml",
 		$path,
+		$transient,
 		$self->env->name,
 		$self->env->signature,
 		$type,

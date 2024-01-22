@@ -67,7 +67,7 @@ sub load {
 
 sub reject {
 	my ($class_or_ref,$subject,$error,$path,$args) = @_;
-	if ($class_or_ref->isa(__PACKAGE__)) {
+	if (ref($class_or_ref) && $class_or_ref->isa(__PACKAGE__)) {
 		$path //= $class_or_ref->path;
 		$args //= $class_or_ref->definition;
 		$args->{_feature} //= $class_or_ref->{feature}  if $class_or_ref->from_kit;
@@ -80,21 +80,16 @@ sub reject {
 
 sub validate_definition {
 	my ($class, $path, %opts) =  @_;
-	
-	unless ($ENV{GENESIS_SKIP_SECRET_DEFINITION_VALIDATION}) {
-		return $class->_validate_constructor_opts($path, %opts) if $class->can('_validate_constructor_opts');
 
-		my @errors;
-		my @required_options = $class->_required_constructor_opts;
-		my @valid_options = (@required_options, $class->_optional_constructor_opts);
-		push(@errors, "Missing required '$_' argument") for grep {!$opts{$_}} @required_options;
-		push(@errors, "Unknown '$_' argument specified") for grep {my $k = $_; ! grep {$_ eq $k} @valid_options} keys(%opts);
-		return (
-			\%opts,
-			\@errors, 
-			$path,
-		) if @errors; 
-	}
+	return (\%opts, $path) if ($ENV{GENESIS_SKIP_SECRET_DEFINITION_VALIDATION});
+	return $class->_validate_constructor_opts($path, %opts) if $class->can('_validate_constructor_opts');
+
+	my @errors;
+	my @required_options = $class->_required_constructor_opts;
+	my @valid_options = (@required_options, $class->_optional_constructor_opts);
+	push(@errors, "Missing required '$_' argument") for grep {!$opts{$_}} @required_options;
+	push(@errors, "Unknown '$_' argument specified") for grep {my $k = $_; ! grep {$_ eq $k} @valid_options} keys(%opts);
+	return (\%opts, \@errors, $path) if @errors;
 	return (\%opts, $path);
 }
 
@@ -223,7 +218,7 @@ sub import_from_credhub {
 	return ('error', "credhub import path unknown for secret")
 		unless $self->from_manifest && $self->var_name;
 
-	my ($value, $err) = $self->credhub->get($self->var_name);
+	my ($value, $err) = $self->credhub->get(split(/\./,$self->var_name,2));
 	return ('error', $err) if $err;
 
 	return $self->_import_from_credhub($value); 

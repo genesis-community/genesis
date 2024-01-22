@@ -8,6 +8,7 @@ use base 'Genesis::Base';
 use Genesis;
 use JSON::PP qw/encode_json decode_json/;
 use Time::HiRes qw/gettimeofday/;
+use Data::Dumper;
 
 ### Class Methods {{{
 # accessor methods for each Manifest type - dynamically built {{{
@@ -95,6 +96,19 @@ sub deployment {
 	$self->$deployment_type(@_);
 }
 
+# }}}
+# base_manifest - the manifest to use to look data up (ie not entombified)
+sub base_manifest {
+	my $self = shift;
+	my $lookup_type = $self->_memoize(sub {
+		my $self = shift;
+		return 'vaultified'
+			if (! $self->env->use_create_env && @{$self->unevaluated(notify => 0)->data->{variables}//[]});
+		return 'unredacted';
+	});
+
+	$self->$lookup_type(@_);
+}
 # }}}
 # reset - reset all stored and cached manifests {{{
 sub reset {

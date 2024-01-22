@@ -13,7 +13,7 @@ sub local_vault {
 }
 
 sub _entomb_secrets {
-	my ($self) = @_;
+	my ($self, $data) = @_;
 
 	return if $self->{entombed}; # don't do this more than once...
 
@@ -60,12 +60,13 @@ sub _entomb_secrets {
 		info ("#g{done!}");
 
 		my $credhub = $self->env->credhub();
+		$credhub->preload();
 
 		#Design decision: use value-type credhub for each key, and only populate what is needed.
 		my $base_path = $self->env->secrets_base();
 		my $idx = 0;
 		my $w = length("$secrets_count");
-		my $entombment_prefix = ""; # can be set to another value to prevent conflicts if needed
+		my $entombment_prefix = "genesis-entombed/"; # can be set to another value to prevent conflicts if needed
 		info(
 			"[[  - >>copying Vault values to Credhub: #c{%s} => #B{%s}:",
 			$base_path, $credhub->base().($entombment_prefix ? "/$entombment_prefix" : "/")

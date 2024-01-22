@@ -47,7 +47,7 @@ sub _required_value_keys	{
 }
 
 # }}}
-# _validate_value - validate an x509 secret value {{{
+# _validate_value - validate an DHParams secret value {{{
 sub _validate_value {
 	my ($self) = @_;
 	my $values = $self->value;

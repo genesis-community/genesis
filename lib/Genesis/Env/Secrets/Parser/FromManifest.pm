@@ -66,7 +66,7 @@ sub parse {
 sub _parse_password {
 	my ($self, %opts) = @_;
 	my $path = $opts{name};
-	my $size = $opts{length} // 30;
+	my $size = $opts{options}{length} // 30;
 	my $policy = "";
 	$policy .= 'A-Z' unless $opts{options}{exclude_upper};
 	$policy .= 'a-z' unless $opts{options}{exclude_lower};
@@ -110,8 +110,8 @@ sub _parse_certificate {
 	$duration = defined($duration)
 		? $duration.'d'
 		: $opts{options}{is_ca} ? '10y' : '3y';
-	
-	my @names = uniq($opts{options}{common_name}, @{$opts{options}{alternative_names}});
+
+	my @names = @{$opts{options}{alternative_names}//[]};
 
 	# Special Case v2.0.x CF Kit
 	if ($path eq 'nats_server_cert' && $self->env->kit->id =~ /^cf\/2.0/) {
@@ -128,10 +128,12 @@ sub _parse_certificate {
 		is_ca      => !!$opts{options}{is_ca}//0,
 		signed_by  => $opts{options}{ca},
 		valid_for  => $duration,
+		subject_cn => $opts{options}{common_name},
 		names      => [@names],
 		usage      => [@usage],
 		_ch_name   => $path
 	);
 }
+
 1;
 # vim: fdm=marker:foldlevel=1:noet

@@ -3,10 +3,19 @@ package Genesis::Env::Manifest::Entombed;
 use strict;
 use warnings;
 
-use base 'Genesis::Env::Manifest';
-require Genesis::Env::Manifest::_entombment_mixin;
+use parent qw/Genesis::Env::Manifest/;
+
+do $ENV{GENESIS_LIB}."/Genesis/Env/Manifest/_entombment_mixin.pm";
 
 sub deployable {1}
+
+sub redacted {
+	$_[0]; #Entombed manifests don't need to be redacted - no vault secrets
+}
+
+sub manifest_lookup_target {
+	$_[0]->builder->unredacted(subset => $_[0]->{subset});
+}
 
 sub source_files {
 	my $self = shift;
@@ -17,10 +26,6 @@ sub source_files {
 		$self->builder->environment_files(),
 		$self->builder->conclusion_file()
 	]
-}
-
-sub redacted {
-	$_[0]; #Entombed manifests don't need to be redacted - no vault secrets
 }
 
 sub merge_options {

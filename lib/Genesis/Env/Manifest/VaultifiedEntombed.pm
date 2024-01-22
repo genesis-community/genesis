@@ -3,11 +3,14 @@ package Genesis::Env::Manifest::VaultifiedEntombed;
 use strict;
 use warnings;
 
-use base 'Genesis::Env::Manifest';
+use parent qw/Genesis::Env::Manifest/;
+
+do $ENV{GENESIS_LIB}."/Genesis/Env/Manifest/_entombment_mixin.pm";
+do $ENV{GENESIS_LIB}."/Genesis/Env/Manifest/_vaultify_mixin.pm";
 
 sub deployable {1}
 
-sub _source_files {
+sub source_files {
 	my $self = shift;
 	(
 		$self->builder->initiation_file(),
@@ -18,16 +21,68 @@ sub _source_files {
 	)
 }
 
+sub redacted {
+	$_[0]; #Entombed manifests don't need to be redacted - no vault secrets
+}
+sub manifest_lookup_target {
+	$_[0]->builder->vaultified(subset => $_[0]->{subset});
+}
+
+sub merge_options {
+	return {}
+}
+
+sub merge_environment {
+	return {
+		%{$_[0]->builder->full_merge_env},
+		%{$_[0]->local_vault->env},
+		REDACT => undef
+	}
+}
+
 sub _merge {
 	my $self = shift;
-	my ($data, $file, $warnings, $errors) = $self->builder->merge(
+
+	# vaultify to set the data to discover the vault paths.
+	return ($self->builder->entombed->data, $self->builder->entombed->file)
+		unless ($self->vaultify($self->_get_decoupled_data, $self->pre_merged_vaultified_file));
+
+	$self->_entomb_secrets();
+	my $transient_file = $self->pre_merged_vaultified_file;
+	$self->_set_file_name($transient_file);
+	my ($partially_entombed_data, undef, $p_warnings, $p_errors) = $self->builder->merge(
 		$self,
-		[$self->_source_files],
-		eval => "partial",
+		[$self->source_files],
+		$self->merge_options,
+		$self->merge_environment
+	);
+	$self->_set_file_name(undef);
+
+	$self->vaultify($partially_entombed_data, $self->pre_merged_vaultified_file);
+	my ($data, $file, $warnings, $errors) = $self->merge_vaultified_manifest(
+		merge_env =>  {
+			%{$self->builder->full_merge_env}, # May not be needed
+			%{$self->local_vault->env},
+			REDACT => undef
+		}
 	);
 
 	# FIXME: Do something if there were errors or warnings...
 	return ($data,$file);
+}
+
+sub _generate_file_name {
+	my $self = shift;
+	return $self->{transient_filename} || $self->SUPER::_generate_file_name();
+}
+
+sub _set_file_name {
+	my ($self, $filename) = @_;
+	if ($filename) {
+		$self->{transient_filename} = $filename;
+	} else {
+		delete($self->{transient_filename});
+	}
 }
 
 1;

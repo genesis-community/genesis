@@ -359,10 +359,7 @@ sub create {
 	bail("No vault specified or configured.")
 		unless $env->vault;
 
-	# TODO: Remove credhub secrets
-	if (! $env->kit->uses_credhub) {
-		$env->remove_secrets(all => 1) || bail "Cannot continue with existing secrets for this environment";
-	}
+	$env->remove_secrets(all => 1) || bail "Cannot continue with existing secrets for this environment";
 
 	# credhub env overrides
 	$env->{__params}{genesis}{credhub_env} = $ENV{GENESIS_CREDHUB_EXODUS_SOURCE}
@@ -384,12 +381,10 @@ sub create {
 
 	# Load the environment from the file to pick up hierarchy, and generate secrets
 	$env = $class->load(name =>$env->name, top => $env->top);
-	if (! $env->kit->uses_credhub) {
-		if (! $env->add_secrets(verbose=>1)) {
-			$env->remove_secrets(all => 1, 'no-prompt' => 1);
-			unlink $env->file;
-			return undef;
-		}
+	if (! $env->add_secrets(verbose=>1, import => 1)) {
+		$env->remove_secrets(all => 1, 'no-prompt' => 1);
+		unlink $env->file;
+		return undef;
 	}
 	return $env;
 }
@@ -779,8 +774,7 @@ sub partial_manifest_lookup {
 # manifest_lookup - look up a value from a completely merged manifest for this environment {{{
 sub manifest_lookup {
 	my ($self, $key, $default) = @_;
-	my $type = 'unredacted'; #TODO use vaultified if kit is credhub-based 
-	return struct_lookup($self->manifest_provider->$type->data, $key, $default);
+	return struct_lookup($self->manifest_provider->base_manifest->data, $key, $default);
 }
 
 # }}}
@@ -1554,7 +1548,7 @@ sub check {
 
 	my $kit_files = $self->manifest_provider->kit_files(); # pre-warm the cache
 
-	if ($self->kit->secrets_store eq 'vault' && (!exists($opts{check_secrets}) || $opts{check_secrets})) {
+	if (!exists($opts{check_secrets}) || $opts{check_secrets}) {
 		$self->notify("running secrets checks...");
 		my %check_opts=(indent => '  ', validate => ! envset("GENESIS_TESTING_CHECK_SECRETS_PRESENCE_ONLY"));
 		$ok = 0 unless $self->check_secrets(%check_opts);
@@ -1635,18 +1629,30 @@ sub check {
 sub deploy {
 	my ($self, %opts) = @_;
 
-	if ($self->use_create_env) {
-		$self->manifest_provider->set_deployment('unredacted');
-	} else {
+	unless ($self->use_create_env) {
 		my @hooks = qw(blueprint manifest check);
 		push @hooks, grep {$self->kit->has_hook($_)} qw(pre-deploy post-deploy);
 		$self->download_required_configs(@hooks);
-		$self->manifest_provider->set_deployment($opts{entomb} ? 'entombed' : 'unredacted') if exists($opts{entomb});
 	}
 
 	bail(
 		"Preflight checks failed; deployment operation halted."
 	) unless $self->check();
+
+	my $deployment_manifest_type = 'unredacted';
+	if (! $self->use_create_env) {
+		if (@{$self->manifest_provider->unevaluated->data->{variables}//[]}) {
+			$deployment_manifest_type = $opts{entomb}
+				? 'vaultified_entombed'
+				: 'vaultified';
+		} else {
+			$deployment_manifest_type = $opts{entomb}
+				? 'entombed'
+				: 'unredacted';
+		}
+	}
+
+	$self->manifest_provider->set_deployment($deployment_manifest_type);
 
 	$self->manifest_provider->deployment(subset=>'pruned',notify=>1)->write_to(
 		"$self->{__tmp}/manifest.yml"
@@ -1835,7 +1841,7 @@ sub exodus {
 	# FIXME: May need to use an unentombed manifest...
 	my $exodus = flatten({}, undef, scalar($self->manifest_lookup('exodus', {})));
 	my $vars_file = $self->vars_file;
-	return $exodus unless ($vars_file || $self->kit->uses_credhub);
+	return $exodus unless ($vars_file || $self->kit->uses_credhub); ## May be redundant if vaultifying credhub secrets...?
 
 	#interpolate bosh vars first
 	if ($vars_file) {
@@ -1903,7 +1909,7 @@ sub add_secrets {
 	) if ($self->has_hook('secrets'));
 
 	return $plan->generate_secrets(
-		import    => $opts{import} && $self->kit->uses_credhub,
+		import    => $opts{import},
 		level     => $opts{verbose}?'full':'line'
 	);
 }
