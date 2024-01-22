@@ -6,6 +6,7 @@ use warnings;
 use base "Genesis::Base";
 
 use Genesis;
+use Genesis::Term;
 use POSIX qw/strftime/;
 
 # Constructors
@@ -128,7 +129,7 @@ sub validate {
 	my $err = $@;
 	error(
 		"Failed to build %s manifest:\n\n%s",
-		$self->label, $err
+		$self->label, fix_wrap($err)
 	) if $err;
 	return $err ? 0 : 1;
 }

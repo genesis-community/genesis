@@ -21,7 +21,7 @@ sub _entomb_secrets {
 	my $src_vault = $self->env->vault;
 	info (
 		{pending => 1},
-		"[[  >>Determining vault paths used by manifest from %s...",
+		"[[  - >>determining vault paths used by manifest from %s...",
 		$src_vault->name
 	);
 	$self->builder->unevaluated(); # Prewarm cache
@@ -33,7 +33,7 @@ sub _entomb_secrets {
 
 		info (
 			{pending => 1},
-			"[[  >>Retrieving secrets from used vault paths...",
+			"[[  - >>retrieving secrets from used vault paths...",
 		);
 		for (keys %$secret_paths) {
 			my ($s,$k) = split ":", $_, 2;
@@ -54,7 +54,7 @@ sub _entomb_secrets {
 
 		info (
 			{pending => 1},
-			"[[  >>Starting local in-memory vault to hold references to Credhub...",
+			"[[  - >>starting local in-memory vault to hold references to Credhub...",
 		);
 		my $local_vault = $self->local_vault;
 		info ("#g{done!}");
@@ -67,7 +67,7 @@ sub _entomb_secrets {
 		my $w = length("$secrets_count");
 		my $entombment_prefix = ""; # can be set to another value to prevent conflicts if needed
 		info(
-			"[[  >>Copying Vault values to Credhub: #c{%s} => #B{%s}:",
+			"[[  - >>copying Vault values to Credhub: #c{%s} => #B{%s}:",
 			$base_path, $credhub->base().($entombment_prefix ? "/$entombment_prefix" : "/")
 		);
 
@@ -111,8 +111,9 @@ sub _entomb_secrets {
 			}
 		}
 		print STDERR "\r[A[2K" for (1..$previous_lines);
+		# FIXME: use pretty_duration and style consistent with *_secrets output
 		info(
-			"[[  >>$idx of $secrets_count secrets processed: %s new, %s already exist, %s altered, %s failed",
+			"[[  - >>$idx of $secrets_count secrets processed: %s new, %s already exist, %s altered, %s failed",
 			@results{('new','exists','altered','failed')}
 		);
 
@@ -127,7 +128,7 @@ sub _entomb_secrets {
 			$Genesis::GITHUB
 		) if ($results{failed});
 	} else {
-		info "[[  >>No vault paths in use.\n";
+		info "[[  - >>no vault paths in use.\n";
 	}
 	$self->{entombed} = 1;
 }

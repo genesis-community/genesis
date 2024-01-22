@@ -53,6 +53,7 @@ sub populate {
 	$self->env->notify({tags=>[qw(secrets task env)]},
 		"processing secrets descriptions..."
 	);
+	logger->info("[[  - >>using kit #M{%s} #Ri{%s}", $self->env->kit->id =~ /^(.*?) ?(|\(dev\))?$/);
 	my %initial_counts = ();
 	my $tstart = gettimeofday();
 	$initial_counts{ref($_)}++ for ($self->secrets);
@@ -186,9 +187,12 @@ sub filter {
 sub validate {
 	my $self = shift;
 	return 1 unless ($self->errors);
-	fatal(
-		"\nErrors found in secrets definition:\n%s\n",
-		join("\n", map {"[[- >>".$_->description} ($self->errors))
+	bail(
+		"\nErrors found in %s:\n%s\n".
+		"#r{This may be an issue with the kit or with values in your environment ".
+		"file(s).}",
+		count_nouns(scalar($self->errors),'secret definition'),
+		join("\n", map {"[[- >>".$_->describe} ($self->errors))
 	);
 } 
 
@@ -270,13 +274,13 @@ sub generate_secrets {
 		my ($result, $msg) = ();
 		if ($interactive) {
 			unless (in_controlling_terminal && scalar(@command)) {
-				$self->notify->(
+				$self->notify(
 					@update_args, 'done-item', result => 'error',
 					msg => "Cannot prompt for user input from a non-controlling terminal"
 				);
 				last;
 			}
-			$self->notify->(@update_args, "notify", msg => "#Yi{user input required:\n}");
+			$self->notify(@update_args, "notify", msg => "#Yi{user input required:\n}");
 			if (ref($command[0]) eq 'CODE') {
 				my $precommand = shift @command;
 				my @precommand_args;

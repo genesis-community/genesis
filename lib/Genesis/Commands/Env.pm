@@ -210,8 +210,8 @@ sub add_secrets {
 		$msg = "- all ".($results->{skipped} ? 'missing ':'')."secrets were added";
 	} elsif ($results->{imported}) {
 		$msg = "- all ".($results->{skipped} ? 'missing ':'')."secrets were imported";
-	} elsif ($results->{skipped} == scalar($env->plan->secrets)) {
-		env->notify(success => " - all secrets already present, nothing to do!");
+	} elsif ($results->{skipped}) {
+		$env->notify(success => "- all secrets already present, nothing to do!\n");
 		exit 0;
 	} else {
 		$env->notify(warning => "- no secrets were added.\n");
