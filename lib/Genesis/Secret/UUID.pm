@@ -52,7 +52,7 @@ sub _validate_constructor_opts {
   my $orig_opts = {%opts};
 	my ($args, @errors);
 
-	my $version = delete(%opts{version}) || 'v4';
+	my $version = delete($opts{version}) || 'v4';
 	$version = lc($version);
 	if ($version =~ m/^(v3|v5|md5|sha1)$/i) {
 		$args->{namespace} = delete($opts{namespace}) if defined($opts{namespace});

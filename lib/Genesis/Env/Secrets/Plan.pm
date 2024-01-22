@@ -320,7 +320,7 @@ sub regenerate_secrets {
 	my ($self,%opts) = @_;
 	my @update_args = ('rotate', {%opts{qw/level invalid indent/}, indent => '    '});
 	my ($no_prompt,$interactive) = delete(@opts{qw/no_prompt interactive/});
-	my $severity = ['','invalid','problem']->[delete(%opts{invalid})||0];
+	my $severity = ['','invalid','problem']->[delete($opts{invalid})||0];
 
 	$self->env->notify("rotating environment secrets...");
 	info({pending => 1}, "[[  - >>loading existing secrets from source...");
@@ -448,7 +448,7 @@ sub remove_secrets {
 	my ($self,%opts) = @_;
 	my @update_args = ('remove', {%opts{qw/level invalid indent/}, indent => '    '});
 	my ($no_prompt,$interactive) = delete(@opts{qw/no_prompt interactive/});
-	my $severity = ['','invalid','problem']->[delete(%opts{invalid})||0];
+	my $severity = ['','invalid','problem']->[delete($opts{invalid})||0];
 
 	$self->env->notify("rotating environment secrets...");
 	info({pending => 1}, "[[  - >>loading existing secrets from source...");
