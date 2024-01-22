@@ -2018,7 +2018,7 @@ sub remove_secrets {
 								split(":", $secret->path, 2),
 								scalar($secret->describe),
 							)));
-						} elsif ($secret = grep {$_->get('format') && $_->can('format_path') && ($_->format_path//'') eq $ext_path} ($plan->secrets)) {
+						} elsif (($secret) = grep {$_->get('format') && $_->can('format_path') && ($_->format_path//'') eq $ext_path} ($plan->secrets)) {
 							info(bullet(sprintf(
 								"#C{%s}:#c{%s} #i{%s}",
 								split(":", $secret->format_path, 2),
