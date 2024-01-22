@@ -63,7 +63,9 @@ sub has_hook {
 	my ($self, $hook) = @_;
 	return $self->{__hook_check}{$hook} if exists($self->{__hook_check}{$hook});
 	trace("checking the kit for a(n) '$hook' hook");
-	$self->{__hook_check}{$hook} = -f $self->path("hooks/$hook");
+	$self->{__hook_check}{$hook} = -f $self->path("hooks/$hook") || (
+		 !envset('GENESIS_NO_MODULE_HOOKS') && -f $self->path("hooks/${hook}.pm"
+	));
 }
 
 # }}}
