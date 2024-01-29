@@ -889,13 +889,14 @@ sub check_prereqs { # {{{
 	my $reqs = [
 		# Name,     Version, Command,                                 Pattern                   Source
 		["perl",   "5.20.0", "", $perl_version, $^X],
-		["curl",   "7.30.0", "curl --version 2>/dev/null | head -n1",                  qr(^curl\s+(\S+))],
-		["git",     "1.8.0", "git --version  2>/dev/null",                             qr(.*version\s+(\S+).*)],
-		["jq",        "1.6", "jq --version   2>/dev/null",                             qr(^jq-([\.0-9]+)),       "https://stedolan.github.io/jq/download/"],
-		["spruce", "1.28.0", "spruce -v      2>/dev/null",                             qr(.*version\s+(\S+).*)i, "https://github.com/geofffranks/spruce/releases"],
-		["safe",    "1.6.1", "safe -v        2>&1 >/dev/null",                         qr(safe v(\S+)),          "https://github.com/starkandwayne/safe/releases"],
-		["vault",   "0.9.0", "vault -v       2>/dev/null",                             qr(.*vault v(\S+).*)i,    "https://www.vaultproject.io/downloads.html"],
-		["credhub", "2.7.0", "CREDHUB_SERVER='' credhub --version 2>/dev/null",        qr(CLI Version: (\S+)),   "https://github.com/cloudfoundry-incubator/credhub-cli/releases"],
+		["curl",   "7.30.0", "curl --version  2>/dev/null | head -n1",          qr(^curl\s+(\S+))],
+		["git",     "1.8.0", "git --version   2>/dev/null",                     qr(.*version\s+(\S+).*)],
+		["jq",        "1.6", "jq --version    2>/dev/null",                     qr(^jq-([\.0-9]+)),       "https://stedolan.github.io/jq/download/"],
+		["spruce", "1.28.0", "spruce -v       2>/dev/null",                     qr(.*version\s+(\S+).*)i, "https://github.com/geofffranks/spruce/releases"],
+		["safe",    "1.6.1", "safe -v         2>&1 >/dev/null",                 qr(safe v(\S+)),          "https://github.com/starkandwayne/safe/releases"],
+		["vault",   "0.9.0", "vault -v        2>/dev/null",                     qr(.*vault v(\S+).*)i,    "https://www.vaultproject.io/downloads.html"],
+		["openssl", "1.1.1", "openssl version 2>/dev/null",                     qr(OpenSSL ([\.0-9]+) .*),"https://www.openssl.org/source/"],
+		["credhub", "2.7.0", "CREDHUB_SERVER='' credhub --version 2>/dev/null", qr(CLI Version: (\S+)),   "https://github.com/cloudfoundry-incubator/credhub-cli/releases"],
 	];
 
 	my @errors = grep {$_} map {
