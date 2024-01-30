@@ -69,7 +69,7 @@ sub vaultify {
 				my @concat = ();
 				while (@bits) {
 					(my $prefix, my $var, @bits) = @bits;
-					push @concat, $prefix if $prefix;
+					push @concat, '"'.$prefix.'"' if $prefix;
 					next unless $var;
 					if ($data->{'bosh-variables'}{$var}) {
 						push @concat,"\"(($var))\"";
