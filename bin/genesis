@@ -164,7 +164,7 @@ define_command("create", {
 		"another path, create the new environment, then move back the secrets you ".
 		"need to keep.",
 	function_group => Genesis::Commands::ENVIRONMENT,
-	scope => 'repo',
+	scope => [qw/repo env/],
 	option_group => Genesis::Commands::ENV_OPTIONS,
 	arguments => [
 		"env" =>
