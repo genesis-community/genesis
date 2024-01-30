@@ -71,7 +71,7 @@ sub vaultify {
 					(my $prefix, my $var, @bits) = @bits;
 					push @concat, '"'.$prefix.'"' if $prefix;
 					next unless $var;
-					if ($data->{'bosh-variables'}{$var}) {
+					if ($data->{'bosh-variables'}{$var} || $var =~ /^genesis-entombed\//) {
 						push @concat,"\"(($var))\"";
 					} else {
 						my ($path, $key) = ($var =~ /^(.*?)(?:\.(.*))?$/);
