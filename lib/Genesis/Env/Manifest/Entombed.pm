@@ -32,7 +32,14 @@ sub merge_options {
 	return {}
 }
 
-sub merge_environment {
+sub remote_vault_merge_environment {
+	return {
+		%{$_[0]->builder->full_merge_env},
+		%{$_[0]->env->vault->env},
+		REDACT => undef
+	}
+}
+sub local_vault_merge_environment {
 	return {
 		%{$_[0]->builder->full_merge_env},
 		%{$_[0]->local_vault->env},
@@ -44,12 +51,12 @@ sub _merge {
 	my $self = shift;
 	my $src_files = $self->source_files; # For logging order purposes
 
-	$self->_entomb_secrets();
+	my $entombed = $self->_entomb_secrets();
 	my ($data, $file, $warnings, $errors) = $self->builder->merge(
 		$self,
 		$src_files,
 		$self->merge_options,
-		$self->merge_environment
+		$entombed ? $self->local_vault_merge_environment : $self->remote_vault_merge_environment
 	);
 
 	# FIXME: Do something if there were errors or warnings...
