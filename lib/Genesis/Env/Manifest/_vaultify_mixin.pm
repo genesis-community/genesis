@@ -1,6 +1,6 @@
 # Mixin to provide entombment functionality - require to use;
 
-use Genesis  qw/bail flatten struct_set_value save_to_yaml_file tmpfile/;
+use Genesis  qw/bail flatten struct_set_value save_to_yaml_file tmpfile uniq/;
 use JSON::PP qw/decode_json encode_json/;
 
 
