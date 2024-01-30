@@ -159,17 +159,28 @@ sub check_secrets {
 	my ($name,@paths) = @_;
 
 	my $level = delete(get_options->{exists});
-	my $validation_level = $level ? 0 : 1;
+	my ($action_desc, $validation_level) = $level
+		? (checked => 0)
+		: (validated => 1);
+
 	my $env = Genesis::Top
 		->new(".")
 		->load_env($name)
 		->with_vault();
 
-	my ($results) = $env->check_secrets(
+	my ($results, $msg) = $env->check_secrets(
 		paths=>\@paths,
 		%{get_options()}
 		, validate => $validation_level
 	);
+
+	if ($results->{empty}) {
+		if ($msg) {
+			$env->notify($msg."\n")
+		} else {
+			$env->notify(success => "doesn't have any secrets to be $action_desc.\n");
+		}
+	}
 
 	if ($results->{error}) {
 		$env->notify(fatal => "- invalid secrets detected.\n");
@@ -183,7 +194,7 @@ sub check_secrets {
 		$env->notify(warning => "- all secrets valid, but warnings were encountered.\n");
 		exit 0;
 	}
-	$env->notify(success => ($level ? "checked" : "validated") ." secrets successfully!\n");
+	$env->notify(success => "$action_desc secrets successfully!\n");
 	exit 0
 }
 
@@ -490,3 +501,4 @@ sub env_shell {
 	$env->shell(%{get_options()});
 }
 1;
+# vim: fdm=marker:foldlevel=1:noet
