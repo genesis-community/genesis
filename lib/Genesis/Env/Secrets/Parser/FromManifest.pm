@@ -114,11 +114,17 @@ sub _parse_certificate {
 	my @names = @{$opts{options}{alternative_names}//[]};
 
 	# Special Case v2.0.x CF Kit
-	if ($path eq 'nats_server_cert' && $self->env->kit->id =~ /^cf\/2.0/) {
-		@names = (
-			"nats.service.cf.internal",
-			"*.nats.service.cf.internal"
-		)
+	if ($self->env->kit->id =~ /^cf\/2.0/) {
+		if ($path eq 'nats_server_cert') {
+			@names = (
+				"nats.service.cf.internal",
+				"*.nats.service.cf.internal"
+			)
+		}
+
+		my $subject_cn = $opts{options}{common_name};
+		push @names, $subject_cn
+			if (!scalar(@names) && $subject_cn);
 	}
 
 	my @usage = @{$opts{options}{extended_key_usage}//[]};
