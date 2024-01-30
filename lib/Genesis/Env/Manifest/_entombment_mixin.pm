@@ -128,10 +128,13 @@ sub _entomb_secrets {
 			"#Bu{%s/issues/new}",
 			$Genesis::GITHUB
 		) if ($results{failed});
+
+		$self->{entombed} = 1;
+		return 1
 	} else {
-		info "[[  - >>no vault paths in use.\n";
+		info "no vault paths in use.\n";
+		return 0
 	}
-	$self->{entombed} = 1;
 }
 
 1;

@@ -59,6 +59,7 @@ sub _merge {
 	$self->_set_file_name(undef);
 
 	$self->vaultify($partially_entombed_data, $self->pre_merged_vaultified_file);
+	$self->{notice} = undef;
 	my ($data, $file, $warnings, $errors) = $self->merge_vaultified_manifest(
 		merge_env =>  {
 			%{$self->builder->full_merge_env}, # May not be needed
