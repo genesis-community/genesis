@@ -3,7 +3,7 @@ package Genesis::Env::Secrets::Parser::FromKit;
 use strict;
 use warnings;
 
-use base 'Genesis::Env::Secrets::Parser';
+use parent ('Genesis::Env::Secrets::Parser');
 
 use Genesis::Secret::DHParams;
 use Genesis::Secret::Invalid;
@@ -12,6 +12,7 @@ use Genesis::Secret::RSA;
 use Genesis::Secret::Random;
 use Genesis::Secret::SSH;
 use Genesis::Secret::X509;
+use Genesis::Secret::UUID;
 
 use Genesis;
 
@@ -22,8 +23,15 @@ sub parse {
 	logger->info({pending =>1},
 		"[[  - >>fetching secret definitions from kit defintion file ... "
 	) if $opts{notify};
-	my $metadata = $self->env->dereferenced_kit_metadata;
-	for my $feature ('base', @{[$self->env->features] || []}) {
+
+	bug(
+		"No environment provided, and no kit metadata or features list were ".
+		"passed in as options."
+	) unless $self->env || ($opts{kit_metadata} && $opts{features});
+
+	my $metadata = $opts{kit_metadata} // $self->env->dereferenced_kit_metadata;
+	my $features = $opts{features} // [$self->env->features] // [];
+	for my $feature ('base', @$features) {
 		if (_validate_feature_block($metadata, 'certificates', $feature, \@secrets)) {
 			while (my ($path, $data) = each(%{$metadata->{certificates}{$feature}||{}})) {
 				push @secrets, $self->_parse_x509_secret_definition($path, $data, $feature);
