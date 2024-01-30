@@ -1966,6 +1966,7 @@ sub rotate_secrets {
 
 	return $plan->regenerate_secrets(
 		regen_x509_keys => $opts{'regen-x509-keys'},
+		update_subject  => $opts{'update-subjects'},
 		no_prompt       => $opts{'no-prompt'},
 		invalid         => $opts{invalid},
 		interactive     => $opts{interactive},

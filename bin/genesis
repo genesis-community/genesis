@@ -641,6 +641,15 @@ define_command("rotate-secrets", {
 			"regenerated, and any deployments on certificate modulo pairing will ".
 			"need a three-step deployment.",
 
+		'update-subjects' =>
+			"When rotating X.509 certificates, normally the current subject is ".
+			"retained because changing it will break signing chains for any ".
+			"certificate it signed.  However, it may be necessary to update the ".
+			"subject of a leaf certificate, or even a CA, if the definition has ".
+			"changed, so this option is provided.\n\n".
+			"[[Note: >>If --regen-x509-keys option is used, it will recreate the ".
+			"certificate completely, including any changes in the subject.",
+
 		'invalid|I' =>
 			"Rotate secrets that are invalid (expired, missing, or don't match the ".
 			"kit specification)",

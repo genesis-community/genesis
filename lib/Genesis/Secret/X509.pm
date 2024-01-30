@@ -411,7 +411,7 @@ sub _get_safe_command_for_rotate {
 	} else {
 		my $cert_name = $self->get(subject_cn => $names[0]);
 		push(@cmd, '--subject', "cn=$cert_name")
-			if envset("GENESIS_RENEW_SUBJECT");
+			if $opts{update_subject} || envset("GENESIS_RENEW_SUBJECT");
 	}
 	return @cmd
 }
