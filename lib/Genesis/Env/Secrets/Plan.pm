@@ -661,8 +661,9 @@ sub _order_secrets {
 	}
 
 	my $target = undef;
+	my $kit_id = $self->env->kit->id if $self->env;
 	do {
-		_order_x509_secrets($target,\%signers,\@x509certs,\@ordered_secrets,\@errored_secrets)
+		_order_x509_secrets($target,\%signers,\@x509certs,\@ordered_secrets,\@errored_secrets, undef, $kit_id)
 	} while ($target = _next_x509_signer(\%signers));
 
 	# Find unresolved signage paths and handled errors
@@ -704,7 +705,7 @@ sub _next_x509_signer {
 # }}}
 # _order_x509_secrets - process the certs in order of signer {{{
 sub _order_x509_secrets {
-	my ($signer_path,$certs_by_signer,$src_certs,$ordered_certs,$errored_certs) = @_;
+	my ($signer_path,$certs_by_signer,$src_certs,$ordered_certs,$errored_certs, $issuer, $kit_id) = @_;
 
 	if ($signer_path) { # Not implicitly self-signed or signed by root ca path
 		my $signer_certs = $certs_by_signer->{$signer_path};
@@ -723,9 +724,16 @@ sub _order_x509_secrets {
 			push @$errored_certs, $cert->reject( $cert->label => 'Cyclical CA signage detected');
 			next;
 		}
+		if (($kit_id//'') !~ /^cf\/2.*/ && $issuer) { # cf/v2.x kits have a CA subject DN error inherited from upstream
+			my $subject_cn = $cert->get('subject_cn',(@{$cert->get('names' => [])})[0]);
+			my $issuer_cn  = $issuer->get('subject_cn',(@{$issuer->get('names' => [])})[0]);
+			push(@$errored_certs, $cert->reject(
+				$cert->label => "CA Common Name Conflict - can't share CN '".$subject_cn."' with signing CA"
+			)) if $subject_cn && $issuer_cn && $subject_cn eq $issuer_cn;
+		}
 		$cert->ordered(1);
 		push @$ordered_certs, $cert;
-		_order_x509_secrets($cert->path,$certs_by_signer,$src_certs,$ordered_certs,$errored_certs)
+		_order_x509_secrets($cert->path,$certs_by_signer,$src_certs,$ordered_certs,$errored_certs, $cert, $kit_id)
 			if scalar(@{$certs_by_signer->{$cert->path} || []});
 	}
 }
