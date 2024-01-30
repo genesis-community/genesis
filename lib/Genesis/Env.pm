@@ -359,7 +359,9 @@ sub create {
 	bail("No vault specified or configured.")
 		unless $env->vault;
 
-	$env->remove_secrets(all => 1) || bail "Cannot continue with existing secrets for this environment";
+	my ($results) = $env->remove_secrets(all => 1, no_populate => 1);
+	bail "Cannot continue with existing secrets for this environment"
+		if ($results->{abort} || $results->{error});
 
 	# credhub env overrides
 	$env->{__params}{genesis}{credhub_env} = $ENV{GENESIS_CREDHUB_EXODUS_SOURCE}
@@ -843,7 +845,7 @@ sub get_secrets_plan {
 	my ($self, %opts) = @_;
 	my $plan = $self->_memoize(sub {
 		Genesis::Env::Secrets::Plan
-			->new($_[0], $self->get_secrets_store(), $self->credhub)
+			->new($_[0], $self->get_secrets_store(), $self->credhub, verbose => !$opts{silent})
 			->populate(
 				'Genesis::Env::Secrets::Parser::FromKit',
 				'Genesis::Env::Secrets::Parser::FromManifest',
@@ -1551,7 +1553,20 @@ sub check {
 	if (!exists($opts{check_secrets}) || $opts{check_secrets}) {
 		$self->notify("running secrets checks...");
 		my %check_opts=(indent => '  ', validate => ! envset("GENESIS_TESTING_CHECK_SECRETS_PRESENCE_ONLY"));
-		$ok = 0 unless $self->check_secrets(%check_opts);
+		my ($secrets_results, $secrets_msg) = $self->check_secrets(%check_opts);
+		if ($secrets_results) {
+			if ($secrets_results->{error}) {
+				$self->notify(error => "- invalid secrets detected.\n");
+				$ok = 0;
+			}
+			if ($secrets_results->{missing}) {
+				$self->notify(error => "- missing secrets detected.\n");
+				$ok = 0;
+			}
+			if ($secrets_results->{warn}) {
+				$self->notify(warning => "- all secrets valid, but warnings were encountered.\n");
+			}
+		}
 	}
 
 	if ($ok) {
@@ -1926,12 +1941,10 @@ sub check_secrets {
 	my $plan = $self->get_secrets_plan(%opts);
 
 	unless ($plan->secrets) {
-		if ($plan->filters) {
-			info("\nNo applicable secrets found - no need to continue.\n");
-		} else {
-			$self->notify(success => "doesn't have any secrets to be $action_desc.\n");
-		}
-		exit 0;
+		my $msg = ($plan->filters)
+			? "No applicable secrets found"
+			: undef;
+		return ({empty => 1}, $msg);
 	}
 
 	kit_bug(
