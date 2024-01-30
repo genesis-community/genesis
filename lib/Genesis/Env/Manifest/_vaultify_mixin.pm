@@ -52,6 +52,7 @@ sub vaultify {
 		for my $var_ref (sort keys %vars_map) {
 			if ($var_ref =~ /^\(\(([^\) ]+)\)\)$/) { # is it a single variable reference?
 				my $var = $1;
+				next if $var =~ /^genesis-entombed\//; #entombed vault data from previous phase
 				next if $data->{'bosh-variables'}{$var}; # its a bosh variable
 				my ($path, $key) = ($var =~ /^(.*?)(?:\.(.*))?$/);
 				my $secret = $ch_path_lookup{$var} || $ch_path_lookup{$path};
