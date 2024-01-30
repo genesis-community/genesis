@@ -6,7 +6,7 @@ use JSON::PP qw/decode_json encode_json/;
 
 sub get_vault_paths {
 	my ($self, %opts) = @_;
-	my @vault_paths = $self->SUPER::get_vault_paths(%opts);
+	my $vault_paths = $self->SUPER::get_vault_paths(%opts);
 	my @vaultify_path_args = $self->{vaultified_file}
 		? (file => $self->{vaultified_file})
 		: $self->{vaultified_data}
@@ -17,11 +17,12 @@ sub get_vault_paths {
 		@vaultify_path_args = (data => $data)
 			if $self->vaultify($data);
 	}
-	return @vault_paths unless @vaultify_path_args;
-	return (
-		@vault_paths,
-		$self->builder->vault_paths(@vaultify_path_args)
-	);
+	return $vault_paths unless @vaultify_path_args;
+	my $vaultified_paths = $self->builder->vault_paths(@vaultify_path_args);
+	return {
+		%$vault_paths,
+		%$vaultified_paths
+	};
 }
 
 # _get_decoupled_data -  deep copy because we're going to modify the values
