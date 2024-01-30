@@ -310,12 +310,13 @@ sub generate_secrets {
 				last if $rc;
 			}
 		} else {
-			my ($out, $rc) = $self->store->service->query(@command);
-			$out = $secret->process_command_output('add', $out) if $self->can('process_command_output');
+			my ($out, $rc) = $secret->process_command_output(
+				'add', $self->store->service->query(@command)
+			);
 			if ($out =~ /refusing to .* as it is already present/ ||
 					$out =~ /refusing to .* as the following keys would be clobbered:/) {
 				$self->notify(@update_args, 'done-item', result => 'skipped')
-			} elsif ($rc == '0' &&  !$out) {
+			} elsif ($rc == '0' && !$out) {
 				if ($import_msg) {
 					$self->notify(@update_args, 'done-item', result => 'generated', msg => "Import failed, generated new value: $import_msg");
 				} else {
