@@ -13,7 +13,7 @@ use Time::HiRes qw/gettimeofday/;
 ### Class Methods {{{
 # new - create a new blank plan object {{{
 sub new {
-	my ($class, $env, $store, $credhub) = @_;
+	my ($class, $env, $store, $credhub, %opts) = @_;
 	my $plan = {
 		env     => $env,
 		store   => $store,
@@ -21,6 +21,9 @@ sub new {
 		parent  => undef,
 		secrets => [],
 		filter  => undef,
+
+		# Options
+		__verbose => exists($opts{verbose}) ? $opts{verbose} : 1,
 	};
 	return bless($plan, $class)
 }
@@ -39,6 +42,12 @@ sub paths     {sort keys %{$_[0]->{paths}} }
 sub secret_at {$_[0]->{paths}{$_[1]}};
 sub errors    {grep {ref($_) eq 'Genesis::Secret::Invalid'} @{$_[0]->{secrets}} }
 
+sub verbose {
+	my $self = shift;
+	$self->{__verbose} = shift if @_;
+	return $self->{__verbose} ? 1 : 0
+}
+
 # }}}
 # filters - list of filters currently applies to this plan (including parent plans) {{{
 sub filters {
@@ -50,21 +59,23 @@ sub filters {
 # populate - add secrets to the plan: accepts Secret::* objects, Env::Secrets::Parser::* objects or classes {{{
 sub populate {
 	my ($self, @secrets) = @_;
-	$self->env->notify({tags=>[qw(secrets task env)]},
-		"processing secrets descriptions..."
-	);
-	logger->info("[[  - >>using kit #M{%s} #Ri{%s}", $self->env->kit->id =~ /^(.*?) ?(|\(dev\))?$/);
+	if ($self->env && $self->verbose) {
+		$self->env->notify({tags=>[qw(secrets task env)]},
+			"processing secrets descriptions..."
+		);
+		logger->info("[[  - >>using kit #M{%s} #Ri{%s}", $self->env->kit->id =~ /^(.*?) ?(|\(dev\))?$/);
+	}
 	my %initial_counts = ();
 	my $tstart = gettimeofday();
 	$initial_counts{ref($_)}++ for ($self->secrets);
 	for my $secret_src (@secrets) {
 		if ($secret_src->isa('Genesis::Secret')) {
 			push @{$self->{secrets}}, $secret_src
-		} elsif ($secret_src->isa('Genesis::Env::Secrets::Parser')) {
-			push @{$self->{secrets}}, $secret_src->parse(notify => 1)
 		} elsif (ref($secret_src) eq '' && ($secret_src//'') =~ /^Genesis::Env::Secrets::Parser::/) {
 			eval "require $secret_src";
-			push @{$self->{secrets}}, $secret_src->new($self->env)->parse(notify => 1);
+			push @{$self->{secrets}}, $secret_src->new($self->env)->parse(notify => $self->verbose);
+		} elsif ($secret_src->isa('Genesis::Env::Secrets::Parser')) {
+			push @{$self->{secrets}}, $secret_src->parse(notify => $self->verbose)
 		} else {
 			bug(
 				"Genesis::Env::Secrets::Plan->populate was given an argument that ".
@@ -82,6 +93,7 @@ sub populate {
 	$new_counts{ref($_)}++ for ($self->secrets);
 	my $count = 0; $count += $_ for values %new_counts;
 	my $duration = gettimeofday - $tstart;
+	return $self unless $self->env && $self->verbose;
 	if ($count) {
 		info({tags=>[qw(secrets task env)]},
 			"[[  - >>processed %s%s%s",
@@ -584,7 +596,7 @@ sub remove_secrets {
 # _order_secrets - determine signing changes, add defaults and specify build order {{{
 sub _order_secrets {
 	my $self = shift;
-	my $root_ca_path = $self->env->root_ca_path;
+	my $root_ca_path = $self->env->root_ca_path if $self->env;
 
 	my @ordered_secrets = ();
 	my @errored_secrets = ();
