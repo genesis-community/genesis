@@ -94,7 +94,16 @@ sub vaultify {
 				my $value = "";
 				if (keys %meta_vaultification) { # only need to replace if one or more vault values created
 					$data->{meta}{__vaultified}{$_} = $meta_vaultification{$_} for (keys %meta_vaultification);
-					my $value = join(' ', '((', 'concat', @concat, '))');
+					my %nl_lookup = ();
+					my $i=0;
+					for my $nl (uniq sort grep {$_ =~ /\n/} @concat) {
+						my $key = "__nl+".$i++;
+						$nl_lookup{$nl} = $key;
+						$data->{meta}{$key} = $nl =~ s/^"(.)"$/$1/sr;
+					}
+					my $value = join(' ', '((', 'concat', map {
+						$nl_lookup{$_} ? "meta.".$nl_lookup{$_} : $_
+					} @concat, '))');
 					struct_set_value $data, $_, $value for @{$vars_map{$var_ref}};
 				}
 			}
