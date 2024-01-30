@@ -204,7 +204,7 @@ sub validate {
 		"#r{This may be an issue with the kit or with values in your environment ".
 		"file(s).}",
 		count_nouns(scalar($self->errors),'secret definition'),
-		join("\n", map {"[[- >>".$_->describe} ($self->errors))
+		join("\n", map {"[[- >>".join("\n[[  >>",split(/\n/,$_->describe))} ($self->errors))
 	);
 }
 
