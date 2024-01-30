@@ -1992,15 +1992,14 @@ sub rotate_secrets {
 sub remove_secrets {
 	my ($self, %opts) = @_;
 
-	$self->manifest_provider->kit_files(); #process blueprint
-	my $plan = $self->get_secrets_plan(%opts);
+	my $store = $self->get_secrets_store(%opts);
 
 	# Determine secrets_store from kit - assume vault for now (credhub ignored)
-	my $store = $self->vault->connect_and_validate;
 	if ($opts{all}) {
-		my @paths = $plan->store->store_paths();
+		my @paths = $store->store_paths();
 		return ({empty => 1}) unless scalar(@paths);
 
+		my $plan = $self->get_secrets_plan(%opts, silent => 1);
 		unless ($opts{'no-prompt'}) {
 			die_unless_controlling_terminal(
 				"\nCannot prompt for confirmation to remove all secrets outside a ".
@@ -2012,7 +2011,8 @@ sub remove_secrets {
 				"include non-generated values set by 'genesis new' or manually created:\n",
 				 scalar(@paths), $self->secrets_base
 			 );
-			my $prefix = $plan->store->base =~ s/^\///r;
+			my $prefix = $store->base =~ s/^\///r;
+			my $plan = $self->get_secrets_plan(%opts);
 			for my $full_path (sort @paths) {
 				my $path = $full_path =~ s/^$prefix//r;
 				my $secret = $plan->secret_at($path);
@@ -2023,7 +2023,7 @@ sub remove_secrets {
 						scalar($secret->describe),
 					)));
 				} else {
-					my @keys = keys %{$plan->store->store_data->{$full_path}};
+					my @keys = keys %{$store->store_data->{$full_path}};
 					for my $ext_path (map {$path.':'.$_} sort @keys) {
 						$secret = $plan->secret_at($ext_path);
 						if ($secret) {
@@ -2052,16 +2052,17 @@ sub remove_secrets {
 			if ($response ne 'yes') {
 				return ({abort => 1}, sprintf(
 					"Keeping all existing secrets under '#C{%s}'.",
-					$plan->store->base
+					$store->base
 				));
 			}
 		}
-		output {pending => 1}, "Deleting existing secrets under '#C{%s}'...", $plan->store->base;
-		my ($out,$rc) = $plan->store->service->query('rm', '-rf', $plan->store->base);
+		output {pending => 1}, "Deleting existing secrets under '#C{%s}'...", $store->base;
+		my ($out,$rc) = $store->service->query('rm', '-rf', $store->base);
 		return ({error => 1}, $out) if ($rc);
 		return ({success => 1}, "#G{All applicable secrets removed.}");;
 	}
 
+	my $plan = $self->get_secrets_plan(%opts);
 	unless ($plan->secrets) {
 		# FIXME: this should get returned as a result to the calling proceedure
 		if ($plan->filters) {
