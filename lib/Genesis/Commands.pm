@@ -623,7 +623,7 @@ sub set_top_path { # {{{
 		if ( -f $cwd || -f "${cwd}.yml" ) {
 			bail(
 				"#B{%s %s} cannot be called specifying a file as an argument",
-				__FILE__, $COMMAND
+				humanize_bin, $CALLED
 			) unless has_scope('env');
 			unshift(@COMMAND_ARGS, basename($cwd));
 			$cwd = dirname($cwd);
@@ -957,5 +957,4 @@ END {
 } # }}}
 
 1;
-
 # vim: fdm=marker:foldlevel=0:noet
