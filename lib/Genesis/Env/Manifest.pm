@@ -122,6 +122,15 @@ sub notify {
 	);
 }
 
+sub dewrap {
+	my $msg = shift;
+	my $delabeled = $msg =~ s/\s*\[[0-9;]+m(\[[A-Z]+\])\[0m //r;
+	my $label = $1;
+	return $msg unless $label;
+	my $indent = ' ' x (length($label) + 1);
+	$delabeled =~ s/\n$indent/\n/gr =~ s/\s+\z//r;
+}
+
 sub validate {
 	my $self = shift;
 	eval {
@@ -131,7 +140,7 @@ sub validate {
 	my $err = $@;
 	error(
 		"Failed to build %s manifest:\n\n%s",
-		$self->label, fix_wrap($err)
+		$self->label, dewrap($err)
 	) if $err;
 	return $err ? 0 : 1;
 }
