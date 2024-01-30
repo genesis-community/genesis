@@ -91,7 +91,22 @@ sub set_deployment {
 sub deployment {
 	my $self = shift;
 
-	$self->{deployment} //= $self->env->use_create_env ? 'unredacted' : 'entombed';
+	unless ($self->{deployment}) {
+		my $deployment_manifest_type = 'unredacted';
+		if (! $self->env->use_create_env) {
+			my $enable_entombment = !$self->env->top->config->{'no_entombment'};
+			if (@{$self->unevaluated->data->{variables}//[]}) {
+				$deployment_manifest_type = $enable_entombment
+					? 'vaultified_entombed'
+					: 'vaultified';
+			} else {
+				$deployment_manifest_type = $enable_entombment
+					? 'entombed'
+					: 'unredacted';
+			}
+		}
+		$self->{deployment} = $deployment_manifest_type;
+	}
 	my $deployment_type = $self->{deployment};
 	$self->$deployment_type(@_);
 }
