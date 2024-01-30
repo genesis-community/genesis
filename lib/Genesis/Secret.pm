@@ -19,7 +19,7 @@ sub new {
 		$args->{_ch_name} = $src{var_name} if ($src{source}//'') eq 'manifest';
 		$args->{_feature} = $src{feature}  if ($src{source}//'') eq 'kit';
 		return $class->reject(
-			$class->type(), "Errors in definition:".join("\n- ", '', @{$errors}),
+			$class->label, $errors,
 			$path, $args
 		);
 	} else {
@@ -42,7 +42,7 @@ sub build {
 	my $package = class_of($type);
 	my $loaded = eval "require $package";
 	return $class->reject(
-		$type, "No secret definition found for type $type - cannot parse.",
+		$type, ["No secret definition found for type $type - cannot parse."],
 		$path, {%definition}
 	) unless $loaded;
 
@@ -50,7 +50,7 @@ sub build {
 	my $secret = eval "$package->new(\$path,\%definition);";
 	my $err = $@;
 	return $class->reject(
-		$type, "$err", $path, {%definition}
+		$type, [$err], $path, {%definition}
 	) if $err;
 	return $secret;
 }
@@ -66,16 +66,16 @@ sub load {
 }
 
 sub reject {
-	my ($class_or_ref,$subject,$error,$path,$args) = @_;
+	my ($class_or_ref,$subject,$errors,$path,$args) = @_;
 	if (ref($class_or_ref) && $class_or_ref->isa(__PACKAGE__)) {
 		$path //= $class_or_ref->path;
 		$args //= $class_or_ref->definition;
 		$args->{_feature} //= $class_or_ref->{feature}  if $class_or_ref->from_kit;
 		$args->{_ch_name} //= $class_or_ref->{var_name} if $class_or_ref->from_manifest;
 	}
-	trace("reporting secret error $subject: $error -> $path");
+	trace("reporting secret error $subject: $path -> ".join(", ",$errors));
 	require Genesis::Secret::Invalid;
-	return Genesis::Secret::Invalid->new($path, data => $args, subject => $subject, error => $error);
+	return Genesis::Secret::Invalid->new($path, data => $args, subject => $subject, errors => ref($errors) ? $errors: [$errors]);
 }
 
 sub validate_definition {

@@ -44,7 +44,7 @@ sub parse {
 			push @secrets, Genesis::Secret::Invalid->new(
 				"$name",
 				subject  => "$type variable definition",
-				error    => "Unknown variable type",
+				errors   => "Unknown variable type",
 				data     => $defn,
 				_ch_name => $name
 			)

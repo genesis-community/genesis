@@ -247,7 +247,7 @@ sub _invalid_secret {
 		$_[2],
 		data     => $_[3],
 		subject  => $_[0],
-		error    => $_[1],
+		errors   => ref($_[1]) eq 'ARRAY' ? $_[1] : [$_[1]],
 		_feature => $_[4]
 	);
 }
