@@ -57,12 +57,14 @@ sub parse {
 sub _parse_x509_secret_definition {
 	my ($self, $path, $data, $feature) = @_;
 
+	next unless defined($data);
+
 	return _invalid_secret(
-		"X509 Certificate path" => "Path cannot contain colons", $path, $data, $feature
+		"X.509 Certificate" => "Path cannot contain colons", $path, $data, $feature
 	) if ($path =~ ':');
 
 	return _invalid_secret(
-		"X509 Certificate definition" => "Expecting certificate specification in the form of a hash map",
+		"X.509 Certificate" => "Expecting certificate specification in the form of a hash map",
 		$path, $data, $feature
 	) unless ref($data) eq 'HASH';
 
@@ -76,8 +78,10 @@ sub _parse_x509_subpaths {
 
 	my $ext_path = "$path/$subpath";
 
+	next unless defined($subdata);
+
 	return _invalid_secret(
-		"X509 Certificate definition" => "Expecting hashmap, got "._ref_description($subdata),
+		"X.509 Certificate" => "Expecting hashmap, got "._ref_description($subdata),
 		$ext_path, $subdata, $feature
 	) unless ref($subdata) eq 'HASH';
 
@@ -98,20 +102,22 @@ sub _parse_x509_subpaths {
 sub _parse_provided_secret_definition {
 	my ($self, $path, $data, $feature) = @_;
 
+	next unless defined($data);
+
 	return _invalid_secret(
-		"Provided credential definition" => "Path cannot contain colons",
+		"User-Provided" => "Path cannot contain colons",
 		$path, $data, $feature
 	) if ($path =~ ':');
 
 	return _invalid_secret(
-		"Provided credential definition" => "Expecting hashmap, got "._ref_description($data),
+		"User-Provided" => "Expecting hashmap, got "._ref_description($data),
 		$path, $data, $feature
 	) unless ref($data) eq 'HASH';
 
 	my @secrets = ();
 	if (($data->{type} //= 'generic') eq 'generic') {
 		return _invalid_secret(
-			"Generic Provided credential definition" => "Missing or invalid 'keys' hash",
+			"User-Provided" => "Missing or invalid 'keys' hash",
 			$path, $data, $feature
 		) unless ref($data->{keys}) eq 'HASH';
 
@@ -121,7 +127,7 @@ sub _parse_provided_secret_definition {
 			if ($k =~ ':') {
 
 				push @secrets, _invalid_secret(
-					"Generic Provided credential definition" => "Key cannot contain colons",
+					"User-Provided" => "Key cannot contain colons",
 					$ext_path, $key_data, $feature
 				);
 				next;
@@ -138,7 +144,7 @@ sub _parse_provided_secret_definition {
 		}
 	} else {
 		return _invalid_secret(
-			"Provided credential definition" => "Unknown provided type '$data->{type}'",
+			"User-Provided" => "Unknown provided type '$data->{type}'",
 			$path, $data, $feature
 		)
 	}
@@ -148,8 +154,10 @@ sub _parse_provided_secret_definition {
 sub _parse_credential_definition {
 	my ($self, $path, $data, $feature) = @_;
 
+	next unless defined($data);
+
 	return _invalid_secret(
-		"Provided credential definition" => "Path cannot contain colons",
+		"Credential" => "Path cannot contain colons",
 		$path, $data, $feature
 	) if ($path =~ ':');
 
@@ -159,20 +167,20 @@ sub _parse_credential_definition {
 		my $type = "Genesis::Secret::".uc($1);
 		return $type->new($path, size => $2, fixed => ($3 ? 1 : 0), _feature => $feature);
 	} elsif ($data =~ m/^dhparams?\s+(\d+)(\s+fixed)?$/) {
-		return Genesis::Secret::DHParams->($path, size => $1, fixed => ($2 ? 1 : 0), _feature => $feature);
+		return Genesis::Secret::DHParams->new($path, size => $1, fixed => ($2 ? 1 : 0), _feature => $feature);
 	} elsif ($data =~ m/^random .?$/) {
 		return _invalid_secret(
-			"Random credential" => "random password request for a path must be specified per key in a hashmap",
+			"Random" => "random password request for a path must be specified per key in a hashmap",
 			$path, $data, $feature
 		)
 	} elsif ($data =~ m/^uuid .?$/) {
 		return _invalid_secret(
-			"UUID credential" => "UUID request for a path must be specified per key in a hashmap",
+			"UUID" => "UUID request for a path must be specified per key in a hashmap",
 			$path, $data, $feature
 		)
 	} else {
 		return _invalid_secret(
-			"Credential request" => "Unrecognized request '$data'",
+			"Unrecognized" => "Unrecognized request '$data'",
 			$path, $data, $feature
 		)
 	}
@@ -182,7 +190,7 @@ sub _parse_credential_key {
 	my ($self, $path, $key, $data, $feature) = @_;
 
 	return _invalid_secret(
-		"Provided credential definition" => "Key cannot contain colons",
+		"Credential" => "Key cannot contain colons",
 		$path.":".$key, $data, $feature
 	) if ($key =~ ':');
 
@@ -200,7 +208,7 @@ sub _parse_credential_key {
 			);
 		} else {
 			return _invalid_secret(
-				"Random password definition" =>
+				"Random" =>
 					"Expected usage: random <size> [fmt <format> [at <key>]] [allowed-chars <chars>] [fixed]\n".
 					"Got: $data",
 				$ext_path, $data, $feature
@@ -218,7 +226,7 @@ sub _parse_credential_key {
 			);
 		} else {
 			return _invalid_secret(
-				"UID definition" =>
+				"UUID" =>
 					"Expected usage: uuid [v1|time|v3|md5|v4|random|v5|sha1] ".
 					"[namespace (dns|url|oid|x500|<UUID namespace>] [name <name>] ".
 					"[fixed]\n".
@@ -228,7 +236,7 @@ sub _parse_credential_key {
 		}
 	} else {
 		return _invalid_secret(
-			"Random password request" => "Bad generate-password format '$data'",
+			"Random" => "Bad generate-password format '$data'",
 			$ext_path, $data, $feature
 		);
 	}
@@ -251,12 +259,20 @@ sub _ref_description {
 
 sub _validate_feature_block {
 	my ($data, $block, $feature, $secrets) = @_;
-	return 0 unless exists $data->{$block}{$feature};
+	return 0 unless defined($data->{$block}{$feature});
 	return 1 if ref($data->{$block}{$feature}) eq 'HASH';
+
+
+	my $subject = {
+		certificates => 'X.509 Certificate',
+		provided => "User-Provided",
+		credentials => "Credentials"
+	}->{$block};
 	push @$secrets, _invalid_secret(
-		"Secrets definition for $block/$feature" =>
+		 $subject =>
 			"Expecting a hashmap, got "._ref_description($data->{$block}{$feature}),
 		"$block/$feature"
+
 	);
 	return 0;
 }
