@@ -208,9 +208,10 @@ sub _validate_constructor_opts {
 	$args->{signed_by} = delete($opts{signed_by}) if defined($opts{signed_by});
 	$args->{base_path} = delete($opts{base_path});
 
-	if ($args->{signed_by} && $args->{signed_by} !~ /^[a-z0-9_-]+(\/[a-z0-9_-]+)?$/i) {
-		push @errors, "Invalid signed_by argument: expecting relative vault path string, got '$args->{signed_by}'"
-	}
+	push(
+		@errors,
+		"Invalid signed_by argument: expecting relative vault path string, got '$args->{signed_by}'"
+	) if ($args->{signed_by} && $args->{signed_by} !~ /^[a-z0-9_-]+(\/[a-z0-9_-]+)*$/i);
 
 	push(@errors, "Invalid '$_' argument specified") for grep {defined($opts{$_})} keys(%opts);
 	return @errors
