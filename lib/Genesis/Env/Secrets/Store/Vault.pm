@@ -101,11 +101,15 @@ sub root_ca_path {
 sub store_data {
 	my $self = shift;
 	$self->{__data} //= read_json_from($self->service->query('export', grep {$_} ($self->base, $self->root_ca_path)));
-	return $self->{__data}
+	return $self->{__data}//{};
 }
 
 sub store_paths {
 	return keys %{$_[0]->store_data};
+}
+
+sub clear_data {
+	delete($_[0]->{__data})
 }
 
 # }}}
