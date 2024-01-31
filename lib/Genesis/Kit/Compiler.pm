@@ -4,7 +4,8 @@ use warnings;
 
 use Genesis;
 use Genesis::Kit::Dev;
-use Service::Vault;
+use Genesis::Env::Secrets::Parser::FromKit;
+use Genesis::Env::Secrets::Plan;
 
 sub new {
 	my ($class, $root) = @_;
@@ -101,33 +102,26 @@ sub validate {
 
 	# Check if any defined secrets have errors
 	if ($meta && (!defined($meta->{secrets_store}) || $meta->{secrets_store} eq 'vault')) {
-		my @all_features = grep {$_ ne 'base'} sort uniq(
+		my @all_features = grep {$_ ne 'base'} uniq sort(
 			keys(%{$meta->{credentials}  || {}}),
 			keys(%{$meta->{certificates} || {}}),
 			keys(%{$meta->{provided}     || {}})
 		);
 
 		my $kit = Genesis::Kit::Dev->new($self->{root});
-		my @plans = Service::Vault::parse_kit_secret_plans(
-			$kit->dereferenced_metadata(sub {$self->_lookup_test_params(@_)}),
-			\@all_features,
-			validate => 1
+
+		# Validate secrets plan
+		my @secrets = Genesis::Env::Secrets::Parser::FromKit->new()->parse(
+			features => \@all_features,
+			kit_metadata => $kit->dereferenced_metadata(sub {$self->_lookup_test_params(@_)})
 		);
-		my @secrets_errors = grep {$_->{type} eq 'error'} @plans;
+
+		my $plan = Genesis::Env::Secrets::Plan->new()->populate(@secrets);
+		my @secrets_errors = $plan->errors;
 		if (scalar @secrets_errors) {
 			my $msg =
 				"#Wk{Secrets specifications in }#Ck{kit.yml}#Wk{:}\n".
-				join("\n", map {
-					my $err = $_;
-					my ($head,$extra) = split(
-						/: *\n/,
-						join(
-							"\n[[  >>",
-							map {s/^(\W+)/[[$1>>/; s/(Valid.*?: )/[[$1>>/;$_} split("\n", $err->{error})
-						)
-					);
-					sprintf("\n[[- >>#R{%s for }#C{%s}%s", $head, $err->{path}, $extra ? ":\n".$extra : '');
-				} @secrets_errors);
+				join("\n\n", map {"[[- >>".join("\n[[  >>", split(/\n/,$_->describe))} @secrets_errors);
 
 			if (grep {$msg =~ qr/\$\{$_\}/} @{$kit->{__deref_miss}||[]}) {
 				$msg .= "\n\n[[  >>Some of the errors above are due to unresolved param dereferencing.  ";
