@@ -244,7 +244,7 @@ sub validate_secrets {
 	for my $secret ($self->secrets) {
 		my ($path, $label, $details) = $secret->describe;
 		$self->notify(@update_args, 'start-item', path => $path, label => $label, details => $details);
-		my ($result, $msg) = $secret->validate_value($self);
+		my ($result, $msg) = $secret->validate_value($self, %opts);
 		$self->notify(@update_args, 'done-item', result => $result, msg => $msg, action => 'validate');
 	}
 	return $self->notify(@update_args, 'completed');

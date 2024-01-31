@@ -51,18 +51,24 @@ sub _required_value_keys	{
 # }}}
 # _validate_value - validate an DHParams secret value {{{
 sub _validate_value {
-	my ($self) = @_;
+	my ($self, %opts) = @_;
 	my $values = $self->value;
 
 	my $pem  = $values->{'dhparam-pem'};
 	my $pemInfo = run('openssl dhparam -in <(echo "$1") -text -check -noout', $pem);
 	my ($size) = $pemInfo =~ /DH Parameters: \((\d+) bit\)/;
 	my $pem_ok = $pemInfo =~ /DH parameters appear to be ok\./;
-	my $size_ok = $size == $self->get('size');
+	my $size_diff = $size -  $self->get('size');
+	my $size_ok = $opts{allow_oversized} ? $size_diff >= 0 : $size_diff == 0;
 
 	return ({
 		valid => [$pem_ok, "Valid"],
-		size  => [$size_ok, sprintf("%s bits%s", $self->get('size'), $size_ok ? '' : " (found $size bits)" )]
+		size  => [$size_ok, sprintf(
+			"%s bits%s%s",
+			$self->get('size'),
+			$opts{allow_oversized} ? ' minimum' : '',
+			$size_diff == 0 ? '' : " (found $size bits)"
+		)]
 	}, qw/valid size/);
 }
 

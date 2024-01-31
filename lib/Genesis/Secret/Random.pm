@@ -134,14 +134,20 @@ sub _validate_constructor_opts {
 # }}}
 # _validate_value - validate randomly generated string secret value {{{
 sub _validate_value {
-	my $self = shift;
+	my ($self, %opts) = @_;
 	my $value = $self->value;
 	my %results;
 
-	my $length_ok =  $self->get('size') == length($value);
+	my $size_diff = length($value) -  $self->get('size');
+	my $length_ok = $opts{allow_oversized} ? $size_diff >= 0 : $size_diff == 0;
 	$results{length} = [
 		$length_ok ? 'ok' : 'warn',
-		sprintf("%s characters%s",  $self->get('size'), $length_ok ? '' : " - got ". length($value))
+		sprintf(
+			"%s characters%s%s",
+			$self->get('size'),
+			$opts{allow_oversized} ? ' minimum' : '',
+			$size_diff == 0 ? '' : " - got ". length($value)
+		)
 	];
 
 	if ($self->get('valid_chars')) {

@@ -1952,7 +1952,8 @@ sub check_secrets {
 	) if ($self->has_hook('secrets'));
 
 	return $plan->$action(
-		level => $opts{verbose}?'full':'line'
+		level => $opts{verbose}?'full':'line',
+		allow_oversized => $self->top->config->{allow_oversized_secrets}//0
 	);
 }
 

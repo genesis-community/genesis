@@ -82,7 +82,7 @@ sub _required_value_keys {
 # }}}
 # _validate_value - validate an SSH secret value {{{
 sub _validate_value {
-	my ($self) = @_;
+	my ($self, %opts) = @_;
 	my $values = $self->value;
 	my %results;
 	my $fifo_file="genesis-ssh-1.fifo";
@@ -111,9 +111,17 @@ sub _validate_value {
 	}
 	if (!$pub_rc) {
 		my ($bits) = $pub_sig =~ /^\s*([0-9]*)/;
+		my $size_diff = $bits - $self->get('size');
+		my $size_ok = $opts{allow_oversized} ? $size_diff >= 0 : $size_diff == 0;
+
 		$results{size} = [
 			$bits == $self->get('size') ? 'ok' : 'warn',
-			sprintf("%s bits%s", $self->get('size'), ($bits == $self->get('size')) ? '' : " (found $bits bits)" )
+			sprintf(
+				"%s bits%s%s",
+				$self->get('size'),
+				$opts{allow_oversized} ? ' minimum' : '',
+				($bits == $self->get('size')) ? '' : " (found $bits bits)"
+			)
 		];
 	}
 
