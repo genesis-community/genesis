@@ -5,6 +5,8 @@ no warnings 'once';
 
 use base "Genesis::Secret";
 
+use Genesis::Term qw(csprintf);
+
 sub new {
 	my $obj = shift->SUPER::new(@_);
 	return $obj;
@@ -20,25 +22,46 @@ sub _validate_constructor_opts {
 sub describe {
 	my $self = shift;
 	my $fmt_defn;
-	{
-		require YAML;
-		local $YAML::UseBlock = 1;
-		local $YAML::UseHeader = 0;
-		local $YAML::UseAliases = 0;
-		local $YAML::Stringify = 1;
-		$fmt_defn = YAML::Dump($self->get('data' => '#w_{<undefined>}')) =~ s/\n/\n        /rmsg;
+	if (ref($self->get('data'))) {
+		eval {
+			require YAML;
+			local $YAML::UseBlock = 1;
+			local $YAML::UseHeader = 0;
+			local $YAML::UseAliases = 0;
+			local $YAML::Stringify = 1;
+			$fmt_defn = YAML::Dump($self->get('data'));
+			$fmt_defn =~ s/\s*\z//ms;
+			$fmt_defn =~ s/\n/\n[[        >>/msg;
+		};
+		if ($@) {
+			require JSON::PP;
+			$fmt_defn = JSON::PP->new->pretty(1)->encode($self->get('data'));
+			$fmt_defn =~ s/\s*\z//ms;
+			$fmt_defn =~ s/\n/\n[[        >>/msg;
+		}
+		$fmt_defn //= "#Ri{<invalid yaml>}" ;
+	} else {
+		$fmt_defn = $self->get('data' => "#yi{<undefined>}");
 	}
 	my $path = $self->path;
-	$path .= sprintf(" (for '%s' feature in kit.yml)",$self->{feature})
+	$path = ($path =~ /:/)
+		? csprintf("#C{%s}:#c{%s}", split(/:/, $path, 2))
+		: csprintf("#C{%s}", $path);
+
+	$path .= sprintf("#Ki{ (for '%s' feature in kit.yml)}",$self->{feature})
 		if $self->from_kit;
-	$path .= sprintf(" (from variables.%s in manifest)",$self->{var_name})
+	$path .= sprintf("#Ki{ (from variables.%s in manifest)}",$self->{var_name})
 		if $self->from_manifest;
 	my $msg = sprintf(
-		"Invalid definition for %s secret: %s\n".
-		"  path: %s\n".
-		"  data: %s\n",
-		$self->get('subject' => "Credential at '$path'"),
-		$self->get('error' => "Invalid secret definition"),
+		"Invalid definition for %s secret:\n".
+		"%s\n".
+		csprintf("[[  #Ki{path:} >>%%s\n").
+		csprintf("[[  #Ki{data: >>%%s}\n"),
+		$self->get('subject' => "Unknown"),
+		join("\n", map {
+				my $err = $_;
+				"[[- >>".join("\n[[  >>",split(/\n/,$err))
+			} @{$self->get('errors' => ["Invalid secret definition"])}),
 		$path,
 		$fmt_defn
 	);
