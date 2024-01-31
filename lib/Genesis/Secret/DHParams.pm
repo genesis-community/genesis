@@ -4,6 +4,8 @@ use warnings;
 
 use base "Genesis::Secret";
 
+use Genesis qw/run/;
+
 ### Construction arguments {{{
 # size: <positive integer>
 # path: <relative location in secrets-store under the base>
@@ -75,6 +77,16 @@ sub __get_safe_command_for_generate {
 
 sub _get_safe_command_for_add    {shift->__get_safe_command_for_generate('add',@_)}
 sub _get_safe_command_for_rotate {shift->__get_safe_command_for_generate('rotate',@_)}
+
+sub process_command_output {
+	my ($self, $action, $out, $rc, $err) = @_;
+	return ($out, $rc, $err) unless $action eq 'add';
+	if ($out =~ /Generating DH parameters,.*\+\+\*\+\+\*\s*$/s) {
+		$out = '';
+	}
+	return ($out, $rc, $err);
+}
+# }}}
 
 # }}}
 # }}}
