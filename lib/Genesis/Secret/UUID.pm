@@ -27,14 +27,15 @@ sub generate_value {
 
 # }}}
 sub process_command_output {
-	my ($self, $action, $out) = @_;
-	return $out unless $action eq 'add';
-	join("\n",
+	my ($self, $action, $out, $rc, $err) = @_;
+	return ($out, $rc, $err) unless $action eq 'add';
+	$out = join("\n",
 		grep {
 			my (undef, $key) = split(':',$self->path);
 			$_ !~ /^$key: [a-f0-9]{8}(-[a-f0-9]{4}){4}[a-f0-9]{8}$/;
 		} split("\n", $out)
 	);
+	return ($out, $rc, $err);
 }
 # }}}
 
@@ -63,7 +64,7 @@ sub _validate_constructor_opts {
 	}
 	$args->{version} = $version;
 	$args->{fixed} = !!delete($opts{fixed});
-	push(@errors, "Invalid '$_' argument specified for version $version") for grep {defined($opts{$_})} keys(%opts);
+	push(@errors, "Invalid '$_' argument specified for version $version") for grep {defined($opts{$_})} sort keys(%opts);
   return @errors
     ? ($orig_opts, \@errors)
     : ($args)
