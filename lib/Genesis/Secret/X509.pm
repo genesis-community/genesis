@@ -186,7 +186,7 @@ sub _validate_constructor_opts {
 		if (ref($usage) eq 'ARRAY') {
 			my %valid_keys = map {$_, 1} _key_usage_types();
 			my @invalid_keys = grep {!$valid_keys{$_}} @{$usage};
-			push @errors, sprintf("Invalid usage argument - unknown usage keys: '%s'\n  Valid keys are: '%s'",
+			push @errors, sprintf("Invalid usage argument - unknown usage keys: '%s'\n[[Valid keys are: >>'%s'",
 				join("', '", sort @invalid_keys), join("', '", sort(keys %valid_keys)))
 			if (@invalid_keys);
 		} else {
@@ -207,6 +207,10 @@ sub _validate_constructor_opts {
 
 	$args->{signed_by} = delete($opts{signed_by}) if defined($opts{signed_by});
 	$args->{base_path} = delete($opts{base_path});
+
+	if ($args->{signed_by} && $args->{signed_by} !~ /^[a-z0-9_-]+(\/[a-z0-9_-]+)?$/i) {
+		push @errors, "Invalid signed_by argument: expecting relative vault path string, got '$args->{signed_by}'"
+	}
 
 	push(@errors, "Invalid '$_' argument specified") for grep {defined($opts{$_})} keys(%opts);
 	return @errors
