@@ -127,8 +127,6 @@ sub _parse_certificate {
 			if (!scalar(@names) && $subject_cn);
 	}
 
-	my @usage = @{$opts{options}{extended_key_usage}//[]};
-
 	return Genesis::Secret::X509->new(
 		$path,
 		is_ca      => !!$opts{options}{is_ca}//0,
@@ -136,7 +134,7 @@ sub _parse_certificate {
 		valid_for  => $duration,
 		subject_cn => $opts{options}{common_name},
 		names      => [@names],
-		usage      => [@usage],
+		usage      => $opts{options}{extended_key_usage},
 		_ch_name   => $path
 	);
 }

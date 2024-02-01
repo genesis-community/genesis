@@ -1953,7 +1953,7 @@ sub check_secrets {
 
 	return $plan->$action(
 		level => $opts{verbose}?'full':'line',
-		allow_oversized => $self->top->config->{allow_oversized_secrets}//0
+		allow_oversized => $self->top->config->get(allow_oversized_secrets => 0)
 	);
 }
 
