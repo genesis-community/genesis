@@ -70,7 +70,7 @@ sub _required_value_keys {
 # }}}
 # _validate_value - validate an RSA secret value {{{
 sub _validate_value {
-	my ($self) = @_;
+	my ($self, %opts) = @_;
 
 	my $values = $self->value;
 	my %results;
@@ -90,10 +90,18 @@ sub _validate_value {
 	if (!$pub_rc) {
 		my ($pub_info, $pub_rc2) = run('openssl rsa -noout -text -inform PEM -in <(echo "$1") -pubin', $values->{public});
 		my ($bits) = ($pub_rc2) ? () : $pub_info =~ /Key:\s*\(([0-9]*) bit\)/;
-		my $size_ok = ($bits || 0) == $self->get('size');
+		$bits //=0;
+		my $size_diff = ($bits) - $self->get('size');
+		my $size_ok = $opts{allow_oversized} ? $size_diff >= 0 : $size_diff == 0;
+
 		$results{size} = [
 			$size_ok ? 'ok' : 'warn',
-			sprintf("%s bit%s", $self->get('size'), $size_ok ? '' : ($bits ? " (found $bits bits)" : " (could not read size)"))
+			sprintf(
+				"%s bits%s%s",
+				$self->get('size'),
+				$opts{allow_oversized} ? ' minimum' : '',
+				($bits == $self->get('size')) ? '' : " (found $bits bits)"
+			)
 		];
 		if (!$priv_rc) {
 			$results{agree} = [

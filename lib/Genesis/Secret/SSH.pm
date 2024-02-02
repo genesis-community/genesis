@@ -115,7 +115,7 @@ sub _validate_value {
 		my $size_ok = $opts{allow_oversized} ? $size_diff >= 0 : $size_diff == 0;
 
 		$results{size} = [
-			$bits == $self->get('size') ? 'ok' : 'warn',
+			$size_ok ? 'ok' : 'warn',
 			sprintf(
 				"%s bits%s%s",
 				$self->get('size'),
