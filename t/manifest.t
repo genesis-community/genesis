@@ -20,7 +20,7 @@ eq_or_diff get_file("$tmp/manifest.yml"), <<EOF, "manifest generated for us-east
 
 [us-east-1-sandbox/manifest-test] generating unredacted manifest...
 
-[us-east-1-sandbox/manifest-test] determining manifest fragments for merging...
+[us-east-1-sandbox/manifest-test] determining manifest fragments for merging...done
 
 jobs:
 - name: thing
@@ -41,7 +41,7 @@ eq_or_diff get_file("$tmp/manifest.yml"), <<EOF, "manifest generated for us-west
 
 [us-west-1-sandbox/manifest-test] generating unredacted manifest...
 
-[us-west-1-sandbox/manifest-test] determining manifest fragments for merging...
+[us-west-1-sandbox/manifest-test] determining manifest fragments for merging...done
 
 jobs:
 - name: thing
@@ -68,7 +68,7 @@ eq_or_diff get_file("$tmp/error.txt"), <<EOF, "manifest for bosh-init/create-env
 
 [bosh-init-sandbox/manifest-test] generating unredacted manifest...
 
-[bosh-init-sandbox/manifest-test] determining manifest fragments for merging...
+[bosh-init-sandbox/manifest-test] determining manifest fragments for merging...done
 
 EOF
 eq_or_diff get_file("$tmp/manifest.yml"), <<EOF, "manifest for bosh-init/create-env scenario ignores provided cloud config file, and doesn't prune cloud-y datastructures";
@@ -107,7 +107,7 @@ eq_or_diff get_file("$tmp/error.txt"), <<EOF, "manifest for bosh-init/create-env
 
 [create-env-sandbox/manifest-test] generating unredacted manifest...
 
-[create-env-sandbox/manifest-test] determining manifest fragments for merging...
+[create-env-sandbox/manifest-test] determining manifest fragments for merging...done
 
 EOF
 eq_or_diff get_file("$tmp/manifest.yml"), <<EOF, "manifest for bosh-int/create-env scenario ignores provided cloud config file, and doesn't prune cloud-y datastructures";
@@ -143,7 +143,7 @@ eq_or_diff get_file("$tmp/manifest.yml"), <<EOF, "manifest is generated using ca
 
 [us-west-1-sandbox/manifest-test] generating unredacted manifest...
 
-[us-west-1-sandbox/manifest-test] determining manifest fragments for merging...
+[us-west-1-sandbox/manifest-test] determining manifest fragments for merging...done
 
 cached_value: is_present
 jobs:
@@ -175,7 +175,7 @@ eq_or_diff get_file("error.txt"), <<EOF, "manifest for bosh-init/create-env scen
 
 [create-env-sandbox/manifest-test] generating unredacted manifest...
 
-[create-env-sandbox/manifest-test] determining manifest fragments for merging...
+[create-env-sandbox/manifest-test] determining manifest fragments for merging...done
 
 EOF
 eq_or_diff get_file("manifest.yml"), <<EOF, "manifest for bosh-int/create-env scenario ignores provided cloud config file, and doesn't prune cloud-y datastructures (-C option)";
@@ -211,7 +211,7 @@ eq_or_diff get_file("manifest.yml"), <<EOF, "manifest is generated using cached 
 
 [us-west-1-sandbox/manifest-test] generating unredacted manifest...
 
-[us-west-1-sandbox/manifest-test] determining manifest fragments for merging...
+[us-west-1-sandbox/manifest-test] determining manifest fragments for merging...done
 
 cached_value: is_present
 jobs:

@@ -7,16 +7,16 @@ coverage:
 	SKIP_SECRETS_TESTS=yes cover -t -ignore_re '(/Legacy.pm|/UI.pm|^t/|/JSON/)'
 
 test: sanity-test
-	prove t/*.t
+	prove -l t/*.t
 
 test-all: sanity-test test-quick test-secrets
 
 test-quick: sanity-test
-	SKIP_SECRETS_TESTS=yes prove t/*.t
+	SKIP_SECRETS_TESTS=yes prove -l t/*.t
 
 test-secrets: sanity-test
 	@echo 'prove t/secrets.t'
-	@prove t/secrets.t ; rc=$$? ; for pid in $$(ps | grep '[\.]/t/vaults/vault-' | awk '{print $$1}') ; do kill -TERM $$pid; done ; exit $$rc
+	@prove -l t/secrets.t ; rc=$$? ; for pid in $$(ps | grep '[\.]/t/vaults/vault-' | awk '{print $$1}') ; do kill -TERM $$pid; done ; exit $$rc
 
 test-isolated: sanity-test
 	for x in t/*.t; do git clean -xdf t; prove -lv $$x; done

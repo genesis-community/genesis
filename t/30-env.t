@@ -815,7 +815,7 @@ EOF
 	};
 
 
-	cmp_deeply(Genesis::Env::_unflatten($good_flattened), {
+	cmp_deeply(Genesis::unflatten($good_flattened), {
 		key => "value",
 		another_key => "another value",
 		this => {
@@ -1069,23 +1069,30 @@ subtest 'new env and check' => sub{
 		$out = combined_from {$env = $top->create_env($name, $kit, vault => $vault_target)}
 	} "successfully create an env with a dev kit";
 
-	$out =~ s/(Duration:|-) (\d+ minutes?, )?\d+ seconds?/$1 XXX seconds/g;
 	eq_or_diff $out, <<EOF, "creating environment provides secret generation output";
-Parsing kit secrets descriptions ... done. - XXX seconds
 
-Adding 10 secrets for far-fetched under path '/secret/far/fetched/sample/':
-  [ 1/10] my-cert/ca X509 certificate - CA, self-signed ... done.
-  [ 2/10] my-cert/server X509 certificate - signed by 'my-cert/ca' ... done.
-  [ 3/10] ssl/ca X509 certificate - CA, self-signed ... done.
-  [ 4/10] ssl/server X509 certificate - signed by 'ssl/ca' ... done.
-  [ 5/10] crazy/thing:id random password - 32 bytes, fixed ... done.
-  [ 6/10] crazy/thing:token random password - 16 bytes ... done.
-  [ 7/10] users/admin:password random password - 64 bytes ... done.
-  [ 8/10] users/bob:password random password - 16 bytes ... done.
-  [ 9/10] work/signing_key RSA public/private keypair - 2048 bits, fixed ... done.
-  [10/10] something/ssh SSH public/private keypair - 2048 bits, fixed ... done.
-Completed - Duration: XXX seconds [10 added/0 skipped/0 errors]
+[far-fetched/sample] determining manifest fragments for merging...done
 
+[far-fetched/sample] processing secrets descriptions...
+  - using kit Sample Kit/in-development (dev)
+  - fetching secret definitions from kit defintion file ... found 10
+  - fetching secret definitions from manifest variables block ... found 0
+  - processed 10 secret definitions [1 rsa/4 random/1 ssh/4 x509]
+
+[far-fetched/sample] adding missing environment secrets...
+  - loading existing secrets from source...done
+  - adding 10 secrets under path '/secret/far/fetched/sample/':
+    [ 1/10] my-cert/ca X.509 certificate - CA, self-signed ... done.
+    [ 2/10] my-cert/server X.509 certificate - signed by 'my-cert/ca' ... done.
+    [ 3/10] ssl/ca X.509 certificate - CA, self-signed ... done.
+    [ 4/10] ssl/server X.509 certificate - signed by 'ssl/ca' ... done.
+    [ 5/10] crazy/thing:id Random - 32 bytes, fixed ... done.
+    [ 6/10] crazy/thing:token Random - 16 bytes ... done.
+    [ 7/10] something/ssh SSH public/private keypair - 2048 bits, fixed ... done.
+    [ 8/10] users/admin:password Random - 64 bytes ... done.
+    [ 9/10] users/bob:password Random - 16 bytes ... done.
+    [10/10] work/signing_key RSA public/private keypair - 2048 bits, fixed ... done.
+    completed [10 added/0 skipped/0 errors]
 EOF
 
 	eq_or_diff get_file($env->path($env->{file})), <<EOF, "Created env file contains correct info";
@@ -1108,25 +1115,23 @@ EOF
 	$out = combined_from {
 		ok $env->check_secrets(verbose => 1), "check_secrets shows all secrets okay"
 	};
-	$out =~ s/(Duration:|-) (\d+ minutes?, )?\d+ seconds?/$1 XXX seconds/g;
 
 	eq_or_diff $out, <<EOF, "check_secrets gives meaninful output on success";
-Parsing kit secrets descriptions ... done. - XXX seconds
-Retrieving all existing secrets ... done. - XXX seconds
 
-Checking 10 secrets for far-fetched under path '/secret/far/fetched/sample/':
-  [ 1/10] my-cert/ca X509 certificate - CA, self-signed ... found.
-  [ 2/10] my-cert/server X509 certificate - signed by 'my-cert/ca' ... found.
-  [ 3/10] ssl/ca X509 certificate - CA, self-signed ... found.
-  [ 4/10] ssl/server X509 certificate - signed by 'ssl/ca' ... found.
-  [ 5/10] crazy/thing:id random password - 32 bytes, fixed ... found.
-  [ 6/10] crazy/thing:token random password - 16 bytes ... found.
-  [ 7/10] users/admin:password random password - 64 bytes ... found.
-  [ 8/10] users/bob:password random password - 16 bytes ... found.
-  [ 9/10] work/signing_key RSA public/private keypair - 2048 bits, fixed ... found.
-  [10/10] something/ssh SSH public/private keypair - 2048 bits, fixed ... found.
-Completed - Duration: XXX seconds [10 found/0 skipped/0 errors]
-
+[far-fetched/sample] checking presence of environment secrets...
+  - loading secrets from source...done
+  - checking 10 secrets under path '/secret/far/fetched/sample/':
+    [ 1/10] my-cert/ca X.509 certificate - CA, self-signed ... found.
+    [ 2/10] my-cert/server X.509 certificate - signed by 'my-cert/ca' ... found.
+    [ 3/10] ssl/ca X.509 certificate - CA, self-signed ... found.
+    [ 4/10] ssl/server X.509 certificate - signed by 'ssl/ca' ... found.
+    [ 5/10] crazy/thing:id Random - 32 bytes, fixed ... found.
+    [ 6/10] crazy/thing:token Random - 16 bytes ... found.
+    [ 7/10] something/ssh SSH public/private keypair - 2048 bits, fixed ... found.
+    [ 8/10] users/admin:password Random - 64 bytes ... found.
+    [ 9/10] users/bob:password Random - 16 bytes ... found.
+    [10/10] work/signing_key RSA public/private keypair - 2048 bits, fixed ... found.
+    completed [10 found/0 skipped/0 errors]
 EOF
 
 	qx(safe export > /tmp/out.json);
@@ -1134,32 +1139,33 @@ EOF
 	qx(safe rm -rf secret/far/fetched/sample/users);
 	qx(safe rm secret/far/fetched/sample/ssl/ca:key secret/far/fetched/sample/ssl/ca:certificate);
 	qx(safe rm secret/far/fetched/sample/crazy/thing:token);
+	$env->get_secrets_store->clear_data;
 
+	my $results;
 	$out = combined_from {
-		ok !$env->check_secrets(verbose=>1), "check_secrets shows missing secrets and keys"
+		($results) = $env->check_secrets(verbose=>1)
 	};
-	$out =~ s/(Duration:|-) (\d+ minutes?, )?\d+ seconds?/$1 XXX seconds/g;
+	ok $results->{missing} == 2, "check_secrets shows missing secrets and keys";
 
 	matches_utf8 encode_utf8($out), <<EOF,  "check_secrets gives meaninful output on failure";
-Parsing kit secrets descriptions ... done. - XXX seconds
-Retrieving all existing secrets ... done. - XXX seconds
 
-Checking 10 secrets for far-fetched under path '/secret/far/fetched/sample/':
-  [ 1/10] my-cert/ca X509 certificate - CA, self-signed ... found.
-  [ 2/10] my-cert/server X509 certificate - signed by 'my-cert/ca' ... found.
-  [ 3/10] ssl/ca X509 certificate - CA, self-signed ... missing!
-          [✘ ] missing key ':certificate'
-          [✘ ] missing key ':key'
+[far-fetched/sample] checking presence of environment secrets...
+  - loading secrets from source...done
+  - checking 10 secrets under path '/secret/far/fetched/sample/':
+    [ 1/10] my-cert/ca X.509 certificate - CA, self-signed ... found.
+    [ 2/10] my-cert/server X.509 certificate - signed by 'my-cert/ca' ... found.
+    [ 3/10] ssl/ca X.509 certificate - CA, self-signed ... missing!
+            [✘ ] missing key ':certificate'
+            [✘ ] missing key ':key'
 
-  [ 4/10] ssl/server X509 certificate - signed by 'ssl/ca' ... found.
-  [ 5/10] crazy/thing:id random password - 32 bytes, fixed ... found.
-  [ 6/10] crazy/thing:token random password - 16 bytes ... missing!
-  [ 7/10] users/admin:password random password - 64 bytes ... missing!
-  [ 8/10] users/bob:password random password - 16 bytes ... missing!
-  [ 9/10] work/signing_key RSA public/private keypair - 2048 bits, fixed ... found.
-  [10/10] something/ssh SSH public/private keypair - 2048 bits, fixed ... found.
-Failed - Duration: XXX seconds [6 found/0 skipped/4 errors]
-
+    [ 4/10] ssl/server X.509 certificate - signed by 'ssl/ca' ... found.
+    [ 5/10] crazy/thing:id Random - 32 bytes, fixed ... found.
+    [ 6/10] crazy/thing:token Random - 16 bytes ... missing!
+    [ 7/10] something/ssh SSH public/private keypair - 2048 bits, fixed ... found.
+    [ 8/10] users/admin:password Random - 64 bytes ... found.
+    [ 9/10] users/bob:password Random - 16 bytes ... found.
+    [10/10] work/signing_key RSA public/private keypair - 2048 bits, fixed ... found.
+    failed [8 found/0 skipped/2 errors]
 EOF
 
 	$director1->stop();
@@ -1238,94 +1244,100 @@ EOF
 
 	local $ENV{NOCOLOR} = "yes";
 	my $out;
+
 	lives_ok {
 		$out = combined_from {$env->add_secrets() }
 	} "successfully add secrets with environment kit overrides";
 
-	$out =~ s/(Duration:|-) (\d+ minutes?, )?\d+ seconds?/$1 XXX seconds/g;
 	eq_or_diff $out, <<EOF, "environment kit overrides add the expected secrets";
-Parsing kit secrets descriptions ... done. - XXX seconds
 
-Adding 10 secrets for standalone under path '/secret/standalone/thing/':
-  [ 1/10] my-cert/ca X509 certificate - CA, self-signed ... done.
-  [ 2/10] my-cert/server X509 certificate - signed by 'my-cert/ca' ... done.
-  [ 3/10] private-cert/server X509 certificate - signed by 'my-cert/ca' ... done.
-  [ 4/10] crazy/thing:id random password - 32 bytes, fixed ... done.
-  [ 5/10] crazy/thing:token random password - 48 bytes ... done.
-  [ 6/10] need-to-know:secret random password - 32 bytes ... done.
-  [ 7/10] users/admin:password random password - 64 bytes ... done.
-  [ 8/10] users/bob:password random password - 16 bytes ... done.
-  [ 9/10] work/signing_key RSA public/private keypair - 2048 bits, fixed ... done.
-  [10/10] something/ssh SSH public/private keypair - 2048 bits, fixed ... done.
-Completed - Duration: XXX seconds [10 added/0 skipped/0 errors]
+[standalone/thing] determining manifest fragments for merging...done
 
+[standalone/thing] processing secrets descriptions...
+  - using kit Sample Kit/in-development (dev)
+  - fetching secret definitions from kit defintion file ... found 10
+  - fetching secret definitions from manifest variables block ... found 0
+  - processed 10 secret definitions [1 rsa/5 random/1 ssh/3 x509]
+
+[standalone/thing] adding missing environment secrets...
+  - loading existing secrets from source...done
+  - adding 10 secrets under path '/secret/standalone/thing/':
+    [ 1/10] my-cert/ca X.509 certificate - CA, self-signed ... done.
+    [ 2/10] my-cert/server X.509 certificate - signed by 'my-cert/ca' ... done.
+    [ 3/10] private-cert/server X.509 certificate - signed by 'my-cert/ca' ... done.
+    [ 4/10] crazy/thing:id Random - 32 bytes, fixed ... done.
+    [ 5/10] crazy/thing:token Random - 48 bytes ... done.
+    [ 6/10] need-to-know:secret Random - 32 bytes ... done.
+    [ 7/10] something/ssh SSH public/private keypair - 2048 bits, fixed ... done.
+    [ 8/10] users/admin:password Random - 64 bytes ... done.
+    [ 9/10] users/bob:password Random - 16 bytes ... done.
+    [10/10] work/signing_key RSA public/private keypair - 2048 bits, fixed ... done.
+    completed [10 added/0 skipped/0 errors]
 EOF
 	sleep 2; # to allow x509 certs to start
 	lives_ok {
 		$out = combined_from {$env->check_secrets(verbose => 1, validate => 1) }
 	} "successfully check secrets with environment kit overrides";
-	$out =~ s/(Duration:|-) (\d+ minutes?, )?\d+ seconds?/$1 XXX seconds/g;
 	$out =~ s/expires in (\d+) days \(([^\)]+)\)/expires in $1 days (<timestamp>)/g;
 	matches_utf8 encode_utf8($out), <<EOF, "environment kit overrides create expected secrets - validation";
-Parsing kit secrets descriptions ... done. - XXX seconds
-Retrieving all existing secrets ... done. - XXX seconds
 
-Validating 10 secrets for standalone under path '/secret/standalone/thing/':
-  [ 1/10] my-cert/ca X509 certificate - CA, self-signed ... valid.
-          [✔ ] CA Certificate
-          [✔ ] Self-Signed
-          [✔ ] Valid: expires in 3650 days (<timestamp>)
-          [✔ ] Modulus Agreement
-          [✔ ] Default CA key usage: server_auth, client_auth, crl_sign, key_cert_sign
+[standalone/thing] validating environment secrets...
+  - loading secrets from source...done
+  - validating 10 secrets under path '/secret/standalone/thing/':
+    [ 1/10] my-cert/ca X.509 certificate - CA, self-signed ... valid.
+            [✔ ] CA Certificate
+            [✔ ] Self-Signed
+            [✔ ] Valid: expires in 3650 days (<timestamp>)
+            [✔ ] Modulus Agreement
+            [✔ ] Default CA key usage: server_auth, client_auth, crl_sign, key_cert_sign
 
-  [ 2/10] my-cert/server X509 certificate - signed by 'my-cert/ca' ... valid.
-          [✔ ] Not a CA Certificate
-          [✔ ] Signed by my-cert/ca
-          [✔ ] Valid: expires in 365 days (<timestamp>)
-          [✔ ] Modulus Agreement
-          [✔ ] Subject Name 'locker'
-          [✔ ] Subject Alt Names: 'locker'
-          [✔ ] Default key usage: server_auth, client_auth
+    [ 2/10] my-cert/server X.509 certificate - signed by 'my-cert/ca' ... valid.
+            [✔ ] Not a CA Certificate
+            [✔ ] Signed by my-cert/ca
+            [✔ ] Valid: expires in 365 days (<timestamp>)
+            [✔ ] Modulus Agreement
+            [✔ ] Subject Name 'locker'
+            [✔ ] Subject Alt Names: 'locker'
+            [✔ ] Default key usage: server_auth, client_auth
 
-  [ 3/10] private-cert/server X509 certificate - signed by 'my-cert/ca' ... valid.
-          [✔ ] Not a CA Certificate
-          [✔ ] Signed by my-cert/ca
-          [✔ ] Valid: expires in 365 days (<timestamp>)
-          [✔ ] Modulus Agreement
-          [✔ ] Subject Name 'standalone'
-          [✔ ] Subject Alt Names: 'standalone'
-          [✔ ] Default key usage: server_auth, client_auth
+    [ 3/10] private-cert/server X.509 certificate - signed by 'my-cert/ca' ... valid.
+            [✔ ] Not a CA Certificate
+            [✔ ] Signed by my-cert/ca
+            [✔ ] Valid: expires in 365 days (<timestamp>)
+            [✔ ] Modulus Agreement
+            [✔ ] Subject Name 'standalone'
+            [✔ ] Subject Alt Names: 'standalone'
+            [✔ ] Default key usage: server_auth, client_auth
 
-  [ 4/10] crazy/thing:id random password - 32 bytes, fixed ... valid.
-          [✔ ] 32 characters
+    [ 4/10] crazy/thing:id Random - 32 bytes, fixed ... valid.
+            [✔ ] 32 characters
 
-  [ 5/10] crazy/thing:token random password - 48 bytes ... valid.
-          [✔ ] 48 characters
-          [✔ ] Only uses characters 'ABCDEF0123456789'
+    [ 5/10] crazy/thing:token Random - 48 bytes ... valid.
+            [✔ ] 48 characters
+            [✔ ] Only uses characters 'ABCDEF0123456789'
 
-  [ 6/10] need-to-know:secret random password - 32 bytes ... valid.
-          [✔ ] 32 characters
+    [ 6/10] need-to-know:secret Random - 32 bytes ... valid.
+            [✔ ] 32 characters
 
-  [ 7/10] users/admin:password random password - 64 bytes ... valid.
-          [✔ ] 64 characters
+    [ 7/10] something/ssh SSH public/private keypair - 2048 bits, fixed ... valid.
+            [✔ ] Valid private key
+            [✔ ] Valid public key
+            [✔ ] Public/Private key Agreement
+            [✔ ] 2048 bits
 
-  [ 8/10] users/bob:password random password - 16 bytes ... valid.
-          [✔ ] 16 characters
+    [ 8/10] users/admin:password Random - 64 bytes ... valid.
+            [✔ ] 64 characters
 
-  [ 9/10] work/signing_key RSA public/private keypair - 2048 bits, fixed ... valid.
-          [✔ ] Valid private key
-          [✔ ] Valid public key
-          [✔ ] Public/Private key agreement
-          [✔ ] 2048 bit
+    [ 9/10] users/bob:password Random - 16 bytes ... valid.
+            [✔ ] 16 characters
 
-  [10/10] something/ssh SSH public/private keypair - 2048 bits, fixed ... valid.
-          [✔ ] Valid private key
-          [✔ ] Valid public key
-          [✔ ] Public/Private key Agreement
-          [✔ ] 2048 bits
+    [10/10] work/signing_key RSA public/private keypair - 2048 bits, fixed ... valid.
+            [✔ ] Valid private key
+            [✔ ] Valid public key
+            [✔ ] Public/Private key agreement
+            [✔ ] 2048 bits
 
-Completed - Duration: XXX seconds [10 validated/0 skipped/0 errors]
-
+    completed [10 validated/0 skipped/0 errors]
 EOF
 
 	put_file $top->path("c.yml"), <<EOF; # Array entry: string
@@ -1421,128 +1433,132 @@ EOF
 		$out = combined_from {$env->add_secrets() }
 	} "successfully add secrets with environment kit overrides";
 
-	$out =~ s/(Duration:|-) (\d+ minutes?, )?\d+ seconds?/$1 XXX seconds/g;
 	eq_or_diff $out, <<EOF, "environment kit overrides add the expected secrets";
-Parsing kit secrets descriptions ... done. - XXX seconds
 
-Adding 16 secrets for c-env under path '/secret/c/env/thing/':
-  [ 1/16] my-cert/ca X509 certificate - CA, self-signed ... done.
-  [ 2/16] my-cert/server X509 certificate - signed by 'my-cert/ca' ... done.
-  [ 3/16] some-ssl/ca X509 certificate - CA, self-signed ... done.
-  [ 4/16] some-ssl/server X509 certificate - signed by 'some-ssl/ca' ... done.
-  [ 5/16] ssl/ca X509 certificate - CA, self-signed ... done.
-  [ 6/16] ssl/server X509 certificate - signed by 'ssl/ca' ... done.
-  [ 7/16] iaas:access_key user-provided - IaaS Access Key ... exists!
-  [ 8/16] iaas:secret_key user-provided - IaaS Secret Key ... exists!
-  [ 9/16] crazy/thing:id random password - 32 bytes, fixed ... done.
-  [10/16] crazy/thing:token random password - 16 bytes ... done.
-  [11/16] proto-credentials:seed random password - 64 bytes, fixed ... done.
-  [12/16] proto-credentials:token random password - 24 bytes ... done.
-  [13/16] users/admin:password random password - 64 bytes ... done.
-  [14/16] users/bob:password random password - 16 bytes ... done.
-  [15/16] work/signing_key RSA public/private keypair - 2048 bits, fixed ... done.
-  [16/16] something/ssh SSH public/private keypair - 2048 bits, fixed ... done.
-Completed - Duration: XXX seconds [14 added/2 skipped/0 errors]
+[c-env/thing] determining manifest fragments for merging...done
 
+[c-env/thing] processing secrets descriptions...
+  - using kit Sample Kit/in-development (dev)
+  - fetching secret definitions from kit defintion file ... found 16
+  - fetching secret definitions from manifest variables block ... found 0
+  - processed 16 secret definitions [1 rsa/6 random/1 ssh/2 userprovided/6 x509]
+
+[c-env/thing] adding missing environment secrets...
+  - loading existing secrets from source...done
+  - adding 16 secrets under path '/secret/c/env/thing/':
+    [ 1/16] my-cert/ca X.509 certificate - CA, self-signed ... done.
+    [ 2/16] my-cert/server X.509 certificate - signed by 'my-cert/ca' ... done.
+    [ 3/16] some-ssl/ca X.509 certificate - CA, self-signed ... done.
+    [ 4/16] some-ssl/server X.509 certificate - signed by 'some-ssl/ca' ... done.
+    [ 5/16] ssl/ca X.509 certificate - CA, self-signed ... done.
+    [ 6/16] ssl/server X.509 certificate - signed by 'ssl/ca' ... done.
+    [ 7/16] crazy/thing:id Random - 32 bytes, fixed ... done.
+    [ 8/16] crazy/thing:token Random - 16 bytes ... done.
+    [ 9/16] iaas:access_key User-provided - IaaS Access Key ... exists!
+    [10/16] iaas:secret_key User-provided - IaaS Secret Key ... exists!
+    [11/16] proto-credentials:seed Random - 64 bytes, fixed ... done.
+    [12/16] proto-credentials:token Random - 24 bytes ... done.
+    [13/16] something/ssh SSH public/private keypair - 2048 bits, fixed ... done.
+    [14/16] users/admin:password Random - 64 bytes ... done.
+    [15/16] users/bob:password Random - 16 bytes ... done.
+    [16/16] work/signing_key RSA public/private keypair - 2048 bits, fixed ... done.
+    completed [14 added/2 skipped/0 errors]
 EOF
 
 	sleep 5; # Lets make sure the certs aren't in the future!
+	$env->get_secrets_store->clear_data;
 	lives_ok {
 		$out = combined_from {$env->check_secrets(verbose => 1, validate => 1) }
 	} "successfully check secrets with environment kit overrides";
-	$out =~ s/(Duration:|-) (\d+ minutes?, )?\d+ seconds?/$1 XXX seconds/g;
 	$out =~ s/expires in (\d+) days \(([^\)]+)\)/expires in $1 days (<timestamp>)/g;
 	matches_utf8 encode_utf8($out), <<EOF, "environment kit overrides create expected secrets - validation";
-Parsing kit secrets descriptions ... done. - XXX seconds
-Retrieving all existing secrets ... done. - XXX seconds
 
-Validating 16 secrets for c-env under path '/secret/c/env/thing/':
-  [ 1/16] my-cert/ca X509 certificate - CA, self-signed ... valid.
-          [✔ ] CA Certificate
-          [✔ ] Self-Signed
-          [✔ ] Valid: expires in 3650 days (<timestamp>)
-          [✔ ] Modulus Agreement
-          [✔ ] Default CA key usage: server_auth, client_auth, crl_sign, key_cert_sign
+[c-env/thing] validating environment secrets...
+  - loading secrets from source...done
+  - validating 16 secrets under path '/secret/c/env/thing/':
+    [ 1/16] my-cert/ca X.509 certificate - CA, self-signed ... valid.
+            [✔ ] CA Certificate
+            [✔ ] Self-Signed
+            [✔ ] Valid: expires in 3650 days (<timestamp>)
+            [✔ ] Modulus Agreement
+            [✔ ] Default CA key usage: server_auth, client_auth, crl_sign, key_cert_sign
 
-  [ 2/16] my-cert/server X509 certificate - signed by 'my-cert/ca' ... valid.
-          [✔ ] Not a CA Certificate
-          [✔ ] Signed by my-cert/ca
-          [✔ ] Valid: expires in 365 days (<timestamp>)
-          [✔ ] Modulus Agreement
-          [✔ ] Subject Name 'locker'
-          [✔ ] Subject Alt Names: 'locker'
-          [✔ ] Default key usage: server_auth, client_auth
+    [ 2/16] my-cert/server X.509 certificate - signed by 'my-cert/ca' ... valid.
+            [✔ ] Not a CA Certificate
+            [✔ ] Signed by my-cert/ca
+            [✔ ] Valid: expires in 365 days (<timestamp>)
+            [✔ ] Modulus Agreement
+            [✔ ] Subject Name 'locker'
+            [✔ ] Subject Alt Names: 'locker'
+            [✔ ] Default key usage: server_auth, client_auth
 
-  [ 3/16] some-ssl/ca X509 certificate - CA, self-signed ... valid.
-          [✔ ] CA Certificate
-          [✔ ] Self-Signed
-          [✔ ] Valid: expires in 730 days (<timestamp>)
-          [✔ ] Modulus Agreement
-          [✔ ] Default CA key usage: server_auth, client_auth, crl_sign, key_cert_sign
+    [ 3/16] some-ssl/ca X.509 certificate - CA, self-signed ... valid.
+            [✔ ] CA Certificate
+            [✔ ] Self-Signed
+            [✔ ] Valid: expires in 730 days (<timestamp>)
+            [✔ ] Modulus Agreement
+            [✔ ] Default CA key usage: server_auth, client_auth, crl_sign, key_cert_sign
 
-  [ 4/16] some-ssl/server X509 certificate - signed by 'some-ssl/ca' ... valid.
-          [✔ ] Not a CA Certificate
-          [✔ ] Signed by some-ssl/ca
-          [✔ ] Valid: expires in 365 days (<timestamp>)
-          [✔ ] Modulus Agreement
-          [✔ ] Subject Name 'proto-ssl'
-          [✔ ] Subject Alt Names: 'proto-ssl'
-          [✔ ] Default key usage: server_auth, client_auth
+    [ 4/16] some-ssl/server X.509 certificate - signed by 'some-ssl/ca' ... valid.
+            [✔ ] Not a CA Certificate
+            [✔ ] Signed by some-ssl/ca
+            [✔ ] Valid: expires in 1095 days (<timestamp>)
+            [✔ ] Modulus Agreement
+            [✔ ] Subject Name 'proto-ssl'
+            [✔ ] Subject Alt Names: 'proto-ssl'
+            [✔ ] Default key usage: server_auth, client_auth
 
-  [ 5/16] ssl/ca X509 certificate - CA, self-signed ... valid.
-          [✔ ] CA Certificate
-          [✔ ] Self-Signed
-          [✔ ] Valid: expires in 3650 days (<timestamp>)
-          [✔ ] Modulus Agreement
-          [✔ ] Default CA key usage: server_auth, client_auth, crl_sign, key_cert_sign
+    [ 5/16] ssl/ca X.509 certificate - CA, self-signed ... valid.
+            [✔ ] CA Certificate
+            [✔ ] Self-Signed
+            [✔ ] Valid: expires in 3650 days (<timestamp>)
+            [✔ ] Modulus Agreement
+            [✔ ] Default CA key usage: server_auth, client_auth, crl_sign, key_cert_sign
 
-  [ 6/16] ssl/server X509 certificate - signed by 'ssl/ca' ... valid.
-          [✔ ] Not a CA Certificate
-          [✔ ] Signed by ssl/ca
-          [✔ ] Valid: expires in 365 days (<timestamp>)
-          [✔ ] Modulus Agreement
-          [✔ ] Subject Name 'bonus.ci'
-          [✔ ] Subject Alt Names: 'bonus.ci'
-          [✔ ] Default key usage: server_auth, client_auth
+    [ 6/16] ssl/server X.509 certificate - signed by 'ssl/ca' ... valid.
+            [✔ ] Not a CA Certificate
+            [✔ ] Signed by ssl/ca
+            [✔ ] Valid: expires in 365 days (<timestamp>)
+            [✔ ] Modulus Agreement
+            [✔ ] Subject Name 'bonus.ci'
+            [✔ ] Subject Alt Names: 'bonus.ci'
+            [✔ ] Default key usage: server_auth, client_auth
 
-  [ 7/16] iaas:access_key user-provided - IaaS Access Key ... found.
+    [ 7/16] crazy/thing:id Random - 32 bytes, fixed ... valid.
+            [✔ ] 32 characters
 
-  [ 8/16] iaas:secret_key user-provided - IaaS Secret Key ... found.
+    [ 8/16] crazy/thing:token Random - 16 bytes ... valid.
+            [✔ ] 16 characters
+            [✔ ] Only uses characters 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0987654321'
 
-  [ 9/16] crazy/thing:id random password - 32 bytes, fixed ... valid.
-          [✔ ] 32 characters
+    [ 9/16] iaas:access_key User-provided - IaaS Access Key ... valid.
+    [10/16] iaas:secret_key User-provided - IaaS Secret Key ... valid.
+    [11/16] proto-credentials:seed Random - 64 bytes, fixed ... valid.
+            [✔ ] 64 characters
 
-  [10/16] crazy/thing:token random password - 16 bytes ... valid.
-          [✔ ] 16 characters
-          [✔ ] Only uses characters 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0987654321'
+    [12/16] proto-credentials:token Random - 24 bytes ... valid.
+            [✔ ] 24 characters
+            [✔ ] Formatted as base64 in ':token-base64'
 
-  [11/16] proto-credentials:seed random password - 64 bytes, fixed ... valid.
-          [✔ ] 64 characters
+    [13/16] something/ssh SSH public/private keypair - 2048 bits, fixed ... valid.
+            [✔ ] Valid private key
+            [✔ ] Valid public key
+            [✔ ] Public/Private key Agreement
+            [✔ ] 2048 bits
 
-  [12/16] proto-credentials:token random password - 24 bytes ... valid.
-          [✔ ] 24 characters
-          [✔ ] Formatted as base64 in ':token-base64'
+    [14/16] users/admin:password Random - 64 bytes ... valid.
+            [✔ ] 64 characters
 
-  [13/16] users/admin:password random password - 64 bytes ... valid.
-          [✔ ] 64 characters
+    [15/16] users/bob:password Random - 16 bytes ... valid.
+            [✔ ] 16 characters
 
-  [14/16] users/bob:password random password - 16 bytes ... valid.
-          [✔ ] 16 characters
+    [16/16] work/signing_key RSA public/private keypair - 2048 bits, fixed ... valid.
+            [✔ ] Valid private key
+            [✔ ] Valid public key
+            [✔ ] Public/Private key agreement
+            [✔ ] 2048 bits
 
-  [15/16] work/signing_key RSA public/private keypair - 2048 bits, fixed ... valid.
-          [✔ ] Valid private key
-          [✔ ] Valid public key
-          [✔ ] Public/Private key agreement
-          [✔ ] 2048 bit
-
-  [16/16] something/ssh SSH public/private keypair - 2048 bits, fixed ... valid.
-          [✔ ] Valid private key
-          [✔ ] Valid public key
-          [✔ ] Public/Private key Agreement
-          [✔ ] 2048 bits
-
-Completed - Duration: XXX seconds [16 validated/0 skipped/0 errors]
-
+    completed [16 validated/0 skipped/0 errors]
 EOF
 	$director1->stop();
 	teardown_vault();
@@ -1894,21 +1910,20 @@ EOF
 
 	eq_or_diff($err, "", "no fatal error");
 
-	$stderr =~ s/(Duration:|-) (\d+ minutes?, )?\d+ seconds?/$1 XXX seconds/g;
 	eq_or_diff($stderr, <<'EOF', "deploy output should contain the correct pre-deploy output");
 
 [postdeploy-reaction-fail/thing] reactions/in-development (dev) does not define a 'check' hook; BOSH configs and
 environmental parameters checks will be skipped.
 
-[postdeploy-reaction-fail/thing] determining manifest fragments for merging...
+[postdeploy-reaction-fail/thing] determining manifest fragments for merging...done
 
 [postdeploy-reaction-fail/thing] running secrets checks...
-Parsing kit secrets descriptions ... done. - XXX seconds
-Retrieving all existing secrets ... done. - XXX seconds
 
-Validating 0 secrets for postdeploy-reaction-fail under path '/secret/postdeploy/reaction/fail/thing/':
-Completed - Duration: XXX seconds [0 validated/0 skipped/0 errors]
-
+[postdeploy-reaction-fail/thing] processing secrets descriptions...
+  - using kit reactions/in-development (dev)
+  - fetching secret definitions from kit defintion file ... found 0
+  - fetching secret definitions from manifest variables block ... found 0
+  - no secrets defined for postdeploy-reaction-fail
 
 [postdeploy-reaction-fail/thing] running manifest viability checks...
 
@@ -1947,6 +1962,8 @@ This script failed
 
 EOF
 
+	delete $env->{__get_secrets_plan};
+	delete $env->{__get_secrets_store};
 	$env->manifest_provider->reset->set_deployment('entombed');
 	($stdout,$stderr,$err) = (
 		output_from {lives_ok {$env->deploy('disable-reactions' => 1)} "deploy does not run reactions when disabled"},
@@ -1955,35 +1972,32 @@ EOF
 
 	eq_or_diff($err, "", "no fatal error");
 
-	$stderr =~ s/(Duration:|-) (\d+ minutes?, )?\d+ seconds?/$1 XXX seconds/g;
 	eq_or_diff($stderr, <<'EOF', "deploy output should contain the correct pre-deploy output");
 
 [postdeploy-reaction-fail/thing] reactions/in-development (dev) does not define a 'check' hook; BOSH configs and
 environmental parameters checks will be skipped.
 
-[postdeploy-reaction-fail/thing] determining manifest fragments for merging...
+[postdeploy-reaction-fail/thing] determining manifest fragments for merging...done
 
 [postdeploy-reaction-fail/thing] running secrets checks...
-Parsing kit secrets descriptions ... done. - XXX seconds
-Retrieving all existing secrets ... done. - XXX seconds
 
-Validating 0 secrets for postdeploy-reaction-fail under path '/secret/postdeploy/reaction/fail/thing/':
-Completed - Duration: XXX seconds [0 validated/0 skipped/0 errors]
-
+[postdeploy-reaction-fail/thing] processing secrets descriptions...
+  - using kit reactions/in-development (dev)
+  - fetching secret definitions from kit defintion file ... found 0
+  - fetching secret definitions from manifest variables block ... found 0
+  - no secrets defined for postdeploy-reaction-fail
 
 [postdeploy-reaction-fail/thing] running manifest viability checks...
 
 [postdeploy-reaction-fail/thing] running stemcell checks...
 
-[postdeploy-reaction-fail/thing] generating entombed manifest...
-
-[postdeploy-reaction-fail/thing] entombing secrets into Credhub for enhanced security...
-  Determining vault paths used by manifest from genesis-ci-unit-tests...  No vault paths in use.
-
+[postdeploy-reaction-fail/thing] generating unredacted manifest...
 
 [postdeploy-reaction-fail/thing] generating BOSH variables file (if applicable)...
 
 [WARNING] Reactions are disabled for this deploy
+
+[postdeploy-reaction-fail/thing] generating redacted BOSH variables file (if applicable)...
 
 [postdeploy-reaction-fail/thing] all systems ok, initiating BOSH deploy...
 

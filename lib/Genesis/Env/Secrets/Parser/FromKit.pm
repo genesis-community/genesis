@@ -60,11 +60,11 @@ sub _parse_x509_secret_definition {
 	next unless defined($data);
 
 	return _invalid_secret(
-		"X.509 Certificate" => "Path cannot contain colons", $path, $data, $feature
+		"X.509 certificate" => "Path cannot contain colons", $path, $data, $feature
 	) if ($path =~ ':');
 
 	return _invalid_secret(
-		"X.509 Certificate" => "Expecting certificate specification in the form of a hash map",
+		"X.509 certificate" => "Expecting certificate specification in the form of a hash map",
 		$path, $data, $feature
 	) unless ref($data) eq 'HASH';
 
@@ -81,7 +81,7 @@ sub _parse_x509_subpaths {
 	next unless defined($subdata);
 
 	return _invalid_secret(
-		"X.509 Certificate" => "Expecting hashmap, got "._ref_description($subdata),
+		"X.509 certificate" => "Expecting hashmap, got "._ref_description($subdata),
 		$ext_path, $subdata, $feature
 	) unless ref($subdata) eq 'HASH';
 
@@ -264,7 +264,7 @@ sub _validate_feature_block {
 
 
 	my $subject = {
-		certificates => 'X.509 Certificate',
+		certificates => 'X.509 certificate',
 		provided => "User-Provided",
 		credentials => "Credentials"
 	}->{$block};

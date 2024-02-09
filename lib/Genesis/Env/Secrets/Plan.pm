@@ -73,6 +73,9 @@ sub populate {
 			push @{$self->{secrets}}, $secret_src
 		} elsif (ref($secret_src) eq '' && ($secret_src//'') =~ /^Genesis::Env::Secrets::Parser::/) {
 			eval "require $secret_src";
+			bug(
+				"Error encountered while trying to require $secret_src perl module:\n\n$@"
+			) if $@;
 			push @{$self->{secrets}}, $secret_src->new($self->env)->parse(notify => $self->verbose);
 		} elsif ($secret_src->isa('Genesis::Env::Secrets::Parser')) {
 			push @{$self->{secrets}}, $secret_src->parse(notify => $self->verbose)
@@ -377,7 +380,7 @@ sub regenerate_secrets {
 				"[[  - >>the following secrets under path '#C{%s}' will be rotated:\n%s",
 				$self->store->base,
 				join("\n",
-					map {bullet($_, inline => 1, indent => 6)}
+					map {bullet($_, inline => 1, indent => 4)}
 					map {
 						my @items;
 						for my $path ($_->all_paths) {
@@ -480,7 +483,7 @@ sub remove_secrets {
 		$label = ($severity eq 'problem')
 			? "invalid or problematic"
 			: "invalid";
-		$self->notify(@update_args, 'init', action => "[[  - >>determining $label secrets", total => scalar(@selected_secrets));
+		$self->notify(@update_args, 'init', action => "[[  - >>determining $label secrets", total => scalar($self->secrets));
 		for my $secret ($self->secrets) {
 			my ($path, $label, $details) = $secret->describe;
 			$self->notify(@update_args, 'start-item', path => $path, label => $label, details => $details);
@@ -507,7 +510,7 @@ sub remove_secrets {
 				"[[  - >>the following secrets under path '#C{%s}' will be removed\n%s",
 				$self->store->base,
 				join("\n",
-					map {bullet($_, inline => 1, indent => 6)}
+					map {bullet($_, inline => 1, indent => 4)}
 					map {
 						my @items;
 						for my $path ($_->all_paths) {
@@ -790,7 +793,7 @@ sub notify {
 		$self->{__update_notifications__idx}++;
 		my $w = length($self->{__update_notifications__total});
 		my $long_warning='';
-		if ($args{label} eq "Diffie-Hellman key exchange parameters" && $action =~ /^(add|recreate)$/) {
+		if ($args{label} eq "Diffie-Hellman key exchange parameters" && $action =~ /^(add|rotate)$/) {
 			$long_warning = ($level eq 'line' ? " - " : "; ")."#Yi{may take a very long time}"
 		}
 		info({pending => 1},

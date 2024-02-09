@@ -1,0 +1,6 @@
+---
+
+params:
+  default_ca_ttl: 5y
+  default_cert_ttl: 3m
+  base_domain: (( param "Please specify base domain in env file" ))

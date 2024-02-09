@@ -25,7 +25,7 @@ sub _description {
 
 	return (
 		"Diffie-Hellman key exchange parameters",
-		$self->{definition}{size} . ' bytes',
+		$self->{definition}{size} . ' bits',
 		$self->{definition}{fixed} ? 'fixed' : undef
 	);
 }
@@ -84,6 +84,8 @@ sub __get_safe_command_for_generate {
 sub _get_safe_command_for_add    {shift->__get_safe_command_for_generate('add',@_)}
 sub _get_safe_command_for_rotate {shift->__get_safe_command_for_generate('rotate',@_)}
 
+# }}}
+# process_command_output - process the command output to alter it for output
 sub process_command_output {
 	my ($self, $action, $out, $rc, $err) = @_;
 	return ($out, $rc, $err) unless $action eq 'add';

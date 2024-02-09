@@ -47,7 +47,7 @@ sub _description {
 
 	return (
 		uc($self->type)." public/private keypair",
-		$self->{definition}{size} . ' bytes',
+		$self->{definition}{size} . ' bits',
 		$self->{definition}{fixed} ? 'fixed' : undef
 	);
 }

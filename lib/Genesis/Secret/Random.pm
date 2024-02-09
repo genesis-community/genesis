@@ -182,7 +182,7 @@ sub _get_safe_command_for_remove {
 	my ($self) = @_;
 	my @cmd = ('rm', '-f', $self->full_path);
 	if ($self->get('format')) {
-		push @cmd, '--', 'rm', '-f', $self->format_path;
+		push @cmd, '--', 'rm', '-f', $self->base_path.$self->format_path;
 	}
 	return @cmd;
 }

@@ -17,9 +17,9 @@ use UUID::Tiny ();
 ### Instance Methods {{{
 # generate_value - generate a new UUID value {{{
 sub generate_value {
-	my $self = @_;
-	my $version=(\&{"UUID::Tiny::UUID_".$self->get('version')})->();
-	my $ns=(\&{"UUID::Tiny::UUID_".$self->get('namespace')})->()
+	my ($self) = @_;
+	my $version=(\&{"UUID::Tiny::UUID_".uc($self->get('version'))})->();
+	my $ns=(\&{"UUID::Tiny::UUID_".uc($self->get('namespace'))})->()
 		if ($self->get('namespace')||'') =~ m/^NS_/;
 	$ns ||= $self->get('namespace');
 	UUID::Tiny::create_uuid_as_string($version, $ns, $self->get('name'));
@@ -78,13 +78,13 @@ sub _validate_value {
 	my %results;
 	my @validations = qw/valid/;
 
-	my $version = $self->get('version');
+	my $version = uc($self->get('version'));
 	if (UUID::Tiny::is_uuid_string $value) {
 		$results{valid} = ['ok', "Valid UUID string"];
 		push @validations, '';
-		if ($version =~ m/^(v3|md5|v5|sha1)$/i) {
+		if ($version =~ m/^(V3|MD5|V5|SHA1)$/) {
 			my $v=(\&{"UUID::Tiny::UUID_$version"})->();
-			my $ns=(\&{"UUID::Tiny::UUID_".$self->get('namespace')})->() if ($self->get('namespace')||'') =~ m/^NS_/;
+			my $ns=(\&{"UUID::Tiny::UUID_".uc($self->get('namespace'))})->() if ($self->get('namespace')||'') =~ m/^NS_/;
 			$ns ||= $self->get('namespace');
 			my $uuid = UUID::Tiny::create_uuid_as_string($v, $ns, $self->get('name'));
 			$results{hash} = [
@@ -105,14 +105,16 @@ sub _description {
   my $self = shift;
 
   my @features;
-	my $namespace = $self->{definition}{namespace} ? "ns:$self->{namespace}" : undef;
-	$namespace =~ s/^ns:NS_/ns:@/ if $namespace;
+	my $name = $self->get('name');
+	my $namespace = $self->get('namespace');
+	$namespace = "ns:" . $namespace =~ s/^NS_/@/r
+		if (defined($namespace));
 	if ($self->{definition}{version} =~ /^(v1|time)/i) {
 		@features = ('random:time based (v1)')
 	} elsif ($self->{definition}{version} =~ /^(v3|md5)/i) {
 		@features = (
 			'static:md5-hash (v3)',
-			"'$self->{name}'",
+			"'$name'",
 			$namespace
 		);
 	} elsif ($self->{definition}{version} =~ /^(v4|random)/i) {
@@ -120,7 +122,7 @@ sub _description {
 	} elsif ($self->{definition}{version} =~ /^(v5|sha1)/i) {
 		@features = (
 			'static:sha1-hash (v5)',
-			"'$self->{name}'",
+			"'$name'",
 			$namespace,
 		);
 	}

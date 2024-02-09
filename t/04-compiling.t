@@ -589,7 +589,6 @@ certificates:
     bad_chain:
       ca:
         signed_by: top-level/certs/root
-        ttl: 1y
         names: [rootCA]
       server:
         valid_for: forever
@@ -599,6 +598,7 @@ certificates:
         is_ca: CA
         signed_by: \${params.root_ca}
         names: "this"
+        ttl: 1y
         usage: client_auth
       server:
         names: []
@@ -720,82 +720,184 @@ eq_or_diff($out, <<'EOF', "validate should report all errors in the kit");
                           required_configs, exclude_paths, credentials, certificates, provided
 
         Secrets specifications in kit.yml:
+        - Invalid definition for X.509 certificate secret:
+          - CA Common Name Conflict - can't share CN 'rootCA' with signing CA
+            path: bad_chain/ca
+            data: _feature: errors
+                  base_path: bad_chain
+                  is_ca: 1
+                  names:
+                    - rootCA
+                  signed_by: top-level/certs/root
 
-        - Bad X509 certificate request for bad-params/client:
+        - Invalid definition for User-Provided secret:
+          - Missing or invalid 'keys' hash
+            path: bad-key-hash (for 'errors' feature in kit.yml)
+            data: keys:
+                    - a
+                    - b
+                    - c
+                  type: generic
+
+        - Invalid definition for User-Provided secret:
+          - Key cannot contain colons
+            path: bad-keys:test:me (for 'errors' feature in kit.yml)
+            data: {}
+
+        - Invalid definition for X.509 certificate secret:
           - Invalid names argument: cannot have an empty name entry
           - Invalid usage argument - unknown usage keys: 'take_over_the_world', 'tax shelter'
             Valid keys are: 'client_auth', 'code_signing', 'content_commitment', 'crl_sign', 'data_encipherment',
                             'decipher_only', 'digital_signature', 'email_protection', 'encipher_only', 'key_agreement',
                             'key_cert_sign', 'key_encipherment', 'non_repudiation', 'server_auth', 'timestamping'
+            path: bad-params/client
+            data: _feature: errors
+                  base_path: bad-params
+                  names:
+                    - ''
+                  usage:
+                    - decipher_only
+                    - take_over_the_world
+                    - tax shelter
 
-        - Bad X509 certificate request for bad-params/server:
-          - Invalid names argument: expecting an array of one or more strings, got an empty list
-
-        - Bad X509 certificate request for bad_chain/ca:
-          - CA Common Name Conflict - can't share CN 'rootCA' with signing CA
-
-        - Bad X509 certificate request for bad_chain/server:
-          - Invalid valid_for argument: expecting <positive_number>[ymdh], got forever
-
-        - Bad X509 certificate request for bad-params/master:
+        - Invalid definition for X.509 certificate secret:
           - Invalid names argument: expecting an array of one or more strings, got the string 'this'
           - Invalid usage argument: expecting an array of one or more strings, got the string 'client_auth'
           - Invalid is_ca argument: expecting boolean value, got 'CA'
           - Invalid signed_by argument: expecting relative vault path string, got '${params.root_ca}'
+          - Invalid 'ttl' argument specified
+            path: bad-params/master
+            data: _feature: errors
+                  base_path: bad-params
+                  is_ca: CA
+                  names: this
+                  signed_by: '${params.root_ca}'
+                  ttl: 1y
+                  usage: client_auth
 
-        - Bad generic provided secret description for bad-key-hash:
-          - Missing 'keys' hash
+        - Invalid definition for X.509 certificate secret:
+          - Invalid names argument: expecting an array of one or more strings, got an empty list
+          - Non-CA certificates must supply at least one name
+            path: bad-params/server
+            data: _feature: errors
+                  base_path: bad-params
+                  names: []
+                  usage: []
 
-        - Bad generic provided secret description for bad-keys:test:me:
-          - Key cannot contain colons
-
-        - Bad provided secret description for bad:path:
+        - Invalid definition for User-Provided secret:
           - Path cannot contain colons
+            path: bad:path (for 'errors' feature in kit.yml)
+            data: keys:
+                    test_me: {}
 
-        - Badly formed x509 request for bad_request:
+        - Invalid definition for X.509 certificate secret:
+          - Invalid valid_for argument: expecting <positive_number>[ymdh], got forever
+          - Non-CA certificates must supply at least one name
+          - Invalid 'valid_for' argument specified
+            path: bad_chain/server
+            data: _feature: errors
+                  base_path: bad_chain
+                  valid_for: forever
+
+        - Invalid definition for X.509 certificate secret:
           - Expecting certificate specification in the form of a hash map
+            path: bad_request (for 'errors' feature in kit.yml)
+            data: x509 issue --name bob -A secret/root_ca
 
-        - Bad provided secrets path for broken-content:
+        - Invalid definition for SSH key pair secret:
+          - Invalid size argument: expecting 1024-16384, got 24
+            path: bad_ssh
+            data: _feature: errors
+                  fixed: 0
+                  size: 24
+
+        - Invalid definition for User-Provided secret:
           - Expecting hashmap, got array
+            path: broken-content (for 'errors' feature in kit.yml)
+            data: - this-password
+                  - that-password
 
-        - Bad generic provided secret description for broken-structure:
-          - Missing 'keys' hash
+        - Invalid definition for User-Provided secret:
+          - Missing or invalid 'keys' hash
+            path: broken-structure (for 'errors' feature in kit.yml)
+            data: not-a-secret:
+                    prompt: Why does no one ask for me
+                    sensitive: 0
+                  type: generic
 
-        - Bad provided secrets description for broken-type:
-          - Unrecognized type 'xtreme'; expecting one of: generic
+        - Invalid definition for User-Provided secret:
+          - Unknown provided type 'xtreme'
+            path: broken-type (for 'errors' feature in kit.yml)
+            data: type: xtreme
 
-        - Bad provided secrets feature block for not-valid:
-          - Expecting hashmap of paths, got 'this isn't a hash'
+        - Invalid definition for X.509 certificate secret:
+          - Non-CA certificates must supply at least one name
+          - Invalid 'name' argument specified
+            path: other/certs/server
+            data: _feature: base
+                  base_path: other/certs
+                  name:
+                    - otherCert
+                  usage:
+                    - client_auth
+                    - server_auth
 
-        - Bad credential request for password:
+        - Invalid definition for Unrecognized secret:
           - Unrecognized request 'random 64'
+            path: password (for 'errors' feature in kit.yml)
+            data: random 64
 
-        - Bad random password request for passwords:that:
+        - Invalid definition for Random secret:
           - Expected usage: random <size> [fmt <format> [at <key>]] [allowed-chars <chars>] [fixed]
             Got: random 99 alt-chars asdfghjkl as test
+            path: passwords:that (for 'errors' feature in kit.yml)
+            data: random 99 alt-chars asdfghjkl as test
 
-        - Bad credential request for passwords:this:
+        - Invalid definition for Random secret:
           - Bad generate-password format 'gen 64'
+            path: passwords:this (for 'errors' feature in kit.yml)
+            data: gen 64
 
-        - Bad credential request for secret:passwords:
+        - Invalid definition for User-Provided secret:
+          - Expecting a hashmap, got 'this isn't a hash'
+            path: provided/not-valid
+            data: <undefined>
+
+        - Invalid definition for Credential secret:
           - Path cannot contain colons
+            path: secret:passwords (for 'errors' feature in kit.yml)
+            data: random 32 fixed
 
-        - Bad credential request for something:
+        - Invalid definition for Unrecognized secret:
           - Unrecognized request 'completely different'
+            path: something (for 'errors' feature in kit.yml)
+            data: completely different
 
-        - Bad UUID request for uuids:bogus:
+        - Invalid definition for UUID secret:
           - Expected usage: uuid [v1|time|v3|md5|v4|random|v5|sha1] [namespace (dns|url|oid|x500|<UUID namespace>] [name
             <name>] [fixed]
             Got: uuid v2
+            path: uuids:bogus (for 'errors' feature in kit.yml)
+            data: uuid v2
 
-        - Bad SSH request for bad_ssh:
-          - Invalid size argument: expecting 1024-16384, got 24
+        - Invalid definition for UUID secret:
+          - Invalid 'name' argument specified for version v4
+          - Invalid 'namespace' argument specified for version v4
+            path: uuids:extra
+            data: _feature: errors
+                  fixed: 0
+                  name: something.internal
+                  namespace: NS_DNS
+                  version: V4
 
-        - Bad UUID request for uuids:extra:
-          - V4 UUIDs cannot take name or namespace arguments
-
-        - Bad UUID request for uuids:missing:
-          - V5 UUIDs require a name argument to be specified
+        - Invalid definition for UUID secret:
+          - v5 UUIDs require a name argument to be specified
+            path: uuids:missing
+            data: _feature: errors
+                  fixed: 0
+                  name: ~
+                  namespace: ~
+                  version: V5
 
           Some of the errors above are due to unresolved param dereferencing.  Update the ci/test_params.yml file in the
           kit directory to contain these parameters.

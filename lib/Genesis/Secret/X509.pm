@@ -6,6 +6,7 @@ use base "Genesis::Secret";
 
 use Genesis qw/uniq run bug compare_arrays/;
 use Genesis::State qw/envset/;
+use Genesis::Term qw/checkbox/;
 use Time::Piece;
 
 ### Construction arguments {{{
@@ -116,7 +117,7 @@ sub vault_operator {
 
 ### Polymorphic Instance Methods {{{
 # label - specific label for this derived class {{{
-sub label {"X.509 Certificate"}
+sub label {"X.509 certificate"}
 
 # }}}
 # }}}
@@ -207,6 +208,7 @@ sub _validate_constructor_opts {
 
 	$args->{signed_by} = delete($opts{signed_by}) if defined($opts{signed_by});
 	$args->{base_path} = delete($opts{base_path});
+	$args->{fixed} = delete($opts{fixed}) if defined($opts{fixed});
 
 	push(
 		@errors,
@@ -255,7 +257,13 @@ sub _validate_value {
 	}
 
 	# Validate SAN
-	# Note: We no longer validate CA SANs
+	# Note: According to X.509 documentation, CA certificates are not suppose to
+	# have SANS, but cf-deployment misinterprets the golang 1.15 stipulation that
+	# the host name will no longer be taking from subject if sans is missing, so
+	# it includes a sans hostname identical to the subject CN on CA certs.
+	#
+	# As a results, we no longer validate CA SANs because they can be there, but
+	# are ignored
 	unless ($self->get('is_ca')) {
 		my (%sans,%desired_sans);
 		my @names = @{$self->get('names')||[]};
@@ -290,12 +298,12 @@ sub _validate_value {
 	} else {
 		my $all_secrets = $self->plan->store->store_data;
 		my $signer_path = $self->get('signed_by');
-		my $signer_full_path = $root_path . $signer_path unless $signer_path =~ /^\//;
+		my $signer_full_path = $signer_path =~ /^\// ? $signer_path : $root_path . $signer_path;
 		$signer_full_path =~ s/^\///;
 		if ($all_secrets->{$signer_full_path}) {
 			my $ca_cert = $self->plan->store->store_data->{$signer_full_path}{certificate};
 			my $caSubjectKeyID;
-			if ($authKeyID) {
+			if ($authKeyID && $ca_cert) {
 				# Try to use the subject and authority key identifiers if they exist
 				my $caInfo = run('openssl x509 -in <(echo "$1") -text -noout', $ca_cert);
 				($caSubjectKeyID) = $caInfo =~ /X509v3 Subject Key Identifier: *[\r\n]+\s+([A-F0-9:]+)\s*$/m;
@@ -311,7 +319,8 @@ sub _validate_value {
 				my $full_cert_chain='';
 				while (1) {
 					last unless $signer_full_path && defined($all_secrets->{$signer_full_path});
-					$full_cert_chain =  $all_secrets->{$signer_path}{certificate}.$full_cert_chain;
+					last unless defined($all_secrets->{$signer_full_path}{certificate});
+					$full_cert_chain = $all_secrets->{$signer_full_path}{certificate}.$full_cert_chain;
 
 					$ca_secret = $self->plan->secret_at($signer_path);
 					last unless ($ca_secret && $ca_secret->get('signed_by'));
@@ -320,28 +329,36 @@ sub _validate_value {
 					$signer_full_path = $root_path . $signer_path unless $signer_path =~ /^\//;
 					$signer_full_path =~ s/^\///;
 				}
-
-				my $out = run(
-					'openssl verify -verbose -CAfile <(echo "$1") <(echo "$2")',
-					$full_cert_chain, $values->{certificate}
-				);
-				my $signed;
-				if ($out =~ /error \d+ at \d+ depth lookup/) {
-					#fine, we'll check via safe itself - last resort because it takes time
-					my $signer_path = $self->get('signed_by');
-					my $signer_full_path = $root_path . $signer_path unless $signer_path =~ /^\//;
-					$signer_full_path =~ s/^\///;
-					my ($safe_out,$rc) = $self->plan->env->vault->query('x509','validate','--signed-by', $signer_full_path, $root_path.$self->path);
-					$signed = $rc == 0 && $safe_out =~ qr/$self->path checks out/;
+				if ($full_cert_chain) {
+					my $out = run(
+						'openssl verify -verbose -CAfile <(echo "$1") <(echo "$2")',
+						$full_cert_chain, $values->{certificate}
+					);
+					my $signed;
+					if ($out =~ /error \d+ at \d+ depth lookup/) {
+						#fine, we'll check via safe itself - last resort because it takes time
+						my $signer_path = $self->get('signed_by');
+						my $signer_full_path = $root_path . $signer_path unless $signer_path =~ /^\//;
+						$signer_full_path =~ s/^\///;
+						my ($safe_out,$rc) = $self->plan->env->vault->query('x509','validate','--signed-by', $signer_full_path, $root_path.$self->path);
+						$signed = $rc == 0 && $safe_out =~ qr/$self->path checks out/;
+					} else {
+						$signed = $out =~ /: OK$/;
+					}
+					$results{signed} = [
+						$signed,
+						sprintf("Signed by %s%s", $self->get('signed_by'), $signed ? '' : (
+							$subjectCN eq $issuerCN ? " (maybe self-signed?)" : "  (signed by CN '$issuerCN')"
+						))
+					];
 				} else {
-					$signed = $out =~ /: OK$/;
+					$results{signed} = [
+						'error',
+						sprintf("Signed by %s (specified CA certificate not found - %s)", $self->get('signed_by'),
+							($subjectCN eq $issuerCN ? "maybe self-signed?" : "found signed by CN '$issuerCN'")
+						)
+					];
 				}
-				$results{signed} = [
-					$signed,
-					sprintf("Signed by %s%s", $self->get('signed_by'), $signed ? '' : (
-						$subjectCN eq $issuerCN ? " (maybe self-signed?)" : "  (signed by CN '$issuerCN')"
-					))
-				];
 			}
 		} else {
 			$results{signed} = [
@@ -405,7 +422,7 @@ sub _get_safe_command_for_rotate {
 		if $self->get('is_ca') && ! scalar(@names) && ! $self->get('subject_cn');
 
 	my $action = 'renew';
-	if ($opts{'regen-x509-keys'}) {
+	if ($opts{'regen_x509_keys'}) {
 		my $value = $self->value || $self->plan->store->read->value;
 		$action = 'issue' if ($value && $value->{key});
 	}
@@ -422,6 +439,22 @@ sub _get_safe_command_for_rotate {
 }
 
 # }}}
+# process_command_output - process the command output to alter it for output
+sub process_command_output {
+	my ($self, $action, $out, $rc, $err) = @_;
+	if ( $action eq 'rotate' && $out =~ /Renewed x509 cert.*expiry set to (.*)$/) {
+		my $expires = $1;
+		my $now_t = Time::Piece->new() - 120; #  2 minutes buffer time
+		eval {
+			(my $exp_gmt = $1) =~ s/UTC/GMT/;
+			my $expires_t = Time::Piece->strptime($exp_gmt, "%b %d %Y %H:%M %Z");
+			my $days = sprintf("%.0f",($expires_t - $now_t)->days());
+			$out = checkbox(1)."Expiry updated to $expires ($days days)";
+		};
+		$out = "Expiry updated to $expires - $@" if $@;
+	}
+	return ($out, $rc, $err);
+}
 # _import_from_credhub - import secret values from credhub {{{
 sub _import_from_credhub {
 	my ($self,$value) = @_;

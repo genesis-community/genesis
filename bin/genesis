@@ -30,7 +30,7 @@ use Genesis::Commands;
 use Genesis::Log;
 
 $Genesis::APP = 'genesis';
-$Genesis::VERSION = "2.9.0-rc10"; #"(development)";
+$Genesis::VERSION = "(development)";
 $Genesis::BUILD = "";
 Genesis::Init();
 

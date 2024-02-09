@@ -1914,9 +1914,9 @@ sub add_secrets {
 		if ($plan->filters) {
 			info("\nNo applicable secrets found - no need to continue.\n");
 		} else {
-			$self->notify(success => "doen't have any secrets to add.\n");
+			$self->notify(success => "doesn't have any secrets to add.\n");
 		}
-		exit 0;
+		return ({empty => 1});
 	}
 
 	kit_bug(
@@ -1969,7 +1969,7 @@ sub rotate_secrets {
 		if ($plan->filters) {
 			info("\nNo applicable secrets found - no need to continue.\n");
 		} else {
-			$self->notify(success => "doen't have any secrets to add.\n");
+			$self->notify(success => "doesn't have any secrets to rotate.\n");
 		}
 		exit 0;
 	}
@@ -2069,7 +2069,7 @@ sub remove_secrets {
 		if ($plan->filters) {
 			info("\nNo applicable secrets found - no need to continue.\n");
 		} else {
-			$self->notify(success => "doen't have any secrets to add.\n");
+			$self->notify(success => "doesn't have any secrets to remove.\n");
 		}
 		exit 0;
 	}
