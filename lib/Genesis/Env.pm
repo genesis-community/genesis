@@ -844,16 +844,16 @@ sub get_secrets_store {
 sub get_secrets_plan {
 	my ($self, %opts) = @_;
 	my $plan = $self->_memoize(sub {
+		my @sources = ('Genesis::Env::Secrets::Parser::FromKit');
+		push @sources, 'Genesis::Env::Secrets::Parser::FromManifest'
+			if ($self->feature_compatibility('3.0.0-rc.1') && ! $self->use_create_env && $self->lookup('genesis.vaultify', 1));
 		Genesis::Env::Secrets::Plan
 			->new($_[0], $self->get_secrets_store(), $self->credhub, verbose => !$opts{silent})
-			->populate(
-				'Genesis::Env::Secrets::Parser::FromKit',
-				'Genesis::Env::Secrets::Parser::FromManifest',
-			)
+			->populate(@sources);
 	});
 	$plan = $plan->filter(@{$opts{paths}//[]});
 	$plan->validate unless $opts{no_validate};
-	$plan
+	$plan;
 }
 
 # }}}
@@ -1487,6 +1487,23 @@ sub manifest_provider {
 }
 
 # }}}
+# deployment_manifest_type - returns the type of manifest to be generated for deploying this environment {{{
+sub deployment_manifest_type {
+	my ($self) = @_;
+	my ($entomb, $vaultify) = (0,0);
+	if ($self->feature_compatibility('3.0.0-rc.1') && ! $self->use_create_env) {
+		$entomb = $self->lookup('genesis.entomb', 1);
+		$vaultify = $self->lookup('genesis.vaultify', 1);
+	}
+
+	if ($vaultify && @{$self->manifest_provider->unevaluated->data->{variables}//[]}) {
+		return $entomb ? 'vaultified_entombed' : 'vaultified';
+	} else {
+		return $entomb ? 'entombed' : 'unredacted';
+	}
+}
+
+# }}}
 # prunable_keys - list the keys that can be pruned from a manifest and still be deployable {{{
 sub prunable_keys {
 	return @{$_[0]->_memoize( sub {
@@ -1654,20 +1671,7 @@ sub deploy {
 		"Preflight checks failed; deployment operation halted."
 	) unless $self->check();
 
-	my $deployment_manifest_type = 'unredacted';
-	if (! $self->use_create_env) {
-		if (@{$self->manifest_provider->unevaluated->data->{variables}//[]}) {
-			$deployment_manifest_type = $opts{entomb}
-				? 'vaultified_entombed'
-				: 'vaultified';
-		} else {
-			$deployment_manifest_type = $opts{entomb}
-				? 'entombed'
-				: 'unredacted';
-		}
-	}
-
-	$self->manifest_provider->set_deployment($deployment_manifest_type);
+	$self->manifest_provider->set_deployment($self->deployment_manifest_type);
 
 	$self->manifest_provider->deployment(subset=>'pruned',notify=>1)->write_to(
 		"$self->{__tmp}/manifest.yml"

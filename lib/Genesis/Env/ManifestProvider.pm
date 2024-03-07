@@ -90,24 +90,7 @@ sub set_deployment {
 # deployment - return the manifest builder for the default deployment type {{{
 sub deployment {
 	my $self = shift;
-
-	unless ($self->{deployment}) {
-		my $deployment_manifest_type = 'unredacted';
-		if (! $self->env->use_create_env) {
-			my $enable_entombment = !$self->env->top->config->{'no_entombment'};
-			if (@{$self->unevaluated->data->{variables}//[]}) {
-				$deployment_manifest_type = $enable_entombment
-					? 'vaultified_entombed'
-					: 'vaultified';
-			} else {
-				$deployment_manifest_type = $enable_entombment
-					? 'entombed'
-					: 'unredacted';
-			}
-		}
-		$self->{deployment} = $deployment_manifest_type;
-	}
-	my $deployment_type = $self->{deployment};
+	my $deployment_type = $self->env->deployment_manifest_type;
 	$self->$deployment_type(@_);
 }
 
@@ -117,8 +100,10 @@ sub base_manifest {
 	my $self = shift;
 	my $lookup_type = $self->_memoize(sub {
 		my $self = shift;
-		return 'vaultified'
-			if (! $self->env->use_create_env && @{$self->unevaluated(notify => 0)->data->{variables}//[]});
+		return 'unredacted' if $self->env->use_create_env;
+		return 'unredacted' unless $self->feature_compatibility('3.0.0');
+		return 'unredacted' unless $self->env->lookup('genesis.vaultify', 1);
+		return 'vaultified' if (@{$self->unevaluated(notify => 0)->data->{variables}//[]});
 		return 'unredacted';
 	});
 

@@ -375,14 +375,6 @@ define_command("deploy", {
 
 		'max-in-flight=i' =>
 			"Override the default number of maximum VMs in flight per instance group.",
-
-		'entomb!' =>
-			"By default, deployments to BOSH directors will entomb vault secrets into ".
-			"the director's CredHub, then use CredHub variable operators to prevent ".
-			"secrets from being present in clear text in the manifest.  This can be ".
-			"prevented by specifying --no-entomb as an option, or by setting ".
-			"'entomb_secrets: false' in your #C{~/.genesis/config} file.  The option ".
-			"will override the configuration file setting.",
 	]
 });
 # }}}
