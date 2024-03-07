@@ -287,6 +287,8 @@ subtest 'semantic versioning' => sub {
 	ok !new_enough('1.0.0-rc.0', '1.0.0'), '1.0.0-rc.0 is not new enough to satisfy 1.0.0+';
 	ok  new_enough('1.0.0-rc.5', '1.0.0-rc.3'), '1.0.0-rc.5 is new enough to satisfy 1.0.0-rc.3+';
 	ok !new_enough('1.0.0-rc.2', '1.0.0-rc.3'), '1.0.0-rc.2 is not new enough to satisfy 1.0.0-rc.3+';
+	ok  new_enough('2.8.12',     '2.8.6'), '2.8.12 is new enough to satisfy 2.8.6+';
+	ok !new_enough('2.8.12',     '2.11.1'), '2.8.12 is not new enough to satisfy 2.11.1+';
 };
 
 subtest 'fuzzy time' => sub {
