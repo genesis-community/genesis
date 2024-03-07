@@ -1139,7 +1139,7 @@ EOF
 	qx(safe rm -rf secret/far/fetched/sample/users);
 	qx(safe rm secret/far/fetched/sample/ssl/ca:key secret/far/fetched/sample/ssl/ca:certificate);
 	qx(safe rm secret/far/fetched/sample/crazy/thing:token);
-	$env->get_secrets_store->clear_data;
+	$env->secrets_store->clear_data;
 
 	my $results;
 	$out = combined_from {
@@ -1466,7 +1466,7 @@ EOF
 EOF
 
 	sleep 5; # Lets make sure the certs aren't in the future!
-	$env->get_secrets_store->clear_data;
+	$env->secrets_store->clear_data;
 	lives_ok {
 		$out = combined_from {$env->check_secrets(verbose => 1, validate => 1) }
 	} "successfully check secrets with environment kit overrides";
@@ -1962,8 +1962,8 @@ This script failed
 
 EOF
 
-	delete $env->{__get_secrets_plan};
-	delete $env->{__get_secrets_store};
+	delete $env->{__secrets_plan};
+	delete $env->{__secrets_store};
 	$env->manifest_provider->reset->set_deployment('entombed');
 	($stdout,$stderr,$err) = (
 		output_from {lives_ok {$env->deploy('disable-reactions' => 1)} "deploy does not run reactions when disabled"},

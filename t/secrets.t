@@ -311,7 +311,7 @@ EOF
 EOF
 
   my $env = Genesis::Top->new('.')->load_env($env_name);
-	my $secrets_store = $env->get_secrets_store;
+	my $secrets_store = $env->secrets_store;
   my $secrets_old = $secrets_store->store_data;
   my @secret_paths = map {my $p = $_ ; map {[$p, $_]} keys %{$secrets_old->{$_}}} keys %$secrets_old;
 
@@ -1254,7 +1254,7 @@ EOF
 EOF
 
 	$env = Genesis::Top->new('.')->load_env($env_name);
-	$secrets_store = $env->get_secrets_store;
+	$secrets_store = $env->secrets_store;
 	$secrets_old = $secrets_store->store_data;
 	@secret_paths = map {my $p = $_ ; map {[$p, $_]} keys %{$secrets_old->{$_}}} keys %$secrets_old;
 

@@ -46,7 +46,7 @@ sub vaultify {
 
 		my %ch_path_lookup = (
 			map {$_->from_manifest ? ($_->var_name, $_) : ()}
-			$self->env->get_secrets_plan->secrets
+			$self->env->secrets_plan->secrets
 		);
 
 		for my $var_ref (sort keys %vars_map) {

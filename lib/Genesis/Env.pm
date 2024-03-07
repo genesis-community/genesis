@@ -827,8 +827,8 @@ sub vault_paths {
 }
 
 #	# Secrets Plan
-# get_secrets_store - get the vault store for the environment {{{
-sub get_secrets_store {
+# secrets_store - get the vault store for the environment {{{
+sub secrets_store {
 	return $_[0]->_memoize(sub{
 		my $self = shift;
 		# TODO: Use a builder?
@@ -840,15 +840,15 @@ sub get_secrets_store {
 }
 
 # }}}
-# get_secrets_plan - get the secrets plan {{{
-sub get_secrets_plan {
+# secrets_plan - get the secrets plan {{{
+sub secrets_plan {
 	my ($self, %opts) = @_;
 	my $plan = $self->_memoize(sub {
 		my @sources = ('Genesis::Env::Secrets::Parser::FromKit');
 		push @sources, 'Genesis::Env::Secrets::Parser::FromManifest'
 			if ($self->feature_compatibility('3.0.0-rc.1') && ! $self->use_create_env && $self->lookup('genesis.vaultify', 1));
 		Genesis::Env::Secrets::Plan
-			->new($_[0], $self->get_secrets_store(), $self->credhub, verbose => !$opts{silent})
+			->new($_[0], $self->secrets_store(), $self->credhub, verbose => !$opts{silent})
 			->populate(@sources);
 	});
 	$plan = $plan->filter(@{$opts{paths}//[]});
@@ -1912,7 +1912,7 @@ sub add_secrets {
 	my ($self, %opts) = @_;
 
 	$self->manifest_provider->kit_files(); #process blueprint
-	my $plan = $self->get_secrets_plan(%opts);
+	my $plan = $self->secrets_plan(%opts);
 
 	unless ($plan->secrets) {
 		if ($plan->filters) {
@@ -1942,7 +1942,7 @@ sub check_secrets {
 		: ('check_secrets', 'checked');
 
 	$self->manifest_provider->kit_files(); #process blueprint
-	my $plan = $self->get_secrets_plan(%opts);
+	my $plan = $self->secrets_plan(%opts);
 
 	unless ($plan->secrets) {
 		my $msg = ($plan->filters)
@@ -1967,7 +1967,7 @@ sub rotate_secrets {
 	my ($self, %opts) = @_;
 
 	$self->manifest_provider->kit_files(); #process blueprint
-	my $plan = $self->get_secrets_plan(%opts);
+	my $plan = $self->secrets_plan(%opts);
 
 	unless ($plan->secrets) {
 		if ($plan->filters) {
@@ -1997,14 +1997,14 @@ sub rotate_secrets {
 sub remove_secrets {
 	my ($self, %opts) = @_;
 
-	my $store = $self->get_secrets_store(%opts);
+	my $store = $self->secrets_store(%opts);
 
 	# Determine secrets_store from kit - assume vault for now (credhub ignored)
 	if ($opts{all}) {
 		my @paths = $store->store_paths();
 		return ({empty => 1}) unless scalar(@paths);
 
-		my $plan = $self->get_secrets_plan(%opts, silent => 1);
+		my $plan = $self->secrets_plan(%opts, silent => 1);
 		unless ($opts{'no-prompt'}) {
 			die_unless_controlling_terminal(
 				"\nCannot prompt for confirmation to remove all secrets outside a ".
@@ -2017,7 +2017,7 @@ sub remove_secrets {
 				 scalar(@paths), $self->secrets_base
 			 );
 			my $prefix = $store->base =~ s/^\///r;
-			my $plan = $self->get_secrets_plan(%opts);
+			my $plan = $self->secrets_plan(%opts);
 			for my $full_path (sort @paths) {
 				my $path = $full_path =~ s/^$prefix//r;
 				my $secret = $plan->secret_at($path);
@@ -2067,7 +2067,7 @@ sub remove_secrets {
 		return ({success => 1}, "#G{All applicable secrets removed.}");;
 	}
 
-	my $plan = $self->get_secrets_plan(%opts);
+	my $plan = $self->secrets_plan(%opts);
 	unless ($plan->secrets) {
 		# FIXME: this should get returned as a result to the calling proceedure
 		if ($plan->filters) {
