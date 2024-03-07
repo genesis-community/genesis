@@ -371,15 +371,15 @@ sub create {
 	$env->download_required_configs('new')
 		unless $env->lookup('genesis.use_create_env','0');
 
-	if ($env->has_hook('new')) {
-		$env->run_hook('new');
-	} else {
-		bail(
-			"Kit %s is not supported in Genesis %s (no hooks/new script).  Check for ".
-			"a newer version of this kit.",
-			$env->kit->id, $Genesis::VERSION
-		);
-	}
+	# Use the current version of Genesis as the minimum version if not specified
+	$ENV{GENESIS_MIN_VERSION} ||= $Genesis::VERSION;
+
+	bail(
+		"Kit %s is not supported in Genesis %s (no hooks/new script).  Check for ".
+		"a newer version of this kit.",
+		$env->kit->id, $Genesis::VERSION
+	) unless $env->has_hook('new');
+	$env->run_hook('new');
 
 	# Load the environment from the file to pick up hierarchy, and generate secrets
 	$env = $class->load(name =>$env->name, top => $env->top);

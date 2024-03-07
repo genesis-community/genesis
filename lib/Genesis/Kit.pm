@@ -119,7 +119,10 @@ sub run_hook {
 
 	my @args;
 	if ($hook eq 'new') {
-		$ENV{GENESIS_MIN_VERSION} = $self->genesis_version_min;
+		$ENV{GENESIS_MIN_VERSION} = (reverse sort by_semver(
+			$ENV{GENESIS_MIN_VERSION}||'0.0.0', $self->genesis_version_min
+		))[0];
+
 		@args = (
 			$ENV{GENESIS_ROOT},           # deprecated in 2.6.13!
 			$ENV{GENESIS_ENVIRONMENT},    # deprecated in 2.6.13!
