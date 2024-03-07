@@ -2222,6 +2222,7 @@ exodus:
   is_director:    ${\($self->is_bosh_director ? 'true' : 'false')}
   use_create_env: ${\($self->use_create_env ? 'true' : 'false')}
   features:       (( join "," kit.features ))
+  manifest_type:  ${\($self->deployment_manifest_type)}
 EOF
 }
 
