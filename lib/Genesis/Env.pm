@@ -383,6 +383,18 @@ sub create {
 
 	# Load the environment from the file to pick up hierarchy, and generate secrets
 	$env = $class->load(name =>$env->name, top => $env->top);
+
+	# Make environment file executable if requested
+	if ($Genesis::RC->get('executable_environments')) {
+		# append hashbang to the file
+		my $file = $env->path($env->file);
+		my $contents = slurp($file);
+		unless ($contents =~ /^#!/) {
+			$contents = "#!/usr/bin/env genesis\n".$contents;
+			mkfile_or_fail($file, 0755, $contents);
+		}
+	}
+
 	if (! $env->add_secrets(verbose=>1, import => 1)) {
 		$env->remove_secrets(all => 1, 'no-prompt' => 1);
 		unlink $env->file;
