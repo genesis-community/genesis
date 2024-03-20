@@ -539,6 +539,10 @@ define_command("kit-manual", {
 	function_group => Genesis::Commands::INFO,
 	scope => ['repo','env'],
 	option_group => Genesis::Commands::REPO_OPTIONS,
+	options => [
+		'raw' =>
+			"Print the raw manual instead of rendering it in markdown."
+	],
 	no_vault => 1
 });
 

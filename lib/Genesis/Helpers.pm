@@ -757,7 +757,7 @@ offer_environment_editor() {
     __tmpdir="$(mktemp -d)/$GENESIS_KIT_NAME-$GENESIS_KIT_VERSION"
     mkdir -p "$__tmpdir"
     [[ -n $EDITOR ]] || EDITOR="vim"
-    if $GENESIS_CALLBACK_BIN -C $GENESIS_ROOT man "$(basename "$__file")" > "$__tmpdir/manual.md" ; then
+    if $GENESIS_CALLBACK_BIN -C $GENESIS_ROOT man --raw "$(basename "$__file")" > "$__tmpdir/manual.md" ; then
       __editor="$(basename $EDITOR)"
       [[ $__editor =~ ^.*vim?$ ]] && \
         __editor_cmd="$EDITOR -O '$__file' '$__tmpdir/manual.md'"

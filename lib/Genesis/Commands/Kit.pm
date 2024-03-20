@@ -209,21 +209,26 @@ sub list_kits {
 				) unless keys(%{$kits{$kit}});
 			}
 			for my $version (sort by_semver keys(%{$kits{$kit}})) {
-				my $c = ($version =~ /[\.-]rc[\.-]?(\d+)$/) ? "Y"
-				: ($kits{$kit}{$version}{prerelease} ? "y" : "G");
+				my $c = ($version =~ /[\.-]rc[\.-]?(\d+)$/) 
+					? "Y"
+					: ($kits{$kit}{$version}{prerelease} ? "y" : "G");
 				my $d = "";
 				if ($kits{$kit}{$version}{date} && $options{details}) {
 					$d = "Published ".$kits{$kit}{$version}{date};
-					$d .= " - \e[3mPre-release\e[0m"
-					if $kits{$kit}{$version}{prerelease};
+					$d .= " - \}#${c}i{Pre-release}#${c}\{"
+						if $kits{$kit}{$version}{prerelease};
 					$d = " ($d)";
 				}
-				$out .= sprintf("  #%s{v%s%s}\n", $c, $version, $d);
-				if ($kits{$kit}{$version}{body} && $options{details}) {
-					$out .= "    Release Notes:\n";
-					$out .= "      $_\n" for split $/, $kits{$kit}{$version}{body};
-					$out .= "\n";
-				}
+				$out .= sprintf("\n\n%s#%s{%s%s%s}\n\n", bullet('', color => $c), $c, "Release Notes for v", $version, $d);
+				$out .= ("    " . join(
+					"\n    ",
+					split(/\n/, render_markdown(
+						$kits{$kit}{$version}{body},
+						expand => 1,
+						width => (terminal_width() - 4)
+					))
+				))	if $options{details} && $kits{$kit}{$version}{body};
+				$out .= "\n";
 			}
 			$out .= "\n";
 		}

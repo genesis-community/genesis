@@ -254,7 +254,8 @@ sub kit_manual {
 
 	my $man = $kit->path('MANUAL.md');
 	if (-f $man) {
-		run({ interactive => 1 }, 'less "$1"', $man);
+		my $man_contents = slurp($man);
+		output get_options->{raw} ? $man_contents : render_markdown($man_contents);
 		exit 0;
 	}
 	error "#Y{%s} has no MANUAL.md", $kit->id;

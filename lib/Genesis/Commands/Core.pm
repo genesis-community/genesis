@@ -138,19 +138,14 @@ sub update {
 			my $d = "";
 			if ($version->{date}) {
 				$d = "Published ".$version->{date};
-				$d .= " - \e[3mPre-release\e[0m"
-				if $version->{prerelease};
+				$d .= " - \}#${c}i{Pre-release}#${c}\{" if $version->{prerelease};
 				$d = " ($d)";
 			}
-			$summary .= sprintf("  #%s{v%s%s}\n", $c, $version->{version}, $d);
-			if ($version->{body} && get_options->{details}) {
-				$summary .= "    Release Notes:\n";
-				$summary .= "      $_\n" for split $/, $version->{body};
-				$summary .= "\n";
-			}
+			$summary .= sprintf("#%s{Release Notes for v%s%s}\n\n", $c, $version->{version}, $d);
+			$summary .= render_markdown($version->{body});
 		}
 	}
-	output $summary."\n";
+	output $summary;
 	exit 0 if get_options->{check};
 
 	my $tmpdir = workdir();
