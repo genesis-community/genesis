@@ -101,7 +101,7 @@ sub base_manifest {
 	my $lookup_type = $self->_memoize(sub {
 		my $self = shift;
 		return 'unredacted' if $self->env->use_create_env;
-		return 'unredacted' unless $self->feature_compatibility('3.0.0');
+		return 'unredacted' unless $self->env->feature_compatibility('3.0.0');
 		return 'unredacted' unless $self->env->lookup('genesis.vaultify', 1);
 		return 'vaultified' if (@{$self->unevaluated(notify => 0)->data->{variables}//[]});
 		return 'unredacted';
@@ -424,10 +424,30 @@ sub _adaptive_merge {
 			my ($err_path, $err_msg) = @{$err_details};
 			my $val = struct_lookup($uneval, $err_path);
 			my $orig_err_path = $err_path;
+			my $replaced = 0;
 			WANDER: while (! $val) {
 				trace "[adaptive_merge] Couldn't find direct dereference error, backtracing $err_path";
-				bug "Internal error: Could not find line causing error '$err_msg' during adaptive merge."
-					unless $err_path =~ s/.[^\.]+$//;
+				unless ($err_path =~ s/.[^\.]+$//) {
+					if ($err_details->[1] =~ /^secret (.*) not found/) {
+						my $err_vault_path = $1;
+						trace "[adaptive_merge] vault path $err_vault_path not found in merged manifest, looking in original content";
+						my $key = $err_details->[0] =~ s/.*\.([^\.]+)$/$1/r;
+						my $vault_base = $self->env->secrets_base =~ s/\/$//r;
+						my ($source_line, $src_vault_path) = $contents =~ m/($key: \(\(\s*vault (.*?)\s*\)\))/;
+						if ($src_vault_path) {
+							$src_vault_path =~ s/^meta.vault\s+(["'])/$1$vault_base/;
+							$src_vault_path =~ s/["']//g;
+							if ($src_vault_path eq $err_vault_path) {
+								trace "[adaptive_merge] Found vault path $err_vault_path in original content, deferring";
+								my $replacement = $source_line =~ s/\(\( *vault /(( defer vault /r;
+								$contents =~ s/\Q$source_line\E/$replacement/sg;
+								$replaced = 1;
+								last WANDER;
+							}
+						}
+					}
+					bug "Internal error: Could not find line causing error '$err_msg' during adaptive merge."
+				}
 				$val = struct_lookup($uneval, $err_path) || next;
 				if (ref($val) eq "HASH") {
 					for my $sub_key (keys %$val) {
@@ -442,14 +462,16 @@ sub _adaptive_merge {
 				$val = undef; # wasn't what we were looking for, look deeper...
 			}
 
-			my $spruce_ops=join("|", qw/
-				calc cartesian-product concat defer empty file grab inject ips join
-				keys load param prune shuffle sort static_ips vault awsparam
-				awssecret base64
-				/);
-			(my $replacement = $val) =~ s/\(\( *($spruce_ops) /(( defer $1 /;
-			trace "[adaptive_merge] Resolving $orig_err_path" . ($err_path ne $orig_err_path ? (" => ". $err_path) : "");
-			$contents =~ s/\Q$val\E/$replacement/sg;
+			unless ($replaced) {
+				my $spruce_ops=join("|", qw/
+					calc cartesian-product concat defer empty file grab inject ips join
+					keys load param prune shuffle sort static_ips vault awsparam
+					awssecret base64
+					/);
+				(my $replacement = $val) =~ s/\(\( *($spruce_ops) /(( defer $1 /;
+				trace "[adaptive_merge] Resolving $orig_err_path" . ($err_path ne $orig_err_path ? (" => ". $err_path) : "");
+				$contents =~ s/\Q$val\E/$replacement/sg;
+			}
 		}
 		my $premerge = mkfile_or_fail($self->env->workpath('premerge.yml'),$contents);
 		($out,$rc,$err) = run({stderr => 0, %opts }, 'spruce merge --multi-doc --go-patch "$1"', $premerge);

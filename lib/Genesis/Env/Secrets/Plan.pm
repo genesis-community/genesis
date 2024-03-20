@@ -307,7 +307,7 @@ sub generate_secrets {
 			}
 			if (@command) {
 				$self->notify(@update_args, 'notify', msg=> "\nsaving user input ... ", nonl => 1) if ! $interactive;
-				my ($out,$rc) = $self->query({interactive => $interactive}, @command);
+				my ($out,$rc) = $self->store->service->query({interactive => $interactive}, @command);
 				$self->notify(@update_args, 'notify', msg=> "\nsaving user input ... ", nonl => 1) if $interactive;
 				$self->notify(@update_args, 'done-item', result => ($rc ? 'error': 'ok'));
 				last if $rc;
