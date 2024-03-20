@@ -84,6 +84,7 @@ sub update {
 
 	my ($err,$label,@versions);
 	if (get_options->{version}) {
+		get_options->{version} =~ s/^v//;
 		@versions = $gh->versions('genesis', version => get_options->{version});
 		if (! @versions) {
 			$err = csprintf("Genesis #C{v%s} does not exist", get_options->{version});
