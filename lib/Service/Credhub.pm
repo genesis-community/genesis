@@ -41,8 +41,9 @@ sub env {
 sub preload {
 	my $self = shift;
 	my ($out,$rc,$err) = run({
-			redact_output => 1,
 			env => $self->env(),
+			redact_env => 1,
+			redact_output => 1,
 			stderr => 0
 		},
 		'credhub', 'export', '-j', '-p', $self->base
@@ -78,8 +79,9 @@ sub get {
 sub data {
 	my ($self,$path) = @_;
 	my ($out,$rc,$err) = run({
-			redact_output => 1,
 			env => $self->env(),
+			redact_env => 1,
+			redact_output => 1,
 			stderr => 0
 		},
 		'credhub', 'get', '-j', '-n', $self->_full_path($path)
@@ -177,6 +179,8 @@ sub set {
 				%{$self->env()},
 				__dollar_symbol__ => '$'
 			},
+			redact_output => 1,
+			redact_env => 1,
 			stderr => 0
 		},
 		'credhub', 'set', '-j', @args
@@ -200,7 +204,8 @@ sub paths {
 
 	my $paths = read_json_from(run({
 			env => $self->env(),
-			stderr => 0
+			redact_env => 1,
+			stderr => 0,
 		},
 		'credhub', 'find', '-j', @filter
 	));
@@ -218,6 +223,7 @@ sub delete {
 	my ($self,$name) = @_;
 	return run({
 			env => $self->env(),
+			redact_env => 1,
 			stderr => 0
 		},
 		'credhub', 'delete', '--name', $self->_full_path($name)
@@ -228,6 +234,7 @@ sub delete_all {
 	my ($self,$path) = @_;
 	return run({
 			env => $self->env(),
+			redact_env => 1,
 			stderr => 0
 		},
 		'credhub', 'delete', '--path', $self->_full_path($path)
@@ -245,6 +252,7 @@ sub query {
 	# TODO: extract uri-encoded query params out of %params
 	return scalar(read_json_from(run({
 			env => $self->env(),
+			redact_env => 1,
 			stderr => 0
 		},
 		'credhub', 'curl', '--path', "$path", @args
