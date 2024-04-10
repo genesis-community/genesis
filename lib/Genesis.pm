@@ -376,10 +376,15 @@ sub run {
 		for (keys %{$opts{env} || {}}) {
 			if (defined($opts{env}{$_})) {
 				$ENV{$_} = $opts{env}{$_};
-				$tracemsg .= csprintf("\n#B{%s}='#C{%s}'",$_,$ENV{$_});
+				$tracemsg .= $opts{redact_env}
+					? csprintf("\n#B{%s}='#Ci{<redacted>}'",$_)
+					: csprintf("\n#B{%s}='#C{%s}'",$_,$ENV{$_});
 			} else {
 				my $was = delete $ENV{$_};
-				$tracemsg .= csprintf("\n#B{%s} unset - was '#C{%s}' ",$_,$was) if defined($was);
+				$tracemsg .= ($opts{redact_env}
+					? csprintf("\n#B{%s} unset - was '#Ci{<redacted>}'",$_)
+					: csprintf("\n#B{%s} unset - was '#C{%s}' ",$_,$was)
+				) if defined($was);
 			}
 		}
 		$tracemsg .= "\n\n";
