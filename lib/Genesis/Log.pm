@@ -26,6 +26,7 @@ our @EXPORT = qw/
 	get_stack
 	get_scope
 	log_levels
+	log_styles
 /;
 
 sub new {
@@ -118,6 +119,13 @@ sub is_logging {
 	return 0;
 }
 
+sub style {
+	my ($self,$log) = @_;
+	$log ||= '<terminal>';
+	die "invalid log: $log\n" unless defined($self->{logs}{$log});
+	return $self->{logs}{$log}{style};
+}
+
 sub set_level {
 	my ($self,$level,$log) = @_;
 	$log ||= '<terminal>';
@@ -127,14 +135,29 @@ sub set_level {
 	return $self;
 }
 
-sub output  { shift->_log("OUTPUT",  {colors => "kC", pri => 6, emoji => 'printer'}, @_) }
-sub info    { shift->_log("INFO",    {colors => "Wc", pri => 6, emoji => 'information'}, @_) }
-sub debug   { shift->_log("DEBUG",   {colors => "Wm", emoji => 'crystal-ball'}, @_) }
-sub warning { shift->_log("WARNING", {colors => "ky", pri => 4, emoji => 'warning'}, @_) }
-sub error   { shift->_log("ERROR",   {colors => "WR", pri => 3, emoji => 'collision'}, @_) }
-sub fatal   { shift->_log("FATAL",   {colors => "Yr", pri => 0, emoji => 'stop-sign'}, @_) }
-sub trace   { shift->_log("TRACE",   {colors => "WG", emoji => 'detective', show_stack => 'current'}, @_); }
-sub qtrace  { shift->_log("TRACE",   {colors => "Wg", emoji => 'detective'}, @_); }
+sub log_styles {
+	return {
+		output    => {colors => "kC", pri => 6, emoji => 'printer'},
+		info      => {colors => "Wc", pri => 6, emoji => 'information'},
+		debug     => {colors => "Wm", emoji => 'crystal-ball'},
+		warning   => {colors => "ky", pri => 4, emoji => 'warning'},
+		error     => {colors => "WR", pri => 3, emoji => 'collision'},
+		fatal     => {colors => "Yr", pri => 0, emoji => 'stop-sign'},
+		trace     => {colors => "WG", emoji => 'detective', show_stack => 'current'},
+		qtrace    => {colors => "Wg", emoji => 'detective'},
+		dumpvar   => {colors => "WB", show_scope => 'current', emoji => 'magnifying-glass', raw => 1},
+		dumpstack => {colors => "kY", emoji => 'pancakes', raw => 1},
+	}->{$_[0]}
+}
+
+sub output  { shift->_log("OUTPUT",  log_styles('output'),  @_) }
+sub info    { shift->_log("INFO",    log_styles('info'),    @_) }
+sub debug   { shift->_log("DEBUG",   log_styles('debug'),   @_) }
+sub warning { shift->_log("WARNING", log_styles('warning'), @_) }
+sub error   { shift->_log("ERROR",   log_styles('error'),   @_) }
+sub fatal   { shift->_log("FATAL",   log_styles('fatal'),   @_) }
+sub trace   { shift->_log("TRACE",   log_styles('trace'),   @_); }
+sub qtrace  { shift->_log("TRACE",   log_styles('qtrace'),  @_); }
 
 sub dump_var {
 	my $self = shift;
@@ -157,7 +180,7 @@ sub dump_var {
 	my (%vars) = @_;
 	for (keys %vars) {
 		chomp (my $value = Data::Dumper::Dumper($vars{$_}));
-		$self->_log("VALUE", {colors => "WB", show_scope => 'current', emoji => 'magnifying-glass', offset => $scope, raw => 1}, $options, "#M{%s} = %s", $_, $value);
+		$self->_log("VALUE", {%{log_styles('dumpvar')}, offset => $scope}, $options, "#M{%s} = %s", $_, $value);
 	}
 }
 
@@ -181,11 +204,8 @@ sub dump_stack {
 	}
 
 	print STDERR "\n"; # Ensures that the header lines up at the cost of a blank line
-	$options->{colors} = 'kY';
-	$options->{emoji} = 'pancakes';
-	$options->{raw} = 1;
 	my $header = csprintf("#Wku{%*s}  #Wku{%-*s}  #Wku{%-*s}\n", $sizes{line}, "Line", $sizes{sub}, "Subroutine", $sizes{file}, "File");
-	$self->_log("STACK", $options, $header.join("\n",map {
+	$self->_log("STACK", { %$options, %{log_styles('dumpstack')} }, $header.join("\n",map {
 		csprintf("#w{%*s}  #Y{%-*s}  #Ki{%s}", $sizes{line}, $_->{line}, $sizes{sub}, $_->{sub}||'', $_->{file})
 	} @stack));
 }
