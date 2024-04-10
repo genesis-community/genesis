@@ -490,8 +490,11 @@ sub command_usage { # {{{
 			terminal_width
 		);
 		info $out;
-		$msg ||= "#g{${\(humanize_bin)}} #G{$CALLED} was called incorrectly: $ENV{GENESIS_FULL_CALL}";
-		fatal {show_stack => 'default'}, "\n#r{$msg}\n";
+		$msg = defined($msg)
+			? "#r{".csprintf($msg)."}"
+			: "#g{${\(humanize_bin)}} #G{$CALLED} was called incorrectly: $ENV{GENESIS_FULL_CALL}";
+
+		fatal {show_stack => 'default'}, "\n$msg\n";
 		info "$ver$hr\n";
 		exit $rc;
 	}
