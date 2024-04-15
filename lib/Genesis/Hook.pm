@@ -2,15 +2,17 @@ package Genesis::Hook;
 use strict;
 use warnings;
 
-use Genesis qw/trace bug bail trace new_enough semver pushd popd/;
+use Genesis qw/trace bug bail trace new_enough semver pushd popd run/;
 use Data::Dumper ();
 
 sub init {
 	my ($class, %ops) = @_;
 
+	my @missing = grep {!defined($ops{$_})} qw/env kit/;
 	bug(
-		"Missing environment argument for a perl-based kit hook call"
-	) unless $ops{env};
+		"Missing required arguments for a perl-based kit hook call: %s",
+		join(", ", @missing)
+	) if @missing;
 
 	my $hook = bless({%ops, type => $ENV{GENESIS_KIT_HOOK}},$class);
 	$hook->{features} = [$hook->env->features]
@@ -31,6 +33,33 @@ sub init {
 	);
 
 	return $hook;
+}
+
+sub load_hook_module {
+	my ($class, $file, $kit) = @_;
+
+	my $hook_module;
+
+	if (-f $file) {
+		open my $fh, '<', $file;
+		my $line = <$fh>;
+		$line = <$fh> while ($line =~/^\s*(#.*)?$/);
+		close $fh;
+
+		if ($line =~ /^package (Genesis::Hook::[^ ]*)/) {
+			$hook_module = $1;
+		}
+	} else {
+		bail(
+			"Hook module %s does not exist for kit %s",
+			$file, $kit->id
+		);
+	}
+
+	eval {require $file};
+	bail "Failed to load hook module %s: %s", $file, $@ if $@;
+
+	return $hook_module;
 }
 
 sub perform {
@@ -92,13 +121,22 @@ sub titleize {map { s/([\\w']+)/\\u\\L\$1/gr } @_}
 sub label {
 	my $self = shift;
 	$self->kit->kit_bug(
-		"Invalid Genesis Hook module: %s -- expected Genesis::Hook::<type>::<kit-name>",
+		"Invalid Genesis Hook module: %s -- expected Genesis::Hook::<type>::<kit-name>[::<subcommand>]",
 		ref($self)
-	) unless ref($self) =~ m/Genesis::Hook::(?:([^:]*)::)?([^:]*)$/;
+	) unless ref($self) =~ m/Genesis::Hook::([^:]+)::([^:]+)(?:::([^:]+))?$/;
 
-	my $msg = $2;
-	$msg .= " $1" if $1;
+	my $msg = "$2 $1";
+	$msg .= "/$3" if $3;
 	my $v = __PACKAGE__->VERSION ? " #g{".(__PACKAGE__->VERSION)."}" : "";
 	sprintf("[#M{%s}%s] ", $msg, $v);
+}
+
+sub spruce_merge {
+	my ($self, @args) = @_;
+	my $opts = ref($args[0]) eq 'HASH' ? shift @args : {};
+	# TODO: make this support passing in json/yaml directly
+	my ($out, $err, $res) = run($opts, 'spruce','merge', @args);
+	bail "Failed to merge spruce files: %s", $err if $res;
+	return $out;
 }
 1;
