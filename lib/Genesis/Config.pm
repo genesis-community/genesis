@@ -3,6 +3,7 @@ use strict;
 use warnings;
 
 use Genesis;
+use Genesis::Term qw/bullet/;
 
 use JSON::PP ();
 use Digest::SHA qw/sha1_hex/;
@@ -137,6 +138,41 @@ sub save {
 }
 
 # }}}
+# validate - validate the configuration against a schema {{{
+sub validate {
+	my ($self, $schema) = @_;
+	$self->{schema} = $schema;
+	my @errors = ();
+
+	# Ensure all required keys are present, and all defaults are set
+	for my $key (keys %$schema) {
+		if (exists($schema->{$key}{default}) and ! exists($self->_contents->{$key})) {
+			$self->set($key, $schema->{$key}{default});
+		} elsif ($schema->{$key}{required} and ! exists($self->_contents->{$key})) {
+			push @errors, "#R{$key}: missing required key";
+			next;
+		}
+	}
+
+	for my $key (sort keys %{$self->_contents}) {
+		if (! exists($schema->{$key})) {
+			push @errors, "#R{$key}: unknown configuration key: expected one of ".join(', ', keys %$schema);
+			next;
+		}
+		my $value = $self->get($key);
+		my @key_errors = $self->_validate($key, $schema->{$key});
+		push @errors, @key_errors if @key_errors;
+	}
+
+	if (@errors) {
+		bail("Configuration validation failed for #C{%s}:%s",
+			$self->{path},
+			join('', map {"\n[[".bullet('', inline => 1, indent => 0).">>$_"} @errors));
+	}
+
+	return 1;
+}
+# }}}
 # }}}
 
 ### Instance Private Methods {{{
@@ -169,6 +205,70 @@ sub _signature {
 	sha1_hex(JSON::PP->new->canonical->encode($_[0]->{contents}))
 }
 # }}}
+# _validate - validate a value against a schema {{{
+sub _validate {
+	my ($self, $key, $schema) = @_;
+	my @errors = ();
+	my $type = $schema->{type} or bug "Schema for $key has no type";
+	my $value = $self->get($key);
+
+	if ($type eq 'boolean') {
+		if (! in_array($value, TRUE, FALSE, 1, 0, '', undef, 'true', 'false', 'yes', 'no')) {
+			push @errors, "#R{$key}: expected a boolean, not #ri{".($value ? $value : '<null>')."}";
+		}
+		$self->set($key, $value ? TRUE : FALSE); # Normalize to JSON::PP::true or JSON::PP::false
+	} elsif ($type eq 'enum') {
+		if (! in_array($value, @{$schema->{values}})) {
+			push @errors, "#R{$key}: unknown value: #ri{".($value ? $value : "<null>")."}; expected one of ".join(', ', @{$schema->{values}});
+		}
+	} elsif ($type eq 'string') {
+		if (ref($value) ne '' || !defined($value)) {
+			push @errors, "#R{$key}: expected a string, not #ri{".($value ? $value : "<null>")."}";
+		}
+	} elsif ($type eq 'number') {
+		if (ref($value) ne '' || !defined($value) || $value !~ m/^-?\d+(\.\d+)?$/) {
+			push @errors, "#R{$key}: expected a number, not #ri{".($value ? $value : "<null>")."}";
+		}
+	} elsif ($type eq 'array') {
+		if (ref($value) ne 'ARRAY') {
+			push @errors, "#R{$key}: expected an array";
+		} else {
+			my $subtype = $schema->{subtype} or bug "Schema for array $key has no subtype"; # or maybe just validate that its a freeform array?
+			for my $i (0..$#{$value}) {
+				if ($subtype eq 'hash') {
+					if (ref($value->[$i]) ne 'HASH') {
+						push @errors, "#R{${key}[$i]}: expected a hash";
+					} else {
+						# Ensure all required keys are present, and all defaults are set for each hash
+						for my $subkey (keys %{$schema->{schema}}) {
+							if (exists($schema->{schema}{$subkey}{default}) and ! exists($value->[$i]{$subkey})) {
+								$self->set("${key}[$i]{$subkey}", $schema->{schema}{$subkey}{default});
+							} elsif ($schema->{schema}{$subkey}{required} and ! exists($value->[$i]{$subkey})) {
+								push @errors, "#R{${key}[$i]}: missing required key #ri{$subkey}";
+							}
+						}
+						for my $subkey (sort keys %{$value->[$i]}) {
+							if (! exists($schema->{schema}{$subkey})) {
+								push @errors, "#R{${key}[$i].$subkey}: unknown configuration key: expected one of ".join(', ', keys %{$schema->{schema}});
+								next;
+							}
+							my @subkey_errors = $self->_validate("${key}[$i].$subkey", $schema->{schema}{$subkey});
+							push @errors, @subkey_errors if @subkey_errors;
+						}
+					}
+				} else {
+					my $subschema = $schema->{schema}//{};
+					$subschema->{type} //= $subtype;
+					my @subkey_errors = $self->_validate("${key}[$i]", $subschema);
+					push @errors, @subkey_errors if @subkey_errors;
+				}
+			}
+		}
+	} else {
+		push @errors, "#R{$key}: unknown schema type $type";
+	}
+	return @errors;
+}
 # }}}
 1;
 # vim: fdm=marker:foldlevel=1:noet

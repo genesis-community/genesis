@@ -98,6 +98,29 @@ our @EXPORT = qw/
 sub Init {
 	my $version = shift // $Genesis::VERSION;
 	$Genesis::RC = Genesis::Config->new($ENV{HOME}."/.genesis/config");
+	$Genesis::RC->validate({
+		confirm_bosh_target     => { type => 'boolean', default => 1 },
+		oversized_secrets       => { type => 'boolean', default => 0 },
+		legacy_repo_suffix      => { type => 'boolean', default => 0 },
+		deployment_roots        => { type => 'array',   default => [], subtype => 'string' },
+		embedded_genesis        => { type => 'enum',    default => 'ignore', values => [qw/ignore check warn/]},
+		output_style            => { type => 'enum',    default => 'plain', values => [qw/plain fun pointer/]},
+		show_duration           => { type => 'boolean', default => 0 },
+		executable_environments => { type => 'boolean', default => 0 },
+		logs => {
+			type => 'array',
+			subtype => 'hash',
+			schema => {
+				file => { type => 'string', required => 1 },
+				level => { type => 'enum', default => 'INFO', values => [qw/TRACE DEBUG INFO WARN ERROR FATAL/]},
+				show_stack => { type => 'enum', default => 'default', values => [qw/default none full current fatal/]},
+				truncate => { type => 'boolean', default => 0 },
+				style => { type => 'enum', default => 'plain', values => [qw/plain fun pointer rfc-5424/]},
+				lifespan => { type => 'enum', default => 'forever', values => [qw/forever current/]},
+				timestamp => { type => 'boolean', default => 0 },
+			}
+		}
+	});
 	Genesis::Log->setup_from_configs($Genesis::RC->get("logs",[]));
 
 	our $USER_AGENT_STRING = "genesis/$Genesis::VERSION";
