@@ -52,12 +52,7 @@ sub _entomb_secrets {
 		}
 		info ("#g{done!}");
 
-		info (
-			{pending => 1},
-			"[[  - >>starting local in-memory vault to hold references to Credhub...",
-		);
-		my $local_vault = $self->local_vault;
-		info ("#g{done!}");
+		my $local_vault = $self->_setup_local_vault();
 
 		my $credhub = $self->env->credhub();
 		$credhub->preload();
@@ -69,7 +64,7 @@ sub _entomb_secrets {
 		my $entombment_prefix = "genesis-entombed/"; # can be set to another value to prevent conflicts if needed
 		info(
 			"[[  - >>copying Vault values to Credhub: #c{%s} => #B{%s}:",
-			$base_path, $credhub->base().($entombment_prefix ? "/$entombment_prefix" : "/")
+			$base_path, $credhub->base().($entombment_prefix ? "$entombment_prefix" : "")
 		);
 
 		my $previous_lines=0;
@@ -82,31 +77,16 @@ sub _entomb_secrets {
 			$cred_path =~ s#^/#_/#;
 			for my $key (sort @{$secret_keys{$secret}}) {
 				my $value = $secret_values{substr($secret,1)}{$key};
-				my $secret_sha = substr(sha1_hex("$cred_path--$key--".$value),0,8);
-				my $cred_name = "$entombment_prefix$cred_path--$key--$secret_sha";
-				my $credhub_var = "(($cred_name))";
-				my $existing = $credhub->get($cred_name);
-				my $action_color = "yi";
-				my $action = "exists";
-				unless ($existing && $existing eq $value) {
-					$credhub->set($cred_name, $value);
-					my $new_value = $credhub->get($cred_name);
-					if ($new_value ne $value) {
-						$action = "failed";
-						$action_color = "Yr";
-					} else {
-						$action = $existing ? "altered" : "new";
-						$action_color = $existing ? "ri" : "gi";
-					}
-				}
-				$local_vault->set($secret, $key, $credhub_var);
-				print STDERR "\r[A[2K" for (1..$previous_lines);
+				my ($credhub_var, $secret_sha, $action, $action_color, $existing) = $self->_entomb_secret(
+					$local_vault, $secret, $key, $value, $credhub, $cred_path, $entombment_prefix
+				);
 				$results{$action} += 1;
 				my $msg = wrap(sprintf(
 					"[[    [%*d/%*d] >>%s:#c{%s} #Kk{[sha1: }#Wk{%s}#Kk{]} #G{=>} #B{%s} ...#%s{%s}",
 					$w, ++$idx, $w, $secrets_count, "#y{$vault_label}", $key, $secret_sha,
 					$credhub_var, $action_color, $action
 				), terminal_width);
+				print STDERR "\r[A[2K" for (1..$previous_lines);
 				info $msg;
 				$previous_lines=($existing && $existing eq $value) ? scalar(lines($msg)) : 0;
 			}
@@ -135,6 +115,41 @@ sub _entomb_secrets {
 		info "no vault paths in use.\n";
 		return 0
 	}
+}
+
+sub _setup_local_vault {
+	my ($self) = @_;
+	info (
+		{pending => 1},
+		"[[  - >>starting local in-memory vault to hold references to Credhub...",
+	);
+	my $local_vault = $self->local_vault;
+	info ("#g{done!}");
+	return $local_vault;
+}
+
+sub _entomb_secret {
+	my ($self, $local_vault, $vault_path, $key, $value, $credhub, $cred_path, $entombment_prefix) = @_;
+	$entombment_prefix //= 'genesis-entombed/';
+	my $secret_sha = substr(sha1_hex("$cred_path--$key--".$value),0,8);
+	my $cred_name = "$entombment_prefix$cred_path--$key--$secret_sha";
+	my $credhub_var = "(($cred_name))";
+	my $existing = $credhub->get($cred_name);
+	my $action_color = "yi";
+	my $action = "exists";
+	unless ($existing && $existing eq $value) {
+		$credhub->set($cred_name, $value);
+		my $new_value = $credhub->get($cred_name);
+		if ($new_value ne $value) {
+			$action = "failed";
+			$action_color = "Yr";
+		} else {
+			$action = $existing ? "altered" : "new";
+			$action_color = $existing ? "ri" : "gi";
+		}
+	}
+	$local_vault->set($vault_path, $key, $credhub_var);
+	return ($credhub_var, $secret_sha, $action, $action_color, $existing);
 }
 
 1;
