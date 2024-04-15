@@ -752,7 +752,12 @@ define_command("init", {
 			"directory|d=s" =>
 				"By default, the directory in which the Genesis deployment will be ".
 				"created in will be named ./<name>-deployments.  Use this option to ".
-				"change it to something else.",
+				"change it to something else.".
+				"\n".
+				"Note: As of Genesis 3.0.0, the default directory name no longer has ".
+				"the '-deployments' suffix, but the option is still available for ".
+				"backward compatibility by setting the #Y{legacy_repo_suffix} option in ".
+				"the Genesis configuration file \$HOME/.genesis/config.yml to true.",
 		],
 		option_passthrough => 1,
 		arguments => [

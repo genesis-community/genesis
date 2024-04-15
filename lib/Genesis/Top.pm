@@ -67,7 +67,9 @@ sub create {
 
 	debug("generating a new Genesis repo, named $name");
 
-	my $dir = $opts{directory} || "${name}-deployments";
+	my $dir = $opts{directory} || "${name}".(
+		$Genesis::RC->get('legacy_repo_suffix') ? "-deployments" : ""
+	);
 	bail(
 		"Repository directory name must only contain alpha-numeric characters, periods, hyphens and underscores"
 	) if $dir =~ /([^\w\.-])/;
