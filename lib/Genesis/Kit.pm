@@ -117,7 +117,7 @@ sub run_hook {
 			if (grep { $_ eq $hook } qw/new secrets info addon check blueprint pre-deploy post-deploy features/);
 	}
 
-	my @args;
+	my (@args, %module_options);
 	if ($hook eq 'new') {
 		$ENV{GENESIS_MIN_VERSION} = (reverse sort by_semver(
 			$ENV{GENESIS_MIN_VERSION}||'0.0.0', $self->genesis_version_min
@@ -136,7 +136,10 @@ sub run_hook {
 	} elsif ($hook eq 'addon') {
 		$ENV{GENESIS_ADDON_SCRIPT} = $opts{script};
 		@args = @{$opts{args} || []};
-
+		%module_options = (
+			script => $opts{script},
+			args => \@args,
+		);
 	} elsif ($hook eq 'check') {
 		# Nothing special needed
 
@@ -176,7 +179,26 @@ EOF
 		$ENV{EDITOR}=$opts{editor};
 
 	} else {
-		$hook_file = $self->path("hooks/${hook}.pm");
+		if ($hook eq 'addon') {
+			($hook_file) =
+				grep {/(\/addon-$opts{script}(~.*)?|~$opts{script}).pm$/}
+				glob($self->path('hooks/addon*'));
+			if (($hook_file//'') =~ m/\/addon-([^~]*)(?:~(.*))?\.pm$/) {
+				$hook_name = "hook/addon ". $2 ? "'$1/$2'" : "'$1'";
+				my $addon_label = $2 ? "$1/$2" : $1;
+				info(
+					"[1ARunning #G{%s} addon for #C{%s} #M{%s} deployment",
+					$addon_label, $opts{env}->name, $self->id
+				);
+			} else {
+				$hook_file = $self->path("hooks/addon.sh");
+				$hook_name = "hook/addon '$opts{script}'";
+			}
+		} else {
+			$hook_file = $self->path("hooks/$hook");
+			$hook_name = "hook/$hook";
+		}
+
 		if (-f $hook_file && !envset('GENESIS_NO_MODULE_HOOKS')) {
 			open my $fh, '<', $hook_file;
 			my $line = <$fh>;
@@ -212,9 +234,10 @@ EOF
 			$hook_file, $hook_name, $self->id, $@
 		) if $@;
 
-		my $hook_obj = $hook_module->init(env => $opts{env}, kit => $self);
+		my $hook_obj = $hook_module->init(env => $opts{env}, kit => $self, %module_options);
 		# TODO: wrap in an eval, give better error messages
-		my $ok = $hook_obj->perform();
+
+		my $ok = $hook eq 'list' ? $hook_obj->help() : $hook_obj->perform();
 		bail(
 			"Could not run '%s' hook successfully!",
 			$hook
