@@ -982,7 +982,7 @@ sub uniq {
 
 sub in_array {
 	my ($item, @arr) = @_;
-	return !!scalar(grep {$item eq $_} (@arr));
+	return !!scalar(grep {defined($_) ? (defined($item) && $item eq $_) : !defined($item)} (@arr));
 }
 
 sub compare_arrays {
