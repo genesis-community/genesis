@@ -2245,6 +2245,7 @@ sub _cc_yaml_files {
 			$self->download_required_configs('blueprint') if $self->missing_required_configs('blueprint');
 			for (@configs) {
 				my $ccfile = $self->config_file($_);
+				next unless $ccfile =~ m/\/cloud\.yml$/; # FIXME: should be a better way to detect cloud-config, or support multiple cloud config files
 				bail(
 					"No cloud-config specified for this environment\n"
 				) unless $ccfile;
