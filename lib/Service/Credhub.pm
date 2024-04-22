@@ -26,7 +26,7 @@ sub new {
 # }}}
 
 ### Instance Methods {{{
-sub base {$_[0]->{base}};
+sub base {$_[0]->{base} =~ s/\/?\z/\//r};
 
 sub env {
 	my $self = shift;
@@ -59,12 +59,20 @@ sub preload {
 	return;
 }
 
+sub is_preloaded {
+	my $self = shift;
+	return defined($self->{cached}) && ref($self->{cached}) eq 'HASH' && scalar(keys %{$self->{cached}});
+}
+
 sub has {
 	my ($self,$path,$key) = @_;
+	if ($self->{cached} && exists($self->{cached}{$path})) {
+		return !defined($key) || exists($self->{cached}{$path}{$key});
+	}
 	my $data = $self->data($path);
 	return "" if !defined($data) || ref($data) ne 'HASH' || $data->{error};
-	return defined($data->{value}) && ref($data->{value}) eq 'HASH' unless defined($key);
-	return defined($data->{value}{$key});
+	return defined($data->{value}) unless defined($key);
+	return ref($data->{value}) eq 'HASH' && defined($data->{value}{$key});
 }
 
 sub get {
@@ -190,6 +198,7 @@ sub set {
 		$type,$out,$rc
 	) if $rc;
 	my $result = read_json_from($out, $rc, $err);
+	# TODO: update cache if it exists
 	return ($result->{id});
 }
 
