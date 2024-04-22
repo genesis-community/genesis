@@ -830,15 +830,122 @@ sub dereferenced_kit_metadata {
 }
 
 # }}}
+# vault_paths - get the list of paths in the vault for this environment {{{
 sub vault_paths {
 	my ($self, %opts) = @_;
 
 	$self->manifest_provider
-		->base_manifest(notify=>1)
-		->get_vault_paths;
+		->base_manifest
+		->get_vault_paths(notify=>$opts{notify}//1);
 }
 
-#	# Secrets Plan
+# }}}
+# last_deployed_manifest - get the last deployed manifest, if it exists {{{
+sub last_deployed_manifest {
+	my ($self) = @_;
+
+	# Get exodus data for the last deployed manifest sha1sum and path, and if it
+	# exists, also the manifest contents
+	my $manifest_package = $self->exodus_lookup('manifest',undef);
+	my $manifest_type = $self->exodus_lookup('manifest_type',undef);
+	if ($manifest_package) {
+		if (require MIME::Base64 && require IO::Uncompress::Gunzip) {
+			MIME::Base64->import(qw(decode_base64));
+			my $compressed_data = decode_base64($manifest_package);
+			my $data;
+			use IO::Uncompress::Gunzip qw(gunzip $GunzipError);
+			gunzip(\$compressed_data => \$data) or bail("Error uncompressing manifest: $GunzipError");
+			my $manifest = load_yaml($data);
+			return wantarray ? ($manifest, $manifest_type, 'exodus') : $manifest;
+		}
+		trace(
+			"Could not load MIME::Base64 and/or IO::Uncompress::Gunzip modules, ".
+			"so unable to decode the manifest found in exodus, deferring to file."
+		);
+	}
+	my $manifest_sha1 = $self->exodus_lookup('manifest_sha1',undef);
+	if ($manifest_sha1) {
+		my $manifest_path = $self->path(".genesis/manifests/".$self->name.".yml");
+		if (-f $manifest_path) {
+			my $data = slurp($manifest_path);
+			if (sha1_hex($data) eq $manifest_sha1) {
+				my ($manifest, $rc, $err) = load_yaml($data);
+				if ($rc) {
+					trace("Error loading manifest file %s: %s", $manifest_path, $err);
+					return wantarray ? (undef, undef, 'file', $err) : undef;
+				}
+				return wantarray ? ($manifest, $manifest_type, 'file') : load_yaml($data);
+			}
+			trace(
+				"Manifest file %s does not match the sha1sum (%s) in exodus, can't use it.",
+				$manifest_path, $manifest_sha1
+			);
+			return wantarray ? (undef, undef,'file','checksum mismatch') : undef;
+		}
+		trace("Manifest file %s does not exist, can't use it.", $manifest_path);
+		return wantarray ? (undef, undef,'file','not found') : undef;
+	}
+	trace("No manifest data found in exodus, can't use it.");
+	return wantarray ? (undef, undef, 'exodus','not found') : undef;
+}
+
+# }}}
+
+## Secrets Plan
+# is_vaultified - returns true if the environment is vaultified {{{
+sub is_vaultified {
+	my $self = shift;
+	return $self->_memoize('__is_vaultified', sub {
+
+		# Short circuit if we don't meed minimum requirements
+		return 0 unless $self->feature_compatibility('3.0.0-rc.1')
+			&& ! $self->use_create_env
+			&& scalar($self->lookup('genesis.vaultify', 1));
+
+		# If credhub is used explicitly, we can assume we're vaultified
+		return 1 if $self->kit->uses_credhub;
+
+		# We might still be using credhub, so check each blueprint file for
+		# occurances of 'variables' blocks.  Return on finding at least one.
+		my @files = map {
+			my $f = $_;
+			$f =~ /^\// ? $_ : $self->kit->path($_)
+		} $self->kit_files;
+		push (@files, $self->actual_environment_files);
+		for my $file (@files) {
+			my $content = slurp($file) =~ s/\A---\n//r;
+			my @pages = split(/\n---\n/,$content);
+			for my $page (@pages) {
+				if ($page =~ /^- /) {
+					# Go-patch-based arrays file - spruce can't handle these, so need to
+					# convert to hash format
+					$page = join("\n",("__ops__:",split(/\n/,$page)));
+				}
+				my $data = load_yaml($page);
+				next unless $data;
+				return 1 if $data->{variables};
+				if (exists $data->{__ops__}) {
+					return 1 if grep {
+						$_->{path} =~ /^\/variables\??\// &&
+						$_->{type} ne 'remove'
+					} @{$data->{__ops__}};
+				}
+			}
+		}
+		return 0;
+	});
+}
+
+# }}}
+# can_be_entombed - returns true if the environment can be entombed {{{
+sub can_be_entombed {
+	my $self = shift;
+	$self->feature_compatibility('3.0.0-rc.1')
+	&& ! $self->use_create_env
+	&& scalar($self->lookup('genesis.entomb', 1));
+}
+
+# }}}
 # secrets_store - get the vault store for the environment {{{
 sub secrets_store {
 	return $_[0]->_memoize(sub{
@@ -857,11 +964,12 @@ sub secrets_plan {
 	my ($self, %opts) = @_;
 	my $plan = $self->_memoize(sub {
 		my @sources = ('Genesis::Env::Secrets::Parser::FromKit');
-		push @sources, 'Genesis::Env::Secrets::Parser::FromManifest'
-			if ($self->feature_compatibility('3.0.0-rc.1') && ! $self->use_create_env && $self->lookup('genesis.vaultify', 1));
-		Genesis::Env::Secrets::Plan
+		push @sources, 'Genesis::Env::Secrets::Parser::FromManifest' if $self->is_vaultified;
+		my $plan = Genesis::Env::Secrets::Plan
 			->new($_[0], $self->secrets_store(), $self->credhub, verbose => !$opts{silent})
 			->populate(@sources);
+		$plan->{__sources} = \@sources;
+		$plan;
 	});
 	$plan = $plan->filter(@{$opts{paths}//[]});
 	$plan->validate unless $opts{no_validate};
@@ -1502,13 +1610,9 @@ sub manifest_provider {
 # deployment_manifest_type - returns the type of manifest to be generated for deploying this environment {{{
 sub deployment_manifest_type {
 	my ($self) = @_;
-	my ($entomb, $vaultify) = (0,0);
-	if ($self->feature_compatibility('3.0.0-rc.1') && ! $self->use_create_env) {
-		$entomb = $self->lookup('genesis.entomb', 1);
-		$vaultify = $self->lookup('genesis.vaultify', 1);
-	}
 
-	if ($vaultify && @{$self->manifest_provider->unevaluated->data->{variables}//[]}) {
+	my $entomb = $self->can_be_entombed;
+	if ($self->is_vaultified && @{$self->manifest_provider->unevaluated->data->{variables}//[]}) {
 		return $entomb ? 'vaultified_entombed' : 'vaultified';
 	} else {
 		return $entomb ? 'entombed' : 'unredacted';
@@ -1589,7 +1693,15 @@ sub check {
 				$ok = 0;
 			}
 			if ($secrets_results->{missing}) {
-				$self->notify(error => "- missing secrets detected.\n");
+				my $msg = "- missing secrets detected";
+				if ($self->is_vaultified) {
+					my ($bin,$env_path) = split(/\s+/, $ENV{GENENSIS_CALL_ENV}, 2);
+					$msg .= csprintf(
+						" (you may need to run '#g{%s} #M{%s} #g{add-secrets} #Y{--import}' to import them from credhub)"
+						, $bin, $env_path
+					);
+				}
+				$self->notify(error => "$msg\n");
 				$ok = 0;
 			}
 			if ($secrets_results->{warn}) {
@@ -1850,6 +1962,17 @@ sub deploy {
 	my $exodus = $self->exodus;
 
 	$exodus->{manifest_sha1} = digest_file_hex($manifest_file, 'SHA-1');
+	$exodus->{manifest_type} = $self->deployment_manifest_type;
+
+	# Compress and base64 encode the manifest for storage in the vault
+	if (require MIME::Base64 && require IO::Compress::Gzip) {
+		MIME::Base64->import(qw(encode_base64));
+		use IO::Compress::Gzip qw(gzip $GzipError);
+		my $compressed_bytes;
+		gzip($manifest_file => \$compressed_bytes) or bail "Failed to compress manifest: $GzipError\n";
+		$exodus->{manifest} = MIME::Base64::encode_base64($compressed_bytes);
+	}
+
 	debug("setting exodus data in the Vault, for use later by other deployments");
 	$self->vault->authenticate->query(
 		{ onfailure => "#R{Failed to export $self->{name} metadata.}\n".
@@ -2079,8 +2202,9 @@ sub remove_secrets {
 		return ({success => 1}, "#G{All applicable secrets removed.}");;
 	}
 
+	$self->manifest_provider->kit_files(); #process blueprint
 	my $plan = $self->secrets_plan(%opts);
-	unless ($plan->secrets) {
+	unless ($plan->secrets || $opts{invalid} >= 3) {
 		# FIXME: this should get returned as a result to the calling proceedure
 		if ($plan->filters) {
 			info("\nNo applicable secrets found - no need to continue.\n");
@@ -2222,7 +2346,6 @@ exodus:
   is_director:    ${\($self->is_bosh_director ? 'true' : 'false')}
   use_create_env: ${\($self->use_create_env ? 'true' : 'false')}
   features:       (( join "," kit.features ))
-  manifest_type:  ${\($self->deployment_manifest_type)}
 EOF
 }
 
