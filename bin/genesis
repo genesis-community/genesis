@@ -385,19 +385,29 @@ define_command("bosh", {
 	description =>
 		"Runs the specified bosh command and options, without the need to specify ".
 		"the director or deployment name.  The options below must come BEFORE any ".
-		"bosh command and options, or they will be passed through to the bosh cli.",
+		"bosh command and options, or they will be passed through to the bosh cli.".
+		"\n\n".
+		"[[Note: >>When targeting a bosh director deployment that was deployed by ".
+		"another bosh director, you should specify either --self or --parent, as ".
+		"the target is ambiguous.  If you don't specify either, it will prompt you ".
+		"to choose one if in a controlling terminal, or fail if not.",
 	function_group => Genesis::Commands::ENVIRONMENT,
 	scope => 'env',
 	option_group => Genesis::Commands::REPO_OPTIONS,
 	option_passthrough => 1,
 	option_require_order => 1,
 	options => [
-		"as-director|A" =>
-			"The specified environment is the desired BOSH director to target, and ".
-			"there is no associated deployment.  Without this option, it will ".
-			"target the BOSH director used to deploy this environment, with the ".
-			"environment being the associated deployment.",
-
+		"self|A|?as-director" =>
+			"Run the bosh command against this deployment as a bosh director.  This ".
+			"is only applicable if the environment is a bosh deployment that doesn't ".
+			"use create-env.  This is the only valid behaviour for bosh director ".
+			"deployments that use create-env, so this option is unnecessary.",
+		"parent" =>
+			"Target the BOSH director used to deploy this environment, with the ".
+			"environment being the associated deployment.  This is only applicable ".
+			"if the environment is a bosh deployment that doesn't use create-env.  ".
+			"This is the only valid behaviour for non-bosh director deployments, so".
+			"this option is unnecessary.",
 		"connect" =>
 			"Intended to run inside an #C{eval \"\$(...)\"} wrapper, this command ".
 			"will set the environment variables required to connect via the bosh ".

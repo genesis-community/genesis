@@ -8,6 +8,7 @@ use Genesis::State;
 use Genesis::Term;
 use Genesis::Commands;
 use Genesis::Top;
+use Genesis::UI;
 
 sub create {
 	command_usage(1) if @_ != 1;
@@ -440,7 +441,61 @@ sub bosh {
 
 	my $bosh;
 	my $bosh_exodus_path;
-	if (get_options->{'as-director'}) {
+	my $target;
+
+	bail(
+		"Cannot use the #y{--self} and #y{--parent} options together."
+	) if (get_options->{self} && get_options->{parent});
+
+	if ($env->is_bosh_director && !$env->use_create_env) {
+		if (get_options->{self}) {
+			$target = 'self'
+		} elsif (get_options->{parent}) {
+			$target = 'parent'
+		} else {
+			bail(
+				"Environment #C{%s} is a BOSH director deployed by another BOSH ".
+				"director.  You must specify either #y{--self} or #y{--parent} option ".
+				"to target it or its deploying director respectively.",
+				$env->name
+			) unless in_controlling_terminal;
+
+			my $self_name = $env->name;
+			my $parent_name = $env->lookup('genesis.bosh_env');
+			$target = prompt_for_choice(
+				"Which BOSH director do you want to target?",
+				['self', 'parent'],
+				'self',
+				[
+					"#C{$self_name}: this environment",
+					"#C{$parent_name}: the BOSH director that deployed this environment"
+				]
+			);
+		}
+	} elsif (get_options->{self} || get_options->{parent}) {
+		if ($env->use_create_env) {
+			bail(
+				"Environment %s is a #M{create-env} deployment, so the #y{--self} is ".
+				"unnecessary and the #y{--parent} is invalid.",
+				$env->name
+			);
+		} elsif (!$env->is_bosh_director) {
+			bail(
+				"Environment %s is not a BOSH director, so the #y{--self} is invalid ".
+				"and #y{--parent} is unnecessary.",
+				$env->name
+			) ;
+		} else {
+			bug(
+				"Somehow, the environment %s is not a BOSH director, but is also not a ".
+				"#M{create-env} deployment.  This should not be possible.",
+			);
+		}
+	} else {
+		$target = $env->is_bosh_director ? 'self' : 'parent';
+	}
+
+	if ($target eq 'self') {
 		$bosh_exodus_path=$env->exodus_base;
 		my $exodus_data = eval {$env->vault->get($bosh_exodus_path)};
 		if ($exodus_data->{url} && $exodus_data->{admin_password}) {
@@ -449,12 +504,6 @@ sub bosh {
 			$bosh = Service::BOSH::Director->from_alias($env->name);
 		}
 	} else {
-		bail(
-			"Environment %s is a 'create-env' environment, so it does not have an ".
-			"associated BOSH Director.  Please use the #y{--as-director} option if ".
-			"you are trying to target this environment as the BOSH director.",
-			 $env->name
-		) if ($env->use_create_env);
 		$bosh_exodus_path=Service::BOSH::Director->exodus_path($env->name);
 		$bosh = $env->bosh; # This sets the deployment name.
 	}
