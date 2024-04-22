@@ -466,131 +466,323 @@ sub regenerate_secrets {
 # remove_secrets - remove some or all the secrets in the plan {{{
 sub remove_secrets {
 	my ($self,%opts) = @_;
-	my @update_args = ('remove', {%opts{qw/level invalid indent/}, indent => '    '});
-	my ($no_prompt,$interactive) = delete(@opts{qw/no_prompt interactive/});
-	my $severity = ['','invalid','problem']->[delete($opts{invalid})||0];
 
-	$self->env->notify("rotating environment secrets...");
-	info({pending => 1}, "[[  - >>loading existing secrets from source...");
-	my $t = time_exec(sub {
-			$self->store->fill($self->secrets);
-	});
-	info("#G{done}".pretty_duration($t, scalar($self->secrets) * 0.02, scalar($self->secrets) * 0.05));
+	$self->{notification_options} = {%opts{qw/level invalid indent/}, indent => '    '};
+	my ($no_prompt,$interactive) = delete(@opts{qw/no_prompt interactive/});
+	my $severity = ['','invalid','problem','unused', 'unused-vault', 'unused-credhub', 'unused-entombed']->[delete($opts{invalid})||0];
 
 	my $label = '';
-	my @selected_secrets = ();
-	if ($severity) {
-		$label = ($severity eq 'problem')
-			? "invalid or problematic"
-			: "invalid";
-		$self->notify(@update_args, 'init', action => "[[  - >>determining $label secrets", total => scalar($self->secrets));
-		for my $secret ($self->secrets) {
-			my ($path, $label, $details) = $secret->describe;
-			$self->notify(@update_args, 'start-item', path => $path, label => $label, details => $details);
-			my ($result, $msg) = $secret->validate_value($self);
-			if ($result eq 'error' || ($result eq 'warn' && $severity eq 'problem')) {
-				$self->notify(@update_args, 'done-item', result => $result, action => 'validate', msg => $msg) ;
-				push @selected_secrets, $secret;
-			} elsif ($result eq 'missing') {
-				$self->notify(@update_args, 'done-item', result => $result, action => 'remove') ;
-			} else {
-				$self->notify(@update_args, 'done-item', result => 'ok', action => 'validate')
-			}
-		}
-		$self->notify(@update_args, 'notify', indent => "[[  - >>", msg => sprintf("found %s %s secrets", scalar(@selected_secrets), $label));
-		return ({empty => 1}, "- no $label secrets found to remove.\n")
-			unless @selected_secrets;
-	} else {
-		@selected_secrets = ($self->secrets);
-	}
+	my $confirm = $no_prompt ? 'none' : $interactive ? 'each' : 'all';
+	if (! $severity) {
+		my @selected_secrets = ($self->secrets);
+		# TODO: specify label here or inside _remove_secrets?
+		return $self->_remove_secrets(\@selected_secrets, confirm => $confirm, %opts);
 
-	if (!$no_prompt && !$interactive) {
-		my $permission = $self->notify(@update_args, 'prompt',
-			msg => sprintf(
-				"[[  - >>the following secrets under path '#C{%s}' will be removed\n%s",
-				$self->store->base,
-				join("\n",
-					map {bullet($_, inline => 1, indent => 4)}
-					map {
-						my @items;
-						for my $path ($_->all_paths) {
-							my $desc = $_->path eq $path ? $_->describe : $_->can('format_path') ? $_->describe('format') : '';
-							if ($path =~ /^(.*?):([^:]*)$/) {
-								push(@items, sprintf("#C{%s}:#c{%s} #i{%s}", $1, $2, $desc))
-							} else {
-								push(@items, sprintf("#C{%s} #i{%s}", $path, $desc))
-							}
-						}
-						@items;
+	} elsif ($severity && $severity =~ /^unused/) {
+		my $check_entombed = $severity =~ /^unused(-entombed)?$/;
+		my ($last_manifest, $manifest_type);
+		$self->env->notify("loading existing secrets to check for unused or outdated entries...");
+		my %results = ();
+
+		if ($severity =~ /^unused(|-credhub|-entombed)$/) {
+			if ($check_entombed) {
+				# Check if the last manifest deployed is available in exodus
+				info({pending => 1}, "[[  - >>retrieving last deployed manifest to determine active entombed secrets ... ");
+				my ($source, $error);
+				my $t = time_exec(sub {
+					($last_manifest, $manifest_type, $source, $error) = $self->env->last_deployed_manifest;
+				});
+				if ($error) {
+					my $msg;
+					if ($source eq 'exodus') {
+						$msg = $error eq 'not_found'
+							?	"[[    #R{[ERROR]} >>no deployment details found in exodus"
+							: "[[    #R{[ERROR]} >>failed to retrieve last deployed manifest from exodus: $error"
+					} elsif ($source eq 'file') {
+						$msg = $error eq 'checksum_mismatch'
+							? "[[    #R{[ERROR]} >>local deploy manifest does not match checksum in exodus"
+							: "[[    #R{[ERROR]} >>local deploy manifest not found"
+					} else {
+						$msg = "[[    #R{[ERROR]} >>failed to retrieve last deployed manifest: $error";
 					}
-					grep {$_->has_value}
-					@selected_secrets
-				)
-			),
-			prompt => "    Type 'yes' to remove these secrets"
-		);
-		return ({abort => 1}) if $permission ne 'yes';
-		info "";
-	}
-
-	$self->notify(@update_args, 'init', total => scalar(@selected_secrets), indent => '[[  - >>');
-	for my $secret (@selected_secrets) {
-		my ($path, $label, $details) = $secret->describe;
-		$self->notify(@update_args, 'start-item', path => $path, label => $label, details => $details);
-		if (!$secret->has_value) {
-			$self->notify(@update_args, 'done-item', result => 'missing');
-			next;
-		}
-
-		if ($interactive) {
-			my $confirm = $self->notify(@update_args, 'inline-prompt', prompt => '#Y{remove} [y/n/q]?');
-			if ($confirm ne 'y') {
-				$self->notify(@update_args, 'done-item', result => 'skipped');
-				return ({abort => 1}, "Quit!\n") if ($confirm eq 'q');
-				next;
-			}
-		}
-
-		my @command = $secret->get_safe_command_for('remove', %opts);
-		my $cmd_interactive = $secret->is_command_interactive('remove', %opts);
-
-		my ($result, $msg) = ();
-		if ($cmd_interactive) {
-			unless (in_controlling_terminal && scalar(@command)) {
-				$self->notify(
-					@update_args, 'done-item', result => 'error',
-					msg => "Cannot prompt for user input from a non-controlling terminal"
-				);
-				last;
-			}
-			$self->notify(@update_args, "notify", msg => "#Yi{user input required:\n}");
-			if (ref($command[0]) eq 'CODE') {
-				my $precommand = shift @command;
-				my @precommand_args;
-				while (my $arg = shift @command) {
-					last if $arg eq '--';
-					push @precommand_args, $arg;
+					info(
+						"#R{failed!}".pretty_duration($t, 0.5, 1.0).
+						"\n$msg".
+						"\n[[  - >>will not be able to determine unneeded entombed secrets"
+					);
+					$check_entombed = 0;
+				} else {
+					info("#G{done}".pretty_duration($t, 0.5, 1.0));
 				}
-				$interactive = $precommand->(@precommand_args);
 			}
-			if (@command) {
-				$self->notify(@update_args, 'notify', msg=> "\nsaving user input ... ", nonl => 1) if ! $interactive;
-				my ($out,$rc) = $secret->process_command_output('remove', $self->query({interactive => $interactive}, @command));
-				$self->notify(@update_args, 'notify', msg=> "\nsaving user input ... ", nonl => 1) if $interactive;
-				$self->notify(@update_args, 'done-item', result => ($rc ? 'error': 'ok'));
-				last if $rc;
+			my $credhub = $self->env->credhub;
+			unless ($credhub->is_preloaded) {
+				info({pending => 1},
+					"[[  - >>loading credhub secrets under path #c{%s} ... ",
+					$credhub->base
+				);
+				my $t = time_exec(sub {
+						$credhub->preload;
+					});
+				info "#G{done}".pretty_duration($t, scalar($self->secrets) * 0.04, scalar($self->secrets) * 0.1);
 			}
-		} else {
-			my ($out, $rc) = $secret->process_command_output('remove', $self->store->service->query(@command));
-			if ($rc == '0') {
-				$self->notify(@update_args, 'done-item', result => 'ok', msg => $out||undef)
-			} else {
-				$self->notify(@update_args, 'done-item', result => 'error', msg => $out);
-			}
-			last if ($rc);
 		}
+		if ($severity =~ /^unused(-vault)?$/) {
+			info({pending => 1},
+				"[[  - >>loading vault secrets under path #c{%s}...",
+				$self->store->base
+			);
+			my $t = time_exec(sub {
+					$self->store->fill($self->secrets);
+			});
+			info "#G{done}".pretty_duration($t, scalar($self->secrets) * 0.02, scalar($self->secrets) * 0.05);
+			my @selected_secrets = $self->_unused_vault_secrets();
+			my @partial_results = $self->_remove_secrets(
+				\@selected_secrets,
+				label => 'unused vault',
+				confirm => $confirm,
+				%opts
+			);
+			return @partial_results unless $severity eq 'unused';
+
+			# Print message, stash results, and continue to next unused portion
+			#$self->notify('remove', ...
+			($results{$_}//=0) += $partial_results[0]{$_} for keys %{$partial_results[0]};
+		}
+		if ($severity =~ /^unused(-credhub)?$/) { # && is vaultified?
+			my @selected_secrets = $self->_unused_credhub_secrets();
+			my @partial_results = $self->_remove_secrets(
+				\@selected_secrets,
+				label => 'imported credhub',
+				confirm => $confirm,
+				source => 'credhub',
+				%opts
+			);
+			return @partial_results unless $severity eq 'unused';
+			($results{$_}//=0) += $partial_results[0]{$_} for keys %{$partial_results[0]};
+		}
+		if ($severity =~ /^unused(-entombed)?$/) {
+			my @selected_secrets = $self->_unused_entombed_secrets($last_manifest, $manifest_type);
+			my @partial_results = $self->_remove_secrets(
+				\@selected_secrets,
+				label => 'outdated entombed credhub',
+				confirm => $confirm,
+				source => 'credhub',
+				%opts
+			);
+			return @partial_results unless $severity eq 'unused';
+			($results{$_}//=0) += $partial_results[0]{$_} for keys %{$partial_results[0]};
+		}
+		# MAYBE: massage results into a cohesive message?
+		my $msg = '';
+		return \%results, $msg;
+	} else {
+		my @selected_secrets = $self->_invalid_secrets($severity, %opts);
+		my $label = ($severity eq 'problem')
+			? "invalid, problematic, or missing"
+			: "invalid or missing";
+		$self->env->notify("loading existing secrets to check for $label entries...");
+		info({pending => 1}, "[[  - >>loading existing secrets from vault...");
+		my $t = time_exec(sub {
+				$self->store->fill($self->secrets);
+		});
+		info "#G{done}".pretty_duration($t, scalar($self->secrets) * 0.02, scalar($self->secrets) * 0.05);
+
+		return $self->_remove_secrets(
+			\@selected_secrets,
+			label => $label,
+			confirm => $confirm,
+			%opts
+		);
 	}
-	return $self->notify(@update_args, 'completed', msg => ($label ? "$label ":'').'secrets removed');
+}
+
+# }}}
+# notify - callback for notifying user with processing updates {{{
+sub notify {
+	my $self = shift;
+	my $action = shift;
+	my $opts = (ref($_[0]) eq 'HASH') ? shift : $self->{notification_options} || {};
+	my ($state,%args) = @_;
+	my $indent = $args{indent} || $opts->{indent} || '  ';
+	$indent = "[[$indent>>" unless $indent =~ /^\[\[.*>>/;
+	my $level = $opts->{level} || 'full';
+	$level = 'full' if $args{'verbose'};
+	$level = 'full' unless -t STDOUT;
+
+	bug('Failure to specify $action') unless $action;
+
+	$action = $args{action} if $args{action};
+	$args{result} ||= '';
+	(my $actioned = $action) =~ s/e?$/ed/;
+	$actioned = 'found' if $actioned eq 'checked';
+	(my $actioning = $action) =~ s/e?$/ing/;
+	my $secret_label = $args{secret_label}//'secret';
+
+	if ($state eq 'done-item') {
+		my $map = {
+			'validate/error'   => '#R{invalid!}',
+			error              => '#R{failed!}',
+			'check/ok'         => '#G{found.}',
+			'validate/ok'      => '#G{valid.}',
+			'validate/warn'    => '#Y{warning!}',
+			ok                 => '#G{done.}',
+			'rotate/skipped'   => '#Y{skipped}',
+			'remove/skipped'   => '#Y{skipped}',
+			'remove/aborted'   => "#R{aborted} - #Yi{all remaining ${secret_label}s skipped}",
+			'add/imported'     => '#C{imported}',
+			'add/generated'    => '#Y{generated}',
+			skipped            => '#Y{exists!}',
+			'remove/missing'   => '#B{not present}',
+			missing            => '#R{missing!}'
+		};
+		push(@{$self->{__update_notifications__items}{$args{result}} ||= []},
+				 $self->{__update_notifications__item});
+
+		if ("$action/$args{result}" eq 'remove/aborted') {
+			info({pending => 1}, "\r[2K");
+			my @updates = @{$self->{__update_notifications__last_start}};
+			$updates[0] .= $map->{"$action/$args{result}"};
+			info(@updates);
+		} elsif ($args{result} && ($level eq 'full' || !( $args{result} eq 'ok' || ($args{result} =~ /^(skipped|imported)$/ && $action eq 'add')))) {
+			info $map->{"$action/$args{result}"} || $map->{$args{result}} || $args{result}
+		}
+
+		if (defined($args{msg}) && $args{msg} ne '') {
+			my @lines = grep {$level eq 'full' || $_ =~ /^\[#[YR]/} split("\n",$args{msg});
+			my $pad = " " x (length($self->{__update_notifications__total})*2+4);
+			my $indent_pad = $indent =~ s/>>/$pad>>/r;
+			info("%s%s", $indent_pad, join("\n$indent_pad", @lines)) if @lines;
+			info("") if $level eq 'full' || scalar @lines;
+		}
+		info({pending => 1}, "\r[2K") unless $level eq 'full';
+
+	} elsif ($state eq 'start-item') {
+		$self->{__update_notifications__idx}++;
+		my $w = length($self->{__update_notifications__total});
+		my $long_warning='';
+		if ($args{label} eq "Diffie-Hellman key exchange parameters" && $action =~ /^(add|rotate)$/) {
+			$long_warning = ($level eq 'line' ? " - " : "; ")."#Yi{may take a very long time}"
+		}
+		$self->{__update_notifications__last_start} = [
+			"%s[[[%*d/%*d] >>%s #wi{%s}%s ... ",
+			$indent,
+			$w, $self->{__update_notifications__idx},
+			$w, $self->{__update_notifications__total},
+			csprintf( ($args{path} =~ /^(.*?):([^: ]*)(?: \((.*)\))?$/)
+				? "#C{$1}:#c{$2}".($3 ? " #mi{$3}" : '')
+				: "#C{$args{path}}"
+			),	
+			$args{label} . ($level eq 'line' || !$args{details} ? '' : " - $args{details}"),
+			$long_warning
+		];
+		info({pending => 1}, @{$self->{__update_notifications__last_start}});
+
+	} elsif ($state eq 'init') {
+		$self->{__update_notifications__start} = gettimeofday();
+		$self->{__update_notifications__total} = $args{total};
+		$self->{__update_notifications__idx} = 0;
+		$self->{__update_notifications__items} = {};
+		my $msg_action = $args{action} || sprintf("%s%s %s", $indent, $actioning, count_nouns($args{total}, $secret_label));
+		info "%s under path '#C{%s}':", $msg_action, $args{base_path}//$self->store->base;
+
+	} elsif ($state eq 'wait') {
+		$self->env->manifest_provider->{suppress_notification}=1;
+		$self->{__update_notifications__startwait} = gettimeofday();
+		info {pending => 1},  "%s ... ", $args{msg};
+
+	} elsif ($state eq 'wait-done') {
+		$self->env->manifest_provider->{suppress_notification}=0;
+		info("%s%s",
+			$args{result} eq 'ok' ? "#G{done.}" : "#R{error!}",
+			pretty_duration(gettimeofday - $self->{__update_notifications__startwait},0,0,'',' - ','Ki')
+		) if ($args{result} && ($args{result} eq 'error' || $level eq 'full'));
+		error("Encountered error: %s", $args{msg}) if ($args{result} eq 'error');
+		info {pending => 1}, "\r[2K" unless $level eq 'full';
+
+	} elsif ($state eq 'completed') {
+		my @extra_errors = @{$args{errors} || []};
+		my $warn_count = scalar(@{$self->{__update_notifications__items}{warn} || []});
+		my $err_count = scalar(@{$self->{__update_notifications__items}{error} || []})
+			+ scalar(@extra_errors)
+			+ ($action =~ /^(check|validate)$/ ?
+				scalar(@{$self->{__update_notifications__items}{missing} || []}) : 0);
+		my $err_color = $err_count ? 'r' : '-';
+		my $missing_count = $action eq 'remove'
+			? scalar(@{$self->{__update_notifications__items}{missing} || []}) : 0;
+
+		my $ok_counts = scalar(@{$self->{__update_notifications__items}{ok} || []});
+		my $imported_counts_msg = '';
+		my @imported_counts = ();
+		my $import_count = scalar(@{$self->{__update_notifications__items}{imported}//[]});
+		my $gen_count = scalar(@{$self->{__update_notifications__items}{generated}//[]});
+		if ($action eq 'add' && $import_count + $gen_count > 0) {
+			if ($gen_count == 0) {
+				$imported_counts_msg = "%d imported/";
+				push @imported_counts, $import_count;
+			} else {
+				$imported_counts_msg = "#y{%d of %d imported}/";
+				push @imported_counts, $import_count, $import_count + $gen_count;
+				$ok_counts += $gen_count;
+			}
+		}
+		my $skip_count = scalar(@{$self->{__update_notifications__items}{skipped} || []});
+		my $unprocessed = $self->{__update_notifications__total}
+			 - $ok_counts - $err_count - $warn_count - $missing_count
+			 - $import_count - $gen_count - $skip_count;
+
+		my $status = scalar(@{$self->{__update_notifications__items}{aborted} || []})
+			? '#R{aborted}'
+			: $err_count
+			? '#r{failed}'
+			: "#G{completed}";
+
+		info "%s%s%s [%d %s/".$imported_counts_msg."%d skipped/#%s{%d errors}%s%s]",
+			$indent,
+			$status,
+			pretty_duration(gettimeofday-$self->{__update_notifications__start},0,0,'',' in '),
+			$ok_counts, $actioned, @imported_counts,
+			$skip_count + $unprocessed,
+			$err_color, $err_count,
+			$warn_count ? "/#y{$warn_count warnings}" : '',
+			$missing_count ? "/#B{$missing_count missing}" : '';
+		$err_count += $warn_count
+			if (($opts->{invalid}||0) == 2 || ($opts->{validate}||0) == 2);
+		my $results = {
+			map {($_, scalar(@{$self->{__update_notifications__items}{$_} || []}))} keys %{$self->{__update_notifications__items}}
+		};
+		return wantarray ? ($results,$args{msg}) : !$err_count;
+	} elsif ($state eq 'inline-prompt') {
+		die_unless_controlling_terminal(
+			"Cannot prompt for confirmation to $action secrets outside a controlling ".
+			"terminal.  Use #C{-y|--no-prompt} option to provide confirmation to ".
+			"bypass this limitation."
+		);
+		print "[s\n[u[B[A[s"; # make sure there is room for a newline, then restore and save the current cursor
+		my $response = Genesis::UI::__prompt_for_line($args{prompt}, $args{validation}, $args{err_msg}, $args{default}, !$args{default});
+		print "[u[0K" unless $args{noclear};
+		return $response;
+	} elsif ($state eq 'prompt') {
+		my $title = '';
+		if ($args{class}) {
+			$title = sprintf("\r[2K\n#%s{[%s]} ", $args{class} eq 'warning' ? "Y" : '-', uc($args{class}));
+		}
+		info "%s%s", $title, $args{msg};
+		die_unless_controlling_terminal(
+			"Cannot prompt for confirmation to $action secrets outside a controlling ".
+			"terminal.  Use #C{-y|--no-prompt} option to provide confirmation to ".
+			"bypass this limitation."
+		);
+		return prompt_for_line(undef, $args{prompt}, $args{default} || "");
+	} elsif ($state eq 'notify') {
+		if ($args{nonl}) {
+			info {pending => 1}, "%s%s", $indent, $args{msg};
+		} else {
+			info "%s%s", $indent, $args{msg};
+		}
+	} else {
+		bug "notify encountered an unknown state '$state'";
+	}
 }
 
 # }}}
@@ -742,165 +934,345 @@ sub _order_x509_secrets {
 }
 
 # }}}
-# notify - callback for notifying user with processing updates {{{
-sub notify {
-	my ($self,$action,$opts,$state,%args) = @_;
-	my $indent = $args{indent} || $opts->{indent} || '  ';
-	$indent = "[[$indent>>" unless $indent =~ /^\[\[.*>>/;
-	my $level = $opts->{level} || 'full';
-	$level = 'full' unless -t STDOUT;
+# _unused_vault_secrets - find secrets in the vault that are not used by the kit {{{
+sub _unused_vault_secrets {
 
-	bug('Failure to specify $action') unless $action;
+	# Note: the intention of this method is to find unused secrets under the vault
+	# path for the kit.  It will not find secrets that may have been once used by
+	# the environment that are in the vault but under a different root path.
+	
+	my ($self, %opts) = @_;
 
-	$action = $args{action} if $args{action};
-	$args{result} ||= '';
-	(my $actioned = $action) =~ s/e?$/ed/;
-	$actioned = 'found' if $actioned eq 'checked';
-	(my $actioning = $action) =~ s/e?$/ing/;
+	my $vault_prefix = $self->store->base =~ s/^\///r;
+	my @actual_paths = map {s/^$vault_prefix//r} $self->store->store_paths();
 
-	if ($state eq 'done-item') {
-		my $map = {
-			'validate/error'   => '#R{invalid!}',
-			error              => '#R{failed!}',
-			'check/ok'         => '#G{found.}',
-			'validate/ok'      => '#G{valid.}',
-			'validate/warn'    => '#Y{warning!}',
-			ok                 => '#G{done.}',
-			'rotate/skipped'   => '#Y{skipped}',
-			'remove/skipped'   => '#Y{skipped}',
-			'add/imported'     => '#C{imported}',
-			'add/generated'    => '#Y{generated}',
-			skipped            => '#Y{exists!}',
-			'remove/missing'   => '#B{not present}',
-			missing            => '#R{missing!}'
-		};
-		push(@{$self->{__update_notifications__items}{$args{result}} ||= []},
-				 $self->{__update_notifications__item});
+	# Get the list of secrets known to the kit, including formatted paths if they exist
+	my $known_paths = { map {
+		my $s = $_;
+		map {($_, $s)} $s->all_paths
+	} $self->secrets };
 
-		info $map->{"$action/$args{result}"} || $map->{$args{result}} || $args{result}
-			if $args{result} && ($level eq 'full' || !( $args{result} eq 'ok' || ($args{result} =~ /^(skipped|imported)$/ && $action eq 'add')));
-
-		if (defined($args{msg}) && $args{msg} ne '') {
-			my @lines = grep {$level eq 'full' || $_ =~ /^\[#[YR]/} split("\n",$args{msg});
-			my $pad = " " x (length($self->{__update_notifications__total})*2+4);
-			my $indent_pad = $indent =~ s/>>/$pad>>/r;
-			info("%s%s", $indent_pad, join("\n$indent_pad", @lines)) if @lines;
-			info("") if $level eq 'full' || scalar @lines;
+	# Also check for known vault paths from the manifest (aka $self->vault_paths)
+	info ({pending => 1}, "[[  - >>determining vault paths used by environment ... ");
+	my $used_paths;
+	my $t = time_exec(sub {
+		$used_paths = {
+			map {
+				my $k = $_;
+				$k =~ m#/$vault_prefix(.*)# ? ($1,1) : ($k,1);
+			} keys %{$self->env->vault_paths(notify => 0)}
 		}
-		info({pending => 1}, "\r[2K") unless $level eq 'full';
+	});
+	info("#G{done}".pretty_duration($t, scalar($self->secrets) * 0.02, scalar($self->secrets) * 0.08));
 
-	} elsif ($state eq 'start-item') {
-		$self->{__update_notifications__idx}++;
-		my $w = length($self->{__update_notifications__total});
-		my $long_warning='';
-		if ($args{label} eq "Diffie-Hellman key exchange parameters" && $action =~ /^(add|rotate)$/) {
-			$long_warning = ($level eq 'line' ? " - " : "; ")."#Yi{may take a very long time}"
+	my @unknown_paths = ();
+	my @missing_paths = grep {!$known_paths->{$_} && !$used_paths->{$_}} @actual_paths;
+	my @known_keys = grep {$_ =~ m/:/} uniq sort (keys %$known_paths, keys %$used_paths);
+	info ({pending => 1}, "[[  - >>searching for keys under specified paths ... ");
+	my $start_time = time;
+	for my $missing_path (@missing_paths) {
+		# Some of the paths may be keys instead of complex paths, so we need to
+		# check each key.
+		if (grep {$_ =~ m/^$missing_path:/} @known_keys) {
+			# There is a known path that contains keys for this path -- validate each key
+			my @keys = map {s/^$missing_path://r} $self->store->keys($vault_prefix.$missing_path);
+			for my $key (@keys) {
+				next if exists($known_paths->{$missing_path.':'.$key});
+				next if exists($used_paths->{$missing_path.':'.$key});
+				push(@unknown_paths, $missing_path.':'.$key);
+			}
+		} else {
+			# This is a simple path, so we can just add it to the list of unknown paths
+			push(@unknown_paths, $missing_path);
 		}
-		info({pending => 1},
-			"%s[%*d/%*d] #C{%s} #wi{%s}%s ... ",
-			$indent,
-			$w, $self->{__update_notifications__idx},
-			$w, $self->{__update_notifications__total},
-			$args{path},
-			$args{label} . ($level eq 'line' || !$args{details} ? '' : " - $args{details}"),
-			$long_warning
-		);
+	}
+	my $elapsed_time = time - $start_time;
+	info("#G{done}".pretty_duration($elapsed_time, scalar(@missing_paths) * 0.02, scalar(@missing_paths) * 0.05));
+	return @unknown_paths;
+}
 
-	} elsif ($state eq 'init') {
-		$self->{__update_notifications__start} = gettimeofday();
-		$self->{__update_notifications__total} = $args{total};
-		$self->{__update_notifications__idx} = 0;
-		$self->{__update_notifications__items} = {};
-		my $msg_action = $args{action} || sprintf("%s%s %s", $indent, $actioning, count_nouns($args{total}, 'secret'));
-		info "%s under path '#C{%s}':", $msg_action,$self->store->base;
+# }}}
+# _unused_credhub_secrets - find secrets in the credhub that are not used by the kit {{{
+sub _unused_credhub_secrets {
+	my ($self, %opts) = @_;
 
-	} elsif ($state eq 'wait') {
-		$self->manifest_provider->{suppress_notification}=1;
-		$self->{__update_notifications__startwait} = gettimeofday();
-		info {pending => 1},  "%s ... ", $args{msg};
+	# Return an empty list if the kit isn't based on credhub and not vaultified
+	return () unless $self->env->is_vaultified;
 
-	} elsif ($state eq 'wait-done') {
-		$self->env->manifest_provider->{suppress_notification}=0;
-		info("%s%s",
-			$args{result} eq 'ok' ? "#G{done.}" : "#R{error!}",
-			pretty_duration(gettimeofday - $self->{__update_notifications__startwait},0,0,'',' - ','Ki')
-		) if ($args{result} && ($args{result} eq 'error' || $level eq 'full'));
-		error("Encountered error: %s", $args{msg}) if ($args{result} eq 'error');
-		info {pending => 1}, "\r[2K" unless $level eq 'full';
+	my $credhub = $self->env->credhub;
+	my $credhub_prefix = $credhub->base;
+	my @actual_paths = grep {$_ !~ /^genesis-entombed\//} map {s/^$credhub_prefix//r} $credhub->paths();
+	my @unneeded_paths = ();
 
-	} elsif ($state eq 'completed') {
-		my @extra_errors = @{$args{errors} || []};
-		my $warn_count = scalar(@{$self->{__update_notifications__items}{warn} || []});
-		my $err_count = scalar(@{$self->{__update_notifications__items}{error} || []})
-			+ scalar(@extra_errors)
-			+ ($action =~ /^(check|validate)$/ ?
-				scalar(@{$self->{__update_notifications__items}{missing} || []}) : 0);
-		my $err_color = $err_count ? 'r' : '-';
-		my $missing_count = $action eq 'remove'
-			? scalar(@{$self->{__update_notifications__items}{missing} || []}) : 0;
+	my $known_secrets = { map {($_->var_name, $_)} grep {$_->from_manifest} $self->secrets };
 
-		my $ok_counts = scalar(@{$self->{__update_notifications__items}{ok} || []});
-		my $imported_counts_msg = '';
-		my @imported_counts = ();
-		my $import_count = scalar(@{$self->{__update_notifications__items}{imported}//[]});
-		my $gen_count = scalar(@{$self->{__update_notifications__items}{generated}//[]});
-		if ($action eq 'add' && $import_count + $gen_count > 0) {
-			if ($gen_count == 0) {
-				$imported_counts_msg = "%d imported/";
-				push @imported_counts, $import_count;
+	for my $path (@actual_paths) {
+		if (my $secret = $known_secrets->{$path}) {
+			# Path is known, lets see if it has been imported into vault
+			if ($secret->has_value) {
+				if (scalar($credhub->get($path)) eq $secret->value) {
+					push @unneeded_paths, {path => $path, secret => $secret, details => '#Gi{imported, identical}'};
+				} else {
+					push @unneeded_paths, {path => $path, secret => $secret, details => '#Gi{imported,} #Yi{altered}'};
+				}
 			} else {
-				$imported_counts_msg = "#y{%d of %d imported}/";
-				push @imported_counts, $import_count, $import_count + $gen_count;
-				$ok_counts += $gen_count;
+				# The secret has no value, so it has been not been imported into vault
+				push @unneeded_paths, {path => $path, secret => $secret, details => '#Ri{not imported}'};
+			}
+		} else {
+			# Path is not known, so it may not be safe to remove
+			push @unneeded_paths, {path => $path, details => '#Yi{unknown}'};
+		}
+	}
+	# TODO: only returning imported secrets for now, but may want to revisit this
+	return grep {decolorize($_->{details}) =~ /^imported,/} @unneeded_paths;
+}
+
+# }}}
+# _unused_entombed_secrets - find entombed secrets in credhub that are not used by the kit {{{
+sub _unused_entombed_secrets {
+	my ($self, $last_manifest, $type, %opts) = @_;
+
+	my $credhub = $self->env->credhub;
+	my $credhub_prefix = $credhub->base;
+	my @entombed_paths = uniq sort grep {$_ =~ /^genesis-entombed\//} map {s/^$credhub_prefix//r} $credhub->paths();
+
+	return {} unless @entombed_paths;
+
+	# Determine if the last manifest contains entombed secrets
+	if ($type !~ /entombed$/) {
+
+		# All entomed secrets are unused if the last manifest is not an entombed manifest
+		# so we can just return all entombed paths
+		warning(
+			"\nLast deployed manifest is not an entombed manifest - all existing ".
+			"entombed secrets are not being used."
+		);
+		return @entombed_paths;
+	}
+
+	# Get the list of entombed secrets from the last manifest
+	my @used_paths = uniq sort 
+		map {my @result = $_ =~ /\(\((.*?)\)\)/g; @result}
+		grep {$_ && /^\(\(genesis-entombed/}
+		values %{flatten({}, undef, $last_manifest)};
+
+	my ($unused, $used) = compare_arrays(\@entombed_paths, \@used_paths);
+
+	my @unused_paths = ();
+
+	for my $path (@$unused) {
+		my ($root, $key, $sig) = $path =~ m{^genesis-entombed/(.+?)--(.+?)--([a-z0-9]+)$};
+		my $label = "$root:$key ($sig)";
+		$label =~ s/^_\//\//;
+
+		# The following works because any regular expression that doesn't match
+		# will return an empty list, which means only matching paths will be considered
+		# for the replacement signature, thus no need to grep first.
+		my ($replacement) = map {$_ =~ /^genesis-entombed\/$root--$key--([a-z0-9]+)$/} @$used;
+		if ($replacement) {
+			push @unused_paths, {label => $label, path => $path, details => "#Yi{unused,} #Gi{replaced by $replacement}"};
+		} else {
+			push @unused_paths, {label => $label, path => $path, details => "#Yi{unused}"};
+		}
+	}
+	return @unused_paths;
+}
+
+# }}}
+# _invalid_secrets - find secrets that are invalid or problematic {{{
+sub _invalid_secrets {
+	my ($self, $severity, $update_args, %opts) = @_;
+	my @selected_secrets = ();
+	my $label = ($severity eq 'problem')
+			? "invalid or problematic"
+			: "invalid";
+	$self->notify(@$update_args, 'init', action => "[[  - >>determining $label secrets", total => scalar($self->secrets));
+	for my $secret ($self->secrets) {
+		my ($path, $label, $details) = $secret->describe;
+		$self->notify(@$update_args, 'start-item', path => $path, label => $label, details => $details);
+		my ($result, $msg) = $secret->validate_value($self);
+		if ($result eq 'error' || ($result eq 'warn' && $severity eq 'problem')) {
+			$self->notify(@$update_args, 'done-item', result => $result, action => 'validate', msg => $msg) ;
+			push @selected_secrets, $secret;
+		} elsif ($result eq 'missing') {
+			$self->notify(@$update_args, 'done-item', result => $result, action => 'remove') ;
+		} else {
+			$self->notify(@$update_args, 'done-item', result => 'ok', action => 'validate')
+		}
+	}
+	$self->notify(@$update_args, 'notify', indent => "[[  - >>", msg => sprintf("found %s %s secrets", scalar(@selected_secrets), $label));
+	return @selected_secrets;
+}
+
+# }}}
+# _remove_secrets - remove the selected secrets with optional prompting {{{
+sub _remove_secrets {
+	my ($self, $selected_secrets, %opts) = @_;
+
+	my $source = $opts{source} || 'vault';
+	my $base_path = $source eq 'credhub' ? $self->env->credhub->base : $self->store->base;
+
+	my $label = $opts{label} ? $opts{label}.' secret' : 'secret';
+	return ({empty => 1}, "- no ${label} found to remove.\n")
+		unless @$selected_secrets;
+
+	my $header = sprintf(
+		"found %s %s%s",
+		scalar(@$selected_secrets), $label, scalar(@$selected_secrets) == 1 ? '' : 's'
+	);
+	my %secret_label = ();
+	my %secret_desc = ();
+	for my $secret (@$selected_secrets) {
+		if (ref($secret) eq 'HASH') {
+			# Got a hash of secret details
+			my $path_label = $secret->{label} || $secret->{path};
+			my $path = $secret->{path};
+			my $desc = csprintf($secret->{details});
+			$secret_desc{$path} = $desc;
+			$secret_label{$path} = ($path_label =~ /^(.*?):([^: ]*)(?: \((.*)\))?$/)
+				? sprintf("#C{%s}:#c{%s}".($3 ? " (#mi{$3})" : '')." - #i{%s}", $1, $2 , $desc)
+				: sprintf("#C{%s} - #i{%s}", $path_label, $desc);
+
+		} elsif (ref($secret) && $secret->can('all_paths')) {
+			# Got Genesis::Secret object
+			for my $path ($secret->all_paths) {
+				my $desc = $secret->path eq $path ? $secret->describe : $secret->can('format_path') ? $secret->describe('format') : '';
+				$secret_desc{$path} = $desc;
+				$secret_label{$path} = ($path =~ /^(.*?):([^: ]*)(?: \((.*)\))?$/)
+					? sprintf("#C{%s}:#c{%s}".($3 ? " (#mi{$3})" : '')." - #i{%s}", $1, $2 , $desc)
+					: sprintf("#C{%s} - #i{%s}", $path, $desc);
+			}
+
+		} else {
+			# Assume got a secret vault path
+			my $path = $secret;
+			my $desc = '';
+			if ($source eq 'vault') {
+				if (my $secret = $self->secret_at($path)) {
+					$desc = $secret->path eq $path ? $secret->describe : $secret->can('format_path') ? $secret->describe('format') : '';
+				}
+				$desc = "all keys: ".join(", ", keys %{$self->store->get($self->store->base.$path)})
+					if (!$desc && $path !~ /:/);
+			} else {
+				# Credhub - to be implemented
+				bail("Credhub removal not yet implemented");
+			}
+			$secret_desc{$path} = $desc;
+			$secret_label{$path} = ($path =~ /^(.*?):([^:]*)$/)
+				? sprintf("#C{%s}:#c{%s} - #i{%s}", $1, $2, $desc)
+				: sprintf("#C{%s} - #i{%s}", $path, $desc);
+		}
+	}
+	if ($opts{confirm} eq 'all') {
+		my @selected_paths = sort keys %secret_label;
+		my $total = scalar(@selected_paths);
+		my $total_width = length($total);
+		my $msg = sprintf(
+			"%s\n  - will remove %s under path '#c{%s}'",
+			$header, count_nouns($total, $label), $base_path
+		);
+		my $i = 0;
+		for my $path (@selected_paths) {
+			my $label = $secret_label{$path};
+			$msg .= sprintf("\n    [%*s/%s] %s", $total_width, ++$i, $total, $label);
+		}
+		$self->env->notify($msg);
+		warning("\nRemoving secrets cannot be undone!");
+		my $proceed = $self->notify(
+			'remove','inline-prompt',
+			prompt => (' ' x (logger->style eq 'fun' ? 12 : 10))."Type 'yes' to remove ".count_nouns($total, $label),
+			noclear => 1,
+			default => 'no'
+		);
+		info('');
+		return ({abort => 1}, "Quit!\n") if ($proceed ne 'yes');
+	} else {
+		$self->env->notify($header);
+	}
+
+	$self->notify('remove', 'init',
+		secret_label => $label,
+		base_path    => $base_path,
+		total        => scalar(@$selected_secrets),
+		indent       => '[[  - >>'
+	);
+
+	$self->{notification_options}{level} = 'full' if $opts{confirm} eq 'each';
+	for my $secret (@$selected_secrets) {
+		my ($path, $alt_path, $desc, $details);
+		if (ref($secret) eq 'HASH') {
+			$path = $secret->{path};
+			$alt_path = $secret->{alt_path};
+		} elsif (ref($secret) =~ /^Genesis::Secret(::|$)/) {
+			($path, $desc, $details) = $secret->describe;
+		} else {
+			$path = $secret;
+		}
+		$desc //= $secret_desc{$path};
+		$details //= '';
+		$self->notify('remove', 'start-item', path => $alt_path//$path, label => $desc, details => $details);
+		if ($source eq 'credhub') {
+			my $credhub = $self->env->credhub;
+			if (!$credhub->has($path)) {
+				$self->notify('remove', 'done-item', result => 'missing');
+				next;
+			}
+		} elsif (ref($secret) =~ /^Genesis::Secret(::|$)/ && !$secret->has_value) {
+			$self->notify('remove', 'done-item', result => 'missing');
+			next;
+		}
+
+		if ($opts{confirm} eq 'each') {
+			my $confirm = $self->notify('remove', 'inline-prompt', prompt => '#Y{remove} [y/n/q/a]?');
+			if ($confirm eq 'q') {
+				$self->notify('remove', 'done-item', result => 'aborted', secret_label => $label);
+				my $results = $self->notify('remove', 'completed', msg => "$label removed");
+
+				return ({
+					abort => 1,
+					skipped => $self->{__update_notifications__total} - $self->{__update_notifications__idx} + 1 + scalar(@{$self->{__update_notifications__items}{skipped}//[]}),
+					errors => scalar(@{$self->{__update_notifications__items}{error}//[]}),
+					warnings => scalar(@{$self->{__update_notifications__items}{warn}//[]}),
+					ok => scalar(@{$self->{__update_notifications__items}{ok}//[]}),
+				}, "Quit!\n");
+			} elsif ($confirm eq 'a') {
+				$opts{confirm} = 'none';
+			} elsif ($confirm ne 'y') {
+				$self->notify('remove', 'done-item', result => 'skipped');
+				next;
 			}
 		}
 
-		info "%s%s%s [%d %s/".$imported_counts_msg."%d skipped/#%s{%d errors}%s%s]",
-		  $indent,
-			$err_count ? "#R{failed}" : "#G{completed}",
-			pretty_duration(gettimeofday-$self->{__update_notifications__start},0,0,'',' in '),
-			$ok_counts, $actioned, @imported_counts,
-			scalar(@{$self->{__update_notifications__items}{skipped} || []}),
-			$err_color, $err_count,
-			$warn_count ? "/#y{$warn_count warnings}" : '',
-			$missing_count ? "/#B{$missing_count missing}" : '';
-		$err_count += $warn_count
-			if (($opts->{invalid}||0) == 2 || ($opts->{validate}||0) == 2);
-		my $results = {
-			map {($_, scalar(@{$self->{__update_notifications__items}{$_} || []}))} keys %{$self->{__update_notifications__items}}
-		};
-		return wantarray ? ($results,$args{msg}) : !$err_count;
-	} elsif ($state eq 'inline-prompt') {
-		die_unless_controlling_terminal(
-			"Cannot prompt for confirmation to $action secrets outside a controlling ".
-			"terminal.  Use #C{-y|--no-prompt} option to provide confirmation to ".
-			"bypass this limitation."
-		);
-		print "[s\n[u[B[A[s"; # make sure there is room for a newline, then restore and save the current cursor
-		my $response = Genesis::UI::__prompt_for_line($args{prompt}, $args{validation}, $args{err_msg}, $args{default}, !$args{default});
-		print "[u[0K";
-		return $response;
-	} elsif ($state eq 'prompt') {
-		my $title = '';
-		if ($args{class}) {
-			$title = sprintf("\r[2K\n#%s{[%s]} ", $args{class} eq 'warning' ? "Y" : '-', uc($args{class}));
-		}
-		info "%s%s", $title, $args{msg};
-		die_unless_controlling_terminal(
-			"Cannot prompt for confirmation to $action secrets outside a controlling ".
-			"terminal.  Use #C{-y|--no-prompt} option to provide confirmation to ".
-			"bypass this limitation."
-		);
-		return prompt_for_line(undef, $args{prompt}, $args{default} || "");
-	} elsif ($state eq 'notify') {
-		if ($args{nonl}) {
-			info {pending => 1}, "%s%s", $indent, $args{msg};
+		my ($result, $msg, $out, $rc, @command) = ();
+		if ($source eq 'credhub') {
+			# Credhub - to be implemented
+			my $credhub = $self->env->credhub;
+			($out, $rc) = $credhub->delete($path);
+			$out = "" if $out eq "Credential successfully deleted";
+		} elsif (!ref($secret)) {
+			# Raw vault path string
+			@command = ('delete', $self->store->base.$secret);
+			($out, $rc) = $self->store->service->query(@command);
+		} elsif (ref($secret) =~ /^Genesis::Secret(::|$)/) {
+			@command = $secret->get_safe_command_for('remove', %opts);
+			my $cmd_interactive = $secret->is_command_interactive('remove', %opts);
+			bug (
+				"Interactive removal of secrets is not yet supported"
+			) if $cmd_interactive;
+			($out, $rc) = $secret->process_command_output('remove', $self->store->service->query(@command));
 		} else {
-			info "%s%s", $indent, $args{msg};
+			bug "Unknown secret type for removal";
 		}
-	} else {
-		bug "notify encountered an unknown state '$state'";
+
+		if ($rc == '0') {
+			$self->notify('remove', 'done-item', result => 'ok', msg => $out||undef)
+		} else {
+			$self->notify('remove', 'done-item', result => 'error', msg => $out);
+		}
+		last if ($rc);
 	}
+	return $self->notify('remove', 'completed', msg => "$label removed");
 }
 
 # }}}

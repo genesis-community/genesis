@@ -97,17 +97,12 @@ sub deployment {
 # }}}
 # base_manifest - the manifest to use to look data up (ie not entombified)
 sub base_manifest {
-	my $self = shift;
+	my ($self, @args) = @_;
 	my $lookup_type = $self->_memoize(sub {
-		my $self = shift;
-		return 'unredacted' if $self->env->use_create_env;
-		return 'unredacted' unless $self->env->feature_compatibility('3.0.0');
-		return 'unredacted' unless $self->env->lookup('genesis.vaultify', 1);
-		return 'vaultified' if (@{$self->unevaluated(notify => 0)->data->{variables}//[]});
-		return 'unredacted';
+		return $_[0]->env->is_vaultified ? 'vaultified' : 'unredacted';
 	});
 
-	$self->$lookup_type(@_);
+	$self->$lookup_type(@args);
 }
 # }}}
 # reset - reset all stored and cached manifests {{{
@@ -354,7 +349,7 @@ sub vault_paths {
 		$file = $opts{manifest}->file
 	} else {
 		$file = $self->unevaluated(
-			notify=>!$opts{no_notification}
+			notify=>$opts{notify}//1
 		)->file;
 	}
 	pushd $self->env->path;
@@ -478,12 +473,13 @@ sub _adaptive_merge {
 	}
 
 	bail(
-		"Could not merge $self->{name} environment files:\n\n".
-		"$err\n\n".
+		"Could not merge %s environment files:\n\n".
+		"%s\n\n".
 		"Efforts were made to work around resolving the following errors, but if ".
 		"they caused the above errors, you may be able to partially resolve this ".
-		"issue by using #C{export GENESIS_UNEVALED_PARAMS=1}:\n\n".
-		$orig_errors
+		"issue by using #C{export GENESIS_UNEVALED_PARAMS=1}",
+		$self->env->name,
+		$orig_errors || $err
 	) if $rc;
 
 	return (wantarray ? ($out,$orig_errors) : $out)

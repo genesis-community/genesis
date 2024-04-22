@@ -29,7 +29,7 @@ sub new {
 	bug("No '$_' specified in call to Genesis::Env::SecretsStore::Vault->new")
 		for grep {!$opts{$_}} @required_options;
 	bug("Unknown '$_' option specified in call to Genesis::Env::SecretsStore::Vault->new")
-		for grep {my $k = $_; ! grep {$_ eq $k} @valid_options} keys(%opts);
+		for grep {my $k = $_; ! grep {$_ eq $k} @valid_options} CORE::keys(%opts);
 
 	$opts{mount_override}   //= $env->lookup('genesis.secrets_mount');
 	$opts{slug_override}    //= $env->lookup(['genesis.secrets_path','params.vault_prefix','params.vault']);
@@ -105,11 +105,46 @@ sub store_data {
 }
 
 sub store_paths {
-	return keys %{$_[0]->store_data};
+	return CORE::keys %{$_[0]->store_data};
 }
 
 sub clear_data {
 	delete($_[0]->{__data})
+}
+
+sub paths {
+	my $self = shift;
+	return $self->service->paths(@_) unless exists($self->{__data});
+	my @paths = ();
+	my $base = $self->base =~ s/^\///r;
+	for my $path (@_) {
+		if ($path =~ /^$base/) {
+			my $spath = $path =~ s/\/$//r;
+			my @sub_paths = grep {$_ =~ /^\/$spath(\/|$)/} CORE::keys %{$self->{__data}};
+			push(@paths, @sub_paths);
+		} else {
+			#use Pry; pry();
+			# if its not under the store base, then its not in the store
+			push(@paths, $self->service->paths($path));
+		}
+	}
+	return @paths;
+}
+
+sub keys {
+	my $self = shift;
+	return $self->service->keys(@_) unless exists($self->{__data});
+	my @paths = $self->paths(@_);
+	my @keys = ();
+	for my $path (@paths) {
+		my $base = $self->base;
+		if ($path =~ /^$base\//) {
+			push (@keys, CORE::keys %{$self->{__data}{$path}})
+		} else {
+			push (@keys, $self->service->keys($path));
+		}
+	}
+	return @keys;
 }
 
 # }}}
@@ -141,7 +176,7 @@ sub write   {
 			next if exists($secret->value->{$key});
 			$self->service->query('rm', join(":", ($self->path($secret->path),$_)));
 		}	;
-		$self->service->set($self->path($secret->path), $_, $values{$_}) for keys %values;
+		$self->service->set($self->path($secret->path), $_, $values{$_}) for CORE::keys %values;
 	} else {
 		my $key = $secret->default_key//'value';
 		$self->service->set($self->path($secret->path), $key, $secret->value);
@@ -174,6 +209,7 @@ sub fill  {
 	}
 	return;
 }
+
 sub check {
 	my ($self, $secret) = @_;
 	my $ok = $self->get($secret) unless $secret->has_value;
@@ -188,13 +224,18 @@ sub validate {
 
 sub generate {
 	my ($self, $secret) = @_;
-
+	bail "Generate not implemented for Vault store";
 }
 
-sub regenerate {}
+sub regenerate {
+	bail "Regenerate not implemented for Vault store";}
 
-sub remove {}
+sub remove {
+	bail "Remove not implemented for Vault store";
+}
 
-sub remove_all {}
+sub remove_all {
+	bail "Remove_all not implemented for Vault store";
+}
 
 1;

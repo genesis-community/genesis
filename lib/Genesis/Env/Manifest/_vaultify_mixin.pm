@@ -13,7 +13,7 @@ sub get_vault_paths {
 		? (data => $self->{vaultified_data})
 		: ();
 	unless (@vaultify_path_args) {
-		my $data = {%{$self->builder->partial(no_notification => 1)->data}};
+		my $data = {%{$self->builder->partial(notify => 0)->data}};
 		@vaultify_path_args = (data => $data)
 			if $self->vaultify($data);
 	}
@@ -60,7 +60,7 @@ sub vaultify {
 					my $vault_operator = $secret->vault_operator($key);
 					bail("Could not find vault lookup operator") unless $vault_operator;
 					struct_set_value($data,$_,$vault_operator) for @{$vars_map{$var_ref}};
-				} else {
+				} elsif ($var !~ /^\/runtime-config.genesis-entombed\//) {
 					warning("Could not find definition for variable $var - leaving as-is");
 				}
 			} else { # or is it an embedded variable reference (multiple?)

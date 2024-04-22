@@ -15,7 +15,7 @@ sub source_files {
 	(
 		$self->builder->initiation_file(),
 		$self->builder->kit_files(),
-		$self->builder->cloud_config_files(optional => 1),
+		$self->builder->cloud_config_files(optional => 0),
 		$self->builder->environment_files(),
 		$self->builder->conclusion_file()
 	)

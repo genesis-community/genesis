@@ -706,13 +706,17 @@ define_command("remove-secrets", {
 			"List each item as it is processed, not just failures and warnings.",
 
 		'all|A' =>
-			"Remove all secrets under this deployments secrets base path.",
+			"Remove all secrets under this deployments secrets base path in vault.",  # FIXME: what about credhub?
 
 		'invalid|I' =>
 			"Remove any secrets that are invalid",
 
 		'problematic|problem|P' =>
 			"Remove any secrets that are invalid or problematic.",
+
+		'unused|U' =>
+			"Remove any secrets that the kit does not know about, or are in credhub ".
+			"from a pre-vaultified deployment, or are outdated entombed secrets.",
 
 		'no-prompt|y' =>
 			"Don't prompt for confirmation",
