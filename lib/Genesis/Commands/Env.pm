@@ -286,22 +286,38 @@ sub remove_secrets {
 			"Cannot specify secret paths when using the --all option."
 		) if @paths;
 		bail(
-			"Cannot use --invalid, --problematic, or --interactive at the same time as the --all option."
-		) if $options{problematic} || $options{invalid} || $options{interactive};
+			"Cannot use --invalid, --problematic, --interactive or --unused at the same time as the --all option."
+		) if $options{problematic} || $options{invalid} || $options{interactive} || $options{unused};
+	}
+	if ($options{unused}) {
+		bail(
+			"Cannot specify secret paths or filters when using the --unused option."
+		) if @paths;
+		bail(
+			"Cannot use --invalid or --problematic at the same time as the --unused option."
+		) if $options{problematic} || $options{invalid};
 	}
 
 	$options{invalid} = 2 if delete($options{problematic});
+	$options{invalid} = 3 if delete($options{unused});
 	my $env = Genesis::Top
 		->new(".")
 		->load_env($name)
 		->with_vault();
 
 	my ($results, $msg) = $env->remove_secrets(paths => \@paths,%options);
+	$msg ||= "Unused secrets removed" if $options{invalid} == 3;
 
-	bail($msg||"User aborted secrets removal") if $results->{abort};
+	if ($results->{abort}) {
+		if ($options{invalid} == 3 || $options{interactive}) { # -- unused or interactive can be partially aborted
+			bail($msg||"User aborted secrets removal") unless $results->{ok} || $results->{warn} || $results->{error} || $results->{missing};
+		} else {
+			bail($msg||"User aborted secrets removal");
+		}
+	}
 
-	if ($results->{empty}) {
-		$env->notify($msg);
+	if ($results->{empty} && keys %$results == 1) {
+		$env->notify($msg||"No secrets were found to remove");
 		exit 0
 	}
 	if ($results->{error}) {
