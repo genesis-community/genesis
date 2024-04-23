@@ -1045,6 +1045,18 @@ sub _unused_entombed_secrets {
 	return {} unless @entombed_paths;
 
 	# Determine if the last manifest contains entombed secrets
+	if (!defined($type) || $type eq 'unknown') {
+		# We need to do some forensics to determine the last manifest type
+		my $flat_manifest = flatten({}, undef, $last_manifest);
+		if (grep {$_ && /^\(\(genesis-entombed/} values %$flat_manifest) {
+			$type = 'entombed';
+		} elsif ($_ && /^REDACTED$/) {
+			$type = 'redacted';
+		} else {
+			# still unknown
+			$type = 'unknown';
+		}
+	}
 	if ($type !~ /entombed$/) {
 
 		# All entomed secrets are unused if the last manifest is not an entombed manifest

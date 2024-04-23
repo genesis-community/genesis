@@ -844,49 +844,51 @@ sub vault_paths {
 sub last_deployed_manifest {
 	my ($self) = @_;
 
-	# Get exodus data for the last deployed manifest sha1sum and path, and if it
-	# exists, also the manifest contents
-	my $manifest_package = $self->exodus_lookup('manifest',undef);
-	my $manifest_type = $self->exodus_lookup('manifest_type',undef);
-	if ($manifest_package) {
-		if (require MIME::Base64 && require IO::Uncompress::Gunzip) {
-			MIME::Base64->import(qw(decode_base64));
-			my $compressed_data = decode_base64($manifest_package);
-			my $data;
-			use IO::Uncompress::Gunzip qw(gunzip $GunzipError);
-			gunzip(\$compressed_data => \$data) or bail("Error uncompressing manifest: $GunzipError");
-			my $manifest = load_yaml($data);
-			return wantarray ? ($manifest, $manifest_type, 'exodus') : $manifest;
-		}
-		trace(
-			"Could not load MIME::Base64 and/or IO::Uncompress::Gunzip modules, ".
-			"so unable to decode the manifest found in exodus, deferring to file."
-		);
-	}
-	my $manifest_sha1 = $self->exodus_lookup('manifest_sha1',undef);
-	if ($manifest_sha1) {
-		my $manifest_path = $self->path(".genesis/manifests/".$self->name.".yml");
-		if (-f $manifest_path) {
-			my $data = slurp($manifest_path);
-			if (sha1_hex($data) eq $manifest_sha1) {
-				my ($manifest, $rc, $err) = load_yaml($data);
-				if ($rc) {
-					trace("Error loading manifest file %s: %s", $manifest_path, $err);
-					return wantarray ? (undef, undef, 'file', $err) : undef;
-				}
-				return wantarray ? ($manifest, $manifest_type, 'file') : load_yaml($data);
+	return $self->_memoize(sub {
+		# Get exodus data for the last deployed manifest sha1sum and path, and if it
+		# exists, also the manifest contents
+		my $manifest_package = $self->exodus_lookup('manifest',undef);
+		my $manifest_type = $self->exodus_lookup('manifest_type','unknown');
+		if ($manifest_package) {
+			if (require MIME::Base64 && require IO::Uncompress::Gunzip) {
+				MIME::Base64->import(qw(decode_base64));
+				my $compressed_data = decode_base64($manifest_package);
+				my $data;
+				use IO::Uncompress::Gunzip qw(gunzip $GunzipError);
+				gunzip(\$compressed_data => \$data) or bail("Error uncompressing manifest: $GunzipError");
+				my $manifest = load_yaml($data);
+				return wantarray ? ($manifest, $manifest_type, 'exodus') : $manifest;
 			}
 			trace(
-				"Manifest file %s does not match the sha1sum (%s) in exodus, can't use it.",
-				$manifest_path, $manifest_sha1
+				"Could not load MIME::Base64 and/or IO::Uncompress::Gunzip modules, ".
+				"so unable to decode the manifest found in exodus, deferring to file."
 			);
-			return wantarray ? (undef, undef,'file','checksum mismatch') : undef;
 		}
-		trace("Manifest file %s does not exist, can't use it.", $manifest_path);
-		return wantarray ? (undef, undef,'file','not found') : undef;
-	}
-	trace("No manifest data found in exodus, can't use it.");
-	return wantarray ? (undef, undef, 'exodus','not found') : undef;
+		my $manifest_sha1 = $self->exodus_lookup('manifest_sha1',undef);
+		if ($manifest_sha1) {
+			my $manifest_path = $self->path(".genesis/manifests/".$self->name.".yml");
+			if (-f $manifest_path) {
+				my $data = slurp($manifest_path);
+				if (sha1_hex($data) eq $manifest_sha1) {
+					my ($manifest, $rc, $err) = load_yaml($data);
+					if ($rc) {
+						trace("Error loading manifest file %s: %s", $manifest_path, $err);
+						return wantarray ? (undef, undef, 'file', $err) : undef;
+					}
+					return wantarray ? ($manifest, $manifest_type, 'file') : load_yaml($data);
+				}
+				trace(
+					"Manifest file %s does not match the sha1sum (%s) in exodus, can't use it.",
+					$manifest_path, $manifest_sha1
+				);
+				return wantarray ? (undef, undef,'file','checksum mismatch') : undef;
+			}
+			trace("Manifest file %s does not exist, can't use it.", $manifest_path);
+			return wantarray ? (undef, undef,'file','not found') : undef;
+		}
+		trace("No manifest data found in exodus, can't use it.");
+		return wantarray ? (undef, undef, 'exodus','not found') : undef;
+	});
 }
 
 # }}}
@@ -1962,7 +1964,7 @@ sub deploy {
 	my $exodus = $self->exodus;
 
 	$exodus->{manifest_sha1} = digest_file_hex($manifest_file, 'SHA-1');
-	$exodus->{manifest_type} = $self->deployment_manifest_type;
+	$exodus->{manifest_type} = $self->manifest_provider->deployment->redacted->type;
 
 	# Compress and base64 encode the manifest for storage in the vault
 	if (require MIME::Base64 && require IO::Compress::Gzip) {
