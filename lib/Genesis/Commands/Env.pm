@@ -306,8 +306,6 @@ sub remove_secrets {
 		->with_vault();
 
 	my ($results, $msg) = $env->remove_secrets(paths => \@paths,%options);
-	$msg ||= "Unused secrets removed" if $options{invalid} == 3;
-
 	if ($results->{abort}) {
 		if ($options{invalid} == 3 || $options{interactive}) { # -- unused or interactive can be partially aborted
 			bail($msg||"User aborted secrets removal") unless $results->{ok} || $results->{warn} || $results->{error} || $results->{missing};
@@ -326,6 +324,7 @@ sub remove_secrets {
 	}
 
 	my @warnings = ();
+	$msg ||= "unused secrets removed" if $options{invalid} == 3;
 	push(@warnings, 'some removals were skipped') if $results->{skipped};
 	push(@warnings, 'warnings were encountered') if $results->{warn};
 	if ($results->{missing} && !$results->{skipped} && !$results->{ok} && !$results->{warn}) {
