@@ -98,15 +98,16 @@ our @EXPORT = qw/
 sub Init {
 	my $version = shift // $Genesis::VERSION;
 	$Genesis::RC = Genesis::Config->new($ENV{HOME}."/.genesis/config");
+	# FIXME: If command is ping, don't error out, but print validation errors
 	$Genesis::RC->validate({
-		confirm_bosh_target     => { type => 'boolean', default => 1 },
-		oversized_secrets       => { type => 'boolean', default => 0 },
-		legacy_repo_suffix      => { type => 'boolean', default => 0 },
-		deployment_roots        => { type => 'array',   default => [], subtype => 'string' },
-		embedded_genesis        => { type => 'enum',    default => 'ignore', values => [qw/ignore check warn/]},
-		output_style            => { type => 'enum',    default => 'plain', values => [qw/plain fun pointer/]},
-		show_duration           => { type => 'boolean', default => 0 },
-		executable_environments => { type => 'boolean', default => 0 },
+		confirm_bosh_target      => { type => 'boolean', default => 1 },
+		allow_oversized_secrets  => { type => 'boolean', default => 0 },
+		legacy_repo_suffix       => { type => 'boolean', default => 0 },
+		deployment_roots         => { type => 'array',   default => [], subtype => 'string' },
+		embedded_genesis         => { type => 'enum',    default => 'ignore', values => [qw/ignore check warn/]},
+		output_style             => { type => 'enum',    default => 'plain', values => [qw/plain fun pointer/]},
+		show_duration            => { type => 'boolean', default => 0 },
+		executable_environments  => { type => 'boolean', default => 0 },
 		logs => {
 			type => 'array',
 			subtype => 'hash',

@@ -24,6 +24,10 @@ sub new {
 
 		# Options
 		__verbose => exists($opts{verbose}) ? $opts{verbose} : 1,
+
+		# Check if user or repo allows oversized secrets to be ignored
+		__allow_oversized => $Genesis::RC->get('allow_oversized_secrets')
+			|| $env->top->config->get('allow_oversized_secrets' => 0)
 	};
 	return bless($plan, $class)
 }
@@ -243,6 +247,7 @@ sub validate_secrets {
 
 	# TODO: if secret has a credhub var_name and the value in credhub differs, warn
 
+	$opts{allow_oversized} = $self->{__allow_oversized} if $self->{__allow_oversized};
 	$self->notify(@update_args, 'init', total => scalar($self->secrets), indent => '  - ');
 	for my $secret ($self->secrets) {
 		my ($path, $label, $details) = $secret->describe;
