@@ -165,10 +165,10 @@ sub check_value {
 }
 
 sub validate_value {
-	my ($self) = @_;
+	my ($self, $plan, %opts) = @_;
 	my ($check, $check_msg) = $self->check_value();
 	return ($check, $check_msg) unless $check eq 'ok' && $self->can('_validate_value');
-	my ($results, @validations) = $self->_validate_value();
+	my ($results, @validations) = $self->_validate_value(%opts);
 	my $show_all_messages = ! envset("GENESIS_HIDE_PROBLEMATIC_SECRETS");
 	my %priority = ('error' => 0, 'warn' => 1, 'ok' => 2);
 	my @results_levels =
