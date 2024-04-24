@@ -468,24 +468,27 @@ sub bosh {
 		} elsif (get_options->{parent}) {
 			$target = 'parent'
 		} else {
-			bail(
-				"Environment #C{%s} is a BOSH director deployed by another BOSH ".
-				"director.  You must specify either #y{--self} or #y{--parent} option ".
-				"to target it or its deploying director respectively.",
-				$env->name
-			) unless in_controlling_terminal;
+			$target = $Genesis::RC->get('default_bosh_target' => 'ask');
+			if ($target eq 'ask') {
+				bail(
+					"Environment #C{%s} is a BOSH director deployed by another BOSH ".
+					"director.  You must specify either #y{--self} or #y{--parent} option ".
+					"to target it or its deploying director respectively.",
+					$env->name
+				) unless in_controlling_terminal;
 
-			my $self_name = $env->name;
-			my $parent_name = $env->lookup('genesis.bosh_env');
-			$target = prompt_for_choice(
-				"Which BOSH director do you want to target?",
-				['self', 'parent'],
-				'self',
-				[
-					"#C{$self_name}: this environment",
-					"#C{$parent_name}: the BOSH director that deployed this environment"
-				]
-			);
+				my $self_name = $env->name;
+				my $parent_name = $env->lookup('genesis.bosh_env');
+				$target = prompt_for_choice(
+					"Which BOSH director do you want to target?",
+					['self', 'parent'],
+					'self',
+					[
+						"#C{$self_name}: this environment",
+						"#C{$parent_name}: the BOSH director that deployed this environment"
+					]
+				);
+			}
 		}
 	} elsif (get_options->{self} || get_options->{parent}) {
 		if ($env->use_create_env) {
