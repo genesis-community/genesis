@@ -186,7 +186,7 @@ sub attach {
 			);
 		}
 	}
-	return $targets[0]->connect_and_validate;
+	return $targets[0]->connect_and_validate($opts{silent});
 }
 
 # }}}
@@ -230,12 +230,12 @@ sub find {
 
 # connect_and_validate - connect to the vault and validate that its connected {{{
 sub connect_and_validate {
-	my ($self) = @_;
+	my ($self, $silent) = @_;
 	unless ($self->is_current) {
 		my $log_id = info({pending => 1, delay => 2000 }, # don't show for 2 seconds (NYI)
 			"\n#yi{Verifying availability of vault '%s' (%s)...}",
 			$self->name, $self->url
-		) unless in_callback || under_test;
+		) unless in_callback || under_test || $silent;
 		my $status = $self->status;
 		if ($status eq 'unauthenticated') {
 			$self->authenticate;
@@ -259,11 +259,11 @@ sub connect_and_validate {
 		#  Motive:  Don't print out the vault test if it quickly comes back, but
 		#  if it takes a long time, let user's know what its trying to do...
 		#
-		info ("#%s{%s}\n", $status eq "ok"?"G":"R", $status)
-			unless in_callback || under_test;
+		info ("#%s{%s}", $status eq "ok"?"G":"R", $status)
+			unless in_callback || under_test || $silent;
 		debug "Vault status: $status";
 		bail("Could not connect to vault%s",
-			(in_callback || under_test) ? sprintf(" '%s' (%s): status is %s)", $self->name, $self->url,$status):""
+			(in_callback || under_test || $silent) ? sprintf(" '%s' (%s): status is %s)", $self->name, $self->url,$status):""
 		) unless $status eq "ok";
 	}
 	return $self->set_as_current;

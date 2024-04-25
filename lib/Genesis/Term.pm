@@ -25,7 +25,19 @@ our @EXPORT = qw/
 	process_markdown_block
 	render_markdown
 	elipses
+	$ansi_reset_line
+	$ansi_cursor_up
+	$ansi_cursor_down
+	$ansi_hide_cursor
+	$ansi_show_cursor
 /;
+
+# ANSI control sequences
+our $ansi_reset_line = "\r\e[2K";
+our $ansi_cursor_up = "\e[A";
+our $ansi_cursor_down = "\e[B";
+our $ansi_hide_cursor = "\e[?25l";
+our $ansi_show_cursor = "\e[?25h";
 
 my $has_tput = $ENV{TERM} ? undef : 0; # tput doesn't work if $TERM isn't defined
 sub terminal_width {

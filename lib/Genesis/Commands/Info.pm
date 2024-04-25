@@ -2,6 +2,9 @@ package Genesis::Commands::Info;
 
 use strict;
 use warnings;
+use feature 'state';
+no warnings 'utf8';
+use utf8;
 
 use Genesis;
 use Genesis::State;
@@ -9,8 +12,9 @@ use Genesis::Term;
 use Genesis::Commands;
 use Genesis::Top;
 
-use Cwd      qw/getcwd abs_path/;
-use JSON::PP qw/encode_json/;
+use Cwd            qw/getcwd abs_path/;
+use File::Basename qw/basename/;
+use JSON::PP       qw/encode_json/;
 
 sub information {
 	# TODO: Make use of terminal_width and wrap to make this look better
@@ -214,7 +218,6 @@ sub vault_paths {
 	output "$msg\n";
 }
 
-
 sub kit_manual {
 	my ($name) = @_;
 	my $top = Genesis::Top->new('.');
@@ -261,5 +264,140 @@ sub kit_manual {
 	error "#Y{%s} has no MANUAL.md", $kit->id;
 	exit 1;
 }
+
+# List all environments known to Genesis under the deployment_roots.  This
+# will display the following properties for each environment:
+# - Root path
+# - Environment name
+# - Environment kit type and version
+# - Last deployment date
+#
+# TODO: Add a flag for verbose mode that will display significantly more
+# detailed information about each environment - TBD
+# TODO: Add a flag for filtering environments by kit type
+# TODO: Add a flag to mass check secrets in all environments
+sub environments {
+
+	my $group_by = get_options->{group_by_env} ? 'env' : 'kit';
+	#preemptively check that vault is available
+	
+	# Get the list of deployment roots
+	my @roots = map {
+		abs_path($_) eq abs_path('.') ? '.' : abs_path($_)
+	} @{$Genesis::RC->get(deployment_roots => [])};
+
+	push @roots, '.' unless in_array('.', @roots);
+
+	for my $root (@roots) {
+		# Find all deployments under each root
+		my @repos = map {s{/.genesis/config$}{}; $_} glob("$root/*/.genesis/config");
+		if (scalar @repos) {
+			$root =~ s{/?$}{/};
+			info "\nDeployment root #C{%s} contains the following:", humanize_path($root) =~ s{/?$}{/}r;
+			info $ansi_hide_cursor if $group_by eq 'env';
+			my %deployments_by_name;
+			my ($i,$j) = (0,0);
+			for my $repo (@repos) {
+				__processing($i, scalar(@repos), $j) if ($group_by eq 'env');
+				my $top = Genesis::Top->new($repo, silent_vault_check => 1);
+				my $repo_label = basename($top->path);
+				my @envs = $top->envs; # Do the heavy lifting to determine which files are environments
+				__processing(++$i, scalar(@repos), $j) if ($group_by eq 'env');
+
+				if (scalar(@envs)) {
+					info "\n[[  >>#u{Environments under repo }#mu{%s}#u{:}", $repo_label if ($group_by eq 'kit');
+					for my $env (@envs) {
+						my $exodus = $env->exodus_lookup('.',{});
+						my $env_info = {
+							name => $env->name,
+							kit => $env->kit->id,
+							type => $env->type,
+							kit_version => $env->kit->version,
+							is_director => $env->is_bosh_director,
+							bosh_env => $exodus->{bosh},
+							path => $repo_label,
+						};
+						if ($exodus->{dated}) {
+							$env_info->{last_deployed} = $exodus->{dated};
+							$env_info->{last_deployed_by} = $exodus->{deployer};
+							$env_info->{last_kit} = $exodus->{kit_name}.'/'.$exodus->{kit_version}.($exodus->{kit_is_dev} ? ' (dev)' : '');
+						}
+						push @{$deployments_by_name{$env_info->{name}}}, $env_info;
+
+						if ($group_by eq 'kit') {
+							my $msg = sprintf(
+								"[[    #c{%s}: >>#m{%s}",
+								$env_info->{name},
+								$env_info->{kit}
+							);
+							if ($env_info->{last_deployed}) {
+								$msg .= sprintf(
+									" - deployed #yi{%s}by #G{%s} %s",
+									$env_info->{bosh_env} && $env_info->{bosh_env} ne $env_info->{name} ? "on BOSH $env_info->{bosh_env} " : '',
+									$env_info->{last_deployed_by},
+									strfuzzytime($env_info->{last_deployed}),
+								);
+								$msg .= " using kit #Y{$env_info->{last_kit}} #y\@{!}"
+									if ($env_info->{last_kit} ne $env_info->{kit});
+							} else {
+								$msg .= " - #Y{never deployed}";
+							}
+							info $msg;
+						} else {
+							__processing($i, scalar(@repos), ++$j);
+						}
+					}
+				}
+			}
+			if ($group_by eq 'env') {
+				info {pending => 1}, $ansi_reset_line.$ansi_cursor_up.$ansi_show_cursor;
+				for my $env_name (sort keys %deployments_by_name) {
+					info "\n[[  >>#u{Environment }#cu{%s}#u{:}", $env_name;
+					for my $env_info (@{$deployments_by_name{$env_name}}) {
+						my $type = $env_info->{is_director} ? '#R{BOSH director}' : '#G{'.$env_info->{type}.' deployment}';
+						my $msg = sprintf(
+							"[[    $type#yi{%s}: >>#m{%s}",
+							$env_info->{type} eq $env_info->{path} ? '' : ' (in '.$env_info->{path}.')',
+							$env_info->{kit}
+						);
+						if ($env_info->{last_deployed}) {
+							$msg .= sprintf(
+								" - deployed #yi{%s}by #G{%s} %s",
+								$env_info->{bosh_env} && $env_info->{bosh_env} ne $env_info->{name} ? "on BOSH $env_info->{bosh_env} " : '',
+								$env_info->{last_deployed_by},
+								strfuzzytime($env_info->{last_deployed}),
+							);
+							$msg .= " using kit #Y{$env_info->{last_kit}} #y\@{!}"
+								if ($env_info->{last_kit} ne $env_info->{kit});
+						} else {
+							$msg .= " - #r{never deployed}";
+						}
+						info $msg;
+					}
+				}
+			}
+		} elsif ($root ne '.') {
+			warning("\nNo environments found under deployment root #C{%s}\n", $root);
+		}
+	}
+	info '';
+}
+
+sub __processing {
+	my ($block, $total, $strobe, $strobe_size) = @_;
+	$strobe_size ||= 7;
+	my $percent = $block / $total;
+	my $strobe_swing = $strobe_size - 1;
+	my $strobe_pos = ($strobe_swing) - abs(($strobe % ($strobe_swing*2)) - $strobe_swing);
+	my $strobe_char = $ENV{GENESIS_NO_UTF8} ? "*" : "\x{25FC}";
+	info(
+		{pending => 1, raw => 1},
+		$ansi_reset_line."  Processing: %3d%%: [%s ]",
+		$percent * 100,
+		join('', map { csprintf("#%s{%s}", $_ == $strobe_pos ? "Y" : "K", $strobe_char)} 0..$strobe_swing)
+	);
+
+}
+
 
 1;

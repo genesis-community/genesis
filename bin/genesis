@@ -13,6 +13,9 @@ BEGIN {
 $SIG{ __DIE__ } = sub {require Carp; $Carp::Verbose=1;  Carp::confess(@_) }
 	if ($ENV{GENESIS_DEV_MODE});
 $SIG{INT} = $SIG{TERM} = sub {print STDERR "\n";bail("Genesis halted due to user interrupt (Ctrl-C)")};
+END {
+	print "\e[?25h"; # Restore cursor in case it was hidden
+};
 
 # core modules
 
@@ -554,6 +557,27 @@ define_command("kit-manual", {
 			"Print the raw manual instead of rendering it in markdown."
 	],
 	no_vault => 1
+});
+
+# }}}
+# genesis environments - list the environments in the known deployment repositories {{{
+define_command("environments", {
+	summary => "List the environments in the known deployment repositories.",
+	usage => "environments",
+	alias => 'envs',
+	description =>
+		"List the environments in the known deployment repositories, along with ".
+		"the path to the environment file, the kit used, and the last deployment ".
+		"status.",
+	function_group => Genesis::Commands::INFO,
+	scope => 'all',
+	option_group => Genesis::Commands::REPO_OPTIONS,
+	options => [
+		'group_by_env|G' =>
+			"Group the environments by the environment name, rather than by the ".
+			"kit repository."
+	],
+	no_vault => 0
 });
 
 # }}}

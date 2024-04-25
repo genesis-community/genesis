@@ -42,7 +42,7 @@ sub new {
 		$top->set_vault(target => $opts{vault}, session_only => 1);
 		#}
 	}
-	if ($top->vault()) {
+	if ($top->vault(silent => $opts{silent_vault_check})) {
 		$ENV{GENESIS_TARGET_VAULT} = $ENV{SAFE_TARGET} = $top->vault->name;
 	} elsif (!$ENV{GENESIS_NO_VAULT}) {
 		debug {label => "WARNING"}, "Could not find any #M{safe} target.  This may cause consequences later on";
@@ -298,7 +298,8 @@ sub kit_provider_info {
 # Secrets provider handling
 # vault - initialize connectivity to the vault specified by the secrets provider {{{
 sub vault {
-	my $ref = $_[0]->_memoize(sub {
+	my ($self, %opts) = @_;
+	my $ref = $self->_memoize(sub {
 		return Service::Vault::None->new() if ($ENV{GENESIS_NO_VAULT});
 		my ($self) = @_;
 		if (in_callback && $ENV{GENESIS_TARGET_VAULT}) {
@@ -308,14 +309,15 @@ sub vault {
 			my $strongbox = $self->config->get("secrets_provider.strongbox");
 			my %attach_opts = (
 				url    => $self->config->get("secrets_provider.url"),
-				verify => $self->config->get("secrets_provider.insecure") ? 0 : 1
+				verify => $self->config->get("secrets_provider.insecure") ? 0 : 1,
+				silent => $opts{silent}
 			);
 			$attach_opts{namespace} = $namespace if defined($namespace);
 			$attach_opts{strongbox} = ($strongbox ? 1: 0) if defined($strongbox);
 			return Service::Vault::Remote->attach(%attach_opts);
 		} else {
 			my $vault = Service::Vault::default;
-			$vault->connect_and_validate()->ref_by_name() if $vault;
+			$vault->connect_and_validate($opts{silent})->ref_by_name() if $vault;
 			return $vault;
 		}
 	});
@@ -541,6 +543,31 @@ sub has_dev_kit {
 # }}}
 
 # Environment handling
+# envs - return a list of the environments in the repo {{{
+sub envs {
+	my ($self) = @_;
+
+	my $root_path = $self->path();
+	my @envs;
+	my @candidates =
+		grep {! scalar(Genesis::Env::_env_name_errors($_))} # only pick envs with valid names
+		map {s{^$root_path/}{}r}                            # strip the root path
+		map {s{.yml$}{}r}                                   # strip the .yml extension
+		glob($self->path("*.yml"));
+
+	foreach my $env (@candidates) {
+		my $yaml_src;
+		eval {$yaml_src = slurp($self->path("$env.yml"))};
+		next if $@;
+
+		my @env_names = $yaml_src =~ /^genesis:\r?\n\r?  (?:.*\r?\n\r?  )*env:\s+([^\s]*)/mg;
+		next unless scalar(@env_names) == 1;
+		next unless $env_names[-1] eq $env;
+		push @envs, $self->load_env($env);
+	}
+	return @envs;
+}
+# }}}
 # load_env - return a Genesis::Env object for the specified environment in the repo {{{
 sub load_env {
 	my ($self, $name) = @_;
