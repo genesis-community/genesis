@@ -202,10 +202,22 @@ sub prompt_for_choices {
 	return \@ll;
 
 }
+
+# This is a wrapper around prompt_for_choice that allows for multiple selections
+# to be made.  It will return an arrayref of the selected choices.
+# The $min and $max parameters are optional, and will default to 0 and the
+# number of choices, respectively.
+# The $labels parameter is also optional, and will default to the choices
+# themselves.
+# The $err_msg parameter is optional, and will default to a generic error
+# message.
+# The $object_description parameter is optional, and will default to "choice".
+#
 sub prompt_for_choice {
-	my ($prompt, $choices, $default, $labels, $err_msg) = @_;
+	my ($prompt, $choices, $default, $labels, $err_msg, $object_description) = @_;
 
 	my $default_choice;
+	my $object = $object_description//"choice";
 	my $num_choices = scalar(@{$choices});
 	print csprintf("%s","\n$prompt");
 	for my $i (0 .. $#$choices) {
@@ -218,12 +230,12 @@ sub prompt_for_choice {
 	}
 	print "\n\n";
 	my $c = __prompt_for_line(
-		"Select choice",
+		"Select $object",
 		"1-$num_choices",
 		$err_msg || "enter a number between 1 and $num_choices",
 		$default_choice);
 
-	print(csprintf("\033[1ASelect choice > #C{%s}\n", (ref($labels) eq 'ARRAY' &&  $labels->[$c-1]) ? (ref($labels->[$c-1]) eq 'ARRAY' ? $labels->[$c-1][1] : $labels->[$c-1]) : $choices->[$c-1]));
+	print(csprintf("\033[1ASelect $object > #C{%s}\n", (ref($labels) eq 'ARRAY' &&  $labels->[$c-1]) ? (ref($labels->[$c-1]) eq 'ARRAY' ? $labels->[$c-1][1] : $labels->[$c-1]) : $choices->[$c-1]));
 	return $choices->[$c-1];
 }
 

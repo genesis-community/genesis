@@ -1494,6 +1494,22 @@ sub main {
 	my $no_warn = 1;
 	my $path = '';
 	$ENV{GENESIS_PREFIX_TYPE}="none";
+
+	if ($_[0] =~ /^@/) {
+		# @-notation for specifying environment
+		my $pattern = shift;
+		my ($env_pattern,$type_pattern) = $pattern =~ /^@([^:]*)(?::(.*))?$/;
+		bail(
+			'Invalid file search specifies - expecting @[<deployment-match>/]<env-match> or @<deployment-match>/'
+		) unless $type_pattern || $env_pattern;
+		$ENV{GENESIS_PREFIX_TYPE} = "search";
+		$ENV{GENESIS_PREFIX_SEARCH} = $pattern;
+		require Genesis::Env;
+		my $director_target;
+		if ($env_pattern) {
+			($director_target, $path) = Genesis::Env->search_for_env_file($env_pattern, $type_pattern);
+		}
+	}
 	while (@_ > 0) {
 		my $arg = shift @_;
 
@@ -1511,13 +1527,17 @@ sub main {
 		if ($cmd || $arg =~ m/^-+/) {
 			if ($arg eq '-C') {
 				bail(
-					"#R{[ERROR]} Cannot specify -C after environment name when using prefix style calls\n"
+					"Cannot specify -C after environment name when using prefix style calls\n"
 				) if ($ENV{GENESIS_PREFIX_TYPE} =~ /file$/ );
 				$path = shift @_;
 				$ENV{GENESIS_PREFIX_TYPE} = "option_c"
 			} else {
 				push @args, $arg;
 			}
+		} elsif ($arg =~ /^@/) {
+			bail(
+				"Must use @-notation before the Genesis subcommand."
+			);
 		} else {
 			if (has_command($arg) || $arg eq 'help') {
 				# argument matches a command (or alias) -- assume its a command

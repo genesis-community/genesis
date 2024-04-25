@@ -72,6 +72,9 @@ sub load {
 		)) unless -f $env->path($env->{file});
 		last if @errors;
 
+		$env->notify("Using environment file #M{%s}", humanize_path($env->path($env->{file})))
+			if $ENV{GENESIS_PREFIX_TYPE} eq "search";
+
 		push(@errors, "#ci{kit.subkits} has been superceeded by #ci{kit.features}")
 			if $env->defines('kit.subkits');
 
@@ -418,6 +421,59 @@ sub exists {
 }
 
 #}}}
+# search_for_env_file - search for an environment file in known deployment root(s) {{{
+sub search_for_env_file {
+	my ($class, $env, $deployment) = @_;
+	my $label = '@'.($env//'').($deployment ? ":$deployment" : '');
+	my $director_target = defined($deployment) ? 'parent' : 'self';
+	my @files;
+	my @roots =
+		(exists($ENV{GENESIS_DEPLOYMENT_ROOTS}))
+		? (split(/:/,$ENV{GENESIS_DEPLOYMENT_ROOTS}))
+		: @{$Genesis::RC->get(deployment_roots => [])};
+	push @roots, $ENV{GENESIS_ORIGINATING_DIR};
+	$env = "*$env*" =~ s/\*\^//r =~ s/\$\*//r;
+	$deployment = "*$deployment*" =~ s/\*\^//r =~ s/\$\*//r if defined($deployment);
+
+	for my $root (@roots) {
+		my @deployments = map {s{/\.genesis/config$}{}r}
+			glob("$root/".($deployment//'*')."/.genesis/config"); # Only include genesis repos
+		next unless @deployments;
+		if (defined $deployment) {
+			push @files, glob("$_/$env.yml") for @deployments;
+		} else {
+			push @files, glob("$_/$env.yml")
+				for (grep { /\/bosh(-deployment)?$/ } @deployments);
+		}
+	}
+
+	if (scalar(@files) > 1) {
+		bail(
+			"Ambiguous environment name: #C{%s} matches multiple files:\n  - %s\n\n".
+			"Please refine your match criteria.",
+			$label, join("\n  - ", @files)
+		) unless in_controlling_terminal;
+
+		$files[0] = prompt_for_choice(
+			csprintf(
+				"Multiple environment files found matching #C{$label}:"
+			),
+			[@files, 'none'],
+			$files[0],
+			[(
+					map {m{(.*?)/([^/]*)/([^/]*)\.yml}; csprintf("#C{%s}/#c{%s}/#m{%s}", $1, $2, $3)}
+					map {humanize_path($_)}
+					@files
+				), csprintf('#R{None of these - cancel}')
+			],
+			undef,
+			"the desired environment file"
+		);
+		output({stderr=>1}, "");
+		bail("No environment file selected.") if $files[0] eq 'none';
+	}
+	return ($director_target, $files[0]);
+}
 #}}}
 
 ### Private Class Methods {{{
