@@ -16,16 +16,17 @@ use Time::Piece;
 use_ok 'Genesis';
 use_ok 'Genesis::State';
 use_ok 'Genesis::Log';
+
 use Genesis::Log; # use_ok fails to import $Logger;
 use Cwd ();
 my $start_dir = Cwd::getcwd;
 subtest 'bug reporting utilities' => sub {
-	local $Genesis::VERSION = '2.6.0';
+	local $Genesis::VERSION = '3.0.0';
 	quietly {
 		throws_ok { bug("an example bug"); } qr{
-				an \s+ example \s+ bug.*
-				a \s+ bug \s+ in \s+ Genesis.*
-			}six, "bug() reports all the necessary details";
+		an \s+ example \s+ bug.*
+		a \s+ bug \s+ in \s+ Genesis.*
+		}six, "bug() reports all the necessary details";
 	};
 
 	local $ENV{GENESIS_IGNORE_EVAL}=1;
