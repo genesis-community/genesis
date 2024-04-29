@@ -28,6 +28,7 @@ fake_bosh;
 
 $ENV{GENESIS_CALLBACK_BIN} ||= abs_path('bin/genesis');
 $ENV{GENESIS_LIB} ||= abs_path('lib');
+$ENV{GENESIS_OUTPUT_COLUMNS}=80;
 
 subtest 'new() validation' => sub {
 	quietly { throws_ok { Genesis::Env->new() }
@@ -281,9 +282,13 @@ EOF
 
 	my $env;
 	$ENV{NOCOLOR}=1;
-	quietly { throws_ok { $top->load_env('enoent');   } qr/enoent.yml\n\s+does not exist/; };
+	$ENV{GENESIS_OUTPUT_COLUMNS}=200;
+	quietly {
+		throws_ok { $top->load_env('enoent');   } qr/enoent.yml does not exist/;
+	};
 	quietly { throws_ok { $top->load_env('e-no-ent'); } qr/does not exist/; };
 
+	$ENV{GENESIS_OUTPUT_COLUMNS}=80;
 	lives_ok { $env = $top->load_env('standalone') }
 	         "Genesis::Env should be able to load the `standalone' environment.";
 
