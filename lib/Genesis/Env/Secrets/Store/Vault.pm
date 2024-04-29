@@ -149,14 +149,28 @@ sub keys {
 
 # }}}
 
+sub exists {
+	my ($self, $secret) = @_;
+	my ($path,$key) = split /:/, $secret->full_path, 2;
+	$key = $secret->default_key unless defined($key);
+	return $self->service->has($path, $key);
+}
+
 sub read   {
 	my ($self, $secret) = @_;
 	my $path = $secret->path;
 	$path .= ":".$secret->default_key if $secret->default_key;
-	$secret->set_value($self->service->get($self->path($path)));
+	my $value = $self->service->has($self->path($path)) 
+		? $self->service->get($self->path($path))
+		: undef;
+	$secret->set_value($value, loaded => 1);
+
 	if ($secret->can('format_path') && (my $format_path = $secret->format_path)) {
 		my $format_path = $secret->format_path;
-		secret->set_format_value($self->service->get($self->path($format_path)));
+		my $fmt_value = $self->service->has($self->path($format_path))
+			? $self->service->get($self->path($format_path))
+			: undef;
+		$secret->set_format_value($fmt_value);
 	}
 	$secret->promote_value_to_stored();
 	return $secret;

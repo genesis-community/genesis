@@ -196,6 +196,7 @@ sub bail {
 	# log a fatal message and exit
 	my $rc = delete($options->{exitcode}) // 1;
 	logger->fatal({offset=>1},$options, "\n".$msg);
+	print STDERR $ansi_show_cursor; # restore cursor visibility, just in case
 	exit $rc;
 }
 
@@ -228,6 +229,7 @@ sub bug {
 	if ($^S && !envset("GENESIS_IGNORE_EVAL")) {
 		# die if in an eval;
 		logger->trace("Bug caught: $msg");
+		print STDERR $ansi_show_cursor; # restore cursor visibility, just in case
 		die "\n".csprintf("%s",wrap($msg,terminal_width,"#r{[FATAL]} ")."\n\n");
 	}
 
@@ -236,6 +238,7 @@ sub bug {
 
 	my $rc = delete($options->{exitcode}) // 1;
 	logger->fatal({offset=>1, show_stack => 'none'},$options, "\n".$msg."\n");
+	print STDERR $ansi_show_cursor; # restore cursor visibility, just in case
 	exit $rc;
 }
 
@@ -1063,13 +1066,17 @@ sub pretty_duration {
 my $pluralize_exceptions = {
 };
 sub count_nouns {
-	my ($count, $noun) = @_;
-	return "$count $noun" if $count == 1;
-	return "$count ".$pluralize_exceptions->{$noun} if $pluralize_exceptions->{$noun};
-	return "$count ${noun}es" if $noun =~ /(ch|sh|x|ss)$/; # we will not be counting oxen...
-	return "$count ${noun}$1es" if $noun =~ /[aeiou]([sz])$/;
-	return "$count ${1}ies" if $noun =~ /^(.*[^aeiou])y$/;
-	return "$count ${noun}s";
+	my ($count, $noun, %opts) = @_;
+	my $value = defined $opts{prefix}
+		? $opts{prefix}[($count == 1) ? 0 : 1] . ' '
+		: '';
+	$value .= "$count " unless $opts{suppress_count};
+	return "$value$noun" if $count == 1;
+	return "$value".$pluralize_exceptions->{$noun} if $pluralize_exceptions->{$noun};
+	return "$value${noun}es" if $noun =~ /(ch|sh|x|ss)$/; # we will not be counting oxen...
+	return "$value${noun}$1es" if $noun =~ /[aeiou]([sz])$/;
+	return "$value${1}ies" if $noun =~ /^(.*[^aeiou])y$/;
+	return "$value${noun}s";
 }
 
 1;

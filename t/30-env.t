@@ -13,6 +13,9 @@ use Test::Output;
 use Test::Differences;
 use Cwd qw/cwd abs_path/;
 
+use_ok 'Genesis::Config';
+$Genesis::RC = Genesis::Config->new("$ENV{HOME}/.genesis/config");
+
 use_ok 'Genesis::Env';
 use Service::BOSH;
 use Genesis::Top;
@@ -929,6 +932,8 @@ EOF
 				use_create_env => 0,
 				vault_base => "/secret/standalone/thing",
 				version => '(development)',
+				manifest => ignore,
+				manifest_type => 'redacted',
 				manifest_sha1 => $sha1,
 				'hello.world' => 'i see you',
 				'multilevel.arrays[0]' => 'so',
@@ -952,6 +957,8 @@ EOF
 				features => '',
 				vault_base => "/secret/standalone/thing",
 				version => '(development)',
+				manifest => ignore,
+				manifest_type => 'redacted',
 				manifest_sha1 => $sha1,
 				hello => {
 					world => 'i see you'
@@ -982,6 +989,9 @@ subtest 'bosh variables' => sub {
 	Service::Vault->clear_all();
 	Service::BOSH->set_command($ENV{GENESIS_BOSH_COMMAND});
 	my $top = Genesis::Top->create(workdir, 'thing', vault=>$VAULT_URL)->link_dev_kit('t/src/fancy');
+  pushd $top->path;
+  local $ENV{GENESIS_VERSION} = '3.0.0-rc.10';
+  local $Genesis::VERSION = '3.0.0-rc.10';
 	put_file $top->path("standalone.yml"), <<EOF;
 ---
 kit:
@@ -997,6 +1007,7 @@ bosh-variables:
 
 genesis:
   env: standalone
+  min_version: 3.0.0-rc.1
 
 params:
   extras:
@@ -1037,11 +1048,14 @@ deployment_name: standalone-thing
 something: valueable
 EOF
 
+  popd;
 	teardown_vault();
 };
 
 subtest 'new env and check' => sub{
 	local $ENV{GENESIS_BOSH_COMMAND};
+  local $ENV{GENESIS_VERSION} = '3.0.0-rc.10';
+  local $Genesis::VERSION = '3.0.0-rc.10';
 	my $vault_target = vault_ok;
 	Service::Vault->clear_all();
 
@@ -1049,6 +1063,7 @@ subtest 'new env and check' => sub{
 	write_bosh_config $name;
 	my $top = Genesis::Top->create(workdir, 'sample', vault=>$VAULT_URL);
 	my $kit = $top->link_dev_kit('t/src/creator')->local_kit_version('dev');
+  pushd $top->path;
 	mkfile_or_fail $top->path("pre-existing.yml"), "I'm already here";
 
 	# create the environment
@@ -1066,6 +1081,7 @@ subtest 'new env and check' => sub{
 	Service::BOSH->set_command($ENV{GENESIS_BOSH_COMMAND});
 	my $out;
 	lives_ok {
+    local $ENV{GENESIS_MIN_VERSION} = '3.0.0-rc.1';
 		$out = combined_from {$env = $top->create_env($name, $kit, vault => $vault_target)}
 	} "successfully create an env with a dev kit";
 
@@ -1076,7 +1092,6 @@ subtest 'new env and check' => sub{
 [far-fetched/sample] processing secrets descriptions...
   - using kit Sample Kit/in-development (dev)
   - fetching secret definitions from kit defintion file ... found 10
-  - fetching secret definitions from manifest variables block ... found 0
   - processed 10 secret definitions [1 rsa/4 random/1 ssh/4 x509]
 
 [far-fetched/sample] adding missing environment secrets...
@@ -1107,6 +1122,7 @@ kit:
 genesis:
   env:            $name
   vault:          $VAULT_URL as $vault_target no-strongbox
+  min_version:    3.0.0-rc.1
 
 params:
   static: junk
@@ -1168,6 +1184,7 @@ EOF
     failed [8 found/0 skipped/2 errors]
 EOF
 
+  popd;
 	$director1->stop();
 	teardown_vault();
 };
@@ -1175,6 +1192,8 @@ EOF
 subtest 'env_kit_overrides' => sub {
 	local $ENV{GENESIS_BOSH_COMMAND};
 	local $ENV{GENESIS_OUTPUT_COLUMNS}=120;
+  local $ENV{GENESIS_VERSION} = '3.0.0';
+  local $Genesis::VERSION = '3.0.0';
 	fake_bosh;
 
 	my ($director1) = fake_bosh_directors(
@@ -1184,6 +1203,7 @@ subtest 'env_kit_overrides' => sub {
 	Service::Vault->clear_all();
 	Service::BOSH->set_command($ENV{GENESIS_BOSH_COMMAND});
 	my $top = Genesis::Top->create(workdir, 'thing', vault=>$VAULT_URL)->link_dev_kit('t/src/creator');
+  pushd $top->path;
 	put_file $top->path("standalone.yml"), <<EOF; # Direct YAML
 ---
 kit:
@@ -1208,7 +1228,8 @@ kit:
           token: random 48 allowed-chars ABCDEF0123456789 # Update
 
 genesis:
-  env: standalone
+  env:         standalone
+  min_version: 3.0.0-rc.1
 
 params:
   extras:
@@ -1256,7 +1277,6 @@ EOF
 [standalone/thing] processing secrets descriptions...
   - using kit Sample Kit/in-development (dev)
   - fetching secret definitions from kit defintion file ... found 10
-  - fetching secret definitions from manifest variables block ... found 0
   - processed 10 secret definitions [1 rsa/5 random/1 ssh/3 x509]
 
 [standalone/thing] adding missing environment secrets...
@@ -1440,7 +1460,6 @@ EOF
 [c-env/thing] processing secrets descriptions...
   - using kit Sample Kit/in-development (dev)
   - fetching secret definitions from kit defintion file ... found 16
-  - fetching secret definitions from manifest variables block ... found 0
   - processed 16 secret definitions [1 rsa/6 random/1 ssh/2 userprovided/6 x509]
 
 [c-env/thing] adding missing environment secrets...
@@ -1560,12 +1579,15 @@ EOF
 
     completed [16 validated/0 skipped/0 errors]
 EOF
+  popd;
 	$director1->stop();
 	teardown_vault();
 };
 
 subtest 'load environment from env vars' => sub {
 	local $ENV{GENESIS_BOSH_COMMAND};
+  local $ENV{GENESIS_VERSION} = '3.0.0';
+  local $Genesis::VERSION = '3.0.0';
 	fake_bosh;
 
 	my ($director1) = fake_bosh_directors(
@@ -1575,6 +1597,7 @@ subtest 'load environment from env vars' => sub {
 	Service::Vault->clear_all();
 	Service::BOSH->set_command($ENV{GENESIS_BOSH_COMMAND});
 	my $top = Genesis::Top->create(workdir, 'thing', vault=>$VAULT_URL)->link_dev_kit('t/src/creator');
+  pushd $top->path;
 	put_file $top->path("base.yml"), <<'EOF'; # Direct YAML
 ---
 kit:
@@ -1587,6 +1610,7 @@ kit:
 
 genesis:
   env: base
+  min_version: 3.0.0
 
 params:
   secret: (( vault $GENESIS_SECRETS_BASE "test:secret" ))
@@ -1735,12 +1759,15 @@ EOF
 		}
 	}
 
+  popd;
 	$director1->stop();
 	teardown_vault();
 };
 
 subtest 'pre and post deploy reactions' => sub {
 	local $ENV{GENESIS_BOSH_COMMAND};
+  local $ENV{GENESIS_VERSION} = '3.0.0';
+  local $Genesis::VERSION = '3.0.0';
 	local $ENV{NOCOLOR} = "yes";
 	fake_bosh(<<EOF);
 	echo 'BOSH Deploy ran successfully'
@@ -1758,6 +1785,7 @@ EOF
 	# Instead of linking, copy the reactions kit so it can be modified as needed
 	`cp -a t/src/reactions ${\($top->path('dev'))}`;
 
+  pushd $top->path;
 	# Common cloud config
 	put_file $top->path(".cloud.yml"), <<EOF;
 --- {}
@@ -1885,6 +1913,7 @@ kit:
   features: []
 
 genesis:
+  min_version: 3.0.0
   env:  postdeploy-reaction-fail
   bosh_env: reactions
   reactions:
@@ -1922,7 +1951,6 @@ environmental parameters checks will be skipped.
 [postdeploy-reaction-fail/thing] processing secrets descriptions...
   - using kit reactions/in-development (dev)
   - fetching secret definitions from kit defintion file ... found 0
-  - fetching secret definitions from manifest variables block ... found 0
   - no secrets defined for postdeploy-reaction-fail
 
 [postdeploy-reaction-fail/thing] running manifest viability checks...
@@ -1984,20 +2012,21 @@ environmental parameters checks will be skipped.
 [postdeploy-reaction-fail/thing] processing secrets descriptions...
   - using kit reactions/in-development (dev)
   - fetching secret definitions from kit defintion file ... found 0
-  - fetching secret definitions from manifest variables block ... found 0
   - no secrets defined for postdeploy-reaction-fail
 
 [postdeploy-reaction-fail/thing] running manifest viability checks...
 
 [postdeploy-reaction-fail/thing] running stemcell checks...
 
-[postdeploy-reaction-fail/thing] generating unredacted manifest...
+[postdeploy-reaction-fail/thing] generating entombed manifest...
+
+[postdeploy-reaction-fail/thing] entombing secrets into Credhub for enhanced security...
+  - determining vault paths used by manifest from genesis-ci-unit-tests...no vault paths in use.
+
 
 [postdeploy-reaction-fail/thing] generating BOSH variables file (if applicable)...
 
 [WARNING] Reactions are disabled for this deploy
-
-[postdeploy-reaction-fail/thing] generating redacted BOSH variables file (if applicable)...
 
 [postdeploy-reaction-fail/thing] all systems ok, initiating BOSH deploy...
 
@@ -2010,8 +2039,9 @@ environmental parameters checks will be skipped.
 EOF
 	logger->configure_log('/tmp/cleanup.out',level=>'T',show_stack =>'full',truncate=>1,no_color=>0);
 
-	Service::Vault::Local->shutdown_all();
+  popd;
 
+	Service::Vault::Local->shutdown_all();
 	teardown_vault();
 };
 

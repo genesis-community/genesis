@@ -2,7 +2,7 @@ package Genesis::Config;
 use strict;
 use warnings;
 
-use Genesis;
+use Genesis qw/bail bug debug struct_lookup struct_set_value in_array load_yaml_file run workdir mkdir_or_fail/;
 use Genesis::Term qw/bullet/;
 
 use JSON::PP ();
@@ -69,7 +69,7 @@ sub get {
 	$key ||= '';
 	return $self->{cache}{$key} if exists($self->{cache}{$key});
 
-	my ($value,$found) = struct_lookup($self->_contents,$key,$default);
+	my ($value,$found) = Genesis::struct_lookup($self->_contents,$key,$default);
 	if ($set_if_missing && ! defined($found)) {
 		$self->set($key,$value);
 		$found = $key;

@@ -72,7 +72,6 @@ EOF
 [c-azure-us1-dev/secrets-2.7.0] processing secrets descriptions...
   - using kit secrets-2.7.0/0.0.1 (dev)
   - fetching secret definitions from kit defintion file ... found 30
-  - fetching secret definitions from manifest variables block ... found 0
   - processed 30 secret definitions [1 dhparams/2 rsa/4 random/2 ssh/11 uuid/10 x509]
 
 [c-azure-us1-dev/secrets-2.7.0] checking presence of environment secrets...
@@ -125,7 +124,6 @@ EOF
 [c-azure-us1-dev/secrets-2.7.0] processing secrets descriptions...
   - using kit secrets-2.7.0/0.0.1 (dev)
   - fetching secret definitions from kit defintion file ... found 30
-  - fetching secret definitions from manifest variables block ... found 0
   - processed 30 secret definitions [1 dhparams/2 rsa/4 random/2 ssh/11 uuid/10 x509]
 
 [c-azure-us1-dev/secrets-2.7.0] validating environment secrets...
@@ -304,6 +302,7 @@ EOF
 
 	# Feature: No --force on rotate
 	($pass,$rc,$out) = run_fails "genesis rotate-secrets --force $env_name -y", "genesis fails when --force option is used on rotate-secrets";
+	$out =~ s/\e\[\?25h//g;
 	matches_utf8 $out, <<'EOF', "genesis reports no force option on rotate-secrets";
 
 [FATAL] --force option no longer valid. See `genesis rotate-secrets -h` for more details
@@ -323,7 +322,6 @@ EOF
 [c-azure-us1-dev/secrets-2.7.0] processing secrets descriptions...
   - using kit secrets-2.7.0/0.0.1 (dev)
   - fetching secret definitions from kit defintion file ... found 30
-  - fetching secret definitions from manifest variables block ... found 0
   - processed 30 secret definitions [1 dhparams/2 rsa/4 random/2 ssh/11 uuid/10 x509]
   - limited to 7 secrets due to filter(s): //ca$/||/^passwords:/
 
@@ -387,7 +385,6 @@ EOF
 [c-azure-us1-dev/secrets-2.7.0] processing secrets descriptions...
   - using kit secrets-2.7.0/0.0.1 (dev)
   - fetching secret definitions from kit defintion file ... found 30
-  - fetching secret definitions from manifest variables block ... found 0
   - processed 30 secret definitions [1 dhparams/2 rsa/4 random/2 ssh/11 uuid/10 x509]
 
 [c-azure-us1-dev/secrets-2.7.0] validating environment secrets...
@@ -590,7 +587,6 @@ EOF
 [c-azure-us1-dev/secrets-2.7.0] processing secrets descriptions...
   - using kit secrets-2.7.0/0.0.1 (dev)
   - fetching secret definitions from kit defintion file ... found 30
-  - fetching secret definitions from manifest variables block ... found 0
   - processed 30 secret definitions [1 dhparams/2 rsa/4 random/2 ssh/11 uuid/10 x509]
 
 [c-azure-us1-dev/secrets-2.7.0] rotating environment secrets...
@@ -688,7 +684,6 @@ EOF
 [c-azure-us1-dev/secrets-2.7.0] processing secrets descriptions...
   - using kit secrets-2.7.0/0.0.1 (dev)
   - fetching secret definitions from kit defintion file ... found 30
-  - fetching secret definitions from manifest variables block ... found 0
   - processed 30 secret definitions [1 dhparams/2 rsa/4 random/2 ssh/11 uuid/10 x509]
 
 [c-azure-us1-dev/secrets-2.7.0] validating environment secrets...
@@ -767,16 +762,17 @@ EOF
   # Feature: Remove secrets - can remove failed secrets
   ($pass,$rc,$out) = runs_ok "GENESIS_NO_UTF8=1 genesis remove-secrets $env_name -y -P", "Remove all invalid secrets";
   $out =~ s/'[12]{64}'/'<[12]{64}>'/g;
-  eq_or_diff $out, <<EOF, "genesis add-secrets reports existing secrets";
+  eq_or_diff $out, <<EOF, "genesis remove-secrets reports existing secrets";
+
+[c-azure-us1-dev/secrets-2.7.0] determining manifest fragments for merging...done
 
 [c-azure-us1-dev/secrets-2.7.0] processing secrets descriptions...
   - using kit secrets-2.7.0/0.0.1 (dev)
   - fetching secret definitions from kit defintion file ... found 30
-  - fetching secret definitions from manifest variables block ... found 0
   - processed 30 secret definitions [1 dhparams/2 rsa/4 random/2 ssh/11 uuid/10 x509]
 
-[c-azure-us1-dev/secrets-2.7.0] rotating environment secrets...
-  - loading existing secrets from source...done
+[c-azure-us1-dev/secrets-2.7.0] checking existing secrets...
+  - loading existing secrets from vault...done
   - determining invalid or problematic secrets under path '$secrets_mount$secrets_path/':
     [ 1/30] fixed/ca X.509 certificate - CA, signed by '/secret/genesis-2.7.0/root_ca' ... valid.
     [ 2/30] fixed/server X.509 certificate - signed by 'fixed/ca' ... valid.
@@ -815,7 +811,9 @@ EOF
     [29/30] uuids:time UUID - random:time based (v1) ... valid.
     [30/30] uuids:time-2 UUID - random:time based (v1) ... valid.
   - found 2 invalid or problematic secrets
-  - removing 2 secrets under path '/secret/genesis-2.7.0/deployments/dev/azure/us1/':
+
+[c-azure-us1-dev/secrets-2.7.0] found 2 invalid or problematic secrets
+  - removing 2 invalid or problematic secrets under path \'/secret/genesis-2.7.0/deployments/dev/azure/us1/\':
     [1/2] passwords:word Random - 64 bytes, fixed ... done.
     [2/2] rsa RSA public/private keypair - 4096 bits, fixed ... done.
     completed [2 removed/0 skipped/0 errors]
@@ -828,39 +826,41 @@ EOF
 	$cmd = Expect->new();
 	$cmd->log_stdout(0);
 	$cmd->spawn("genesis remove-secrets $env_name /t/");
-	(undef, $error, undef, $out) = $cmd->expect(300,"    Type 'yes' to remove these secrets >");
+	(undef, $error, undef, $out) = $cmd->expect(90,"          Type 'yes' to remove these 13 secrets >");
 
   is($error, undef, "No error or timeout encountered waiting to be asked to recreate secrets");
 	$out =~ s/\e\[2K/<clear-line>/g;
 	$out =~ s/\r\n/\n/g;
 	$out =~ s/\r/<cr>\n/g;
   $out =~ s/'[12]{64}'/'<[12]{64}>'/g;
+	$out =~ s/(\e\[[ABsu]|\r?\n)*\z/\n/m; # Remove trailing newlines and cursor movements
 	$pass = matches_utf8 $out, <<EOF, "genesis lists the expected failed secrets to be recreated";
+
+[c-azure-us1-dev/secrets-2.7.0] determining manifest fragments for merging...done
 
 [c-azure-us1-dev/secrets-2.7.0] processing secrets descriptions...
   - using kit secrets-2.7.0/0.0.1 (dev)
   - fetching secret definitions from kit defintion file ... found 30
-  - fetching secret definitions from manifest variables block ... found 0
   - processed 30 secret definitions [1 dhparams/2 rsa/4 random/2 ssh/11 uuid/10 x509]
   - limited to 11 secrets due to filter(s): /t/
 
-[c-azure-us1-dev/secrets-2.7.0] rotating environment secrets...
-  - loading existing secrets from source...done
-  - the following secrets under path \'/secret/genesis-2.7.0/deployments/dev/azure/us1/\' will be removed
-    • top-level/top X.509 certificate - CA, signed by \'/secret/genesis-2.7.0/root_ca\'
-    • top-level/server X.509 certificate - signed by \'top-level/top\'
-    • openVPN/certs/root X.509 certificate - CA, explicitly self-signed
-    • openVPN/certs/server X.509 certificate - signed by \'openVPN/certs/root\'
-    • passwords:alt Random - 32 bytes
-    • passwords:alt-base64 Random - base64 formatted value of passwords:alt
-    • passwords:permanent Random - 128 bytes, fixed
-    • passwords:uncrypted Random - 1024 bytes
-    • passwords:crypted Random - bcrypt formatted value of passwords:uncrypted
-    • rsa-default RSA public/private keypair - 2048 bits
-    • ssh-default SSH public/private keypair - 2048 bits, fixed
-    • uuids:time UUID - random:time based (v1)
-    • uuids:time-2 UUID - random:time based (v1)
+[c-azure-us1-dev/secrets-2.7.0] found 11 secrets
+  - will remove 13 secrets under path \'/secret/genesis-2.7.0/deployments/dev/azure/us1/\'
+    [ 1/13] openVPN/certs/root - X.509 certificate - CA, explicitly self-signed
+    [ 2/13] openVPN/certs/server - X.509 certificate - signed by \'openVPN/certs/root\'
+    [ 3/13] passwords:alt - Random - 32 bytes
+    [ 4/13] passwords:alt-base64 - Random - base64 formatted value of passwords:alt
+    [ 5/13] passwords:crypted - Random - bcrypt formatted value of passwords:uncrypted
+    [ 6/13] passwords:permanent - Random - 128 bytes, fixed
+    [ 7/13] passwords:uncrypted - Random - 1024 bytes
+    [ 8/13] rsa-default - RSA public/private keypair - 2048 bits
+    [ 9/13] ssh-default - SSH public/private keypair - 2048 bits, fixed
+    [10/13] top-level/server - X.509 certificate - signed by \'top-level/top\'
+    [11/13] top-level/top - X.509 certificate - CA, signed by \'/secret/genesis-2.7.0/root_ca\'
+    [12/13] uuids:time - UUID - random:time based (v1)
+    [13/13] uuids:time-2 - UUID - random:time based (v1)
 
+[WARNING] Removing secrets cannot be undone!
 EOF
 
   if ($pass && !$error) {
@@ -896,15 +896,15 @@ EOF
   $out =~ s/'[12]{64}'/'<[12]{64}>'/g;
   eq_or_diff $out, <<EOF, "genesis add-secrets reports existing secrets";
 
+[c-azure-us1-dev/secrets-2.7.0] determining manifest fragments for merging...done
+
 [c-azure-us1-dev/secrets-2.7.0] processing secrets descriptions...
   - using kit secrets-2.7.0/0.0.1 (dev)
   - fetching secret definitions from kit defintion file ... found 30
-  - fetching secret definitions from manifest variables block ... found 0
   - processed 30 secret definitions [1 dhparams/2 rsa/4 random/2 ssh/11 uuid/10 x509]
   - limited to 2 secrets due to filter(s): haproxy/ssl, secondary/server
 
-[c-azure-us1-dev/secrets-2.7.0] rotating environment secrets...
-  - loading existing secrets from source...done
+[c-azure-us1-dev/secrets-2.7.0] found 2 secrets
   - removing 2 secrets under path '$secrets_mount$secrets_path/':
     [1/2] haproxy/ssl X.509 certificate - signed by \'haproxy/ca\' ... done.
     [2/2] secondary/server X.509 certificate - signed by \'secondary/ca\' ... done.
@@ -922,7 +922,6 @@ EOF
 [c-azure-us1-dev/secrets-2.7.0] processing secrets descriptions...
   - using kit secrets-2.7.0/0.0.1 (dev)
   - fetching secret definitions from kit defintion file ... found 30
-  - fetching secret definitions from manifest variables block ... found 0
   - processed 30 secret definitions [1 dhparams/2 rsa/4 random/2 ssh/11 uuid/10 x509]
 
 [c-azure-us1-dev/secrets-2.7.0] checking presence of environment secrets...
@@ -976,7 +975,6 @@ EOF
 [c-azure-us1-dev/secrets-2.7.0] processing secrets descriptions...
   - using kit secrets-2.7.0/0.0.1 (dev)
   - fetching secret definitions from kit defintion file ... found 30
-  - fetching secret definitions from manifest variables block ... found 0
   - processed 30 secret definitions [1 dhparams/2 rsa/4 random/2 ssh/11 uuid/10 x509]
 
 [c-azure-us1-dev/secrets-2.7.0] adding missing environment secrets...
@@ -1040,7 +1038,6 @@ EOF
 [c-azure-us1-dev/secrets-2.7.0] processing secrets descriptions...
   - using kit secrets-2.7.0/0.0.1 (dev)
   - fetching secret definitions from kit defintion file ... found 30
-  - fetching secret definitions from manifest variables block ... found 0
   - processed 30 secret definitions [1 dhparams/2 rsa/4 random/2 ssh/11 uuid/10 x509]
   - limited to 7 secrets due to filter(s): /(/ca\$|passwords:)/
 
@@ -1137,7 +1134,6 @@ EOF
 [c-azure-us1-dev/secrets-2.7.0] processing secrets descriptions...
   - using kit secrets-2.7.0/0.0.1 (dev)
   - fetching secret definitions from kit defintion file ... found 30
-  - fetching secret definitions from manifest variables block ... found 0
   - processed 30 secret definitions [1 dhparams/2 rsa/4 random/2 ssh/11 uuid/10 x509]
 
 [c-azure-us1-dev/secrets-2.7.0] validating environment secrets...
@@ -1211,7 +1207,6 @@ EOF
 [c-azure-us1-prod/secrets-2.7.0] processing secrets descriptions...
   - using kit secrets-2.7.0/0.0.1 (dev)
   - fetching secret definitions from kit defintion file ... found 30
-  - fetching secret definitions from manifest variables block ... found 0
   - processed 30 secret definitions [1 dhparams/2 rsa/4 random/2 ssh/11 uuid/10 x509]
 
 [c-azure-us1-prod/secrets-2.7.0] checking presence of environment secrets...
@@ -1267,7 +1262,6 @@ EOF
 [c-azure-us1-prod/secrets-2.7.0] processing secrets descriptions...
   - using kit secrets-2.7.0/0.0.1 (dev)
   - fetching secret definitions from kit defintion file ... found 30
-  - fetching secret definitions from manifest variables block ... found 0
   - processed 30 secret definitions [1 dhparams/2 rsa/4 random/2 ssh/11 uuid/10 x509]
   - limited to 6 secrets due to filter(s): /(/server|-default)\$/
 
@@ -1335,7 +1329,6 @@ EOF
 [c-azure-us1-prod/secrets-2.7.0] processing secrets descriptions...
   - using kit secrets-2.7.0/0.0.1 (dev)
   - fetching secret definitions from kit defintion file ... found 30
-  - fetching secret definitions from manifest variables block ... found 0
   - processed 30 secret definitions [1 dhparams/2 rsa/4 random/2 ssh/11 uuid/10 x509]
 
 [c-azure-us1-prod/secrets-2.7.0] validating environment secrets...
@@ -1413,7 +1406,6 @@ EOF
 [c-azure-us1-prod/secrets-2.7.0] processing secrets descriptions...
   - using kit secrets-2.7.0/0.0.1 (dev)
   - fetching secret definitions from kit defintion file ... found 30
-  - fetching secret definitions from manifest variables block ... found 0
   - processed 30 secret definitions [1 dhparams/2 rsa/4 random/2 ssh/11 uuid/10 x509]
 
 [c-azure-us1-prod/secrets-2.7.0] validating environment secrets...
@@ -1627,7 +1619,6 @@ subtest 'secrets-base' => sub {
 [us-east-sandbox/omega-v2.7.0] processing secrets descriptions...
   - using kit Omega/2.0.0 (dev)
   - fetching secret definitions from kit defintion file ... found 16
-  - fetching secret definitions from manifest variables block ... found 0
   - processed 16 secret definitions [4 rsa/8 random/4 ssh]
 
 [us-east-sandbox/omega-v2.7.0] checking presence of environment secrets...
@@ -1750,7 +1741,6 @@ EOF
 [west-us-sandbox/certificates] processing secrets descriptions...
   - using kit certificatetest/0.0.1 (dev)
   - fetching secret definitions from kit defintion file ... found 6
-  - fetching secret definitions from manifest variables block ... found 0
   - processed 6 secret definitions [6 x509]
 
 [west-us-sandbox/certificates] checking presence of environment secrets...
@@ -1817,7 +1807,6 @@ EOF
 [west-us-sandbox/certificates] processing secrets descriptions...
   - using kit certificatetest/0.0.1 (dev)
   - fetching secret definitions from kit defintion file ... found 6
-  - fetching secret definitions from manifest variables block ... found 0
   - processed 6 secret definitions [6 x509]
 
 [west-us-sandbox/certificates] adding missing environment secrets...

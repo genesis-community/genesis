@@ -18,6 +18,11 @@ system 'git config --global user.name "Genesis CI Testing"';
 system 'git config --global user.email genesis-ci@rubidiumstudios.com';
 chdir "t/tmp";
 
+# Need to create a config file with the legacy_repo_suffix set to true
+# TODO: Test with the legacy_repo_suffix set to false
+use Genesis::Config;
+Genesis::Config->new($ENV{HOME}.'/.genesis/config', 1)->set(legacy_repo_suffix => JSON::PP::true);
+
 runs_ok "genesis init random --vault $VAULT_URL";
 ok -d "random-deployments",                      "`genesis init` created the random-deployments/ directory";
 ok -d "random-deployments/.genesis",             "`genesis init` created the .genesis/ sub-directory";

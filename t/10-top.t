@@ -10,6 +10,9 @@ use Test::Deep;
 use Test::Output;
 use Cwd ();
 
+use_ok 'Genesis::Config';
+$Genesis::RC = Genesis::Config->new("$ENV{HOME}/.genesis/config");
+
 use_ok 'Genesis::Top';
 use_ok 'Genesis::Kit::Compiled';
 use Genesis;
@@ -135,7 +138,7 @@ subtest 'init' => sub {
 	$tmp = workdir;
 	ok ! -f "$tmp/jumpbox-deployments/.genesis/config", "No .genesis/config in new Top";
 	$top = Genesis::Top->create($tmp, 'jumpbox', vault=>$VAULT_URL);
-	ok -f "$tmp/jumpbox-deployments/.genesis/config", ".genesis created in correct top dir";
+	ok -f "$tmp/jumpbox/.genesis/config", ".genesis created in correct top dir";
 	ok -f $top->path('.genesis/config'), "Top->create should create a new .genesis/config";
 	is $top->type, 'jumpbox', 'an initialized top has a type';
 	is $top->vault->url, $VAULT_URL, 'specifies the correct vault url';
@@ -168,7 +171,7 @@ subtest 'init' => sub {
 	# overwrite tests
 	$tmp = workdir;
 	lives_ok { Genesis::Top->create($tmp, 'test', vault=>$VAULT_URL) } "it should be okay to init once";
-	throws_ok { Genesis::Top->create($tmp, 'test', vault=>$VAULT_URL) } qr/\[FATAL\] Cannot create new deployments repository `test-deployments': already\n *exists!/,
+	throws_ok { Genesis::Top->create($tmp, 'test', vault=>$VAULT_URL) } qr/\[FATAL\] Cannot create new deployments repository `test': already exists!/,
 		"it is not okay to init twice";
 
 	# name validation
@@ -186,14 +189,14 @@ EOF
 	system("$tmp/not-genesis 2>/dev/null");
 	isnt $?, 0, "tmp/not-genesis should not be executable";
 
-	ok ! -f "$tmp/thing-deployments/.genesis/bin/genesis",
+	ok ! -f "$tmp/thing/.genesis/bin/genesis",
 		"genesis bin should not be embedded by default";
 
 	$top->embed("$tmp/not-genesis");
-	ok -f "$tmp/thing-deployments/.genesis/bin/genesis",
+	ok -f "$tmp/thing/.genesis/bin/genesis",
 		"genesis bin should be embedded once we call embed()";
 
-	is qx($tmp/thing-deployments/.genesis/bin/genesis), "this is not genesis\n",
+	is qx($tmp/thing/.genesis/bin/genesis), "this is not genesis\n",
 		"embed() makes the embedded copy executable";
 };
 

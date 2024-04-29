@@ -10,6 +10,9 @@ use Test::Exception;
 use Test::Deep;
 use Test::Output;
 
+use_ok 'Genesis::Config';
+$Genesis::RC = Genesis::Config->new("$ENV{HOME}/.genesis/config");
+
 use_ok 'Genesis::Kit';
 use Genesis::Kit::Dev;
 use Genesis::Top;

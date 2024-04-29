@@ -27,7 +27,7 @@ sub new {
 
 		# Check if user or repo allows oversized secrets to be ignored
 		__allow_oversized => $Genesis::RC->get('allow_oversized_secrets')
-			|| $env->top->config->get('allow_oversized_secrets' => 0)
+			|| ($env && $env->top->config->get('allow_oversized_secrets' => 0))
 	};
 	return bless($plan, $class)
 }
@@ -582,17 +582,18 @@ sub remove_secrets {
 		my $msg = '';
 		return \%results, $msg;
 	} else {
-		my @selected_secrets = $self->_invalid_secrets($severity, %opts);
 		my $label = ($severity eq 'problem')
-			? "invalid, problematic, or missing"
-			: "invalid or missing";
-		$self->env->notify("loading existing secrets to check for $label entries...");
+			? "invalid or problematic"
+			: "invalid";
+
+		$self->env->notify("checking existing secrets...");
 		info({pending => 1}, "[[  - >>loading existing secrets from vault...");
 		my $t = time_exec(sub {
 				$self->store->fill($self->secrets);
 		});
 		info "#G{done}".pretty_duration($t, scalar($self->secrets) * 0.02, scalar($self->secrets) * 0.05);
 
+		my @selected_secrets = $self->_invalid_secrets($severity, %opts);
 		return $self->_remove_secrets(
 			\@selected_secrets,
 			label => $label,
@@ -1099,26 +1100,26 @@ sub _unused_entombed_secrets {
 # }}}
 # _invalid_secrets - find secrets that are invalid or problematic {{{
 sub _invalid_secrets {
-	my ($self, $severity, $update_args, %opts) = @_;
+	my ($self, $severity, %opts) = @_;
 	my @selected_secrets = ();
 	my $label = ($severity eq 'problem')
 			? "invalid or problematic"
 			: "invalid";
-	$self->notify(@$update_args, 'init', action => "[[  - >>determining $label secrets", total => scalar($self->secrets));
+	$self->notify('remove', 'init', action => "[[  - >>determining $label secrets", total => scalar($self->secrets));
 	for my $secret ($self->secrets) {
 		my ($path, $label, $details) = $secret->describe;
-		$self->notify(@$update_args, 'start-item', path => $path, label => $label, details => $details);
+		$self->notify('remove', 'start-item', path => $path, label => $label, details => $details);
 		my ($result, $msg) = $secret->validate_value($self);
 		if ($result eq 'error' || ($result eq 'warn' && $severity eq 'problem')) {
-			$self->notify(@$update_args, 'done-item', result => $result, action => 'validate', msg => $msg) ;
+			$self->notify('remove', 'done-item', result => $result, action => 'validate', msg => $msg) ;
 			push @selected_secrets, $secret;
 		} elsif ($result eq 'missing') {
-			$self->notify(@$update_args, 'done-item', result => $result, action => 'remove') ;
+			$self->notify('remove', 'done-item', result => $result, action => 'remove') ;
 		} else {
-			$self->notify(@$update_args, 'done-item', result => 'ok', action => 'validate')
+			$self->notify('remove', 'done-item', result => 'ok', action => 'validate')
 		}
 	}
-	$self->notify(@$update_args, 'notify', indent => "[[  - >>", msg => sprintf("found %s %s secrets", scalar(@selected_secrets), $label));
+	$self->notify('remove', 'notify', indent => "[[  - >>", msg => sprintf("found %s %s secrets", scalar(@selected_secrets), $label));
 	return @selected_secrets;
 }
 
@@ -1198,7 +1199,8 @@ sub _remove_secrets {
 		warning("\nRemoving secrets cannot be undone!");
 		my $proceed = $self->notify(
 			'remove','inline-prompt',
-			prompt => (' ' x (logger->style eq 'fun' ? 12 : 10))."Type 'yes' to remove ".count_nouns($total, $label),
+			prompt => (' ' x (logger->style eq 'fun' ? 12 : 10))."Type 'yes' to remove ".
+				count_nouns($total, $label, prefix => [qw/this these/]),
 			noclear => 1,
 			default => 'no'
 		);
@@ -1235,7 +1237,7 @@ sub _remove_secrets {
 				$self->notify('remove', 'done-item', result => 'missing');
 				next;
 			}
-		} elsif (ref($secret) =~ /^Genesis::Secret(::|$)/ && !$secret->has_value) {
+		} elsif (ref($secret) =~ /^Genesis::Secret(::|$)/ && !$secret->exists) {
 			$self->notify('remove', 'done-item', result => 'missing');
 			next;
 		}
@@ -1289,7 +1291,9 @@ sub _remove_secrets {
 		}
 		last if ($rc);
 	}
-	return $self->notify('remove', 'completed', msg => "$label removed");
+	return $self->notify('remove', 'completed', msg => sprintf(
+		"$label%s removed", scalar(@$selected_secrets) == 1 ? '' : 's')
+	);
 }
 
 # }}}

@@ -280,6 +280,7 @@ sub rotate_secrets {
 sub remove_secrets {
 	command_usage(1, 'Missing environment name or file') if @_ < 1;
 	my %options = %{get_options()};
+	$options{invalid} //= 0;
 	my ($name, @paths) = @_;
 	if ( $options{all}) {
 		bail(

@@ -10,6 +10,9 @@ use Test::Output;
 use Test::Differences;
 use Archive::Tar;
 
+use_ok 'Genesis::Config';
+$Genesis::RC = Genesis::Config->new("$ENV{HOME}/.genesis/config");
+
 use_ok 'Genesis::Kit::Compiler';
 use Genesis;
 
@@ -102,7 +105,6 @@ if (-f $new_hook_file) {
 ##################################
 
 again();
-
 $out = combined_from {
 	ok($cc->validate('test','1.2.3'), "validate should succeed when kit.yml defines all the things");
 };

@@ -16,7 +16,7 @@ bosh2_cli_ok;
 system 'git config --global user.name "Genesis CI Testing"';
 system 'git config --global user.email genesis-ci@rubidiumstudios.com';
 
-runs_ok "genesis init new --vault $vault_target";
+runs_ok "genesis init new --vault $vault_target -d 'new-deployments'", "initialized new genesis directory";
 ok -d "new-deployments", "created initial deployments directory";
 chdir "new-deployments";
 

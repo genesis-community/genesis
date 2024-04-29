@@ -16,6 +16,7 @@ unified_diff;
 $ENV{GENESIS_TESTING} = "yes";
 
 our $TOPDIR;
+
 sub import {
 	my ($class, @args) = @_;
 	$TOPDIR = Cwd::getcwd();

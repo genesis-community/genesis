@@ -131,7 +131,6 @@ sub execute {
 	}
 
 	dump_var("bosh command" => \@cmd);
-	output({stderr=>1}, "");
 	my @results = run($opts, @cmd);
 
 	if ($opts->{interactive} && ! $opts->{passfail} && $file) {

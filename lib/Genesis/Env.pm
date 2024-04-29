@@ -73,7 +73,7 @@ sub load {
 		last if @errors;
 
 		$env->notify("Using environment file #M{%s}", humanize_path($env->path($env->{file})))
-			if $ENV{GENESIS_PREFIX_TYPE} eq "search";
+			if ($ENV{GENESIS_PREFIX_TYPE}//'none') eq "search";
 
 		push(@errors, "#ci{kit.subkits} has been superceeded by #ci{kit.features}")
 			if $env->defines('kit.subkits');
@@ -474,6 +474,7 @@ sub search_for_env_file {
 	}
 	return ($director_target, $files[0]);
 }
+#}}}
 #}}}
 
 ### Private Class Methods {{{
@@ -977,7 +978,7 @@ sub is_vaultified {
 				if ($page =~ /^- /) {
 					# Go-patch-based arrays file - spruce can't handle these, so need to
 					# convert to hash format
-					$page = join("\n",("__ops__:",split(/\n/,$page)));
+					$page = "__ops__:\n$page";
 				}
 				my $data = load_yaml($page);
 				next unless $data;
@@ -1853,8 +1854,6 @@ sub deploy {
 		"Preflight checks failed; deployment operation halted."
 	) unless $self->check();
 
-	$self->manifest_provider->set_deployment($self->deployment_manifest_type);
-
 	$self->manifest_provider->deployment(subset=>'pruned',notify=>1)->write_to(
 		"$self->{__tmp}/manifest.yml"
 	);
@@ -2193,6 +2192,7 @@ sub remove_secrets {
 
 	# Determine secrets_store from kit - assume vault for now (credhub ignored)
 	if ($opts{all}) {
+		# TODO: extract this to a method in Genesis::Env::Secrets::Store
 		my @paths = $store->store_paths();
 		return ({empty => 1}) unless scalar(@paths);
 
@@ -2420,18 +2420,15 @@ sub _cc_yaml_files {
 	} else {
 		trace("[env $self->{name}] in _yaml_files(): not a create-env, we need cloud-config");
 
-		my @configs = $self->required_configs('blueprint');
-		if (@configs) {
+		my @cloud_configs = grep {$_ =~ /^cloud(\@.*)?$/} $self->required_configs('blueprint');
+		if (@cloud_configs) {
 			$self->download_required_configs('blueprint') if $self->missing_required_configs('blueprint');
-			for (@configs) {
-				my $ccfile = $self->config_file($_);
-				next unless $ccfile =~ m/\/cloud\.yml$/; # FIXME: should be a better way to detect cloud-config, or support multiple cloud config files
-				bail(
-					"No cloud-config specified for this environment\n"
-				) unless $ccfile;
-				trace("[env $self->{name}] in _yaml_files(): cloud-config at $ccfile");
-				push @cc, $ccfile;
-			}
+			my @cc_files = uniq sort map {$self->config_file($_)} @cloud_configs;
+			bail(
+				"No cloud-config specified for this environment\n"
+			) unless @cc_files;
+			trace("[env $self->{name}] in _yaml_files(): cloud-configs: %s", join(", ", @cc_files));
+			push @cc, @cc_files;
 		}
 	}
 	return @cc;

@@ -27,6 +27,7 @@ sub new {
 		return bless({
 			path => $alt_path || $path,
 			definition => $args,
+			loaded => 0,
 			%src
 		}, $class);
 	}
@@ -63,6 +64,12 @@ sub save {
 sub load {
 	my ($self,$value) = @_;
 	$self->plan->store->read($self);
+}
+
+sub exists {
+	my ($self) = @_;
+	return 1 if $self->loaded && $self->has_value;
+	$self->plan->store->exists($self);
 }
 
 sub reject {
@@ -108,6 +115,7 @@ sub default_key   {undef}
 sub definition    {$_[0]->{definition}}
 sub value         {$_[0]->{value}||$_[0]->{stored_value}}
 sub has_value     {defined($_[0]->{stored_value})}
+sub loaded        {$_[0]->{loaded}}
 sub missing       {!$_[0]->has_value}
 sub set_plan      {$_[0]->{plan} = $_[1]; $_[0]}
 sub plan          {$_[0]->{plan} || bail('Secret not in a plan -- cannot continue')}
@@ -283,6 +291,7 @@ sub set_value {
 	my ($self, $value, %opts) = @_;
 	$self->_set_value($value);
 	$self->{stored_value} = delete($self->{value}) if ($opts{in_sync});
+	$self->{loaded} = $opts{loaded} ? 1 : 0;
 }
 
 # Override in derived classes for special value handling
@@ -292,6 +301,7 @@ sub _set_value {
 
 sub promote_value_to_stored {
 	my $self = shift;
+	$self->{loaded} = 1;
 	$self->{stored_value} = delete($self->{value});
 }
 
