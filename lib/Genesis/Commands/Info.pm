@@ -258,7 +258,14 @@ sub kit_manual {
 	my $man = $kit->path('MANUAL.md');
 	if (-f $man) {
 		my $man_contents = slurp($man);
-		output get_options->{raw} ? $man_contents : render_markdown($man_contents);
+		my $contents = get_options->{raw} ? $man_contents : render_markdown($man_contents);
+		if (get_options->{pager}) {
+			open my $pager, "|-", "less -R" or die "Can't open pager: $!";
+			print $pager $contents;
+			close $pager;
+		} else {
+			output $contents;
+		}
 		exit 0;
 	}
 	error "#Y{%s} has no MANUAL.md", $kit->id;

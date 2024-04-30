@@ -551,7 +551,9 @@ define_command("kit-manual", {
 	option_group => Genesis::Commands::REPO_OPTIONS,
 	options => [
 		'raw' =>
-			"Print the raw manual instead of rendering it in markdown."
+			"Print the raw manual instead of rendering it in markdown.",
+		'pager|P' =>
+			"Use a pager to display the manual."
 	],
 	no_vault => 1
 });
