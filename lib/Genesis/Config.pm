@@ -2,7 +2,7 @@ package Genesis::Config;
 use strict;
 use warnings;
 
-use Genesis qw/bail bug debug struct_lookup struct_set_value in_array load_yaml_file run workdir mkdir_or_fail/;
+use Genesis qw/bail bug debug struct_lookup struct_set_value in_array load_yaml_file run workdir mkdir_or_fail semver/;
 use Genesis::Term qw/bullet/;
 
 use JSON::PP ();
@@ -146,7 +146,10 @@ sub validate {
 
 	# Ensure all required keys are present, and all defaults are set
 	for my $key (keys %$schema) {
-		if (exists($schema->{$key}{default}) and ! exists($self->_contents->{$key})) {
+		if (exists($schema->{$key}{envvar}) and exists($ENV{$schema->{$key}{envvar}})) {
+			# Environment variables take precedence over configuration values.
+			$self->set($key, $ENV{$schema->{$key}{envvar}});
+		} elsif (exists($schema->{$key}{default}) and ! exists($self->_contents->{$key})) {
 			$self->set($key, $schema->{$key}{default});
 		} elsif ($schema->{$key}{required} and ! exists($self->_contents->{$key})) {
 			push @errors, "#R{$key}: missing required key";
@@ -160,7 +163,7 @@ sub validate {
 			next;
 		}
 		my $value = $self->get($key);
-		my @key_errors = $self->_validate($key, $schema->{$key});
+		my @key_errors = $self->_validate_key($key, $schema->{$key});
 		push @errors, @key_errors if @key_errors;
 	}
 
@@ -205,14 +208,64 @@ sub _signature {
 	sha1_hex(JSON::PP->new->canonical->encode($_[0]->{contents}))
 }
 # }}}
-# _validate - validate a value against a schema {{{
-sub _validate {
+# _validate_key - validate a value against a schema {{{
+sub _validate_key {
 	my ($self, $key, $schema) = @_;
 	my @errors = ();
 	my $type = $schema->{type} or bug "Schema for $key has no type";
 	my $value = $self->get($key);
 
-	if ($type eq 'boolean') {
+	if ($type eq 'hash') {
+		if (ref($value) ne 'HASH') {
+			push @errors, "#R{$key}: expected a hash";
+		} else {
+			# Ensure all required keys are present, and all defaults are set
+			for my $subkey (keys %{$schema->{schema}}) {
+				my $subschema = $schema->{schema}{$subkey};
+				if (exists($subschema->{envvar}) && exists($ENV{$subschema->{envvar}})) {
+					# Environment variables take precedence over configuration values.
+					$self->set("$key.$subkey", $ENV{$subschema->{envvar}});
+				} elsif (exists($subschema->{default}) and ! exists($value->{$subkey})) {
+					$self->set("$key.$subkey", $subschema->{default});
+				} elsif ($subschema->{required} and ! exists($value->{$subkey})) {
+					push @errors, "#R{$key}: missing required key #ri{$subkey}";
+				}
+			}
+			for my $subkey (sort keys %$value) {
+				if (! exists($schema->{schema}{$subkey})) {
+					push @errors, "#R{$key.$subkey}: unknown configuration key: expected one of ".join(', ', keys %{$schema->{schema}});
+					next;
+				}
+				my @subkey_errors = $self->_validate_key("$key.$subkey", $schema->{schema}{$subkey});
+				push @errors, @subkey_errors if @subkey_errors;
+			}
+		}
+
+	} elsif ($type eq 'array') {
+		my $subtype = $schema->{subtype} or bug "Schema for array $key has no subtype"; # or maybe just validate that its a freeform array?
+		if (ref($value) eq '' && $subtype eq 'string' && $schema->{envsplit}) {
+			# Split the value into an array based on the environment variable
+			$value = [split($schema->{envsplit}, $value)];
+			$self->set($key,$value);
+		}
+		if (ref($value) ne 'ARRAY') {
+			push @errors, "#R{$key}: expected an array";
+		} else {
+			for my $i (0..$#{$value}) {
+				my $subschema;
+				if ($subtype eq 'hash') {
+					bug "Schema for array $key hash value has no schema" unless $schema->{schema};
+					$subschema = {schema => $schema->{schema}, type => 'hash'};
+				} else {
+					$subschema = $schema->{schema}//{};
+					$subschema->{type} //= $subtype;
+				}
+				my @subkey_errors = $self->_validate_key("${key}[$i]", $subschema);
+				push @errors, @subkey_errors if @subkey_errors;
+			}
+		}
+
+	} elsif ($type eq 'boolean') {
 		if (! in_array($value, TRUE, FALSE, 1, 0, '', undef, 'true', 'false', 'yes', 'no')) {
 			push @errors, "#R{$key}: expected a boolean, not #ri{".($value ? $value : '<null>')."}";
 		}
@@ -229,46 +282,23 @@ sub _validate {
 		if (ref($value) ne '' || !defined($value) || $value !~ m/^-?\d+(\.\d+)?$/) {
 			push @errors, "#R{$key}: expected a number, not #ri{".($value ? $value : "<null>")."}";
 		}
-	} elsif ($type eq 'array') {
-		if (ref($value) ne 'ARRAY') {
-			push @errors, "#R{$key}: expected an array";
-		} else {
-			my $subtype = $schema->{subtype} or bug "Schema for array $key has no subtype"; # or maybe just validate that its a freeform array?
-			for my $i (0..$#{$value}) {
-				if ($subtype eq 'hash') {
-					if (ref($value->[$i]) ne 'HASH') {
-						push @errors, "#R{${key}[$i]}: expected a hash";
-					} else {
-						# Ensure all required keys are present, and all defaults are set for each hash
-						for my $subkey (keys %{$schema->{schema}}) {
-							if (exists($schema->{schema}{$subkey}{default}) and ! exists($value->[$i]{$subkey})) {
-								$self->set("${key}[$i]{$subkey}", $schema->{schema}{$subkey}{default});
-							} elsif ($schema->{schema}{$subkey}{required} and ! exists($value->[$i]{$subkey})) {
-								push @errors, "#R{${key}[$i]}: missing required key #ri{$subkey}";
-							}
-						}
-						for my $subkey (sort keys %{$value->[$i]}) {
-							if (! exists($schema->{schema}{$subkey})) {
-								push @errors, "#R{${key}[$i].$subkey}: unknown configuration key: expected one of ".join(', ', keys %{$schema->{schema}});
-								next;
-							}
-							my @subkey_errors = $self->_validate("${key}[$i].$subkey", $schema->{schema}{$subkey});
-							push @errors, @subkey_errors if @subkey_errors;
-						}
-					}
-				} else {
-					my $subschema = $schema->{schema}//{};
-					$subschema->{type} //= $subtype;
-					my @subkey_errors = $self->_validate("${key}[$i]", $subschema);
-					push @errors, @subkey_errors if @subkey_errors;
-				}
-			}
+	} elsif ($type eq 'integer') {
+		if (ref($value) ne '' || !defined($value) || $value !~ m/^-?[1-9]\d*$/) {
+			push @errors, "#R{$key}: expected an integer, not #ri{".($value ? $value : "<null>")."}";
+		}
+	} elsif ($type eq 'semver') {
+		if (ref($value) ne '' || !defined($value) || ! semver($value)) {
+			push @errors, "#R{$key}: expected a number, not #ri{".($value ? $value : "<null>")."}"
+				unless (!defined($value) && $schema->{allow_null});
 		}
 	} else {
 		push @errors, "#R{$key}: unknown schema type $type";
 	}
 	return @errors;
 }
+
+# }}}
+# TODO: extract the hash schema validation into a separate method {{{
 # }}}
 1;
 # vim: fdm=marker:foldlevel=1:noet
