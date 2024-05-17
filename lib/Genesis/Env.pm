@@ -302,6 +302,8 @@ sub create {
 			get_opts(\%opts, qw(vault secrets_path secrets_mount exodus_mount ci_mount root_ca_path credhub_env))}
 	};
 
+	my $bosh_env = $ENV{GENESIS_BOSH_ENVIRONMENT} eq '' ? undef : $ENV{GENESIS_BOSH_ENVIRONMENT};
+
 	# The crazy-intricate create-env/bosh_env dance...
 	if ($env->kit->feature_compatibility("2.8.0")) {
 		# Kits that are explicitly compatible with 2.8.0 can specify if they
@@ -315,7 +317,7 @@ sub create {
 			bail(
 				"Cannot specify a bosh environment for environments that use ".
 				"create-env deployment method"
-			) if defined($ENV{GENESIS_BOSH_ENVIRONMENT});
+			) if defined($bosh_env);
 			$env->{__params}{genesis}{use_create_env} = 1;
 			$env->{__params}{genesis}{bosh_env} = '';
 		} elsif ($uce eq 'no') {
@@ -324,20 +326,19 @@ sub create {
 				$env->kit->id
 			) if $create_env;
 			$env->{__params}{genesis}{use_create_env} = 0;
-			$env->{__params}{genesis}{bosh_env} = $ENV{GENESIS_BOSH_ENVIRONMENT} || $opts{name};
+			$env->{__params}{genesis}{bosh_env} = $bosh_env//$opts{name};
 		} else {
 			# Complicated state: the kit allows but does not require create-env.
 			warning(
-				"Kit %s supports both bosh and create-env deployment.  No --create-env ".
+				"\nKit #M{%s} supports both bosh and create-env deployment.  No --create-env ".
 				"option specified, so using bosh deployment method.",
 				$env->kit->id
-			) unless defined($create_env) and ! $ENV{GENESIS_BOSH_ENVIRONMENT};
+			) unless defined($create_env) || $bosh_env;
 			bail(
-				"Cannot specify a bosh environment for environments that use ".
-				"create-env deployment method"
-			) if $create_env && $ENV{GENESIS_BOSH_ENVIRONMENT};
-			$env->{__params}{genesis}{use_create_env} = $create_env || 0;
-			$env->{__params}{genesis}{bosh_env} = $create_env ? '' : $ENV{GENESIS_BOSH_ENVIRONMENT} || $opts{name};
+				"Cannot specify a bosh environment for environments that use create-env deployment method."
+			) if $create_env && $bosh_env;
+			$env->{__params}{genesis}{use_create_env} = $create_env//0;
+			$env->{__params}{genesis}{bosh_env} = $create_env ? '' : $bosh_env || $opts{name};
 		}
 	} else {
 		bail(
@@ -345,16 +346,11 @@ sub create {
 			$env->kit->id
 		) if defined($create_env);
 		if ($env->is_bosh_director()) { # Prior to 2.8.0, only the bosh kit can use create_env.
-			if ($ENV{GENESIS_BOSH_ENVIRONMENT}) {
-				$env->{__params}{genesis}{use_create_env} = 0;
-				$env->{__params}{genesis}{bosh_env} = $ENV{GENESIS_BOSH_ENVIRONMENT};
-			} else {
-				$env->{__params}{genesis}{use_create_env} = 1;
-				$env->{__params}{genesis}{bosh_env} = '';
-			}
+			$env->{__params}{genesis}{use_create_env} = ($bosh_env) ? 0 : 1;
+			$env->{__params}{genesis}{bosh_env} = $bosh_env || '';
 		} else {
 			$env->{__params}{genesis}{use_create_env} = 0;
-			$env->{__params}{genesis}{bosh_env} = $ENV{GENESIS_BOSH_ENVIRONMENT} || $opts{name};
+			$env->{__params}{genesis}{bosh_env} = $bosh_env || $opts{name};
 		}
 	}
 

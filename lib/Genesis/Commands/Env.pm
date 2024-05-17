@@ -11,6 +11,10 @@ use Genesis::Top;
 use Genesis::UI;
 
 sub create {
+
+	# WARNING: Do not default create-env option to 0, because its absence is used
+	# to determine whether the user has explicitly specified it or not, so
+	# appropriate warnings can be issued, or actions taken.
 	command_usage(1) if @_ != 1;
 	warning(
 		"The --no-secrets flag is deprecated, and no longer honored."
@@ -491,7 +495,35 @@ sub bosh {
 				);
 			}
 		}
-	} elsif (get_options->{self} || get_options->{parent}) {
+	} elsif (!$env->is_bosh_director && $env->use_create_env) {
+		bail(
+			"Environment %s is a #M{create-env} deployment, but not a BOSH director, ".
+			"so there is no BOSH director to target.",
+			$env->name
+		);
+	} elsif (!$env->is_bosh_director) {
+		bail(
+			"Environment %s is not a BOSH director, so the #y{--self} option is invalid.",
+			$env->name
+		) if get_options->{self};
+		warning(
+			"Environment %s is not a BOSH director, so the #y{--parent} option is unnecessary.",
+			$env->name
+		) if get_options->{parent} && !$Genesis::RC->get('suppress_warnings.bosh_target' => 0);
+		$target = 'parent';
+	} elsif ($env->use_create_env) {
+		bail(
+			"Environment %s is a #M{create-env} deployment, so the #y{--parent} option is invalid.",
+			$env->name
+		) if get_options->{parent};
+		warning(
+			"Environment %s is a #M{create-env} deployment, so the #y{--self} option is unnecessary.",
+			$env->name
+		) if get_options->{self} && !$Genesis::RC->get('suppress_warnings.bosh_target' => 0);
+		$target = 'self';
+	}
+
+	elsif (get_options->{self} || get_options->{parent}) {
 		if ($env->use_create_env) {
 			bail(
 				"Environment %s is a #M{create-env} deployment, so the #y{--self} is ".
