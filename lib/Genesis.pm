@@ -101,12 +101,19 @@ sub Init {
 	# FIXME: If command is ping, don't error out, but print validation errors
 	$Genesis::RC->validate({
 		default_bosh_target      => { type => 'enum',    default => 'ask', values => [qw/ask self parent/]},
-		allow_oversized_secrets  => { type => 'boolean', default => 0 },
 		legacy_repo_suffix       => { type => 'boolean', default => 0 },
-		deployment_roots         => { type => 'array',   default => [], subtype => 'string' },
+		deployment_roots         => { type => 'array',   default => [], subtype => 'string', envvar => 'GENESIS_DEPLOYMENT_ROOTS', envsplit => ':' },
 		embedded_genesis         => { type => 'enum',    default => 'ignore', values => [qw/ignore check warn/]},
 		output_style             => { type => 'enum',    default => 'plain', values => [qw/plain fun pointer/]},
 		show_duration            => { type => 'boolean', default => 0 },
+
+		suppress_warnings => {
+			type => 'hash',
+			schema => {
+				oversized_secrets => { type => 'boolean', default => 0 , envvar => 'GENESIS_SUPRESS_OVERSIZED_SECRETS_WARNING'},
+				bosh_target => { type => 'boolean', default => 0 , envvar => 'GENESIS_SUPPRESS_BOSH_TARGET_WARNING'},
+			}
+		},
 
 		# To be implemented:
 		# executable_environments  => { type => 'boolean', default => 0 },

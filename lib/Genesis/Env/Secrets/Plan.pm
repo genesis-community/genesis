@@ -26,7 +26,7 @@ sub new {
 		__verbose => exists($opts{verbose}) ? $opts{verbose} : 1,
 
 		# Check if user or repo allows oversized secrets to be ignored
-		__allow_oversized => $Genesis::RC->get('allow_oversized_secrets')
+		__allow_oversized => $Genesis::RC->get('suppress_warnings.oversized_secrets' => 0)
 			|| ($env && $env->top->config->get('allow_oversized_secrets' => 0))
 	};
 	return bless($plan, $class)
