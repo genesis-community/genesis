@@ -302,7 +302,7 @@ sub create {
 			get_opts(\%opts, qw(vault secrets_path secrets_mount exodus_mount ci_mount root_ca_path credhub_env))}
 	};
 
-	my $bosh_env = $ENV{GENESIS_BOSH_ENVIRONMENT} eq '' ? undef : $ENV{GENESIS_BOSH_ENVIRONMENT};
+	my $bosh_env = ($ENV{GENESIS_BOSH_ENVIRONMENT}//'') eq '' ? undef : $ENV{GENESIS_BOSH_ENVIRONMENT};
 
 	# The crazy-intricate create-env/bosh_env dance...
 	if ($env->kit->feature_compatibility("2.8.0")) {
