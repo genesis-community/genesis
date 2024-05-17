@@ -297,13 +297,29 @@ define_command("manifest", {
 	usage => "<env> manifest [<options...>]",
 	alias => 'm',
 	description =>
-		"Generate the manifest based on the given environment file.",
+		"Generate the manifest based on the given environment file, or list the ".
+		"valid manifest types and subsets for the environment.\n".
+		"\n".
+		"[[#yi{Note:} >>For those upgrading from Genesis 2.x, the --no-redact option ".
+		"has been replaced with the #Y{--type unredacted} option.  However, ".
+		"unredacted manifest may not be what you want, as there are two other types ".
+		"that don't get redacted, but also don't show all the secrets: entombed ".
+		"and vaultified-entombed.  See the --type option for more information. ".
+		"You will most likely want to use the default behaviour, which is to ".
+		"display the manifest that will be sent to the BOSH director (with the ".
+		"extra build metadata still remaining -- see below).\n".
+		"\n".
+		"[[      >>Likewise, the #Y{--no-prune} option is now the default behaviour; ".
+		"if you want to see the pruned manifest, you will need to specify the ".
+		"#Y{--subset pruned} option.",
 	function_group => Genesis::Commands::ENVIRONMENT,
 	scope => 'env',
 	option_group => Genesis::Commands::ENV_OPTIONS,
 	options => [
 		'list|l' =>
-			"List the valid manifest types and subsets -- other options will be ignored",
+			"List the valid manifest types and subsets for the environment (different ".
+			"environments and their kits may have different valid types and subsets)".
+			" -- all other options are ignored if this is specified.",
 
 		'type|t=s' =>
 			"Will generate a manifest of the given type.  If no type given, it will ".
