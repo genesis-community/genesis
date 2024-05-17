@@ -1746,8 +1746,7 @@ sub check {
 			if ($secrets_results->{error}) {
 				$self->notify(error => "- invalid secrets detected.\n");
 				$ok = 0;
-			}
-			if ($secrets_results->{missing}) {
+			} elsif ($secrets_results->{missing}) {
 				my $msg = "- missing secrets detected";
 				if ($self->is_vaultified) {
 					my ($bin,$env_path) = split(/\s+/, $ENV{GENENSIS_CALL_ENV}, 2);
@@ -1758,8 +1757,7 @@ sub check {
 				}
 				$self->notify(error => "$msg\n");
 				$ok = 0;
-			}
-			if ($secrets_results->{warn}) {
+			} elsif ($secrets_results->{warn}) {
 				$self->notify(warning => "- all secrets valid, but warnings were encountered.\n");
 			}
 		}
