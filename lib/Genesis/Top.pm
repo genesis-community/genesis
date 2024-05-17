@@ -103,6 +103,7 @@ sub create {
 		$self->config->set('kit_provider', $self->kit_provider->config)
 			unless ref($self->kit_provider) eq "Genesis::Kit::Provider::GenesisCommunity";
 
+		$self->_validate_config;
 		$self->config->save;
 
 	$self->mkfile("README.md", # {{{
@@ -279,7 +280,9 @@ sub set_kit_provider {
 		if (ref($self->kit_provider) eq "Genesis::Kit::Provider::GenesisCommunity") {
 			$self->config->clear('kit_provider',1)
 		} else {
-			$self->config->set('kit_provider', $self->kit_provider->config,1);
+			$self->config->set('kit_provider', $self->kit_provider->config);
+			$self->_validate_config;
+			$self->config->save;
 		}
 		info "done.";
 	};
@@ -375,7 +378,9 @@ sub set_vault {
 			strongbox => $new_vault->strongbox ? Genesis::Config::TRUE  : Genesis::Config::FALSE,
 			namespace => $new_vault->namespace,
 			alias     => $new_vault->name
-		}, 1);
+		});
+		$self->_validate_config;
+		$self->config->save;
 	} else {
 		$self->config->clear('secrets_provider',1);
 	}
@@ -489,10 +494,12 @@ sub mkdir {
 # config - read the configuration of the repo {{{
 sub config {
 	my ($self) = @_;
+	return $self->{__config} if defined($self->{__config});
 	my $ref = $self->_memoize(sub {
 		my ($self) = @_;
 		return Genesis::Config->new($self->path(".genesis/config"));
 	});
+	$self->_validate_config if -f $self->path(".genesis/config");
 	return $ref;
 }
 
@@ -693,6 +700,50 @@ sub download_kit {
 	}
 
 	$self->kit_provider->fetch_kit_version($name,$version,$target,$opts{force});
+}
+
+# }}}
+# }}}
+
+# Private Methods {{{
+
+# _validate_config - validate the configuration of the repo {{{
+sub _validate_config {
+	my ($self) = @_;
+	my $config_version = $self->config->get(version => 1);
+	if ( $config_version == 1) {
+		# Currently unsupported
+		bail "Genesis deployment repo v1 configuration is not supported";
+	} elsif ($config_version == 2){
+		$self->config->validate({
+			deployment_type  => {type => 'string', required => 1},
+			version          => {type => 'integer', required => 1},
+			creator_version  => {type => 'semver', required => 1},
+			kit_provider     => {
+				type => 'hash',
+				schema => {
+					type         => {type => 'enum', values => ['github','genesis-community']}, # absences means genesis-community
+					organization => {type => 'string'},
+					label        => {type => 'string'},
+					tls          => {type => 'boolean'},
+					domain       => {type => 'string'},
+				}
+			},
+			secrets_provider => {
+				type           => 'hash',
+				schema         => {
+					url          => {type => 'string', required => 1},
+					insecure     => {type => 'boolean', default => Genesis::Config::TRUE},
+					strongbox    => {type => 'boolean', default => Genesis::Config::TRUE},
+					namespace    => {type => 'string'},
+					alias        => {type => 'string'}
+				}
+			},
+			allow_oversized_secrets => {type => 'boolean'},
+		});
+	} else {
+		bail "Genesis deployment repo configuration version $config_version is not supported";
+	}
 }
 
 # }}}
