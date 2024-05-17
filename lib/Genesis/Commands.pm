@@ -624,12 +624,21 @@ sub set_top_path { # {{{
 		) unless $cwd;
 
 		if ( -f $cwd || -f "${cwd}.yml" ) {
-			bail(
-				"#B{%s %s} cannot be called specifying a file as an argument",
-				humanize_bin, $CALLED
-			) unless has_scope('env');
-			unshift(@COMMAND_ARGS, basename($cwd));
-			$cwd = dirname($cwd);
+			if (! has_scope('env')) {
+				# Allow gracefull degradation of specifying a file as an argument when
+				# the command is repo scoped and using search target mode.
+				if ($ENV{GENESIS_PREFIX_TYPE} eq 'search' && has_scope('repo')) {
+					$cwd = dirname($cwd);
+				} else {
+					bail(
+						"#B{%s %s} cannot be called specifying a file as an argument",
+						humanize_bin, $CALLED
+					);
+				}
+			} else {
+				unshift(@COMMAND_ARGS, basename($cwd));
+				$cwd = dirname($cwd);
+			}
 		} elsif ($COMMAND eq 'create' && ! -d $cwd) {
 			unshift(@COMMAND_ARGS, basename($cwd));
 			$cwd = dirname($cwd);
