@@ -31,9 +31,9 @@ sub log_from_script {
 	my $log_cmd = \&Genesis::info;
 
 	if ($_[0] =~ /^@/) {
-		(my $log_level = shift) =~ s/^@//;
+		(my $log_level = lc(shift)) =~ s/^@//;
 		$log_cmd = 'Genesis'->can($log_level);
-		bug(
+		Genesis::bug(
 			"$log_level is not a valid log command for Genesis"
 		) unless $log_cmd;
 	}
