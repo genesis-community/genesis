@@ -137,10 +137,14 @@ sub ci_pipeline_deploy {
 	}
 
 	my $result;
+	my %deploy_opts = (
+		redact => !envset('CI_NO_REDACT'),
+		'disable-reactions' => 0,
+	);
 	eval {
 		$result = $env->with_bosh
 		              ->download_required_configs('deploy')
-		              ->deploy(redact => !envset('CI_NO_REDACT'), reactions => 1);
+		              ->deploy(%deploy_opts);
 	};
 
 	if ($@ || !$result) {
