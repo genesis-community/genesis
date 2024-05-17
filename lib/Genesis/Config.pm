@@ -215,7 +215,20 @@ sub _validate_key {
 	my $type = $schema->{type} or bug "Schema for $key has no type";
 	my $value = $self->get($key);
 
-	if ($type eq 'hash') {
+	if ($type =~ m/\|\|/) {
+		# Allows for multiple types - check that at least one is valid
+		my @types = split(/\|\|/, $type);
+		my $valid = 0;
+		for my $t (@types) {
+			if ($self->_validate_key($key, {type => $t})) {
+				$valid = 1;
+				last;
+			}
+		}
+		if (! $valid) {
+			push @errors, "#R{$key}: expected one of ".join(', ', @types);
+		}
+	} elsif ($type eq 'hash') {
 		if (ref($value) ne 'HASH') {
 			push @errors, "#R{$key}: expected a hash";
 		} else {
@@ -291,6 +304,16 @@ sub _validate_key {
 			push @errors, "#R{$key}: expected a number, not #ri{".($value ? $value : "<null>")."}"
 				unless (!defined($value) && $schema->{allow_null});
 		}
+	} elsif ($type =~ /^"(.*?)"$/) {
+		if (ref($value) ne '' || !defined($value) || $value ne $1) {
+			push @errors, "#R{$key}: expected #ri{$1}, not #ri{".($value ? $value : "<null>")."}";
+		}
+	} elsif ($type eq 'null') {
+		if (defined($value)) {
+			push @errors, "#R{$key}: expected null, not #ri{".($value ? $value : "<null>")."}";
+		}
+	} elsif ($type eq 'any') {
+		# Do nothing
 	} else {
 		push @errors, "#R{$key}: unknown schema type $type";
 	}

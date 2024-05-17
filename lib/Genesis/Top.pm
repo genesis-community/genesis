@@ -718,7 +718,7 @@ sub _validate_config {
 		$self->config->validate({
 			deployment_type  => {type => 'string', required => 1},
 			version          => {type => 'integer', required => 1},
-			creator_version  => {type => 'semver', required => 1},
+			creator_version  => {type => 'semver||"(development)"', required => 1},
 			kit_provider     => {
 				type => 'hash',
 				schema => {
