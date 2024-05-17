@@ -253,7 +253,7 @@ sub kit_manual {
 		exit 1;
 	}
 
-	info "Displaying manual for kit #C{%s}...\n", $kit->id;
+	info "Displaying manual for kit #M{%s}...\n", $kit->id;
 
 	my $man = $kit->path('MANUAL.md');
 	if (-f $man) {
@@ -268,7 +268,7 @@ sub kit_manual {
 		}
 		exit 0;
 	}
-	error "#Y{%s} has no MANUAL.md", $kit->id;
+	error "#M{%s} has no MANUAL.md", $kit->id;
 	exit 1;
 }
 
@@ -347,7 +347,7 @@ sub environments {
 								$msg .= " using kit #Y{$env_info->{last_kit}} #y\@{!}"
 									if ($env_info->{last_kit} ne $env_info->{kit});
 							} else {
-								$msg .= " - #Y{never deployed}";
+								$msg .= " - #r{never deployed}";
 							}
 							info $msg;
 						} else {
