@@ -6,6 +6,8 @@ use base 'Genesis::Base';
 
 use Genesis;
 use Genesis::State;
+use Genesis::Term qw/in_controlling_terminal csprintf/;
+use Genesis::UI qw/prompt_for_choice/;
 use Genesis::Env;
 use Genesis::Kit::Compiled;
 use Genesis::Kit::Dev;
@@ -245,6 +247,55 @@ EOF
 	return $self;
 }
 
+# }}}
+# search_for_repo_path - search for an deployment repository path in known deployment root(s) {{{
+sub search_for_repo_path {
+	my ($class, $deployment) = @_;
+	my $label = "\@:$deployment";
+	my @paths;
+	my @roots =
+		(exists($ENV{GENESIS_DEPLOYMENT_ROOTS}))
+		? (split(/:/,$ENV{GENESIS_DEPLOYMENT_ROOTS}))
+		: @{$Genesis::RC->get(deployment_roots => [])};
+	push @roots, $ENV{GENESIS_ORIGINATING_DIR};
+	$deployment = "*$deployment*" =~ s/\*\^//r =~ s/\$\*//r if defined($deployment);
+
+	for my $root (@roots) {
+		my @deployments = map {s{/\.genesis/config$}{}r}
+			glob("$root/".($deployment//'*')."/.genesis/config"); # Only include genesis repos
+		next unless @deployments;
+		push @paths, @deployments;
+	}
+
+	if (scalar(@paths) > 1) {
+		bail(
+			"Ambiguous deployment repository name: #C{%s} matches multiple paths:\n  - %s\n\n".
+			"Please refine your match criteria.",
+			$label, join("\n  - ", @paths)
+		) unless in_controlling_terminal;
+
+		my $default = (grep {$_ =~ m{/bosh(-deployments)?$}} @paths)[0] || $paths[0];
+
+		$paths[0] = prompt_for_choice(
+			csprintf(
+				"Multiple deployment repository paths found matching #C{$label}:"
+			),
+			[@paths, 'none'],
+			$default,
+			[(
+					map {m{(.*?)/([^/]*)$}; csprintf("#C{%s}/#c{%s}/", $1, $2)}
+					map {humanize_path($_)}
+					@paths
+				), csprintf('#R{None of these - cancel}')
+			],
+			undef,
+			"the desired deployment repository path"
+		);
+		output({stderr=>1}, "");
+		bail("No deployment repository path selected.") if $paths[0] eq 'none';
+	}
+	return $paths[0];
+}
 # }}}
 # }}}
 
