@@ -6,6 +6,7 @@ use lib 't';
 use helper;
 use Test::Differences;
 
+$ENV{GENESIS_CONFIG_AUTOMATIC_UPGRADE} = 'silent';
 vault_ok();
 
 my $tmp = workdir;

@@ -106,6 +106,7 @@ sub Init {
 		embedded_genesis         => { type => 'enum',    default => 'ignore', values => [qw/ignore check warn/]},
 		output_style             => { type => 'enum',    default => 'plain', values => [qw/plain fun pointer/]},
 		show_duration            => { type => 'boolean', default => 0 },
+		automatic_config_upgrade => { type => 'enum',    default => 'no', values => [qw/no yes silent/], envvar => 'GENESIS_CONFIG_AUTOMATIC_UPGRADE' },
 
 		suppress_warnings => {
 			type => 'hash',

@@ -440,7 +440,13 @@ sub reprovision {
 			exit 1;
 		}
 
-		qx(mkdir -p .genesis && echo "deployment_type: $opts{kit}" > .genesis/config);
+		if (-f ".genesis/config") {
+			$contents = get_file(".genesis/config");
+			$contents =~ s/deployment_type: .*/deployment_type: $opts{kit}/;
+			put_file(".genesis/config", $contents);
+		} else {
+			qx(mkdir -p .genesis && echo "version: 2\ncreator_version: (development)\ndeployment_type: $opts{kit}" > .genesis/config);
+		}
 
 		if ($opts{compiled}) {
 			$opts{version} ||= "1.0.0";

@@ -6,6 +6,8 @@ use lib 't';
 use helper;
 use Test::Differences;
 
+$ENV{GENESIS_CONFIG_AUTOMATIC_UPGRADE} = 'silent';
+
 my $vault_target = vault_ok;
 write_bosh_config qw/test-env test-env-upgrade new-env/;
 

@@ -37,7 +37,8 @@ subtest 'kit location' => sub {
 		/);
 		mkfile_or_fail("$tmp/.genesis/config", <<EOF);
 ---
-genesis_version: 2.7.0
+version: 2
+creator_version: 2.7.0
 deployment_type: foo
 EOF
 	};
@@ -224,8 +225,9 @@ subtest 'manage secrets provider' => sub {
 
 	$reset->(<<EOF);
 ---
+version: 2
 deployment_type: test
-genesis_version: 99.99.99
+creator_version: 99.99.99
 EOF
 
 	# Check that top uses the system vault if no vault present in config
@@ -260,7 +262,7 @@ EOF
 	is($top->vault->{name}, $vault_target, "top targets the expected vault");
 	yaml_is(get_file("$tmp/.genesis/config"), <<EOF, ".genesis/config contains the correct information");
 ---
-genesis_version: 99.99.99
+creator_version: 99.99.99
 deployment_type: test
 secrets_provider:
   url: $VAULT_URL{$vault_target}
@@ -268,10 +270,14 @@ secrets_provider:
   strongbox: false
   namespace: ""
   alias: $vault_target
+updater_version: (development)
+version: 2
 EOF
 	cmp_deeply($top->config->_contents, {
 			"deployment_type" => "test",
-			"genesis_version" => "99.99.99",
+			"creator_version" => "99.99.99",
+			"updater_version" => "(development)",
+			"version" => 2,
 			"secrets_provider" => {
 				"url" => $VAULT_URL{$vault_target},
 				"insecure" => bool(0),
@@ -288,7 +294,7 @@ EOF
 	is($top->vault->{name}, $other_vault_name, "top targets the expected vault");
 	yaml_is(get_file("$tmp/.genesis/config"), <<EOF, ".genesis/config contains the correct information");
 ---
-genesis_version: 99.99.99
+creator_version: 99.99.99
 deployment_type: test
 secrets_provider:
   url: $VAULT_URL{$vault_target}
@@ -296,10 +302,14 @@ secrets_provider:
   strongbox: false
   namespace: ""
   alias: $vault_target
+updater_version: (development)
+version: 2
 EOF
 	cmp_deeply($top->config->_contents, {
 			"deployment_type" => "test",
-			"genesis_version" => "99.99.99",
+			"creator_version" => "99.99.99",
+			"updater_version" => "(development)",
+			"version" => 2,
 			"secrets_provider" => {
 				"url" => $VAULT_URL{$vault_target},
 				"insecure" => bool(0),
@@ -318,7 +328,7 @@ EOF
 	is($top->vault->{name}, $other_vault_name, "top targets the expected vault");
 	yaml_is(get_file("$tmp/.genesis/config"), <<EOF, ".genesis/config contains the correct information");
 ---
-genesis_version: 99.99.99
+creator_version: 99.99.99
 deployment_type: test
 secrets_provider:
   url: $VAULT_URL{$other_vault_name}
@@ -326,10 +336,14 @@ secrets_provider:
   strongbox: false
   namespace: ""
   alias: $other_vault_name
+updater_version: (development)
+version: 2
 EOF
 	cmp_deeply($top->config->_contents, {
 			"deployment_type" => "test",
-			"genesis_version" => "99.99.99",
+			"creator_version" => "99.99.99",
+			"updater_version" => "(development)",
+			"version" => 2,
 			"secrets_provider" => {
 				"url" => $VAULT_URL{$other_vault_name},
 				"insecure" => bool(0),

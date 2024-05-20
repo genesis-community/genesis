@@ -7,7 +7,7 @@ use base 'Genesis::Base';
 use Genesis;
 use Genesis::State;
 use Genesis::Term qw/in_controlling_terminal csprintf/;
-use Genesis::UI qw/prompt_for_choice/;
+use Genesis::UI qw/prompt_for_boolean prompt_for_choice/;
 use Genesis::Env;
 use Genesis::Kit::Compiled;
 use Genesis::Kit::Dev;
@@ -332,6 +332,7 @@ sub set_kit_provider {
 			$self->config->clear('kit_provider',1)
 		} else {
 			$self->config->set('kit_provider', $self->kit_provider->config);
+			$self->config->set('updater_version', $Genesis::VERSION) if $self->config->exists();
 			$self->_validate_config;
 			$self->config->save;
 		}
@@ -430,6 +431,7 @@ sub set_vault {
 			namespace => $new_vault->namespace,
 			alias     => $new_vault->name
 		});
+		$self->config->set('updater_version', $Genesis::VERSION) if $self->config->exists();
 		$self->_validate_config;
 		$self->config->save;
 	} else {
@@ -762,14 +764,22 @@ sub download_kit {
 sub _validate_config {
 	my ($self) = @_;
 	my $config_version = $self->config->get(version => 1);
-	if ( $config_version == 1) {
-		# Currently unsupported
-		bail "Genesis deployment repo v1 configuration is not supported";
+	if ($config_version == 1 || $config_version =~ /^\d+\.\d+\.\d+(-[A-Za-z0-9_-]\.?\d+)?$/) {
+
+		my $upgrade_automatically = $Genesis::RC->get(automatic_config_upgrade => 'no');
+		bail(
+			"Genesis deployment repo v1 configuration is not supported, and cannot ".
+			"update automatically.  Manual intervention required."
+		) unless in_controlling_terminal || $upgrade_automatically ne 'no';
+
+		$self->_upgrade_config_to_v2($config_version, $upgrade_automatically);
+
 	} elsif ($config_version == 2){
 		$self->config->validate({
 			deployment_type  => {type => 'string', required => 1},
-			version          => {type => 'integer', required => 1},
-			creator_version  => {type => 'semver||"(development)"', required => 1},
+			version          => {type => '"2"', required => 1},
+			creator_version  => {type => 'semver||"(development)"||"Unknown"', required => 1},
+			updater_version  => {type => 'semver||"(development)"'},
 			kit_provider     => {
 				type => 'hash',
 				schema => {
@@ -798,6 +808,70 @@ sub _validate_config {
 }
 
 # }}}
+# _upgrade_config_to_v2 - upgrade the configuration to version 2 from previous unversioned configs {{{
+sub _upgrade_config_to_v2 {
+	my ($self, $config_version, $upgrade_automatically) = @_;
+
+	# Check if we can upgrade to v2
+	my $new_config = Genesis::Config->new();
+	$new_config->set('deployment_type', $self->config->get('deployment_type' => $self->config->get('type')));
+	$new_config->set('version', 2);
+	if ($config_version =~ /^\d+\.\d+\.\d+(-[A-Za-z0-9_-]\.?\d+)?$/) {
+		$new_config->set('creator_version', $config_version);
+	} else {
+		$new_config->set('creator_version',  # There are several possible keys for the creator version
+				 $self->config->get('creator_version'
+			=> $self->config->get('genesis_version'
+			=> $self->config->get('genesis' => 'Unknown'
+		))));
+	}
+	$new_config->set('updater_version', $Genesis::VERSION);
+	$new_config->set('kit_provider', $self->config->get('kit_provider')) if $self->config->has('kit_provider');
+	if ($self->config->has('secrets_provider')) {
+		$new_config->set('secrets_provider', $self->config->get('secrets_provider'))
+	} elsif ($self->config->has('vault')) {
+		$new_config->set('secrets_provider', {
+			url       => $self->vault->url,
+			insecure  => $self->vault->verify    ? Genesis::Config::FALSE : Genesis::Config::TRUE,
+			strongbox => $self->vault->strongbox ? Genesis::Config::TRUE  : Genesis::Config::FALSE,
+			namespace => $self->vault->namespace,
+			alias     => $self->vault->name
+		});
+	}
+
+	if ($self->config->has('allow_oversized_secrets')) {
+		$new_config->set('allow_oversized_secrets', $self->config->get('allow_oversized_secrets'));
+	}
+
+	my $old_config = $self->config;
+	$self->{__config} = $new_config;
+
+	bail(
+		"Cannot upgrade Genesis deployment repo v1 configuration to v2.  Manual intervention required."
+	) unless $self->_validate_config;
+
+	# Show and ask permission to upgrade
+	if ($upgrade_automatically ne 'silent') {
+		warning "Genesis deployment repo v1 configuration detected, preparing to upgrade to v2";
+		$self->config->show_diff($old_config);
+	}
+
+		# Ask user permission to upgrade to v2
+
+	my $upgrade = $upgrade_automatically ne 'no' || prompt_for_boolean(
+		"Proceed [y|n]?", 1
+	);
+
+	if ($upgrade) {
+		$self->config->replace($old_config);
+		info(
+			"Genesis deployment repo configuration upgraded to v2"
+		) unless $upgrade_automatically eq 'silent';
+	} else {
+		bail "Genesis deployment repo configuration upgrade to v2 aborted";
+	}
+}
+
 # }}}
 
 1;
