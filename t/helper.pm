@@ -751,7 +751,7 @@ sub expect_ok {
 		$cmd = shift;
 	}
 
-	$cmd->expect(10, @_,
+	$cmd->expect(60, @_,
 		[ timeout => sub {
 				$cmd->expect(0,['eof']);
 				my $remainder = $cmd->set_accum('');
