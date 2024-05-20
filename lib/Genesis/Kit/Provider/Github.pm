@@ -221,7 +221,7 @@ sub fetch_kit_version {
 	) unless $url;
 
 	info {pending=> 1}, "Downloading v%s of #M{%s} kit from #C{%s} ... ",$version,$name,$self->label;
-	my ($code, $msg, $data) = curl("GET", $url);
+	my ($code, $msg, $data) = curl("GET", $url, undef, undef, 0, $self->credentials);
 	bail(
 		"Failed to download %s/%s from %s: returned a %s status code\n",
 		$name, $version, $self->label, $code

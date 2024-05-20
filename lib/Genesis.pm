@@ -532,11 +532,12 @@ sub curl {
 	bug("No methhod provided to Genesis::curl") unless $method;
 
 	my $header_opt = "i";
+	my @flags = ("-X", $method);
 	if ($method eq "HEAD") {
 		$header_opt = 'I';
-		$method = "GET";
+	} elsif ($method eq "POST") {
+		push @flags, qw/--post301 --post302/;
 	}
-	my @flags = ("-X", $method);
 	push @flags, "-H", "$_: $headers->{$_}" for (keys %$headers);
 	push @flags, "-d", $data                if  $data;
 	push @flags, "-k"                       if  ($skip_verify);
