@@ -23,6 +23,43 @@ sub new {
 	}, $class)
 }
 # }}}
+# from_bosh - create a credhub object from the BOSH director details {{{
+sub from_bosh {
+	my ($class, $bosh, %opts) = @_;
+	my ($exodus, $exodus_source);
+	$opts{vault} ||= (Service::Vault->current || Service::Vault->default);
+	my $exodus_path = $opts{exodus_path} || $bosh->exodus_path;
+	$exodus = $opts{vault}->get($exodus_path);
+	$exodus_source = csprintf("under #C{%s} on vault #M{%s}", $exodus_path, $opts{vault}->name);
+	unless ($exodus) {
+		trace("#R{[ERROR]} No exodus data found %s", $exodus_source);
+		return;
+	}
+
+	# validate exodus data
+	my @missing_keys;
+	for (qw(credhub_url credhub_username credhub_password credhub_ca_cert)) {
+		push(@missing_keys,$_) unless $exodus->{$_};
+	}
+	if (@missing_keys) {
+		trace(
+			"#R{[ERROR]} Exodus data %s does not appear to be for a deployment ".
+			"containing a CredHub endpoint:\n".
+			"        Missing keys: %s",
+			$exodus_source, join(", ", @missing_keys)
+		);
+		return;
+	}
+	return $class->new(
+		$bosh->alias,
+		$exodus->{credhub_base} || $opts{base} ||	"/",
+		$exodus->{credhub_url},
+		$exodus->{credhub_username},
+		$exodus->{credhub_password},
+		$exodus->{ca_cert}.$exodus->{credhub_ca_cert}
+	);
+}
+# }}}
 # }}}
 
 ### Instance Methods {{{
@@ -273,6 +310,18 @@ sub _full_path {
 	return $self->{base} unless $path;
 	return $path if ($path =~ /^\//);
 	return ($self->{base}).'/'.$path;
+}
+
+sub execute {
+	my ($self,$cmd,@args) = @_;
+	return run({
+			env => $self->env(),
+			interactive => 1,
+			redact_env => 1,
+			stderr => 0
+		},
+		'credhub', $cmd, @args
+	);
 }
 
 # TODO: export, import

@@ -431,6 +431,54 @@ define_command("bosh", {
 	]
 });
 # }}}
+# genesis delete - delete the environment from the BOSH director {{{
+# TODO: Create this command
+# }}}
+# genesis credhub - run a credhub command on the Credhub server for the specified environment {{{
+define_command("credhub", {
+	summary => "Run a Credhub cli command for the specific environment.",
+	usage => "<env> credhub [<options>] <credhub command> [<credhub options and args...>]",
+	description =>
+		"Runs the specified credhub command and options against the CredHub server ".
+		"associated with the specified environment.  The options below must come ".
+		"BEFORE any credhub command and options, or they will be passed through to ".
+		"the credhub cli.\n".
+		"\n".
+		"[[Note: >>Like the bosh command, if specifying a non-bosh director ".
+		"deployment, it will select the CredHub server used to deploy the ".
+		"environment.  If the environment is a bosh deployment that was deployed by ".
+		"create-env, it will select the CredHub server on that BOSH director VM.\n".
+		"\n".
+		"[[      >>If the environment is a bosh deployment that was deployed by ".
+		"another bosh director, you should specify either --self or --parent, as ".
+		"the target is ambiguous.  If you don't specify either, it will prompt you ".
+		"to choose one if in a controlling terminal, or fail if not.  Alternatively, ".
+		"you can set the `default_bosh_target` in the user config to specify the ".
+		"default target.",
+	function_group => Genesis::Commands::ENVIRONMENT,
+	scope => 'env',
+	option_group => Genesis::Commands::REPO_OPTIONS,
+	option_passthrough => 1,
+	option_require_order => 1,
+	options => [
+		"raw" =>
+			"Process the command exactly as given, without any additional processing. ".
+			"Without this option, the command will provide augmentation to the path ".
+			"based on the environment",
+		"self" =>
+			"Run the credhub command against this deployment as a credhub server.  This ".
+			"is only applicable if the environment is a bosh deployment that doesn't ".
+			"use create-env.  This is the only valid behaviour for bosh director ".
+			"deployments that use create-env, so this option is unnecessary.",
+		"parent" =>
+			"Target the Credhub server used to deploy this environment, with the ".
+			"environment being the associated deployment.  This is only applicable ".
+			"if the environment is a bosh deployment that doesn't use create-env.  ".
+			"This is the only valid behaviour for non-bosh director deployments, so ".
+			"this option is unnecessary."
+	]
+});
+# }}}
 # genesis do - run a kit addon {{{
 define_command("do", {
 	summary => "Run an addon script provided by the environment's kit.",

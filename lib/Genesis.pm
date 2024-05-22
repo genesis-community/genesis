@@ -86,6 +86,7 @@ our @EXPORT = qw/
 	flatten
 	unflatten
 	in_array
+	index_of
 	compare_arrays
 	sentence_join
 	uniq
@@ -1000,6 +1001,14 @@ sub uniq {
 sub in_array {
 	my ($item, @arr) = @_;
 	return !!scalar(grep {defined($_) ? (defined($item) && $item eq $_) : !defined($item)} (@arr));
+}
+
+sub index_of {
+	my ($item, @arr) = @_;
+	for (my $i = 0; $i < scalar(@arr); $i++) {
+		return $i if $arr[$i] eq $item;
+	}
+	return undef;
 }
 
 sub compare_arrays {

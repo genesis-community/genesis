@@ -29,7 +29,8 @@ sub new {
 		alias  => $alias,
 		deployment => $opts{deployment},
 		use_local_config => $opts{use_local_config},
-		validated => ($ENV{GENESIS_BOSH_VERIFIED}||"") eq $alias
+		validated => ($ENV{GENESIS_BOSH_VERIFIED}||"") eq $alias,
+		exodus_path => $opts{exodus_path}//$class->exodus_path($alias, %opts)
 	};
 
 	return bless($director, $class);
@@ -88,7 +89,8 @@ sub from_exodus {
 		client  => $exodus->{admin_username},
 		secret  => $exodus->{admin_password},
 		ca_cert => $exodus->{ca_cert},
-		deployment => $opts{deployment}
+		deployment => $opts{deployment},
+		exodus_path => $opts{exodus_path}
 	);
 }
 
@@ -139,6 +141,9 @@ sub from_environment {
 # exodus_path - return the exodus path from which the connection details will be read {{{
 sub exodus_path {
 	my ($class, $alias, %opts) = @_;
+	if (ref($class) && $class->isa(__PACKAGE__)) {
+		return $class->{exodus_path};
+	}
 	return $opts{exodus_path} || (
 		($opts{exodus_mount} || '/secret/exodus/').
 		$alias.'/'.

@@ -1449,8 +1449,118 @@ sub bosh {
 		return $bosh;
 	});
 }
+# }}}
+# get_target_bosh - determine the correct BOSH to target for this environment {{{
+sub get_target_bosh {
+	my ($self, $options) = @_;
+	my $target;
+	my $bosh;
+	my $bosh_exodus_path;
 
-#}}}
+	bail(
+		"Cannot use the #y{--self} and #y{--parent} options together."
+	) if ($options->{self} && $options->{parent});
+
+	if ($self->is_bosh_director && !$self->use_create_env) {
+		if ($options->{self}) {
+			$target = 'self'
+		} elsif ($options->{parent}) {
+			$target = 'parent'
+		} else {
+			$target = $Genesis::RC->get('default_bosh_target' => 'ask');
+			if ($target eq 'ask') {
+				bail(
+					"Environment #C{%s} is a BOSH director deployed by another BOSH ".
+					"director.  You must specify either #y{--self} or #y{--parent} option ".
+					"to target it or its deploying director respectively.",
+					$self->name
+				) unless in_controlling_terminal;
+
+				my $self_name = $self->name;
+				my $parent_name = $self->lookup('genesis.bosh_env');
+				$target = prompt_for_choice(
+					"Which BOSH director do you want to target?",
+					['self', 'parent'],
+					'self',
+					[
+						"#C{$self_name}: this environment",
+						"#C{$parent_name}: the BOSH director that deployed this environment"
+					]
+				);
+			}
+		}
+	} elsif (!$self->is_bosh_director && $self->use_create_env) {
+		bail(
+			"Environment %s is a #M{create-env} deployment, but not a BOSH director, ".
+			"so there is no BOSH director to target.",
+			$self->name
+		);
+	} elsif (!$self->is_bosh_director) {
+		bail(
+			"Environment %s is not a BOSH director, so the #y{--self} option is invalid.",
+			$self->name
+		) if $options->{self};
+		warning(
+			"Environment %s is not a BOSH director, so the #y{--parent} option is unnecessary.",
+			$self->name
+		) if $options->{parent} && !$Genesis::RC->get('suppress_warnings.bosh_target' => 0);
+		$target = 'parent';
+	} elsif ($self->use_create_env) {
+		bail(
+			"Environment %s is a #M{create-env} deployment, so the #y{--parent} option is invalid.",
+			$self->name
+		) if $options->{parent};
+		warning(
+			"Environment %s is a #M{create-env} deployment, so the #y{--self} option is unnecessary.",
+			$self->name
+		) if $options->{self} && !$Genesis::RC->get('suppress_warnings.bosh_target' => 0);
+		$target = 'self';
+	}
+
+	elsif ($options->{self} || $options->{parent}) {
+		if ($self->use_create_env) {
+			bail(
+				"Environment %s is a #M{create-env} deployment, so the #y{--self} is ".
+				"unnecessary and the #y{--parent} is invalid.",
+				$self->name
+			);
+		} elsif (!$self->is_bosh_director) {
+			bail(
+				"Environment %s is not a BOSH director, so the #y{--self} is invalid ".
+				"and #y{--parent} is unnecessary.",
+				$self->name
+			) ;
+		} else {
+			bug(
+				"Somehow, the environment %s is not a BOSH director, but is also not a ".
+				"#M{create-env} deployment.  This should not be possible.",
+			);
+		}
+	} else {
+		$target = $self->is_bosh_director ? 'self' : 'parent';
+	}
+
+	if ($target eq 'self') {
+		$bosh_exodus_path=$self->exodus_base;
+		my $exodus_data = eval {$self->vault->get($bosh_exodus_path)};
+		if ($exodus_data->{url} && $exodus_data->{admin_password}) {
+			$bosh = Service::BOSH::Director->from_exodus($self->name, exodus_data => $exodus_data);
+		} else {
+			$bosh = Service::BOSH::Director->from_alias($self->name);
+		}
+	} else {
+		$bosh_exodus_path=Service::BOSH::Director->exodus_path($self->name);
+		$bosh = $self->bosh; # This sets the deployment name.
+	}
+	bail(
+		"No BOSH connection details found.  This may be due to not having read ".
+		"access to the BOSH deployment's exodus data in vault (#M{%s}).",
+		$bosh_exodus_path
+	) unless $bosh;
+
+	return wantarray ? ($bosh, $target, $bosh_exodus_path) : $bosh;
+}
+# }}}
 
 # Config Management
 # configs - return the list of configs being used by this environment. {{{

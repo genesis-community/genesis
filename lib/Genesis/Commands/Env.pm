@@ -452,6 +452,14 @@ sub do {
 		or exit 1;
 }
 
+sub env_shell {
+	append_options(redact => ! -t STDOUT);
+	command_usage(1) if @_ != 1;
+	my $env = Genesis::Top->new('.')->load_env($_[0])->with_vault();
+	$env->with_bosh() unless get_options->{'no-bosh'};
+	$env->shell(%{get_options()});
+}
+
 
 sub bosh {
 	append_options(redact => ! -t STDOUT);
@@ -459,110 +467,7 @@ sub bosh {
 	command_usage(1) unless @_;
 	my $env = Genesis::Top->new('.')->load_env(shift(@_))->with_vault();
 
-	my $bosh;
-	my $bosh_exodus_path;
-	my $target;
-
-	bail(
-		"Cannot use the #y{--self} and #y{--parent} options together."
-	) if (get_options->{self} && get_options->{parent});
-
-	if ($env->is_bosh_director && !$env->use_create_env) {
-		if (get_options->{self}) {
-			$target = 'self'
-		} elsif (get_options->{parent}) {
-			$target = 'parent'
-		} else {
-			$target = $Genesis::RC->get('default_bosh_target' => 'ask');
-			if ($target eq 'ask') {
-				bail(
-					"Environment #C{%s} is a BOSH director deployed by another BOSH ".
-					"director.  You must specify either #y{--self} or #y{--parent} option ".
-					"to target it or its deploying director respectively.",
-					$env->name
-				) unless in_controlling_terminal;
-
-				my $self_name = $env->name;
-				my $parent_name = $env->lookup('genesis.bosh_env');
-				$target = prompt_for_choice(
-					"Which BOSH director do you want to target?",
-					['self', 'parent'],
-					'self',
-					[
-						"#C{$self_name}: this environment",
-						"#C{$parent_name}: the BOSH director that deployed this environment"
-					]
-				);
-			}
-		}
-	} elsif (!$env->is_bosh_director && $env->use_create_env) {
-		bail(
-			"Environment %s is a #M{create-env} deployment, but not a BOSH director, ".
-			"so there is no BOSH director to target.",
-			$env->name
-		);
-	} elsif (!$env->is_bosh_director) {
-		bail(
-			"Environment %s is not a BOSH director, so the #y{--self} option is invalid.",
-			$env->name
-		) if get_options->{self};
-		warning(
-			"Environment %s is not a BOSH director, so the #y{--parent} option is unnecessary.",
-			$env->name
-		) if get_options->{parent} && !$Genesis::RC->get('suppress_warnings.bosh_target' => 0);
-		$target = 'parent';
-	} elsif ($env->use_create_env) {
-		bail(
-			"Environment %s is a #M{create-env} deployment, so the #y{--parent} option is invalid.",
-			$env->name
-		) if get_options->{parent};
-		warning(
-			"Environment %s is a #M{create-env} deployment, so the #y{--self} option is unnecessary.",
-			$env->name
-		) if get_options->{self} && !$Genesis::RC->get('suppress_warnings.bosh_target' => 0);
-		$target = 'self';
-	}
-
-	elsif (get_options->{self} || get_options->{parent}) {
-		if ($env->use_create_env) {
-			bail(
-				"Environment %s is a #M{create-env} deployment, so the #y{--self} is ".
-				"unnecessary and the #y{--parent} is invalid.",
-				$env->name
-			);
-		} elsif (!$env->is_bosh_director) {
-			bail(
-				"Environment %s is not a BOSH director, so the #y{--self} is invalid ".
-				"and #y{--parent} is unnecessary.",
-				$env->name
-			) ;
-		} else {
-			bug(
-				"Somehow, the environment %s is not a BOSH director, but is also not a ".
-				"#M{create-env} deployment.  This should not be possible.",
-			);
-		}
-	} else {
-		$target = $env->is_bosh_director ? 'self' : 'parent';
-	}
-
-	if ($target eq 'self') {
-		$bosh_exodus_path=$env->exodus_base;
-		my $exodus_data = eval {$env->vault->get($bosh_exodus_path)};
-		if ($exodus_data->{url} && $exodus_data->{admin_password}) {
-			$bosh = Service::BOSH::Director->from_exodus($env->name, exodus_data => $exodus_data);
-		} else {
-			$bosh = Service::BOSH::Director->from_alias($env->name);
-		}
-	} else {
-		$bosh_exodus_path=Service::BOSH::Director->exodus_path($env->name);
-		$bosh = $env->bosh; # This sets the deployment name.
-	}
-	bail(
-		"No BOSH connection details found.  This may be due to not having read ".
-		"access to the BOSH deployment's exodus data in vault (#M{%s}).",
-		$bosh_exodus_path
-	) unless $bosh;
+	my $bosh = $env->get_target_bosh(get_options());
 
 	if (get_options->{connect}) {
 		if (in_controlling_terminal) {
@@ -589,12 +494,100 @@ sub bosh {
 	}
 }
 
-sub env_shell {
-	append_options(redact => ! -t STDOUT);
-	command_usage(1) if @_ != 1;
-	my $env = Genesis::Top->new('.')->load_env($_[0])->with_vault();
-	$env->with_bosh() unless get_options->{'no-bosh'};
-	$env->shell(%{get_options()});
+# }}}
+# credhub - execute a credhub command for the target environment {{{
+sub credhub {
+
+	command_usage(1) unless @_;
+	my $env = Genesis::Top->new('.')->load_env(shift(@_))->with_vault();
+
+	# TODO: Support a --connect option similar to `bosh` command so that it
+	#       will set the environment variables in the current shell.
+
+	my ($cmd,@args) = @_;
+
+	my ($bosh, $target) = $env->get_target_bosh(get_options());
+
+	my $credhub = ($target eq 'self')
+		? Service::Credhub->from_bosh($bosh, vault => $env->vault)
+		: $env->credhub;
+
+	# Check for invalid commands in the context of Genesis-augmented CredHub
+	# environments
+	if ($cmd =~ m/^(l|login|a|api|o|logout)$/) {
+		bail(
+			"Command #C{genesis credhub %s} is not allowed in when Genesis is ".
+			"managing authentication to CredHub",
+			$cmd
+		);
+	}
+
+	unless (get_options->{raw}) {
+
+		# Find the name or path option, and make it magically work under the
+		# environment's base path
+
+		my $name_idx = index_of('-n', @args) // index_of('--name', @args);
+		my $path_idx = index_of('-p', @args) // index_of('--path', @args) // index_of('--prefix', @args);
+
+		# Commands that take a --name option only
+		if ($cmd =~ m/^(g|get|s|set|n|generate|r|regenerate|d|delete)$/) {
+			if (defined($name_idx)) {
+				$args[$name_idx+1] = $credhub->base. $args[$name_idx+1]
+					if ($args[$name_idx+1] !~ m/^\//);
+			} else {
+				# Can't generate a name if --name isn't present -- let credhub handle it
+			}
+
+		# Commands that take a --path or --prefix option (both use -p for short)
+		} elsif ($cmd =~ m/^(e|export|interpolate|f|find)$/) {
+			if (defined($path_idx)) {
+				$args[$path_idx+1] = $credhub->base. $args[$path_idx+1]
+					if ($args[$path_idx+1] !~ m/^\//);
+			} else {
+				unshift(@args, '-p', $credhub->base);
+			}
+		}
+	}
+
+	pushd($ENV{GENESIS_ORIGINATING_DIR});
+	$env->notify(
+		"Running #C{credhub %s} against CredHub server on #M{%s} (#C{%s}):\n",
+		$cmd, $credhub->{name}, $credhub->{url}
+	);
+	my ($out, $rc) = $credhub->execute($cmd, @args);
+	popd();
+	if ($rc) {
+		$env->notify(
+			fatal => "command #C{credhub %s} failed with exit code #R{%d}\n",
+			$cmd, $rc
+		);
+	} else {
+		$env->notify(
+			success => "command #C{credhub %s} succeeded!\n",
+			$cmd
+		);
+	}
+	exit $rc;
+}
+
+
+# }}}
+sub logs {
+	command_usage(1) if @_ < 2;
+
+	my %options = %{get_options()};
+	my ($env_name, @extra_args) = @_;
+
+	my $env = Genesis::Top->new('.')->load_env($env_name)->with_vault()->with_bosh();
+	my $target = get_target_bosh($env, \%options);
+
+	my @logs;
+	if ($target eq 'self') {
+		@logs = $env->bosh_logs(undef, @extra_args);
+	} else {
+		@logs = $env->bosh_logs($env->deployment_name, @extra_args);
+	}
 }
 1;
 # vim: fdm=marker:foldlevel=1:noet
