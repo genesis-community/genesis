@@ -57,7 +57,7 @@ sub version {
 		"$Y$M$d.$h$m$s",
 		strftime("%Y-%b-%d %r %Z", localtime($epoch)),
 		$commit,
-		$dirty eq '+' ? $JSON::PP::true : $JSON::PP::false,
+		($dirty//'') eq '+' ? $JSON::PP::true : $JSON::PP::false,
 	) if $Y;
 
 	if (get_options->{json}) {
