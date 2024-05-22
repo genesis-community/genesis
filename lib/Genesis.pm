@@ -126,7 +126,7 @@ sub Init {
 			subtype => 'hash',
 			schema => {
 				file => { type => 'string', required => 1 },
-				level => { type => 'enum', default => 'INFO', values => [qw/TRACE DEBUG INFO WARN ERROR FATAL/]},
+				level => { type => 'enum', default => 'INFO', values => [qw/TRACE DEBUG INFO WARN ERROR OUTPUT/]},
 				show_stack => { type => 'enum', default => 'default', values => [qw/default none full current fatal/]},
 				truncate => { type => 'boolean', default => 0 },
 				style => { type => 'enum', default => 'plain', values => [qw/plain fun pointer rfc-5424/]},
