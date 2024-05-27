@@ -289,9 +289,12 @@ sub environments {
 	#preemptively check that vault is available
 	
 	# Get the list of deployment roots
+	my $root_map = $Genesis::RC->get(deployment_roots => []);
 	my @roots = map {
 		abs_path($_) eq abs_path('.') ? '.' : abs_path($_)
-	} @{$Genesis::RC->get(deployment_roots => [])};
+	} map {
+		ref($_) eq 'ARRAY' ? $_->[1] : $_
+	} @$root_map;
 
 	push @roots, '.' unless in_array('.', @roots);
 
@@ -300,7 +303,7 @@ sub environments {
 		my @repos = map {s{/.genesis/config$}{}; $_} glob("$root/*/.genesis/config");
 		if (scalar @repos) {
 			$root =~ s{/?$}{/};
-			info "\nDeployment root #C{%s} contains the following:", humanize_path($root) =~ s{/?$}{/}r;
+			info "\nDeployment root #C{%s} contains the following:", humanize_path($root, $root_map) =~ s{/?$}{/}r =~ s{>\e\[0m/$}{>\e\[0m}r;
 			info $ansi_hide_cursor if $group_by eq 'env';
 			my %deployments_by_name;
 			my ($i,$j) = (0,0);

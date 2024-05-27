@@ -6,7 +6,7 @@ use base 'Genesis::Base';
 
 use Genesis;
 use Genesis::State;
-use Genesis::Term qw/in_controlling_terminal csprintf/;
+use Genesis::Term qw/in_controlling_terminal csprintf decolorize/;
 use Genesis::UI qw/prompt_for_boolean prompt_for_choice/;
 use Genesis::Env;
 use Genesis::Kit::Compiled;
@@ -253,19 +253,20 @@ sub search_for_repo_path {
 	my ($class, $deployment) = @_;
 	my $label = "\@:$deployment";
 	my @paths;
-	my @roots =
-		(exists($ENV{GENESIS_DEPLOYMENT_ROOTS}))
-		? (split(/:/,$ENV{GENESIS_DEPLOYMENT_ROOTS}))
-		: @{$Genesis::RC->get(deployment_roots => [])};
-	push @roots, $ENV{GENESIS_ORIGINATING_DIR};
-	$deployment = "*$deployment*" =~ s/\*\^//r =~ s/\$\*//r if defined($deployment);
+	my $root_map = $Genesis::RC->get(deployment_roots => []);
+	push @$root_map, ["current directory", $ENV{GENESIS_ORIGINATING_DIR}]
+		unless grep {(ref($_) eq 'ARRAY' ? $_->[-1] : $_) eq $ENV{GENESIS_ORIGINATING_DIR}} @$root_map;
+	$deployment = "*$deployment*" =~ s/\*\^//r =~ s/\$\*//r if defined($deployment) && $deployment ne '*';
 
-	for my $root (@roots) {
-		my @deployments = map {s{/\.genesis/config$}{}r}
-			glob("$root/".($deployment//'*')."/.genesis/config"); # Only include genesis repos
+	for my $root (@$root_map) {
+		my ($label, $root_path) = ref($root) eq 'ARRAY' ? @$root : ($root, $root);
+		my @deployments = map {s{/\.genesis/config$}{/}r}
+			glob("$root_path/".($deployment//'*')."/.genesis/config"); # Only include genesis repos
 		next unless @deployments;
 		push @paths, @deployments;
 	}
+
+	my @roots = ();
 
 	if (scalar(@paths) > 1) {
 		bail(
@@ -274,7 +275,20 @@ sub search_for_repo_path {
 			$label, join("\n  - ", @paths)
 		) unless in_controlling_terminal;
 
-		my $default = (grep {$_ =~ m{/bosh(-deployments)?$}} @paths)[0] || $paths[0];
+
+		my $default =
+			(grep {$_ eq $ENV{GENESIS_ORIGINATING_DIR}.'/'} @paths)[0] //
+			(grep {$_ =~ m{/bosh(-deployments)?$}} @paths)[0] //
+			$paths[0];
+
+		@paths = ($default, @paths[0..index_of($default, @paths)-1], @paths[index_of($default, @paths)+1..$#paths])
+			if index_of($default, @paths) > 0;
+
+		my $label_map = [ map {
+			ref($_) eq 'ARRAY'
+			? [$_->[0].($_->[0] eq 'current directory' ? '' : ' deployment root'), $_->[1]]
+			: undef
+		} @$root_map ];
 
 		$paths[0] = prompt_for_choice(
 			csprintf(
@@ -283,8 +297,9 @@ sub search_for_repo_path {
 			[@paths, 'none'],
 			$default,
 			[(
-					map {m{(.*?)/([^/]*)$}; csprintf("#C{%s}/#c{%s}/", $1, $2)}
-					map {humanize_path($_)}
+					map {decolorize($_) eq '<current directory>/' ? $_ =~ s{/$}{}r : $_}
+					map {m{(?:(.*?)/)?([^/]+)/?$}; csprintf("#C{%s}%s#c{%s}/", $1?($1,'/'):('',''), $2)}
+					map {humanize_path($_, $label_map)}
 					@paths
 				), csprintf('#R{None of these - cancel}')
 			],

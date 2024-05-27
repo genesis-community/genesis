@@ -423,11 +423,10 @@ sub search_for_env_file {
 	my $label = '@'.($env//'').($deployment ? ":$deployment" : '');
 	my $director_target = defined($deployment) ? 'parent' : 'self';
 	my @files;
-	my @roots =
-		(exists($ENV{GENESIS_DEPLOYMENT_ROOTS}))
-		? (split(/:/,$ENV{GENESIS_DEPLOYMENT_ROOTS}))
-		: @{$Genesis::RC->get(deployment_roots => [])};
-	push @roots, $ENV{GENESIS_ORIGINATING_DIR};
+	my $root_map = $Genesis::RC->get(deployment_roots => []);
+	push @$root_map, ["current directory", $ENV{GENESIS_ORIGINATING_DIR}]
+		unless grep {(ref($_) eq 'ARRAY' ? $_->[-1] : $_) eq $ENV{GENESIS_ORIGINATING_DIR}} @$root_map;
+	my @roots = map { ref($_) eq 'ARRAY' ? $_->[1] : $_ } @$root_map;
 	$env = "*$env*" =~ s/\*\^//r =~ s/\$\*//r;
 	$deployment = "*$deployment*" =~ s/\*\^//r =~ s/\$\*//r if defined($deployment);
 
@@ -443,6 +442,14 @@ sub search_for_env_file {
 		}
 	}
 
+	# FIXME: Get rid of any files that aren't actually environment files - the
+	# following is too simple, and will miss some cases, and sometimes we want
+	# to be able to edit an ancestor environment file, which doesn't have the
+	# genesis:env stanza.  However, we don't want to deploy those files.
+	#@files = grep {
+	#		slurp($_) =~ m{^genesis:\s*env}m
+	#} @files;
+
 	if (scalar(@files) > 1) {
 		bail(
 			"Ambiguous environment name: #C{%s} matches multiple files:\n  - %s\n\n".
@@ -450,15 +457,23 @@ sub search_for_env_file {
 			$label, join("\n  - ", @files)
 		) unless in_controlling_terminal;
 
+		my $default =
+			(grep {$_ =~ m{^$ENV{GENESIS_ORIGINATING_DIR}/}} @files)[0] //
+			(grep {$_ =~ m{/bosh(-deployments)?$}} @files)[0] //
+			$files[0];
+
+		@files = ($default, @files[0..index_of($default, @files)-1], @files[index_of($default, @files)+1..$#files])
+			if index_of($default, @files) > 0;
+
 		$files[0] = prompt_for_choice(
 			csprintf(
 				"Multiple environment files found matching #C{$label}:"
 			),
 			[@files, 'none'],
-			$files[0],
+			$default,
 			[(
-					map {m{(.*?)/([^/]*)/([^/]*)\.yml}; csprintf("#C{%s}/#c{%s}/#m{%s}", $1, $2, $3)}
-					map {humanize_path($_)}
+					map {m{(?:(.*?)/)?([^/]*)/([^/]*)\.yml}; csprintf("#C{%s}%s#c{%s}/#m{%s}", $1?($1,'/'):('',''), $2, $3)}
+					map {humanize_path($_, $root_map)}
 					@files
 				), csprintf('#R{None of these - cancel}')
 			],
@@ -1501,7 +1516,7 @@ sub get_target_bosh {
 			$self->name
 		) if $options->{self};
 		warning(
-			"Environment %s is not a BOSH director, so the #y{--parent} option is unnecessary.",
+			"\n\aEnvironment %s is not a BOSH director, so the #y{--parent} option is unnecessary.\n",
 			$self->name
 		) if $options->{parent} && !$Genesis::RC->get('suppress_warnings.bosh_target' => 0);
 		$target = 'parent';
@@ -1511,7 +1526,7 @@ sub get_target_bosh {
 			$self->name
 		) if $options->{parent};
 		warning(
-			"Environment %s is a #M{create-env} deployment, so the #y{--self} option is unnecessary.",
+			"\n\aEnvironment %s is a #M{create-env} deployment, so the #y{--self} option is unnecessary.\n",
 			$self->name
 		) if $options->{self} && !$Genesis::RC->get('suppress_warnings.bosh_target' => 0);
 		$target = 'self';

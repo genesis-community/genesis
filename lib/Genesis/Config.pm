@@ -268,6 +268,15 @@ sub _validate_key {
 		if (! $valid) {
 			push @errors, "#R{$key}: expected one of ".join(', ', @types);
 		}
+	} elsif ($type eq 'hasharray') { # Special type that allows an array to be specified as a hash in yaml or a string in environment
+		if (ref($value) ne 'ARRAY') {
+			push @errors, "#R{$key}: expected an array";
+		} else {
+			for my $i (0..$#{$value}) {
+				my @subkey_errors = $self->_validate_key("$key\[$i\]", $schema->{schema});
+				push @errors, @subkey_errors if @subkey_errors;
+			}
+		}
 	} elsif ($type eq 'hash') {
 		if (ref($value) ne 'HASH') {
 			push @errors, "#R{$key}: expected a hash";
@@ -295,27 +304,118 @@ sub _validate_key {
 		}
 
 	} elsif ($type eq 'array') {
-		my $subtype = $schema->{subtype} or bug "Schema for array $key has no subtype"; # or maybe just validate that its a freeform array?
-		if (ref($value) eq '' && $subtype eq 'string' && $schema->{envsplit}) {
-			# Split the value into an array based on the environment variable
-			$value = [split($schema->{envsplit}, $value)];
-			$self->set($key,$value);
-		}
+		if (ref($value) ne 'ARRAY') {
+			# If the value is a scalar, it most likely came from the environment and needs to be split
+			# into an array of values
+			my $split = $schema->{envsplit};
+			bug(
+				"Schema for array $key has no envsplit, but was given a string value: #ri{%s}",
+				$value
+			) unless $split;
+			$value = [split(/$split/, $value, -1)];
+
+			if (defined($schema->{envconvert})) {
+				# Convert the values to the specified type based on matches to
+				# conversion rules
+				for my $idx (0..(scalar(@$value)-1)) {
+					my $found = 0;
+					my @conversion_errors = ();
+					for my $match (@{$schema->{envconvert}}) {
+						if ($match->{type} eq 'hasharray') {
+							# In string form, hasharray is restricted to pairs of key/value pairs
+							my @pairs;
+							eval { @pairs = split(qr($match->{pair_split}), $value->[$idx]); };
+							if ($@) {
+								push @conversion_errors, "Invalid hasharray value: %s", $value->[$idx];
+								next;
+							}
+							my $kvs = $match->{kv_split};
+							my $failed = 0;
+							my @converted_pairs;
+							for (@pairs) {
+								# Check that the pair is in the form key=value
+								my ($key, $value) = $_ =~ qr(^([^$kvs]+)$kvs([^$kvs]*)$);
+								if (!defined($key)) {
+									$failed = 1;
+									push @conversion_errors, "Invalid hasharray string value: %s", $value->[$idx]; # continue processing to get all errors
+								} else {
+									push @converted_pairs, {$key => $value};
+								}
+							}
+							next if ($failed);
+							$value->[$idx] = \@converted_pairs;
+							$found = 1;
+							last;
+						} elsif ($match->{type} eq 'string') {
+							# Pretty much any string will match this, but not null or empty strings
+							if (!defined($value->[$idx]) || $value->[$idx] eq '') {
+								push @conversion_errors, "Invalid string value: %s", $value->[$idx] ? '""' : '<null>';
+							} else {
+								$found = 1;
+								last;
+							}
+						} else {
+							push @conversion_errors, "Unknown conversion type: %s", $match->{type};
+						}
+					}
+					if (! $found) {
+						my $error_list = join("", map {"  - $_\n"} @conversion_errors) || "  - No conversion rule matched the value";
+						push @errors, "No conversion rule matched the value: %s\n%s", $value->[$idx], $error_list;
+					}
+				}
+			}
+		} # end conversion of strings to an array
+
 		if (ref($value) ne 'ARRAY') {
 			push @errors, "#R{$key}: expected an array";
 		} else {
+			my @subtypes = split(/\|\|/, $schema->{subtype});
 			for my $i (0..$#{$value}) {
 				my $subschema;
-				if ($subtype eq 'hash') {
-					bug "Schema for array $key hash value has no schema" unless $schema->{schema};
-					$subschema = {schema => $schema->{schema}, type => 'hash'};
-				} else {
-					$subschema = $schema->{schema}//{};
-					$subschema->{type} //= $subtype;
+				my $found = 0;
+				my @subtype_errors = ();
+				for my $subtype (@subtypes) {
+					if ($subtype eq 'hasharray') {
+						# Hasharray is a special type that allows for a hash representation in of an array
+						if (ref($value->[$i]) eq 'HASH') {
+							$value->[$i] = [map {($_, $value->[$i]{$_})} keys %{$value->[$i]}];
+						} elsif (ref($value->[$i]) eq 'ARRAY') {
+							# Already in the correct format
+						} else {
+							push @subtype_errors, "#R{$key}[$i]: expected a hash or array, not #ri{".($value->[$i] ? $value->[$i] : "<null>")."}";
+							next
+						}
+						$found = 1;
+						last;
+					} elsif ($subtype eq 'string') {
+						if (ref($value->[$i]) ne '' || !defined($value->[$i]) || $value->[$i] eq '') {
+							push @subtype_errors, "#R{$key}[$i]: expected a string, not #ri{".($value->[$i] ? $value->[$i] : "<null>")."}";
+							next;
+						}
+						$found = 1;
+						last;
+					} else {
+						if ($subtype eq 'hash') {
+							bug "Schema for array $key hash value has no schema" unless $schema->{schema};
+							$subschema = {schema => $schema->{schema}, type => 'hash'};
+						} else {
+							$subschema = $schema->{schema}//{};
+							$subschema->{type} //= $subtype;
+						}
+						if (my @subkey_errors = $self->_validate_key("${key}[$i]", $subschema)) {
+							push @subtype_errors, @subkey_errors;
+						} else {
+							$found = 1;
+							last;
+						}
+					}
 				}
-				my @subkey_errors = $self->_validate_key("${key}[$i]", $subschema);
-				push @errors, @subkey_errors if @subkey_errors;
+				if (!$found) {
+					my $error_list = join("", map {"  - $_\n"} @subtype_errors) || "  - No conversion rule matched the value";
+					push @errors, sprintf("No subtype matched the value: %s\n%s", $value->[$i], $error_list);
+				}
 			}
+			$self->set($key, $value);
 		}
 
 	} elsif ($type eq 'boolean') {

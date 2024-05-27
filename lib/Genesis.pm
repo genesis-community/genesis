@@ -103,11 +103,23 @@ sub Init {
 	$Genesis::RC->validate({
 		default_bosh_target      => { type => 'enum',    default => 'ask', values => [qw/ask self parent/]},
 		legacy_repo_suffix       => { type => 'boolean', default => 0 },
-		deployment_roots         => { type => 'array',   default => [], subtype => 'string', envvar => 'GENESIS_DEPLOYMENT_ROOTS', envsplit => ':' },
 		embedded_genesis         => { type => 'enum',    default => 'ignore', values => [qw/ignore check warn/]},
 		output_style             => { type => 'enum',    default => 'plain', values => [qw/plain fun pointer/]},
 		show_duration            => { type => 'boolean', default => 0 },
 		automatic_config_upgrade => { type => 'enum',    default => 'no', values => [qw/no yes silent/], envvar => 'GENESIS_CONFIG_AUTOMATIC_UPGRADE' },
+
+		bosh_logs_path           => { type => 'string',  default => "<DEPLOYMENT_ROOT>/bosh_logs", envvar => 'GENESIS_DEPLOYMENT_LOGS_PATH'},
+		deployment_roots  => {
+			type => 'array',
+			default => [],
+			subtype => 'string||hasharray', # Can be a string or a hash of label => path
+			envvar => 'GENESIS_DEPLOYMENT_ROOTS', # Comma-separated list of path strings or label=path pairs
+			envsplit => ':',
+			envconvert => [
+				{ type => 'hasharray', pair_split => ';', kv_split => '=', key_type => 'string', value_type => 'string' },
+				{ type => 'string' }
+			]
+		},
 
 		suppress_warnings => {
 			type => 'hash',
@@ -120,7 +132,7 @@ sub Init {
 		# To be implemented:
 		# executable_environments  => { type => 'boolean', default => 0 },
 		# fix_secrets_on_deploy    => { type => 'boolean', default => 0 },
-		# artifact_location        => { type => 'string',  default => 'repo', values => [qw/vault vault/]},
+
 		logs => {
 			type => 'array',
 			subtype => 'hash',
@@ -677,9 +689,27 @@ sub chmod_or_fail {
 		or bail "Could not change mode of $path: $!";
 }
 
+our %path_cache = ();
 sub humanize_path {
-	my $path = shift;
+	my ($path, $label_maps) = @_;
+
+	#TODO: cache paths better
 	my $pwd = Cwd::abs_path($ENV{GENESIS_CALLER_DIR} || Cwd::getcwd());
+	return $path_cache{"$path\@$pwd"}
+		if ($path =~ m{^/} && defined($path_cache{"$path\@$pwd"}));
+
+	if (defined($label_maps)) {
+		# We only want to match to array pairs -- if its just a path match, we don't care
+		my ($path_match) = grep {
+			ref($_) eq 'ARRAY' ? $path =~ qr(^$_->[-1]/) : 0
+		} @$label_maps;
+		if ($path_match) {
+			my ($label, $subpath) = @$path_match;
+			my $new_path = $path =~ s/^$subpath/#g{<$label>}/r;
+			return csprintf("%s", $new_path)
+		}
+	}
+
 	$path = $ENV{HOME}.substr($path,1) if substr($path,0,1)  eq '~';
 	$path = "$pwd/$path" unless $path =~ /^\//;
 	while ($path =~ s/\/[^\/]*\/\.\.\//\//) {};
@@ -691,6 +721,7 @@ sub humanize_path {
 	my $i=-1; while ($i < $#path_bits && $i < $#pwd_bits && $path_bits[++$i] eq $pwd_bits[$i]) {};
 	$i++ if $path_bits[$i] && $pwd_bits[$i] && $path_bits[$i] eq $pwd_bits[$i];
 	$rel_path = join('/', (map {'..'} ($i .. $#pwd_bits)), @path_bits[$i .. $#path_bits]);
+	$rel_path .= '/' if $path =~ m{/$};
 	$rel_path = "./$rel_path" if -x $path && ! -d $path && $rel_path !~ /(^\.|\/)/;
 
 	my $new_path = (substr($path, 0, length($pwd) + 1) eq $pwd . '/')
@@ -699,7 +730,8 @@ sub humanize_path {
 		? "~" . substr($path, length($ENV{HOME})) : $path;
 	while ($new_path =~ s/\/[^\/]*\/\.\.\//\//) {};
 	$new_path =~ s/^\.\/\.\.\//..\//;
-	($rel_path && length($rel_path) < length($new_path)) ? $rel_path : $new_path;
+	$rel_path = undef if $rel_path =~ m{^(\.\./){3,}};
+	$path_cache{"$path\@$pwd"} = ($rel_path && length($rel_path) < length($new_path)) ? $rel_path : $new_path;
 }
 
 my $humanized_bin;
