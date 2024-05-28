@@ -3,10 +3,12 @@ MAINTAINER Dennis J. Bell <dennis.j.bell@gmail.com>
 
 RUN apt-get update \
  && apt-get install -yy wget gnupg \
+ && mkdir -p -m 755 /etc/apt/keyrings \
+ && wget -qO- https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null \
+ && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+ && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
  && wget -q -O - https://raw.githubusercontent.com/cloudfoundry-community/homebrew-cf/master/public.key | apt-key add - \
  && echo "deb http://apt.community.cloudfoundry.org stable main" | tee /etc/apt/sources.list.d/cloudfoundry-community.list \
- && wget -q -O - https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add - \
- && echo "deb http://apt.kubernetes.io/ kubernetes-xenial main" | tee -a /etc/apt/sources.list.d/kubernetes.list \
  && apt-get update && apt-get install -yy \
     aha \
     autoconf \
@@ -19,9 +21,9 @@ RUN apt-get update \
     curl \
     file \
     git \
+    gh \
     gotcha \
     jq \
-    kubectl \
     libreadline8 \
     libreadline-dev \
     libsqlite3-dev \
