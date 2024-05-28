@@ -21,6 +21,7 @@ use Service::Vault::None;
 
 use JSON::PP qw/encode_json decode_json/;
 use POSIX qw/strftime/;
+use File::Basename qw/basename/;
 use Data::Dumper;
 use Digest::file qw/digest_file_hex/;
 use Digest::SHA qw/sha1_hex/;
@@ -483,7 +484,18 @@ sub search_for_env_file {
 		output({stderr=>1}, "");
 		bail("No environment file selected.") if $files[0] eq 'none';
 	}
-	return ($director_target, $files[0]);
+	$files[0] =~ m{(?:(.*?)/)?([^/]*)/([^/]*)\.yml};
+	my $deployment_root = $1;
+	if (!$deployment_root) {
+		if (-f "./.genesis/config") {
+			# Choose the parent directory of the directory containing .genesis/config file
+			$deployment_root = Cwd::abs_path('..');
+		} else {
+			# The curren directory is the deployment root
+			$deployment_root = Cwd::abs_path('.');
+		}
+	}
+	return ($deployment_root,$files[0]);
 }
 #}}}
 #}}}
@@ -2165,7 +2177,7 @@ sub deploy {
 }
 
 # }}}
-# exodus - get the populated exodus data generated in the manifest {{{
+#	 exodus - get the populated exodus data generated in the manifest {{{
 sub exodus {
 	my ($self) = @_;
 	# FIXME: May need to use an unentombed manifest...
@@ -2415,6 +2427,101 @@ sub notify {
 	$self->can($target)->($opts, "\n%s#M{%s}/#c{%s}%s %s", $prefix, $self->name, $self->type, $postfix, $msg);
 }
 
+# }}}
+
+# Post-deployment Activities
+# bosh_logs - get the logs for the environment {{{
+sub bosh_logs {
+	my ($self, @extra_opts ) = @_;
+
+	if (grep {$_ =~ /^(-h|--help)$/} @extra_opts) {
+		info("\nFetching help for 'bosh logs'...\n");
+		$self->bosh->execute({interactive => 1}, "logs", "--help");
+		exit 0;
+	}
+
+	bail(
+		"Cannot use log with -f|--follow option; use %s %s bosh logs %s instead",
+		$ENV{GENESIS_CALL_BIN},
+		$ENV{'GENESIS_PREFIX_'.uc($ENV{GENESIS_PREFIX_TYPE})},
+		join(" ", map {$_ =~ /\s+/ ? "'$_'" : $_} @extra_opts)
+	)	if (grep {$_ =~ /^(-f|--follow)$/} @extra_opts);
+
+	my %opts = ref($extra_opts[0]) eq 'HASH' ? %{shift @extra_opts} : ();
+
+	$self->notify("fetching BOSH logs for %s/%s...", $self->name, $self->type);
+	my $log_path = $Genesis::RC->get('bosh_logs_path');
+	my $deployment_root = $ENV{GENESIS_DEPLOYMENT_ROOT};
+	unless ($deployment_root) {
+		if (-f ".genesis/config") {
+			$deployment_root = Cwd::abs_path('..');
+		} else {
+			$deployment_root = Cwd::abs_path('.');
+		}
+	}
+	$log_path =~ s/^<DEPLOYMENT_ROOT>\//$deployment_root\//;
+	my $dep_log_path = $log_path.'/'.$self->name.'/'.$self->type;
+	info("- logs will be saved to %s", humanize_path($dep_log_path));
+
+	mkdir_or_fail($dep_log_path) unless -d $dep_log_path;
+
+	info("- fetching logs...\n");
+	pushd($log_path);
+	my $bosh = $self->bosh;
+	my ($out, $rc, $err) = $bosh->execute({interactive => 1}, "logs", @extra_opts);
+	info("");
+	if ($rc) {
+		bail("Failed to fetch logs: %s", $err);
+	}
+
+	$self->notify("extracting logs...");
+	my $grouped = $out =~ m/Fetching group of logs: Packing log files together/;
+	my @archives = $out =~ m/Downloading resource .* to '(.*)'\.\.\./g;
+	my @logs = ();
+	if ($grouped) {
+		for my $archive (@archives) {
+			my $file_name = basename($archive) =~ s/\.tgz$//r;
+			my ($extract_out, $extract_rc, $extract_err) = run({stderr => 0},
+				"tar", "xzf", $archive, "-C", $dep_log_path
+			);
+			if ($extract_rc) {
+				warning("- failed to extract packed archive %s: %s", $file_name, $extract_err);
+			} else {
+				info("- extracted packed archive %s", $file_name);
+			}
+			unlink $archive;
+		}
+	} else {
+		# Move the singleton log into the right place with the corrected name
+		basename($archives[0]) =~ m/^(.*?)[-\.](\d\d\d\d)(\d\d)(\d\d)-(\d\d)(\d\d)(\d\d)-(\d+)\.tgz$/;
+		my $new_archive = sprintf("%s.%s-%s-%s-%s-%s-%s.tgz", $1, $2, $3, $4, $5, $6, $7);
+		require File::Copy;
+		File::Copy::move($archives[0], "$dep_log_path/$new_archive")
+			or bail("Failed to move %s to %s: %s", $archives[0], "$dep_log_path/$new_archive", $!);
+	}
+
+	pushd($dep_log_path);
+  my @dep_archives = glob("*.tgz");
+
+  foreach my $archive (@dep_archives) {
+    my $file_name = $archive =~ s/\.tgz$//r;
+    my ($job, $vmid, $ts) = split /\./, $file_name;
+
+		my $target_dir = "$dep_log_path/$job/$vmid/$ts";
+    mkdir_or_fail($target_dir) unless -d $target_dir;
+
+    my ($out, $rc, $err) = run("tar", "-zxf", $archive, "-C", $target_dir);
+		if ($rc) {
+			warning("failed to extract archive %s: %s", $file_name, $err);
+		} else {
+			info("- extracted archive %s", $file_name);
+		}
+    unlink $archive;
+  }
+	popd();
+	popd();
+	$self->notify(success => "BOSH logs fetched successfully - they can be found in #G{%s}\n", humanize_path($dep_log_path));
+}
 # }}}
 
 

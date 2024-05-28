@@ -309,7 +309,18 @@ sub search_for_repo_path {
 		output({stderr=>1}, "");
 		bail("No deployment repository path selected.") if $paths[0] eq 'none';
 	}
-	return $paths[0];
+	$paths[0] =~ m{(?:(.*?)/)?([^/]+)/?$};
+	my $deployment_root = $1;
+	if (!$deployment_root) {
+		if (-f "./.genesis/config") {
+			# Choose the parent directory of the directory containing .genesis/config file
+			$deployment_root = Cwd::abs_path('..');
+		} else {
+			# The curren directory is the deployment root
+			$deployment_root = Cwd::abs_path('.');
+		}
+	}
+	return ($deployment_root, $paths[0]);
 }
 # }}}
 # }}}

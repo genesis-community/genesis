@@ -574,20 +574,15 @@ sub credhub {
 
 # }}}
 sub logs {
-	command_usage(1) if @_ < 2;
-
 	my %options = %{get_options()};
 	my ($env_name, @extra_args) = @_;
 
 	my $env = Genesis::Top->new('.')->load_env($env_name)->with_vault()->with_bosh();
-	my $target = get_target_bosh($env, \%options);
+	bail(
+		"No bosh logs for environments deployed with #M{create-env}"
+	) if $env->use_create_env;
 
-	my @logs;
-	if ($target eq 'self') {
-		@logs = $env->bosh_logs(undef, @extra_args);
-	} else {
-		@logs = $env->bosh_logs($env->deployment_name, @extra_args);
-	}
+	my @logs = $env->bosh_logs(@extra_args);
 }
 1;
 # vim: fdm=marker:foldlevel=1:noet
