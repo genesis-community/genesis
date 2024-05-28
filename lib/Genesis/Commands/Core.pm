@@ -165,6 +165,8 @@ sub update {
 	my (undef,undef,$file) = $gh->fetch_release('genesis',$version,$tmpdir);
 	my (undef,undef,$fmode,undef,$fuid, $fgid) = stat($target);
 
+	$fmode &= 0777; # Ignore setuid, setgid, sticky bits and file type
+
 	if (-w $target && $fuid == $> && $fgid == $)) {
 		copy_or_fail $file, $target;
 		chmod_or_fail($fmode,$file);
