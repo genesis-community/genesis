@@ -242,6 +242,7 @@ define_command("create", {
 define_command("edit", {
 	summary => "Edit a Genesis deployment environment file, with manual in a side window",
 	usage => "<env> edit",
+	alias => 'e',
 	description =>
 		"Open the environment file in your default editor.  If your editor is vim ".
 		"or emacs, it will also include the kit's manual pages open in a split window.",
@@ -398,6 +399,7 @@ define_command("deploy", {
 define_command("bosh", {
 	summary => "Run a BOSH cli command for the specific environment.",
 	usage => "<env> bosh [<options>] <bosh command> [<bosh options and args...>]",
+	alias => 'b',
 	description =>
 		"Runs the specified bosh command and options, without the need to specify ".
 		"the director or deployment name.  The options below must come BEFORE any ".
