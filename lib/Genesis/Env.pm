@@ -423,67 +423,85 @@ sub search_for_env_file {
 	my ($class, $env, $deployment) = @_;
 	my $label = '@'.($env//'').($deployment ? ":$deployment" : '');
 	my $director_target = defined($deployment) ? 'parent' : 'self';
-	my @files;
-	my $root_map = $Genesis::RC->get(deployment_roots => []);
-	push @$root_map, ["current directory", $ENV{GENESIS_ORIGINATING_DIR}]
-		unless grep {(ref($_) eq 'ARRAY' ? $_->[-1] : $_) eq $ENV{GENESIS_ORIGINATING_DIR}} @$root_map;
-	my @roots = map { ref($_) eq 'ARRAY' ? $_->[1] : $_ } @$root_map;
-	$env = "*$env*" =~ s/\*\^//r =~ s/\$\*//r;
+	my %file_map;
+
+	my ($root_labels, $root_map) = Genesis::deployment_roots_map(
+		[$ENV{GENESIS_ORIGINATING_DIR}, $ENV{GENESIS_ORIGINATING_DIR}]
+	);
+	$env = "*$env*" =~ s/\*\^//r =~ s/\$\*//r unless $env eq '*';
 	$deployment = "*$deployment*" =~ s/\*\^//r =~ s/\$\*//r if defined($deployment);
 
-	for my $root (@roots) {
+	for my $label (@$root_labels) {
+		my $root = $root_map->{$label};
 		my @deployments = map {s{/\.genesis/config$}{}r}
 			glob("$root/".($deployment//'*')."/.genesis/config"); # Only include genesis repos
 		next unless @deployments;
 		if (defined $deployment) {
-			push @files, glob("$_/$env.yml") for @deployments;
+			$file_map{$label} = [map {glob("$_/$env.yml")} @deployments];
 		} else {
-			push @files, glob("$_/$env.yml")
-				for (grep { /\/bosh(-deployment)?$/ } @deployments);
+			$file_map{$label} = [map {glob("$_/$env.yml")} grep { /\/bosh(-deployment)?$/ } @deployments];
 		}
 	}
 
-	# FIXME: Get rid of any files that aren't actually environment files - the
-	# following is too simple, and will miss some cases, and sometimes we want
-	# to be able to edit an ancestor environment file, which doesn't have the
-	# genesis:env stanza.  However, we don't want to deploy those files.
-	#@files = grep {
-	#		slurp($_) =~ m{^genesis:\s*env}m
-	#} @files;
+	
+	# Order the files by current directory, then by the order of the deployment
+	# roots specified in the .genesis/config file, then bosh first, followed by
+	# any other deployments in alphabetical order.
+	my @files = ();
+	for my $label ($ENV{GENESIS_ORIGINATING_DIR}, @$root_labels) {
+		if ($file_map{$label}) {
+			my $is_bosh= qr{/bosh(-deployments)?/[^/]*\.yml$};
+			push(@files, 
+				map {[$label, $_]}
+				sort {
+					($a =~ $is_bosh ? 0 : 1) <=> ($b =~ $is_bosh ? 0 : 1 ) || $a cmp $b
+				} @{delete $file_map{$label}}
+			);
+		}
+	}
 
-	if (scalar(@files) > 1) {
+	# Filter out files that aren't genesis environments
+	@files = grep {
+		my (undef, $name) = $_->[1] =~ m{(.*)/([^/]*)\.yml$};
+		my $contents = slurp($_->[1]);
+		($contents =~ m/^genesis:\s*$(\n  .*: .*$)*(\n  env: *$name)/m)
+			&& ($contents !~ m/^name:/);
+	} @files;
+
+	use Pry; pry;
+
+	if (@files) {
+		my @file_labels = map {
+			m{(?:(.*?)/)?([^/]*)/([^/]*)\.yml};
+			csprintf("#C{%s}%s#c{%s}/#m{%s}", $1?($1,'/'):('',''), $2, $3)
+		} map {
+			$_->[0] =~ m{^$root_map->{$_->[0]}}
+			? ($_->[0] eq $ENV{GENESIS_ORIGINATING_DIR} ? './'. humanize_path($_->[1]) : humanize_path($_->[1]))
+			: $_->[1] =~ s{^$root_map->{$_->[0]}/}{csprintf("#Bi{<%s>}/",$_->[0])}re
+		} @files;
+
+
 		bail(
 			"Ambiguous environment name: #C{%s} matches multiple files:\n  - %s\n\n".
 			"Please refine your match criteria.",
-			$label, join("\n  - ", @files)
+			$label, join("\n  - ", @file_labels)
 		) unless in_controlling_terminal;
 
-		my $default =
-			(grep {$_ =~ m{^$ENV{GENESIS_ORIGINATING_DIR}/}} @files)[0] //
-			(grep {$_ =~ m{/bosh(-deployments)?$}} @files)[0] //
-			$files[0];
-
-		@files = ($default, @files[0..index_of($default, @files)-1], @files[index_of($default, @files)+1..$#files])
-			if index_of($default, @files) > 0;
-
-		$files[0] = prompt_for_choice(
+		my $selected_file = prompt_for_choice(
 			csprintf(
 				"Multiple environment files found matching #C{$label}:"
 			),
 			[@files, 'none'],
-			$default,
-			[(
-					map {m{(?:(.*?)/)?([^/]*)/([^/]*)\.yml}; csprintf("#C{%s}%s#c{%s}/#m{%s}", $1?($1,'/'):('',''), $2, $3)}
-					map {humanize_path($_, $root_map)}
-					@files
-				), csprintf('#R{None of these - cancel}')
-			],
+			$files[0],
+			[ @file_labels, csprintf('#R{None of these - cancel}') ],
 			undef,
 			"the desired environment file"
 		);
+		use Pry; pry;
 		output({stderr=>1}, "");
 		bail("No environment file selected.") if $files[0] eq 'none';
 	}
+
 	$files[0] =~ m{(?:(.*?)/)?([^/]*)/([^/]*)\.yml};
 	my $deployment_root = $1;
 	if (!$deployment_root) {

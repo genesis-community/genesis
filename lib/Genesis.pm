@@ -161,6 +161,83 @@ sub Init {
 	$ENV{GENESIS_ORIGINATING_DIR}= Cwd::getcwd;
 	$ENV{GENESIS_CALL_BIN}       = humanize_bin();
 	$ENV{GENESIS_FULL_CALL}      = join(" ", map {$_ =~ / / ? "\"$_\"" : $_} ($ENV{GENESIS_CALL_BIN}, @ARGV));
+
+}
+
+sub deployment_roots_map {
+	# Returns a list of deployment root labels, and a hash of label => path.
+	my @extras = @_;
+	my @roots = @{$Genesis::RC->get("deployment_roots", [])};
+	my @expanded_roots;
+
+	# Expand the paths in the extras list
+	@extras = map {[$_->[0], expand_path($_->[1])]} @extras;
+	for my $root (@roots) {
+		if (ref($root) eq 'ARRAY') {
+			my ($label, $path) = @$root;
+			$path = expand_path($path);
+			push @expanded_roots, { label => $label, path => $path };
+		} else {
+			# Check if unlabeled roots are in the extras list
+			my $path = expand_path($root);
+			my ($extra_label) = map {$_->[0]} grep {$_->[1] eq $path} @extras;
+			my $label = $extra_label // $path;
+			push @expanded_roots, { label => $label, path => $path };
+		}
+	}
+
+	# Check for any duplicate labels
+	my @labels;
+	my %deployment_roots = ();
+	# FIXME: This should process the labels as a pool, not a first-come-first-serve
+	# manner, so that each path using the same label is equally expressive.  As it
+	# is now, the third path will get the original label, while the first two are
+	# modified to be expanded based on their unique path components.
+	for my $root (@expanded_roots) {
+		my $label = $root->{label};
+		if ($deployment_roots{$label}) {
+			bail("Duplicate deployment root label '%s' found", $label);
+
+			# TODO: Come up with another unique label based on the existing path using that label
+			my ($first_label, $second_label) = unique_path_diff($label, $deployment_roots{$label}, $root->{path});
+			unless ($first_label eq $label) {
+				$deployment_roots{$first_label} = delete($deployment_roots{$label});
+				$labels[index_of($label, @labels)] = $first_label;
+			}
+			$label = $second_label;
+		}
+		push @labels, $label;
+		$deployment_roots{$label} = $root->{path};
+	}
+
+	# Add any unused extras to the list
+	my ($missing_extras) = compare_arrays(
+		[map {$_->[1]} @extras ],
+		[values %deployment_roots]
+	);
+	for my $extra (@$missing_extras) {
+		my ($label) = map {$_->[0]} grep {$_->[1] eq $extra} @extras;
+		push @labels, $label;
+		$deployment_roots{$label} = $extra;
+	}
+
+	return wantarray ? (\@labels, \%deployment_roots) : {
+		labels => \@labels,
+		roots  => \%deployment_roots
+	}
+}
+
+sub expand_path {
+	my ($path) = @_;
+	$path =~ s/^~/$ENV{HOME}/;
+	$path =~ s/\$([A-Za-z0-9_]+)/$ENV{$1}/g;
+	if (-l $path) {
+		$path = readlink($path);
+		$path = expand_path($path) if -l $path;
+	}
+	return $path;
+}
+
 }
 
 sub in_repo_dir {
