@@ -388,6 +388,14 @@ sub manifest {
 	}
 
 	$type //= 'deployment';
+	$type =~ s/-/_/g if $type;
+	$subset =~ s/-/_/g if $subset;
+
+	bail(
+		"Manifest type %s is not supported by this environment",
+		$type
+	) unless $env->manifest_provider->can($type);
+
 	my $manifest = $env
 		->download_required_configs('blueprint', 'manifest')
 		->manifest_provider->$type(notify=>1,subset=>$subset);
