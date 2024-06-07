@@ -170,11 +170,18 @@ sub deployment_roots_map {
 	my @roots = @{$Genesis::RC->get("deployment_roots", [])};
 	my @expanded_roots;
 
-	# Expand the paths in the extras list
+	# Humanize in the extras list
 	@extras = map {[$_->[0], expand_path($_->[1])]} @extras;
+
+	# Process the roots list, validating root labels and expanding paths.
 	for my $root (@roots) {
 		if (ref($root) eq 'ARRAY') {
 			my ($label, $path) = @$root;
+			bail(
+				"Deployment root labels cannot start with a '@' character.  This is ".
+				"reserved for Genesis internal use.  Please check your configuration ".
+				"file or GENSIS_DEPLOYMENT_ROOTS environment variable."
+			) if $label =~ /^@/;
 			$path = expand_path($path);
 			push @expanded_roots, { label => $label, path => $path };
 		} else {

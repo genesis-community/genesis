@@ -10,6 +10,8 @@ our @EXPORT = qw/
 	prompt_for_block
 /;
 
+# FIXME: This entire module uses print instead of the logging system (output, error, etc)
+
 use Genesis;
 use Genesis::Term;
 
@@ -208,7 +210,12 @@ sub prompt_for_choices {
 # The $min and $max parameters are optional, and will default to 0 and the
 # number of choices, respectively.
 # The $labels parameter is also optional, and will default to the choices
-# themselves.
+# themselves.  The labels has to be an array ref, composed of elements that
+# are either strings or array refs.  If the element is an array ref, the first
+# element is the label displayed in the choice list, and the second element is
+# the label displayed on the selecdtion lineafter the user has entered a value.
+# If the label matches the pattern "---(.*)---", it will be treated as a
+# section header, and will be displayed as such, without a selection number.
 # The $err_msg parameter is optional, and will default to a generic error
 # message.
 # The $object_description parameter is optional, and will default to "choice".
@@ -220,9 +227,34 @@ sub prompt_for_choice {
 	my $object = $object_description//"choice";
 	my $num_choices = scalar(@{$choices});
 	print csprintf("%s","\n$prompt");
+	my $iw = length($#$choices) + 1;
+	my $section_offset = 0;
+	my %selection_map=();
 	for my $i (0 .. $#$choices) {
-		my $label = (ref($labels) eq 'ARRAY' && $labels->[$i]) ? (ref($labels->[$i]) eq 'ARRAY' ? $labels->[$i][0] : $labels->[$i]) : $choices->[$i];
-		print csprintf("%s","\n  ".($i+1).") ".$label);
+		my $label;
+		while (1) {
+			my $idx = $i + $section_offset;
+			($label,my $selected) = (ref($labels) eq 'ARRAY' && $labels->[$idx])
+				? (ref($labels->[$idx]) eq 'ARRAY'
+					? @{$labels->[$idx]}
+					: ($labels->[$idx],$labels->[$idx]))
+				: ($choices->[$i],$choices->[$i]);
+
+			if ($label =~ /^---(.*)---$/) {
+				my $section_header = $1;
+				$section_offset += 1;
+				print csprintf("\n\n  %s", $section_header);
+				next;
+			} elsif ($label eq '---') {
+				my $section_header = '';
+				$section_offset += 1;
+				print csprintf("\n");
+				next;
+			}
+			$selection_map{$i} = $selected;
+			last;
+		}
+		print csprintf("\n  %*s) %s", $iw, ($i+1), $label);
 		if ($default && $default eq $choices->[$i]) {
 			print csprintf(" #G{(default)}");
 			$default_choice = $i+1;
@@ -235,7 +267,7 @@ sub prompt_for_choice {
 		$err_msg || "enter a number between 1 and $num_choices",
 		$default_choice);
 
-	print(csprintf("\033[1ASelect $object > #C{%s}\n", (ref($labels) eq 'ARRAY' &&  $labels->[$c-1]) ? (ref($labels->[$c-1]) eq 'ARRAY' ? $labels->[$c-1][1] : $labels->[$c-1]) : $choices->[$c-1]));
+	print(csprintf("\033[1ASelect $object > #C{%s}\n", $selection_map{$c-1}));
 	return $choices->[$c-1];
 }
 

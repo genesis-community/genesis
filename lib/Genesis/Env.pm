@@ -426,7 +426,8 @@ sub search_for_env_file {
 	my %file_map;
 
 	my ($root_labels, $root_map) = Genesis::deployment_roots_map(
-		[$ENV{GENESIS_ORIGINATING_DIR}, $ENV{GENESIS_ORIGINATING_DIR}]
+		['@current', $ENV{GENESIS_ORIGINATING_DIR}],
+		['@parent', Cwd::abs_path(Genesis::expand_path($ENV{GENESIS_ORIGINATING_DIR}.'/..'))],
 	);
 	$env = "*$env*" =~ s/\*\^//r =~ s/\$\*//r unless $env eq '*';
 	$deployment = "*$deployment*" =~ s/\*\^//r =~ s/\$\*//r if defined($deployment);
@@ -448,7 +449,7 @@ sub search_for_env_file {
 	# roots specified in the .genesis/config file, then bosh first, followed by
 	# any other deployments in alphabetical order.
 	my @files = ();
-	for my $label ($ENV{GENESIS_ORIGINATING_DIR}, @$root_labels) {
+	for my $label ('@current', '@parent', @$root_labels) {
 		if ($file_map{$label}) {
 			my $is_bosh= qr{/bosh(-deployments)?/[^/]*\.yml$};
 			push(@files, 
@@ -468,16 +469,36 @@ sub search_for_env_file {
 			&& ($contents !~ m/^name:/);
 	} @files;
 
-	use Pry; pry;
-
-	if (@files) {
+	if (!@files) {
+		bail("No environment files found matching #C{%s}", $label);
+	} elsif (scalar(@files) > 1) {
+		my $last_section = '';
 		my @file_labels = map {
-			m{(?:(.*?)/)?([^/]*)/([^/]*)\.yml};
-			csprintf("#C{%s}%s#c{%s}/#m{%s}", $1?($1,'/'):('',''), $2, $3)
-		} map {
-			$_->[0] =~ m{^$root_map->{$_->[0]}}
-			? ($_->[0] eq $ENV{GENESIS_ORIGINATING_DIR} ? './'. humanize_path($_->[1]) : humanize_path($_->[1]))
-			: $_->[1] =~ s{^$root_map->{$_->[0]}/}{csprintf("#Bi{<%s>}/",$_->[0])}re
+			my ($section, $label) = @$_;
+			$label =~ m{(?:(.*?)/)?([^/]*)/([^/]*)\.yml};
+			my $fmt_label = csprintf("#c{%s}/#m{%s}", $2, $3);
+			if ($section ne $last_section) {
+				$last_section = $section;
+				my $fmt_section;
+				my $target_path = $root_map->{$section} =~ s{^$ENV{HOME}/}{~/}r;
+				my $is_current = $root_map->{$section} eq $ENV{GENESIS_ORIGINATING_DIR};
+				my $flag = $ENV{GENESIS_NO_UFT8}
+					? ''
+					: $is_current ? "\x{1F4C2} " : "\x{1F4C1} ";
+				if ($section eq '@current') {
+					$fmt_section = csprintf("#Gu{%sCurrent Directory:} #Ki{%s}", $flag, $target_path);
+				} elsif ($section eq '@parent') {
+					$fmt_section = csprintf("%s#Yu{%sParent Directory:} #Ki{%s}", $flag, $target_path);
+				} elsif ($section ne $root_map->{$section}) {
+					my $is_current = $root_map->{$section} eq $ENV{GENESIS_ORIGINATING_DIR};
+					$fmt_section = csprintf("#%su{%sDeployment Root '%s':} #Ki{%s}", $is_current ? 'g' : 'B', $flag, $section, $target_path);
+				} else {
+					$fmt_section = csprintf("#Bu{%sDeployment Root:} #Ki{%s}", $flag, $target_path);
+				}
+				("---$fmt_section---", $fmt_label)
+			} else {
+				($fmt_label)
+			}
 		} @files;
 
 
@@ -491,29 +512,20 @@ sub search_for_env_file {
 			csprintf(
 				"Multiple environment files found matching #C{$label}:"
 			),
-			[@files, 'none'],
+			[@files, ['none']],
 			$files[0],
-			[ @file_labels, csprintf('#R{None of these - cancel}') ],
+			[ @file_labels, '---', csprintf('#R{%s of these - cancel}', scalar(@files) == 2 ? 'Neither' : "None") ],
 			undef,
 			"the desired environment file"
 		);
-		use Pry; pry;
 		output({stderr=>1}, "");
-		bail("No environment file selected.") if $files[0] eq 'none';
+		bail("No environment file selected.") if $selected_file->[0] eq 'none';
+		$files[0] = $selected_file;
 	}
 
-	$files[0] =~ m{(?:(.*?)/)?([^/]*)/([^/]*)\.yml};
+	$files[0][1] =~ m{(?:(.*?)/)?([^/]*)/([^/]*)\.yml};
 	my $deployment_root = $1;
-	if (!$deployment_root) {
-		if (-f "./.genesis/config") {
-			# Choose the parent directory of the directory containing .genesis/config file
-			$deployment_root = Cwd::abs_path('..');
-		} else {
-			# The curren directory is the deployment root
-			$deployment_root = Cwd::abs_path('.');
-		}
-	}
-	return ($deployment_root,$files[0]);
+	return ($deployment_root, $files[0][1]);
 }
 #}}}
 #}}}
@@ -1107,7 +1119,7 @@ sub get_environment_variables {
 	if ($ENV{GENESIS_COMMAND}) {
 		$env{GENESIS_PREFIX_TYPE} = $ENV{GENESIS_PREFIX_TYPE} || 'none';
 		$env{GENESIS_CALL_PREFIX} = sprintf("%s %s %s", $env{GENESIS_CALL_BIN}, $env_ref, $ENV{GENESIS_COMMAND});
-		$env{GENESIS_CALL_FULL} = $env{GENESIS_PREFIX_TYPE} =~ /file$/
+		$env{GENESIS_CALL_FULL} = $env{GENESIS_PREFIX_TYPE} =~ /(^search|file)$/
 			? $env{GENESIS_CALL_PREFIX}
 			: sprintf("%s %s '%s'", $env{GENESIS_CALL},$ENV{GENESIS_COMMAND}, $self->name);
 	}

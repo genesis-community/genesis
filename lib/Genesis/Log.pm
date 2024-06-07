@@ -102,7 +102,7 @@ sub setup_from_configs {
 		for (@$log_configs) {
 			my $file = delete($_->{file});
 			$file = Cwd::getcwd ."/$file" unless $file =~ /^[~\/]/;
-			$class->new->configure_log(Genesis::humanize_path($file), %{$_});
+			$class->new->configure_log(Cwd::abs_path(Genesis::expand_path($file)), %{$_});
 			# TODO: add suppress list so that we can set a level, but ingore specific output
 			# TODO: support an only-log-if-an-error-occurred setting... that adds and flushes the log in END step if rc > 0
 		}
@@ -371,7 +371,7 @@ sub flush_logs {
 					my $file = $log;
 					$file =~ s/^~/$ENV{HOME}/;
 					open $fh, '>>:encoding(UTF-8)', $file
-						or die "Could not open $log for writing logs\n";
+						or die "Could not open $log for writing logs: $!\n";
 				}
 				$pre_pad =~ s/\A[\r\n]+// unless ($log eq '<terminal>' || ($last_waiting && !$reset));
 				$post_pad =~ s/[\r\n]+\z// unless ($log eq '<terminal>' || $pending);
