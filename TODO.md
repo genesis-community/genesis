@@ -190,3 +190,53 @@ TODO 2023-06-30:
 * Fix specifying named runtime configs (currently only default)
 
 * Support multiple vaults.
+
+  Bump config to version 3, and replace secrets_provider with an array under
+  `secret_stores`.  Each entry in the array is a hash with the following keys:
+  - name: the name to refer to this vault by
+  - type: vault (for now)
+  - descriptor: the genesis-style descriptor for the vault in the form of
+    [namespace@]https?://<ip-or-domain>[:port] [as name] [no-verify] [no-stronghold]
+
+  This will be utilized by each environment to determine which vault to use
+  for that environment -- unspecified vaults will default a vault named
+  "default" if it exists, or the first vault in the list if not.
+
+  There is no current plan to support multiple vaults in a single environment,
+  but this may change if there is a valid method to use a different vault for
+  the manifest and another for exodus data.
+
+
+Turn output of `genesis envs` into json for easier parsing by other tools,
+maybe also csv for easy import into spreadsheets.
+
+* Add `genesis envs --json` and `genesis envs --csv` commands
+
+Add ability for `genesis update` to:
+
+* Pick a different target directory/filename for the new genesis binary
+  instead of always overwriting the current one.
+
+* Add the ability to list older versions of genesis and select one to
+  install, instead of always installing the latest.
+  * This may be two separate commands, with `genesis update --list` to list
+    available versions, with a second option to show --older or --all (default
+    is newer -- this is currently provided by `genesis update --check`).
+
+  * Perhapse an interactive mode to select latest, or list newer/older/all
+    and also include pre-releases and drafts, and then once selected, you can
+    get the release notes, and then install it, prompting to overwrite the
+    current binary, or install to a different location and name.  (it could 
+    even be smart enough to detect a bin directory under the user's home and
+    offer to install there with the version in its name ie `genesis-2.8.12` or
+    `g2.8.12`)
+
+Show what versions of releases are being overridden by the user from the ones
+that come from the kit.  Make it an option to show this during deploy/manifest
+generation.  Also good to see in an expanded `genesis envs` output (kit
+features in use, release overrides, etc).
+
+Genesis deploy should work like pipeline in regard to propagating the
+hierarchial changes.  Make this a value in the config file (deployment) and
+have it set on/off, and/or have specific environments protected from being
+pushed without cache/gating.
