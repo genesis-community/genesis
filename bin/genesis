@@ -594,7 +594,7 @@ define_command("yamls", {
 });
 
 # }}}
-# genesis yamls - Print a list of the YAML files used for a single environment. {{{
+# genesis vault-paths - Print the list of vault paths used by the environment. {{{
 define_command("vault-paths", {
 	summary => "Print the list of vault paths used by the environment, and optionally what references each one.",
 	usage => '<env> yamls [-r|--references]',
