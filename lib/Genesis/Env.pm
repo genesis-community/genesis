@@ -440,7 +440,7 @@ sub search_for_env_file {
 		if (defined $deployment) {
 			$file_map{$label} = [map {glob("$_/$env.yml")} @deployments];
 		} else {
-			$file_map{$label} = [map {glob("$_/$env.yml")} grep { /\/bosh(-deployment)?$/ } @deployments];
+			$file_map{$label} = [map {glob("$_/$env.yml")} grep { /\/bosh(-deployments)?$/ } @deployments];
 		}
 	}
 
