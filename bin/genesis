@@ -256,7 +256,24 @@ define_command("edit", {
 
 		'kit|k=s' =>
 			"Specify the kit/version for displaying the manual.  Used when the ".
-			"environment is intending to use a new version."
+			"environment is intending to use a new version, or to override the ".
+			"kit specified in the environment file.",
+
+		'manual!' =>
+			"Display the kit manual in a split window.  This is the default, but ".
+			"can be turned off with this option.".
+			"\n".
+			"[[Note: >>this option is only valid if the editor is vi-based (vim, ".
+			"mvim, etc) or emacs.",
+
+		'ancestors!' =>
+			"If specified, all possible hierarchial files will be opened in the ".
+			"split window, even if they don't exist.  If --no-ancestors is specified, ".
+			"only the environment file will be opened.  By default, existing ancestor ".
+			"files will be opened underneith the environment file in the split window.".
+			"\n".
+			"[[Note: >>this option is only valid if the editor is vi-based (vim, ".
+			"mvim, etc)",
 	]
 });
 

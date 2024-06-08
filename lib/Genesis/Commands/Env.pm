@@ -85,46 +85,134 @@ sub create {
 }
 
 sub edit {
+	option_defaults(
+		editor => $ENV{EDITOR} || 'vim',
+	);
 	my ($name) = @_;
 	my $top = Genesis::Top->new('.');
-	my $env = $top->load_env($name);
-	my $kit;
+	# Can't use load_env because it validates, and we don't care about that here
+	my $env = Genesis::Env->new(name => $name, top => $top);
 
+	my $kit_name = $env->params->{kit}{name};
+	my $kit_version = $env->params->{kit}{version};
 	if (get_options->{kit}) {
-		my @possible_kits = keys %{$top->local_kits};
-		push @possible_kits, 'dev' if $top->has_dev_kit;
-
-		bail "No local kits found; you must specify the name of the kit to fetch"
-			unless scalar(@possible_kits);
-
-		my ($kit_name,$version) = (get_options->{kit}) =~ m/^([^\/]*)(?:\/(.*))?$/;
-		if (!$version && semver($name)) {
-			bail "More than one local kit found; please specify the kit to get the manual for"
-				if scalar(@possible_kits) > 1;
-			$version = $name;
-			$version =~ s/^v//;
-			$name = $possible_kits[0];
-		}
-		$kit = $top->local_kit_version($name, $version);
-
-		if(!(defined $kit)) {
-			error "Kit not found: #C{%s}", $name;
-			exit 1;
-		}
-
-	} else {
-		$kit = $env->kit;
+		($kit_name,$kit_version) = (get_options->{kit}) =~ m/^([^\/]*)(?:\/(.*))?$/;
 	}
-	info "Editing environment $name (kit #C{%s})", $kit->id;
 
-	my $man = $kit->path('MANUAL.md');
-	warning(
-		"#M{%s} has no MANUAL.md",
-		$kit->id
-	) unless (-f $man);
+	$env->notify("Editing environment #C{%s}", humanize_path($env->file));
+	my $kit_id = $kit_name eq 'dev' ? 'dev' : "$kit_name/$kit_version";
+	info "[[  - >>based on kit #C{%s}", $kit_id;
 
-	$kit->run_hook('edit', env => $env, editor => get_options->{editor});
-	exit 0;
+	my $editor = get_options->{editor};
+	my @cmd = split(/\s+/, $editor);
+	$editor = $cmd[0];
+	info "[[  - >>using editor #C{%s}", $editor;
+
+	my @warnings = ();
+	my $manual_path = '';
+	my $use_manual = defined(get_options->{manual}) ? (get_options->{manual} ? 1 : 0) : undef;
+
+	bail(
+		"Cannot specify #Y{--manual} unless the editor is vim/vi or emacs: Pull ".
+		"request are welcome for other editors."
+	) if $use_manual && ! $editor =~ m/(vim?|emacs)$/;
+	if ($use_manual//1 && $editor =~ m/(vim?|emacs)$/) {
+		if ($kit_name eq 'dev') {
+			if (-d $top->path('dev')) {
+				$manual_path = $top->path('dev/MANUAL.md');
+				if (! -f $manual_path) {
+					push @warnings, "Dev kit for environment #C{$name} has no MANUAL.md";
+				}
+			} else {
+				push @warnings, "Dev kit for environment #C{$name} not found - no MANUAL.md available";
+			}
+		} else {
+			my $kit = $top->local_kit_version($kit_name, $kit_version);
+			if ($kit) {
+				$manual_path = $kit->path('MANUAL.md');
+				if (! -f $manual_path) {
+					push @warnings, "Kit #C{$kit_name/$kit_version} has no MANUAL.md";
+				}
+			} else {
+				push @warnings, "Kit #C{$kit_name/$kit_version} not found - no MANUAL.md available";
+			}
+		}
+	} else {
+		if ($kit_name eq 'dev') {
+			push @warnings, "Dev kit for environment #C{$name} not found!"
+				unless (-d $top->path('dev'));
+		} else {
+			my $kit = $top->local_kit_version($kit_name, $kit_version);
+			push @warnings, "Specified kit #C{$kit_name/$kit_version} not found!"
+				unless ($kit);
+		}
+	}
+	info "[[  - >>showing kit manual" if $manual_path;
+
+	my @files = $top->path($env->file);
+	push @files, $manual_path;
+
+	my $show_ancestors = defined(get_options->{ancestors}) ? (get_options->{ancestors} ? 1 : 0) : undef;
+	bail(
+		"Cannot specify #Y{--include-all-ancestors} unless the editor is vim or ".
+		"vi: Pull request are welcome for other editors."
+	) if $show_ancestors && !$editor =~ m/vim?$/;
+
+	if ($show_ancestors//1 && $editor =~ m/vim?$/) {
+		my @ancestors = reverse $env->potential_environment_files;
+		shift @ancestors; # remove the current environment file
+		@ancestors = grep {-f $_} @ancestors unless $show_ancestors;
+		push @files, map {Cwd::abs_path($_)} @ancestors;
+		info(
+			"[[  - >>including %s hierarchial ancestor files",
+			$show_ancestors ? "all" : 'existing'
+		) if @ancestors;
+	}
+
+	if ($editor =~ m/vim?$/) {
+		push @cmd, '-c';
+		my $build_opts = 'edit '.shift(@files);
+		if (my $manual = shift(@files)) {
+			$build_opts .= ' | vsplit '. $manual;
+			$build_opts .= ' | wincmd w';
+		}
+		$build_opts .= ' | split '. $_ for (@files);
+		$build_opts .= ' | '.scalar(@files).' wincmd k' if (@files);
+
+		push @cmd, $build_opts;
+	} elsif ($editor eq 'emacs') {
+		push @cmd, '-nw', shift(@files);
+		push @cmd, '-f', 'split-window-horizontally', shift(@files), '-f', 'other-window'
+			if @files;
+	} else {
+		push @cmd, shift(@files);
+	}
+
+
+
+	if (@warnings) {
+		warning(
+			"\nFound the following issues were found with the environment:%s",
+			join("", map {"\n[[- >>$_"} @warnings)
+		);
+		prompt_for_boolean(
+			"Would you like to continue editing the environment anyway? [y|n]",
+			1
+		) or bail("Aborted by user");
+	}
+
+	my ($out, $rc, $err) = run(
+		{interactive => 1},
+		@cmd
+	);
+
+	if ($rc) {
+		bail(
+			"Failed to edit environment %s: %s",
+			$name, $err
+		);
+	}
+	$env->notify(success => "Environment $name edit completed.\n");
 }
 
 sub check {
