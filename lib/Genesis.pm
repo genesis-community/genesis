@@ -775,24 +775,12 @@ sub chmod_or_fail {
 
 our %path_cache = ();
 sub humanize_path {
-	my ($path, $label_maps) = @_;
+	my ($path, $absolute) = @_;
 
 	#TODO: cache paths better
 	my $pwd = Cwd::abs_path($ENV{GENESIS_CALLER_DIR} || Cwd::getcwd());
 	return $path_cache{"$path\@$pwd"}
 		if ($path =~ m{^/} && defined($path_cache{"$path\@$pwd"}));
-
-	if (defined($label_maps)) {
-		# We only want to match to array pairs -- if its just a path match, we don't care
-		my ($path_match) = grep {
-			ref($_) eq 'ARRAY' ? $path =~ qr(^$_->[-1]/) : 0
-		} @$label_maps;
-		if ($path_match) {
-			my ($label, $subpath) = @$path_match;
-			my $new_path = $path =~ s/^$subpath/#g{<$label>}/r;
-			return csprintf("%s", $new_path)
-		}
-	}
 
 	$path = $ENV{HOME}.substr($path,1) if substr($path,0,1)  eq '~';
 	$path = "$pwd/$path" unless $path =~ /^\//;
@@ -800,13 +788,15 @@ sub humanize_path {
 	while ($path =~ s/\/\.\//\//) {};
 
 	my $rel_path;
-	my @path_bits = split('/',$path);
-	my @pwd_bits = split('/',$pwd);
-	my $i=-1; while ($i < $#path_bits && $i < $#pwd_bits && $path_bits[++$i] eq $pwd_bits[$i]) {};
-	$i++ if $path_bits[$i] && $pwd_bits[$i] && $path_bits[$i] eq $pwd_bits[$i];
-	$rel_path = join('/', (map {'..'} ($i .. $#pwd_bits)), @path_bits[$i .. $#path_bits]);
-	$rel_path .= '/' if $path =~ m{/$};
-	$rel_path = "./$rel_path" if -x $path && ! -d $path && $rel_path !~ /(^\.|\/)/;
+	unless ($absolute) {
+		my @path_bits = split('/',$path);
+		my @pwd_bits = split('/',$pwd);
+		my $i=-1; while ($i < $#path_bits && $i < $#pwd_bits && $path_bits[++$i] eq $pwd_bits[$i]) {};
+		$i++ if $path_bits[$i] && $pwd_bits[$i] && $path_bits[$i] eq $pwd_bits[$i];
+		$rel_path = join('/', (map {'..'} ($i .. $#pwd_bits)), @path_bits[$i .. $#path_bits]);
+		$rel_path .= '/' if $path =~ m{/$};
+		$rel_path = "./$rel_path" if -x $path && ! -d $path && $rel_path !~ /(^\.|\/)/;
+	}
 
 	my $new_path = (substr($path, 0, length($pwd) + 1) eq $pwd . '/')
 		? '.' . substr($path, length($pwd))
@@ -814,7 +804,7 @@ sub humanize_path {
 		? "~" . substr($path, length($ENV{HOME})) : $path;
 	while ($new_path =~ s/\/[^\/]*\/\.\.\//\//) {};
 	$new_path =~ s/^\.\/\.\.\//..\//;
-	$rel_path = undef if $rel_path =~ m{^(\.\./){3,}};
+	$rel_path = undef if ($rel_path//'') =~ m{^(\.\./){3,}};
 	$path_cache{"$path\@$pwd"} = ($rel_path && length($rel_path) < length($new_path)) ? $rel_path : $new_path;
 }
 
