@@ -264,7 +264,7 @@ define_command("edit", {
 			"can be turned off with this option.".
 			"\n".
 			"[[Note: >>this option is only valid if the editor is vi-based (vim, ".
-			"mvim, etc) or emacs.",
+			"mvim, etc), emacs, or VSCode (code).",
 
 		'ancestors!' =>
 			"If specified, all possible hierarchial files will be opened in the ".
@@ -273,7 +273,7 @@ define_command("edit", {
 			"files will be opened underneith the environment file in the split window.".
 			"\n".
 			"[[Note: >>this option is only valid if the editor is vi-based (vim, ".
-			"mvim, etc)",
+			"mvim, etc) or VSCode (code)",
 	]
 });
 

@@ -495,9 +495,9 @@ sub search_for_env_file {
 				} else {
 					$fmt_section = csprintf("#Bu{%sDeployment Root:} #Ki{%s}", $flag, $target_path);
 				}
-				("---$fmt_section---", $fmt_label)
+				("---$fmt_section---", [$fmt_label, csprintf("#C{%s}", humanize_path($root_map->{$section}, 1))."/$fmt_label"])
 			} else {
-				($fmt_label)
+				[$fmt_label, csprintf("#C{%s}", humanize_path($root_map->{$section}, 1))."/$fmt_label"]
 			}
 		} @files;
 
@@ -505,7 +505,7 @@ sub search_for_env_file {
 		bail(
 			"Ambiguous environment name: #C{%s} matches multiple files:\n  - %s\n\n".
 			"Please refine your match criteria.",
-			$label, join("\n  - ", @file_labels)
+			$label, join("\n  - ", map {$_->[1]} grep {ref($_) eq 'ARRAY'} @file_labels)
 		) unless in_controlling_terminal;
 
 		my $selected_file = prompt_for_choice(

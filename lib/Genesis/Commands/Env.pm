@@ -89,7 +89,7 @@ sub edit {
 		editor => $ENV{EDITOR} || 'vim',
 	);
 	my ($name) = @_;
-	my $top = Genesis::Top->new('.');
+	my $top = Genesis::Top->new('.', no_vault => 1);
 	# Can't use load_env because it validates, and we don't care about that here
 	my $env = Genesis::Env->new(name => $name, top => $top);
 
@@ -99,7 +99,7 @@ sub edit {
 		($kit_name,$kit_version) = (get_options->{kit}) =~ m/^([^\/]*)(?:\/(.*))?$/;
 	}
 
-	$env->notify("Editing environment #C{%s}", humanize_path($env->file));
+	$env->notify("Editing environment file #C{%s}", Cwd::abs_path($env->file) =~ s/^\Q$ENV{HOME}\E/~/r);
 	my $kit_id = $kit_name eq 'dev' ? 'dev' : "$kit_name/$kit_version";
 	info "[[  - >>based on kit #C{%s}", $kit_id;
 
@@ -113,10 +113,11 @@ sub edit {
 	my $use_manual = defined(get_options->{manual}) ? (get_options->{manual} ? 1 : 0) : undef;
 
 	bail(
-		"Cannot specify #Y{--manual} unless the editor is vim/vi or emacs: Pull ".
-		"request are welcome for other editors."
-	) if $use_manual && ! $editor =~ m/(vim?|emacs)$/;
-	if ($use_manual//1 && $editor =~ m/(vim?|emacs)$/) {
+		"Cannot specify #Y{--manual} unless the editor is vi-based (vi,vim,mvim,".
+		"nvim,gvim), vscode (code) or emacs: ".
+		"Pull request are welcome for other editors."
+	) if $use_manual && ! $editor =~ m/^([gmn]?vim|vi|emacs|code)$/;
+	if ($use_manual//1 && $editor =~ m/^([gmn]?vim|vi|emacs|code)$/) {
 		if ($kit_name eq 'dev') {
 			if (-d $top->path('dev')) {
 				$manual_path = $top->path('dev/MANUAL.md');
@@ -154,11 +155,11 @@ sub edit {
 
 	my $show_ancestors = defined(get_options->{ancestors}) ? (get_options->{ancestors} ? 1 : 0) : undef;
 	bail(
-		"Cannot specify #Y{--include-all-ancestors} unless the editor is vim or ".
-		"vi: Pull request are welcome for other editors."
-	) if $show_ancestors && !$editor =~ m/vim?$/;
+		"Cannot specify #Y{--include-all-ancestors} unless the editor is vi-based ".
+		"(vi,vim,mvim,nvim,gvim) or vscode (code): Pull request are welcome for other editors."
+	) if $show_ancestors && !$editor =~ m/^([gmn]?vim|vi|^code)$/;
 
-	if ($show_ancestors//1 && $editor =~ m/vim?$/) {
+	if ($show_ancestors//1 && $editor =~ m/^([gmn]?vim|vi|code)$/) {
 		my @ancestors = reverse $env->potential_environment_files;
 		shift @ancestors; # remove the current environment file
 		@ancestors = grep {-f $_} @ancestors unless $show_ancestors;
@@ -180,6 +181,12 @@ sub edit {
 		$build_opts .= ' | '.scalar(@files).' wincmd k' if (@files);
 
 		push @cmd, $build_opts;
+	} elsif ($editor eq 'code') {
+		info(
+			"\n[[#Y{Note:} >>VSCode opens files in separate tabs -- drag and drop ".
+			"them to split the view if desired."
+		) if grep {$_} @files > 1;
+		push @cmd, '--wait', '--add','.', grep {$_} @files;
 	} elsif ($editor eq 'emacs') {
 		push @cmd, '-nw', shift(@files);
 		push @cmd, '-f', 'split-window-horizontally', shift(@files), '-f', 'other-window'
@@ -187,8 +194,6 @@ sub edit {
 	} else {
 		push @cmd, shift(@files);
 	}
-
-
 
 	if (@warnings) {
 		warning(
@@ -200,6 +205,7 @@ sub edit {
 			1
 		) or bail("Aborted by user");
 	}
+	info '';
 
 	my ($out, $rc, $err) = run(
 		{interactive => 1},
@@ -208,8 +214,8 @@ sub edit {
 
 	if ($rc) {
 		bail(
-			"Failed to edit environment %s: %s",
-			$name, $err
+			"Failed to edit environment %s",
+			$name,
 		);
 	}
 	$env->notify(success => "Environment $name edit completed.\n");
