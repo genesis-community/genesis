@@ -200,5 +200,48 @@ EOF
 	exec {$target} $target, 'version';
 }
 
+sub hack {
+	my ($cmd, @args) = @_;
+
+	require Genesis::Top;
+	my $top = Genesis::Top->new('.');
+	my $env;
+	if (-f $top->path($cmd =~ s/(.yml)?$/.yml/r)) {
+		eval {$env = $top->load_env($cmd)};
+		bail(
+			"Attempted to load environment from #C{%s}, but encountered error: %s",
+			$top->path($cmd.".yml"), $@
+		) if $@;
+		$cmd = shift @args;
+	}
+
+	if ($cmd eq 'pry') {
+		use Pry; pry;
+		exit 0;
+	}
+
+	if ($cmd =~ /^\$top->/) {
+		$cmd =~ s/^\$top->//;
+		my $result = $top->$cmd(@args);
+		Genesis::dump_var({level => 1}, result => $result);
+	} elsif ($cmd =~ /^\$env->/) {
+		$cmd =~ s/^\$env->//;
+		my $result = $env->$cmd(@args);
+		Genesis::dump_var({level => 1}, result => $result);
+	} else {
+		my ($module,$op,$cmd) = $cmd =~ /(.*)(::|->)([^:]*)$/;
+		if ($module) {
+			my $module_name = $module =~ s/::/\//gr;
+			$module_name .= ".pm";
+			require $module_name;
+		}
+		no strict 'refs';
+		my $result = $op eq '::'
+		 ? &{$module.'::'.$cmd}(@args)
+		 : $module->$cmd(@args);
+		Genesis::dump_var({level => 1}, result => $result);
+	}
+}
+
 1;
 # vim: fdm=marker:foldlevel=0:noet

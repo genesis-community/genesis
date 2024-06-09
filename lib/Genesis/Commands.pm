@@ -67,6 +67,7 @@ use constant { # {{{
 	GENESIS     => {order =>  5, module => "Core",       label => "Genesis Management"},
 	UTILITY     => {order => -1, module => "Utility",    label => "Script Callback Helper"},
 	DEPRECATED  => {order => -2, module => "Deprecated", label => "Deprecated"},
+	DEV         => {order => -3, module => "Core",       label => "Development"},
 
 	# Option Groups
 	BLANK_OPTIONS => 0,

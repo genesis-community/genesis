@@ -1601,6 +1601,28 @@ define_command("env-shell", {
 });
 
 # }}}
+# genesis hack - run a method with arguments inside the genesis environment {{{
+#
+define_command("hack", {
+	summary => "Run a method with arguments inside the Genesis environment",
+	usage => "hack <module> <method> [<arg> ...]",
+	description =>
+		'This is a special command that is not intended to be used by end users, '.
+		'but rather by developers of Genesis itself.  It allows for running a '.
+		'method with arguments inside the Genesis environment, which is useful for '.
+		"testing and development. \n".
+		"\n".
+		'For example, to run the `Genesis::Env->search_for_env_file` method with '.
+		"the arguments 'dev' and 'default', you would run: \n".
+		" #g{genesis} #G{hack} Genesis::Env search_for_env_file dev default\n".
+		"\n".
+		'Note that $env and $top are special arguments that are replaced with the '.
+		"current environment and top-level directory objects, respectively.",
+	function_group => Genesis::Commands::DEV,
+	scope => ['env','repo','any'],
+	option_group => Genesis::Commands::ENV_OPTIONS,
+});
+# }}}
 # }}}
 
 ###########################################################################
