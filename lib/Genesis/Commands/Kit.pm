@@ -145,26 +145,42 @@ sub list_kits {
 		if ($name && has_option('filter'));
 	command_usage(1,"Cannot specify both --remote|-r and --updates|-u.")
 		if has_option('remote') && has_option('updates');
+	command_usage(1,"Cannot specify a name or filter with the --all|-a option.")
+		if has_option('all') && ($name || has_option('filter'));
 
 	my $top = Genesis::Top->new('.');
 
-	my (%kits, %latest);
+	my $local_kits = $top->local_kits;
+
 	my %options = %{get_options()};
-	$options{details} = $options{updates} unless defined $options{details};
+
+	my (%kits, %latest);
+	$options{details} //= $options{updates};
 	if ($options{remote}) {
-		my @kit_names = ($name ? ($name) : $top->remote_kit_names($options{filter}));
+		# set the filter or name to local kit(s) unless name or filter is provided,
+		# or if --remote and --all|-a is specified
+		my $filter = $options{filter};
+		unless ($name || $filter || $options{all}) {
+			my @local_kit_names = keys %$local_kits;
+			if (scalar(@local_kit_names) == 1) {
+				$name = $local_kit_names[0];
+			} elsif (@local_kit_names > 1) {
+				$filter = '(^'.join('|', @local_kit_names).'$)';
+			}
+		}
+		my @kit_names = ($name ? ($name) : $top->remote_kit_names($filter));
 		for my $kit (@kit_names) {
 			my %versions;
+			# TODO: make this overwrite each check, or have a progress bar...
 			$versions{$_->{version}} = $_
 				for ($top->remote_kit_versions($kit, latest=>$options{latest}, include_prereleases=>$options{prereleases}, include_drafts=>$options{drafts}));
 			$kits{$kit} = \%versions;
 		}
 
 	} elsif ($options{updates}) {
-		my $available_kits = $top->local_kits;
-		for my $k (keys %$available_kits) {
+		for my $k (keys %$local_kits) {
 			$kits{$k} = {};
-			$latest{$k} = (reverse sort by_semver keys(%{$available_kits->{$k}}))[0];
+			$latest{$k} = (reverse sort by_semver keys(%{$local_kits->{$k}}))[0];
 			my %versions;
 			$versions{$_->{version}} = $_
 				for ($top->remote_kit_versions($k, latest=>$options{latest}, include_prereleases=>$options{prereleases}, include_drafts=>$options{drafts}));
@@ -175,11 +191,10 @@ sub list_kits {
 		}
 
 	} else {
-		my $available_kits = $top->local_kits;
-		for my $k (keys %$available_kits) {
+		for my $k (keys %$local_kits) {
 			next if $name && $name ne $k;
 			$kits{$k} ||= {};
-			my @versions = keys %{$available_kits->{$k}};
+			my @versions = keys %{$local_kits->{$k}};
 			@versions = reverse grep {$_} (reverse sort by_semver @versions)[0..(($options{latest} || 1)-1)]
 				if defined $options{latest};
 			$kits{$k}{$_} = {} for (@versions); # local kits don't have details - TODO: Package them with release notes
@@ -187,7 +202,7 @@ sub list_kits {
 	}
 
 	if (keys %kits) {
-		my $out = '';
+		my $out = "";
 		for my $kit (sort(keys %kits)) {
 			if ($options{updates}) {
 				my $num_updates = keys(%{$kits{$kit}});
@@ -213,24 +228,35 @@ sub list_kits {
 					? "Y"
 					: ($kits{$kit}{$version}{prerelease} ? "y" : "G");
 				my $d = "";
-				if ($kits{$kit}{$version}{date} && $options{details}) {
-					$d = "Published ".$kits{$kit}{$version}{date};
-					$d .= " - \}#${c}i{Pre-release}#${c}\{"
-						if $kits{$kit}{$version}{prerelease};
-					$d = " ($d)";
+				if ($options{details}) {
+					if ($kits{$kit}{$version}{date}) {
+						$d = "Published ".$kits{$kit}{$version}{date};
+						$d .= " - \}#${c}i{Pre-release}#${c}\{"
+							if $kits{$kit}{$version}{prerelease};
+						$d = " ($d)";
+					}
+					if ($kits{$kit}{$version}{body}) {
+						$out .= sprintf("\n\n%s#%s{%s%s%s}\n\n", bullet('', color => $c), $c, "Release Notes for v", $version, $d);
+						$out .= ("    " . join(
+							"\n    ",
+							split(/\n/, render_markdown(
+								$kits{$kit}{$version}{body},
+								expand => 1,
+								width => (terminal_width() - 4)
+							))
+						));
+					}
+				} else {
+					$out .= sprintf(
+						"%s#%s{v%s%s}",
+						bullet('', color => $c),
+						$c,
+						$version,
+						$d
+					);
 				}
-				$out .= sprintf("\n\n%s#%s{%s%s%s}\n\n", bullet('', color => $c), $c, "Release Notes for v", $version, $d);
-				$out .= ("    " . join(
-					"\n    ",
-					split(/\n/, render_markdown(
-						$kits{$kit}{$version}{body},
-						expand => 1,
-						width => (terminal_width() - 4)
-					))
-				))	if $options{details} && $kits{$kit}{$version}{body};
 				$out .= "\n";
 			}
-			$out .= "\n";
 		}
 		output $out;
 	} else {

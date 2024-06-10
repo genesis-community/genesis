@@ -1108,6 +1108,10 @@ define_command("list-kits", {
 			"List the remote kits available from the Genesis Community Github ".
 			"organization",
 
+		'all|a' =>
+			"List all the remote kits and versions, not just the kit(s) in the ".
+			"current deployment repository.  Must be used with #y{--remote}",
+
 		'latest|l:i' =>
 			"List only the latest (N) versions -- N defaults to 1",
 
