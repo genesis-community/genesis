@@ -203,20 +203,24 @@ EOF
 sub hack {
 	my ($cmd, @args) = @_;
 
-	require Genesis::Top;
-	my $top = Genesis::Top->new('.');
-	my $env;
-	if (-f $top->path($cmd =~ s/(.yml)?$/.yml/r)) {
-		eval {$env = $top->load_env($cmd)};
-		bail(
-			"Attempted to load environment from #C{%s}, but encountered error: %s",
-			$top->path($cmd.".yml"), $@
-		) if $@;
-		$cmd = shift @args;
+	my ($top, $env);
+	if (-d './.genesis/kits/') {
+		require Genesis::Top;
+		$top = Genesis::Top->new('.');
+		if (-f $top->path($cmd =~ s/(.yml)?$/.yml/r)) {
+			eval {$env = $top->load_env($cmd)};
+			bail(
+				"Attempted to load environment from #C{%s}, but encountered error: %s",
+				$top->path($cmd.".yml"), $@
+			) if $@;
+			$cmd = shift @args;
+		}
 	}
 
 	if ($cmd eq 'pry') {
-		use Pry; pry;
+		eval {require 'Pry.pm'};
+		bail("Attempted to load Pry, but encountered error: %s", $@) if $@;
+		Pry->pry;
 		exit 0;
 	}
 
