@@ -289,17 +289,14 @@ sub environments {
 	#preemptively check that vault is available
 	
 	# Get the list of deployment roots
-	my $root_map = $Genesis::RC->get(deployment_roots => []);
-	my @roots = map {
-		abs_path($_) eq abs_path('.') ? '.' : abs_path($_)
-	} map {
-		ref($_) eq 'ARRAY' ? $_->[1] : $_
-	} @$root_map;
+	my $root_map = Genesis::deployment_roots_map(
+		['@current', $ENV{GENESIS_ORIGINATING_DIR}],
+		['@parent', Cwd::abs_path(Genesis::expand_path($ENV{GENESIS_ORIGINATING_DIR}.'/..'))],
+	);
 
-	push @roots, '.' unless in_array('.', @roots);
-
-	for my $root (@roots) {
+	for my $label (@{$root_map->{labels}}) {
 		# Find all deployments under each root
+		my $root = $root_map->{roots}{$label};
 		my @repos = map {s{/.genesis/config$}{}; $_} glob("$root/*/.genesis/config");
 		if (scalar @repos) {
 			$root =~ s{/?$}{/};
@@ -317,15 +314,34 @@ sub environments {
 				if (scalar(@envs)) {
 					info "\n[[  >>#u{Environments under repo }#mu{%s}#u{:}", $repo_label if ($group_by eq 'kit');
 					for my $env (@envs) {
+						# Each environment is not initialized because otherwise we would
+						# get errors if it contains any bad configuration (ie invalid kit)
+						# We will try to load it and if it works, we're good -- otherwise
+						# we'll need to get what we can, and report the errors.
+
 						my $exodus = $env->exodus_lookup('.',{});
 						my $env_info = {
 							name => $env->name,
-							kit => $env->kit->id,
 							type => $env->type,
-							kit_version => $env->kit->version,
-							is_director => $env->is_bosh_director,
-							bosh_env => $exodus->{bosh},
 							path => $repo_label,
+							bosh_env => $exodus->{bosh},
+						};
+
+						my $loaded_env = eval {
+							$top->load_env($env->name)
+						};
+						if (my $err_msg = $@) {
+							my $kit_name = $env->params->{kit}{name} // 'unknown';
+							my $kit_version = $env->params->{kit}{version} // 'unknown';
+							my $kit_id = $kit_name . ($kit_name eq 'dev' ? '' : '/'.$kit_version);
+							$env_info->{kit_version} = $kit_version;
+							$env_info->{kit} = csprintf("%s #Ri{(not found)}", $kit_id);
+							$env_info->{is_director} = 'unknown';
+						} else {
+							$env = $loaded_env;
+							$env_info->{kit} = $env->kit->id;
+							$env_info->{kit_version} = $env->kit->version;
+							$env_info->{is_director} = $env->is_bosh_director;
 						};
 						if ($exodus->{dated}) {
 							$env_info->{last_deployed} = $exodus->{dated};
@@ -367,7 +383,7 @@ sub environments {
 						my $type = $env_info->{is_director} ? '#R{BOSH director}' : '#G{'.$env_info->{type}.' deployment}';
 						my $msg = sprintf(
 							"[[    $type#yi{%s}: >>#m{%s}",
-							$env_info->{type} eq $env_info->{path} ? '' : ' (in '.$env_info->{path}.')',
+							$env_info->{path} =~ /^$env_info->{type}(-deployments)?$/ ? '' : ' (in '.$env_info->{path}.')',
 							$env_info->{kit}
 						);
 						if ($env_info->{last_deployed}) {
@@ -386,7 +402,7 @@ sub environments {
 					}
 				}
 			}
-		} elsif ($root ne '.') {
+		} elsif ($label !~ /^@/) {
 			warning("\nNo environments found under deployment root #C{%s}\n", $root);
 		}
 	}
