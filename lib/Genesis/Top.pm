@@ -252,75 +252,95 @@ EOF
 sub search_for_repo_path {
 	my ($class, $deployment) = @_;
 	my $label = "\@:$deployment";
-	my @paths;
-	my $root_map = $Genesis::RC->get(deployment_roots => []);
-	push @$root_map, ["current directory", $ENV{GENESIS_ORIGINATING_DIR}]
-		unless grep {(ref($_) eq 'ARRAY' ? $_->[-1] : $_) eq $ENV{GENESIS_ORIGINATING_DIR}} @$root_map;
+
+	my ($root_labels, $root_map) = Genesis::deployment_roots_map(
+		['@current', $ENV{GENESIS_ORIGINATING_DIR}],
+		['@parent', Cwd::abs_path(Genesis::expand_path($ENV{GENESIS_ORIGINATING_DIR}.'/..'))],
+	);
+
 	$deployment = "*$deployment*" =~ s/\*\^//r =~ s/\$\*//r if defined($deployment) && $deployment ne '*';
 
-	for my $root (@$root_map) {
-		my ($label, $root_path) = ref($root) eq 'ARRAY' ? @$root : ($root, $root);
-		my @deployments = map {s{/\.genesis/config$}{/}r}
-			glob("$root_path/".($deployment//'*')."/.genesis/config"); # Only include genesis repos
+	my %path_map = ();
+	for my $label (@$root_labels) {
+		my $root = $root_map->{$label};
+		my @deployments = map {s{/\.genesis/config$}{}r}
+			glob("$root/".($deployment//'*')."/.genesis/config"); # Only include genesis repos
 		next unless @deployments;
-		push @paths, @deployments;
+		$path_map{$label} = [@deployments];
 	}
 
-	my @roots = ();
+	# Order the files by current directory, then by the order of the deployment
+	# roots specified in the .genesis/config file, then bosh first, followed by
+	# any other deployments in alphabetical order.
+	my @paths = ();
+	for my $label ('@current', '@parent', @$root_labels) {
+		if ($path_map{$label}) {
+			my $is_bosh= qr{/bosh(-deployments)?/$};
+			push(@paths,
+				map {[$label, $_]}
+				sort {
+					($a =~ $is_bosh ? 0 : 1) <=> ($b =~ $is_bosh ? 0 : 1 ) || $a cmp $b
+				} @{$path_map{$label}}
+			);
+		}
+	}
 
-	if (scalar(@paths) > 1) {
+	if (!@paths) {
+		bail("No deployment repositories found matching #C{%s}", $label);
+
+	} elsif (scalar(@paths) > 1) {
+		my $last_section = '';
+		my @path_labels = map {
+			my ($section, $path) = @$_;
+			$path =~ m{(?:(.*?)/)?([^/]*/?)$};
+			my $fmt_label = csprintf("#c{%s}/", $2);
+			if ($section ne $last_section) {
+				$last_section = $section;
+				my $fmt_section;
+				my $target_path = $root_map->{$section} =~ s{^$ENV{HOME}/}{~/}r;
+				my $is_current = $root_map->{$section} eq $ENV{GENESIS_ORIGINATING_DIR};
+				my $flag = $ENV{GENESIS_NO_UFT8}
+					? ''
+					: $is_current ? "\x{1F4C2} " : "\x{1F4C1} ";
+				if ($section eq '@current') {
+					$fmt_section = csprintf("#Gu{%sCurrent Directory:} #Ki{%s}", $flag, $target_path);
+				} elsif ($section eq '@parent') {
+					$fmt_section = csprintf("%s#Yu{%sParent Directory:} #Ki{%s}", $flag, $target_path);
+				} elsif ($section ne $root_map->{$section}) {
+					my $is_current = $root_map->{$section} eq $ENV{GENESIS_ORIGINATING_DIR};
+					$fmt_section = csprintf("#%su{%sDeployment Root '%s':} #Ki{%s}", $is_current ? 'g' : 'B', $flag, $section, $target_path);
+				} else {
+					$fmt_section = csprintf("#Bu{%sDeployment Root:} #Ki{%s}", $flag, $target_path);
+				}
+				("---$fmt_section---", [$fmt_label, csprintf("#C{%s}", humanize_path($root_map->{$section}, 1))."/$fmt_label"])
+			} else {
+				[$fmt_label, csprintf("#C{%s}", humanize_path($root_map->{$section}, 1))."/$fmt_label"]
+			}
+		} @paths;
 		bail(
 			"Ambiguous deployment repository name: #C{%s} matches multiple paths:\n  - %s\n\n".
 			"Please refine your match criteria.",
-			$label, join("\n  - ", @paths)
+			$label, join("\n  - ", map {$_->[1]} grep {ref($_) eq 'ARRAY'} @path_labels)
 		) unless in_controlling_terminal;
 
 
-		my $default =
-			(grep {$_ eq $ENV{GENESIS_ORIGINATING_DIR}.'/'} @paths)[0] //
-			(grep {$_ =~ m{/bosh(-deployments)?$}} @paths)[0] //
-			$paths[0];
-
-		@paths = ($default, @paths[0..index_of($default, @paths)-1], @paths[index_of($default, @paths)+1..$#paths])
-			if index_of($default, @paths) > 0;
-
-		my $label_map = [ map {
-			ref($_) eq 'ARRAY'
-			? [$_->[0].($_->[0] eq 'current directory' ? '' : ' deployment root'), $_->[1]]
-			: undef
-		} @$root_map ];
-
-		$paths[0] = prompt_for_choice(
+		my $selected_path = prompt_for_choice(
 			csprintf(
-				"Multiple deployment repository paths found matching #C{$label}:"
+				"Multiple deployment repositories found matching #C{$label}:"
 			),
-			[@paths, 'none'],
-			$default,
-			[(
-					map {decolorize($_) eq '<current directory>/' ? $_ =~ s{/$}{}r : $_}
-					map {m{(?:(.*?)/)?([^/]+)/?$}; csprintf("#C{%s}%s#c{%s}/", $1?($1,'/'):('',''), $2)}
-					map {humanize_path($_, $label_map)}
-					@paths
-				), csprintf('#R{None of these - cancel}')
-			],
+			[@paths, ['none']],
+			$paths[0],
+			[ @path_labels, '---', csprintf('#R{%s of these - cancel}', scalar(@paths) == 2 ? 'Neither' : "None") ],
 			undef,
 			"the desired deployment repository path"
 		);
 		output({stderr=>1}, "");
-		bail("No deployment repository path selected.") if $paths[0] eq 'none';
+		bail("No deployment repository path selected.") if $selected_path->[0] eq 'none';
+		$paths[0] = $selected_path;
 	}
-	$paths[0] =~ m{(?:(.*?)/)?([^/]+)/?$};
+	$paths[0][1] =~ m{(?:(.*?)/)?([^/]+)/?$};
 	my $deployment_root = $1;
-	if (!$deployment_root) {
-		if (-f "./.genesis/config") {
-			# Choose the parent directory of the directory containing .genesis/config file
-			$deployment_root = Cwd::abs_path('..');
-		} else {
-			# The curren directory is the deployment root
-			$deployment_root = Cwd::abs_path('.');
-		}
-	}
-	return ($deployment_root, $paths[0]);
+	return ($deployment_root, $paths[0][1]);
 }
 # }}}
 # }}}
@@ -649,7 +669,7 @@ sub envs {
 		my @env_names = $yaml_src =~ /^genesis:\r?\n\r?  (?:.*\r?\n\r?  )*env:\s+([^\s]*)/mg;
 		next unless scalar(@env_names) == 1;
 		next unless $env_names[-1] eq $env;
-		push @envs, $self->load_env($env);
+		push @envs, Genesis::Env->new(name => $env, top => $self);
 	}
 	return @envs;
 }

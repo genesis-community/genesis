@@ -430,7 +430,7 @@ sub search_for_env_file {
 		['@parent', Cwd::abs_path(Genesis::expand_path($ENV{GENESIS_ORIGINATING_DIR}.'/..'))],
 	);
 	$env = "*$env*" =~ s/\*\^//r =~ s/\$\*//r unless $env eq '*';
-	$deployment = "*$deployment*" =~ s/\*\^//r =~ s/\$\*//r if defined($deployment);
+	$deployment = "*$deployment*" =~ s/\*\^//r =~ s/\$\*//r if defined($deployment) && $deployment ne '*';
 
 	for my $label (@$root_labels) {
 		my $root = $root_map->{$label};
