@@ -245,8 +245,6 @@ sub expand_path {
 	return $path;
 }
 
-}
-
 sub in_repo_dir {
 	return  -d ".genesis" && -e ".genesis/config";
 }
