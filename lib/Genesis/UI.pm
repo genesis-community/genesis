@@ -227,7 +227,7 @@ sub prompt_for_choice {
 	my $object = $object_description//"choice";
 	my $num_choices = scalar(@{$choices});
 	print csprintf("%s","\n$prompt");
-	my $iw = length($#$choices) + 1;
+	my $iw = length($#$choices + 1);
 	my $section_offset = 0;
 	my %selection_map=();
 	for my $i (0 .. $#$choices) {
