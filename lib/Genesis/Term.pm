@@ -367,14 +367,14 @@ sub build_markdown_table {
 		@col_align = map {m/^:-/ ? (m/-+:$/ ? 'c' : 'l' ) : (m/-:$/ ? 'r' : 'l')} split(/\s*\|\s*/, shift @$rows, -1);
 	}
 	my @data = map {[split(/ *\| */,$_,-1)]} @$rows;
-	my @col_min_widths = map {length($_)} @headers;
+	my @col_min_widths = map {length($_)+2} @headers;
 	my @col_max_widths = @col_min_widths;
 	for my $row (@data) {
 		for my $i (0..$#$row) {
 			# Determine the minimum width of each column by the length of the longest word
 			# in each column.
 			my $longest_word = (sort {length($b) <=> length($a)} split(/\s+/, $row->[$i]//''))[0] // 0;
-			$col_min_widths[$i] = length($longest_word) if length($longest_word) > ($col_min_widths[$i]//0);
+			$col_min_widths[$i] = length($longest_word) if length($longest_word) < ($col_min_widths[$i]//0);
 
 			# Determine the total width of each column by the length of the longest line
 			$col_max_widths[$i] = length($row->[$i]) if length($row->[$i]) > ($col_max_widths[$i]//0);
@@ -406,9 +406,13 @@ sub build_markdown_table {
 
 	} elsif ($opts{expand}) {
 		my $extra_width = $total_content_width - $max_row_width;
-		@col_widths = map {
-			$col_max_widths[$_] + int($extra_width * ($col_max_widths[$_] - $col_min_widths[$_]) / ($max_row_width - $min_row_width))
-		} 0..$#col_max_widths;
+		if ($max_row_width == $min_row_width) {
+			@col_widths = map {int($col_max_widths[$_] / $max_row_width * $total_content_width)} 0..$#col_max_widths;
+		} else {
+			@col_widths = map {
+				$col_max_widths[$_] + int($extra_width * ($col_max_widths[$_] - $col_min_widths[$_]) / ($max_row_width - $min_row_width)||1)
+			} 0..$#col_max_widths;
+		}
 		my $total_col_widths = 0;
 		$total_col_widths += $_ for @col_widths;
 		my $diff = $total_content_width - $total_col_widths;
@@ -558,8 +562,8 @@ sub process_markdown_block {
 	# Check for embedded links
 	my $links = $opts{links};
 	$block =~ s/\[([^\]]+)\]\(## "(.*?)"\)/$1 [#i{$2}]/g;
-	while ($block =~ s/\[([^\]]+)\](?:\((.*?)\)|(\[\d+\]))/"#Bu{$1}".superscript(scalar(@$links)+1)/e) {
-		push @$links, [$1, $2||$3];
+	while ($block =~ s/\[([^\]]+)\](?:\((.*?)\)|(\[\d+\])|\[([^\]]+)\])/"#Bu{$1}".superscript(scalar(@$links)+1)/e) {
+		push @$links, [$1, $2||$3||$4];
 	}
 
 	while ($block =~ m/(^\s*(\[\d+\]): (.*?)(?:\n|$))/) { # Footnote link references
@@ -574,6 +578,18 @@ sub process_markdown_block {
 		$block =~ s/\Q$line\E//;
 		return '' unless $block =~ m/\S/;
 	}
+
+	# Old-style link references
+	if ($block =~ m/(^\[([^\]]+)]: (http.*))$/) {
+		my ($line, $ref, $url) = ($1, $2, $3);
+		my ($link) = grep {$_->[1] eq $ref} @$links;
+		if ($link) {
+			$link->[1] = $url;
+			$block =~ s/\Q$line\E//;
+			return ''
+		}
+	}
+
 
 	# Check for inline formatting (except for code blocks)
 	unless ($block =~ m/^\s*```/) {
@@ -681,6 +697,16 @@ sub render_markdown {
 			splice(@blocks, $i, 1, @sub_blocks)
 				if (scalar(@sub_blocks));
 			$i += scalar(@sub_blocks) - 1;
+		}
+		$i++;
+	}
+
+	# Separate header blocks from the rest of the blocks
+	$i = 0;
+	while ($i < @blocks) {
+		if ($blocks[$i] =~ m/^\s*#+/) {
+			my ($header, $rest) = split(/\n/, $blocks[$i], 2);
+			splice(@blocks, $i, 1, $header, $rest) if $rest;
 		}
 		$i++;
 	}
