@@ -58,6 +58,13 @@ sub configure_log {
 	my $default_level = envset("QUIET") ? "ERROR" :  envset("GENESIS_TRACE") ? "TRACE" : envset("GENESIS_DEBUG") ? "DEBUG" : "INFO";
 	my $default_output_style = defined($Genesis::RC) ? $Genesis::RC->get('output_style','plain') : 'plain';
 
+	# Create log directory if it doesn't exist.
+	if ($log ne '<terminal>') {
+		require Genesis;
+		my $dir = Cwd::dirname(Cwd::abs_path(Genesis::expand_path($log)));
+		mkdir_or_fail $dir unless -d $dir;
+	}
+
 	unless ($self->{logs}{$log}) {
 		$self->{logs}{$log} = {
 			level       => $default_level,
