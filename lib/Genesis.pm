@@ -178,7 +178,7 @@ sub deployment_roots_map {
 		if (ref($root) eq 'ARRAY') {
 			my ($label, $path) = @$root;
 			bail(
-				"Deployment root labels cannot start with a '@' character.  This is ".
+				"Deployment root labels cannot start with a '\@' character.  This is ".
 				"reserved for Genesis internal use.  Please check your configuration ".
 				"file or GENSIS_DEPLOYMENT_ROOTS environment variable."
 			) if $label =~ /^@/;
