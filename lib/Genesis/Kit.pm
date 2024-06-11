@@ -467,7 +467,7 @@ sub feature_compatibility {
 }
 
 # }}}
-# genesis_version_min -- minimum version of genesis required to be used for this kit
+# genesis_version_min -- minimum version of genesis required to be used for this kit {{{
 sub genesis_version_min {
 	return $_[0]->_memoize('__genesis_version_min',sub{
 		my ($self) = @_;

@@ -95,6 +95,7 @@ sub edit {
 
 	my $kit_name = $env->params->{kit}{name};
 	my $kit_version = $env->params->{kit}{version};
+	my $min_genesis_version = $env->params->{genesis}{min_version};
 	if (get_options->{kit}) {
 		($kit_name,$kit_version) = (get_options->{kit}) =~ m/^([^\/]*)(?:\/(.*))?$/;
 	}
@@ -111,6 +112,14 @@ sub edit {
 	my @warnings = ();
 	my $manual_path = '';
 	my $use_manual = defined(get_options->{manual}) ? (get_options->{manual} ? 1 : 0) : undef;
+	my $prompt_for_kit = 0;
+
+	push(@warnings,
+		"Genesis version #Y{$Genesis::VERSION} does not meet the environment's ".
+		"minimum required version #R{$min_genesis_version} - you will need to ".
+		"upgrade Genesis or alter the environment file to manage this environment ".
+		"with this version of Genesis."
+	) if $min_genesis_version && !new_enough($Genesis::VERSION, $min_genesis_version);
 
 	bail(
 		"Cannot specify #Y{--manual} unless the editor is vi-based (vi,vim,mvim,".
@@ -136,6 +145,7 @@ sub edit {
 				}
 			} else {
 				push @warnings, "Kit #C{$kit_name/$kit_version} not found - no MANUAL.md available";
+				$prompt_for_kit = 1;
 			}
 		}
 	} else {
@@ -144,15 +154,15 @@ sub edit {
 				unless (-d $top->path('dev'));
 		} else {
 			my $kit = $top->local_kit_version($kit_name, $kit_version);
-			push @warnings, "Specified kit #C{$kit_name/$kit_version} not found!"
-				unless ($kit);
+			unless ($kit) {
+				push @warnings, "Specified kit #C{$kit_name/$kit_version} not found!";
+				$prompt_for_kit = 1;
+			}
 		}
 	}
 	info "[[  - >>showing kit manual" if $manual_path;
 
-	my @files = $top->path($env->file);
-	push @files, $manual_path;
-
+	my @files = ();
 	my $show_ancestors = defined(get_options->{ancestors}) ? (get_options->{ancestors} ? 1 : 0) : undef;
 	bail(
 		"Cannot specify #Y{--include-all-ancestors} unless the editor is vi-based ".
@@ -170,9 +180,58 @@ sub edit {
 		) if @ancestors;
 	}
 
+	my $replace_kit = 0;
+	if (@warnings) {
+		warning(
+			"\nFound the following issues were found with the environment:%s",
+			join("", map {"\n[[- >>$_"} @warnings)
+		);
+		if ($prompt_for_kit && $editor =~ m/^([gmn]?vim|vi)$/) {
+			my $local_kits = $top->local_kits;
+			my @kit_names = keys %$local_kits;
+			my @kit_labels = ();
+			my @kits = ();
+			for my $kit (@kit_names) {
+				my @versions = keys %{$local_kits->{$kit}};
+				if (@versions) {
+					push @kit_labels, csprintf("---#C{%s-genesis-kit:}---", $kit);
+					for my $version (reverse sort by_semver @versions) {
+						push @kits, [$kit, $version];
+						push @kit_labels, [csprintf("#%s{%s}", ($version =~ /[\.-]rc[\.-]?(\d+)$/) ? 'Y' : 'G',$version), "$kit/$version"];
+					}
+				}
+			}
+			my $selection = prompt_for_choice(
+				"Would you like to select a local kit and continue?",
+				[@kits, 'current', 'abort'],
+				$kits[0],
+				[@kit_labels, '---', csprintf('#y{Keep as-is}'), csprintf('#r{Quit}')]
+			) or bail("Aborted by user");
+
+			bail("Aborted by user") if $selection eq 'abort';
+			if ($selection ne 'current') {
+				$replace_kit = 1;
+				($kit_name, $kit_version) = @$selection;
+				$manual_path = $top->local_kit_version($kit_name, $kit_version)->path('MANUAL.md');
+				$manual_path = '' unless -f $manual_path;
+			}
+		} else {
+			prompt_for_boolean(
+				"Would you like to continue editing the environment anyway? [y|n]",
+				1
+			) or bail("Aborted by user");
+		}
+	}
+
+	@files = ($top->path($env->file), $manual_path, @files);
+
 	if ($editor =~ m/vim?$/) {
 		push @cmd, '-c';
 		my $build_opts = 'edit '.shift(@files);
+		if ($replace_kit) {
+			$build_opts .= ' | %s/\(kit:\(\n  .*$\)*\n  name:\s*\).*/\1'.$kit_name.'/';
+			$build_opts .= ' | %s/\(kit:\(\n  .*$\)*\n  version\s*\).*/\1'.$kit_version.'/';
+		}
 		if (my $manual = shift(@files)) {
 			$build_opts .= ' | vsplit '. $manual;
 			$build_opts .= ' | wincmd w';
@@ -194,18 +253,6 @@ sub edit {
 	} else {
 		push @cmd, shift(@files);
 	}
-
-	if (@warnings) {
-		warning(
-			"\nFound the following issues were found with the environment:%s",
-			join("", map {"\n[[- >>$_"} @warnings)
-		);
-		prompt_for_boolean(
-			"Would you like to continue editing the environment anyway? [y|n]",
-			1
-		) or bail("Aborted by user");
-	}
-	info '';
 
 	my ($out, $rc, $err) = run(
 		{interactive => 1},
