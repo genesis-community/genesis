@@ -183,7 +183,7 @@ sub edit {
 	my $replace_kit = 0;
 	if (@warnings) {
 		warning(
-			"\nFound the following issues were found with the environment:%s",
+			"\nThe following issues were found with the environment:%s",
 			join("", map {"\n[[- >>$_"} @warnings)
 		);
 		if ($prompt_for_kit && $editor =~ m/^([gmn]?vim|vi)$/) {
@@ -217,7 +217,7 @@ sub edit {
 			}
 		} else {
 			prompt_for_boolean(
-				"Would you like to continue editing the environment anyway? [y|n]",
+				"Continue? [y|n]",
 				1
 			) or bail("Aborted by user");
 		}
