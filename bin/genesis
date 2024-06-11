@@ -399,7 +399,7 @@ define_command("deploy", {
 			"Recreates all persistant disks, even if the deployment is a no-op ".
 			"(Shortform: #y{--rpd})",
 
-		'skip-drain=s@' =>
+		'skip-drain:s@' =>
 			"Skip running drain scripts for specific instance group.  Can be ".
 			"specified multiple times. No instance group needs to be specified for ".
 			"create-env environments.",

@@ -2114,7 +2114,8 @@ sub deploy {
 		my @bosh_opts;
 		push @bosh_opts, "--$_"             for grep { $opts{$_} } qw/fix fix-releases recreate dry-run/;
 		push @bosh_opts, "--no-redact"      if  !$opts{redact};
-		push @bosh_opts, "--skip-drain=$_"  for @{$opts{'skip-drain'} || []};
+		push @bosh_opts, '--skip-drain'     if grep {$_ eq ''} @{$opts{'skip-drain'}};
+		push @bosh_opts, "--skip-drain=$_"  for grep {$_} @{$opts{'skip-drain'} || []};
 		push @bosh_opts, "--$_=$opts{$_}"   for grep { defined $opts{$_} } qw/canaries max-in-flight/;
 
 		debug("deploying this environment to our BOSH director");
