@@ -107,7 +107,7 @@ sub edit {
 	my $editor = get_options->{editor};
 	my @cmd = split(/\s+/, $editor);
 	$editor = $cmd[0];
-	info "[[  - >>using editor #C{%s}", $editor;
+	info "[[  - >>using editor #C{%s}%s", $editor, @cmd > 1 ? ", with option(s): ".join(', ', map {"#Y{'$_'}"} @cmd[1..$#cmd]) : '';
 
 	my @warnings = ();
 	my $manual_path = '';
