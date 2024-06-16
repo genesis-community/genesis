@@ -274,7 +274,7 @@ sub check {
 	option_defaults(
 		secrets => 0,
 		manifest => 1,
-		stemcells => 0
+		stemcells => 0,
 	);
 	my $env = Genesis::Top->new('.')->load_env($_[0]);
 	$env->with_vault() if get_options->{secrets} || get_options->{manifest};

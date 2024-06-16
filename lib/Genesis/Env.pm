@@ -444,7 +444,6 @@ sub search_for_env_file {
 		}
 	}
 
-	
 	# Order the files by current directory, then by the order of the deployment
 	# roots specified in the .genesis/config file, then bosh first, followed by
 	# any other deployments in alphabetical order.
@@ -1951,6 +1950,65 @@ sub check {
 		}
 	}
 
+	# Check for release overrides in the environment file.
+	if ($ok) {
+		if (!exists($opts{check_releases}) || $opts{check_releases}) {
+			$self->notify("checking for release overrides...");
+
+			my @overrides = ();
+			my @outdated = ();
+			my $env_releases = $self->manifest_provider->partial_environment(subset=>'releases')->data;
+			if (ref($env_releases) eq 'ARRAY' && scalar(@$env_releases)) {
+
+				my $kit_releases = scalar(load_yaml(scalar(run(
+					'spruce','merge',
+					'--skip-eval','--go-patch','-m',
+					'--cherry-pick', 'releases',
+					map {$self->kit->path($_)} $self->kit_files)))
+				)->{releases} // [];
+
+				# Step through each override sorted by release name
+				for my $override (sort {$a->{name} cmp $b->{name}} @$env_releases) {
+					my ($release) = grep {$_->{name} eq $override->{name}} @$kit_releases;
+					push @overrides, [$override->{name}, $override->{version}, $release ? $release->{version} : undef]
+						if !$release || $release->{version} ne $override->{version};
+				}
+			}
+
+			if (@overrides) {
+				@outdated = grep {!new_enough($_->[1],$_->[2])} @overrides;
+				info "[[  #E{warning}>>#y{Environment overrides the following releases:}";
+				for my $override (@overrides) {
+					my ($name, $env_version, $kit_version) = @$override;
+					if ($kit_version) {
+						info(
+							"[[     %s#C{%s} #y{v%s} => #%s{v%s}",
+							bullet('', '>>', indent => 0),
+							$name, $kit_version,
+							new_enough($env_version,$kit_version) ? 'G' : 'R', $env_version
+						);
+					} else {
+						info(
+							"[[    >>#C{%s} #G{v%s} added",
+							$name, $env_version
+						);
+					}
+				}
+				if (
+					$opts{confirm_release_overrides} eq 'always' || (
+					$opts{confirm_release_overrides} eq 'outdated' && @outdated)
+				) {
+					my $confirm = prompt_for_boolean(
+						"Proceed with release version overrides? [y|n]",
+						1
+					);
+					$ok = 0 unless $confirm;
+				}
+			}
+		}
+	}
+
+
 	# TODO: secrets check for Credhub (post manifest generation)
 
 	if ($ok && (!exists($opts{check_stemcells}) || $opts{check_stemcells}) && !$self->use_create_env) {
@@ -2011,9 +2069,10 @@ sub deploy {
 		$self->download_required_configs(@hooks);
 	}
 
+	my $confirm = $opts{yes} ? 'never' : $Genesis::RC->get('confirm_release_overrides' => 'outdated');
 	bail(
 		"Preflight checks failed; deployment operation halted."
-	) unless $self->check();
+	) unless $self->check('confirm_release_overrides' => $confirm);
 
 	$self->manifest_provider->deployment(subset=>'pruned',notify=>1)->write_to(
 		"$self->{__tmp}/manifest.yml"

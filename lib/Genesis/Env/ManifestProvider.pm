@@ -385,7 +385,8 @@ sub _subset_plans {
 		return {
 			credhub_vars => { include => [qw(variables bosh-variables)]},
 			bosh_vars    => { fetch   => {key => 'bosh-variables', default => {}} },
-			pruned       => { exclude => [$_[0]->env->prunable_keys]}
+			pruned       => { exclude => [$_[0]->env->prunable_keys]},
+			releases     => { fetch   => {key => 'releases', default => {}} },
 		}
 	});
 };
