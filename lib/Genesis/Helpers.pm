@@ -811,11 +811,18 @@ if [[ "$GENESIS_KIT_HOOK" == "addon" ]] ; then
 		done
 		(
 			shopt -s nullglob
+
 			for addon in hooks/addon-*; do
+				[[ -f "$addon.pm" && -z ${GENESIS_NO_MODULE_HOOKS:-''} ]] && continue # prefer the perl module version
 				[[ -x "$addon" ]] || chmod +x "$addon"
-				msg="$($addon help | sed -e 's/^/    /')" || continue
-				label="$(echo "$addon" | sed -e 's/.*\/addon-\([^~]*\).*/\1/')"
-				short="$(echo "$addon" | sed -e 's/.*\/addon-\([^~]*\)\(~\(.*\)\)\{0,1\}/\3/')"
+				if [[ $addon =~ .pm$ && -n ${GENESIS_NO_MODULE_HOOKS:-''} ]] ; then
+					module="$(grep '^package ' "$addon" | sed -e 's/^package \([^ ]*\).*/\1/;q')"
+					msg="$(perl -I $GENESIS_LIB -MGenesis::Term -e "require '$(pwd)/$addon'; print wrap($module->cmd_details, terminal_width, '', 4);")" || continue
+				else
+					msg="$($addon help | sed -e 's/^/    /')" || continue
+				fi
+				label="$(echo "$addon" | sed -e 's/.*\/addon-\([^~\.]*\).*/\1/')"
+				short="$(echo "$addon" | sed -e 's/.*\/addon-\([^~\.]*\)\(~\([^\.]*\)\)\{0,1\}.*/\3/')"
 				[[ -n "$short" ]] && short="|$short"
 				describe "" "  #Gu{$label$short}" "$msg"
 			done
