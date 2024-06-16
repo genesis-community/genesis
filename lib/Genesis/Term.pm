@@ -146,7 +146,10 @@ sub _emojify {
 		'memo' => "\x{1F4DD}",
 		'notes' => "\x{1F5D2}\x{FE0F} ",
 		'printer' => "\x{1F5A8}\x{FE0F} ",
-		'tada' => "\x{1F389}"
+		'tada' => "\x{1F389}",
+		'tmyn' => "\x{1F320}",
+		'notice' => "\x{1FAA7} ",
+		'megaphone' => "\x{1F4E3}",
 	);
 	return '' if envset('GENESIS_NO_UTF8');
 	return $emojis{$emoji} // '';

@@ -13,6 +13,8 @@ use Genesis::Term;
 
 use POSIX qw/strftime/;
 use Cwd ();
+use File::Basename qw/dirname/;
+use File::Spec;
 #use Symbol qw/qualify_to_ref/;
 use Time::HiRes qw/gettimeofday/;
 use Time::Piece;
@@ -59,10 +61,20 @@ sub configure_log {
 	my $default_output_style = defined($Genesis::RC) ? $Genesis::RC->get('output_style','plain') : 'plain';
 
 	# Create log directory if it doesn't exist.
-	if ($log ne '<terminal>') {
+	if ($log && $log ne '<terminal>') {
 		require Genesis;
-		my $dir = Cwd::dirname(Cwd::abs_path(Genesis::expand_path($log)));
-		mkdir_or_fail $dir unless -d $dir;
+		my $dir = dirname(File::Spec->rel2abs(Genesis::expand_path($log)));
+		if (!-d $dir) {
+			printf STDERR wrap( # Have to use printf because logs aren't set up yet
+				csprintf(
+					"[[#B{[#E{%s}NOTICE]} >>Creating missing log directory for log #c{%s}\n\n",
+					$Genesis::RC->get('output_style','plain') eq 'fun' ? 'megaphone' : '',
+					$log
+				),
+				terminal_width
+			);
+			Genesis::mkdir_or_fail $dir
+		}
 	}
 
 	unless ($self->{logs}{$log}) {
@@ -108,8 +120,7 @@ sub setup_from_configs {
 	if (ref($log_configs) eq 'ARRAY') {
 		for (@$log_configs) {
 			my $file = delete($_->{file});
-			$file = Cwd::getcwd ."/$file" unless $file =~ /^[~\/]/;
-			$class->new->configure_log(Cwd::abs_path(Genesis::expand_path($file)), %{$_});
+			$class->new->configure_log(File::Spec->rel2abs(Genesis::expand_path($file)), %{$_});
 			# TODO: add suppress list so that we can set a level, but ingore specific output
 			# TODO: support an only-log-if-an-error-occurred setting... that adds and flushes the log in END step if rc > 0
 		}
@@ -148,6 +159,7 @@ sub log_styles {
 		info      => {colors => "Wc", pri => 6, emoji => 'information'},
 		debug     => {colors => "Wm", emoji => 'crystal-ball'},
 		warning   => {colors => "ky", pri => 4, emoji => 'warning'},
+		notice    => {colors => "BK", pri => 4, emoji => 'notice'},
 		error     => {colors => "WR", pri => 3, emoji => 'collision'},
 		fatal     => {colors => "Yr", pri => 0, emoji => 'stop-sign'},
 		trace     => {colors => "WG", emoji => 'detective', show_stack => 'current'},
@@ -160,6 +172,7 @@ sub log_styles {
 sub output  { shift->_log("OUTPUT",  log_styles('output'),  @_) }
 sub info    { shift->_log("INFO",    log_styles('info'),    @_) }
 sub debug   { shift->_log("DEBUG",   log_styles('debug'),   @_) }
+sub notice  { shift->_log("NOTICE",  log_styles('notice'),  @_) }
 sub warning { shift->_log("WARNING", log_styles('warning'), @_) }
 sub error   { shift->_log("ERROR",   log_styles('error'),   @_) }
 sub fatal   { shift->_log("FATAL",   log_styles('fatal'),   @_) }
