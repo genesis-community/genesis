@@ -180,11 +180,15 @@ EOF
 
 	} else {
 		if ($hook eq 'addon') {
+			# Check if its a perl module
 			($hook_file) =
-				grep {/(\/addon-$opts{script}(~.*)?|~$opts{script}).pm$/}
+				grep {/(\/addon-$opts{script}(~.*)?|~$opts{script})\.pm$/}
 				glob($self->path('hooks/addon*'));
-			if (($hook_file//'') =~ m/\/addon-([^~]*)(?:~(.*))?\.pm$/) {
-				$hook_name = "hook/addon ". $2 ? "'$1/$2'" : "'$1'";
+			if (
+				($hook_file//'') =~ m/\/addon-([^~]*)(?:~(.*))?\.pm$/
+				&& ! envset('GENESIS_NO_MODULE_HOOKS')
+			) {
+				$hook_name = "hook/addon ".($2 ? "'$1/$2'" : "'$1'");
 				my $addon_label = $2 ? "$1/$2" : $1;
 				info(
 					"[1ARunning #G{%s} addon for #C{%s} #M{%s} deployment",
@@ -229,6 +233,8 @@ EOF
 	debug ("Running hook now in ".$self->path);
 	if ($hook_module) {
 		eval {require $hook_file};
+		$module_options{file} = $opts{$hook_file};
+		$module_options{label} = $hook_name =~ s/^hook\/addon '([^'])'.*/$1/r =~ s{/}{|}r;
 		bail(
 			"Could not load Perl module %s to run hook %s in kit %s: %s",
 			$hook_file, $hook_name, $self->id, $@
@@ -237,7 +243,9 @@ EOF
 		my $hook_obj = $hook_module->init(env => $opts{env}, kit => $self, %module_options);
 		# TODO: wrap in an eval, give better error messages
 
-		my $ok = $hook eq 'list' ? $hook_obj->help() : $hook_obj->perform();
+		my $ok = $hook =~ /^addon/ && scalar(grep {$_ =~ /^(?:-h|--help)$/} @args)
+			? $hook_obj->help()
+			: $hook_obj->perform();
 		bail(
 			"Could not run '%s' hook successfully!",
 			$hook

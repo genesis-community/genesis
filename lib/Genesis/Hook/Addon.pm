@@ -21,6 +21,19 @@ sub init {
 sub help {
 	my ($self, %addons) = @_;
 
+	if ($self->can('cmd_details')) {
+		info (
+			"\n#Gu{%s}\n[[  >>%s\n",
+			$self->{label}, join("\n[[  >>", split("\n",$self->cmd_details()))
+		);
+		return 1;
+	}
+
+	# FIXME: The code below is not being called yes, so may contain errors:
+	# - the passed in %addons does not seem compatible with the code below
+	#   due to the includsion of $addons{$cmd} already containing the help
+	#   output.
+
 	# Loook for any extended addon hooks
 	my @module_files = glob($self->kit->path("hooks/addon-*.pm"));
 	foreach my $file (@module_files) {
