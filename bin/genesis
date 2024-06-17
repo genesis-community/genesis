@@ -515,6 +515,29 @@ define_command("logs", {
 	options => []
 });
 # }}}
+# genesis broadcast - send commands to the vms of the environment {{{
+define_command("broadcast", {
+	summary => "Send a command to all VMs in the environment, or a select group.",
+	usage => "<env> broadcast [<options...>] <command and command options>",
+	alias => 'vmdo', # legacy gb script name
+	description =>
+		"Send a command to all VMs in the environment, or a select group.  This ".
+		"command will run the given command in series on each VM, and will allow ".
+		"the user to interact with the command as if they were running it on the ".
+		"VM directly.",
+	function_group => Genesis::Commands::ENVIRONMENT,
+	scope => 'env',
+	option_group => Genesis::Commands::REPO_OPTIONS,
+	options => [
+		'on=s@' =>
+			"Specify the vm type or type/id for the command to run on.  If not ".
+			"specified, it will run on all jobs in the deployment.  This option can ".
+			"be specified multiple times to run on multiple types or instances.",
+	],
+	option_passthrough => 1,
+	option_require_order => 1,
+});
+# }}}
 # genesis do - run a kit addon {{{
 define_command("do", {
 	summary => "Run an addon script provided by the environment's kit.",

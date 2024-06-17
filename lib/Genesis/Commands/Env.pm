@@ -38,7 +38,6 @@ sub create {
 		$vault_desc = $top->vault->build_descriptor()
 	}
 
-
 	# determine the kit to use (dev or compiled)
 	my $kit_id=delete(get_options->{kit}) || '';
 	my $kit = $top->local_kit_version($kit_id);
@@ -732,6 +731,58 @@ sub logs {
 	) if $env->use_create_env;
 
 	my @logs = $env->bosh_logs(@extra_args);
+}
+
+sub broadcast {
+	my %options = %{get_options()};
+	my ($env_name, @extra_args) = @_;
+
+	my $targets = $options{on}; # default to all jobs
+
+	my $env = Genesis::Top->new('.')->load_env($env_name)->with_vault()->with_bosh();
+	my $bosh = $env->bosh;
+	my ($out,$rc, $err) = read_json_from($bosh->execute({interactive => 0}, 'vms', '--json'));
+	bail("Failed to fetch VM list: %s", $err) if $rc;
+	my @vms = ();
+	eval {
+		@vms = @{$out->{Tables}[0]{Rows}};
+	} or bail("Failed to parse VM list: %s", $@);
+
+	my @errors = ();
+	if ($targets) {
+		my @instances = ();
+		for my $target (@$targets) {
+			my $search_target = $target;
+			$search_target .= '/' unless $search_target =~ m{/};
+			my @match = map {$_->{instance}} grep {$_->{instance} =~ m{^\Q$target\E}} @vms;
+			if (@match) {
+				push @instances, @match;
+			} else {
+				@errors = (@errors, ($target =~ m{/})
+					? "No instances found matching specified instance ID #c{$target}"
+					: "No instances found matching specified instance type #C{$target}");
+			}
+		}
+		$targets = \@instances;
+	} else {
+		$targets = [map {$_->{instance}} @vms];
+	}
+
+	bail(
+		"Errors were encountered while determining broadcast targets:\n%s",
+		join("\n", map {"- $_"} @errors)
+	) if @errors;
+
+	for my $target ( uniq @$targets ) {
+		info("\n" . ('=' x terminal_width()));
+		info("#g{Broadcasting to }#C{%s}#g{...}", $target);
+		info('-' x terminal_width());
+		my ($out, $rc, $err) = $bosh->execute({interactive => 1}, 'ssh', $target, '--', @extra_args);
+		error("Failed to broadcast to %s: %s", $target, $err) if $rc;
+	}
+
+	info("\n" . ('=' x terminal_width()));
+	success("\nBroadcast complete!\n");
 }
 1;
 # vim: fdm=marker:foldlevel=1:noet
