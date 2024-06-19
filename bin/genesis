@@ -519,7 +519,7 @@ define_command("logs", {
 define_command("broadcast", {
 	summary => "Send a command to all VMs in the environment, or a select group.",
 	usage => "<env> broadcast [<options...>] <command and command options>",
-	alias => 'vmdo', # legacy gb script name
+	aliases => ['bc','vmsdo'], # legacy gb script name
 	description =>
 		"Send a command to all VMs in the environment, or a select group.  This ".
 		"command will run the given command in series on each VM, and will allow ".
