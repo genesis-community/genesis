@@ -285,6 +285,21 @@ sub kit_manual {
 # TODO: Add a flag to mass check secrets in all environments
 sub environments {
 
+	pushd($ENV{GENESIS_ORIGINATING_DIR}) if $ENV{GENESIS_ORIGINATING_DIR};
+
+	my ($filter_env, $filter_type,$search) = ();
+	if ($ENV{GENESIS_PREFIX_TYPE} eq 'search') {
+		$search = delete($ENV{GENESIS_PREFIX_SEARCH});
+		$ENV{GENESIS_PREFIX_TYPE} = 'none';
+		($filter_env, $filter_type) = $search =~ m{^@([^:]+)?(?::(.*))?$};
+		$filter_env //= '*';
+		$filter_type //= '*';
+		$filter_env = "*$filter_env*" =~ s/\*\^/\^/r =~ s/\$\*/\$/r unless $filter_env eq '*';
+		$filter_type = "*$filter_type*" =~ s/\*\^/\^/r =~ s/\$\*/\$/r unless $filter_type eq '*';
+		$filter_env =~ s/([\*\?])/.$1/g;
+		$filter_type =~ s/([\*\?])/.$1/g;
+	}
+
 	my $group_by = get_options->{group_by_env} ? 'env' : 'kit';
 	#preemptively check that vault is available
 	
@@ -298,6 +313,7 @@ sub environments {
 		# Find all deployments under each root
 		my $root = $root_map->{roots}{$label};
 		my @repos = grep {Genesis::Top->is_repo($_)} map {s{/.genesis/config$}{}; $_} glob("$root/*/.genesis/config");
+		@repos = grep {basename($_) =~ qr($filter_type)} @repos if $filter_type;
 		if (scalar @repos) {
 			$root =~ s{/?$}{/};
 			info "\nDeployment root #C{%s} contains the following:", humanize_path($root, $root_map) =~ s{/?$}{/}r =~ s{>\e\[0m/$}{>\e\[0m}r;
@@ -309,6 +325,7 @@ sub environments {
 				my $top = Genesis::Top->new($repo, silent_vault_check => 1, allow_no_vault => 1);
 				my $repo_label = basename($top->path);
 				my @envs = $top->envs; # Do the heavy lifting to determine which files are environments
+				@envs = grep {$_->name =~ qr($filter_env)} @envs if $filter_env;
 				__processing(++$i, scalar(@repos), $j) if ($group_by eq 'env');
 
 				if (scalar(@envs)) {
@@ -384,7 +401,7 @@ sub environments {
 					}
 				}
 			}
-			if ($group_by eq 'env') {
+			if ($group_by eq 'env' && scalar keys %deployments_by_name) {
 				info {pending => 1}, $ansi_reset_line.$ansi_cursor_up.$ansi_show_cursor;
 				for my $env_name (sort keys %deployments_by_name) {
 					info "\n[[  >>#u{Environment }#cu{%s}#u{:}", $env_name;
@@ -404,15 +421,26 @@ sub environments {
 							);
 							$msg .= " using kit #Y{$env_info->{last_kit}} #y\@{!}"
 								if ($env_info->{last_kit} ne $env_info->{kit});
+						} elsif ($env_info->{vault_status} ne 'ok') {
+							my $status = $env_info->{vault_status};
+							my $vault_url = $env_info->{vault_url};
+							$msg .= " - #Ri{vault }#Mi{$vault_url}#Ri{ is $status:} #Y{exodus deployment data unavailable}";
 						} else {
 							$msg .= " - #r{never deployed}";
 						}
 						info $msg;
 					}
 				}
+			} else {
+				info {pending => 1}, $ansi_reset_line.$ansi_cursor_up.$ansi_show_cursor;
+				info "\n[[  #E{warning}>>#Ki{No environments found}" . ($search
+				 ? sprintf("#Ki{ matching pattern }#Ci{%s}", $search)
+				 : '#Ki{.}'
+				);
+
 			}
 		} elsif ($label !~ /^@/) {
-			warning("\nNo environments found under deployment root #C{%s}\n", $root);
+			warning("#Ki{No environments found under deployment root }#C{%s}", $root)
 		}
 	}
 	info '';

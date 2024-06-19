@@ -628,7 +628,7 @@ sub set_top_path { # {{{
 			if (! has_scope('env')) {
 				# Allow gracefull degradation of specifying a file as an argument when
 				# the command is repo scoped and using search target mode.
-				if ($ENV{GENESIS_PREFIX_TYPE} eq 'search' && has_scope('repo')) {
+				if ($ENV{GENESIS_PREFIX_TYPE} eq 'search' && has_scope('repo','any','all')) {
 					$cwd = dirname($cwd);
 				} else {
 					bail(
