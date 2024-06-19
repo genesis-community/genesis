@@ -306,7 +306,7 @@ sub environments {
 			my ($i,$j) = (0,0);
 			for my $repo (@repos) {
 				__processing($i, scalar(@repos), $j) if ($group_by eq 'env');
-				my $top = Genesis::Top->new($repo, silent_vault_check => 1);
+				my $top = Genesis::Top->new($repo, silent_vault_check => 1, allow_no_vault => 1);
 				my $repo_label = basename($top->path);
 				my @envs = $top->envs; # Do the heavy lifting to determine which files are environments
 				__processing(++$i, scalar(@repos), $j) if ($group_by eq 'env');
@@ -319,16 +319,16 @@ sub environments {
 						# We will try to load it and if it works, we're good -- otherwise
 						# we'll need to get what we can, and report the errors.
 
-						my $exodus = $env->exodus_lookup('.',{});
+						my $exodus = $top->vault->status ne 'ok' ? {} : $env->exodus_lookup('.',{});
 						my $env_info = {
 							name => $env->name,
 							type => $env->type,
 							path => $repo_label,
-							bosh_env => $exodus->{bosh},
+							bosh_env => $exodus->{bosh} // $env->params->{bosh_env} // $env->name
 						};
 
 						my $loaded_env = eval {
-							$top->load_env($env->name)
+							$top->load_env($env->name);
 						};
 						if (my $err_msg = $@) {
 							my $kit_name = $env->params->{kit}{name} // 'unknown';
@@ -348,6 +348,11 @@ sub environments {
 							$env_info->{last_deployed_by} = $exodus->{deployer};
 							$env_info->{last_kit} = $exodus->{kit_name}.'/'.$exodus->{kit_version}.($exodus->{kit_is_dev} ? ' (dev)' : '');
 						}
+						$env_info->{vault_status} = $top->vault->status;
+						if ($top->vault->status ne 'ok') {
+							$env_info->{vault_status} = $top->vault->status;
+							$env_info->{vault_url} = $top->config->get("secrets_provider.url");
+						}
 						push @{$deployments_by_name{$env_info->{name}}}, $env_info;
 
 						if ($group_by eq 'kit') {
@@ -365,6 +370,10 @@ sub environments {
 								);
 								$msg .= " using kit #Y{$env_info->{last_kit}} #y\@{!}"
 									if ($env_info->{last_kit} ne $env_info->{kit});
+							} elsif ($env_info->{vault_status} ne 'ok') {
+								my $status = $env_info->{vault_status};
+								my $vault_url = $env_info->{vault_url};
+								$msg .= " - #Ri{vault }#Mi{$vault_url}#Ri{ is $status:} #Y{exodus deployment data unavailable}";
 							} else {
 								$msg .= " - #r{never deployed}";
 							}

@@ -133,6 +133,8 @@ sub attach {
 
 	my $url = delete($opts{url});
 	my $alias = delete($opts{alias});
+	my $allow_no_vault = $opts{no_vault};
+	my $silent = $opts{silent};
 
 	bail "No vault target specified"
 		unless $url;
@@ -161,6 +163,7 @@ sub attach {
 			bail $msg."\nAlter your ~/.saferc or .genesis/config to match, or add a matching target.\n";
 		} else {
 			# TODO: If alias and url was given, and in a controlling terminal, create safe target
+			return if $allow_no_vault;
 			bail "Safe target for #M{%s} not found.  Please run\n\n".
 					 "  #G{safe target <name> \"%s\"%s}\n\n".
 					 "then authenticate against it using the correct auth method before ".

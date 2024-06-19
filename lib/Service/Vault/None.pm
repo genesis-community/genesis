@@ -23,6 +23,8 @@ sub DESTROY {} # Prevents AUTOLOAD from causing a problem
 
 sub name {return ''}
 
+sub status {return 'absent'}
+
 # AUTOLOAD - errors out when a normal vault method is called {{{
 our $AUTOLOAD;
 sub AUTOLOAD {

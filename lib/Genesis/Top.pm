@@ -44,7 +44,7 @@ sub new {
 		$top->set_vault(target => $opts{vault}, session_only => 1);
 		#}
 	}
-	if ($top->vault(silent => $opts{silent_vault_check})) {
+	if ($top->vault(silent => $opts{silent_vault_check}, no_vault => $opts{allow_no_vault})) {
 		$ENV{GENESIS_TARGET_VAULT} = $ENV{SAFE_TARGET} = $top->vault->name;
 	} elsif (!$ENV{GENESIS_NO_VAULT}) {
 		debug {label => "WARNING"}, "Could not find any #M{safe} target.  This may cause consequences later on";
@@ -414,13 +414,16 @@ sub vault {
 			my $namespace =  $self->config->get("secrets_provider.namespace");
 			my $strongbox = $self->config->get("secrets_provider.strongbox");
 			my %attach_opts = (
-				url    => $self->config->get("secrets_provider.url"),
-				verify => $self->config->get("secrets_provider.insecure") ? 0 : 1,
-				silent => $opts{silent}
+				url      => $self->config->get("secrets_provider.url"),
+				verify   => $self->config->get("secrets_provider.insecure") ? 0 : 1,
+				silent   => $opts{silent},
+				no_vault => $opts{no_vault}
 			);
 			$attach_opts{namespace} = $namespace if defined($namespace);
 			$attach_opts{strongbox} = ($strongbox ? 1: 0) if defined($strongbox);
-			return Service::Vault::Remote->attach(%attach_opts);
+			my $vault = Service::Vault::Remote->attach(%attach_opts);
+			$vault = Service::Vault::None->new() if (!$vault && $opts{no_vault});
+			return $vault;
 		} else {
 			my $vault = Service::Vault::default;
 			$vault->connect_and_validate($opts{silent})->ref_by_name() if $vault;
