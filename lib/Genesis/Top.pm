@@ -343,6 +343,11 @@ sub search_for_repo_path {
 	return ($deployment_root, $paths[0][1]);
 }
 # }}}
+# is_repo - returns true if the specified path is a Genesis deployment repository {{{
+sub is_repo {
+	my ($class, $path) = @_;
+	return -d "$path/.genesis" && -f "$path/.genesis/config" && slurp("$path/.genesis/config") =~ /deployment_type:/;
+}
 # }}}
 
 ### Instance Methods {{{

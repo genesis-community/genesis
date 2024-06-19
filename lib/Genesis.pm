@@ -247,7 +247,7 @@ sub expand_path {
 }
 
 sub in_repo_dir {
-	return  -d ".genesis" && -e ".genesis/config";
+	return  -d ".genesis" && -e ".genesis/config" && slurp(".genesis/config") =~ m/^deployment_type:/m;
 }
 
 sub in_kit_dir {

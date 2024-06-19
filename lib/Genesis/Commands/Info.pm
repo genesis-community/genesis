@@ -297,7 +297,7 @@ sub environments {
 	for my $label (@{$root_map->{labels}}) {
 		# Find all deployments under each root
 		my $root = $root_map->{roots}{$label};
-		my @repos = map {s{/.genesis/config$}{}; $_} glob("$root/*/.genesis/config");
+		my @repos = grep {Genesis::Top->is_repo($_)} map {s{/.genesis/config$}{}; $_} glob("$root/*/.genesis/config");
 		if (scalar @repos) {
 			$root =~ s{/?$}{/};
 			info "\nDeployment root #C{%s} contains the following:", humanize_path($root, $root_map) =~ s{/?$}{/}r =~ s{>\e\[0m/$}{>\e\[0m}r;
