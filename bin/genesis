@@ -1667,6 +1667,7 @@ sub main {
 	my $path = '';
 	$ENV{GENESIS_PREFIX_TYPE}="none";
 
+	unshift @_, 'help' if @_ == 0;
 	if ($_[0] =~ /^@/) {
 		# @-notation for specifying environment
 		my $pattern = shift;
