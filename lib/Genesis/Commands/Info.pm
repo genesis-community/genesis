@@ -401,43 +401,44 @@ sub environments {
 					}
 				}
 			}
-			if ($group_by eq 'env' && scalar keys %deployments_by_name) {
-				info {pending => 1}, $ansi_reset_line.$ansi_cursor_up.$ansi_show_cursor;
-				for my $env_name (sort keys %deployments_by_name) {
-					info "\n[[  >>#u{Environment }#cu{%s}#u{:}", $env_name;
-					for my $env_info (@{$deployments_by_name{$env_name}}) {
-						my $type = $env_info->{is_director} ? '#R{BOSH director}' : '#G{'.$env_info->{type}.' deployment}';
-						my $msg = sprintf(
-							"[[    $type#yi{%s}: >>#m{%s}",
-							$env_info->{path} =~ /^$env_info->{type}(-deployments)?$/ ? '' : ' (in '.$env_info->{path}.')',
-							$env_info->{kit}
-						);
-						if ($env_info->{last_deployed}) {
-							$msg .= sprintf(
-								" - deployed #yi{%s}by #G{%s} %s",
-								$env_info->{bosh_env} && $env_info->{bosh_env} ne $env_info->{name} ? "on BOSH $env_info->{bosh_env} " : '',
-								$env_info->{last_deployed_by},
-								strfuzzytime($env_info->{last_deployed}),
+			if ($group_by eq 'env') {
+				if (scalar keys %deployments_by_name) {
+					info {pending => 1}, $ansi_reset_line.$ansi_cursor_up.$ansi_show_cursor;
+					for my $env_name (sort keys %deployments_by_name) {
+						info "\n[[  >>#u{Environment }#cu{%s}#u{:}", $env_name;
+						for my $env_info (@{$deployments_by_name{$env_name}}) {
+							my $type = $env_info->{is_director} ? '#R{BOSH director}' : '#G{'.$env_info->{type}.' deployment}';
+							my $msg = sprintf(
+								"[[    $type#yi{%s}: >>#m{%s}",
+								$env_info->{path} =~ /^$env_info->{type}(-deployments)?$/ ? '' : ' (in '.$env_info->{path}.')',
+								$env_info->{kit}
 							);
-							$msg .= " using kit #Y{$env_info->{last_kit}} #y\@{!}"
-								if ($env_info->{last_kit} ne $env_info->{kit});
-						} elsif ($env_info->{vault_status} ne 'ok') {
-							my $status = $env_info->{vault_status};
-							my $vault_url = $env_info->{vault_url};
-							$msg .= " - #Ri{vault }#Mi{$vault_url}#Ri{ is $status:} #Y{exodus deployment data unavailable}";
-						} else {
-							$msg .= " - #r{never deployed}";
+							if ($env_info->{last_deployed}) {
+								$msg .= sprintf(
+									" - deployed #yi{%s}by #G{%s} %s",
+									$env_info->{bosh_env} && $env_info->{bosh_env} ne $env_info->{name} ? "on BOSH $env_info->{bosh_env} " : '',
+									$env_info->{last_deployed_by},
+									strfuzzytime($env_info->{last_deployed}),
+								);
+								$msg .= " using kit #Y{$env_info->{last_kit}} #y\@{!}"
+									if ($env_info->{last_kit} ne $env_info->{kit});
+							} elsif ($env_info->{vault_status} ne 'ok') {
+								my $status = $env_info->{vault_status};
+								my $vault_url = $env_info->{vault_url};
+								$msg .= " - #Ri{vault }#Mi{$vault_url}#Ri{ is $status:} #Y{exodus deployment data unavailable}";
+							} else {
+								$msg .= " - #r{never deployed}";
+							}
+							info $msg;
 						}
-						info $msg;
 					}
+				} else {
+					info {pending => 1}, $ansi_reset_line.$ansi_cursor_up.$ansi_show_cursor;
+					info "\n[[  #E{warning}>>#Ki{No environments found}" . ($search
+					 ? sprintf("#Ki{ matching pattern }#Ci{%s}", $search)
+					 : '#Ki{.}'
+					);
 				}
-			} else {
-				info {pending => 1}, $ansi_reset_line.$ansi_cursor_up.$ansi_show_cursor;
-				info "\n[[  #E{warning}>>#Ki{No environments found}" . ($search
-				 ? sprintf("#Ki{ matching pattern }#Ci{%s}", $search)
-				 : '#Ki{.}'
-				);
-
 			}
 		} elsif ($label !~ /^@/) {
 			warning("#Ki{No environments found under deployment root }#C{%s}", $root)
