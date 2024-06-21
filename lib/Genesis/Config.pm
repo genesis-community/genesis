@@ -473,11 +473,19 @@ sub show_diff {
 	my $diff_file  = workdir('genesis-config')."/spruce-diff.ym";
 	save_to_yaml_file($self->_contents, $file1);
 	save_to_yaml_file($other->_contents, $file2);
-	my ($diff, $rc, $err) = run(
-		{stderr => 0},
-		'script -qe $3, spruce diff "$1" "$2"',
-		$file2, $file1, $diff_file
-	);
+
+	my $OS = "$^O";
+	my @cmd = ('spruce', 'diff', $file2, $file1);
+	if ($OS eq 'darwin') {
+		unshift @cmd, 'script', '-qe', $diff_file
+	} elsif ($OS eq 'linux') {
+		# Sometimes gnu just sucks...
+		# TODO: more rigorous wrapping of subcmd to deal with quotes and pipes
+		my $subcmd = join(" ", map {$_ =~ m/\s/ ? "\"$_\"" : $_} @cmd);
+		@cmd = ("script -q '$diff_file' -c '$subcmd'");
+	}
+	my ($diff, $rc, $err) = run( {stderr => 0}, @cmd);
+
 	if ($diff) {
 		$diff = decolorize($diff) if $ENV{NOCOLOR};
 		info("Differences between existing and updated configuration:\n%s", $diff);
