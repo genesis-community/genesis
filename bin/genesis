@@ -1677,16 +1677,21 @@ sub main {
 		) unless $type_pattern || $env_pattern;
 		$ENV{GENESIS_PREFIX_TYPE} = "search";
 		$ENV{GENESIS_PREFIX_SEARCH} = $pattern;
-		if ($env_pattern) {
-			require Genesis::Env;
-			($ENV{GENESIS_DEPLOYMENT_ROOT}, $path) = Genesis::Env->search_for_env_file($env_pattern, $type_pattern);
-		} elsif ($type_pattern) {
-			require Genesis::Top;
-			($ENV{GENESIS_DEPLOYMENT_ROOT},$path) = Genesis::Top->search_for_repo_path($type_pattern);
-		} else {
-			bail(
-				'Invalid file search specifies - expecting @[<deployment-match>/]<env-match> or @<deployment-match>/'
-			);
+
+		# Special Case: the `genesis environments` command doesn't need to resolve the environment/repo
+		my ($_cmd) = grep {$_ !~ /^-/} @_;
+		if ($_cmd !~ /^env(rionment)?s$/) {
+			if ($env_pattern) {
+				require Genesis::Env;
+				($ENV{GENESIS_DEPLOYMENT_ROOT}, $path) = Genesis::Env->search_for_env_file($env_pattern, $type_pattern);
+			} elsif ($type_pattern) {
+				require Genesis::Top;
+				($ENV{GENESIS_DEPLOYMENT_ROOT},$path) = Genesis::Top->search_for_repo_path($type_pattern);
+			} else {
+				bail(
+					'Invalid file search specifies - expecting @[<deployment-match>/]<env-match> or @<deployment-match>/'
+				);
+			}
 		}
 	}
 	while (@_ > 0) {
