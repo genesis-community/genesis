@@ -245,7 +245,7 @@ sub get_subset {
 		} elsif ($operator eq 'fetch') {
 			@cmd = (
 				sprintf(
-					'spruce json "$1" | jq \'.%s//%s\' | spruce merge --skip-eval > "$2"',
+					'spruce json "$1" | jq \'."%s"//%s\' | spruce merge --skip-eval > "$2"',
 					$selection->{key}, JSON::PP->new->allow_nonref->encode($selection->{default})
 				), $src, $file
 			);
