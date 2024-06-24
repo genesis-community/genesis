@@ -63,6 +63,7 @@ sub filters {
 # populate - add secrets to the plan: accepts Secret::* objects, Env::Secrets::Parser::* objects or classes {{{
 sub populate {
 	my ($self, @secrets) = @_;
+	$self->{__sources} //= [];
 	if ($self->env && $self->verbose) {
 		$self->env->notify({tags=>[qw(secrets task env)]},
 			"processing secrets descriptions..."
@@ -74,15 +75,18 @@ sub populate {
 	$initial_counts{ref($_)}++ for ($self->secrets);
 	for my $secret_src (@secrets) {
 		if ($secret_src->isa('Genesis::Secret')) {
-			push @{$self->{secrets}}, $secret_src
+			push @{$self->{secrets}}, $secret_src;
+			push @{$self->{__sources}}, ref($secret_src);
 		} elsif (ref($secret_src) eq '' && ($secret_src//'') =~ /^Genesis::Env::Secrets::Parser::/) {
 			eval "require $secret_src";
 			bug(
 				"Error encountered while trying to require $secret_src perl module:\n\n$@"
 			) if $@;
 			push @{$self->{secrets}}, $secret_src->new($self->env)->parse(notify => $self->verbose);
+			push @{$self->{__sources}}, $secret_src;
 		} elsif ($secret_src->isa('Genesis::Env::Secrets::Parser')) {
-			push @{$self->{secrets}}, $secret_src->parse(notify => $self->verbose)
+			push @{$self->{secrets}}, $secret_src->parse(notify => $self->verbose);
+			push @{$self->{__sources}}, ref($secret_src);
 		} else {
 			bug(
 				"Genesis::Env::Secrets::Plan->populate was given an argument that ".

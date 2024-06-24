@@ -1079,7 +1079,6 @@ sub secrets_plan {
 		my $plan = Genesis::Env::Secrets::Plan
 			->new($_[0], $self->secrets_store(), $self->credhub, verbose => !$opts{silent})
 			->populate(@sources);
-		$plan->{__sources} = \@sources;
 		$plan;
 	});
 	$plan = $plan->filter(@{$opts{paths}//[]});
@@ -1914,11 +1913,14 @@ sub check {
 				$ok = 0;
 			} elsif ($secrets_results->{missing}) {
 				my $msg = "- missing secrets detected";
-				if ($self->is_vaultified) {
-					my ($bin,$env_path) = split(/\s+/, $ENV{GENENSIS_CALL_ENV}, 2);
+				if ($self->is_vaultified && grep {$_->{source} eq 'manifest'} ($self->secrets_plan->secrets)) {
+					my $env_path = $ENV{GENESIS_PREFIX_TYPE} eq 'search'
+						? $ENV{GENESIS_PREFIX_SEARCH}
+						: humanize_path($self->file);
+
 					$msg .= csprintf(
 						" (you may need to run '#g{%s} #M{%s} #g{add-secrets} #Y{--import}' to import them from credhub)"
-						, $bin, $env_path
+						, humanize_bin, $env_path
 					);
 				}
 				$self->notify(error => "$msg\n");
