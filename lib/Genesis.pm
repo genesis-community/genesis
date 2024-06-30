@@ -63,7 +63,7 @@ our @EXPORT = qw/
 	ordify
 	count_nouns
 
-	run lines curl
+	run lines curl fake_tty
 	read_json_from
 	safe_path_exists
 
@@ -600,6 +600,21 @@ sub run {
 	return $out if $opts{onfailure};
 	return ($out,  $rc, $err) if wantarray;
 	return ($rc > 0 && defined($err) ? $err : $out);
+}
+
+# Wrap the command in an OS-specific script call to fake being in a tty terminal.
+sub fake_tty {
+	my ($file, @cmd) = @_;
+	my $OS = "$^O";
+	if ($OS eq 'darwin') {
+		unshift @cmd, 'script', '-qeF', $file
+	} elsif ($OS eq 'linux') {
+		# Sometimes gnu just sucks...
+		# TODO: more rigorous wrapping of subcmd to deal with quotes and pipes
+		my $subcmd = join(" ", map {$_ =~ m/\s/ ? "\"$_\"" : $_} @cmd);
+		@cmd = ("script -qf '$file' -c '$subcmd'");
+	}
+	return @cmd
 }
 
 sub lines {
