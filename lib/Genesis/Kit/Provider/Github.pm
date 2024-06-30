@@ -174,9 +174,7 @@ sub kit_releases {
 		bail "$status"."\n" if $status;
 		trace "About to get releases from Github";
 
-		info {pending=>1}, "Retrieving list of available releases for #M{%s} kit on #C{%s} ...",$name,$self->label;
-		$self->{_releases}{$name} = $self->remote->get_release_info($name."-genesis-kit", "Genesis Kit $name");
-		info "#G{ done.}";
+		$self->{_releases}{$name} = $self->remote->get_release_info($name."-genesis-kit", label => $self->label);
 	}
 
 	return @{$self->{_releases}{$name}};

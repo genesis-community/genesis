@@ -4,7 +4,9 @@ use warnings;
 
 use Genesis;
 use Genesis::UI;
+use Genesis::Term qw/csprintf/;
 
+use Time::HiRes qw/gettimeofday/;
 use Digest::SHA qw/sha1_hex/;
 
 use constant {
@@ -19,7 +21,7 @@ sub new {
 	my ($class, %config) = @_;
 	my $tls = $config{tls} || DEFAULT_TLS;
 	$tls = "skip" unless $tls =~ /^(no|yes|skip)$/;
-	
+
 	my $creds;
 	if ($ENV{GITHUB_USER} && $ENV{GITHUB_AUTH_TOKEN}) {
 		$creds = "$ENV{GITHUB_USER}:$ENV{GITHUB_AUTH_TOKEN}";
@@ -79,6 +81,12 @@ sub releases_url {
 	my $url = sprintf("%s/repos/%s/%s/releases",$self->base_url,$self->{org},$name);
 	$url .= "?page=$page" if $page;
 	return $url;
+}
+# }}}
+# release_version_url - The url required to fetch the release information for a specific version of a kit on this provider {{{
+sub release_version_url {
+	my ($self, $name, $version) = @_;
+	return sprintf("%s/repos/%s/%s/releases/tags/%s",$self->base_url,$self->{org},$name,$version);
 }
 # }}}
 # base_url - the base url under which all requests are made {{{
@@ -145,8 +153,7 @@ sub releases {
 		bail "$status"."\n" if $status;
 		trace "About to get releases from Github";
 
-		info {pending=>1}, "%sRetrieving list of available releases for #M{%s} kit on #C{%s} ...",$prefix, $name,$self->label;
-		$self->{_releases}{$name} = $self->get_release_info($name);
+		$self->get_release_info($name, label => $self->label, prefix => $prefix);
 	}
 
 	return @{$self->{_releases}{$name}};
@@ -155,30 +162,116 @@ sub releases {
 # }}}
 # get_release_info - fetch all release information for the given repository {{{
 sub get_release_info {
-	my ($self, $name, $label) = @_;
-	$label ||= "repository #C{$name}";
+	my ($self, $name, %opts) = @_;
+	return $self->{_releases}{$name} if $self->{_releases}{$name};
+
 	my ($code,$msg,$data,$headers,@results);
-	my $url = $self->releases_url($name);
-	while (1) {
-		($code, $msg, $data, $headers) = curl("GET", $url, undef, undef, 0, $self->{creds});
-		bail("Could not find  %s release information; Github rsponded with a %s status:\n%s",$label,$code,$msg)
-			unless $code == 200;
+	my $prefix = $opts{prefix} // '';
+	my $label =  $opts{label} || $self->label || "repository #C{$name}";
+	my $fatal = $opts{fatal} if defined($opts{fatal});
+	my $get_versions = exists($opts{versions});
+	my $versions = $opts{versions} if $get_versions;
+	my $suppress_output = exists($opts{msg}) && ! defined($opts{msg});
+	my $suppress_errors = $opts{suppress_errors} // 0;
 
-		my $results;
-		eval {
-			$results = load_json($data);
-			1;
-		} or bail("Failed to read releases information from Github: %s\n",$@);
-		push(@results, @{$results});
+	return $self->{_releases}{$name}
+		if (defined($self->{_releases}{$name}) && !$get_versions);
 
-		my ($links) = grep {$_ =~ s/^Link: //i} split(/[\r\n]+/, $headers);
-		last unless $links;
-		$url = (grep {$_ =~ s/^<(.*)>; rel="next"/$1/} split(', ', $links))[0];
-		last unless $url;
-		info {pending=>1}, '.';
+	bug(
+		"Must specify at least one version to retrieve when using the 'versions' option"
+	) if $get_versions && !@$versions;
+
+	my $time = gettimeofday;
+	if (exists($opts{msg})) {
+		info {pending=>1}, $opts{msg} unless $suppress_output;
+	} else {
+		info({pending=>1},
+			"%s%setrieving list of %s releases for #M{%s} kit on #C{%s}",
+			$prefix, $prefix ? 'r' : 'R',
+			$get_versions ? 'requested' : 'available',
+			$name, $label
+		)
 	}
-	info "#G{ done.}";
-	return \@results;
+
+	my $url = $get_versions
+		? $self->release_version_url($name, @$versions[0] =~ s/^v?/v/r)
+		: $self->releases_url($name);
+
+	my $pages = 0;
+	my @retrieved_versions = ();
+	my @errors;
+	while (1) {
+		if ($get_versions && $self->{_release_versions}{$name}{@$versions[0]}) {
+			push @retrieved_versions	, shift @$versions;
+			last unless @$versions;
+			next;
+		}
+
+		($code, $msg, $data, $headers) = curl("GET", $url, undef, undef, 0, $self->{creds});
+		$msg =~ s/\s*$//;
+		if ($code != 200) {
+			if ($code == 404 && $get_versions) {
+				if ($url =~ /v@$versions[0]/) {
+					$url = $self->release_version_url($name, @$versions[0] =~ s/^v?//r);
+					next;
+				}
+			}
+			bail(
+				"Failed to retrieve release information for #M{%s}; Github responded with a #R{%s} status:\n#y{%s}\n\nURL: %s",
+				$get_versions ? $name.'/'.@$versions[0] : $name,
+				$code, $msg, $url
+			) if $fatal;
+
+			error(
+				"Could not find %s release information - got %s status from Github.",
+				$get_versions ? $name.'/'.@$versions[0] : $name, $code
+			) unless $suppress_output || $suppress_errors;
+			push @errors, {
+				code => $code,
+				data => $data,
+				url  => $url,
+				msg  => $msg eq $code
+					? csprintf(
+						"Failed to retrieve release information for #M{%s}; Github responded with a #R{%s} status:\n#y{%s}\n\nURL: %s",
+						$get_versions ? $name.'/'.@$versions[0] : $name,
+						$code,  $data, $url
+					): $msg
+				}
+		}
+		my $results;
+		eval {$results = load_json($data); 1};
+		if (my $err = $@) {
+			my $err_msg = "Failed to read releases information from Github: $err";
+			bail($err_msg) if $fatal;
+			push @errors, $err_msg;
+		}
+
+		info({pending=>1}, '.') unless $suppress_output;
+		$pages++;
+		if ($get_versions) {
+			$self->{_release_versions}{$name}{@$versions[0]} = $results;
+			push @retrieved_versions, shift @$versions;
+			last unless @$versions;
+			$url = $self->release_version_url($name, @$versions[0] =~ s/^v?/v/r);
+			next
+		} else {
+			push(@results, @{$results});
+			my ($links) = grep {$_ =~ s/^Link: //i} split(/[\r\n]+/, $headers);
+			last unless $links;
+			$url = (grep {$_ =~ s/^<(.*)>; rel="next"/$1/} split(', ', $links))[0];
+			last unless $url;
+		}
+
+	}
+	info(
+		"#G{ done}".pretty_duration(gettimeofday - $time, 0.5*$pages, 1.5*$pages)
+	) unless $suppress_output;
+
+	return ($get_versions
+		? [map {$self->{_release_versions}{$name}{$_}} @retrieved_versions]
+		: ($self->{_releases}{$name} = \@results),
+		\@errors
+	)
 }
 
 # }}}
