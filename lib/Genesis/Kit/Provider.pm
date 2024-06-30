@@ -233,6 +233,19 @@ sub fetch_kit_version {
 	#   ( <kit_name>, <actual_version>, <path/filename to where tarball was saved> )
 }
 # }}}
+# fetch_kit_version_src - fetches a source tarball for the named kit and version from this provide (abstract) {{{
+sub fetch_kit_version_src {
+	my ($self, $name, $version, $path, $force) = @_;
+	bug("Abstract Method: Expecting %s class to define concrete '%' method", ref($self), 'fetch_kit_version_src');
+	# Input expected:
+	#		$name:    <kit name>
+	#		$version: <kit version, or 'latest'>
+	#		$path:    <directory to store kit tarball>
+	#
+	# Output expected:
+	#   ( <kit_name>, <actual_version>, <path/filename to where tarball was saved> )
+}
+# }}}
 # latest_version_of - The latest version number,  {{{
 sub latest_version_of {
 	my ($self, $name, %opts) = @_;

@@ -1046,16 +1046,20 @@ define_command("create-kit", {
 });
 
 # }}}
-# genesis compile-kit - Create a distributable kit archive from dev/. {{{
-
-define_command("compile-kit", {
+# genesis build-kit - Create a distributable kit archive from dev/. {{{
+define_command("build-kit", {
 	summary => "Create a distributable kit archive from the kit repo or dev dir",
 	usage => "compile-kit [<options...>]",
-	alias => 'ck',
+	alias => 'bk,compile-kit,ck',
 	description =>
 		"Compile the kit in the current directy (if in a kit dir) or in ./dev (if ".
 		"in a deployment repo dir), automatically creating the next appropriate ".
-		"version (see options for version specification if desired)",
+		"version (see options for version specification if desired)\n".
+		"\n".
+		"Note: This has been renamed build-kit|bk to avoid confusion with the ".
+		"compile-kit|ck command in the kit repo.  The old name of compile-kit|ck ".
+		"will still work, but is deprecated, and will be removed in a future ".
+		"version.",
 	function_group => Genesis::Commands::KIT,
 	scope => [
 		[['processed','dev'] => 'repo'],
@@ -1235,6 +1239,42 @@ define_command("download", {
 }, "Genesis::Commands::Deprecated::redirect");
 
 # }}}
+# genesis compare-kits - Compare two kits for job spec differences. {{{
+define_command("compare-kits", {
+	summary => "Compare two kits for job spec differences.",
+	usage => "compare-kits [--compare-to <kit>] [<filter> ...]",
+	alias => 'cmpk',
+	description =>
+		"Compare two kits for job spec differences.  This will compare the job ".
+		"specs in the two kits, and output a list of differences.\n".
+		"\n".
+		"The specified comparable can be a version, the path to a kit tarball, or ".
+		"a path to a kit directory.\n".
+		"\n".
+		"If no comparable is specified, it will compare the local kit with the ".
+		"latest version of the kit in the remote repository.  If run in a repo ".
+		"directory with a dev directory, it will compare against the latest local ".
+		"version.",
+	function_group => Genesis::Commands::KIT,
+	scope => ['repo','kit'],
+	option_group => Genesis::Commands::REPO_OPTIONS,
+	options => [
+		'compare-to|c=s' =>
+			"Specify the kit to compare against.  This can be a version, the path ".
+			"to a kit tarball, or a path to a kit directory.  If not specified, it ".
+			"will compare against the latest version of the kit in the remote ".
+			"repository.  If run in a repo directory with a dev directory, it will ".
+			"compare against the latest local version.",
+	],
+	arguments => [
+		'filter?' =>
+			"Filter the job specs to compare by release or release/job-name.  ".
+			"Multiple of these can be specified, and they will be OR'd together.  ".
+			"If not specified, all job specs will be compared."
+	],
+	no_vault => 1,
+});
+#
 # }}}
 
 ### Pipeline Management commands {{{
