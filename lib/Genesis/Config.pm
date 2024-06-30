@@ -474,17 +474,8 @@ sub show_diff {
 	save_to_yaml_file($self->_contents, $file1);
 	save_to_yaml_file($other->_contents, $file2);
 
-	my $OS = "$^O";
 	my @cmd = ('spruce', 'diff', $file2, $file1);
-	if ($OS eq 'darwin') {
-		unshift @cmd, 'script', '-qe', $diff_file
-	} elsif ($OS eq 'linux') {
-		# Sometimes gnu just sucks...
-		# TODO: more rigorous wrapping of subcmd to deal with quotes and pipes
-		my $subcmd = join(" ", map {$_ =~ m/\s/ ? "\"$_\"" : $_} @cmd);
-		@cmd = ("script -q '$diff_file' -c '$subcmd'");
-	}
-	my ($diff, $rc, $err) = run( {stderr => 0}, @cmd);
+	my ($diff, $rc, $err) = run( {stderr => 0}, fake_tty($diff_file, @cmd));
 
 	if ($diff) {
 		$diff = decolorize($diff) if $ENV{NOCOLOR};
