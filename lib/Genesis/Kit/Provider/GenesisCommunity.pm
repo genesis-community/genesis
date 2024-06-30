@@ -17,12 +17,14 @@ sub init {
 # new - create a default genesis-community kit provider {{{
 sub new {
 	my ($class) = @_;
+	my $label = "Genesis Community organization on Github";
 	bless({
-		label  => "Genesis Community organization on Github",
+		label  => $label,
 		remote => Service::Github->new(
 								domain => "github.com",
 								org    => "genesis-community",
-								tls    => "yes"
+								tls    => "yes",
+								label  => $label
 							)
 	}, $class);
 }

@@ -73,6 +73,7 @@ our @EXPORT = qw/
 	symlink_or_fail
 	copy_or_fail
 	copy_tree_or_fail
+	expand_path
 	humanize_path
 	humanize_bin
 
@@ -108,6 +109,7 @@ sub Init {
 		show_duration            => { type => 'boolean', default => 0 },
 		automatic_config_upgrade => { type => 'enum',    default => 'no', values => [qw/no yes silent/], envvar => 'GENESIS_CONFIG_AUTOMATIC_UPGRADE' },
 		confirm_release_overrides=> { type => 'enum',    default => 'outdated', values => [qw/always outdated never/]},
+		spec_cache_dir           => { type => 'string',  default => "", envvar => 'GENESIS_SPEC_CACHE_DIR'},
 
 		bosh_logs_path           => { type => 'string',  default => "<DEPLOYMENT_ROOT>/bosh_logs", envvar => 'GENESIS_DEPLOYMENT_LOGS_PATH'},
 		deployment_roots  => {
@@ -541,7 +543,7 @@ sub run {
 			$trace_arg = "<redacted>";
 			$cmd_arg = $cmd_arg->{redact};
 		}
-		$cmd_arg =~ s/(?<!\\)\$(?:{([^}]+)}|([A-Za-z0-9_]*))/my $v = $ENV{$1||$2}; defined($v) ? $v : ""/eg;
+		$cmd_arg =~ s/(?<!\\)\$(?:{([^\}]+)}|([A-Za-z0-9_]*))/my $v = $ENV{$1||$2}; defined($v) ? $v : ""/eg;
 
 		# Normal flow, assume arg is string-equivalent as before
 		push(@trace_args, $trace_arg//$cmd_arg);
