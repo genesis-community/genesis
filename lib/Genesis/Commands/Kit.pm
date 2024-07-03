@@ -538,14 +538,13 @@ sub compare_kits {
 		my $old_upstream_repo = {repos => []};
 		if ($other_kit_src) {
 			# extract ci/upstreamrepo.yml from tarfile
-			my $tar = Archive::Tar->new(
-				$other_kit_src, undef, {filter => qr{/ci/upstreamrepo\.yml$}}
-			);
+			my $tar= Archive::Tar->new();
+			$tar->read($other_kit_src, undef, {filter => qr{/ci/upstreamrepo\.yml$}});
 			if ($tar->list_files()) {
 				my $upstream_repo = $tar->get_content($tar->list_files());
 				$old_upstream_repo = load_yaml($upstream_repo);
 			} else {
-				debug("No ci/upstreamrepo.yml found in kit %s source", $other_kit->id);
+				debug("No ci/upstreamrepo.yml found in kit %s source:\n\n#y{%s}", $other_kit_src, $@);
 			}
 		} elsif (-f $other_kit->path('ci/upstreamrepo.yml')) {
 			$old_upstream_repo = load_yaml(slurp($other_kit->path('ci/upstreamrepo.yml')));
