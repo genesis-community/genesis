@@ -938,6 +938,29 @@ sub _get_spec_tarball {
 		msg => undef,
 		fatal => 0
 	);
+	if (@$errors && $errors->[0]{code} == 404) {
+		# Can't find a release, it might just be a tag, so see if the tagged tarball exists
+		# TODO: Maybe we should look for the tagged tarball first...?
+		my $base_url = $gh->base_url;
+		my $tag_urls = [
+			map {
+				sprintf("%s/repos/%s/%s/tarball/refs/tags/%s", $base_url, $org, $repo, $_)
+			} ("v$version", $version)
+		];
+
+		for my $url (@$tag_urls) {
+			my ($code, $msg, $data, $headers) = curl("HEAD", $url, undef, undef, 0, $gh->{creds});
+			if ($code == 200) {
+				$results = [{
+					name => $name,
+					version => $version,
+					tarball_url => $url
+				}];
+				$errors = [];
+				last;
+			}
+		}
+	}
 
 	if (@$errors) {
 		info(" #R{failed}".pretty_duration(gettimeofday-$time, 0.5, 2));
