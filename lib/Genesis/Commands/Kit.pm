@@ -344,9 +344,9 @@ sub decompile_kit {
 	}
 
 	info(
-		"Uncompressing compiled kit archive #G{%s} into #C{%s/}\n",
+		"Decompiling kit archive #G{%s} into #C{%s}\n",
 		$label,
-		humanize_path($dir)
+		humanize_path($dir) =~ s{/?$}{/}r
 	);
 	_decompile_kit($top,$file,get_options->{directory});
 }
