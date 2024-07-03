@@ -835,24 +835,32 @@ sub _get_kit_releases {
 	my @src_patch_blocks = map {
 		my $src = $_ =~ s{^$kit_path/}{}r;
 		trace("Loading patch file %s", $_);
-		my $yaml = load_yaml(slurp($_) =~ s{\A(---.*)?}{data:\n}r )->{data};
-		my @data = grep {
-			$_->{path} =~ m{^/releases/} && $_->{type} eq 'replace'
-		} @{$yaml//[]};
+		my $patch_data = slurp($_);
+		my @results = ();
+		for my $block (split(/---/, $patch_data)) {
+			$block =~ s{\A\s+}{}; # remove leading whitespace
+			next unless $block =~ m{^ *- }; # skip non patch blocks
+			my $block = "data:\n$block";
+			my $yaml = load_yaml($block)->{data};
+			my @data = grep {
+				$_->{path} =~ m{^/releases\??/} && $_->{type} eq 'replace'
+			} @{$yaml//[]};
 
-		@data ? map {
-			my $entry = $_;
-			if (ref($entry->{value}) eq 'HASH') {
-				scalar {%{$_->{value}}, __src => $src, __type => 'patch'}
-			} else {
-				my ($_name, $_prop) = $entry->{path} =~ m{^/releases/(name=)?([^=\/\?]+/?)/(.*)};
-				if ($_prop eq 'version') {
-					scalar {name => $_name, version => $entry->{value}, __src => $src, __type => 'patch'}
+			push @results, (@data ? map {
+				my $entry = $_;
+				if (ref($entry->{value}) eq 'HASH') {
+					scalar {%{$_->{value}}, __src => $src, __type => 'patch'}
 				} else {
-					()
+					my ($_name, $_prop) = $entry->{path} =~ m{^/releases\??/(name=)?([^=\/\?]+/?)/(.*)};
+					if ($_prop eq 'version') {
+						scalar {name => $_name, version => $entry->{value}, __src => $src, __type => 'patch'}
+					} else {
+						()
+					}
 				}
-			}
-		} @data : ()
+			} @data : ())
+		}
+		@results;
 	} @new_patch_files;
 
 	my $releases = {};
