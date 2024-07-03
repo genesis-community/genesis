@@ -918,6 +918,31 @@ sub check_prereqs { # {{{
 		$err
 	} @$reqs;
 
+	# Check that we have some required but not necessarily available Perl modules
+	my $perl_modules = [
+		["MIME::Base64", "3.14", "MIME::Base64"],
+		["IO::Uncompress::Gunzip", "2.064", "IO::Uncompress::Gunzip"],
+		["IO::Compress::Gzip", "2.064", "IO::Compress::Gzip"],
+		["Archive::Tar", "1.96", "Archive::Tar"],
+	];
+
+	for my $mod (@$perl_modules) {
+		my ($name, $min, $modname) = @$mod;
+		eval "use $modname";
+		if ($@) {
+			push @errors, "Perl module $name is required but not installed";
+		} elsif (new_enough $min, $modname->VERSION) {
+			push @errors, sprintf(
+				"Perl module $name is installed but version is too old (%s < %s)",
+				$modname->VERSION, $min
+			);
+		} else {
+			debug(
+				"#G{Perl module %s/%s} is installed and meets version requirements",
+				$name, $modname->VERSION
+			)
+		}
+	}
 	# check that we has a bosh (v2)
 	require Service::BOSH;
 	eval {$ENV{GENESIS_BOSH_COMMAND} = Service::BOSH->command($bosh_min_version)};
