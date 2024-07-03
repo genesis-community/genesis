@@ -83,10 +83,16 @@ sub releases_url {
 	return $url;
 }
 # }}}
-# release_version_url - The url required to fetch the release information for a specific version of a kit on this provider {{{
-sub release_version_url {
+# release_version_urls - The urls required to fetch the release information for a specific version of a kit on this provider {{{
+sub release_version_urls {
 	my ($self, $name, $version) = @_;
-	return sprintf("%s/repos/%s/%s/releases/tags/%s",$self->base_url,$self->{org},$name,$version);
+	# Iterate over release tag urls, with and without the 'v' prefix
+	$version =~ s/^v//;
+	return [
+		map {
+			sprintf("%s/repos/%s/%s/releases/tags/%s",$self->base_url,$self->{org},$name,$_)
+		} ($version, "v$version")
+	];
 }
 # }}}
 # base_url - the base url under which all requests are made {{{
@@ -170,7 +176,7 @@ sub get_release_info {
 	my $label =  $opts{label} || $self->label || "repository #C{$name}";
 	my $fatal = $opts{fatal} if defined($opts{fatal});
 	my $get_versions = exists($opts{versions});
-	my $versions = $opts{versions} if $get_versions;
+	my $versions = ($opts{versions}//[]) if $get_versions;
 	my $suppress_output = exists($opts{msg}) && ! defined($opts{msg});
 	my $suppress_errors = $opts{suppress_errors} // 0;
 
@@ -193,26 +199,28 @@ sub get_release_info {
 		)
 	}
 
-	my $url = $get_versions
-		? $self->release_version_url($name, @$versions[0] =~ s/^v?/v/r)
-		: $self->releases_url($name);
+	my $urls = $get_versions
+		? $self->release_version_urls($name, @$versions[0])
+		: [$self->releases_url($name)];
 
 	my $pages = 0;
 	my @retrieved_versions = ();
 	my @errors;
 	while (1) {
 		if ($get_versions && $self->{_release_versions}{$name}{@$versions[0]}) {
-			push @retrieved_versions	, shift @$versions;
+			push @retrieved_versions, shift @$versions;
 			last unless @$versions;
 			next;
 		}
+
+		last unless @$urls;
+		my $url = shift @$urls;
 
 		($code, $msg, $data, $headers) = curl("GET", $url, undef, undef, 0, $self->{creds});
 		$msg =~ s/\s*$//;
 		if ($code != 200) {
 			if ($code == 404 && $get_versions) {
 				if ($url =~ /v@$versions[0]/) {
-					$url = $self->release_version_url($name, @$versions[0] =~ s/^v?//r);
 					next;
 				}
 			}
@@ -252,7 +260,7 @@ sub get_release_info {
 			$self->{_release_versions}{$name}{@$versions[0]} = $results;
 			push @retrieved_versions, shift @$versions;
 			last unless @$versions;
-			$url = $self->release_version_url($name, @$versions[0] =~ s/^v?/v/r);
+			$urls = $self->release_version_urls($name, @$versions[0] =~ s/^v?/v/r);
 			next
 		} else {
 			push(@results, @{$results});
