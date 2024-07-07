@@ -2611,7 +2611,6 @@ sub deploy {
 		copy_or_fail($last_manifest->{state}{path}, $state_path) if $last_manifest->{state}{path};
 		copy_or_fail($last_manifest->{store}{path}, $store_path) if $last_manifest->{store}{path};
 		# TODO: Can we run this non-blocking to get a Task ID, then connect to the task ID in case we get disconnected?
-		use Pry; pry;
 		@results = $self->bosh->create_env(
 			$manifest_path,
 			vars_file => $vars_path,
