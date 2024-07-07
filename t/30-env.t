@@ -898,25 +898,36 @@ EOF
 	quietly {$env->manifest_provider->reset->set_deployment('unredacted')->deployment->data};
 	is($env->lookup("something","goose"), "goose", "Environment doesn't contain cloud config details");
 	is($env->manifest_lookup("something","goose"), "penguin", "Manifest contains cloud config details");
-	my ($manifest_file, $exists, $sha1) = $env->cached_manifest_info;
-	ok $manifest_file eq $env->path(".genesis/manifests/".$env->name.".yml"), "cached manifest path correctly determined";
-	ok ! $exists, "manifest file doesn't exist.";
-	ok ! defined($sha1), "sha1 sum for manifest not computed.";
+	my ($manifest_file, $manifest_type, $sha, $source, $errors);
+	quietly {
+		($manifest_file, $manifest_type, $sha, $source, $errors)
+			= $env->last_deployed_manifest(just=>'file')
+	};
+	ok ! $manifest_file, "manifest file doesn't exist.";
+	ok ! defined($sha), "sha1 sum for manifest not computed.";
+	ok defined($errors) && scalar(@$errors) == 1 , "errors reported";
+	is($errors->[0], "No previously deployed manifest found.", "correct error reported");
 	my ($stdout, $stderr) = output_from {$env->deploy(canaries => 2, "max-in-flight" => 5);};
 	$stdout =~ s/\r//g;  # Using script to wrap bosh calls injects <CR> characters for some reason?!
 	eq_or_diff($stdout, <<EOF, "Deploy should call BOSH with the correct options");
 bosh
 deploy
+--tty
 --no-redact
 --canaries=2
 --max-in-flight=5
-$env->{__tmp}/manifest.yml
+$env->{__tmp}/deploy-cache/$env->{name}.yml
 EOF
-	($manifest_file, $exists, $sha1) = $env->cached_manifest_info;
-	ok $manifest_file eq $env->path(".genesis/manifests/".$env->name.".yml"), "cached manifest path correctly determined";
-	ok $exists, "manifest file should exist.";
-	ok $sha1 =~ /[a-f0-9]{40}/, "cached manifest calculates valid SHA-1 checksum";
+	quietly {
+		($manifest_file, $manifest_type, $sha, $source, $errors)
+			= $env->last_deployed_manifest(just=>'file')
+	};
+	ok $manifest_file eq $env->workpath("manifests/".$env->name.".yml"), "cached manifest path correctly determined";
+	ok -f $manifest_file, "manifest file should exist.";
+	ok $sha =~ /[a-f0-9]{40}/, "cached manifest calculates valid SHA-1 checksum";
 	ok -f $manifest_file, "deploy created cached redacted manifest file";
+	ok !defined($errors), "no errors reported";
+	ok $source eq 'exodus-deployments', "cached manifest source correctly determined";
 
 	# Compare the raw exodus data
 	#
@@ -937,9 +948,6 @@ EOF
 				use_create_env => 0,
 				vault_base => "/secret/standalone/thing",
 				version => '(development)',
-				manifest => ignore,
-				manifest_type => 'redacted',
-				manifest_sha1 => $sha1,
 				'hello.world' => 'i see you',
 				'multilevel.arrays[0]' => 'so',
 				'multilevel.arrays[1]' => 'useful',
@@ -947,9 +955,28 @@ EOF
 				'three.levels.works' => 'now'
 			}, "exodus data was written by deployment");
 
-	is($env->last_deployed_lookup("something","goose"), "REDACTED", "Cached manifest contains redacted vault details");
-	is($env->last_deployed_lookup("fancy.status","none"), "online", "Cached manifest contains non-redacted params");
-	is($env->last_deployed_lookup("genesis.env","none"), "standalone", "Cached manifest contains pruned params");
+	($pass, $rc, $out) = runs_ok('safe paths "secret/exodus/standalone/thing/deployments"', 'exodus deployments entry created in vault');
+	my ($timestamp) = $out =~ m{/deployments/(.*)$};
+	ok $timestamp =~ /^\d{14}$/, "exodus timestamp is a valid timestamp";
+	($pass, $rc, $out) = runs_ok("safe get 'secret/exodus/standalone/thing/deployments/$timestamp' | spruce json #");
+
+	my $deployment_exodus = load_json($out);
+	cmp_deeply($deployment_exodus, {
+				artifacts => ignore,
+				deployer => $ENV{USER},
+				kit_id => "fancy/in-development (dev)",
+				kit_is_dev => 1,
+				kit_features => '',
+				manifest_type => 'unredacted',
+				manifest_sha2 => $sha,
+			}, "deployment_exodus data was written by deployment");
+
+
+	quietly {
+		is($env->last_deployed_lookup("something","goose"), "penguin", "Cached manifest contains redacted vault details");
+		is($env->last_deployed_lookup("fancy.status","none"), "online", "Cached manifest contains non-redacted params");
+		is($env->last_deployed_lookup("genesis.env","none"), "standalone", "Cached manifest contains pruned params");
+	};
 	cmp_deeply(scalar($env->exodus_lookup("",{})), {
 				dated => $exodus->{dated},
 				deployer => $ENV{USER},
@@ -962,9 +989,6 @@ EOF
 				features => '',
 				vault_base => "/secret/standalone/thing",
 				version => '(development)',
-				manifest => ignore,
-				manifest_type => 'redacted',
-				manifest_sha1 => $sha1,
 				hello => {
 					world => 'i see you'
 				},
@@ -1037,13 +1061,15 @@ EOF
 	quietly {$varsfile = $env->vars_file()};
 	my ($stdout, $stderr) = output_from {eval {$env->deploy();}};
 	$stdout =~ s/\r//g;
+	my $manifest_file = $env->workpath("deploy-cache/$env->{name}.yml");
 	eq_or_diff($stdout, <<EOF, "Deploy should call BOSH with the correct options, including vars file");
 bosh
 deploy
+--tty
 --no-redact
 -l
 $varsfile
-$env->{__tmp}/manifest.yml
+$manifest_file
 EOF
 
 	eq_or_diff get_file($env->vars_file), <<EOF, "download_cloud_config calls BOSH correctly";
@@ -1978,8 +2004,6 @@ arg with spaces"]:
 This script passed
 Argument 1: 'just a single arg with spaces'
 
-
-[postdeploy-reaction-fail/thing] generating redacted BOSH variables file (if applicable)...
 
 [postdeploy-reaction-fail/thing] all systems ok, initiating BOSH deploy...
 

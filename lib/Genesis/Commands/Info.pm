@@ -36,56 +36,86 @@ sub information {
 	my $unknown = csprintf("#YI{unknown}");
 	if ($exodus->{dated}) {
 		$out .= sprintf(
-			"  #I{Last deployed} %s\n".
-			"  #I{           by} #C{%s}\n",
+			"[[  #I{Last deployed} >>%s\n".
+			"[[  #I{           by} >>#C{%s}\n",
 			strfuzzytime($exodus->{dated}, "#C{%~} #K{(%I:%M%p on %b %d, %Y %Z)}"),
 			$exodus->{deployer} || $unknown
 		);
 		if ($exodus->{bosh}) {
 			if ($exodus->{bosh} eq "(none)" || $exodus->{bosh} eq '~' || $exodus->{use_create_env}) {
 				$out .= sprintf(
-					"  #I{     %s BOSH} #CI{create-env}\n",
+					"[[  #I{     %s BOSH} >>#CI{create-env}\n",
 					(defined($exodus->{as_director}) && !$exodus->{as_director}) ? 'via' : ' as'
 				);
 			} else {
-				$out .= sprintf("  #I{      to BOSH} #CI{%s}\n",$exodus->{bosh});
+				$out .= sprintf("[[  #I{      to BOSH} >>#CI{%s}\n",$exodus->{bosh});
 			}
 		}
 		$out .= sprintf(
-			"  #I{ based on kit} #C{%s}#C{/%s}%s%s\n",
+			"[[  #I{ based on kit} >>#C{%s}#C{/%s}%s%s\n",
 			$exodus->{kit_name}||$unknown,
 			$exodus->{kit_version}||$unknown,
 			($exodus->{kit_is_dev} ? " #y{(dev)}" : ''),
-			($env->kit->version ne $exodus->{kit_version}||'' ? " -- #Y{local file specifies ${\($env->kit->id)}!}" : '')
+			($env->kit->version ne $exodus->{kit_version}||'' ? " #E{warning}#Y{local file specifies ${\($env->kit->id)}!}" : '')
 		);
 		$out .= sprintf(
-			"  #I{        using} #C{Genesis v%s}\n",
+			"[[  #I{        using}>> #C{Genesis v%s}\n",
 			$exodus->{version} ||$unknown
 		);
 
-		my ($manifest_path,$exists,$sha1) = $env->cached_manifest_info;
+		my $deployed_manifest = $env->last_deployed_manifest(files => 1);
 		my $pwd = Cwd::abs_path(Cwd::getcwd);
+		my $manifest_path = $deployed_manifest->{manifest}{path};
+		my $sha1 = '';
 		$manifest_path =~ s#^$pwd/##;
-		if ($exists) {
-			if (! defined($exodus->{manifest_sha1})) {
+		if ($manifest_path && -f $manifest_path) {
+			if ($deployed_manifest->{source} eq 'repo') {
+				if (!$deployed_manifest->{manifest_sha1}) {
+					info $out;
+					$out = '';
+					error(
+						"\nCannot confirm local cached deployment manifest pertains to this ".
+						"deployment -- perform another deployment to correct this problem."
+					);
+				} elsif ($deployed_manifest->{manifest}{sha1} ne $deployed_manifest->{manifest_sha1}) {
+					info $out;
+					$out = '';
+					warning(
+						"\nLatest deployment does not match the local cached deployment ".
+						"manifest, perhaps you need to perform a #C{git pull}."
+					)
+				}
+			} elsif ($deployed_manifest->{source} eq 'exodus' && !$deployed_manifest->{manifest_sha1}) {
 				info $out;
 				$out = '';
 				error(
 					"\nCannot confirm local cached deployment manifest pertains to this ".
 					"deployment -- perform another deployment to correct this problem."
 				);
-			} elsif ($exodus->{manifest_sha1} ne $sha1) {
-				info $out;
-				$out = '';
-				warning(
-					"\nLatest deployment does not match the local cached deployment ".
-					"manifest, perhaps you need to perform a #C{git pull}."
-				)
-			} else {
-				$out .= sprintf(
-					"  #I{with manifest} #C{%s} #K{(redacted)}\n",
-					$manifest_path
-				);
+			}
+			if ($out ne '') {
+				my $manifest_source = $deployed_manifest->{manifest}{source};
+				if ($manifest_source eq 'repo') {
+					$out .= sprintf(
+						"[[  #I{with manifest} >>#C{%s} #K{(%s)}\n",
+						$manifest_path, $deployed_manifest->{manifest_type} // 'redacted'
+					);
+
+				} elsif ($manifest_source eq 'exodus') {
+					$out .= sprintf(
+						"[[  #I{with manifest} >>#C{%s} - #c{sha1: %s} #K{(%s)}\n",
+						'stored in exodus',
+						$deployed_manifest->{manifest_sha1},
+						$deployed_manifest->{manifest_type} // 'redacted'
+					);
+				} elsif ($manifest_source eq 'exodus-deployments') {
+					$out .= sprintf(
+						"[[  #I{with manifest} >>#C{%s} - #g{sha2: %s} #K{(%s)}\n",
+						'in exodus deployments/' . $deployed_manifest->{timestamp},
+						$deployed_manifest->{manifest_sha2},
+						$deployed_manifest->{manifest_type}
+					);
+				}
 			}
 		} else {
 			info $out;
@@ -95,11 +125,11 @@ sub information {
 				"perhaps you need to perform a #C{git pull}."
 			)
 		}
-		if ($exodus->{features}) {
+		if (defined($exodus->{features})) {
 			my @features = split(',',$exodus->{features});
-			$out .= "\n       #I{Features} ";
+			$out .= "\n[[       #I{Features} >>";
 			if (@features) {
-				$out .= "#C{".join("}\n                #C{",@features)."}\n";
+				$out .= "#C{".join("}\n[[                >>#C{",@features)."}\n";
 			} else {
 				$out .= "#Ci{None}\n";
 			}

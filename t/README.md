@@ -46,4 +46,6 @@ Test::Deep
 Test::Differences
 Test::Output
 Test::TCP
+Test::Exit
+Test::More
 

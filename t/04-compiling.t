@@ -710,6 +710,10 @@ EOF
 $out = combined_from {
 	ok(!$cc->validate("test","1.2.3"), "validation should error on multiple errors")
 };
+
+# FIXME: The test output below differs if YAML is installed or not.  The
+# test should detect if YAML is not available, and test for the json output
+# instead.
 eq_or_diff($out, <<'EOF', "validate should report all errors in the kit");
 
 [ERROR] Encountered issues while processing kit test/1.2.3:
