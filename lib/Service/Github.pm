@@ -268,6 +268,7 @@ sub get_release_info {
 			last unless $links;
 			$url = (grep {$_ =~ s/^<(.*)>; rel="next"/$1/} split(', ', $links))[0];
 			last unless $url;
+			push @$urls, $url;
 		}
 
 	}

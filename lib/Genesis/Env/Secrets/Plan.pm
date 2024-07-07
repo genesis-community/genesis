@@ -504,23 +504,13 @@ sub remove_secrets {
 			if ($check_entombed) {
 				# Check if the last manifest deployed is available in exodus
 				info({pending => 1}, "[[  - >>retrieving last deployed manifest to determine active entombed secrets ... ");
-				my ($source, $error);
+				my ($source, $errors);
 				my $t = time_exec(sub {
-					($last_manifest, $manifest_type, $source, $error) = $self->env->last_deployed_manifest;
+					($last_manifest, $manifest_type, $source, $errors) = 
+						$self->env->last_deployed_manifest(just => 'contents');
 				});
-				if ($error) {
-					my $msg;
-					if ($source eq 'exodus') {
-						$msg = $error eq 'not_found'
-							?	"[[    #R{[ERROR]} >>no deployment details found in exodus"
-							: "[[    #R{[ERROR]} >>failed to retrieve last deployed manifest from exodus: $error"
-					} elsif ($source eq 'file') {
-						$msg = $error eq 'checksum_mismatch'
-							? "[[    #R{[ERROR]} >>local deploy manifest does not match checksum in exodus"
-							: "[[    #R{[ERROR]} >>local deploy manifest not found"
-					} else {
-						$msg = "[[    #R{[ERROR]} >>failed to retrieve last deployed manifest: $error";
-					}
+				if ($errors && @$errors) {
+					my $msg= join("\n", map {"[[    #R{[ERROR]} >>$_"} @$errors);
 					info(
 						"#R{failed!}".pretty_duration($t, 0.5, 1.0).
 						"\n$msg".

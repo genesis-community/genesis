@@ -635,6 +635,10 @@ sub deploy {
 	);
 	command_usage(1) if @_ != 1;
 
+	# TODO: Check if there's a deployment cache directory and tell the user to
+	#       run `genesis deploy --resume` to finish the deployment, or `genesis
+	#       deploy --clean` to start over.
+
 	my %options = %{get_options()};
 	my @invalid_create_env_opts = grep {$options{$_}} (qw/fix dry-run/);
 

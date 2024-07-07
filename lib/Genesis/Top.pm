@@ -834,6 +834,7 @@ sub _validate_config {
 			version          => {type => '"2"', required => 1},
 			creator_version  => {type => 'semver||"(development)"||"Unknown"', required => 1},
 			updater_version  => {type => 'semver||"(development)"'},
+			manifest_store   => {type => 'enum', values => ['repo','exodus'], default => 'exodus'},
 			kit_provider     => {
 				type => 'hash',
 				schema => {
