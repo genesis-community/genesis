@@ -102,10 +102,10 @@ sub Init {
 	# FIXME: If command is ping, don't error out, but print validation errors
 	$Genesis::RC->validate({
 		default_bosh_target      => { type => 'enum',    default => 'ask', values => [qw/ask self parent/]},
-		legacy_repo_suffix       => { type => 'boolean', default => 0 },
+		legacy_repo_suffix       => { type => 'boolean', default => 0, envvar => 'GENESIS_LEGACY_REPO_SUFFIX' },
 		embedded_genesis         => { type => 'enum',    default => 'ignore', values => [qw/ignore check warn/]},
 		output_style             => { type => 'enum',    default => 'plain', values => [qw/plain fun pointer/]},
-		show_duration            => { type => 'boolean', default => 0 },
+		show_duration            => { type => 'boolean', default => 0, envvar => 'GENESIS_SHOW_DURATION' },
 		automatic_config_upgrade => { type => 'enum',    default => 'no', values => [qw/no yes silent/], envvar => 'GENESIS_CONFIG_AUTOMATIC_UPGRADE' },
 		confirm_release_overrides=> { type => 'enum',    default => 'outdated', values => [qw/always outdated never/]},
 
