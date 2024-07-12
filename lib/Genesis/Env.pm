@@ -97,7 +97,7 @@ sub load {
 			$env->{__params}{genesis}{bosh_env} = delete($env->{__params}{params}{bosh});
 		}
 
-		(my $min_version = $env->lookup('genesis.min_version','')) =~ s/^v//i;
+		(my $min_version = $env->lookup(['genesis.min_version','genesis.minimum_version'],'')) =~ s/^v//i;
 		if ($min_version) {
 			if ($Genesis::VERSION eq "(development)") {
 				push(@config_warnings, "using development version of Genesis, cannot confirm it meets minimum version of #ci{$min_version}");

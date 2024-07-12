@@ -90,6 +90,7 @@ sub set_deployment {
 # deployment - return the manifest builder for the default deployment type {{{
 sub deployment {
 	my $self = shift;
+	# FIXME: should this set/cache the deployment type to $self->{deployment}?  What are the implications?
 	my $deployment_type = $self->{deployment}//$self->env->deployment_manifest_type;
 	$self->$deployment_type(@_);
 }
