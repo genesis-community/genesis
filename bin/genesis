@@ -1684,6 +1684,12 @@ sub main {
 			if ($env_pattern) {
 				require Genesis::Env;
 				($ENV{GENESIS_DEPLOYMENT_ROOT}, $path) = Genesis::Env->search_for_env_file($env_pattern, $type_pattern);
+				unless (exists $ENV{GENESIS_DEFAULT_BOSH_TARGET}) {
+					$ENV{GENESIS_DEFAULT_BOSH_TARGET} = $type_pattern ? 'parent' : 'self';
+					# Since the user config has already been processed, we need to over-
+					# ride the default bosh target in the in-memory config as well.
+					$Genesis::RC->set('default_bosh_target', $ENV{GENESIS_DEFAULT_BOSH_TARGET});
+				}
 			} elsif ($type_pattern) {
 				require Genesis::Top;
 				($ENV{GENESIS_DEPLOYMENT_ROOT},$path) = Genesis::Top->search_for_repo_path($type_pattern);
