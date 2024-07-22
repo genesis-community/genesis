@@ -473,7 +473,9 @@ sub _import_from_credhub {
 	});
 	$self->save;
 
-	return ('ok') unless $self->get('is_ca');
+	return (
+		'ok', 'Certificate imported with these keys: '.join(", ", sort keys %{$self->value})
+	) unless $self->get('is_ca');
 
 	# Generate the serial and crl that credhub doesn't provide
 	my @cmd = (qw(x509 renew), $self->full_path);
@@ -482,7 +484,7 @@ sub _import_from_credhub {
 		push(@cmd, '--signed-by', $signed_by);
 	}
 	my ($out, $rc, $err) = $self->plan->store->service->query(@cmd);
-	return ('error', $out."\n".$err) unless $rc == 0 && $out =~ /^\s*Renewed x509 certificate at/;
+	return ('error', $out."\n".($err||'')) unless $rc == 0 && $out =~ /^\s*Renewed x509 certificate at/;
 
 	# load secret and check that it contains crl and serial
 	$self->load();
@@ -490,11 +492,17 @@ sub _import_from_credhub {
 		unless (exists($self->value->{crl}) && exists($self->value->{serial}));
 
 	# Restore the certificate
-	$self->value->{certificate} = $value->{certificate};
-	$self->value->{combined} =  $value->{certificate}.$value->{private_key};
+	$self->update_value({
+		certificate => $value->{certificate},
+		combined =>  $value->{certificate}.$value->{private_key}
+	});
+	$self->update_value({
+		key => $value->{private_key}
+	}) unless exists($self->value->{key});
+
 	$self->save; #TODO: or return error?
 
-	return ('ok');
+	return ('ok', 'CA certificate imported with these keys: '.join(", ", sort keys %{$self->value}));
 }
 
 # }}}

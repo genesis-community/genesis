@@ -195,7 +195,7 @@ sub write   {
 		my $key = $secret->default_key//'value';
 		$self->service->set($self->path($secret->path), $key, $secret->value);
 	}
-	$secret->promote_value_to_stored();
+	$secret->promote_value_to_stored() if $secret->{value};
 
 	delete($self->{__data});
 	return $secret;

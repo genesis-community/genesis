@@ -294,6 +294,16 @@ sub set_value {
 	$self->{loaded} = $opts{loaded} ? 1 : 0;
 }
 
+sub update_value {
+	my ($self, $value, %opts) = @_;
+	my $old_value = $self->value;
+	if (ref($old_value) eq 'HASH' && ref($value) eq 'HASH') {
+		$self->set_value({%$old_value, %$value}, %opts);
+	} else {
+		$self->set_value($value, %opts);
+	}
+}
+
 # Override in derived classes for special value handling
 sub _set_value {
 	$_[0]->{value} = $_[1]
