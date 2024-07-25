@@ -657,7 +657,7 @@ sub credhub {
 	my ($bosh, $target) = $env->get_target_bosh(get_options());
 
 	my $credhub = ($target eq 'self')
-		? Service::Credhub->from_bosh($bosh, vault => $env->vault)
+		? Service::Credhub->from_bosh($bosh, vault => $bosh->{exodus_vault}//$env->vault)
 		: $env->credhub;
 
 	# Check for invalid commands in the context of Genesis-augmented CredHub

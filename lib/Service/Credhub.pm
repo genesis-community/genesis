@@ -27,12 +27,15 @@ sub new {
 sub from_bosh {
 	my ($class, $bosh, %opts) = @_;
 	my ($exodus, $exodus_source);
+
 	$opts{vault} ||= (Service::Vault->current || Service::Vault->default);
 	my $exodus_path = $opts{exodus_path} || $bosh->exodus_path;
 	$exodus = $opts{vault}->get($exodus_path);
 	$exodus_source = csprintf("under #C{%s} on vault #M{%s}", $exodus_path, $opts{vault}->name);
 	unless ($exodus) {
-		trace("#R{[ERROR]} No exodus data found %s", $exodus_source);
+		my $msg = "No exodus data found under $exodus_source";
+		bail($msg) unless $opts{return_on_error};
+		debug($msg);
 		return;
 	}
 
@@ -41,15 +44,19 @@ sub from_bosh {
 	for (qw(credhub_url credhub_username credhub_password credhub_ca_cert)) {
 		push(@missing_keys,$_) unless $exodus->{$_};
 	}
+
 	if (@missing_keys) {
-		trace(
-			"#R{[ERROR]} Exodus data %s does not appear to be for a deployment ".
+		my $msg = sprintf(
+			"Exodus data %s does not appear to be for a deployment ".
 			"containing a CredHub endpoint:\n".
-			"        Missing keys: %s",
+			"[[  Missing keys: >>%s",
 			$exodus_source, join(", ", @missing_keys)
 		);
+		bail($msg) unless $opts{return_on_error};
+		debug($msg);
 		return;
 	}
+
 	return $class->new(
 		$bosh->alias,
 		$exodus->{credhub_base} || $opts{base} ||	"/",

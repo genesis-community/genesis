@@ -90,7 +90,8 @@ sub from_exodus {
 		secret  => $exodus->{admin_password},
 		ca_cert => $exodus->{ca_cert},
 		deployment => $opts{deployment},
-		exodus_path => $opts{exodus_path}
+		exodus_path => $opts{exodus_path},
+		exodus_vault => $opts{vault},
 	);
 }
 

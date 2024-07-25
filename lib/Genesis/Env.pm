@@ -1473,8 +1473,11 @@ sub bosh {
 			deployment => $self->deployment_name
 		);
 		bail(
-			"Could not find BOSH director #M{%s}",
-			$bosh_alias
+			"Could not find BOSH director #M{%s} (under exodus #C{%s%s} or by alias in ~/.bosh/config)",
+			$bosh_alias,
+			$bosh_exodus_mount || $self->exodus_mount,
+			$bosh_vault->name eq $self->vault->name ? "" : " in vault ".$bosh_vault->ref
+
 		) unless $bosh;
 
 		warning(
@@ -1532,15 +1535,15 @@ sub get_target_bosh {
 				) unless in_controlling_terminal;
 
 				my $self_name = $self->name;
-				my $parent_name = $self->lookup('genesis.bosh_env');
+				my ($bosh_alias,$bosh_dep_type,$bosh_exodus_vault,$bosh_exodus_mount) = $self->_parse_bosh_env();
 				$target = prompt_for_choice(
 					"Which BOSH director do you want to target?",
 					['self', 'parent'],
 					'self',
-					[
+					[ map {[$_, s/: .*//r]} map {csprintf("%s", $_)} (
 						"#C{$self_name}: this environment",
-						"#C{$parent_name}: the BOSH director that deployed this environment"
-					]
+						"#C{$bosh_alias}: the BOSH director that deployed this environment"
+					) ]
 				);
 			}
 		}
@@ -1604,8 +1607,8 @@ sub get_target_bosh {
 			$bosh = Service::BOSH::Director->from_alias($self->name);
 		}
 	} else {
-		$bosh_exodus_path=Service::BOSH::Director->exodus_path($self->name);
-		$bosh = $self->bosh; # This sets the deployment name.
+		$bosh = $self->bosh;
+		$bosh_exodus_path = $self->exodus_base;
 	}
 	bail(
 		"No BOSH connection details found.  This may be due to not having read ".
