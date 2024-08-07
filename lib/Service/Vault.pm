@@ -298,6 +298,7 @@ sub query {
 # get - get a key or all keys under for a given path {{{
 sub get {
 	my ($self, $path, $key) = @_;
+	$path =~ s/\/{2,}/\//g; # Clean up any double slashes from joins
 	if (defined($key)) {
 		my ($out,$rc) = $self->query({redact_output => 1}, 'get', "$path:$key");
 		return $out if $rc == 0;
@@ -332,6 +333,7 @@ sub get {
 # set - write a secret to the vault (prompts for value if not given) {{{
 sub set {
 	my ($self, $path, $key, $value) = @_;
+	$path =~ s/\/{2,}/\//g; # Clean up any double slashes from joins
 	if (defined($value)) {
 		my ($out,$rc) = $self->query('set', $path, "${key}=${value}");
 		bail(
@@ -356,6 +358,7 @@ sub set {
 # has - return true if vault has given key {{{
 sub has {
 	my ($self, $path, $key) = @_;
+	$path =~ s/\/{2,}/\//g; # Clean up any double slashes from joins
 	return $self->query({ passfail => 1 }, 'exists', defined($key) ? "$path:$key" : $path);
 }
 
