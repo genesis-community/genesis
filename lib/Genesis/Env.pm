@@ -1197,27 +1197,43 @@ sub credhub_connection_env {
 	);
 	my %env=();
 
-	my $credhub_path = $credhub_src;
-	$env{GENESIS_CREDHUB_EXODUS_SOURCE_OVERRIDE} =
-		(($credhub_src_key || "") eq 'genesis.credhub_env') ? $credhub_src : "";
-
-	if ($credhub_src =~ /\/\w+$/) {
-		$credhub_path  =~ s/\/([^\/]*)$/-$1/;
-	} else {
-		$credhub_src .= "/bosh";
-		$credhub_path .= "-bosh";
-	}
-	$env{GENESIS_CREDHUB_EXODUS_SOURCE} = $credhub_src;
-	$env{GENESIS_CREDHUB_ROOT}=sprintf("/%s/%s-%s", $credhub_path, $self->name, $self->type);
-
-	if ($credhub_src) {
-		my $credhub_info = $self->exodus_lookup('.',undef,$credhub_src);
-		if ($credhub_info) {
-			$env{CREDHUB_SERVER} = $credhub_info->{credhub_url}||"";
-			$env{CREDHUB_CLIENT} = $credhub_info->{credhub_username}||"";
-			$env{CREDHUB_SECRET} = $credhub_info->{credhub_password}||"";
-			$env{CREDHUB_CA_CERT} = sprintf("%s%s",$credhub_info->{ca_cert}||"",$credhub_info->{credhub_ca_cert}||"");
+	my $credhub_info = {};
+	$env{GENESIS_CREDHUB_EXODUS_SOURCE_OVERRIDE} = "";
+	if ($credhub_src_key eq 'genesis.bosh_env') {
+		my ($bosh_alias,$bosh_dep_type,$bosh_exodus_vault,$bosh_exodus_mount) = $self->_parse_bosh_env($credhub_src);
+		$bosh_alias //= $self->name;
+		$bosh_dep_type //= 'bosh';
+		$bosh_exodus_mount //= $self->exodus_mount;
+		my $bosh_vault = $self->vault;
+		if ($bosh_exodus_vault) {
+			$bosh_vault = Service::Vault->find_single_match_or_bail($bosh_exodus_vault);
+			bail(
+				"Could not access vault #C{$bosh_exodus_vault} to retrieve BOSH ".
+				"director login credentials"
+			) unless $bosh_vault && $bosh_vault->connect_and_validate;
 		}
+		$credhub_info = $bosh_vault->get("$bosh_exodus_mount/$bosh_alias/$bosh_dep_type");
+	} else {
+		$env{GENESIS_CREDHUB_EXODUS_SOURCE_OVERRIDE} =
+			(($credhub_src_key || "") eq 'genesis.credhub_env') ? $credhub_src : "";
+
+		my $credhub_path = $credhub_src;
+		if ($credhub_src =~ /\/\w+$/) {
+			$credhub_path  =~ s/\/([^\/]*)$/-$1/;
+		} else {
+			$credhub_src .= "/bosh";
+			$credhub_path .= "-bosh";
+		}
+		$env{GENESIS_CREDHUB_EXODUS_SOURCE} = $credhub_src;
+		$env{GENESIS_CREDHUB_ROOT}=sprintf("/%s/%s-%s", $credhub_path, $self->name, $self->type);
+		$credhub_info = $self->exodus_lookup('.',undef,$credhub_src) if ($credhub_src);
+	}
+
+	if ($credhub_info) {
+		$env{CREDHUB_SERVER} = $credhub_info->{credhub_url}||"";
+		$env{CREDHUB_CLIENT} = $credhub_info->{credhub_username}||"";
+		$env{CREDHUB_SECRET} = $credhub_info->{credhub_password}||"";
+		$env{CREDHUB_CA_CERT} = sprintf("%s%s",$credhub_info->{ca_cert}||"",$credhub_info->{credhub_ca_cert}||"");
 	}
 
 	return %env;
@@ -2292,29 +2308,16 @@ sub exodus {
 	my @int_keys = grep {$exodus->{$_} =~ /^\(\(.*\)\)$/} grep {defined($exodus->{$_})} keys %$exodus;
 	if ($self->kit->uses_credhub && @int_keys) {
 		# Get credhub info
-		my %credhub_env = $self->credhub_connection_env;
-		my $credhub_exodus = $self->exodus_lookup("", {}, $credhub_env{GENESIS_CREDHUB_EXODUS_SOURCE});
-		my @missing = grep {!exists($credhub_exodus->{$_})} qw/ca_cert credhub_url credhub_ca_cert credhub_password credhub_username/;
-		bail(
-			"%s exodus data missing required credhub connection information: %s\n".
-			"Redeploying it may help.",
-			$credhub_env{GENESIS_CREDHUB_EXODUS_SOURCE}, join (', ', @missing)
-		) if @missing;
-
-		local %ENV=%ENV;
-		$ENV{$_} = $credhub_env{$_} for (grep {$_ =~ /^CREDHUB_/} keys(%credhub_env));
+		my $credhub = $self->credhub;
 		for my $target (@int_keys) {
 			my ($secret,$key) = ($exodus->{$target} =~ /^\(\(([^\.]*)(?:\.(.*))?\)\)$/);
 			next unless $secret;
-			my @keys; @keys = ("-k", $key) if defined($key);
-			my ($out, $rc, $err) = run({stderr => 0},
-				"credhub", "get", "-n", $credhub_env{GENESIS_CREDHUB_ROOT}."/$secret", @keys, "-q"
-			);
+			my ($out, $err) = $credhub->get($secret, $key);
 			error(
 				"Could not retrieve %s under %s:\n%s",
 				$key ? "$secret.$key" : $secret,
-				$credhub_env{GENESIS_CREDHUB_ROOT}, $err
-			) if $rc;
+				$credhub->base, $err
+			) if $err;
 			$exodus->{$target} = $out;
 		}
 	}
@@ -2871,8 +2874,16 @@ sub _process_reactions {
 # }}}
 # _parse_bosh_env - parse the bosh env into its constituent parts {{{
 sub _parse_bosh_env {
+	# Pattern: <name>[/<type>][@[<url>]/<mount>]
 	my $self = shift;
-	return ($self->bosh_env =~ m/^([^\/\@]+)(?:\/([^\@]+))?(?:@(?:(https?:\/\/[^\/]+)?(?:\/|$))?(.*))?$/);
+	my ($name, $dep_type, $vault_url, $exodus_mount) =
+		$self->bosh_env =~ m/^([^\/\@]+)(?:\/([^\@]+))?(?:@(?:(https?:\/\/[^\/]+)?(?:\/|$))?(.*))?$/;
+	return wantarray ? ($name, $dep_type, $vault_url, $exodus_mount) : {
+		name => $name,
+		dep_type => $dep_type,
+		vautl_url  => $vault_url,
+		exodus_mount => $exodus_mount,
+	};
 }
 
 # }}}
