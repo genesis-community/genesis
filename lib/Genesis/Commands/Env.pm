@@ -179,7 +179,7 @@ sub edit {
 		) if @ancestors;
 	}
 
-	my $replace_kit = 0;
+	my $replace_kit = undef;
 	if (@warnings) {
 		warning(
 			"\nThe following issues were found with the environment:%s",
@@ -202,14 +202,29 @@ sub edit {
 			}
 			my $selection = prompt_for_choice(
 				"Would you like to select a local kit and continue?",
-				[@kits, 'current', 'abort'],
+				[@kits, 'download','current', 'abort'],
 				$kits[0],
-				[@kit_labels, '---', csprintf('#y{Keep as-is}'), csprintf('#r{Quit}')]
+				[@kit_labels, '---', csprintf('#g{Download} #C{%s/%s}',$kit_name, $kit_version), csprintf('#y{Keep as-is}'), csprintf('#r{Quit}')]
 			) or bail("Aborted by user");
+
+			if ($selection eq 'download') {
+				my $kitsig = "$kit_name/$kit_version";
+				$env->notify(
+					"Attempting to retrieve Genesis kit #M{$kit_name (v$kit_version)}..."
+				);
+				my ($name,$version,$target) = $top->download_kit($kitsig)
+					or bail "Failed to download Genesis Kit #C{$kitsig}";
+
+				$env->notify(
+					"Downloaded version #C{$version} of the #C{$name} kit\n",
+				);
+				$selection = [$name, $version];
+				$replace_kit = 0;
+			}
 
 			bail("Aborted by user") if $selection eq 'abort';
 			if ($selection ne 'current') {
-				$replace_kit = 1;
+				$replace_kit //= 1;
 				($kit_name, $kit_version) = @$selection;
 				$manual_path = $top->local_kit_version($kit_name, $kit_version)->path('MANUAL.md');
 				$manual_path = '' unless -f $manual_path;
