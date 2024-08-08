@@ -140,7 +140,7 @@ sub _description {
 # _required_value_keys - list of required keys in value store {{{
 sub _required_value_keys {
 	my @keys = qw(certificate combined key);
-	push(@keys, qw(crl serial)) if$_[0] && $_[0]->get('is_ca');
+	push(@keys, qw(crl serial)) if$_[0] && $_[0]->get('is_ca') && $_[0]->source ne 'credhub';
 	return @keys;
 }
 
@@ -243,7 +243,7 @@ sub _validate_value {
 	my $is_ca = $certInfo =~ /X509v3 Basic Constraints:.*(CA:TRUE).*Signature Algorithm/ms;
 	my (undef, $sanInfo) = $certInfo =~ /\n( *)X509v3 Subject Alternative Name:\s*?((?:[\n\r]+\1.*)+)/;
 	my @SANs = ($sanInfo || '') =~ /(?:IP Address|DNS):([^,\n\r]+)/g;
-	@SANs =  map {s/\s*$//; $_} @SANs;
+	@SANs = map {s/\s*$//; $_} @SANs;
 
 	# Validate CN if kit requests on explicitly
 	my $cn_str = $self->get(subject_cn => ${$self->get('names')||[]}[0]);
