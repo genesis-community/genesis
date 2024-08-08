@@ -1212,6 +1212,8 @@ sub credhub_connection_env {
 				"director login credentials"
 			) unless $bosh_vault && $bosh_vault->connect_and_validate;
 		}
+		$env{GENESIS_CREDHUB_EXODUS_SOURCE} = "$bosh_alias/$bosh_dep_type";
+		$env{GENESIS_CREDHUB_ROOT}=sprintf("/%s-%s/%s-%s", $bosh_alias, $bosh_dep_type, $self->name, $self->type);
 		$credhub_info = $bosh_vault->get("$bosh_exodus_mount/$bosh_alias/$bosh_dep_type");
 	} else {
 		$env{GENESIS_CREDHUB_EXODUS_SOURCE_OVERRIDE} =
