@@ -60,6 +60,12 @@ sub _merge {
 	);
 
 	# FIXME: Do something if there were errors or warnings...
+
+	if ($entombed) {
+		$self->env->notify("Shutting down local vault after manifest merge.");
+		$self->local_vault->shutdown;
+	}
+
 	return ($data,$file);
 }
 

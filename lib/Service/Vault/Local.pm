@@ -25,6 +25,7 @@ sub create {
 
 	unless ($safe_process) {
 		debug "Starting background local safe $alias";
+		my $default_vault = $class->default;
 		system("safe local -m --as '$alias' &>$logfile &");
 		trace "Looking for new process";
 		$safe_process = _get_safe_process($alias,1);
@@ -32,6 +33,7 @@ sub create {
 			"Could not start local memory-backed vault:\n%s",
 			slurp($logfile)
 		) unless $safe_process;
+		$class->set_default($default_vault); # Restore default vault target
 	}
 
 	my $vault_process = _get_vault_process($safe_process->{pid}, 1);
@@ -106,6 +108,11 @@ sub valid_local_vault {
 # }}}
 # shutdown_all - shutdown all local vaults {{{
 sub shutdown_all {
+
+	# TODO: This may have to be done in order of what is targeted in .saferc so
+	# that previous targets are restored properly.  Not sure if this even works
+	# on multiple retargets, so local vaults may need to track their previous
+	# target and restore it on shutdown.
 	for (keys %$local_vaults) {
 		debug "Shutting down $_ ...";
 		delete($local_vaults->{$_})->shutdown;
@@ -133,6 +140,12 @@ sub shutdown {
 			"Not shutting down local vault %s because it is owned by a different process",
 			$self->pid
 		);
+		return;
+	}
+
+	# Exit if the local vault is already shut down
+	unless ($self->{safe_pid}) {
+		debug "Local vault %s is already shut down", $self->{name};
 		return;
 	}
 

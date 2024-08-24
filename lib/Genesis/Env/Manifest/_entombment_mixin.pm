@@ -15,7 +15,7 @@ sub local_vault {
 sub _entomb_secrets {
 	my ($self, $data) = @_;
 
-	return if $self->{entombed}; # don't do this more than once...
+	return 1 if $self->{entombed}; # don't do this more than once...
 
 	$self->env->notify("entombing secrets into Credhub for enhanced security...");
 	my $src_vault = $self->env->vault;

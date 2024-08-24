@@ -99,6 +99,17 @@ sub default {
 }
 
 # }}}
+# set_default - set the default vault (targeted by system) {{{
+sub set_default {
+	my ($class, $vault) = @_;
+	my ($out, $rc, $err) = run({env => {VAULT_ADDR => "", SAFE_TARGET => ""}},"safe", "target", $vault->name);
+	bail(
+		"Could not set default vault to #C{%s}:\n%s",
+		$vault->name, $err
+	) unless $rc == 0;
+	return $vault;
+}
+# }}}
 # current - return the last vault returned by attach, target, or rebind {{{
 sub current {
 	return $current_vault
