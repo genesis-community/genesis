@@ -27,7 +27,7 @@ sub parse {
 	if (%boshvars && $variables) {
 		require JSON::PP;
 		my $varsjson = JSON::PP::encode_json($variables);
-		my $changes = $varsjson =~ s/\(\(([^ \)]+)\)\)/$boshvars{$1}\/\/"(($1))"/eg;
+		$varsjson =~ s/\(\(!?([^ \)]+)\)\)/$boshvars{$1}\/\/"(($1))"/eg;
 		$variables = JSON::PP::decode_json($varsjson);
 	}
 	for my $defn (@{$variables//[]}) {
