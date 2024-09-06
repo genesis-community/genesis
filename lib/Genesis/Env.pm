@@ -430,6 +430,7 @@ sub search_for_env_file {
 		['@parent', Cwd::abs_path(Genesis::expand_path($ENV{GENESIS_ORIGINATING_DIR}.'/..'))],
 	);
 	$env = "*$env*" =~ s/\*\^//r =~ s/\$\*//r unless $env eq '*';
+	my $given_deployment = $deployment//'';
 	$deployment = "*$deployment*" =~ s/\*\^//r =~ s/\$\*//r if defined($deployment) && $deployment ne '*';
 
 	for my $label (@$root_labels) {
@@ -468,9 +469,16 @@ sub search_for_env_file {
 			&& ($contents !~ m/^name:/);
 	} @files;
 
-	if (!@files) {
-		bail("No environment files found matching #C{%s}", $label);
-	} elsif (scalar(@files) > 1) {
+	bail("No environment files found matching #C{%s}", $label)
+		unless @files;
+
+		# Check if the deployment, if given, is an exact singular match
+	if (scalar(@files) > 1 && $given_deployment =~ /^[\w-]+$/) {
+		my @exact_matches = grep {$_->[1] =~ m{/$given_deployment(-deployments)?/}} @files;
+		@files = @exact_matches	if (scalar(@exact_matches) == 1);
+	}
+
+	if (scalar(@files) > 1) {
 		my $last_section = '';
 		my @file_labels = map {
 			my ($section, $label) = @$_;
@@ -499,7 +507,6 @@ sub search_for_env_file {
 				[$fmt_label, csprintf("#C{%s}", humanize_path($root_map->{$section}, 1))."/$fmt_label"]
 			}
 		} @files;
-
 
 		bail(
 			"Ambiguous environment name: #C{%s} matches multiple files:\n  - %s\n\n".
