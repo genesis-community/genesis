@@ -1929,32 +1929,34 @@ sub check {
 		$self->notify("#Y{%s does not define a 'check' hook; $checks checks will be skipped.}", $self->kit->id);
 	}
 
-	my $kit_files = $self->manifest_provider->kit_files(); # pre-warm the cache
+	if ($ok) {
+		my $kit_files = $self->manifest_provider->kit_files(); # pre-warm the cache
 
-	if (!exists($opts{check_secrets}) || $opts{check_secrets}) {
-		$self->notify("running secrets checks...");
-		my %check_opts=(indent => '  ', validate => ! envset("GENESIS_TESTING_CHECK_SECRETS_PRESENCE_ONLY"));
-		my ($secrets_results, $secrets_msg) = $self->check_secrets(%check_opts);
-		if ($secrets_results) {
-			if ($secrets_results->{error}) {
-				$self->notify(error => "- invalid secrets detected.\n");
-				$ok = 0;
-			} elsif ($secrets_results->{missing}) {
-				my $msg = "- missing secrets detected";
-				if ($self->is_vaultified && grep {$_->{source} eq 'manifest'} ($self->secrets_plan->secrets)) {
-					my $env_path = $ENV{GENESIS_PREFIX_TYPE} eq 'search'
-						? $ENV{GENESIS_PREFIX_SEARCH}
-						: humanize_path($self->file);
+		if (!exists($opts{check_secrets}) || $opts{check_secrets}) {
+			$self->notify("running secrets checks...");
+			my %check_opts=(indent => '  ', validate => ! envset("GENESIS_TESTING_CHECK_SECRETS_PRESENCE_ONLY"));
+			my ($secrets_results, $secrets_msg) = $self->check_secrets(%check_opts);
+			if ($secrets_results) {
+				if ($secrets_results->{error}) {
+					$self->notify(error => "- invalid secrets detected.\n");
+					$ok = 0;
+				} elsif ($secrets_results->{missing}) {
+					my $msg = "- missing secrets detected";
+					if ($self->is_vaultified && grep {$_->{source} eq 'manifest'} ($self->secrets_plan->secrets)) {
+						my $env_path = $ENV{GENESIS_PREFIX_TYPE} eq 'search'
+							? $ENV{GENESIS_PREFIX_SEARCH}
+							: humanize_path($self->file);
 
-					$msg .= csprintf(
-						" (you may need to run '#g{%s} #M{%s} #g{add-secrets} #Y{--import}' to import them from credhub)"
-						, humanize_bin, $env_path
-					);
+						$msg .= csprintf(
+							" (you may need to run '#g{%s} #M{%s} #g{add-secrets} #Y{--import}' to import them from credhub)"
+							, humanize_bin, $env_path
+						);
+					}
+					$self->notify(error => "$msg\n");
+					$ok = 0;
+				} elsif ($secrets_results->{warn}) {
+					$self->notify(warning => "- all secrets valid, but warnings were encountered.\n");
 				}
-				$self->notify(error => "$msg\n");
-				$ok = 0;
-			} elsif ($secrets_results->{warn}) {
-				$self->notify(warning => "- all secrets valid, but warnings were encountered.\n");
 			}
 		}
 	}

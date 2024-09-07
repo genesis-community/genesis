@@ -309,8 +309,7 @@ sub check {
 		info "\n[#M{%s}] #G{All Checks Succeeded}", $env->name;
 		exit 0;
 	} else {
-		error "\n[#M{%s}] #R{PREFLIGHT FAILED}", $env->name;
-		exit 1;
+		bail "\n[#M{%s}] #R{PREFLIGHT FAILED}", $env->name;
 	}
 }
 
