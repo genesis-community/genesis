@@ -99,8 +99,11 @@ sub vault_operator {
 	} elsif ($key eq 'private_key' || $key eq 'key') {
 		$path .= ':key';
 	} elsif ($key eq 'ca') {
+		if ($self->get('self_signed')) {
+			return $self->vault_operator('certificate')
+		}
 		my $ca_path = $self->get('signed_by');
-		if ($ca_path =~ /^\//) {
+		if ($ca_path && $ca_path =~ /^\//) {
 			$path = "$ca_path:certificate"
 		} else {
 			return $self->ca->vault_operator('certificate')

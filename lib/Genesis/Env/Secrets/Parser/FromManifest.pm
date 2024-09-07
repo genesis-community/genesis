@@ -113,8 +113,8 @@ sub _parse_certificate {
 
 	my @names = @{$opts{options}{alternative_names}//[]};
 
-	# Special Case v2.0.x CF Kit
-	if ($self->env->kit->id =~ /^cf\/2.0/) {
+	# Special Case v2.0.x CF Kit and v4.x Autoscaler Kit
+	if ($self->env->kit->id =~ /^cf\/2\.0\./) {
 		if ($path eq 'nats_server_cert') {
 			@names = (
 				"nats.service.cf.internal",
@@ -122,6 +122,10 @@ sub _parse_certificate {
 			)
 		}
 
+		my $subject_cn = $opts{options}{common_name};
+		push @names, $subject_cn
+			if (!scalar(@names) && $subject_cn);
+	} elsif ($self->env->kit->id =~ /^cf-app-autoscaler\/4\./) {
 		my $subject_cn = $opts{options}{common_name};
 		push @names, $subject_cn
 			if (!scalar(@names) && $subject_cn);
