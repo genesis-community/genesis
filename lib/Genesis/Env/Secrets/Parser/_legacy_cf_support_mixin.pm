@@ -41,20 +41,6 @@ sub process_legacy_cf_secrets {
 			fixed     => 1,
 			_ch_name  => "haproxy_ssl.private_key"
 		);
-		push @$secrets, Genesis::Secret::UserProvided->new("haproxy_ca:certificate",
-			prompt    => "HA Proxy CA certificate",
-			sensitive => 1,
-			multiline => 1,
-			fixed     => 1,
-			_ch_name  => "haproxy_ca.certificate"
-		);
-		push @$secrets, Genesis::Secret::UserProvided->new("haproxy_ca:key",
-			prompt    => "HA Proxy CA key",
-			sensitive => 1,
-			multiline => 1,
-			fixed     => 1,
-			_ch_name  => "haproxy_ca.private_key"
-		);
 	}
 
 	# AWS blobstore

@@ -314,6 +314,7 @@ sub generate_secrets {
 				}
 				$interactive = $precommand->(@precommand_args);
 			}
+
 			if (@command) {
 				$self->notify(@update_args, 'notify', msg=> "\nsaving user input ... ", nonl => 1) if ! $interactive;
 				my ($out,$rc) = $self->store->service->query({interactive => $interactive}, @command);

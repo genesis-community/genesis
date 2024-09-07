@@ -59,7 +59,7 @@ sub __get_safe_command_for_generate {
 		# TODO: some method to keep existing value?
 		if ($self->get('multiline')) {
 			my $file=workdir().'/secret_contents';
-			push (@cmd, &prompt_for_multiline_secret, $file, $self->get('prompt'));
+			push (@cmd, \&prompt_for_multiline_secret, $file, $self->get('prompt'));
 			push (@cmd, '--', 'set', split(':', $self->full_path."\@$file", 2));
 			push (@cmd, '--no-clobber') if $action eq 'add' || $self->get('fixed');
 		} else {
@@ -101,7 +101,6 @@ sub prompt_for_multiline_secret {
 	my ($file,$prompt) = @_;
 	require Genesis::UI;
 	#print "[2A";
-	info ('User input required:');
 	mkfile_or_fail($file,Genesis::UI::prompt_for_block($prompt));
 	0;
 }
