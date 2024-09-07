@@ -35,13 +35,14 @@ sub compile_kit {
 	my $dir;
 	unless ($options{name}) {
 		my $pwd =  getcwd;
-		if ($pwd =~ /\/([^\/]*)-deployments(\/)?$/) {
+		if ($pwd =~ /\/([^\/]*)(-deployments)?$/ && -f "$pwd/dev/kit.yml") {
 			# Building from dev/ inside a deployment repo - glean the name
 			$options{name} = $1;
 			$dir = "$pwd/dev";
+			$dir = readlink($dir) if (-l "$dir");
 			$options{dev} = 1;
 
-		} elsif ($pwd =~ /\/([^\/]*)-genesis-kit(\/)?$/) {
+		} elsif ($pwd =~ /\/([^\/]*)-genesis-kit$/) {
 			# Building from a Genesis Kit source repo
 			$options{name} = $1;
 			$dir = $pwd;
