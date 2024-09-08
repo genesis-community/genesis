@@ -3,7 +3,7 @@ TODO
 
 To-Do for v2.8.0+
 
- 1. Credhub add, check, rotate and remove secrets (v2.9.0)
+ 1. ~~Credhub add, check, rotate and remove secrets (V2.9.0)~~ done in 3.0.0
 
  2. Use Cepler for pipelines (2.10.0)
 
@@ -90,9 +90,9 @@ These things need to be done. They cannot be ignored.
   fully-generated, and compare it against the cloud-config
   (required argument) to see if they are mutually consistent.
 
-- (P4) **genesis sync** - Allows genesis to download the latest packed genesis and
+- ~~(P4) **genesis sync** - Allows genesis to download the latest packed genesis and
   replace the current executable.  Command not yet implemented (Low priority
-  as the jumpbox kit should grab the latest version)
+  as the jumpbox kit should grab the latest version)~~
 
 - (P3) Add --hooks to `create-kit` command;
   --hooks will take a list of one or more of valid hook names;
@@ -168,14 +168,14 @@ More:
 
 
 TODO 2023-06-30:
-* Many genesis commands don't need to validate to vault, or conditionally
+* ~~Many genesis commands don't need to validate to vault, or conditionally
   validate to vault, such as most of the kit commands.  Not having a vault or
-  being unable to connect to vault should not block these commands.
+  being unable to connect to vault should not block these commands.~~
   - Resolved: 2023-08-01
 
 * compile kit should:
-  a) detect if you're in a repo with a dev directory containing kit.yml and
-  assume -d option
+  a) ~~detect if you're in a repo with a dev directory containing kit.yml and
+  assume -d option~~ - Resovled: 2024-09-06
   b) Not error out if the kit name doesn't already exist when trying to
   ascertain previous versions
 
@@ -211,6 +211,7 @@ Turn output of `genesis envs` into json for easier parsing by other tools,
 maybe also csv for easy import into spreadsheets.
 
 * Add `genesis envs --json` and `genesis envs --csv` commands
+  * --json|-j added in 3.0.10 (2024-09-07)
 
 Add ability for `genesis update` to:
 
@@ -231,10 +232,10 @@ Add ability for `genesis update` to:
     offer to install there with the version in its name ie `genesis-2.8.12` or
     `g2.8.12`)
 
-Show what versions of releases are being overridden by the user from the ones
+~~Show what versions of releases are being overridden by the user from the ones
 that come from the kit.  Make it an option to show this during deploy/manifest
 generation.  Also good to see in an expanded `genesis envs` output (kit
-features in use, release overrides, etc).
+features in use, release overrides, etc).~~ Resolved in 3.0.4
 
 Genesis deploy should work like pipeline in regard to propagating the
 hierarchial changes.  Make this a value in the config file (deployment) and
