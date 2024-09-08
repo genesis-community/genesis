@@ -300,6 +300,7 @@ sub environments {
 		$filter_type =~ s/([\*\?])/.$1/g;
 	}
 
+	my $show_details = get_options->{details};
 	my $group_by = get_options->{group_by_env} ? 'env' : 'kit';
 	#preemptively check that vault is available
 	
@@ -316,120 +317,151 @@ sub environments {
 		@repos = grep {basename($_) =~ qr($filter_type)} @repos if $filter_type;
 		if (scalar @repos) {
 			$root =~ s{/?$}{/};
-			info "\nDeployment root #C{%s} contains the following:", humanize_path($root, $root_map) =~ s{/?$}{/}r =~ s{>\e\[0m/$}{>\e\[0m}r;
+			info(
+				"\nDeployment root #C{%s} contains the following%s:",
+				humanize_path($root, $root_map) =~ s{/?$}{/}r =~ s{>\e\[0m/$}{>\e\[0m}r,
+				$group_by eq 'env' ? " environments" : " repositories"
+			);
 			info $ansi_hide_cursor if $group_by eq 'env';
 			my %deployments_by_name;
 			my ($i,$j) = (0,0);
 			for my $repo (@repos) {
-				__processing($i, scalar(@repos), $j) if ($group_by eq 'env');
+				__processing($i, scalar(@repos), $j) if ($group_by eq 'env' && $show_details);
 				my $top = Genesis::Top->new($repo, silent_vault_check => 1, allow_no_vault => 1);
 				my $repo_label = basename($top->path);
 				my @envs = $top->envs; # Do the heavy lifting to determine which files are environments
 				@envs = grep {$_->name =~ qr($filter_env)} @envs if $filter_env;
-				__processing(++$i, scalar(@repos), $j) if ($group_by eq 'env');
+				__processing(++$i, scalar(@repos), $j) if ($group_by eq 'env' && $show_details);
 
 				if (scalar(@envs)) {
-					info "\n[[  >>#u{Environments under repo }#mu{%s}#u{:}", $repo_label if ($group_by eq 'kit');
+					if ($group_by eq 'kit') {
+						my $msg = "";
+						$msg .= sprintf(
+							"\n[[  >>#u{Environments under repo }#mu{%s}#u{:}",
+							$repo_label
+						) if $show_details;
+						info $msg;
+					}
 					for my $env (@envs) {
 						# Each environment is not initialized because otherwise we would
 						# get errors if it contains any bad configuration (ie invalid kit)
 						# We will try to load it and if it works, we're good -- otherwise
 						# we'll need to get what we can, and report the errors.
 
-						my $exodus = $top->vault->status ne 'ok' ? {} : $env->exodus_lookup('.',{});
 						my $env_info = {
 							name => $env->name,
 							type => $env->type,
 							path => $repo_label,
-							bosh_env => $exodus->{bosh} // $env->params->{bosh_env} // $env->name
 						};
 
-						my $loaded_env = eval {
-							$top->load_env($env->name);
-						};
-						if (my $err_msg = $@) {
-							my $kit_name = $env->params->{kit}{name} // 'unknown';
-							my $kit_version = $env->params->{kit}{version} // 'unknown';
-							my $kit_id = $kit_name . ($kit_name eq 'dev' ? '' : '/'.$kit_version);
-							$env_info->{kit_version} = $kit_version;
-							$env_info->{kit} = csprintf("%s #Ri{(not found)}", $kit_id);
-							$env_info->{is_director} = 'unknown';
-						} else {
-							$env = $loaded_env;
-							$env_info->{kit} = $env->kit->id;
-							$env_info->{kit_version} = $env->kit->version;
-							$env_info->{is_director} = $env->is_bosh_director;
-						};
-						if ($exodus->{dated}) {
-							$env_info->{last_deployed} = $exodus->{dated};
-							$env_info->{last_deployed_by} = $exodus->{deployer};
-							$env_info->{last_kit} = $exodus->{kit_name}.'/'.$exodus->{kit_version}.($exodus->{kit_is_dev} ? ' (dev)' : '');
-						}
-						$env_info->{vault_status} = $top->vault->status;
-						if ($top->vault->status ne 'ok') {
+						if ($show_details) {
+							# TODO: Extract this into a method so that it can be called per
+							# environment to get the details.
+							my $exodus = $top->vault->status ne 'ok' ? {} : $env->exodus_lookup('.',{});
+							$env_info->{bosh_env} = $exodus->{bosh} // $env->params->{bosh_env} // $env->name;
+							my $loaded_env = eval {
+								$top->load_env($env->name);
+							};
+							if (my $err_msg = $@) {
+								# FIXME: Test for 'genesis <xxx> does not meet minimum version of <yyy>' and provide a more helpful message.
+								my $kit_name = $env->params->{kit}{name} // 'unknown';
+								my $kit_version = $env->params->{kit}{version} // 'unknown';
+								my $kit_id = $kit_name . ($kit_name eq 'dev' ? '' : '/'.$kit_version);
+								$env_info->{kit_version} = $kit_version;
+								$env_info->{kit} = csprintf("%s #Ri{(not found)}", $kit_id);
+								$env_info->{is_director} = 'unknown';
+							} else {
+								$env = $loaded_env;
+								$env_info->{kit} = $env->kit->id;
+								$env_info->{kit_version} = $env->kit->version;
+								$env_info->{is_director} = $env->is_bosh_director;
+							};
+							if ($exodus->{dated}) {
+								$env_info->{last_deployed} = $exodus->{dated};
+								$env_info->{last_deployed_by} = $exodus->{deployer};
+								$env_info->{last_kit} = $exodus->{kit_name}.'/'.$exodus->{kit_version}.($exodus->{kit_is_dev} ? ' (dev)' : '');
+							}
 							$env_info->{vault_status} = $top->vault->status;
-							$env_info->{vault_url} = $top->config->get("secrets_provider.url");
+							if ($top->vault->status ne 'ok') {
+								$env_info->{vault_status} = $top->vault->status;
+								$env_info->{vault_url} = $top->config->get("secrets_provider.url");
+							}
+
+							if ($group_by eq 'kit') {
+								my $msg = sprintf(
+									"[[    #c{%s}: >>#m{%s}",
+									$env_info->{name},
+									$env_info->{kit}
+								);
+								if ($env_info->{last_deployed}) {
+									$msg .= sprintf(
+										" - deployed #yi{%s}by #G{%s} %s",
+										$env_info->{bosh_env} && $env_info->{bosh_env} ne $env_info->{name} ? "on BOSH $env_info->{bosh_env} " : '',
+										$env_info->{last_deployed_by},
+										strfuzzytime($env_info->{last_deployed}),
+									);
+									$msg .= " using kit #Y{$env_info->{last_kit}} #y\@{!}"
+										if ($env_info->{last_kit} ne $env_info->{kit});
+								} elsif ($env_info->{vault_status} ne 'ok') {
+									my $status = $env_info->{vault_status};
+									my $vault_url = $env_info->{vault_url};
+									$msg .= " - #Ri{vault }#Mi{$vault_url}#Ri{ is $status:} #Y{exodus deployment data unavailable}";
+								} else {
+									$msg .= " - #r{never deployed}";
+								}
+								info $msg;
+							} else {
+								__processing($i, scalar(@repos), ++$j);
+							}
+						} elsif ($group_by eq 'kit') {
+							my $msg = sprintf(
+								"    #m{%s}/#c{%s}",
+								$repo_label,
+								$env_info->{name},
+							);
+							info $msg;
 						}
 						push @{$deployments_by_name{$env_info->{name}}}, $env_info;
 
-						if ($group_by eq 'kit') {
-							my $msg = sprintf(
-								"[[    #c{%s}: >>#m{%s}",
-								$env_info->{name},
-								$env_info->{kit}
-							);
-							if ($env_info->{last_deployed}) {
-								$msg .= sprintf(
-									" - deployed #yi{%s}by #G{%s} %s",
-									$env_info->{bosh_env} && $env_info->{bosh_env} ne $env_info->{name} ? "on BOSH $env_info->{bosh_env} " : '',
-									$env_info->{last_deployed_by},
-									strfuzzytime($env_info->{last_deployed}),
-								);
-								$msg .= " using kit #Y{$env_info->{last_kit}} #y\@{!}"
-									if ($env_info->{last_kit} ne $env_info->{kit});
-							} elsif ($env_info->{vault_status} ne 'ok') {
-								my $status = $env_info->{vault_status};
-								my $vault_url = $env_info->{vault_url};
-								$msg .= " - #Ri{vault }#Mi{$vault_url}#Ri{ is $status:} #Y{exodus deployment data unavailable}";
-							} else {
-								$msg .= " - #r{never deployed}";
-							}
-							info $msg;
-						} else {
-							__processing($i, scalar(@repos), ++$j);
-						}
 					}
 				}
 			}
 			if ($group_by eq 'env') {
+				info {pending => 1}, $ansi_show_cursor;
 				if (scalar keys %deployments_by_name) {
-					info {pending => 1}, $ansi_reset_line.$ansi_cursor_up.$ansi_show_cursor;
-					for my $env_name (sort keys %deployments_by_name) {
-						info "\n[[  >>#u{Environment }#cu{%s}#u{:}", $env_name;
-						for my $env_info (@{$deployments_by_name{$env_name}}) {
-							my $type = $env_info->{is_director} ? '#R{BOSH director}' : '#G{'.$env_info->{type}.' deployment}';
-							my $msg = sprintf(
-								"[[    $type#yi{%s}: >>#m{%s}",
-								$env_info->{path} =~ /^$env_info->{type}(-deployments)?$/ ? '' : ' (in '.$env_info->{path}.')',
-								$env_info->{kit}
-							);
-							if ($env_info->{last_deployed}) {
-								$msg .= sprintf(
-									" - deployed #yi{%s}by #G{%s} %s",
-									$env_info->{bosh_env} && $env_info->{bosh_env} ne $env_info->{name} ? "on BOSH $env_info->{bosh_env} " : '',
-									$env_info->{last_deployed_by},
-									strfuzzytime($env_info->{last_deployed}),
+					if ($show_details) {
+						info {pending => 1}, $ansi_reset_line.$ansi_cursor_up;
+						for my $env_name (sort keys %deployments_by_name) {
+							info "\n[[  >>#u{Environment }#cu{%s}#u{:}", $env_name;
+							for my $env_info (@{$deployments_by_name{$env_name}}) {
+								my $type = $env_info->{is_director} ? '#R{BOSH director}' : '#G{'.$env_info->{type}.' deployment}';
+								my $msg = sprintf(
+									"[[    $type#yi{%s}: >>#m{%s}",
+									$env_info->{path} =~ /^$env_info->{type}(-deployments)?$/ ? '' : ' (in '.$env_info->{path}.')',
+									$env_info->{kit}
 								);
-								$msg .= " using kit #Y{$env_info->{last_kit}} #y\@{!}"
-									if ($env_info->{last_kit} ne $env_info->{kit});
-							} elsif ($env_info->{vault_status} ne 'ok') {
-								my $status = $env_info->{vault_status};
-								my $vault_url = $env_info->{vault_url};
-								$msg .= " - #Ri{vault }#Mi{$vault_url}#Ri{ is $status:} #Y{exodus deployment data unavailable}";
-							} else {
-								$msg .= " - #r{never deployed}";
+								if ($env_info->{last_deployed}) {
+									$msg .= sprintf(
+										" - deployed #yi{%s}by #G{%s} %s",
+										$env_info->{bosh_env} && $env_info->{bosh_env} ne $env_info->{name} ? "on BOSH $env_info->{bosh_env} " : '',
+										$env_info->{last_deployed_by},
+										strfuzzytime($env_info->{last_deployed}),
+									);
+									$msg .= " using kit #Y{$env_info->{last_kit}} #y\@{!}"
+										if ($env_info->{last_kit} ne $env_info->{kit});
+								} elsif ($env_info->{vault_status} ne 'ok') {
+									my $status = $env_info->{vault_status};
+									my $vault_url = $env_info->{vault_url};
+									$msg .= " - #Ri{vault }#Mi{$vault_url}#Ri{ is $status:} #Y{exodus deployment data unavailable}";
+								} else {
+									$msg .= " - #r{never deployed}";
+								}
+								info $msg;
 							}
-							info $msg;
+						}
+					} else {
+						for my $env_name (sort keys %deployments_by_name) {
+							info "[[  #cu{%s:} >>%s\n", $env_name, join(', ', map {$_->{path} =~ s/-deployments$//r} @{$deployments_by_name{$env_name}})
 						}
 					}
 				} else {
