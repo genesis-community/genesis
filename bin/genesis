@@ -689,15 +689,17 @@ define_command("environments", {
 	alias => 'envs',
 	description =>
 		"List the environments in the known deployment repositories, along with ".
-		"the path to the environment file, the kit used, and the last deployment ".
-		"status.",
+		"the path to the environment file and deployment type.",
 	function_group => Genesis::Commands::INFO,
 	scope => 'all',
 	option_group => Genesis::Commands::REPO_OPTIONS,
 	options => [
 		'group_by_env|G' =>
 			"Group the environments by the environment name, rather than by the ".
-			"kit repository."
+			"kit repository.",
+		'details|d|v' =>
+			"Show more details about the environment, including the last deployment ".
+			"status, the last deployment time, and the last deployment version."
 	],
 	no_vault => 0
 });
