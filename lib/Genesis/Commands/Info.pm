@@ -302,6 +302,8 @@ sub environments {
 
 	my $show_details = get_options->{details};
 	my $group_by = get_options->{group_by_env} ? 'env' : 'kit';
+	my $json = get_options->{json};
+	my %data;
 	#preemptively check that vault is available
 	
 	# Get the list of deployment roots
@@ -315,26 +317,35 @@ sub environments {
 		my $root = $root_map->{roots}{$label};
 		my @repos = grep {Genesis::Top->is_repo($_)} map {s{/.genesis/config$}{}; $_} glob("$root/*/.genesis/config");
 		@repos = grep {basename($_) =~ qr($filter_type)} @repos if $filter_type;
+		my %envs_by_deployments;
+		my %deployments_by_name;
 		if (scalar @repos) {
 			$root =~ s{/?$}{/};
-			info(
-				"\nDeployment root #C{%s} contains the following%s:",
-				humanize_path($root, $root_map) =~ s{/?$}{/}r =~ s{>\e\[0m/$}{>\e\[0m}r,
-				$group_by eq 'env' ? " environments" : " repositories"
-			);
+			if ($json) {
+				info(
+					"\nReading %s under deployment root #C{%s}",
+					$group_by eq 'env' ? "environments" : "repositories",
+					humanize_path($root, $root_map) =~ s{/?$}{/}r =~ s{>\e\[0m/$}{>\e\[0m}r
+				);
+			} else {
+				info(
+					"\nDeployment root #C{%s} contains the following %s:",
+					humanize_path($root, $root_map) =~ s{/?$}{/}r =~ s{>\e\[0m/$}{>\e\[0m}r,
+					$group_by eq 'env' ? "environments" : "repositories"
+				);
+			}
 			info $ansi_hide_cursor if $group_by eq 'env';
-			my %deployments_by_name;
 			my ($i,$j) = (0,0);
 			for my $repo (@repos) {
-				__processing($i, scalar(@repos), $j) if ($group_by eq 'env' && $show_details);
+				__processing($i, scalar(@repos), $j) if ($show_details && ($group_by eq 'env' || $json));
 				my $top = Genesis::Top->new($repo, silent_vault_check => 1, allow_no_vault => 1);
 				my $repo_label = basename($top->path);
 				my @envs = $top->envs; # Do the heavy lifting to determine which files are environments
 				@envs = grep {$_->name =~ qr($filter_env)} @envs if $filter_env;
-				__processing(++$i, scalar(@repos), $j) if ($group_by eq 'env' && $show_details);
+				__processing(++$i, scalar(@repos), $j) if ($show_details && ($group_by eq 'env' || $json));
 
 				if (scalar(@envs)) {
-					if ($group_by eq 'kit') {
+					if ($group_by eq 'kit' && ! $json) {
 						my $msg = "";
 						$msg .= sprintf(
 							"\n[[  >>#u{Environments under repo }#mu{%s}#u{:}",
@@ -374,7 +385,7 @@ sub environments {
 								$env = $loaded_env;
 								$env_info->{kit} = $env->kit->id;
 								$env_info->{kit_version} = $env->kit->version;
-								$env_info->{is_director} = $env->is_bosh_director;
+								$env_info->{is_director} = $env->is_bosh_director ? JSON::PP::true : JSON::PP::false;
 							};
 							if ($exodus->{dated}) {
 								$env_info->{last_deployed} = $exodus->{dated};
@@ -387,7 +398,9 @@ sub environments {
 								$env_info->{vault_url} = $top->config->get("secrets_provider.url");
 							}
 
-							if ($group_by eq 'kit') {
+							if ($group_by eq 'env' || $json) {
+								__processing($i, scalar(@repos), ++$j);
+							} else {
 								my $msg = sprintf(
 									"[[    #c{%s}: >>#m{%s}",
 									$env_info->{name},
@@ -410,10 +423,8 @@ sub environments {
 									$msg .= " - #r{never deployed}";
 								}
 								info $msg;
-							} else {
-								__processing($i, scalar(@repos), ++$j);
 							}
-						} elsif ($group_by eq 'kit') {
+						} elsif ($group_by eq 'kit' && ! $json) {
 							my $msg = sprintf(
 								"    #m{%s}/#c{%s}",
 								$repo_label,
@@ -421,16 +432,18 @@ sub environments {
 							);
 							info $msg;
 						}
+						$envs_by_deployments{$repo_label}{$env_info->{name}} = $env_info;
 						push @{$deployments_by_name{$env_info->{name}}}, $env_info;
-
 					}
 				}
 			}
-			if ($group_by eq 'env') {
-				info {pending => 1}, $ansi_show_cursor;
+
+			info {pending => 1}, $ansi_show_cursor.$ansi_reset_line.$ansi_cursor_up
+				if $show_details && ($group_by eq 'env' || $json);
+
+			if ($group_by eq 'env' && ! $json) {
 				if (scalar keys %deployments_by_name) {
 					if ($show_details) {
-						info {pending => 1}, $ansi_reset_line.$ansi_cursor_up;
 						for my $env_name (sort keys %deployments_by_name) {
 							info "\n[[  >>#u{Environment }#cu{%s}#u{:}", $env_name;
 							for my $env_info (@{$deployments_by_name{$env_name}}) {
@@ -475,8 +488,18 @@ sub environments {
 		} elsif ($label !~ /^@/) {
 			warning("#Ki{No environments found under deployment root }#C{%s}", $root)
 		}
+		if ($group_by eq 'env') {
+			next if $label =~ /^@/ && ! scalar(keys %deployments_by_name);
+			$data{$label}{environments} = \%deployments_by_name;
+		} else {
+			next if $label =~ /^@/ && ! scalar(keys %envs_by_deployments);
+			$data{$label}{deployments} = \%envs_by_deployments;
+		}
 	}
-	info '';
+	if ($json) {
+		output {raw => 1}, encode_json(\%data);
+	}
+	info $ansi_show_cursor;
 }
 
 sub __processing {
