@@ -207,3 +207,34 @@ for permition to rotate/add the missing secrets or upload the missing stemcells
 to the director and continue the deployment.  This may be scoped to a
 secondary work item, but should be considered if generalization of the above
 code can be done to accomodate this.
+
+### Environment Scale
+
+* [ ] The environment scale can be specified in the environment, or the
+  default can be from the bosh director deploying it.  The default for the
+  bosh director if not specified in the environment file will be `dev`.
+
+* [ ] On deployment, the scale will be made available in the exodus data for
+  the deployment.
+
+* [ ] Kits will provide cloud-config fragments that will match the scales
+  available for that kit.  If the scale is not available in the kit, the
+  deployment will abort with an error message.
+
+* [ ] If the user provides an `ops/<scale>-cloud-config.yml` file, it will be
+  used as an override for the kit's cloud-config fragments.  This includes
+  scales other than those known to the kit, but in that case, the kit's scale
+  files will not be merged first, and the user will have to provide all the
+  necessary cloud-config fragments for that scale.
+
+* [ ] The network fragment can also be provided in the
+  `ops/<scale>-cloud-config.yml` file, and will be extracted to merge with the
+  kits network fragments to apply to the network section of the
+  cloud-config.yml based on the `bosh-configs.cloud.networks` definition.
+  Alternatively, this could be a separate file, but not sure if that's needed.
+
+* [ ] The format of the `ops/<scale>-cloud-config.yml` file will have to take
+  Iaas-specific cloud-config format into account. TBD: Should there be
+  iaas-specific files for this (as per the kit) or should the iaas-specific
+  parts be under the Iaas keys in the file.
+
