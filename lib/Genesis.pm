@@ -790,7 +790,7 @@ sub chmod_or_fail {
 
 our %path_cache = ();
 sub humanize_path {
-	my ($path, $absolute) = @_;
+	my ($path, %opts) = @_;
 
 	#TODO: cache paths better
 	my $pwd = Cwd::abs_path($ENV{GENESIS_CALLER_DIR} || Cwd::getcwd());
@@ -802,8 +802,20 @@ sub humanize_path {
 	while ($path =~ s/\/[^\/]*\/\.\.\//\//) {};
 	while ($path =~ s/\/\.\//\//) {};
 
+	if (defined $opts{root_map}) {
+		my %root_map = %{$opts{root_map}{roots}};
+		my %path_lookup = map {($root_map{$_}, $_)} keys %root_map;
+		for my $root (sort {length($b) <=> length($a)} keys %path_lookup) {
+			next if ($root eq $path_lookup{$root}); # skip unnamed roots
+			if (substr($path,0,length($root)) eq $root) {
+				$path = "[Deployment Root '$path_lookup{$root}']:".substr($path,length($root)+1);
+				return $path;
+			}
+		}
+	}
+
 	my $rel_path;
-	unless ($absolute) {
+	unless ($opts{absolute}) {
 		my @path_bits = split('/',$path);
 		my @pwd_bits = split('/',$pwd);
 		my $i=-1; while ($i < $#path_bits && $i < $#pwd_bits && $path_bits[++$i] eq $pwd_bits[$i]) {};
