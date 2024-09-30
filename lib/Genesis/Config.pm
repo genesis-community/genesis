@@ -250,9 +250,9 @@ sub _signature {
 # }}}
 # _validate_key - validate a value against a schema {{{
 sub _validate_key {
-	my ($self, $key, $schema) = @_;
+	my ($self, $key, $schema, $type) = @_;
 	my @errors = ();
-	my $type = $schema->{type} or bug "Schema for $key has no type";
+	$type //= $schema->{type} or bug "Schema for $key has no type";
 	my $value = $self->get($key);
 
 	if ($type =~ m/\|\|/) {
@@ -273,7 +273,7 @@ sub _validate_key {
 			push @errors, "#R{$key}: expected an array";
 		} else {
 			for my $i (0..$#{$value}) {
-				my @subkey_errors = $self->_validate_key("$key\[$i\]", $schema->{schema});
+				my @subkey_errors = $self->_validate_key("$key\[$i\]", $schema, 'hash');
 				push @errors, @subkey_errors if @subkey_errors;
 			}
 		}
@@ -282,8 +282,24 @@ sub _validate_key {
 			push @errors, "#R{$key}: expected a hash";
 		} else {
 			# Ensure all required keys are present, and all defaults are set
+			my %variant_schema = ();
 			for my $subkey (keys %{$schema->{schema}}) {
-				my $subschema = $schema->{schema}{$subkey};
+				my $subschema = {%{$schema->{schema}{$subkey}}};
+				if (exists($subschema->{vary_on}) || exists($subschema->{variant_schema})) {
+					bail(
+						"Schema for $key.$subkey is missing no vary_on or variant_schema - both must be present"
+					) unless exists($subschema->{vary_on}) && exists($subschema->{variant_schema});
+					bail(
+						"Schema for $key.$subkey requires a value for $key.%s for validation",
+						$subschema->{vary_on}
+					) unless exists($value->{$subschema->{vary_on}});
+					my $variant_value = $value->{$subschema->{vary_on}};
+					my $keyschema = $subschema->{variant_schema}{$variant_value};
+					next unless defined($keyschema);
+					$subschema = {(%$subschema, %$keyschema)};
+					delete($subschema->{$_}) for qw(vary_on variant_schema);
+					$variant_schema{$subkey} = $subschema;
+				}
 				if (exists($subschema->{envvar}) && exists($ENV{$subschema->{envvar}})) {
 					# Environment variables take precedence over configuration values.
 					$self->set("$key.$subkey", $ENV{$subschema->{envvar}});
@@ -294,11 +310,17 @@ sub _validate_key {
 				}
 			}
 			for my $subkey (sort keys %$value) {
-				if (! exists($schema->{schema}{$subkey})) {
-					push @errors, "#R{$key.$subkey}: unknown configuration key: expected one of ".join(', ', keys %{$schema->{schema}});
+				my $subschema = {%{$schema->{schema}}};
+				my @valid_keys = keys %{$subschema};
+				# Remove keys with undefined schemas in variants (they are not valid)
+				if (exists($variant_schema{$subkey}) && !defined($variant_schema{$subkey})) {
+					@valid_keys = grep {$_ ne $subkey} @valid_keys;
+				}
+				if (! exists($subschema->{$subkey})) {
+					push @errors, "#R{$key.$subkey}: unknown configuration key: expected one of ".join(', ', keys %$subschema);
 					next;
 				}
-				my @subkey_errors = $self->_validate_key("$key.$subkey", $schema->{schema}{$subkey});
+				my @subkey_errors = $self->_validate_key("$key.$subkey", $variant_schema{$subkey} ? $variant_schema{$subkey} : $subschema->{$subkey});
 				push @errors, @subkey_errors if @subkey_errors;
 			}
 		}

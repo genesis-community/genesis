@@ -1,4 +1,4 @@
-package Genesis::Kit::Compiled;
+package Genesis::Kit::Vaultified;
 use strict;
 use warnings;
 
@@ -8,27 +8,33 @@ use Genesis::Term;
 use Genesis::Helpers;
 
 sub new {
-	my ($class, %opts) = @_;
+	my ($class, $vault, $path, $name, $version) = @_;
+
+	bail (
+		"Cannot find kit %s in vault %s",
+		$path, $vault->name
+	) unless $vault->has($path);
+
+	my ($path_name, $path_version) = m{([^/]*):(\d+(\.\d+(\.\d+([.-]rc[.-]?\d+)?)?)?)$};
+
 	bless({
-		name     => $opts{name},
-		version  => $opts{version},
-		archive  => $opts{archive},
-		provider => $opts{provider},
+		name     =>  $name || $path_name,
+		version  =>  $version || $path_version,
+		path     =>  $path,
+		vault    =>  $vault,
 	}, $class);
 }
 
 sub local_kits {
-	my ($class, $provider, $path) = @_;
-	$path ||= '.';
+	my ($class, $vault, $base_path) = @_;
+	$base_path ||= '/secret/exodus/_genesis_/kits/';
+	$base_path =~ s{/?$}{/};
 
 	my %kits;
-	for (glob("$path/*")) {
-		next unless m{/([^/]*)-(\d+(\.\d+(\.\d+([.-]rc[.-]?\d+)?)?)?).t(ar.)?gz$};
+	for (vault->keys("$base_path")) {
+		next unless m{/([^/]*):(\d+(\.\d+(\.\d+([.-]rc[.-]?\d+)?)?)?)$};
 		$kits{$1}{$2} = $class->new(
-			name     => $1,
-			version  => $2,
-			archive  => $_,
-			provider => $provider
+			$vault, $_, $1, $2,
 		);
 	}
 	return \%kits;
@@ -60,16 +66,16 @@ sub kit_bug {
 
 sub location {
 	my ($self) = @_;
-	my $loc = humanize_path($self->{archive}, root_map => scalar(Genesis::deployment_roots_map()));
-	$loc =~ s{.genesis/kits/.*}{}; # strip off the .genesis/kits/... part
-	return "from deployment $loc";
+	return sprintf("from %s in vault %s", $self->path, $self->vault->name);
 }
 
 sub unpack {
 	my ($self, $dest) = @_;
-	run({ onfailure => 'Could not read kit file' },
-	    'tar -xz -C "$1" --strip-components 1 -f "$2"',
-	    $dest, $self->{archive});
+	my $content = $self->vault->get($self->path);
+
+	mkdir_or_fail($dest) unless -d $dest;
+	run({ onfailure => 'Could not extract compiled kit' },
+		'echo "$1" | base64 -d | tar -C "$2" -xzf -', $content, $dest);
 }
 
 1;
