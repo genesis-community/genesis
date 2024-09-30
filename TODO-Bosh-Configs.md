@@ -4,11 +4,11 @@
 
 ### Environment File
 
-* [ ] Contains section `kit.scale` with one of the following values:
+* [ ] Contains section `params.scale` with one of the following values:
   * [ ] `dev` - suitable for development and testing
   * [ ] `lab` - suitable for internal organizational testing
   * [ ] `prod` - suitable for nominal production deployments
-  * [ ] `xlprod` - suitable for large production deployments
+  * [ ] `prod-xl` - suitable for extra large production deployments
   * [ ] *other* - must be specified in the `ops/other-cloud-config.yml` file - **expert level only**
 
 * [ ] Contains section `bosh-configs` with the following keys:
