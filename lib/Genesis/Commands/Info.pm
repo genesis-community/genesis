@@ -355,12 +355,12 @@ sub environments {
 				info(
 					"\nReading %s under deployment root #C{%s}",
 					$group_by eq 'env' ? "environments" : "repositories",
-					humanize_path($root, $root_map) =~ s{/?$}{/}r =~ s{>\e\[0m/$}{>\e\[0m}r
+					humanize_path($root, root_map => $root_map) =~ s{/?$}{/}r =~ s{>\e\[0m/$}{>\e\[0m}r
 				);
 			} else {
 				info(
 					"\nDeployment root #C{%s} contains the following %s:",
-					humanize_path($root, $root_map) =~ s{/?$}{/}r =~ s{>\e\[0m/$}{>\e\[0m}r,
+					humanize_path($root, root_map => $root_map) =~ s{/?$}{/}r =~ s{>\e\[0m/$}{>\e\[0m}r,
 					$group_by eq 'env' ? "environments" : "repositories"
 				);
 			}
@@ -477,7 +477,9 @@ sub environments {
 						for my $env_name (sort keys %deployments_by_name) {
 							info "\n[[  >>#u{Environment }#cu{%s}#u{:}", $env_name;
 							for my $env_info (@{$deployments_by_name{$env_name}}) {
-								my $type = $env_info->{is_director} ? '#R{BOSH director}' : '#G{'.$env_info->{type}.' deployment}';
+								my $type = ($env_info->{is_director} && $env_info->{is_director} ne 'unknown')
+								? '#R{BOSH director}'
+								: '#G{'.$env_info->{type}.' deployment}';
 								my $msg = sprintf(
 									"[[    $type#yi{%s}: >>#m{%s}",
 									$env_info->{path} =~ /^$env_info->{type}(-deployments)?$/ ? '' : ' (in '.$env_info->{path}.')',
