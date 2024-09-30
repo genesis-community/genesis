@@ -410,6 +410,7 @@ sub exists {
 	unless (ref($ref)) {
 		# called on the class, need a instance
 		return undef if _env_name_errors($args{name});
+		return undef unless $args{top};
 		eval{ $ref = $ref->new(%args) };
 		bug ("Failed to check existence of Genesis Environment: %s", $@) if $@;
 		return undef unless $ref;
@@ -502,9 +503,9 @@ sub search_for_env_file {
 				} else {
 					$fmt_section = csprintf("#Bu{%sDeployment Root:} #Ki{%s}", $flag, $target_path);
 				}
-				("---$fmt_section---", [$fmt_label, csprintf("#C{%s}", humanize_path($root_map->{$section}, 1))."/$fmt_label"])
+				("---$fmt_section---", [$fmt_label, csprintf("#C{%s}", humanize_path($root_map->{$section}, absolute => 1))."/$fmt_label"])
 			} else {
-				[$fmt_label, csprintf("#C{%s}", humanize_path($root_map->{$section}, 1))."/$fmt_label"]
+				[$fmt_label, csprintf("#C{%s}", humanize_path($root_map->{$section}, absolute => 1))."/$fmt_label"]
 			}
 		} @files;
 

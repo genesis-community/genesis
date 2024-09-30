@@ -312,9 +312,9 @@ sub search_for_repo_path {
 				} else {
 					$fmt_section = csprintf("#Bu{%sDeployment Root:} #Ki{%s}", $flag, $target_path);
 				}
-				("---$fmt_section---", [$fmt_label, csprintf("#C{%s}", humanize_path($root_map->{$section}, 1))."/$fmt_label"])
+				("---$fmt_section---", [$fmt_label, csprintf("#C{%s}", humanize_path($root_map->{$section}, absolute => 1))."/$fmt_label"])
 			} else {
-				[$fmt_label, csprintf("#C{%s}", humanize_path($root_map->{$section}, 1))."/$fmt_label"]
+				[$fmt_label, csprintf("#C{%s}", humanize_path($root_map->{$section}, absolute => 1))."/$fmt_label"]
 			}
 		} @paths;
 		bail(
@@ -692,7 +692,11 @@ sub load_env {
 	} elsif (in_callback() && $name eq $ENV{'GENESIS_ENVIRONMENT'}) {
 		return Genesis::Env->from_envvars($self);
 	} else {
-		bail "Environment file #C{%s} does not exist", humanize_path($self->path($name.".yml"));
+		bail(
+			"Environment file #C{%s} does not exist%s",
+			humanize_path($self->path($name.".yml")),
+			-f $self->path(".genesis/config") ? '' : " - this does not appear to be a Genesis deployment directory!"
+		);
 	}
 }
 
@@ -701,6 +705,7 @@ sub load_env {
 sub has_env {
 	my ($self, $name) = @_;
 	$name =~ s/.yml$//;
+	return undef unless -f $self->path("$name.yml");
 	return Genesis::Env->exists(
 		top => $self,
 		name => $name
