@@ -21,6 +21,44 @@ sub new {
 
 ### Instance Methods {{{
 
+sub name {
+	return $_[0]->{name} || $_[0]->metadata->{name} || 'unknown';
+}
+
+sub version {
+	return $_[0]->{version} || $_[0]->metadata->{version} || 'latest';
+}
+
+sub id {
+	return $_[0]->name.'/v'.$_[0]->version;
+}
+
+sub location {
+	bug('Base kits do not have a location - derived kit types must implement this method');
+}
+
+sub type {
+	return ref($_[0]) =~ s/Genesis::Kit::(.*)/\l$1/r;
+}
+
+# unpack - {{{
+sub unpack {
+	my ($self, $dest) = @_;
+	bug("Cannot unpack a base kit");
+}
+
+# }}}
+# extract - {{{
+sub extract {
+	my ($self) = @_;
+	return if $self->{root};
+	$self->{root} = workdir();
+	$self->unpack($self->{root});
+	Genesis::Helpers->write("$self->{root}/.helper");
+	return 1;
+}
+
+# }}}
 # path - {{{
 sub path {
 	my ($self, $path) = @_;

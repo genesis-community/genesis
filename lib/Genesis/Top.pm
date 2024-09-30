@@ -11,6 +11,8 @@ use Genesis::UI qw/prompt_for_boolean prompt_for_choice/;
 use Genesis::Env;
 use Genesis::Kit::Compiled;
 use Genesis::Kit::Dev;
+use Genesis::Kit::Unpacked;
+use Genesis::Kit::Vaultified;
 use Genesis::Kit::Provider;
 use Service::Vault::Remote;
 use Service::Vault::None;
@@ -728,7 +730,16 @@ sub create_env {
 # }}}
 
 # Kit handling
+
+# TODO: Refactor how kits are handled to allow kits to be retrieved from
+#       the local .genesis/kits directory, locally unpacked directories,
+#       alternative paths to compiled kits, and compiled kits stored in
+#
+#       Right now, the Genesis::Env object is responsible for managing
+#       the selection of kits.
+
 # local_kits - return the list of the kits available locally {{{
+
 sub local_kits {
 	my ($self) = @_;
 	return Genesis::Kit::Compiled->local_kits(
@@ -764,6 +775,92 @@ sub local_kit_version {
 	return $kits->{$name}{$version};
 }
 
+# }}}
+# get_kit - return the Genesis::Kit object for the given name and version {{{
+sub get_kit { 
+	my ($self, $name, $version, $source) = @_;
+	$version = '*' if $version eq 'latest';
+
+	if ($version eq 'dev' || $name eq 'dev') {
+		if (!$self->has_dev_kit) {
+			bail(
+				"Dev kit not found in %s",
+				$self->path()
+			);
+		}
+		my $kit = Genesis::Kit::Dev->new($self->path('dev'), $name);
+		if ($name eq 'dev') {
+			warning(
+				"\nUsing 'dev' as the kit name is deprecated.  Please specify the kit ".
+				"name in the environment file, with `dev` as the version."
+			) unless $ENV{GENESIS_DEV_KIT_NAME_WARNING};
+			$ENV{GENESIS_DEV_KIT_NAME_WARNING} = 1;
+		} elsif ($kit->metadata->{name} ne $name) {
+			warning(
+				"\nDev kit in %s expected to be a %s kit, but specifies %s as the kit name",
+				$self->path(), $name, $kit->name
+			) unless $ENV{GENESIS_DEV_KIT_NAME_MISMATCH_WARNING};
+			$ENV{GENESIS_DEV_KIT_NAME_MISMATCH_WARNING} = 1;
+		}
+		return $kit;
+	}
+
+	my (@unpacked_kits, @compiled_kits, @vault_kits) = ();
+	if (!$source || $source eq 'local') {
+		@unpacked_kits = map {s{kit.yml$}{}r} grep {-f} (glob $self->path("$name-$version/kit.yml"));
+		if (@unpacked_kits && $version ne '*') {
+			require Genesis::Kit::Unpacked;
+			return Genesis::Kit::Unpacked->new($self, $name, $version, $unpacked_kits[0]);
+		}
+	}
+
+	if (!$source || $source eq 'repo') {
+		@compiled_kits = grep {-f} (glob $self->path(".genesis/kits/$name-$version.t{ar.,}gz"));
+		if (@compiled_kits && $version ne '*') {
+			return Genesis::Kit::Compiled->new(
+				name     => $name,
+				version  => $version,
+				archive  => $compiled_kits[0],
+				provider => $self->kit_provider
+			);
+		}
+	}
+
+	if (!$source || $source eq 'vault') {
+		@vault_kits = $self->vault->paths($self->kit_mount."$name:".($version eq '*' ? '' : "$version"));
+		if (@vault_kits && $version ne '*') {
+			return Genesis::Kit::Vaultified->new($self->vault, $vault_kits[0], $name, $version);
+		}
+	}
+
+	bail(
+		"Could not find kit #M{%s}/v#C{%s} in any the local, repo or vault locations.",
+		$version, $name
+	) unless $version eq '*';
+
+	my %versions = (
+		map {s{.*/$name-(.*).t(ar.)?gz}{$1}r => [compiled => $_]} @compiled_kits,
+		map {s{.*/$name:}{}r => [vault => $_]} @vault_kits,
+		map {s{.*/$name-(.*)/}{$1}r => [unpacked => $_]} @unpacked_kits
+	);
+
+	my $latest = (sort by_semver keys %versions)[-1];
+	if ($versions{$latest}[0] eq 'compiled') {
+		return Genesis::Kit::Compiled->new(
+			name     => $name,
+			version  => $latest,
+			archive  => $versions{$latest}[1],
+			provider => $self->kit_provider
+		);
+	} elsif ($versions{$latest}[0] eq 'vault') {
+		return Genesis::Kit::Vaultified->new($self->vault, $versions{$latest}[1], $name, $latest);
+	} elsif ($versions{$latest}[0] eq 'unpacked') {
+		return Genesis::Kit::Unpacked->new($versions{$latest}[1], $name, $latest);
+	}
+
+	return;
+}
+	
 # }}}
 # remote_kit_names - get available kit names from kit provider {{{
 sub remote_kit_names {
@@ -861,6 +958,64 @@ sub _validate_config {
 			},
 			allow_oversized_secrets   => {type => 'boolean'},
 			confirm_release_overrides => {type => 'enum', values => [qw/always outdated never/], envvar => 'GENESIS_CONFIRM_RELEASE_OVERRIDES' },
+		});
+	} elsif ($config_version == 3) {
+		$self->config->validate({
+			deployment_type  => {type => 'string', required => 1},
+			version          => {type => '"3"', required => 1},
+			creator_version  => {type => 'semver||"(development)"||"Unknown"', required => 1},
+			updater_version  => {type => 'semver||"(development)"'},
+			kit_providers    => {
+				type => 'hasharray',
+				schema => {
+					type         => {type => 'enum', values => ['vault','dev','unpacked','repo','file-archive','github','genesis-community']}, # absences means genesis-community
+					name         => {type => 'string'},
+					deployable   => {type => 'boolean'}, # TODO: variant default based on type? or move into options?
+					disabled     => {type => 'boolean', default => Genesis::Config::FALSE},
+					options => {
+						type           => 'hash',
+						vary_on        => 'type',
+						variant_schema => {
+							vault => {
+								required       => Genesis::Config::FALSE,
+								schema => {
+									url          => {type => 'string',  required => 1},
+									insecure     => {type => 'boolean', default => Genesis::Config::TRUE},
+									strongbox    => {type => 'boolean', default => Genesis::Config::TRUE},
+									namespace    => {type => 'string',  default => ''},
+									alias        => {type => 'string'}
+								}
+							},
+							github => {
+								required => Genesis::Config::TRUE,
+								schema => {
+									organization => {type => 'string',  required => 1},
+									label        => {type => 'string'},
+									tls          => {type => 'boolean', default => Genesis::Config::TRUE},
+									domain       => {type => 'string',  default => 'github.com'},
+								}
+							},
+							"file-archive" => {
+								required => Genesis::Config::TRUE,
+								schema => {
+									path         => {type => 'string', required => 1},
+								}
+							},
+						}
+					},
+				}
+			},
+			secrets_provider => {
+				type           => 'hash',
+				schema         => {
+					url          => {type => 'string', required => 1},
+					insecure     => {type => 'boolean', default => Genesis::Config::TRUE},
+					strongbox    => {type => 'boolean', default => Genesis::Config::TRUE},
+					namespace    => {type => 'string'},
+					alias        => {type => 'string'}
+				}
+			},
+			allow_oversized_secrets => {type => 'boolean'},
 		});
 	} else {
 		bail "Genesis deployment repo configuration version $config_version is not supported";

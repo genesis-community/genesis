@@ -316,6 +316,9 @@ sub kit_manual {
 sub environments {
 
 	pushd($ENV{GENESIS_ORIGINATING_DIR}) if $ENV{GENESIS_ORIGINATING_DIR};
+	$ENV{GENESIS_DEV_KIT_NAME_WARNING} = 1;
+	$ENV{GENESIS_DEV_KIT_NAME_MISMATCH_WARNING} = 1;
+	$ENV{GENESIS_NO_KIT_LOCATION} = 1;
 
 	my ($filter_env, $filter_type,$search) = ();
 	if ($ENV{GENESIS_PREFIX_TYPE} eq 'search') {

@@ -1135,7 +1135,7 @@ define_command("decompile-kit", {
 	alias => 'dk',
 	description =>
 		"Decompile the specified kit (by name/version, path, or in use by the ".
-		"given environment file) into a local 'dev' directory.  This can be used ".
+		"given environment file) into a local directory.  This can be used ".
 		"to alter the kit from published version (ie for bug fixes or feature ".
 		"augmentation) by specifying the kit.name key in your environment file.",
 	function_group => Genesis::Commands::KIT,
@@ -1144,7 +1144,8 @@ define_command("decompile-kit", {
 	option_group => Genesis::Commands::REPO_OPTIONS,
 	options => [
 		'directory|d=s' =>
-			"Path to decompile kit into (defaults to dev)",
+			"Path to decompile kit into (defaults to name-version).  A common ".
+			"alternative is 'dev' to decompile into the dev directory.",
 
 		'force|f' =>
 			"Overwrite dev/, if it exists."
@@ -1220,20 +1221,39 @@ define_command("fetch-kit", {
 	scope => 'repo',
 	option_group => Genesis::Commands::REPO_OPTIONS,
 	options => [
+		'provider|p=s' => { argument => ' <type[:path]>', description =>
+			"Specify the kit provider to fetch the kit from.  Valid providers are ".
+			"`vault`, `github`, `local`, and `genesis-community`.  If not specified, ".
+			"`genesis-community` is used. If the provider is not `genesis-community`, ".
+			"paths for the provider can be specified after a colon, ie ".
+			"`vault:[url@]/path/to/kits`,`local:/path/to/kits` or `github:org/repo`. "
+		},
+
+		'destination|d=s' => { argument => ' <type[:path]>', description =>
+			"Specify the directory to download the kit into.  If not specified, the ".
+			"kit will be downloaded into the .genesis/kits directory in the current ".
+			"repository. Other options are `vault[:[url@]/path/to/kits]`, ".
+			"`local:/path/to/kits`, or `unpacked`.  If `unpacked` is specified, the ".
+			"kit will be downloaded and unpacked into a directory named after the ".
+			"kit (name-version) in the root deployment directory."
+		},
+
 		'force|f' =>
 			"Force refetching the specified kit, or overwriting the ./dev directory, ".
 			"even if it already exists.",
 
-		'to=s' => {argument => ' <path>', description =>
-			"Normally, the kit is downloaded into the .genesis/kits in your repo ".
-			"directory.  Use this option to download it to any specified directory.\n",
-		},
 		'as-dev|d' =>
 			"After downloading the specified kit, decompile it to the dev director\n".
 			"\n".
 			"Note: if using this option, you must specify a single version of the ".
 			"kit to download",
 
+	],
+	deprecated_options => [
+		'!to=s' => {argument => ' <path>', description =>
+			"Normally, the kit is downloaded into the .genesis/kits in your repo ".
+			"directory.  Use this option to download it to any specified directory.\n",
+		},
 	],
 	no_vault => 1,
 });

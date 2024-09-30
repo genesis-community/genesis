@@ -279,16 +279,22 @@ sub list_kits {
 sub decompile_kit {
 	command_usage(1) if @_ != 1;
 
+	my %options = %{get_options()};
+	my $dir = $options{directory};
+	my $force = $options{force};
+
 	my $top = Genesis::Top->new('.');
-	(my $dir = get_options->{directory} || 'dev' ) =~ s#/*$#/#;
-	bail(
-		"#C{%s} directory already exists (and --force not specified).\n".
-		"Will not continue.",
-		humanize_path($dir)
-	) if ($dir eq 'dev/' && $top->has_dev_kit && !get_options->{force});
+#	(my $dir = get_options->{directory} || 'dev' ) =~ s#/*$#/#;
+#	bail(
+#		"#C{%s} directory already exists (and --force not specified).\n".
+#		"Will not continue.",
+#		humanize_path($dir)
+#	) if ($dir eq 'dev/' && $top->has_dev_kit && !get_options->{force});
 
 	my $file = $_[0];
 	my $label = $file;
+	my $type = 'unknown';
+	my $kit = undef;
 	$file = $1 if $file =~ /(.*)\.yml/; #.yml extension should be allowed
 	if ($label ne 'latest' && $top->has_env($file)) {
 		local %ENV = %ENV;
@@ -297,14 +303,18 @@ sub decompile_kit {
 			"#R{[ERROR]} #C{%s} should be an environment YAML file, but could not be loaded",
 			humanize_path($file)
 		);
+		$kit = $env->kit;
+		$type = ref($env->kit) =~ s/^Genesis::Kit::(.*)/\l$1/r;
+		$label = $file;
 		bail(
 			"Environment #C{%s} is already using a dev kit, and we don't ".
 			"want to get into metaphysical absurities...",
 			$file
-		) if $env->kit->name eq 'dev';
-		$file = $env->kit->id;
-		$label = $file;
-	}
+		) if $type eq 'dev' && (!$dir || $dir eq 'dev');
+	} else {
+		m
+
+	
 	if ($file eq 'latest' || ! -f $file) {
 		(my $stem = $file) =~ s|/v?|-|;
 		my $maybe_file = $top->path(".genesis/kits/$stem.tar.gz");

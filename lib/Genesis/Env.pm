@@ -114,39 +114,40 @@ sub load {
 
 		my $kit_name = $env->lookup('kit.name');
 		my $kit_version = $env->lookup('kit.version');
-		my $kit = $env->{top}->local_kit_version($kit_name, $kit_version);
-		if ($kit) {
-			$env->{kit} = $kit;
-			my $overrides = $env->lookup('kit.overrides');
-			if (defined($overrides)) {
-				$overrides = [ $overrides ] unless (ref($overrides) eq 'ARRAY');
-				my @override_files;
-
-				my $i=0;
-				my $override_dir = workdir;
-				for my $override (@$overrides) {
-					my $file="$override_dir/env-overrides-$i.yml";
-					$i+=1;
-					if (ref($override) eq "HASH") {
-						save_to_yaml_file($override,$file);
-					} else {
-						mkfile_or_fail($file,$override);
-					}
-					push @override_files, $file;
-				}
-				$env->kit->apply_env_overrides(@override_files);
-			}
-		} elsif (!$kit_name) {
-			push(@errors, "Missing #ci{kit.name} and no local dev kit");
-			push(@errors, "Missing #ci{kit.version}") unless $kit_version;
-		} elsif (!$kit_version) {
-			push(@errors, "Missing #ci{kit.version}");
+		if (!defined($kit_name)) {
+			push(@errors, "Missing #ci{kit.name} in environment file");
 		} else {
-			push(@errors, sprintf(
-				"Unable to locate v%s of #M{%s}` kit for #C{%s} environment.",
-				$kit_version, $kit_name, $env->name
-			));
+			my $kit; eval {$kit = $env->kit}; my $err = $@;
+			if ($kit && !$err) {
+				$env->notify("Using kit #M{%s} #Ki{%s}", $kit->id, $kit->location)
+					unless in_callback || under_test || envset('GENESIS_NO_KIT_LOCATION');
+				my $overrides = $env->lookup('kit.overrides');
+				if (defined($overrides)) {
+					info("  - with overrides from environment file")
+						unless in_callback || under_test || envset('GENESIS_NO_KIT_LOCATION');
+					$overrides = [ $overrides ] unless (ref($overrides) eq 'ARRAY');
+					my @override_files;
+
+					my $i=0;
+					my $override_dir = workdir;
+					for my $override (@$overrides) {
+						my $file="$override_dir/env-overrides-$i.yml";
+						$i+=1;
+						if (ref($override) eq "HASH") {
+							save_to_yaml_file($override,$file);
+						} else {
+							mkfile_or_fail($file,$override);
+						}
+						push @override_files, $file;
+					}
+					$env->kit->apply_env_overrides(@override_files);
+				}
+				info("") unless in_callback || under_test || envset('GENESIS_NO_KIT_LOCATION');
+			} else {
+				push(@errors, "Kit not found: $err");
+			}
 		}
+
 		last if @errors;
 		$env->kit->check_prereqs($env) or bail "Cannot use the selected kit.";
 
@@ -585,7 +586,6 @@ sub _env_name_errors {
 # Public Accessors: name, file, kit, top {{{
 sub name   { $_[0]->{name};   }
 sub file   { $_[0]->{file};   }
-sub kit    { $_[0]->{kit}    || bug("Incompletely initialized environment '".$_[0]->name."': no kit specified"); }
 sub top    { $_[0]->{top}    || bug("Incompletely initialized environment '".$_[0]->name."': no top specified"); }
 
 # }}}
@@ -1864,6 +1864,16 @@ sub runtime_config { return $_[0]->config_file('runtime'); }
 # }}}
 
 # Kit Components
+sub kit {
+	return $_[0]->_memoize(sub {
+		my $self = shift;
+
+		my $kit_name = $self->lookup('kit.name');
+		my $kit_version = scalar($self->lookup('kit.version')) // (-f $self->path('dev') ? 'dev' : 'latest');
+		my $kit_source = $self->lookup('kit.source');
+		return $self->top->get_kit($kit_name, $kit_version, $kit_source);
+	});
+}
 # kit_files - get list of yaml files from the kit to be used to merge the manifest {{{
 sub kit_files {
 	my ($self, $absolute) = @_;

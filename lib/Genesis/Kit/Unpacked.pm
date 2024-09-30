@@ -1,4 +1,4 @@
-package Genesis::Kit::Dev;
+package Genesis::Kit::Unpacked;
 use strict;
 use warnings;
 
@@ -8,37 +8,44 @@ use Genesis::Term;
 use Genesis::Helpers;
 
 sub new {
-	my ($class, $path, $kit_name) = @_;
+	my ($class, $path, $name, $version) = @_;
 	bless({
 		path => $path,
-		name => $kit_name,
-		version => 'dev',
+		name => $name,
+		version => $version,
 	}, $class);
 }
 
 sub kit_bug {
 	my ($self, @msg) = @_;
 	$! = 2; die csprintf(@msg)."\n".
-	            csprintf("#R{This is a bug in your dev/ kit.}\n").
+	            csprintf("#R{This is a bug in the unpacked kit located in #C{%s}.}\n", $self->path).
 	            csprintf("Please contact the author(s):\n").
 	            csprintf("  - you\n\n"); # you're welcome, Tom
 }
 
-sub id {
-	return sprintf(
-		"%s/%s%s",
-		$_[0]->metadata->{name} || 'unknown',
-		$_[0]->metadata->{version} || 'in-development',
-		$_[0]->metadata->{version} ? ' (dev)': '',
-	);
+sub name {
+	my $self = shift;
+	return $self->{metadata}->{name} || $self->{name};
 }
+
+sub version {
+	my $self = shift;
+	return $self->{metadata}->{version} || $self->{version};
+}
+
+sub id {
+	my $self = shift;
+	return sprintf("%s/%s (unpacked)", $self->name, $self->version);
+}
+
 sub location {
 	return 'in '.humanize_path($_[0]->{path});
 }
 
 sub unpack {
 	my ($self, $dest) = @_;
-	run({ onfailure => 'Could not copy dev/ kit directory' },
+	run({ onfailure => 'Could not copy unpacked kit directory' },
 		'cp -a "$1/" "$2"', $self->{path}, $dest);
 }
 
