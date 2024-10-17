@@ -451,7 +451,7 @@ define_command("bosh", {
 		"another bosh director, you should specify either --self or --parent, as ".
 		"the target is ambiguous.  If you don't specify either, it will prompt you ".
 		"to choose one if in a controlling terminal, or fail if not.",
-	function_group => Genesis::Commands::ENVIRONMENT,
+	function_group => Genesis::Commands::BOSH,
 	scope => 'env',
 	option_group => Genesis::Commands::REPO_OPTIONS,
 	option_passthrough => 1,
@@ -474,9 +474,35 @@ define_command("bosh", {
 			"cli, targeting the desired deployment and associated BOSH director."
 	]
 });
+
 # }}}
-# genesis delete - delete the environment from the BOSH director {{{
-# TODO: Create this command
+# bosh-configs - create, list, compare, view or delete bosh configs {{{
+define_command("bosh-configs", {
+	summary => "Create, update, list, view and delete bosh configs",
+	usage => "<env> bosh-configs <action> [<options...>]",
+	aliases => ['bc','configs'],
+	description =>
+		"Upload the bosh configs needed for the given environment.  Optionally, ".
+		"you can generate without uploading, list the bosh configs already ".
+		"uploaded, view the current config already uploaded, compare the current ".
+		"config with the one you would upload, or delete the config already ".
+		"uploaded.",
+	function_group => Genesis::Commands::BOSH,
+	scope => 'env',
+	option_group => Genesis::Commands::ENV_OPTIONS,
+	arguments => [
+		"action" =>
+			"The action to take: upload (default), view, compare, or delete."
+	],
+	options => [
+		"type|t=s" =>
+			"Specify the type of bosh config. If not specified, it will perform the ".
+			"action on all types of bosh configs.  Valid types are: cloud, runtime, ".
+			"and cpi.",
+		# TBD: Add options for the various actions as needed
+	]
+});
+
 # }}}
 # genesis credhub - run a credhub command on the Credhub server for the specified environment {{{
 define_command("credhub", {
@@ -499,7 +525,7 @@ define_command("credhub", {
 		"to choose one if in a controlling terminal, or fail if not.  Alternatively, ".
 		"you can set the `default_bosh_target` in the user config to specify the ".
 		"default target.",
-	function_group => Genesis::Commands::ENVIRONMENT,
+	function_group => Genesis::Commands::BOSH,
 	scope => 'env',
 	option_group => Genesis::Commands::REPO_OPTIONS,
 	option_passthrough => 1,
@@ -532,7 +558,7 @@ define_command("logs", {
 		"will only work for environments that are bosh deployments (i.e.: will ".
 		"work on create-env deployments, as they don't have a CredHub server ".
 		"associated with them).",
-	function_group => Genesis::Commands::ENVIRONMENT,
+	function_group => Genesis::Commands::BOSH,
 	scope => 'env',
 	option_group => Genesis::Commands::REPO_OPTIONS,
 	option_passthrough => 1,
@@ -544,13 +570,13 @@ define_command("logs", {
 define_command("broadcast", {
 	summary => "Send a command to all VMs in the environment, or a select group.",
 	usage => "<env> broadcast [<options...>] <command and command options>",
-	aliases => ['bc','vmsdo'], # legacy gb script name
+	aliases => ['bbc','vmsdo'], # legacy gb script name
 	description =>
 		"Send a command to all VMs in the environment, or a select group.  This ".
 		"command will run the given command in series on each VM, and will allow ".
 		"the user to interact with the command as if they were running it on the ".
 		"VM directly.",
-	function_group => Genesis::Commands::ENVIRONMENT,
+	function_group => Genesis::Commands::BOSH,
 	scope => 'env',
 	option_group => Genesis::Commands::REPO_OPTIONS,
 	options => [
