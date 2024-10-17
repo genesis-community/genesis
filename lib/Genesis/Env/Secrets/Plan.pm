@@ -206,6 +206,12 @@ sub filter {
 }
 
 # }}}
+# autoload - load secrets on demand for their values {{{
+sub autoload {
+	my $self = shift;
+	$_->{autoload} = 1 for ($self->secrets);
+	return $self;
+}
 # validate - validate the secret definitions, and any dependencies {{{
 sub validate {
 	my $self = shift;

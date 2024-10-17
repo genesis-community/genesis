@@ -28,6 +28,7 @@ sub new {
 			path => $alt_path || $path,
 			definition => $args,
 			loaded => 0,
+			autoload => 0,
 			%src
 		}, $class);
 	}
@@ -64,6 +65,11 @@ sub save {
 sub load {
 	my ($self,$value) = @_;
 	$self->plan->store->read($self);
+}
+
+sub autoload {
+	my ($self) = @_;
+	$self->load unless !$self->{autoload} || $self->loaded;
 }
 
 sub exists {
@@ -113,8 +119,8 @@ sub all_paths     {($_[0]->path)}
 sub full_path     {$_[0]->base_path.$_[0]->path}
 sub default_key   {undef}
 sub definition    {$_[0]->{definition}}
-sub value         {$_[0]->{value}||$_[0]->{stored_value}}
-sub has_value     {defined($_[0]->{stored_value})}
+sub value         {$_[0]->autoload; $_[0]->{value}||$_[0]->{stored_value}}
+sub has_value     {$_[0]->autoload; defined($_[0]->{stored_value})}
 sub loaded        {$_[0]->{loaded}}
 sub missing       {!$_[0]->has_value}
 sub set_plan      {$_[0]->{plan} = $_[1]; $_[0]}
