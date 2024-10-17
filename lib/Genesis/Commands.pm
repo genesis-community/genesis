@@ -60,11 +60,12 @@ use constant { # {{{
 	# Functional Areas (and Submodule)
 	# Used for help generation, and default command module identifier
 	ENVIRONMENT => {order =>  0, module => "Env",        label => "Environment Management"},
-	INFO        => {order =>  1, module => "Info",       label => "Informative"},
-	REPOSITORY  => {order =>  2, module => "Repo",       label => "Repository Management"},
-	KIT         => {order =>  3, module => "Kit",        label => "Kit Management"},
-	PIPELINE    => {order =>  4, module => "Pipelines",  label => "Pipeline Management"},
-	GENESIS     => {order =>  5, module => "Core",       label => "Genesis Management"},
+	BOSH        => {order =>  1, module => "Bosh",       label => "BOSH Actions"},
+	INFO        => {order =>  2, module => "Info",       label => "Informative"},
+	REPOSITORY  => {order =>  3, module => "Repo",       label => "Repository Management"},
+	KIT         => {order =>  4, module => "Kit",        label => "Kit Management"},
+	PIPELINE    => {order =>  5, module => "Pipelines",  label => "Pipeline Management"},
+	GENESIS     => {order =>  6, module => "Core",       label => "Genesis Management"},
 	UTILITY     => {order => -1, module => "Utility",    label => "Script Callback Helper"},
 	DEPRECATED  => {order => -2, module => "Deprecated", label => "Deprecated"},
 	DEV         => {order => -3, module => "Core",       label => "Development"},
