@@ -313,6 +313,77 @@ sub check {
 	}
 }
 
+sub list_secrets {
+	command_usage(1) if @_ < 1;
+	my ($name, @filters) = @_;
+	my $env = Genesis::Top
+		->new(".")
+		->load_env($name)
+		->with_vault();
+
+	# TODO: Should we support the missing|invalid|problematic|unused options here?
+	my %options = %{get_options()};
+	my $plan = $env->secrets_plan(no_validation=>1)->filter(@filters)->autoload;
+
+	my $results = [];
+	for my $secret ($plan->secrets) {
+		my $path = $options{relative} ? $secret->path :$secret->full_path;
+		if ($options{json}) {
+			my $json = undef;
+			if ($options{verbose}) {
+				$json = {
+					path => $path,
+					type => $secret->type,
+					description => scalar($secret->describe),
+					source => $secret->source,
+				};
+				$json->{value} = $secret->value if $options{verbose} > 1;
+				$json->{feature} = $secret->feature if $secret->from_kit;
+				$json->{var_name} = $secret->var_name if $secret->from_manifest;
+			} else {
+				$json = $path;
+			}
+			push @$results, $json;
+		} else {
+			my $value = $path;
+			if ($options{verbose}) {
+				$value .= " #C{(".$secret->describe.")}";
+				my $source = $secret->source;
+				my $descriminator = $source eq 'kit' ? 'feature' : 'var_name';
+				my $desc = $secret->$descriminator;
+				$value .= " from #m{$source} (#Mi{$descriminator: $desc})";
+			}
+			push @$results, csprintf($value);
+		}
+	}
+	if ($options{json}) {
+		info '';
+		my %json_key_order = (
+			path => 1,
+			type => 2,
+			description => 2,
+			source => 3,
+			feature => 4,
+			var_name => 5,
+		);
+
+		require "JSON/PP.pm";
+		print(
+			JSON::PP->new->pretty
+			->sort_by(sub {
+				my ($a, $b) = ($JSON::PP::a, $JSON::PP::b);
+				return ($json_key_order{$a}//999) <=> ($json_key_order{$b}//999) || $a cmp $b;
+			})
+			->encode($results)
+		);
+	} else {
+		info "\nSecrets in #C{$name}:\n";
+		output(join("\n", @$results));
+	}
+
+	$env->notify(success => "found ".scalar($plan->secrets)." secrets.\n");
+
+}
 sub check_secrets {
 	command_usage(1) if @_ < 1;
 	my ($name,@paths) = @_;
