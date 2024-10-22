@@ -161,12 +161,20 @@ sub define_command { # {{{
 	};
 
 	$PROPS{$name} = {%$default_props, %$props};
+
+	# Should we have a define_subcommand routine instead of handling multicommands and monocommands in the same routine?
+
 	my $fn_require = '';
 	if (ref($fn) ne "CODE") {
 		if (defined($fn)) {
 			$fn =~ m/(.*)::[^:]*$/;
 			$fn_require = $1;
 		} else {
+			# TODO: make work with subcommands - each subcommand should have its own
+			# function which by default will be <function_name>_<subcommand_name>
+			# Also allow subcommand property of function to be a pointer to a
+			# function in the same way as the third argument to this sub uses
+			#
 			my ($fn_label, $fn_submodule) = @{($PROPS{$name}{function_group})}{qw(label module)};
 			(my $fn_name = $name) =~ s/-/_/g;
 			$fn_submodule ||= $fn_label;
@@ -175,6 +183,12 @@ sub define_command { # {{{
 		}
 		$fn_require =~ s/::/\//g;
 		$fn_require =~ s/(\.pm)?$/.pm/;
+	}
+
+	# If the command has subcommands, we need to use a different function launch
+	# the correct subcommand
+	#
+	if ($props->{subcommands}) {
 	}
 
 	$RUN{$name} = sub {

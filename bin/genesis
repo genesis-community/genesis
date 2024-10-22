@@ -477,6 +477,35 @@ define_command("bosh", {
 # }}}
 # genesis delete - delete the environment from the BOSH director {{{
 # TODO: Create this command
+
+# }}}
+# bosh-configs - create, list, compare, view or delete bosh configs {{{
+define_command("bosh-configs", {
+	summary => "Create, update, list, view and delete bosh configs",
+	usage => "<env> bosh-configs <action> [<options...>]",
+	aliases => ['bc','configs'],
+	description =>
+		"Upload the bosh configs needed for the given environment.  Optionally, ".
+		"you can generate without uploading, list the bosh configs already ".
+		"uploaded, view the current config already uploaded, compare the current ".
+		"config with the one you would upload, or delete the config already ".
+		"uploaded.",
+	function_group => Genesis::Commands::BOSH,
+	scope => 'env',
+	option_group => Genesis::Commands::ENV_OPTIONS,
+	arguments => [
+		"action" =>
+			"The action to take: upload (default), view, compare, or delete."
+	],
+	options => [
+		"type|t=s" =>
+			"Specify the type of bosh config. If not specified, it will perform the ".
+			"action on all types of bosh configs.  Valid types are: cloud, runtime, ".
+			"and cpi.",
+		# TBD: Add options for the various actions as needed
+	]
+});
+
 # }}}
 # genesis credhub - run a credhub command on the Credhub server for the specified environment {{{
 define_command("credhub", {
@@ -718,11 +747,202 @@ define_command("environments", {
 # }}}
 
 ### Secrets Management commands {{{
+# genesis secrets - Manage the secrets for an environment. {{{
+define_command("secrets", {
+	summary => "Manage the secrets for an environment.", 
+	usage => '<env> secrets <action> [<options...>] [<filter1> <...filterN>]',
+	alias => 's',
+	description =>
+		"Manage the secrets for the environment.  Actions include checking for ".
+		"missing secrets, listing the secrets, generating missing secrets, ".
+		"rotating secrets, and removing secrets.  If no action is specified, it ".
+		"will list the secrets for the environment.",
+	function_group => Genesis::Commands::ENVIRONMENT,
+	scope => 'env',
+	option_group => Genesis::Commands::ENV_OPTIONS,
+	options => [
+		"verbose|v+" =>
+			"List each item, with its associated metadata.  Will also include the ".
+			"value of the secret if the --verbose option is specified more than once.",
+	],
+	deprecated_options => [
+		'vault' =>
+			"The name of a `safe' target (a Vault) to check for the generated ".
+			"credentials.  Only accepted if the deployment repository does not ".
+			"have a vault specified."
+	],
+	argurments => [
+		"filter@" => { #TODO: support array type arguments suffixed with @
+			summary => "A list of filters to apply to the secrets.",
+			description =>
+				"Filters can be a full or partial path, a property expression, or a ".
+				"regular expression.  If no filters are specified, all secrets will be ".
+				"listed.  Multiple filters will be ANDed together, but OR conditions ".
+				"can be specified by joining the filters with a '||'.",
+		}
+	],
+	default_subcommand => 'list',
+	subcommands => [
+		"list" => {
+			summary => "List the available secrets for the environment, with filtering.",
+			usage => "<env> secrets list [<options...>] [<filter1> <...filterN>]",
+			alias => 'l',
+			description =>
+				"List the secrets for the environment, with optional filtering.  If no ".
+				"paths are specified, all secrets will be listed.  If filters are ".
+				"specified, only secrets that match the filter will be listed.  Filters ".
+				"can be a full or partial path, a property expression, or a regular ".
+				"expression.",
+			options => [
+				"verbose|v+" =>
+					"List each item, with its associated metadata.  Will also include the ".
+					"value of the secret if the --verbose option is specified more than once.",
+
+				"relative|r" =>
+					"List the secrets relative to the secrets path, rather than the full ".
+					"path.",
+
+				"json|j" =>
+					"Return the secrets in JSON array format. If the --verbose option is ".
+					"specified, the JSON will include the metadata for each secret as a ".
+					"array of hash objects.",
+			],
+		},
+		"check" => {
+			summary => "Check for missing secrets for the environment.",
+			usage => "<env> secrets check [<options...>] [<filter1> <...filterN>]",
+			alias => 'c',
+			description =>
+				"Checks that all required secrets are present.  Returns a exit code of 1 ".
+				"if any are missing, and lists them, otherwise states all secrets are ".
+				"present and exits with 0.  A list of secret paths can be specified, ".
+				"otherwise all secrets specified by the kit will be checked.",
+			options => [
+				'verbose|v' =>
+					"List each item, not just failures and warnings.",
+
+				'exists' =>
+					"Instead of validating the structure of each secret, just check that ".
+					"secret and its required keys exist",
+			],
+		},
+		"add" => {
+			summary => "Generate missing certificates and credentials for the environment.",
+			usage => "<env> secrets add [<options...>] [<filter1> <...filterN>]",
+			alias => 'a',
+			description =>
+				"Generates any missing secrets required by the deployment.  Useful to ".
+				"generate credentials after upgrading kits.   A list of filters can ".
+				"be specified, or it applies to all secrets if no filter is specified.",
+			options => [
+				"verbose|v" =>
+					"List each item as it is processed.",
+
+				"~import|import-from-credhub" =>
+					"Attempt to import the secret value from credhub if the secret ".
+					"definition originates from the manifest and the value exists in ".
+					"credhub.  (credhub-oriented kits such as cf and cf-app-autoscaler)"
+			],
+		},
+		"rotate" => {
+			summary => "Regenerate secrets for the environment.",
+			usage => "<env> secrets rotate [<options...>] [<filter1> <...filterN>]",
+			aliases => ['r', 'rot','rs','regen'],
+			description =>
+				"Regenerate secrets for your deployment. If any secrets are marked by the ".
+				"kit as 'fixed', they are not updated.  A list of secret paths can be ".
+				"specified, or it applies to all secrets if no path is specified.\n",
+			options => [
+				'verbose|v' =>
+					"List each item as it is processed, not just failures and warnings.",
+
+				'regen-x509-keys' =>
+					"Normally, when x509 certificates are renewed, Genesis retains the ".
+					"existing keys.  This is done to ensure compatibility with the previous ".
+					"certificates (and any certificates signed by that certificate) while ".
+					"updating the validity period.\n".
+					"\n".
+					"With this option specified, keys will be regenerated along with the ".
+					"certificate, meaning all certificates it signed will also have to be ".
+					"regenerated, and any deployments on certificate modulo pairing will ".
+					"need a three-step deployment.",
+
+				'update-subjects' =>
+					"When rotating X.509 certificates, normally the current subject is ".
+					"retained because changing it will break signing chains for any ".
+					"certificate it signed.  However, it may be necessary to update the ".
+					"subject of a leaf certificate, or even a CA, if the definition has ".
+					"changed, so this option is provided.\n\n".
+					"[[Note: >>If --regen-x509-keys option is used, it will recreate the ".
+					"certificate completely, including any changes in the subject.",
+
+				'invalid|I' =>
+					"Rotate secrets that are invalid (expired, missing, or don't match the ".
+					"kit specification)",
+
+				'problematic|problem|P' =>
+					"Rotate secrets that are either invalid, or valid for deployment, but ".
+					"are not in compliance with the kit specification or may soon expire.",
+
+				'no-prompt|y' =>
+					"Don't prompt for confirmation",
+
+				'interactive|i' =>
+					"Ask before rotating each secret.",
+			],
+			deprecated_options => [
+				'force|force-rotate-all|f' =>
+					"Used to rotate #R{ALL} secrets, including any credentials that the kit ".
+					"defined as `fixed'. This was very dangerous.  Instead, use ".
+					"'#G{remove-secrets}' to remove specific secrets and the ".
+					"'#G{add-secrets}' to add them back."
+			]
+		},
+		"remove" => {
+			summary => "Remove certificates and credentials from the environment",
+			usage => "<env> remove-secrets [<options...>] [<path1> <...pathN>]",
+			aliases => ['rm','d','del','delete'],
+			description =>
+			"Removes the generated secrets for the specified environment. If the --all ".
+			"option is specified, it will remove all screts under the environment's ".
+			"secrets base path, including any manually put there (such as by the ".
+			"'#g{genesis} #G{create}' command).  Otherwise, secrets can be specified ".
+			"on the command line to further limit the scope of what will be removed ".
+			"(all generated secrets if no path is specified).",
+			options => [
+				'verbose|v' =>
+				"List each item as it is processed, not just failures and warnings.",
+
+				'all|A' =>
+				"Remove all secrets under this deployments secrets base path in vault.",  # FIXME: what about credhub?
+
+				'invalid|I' =>
+				"Remove any secrets that are invalid",
+
+				'problematic|problem|P' =>
+				"Remove any secrets that are invalid or problematic.",
+
+				'unused|U' =>
+				"Remove any secrets that the kit does not know about, or are in credhub ".
+				"from a pre-vaultified deployment, or are outdated entombed secrets.",
+
+				'no-prompt|y' =>
+				"Don't prompt for confirmation",
+
+				'interactive|i' =>
+				"Ask for confirmation on each secret path removal.",
+			], # FIXME Do we need a --force to remove fixed and x509 keys/serial?
+		}
+	]
+});
+
+
 # genesis check-secrets - Check required credentials for an environment. {{{
 define_command("check-secrets", {
 	summary => "Check for missing certificates and credentials needed by the environment.",
 	usage => '<env> check-secrets [<options...>] [<path1> <...pathN>]',
 	alias => 'cs',
+	deprecated => 'secrets check',
 	description =>
 		"Checks that all required secrets are present.  Returns a exit code of 1 ".
 		"if any are missing, and lists them, otherwise states all secrets are ".
@@ -749,10 +969,11 @@ define_command("check-secrets", {
 
 # }}}
 # genesis secrets - List the available secrets for an environment, with filtering. {{{
-define_command("secrets", {
+define_command("list-secrets", {
 	summary => "List the available secrets for an environment, with filtering.",
 	usage => '<env> secrets [<options...>] [<filter1> <...filterN>]',
-	alias => 's',
+	alias => 'ls',
+	deprecated => 'secrets list',
 	description =>
 		"List the secrets for the environment, with optional filtering.  If no ".
 		"paths are specified, all secrets will be listed.  If filters are ".
@@ -782,6 +1003,7 @@ define_command("add-secrets", {
 	summary => "Generate missing certificates and credentials for the environment.",
 	usage => '<env> add-secrets [<options...>] [<path1> <...pathN>]',
 	alias => 'as',
+	deprecated => 'secrets add',
 	description =>
 		"Generates any missing secrets required by the deployment.  Useful to ".
 		"generate credentials after upgrading kits.   A list of secret paths can ".
@@ -812,6 +1034,7 @@ define_command("rotate-secrets", {
 	summary => "Regenerate secrets for the environment.",
 	usage => '<env> rotate-secrets [<options...>] [<path1> <...pathN>]',
 	aliases => ['rot','rs','regen'],
+	deprecated => 'secrets rotate',
 	function_group => Genesis::Commands::ENVIRONMENT,
 	scope => 'env',
 	description =>
@@ -878,6 +1101,7 @@ define_command("remove-secrets", {
 	summary => "Remove certificates and credentials from the environment",
 	usage => "<env> remove-secrets [<options...>] [<path1> <...pathN>]",
 	aliases => ['rms','ds'],
+	deprecated => 'secrets remove',
 	description =>
 		"Removes the generated secrets for the specified environment. If the --all ".
 		"option is specified, it will remove all screts under the environment's ".
