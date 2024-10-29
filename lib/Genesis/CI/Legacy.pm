@@ -46,30 +46,6 @@ sub _gen_notifications {
 },
 EOF
 	}
-	if ($pipeline->{pipeline}{hipchat}) {
-		$notification .= <<EOF;
-{
-  put: "hipchat",
-  params: {
-    from:     (( grab pipeline.hipchat.username )),
-    color:   "gray",
-    message: "$pipeline_name: $message_as_yaml",
-    notify:  (( grab pipeline.hipchat.notify ))
-  }
-},
-EOF
-	}
-	if ($pipeline->{pipeline}{stride}) {
-		$notification .= <<EOF;
-{
-  put: "stride",
-  params: {
-    conversation: (( grab pipeline.stride.conversation )),
-    message:      "$pipeline_name: $message_as_yaml"
-  }
-},
-EOF
-	}
 	if ($pipeline->{pipeline}{email}) {
 		my ($registry_prefix, $registry_creds) = ("", "");
 		if ($pipeline->{pipeline}{registry}{uri}) {
@@ -143,7 +119,7 @@ sub parse_pipeline {
 	}
 	for (keys %{$p->{pipeline}}) {
 		push @errors, "Unrecognized `pipeline.$_' key found."
-			unless m/^(name|public|tagged|errands|ocfp|vault|git|slack|hipchat|stride|email|boshes|task|layout|layouts|groups|debug|locker|unredacted|notifications|auto-update|registry)$/;
+			unless m/^(name|public|tagged|errands|ocfp|vault|git|slack|email|boshes|task|layout|layouts|groups|debug|locker|unredacted|notifications|auto-update|registry)$/;
 	}
 	for (qw(name vault git boshes)) {
 		push @errors, "`pipeline.$_' is required."
@@ -237,11 +213,11 @@ sub parse_pipeline {
 
 	# validate notifications
 	my $n = 0;
-	for (qw(slack hipchat stride email)) {
+	for (qw(slack email)) {
 		$n++ if exists $p->{pipeline}{$_};
 	}
 	if ($n == 0) {
-		push @errors, "No notification stanzas defined.  Please define `pipeline.slack', `pipeline.hipchat', `pipeline.stride' or `pipeline.email'.\n";
+		push @errors, "No notification stanzas defined.  Please define `pipeline.slack' or `pipeline.email'.\n";
 	} else {
 		if ($p->{pipeline}{slack}) {
 			# validate pipeline.slack.*
@@ -257,40 +233,6 @@ sub parse_pipeline {
 				for (keys %{$p->{pipeline}{slack}}) {
 					push @errors, "Unrecognized `pipeline.slack.$_' key found."
 						unless m/^(webhook|channel|username|icon)$/;
-				}
-			}
-		}
-		if ($p->{pipeline}{hipchat}) {
-			# validate pipeline.hipchat.*
-			if (ref($p->{pipeline}{hipchat}) ne 'HASH') {
-				push @errors, "`pipeline.hipchat' must be a map.";
-			} else {
-				# required subkeys
-				for (qw/room_id token/) {
-					push @errors, "`pipeline.hipchat.$_' is required."
-						unless $p->{pipeline}{hipchat}{$_};
-				}
-				# allowed subkeys
-				for (keys %{$p->{pipeline}{hipchat}}) {
-					push @errors, "Unrecognized `pipeline.hipchat.$_' key found."
-						unless m/^(url|token|room_id|notify|username)$/;
-				}
-			}
-		}
-		if ($p->{pipeline}{stride}) {
-			# validate pipeline.stride.*
-			if (ref($p->{pipeline}{stride}) ne 'HASH') {
-				push @errors, "`pipeline.stride' must be a map.";
-			} else {
-				# required subkeys
-				for (qw/client_id client_secret cloud_id conversation/) {
-					push @errors, "`pipeline.stride.$_' is required."
-						unless $p->{pipeline}{stride}{$_};
-				}
-				# allowed subkeys
-				for (keys %{$p->{pipeline}{stride}}) {
-					push @errors, "Unrecognized `pipeline.stride.$_' key found."
-						unless m/^(client_id|client_secret|cloud_id|conversation)$/;
 				}
 			}
 		}
@@ -805,27 +747,6 @@ EOF
     icon:     http://cl.ly/image/3e1h0H3H2s0P/concourse-logo.png
 EOF
 	} # }}}
-	# -- pipeline.hipchat {{{
-	if ($pipeline->{pipeline}{hipchat}) {
-		print $OUT <<'EOF';
-  hipchat:
-    url:      http://api.hipchat.com
-    room_id:  (( param "Please specify the room ID that Concourse should send HipChat notifications to" ))
-    token:    (( param "Please specify the HipChat authentication token" ))
-    notify:   false
-    username: runwaybot
-EOF
-	} # }}}
-	# -- pipeline.stride {{{
-	if ($pipeline->{pipeline}{stride}) {
-		print $OUT <<'EOF';
-  stride:
-    client_id: (( param "Please specify the client ID for the Stride app that Concourse should send notifications as" ))
-    client_secret: (( param "Please specify the client secret for the Stride app that Concourse should send notifications as" ))
-    cloud_id: (( param "Please specify the Stride cloud ID that Concourse should send notifications to" ))
-    conversation: (( param "Please specify the Stride conversation name that Concourse should send notifications to" ))
-EOF
-	} # }}}
 	# -- pipeline.email {{{
 	if ($pipeline->{pipeline}{email}) {
 		print $OUT <<'EOF';
@@ -1123,28 +1044,6 @@ EOF
 
 EOF
 	}
-	if ($pipeline->{pipeline}{hipchat}) {
-		print $OUT <<'EOF';
-  - name: hipchat
-    type: hipchat-notification
-    icon: bell-ring
-    source:
-      hipchat_server_url: (( grab pipeline.hipchat.url ))
-      room_id:  (( grab pipeline.hipchat.room_id ))
-      token:    (( grab pipeline.hipchat.token ))
-EOF
-	}
-	if ($pipeline->{pipeline}{stride}) {
-		print $OUT <<'EOF';
-  - name: stride
-    type: stride-notification
-    icon: bell-ring
-    source:
-      client_id: (( grab pipeline.stride.client_id ))
-      client_secret: (( grab pipeline.stride.client_secret ))
-      cloud_id: (( grab pipeline.stride.cloud_id ))
-EOF
-	}
 	if ($pipeline->{pipeline}{email}) {
 		print $OUT <<'EOF';
   - name: email
@@ -1217,16 +1116,6 @@ ${registry_creds}
     type: registry-image
     source:
       repository: ${registry_prefix}cfcommunity/slack-notification-resource
-${registry_creds}
-  - name: hipchat-notification
-    type: registry-image
-    source:
-      repository: ${registry_prefix}cfcommunity/hipchat-notification-resource
-${registry_creds}
-  - name: stride-notification
-    type: registry-image
-    source:
-      repository: ${registry_prefix}starkandwayne/stride-notification-resource
 ${registry_creds}
   - name: bosh-config
     type: registry-image
