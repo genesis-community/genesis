@@ -101,7 +101,8 @@ EOF
 	return $notification;
 }
 
-sub parse_pipeline {
+# validate_pipeline - validate the pipeline configuration and provide defaults for missing values
+sub validate_pipeline {
 	my ($file, $top) = @_;
 
 	my @errors = ();
@@ -424,7 +425,7 @@ sub parse_pipeline {
 sub parse {
 	my ($file, $top, $layout) = @_;
 
-	my ($pipeline, @errors) = parse_pipeline($file, $top);
+	my ($pipeline, @errors) = validate_pipeline($file, $top);
 	if (@errors) {
 		error "#R{ERRORS encountered} in pipeline definition in #Y{$file}:";
 		error "  - #R{$_}" for @errors;
