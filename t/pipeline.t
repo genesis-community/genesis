@@ -42,7 +42,7 @@ jobs:
     - config:
         image_resource:
           source:
-            repository: starkandwayne/concourse
+            repository: genesiscommunity/concourse
             tag: latest
           type: registry-image
         inputs:
@@ -85,7 +85,7 @@ jobs:
     - config:
         image_resource:
           source:
-            repository: starkandwayne/concourse
+            repository: genesiscommunity/concourse
             tag: latest
           type: registry-image
         inputs:
@@ -157,7 +157,7 @@ jobs:
   - config:
       image_resource:
         source:
-          repository: starkandwayne/concourse
+          repository: genesiscommunity/concourse
           tag: latest
         type: registry-image
       inputs:
@@ -217,7 +217,7 @@ jobs:
     - config:
         image_resource:
           source:
-            repository: starkandwayne/concourse
+            repository: genesiscommunity/concourse
             tag: latest
           type: registry-image
         inputs:
@@ -260,7 +260,7 @@ jobs:
     - config:
         image_resource:
           source:
-            repository: starkandwayne/concourse
+            repository: genesiscommunity/concourse
             tag: latest
           type: registry-image
         inputs:
@@ -325,7 +325,7 @@ jobs:
     - config:
         image_resource:
           source:
-            repository: starkandwayne/concourse
+            repository: genesiscommunity/concourse
             tag: latest
           type: registry-image
         inputs:
@@ -367,7 +367,7 @@ jobs:
     - config:
         image_resource:
           source:
-            repository: starkandwayne/concourse
+            repository: genesiscommunity/concourse
             tag: latest
           type: registry-image
         inputs:
@@ -433,14 +433,6 @@ resource_types:
 - name: slack-notification
   source:
     repository: cfcommunity/slack-notification-resource
-  type: registry-image
-- name: hipchat-notification
-  source:
-    repository: cfcommunity/hipchat-notification-resource
-  type: registry-image
-- name: stride-notification
-  source:
-    repository: starkandwayne/stride-notification-resource
   type: registry-image
 - name: bosh-config
   source:
@@ -672,7 +664,7 @@ jobs:
     - config:
         image_resource:
           source:
-            repository: starkandwayne/concourse
+            repository: genesiscommunity/concourse
             tag: latest
           type: registry-image
         inputs:
@@ -718,7 +710,7 @@ jobs:
     - config:
         image_resource:
           source:
-            repository: starkandwayne/concourse
+            repository: genesiscommunity/concourse
             tag: latest
           type: registry-image
         inputs:
@@ -796,7 +788,7 @@ jobs:
   - config:
       image_resource:
         source:
-          repository: starkandwayne/concourse
+          repository: genesiscommunity/concourse
           tag: latest
         type: registry-image
       inputs:
@@ -859,7 +851,7 @@ jobs:
     - config:
         image_resource:
           source:
-            repository: starkandwayne/concourse
+            repository: genesiscommunity/concourse
             tag: latest
           type: registry-image
         inputs:
@@ -905,7 +897,7 @@ jobs:
     - config:
         image_resource:
           source:
-            repository: starkandwayne/concourse
+            repository: genesiscommunity/concourse
             tag: latest
           type: registry-image
         inputs:
@@ -976,7 +968,7 @@ jobs:
     - config:
         image_resource:
           source:
-            repository: starkandwayne/concourse
+            repository: genesiscommunity/concourse
             tag: latest
           type: registry-image
         inputs:
@@ -1021,7 +1013,7 @@ jobs:
     - config:
         image_resource:
           source:
-            repository: starkandwayne/concourse
+            repository: genesiscommunity/concourse
             tag: latest
           type: registry-image
         inputs:
@@ -1089,14 +1081,6 @@ resource_types:
 - name: slack-notification
   source:
     repository: cfcommunity/slack-notification-resource
-  type: registry-image
-- name: hipchat-notification
-  source:
-    repository: cfcommunity/hipchat-notification-resource
-  type: registry-image
-- name: stride-notification
-  source:
-    repository: starkandwayne/stride-notification-resource
   type: registry-image
 - name: bosh-config
   source:
@@ -1336,7 +1320,7 @@ jobs:
     - config:
         image_resource:
           source:
-            repository: starkandwayne/concourse
+            repository: genesiscommunity/concourse
             tag: latest
           type: registry-image
         inputs:
@@ -1376,7 +1360,7 @@ jobs:
     - config:
         image_resource:
           source:
-            repository: starkandwayne/concourse
+            repository: genesiscommunity/concourse
             tag: latest
           type: registry-image
         inputs:
@@ -1402,7 +1386,7 @@ jobs:
     - config:
         image_resource:
           source:
-            repository: starkandwayne/concourse
+            repository: genesiscommunity/concourse
             tag: latest
           type: registry-image
         inputs:
@@ -1471,7 +1455,7 @@ jobs:
   - config:
       image_resource:
         source:
-          repository: starkandwayne/concourse
+          repository: genesiscommunity/concourse
           tag: latest
         type: registry-image
       inputs:
@@ -1528,7 +1512,7 @@ jobs:
     - config:
         image_resource:
           source:
-            repository: starkandwayne/concourse
+            repository: genesiscommunity/concourse
             tag: latest
           type: registry-image
         inputs:
@@ -1568,7 +1552,7 @@ jobs:
     - config:
         image_resource:
           source:
-            repository: starkandwayne/concourse
+            repository: genesiscommunity/concourse
             tag: latest
           type: registry-image
         inputs:
@@ -1594,7 +1578,7 @@ jobs:
     - config:
         image_resource:
           source:
-            repository: starkandwayne/concourse
+            repository: genesiscommunity/concourse
             tag: latest
           type: registry-image
         inputs:
@@ -1656,7 +1640,7 @@ jobs:
     - config:
         image_resource:
           source:
-            repository: starkandwayne/concourse
+            repository: genesiscommunity/concourse
             tag: latest
           type: registry-image
         inputs:
@@ -1695,7 +1679,7 @@ jobs:
     - config:
         image_resource:
           source:
-            repository: starkandwayne/concourse
+            repository: genesiscommunity/concourse
             tag: latest
           type: registry-image
         inputs:
@@ -1721,7 +1705,7 @@ jobs:
     - config:
         image_resource:
           source:
-            repository: starkandwayne/concourse
+            repository: genesiscommunity/concourse
             tag: latest
           type: registry-image
         inputs:
@@ -1784,14 +1768,6 @@ resource_types:
 - name: slack-notification
   source:
     repository: cfcommunity/slack-notification-resource
-  type: registry-image
-- name: hipchat-notification
-  source:
-    repository: cfcommunity/hipchat-notification-resource
-  type: registry-image
-- name: stride-notification
-  source:
-    repository: starkandwayne/stride-notification-resource
   type: registry-image
 - name: bosh-config
   source:
@@ -2159,13 +2135,6 @@ jobs:
             failed'
           username: runwaybot
         put: slack
-      - params:
-          color: gray
-          from: runwaybot
-          message: 'aws-1: Concourse deployment to client-aws-1-preprod-pipeline-test
-            failed'
-          notify: false
-        put: hipchat
     on_success:
       in_parallel:
       - params:
@@ -2174,12 +2143,6 @@ jobs:
           text: 'aws-1: Concourse successfully deployed client-aws-1-preprod-pipeline-test'
           username: runwaybot
         put: slack
-      - params:
-          color: gray
-          from: runwaybot
-          message: 'aws-1: Concourse successfully deployed client-aws-1-preprod-pipeline-test'
-          notify: false
-        put: hipchat
   public: true
   serial: true
 - name: notify-client-aws-1-prod-pipeline-test-changes
@@ -2249,14 +2212,6 @@ jobs:
           then schedule and run a deploy via Concourse'
         username: runwaybot
       put: slack
-    - params:
-        color: gray
-        from: runwaybot
-        message: 'aws-1: Changes are staged to be deployed to client-aws-1-prod-pipeline-test,
-          see notify-client-aws-1-prod-pipeline-test-changes job for change summary,
-          then schedule and run a deploy via Concourse'
-        notify: false
-      put: hipchat
   public: true
   serial: true
 - name: client-aws-1-prod-pipeline-test
@@ -2425,13 +2380,6 @@ jobs:
           text: 'aws-1: Concourse deployment to client-aws-1-prod-pipeline-test failed'
           username: runwaybot
         put: slack
-      - params:
-          color: gray
-          from: runwaybot
-          message: 'aws-1: Concourse deployment to client-aws-1-prod-pipeline-test
-            failed'
-          notify: false
-        put: hipchat
     on_success:
       in_parallel:
       - params:
@@ -2440,12 +2388,6 @@ jobs:
           text: 'aws-1: Concourse successfully deployed client-aws-1-prod-pipeline-test'
           username: runwaybot
         put: slack
-      - params:
-          color: gray
-          from: runwaybot
-          message: 'aws-1: Concourse successfully deployed client-aws-1-prod-pipeline-test'
-          notify: false
-        put: hipchat
   public: true
   serial: true
 - name: client-aws-1-sandbox-pipeline-test
@@ -2620,13 +2562,6 @@ jobs:
             failed'
           username: runwaybot
         put: slack
-      - params:
-          color: gray
-          from: runwaybot
-          message: 'aws-1: Concourse deployment to client-aws-1-sandbox-pipeline-test
-            failed'
-          notify: false
-        put: hipchat
     on_success:
       in_parallel:
       - params:
@@ -2635,12 +2570,6 @@ jobs:
           text: 'aws-1: Concourse successfully deployed client-aws-1-sandbox-pipeline-test'
           username: runwaybot
         put: slack
-      - params:
-          color: gray
-          from: runwaybot
-          message: 'aws-1: Concourse successfully deployed client-aws-1-sandbox-pipeline-test'
-          notify: false
-        put: hipchat
   public: true
   serial: true
 - name: update-genesis-assets
@@ -2770,14 +2699,6 @@ resource_types:
 - name: slack-notification
   source:
     repository: cfcommunity/slack-notification-resource
-  type: registry-image
-- name: hipchat-notification
-  source:
-    repository: cfcommunity/hipchat-notification-resource
-  type: registry-image
-- name: stride-notification
-  source:
-    repository: starkandwayne/stride-notification-resource
   type: registry-image
 - name: bosh-config
   source:
@@ -3059,13 +2980,6 @@ resources:
   source:
     url: http://127.0.0.1:1337
   type: slack-notification
-- icon: bell-ring
-  name: hipchat
-  source:
-    hipchat_server_url: http://api.hipchat.com
-    room_id: 1234
-    token: abcdefg
-  type: hipchat-notification
 - check_every: 24h
   icon: package-variant
   name: kit-release
@@ -3164,14 +3078,6 @@ jobs:
           then schedule and run a deploy via Concourse'
         username: runwaybot
       put: slack
-    - params:
-        color: gray
-        from: runwaybot
-        message: 'aws-1: Changes are staged to be deployed to client-aws-1-preprod-pipeline-test,
-          see notify-client-aws-1-preprod-pipeline-test-changes job for change summary,
-          then schedule and run a deploy via Concourse'
-        notify: false
-      put: hipchat
   public: true
   serial: true
 - name: client-aws-1-preprod-pipeline-test
@@ -3340,13 +3246,6 @@ jobs:
             failed'
           username: runwaybot
         put: slack
-      - params:
-          color: gray
-          from: runwaybot
-          message: 'aws-1: Concourse deployment to client-aws-1-preprod-pipeline-test
-            failed'
-          notify: false
-        put: hipchat
     on_success:
       in_parallel:
       - params:
@@ -3355,12 +3254,6 @@ jobs:
           text: 'aws-1: Concourse successfully deployed client-aws-1-preprod-pipeline-test'
           username: runwaybot
         put: slack
-      - params:
-          color: gray
-          from: runwaybot
-          message: 'aws-1: Concourse successfully deployed client-aws-1-preprod-pipeline-test'
-          notify: false
-        put: hipchat
   public: true
   serial: true
 - name: notify-client-aws-1-prod-pipeline-test-changes
@@ -3429,14 +3322,6 @@ jobs:
           then schedule and run a deploy via Concourse'
         username: runwaybot
       put: slack
-    - params:
-        color: gray
-        from: runwaybot
-        message: 'aws-1: Changes are staged to be deployed to client-aws-1-prod-pipeline-test,
-          see notify-client-aws-1-prod-pipeline-test-changes job for change summary,
-          then schedule and run a deploy via Concourse'
-        notify: false
-      put: hipchat
   public: true
   serial: true
 - name: client-aws-1-prod-pipeline-test
@@ -3601,13 +3486,6 @@ jobs:
           text: 'aws-1: Concourse deployment to client-aws-1-prod-pipeline-test failed'
           username: runwaybot
         put: slack
-      - params:
-          color: gray
-          from: runwaybot
-          message: 'aws-1: Concourse deployment to client-aws-1-prod-pipeline-test
-            failed'
-          notify: false
-        put: hipchat
     on_success:
       in_parallel:
       - params:
@@ -3616,12 +3494,6 @@ jobs:
           text: 'aws-1: Concourse successfully deployed client-aws-1-prod-pipeline-test'
           username: runwaybot
         put: slack
-      - params:
-          color: gray
-          from: runwaybot
-          message: 'aws-1: Concourse successfully deployed client-aws-1-prod-pipeline-test'
-          notify: false
-        put: hipchat
   public: true
   serial: true
 - name: client-aws-1-sandbox-pipeline-test
@@ -3793,13 +3665,6 @@ jobs:
             failed'
           username: runwaybot
         put: slack
-      - params:
-          color: gray
-          from: runwaybot
-          message: 'aws-1: Concourse deployment to client-aws-1-sandbox-pipeline-test
-            failed'
-          notify: false
-        put: hipchat
     on_success:
       in_parallel:
       - params:
@@ -3808,12 +3673,6 @@ jobs:
           text: 'aws-1: Concourse successfully deployed client-aws-1-sandbox-pipeline-test'
           username: runwaybot
         put: slack
-      - params:
-          color: gray
-          from: runwaybot
-          message: 'aws-1: Concourse successfully deployed client-aws-1-sandbox-pipeline-test'
-          notify: false
-        put: hipchat
   public: true
   serial: true
 resource_types:
@@ -3828,14 +3687,6 @@ resource_types:
 - name: slack-notification
   source:
     repository: cfcommunity/slack-notification-resource
-  type: registry-image
-- name: hipchat-notification
-  source:
-    repository: cfcommunity/hipchat-notification-resource
-  type: registry-image
-- name: stride-notification
-  source:
-    repository: starkandwayne/stride-notification-resource
   type: registry-image
 - name: bosh-config
   source:
@@ -4117,13 +3968,6 @@ resources:
   source:
     url: http://127.0.0.1:1337
   type: slack-notification
-- icon: bell-ring
-  name: hipchat
-  source:
-    hipchat_server_url: http://api.hipchat.com
-    room_id: 1234
-    token: abcdefg
-  type: hipchat-notification
 EOF
 # }}}
 
@@ -4321,13 +4165,6 @@ jobs:
             failed'
           username: runwaybot
         put: slack
-      - params:
-          color: gray
-          from: runwaybot
-          message: 'aws-1: Concourse deployment to client-aws-1-preprod-pipeline-test
-            failed'
-          notify: false
-        put: hipchat
     on_success:
       in_parallel:
       - params:
@@ -4336,12 +4173,6 @@ jobs:
           text: 'aws-1: Concourse successfully deployed client-aws-1-preprod-pipeline-test'
           username: runwaybot
         put: slack
-      - params:
-          color: gray
-          from: runwaybot
-          message: 'aws-1: Concourse successfully deployed client-aws-1-preprod-pipeline-test'
-          notify: false
-        put: hipchat
   public: true
   serial: true
 - name: notify-client-aws-1-prod-pipeline-test-changes
@@ -4410,14 +4241,6 @@ jobs:
           then schedule and run a deploy via Concourse'
         username: runwaybot
       put: slack
-    - params:
-        color: gray
-        from: runwaybot
-        message: 'aws-1: Changes are staged to be deployed to client-aws-1-prod-pipeline-test,
-          see notify-client-aws-1-prod-pipeline-test-changes job for change summary,
-          then schedule and run a deploy via Concourse'
-        notify: false
-      put: hipchat
   public: true
   serial: true
 - name: client-aws-1-prod-pipeline-test
@@ -4584,13 +4407,6 @@ jobs:
           text: 'aws-1: Concourse deployment to client-aws-1-prod-pipeline-test failed'
           username: runwaybot
         put: slack
-      - params:
-          color: gray
-          from: runwaybot
-          message: 'aws-1: Concourse deployment to client-aws-1-prod-pipeline-test
-            failed'
-          notify: false
-        put: hipchat
     on_success:
       in_parallel:
       - params:
@@ -4599,12 +4415,6 @@ jobs:
           text: 'aws-1: Concourse successfully deployed client-aws-1-prod-pipeline-test'
           username: runwaybot
         put: slack
-      - params:
-          color: gray
-          from: runwaybot
-          message: 'aws-1: Concourse successfully deployed client-aws-1-prod-pipeline-test'
-          notify: false
-        put: hipchat
   public: true
   serial: true
 - name: client-aws-1-sandbox-pipeline-test
@@ -4776,13 +4586,6 @@ jobs:
             failed'
           username: runwaybot
         put: slack
-      - params:
-          color: gray
-          from: runwaybot
-          message: 'aws-1: Concourse deployment to client-aws-1-sandbox-pipeline-test
-            failed'
-          notify: false
-        put: hipchat
     on_success:
       in_parallel:
       - params:
@@ -4791,12 +4594,6 @@ jobs:
           text: 'aws-1: Concourse successfully deployed client-aws-1-sandbox-pipeline-test'
           username: runwaybot
         put: slack
-      - params:
-          color: gray
-          from: runwaybot
-          message: 'aws-1: Concourse successfully deployed client-aws-1-sandbox-pipeline-test'
-          notify: false
-        put: hipchat
   public: true
   serial: true
 resource_types:
@@ -4811,14 +4608,6 @@ resource_types:
 - name: slack-notification
   source:
     repository: cfcommunity/slack-notification-resource
-  type: registry-image
-- name: hipchat-notification
-  source:
-    repository: cfcommunity/hipchat-notification-resource
-  type: registry-image
-- name: stride-notification
-  source:
-    repository: starkandwayne/stride-notification-resource
   type: registry-image
 - name: bosh-config
   source:
@@ -5100,13 +4889,6 @@ resources:
   source:
     url: http://127.0.0.1:1337
   type: slack-notification
-- icon: bell-ring
-  name: hipchat
-  source:
-    hipchat_server_url: http://api.hipchat.com
-    room_id: 1234
-    token: abcdefg
-  type: hipchat-notification
 EOF
 # }}}
 
@@ -5305,13 +5087,6 @@ jobs:
             failed'
           username: runwaybot
         put: slack
-      - params:
-          color: gray
-          from: runwaybot
-          message: 'aws-1: Concourse deployment to client-aws-1-preprod-pipeline-test
-            failed'
-          notify: false
-        put: hipchat
     on_success:
       in_parallel:
       - params:
@@ -5320,12 +5095,6 @@ jobs:
           text: 'aws-1: Concourse successfully deployed client-aws-1-preprod-pipeline-test'
           username: runwaybot
         put: slack
-      - params:
-          color: gray
-          from: runwaybot
-          message: 'aws-1: Concourse successfully deployed client-aws-1-preprod-pipeline-test'
-          notify: false
-        put: hipchat
   public: true
   serial: true
 - name: notify-client-aws-1-prod-pipeline-test-changes
@@ -5394,14 +5163,6 @@ jobs:
           then schedule and run a deploy via Concourse'
         username: runwaybot
       put: slack
-    - params:
-        color: gray
-        from: runwaybot
-        message: 'aws-1: Changes are staged to be deployed to client-aws-1-prod-pipeline-test,
-          see notify-client-aws-1-prod-pipeline-test-changes job for change summary,
-          then schedule and run a deploy via Concourse'
-        notify: false
-      put: hipchat
   public: true
   serial: true
 - name: client-aws-1-prod-pipeline-test
@@ -5566,13 +5327,6 @@ jobs:
           text: 'aws-1: Concourse deployment to client-aws-1-prod-pipeline-test failed'
           username: runwaybot
         put: slack
-      - params:
-          color: gray
-          from: runwaybot
-          message: 'aws-1: Concourse deployment to client-aws-1-prod-pipeline-test
-            failed'
-          notify: false
-        put: hipchat
     on_success:
       in_parallel:
       - params:
@@ -5581,12 +5335,6 @@ jobs:
           text: 'aws-1: Concourse successfully deployed client-aws-1-prod-pipeline-test'
           username: runwaybot
         put: slack
-      - params:
-          color: gray
-          from: runwaybot
-          message: 'aws-1: Concourse successfully deployed client-aws-1-prod-pipeline-test'
-          notify: false
-        put: hipchat
   public: true
   serial: true
 - name: client-aws-1-sandbox-pipeline-test
@@ -5758,13 +5506,6 @@ jobs:
             failed'
           username: runwaybot
         put: slack
-      - params:
-          color: gray
-          from: runwaybot
-          message: 'aws-1: Concourse deployment to client-aws-1-sandbox-pipeline-test
-            failed'
-          notify: false
-        put: hipchat
     on_success:
       in_parallel:
       - params:
@@ -5773,12 +5514,6 @@ jobs:
           text: 'aws-1: Concourse successfully deployed client-aws-1-sandbox-pipeline-test'
           username: runwaybot
         put: slack
-      - params:
-          color: gray
-          from: runwaybot
-          message: 'aws-1: Concourse successfully deployed client-aws-1-sandbox-pipeline-test'
-          notify: false
-        put: hipchat
   public: true
   serial: true
 resource_types:
@@ -5793,14 +5528,6 @@ resource_types:
 - name: slack-notification
   source:
     repository: cfcommunity/slack-notification-resource
-  type: registry-image
-- name: hipchat-notification
-  source:
-    repository: cfcommunity/hipchat-notification-resource
-  type: registry-image
-- name: stride-notification
-  source:
-    repository: starkandwayne/stride-notification-resource
   type: registry-image
 - name: bosh-config
   source:
@@ -6082,13 +5809,6 @@ resources:
   source:
     url: http://127.0.0.1:1337
   type: slack-notification
-- icon: bell-ring
-  name: hipchat
-  source:
-    hipchat_server_url: http://api.hipchat.com
-    room_id: 1234
-    token: abcdefg
-  type: hipchat-notification
 EOF
 # }}}
 
@@ -6210,14 +5930,6 @@ resource_types:
 - name: slack-notification
   source:
     repository: cfcommunity/slack-notification-resource
-  type: registry-image
-- name: hipchat-notification
-  source:
-    repository: cfcommunity/hipchat-notification-resource
-  type: registry-image
-- name: stride-notification
-  source:
-    repository: starkandwayne/stride-notification-resource
   type: registry-image
 - name: bosh-config
   source:

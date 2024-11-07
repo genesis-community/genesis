@@ -143,7 +143,7 @@ sub parse_pipeline {
 	}
 	for (keys %{$p->{pipeline}}) {
 		push @errors, "Unrecognized `pipeline.$_' key found."
-			unless m/^(name|public|tagged|errands|ocfp|vault|git|slack|hipchat|stride|email|boshes|task|layout|layouts|groups|debug|locker|unredacted|notifications|auto-update|registry)$/;
+			unless m/^(name|public|tagged|errands|ocfp|vault|git|slack|email|boshes|task|layout|layouts|groups|debug|locker|unredacted|notifications|auto-update|registry|require-passed-caches)$/;
 	}
 	for (qw(name vault git boshes)) {
 		push @errors, "`pipeline.$_' is required."
@@ -215,6 +215,8 @@ sub parse_pipeline {
 			$p->{pipeline}{git}{commits}{user_email} ||= 'concourse@pipeline';
 		}
 		($p->{pipeline}{git}{root} ||= '.') =~ s#/*$##;
+		$p->{pipeline}{git}{branch} ||= 'master';
+		$p->{pipeline}{git}{version_depth} ||= 0;
 	}
 
 	# validate locker
@@ -476,6 +478,13 @@ sub parse_pipeline {
 		}
 	}
 
+	if (exists $p->{pipeline}{'require-passed-caches'}) {
+		push @errors, "expecting `pipeline.require-passed-caches' to be boolean, found ".lc(ref($p->{pipeline}{'require-passed-caches'}) || 'string')
+			if ref($p->{pipeline}{'require-passed-caches'}) ne 'JSON::PP::Boolean';
+	} else {
+		$p->{pipeline}{'require-passed-caches'} = JSON::PP::true;  # TODO: Will be false in the future, once validated and other clients are updated
+	}
+
 	return $p, @errors;
 }
 
@@ -537,7 +546,7 @@ sub parse {
 	# some default values, if the user didn't supply any
 	$P->{pipeline}{vault}{verify} = yaml_bool($P->{pipeline}{vault}{verify}, 1);
 
-	$P->{pipeline}{task}{image}   ||= 'starkandwayne/concourse';
+	$P->{pipeline}{task}{image}   ||= 'genesiscommunity/concourse';
 	$P->{pipeline}{task}{version} ||= 'latest';
 	$P->{pipeline}{task}{privileged} ||= [];
 
@@ -652,10 +661,13 @@ sub parse {
 	# triggererd by more than one other environment.  this decision
 	# was made to simplify implementation, and was deemed to not
 	# impose overly much on desired pipeline structure.
+	#
+	# TODO: Explore allowing multiple triggers for a given environment, such
+	# as having lab A and qa B both pass in order to trigger a deploy of preprod C.
 	my $triggers = {};
 	for my $a (keys %{$P->{will_trigger}}) {
 		for my $b (@{$P->{will_trigger}{$a}}) {
-			# $a triggers $b, that is $b won't deploy unti we
+			# $a triggers $b, that is $b won't deploy until we
 			# see a successful deploy (+test) of the $a environment
 			die "Environment '$b' is already being triggered by environment '$triggers->{$b}'.\nIt is illegal to trigger an environment more than once.\n"
 				if $triggers->{$b} and $triggers->{$b} ne $a;
@@ -761,20 +773,30 @@ sub generate_pipeline_concourse_yaml {
 pipeline:
 EOF
 	# -- pipeline.git {{{
-	my $git_credentials;
+	my ($git_credentials, $git_resource_creds, $git_env_creds);
 	if ($pipeline->{pipeline}{git}{private_key}) {
 		$git_credentials = "    private_key: |-\n      ".join("\n      ",split("\n",$pipeline->{pipeline}{git}{private_key}));
+		$git_resource_creds = "      private_key: (( grab pipeline.git.private_key ))";
+		$git_env_creds = "            GIT_PRIVATE_KEY:      (( grab pipeline.git.private_key ))";
 	} else {
 		my $git_password_as_yaml = string_to_yaml($pipeline->{pipeline}{git}{password});
 		$git_credentials = "    username:    $pipeline->{pipeline}{git}{username}\n    password:    \"$git_password_as_yaml\"";
+		$git_resource_creds = "      username:    (( grab pipeline.git.username ))\n      password:    (( grab pipeline.git.password ))";
+		$git_env_creds = "            GIT_USERNAME:         (( grab pipeline.git.username ))\n            GIT_PASSWORD:         (( grab pipeline.git.password || \"\" ))";
 	}
+	my $git_genesis_root = $pipeline->{pipeline}{git}{root} ne '.' ? "            GIT_GENESIS_ROOT:     $pipeline->{pipeline}{git}{root}\n" : "";
+
 	print $OUT <<"EOF";
   git:
     uri:         $pipeline->{pipeline}{git}{uri}
-    branch:      master
+    branch:      $pipeline->{pipeline}{git}{branch}
 $git_credentials
     config:
       icon: github
+    resource_source:
+      branch:      (( grab pipeline.git.branch ))
+$git_resource_creds
+      uri:         (( grab pipeline.git.uri ))
     commits:
       user_name:  $pipeline->{pipeline}{git}{commits}{user_name}
       user_email: $pipeline->{pipeline}{git}{commits}{user_email}
@@ -937,16 +959,6 @@ EOF
     - update-genesis-assets
 EOF
 	}
-	my ($git_resource_creds,$git_env_creds);
-	if ($pipeline->{pipeline}{git}{private_key}) {
-		$git_resource_creds = "      private_key: (( grab pipeline.git.private_key ))";
-		$git_env_creds = "            GIT_PRIVATE_KEY:      (( grab pipeline.git.private_key ))";
-	} else {
-		$git_resource_creds = "      username:    (( grab pipeline.git.username ))\n      password:    (( grab pipeline.git.password ))";
-		$git_env_creds = "            GIT_USERNAME:         (( grab pipeline.git.username ))\n            GIT_PASSWORD:         (( grab pipeline.git.password || \"\" ))";
-	}
-	my $git_genesis_root = $pipeline->{pipeline}{git}{root} ne '.' ? "            GIT_GENESIS_ROOT:     $pipeline->{pipeline}{git}{root}\n" : "";
-
 	print $OUT <<EOF;
 
 resources:
@@ -954,19 +966,22 @@ resources:
     type: git
     .: (( inject pipeline.git.config ))
     source:
-      branch:      (( grab pipeline.git.branch ))
-$git_resource_creds
-      uri:         (( grab pipeline.git.uri ))
+      .: (( inject pipeline.git.resource_source ))
 EOF
+	if ($pipeline->{pipeline}{git}{version_depth}) {
+		print $OUT "      version_depth: $pipeline->{pipeline}{git}{version_depth}\n";
+	}
    # }}}
 	# CONCOURSE: env-specific resource configuration {{{
 	my $path_root = $pipeline->{pipeline}{git}{root}."/";
 	$path_root = "" if $path_root eq "./";
-	my @base_paths = qw[
+	my @base_paths = $pipeline->{pipeline}{'require-passed-caches'}
+		? qw[
 		.genesis/bin/genesis
 		.genesis/kits
 		.genesis/config
-	];
+		]
+		: ();
 	for my $env (sort @{$pipeline->{envs}}) {
 		my $E = $top->load_env($env);
 		# YAML snippets, to make the print's less obnoxious {{{
@@ -981,7 +996,7 @@ EOF
     type: git
     .: (( inject pipeline.git.config ))
     source:
-      .: (( inject resources.git.source ))
+      .: (( inject pipeline.git.resource_source ))
       paths:
 EOF
 		# }}}
@@ -1015,7 +1030,7 @@ EOF
     type: git
     .: (( inject pipeline.git.config ))
     source:
-      .: (( inject resources.git.source ))
+      .: (( inject pipeline.git.resource_source ))
       paths:
 EOF
 			print $OUT "# $trigger -> $env\n";
@@ -1050,7 +1065,7 @@ EOF
 			}
 			print $OUT <<EOF;
       config: cloud
-      name: $config_name
+      all: true
 
   - name: ${alias}-runtime-config
     type: bosh-config
@@ -1069,7 +1084,7 @@ EOF
 			}
 			print $OUT <<EOF;
       config: runtime
-      name: $config_name
+      all: true
 
 EOF
 		}
@@ -1250,6 +1265,7 @@ EOF
               password: "$registry_password_as_yaml"
 EOF
 	}
+	my $passing_cache = $pipeline->{pipeline}{'require-passed-caches'};
 	for my $env (sort @{$pipeline->{envs}}) {
 		my $E = $top->load_env($env);
 		# CONCOURSE: env-specific job configuration {{{
@@ -1270,22 +1286,42 @@ EOF
 		#    on for our cached configuration changes
 		my $passed =$pipeline->{triggers}{$env} ? $pipeline->{triggers}{$env} : "";
 		my $passed_alias = $passed ? "$pipeline->{aliases}{$passed}-$deployment_suffix" : "";
+		my $notify_git_chaining = my $task_git_chaining = $passing_cache
+		? ""
+		: "- { get: git, passed: [$passed_alias], trigger: false }";
 
 		# 5) Alias of environment for concourse readabilitys
 		my $alias = $pipeline->{aliases}{$env};
 
 		# 6) If we have a previous environment, generate input definition
 		#    too look at our cache
+		#
+		#    We have to contend with triggering vs. non-triggering, inline vs
+		#    parallel notifications, and the new 'require-passed-caches' feature
+		#    that allows us to sever the pass qualification from the trigger
+		#    on cached changes.
+		#
+		#    "Trigger" in the context below is if it autotriggers the next
+		#    environment, not if it is triggered by another environment.
 		my $cache_yaml = "";
+		my $notify_passed_clause = '';
 		if ($pipeline->{triggers}{$env}) {
-			if ($trigger eq "true" || !$inline_notifications) {
-				$cache_yaml = sprintf("- { get: $alias-cache, passed: [%s], trigger: %s }", $passed_alias, $trigger)
-			} else {
-				$cache_yaml = sprintf("- { get: $alias-cache, passed: [notify-%s-%s-changes], trigger: false }", $alias, $deployment_suffix);
+			my $passed_clause = '';
+			if ($passing_cache) {
+				$notify_passed_clause = ", passed: [${passed_alias}]";
+				$passed_clause = ($trigger eq "true" || !$inline_notifications)
+				? $notify_passed_clause
+				: ", passed: [notify-${alias}-${deployment_suffix}-changes]";
+			} elsif ($trigger eq 'false' && $inline_notifications) {
+				$task_git_chaining = "- { get: git, passed: [notify-${alias}-${deployment_suffix}-changes], trigger: false }";
 			}
+			$cache_yaml = sprintf(
+				"- { get: $alias-cache%s, trigger: %s }",
+				$passed_clause, $trigger
+			);
 		}
 		my $notify_cache = $pipeline->{triggers}{$env} ?
-			"- { get: $alias-cache, passed: [$passed_alias], trigger: true }" : "";
+			"- { get: $alias-cache${notify_passed_clause}, trigger: true }" : "";
 
 		# 7) If we don't auto-trigger, we should use passed as our notify resource
 		#    otherwise, use the live value
@@ -1308,7 +1344,9 @@ EOF
 			"Concourse successfully deployed $env-$deployment_suffix", "success");
 
 		# 11) directory to find the genesis binary in (use previous env cache if present, else local-changes
-		my $genesis_srcdir = my $genesis_bindir = $passed ? "$alias-cache" : "$alias-changes";
+		my $genesis_srcdir = my $genesis_bindir = $passing_cache
+		? ($passed ? "$alias-cache" : "$alias-changes")
+		: 'git';
 		$genesis_bindir .= "/$pipeline->{pipeline}{git}{root}"
 		  if ($pipeline->{pipeline}{git}{root} ne ".");
 
@@ -1324,6 +1362,7 @@ EOF
       - in_parallel:
         - { get: $alias-changes, trigger: true }
         $notify_cache
+        $notify_git_chaining
 EOF
 			unless ($E->use_create_env) {
 				print $OUT <<EOF;
@@ -1383,6 +1422,11 @@ EOF
 EOF
 		print $OUT <<EOF if $passed;
             - { name: $alias-cache }
+EOF
+    print $OUT <<EOF unless $pipeline->{pipeline}{'require-passed-caches'};
+            - { name: git }
+          #outputs: # DO WE NEED THIS?
+          #  - { name: git }
 EOF
 		print $OUT <<EOF;
       - $changes_staged_notification
@@ -1468,6 +1512,7 @@ EOF
         # the previous environment, if in cached, and if not, should be triggered
         $changes_yaml
         $cache_yaml
+        $task_git_chaining
 EOF
 		print $OUT <<EOF;
       - task: bosh-deploy
@@ -1517,6 +1562,9 @@ EOF
 EOF
 		print $OUT <<EOF if $passed;
             - { name: $alias-cache }
+EOF
+		print $OUT <<EOF unless $pipeline->{pipeline}{'require-passed-caches'};
+            - { name: git }
 EOF
 		print $OUT <<EOF;
           outputs:
@@ -1603,7 +1651,7 @@ EOF
 EOF
 		print $OUT <<EOF if $passed;
             PREVIOUS_ENV:         ${\($passed || '~')}
-            CACHE_DIR:            $alias-cache
+            CACHE_DIR:            out/git # getting this from previous task
 EOF
 		print $OUT <<EOF;
             WORKING_DIR:          out/git
@@ -1631,11 +1679,18 @@ ${registry_creds}
 EOF
 
 		for my $push_env (@{$pipeline->{will_trigger}{$env}}) {
-			print $OUT <<EOF;
+			if ($passing_cache) {
+				print $OUT <<EOF;
       - put: $pipeline->{aliases}{$push_env}-cache
         params:
           repository: cache-out/git
 EOF
+			} else {
+				print $OUT <<EOF;
+      - get: $pipeline->{aliases}{$push_env}-cache
+        $tag_yaml
+EOF
+			}
 		}
 	# }}}
 	}

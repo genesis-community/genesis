@@ -69,6 +69,3 @@ pipeline:
   slack:
     channel: '#botspam'
     webhook: http://127.0.0.1:1337
-  hipchat:
-    room_id: 1234
-    token: abcdefg
