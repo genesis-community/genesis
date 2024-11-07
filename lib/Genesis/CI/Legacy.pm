@@ -972,7 +972,7 @@ EOF
 			}
 			print $OUT <<EOF;
       config: cloud
-      name: $config_name
+      all: true
 
   - name: ${alias}-runtime-config
     type: bosh-config
@@ -991,7 +991,7 @@ EOF
 			}
 			print $OUT <<EOF;
       config: runtime
-      name: $config_name
+      all: true
 
 EOF
 		}
