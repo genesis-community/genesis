@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-# vim:ft=perl:ts=4:sts=4:sw=4
+# vim:ft=perl:ts=2:sts=2:sw=2
 use strict;
 use warnings;
 
@@ -8,6 +8,10 @@ use MIME::Base64 qw(encode_base64);
 use POSIX qw(strftime);
 
 ######################################################################
+if (grep {/^(-h|--help)$/} @ARGV) {
+	printf STDERR "usage: ./pack [<version> [<output path/file>]]\n\n";
+	exit 0;
+}
 
 system "perl -c -Ilib bin/genesis";
 die "Perl compilation failed, not packing\n" if $?;
@@ -45,6 +49,8 @@ if (qx(git status --porcelain bin/genesis lib/)) {
 	$sha1 .= '+';
 	$stub_out .= '-dirty';
 }
+$stub_out = $ARGV[1] if $ARGV[1];
+
 my $BUILD = "($sha1) build ".strftime("%Y%m%d.%H%M%S", gmtime);
 
 # ---
@@ -69,7 +75,7 @@ chmod 0755, "pkg/genesis";
 # Assemble the tarball (with embedded checksum)
 # ---
 my $fh;
-system('tar -cf pkg.tar -C pkg .') == 0
+system('tar -cf pkg.tar --no-xattrs -C pkg .') == 0
 	or die "Failed to compile runtime archive: $!\n";
 open $fh, "<", "pkg.tar"
 	or die "Failed to reopen runtime archive for reading: $!\n";
@@ -82,7 +88,12 @@ open $fh, ">", "pkg/checksum"
 print $fh "$checksum\n";
 close $fh;
 
-system('tar -rf pkg.tar -C pkg ./checksum') == 0
+open $fh, ">", "pkg/version"
+	or die "Failed to open version file for writing: $!\n";
+print $fh "$VERSION $BUILD\n";
+close $fh;
+
+system('tar -rf pkg.tar --no-xattrs -C pkg ./checksum ./version') == 0
 	or die "Failed to append checksum file to runtime archive: $!\n";
 
 system('gzip -9 pkg.tar') == 0
@@ -91,8 +102,11 @@ system('gzip -9 pkg.tar') == 0
 open my $o, ">", $stub_out
 	or die "Failed to open $stub_out for writing: $!\n";
 
+my $first_line = <DATA>;
+print $o $first_line;
+print $o "\n# Genesis $VERSION $BUILD\n\n";
 print $o $_ for <DATA>;
-print $o "__DATA__\n$checksum\n";
+print $o "\n__DATA__\n$checksum\n";
 
 my $buf;
 open my $tbfh, "< :raw :bytes", "pkg.tar.gz"
@@ -158,7 +172,7 @@ if ($fh) {
 }
 
 if ($want ne $have) {
-	system("/bin/bash", "-c", "rm -rf $root/*");
+	system("/bin/bash", "-c", "rm -rf $root/lib $root/genesis $root/checksum $root/version");
 	my $action = $have ? "updating" : "installing";
 
 	# extract the payload
