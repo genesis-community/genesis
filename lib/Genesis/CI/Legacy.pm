@@ -480,7 +480,7 @@ sub parse {
 	# some default values, if the user didn't supply any
 	$P->{pipeline}{vault}{verify} = yaml_bool($P->{pipeline}{vault}{verify}, 1);
 
-	$P->{pipeline}{task}{image}   ||= 'starkandwayne/concourse';
+	$P->{pipeline}{task}{image}   ||= 'genesiscommunity/concourse';
 	$P->{pipeline}{task}{version} ||= 'latest';
 	$P->{pipeline}{task}{privileged} ||= [];
 
