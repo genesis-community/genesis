@@ -1568,9 +1568,9 @@ EOF
 		if ($passing_cache) {
 			for my $push_env (@{$pipeline->{will_trigger}{$env}}) {
 				print $OUT <<EOF;
-				- put: $pipeline->{aliases}{$push_env}-cache
-					params:
-						repository: cache-out/git
+      - put: $pipeline->{aliases}{$push_env}-cache
+        params:
+          repository: cache-out/git
 EOF
 			}
 		}
