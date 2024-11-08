@@ -95,7 +95,7 @@ jobs:
         - name: cache-out
         params:
           CI_NO_REDACT: 0
-          CACHE_DIR: client-aws-1-preprod-cache
+          CACHE_DIR: out/git
           CURRENT_ENV: client-aws-1-preprod
           GENESIS_HONOR_ENV: 1
           GIT_AUTHOR_EMAIL: concourse@pipeline
@@ -269,7 +269,7 @@ jobs:
         outputs:
         - name: cache-out
         params:
-          CACHE_DIR: client-aws-1-prod-cache
+          CACHE_DIR: out/git
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-prod
           GENESIS_HONOR_ENV: 1
@@ -719,7 +719,7 @@ jobs:
         outputs:
         - name: cache-out
         params:
-          CACHE_DIR: client-aws-1-preprod-cache
+          CACHE_DIR: out/git
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-preprod
           GENESIS_HONOR_ENV: 1
@@ -906,7 +906,7 @@ jobs:
         outputs:
         - name: cache-out
         params:
-          CACHE_DIR: client-aws-1-prod-cache
+          CACHE_DIR: out/git
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-prod
           GENESIS_HONOR_ENV: 1
@@ -1395,7 +1395,7 @@ jobs:
         outputs:
         - name: cache-out
         params:
-          CACHE_DIR: preprod-cache
+          CACHE_DIR: out/git
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-preprod
           DEBUG: 1
@@ -1587,7 +1587,7 @@ jobs:
         outputs:
         - name: cache-out
         params:
-          CACHE_DIR: prod-cache
+          CACHE_DIR: out/git
           CI_NO_REDACT: 0
           CURRENT_ENV: client-aws-1-prod
           DEBUG: 1
@@ -2078,7 +2078,7 @@ jobs:
         outputs:
         - name: cache-out
         params:
-          CACHE_DIR: client-aws-1-preprod-cache
+          CACHE_DIR: out/git
           CI_NO_REDACT: 1
           CURRENT_ENV: client-aws-1-preprod
           DEBUG: 1
@@ -2327,7 +2327,7 @@ jobs:
         outputs:
         - name: cache-out
         params:
-          CACHE_DIR: client-aws-1-prod-cache
+          CACHE_DIR: out/git
           CI_NO_REDACT: 1
           CURRENT_ENV: client-aws-1-prod
           DEBUG: 1
@@ -3190,7 +3190,7 @@ jobs:
         outputs:
         - name: cache-out
         params:
-          CACHE_DIR: client-aws-1-preprod-cache
+          CACHE_DIR: out/git
           CI_NO_REDACT: 1
           CURRENT_ENV: client-aws-1-preprod
           DEBUG: 1
@@ -3434,7 +3434,7 @@ jobs:
         outputs:
         - name: cache-out
         params:
-          CACHE_DIR: client-aws-1-prod-cache
+          CACHE_DIR: out/git
           CI_NO_REDACT: 1
           CURRENT_ENV: client-aws-1-prod
           DEBUG: 1
@@ -4109,7 +4109,7 @@ jobs:
         outputs:
         - name: cache-out
         params:
-          CACHE_DIR: client-aws-1-preprod-cache
+          CACHE_DIR: out/git
           CI_NO_REDACT: 1
           CURRENT_ENV: client-aws-1-preprod
           DEBUG: 1
@@ -4355,7 +4355,7 @@ jobs:
         outputs:
         - name: cache-out
         params:
-          CACHE_DIR: client-aws-1-prod-cache
+          CACHE_DIR: out/git
           CI_NO_REDACT: 1
           CURRENT_ENV: client-aws-1-prod
           DEBUG: 1
@@ -5031,7 +5031,7 @@ jobs:
         outputs:
         - name: cache-out
         params:
-          CACHE_DIR: client-aws-1-preprod-cache
+          CACHE_DIR: out/git
           CI_NO_REDACT: 1
           CURRENT_ENV: client-aws-1-preprod
           DEBUG: 1
@@ -5275,7 +5275,7 @@ jobs:
         outputs:
         - name: cache-out
         params:
-          CACHE_DIR: client-aws-1-prod-cache
+          CACHE_DIR: out/git
           CI_NO_REDACT: 1
           CURRENT_ENV: client-aws-1-prod
           DEBUG: 1
