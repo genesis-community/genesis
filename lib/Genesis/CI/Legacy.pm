@@ -1538,7 +1538,7 @@ EOF
 EOF
 		print $OUT <<EOF if $passed;
             PREVIOUS_ENV:         ${\($passed || '~')}
-            CACHE_DIR:            $alias-cache
+            CACHE_DIR:            out/git # getting this from previous task
 EOF
 		print $OUT <<EOF;
             WORKING_DIR:          out/git
@@ -1565,12 +1565,17 @@ ${registry_creds}
           repository: cache-out/git
 EOF
 
-		if ($passing_cache) {
-			for my $push_env (@{$pipeline->{will_trigger}{$env}}) {
+		for my $push_env (@{$pipeline->{will_trigger}{$env}}) {
+			if ($passing_cache) {
 				print $OUT <<EOF;
       - put: $pipeline->{aliases}{$push_env}-cache
         params:
           repository: cache-out/git
+EOF
+			} else {
+				print $OUT <<EOF;
+      - get: $pipeline->{aliases}{$push_env}-cache
+        $tag_yaml
 EOF
 			}
 		}
