@@ -192,6 +192,7 @@ sub validate_pipeline {
 			$p->{pipeline}{git}{commits}{user_email} ||= 'concourse@pipeline';
 		}
 		($p->{pipeline}{git}{root} ||= '.') =~ s#/*$##;
+		$p->{pipeline}{git}{version_depth} ||= 0;
 	}
 
 	# validate locker
@@ -890,6 +891,9 @@ resources:
 $git_resource_creds
       uri:         (( grab pipeline.git.uri ))
 EOF
+	if ($pipeline->{pipeline}{git}{version_depth}) {
+		print $OUT "      version_depth: $pipeline->{pipeline}{git}{version_depth}\n";
+	}
    # }}}
 	# CONCOURSE: env-specific resource configuration {{{
 	my $path_root = $pipeline->{pipeline}{git}{root}."/";
