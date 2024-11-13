@@ -192,6 +192,7 @@ sub validate_pipeline {
 			$p->{pipeline}{git}{commits}{user_email} ||= 'concourse@pipeline';
 		}
 		($p->{pipeline}{git}{root} ||= '.') =~ s#/*$##;
+		$p->{pipeline}{git}{branch} ||= 'master';
 		$p->{pipeline}{git}{version_depth} ||= 0;
 	}
 
@@ -715,20 +716,30 @@ sub generate_pipeline_concourse_yaml {
 pipeline:
 EOF
 	# -- pipeline.git {{{
-	my $git_credentials;
+	my ($git_credentials, $git_resource_creds, $git_env_creds);
 	if ($pipeline->{pipeline}{git}{private_key}) {
 		$git_credentials = "    private_key: |-\n      ".join("\n      ",split("\n",$pipeline->{pipeline}{git}{private_key}));
+		$git_resource_creds = "      private_key: (( grab pipeline.git.private_key ))";
+		$git_env_creds = "            GIT_PRIVATE_KEY:      (( grab pipeline.git.private_key ))";
 	} else {
 		my $git_password_as_yaml = string_to_yaml($pipeline->{pipeline}{git}{password});
 		$git_credentials = "    username:    $pipeline->{pipeline}{git}{username}\n    password:    \"$git_password_as_yaml\"";
+		$git_resource_creds = "      username:    (( grab pipeline.git.username ))\n      password:    (( grab pipeline.git.password ))";
+		$git_env_creds = "            GIT_USERNAME:         (( grab pipeline.git.username ))\n            GIT_PASSWORD:         (( grab pipeline.git.password || \"\" ))";
 	}
+	my $git_genesis_root = $pipeline->{pipeline}{git}{root} ne '.' ? "            GIT_GENESIS_ROOT:     $pipeline->{pipeline}{git}{root}\n" : "";
+
 	print $OUT <<"EOF";
   git:
     uri:         $pipeline->{pipeline}{git}{uri}
-    branch:      master
+    branch:      $pipeline->{pipeline}{git}{branch}
 $git_credentials
     config:
       icon: github
+    resource_source:
+      branch:      (( grab pipeline.git.branch ))
+$git_resource_creds
+      uri:         (( grab pipeline.git.uri ))
     commits:
       user_name:  $pipeline->{pipeline}{git}{commits}{user_name}
       user_email: $pipeline->{pipeline}{git}{commits}{user_email}
@@ -870,16 +881,6 @@ EOF
     - update-genesis-assets
 EOF
 	}
-	my ($git_resource_creds,$git_env_creds);
-	if ($pipeline->{pipeline}{git}{private_key}) {
-		$git_resource_creds = "      private_key: (( grab pipeline.git.private_key ))";
-		$git_env_creds = "            GIT_PRIVATE_KEY:      (( grab pipeline.git.private_key ))";
-	} else {
-		$git_resource_creds = "      username:    (( grab pipeline.git.username ))\n      password:    (( grab pipeline.git.password ))";
-		$git_env_creds = "            GIT_USERNAME:         (( grab pipeline.git.username ))\n            GIT_PASSWORD:         (( grab pipeline.git.password || \"\" ))";
-	}
-	my $git_genesis_root = $pipeline->{pipeline}{git}{root} ne '.' ? "            GIT_GENESIS_ROOT:     $pipeline->{pipeline}{git}{root}\n" : "";
-
 	print $OUT <<EOF;
 
 resources:
@@ -887,9 +888,7 @@ resources:
     type: git
     .: (( inject pipeline.git.config ))
     source:
-      branch:      (( grab pipeline.git.branch ))
-$git_resource_creds
-      uri:         (( grab pipeline.git.uri ))
+      .: (( inject pipeline.git.resource_source ))
 EOF
 	if ($pipeline->{pipeline}{git}{version_depth}) {
 		print $OUT "      version_depth: $pipeline->{pipeline}{git}{version_depth}\n";
@@ -919,7 +918,7 @@ EOF
     type: git
     .: (( inject pipeline.git.config ))
     source:
-      .: (( inject resources.git.source ))
+      .: (( inject pipeline.git.resource_source ))
       paths:
 EOF
 		# }}}
@@ -953,7 +952,7 @@ EOF
     type: git
     .: (( inject pipeline.git.config ))
     source:
-      .: (( inject resources.git.source ))
+      .: (( inject pipeline.git.resource_source ))
       paths:
 EOF
 			print $OUT "# $trigger -> $env\n";
