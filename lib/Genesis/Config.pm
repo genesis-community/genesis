@@ -23,15 +23,15 @@ use constant {
 
 # new - return a bare config object {{{
 sub new {
-	my ($class,$path,$autosave) = @_;
+	my ($class,$path,$autosave,$content) = @_;
 
 	bug('No path to config file was specified - cannot autosave') if $autosave && !$path;
 
 	return bless({
 			path => $path,
 			persistant_signature => undef,
-			autosave => $autosave ? 1 : 0,
-			contents => {},
+			autosave => ($autosave && $path)? 1 : 0,
+			contents => $content//{},
 		}, $class);
 }
 
@@ -486,7 +486,7 @@ sub show_diff {
 }
 
 # }}}
-# TODO: extract the hash schema validation into a separate method {{{
+# TODO: extract the hash schema validation into a separate method
 # }}}
 1;
 # vim: fdm=marker:foldlevel=1:noet
