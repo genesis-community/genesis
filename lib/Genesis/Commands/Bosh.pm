@@ -10,6 +10,7 @@ use Genesis::Commands;
 use Genesis::Top;
 use Genesis::UI;
 
+# bosh - provide a wrapper around the bosh command {{{
 sub bosh {
 	append_options(redact => ! -t STDOUT);
 
@@ -186,12 +187,13 @@ sub broadcast {
 	success("\nBroadcast complete!\n");
 }
 
+# New bosh_configs commands
 sub bosh_configs {
 	my %options = %{get_options()};
 	my ($env_name, $action, @extra_args) = @_;
 
 	$action //= 'upload';
-	my @valid_actions = qw(upload list view compare delete);
+	my @valid_actions = qw(upload list view compare delete summary);
 	bail(
 		"Invalid action: %s - expected one of: %s (leave blank for 'upload')",
 		$action, sentence_join(@valid_actions)
@@ -199,13 +201,42 @@ sub bosh_configs {
 
 	bail("Too many arguments provided") if @extra_args > 0;
 
-	my $env = Genesis::Top->new('.')->load_env($env_name)->with_vault()->with_bosh();
+	my $env = Genesis::Top->new('.')->load_env($env_name)->with_vault(); #->with_bosh();
 	my $bosh = $env->bosh;
 
 	my $subcommand = "bosh_configs_$action";
 	return (\&{$subcommand})->($env, $bosh, %options);
 }
 
+# bosh_configs_summary - list all configs provided by this environment/kit, and their status on the director {{{
+sub bosh_configs_summary {
+	my ($env, $bosh, %options) = @_;
+
+	# This command will:
+	# - Determine which configs are provided by the environment/kit by checking
+	#   for the presence of a cloud-config and runtime-config hooks file.
+	# - List any Director configs that will also be present
+	# - List any other configs in the Director that are not provided by the
+	#   environment/kit or director itself.
+	#
+	# Longer term, we may want to inform the user of the merge order of the
+	# configs, and any potential conflicts that may arise.  We also want to
+	# provide the status of the kit's configs on the Director (current, outdated,
+	# or missing).
+	#
+	# if --local|-l is provided, we will only list the configs provided by the
+	# environment/kit, and not the Director's configs.
+
+
+	#my $bosh_configs = $bosh->configs unless $options{local};
+	my $env_configs = $env->bosh_config_names;
+
+	my $result = $env->run_hook('cloud-config');
+	#use Pry; pry();
+}
+
+# }}}
+# bosh_configs_upload - upload configs to the director {{{
 sub bosh_configs_upload {
 	my ($env, $bosh, %options) = @_;
 	print "Genesis::Commands::Bosh::bosh_configs_upload called - TO BE IMPLEMENTED\n";
@@ -215,20 +246,7 @@ sub bosh_configs_upload {
 sub bosh_configs_list {
 	my ($env, $bosh, %options) = @_;
 	print "Genesis::Commands::Bosh::bosh_configs_list called - TO BE IMPLEMENTED\n";
-	my $configs_raw = read_json_from(
-		$bosh->execute({interactive => 0}, 'configs', '-r=99999', '--json')
-	);
-	my %configs = ();
-	for my $config (@{$configs_raw->{Tables}[0]{Rows}}) {
-		my ($type, $name) = @{$config}{qw{type name}};
-		my ($id, $current) = $config->{id} =~ m/^(\d+)(\*)?$/;
-		$configs{$type}{$name} //= {'current' => undef, 'entries' => {}};
-		$configs{$type}{$name}{'current'} = $id if $current;
-		$configs{$type}{$name}{'entries'}{$id} = {
-			date => $config->{"created_at"},
-			team => $config->{"team"},
-		}
-	}
+	my %configs = $bosh->configs;
 	use Pry; pry();
 	return 1;
 }

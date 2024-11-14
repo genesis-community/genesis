@@ -4,6 +4,7 @@ use warnings;
 
 use Genesis qw/trace bug bail trace new_enough semver pushd popd run/;
 use Data::Dumper ();
+use JSON::PP;
 
 sub init {
 	my ($class, %ops) = @_;
@@ -14,9 +15,8 @@ sub init {
 		join(", ", @missing)
 	) if @missing;
 
-	my $hook = bless({%ops, type => $ENV{GENESIS_KIT_HOOK}},$class);
-	$hook->{features} = [$hook->env->features]
-		unless $ENV{GENESIS_KIT_HOOK} eq 'feature';
+	my $hook = bless({%ops, complete => 0, type => $ENV{GENESIS_KIT_HOOK}},$class);
+	$hook->{features} = ($hook->env && $ENV{GENESIS_KIT_HOOK} ne 'feature') ? [$hook->env->features] : [];
 
 	trace({raw => 1},
 		"%senvironmental variables:\n%s",
@@ -71,6 +71,8 @@ sub perform {
 
 sub done {$_[0]->{complete} = 1}
 
+sub completed {$_[0]->{complete}}
+
 sub check_minimum_genesis_version {
 	my ($self,$min_version) = @_;
 	bail(
@@ -82,7 +84,7 @@ sub check_minimum_genesis_version {
 
 
 sub env {$_[0]->{env}}
-sub kit {$_[0]->env->kit}
+sub kit {$_[0]->env && $_[0]->env->kit}
 
 sub deployed {defined($_[0]->exodus_lookup('data'))}
 
@@ -102,12 +104,16 @@ sub want_feature {
 	return $self->{__wanted_features}{$feature};
 }
 
+# Special "universal" feature detection {{{
+sub is_ocfp {$_[0]->want_feature('ocfp')}
+
+# }}}
+
 sub set_features {
 	my $self = shift;
 	delete($self->{__wanted_features});
 	$self->{features} = [@_];
 }
-
 
 sub relative_env_path {
 	my $self = shift;
@@ -118,6 +124,7 @@ sub relative_env_path {
 }
 
 sub titleize {map { s/([\\w']+)/\\u\\L\$1/gr } @_}
+
 sub label {
 	my $self = shift;
 	$self->kit->kit_bug(
@@ -139,4 +146,11 @@ sub spruce_merge {
 	bail "Failed to merge spruce files: %s", $err if $res;
 	return $out;
 }
+
+# JSON/YAML helpers {{{
+sub TRUE  {JSON::PP::true}
+sub FALSE {JSON::PP::false}
+sub NULL  {JSON::PP::null}
+# }}}
+#
 1;

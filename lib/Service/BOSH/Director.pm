@@ -247,6 +247,25 @@ sub connect_and_validate {
 }
 
 # }}}
+# configs - list all the configurations on the BOSH director {{{
+sub configs {
+	my ($self) = @_;
+	my $configs_raw = read_json_from(
+		$self->execute({interactive => 0}, 'configs', '-r=99999', '--json')
+	);
+	my %configs = ();
+	for my $config (@{$configs_raw->{Tables}[0]{Rows}}) {
+		my ($type, $name) = @{$config}{qw{type name}};
+		my ($id, $current) = $config->{id} =~ m/^(\d+)(\*)?$/;
+		$configs{$type}{$name} //= {'current' => undef, 'entries' => {}};
+		$configs{$type}{$name}{'current'} = $id if $current;
+		$configs{$type}{$name}{'entries'}{$id} = {
+			date => $config->{"created_at"},
+			team => $config->{"team"},
+		}
+	}
+	return wantarray ? %configs : \%configs;
+}
 # download_confgs - download configuration(s) of the given type (and optional name) {{{
 sub download_configs {
 	my ($self, $path, $type, $name) = @_;

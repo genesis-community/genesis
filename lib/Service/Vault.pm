@@ -243,6 +243,8 @@ sub parse_vault_descriptor {
 }
 
 # }}}
+# TODO: Validate dependencies with output that is compatible wth
+# Genesis::Command::check_reqs
 # }}}
 
 ### Instance Methods {{{

@@ -968,6 +968,53 @@ sub exodus_lookup {
 }
 
 # }}}
+# director_exodus_lookup - lookup Exodus data from the director that deploys this environment {{{
+my $director_exodus_cache = {};
+sub director_exodus_lookup {
+	my ($self, $key, $default) = @_;
+	# TODO: Other code that needs to access bosh director exodus data should be
+	# refactored to use this method instead of what it currently does.
+	my ($bosh_alias,$bosh_dep_type,$bosh_exodus_vault,$bosh_exodus_mount) = $self->_parse_bosh_env($self->bosh_env);
+	$bosh_alias //= $self->name;
+	$bosh_dep_type //= 'bosh';
+	$bosh_exodus_mount //= $self->exodus_mount;
+	my $path = $bosh_exodus_mount.'/'.$bosh_alias.'/'.$bosh_dep_type;
+
+	# Check for cached data
+	my $bosh_exodus = undef;
+	my $cache_key = $path . ($bosh_exodus_vault ? ('@'.$bosh_exodus_vault->name) : '');
+	if (exists($director_exodus_cache->{$cache_key})) {
+		$bosh_exodus = $director_exodus_cache->{$cache_key};
+	} else {
+		my $bosh_vault = $self->vault;
+		if ($bosh_exodus_vault) {
+			$bosh_vault = Service::Vault->find_single_match_or_bail($bosh_exodus_vault);
+			bail(
+				"Could not access vault #C{%s} to retrieve BOSH director's Exodus data ".
+				"for #C{%s} environment.",
+				$bosh_exodus_vault, $bosh_alias
+			) unless $bosh_vault && $bosh_vault->connect_and_validate;
+		}
+		# Extended exodus paths support
+		my $path = $bosh_exodus_mount.'/'.$bosh_alias.'/'.$bosh_dep_type;
+		my $expand = 1;
+		if (ref($key) eq 'ARRAY') {
+			$path .= '/'.$key->[0];
+			$key = $key->[1];
+			$expand = 0;
+		}
+
+		if ($bosh_vault->has($path)) {
+			my $data = $bosh_vault->get($path);
+			$bosh_exodus = $expand ? unflatten($data) : $data;
+		} else {
+			$bosh_exodus = {};
+		}
+		$director_exodus_cache->{$cache_key} = $bosh_exodus;
+	}
+	return struct_lookup($bosh_exodus, $key, $default);
+}
+# }}}
 # deployment_lookup - lookup deployment details for a given timestamp, or list of deployments timestamps {{{
 sub deployment_lookup {
 	my ($self, $timestamp) = @_;
@@ -1077,6 +1124,64 @@ sub last_deployed_manifest_deprecated {
 }
 
 # }}}
+
+# Bosh Config stuff - TODO: sort later
+# bosh_config_names - returns a hash of bosh config names proved by the environment {{{
+sub bosh_config_names {
+	my $self = shift;
+	# environments need to be given a name based on the environment name and type
+	my $configs = {};
+	my $prefix = $self->name . '/' . $self->type;
+	my @config_types = $self->kit->provided_configs;
+	for my $config_type (@config_types) {
+		my ($type, $purpose) = split(/:/,$config_type,2); # Support multiple files per type
+		push @{$configs->{$type}}, $prefix.($purpose ? ":$purpose" : '');
+	}
+	return $configs;
+}
+
+sub env_config_overrides {
+	my ($self, $type) = @_;
+	my $overrides = $self->lookup('bosh-configs.$type', {});
+	# TODO: Need to figure out where to find these overrides
+	return $overrides;
+}
+
+sub director_config_overrides {
+	my $self = shift;
+	my $overrides = $self->director_exodus_lookup(['bosh-config/cloud' => '.'], {});
+	return $overrides;
+}
+
+sub scale {
+	my ($self, $type) = @_;
+	my $scale = $self->lookup(
+		['bosh-configs.scale', 'kit.scale']
+	) // $self->director_exodus_lookup('scale',undef);
+
+	bug(
+		"No scale set for %s environment, and no default scale set for ".
+		"deployments under %s bosh director.",
+		$self->name, $self->bosh->alias
+	) unless $scale;
+
+	return $scale;
+}
+
+sub iaas {
+	my ($self, $type) = @_;
+	my $iaas = $self->lookup(
+		['bosh-configs.iaas', 'kit.iaas']
+	) // $self->director_exodus_lookup('iaas',undef); # FIXME: How to handle multiple CPIs?
+
+	bail(
+		"No IaaS type set for %s environment, and no default IaaS type set for ".
+		"deployments under %s bosh director.",
+		$self->name, $self->bosh->alias
+	) unless $iaas;
+
+	return lc($iaas);
+}
 
 ## Secrets Plan
 # is_vaultified - returns true if the environment is vaultified {{{
@@ -1254,7 +1359,7 @@ sub get_environment_variables {
 		}
 	} else {
 		$env{GENESIS_USE_CREATE_ENV} = "false";
-		$env{BOSH_ALIAS} = $self->bosh_env;
+		$env{BOSH_ALIAS} = $self->bosh_env; # FIXME: bosh_env can contain more than just the alias - see _parse_bosh_env
 		if ($self->{__bosh} || grep {$_ eq 'bosh'} ($self->kit->required_connectivity($hook))) {
 			my %bosh_env = $self->bosh->environment_variables;
 			$env{$_} = $bosh_env{$_} for keys %bosh_env;
@@ -3142,6 +3247,7 @@ sub _genesis_inherits {
 		) unless ref($contents->{genesis}{inherits}) eq 'ARRAY';
 
 		for (@{$contents->{genesis}{inherits}}) {
+			s/\.yml$//; # remove any .yml extensions
 			my $cached_file;
 			if ($ENV{PREVIOUS_ENV}) {
 				$cached_file = ".genesis/cached/$ENV{PREVIOUS_ENV}/$_.yml";
