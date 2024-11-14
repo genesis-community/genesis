@@ -35,10 +35,11 @@ jobs:
 
     - put: github
       params:
-        name:   gh/name
-        tag:    gh/tag
-        body:   gh/notes.md
-        globs: [gh/artifacts/*]
+        name:      gh/name
+        tag:       gh/tag
+        body:      gh/notes.md
+        commitish: gh/commitish
+        globs:     [gh/artifacts/*]
 
     - put: version
       params:

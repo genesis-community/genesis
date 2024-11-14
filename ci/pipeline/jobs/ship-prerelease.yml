@@ -28,6 +28,7 @@ jobs:
         name:        gh/name
         tag:         gh/tag
         body:        gh/notes.md
+        commitish:   gh/commitish
         globs:       [gh/artifacts/*]
 
     on_failure:

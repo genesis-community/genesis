@@ -53,4 +53,3 @@ meta:
     url:          ((shout.url))
     username:     ((shout.username))
     password:     ((shout.password))
-
