@@ -6,10 +6,10 @@
 
 * [ ] Contains section `params.scale` with one of the following values:
   * [ ] `dev` - suitable for development and testing
-  * [ ] `lab` - suitable for internal organizational testing
+  * [ ] `lab` - suitable for internal organizational testing (DEFERRED)
   * [ ] `prod` - suitable for nominal production deployments
-  * [ ] `prod-xl` - suitable for extra large production deployments
-  * [ ] *other* - must be specified in the `ops/other-cloud-config.yml` file - **expert level only**
+  * [ ] `prod-xl` - suitable for extra large production deployments (DEFERRED)
+  * [ ] *other* - must be specified in the `ops/other-cloud-config.yml` file - **expert level only** (DEFERRED)
 
 * [ ] Contains section `bosh-configs` with the following keys:
   * [ ] cloud

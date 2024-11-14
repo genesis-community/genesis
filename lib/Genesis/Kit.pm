@@ -96,7 +96,7 @@ sub run_hook {
 
 	bug("Unrecognized hook '$hook'\n") unless grep {
 		$_ eq $hook
-	} qw/new blueprint secrets info addon check prereqs pre-deploy post-deploy features shell edit/;
+	} qw/new blueprint secrets info addon check prereqs pre-deploy post-deploy cloud-config features shell edit/;
 
 	if ($opts{env}) {
 		my %env_vars = $opts{env}->get_environment_variables($hook);
@@ -114,7 +114,7 @@ sub run_hook {
 		}
 	} else {
 		bug("The 'env' option to run_hook is required for the '$hook' hook!!")
-			if (grep { $_ eq $hook } qw/new secrets info addon check blueprint pre-deploy post-deploy features/);
+			if (grep { $_ eq $hook } qw/new secrets info addon check blueprint pre-deploy post-deploy cloud-config features/);
 	}
 
 	my (@args, %module_options);
@@ -140,6 +140,12 @@ sub run_hook {
 			script => $opts{script},
 			args => \@args,
 		);
+
+	} elsif ($hook eq 'cloud-config') {
+		$ENV{GENESIS_CLOUD_CONFIG_SUBTYPE} = $opts{purpose};
+		# TODO: add support for multiple cpi boshes
+		%module_options = ();
+
 	} elsif ($hook eq 'check') {
 		# Nothing special needed
 
@@ -160,6 +166,7 @@ sub run_hook {
 		$ENV{GENESIS_REQUESTED_FEATURES} = join(" ", @{ $opts{features} });
 	}
 
+	# Detect Perl-based hooks and psuedo-hooks
 	my ($hook_name,$hook_file,$hook_module) = ($hook,undef,undef);
 	if ($is_shell) {
 		@args = ();
@@ -198,6 +205,24 @@ EOF
 				$hook_file = $self->path("hooks/addon.sh");
 				$hook_name = "hook/addon '$opts{script}'";
 			}
+		} elsif ($hook eq 'cloud-config') {
+			if ($ENV{GENESIS_CLOUD_CONFIG_SUBTYPE}) {
+				$hook_file = $self->path("hooks/cloud-config-$ENV{GENESIS_CLOUD_CONFIG_SUBTYPE}.pm");
+				if (! -f $hook_file) {
+					$self->kit_bug(
+						"Could not find cloud-config hook for '%s' support in kit %s",
+						$ENV{GENESIS_CLOUD_CONFIG_SUBTYPE}, $self->id
+					);
+				}
+				$hook_name = "hook/cloud-config ($ENV{GENESIS_CLOUD_CONFIG_SUBTYPE} support)";
+			} else {
+				$hook_file = $self->path("hooks/cloud-config.pm");
+				$hook_name = "hook/cloud-config";
+			}
+			$hook_file = $ENV{GENESIS_CLOUD_CONFIG_SUBTYPE}
+			? $self->path("hooks/cloud-config-$ENV{GENESIS_CLOUD_CONFIG_SUBTYPE}.pm")
+			: $self->path("hooks/cloud-config.pm");
+			$hook_name = "hook/cloud-config";
 		} else {
 			$hook_file = $self->path("hooks/${hook}.pm");
 			$hook_name = "hook/$hook";
@@ -217,6 +242,7 @@ EOF
 		unless ($hook_module) {
 			$hook_file = $self->path("hooks/$hook");
 			if (envset('GENESIS_TRACE')) {
+				# Enable bash tracing for the hook (if it's a bash script)
 				open my $file, '<', $hook_file;
 				my $firstLine = <$file>;
 				close $file;
@@ -240,12 +266,18 @@ EOF
 			$hook_file, $hook_name, $self->id, $@
 		) if $@;
 
+		# Don't cache hooks that have side effects, just ones that are idempotent
 		my $hook_obj = $hook_module->init(env => $opts{env}, kit => $self, %module_options);
-		# TODO: wrap in an eval, give better error messages
+		if ($hook_obj->can("completed") && $hook_obj->completed) {
+			trace("Using cached results for '%s' hook for env %s", $hook, $opts{env}->name);
+			return $hook_obj->results();
+		}
 
+		# TODO: wrap in an eval, give better error messages
 		my $ok = $hook =~ /^addon/ && scalar(grep {$_ =~ /^(?:-h|--help)$/} @args)
 			? $hook_obj->help()
 			: $hook_obj->perform();
+
 		bail(
 			"Could not run '%s' hook successfully!",
 			$hook
@@ -401,6 +433,48 @@ sub secrets_store {
 sub uses_credhub { return $_[0]->secrets_store eq "credhub"; }
 
 # }}}
+
+# provided_configs - what configs does this kit provide to BOSH? {{{
+sub provided_configs {
+	my ($self) = @_;
+
+	# Option 1:  Detect if the cloud-config hook and/or runtime-config hooks are present
+	#   - Pro: very simple and quick
+	#   - Con: only supports single cloud-config and runtime-config files
+	#
+	# Option 2: Run the cloud-config and runtime-config with a 'list' argument that returns the names of the configs being generated
+	#  - Pro: supports multiple cloud-config and runtime-config files
+	#  - Con: requires the hooks to be written to support this
+	#
+	# Option 3: Run the cloud-config and runtime-config hooks and parse the output to determine the configs being generated
+	# - Pro: supports multiple cloud-config and runtime-config files
+	# - Con: much more time consuming and complex
+	#
+	# Option 4: Support hooks that are named `<type>-config-<purpose>` and return the type and purpose of the config
+	# - Pro: supports multiple cloud-config and runtime-config files
+	#        no need to execute the hooks to determine the configs
+	#        each hook execution will return a single config content, so no extra parsing needed
+	#        each hook can be run independently if only a single config is needed (common routines can be shared in included libraries)
+	# - Con: needs kit to be updated to find and call the correct hooks
+	#
+	# Decision: We're going to go with Option 1 for now.  It's simple and quick,
+	# and we can always add support for the other options later if needed. We can
+	# define a convention to support multiple cloud-config and runtime-config
+	# files but implement the single varient only for now (leaning heavily towards
+	# Option 4).
+	#
+	# FUTURE: when supporting multipe files per type, return <type>:<purpose> for each file
+	#
+	# TBD: How do we support conditional configurations? Currently we can only
+	# upload empty configs if there is a hook, but nothing is determined to be
+	# needed.
+
+	my @configs = ();
+	push(@configs, 'cloud') if $self->has_hook('cloud-config');
+	push(@configs, 'runtime') if $self->has_hook('runtime-config');
+	return @configs;
+}
+
 # required_configs - what configs does this kit require from BOSH? {{{
 sub required_configs {
 	my ($self,@hooks) = @_;
