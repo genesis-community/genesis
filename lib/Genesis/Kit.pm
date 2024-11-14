@@ -199,7 +199,7 @@ EOF
 				$hook_name = "hook/addon '$opts{script}'";
 			}
 		} else {
-			$hook_file = $self->path("hooks/$hook.pm");
+			$hook_file = $self->path("hooks/${hook}.pm");
 			$hook_name = "hook/$hook";
 		}
 
