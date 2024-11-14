@@ -424,8 +424,11 @@ sub status {
 
 	my ($out,$rc) = $self->query({stderr => "&1"}, "vault", "status");
 	if ($rc != 0) {
+		if ($out =~ /More than one target for Vault at '(.*)'/) {
+			return "ambiguous - multiple targets for $1";
+		}
 		$out =~ /exit status ([0-9])/;
-		return "sealed" if $1 == 2;
+		return "sealed" if $1//0 == 2;
 		return "unreachable";
 	}
 

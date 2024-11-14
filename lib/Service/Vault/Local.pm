@@ -59,9 +59,18 @@ sub create {
 	$vault->{vault_pid} = $vault_process->{pid};
 	$local_vaults->{$alias} = $vault;
 
-	while ($vault->status ne "ok") {
+	my $status = '';
+	while ($status ne "ok") {
 		trace "Waiting for local vault to become available...";
 		select(undef,undef,undef,0.25);
+		$status = $vault->status;
+		if ($status =~ /^ambiguous/) {
+			$vault->shutdown;
+			bail(
+				"Failed to connect to local memory-backed vault: %s\n\nYou may need to clean out your ~/.saferc file for stale local vaults.",
+				$status
+			);
+		}
 	}
 
 	return $vault;
