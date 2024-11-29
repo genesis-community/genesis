@@ -385,6 +385,7 @@ params: {}
 EOF
 ) >\$GENESIS_ROOT/\$GENESIS_ENVIRONMENT.yml
 
+offer_environment_editor
 exit 0
 DONE
 
