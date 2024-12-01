@@ -27,7 +27,6 @@ use Time::HiRes qw/gettimeofday/;
 use Time::Piece;
 use Time::Seconds;
 
-
 use utf8;
 
 # Timezone hackage to workaround keeping local TZ;
@@ -1066,7 +1065,7 @@ sub struct_lookup {
 
 # flatten - convert deep structure to single sequence of key:value {{{
 sub flatten {
-	my ($final, $key, $val) = @_;
+	my ($final, $key, $val) = (@_ == 1 ) ? ({},'', $_[0]) : @_;
 
 	if (ref $val eq 'ARRAY') {
 		for (my $i = 0; $i < @$val; $i++) {
@@ -1075,7 +1074,8 @@ sub flatten {
 
 	} elsif (ref $val eq 'HASH') {
 		for (keys %$val) {
-			flatten($final, $key ? "$key.$_" : "$_", $val->{$_})
+			my $leaf_key = $_ =~ s/\./~/gr;
+			flatten($final, $key ? "$key.$leaf_key" : "$leaf_key", $val->{$_})
 		}
 
 	} else {
@@ -1120,6 +1120,7 @@ sub unflatten {
 		my %h_data;
 		for my $k (sort keys %$data) {
 			my ($pk, $sk) = $k =~ /^([^\[\.]*)(?:\.)?([^\.].*?)?$/;
+			$pk =~ s/~/./g;
 			if (defined $sk) {
 				die "Hash cannot have scalar and non-scalar values (at ".join('.', grep $_, ($branch, "pk")).")"
 					if defined $h_data{$pk} && ref($h_data{$pk}) ne 'HASH';
@@ -1131,7 +1132,8 @@ sub unflatten {
 			}
 		}
 		for my $k (sort keys %h_data) {
-			$h_data{$k} = unflatten($h_data{$k}, join('.', grep $_, ($branch, "$k")));
+			my $nk = $k =~ s/~/./gr;
+			$h_data{$nk} = unflatten($h_data{$nk}, join('.', grep $_, ($branch, "$k")));
 		}
 		return {%h_data}
 	}
