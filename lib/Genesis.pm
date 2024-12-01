@@ -752,11 +752,27 @@ sub copy_or_fail {
 	-f $from or bail "$from: $!\n";
 	$to.=($to =~ /\/$/?'':'/').basename($from) if -d $to;
 	trace("copying $from to $to");
-	open my $in,  "<", $from or bail "Unable to open $from for reading: $!";
-	open my $out, ">", $to   or bail "Unable to open $to for writing: $!";
-	print $out $_ while (<$in>);
-	close $in;
-	close $out;
+	open IN,  "<", $from or bail "Unable to open $from for reading: $!";
+	open OUT, ">", $to   or bail "Unable to open $to for writing: $!";
+
+	my $blksize = (stat IN)[11] || 16384; # preferred block size?
+	my ($len, $written, $buf, $offset);
+	while ($len = sysread IN, $buf, $blksize) {
+		if (!defined $len) {
+			next if $! =~ /^Interrupted/;       # ^Z and fg
+			die "System read error: $!\n";
+		}
+		$offset = 0;
+		while ($len) { # Handle partial writes.
+			defined($written = syswrite OUT, $buf, $len, $offset)
+				or die "System write error: $!\n";
+			$len    -= $written;
+			$offset += $written;
+		};
+	}
+
+	close(IN);
+	close(OUT);
 }
 
 sub copy_tree_or_fail {
