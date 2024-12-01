@@ -341,6 +341,37 @@ sub get {
 }
 
 # }}}
+# get_path - get all the keys under a given path, including subpaths {{{
+sub get_path {
+	my ($self, $path) = @_;
+	my ($data,$rc,$err) = read_json_from($self->query({stderr => 0, redact_output => 1}, 'export', $path));
+	if ($rc || $err) {
+		debug(
+			"#R{[ERROR]} Could not read all key/value pairs from #C{%s} in vault at #M{%s}:%s\nexit code: %s",
+			$path,$self->{url},$err || '',$rc
+		);
+		return {};
+	}
+
+	my $results = {};
+	$path =~ s/^\///; # Trim leading / as safe doesn't honour it
+	for my $subpath (sort keys %$data) {
+		if ($subpath eq $path) {
+			$results = delete($data->{$subpath}{__flattened__})
+			  ? Genesis::unflatten($data->{$subpath})
+				: $data->{$subpath};
+			next;
+		}
+		my @path_bits = split('/',substr($subpath,length($path)+1));
+		my $refobj = $results;
+		$refobj = $refobj->{shift @path_bits} //= {} while @path_bits > 1;
+		$refobj->{$path_bits[0]} = delete($data->{$subpath}{__flattened__})
+			? Genesis::unflatten($data->{$subpath})
+			: $data->{$subpath};
+	}
+	return $results;
+}
+# }}}
 # set - write a secret to the vault (prompts for value if not given) {{{
 sub set {
 	my ($self, $path, $key, $value) = @_;
@@ -363,6 +394,78 @@ sub set {
 		) unless $rc == 0;
 		return $self->get($path,$key);
 	}
+}
+
+# }}}
+# set_path - writes a set of key value pairs to the vault {{{
+sub set_path {
+	my ($self, $path, $data, %opts) = @_;
+
+	my $flatten = $opts{flatten} // 0;
+	my $clear = $opts{clear} // 0;
+	if ($flatten) {
+		$data = Genesis::flatten({},'',$data);
+		$data->{__flattened__} = 1;
+	}
+
+	if ($clear) {
+		my ($out,$rc,$err) = ('',0,'');
+		if ($flatten) {
+			# Just clear the leaf, not the whole tree
+			if ($self->has($path)) {
+				debug("Clearing #C{%s} in vault at #M{%s}", $path, $self->{url});
+				($out,$rc,$err) = $self->query('rm', '-f', $path);
+			}
+		} else {
+			if ($self->paths($path)) {
+				debug("Clearing #C{%s} and all subpaths in vault at #M{%s}", $path, $self->{url});
+				($out,$rc,$err) = $self->query('rm', '-rf', $path);
+			}
+		}
+		bail(
+			"Could not clear #C{%s} in vault at #M{%s}:\n%s",
+			$path,$self->{url},$out.$err
+		) unless $rc == 0;
+	}
+
+	my @set_data = ();
+	while (my ($key,$value) = each %$data) {
+
+		if (ref($value) eq 'HASH') {
+			$self->set_path("$path/$key", $value);
+			next;
+		}
+
+		if (ref($value) eq 'ARRAY') {
+			for my $i (0..$#{$value}) {
+				if (ref($value->[$i]) eq 'HASH') {
+					$self->set_path("$path/$key/$i", $value->[$i]);
+				} else {
+					push(@set_data, "${key}[${i}]=$value->[$i]");
+				}
+			}
+		}
+
+		push(@set_data, "$key=$value");
+
+		# make sure the command isn't too long (<900 characters)
+		if (length(join(' ', @set_data)) > 900) {
+			my @new_set_data = pop(@set_data);
+			my ($out,$rc) = $self->query('set', $path, @set_data);
+			bail(
+				"Could not write #C{%s} to vault at #M{%s}:\n%s",
+				$path,$self->{url},$out
+			) unless $rc == 0;
+			@set_data = @new_set_data;
+		}
+	}
+
+	my ($out,$rc) = $self->query('set', $path, @set_data);
+	bail(
+		"Could not write #C{%s} to vault at #M{%s}:\n%s",
+		$path,$self->{url},$out
+	) unless $rc == 0;
+	return $data;
 }
 
 # }}}
