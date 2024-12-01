@@ -1953,7 +1953,7 @@ sub last_deployed_manifest {
 	#    the name of the environment, with a .yml extension.  This is the legacy
 	#    method of storing the manifest, and is being phased out in favor of the
 	#    exodus method, though may still be used by setting the deployment
-	#    config file's 'manifest_store' to 'repo'.
+	#    config file's 'manifest_store' to 'repository'.
 	#
 	# Returns depend on options sent in:
 	# - just => 'manifest' or 'manifest_file' to return just the manifest or the
@@ -1978,12 +1978,12 @@ sub last_deployed_manifest {
 	my $pruned = !exists($opts{pruned}) || $opts{pruned} || 0;
 	my $include_contents = !exists($opts{contents}) || $opts{contents} || 0;
 
-	my $manifest_store = $self->top->config->get('manifest_store', 'exodus');
+	my $manifest_store = $self->top->config->get('manifest_store', 'hybrid');
 	my $results = undef;
 	my $start = gettimeofday;
 	my @errors;
 	while (1) {
-		if ($manifest_store eq 'exodus') {
+		if ($manifest_store ne 'repository') {
 			my $deploy_date = $self->exodus_lookup('dated');
 			info({pending => 1},
 				"  - looking for cached manifest..."
@@ -2149,7 +2149,7 @@ sub last_deployed_manifest {
 
 					for (grep {-f $files{$_}} keys %files) {
 						push(@{$results->{artifacts}}, $_);
-						$results->{$_}{source} = $_ eq 'manifest' ? $source : 'repo';
+						$results->{$_}{source} = $_ eq 'manifest' ? $source : 'repository';
 						$results->{$_}{sha1} = $_ eq 'manifest'
 							? sha1_hex($data)
 							: digest_file_hex($files{$_}, 'SHA-1');
@@ -2183,17 +2183,17 @@ sub last_deployed_manifest {
 			}
 
 			if ($just_return eq 'contents') {
-				$results = wantarray ? [$data, $type, $sha1, 'repo']: $data;
+				$results = wantarray ? [$data, $type, $sha1, 'repository']: $data;
 				last;
 			} elsif ($just_return eq 'file') {
-				$results = wantarray ? [$mpath, $type, $sha1, 'repo'] : $mpath;
+				$results = wantarray ? [$mpath, $type, $sha1, 'repository'] : $mpath;
 			}
 			$results = {
 				manifest_type => $type,
 				manifest_sha1 => $sha1,
 				dated => scalar($self->exodus_lookup('dated')),
 				deployer => scalar($self->exodus_lookup('deployer')),
-				source => 'repo',
+				source => 'repository',
 				artifacts => []
 			};
 			my %files = (
@@ -2205,7 +2205,7 @@ sub last_deployed_manifest {
 			;
 			for (grep {-f $files{$_}} keys %files) {
 				push(@{$results->{artifacts}}, $_);
-				$results->{$_}{source} = 'repo';
+				$results->{$_}{source} = 'repository';
 				$results->{$_}{sha1} = digest_file_hex($files{$_}, 'SHA-1');
 				$results->{$_}{path} = $files{$_} if ($include_files);
 				$results->{$_}{data} = slurp($files{$_}) if ($include_contents);
@@ -2649,9 +2649,11 @@ sub deploy {
 		);
 	}
 
+	my $manifest_store = $self->top->config->get('manifest_store','hybrid');
+
 	# Don't do post-deploy stuff if just doing a dry run
 	unless ($opts{"dry-run"}) {
-		if ($ok && $manifest_store eq 'repo') {
+		if ($ok && $manifest_store ne 'exodus') {
 			# deployment succeeded; update the cache (Legacy manifest store)
 			mkdir_or_fail($self->path(".genesis/manifests")) unless -d $self->path(".genesis/manifests");
 			copy_or_fail($cached_manifest_path, $self->path(".genesis/manifests/$self->{name}.yml"));
