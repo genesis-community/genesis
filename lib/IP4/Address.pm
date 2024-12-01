@@ -65,6 +65,10 @@ sub add($self, $count) {
 	return IP4::Address->new($self->int() + $count);
 }
 
+sub subtract($self, $count) {
+	return IP4::Address->new($self->int() - $count);
+}
+
 sub diff($self, $other) {
 	return $self->int() - $other->int();
 }
@@ -75,6 +79,12 @@ sub cmp($self, $other) {
 
 sub eq($self, $other) {
 	return $self->int() == $other->int();
+}
+
+sub to($self, $other) {
+	$other = ref($other) eq 'IP4::Address' ? $self : IP4::Address->new($other);
+	require IP4::Range;
+	return IP4::Range->new([$self, $other]);
 }
 
 1;

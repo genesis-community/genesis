@@ -17,8 +17,16 @@ use IP4::Address;
 sub new($class, $range) { # TODO: Add seconds size argument that can be a count or a /[bits] mask if needed
 	my $self = bless {}, $class;
 
-	# CIDR block
-	if ($range =~ m{^(\d+\.\d+\.\d+\.\d+)/(\d+)$}) {
+	if (ref($range) eq 'ARRAY') {
+		# Array of two IP4::Address objects or two strings
+		my $start = ref($range->[0]) eq 'IP4::Address' ? $range->[0] : IP4::Address->new($range->[0]);
+		my $end   = ref($range->[1]) eq 'IP4::Address' ? $range->[1] : IP4::Address->new($range->[1]);
+
+		$self->{range} = sprintf("%s-%s", $start->address(), $end->address());
+		$self->{start} = $start;
+		$self->{end} = $end;
+	} elsif ($range =~ m{^(\d+\.\d+\.\d+\.\d+)/(\d+)$}) {
+		# CIDR block
 
 		my $mask = $2;
 		my $address = IP4::Address->new($1);
@@ -58,7 +66,8 @@ sub new($class, $range) { # TODO: Add seconds size argument that can be a count 
 		$self->{end} = $self->{start}->add($2 - 1);
 		$self->{mask} = $2;
 	} else {
-		die "Invalid range: `$range`";
+		require Genesis;
+		Genesis::bail("Invalid range: `$range`");
 	}
 	return $self;
 }
@@ -71,6 +80,7 @@ sub count($self) {
 }
 
 sub range($self) {
+	return $self->start->address() if $self->start->eq($self->end);
 	return sprintf("%s-%s", $self->{start}->address(), $self->{end}->address());
 }
 
@@ -99,9 +109,12 @@ sub add($self, $other){
 	} else {
 		push @sum, $self, $other;
 	}
+	return scalar(@sum) == 1 ? $sum[0] : IP4::MultiRange->new(@sum);
 }
 
 sub subtract($self, $other){
+	return IP4::MultiRange->new($self)->subtract($other) if ref $other eq 'IP4::MultiRange';
+
 	my $ssi = $self->start->int();
 	my $sei = $self->end->int();
 	$other = IP4::Range->new($other) unless ref $other eq 'IP4::Range';
@@ -127,7 +140,7 @@ sub subtract($self, $other){
 		$nei = $sei;
 	}
 	push @remaining, IP4::Range->new(sprintf("%s-%s", IP4::Address->new($nsi)->address(), IP4::Address->new($nei)->address()));
-	return @remaining;
+	return scalar(@remaining) == 1 ? $remaining[0] : IP4::MultiRange->new(@remaining);
 	
 }
 
@@ -147,6 +160,15 @@ sub addresses($self) {
 		push @ips, IP4::Address->new($i);
 	}
 	return @ips;
+}
+
+sub slice($self, $size, $offset = 0) {
+	if ($size + $offset > $self->size) {
+		my $slice = IP4::Range->new([$self->start->add($offset)->address, $self->end->address]);
+		return ($slice, $size - $slice->size, $self->subtract($slice));
+	}
+	my $slice = IP4::Range->new([$self->start->add($offset)->address, $self->start->add($offset + $size - 1)->address]);
+	return ($slice, 0, $self->subtract($slice));
 }
 
 sub cidrs($self) {
