@@ -1054,7 +1054,7 @@ define_command("create-kit", {
 define_command("build-kit", {
 	summary => "Create a distributable kit archive from the kit repo or dev dir",
 	usage => "compile-kit [<options...>]",
-	alias => 'bk,compile-kit,ck',
+	aliases => [qw/bk compile-kit ck/],
 	description =>
 		"Compile the kit in the current directy (if in a kit dir) or in ./dev (if ".
 		"in a deployment repo dir), automatically creating the next appropriate ".
