@@ -310,3 +310,27 @@ Transitional Cert Rotation:
 
   1. Announce to the user that the transitional deployment is complete and
      they can now run \*-secrets commands as needed.
+
+---
+
+Flip it on its head: The Return of the Codex
+
+It might be easier for clients to understand if we had a structure of
+<root>/env-name/type.yml, instead of <root>/env-type/env-name.yml.  This
+would also align better with the secrets structure in vault.
+
+It would also allow the <root> to contain a .genesis-env file that would set
+common environment variables that pertain across all environments under it,
+such as setting the secrets_mount, or vault namespace, etc.
+
+---
+
+* Failed deploys should be stored to exodus deployment...
+
+* Add a cleanup option to deploy that will run:
+  * bosh cleanup to remove unused releases, stemcells, etc.
+  * clean up credhub secrets that are no longer needed
+
+  This will keep disk usage down and reduce chance of running out of space.
+
+* Add option to prefix azs with the environment name/type.
