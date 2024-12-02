@@ -959,12 +959,25 @@ sub exodus_lookup {
 	debug "Checking if $path path exists...";
 	return $default unless $self->vault->has($path);
 	debug "Exodus data exists, retrieving it and converting to json";
-	my $out;
-	eval {$out = $self->vault->get($path);};
-	bail "Could not get $for exodus data from the Vault: $@" if $@;
 
-	my $exodus = unflatten($out);
-	return struct_lookup($exodus, $key, $default);
+	my $extended = 0;
+	if ($key =~ m#^(/[^:]*)(?::(.*))?#) {
+		$path .= $1;
+		$key = $2//'';
+		$extended = 1;
+	}
+
+	my $out;
+	if ($extended) {
+		eval {$out = $self->vault->get_path($path);};
+		bail "Could not get $for exodus data from the Vault: $@" if $@;
+		return struct_lookup($out, $key, $default);
+	} else {
+		eval {$out = $self->vault->get($path);};
+		bail "Could not get $for exodus data from the Vault: $@" if $@;
+		my $exodus = unflatten($out);
+		return struct_lookup($exodus, $key, $default);
+	}
 }
 
 # }}}
