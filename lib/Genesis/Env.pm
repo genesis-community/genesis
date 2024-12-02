@@ -2294,8 +2294,8 @@ sub last_deployed_manifest {
 					my $file_type =
 						$name eq $self->name.".yml" ? 'manifest' :
 						$name eq $self->name.'.vars' ? 'vars' :
-						$name eq $self->name.'-state.yml' ? 'state' :
-						$name eq $self->name.'-store.json' ? 'store' :
+						$name eq $self->name.'-state.json' ? 'state' :
+						$name eq $self->name.'-store.yml' ? 'store' :
 						$name eq $self->name.'-unpruned.yml' ? 'unpruned' :
 						"other/$name";
 
@@ -2369,10 +2369,17 @@ sub last_deployed_manifest {
 					};
 
 					# Legacy workaround - find the non-manifest files in the local repo.
+					# First, rename the state.yml file to state.json
+					if (-f $self->path(".genesis/manifests/".$self->name."-state.yml")) {
+						rename(
+							$self->path(".genesis/manifests/".$self->name."-state.yml"),
+							$self->path(".genesis/manifests/".$self->name."-state.json")
+						);
+					}
 					my %files = (
 						manifest => $manifest_file,
-						state =>    $self->path(".genesis/manifests/".$self->name."-state.yml"),
-						store =>    $self->path(".genesis/manifests/".$self->name."-store.json"),
+						state =>    $self->path(".genesis/manifests/".$self->name."-state.json"),
+						store =>    $self->path(".genesis/manifests/".$self->name."-store.yml"),
 						vars =>     $self->path(".genesis/manifests/".$self->name.".vars"),
 					);
 
@@ -2401,7 +2408,7 @@ sub last_deployed_manifest {
 				"  - found manifest in .genesis/manifests - retrieving..."
 			);
 
-			my $data = load_yaml(slurl($mpath));
+			my $data = load_yaml(slurp($mpath));
 			my $is_pruned = exists($data->{genesis});
 			if ($pruned && !$is_pruned) {
 				push(@errors, "Manifest is not pruned, but pruned manifest requested");
@@ -2428,7 +2435,7 @@ sub last_deployed_manifest {
 			my %files = (
 				manifest => $mpath,
 				state =>    $self->path(".genesis/manifests/".$self->name."-state.yml"),
-				store =>    $self->path(".genesis/manifests/".$self->name."-store.json"),
+				store =>    $self->path(".genesis/manifests/".$self->name."-store.yml"),
 				vars =>     $self->path(".genesis/manifests/".$self->name.".vars"),
 			);
 			;
@@ -2447,6 +2454,23 @@ sub last_deployed_manifest {
 				push(@errors, "No previously deployed manifest found.");
 				last;
 			}
+		}
+	}
+
+	# Check if we have to try harder to find a state file
+	if ($self->use_create_env && !exists($results->{state})) {
+		# No state file found in the exodus-deployments data, so check
+		# repository for it.
+		my $local_path = $self->path(".genesis/manifests/".$self->name."-state.json");
+		$local_path = $self->path(".genesis/manifests/".$self->name."-state.yml") if (! -f $local_path);
+		if (-f $local_path) {
+			$results->{state} = {
+				source => 'repository',
+				sha1 => digest_file_hex($local_path, 'SHA-1'),
+			};
+			$results->{state}{data} = slurp($local_path) if ($include_contents);
+			$results->{state}{path} = $local_path if ($include_files);
+			push(@{$results->{artifacts}}, 'state');
 		}
 	}
 
