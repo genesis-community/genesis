@@ -26,7 +26,7 @@ sub create {
 	unless ($safe_process) {
 		debug "Starting background local safe $alias";
 		my $default_vault = $class->default;
-		system("safe local -m --as '$alias' &>$logfile &");
+		run("safe local -m --as '$alias' &>$logfile &");
 		trace "Looking for new process";
 		$safe_process = _get_safe_process($alias,1);
 		bail(
