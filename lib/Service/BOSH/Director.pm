@@ -30,6 +30,7 @@ sub new {
 		deployment => $opts{deployment},
 		use_local_config => $opts{use_local_config},
 		validated => ($ENV{GENESIS_BOSH_VERIFIED}||"") eq $alias,
+		exodus_vault => $opts{vault} // (Service::Vault->current || Service::Vault->default),
 		exodus_path => $opts{exodus_path}//$class->exodus_path($alias, %opts)
 	};
 
@@ -112,7 +113,8 @@ sub from_alias {
 			url => $e->{url},
 			ca_cert => $e->{ca_cert},
 			use_local_config => 1,
-			deployment => $opts{deployment}
+			deployment => $opts{deployment},
+			%opts
 		) if $e->{alias} eq $alias;
 	}
 
@@ -387,6 +389,12 @@ sub stemcells {
 	return lines($_[0]->execute(
 		q<bosh stemcells --json | jq -r '.Tables[0].Rows[] | "\(.os)@\(.version)" | sub("[^0-9]+$";"")'>,
 	));
+}
+
+# }}}
+# vault - returns the vault object used to fetch exodus data {{{
+sub vault {
+	return $_[0]->{exodus_vault};
 }
 
 # }}}
