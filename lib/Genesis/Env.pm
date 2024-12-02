@@ -1125,6 +1125,94 @@ sub last_deployed_manifest_deprecated {
 }
 
 # }}}
+# scale - returns the scale for the environment {{{
+sub scale {
+	my ($self, $type) = @_;
+	my $scale = $self->lookup(
+		['bosh-configs.scale', 'kit.scale']
+	) // $self->director_exodus_lookup('scale',undef);
+
+	bug(
+		"No scale set for %s environment, and no default scale set for ".
+		"deployments under %s bosh director.",
+		$self->name, $self->bosh->alias
+	) unless $scale;
+
+	return $scale;
+}
+
+# }}}
+# iaas - returns the iaas for the environment {{{
+sub iaas {
+	my ($self, $type) = @_;
+	my $iaas = $self->lookup(
+		['bosh-configs.iaas', 'kit.iaas']
+	);
+
+	return $iaas if $iaas;
+
+	bail(
+		"No IaaS type set for %s environment, which uses a create-env deployment. ".
+		"Please set the `kit.iaas` in the enviroment file -- you can use #G{%s ".
+		"%s edit} to do this.",
+		$self->name,
+		humanize_bin(),
+		humanize_path($self->path($self->name))
+	) if $self->use_create_env && !$iaas;
+
+	$iaas = $self->director_exodus_lookup('iaas'); # FIXME: How to handle multiple CPIs?
+
+	bail(
+		"No IaaS type set for %s environment, and no default IaaS type set for ".
+		"deployments under %s bosh director.",
+		$self->name, $self->bosh->alias
+	) unless $iaas;
+
+	return lc($iaas);
+}
+
+# }}}
+
+# OCFP Stuff
+# is_ocfp - returns true if the environment is an OCFP environment {{{
+sub is_ocfp {
+	my $self = shift;
+	return $self->has_feature('ocfp')
+}
+
+# }}}
+# ocfp_type - returns the type of OCFP environment {{{
+sub ocfp_type {
+	my $self = shift;
+	return '' unless $self->is_ocfp;
+	my ($type) = $self->name =~ m/^.*-(mgmt|ocf)$/;
+	return $type || 'unknown';
+}
+
+# }}}
+# ocfp_env - returns the OCFP environment name used in vault {{{
+sub ocfp_env {
+	my $self = shift;
+	$self->name =~ s/^(.*)-(mgmt|ocf)/$1\/$2/r;
+}
+
+# }}}
+#	ocfp_config - returns the OCFP configuration for the environment {{{
+sub ocfp_config {
+	my ($self,$path) = @_;
+	my $config= $self->_memoize(sub {
+		my $ocfp_config = $self->vault->get_path($self->ocfp_config_base);
+	});
+}
+
+# }}}
+# ocfp_config_lookup - look up a value from the OCFP configuration {{{
+sub ocfp_config_lookup {
+	my ($self, $key, $default) = @_;
+	return struct_lookup($self->ocfp_config, $key, $default);
+}
+
+# }}}
 
 # Bosh Config stuff - TODO: sort later
 # bosh_config_names - returns a hash of bosh config names proved by the environment {{{
@@ -1148,41 +1236,15 @@ sub env_config_overrides {
 	return $overrides;
 }
 
+# }}}
+# director_config_overrides - returns the director config overrides for the environment {{{
 sub director_config_overrides {
 	my $self = shift;
 	my $overrides = $self->director_exodus_lookup(['bosh-config/cloud' => '.'], {});
 	return $overrides;
 }
 
-sub scale {
-	my ($self, $type) = @_;
-	my $scale = $self->lookup(
-		['bosh-configs.scale', 'kit.scale']
-	) // $self->director_exodus_lookup('scale',undef);
-
-	bug(
-		"No scale set for %s environment, and no default scale set for ".
-		"deployments under %s bosh director.",
-		$self->name, $self->bosh->alias
-	) unless $scale;
-
-	return $scale;
-}
-
-sub iaas {
-	my ($self, $type) = @_;
-	my $iaas = $self->lookup(
-		['bosh-configs.iaas', 'kit.iaas']
-	) // $self->director_exodus_lookup('iaas',undef); # FIXME: How to handle multiple CPIs?
-
-	bail(
-		"No IaaS type set for %s environment, and no default IaaS type set for ".
-		"deployments under %s bosh director.",
-		$self->name, $self->bosh->alias
-	) unless $iaas;
-
-	return lc($iaas);
-}
+# }}}
 
 ## Secrets Plan
 # is_vaultified - returns true if the environment is vaultified {{{
@@ -1330,6 +1392,8 @@ sub get_environment_variables {
 	$env{GENESIS_KIT_NAME}               = $self->kit->name;
 	$env{GENESIS_KIT_VERSION}            = $self->kit->version;
 	$env{GENESIS_KIT_PATH}               = $self->kit->path;
+	$env{GENESIS_ENV_IAAS}               = $self->iaas;
+	$env{GENESIS_ENV_SCALE}              = $self->scale;
 	$env{GENESIS_ENV_KIT_OVERRIDE_FILES} = join(' ', $self->kit->env_override_files);
 	$env{GENESIS_MIN_VERSION_FOR_KIT}    = $self->kit->genesis_version_min();
 
@@ -1599,6 +1663,36 @@ sub ci_base {
 		(my $base = $_[0]->lookup('genesis.ci_base', $default)) =~ s#^/?(.*?)/?$#/$1/#;
 		return $base
 	});
+}
+
+# }}}
+# ocfp_config_mount - returns the Vault path under which all ocfp_config data is stored (env: GENESIS_OCFP_CONFIG_MOUNT) {{{
+sub default_ocfp_config_mount { $_[0]->secrets_mount . $_[0]->lookup('params.ocfp_vault_config_prefix','config') . '/'; }
+sub ocfp_config_mount {
+	$_[0]->_memoize(sub {
+		(my $mount = $_[0]->lookup('genesis.ocfp_config_mount', $_[0]->default_ocfp_config_mount)) =~ s#^/?(.*?)/?$#/$1/#;
+		return $mount;
+	});
+}
+
+# }}}
+# ocfp_config_slug - returns the component of the Vault path under the ocfp_config mount for this evironments ocfp_config data {{{
+sub ocfp_config_slug {
+	my $param_ocfp_config_slug = $_[0]->lookup('params.ocfp_vault_config_slug');
+	return $param_ocfp_config_slug if $param_ocfp_config_slug;
+	sprintf("%s/%s", $_[0]->name =~ m/^(.*)-(mgmt|ocf)$/);
+}
+
+# }}}
+# ocfp_config_base - returns the full Vault path of the ocfp_config data for this environment (env:  GENESIS_OCFP_CONFIG_BASE) {{{
+sub ocfp_config_base {
+	$_[0]->_memoize(sub {
+		$_[0]->ocfp_config_mount . $_[0]->ocfp_config_slug
+	});
+}
+
+sub ocfp_subnet_prefix {
+	return $_[0]->lookup('params.ocfp_subnet_prefix') // 'ocfp';
 }
 
 # }}}
@@ -3321,6 +3415,7 @@ sub _cap_yaml_file {
 name: (( concat genesis.env "-$type" ))
 genesis:
   env:           ${\(scalar $self->lookup(['genesis.env','params.env'], $self->name))}
+  type:          $type
   vault_env:     ${\($self->env_vault_slug)}
   secrets_mount: ${\($self->secrets_mount)}
   secrets_path:  ${\($self->secrets_slug)}
@@ -3330,7 +3425,13 @@ genesis:
   exodus_base:   ${\($self->exodus_base)}
   ci_mount:      ${\($self->ci_mount)}${\(
   ($self->use_create_env || $self->bosh_env eq $self->name) ? "" :
-  "\n  bosh_env:      $bosh_target")}
+  "\n  bosh_env:      $bosh_target")}${\(
+	$self->is_ocfp
+	? "\n  ocfp:          true".
+		"\n  ocfp_env:      ".$self->ocfp_env .
+		"\n  ocfp_config_mount:  ".$self->ocfp_config_mount
+	: ''
+	)}
 
 exodus:
   version:        $Genesis::VERSION
@@ -3341,6 +3442,8 @@ exodus:
   kit_is_dev:     ${\(ref($self->kit) eq "Genesis::Kit::Dev" ? 'true' : 'false')}
   vault_base:     (( grab meta.vault ))
   bosh:           $bosh_target
+  iaas:           ${\($self->iaas)}
+  scale:          ${\($self->scale)}
   is_director:    ${\($self->is_bosh_director ? 'true' : 'false')}
   use_create_env: ${\($self->use_create_env ? 'true' : 'false')}
   features:       (( join "," kit.features ))
