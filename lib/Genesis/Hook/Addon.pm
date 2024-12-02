@@ -76,6 +76,16 @@ sub bosh {
 	}->($self);
 }
 
+use Getopt::Long qw(GetOptionsFromArray);
+sub parse_options {
+	my ($self, $opt_defn) = @_;
+	my %opts;
+	GetOptionsFromArray($self->{args}, \%opts, @$opt_defn);
+	my $bad_opts = join(", ", grep {/^-/} @{$self->{args}});
+	bail("Unknown option(s) passed to %s: %s", $self->label, $bad_opts) if $bad_opts;
+	return wantarray ? %opts : \%opts;
+}
+
 sub read_json_from_bosh {
 	my ($self, @args) = @_;
 	my $data = read_json_from($self->bosh->execute(@args, '--json'));

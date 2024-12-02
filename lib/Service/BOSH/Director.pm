@@ -268,6 +268,17 @@ sub configs {
 	}
 	return wantarray ? %configs : \%configs;
 }
+# has_config - check if a configuration exists on the BOSH director {{{
+sub has_config {
+	my ($self, $type, $name) = @_;
+	my $config_raw = read_json_from(
+		$self->execute({interactive => 0}, 'configs', '-r=1', "--type=$type","--name=$name",'--json')
+	);
+	return ($config_raw->{Tables}[0]{Rows}[0]{name}||'') eq $name
+	    && ($config_raw->{Tables}[0]{Rows}[0]{type}||'') eq $type
+	    && ($config_raw->{Tables}[0]{Rows}[0]{id}||'') =~ m/^\d+\*?$/;
+}
+# }}}
 # download_confgs - download configuration(s) of the given type (and optional name) {{{
 sub download_configs {
 	my ($self, $path, $type, $name) = @_;
@@ -300,7 +311,7 @@ sub download_configs {
 	my @config_contents;
 	for (@configs) {
 		my ($out,$rc,$err) = $self->execute({ interactive => 0},
-			'config', '--type', $_->{type}, '--name', $_->{name}, '--json'
+			'config', "--type=$_->{type}", "--name=$_->{name}", '--json'
 		);
 
 		my $json = eval {JSON::PP::decode_json($out) unless $rc};
@@ -332,7 +343,7 @@ sub download_configs {
 	if (scalar(@config_contents) > 1) {
 		($config, my $rc, my $err) = run(
 			{interactive => 0, stderr=>0},
-			'spruce merge --multi-doc --go-patch <(echo "$1")',
+			'spruce merge --multi-doc --go-patch --fallback-append <(echo "$1")',
 			join("\n---\n", @config_contents)
 		);
 		bail("Failed to converge the active $type configurations: $err") if $rc;
@@ -345,6 +356,35 @@ sub download_configs {
 	) unless (-s $path);
 	return wantarray ? @configs : \@configs;
 }
+
+# }}}
+# upload_config - upload a configuration to the BOSH director {{{
+sub upload_config {
+	my ($self, $config, $type, $name) = @_;
+	$name ||= 'default';
+	my $path = workdir() . "/$name-$type.yml";
+	if (ref($config)) {
+		save_to_yaml_file($config, $path);
+	} else {
+		mkfile_or_fail($path, $config);
+	}
+	$self->upload_config_from_file($path, $type, $name);
+}
+
+sub upload_config_from_file {
+	my ($self, $path, $type, $name) = @_;
+	$name ||= 'default';
+	my @commands = (
+		'update-config', "-n", "--type=$type", "--name=$name", $path
+	);
+	my ($out, $rc, $err) = $self->execute({interactive => 0}, @commands);
+	bail(
+		"Failed to upload %s configuration to '#M{%s}' BOSH director: %s",
+		$name, $self->alias, $err
+	) if $rc;
+	return 1;
+}
+
 # }}}
 # deploy - deploy the given manifest as the deployment {{{
 sub deploy {
