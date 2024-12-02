@@ -205,14 +205,27 @@ sub connect_and_validate {
 		$waiting=1;
 	}
 
-	my $status = tcp_listening($self->{host},$self->{port});
-	unless ($status eq 'ok') {
-		error "#R{unreachable - $status!}\n" if $waiting;
-		dump_stack;
-		bail("Unable to connect to #M{%s} BOSH director...", $self->{alias});
+	my ($out, $rc, $err);
+	if ($ENV{BOSH_ALL_PROXY}) {
+		my $timeout = $ENV{GENESIS_NETWORK_TIMEOUT} || 10;
+		eval {
+			local $SIG{ALRM} = sub {die "timeout\n"; };
+			alarm $timeout;
+			($out,$rc,$err) = eval{$self->execute('env')};
+			alarm 0;
+		};
+		my $err = $@ if $@;
+		die "Timed out after $timeout seconds\n" if $@ && $@ eq "timeout\n";
+	} else {
+		my $status = tcp_listening($self->{host},$self->{port});
+		unless ($status eq 'ok') {
+			error "#R{unreachable - $status!}\n" if $waiting;
+			dump_stack;
+			bail("Unable to connect to #M{%s} BOSH director...", $self->{alias});
+		}
+		($out,$rc,$err) = eval{$self->execute('env')};
 	}
 
-	my ($out,$rc,$err) = eval{$self->execute('env')};
 	($err,$rc) = ($@,70)if ($@); # 70 is EX_SOFTWARE in sysexits.h,denoting internal software error
 	if ($rc) {
 		error "#R{error!}" if $waiting;
