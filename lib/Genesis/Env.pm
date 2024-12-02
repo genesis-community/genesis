@@ -982,49 +982,37 @@ sub exodus_lookup {
 
 # }}}
 # director_exodus_lookup - lookup Exodus data from the director that deploys this environment {{{
-my $director_exodus_cache = {};
 sub director_exodus_lookup {
-	my ($self, $key, $default) = @_;
-	# TODO: Other code that needs to access bosh director exodus data should be
-	# refactored to use this method instead of what it currently does.
-	my ($bosh_alias,$bosh_dep_type,$bosh_exodus_vault,$bosh_exodus_mount) = $self->_parse_bosh_env($self->bosh_env);
-	$bosh_alias //= $self->name;
-	$bosh_dep_type //= 'bosh';
-	$bosh_exodus_mount //= $self->exodus_mount;
-	my $path = $bosh_exodus_mount.'/'.$bosh_alias.'/'.$bosh_dep_type;
+	my ($self, $key) = (shift, shift);
+	my $default = shift if scalar(@_) % 2 == 1;
+	my %opts = @_;
+
+	# Return default (with undef source) if this is a create-env environment
+	return (wantarray ? ($default, undef) : $default) if $self->use_create_env;
 
 	# Check for cached data
 	my $bosh_exodus = undef;
-	my $cache_key = $path . ($bosh_exodus_vault ? ('@'.$bosh_exodus_vault->name) : '');
-	if (exists($director_exodus_cache->{$cache_key})) {
-		$bosh_exodus = $director_exodus_cache->{$cache_key};
-	} else {
-		my $bosh_vault = $self->vault;
-		if ($bosh_exodus_vault) {
-			$bosh_vault = Service::Vault->find_single_match_or_bail($bosh_exodus_vault);
-			bail(
-				"Could not access vault #C{%s} to retrieve BOSH director's Exodus data ".
-				"for #C{%s} environment.",
-				$bosh_exodus_vault, $bosh_alias
-			) unless $bosh_vault && $bosh_vault->connect_and_validate;
-		}
-		# Extended exodus paths support
-		my $path = $bosh_exodus_mount.'/'.$bosh_alias.'/'.$bosh_dep_type;
-		my $expand = 1;
-		if (ref($key) eq 'ARRAY') {
-			$path .= '/'.$key->[0];
-			$key = $key->[1];
-			$expand = 0;
-		}
-
-		if ($bosh_vault->has($path)) {
-			my $data = $bosh_vault->get($path);
-			$bosh_exodus = $expand ? unflatten($data) : $data;
-		} else {
-			$bosh_exodus = {};
-		}
-		$director_exodus_cache->{$cache_key} = $bosh_exodus;
+	my $ext_path = undef;
+	if ($key =~ m#^(/[^:]*)(?::(.*))?#) {
+		$ext_path = $1;
+		$key = $2//'';
 	}
+	if (exists($self->{__director_exodus_cache}{$ext_path//''})) {
+		$bosh_exodus = $self->{__director_exodus_cache}{$ext_path//''};
+	} else {
+		my $path = $self->bosh->exodus_path; # changed fromn ${bosh_exodus_mount}${bosh_alias}/$bosh_dep_type";
+		my $out;
+		if ($ext_path) {
+			eval {$out = $self->bosh->vault->get_path("$path$ext_path");}; # changed from $bosh_vault to $self->bosh->vault
+			bail "Could not get director exodus data from the Vault: $@" if $@;
+		} else {
+			eval {$out = $self->bosh->vault->get($path);}; # changed from $bosh_vault to $self->bosh->vault
+			bail "Could not get director exodus data from the Vault: $@" if $@;
+			$out = unflatten($out);
+		}
+		$bosh_exodus = $self->{__director_exodus_cache}{$ext_path//''} = $out;
+	}
+	return $bosh_exodus unless defined($key);
 	return struct_lookup($bosh_exodus, $key, $default);
 }
 # }}}
