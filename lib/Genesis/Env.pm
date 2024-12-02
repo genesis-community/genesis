@@ -1284,12 +1284,20 @@ sub get_environment_variables {
 	$env{GENESIS_CALL_BIN}     = $ENV{GENESIS_CALL_BIN} || humanize_bin();
 
 	# Deprecated, use GENESIS_CALL_ENV instead, but drop the $GENESIS_ENVIRONMENT after the command
-	$env{GENESIS_CALL}         = $env{GENESIS_CALL_BIN}.
-	                            ($is_alt_path ? sprintf(" -C '%s'", humanize_path($self->path)) : "");
+	$env{GENESIS_CALL}         = $env{GENESIS_CALL_BIN};
+	if ($ENV{GENESIS_PREFIX_TYPE} eq 'search') {
+		$env{GENESIS_CALL} .= " '$ENV{GENESIS_PREFIX_SEARCH}'";
+	} elsif ($is_alt_path) {
+		$env{GENESIS_CALL} .= sprintf(" -C '%s'", humanize_path($self->path));
+	}
 
 	my $env_ref = $self->name;
-	$env_ref .= '.yml' if (grep {$_ eq $self->name} known_commands);
-	$env_ref = humanize_path($self->path)."/$env_ref" if $is_alt_path;
+	if ($ENV{GENESIS_PREFIX_TYPE} eq 'search') {
+		$env_ref = "$ENV{GENESIS_PREFIX_SEARCH}";
+	} else {
+		$env_ref .= '.yml' if (grep {$_ eq $self->name} known_commands);
+		$env_ref = humanize_path($self->path)."/$env_ref" if $is_alt_path;
+	}
 	$env_ref = "'$env_ref'" if $env_ref =~ / \(\)!\*\?/;
 
 	$env{GENESIS_ENV_REF}  = $env_ref;
