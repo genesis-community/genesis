@@ -60,12 +60,20 @@ sub glob {
 # }}}
 # has_hook - {{{
 sub has_hook {
-	my ($self, $hook) = @_;
+	my ($self, $hook, %opts) = @_;
+
+	if ($hook eq 'cloud-config') {
+		$hook = "cloud-config-$opts{purpose}" if ($opts{purpose});
+	}
 	return $self->{__hook_check}{$hook} if exists($self->{__hook_check}{$hook});
 	trace("checking the kit for a(n) '$hook' hook");
-	$self->{__hook_check}{$hook} = -f $self->path("hooks/$hook") || (
-		 !envset('GENESIS_NO_MODULE_HOOKS') && -f $self->path("hooks/${hook}.pm"
-	));
+	my $hook_path = $self->path("hooks/$hook");
+	my @allowed_exts = ('');
+	push @allowed_exts, '.pm' unless envset('GENESIS_NO_MODULE_HOOKS');
+	for my $ext (@allowed_exts) {
+		$self->{__hook_check}{$hook} = "$hook_path$ext" if (-f "$hook_path$ext");
+	}
+	return $self->{__hook_check}{$hook};
 }
 
 # }}}
@@ -157,8 +165,10 @@ sub run_hook {
 	} elsif ($hook eq 'post-deploy') {
 		$ENV{GENESIS_DEPLOY_RC} = defined $opts{rc} ? $opts{rc} : 255;
 		my $fn = $opts{env}->workpath("data");
-		mkfile_or_fail($fn, $opts{data}) if ($opts{data});
+		mkfile_or_fail($fn, $opts{data}) if ($opts{data}); #FIXME: should be a json file
 		$ENV{GENESIS_PREDEPLOY_DATAFILE} = $fn;
+		$module_options{rc} = $ENV{GENESIS_DEPLOY_RC};
+		$module_options{data} = $opts{data} if ($opts{data});
 
 	} elsif ($hook eq 'features') {
 		bug("The 'features' option to run_hook is required for the '$hook' hook!!")
@@ -219,10 +229,6 @@ EOF
 				$hook_file = $self->path("hooks/cloud-config.pm");
 				$hook_name = "hook/cloud-config";
 			}
-			$hook_file = $ENV{GENESIS_CLOUD_CONFIG_SUBTYPE}
-			? $self->path("hooks/cloud-config-$ENV{GENESIS_CLOUD_CONFIG_SUBTYPE}.pm")
-			: $self->path("hooks/cloud-config.pm");
-			$hook_name = "hook/cloud-config";
 		} else {
 			$hook_file = $self->path("hooks/${hook}.pm");
 			$hook_name = "hook/$hook";
@@ -234,7 +240,7 @@ EOF
 			$line = <$fh> while ($line =~/^\s*(#.*)?$/);
 			close $fh;
 
-			if ($line =~ /^package (Genesis::Hook::[^ ]*)/) {
+			if ($line =~ /^package (Genesis::Hook::[^;\s]*)/) {
 				$hook_module = $1;
 			}
 		}
@@ -256,7 +262,7 @@ EOF
 		}
 	}
 
-	debug ("Running hook now in ".$self->path);
+	debug ("Running #C{$hook_name} hook now in ".$self->path);
 	if ($hook_module) {
 		eval {require $hook_file};
 		$module_options{file} = $opts{$hook_file};
@@ -332,7 +338,7 @@ EOF
 			$self->id, $out||"#i{No stdout provided}"
 		) unless $rc == 0;
 		$out =~ s/^\s+//;
-		return split(/\s+/, $out);
+		return [split(/\s+/, $out)];
 	}
 
 	if ($hook eq 'pre-deploy') {
@@ -475,9 +481,16 @@ sub provided_configs {
 	return @configs;
 }
 
+# }}}
 # required_configs - what configs does this kit require from BOSH? {{{
 sub required_configs {
 	my ($self,@hooks) = @_;
+
+	# Cloud-config hook never requires a cloud config or runtime config
+	if (@hooks == 1 && $hooks[0] eq 'cloud-config') {
+		return ();
+	}
+
 	my $required_configs = $self->metadata->{required_configs};
 	unless ($required_configs) {
 		return ('cloud') if (grep {$_ eq 'manifest'} @hooks); # Erroneous, should be blueprint - need to fix in callers

@@ -2,6 +2,7 @@ package Genesis::Commands::Env;
 
 use strict;
 use warnings;
+use utf8;
 
 use Genesis;
 use Genesis::State;
@@ -9,6 +10,7 @@ use Genesis::Term;
 use Genesis::Commands;
 use Genesis::Top;
 use Genesis::UI;
+use Encode qw(decode_utf8);
 
 sub create {
 
@@ -643,7 +645,7 @@ sub deploy {
 	my @invalid_create_env_opts = grep {$options{$_}} (qw/fix dry-run/);
 
 	$options{'disable-reactions'} = ! delete($options{reactions});
-	my $env = Genesis::Top->new('.')->load_env($_[0])->with_vault();
+	my $env = Genesis::Top->new('.')->load_env($_[0])->with_vault()->with_bosh();
 
 	if (scalar(grep {$_} ($options{fix}, $options{recreate}, $options{'dry-run'})) > 1) {
 		command_usage(1,"Can only specify one of --dry-run, --fix or --recreate");
@@ -655,18 +657,91 @@ sub deploy {
 		join(", ", @invalid_create_env_opts)
 	) if $env->use_create_env && @invalid_create_env_opts;
 
-	info "Preparing to deploy #C{%s}:\n  - based on kit #c{%s}\n  - using Genesis #c{%s}", $env->name, $env->kit->id, $Genesis::VERSION;
+	info "\nPreparing to deploy #C{%s}:\n  - based on kit #c{%s}\n  - using Genesis #c{%s}", $env->name, $env->kit->id, $Genesis::VERSION;
 	if ($env->use_create_env) {
 		info "  - as a #M{create-env} deployment\n";
 	} else {
 		info "  - to '#M{%s}' BOSH director at #c{%s}.\n", $env->bosh->{alias}, $env->bosh->{url};
 	}
-	$env
-		->with_bosh
-		->download_required_configs('deploy');
 
-	my $ok = $env->deploy(%options);
-	exit ($ok ? 0 : 1);
+	my ($cloud_config, $network_map) = (undef, undef);
+	if (! $env->use_create_env) {
+		# TODO: refactor to clean this up a bit
+		if ($env->can_build_cloud_configs) {
+			if ($env->has_hook('cloud-config')) {
+				$env->notify("Generating cloud configs for #C{%s} deployment...", $env->name);
+				($cloud_config, $network_map) = $env->run_hook('cloud-config');
+
+				# TODO: Support multiple cloud configs
+				my $cloud_config_name = $env->name.'.'.$env->type;
+				my $cloud_config_dir = $env->workpath('cloud-configs');
+				my $new_path = "$cloud_config_dir/${cloud_config_name}.yml";
+				info "[[  - >>cloud config synthesized.";
+
+				mkdir($cloud_config_dir) unless -d $cloud_config_dir;
+				mkfile_or_fail($new_path, 0644, $cloud_config);
+				info "[[  - >>checking for existing cloud config on #M{%s} BOSH director...", $env->bosh->{alias};
+				if ($env->bosh->has_config('cloud',$cloud_config_name)) {
+					my $old_path = "$cloud_config_dir/current-${cloud_config_name}.yml";
+					info "[[  - >>comparing generated cloud config with existing cloud config...";
+					$env->bosh->download_configs($old_path,'cloud',$cloud_config_name);
+					my ($out, $rc, $err) = run(
+						fake_tty("$cloud_config_dir/spruce-out.txt",'spruce','diff',$old_path, $new_path)
+					);
+					bail "Error comparing cloud configs: %s", $err if $rc;
+
+					$out = decode_utf8($out) =~ s/\A\s*(.*?)\s*\z/$1/mrs;
+					if ($out) {
+						$out =~ s/\(root level\)/<root>/m;
+						info "[[  - >>#yui{found the following differences:}\n\n%s", $out;
+						if (in_controlling_terminal || !$options{'yes'}) {
+							prompt_for_boolean(
+								"Upload the new cloud config to the BOSH director ('no' will cancel deploy)? [y|n]",
+								1
+							) or bail "Aborted by user!";
+						}
+						info(
+							"Uploading new cloud config to #M{%s} BOSH director...",
+							$env->bosh->{alias}
+						);
+						$env->bosh->upload_config_from_file($new_path,'cloud',$cloud_config_name);
+						info "[[  - >>cloud config for #C{%s} deployment has been updated.\n", $env->name;
+					} else {
+						info "[[  - >>no changes detected in cloud config; proceeding with deploy.\n";
+					}
+				} else {
+					info(
+						"[[  - >>uploading new cloud config to #M{%s} BOSH director...",
+						$env->bosh->{alias}
+					);
+					$env->bosh->upload_config_from_file($new_path,'cloud',$cloud_config_name);
+					info "[[  - >>cloud config for #C{%s} deployment has been created.\n", $env->name;
+				}
+
+			} else {
+				warning(
+					"Kit %s does not provide a cloud-config hook, so cloud configs will ".
+					"not be generated.  Ensure that the BOSH director has the necessary ".
+					"cloud config in place.",
+				);
+			}
+		} else {
+			warning(
+				"Cloud Configs will not be generated for this deployment.  ".
+				"Ensure that the BOSH director has the necessary cloud config in place."
+			);
+		}
+		$env ->download_required_configs('deploy');
+	}
+
+	my $ok = $env->deploy(%options, network_map => $network_map);
+
+	if ($ok) {
+		success "#M{%s}/#c{%s} deployed successfully.\n", $env->name, $env->type;
+		exit 0;
+	} else {
+		bail "[#M{%s}] #R{Deployment Failed}", $env->name;
+	}
 }
 
 sub addon {

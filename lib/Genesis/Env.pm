@@ -23,6 +23,7 @@ use Archive::Tar;
 use Data::Dumper;
 use Digest::SHA qw/sha1_hex sha256_hex/;
 use Digest::file qw/digest_file_hex/;
+use Encode qw/decode_utf8/;
 use File::Basename qw/basename dirname/;
 use IO::Compress::Gzip qw/gzip $GzipError/;
 use IO::Uncompress::Gunzip qw/gunzip $GunzipError/;
@@ -735,6 +736,15 @@ sub use_create_env {
 }
 
 # }}}
+# can_build_cloud_configs - returns true if the environment can build a cloud config {{{
+sub can_build_cloud_configs {
+	my $self = shift;
+	return 0 unless $self->feature_compatibility("3.1.0-rc.9");
+	return 0 unless $self->lookup('genesis.manage-cloud-configs')//1;
+	return 1;
+}
+
+# }}}
 # feature_compatibility - returns true if the min version for the environment meets or exceeds the specified version {{{
 sub feature_compatibility {
 	my ($self,$version) = @_;
@@ -864,7 +874,7 @@ sub features {
 			"Environment #C{%s} cannot explicitly specify derived features:\n  - %s",
 			$self->name, join("\n  - ",@derived_features)
 		) if @derived_features;
-		$features = [$self->kit->run_hook('features',env => $self, features => $features)]
+		$features = $self->kit->run_hook('features',env => $self, features => $features)
 			if $self->kit->has_hook('features');
 		$features;
 	});
@@ -1229,6 +1239,8 @@ sub bosh_config_names {
 	return $configs;
 }
 
+# }}}
+# bosh_config_overrides - returns the bosh config overrides for the environment {{{
 sub env_config_overrides {
 	my ($self, $type) = @_;
 	my $overrides = $self->lookup('bosh-configs.$type', {});
@@ -1632,6 +1644,7 @@ sub exodus_mount {
 }
 
 # }}}
+# FIXME: These env references aren't being used anywhere
 # exodus_slug - returns the component of the Vault path under the Exodus mount for this evironments Exodus data {{{
 sub exodus_slug {
 	sprintf("%s/%s", $_[0]->name, $_[0]->type);
@@ -2494,7 +2507,7 @@ sub last_deployed_manifest {
 # }}}
 # vars_file - create yml file and return path for bosh variables {{{
 sub vars_file {
-	my ($self,$redact) = @_;
+	my ($self,$redact,$file) = @_;
 	my $manifest = $self->manifest_provider->deployment(subset=>'bosh_vars');
 	$manifest = $manifest->redacted if $redact;
 	$manifest->notify(sprintf(
@@ -2504,7 +2517,12 @@ sub vars_file {
 
 	return unless scalar(keys %{$manifest->data});
 	dump_var "BOSH Variables File" => $manifest->file, "Contents" => $manifest->data;
-	return $manifest->file;
+	if ($file) {
+		save_to_yaml_file($manifest->data, $file);
+		return $file;
+	} else {
+		return $manifest->file;
+	}
 }
 
 # }}}
@@ -2717,7 +2735,7 @@ sub deploy {
 	$unpruned_deploy_manifest->write_to($unpruned_manifest_path);
 
 	my ($ok, $predeploy_data,$data_fn) = ();
-	my $vars_path = $self->vars_file();
+	my $vars_path = $self->vars_file(0,$deploy_cache."/".$self->name.".vars");
 	if ($self->has_hook('pre-deploy')) {
 		($ok, $predeploy_data) = $self->run_hook(
 			'pre-deploy',
@@ -2776,54 +2794,56 @@ sub deploy {
 	#       contain secrets, but those secrets are generated real-time during
 	#       the deployment, so can't be preemptively stored in the vault.
 
-	my $cached_manifest_path = $deploy_cache."/".$self->name."-redacted.yml";
-	my $cached_vars_path = $deploy_cache."/".$self->name."-redacted.vars";
+	my $cached_manifest_path = $manifest_path;
+	my $cached_vars_path = $vars_path;
+	my $cached_redacted_manifest_path = $deploy_cache."/".$self->name."-redacted.yml";
+	my $cached_redacted_vars_path = $deploy_cache."/".$self->name."-redacted.vars";
+	$self->manifest_provider->deployment->redacted->write_to($cached_redacted_manifest_path);
+	$self->vars_file('redacted', $cached_redacted_vars_path);
 
-	my $manifest_store = $self->top->config->get('manifest_store');
-	if ($manifest_store eq 'exodus') {
-		$cached_manifest_path = $manifest_path;
-		$cached_vars_path = $vars_path;
-	} else {
-		# Legacy method of storing state files, and possibly manifests
-		$self->manifest_provider->deployment->redacted->write_to($cached_manifest_path);
-		copy_or_fail($self->vars_file('redacted'), $cached_vars_path) if ($self->vars_file('redacted'));
-	}
+	# Only used by create-env deployments, but need to reference them if they
+	# exist when caching the results.
+	my $state_path = $deploy_cache."/".$self->name."-state.json";
+	my $store_path = $deploy_cache."/".$self->name."-store.yml";
 
 	# DEPLOY!!!
 	$self->notify("all systems #G{ok}, initiating BOSH deploy...");
 
 	my @results;
 	if ($self->use_create_env) {
+		# Todo: Show spruce diff of the manifest in non-create-env deployments too
 		# Check for differences between the last deployed manifest and the current one
 		debug("deploying this environment via `bosh create-env`, locally");
-		my $last_manifest = $self->deployed_manifest_data(files => 1, contents => 0);
+		my $last_manifest = $self->last_deployed_manifest(files => 1, contents => 0);
 		my $last_manifest_path = ($last_manifest->{manifest}{path});
 		my $last_manifest_sha1 = $last_manifest->{manifest_sha1};
 		my $local_mismatch = 0;
-		if ($last_manifest->{source} ne 'exodus-deployments' && $last_manifest_path) {
+
+		if (($last_manifest->{source}||'') ne 'exodus-deployments' && $last_manifest_path) {
 			# Legacy method of storing state files, and possibly manifests
 			my $last_state_path = $last_manifest->{state}{path};
-			my $last_manifest_repo_path = $last_state_path =~ s/-state\.yml$/.yml/r;
+			my $last_manifest_repo_path = $last_state_path =~ s/-state\.yml$/.yml/r; # FIXME: This seems sus... but it seems to work for now.
 			my $last_repo_sha1 = sha1_hex(slurp($last_manifest_repo_path));
-			if ($last_repo_sha1 ne $last_manifest_sha1) {
-				$local_mismatch = 1;
+			my $issue = '';
+			if (!defined($last_manifest_sha1) || $last_manifest_sha1 eq '') {
+				$issue = "Cannot confirm local cached deployment manifest pertains to ".
+				         "the current deployment (sha1 sum missing from exodus data).";
+			} elsif ($last_repo_sha1 ne $last_manifest_sha1) {
+				$issue = "Manifest in the deployment archive does not match the manifest in the ".
+				         "local repository; perhaps you need to perform a #C{git pull}.  #y{Differences ".
+				         "will not be accurate for this deployment compared to what was last deployed.}";
+			}
+			if ($issue) {
+				$issue .= "  #R{This may mean your state file is also out of date!}";
 				if (in_controlling_terminal || envset('BOSH_NON_INTERACTIVE')) {
-					warning(
-						"Manifest in the deployment archive does not match the manifest in the ".
-						"local repository; perhaps you need to perform a #C{git pull}.  #y{Differences ".
-						"will not be accurate for this deployment compared to what was last deployed.}"
-					);
-					my $confirm = envset('BOSH_NON_INTERACTIVE') ||	prompt_for_boolean(
+					warning($issue);
+					prompt_for_boolean(
 						"Proceed with BOSH create-env for the #C{${\($self->name)}} anyways? [y|n] ",
 						0
-					);
-					bail "Aborted!\n" unless $confirm;
+					) or bail "Aborted!\n";
 				} else {
 					bail(
-						"Manifest in the deployment archive does not match the manifest in ".
-						"the local repository - #R{This may mean your state file is also ".
-						"out of date!}\n\n".
-						"Refusing to deploy to protect integrity of the environment."
+						"$issue\n\nRefusing to deploy to protect integrity of the environment."
 					);
 				}
 			}
@@ -2831,8 +2851,14 @@ sub deploy {
 
 		my $old_exodus = $self->exodus_lookup("",{});
 		if ($last_manifest_path) {
-			info "Showing differences between previous deployment found in archive:\n";
-			if ($last_manifest->{manifest}{source} eq 'repo' && !defined($last_manifest->{manifest_sha1})) {
+			bail(
+				"Cannot find state file for previous deployment; cannot proceed with create-env."
+			) unless $last_manifest->{state}{path};
+
+			# FIXME: These checks seem redundant to the above "non-exodus" checks --
+			#        they should be universal.  Find out why the deviation and unify
+			#        if possible
+			if ($last_manifest->{manifest}{source} eq 'repository' && !defined($last_manifest->{manifest_sha1})) {
 				warning(
 					"Cannot confirm local cached deployment manifest pertains to the ".
 					"current deployment."
@@ -2844,35 +2870,60 @@ sub deploy {
 					"will not be accurate for this deployment compared to what was last deployed.}"
 				);
 			}
-			my $rc = run({interactive => 1, redact => 1}, "spruce", "diff", $last_manifest_path, $manifest_path);
-			info "#y{NOTE}: values from vault have been redacted, so differences are not shown.";
+			my ($out, $rc, $err) = run({redact => 1}, fake_tty(
+					$self->workpath('spruce-predeploy-manifest.diff'), # fake_tty() needs a tmp file
+					"spruce", "diff", $last_manifest_path, $manifest_path
+			));
+			
+			bail(
+				"Failed to diff the last deployed manifest with the current manifest: $err"
+			) if $rc;
+			$out = decode_utf8($out) =~ s/\A\s*(.*?)\s*\z/$1/smr;
+			if ($out) {
+				$local_mismatch = 1;
+				info(
+					"[[  - >>#y{found differences between last deployed and current manifest:}\n\n%s%s",
+					$out,
+					($last_manifest->{manifest}{source} eq 'repository'
+						? "\n\n#y{NOTE}: values from vault have been redacted, so differences are not shown."
+						: '')
+				);
+			} else {
+				info(
+					"[[  - >>#G{no differences found between last deployed and current manifest.}"
+				);
+			}
 		} else {
-			info "No previous deployment of this environment found in the deployment archive."
+			info "[[  - >>no previous deployment of this environment found in the deployment archive.";
 		}
 
 		if (in_controlling_terminal && !envset('BOSH_NON_INTERACTIVE')) {
 			prompt_for_boolean(
 				"Proceed with BOSH create-env for the #C{${\($self->name)}}? [y|n] ",1
-			) or bail "Aborted!\n" unless $confirm;
+			) or bail "Aborted!\n";
+			print "\n";
 		} else {
 			print "\n";
 		}
 
+		copy_or_fail($last_manifest->{state}{path}, $state_path)
+			if $last_manifest->{state}{path};
+		copy_or_fail($last_manifest->{store}{path}, $store_path)
+			if $last_manifest->{store}{path};
+
 		my @bosh_opts;
 		push @bosh_opts, "--$_" for grep { $opts{$_} } qw/recreate skip-drain/;
-		my $state_path = $deploy_cache."/".$self->name."-state.yml";
-		my $store_path = $deploy_cache."/".$self->name."-store.json";
-		copy_or_fail($last_manifest->{state}{path}, $state_path) if $last_manifest->{state}{path};
-		copy_or_fail($last_manifest->{store}{path}, $store_path) if $last_manifest->{store}{path};
+
 		# TODO: Can we run this non-blocking to get a Task ID, then connect to the task ID in case we get disconnected?
 		@results = $self->bosh->create_env(
 			$manifest_path,
+			flags => \@bosh_opts,
 			vars_file => $vars_path,
 			state => $state_path,
-			#TODO: maybe need to check if manifest contains any secrets and is not
-			#      vaultified - currently no kit supports create-env with credhub, so
-			#      no urgency to implement this.
-			store => $self->kit->secrets_store eq 'credhub' ? $store_path : undef
+			# TODO: maybe need to check if manifest contains any secrets and is not
+			#       vaultified - currently no kit supports create-env with credhub, so
+			#       no urgency to implement this.
+			store => $self->kit->secrets_store eq 'credhub' ? $store_path : undef,
 		);
 
 	} else {
@@ -2909,24 +2960,30 @@ sub deploy {
 		if ($ok && $manifest_store ne 'exodus') {
 			# deployment succeeded; update the cache (Legacy manifest store)
 			mkdir_or_fail($self->path(".genesis/manifests")) unless -d $self->path(".genesis/manifests");
-			copy_or_fail($cached_manifest_path, $self->path(".genesis/manifests/$self->{name}.yml"));
-			copy_or_fail($cached_vars_path, $self->path(".genesis/manifests/$self->{name}.vars")) if -e $cached_vars_path;
-			for (qw(state.yml store.json)) {
+			eval {
+				copy_or_fail($cached_redacted_manifest_path, $self->path(".genesis/manifests/$self->{name}.yml"));
+				copy_or_fail($cached_redacted_vars_path, $self->path(".genesis/manifests/$self->{name}.vars")) 
+					if -e $cached_redacted_vars_path;
+			};
+			warning("Failed to copy manifest to repository: $@") if ($@);
+			for ('state.json', 'store.yml') {
 				my $file = $self->name."-$_";
-				copy_or_fail($deploy_cache/$file, $self->path(".genesis/manifests/$file")) if -f "$deploy_cache/$file";
+				next unless -f "$deploy_cache/$file";
+				eval {
+					copy_or_fail("$deploy_cache/$file", $self->path(".genesis/manifests/$file"));
+				};
+				warning("Failed to copy $file to repository: $@") if ($@);
 			}
 		}
-
-		# Reauthenticate to vault, as deployment can take a long time
-		$self->vault->authenticate unless $self->vault->status eq 'sealed';
-
-		$self->run_hook('post-deploy', rc => ($ok ? 0 : 1), data => $predeploy_data)
-			if $self->has_hook('post-deploy');
 	}
 
 	# bail out early if the deployment failed;
 	# don't update the cached manifests
 	if ($results[1] && $results[0]) {
+		if (!$opts{"dry-run"} && $self->has_hook('post-deploy')) {
+			# Call post-deploy hook with the pre-deploy data in case of cleanup on failure
+			$self->run_hook('post-deploy', rc => $results[1], data => $predeploy_data)
+		}
 		my $last_bits_of_output = join "\n", map {decolorize($_)} (split(/\r?\n/,$results[0]))[-5..-1];
 		if ($last_bits_of_output =~ /Continue\?[^\n]*: [^\n]*[nN]o?\r?\n\s*Stopped\s*Exit code 1/sm) {
 			bail "User canceled deployment when prompted to continue."
@@ -2944,25 +3001,32 @@ sub deploy {
 		exit 0;
 	}
 
-	# track exodus data in the vault
+	# track exodus data in the vault 
 	$self->notify("Preparing metadata for export...");
 	$self->vault->authenticate unless $self->vault->authenticated;
 	my $exodus = $self->exodus;
+
+	if ($manifest_store ne 'exodus') {
+		# Repository-based exodus data (also used in hybrid mode)
+		$exodus = {
+			%$exodus,
+			manifest_sha1 => digest_file_hex($manifest_path, 'SHA-1'),
+			manifest_type => $self->manifest_provider->deployment->redacted->type,
+		};
+	}
 
 	my @exodus_cmds = (
 		'rm',  $self->exodus_base, "-f", '--',
 		'set', $self->exodus_base, map { "$_=$exodus->{$_}" } grep {defined($exodus->{$_})} keys %$exodus,
 	);
 
-	if ($manifest_store eq 'exodus') {
+	if ($manifest_store ne 'repository') {
+		my $output_path = $deploy_cache."/".$self->name."-output.log";
+		mkfile_or_fail($output_path, decode_utf8($results[0]));
 
-		# Remove any lingering manifest files from the repo
-		unlink $_ for grep {-f $_} (
-			$self->path(".genesis/manifests/".$self->name.".yml"),
-			$self->path(".genesis/manifests/".$self->name.".vars"),
-			$self->path(".genesis/manifests/".$self->name."-state.yml"),
-			$self->path(".genesis/manifests/".$self->name."-store.json")
-		);
+		# TODO: Grab the credhub variables used, and a diff of the dev kit compared
+		#       to the version the dev kit was initiated with, if dev kit is used,
+		#       or maybe just tar-up the whole dev directory...?
 
 		my $exodus_deployment = {
 			manifest_sha2 => digest_file_hex($manifest_path, 'SHA-256'),
@@ -2973,18 +3037,16 @@ sub deploy {
 			kit_features  => $exodus->{features},
 		};
 
-		# TODO: Grab the credhub variables used, and a diff of the dev kit compared
-		#       to the version the dev kit was initiated with, if dev kit is used,
-		#       or maybe just tar-up the whole dev directory...?
-
 		# Compress and base64 encode the manifest data for storage in the vault
 		my %artifacts = (
+			log => $output_path,
 			manifest => $manifest_path,
 			unpruned => $unpruned_manifest_path,
 			vars => $vars_path,
-			state => $self->workpath($self->name."-state.yml"),
-			store => $self->workpath($self->name."-store.json"),
+			state => $state_path,
+			store => $store_path,
 		);
+
 		my $tar = Archive::Tar->new;
 		for my $artifact (keys %artifacts) {
 			next unless $artifacts{$artifact} && -f $artifacts{$artifact};
@@ -2996,14 +3058,16 @@ sub deploy {
 		$tar->write(IO::Compress::Gzip->new($data_fh, Level => 9, Append => 0, AutoClose => 1))
 			or bail("Failed to compress manifest artifacts");
 
-		$exodus_deployment->{artifacts} = encode_base64($compressed_data);
+		my $encoded_artifacts = encode_base64($compressed_data);
 		my ($deployment_time) = map {
 			my $time = Time::Piece->strptime($exodus->{$_}, "%Y-%m-%d %H:%M:%S %z");
 			$time->gmtime($time->epoch)->strftime("%Y%m%d%H%M%S");
 		} ('dated');
+		my $artifact_file = $self->workpath("exodus-$deployment_time.tgz.b64");
+		mkfile_or_fail($artifact_file, $encoded_artifacts);
 
 		push @exodus_cmds, (
-			'--', 'set', $self->exodus_base."/deployments/$deployment_time", map { "$_=$exodus_deployment->{$_}" } keys %$exodus_deployment
+			'--', 'set', $self->exodus_base."/deployments/$deployment_time", "artifacts\@$artifact_file", map { "$_=$exodus_deployment->{$_}" } keys %$exodus_deployment
 		);
 	}
 
@@ -3017,7 +3081,31 @@ sub deploy {
 	);
 	$self->_reset_last_deployed_manifest;
 
-	success "\n#M{%s}/#c{%s} deployed successfully.\n", $self->name, $self->type;
+	if ($manifest_store eq 'exodus') {
+		# Remove any lingering manifest files from the repo
+		unlink $_ for grep {-f $_} (
+			$self->path(".genesis/manifests/".$self->name.".yml"),
+			$self->path(".genesis/manifests/".$self->name.".vars"),
+			$self->path(".genesis/manifests/".$self->name."-state.yml"),
+			$self->path(".genesis/manifests/".$self->name."-state.json"),
+			$self->path(".genesis/manifests/".$self->name."-store.yml")
+		);
+	}
+
+	# Update the network map on the director's exodus network data
+	if (!$self->use_create_env && $opts{network_map}) {
+		$self->notify("Submitting network claims for this deployment to #M{%s} BOSH director...", $self->bosh->{alias});
+		eval {$self->bosh->vault->set_path($self->bosh->exodus_path.'/network', $opts{network_map}, flatten => 1, clear => 1);};
+		if ($@) {
+			info("  - #R{failed to update network map}:\n\n%s", $@);
+		} else {
+			info("  - #G{network map successfully updated}");
+		}
+	}
+
+	$self->run_hook('post-deploy', rc => ($ok ? 0 : 1), data => $predeploy_data)
+		if $self->has_hook('post-deploy');
+
 	return $ok;
 }
 
@@ -3619,9 +3707,9 @@ sub _process_reactions {
 # _parse_bosh_env - parse the bosh env into its constituent parts {{{
 sub _parse_bosh_env {
 	# Pattern: <name>[/<type>][@[<url>]/<mount>]
-	my $self = shift;
+	my ($self, $bosh_env_description) = @_;
 	my ($name, $dep_type, $vault_url, $exodus_mount) =
-		$self->bosh_env =~ m/^([^\/\@]+)(?:\/([^\@]+))?(?:@(?:(https?:\/\/[^\/]+)?(?:\/|$))?(.*))?$/;
+		($bosh_env_description // $self->bosh_env) =~ m/^([^\/\@]+)(?:\/([^\@]+))?(?:@(?:(https?:\/\/[^\/]+)?(?:\/|$))?(.*))?$/;
 	return wantarray ? ($name, $dep_type, $vault_url, $exodus_mount) : {
 		name => $name,
 		dep_type => $dep_type,

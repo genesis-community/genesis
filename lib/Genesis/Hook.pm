@@ -2,7 +2,7 @@ package Genesis::Hook;
 use strict;
 use warnings;
 
-use Genesis qw/trace bug bail trace new_enough semver pushd popd run/;
+use Genesis qw/trace bug bail trace new_enough semver pushd popd run humanize_path/;
 use Data::Dumper ();
 use JSON::PP;
 
@@ -16,7 +16,7 @@ sub init {
 	) if @missing;
 
 	my $hook = bless({%ops, complete => 0, type => $ENV{GENESIS_KIT_HOOK}},$class);
-	$hook->{features} = ($hook->env && $ENV{GENESIS_KIT_HOOK} ne 'feature') ? [$hook->env->features] : [];
+	$hook->{features} = ($hook->env && $ENV{GENESIS_KIT_HOOK} ne 'features') ? [$hook->env->features] : [];
 
 	trace({raw => 1},
 		"%senvironmental variables:\n%s",
@@ -69,7 +69,18 @@ sub perform {
 	)
 }
 
-sub done {$_[0]->{complete} = 1}
+sub done {
+	my ($self) = shift;
+	if (@_) {
+		my $results = shift;
+		$self->{results} = $results;
+		$self->{complete} = defined($results) ? 1 : 0;
+	} else {
+		$self->{complete} = 1;
+	}
+}
+
+sub results {$_[0]->completed ? $_[0]->{results} : undef}
 
 sub completed {$_[0]->{complete}}
 
@@ -103,10 +114,12 @@ sub want_feature {
 	}
 	return $self->{__wanted_features}{$feature};
 }
+sub wants_feature {$_[0]->want_feature($_[1])} # alias
 
 # Special "universal" feature detection {{{
-sub is_ocfp {$_[0]->want_feature('ocfp')}
-
+sub iaas {$_[0]->env && $_[0]->env->iaas}
+sub scale {$_[0]->env && $_[0]->env->scale}
+sub is_ocfp {$_[0]->env && $_[0]->env->is_ocfp}
 # }}}
 
 sub set_features {
