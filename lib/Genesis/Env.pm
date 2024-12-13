@@ -1401,13 +1401,15 @@ sub get_environment_variables {
 	$env{GENESIS_VERIFY_VAULT} = $self->vault->connect_and_validate->verify || "";
 
 	# Kit ENV VARS
-	$env{GENESIS_KIT_NAME}               = $self->kit->name;
-	$env{GENESIS_KIT_VERSION}            = $self->kit->version;
-	$env{GENESIS_KIT_PATH}               = $self->kit->path;
-	$env{GENESIS_ENV_IAAS}               = $self->iaas;
-	$env{GENESIS_ENV_SCALE}              = $self->scale;
-	$env{GENESIS_ENV_KIT_OVERRIDE_FILES} = join(' ', $self->kit->env_override_files);
-	$env{GENESIS_MIN_VERSION_FOR_KIT}    = $self->kit->genesis_version_min();
+	$env{GENESIS_KIT_NAME}                 = $self->kit->name;
+	$env{GENESIS_KIT_VERSION}              = $self->kit->version;
+	$env{GENESIS_KIT_PATH}                 = $self->kit->path;
+  $env{GENESIS_MIN_VERSION_FOR_KIT}      = $self->kit->genesis_version_min();
+	if ($self->exists) {
+		$env{GENESIS_ENV_IAAS}               = $self->iaas;
+		$env{GENESIS_ENV_SCALE}              = $self->scale;
+		$env{GENESIS_ENV_KIT_OVERRIDE_FILES} = join(' ', $self->kit->env_override_files);
+	}
 
 	# Genesis v2.7.0 Secrets management
 	# This provides GENESIS_{SECRETS,EXODUS,CI}_{MOUNT,BASE}
