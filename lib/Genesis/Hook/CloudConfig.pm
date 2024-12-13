@@ -166,6 +166,17 @@ sub build_cloud_config {
 }
 
 # }}}
+# relinquish_networks - Relinquishes the named network(s) {{{
+sub relinquish_networks {
+	my ($self, @networks) = @_;
+	my $network = $self->network;
+	for (@networks) {
+		my $network_id = $self->name_for('net', $_);
+		delete($network->{subnets}{$_}{claims}{$network_id}) for keys %{$network->{subnets}};
+	}
+}
+
+# }}}
 # network_definition - Returns the definition for a given network {{{
 sub network_definition {
 	# This one is special compared to vm_type_definition, vm_extension_definition,

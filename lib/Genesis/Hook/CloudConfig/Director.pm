@@ -152,12 +152,22 @@ sub _set_network_azs {
 			my $az_name = $_;
 			my $data = $azs->{$az_name};
 			my $idx = $data->{index} // ($az_name =~ m/-([0-9]*)$/)[0];
-			($az_name,
-				{
+			my $cloud_properties = $data->{cloud_properties};
+			if ($cloud_properties) {
+				eval {
+					JSON::PP->new->encode($data->{cloud_properties})
+				};
+				bug(
+					"Invalid json in cloud properties for AZ %s: %s",
+					$az_name, $@
+				) if ($@);
+			} else {
+				$cloud_properties = '{}';
+			}
+			($az_name, {
 					name => $opts{prefix} . $idx,
-					cloud_properties => $data->{cloud_properties} // '{}',
-				}
-			);
+					cloud_properties => $cloud_properties,
+			});
 		} sort keys %{scalar $azs};
 
 		# FIXME: What if this has changed (ie there is already network data)?
