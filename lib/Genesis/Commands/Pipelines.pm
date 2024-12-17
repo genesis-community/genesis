@@ -209,13 +209,21 @@ sub ci_show_changes {
 
 	_bail_on_missing_pipeline_environment_variables(@undefined);
 
-	mkfile_or_fail "updates.yml", 0644, $env->with_bosh
+	my $manifest_provider = $env->with_bosh
 		->download_required_configs('blueprint', 'manifest')
-		->manifest(redact => 0, prune => 1);
+		->manifest_provider;
 
-	my $vars = $env->manifest_lookup('bosh-variables') || {};
-	my $vars_file = "bosh-vars.yml";
-	save_to_yaml_file($vars,$vars_file);
+	mkfile_or_fail "updates.yml", 0644, slurp(
+		$manifest_provider
+		->deployment(notify=>0,subset=>'pruned')
+		->file =~ s/^\s*\z//mgr
+	);
+
+	mkfile_or_fail "bosh-vars.yml", 0644, slurp(
+		$manifest_provider
+		->deployment(notify=>0,subset=>'bosh_vars')
+		->file =~ s/^\s*\z//mgr
+	);
 
 	my $cmd = './dry-run';
 	mkfile_or_fail $cmd, 0755, <<'EOF';
@@ -254,7 +262,7 @@ EOF
 		run( {interactive => 0}, "sed -e 's/set -e/set -ex/' $cmd > ${cmd}-trace");
 		$cmd.='-trace';
 	}
-	my (undef,$rc) = run( {interactive => 1, env => \%envvars}, $cmd, $env->name, $env->type, 'updates.yml', $vars_file);
+	my (undef,$rc) = run( {interactive => 1, env => \%envvars}, $cmd, $env->name, $env->type, 'updates.yml', 'bosh-vars.yml');
 	bail "Failed to determine changes." if $rc;
 
 	my @missing = @{$mismatches->{missing} || []};
@@ -315,6 +323,9 @@ sub ci_generate_cache {
 	#   WORKING_DIR     - Path to the directory to deploy/work from
 	#   OUT_DIR         - Path to the directory to output to
 	#
+	# TODO: Detect if we need to run genesis from a different directory, based
+	# on the min genesis version of the environment for cached, changes, or git
+	# repo.
 	my @undefined = grep { !$ENV{$_} }
 		qw/CURRENT_ENV GIT_BRANCH
 			 WORKING_DIR OUT_DIR/;
@@ -345,6 +356,7 @@ sub ci_generate_cache {
 	} Genesis::Env::relate_by_name(
 		$ENV{CURRENT_ENV}, $ENV{PREVIOUS_ENV} || '', $common_path, $workdir
 	);
+
 	push(@cachables, "$common_path/kit-overrides.yml") if -f "$common_path/kit-overrides.yml";
 	copy_or_fail($_, "$target_dir/") for (@cachables);
 	copy_tree_or_fail("$common_path/ops", "$target_dir", "$common_path/") if -d "$common_path/ops";
@@ -443,6 +455,7 @@ sub _propagate_previous_passed_files {
 	) for (@cachables);
 
 	info "\n#C{Copying over cached files from $ENV{PREVIOUS_ENV} environment:}";
+
 	run(
 		{ onfailure => "#R{[ERROR]} Failed to copy '$cachedir/$_' to '$workdir/$_'", interactive => 1 },
 		'cp', '-Rv', "$cachedir/$_", "$workdir/$_"

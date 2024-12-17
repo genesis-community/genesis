@@ -500,7 +500,7 @@ resources:
     client: pp-admin
     client_secret: Ahti2eeth3aewohnee1Phaec
     config: cloud
-    name: default
+    all: true
     target: https://preprod.example.com:25555
   type: bosh-config
 - icon: script-text
@@ -513,7 +513,7 @@ resources:
     client: pp-admin
     client_secret: Ahti2eeth3aewohnee1Phaec
     config: runtime
-    name: default
+    all: true
     target: https://preprod.example.com:25555
   type: bosh-config
 - icon: github
@@ -561,7 +561,7 @@ resources:
     client: pr-admin
     client_secret: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
     config: cloud
-    name: default
+    all: true
     target: https://prod.example.com:25555
   type: bosh-config
 - icon: script-text
@@ -574,7 +574,7 @@ resources:
     client: pr-admin
     client_secret: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
     config: runtime
-    name: default
+    all: true
     target: https://prod.example.com:25555
   type: bosh-config
 - icon: github
@@ -609,7 +609,7 @@ resources:
     client: sb-admin
     client_secret: PaeM2Eip
     config: cloud
-    name: default
+    all: true
     target: https://sandbox.example.com:25555
   type: bosh-config
 - icon: script-text
@@ -622,7 +622,7 @@ resources:
     client: sb-admin
     client_secret: PaeM2Eip
     config: runtime
-    name: default
+    all: true
     target: https://sandbox.example.com:25555
   type: bosh-config
 - icon: slack
@@ -1148,7 +1148,7 @@ resources:
     client: pp-admin
     client_secret: Ahti2eeth3aewohnee1Phaec
     config: cloud
-    name: default
+    all: true
     target: https://preprod.example.com:25555
   tags:
     - client-aws-1-preprod
@@ -1163,7 +1163,7 @@ resources:
     client: pp-admin
     client_secret: Ahti2eeth3aewohnee1Phaec
     config: runtime
-    name: default
+    all: true
     target: https://preprod.example.com:25555
   tags:
     - client-aws-1-preprod
@@ -1213,7 +1213,7 @@ resources:
     client: pr-admin
     client_secret: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
     config: cloud
-    name: default
+    all: true
     target: https://prod.example.com:25555
   tags:
     - client-aws-1-prod
@@ -1228,7 +1228,7 @@ resources:
     client: pr-admin
     client_secret: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
     config: runtime
-    name: default
+    all: true
     target: https://prod.example.com:25555
   tags:
     - client-aws-1-prod
@@ -1265,7 +1265,7 @@ resources:
     client: sb-admin
     client_secret: PaeM2Eip
     config: cloud
-    name: default
+    all: true
     target: https://sandbox.example.com:25555
   tags:
     - client-aws-1-sandbox
@@ -1280,7 +1280,7 @@ resources:
     client: sb-admin
     client_secret: PaeM2Eip
     config: runtime
-    name: default
+    all: true
     target: https://sandbox.example.com:25555
   tags:
     - client-aws-1-sandbox
@@ -1823,7 +1823,7 @@ resources:
     client: pp-admin
     client_secret: Ahti2eeth3aewohnee1Phaec
     config: cloud
-    name: default
+    all: true
     target: https://preprod.example.com:25555
   type: bosh-config
 - icon: script-text
@@ -1836,7 +1836,7 @@ resources:
     client: pp-admin
     client_secret: Ahti2eeth3aewohnee1Phaec
     config: runtime
-    name: default
+    all: true
     target: https://preprod.example.com:25555
   type: bosh-config
 - icon: github
@@ -1876,7 +1876,7 @@ resources:
     client: pr-admin
     client_secret: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
     config: cloud
-    name: default
+    all: true
     target: https://prod.example.com:25555
   type: bosh-config
 - icon: script-text
@@ -1889,7 +1889,7 @@ resources:
     client: pr-admin
     client_secret: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
     config: runtime
-    name: default
+    all: true
     target: https://prod.example.com:25555
   type: bosh-config
 - icon: github
@@ -1920,7 +1920,7 @@ resources:
     client: sb-admin
     client_secret: PaeM2Eip
     config: cloud
-    name: default
+    all: true
     target: https://sandbox.example.com:25555
   type: bosh-config
 - icon: script-text
@@ -1933,7 +1933,7 @@ resources:
     client: sb-admin
     client_secret: PaeM2Eip
     config: runtime
-    name: default
+    all: true
     target: https://sandbox.example.com:25555
   type: bosh-config
 - icon: slack
@@ -2766,7 +2766,7 @@ resources:
     client: pp-admin
     client_secret: Ahti2eeth3aewohnee1Phaec
     config: cloud
-    name: default
+    all: true
     target: https://preprod.bosh-lite.com:25555
   tags:
   - client-aws-1-preprod
@@ -2781,7 +2781,7 @@ resources:
     client: pp-admin
     client_secret: Ahti2eeth3aewohnee1Phaec
     config: runtime
-    name: default
+    all: true
     target: https://preprod.bosh-lite.com:25555
   tags:
   - client-aws-1-preprod
@@ -2855,7 +2855,7 @@ resources:
     client: pr-admin
     client_secret: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
     config: cloud
-    name: default
+    all: true
     target: https://prod.bosh-lite.com:25555
   tags:
   - client-aws-1-prod
@@ -2870,7 +2870,7 @@ resources:
     client: pr-admin
     client_secret: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
     config: runtime
-    name: default
+    all: true
     target: https://prod.bosh-lite.com:25555
   tags:
   - client-aws-1-prod
@@ -2931,7 +2931,7 @@ resources:
     client: sb-admin
     client_secret: PaeM2Eip
     config: cloud
-    name: default
+    all: true
     target: https://sandbox.bosh-lite.com:25555
   tags:
   - client-aws-1-sandbox
@@ -2946,7 +2946,7 @@ resources:
     client: sb-admin
     client_secret: PaeM2Eip
     config: runtime
-    name: default
+    all: true
     target: https://sandbox.bosh-lite.com:25555
   tags:
   - client-aws-1-sandbox
@@ -3754,7 +3754,7 @@ resources:
     client: pp-admin
     client_secret: Ahti2eeth3aewohnee1Phaec
     config: cloud
-    name: default
+    all: true
     target: https://preprod.bosh-lite.com:25555
   tags:
   - client-aws-1-preprod
@@ -3769,7 +3769,7 @@ resources:
     client: pp-admin
     client_secret: Ahti2eeth3aewohnee1Phaec
     config: runtime
-    name: default
+    all: true
     target: https://preprod.bosh-lite.com:25555
   tags:
   - client-aws-1-preprod
@@ -3843,7 +3843,7 @@ resources:
     client: pr-admin
     client_secret: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
     config: cloud
-    name: default
+    all: true
     target: https://prod.bosh-lite.com:25555
   tags:
   - client-aws-1-prod
@@ -3858,7 +3858,7 @@ resources:
     client: pr-admin
     client_secret: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
     config: runtime
-    name: default
+    all: true
     target: https://prod.bosh-lite.com:25555
   tags:
   - client-aws-1-prod
@@ -3919,7 +3919,7 @@ resources:
     client: sb-admin
     client_secret: PaeM2Eip
     config: cloud
-    name: default
+    all: true
     target: https://sandbox.bosh-lite.com:25555
   tags:
   - client-aws-1-sandbox
@@ -3934,7 +3934,7 @@ resources:
     client: sb-admin
     client_secret: PaeM2Eip
     config: runtime
-    name: default
+    all: true
     target: https://sandbox.bosh-lite.com:25555
   tags:
   - client-aws-1-sandbox
@@ -4675,7 +4675,7 @@ resources:
     client: pp-admin
     client_secret: Ahti2eeth3aewohnee1Phaec
     config: cloud
-    name: default
+    all: true
     target: https://preprod.bosh-lite.com:25555
   tags:
   - client-aws-1-preprod
@@ -4690,7 +4690,7 @@ resources:
     client: pp-admin
     client_secret: Ahti2eeth3aewohnee1Phaec
     config: runtime
-    name: default
+    all: true
     target: https://preprod.bosh-lite.com:25555
   tags:
   - client-aws-1-preprod
@@ -4764,7 +4764,7 @@ resources:
     client: pr-admin
     client_secret: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
     config: cloud
-    name: default
+    all: true
     target: https://prod.bosh-lite.com:25555
   tags:
   - client-aws-1-prod
@@ -4779,7 +4779,7 @@ resources:
     client: pr-admin
     client_secret: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
     config: runtime
-    name: default
+    all: true
     target: https://prod.bosh-lite.com:25555
   tags:
   - client-aws-1-prod
@@ -4840,7 +4840,7 @@ resources:
     client: sb-admin
     client_secret: PaeM2Eip
     config: cloud
-    name: default
+    all: true
     target: https://sandbox.bosh-lite.com:25555
   tags:
   - client-aws-1-sandbox
@@ -4855,7 +4855,7 @@ resources:
     client: sb-admin
     client_secret: PaeM2Eip
     config: runtime
-    name: default
+    all: true
     target: https://sandbox.bosh-lite.com:25555
   tags:
   - client-aws-1-sandbox
@@ -5595,7 +5595,7 @@ resources:
     client: pp-admin
     client_secret: Ahti2eeth3aewohnee1Phaec
     config: cloud
-    name: default
+    all: true
     target: https://preprod.bosh-lite.com:25555
   tags:
   - client-aws-1-preprod
@@ -5610,7 +5610,7 @@ resources:
     client: pp-admin
     client_secret: Ahti2eeth3aewohnee1Phaec
     config: runtime
-    name: default
+    all: true
     target: https://preprod.bosh-lite.com:25555
   tags:
   - client-aws-1-preprod
@@ -5684,7 +5684,7 @@ resources:
     client: pr-admin
     client_secret: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
     config: cloud
-    name: default
+    all: true
     target: https://prod.bosh-lite.com:25555
   tags:
   - client-aws-1-prod
@@ -5699,7 +5699,7 @@ resources:
     client: pr-admin
     client_secret: eeheelod3veepaepiepee8ahc3rukaefo6equiezuapohS2u
     config: runtime
-    name: default
+    all: true
     target: https://prod.bosh-lite.com:25555
   tags:
   - client-aws-1-prod
@@ -5760,7 +5760,7 @@ resources:
     client: sb-admin
     client_secret: PaeM2Eip
     config: cloud
-    name: default
+    all: true
     target: https://sandbox.bosh-lite.com:25555
   tags:
   - client-aws-1-sandbox
@@ -5775,7 +5775,7 @@ resources:
     client: sb-admin
     client_secret: PaeM2Eip
     config: runtime
-    name: default
+    all: true
     target: https://sandbox.bosh-lite.com:25555
   tags:
   - client-aws-1-sandbox
@@ -5976,7 +5976,7 @@ resources:
     client: sb-admin
     client_secret: PaeM2Eip
     config: cloud
-    name: default
+    all: true
     target: https://sandbox.bosh-lite.com:25555
   type: bosh-config
 - icon: script-text
@@ -5989,7 +5989,7 @@ resources:
     client: sb-admin
     client_secret: PaeM2Eip
     config: runtime
-    name: default
+    all: true
     target: https://sandbox.bosh-lite.com:25555
   type: bosh-config
 - icon: slack
