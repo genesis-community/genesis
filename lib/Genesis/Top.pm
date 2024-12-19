@@ -350,7 +350,7 @@ sub is_repo {
 }
 # }}}
 
-### Instance Methods {{{
+### Instance Methods
 
 # Kit Provider handling
 # kit_provider - return the kit provider for the Top object {{{
@@ -810,9 +810,8 @@ sub download_kit {
 }
 
 # }}}
-# }}}
 
-# Private Methods {{{
+# Private Methods
 
 # _validate_config - validate the configuration of the repo {{{
 sub _validate_config {
@@ -854,7 +853,8 @@ sub _validate_config {
 					alias        => {type => 'string'}
 				}
 			},
-			allow_oversized_secrets => {type => 'boolean'},
+			allow_oversized_secrets   => {type => 'boolean'},
+			confirm_release_overrides => {type => 'enum', values => [qw/always outdated never/], envvar => 'GENESIS_CONFIRM_RELEASE_OVERRIDES' },
 		});
 	} else {
 		bail "Genesis deployment repo configuration version $config_version is not supported";

@@ -2101,7 +2101,9 @@ sub deploy {
 		$self->download_required_configs(@hooks);
 	}
 
-	my $confirm = $opts{yes} ? 'never' : $Genesis::RC->get('confirm_release_overrides' => 'outdated');
+	my $confirm = $opts{yes} ? 'never' : $Genesis::RC->get(
+		'confirm_release_overrides' => $self->top->config->{'confirm_release_overrides'} // 'outdated'
+	);
 	bail(
 		"Preflight checks failed; deployment operation halted."
 	) unless $self->check('confirm_release_overrides' => $confirm);

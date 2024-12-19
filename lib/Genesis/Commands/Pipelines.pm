@@ -140,7 +140,9 @@ sub ci_pipeline_deploy {
 	my %deploy_opts = (
 		redact => !envset('CI_NO_REDACT'),
 		'disable-reactions' => 0,
+		'yes' => 1,
 	);
+	$ENV{BOSH_NON_INTERACTIVE} = 'true'; # Doesn't work without this...
 	eval {
 		$result = $env->with_bosh
 		              ->download_required_configs('deploy')

@@ -101,15 +101,15 @@ sub Init {
 	$Genesis::RC = Genesis::Config->new($ENV{HOME}."/.genesis/config");
 	# FIXME: If command is ping, don't error out, but print validation errors
 	$Genesis::RC->validate({
-		default_bosh_target      => { type => 'enum',    default => 'ask', values => [qw/ask self parent/], envvar => 'GENESIS_DEFAULT_BOSH_TARGET' },
-		legacy_repo_suffix       => { type => 'boolean', default => 0, envvar => 'GENESIS_LEGACY_REPO_SUFFIX' },
+		default_bosh_target      => { type => 'enum',    default => 'ask',    values => [qw/ask self parent/],       envvar => 'GENESIS_DEFAULT_BOSH_TARGET' },
+		legacy_repo_suffix       => { type => 'boolean', default => 0,                                               envvar => 'GENESIS_LEGACY_REPO_SUFFIX' },
 		embedded_genesis         => { type => 'enum',    default => 'ignore', values => [qw/ignore check warn/]},
-		output_style             => { type => 'enum',    default => 'plain', values => [qw/plain fun pointer/]},
-		show_duration            => { type => 'boolean', default => 0, envvar => 'GENESIS_SHOW_DURATION' },
-		automatic_config_upgrade => { type => 'enum',    default => 'no', values => [qw/no yes silent/], envvar => 'GENESIS_CONFIG_AUTOMATIC_UPGRADE' },
-		confirm_release_overrides=> { type => 'enum',    default => 'outdated', values => [qw/always outdated never/], envvar => 'GENESIS_CONFIRM_RELEASE_OVERRIDES' },
+		output_style             => { type => 'enum',    default => 'plain',  values => [qw/plain fun pointer/]},
+		show_duration            => { type => 'boolean', default => 0,                                               envvar => 'GENESIS_SHOW_DURATION' },
+		automatic_config_upgrade => { type => 'enum',    default => 'no',     values => [qw/no yes silent/],         envvar => 'GENESIS_CONFIG_AUTOMATIC_UPGRADE' },
+		confirm_release_overrides=> { type => 'enum',                         values => [qw/always outdated never/], envvar => 'GENESIS_CONFIRM_RELEASE_OVERRIDES' },
 
-		bosh_logs_path           => { type => 'string',  default => "<DEPLOYMENT_ROOT>/bosh_logs", envvar => 'GENESIS_DEPLOYMENT_LOGS_PATH'},
+		bosh_logs_path           => { type => 'string',  default => "<DEPLOYMENT_ROOT>/bosh_logs",                   envvar => 'GENESIS_DEPLOYMENT_LOGS_PATH'},
 		deployment_roots  => {
 			type => 'array',
 			default => [],
@@ -126,7 +126,7 @@ sub Init {
 			type => 'hash',
 			schema => {
 				oversized_secrets => { type => 'boolean', default => 0 , envvar => 'GENESIS_SUPRESS_OVERSIZED_SECRETS_WARNING'},
-				bosh_target => { type => 'boolean', default => 0 , envvar => 'GENESIS_SUPPRESS_BOSH_TARGET_WARNING'},
+				bosh_target =>       { type => 'boolean', default => 0 , envvar => 'GENESIS_SUPPRESS_BOSH_TARGET_WARNING'},
 			}
 		},
 
