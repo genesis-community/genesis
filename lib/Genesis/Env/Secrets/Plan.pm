@@ -506,7 +506,7 @@ sub remove_secrets {
 				info({pending => 1}, "[[  - >>retrieving last deployed manifest to determine active entombed secrets ... ");
 				my ($source, $errors);
 				my $t = time_exec(sub {
-					($last_manifest, $manifest_type, $source, $errors) = 
+					($last_manifest, $manifest_type, undef, $source, $errors) =
 						$self->env->last_deployed_manifest(just => 'contents');
 				});
 				if ($errors && @$errors) {
