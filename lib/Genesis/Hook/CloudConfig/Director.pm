@@ -154,9 +154,7 @@ sub _set_network_azs {
 			my $idx = $data->{index} // ($az_name =~ m/-([0-9]*)$/)[0];
 			my $cloud_properties = $data->{cloud_properties};
 			if ($cloud_properties) {
-				eval {
-					JSON::PP->new->encode($data->{cloud_properties})
-				};
+				eval {JSON::PP->new->decode($cloud_properties)};
 				bug(
 					"Invalid json in cloud properties for AZ %s: %s",
 					$az_name, $@
