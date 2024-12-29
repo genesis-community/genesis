@@ -125,7 +125,7 @@ sub _parse_certificate {
 		my $subject_cn = $opts{options}{common_name};
 		push @names, $subject_cn
 			if (!scalar(@names) && $subject_cn);
-	} elsif ($self->env->kit->id =~ /^cf-app-autoscaler\/4\./) {
+	} elsif ($self->env->kit->id =~ /^cf-app-autoscaler\/[4567]\./) {
 		my $subject_cn = $opts{options}{common_name};
 		push @names, $subject_cn
 			if (!scalar(@names) && $subject_cn);
