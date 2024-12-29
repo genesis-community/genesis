@@ -643,7 +643,7 @@ sub use_create_env {
 		}
 
 		sub validate_create_env_state {
-			my ($self,$is_create_env,$has_bosh_env,$env_type,$is_bosh_kit) = @_;
+			my ($self,$is_create_env,$has_bosh_env,$env_type,$is_bosh_kit, $is_310plus) = @_;
 			clear_and_bail($self,
 				"This #M{$env_type} environment specifies an alternative bosh_env, but ".
 				"is marked as a create-env (proto) environment. Create-env deployments ".
@@ -651,15 +651,22 @@ sub use_create_env {
 				"this environment as a non-create-env environment.  It may be that ".
 				"bosh_env is configured in an inherited environment file."
 			) if $is_create_env && $has_bosh_env;
+			return unless $is_bosh_kit;
+			clear_and_bail($self,
+				"This #M{$env_type} environment does not use create-env nor does it ".
+				"specify an alternative #C{genesis.bosh_env} as a deploy target.  ".
+				"Please provide the name of the BOSH environment that will deploy this ".
+				"environment, or mark this environment as a create-env environment."
+			) if $is_310plus && !($is_create_env || $has_bosh_env );
 			clear_and_bail($self,
 				"This #M{$env_type} environment does not use create-env (proto) or ".
 				"specify an alternative #C{genesis.bosh_env} as a deploy target.  ".
 				"Please provide the name of the BOSH environment that will deploy this ".
 				"environment, or mark this environment as a create-env environment."
-			) unless $is_create_env || $has_bosh_env || !$is_bosh_kit;
+			) unless $is_create_env || $has_bosh_env;
 		}
 
-		my $different_bosh_env = $self->bosh_env && $self->bosh_env ne '--' && ($self->bosh_env ne $self->name);
+		my $different_bosh_env = $self->bosh_env && ($self->bosh_env ne $self->name);
 
 		if ($self->kit->feature_compatibility("2.8.0")) {
 			# Kits that are explicitly compatible with 2.8.0 can specify if they
@@ -684,13 +691,27 @@ sub use_create_env {
 				return 0 ;
 			}
 
+			# Allowed, but not reuqired to use create-env
+			my $is_create_env = undef;
 			my $euce = $self->lookup('genesis.use_create_env', undef);
-			my $is_create_env = (
-				$euce || (
-					! defined($euce) && $self->kit->id =~ /^bosh\// && grep {$_ eq 'proto'} $self->features
-			)) ? 1 : 0;
+			my $is_310plus = $self->feature_compatibility("3.1.0-rc1");
+			if ($is_310plus && $is_bosh_director) {
+				# proto feature removed in 3.1.0-rc1
+				$is_create_env = $euce || !$different_bosh_env;
+			} elsif ($euce) {
+				$is_create_env = 1;
+			} elsif ( $is_bosh_director && $different_bosh_env) {
+				$is_create_env = 0;
+			} elsif (grep {$_ eq 'proto'} @{$self->lookup('kit.features', [])}) {
+				$is_create_env = 1;
+			} else {
+				$is_create_env = 0;
+			}
 
-			validate_create_env_state($self,$is_create_env,$different_bosh_env,$self->type,$is_bosh_director);
+			validate_create_env_state(
+				$self,$is_create_env,$different_bosh_env,$self->type,
+				$is_bosh_director,$is_310plus
+			);
 			return $is_create_env;
 		}
 
