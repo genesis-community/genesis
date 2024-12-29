@@ -46,8 +46,8 @@ sub _get_token {
 	while ($caller = (caller($level))[3]) {
 		$level++;
 		my ($pkg,$sub) = $caller =~ m/^(.*)::([^:]*)$/;
-		next unless $pkg eq ref($self);
-		next if $sub =~ /^__ANON__$/;
+		next unless $pkg && $pkg eq ref($self);
+		next if !defined($sub) || $sub =~ /^__ANON__$/;
 		return "__$sub";
 	}
 	bug("Could not find %s in stack; cannot determine memoization token", ref($self));
