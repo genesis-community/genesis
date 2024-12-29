@@ -334,3 +334,9 @@ such as setting the secrets_mount, or vault namespace, etc.
   This will keep disk usage down and reduce chance of running out of space.
 
 * Add option to prefix azs with the environment name/type.
+
+---
+
+* Modify the 3.1 kits to allow for `requires_iaas` and `requires_scale` to be
+  set to a list of hooks instead of boolean.  This will allow for more
+  fine-grained control over which hook requires which iaas or scale.

@@ -648,6 +648,18 @@ sub dereferenced_metadata {
 }
 
 # }}}
+# requires_iaas - does this kit require iaas to be declared in the environment {{{
+sub requires_iaas {
+	my ($self, $env) = @_;
+	return $self->metadata->{requires_iaas};
+}
+# }}}
+# requires_scale - does this kit require scale to be declared in the environment {{{
+sub requires_scale {
+	my ($self, $env) = @_;
+	return $self->metadata->{requires_scale};
+}
+# }}}
 # }}}
 
 ### Private Methods {{{

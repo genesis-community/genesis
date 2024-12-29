@@ -1137,26 +1137,29 @@ sub last_deployed_manifest_deprecated {
 # }}}
 # scale - returns the scale for the environment {{{
 sub scale {
-	my ($self, $type) = @_;
+	my ($self) = @_;
 	my $scale = $self->lookup(
 		['bosh-configs.scale', 'kit.scale']
-	) // $self->director_exodus_lookup('scale',undef);
+	);
+
+	return $scale if $scale;
+	eval {$scale = $self->director_exodus_lookup('scale',undef)};
 
 	bug(
 		"No scale set for %s environment, and no default scale set for ".
 		"deployments under %s bosh director.",
 		$self->name, $self->bosh->alias
-	) unless $scale;
+	) if !$scale && $self->kit->requires_scale($self);
 
-	return $scale;
+	return $scale//'';
 }
 
 # }}}
 # iaas - returns the iaas for the environment {{{
 sub iaas {
-	my ($self, $type) = @_;
+	my ($self) = @_;
 	my $iaas = $self->lookup(
-		['bosh-configs.iaas', 'kit.iaas']
+		['kit.iaas','bosh-configs.iaas']
 	);
 
 	return $iaas if $iaas;
@@ -1168,17 +1171,17 @@ sub iaas {
 		$self->name,
 		humanize_bin(),
 		humanize_path($self->path($self->name))
-	) if $self->use_create_env && !$iaas;
+	) if $self->use_create_env;
 
-	$iaas = $self->director_exodus_lookup('iaas'); # FIXME: How to handle multiple CPIs?
+	eval {$iaas = $self->director_exodus_lookup('iaas') }; # FIXME: How to handle multiple CPIs?
 
 	bail(
 		"No IaaS type set for %s environment, and no default IaaS type set for ".
 		"deployments under %s bosh director.",
 		$self->name, $self->bosh->alias
-	) unless $iaas;
+	) if ! $iaas && $self->kit->requires_iaas($self);
 
-	return lc($iaas);
+	return lc($iaas//'');
 }
 
 # }}}
@@ -1348,9 +1351,9 @@ sub secrets_plan {
 # get_environment_variables - returns a hash of all environment variables pertaining to this Genesis::Env object {{{
 sub get_environment_variables {
 	my ($self, $hook) = @_;
+	$hook //= '';
 
 	my %env;
-
 	my $is_alt_path = defined($ENV{GENESIS_CALLER_DIR}) && $self->path ne $ENV{GENESIS_CALLER_DIR};
 
 	$env{GENESIS_ROOT}         = $self->path;
@@ -1406,8 +1409,8 @@ sub get_environment_variables {
 	$env{GENESIS_KIT_PATH}                 = $self->kit->path;
   $env{GENESIS_MIN_VERSION_FOR_KIT}      = $self->kit->genesis_version_min();
 	if ($self->exists) {
-		$env{GENESIS_ENV_IAAS}               = $self->iaas;
-		$env{GENESIS_ENV_SCALE}              = $self->scale;
+		$env{GENESIS_ENV_IAAS}               = $self->iaas();
+		$env{GENESIS_ENV_SCALE}              = $self->scale();
 		$env{GENESIS_ENV_KIT_OVERRIDE_FILES} = join(' ', $self->kit->env_override_files);
 	}
 
@@ -1430,7 +1433,7 @@ sub get_environment_variables {
 	$env{GENESIS_SECRETS_SLUG_OVERRIDE} = $self->secrets_slug ne $self->default_secrets_slug ? "true" : "";
 	$env{GENESIS_ROOT_CA_PATH} = $self->root_ca_path;
 
-	unless (grep { $_ eq ($hook||'') } qw/new features/) {
+	unless (grep { $_ eq ($hook) } qw/new features/) {
 		$env{GENESIS_REQUESTED_FEATURES} = join(' ', $self->features);
 	}
 
