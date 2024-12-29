@@ -9,6 +9,7 @@ use Genesis;
 sub init {
 	my $class = shift;
 	my $obj = $class->SUPER::init(@_);
+	$obj->{features} = [$obj->env->features];
 	$obj->{files} = [];
 	return $obj
 }
