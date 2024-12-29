@@ -948,14 +948,13 @@ sub manifest_lookup {
 # last_deployed_lookup - look up values from the last deployment of this environment {{{
 sub last_deployed_lookup {
 	my ($self, $key, $default) = @_;
-	my $last_manifest = $self->{__last_deployed_manifest};
+	my $last_manifest = $self->{__last_deployed_lookup_manifest};
 	unless ($last_manifest) {
-		my ($last_manifest_data,$manifest_type, $manifest_sha, $source, $err)
-			= $self->last_deployed_manifest(just => 'contents', pruned => 0);
+		my $last_manifest_file = $self->last_deployed_manifest(just => 'file');
 		die "No successfully deployed manifest found for $self->{name} environment"
-			unless $last_manifest_data;
-		$last_manifest = load_yaml($last_manifest_data);
-		$self->{__last_deployed_manifest} = $last_manifest;
+			unless $last_manifest_file;
+		$last_manifest = load_yaml_file($last_manifest_file);
+		$self->{__last_deployed_lookup_manifest} = $last_manifest;
 	}
 	return struct_lookup($last_manifest, $key, $default);
 }
@@ -1080,58 +1079,6 @@ sub vault_paths {
 	$self->manifest_provider
 		->base_manifest
 		->get_vault_paths(notify=>$opts{notify}//1);
-}
-
-# }}}
-# last_deployed_manifest_deprecated - get the last deployed manifest, if it exists {{{
-sub last_deployed_manifest_deprecated {
-	# This method is deprecated and will be removed in a future release; it has
-	# been replaced by last_deployed_manifest, which is what this method used
-	# to be called.  This method is not exodus/deployments aware, but is retained
-	# for historic reasons.
-	my ($self) = @_;
-
-	return $self->_memoize(sub {
-		# Get exodus data for the last deployed manifest sha1sum and path, and if it
-		# exists, also the manifest contents
-		my $manifest_package = $self->exodus_lookup('manifest',undef);
-		my $manifest_type = $self->exodus_lookup('manifest_type','unknown');
-		my $manifest_sha1 = $self->exodus_lookup('manifest_sha1',undef);
-		my %results = {
-			type => $manifest_type,
-			sha1 => $manifest_sha1,
-		};
-		if ($manifest_package) {
-			my $compressed_data = decode_base64($manifest_package);
-			my $data;
-			gunzip(\$compressed_data => \$data) or bail("Error uncompressing manifest: $GunzipError");
-			my $manifest = load_yaml($data);
-			return wantarray ? ($manifest, $manifest_type, $manifest_sha1, 'exodus') : $manifest;
-		}
-		if ($manifest_sha1) {
-			my $manifest_path = $self->path(".genesis/manifests/".$self->name.".yml");
-			if (-f $manifest_path) {
-				my $data = slurp($manifest_path);
-				if (sha1_hex($data) eq $manifest_sha1) {
-					my ($manifest, $rc, $err) = load_yaml($data);
-					if ($rc) {
-						trace("Error loading manifest file %s: %s", $manifest_path, $err);
-						return wantarray ? (undef, undef, $manifest_sha1, 'file', $err) : undef;
-					}
-					return wantarray ? ($manifest, $manifest_type, $manifest_sha1, 'file') : load_yaml($data);
-				}
-				trace(
-					"Manifest file %s does not match the sha1sum (%s) in exodus, can't use it.",
-					$manifest_path, $manifest_sha1
-				);
-				return wantarray ? (undef, undef, $manifest_sha1, 'file','checksum mismatch') : undef;
-			}
-			trace("Manifest file %s does not exist, can't use it.", $manifest_path);
-			return wantarray ? (undef, undef, $manifest_sha1, 'file','not found') : undef;
-		}
-		trace("No manifest data found in exodus, can't use it.");
-		return wantarray ? (undef, undef, $manifest_sha1, 'exodus','not found') : undef;
-	});
 }
 
 # }}}
@@ -2460,6 +2407,7 @@ sub last_deployed_manifest {
 				last;
 			} elsif ($just_return eq 'file') {
 				$results = wantarray ? [$mpath, $type, $sha1, 'repository'] : $mpath;
+				last;
 			}
 			$results = {
 				manifest_type => $type,
@@ -3770,10 +3718,10 @@ sub _parse_bosh_env {
 }
 
 # }}}
-# _reset_last_deployed_manifest - clear the cache of last deployed manifest {{{
+# _reset_last_deployed_manifest - clear the cache of last deployed manifest used by last_deployed_lookup {{{
 sub _reset_last_deployed_manifest {
 	my $self = shift;
-	undef($self->{__last_deployed_manifest});
+	undef($self->{__last_deployed_lookup_manifest});
 }
 # }}}
 1;
