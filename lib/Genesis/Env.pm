@@ -2543,10 +2543,27 @@ sub vars_file {
 	dump_var "BOSH Variables File" => $manifest->file, "Contents" => $manifest->data;
 	if ($file) {
 		save_to_yaml_file($manifest->data, $file);
-		return $file;
 	} else {
-		return $manifest->file;
+		$file = $manifest->file;
 	}
+
+	# BOSH variables won't interpolate more than once, so if a bosh variable
+	# contains a reference to another bosh variable, it won't be resolved.
+	# So, we'll have to resolve it for them.
+	my $tries = 0;
+	while (1) {
+		my ($int_vars, $rc, $err) = $self->bosh->execute(
+			'interpolate -l "$1" "$1"', $file
+		);
+		bail(
+			"Failed to interpolate BOSH variables: %s",
+			$err||$int_vars
+		) if $rc;
+		last if digest_file_hex($file, 'SHA-1') eq sha1_hex($int_vars);
+		mkfile_or_fail($file, $int_vars);
+		last if ++$tries >= 10;
+	}
+	return $file;
 }
 
 # }}}
