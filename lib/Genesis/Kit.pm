@@ -524,6 +524,7 @@ sub required_configs {
 # required_connectivity - what connectivity does this kit require to do its job? {{{
 sub required_connectivity {
 	my ($self,@hooks) = @_;
+	@hooks = grep {$_} @hooks;
 	my $required_conns = $self->metadata->{required_connectivity};
 	return () unless ($required_conns);
 	return @{$required_conns} if ref($required_conns) eq 'ARRAY';
