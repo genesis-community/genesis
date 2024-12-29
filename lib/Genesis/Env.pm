@@ -2354,10 +2354,29 @@ sub last_deployed_manifest {
 					my $data;
 					gunzip(\$compressed_data => \$data);
 
-					my $is_pruned = exists($data->{genesis});
+					my $is_pruned = ! grep {/^genesis:/} split /\n/, $data;
 					if ($pruned && !$is_pruned) {
-						push(@errors, "Manifest is not pruned, but pruned manifest requested");
-						last;
+						my $file_sha1 = sha1_hex($data);
+						my ($pruned_data, $rc, $err) = run(
+							'fin=$1; shift 1; echo "$fin" | spruce merge "$@" -',
+							$data,
+							map {('--prune',$_)} $self->prunable_keys
+						);
+						if ($rc) {
+							push(@errors,
+								"Manifest is not pruned, and could not be retroactively pruned: ".
+								($err//$pruned_data)
+							);
+							last;
+						}
+						if ($file_sha1 ne sha1_hex($data)) { # Check if original data has been tampered with
+							push(@errors,
+								"Manifest does not match specified sha1 at the time of deployment"
+							);
+							last;
+						}
+						$sha1 = sha1_hex($pruned_data); # We're going to fudge the sha1 because we pruned it
+						$data = $pruned_data;
 					} elsif (!$pruned && $is_pruned) {
 						push(@errors, "Manifest is pruned, but unpruned manifest requested");
 						last;
