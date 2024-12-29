@@ -2856,6 +2856,11 @@ sub deploy {
 		# Check for differences between the last deployed manifest and the current one
 		debug("deploying this environment via `bosh create-env`, locally");
 		my $last_manifest = $self->last_deployed_manifest(files => 1, contents => 0);
+		if ($last_manifest->{errors}) {
+			bail("Errors encountered while retrieving last deployed manifest: %s",
+				join("\n", @{$last_manifest->{errors}})
+			);
+		}
 		my $last_manifest_path = ($last_manifest->{manifest}{path});
 		my $last_manifest_sha1 = $last_manifest->{manifest_sha1};
 		my $local_mismatch = 0;
@@ -2866,6 +2871,8 @@ sub deploy {
 			my $last_manifest_repo_path = $last_state_path =~ s/-state\.yml$/.yml/r; # FIXME: This seems sus... but it seems to work for now.
 			my $last_repo_sha1 = sha1_hex(slurp($last_manifest_repo_path));
 			my $issue = '';
+
+			# FIXME: exodus deployments use sha2, not sha1, so this check is not valid for them
 			if (!defined($last_manifest_sha1) || $last_manifest_sha1 eq '') {
 				$issue = "Cannot confirm local cached deployment manifest pertains to ".
 				         "the current deployment (sha1 sum missing from exodus data).";
@@ -2877,11 +2884,12 @@ sub deploy {
 			if ($issue) {
 				$issue .= "  #R{This may mean your state file is also out of date!}";
 				if (in_controlling_terminal || envset('BOSH_NON_INTERACTIVE')) {
-					warning($issue);
+					warning("\n".$issue);
 					prompt_for_boolean(
 						"Proceed with BOSH create-env for the #C{${\($self->name)}} anyways? [y|n] ",
 						0
 					) or bail "Aborted!\n";
+					$self->notify("\ncomparing against the last deployed manifest...");
 				} else {
 					bail(
 						"$issue\n\nRefusing to deploy to protect integrity of the environment."
@@ -2915,11 +2923,13 @@ sub deploy {
 					$self->workpath('spruce-predeploy-manifest.diff'), # fake_tty() needs a tmp file
 					"spruce", "diff", $last_manifest_path, $manifest_path
 			));
+			$out = decode_utf8($out) =~ s/\A\s*(.*?)\s*\z/$1/smr;
 			
 			bail(
-				"Failed to diff the last deployed manifest with the current manifest: $err"
-			) if $rc;
-			$out = decode_utf8($out) =~ s/\A\s*(.*?)\s*\z/$1/smr;
+				"Failed to diff the last deployed manifest with the current manifest: %s",
+				$err//$out
+			) if $rc > 1;
+
 			if ($out) {
 				$local_mismatch = 1;
 				info(
