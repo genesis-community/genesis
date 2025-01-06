@@ -1996,7 +1996,7 @@ sub check {
 					'spruce','merge',
 					'--skip-eval','--go-patch','-m',
 					'--cherry-pick', 'releases',
-					map {$self->kit->path($_)} $self->kit_files)))
+					map { $_ =~ m{^/} ? $_ : $self->kit->path($_)} $self->kit_files)))
 				)->{releases} // [];
 
 				# Step through each override sorted by release name
