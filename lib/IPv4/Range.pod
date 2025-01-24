@@ -1,0 +1,387 @@
+
+=head1 NAME
+
+IPv4::Range - A module for handling ranges of IPv4 addresses
+
+=head1 SYNOPSIS
+
+  use IPv4::Range;
+
+  # Create a new range
+  my $range = IPv4::Range->new('192.168.1.1-192.168.1.10', '192.168.1.20-192.168.1.30');
+
+  # Get range properties
+  print "Range: ", $range->range(), "\n";
+  print "Size: ", $range->size(), "\n";
+  print "Start: ", $range->start(), "\n";
+  print "End: ", $range->end(), "\n";
+
+  # Simplify the range
+  my $simplified = $range->simplify();
+
+  # Get all spans in the range
+  my @spans = $range->spans();
+
+  # Get all addresses in the range
+  my @addresses = $range->addresses();
+
+  # Subtract a range from another range
+  my $result = $range->subtract('192.168.1.5-192.168.1.7');
+  print "Resulting range: ", $result->range(), "\n";
+
+=head1 DESCRIPTION
+
+The C<IPv4::Range> module provides functionality for managing IPv4 address ranges, including multiple discontiguous spans. It supports various operations such as creating ranges, simplifying ranges, getting spans, retrieving all addresses in a range, and subtracting ranges.
+
+=head1 METHODS
+
+=head2 new
+
+  my $range = IPv4::Range->new(@args);
+
+Creates a new C<IPv4::Range> object. Accepts:
+- IP addresses
+- CIDR blocks
+- IP ranges
+- IPv4::Address objects
+- IPv4::Span objects
+- Arrays of the above
+
+  # Examples
+  my $range1 = IPv4::Range->new('192.168.1.1');
+  my $range2 = IPv4::Range->new('192.168.1.0/24');
+  my $range3 = IPv4::Range->new('192.168.1.1-192.168.1.10');
+  my $range4 = IPv4::Range->new(['192.168.1.1', '192.168.1.10']);
+
+=head2 compact
+
+  my $compressed = $range->compact();
+
+Optimizes the range by merging overlapping or adjacent spans.
+
+  # Example
+  my $range = IPv4::Range->new(
+    '192.168.1.1-192.168.1.5',
+    '192.168.1.4-192.168.1.10'
+  );
+  $range->compact();
+  print $range->range(); # prints '192.168.1.1-192.168.1.10'
+
+=head2 simplify
+
+  my $simplified = $range->simplify();
+
+Simplifies the range by compacting it and converting it to a simpler form if possible:
+- If the range contains only one span, returns that span
+- If that span contains only one address, returns that address
+
+  # Example
+  my $range = IPv4::Range->new('192.168.1.1-192.168.1.1');
+  my $simplified = $range->simplify();
+  print ref($simplified); # prints 'IPv4::Address'
+
+  $range = IPv4::Range->new('192.168.1.1-192.168.1.10');
+  $simplified = $range->simplify();
+  print ref($simplified); # prints 'IPv4::Span'
+
+=head2 spans
+
+  my @spans = $range->spans();
+
+Returns all spans in the range as an array.
+
+  # Example
+  my $range = IPv4::Range->new('192.168.1.1-192.168.1.5', '192.168.1.10-192.168.1.15');
+  my @spans = $range->spans();
+  foreach my $span (@spans) {
+      print $span->range(), "\n";
+  }
+  # prints:
+  # 192.168.1.1-192.168.1.5
+  # 192.168.1.10-192.168.1.15
+
+=head2 addresses
+
+  my @addresses = $range->addresses();
+
+Returns all addresses in the range as an array.
+
+  # Example
+  my $range = IPv4::Range->new('192.168.1.1-192.168.1.3');
+  my @addresses = $range->addresses();
+  foreach my $addr (@addresses) {
+      print $addr->address(), "\n";
+  }
+  # prints:
+  # 192.168.1.1
+  # 192.168.1.2
+  # 192.168.1.3
+
+=head2 start
+
+  my $first = $range->start();
+
+Returns the first address in the range.
+
+  # Example
+  my $range = IPv4::Range->new('192.168.1.1-192.168.1.10');
+  print $range->start(); # prints '192.168.1.1'
+
+=head2 end
+
+  my $last = $range->end();
+
+Returns the last address in the range.
+
+  # Example
+  my $range = IPv4::Range->new('192.168.1.1-192.168.1.10');
+  print $range->end(); # prints '192.168.1.10'
+
+=head2 range
+
+  my $str = $range->range();
+
+Returns a string representation of the range.
+
+  # Example
+  my $range = IPv4::Range->new(
+    '192.168.1.1-192.168.1.5',
+    '192.168.1.10-192.168.1.15'
+  );
+  print $range->range(); # prints '192.168.1.1-192.168.1.5,192.168.1.10-192.168.1.15'
+
+=head2 size
+
+  my $count = $range->size();
+
+Returns the total number of addresses in the range.
+
+  # Example
+  my $range = IPv4::Range->new(
+    '192.168.1.1-192.168.1.5',
+    '192.168.1.10-192.168.1.15'
+  );
+  print $range->size(); # prints '11'
+
+=head2 subtract
+
+  my $result = $range->subtract(@args);
+
+Subtracts one or more ranges from the current range.
+
+  # Example
+  my $range = IPv4::Range->new('192.168.1.1-192.168.1.10');
+  my $result = $range->subtract('192.168.1.5-192.168.1.7');
+  print "Resulting range: ", $result->range(), "\n"; # prints '192.168.1.1-192.168.1.4, 192.168.1.8-192.168.1.10'
+
+=head2 clone
+
+  my $clone = $range->clone();
+
+Returns a clone of the range.
+
+  # Example
+  my $range = IPv4::Range->new('192.168.1.1-192.168.1.10');
+  my $clone = $range->clone();
+  print $clone->range(); # prints '192.168.1.1-192.168.1.10'
+
+=head2 slice
+
+  my ($slice, $remaining_size, $remaining_range) = $range->slice($size, $offset);
+
+Given a size and an optional offset, returns a new range of the given size starting at the offset. Also returns the remaining size and the remaining range after the slice.
+
+  # Example
+  my $range = IPv4::Range->new('192.168.1.1-192.168.1.10');
+  my ($slice, $remaining_size, $remaining_range) = $range->slice(3, 2);
+  print $slice->range(); # prints '192.168.1.3-192.168.1.5'
+  print $remaining_size; # prints '5'
+  print $remaining_range->range(); # prints '192.168.1.1-192.168.1.2,192.168.1.6-192.168.1.10'
+
+=head2 span
+
+  my $span = $range->span();
+
+Returns a span object that starts at the lowest address in the range and ends at the highest address in the range.
+
+  # Example
+  my $range = IPv4::Range->new('192.168.1.1-192.168.1.10', '192.168.1.20-192.168.1.30');
+  my $span = $range->span();
+  print $span->range(); # prints '192.168.1.1-192.168.1.30'
+
+=head2 add
+
+  my $new_range = $range->add(@spans);
+
+Adds one or more spans to the range.
+
+  # Example
+  my $range = IPv4::Range->new('192.168.1.1-192.168.1.10');
+  my $new_range = $range->add('192.168.1.20-192.168.1.30');
+  print $new_range->range(); # prints '192.168.1.1-192.168.1.10,192.168.1.20-192.168.1.30'
+
+=head2 cmp
+
+  my $result = $range1->cmp($range2);
+  my $result = $range1 cmp $range2;
+
+Compares two ranges based on their starting addresses.
+
+  # Example
+  my $range1 = IPv4::Range->new('192.168.1.1-192.168.1.10');
+  my $range2 = IPv4::Range->new('192.168.2.1-192.168.2.10');
+  my $result = $range1->cmp($range2);
+  print $result; # prints '-1' since 192.168.1.1 comes before 192.168.2.1
+
+  print $range1 lt $range2; # prints '1'
+
+=head2 eq
+
+  my $bool = $range1->eq($range2);
+
+Checks if two ranges are equal.
+
+  # Example
+  my $range1 = IPv4::Range->new('192.168.1.1-192.168.1.10');
+  my $range2 = IPv4::Range->new('192.168.1.1-192.168.1.10');
+  my $bool = $range1->eq($range2);
+  print $bool; # prints '1'
+
+=head2 numeric_eq
+
+  my $bool = $range1->numeric_eq($range2);
+  my $bool = $range1 == 5;     # Compares size to a number
+
+Checks if two ranges have the same size.
+
+  # Example
+  my $range1 = IPv4::Range->new('192.168.1.1-192.168.1.5');
+  my $range2 = IPv4::Range->new('192.168.2.1-192.168.2.5');
+  my $bool = $range1->numeric_eq($range2);
+  print "Numerically equal: $bool\n"; # prints '1'
+
+  print $range1 == 5; # prints '1'
+
+=head2 numeric_cmp
+
+  my $result = $range1->numeric_cmp($range2);
+  my $result = $range1 <=> 6;   # Compares the size of the range to the number 6
+
+Compares two ranges numerically, based on their sizes.
+
+  # Example
+  my $range1 = IPv4::Range->new('192.168.1.1-192.168.1.5');
+  my $range2 = IPv4::Range->new('192.168.1.10-192.168.1.15');
+  my $result = $range1->numeric_cmp($range2);
+  print "Numeric comparison result: $result\n"; # prints '0' (both have 5 addresses)
+
+  $range2 = IPv4::Range->new('192.168.1.10-192.168.1.20');
+  print "$range1 < $range2\n"; # prints '1' (5 addresses < 11 addresses)
+
+=head2 next
+
+  my $address = $range->next();
+
+Returns the next address in the range. Returns undef when all addresses have been retrieved. After returning undef, subsequent calls will start over from the beginning.
+
+  # Example
+  my $range = IPv4::Range->new('192.168.1.1-192.168.1.3', '192.168.2.1');
+  while (my $addr = $range->next()) {
+      print "$addr\n";
+  }
+  # prints:
+  # 192.168.1.1
+  # 192.168.1.2
+  # 192.168.1.3
+  # 192.168.2.1
+
+=head2 reset
+
+  $range->reset();
+
+Resets the iterator to the beginning of the range.
+
+  # Example
+  my $range = IPv4::Range->new('192.168.1.1-192.168.1.3');
+  my $addr = $range->next(); # returns '192.168.1.1'
+  $addr = $range->next();    # returns '192.168.1.2'
+  $range->reset();
+  $addr = $range->next();    # returns '192.168.1.1' again
+
+=head2 contains
+
+  my $bool = $range->contains($addr);
+  my $bool = $range->contains($span);
+  my $bool = $range->contains($other_range);
+
+Checks if the range contains the given address, span, or range.
+
+  # Example
+  my $range = IPv4::Range->new('192.168.1.1-192.168.1.10');
+  print $range->contains('192.168.1.5');     # prints '1'
+  print $range->contains('192.168.1.20');    # prints ''
+  
+  # Check if range contains a span
+  print $range->contains('192.168.1.3-192.168.1.7'); # prints '1'
+  
+  # Check if range contains another range
+  my $other = IPv4::Range->new('192.168.1.4-192.168.1.6');
+  print $range->contains($other);            # prints '1'
+
+
+=head1 OVERLOADED OPERATORS
+
+=over 4
+
+=item * Stringification ("")
+
+  print "$range"; # Same as $range->range()
+
+=item * Numeric context (0+)
+
+  my $size = 0 + $range; # Same as $range->size()
+
+=item * Array dereference (@{})
+
+  my @addresses = @$range; # Same as $range->addresses()
+
+=item * Iterator (<>)
+
+  while (my $addr = <$range>) {
+      print "$addr\n";
+  }
+
+=item * Addition (+)
+
+  my $new_range = $range + $other_range;
+  my $new_range = $range + '192.168.1.100';
+
+=item * Subtraction (-)
+
+  my $new_range = $range - $other_range;
+  my $new_range = $range - '192.168.1.100';
+
+=item * Comparison (<=>, cmp)
+
+  if ($range1 < $range2) { ... }    # Compare start addresses
+  if ($range1 <=> 5) { ... }        # Compare sizes
+
+=item * Equality (==, eq)
+
+  if ($range1 == $range2) { ... }   # Compare sizes
+  if ($range1 eq $range2) { ... }   # Compare exact ranges
+
+=back
+
+=head1 AUTHOR
+
+Dennis J. Bell, <dennis.j.bell@gmail.com>
+
+=head1 COPYRIGHT AND LICENSE
+
+Copyright 2024 Rubidium Studios, Ltd.
+
+This library is free software; you can redistribute it and/or modify
+it under the same terms as Perl itself.
+
+=cut

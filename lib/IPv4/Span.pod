@@ -1,0 +1,460 @@
+=head1 NAME
+
+IPv4::Span - A module for handling spans of IPv4 addresses.
+
+=head1 SYNOPSIS
+
+  use IPv4::Span;
+
+  # Create a new IPv4::Span object
+  my $span = IPv4::Span->new('192.168.1.1-192.168.1.10');
+
+  # Get the size of the span
+  my $size = $span->size();
+  print "Size: $size\n"; # prints '10'
+
+  # Get the range of the span
+  my $range = $span->range();
+  print "Range: $range\n"; # prints '192.168.1.1-192.168.1.10'
+
+  # Get the next address in the span
+  my $next = $span->next();
+  print "Next address: $next\n"; # prints '192.168.1.1' the first time, '192.168.1.2' the second time, etc.
+
+  # Reset the iteration
+  $span->reset();
+
+  # Get all addresses in the span
+  my @addresses = $span->addresses();
+  print "Addresses: ".join(' ', @addresses)."\n";
+
+  # Get a slice of the span
+  my $slice = $span->slice(3);
+  print "Slice: ", $slice->range(), "\n"; # prints 'Slice: 192.168.1.1-192.168.1.3'
+
+  # Get the CIDR blocks for the span
+  my @cidrs = $span->cidrs();
+  print "CIDR blocks: ".join(', ',@cidrs)."\n"; 192.168.1.1/32, 192.168.1.2/31, 192.168.4/30, 192.168.8/31, 192.168.10/32
+
+=head1 DESCRIPTION
+
+The C<IPv4::Span> module provides a simple interface for creating and manipulating spans of IPv4 addresses. It supports various operations such as getting the size and range of the span, iterating through addresses, slicing the span, and getting the CIDR blocks for the span.
+
+=head1 CLASS VARIABLES
+
+=head2 $allow_oversized_mask
+
+  our $allow_oversized_mask = 1;
+
+A class variable that allows oversized masks. The default value is 1 (true). If set to 0 (false), the module will throw an exception when trying to create a CIDR block with a mask that doesn't start with the specified address.
+
+=head1 METHODS
+
+=head2 new
+
+  my $span = IPv4::Span->new($string_description);
+  my $span = IPv4::Span->new($start [, $end]);
+
+Creates a new C<IPv4::Span> object. The input can be two IPv4 addresses representing the start and end of the span, just a single ip address, or a string in the format 'start-end' representing the range of the span, or a 'start/mask' representing a CIDR block.
+
+  # Example
+  my $span = IPv4::Span->new('192.168.1.1', '192.168.1.10');
+  my $span = IPv4::Span->new('172.16.24.24');
+  my $span = IPv4::Span->new('192.168.1.1-192.168.1.10');
+  my $span = IPv4::Span->new('10.0.0.0/8');
+
+=head2 clone
+
+  my $clone = $span->clone();
+
+Returns a clone of the span.
+
+  # Example
+  my $span = IPv4::Span->new('192.168.1.1', '192.168.1.10');
+  my $clone = $span->clone();
+  print "Clone: ", $clone->range(), "\n"; # prints '192.168.1.1-192.168.1.10'
+
+=head2 size
+
+  my $size = $span->size();
+
+Returns the number of addresses in the span.
+
+  # Example
+  my $span = IPv4::Span->new('192.168.1.1', '192.168.1.10');
+  my $size = $span->size();
+  print "Size: $size\n"; # prints '10'
+
+=head2 range
+
+  my $range = $span->range();
+
+Returns the span as a string.
+
+  # Example
+  my $span = IPv4::Span->new('192.168.1.1', '192.168.1.10');
+  my $range = $span->range();
+  print "Range: $range\n"; # prints '192.168.1.1-192.168.1.10'
+
+=head2 start
+
+  my $start = $span->start();
+
+Returns the start address of the span.
+
+  # Example
+  my $span = IPv4::Span->new('192.168.1.1', '192.168.1.10');
+  my $start = $span->start();
+  print "Start address: $start\n"; # prints '192.168.1.1'
+
+=head2 end
+
+  my $end = $span->end();
+
+Returns the end address of the span.
+
+  # Example
+  my $span = IPv4::Span->new('192.168.1.1', '192.168.1.10');
+  my $end = $span->end();
+  print "End address: $end\n"; # prints '192.168.1.10'
+
+=head2 contains
+
+  my $bool = $span->contains($address);
+
+Checks if the span contains the given address.
+
+  # Example
+  my $span = IPv4::Span->new('192.168.1.1', '192.168.1.10');
+  my $address = IPv4::Address->new('192.168.1.5');
+  my $bool = $span->contains($address);
+  print "Contains: $bool\n"; # prints '1'
+
+=head2 cmp
+
+  my $result = $span1->cmp($span2);
+
+Compares two spans.  It first compares their starting addresses, and if they are equal, it compares their ending addresses.  Returns -1, 0, or 1 if the first span is less than, equal to, or greater than the second span, respectively.
+
+  # Example
+  my $span1 = IPv4::Span->new('192.168.1.1', '192.168.1.5');
+  my $span2 = IPv4::Span->new('192.168.1.6', '192.168.1.10');
+  my $result = $span1->cmp($span2);
+  print "Comparison result: $result\n"; # prints '-1'
+
+=head2 numeric_cmp
+
+  my $result = $span1->numeric_cmp($span2); # Compares two spans
+  my $result = $span1 <=> 6;   # Compares the size of the span to the number 6
+
+Compares two IPv4 objects numerically.
+
+It first compares their starting addresses, and if they are equal, it compares their ending addresses, and if those are equal it will compare the size of the objects (IPv4::Range objects can have the same start and end addresses but different sizes)
+
+Returns -1, 0, or 1 if the first object is less than, equal to, or greater than the second 
+object, respectively.
+
+When compared to an integer, it will compare the size of the object to the integer.  In this scenario, the span object must be on the left side of the comparison operator.
+
+  # Example
+  my $span1 = IPv4::Span->new('192.168.1.1', '192.168.1.5');
+  my $span2 = IPv4::Span->new('192.168.1.6', '192.168.1.10');
+  my $result = $span1->numeric_cmp($span2);
+  print "Numeric comparison result: $result\n"; # prints '-1'
+
+  $span1 = IPv4::Span->new('192.168.1.1', '192.168.1.10');
+  $span2 = IPv4::Span->new('192.168.1.1', '192.168.1.5');
+  $result = $span1->numeric_cmp($span2);
+  print "Numeric comparison result: $result\n"; # prints '1'
+
+  $span1 = IPv4::Span->new('192.168.1.1', '192.168.1.5');
+  $span2 = IPv4::Span->new('192.168.1.1', '192.168.1.5');
+  $result = $span1->numeric_cmp($span2);
+  print "Numeric comparison result: $result\n"; # prints '0'
+
+=head2 eq
+
+  my $bool = $span1->eq($span2);
+
+Checks if two spans are equal based on their start and end addresses.
+
+  # Example
+  my $span1 = IPv4::Span->new('192.168.1.1', '192.168.1.5');
+  my $span2 = IPv4::Span->new('192.168.1.1', '192.168.1.5');
+  my $bool = $span1->eq($span2);
+  print "Equality: $bool\n"; # prints '1'
+
+=head2 next
+
+  my $next = $span->next();
+
+Returns the next address in the span. If the end of the span is reached, it returns C<undef>.  Any further call to C<next> will return the first address in the span, and repeat the cycle.
+
+  # Example
+  my $span = IPv4::Span->new('192.168.1.1', '192.168.1.3');
+  my $next = $span->next();
+  print "Next address: $next\n"; # prints '192.168.1.1'
+
+  $next = $span->next();
+  print "Next address: $next\n"; # prints '192.168.1.2'
+
+  $span->reset();
+  $next = $span->next();
+  print "Next address: $next\n"; # prints '192.168.1.1'
+
+=head2 reset
+
+  $span->reset();
+
+Resets the iteration for the C<next> method.
+
+  # Example
+  my $span = IPv4::Span->new('192.168.1.1', '192.168.1.3');
+  $span->next();
+  $span->reset();
+  my $next = $span->next();
+  print "Next address after reset: $next\n"; # prints '192.168.1.1'
+
+=head2 addresses
+
+  my @addresses = $span->addresses();
+
+Returns all addresses in the span as an array.
+
+  # Example
+  my $span = IPv4::Span->new('192.168.1.1', '192.168.1.3');
+  my @addresses = $span->addresses();
+  print "Addresses: @addresses\n"; # prints '192.168.1.1 192.168.1.2 192.168.1.3'
+
+=head2 slice
+
+  my $slice = $span->slice($size, $offset = 0);
+
+Given a size and an optional offset, returns a new span of the given size starting at the offset. If the offset is negative, the slice will end at the given offset, with the start being the nth address before the end of the span that accommodates the given size. An offset of -1 will represent the last address in the span.
+
+If there is not enough space in the span to accommodate the requested size and offset, the offset will be maintained, while the size will be reduced to the maximum possible size.
+
+  # Example
+  my $span = IPv4::Span->new('192.168.1.1', '192.168.1.10');
+  my $slice = $span->slice(3);
+  print "Slice: ", $slice->range(), "\n"; # prints '192.168.1.1-192.168.1.3'
+
+  $slice = $span->slice(3, 2);
+  print "Slice: ", $slice->range(), "\n"; # prints '192.168.1.3-192.168.1.5'
+
+  $slice = $span->slice(3, -1);
+  print "Slice: ", $slice->range(), "\n"; # prints '192.168.1.8-192.168.1.10'
+
+=head2 cidrs
+
+  my @cidrs = $span->cidrs();
+
+Returns the CIDR blocks for the span.
+
+  # Example
+  my $span = IPv4::Span->new('192.168.1.0', '192.168.1.255');
+  my @cidrs = $span->cidrs();
+  print "CIDR blocks: @cidrs\n"; # prints '192.168.1.0/24'
+
+  $span = IPv4::Span->new('192.168.1.0', '192.168.1.63');
+  @cidrs = $span->cidrs();
+  print "CIDR blocks: @cidrs\n"; # prints '192.168.1.0/26'
+
+=head2 add
+
+  my $new_span = $span->add($other_span);
+
+Adds one span to another, or increases the size of the span by the given number.  If the number is negative, it increases the size of the span by growing the span from before the start address. 
+
+  # Example
+  my $span1 = IPv4::Span->new('192.168.1.1', '192.168.1.5');
+  my $span2 = IPv4::Span->new('192.168.1.6', '192.168.1.10');
+  my $new_span = $span1->add($span2);
+  print "New span: $new_span\n"; # prints '192.168.1.1-192.168.1.10'
+
+  # Add a positive number to the span
+  my $span = IPv4::Span->new('192.168.1.1', '192.168.1.5');
+  my $new_span = $span->add(5);
+  print "New span after adding 5: ", $new_span->range(), "\n"; # prints '192.168.1.1-192.168.1.10'
+
+  # Add a negative number to the span
+  $new_span = $span->add(-2);
+  print "New span after adding -2: ", $new_span->range(), "\n"; # prints '192.168.0.255-192.168.1.10'
+
+=head2 subtract
+
+  my $new_span = $span->subtract($other_span);
+
+Subtracts one span from another, or decreases the size of the span by the given number.  If the number is negative, it decreases the size of the span by shrinking the span by increasing the starting address.
+
+  # Example
+  my $span1 = IPv4::Span->new('192.168.1.1', '192.168.1.10');
+  my $span2 = IPv4::Span->new('192.168.1.5', '192.168.1.7');
+  my $new_span = $span1->subtract($span2);
+  print "New span: $new_span\n"; # prints '192.168.1.1-192.168.1.4, 192.168.1.8-192.168.1.10'
+
+  # Subtract a positive number from the span
+  my $span = IPv4::Span->new('192.168.1.1', '192.168.1.10');
+  my $new_span = $span->subtract(3);
+  print "New span after subtracting 3: ", $new_span->range(), "\n"; # prints '192.168.1.1-192.168.1.7'
+
+  # Subtract a negative number from the span
+  $new_span = $span->subtract(-2);
+  print "New span after subtracting -2: ", $new_span->range(), "\n"; # prints '192.168.1.3-192.168.1.10'
+
+=head2 simplify
+
+  my $simplified = $span->simplify();
+
+Returns the start address if the span contains only one address, otherwise returns the span itself.
+
+  # Example
+  my $span = IPv4::Span->new('192.168.1.1');
+  my $simplified = $span->simplify();
+  print "Simplified: $simplified\n"; # prints '192.168.1.1'
+
+  $span = IPv4::Span->new('192.168.1.1-192.168.1.10');
+  $simplified = $span->simplify();
+  print "Simplified: $simplified\n"; # prints '192.168.1.1-192.168.1.10'
+
+=head2 spans
+
+  my @spans = $span->spans();
+
+Returns an array containing the span itself. This method exists for compatibility with IPv4::Range objects.
+
+  # Example
+  my $span = IPv4::Span->new('192.168.1.1-192.168.1.10');
+  my @spans = $span->spans();
+  print "Number of spans: ", scalar(@spans), "\n"; # prints '1'
+  print "First span: ", $spans[0]->range(), "\n"; # prints '192.168.1.1-192.168.1.10'
+
+=head1 OPERATOR OVERLOADS
+
+The following operators are overloaded for C<IPv4::Span> objects:
+
+=head2 Stringification ("")
+
+  my $string = "$span";
+
+Returns the span as a string.
+
+  # Example
+  my $span = IPv4::Span->new('192.168.1.1', '192.168.1.10');
+  print "$span\n"; # prints '192.168.1.1-192.168.1.10'
+
+=head2 Numeric context (0+)
+
+  my $size = int($span); # explicit
+  printf("Size: %d\n", $span); # induced conversion
+
+  Note: 0 + $span, contrary to the notation shown, will actually invoke the C<+> overload operator, not the numeric context.
+
+Returns the number of addresses in the span.
+
+  # Example
+  my $span = IPv4::Span->new('192.168.1.1', '192.168.1.10');
+  printf("Size: %d\n", $span); # prints '10'
+
+=head2 Subtraction (-)
+
+  my $new_span = $span - $other_span;
+  my $smaller_span = $span - 5;
+
+  Subtracts one span/address from another, or shrinks a span by the given number.  See the C<subtract> method for more details.
+
+  # Example
+  my $span1 = IPv4::Span->new('192.168.1.1', '192.168.1.10');
+  my $span2 = IPv4::Span->new('192.168.1.5', '192.168.1.7');
+  my $new_span = $span1 - $span2;
+  print "New span: $new_span\n"; # prints '192.168.1.1-192.168.1.4, 192.168.1.8-192.168.1.10'
+
+  Note: $new_span will actually be a IPv4::Range object if the removed span results in non-contiguous addresses.
+
+=head2 Addition (+)
+
+  my $new_span = $span + $other_span;
+  my $bigger_span = $span + 5;
+
+Adds one span/address to another, or grows a span by the given number.  See the C<add> method for more details.
+
+  # Example
+  my $span1 = IPv4::Span->new('192.168.1.1', '192.168.1.5');
+  my $span2 = IPv4::Span->new('192.168.1.6', '192.168.1.10');
+  my $new_span = $span1 + $span2;
+  print "New span: $new_span\n"; # prints '192.168.1.1-192.168.1.10'
+
+  Note: $new_span will actually be a IPv4::Range object if the added span results in non-contiguous addresses.
+
+=head2 Comparison (<=>)
+
+  my $result = $span1 <=> $span2;
+
+Compares two spans.  See the C<cmp> method for more details.
+
+  # Example
+  my $span1 = IPv4::Span->new('192.168.1.1', '192.168.1.5');
+  my $span2 = IPv4::Span->new('192.168.1.6', '192.168.1.10');
+  my $result = $span1 <=> $span2;
+  print "Comparison result: $result\n"; # prints '-1'
+
+=head2 Equality (==)
+
+  my $bool = $span1 == $span2;
+
+Checks if two spans are equal. See the C<eq> method for more details.
+
+  # Example
+  my $span1 = IPv4::Span->new('192.168.1.1', '192.168.1.5');
+  my $span2 = IPv4::Span->new('192.168.1.1', '192.168.1.5');
+  my $bool = $span1 == $span2;
+  print "Equality: $bool\n"; # prints '1'
+
+=head2 Array dereference (@{})
+
+  my @addresses = @$span;
+
+Returns all addresses in the span as an array. See the C<addresses> method for more details.
+
+  # Example
+  my $span = IPv4::Span->new('192.168.1.1', '192.168.1.3');
+  my @addresses = @$span;
+  print "Addresses: @addresses\n"; # prints '192.168.1.1 192.168.1.2 192.168.1.3'
+
+=head2 Diamond operator (<>)
+
+  my $next = <$span>;
+
+Alternative syntax for the C<next> method. Returns the next address in the span.
+
+  # Example
+  my $span = IPv4::Span->new('192.168.1.1', '192.168.1.3');
+  my $next = <$span>;
+  print "Next address: $next\n"; # prints '192.168.1.1'
+  $next = <$span>;
+  print "Next address: $next\n"; # prints '192.168.1.2'
+
+=head2 Copy (=)
+
+  my $copy = $span;
+
+Makes a copy of the span using the C<clone> method.
+
+  # Example
+  my $span = IPv4::Span->new('192.168.1.1', '192.168.1.10');
+  my $copy = $span;
+  $copy->reset();
+  print "Original next: ", $span->next(), "\n"; # prints '192.168.1.1'
+  print "Copy next: ", $copy->next(), "\n"; # prints '192.168.1.1'
+
+=head1 AUTHOR
+
+Dennis J. Bell <dennis.j.bell@gmail.com>
+
+=head1 COPYRIGHT AND LICENSE
+
+Copyright 2024 Rubidium Studios, Ltd.
+
+This library is free software; you can redistribute it and/or modify it under the same terms as Perl itself.
+
+=cut

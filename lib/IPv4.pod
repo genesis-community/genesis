@@ -1,0 +1,153 @@
+=head1 NAME
+
+IPv4 - A module for handling IPv4 addresses, spans, and ranges and performing operations on them.
+
+=head1 SYNOPSIS
+
+  use IPv4;
+
+  # Create a new IPv4 object
+  my $range = IPv4->new('192.168.0.1-192.168.0.15,192.168.11.8,192.168.24.0/27');
+  my $span = IPv4->new('192.168.0.1/24');
+  my $address = IPv4->new('10.0.0.10');
+
+  # Create a new IPv4::Address object
+  my $address = IPv4->address('192.168.0.1');
+
+  # Create a new IPv4::Span object
+  my $span = IPv4->span('192.168.0.1-192.168.0.10');
+
+  # Create a new IPv4::Range object
+  my $range = IPv4->range('192.168.0.1-192.168.0.15,192.168.11.8,192.168.24.0/27');
+
+=head1 DESCRIPTION
+
+The C<IPv4> module provides a simple interface for creating and manipulating IPv4 addresses, spans, and ranges. It acts as a factory for creating objects of the C<IPv4::Address>, C<IPv4::Span>, and C<IPv4::Range> classes, which can then be used to perform calculations and operations on IPv4 addresses.
+
+=head1 CHILD CLASSES
+
+The C<IPv4> module provides the following child classes:
+
+=over 4
+
+=item *
+
+C<IPv4::Address> - Represents a single IPv4 address.
+
+=item *
+
+C<IPv4::Span> - Represents a span of IPv4 addresses.
+
+=item *
+
+C<IPv4::Range> - Represents a range of IPv4 addresses.
+
+=back
+
+While not derived from the C<IPv4> class, these classes are intended to be used together to facilitate the manipulation of entities in the IPv4 address space.  As such, they will all share a set of common methods and behaviors, in addition to methods specific to each class.  These common behaviour are:
+
+=over 6
+
+=item $obj->range
+
+Returns a string representation of the object.  This is also the string representation of the object when it is used in a string context.
+
+=item $obj->spans
+
+Returns a list of C<IPv4::Span> objects that represent the object.  Ranges will return a list of spans that represent the range.  Spans will return a list of itself.  Addresses will return a list of one span containing itself.
+
+=item $obj->addresses
+
+Returns a list of C<IPv4::Address> objects that represent the object.  Ranges will return a list of addresses that represent the range.  Spans will return a list of addresses that represent the span.  Addresses will return a list of itself.  This list of addresses will also be used when the object is dereferenced as an array reference.
+
+Large ranges can cause this method to return a large number of addresses, so use with caution.  A better approach is to use the C<next> method to iterate over the addresses.
+
+=item $obj->next, $obj->reset
+
+C<next> returns the next address in the object.  This is useful for iterating over the addresses in a range or span in a while loop.  When the end of the object is reached, this method will return undef.  Further calls to this method will start the iteration over again.
+
+C<reset> will reset the iteration to the beginning of the object.  Always safest to call this method before starting an iteration if you don't know the state of the object.
+
+=item $obj->start, $obj->end
+
+Returns the start and end addresses of the object.  For addresses, these will be the same.  For spans, these will be the first and last addresses in the span.  For ranges, these will be the first and last addresses in the range.
+
+=item $obj->contains
+
+Returns true if the object contains the given address.  For ranges, this will return true if the address is within the range.  For spans, this will return true if the address is within the span.  For addresses, this will return true if the address is the same as the object.
+
+=item Autovivification
+
+When performing operations on IPv4 objects that take another IPv4 object as an argument, you can use a string representation of an IPv4 object in place of the object itself.  The C<IPv4> module will automatically create the appropriate object for you.  It is a short form of IPv4->new(@args).  Note: an undefined value will be autoviivified as a C<IPv4::Range> object with no addresses.
+
+=item String, numeric and object comparison
+
+All IPv4 objects can be compared to string or integer values, as well as other IPv4 objects.  Strings will be automatically converted to IPv4 objects, whereas comparing integers will compare it to the size of the object.
+
+=item $obj->add, $obj->subtract
+
+These methods will add or subtract the given object from the object.  The object can be a range, span, or address.  The result will be a new object that represents the result of the operation.  The + and - operators are overloaded to call these methods.
+
+The behaviour of these methods is made to be as intuitive as possible.  For example, subtracting a range from a range will return a range that represents the difference between the two ranges.  Subtracting a span from a range will return a range that represents the difference between the span and the range.  Subtracting an address from a range will return a range that represents the difference between the address and the range.
+
+However, there are some corner cases that are intuitive in isolation, but not as taken in respect to the other objects.  For example, subtracting an address from another address will return the difference between the two as an integer,while subtracting a span or address from a span will return the span that does not contain any addresses from the other object.  In this case, it makes sense because an address is a single point along a finite vector, while a span is treated as a contiguous set of addresses, but the behaviour is different for the same operation.
+
+Similarly, when you add or subtract an integer from an Address, it will return an address that is greater or lesser than the original address by the integer.  However, if you add a positive address to a span, it will increase the span that much from the end, while adding a negative integer to a span will still increase the span, but by the absolute value of the integer being appended to the start.  Subtraction works in a similar way.  You cannot add or subtract integers on C<IPv4::Range> objects as that behavior is undefined..
+
+=back
+
+=head1 METHODS
+
+=head2 new
+
+  my $obj = IPv4->new(@args);
+
+Creates a new IPv4 object. The type of object returned depends on the input arguments. If the input represents a single address, a C<IPv4::Address> object is returned. If the input represents a span of addresses, a C<IPv4::Span> object is returned. If the input represents a range of addresses, a C<IPv4::Range> object is returned.
+
+=head2 address
+
+  my $address = IPv4->address(@args);
+
+Creates a new C<IPv4::Address> object. The input arguments should represent a single IPv4 address.
+
+=head2 span
+
+  my $span = IPv4->span(@args);
+
+Creates a new C<IPv4::Span> object. The input arguments should represent a span of IPv4 addresses.
+
+=head2 range
+
+  my $range = IPv4->range(@args);
+
+Creates a new C<IPv4::Range> object. The input arguments should represent a range of IPv4 addresses.
+
+=head1 INTERNAL METHODS
+
+=head2 __strip_call_ref
+
+  my @args = __strip_call_ref(@args);
+
+Strips the call reference from the input arguments. This is an internal method and should not be used directly.
+
+=head2 __is_integer
+
+  if (IPv4::__is_integer($arg)) { ... }
+
+Returns true if the argument is an integer.  Intended for internal use only by the IPv4 children classes.
+
+=head2 __autovivify
+
+  my $obj = __autovivify($arg);
+
+Autovivifies the argument into an IPv4 object.  Intended for internal use only by the IPv4 children classes.  Dies if the argument cannot be used to create an IPv4 child class object.
+
+=head1 AUTHOR
+
+Dennis J. Bell <dennis.j.bell@gmail.com>
+
+=head1 COPYRIGHT AND LICENSE
+
+Copyright 2024 by Rubidium Studios, Ltd.
+
+This library is free software; you can redistribute it and/or modify it under the same terms as Perl itself.

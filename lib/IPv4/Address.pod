@@ -1,0 +1,388 @@
+=head1 NAME
+
+IPv4::Address - A module for handling individual IPv4 addresses.
+
+=head1 SYNOPSIS
+
+  use IPv4::Address;
+
+  # Create a new IPv4::Address object
+  my $address = IPv4::Address->new('192.168.0.1');
+  my $from_int = IPv4::Address->new(3232235521);
+  my $from_array = IPv4::Address->new([192, 168, 0, 1]);
+
+  # Get string and integer representations
+  print "Address: $address\n";
+  print "Integer: ".$address->int()."\n";
+
+  # Compare two addresses
+  my $address1 = IPv4::Address->new('192.168.0.1');
+  my $address2 = IPv4::Address->new('192.168.0.2');
+  if ($address1 < $address2) {
+      print "$address1 is less than $address2\n";
+  }
+
+=head1 DESCRIPTION
+
+The C<IPv4::Address> module provides a simple interface for creating and manipulating individual IPv4 addresses. It supports various operations such as comparison, addition, and subtraction of addresses.
+
+=head1 METHODS
+
+=head2 new (constructor)
+
+  my $address = IPv4::Address->new($address);
+
+Creates a new C<IPv4::Address> object. The input can be:
+
+=over 4
+
+=item * A dotted-decimal string (e.g., '192.168.0.1')
+
+=item * An integer (e.g., 3232235521)
+
+=item * An array reference of 4 octets (e.g., [192, 168, 0, 1])
+
+=item * A hostname (e.g., 'localhost')
+
+=back
+
+Dies with an error message if the input is invalid.
+
+  # Examples
+  my $addr1 = IPv4::Address->new('192.168.0.1');
+  my $addr2 = IPv4::Address->new(3232235521);
+  my $addr3 = IPv4::Address->new([192, 168, 0, 1]);
+  my $addr4 = IPv4::Address->new('localhost');
+
+=head2 all_for_host (class method)
+
+  my @addresses = IPv4::Address->all_for_host($hostname);
+
+Returns all IPv4 addresses associated with the given hostname.
+
+  # Example
+  my @addresses = IPv4::Address->all_for_host('localhost');
+  foreach my $address (@addresses) {
+    print $address->address(); # prints '127.0.0.1'
+  }
+
+=head2 address
+
+  my $str = $address->address();
+
+Returns the string representation of the IPv4 address.
+
+  # Example
+  my $address = IPv4::Address->new('192.168.0.1');
+  print $address->range(); # prints '192.168.0.1'
+
+=head2 range
+
+  my $str = $address->range();
+
+Returns the string representation of the IPv4 address. This is an alias for the C<range> method, provided for compatibility with C<IPv4::Span> and C<IPv4::Range> objects.
+
+  # Example
+  my $address = IPv4::Address->new('192.168.0.1');
+  print $address->range(); # prints '192.168.0.1'
+
+=head2 int
+
+  my $int = $address->int();
+
+Returns the integer representation of the IPv4 address.
+
+  # Example
+  my $address = IPv4::Address->new('192.168.0.1');
+  print $address->int(); # prints '3232235521'
+
+=head2 octets
+
+  my @octets = $address->octets();
+
+Returns the octets of the IPv4 address as an array.
+
+  # Example
+  my $address = IPv4::Address->new('192.168.0.1');
+  my @octets = $address->octets(); # returns (192, 168, 0, 1)
+
+=head2 hostname
+
+  my $hostname = $address->hostname();
+
+Returns the hostname associated with the IPv4 address, if available.  Otherwise, returns undef.
+
+  # Example
+  my $address = IPv4::Address->new('127.0.0.1');
+  print $address->hostname(); # prints 'localhost'
+
+=head2 start
+
+  my $start_address = $address->start();
+
+Returns the start address of the span. For an individual address, this is the address itself.
+
+  # Example
+  my $address = IPv4::Address->new('192.168.0.1');
+  print $address->start()->address(); # prints '192.168.0.1'
+
+=head2 end
+
+  my $end_address = $address->end();
+
+Returns the end address of the span. For an individual address, this is the address itself. This is provided for consistency with other classes that represent spans of addresses.
+
+  # Example
+  my $address = IPv4::Address->new('192.168.0.1');
+  print $address->end()->address(); # prints '192.168.0.1'
+
+=head2 size
+
+  my $size = $address->size();
+
+Returns the size of the address. For an individual address, this is always 1.
+
+  # Example
+  my $address = IPv4::Address->new('192.168.0.1');
+  print $address->size(); # prints '1'
+
+=head2 in_cidr
+
+  my ($start, $end) = $address->in_cidr($mask);
+
+Returns the start and end addresses of the CIDR block that the address belongs to.
+
+  # Example
+  my $address = IPv4::Address->new('192.168.0.1');
+  my ($start, $end) = $address->in_cidr(24);
+  print $start->address(); # prints '192.168.0.0'
+  print $end->address();   # prints '192.168.0.255'
+
+=head2 add
+
+  my $new_address = $address->add($count);
+
+Adds a specified number to the IPv4 address and returns the new address.
+
+  # Example
+  my $address = IPv4::Address->new('192.168.0.1');
+  my $new_address = $address->add(5);
+  print $new_address->address(); # prints '192.168.0.6'
+
+=head2 subtract
+
+  my $new_address = $address->subtract($count);
+
+Subtracts a specified number from the IPv4 address and returns the new address.
+
+  # Example
+  my $address = IPv4::Address->new('192.168.0.10');
+  my $new_address = $address->subtract(5);
+  print $new_address->address(); # prints '192.168.0.5'
+
+=head2 diff
+
+  my $difference = $address->diff($other_address);
+
+Returns the difference between two IPv4 addresses.
+
+  # Example
+  my $address1 = IPv4::Address->new('192.168.0.10');
+  my $address2 = IPv4::Address->new('192.168.0.5');
+  my $difference = $address1->diff($address2);
+  print $difference; # prints '5'
+
+=head2 cmp
+
+  my $result = $address1->cmp($address2);
+
+Compares two IPv4 addresses. Returns -1, 0, or 1 if the first address is less than, equal to, or greater than the second address, respectively.
+
+  # Example
+  my $address1 = IPv4::Address->new('192.168.0.1');
+  my $address2 = IPv4::Address->new('192.168.0.2');
+  my $result = $address1->cmp($address2);
+  print $result; # prints '-1'
+
+=head2 numeric_cmp
+
+  my $result = $address1->numeric_cmp($address2);
+
+Compares two IPv4 addresses. Returns -1, 0, or 1 if the first address is less than, equal to, or greater than the second address, respectively.  This method can also compare the size of an address to an integer.  While the size is always 1, it is included for consistency with the C<IPv4::Span> and C<IPv4::Range> classes.
+
+  # Example
+  my $address1 = IPv4::Address->new('192.168.0.1');
+  my $address2 = IPv4::Address->new('192.168.0.2');
+  my $result = $address1->cmp($address2);
+  print $result; # prints '-1'
+
+	$result = $address1->numeric_cmp(1);
+	print $result; # prints '0'
+
+=head2 eq
+
+  my $bool = $address1->eq($address2);
+
+Checks if two IPv4 addresses are equal. Returns true if they are equal, false otherwise.
+
+  # Example
+  my $address1 = IPv4::Address->new('192.168.0.1');
+  my $address2 = IPv4::Address->new('192.168.1.1');
+  my $eq = $address1->eq($address2) ? 'true' : 'false';
+  print $eq; # prints 'false'
+
+=head2 to
+
+  my $span = $address->to($other_address);
+
+Creates a new C<IPv4::Span> object representing the range between the current address and the specified address.
+
+  # Example
+  my $address1 = IPv4::Address->new('192.168.4.0');
+  my $address2 = IPv4::Address->new('192.168.4.10');
+  my $span = $address1->to($address2);
+  print $span->range(); # prints '192.168.4.0-192.168.4.10'
+
+=head2 numeric_eq
+
+  my $bool = $address1->numeric_eq($address2);
+
+Checks if two IPv4 addresses are numerically equal. Returns true if they are equal, false otherwise.
+
+  # Example
+  my $address1 = IPv4::Address->new('192.168.0.1');
+  my $address2 = IPv4::Address->new('192.168.0.1');
+  my $bool = $address1->numeric_eq($address2);
+  print $bool; # prints '1'
+
+  # Example with integer
+  my $address = IPv4::Address->new('192.168.0.1');
+  my $bool = $address->numeric_eq(1);
+  print $bool; # prints '1'
+
+=head2 clone
+
+  my $copy = $address->clone();
+
+Creates an exact copy of the address object.
+
+  # Example
+  my $address = IPv4::Address->new('192.168.0.1');
+  my $copy = $address->clone();
+  print $copy->address(); # prints '192.168.0.1'
+
+=head2 simplify
+
+  my $simple = $address->simplify();
+
+Returns the address object itself. Provided for compatibility with C<IPv4::Span> and C<IPv4::Range> objects.
+
+  # Example
+  my $address = IPv4::Address->new('192.168.0.1');
+  print $address->simplify()->address(); # prints '192.168.0.1'
+
+=head2 addresses
+
+  my @addresses = $address->addresses();
+
+Returns an array containing only this address. Provided for compatibility with C<IPv4::Span> and C<IPv4::Range> objects.
+
+  # Example
+  my $address = IPv4::Address->new('192.168.0.1');
+  my @addrs = $address->addresses();
+  print scalar(@addrs); # prints '1'
+
+=head2 spans
+
+  my @spans = $address->spans();
+
+Returns an array containing a single span representing this address.
+
+  # Example
+  my $address = IPv4::Address->new('192.168.0.1');
+  my @spans = $address->spans();
+  print $spans[0]->range(); # prints '192.168.0.1'
+
+=head2 next
+
+  my $next_address = $address->next();
+
+Returns the next address in sequence when iterating. Returns undef after the first call.
+
+  # Example
+  my $address = IPv4::Address->new('192.168.0.1');
+  print $address->next()->address(); # prints '192.168.0.1'
+  print $address->next(); # prints nothing (undef)
+
+=head2 reset
+
+  $address->reset();
+
+Resets the iteration state for the next() method.
+
+  # Example
+  my $address = IPv4::Address->new('192.168.0.1');
+  $address->next();
+  $address->reset();
+  print $address->next()->address(); # prints '192.168.0.1'
+
+=head2 contains
+
+  my $bool = $address->contains($other_address);
+
+Returns true if this address equals the given address.
+
+  # Example
+  my $address = IPv4::Address->new('192.168.0.1');
+  print $address->contains('192.168.0.1'); # prints '1'
+  print $address->contains('192.168.0.2'); # prints '0'
+
+=head1 INTERNAL METHODS
+
+Private methods used internally and for overloading support. These should not be called directly.
+
+=head2 __minus
+
+Internal method for handling subtraction operations.
+
+=head2 __plus
+
+Internal method for handling addition operations.
+
+=head1 OVERLOADED OPERATORS
+
+The following operators are overloaded for C<IPv4::Address> objects:
+
+=over 4
+
+=item * Stringification ("") - returns the string representation of the address
+
+=item * Numeric context (0+) - returns the size (always 1)
+
+=item * Object Comparison (cmp) - compares two IPv4 entities, exclilitly their string representations.  A range, span or address are considered equal if they all contain the same single address representation.  Greater than or less than comparisons are based on the first address value, then by size.
+
+=item * Numeric Comparison (<=>) - compares the SIZE of two IPv4 entities numerically
+
+=item * Subtraction (-) - returns the difference between addresses or subtracts an integer
+
+=item * Addition (+) - returns a new address offset by the given integer
+
+=item * Assignment (=) - creates a clone of the address.  Note this is only applied when using +=, -=, etc, not on simple assignment.  Use clone explicitly for that.
+
+=item * Iteration (<>) - returns the next address in sequence, ending with undef
+
+=item * Array dereference (@{}) - returns an array reference containing the address
+
+=back
+
+=head1 AUTHOR
+
+Dennis J. Bell <dennis.j.bell@gmail.com>
+
+=head1 COPYRIGHT AND LICENSE
+
+Copyright 2024 Rubidium Studios, Ltd.
+
+This library is free software; you can redistribute it and/or modify it under the same terms as Perl itself.
+
+=cut
