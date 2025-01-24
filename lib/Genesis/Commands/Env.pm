@@ -669,7 +669,7 @@ sub deploy {
 	exit ($ok ? 0 : 1);
 }
 
-sub do {
+sub addon {
 	command_usage(1) if @_ < 2;
 
 	my ($name, $script, @args) = @_;

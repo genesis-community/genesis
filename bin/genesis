@@ -411,7 +411,32 @@ define_command("deploy", {
 			"Override the default number of maximum VMs in flight per instance group.",
 	]
 });
+
 # }}}
+# genesis do - run a kit addon {{{
+define_command("do", {
+	summary => "Run an addon script provided by the environment's kit.",
+	usage => "<env> do [<options...>] action [<addon options and args...>]",
+	aliases => ['apply','run','addon'],
+	description =>
+		"Run an addon from the kit against your environment.  Except for rare ".
+		"circumstances, this requires the environment to already be deployed.  ".
+		"A list of addons available and any options they support can be found by ".
+		'running the `#g{$BIN} #M{<env>} #G{$CALLED} #c{list}` addon.',
+	function_group => Genesis::Commands::ENVIRONMENT,
+	scope => 'env',
+	option_group => Genesis::Commands::ENV_OPTIONS,
+	option_passthrough => 1,
+	option_require_order => 1,
+}, "Genesis::Commands::Env::addon");
+
+# }}}
+# genesis remove - remove the environment from the BOSH director {{{
+# TODO: Create this command
+# }}}
+#}}}
+
+### BOSH and Credhub Actions {{{
 # genesis bosh - run a bosh command against the BOSH director for the specified environment {{{
 define_command("bosh", {
 	summary => "Run a BOSH cli command for the specific environment.",
@@ -534,23 +559,6 @@ define_command("broadcast", {
 			"specified, it will run on all jobs in the deployment.  This option can ".
 			"be specified multiple times to run on multiple types or instances.",
 	],
-	option_passthrough => 1,
-	option_require_order => 1,
-});
-# }}}
-# genesis do - run a kit addon {{{
-define_command("do", {
-	summary => "Run an addon script provided by the environment's kit.",
-	usage => "<env> do [<options...>] action [<addon options and args...>]",
-	aliases => ['apply','run','addon'],
-	description =>
-		"Run an addon from the kit against your environment.  Except for rare ".
-		"circumstances, this requires the environment to already be deployed.  ".
-		"A list of addons available and any options they support can be found by ".
-		'running the `#g{$BIN} #M{<env>} #G{$CALLED} #c{list}` addon.',
-	function_group => Genesis::Commands::ENVIRONMENT,
-	scope => 'env',
-	option_group => Genesis::Commands::ENV_OPTIONS,
 	option_passthrough => 1,
 	option_require_order => 1,
 });
