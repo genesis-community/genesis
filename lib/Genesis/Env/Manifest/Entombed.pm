@@ -4,8 +4,8 @@ use strict;
 use warnings;
 
 use parent qw/Genesis::Env::Manifest/;
-
-do $ENV{GENESIS_LIB}."/Genesis/Env/Manifest/_entombment_mixin.pm";
+require File::Basename;
+do((File::Basename::dirname(__FILE__) =~ s#^lib/##r) . "/_entombment_mixin.pm");
 
 sub deployable {1}
 

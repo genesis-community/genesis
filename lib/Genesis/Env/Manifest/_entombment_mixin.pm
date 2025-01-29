@@ -2,8 +2,8 @@
 
 use Digest::SHA qw/sha1_hex/;
 
-use Genesis;
-use Genesis::Term;
+use Genesis qw/info bail read_json_from lines/;
+use Genesis::Term qw/terminal_width/;
 
 use Service::Vault::Local;
 use Service::Credhub;

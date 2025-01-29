@@ -5,8 +5,10 @@ use warnings;
 
 use parent qw/Genesis::Env::Manifest/;
 
-do $ENV{GENESIS_LIB}."/Genesis/Env/Manifest/_entombment_mixin.pm";
-do $ENV{GENESIS_LIB}."/Genesis/Env/Manifest/_vaultify_mixin.pm";
+use File::Basename;
+my $base_path = dirname(__FILE__) =~ s#^lib/##r;
+do "$base_path/_entombment_mixin.pm";
+do "$base_path/_vaultify_mixin.pm";
 
 sub deployable {1}
 

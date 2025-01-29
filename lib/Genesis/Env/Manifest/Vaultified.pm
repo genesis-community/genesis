@@ -5,7 +5,8 @@ use warnings;
 
 use parent qw/Genesis::Env::Manifest/;
 
-do $ENV{GENESIS_LIB}."/Genesis/Env/Manifest/_vaultify_mixin.pm";
+require File::Basename;
+do((File::Basename::dirname(__FILE__) =~ s#^lib/##r) . "/_vaultify_mixin.pm");
 
 sub deployable {1}
 
