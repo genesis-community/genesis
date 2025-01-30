@@ -334,15 +334,23 @@ EOF
 
 	# Test the parsing of the bosh env, including deployment type, alternate vault and alternate exodus mount
 	my %valid_bosh_envs=(
-		$env->bosh_env => ["parent-bosh", undef, undef, undef],
+		$env->bosh_alias => ["parent-bosh", undef, undef, undef],
 		"test-me/my-bosh" => ["test-me","my-bosh",undef,undef],
 		"my-parent-bosh\@secret/other/exodus" => ["my-parent-bosh",undef,undef,"secret/other/exodus"],
 		"big-badda-boom/special_bosh@/secret/mngt/exodus/" => ["big-badda-boom","special_bosh",undef,"secret/mngt/exodus/"],
 		"bosh-env/bosh-type\@https://mngt-vault:8443/private/data" => ["bosh-env","bosh-type", "https://mngt-vault:8443", "private/data"]
 	);
-	for my $bosh_env (keys(%valid_bosh_envs)) {
+	for my $bosh_env (sort keys(%valid_bosh_envs)) {
 		$env->{__params}{genesis}{bosh_env} = $bosh_env;
-		cmp_deeply([$env->_parse_bosh_env], $valid_bosh_envs{$bosh_env}, "Ensuring bosh_env '$bosh_env' can be parsed correctly");
+		delete($env->{__bosh_env});
+		cmp_deeply([($env->bosh_env)], [@{$valid_bosh_envs{$bosh_env}},$bosh_env], "Ensuring bosh_env '$bosh_env' can be parsed correctly (array context)");
+		cmp_deeply(scalar($env->bosh_env), {
+			name => $valid_bosh_envs{$bosh_env}[0],
+			dep_type => $valid_bosh_envs{$bosh_env}[1],
+			vault_url => $valid_bosh_envs{$bosh_env}[2],
+			exodus_mount => $valid_bosh_envs{$bosh_env}[3],
+			description => $bosh_env
+		}, "Ensuring bosh_env '$bosh_env' can be parsed correctly (scalar hashref context)");
 	}
 
 	teardown_vault();

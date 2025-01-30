@@ -667,7 +667,7 @@ sub use_create_env {
 			) unless $is_create_env || $has_bosh_env;
 		}
 
-		my $different_bosh_env = $self->bosh_env && ($self->bosh_env ne $self->name);
+		my $different_bosh_env = ($self->bosh_env->{description}//$self->name) ne $self->name;
 
 		if ($self->kit->feature_compatibility("2.8.0")) {
 			# Kits that are explicitly compatible with 2.8.0 can specify if they
@@ -1396,7 +1396,7 @@ sub get_environment_variables {
 		}
 	} else {
 		$env{GENESIS_USE_CREATE_ENV} = "false";
-		$env{BOSH_ALIAS} = $self->bosh_env; # FIXME: bosh_env can contain more than just the alias - see _parse_bosh_env
+		$env{BOSH_ALIAS} = $self->bosh_alias;
 		if ($self->{__bosh} || grep {$_ eq 'bosh'} ($self->kit->required_connectivity($hook))) {
 			my %bosh_env = $self->bosh->environment_variables;
 			$env{$_} = $bosh_env{$_} for keys %bosh_env;
@@ -1693,9 +1693,19 @@ sub with_bosh {
 # }}}
 # bosh_env - return the bosh_env for this environment {{{
 sub bosh_env {
-	my $self = shift;
-	my $env_bosh_target = scalar($self->lookup('genesis.bosh_env', $self->is_bosh_director ? undef : $self->{name}));
-  # TODO? warn if GENESIS_BOSH_ENVIRONMENT is set and different
+	my $data = $_[0]->_memoize(sub {
+		my $self = shift;
+		my $env_bosh_target = scalar($self->lookup('genesis.bosh_env', $self->is_bosh_director ? undef : $self->{name}));
+		return {} unless $env_bosh_target;
+		return scalar($self->_parse_bosh_env($env_bosh_target));
+	});
+	return wantarray ? @$data{'name', 'dep_type','vault_url','exodus_mount','description'} : $data;
+}
+
+# }}}
+# bosh_alias - return the alias of the bosh used to deploy this environment (diminutive of bosh_env) {{{
+sub bosh_alias {
+	return $_[0]->bosh_env->{name};
 }
 
 # }}}
@@ -1718,13 +1728,13 @@ sub bosh {
 		}
 
 		# bosh env can be <alias>[/<deployment-type>]@[http(s?)://<host>[:<port>]/][<mount>]
-		my ($bosh_alias,$bosh_dep_type,$bosh_exodus_vault,$bosh_exodus_mount) = $self->_parse_bosh_env();
+		my ($bosh_alias,$bosh_dep_type,$bosh_exodus_vault_url,$bosh_exodus_mount) = $self->bosh_env;
 
 		my $bosh_vault = $self->vault;
-		if ($bosh_exodus_vault) {
-			$bosh_vault = Service::Vault->find_single_match_or_bail($bosh_exodus_vault);
+		if ($bosh_exodus_vault_url) {
+			$bosh_vault = Service::Vault->find_single_match_or_bail($bosh_exodus_vault_url);
 			bail(
-				"Could not access vault #C{$bosh_exodus_vault} to retrieve BOSH ".
+				"Could not access vault #C{$bosh_exodus_vault_url} to retrieve BOSH ".
 				"director login credentials"
 			) unless $bosh_vault && $bosh_vault->connect_and_validate;
 		}
@@ -1802,12 +1812,12 @@ sub get_target_bosh {
 				) unless in_controlling_terminal;
 
 				my $self_name = $self->name;
-				my ($bosh_alias,$bosh_dep_type,$bosh_exodus_vault,$bosh_exodus_mount) = $self->_parse_bosh_env();
+				my $bosh_alias = $self->bosh_alias;
 				$target = prompt_for_choice(
 					"Which BOSH director do you want to target?",
 					['self', 'parent'],
 					'self',
-					[ map {[$_, s/: .*//r]} map {csprintf("%s", $_)} (
+					[ map {[ $_, s/: .*//r ]} map {csprintf("%s", $_)} (
 						"#C{$self_name}: this environment",
 						"#C{$bosh_alias}: the BOSH director that deployed this environment"
 					) ]
@@ -3520,7 +3530,7 @@ sub _cap_yaml_file {
 	my $cap_file  = $self->workpath("fin.yml");
 
 	my $now = strftime("%Y-%m-%d %H:%M:%S +0000", gmtime());
-	my $bosh_target = $self->use_create_env ? "~" : ($self->bosh_env || $self->name);
+	my $bosh_target = $self->use_create_env ? "~" : $self->bosh_env->{description};
 	mkfile_or_fail($cap_file, 0644, <<EOF);
 ---
 name: (( concat genesis.env "-$type" ))
@@ -3535,7 +3545,7 @@ genesis:
   exodus_path:   ${\($self->exodus_slug)}
   exodus_base:   ${\($self->exodus_base)}
   ci_mount:      ${\($self->ci_mount)}${\(
-  ($self->use_create_env || $self->bosh_env eq $self->name) ? "" :
+  ($self->use_create_env || $self->bosh_env->{description} eq $self->name) ? "" :
   "\n  bosh_env:      $bosh_target")}${\(
 	$self->is_ocfp
 	? "\n  ocfp:          true".
@@ -3703,17 +3713,21 @@ sub _process_reactions {
 }
 
 # }}}
-# _parse_bosh_env - parse the bosh env into its constituent parts {{{
+# _parse_bosh_env - parse the bosh env into its constituent parts, and returns a hashref {{{
 sub _parse_bosh_env {
-	# Pattern: <name>[/<type>][@[<url>]/<mount>]
 	my ($self, $bosh_env_description) = @_;
+	bail("Invalid BOSH environment description: %s", $bosh_env_description) unless $bosh_env_description;
+
+	# Pattern: <name>[/<type>][@[<url>]/<mount>]
 	my ($name, $dep_type, $vault_url, $exodus_mount) =
-		($bosh_env_description // $self->bosh_env) =~ m/^([^\/\@]+)(?:\/([^\@]+))?(?:@(?:(https?:\/\/[^\/]+)?(?:\/|$))?(.*))?$/;
+		($bosh_env_description) =~ m/^([^\/\@]+)(?:\/([^\@]+))?(?:@(?:(https?:\/\/[^\/]+)?(?:\/|$))?(.*))?$/;
+
 	return wantarray ? ($name, $dep_type, $vault_url, $exodus_mount) : {
-		name => $name,
-		dep_type => $dep_type,
-		vautl_url  => $vault_url,
+		name         => $name,
+		dep_type     => $dep_type,
+		vault_url    => $vault_url,
 		exodus_mount => $exodus_mount,
+		description  => $bosh_env_description,
 	};
 }
 
