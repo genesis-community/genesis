@@ -1771,6 +1771,7 @@ EOF
 		GENESIS_KIT_PATH => $env->kit->path,
 		GENESIS_MIN_VERSION => '2.8.0',
 		GENESIS_MIN_VERSION_FOR_KIT => '2.8.0',
+		GENESIS_PREFIX_TYPE => "none",
 		GENESIS_REQUESTED_FEATURES => "alpha oscar kilo november",
 		GENESIS_ROOT_CA_PATH => "company/root-ca",
 		GENESIS_SECRETS_BASE => "/shhhh/base/extended/thing/",

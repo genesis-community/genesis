@@ -1318,8 +1318,8 @@ sub get_environment_variables {
 	}
 
 	my $env_ref = $self->name;
-	if ($ENV{GENESIS_PREFIX_TYPE} eq 'search') {
-		$env_ref = "$ENV{GENESIS_PREFIX_SEARCH}";
+	if ($env{GENESIS_PREFIX_TYPE} eq 'search') {
+		$env_ref = "$env{GENESIS_PREFIX_SEARCH}";
 	} else {
 		$env_ref .= '.yml' if (grep {$_ eq $self->name} known_commands);
 		$env_ref = humanize_path($self->path)."/$env_ref" if $is_alt_path;
@@ -1330,7 +1330,6 @@ sub get_environment_variables {
 	$env{GENESIS_CALL_ENV} = "$env{GENESIS_CALL_BIN} $env_ref";
 
 	if ($ENV{GENESIS_COMMAND}) {
-		$env{GENESIS_PREFIX_TYPE} = $ENV{GENESIS_PREFIX_TYPE} || 'none';
 		$env{GENESIS_CALL_PREFIX} = sprintf("%s %s %s", $env{GENESIS_CALL_BIN}, $env_ref, $ENV{GENESIS_COMMAND});
 		$env{GENESIS_CALL_FULL} = $env{GENESIS_PREFIX_TYPE} =~ /(^search|file)$/
 			? $env{GENESIS_CALL_PREFIX}
