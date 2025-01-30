@@ -14,13 +14,23 @@ sub init {
 	return $obj
 }
 
+sub validate_features {
+	my ($self, @features) = @_;
+	return 1
+}
+
 sub add_files {
 	my $self = shift;
 	push(@{$self->{files}}, @_);
 }
 
 sub results {
-	return undef unless $_[0]->{complete}; # Should this be an error?
-	return (@{$_[0]->{files}})
+	bail(
+		"Blueprint hook could not be run"
+	) unless $_[0]->{complete};
+	bail(
+		"Could not determine which YAML files to merge: 'blueprint' specified no files"
+	) unless scalar(@{$_[0]->{files}});
+	return $_[0]->{files}
 }
 1;

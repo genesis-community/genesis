@@ -725,7 +725,7 @@ sub use_create_env {
 		my $euce;
 		if ($self->exists) {
 			my $features = scalar($self->lookup(['kit.features', 'kit.subkits'], []));
-			$euce = scalar(grep {$_ =~ /^(proto|bosh-init|create-env)$/} @$features) ? 1 : 0;
+			$euce = scalar(grep {$_ =~ /^(proto|bosh-init|create-env)$/} @$features) ? 1 : 0; # FIXME: remove bosh-init prior to 3.1.0, proto prior to 3.2.0
 		} else {
 			$euce = !$ENV{GENESIS_BOSH_ENVIRONMENT};
 		}
@@ -1310,7 +1310,8 @@ sub get_environment_variables {
 
 	# Deprecated, use GENESIS_CALL_ENV instead, but drop the $GENESIS_ENVIRONMENT after the command
 	$env{GENESIS_CALL}         = $env{GENESIS_CALL_BIN};
-	if ($ENV{GENESIS_PREFIX_TYPE} eq 'search') {
+	$env{GENESIS_PREFIX_TYPE}  = $ENV{GENESIS_PREFIX_TYPE} || 'none';
+	if ($env{GENESIS_PREFIX_TYPE} eq 'search') {
 		$env{GENESIS_CALL} .= " '$ENV{GENESIS_PREFIX_SEARCH}'";
 	} elsif ($is_alt_path) {
 		$env{GENESIS_CALL} .= sprintf(" -C '%s'", humanize_path($self->path));

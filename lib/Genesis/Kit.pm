@@ -79,6 +79,9 @@ sub has_hook {
 # }}}
 # run_hook - {{{
 sub run_hook {
+
+	# FIXME: run_hook should always return a scalar (simple or reference), not an array or hash.
+	# TODO: Refactor method into smaller, more focused methods per hook type and generalized hook execution support methods
 	my ($self, $hook, %opts) = @_;
 
 	my $is_shell=($hook eq 'shell');
@@ -328,7 +331,7 @@ EOF
 		bail(
 			"Could not determine which YAML files to merge: 'blueprint' specified no files"
 		) unless @manifests;
-		return @manifests;
+		return \@manifests;
 	}
 
 	if (grep { $_ eq $hook}  qw/features/) {
@@ -626,7 +629,12 @@ sub source_yaml_files {
 		$self->id, $Genesis::VERSION
 	) unless ($self->has_hook('blueprint'));
 
-	my @files = $self->run_hook('blueprint', env => $env);
+	my $files_ref = $self->run_hook('blueprint', env => $env);
+	bail(
+		"Kit %s blueprint hook did not return a list of files to merge",
+		$self->id
+	) unless $files_ref && ref($files_ref) eq 'ARRAY';
+	my @files = @$files_ref;
 	if ($absolute) {
 		my $env_path = $env->path();
 		@files = map { $_ =~ qr(^$env_path) ? $_ : $self->path($_) } @files;
