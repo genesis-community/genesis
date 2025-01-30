@@ -1,13 +1,15 @@
 .PHONY: sanity-test test test-quick test-secrets test-ci release dev-release clean coverage
 
+TESTS ?= t/*.t
+
 sanity-test:
 	@bash -c 'set -o pipefail; export GENESIS_OUTPUT_COLUMNS=120; perl -Ilib -c bin/genesis && perl -Ilib -- bin/genesis -D ping 2>&1'
 
 coverage:
-	SKIP_SECRETS_TESTS=yes cover -t -ignore_re '(/Legacy.pm|/UI.pm|^t/|/JSON/)'
+	SKIP_SECRETS_TESTS=yes cover -t -ignore_re '(/Legacy.pm|/JSON/|/UUID/|^t/.*\.pm)'
 
 test: sanity-test
-	prove -l t/*.t
+	prove -lf $(TESTS)
 
 test-all: sanity-test test-quick test-secrets
 

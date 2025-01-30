@@ -140,13 +140,17 @@ subtest 'dev kits' => sub {
 		"compiled-kit paths are not the same as dev-kit paths");
 
 	## source yaml files, based on features:
-	cmp_deeply([$kit->source_yaml_files(mockenv->new())],
-	           [re('\bmanifest.yml$')],
-	           "simple kits without subkits should return base yaml files only");
+	cmp_deeply(
+		[$kit->source_yaml_files(mockenv->new())],
+		[re('\bmanifest.yml$')],
+		"simple kits without subkits should return base yaml files only"
+	);
 
-	cmp_deeply([$kit->source_yaml_files(mockenv->new('bogus', 'features'))],
-	           [$kit->source_yaml_files(mockenv->new())],
-	           "simple kits ignore features they don't know about");
+	cmp_deeply(
+		[$kit->source_yaml_files(mockenv->new('bogus', 'features'))],
+		[$kit->source_yaml_files(mockenv->new())],
+		"simple kits	ignore features	they don't know	about"
+	);
 };
 
 subtest 'genesis-community kit provider configuration' => sub {

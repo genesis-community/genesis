@@ -15,6 +15,7 @@ chdir "t/repos/manifest-test" or die;
 bosh2_cli_ok;
 write_bosh_config "us-common";
 $ENV{NOCOLOR} = 1;
+$ENV{GENESIS_OUTPUT_COLUMNS}=80;
 
 runs_ok "genesis manifest -c cloud.yml -t unredacted -s pruned us-east-1-sandbox >$tmp/manifest.yml";
 eq_or_diff get_file("$tmp/manifest.yml"), <<EOF, "manifest generated for us-east-1/sandbox";

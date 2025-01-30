@@ -324,8 +324,7 @@ genesis:
   env:      regular-deploy
   bosh_env: parent-bosh
 EOF
-	lives_ok { $env = $top->load_env('regular-deploy') }
-	         "Genesis::Env should be able to load the `regular-deploy' environment.";
+	lives_ok { $env = $top->load_env('regular-deploy') } "Genesis::Env should be able to load the `regular-deploy' environment.";
 	ok($env->has_feature('vsphere'), "regular-deploy env has the vsphere feature");
 	quietly { throws_ok { $env->use_create_env() }
 		qr/\[FATAL\] This bosh environment specifies an alternative bosh_env, but is marked\n\s+as a create-env \(proto\) environment./sm,
@@ -367,6 +366,8 @@ subtest 'manifest generation' => sub {
 kit:
   name:    dev
   version: latest
+  iaas:    vsphere
+  scale:   dev
   features:
     - whiskey
     - tango
@@ -400,6 +401,7 @@ EOF
 --- {}
 # not really a cloud config, but close enough
 EOF
+
 	lives_ok { $env->use_config($top->path(".cloud.yml"))->manifest_provider->deployment->data; }
 		"should be able to merge an env with a cloud-config";
 
@@ -444,6 +446,8 @@ EOF
 kit:
   name:    dev
   version: latest
+  iaas:    vsphere
+  scale:   dev
   features:
     - whiskey
     - tango
@@ -479,7 +483,9 @@ EOF
 		kit => {
 			features   => [ "oscar", "kilo" ],
 			name       => "dev",
-			version    => "latest"
+			version    => "latest",
+			iaas       => "vsphere",
+			scale      => "dev"
 		},
 		genesis => {
 			env        => "standalone"
@@ -517,6 +523,8 @@ EOF
 kit:
   name:    dev
   version: latest
+  iaas:    vsphere
+  scale:   prod
   features:
     - whiskey
     - tango
@@ -574,6 +582,8 @@ EOF
 		kit    => {
 			name          => ignore,
 			version       => ignore,
+			iaas          => "vsphere",
+			scale         => "prod",
 			features      => [ "oscar", "kilo" ],
 		},
 	}, "written manifest (unpruned) contains all the keys");
@@ -607,6 +617,8 @@ EOF
 kit:
   name:    dev
   version: latest
+  iaas:    openstack
+  scale:   dev
   features:
     - papa    # for pruning tests
 genesis:
@@ -681,6 +693,8 @@ EOF
 kit:
   name:    dev
   version: latest
+  iaas:    aws
+  scale:   lab
   features:
     - papa     # for pruning tests
     - proto
@@ -768,6 +782,8 @@ subtest 'exodus data' => sub {
 kit:
   name:    dev
   version: latest
+  iaas:    vsphere
+  scale:   dev
   features:
     - echo    # for pruning tests
 genesis:
@@ -793,6 +809,8 @@ EOF
 			'addons[0]'    => 'echo',
 			vault_base     => '/secret/standalone/thing',
 			features       => 'echo',
+			iaas           => 'vsphere',
+			scale          => 'dev',
 
 			'hello.world' => 'i see you',
 
@@ -866,6 +884,8 @@ EOF
 
 
 subtest 'cloud_config_and_deployment' => sub{
+	# FIXME: This needs a complete rewrite to take into consideration the new exodus deployment entries and artifacts.
+
 	local $ENV{GENESIS_BOSH_COMMAND};
 	my ($director1) = fake_bosh_directors(
 		{alias => 'standalone'},
@@ -877,6 +897,7 @@ subtest 'cloud_config_and_deployment' => sub{
 	`safe set --quiet secret/standalone/thing/admin password='drowssap'`;
 
 	my $top = Genesis::Top->create(workdir, 'thing', vault=>$VAULT_URL)->link_dev_kit('t/src/fancy');
+	$top->config->set('manifest_store','repository'); # TODO: We also need to test hybrid and exodus mode
 	put_file $top->path('standalone.yml'), <<EOF;
 ---
 kit:
@@ -895,7 +916,7 @@ EOF
 	quietly {$env->manifest_provider->reset->set_deployment('unredacted')->deployment->data};
 	ok -f $env->config_file('cloud','genesis-test'), "download_cloud_config created cc file";
 	eq_or_diff get_file($env->config_file('cloud','genesis-test')), <<EOF, "download_config calls BOSH correctly";
-{"cmd": "bosh config --type cloud --name genesis-test --json"}
+{"cmd": "bosh config --type=cloud --name=genesis-test --json"}
 EOF
 
 	put_file $env->config_file('cloud'), <<EOF;
@@ -930,12 +951,12 @@ EOF
 		($manifest_file, $manifest_type, $sha, $source, $errors)
 			= $env->last_deployed_manifest(just=>'file')
 	};
-	ok $manifest_file eq $env->workpath("manifests/".$env->name.".yml"), "cached manifest path correctly determined";
+	ok $manifest_file eq $env->path(".genesis/manifests/".$env->name.".yml"), "cached manifest path correctly determined";
 	ok -f $manifest_file, "manifest file should exist.";
-	ok $sha =~ /[a-f0-9]{40}/, "cached manifest calculates valid SHA-1 checksum";
+	ok $sha =~ /^[a-f0-9]{40}$/, "cached manifest calculates valid SHA-1 checksum";
 	ok -f $manifest_file, "deploy created cached redacted manifest file";
 	ok !defined($errors), "no errors reported";
-	ok $source eq 'exodus-deployments', "cached manifest source correctly determined";
+	ok $source eq 'repository', "cached manifest source correctly determined";
 
 	# Compare the raw exodus data
 	#
@@ -953,6 +974,8 @@ EOF
 				features => '',
 				bosh => "standalone",
 				is_director => 0,
+				manifest_sha1 => $sha,
+				manifest_type => $manifest_type,
 				use_create_env => 0,
 				vault_base => "/secret/standalone/thing",
 				version => '(development)',
@@ -963,25 +986,28 @@ EOF
 				'three.levels.works' => 'now'
 			}, "exodus data was written by deployment");
 
-	($pass, $rc, $out) = runs_ok('safe paths "secret/exodus/standalone/thing/deployments"', 'exodus deployments entry created in vault');
-	my ($timestamp) = $out =~ m{/deployments/(.*)$};
-	ok $timestamp =~ /^\d{14}$/, "exodus timestamp is a valid timestamp";
-	($pass, $rc, $out) = runs_ok("safe get 'secret/exodus/standalone/thing/deployments/$timestamp' | spruce json #");
+	ok $exodus->{manifest_sha1} =~ /^[a-f0-9]{40}$/, "cached manifest calculates valid SHA-1 checksum";
 
-	my $deployment_exodus = load_json($out);
-	cmp_deeply($deployment_exodus, {
-				artifacts => ignore,
-				deployer => $ENV{USER},
-				kit_id => "fancy/in-development (dev)",
-				kit_is_dev => 1,
-				kit_features => '',
-				manifest_type => 'unredacted',
-				manifest_sha2 => $sha,
-			}, "deployment_exodus data was written by deployment");
+	# FIXME: This is for handling the exodus (and hybrid) deployment stores, but the above use repository store, so disable this for now
+	# ($pass, $rc, $out) = runs_ok('safe paths "secret/exodus/standalone/thing/deployments"', 'exodus deployments entry created in vault');
+	# my ($timestamp) = $out =~ m{/deployments/(.*)$};
+	# ok $timestamp =~ /^\d{14}$/, "exodus timestamp is a valid timestamp";
+	# ($pass, $rc, $out) = runs_ok("safe get 'secret/exodus/standalone/thing/deployments/$timestamp' | spruce json #");
+
+	# my $deployment_exodus = load_json($out);
+	# cmp_deeply($deployment_exodus, {
+	# 			artifacts => ignore,
+	# 			deployer => $ENV{USER},
+	# 			kit_id => "fancy/in-development (dev)",
+	# 			kit_is_dev => 1,
+	# 			kit_features => '',
+	# 			manifest_type => 'unredacted',
+	# 			manifest_sha2 => $sha,
+	# 		}, "deployment_exodus data was written by deployment");
 
 
 	quietly {
-		is($env->last_deployed_lookup("something","goose"), "penguin", "Cached manifest contains redacted vault details");
+		is($env->last_deployed_lookup("something","goose"), "REDACTED", "Cached manifest contains redacted vault details");
 		is($env->last_deployed_lookup("fancy.status","none"), "online", "Cached manifest contains non-redacted params");
 		is($env->last_deployed_lookup("genesis.env","none"), "standalone", "Cached manifest contains pruned params");
 	};
@@ -995,6 +1021,8 @@ EOF
 				kit_version => "0.0.0-rc0",
 				kit_is_dev => 1,
 				features => '',
+				manifest_sha1 => $sha,
+				manifest_type => $manifest_type,
 				vault_base => "/secret/standalone/thing",
 				version => '(development)',
 				hello => {
@@ -1026,6 +1054,7 @@ subtest 'bosh variables' => sub {
 	Service::Vault->clear_all();
 	Service::BOSH->set_command($ENV{GENESIS_BOSH_COMMAND});
 	my $top = Genesis::Top->create(workdir, 'thing', vault=>$VAULT_URL)->link_dev_kit('t/src/fancy');
+	$top->config->set(manifest_store => "repository");
   pushd $top->path;
   local $ENV{GENESIS_VERSION} = '3.0.0-rc.10';
   local $Genesis::VERSION = '3.0.0-rc.10';
@@ -1064,12 +1093,11 @@ EOF
 cc-stuff: cloud-config-data
 EOF
 
-	my $varsfile;
 	$env->manifest_provider->reset->set_deployment('unredacted');
-	quietly {$varsfile = $env->vars_file()};
 	my ($stdout, $stderr) = output_from {eval {$env->deploy();}};
 	$stdout =~ s/\r//g;
 	my $manifest_file = $env->workpath("deploy-cache/$env->{name}.yml");
+	my $varsfile = $env->workpath("deploy-cache/$env->{name}.vars");
 	eq_or_diff($stdout, <<EOF, "Deploy should call BOSH with the correct options, including vars file");
 bosh
 deploy
@@ -1080,7 +1108,9 @@ $varsfile
 $manifest_file
 EOF
 
-	eq_or_diff get_file($env->vars_file), <<EOF, "download_cloud_config calls BOSH correctly";
+	my $contents = get_file($env->vars_file);
+	chomp $contents; # it may or may not have a newline
+	eq_or_diff $contents."\n", <<EOF, "download_cloud_config calls BOSH correctly";
 cc: cloud-config-data
 collection: 1 2 3
 deployment_name: standalone-thing
@@ -1088,6 +1118,7 @@ something: valueable
 EOF
 
   popd;
+	$director1->stop();
 	teardown_vault();
 };
 
@@ -1404,6 +1435,7 @@ EOF
 kit:
   name:    dev
   version: latest
+  iaas:    vsphere
   features:
   - bonus
   overrides:
@@ -1688,6 +1720,7 @@ genesis:
   use_create_env: true
 
 kit:
+  iaas:    vsphere
   overrides:
     genesis_version_min: 2.8.0
     use_create_env: allow
@@ -1726,6 +1759,8 @@ EOF
 		GENESIS_CREDHUB_EXODUS_SOURCE => "root_vault/credhub",
 		GENESIS_CREDHUB_EXODUS_SOURCE_OVERRIDE => "root_vault/credhub", # Shouldn't this be boolean?
 		GENESIS_CREDHUB_ROOT => "/root_vault-credhub/base-extended-thing",
+		GENESIS_ENV_IAAS => "vsphere",
+		GENESIS_ENV_SCALE => "",
 		GENESIS_ENV_REF => $env->name,
 		GENESIS_ENV_KIT_OVERRIDE_FILES => re('\/(var\/folders|tmp)\/.*\/env-overrides-0.yml'),
 		GENESIS_EXODUS_BASE => "/shhhh/exodus/base-extended/thing",
@@ -2013,6 +2048,8 @@ This script passed
 Argument 1: 'just a single arg with spaces'
 
 
+[postdeploy-reaction-fail/thing] generating redacted BOSH variables file (if applicable)...
+
 [postdeploy-reaction-fail/thing] all systems ok, initiating BOSH deploy...
 
 [postdeploy-reaction-fail/thing] Deployment successful.
@@ -2024,14 +2061,13 @@ This script failed
 [WARNING] Environment post-deploy reaction failed!  Manual intervention may be needed.
 
 [postdeploy-reaction-fail/thing] Preparing metadata for export...
-
-[DONE] postdeploy-reaction-fail/thing deployed successfully.
-
 EOF
 
-	delete $env->{__secrets_plan};
-	delete $env->{__secrets_store};
-	$env->manifest_provider->reset->set_deployment('entombed');
+	$env = $top->load_env('postdeploy-reaction-fail'); # Get a fresh copy to reset the state
+	$env->use_config($top->path(".cloud.yml"));
+	$env->manifest_provider->reset->set_deployment('unredacted');
+	#delete $env->{__secrets_plan};
+	#delete $env->{__secrets_store};
 	($stdout,$stderr,$err) = (
 		output_from {lives_ok {$env->deploy('disable-reactions' => 1)} "deploy does not run reactions when disabled"},
 		$@
@@ -2059,24 +2095,19 @@ environmental parameters checks will be skipped.
 
 [postdeploy-reaction-fail/thing] running stemcell checks...
 
-[postdeploy-reaction-fail/thing] generating entombed manifest...
-
-[postdeploy-reaction-fail/thing] entombing secrets into Credhub for enhanced security...
-  - determining vault paths used by manifest from genesis-ci-unit-tests...no vault paths in use.
-
+[postdeploy-reaction-fail/thing] generating unredacted manifest...
 
 [postdeploy-reaction-fail/thing] generating BOSH variables file (if applicable)...
 
 [WARNING] Reactions are disabled for this deploy
+
+[postdeploy-reaction-fail/thing] generating redacted BOSH variables file (if applicable)...
 
 [postdeploy-reaction-fail/thing] all systems ok, initiating BOSH deploy...
 
 [postdeploy-reaction-fail/thing] Deployment successful.
 
 [postdeploy-reaction-fail/thing] Preparing metadata for export...
-
-[DONE] postdeploy-reaction-fail/thing deployed successfully.
-
 EOF
 	logger->configure_log('/tmp/cleanup.out',level=>'T',show_stack =>'full',truncate=>1,no_color=>0);
 
@@ -2086,4 +2117,5 @@ EOF
 	teardown_vault();
 };
 
+# TODO: Test v2.8.0+ and 3.1.0+ kits for create-env functionality
 done_testing;

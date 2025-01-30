@@ -1,6 +1,7 @@
 kit:
   name: dev
   version: latest
+  iaas: aws
   features:
   - bosh-init # old style
 genesis:

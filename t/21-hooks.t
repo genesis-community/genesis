@@ -248,7 +248,7 @@ EOF
 		} qr/could not create/i;
 
 		ok ! -f "$root/env-should-fail.yml",
-		   "[fancy] if the 'new' hook script exists non-zero, the env file should not get created";
+			"[fancy] if the 'new' hook script exists non-zero, the env file should not get created";
 	}
 
 	{
@@ -264,18 +264,18 @@ EOF
 		} qr/could not create/i;
 
 		ok ! -f "$root/env-should-fail.yml",
-		   "[fancy] if the 'new' hook script fails, the env file shoud be missing";
+			"[fancy] if the 'new' hook script fails, the env file shoud be missing";
 	}
 };
 
 subtest 'blueprint hook' => sub {
 	again();
 
-	cmp_deeply([$simple->run_hook('blueprint', env => $us_west_1_prod)], [qw[
+	cmp_deeply($simple->run_hook('blueprint', env => $us_west_1_prod), [qw[
 			manifest.yml
 		]], "[simple] blueprint hook should return the relative manifest file paths");
 
-	cmp_deeply([$fancy->run_hook('blueprint', env => $snw_lab_dev)], [qw[
+	cmp_deeply($fancy->run_hook('blueprint', env => $snw_lab_dev), [qw[
 			base.yml
 			addons/alpha.yml
 			addons/foxtrot.yml
@@ -299,7 +299,7 @@ subtest 'blueprint hook' => sub {
 
 	{
 		local $ENV{HOOK_SHOULD_BE_AIRY} = 'yes';
-		cmp_deeply([$fancy->run_hook('blueprint', env => $snw_lab_dev)], [qw[
+		cmp_deeply($fancy->run_hook('blueprint', env => $snw_lab_dev), [qw[
 				base.yml
 				addons/alpha.yml
 				addons/foxtrot.yml
@@ -583,7 +583,7 @@ EOF
 	enable_features_hook($fancy);
 	$fun_times->{kit} = $fancy;
 	delete($fun_times->{__features});
-	cmp_deeply([$fancy->run_hook('features', env => $fun_times, features => scalar($fun_times->lookup('kit.features')))], [qw[
+	is_deeply($fancy->run_hook('features', env => $fun_times, features => scalar($fun_times->lookup('kit.features'))), [qw[
 			always-first
 			a-thing
 			bob
@@ -591,7 +591,9 @@ EOF
 		]], "[fancy] features hook augments features - set 1");
 
 	my @manifests;
-	lives_ok {@manifests = $fancy->run_hook('blueprint',env=>$fun_times)} "[fancy] blueprint hook works with derived features";
+
+	
+	lives_ok {@manifests = @{$fancy->run_hook('blueprint',env=>$fun_times)}} "[fancy] blueprint hook works with derived features";
 	cmp_deeply([@manifests], [
 		"base.yml",
 		"addons/always-first.yml",
@@ -602,18 +604,18 @@ EOF
 
 	delete($fun_times->{__features});
 
-	cmp_deeply(join('/',$fun_times->features), join('/',qw[
+	is_deeply([$fun_times->features], [qw[
 			always-first
 			a-thing
 			bob
 			+no-shazzam
-		]), "[fancy] the 'features' are augmented when features hook is present - set 1");
+		]], "[fancy] the 'features' are augmented when features hook is present - set 1");
 
 	$fun_times = $top->load_env('fun-times');
 	$fun_times->{kit} = $fancy;
-	cmp_deeply([$fancy->run_hook('features', env => $fun_times, features => [qw(shazzam)])], [qw[
-			shazzam
-		]], "[fancy] features hook augments features - set 2");
+	cmp_deeply($fancy->run_hook('features', env => $fun_times, features => [qw(shazzam)]), [qw[
+		shazzam
+	]], "[fancy] features hook augments features - set 2");
 
 	{
 		local $ENV{HOOK_SHOULD_FAIL} = 'yes';
@@ -623,7 +625,7 @@ EOF
 
 	{
 		local $ENV{HOOK_NO_FEATURES} = 'yes';
-		cmp_deeply([$fancy->run_hook('features', env => $fun_times, features => scalar($fun_times->lookup('kit.features')))], [],
+		cmp_deeply($fancy->run_hook('features', env => $fun_times, features => scalar($fun_times->lookup('kit.features'))), [],
 			"[fancy] the 'features' hook can remove all featuress");
 	}
 };

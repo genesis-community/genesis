@@ -265,7 +265,7 @@ EOF
 ---
 creator_version: 99.99.99
 deployment_type: test
-manifest_store: exodus
+manifest_store: hybrid
 secrets_provider:
   url: $VAULT_URL{$vault_target}
   insecure: false
@@ -277,7 +277,7 @@ version: 2
 EOF
 	cmp_deeply($top->config->_contents, {
 			"deployment_type" => "test",
-			"manifest_store"  => "exodus",
+			"manifest_store"  => "hybrid",
 			"creator_version" => "99.99.99",
 			"updater_version" => "(development)",
 			"version" => 2,
@@ -299,7 +299,7 @@ EOF
 ---
 creator_version: 99.99.99
 deployment_type: test
-manifest_store: exodus
+manifest_store: hybrid
 secrets_provider:
   url: $VAULT_URL{$vault_target}
   insecure: false
@@ -311,7 +311,7 @@ version: 2
 EOF
 	cmp_deeply($top->config->_contents, {
 			"deployment_type" => "test",
-			"manifest_store"  => "exodus",
+			"manifest_store"  => "hybrid",
 			"creator_version" => "99.99.99",
 			"updater_version" => "(development)",
 			"version" => 2,
@@ -335,7 +335,7 @@ EOF
 ---
 creator_version: 99.99.99
 deployment_type: test
-manifest_store: exodus
+manifest_store: hybrid
 secrets_provider:
   url: $VAULT_URL{$other_vault_name}
   insecure: false
@@ -347,7 +347,7 @@ version: 2
 EOF
 	cmp_deeply($top->config->_contents, {
 			"deployment_type" => "test",
-			"manifest_store"  => "exodus",
+			"manifest_store"  => "hybrid",
 			"creator_version" => "99.99.99",
 			"updater_version" => "(development)",
 			"version" => 2,

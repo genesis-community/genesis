@@ -1,6 +1,7 @@
 kit:
   name: dev
   version: latest
+  iaas: vsphere
   features: [ create-env ]
 genesis:
   env: create-env-sandbox

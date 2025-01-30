@@ -196,7 +196,12 @@ EOF
     my $json_printout = join("\n", map {(my $l = $_) =~ s/'/'\\''/g; "    echo '$l'"} split("\n", $json));
     $script=<<EOF;
 #!/bin/bash
+real_bosh="\$(which bosh)"
 args="\$(echo "bosh \$*" | sed -e 's/"/"\\""/g')"
+if [[ \$args =~ ^bosh\\ interpolate(\\ |\$) ]] ; then
+	exec \$real_bosh \$@
+	exit \$?
+fi
 if [[ \$args =~ \\ --json(\\ |\$) ]] ; then
   (
 $json_printout

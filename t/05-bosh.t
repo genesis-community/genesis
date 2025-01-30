@@ -170,8 +170,10 @@ subtest 'bosh run_errand' => sub {
 
 subtest 'environment variable management' => sub {
 	my $home = $ENV{HOME};
+	my $path = $ENV{PATH};
 	local %ENV;
 	$ENV{HOME}=$home; # Genesis always needs $HOME
+	$ENV{PATH}=$path; # Genesis relies on programs found under $PATH
 	for (qw/ENVIRONMENT CA_CERT CLIENT CLIENT_SECRET DEPLOYMENT ALIAS/) {
 		$ENV{"BOSH_$_"} = "calling_environment_$_";
 	}
