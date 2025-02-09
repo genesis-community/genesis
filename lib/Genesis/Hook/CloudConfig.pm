@@ -29,8 +29,8 @@ use constant {
 my %cloud_configs = ();
 sub init {
 	my ($class, %opts) = @_;
-
-	my $env = delete($opts{env}) or bail("CloudConfig hook requires an environment");
+	$class->check_for_required_args(\%opts, qw/env/);
+	my $env	= $opts{env};
 	bail(
 		"Create-env environments do not have deployment cloud configs,as there is ".
 		"no director to upload them to."

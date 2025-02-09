@@ -8,6 +8,7 @@ use Genesis;
 
 sub init {
 	my $class = shift;
+	$class->check_for_required_args(\@_, qw/env kit features/);
 	my $obj = $class->SUPER::init(@_);
 	$obj->{all_features} = [];
 	$obj->{has_feature} = {};

@@ -8,13 +8,7 @@ use JSON::PP;
 
 sub init {
 	my ($class, %ops) = @_;
-
-	my @missing = grep {!defined($ops{$_})} qw/env kit/;
-	bug(
-		"Missing required arguments for a perl-based kit hook call: %s",
-		join(", ", @missing)
-	) if @missing;
-
+	$class->check_for_required_args(\%ops, qw/env/);
 	my $hook = bless({%ops, complete => 0, type => $ENV{GENESIS_KIT_HOOK}},$class);
 	$hook->{features} = ($hook->env && $ENV{GENESIS_KIT_HOOK} ne 'features') ? [$hook->env->features] : [];
 
@@ -165,5 +159,16 @@ sub TRUE  {JSON::PP::true}
 sub FALSE {JSON::PP::false}
 sub NULL  {JSON::PP::null}
 # }}}
-#
+
+sub check_for_required_args {
+	my ($class, $ops, @required) = @_;
+	my @missing = grep {!defined($ops->{$_})} @required;
+	bug(
+		"Missing required arguments for a perl-based kit hook call: %s",
+		join(", ", @missing)
+	) if @missing;
+	return 1;
+}
+
 1;
+# vim: fdm=marker:ts=2:sw=2:sts=2:noet:cc=80
