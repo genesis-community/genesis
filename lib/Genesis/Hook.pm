@@ -10,7 +10,6 @@ sub init {
 	my ($class, %ops) = @_;
 	$class->check_for_required_args(\%ops, qw/env/);
 	my $hook = bless({%ops, complete => 0, type => $ENV{GENESIS_KIT_HOOK}},$class);
-	$hook->{features} = ($hook->env && $ENV{GENESIS_KIT_HOOK} ne 'features') ? [$hook->env->features] : [];
 
 	trace({raw => 1},
 		"%senvironmental variables:\n%s",
@@ -98,7 +97,12 @@ sub use_create_env {
 	$ENV{GENESIS_USE_CREATE_ENV}||'false' eq 'true';
 }
 
-sub features {return @{$_[0]->{features}}}
+sub features {
+	my $self = shift;
+	$self->{features} //= $self->env ? [$self->env->features] : [];
+	return @{$self->{features}}
+}
+
 sub want_feature {
 	my ($self, $feature) = @_;
 	unless (defined($self->{__wanted_features})) {
