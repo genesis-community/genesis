@@ -176,6 +176,7 @@ sub run_hook {
 	} elsif ($hook eq 'features') {
 		bug("The 'features' option to run_hook is required for the '$hook' hook!!")
 			unless $opts{features};
+		$module_options{features} = $opts{features};
 		$ENV{GENESIS_REQUESTED_FEATURES} = join(" ", @{ $opts{features} });
 	}
 
