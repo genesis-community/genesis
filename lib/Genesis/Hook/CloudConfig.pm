@@ -37,21 +37,21 @@ sub init {
 	) unless $class->_can_build_cloud_config($env);
 
 	my $purpose = $opts{purpose} // $ENV{GENESIS_CLOUD_CONFIG_SUBTYPE};
-	my $basename = $env->lookup('params.cloud_config_prefix', join '.', $env->name, $env->type);
+	# BUG: This shouldn't be cloud_config_prefix, but what should it be, if anything?
+	#my $basename = $env->lookup('params.cloud_config_prefix', join '.', $env->name, $env->type);
+	my $basename = $opts{basename} // join('.', $env->name, $env->type);
 	my $id = join('@', $purpose ? ($basename, $purpose) : ($basename));
+
+	# Return cached object if it exists
 	return $cloud_configs{$id} if ($cloud_configs{$id});
 
-	my $iaas = delete($opts{cpi_iaas}) || $env->iaas;
-	my $scale = delete($opts{scale}) || $env->scale;
-
 	my $obj = $class->SUPER::init(
-		env => $env, iaas => $iaas, scale => $scale, %opts, basename => $basename,
-		id => $id, contents => {}, completed => 0
+		%opts, basename => $basename, id => $id, contents => {}
 	);
 
 	$obj->{overrides} = {
-		environment => $env->env_config_overrides,
-		director => $env->director_config_overrides,
+		environment => $env->env_config_overrides('cloud'),
+		director => $env->director_config_overrides('cloud'),
 	};
 
 	$obj->{network} //= $obj->_get_bosh_network_data();
@@ -110,8 +110,6 @@ sub _can_build_cloud_config {
 # }}}
 
 # Accessors {{{
-sub iaas {shift->{iaas}}
-sub scale {shift->{scale}}
 sub basename { return shift->{basename}; }
 sub contents { return shift->{contents}; }
 # }}}
@@ -246,28 +244,7 @@ sub network_definition {
 		# /secrets/{params.ocfp_config_path}.{env-name}/{mgmt|ocfp}/bosh/iaas/subnets/<name>/<id>
 		# with `...ips.[mgmt|ocfp].reserved` for the reserved list.
 		
-		my $subnets = $self->subnets;
-		if (defined(my $subnet_filter = $definition->{subnets})) {
-			$subnet_filter = [$subnet_filter] unless ref $subnet_filter eq 'ARRAY';
-			my $selected_subnets = {};
-			for my $filter (grep {defined $_} @$subnet_filter) {
-				if (ref $filter eq 'Regexp') {
-					for my $subnet (keys %$subnets) {
-						$selected_subnets->{$subnet} = $subnets->{$subnet} if $subnet =~ $filter;
-					}
-				} elsif (ref($filter)) {
-					bail("Invalid subnet filter type: %s", ref($filter));
-
-				# Beyond here, everything is a string/number
-				} elsif (defined($subnets->{$filter})) {
-					$selected_subnets->{$filter} = $subnets->{$filter};
-				} else {
-					bail("Invalid subnet name: %s", $filter);
-				}
-			}
-			$subnets = $selected_subnets;
-		}
-
+		my $subnets = $self->_filter_subnets($definition->{subnets});
 		$config->{subnets} = [];
 
 		my $allocation = delete($definition->{allocation});
@@ -430,7 +407,15 @@ sub lookup_az {
 		"#M{%s} BOSH director to update its network information.",
 		$self->env->bosh->alias
 	) unless keys %{$self->network->{azs}};
-	return $self->network->{azs}{$az}{name};
+	# This code is autoviving the azs hash, so we need to check for the key
+	# TBD: Should we check for the full name as well in all the existing azs?
+	my $az_name = undef;
+	if (exists $self->network->{azs}{$az}) {
+		$az_name = $self->network->{azs}{$az}{name};
+	} else {
+		$az_name = $az if grep {$_->{name} eq $az} values %{$self->network->{azs}};
+	}
+	return $az_name;
 }
 
 # }}}
@@ -460,7 +445,8 @@ sub get_network_size {
 	if (@filters) {
 		for my $az (@filters) {
 			$valid_azs{$az} = 1;
-			$valid_azs{$self->lookup_az($az)} = 1 if $self->lookup_az($az);
+			my $full_az_name = $self->lookup_az($az);
+			$valid_azs{$full_az_name} = 1 if $full_az_name;
 		}
 	} else {
 		$valid_azs{$network->{$_}{az}} = 1 for keys %$network;
@@ -644,8 +630,8 @@ sub _cloud_properties_for_iaas {
 		// '*';
 	my $cloud_properties = $map{$map_key}; #TODO: allow glob-style matching
 	$self->env->kit->kit_bug(
-		"No Cloud Config for IaaS type %s defined in %s",
-		$self->iaas, $self->env->kit->id
+		"Unsupported #R{%s} IaaS for building #C{%s} definitions in #M{%s}",
+		$self->iaas, $type, $self->env->kit->id
 	) unless ($cloud_properties);
 
 	return $self->_process_config_overrides(
@@ -850,6 +836,34 @@ sub _calculate_static_allocation {
 # _get_bosh_network_data - Returns the network data for the BOSH director (self) {{{
 sub _get_bosh_network_data {
 	return $_[0]->env->director_exodus_lookup('/network');
+}
+
+# }}}
+# _filter_subnets - Filters and validates subnets based on provided filter criteria {{{
+sub _filter_subnets {
+  my ($self, $subnet_filter) = @_;
+
+	my $subnets = $self->subnets;
+	return $subnets unless defined($subnet_filter);
+
+  $subnet_filter = [$subnet_filter] unless ref $subnet_filter eq 'ARRAY';
+  my $selected_subnets = {};
+  
+  for my $filter (grep {defined $_} @$subnet_filter) {
+    if (ref $filter eq 'Regexp') {
+      for my $subnet (keys %$subnets) {
+        $selected_subnets->{$subnet} = $subnets->{$subnet} if $subnet =~ $filter;
+      }
+    } elsif (ref($filter)) {
+      bail("Invalid subnet filter type: %s", ref($filter));
+    } elsif (defined($subnets->{$filter})) {
+      $selected_subnets->{$filter} = $subnets->{$filter};
+    } else {
+      debug("Invalid subnet name in filter: %s", $filter);
+    }
+  }
+  
+  return  $selected_subnets;
 }
 
 # }}}

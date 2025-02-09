@@ -15,6 +15,10 @@ use parent qw(Genesis::Hook::CloudConfig);
 my %cloud_configs = ();
 sub init {
 	my ($class, %opts) = @_;
+	bail(
+		"Purpose must be 'director' - %s",
+		$opts{purpose} ? "got '$opts{purpose}'" : "no purpose provided"
+	) unless ($opts{purpose}//'') eq 'director';
 	my $az_prefix = delete($opts{az_prefix}) // 'z';
 	my $obj = $class->SUPER::init(%opts, network => {});
 	
@@ -65,13 +69,15 @@ sub build_az_definitions {
 	my @azs = ();
 	my $azs = $self->get_available_azs;
 	for my $az (keys %$azs) {
+		next unless $azs->{$az}{name};
 		my $config = {};
 		$config->{name} = $azs->{$az}{name};
 		$config->{cloud_properties} = JSON::PP->new->decode($azs->{$az}{cloud_properties})
 			unless ($options{virtual});
 		push @azs, $config;
 	}
-	return sort {$a->{name} cmp $b->{name}} @azs;
+	my @results = uniq sort {$a->{name} cmp $b->{name}} @azs;
+	return wantarray ? @results : \@results;
 }
 
 # }}}
@@ -95,13 +101,10 @@ sub compilation_definition {
 
 	my $strategy = delete($options{strategy}) // 'generic';
 
-	unless ($strategy eq 'ocfp') {
-		debug(
-			'Unsupported strategy for building compilation definitions: %s',
-			$strategy
-		);
-		return ();
-	}
+	bail(
+		'Unsupported strategy for building compilation definitions: %s',
+		$strategy
+	) unless ($strategy eq 'ocfp');
 	
 	# TODO: Enable overrides for the compilation definition in bosh-configs
 	# section of the environment configuration.
@@ -120,10 +123,6 @@ sub compilation_definition {
 		workers => $workers,
 		reuse_compilation => $reuse_compilation,
 	};
-	my $disk_type = (exists $options{persistent_disk_type})
-	? $options{persistent_disk_type}
-	: 'compilation';
-	$config->{disk_type} = $self->name_for('disk',$disk_type) if $disk_type;
 	return %$config;
 }
 
@@ -151,7 +150,7 @@ sub _set_network_azs {
 		my %azs = map {
 			my $az_name = $_;
 			my $data = $azs->{$az_name};
-			my $idx = $data->{index} // ($az_name =~ m/-([0-9]*)$/)[0];
+			my $idx = $data->{index} // ($az_name =~ m/[^0-9]([0-9]*)$/)[0];
 			my $cloud_properties = $data->{cloud_properties};
 			if ($cloud_properties) {
 				eval {JSON::PP->new->decode($cloud_properties)};
