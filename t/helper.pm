@@ -1,5 +1,6 @@
 package helper;
 use lib 't';
+use Mock;
 use Test::More;
 use Test::Exception;
 use Test::Differences;
@@ -483,6 +484,13 @@ sub reprovision {
 	pass "working directory re-provisioned for next set of tests";
 }
 
+sub not_ok {
+	local $Test::Builder::Level = $Test::Builder::Level + 1;
+	my ($result, $msg) = @_;
+	$msg ||= "expected a false value";
+	ok !$result, $msg;
+}
+
 sub runs_ok($;$) {
 	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($cmd, $msg) = @_;
@@ -765,6 +773,18 @@ sub expect_ok {
 				exit;
 			}
 		]);
+}
+
+sub mock {
+	my ($mock_class, $definition) = @_;
+
+	my $base_class = 'Mock';
+	eval qq(
+		package $mock_class;
+		use parent '$base_class';
+	);
+	die "Error creating mock class: $@" if $@;
+	return $mock_class->new(%$definition);
 }
 
 1;
