@@ -78,7 +78,7 @@ sub new($class, @spans) {
 
 sub compact($self) {
 	return unless $self->spans > 1;
-	my @spans = sort { $a->start->cmp($b->start) } $self->spans;
+	my @spans = sort $self->spans;
 	my @compacted = shift @spans;
 	for my $span (@spans) {
 		if ($span->start->int <= $compacted[-1]->end()->int()+1) {

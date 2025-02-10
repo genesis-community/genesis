@@ -482,7 +482,7 @@ subtest 'IPv4::Span' => sub {
   };
 
   subtest 'add method' => sub {
-    plan tests => 31;
+    plan tests => 32;
     my $span1 = IPv4::Span->new('192.168.1.1', '192.168.1.5');
     my $span2 = IPv4::Span->new('192.168.1.6', '192.168.1.10');
     my $result = $span1->add($span2);
@@ -552,6 +552,11 @@ subtest 'IPv4::Span' => sub {
 
     dies_ok { 8 + $span4 } 'adding a span to a number with overloaded + operator dies';
     like($@, qr/Cannot add an IPv4::Span object to a number/i, 'adding a span to a number with overloaded + operator dies with correct message');
+
+    # Regression tests for adding a range to a span where the first span in the range is a subset of the span
+    my $span5 = IPv4::Span->new('10.0.1.0-10.0.1.36');
+    my $range = IPv4::Range->new('10.0.1.0-10.0.1.15,10.0.1.250-10.0.1.255');
+    is($span5 + $range, '10.0.1.0-10.0.1.36,10.0.1.250-10.0.1.255', 'can add a range to a span where the first span in the range is a subset of the span');
   };
 
   subtest 'contains method' => sub {
@@ -968,7 +973,7 @@ subtest 'IPv4::Range' => sub {
   };
 
   subtest 'add method' => sub {
-    plan tests => 13;
+    plan tests => 14;
     my $range = IPv4::Range->new('192.168.1.1-192.168.1.5');
     my $result = $range->add('192.168.1.6-192.168.1.10');
     isa_ok($result, 'IPv4::Range', 'add() returns IPv4::Range for contiguous addition');
@@ -994,6 +999,11 @@ subtest 'IPv4::Range' => sub {
 
     dies_ok { $range + 'invalid' } 'add() with invalid input dies';
     like($@, qr/Invalid IPv4 literal: 'invalid'/i, 'add() with invalid input dies with correct message');
+
+    # Regression tests for adding a range to another range where the first span in the range being added is a subset of the single span in the range being added to
+    my $span5 = IPv4::Range->new('10.0.1.0-10.0.1.36');
+    my $range = IPv4::Range->new('10.0.1.0-10.0.1.15,10.0.1.250-10.0.1.255');
+    is($span5 + $range, '10.0.1.0-10.0.1.36,10.0.1.250-10.0.1.255', 'can add a range to a span where the first span in the range is a subset of the span');
   };
 
   subtest 'subtract method' => sub {

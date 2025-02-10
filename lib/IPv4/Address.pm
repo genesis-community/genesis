@@ -179,7 +179,8 @@ sub __minus($self, $other, $swap=0) {
 	}
 
 	$other = IPv4::__autovivify($other);
-	return $self->int() - $other->int();
+	return $self->int() - $other->int() if (ref($other) eq __PACKAGE__);
+	return IPv4->range($self)->subtract($other)->simplify;
 }
 
 sub __plus($self, $other, $swap=0) {
