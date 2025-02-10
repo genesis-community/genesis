@@ -3,6 +3,7 @@ use strict;
 use warnings;
 
 use lib 't';
+use Carp::Always;
 use helper;
 use Test::More;
 use Test::Exception;
@@ -145,12 +146,16 @@ my ($mgmt_env, $env, $cf_env, $director_network_exodus);
 my ($cc_hook, $cc_director_hook, $cc_cf_hook);
 
 subtest 'Genesis::Hook::CloudConfig::Bosh' => sub {
+	plan tests => 2; # 2 major subtests: director cloudconfig and cloud config-bosh
+
 	# Test initialization
 	$Genesis::VERSION = '3.1.0-rc.10';
 	$ENV{GENESIS_CALL_BIN} = 'genesis';
 	$ENV{"GENESIS_KIT_HOOK"} = "cloud-config";
 
 	subtest "director cloudconfig" => sub {
+		plan tests => 7; # initialization, properties, az defs, compilation network, vm type, compilation def, build cloud config
+
 		$mgmt_env = mock_env(
 			use_create_env => 1,
 			name           => 'test-env-mgmt',
@@ -158,6 +163,7 @@ subtest 'Genesis::Hook::CloudConfig::Bosh' => sub {
 		);
 
 		subtest 'initialization' => sub {
+			plan tests => 6; # require_ok + 2 throws_ok + 3 isa_ok
 			require_ok "hooks/cloud-config-bosh-director.pm";
 
 			local $ENV{GENESIS_ENVIRONMENT} = 'test-env-mgmt';
@@ -177,6 +183,7 @@ subtest 'Genesis::Hook::CloudConfig::Bosh' => sub {
 		};
 
 		subtest 'basic cloud-config director properties' => sub {
+			plan tests => 4; # 4 is() checks
 
 			is( $cc_director_hook->{purpose}, 'director', 'Purpose is set if provided' );
 			is( $cc_director_hook->{basename}, 'test-env-mgmt.bosh', 'Basename should match environment name.type by default' );
@@ -185,6 +192,8 @@ subtest 'Genesis::Hook::CloudConfig::Bosh' => sub {
 		};
 
 		subtest 'az definitions' => sub {
+			plan tests => 1; # 1 cmp_deeply
+
 			my @azs = $cc_director_hook->build_az_definitions();
 			cmp_deeply([@azs], [
 				{
@@ -203,6 +212,8 @@ subtest 'Genesis::Hook::CloudConfig::Bosh' => sub {
 		};
 
 		subtest 'compilation network definition' => sub {
+			plan tests => 4;
+
 			my $network = $cc_director_hook->network_definition('compilation',
 				strategy => 'ocfp',
 				dynamic_subnets => {
@@ -227,6 +238,8 @@ subtest 'Genesis::Hook::CloudConfig::Bosh' => sub {
 		};
 
 		subtest 'vm type definition' => sub {
+			plan tests => 5;
+
 			my $vm_type = $cc_director_hook->vm_type_definition('compilation',
 				cloud_properties_for_iaas => {
 					openstack => {
@@ -247,6 +260,8 @@ subtest 'Genesis::Hook::CloudConfig::Bosh' => sub {
 		};
 
 		subtest 'compilation definition' => sub {
+			plan tests => 3;
+
 			throws_ok {
 				$cc_director_hook->compilation_definition(strategy => 'generic')
 			} qr/Unsupported strategy for building compilation definitions: generic/m, 'Unsupported strategy';
@@ -263,6 +278,8 @@ subtest 'Genesis::Hook::CloudConfig::Bosh' => sub {
 		};
 
 		subtest 'build cloud config' => sub {
+			plan tests => 5; # 1 ok + 1 is() + 1 eq_or_diff + 2 cmp_deeply
+
 			$mgmt_env->_mock_set_responses( workdir => {value => workdir} );
 			ok($cc_director_hook->perform, 'Cloud config generation succeeds');
 			ok($cc_director_hook->completed, 'Cloud config is marked as completed');
@@ -347,6 +364,7 @@ EOF
   $director_network_exodus = $cc_director_hook->results->{network};
 
 	subtest 'cloud config - bosh' => sub {
+		plan tests => 9; # init, basic props, basic cloud-config props, network azs, existing network def, etc
 
 		# Get a new env and use the director hook output as the network data
 		$env = mock_env(
@@ -358,6 +376,7 @@ EOF
 		);
 
 		subtest "initialization" => sub {
+			plan tests => 8; # require_ok + 2 throws_ok + lives_ok + isa_ok chain
 			require_ok "hooks/cloud-config-bosh.pm";
 
 			# Test that invalid initialization conditions are caught
@@ -386,6 +405,8 @@ EOF
 		};
 
 		subtest 'basic properties' => sub {
+			plan tests => 12;
+
 			# Test basic hook properties
 			is( $cc_hook->completed, 0, 'Freshly initiated hook is not completed' );
 			is( $cc_hook->results, undef, 'Freshly initiated hook has no results' );
@@ -405,6 +426,7 @@ EOF
 		};
 
 		subtest "basic cloud-config properties" => sub{
+			plan tests => 8;
 
 			is( $cc_hook->{purpose}, undef, 'Purpose is empty' );
 			is( $cc_hook->{basename}, 'test-env-ocf.bosh', 'Basename should match environment name by default' );
@@ -427,6 +449,7 @@ EOF
 		};
 
 		subtest "network availability zones" => sub {
+			plan tests => 3; # 1 is() + 1 is() + 1 cmp_deeply
 
       is( $cc_hook->lookup_az('az1'), 'test-env-mgmt-az1', 'AZ lookup is correct' );
       is( $cc_hook->lookup_az('az4'), undef, 'AZ lookup returns undef for unknown AZ' );
@@ -449,11 +472,13 @@ EOF
 		};
 
 		subtest "existing network definition from director" => sub {
+			plan tests => 11;
+
 			my $allocations = $cc_hook->_get_existing_allocations();
 			cmp_deeply([keys %$allocations], ['test-env-mgmt.bosh.net-compilation'], 'Just the director\'s compilation network is allocated');
 			cmp_deeply([keys %{$allocations->{'test-env-mgmt.bosh.net-compilation'}}], ['ocfp-1'], 'The director\'s compilation network only uses "ocfp-1" subnet');
 			my $compilation_range = $allocations->{'test-env-mgmt.bosh.net-compilation'}{'ocfp-1'};
-			isa_ok($compilation_range, 'IP4::MultiRange', 'Compilation range is an IP4::MultiRange');
+			isa_ok($compilation_range, 'IPv4::Span', 'Compilation range is an IPv4::Span');
 			is($compilation_range->size, 4, 'Compilation range is 4 addresses');
 			is($compilation_range->range, '10.0.1.37-10.0.1.40', 'Compilation range is correct');
 
@@ -463,7 +488,8 @@ EOF
 			cmp_deeply([sort keys %{$cc_hook->_filter_subnets([qr/ocfp-[2-4]/,'ocfp-0','ocfp-2'])}], ['ocfp-0', 'ocfp-2'], 'Subnets can be filtered by regex and string, and return only the matching ones with no duplicates');
 			cmp_deeply([sort keys %{$cc_hook->_filter_subnets('random-string')}], [], 'Subnets can be filtered by string, and return nothing');
 
-			cmp_deeply($cc_hook->_filter_subnets('ocfp-0'), {'ocfp-0' => {
+			my $subnet0 = $cc_hook->_filter_subnets('ocfp-0');
+			cmp_deeply($subnet0, {'ocfp-0' => {
 				'az' => 'az1',
 				'cidr_block' => '10.0.0.0/24',
 				'dns' => '10.0.0.2',
@@ -474,9 +500,15 @@ EOF
 					'bosh_ip' => '10.0.0.5'
 				}
 			}}, 'Subnet data is correct');
-    }; # existing network definition from director
+
+			#my ($available, $reserved) = $cc_hook->_get_subnet_ranges($subnet0);
+			# `cp /Users/dennis.bell/.replyrc \$HOME/` unless -f $ENV{HOME}."/.replyrc"; use Pry; pry;
+			# TODO: Test _get_subnet_ranges for subnet1 and subnet2 as well, because they contain reserved ranges, and overlapping ranges.
+		}; # existing network definition from director
 
 		subtest "network definition generation" => sub {
+			plan tests => 9;
+
 			my $network = $cc_hook->network_definition('bosh',
 				strategy => 'ocfp',
 				dynamic_subnets => {
@@ -534,6 +566,8 @@ EOF
 		}; # network definition generation
 
 		subtest "VM type definition" => sub {
+			plan tests => 5;
+
 			my $build_vm_type = sub {
 				$cc_hook->vm_type_definition('bosh', cloud_properties_for_iaas => {
 					aws => {
@@ -618,6 +652,7 @@ EOF
 		}; # VM type definition
 
 		subtest "disk type definition" => sub {
+			plan tests => 5;
 
 			BEGIN {
 				use_ok('Genesis::Hook::CloudConfig::Helpers', qw/gigabytes megabytes/)
@@ -687,10 +722,11 @@ EOF
 		}; # disk type definition
 
 		subtest "cloud config generation" => sub {
+			plan tests => 6; # 1 ok + 1 is() + 1 eq_or_diff + 2 cmp_deeply
+
 			$env->_mock_set_responses( workdir => {value => workdir} );
 			delete $cc_hook->{ocfp_config}{subnets}{'ocfp-2'}{'reserved-ips'}{bosh_ip};
 			# $env->{config}{'bosh-config'}{cloud}{networks}{bosh}{subnets} = ['ocfp-1'];
-			# `cp /Users/dennis.bell/.replyrc \$HOME/` unless -f $ENV{HOME}."/.replyrc"; use Pry; pry;
 			ok($cc_hook->perform, 'Cloud config generation succeeds');
 			ok($cc_hook->completed, 'Cloud config is marked as completed');
 			my $results = $cc_hook->results;
@@ -773,6 +809,7 @@ EOF
 };
 
 subtest "Genesis::Hook::CloudConfig::CF" => sub {
+	plan tests => 3; # initialization, basic properties, cloud config generation
 
 	my $cf_kit = mock "Genesis::Kit" => {
 		name => 'cf',
@@ -818,9 +855,9 @@ subtest "Genesis::Hook::CloudConfig::CF" => sub {
 	);
 
 	subtest 'initialization' => sub {
+		plan tests => 5;
 
 		require_ok('hooks/cloud-config-cf.pm');
-
 		lives_ok {
 			$cc_cf_hook = Genesis::Hook::CloudConfig::CF->init( env => $cf_env )
 		} 'Hook initialization succeeds with valid arguments';
@@ -831,6 +868,8 @@ subtest "Genesis::Hook::CloudConfig::CF" => sub {
 	};
 
 	subtest 'basic properties' => sub {
+		plan tests => 9;
+
 		is( $cc_cf_hook->completed, 0, 'Freshly initiated hook is not completed' );
 		is( $cc_cf_hook->results, undef, 'Freshly initiated hook has no results' );
 		cmp_deeply( [$cc_cf_hook->features], ['ocfp', 'split-network'], 'Hook has features (as array ref)' );
@@ -845,6 +884,8 @@ subtest "Genesis::Hook::CloudConfig::CF" => sub {
 	};
 
 	subtest 'correct generation of cloud config and network updates' => sub {
+		plan tests => 6;
+
 		$cf_env->_mock_set_responses( workdir => {value => workdir} );
 		my $success = 0;
 		lives_ok {
@@ -1212,6 +1253,14 @@ EOF
 		}, 'Network data is correct');
 	}
 };
+
+# TODO: Test stability of generated network definitions even if the available ip ranges change (e.g. there are ips lower than currently claimed)
+
+# TODO: test for increasing and decreasing the size of desired ip ranges
+
+# TODO: test for environment and director overrides
+# - default and specific vm_types and disk_types
+# - subnet selection and requested ip ranges for networks
 
 
 done_testing;

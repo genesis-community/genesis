@@ -6,39 +6,40 @@ use Genesis;
 use Genesis::Hook::CloudConfig::LookupRef;
 use Genesis::Hook::CloudConfig::LookupNetworkRef;
 use Genesis::Hook::CloudConfig::LookupSubnetRef;
-use IP4::Range;
-use IP4::MultiRange;
+use IPv4;
 use POSIX qw(round);
 
 use parent qw(Genesis::Hook);
 
+# FIXME: What happens if the subnets are restricted to a specific list of AZs in the env file.
+
 # Constants {{{
 use constant {
-	VM_TYPE => 'vm_type',
-	VM_EXTENSION => 'vm_extension',
-	DISK_TYPE => 'disk_type',
-	NETWORK => 'network',
+	VM_TYPE          => 'vm_type',
+	VM_EXTENSION     => 'vm_extension',
+	DISK_TYPE        => 'disk_type',
+	NETWORK          => 'network',
 	FIRST_SORT_TOKEN => '0000',
-	LAST_SORT_TOKEN => "zzzz",
+	LAST_SORT_TOKEN  => "zzzz",
 };
+
 # }}}
 
 # Class Overrides {{{
 # init - Initializes the CloudConfig hook, injecting the common properties {{{
 
 my %cloud_configs = ();
+
 sub init {
 	my ($class, %opts) = @_;
 	$class->check_for_required_args(\%opts, qw/env/);
-	my $env	= $opts{env};
+	my $env = $opts{env};
 	bail(
 		"Create-env environments do not have deployment cloud configs,as there is ".
 		"no director to upload them to."
 	) unless $class->_can_build_cloud_config($env);
 
 	my $purpose = $opts{purpose} // $ENV{GENESIS_CLOUD_CONFIG_SUBTYPE};
-	# BUG: This shouldn't be cloud_config_prefix, but what should it be, if anything?
-	#my $basename = $env->lookup('params.cloud_config_prefix', join '.', $env->name, $env->type);
 	my $basename = $opts{basename} // join('.', $env->name, $env->type);
 	my $id = join('@', $purpose ? ($basename, $purpose) : ($basename));
 
@@ -51,7 +52,7 @@ sub init {
 
 	$obj->{overrides} = {
 		environment => $env->env_config_overrides('cloud'),
-		director => $env->director_config_overrides('cloud'),
+		director    => $env->director_config_overrides('cloud'),
 	};
 
 	$obj->{network} //= $obj->_get_bosh_network_data();
@@ -90,6 +91,7 @@ sub done {
 	unlink($filename);
 	$self->SUPER::done;
 }
+
 # }}}
 # results - Returns the contents of the cloud config {{{
 sub results {
@@ -103,15 +105,17 @@ sub results {
 # _can_build_cloud_config - Returns whether the cloud config can be built for the environment {{{
 sub _can_build_cloud_config {
 	my ($class, $env) = @_;
-	!($env->use_create_env)
+	!($env->use_create_env);
 
 }
+
 # }}}
 # }}}
 
 # Accessors {{{
 sub basename { return shift->{basename}; }
 sub contents { return shift->{contents}; }
+
 # }}}
 
 # Public Methods {{{
@@ -170,13 +174,15 @@ sub relinquish_networks {
 	my $network = $self->network;
 	for (@networks) {
 		my $network_id = $self->name_for('net', $_);
-		delete($network->{subnets}{$_}{claims}{$network_id}) for keys %{$network->{subnets}};
+		delete($network->{subnets}{$_}{claims}{$network_id})
+			for keys %{ $network->{subnets} };
 	}
 }
 
 # }}}
 # network_definition - Returns the definition for a given network {{{
 sub network_definition {
+
 	# This one is special compared to vm_type_definition, vm_extension_definition,
 	# and disk_type_definition.  It will query the exodus data of the deploying
 	# BOSH director to get the network definition, as well as what is already
@@ -194,11 +200,13 @@ sub network_definition {
 	# Range of networks will be dynamically determined based on the master range,
 	# the existing allocations, and the static values (which can be outside the
 	# allocation mask-generated range(s)).
-	
+
 	my ($self, $target, %options) = @_;
 	my $strategy = delete($options{strategy}) // 'generic';
 
+	# FIXME: Should this just die if the strategy does not match?
 	if (($strategy eq 'ocfp') xor $self->env->is_ocfp) {
+
 		# This is an ocfp deployment, but the network is not an ocfp network (or vice versa)
 		return ();
 	}
@@ -219,7 +227,7 @@ sub network_definition {
 		my $definition = $options{dynamic_subnets};
 
 		# OCFP Network Range Calculations
-		# *-mgmt - 
+		# *-mgmt -
 		#   - Owns .0 to .31 of each subnet
 		#   - bosh is deployed to 5th
 		#   - vault is deployed to 6th
@@ -243,16 +251,16 @@ sub network_definition {
 		# on the ocfp configuration in vault, under
 		# /secrets/{params.ocfp_config_path}.{env-name}/{mgmt|ocfp}/bosh/iaas/subnets/<name>/<id>
 		# with `...ips.[mgmt|ocfp].reserved` for the reserved list.
-		
+
 		my $subnets = $self->_filter_subnets($definition->{subnets});
 		$config->{subnets} = [];
 
 		my $allocation = delete($definition->{allocation});
 
 		my $vm_count = $allocation->{size} // 0;
-		$vm_count = 2 ** (32 - $1) if $vm_count =~ m#^/(\d+)$#;
-		my $statics = $allocation->{statics} // 0; # Does not include the reserved ips
-		$statics = 2 ** (32 - $1) if $statics =~ m#^/(\d+)$#;
+		$vm_count = 2**(32 - $1) if $vm_count =~ m#^/(\d+)$#;
+		my $statics = $allocation->{statics} // 0; # Does not include the reserved ips based on network name (ie bosh_ip, vault_a, vault_b, etc)
+		$statics = 2**(32 - $1) if $statics =~ m#^/(\d+)$#;
 
 		bail(
 			'More static IPs requested (%d) than the allocation for the subnet for '.
@@ -273,26 +281,29 @@ sub network_definition {
 
 		for my $subnet_name (@ocfp_subnet_names) {
 			my $subnet = $subnets->{$subnet_name};
-			my ($available) = $self->_get_subnet_ranges($subnet);
+			my $full_range = IPv4->new($subnet->{cidr_block});
+			my ($available, $reserved) = $self->_get_subnet_ranges($subnet);
 
 			# Remove existing allocations from available range that are not for the
 			# target network
 			for my $claiming_network (keys %$existing_allocations) {
 				next if ($network_id eq $claiming_network);
 				my $alloc = $existing_allocations->{$claiming_network}{$subnet_name};
-				$available = $available->subtract($alloc) if ($alloc);
+				$available -= $alloc if ($alloc);
 			}
+
+			# Find any existing allocations, but ignore those explicitly reserved
+			my $existing = $existing_allocations->{$network_id}{$subnet_name} // IPv4->new();
+			$existing -= $reserved if $existing && $reserved;
 
 			# Compare existing and desired allocations, and adjust as needed
 			my $allocated_range = $self->_calculate_subnet_allocation(
 				$target,
 				$available,
-				$existing_allocations->{$network_id}{$subnet_name} // IP4::MultiRange->new(),
-				$vm_count,
-			);
-
-			my $full_range = IP4::Range->new($subnet->{cidr_block});
-			my $reserved = $full_range->subtract($allocated_range);
+				$existing,
+				$vm_count
+			);  
+			$reserved += $full_range->subtract($allocated_range);
 
 			# TODO: We currently just shove statics into the front of the range, but
 			# this doesn't account for ips already in use.  We can either actively
@@ -303,19 +314,19 @@ sub network_definition {
 			my $static_range = $self->_calculate_static_allocation(
 				$target,
 				$allocated_range,
-				$statics,
+				$statics
 			);
 
 			# Check for reserved_ips and "unreserve" them from the reserved range
 			# and put them into the static list
-			my $reserved_ips = IP4::MultiRange->new(
-				map {$subnet->{'reserved-ips'}{$_}}
+			my $reserved_ips = IPv4->new(
+				map  {$subnet->{'reserved-ips'}{$_}}
 				grep {$_ =~ m/${target}_ip/}
 				keys %{$subnet->{'reserved-ips'}//{}}
 			);
-			if ($reserved_ips->size) {
-				$static_range = $static_range->add(@$reserved_ips);
-				$reserved = $reserved->subtract(@$reserved_ips);
+			while (<$reserved_ips>) {
+				$static_range += $_;
+				$reserved     -= $_;
 			}
 
 			my $fields = {
@@ -323,20 +334,24 @@ sub network_definition {
 				range => $subnet->{cidr_block},
 				gateway => $subnet->{gateway},
 				dns => [$subnet->{dns}], # TODO: Support multiple DNS servers
-				reserved => [map {$_->range} $reserved->ranges],
+				reserved => [map {$_->range} $reserved->spans],
 				cloud_properties_for_iaas => $definition->{cloud_properties_for_iaas},
-				($static_range->size ? (static => [map {$_->range} $static_range->ranges]) : ())
+				($static_range->size
+					? (static => [map {$_->range} $static_range->spans])
+					: ()
+				)
 			};
 			my $subnet_config = $self->_subnet_definition($target, $subnet_name, $fields, $strategy);
 
 			# TODO: Apply overrides to the subnet config
-			push @{$config->{subnets}}, $subnet_config if $full_range->size > $reserved->size;
+			push @{$config->{subnets}}, $subnet_config
+				if $full_range->size > $reserved->size;
 		}
 	} elsif ($options{subnets}) {
 		bug(
 			"Subnets are not implemented for network definitions using the %s strategy",
 			$strategy
-		)
+		);
 	} else {
 		# This is a non-subnetted network
 		bug(
@@ -352,10 +367,12 @@ sub network_definition {
 	return $config;
 
 }
+
 # }}}
 # network - Returns the network definitions for the environment {{{
 sub network {
 	my ($self) = @_;
+
 	# TODO: Do we need to build an adapter between the raw exodus data and the
 	# network data structure we use internally?  Ideally, we don't want to do
 	# that.
@@ -374,10 +391,10 @@ sub update_network {
 	# Calculate and store the new allocations
 	for my $subnet (@{$config->{subnets}}) {
 		my $subnet_id = delete($subnet->{name});
-		my $range = $subnet->{range};
-		$self->network->{subnets}{$subnet_id}{claims}{$network} =
-		IP4::Range->new($range)
-			->subtract(IP4::MultiRange->new(@{$subnet->{reserved}}))
+		my $range     = $subnet->{range};
+		$self->network->{subnets}{$subnet_id}{claims}{$network} = IPv4
+			->new($range)
+			->subtract(@{$subnet->{reserved}})
 			->range;
 	}
 }
@@ -393,12 +410,11 @@ sub get_allocated_networks {
 			$network_allocations->{$network}{$subnet} = {
 				allocated => $self->network->{subnets}{$subnet}{claims}{$network},
 				az => $subnet_az
-			}
+			};
 		}
 	}
 	return $network_allocations;
 }
-
 
 sub lookup_az {
 	my ($self, $az) = @_;
@@ -429,8 +445,12 @@ sub get_available_azs {
 # get_available_azs_in_network - Returns the available AZs for a given network {{{
 sub get_available_azs_in_network {
 	my ($self, $target) = @_;
-	my $allocated_subnets = $self->get_allocated_networks->{$self->name_for('net',$target)};
-	return [(uniq sort map {$allocated_subnets->{$_}{az}} keys %$allocated_subnets)];
+	my $allocated_subnets = $self
+		->get_allocated_networks
+		->{$self->name_for('net',$target)};
+	return [
+		(uniq sort map {$allocated_subnets->{$_}{az}} keys %$allocated_subnets)
+	];
 }
 
 # }}}
@@ -453,8 +473,9 @@ sub get_network_size {
 	}
 
 	for my $subnet (values %{$network}) {
-		$size += IP4::Range->new($subnet->{allocated})->size if $valid_azs{$subnet->{az}};
+		$size += IPv4->new($subnet->{allocated})->size if $valid_azs{$subnet->{az}};
 	}
+	`cp /Users/dennis.bell/.replyrc \$HOME/` unless -f $ENV{HOME}."/.replyrc"; use Pry; pry if $size == 214;
 	return $size;
 }
 
@@ -504,22 +525,17 @@ sub _config_definition {
 		$type, $target, %{$maps{cloud_properties_for_iaas}//{}}
 	) if exists $maps{cloud_properties_for_iaas};
 
-	$self->_process_config_overrides(
-		$type, $target, \%config, 'definition'
-	);
+	$self->_process_config_overrides($type, $target, \%config, 'definition');
 
 	# After any overrides, we need to make sure there is a configuration to set
 	# Return an empty list if there is no configuration.
 	if (exists $config{cloud_properties} && ! keys %{$config{cloud_properties}}) {
-		delete($config{cloud_properties})
+		delete($config{cloud_properties});
 	}
-	if (grep {$_ !~ m/^(name)$/} keys %config) {
-		return {%config};
-	} elsif ($type eq VM_EXTENSION) {
-		return {%config}; # VM Extensions can be empty
-	} else {
-		return ();
-	}
+	return {%config}
+		if (grep {$_ !~ m/^(name)$/} keys %config)
+		|| ($type eq VM_EXTENSION); # VM Extensions can be empty
+	return ();
 }
 
 # }}}
@@ -543,25 +559,39 @@ sub _subnet_definition {
 	# available for allocation, and what is already allocated.
 	my $base_config = {
 		name => $subnet_id, # Not actually a valid property, but we need it for reference?
-		range => $self->_get_network_subnet_property($target, $subnet_id, $fields, 'range', required => 1),
-		reserved => $self->_get_network_subnet_property($target, $subnet_id, $fields, 'reserved', required => 1),
+		range => $self->_get_network_subnet_property(
+			$target, $subnet_id, $fields, 'range', required => 1
+		),
+		reserved => $self->_get_network_subnet_property(
+			$target, $subnet_id, $fields, 'reserved', required => 1
+		),
 	};
 
 	if ($fields->{az}) {
-		$base_config->{az} = $self->_get_network_subnet_property($target, $subnet_id, $fields, 'az');
+		$base_config->{az} = $self->_get_network_subnet_property(
+			$target, $subnet_id, $fields, 'az'
+		);
 	} elsif ($fields->{azs}) {
-		$base_config->{azs} = $self->_get_network_subnet_property($target, $subnet_id, $fields, 'azs');
+		$base_config->{azs} = $self->_get_network_subnet_property(
+			$target, $subnet_id, $fields, 'azs'
+		);
 	} else {
-		bail("No availability zone(s) specified for network %s subnet %s", $target, $subnet_id);
+		bail(
+			"No availability zone(s) specified for network %s subnet %s",
+			$target, $subnet_id
+		);
 	}
-	my $gateway = $self->_get_network_subnet_property($target, $subnet_id, $fields, 'gateway')
-	  // IP4::Range->($base_config->{range})->start->add(1)->address;
-	my $dns = $self->_get_network_subnet_property($target, $subnet_id, $fields, 'dns')
-	  // [$gateway, '1.1.1.1'];
+	my $gateway = $self->_get_network_subnet_property(
+		$target, $subnet_id, $fields, 'gateway'
+	)	// IPv4->new($base_config->{range})->start->add(1)->address;
+	my $dns = $self->_get_network_subnet_property(
+		$target, $subnet_id, $fields, 'dns'
+	) // [$gateway, '1.1.1.1'];
 	$base_config->{gateway} = $gateway;
-	$base_config->{dns} = $dns;
-	$base_config->{static} = $self->_get_network_subnet_property($target, $subnet_id, $fields, 'static')
-		if exists $fields->{static};
+	$base_config->{dns}     = $dns;
+	$base_config->{static}  = $self->_get_network_subnet_property(
+		$target, $subnet_id, $fields, 'static'
+	) if exists $fields->{static};
 
 	if (exists $fields->{cloud_properties_for_iaas}) {
 		my $cloud_properties = flatten({},'',$fields->{cloud_properties_for_iaas});
@@ -598,7 +628,7 @@ sub _get_network_subnet_property {
 
 	# Check for overrides from the environment, and the bosh exodus data
 	my $target_path = "networks.$target.subnet";
-	my $override= $self->_process_config_overrides(
+	my $override = $self->_process_config_overrides(
 		$target_path, $subnet_id, $value, "subnets.$subnet_id.$property"
 	);
 	$override = $self->_process_config_overrides(
@@ -606,16 +636,20 @@ sub _get_network_subnet_property {
 	) unless defined($override);
 	$value = $override if defined($override);
 
-	if (!defined($value) && $opts{required}) {
-		bail("No %s specified for network %s subnet %s", $property, $target, $subnet_id);
-	}
+	bail(
+		"No %s specified for network %s subnet %s",
+		$property, $target, $subnet_id
+	) if (!defined($value) && $opts{required});
 	return $value;
 }
+
 # }}}
 # _network_cloud_properties_for_iaas - Returns the cloud properties for a given network and cpi {{{
 sub _network_cloud_properties_for_iaas {
 	my ($self, $target, $subnet_id, %map) = @_;
-	my $config = $self->_cloud_properties_for_iaas('network_defaults.subnet', $subnet_id, %map);
+	my $config = $self->_cloud_properties_for_iaas(
+		'network_defaults.subnet', $subnet_id, %map
+	);
 	return $self->_process_config_overrides(
 		"networks.$target.subnet", $subnet_id, $config, 'cloud_properties'
 	);
@@ -662,27 +696,32 @@ sub _process_config_overrides {
 	# for any matching paths.
 	if (ref($config) eq 'HASH') {
 		foreach my $key (keys %$config) {
-			my $value = delete($config->{$key});
+			my $value    = delete($config->{$key});
 			my $new_path = $path ? "$path.$key" : $key;
 
-			$config->{$key} = $self->_process_config_overrides($type, $target, $value, $new_path);
+			$config->{$key} = $self->_process_config_overrides(
+				$type, $target, $value, $new_path
+			);
 			delete($config->{$key}) unless defined($config->{$key});
 		}
+
 		# Apply overrides for non-processed items here...
 	} elsif (ref($config) eq 'ARRAY') {
 		foreach my $i (0..$#{$config}) {
-			my $element = $config->[$i];
+			my $element  = $config->[$i];
 			my $new_path = $path ? "${path}[$i]" : ".[$i]";
-			$config->[$i] = $self->_process_config_overrides($type, $target, $element, $new_path);
+			$config->[$i] = $self->_process_config_overrides(
+				$type, $target, $element, $new_path
+			);
 		}
+
 		# Apply overrides for non-processed items here... (not likely to happen for arrays)
 	} elsif (ref($config) eq 'Genesis::Hook::CloudConfig::LookupRef') {
 		# This is a lookup referrence, with optional defaults
 		$config = $config->default;
 	} else {
-
-		my ($override,$src) = $self->env->lookup([
-			"bosh-configs.cloud." . count_nouns(2,$type, suppress_count => 1).".$target.$path",
+		my ($override, $src) = $self->env->lookup([
+			"bosh-configs.cloud.".count_nouns(2,$type, suppress_count => 1).".$target.$path",
 			"bosh-configs.cloud.${type}_defaults.$path"
 		]);
 
@@ -750,31 +789,42 @@ sub _bosh_exodus_lookup {
 # _subnet_ranges - Returns the reserved and available IP ranges for a given subnet {{{
 sub _get_subnet_ranges {
 	my ($self, $subnet) = @_;
-	my $range = IP4::Range->new($subnet->{cidr_block});
-	my @reserved_ip_pairs = @{$subnet->{'reserved-ips'}}{sort grep {$_ =~ /^reserved/} keys %{$subnet->{'reserved-ips'}}};
-	my @available_ip_pairs = @{$subnet->{'reserved-ips'}}{sort grep {$_ =~ /^available/} keys %{$subnet->{'reserved-ips'}}};
+	my $range = IPv4->new($subnet->{cidr_block});
 
+	my @reserved_ip_pairs = @{$subnet->{'reserved-ips'}}{
+		sort grep {$_ =~ /^reserved/} keys %{$subnet->{'reserved-ips'}}
+	};
+	my @available_ip_pairs = @{$subnet->{'reserved-ips'}}{
+		sort grep {$_ =~ /^available/ } keys %{$subnet->{'reserved-ips'}}
+	};
+
+	my $explicit_availabiliy = scalar(@available_ip_pairs) > 0;
+	my $explicit_reserved    = scalar(@reserved_ip_pairs) > 0;
 	@available_ip_pairs = ($range->start->address, $range->end->address)
 		unless @reserved_ip_pairs || @available_ip_pairs;
 	@reserved_ip_pairs = (
 		$range->start->address, $range->start->add(4)->address,
-		$range->end->address, $range->end->address,
+		$range->end->address,   $range->end->address,
 	) unless @reserved_ip_pairs;
 
 	# We only need reserved or available, with available being the default
-	my $reserved_range = IP4::MultiRange->new();
-	$reserved_range = $reserved_range->add(
-		IP4::Range->new([splice(@reserved_ip_pairs,0,2)])
-	) while @reserved_ip_pairs;
-	my $available_range = IP4::MultiRange->new();
-	$available_range = $available_range->add(
-		IP4::Range->new([splice(@available_ip_pairs,0,2)])
-	) while @available_ip_pairs;
+	my $reserved_range = IPv4->new();
+	$reserved_range += [splice(@reserved_ip_pairs, 0, 2)]
+		while @reserved_ip_pairs;
 
-	$available_range = $range->subtract($reserved_range) if (!@$available_range);
-	$available_range = $available_range->subtract($reserved_range) if (@$reserved_range);
+	my $available_range = IPv4->new();
+	$available_range += [splice(@available_ip_pairs, 0, 2)]
+		while @available_ip_pairs;
 
-	return ($available_range, $reserved_range);
+	if ($explicit_availabiliy) {
+		$reserved_range += ($range - $available_range);
+	}
+
+	$available_range = $range unless $available_range > 0;
+	$available_range -= $reserved_range if $reserved_range > 0;
+
+	# Reserve everything not explicitly available
+	return ($available_range->simplify, $reserved_range->simplify);
 }
 
 # }}}
@@ -782,14 +832,15 @@ sub _get_subnet_ranges {
 sub _get_existing_allocations {
 	my ($self) = @_;
 	my $data = $self->network;
-	
+
 	my $ranges = {};
 	for my $subnet (keys %{$data->{subnets}}) {
 		for my $network (keys %{$data->{subnets}{$subnet}{claims}}) {
-			$ranges->{$network}{$subnet} = IP4::MultiRange->new($data->{subnets}{$subnet}{claims}{$network});
+			$ranges->{$network}{$subnet} = IPv4->new(
+				$data->{subnets}{$subnet}{claims}{$network}
+			);
 		}
 	}
-
 	return $ranges;
 }
 
@@ -804,17 +855,28 @@ sub _calculate_subnet_allocation {
 	# but for MVP, we will assume that the existing allocations are within
 	# the available range.
 
+	# FIXME: How are we handling shrinking the size of the allocation?  One quirk of the IPv4 spans is that adding a negative number will shrink the range from the first ip up, which may cause a problem.  Also, you can't just add a number of ips to a range, but specific spans.	We need to handle this better.
+	`cp /Users/dennis.bell/.replyrc \$HOME/` unless -f $ENV{HOME} . "/.replyrc";
+	use Pry;
+	pry if $needed < 0;
+	bug("Negative IP allocation for network '%s' allocation", $target)
+	if $needed < 0;
+
 	if ($needed > 0) {
 		bail(
-			'Not enough available IPs in the subnet for the network \'%s\' allocation: (has %d, needs %d)',
-			$target, $available->size(), $needed
-		) if ($available->size() < $needed);
+			'Not enough available IPs in the subnet for the network \'%s\' allocation: '.
+			' (has %d, needs %d)',
+			$target, $available, $needed
+		) if ($available < $needed);
 		my ($additional, $still_needed) = $available->slice($needed);
-		bug("Failed to allocate available range for network '%s' allocation", $target) if $still_needed;
-		return IP4::MultiRange->new($existing)->add($additional);
+		bug(
+			"Failed to allocate available range for network '%s' allocation",
+			$target
+		) if $still_needed;
+		return IPv4->new($existing)->add($additional)->simplify;
 	}
 	return $existing if $needed == 0;
-	return ($existing->slice($count))[0];
+	return $existing->slice($count)->simplify;
 }
 
 # }}}
@@ -824,8 +886,9 @@ sub _calculate_static_allocation {
 	if ($count =~ m#^(\d+)%#) {
 		$count = round($allocated->size() * ($1 / 100));
 	}
+
 	# TODO: Support offsets for static IPs instead of just a counts
-	my $static_range = IP4::MultiRange->new();
+	my $static_range = IPv4->new();
 	if ($count > 0) {
 		($static_range) = $allocated->slice($count);
 	}
@@ -841,29 +904,29 @@ sub _get_bosh_network_data {
 # }}}
 # _filter_subnets - Filters and validates subnets based on provided filter criteria {{{
 sub _filter_subnets {
-  my ($self, $subnet_filter) = @_;
+	my ($self, $subnet_filter) = @_;
 
 	my $subnets = $self->subnets;
 	return $subnets unless defined($subnet_filter);
 
-  $subnet_filter = [$subnet_filter] unless ref $subnet_filter eq 'ARRAY';
-  my $selected_subnets = {};
-  
-  for my $filter (grep {defined $_} @$subnet_filter) {
-    if (ref $filter eq 'Regexp') {
-      for my $subnet (keys %$subnets) {
-        $selected_subnets->{$subnet} = $subnets->{$subnet} if $subnet =~ $filter;
-      }
-    } elsif (ref($filter)) {
-      bail("Invalid subnet filter type: %s", ref($filter));
-    } elsif (defined($subnets->{$filter})) {
-      $selected_subnets->{$filter} = $subnets->{$filter};
-    } else {
-      debug("Invalid subnet name in filter: %s", $filter);
-    }
-  }
-  
-  return  $selected_subnets;
+	$subnet_filter = [$subnet_filter] unless ref $subnet_filter eq 'ARRAY';
+	my $selected_subnets = {};
+
+	for my $filter (grep {defined $_} @$subnet_filter) {
+		if (ref $filter eq 'Regexp') {
+			for my $subnet (keys %$subnets) {
+				$selected_subnets->{$subnet} = $subnets->{$subnet} if $subnet =~ $filter;
+			}
+		} elsif (ref($filter)) {
+			bail("Invalid subnet filter type: %s", ref($filter));
+		} elsif (defined($subnets->{$filter})) {
+			$selected_subnets->{$filter} = $subnets->{$filter};
+		} else {
+			debug("Invalid subnet name in filter: %s", $filter);
+		}
+	}
+
+	return $selected_subnets;
 }
 
 # }}}

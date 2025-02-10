@@ -5,6 +5,8 @@ use warnings;
 use Genesis;
 use Genesis::Hook::CloudConfig::LookupSubnetRef;
 use Genesis::Hook::CloudConfig::LookupNetworkRef;
+
+use IPv4;
 use JSON::PP;
 
 use parent qw(Genesis::Hook::CloudConfig);
@@ -189,7 +191,7 @@ sub _set_network_subnets {
 			my $data = $subnets->{$subnet_name};
 			($subnet_name,
 				{
-					range => IP4::Range->new($data->{cidr_block})->range,
+					range => IPv4->new($data->{cidr_block})->range,
 					az => $self->lookup_az($data->{az}),
 				}
 			);
