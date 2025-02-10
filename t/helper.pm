@@ -1,4 +1,19 @@
 package helper;
+
+BEGIN {
+	my $carp_always_loaded = eval {
+		require Carp::Always;
+		Carp::Always->import();
+		1;
+	};
+
+	if ($carp_always_loaded) {
+		print "Carp::Always loaded successfully.\n";
+	} else {
+		print "Carp::Always not available - falling back to standard die() and warn() behavior.\n";
+	}
+}
+
 use lib 't';
 use Mock;
 use Test::More;

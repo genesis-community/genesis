@@ -3,7 +3,6 @@ use strict;
 use warnings;
 
 use lib 't';
-use Carp::Always;
 use helper;
 use Test::More;
 use Test::Exception;
