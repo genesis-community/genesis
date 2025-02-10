@@ -1193,6 +1193,7 @@ sub bosh_config_names {
 # bosh_config_overrides - returns the bosh config overrides for the environment {{{
 sub env_config_overrides {
 	my ($self, $type) = @_;
+	bug("No type specified for bosh config overrides") unless $type;
 	my $overrides = $self->lookup('bosh-configs.$type', {});
 	# TODO: Need to figure out where to find these overrides
 	return $overrides;
