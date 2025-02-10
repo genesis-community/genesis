@@ -262,9 +262,16 @@ Returns the CIDR blocks for the span.
 
 =head2 add
 
-  my $new_span = $span->add($other_span);
+  my $new_span = $span->add(@args);
 
-Adds one span to another, or increases the size of the span by the given number.  If the number is negative, it increases the size of the span by growing the span from before the start address. 
+Adds one or more spans/addresses/ranges/numbers to the span. For each argument:
+- If a number, grows the span by that many addresses
+- If negative, grows backward from start address
+- If positive, grows forward from end address  
+- If a span/address/range, combines them into a single span if contiguous
+- If not contiguous, returns an IPv4::Range containing both spans
+
+Returns a simplified result (address for single IP, span for contiguous range).
 
   # Example
   my $span1 = IPv4::Span->new('192.168.1.1', '192.168.1.5');
@@ -272,33 +279,44 @@ Adds one span to another, or increases the size of the span by the given number.
   my $new_span = $span1->add($span2);
   print "New span: $new_span\n"; # prints '192.168.1.1-192.168.1.10'
 
-  # Add a positive number to the span
+  # Add a positive number to grow forward
   my $span = IPv4::Span->new('192.168.1.1', '192.168.1.5');
   my $new_span = $span->add(5);
   print "New span after adding 5: ", $new_span->range(), "\n"; # prints '192.168.1.1-192.168.1.10'
 
-  # Add a negative number to the span
+  # Add a negative number to grow backward
   $new_span = $span->add(-2);
-  print "New span after adding -2: ", $new_span->range(), "\n"; # prints '192.168.0.255-192.168.1.10'
+  print "New span after adding -2: ", $new_span->range(), "\n"; # prints '192.168.0.255-192.168.1.5'
+
+  # Add non-contiguous span returns a range
+  my $range = $span->add('192.168.2.1-192.168.2.5');
+  print "Range: $range\n"; # prints '192.168.1.1-192.168.1.5,192.168.2.1-192.168.2.5'
 
 =head2 subtract
 
-  my $new_span = $span->subtract($other_span);
+  my $new_span = $span->subtract(@args);
 
-Subtracts one span from another, or decreases the size of the span by the given number.  If the number is negative, it decreases the size of the span by shrinking the span by increasing the starting address.
+Subtracts one or more spans/addresses/ranges/numbers from the span. For each argument:
+- If a number, shrinks the span by that many addresses
+- If negative, shrinks from start address 
+- If positive, shrinks from end address
+- If a span/address/range, removes it from the original span
+- If removal creates gaps, returns an IPv4::Range
+
+Returns a simplified result (address for single IP, span for contiguous range).
 
   # Example
   my $span1 = IPv4::Span->new('192.168.1.1', '192.168.1.10');
   my $span2 = IPv4::Span->new('192.168.1.5', '192.168.1.7');
   my $new_span = $span1->subtract($span2);
-  print "New span: $new_span\n"; # prints '192.168.1.1-192.168.1.4, 192.168.1.8-192.168.1.10'
+  print "New span: $new_span\n"; # prints '192.168.1.1-192.168.1.4,192.168.1.8-192.168.1.10'
 
-  # Subtract a positive number from the span
+  # Subtract a positive number from the end
   my $span = IPv4::Span->new('192.168.1.1', '192.168.1.10');
   my $new_span = $span->subtract(3);
   print "New span after subtracting 3: ", $new_span->range(), "\n"; # prints '192.168.1.1-192.168.1.7'
 
-  # Subtract a negative number from the span
+  # Subtract a negative number from the start
   $new_span = $span->subtract(-2);
   print "New span after subtracting -2: ", $new_span->range(), "\n"; # prints '192.168.1.3-192.168.1.10'
 
@@ -328,6 +346,28 @@ Returns an array containing the span itself. This method exists for compatibilit
   my @spans = $span->spans();
   print "Number of spans: ", scalar(@spans), "\n"; # prints '1'
   print "First span: ", $spans[0]->range(), "\n"; # prints '192.168.1.1-192.168.1.10'
+
+=head2 _plus (Internal)
+
+  my $result = $span->__plus($other, $swap);
+
+Internal method called by overloaded + operator, as well as the add method. Handles:
+
+- Adding integers to grow the span
+- Adding spans or addresses for combining ranges
+- Returns IPv4::Range for non-contiguous results
+- Enforces integer must be on right side
+
+=head2 _minus (Internal)
+
+  my $result = $span->__minus($other, $swap); 
+
+Internal method called by overloaded - operator, as well as the subtract method. Handles:
+
+- Subtracting integers to shrink the span
+- Subtracting spans or addresses for removing ranges
+- Returns IPv4::Range for non-contiguous results 
+- Enforces integer must be on right side
 
 =head1 OPERATOR OVERLOADS
 

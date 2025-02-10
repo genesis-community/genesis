@@ -411,7 +411,7 @@ subtest 'IPv4::Span' => sub {
   };
 
   subtest 'subtract method' => sub {
-    plan tests => 28;
+    plan tests => 32;
     my $span1 = IPv4::Span->new('192.168.1.1', '192.168.1.10');
     my $span2 = IPv4::Span->new('192.168.1.5', '192.168.1.7');
     my $result = $span1->subtract($span2);
@@ -444,6 +444,16 @@ subtest 'IPv4::Span' => sub {
     dies_ok { 20 - $span1 } 'overloaded - operator with non-IPv4::Span dies when subtracting a span from a number';
     dies_ok { 'sandwich' - $span1} 'overloaded - operator with non-IPv4::Span dies when subtracting a span from a non-ip string';
 
+    # Test subtracting multiple arguments from the span
+    $result = $span1->subtract('192.168.1.2', '192.168.1.4', '192.168.1.8');
+    isa_ok($result, 'IPv4::Range', 'subtract() returns IPv4::Range object when subtracting multiple addresses');
+    is($result->range, '192.168.1.1,192.168.1.3,192.168.1.5-192.168.1.7,192.168.1.9-192.168.1.10', 'subtract() returns correct range when subtracting multiple addresses');
+
+    # Test subtracting positive and negative numbers from the span
+    $result = $span1->subtract(2,-2);
+    isa_ok($result, 'IPv4::Span', 'subtract() returns IPv4::Span object when subtracting a positive and negative number');
+    is($result->range, '192.168.1.3-192.168.1.8', 'subtract() returns correct range when subtracting a positive and negative number');
+
     # Test subtracting spans that are not exclusively within the original span, or completely outside the original span
     my $span3 = IPv4::Span->new('192.168.0.0','192.168.1.3');
     is($span1->subtract($span3)->range, '192.168.1.4-192.168.1.10', 'subtract() returns correct range when subtracting span that is not completely inside original span');
@@ -472,7 +482,7 @@ subtest 'IPv4::Span' => sub {
   };
 
   subtest 'add method' => sub {
-    plan tests => 24;
+    plan tests => 31;
     my $span1 = IPv4::Span->new('192.168.1.1', '192.168.1.5');
     my $span2 = IPv4::Span->new('192.168.1.6', '192.168.1.10');
     my $result = $span1->add($span2);
@@ -481,6 +491,19 @@ subtest 'IPv4::Span' => sub {
     $result = $span1->add('192.168.2.0'); # Add a single address on the end
     isa_ok($result, 'IPv4::Range', 'add() returns IPv4::Range object when adding a single address to a span that isn\'t consecutive (after end)');
 
+    # Test adding multiple arguments to a span
+    $result = $span1->add('192.168.1.11', '192.168.1.12');
+    isa_ok($result, 'IPv4::Range', 'add() returns IPv4::Range object when adding multiple addresses');
+    is($result->range, '192.168.1.1-192.168.1.5,192.168.1.11-192.168.1.12', 'add() returns correct range when adding multiple addresses');
+
+    $result = $span1->add('192.168.1.0/30', '192.168.1.8/30');
+    isa_ok($result, 'IPv4::Range', 'add() returns IPv4::Range object when adding multiple CIDR blocks');
+    is($result->range, '192.168.1.0-192.168.1.5,192.168.1.8-192.168.1.11', 'add() returns correct range when adding multiple CIDR blocks');
+
+    $result = $span1->add(-4,4);
+    isa_ok($result, 'IPv4::Span', 'add() returns IPv4::Span object when adding multiple numbers');
+    is($result->range, '192.168.0.253-192.168.1.9', 'add() returns correct range when adding negative and positive numbers to expand the size of the span');
+    is($result->size, $span1->size + 8, 'add() returns correct size when adding negative and positive numbers to expand the size of the span');
 
     # Test A contains B, A is contained in B, and A and B are equal
     $span1 = IPv4::Span->new('10.0.0.0/24');

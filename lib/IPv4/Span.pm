@@ -11,8 +11,8 @@ our $allow_oversized_mask = 1;
 use overload
 	'""'  => sub { shift->range() },
 	'0+'  => sub { shift->size() },
-	'-'   => 'subtract',
-	'+'   => 'add',
+	'-'   => '__minus',
+	'+'   => '__plus',
 	'<=>' => 'numeric_cmp',
 	'cmp' => 'cmp',
 	'eq'  => 'eq',
@@ -145,7 +145,13 @@ sub eq($self, $other, $swap = 0) {
 	return "$self" eq "$other";
 }
 
-sub add($self, $other, $swap = 0) {
+sub add ($self, @args) {
+	my $result = $self->clone();
+	$result += $_ for @args;
+	return $result->simplify();
+}
+
+sub __plus($self, $other, $swap = 0) {
 
 	if (IPv4::__is_integer($other)) { 
 		die "Cannot add an IPv4::Span object to a number" if $swap;
@@ -174,7 +180,13 @@ sub add($self, $other, $swap = 0) {
 	}
 }
 
-sub subtract( $self, $other, $swap = 0 ) {
+sub subtract($self, @args) {
+	my $result = $self->clone();
+	$result -= $_ for @args;
+	return $result->simplify();
+}
+
+sub __minus( $self, $other, $swap = 0 ) {
 
 	if ( IPv4::__is_integer($other) ) {
 		die "Cannot subtract an IPv4::Span object from a number" if $swap;
