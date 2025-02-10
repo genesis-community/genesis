@@ -200,6 +200,7 @@ sub subtract($self, @args) {
 }
 
 sub __minus($self, $other, $swap = 0) {
+	# FIXME: Shouldn't we just use the size of the range in the following case?
 	die "Invalid subtraction between IPv4::Range and integer"
 		if (IPv4::__is_integer($other));
 	
