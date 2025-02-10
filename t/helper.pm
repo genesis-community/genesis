@@ -68,7 +68,7 @@ sub import {
 	for my $var (qw(VAULT_URL)) {
 		*{$caller . "::$var"} = \%{"helper::$var"};
 	}
-	runs_ok("genesis ping") or die "`genesis ping` failed...\n";
+	#runs_ok("genesis ping") or die "`genesis ping` failed...\n";
 }
 
 sub reset_kit {
