@@ -555,8 +555,8 @@ subtest 'IPv4::Span' => sub {
 
     # Regression tests for adding a range to a span where the first span in the range is a subset of the span
     my $span5 = IPv4::Span->new('10.0.1.0-10.0.1.36');
-    my $range = IPv4::Range->new('10.0.1.0-10.0.1.15,10.0.1.250-10.0.1.255');
-    is($span5 + $range, '10.0.1.0-10.0.1.36,10.0.1.250-10.0.1.255', 'can add a range to a span where the first span in the range is a subset of the span');
+    my $range2 = IPv4::Range->new('10.0.1.0-10.0.1.15,10.0.1.250-10.0.1.255');
+    is($span5 + $range2, '10.0.1.0-10.0.1.36,10.0.1.250-10.0.1.255', 'can add a range to a span where the first span in the range is a subset of the span');
   };
 
   subtest 'contains method' => sub {
@@ -1002,8 +1002,8 @@ subtest 'IPv4::Range' => sub {
 
     # Regression tests for adding a range to another range where the first span in the range being added is a subset of the single span in the range being added to
     my $span5 = IPv4::Range->new('10.0.1.0-10.0.1.36');
-    my $range = IPv4::Range->new('10.0.1.0-10.0.1.15,10.0.1.250-10.0.1.255');
-    is($span5 + $range, '10.0.1.0-10.0.1.36,10.0.1.250-10.0.1.255', 'can add a range to a span where the first span in the range is a subset of the span');
+    my $range2 = IPv4::Range->new('10.0.1.0-10.0.1.15,10.0.1.250-10.0.1.255');
+    is($span5 + $range2, '10.0.1.0-10.0.1.36,10.0.1.250-10.0.1.255', 'can add a range to a span where the first span in the range is a subset of the span');
   };
 
   subtest 'subtract method' => sub {
