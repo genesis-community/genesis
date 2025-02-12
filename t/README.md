@@ -49,8 +49,16 @@ Test::TCP
 Test::Exit
 Test::More
 
+```
+cpanm Expect Test::Exception Test::Deep Test::Differences Test::Output Test::TCP Test::Exit Test::More
+```
+
 If you want to run the coverage tests, you will also need the following modules:
 Devel::Cover
 Template
 PPI::HTML (or Perl::Tidy)
 Pod::Coverage::CountParents (or Pod::Coverage)
+
+```
+cpanm -n Devel::Cover Template PPI::HTML Pod::Coverage::CountParents
+```
