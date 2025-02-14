@@ -22,8 +22,8 @@ use lib $ENV{GENESIS_LIB}  ||  $FindBin::Bin.'/lib';
 $ENV{GENESIS_LIB}          ||= $FindBin::Bin.'/lib';
 $ENV{GENESIS_CALLBACK_BIN} ||= $FindBin::Bin.'/'.$FindBin::Script;
 
-use Genesis;
-use Genesis::State;
+use Genesis qw/bail trace debug logger/;
+use Genesis::State qw/envset in_callback under_test/;
 use Genesis::Config;
 use Genesis::Term;
 use Genesis::Commands;
@@ -223,7 +223,7 @@ define_command("create", {
 			"credentials in.  Overrides the vault specified in the deployment ".
 			"repository for the environment.",
 
-		"force|-f" =>
+		"force|f" =>
 			"Create a new environment file even if it already exists."
 	],
 	deprecated_options => [
@@ -1811,6 +1811,7 @@ define_command("hack", {
 # }}}
 # }}}
 
+# FIXME: refactor main to call subroutines to improve testing of the different ways to call genesis, and parsing of the arguments.
 ###########################################################################
 sub main {
 
@@ -1964,5 +1965,5 @@ END {
 	$? = $rc; # Have to set the exit code again before leaving...
 }
 
-main(@ARGV);
+main(@ARGV) unless under_test;
 # vim: fdm=marker:foldlevel=1:noet
