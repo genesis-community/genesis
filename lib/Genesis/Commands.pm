@@ -28,6 +28,7 @@ our @EXPORT = qw/
 	known_commands
 	run_command
 	has_command
+	is_equivalent_command
 	equivalent_commands
 	command_help
 	command_usage
@@ -187,7 +188,7 @@ sub define_command { # {{{
 		}
 		$fn->(@_);
 	};
-	push @COMMANDS, $name;
+	push @COMMANDS, $name; # FIXME: This is denormalized from keys of $GENESIS_COMMANDS, could be a potential bug -- is it needed, or can we just use commands() and return the keys of $GENESIS_COMMANDS where key equals value?
 	$GENESIS_COMMANDS{$name} = $name;
 	$GENESIS_COMMANDS{$_} = $name for @{$PROPS{$name}{aliases} || (defined($PROPS{$name}{alias}) ? [$PROPS{$name}{alias}] : [])};
 	return;
@@ -205,6 +206,7 @@ sub current_command_alias { # {{{
 	return $CALLED;
 } # }}}
 
+# FIXME:  What's the difference between commands and known commands?  known_commands is only used by Env, to deterime if a string conflicts with a command name to add .yml to the end -- shouldn't this apply to aliases as well?
 sub known_commands { # list the known genesis commands specified by define_command {{{
 	return grep {$_ eq $GENESIS_COMMANDS{$_}} keys %GENESIS_COMMANDS;
 } # }}}
@@ -238,9 +240,18 @@ sub has_command { # {{{
 	return defined($GENESIS_COMMANDS{$cmd});
 } # }}}
 
-sub equivalent_commands { # {{{
+sub is_equivalent_command {
 	my ($cmd1,$cmd2) = @_;
-	return $GENESIS_COMMANDS{$cmd1}//'' eq $GENESIS_COMMANDS{$cmd2}//'';
+	return ($GENESIS_COMMANDS{$cmd1}//'') eq ($GENESIS_COMMANDS{$cmd2}//'');
+}
+sub equivalent_commands { # {{{
+	my ($cmd) = @_;
+	my @results = ();
+	my $base_cmd = $GENESIS_COMMANDS{$cmd} || '';
+	if ($base_cmd) {
+		@results = grep {$GENESIS_COMMANDS{$_} eq $base_cmd} keys %GENESIS_COMMANDS;
+	}
+	return wantarray ? @results : \@results;
 } # }}}
 
 sub command_properties { # {{{
@@ -613,7 +624,7 @@ sub set_top_path { # {{{
 	if (!$COMMAND_OPTIONS->{cwd} && scalar(@COMMAND_ARGS)) {
 		if (has_scope('env') &&  (-f $COMMAND_ARGS[0] || -f $COMMAND_ARGS[0].'.yml')) {
 			$COMMAND_OPTIONS->{cwd} = shift(@COMMAND_ARGS);
-		} elsif (equivalent_commands($COMMAND, 'create') && $COMMAND_ARGS[0] =~ /(.*)\/[^\/]+?(.yml)?$/ && -d $1) {
+		} elsif (is_equivalent_command(create => $COMMAND) && $COMMAND_ARGS[0] =~ /(.*)\/[^\/]+?(.yml)?$/ && -d $1) {
 			$COMMAND_OPTIONS->{cwd} = shift(@COMMAND_ARGS);
 		}
 	}

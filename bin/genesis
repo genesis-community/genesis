@@ -1892,7 +1892,7 @@ sub main {
 				# argument matches a command (or alias) -- assume its a command
 				$cmd = $arg;
 			} else {
-				if ($arg =~ /\.yml/ || -f $arg.'.yml' || equivalent_commands($_[0],'create')) {
+				if ($arg =~ /\.yml/ || -f $arg.'.yml' || is_equivalent_command(create => $_[0])) {
 					bail(
 						"Cannot specify both -C and explicit file before the Genesis subcommand"
 					) if ($ENV{GENESIS_PREFIX_TYPE} eq 'option_c');
@@ -1906,7 +1906,7 @@ sub main {
 						) unless -f $arg || $_[0] eq 'new';
 						$ENV{GENESIS_PREFIX_TYPE} = 'explicit_file';
 						$path = $arg;
-					} elsif (-f $arg.".yml" || equivalent_commands($_[0],'create')) {
+					} elsif (-f $arg.".yml" || is_equivalent_command(create => $_[0])) {
 						$ENV{GENESIS_PREFIX_TYPE} = 'file';
 						$path = $arg.".yml";
 					} else {
