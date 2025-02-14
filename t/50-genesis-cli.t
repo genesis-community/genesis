@@ -27,7 +27,7 @@ subtest 'bin/genesis' => sub {
 };
 
 subtest 'genesis terminate' => sub {
-    plan tests => 3;
+    plan tests => 19;
 
     ok(has_command('terminate'), "Terminate command is registered");
 
@@ -42,11 +42,15 @@ subtest 'genesis terminate' => sub {
     is(command_properties('terminate')->{option_group}, Genesis::Commands::ENV_OPTIONS, "Terminate command uses ENV_OPTIONS");
 
     my %terminate_opts = command_properties('terminate')->{options}->@*;
+    ok(exists $terminate_opts{'keep-secrets|k'}, "terminate has keep-secrets option");
     ok(exists $terminate_opts{'force|f'}, "terminate has force option");
     ok(exists $terminate_opts{'yes|y'}, "terminate has yes (no-prompt) option");
     ok(exists $terminate_opts{'dry-run|n'}, "terminate has dry-run option");
+    is(scalar(keys %terminate_opts), 4, "terminate only has the 4 options above");
 
-    is(scalar(keys %terminate_opts), 3, "terminate only has the 3 options above");
+    my %terminate_args = command_properties('terminate')->{arguments}->@*;
+    is(scalar(keys %terminate_args), 1, "terminate has one argument");
+    ok(exists $terminate_args{reason}, "terminate has a 'reason' argument");
 
     not_ok(command_properties('terminate')->{deprecated}, "terminate command is not deprecated");
 
