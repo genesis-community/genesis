@@ -48,9 +48,10 @@ Test::Output
 Test::TCP
 Test::Exit
 Test::More
+PadWalker
 
 ```
-cpanm Expect Test::Exception Test::Deep Test::Differences Test::Output Test::TCP Test::Exit Test::More
+cpanm -n  Expect Test::Exception Test::Deep Test::Differences Test::Output Test::TCP Test::Exit Test::More PadWalker
 ```
 
 If you want to run the coverage tests, you will also need the following modules:
