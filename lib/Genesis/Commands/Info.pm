@@ -248,6 +248,27 @@ sub vault_paths {
 	output "$msg\n";
 }
 
+sub deployments {
+	my ($name) = @_;
+	my $top = Genesis::Top->new('.');
+	my $env = $top->load_env($name);
+
+	if ($top->config->get('manifest_store') eq 'repository') {
+		bail(
+			"This environment is configured to store manifests in the repository, ".
+			"which does not support deployment tracking.  Set the #C{manifest_store} ".
+			"in the environment's #C{.genesis/config} to #C{exodus} to move the ".
+			"manifests to the exodus store, or #C{hybrid} to store them in both."
+		);
+	}
+
+	# Get the list of deployments in exodus from the paths under deployments
+	my $deployment_entries = map {$_ =~ /-(\d+)$/} $env->vault->paths($env->exodus_base.'/deployments/');
+
+	use Pry; pry;
+}
+
+
 sub kit_manual {
 	my ($name) = @_;
 	my $top = Genesis::Top->new('.');

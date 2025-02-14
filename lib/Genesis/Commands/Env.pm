@@ -744,6 +744,18 @@ sub deploy {
 	}
 }
 
+sub terminate {
+	command_usage(1) if @_ != 1;
+	my $env = Genesis::Top->new('.')->load_env($_[0])->with_vault()->with_bosh();
+	my $ok = $env->terminate();
+	if ($ok) {
+		success "\n#M{%s}/#c{%s} terminated successfully.\n", $env->name, $env->type;
+		exit 0;
+	} else {
+		bail "\n[#M{%s}] #R{Termination Failed}", $env->name;
+	}
+}
+
 sub addon {
 	command_usage(1) if @_ < 2;
 

@@ -413,6 +413,35 @@ define_command("deploy", {
 });
 
 # }}}
+# genesis terminate - terminate the environment on the bosh director {{{
+define_command("terminate", {
+	summary => "Terminate the environment on the BOSH director.",
+	usage => "<env> terminate [<options...>]",
+	aliases => ['destroy','implode','kill'],
+	description =>
+		"Terminate the environment on the BOSH director.  This will remove the ".
+		"deployment from the BOSH director, delete the cloud config associated ".
+		"with the environment, and mark the last 'deployment' as terminated in ".
+		"exodus and the deployment history.  It will also remove the local ".
+		"manifest deployment files, including state files.\n".
+		"\n".
+		"This command will NOT remove the environment file or any secrets ".
+		"associated with the environment.",
+	function_group => Genesis::Commands::ENVIRONMENT,
+	scope => 'env',
+	option_group => Genesis::Commands::ENV_OPTIONS,
+	options => [
+		'yes|y' =>
+			"Don't pause to ask for confirmation to terminate the environment",
+		'force|f' =>
+			"For deployments deployed by a BOSH director, this will ignore any ".
+			"errors while deleting the deployment.	For create-env deployments, ".
+			"this will skip running the drain and pre-stop scripts.",
+		
+	]
+});
+
+# }}}
 # genesis do - run a kit addon {{{
 define_command("do", {
 	summary => "Run an addon script provided by the environment's kit.",
@@ -605,6 +634,29 @@ define_command("info", {
 }, "Genesis::Commands::Info::information"); # info method already taken, so can't use default
 
 # }}}
+# genesis deployments - list the history of deployments for an environment {{{
+define_command("deployments", {
+	summary => "List the history of deployments for an environment.",
+	usage => "<env> deployments [<options...>]",
+	aliasies => ['deps','hist', 'history'],
+	description =>
+		"List the history of deployments for the given environment.  This requires ".
+		"that the deployment history is stored in exodus, by way of setting ".
+		"#y{manifest_store} to #C{exodus} or #C{hybrid} in the environment file.",
+	function_group => Genesis::Commands::INFO,
+	scope => 'env',
+	option_group => Genesis::Commands::ENV_OPTIONS,
+	options => [
+		"all|a" =>
+			"List all deployments, not just the latest.",
+		"json|j" =>
+			"Output the deployments in json format.",
+		'resent|n=i' =>
+			"List the last n deployments.",
+		'details|d' =>
+			"Show the details of each deployment."
+	]
+});
 # genesis lookup - Find a key set in environment manifests. {{{
 define_command("lookup", {
 	summary => "Look up values from an environment's file, manifest, deployment, exodus or env state.",
