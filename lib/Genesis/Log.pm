@@ -449,6 +449,7 @@ sub _log_item_level_map {
 		'FATAL'   => 2,
 		'ERROR'   => 2,
 		'WARNING' => 3,
+		'NOTICE'  => 3,
 		'INFO'    => 4,
 		'DEBUG'   => 5,
 		'VALUE'   => 6,
