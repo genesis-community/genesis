@@ -33,6 +33,7 @@ our @EXPORT = qw/
 	command_help
 	command_usage
 	command_properties
+	get_args
 	get_options
 	has_option
 	option_defaults
@@ -217,6 +218,7 @@ sub prepare_command { # {{{
 	trace "Preparing genesis command '$COMMAND'".($CALLED ne $COMMAND ? ' (called as $CALLED)':'');
 	parse_options(\@args);
 	set_logging_state();
+	return 1;
 } # }}}
 
 sub run_command { # {{{
@@ -295,6 +297,7 @@ sub parse_options { # {{{
 	my $parsing_ok = 1;
 	my @option_warnings = ();
 	{
+		$COMMAND_OPTIONS = {};
 		local $SIG{__WARN__} = sub { push @option_warnings, @_; };
 		$parsing_ok = GetOptionsFromArray($args, $COMMAND_OPTIONS, (@base_spec,@opts_spec));
 	}
@@ -334,6 +337,15 @@ sub get_options { # {{{
 		}
 	}
 	return \%slice
+} # }}}
+
+sub get_args { # {{{
+	# TODO: Ideally, this should use the arguments defined in the command properties
+	# to build a hash map of the arguments, and return that.  This would allow
+	# for the arguments to be accessed by name, rather than by index.  It will also
+	# allow for pre-validation of the arguments, and for special arguments to be
+	# instantiated such as environment objects, etc.
+	return wantarray ? @COMMAND_ARGS : die "hashref not yet implemented";
 } # }}}
 
 sub has_option { # {{{
@@ -656,6 +668,9 @@ sub set_top_path { # {{{
 			unshift(@COMMAND_ARGS, basename($cwd));
 			$cwd = dirname($cwd);
 		}
+
+		# TODO: create top and env objects if in a repo or env context, and put them
+		# in the args hash (currently only the args array is used - see get_args)
 
 		chdir_or_fail($cwd);
 		return 1;
