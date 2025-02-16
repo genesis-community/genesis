@@ -795,11 +795,21 @@ sub mock {
 
 	my $base_class = 'Mock';
 	eval qq(
+		require $mock_class;
+		die "Mock class \$mock_class already exists" if \$mock_class->isa('Mock');
+	);
+	unless ($@) {
+		# If the mock class exists, clean it out to not interfere with the new mock
+		no strict 'refs';
+		my $symtab = \%{$mock_class."::"};
+		delete $symtab->{$_} for keys %$symtab;
+	}
+	eval qq(
 		package $mock_class;
 		use parent '$base_class';
 	);
 	die "Error creating mock class: $@" if $@;
-	return $mock_class->new(%$definition);
+  my $mock_obj = $mock_class->new(%$definition);
 }
 
 1;

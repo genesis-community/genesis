@@ -745,14 +745,23 @@ sub deploy {
 }
 
 sub terminate {
-	command_usage(1) if @_ != 1;
-	my $env = Genesis::Top->new('.')->load_env($_[0])->with_vault()->with_bosh();
-	my $ok = $env->terminate();
+	my ($env, $reason, @extras) = @_;
+	command_usage(1) if @extras || !defined($env);
+
+	my %options = %{get_options()};
+	$env = Genesis::Top->new('.')->load_env($env)->with_vault()->with_bosh()
+		unless $env->isa('Genesis::Env');
+
+	my $ok = $env->terminate(%options, reason => $reason);
+	if ($options{'dry-run'}) {
+		notice("\n#M{%s}/#c{%s} termination dry-run completed.\n", $env->name, $env->type);
+		exit($ok ? 0 : 1);
+	}
 	if ($ok) {
 		success "\n#M{%s}/#c{%s} terminated successfully.\n", $env->name, $env->type;
 		exit 0;
 	} else {
-		bail "\n[#M{%s}] #R{Termination Failed}", $env->name;
+		bail "\n#M{%s}/#c{%s} #R{termination failed}", $env->name, $env->type;
 	}
 }
 
