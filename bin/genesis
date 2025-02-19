@@ -439,13 +439,19 @@ define_command("terminate", {
 			"errors while deleting the deployment.	For create-env deployments, ".
 			"this will skip running the drain and pre-stop scripts.",
 
-		'keep-secrets|k' =>
+		'keep-resources|R' =>
+			"Keep the resources in the BOSH director.  Without this option, any unused ".
+			"resources will be removed.  If yes|y is specified without this option, ".
+			"the resources will be removed without prompting.",
+
+		'keep-secrets|S' =>
 			"Keep the secrets in the vault.  Without this option, the user will ".
 			"be prompted to keep or remove the secrets.  If yes|y is specified".
 			"without this option, the secrets will be removed without prompting.",
 
 		'dry-run|n' =>
-			"Show what would be done, but don't actually do it."
+			"Show what would be done, but don't actually do it.  The -y option ".
+			"will be ignored if this is specified, as there are no prompts.",
 	],
 	arguments => [
 		'reason' =>

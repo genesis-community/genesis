@@ -26,6 +26,7 @@ use Config;
 use Encode;
 use File::Temp qw/tempdir/;
 use File::Basename qw/dirname/;
+use IO::Handle;
 use JSON::PP;
 unified_diff;
 
@@ -87,6 +88,23 @@ sub workdir {
 	return $path;
 }
 
+my ($stdin_r, $stdin_w, $stdin_orig);
+sub set_stdin {
+	my $input = shift;
+	pipe($stdin_r, $stdin_w) or die "can't create pipe: $!";
+	open $stdin_orig, '<&', \*STDIN or die "can't dup STDIN: $!";
+	open STDIN, '<&', $stdin_r or die "can't dup pipe to STDIN: $!";
+	print $stdin_w $input;
+	close $stdin_w;
+	return;
+}
+
+sub reset_stdin {
+	open STDIN, '<&', $stdin_orig or die "can't restore STDIN: $!";
+	close $stdin_orig;
+	close $stdin_r;
+	return;
+}
 sub mkdir_or_fail {
 	my ($dir) = @_;
 	unless (-d $dir) {;

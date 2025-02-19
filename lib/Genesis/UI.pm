@@ -98,11 +98,11 @@ sub __prompt_for_line {
 	}
 
 	while (1) {
-		print csprintf("%s", $prompt);
+		print STDERR csprintf("%s", $prompt);
 		chomp (my $in=<STDIN>);
 		if ($in eq "" && defined($default)) {
 			$in = $default;
-			print(csprintf("\033[1A%s#C{%s}\n",$prompt, $in));
+			print STDERR (csprintf("\033[1A%s#C{%s}\n",$prompt, $in));
 		}
 		$in =~ s/^\s+|\s+$//g;
 
@@ -147,9 +147,9 @@ sub prompt_for_boolean {
 		# Allow a single line boolean prompt
 		$prompt =~ s/\[y\|n\]/$val_prompt/;
 		$val_prompt = $prompt;
-		print "\n";
+		print STDERR "\n";
 	} else {
-		print csprintf("%s","\n$prompt\n");
+		print STDERR csprintf("%s","\n$prompt\n");
 	}
 	while (1) {
 		my $answer = __prompt_for_line($val_prompt,undef,undef,$default,'allow_blank');

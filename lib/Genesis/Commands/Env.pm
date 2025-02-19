@@ -752,6 +752,36 @@ sub terminate {
 	$env = Genesis::Top->new('.')->load_env($env)->with_vault()->with_bosh()
 		unless $env->isa('Genesis::Env');
 
+	my $no_prompt = delete($options{'yes'})//0;
+	my $keep_secrets = $options{'keep-secrets'}//0;
+	my $dry_run = $options{'dry-run'}//0;
+	my $clean_up = !($options{'keep-resources'}//0);
+
+	my $action_desc = $dry_run ? 'would' : 'will';
+	my $msg = (
+		"This $action_desc #R{terminate} this deployment:\n".
+		"[[  - >>#R{all its VMs and persistent disks} $action_desc be #R{destroyed}"
+	).(
+		$keep_secrets
+		? "\n[[  - >>#G{this environment's secrets} $action_desc be left in place"
+		: "\n[[  - >>#R{this environment's secrets} $action_desc be #R{removed} (use --keep-secrets to skip)"
+	).(
+		$clean_up
+		? "\n[[  - >>#R{all unused resources} $action_desc be #R{removed} from the BOSH director (use --keep-resources to skip)"
+		: "\n[[  - >>#G{all unused resources} $action_desc be left in place on the BOSH director"
+	);
+
+	$env->notify($msg);
+
+	if (!$dry_run && !$no_prompt) {
+		warning "\nThis action is #R{irreversible} and #R{cannot be undone}!";
+		my $msg = sprintf(
+			"Are you sure you want to terminate #M{%s}/#c{%s} deployment? [y|n]",
+			$env->name, $env->type
+		);
+		prompt_for_boolean($msg, 0) or bail "Aborted by user!";
+	}
+
 	my $ok = $env->terminate(%options, reason => $reason);
 	if ($options{'dry-run'}) {
 		notice("\n#M{%s}/#c{%s} termination dry-run completed.\n", $env->name, $env->type);
@@ -761,7 +791,7 @@ sub terminate {
 		success "\n#M{%s}/#c{%s} terminated successfully.\n", $env->name, $env->type;
 		exit 0;
 	} else {
-		bail "\n#M{%s}/#c{%s} #R{termination failed}", $env->name, $env->type;
+		bail "\n#M{%s}/#c{%s} #R{termination failed!}", $env->name, $env->type;
 	}
 }
 
