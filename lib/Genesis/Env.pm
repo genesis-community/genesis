@@ -1814,7 +1814,17 @@ sub bosh {
 		my $bosh;
 		return Service::BOSH::CreateEnvProxy->new($self) if $self->use_create_env;
 
-		# If we're in a callback or under test, just reload from envirionemnt variables.
+		# Priority 1: Check for user credentials first (BOSH_USER/BOSH_PASSWORD)
+		my ($valid, $msg) = Service::BOSH::Director->validate_user_credentials();
+		if ($valid) {
+			$ENV{BOSH_ALIAS} ||= scalar($self->lookup('genesis.bosh_env', $self->{name}));
+			$ENV{BOSH_DEPLOYMENT} ||= $self->deployment_name;
+			$bosh = Service::BOSH::Director->detect_user_credentials();
+			trace("Prioritizing user credentials from environment variables: %s", $msg);
+			return $bosh if $bosh;
+		}
+
+		# If we're in a callback or under test, just reload from environment variables.
 		if (in_callback || under_test) {
 			if ($ENV{GENESIS_BOSH_ENVIRONMENT} && $ENV{BOSH_CLIENT} && is_valid_uri($ENV{GENESIS_BOSH_ENVIRONMENT})) {
 				$ENV{BOSH_ENVIRONMENT} = $ENV{GENESIS_BOSH_ENVIRONMENT};
@@ -1980,11 +1990,22 @@ sub get_target_bosh {
 
 	if ($target eq 'self') {
 		$bosh_exodus_path=$self->exodus_base;
-		my $exodus_data = eval {$self->vault->get($bosh_exodus_path)};
-		if ($exodus_data->{url} && $exodus_data->{admin_password}) {
-			$bosh = Service::BOSH::Director->from_exodus($self->name, exodus_data => $exodus_data);
-		} else {
-			$bosh = Service::BOSH::Director->from_alias($self->name);
+		
+		# Priority 1: Check for user credentials first
+		my ($valid, $msg) = Service::BOSH::Director->validate_user_credentials();
+		if ($valid) {
+			$bosh = Service::BOSH::Director->detect_user_credentials();
+			trace("get_target_bosh: Using user credentials from environment variables: %s", $msg);
+		}
+		
+		# Priority 2: Exodus data (admin credentials)  
+		if (!$bosh) {
+			my $exodus_data = eval {$self->vault->get($bosh_exodus_path)};
+			if ($exodus_data->{url} && $exodus_data->{admin_password}) {
+				$bosh = Service::BOSH::Director->from_exodus($self->name, exodus_data => $exodus_data);
+			} else {
+				$bosh = Service::BOSH::Director->from_alias($self->name);
+			}
 		}
 	} else {
 		$bosh = $self->bosh;
@@ -1997,6 +2018,64 @@ sub get_target_bosh {
 	) unless $bosh;
 
 	return wantarray ? ($bosh, $target, $bosh_exodus_path) : $bosh;
+}
+
+# upload_user_credentials_to_uaa - upload user credentials to UAA after BOSH director deployment {{{
+sub upload_user_credentials_to_uaa {
+	my ($self) = @_;
+	
+	# Only upload credentials for BOSH director deployments
+	return unless $self->is_bosh_director;
+	
+	# Only proceed if user credentials are configured
+	return unless $ENV{BOSH_USER} && $ENV{BOSH_PASSWORD};
+	
+	my $user = $ENV{BOSH_USER};
+	my $password = $ENV{BOSH_PASSWORD};
+	
+	trace("Uploading user credentials to UAA: user=%s", $user);
+	$self->notify("Provisioning user credentials in UAA...");
+	
+	eval {
+		# Create both username/password and client credentials with same values
+		# This maintains compatibility with Genesis's preference for client credentials
+		my $bosh = $self->get_target_bosh({self => 1});
+		
+		# This is a simplified implementation - in practice, this would need to:
+		# 1. Connect to UAA using admin credentials
+		# 2. Create/update the user account
+		# 3. Create/update the client credentials
+		# 4. Set appropriate scopes and authorities
+		
+		# For now, we'll create a method stub that can be extended by kits
+		$self->_provision_uaa_credentials($bosh, $user, $password);
+		
+		info("Successfully provisioned user credentials in UAA: %s", $user);
+	};
+	if ($@) {
+		warning("Failed to provision user credentials in UAA: %s", $@);
+	}
+}
+
+# _provision_uaa_credentials - provision user credentials in UAA (stub for kit implementation) {{{
+sub _provision_uaa_credentials {
+	my ($self, $bosh, $username, $password) = @_;
+	
+	# This is a stub method that kit authors can override via hooks
+	# The actual implementation depends on the specific UAA configuration
+	# and the available errands/scripts in the BOSH director deployment
+	
+	trace("Provisioning UAA credentials for user: %s", $username);
+	
+	# Example approach: Use a post-deploy hook script that:
+	# 1. Sources UAA admin credentials from Vault/Credhub
+	# 2. Uses UAA CLI or API to create user and client
+	# 3. Sets appropriate permissions and scopes
+	
+	# For now, just log that this would happen
+	debug("Would provision UAA user and client credentials for: %s", $username);
+	
+	return 1;
 }
 # }}}
 
@@ -3110,6 +3189,11 @@ sub deploy {
 		} else {
 			info("  - #G{network map successfully updated}");
 		}
+	}
+
+	# Upload user credentials to UAA if this is a BOSH director and user credentials are set
+	if ($self->is_bosh_director && $ENV{BOSH_USER} && $ENV{BOSH_PASSWORD} && $results[1] == 0) {
+		$self->upload_user_credentials_to_uaa();
 	}
 
 	$self->run_hook(

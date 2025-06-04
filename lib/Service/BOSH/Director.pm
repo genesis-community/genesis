@@ -35,6 +35,7 @@ sub new {
 		alias  => $alias,
 		deployment => $opts{deployment},
 		use_local_config => $opts{use_local_config},
+		user_credentials => $opts{user_credentials},
 		validated => ($ENV{GENESIS_BOSH_VERIFIED}||"") eq $alias,
 		exodus_vault => $opts{vault} // (Service::Vault->current || Service::Vault->default),
 		exodus_path => $opts{exodus_path}//$class->exodus_path($alias, %opts)
@@ -132,10 +133,92 @@ sub from_alias {
 }
 
 # }}}
+# validate_user_credentials - check if user credentials are available and valid {{{
+sub validate_user_credentials {
+	my $class = shift;
+
+	debug("Validating user credentials...");
+	debug("  BOSH_USER: %s", $ENV{BOSH_USER} ? $ENV{BOSH_USER} : '<not set>');
+	debug("  BOSH_PASSWORD: %s", $ENV{BOSH_PASSWORD} ? '<set>' : '<not set>');
+
+	# Check if all required user credentials are present
+	my @missing;
+	my @validation_errors;
+
+	push @missing, 'BOSH_USER' unless $ENV{BOSH_USER};
+	push @missing, 'BOSH_PASSWORD' unless $ENV{BOSH_PASSWORD};
+
+	if (@missing || @validation_errors) {
+		my $error_msg = '';
+		$error_msg .= "Missing required environment variables: " . join(', ', @missing) if @missing;
+		$error_msg .= "; " if @missing && @validation_errors;
+		$error_msg .= "Validation errors: " . join('; ', @validation_errors) if @validation_errors;
+
+		trace("User credential validation failed: %s", $error_msg);
+		return (0, $error_msg);
+	}
+
+	trace("User credentials validation passed: BOSH_USER=%s", $ENV{BOSH_USER});
+	debug("User credentials are valid and ready for use");
+	return (1, "User credentials validated successfully");
+}
+
+# }}}
+# detect_user_credentials - prioritize user credentials from environment variables {{{
+sub detect_user_credentials {
+	my $class = shift;
+
+	debug("Attempting to detect user credentials...");
+
+	# Validate user credentials first
+	my ($valid, $msg) = $class->validate_user_credentials();
+	if (!$valid) {
+		debug("User credential detection failed, falling back to standard environment: %s", $msg);
+		return $class->from_environment();
+	}
+
+	# Priority 1: User credentials (BOSH_USER/BOSH_PASSWORD)
+	info("Using user credentials from environment variables: BOSH_USER=%s", $ENV{BOSH_USER});
+	debug("Creating BOSH director with user credentials:");
+	debug("  Environment: %s", $ENV{BOSH_ENVIRONMENT});
+	debug("  Alias: %s", $ENV{BOSH_ALIAS} || 'user-env');
+	debug("  CA Cert: %s", $ENV{BOSH_CA_CERT} ? '<provided>' : '<not provided>');
+	debug("  Deployment: %s", $ENV{BOSH_DEPLOYMENT} || '<not set>');
+
+	my $director = $class->new(
+		$ENV{BOSH_ALIAS} || 'user-env',
+		url => $ENV{BOSH_ENVIRONMENT}, # TODO : Is this the way to get the url?
+		client => $ENV{BOSH_USER},  # Use as client for compatibility
+		secret => $ENV{BOSH_PASSWORD},
+		ca_cert => $ENV{BOSH_CA_CERT},
+		deployment => $ENV{BOSH_DEPLOYMENT},
+		user_credentials => 1  # Flag to indicate these are user credentials
+	);
+
+	debug("Successfully created BOSH director with user credentials");
+	return $director;
+}
+
+# }}}
 # from_environment - create a BOSH director object from current environment variables {{{
 sub from_environment {
 	my $class = shift;
 
+	# Check for user credentials first (BOSH_USER/BOSH_PASSWORD)
+	if (is_valid_uri($ENV{BOSH_ENVIRONMENT}) && $ENV{BOSH_USER} && $ENV{BOSH_PASSWORD}) {
+		trace("Using user credentials from environment: BOSH_USER=%s", $ENV{BOSH_USER});
+		return $class->new(
+			$ENV{BOSH_ALIAS} || 'user-env',
+			url => $ENV{BOSH_ENVIRONMENT},
+			client => $ENV{BOSH_USER},
+			secret => $ENV{BOSH_PASSWORD},
+			ca_cert => $ENV{BOSH_CA_CERT},
+			deployment => $ENV{BOSH_DEPLOYMENT},
+			user_credentials => 1
+		);
+	}
+
+	# Fall back to client credentials (existing behavior)
 	if (is_valid_uri($ENV{BOSH_ENVIRONMENT}) && $ENV{BOSH_CLIENT}) {
 		return $class->new(
 			$ENV{BOSH_ALIAS},
@@ -198,9 +281,23 @@ sub environment_variables {
 		BOSH_ALIAS         => $self->{alias},
 		BOSH_ENVIRONMENT   => $self->url,
 		BOSH_CA_CERT       => $self->{ca_cert},
-		BOSH_CLIENT        => $self->{client},
-		BOSH_CLIENT_SECRET => $self->{secret},
 	);
+
+	# Set credentials based on type
+	if ($self->{user_credentials}) {
+		# For user credentials, set both formats for compatibility
+		$envs{BOSH_USER} = $self->{client};
+		$envs{BOSH_PASSWORD} = $self->{secret};
+		# Also set client format since Genesis expects these
+		$envs{BOSH_CLIENT} = $self->{client};
+		$envs{BOSH_CLIENT_SECRET} = $self->{secret};
+		trace("Setting environment variables for user credentials: BOSH_USER=%s", $self->{client});
+	} else {
+		# Standard client credentials
+		$envs{BOSH_CLIENT} = $self->{client};
+		$envs{BOSH_CLIENT_SECRET} = $self->{secret};
+	}
+
 	$envs{BOSH_DEPLOYMENT} = $self->{deployment} if $self->{deployment};
 	return %envs;
 }
@@ -517,7 +614,7 @@ sub deployments {
 	my $deployment_rows = read_json_from($_[0]->execute('deployments','--json'))->{Tables}[0]{Rows};
 	my $deployments = {};
 	for my $deployment (@$deployment_rows) {
-		# Clean up 
+		# Clean up
 		my $name = $deployment->{name};
 		$deployments->{$name} = {
 			releases  => [split(/\n/, $deployment->{release_s} // '')],
@@ -549,7 +646,7 @@ sub delete_deployment {
 	if ($opts{dryrun}) {
 		$self->dryrun_of(@cmd);
 		return wantarray ? (undef, 0, undef) : 1;
-	} 
+	}
 
 	my ($out, $rc, $err) = $self->execute({interactive => 1}, @cmd);
 	return wantarray ? ($out, $rc, $err) : !$rc;
@@ -623,7 +720,7 @@ sub cleanup {
 						$last_name = $name;
 						$name_length = length($name) if length($name) > $name_length;
 					}
-					push @{$results{$name}{$release->{'Stemcell OS'}}}, $release->{'Stemcell Version'}; 
+					push @{$results{$name}{$release->{'Stemcell OS'}}}, $release->{'Stemcell Version'};
 				}
 
 				$name_length += 2; # for the ': '
@@ -658,6 +755,49 @@ sub cleanup {
 	my ($out, $rc, $err) = $self->execute({interactive => 1},@cmd);
 	return wantarray ? ($out, $rc, $err) : !$rc;
 }
+# }}}
+
+# synchronize_credentials - ensure both user and client credential formats work {{{
+sub synchronize_credentials {
+	my ($self) = @_;
+
+	# If this director was created with user credentials, ensure both formats are synchronized
+	if ($self->{user_credentials}) {
+		trace("Synchronizing user and client credential formats for: %s", $self->{client});
+
+		# Both BOSH_USER/BOSH_PASSWORD and BOSH_CLIENT/BOSH_CLIENT_SECRET should work
+		# This is already handled in environment_variables method
+		return {
+			user_format => {
+				user => $self->{client},
+				password => $self->{secret}
+			},
+			client_format => {
+				client => $self->{client},
+				secret => $self->{secret}
+			},
+			synchronized => 1
+		};
+	}
+
+	return {
+		synchronized => 0,
+		message => "Director not using user credentials"
+	};
+}
+
+# supports_user_credentials - check if this director instance supports user credentials {{{
+sub supports_user_credentials {
+	my ($self) = @_;
+	return $self->{user_credentials} || 0;
+}
+
+# get_credential_type - return the type of credentials being used {{{
+sub get_credential_type {
+	my ($self) = @_;
+	return $self->{user_credentials} ? 'user' : 'client';
+}
+
 # }}}
 1
 # vim: fdm=marker:foldlevel=1:noet

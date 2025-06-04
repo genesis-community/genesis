@@ -25,6 +25,78 @@ sub deploy_successful {
 	return $_[0]->{rc} == 0;
 }
 
+# upload_user_credentials_to_uaa - upload user credentials to UAA after BOSH director deployment {{{
+sub upload_user_credentials_to_uaa {
+	my ($self) = @_;
+	my $env = $self->env;
+	
+	# Only upload credentials for BOSH director deployments
+	return unless $env->is_bosh_director;
+	
+	# Only proceed if user credentials are configured
+	return unless $ENV{BOSH_USER} && $ENV{BOSH_PASSWORD};
+	
+	my $user = $ENV{BOSH_USER};
+	my $password = $ENV{BOSH_PASSWORD};
+	
+	trace("Uploading user credentials to UAA: user=%s", $user);
+	
+	# Create both username/password and client credentials with same values
+	# This maintains compatibility with Genesis's preference for client credentials
+	my $bosh = $env->get_target_bosh({self => 1});
+	
+	eval {
+		# Create UAA user account
+		$self->_create_uaa_user($bosh, $user, $password);
+		
+		# Create UAA client with same credentials
+		$self->_create_uaa_client($bosh, $user, $password);
+		
+		info("Successfully uploaded user credentials to UAA: %s", $user);
+	};
+	if ($@) {
+		warning("Failed to upload user credentials to UAA: %s", $@);
+	}
+}
+
+# _create_uaa_user - create a UAA user account {{{
+sub _create_uaa_user {
+	my ($self, $bosh, $username, $password) = @_;
+	
+	# Use BOSH CLI to create UAA user (requires admin access)
+	my ($out, $rc, $err) = $bosh->execute(
+		{interactive => 0},
+		'run-errand', 'configure-uaa',
+		'--var', "username=$username",
+		'--var', "password=$password"
+	);
+	
+	if ($rc) {
+		bail("Failed to create UAA user $username: $err");
+	}
+	
+	trace("Created UAA user: %s", $username);
+}
+
+# _create_uaa_client - create a UAA client with same credentials {{{
+sub _create_uaa_client {
+	my ($self, $bosh, $client_id, $client_secret) = @_;
+	
+	# Use BOSH CLI to create UAA client
+	my ($out, $rc, $err) = $bosh->execute(
+		{interactive => 0},
+		'run-errand', 'configure-uaa-client',
+		'--var', "client_id=$client_id",
+		'--var', "client_secret=$client_secret"
+	);
+	
+	if ($rc) {
+		bail("Failed to create UAA client $client_id: $err");
+	}
+	
+	trace("Created UAA client: %s", $client_id);
+}
+
 sub update_director_network_config {
 	my $self = shift;
 	my $env = $self->env;
