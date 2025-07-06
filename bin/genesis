@@ -34,7 +34,6 @@ $Genesis::VERSION = "(development)";
 $Genesis::BUILD = "";
 
 # Command will be determined later in main()
-$ENV{GENESIS_COMMAND} = '';
 Genesis::Init();
 
 
@@ -45,37 +44,18 @@ define_command('help', {
 		usage => "help [<options...>]",
 		function_group => Genesis::Commands::GENESIS,
 		options => [
-			'all|A' => 'Show all commands, not just the common categories',
+			'all|A' =>
+				'Show all , not just the common categories',
+			'list-topics|l' =>
+				'List all available help topics',
+			'topic|t=s' =>
+				'Show help for a specific topic (eg: genesis help topic)',
+			'command|c=s' =>
+				'Show help for a specific command (eg: genesis help command) - usually '.
+				'equavalent to genesis command -h',
 		],
 		skip_check_prereqs => 1,
 		no_vault => 1
-}, sub {
-	# First check if we just want to see global options alone
-	if (!@_ && get_options->{globals}) {
-		# Show only global options
-		Genesis::Commands::show_global_options();
-		return;
-	}
-	
-	if (@_) {
-		# Show help for specific command
-		my $cmd = shift;
-		
-		# Check if command exists
-		if (exists $Genesis::Commands::GENESIS_COMMANDS{$cmd}) {
-			# Prepare command context for usage display
-			$Genesis::Commands::CALLED = $cmd;
-			$Genesis::Commands::COMMAND = $Genesis::Commands::GENESIS_COMMANDS{$cmd};
-			# Show globals if --globals, --help-full, or --helpful flag is present
-			my $show_global = (get_options->{globals} || get_options->{'help-full'} || get_options->{helpful}) ? 1 : 0;
-			command_usage(0, undef, $show_global);
-		} else {
-			command_help("Unknown command: #G{$cmd}", 2);
-		}
-	} else {
-		# Show general help listing
-		command_help();
-	}
 });
 
 # }}}
@@ -2016,7 +1996,7 @@ sub main {
 			}
 		} elsif ($arg =~ /^@/) {
 			bail(
-				"Must use @-notation before the Genesis subcommand."
+				'Must use @-notation before the Genesis subcommand.'
 			);
 		} else {
 			if (has_command($arg) || $arg eq 'help') {
@@ -2069,7 +2049,6 @@ sub main {
 		trace("arguments are [".join(', ', @args)."]");
 		if (has_command $cmd) {
 			# Set the command for logging purposes
-			$ENV{GENESIS_COMMAND} = $cmd;
 			prepare_command $cmd, @args;
 			set_top_path;
 			check_embedded_genesis;

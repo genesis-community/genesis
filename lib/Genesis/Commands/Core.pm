@@ -193,6 +193,49 @@ EOF
 	exec {$target} $target, 'version';
 }
 
+sub help {
+	
+	# First check if we just want to see global options alone
+	if (!@_ && get_options->{globals}) {
+		# Show only global options
+		Genesis::Commands::show_global_options();
+		return;
+	}
+
+	if (@_) {
+		my $cmd = shift;
+		
+		# Check for help topics command
+		if ($cmd eq 'topics') {
+			require Genesis::HelpTopics;
+			Genesis::HelpTopics::list_help_topics();
+			return;
+		}
+		
+		# Check if it's a help topic
+		require Genesis::HelpTopics;
+		if (Genesis::HelpTopics::is_help_topic($cmd)) {
+			Genesis::HelpTopics::show_help_topic($cmd);
+			return;
+		}
+
+		# Check if command exists
+		if (exists $Genesis::Commands::GENESIS_COMMANDS{$cmd}) {
+			# Prepare command context for usage display
+			$Genesis::Commands::CALLED = $cmd;
+			$Genesis::Commands::COMMAND = $Genesis::Commands::GENESIS_COMMANDS{$cmd};
+			# Show globals if --globals, --help-full, or --helpful flag is present
+			my $show_global = (get_options->{globals} || get_options->{'help-full'} || get_options->{helpful}) ? 1 : 0;
+			command_usage(0, undef, $show_global);
+		} else {
+			command_help("Unknown command or topic: #G{$cmd}", 2);
+		}
+	} else {
+		# Show general help listing
+		command_help();
+	}
+}
+
 sub hack {
 	my ($cmd, @args) = @_;
 
@@ -283,7 +326,7 @@ sub hack {
 				bail(
 					"Improperly formatted expression: unexpected opening parenthesis while waiting for argment",
 				) if ($waiting_for eq 'arg');
-				$waiting_for = 'arg';	
+				$waiting_for = 'arg';
 				my $obj = $obj->$method_name(@method_args);
 				$call_ready = 0;
 			}
