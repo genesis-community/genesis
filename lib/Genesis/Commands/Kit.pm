@@ -64,14 +64,19 @@ sub build_kit {
 
 	my $name = delete $options{name};
 
-	my $top = Genesis::Top->new('.');
-	my @remote_versions = map {$_->{version}} ($top->remote_kit_versions(
-		$name,
-		include_prereleases=>1,
-		include_drafts=>1
-	));
-	my $local_kits = Genesis::Kit::Compiled->local_kits($top->kit_provider, $target);
-	my @local_versions = grep { semver($_) } (keys %{ $local_kits->{$name} });
+	# Only query remote/local kit versions if we're in a deployment repository.
+	# When compiling from a standalone kit source repo, we skip this check.
+	my ($top, @remote_versions, @local_versions);
+	if (Genesis::Top->is_repo('.')) {
+		$top = Genesis::Top->new('.');
+		@remote_versions = map {$_->{version}} ($top->remote_kit_versions(
+			$name,
+			include_prereleases=>1,
+			include_drafts=>1
+		));
+		my $local_kits = Genesis::Kit::Compiled->local_kits($top->kit_provider, $target);
+		@local_versions = grep { semver($_) } (keys %{ $local_kits->{$name} });
+	}
 
 	if ($options{version}) {
 		$options{version} =~ s/^v//; # trim any leading 'v'

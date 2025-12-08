@@ -234,8 +234,9 @@ sub _select_files {
 		return if $exclude_re && $File::Find::name =~ $exclude_re;
 		return if $File::Find::name eq $self->{root}; # skip root dir itself
 
-		# Strip the root path prefix
-		my $filename = substr($File::Find::name, length($self->{root} =~ s{/*}{/}r) + 1);
+		# Strip the root path prefix (ensure root has trailing slash)
+		my $root_with_slash = $self->{root} =~ s{/*$}{/}r;
+		my $filename = substr($File::Find::name, length($root_with_slash));
 		push @all_files, $filename;
 	}, $self->{root});
 	return @all_files;
@@ -269,6 +270,10 @@ sub compile {
 	# Add and remap the files to be under the base dir
 	for my $path (sort @files) {
 		my ($file) = $tar->add_files($path);
+		unless ($file) {
+			warning "Skipping file '%s' - not found", $path;
+			next;
+		}
 		my $full_path = "$base_dir".$file->full_path;
 		$full_path =~ s{/*$}{/} if $file->is_dir;
 		$file->rename($full_path);
