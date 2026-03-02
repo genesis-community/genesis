@@ -9,6 +9,7 @@ use Genesis::Commands;
 use Genesis::Top;
 use Genesis::Env;
 use Genesis::CI::Legacy qw//;
+use Genesis::CI::Compiler;
 use Service::Vault::Remote;
 
 use File::Basename qw/dirname/;
@@ -24,6 +25,27 @@ sub embed {
 sub repipe {
 	option_defaults(config => 'ci.yml');
 	my $layout = $_[0];
+
+	bail("--output-dir requires --platform")
+		if get_options->{'output-dir'} && !get_options->{platform};
+
+	bail("--skip-vault requires --platform")
+		if get_options->{'skip-vault'} && !get_options->{platform};
+
+	# New compiler pipeline when --platform is specified
+	if (get_options->{platform}) {
+		my $top;
+		if (get_options->{'skip-vault'}) {
+			$top = Genesis::Top->new('.');
+		} else {
+			$top = Genesis::Top->new('.', vault=>get_options->{vault});
+			bail("No vault specified or configured.\n".
+				"Use --skip-vault with --platform to compile without vault access."
+			) unless $top->vault;
+		}
+		return _repipe_compiled($top, $layout);
+	}
+
 	my $top = Genesis::Top->new('.', vault=>get_options->{vault});
 	bail(
 		"No vault specified or configured."
@@ -71,6 +93,11 @@ sub graph {
 	my $layout = $_[0];
 	my $top = Genesis::Top->new('.');
 
+	# New compiler pipeline when --platform is specified
+	if (get_options->{platform}) {
+		return _graph_compiled($top, $layout);
+	}
+
 	(my $pipeline, $layout) = Genesis::CI::Legacy::parse(get_options->{config}, $top, $layout);
 	my $dot = Genesis::CI::Legacy::generate_pipeline_graphviz_source($pipeline);
 	output "$dot";
@@ -81,6 +108,11 @@ sub describe {
 	option_defaults(config => 'ci.yml');
 	my $layout = $_[0];
 	my $top = Genesis::Top->new('.');
+
+	# New compiler pipeline when --platform is specified
+	if (get_options->{platform}) {
+		return _describe_compiled($top, $layout);
+	}
 
 	(my $pipeline, $layout) = Genesis::CI::Legacy::parse(get_options->{config}, $top, $layout);
 	Genesis::CI::Legacy::generate_pipeline_human_description($pipeline);
@@ -394,6 +426,261 @@ sub ci_pipeline_run_errand {
 	$env->bosh->run_errand($ENV{ERRAND_NAME});
 	exit 0;
 }
+
+### Compiler Pipeline Functions {{{
+
+# _repipe_compiled - deploy pipeline using the new compiler system {{{
+sub _repipe_compiled {
+	my ($top, $layout) = @_;
+	my $platform = get_options->{platform};
+
+	my $result = _compile_pipeline($top, $platform);
+	my $ast    = $result->{ast};
+	my $output = $result->{output};
+
+	my $name = $ast->metadata->{name}
+		or bail("Pipeline AST has no name defined");
+
+	# --output-dir: write artifacts to directory and exit
+	if (my $out_dir = get_options->{'output-dir'}) {
+		mkdir_or_fail($out_dir);
+		for my $file (sort keys %$output) {
+			mkfile_or_fail("$out_dir/$file", $output->{$file});
+			info("Wrote #C{%s/%s}", $out_dir, $file);
+		}
+		mkfile_or_fail("$out_dir/ast.json",
+			JSON::PP->new->pretty->canonical->encode({%$ast}));
+		info("Wrote #C{%s/ast.json}", $out_dir);
+		info("Pipeline artifacts written to #C{%s/}", $out_dir);
+		exit 0;
+	}
+
+	# For concourse, output is { 'pipeline.yml' => $yaml_string }
+	if ($platform eq 'concourse') {
+		my $yaml = $output->{'pipeline.yml'}
+			or bail("Concourse provider did not produce pipeline.yml");
+
+		if (get_options->{'dry-run'}) {
+			output({raw => 1}, $yaml);
+			exit 0;
+		}
+
+		option_defaults(target => $layout || $name);
+
+		my ($out,$rc) = run(
+			'fly -t $1 pause-pipeline -p $2',
+			get_options->{target}, $name
+		);
+		bail("Could not pause #c{%s} pipeline: $out", $name)
+			unless $rc == 0 || $out =~ /pipeline '.*' not found/;
+
+		my $yes = get_options->{yes} ? ' -n ' : '';
+		my $dir = workdir;
+		mkfile_or_fail("${dir}/pipeline.yml", $yaml);
+		run({ interactive => 1, onfailure => "Could not upload pipeline $name" },
+			'fly -t $1 set-pipeline '.$yes.' -p $2 -c $3/pipeline.yml',
+			get_options->{target}, $name, $dir);
+
+		run(
+			{ interactive => 1, onfailure => "Could not unpause pipeline $name" },
+			'fly -t $1 unpause-pipeline -p $2',
+			get_options->{target}, $name
+		) unless (get_options->{paused});
+
+		my $public = $ast->configuration->{public} || 0;
+		my $action = ($public ? 'expose' : 'hide');
+		run({ interactive => 1, onfailure => "Could not $action pipeline $name" },
+			'fly -t $1 '.$action.'-pipeline -p $2',
+			get_options->{target}, $name);
+
+	} elsif ($platform eq 'github-actions') {
+		# GitHub Actions outputs workflow YAML files to .github/workflows/
+		if (get_options->{'dry-run'}) {
+			for my $file (sort keys %$output) {
+				output "#G{--- %s ---}", $file;
+				output({raw => 1}, $output->{$file});
+			}
+			exit 0;
+		}
+
+		for my $file (sort keys %$output) {
+			my $path = ".github/workflows/$file";
+			mkdir_or_fail(dirname($path));
+			mkfile_or_fail($path, $output->{$file});
+			info("Wrote #C{%s}", $path);
+		}
+		info("GitHub Actions workflows written. Commit and push to activate.");
+	} else {
+		bail("Unsupported platform '%s' for repipe", $platform);
+	}
+
+	exit 0;
+}
+
+# }}}
+# _graph_compiled - generate graphviz from compiled pipeline {{{
+sub _graph_compiled {
+	my ($top, $layout) = @_;
+	my $platform = get_options->{platform};
+
+	my $result   = _compile_pipeline($top, $platform);
+	my $ast      = $result->{ast};
+	my $provider = $result->{provider};
+
+	# Use provider's graphviz method if available
+	if ($provider->can('generate_graphviz')) {
+		my $dot = $provider->generate_graphviz($ast);
+		output "$dot";
+		exit 0;
+	}
+
+	# Fall back to generic AST-based graphviz
+	my $dot = _ast_to_graphviz($ast);
+	output "$dot";
+	exit 0;
+}
+
+# }}}
+# _describe_compiled - describe compiled pipeline in human-readable form {{{
+sub _describe_compiled {
+	my ($top, $layout) = @_;
+	my $platform = get_options->{platform};
+
+	my $result   = _compile_pipeline($top, $platform);
+	my $ast      = $result->{ast};
+	my $provider = $result->{provider};
+
+	# Use provider's describe method if available
+	if ($provider->can('generate_description')) {
+		$provider->generate_description($ast);
+		exit 0;
+	}
+
+	# Fall back to generic AST-based description
+	_describe_ast($ast, $platform);
+	exit 0;
+}
+
+# }}}
+# _compile_pipeline - run the compiler pipeline and return results {{{
+sub _compile_pipeline {
+	my ($top, $platform) = @_;
+
+	my %compiler_opts = (top => $top);
+
+	# Detect configuration source
+	my $ci_dir = '.genesis/ci';
+	if (-d $ci_dir && -f "$ci_dir/pipeline.yml") {
+		$compiler_opts{ci_dir} = $ci_dir;
+		info("Using multi-file configuration from #C{%s/}", $ci_dir);
+	} else {
+		$compiler_opts{file} = get_options->{config} || 'ci.yml';
+		info("Using legacy configuration from #C{%s}", $compiler_opts{file});
+	}
+
+	my $compiler = Genesis::CI::Compiler->new(%compiler_opts);
+	return $compiler->compile(provider => $platform);
+}
+
+# }}}
+# _ast_to_graphviz - generate graphviz DOT source from an AST {{{
+sub _ast_to_graphviz {
+	my ($ast) = @_;
+
+	my @lines = (
+		'digraph pipeline {',
+		'  rankdir=LR;',
+		'  node [shape=box, style=filled, fillcolor=lightblue];',
+		sprintf('  labelloc=t; label="%s";', $ast->metadata->{name} || 'Pipeline'),
+		'',
+	);
+
+	for my $wf_name ($ast->workflow_names) {
+		my $wf = $ast->workflows->{$wf_name};
+		next unless $wf->{graph};
+
+		push @lines, sprintf('  subgraph cluster_%s {', $wf_name);
+		push @lines, sprintf('    label="%s";', $wf_name);
+
+		my $nodes = $wf->{graph}{nodes} || {};
+		my $edges = $wf->{graph}{edges} || [];
+
+		for my $node_name (sort keys %$nodes) {
+			my $node = $nodes->{$node_name};
+			my $label = $node->{alias} || $node->{genesis_env} || $node_name;
+			my $color = $node->{auto} ? 'palegreen' : 'lightblue';
+			push @lines, sprintf('    "%s_%s" [label="%s", fillcolor=%s];',
+				$wf_name, $node_name, $label, $color);
+		}
+
+		for my $edge (@$edges) {
+			push @lines, sprintf('    "%s_%s" -> "%s_%s";',
+				$wf_name, $edge->{from}, $wf_name, $edge->{to});
+		}
+
+		push @lines, '  }';
+		push @lines, '';
+	}
+
+	push @lines, '}';
+	return join("\n", @lines);
+}
+
+# }}}
+# _describe_ast - describe AST contents in human-readable form {{{
+sub _describe_ast {
+	my ($ast, $platform) = @_;
+
+	output "#G{Pipeline}: #C{%s}", $ast->metadata->{name} || '(unnamed)';
+	output "  #Yi{Platform}: %s", $platform;
+	output "  #Yi{Source}:   %s", $ast->metadata->{source} || 'unknown';
+	output "";
+
+	# Integrations
+	my $integrations = $ast->integrations || {};
+	if (my $sc = $integrations->{source_control}) {
+		output "#G{Source Control}:";
+		output "  Provider:   %s", $sc->{provider} || 'unknown';
+		output "  Repository: %s", $sc->{repository} || 'unknown';
+	}
+
+	# Targets
+	my @targets = $ast->target_names;
+	if (@targets) {
+		output "";
+		output "#G{Targets}: (%d)", scalar @targets;
+		for my $name (sort @targets) {
+			output "  - #C{%s}", $name;
+		}
+	}
+
+	# Workflows
+	my @workflows = $ast->workflow_names;
+	if (@workflows) {
+		output "";
+		output "#G{Workflows}: (%d)", scalar @workflows;
+		for my $wf_name (sort @workflows) {
+			my $wf = $ast->workflows->{$wf_name};
+			output "  #Yi{%s} (%s)", $wf_name, $wf->{type} || 'deployment';
+
+			if ($wf->{graph} && $wf->{graph}{nodes}) {
+				my $nodes = $wf->{graph}{nodes};
+				my $edges = $wf->{graph}{edges} || [];
+				output "    Stages: %s", join(' -> ',
+					map { $_->{alias} || $_->{genesis_env} || $_->{stage_name} }
+					map { $nodes->{$_} }
+					sort keys %$nodes
+				);
+				output "    Edges:  %d", scalar @$edges;
+			}
+		}
+	}
+
+	output "";
+}
+
+# }}}
+# }}}
 
 ### Support functions
 

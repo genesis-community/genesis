@@ -2,14 +2,31 @@ package Genesis::CI::GithubActions;
 use v5.20;
 use warnings;
 
-use parent 'Genesis::CI';
+use parent 'Genesis::CI', 'Genesis::CI::Compiler::PipelineProvider';
 
 use Genesis;
 use Genesis::Top;
 use YAML::PP;
+use JSON::PP;
 
 ### Class Methods {{{
 
+# new - constructor for compiler pipeline path {{{
+sub new {
+	my ($class, %opts) = @_;
+
+	if ($opts{ast}) {
+		return bless({
+			ast => $opts{ast},
+			top => $opts{top},
+		}, $class);
+	}
+
+	bug("Use Genesis::CI->new(type => 'github-actions', ...) for trait construction, ".
+		"or pass ast => \$ast for compiler construction");
+}
+
+# }}}
 # init - initialize GitHub Actions provider {{{
 sub init {
 	my ($class, %opts) = @_;
@@ -288,6 +305,160 @@ sub _generate_steps_for_env {
 	}
 	
 	return \@steps;
+}
+
+# }}}
+# }}}
+### Compiler Pipeline Interface {{{
+
+# generate_from_ast - generate GitHub Actions workflow from AST {{{
+sub generate_from_ast {
+	my ($self, $ast) = @_;
+
+	my $sc          = $ast->integrations->{source_control} || {};
+	my $vault       = $ast->integrations->{vault} || {};
+	my $config      = $ast->configuration || {};
+	my $deploy_type = $ast->metadata->{deployment_type} || 'deployment';
+	my $name        = $ast->metadata->{name} || 'genesis-pipeline';
+	my $branch      = $sc->{default_branch} || $ast->branches->{live} || 'main';
+	my $root        = $sc->{root} || '.';
+
+	# Build workflow triggers
+	my $on = {
+		push => {
+			branches => [$branch],
+			($root ne '.' ? (paths => ["$root/**"]) : ()),
+		},
+		workflow_dispatch => undef,
+	};
+
+	# Process workflows to build jobs
+	my %jobs;
+	for my $wf_name (sort $ast->workflow_names) {
+		my $workflow = $ast->workflows->{$wf_name};
+		my $graph    = $workflow->{graph} || {};
+		my $nodes    = $graph->{nodes} || {};
+		my $edges    = $graph->{edges} || [];
+
+		# Compute trigger relationships
+		my %triggers;
+		for my $edge (@$edges) {
+			$triggers{$edge->{to}} = $edge->{from};
+		}
+
+		for my $env_name (sort keys %$nodes) {
+			my $node  = $nodes->{$env_name};
+			my $alias = $node->{alias} || $env_name;
+			my $target = $ast->targets->{$env_name} || {};
+			my $conn   = $target->{connection} || {};
+			my $auth   = $conn->{auth} || {};
+			my $is_create_env = (($target->{type} || '') eq 'bosh-create-env')
+				|| grep { $_ eq 'create-env' } @{$target->{tags} || []};
+
+			my @steps;
+
+			# Checkout
+			push @steps, {
+				name => 'Checkout code',
+				uses => 'actions/checkout@v4',
+			};
+
+			# Vault authentication
+			if ($vault->{url}) {
+				push @steps, {
+					name => 'Authenticate to Vault',
+					uses => 'hashicorp/vault-action@v2',
+					with => {
+						url      => $vault->{url},
+						method   => 'approle',
+						roleId   => '${{ secrets.VAULT_ROLE_ID }}',
+						secretId => '${{ secrets.VAULT_SECRET_ID }}',
+					},
+				};
+			}
+
+			# Build environment variables
+			my %env_vars = (
+				GENESIS_HONOR_ENV    => '1',
+				CURRENT_ENV          => $env_name,
+				VAULT_ADDR           => $vault->{url} || '${{ secrets.VAULT_ADDR }}',
+				VAULT_ROLE_ID        => '${{ secrets.VAULT_ROLE_ID }}',
+				VAULT_SECRET_ID      => '${{ secrets.VAULT_SECRET_ID }}',
+			);
+
+			unless ($is_create_env) {
+				$env_vars{BOSH_ENVIRONMENT}   = $conn->{url} || '${{ secrets.BOSH_ENVIRONMENT }}';
+				$env_vars{BOSH_CLIENT}        = $auth->{client_id} || '${{ secrets.BOSH_CLIENT }}';
+				$env_vars{BOSH_CLIENT_SECRET} = '${{ secrets.BOSH_CLIENT_SECRET }}';
+				$env_vars{BOSH_CA_CERT}       = '${{ secrets.BOSH_CA_CERT }}';
+			}
+
+			# Git auth
+			if ($sc->{auth} && ($sc->{auth}{type} || '') eq 'ssh-key') {
+				$env_vars{GIT_PRIVATE_KEY} = '${{ secrets.GIT_PRIVATE_KEY }}';
+			} else {
+				$env_vars{GIT_USERNAME} = '${{ secrets.GIT_USERNAME }}';
+				$env_vars{GIT_PASSWORD} = '${{ secrets.GIT_PASSWORD }}';
+			}
+
+			# Deploy step
+			my $task_image = ($config->{task} || {})->{image} || 'genesiscommunity/concourse';
+			my $task_ver   = ($config->{task} || {})->{version} || 'latest';
+
+			push @steps, {
+				name      => "Deploy $env_name",
+				uses      => 'docker://'. $task_image . ':' . $task_ver,
+				env       => \%env_vars,
+				with      => { args => 'genesis ci-pipeline-deploy' },
+			};
+
+			# Slack notification
+			my $notifications = $ast->integrations->{notifications} || [];
+			for my $notif (@$notifications) {
+				if ($notif->{type} eq 'slack') {
+					push @steps, {
+						name => 'Notify Slack',
+						if   => 'always()',
+						uses => 'slackapi/slack-github-action@v1',
+						with => {
+							channel_id    => $notif->{channel},
+							slack_message => "$name: Deployment to $env_name " . '${{ job.status }}',
+						},
+						env => { SLACK_BOT_TOKEN => '${{ secrets.SLACK_BOT_TOKEN }}' },
+					};
+				}
+			}
+
+			# Build job with dependency on trigger
+			my $job = {
+				'runs-on' => 'ubuntu-latest',
+				steps     => \@steps,
+			};
+
+			# Add dependency if triggered by another env
+			if ($triggers{$env_name}) {
+				my $dep_alias = $nodes->{$triggers{$env_name}}{alias} || $triggers{$env_name};
+				$job->{needs} = ["deploy-$dep_alias"];
+			}
+
+			$jobs{"deploy-$alias"} = $job;
+		}
+	}
+
+	my $workflow = {
+		name => $name,
+		on   => $on,
+		jobs => \%jobs,
+	};
+
+	my $ypp = YAML::PP->new;
+	return $ypp->dump_string($workflow);
+}
+
+# }}}
+# output_files - describe generated files {{{
+sub output_files {
+	return { "$_[0]->{config}{name}.yml" => 'GitHub Actions workflow definition' };
 }
 
 # }}}
