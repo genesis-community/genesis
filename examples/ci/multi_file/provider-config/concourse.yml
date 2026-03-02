@@ -1,0 +1,44 @@
+---
+# Concourse-specific configuration overrides
+
+# Make pipeline publicly visible in Concourse UI
+public: true
+
+# Task configuration
+task:
+  image: genesiscommunity/concourse
+  version: latest
+
+  # Tasks that require privileged mode
+  privileged:
+    - deploy-us-west-prod
+    - deploy-us-east-prod
+
+# Concourse-specific resource types
+resource_types:
+  - name: locker
+    type: docker-image
+    source:
+      repository: cfcommunity/locker-resource
+      tag: latest
+
+# Concourse pipeline groups (optional, overrides pipeline.yml groups)
+groups:
+  - name: sandbox
+    jobs:
+      - deploy-us-west-sandbox
+      - deploy-us-east-sandbox
+      - smoke-test-us-west-sandbox
+      - smoke-test-us-east-sandbox
+
+  - name: production
+    jobs:
+      - deploy-us-west-prod
+      - deploy-us-east-prod
+      - smoke-test-us-west-prod
+      - smoke-test-us-east-prod
+
+  - name: maintenance
+    jobs:
+      - check-kit-updates
+      - update-kit

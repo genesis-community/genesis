@@ -1,0 +1,74 @@
+---
+# External Integrations Configuration
+# Vault, Git, Notifications, and other external services
+
+vault:
+  url: https://vault.example.com:8200
+  namespace: /deployments/cf
+
+  auth:
+    type: approle
+    role_id: ((vault/approle/role-id))
+    secret_id: ((vault/approle/secret-id))
+
+  options:
+    tls_verify: true
+    no_strongbox: false
+
+source_control:
+  provider: github
+  repository: myorg/cf-deployments
+  uri: git@github.com:myorg/cf-deployments.git
+  default_branch: main
+  root: .
+  version_depth: 100
+
+  auth:
+    type: ssh-key
+    private_key: ((git/deploy-key))
+
+  commit_author:
+    name: Genesis CI Bot
+    email: genesis-ci@example.com
+
+notifications:
+  - type: slack
+    name: slack-main
+    webhook: ((slack/webhook-url))
+    channel: "#cf-deployments"
+    username: Genesis Pipeline
+    icon: https://genesis-community.org/images/genesis-logo.png
+    events:
+      - started
+      - failed
+      - succeeded
+
+  - type: slack
+    name: slack-alerts
+    webhook: ((slack/alerts-webhook-url))
+    channel: "#alerts"
+    username: Genesis Alerts
+    icon: https://genesis-community.org/images/genesis-logo.png
+    events:
+      - failed
+
+  - type: email
+    name: email-ops
+    recipients:
+      - ops-team@example.com
+      - platform-team@example.com
+    from: genesis-ci@example.com
+    smtp:
+      host: smtp.example.com
+      port: 587
+      username: ((smtp/username))
+      password: ((smtp/password))
+    events:
+      - failed
+
+locker:
+  url: https://locker.example.com
+  username: ((locker/username))
+  password: ((locker/password))
+  ca_cert: ((locker/ca-cert))
+  skip_ssl_validation: false
