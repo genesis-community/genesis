@@ -90,6 +90,23 @@ B<Undefined/Empty Values:> C<undef> or empty strings return false.
 B<Unknown Values:> Unrecognized strings return C<undef> to allow callers
 to distinguish between a false Boolean object and an unparseable value.
 
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<invalid call to Boolean::parse - only one argument allowed> — raised if
+more than one argument is passed.
+
+=back
+
+B<Examples:>
+
+    my $yes   = Boolean->parse("yes");      # Boolean true
+    my $zero  = Boolean->parse(0);          # Boolean false
+    my $undef = Boolean->parse("unknown");  # undef
+
 =head2 of
 
     my $bool = Boolean->of($value);
@@ -103,11 +120,53 @@ methods like C<is_true>, C<is_empty>, etc.
 =head2 register_pair
 
     Boolean->register_pair($true_value, $false_value);
-    Boolean->register_pair('online', 'offline');
 
 Registers a custom boolean pair for use in parsing and string generation.
 Both values are stored case-insensitively and can be used in C<parse()>
 and auto-derived in C<to_str()>.
+
+=over
+
+=item C<$true_value>
+
+B<(required)> The string representing the true value. Must be a non-empty
+string or an object with string overloading.
+
+=item C<$false_value>
+
+B<(required)> The string representing the false value. Must be a non-empty
+string or an object with string overloading.
+
+=back
+
+Returns C<1> on success.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<Invalid call to Boolean::register_pair - must provide two strings of non-zero length>
+— raised if the argument count is not exactly two.
+
+=item *
+
+C<Invalid true value - must be a non-empty string or an object that provides a string value>
+— raised if C<$true_value> is undefined, empty, or a non-stringifiable reference.
+
+=item *
+
+C<Invalid false value - must be a non-empty string or an object that provides a string value>
+— raised if C<$false_value> is undefined, empty, or a non-stringifiable reference.
+
+=back
+
+B<Examples:>
+
+    Boolean->register_pair('online', 'offline');  # returns 1
+    my $b = Boolean->parse('online');             # Boolean true
+    print $b->to_str('online');                   # "online"
 
 =head1 INSTANCE METHODS
 
@@ -120,6 +179,21 @@ and auto-derived in C<to_str()>.
 Converts the Boolean object to a string representation. By default, returns
 "true" for true values and "false" for false values.
 
+=over
+
+=item C<$true_value>
+
+B<(optional)> The string to return for true values. Defaults to C<"true">.
+
+=item C<$false_value>
+
+B<(optional)> The string to return for false values. When omitted, the
+method attempts to auto-derive the false value from registered boolean
+pairs, preserving the original capitalization pattern. If no matching
+pair is found, defaults to C<"false">.
+
+=back
+
 When only C<$true_value> is provided, the method attempts to auto-derive
 the corresponding false value using the registered boolean pairs, preserving
 the original capitalization pattern. If no matching pair is found, defaults
@@ -128,6 +202,17 @@ to "false".
 The method includes an optimization: when using default values (C<$true_value>
 equals "true" and C<$false_value> is undefined or "false"), it returns the
 appropriate value directly without additional processing.
+
+B<Examples:>
+
+    my $true = Boolean->true;
+    print $true->to_str();              # "true"
+    print $true->to_str("YES", "NO");   # "YES"
+    print $true->to_str("ON");          # "ON" (auto-derives "OFF")
+
+    my $false = Boolean->false;
+    print $false->to_str("YES", "NO");  # "NO"
+    print $false->to_str("ON");         # "OFF" (auto-derived)
 
 =head2 to_i
 
@@ -208,7 +293,7 @@ and safety:
 
 Only two Boolean objects are ever created during the lifetime of the program.
 These singletons are created at compile time and their underlying scalar
-values are marked as read-only using C<Internals::SvREADONLY> to prevent
+values are marked as read-only using the Perl internal function C<Internals::SvREADONLY> to prevent
 accidental modification.
 
 =head2 Memory Efficiency
@@ -233,7 +318,7 @@ runtime. The pairing system supports:
 
 =item * Automatic case preservation in output
 
-=item * Bidirectional lookup (true→false and false→true)
+=item * Bidirectional lookup (true->false and false->true)
 
 =item * Runtime registration of custom pairs
 
@@ -275,10 +360,11 @@ provided to the C<to_str> method rather than relying on auto-derivation.
 
     use Boolean;
 
+    my %raw = (debug => 'yes', verbose => 'no', enabled => '1');
     my %config = (
-        debug    => Boolean->parse($config_hash{debug}),
-        verbose  => Boolean->parse($config_hash{verbose}),
-        enabled  => Boolean->parse($config_hash{enabled}),
+        debug    => Boolean->parse($raw{debug}),     # Boolean true
+        verbose  => Boolean->parse($raw{verbose}),    # Boolean false
+        enabled  => Boolean->parse($raw{enabled}),    # Boolean true
     );
 
     # Use in boolean context
