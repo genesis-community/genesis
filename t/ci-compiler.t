@@ -178,6 +178,51 @@ subtest 'AST - cycle detection' => sub {
 	like $@, qr/Cycle detected/, "topological sort detects cycles";
 };
 
+subtest 'AST - generic triggers and resources' => sub {
+	my $ast = Genesis::CI::Compiler::AST->new(
+		triggers => {
+			'git-push' => { type => 'git', branch => 'main', paths => ['*.yml'] },
+			'schedule' => { type => 'time', interval => '24h' },
+		},
+		resources => {
+			'lab-bosh' => { type => 'bosh-director', url => 'https://bosh.lab:25555' },
+			'vault'    => { type => 'vault', url => 'https://vault.example.com' },
+			'git-repo' => { type => 'git', uri => 'git@github.com:org/repo.git' },
+		},
+	);
+
+	# Trigger accessors
+	my @triggers = $ast->trigger_names;
+	is_deeply \@triggers, ['git-push', 'schedule'], "trigger_names returns sorted names";
+	is $ast->triggers->{'git-push'}{type}, 'git', "trigger type accessible";
+	is $ast->triggers->{'schedule'}{interval}, '24h', "trigger data accessible";
+
+	# Resource accessors
+	my @resources = $ast->resource_names;
+	is_deeply \@resources, ['git-repo', 'lab-bosh', 'vault'], "resource_names returns sorted names";
+	is $ast->resources->{'lab-bosh'}{type}, 'bosh-director', "resource type accessible";
+
+	# resources_matching
+	my @bosh_resources = $ast->resources_matching('*-bosh');
+	is scalar(@bosh_resources), 1, "resources_matching '*-bosh' finds 1 resource";
+	is $bosh_resources[0]{type}, 'bosh-director', "matched resource has correct type";
+
+	my @all_resources = $ast->resources_matching('*');
+	is scalar(@all_resources), 3, "resources_matching '*' finds all 3 resources";
+};
+
+subtest 'AST - backward compat: triggers/resources empty by default' => sub {
+	my $ast = Genesis::CI::Compiler::AST->new(
+		metadata => { name => 'compat-test' },
+		targets  => { sandbox => { type => 'bosh-director' } },
+	);
+
+	is_deeply $ast->triggers, {}, "triggers defaults to empty hash";
+	is_deeply $ast->resources, {}, "resources defaults to empty hash";
+	# Legacy accessors still work
+	is_deeply [sort keys %{$ast->targets}], ['sandbox'], "targets accessor still works";
+};
+
 subtest 'AST - env_vars_for_target' => sub {
 	my $ast = Genesis::CI::Compiler::AST->new(
 		integrations => {
@@ -348,6 +393,75 @@ subtest 'ASTBuilder - modern format' => sub {
 	is $edges[0]{to}, 'preprod', "first edge to preprod";
 	is $edges[1]{from}, 'preprod', "second edge from preprod";
 	is $edges[1]{to}, 'prod', "second edge to prod";
+};
+
+subtest 'ASTBuilder - modern format populates generic fields' => sub {
+	my $builder = Genesis::CI::Compiler::ASTBuilder->new();
+
+	my $parsed = {
+		_source_format => 'multi-file',
+		pipeline => {
+			metadata => { name => 'generic-test', version => '2.0' },
+			branches => { live => 'main' },
+			workflows => {
+				deploy => {
+					type   => 'deployment',
+					stages => [{ name => 'sandbox', script => 'deploy' }],
+				},
+			},
+			triggers => {
+				'git-push' => { type => 'git', branch => 'main', paths => ['*.yml'] },
+			},
+			resources => {
+				'lab-bosh' => { type => 'bosh-director', url => 'https://bosh:25555' },
+			},
+		},
+		integrations => {
+			vault => { url => 'https://vault.example.com' },
+			source_control => { provider => 'github', repository => 'org/repo' },
+		},
+		targets => { sandbox => { type => 'bosh-director' } },
+	};
+
+	my $ast = $builder->build($parsed, {});
+
+	# Explicit triggers/resources are passed through
+	ok exists $ast->triggers->{'git-push'}, "explicit triggers preserved";
+	is $ast->triggers->{'git-push'}{type}, 'git', "trigger type preserved";
+	ok exists $ast->resources->{'lab-bosh'}, "explicit resources preserved";
+	is $ast->resources->{'lab-bosh'}{type}, 'bosh-director', "resource type preserved";
+};
+
+subtest 'ASTBuilder - no auto-population without explicit triggers/resources' => sub {
+	my $builder = Genesis::CI::Compiler::ASTBuilder->new();
+
+	my $parsed = {
+		_source_format => 'multi-file',
+		pipeline => {
+			metadata  => { name => 'no-auto-pop-test' },
+			branches  => { live => 'main' },
+			workflows => {},
+			# No explicit triggers or resources
+		},
+		integrations => {
+			vault          => { url => 'https://vault.example.com', auth => { role_id => 'r' } },
+			source_control => { provider => 'github', repository => 'org/repo' },
+		},
+		targets => {
+			sandbox => { type => 'bosh-director', connection => { url => 'https://bosh:25555' } },
+		},
+	};
+
+	my $ast = $builder->build($parsed, {});
+
+	# Without explicit triggers/resources, AST should have empty hashes
+	# (auto-population is PipelineDescriptor's job, not ASTBuilder's)
+	is_deeply $ast->triggers, {}, "triggers empty without explicit config";
+	is_deeply $ast->resources, {}, "resources empty without explicit config";
+
+	# But targets and integrations are still accessible
+	ok exists $ast->targets->{sandbox}, "targets still accessible";
+	ok exists $ast->integrations->{vault}, "integrations still accessible";
 };
 
 ### ============================================================ ###
@@ -736,14 +850,14 @@ subtest 'Concourse - native generation from modern AST' => sub {
 };
 
 ### ============================================================ ###
-### Concourse Provider - Internal Helpers
+### PipelineDescriptor - Internal Helpers
 ### ============================================================ ###
 
-subtest 'Concourse - _env_file_patterns' => sub {
-	my $ast = Genesis::CI::Compiler::AST->new();
-	my $provider = Genesis::CI::Concourse->new(ast => $ast);
+use_ok 'Genesis::CI::Compiler::PipelineDescriptor';
 
-	my @patterns = $provider->_env_file_patterns('us-west-1-sandbox');
+subtest 'PipelineDescriptor - _env_file_patterns' => sub {
+	# _env_file_patterns is a package function in PipelineDescriptor
+	my @patterns = Genesis::CI::Compiler::PipelineDescriptor::_env_file_patterns('us-west-1-sandbox');
 	is_deeply \@patterns, [
 		'us.yml',
 		'us-west.yml',
@@ -751,20 +865,19 @@ subtest 'Concourse - _env_file_patterns' => sub {
 		'us-west-1-sandbox.yml',
 	], "_env_file_patterns computes correct hierarchical files";
 
-	@patterns = $provider->_env_file_patterns('sandbox');
+	@patterns = Genesis::CI::Compiler::PipelineDescriptor::_env_file_patterns('sandbox');
 	is_deeply \@patterns, ['sandbox.yml'],
 		"single-segment env has one pattern";
 };
 
-subtest 'Concourse - _unique_env_files' => sub {
-	my $ast = Genesis::CI::Compiler::AST->new();
-	my $provider = Genesis::CI::Concourse->new(ast => $ast);
-
-	my @unique = $provider->_unique_env_files('us-west-1-preprod', 'us-west-1-sandbox');
+subtest 'PipelineDescriptor - _unique_env_files' => sub {
+	my @unique = Genesis::CI::Compiler::PipelineDescriptor::_unique_env_files(
+		'us-west-1-preprod', 'us-west-1-sandbox');
 	is_deeply \@unique, ['us-west-1-preprod.yml'],
 		"unique files for preprod (triggered by sandbox) is just the preprod-specific file";
 
-	@unique = $provider->_unique_env_files('us-east-1-sandbox', 'us-west-1-sandbox');
+	@unique = Genesis::CI::Compiler::PipelineDescriptor::_unique_env_files(
+		'us-east-1-sandbox', 'us-west-1-sandbox');
 	is_deeply \@unique, [
 		'us-east.yml',
 		'us-east-1.yml',
@@ -772,23 +885,22 @@ subtest 'Concourse - _unique_env_files' => sub {
 	], "unique files when common prefix is just 'us'";
 };
 
-subtest 'Concourse - _shared_env_files' => sub {
-	my $ast = Genesis::CI::Compiler::AST->new();
-	my $provider = Genesis::CI::Concourse->new(ast => $ast);
-
-	my @shared = $provider->_shared_env_files('us-west-1-preprod', 'us-west-1-sandbox');
+subtest 'PipelineDescriptor - _shared_env_files' => sub {
+	my @shared = Genesis::CI::Compiler::PipelineDescriptor::_shared_env_files(
+		'us-west-1-preprod', 'us-west-1-sandbox');
 	is_deeply \@shared, [
 		'us.yml',
 		'us-west.yml',
 		'us-west-1.yml',
 	], "shared files between sandbox and preprod in same region";
 
-	@shared = $provider->_shared_env_files('us-east-1-sandbox', 'us-west-1-sandbox');
+	@shared = Genesis::CI::Compiler::PipelineDescriptor::_shared_env_files(
+		'us-east-1-sandbox', 'us-west-1-sandbox');
 	is_deeply \@shared, ['us.yml'],
 		"shared files between different regions is just the top-level";
 };
 
-subtest 'Concourse - _is_create_env' => sub {
+subtest 'PipelineDescriptor - _is_create_env' => sub {
 	my $ast = Genesis::CI::Compiler::AST->new(
 		targets => {
 			'proto-bosh' => { type => 'bosh-create-env' },
@@ -797,22 +909,19 @@ subtest 'Concourse - _is_create_env' => sub {
 		},
 	);
 
-	my $provider = Genesis::CI::Concourse->new(ast => $ast);
-	ok $provider->_is_create_env($ast, 'proto-bosh'), "type=bosh-create-env detected";
-	ok !$provider->_is_create_env($ast, 'regular'), "type=bosh-director is not create-env";
-	ok $provider->_is_create_env($ast, 'tagged-ce'), "tag 'create-env' detected";
-	ok !$provider->_is_create_env($ast, 'nonexistent'), "missing target returns false";
+	my $descriptor = Genesis::CI::Compiler::PipelineDescriptor->new(ast => $ast);
+	ok $descriptor->_is_create_env($ast, 'proto-bosh'), "type=bosh-create-env detected";
+	ok !$descriptor->_is_create_env($ast, 'regular'), "type=bosh-director is not create-env";
+	ok $descriptor->_is_create_env($ast, 'tagged-ce'), "tag 'create-env' detected";
+	ok !$descriptor->_is_create_env($ast, 'nonexistent'), "missing target returns false";
 };
 
-subtest 'Concourse - _unwrap_ref' => sub {
-	my $ast = Genesis::CI::Compiler::AST->new();
-	my $provider = Genesis::CI::Concourse->new(ast => $ast);
-
-	is $provider->_unwrap_ref('plain-value'), 'plain-value',
+subtest 'PipelineDescriptor - _unwrap_ref' => sub {
+	is Genesis::CI::Compiler::PipelineDescriptor::_unwrap_ref('plain-value'), 'plain-value',
 		"plain scalar passes through";
-	is $provider->_unwrap_ref({ secret_ref => 'vault/path' }), '((vault/path))',
-		"secret_ref hash is unwrapped to ((...)) format";
-	is $provider->_unwrap_ref(undef), undef,
+	is Genesis::CI::Compiler::PipelineDescriptor::_unwrap_ref({ secret_ref => 'vault/path' }),
+		'((vault/path))', "secret_ref hash is unwrapped to ((...)) format";
+	is Genesis::CI::Compiler::PipelineDescriptor::_unwrap_ref(undef), undef,
 		"undef passes through as undef";
 };
 
@@ -859,6 +968,466 @@ subtest 'Concourse - generate_from_ast routes to native for non-legacy' => sub {
 
 	ok defined($output), "native generation produces output for modern AST";
 	like $output, qr/^---/, "output starts with YAML document marker";
+};
+
+### ============================================================ ###
+### Concourse Provider - Locker Resources and Jobs
+### ============================================================ ###
+
+subtest 'Concourse - locker resources generated when locker configured' => sub {
+	my $ast = Genesis::CI::Compiler::AST->new(
+		metadata => {
+			name            => 'locker-test',
+			source          => 'modern',
+			deployment_type => 'cf',
+		},
+		branches => { live => 'main' },
+		integrations => {
+			vault => {
+				url  => 'https://vault.example.com',
+				auth => { role_id => 'role', secret_id => 'secret' },
+			},
+			source_control => {
+				provider   => 'github',
+				repository => 'org/repo',
+				auth       => { type => 'ssh-key', private_key => 'key' },
+			},
+			notifications => [],
+			locker => {
+				url      => 'https://locker.example.com',
+				username => 'admin',
+				password => 'pass',
+			},
+		},
+		targets => {
+			sandbox => {
+				type => 'bosh-director',
+				connection => {
+					url  => 'https://bosh.sandbox:25555',
+					auth => { client_id => 'admin', client_secret => 'secret' },
+				},
+			},
+		},
+		workflows => {
+			default => {
+				name => 'default',
+				graph => {
+					nodes => {
+						sandbox => {
+							stage_name => 'sandbox', alias => 'sandbox',
+							genesis_env => 'sandbox', auto => 1,
+						},
+					},
+					edges => [],
+				},
+			},
+		},
+		configuration => {
+			task => { image => 'img', version => 'v1' },
+			notifications => { style => 'inline' },
+		},
+	);
+
+	my $provider = Genesis::CI::Concourse->new(ast => $ast);
+	my $output = $provider->generate_from_ast($ast);
+
+	_debug_write('concourse-locker.yml', $output // '');
+
+	# Locker resources
+	like $output, qr/sandbox-bosh-lock/, "bosh-lock resource present";
+	like $output, qr/sandbox-deployment-lock/, "deployment-lock resource present";
+	like $output, qr/shield-lock-outline/, "locker icon present";
+
+	# Locker lock/unlock steps in deploy job
+	like $output, qr/lock_op: lock/, "lock step present";
+	like $output, qr/lock_op: unlock/, "unlock step in ensure present";
+	like $output, qr/dont-upgrade-bosh-on-me/, "bosh lock key present";
+	like $output, qr/i-need-to-deploy-myself/, "deployment lock key present";
+};
+
+subtest 'Concourse - locker skips bosh-lock for create-env' => sub {
+	my $ast = Genesis::CI::Compiler::AST->new(
+		metadata => { name => 'ce-test', deployment_type => 'bosh', source => 'modern' },
+		branches => { live => 'main' },
+		integrations => {
+			vault => { url => 'https://vault.example.com' },
+			source_control => {
+				provider => 'github', repository => 'org/repo',
+				auth => { type => 'ssh-key', private_key => 'key' },
+			},
+			notifications => [],
+			locker => { url => 'https://locker.example.com', username => 'u', password => 'p' },
+		},
+		targets => {
+			'proto-bosh' => {
+				type => 'bosh-create-env',
+				connection => { url => 'https://proto:25555' },
+			},
+		},
+		workflows => {
+			default => {
+				name => 'default',
+				graph => {
+					nodes => { 'proto-bosh' => {
+						stage_name => 'proto-bosh', alias => 'proto',
+						genesis_env => 'proto-bosh', auto => 1,
+					}},
+					edges => [],
+				},
+			},
+		},
+		configuration => {
+			task => { image => 'img', version => 'v1' },
+			notifications => { style => 'inline' },
+		},
+	);
+
+	my $provider = Genesis::CI::Concourse->new(ast => $ast);
+	my $output = $provider->generate_from_ast($ast);
+
+	_debug_write('concourse-create-env-locker.yml', $output // '');
+
+	# Deployment lock should exist, bosh-lock should NOT
+	like $output, qr/proto-deployment-lock/, "deployment-lock present for create-env";
+	unlike $output, qr/proto-bosh-lock/, "bosh-lock absent for create-env";
+};
+
+### ============================================================ ###
+### Concourse Provider - Auto-Update Job
+### ============================================================ ###
+
+subtest 'Concourse - auto-update job generated' => sub {
+	my $ast = Genesis::CI::Compiler::AST->new(
+		metadata => { name => 'autoupdate-test', deployment_type => 'cf', source => 'modern' },
+		branches => { live => 'main' },
+		integrations => {
+			vault => { url => 'https://vault.example.com' },
+			source_control => {
+				provider => 'github', repository => 'org/repo',
+				auth => { type => 'ssh-key', private_key => 'key' },
+			},
+			notifications => [],
+		},
+		targets => {
+			sandbox => {
+				type => 'bosh-director',
+				connection => { url => 'https://bosh:25555',
+					auth => { client_id => 'admin', client_secret => 's' } },
+			},
+		},
+		workflows => {
+			default => {
+				name => 'default',
+				graph => {
+					nodes => { sandbox => {
+						stage_name => 'sandbox', alias => 'sandbox',
+						genesis_env => 'sandbox', auto => 1,
+					}},
+					edges => [],
+				},
+			},
+		},
+		configuration => {
+			task => { image => 'img', version => 'v1' },
+			notifications => { style => 'inline' },
+			auto_update => {
+				file => 'sandbox.yml',
+				kit  => 'cf',
+				org  => 'genesis-community',
+			},
+		},
+	);
+
+	my $provider = Genesis::CI::Concourse->new(ast => $ast);
+	my $output = $provider->generate_from_ast($ast);
+
+	_debug_write('concourse-autoupdate.yml', $output // '');
+
+	# Auto-update resources
+	like $output, qr/kit-release/, "kit-release resource present";
+	like $output, qr/genesis-release/, "genesis-release resource present";
+	like $output, qr/github-release/, "github-release resource type used";
+
+	# Auto-update job
+	like $output, qr/update-genesis-assets/, "auto-update job present";
+	like $output, qr/list-kits/, "list-kits task present";
+	like $output, qr/update-genesis/, "update-genesis task present";
+	like $output, qr/fetch-kit/, "fetch-kit task present";
+
+	# Auto-update group
+	like $output, qr/genesis-updates/, "genesis-updates group present";
+};
+
+### ============================================================ ###
+### Concourse Provider - Groups with Notification Grouping
+### ============================================================ ###
+
+subtest 'Concourse - grouped notifications' => sub {
+	my $ast = Genesis::CI::Compiler::AST->new(
+		metadata => { name => 'grouped-test', deployment_type => 'cf', source => 'modern' },
+		branches => { live => 'main' },
+		integrations => {
+			vault => { url => 'https://vault.example.com' },
+			source_control => {
+				provider => 'github', repository => 'org/repo',
+				auth => { type => 'ssh-key', private_key => 'key' },
+			},
+			notifications => [{ type => 'slack', webhook => 'https://hooks.slack.com', channel => '#ci' }],
+		},
+		targets => {
+			sandbox => {
+				type => 'bosh-director',
+				connection => { url => 'https://bosh1:25555',
+					auth => { client_id => 'admin', client_secret => 's' },
+					ca_cert => 'cert1' },
+			},
+			prod => {
+				type => 'bosh-director',
+				connection => { url => 'https://bosh2:25555',
+					auth => { client_id => 'admin', client_secret => 's' },
+					ca_cert => 'cert2' },
+			},
+		},
+		workflows => {
+			default => {
+				name => 'default',
+				graph => {
+					nodes => {
+						sandbox => { stage_name => 'sandbox', alias => 'sandbox',
+							genesis_env => 'sandbox', auto => 1 },
+						prod    => { stage_name => 'prod', alias => 'prod',
+							genesis_env => 'prod', auto => 0 },
+					},
+					edges => [{ from => 'sandbox', to => 'prod' }],
+				},
+			},
+		},
+		configuration => {
+			task => { image => 'img', version => 'v1' },
+			notifications => { style => 'grouped' },
+		},
+	);
+
+	my $provider = Genesis::CI::Concourse->new(ast => $ast);
+	my $output = $provider->generate_from_ast($ast);
+
+	_debug_write('concourse-grouped.yml', $output // '');
+
+	# With grouped notifications, notify jobs should be in a separate group
+	like $output, qr/name: notifications/, "notifications group present";
+	like $output, qr/notify-prod-cf-changes/, "notify job present for non-auto env";
+};
+
+subtest 'Concourse - custom groups' => sub {
+	my $ast = Genesis::CI::Compiler::AST->new(
+		metadata => { name => 'custom-groups-test', deployment_type => 'cf', source => 'modern' },
+		branches => { live => 'main' },
+		integrations => {
+			vault => { url => 'https://vault.example.com' },
+			source_control => {
+				provider => 'github', repository => 'org/repo',
+				auth => { type => 'ssh-key', private_key => 'key' },
+			},
+			notifications => [],
+		},
+		targets => {
+			sandbox => {
+				type => 'bosh-director',
+				connection => { url => 'https://bosh1:25555',
+					auth => { client_id => 'admin', client_secret => 's' } },
+			},
+			prod => {
+				type => 'bosh-director',
+				connection => { url => 'https://bosh2:25555',
+					auth => { client_id => 'admin', client_secret => 's' } },
+			},
+		},
+		workflows => {
+			default => {
+				name => 'default',
+				graph => {
+					nodes => {
+						sandbox => { stage_name => 'sandbox', alias => 'sandbox',
+							genesis_env => 'sandbox', auto => 1 },
+						prod    => { stage_name => 'prod', alias => 'prod',
+							genesis_env => 'prod', auto => 0 },
+					},
+					edges => [{ from => 'sandbox', to => 'prod' }],
+				},
+			},
+		},
+		configuration => {
+			task => { image => 'img', version => 'v1' },
+			notifications => { style => 'inline' },
+			groups => {
+				'non-prod' => ['sandbox'],
+				'production' => ['prod'],
+			},
+		},
+	);
+
+	my $provider = Genesis::CI::Concourse->new(ast => $ast);
+	my $output = $provider->generate_from_ast($ast);
+
+	_debug_write('concourse-custom-groups.yml', $output // '');
+
+	like $output, qr/name: non-prod/, "custom group 'non-prod' present";
+	like $output, qr/name: production/, "custom group 'production' present";
+};
+
+### ============================================================ ###
+### Concourse Provider - OCFP Config Name Support
+### ============================================================ ###
+
+subtest 'Concourse - OCFP config name support' => sub {
+	my $ast = Genesis::CI::Compiler::AST->new(
+		metadata => { name => 'ocfp-test', deployment_type => 'cf', source => 'modern' },
+		branches => { live => 'main' },
+		integrations => {
+			vault => { url => 'https://vault.example.com' },
+			source_control => {
+				provider => 'github', repository => 'org/repo',
+				auth => { type => 'ssh-key', private_key => 'key' },
+			},
+			notifications => [],
+		},
+		targets => {
+			'us-west-1-sandbox' => {
+				type => 'bosh-director',
+				connection => {
+					url     => 'https://bosh:25555',
+					ca_cert => 'cert',
+					auth    => { client_id => 'admin', client_secret => 'secret' },
+				},
+			},
+		},
+		workflows => {
+			default => {
+				name => 'default',
+				graph => {
+					nodes => { 'us-west-1-sandbox' => {
+						stage_name => 'us-west-1-sandbox', alias => 'sandbox',
+						genesis_env => 'us-west-1-sandbox', auto => 1,
+					}},
+					edges => [],
+				},
+			},
+		},
+		configuration => {
+			ocfp => 1,
+			task => { image => 'img', version => 'v1' },
+			notifications => { style => 'inline' },
+		},
+	);
+
+	my $provider = Genesis::CI::Concourse->new(ast => $ast);
+	my $output = $provider->generate_from_ast($ast);
+
+	_debug_write('concourse-ocfp.yml', $output // '');
+
+	# OCFP mode should use genesis_envs for config names
+	like $output, qr/sandbox-cloud-config/, "cloud-config resource present";
+	like $output, qr/sandbox-runtime-config/, "runtime-config resource present";
+	# The BOSH config resource should include the genesis_env-based config name
+	like $output, qr/name: us-west-1-sandbox/, "OCFP config name present in bosh-config source";
+};
+
+### ============================================================ ###
+### Concourse Provider - Native Graphviz and Describe
+### ============================================================ ###
+
+subtest 'Concourse - native graphviz generation' => sub {
+	my $ast = Genesis::CI::Compiler::AST->new(
+		metadata => { name => 'viz-test', deployment_type => 'cf' },
+		workflows => {
+			default => {
+				name => 'default',
+				graph => {
+					nodes => {
+						sandbox => { stage_name => 'sandbox', alias => 'sandbox', auto => 1 },
+						preprod => { stage_name => 'preprod', alias => 'preprod', auto => 0 },
+						prod    => { stage_name => 'prod', alias => 'prod', auto => 0 },
+					},
+					edges => [
+						{ from => 'sandbox', to => 'preprod' },
+						{ from => 'preprod', to => 'prod' },
+					],
+				},
+			},
+		},
+	);
+
+	my $descriptor = Genesis::CI::Compiler::PipelineDescriptor->new(ast => $ast);
+	my $dot = $descriptor->graphviz();
+
+	_debug_write('concourse-graphviz.dot', $dot // '');
+
+	like $dot, qr/digraph/, "DOT output contains digraph";
+	like $dot, qr/rankdir = LR/, "left-to-right layout";
+	like $dot, qr/"sandbox".*label="sandbox-cf"/, "sandbox node with correct label";
+	like $dot, qr/"sandbox" -> "preprod"/, "edge from sandbox to preprod";
+	like $dot, qr/"preprod" -> "prod"/, "edge from preprod to prod";
+	like $dot, qr/lightgreen/, "auto env colored green";
+	like $dot, qr/lightyellow/, "manual env colored yellow";
+};
+
+subtest 'Concourse - native describe generation' => sub {
+	my $ast = Genesis::CI::Compiler::AST->new(
+		metadata => { name => 'desc-test', deployment_type => 'cf' },
+		workflows => {
+			default => {
+				name => 'default',
+				graph => {
+					nodes => {
+						sandbox => { stage_name => 'sandbox', alias => 'sandbox', auto => 1 },
+						prod    => { stage_name => 'prod', alias => 'prod', auto => 0 },
+					},
+					edges => [{ from => 'sandbox', to => 'prod' }],
+				},
+			},
+		},
+	);
+
+	my $descriptor = Genesis::CI::Compiler::PipelineDescriptor->new(ast => $ast);
+
+	# description() returns a string
+	my $output = $descriptor->description();
+	ok length($output) > 0, "describe produces output";
+	like $output, qr/Pipeline:/, "output contains Pipeline header";
+	like $output, qr/sandbox/, "output mentions sandbox env";
+};
+
+### ============================================================ ###
+### Concourse Provider - Locker Resources Helper
+### ============================================================ ###
+
+subtest 'PipelineDescriptor - _locker_resources' => sub {
+	my $ast = Genesis::CI::Compiler::AST->new(
+		integrations => {
+			locker => { url => 'https://locker:8910', username => 'u', password => 'p' },
+		},
+		targets => {
+			sandbox => {
+				type => 'bosh-director',
+				connection => { url => 'https://bosh:25555' },
+			},
+		},
+		configuration => { tagged => 0 },
+	);
+
+	my $descriptor = Genesis::CI::Compiler::PipelineDescriptor->new(ast => $ast);
+	my $resources = $descriptor->_locker_resources($ast, 'sandbox', 'sandbox', 'cf', 0);
+
+	is scalar(@$resources), 2, "non-create-env gets 2 locker resources (bosh + deployment)";
+	is $resources->[0]{name}, 'sandbox-bosh-lock', "first resource is bosh-lock";
+	is $resources->[1]{name}, 'sandbox-deployment-lock', "second resource is deployment-lock";
+	is $resources->[0]{source}{bosh_lock}, 'https://bosh:25555', "bosh_lock has correct URL";
+	is $resources->[1]{source}{lock_name}, 'sandbox-cf', "lock_name has correct format";
+
+	# create-env should skip bosh-lock
+	my $ce_resources = $descriptor->_locker_resources($ast, 'proto', 'proto', 'bosh', 1);
+	is scalar(@$ce_resources), 1, "create-env gets only 1 locker resource (deployment only)";
+	is $ce_resources->[0]{name}, 'proto-deployment-lock', "only deployment-lock for create-env";
 };
 
 ### ============================================================ ###
@@ -917,8 +1486,8 @@ subtest 'Compiler - can_compile' => sub {
 	print $fh "---\nmetadata:\n  name: test\n";
 	close $fh;
 
-	ok Genesis::CI::Compiler->can_compile("$tmp/test-ci"),
-		"can_compile returns true when pipeline.yml exists";
+	my $result = Genesis::CI::Compiler->can_compile("$tmp/test-ci");
+	ok $result, "can_compile returns true when pipeline.yml exists";
 };
 
 ### ============================================================ ###

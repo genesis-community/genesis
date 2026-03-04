@@ -221,7 +221,7 @@ sub _build_from_multi_file {
 	# Integrations
 	my $integrations = $parsed->{integrations} || {};
 
-	# Targets
+	# Targets (legacy accessor)
 	my $targets_data = $parsed->{targets}{targets} || $parsed->{targets} || {};
 
 	# Build workflows
@@ -233,6 +233,10 @@ sub _build_from_multi_file {
 	# Provider config
 	my $provider_config = $parsed->{provider_config} || {};
 
+	# Generic pipeline extensions (from pipeline description)
+	my $triggers  = $pipeline->{triggers}  || {};
+	my $resources = $pipeline->{resources} || {};
+
 	return (
 		metadata        => $metadata,
 		branches        => $branches,
@@ -242,6 +246,8 @@ sub _build_from_multi_file {
 		workflows       => $workflows,
 		configuration   => $configuration,
 		provider_config => $provider_config,
+		triggers        => $triggers,
+		resources       => $resources,
 	);
 }
 

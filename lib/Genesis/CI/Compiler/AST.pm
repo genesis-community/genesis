@@ -11,44 +11,133 @@ sub new {
 	my ($class, %data) = @_;
 
 	return bless({
-		metadata        => $data{metadata}        || {},
-		branches        => $data{branches}        || {},
-		integrations    => $data{integrations}    || {},
-		targets         => $data{targets}         || {},
-		scripts         => $data{scripts}         || {},
-		workflows       => $data{workflows}       || {},
-		configuration   => $data{configuration}   || {},
-		provider_config => $data{provider_config} || {},
+		# === Generic pipeline (the public interface for providers) ===
+		# These are populated by PipelineDescriptor after the source
+		# representation is built. Providers ONLY read these fields.
+		pipeline => $data{pipeline} || {},  # {resource_types, resources, jobs, groups}
+		metadata => $data{metadata} || {},  # {name, version, source, deployment_type, ...}
+		scripts  => $data{scripts}  || {},  # script_id => {path, content, ...}
+
+		# === Source representation (Genesis-specific, internal) ===
+		# Used by PipelineDescriptor to build the generic pipeline.
+		# Providers should NOT read these directly.
+		_source => {
+			branches        => $data{branches}        || {},
+			integrations    => $data{integrations}    || {},
+			targets         => $data{targets}         || {},
+			workflows       => $data{workflows}       || {},
+			configuration   => $data{configuration}   || {},
+			provider_config => $data{provider_config} || {},
+			triggers        => $data{triggers}        || {},
+			resources       => $data{resources}       || {},
+		},
 	}, $class);
 }
 
 # }}}
 # }}}
-### Accessors {{{
+### Pipeline Accessors (for providers) {{{
 
-sub metadata        { $_[0]->{metadata} }
-sub branches        { $_[0]->{branches} }
-sub integrations    { $_[0]->{integrations} }
-sub targets         { $_[0]->{targets} }
-sub scripts         { $_[0]->{scripts} }
-sub workflows       { $_[0]->{workflows} }
-sub configuration   { $_[0]->{configuration} }
-sub provider_config { $_[0]->{provider_config} }
+# pipeline - the fully-resolved generic pipeline {{{
+sub pipeline { $_[0]->{pipeline} }
 
 # }}}
-### Query Methods {{{
+# metadata - pipeline metadata {{{
+sub metadata { $_[0]->{metadata} }
+
+# }}}
+# scripts - script metadata with content {{{
+sub scripts { $_[0]->{scripts} }
+
+# }}}
+# resource_types - shortcut to pipeline->{resource_types} {{{
+sub resource_types { $_[0]->{pipeline}{resource_types} || [] }
+
+# }}}
+# pipeline_resources - shortcut to pipeline->{resources} {{{
+sub pipeline_resources { $_[0]->{pipeline}{resources} || [] }
+
+# }}}
+# jobs - shortcut to pipeline->{jobs} {{{
+sub jobs { $_[0]->{pipeline}{jobs} || [] }
+
+# }}}
+# groups - shortcut to pipeline->{groups} {{{
+sub groups { $_[0]->{pipeline}{groups} || [] }
+
+# }}}
+# graphviz - pre-built DOT source for visualization {{{
+sub graphviz { $_[0]->{pipeline}{graphviz} }
+
+# }}}
+# description - pre-built human-readable description {{{
+sub description { $_[0]->{pipeline}{description} }
+
+# }}}
+# set_pipeline - store the resolved generic pipeline {{{
+sub set_pipeline {
+	my ($self, $pipeline) = @_;
+	$self->{pipeline} = $pipeline;
+}
+
+# }}}
+# }}}
+### Source Accessors (for PipelineDescriptor / internal use) {{{
+
+sub branches        { $_[0]->{_source}{branches} }
+sub integrations    { $_[0]->{_source}{integrations} }
+sub targets         { $_[0]->{_source}{targets} }
+sub workflows       { $_[0]->{_source}{workflows} }
+sub configuration   { $_[0]->{_source}{configuration} }
+sub provider_config { $_[0]->{_source}{provider_config} }
+sub triggers        { $_[0]->{_source}{triggers} }
+sub resources       { $_[0]->{_source}{resources} }
+
+# }}}
+### Source Query Methods (for PipelineDescriptor / internal use) {{{
 
 # target_names - return sorted list of all target names {{{
 sub target_names {
 	my ($self) = @_;
-	return sort keys %{$self->{targets}};
+	return sort keys %{$self->{_source}{targets}};
 }
 
 # }}}
 # workflow_names - return sorted list of all workflow names {{{
 sub workflow_names {
 	my ($self) = @_;
-	return sort keys %{$self->{workflows}};
+	return sort keys %{$self->{_source}{workflows}};
+}
+
+# }}}
+# resource_names - return sorted list of all generic resource names {{{
+sub resource_names {
+	my ($self) = @_;
+	return sort keys %{$self->{_source}{resources}};
+}
+
+# }}}
+# trigger_names - return sorted list of all trigger names {{{
+sub trigger_names {
+	my ($self) = @_;
+	return sort keys %{$self->{_source}{triggers}};
+}
+
+# }}}
+# resources_matching - return resources whose names match a glob pattern {{{
+sub resources_matching {
+	my ($self, $pattern) = @_;
+
+	my $regex = $pattern;
+	$regex =~ s/\*/.*/g;
+	$regex =~ s/\?/./g;
+	$regex = qr/^$regex$/;
+
+	my @matching;
+	for my $name (sort keys %{$self->{_source}{resources}}) {
+		push @matching, $self->{_source}{resources}{$name} if $name =~ $regex;
+	}
+	return @matching;
 }
 
 # }}}
@@ -62,9 +151,9 @@ sub targets_matching {
 	$regex = qr/^$regex$/;
 
 	my @matching;
-	for my $name (sort keys %{$self->{targets}}) {
+	for my $name (sort keys %{$self->{_source}{targets}}) {
 		if ($name =~ $regex) {
-			push @matching, $self->{targets}{$name};
+			push @matching, $self->{_source}{targets}{$name};
 		}
 	}
 	return @matching;
@@ -75,7 +164,7 @@ sub targets_matching {
 sub workflow_stage_order {
 	my ($self, $workflow_name) = @_;
 
-	my $workflow = $self->{workflows}{$workflow_name}
+	my $workflow = $self->{_source}{workflows}{$workflow_name}
 		or bail("Unknown workflow '%s'", $workflow_name);
 
 	my $graph = $workflow->{graph}
@@ -89,7 +178,7 @@ sub workflow_stage_order {
 sub script_for_stage {
 	my ($self, $workflow_name, $stage_name) = @_;
 
-	my $workflow = $self->{workflows}{$workflow_name}
+	my $workflow = $self->{_source}{workflows}{$workflow_name}
 		or return undef;
 
 	my $graph = $workflow->{graph}
@@ -109,10 +198,10 @@ sub script_for_stage {
 sub env_vars_for_target {
 	my ($self, $target_name) = @_;
 
-	my $target = $self->{targets}{$target_name}
+	my $target = $self->{_source}{targets}{$target_name}
 		or bail("Unknown target '%s'", $target_name);
 
-	my $vault = $self->{integrations}{vault} || {};
+	my $vault = $self->{_source}{integrations}{vault} || {};
 	my $conn  = $target->{connection} || {};
 	my $auth  = $conn->{auth} || {};
 
@@ -139,7 +228,7 @@ sub env_vars_for_target {
 	}
 
 	# Git
-	my $git = $self->{integrations}{source_control} || {};
+	my $git = $self->{_source}{integrations}{source_control} || {};
 	if ($git->{auth}) {
 		if ($git->{auth}{type} eq 'ssh-key') {
 			$env{GIT_PRIVATE_KEY} = _resolve_ref($git->{auth}{private_key});
@@ -213,38 +302,57 @@ sub _resolve_ref {
 
 =head1 NAME
 
-Genesis::CI::Compiler::AST - Platform-agnostic pipeline representation
+Genesis::CI::Compiler::AST - Generic pipeline representation
 
 =head1 DESCRIPTION
 
-Genesis::CI::Compiler::AST is the intermediate representation produced by
-the Genesis CI compiler. It contains all the information needed for a
-provider plugin to generate platform-specific CI/CD configuration.
+Genesis::CI::Compiler::AST is the fully-resolved pipeline representation
+produced by the Genesis CI compiler. It contains ALL data needed by a
+provider to generate platform-specific CI/CD configuration, including
+resource types, resources, jobs, groups, and embedded script content.
 
-The AST is a read-only data structure. Only the ASTBuilder creates it;
-provider plugins only read from it via the accessor and query methods.
+The AST has two layers:
+
+=over 4
+
+=item B<Generic pipeline> (public, for providers)
+
+The C<pipeline> field holds the fully-resolved generic pipeline with
+resource_types, resources, jobs, and groups. Providers ONLY read this.
+
+=item B<Source representation> (internal, for PipelineDescriptor)
+
+The C<_source> fields hold Genesis-specific concepts (targets, integrations,
+workflows, configuration). These are used by PipelineDescriptor to build
+the generic pipeline and should not be accessed by providers directly.
+
+=back
 
 =head1 SYNOPSIS
 
-  my $ast = Genesis::CI::Compiler::AST->new(
-    metadata     => { name => 'my-pipeline', version => '2.0' },
-    branches     => { live => 'main', target_prefix => 'target/' },
-    integrations => { vault => {...}, source_control => {...} },
-    targets      => { 'us-sandbox' => {...} },
-    scripts      => { 'deploy/genesis-deploy' => {...} },
-    workflows    => { sandbox => {...} },
-    configuration => { timeouts => {...} },
-  );
+  # The compiler builds the AST in two phases:
+  # Phase 1: ASTBuilder creates source representation
+  my $ast = Genesis::CI::Compiler::ASTBuilder->new(top => $top)->build($parsed, $scripts);
 
-  # Query the AST
-  my @targets = $ast->target_names();
-  my @stages  = $ast->workflow_stage_order('sandbox');
-  my $script  = $ast->script_for_stage('sandbox', 'deploy');
-  my %env     = $ast->env_vars_for_target('us-sandbox');
+  # Phase 2: PipelineDescriptor resolves into generic pipeline
+  my $descriptor = Genesis::CI::Compiler::PipelineDescriptor->new(ast => $ast);
+  $ast->set_pipeline($descriptor->describe());
+
+  # Providers serialize the generic pipeline
+  my $yaml = $provider->serialize($ast);
+
+  # Pipeline accessors (for providers)
+  my $resource_types = $ast->resource_types;
+  my $resources      = $ast->pipeline_resources;
+  my $jobs           = $ast->jobs;
+  my $groups         = $ast->groups;
+  my $dot            = $ast->graphviz;
+  my $text           = $ast->description;
 
 =head1 SEE ALSO
 
-Genesis::CI::Compiler::ASTBuilder, Genesis::CI::Compiler::PipelineProvider
+Genesis::CI::Compiler::ASTBuilder, Genesis::CI::Compiler::PipelineDescriptor,
+Genesis::CI::Compiler::PipelineProvider
 
 =cut
 

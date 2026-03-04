@@ -7,6 +7,7 @@ use Genesis::CI::Compiler::Parser;
 use Genesis::CI::Compiler::Validator;
 use Genesis::CI::Compiler::ScriptDiscovery;
 use Genesis::CI::Compiler::ASTBuilder;
+use Genesis::CI::Compiler::PipelineDescriptor;
 
 ### Constructor {{{
 
@@ -65,14 +66,23 @@ sub compile {
 	);
 	my $scripts = $script_discovery->discover($parsed);
 
-	# Stage 4: Build AST
+	# Stage 4: Build AST (source representation)
 	info("Building pipeline AST...");
 	my $ast_builder = Genesis::CI::Compiler::ASTBuilder->new(
 		top => $self->{top},
 	);
 	my $ast = $ast_builder->build($parsed, $scripts);
 
-	# Stage 5: Load and run provider
+	# Stage 5: Resolve generic pipeline from source representation
+	info("Resolving pipeline...");
+	my $descriptor = Genesis::CI::Compiler::PipelineDescriptor->new(
+		ast => $ast,
+		top => $self->{top},
+	);
+	$ast->set_pipeline($descriptor->describe());
+
+	# Stage 6: Load and run provider
+	# Stage 6 continued: generate platform-specific output
 	info("Generating %s pipeline...", $provider_type);
 	my $provider_info = $self->_resolve_provider_class($provider_type);
 	eval { require $provider_info->{file} } ## no critic
