@@ -89,7 +89,18 @@ sub compile {
 		or bail("Failed to load CI provider '%s': %s", $provider_type, $@);
 
 	my $provider = $provider_info->{class}->new(ast => $ast, top => $self->{top});
-	my $output = $provider->generate_from_ast($ast);
+	my $raw_output = $provider->generate_from_ast($ast);
+
+	# Wrap raw output into file map using provider's output_files manifest
+	my $output;
+	if (ref($raw_output) eq 'HASH') {
+		$output = $raw_output;
+	} else {
+		my $files = $provider->output_files || {};
+		my @filenames = keys %$files;
+		my $filename = @filenames ? $filenames[0] : 'pipeline.yml';
+		$output = { $filename => $raw_output };
+	}
 
 	return {
 		ast      => $ast,

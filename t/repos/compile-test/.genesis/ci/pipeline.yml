@@ -1,0 +1,29 @@
+metadata:
+  name: test-deploy-pipeline
+  version: "2.0"
+
+branches:
+  live: main
+  target_prefix: deploy/
+
+workflows:
+  deploy:
+    type: deployment
+    stages:
+      - name: sandbox
+        script: deploy
+      - name: preprod
+        script: deploy
+      - name: prod
+        script: deploy
+
+configuration:
+  public: false
+  tagged: false
+  unredacted: false
+  ocfp: false
+  task:
+    image: genesiscommunity/concourse
+    version: latest
+  notifications:
+    style: inline

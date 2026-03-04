@@ -14,6 +14,7 @@ use Service::Vault::Remote;
 
 use File::Basename qw/dirname/;
 use File::Path qw/rmtree/;
+use JSON::PP;
 
 sub embed {
 	command_usage(1) if @_;
@@ -26,14 +27,20 @@ sub repipe {
 	option_defaults(config => 'ci.yml');
 	my $layout = $_[0];
 
-	bail("--output-dir requires --platform")
-		if get_options->{'output-dir'} && !get_options->{platform};
+	# Resolve --provider/--platform into a canonical platform value
+	my $platform = get_options->{platform};
 
-	bail("--skip-vault requires --platform")
-		if get_options->{'skip-vault'} && !get_options->{platform};
+	bail("--output-dir requires --provider")
+		if get_options->{'output-dir'} && !$platform;
 
-	# New compiler pipeline when --platform is specified
-	if (get_options->{platform}) {
+	bail("--skip-vault requires --provider")
+		if get_options->{'skip-vault'} && !$platform;
+
+	bail("--debug-dir requires --provider")
+		if get_options->{'debug-dir'} && !$platform;
+
+	# New compiler pipeline when --provider/--platform is specified
+	if ($platform) {
 		my $top;
 		if (get_options->{'skip-vault'}) {
 			$top = Genesis::Top->new('.');
@@ -579,7 +586,87 @@ sub _compile_pipeline {
 	}
 
 	my $compiler = Genesis::CI::Compiler->new(%compiler_opts);
-	return $compiler->compile(provider => $platform);
+	my $result = $compiler->compile(provider => $platform);
+
+	# Dump debug artifacts if --debug-dir is specified
+	if (my $debug_dir = get_options->{'debug-dir'}) {
+		_dump_debug_artifacts($debug_dir, $result, $platform);
+	}
+
+	return $result;
+}
+
+# }}}
+# _dump_debug_artifacts - write compiler intermediates to debug directory {{{
+sub _dump_debug_artifacts {
+	my ($debug_dir, $result, $platform) = @_;
+
+	mkdir_or_fail($debug_dir);
+
+	my $json = JSON::PP->new->pretty->canonical;
+
+	# 1. Parsed config (what the parser produced)
+	if ($result->{parsed}) {
+		mkfile_or_fail("$debug_dir/01-parsed.json",
+			$json->encode($result->{parsed}));
+		info("Debug: wrote #C{%s/01-parsed.json}", $debug_dir);
+	}
+
+	# 2. AST source representation (internal Genesis concepts)
+	if (my $ast = $result->{ast}) {
+		my %source;
+		for my $key (qw(branches integrations targets workflows configuration
+						provider_config triggers resources)) {
+			my $accessor = $ast->can($key);
+			$source{$key} = $accessor->($ast) if $accessor;
+		}
+		$source{metadata} = $ast->metadata;
+		$source{scripts}  = $ast->scripts;
+
+		mkfile_or_fail("$debug_dir/02-ast-source.json",
+			$json->encode(\%source));
+		info("Debug: wrote #C{%s/02-ast-source.json}", $debug_dir);
+
+		# 3. Resolved generic pipeline (what PipelineDescriptor produced)
+		if ($ast->pipeline && %{$ast->pipeline}) {
+			# Write pipeline structure (minus graphviz/description for readability)
+			my %pipeline = %{$ast->pipeline};
+			my $graphviz    = delete $pipeline{graphviz};
+			my $description = delete $pipeline{description};
+
+			mkfile_or_fail("$debug_dir/03-pipeline.json",
+				$json->encode(\%pipeline));
+			info("Debug: wrote #C{%s/03-pipeline.json}", $debug_dir);
+
+			# 4. Graphviz DOT source
+			if ($graphviz) {
+				mkfile_or_fail("$debug_dir/04-pipeline.dot", $graphviz);
+				info("Debug: wrote #C{%s/04-pipeline.dot}", $debug_dir);
+			}
+
+			# 5. Human description
+			if ($description) {
+				mkfile_or_fail("$debug_dir/05-description.txt", $description);
+				info("Debug: wrote #C{%s/05-description.txt}", $debug_dir);
+			}
+		}
+	}
+
+	# 6. Provider output (final platform-specific YAML)
+	if ($result->{output}) {
+		if (ref($result->{output}) eq 'HASH') {
+			for my $file (sort keys %{$result->{output}}) {
+				mkfile_or_fail("$debug_dir/06-output-$file",
+					$result->{output}{$file});
+				info("Debug: wrote #C{%s/06-output-%s}", $debug_dir, $file);
+			}
+		} else {
+			mkfile_or_fail("$debug_dir/06-output.yml", $result->{output});
+			info("Debug: wrote #C{%s/06-output.yml}", $debug_dir);
+		}
+	}
+
+	info("Debug artifacts written to #C{%s/}", $debug_dir);
 }
 
 # }}}
