@@ -458,7 +458,10 @@ sub generate_from_ast {
 # }}}
 # output_files - describe generated files {{{
 sub output_files {
-	return { "$_[0]->{config}{name}.yml" => 'GitHub Actions workflow definition' };
+	my $name = $_[0]->{config}{name}
+		|| ($_[0]->{ast} && $_[0]->{ast}->metadata->{name})
+		|| 'genesis-pipeline';
+	return { "$name.yml" => 'GitHub Actions workflow definition' };
 }
 
 # }}}
