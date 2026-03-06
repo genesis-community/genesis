@@ -1,8 +1,7 @@
 # Genesis CI Pipeline Documentation
 
 Genesis includes a CI pipeline system that generates deployment automation
-for CI/CD platforms. The system supports Concourse CI natively and has
-experimental support for GitHub Actions.
+for CI/CD platforms. The system supports Concourse CI natively
 
 This documentation is split into two audiences:
 
