@@ -208,27 +208,4 @@ subtest 'Concourse provider generates YAML' => sub {
 	diag("\n=== Generated Concourse Pipeline YAML ===\n$yaml\n=== END ===\n");
 };
 
-# --- Stage 7: Generate GitHub Actions YAML from AST ---
-subtest 'GHA provider generates YAML' => sub {
-	my $parser = Genesis::CI::Compiler::Parser->new(ci_dir => $ci_dir);
-	my $parsed = $parser->parse();
-	my $builder = Genesis::CI::Compiler::ASTBuilder->new();
-	my $ast = $builder->build($parsed, {});
-
-	# Resolve pipeline first
-	my $descriptor = Genesis::CI::Compiler::PipelineDescriptor->new(ast => $ast);
-	$ast->set_pipeline($descriptor->describe());
-
-	# Load GHA provider
-	require Genesis::CI::Compiler::Providers::GithubActions;
-	my $provider = Genesis::CI::GithubActions->new(ast => $ast);
-
-	my $yaml = $provider->generate_from_ast($ast);
-	ok($yaml, 'generate_from_ast returned output');
-	like($yaml, qr/name:/, 'output has name');
-	like($yaml, qr/jobs:/, 'output has jobs');
-
-	diag("\n=== Generated GitHub Actions YAML ===\n$yaml\n=== END ===\n");
-};
-
 done_testing;

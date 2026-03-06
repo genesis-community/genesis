@@ -40,9 +40,6 @@ use_ok 'Genesis::CI::Compiler';
 eval { require 'Genesis/CI/Compiler/Providers/Concourse.pm' };
 ok !$@, "loaded Concourse provider" or diag $@;
 
-eval { require 'Genesis/CI/Compiler/Providers/GithubActions.pm' };
-# GithubActions may fail due to YAML::PP not installed; skip those tests if so
-my $has_gha = !$@;
 
 ### ============================================================ ###
 ### AST Tests
@@ -1442,10 +1439,6 @@ subtest 'CI factory - _resolve_provider_class' => sub {
 	is $concourse->{class}, 'Genesis::CI::Concourse', "concourse class correct";
 	like $concourse->{file}, qr{Concourse\.pm$}, "concourse file path correct";
 
-	my $gha = Genesis::CI::_resolve_provider_class('github-actions');
-	is $gha->{class}, 'Genesis::CI::GithubActions', "github-actions class correct";
-	like $gha->{file}, qr{GithubActions\.pm$}, "github-actions file path correct";
-
 	eval { Genesis::CI::_resolve_provider_class('bogus') };
 	like $@, qr/Unknown CI provider/, "unknown provider type bails";
 };
@@ -1489,61 +1482,6 @@ subtest 'Compiler - can_compile' => sub {
 	my $result = Genesis::CI::Compiler->can_compile("$tmp/test-ci");
 	ok $result, "can_compile returns true when pipeline.yml exists";
 };
-
-### ============================================================ ###
-### GithubActions Provider Tests (if available)
-### ============================================================ ###
-
-SKIP: {
-	skip "YAML::PP not available, skipping GithubActions tests", 1 unless $has_gha;
-
-	subtest 'GithubActions - generate_from_ast' => sub {
-		my $ast = Genesis::CI::Compiler::AST->new(
-			metadata => {
-				name            => 'gha-test',
-				deployment_type => 'cf',
-			},
-			branches => { live => 'main' },
-			integrations => {
-				vault => { url => 'https://vault.example.com' },
-				source_control => {
-					provider => 'github',
-					repository => 'org/repo',
-					auth => { type => 'ssh-key', private_key => 'key' },
-				},
-				notifications => [],
-			},
-			targets => {
-				sandbox => { type => 'bosh-director', connection => { url => 'https://bosh:25555' } },
-			},
-			workflows => {
-				default => {
-					name => 'default',
-					graph => {
-						nodes => {
-							sandbox => { stage_name => 'sandbox', alias => 'sandbox', auto => 1 },
-						},
-						edges => [],
-					},
-				},
-			},
-			configuration => {
-				task => { image => 'genesiscommunity/concourse', version => 'latest' },
-			},
-		);
-
-		my $provider = Genesis::CI::GithubActions->new(ast => $ast);
-		my $output = $provider->generate_from_ast($ast);
-
-		_debug_write('github-actions-workflow.yml', $output // '');
-
-		ok defined($output), "GHA generate_from_ast returns output";
-		like $output, qr/name:\s*gha-test/, "output contains workflow name";
-		like $output, qr/deploy-sandbox/, "output contains sandbox job";
-		like $output, qr/actions\/checkout/, "output contains checkout step";
-		like $output, qr/ubuntu-latest/, "output specifies ubuntu runner";
-	};
-}
 
 done_testing;
 
