@@ -87,6 +87,8 @@ exclusive with C<--kit>.
 =item C<--kits-path> I<dir>
 
 Override the local kits cache directory (defaults to C<~/.genesis/kits>).
+When specified, the directory is created if it does not already exist and is
+used as the kit storage location for the new repository.
 
 =back
 
