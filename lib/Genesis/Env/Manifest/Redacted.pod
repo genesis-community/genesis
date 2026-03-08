@@ -1,0 +1,136 @@
+=head1 NAME
+
+Genesis::Env::Manifest::Redacted - Full manifest with secrets redacted for safe viewing
+
+=head1 SYNOPSIS
+
+  use Genesis::Env::Manifest::Redacted;
+
+  # Typically obtained via the manifest builder, not instantiated directly:
+  my $manifest = $builder->redacted;
+
+  # Access the merged YAML data (secrets replaced with REDACTED):
+  my $data = $manifest->data;
+
+  # Get the path to the manifest file on disk:
+  my $file = $manifest->file;
+
+=head1 DESCRIPTION
+
+C<Genesis::Env::Manifest::Redacted> is a subclass of C<Genesis::Env::Manifest>
+that produces a fully merged BOSH manifest with all Vault secrets replaced by
+the string C<"REDACTED">. This makes the manifest safe to display, log, or
+share without exposing credential values.
+
+The redaction is achieved by setting the C<REDACT=yes> environment variable
+during the Spruce merge. Spruce recognizes this variable and substitutes secret
+values with a redacted placeholder instead of resolving them from Vault.
+
+This class overrides C<source_files>, C<merge_options>, C<merge_environment>,
+and C<_merge> from C<Genesis::Env::Manifest> to control exactly which files are
+merged and what environment is passed to the merge process.
+
+=head1 METHODS
+
+=head2 description
+
+  my $label = $manifest->description;
+
+Returns a human-readable string describing this manifest type:
+C<"Full manifest with secrets redacted for safe viewing">.
+
+  # Example
+  my $manifest = $builder->redacted;
+  print $manifest->description;
+  # prints 'Full manifest with secrets redacted for safe viewing'
+
+=head2 source_files
+
+  my $files = $manifest->source_files;
+
+Returns an array reference of source file paths to be merged, in order:
+
+=over 4
+
+=item 1. The builder's initiation file
+
+=item 2. The builder's kit files
+
+=item 3. The builder's cloud config files (required; C<optional =E<gt> 0>)
+
+=item 4. The builder's environment files
+
+=item 5. The builder's conclusion file
+
+=back
+
+B<Returns:> An array reference of file paths.
+
+  # Example
+  my $files = $manifest->source_files;
+  print scalar(@$files), " source files\n";
+
+=head2 merge_options
+
+  my $opts = $manifest->merge_options;
+
+Returns the merge options hash reference for this manifest type. For redacted
+manifests, no special merge options are required, so an empty hash reference is
+returned.
+
+B<Returns:> An empty hash reference (C<{}>).
+
+  # Example
+  my $opts = $manifest->merge_options;
+  print ref($opts);  # prints 'HASH'
+
+=head2 merge_environment
+
+  my $env = $manifest->merge_environment;
+
+Returns a hash reference of environment variables to pass to the Spruce merge
+process. This hash includes:
+
+=over 4
+
+=item * All variables from the builder's full merge environment (via C<full_merge_env>)
+
+=item * All variables from the Vault client environment (via C<env->vault->env>)
+
+=item * C<REDACT =E<gt> "yes">, which instructs Spruce to replace secret values with a redacted placeholder
+
+=back
+
+B<Returns:> A hash reference of environment variable name/value pairs.
+
+  # Example
+  my $env = $manifest->merge_environment;
+  print $env->{REDACT};  # prints 'yes'
+
+=head1 INTERNAL METHODS
+
+These methods are internal to the implementation. They may change without
+notice and should not be called directly.
+
+=head2 _merge
+
+  my ($data, $file) = $manifest->_merge;
+
+Performs the Spruce merge by delegating to C<< $self->builder->merge >> with
+the results of C<source_files>, C<merge_options>, and C<merge_environment>.
+Returns the merged YAML data structure and the path to the generated manifest
+file on disk.
+
+B<Returns:> A two-element list: C<$data> (the merged YAML data structure) and
+C<$file> (the path to the manifest file). Either may be C<undef> if the merge
+did not produce that output.
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

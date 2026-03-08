@@ -1,0 +1,360 @@
+=head1 NAME
+
+Genesis::Env::Manifest::_vaultify_mixin - Mixin providing Credhub-to-Vault operator conversion for vaultified manifest classes
+
+=head1 DESCRIPTION
+
+This is a mixin module. It has no C<package> declaration and is included into
+consuming classes via C<do>. The methods it defines become part of the
+consuming class's namespace after inclusion.
+
+This mixin is the core of the I<vaultification> process: it rewrites a BOSH
+manifest's C<variables>-block Credhub references (C<((var))> syntax) into
+Spruce Vault operator calls so that Genesis Vault-based secrets can be
+resolved during manifest rendering. The converted manifest is cached in the
+consuming object for reuse by subsequent merge operations.
+
+Three manifest classes include this mixin:
+
+=over 4
+
+=item * C<Genesis::Env::Manifest::Vaultified> -- the primary deployable
+manifest for Vault-based kits: vaultifies the unredacted data and merges
+back through Spruce for secret interpolation.
+
+=item * C<Genesis::Env::Manifest::VaultifiedRedacted> -- the redacted view of
+a vaultified manifest: same vaultification step, but the final merge uses
+C<REDACT=yes> so secrets appear masked.
+
+=item * C<Genesis::Env::Manifest::VaultifiedEntombed> -- for kits that
+entomb secrets into BOSH Credhub: vaultification is used both to discover
+which Vault paths appear in the manifest (via C<get_vault_paths>) and to
+prepare the final merged output after entombment.
+
+=back
+
+=head1 USAGE
+
+Include this mixin in a manifest class with C<do>, using an absolute path
+derived from the consuming file's own location:
+
+    # Path-relative inclusion (used by all three consuming classes):
+    use File::Basename;
+    my $base_path = dirname(__FILE__) =~ s#^lib/##r;
+    do "$base_path/_vaultify_mixin.pm";
+
+    # Or inline (as used by Vaultified.pm):
+    do((File::Basename::dirname(__FILE__) =~ s#^lib/##r) . "/_vaultify_mixin.pm");
+
+After the C<do>, all methods defined by this mixin are available as methods
+on the consuming class.
+
+=head1 METHODS
+
+=head2 get_vault_paths
+
+    my $paths = $obj->get_vault_paths(%opts);
+
+Returns a merged hash of all Vault secret paths referenced by the manifest.
+This method overrides the parent class's C<get_vault_paths> to include
+paths that only become visible after vaultification (i.e., Credhub variable
+references that map to Vault secrets).
+
+The override calls the parent class C<get_vault_paths> first to obtain the
+baseline set of paths, then determines the vaultified form of the manifest
+data using the following priority:
+
+=over 4
+
+=item 1. Uses C<$self-E<gt>{vaultified_file}> if a vaultified file already
+exists from a prior call.
+
+=item 2. Uses C<$self-E<gt>{vaultified_data}> if in-memory vaultified data
+already exists from a prior call.
+
+=item 3. Otherwise, calls L<vaultify> on a shallow copy of the builder's
+partial manifest data. If vaultification succeeds, uses the resulting data to
+discover additional paths.
+
+=back
+
+If no vaultification path arguments can be constructed (vaultification
+produced nothing), returns the baseline C<SUPER> result unchanged.
+
+B<Parameters:>
+
+=over 4
+
+=item * C<%opts> - Options passed through to the parent class's
+C<get_vault_paths> method. Recognised options include C<notify>.
+
+=back
+
+B<Returns:> A hashref whose keys are C<"path:key"> strings identifying every
+Vault secret referenced by the manifest, with values being arrayrefs of
+reference-location strings describing where each path is used. Combines the
+parent class's paths with any additional paths discovered through
+vaultification. Returns only the parent result if no vaultified data can be
+produced.
+
+B<Examples:>
+
+    my $paths = $manifest->get_vault_paths(notify => 0);
+    # Returns: { 'secret/env/deployment:value' => ['instance_groups.cell.jobs...'], ... }
+
+=head2 vaultify
+
+    my $changed = $obj->vaultify($data, $file);
+
+Rewrites a manifest data structure in place, replacing Credhub
+C<((variable))> references with equivalent Spruce Vault operator calls.
+The C<variables> block is consumed from C<$data> during processing.
+
+For each value in the flattened manifest that matches the C<((var))> pattern,
+the method looks up the corresponding secret in the environment's secrets plan
+(via C<$self-E<gt>env-E<gt>secrets_plan-E<gt>secrets>). Variables that
+originated from the BOSH manifest (C<from_manifest> secrets) are eligible for
+replacement.
+
+Two cases are handled:
+
+=over 4
+
+=item B<Single variable reference> -- a value that is entirely one
+C<((variable))> reference. The variable is resolved to a Vault operator
+(e.g., C<(( vault "secret/env:key" ))>) and the manifest value is replaced
+directly.
+
+=item B<Compound / embedded reference> -- a value that interpolates one or
+more C<((variable))> references inside a larger string. Each recognisable
+variable is replaced with a Spruce C<concat> operator that assembles the
+final string at render time. Literal newline substrings are extracted into
+C<meta> keys to avoid YAML quoting problems.
+
+=back
+
+Variables in the C<bosh-variables> block and paths beginning with
+C<genesis-entombed/> are left unchanged (they are managed by BOSH or by
+the entombment process respectively). Unrecognised variables produce a
+warning and are left as-is.
+
+After processing, the converted data structure is stored in
+C<$self-E<gt>{vaultified_data}> and, if C<$file> was given, written to disk
+via C<save_to_yaml_file>.
+
+B<Parameters:>
+
+=over 4
+
+=item * C<$data> - A hashref containing the manifest data to transform.
+Modified in place: the C<variables> key is deleted and affected leaf values
+are replaced with Vault operator strings or Spruce C<concat> expressions.
+
+=item * C<$file> - Optional. A file path. When provided, the vaultified data
+structure is written to this YAML file in addition to being stored in
+C<$self-E<gt>{vaultified_file}>.
+
+=back
+
+B<Returns:> C<1> if the manifest contained a C<variables> block (vaultification
+was performed); C<0> if no C<variables> block was present and no changes
+were made.
+
+B<Errors:>
+
+=over 4
+
+=item * C<"Could not find vault lookup operator"> -- a secret was found in the
+secrets plan for a single C<((variable))> reference but the secret object
+could not produce a Vault operator expression. Raised via C<bail>.
+
+=item * C<"Cannot use a compound credhub reference inside a string in %s"> --
+a Credhub variable that maps to a compound Vault object (rather than a
+scalar) appears inside an interpolated string expression. The placeholder
+C<%s> is replaced with the dotted manifest key path of the offending value.
+Raised via C<bail>.
+
+=back
+
+B<Examples:>
+
+    my $data = decode_yaml($manifest_yaml);
+
+    if ($manifest->vaultify($data)) {
+        # $data now has Vault operators in place of ((...)) references
+        # Returns: 1
+    } else {
+        # No variables block was present; $data is unchanged
+        # Returns: 0
+    }
+
+    # With file output:
+    my $tmpfile = $manifest->pre_merged_vaultified_file;
+    $manifest->vaultify($data, $tmpfile);
+    # Returns: 1 (if variables block existed), vaultified YAML written to $tmpfile
+
+=head2 vaultify_merge_environment
+
+    my $env = $obj->vaultify_merge_environment;
+
+Returns the environment variable hash used when running the Spruce merge
+during L<merge_vaultified_manifest>. The hash combines the builder's full
+merge environment with the current environment's Vault environment variables,
+and sets C<REDACT> to C<undef> (disabled) so that secret values are
+interpolated rather than redacted.
+
+Consuming classes may override this method to alter the merge environment
+(for example, C<VaultifiedRedacted> overrides the merge environment in its
+own C<_merge> to set C<REDACT=yes>).
+
+B<Returns:> A hashref of environment variable names to values suitable for
+passing to the Spruce merge process.
+
+B<Examples:>
+
+    my $env = $manifest->vaultify_merge_environment;
+    # Returns: { 'VAULT_ADDR' => '...', 'VAULT_TOKEN' => '...', REDACT => undef, ... }
+
+=head2 vaultify_merge_options
+
+    my $opts = $obj->vaultify_merge_options;
+
+Returns the option hash controlling the Spruce merge behaviour used during
+L<merge_vaultified_manifest>. The returned options always specify:
+
+=over 4
+
+=item * C<eval =E<gt> 'full'> -- full operator evaluation
+
+=item * C<multidoc =E<gt> 0> -- single-document YAML output
+
+=item * C<gopatch =E<gt> 0> -- Go-patch processing disabled
+
+=back
+
+B<Returns:> A hashref of merge option keys to values.
+
+B<Examples:>
+
+    my $opts = $manifest->vaultify_merge_options;
+    # Returns: { eval => 'full', multidoc => 0, gopatch => 0 }
+
+=head2 pre_merged_vaultified_file
+
+    my $path = $obj->pre_merged_vaultified_file;
+
+Returns the path to a temporary file used to hold the vaultified manifest
+data before it is passed to the Spruce merge step. The file is created in
+the environment's work directory on the first call and cached on the object
+for reuse on subsequent calls. The filename follows the pattern
+C<pre-merged-vaultified-manifest-XXXXXXXXXXXX.yml>.
+
+B<Returns:> The absolute path string of the temporary YAML file.
+
+B<Examples:>
+
+    my $tmpfile = $manifest->pre_merged_vaultified_file;
+    # Returns: '/path/to/env/workdir/pre-merged-vaultified-manifest-aB3xK9zQ1m.yml'
+
+=head2 merge_vaultified_manifest
+
+    my ($data, $file, $warnings, $errors) = $obj->merge_vaultified_manifest(%opts);
+
+Performs the Spruce merge that resolves Vault operators in the vaultified
+manifest. Merges the consuming object together with the file produced by
+L<pre_merged_vaultified_file>, using the merge options and environment
+returned by L<vaultify_merge_options> and L<vaultify_merge_environment>
+unless overridden via C<%opts>.
+
+B<Parameters:>
+
+=over 4
+
+=item * C<merge_ops> - Optional hashref of merge options. Defaults to the
+result of C<$self-E<gt>vaultify_merge_options>.
+
+=item * C<merge_env> - Optional hashref of environment variables for the
+merge process. Defaults to the result of C<$self-E<gt>vaultify_merge_environment>.
+
+=back
+
+B<Returns:> A four-element list:
+
+=over 4
+
+=item * C<$data> - The merged manifest data as a Perl data structure.
+
+=item * C<$file> - The path to the file containing the merged output.
+
+=item * C<$warnings> - A string of warning messages from the merge, or C<undef>.
+
+=item * C<$errors> - A string of error messages from the merge, or C<undef>.
+
+=back
+
+B<Examples:>
+
+    my ($data, $file, $warnings, $errors) = $manifest->merge_vaultified_manifest;
+    # Returns: ($data_hashref, '/tmp/merged.yml', undef, undef)
+
+    # With a custom merge environment (as used by VaultifiedEntombed):
+    my ($data, $file, $warnings, $errors) = $manifest->merge_vaultified_manifest(
+        merge_env => {
+            %{$self->builder->full_merge_env},
+            %{$self->local_vault->env},
+            REDACT => undef,
+        }
+    );
+
+=head1 INTERNAL METHODS
+
+These methods are internal to the implementation. They may change without
+notice and should not be called directly.
+
+=head2 _get_decoupled_data
+
+    my $copy = $obj->_get_decoupled_data;
+    my $copy = $obj->_get_decoupled_data($source);
+
+Returns a deep copy of manifest data from the builder, serialised through
+JSON to break all object references. This ensures that in-place modifications
+during L<vaultify> do not affect the builder's cached data.
+
+B<Parameters:>
+
+=over 4
+
+=item * C<$source> - Optional string naming the builder method to call for
+the data source. Defaults to C<'unredacted'>. Must name a method on
+C<$self-E<gt>builder> that returns an object responding to C<data>.
+
+=back
+
+B<Returns:> A fully independent (deep-copied) Perl hashref of the manifest
+data.
+
+B<Examples:>
+
+    my $copy = $manifest->_get_decoupled_data;
+    # Returns: a deep copy of $manifest->builder->unredacted->data as a hashref
+
+    my $copy = $manifest->_get_decoupled_data('redacted');
+    # Returns: a deep copy of $manifest->builder->redacted->data as a hashref
+
+=head1 SEE ALSO
+
+L<Genesis::Env::Manifest>,
+L<Genesis::Env::Manifest::Vaultified>,
+L<Genesis::Env::Manifest::VaultifiedRedacted>,
+L<Genesis::Env::Manifest::VaultifiedEntombed>,
+L<Genesis::Env::Manifest::_entombment_mixin>
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

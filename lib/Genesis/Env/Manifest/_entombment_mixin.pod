@@ -1,0 +1,242 @@
+=head1 NAME
+
+Genesis::Env::Manifest::_entombment_mixin - Mixin providing Credhub entombment of Vault secrets for manifest classes
+
+=head1 DESCRIPTION
+
+This is a mixin module. It has no C<package> declaration and is included into
+consuming classes via C<do>. The methods it defines become available in
+the consuming class's namespace after inclusion.
+
+This mixin extends manifest classes with the ability to I<entomb> secrets: it
+reads every Vault path that a rendered manifest references, copies each
+key-value pair into a Credhub instance as a value-type credential, and
+rewrites the consuming object's local Vault to hold Credhub variable
+references (C<((path--key--sha))>) in place of the original secret values.
+The result is a manifest that resolves secrets from Credhub at deploy time
+rather than embedding them directly from Vault.
+
+The entombment process is idempotent within a single object lifetime: once
+C<_entomb_secrets> has run successfully it sets an C<entombed> flag on the
+consuming object and returns immediately on any subsequent call.
+
+=head1 USAGE
+
+Include this mixin in your manifest class before calling any of its methods:
+
+    # Typical inclusion pattern inside a consuming manifest class:
+    use parent qw/Genesis::Env::Manifest/;
+    require File::Basename;
+    do((File::Basename::dirname(__FILE__) =~ s#^lib/##r) . "/_entombment_mixin.pm");
+
+After the C<do>, all methods defined in this file become available as
+methods on the consuming class.
+
+=head1 METHODS
+
+=head2 local_vault
+
+    my $vault = $obj->local_vault;
+
+Creates and returns a new C<Service::Vault::Local> instance scoped to the
+current environment's name. The local vault is used as an in-memory store to
+hold Credhub variable references during the entombment process.
+
+B<Parameters:> None beyond the implicit invocant.
+
+B<Returns:> A C<Service::Vault::Local> object created via
+C<< Service::Vault::Local->create($env_name) >>.
+
+B<Examples:>
+
+    my $local_vault = $manifest->local_vault;
+    # Returns: a Service::Vault::Local instance for the current environment
+
+=head1 INTERNAL METHODS
+
+These methods are internal to the implementation. They may change without
+notice and should not be called directly.
+
+=head2 _entomb_secrets
+
+    $obj->_entomb_secrets($data);
+
+Orchestrates the full entombment workflow for the consuming manifest object.
+Determines every Vault path referenced by the rendered manifest, retrieves
+the corresponding secret values from the environment's Vault, writes each
+value into Credhub as a value-type credential under the prefix
+C<genesis-entombed/>, and stores the resulting Credhub variable reference
+back into the local in-memory Vault. Progress is printed to STDERR as each
+secret is processed.
+
+The method is guarded by an C<entombed> flag on the consuming object: if
+C<_entomb_secrets> has already completed successfully for this object it
+returns C<1> immediately without repeating any work.
+
+B<Parameters:>
+
+=over 4
+
+=item * C<$data> - Accepted but unused in the current implementation. Present
+for forward-compatibility.
+
+=back
+
+B<Returns:> C<1> if secrets were entombed (or entombment had already been
+performed), C<0> if the manifest references no Vault paths and there was
+nothing to entomb.
+
+B<Errors:>
+
+Calls C<bail> with the message C<"Failed to entomb one or more secrets into
+Credhub.  This may be due to a bug in Genesis, communication or
+authentication error with Credhub, or a value that Credhub can't
+support.\n\nPlease try again without the --entomb option if used, or if
+deploying, use the --no-entomb option, if this persists.\n\nPlease contact
+the Genesis team, or open a issue on #Bu{%s/issues/new}"> (where C<%s> is
+C<$Genesis::GITHUB>) if any individual secret fails to round-trip through
+Credhub correctly.
+
+B<Examples:>
+
+    # Entomb all manifest secrets; returns 1 when vault paths are found.
+    my $entombed = $manifest->_entomb_secrets(undef);
+    # Returns: 1 if secrets were copied to Credhub, 0 if no vault paths found
+
+=head2 _setup_local_vault
+
+    my $local_vault = $obj->_setup_local_vault;
+
+Creates the local in-memory Vault by delegating to L<"local_vault">, printing
+a progress message to STDERR before and after. This is a thin wrapper that
+separates the I/O notification from the construction logic.
+
+B<Parameters:> None beyond the implicit invocant.
+
+B<Returns:> A C<Service::Vault::Local> instance as returned by
+C<< $obj->local_vault >>.
+
+=head2 _entomb_secret_for_vault
+
+    my ($credhub_var, $secret_sha, $action, $action_color, $existing) =
+        $obj->_entomb_secret_for_vault(
+            $local_vault, $vault_path, $key, $value,
+            $credhub, $cred_path, $entombment_prefix
+        );
+    # Returns: ('((genesis-entombed/_myenv--password--a3f1c2b4))',
+    #           'a3f1c2b4', 'new', 'gi', undef)
+
+Entombs a single Vault key-value pair into Credhub and records the resulting
+Credhub variable reference in the local Vault. The credential name is derived
+from C<$entombment_prefix>, C<$cred_path>, C<$key>, and the first eight
+hexadecimal characters of the SHA-1 digest of C<"$cred_path--$key--$value">.
+
+If the credential already exists in Credhub with the same value the method
+skips the write and reports the action as C<"exists">. If the value differs
+it overwrites the credential and reports C<"altered">. If the value is new it
+reports C<"new">. If Credhub does not return the expected value after a write
+the action is C<"failed">.
+
+B<Parameters:>
+
+=over 4
+
+=item * C<$local_vault> - A C<Service::Vault::Local> instance. If defined,
+the Credhub variable reference is written back to this vault under
+C<$vault_path> / C<$key>. May be C<undef> to skip the local-vault write.
+
+=item * C<$vault_path> - The Vault path (e.g. C</secret/dev/myenv/cf/uaa>)
+from which the secret originates. Used as the target path in the local Vault.
+
+=item * C<$key> - The key within C<$vault_path> (e.g. C<password>).
+
+=item * C<$value> - The plaintext secret value to store in Credhub.
+
+=item * C<$credhub> - A connected C<Service::Credhub> instance used for
+C<get> and C<set> operations.
+
+=item * C<$cred_path> - The environment-relative credential path segment
+used to construct the Credhub credential name.
+
+=item * C<$entombment_prefix> - Optional string prepended to the Credhub
+credential name. Defaults to C<"genesis-entombed/">.
+
+=back
+
+B<Returns:> A five-element list:
+
+=over 4
+
+=item * C<$credhub_var> - The Credhub CredHub variable reference string in
+the form C<((credential-name))>.
+
+=item * C<$secret_sha> - An eight-character hex string (first 8 chars of the
+SHA-1 of C<"$cred_path--$key--$value">) used as a uniqueness suffix.
+
+=item * C<$action> - One of C<"new">, C<"exists">, C<"altered">, or
+C<"failed">, describing the outcome of the Credhub write.
+
+=item * C<$action_color> - A Genesis terminal color code corresponding to
+C<$action>: C<"gi"> (new), C<"yi"> (exists), C<"ri"> (altered), or
+C<"Yr"> (failed).
+
+=item * C<$existing> - The value previously stored in Credhub under this
+credential name, or C<undef> if no prior value existed.
+
+=back
+
+=head2 _entomb_secret
+
+    my ($credhub_var, $secret_sha, $action, $color, $existing) =
+        $obj->_entomb_secret($credhub, $path, $key, $value, $prefix);
+    # Returns: ('((genesis-entombed/path--key--deadbeef))',
+    #           'deadbeef', 'new', 'gi', undef)
+
+Single-secret entombment method retained for backwards compatibility. When
+called with more than six arguments (counting C<$self>) it delegates
+immediately to L<"_entomb_secret_for_vault"> using all passed arguments.
+Otherwise it performs the same SHA-based naming and Credhub write logic as
+C<_entomb_secret_for_vault> using the parameters listed below.
+
+B<WARNING:> This method contains a known defect (FWT-736). The implementation
+references the variable C<$cred_path> in the SHA computation and credential
+name construction (lines 160-161), but the parameter actually received is
+named C<$path>. Because C<$cred_path> is not declared in this scope it
+evaluates to C<undef>, producing an incorrect credential name and SHA digest.
+Additionally, the return variable C<$color> is assigned without C<my>,
+creating an implicit package global. These issues do not affect calls that
+are redirected to C<_entomb_secret_for_vault> via the arity guard. Callers
+should use C<_entomb_secret_for_vault> instead until FWT-736 is resolved.
+
+B<Parameters:>
+
+=over 4
+
+=item * C<$credhub> - A connected C<Service::Credhub> instance.
+
+=item * C<$path> - The credential path segment. B<Note:> due to FWT-736 this
+parameter is not used in the implementation body; C<$cred_path> (undef) is
+used instead.
+
+=item * C<$key> - The key name within the credential path.
+
+=item * C<$value> - The plaintext secret value to store.
+
+=item * C<$prefix> - Optional prefix string for the Credhub credential name.
+Defaults to C<"genesis-entombed/">.
+
+=back
+
+B<Returns:> A five-element list identical in structure to the return of
+L<"_entomb_secret_for_vault">: C<($credhub_var, $secret_sha, $action,
+$color, $existing)>.
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

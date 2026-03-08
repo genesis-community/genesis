@@ -1,0 +1,120 @@
+=head1 NAME
+
+Genesis::Env::Manifest::UnevaluatedEnvironment - Manifest built from raw environment files only, with spruce operators unevaluated.
+
+=head1 SYNOPSIS
+
+  use Genesis::Env::Manifest::UnevaluatedEnvironment;
+
+  # Typically constructed via the manifest builder, not directly.
+  my $manifest = $builder->unevaluated_environment();
+
+  # Retrieve the merged (but unevaluated) manifest data.
+  my $data = $manifest->data;
+
+  # Get the path to the cached manifest file.
+  my $file = $manifest->file;
+
+=head1 DESCRIPTION
+
+C<Genesis::Env::Manifest::UnevaluatedEnvironment> is a subclass of
+C<Genesis::Env::Manifest> that builds a manifest from the environment's own
+YAML files only, excluding kit components. Spruce operators such as C<(( grab ))>
+and C<(( concat ))> are left in place; evaluation is explicitly disabled.
+
+This type of manifest is useful for inspecting the raw merged structure of an
+environment's configuration before any operator resolution takes place. Secret
+redaction is also disabled so that all values appear as authored.
+
+Because environment-only files contain no Vault operators (those come from
+the kit), this manifest type does not require Vault credentials or the full
+merge environment -- only the C<REDACT> override is needed.
+
+=head1 METHODS
+
+=head2 description
+
+  my $str = $manifest->description();
+
+Returns a human-readable string describing what this manifest type contains.
+
+B<Returns:> The string C<"Raw merged environment files only (no kit components) - spruce operators still in place">.
+
+  # Example
+  my $manifest = Genesis::Env::Manifest::UnevaluatedEnvironment->new($builder);
+  print $manifest->description();
+  # prints 'Raw merged environment files only (no kit components) - spruce operators still in place'
+
+=head2 source_files
+
+  my $files = $manifest->source_files();
+
+Returns the list of YAML source files to merge for this manifest type. Only
+the environment's own files are included; kit component files are excluded.
+
+B<Returns:> An array reference of file paths returned by the builder's
+C<environment_files> method.
+
+  # Example
+  my $files = $manifest->source_files();
+  print ref($files);   # prints 'ARRAY'
+  print $files->[0];   # prints the path to the first environment file
+
+=head2 merge_options
+
+  my $opts = $manifest->merge_options();
+
+Returns the options hash to pass to the spruce merge engine. For this manifest
+type, evaluation is disabled so that spruce operators remain in the output
+as literal text.
+
+B<Returns:> A hash reference of the form C<{ eval =E<gt> 'no' }>.
+
+  # Example
+  my $opts = $manifest->merge_options();
+  print $opts->{eval};   # prints 'no'
+
+=head2 merge_environment
+
+  my $env = $manifest->merge_environment();
+
+Returns environment variable overrides to apply during the merge. For this
+manifest type, the C<REDACT> variable is explicitly set to C<undef> so that
+secret values are not redacted in the output.
+
+Environment-only files contain no Vault operators (those come from the kit),
+so Vault credentials and the full merge environment are unnecessary. Only
+C<REDACT> needs to be set.
+
+B<Returns:> A hash reference of the form C<{ REDACT =E<gt> undef }>.
+
+  # Example
+  my $env_vars = $manifest->merge_environment();
+  print defined($env_vars->{REDACT}) ? 'defined' : 'undef';   # prints 'undef'
+
+=head1 INTERNAL METHODS
+
+These methods are internal to the implementation. They may change without
+notice and should not be called directly.
+
+=head2 _merge
+
+  my ($data, $file) = $manifest->_merge();
+
+Performs the actual merge by delegating to the builder's C<merge> method,
+passing the manifest object, the source files, the merge options, and the
+merge environment. Returns the merged data structure and the path to the
+generated manifest file.
+
+B<Returns:> A two-element list: the merged manifest data (hash reference)
+and the path to the written manifest file (string).
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

@@ -1,0 +1,504 @@
+=head1 NAME
+
+Genesis::Env::Manifest - Base class for all Genesis environment manifest types
+
+=head1 SYNOPSIS
+
+  use Genesis::Env::Manifest;
+
+  # Manifests are created by the builder, not directly
+  my $manifest = $builder->unredacted();
+  my $manifest = $builder->redacted();
+
+  # Access manifest content
+  my $data = $manifest->data();   # returns parsed YAML as hashref
+  my $file = $manifest->file();   # returns path to manifest YAML file
+
+  # Identify the manifest type
+  print $manifest->type();        # prints e.g. 'unredacted'
+  print $manifest->label();       # prints e.g. 'unredacted'
+
+  # Write to a destination
+  $manifest->write_to('/path/to/deploy.yml');
+
+  # Validate the manifest can be built
+  my $ok = $manifest->validate();
+
+=head1 DESCRIPTION
+
+C<Genesis::Env::Manifest> is the abstract base class for all manifest types
+in the Genesis deployment system. It provides the shared interface for
+building, caching, and accessing deployment manifests derived from environment
+files, kit configurations, and cloud configs.
+
+The manifest hierarchy covers every view of a deployment manifest that Genesis
+needs to produce: unredacted (secrets visible), redacted (secrets hidden),
+entombed (Vault operators resolved and embedded), vaultified (Vault references
+substituted), and partial (pre-merged subsets for inspection). Each variant is
+a subclass of this base class.
+
+Manifests are constructed by a builder object and should not be instantiated
+directly. The builder manages caching so each manifest type is built at most
+once per environment.
+
+Results from C<data> and C<file> are memoized on the object. Use C<reset> to
+clear the cache and force a rebuild.
+
+=head1 METHODS
+
+=head2 new
+
+  my $manifest = $class->new($builder, $subset);
+
+Constructs a new manifest object. If a cached YAML file already exists on disk
+(determined by C<_generate_file_name>), the cache is loaded immediately via
+C<set_file>, deferring the actual parse until C<data> is first called.
+
+B<Parameters:>
+
+=over 4
+
+=item * C<$builder> - the manifest builder object that provides access to the
+environment, merge sources, and subset retrieval
+
+=item * C<$subset> - an optional subset identifier string; when defined the
+manifest is treated as a subset view built from a parent manifest
+
+=back
+
+B<Returns:> a blessed manifest object of the calling class.
+
+  my $manifest = Genesis::Env::Manifest::Unredacted->new($builder, undef);
+  print ref($manifest); # prints 'Genesis::Env::Manifest::Unredacted'
+
+=head2 builder
+
+  my $builder  = $manifest->builder();
+  my $env      = $manifest->env();
+  my $type_str = $manifest->type();
+
+Three accessors that describe the manifest's identity and context:
+
+B<builder> returns the builder object passed to C<new>. The builder provides
+access to the environment, merge source files, and other manifest variants.
+
+B<env> returns the C<Genesis::Env> object for the deployment environment.
+Delegates to C<< $manifest->builder->env >>.
+
+B<type> derives the manifest type name from the class name. Strips the package
+prefix, lowercases the first letter, and inserts underscores before interior
+uppercase letters to produce a snake_case identifier. For example:
+
+=over 4
+
+=item * C<Genesis::Env::Manifest::Unredacted> returns C<'unredacted'>
+
+=item * C<Genesis::Env::Manifest::VaultifiedEntombed> returns C<'vaultified_entombed'>
+
+=item * C<Genesis::Env::Manifest::PartialEnvironment> returns C<'partial_environment'>
+
+=back
+
+  my $builder = $manifest->builder();
+  print ref($builder);       # prints the builder class name
+
+  my $name = $manifest->env()->name();
+  print $name;               # prints the environment name
+
+  my $type = $manifest->type();
+  print $type;               # prints e.g. 'unredacted'
+
+=head2 label
+
+  my $label = $manifest->label();
+
+Returns the human-readable label for the manifest type. Equivalent to C<type>
+with underscores replaced by spaces.
+
+  my $label = $manifest->label();
+  print $label; # prints e.g. 'unredacted' or 'vaultified entombed'
+
+=head2 subset
+
+  my $subset = $manifest->subset();
+
+Returns the subset identifier string passed to C<new>, or an empty string if
+the manifest was not constructed as a subset.
+
+  my $subset = $manifest->subset();
+  print length($subset) ? $subset : '(none)'; # prints the subset id or '(none)'
+
+=head2 redacted
+
+  my $redacted = $manifest->redacted();
+
+Returns the companion redacted manifest for this manifest type. The base class
+does not implement this method; it exists to define the interface that
+subclasses must fulfill. Subclasses representing deployable manifests that
+contain unredacted secrets must override this to return the appropriate
+redacted variant. Subclasses that already represent a redacted or secret-free
+form should return C<$self>.
+
+Dies with C<"redacted: Not implemented for %s manifest types"> if called on
+the base class or any subclass that has not overridden it, where C<%s> is the
+manifest's label (e.g. for the partial environment type the message would be
+C<"redacted: Not implemented for partial environment manifest types">).
+
+  # Example of a subclass override:
+  my $redacted = $manifest->redacted();
+  # Returns: the companion redacted manifest object for this manifest type
+
+=head2 manifest_lookup_target
+
+  my $target = $manifest->manifest_lookup_target();
+  my $data   = $manifest->data();
+
+B<manifest_lookup_target> returns the manifest object that should be used when
+performing Vault or manifest lookups. The base class returns C<$self>.
+Subclasses that require lookups to be resolved against a different manifest
+variant (such as Entombed and VaultifiedEntombed, which delegate to the
+unredacted manifest) may override this.
+
+B<data> returns the manifest content as a parsed YAML data structure (hashref).
+The result is memoized: the first call builds or loads the manifest; subsequent
+calls return the cached value.
+
+Build strategy for C<data>:
+
+=over 4
+
+=item 1. If a pre-built file is already loaded (C<has_file> is true), loads
+and returns the YAML from that file.
+
+=item 2. If the manifest is a subset (C<is_subset> is true), delegates to
+the builder's subset retrieval.
+
+=item 3. Otherwise calls C<_merge> (which subclasses must implement) to merge
+source files and produce the data.
+
+=back
+
+  my $target = $manifest->manifest_lookup_target();
+  print ref($target); # prints the manifest class name
+
+  my $data = $manifest->data();
+  print $data->{name}; # prints the deployment name
+
+=head2 file
+
+  my $file = $manifest->file();
+
+Returns the path to the manifest YAML file on disk. The result is memoized.
+
+Build strategy:
+
+=over 4
+
+=item 1. If the manifest data is already loaded in memory (C<has_data> is
+true), writes it to a YAML file and returns that path.
+
+=item 2. If the manifest is a subset, delegates to the builder's subset
+retrieval.
+
+=item 3. Otherwise calls C<_merge> (which subclasses must implement).
+
+=back
+
+B<Returns:> a string path to the manifest YAML file.
+
+  my $file = $manifest->file();
+  print $file; # prints e.g. '/path/to/manifest-myenv-abc123-unredacted.yml'
+
+=head2 deployable
+
+  my $bool     = $manifest->deployable();
+  my $has_data = $manifest->has_data();
+  my $has_file = $manifest->has_file();
+  $manifest->set_data($data);
+  $manifest->set_file($path);
+  $manifest->write_to($destination);
+  $manifest->reset();
+
+Several methods that manage the manifest's cached state and deployability:
+
+B<deployable> returns true if this manifest type is suitable for passing to
+C<bosh deploy>. The base class returns C<0> (false). Subclasses representing
+deployment-ready manifests (Unredacted, Vaultified, Entombed,
+VaultifiedEntombed) override this to return C<1>.
+
+B<has_data> returns true if manifest data has been loaded into memory.
+
+B<has_file> returns true if a manifest file path has been recorded on the
+object.
+
+B<set_data> stores C<$data> (a parsed YAML hashref) directly on the manifest
+object, bypassing the normal merge pipeline. Modifies the object in-place.
+
+B<set_file> records C<$path> as the manifest's on-disk YAML file, bypassing
+the normal build pipeline. Modifies the object in-place.
+
+B<write_to> copies the manifest's YAML file to C<$destination>. Calls C<file>
+to trigger a build if the file has not yet been produced. Dies if the copy
+fails.
+
+B<reset> clears all cached state -- in-memory data and recorded file path --
+and deletes any on-disk cache file if it exists. Forces subsequent calls to
+C<data> or C<file> to rebuild from scratch. Modifies the object in-place;
+C<set_data> and C<set_file> also modify the object in-place. Returns the
+manifest object for chaining.
+
+  print $manifest->deployable();   # prints '0' from base class
+  print $manifest->has_data() ? 'loaded' : 'not loaded';
+  # prints 'not loaded' when no data has been fetched yet
+
+  $manifest->set_data({ name => 'myenv', instance_groups => [] });
+  print $manifest->has_data() ? 'yes' : 'no'; # prints 'yes'
+
+  $manifest->set_file('/path/to/prebuilt.yml');
+  print $manifest->has_file() ? 'yes' : 'no'; # prints 'yes'
+
+  $manifest->write_to('/tmp/deploy.yml');
+  # copies the manifest YAML to /tmp/deploy.yml
+
+  $manifest->reset();
+  $manifest->data(); # forces a clean rebuild
+
+=head2 is_subset
+
+  my $bool = $manifest->is_subset();
+  $manifest->notify();
+  $manifest->notify($message);
+
+B<is_subset> returns true if this manifest was created with a defined C<$subset>
+argument (i.e., the subset slot is defined on the object, including as an
+empty string).
+
+B<notify> sets the build notice message for this manifest. When called with no
+argument (or C<undef>), generates a default message of the form
+C<"generating E<lt>labelE<gt> manifest..."> where the label comes from
+C<label>, formatted with terminal color markup. When called with a C<$message>
+string, stores that string as the notice instead.
+
+B<Parameters for notify:>
+
+=over 4
+
+=item * C<$message> - optional custom notice string; defaults to a generated
+"generating..." message when omitted
+
+=back
+
+  print $manifest->is_subset() ? 'subset' : 'full';
+  # prints 'full' when no subset was given to new()
+
+  $manifest->notify();
+  print $manifest->get_build_notice();
+  # prints e.g. 'generating unredacted manifest...'
+
+  $manifest->notify("building deployment manifest...");
+  print $manifest->get_build_notice();
+  # prints 'building deployment manifest...'
+
+=head2 dewrap
+
+  my $clean = Genesis::Env::Manifest::dewrap($msg);
+
+Package-level utility function (not an instance method). This function is not
+exported; call it with the fully qualified package name. Strips ANSI terminal
+color sequences and log-level labels (e.g., C<[ERROR]>, C<[WARN]>) from a
+message string, and collapses the indent that was used to align continuation
+lines under the label. Returns the original C<$msg> unchanged if no label
+decoration is found.
+
+B<Parameters:>
+
+=over 4
+
+=item * C<$msg> - the string to clean up, typically an error message captured
+from an C<eval> block
+
+=back
+
+B<Returns:> the cleaned message string, or the original string if no label
+decoration is present.
+
+  my $clean = Genesis::Env::Manifest::dewrap($@);
+  print $clean; # prints the error message without ANSI codes or label prefix
+
+=head2 validate
+
+  my $ok = $manifest->validate();
+
+Attempts to build the manifest by calling C<data> on the corresponding type
+accessor of the builder (e.g., C<< $builder->unredacted->data >>). If the
+build fails, logs an error message.
+
+B<Returns:> C<1> if the manifest was built successfully, C<0> if an error
+occurred.
+
+  if ($manifest->validate()) {
+      print "Manifest is valid\n";
+      # prints 'Manifest is valid' when build succeeds
+  }
+
+=head2 has_notice
+
+  my $bool = $manifest->has_notice();
+  my $msg  = $manifest->get_build_notice();
+
+B<has_notice> returns true if a build notice has been set on this manifest
+(via C<notify>).
+
+B<get_build_notice> returns the build notice string previously set by
+C<notify>, or C<undef> if no notice has been set.
+
+  print $manifest->has_notice() ? 'has notice' : 'no notice';
+  # prints 'no notice' before notify() is called
+
+  $manifest->notify();
+  print $manifest->get_build_notice();
+  # prints e.g. 'generating unredacted manifest...'
+
+=head2 get_vault_paths
+
+  my @paths = $manifest->get_vault_paths();
+
+Returns the Vault paths associated with the environment's manifest. Delegates
+entirely to C<< $manifest->builder->vault_paths() >>.
+
+  my @paths = $manifest->get_vault_paths();
+  print scalar @paths; # prints the number of Vault paths
+
+=head1 ABSTRACT METHODS
+
+Methods that derived classes B<must> implement. The base class dies (via
+C<bug>) if these are not overridden.
+
+=head2 _merge
+
+Must perform the manifest merge operation. Returns a list of C<($data, $file)>
+where C<$data> is the parsed YAML hashref and C<$file> is the path to the
+written YAML file on disk.
+
+This method is also grouped with C<_get_subset>, which handles the C<$req>
+parameter (either C<'data'> or C<'file'>) when the manifest is being retrieved
+as a subset.
+
+B<Parameters for _get_subset:>
+
+=over 4
+
+=item * C<$req> - either C<'data'> or C<'file'>, selecting what to retrieve
+
+=back
+
+Dies with C<"Expected %s to define private _merge method"> if not overridden,
+where C<%s> is the calling class name.
+
+  # In a derived class:
+  sub _merge {
+      my $self = shift;
+      my ($data, $file, $warnings, $errors) = $self->builder->merge(...);
+      return ($data, $file);
+      # Returns: ($data_hashref, '/path/to/manifest.yml')
+  }
+
+=head1 OVERRIDE POINTS
+
+Methods that derived classes B<may> override to customize behavior. The base
+class provides a working default for each.
+
+The following three methods are the primary customization points:
+
+B<deployable> -- override to return C<1> if the manifest type is suitable for
+passing to C<bosh deploy>. The base class returns C<0>.
+
+  # In a derived class that produces a deployable manifest:
+  sub deployable { 1 }
+
+B<redacted> -- override to return the appropriate redacted companion manifest.
+For manifest types that already contain no secrets (e.g., Entombed), return
+C<$self>. For manifest types that expose secrets (e.g., Unredacted), return
+the builder's redacted variant.
+
+  # Manifest type that exposes secrets:
+  sub redacted {
+      my $self = shift;
+      return $self->builder->redacted(subset => $self->{subset});
+  }
+
+  # Manifest type with no secrets:
+  sub redacted { $_[0] }
+
+B<manifest_lookup_target> -- override to return a different manifest object
+for Vault and manifest lookups. The base class returns C<$self>. Entombed-type
+manifests override this to return the unredacted manifest so lookups resolve
+against the manifest that contains the actual values.
+
+  # In a derived class:
+  sub manifest_lookup_target {
+      $_[0]->builder->unredacted(subset => $_[0]->{subset});
+  }
+
+=head1 INTERNAL METHODS
+
+These methods are internal to the implementation. They may change without
+notice and should not be called directly.
+
+=head2 _generate_file_name
+
+  my $path = $manifest->_generate_file_name($transient_flag);
+
+Constructs the canonical on-disk path for this manifest's YAML file. The path
+is built from the environment's work directory, the environment name, a
+signature hash, the manifest type, and optionally a subset suffix.
+
+When C<$transient_flag> is true, prepends C<"transient-"> to the filename to
+indicate a temporary build artifact.
+
+B<Parameters:>
+
+=over 4
+
+=item * C<$transient_flag> - optional boolean; when true, prepends
+C<"transient-"> to the filename
+
+=back
+
+  my $path = $manifest->_generate_file_name();
+  # Returns e.g. '/tmp/genesis/manifest-myenv-abc123-unredacted.yml'
+
+  my $path = $manifest->_generate_file_name(1);
+  # Returns e.g. '/tmp/genesis/transient-manifest-myenv-abc123-unredacted.yml'
+
+=head2 _load_file
+
+  my $data = $manifest->_load_file();
+
+Loads and parses the YAML file at C<< $manifest->file() >>. Returns the parsed
+data structure. Calls C<load_yaml_file> from the Genesis utility library.
+
+  my $data = $manifest->_load_file();
+  print ref($data); # prints 'HASH'
+
+=head2 _save_data_to_file
+
+  my $path = $manifest->_save_data_to_file();
+
+Serializes the object's cached data (C<< $self->{data} >>) to the canonical
+manifest file path (from C<_generate_file_name>, or the already-recorded file
+path if set). Takes no arguments beyond the invocant. Returns the path of the
+written file.
+
+  my $path = $manifest->_save_data_to_file();
+  print $path; # prints the path of the written YAML file
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

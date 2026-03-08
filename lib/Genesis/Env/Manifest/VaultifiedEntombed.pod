@@ -1,0 +1,288 @@
+=head1 NAME
+
+Genesis::Env::Manifest::VaultifiedEntombed - Deployable manifest for vaultified kits that entombs Vault secrets into BOSH Credhub
+
+=head1 SYNOPSIS
+
+  use Genesis::Env::Manifest::VaultifiedEntombed;
+
+  # Manifests are created via the builder, not directly
+  my $manifest = $builder->vaultified_entombed();
+
+  # Access the manifest content (triggers full build on first access)
+  my $data = $manifest->data();   # returns parsed YAML with Credhub references
+  my $file = $manifest->file();   # returns path to the YAML file on disk
+
+  # Confirm this manifest type is deployable
+  print $manifest->deployable();  # prints '1'
+
+  # Write the manifest to a destination path for deployment
+  $manifest->write_to('/path/to/deploy.yml');
+
+=head1 DESCRIPTION
+
+C<Genesis::Env::Manifest::VaultifiedEntombed> is the concrete manifest
+subclass used by vaultified kits that entomb Vault secrets into BOSH's
+Credhub. It is the default manifest type for Credhub-based kits.
+
+This class combines two complementary mixins to implement its behaviour:
+
+=over 4
+
+=item * L<Genesis::Env::Manifest::_vaultify_mixin> -- rewrites the
+C<variables> block of a BOSH manifest, converting Credhub C<((variable))>
+references into Spruce Vault operator calls. This makes the manifest's
+Vault dependencies explicit and allows Genesis secrets operations to manage
+them.
+
+=item * L<Genesis::Env::Manifest::_entombment_mixin> -- reads every Vault
+secret that the manifest references, copies each key-value pair into Credhub
+as a value-type credential under the C<genesis-entombed/> prefix, and
+rewrites the local in-memory Vault to hold Credhub variable references in
+place of the original secret values.
+
+=back
+
+The build process implemented by C<_merge> runs in several coordinated
+phases:
+
+=over 4
+
+=item 1. I<Vaultification discovery> -- C<vaultify> is called on a deep copy
+of the unredacted manifest data to discover which Vault paths the manifest
+references, without modifying the cached builder data.
+
+=item 2. I<Entombment> -- C<_entomb_secrets> copies every referenced Vault
+secret into Credhub and populates the local in-memory Vault with the
+resulting Credhub variable references.
+
+=item 3. I<Partial merge> -- a Spruce merge is performed with the vaultified
+intermediate file temporarily installed as the manifest file name, producing a
+partially-entombed data structure.
+
+=item 4. I<Final vaultification and merge> -- the partially-entombed data is
+vaultified again and the result is passed through C<merge_vaultified_manifest>
+using the local Vault's environment to resolve all remaining references.
+
+=item 5. I<Vault shutdown> -- the local in-memory Vault is shut down cleanly
+after the merge completes.
+
+=back
+
+The result is a manifest whose secrets are resolved entirely from Credhub at
+deploy time. Because entombed manifests carry no embedded Vault secrets, the
+C<redacted> method returns the manifest object itself unchanged.
+
+Content-sensitive naming (the SHA-1 suffix on each Credhub credential name)
+means that Credhub detects changes automatically, and Genesis secrets
+operations continue to manage the canonical values in Vault.
+
+Manifests are constructed by the builder and should not be instantiated
+directly. See L<Genesis::Env::Manifest> for the full interface inherited by
+this class.
+
+=head1 METHODS
+
+=head2 description
+
+  my $str = $manifest->description();
+
+Returns a human-readable string describing this manifest type. This class
+also overrides C<deployable> (returns C<1>, marking this manifest as safe to
+pass to BOSH) and C<source_files> (returns the ordered merge-source file
+list: initiation file, kit files, cloud config files (required, never
+optional), environment files, and conclusion file).
+
+B<Returns:> the string C<"Credhub secrets entombed into BOSH's Credhub from
+the single-source-of-truth Vault for a vaultified kit. This allows
+content-sensitive naming of credhub secrets to detect changes,  and use
+Genesis secrets operations for their management (default for credhub-based
+kits)">.
+
+B<Examples:>
+
+  my $manifest = $builder->vaultified_entombed();
+  print $manifest->description();
+  # Returns: 'Credhub secrets entombed into BOSH\'s Credhub from the
+  #           single-source-of-truth Vault for a vaultified kit...'
+
+  print $manifest->deployable();   # Returns: 1
+
+  my @files = $manifest->source_files();
+  # Returns: ('/path/to/init.yml', '/path/to/kit.yml', ...)
+
+=head2 redacted
+
+  my $redacted = $manifest->redacted();
+
+Returns the manifest object itself. Entombed manifests contain no embedded
+Vault secrets (only Credhub variable references), so no separate redacted
+form is required.
+
+B<Returns:> The invocant C<$manifest> object.
+
+B<Examples:>
+
+  my $same = $manifest->redacted();
+  print $same == $manifest ? 'same object' : 'different';  # Returns: 'same object'
+
+=head2 manifest_lookup_target
+
+  my $target = $manifest->manifest_lookup_target();
+
+Returns the vaultified manifest object for this manifest's subset. Used when
+looking up values from the manifest; delegates to
+C<< $self->builder->vaultified(subset => $self->{subset}) >>.
+
+B<Returns:> A C<Genesis::Env::Manifest::Vaultified> object scoped to the
+same subset as this manifest.
+
+B<Examples:>
+
+  my $target = $manifest->manifest_lookup_target();
+  print ref($target);  # Returns: 'Genesis::Env::Manifest::Vaultified'
+
+=head2 merge_options
+
+  my $opts = $manifest->merge_options();
+
+Returns the merge options hash to be passed to the builder's C<merge> method.
+This manifest type requires no special merge options.
+
+B<Returns:> An empty hash reference C<{}>.
+
+B<Examples:>
+
+  my $opts = $manifest->merge_options();
+  print ref($opts);          # Returns: 'HASH'
+  print scalar keys %$opts;  # Returns: 0
+
+=head2 merge_environment
+
+  my $env = $manifest->merge_environment();
+
+Returns the environment variable hash used during the manifest merge. Combines
+the builder's full merge environment with the local in-memory Vault's
+environment variables, and sets C<REDACT> to C<undef>. The local Vault
+contains Credhub variable references written by the entombment process, so
+clearing C<REDACT> allows those references to be resolved rather than masked.
+
+B<Returns:> A hashref of environment variable names to values, with C<REDACT>
+set to C<undef>.
+
+B<Examples:>
+
+  my $env = $manifest->merge_environment();
+  print defined($env->{REDACT}) ? 'set' : 'unset';  # Returns: 'unset'
+
+=head1 INTERNAL METHODS
+
+These methods are internal to the implementation. They may change without
+notice and should not be called directly.
+
+=head2 _merge
+
+  my ($data, $file) = $manifest->_merge();
+
+Implements the multi-phase build process that produces the fully entombed
+manifest. Called by the base class C<data> and C<file> accessors when no
+cached result exists.
+
+The method runs the following steps in order:
+
+=over 4
+
+=item 1. Calls L<Genesis::Env::Manifest::_vaultify_mixin/vaultify> on a deep
+copy of the unredacted manifest data to populate the pre-merged vaultified
+file. If vaultification finds no C<variables> block, steps 2 through 6 are
+skipped and the method returns the existing entombed builder data and file
+immediately.
+
+=item 2. Calls L<Genesis::Env::Manifest::_entombment_mixin/_entomb_secrets>
+to copy Vault secrets into Credhub and populate the local in-memory Vault
+with Credhub variable references.
+
+=item 3. Temporarily installs the pre-merged vaultified file as the manifest's
+file name (via C<_set_file_name>), runs the builder's C<merge> with
+C<source_files>, C<merge_options>, and C<merge_environment>, then clears the
+transient file name.
+
+=item 4. Calls C<vaultify> again on the partially-entombed merge result to
+resolve any remaining Credhub references.
+
+=item 5. Calls L<Genesis::Env::Manifest::_vaultify_mixin/merge_vaultified_manifest>
+with the local Vault's merge environment to produce the final manifest data
+and file.
+
+=item 6. Shuts down the local in-memory Vault. (This step only executes on
+the full-processing path; the early return at step 1 bypasses it.)
+
+=back
+
+Modifies the object in-place (sets C<entombed>, C<notice>, and
+C<vaultified_data>/C<vaultified_file> internal fields during processing).
+
+B<Returns:> A two-element list C<($data, $file)> where C<$data> is the
+parsed manifest data structure and C<$file> is the path to the written YAML
+file on disk.
+
+=head2 _generate_file_name
+
+  my $path = $manifest->_generate_file_name();
+
+Returns the current manifest file path. Overrides the parent class method to
+return C<$self-E<gt>{transient_filename}> when a transient file name has been
+installed via C<_set_file_name>. Falls back to the parent class implementation
+when no transient name is set.
+
+B<Returns:> The transient file path string if one is set; otherwise the path
+generated by C<< SUPER::_generate_file_name() >>.
+
+=head2 _set_file_name
+
+  $manifest->_set_file_name($filename);
+  $manifest->_set_file_name(undef);
+
+Sets or clears the transient file name used by C<_generate_file_name> during
+intermediate merge phases. When C<$filename> is a defined, true value it is
+stored as C<$self-E<gt>{transient_filename}>. When C<$filename> is false or
+C<undef>, the C<transient_filename> key is deleted from the object.
+
+Modifies the object in-place.
+
+B<Parameters:>
+
+=over 4
+
+=item * C<$filename> - A file path string to install as the transient file
+name, or C<undef> (or any false value) to clear the transient name.
+
+=back
+
+B<Returns:> No meaningful return value.
+
+B<Examples:>
+
+  $manifest->_set_file_name('/tmp/transient.yml');
+  # Returns: no meaningful value; sets transient_filename on the object
+
+  $manifest->_set_file_name(undef);
+  # Returns: no meaningful value; clears transient_filename from the object
+
+=head1 SEE ALSO
+
+L<Genesis::Env::Manifest>,
+L<Genesis::Env::Manifest::_entombment_mixin>,
+L<Genesis::Env::Manifest::_vaultify_mixin>,
+L<Genesis::Env::Manifest::Vaultified>,
+L<Genesis::Env::Manifest::Entombed>
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut
