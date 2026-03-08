@@ -1,0 +1,364 @@
+=head1 NAME
+
+Genesis::Commands::Core - Command handlers for Genesis core operations
+
+=head1 SYNOPSIS
+
+  # Registered in bin/genesis via define_command:
+  genesis version [<field> ...]
+  genesis version --json [<field> ...]
+  genesis ping
+  genesis update [--version <ver>] [--check] [--pre] [--force] [--details]
+  genesis hack [<env>] [<cmd> [<args> ...]]
+
+=head1 DESCRIPTION
+
+Implements the built-in core commands available to all Genesis invocations
+regardless of environment context: C<version>, C<ping>, C<update>, and
+C<hack>.
+
+C<version> reports or queries structured build metadata for the running
+Genesis executable.  C<ping> is a connectivity probe.  C<update> downloads
+and installs a new Genesis release from GitHub.  C<hack> is a developer
+inspection tool that evaluates Perl expressions, invokes object methods, or
+calls module functions against a live Genesis object graph.
+
+=head1 FUNCTIONS
+
+=head2 version(@fields)
+
+  version()
+  version('semver')
+  version('major', 'minor', 'patch')
+  version('semver', 'build_date', 'commit')
+
+Prints Genesis version and build information.
+
+When called with no arguments and no options, outputs the version string in
+the form C<Genesis vX.Y.ZBuild-Info> and exits.  When called with one or more
+field names, outputs each requested field on a separate line.  With the
+C<--json> option, outputs a JSON object containing the requested fields (or
+all fields if none are specified).
+
+B<Parameters:>
+
+=over 4
+
+=item C<@fields>
+
+Zero or more field names to query.  Valid field names are:
+
+=over 4
+
+=item C<semver> - Full semantic version string (e.g., C<1.2.3> or C<1.2.3-rc.4>)
+
+=item C<is_dev> - Boolean; true when running a development build
+
+=item C<major> - Major version number
+
+=item C<minor> - Minor version number
+
+=item C<patch> - Patch version number
+
+=item C<rc> - Release candidate number, or C<undef> if not an RC
+
+=item C<is_rc> - Boolean; true when the version is a release candidate
+
+=item C<build_epoch> - Build timestamp as a Unix epoch integer
+
+=item C<build_code> - Build timestamp as C<YYYYMMDD.HHMMSS> string
+
+=item C<build_date> - Build timestamp as a human-readable date/time string
+
+=item C<commit> - Git commit hash of the build
+
+=item C<is_dirty> - Boolean; true when the build was made from a dirty working tree
+
+=back
+
+Boolean fields (those beginning with C<is_>) are printed as the literal strings
+C<true> or C<false> in plain output mode.  In JSON mode they are proper JSON
+booleans.
+
+=back
+
+B<Returns:> Does not return; always calls C<exit 0>.
+
+B<Errors:>
+
+=over 4
+
+=item Calls C<bail()> with no message if any supplied field name is not in the
+valid set.  (Note: the error message is currently empty due to a known defect.)
+
+=back
+
+B<Examples:>
+
+  # Print the full version string
+  genesis version
+  # prints: Genesis v3.1.0 (abc1234) build 20240315.120000
+
+  # Query a single field
+  genesis version semver
+  # prints: 3.1.0
+
+  # Query multiple fields
+  genesis version major minor patch
+  # prints:
+  #   3
+  #   1
+  #   0
+
+  # Output all version fields as JSON
+  genesis version --json
+  # Returns: {"semver":"3.1.0","is_dev":false,"major":3,...}
+
+=head2 ping()
+
+  ping()
+
+Connectivity probe.  Prints C<PING!> to standard output and exits.
+
+Accepts no arguments.  Calls C<bail()> with usage help if any arguments are passed.
+
+B<Returns:> Does not return; always calls C<exit 0>.
+
+B<Examples:>
+
+  genesis ping
+  # prints: PING!
+
+=head2 update()
+
+  update()
+
+Downloads and installs a Genesis release from GitHub, replacing the running
+executable in-place.
+
+With no options, finds the latest stable release newer than the current
+version and, after prompting for confirmation, downloads and installs it.
+The installed binary preserves the original file's ownership and permission
+bits.  When the target path is not writable by the current user, a temporary
+shell script is generated and executed via C<sudo>.
+
+After a successful install, clears the C<GENESIS_HOME>, C<GENESIS_LIB>, and
+C<GENESIS_CALLBACK_BIN> environment variables and execs the newly installed
+binary with C<version> to confirm the upgrade.
+
+Accepts no positional arguments.  Calls C<bail()> with usage help if any
+positional arguments are passed.
+
+B<Options> (read from the command-line options hash):
+
+=over 4
+
+=item C<--version E<lt>verE<gt>>
+
+Install a specific version.  The leading C<v> is stripped automatically.
+Fails if the version does not exist on GitHub or if the downloadable
+executable is no longer available.
+
+=item C<--check>
+
+Report whether an update is available without installing it.  Exits 0 when
+already at the latest version; exits 1 when no matching version can be found.
+
+=item C<--pre>
+
+Include pre-release versions when searching for updates.
+
+=item C<--details>
+
+Print release notes for each available version before prompting.
+
+=item C<--force>
+
+Skip the interactive confirmation prompt and install without asking.
+
+=back
+
+B<Returns:> Does not return; always calls C<exit 0> on success or C<exec>s
+the new binary.
+
+B<Errors:>
+
+=over 4
+
+=item C<"$err - cannot update."> - The requested version does not exist, the
+executable is unavailable, or no newer version is available (not in C<--check>
+mode).  C<$err> contains the specific reason.
+
+=item C<"Aborted!"> - The user declined the confirmation prompt.
+
+=back
+
+B<Examples:>
+
+  # Check whether an update is available
+  genesis update --check
+  # prints: SUCCESS: You are on the latest version of Genesis (currently v3.1.0).
+
+  # Update to the latest stable release
+  genesis update
+  # prompts for confirmation, then installs and verifies
+
+  # Install a specific version
+  genesis update --version 3.0.5
+
+  # Install the latest pre-release
+  genesis update --pre
+
+=head2 hack($cmd, @args)
+
+  hack()
+  hack('pry')
+  hack('$Genesis::VERSION')
+  hack('$top', '->', 'load_env', '(', 'my-env', ')')
+  hack('Genesis::Env::some_func', 'arg1')
+  hack('Genesis::Env->class_method', 'arg1')
+  hack('<env-name>', '$top', '->', 'load_env', '(', '<env-name>', ')')
+
+Developer inspection tool.  Evaluates Perl expressions, invokes chains of
+object methods, or calls module functions against the live Genesis object
+graph.  Intended for debugging and exploration during development.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$cmd>
+
+The command or expression to evaluate.  Interpretation depends on the value:
+
+=over 4
+
+=item C<undef> or C<'pry'>
+
+Loads L<Pry> and drops into an interactive Pry debugging session.
+
+=item A string beginning with C<$> (e.g., C<$Genesis::VERSION>)
+
+Evaluates the string as a Perl expression using C<eval()>.  The result is
+printed using C<dump_var>.  If C<@args> are present they are interpreted as a
+method-chain continuation (see below).
+
+=item A string in the form I<Module>::I<func> or I<Module>-E<gt>I<method>
+
+Loads the named module and calls the specified function or class method with
+C<@args> as positional arguments.  The result is printed using C<dump_var>.
+
+=back
+
+=item C<@args>
+
+When C<$cmd> is a Perl expression (C<$...>), C<@args> encodes a method chain
+to execute on the result.  Tokens are interpreted as follows:
+
+=over 4
+
+=item C<-E<gt>> - Chain operator; begins a new method call
+
+=item A bare word following C<-E<gt>> - Method name
+
+=item C<(> - Opens argument list for the current method
+
+=item A bare word inside C<(...)> - Argument value passed to the method
+
+=item C<)> - Closes argument list and triggers the call
+
+=back
+
+The chain is executed left-to-right; each call's return value becomes the
+receiver for the next.  If the method name is C<pry>, drops into an
+interactive Pry session with C<$obj> bound to the current receiver.
+
+When C<$cmd> is a module function or method call, C<@args> are passed directly
+as positional arguments.
+
+=back
+
+B<Returns:>
+
+=over 4
+
+=item C<1> - When dispatching to a module function or class method.
+
+=item The result of C<defined($obj)> - After executing a Perl expression with
+a method chain.  Returns true if the final result is defined.
+
+=item Does not return (C<exit 0>) - When C<$cmd> is C<undef> or C<'pry'>.
+
+=back
+
+B<Context detection:> If the current directory contains C<.genesis/kits/> or
+C<dev/>, a C<Genesis::Top> object is constructed automatically.  If C<$cmd>
+matches an environment file name in that top-level directory (with or without
+the C<.yml> extension), the corresponding environment is loaded into C<$env>
+and the next element of C<@args> becomes the new C<$cmd>.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Attempted to load environment from %s, but encountered error: %s"> -
+Loading the environment file failed.  The first C<%s> is the C<.yml> file
+path; the second is the caught exception.
+
+=item C<"Attempted to load Pry, but encountered error: %s"> - The Pry module
+could not be loaded.  The C<%s> is the caught exception.
+
+=item C<"Attempted to evaluate Perl expression, but encountered error: %s"> -
+C<eval()> of the C<$cmd> expression raised an exception.  The C<%s> is the
+caught exception.
+
+=item C<"Improperly formatted expression: no method specified for call"> -
+A closing parenthesis was encountered before a method name was set.
+
+=item C<"Improperly formatted expression: expecting a -> operator, but found '%s'"> -
+A C<-E<gt>> token appeared where a C<-E<gt>> was not expected.  (Note: the
+C<%s> placeholder is present in the format string but no value is substituted,
+due to a known defect.)
+
+=item C<"Improperly formatted expression: unexpected argument '%s' while waiting for %s"> -
+An argument token appeared while the parser was not expecting one.  The first
+C<%s> is the unexpected token; the second is the parser state description.
+
+=item C<"Improperly formatted expression: unexpected opening parenthesis while waiting for %s"> -
+An opening parenthesis appeared while the parser expected a method name.
+The C<%s> is the parser state description.
+
+=item C<"Improperly formatted expression: unexpected opening parenthesis while waiting for argment"> -
+An opening parenthesis appeared while an argument was already being collected.
+(Note: "argment" is a typo in the source for "argument".)
+
+=back
+
+B<Examples:>
+
+  # Drop into a Pry debugging session
+  genesis hack pry
+
+  # Inspect a package variable
+  genesis hack '$Genesis::VERSION'
+  # Returns: result = "3.1.0"
+
+  # Call a method chain on an evaluated expression
+  genesis hack '$top' -> load_env '(' my-env ')'
+
+  # Call a package function directly
+  genesis hack 'Genesis::Env::some_func' arg1 arg2
+
+  # Call a class method
+  genesis hack 'Service::Github->new'
+
+=head1 SEE ALSO
+
+L<Genesis::Commands>, L<Genesis::Top>, L<Genesis::Env>,
+L<Service::Github>
+
+=head1 AUTHOR
+
+FiveTwenty, LLC
+
+=cut

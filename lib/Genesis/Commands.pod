@@ -1,0 +1,1308 @@
+=encoding utf-8
+
+=head1 NAME
+
+Genesis::Commands - Command infrastructure and dispatch for Genesis CLI
+
+=head1 SYNOPSIS
+
+  # In bin/genesis -- register a command
+  use Genesis::Commands;
+
+  define_command('deploy',
+    {
+      summary        => 'Deploy a Genesis environment',
+      scope          => 'env',
+      function_group => ENVIRONMENT,
+      option_group   => ENV_OPTIONS,
+      options        => [
+        'dry-run|n' => 'Perform a dry run without deploying',
+      ],
+    }
+  );
+
+  # From within a command implementation
+  my %opts = %{get_options()};
+  my @args = get_args();
+  bail "need an environment name" unless @args;
+
+  # CLI invocation (from the shell)
+  genesis deploy my-env
+  genesis --help
+  genesis deploy --help-full
+
+=head1 DESCRIPTION
+
+C<Genesis::Commands> is the procedural backbone of the Genesis CLI.  It
+provides command registration, option parsing, dispatch, help generation,
+and pre-flight validation.  All functions are exported into the caller's
+namespace via C<@EXPORT>.
+
+The module maintains several package-level data structures that track the
+currently active command and its parsed state:
+
+=over 4
+
+=item C<$COMMAND>
+
+The canonical name of the active command (e.g., C<deploy>), set during
+C<prepare_command>.
+
+=item C<$CALLED>
+
+The alias or name actually typed by the user (e.g., C<dep> if the user
+typed an alias), set during C<prepare_command>.
+
+=item C<%RUN>
+
+A dispatch table mapping command names to the closures that execute them.
+Populated by C<define_command>.
+
+=item C<%PROPS>
+
+A property hash mapping command names to their registered metadata
+(scope, option group, aliases, summary, description, options, etc.).
+Populated by C<define_command>.
+
+=item C<%GENESIS_COMMANDS>
+
+Maps every known name (canonical and aliases) to the canonical command
+name.  Populated by C<define_command>.
+
+=item C<@COMMANDS>
+
+An ordered list of canonical command names in registration order.
+Populated by C<define_command>.
+
+=back
+
+=head1 CONSTANTS
+
+=head3 Function-Group Constants
+
+The following constants are hash references used as the C<function_group>
+property in C<define_command>.  Each carries C<order>, C<module>, and
+C<label> keys that drive help output grouping and default dispatch module
+resolution.
+
+=over 4
+
+=item C<ENVIRONMENT>
+
+Order 0.  Module C<Env>.  Label C<Environment Management>.
+
+=item C<BOSH>
+
+Order 1.  Module C<Bosh>.  Label C<BOSH Actions>.
+
+=item C<INFO>
+
+Order 2.  Module C<Info>.  Label C<Informative>.
+
+=item C<REPOSITORY>
+
+Order 3.  Module C<Repo>.  Label C<Repository Management>.
+
+=item C<KIT>
+
+Order 4.  Module C<Kit>.  Label C<Kit Management>.
+
+=item C<PIPELINE>
+
+Order 5.  Module C<Pipelines>.  Label C<Pipeline Management>.
+
+=item C<GENESIS>
+
+Order 6.  Module C<Core>.  Label C<Genesis Management>.  This is the
+default function group for commands that do not specify one.
+
+=item C<UTILITY>
+
+Order -1.  Module C<Utility>.  Label C<Script Callback Helper>.
+
+=item C<DEPRECATED>
+
+Order -2.  Module C<Deprecated>.  Label C<Deprecated>.
+
+=item C<DEV>
+
+Order -3.  Module C<Core>.  Label C<Development>.
+
+=item C<WIP>
+
+Order -4.  Module C<Wip>.  Label C<Work in Progress>.
+
+=back
+
+Commands with a negative order are hidden from the default help output and
+only appear when C<--all> is passed.
+
+=head3 Option-Group Constants
+
+Each constant represents a tier of global options that the command opts
+into.  Higher tiers are supersets of lower ones.
+
+=over 4
+
+=item C<BLANK_OPTIONS> (0)
+
+No global options.  The command receives no pre-defined options from the
+global option set.
+
+=item C<BASE_OPTIONS> (1)
+
+Includes help flags (C<--help>, C<--help-full>, C<--helpful>, C<--globals>),
+logging and verbosity flags (C<--color>, C<--log>, C<--quiet>, C<--debug>,
+C<--trace>, C<--show-stack>).  This is the default for commands that do
+not specify C<option_group>.
+
+=item C<REPO_OPTIONS> (2)
+
+Extends C<BASE_OPTIONS> with C<--cwd|-C> (effective working directory).
+Appropriate for commands that operate on a Genesis deployment repository.
+
+=item C<ENV_OPTIONS> (3)
+
+Extends C<REPO_OPTIONS> with C<--bosh-env|-e>, C<--config|-c>, and
+C<--cpi>.  Appropriate for commands that target a specific environment and
+may interact with a BOSH director.
+
+=back
+
+=head1 FUNCTIONS
+
+=head2 define_command
+
+  define_command($name, \%props, $fn);
+  define_command($name, \%props);
+  define_command($name, $fn);
+  define_command($name);
+
+Registers a Genesis CLI command.  This is the primary entry point for
+adding commands to the dispatch table.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$name>
+
+The canonical command name (e.g., C<'deploy'>).  Hyphens are acceptable
+and are translated to underscores when resolving the default function name.
+
+=item C<\%props>
+
+Optional hashref of command properties.  Recognized keys:
+
+=over 4
+
+=item C<summary> - One-line description shown in C<genesis --help> output.
+
+=item C<description> - Full description shown in command-specific help.
+
+=item C<usage> - Usage string shown in command-specific help.
+
+=item C<scope> - Execution context.  A string (C<'any'>, C<'env'>,
+C<'repo'>, C<'kit'>, C<'empty'>, C<'pipeline'>) or an arrayref of scope
+fragments for conditional scoping.  Defaults to C<'any'>.
+
+=item C<no_vault> - Boolean.  When true, sets C<GENESIS_NO_VAULT=1> in the
+environment before running the command.  Defaults to C<0>.
+
+=item C<function_group> - One of the function-group constants
+(C<ENVIRONMENT>, C<BOSH>, etc.).  Controls help grouping and default
+dispatch module resolution.  Defaults to C<GENESIS>.
+
+=item C<option_group> - One of the option-group constants
+(C<BLANK_OPTIONS>, C<BASE_OPTIONS>, C<REPO_OPTIONS>, C<ENV_OPTIONS>).
+Controls which global options are available.  Defaults to C<BASE_OPTIONS>.
+
+=item C<option_passthrough> - Boolean.  When true, unknown options are
+passed through to the command rather than causing an error.  Defaults to
+C<0>.
+
+=item C<option_require_order> - Boolean.  When true, option parsing stops
+at the first non-option argument.  Defaults to false.
+
+=item C<options> - Arrayref of Getopt::Long-style option specifications
+and their descriptions, interleaved: C<[$spec, $desc, $spec, $desc, ...]>.
+
+=item C<deprecated_options> - Arrayref of deprecated option specifications.
+
+=item C<arguments> - Arrayref of positional argument specifications and
+descriptions for help output.
+
+=item C<variables> - Arrayref of environment variable specifications and
+descriptions for help output.
+
+=item C<alias> - A single alias string for the command.
+
+=item C<aliases> - Arrayref of alias strings for the command.
+
+=item C<deprecated> - If set, the command is flagged as deprecated.  The
+value may be a replacement command name string to include in the warning.
+
+=item C<extended_usage> - A coderef returning extended usage text appended
+to command-specific help.
+
+=back
+
+=item C<$fn>
+
+Optional.  Either a coderef to call directly, or a fully qualified
+function name string (e.g., C<'Genesis::Commands::Env::deploy'>).  When
+omitted, the function name is derived from the C<function_group>'s module
+and the command name with hyphens replaced by underscores.
+
+=back
+
+B<Returns:> Nothing.
+
+B<Examples:>
+
+  # Minimal - function resolved from function_group module
+  define_command('status', {
+    summary        => 'Show environment status',
+    function_group => ENVIRONMENT,
+    scope          => 'env',
+  });
+  # Returns: (nothing)
+
+  # Explicit function name
+  define_command('my-cmd', {}, 'Genesis::Commands::Utility::my_cmd');
+  # Returns: (nothing)
+
+  # With an alias and option group
+  define_command('deploy', {
+    alias        => 'dep',
+    scope        => 'env',
+    option_group => ENV_OPTIONS,
+    options      => [
+      'dry-run|n' => 'Perform a dry run without deploying',
+    ],
+  });
+  # Returns: (nothing)
+
+=head2 commands
+
+  my @names = commands();
+
+Returns the ordered list of all registered canonical command names, in
+registration order.
+
+B<Returns:> A list of command name strings.
+
+B<Examples:>
+
+  my @cmds = commands();
+  # Returns: ('status', 'deploy', 'check', ...)
+
+=head2 current_command
+
+  my $name = current_command();
+
+Returns the canonical name of the currently active command as set by
+C<prepare_command>.  Returns C<undef> if no command has been prepared.
+
+B<Returns:> The canonical command name string, or C<undef>.
+
+B<Examples:>
+
+  my $cmd = current_command();
+  # Returns: 'deploy'
+
+=head2 current_command_alias
+
+  my $alias = current_command_alias();
+
+Returns the name the user actually invoked, which may be a registered
+alias rather than the canonical command name.  Set by C<prepare_command>.
+
+B<Returns:> The invoked command name or alias string, or C<undef>.
+
+B<Examples:>
+
+  # User typed: genesis dep
+  my $alias = current_command_alias();
+  # Returns: 'dep'
+
+=head2 known_commands
+
+  my @canonical = known_commands();
+
+Returns a list of the canonical command names -- those where the key equals
+the value in C<%GENESIS_COMMANDS>.  Aliases resolve to their canonical
+target and are excluded from this list.
+
+B<Returns:> A list of canonical command name strings.
+
+B<Examples:>
+
+  my @names = known_commands();
+  # Returns: ('status', 'deploy', 'check', ...)  -- aliases omitted
+
+=head2 prepare_command
+
+  prepare_command($called_name, @args);
+
+Sets up the active command by recording the invoked name, resolving it to
+the canonical command name, parsing command-line options from C<@args>,
+and configuring the logging subsystem.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$called_name>
+
+The command name as typed by the user (canonical or alias).
+
+=item C<@args>
+
+Remaining command-line arguments after the command name.
+
+=back
+
+B<Returns:> C<1> on success.
+
+B<Examples:>
+
+  prepare_command('dep', '--dry-run', 'my-env');
+  # Returns: 1
+  # Sets $COMMAND = 'deploy', $CALLED = 'dep'
+  # Parses --dry-run into %COMMAND_OPTIONS
+  # Remaining 'my-env' goes into @COMMAND_ARGS
+
+=head2 run_command
+
+  run_command();
+
+Dispatches execution to the closure registered for the current command.
+Prints a deprecation warning if the command has a C<deprecated> property,
+then calls the registered function with C<@COMMAND_ARGS> and exits with
+status 0 on success.
+
+If the current command has no registered handler, prints an error via
+C<command_help> and exits with status 1.
+
+B<Returns:> Does not return -- calls C<exit 0> on success.
+
+B<Examples:>
+
+  prepare_command('deploy', 'my-env');
+  run_command();
+  # Calls Genesis::Commands::Env::deploy('my-env') and exits 0
+
+=head2 has_command
+
+  my $bool = has_command($cmd);
+
+Returns true if C<$cmd> is a known command or alias, false otherwise.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$cmd>
+
+Command name or alias to look up.
+
+=back
+
+B<Returns:> C<1> if found, empty string (C<''>) otherwise.
+
+B<Examples:>
+
+  has_command('deploy');
+  # Returns: 1 (if registered)
+
+  has_command('dep');
+  # Returns: 1 (aliases also match)
+
+  has_command('nosuchcmd');
+  # Returns: '' (empty string)
+
+=head2 is_equivalent_command
+
+  my $bool = is_equivalent_command($cmd1, $cmd2);
+
+Returns true if both C<$cmd1> and C<$cmd2> resolve to the same canonical
+command name.  Useful for checking whether an alias or alternate spelling
+refers to the same command.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$cmd1>
+
+First command name or alias.
+
+=item C<$cmd2>
+
+Second command name or alias.
+
+=back
+
+B<Returns:> C<1> if equivalent, empty string otherwise.
+
+B<Examples:>
+
+  is_equivalent_command('dep', 'deploy');
+  # Returns: 1  (if 'dep' is an alias for 'deploy')
+
+  is_equivalent_command('deploy', 'check');
+  # Returns: ''
+
+=head2 equivalent_commands
+
+  my @names = equivalent_commands($cmd);
+  my $aref  = equivalent_commands($cmd);
+
+Returns all names (canonical and aliases) that resolve to the same
+canonical command as C<$cmd>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$cmd>
+
+Any command name or alias.
+
+=back
+
+B<Returns:> In list context, a list of all equivalent names.  In scalar
+context, an arrayref of the same names.  Returns an empty list (or empty
+arrayref) if C<$cmd> is not a known command.
+
+B<Examples:>
+
+  my @all = equivalent_commands('dep');
+  # Returns: ('deploy', 'dep')  -- all names that map to the same command
+
+  my $ref = equivalent_commands('unknown');
+  # Returns: []
+
+=head2 command_properties
+
+  my $props = command_properties();
+  my $props = command_properties($name);
+
+Returns the properties hashref for a command.  When called with no
+argument (or with an empty string), returns the properties for the
+currently active command.  When called with a command name or alias,
+resolves it and returns that command's properties.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$name>
+
+Optional.  A command name or alias.  Defaults to the active command.
+
+=back
+
+B<Returns:> A hashref of command properties as registered by
+C<define_command>.
+
+B<Errors:>
+
+=over 4
+
+=item C<"No active or given command -- cannot return command_properties">
+
+Thrown via C<bug()> if no command name is given and no command is
+currently active.
+
+=back
+
+B<Examples:>
+
+  my $props = command_properties();
+  # Returns: { summary => '...', scope => 'env', ... }
+
+  my $props = command_properties('deploy');
+  # Returns: { summary => '...', scope => 'env', ... }
+
+=head2 get_options
+
+  my $href = get_options();
+  my $href = get_options(@keys);
+
+Returns parsed command options from the current command invocation.
+
+When called with no arguments, returns the entire options hashref.  When
+called with a list of key names, returns a hashref containing only those
+keys that were actually set.  Key names containing underscores are also
+tried with underscores converted to dashes (the internal storage format
+used by Getopt::Long).
+
+B<Parameters:>
+
+=over 4
+
+=item C<@keys>
+
+Optional list of option key names to select.
+
+=back
+
+B<Returns:> A hashref of option name-to-value pairs.
+
+B<Examples:>
+
+  # All options
+  my $opts = get_options();
+  # Returns: { 'dry-run' => 1, format => 'json', ... }
+
+  # Selected keys
+  my $opts = get_options('dry-run', 'format');
+  # Returns: { 'dry-run' => 1, format => 'json' }
+
+  # Underscore-to-dash fallback
+  my $opts = get_options('dry_run');
+  # Returns: { dry_run => 1 }  -- equivalent to get_options('dry-run')
+
+=head2 get_args
+
+  my @args = get_args();
+
+Returns the list of positional arguments remaining after option parsing.
+
+B<Returns:> In list context, the list of argument strings from
+C<@COMMAND_ARGS>.  Scalar context is not yet implemented and will throw an
+error.
+
+B<Errors:>
+
+=over 4
+
+=item C<"hashref not yet implemented">
+
+Thrown when called in scalar context.
+
+=back
+
+B<Examples:>
+
+  prepare_command('deploy', '--dry-run', 'my-env', 'other-arg');
+  my @args = get_args();
+  # Returns: ('my-env', 'other-arg')
+
+=head2 has_option
+
+  my $bool = has_option($option);
+  my $bool = has_option($option, $test);
+
+Tests whether a specific option was set, optionally comparing its value
+to a test expression.
+
+When called with only C<$option>, returns C<1> if the option key exists in
+the parsed options hash, C<0> otherwise.
+
+When called with C<$option> and C<$test>:
+
+=over 4
+
+=item If C<$test> is C<undef>, returns true only if the option value is also C<undef>.
+
+=item If C<$test> is a C<Regexp> object, returns C<1> if the option value matches, C<0> otherwise.
+
+=item If C<$test> is any other scalar, returns C<1> if the option value equals C<$test> as a string, C<0> otherwise.
+
+=back
+
+B<Parameters:>
+
+=over 4
+
+=item C<$option>
+
+The option key name to test.
+
+=item C<$test>
+
+Optional.  C<undef>, a string, or a compiled regexp (C<qr/.../>).
+
+=back
+
+B<Returns:> C<1> or C<0>.
+
+B<Examples:>
+
+  has_option('dry-run');
+  # Returns: 1  (if --dry-run was passed)
+
+  has_option('format', 'json');
+  # Returns: 1  (if --format=json)
+
+  has_option('format', qr/^js/);
+  # Returns: 1  (if format starts with 'js')
+
+  has_option('format', undef);
+  # Returns: 1  (if --format was not given a value)
+
+=head2 option_defaults
+
+  option_defaults(%defaults);
+  option_defaults(key => $value, key2 => $value2);
+
+Sets default values for options that have not yet been assigned a value.
+For each key-value pair in C<%defaults>, if the option key is not already
+defined in the parsed options, it is set to the given value.  Existing
+values are not overwritten.
+
+B<Parameters:>
+
+=over 4
+
+=item C<%defaults>
+
+A flat list of key-value pairs.
+
+=back
+
+B<Returns:> Nothing.
+
+B<Examples:>
+
+  option_defaults(format => 'table', verbose => 0);
+  # Sets 'format' to 'table' only if not already set
+  # Returns: (nothing)
+
+=head2 append_options
+
+  my $href = append_options(%extra);
+
+Merges additional key-value pairs into the parsed options hash, overwriting
+any existing values for those keys.
+
+B<Parameters:>
+
+=over 4
+
+=item C<%extra>
+
+A flat list of key-value pairs to add or overwrite.
+
+=back
+
+B<Returns:> The options hashref (C<$COMMAND_OPTIONS>) after merging.
+
+B<Examples:>
+
+  my $opts = append_options(injected => 1, source => 'internal');
+  # Returns: { injected => 1, source => 'internal', ... }
+
+=head2 command_help
+
+  command_help();
+  command_help($msg);
+  command_help($msg, $rc);
+
+Displays the global Genesis help screen listing all registered commands
+grouped by function area, then exits.
+
+When C<$msg> is provided, it is printed as a fatal error message before
+exiting with the given return code (default C<1>).  When C<$msg> is
+omitted, the help screen is shown and the process exits with code C<0>.
+
+Commands with a function group of negative order (C<DEPRECATED>, C<DEV>,
+C<WIP>, C<UTILITY>) are hidden unless C<--all> was passed as an option.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$msg>
+
+Optional error message to display before exiting.
+
+=item C<$rc>
+
+Optional exit code.  Defaults to C<1> if C<$msg> is set, C<0> otherwise.
+
+=back
+
+B<Returns:> Does not return -- always calls C<exit>.
+
+B<Examples:>
+
+  # Show help and exit 0
+  command_help();
+  # prints: full command listing grouped by function area, then exits 0
+
+  # Show an error message and exit 1
+  command_help("Unrecognized command 'frobnicate'");
+  # prints: error message, then exits 1
+
+  # Show an error with a specific exit code
+  command_help("Bad argument", 2);
+  # prints: error message, then exits 2
+
+=head2 command_usage
+
+  command_usage($rc, $msg, $show_global);
+
+Displays the usage screen for the current command, then exits.
+
+The usage screen includes the command summary, usage line(s), an alias
+note if the command was called by an alias, the full description, and
+sections for arguments, environment variables, options, and optionally
+global options.
+
+When C<$rc> is non-zero and the process is not under test, prints a brief
+usage hint and a fatal error message before exiting.
+
+When C<$rc> is zero, the full usage screen including description and option
+listings is shown.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$rc>
+
+Exit code.  Non-zero triggers error output mode.
+
+=item C<$msg>
+
+Optional error message.  When C<undef> and C<$rc> is non-zero, defaults
+to a message showing how the command was called.
+
+=item C<$show_global>
+
+Optional boolean.  When true, global options are appended to the output.
+When defined and false, a note is added directing users to C<--help-full>.
+When C<undef>, global options are shown if C<--help> was passed.
+
+=back
+
+B<Returns:> Does not return -- always calls C<exit>.
+
+B<Errors:>
+
+=over 4
+
+=item C<"E<lt>typeE<gt> definition for E<lt>commandE<gt> invalid: E<lt>specE<gt>">
+
+Thrown via C<bug()> if a registered option or argument specification
+cannot be parsed.
+
+=back
+
+B<Examples:>
+
+  # Show full usage and exit 0
+  command_usage(0);
+  # prints: full usage screen with description and options, then exits 0
+
+  # Show brief usage and error, then exit 1
+  command_usage(1, "missing required argument");
+  # prints: brief usage hint and error message, then exits 1
+
+  # Show usage with global options included
+  command_usage(0, undef, 1);
+  # prints: full usage screen including global options, then exits 0
+
+=head2 show_global_options
+
+  show_global_options();
+
+Displays the global options screen -- a listing of all options available to
+every Genesis command regardless of the specific command -- then exits with
+status 0.
+
+B<Returns:> Does not return -- always calls C<exit 0>.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Global option definition invalid: E<lt>specE<gt>">
+
+Thrown via C<bug()> if a global option specification cannot be parsed.
+
+=back
+
+B<Examples:>
+
+  # Triggered by: genesis --globals
+  show_global_options();
+  # prints: global options screen, then exits 0
+
+=head2 set_top_path
+
+  my $changed = set_top_path();
+
+Inspects C<@COMMAND_ARGS> and C<$COMMAND_OPTIONS{cwd}> to determine the
+effective working directory, then changes into it via C<chdir_or_fail>.
+
+If no C<--cwd> was given but the first positional argument looks like an
+environment file path (for C<env>-scoped commands) or a directory prefix
+(for the C<create> command), that argument is removed from C<@COMMAND_ARGS>
+and used as the target directory.
+
+If a C<--cwd> was given and it names a file rather than a directory,
+behavior depends on the command scope: for C<env>-scoped commands, the
+basename is prepended back into C<@COMMAND_ARGS> and the dirname is used as
+the working directory; for C<repo>-scoped commands running in search-target
+mode, the dirname is used silently; otherwise an error is raised.
+
+B<Returns:> C<1> if the working directory was changed, C<undef> if no
+change was needed.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Path '%s' specified in -C option does not exist">
+
+Thrown via C<bail()> when the path given via C<--cwd|-C> cannot be resolved
+to an absolute path.  C<%s> is the path as given by the user.
+
+=item C<"#B{%s %s} cannot be called specifying a file as an argument">
+
+Thrown via C<bail()> when a file path is given to a command that does not
+accept file arguments (non-C<env> scope, non-search-target mode).  The
+first C<%s> is the humanized binary name, the second is the command alias.
+
+=back
+
+B<Examples:>
+
+  # After: genesis deploy my-env.yml
+  # @COMMAND_ARGS = ('my-env.yml')
+  set_top_path();
+  # Returns: 1
+  # Chdir to dirname(my-env.yml); @COMMAND_ARGS = ('my-env')
+
+=head2 build_command_environment
+
+  build_command_environment();
+
+Translates parsed command options into environment variables and finalizes
+options consumed by the environment setup layer.  Specifically:
+
+=over 4
+
+=item Processes C<--spruce-log> into C<$ENV{DEBUG}> and C<$ENV{TRACE}>.
+
+=item Sets C<$ENV{GENESIS_EXECUTABLE_ENVS}> from the RC configuration.
+
+=item Moves C<--bosh-env> into C<$ENV{GENESIS_BOSH_ENVIRONMENT}>.
+
+=item Moves C<--cpi> into C<$ENV{GENESIS_TESTING_BOSH_CPI}>.
+
+=item Expands each C<--config> entry into a typed environment variable
+(e.g., C<GENESIS_CLOUD_CONFIG> or C<GENESIS_RUNTIME_CONFIG_myname>).
+
+=back
+
+B<Returns:> Nothing.
+
+B<Errors:>
+
+=over 4
+
+=item C<"--spruce-log is expected to be one of TRACE or DEBUG">
+
+Thrown via C<bail()> when the C<--spruce-log> value does not match C<debug>
+or C<trace> (case-insensitive prefix match).
+
+=item C<"$path: no such file or directory">
+
+Thrown via C<bail()> when a C<--config> path cannot be resolved to an
+absolute path.
+
+=back
+
+B<Examples:>
+
+  # After: genesis deploy my-env --bosh-env c-aws-myenv
+  build_command_environment();
+  # Returns: (nothing)
+  # Sets: $ENV{GENESIS_BOSH_ENVIRONMENT} = 'c-aws-myenv'
+
+=head2 has_scope
+
+  my $bool = has_scope(@scopes);
+
+Returns true if any of the requested C<@scopes> apply to the current
+command given its registered scope specification and current option values.
+
+The command's C<scope> property (set in C<define_command>) may be a simple
+string or an arrayref of scope fragments.  Simple string scopes are matched
+directly.  Array scope fragments allow conditional scoping based on the
+current parsed options: each fragment is a two-element arrayref of
+C<[$conditions, $scopes]>, where conditions are option expressions
+(C<opt_name>, C<!opt_name>, C<opt_name=value>, C<!opt_name=value>) and
+scopes is a string or arrayref of scope names.  The first matching
+fragment determines the active scopes.
+
+B<Parameters:>
+
+=over 4
+
+=item C<@scopes>
+
+One or more scope name strings to test.  Valid values are C<'env'>,
+C<'repo'>, C<'kit'>, C<'empty'>, C<'pipeline'>, and C<'any'>.
+
+=back
+
+B<Returns:> C<1> if any requested scope matches, C<undef> otherwise.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Incorrectly defined scope for command $COMMAND">
+
+Thrown via C<bug()> when an array scope fragment does not have exactly
+two elements.
+
+=back
+
+B<Examples:>
+
+  # In a command registered with scope => 'env'
+  has_scope('env');
+  # Returns: 1
+
+  has_scope('repo');
+  # Returns: undef
+
+  # In a command registered with scope => 'any'
+  has_scope('pipeline');
+  # Returns: undef  ('any' excludes pipeline)
+
+=head2 check_embedded_genesis
+
+  check_embedded_genesis();
+
+Checks whether the current deployment repository contains an embedded
+Genesis binary at C<.genesis/bin/genesis> and, if so, compares its version
+to the running version.
+
+If the embedded version differs from the running version, behavior depends
+on the C<embedded_genesis> RC setting:
+
+=over 4
+
+=item C<'ignore'> - The check is skipped entirely.
+
+=item C<'warn'> (or no C<use> setting) - A warning is printed but execution continues.
+
+=item C<'use'> (and the command does not set C<no_use_embedded_genesis>) -
+The embedded genesis is extracted from the archive and re-executed,
+replacing the current process.
+
+=back
+
+The check is skipped entirely when:
+
+=over 4
+
+=item The C<GENESIS_IS_HELPING_YOU> environment variable is set.
+
+=item The RC setting is C<'ignore'>.
+
+=item The current command is not repo- or env-scoped.
+
+=item No embedded genesis file exists.
+
+=item C<GENESIS_USING_EMBEDDED> is already set (prevents recursive invocation).
+
+=item The embedded binary path matches C<$GENESIS_CALLBACK_BIN>.
+
+=item The embedded version equals the running version.
+
+=back
+
+B<Returns:> Nothing, or does not return if the embedded genesis is re-executed.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Could not use extract embedded Genesis">
+
+Thrown via C<bail()> if the embedded genesis archive cannot be extracted.
+
+=back
+
+B<Examples:>
+
+  check_embedded_genesis();
+  # Returns: (nothing)  -- if versions match or check is skipped
+  # Or: prints a warning and returns  -- version mismatch, warn mode
+  # Or: (does not return)  -- re-execs embedded binary in use mode
+
+=head2 check_prereqs
+
+  check_prereqs();
+
+Validates that all external tools required by Genesis are installed and
+meet minimum version requirements.  Also checks required Perl modules and
+enforces directory scope constraints for the current command.
+
+Checks the following external tools:
+
+=over 4
+
+=item perl E<gt>= 5.20.0
+
+=item curl E<gt>= 7.30.0
+
+=item git E<gt>= 1.8.0
+
+=item jq E<gt>= 1.6
+
+=item spruce E<gt>= 1.28.0
+
+=item safe E<gt>= 1.6.1
+
+=item vault E<gt>= 0.9.0
+
+=item openssl E<gt>= 1.1.1
+
+=item credhub E<gt>= 2.7.0
+
+=item bosh E<gt>= 6.4.4
+
+=back
+
+Checks the following Perl modules:
+
+=over 4
+
+=item MIME::Base64 E<gt>= 3.14
+
+=item IO::Uncompress::Gunzip E<gt>= 2.064
+
+=item IO::Compress::Gzip E<gt>= 2.064
+
+=item Archive::Tar E<gt>= 1.96
+
+=back
+
+After version checks, enforces directory scope:
+
+=over 4
+
+=item Commands with C<repo> or C<env> scope must be run in a Genesis deployment repo.
+
+=item Commands with C<kit> scope must be run in a Genesis kit repo.
+
+=item Commands with C<kit_or_dev> scope must be in a kit repo or a deployment repo with a C<dev/> directory.
+
+=item Commands with C<empty> scope must NOT be in a deployment or kit repo.
+
+=back
+
+The check runs at most once per process (tracked with a static variable).
+It is skipped entirely when C<GENESIS_IS_HELPING_YOU> is set.
+
+B<Returns:> C<1> if prerequisites pass.
+
+B<Errors:>
+
+=over 4
+
+=item C<"check_prereqs called before command selected">
+
+Thrown via C<bug()> if called before C<prepare_command> has been called.
+
+=item C<"#R{GENESIS PRE-REQUISITES CHECKS FAILED!!}\nEncountered the following errors:\n...">
+
+Thrown via C<bail()> if any prerequisite check fails.  The message lists
+all failures encountered.
+
+=back
+
+B<Examples:>
+
+  prepare_command('deploy', @args);
+  check_prereqs();
+  # Returns: 1  (all prerequisites met)
+  run_command();
+
+=head2 at_exit
+
+  at_exit($fn);
+
+Registers a callback to be invoked when the Perl interpreter exits (via the
+C<END> block).  Each registered callback receives the current exit status
+C<$?> as its sole argument.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$fn>
+
+A coderef to call at exit time.
+
+=back
+
+B<Returns:> Nothing.
+
+B<Examples:>
+
+  at_exit(sub {
+    my $status = shift;
+    cleanup_tempfiles() if $status == 0;
+  });
+  # Returns: (nothing)
+
+=head1 INTERNAL FUNCTIONS
+
+These functions are internal to the implementation.  They may change
+without notice and should not be called directly.
+
+=head2 parse_options
+
+  parse_options(\@args);
+
+Parses command-line options from C<\@args> using Getopt::Long.
+Populates C<$COMMAND_OPTIONS> with the parsed option values and
+C<@COMMAND_ARGS> with the remaining positional arguments.  Removes
+consumed items from the referenced array.
+
+Constructs the option specification from the global options up to the
+command's C<option_group> level, plus the command's own C<options> and
+C<deprecated_options>.  If the command's C<option_group> is below
+C<REPO_OPTIONS>, injects a no-op C<cwd|C> spec to silently absorb any
+C<-C> injected by the genesis helper wrapper.
+
+Applies Getopt::Long configuration flags based on the command's
+C<option_passthrough> and C<option_require_order> properties.
+
+On parse failure, calls C<command_usage(1, ...)> with the error messages.
+
+Extracts and side-effects two options from the parsed hash before
+returning:
+
+=over 4
+
+=item C<color> - Sets C<$ENV{NOCOLOR}> if false; removed from options hash.
+
+=item C<quiet> - Sets C<$ENV{QUIET}> if true; removed from options hash.
+
+=back
+
+B<Parameters:>
+
+=over 4
+
+=item C<\@args>
+
+Arrayref of raw command-line strings to parse.  Modified in place.
+
+=back
+
+B<Returns:> Nothing.
+
+B<Examples:>
+
+  my @argv = ('--dry-run', 'my-env');
+  parse_options(\@argv);
+  # Returns: (nothing)
+  # $COMMAND_OPTIONS{dry-run} = 1; @COMMAND_ARGS = ('my-env')
+
+=head2 set_logging_state
+
+  set_logging_state();
+
+Reads logging-related options (C<--log>, C<--debug>, C<--trace>,
+C<--show-stack>) from C<$COMMAND_OPTIONS>, removes them, and configures
+the C<$Logger> singleton via C<configure_log>.
+
+The resolved log level is determined in this priority order:
+
+=over 4
+
+=item C<--log> value (if set), warns if C<--debug> or C<--trace> also given.
+
+=item C<--trace> maps to C<TRACE>.
+
+=item C<--debug> maps to C<DEBUG>.
+
+=item Default is C<INFO>.
+
+=back
+
+Sets C<$ENV{GENESIS_DEBUG}> and C<$ENV{GENESIS_TRACE}> when the resolved
+level meets or exceeds C<DEBUG> or C<TRACE> respectively.
+
+B<Returns:> Nothing.
+
+=head2 check_version
+
+  my $err = check_version($name, $min, $cmd, $regex, $url, $path_src);
+  my $err = check_version($name, $min, '', $version, $path, $url);
+
+Checks whether a tool meets a minimum version requirement.
+
+When C<$cmd> is provided (non-empty string), runs it to obtain a version
+string, extracts the version with C<$regex>, and finds the tool path
+with C<type -p>.  When C<$cmd> is empty, uses the pre-supplied
+C<$version> and C<$path>.
+
+In development mode (C<GENESIS_DEV_MODE> set) a version string containing
+C<'development'> is accepted unconditionally.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$name>
+
+Human-readable tool name (e.g., C<'curl'>).
+
+=item C<$min>
+
+Minimum acceptable version string (e.g., C<'7.30.0'>).
+
+=item C<$cmd>
+
+Shell command to run to get the version output, or empty string.
+
+=item C<@remainder>
+
+When C<$cmd> is non-empty: C<($regex, $url, $path_src)>.
+
+When C<$cmd> is empty: C<($version, $path, $url)>.
+
+=back
+
+B<Returns:> C<undef> on success, or an error message string on failure.
+
+B<Examples:>
+
+  my $err = check_version('curl', '7.30.0',
+    'curl --version 2>/dev/null | head -n1',
+    qr(^curl\s+(\S+)));
+  # Returns: undef  (if curl meets the minimum version)
+  # Returns: "curl v7.29.0 is installed at /usr/bin/curl, ..."  (if too old)
+
+=head1 SEE ALSO
+
+L<Genesis>, L<Genesis::State>, L<Genesis::Log>, L<Genesis::Top>,
+L<Genesis::Commands::Env>, L<Genesis::Commands::Bosh>,
+L<Genesis::Commands::Info>, L<Genesis::Commands::Kit>,
+L<Genesis::Commands::Repo>, L<Genesis::Commands::Pipelines>,
+L<Genesis::Commands::Core>
+
+=head1 AUTHOR
+
+FiveTwenty, LLC
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

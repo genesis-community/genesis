@@ -1,0 +1,809 @@
+=head1 NAME
+
+Genesis::Commands::Kit - Command handlers for Genesis kit management
+
+=head1 SYNOPSIS
+
+  # Registered in bin/genesis via define_command:
+  genesis create-kit --name <name> [--dev]
+  genesis build-kit [options]
+  genesis list-kits [name] [options]
+  genesis decompile-kit <kit> [options]
+  genesis fetch-kit [name[/version]] [options]
+  genesis compare-kits [release[/job] ...] [options]
+
+  # From Perl (called by Genesis command dispatch):
+  use Genesis::Commands::Kit;
+  Genesis::Commands::Kit::create_kit();
+  Genesis::Commands::Kit::build_kit();
+  Genesis::Commands::Kit::list_kits(@args);
+  Genesis::Commands::Kit::decompile_kit(@args);
+  Genesis::Commands::Kit::fetch_kit(@kits);
+  Genesis::Commands::Kit::compare_kits(@filters);
+
+=head1 DESCRIPTION
+
+Provides the command handler functions for Genesis kit management operations.
+Each function in this module corresponds to a C<genesis> CLI subcommand and is
+registered via C<define_command> in the Genesis binary.
+
+Kit management covers the full lifecycle of Genesis kits: scaffolding new kit
+source trees, compiling kit source into distributable tarballs, listing local
+and remote kit versions, decompiling kit archives back into editable
+directories, fetching kits from remote providers, and comparing BOSH release
+inventories between two kit versions.
+
+All functions read CLI options via the C<get_options> function from
+L<Genesis::Commands> and resolve the current directory context via
+L<Genesis::Top>.
+
+=head1 FUNCTIONS
+
+=head2 create_kit()
+
+  genesis create-kit --name <name> [--dev]
+
+Scaffolds a new Genesis kit source directory.  Reads the kit name from the
+C<--name> option and delegates to L<Genesis::Kit::Compiler/scaffold>.
+
+B<Options (via get_options):>
+
+=over 4
+
+=item C<name> (required)
+
+The name of the new kit.  The directory is created at C<< <name>-genesis-kit/ >>
+in the current directory, or at C<dev/> if C<--dev> is also specified.
+
+=item C<dev>
+
+When set, the kit is scaffolded into the C<dev/> directory instead of the
+standard C<< <name>-genesis-kit/ >> directory.
+
+=back
+
+Exits with usage if C<--name> is not provided.
+
+B<Returns:> Nothing.  Prints a confirmation message on success.
+
+B<Examples:>
+
+  # Create a new kit named "my-app"
+  genesis create-kit --name my-app
+  # prints: Created new Genesis kit 'my-app' in /path/to/my-app-genesis-kit
+
+  # Scaffold into the dev/ directory of a deployment repo
+  genesis create-kit --name my-app --dev
+  # prints: Created new Genesis kit 'my-app' in /path/to/dev
+
+=head2 build_kit()
+
+  genesis build-kit [--name <name>] [--version <ver>|--major|--minor|--final]
+                    [--target <dir>] [--dev] [--force]
+
+Compiles a Genesis kit source directory into a distributable C<.tar.gz>
+archive.  Determines the kit name and source directory from options or the
+current directory layout.  Checks both local and remote kit versions to
+propose the next semver, then prompts for confirmation before compiling.
+
+B<Options (via get_options):>
+
+=over 4
+
+=item C<name>
+
+Kit name.  If omitted, inferred from the current directory name.  When run
+from inside a deployment repo with a C<dev/> directory containing
+C<kit.yml>, the kit name is derived from the repo directory name.  When run
+from a C<< <name>-genesis-kit >> directory, the kit name is derived from the
+directory name.
+
+=item C<version>
+
+Explicit semver string for the build (e.g., C<1.2.3> or C<v1.2.3>).  Cannot
+be combined with C<--final>, C<--major>, or C<--minor>.
+
+=item C<major>
+
+Bump the major version component.  Cannot be combined with C<--minor>.
+
+=item C<minor>
+
+Bump the minor version component.  Cannot be combined with C<--major>.
+
+=item C<final>
+
+Build a final (non-RC) release.  When omitted, the build version receives an
+C<-rcNNNNN> pre-release suffix.
+
+=item C<target>
+
+Output directory for the compiled archive.  Defaults to C<.>.  If the target
+directory contains a C<.genesis/config> file (a deployment repo), the archive
+is placed in C<.genesis/kits/> within that directory.
+
+=item C<dev>
+
+Compile from the C<dev/> directory rather than the kit source root.
+
+=item C<force>
+
+Allow overwriting an existing version.
+
+=back
+
+Takes no positional arguments.  Exits with usage if any arguments are
+provided.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Current directory is a kit -- cannot specify dev mode\n">
+
+Raised when C<--dev> is combined with a run from a named kit directory.
+
+=item C<"Version #C{$options{version}} is not in a valid semver format">
+
+Raised when the value passed to C<--version> does not parse as semver.
+The C<#C{...}> markup highlights the version string in terminal output.
+
+=item C<"Cannot specify --version|-v if also specifying --final|-F, --major|-M or --minor|-m">
+
+Raised when C<--version> is combined with any automatic version-bump option.
+
+=item C<"Version %s already exists: use --force to recreate a potentially different one locally.">
+
+Raised when the specified version already exists remotely or locally and
+C<--force> was not provided.  The C<%s> placeholder is the version string.
+
+=item C<"Cannot specify both --major|-M and --minor|-m">
+
+Raised when C<--major> and C<--minor> are both provided.
+
+=item C<"Aborted by user.\n">
+
+Raised when the user declines the version confirmation prompt.
+
+=item C<"%s does not exist -- cannot continue compiling dev kit.\n">
+
+Raised when C<--dev> is in effect but the C<dev/> directory is absent.
+The C<%s> placeholder is the directory path.
+
+=item C<"Unable to compile v%s of %s Genesis Kit.\n">
+
+Raised when L<Genesis::Kit::Compiler/compile> fails.  The first C<%s> is
+the version string and the second is the kit name.
+
+=back
+
+B<Returns:> Nothing.  Prints the path of the compiled archive on success.
+
+B<Examples:>
+
+  # Auto-detect name and bump patch version (from kit source dir)
+  cd my-app-genesis-kit
+  genesis build-kit
+  # prints: Compiled my-app v0.1.1-rc00001 to ./my-app-0.1.1-rc00001.tar.gz
+
+  # Build a final minor-bumped release to a specific deployment repo
+  genesis build-kit --minor --final --target /path/to/my-deployments
+  # prints: Compiled my-app v0.2.0 to /path/to/my-deployments/.genesis/kits/my-app-0.2.0.tar.gz
+
+  # Build an explicit version, forcing overwrite
+  genesis build-kit --version 1.2.3 --force
+  # prints: Compiled my-app v1.2.3 to ./my-app-1.2.3.tar.gz
+
+=head2 list_kits()
+
+  genesis list-kits [name] [--remote|-r] [--updates|-u] [--all|-a]
+                    [--filter <regex>] [--latest <n>]
+                    [--prereleases] [--drafts] [--details]
+
+Lists Genesis kits.  By default, lists locally cached kits from the current
+deployment repo.  With C<--remote>, queries the configured remote kit provider
+instead.  With C<--updates>, lists only remote versions newer than the locally
+installed version.
+
+B<Arguments:>
+
+=over 4
+
+=item C<name> (optional)
+
+Restrict output to a single kit by name.  Cannot be combined with
+C<--filter> or C<--all>.
+
+=back
+
+B<Options (via get_options):>
+
+=over 4
+
+=item C<remote> / C<-r>
+
+List remote kit versions instead of local.  Cannot be combined with
+C<--updates>.
+
+=item C<updates> / C<-u>
+
+List only remote versions newer than the locally installed version.  Cannot
+be combined with C<--remote>.
+
+=item C<all> / C<-a>
+
+When used with C<--remote>, list all remote kits rather than limiting to
+locally installed kit names.  Cannot be combined with a positional name or
+C<--filter>.
+
+=item C<filter>
+
+Regex pattern to filter kit names when listing remote kits.  Cannot be
+combined with a positional name argument.
+
+=item C<latest>
+
+Limit output to the most recent N versions per kit.
+
+=item C<prereleases>
+
+Include pre-release versions when listing remote kits.
+
+=item C<drafts>
+
+Include draft releases when listing remote kits.
+
+=item C<details>
+
+Show release notes and publication dates alongside version listings.
+Enabled automatically when C<--updates> is used.
+
+=back
+
+Must be run from a Genesis deployment repo, or C<--remote> must be specified.
+Exits with status 1 if neither condition is met.
+
+B<Returns:> Nothing.  Writes kit and version listings to standard output.
+
+B<Examples:>
+
+  # List all locally cached kits in the current deployment repo
+  genesis list-kits
+  # prints: Kit: cf
+  #           * v1.5.0
+
+  # List all available remote versions of the "cf" kit
+  genesis list-kits cf --remote
+  # prints: Kit: cf
+  #           * v1.5.0
+
+  # Check for updates to all locally installed kits
+  genesis list-kits --updates
+  # prints: There is 1 update for the cf kit (currently using v1.4.0):
+
+  # List latest 3 versions of all remote kits with release notes
+  genesis list-kits --remote --all --latest 3 --details
+  # prints: Kit: cf
+  #           * Release Notes for v1.5.0 ...
+
+=head2 decompile_kit()
+
+  genesis decompile-kit <kit> [--directory <dir>] [--force]
+
+Extracts a compiled kit archive into an editable source directory.  The kit
+argument may be:
+
+=over 4
+
+=item *
+
+A path to a C<.tar.gz> archive file
+
+=item *
+
+An environment name (C<.yml> extension allowed), in which case the kit used
+by that environment is resolved automatically
+
+=item *
+
+A kit name (resolves to the locally installed latest version)
+
+=item *
+
+A C<name/version> pair (e.g., C<cf/1.2.3>)
+
+=item *
+
+The keyword C<latest> (resolves to the latest locally installed kit version)
+
+=back
+
+B<Arguments:>
+
+=over 4
+
+=item C<$kit> (required)
+
+Kit specifier.  Exactly one argument must be provided.
+
+=back
+
+B<Options (via get_options):>
+
+=over 4
+
+=item C<directory>
+
+Target directory for extraction.  Defaults to C<dev/>.
+
+=item C<force>
+
+Allow overwriting an existing C<dev/> directory.
+
+=back
+
+B<Errors:>
+
+=over 4
+
+=item C<"#C{%s} directory already exists (and --force not specified).\nWill not continue.">
+
+Raised when the target directory is C<dev/>, a dev kit already exists there,
+and C<--force> was not provided.  The C<#C{...}> markup highlights the
+directory path in terminal output.
+
+=item C<"#R{[ERROR]} #C{%s} should be an environment YAML file, but could not be loaded">
+
+Raised when the kit argument matches an environment name but the environment
+file cannot be loaded.  The C<#C{...}> markup highlights the file path in
+terminal output.
+
+=item C<"Environment #C{%s} is already using a dev kit, and we don't want to get into metaphysical absurities...">
+
+Raised when the resolved environment is already using a dev kit.  The
+C<#C{...}> markup highlights the environment name in terminal output.
+
+=item C<"There are multiple kits have the given version - please be explicit">
+
+Raised when the version string matches more than one locally installed kit.
+
+=item C<"Unable to find Kit archive %s\n">
+
+Raised when no matching kit archive can be located.  The C<%s> placeholder
+is the original kit specifier provided by the caller.
+
+=back
+
+B<Returns:> Nothing.  Extracts the kit archive and prints a confirmation message.
+
+B<Examples:>
+
+  # Decompile the kit used by the "us-east-prod" environment
+  genesis decompile-kit us-east-prod
+  # prints: Decompiling kit archive cf/1.5.0 into dev/
+
+  # Decompile the latest locally installed "cf" kit into dev/
+  genesis decompile-kit cf
+  # prints: Decompiling kit archive cf/1.5.0 (latest) into dev/
+
+  # Decompile a specific version into an alternate directory
+  genesis decompile-kit cf/1.5.0 --directory /tmp/kit-work
+  # prints: Decompiling kit archive cf/1.5.0 into /tmp/kit-work/
+
+  # Overwrite an existing dev/ directory
+  genesis decompile-kit latest --force
+  # prints: Decompiling kit archive cf/1.5.0 (latest) into dev/
+
+=head2 fetch_kit()
+
+  genesis fetch-kit [name[/version] ...] [--as-dev] [--force] [--to <dir>]
+
+Downloads one or more Genesis kit archives from the configured remote
+provider.  If no kit names are specified, all locally known kits are fetched.
+Each kit may optionally include a version specifier (e.g., C<cf/1.2.3>); if
+omitted, the latest available version is fetched.
+
+When C<--as-dev> is specified, the downloaded kit is also decompiled into the
+C<dev/> directory of the current deployment repo.
+
+B<Arguments:>
+
+=over 4
+
+=item C<@kits> (optional)
+
+List of kit specifiers in the form C<name> or C<name/version>.  A bare
+version string (semver) is also accepted when only one local kit is present,
+in which case that kit's name is used automatically.
+
+=back
+
+B<Options (via get_options):>
+
+=over 4
+
+=item C<as-dev>
+
+Decompile the fetched kit into C<dev/> after downloading.  Only one kit may
+be fetched at a time when this option is set.
+
+=item C<force>
+
+Allow overwriting an existing C<dev/> directory when C<--as-dev> is used.
+
+=item C<to>
+
+Override the download destination directory.
+
+=back
+
+B<Errors:>
+
+=over 4
+
+=item C<"No local kits found; you must specify the name of the kit to fetch">
+
+Raised when no kits are specified and no locally installed kits exist, or
+when a bare version is provided but no local kits exist.
+
+=item C<"Cannot specify multiple kits to fetch with --as-dev option">
+
+Raised when more than one kit specifier is provided together with C<--as-dev>.
+
+=item C<"More than one local kit found; please specify the kit to fetch">
+
+Raised when a bare version string is provided but more than one local kit
+exists.
+
+=item C<"dev/ directory already exists (and --force not specified).  Bailing out.">
+
+Raised when C<--as-dev> is set, a dev kit already exists, and C<--force> was
+not provided.
+
+=item C<"Failed to download Genesis Kit %s">
+
+Raised when the remote download fails.  The C<%s> placeholder is the
+C<name/version> signature of the kit being fetched.
+
+=back
+
+B<Returns:> Nothing.  Prints a confirmation line for each kit downloaded.
+
+B<Examples:>
+
+  # Fetch the latest version of all locally known kits
+  genesis fetch-kit
+  # prints: Downloaded version 1.5.0 of the cf kit
+
+  # Fetch a specific version of the "cf" kit
+  genesis fetch-kit cf/1.5.0
+  # prints: Downloaded version 1.5.0 of the cf kit
+
+  # Fetch and decompile the latest "bosh" kit into dev/
+  genesis fetch-kit bosh --as-dev
+  # prints: Downloaded version 2.1.0 of the bosh kit and decompiled it into dev/
+
+  # Fetch multiple kits by name (latest of each)
+  genesis fetch-kit cf bosh
+  # prints: Downloaded version 1.5.0 of the cf kit
+  # prints: Downloaded version 2.1.0 of the bosh kit
+
+=head2 compare_kits()
+
+  genesis compare-kits [release[/job] ...] [--compare-to <ref>]
+                       [--show-unchanged-jobs]
+
+Compares the BOSH release inventory and job specifications between the current
+dev kit and a reference kit version.  Must be run from a Genesis deployment
+repo containing a C<dev/> kit, or from a Genesis kit source directory.
+
+The comparison reference (C<--compare-to>) may be a semver string, a
+directory path, or a C<.tar.gz> path.  When omitted, defaults to the latest
+locally installed version of the kit (in a deployment repo) or the latest
+remote version (in a kit directory).
+
+For each changed release, job C<spec> files are fetched from the upstream
+GitHub repository and compared using C<spruce diff>.  A C<spec_cache_dir>
+setting in C<~/.genesis/config> is used to cache downloaded spec archives and
+avoid repeated network fetches.
+
+B<Arguments:>
+
+=over 4
+
+=item C<@filters> (optional)
+
+One or more filter expressions limiting comparison output to specific releases
+or jobs.  Each filter is a release name or a C<release/job> pair.
+
+=back
+
+B<Options (via get_options):>
+
+=over 4
+
+=item C<compare-to>
+
+Reference to compare against.  Accepts a semver version string (e.g.,
+C<1.2.3> or C<v1.2.3>), a directory path to a kit source tree, or a path to
+a compiled C<.tar.gz> kit archive.
+
+=item C<show-unchanged-jobs>
+
+When set, unchanged job specs are also reported in the output.
+
+=back
+
+B<Errors:>
+
+=over 4
+
+=item C<"No kit found -- must be in a Genesis deployment repo or kit directory">
+
+Raised when the current directory is neither a Genesis deployment repo with a
+C<dev/> kit nor a Genesis kit source directory.
+
+=item C<"No local #M{%s} kits found to compare against\n">
+
+Raised when no C<--compare-to> reference is given while in a deployment repo
+and no locally installed versions of the kit are found.  The C<#M{...}>
+markup highlights the kit name in terminal output.
+
+=item C<"Failed to download Genesis Kit %s">
+
+Raised when fetching the comparison kit from the remote provider fails.  The
+C<%s> placeholder is the C<name/version> string.
+
+=item C<"Cannot compare kit against %s -- must be a directory, tarball, or version">
+
+Raised when C<--compare-to> is provided but is neither a valid semver, a
+directory, nor a C<.tar.gz> file.  The C<%s> placeholder is the value
+provided to C<--compare-to>.
+
+=back
+
+B<Returns:> Nothing.  Prints categorized output sections for removed,
+unchanged, added, and changed releases, followed by per-job spec diffs for
+changed releases.  Exits 0 on completion.
+
+B<Examples:>
+
+  # Compare dev/ kit against the latest locally installed version
+  cd my-deployments
+  genesis compare-kits
+  # prints: Unchanged Releases: ...  Changed Releases: ...
+
+  # Compare against a specific remote version
+  genesis compare-kits --compare-to 1.4.0
+  # prints: Changed Releases: cf-routing (1.4.0 -> 1.5.0)
+
+  # Compare only the "cf-routing" release
+  genesis compare-kits cf-routing
+  # prints: Changed Releases: cf-routing ...
+
+  # Compare specific jobs within a release
+  genesis compare-kits cf-routing/route_registrar cf-routing/gorouter
+  # prints: Spec Changes in Changed Releases: ...
+
+  # Compare against a local tarball
+  genesis compare-kits --compare-to /tmp/cf-1.5.0.tar.gz
+  # prints: Removed Releases: ...  Added Releases: ...
+
+=head1 INTERNAL METHODS
+
+These functions are internal to the implementation.  They may change without
+notice and should not be called directly.
+
+=head2 _get_kit_releases($kit, @filters)
+
+  _get_kit_releases($kit, @filters)
+
+Scans all YAML files in a kit's directory tree to extract BOSH release
+entries.  Processes both C<spruce merge>-style release blocks (files
+containing a top-level C<releases:> key) and BOSH op-patch-style files
+(files containing C<path: /releases/...> entries).  Release entries with
+both a C<name> and a C<version> are indexed; entries missing either field
+are collected separately.
+
+When C<@filters> is non-empty, limits results to the release names named in
+the filter list.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$kit>
+
+A kit object (L<Genesis::Kit::Dev> or L<Genesis::Kit::Compiled>) with a
+C<path> method for resolving kit file paths.
+
+=item C<@filters>
+
+Optional list of release or C<release/job> filter expressions.  Only the
+release-name component (before C</>) is used for filtering.
+
+=back
+
+B<Returns:> A three-element list:
+
+=over 4
+
+=item C<$releases>
+
+Hashref keyed by release name, then version.  Each leaf is a release data
+hashref with at minimum C<name>, C<version>, C<__src> (source file path
+relative to the kit root), and C<__type> (C<merge> or C<patch>).
+
+=item C<$release_versions>
+
+Hashref keyed by release name.  Each value is an arrayref of single-key
+hashrefs mapping version string to the release data hashref.
+
+=item C<\%duplicate_releases>
+
+Hashref containing only those release names that appear with more than one
+distinct version within the kit.
+
+=back
+
+B<Examples:>
+
+  my ($releases, $versions, $dups) = _get_kit_releases($kit);
+  # Returns: ({cf-routing => {1.5.0 => {...}}}, {...}, {})
+
+  my ($releases, $versions, $dups) = _get_kit_releases($kit, 'cf-routing');
+  # Returns: ({cf-routing => {1.5.0 => {...}}}, {...}, {})
+
+=head2 _get_spec_url($release)
+
+  _get_spec_url($release)
+
+Resolves the GitHub repository URL for a BOSH release given its release data
+hashref.  Normalizes download URLs from S3, Google Cloud Storage, bosh.io,
+and GitHub into a bare C<https://github.com/E<lt>orgE<gt>/E<lt>repoE<gt>> URL.
+
+For S3 and GCS URLs, the resolution consults the C<repos> list in the
+C<repo> (and optionally C<alt_repo>) field of the release hashref to find a
+matching GitHub URL by release name.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$release>
+
+Hashref with keys C<name>, C<version>, C<url> (the BOSH release download
+URL), and C<repo> (the upstream repo map hashref, which contains a C<repos>
+arrayref of C<< {name, repo} >> entries).
+
+=back
+
+B<Returns:> A GitHub repository URL string, or C<undef> if no mapping can be
+found.
+
+B<Examples:>
+
+  my $url = _get_spec_url({
+    name    => 'cf-routing',
+    version => '1.5.0',
+    url     => 'https://github.com/cloudfoundry/routing-release/releases/download/v1.5.0/routing-1.5.0.tgz',
+    repo    => {repos => []},
+  });
+  # Returns: 'https://github.com/cloudfoundry/routing-release'
+
+=head2 _get_spec_tarball($release, $path)
+
+  _get_spec_tarball($release, $path)
+
+Downloads the source tarball for a BOSH release from its GitHub repository
+so that job C<spec> files can be extracted.  Caches the downloaded tarball
+under C<$path> using the pattern
+C<< <org>--<repo>/<name>-<version>-src.tar.gz >>.
+Returns the cached file path immediately on a cache hit.
+
+When the GitHub Releases API returns 404, falls back to checking the
+repository's tag archive endpoints for both C<v<version>> and bare
+C<<version>> tag names.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$release>
+
+Hashref with keys C<name>, C<version>, and C<spec_url> (the bare GitHub
+repository URL from C<_get_spec_url()>).
+
+=item C<$path>
+
+Base directory under which the tarball cache is stored.
+
+=back
+
+B<Returns:> A two-element list C<($file, $error)>.
+
+=over 4
+
+=item On success: C<($file, undef)>
+
+C<$file> is the absolute path to the downloaded (or cached) tarball.
+
+=item On failure: C<(undef, $error)>
+
+C<$error> is a human-readable error string describing what went wrong.
+
+=back
+
+B<Examples:>
+
+  my ($file, $err) = _get_spec_tarball($release, '/tmp/spec-cache');
+  # Returns: ('/tmp/spec-cache/cloudfoundry--routing-release/cf-routing-1.5.0-src.tar.gz', undef)
+
+  my ($file, $err) = _get_spec_tarball($bad_release, '/tmp/spec-cache');
+  # Returns: (undef, 'Failed to fetch release information for cf-routing/v1.5.0 ...')
+
+=head2 _decompile_kit($top, $file, $dir)
+
+  _decompile_kit($top, $file, $dir)
+
+Extracts a compiled kit C<.tar.gz> archive into a writable directory.
+Validates that the archive contains exactly one top-level directory (a
+requirement of the Genesis kit format) and that the target directory either
+does not exist or is already a valid kit directory (contains C<kit.yml>).
+
+B<Parameters:>
+
+=over 4
+
+=item C<$top>
+
+A L<Genesis::Top> object providing path resolution for the repository root.
+
+=item C<$file>
+
+Path to the compiled kit C<.tar.gz> archive.
+
+=item C<$dir>
+
+Target directory for extraction.  Defaults to the C<dev/> subdirectory of
+the top-level repository root when not provided.
+
+=back
+
+B<Errors:>
+
+=over 4
+
+=item C<"#C{%s} already exists, but does not appear to be a kit directory.\nCowardly refusing to continue...">
+
+Raised when the target directory exists but does not contain C<kit.yml>.
+The C<#C{...}> markup highlights the directory path in terminal output.
+
+=item C<"#C{%s} does not look like a valid compiled kit">
+
+Raised when the archive does not contain exactly one top-level directory.
+The C<#C{...}> markup highlights the archive file path in terminal output.
+
+=back
+
+B<Returns:> Nothing.  The archive contents are extracted into C<$dir> with the
+top-level directory component stripped.
+
+B<Examples:>
+
+  _decompile_kit($top, '/path/to/cf-1.5.0.tar.gz', '/path/to/dev');
+  # Returns: nothing; extracts kit files into /path/to/dev/
+
+  _decompile_kit($top, '/path/to/cf-1.5.0.tar.gz');
+  # Returns: nothing; extracts kit files into $top->path('dev')
+
+=head1 SEE ALSO
+
+L<Genesis::Kit::Compiler>, L<Genesis::Kit::Compiled>, L<Genesis::Kit::Dev>,
+L<Genesis::Top>, L<Genesis::Commands>, L<Service::Github>
+
+=head1 AUTHOR
+
+FiveTwenty, LLC
+
+=cut

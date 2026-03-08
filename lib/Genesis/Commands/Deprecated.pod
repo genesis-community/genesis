@@ -1,0 +1,73 @@
+=head1 NAME
+
+Genesis::Commands::Deprecated - Redirect handler for deprecated Genesis CLI commands
+
+=head1 SYNOPSIS
+
+  # Registered in bin/genesis via define_command:
+  define_command("download", {
+    deprecated => 'fetch-kit',
+    ...
+  }, "Genesis::Commands::Deprecated::redirect");
+
+  # CLI invocation (deprecated command still works, but warns):
+  genesis download my-kit/1.0.0
+
+=head1 DESCRIPTION
+
+Provides the single shared entry point used by deprecated Genesis CLI commands.
+When a deprecated command is invoked, C<redirect> re-initializes the command
+context as the replacement command, emits a deprecation warning, and then
+runs the replacement command's handler with the original arguments.
+
+Each deprecated command is registered in C<bin/genesis> via C<define_command>
+with a C<deprecated> property naming the replacement command, and with
+this module's C<redirect> function as its handler.  The function is generic
+and works for any such registration.
+
+See L<Genesis::Commands> for the C<prepare_command>, C<run_command>, and
+C<command_properties> functions that this module relies on.
+
+=head1 FUNCTIONS
+
+=head2 redirect(@args)
+
+Entry point registered as the handler for deprecated commands.  Re-prepares
+the command context using the replacement command name stored in the
+C<deprecated> property of the active command, then runs the replacement
+command's handler.
+
+  redirect(@args);
+
+B<Parameters:>
+
+=over 4
+
+=item C<@args>
+
+The original command-line arguments passed to the deprecated command.  These
+are forwarded to C<prepare_command> and ultimately to the replacement
+command's handler unchanged.
+
+=back
+
+B<Returns:> Does not return.  Calls C<run_command>, which exits the process
+after the replacement command completes.
+
+B<Examples:>
+
+  # When "genesis download my-kit/1.0.0" is invoked, this handler is called:
+  redirect("my-kit/1.0.0");
+  # Emits: [DEPRECATED] The download command has been deprecated...
+  #        It has been replaced by fetch-kit
+  # Then runs the fetch-kit handler with ("my-kit/1.0.0")
+
+=head1 SEE ALSO
+
+L<Genesis::Commands>, L<Genesis::Commands::Kit>
+
+=head1 AUTHOR
+
+FiveTwenty, LLC
+
+=cut

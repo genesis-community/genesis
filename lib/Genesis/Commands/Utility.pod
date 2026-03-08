@@ -1,0 +1,652 @@
+=head1 NAME
+
+Genesis::Commands::Utility - Command handlers for Genesis utility operations
+
+=head1 SYNOPSIS
+
+  # Registered in bin/genesis via define_command:
+  genesis ui-prompt-for <type> <path> [prompt text ...]
+
+  # Perl usage (via genesis command dispatch):
+  use Genesis::Commands::Utility;
+  Genesis::Commands::Utility::ui_prompt_for($type, $path, @prompt_lines);
+
+=head1 DESCRIPTION
+
+Provides the implementation for the C<genesis ui-prompt-for> command, which
+allows kit hooks to interactively prompt users for values and write the result
+to a file or vault path.
+
+The module defines a registry of prompt handler functions keyed by prompt type
+(C<$prompt_handlers>).  C<ui_prompt_for> dispatches to the appropriate handler
+based on the C<$type> argument.  Most handlers are thin wrappers around
+functions exported by L<Genesis::UI>.
+
+Supported prompt types:
+
+=over 4
+
+=item C<line>
+
+Single-line text input.  Supports optional label, default value, validation,
+and inline mode.
+
+=item C<boolean>
+
+Yes/no prompt.  Returns the string C<"true"> or C<"false">.
+
+=item C<block>
+
+Multi-line text block entered by the user.
+
+=item C<select>
+
+Single-choice selection from a list of options.
+
+=item C<list>, C<lines>, C<multi-line>
+
+Multiple single-line entries.  All three type names dispatch to the same
+handler.
+
+=item C<blocks>, C<multi-block>
+
+Multiple block entries.  Both type names dispatch to the same handler.
+
+=item C<multi-select>
+
+Multiple selections from a list of options.  Returns an empty string when
+nothing is selected.
+
+=item C<secret-line>
+
+Prompts for a single-line value and stores it directly in Vault rather than
+writing to a file.  Requires a Genesis environment loaded from
+C<$GENESIS_ROOT> / C<$GENESIS_ENVIRONMENT>.
+
+=item C<secret-block>
+
+Prompts for a block value and stores it directly in Vault rather than
+writing to a file.  Requires a Genesis environment loaded from
+C<$GENESIS_ROOT> / C<$GENESIS_ENVIRONMENT>.
+
+=back
+
+=head1 FUNCTIONS
+
+=head2 ui_prompt_for($type, $path, @prompt_lines)
+
+Entry point for the C<genesis ui-prompt-for> command.  Validates arguments,
+dispatches to the registered handler for C<$type>, and writes the result to
+C<$path> (for non-secret types) or stores it directly in Vault (for
+C<secret-line> and C<secret-block> types).
+
+B<Parameters:>
+
+=over 4
+
+=item C<$type>
+
+The prompt type string.  Must be one of the registered keys in
+C<$prompt_handlers>: C<line>, C<boolean>, C<block>, C<select>, C<list>,
+C<lines>, C<multi-line>, C<blocks>, C<multi-block>, C<multi-select>,
+C<secret-line>, or C<secret-block>.
+
+=item C<$path>
+
+For non-secret types, the file path where the prompt result is written via
+C<mkfile_or_fail>.  For secret types, the Vault secret path in the form
+C<path/to/secret:key>.
+
+=item C<@prompt_lines>
+
+Zero or more lines of prompt text.  Lines are joined with newlines and passed
+as a single prompt string to the handler.  The prompt is optional.
+
+=back
+
+B<Returns:>
+
+Does not return.  Calls C<exit 0> on success.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Cannot prompt for secrets outside a kit hook">
+
+Raised when the type is C<secret-line> or C<secret-block> but the Genesis
+environment cannot be loaded from C<$GENESIS_ROOT> / C<$GENESIS_ENVIRONMENT>.
+
+=item C<"#R{ERROR:} cannot prompt for %s: unknown type, expecting one of: %s\n">
+
+Raised when C<$type> is not a recognized prompt type.  C<%s> is replaced with
+the given type and the sorted list of valid type names respectively.
+
+=back
+
+B<Examples:>
+
+  # Prompt for a single line and write the result to a file:
+  genesis ui-prompt-for line /tmp/result "Enter your name"
+  # Returns: exits 0; writes entered text to /tmp/result
+
+  # Prompt for a boolean and write "true" or "false":
+  genesis ui-prompt-for boolean /tmp/answer "Enable TLS?"
+  # Returns: exits 0; writes "true" or "false" to /tmp/answer
+
+  # Prompt for a selection from options (via kit hook, using options passed
+  # through genesis command dispatch):
+  genesis ui-prompt-for select /tmp/choice "Pick a region" \
+    --option us-east-1 --option us-west-2
+  # Returns: exits 0; writes selected value to /tmp/choice
+
+=head1 INTERNAL FUNCTIONS
+
+These functions are internal to the implementation.  They may change without
+notice and should not be called directly.
+
+=head2 validate_prompt_opts($type, $opts, @valid_opts)
+
+Validates that all keys present in the C<$opts> hashref are listed in
+C<@valid_opts>.  Prints an error and calls C<exit 2> if any unsupported
+option keys are found.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$type>
+
+The prompt type name string, used in the error message (e.g., C<"line">,
+C<"boolean">).
+
+=item C<$opts>
+
+Hashref of options to validate.
+
+=item C<@valid_opts>
+
+List of option key names that are permitted for this prompt type.
+
+=back
+
+B<Returns:>
+
+Nothing on success.  Calls C<exit 2> if invalid options are found.
+
+B<Examples:>
+
+  # Validate that only 'label' and 'default' are present in %opts:
+  validate_prompt_opts("line", \%opts, qw(label default validation msg inline));
+  # Returns: nothing (exits with code 2 if unknown keys are present)
+
+=head2 line_prompt_handler($prompt, %opts)
+
+Handler for the C<line> prompt type.  Validates options, resolves inline
+mode if requested, ensures a Vault connection when the validation rule starts
+with C<vault_path>, then delegates to C<prompt_for_line>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$prompt>
+
+The prompt string displayed to the user.  Set to C<undef> in inline mode
+(the prompt text becomes the label instead).
+
+=item C<%opts>
+
+Supported keys: C<label>, C<default>, C<validation>, C<msg>, C<inline>.
+
+=over 4
+
+=item C<label> - Label shown beside the input field
+
+=item C<default> - Default value pre-filled in the prompt
+
+=item C<validation> - Validation rule string or coderef passed to C<prompt_for_line>
+
+=item C<msg> - Message displayed when validation fails
+
+=item C<inline> - When true, the prompt text becomes the inline label and C<$prompt> is cleared
+
+=back
+
+=back
+
+B<Returns:>
+
+The string entered by the user, as returned by C<prompt_for_line>.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Cannot request both label and inline options to prompt_for line">
+
+Raised when both C<inline> and C<label> options are specified simultaneously.
+
+=item C<"No vault selected!">
+
+Raised when the C<validation> value starts with C<vault_path> and no Vault
+connection is available.
+
+=back
+
+B<Examples:>
+
+  # Called by ui_prompt_for for the 'line' type:
+  my $value = line_prompt_handler("Enter your name", label => "Name", default => "Alice");
+  # Returns: the string entered by the user (e.g., "Bob")
+
+=head2 boolean_prompt_handler($prompt, %opts)
+
+Handler for the C<boolean> prompt type.  Appends C<' [y|n]'> to the prompt
+when inline mode is requested, then delegates to C<prompt_for_boolean>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$prompt>
+
+The prompt string displayed to the user.
+
+=item C<%opts>
+
+Supported keys: C<default>, C<invert>, C<inline>.
+
+=over 4
+
+=item C<default> - Default boolean value
+
+=item C<invert> - When true, inverts the boolean sense
+
+=item C<inline> - When true, appends C<' [y|n]'> to the prompt text
+
+=back
+
+=back
+
+B<Returns:>
+
+The string C<"true"> if the user answered yes, C<"false"> if no.
+
+B<Examples:>
+
+  my $answer = boolean_prompt_handler("Enable TLS?", default => 1);
+  # Returns: "true" or "false"
+
+=head2 block_prompt_handler($prompt, %opts)
+
+Handler for the C<block> prompt type.  Accepts no options and delegates
+directly to C<prompt_for_block>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$prompt>
+
+The prompt string displayed to the user.
+
+=item C<%opts>
+
+No supported keys.  Any options passed will cause C<validate_prompt_opts>
+to print an error and exit.
+
+=back
+
+B<Returns:>
+
+The multi-line string entered by the user, as returned by C<prompt_for_block>.
+
+B<Examples:>
+
+  my $text = block_prompt_handler("Paste your certificate:");
+  # Returns: multi-line string entered by the user
+
+=head2 select_prompt_handler($prompt, %opts)
+
+Handler for the C<select> prompt type.  Parses option strings in the form
+C<[value] label> to separate machine values from display labels, then
+delegates to C<prompt_for_choice>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$prompt>
+
+The prompt string displayed to the user.
+
+=item C<%opts>
+
+Supported keys: C<label>, C<default>, C<option>.
+
+=over 4
+
+=item C<label> - Label shown beside the selection prompt
+
+=item C<default> - Default selection value
+
+=item C<option> - Arrayref of option strings.  Each string may optionally begin
+with C<[value]> to specify a separate machine value; if omitted, the display
+text is used as the value.
+
+=back
+
+=back
+
+B<Returns:>
+
+The selected value string (the bracketed portion if present, otherwise the
+full option text), as returned by C<prompt_for_choice>.
+
+B<Errors:>
+
+=over 4
+
+=item C<"No options provided to prompt for select">
+
+Raised when the C<option> key is absent or its arrayref is empty.
+
+=back
+
+B<Examples:>
+
+  my $choice = select_prompt_handler(
+    "Choose a region",
+    option  => ["[us-east-1] US East", "[us-west-2] US West"],
+    default => "us-east-1",
+  );
+  # Returns: "us-east-1" or "us-west-2"
+
+=head2 multi_line_prompt_handler($prompt, %opts)
+
+Handler for the C<list>, C<lines>, and C<multi-line> prompt types.  Collects
+multiple single-line entries from the user via C<prompt_for_list>, then joins
+them with null bytes (C<\0>) for inter-process communication.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$prompt>
+
+The prompt string displayed to the user.
+
+=item C<%opts>
+
+Supported keys: C<label>, C<min>, C<max>, C<validation>, C<msg>.
+
+=over 4
+
+=item C<label> - Label shown beside each input field
+
+=item C<min> - Minimum number of entries required
+
+=item C<max> - Maximum number of entries allowed
+
+=item C<validation> - Validation rule string or coderef for each entry
+
+=item C<msg> - Message displayed when validation fails
+
+=back
+
+=back
+
+B<Returns:>
+
+A null-byte-delimited string of all entered values with a trailing null byte
+(e.g., C<"val1\0val2\0">).
+
+B<Errors:>
+
+=over 4
+
+=item C<"No vault selected!">
+
+Raised when the C<validation> value starts with C<vault_path> and no Vault
+connection is available.
+
+=back
+
+B<Examples:>
+
+  my $result = multi_line_prompt_handler("Enter IPs:", min => 1, max => 5);
+  # Returns: "val1\0val2\0" (null-byte-delimited with trailing null)
+
+=head2 multi_block_prompt_handler($prompt, %opts)
+
+Handler for the C<blocks> and C<multi-block> prompt types.  Collects multiple
+block entries from the user via C<prompt_for_list>, then joins them with null
+bytes for inter-process communication.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$prompt>
+
+The prompt string displayed to the user.
+
+=item C<%opts>
+
+Supported keys: C<label>, C<min>, C<max>, C<msg>.
+
+=over 4
+
+=item C<label> - Label shown beside each input block
+
+=item C<min> - Minimum number of blocks required
+
+=item C<max> - Maximum number of blocks allowed
+
+=item C<msg> - Message displayed when entry requirements are not met
+
+=back
+
+=back
+
+B<Returns:>
+
+A null-byte-delimited string of all entered blocks with a trailing null byte.
+
+B<Examples:>
+
+  my $result = multi_block_prompt_handler("Enter config blocks:", min => 1);
+  # Returns: "block1_text\0block2_text\0" (null-byte-delimited with trailing null)
+
+=head2 multi_select_prompt_handler($prompt, %opts)
+
+Handler for the C<multi-select> prompt type.  Parses option strings in the
+same C<[value] label> format as C<select_prompt_handler>, collects multiple
+user selections via C<prompt_for_choices>, then joins the results with null
+bytes.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$prompt>
+
+The prompt string displayed to the user.
+
+=item C<%opts>
+
+Supported keys: C<label>, C<min>, C<max>, C<option>.
+
+=over 4
+
+=item C<label> - Label shown beside the selection prompt
+
+=item C<min> - Minimum number of selections required
+
+=item C<max> - Maximum number of selections allowed
+
+=item C<option> - Arrayref of option strings in C<[value] label> format
+
+=back
+
+=back
+
+B<Returns:>
+
+An empty string if the user made no selections.  Otherwise, a
+null-byte-delimited string of selected values with a trailing null byte.
+
+B<Errors:>
+
+=over 4
+
+=item C<"No options provided to prompt for select">
+
+Raised when the C<option> key is absent or its arrayref is empty.
+
+=back
+
+B<Examples:>
+
+  my $result = multi_select_prompt_handler(
+    "Choose AZs",
+    option => ["[z1] Zone 1", "[z2] Zone 2", "[z3] Zone 3"],
+    min    => 1,
+  );
+  # Returns: "" if nothing selected, or "z1\0z2\0" if z1 and z2 are selected
+
+=head2 secret_line_prompt_handler($prompt, %opts)
+
+Handler for the C<secret-line> prompt type.  Prompts for a single-line value
+using the C<safe prompt> Vault command and stores the result directly in Vault
+at the path specified by the C<secret> option.
+
+For environments with kit compatibility C<2.7.0-rc4> or later, the Vault path
+is resolved relative to C<< $env->secrets_base >> unless it is already
+absolute.  For older environments, the path is prefixed with C<"secret/">.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$prompt>
+
+The prompt string displayed to the user.
+
+=item C<%opts>
+
+Supported keys: C<echo>.  The C<secret> and C<env> keys are consumed
+before validation.
+
+=over 4
+
+=item C<secret> - Vault secret path in C<path:key> form (required, consumed
+before option validation)
+
+=item C<env> - A Genesis environment object used for path resolution and Vault
+lookup (consumed before option validation)
+
+=item C<echo> - When true, uses C<safe ask> (visible input) instead of
+C<safe set> (hidden input)
+
+=back
+
+=back
+
+B<Returns:>
+
+Nothing.  The value is written directly to Vault.
+
+B<Errors:>
+
+=over 4
+
+=item C<"No vault selected!">
+
+Raised when no Vault connection is available.
+
+=back
+
+B<Examples:>
+
+  # Called by ui_prompt_for for the 'secret-line' type (with vault context):
+  secret_line_prompt_handler(
+    "Enter your API key",
+    secret => "myapp/creds:api_key",
+    env    => $env,
+    echo   => 0,
+  );
+  # Returns: nothing; writes value to Vault at the resolved secret path
+
+=head2 secret_block_prompt_handler($prompt, %opts)
+
+Handler for the C<secret-block> prompt type.  Prompts for a multi-line block
+value, writes it to a temporary file, then stores it in Vault at the path
+specified by the C<secret> option using C<safe set key@file>.
+
+Path resolution follows the same C<2.7.0-rc4> compatibility logic as
+C<secret_line_prompt_handler>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$prompt>
+
+The prompt string displayed to the user.
+
+=item C<%opts>
+
+No supported keys beyond C<secret> and C<env>, which are consumed before
+validation.
+
+=over 4
+
+=item C<secret> - Vault secret path in C<path:key> form (required, consumed
+before option validation)
+
+=item C<env> - A Genesis environment object used for path resolution and Vault
+lookup (consumed before option validation)
+
+=back
+
+=back
+
+B<Returns:>
+
+Nothing.  The value is written directly to Vault.
+
+B<Errors:>
+
+=over 4
+
+=item C<"No vault selected!">
+
+Raised when no Vault connection is available.
+
+=back
+
+B<Examples:>
+
+  # Called by ui_prompt_for for the 'secret-block' type (with vault context):
+  secret_block_prompt_handler(
+    "Paste your certificate",
+    secret => "myapp/certs:ca",
+    env    => $env,
+  );
+  # Returns: nothing; writes block content to Vault at the resolved secret path
+
+=head1 SEE ALSO
+
+L<Genesis::Commands>, L<Genesis::UI>, L<Genesis::Top>, L<Service::Vault::Remote>
+
+=head1 AUTHOR
+
+FiveTwenty, LLC
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut
