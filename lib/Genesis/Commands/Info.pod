@@ -1,0 +1,621 @@
+=head1 NAME
+
+Genesis::Commands::Info - Command handlers for Genesis information and inspection
+
+=head1 SYNOPSIS
+
+  # Registered in bin/genesis via define_command:
+  genesis <env> info [<timestamp>]
+  genesis <env> lookup <key> [<default>]
+  genesis <env> yamls
+  genesis <env> vault-paths
+  genesis <env> deployments
+  genesis <env> kit-manual [<name-or-version>]
+  genesis environments [@<type>:<env>]
+
+  # Import (not typically used directly):
+  use Genesis::Commands::Info;
+
+=head1 DESCRIPTION
+
+Provides the command handler functions for Genesis information and inspection
+commands.  Each function in this module is registered as a command handler via
+C<define_command> in the Genesis CLI dispatcher.
+
+The module covers six user-facing commands:
+
+=over 4
+
+=item C<genesis info>
+
+Display detailed deployment information for an environment, including the last
+successful deployment timestamp, the deploying user, the kit used, Genesis
+version, kit features, and an index of archived deployment artifacts.  Accepts
+an optional timestamp to inspect a specific historical deployment.
+
+=item C<genesis lookup>
+
+Query configuration values from an environment's YAML manifests, deployed
+exodus data, environment variables, or partial manifests.  Supports a legacy
+C<key/name> argument-order fallback for backward compatibility.
+
+=item C<genesis yamls>
+
+List the YAML files that Genesis merges to produce the final manifest for an
+environment.  Optionally view the contents of an individual file.
+
+=item C<genesis vault-paths>
+
+Print the Vault secret paths that the environment's manifest references.
+Optionally show the manifest keys that reference each path.
+
+=item C<genesis deployments>
+
+List deployment audit entries for an environment.  Requires the environment to
+use the C<exodus> or C<hybrid> manifest store.
+
+=item C<genesis kit-manual>
+
+Display the C<MANUAL.md> for a locally installed kit.  Accepts an environment
+name, kit name, or kit version as a lookup hint.
+
+=item C<genesis environments>
+
+Enumerate all Genesis environments found under the current and parent
+deployment roots.  Supports filtering by environment name and kit type,
+grouping by environment or repository, and JSON output.
+
+=back
+
+=head1 FUNCTIONS
+
+=head2 information($name, $timestamp)
+
+  information($env_name);
+  information($env_name, $timestamp);
+
+Handler for C<genesis info>.  Displays deployment information for the named
+environment.  When C<$timestamp> is provided the function locates the
+historical deployment whose timestamp matches (after stripping separator
+characters); otherwise it uses the most recent successful deployment, falling
+back to a synthesized record from current exodus data if no audit log entry
+exists.
+
+When the C<--print-artifact> option is set, retrieves and prints a single
+named artifact from the deployment, then exits.  When C<--fetch-artifacts-to>
+is set, downloads all deployment artifacts to the specified directory, then
+exits.  When C<--history> is set, appends the full deployment history to the
+output.  When the kit defines an C<info> hook and neither C<$timestamp> nor
+C<--history> is active, the hook is invoked after the standard output block.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$name>
+
+The environment name string.
+
+=item C<$timestamp>
+
+Optional.  A timestamp string in any format that identifies a specific
+historical deployment.  Separator characters (spaces, slashes, colons, and
+C<T>) are stripped before matching.
+
+=back
+
+B<Errors:>
+
+=over 4
+
+=item C<"Cannot use timestamp arguement with environments that do not have deployment audit logs.  Please ensure the environment file specifies genesis.minimum_version of at least 3.1.0, and that the manifest_store is set to exodus or hybrid in the <repo>/.genesis/config file.">
+
+Raised when C<$timestamp> is given but the environment uses the C<repository>
+manifest store, which does not maintain an audit log.
+
+=item C<"Could not find a deployment with timestamp matching %s in environment %s.  Please ensure the timestamp is correct.">
+
+Raised when C<$timestamp> matches no deployment records.  C<%s> is the
+supplied timestamp string; the second C<%s> is the environment name.
+
+=item C<"Aborted!">
+
+Raised when the user cancels the interactive disambiguation prompt (shown when
+multiple deployments match the given timestamp) or when the user declines the
+overwrite confirmation during artifact fetch.
+
+=item C<"Artifact '%s' not found in deployment %s.  Please confirm the artifact exists.">
+
+Raised when the artifact type named by C<--print-artifact> does not exist in
+the selected deployment.  The first C<%s> is the artifact name; the second
+C<%s> is the deployment timestamp.
+
+=item C<"Deployment #%d has no artifacts to fetch.">
+
+Raised when C<--fetch-artifacts-to> is given but the selected deployment has
+no stored artifacts.  C<%d> is the deployment sequence number.
+
+=item C<"Currently Genesis does not support manifest validation for environments that store manifests in the repository.  Please set manifest_store in the environment's .genesis/config to exodus or hybrid to enable manifest validation.">
+
+Raised when the environment uses the C<repository> manifest store during the
+post-deployment output phase (manifest validation is not yet implemented for
+that store mode).
+
+=back
+
+B<Returns:> Nothing.  Outputs deployment information to the terminal and
+exits on early-exit paths (artifact print, artifact fetch).
+
+B<Examples:>
+
+  # Show information for the most recent deployment:
+  # CLI: genesis prod-us-east info
+  # prints: deployment summary to the terminal
+
+  # Show information for a specific historical deployment:
+  # CLI: genesis prod-us-east info "2025/03/01 14:32:00"
+  # prints: deployment summary for the matching audit record
+
+  # Print a specific deployment artifact:
+  # CLI: genesis prod-us-east info --print-artifact manifest
+  # prints: raw content of the stored manifest artifact
+
+  # Fetch all deployment artifacts to a directory:
+  # CLI: genesis prod-us-east info --fetch-artifacts-to ./artifacts
+  # prints: progress messages; artifacts written to ./artifacts/
+
+  # Show full deployment history:
+  # CLI: genesis prod-us-east info --history
+  # prints: deployment summary followed by a chronological history list
+
+=head2 lookup($name, $key, $default)
+
+  lookup($env_name, $key);
+  lookup($env_name, $key, $default);
+
+Handler for C<genesis lookup>.  Looks up C<$key> in the configuration source
+selected by the active option flag and prints the value.  Supports a legacy
+argument order where C<$name> and C<$key> were reversed; if C<$name> is not a
+known environment but C<$key> is, the two are swapped automatically.
+
+The lookup source is selected by exactly one of the following option flags:
+
+=over 4
+
+=item C<--merged>
+
+Query the fully merged manifest.  Sets the C<GENESIS__LOOKUP_MERGED_MANIFEST>
+environment variable to detect circular calls.
+
+=item C<--partial>
+
+Query the partially merged manifest (pre-operator-processing).  Also sets
+C<GENESIS__LOOKUP_MERGED_MANIFEST>.
+
+=item C<--deployed>
+
+Query the last deployed manifest as stored in the exodus data.
+
+=item C<--exodus> / C<--exodus-for>
+
+Query the environment's exodus metadata.  C<--exodus-for> implicitly sets
+C<--exodus> and scopes the lookup to the named sub-key.
+
+=item C<--env>
+
+Query environment variables, preferring the environment's own computed
+variables (from C<get_environment_variables>) over the process environment.
+An empty key returns all variables as a JSON object.
+
+=back
+
+When none of these flags is set the lookup is performed against the
+environment's YAML params (the default source).
+
+When C<--defined> is active the function exits with code C<0> if the key
+exists in the source or code C<4> if it does not; no value is printed.
+C<--defined> is incompatible with supplying a C<$default> value.
+
+When C<--entombed> is active, entombed (encrypted-at-rest) secrets are
+included in the lookup source.  This flag is incompatible with C<--exodus>,
+C<--exodus-for>, and C<--deployed>.
+
+If the resolved value is a reference (hash or array) it is serialized as
+JSON before output.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$name>
+
+The environment name.  Swapped with C<$key> automatically when legacy
+argument order is detected.
+
+=item C<$key>
+
+The dotted-path key to look up (e.g., C<params.bosh_env> or C<kit.version>).
+
+=item C<$default>
+
+Optional.  Returned when the key is not found.  Incompatible with C<--defined>.
+
+=back
+
+B<Errors:>
+
+=over 4
+
+=item C<"Cannot use --entombed option with --exodus, --exodus-for or --deployed">
+
+Raised when C<--entombed> is combined with an exodus or deployed source flag.
+
+=item C<"Circular reference detected while trying to lookup merged manifest of $name">
+
+Raised when C<genesis lookup --merged> or C<--partial> is invoked recursively
+(e.g., from within a kit hook that itself calls C<genesis lookup --merged>).
+
+=back
+
+B<Returns:> Nothing.  Prints the resolved value to standard output and exits
+with code C<0>.  When C<--defined> is active, exits with code C<0> (found) or
+C<4> (not found) without printing.
+
+B<Examples:>
+
+  # Look up a param value from environment YAML:
+  # CLI: genesis prod-us-east lookup params.bosh_env
+  # Returns: prod-us-east
+
+  # Look up a value from the fully merged manifest:
+  # CLI: genesis prod-us-east lookup --merged instance_groups.0.name
+  # Returns: web
+
+  # Look up a value from exodus metadata:
+  # CLI: genesis prod-us-east lookup --exodus kit.version
+  # Returns: 2.3.1
+
+  # Check whether a key is defined (exits 0 or 4):
+  # CLI: genesis prod-us-east lookup --defined params.optional_key
+
+  # Look up with a default value:
+  # CLI: genesis prod-us-east lookup params.missing_key default-value
+  # Returns: default-value
+
+=head2 yamls($name)
+
+  yamls($env_name);
+
+Handler for C<genesis yamls>.  Lists the YAML files that Genesis assembles
+into the final manifest for the named environment.  By default kit files are
+included (controlled by the C<include-kit> option, which defaults to C<1>).
+
+When the C<--view> option is set, instead of listing all files, the function
+locates the named file and prints its contents.  The C<--view> value is checked
+against the special genesis meta-files C<init.yml> and C<fin.yml> first, then
+against the environment path, and finally against the kit path.  If the file
+is not found in any location, the function exits with an error.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$name>
+
+The environment name string.
+
+=back
+
+B<Errors:>
+
+=over 4
+
+=item C<"File '%s' not found in environment '%s' or kit '%s'.">
+
+Raised when the file named by C<--view> does not exist in the environment
+path or the kit path.  The first C<%s> is the file name, the second is the
+environment name, and the third is the kit identifier.
+
+=back
+
+B<Returns:> Nothing.  Outputs a newline-separated list of file paths (or file
+contents when C<--view> is set) to standard output, then exits.
+
+B<Examples:>
+
+  # List all YAML files for an environment:
+  # CLI: genesis prod-us-east yamls
+  # Returns:
+  #   /path/to/kit/base.yml
+  #   /path/to/kit/addons/feature.yml
+  #   /path/to/prod.yml
+  #   /path/to/prod-us.yml
+  #   /path/to/prod-us-east.yml
+
+  # View the contents of a specific YAML file:
+  # CLI: genesis prod-us-east yamls --view prod-us-east.yml
+  # Returns: (raw YAML content of the file)
+
+=head2 vault_paths($name)
+
+  vault_paths($env_name);
+
+Handler for C<genesis vault-paths>.  Resolves the Vault secret paths referenced
+by the environment's merged manifest and prints them, sorted, one per line.
+
+When the C<--references> option is set (off by default), each path is followed
+by a bulleted list of the manifest keys that reference it.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$name>
+
+The environment name string.
+
+=back
+
+B<Returns:> Nothing.  Outputs the list of Vault paths to standard output.
+
+B<Examples:>
+
+  # List all Vault paths used by the manifest:
+  # CLI: genesis prod-us-east vault-paths
+  # Returns:
+  #   secret/prod/us/east/bosh/admin
+  #   secret/prod/us/east/bosh/nats
+
+  # List Vault paths with referencing manifest keys:
+  # CLI: genesis prod-us-east vault-paths --references
+  # Returns:
+  #   secret/prod/us/east/bosh/admin:
+  #     - admin_password
+
+=head2 deployments($name)
+
+  deployments($env_name);
+
+Handler for C<genesis deployments>.  Lists deployment audit entries for the
+named environment.  The environment must use the C<exodus> or C<hybrid>
+manifest store; environments using the C<repository> store do not maintain a
+deployment audit log and cause the function to exit with an error.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$name>
+
+The environment name string.
+
+=back
+
+B<Errors:>
+
+=over 4
+
+=item C<"This environment is configured to store manifests in the repository, which does not support deployment tracking.  Set the manifest_store in the environment's .genesis/config to exodus to move the manifests to the exodus store, or hybrid to store them in both.">
+
+Raised when the environment's manifest store is C<repository>.
+
+=back
+
+B<Returns:> Nothing.  (Implementation is currently incomplete; the collected
+deployment entry list is not yet output.)
+
+B<Examples:>
+
+  # List deployment history for an environment:
+  # CLI: genesis prod-us-east deployments
+  # prints: deployment audit entries (implementation pending)
+
+=head2 kit_manual($name)
+
+  kit_manual($name);
+  kit_manual();
+
+Handler for C<genesis kit-manual>.  Locates and displays the C<MANUAL.md> for
+a kit.  The C<$name> argument is used to resolve the kit:
+
+=over 4
+
+=item *
+
+If C<$name> matches a known environment, the kit used by that environment is
+resolved.
+
+=item *
+
+If C<$name> is C<"dev">, the local dev kit is used.
+
+=item *
+
+If C<$name> is a semantic version string and only one local kit is present,
+that kit at the given version is used.
+
+=item *
+
+Otherwise, C<$name> is parsed as C<< <kit-name>/<version> >> or C<< <kit-name> >>.
+
+=back
+
+When C<--raw> is set the Markdown content is printed without rendering.
+When C<--pager> is set the output is piped through C<less -R>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$name>
+
+Optional.  An environment name, kit name, C<"dev">, a semantic version string,
+or a C<< name/version >> composite.  When omitted and only one local kit exists,
+that kit is used.
+
+=back
+
+B<Errors:>
+
+=over 4
+
+=item C<"No local kits found; you must specify the name of the kit to fetch">
+
+Raised when no locally installed kits exist in the current deployment root.
+
+=item C<"More than one local kit found; please specify the kit to get the manual for">
+
+Raised when C<$name> is a bare version string and multiple local kits are
+present (ambiguous without a kit name).
+
+=item C<"Can't open pager: $!">
+
+Raised when the function cannot spawn C<less -R> for paged output.
+
+=back
+
+B<Returns:> Nothing.  Outputs the kit manual to standard output (or through the
+pager) and exits with code C<0> on success, or C<1> if the kit was not found
+or has no C<MANUAL.md>.
+
+B<Examples:>
+
+  # Display the manual for the kit used by an environment:
+  # CLI: genesis prod-us-east kit-manual prod-us-east
+  # prints: rendered MANUAL.md for the environment's kit
+
+  # Display the manual for a specific kit version:
+  # CLI: genesis prod-us-east kit-manual bosh/2.3.1
+  # prints: rendered MANUAL.md for the bosh kit at version 2.3.1
+
+  # Display the manual for the dev kit:
+  # CLI: genesis prod-us-east kit-manual dev
+  # prints: rendered MANUAL.md for the local dev kit
+
+  # Display raw Markdown without rendering:
+  # CLI: genesis prod-us-east kit-manual --raw
+  # prints: raw MANUAL.md content without color or formatting
+
+  # Display through a pager:
+  # CLI: genesis prod-us-east kit-manual --pager
+  # prints: rendered MANUAL.md piped through less -R
+
+=head2 environments()
+
+  environments();
+
+Handler for C<genesis environments>.  Enumerates all Genesis environments found
+under the deployment roots relative to the current directory.  The function
+builds a root map containing the current directory (labeled C<@current>) and its
+parent directory (labeled C<@parent>), then scans each root for Genesis
+repositories.
+
+Output is controlled by the following options:
+
+=over 4
+
+=item C<--details>
+
+Show extended information for each environment: kit version, last deployment
+date and user, BOSH director name, and vault status.  Enables a progress
+indicator during the scan.
+
+=item C<--group-by-env>
+
+Group output by environment name across all repositories (default is to group
+by repository/kit type).
+
+=item C<--json>
+
+Emit the full environment data as a JSON object instead of human-readable
+output.
+
+=back
+
+When the C<GENESIS_PREFIX_TYPE> environment variable is C<"search">, the
+function reads the search pattern from C<GENESIS_PREFIX_SEARCH>.  The pattern
+is parsed as C<< @<env-pattern>:<type-pattern> >> and used to filter the list
+of environments and repository types.
+
+B<Parameters:> None.
+
+B<Returns:> Nothing.  Outputs environment information to the terminal (or JSON
+to standard output when C<--json> is set).
+
+B<Examples:>
+
+  # List all environments grouped by repository:
+  # CLI: genesis environments
+
+  # List all environments with extended details:
+  # CLI: genesis environments --details
+
+  # Group environments by name instead of repository:
+  # CLI: genesis environments --group-by-env
+
+  # Emit JSON output:
+  # CLI: genesis environments --json
+
+=head1 INTERNAL METHODS
+
+These functions are internal to the implementation.  They may change without
+notice and should not be called directly.
+
+=head2 __processing($block, $total, $strobe, $strobe_size)
+
+  __processing($block, $total, $strobe);
+  __processing($block, $total, $strobe, $strobe_size);
+
+Renders an animated progress bar to the terminal during multi-step scans such
+as the C<environments --details> scan.  The bar shows a percentage of
+completion and a bouncing strobe indicator.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$block>
+
+The number of items processed so far.
+
+=item C<$total>
+
+The total number of items to process.
+
+=item C<$strobe>
+
+A monotonically increasing counter used to animate the strobe position.
+
+=item C<$strobe_size>
+
+Optional.  The width of the strobe window in characters.  Defaults to C<7>.
+
+=back
+
+B<Returns:> Nothing.  Writes the progress bar directly to the terminal using
+the C<info> function with C<pending =E<gt> 1>.
+
+B<Examples:>
+
+  # Called during an environments --details scan:
+  __processing(5, 20, 3);
+  # prints:   Processing:  25%: [  ***   ]
+
+  # With a custom strobe window size:
+  __processing(10, 20, 4, 5);
+  # prints:   Processing:  50%: [  *  ]
+
+=head1 SEE ALSO
+
+L<Genesis::Commands>, L<Genesis::Commands::Ocfp>, L<Genesis::Top>,
+L<Genesis::Env>, L<Genesis::Env::Deployment>
+
+=head1 AUTHOR
+
+FiveTwenty, LLC
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut
