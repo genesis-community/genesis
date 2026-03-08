@@ -1,0 +1,120 @@
+=head1 NAME
+
+Genesis::Env::Manifest::Unevaluated - Manifest subclass producing a raw merged
+template with spruce operators intact
+
+=head1 SYNOPSIS
+
+  use Genesis::Env::Manifest::Unevaluated;
+
+  # Unevaluated manifests are created by the builder, not directly
+  my $manifest = $builder->unevaluated();
+
+  # Access raw merged content (spruce operators still in place)
+  my $data = $manifest->data();
+  my $file = $manifest->file();
+
+  # Inspect the manifest type
+  print $manifest->type();        # prints 'unevaluated'
+  print $manifest->description(); # prints a human-readable summary
+
+=head1 DESCRIPTION
+
+C<Genesis::Env::Manifest::Unevaluated> is a concrete subclass of
+L<Genesis::Env::Manifest> that produces a raw merged manifest template in which
+spruce operators (C<(( ))>) have B<not> been evaluated. The source files are
+merged in the standard order (initiation, kit, cloud config, environment,
+conclusion), but the merge is performed with C<eval =E<gt> 'no'> so that spruce
+interpolation is suppressed.
+
+This variant is useful for inspecting the merged structure of a deployment
+manifest before any spruce evaluation takes place -- for example, to see the
+literal operator expressions that will later be resolved during a full
+unredacted or deployable manifest build.
+
+The merge environment includes the full set of build environment variables plus
+Vault credentials. Redaction is explicitly disabled (C<REDACT =E<gt> undef>),
+so Vault-sourced values appear in plain text in the merged output.
+
+This class is not instantiated directly. Use the builder to obtain an instance.
+
+=head1 METHODS
+
+=head2 description
+
+  my $str = $manifest->description();
+
+Returns a fixed human-readable string describing this manifest variant:
+C<"Raw merged manifest template with no interpolation (merged, but spruce
+operators still in place)">.
+
+B<Returns:> a string.
+
+  print $manifest->description();
+  # prints 'Raw merged manifest template with no interpolation (merged, but spruce operators still in place)'
+
+=head2 merge_options
+
+  my $opts = $manifest->merge_options();
+
+Returns the spruce merge options hash reference used when building this
+manifest. For the Unevaluated variant, evaluation is disabled:
+
+  { eval => 'no' }
+
+This causes spruce to merge the files without evaluating any C<(( ))>
+operator expressions, leaving them intact in the output.
+
+B<Returns:> a hash reference.
+
+  my $opts = $manifest->merge_options();
+  print $opts->{eval}; # prints 'no'
+
+=head2 merge_environment
+
+  my $env = $manifest->merge_environment();
+
+Returns a hash reference of environment variables passed to the spruce merge
+process. Combines C<< $builder->full_merge_env >> (the standard build
+environment) with C<< $manifest->env->vault->env >> (Vault credential
+variables), and then explicitly sets C<REDACT> to C<undef>, disabling any
+redaction of Vault-sourced values in the merged output.
+
+B<Returns:> a hash reference of environment variable names to values.
+
+  my $env = $manifest->merge_environment();
+  print defined($env->{REDACT}) ? 'set' : 'unset'; # prints 'unset'
+
+=head1 INTERNAL METHODS
+
+These methods are internal to the implementation. They may change without
+notice and should not be called directly.
+
+=head2 _merge
+
+  my ($data, $file) = $manifest->_merge();
+
+Implements the abstract C<_merge> method required by L<Genesis::Env::Manifest>.
+Calls C<< $builder->merge >> with the source files returned by C<source_files>
+(initiation file, kit files, optional cloud config files, environment files,
+and conclusion file), the merge options (C<eval =E<gt> 'no'>), and the merge
+environment assembled by C<merge_environment>. Ignores any warnings or errors
+produced during the merge (see the inline C<FIXME> comment in the source).
+
+B<Returns:> a two-element list C<($data, $file)> where C<$data> is the parsed
+YAML data structure and C<$file> is the path to the written manifest file on
+disk.
+
+  # Called internally by data() and file() from the base class
+  my ($data, $file) = $manifest->_merge();
+  print ref($data); # prints 'HASH'
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut
