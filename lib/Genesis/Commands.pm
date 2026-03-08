@@ -821,7 +821,7 @@ sub build_command_environment  { # {{{
 	if ($spruce_log) {
 		my @spruce_log_levels = grep {$_ =~ qr/^$spruce_log.*/i} (qw[debug trace]);
 		bail "--spruce-log is expected to be one of TRACE or DEBUG"
-			if (scalar(@spruce_log_levels) != 0);
+			if (scalar(@spruce_log_levels) == 0);
 
 		$spruce_log = $spruce_log_levels[0];
 		$ENV{DEBUG} = 'y' if $spruce_log ;
