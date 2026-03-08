@@ -1,0 +1,571 @@
+=head1 NAME
+
+Genesis::CI::Legacy - Legacy Concourse pipeline generation for Genesis deployments
+
+=head1 SYNOPSIS
+
+    use Genesis::CI::Legacy qw//;
+
+    # Validate and load a pipeline configuration file
+    my ($pipeline, @errors) = Genesis::CI::Legacy::validate_pipeline(
+        '/path/to/pipeline.yml', $top
+    );
+
+    # Parse pipeline configuration into a usable structure
+    my ($P, $layout) = Genesis::CI::Legacy::parse(
+        '/path/to/pipeline.yml', $top, 'default'
+    );
+
+    # Generate human-readable pipeline description
+    Genesis::CI::Legacy::generate_pipeline_human_description($P);
+
+    # Generate Graphviz DOT source for pipeline visualization
+    my $dot = Genesis::CI::Legacy::generate_pipeline_graphviz_source($P);
+
+    # Generate Concourse pipeline YAML
+    my $yaml = Genesis::CI::Legacy::generate_pipeline_concourse_yaml($P, $top);
+
+=head1 DESCRIPTION
+
+C<Genesis::CI::Legacy> implements the legacy Concourse pipeline generation
+system for Genesis deployments. It reads a pipeline configuration file
+(in a custom DSL layered on top of YAML), validates the configuration,
+parses the deployment graph, and produces the Concourse pipeline YAML that
+operators set with C<fly set-pipeline>.
+
+The module supports Slack and email notifications, multiple deployment
+layouts, BOSH director configuration per environment, git SSH key and
+username/password authentication, an optional locker service for
+deployment serialization, and automatic kit update pipelines.
+
+All functions in this module are called as plain package-qualified
+functions, not as object methods.
+
+=head1 FUNCTIONS
+
+=head2 string_to_yaml
+
+    my $yaml_str = Genesis::CI::Legacy::string_to_yaml($value);
+
+Encodes a Perl value into a YAML-safe string. References (hashrefs,
+arrayrefs) are encoded as JSON. Scalar strings are JSON-encoded with
+the surrounding double-quote characters stripped, yielding a value
+suitable for interpolation inside a YAML double-quoted string.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$value>
+
+A scalar string or reference to encode.
+
+=back
+
+B<Returns:> A string safe for embedding in YAML. When C<$value> is a
+reference, returns the full JSON encoding. When C<$value> is a scalar,
+returns the interior of the JSON string (without surrounding quotes).
+
+B<Examples:>
+
+    Genesis::CI::Legacy::string_to_yaml("hello world");
+    # Returns: hello world
+
+    Genesis::CI::Legacy::string_to_yaml('has "quotes"');
+    # Returns: has \"quotes\"
+
+    Genesis::CI::Legacy::string_to_yaml({key => "val"});
+    # Returns: {"key":"val"}
+
+=head2 boolean_to_yaml
+
+    my $str = Genesis::CI::Legacy::boolean_to_yaml($bool);
+
+Converts a Perl boolean value to the YAML literal string C<"true"> or
+C<"false">.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$bool>
+
+Any value. A true value produces C<"true">; a false value produces
+C<"false">.
+
+=back
+
+B<Returns:> The string C<"true"> or C<"false">.
+
+B<Examples:>
+
+    Genesis::CI::Legacy::boolean_to_yaml(1);
+    # Returns: true
+
+    Genesis::CI::Legacy::boolean_to_yaml(0);
+    # Returns: false
+
+=head2 yaml_bool
+
+    my $result = Genesis::CI::Legacy::yaml_bool($bool, $default);
+
+Returns C<$bool> if it is defined, otherwise returns C<$default> (or
+C<0> if C<$default> is also undefined or false). Used to normalise
+boolean pipeline settings that may be absent from the YAML source.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$bool>
+
+The value to test. If defined, it is returned as-is.
+
+=item C<$default>
+
+The fallback value when C<$bool> is undefined. Defaults to C<0> if
+not provided or false.
+
+=back
+
+B<Returns:> C<$bool> when defined; otherwise C<$default || 0>.
+
+B<Examples:>
+
+    Genesis::CI::Legacy::yaml_bool(undef, 1);
+    # Returns: 1
+
+    Genesis::CI::Legacy::yaml_bool(0, 1);
+    # Returns: 0  (0 is defined, so it is returned directly)
+
+    Genesis::CI::Legacy::yaml_bool(undef, undef);
+    # Returns: 0
+
+=head2 validate_pipeline
+
+    my ($pipeline, @errors) = Genesis::CI::Legacy::validate_pipeline($file, $top);
+
+Loads and validates a pipeline YAML configuration file. Uses C<spruce
+merge> to evaluate the file, then checks that all required keys are
+present, all keys are recognized, and sub-structures conform to their
+expected types. Missing optional keys are populated with defaults.
+
+The function performs exhaustive validation of the following pipeline
+sections: C<pipeline> (top-level keys), C<pipeline.vault>,
+C<pipeline.git>, C<pipeline.git.commits>, C<pipeline.locker>,
+C<pipeline.slack>, C<pipeline.email>, C<pipeline.email.smtp>,
+C<pipeline.registry>, C<pipeline.task>, C<pipeline.notifications>,
+C<pipeline.layout> / C<pipeline.layouts>, C<pipeline.boshes>,
+C<pipeline.groups>, C<pipeline.auto-update>, and
+C<pipeline.require-passed-caches>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$file>
+
+Path to the pipeline YAML configuration file.
+
+=item C<$top>
+
+A L<Genesis::Top> object representing the current deployment top-level.
+Used to load environments when validating BOSH director entries and to
+query kit provider information for C<auto-update>.
+
+=back
+
+B<Returns:> A two-element list C<($pipeline, @errors)>:
+
+=over 4
+
+=item C<$pipeline>
+
+A hashref of the loaded and partially-defaulted pipeline configuration.
+On fatal structural errors (missing or wrong-typed C<pipeline:> key),
+a partial structure is returned alongside the error list.
+
+=item C<@errors>
+
+A list of human-readable error strings. An empty list means validation
+passed. Some fatal errors cause an early return with a partial
+C<$pipeline>.
+
+=back
+
+B<Errors:>
+
+=over 4
+
+=item C<"Failed to evaluate pipeline $file"> -- C<spruce merge> failed to
+load or evaluate the pipeline YAML file (fatal, via C<run>).
+
+=back
+
+B<Examples:>
+
+    my ($p, @errors) = Genesis::CI::Legacy::validate_pipeline(
+        'ci/pipeline.yml', $top
+    );
+    if (@errors) {
+        print "Validation failed:\n";
+        print "  - $_\n" for @errors;
+    }
+    # Returns: ($p, @errors) where @errors is empty on success
+
+=head2 parse
+
+    my ($P, $layout) = Genesis::CI::Legacy::parse($file, $top, $layout);
+
+Parses a pipeline configuration file and resolves the deployment graph
+for a given layout. Calls C<validate_pipeline> first; if validation
+errors are found, they are printed and the process exits with status 1.
+
+The layout string uses a simple DSL:
+
+=over 4
+
+=item *
+
+C<auto PATTERN [PATTERN ...]> -- mark environments whose names match
+the shell-style glob patterns (only C<*> is special; it expands to match
+any characters) as auto-triggered. Patterns are not full regular
+expressions.
+
+=item *
+
+C<ENV> -- declare a root environment.
+
+=item *
+
+C<ENV1 -E<gt> ENV2 [-E<gt> ENV3 ...]> -- declare that a successful
+deploy of C<ENV1> triggers a deploy of C<ENV2> (and so on).
+
+=back
+
+B<Parameters:>
+
+=over 4
+
+=item C<$file>
+
+Path to the pipeline YAML configuration file.
+
+=item C<$top>
+
+A L<Genesis::Top> object. Passed through to C<validate_pipeline>.
+
+=item C<$layout>
+
+The name of the layout to use, as defined under C<pipeline.layouts> in
+the configuration. If C<undef> or empty, the function selects the
+layout automatically: if only one layout exists it is used; if a layout
+named C<default> exists it is used; otherwise the user is prompted to
+choose.
+
+=back
+
+B<Returns:> A two-element list C<($P, $layout)>:
+
+=over 4
+
+=item C<$P>
+
+A hashref representing the parsed pipeline. Key fields populated by
+C<parse> (in addition to the full C<pipeline> configuration sub-tree)
+include:
+
+=over 4
+
+=item C<file>
+
+Path to the source pipeline file.
+
+=item C<auto>
+
+Arrayref of environment names that trigger automatically.
+
+=item C<envs>
+
+Arrayref of all environment names declared in the layout.
+
+=item C<aliases>
+
+Hashref mapping environment names to their short aliases.
+
+=item C<genesis_envs>
+
+Hashref mapping environment names to their Genesis environment names
+(when different from the BOSH environment name).
+
+=item C<will_trigger>
+
+Hashref of C<< ENV => [ENV, ...] >> trigger relationships (forward
+direction).
+
+=item C<triggers>
+
+Hashref of C<< ENV => ENV >> trigger relationships (reverse direction:
+which environment triggers each environment).
+
+=back
+
+=item C<$layout>
+
+The layout name that was used.
+
+=back
+
+B<Errors:> Calls C<exit 1> after printing errors when C<validate_pipeline>
+returns any errors. Dies with the following messages for DSL parse errors:
+
+=over 4
+
+=item C<"No such layout `${layout}'\n"> -- the requested layout name does not exist.
+
+=item C<"'$tok' was empty in [$src]!\n"> -- an empty token was produced during layout tokenization.
+
+=item C<"The 'auto' directive requires at least one argument.\n"> -- C<auto> used without pattern arguments.
+
+=item C<"Unknown environment '$env' in pipeline definition '$orig'\n"> -- a name referenced in the layout is not defined in C<pipeline.boshes>.
+
+=item C<"Invalid pipeline definition '$orig': expecting '<env> [-> <env>]...'.\n"> -- wrong separator found in a trigger chain.
+
+=item C<"Missing target after -> in pipeline definition '$orig'\n"> -- a C<< -> >> arrow with no following target.
+
+=item C<"Unrecognized environment or configuration directive:  '$cmd'.\n"> -- a token is neither a known directive nor a BOSH environment name.
+
+=item C<"No BOSH director configuration found for $env (at `pipeline.boshes[$env]').\n"> -- an environment in the layout has no corresponding C<pipeline.boshes> entry.
+
+=item C<"Environment '$b' is already being triggered by environment '$triggers->{$b}'.\nIt is illegal to trigger an environment more than once.\n"> -- an environment appears as a trigger target more than once.
+
+=back
+
+B<Examples:>
+
+    my ($P, $layout) = Genesis::CI::Legacy::parse(
+        'ci/pipeline.yml', $top, 'default'
+    );
+    printf "Parsed %d environments in layout '%s'\n",
+        scalar(@{$P->{envs}}), $layout;
+    # Returns: ($P, 'default') where $P->{envs} lists all declared environments
+
+=head2 pipeline_tree
+
+    Genesis::CI::Legacy::pipeline_tree($prefix, $env, $trees);
+
+Recursively prints a human-readable ASCII tree of the pipeline trigger
+graph rooted at C<$env> to standard output. Child environments are
+sorted alphabetically. Used by C<generate_pipeline_human_description>.
+
+Example output:
+
+    sandbox
+      |--> preprod
+      |     |--> prod
+      |     `--> prod-2
+      `--> other-preprod
+            `--> other-prod
+
+B<Parameters:>
+
+=over 4
+
+=item C<$prefix>
+
+String prepended to the current line for indentation. Pass C<""> for
+the root call.
+
+=item C<$env>
+
+The name of the environment to print at this level of the tree.
+
+=item C<$trees>
+
+A hashref mapping each environment name to an arrayref of the
+environments it directly triggers. Built by inverting the C<triggers>
+hashref from the parsed pipeline structure (see
+C<generate_pipeline_human_description> for the construction pattern).
+
+=back
+
+B<Returns:> Nothing. Output is written directly to C<STDOUT>.
+
+B<Examples:>
+
+    my %trees;
+    for my $b (keys %{$P->{triggers}}) {
+        push @{$trees{$P->{triggers}{$b}}}, $b;
+    }
+    Genesis::CI::Legacy::pipeline_tree("", "sandbox", \%trees);
+    # prints the trigger subtree rooted at sandbox
+
+=head2 generate_pipeline_human_description
+
+    Genesis::CI::Legacy::generate_pipeline_human_description($pipeline);
+
+Prints a human-readable description of the entire pipeline trigger
+graph to standard output. Root environments (those not triggered by any
+other environment) are each printed as a tree using C<pipeline_tree>.
+Roots are sorted alphabetically and separated by blank lines.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$pipeline>
+
+The parsed pipeline hashref returned by C<parse>. Must contain
+C<envs>, C<auto>, and C<triggers> keys.
+
+=back
+
+B<Returns:> Nothing. Output is written directly to C<STDOUT>.
+
+B<Examples:>
+
+    my ($P, $layout) = Genesis::CI::Legacy::parse('ci/pipeline.yml', $top);
+    Genesis::CI::Legacy::generate_pipeline_human_description($P);
+    # prints the full trigger tree to stdout
+
+=head2 generate_pipeline_graphviz_source
+
+    my $dot = Genesis::CI::Legacy::generate_pipeline_graphviz_source($pipeline);
+
+Generates a Graphviz DOT source string representing the pipeline
+trigger graph as a directed graph. Each edge from environment A to
+environment B is labeled C<"manual"> unless B is in the auto-trigger
+set, in which case the edge is unlabeled. The graph uses left-to-right
+ranking (C<rankdir = LR>). Environment names with hyphens have them
+replaced with underscores to produce valid DOT identifiers.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$pipeline>
+
+The parsed pipeline hashref returned by C<parse>. Must contain
+C<triggers> and C<auto> keys.
+
+=back
+
+B<Returns:> A string containing the complete Graphviz DOT source,
+including the surrounding C<digraph { ... }> block.
+
+B<Examples:>
+
+    my ($P, $layout) = Genesis::CI::Legacy::parse('ci/pipeline.yml', $top);
+    my $dot = Genesis::CI::Legacy::generate_pipeline_graphviz_source($P);
+    # write to file and render with dot(1):
+    open my $fh, '>', 'pipeline.dot' or die $!;
+    print $fh $dot;
+    close $fh;
+    # Returns: "digraph {\n  rankdir = LR; ...\n}\n"
+
+=head2 generate_pipeline_concourse_yaml
+
+    my $yaml = Genesis::CI::Legacy::generate_pipeline_concourse_yaml($pipeline, $top);
+
+Generates the full Concourse pipeline YAML configuration by writing a
+C<guts.yml> file in a temporary work directory and then merging it with
+the original pipeline configuration file using C<spruce merge>. The
+resulting YAML string is suitable for use with C<fly set-pipeline>.
+
+The generated configuration includes Concourse resources for the git
+repository, Vault credentials, and (when configured) Slack
+notifications, email notifications, and the locker service. It emits
+jobs for each environment in the pipeline: deploy jobs, notification
+jobs (inline, parallel, or grouped depending on
+C<pipeline.notifications>), and optional errands. It also includes a
+C<auto-update-kit> job when C<pipeline.auto-update> is configured.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$pipeline>
+
+The parsed pipeline hashref returned by C<parse>.
+
+=item C<$top>
+
+A L<Genesis::Top> object representing the current deployment top-level.
+
+=back
+
+B<Returns:> A string containing the merged Concourse pipeline YAML.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Failed to generate Concourse Pipeline YAML configuration: $!\n"> -- the temporary C<guts.yml> file could not be opened for writing.
+
+=item C<"Failed to merge Concourse pipeline definition"> -- the final
+C<spruce merge> of the generated C<guts.yml> with the pipeline
+configuration failed (fatal, via C<run>).
+
+=back
+
+B<Examples:>
+
+    my ($P, $layout) = Genesis::CI::Legacy::parse('ci/pipeline.yml', $top);
+    my $yaml = Genesis::CI::Legacy::generate_pipeline_concourse_yaml($P, $top);
+    open my $fh, '>', 'concourse-pipeline.yml' or die $!;
+    print $fh $yaml;
+    close $fh;
+    # Returns: a string of merged Concourse pipeline YAML
+
+=head1 INTERNAL METHODS
+
+These methods are internal to the implementation. They may change without
+notice and should not be called directly.
+
+=head2 _gen_notifications
+
+    my $yaml_fragment = Genesis::CI::Legacy::_gen_notifications($pipeline, $message, $alias);
+
+Generates a quasi-JSON C<in_parallel> YAML fragment for a notification
+step in a Concourse job. Produces Slack C<put: "slack"> steps,
+email task/put step pairs, or both, depending on what notification
+channels are configured in C<$pipeline-E<gt>{pipeline}>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$pipeline>
+
+The pipeline hashref (as returned by C<parse>).
+
+=item C<$message>
+
+The notification message string. Embedded quotes are encoded via
+C<string_to_yaml>.
+
+=item C<$alias>
+
+An optional alias string used for labeling. Defaults to C<"">.
+
+=back
+
+B<Returns:> A string containing the C<in_parallel: [...]> YAML/JSON
+fragment ready for inclusion in a Concourse job step list.
+
+B<Examples:>
+
+    my $step = Genesis::CI::Legacy::_gen_notifications(
+        $pipeline, "Deployment of sandbox failed", "sandbox"
+    );
+    # Returns: "in_parallel: [\n{ put: \"slack\", ... },\n]"
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

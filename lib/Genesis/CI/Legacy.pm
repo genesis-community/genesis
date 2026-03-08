@@ -111,13 +111,13 @@ sub validate_pipeline {
 	unless (exists $p->{pipeline}) {
 		# fatal error
 		push @errors, "Missing top-level 'pipeline:' key.";
-		return $p, \@errors;
+		return $p, @errors;
 	}
 
 	unless (ref($p->{pipeline}) eq 'HASH') {
 		# fatal error
 		push @errors, "Top-level 'pipeline:' key must be a map.";
-		return $p, \@errors;
+		return $p, @errors;
 	}
 	for (keys %{$p->{pipeline}}) {
 		push @errors, "Unrecognized `pipeline.$_' key found."
@@ -552,7 +552,7 @@ sub parse {
 			while (@$rule) {
 				($env, $token, @$rule) = @$rule;
 				die "Unknown environment '$env' in pipeline definition '$orig'\n"
-					unless ($P->{pipeline}{boshes}{$cmd});
+					unless ($P->{pipeline}{boshes}{$env});
 				$envs{$env} = 1;
 				if (defined($token)) {
 					die "Invalid pipeline definition '$orig': expecting '<env> [-> <env>]...'.\n"
@@ -573,8 +573,8 @@ sub parse {
 
 	%envs = (); # we'll reuse envs for auto environment de-duplication
 	for my $pattern (@auto) {
-		my $regex = $pattern;
-		$regex =~ s/\*/.*/g;
+		my $regex = quotemeta($pattern);
+		$regex =~ s/\\\*/.*/g;
 		$regex = qr/^$regex$/;
 
 		my $n = 0;
