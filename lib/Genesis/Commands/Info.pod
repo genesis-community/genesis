@@ -83,10 +83,11 @@ exists.
 
 When the C<--print-artifact> option is set, retrieves and prints a single
 named artifact from the deployment, then exits.  When C<--fetch-artifacts-to>
-is set, downloads all deployment artifacts to the specified directory, then
-exits.  When C<--history> is set, appends the full deployment history to the
-output.  When the kit defines an C<info> hook and neither C<$timestamp> nor
-C<--history> is active, the hook is invoked after the standard output block.
+is set, downloads deployment artifacts to the specified directory and exits.
+When
+C<--history> is set, appends the full deployment history to the output.  When
+the kit defines an C<info> hook and neither C<$timestamp> nor C<--history> is
+active, the hook is invoked after the standard output block.
 
 B<Parameters:>
 
@@ -401,14 +402,13 @@ Raised when the environment's manifest store is C<repository>.
 
 =back
 
-B<Returns:> Nothing.  (Implementation is currently incomplete; the collected
-deployment entry list is not yet output.)
+B<Returns:> Nothing.  Currently bails with a not-yet-implemented message.
 
 B<Examples:>
 
-  # List deployment history for an environment:
+  # Attempt to list deployment history for an environment:
   # CLI: genesis prod-us-east deployments
-  # prints: deployment audit entries (implementation pending)
+  # bails: The 'deployments' command is not yet fully implemented.
 
 =head2 kit_manual($name)
 

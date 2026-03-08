@@ -23,7 +23,7 @@ sub information {
 	# TODO: Make use of terminal_width and wrap to make this look better
 	# FIXME: Make compatible with new (and existing) exodus data, including the deployment audit log
 
-	command_usage(1) if @_ < 0 || @_ > 2;
+	command_usage(1) if @_ < 1 || @_ > 2;
 
 	my ($name,$timestamp) = @_;
 	my $env = Genesis::Top->new('.')->load_env($name)->with_vault();
@@ -148,7 +148,7 @@ sub information {
 			$deployment->timestamp, $path_label
 		);
 		for my $artifact_type (@artifact_types) {
-			next if $artifact_type eq 'secrets' && !get_options->{'INCLULDE-SECRETS-ARTIFACT'};
+			next if $artifact_type eq 'secrets' && !get_options->{'INCLUDE-SECRETS-ARTIFACT'};
 			info({pending => 1}, "[[  - >>fetching artifact type #M{%s} ... ", $artifact_type);
 			my $output = $deployment->extract_artifacts_to($path, $artifact_type);
 			my $file = $output->{$artifact_type};
@@ -430,20 +430,7 @@ sub vault_paths {
 
 sub deployments {
 	my ($name) = @_;
-	my $top = Genesis::Top->new('.');
-	my $env = $top->load_env($name);
-
-	if ($top->config->get('manifest_store') eq 'repository') {
-		bail(
-			"This environment is configured to store manifests in the repository, ".
-			"which does not support deployment tracking.  Set the #C{manifest_store} ".
-			"in the environment's #C{.genesis/config} to #C{exodus} to move the ".
-			"manifests to the exodus store, or #C{hybrid} to store them in both."
-		);
-	}
-
-	# Get the list of deployments in exodus from the paths under deployments
-	my $deployment_entries = map {$_ =~ /-(\d+)$/} $env->vault->paths($env->exodus_base.'/deployments/');
+	bail("The 'deployments' command is not yet fully implemented.");
 }
 
 
