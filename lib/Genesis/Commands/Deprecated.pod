@@ -11,7 +11,7 @@ Genesis::Commands::Deprecated - Redirect handler for deprecated Genesis CLI comm
   }, "Genesis::Commands::Deprecated::redirect");
 
   # CLI invocation (deprecated command still works, but warns):
-  genesis <env> download my-kit/1.0.0
+  genesis download my-kit/1.0.0
 
 =head1 DESCRIPTION
 
@@ -64,7 +64,7 @@ B<Examples:>
 
 =head1 SEE ALSO
 
-L<Genesis::Commands>, L<Genesis::Commands::Kits>
+L<Genesis::Commands>, L<Genesis::Commands::Kit>
 
 =head1 AUTHOR
 
