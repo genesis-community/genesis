@@ -193,6 +193,15 @@ C<$pipeline>.
 
 =back
 
+B<Errors:>
+
+=over 4
+
+=item C<"Failed to evaluate pipeline $file"> -- C<spruce merge> failed to
+load or evaluate the pipeline YAML file (fatal, via C<run>).
+
+=back
+
 B<Examples:>
 
     my ($p, @errors) = Genesis::CI::Legacy::validate_pipeline(
@@ -219,7 +228,9 @@ The layout string uses a simple DSL:
 =item *
 
 C<auto PATTERN [PATTERN ...]> -- mark environments whose names match
-the glob patterns (C<*> expands to any characters) as auto-triggered.
+the shell-style glob patterns (only C<*> is special; it expands to match
+any characters) as auto-triggered. Patterns are not full regular
+expressions.
 
 =item *
 
@@ -372,8 +383,9 @@ The name of the environment to print at this level of the tree.
 =item C<$trees>
 
 A hashref mapping each environment name to an arrayref of the
-environments it directly triggers. Produced from the C<will_trigger>
-data in the parsed pipeline structure.
+environments it directly triggers. Built by inverting the C<triggers>
+hashref from the parsed pipeline structure (see
+C<generate_pipeline_human_description> for the construction pattern).
 
 =back
 
@@ -489,6 +501,10 @@ B<Errors:>
 =over 4
 
 =item C<"Failed to generate Concourse Pipeline YAML configuration: $!\n"> -- the temporary C<guts.yml> file could not be opened for writing.
+
+=item C<"Failed to merge Concourse pipeline definition"> -- the final
+C<spruce merge> of the generated C<guts.yml> with the pipeline
+configuration failed (fatal, via C<run>).
 
 =back
 
