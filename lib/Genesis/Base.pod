@@ -1,0 +1,274 @@
+=head1 NAME
+
+Genesis::Base - Base class providing memoization infrastructure for Genesis objects.
+
+=head1 SYNOPSIS
+
+  package Genesis::MyClass;
+  use parent 'Genesis::Base';
+
+  sub expensive_value {
+    my ($self) = @_;
+    return $self->_memoize(sub {
+      # computed once, cached on $self
+      return _do_expensive_work();
+    });
+  }
+
+=head1 DESCRIPTION
+
+C<Genesis::Base> is the root base class for Genesis objects that need
+transparent, per-instance memoization. Subclasses inherit a set of internal
+helpers that cache computed values as hash entries on C<$self>, keyed by an
+auto-derived token based on the calling method's name.
+
+The memoization token for a given method is the method name prefixed with two
+underscores (e.g., C<expensive_value> becomes C<__expensive_value>). Tokens
+can also be supplied explicitly as strings when a single method needs to manage
+multiple independent cached values.
+
+This module defines no public methods. All functionality is exposed through
+the internal helpers documented below.
+
+=head1 INTERNAL METHODS
+
+These methods are internal to the implementation. They may change without
+notice and should not be called directly by code outside the Genesis framework.
+
+=head2 _memoize
+
+  my $value = $self->_memoize($token, $initialize);
+  my $value = $self->_memoize($initialize);
+
+Caches the return value of C<$initialize> on C<$self> under C<$token>, and
+returns the cached value on all subsequent calls with the same token.
+
+C<$initialize> is a code reference that receives C<$self> as its only argument
+and must return the value to be cached. If the token form with an explicit
+C<$token> string is used, the cache key is C<$token>. If only C<$initialize>
+is supplied (or if C<$token> is itself a code reference), the token is derived
+automatically from the name of the calling method via C<_get_token()>.
+
+If the value is already present in the cache (i.e., C<$self-E<gt>{$token}> is
+defined), the initializer is not called and the cached value is returned
+immediately.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$token>
+
+Optional string cache key. When omitted (or when C<$token> is a code
+reference), the key is derived from the calling method's name.
+
+=item C<$initialize>
+
+Code reference called with C<$self> as its argument. Its return value is
+stored in the cache and returned to the caller.
+
+=back
+
+B<Returns:> The cached value stored at C<$self-E<gt>{$token}>.
+
+B<Examples:>
+
+  # Derive token from calling method name
+  sub my_data {
+    my ($self) = @_;
+    return $self->_memoize(sub { 42 });
+  }
+  $obj->my_data();  # Returns: 42 (computed once, then cached)
+  $obj->my_data();  # Returns: 42 (from cache, initializer not called again)
+
+  # Explicit token
+  sub my_data {
+    my ($self) = @_;
+    return $self->_memoize('__my_data', sub { 42 });
+  }
+  $obj->my_data();  # Returns: 42
+
+=head2 _set_memo
+
+  $self->_set_memo($token, $value);
+  $self->_set_memo($value);
+
+Stores C<$value> in the cache under C<$token> and returns C<$value>. When
+called with a single argument, the token is derived from the calling method
+via C<_get_token()> and that argument is treated as the value.
+
+Modifies the object in-place.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$token>
+
+Optional string cache key. When omitted, derived from the calling method name.
+
+=item C<$value>
+
+The value to store in the cache.
+
+=back
+
+B<Returns:> The value that was stored (C<$value>).
+
+B<Examples:>
+
+  # Explicit token
+  my $stored = $self->_set_memo('__my_data', 99);
+  # Returns: 99
+
+  # Derived token (called from method named 'my_data')
+  my $stored = $self->_set_memo(99);  # stores under '__my_data'
+  # Returns: 99
+
+=head2 _clear_memo
+
+  my $old = $self->_clear_memo($token);
+  my $old = $self->_clear_memo();
+
+Sets the cached value at C<$token> to C<undef>, effectively invalidating it,
+and returns the value that was previously stored there. When called without
+an argument, the token is derived from the calling method via C<_get_token()>.
+
+Modifies the object in-place.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$token>
+
+Optional string cache key. When omitted, derived from the calling method name.
+
+=back
+
+B<Returns:> The value that was stored before the cache entry was cleared, or
+C<undef> if nothing was cached.
+
+B<Examples:>
+
+  # Explicit token
+  my $old = $self->_clear_memo('__my_data');
+  # Returns: the previously cached value, or undef
+
+  # Derived token (called from method named 'my_data')
+  my $old = $self->_clear_memo();
+  # Returns: the previously cached value, or undef
+
+=head2 _get_memo
+
+  my $value = $self->_get_memo($token);
+  my $value = $self->_get_memo();
+
+Returns the current cached value at C<$token> without triggering
+initialization. When called without an argument, the token is derived from
+the calling method via C<_get_token()>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$token>
+
+Optional string cache key. When omitted, derived from the calling method name.
+
+=back
+
+B<Returns:> The value stored at C<$self-E<gt>{$token}>, or C<undef> if nothing
+is cached.
+
+B<Examples:>
+
+  # Explicit token
+  my $val = $self->_get_memo('__my_data');
+  # Returns: the cached value, or undef if not yet memoized
+
+  # Derived token (called from method named 'my_data')
+  my $val = $self->_get_memo();
+  # Returns: the cached value, or undef if not yet memoized
+
+=head2 _get_token
+
+  my $token = $self->_get_token($level);
+
+Walks the Perl call stack starting at C<$level> (default C<1>) looking for
+the first frame whose package matches C<ref($self)> and whose subroutine name
+is not C<__ANON__>. Returns that subroutine name prefixed with C<__>
+(e.g., C<"__my_method">).
+
+B<Parameters:>
+
+=over 4
+
+=item C<$level>
+
+Optional integer. Starting stack depth for the search. Defaults to C<1>.
+
+=back
+
+B<Returns:> A string of the form C<"__method_name">.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Could not find %s in stack; cannot determine memoization token">
+
+Thrown via C<bug()> when no matching caller frame is found on the stack.
+C<%s> is replaced with C<ref($self)> (the class name of the object).
+
+=back
+
+B<Examples:>
+
+  sub my_method {
+    my ($self) = @_;
+    my $token = $self->_get_token(1);
+    # Returns: '__my_method'
+  }
+
+=head2 _get_token_for
+
+  my $token = $self->_get_token_for($method);
+
+Returns the memoization token for a named method without inspecting the call
+stack. If C<$method> is a fully-qualified name (e.g., C<"Genesis::Env::foo">),
+the package portion is used to check whether that method exists via C<can()>.
+Otherwise, C<ref($self)> is used. Returns C<undef> if the method does not
+exist or its name is C<__ANON__>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$method>
+
+The method name to look up, either as a bare name (e.g., C<"my_data">) or as
+a fully-qualified name (e.g., C<"Genesis::Env::my_data">).
+
+=back
+
+B<Returns:> A string of the form C<"__method_name">, or C<undef> if the method
+does not exist on the class or is anonymous.
+
+B<Examples:>
+
+  my $token = $self->_get_token_for('my_data');
+  # Returns: '__my_data'
+
+  my $token = $self->_get_token_for('Genesis::Env::my_data');
+  # Returns: '__my_data' if Genesis::Env->can('Genesis::Env::my_data')
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut
