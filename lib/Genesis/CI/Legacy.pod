@@ -77,34 +77,6 @@ B<Examples:>
     Genesis::CI::Legacy::string_to_yaml({key => "val"});
     # Returns: {"key":"val"}
 
-=head2 boolean_to_yaml
-
-    my $str = Genesis::CI::Legacy::boolean_to_yaml($bool);
-
-Converts a Perl boolean value to the YAML literal string C<"true"> or
-C<"false">.
-
-B<Parameters:>
-
-=over 4
-
-=item C<$bool>
-
-Any value. A true value produces C<"true">; a false value produces
-C<"false">.
-
-=back
-
-B<Returns:> The string C<"true"> or C<"false">.
-
-B<Examples:>
-
-    Genesis::CI::Legacy::boolean_to_yaml(1);
-    # Returns: true
-
-    Genesis::CI::Legacy::boolean_to_yaml(0);
-    # Returns: false
-
 =head2 yaml_bool
 
     my $result = Genesis::CI::Legacy::yaml_bool($bool, $default);

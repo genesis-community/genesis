@@ -16,9 +16,6 @@ sub string_to_yaml {
 		return substr(JSON::PP->new->allow_nonref->encode($_[0]), 1, -1);
 	}
 }
-sub boolean_to_yaml {
-	return $_[0] ? "true" : "false";
-}
 sub yaml_bool {
 	my ($bool, $default) = @_;
 	return ($default || 0) unless defined($bool);
