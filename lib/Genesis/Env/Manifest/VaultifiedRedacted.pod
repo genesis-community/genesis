@@ -1,0 +1,157 @@
+=head1 NAME
+
+Genesis::Env::Manifest::VaultifiedRedacted - Redacted view of a vaultified BOSH manifest
+
+=head1 SYNOPSIS
+
+  use Genesis::Env::Manifest::VaultifiedRedacted;
+
+  # Typically obtained via the manifest builder, not instantiated directly:
+  my $manifest = $builder->vaultified_redacted;
+
+  # Access the merged YAML data (Vault secrets replaced with REDACTED):
+  my $data = $manifest->data;
+
+  # Get the path to the manifest file on disk:
+  my $file = $manifest->file;
+
+=head1 DESCRIPTION
+
+C<Genesis::Env::Manifest::VaultifiedRedacted> is a subclass of
+C<Genesis::Env::Manifest> that produces a fully merged BOSH manifest for
+Vault-based kits, with all secret values replaced by a redacted placeholder.
+This makes the manifest safe to display, log, or share without exposing
+credential values.
+
+The class combines the vaultification step (converting Credhub C<((var))>
+references to Spruce Vault operators) with redaction (setting C<REDACT=yes>
+during the final Spruce merge so that secrets are masked rather than
+resolved). The result is a manifest that shows the full structure of a
+vaultified deployment without revealing any secret values.
+
+This class overrides C<description>, C<redacted>, C<merge_environment>,
+C<merge_options>, and C<_merge> from C<Genesis::Env::Manifest>.
+
+Vaultification behavior is provided by
+L<Genesis::Env::Manifest::_vaultify_mixin>, which is included into this
+class at load time and supplies C<vaultify>, C<get_vault_paths>,
+C<vaultify_merge_environment>, C<vaultify_merge_options>,
+C<pre_merged_vaultified_file>, C<merge_vaultified_manifest>, and
+C<_get_decoupled_data>.
+
+=head1 METHODS
+
+=head2 description
+
+  my $label = $manifest->description;
+
+Returns a human-readable string describing this manifest type:
+C<"Redacted manifest for an environment that has been vaultified, with secrets redacted for safe viewing">.
+
+  # Example
+  my $manifest = $builder->vaultified_redacted;
+  print $manifest->description;
+  # prints 'Redacted manifest for an environment that has been vaultified, with secrets redacted for safe viewing'
+
+=head2 redacted
+
+  my $redacted = $manifest->redacted;
+
+Returns the manifest object itself. This override of the parent abstract
+method signals that this manifest type is already a redacted view, so it
+is its own redacted form.
+
+B<Returns:> The invocant (C<$self>).
+
+  # Example
+  my $manifest = $builder->vaultified_redacted;
+  my $redacted = $manifest->redacted;
+  print ref($redacted);  # prints 'Genesis::Env::Manifest::VaultifiedRedacted'
+
+=head2 merge_environment
+
+  my $env = $manifest->merge_environment;
+
+Returns a hash reference of environment variables to pass to the Spruce
+merge process. This hash includes:
+
+=over 4
+
+=item * All variables from the builder's full merge environment (via C<builder->full_merge_env>)
+
+=item * All variables from the Vault client environment (via C<env->vault->env>)
+
+=item * C<REDACT =E<gt> "yes">, which instructs Spruce to replace secret values with a redacted placeholder
+
+=back
+
+B<Returns:> A hash reference of environment variable name/value pairs.
+
+  # Example
+  my $env = $manifest->merge_environment;
+  print $env->{REDACT};  # prints 'yes'
+
+=head2 merge_options
+
+  my $opts = $manifest->merge_options;
+
+Returns the merge options hash reference controlling the Spruce merge
+behavior for this manifest type. The returned options always specify:
+
+=over 4
+
+=item * C<eval =E<gt> 'full'> -- full operator evaluation
+
+=item * C<multidoc =E<gt> 0> -- single-document YAML output
+
+=item * C<gopatch =E<gt> 0> -- Go-patch processing disabled
+
+=back
+
+B<Returns:> A hash reference of merge option keys to values.
+
+  # Example
+  my $opts = $manifest->merge_options;
+  print $opts->{eval};  # prints 'full'
+
+=head1 INTERNAL METHODS
+
+These methods are internal to the implementation. They may change without
+notice and should not be called directly.
+
+=head2 _merge
+
+  my ($data, $file) = $manifest->_merge;
+
+Performs the two-phase build for this manifest type. First, vaultifies the
+builder's unredacted data (converting Credhub C<((var))> references to Vault
+operators) and writes the result to a transient temporary file. If
+vaultification succeeds (i.e., a C<variables> block was present), delegates
+to C<< $self->builder->merge >> using the transient file, the merge options
+from C<merge_options>, and the merge environment from C<merge_environment>
+(which sets C<REDACT=yes>). The transient file is deleted after the merge.
+
+If vaultification produces no changes (no C<variables> block), falls back to
+returning the data and file from the builder's existing redacted manifest
+(C<< $self->builder->redacted >>).
+
+B<Returns:> A two-element list: C<$data> (the merged YAML data structure)
+and C<$file> (the path to the manifest file on disk). Either may be C<undef>
+if the merge did not produce that output.
+
+=head1 SEE ALSO
+
+L<Genesis::Env::Manifest>,
+L<Genesis::Env::Manifest::_vaultify_mixin>,
+L<Genesis::Env::Manifest::Vaultified>,
+L<Genesis::Env::Manifest::VaultifiedEntombed>
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

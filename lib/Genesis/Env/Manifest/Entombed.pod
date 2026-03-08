@@ -1,0 +1,191 @@
+=head1 NAME
+
+Genesis::Env::Manifest::Entombed - Manifest with Vault secrets entombed into BOSH Credhub
+
+=head1 SYNOPSIS
+
+  use Genesis::Env::Manifest::Entombed;
+
+  # Entombed manifests are created by the builder, not directly
+  my $manifest = $builder->entombed();
+
+  # Access manifest content (triggers entombment on first call)
+  my $data = $manifest->data();
+  my $file = $manifest->file();
+
+  # Confirm this manifest type is deployable
+  print $manifest->deployable(); # prints '1'
+
+  # Redaction is a no-op; entombed manifests contain no raw vault secrets
+  my $same = $manifest->redacted();
+  print ref($same); # prints 'Genesis::Env::Manifest::Entombed'
+
+=head1 DESCRIPTION
+
+C<Genesis::Env::Manifest::Entombed> is a concrete subclass of
+L<Genesis::Env::Manifest> that produces deployment manifests suitable for use
+with BOSH environments whose secrets are stored in Credhub rather than
+resolved directly from Vault at deploy time.
+
+During manifest generation this class invokes the entombment workflow
+provided by L<Genesis::Env::Manifest::_entombment_mixin>: every Vault path
+referenced by the rendered manifest is read, each key-value pair is written
+into Credhub as a value-type credential, and the local in-memory Vault is
+populated with the corresponding Credhub variable references
+(C<((path--key--sha))>). The resulting manifest resolves secrets from Credhub
+at deploy time rather than embedding raw Vault values.
+
+This is the default manifest type for regular Genesis kits. The entombed
+manifest is deployable (C<deployable> returns C<1>) and does not need
+redaction because no raw Vault secrets appear in the merged output.
+
+Vault-path lookups are resolved against the unredacted manifest variant so
+that the original secret values are accessible for the entombment copy step.
+
+This class includes entombment behaviour via
+L<Genesis::Env::Manifest::_entombment_mixin>, which provides the
+C<local_vault> and C<_entomb_secrets> methods used during merging.
+
+=head1 METHODS
+
+=head2 description
+
+  my $desc = $manifest->description();
+
+Returns a human-readable string that identifies this manifest variant and
+its purpose.
+
+B<Returns:> C<"Manifest with secrets entombed into BOSH's Credhub from the
+single-source-of-truth Vault (default for regular kits)">
+
+B<Examples:>
+
+  my $manifest = $builder->entombed();
+  print $manifest->description();
+  # prints 'Manifest with secrets entombed into BOSH's Credhub from the single-source-of-truth Vault (default for regular kits)'
+
+=head2 manifest_lookup_target
+
+  my $target = $manifest->manifest_lookup_target();
+
+Returns the unredacted manifest variant that should be used when performing
+Vault or manifest lookups. Because the entombed manifest replaces secrets
+with Credhub references, lookups must be resolved against the unredacted
+variant that still holds the original values.
+
+B<Returns:> C<< $manifest->builder->unredacted(subset => $manifest->{subset}) >>
+
+B<Examples:>
+
+  my $target = $manifest->manifest_lookup_target();
+  print ref($target); # prints 'Genesis::Env::Manifest::Unredacted'
+
+=head2 source_files
+
+  my $files = $manifest->source_files();
+
+Returns an ordered array reference of the source files that are merged to
+produce this manifest. The list is assembled from the builder in the
+standard Genesis merge order:
+
+=over 4
+
+=item 1. Initiation file
+
+=item 2. Kit files
+
+=item 3. Cloud config files (required; C<optional =E<gt> 0>)
+
+=item 4. Environment files
+
+=item 5. Conclusion file
+
+=back
+
+B<Returns:> an array reference of file paths.
+
+B<Examples:>
+
+  my $files = $manifest->source_files();
+  print scalar @{$files}; # prints the number of source files
+
+=head2 merge_options
+
+  my $opts = $manifest->merge_options();
+
+Returns the options hash passed to the builder's C<merge> call. For the
+entombed manifest no extra merge options are required.
+
+B<Returns:> an empty hash reference C<{}>.
+
+B<Examples:>
+
+  my $opts = $manifest->merge_options();
+  print scalar keys %{$opts}; # prints '0'
+
+=head2 remote_vault_merge_environment
+
+  my $env = $manifest->remote_vault_merge_environment();
+
+Returns the environment hash used when merging against the remote
+(production) Vault. Combines the builder's full merge environment with the
+environment's remote Vault environment variables, and explicitly sets
+C<REDACT> to C<undef> to suppress secret redaction.
+
+B<Returns:> a hash reference combining C<< $manifest->builder->full_merge_env >>,
+C<< $manifest->env->vault->env >>, and C<< REDACT =E<gt> undef >>.
+
+B<Examples:>
+
+  my $env = $manifest->remote_vault_merge_environment();
+  print exists $env->{REDACT} ? 'has REDACT key' : 'no REDACT key';
+  # prints 'has REDACT key'
+
+=head2 local_vault_merge_environment
+
+  my $env = $manifest->local_vault_merge_environment();
+
+Returns the environment hash used when merging against the local in-memory
+Vault that holds Credhub variable references. Combines the builder's full
+merge environment with the local Vault's environment variables, and
+explicitly sets C<REDACT> to C<undef>.
+
+B<Returns:> a hash reference combining C<< $manifest->builder->full_merge_env >>,
+C<< $manifest->local_vault->env >>, and C<< REDACT =E<gt> undef >>.
+
+B<Examples:>
+
+  my $env = $manifest->local_vault_merge_environment();
+  print exists $env->{REDACT} ? 'has REDACT key' : 'no REDACT key';
+  # prints 'has REDACT key'
+
+=head1 INTERNAL METHODS
+
+These methods are internal to the implementation. They may change without
+notice and should not be called directly.
+
+=head2 _merge
+
+  my ($data, $file) = $manifest->_merge();
+
+Performs the full entombed manifest merge. Calls C<_entomb_secrets> (provided
+by the included mixin) to copy Vault secrets into Credhub and populate the
+local in-memory Vault with Credhub variable references. Then merges all
+source files using either the local vault environment (when entombment
+occurred) or the remote vault environment (when there were no Vault paths to
+entomb). If entombment was performed, shuts down the local Vault after the
+merge completes.
+
+B<Returns:> a two-element list C<($data, $file)> where C<$data> is the
+parsed YAML hashref and C<$file> is the path to the written manifest YAML
+file on disk.
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut
