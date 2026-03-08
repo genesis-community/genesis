@@ -81,7 +81,7 @@ notice and should not be called directly.
 
 =head2 _merge
 
-  $manifest->_merge()
+  my ($data, $file) = $manifest->_merge();
 
 Performs the actual merge by invoking the builder's C<merge> method with
 the source files, merge options, and merge environment defined by this

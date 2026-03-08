@@ -50,10 +50,7 @@ this class.
 
   my $str = $manifest->description();
 
-Returns a human-readable string describing this manifest type. Also overrides
-the C<deployable> method (returns C<1>) and the C<source_files> method
-(returns an array reference of the ordered merge-source file paths, with cloud
-config required).
+Returns a human-readable string describing this manifest type.
 
 B<Returns:> the string C<"Complete deployment manifest with embedded
 clear-text secrets from Vault">.
@@ -62,11 +59,29 @@ clear-text secrets from Vault">.
   print $manifest->description();
   # prints 'Complete deployment manifest with embedded clear-text secrets from Vault'
 
-  # This manifest type is deployable
+=head2 deployable
+
+  my $bool = $manifest->deployable();
+
+Returns C<1>, marking this manifest type as suitable for passing to
+C<bosh deploy>. Overrides the base class default of C<0>.
+
+B<Returns:> C<1>.
+
   print $manifest->deployable();
   # prints '1'
 
-  # Source files used for the merge
+=head2 source_files
+
+  my $files = $manifest->source_files();
+
+Returns an array reference of the ordered merge-source file paths used to
+build this manifest. The merge order is: initiation file, kit files, cloud
+config files (required, never optional), environment files, and conclusion
+file.
+
+B<Returns:> An array reference of absolute file path strings.
+
   my $files = $manifest->source_files();
   print ref($files);    # prints 'ARRAY'
 

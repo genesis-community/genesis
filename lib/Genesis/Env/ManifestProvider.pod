@@ -218,17 +218,25 @@ B<Examples:>
 
 =head2 env
 
-  my $env = $provider->env($type);
+  my $env = $provider->env();
 
-C<env> returns the C<Genesis::Env> object that owns this provider (the
-C<$type> argument is not used by C<env> itself; it is the parameter for the
-companion C<set_deployment> method documented below).
+Returns the C<Genesis::Env> object that owns this provider.
 
-C<set_deployment($type)> sets the default deployment manifest type.
-Subsequent calls to C<deployment> will return a manifest of this type.
-C<$type> must be a known deployable manifest type name (e.g.,
-C<"entombed">, C<"unredacted">); otherwise the method aborts with an
-internal error.
+B<Returns:> A C<Genesis::Env> object.
+
+B<Examples:>
+
+  my $env = $provider->env();
+  # Returns: the Genesis::Env object bound to this provider
+
+=head2 set_deployment
+
+  $provider->set_deployment($type);
+
+Sets the default deployment manifest type. Subsequent calls to C<deployment>
+will return a manifest of this type. C<$type> must be a known deployable
+manifest type name (e.g., C<"entombed">, C<"unredacted">); otherwise the
+method aborts with an internal error.
 
 B<Parameters:>
 
@@ -236,13 +244,12 @@ B<Parameters:>
 
 =item C<$type>
 
-A manifest type name string passed to C<set_deployment>. The type must exist
-and must be flagged as deployable.
+A manifest type name string. The type must exist and must be flagged as
+deployable.
 
 =back
 
-B<Returns:> C<env> returns a C<Genesis::Env> object. C<set_deployment>
-returns the provider object itself, for method chaining.
+B<Returns:> The provider object itself, for method chaining.
 
 B<Errors:>
 
@@ -251,9 +258,6 @@ known manifest type or is not marked as deployable. C<$type> in the message
 is the literal name string that was passed.
 
 B<Examples:>
-
-  my $env = $provider->env();
-  # Returns: the Genesis::Env object bound to this provider
 
   $provider->set_deployment('entombed');
   my $manifest = $provider->deployment();
@@ -666,7 +670,7 @@ B<Returns:> A hash reference of subset plan definitions.
 
 =head2 _adaptive_merge
 
-  my ($out, $warnings) = $provider->_adaptive_merge();
+  my ($out, $warnings) = $provider->_adaptive_merge(\%opts, @files);
 
 Attempts to merge source files with C<spruce merge>. When the initial merge
 fails due to unresolvable operators (e.g., missing Vault secrets or

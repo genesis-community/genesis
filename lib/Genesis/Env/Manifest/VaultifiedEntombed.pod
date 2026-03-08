@@ -194,8 +194,9 @@ The method runs the following steps in order:
 
 =item 1. Calls L<Genesis::Env::Manifest::_vaultify_mixin/vaultify> on a deep
 copy of the unredacted manifest data to populate the pre-merged vaultified
-file. If vaultification finds no C<variables> block it returns the existing
-entombed builder data and file immediately, without performing entombment.
+file. If vaultification finds no C<variables> block, steps 2 through 6 are
+skipped and the method returns the existing entombed builder data and file
+immediately.
 
 =item 2. Calls L<Genesis::Env::Manifest::_entombment_mixin/_entomb_secrets>
 to copy Vault secrets into Credhub and populate the local in-memory Vault
@@ -213,7 +214,8 @@ resolve any remaining Credhub references.
 with the local Vault's merge environment to produce the final manifest data
 and file.
 
-=item 6. Shuts down the local in-memory Vault.
+=item 6. Shuts down the local in-memory Vault. (This step only executes on
+the full-processing path; the early return at step 1 bypasses it.)
 
 =back
 

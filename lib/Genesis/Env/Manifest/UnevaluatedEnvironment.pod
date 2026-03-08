@@ -26,6 +26,10 @@ This type of manifest is useful for inspecting the raw merged structure of an
 environment's configuration before any operator resolution takes place. Secret
 redaction is also disabled so that all values appear as authored.
 
+Because environment-only files contain no Vault operators (those come from
+the kit), this manifest type does not require Vault credentials or the full
+merge environment -- only the C<REDACT> override is needed.
+
 =head1 METHODS
 
 =head2 description
@@ -77,6 +81,10 @@ B<Returns:> A hash reference of the form C<{ eval =E<gt> 'no' }>.
 Returns environment variable overrides to apply during the merge. For this
 manifest type, the C<REDACT> variable is explicitly set to C<undef> so that
 secret values are not redacted in the output.
+
+Environment-only files contain no Vault operators (those come from the kit),
+so Vault credentials and the full merge environment are unnecessary. Only
+C<REDACT> needs to be set.
 
 B<Returns:> A hash reference of the form C<{ REDACT =E<gt> undef }>.
 

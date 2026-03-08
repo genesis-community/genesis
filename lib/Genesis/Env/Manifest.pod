@@ -303,7 +303,8 @@ B<Parameters for notify:>
 
   my $clean = Genesis::Env::Manifest::dewrap($msg);
 
-Package-level utility function (not an instance method). Strips ANSI terminal
+Package-level utility function (not an instance method). This function is not
+exported; call it with the fully qualified package name. Strips ANSI terminal
 color sequences and log-level labels (e.g., C<[ERROR]>, C<[WARN]>) from a
 message string, and collapses the indent that was used to align continuation
 lines under the label. Returns the original C<$msg> unchanged if no label
@@ -482,13 +483,14 @@ data structure. Calls C<load_yaml_file> from the Genesis utility library.
 
 =head2 _save_data_to_file
 
-  my $path = $manifest->_save_data_to_file($data);
+  my $path = $manifest->_save_data_to_file();
 
-Serializes C<$data> (a parsed YAML hashref) to the canonical manifest file
-path (from C<_generate_file_name>, or the already-recorded file path if set).
-Returns the path of the written file.
+Serializes the object's cached data (C<< $self->{data} >>) to the canonical
+manifest file path (from C<_generate_file_name>, or the already-recorded file
+path if set). Takes no arguments beyond the invocant. Returns the path of the
+written file.
 
-  my $path = $manifest->_save_data_to_file($data);
+  my $path = $manifest->_save_data_to_file();
   print $path; # prints the path of the written YAML file
 
 =head1 AUTHORS

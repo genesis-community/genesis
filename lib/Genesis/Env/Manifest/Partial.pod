@@ -97,6 +97,20 @@ B<Returns:> a hash reference of environment variable names to values.
   print defined($env->{REDACT}) ? 'redacted' : 'not redacted';
   # Returns: 'not redacted'
 
+=head2 source_files
+
+  my $files = $manifest->source_files();
+
+Returns an array reference of the ordered merge-source file paths used to
+build this manifest. The merge order is: initiation file, kit files, cloud
+config files (optional, so the merge proceeds even when no cloud config is
+available), environment files, and conclusion file.
+
+B<Returns:> An array reference of absolute file path strings.
+
+  my $files = $manifest->source_files();
+  print ref($files);    # prints 'ARRAY'
+
 =head1 INTERNAL METHODS
 
 These methods are internal to the implementation. They may change without
