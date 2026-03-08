@@ -1,0 +1,579 @@
+=encoding utf8
+
+=head1 NAME
+
+Genesis::Commands::Bosh - Command handlers for Genesis BOSH director interaction
+
+=head1 SYNOPSIS
+
+  # Registered in bin/genesis via define_command:
+  genesis <env> bosh [--connect] [bosh-args...]
+  genesis <env> credhub [--raw] <cmd> [credhub-args...]
+  genesis <env> logs [extra-args...]
+  genesis <env> broadcast [--on <instance>] <cmd> [extra-args...]
+  genesis <env> bosh-configs [upload|list|view|compare|delete|summary]
+
+  # In Perl (dispatch layer):
+  use Genesis::Commands::Bosh;
+  Genesis::Commands::Bosh::bosh($env_name, @bosh_args);
+  Genesis::Commands::Bosh::credhub($env_name, $cmd, @args);
+  Genesis::Commands::Bosh::logs($env_name, @extra_args);
+  Genesis::Commands::Bosh::broadcast($env_name, @extra_args);
+  Genesis::Commands::Bosh::bosh_configs($env_name, $action, @extra_args);
+
+=head1 DESCRIPTION
+
+Provides command handler functions for all BOSH-director-related Genesis CLI
+commands.  Each function in this module corresponds to a top-level Genesis CLI
+subcommand and is registered via C<define_command> in the Genesis binary.
+
+The module covers direct BOSH CLI passthrough (C<bosh>), CredHub CLI
+passthrough with Genesis-managed authentication (C<credhub>), VM log retrieval
+(C<logs>), multi-instance SSH broadcast (C<broadcast>), and BOSH config
+management (C<bosh-configs>).
+
+All functions load the named environment from the current directory's Genesis
+top-level and connect to Vault before performing their work.
+
+=head1 FUNCTIONS
+
+=head2 bosh($env_name, @bosh_args)
+
+Entry point for the C<genesis E<lt>envE<gt> bosh> command.  Wraps the C<bosh>
+CLI, routing through the environment's target BOSH director with all
+authentication already configured.
+
+Supports two modes of operation:
+
+=over 4
+
+=item Normal passthrough mode
+
+Executes C<bosh @bosh_args> interactively against the environment's BOSH
+director.  Exit code propagates directly to the shell.
+
+=item C<--connect> mode
+
+When the C<--connect> flag is passed, outputs shell C<export> statements for
+the BOSH environment variables so they can be applied to the current shell via
+C<eval>.  This mode must be invoked as:
+
+  eval "$(genesis <env> bosh --connect)"
+
+If C<--connect> is used but the command is running in a controlling terminal
+(i.e., not under C<eval>), an error is printed explaining the required
+invocation and the process exits with status 1.
+
+=back
+
+Output is automatically redacted when stdout is not a TTY.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$env_name>
+
+The Genesis environment name.  Used to load and connect to the environment's
+configured BOSH director.
+
+=item C<@bosh_args>
+
+Arguments passed through verbatim to the C<bosh> CLI.  At least one argument
+is required; the function calls C<command_usage(1)> if C<@_> is empty.
+
+=back
+
+B<Returns:> Does not return.  Calls C<exit> with the BOSH command's exit code,
+or C<exit 0> after exporting environment variables in C<--connect> mode.
+
+B<Examples:>
+
+  # Run 'bosh deployments' for a given environment
+  # prints the BOSH director's deployment list to stdout
+  genesis my-env bosh deployments
+
+  # Set BOSH env vars in the current shell
+  eval "$(genesis my-env bosh --connect)"
+  # Returns: shell export statements applied to current environment
+
+=head2 credhub($env_name, $cmd, @args)
+
+Entry point for the C<genesis E<lt>envE<gt> credhub> command.  Executes a
+C<credhub> CLI command against the CredHub instance associated with the
+environment's BOSH director, using Genesis-managed authentication.
+
+Relative credential names (those not beginning with C</>) are automatically
+prefixed with the environment's CredHub base path, so that users do not need
+to specify full paths for commands that accept C<--name> or C<--path>/C<--prefix>
+options.  This path expansion is skipped when C<--raw> is passed.
+
+The following CredHub subcommands are blocked because Genesis manages
+authentication internally: C<login> (C<l>), C<api> (C<a>), C<logout> (C<o>).
+
+B<Parameters:>
+
+=over 4
+
+=item C<$env_name>
+
+The Genesis environment name.  Used to load the environment and determine the
+target CredHub instance.  At least one argument (the environment name) is
+required; the function calls C<command_usage(1)> if C<@_> is empty.
+
+=item C<$cmd>
+
+The CredHub subcommand to execute (e.g., C<get>, C<set>, C<find>, C<export>).
+
+=item C<@args>
+
+Additional arguments passed to C<credhub $cmd>.  Relative C<--name> and
+C<--path>/C<--prefix> values are automatically expanded to full CredHub paths
+unless C<--raw> is active.
+
+=back
+
+B<Options> (read from parsed command-line flags):
+
+=over 4
+
+=item C<--raw>
+
+Skips automatic base-path expansion for C<--name>/C<--path>/C<--prefix> values.
+Credential paths are passed to CredHub exactly as provided.
+
+=back
+
+B<Errors:>
+
+=over 4
+
+=item C<"Command #C{genesis credhub %s} is not allowed in when Genesis is managing authentication to CredHub">
+
+Raised (via C<bail()>) when C<$cmd> is one of C<login>, C<api>, or C<logout>
+(or their single-letter aliases C<l>, C<a>, C<o>).  The C<%s> placeholder is
+the disallowed command name.
+
+=back
+
+B<Returns:> Does not return.  Calls C<exit> with the CredHub command's exit
+code.
+
+B<Examples:>
+
+  # Retrieve a credential using a relative name (auto-prefixed to base path)
+  # Returns: credential details printed to stdout by the credhub CLI
+  genesis my-env credhub get --name /my-credential
+
+  # Find all credentials under the environment's base path
+  # Returns: list of matching credential paths printed to stdout
+  genesis my-env credhub find
+
+  # Pass a fully-qualified path without auto-prefixing
+  # Returns: credential details printed to stdout
+  genesis my-env credhub --raw get --name /absolute/path/to/credential
+
+=head2 logs($env_name, @extra_args)
+
+Entry point for the C<genesis E<lt>envE<gt> logs> command.  Retrieves BOSH
+logs for the environment by delegating to C<< $env->bosh_logs >>.
+
+Not available for environments deployed with C<create-env>, since those
+environments do not have a separate BOSH director to query for logs.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$env_name>
+
+The Genesis environment name.
+
+=item C<@extra_args>
+
+Additional arguments forwarded to C<< $env->bosh_logs >>.
+
+=back
+
+B<Errors:>
+
+=over 4
+
+=item C<"No bosh logs for environments deployed with #M{create-env}">
+
+Raised (via C<bail()>) when the environment is a C<create-env> environment.
+
+=back
+
+B<Returns:> Nothing.  Log output is displayed directly by C<< $env->bosh_logs >>.
+
+B<Examples:>
+
+  # Fetch BOSH logs for an environment
+  # Returns: list of BOSH log entries
+  genesis my-env logs
+
+=head2 broadcast($env_name, @extra_args)
+
+Entry point for the C<genesis E<lt>envE<gt> broadcast> command.  Runs an
+arbitrary command on one or more BOSH VMs by SSHing to each matching instance
+in sequence.
+
+Fetches the full VM list from the BOSH director (C<bosh vms --json>) and
+matches it against the C<--on> filter option.  If no filter is provided, the
+command is broadcast to all VMs in the deployment.  Each matching instance is
+targeted individually via C<bosh ssh>.
+
+Target matching rules:
+
+=over 4
+
+=item *
+
+If the target string contains a C</>, it is matched as an exact instance ID
+(e.g., C<web/0>).
+
+=item *
+
+Otherwise it is matched as an instance type prefix (e.g., C<web> matches
+C<web/0>, C<web/1>, etc.).
+
+=back
+
+Duplicate targets (after resolution) are de-duplicated with C<uniq> before
+SSH execution.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$env_name>
+
+The Genesis environment name.
+
+=item C<@extra_args>
+
+The command and its arguments to execute on each target VM via C<bosh ssh>.
+
+=back
+
+B<Options> (read from parsed command-line flags):
+
+=over 4
+
+=item C<on>
+
+An arrayref of target instance specifiers.  Each entry may be an instance type
+(e.g., C<web>) or a fully qualified instance ID (e.g., C<web/0>).  Defaults to
+all VMs in the deployment when not specified.
+
+=back
+
+B<Errors:>
+
+=over 4
+
+=item C<"Failed to fetch VM list: %s">
+
+Raised (via C<bail()>) when the C<bosh vms --json> call fails.  The C<%s>
+placeholder contains the error output from the BOSH CLI.
+
+=item C<"Failed to parse VM list: %s">
+
+Raised (via C<bail()>) when the JSON response from C<bosh vms> cannot be
+parsed.  The C<%s> placeholder contains the Perl C<eval> error string.
+
+=item C<"Errors were encountered while determining broadcast targets:\n%s">
+
+Raised (via C<bail()>) when one or more entries in the C<--on> filter did not
+match any running instance.  The C<%s> placeholder is a newline-joined list of
+per-target error messages.
+
+=back
+
+B<Returns:> Returns after all instances have been targeted.  Individual SSH
+failures are reported via the C<error> function but do not abort the broadcast
+loop.
+
+B<Examples:>
+
+  # Broadcast a command to all VMs in the environment
+  # prints uptime output from each VM separated by dividers
+  genesis my-env broadcast -- uptime
+
+  # Broadcast only to web instances
+  # prints df output from each web/* instance
+  genesis my-env broadcast --on web -- df -h
+
+  # Broadcast to a specific instance
+  # prints syslog output from web/0
+  genesis my-env broadcast --on web/0 -- cat /var/log/syslog
+
+=head2 bosh_configs($env_name, $action, @extra_args)
+
+Entry point for the C<genesis E<lt>envE<gt> bosh-configs> command.  Dispatches
+to one of the C<bosh_configs_*> sub-action functions based on C<$action>.
+
+Valid actions are: C<upload>, C<list>, C<view>, C<compare>, C<delete>,
+C<summary>.  The default action (when C<$action> is omitted) is C<upload>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$env_name>
+
+The Genesis environment name.
+
+=item C<$action>
+
+One of C<upload>, C<list>, C<view>, C<compare>, C<delete>, C<summary>.
+Defaults to C<upload> when not supplied.
+
+=item C<@extra_args>
+
+No extra arguments are currently accepted.  The function calls C<bail()> if
+any are provided.
+
+=back
+
+B<Errors:>
+
+=over 4
+
+=item C<"Invalid action: %s - expected one of: %s (leave blank for 'upload')">
+
+Raised (via C<bail()>) when C<$action> is not one of the valid action strings.
+The first C<%s> is the supplied action; the second is the list of valid actions.
+
+=item C<"Too many arguments provided">
+
+Raised (via C<bail()>) when C<@extra_args> is non-empty.
+
+=back
+
+B<Returns:> Returns the result of the dispatched sub-action function.
+
+B<Examples:>
+
+  # Upload BOSH configs for an environment (default action)
+  # Returns: result from bosh_configs_upload
+  genesis my-env bosh-configs
+
+  # List current BOSH configs on the director
+  # Returns: result from bosh_configs_list
+  genesis my-env bosh-configs list
+
+  # Show a summary of environment and director configs
+  # Returns: result from bosh_configs_summary
+  genesis my-env bosh-configs summary
+
+=head1 INTERNAL FUNCTIONS
+
+These functions are internal to the implementation.  They are dispatched by
+C<bosh_configs()> and should not be called directly.
+
+=head2 bosh_configs_summary($env, $bosh, %options)
+
+Displays a summary of BOSH configs provided by the environment or kit and
+their status on the director.  Intended to show which configs are present
+locally (cloud-config, runtime-config hooks), which are provided by the
+director itself, and which director configs are not kit-managed.
+
+This function is a partial implementation.  It retrieves environment config
+names and runs the C<cloud-config> hook but does not yet produce output.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$env>
+
+A C<Genesis::Env> object for the target environment.
+
+=item C<$bosh>
+
+A BOSH service object for the target director.
+
+=item C<%options>
+
+Parsed command-line options hash.
+
+=back
+
+B<Returns:> Returns nothing (C<undef>) in its current partial state.
+
+B<Examples:>
+
+  # Dispatched internally by bosh_configs():
+  # Returns: undef (partial implementation)
+  bosh_configs_summary($env, $bosh, %options);
+
+=head2 bosh_configs_upload($env, $bosh, %options)
+
+Stub -- not yet implemented.  Intended to upload BOSH configs from the
+environment to the director.  Currently prints a diagnostic message and
+returns C<1>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$env>
+
+A C<Genesis::Env> object.
+
+=item C<$bosh>
+
+A BOSH service object.
+
+=item C<%options>
+
+Parsed command-line options hash.
+
+=back
+
+B<Returns:> Returns C<1> (stub return value).
+
+B<Examples:>
+
+  # Dispatched internally by bosh_configs():
+  # Returns: 1
+  bosh_configs_upload($env, $bosh, %options);
+
+=head2 bosh_configs_list($env, $bosh, %options)
+
+Stub -- not yet implemented.  Intended to list BOSH configs on the director.
+Currently prints a diagnostic message and invokes an interactive Pry debugger
+session before returning C<1>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$env>
+
+A C<Genesis::Env> object.
+
+=item C<$bosh>
+
+A BOSH service object.
+
+=item C<%options>
+
+Parsed command-line options hash.
+
+=back
+
+B<Returns:> Returns C<1> (stub return value).
+
+B<Examples:>
+
+  # Dispatched internally by bosh_configs():
+  # Returns: 1
+  bosh_configs_list($env, $bosh, %options);
+
+=head2 bosh_configs_view($env, $bosh, %options)
+
+Stub -- not yet implemented.  Intended to display the content of a specific
+BOSH config.  Currently prints a diagnostic message and returns C<1>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$env>
+
+A C<Genesis::Env> object.
+
+=item C<$bosh>
+
+A BOSH service object.
+
+=item C<%options>
+
+Parsed command-line options hash.
+
+=back
+
+B<Returns:> Returns C<1> (stub return value).
+
+B<Examples:>
+
+  # Dispatched internally by bosh_configs():
+  # Returns: 1
+  bosh_configs_view($env, $bosh, %options);
+
+=head2 bosh_configs_compare($env, $bosh, %options)
+
+Stub -- not yet implemented.  Intended to compare BOSH configs between the
+environment and the director.  Currently prints a diagnostic message and
+returns C<1>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$env>
+
+A C<Genesis::Env> object.
+
+=item C<$bosh>
+
+A BOSH service object.
+
+=item C<%options>
+
+Parsed command-line options hash.
+
+=back
+
+B<Returns:> Returns C<1> (stub return value).
+
+B<Examples:>
+
+  # Dispatched internally by bosh_configs():
+  # Returns: 1
+  bosh_configs_compare($env, $bosh, %options);
+
+=head2 bosh_configs_delete($env, $bosh, %options)
+
+Stub -- not yet implemented.  Intended to delete a BOSH config from the
+director.  Currently prints a diagnostic message and returns C<1>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$env>
+
+A C<Genesis::Env> object.
+
+=item C<$bosh>
+
+A BOSH service object.
+
+=item C<%options>
+
+Parsed command-line options hash.
+
+=back
+
+B<Returns:> Returns C<1> (stub return value).
+
+B<Examples:>
+
+  # Dispatched internally by bosh_configs():
+  # Returns: 1
+  bosh_configs_delete($env, $bosh, %options);
+
+=head1 SEE ALSO
+
+L<Genesis::Commands::Ocfp>, L<Genesis::Commands>, L<Genesis::Env>,
+L<Genesis::Top>
+
+=head1 AUTHOR
+
+FiveTwenty, LLC
+
+=cut

@@ -1,0 +1,296 @@
+=head1 NAME
+
+Genesis::Commands::Repo - Command handlers for Genesis repository management
+
+=head1 SYNOPSIS
+
+  # Registered in bin/genesis via define_command:
+  genesis init [options] [<name>]
+  genesis secrets-provider [options] [<target>]
+  genesis kit-provider [options]
+
+  # Perl import (for testing or internal dispatch):
+  use Genesis::Commands::Repo;
+  Genesis::Commands::Repo::init(@ARGV);
+  Genesis::Commands::Repo::secrets_provider(@ARGV);
+  Genesis::Commands::Repo::kit_provider(@ARGV);
+
+=head1 DESCRIPTION
+
+Implements the Genesis CLI commands that manage the repository lifecycle and
+its provider configuration.  The three commands handled here correspond
+directly to top-level genesis subcommands:
+
+=over 4
+
+=item C<genesis init>
+
+Create a new Genesis deployment repository on disk, optionally installing or
+linking a kit at the same time.
+
+=item C<genesis secrets-provider>
+
+Display or change the Vault/Safe target used by the current deployment
+repository for secrets storage.
+
+=item C<genesis kit-provider>
+
+Display or change the kit provider (source from which kits are downloaded)
+for the current deployment repository.
+
+=back
+
+Each function reads global command-line options via C<get_options> /
+C<append_options> and then delegates persistence and resolution to
+L<Genesis::Top>.
+
+=head1 FUNCTIONS
+
+=head2 init([$name])
+
+  genesis init [options] [<name>]
+
+Creates a new Genesis deployment repository named C<$name> in the current
+working directory.  Validates git identity, creates the repository directory
+structure via L<Genesis::Top>, embeds the genesis binary, sets up
+the chosen kit, initializes a git repository, and commits the initial state.
+
+C<$name> is optional when a C<--kit> or C<--link-dev-kit> option is
+provided, because the name can be inferred from the kit name or the
+development link target path.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$name> (optional)
+
+The deployment repository name.  May be omitted when C<--kit> or
+C<--link-dev-kit> is supplied; required otherwise.
+
+=back
+
+B<Options> (parsed from C<@_> via C<Genesis::Kit::Provider> and C<get_options>):
+
+=over 4
+
+=item C<--kit|-k> I<spec>
+
+Kit to install.  Accepts a kit name, a C<name/version> specifier, or a path
+to a locally compiled C<.tar.gz> kit archive.
+
+=item C<--link-dev-kit|-L> I<path>
+
+Symlink a local kit directory as C<./dev> inside the new repository.  Mutually
+exclusive with C<--kit>.
+
+=item C<--kits-path> I<dir>
+
+Override the local kits cache directory (defaults to C<~/.genesis/kits>).
+
+=back
+
+B<Returns:>
+
+Does not return to the caller -- calls C<exit 0> on success.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Link target '%s' cannot be found from $pwd!">
+
+The path given to C<--link-dev-kit> could not be resolved to an absolute path
+from the current working directory.  C<%s> is the value of C<--link-dev-kit>.
+
+=item C<"Local compiled kit file %s not found">
+
+The C<--kit> value looks like a local archive path but the file does not exist
+on disk.  C<%s> is the kit path.
+
+=back
+
+Additional errors are propagated from L<Genesis::Top> (repository creation,
+kit download) and from C<git init> / C<git commit> failures.  If any
+post-directory-creation step fails, the partially created directory is removed
+before re-raising the error.
+
+B<Examples:>
+
+  # Create a repo named "my-env" with a kit from the default provider
+  genesis init --kit cf my-env
+  # prints: Initialized empty Genesis repository in my-env
+
+  # Create a repo, linking a local dev kit; name inferred from link target
+  genesis init --link-dev-kit ~/src/cf-genesis-kit
+  # prints: Initialized empty Genesis repository in cf-genesis-kit
+
+  # Create a repo with an explicit name, no kit (empty ./dev directory created)
+  genesis init my-env
+  # prints: Initialized empty Genesis repository in my-env
+
+=head2 secrets_provider([$target])
+
+  genesis secrets-provider [--interactive|-i] [--clear|-c] [<target>]
+
+Displays the Vault/Safe secrets provider configured for the current deployment
+repository.  When options are supplied, updates the configuration first, then
+displays the new state.
+
+Exactly one of C<$target>, C<--interactive>, or C<--clear> may be specified
+at a time.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$target> (optional)
+
+A Vault target alias or URL.  Sets the repository's secrets provider to this
+target.
+
+=back
+
+B<Options> (read via C<get_options>):
+
+=over 4
+
+=item C<--interactive|-i>
+
+Prompt the user interactively to select or configure the Vault target.
+
+=item C<--clear|-c>
+
+Remove the repository's secrets provider configuration, reverting to the
+system-default safe target (legacy mode).
+
+=back
+
+B<Returns:>
+
+Does not return to the caller -- calls C<exit 0> on success or C<exit 1>
+when the provider update fails.
+
+B<Errors:>
+
+=over 4
+
+=item C<"You can only specify one of target, -i|--interactive or -c|--clear">
+
+More than one of the mutually exclusive options was supplied.
+
+=back
+
+Output is written directly to the terminal.  When a vault is configured, the
+display includes the type, URL, local alias, and authentication status.  When
+no vault is configured, a notice is shown that legacy mode is active.
+
+B<Examples:>
+
+  # Show the current secrets provider
+  genesis secrets-provider
+  # prints: Secrets provider for cf deployment at /path/to/repo:
+
+  # Set the secrets provider to a named safe target
+  genesis secrets-provider my-vault
+  # prints: Secrets provider for cf deployment at /path/to/repo:
+
+  # Interactively choose the secrets provider
+  genesis secrets-provider --interactive
+  # prints: (interactive vault selection prompt)
+
+  # Remove the secrets provider configuration (revert to legacy mode)
+  genesis secrets-provider --clear
+  # prints: Not set - legacy mode enabled (will use current safe target on system)
+
+=head2 kit_provider()
+
+  genesis kit-provider [options]
+
+Displays the kit provider currently configured for the deployment repository.
+When provider options are supplied, updates the configuration first, then
+displays the provider status and the list of available kits.
+
+The C<--export-config> flag is mutually exclusive with all other flags; when
+used, it emits the provider configuration as JSON and exits.
+
+B<Options> (parsed via C<Genesis::Kit::Provider> and C<get_options>):
+
+=over 4
+
+=item C<--kit-provider> I<spec>
+
+Set the kit provider to the given provider specifier string.
+
+=item C<--default>
+
+Set the kit provider to the Genesis Community default (C<genesis-community>).
+
+=item C<--export-config>
+
+Output the current kit provider configuration as a JSON object to stdout, then
+exit.  Cannot be combined with any other option.
+
+=item C<--verbose|-v>
+
+Request verbose kit provider information when querying the provider.
+
+=back
+
+B<Returns:>
+
+Exits C<0> after C<--export-config> or exits C<1> when the provider update
+fails.  On the normal display path, returns to the caller after printing
+the provider status and kit list.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Option #M{--export-config} cannot be used with any other options">
+
+C<--export-config> was combined with at least one other option.
+
+=item C<"$@"> (dynamic)
+
+Any exception raised inside the C<eval> block that queries kit provider
+information is re-thrown via C<bail()>.  The message content depends on
+the underlying provider error.
+
+=back
+
+Errors encountered while changing the kit provider are printed and cause an
+immediate C<exit 1>.  Errors from provider information lookup are propagated
+via C<bail()>.
+
+B<Examples:>
+
+  # Show the current kit provider and available kits
+  genesis kit-provider
+  # prints: Type: genesis-community
+
+  # Switch to the Genesis Community provider
+  genesis kit-provider --default
+  # prints: Type: genesis-community
+
+  # Export the current kit provider configuration as JSON
+  genesis kit-provider --export-config
+  # prints: {"type":"genesis-community",...}
+
+  # Set a custom provider and show verbose info
+  genesis kit-provider --kit-provider my-github-org --verbose
+  # prints: Type: my-github-org
+
+=head1 SEE ALSO
+
+L<Genesis::Top>, L<Genesis::Kit::Provider>, L<Genesis::Commands>
+
+=head1 AUTHOR
+
+FiveTwenty, LLC
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut
