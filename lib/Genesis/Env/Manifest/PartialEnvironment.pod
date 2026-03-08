@@ -7,7 +7,7 @@ Genesis::Env::Manifest::PartialEnvironment - Manifest built from environment fil
   use Genesis::Env::Manifest::PartialEnvironment;
 
   # Typically instantiated through the manifest builder, not directly.
-  my $manifest = Genesis::Env::Manifest::PartialEnvironment->new($builder, $subset);
+  my $manifest = $builder->partial_environment();
 
   # Access the merged data or file path.
   my $data = $manifest->data();

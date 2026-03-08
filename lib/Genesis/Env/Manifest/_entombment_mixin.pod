@@ -5,7 +5,7 @@ Genesis::Env::Manifest::_entombment_mixin - Mixin providing Credhub entombment o
 =head1 DESCRIPTION
 
 This is a mixin module. It has no C<package> declaration and is included into
-consuming classes via C<require>. The methods it defines become available in
+consuming classes via C<do>. The methods it defines become available in
 the consuming class's namespace after inclusion.
 
 This mixin extends manifest classes with the ability to I<entomb> secrets: it

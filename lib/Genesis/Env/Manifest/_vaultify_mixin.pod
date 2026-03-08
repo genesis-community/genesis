@@ -91,14 +91,16 @@ C<get_vault_paths> method. Recognised options include C<notify>.
 =back
 
 B<Returns:> A hashref whose keys are C<"path:key"> strings identifying every
-Vault secret referenced by the manifest, combining the parent class's paths
-with any additional paths discovered through vaultification. Returns only the
-parent result if no vaultified data can be produced.
+Vault secret referenced by the manifest, with values being arrayrefs of
+reference-location strings describing where each path is used. Combines the
+parent class's paths with any additional paths discovered through
+vaultification. Returns only the parent result if no vaultified data can be
+produced.
 
 B<Examples:>
 
     my $paths = $manifest->get_vault_paths(notify => 0);
-    # Returns: { 'secret/env/deployment:value' => 1, ... }
+    # Returns: { 'secret/env/deployment:value' => ['instance_groups.cell.jobs...'], ... }
 
 =head2 vaultify
 
@@ -256,7 +258,7 @@ B<Examples:>
 
 =head2 merge_vaultified_manifest
 
-    my ($data, $file, $errors, $warnings) = $obj->merge_vaultified_manifest(%opts);
+    my ($data, $file, $warnings, $errors) = $obj->merge_vaultified_manifest(%opts);
 
 Performs the Spruce merge that resolves Vault operators in the vaultified
 manifest. Merges the consuming object together with the file produced by
@@ -284,19 +286,19 @@ B<Returns:> A four-element list:
 
 =item * C<$file> - The path to the file containing the merged output.
 
-=item * C<$errors> - An arrayref of error strings from the merge, or C<undef>.
+=item * C<$warnings> - A string of warning messages from the merge, or C<undef>.
 
-=item * C<$warnings> - An arrayref of warning strings from the merge, or C<undef>.
+=item * C<$errors> - A string of error messages from the merge, or C<undef>.
 
 =back
 
 B<Examples:>
 
-    my ($data, $file, $errors, $warnings) = $manifest->merge_vaultified_manifest;
+    my ($data, $file, $warnings, $errors) = $manifest->merge_vaultified_manifest;
     # Returns: ($data_hashref, '/tmp/merged.yml', undef, undef)
 
     # With a custom merge environment (as used by VaultifiedEntombed):
-    my ($data, $file, $errors, $warnings) = $manifest->merge_vaultified_manifest(
+    my ($data, $file, $warnings, $errors) = $manifest->merge_vaultified_manifest(
         merge_env => {
             %{$self->builder->full_merge_env},
             %{$self->local_vault->env},

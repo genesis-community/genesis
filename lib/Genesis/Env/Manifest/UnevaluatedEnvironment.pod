@@ -7,7 +7,7 @@ Genesis::Env::Manifest::UnevaluatedEnvironment - Manifest built from raw environ
   use Genesis::Env::Manifest::UnevaluatedEnvironment;
 
   # Typically constructed via the manifest builder, not directly.
-  my $manifest = Genesis::Env::Manifest::UnevaluatedEnvironment->new($builder);
+  my $manifest = $builder->unevaluated_environment();
 
   # Retrieve the merged (but unevaluated) manifest data.
   my $data = $manifest->data;
