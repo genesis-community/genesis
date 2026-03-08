@@ -211,28 +211,8 @@ sub bosh_configs {
 # bosh_configs_summary - list all configs provided by this environment/kit, and their status on the director {{{
 sub bosh_configs_summary {
 	my ($env, $bosh, %options) = @_;
-
-	# This command will:
-	# - Determine which configs are provided by the environment/kit by checking
-	#   for the presence of a cloud-config and runtime-config hooks file.
-	# - List any Director configs that will also be present
-	# - List any other configs in the Director that are not provided by the
-	#   environment/kit or director itself.
-	#
-	# Longer term, we may want to inform the user of the merge order of the
-	# configs, and any potential conflicts that may arise.  We also want to
-	# provide the status of the kit's configs on the Director (current, outdated,
-	# or missing).
-	#
-	# if --local|-l is provided, we will only list the configs provided by the
-	# environment/kit, and not the Director's configs.
-
-
-	#my $bosh_configs = $bosh->configs unless $options{local};
-	my $env_configs = $env->bosh_config_names;
-
-	my $result = $env->run_hook('cloud-config');
-	#use Pry; pry();
+	print "Genesis::Commands::Bosh::bosh_configs_summary called - TO BE IMPLEMENTED\n";
+	return 1;
 }
 
 # }}}
@@ -246,8 +226,6 @@ sub bosh_configs_upload {
 sub bosh_configs_list {
 	my ($env, $bosh, %options) = @_;
 	print "Genesis::Commands::Bosh::bosh_configs_list called - TO BE IMPLEMENTED\n";
-	my %configs = $bosh->configs;
-	require Pry; Pry->pry();
 	return 1;
 }
 
