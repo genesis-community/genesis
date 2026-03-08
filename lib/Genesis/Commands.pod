@@ -78,7 +78,7 @@ Populated by C<define_command>.
 
 =head1 CONSTANTS
 
-=head3 Function-Group Constants
+B<Function-Group Constants>
 
 The following constants are hash references used as the C<function_group>
 property in C<define_command>.  Each carries C<order>, C<module>, and
@@ -137,7 +137,7 @@ Order -4.  Module C<Wip>.  Label C<Work in Progress>.
 Commands with a negative order are hidden from the default help output and
 only appear when C<--all> is passed.
 
-=head3 Option-Group Constants
+B<Option-Group Constants>
 
 Each constant represents a tier of global options that the command opts
 into.  Higher tiers are supersets of lower ones.
@@ -169,7 +169,7 @@ may interact with a BOSH director.
 
 =back
 
-=head1 FUNCTIONS
+=head1 METHODS
 
 =head2 define_command
 
@@ -909,8 +909,9 @@ B<Errors:>
 
 =item C<"--spruce-log is expected to be one of TRACE or DEBUG">
 
-Thrown via C<bail()> when the C<--spruce-log> value does not match C<debug>
-or C<trace> (case-insensitive prefix match).
+Thrown via C<bail()> when the C<--spruce-log> value does not match C<debug> or
+C<trace> (case-insensitive prefix match), indicating that no valid spruce log
+level was provided.
 
 =item C<"$path: no such file or directory">
 
@@ -1158,11 +1159,6 @@ B<Examples:>
   });
   # Returns: (nothing)
 
-=head1 INTERNAL FUNCTIONS
-
-These functions are internal to the implementation.  They may change
-without notice and should not be called directly.
-
 =head2 parse_options
 
   parse_options(\@args);
@@ -1171,6 +1167,8 @@ Parses command-line options from C<\@args> using Getopt::Long.
 Populates C<$COMMAND_OPTIONS> with the parsed option values and
 C<@COMMAND_ARGS> with the remaining positional arguments.  Removes
 consumed items from the referenced array.
+
+Not exported.  Called internally by C<prepare_command>.
 
 Constructs the option specification from the global options up to the
 command's C<option_group> level, plus the command's own C<options> and
@@ -1221,6 +1219,8 @@ Reads logging-related options (C<--log>, C<--debug>, C<--trace>,
 C<--show-stack>) from C<$COMMAND_OPTIONS>, removes them, and configures
 the C<$Logger> singleton via C<configure_log>.
 
+Not exported.  Called internally by C<prepare_command> and C<parse_options>.
+
 The resolved log level is determined in this priority order:
 
 =over 4
@@ -1246,6 +1246,8 @@ B<Returns:> Nothing.
   my $err = check_version($name, $min, '', $version, $path, $url);
 
 Checks whether a tool meets a minimum version requirement.
+
+Not exported.  Called internally by C<check_prereqs>.
 
 When C<$cmd> is provided (non-empty string), runs it to obtain a version
 string, extracts the version with C<$regex>, and finds the tool path

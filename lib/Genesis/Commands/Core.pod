@@ -23,7 +23,7 @@ and installs a new Genesis release from GitHub.  C<hack> is a developer
 inspection tool that evaluates Perl expressions, invokes object methods, or
 calls module functions against a live Genesis object graph.
 
-=head1 FUNCTIONS
+=head1 METHODS
 
 =head2 version(@fields)
 
@@ -88,8 +88,8 @@ B<Errors:>
 
 =over 4
 
-=item Calls C<bail()> with no message if any supplied field name is not in the
-valid set.  (Note: the error message is currently empty due to a known defect.)
+=item C<"Invalid version field(s): %s"> - One or more supplied field names are
+not in the valid set.  The invalid field names are listed in the message.
 
 =back
 
@@ -120,7 +120,8 @@ B<Examples:>
 
 Connectivity probe.  Prints C<PING!> to standard output and exits.
 
-Accepts no arguments.  Calls C<bail()> with usage help if any arguments are passed.
+Accepts no arguments.  Calls C<command_usage(1)> to print usage and exit with
+an error if any arguments are passed.
 
 B<Returns:> Does not return; always calls C<exit 0>.
 
@@ -146,8 +147,8 @@ After a successful install, clears the C<GENESIS_HOME>, C<GENESIS_LIB>, and
 C<GENESIS_CALLBACK_BIN> environment variables and execs the newly installed
 binary with C<version> to confirm the upgrade.
 
-Accepts no positional arguments.  Calls C<bail()> with usage help if any
-positional arguments are passed.
+Accepts no positional arguments.  Calls C<command_usage(1)> to print usage
+and exit with an error if any positional arguments are passed.
 
 B<Options> (read from the command-line options hash):
 
@@ -162,7 +163,8 @@ executable is no longer available.
 =item C<--check>
 
 Report whether an update is available without installing it.  Exits 0 when
-already at the latest version; exits 1 when no matching version can be found.
+already at the latest version; exits 1 when no matching version can be found
+or the requested version is unavailable.
 
 =item C<--pre>
 
@@ -178,8 +180,9 @@ Skip the interactive confirmation prompt and install without asking.
 
 =back
 
-B<Returns:> Does not return; always calls C<exit 0> on success or C<exec>s
-the new binary.
+B<Returns:> Does not return.  In C<--check> mode, exits 0 on success or 1 on
+failure.  Otherwise, calls C<exit 0> after printing release information, or
+execs the newly installed binary to verify the upgrade.
 
 B<Errors:>
 
@@ -316,9 +319,8 @@ caught exception.
 A closing parenthesis was encountered before a method name was set.
 
 =item C<"Improperly formatted expression: expecting a -> operator, but found '%s'"> -
-A C<-E<gt>> token appeared where a C<-E<gt>> was not expected.  (Note: the
-C<%s> placeholder is present in the format string but no value is substituted,
-due to a known defect.)
+A token appeared where a C<-E<gt>> operator was expected.  The C<%s> is the
+unexpected token.
 
 =item C<"Improperly formatted expression: unexpected argument '%s' while waiting for %s"> -
 An argument token appeared while the parser was not expecting one.  The first
@@ -328,9 +330,8 @@ C<%s> is the unexpected token; the second is the parser state description.
 An opening parenthesis appeared while the parser expected a method name.
 The C<%s> is the parser state description.
 
-=item C<"Improperly formatted expression: unexpected opening parenthesis while waiting for argment"> -
+=item C<"Improperly formatted expression: unexpected opening parenthesis while waiting for argument"> -
 An opening parenthesis appeared while an argument was already being collected.
-(Note: "argment" is a typo in the source for "argument".)
 
 =back
 
@@ -357,8 +358,12 @@ B<Examples:>
 L<Genesis::Commands>, L<Genesis::Top>, L<Genesis::Env>,
 L<Service::Github>
 
-=head1 AUTHOR
+=head1 AUTHORS
 
-FiveTwenty, LLC
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
 
 =cut

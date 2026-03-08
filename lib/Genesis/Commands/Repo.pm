@@ -28,9 +28,9 @@ sub init {
 	my $abs_target;
 	my $kit_desc = "";
 	my $kit_path = undef;
-	if (exists($options{kits_path})) {
+	if (exists($options{'kits-path'})) {
 		$kit_path = abs_path($options{'kits-path'}//$ENV{HOME}.'/.genesis/kits');
-		mkdir_or_fail ($abs_target) unless -d $kit_path;
+		mkdir_or_fail ($kit_path) unless -d $kit_path;
 		delete($options{'kits-path'});
 	}
 	if ($options{'link-dev-kit'}) {

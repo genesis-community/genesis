@@ -27,6 +27,9 @@ sub version {
 		@check_args{@valid_args} = (1) x scalar(@valid_args);
 		my @bad_args = grep {! $check_args{$_}} @_;
 		bail(
+			"Invalid version field%s: %s",
+			(scalar(@bad_args) > 1 ? 's' : ''),
+			join(', ', @bad_args)
 		)	if (@bad_args);
 	}
 
@@ -258,6 +261,7 @@ sub hack {
 				# TODO: support internal calls like $obj->method($top->method($arg));
 				bail(
 					"Improperly formatted expression: expecting a -> operator, but found '%s'",
+					$arg
 				) unless $waiting_for =~ /->/;
 				$waiting_for = 'method';
 			}
@@ -281,7 +285,7 @@ sub hack {
 					$waiting_for ? $waiting_for : 'nothing'
 				) if ($waiting_for eq 'method');
 				bail(
-					"Improperly formatted expression: unexpected opening parenthesis while waiting for argment",
+					"Improperly formatted expression: unexpected opening parenthesis while waiting for argument",
 				) if ($waiting_for eq 'arg');
 				$waiting_for = 'arg';
 				$call_ready = 0;

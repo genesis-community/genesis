@@ -83,10 +83,11 @@ exists.
 
 When the C<--print-artifact> option is set, retrieves and prints a single
 named artifact from the deployment, then exits.  When C<--fetch-artifacts-to>
-is set, downloads all deployment artifacts to the specified directory, then
-exits.  When C<--history> is set, appends the full deployment history to the
-output.  When the kit defines an C<info> hook and neither C<$timestamp> nor
-C<--history> is active, the hook is invoked after the standard output block.
+is set, downloads deployment artifacts to the specified directory and exits.
+When
+C<--history> is set, appends the full deployment history to the output.  When
+the kit defines an C<info> hook and neither C<$timestamp> nor C<--history> is
+active, the hook is invoked after the standard output block.
 
 B<Parameters:>
 
@@ -108,7 +109,7 @@ B<Errors:>
 
 =over 4
 
-=item C<"Cannot use timestamp arguement with environments that do not have deployment audit logs.  Please ensure the environment file specifies genesis.minimum_version of at least 3.1.0, and that the manifest_store is set to exodus or hybrid in the <repo>/.genesis/config file.">
+=item C<"Cannot use timestamp argument with environments that do not have deployment audit logs.  Please ensure the environment file specifies genesis.minimum_version of at least 3.1.0, and that the manifest_store is set to exodus or hybrid in the <repo>/.genesis/config file.">
 
 Raised when C<$timestamp> is given but the environment uses the C<repository>
 manifest store, which does not maintain an audit log.
@@ -395,20 +396,19 @@ B<Errors:>
 
 =over 4
 
-=item C<"This environment is configured to store manifests in the repository, which does not support deployment tracking.  Set the manifest_store in the environment's .genesis/config to exodus to move the manifests to the exodus store, or hybrid to store them in both.">
+=item C<"The 'deployments' command is not yet fully implemented.">
 
-Raised when the environment's manifest store is C<repository>.
+Currently always raised when invoking this command.
 
 =back
 
-B<Returns:> Nothing.  (Implementation is currently incomplete; the collected
-deployment entry list is not yet output.)
+B<Returns:> Nothing.  Currently bails with a not-yet-implemented message.
 
 B<Examples:>
 
-  # List deployment history for an environment:
+  # Attempt to list deployment history for an environment:
   # CLI: genesis prod-us-east deployments
-  # prints: deployment audit entries (implementation pending)
+  # bails: The 'deployments' command is not yet fully implemented.
 
 =head2 kit_manual($name)
 

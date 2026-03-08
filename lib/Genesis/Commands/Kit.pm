@@ -637,6 +637,7 @@ sub compare_kits {
 						if ($old_contents ne $contents) {
 							push @{$spec_files{$name}{$version}{errors}}, sprintf(
 								"Job spec has two different specs for job %s in version %s",
+								$name, $version
 							);
 						}
 						next if $spec_files{$name}{$version}{jobs}{$job};
@@ -905,14 +906,13 @@ sub _get_kit_releases {
 		scalar( uniq map {keys %$_} @{$release_versions->{$_}}) > 1
 	} keys %$release_versions;
 
-	return $releases, $release_versions, \%duplicate_releases;
+	return $releases, $release_versions, \%duplicate_releases, $unversioned_releases;
 }
 
 sub _get_spec_url {
 	my ($release) = @_;
 
 	my ($name, $version, $url, $repo_map) = @{$release}{qw/name version url repo/};
-	my $lookup = undef;
 	if ($url =~ m{^https?://s3(-.*)?.amazonaws.com} || $url =~ m{^https?://storage.googleapis.com}) {
 		$url = (map {$_->{repo}} grep {$_->{name} eq $name} @{$repo_map->{repos}})[0];
 		if (!$url && (my $alt_repo_map = $release->{alt_repo})) {

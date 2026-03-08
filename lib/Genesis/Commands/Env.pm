@@ -710,7 +710,7 @@ sub deploy {
 	if (my $min_size = $env->deployment_change_reason_required_size_policy) {
 		# TODO: Maybe prompt for a reason if it wasn't provided
 		bail(
-			"Cannot deploy environment #C{%s} without a reason (minimum length is %d characters)",
+			"Cannot deploy environment #C{%s} without a reason (minimum length is %d characters).\n".
 			"Please provide a reason after any options on the command line",
 			$env->name, $min_size
 		) unless length($reason//'') >= $min_size;
@@ -1116,7 +1116,7 @@ sub terminate {
 	if (my $min_size = $env->deployment_change_reason_required_size_policy) {
 		# TODO: Maybe prompt for reason if not provided?
 		bail(
-			"Cannot terminate environment #C{%s} without a reason (minimum length is %d characters).",
+			"Cannot terminate environment #C{%s} without a reason (minimum length is %d characters).\n".
 			"Please provide a reason after any options on the command line",
 			$env->name, $min_size
 		) unless length($reason//'') >= $min_size;

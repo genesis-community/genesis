@@ -549,12 +549,12 @@ Raised when no C<--compare-to> reference is given while in a deployment repo
 and no locally installed versions of the kit are found.  The C<#M{...}>
 markup highlights the kit name in terminal output.
 
-=item C<"Failed to download Genesis Kit %s">
+=item C<"Failed to download Genesis Kit #C{%s}">
 
 Raised when fetching the comparison kit from the remote provider fails.  The
 C<%s> placeholder is the C<name/version> string.
 
-=item C<"Cannot compare kit against %s -- must be a directory, tarball, or version">
+=item C<"Cannot compare kit against #C{%s} -- must be a directory, tarball, or version">
 
 Raised when C<--compare-to> is provided but is neither a valid semver, a
 directory, nor a C<.tar.gz> file.  The C<%s> placeholder is the value
@@ -603,7 +603,7 @@ entries.  Processes both C<spruce merge>-style release blocks (files
 containing a top-level C<releases:> key) and BOSH op-patch-style files
 (files containing C<path: /releases/...> entries).  Release entries with
 both a C<name> and a C<version> are indexed; entries missing either field
-are collected separately.
+are collected separately into an internal unversioned-releases map.
 
 When C<@filters> is non-empty, limits results to the release names named in
 the filter list.
@@ -624,7 +624,7 @@ release-name component (before C</>) is used for filtering.
 
 =back
 
-B<Returns:> A three-element list:
+B<Returns:> A four-element list:
 
 =over 4
 
@@ -644,15 +644,20 @@ hashrefs mapping version string to the release data hashref.
 Hashref containing only those release names that appear with more than one
 distinct version within the kit.
 
+=item C<$unversioned_releases>
+
+Hashref keyed by release name.  Each value is an arrayref of release data
+hashrefs for entries that are missing either a C<name> or C<version> field.
+
 =back
 
 B<Examples:>
 
-  my ($releases, $versions, $dups) = _get_kit_releases($kit);
-  # Returns: ({cf-routing => {1.5.0 => {...}}}, {...}, {})
+  my ($releases, $versions, $dups, $unversioned) = _get_kit_releases($kit);
+  # Returns: ({cf-routing => {1.5.0 => {...}}}, {...}, {}, {})
 
-  my ($releases, $versions, $dups) = _get_kit_releases($kit, 'cf-routing');
-  # Returns: ({cf-routing => {1.5.0 => {...}}}, {...}, {})
+  my ($releases, $versions, $dups, $unversioned) = _get_kit_releases($kit, 'cf-routing');
+  # Returns: ({cf-routing => {1.5.0 => {...}}}, {...}, {}, {})
 
 =head2 _get_spec_url($release)
 

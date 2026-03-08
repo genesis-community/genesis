@@ -35,9 +35,14 @@ management (C<bosh-configs>).
 All functions load the named environment from the current directory's Genesis
 top-level and connect to Vault before performing their work.
 
+B<Note:> Several C<bosh-configs> sub-actions are stub implementations
+pending future development.  See the INTERNAL FUNCTIONS section for details.
+
 =head1 FUNCTIONS
 
 =head2 bosh($env_name, @bosh_args)
+
+  bosh($env_name, @bosh_args)
 
 Entry point for the C<genesis E<lt>envE<gt> bosh> command.  Wraps the C<bosh>
 CLI, routing through the environment's target BOSH director with all
@@ -99,14 +104,17 @@ B<Examples:>
 
 =head2 credhub($env_name, $cmd, @args)
 
+  credhub($env_name, $cmd, @args)
+
 Entry point for the C<genesis E<lt>envE<gt> credhub> command.  Executes a
 C<credhub> CLI command against the CredHub instance associated with the
 environment's BOSH director, using Genesis-managed authentication.
 
 Relative credential names (those not beginning with C</>) are automatically
 prefixed with the environment's CredHub base path, so that users do not need
-to specify full paths for commands that accept C<--name> or C<--path>/C<--prefix>
-options.  This path expansion is skipped when C<--raw> is passed.
+to specify full paths for commands that accept C<--name> or
+C<--path>/C<--prefix> options.  This path expansion is skipped when C<--raw>
+is passed.
 
 The following CredHub subcommands are blocked because Genesis manages
 authentication internally: C<login> (C<l>), C<api> (C<a>), C<logout> (C<o>).
@@ -175,6 +183,8 @@ B<Examples:>
 
 =head2 logs($env_name, @extra_args)
 
+  logs($env_name, @extra_args)
+
 Entry point for the C<genesis E<lt>envE<gt> logs> command.  Retrieves BOSH
 logs for the environment by delegating to C<< $env->bosh_logs >>.
 
@@ -214,6 +224,8 @@ B<Examples:>
   genesis my-env logs
 
 =head2 broadcast($env_name, @extra_args)
+
+  broadcast($env_name, @extra_args)
 
 Entry point for the C<genesis E<lt>envE<gt> broadcast> command.  Runs an
 arbitrary command on one or more BOSH VMs by SSHing to each matching instance
@@ -311,11 +323,17 @@ B<Examples:>
 
 =head2 bosh_configs($env_name, $action, @extra_args)
 
+  bosh_configs($env_name, $action, @extra_args)
+
 Entry point for the C<genesis E<lt>envE<gt> bosh-configs> command.  Dispatches
 to one of the C<bosh_configs_*> sub-action functions based on C<$action>.
 
 Valid actions are: C<upload>, C<list>, C<view>, C<compare>, C<delete>,
 C<summary>.  The default action (when C<$action> is omitted) is C<upload>.
+
+B<Note:> All sub-actions except the dispatcher itself are stub
+implementations pending future development.  See the INTERNAL FUNCTIONS
+section for details.
 
 B<Parameters:>
 
@@ -373,15 +391,19 @@ B<Examples:>
 These functions are internal to the implementation.  They are dispatched by
 C<bosh_configs()> and should not be called directly.
 
+B<Note:> All functions in this section are stub implementations pending
+future development.  Each prints a diagnostic message and returns C<1>.
+
 =head2 bosh_configs_summary($env, $bosh, %options)
 
-Displays a summary of BOSH configs provided by the environment or kit and
-their status on the director.  Intended to show which configs are present
-locally (cloud-config, runtime-config hooks), which are provided by the
-director itself, and which director configs are not kit-managed.
+  bosh_configs_summary($env, $bosh, %options)
 
-This function is a partial implementation.  It retrieves environment config
-names and runs the C<cloud-config> hook but does not yet produce output.
+Stub -- not yet implemented.  Intended to display a summary of BOSH
+configs provided by the environment or kit and their status on the director,
+covering which configs are present locally (cloud-config, runtime-config
+hooks), which are provided by the director itself, and which director configs
+are not kit-managed.  Currently prints a diagnostic message to stdout and
+returns C<1>.
 
 B<Parameters:>
 
@@ -401,19 +423,21 @@ Parsed command-line options hash.
 
 =back
 
-B<Returns:> Returns nothing (C<undef>) in its current partial state.
+B<Returns:> Returns C<1> (stub return value).
 
 B<Examples:>
 
   # Dispatched internally by bosh_configs():
-  # Returns: undef (partial implementation)
+  # Returns: 1
   bosh_configs_summary($env, $bosh, %options);
 
 =head2 bosh_configs_upload($env, $bosh, %options)
 
-Stub -- not yet implemented.  Intended to upload BOSH configs from the
-environment to the director.  Currently prints a diagnostic message and
-returns C<1>.
+  bosh_configs_upload($env, $bosh, %options)
+
+Stub -- not yet implemented.  Intended to upload BOSH configs from
+the environment to the director.  Currently prints a diagnostic message to
+stdout and returns C<1>.
 
 B<Parameters:>
 
@@ -443,9 +467,10 @@ B<Examples:>
 
 =head2 bosh_configs_list($env, $bosh, %options)
 
-Stub -- not yet implemented.  Intended to list BOSH configs on the director.
-Currently prints a diagnostic message and invokes an interactive Pry debugger
-session before returning C<1>.
+  bosh_configs_list($env, $bosh, %options)
+
+Stub -- not yet implemented.  Intended to list BOSH configs on the
+director.  Currently prints a diagnostic message to stdout and returns C<1>.
 
 B<Parameters:>
 
@@ -475,8 +500,11 @@ B<Examples:>
 
 =head2 bosh_configs_view($env, $bosh, %options)
 
-Stub -- not yet implemented.  Intended to display the content of a specific
-BOSH config.  Currently prints a diagnostic message and returns C<1>.
+  bosh_configs_view($env, $bosh, %options)
+
+Stub -- not yet implemented.  Intended to display the content of a
+specific BOSH config.  Currently prints a diagnostic message to stdout and
+returns C<1>.
 
 B<Parameters:>
 
@@ -506,9 +534,11 @@ B<Examples:>
 
 =head2 bosh_configs_compare($env, $bosh, %options)
 
-Stub -- not yet implemented.  Intended to compare BOSH configs between the
-environment and the director.  Currently prints a diagnostic message and
-returns C<1>.
+  bosh_configs_compare($env, $bosh, %options)
+
+Stub -- not yet implemented.  Intended to compare BOSH configs
+between the environment and the director.  Currently prints a diagnostic
+message to stdout and returns C<1>.
 
 B<Parameters:>
 
@@ -538,8 +568,10 @@ B<Examples:>
 
 =head2 bosh_configs_delete($env, $bosh, %options)
 
-Stub -- not yet implemented.  Intended to delete a BOSH config from the
-director.  Currently prints a diagnostic message and returns C<1>.
+  bosh_configs_delete($env, $bosh, %options)
+
+Stub -- not yet implemented.  Intended to delete a BOSH config from
+the director.  Currently prints a diagnostic message to stdout and returns C<1>.
 
 B<Parameters:>
 

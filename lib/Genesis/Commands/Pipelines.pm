@@ -157,7 +157,7 @@ sub ci_pipeline_deploy {
 			_commit_changes(
 				$ENV{WORKING_DIR}, $ENV{OUT_DIR}, $ENV{GIT_BRANCH},
 				"pushing state file for $ENV{CURRENT_ENV} after failed deploy",
-				qr{^.genesis/manifest/.*\.state$}
+				qr{^\.genesis/manifest/.*\.state$}
 			);
 		}
 		exit 1;
