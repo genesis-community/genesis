@@ -572,8 +572,8 @@ sub parse {
 
 	%envs = (); # we'll reuse envs for auto environment de-duplication
 	for my $pattern (@auto) {
-		my $regex = $pattern;
-		$regex =~ s/\*/.*/g;
+		my $regex = quotemeta($pattern);
+		$regex =~ s/\\\*/.*/g;
 		$regex = qr/^$regex$/;
 
 		my $n = 0;
