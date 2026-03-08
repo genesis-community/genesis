@@ -64,7 +64,7 @@ B<Examples:>
 
 =head1 SEE ALSO
 
-L<Genesis::Commands>, L<Genesis::Commands::Kits>
+L<Genesis::Commands>, L<Genesis::Commands::Kit>
 
 =head1 AUTHOR
 
