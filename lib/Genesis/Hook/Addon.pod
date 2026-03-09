@@ -1,0 +1,378 @@
+=encoding UTF-8
+
+=head1 NAME
+
+Genesis::Hook::Addon - Hook implementation for Genesis kit addon subcommands
+
+=head1 SYNOPSIS
+
+    package Genesis::Hook::Addon::my_kit;
+    use parent 'Genesis::Hook::Addon';
+
+    sub perform {
+        my ($self) = @_;
+
+        my $script = $self->{script};
+
+        if ($script eq 'rotate-creds') {
+            # handle the rotate-creds addon subcommand
+            $self->vault->rotate($self->env->name . '/creds');
+            $self->done(1);
+        } else {
+            $self->kit_bug("Unknown addon script: %s", $script);
+        }
+    }
+
+    sub cmd_details {
+        return "Rotate all credentials for this deployment.";
+    }
+
+    1;
+
+=head1 DESCRIPTION
+
+C<Genesis::Hook::Addon> is the base class for addon hook implementations in
+Genesis kits. Addon hooks respond to C<genesis do E<lt>envE<gt> E<lt>cmdE<gt>>
+invocations and can implement one or more subcommands.
+
+An addon hook receives the name of the subcommand to run via
+C<< $self->{script} >> and any additional arguments via C<< $self->{args} >>.
+Kit authors subclass C<Genesis::Hook::Addon> and implement the C<perform>
+method to dispatch on C<< $self->{script} >>.
+
+The standard pattern for a multi-command addon is to keep all subcommands in
+C<hooks/addon.pm> and dispatch within C<perform>. Alternatively, individual
+subcommands may be placed in separate files named
+C<hooks/addon-E<lt>cmdE<gt>.pm>, each implementing their own C<perform> method.
+Both Perl module and shell script forms of per-command addon files are
+supported; if both C<hooks/addon-E<lt>cmdE<gt>.pm> and
+C<hooks/addon-E<lt>cmdE<gt>> exist, the Perl module takes precedence.
+
+The class also provides C<help>, which enumerates all available addon
+subcommands by querying each addon file's C<cmd_details> method (for Perl
+modules) or running the script with a C<help> argument (for shell scripts).
+If C<init> is called with C<help =E<gt> 1> in C<%opts>, C<help> is invoked
+automatically and the process exits before C<perform> is reached.
+
+This class inherits all hook infrastructure from L<Genesis::Hook>, including
+environment access, feature detection, BOSH and vault integration, and YAML
+merge utilities.
+
+=head1 METHODS
+
+=head2 init
+
+    my $hook = Genesis::Hook::Addon->init(%opts);
+
+Constructs and returns a new addon hook object. Delegates to the parent
+C<init> method after validating that the required keys are present.
+If C<$opts{help}> is true, calls C<help> immediately and exits the process
+before returning.
+
+B<Parameters:>
+
+=over 4
+
+=item C<%opts>
+
+Key-value pairs passed to the hook constructor. The following keys are
+required:
+
+=over 4
+
+=item C<env>
+
+B<(required)> A C<Genesis::Env> object for the deployment being operated on.
+
+=item C<kit>
+
+B<(required)> The C<Genesis::Kit> object for the kit providing this hook.
+
+=item C<script>
+
+B<(required)> The name of the addon subcommand being invoked (e.g.,
+C<'rotate-creds'>).
+
+=item C<args>
+
+B<(required)> An array reference of additional command-line arguments passed
+after the subcommand name.
+
+=item C<help>
+
+B<(optional)> If true, C<help> is called immediately and the process exits
+before C<perform> is reached.
+
+=back
+
+=back
+
+B<Returns:> A blessed C<Genesis::Hook::Addon> object (or subclass instance).
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Missing required arguments for a perl-based kit hook call: %s"> -- raised
+via C<bug()> if any of C<env>, C<kit>, C<script>, or C<args> are absent from
+C<%opts>. C<%s> is replaced with the comma-separated list of missing argument
+names.
+
+=back
+
+B<Examples:>
+
+    my $hook = Genesis::Hook::Addon->init(
+        env    => $env,
+        kit    => $kit,
+        script => 'rotate-creds',
+        args   => [],
+    );
+    # Returns: a blessed Genesis::Hook::Addon object
+
+    # With help flag -- prints help and exits
+    my $hook = Genesis::Hook::Addon->init(
+        env    => $env,
+        kit    => $kit,
+        script => 'rotate-creds',
+        args   => [],
+        help   => 1,
+    );
+    # Returns: never (process exits after printing help)
+
+=head2 help
+
+    $hook->help;
+    $hook->help(%addons);
+
+Displays help text for the available addon subcommands defined by the kit.
+
+If the hook object defines a C<cmd_details> method and it returns a plain
+string, that string is printed and the method returns immediately. If
+C<cmd_details> returns a hash reference (mapping command names to
+descriptions), those entries are merged into the C<%addons> accumulator
+instead and processing continues.
+
+The method then scans for extended addon files in the kit's C<hooks/>
+directory matching C<addon-*>. For each matching Perl module
+(C<addon-E<lt>cmdE<gt>.pm>), the module is loaded and its C<cmd_details>
+result is collected. For each matching shell script (C<addon-E<lt>cmdE<gt>>),
+the script is invoked with a C<help> argument and its output is captured.
+Perl module files take precedence over shell scripts when both exist for the
+same command name.
+
+After all sources are gathered, the combined set of commands and descriptions
+is printed to standard error in sorted order. If no addon subcommands are
+found, a message indicating the kit defines no addons is printed instead.
+
+B<Parameters:>
+
+=over 4
+
+=item C<%addons>
+
+B<(optional)> An initial map of command names to description strings. Callers
+may pre-populate this to inject additional entries before the kit sources are
+scanned. Defaults to an empty hash.
+
+=back
+
+B<Returns:> C<1> after printing help for a single-command hook (when
+C<cmd_details> returns a plain string). C<0> if no addons are defined for
+the kit. The result of C<done(1)> after printing the multi-command addon
+listing.
+
+B<Examples:>
+
+    $hook->help;
+    # Returns: prints addon help to STDERR; returns done(1) or 0
+
+    # Pre-populate an extra command entry
+    $hook->help('extra-cmd' => 'Description of extra-cmd.');
+    # Returns: prints combined help including 'extra-cmd'
+
+=head2 parse_options
+
+    my %opts  = $hook->parse_options(\@opt_defn, %defaults);
+    my $href  = $hook->parse_options(\@opt_defn, %defaults);
+
+Parses command-line options from C<< $self->{args} >> using
+C<GetOptionsFromArray> from the Getopt::Long CPAN module. The parser
+configuration is set to C<no_ignore_case>, C<bundling>, C<no_pass_through>,
+C<auto_abbrev>, and C<permute> before parsing.
+
+Unknown options (any remaining element in C<< $self->{args} >> that begins
+with C<->) trigger a fatal error after parsing completes.
+
+B<Parameters:>
+
+=over 4
+
+=item C<\@opt_defn>
+
+B<(required)> An array reference of option specification strings in
+Getopt::Long format (e.g., C<['verbose|v', 'output|o=s']>).
+
+=item C<%defaults>
+
+B<(optional)> Initial values for the options hash. Keys that are not
+overridden by command-line arguments retain their default values.
+
+=back
+
+B<Returns:>
+
+In list context, returns the parsed options as a flat C<%opts> hash.
+
+In scalar context, returns a reference to the parsed options hash.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Error parsing command line arguments"> -- raised via C<bail()> if
+C<GetOptionsFromArray> fails (e.g., a required option argument is missing or
+an option string is unrecognized by the parser).
+
+=item *
+
+C<"Unknown option(s) passed to %s: %s"> -- raised via C<bail()> if any
+element remaining in C<< $self->{args} >> after parsing begins with C<->.
+The first C<%s> is the hook's label and the second is the comma-separated
+list of unrecognized option strings.
+
+=back
+
+B<Examples:>
+
+    # List context -- returns flat hash
+    my %opts = $hook->parse_options(
+        ['verbose|v', 'output|o=s'],
+        output => 'default.txt',
+    );
+    # Returns: (verbose => undef, output => 'default.txt') if no flags passed
+
+    # Scalar context -- returns hash reference
+    my $opts = $hook->parse_options(['dry-run|n']);
+    # Returns: { 'dry-run' => undef } if --dry-run was not in $self->{args}
+
+=head2 vault
+
+    my $vault = $hook->vault;
+
+Returns the vault service object for the environment's secrets store. The
+result is cached on the hook after the first call.
+
+B<Returns:> The vault service object from C<< $self->env->secrets_store->service >>.
+
+B<Examples:>
+
+    my $vault = $hook->vault;
+    $vault->get($hook->env->name . '/db/password');
+    # Returns: the cached vault service object
+
+=head2 results
+
+    my $result = $hook->results;
+
+Returns C<1> unconditionally, indicating that addon hooks always report a
+successful result. This overrides the C<Genesis::Hook> base class
+implementation, which returns the value stored by C<done>.
+
+B<Returns:> C<1>
+
+B<Examples:>
+
+    my $r = $hook->results;
+    # Returns: 1
+
+=head1 ABSTRACT METHODS
+
+The following method must be implemented by every concrete addon hook
+subclass. It is not implemented in this base class.
+
+=head2 perform
+
+    $hook->perform;
+
+Carries out the addon subcommand identified by C<< $self->{script} >>. The
+implementation should dispatch on C<< $self->{script} >>, execute the
+appropriate logic, and call C<< $self->done >> before returning.
+
+Additional command-line arguments are available via C<< $self->{args} >>
+and may be parsed with C<parse_options>.
+
+B<Returns:> Whatever value is passed to C<done>, made available via
+C<results>.
+
+B<Examples:>
+
+    sub perform {
+        my ($self) = @_;
+        my $script = $self->{script};
+        if ($script eq 'rotate-creds') {
+            $self->vault->rotate($self->env->name . '/creds');
+            $self->done(1);
+        } else {
+            $self->kit_bug("Unknown addon script: %s", $script);
+        }
+    }
+    # Returns: nothing (done() handles the result)
+
+=head1 OVERRIDE POINTS
+
+The following method may optionally be implemented by subclasses to provide
+help text for the addon.
+
+=head2 cmd_details
+
+    my $text = $hook->cmd_details;
+    my $hash = $hook->cmd_details;
+
+Returns help text for the addon subcommand(s). This method is not defined in
+the base class; the base class checks for its existence via C<can()> before
+calling it.
+
+If the hook file is C<hooks/addon.pm> (the primary multi-command addon), this
+method may return either a plain string (description of the single command) or
+a hash reference mapping subcommand names to their descriptions.
+
+If the hook file is a named subcommand file (e.g., C<hooks/addon-rotate.pm>),
+this method must return a plain string, since named subcommand files represent
+a single command each.
+
+B<Returns:>
+
+A plain string description, or a hash reference mapping command names to
+description strings (C<hooks/addon.pm> only).
+
+B<Examples:>
+
+    # Single-command hook (hooks/addon-rotate.pm):
+    sub cmd_details {
+        return "Rotate all credentials for this deployment.";
+    }
+    # Returns: 'Rotate all credentials for this deployment.'
+
+    # Multi-command hook (hooks/addon.pm):
+    sub cmd_details {
+        return {
+            'rotate-creds' => 'Rotate all credentials for this deployment.',
+            'smoke-test'   => 'Run smoke tests against the deployed environment.',
+        };
+    }
+    # Returns: { 'rotate-creds' => '...', 'smoke-test' => '...' }
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut
