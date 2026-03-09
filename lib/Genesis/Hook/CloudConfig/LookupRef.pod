@@ -1,0 +1,156 @@
+=encoding UTF-8
+
+=head1 NAME
+
+Genesis::Hook::CloudConfig::LookupRef - Base class for cloud config value lookup references
+
+=head1 SYNOPSIS
+
+    use Genesis::Hook::CloudConfig::LookupRef;
+
+    # Create a lookup reference for a single path with a default
+    my $ref = Genesis::Hook::CloudConfig::LookupRef->new(
+        'meta.network',
+        'default-network',
+    );
+
+    # Create a lookup reference that searches multiple paths
+    my $ref = Genesis::Hook::CloudConfig::LookupRef->new(
+        ['meta.network', 'params.network'],
+        undef,
+    );
+
+    # Resolve the reference against a config data structure
+    my $value = $ref->resolve($config);
+    # Returns: the first matching value found, or the default
+
+=head1 DESCRIPTION
+
+C<Genesis::Hook::CloudConfig::LookupRef> is the base class for deferred value
+lookup references used in cloud config generation. A lookup reference
+encapsulates one or more dot-notation paths and an optional default value.
+When resolved, it walks the paths in order against a provided config data
+structure and returns the first value found, or the default if none match.
+
+Lookup references are created by cloud config hooks to represent values that
+should be drawn from the environment's manifest or params at resolution time,
+rather than being fixed at construction time. The subclasses
+C<Genesis::Hook::CloudConfig::LookupNetworkRef> and
+C<Genesis::Hook::CloudConfig::LookupSubnetRef> extend this base class with
+network- and subnet-specific resolution logic.
+
+=head1 METHODS
+
+=head2 new
+
+    my $ref = Genesis::Hook::CloudConfig::LookupRef->new($paths, $default);
+
+Constructs a new lookup reference. If C<$paths> is a plain string, it is
+wrapped in an array reference automatically.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$paths>
+
+A dot-notation path string (e.g., C<'meta.network'>) or an array reference
+of path strings to search in order. If a plain string is given, it is
+stored as a single-element array.
+
+=item C<$default>
+
+B<(optional)> The value to return from C<resolve> if none of the paths
+match in the config data structure. May be C<undef>.
+
+=back
+
+B<Returns:> A blessed C<Genesis::Hook::CloudConfig::LookupRef> object.
+
+B<Examples:>
+
+    # Single path with a default
+    my $ref = Genesis::Hook::CloudConfig::LookupRef->new('meta.network', 'default-net');
+    # Returns: a LookupRef object
+
+    # Multiple paths, no default
+    my $ref = Genesis::Hook::CloudConfig::LookupRef->new(
+        ['meta.network', 'params.network'],
+        undef,
+    );
+    # Returns: a LookupRef object
+
+=head2 paths
+
+    my @paths = $ref->paths;
+
+Returns the list of dot-notation lookup paths stored on this reference.
+
+B<Returns:> A list of path strings.
+
+B<Examples:>
+
+    my $ref = Genesis::Hook::CloudConfig::LookupRef->new(
+        ['meta.network', 'params.network'],
+        undef,
+    );
+    my @paths = $ref->paths;
+    # Returns: ('meta.network', 'params.network')
+
+=head2 default
+
+    my $default = $ref->default;
+
+Returns the default value stored on this reference. This value is passed to
+C<struct_lookup> as the fallback when none of the paths match.
+
+B<Returns:> The default value, or C<undef> if none was given to C<new>.
+
+B<Examples:>
+
+    my $ref = Genesis::Hook::CloudConfig::LookupRef->new('meta.network', 'default-net');
+    my $d = $ref->default;
+    # Returns: 'default-net'
+
+=head2 resolve
+
+    my $value = $ref->resolve($config);
+
+Resolves the lookup reference against C<$config> by calling C<struct_lookup>
+with the stored paths and default. Returns the first matching value found
+in C<$config>, or the default value if none of the paths match.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$config>
+
+A hash reference (or nested data structure) representing the config to
+search. Typically the environment's manifest params or a similar structured
+data source.
+
+=back
+
+B<Returns:> The resolved value from C<$config>, or the default value passed
+to C<new> if no path matched.
+
+B<Examples:>
+
+    my $ref = Genesis::Hook::CloudConfig::LookupRef->new('meta.network', 'default-net');
+
+    my $value = $ref->resolve({ meta => { network => 'prod-net' } });
+    # Returns: 'prod-net'
+
+    my $value = $ref->resolve({});
+    # Returns: 'default-net'
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut
