@@ -4,7 +4,7 @@ use warnings;
 
 use base "Genesis::Secret";
 
-use Genesis qw(run bug);
+use Genesis qw(run bug debug);
 
 ### Construction arguments {{{
 # size:  <positive integer>
@@ -132,6 +132,7 @@ sub _validate_value {
 # __get_safe_command_for_generate - get command components to add or rotate secret {{{
 sub __get_safe_command_for_generate {
 	my ($self, $action, %opts) = @_;
+	debug("%s __get_safe_command_for_generate: unconsumed opts: %s", ref($self), join(', ', sort keys %opts)) if %opts;
 	my @cmd = ('ssh', $self->get('size'), $self->full_path);
 	push(@cmd, '--no-clobber') if $action eq 'add' || $self->get(fixed => 0);
 	return @cmd;

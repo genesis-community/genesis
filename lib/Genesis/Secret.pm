@@ -221,6 +221,7 @@ sub validate_value {
 
 sub get_safe_command_for {
 	my ($self, $action, %opts) = @_;
+	delete @opts{qw/level action notice/};
 	my $action_command = "_get_safe_command_for_$action";
 	return $self->$action_command(%opts) if $self->can($action_command);
 

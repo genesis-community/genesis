@@ -4,6 +4,7 @@ use warnings;
 
 use base "Genesis::Secret";
 
+use Genesis qw(debug);
 use UUID::Tiny ();
 
 ### Construction arguments {{{
@@ -134,6 +135,7 @@ sub _description {
 # __get_safe_command_for_generate - get command components to add or rotate secret {{{
 sub __get_safe_command_for_generate {
 	my ($self, $action, %opts) = @_;
+	debug("%s __get_safe_command_for_generate: unconsumed opts: %s", ref($self), join(', ', sort keys %opts)) if %opts;
 	my $uuid = $self->generate_value;
 	my ($path, $key) = split(':',$self->path);
 	my @cmd = ('set', $self->base_path.$path, "$key=$uuid");

@@ -4,6 +4,7 @@ use warnings;
 
 use base "Genesis::Secret";
 
+use Genesis qw(debug);
 use Genesis::Term qw(checkbox);
 
 ### Construction arguments {{{
@@ -201,6 +202,7 @@ sub _get_safe_command_for_remove {
 # __get_safe_command_for_generate - get command components to add or rotate secret {{{{
 sub __get_safe_command_for_generate {
 	my ($self, $action, %opts) = @_;
+	debug("%s __get_safe_command_for_generate: unconsumed opts: %s", ref($self), join(', ', sort keys %opts)) if %opts;
 	my @cmd = ('gen', $self->get('size'),);
 	my ($path, $key) = split(':',$self->path);
 	push(@cmd, '--policy', $self->get('valid_chars')) if $self->get('valid_chars');
