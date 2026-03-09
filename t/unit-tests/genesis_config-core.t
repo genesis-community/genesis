@@ -836,6 +836,17 @@ EOF
 	is($config2->get('top.branch2.leaf4'), 'value4', "another unmodified leaf in different branch preserved");
 };
 
+subtest '_load() with explicit path argument' => sub {
+	my $alt_file = "$tmp/test_alt_load.yml";
+	put_file($alt_file, "---\nalt_key: alt_value\n");
+
+	# Config object with no path of its own
+	my $config = Genesis::Config->new();
+	$config->_load($alt_file);
+
+	is($config->get('alt_key'), 'alt_value', "_load with explicit path loads from that file");
+};
+
 done_testing;
 
 # vim: ts=2 sw=2 sts=2 noet fdm=marker foldlevel=1 nu

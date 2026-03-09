@@ -344,9 +344,9 @@ sub _load {
 	$path ||= $self->{path};
 	bug("Cannot load configuration without a path") unless $path;
 
-	if ($self->exists) {
+	if (-f $path) {
 		($self->{loaded_values}, my $rc, my $err) = load_yaml_file($path);
-		debug "Loaded ".$self->{path}." - rc:$rc";
+		debug "Loaded ".$path." - rc:$rc";
 		bail("Failed to load %s: %s", $path, $err) if ($rc || ! $self->{loaded_values});
 
 		$self->{persistent_signature} = $self->_signature;
