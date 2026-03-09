@@ -612,7 +612,7 @@ the I<loaded> store. Sets the persisted signature after a successful read.
 If the file does not exist and C<autosave> is enabled, creates it by calling
 C<save()>.
 
-Modifies the object in-place (C<loaded_values>, C<persistant_signature>).
+Modifies the object in-place (C<loaded_values>, C<persistent_signature>).
 
 B<Errors:>
 
@@ -633,7 +633,7 @@ parsed. The first C<%s> is the file path and the second is the error detail.
 B<Examples:>
 
     $self->_load;
-    # Loads $self->{path} into loaded_values; sets persistant_signature on success
+    # Loads $self->{path} into loaded_values; sets persistent_signature on success
 
     $self->_load('/alternate/path.yml');
     # Loads the alternate file instead of the configured path
