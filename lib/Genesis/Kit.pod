@@ -1,100 +1,1338 @@
 =head1 NAME
 
-Genesis::Kit
+Genesis::Kit - Abstract base class for all Genesis kit types.
+
+=head1 SYNOPSIS
+
+  # Genesis::Kit is abstract; use a concrete subclass:
+  use Genesis::Kit::Compiled;
+  use Genesis::Kit::Dev;
+
+  # Typical access through a provider and constructor:
+  my ($name, $ver, $file) = $provider->fetch_kit_version('cf', 'latest', '/tmp');
+  my $kit = Genesis::Kit::Compiled->new(
+      name     => $name,
+      version  => $ver,
+      archive  => $file,
+      provider => $provider,
+  );
+
+  # Inspect kit identity and metadata
+  print $kit->id();             # prints 'cf/2.8.0'
+  print $kit->name();           # prints 'cf'
+  print $kit->version();        # prints '2.8.0'
+
+  # Check for and run hooks
+  if ($kit->has_hook('check')) {
+      $kit->run_hook('check', env => $env);
+  }
+
+  # Access kit files
+  my $hook_path = $kit->path('hooks/new');
+  my @yamls      = $kit->glob('base/*.yml');
 
 =head1 DESCRIPTION
 
-This module encapsulates all of the logic for dealing with Genesis Kits in
-the abstract.  It does not handle the concrete problems of dealing with
-tarballs (Genesis::Kit::Compiled) or dev/ directories (Genesis::Kit::Dev).
+C<Genesis::Kit> encapsulates all of the logic for dealing with Genesis kits
+in the abstract. It does not handle the concrete problems of dealing with
+tarballs (L<Genesis::Kit::Compiled>) or C<dev/> directories
+(L<Genesis::Kit::Dev>).
 
-=head1 CLASS METHODS
+A Genesis kit is a self-contained bundle of BOSH deployment configuration
+and hook scripts that know how to provision, configure, and manage a
+specific type of BOSH deployment. Kits define hooks for lifecycle events
+(C<new>, C<blueprint>, C<check>, C<pre-deploy>, C<post-deploy>, etc.) and
+carry metadata in a C<kit.yml> file.
 
-=head2 new()
+This class is abstract and cannot be instantiated directly. All usable kit
+objects are instances of one of its concrete subclasses. Subclasses must
+implement C<new>, C<id>, C<name>, C<version>, and C<extract>.
 
-This is an abstract method, placeholder for derived classes to provide their
-own constructors.
-
-=head1 INSTANCE METHODS
-
-=head2 path([$relative])
-
-Returns a fully-qualified, absolute path to a file inside the kit workspace.
-If C<$relative> is omitted, the workspace root is returned.
-
-=head2 glob($pattern)
-
-Returns the absolute paths to all files inside the kit workspace that match
-the given C<$pattern> file glob.
-
-=head2 metadata()
-
-Returns the parsed metadata from this kit's C<kit.yml> file.  This call is
-moemoized, so it only actually touches the disk once.
-
-=head2 check_prereqs()
-
-Checks the prerequisites of the kit, notably the C<genesis_version_min>
-assertion, against the executing environment.
-
-=head2 has_hook($name)
-
-Returns true if the kit has defined the given hook.
-
-=head2 run_hook($name, %opts)
-
-Executes the named hook and returns something useful to the caller.  It is
-an error if the kit does not define the kit; use C<has_hook> to avoid that.
-
-The specific composition of C<%opts>, as well as the return value / side
-effects of running a hook are wholly hook-dependent.  Refer to the section
-B<GENESIS KIT HOOKS>, later, for more detail.
-
-=head2 source_yaml_files(\@features, $absolute)
-
-Determines, by way of either C<hooks/blueprint> which kit YAML files need to be
-merged together, and returns there paths.
-
-If you pass C<$absolute> as a true value, the paths returned by this
-function will be absolutely qualified to the Kit's Top object root.  This is
-necessary for merging from a different directory (i.e. the deployment root,
-when blueprint is going to return paths relative to the kit working space).
-
-If C<\@features> is omitted, it defaults to the empty arrayref, C<[]>.
-
-=head1 GENESIS KIT HOOKS
-
-Genesis defines the following hooks:
+=head1 METHODS
 
 =head2 new
 
-Provisions a new environment, by interrogating the environment or asking the
-operator for information.
+  my $kit = SubClass->new($provider);
 
-=head2 blueprint
+Abstract constructor. Raises an internal error if called directly on
+C<Genesis::Kit>. Concrete subclasses provide their own constructors.
 
-Maps feature flags in an environment onto manifest fragment YAML files in
-the kit, prescribing order and augmenting feature selection with additional
-logic as needed.
+B<Parameters:>
 
-=head2 secrets
+=over 4
 
-Manages automatic generation of non-Credhub secrets that are stored in the
-shared Genesis Vault.  This hook is repoonsible for determining if secrets
-are missing (i.e. after an upgrade), adding them if they are, and rotating
-what is safe to rotate.
+=item C<$provider>
 
-=head2 info
+The kit provider object (e.g., a local cache or remote registry) that
+produced this kit. Stored for reference by subclasses.
 
-Prints out a kit-specific summary of a single environment.  This could
-include IP addresses, certificates, passwords, and URLs.
+=back
 
-=head2 addon
+B<Returns:>
 
-Executes arbitrary actions.  This allows kit authors to enrich the Genesis
-expierience in highly kit-specific ways by giving operators new commands to
-run.  For example, the BOSH kit defines a C<login> addon that sets up a BOSH
-CLI alias and authenticates to the BOSH director, transparently pulling
-secrets from the Vault.
+A blessed object of the concrete subclass. Does not return when called
+directly on C<Genesis::Kit>.
+
+B<Errors:>
+
+Dies with C<"Attempt to initialize abstract class Genesis::Kit"> if called
+directly on C<Genesis::Kit> rather than on a concrete subclass.
+
+B<Examples:>
+
+  # Incorrect - will die:
+  # my $kit = Genesis::Kit->new($provider);
+
+  # Correct - use a concrete subclass:
+  my $kit = Genesis::Kit::Compiled->new(
+      name     => 'cf',
+      version  => '2.8.0',
+      archive  => '/path/to/cf-2.8.0.tar.gz',
+      provider => $provider,
+  );
+  # Returns: a Genesis::Kit::Compiled object
+
+=head2 known_hooks
+
+  my @hooks = Genesis::Kit::known_hooks();
+  my @hooks = $kit->known_hooks();
+
+Returns the list of all hook names that Genesis recognizes. This is a
+class-level method and may be called on either the class or an instance.
+
+B<Returns:>
+
+A list of strings naming every valid Genesis hook:
+C<new>, C<feature>, C<blueprint>, C<info>, C<check>, C<pre-deploy>,
+C<post-deploy>, C<terminate>, C<edit>, C<shell>, C<addon>,
+C<cloud-config>, C<cpi-config>, C<features>, and C<runtime-config>.
+
+B<Examples:>
+
+  my @hooks = Genesis::Kit::known_hooks();
+  print join(', ', @hooks);
+  # Returns: new, feature, blueprint, info, check, pre-deploy, ...
+
+=head2 path
+
+  my $file = $kit->path($path);
+  my $root = $kit->path();
+
+Returns a fully-qualified, absolute path to a file inside the kit's
+extracted workspace. Calling C<extract> is triggered automatically if it
+has not already been called.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$relative>
+
+Optional. A relative path within the kit workspace (e.g., C<"hooks/new">).
+Leading slashes are stripped before joining. When omitted, the workspace
+root directory is returned.
+
+=back
+
+B<Returns:>
+
+When C<$relative> is omitted: the absolute path to the kit workspace root.
+
+When C<$relative> is provided: the absolute path formed by joining the
+workspace root with the relative path.
+
+B<Errors:>
+
+Dies with C<"self->extract did not set self->{root}!!"> if extraction
+succeeded but failed to record the workspace root on the object.
+
+B<Examples:>
+
+  my $root = $kit->path();
+  # Returns: '/tmp/genesis-kit-work-XXXXX'
+
+  my $hook = $kit->path('hooks/new');
+  # Returns: '/tmp/genesis-kit-work-XXXXX/hooks/new'
+
+=head2 glob
+
+  my @paths = $kit->glob($glob, $absolute);
+  my @paths = $kit->glob($glob);
+
+Returns the paths to all files inside the kit workspace that match the
+given file glob pattern. Calls C<extract> automatically if needed.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$pattern>
+
+A shell glob pattern relative to the kit workspace root (e.g.,
+C<"base/*.yml">). Leading slashes are stripped before matching.
+
+=item C<$absolute>
+
+Optional. When true, the glob is expanded with the workspace root
+prepended so that all returned paths are absolute. When false or omitted,
+paths are relative to the workspace root.
+
+=back
+
+B<Returns:>
+
+A list of matching file paths. When C<$absolute> is true the paths are
+absolute; otherwise they are relative to the kit workspace root.
+
+B<Errors:>
+
+Dies with C<"self->extract did not set self->{root}!!"> if the workspace
+root is not set after extraction.
+
+B<Examples:>
+
+  my @yamls = $kit->glob('base/*.yml');
+  # Returns: ('base/base.yml', 'base/params.yml', ...)
+
+  my @yamls = $kit->glob('base/*.yml', 1);
+  # Returns: ('/tmp/genesis-kit-work-XXXXX/base/base.yml', ...)
+
+=head2 has_hook
+
+  my $path = $kit->has_hook($hook, %opts);
+
+Returns the path to the hook script if the kit defines the named hook, or
+a false value if it does not. Results are cached on the object after the
+first check.
+
+For the C<cloud-config> hook, an optional C<purpose> key in C<%opts>
+selects a purpose-specific subtype (e.g., C<cloud-config-aws>). For the
+C<addon> hook, an optional C<script> key selects a named addon script.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$hook>
+
+The name of the hook to check (e.g., C<"check">, C<"blueprint">,
+C<"addon">).
+
+=item C<%opts>
+
+Optional key-value pairs:
+
+=over 4
+
+=item C<purpose>
+
+Used when C<$hook> is C<"cloud-config">. Selects the
+purpose-specific hook file, e.g., C<"hooks/cloud-config-aws">.
+
+=item C<script>
+
+Used when C<$hook> is C<"addon">. Identifies which addon script
+file to locate.
+
+=back
+
+=back
+
+B<Returns:>
+
+The absolute path to the hook script file if found, or C<undef> if the
+hook is not defined. For Perl-based hooks, C<.pm> files are included in
+the search unless C<GENESIS_NO_MODULE_HOOKS> is set in the environment.
+
+B<Examples:>
+
+  if ($kit->has_hook('check')) {
+      print "Kit defines a check hook\n";
+  }
+
+  my $path = $kit->has_hook('cloud-config', purpose => 'aws');
+  # Returns: '/tmp/.../hooks/cloud-config-aws' or undef
+
+=head2 get_addon_hook_file
+
+  my $file = $kit->get_addon_hook_file($script);
+
+Locates the addon hook file for the given script name. Returns a cached
+result on repeat calls. This method is used internally by C<has_hook> and
+C<run_hook> for addon dispatch.
+
+For the special names C<list>, C<help>, and the empty string, returns
+C<'@Genesis::Hook::Addon'> (a module reference marker) when Perl module
+hooks are enabled.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$script>
+
+The name of the addon script to find (e.g., C<"login">, C<"list">, or
+an empty string for the default addon).
+
+=back
+
+B<Returns:>
+
+The path to the matching addon hook file, the string
+C<'@Genesis::Hook::Addon'> for the built-in help/list handler, or
+C<undef> if no matching file is found.
+
+B<Examples:>
+
+  my $file = $kit->get_addon_hook_file('login');
+  # Returns: '/tmp/.../hooks/addon-login.pm' or undef
+
+  my $file = $kit->get_addon_hook_file('list');
+  # Returns: '@Genesis::Hook::Addon' (when module hooks are enabled)
+
+=head2 get_hook_module
+
+  my $module = $kit->get_hook_module($hook_file);
+
+Reads the first non-blank, non-comment line from a hook file and returns
+the package name if it is a C<Genesis::Hook::*> Perl module. Returns
+C<undef> for shell scripts or files without a recognized C<package>
+declaration.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$hook_file>
+
+Path to the hook file to inspect. If not absolute, the path is resolved
+relative to the kit workspace root via C<path()>.
+
+=back
+
+B<Returns:>
+
+The package name (e.g., C<"Genesis::Hook::Blueprint">) if the first
+substantive line of the file is a C<Genesis::Hook::*> package declaration,
+or C<undef> otherwise.
+
+B<Examples:>
+
+  my $mod = $kit->get_hook_module('hooks/blueprint.pm');
+  # Returns: 'Genesis::Hook::Blueprint' or undef
+
+=head2 run_hook
+
+  my $result = $kit->run_hook($hook, %opts);
+
+Executes the named kit hook and returns its result. This is the central
+dispatch method for all hook execution. The hook may be implemented as a
+Perl module (C<Genesis::Hook::*>) or as a shell script.
+
+The method sets a standard set of C<GENESIS_KIT_*> environment variables
+before running the hook. For most hooks the C<env> option is required to
+populate additional deployment-specific environment variables.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$hook>
+
+The name of the hook to run. Must be one of the names returned by
+C<known_hooks()>.
+
+=item C<%opts>
+
+Key-value options. The available keys depend on which hook is being run:
+
+=over 4
+
+=item C<env>
+
+A C<Genesis::Env> object. Required for the C<new>, C<info>,
+C<addon>, C<check>, C<blueprint>, C<pre-deploy>, C<post-deploy>,
+C<cloud-config>, C<cpi-config>, C<features>, and C<terminate> hooks.
+
+=item C<extra_vars>
+
+Optional hashref of additional environment variables to set when running
+the hook, in addition to those from C<env-E<gt>get_environment_variables>.
+
+=item C<eval_var_args>
+
+Optional. Passed through to the underlying shell runner for bash hooks.
+
+=item C<shell>
+
+Used with the C<shell> hook. The shell executable to invoke; defaults to
+C<"/bin/bash">.
+
+=item C<editor>
+
+Used with the C<edit> hook. The editor to open; defaults to C<$EDITOR>
+or C<vim>.
+
+=item C<script>
+
+Used with the C<addon> hook. The name of the addon script to execute.
+
+=item C<args>
+
+Used with the C<addon> and C<runtime-config> hooks. An arrayref of
+arguments to pass to the hook.
+
+=item C<purpose>
+
+Used with the C<cloud-config> hook. The cloud-config subtype to generate
+(e.g., C<"aws">).
+
+=item C<credhub_prefix>
+
+Used with the C<cpi-config> hook. The CredHub prefix for CPI config
+generation.
+
+=item C<manifest>
+
+Used with the C<pre-deploy> hook. Path to the generated manifest file.
+
+=item C<vars_file>
+
+Used with the C<pre-deploy> hook. Path to the BOSH variables file.
+
+=item C<rc>
+
+Used with the C<post-deploy> hook. The BOSH deploy exit code.
+
+=item C<data>
+
+Used with the C<post-deploy> hook. Optional pre-deploy data to make
+available to the hook.
+
+=item C<interactive>
+
+Used with the C<post-deploy> and C<runtime-config> hooks.
+
+=item C<flags>
+
+Used with the C<post-deploy> hook.
+
+=item C<features>
+
+Used with the C<features> hook. An arrayref of requested feature flags.
+Required for the C<features> hook.
+
+=item C<mode>
+
+Used with the C<terminate> hook.
+
+=item C<dryrun>
+
+Used with the C<terminate> and C<runtime-config> hooks. Defaults to C<0>.
+
+=item C<force>
+
+Used with the C<terminate> hook. Defaults to C<0>.
+
+=item C<noprompt>
+
+Used with the C<terminate> hook. Defaults to C<0>.
+
+=item C<remove>
+
+Used with the C<runtime-config> hook. Defaults to C<0>.
+
+=item C<print>
+
+Used with the C<runtime-config> hook. Defaults to C<0>.
+
+=back
+
+=back
+
+B<Returns:>
+
+The return value is hook-dependent:
+
+=over 4
+
+=item C<new>
+
+Returns C<1> on success.
+
+=item C<blueprint>
+
+Returns an arrayref of YAML file paths to merge.
+
+=item C<features>
+
+Returns an arrayref of feature flag strings.
+
+=item C<pre-deploy>
+
+Returns a two-element list: a boolean success flag and the pre-deploy data
+contents (or C<undef> if no data file was produced).
+
+=item C<addon>, C<check>
+
+Returns a boolean: C<1> on success, C<0> on failure.
+
+=item C<shell>
+
+Does not return; exits the process with the shell's exit code.
+
+=item All other hooks (Perl module-based)
+
+Returns the result of C<$hook_obj-E<gt>results()>.
+
+=item All other hooks (bash-based)
+
+Returns C<1> on success.
+
+=back
+
+B<Errors:>
+
+=over 4
+
+=item C<"No '$hook' hook script found">
+
+The named hook is not defined by this kit (and it is not the C<addon>
+hook, which is allowed to be absent).
+
+=item C<"Unrecognized hook '$hook'\n">
+
+The hook name is not in the list returned by C<known_hooks()>.
+
+=item C<"The 'env' option to run_hook is required for the '$hook' hook!!">
+
+The C<env> key was not supplied in C<%opts> for a hook that requires it.
+
+=item C<"The 'features' option to run_hook is required for the '$hook' hook!!">
+
+The C<features> key was not supplied for the C<features> hook.
+
+=item C<"Could not find addon hook for '%s' script in kit %s">
+
+The C<addon> hook file could not be located. C<%s> is the script name and
+the kit identity string.
+
+=item C<"Could not load Perl module %s to run hook %s in kit %s: %s">
+
+The Perl hook module file could not be loaded via C<require>. The four
+C<%s> placeholders are: module file path, hook name, kit identity, and
+the Perl error from C<$@>.
+
+=item C<"Could not run '%s' hook successfully!">
+
+A Perl module hook's C<perform> method returned a false value. C<%s>
+is the hook name.
+
+=item C<"Could not create new env #C{%s} (in %s): 'new' hook exited %d">
+
+The C<new> hook exited with a non-zero exit code. The placeholders are the
+environment name, the deployment root path, and the exit code.
+
+=item C<"Could not create new env #C{%s} (in %s): 'new' hook did not create #M{%1$s}">
+
+The C<new> hook exited successfully but did not create the expected
+C<E<lt>env-nameE<gt>.yml> file. The placeholders are the environment name
+and the deployment root path.
+
+=item C<"Could not determine which YAML files to merge: 'blueprint' hook exited with %d:">
+
+The C<blueprint> hook exited with a non-zero exit code. C<%d> is the exit
+code, followed by the hook's stdout output.
+
+=item C<"Could not determine which YAML files to merge: 'blueprint' specified no files">
+
+The C<blueprint> hook succeeded but produced no output.
+
+=item C<"Could not run feature hook in kit %s:">
+
+The C<features> hook exited non-zero. C<%s> is the kit identity.
+
+=item C<"Cannot continue with deployment: 'pre-deploy' hook for #C{%s} environment exited %d.">
+
+The C<pre-deploy> hook failed. The placeholders are the environment name
+and the exit code.
+
+=item C<"Could not run '%s' hook successfully - exited with %d:">
+
+A bash hook exited non-zero and produced stdout output. C<%s> is the hook
+name and C<%d> is the exit code, followed by stdout.
+
+=item C<"Could not run '%s' hook successfully - exited with %d">
+
+A bash hook exited non-zero without stdout. C<%s> is the hook name and
+C<%d> is the exit code.
+
+=back
+
+B<Examples:>
+
+  # Run the 'check' hook
+  $kit->run_hook('check', env => $env);
+
+  # Run the 'blueprint' hook and get YAML file list
+  my $files = $kit->run_hook('blueprint', env => $env);
+  # Returns: ['base/base.yml', 'base/networking.yml']
+
+  # Run the 'pre-deploy' hook
+  my ($ok, $data) = $kit->run_hook('pre-deploy',
+      env      => $env,
+      manifest => '/tmp/manifest.yml',
+      vars_file => '/tmp/vars.yml',
+  );
+  # Returns: (1, undef) on success with no pre-deploy data
+
+=head2 metadata
+
+  my $meta     = $kit->metadata(@keys);
+  my $value    = $kit->metadata($key);
+  my $all      = $kit->metadata();
+
+Returns the parsed metadata from this kit's C<kit.yml> file. The result is
+memoized so the file is only read and merged once per kit object.
+
+If environment-specific override files have been registered via
+C<apply_env_overrides()>, those files are merged on top of C<kit.yml> using
+C<spruce merge>. If the environment variable C<PREVIOUS_ENV> is set and a
+cached override file exists, that file is also merged.
+
+The C<use_create_env> field is normalized after loading: JSON booleans are
+converted to C<'yes'> or C<'no'>; string values of C<yes>, C<no>, C<allow>,
+C<true>, C<false>, C<1>, and C<0> are normalized; for kits with a
+C<genesis_version_min> of 2.8.0 or later the field defaults to C<'allow'>
+if absent.
+
+Modifies the object in-place by caching the parsed metadata on first call.
+
+B<Parameters:>
+
+=over 4
+
+=item C<@keys>
+
+Optional. When omitted, the entire metadata hashref is returned. When one
+key is given, the value for that key is returned. When multiple keys are
+given, a subset of the metadata hash selected by those keys is returned via
+C<get_opts>.
+
+=back
+
+B<Returns:>
+
+With no arguments: a hashref of all metadata.
+
+With one argument: the value of the named key, or C<undef> if absent.
+
+With multiple arguments: a hash of the selected key-value pairs.
+
+Returns an empty hashref (C<{}>) if C<kit.yml> does not exist.
+
+B<Examples:>
+
+  my $meta = $kit->metadata();
+  # Returns: { name => 'cf', version => '2.8.0', genesis_version_min => '2.7.0', ... }
+
+  my $store = $kit->metadata('secrets_store');
+  # Returns: 'vault'
+
+=head2 apply_env_overrides
+
+  $kit->apply_env_overrides(@override_files);
+
+Registers one or more YAML override files to be merged on top of
+C<kit.yml> when metadata is next loaded. Clears any previously cached
+metadata so the next call to C<metadata()> re-reads from disk.
+
+Modifies the object in-place.
+
+B<Parameters:>
+
+=over 4
+
+=item C<@override_files>
+
+One or more absolute file paths to YAML files that will be merged on top
+of C<kit.yml> using C<spruce merge>.
+
+=back
+
+B<Returns:>
+
+Nothing.
+
+B<Examples:>
+
+  $kit->apply_env_overrides('/path/to/kit-overrides.yml');
+  my $meta = $kit->metadata();
+  # Returns: merged metadata including override values
+
+=head2 env_override_files
+
+  my @files = $kit->env_override_files();
+
+Returns the list of environment-specific override files currently registered
+on this kit object via C<apply_env_overrides>.
+
+B<Returns:>
+
+A list of file paths, or an empty list if no overrides have been registered.
+
+B<Examples:>
+
+  my @files = $kit->env_override_files();
+  # Returns: ('/path/to/kit-overrides.yml') or ()
+
+=head2 secrets_store
+
+  my $store = $kit->secrets_store();
+
+Returns the name of the secrets store used by this kit, as declared in
+its C<kit.yml> metadata. Defaults to C<'vault'> when the C<secrets_store>
+field is absent or empty.
+
+B<Returns:>
+
+A string: C<'vault'>, C<'credhub'>, or whatever value the kit declares.
+Returns C<'vault'> when not specified.
+
+B<Examples:>
+
+  my $store = $kit->secrets_store();
+  # Returns: 'vault' or 'credhub'
+
+=head2 uses_credhub
+
+  my $bool = $kit->uses_credhub();
+
+Returns a true value if this kit uses CredHub as its secrets store instead
+of Vault. This is a convenience wrapper around C<secrets_store()>.
+
+B<Returns:>
+
+C<1> if C<secrets_store()> returns C<"credhub">, otherwise a false value.
+
+B<Examples:>
+
+  if ($kit->uses_credhub()) {
+      print "Kit uses CredHub\n";
+  }
+
+=head2 required_configs
+
+  my @configs = $kit->required_configs(@hooks);
+
+Returns the list of BOSH config types (e.g., C<'cloud'>) that must be
+present for the given hook operations to succeed.
+
+If no C<required_configs> key is present in C<kit.yml>, the method applies
+built-in defaults: C<'cloud'> is required for the C<blueprint>, C<manifest>,
+and C<check> (unless C<GENESIS_CONFIG_NO_CHECK> is set) hooks. The C<cloud-config>
+hook itself never requires any config.
+
+When C<required_configs> in C<kit.yml> is an arrayref, it is returned
+directly. When it is a hashref mapping config type to hook arrays, only
+the config types relevant to the given hooks are returned.
+
+B<Parameters:>
+
+=over 4
+
+=item C<@hooks>
+
+The hook names for which required configs should be determined (e.g.,
+C<'blueprint'>, C<'check'>).
+
+=back
+
+B<Returns:>
+
+A list of config type strings. May be empty.
+
+B<Examples:>
+
+  my @required = $kit->required_configs('blueprint');
+  # Returns: ('cloud')
+
+  my @required = $kit->required_configs('cloud-config');
+  # Returns: ()
+
+=head2 required_connectivity
+
+  my @conns = $kit->required_connectivity(@hooks);
+
+Returns the list of connectivity requirements that this kit declares in its
+C<kit.yml> metadata under the C<required_connectivity> key.
+
+If C<required_connectivity> is an arrayref, it is returned directly. If it
+is a hashref mapping connectivity type to hook arrays, only the types
+relevant to the given hooks are returned.
+
+B<Parameters:>
+
+=over 4
+
+=item C<@hooks>
+
+The hook names for which connectivity requirements should be evaluated. When
+omitted, all declared connectivity requirements are returned.
+
+=back
+
+B<Returns:>
+
+A list of connectivity type strings, or an empty list if no connectivity
+requirements are declared.
+
+B<Examples:>
+
+  my @conns = $kit->required_connectivity('blueprint');
+  # Returns: ('bosh', 'vault') or ()
+
+=head2 feature_compatibility
+
+  my $bool = $kit->feature_compatibility($version);
+
+Returns true if the kit's minimum required Genesis version is at least
+C<$version>. This is used to determine whether a Genesis feature that was
+introduced in a specific version is available to kits targeting that version
+or later.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$version>
+
+A semantic version string (e.g., C<"2.6.13">) representing the minimum
+Genesis version at which a feature was introduced.
+
+=back
+
+B<Returns:>
+
+A true value if the kit's C<genesis_version_min> is greater than or equal to
+C<$version>; false otherwise.
+
+B<Errors:>
+
+Dies with C<"Invalid base version provided to Genesis::Kit::feature_compatibility">
+if C<$version> is not a valid semantic version string.
+
+B<Examples:>
+
+  my $ok = $kit->feature_compatibility('2.6.13');
+  # Returns: 1 if kit targets Genesis 2.6.13+, 0 otherwise
+
+  if ($kit->feature_compatibility('2.6.13')) {
+      print "Kit supports 2.6.13+ features\n";
+  }
+
+=head2 genesis_version_min
+
+  my $ver = $kit->genesis_version_min();
+
+Returns the minimum Genesis version required to use this kit, as declared
+in its C<kit.yml> metadata under the C<genesis_version_min> key. The result
+is memoized after the first call.
+
+B<Returns:>
+
+A semantic version string (e.g., C<"2.7.0">). Returns C<"0.0.0"> when the
+kit does not declare a minimum version or the declared value is not a valid
+semantic version string.
+
+B<Examples:>
+
+  my $min = $kit->genesis_version_min();
+  # Returns: '2.7.0' or '0.0.0'
+
+=head2 check_prereqs
+
+  my $ok = $kit->check_prereqs($env);
+
+Checks that the runtime environment satisfies the kit's prerequisites.
+Verifies that the running Genesis version meets the kit's
+C<genesis_version_min> requirement and, if the kit defines a C<prereqs>
+hook, runs that hook.
+
+Emits a warning (but does not fail) when running a development version of
+Genesis that cannot be compared against the minimum version requirement.
+Emits an error message and returns false when the running Genesis version
+is too old.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$env>
+
+The C<Genesis::Env> object for the deployment environment. Passed to the
+C<prereqs> hook if one exists.
+
+=back
+
+B<Returns:>
+
+C<1> if all prerequisite checks pass, C<0> if any fail.
+
+B<Examples:>
+
+  my $ok = $kit->check_prereqs($env);
+  if (!$ok) {
+      die "Kit prerequisites not met\n";
+  }
+  # Returns: 1 on success, 0 on failure
+
+=head2 source_yaml_files
+
+  my @files = $kit->source_yaml_files($env, $absolute);
+
+Determines, by running the C<blueprint> hook, which kit YAML files need to
+be merged to produce the deployment manifest.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$env>
+
+The C<Genesis::Env> object for the deployment. Passed to the C<blueprint>
+hook.
+
+=item C<$absolute>
+
+Optional. When true, paths that are not already under the environment's
+root are converted to absolute paths under the kit workspace root. When
+false or omitted, paths are returned as the C<blueprint> hook produced them.
+
+=back
+
+B<Returns:>
+
+A list of file path strings representing the YAML files to be merged.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Kit %s is not supported by Genesis %s (no hooks/blueprint script).  ">
+
+The kit does not define a C<blueprint> hook. C<%s> is the kit identity
+and the running Genesis version.
+
+=item C<"Kit %s blueprint hook did not return a list of files to merge">
+
+The C<blueprint> hook ran successfully but the return value was not a
+valid arrayref. C<%s> is the kit identity.
+
+=back
+
+B<Examples:>
+
+  my @files = $kit->source_yaml_files($env);
+  # Returns: ('base/base.yml', 'base/networking.yml', 'addons/tls.yml')
+
+  my @files = $kit->source_yaml_files($env, 1);
+  # Returns: ('/tmp/kit-work-XXX/base/base.yml', ...)
+
+=head2 dereferenced_metadata
+
+  my $meta = $kit->dereferenced_metadata($lookup, $fatal);
+
+Returns a copy of the kit metadata with all C<${key}> parameter references
+expanded using the supplied lookup callback. The result is memoized: the
+callback is only invoked during the first call; subsequent calls return the
+cached result.
+
+Modifies the object in-place by caching the dereferenced metadata and a
+deref-miss list on first call.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$lookup>
+
+A code reference that accepts a parameter key and an optional default value
+and returns the resolved value. For example:
+C<sub { my ($key, $default) = @_; return $env->params->{$key} // $default }>.
+
+=item C<$fatal>
+
+Optional boolean. When true, the method dies if any C<${key}> references
+could not be resolved. When false or omitted, unresolved references are
+left as literal C<"${key}"> strings in the returned structure.
+
+=back
+
+B<Returns:>
+
+A hashref containing a deep copy of the kit metadata with all C<${key}>
+placeholders replaced by their resolved values. Individual values within
+the hashref may be scalars, arrayrefs, or nested hashrefs depending on
+the metadata structure.
+
+B<Errors:>
+
+Dies with C<"Could not dereference the following values specified in the metadata:\n  - ">
+followed by a newline-separated list of unresolved keys when C<$fatal>
+is true and any references could not be resolved.
+
+B<Examples:>
+
+  my $meta = $kit->dereferenced_metadata(sub {
+      my ($key, $default) = @_;
+      return $env->params->{$key} // $default;
+  });
+  # Returns: metadata hashref with all ${key} references expanded
+
+=head2 requires_iaas
+
+  my $iaas = $kit->requires_iaas($env);
+
+Returns the IaaS type that this kit requires, as declared in its C<kit.yml>
+metadata under the C<requires_iaas> key.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$env>
+
+The C<Genesis::Env> object. Currently unused; accepted for API consistency.
+
+=back
+
+B<Returns:>
+
+The value of the C<requires_iaas> metadata field (e.g., C<"aws">,
+C<"vsphere">), or C<undef> if not declared.
+
+B<Examples:>
+
+  my $iaas = $kit->requires_iaas($env);
+  # Returns: 'vsphere' or undef
+
+=head2 requires_scale
+
+  my $scale = $kit->requires_scale($env);
+
+Returns the scale identifier that this kit requires, as declared in its
+C<kit.yml> metadata under the C<requires_scale> key.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$env>
+
+The C<Genesis::Env> object. Currently unused; accepted for API consistency.
+
+=back
+
+B<Returns:>
+
+The value of the C<requires_scale> metadata field (e.g., C<"small">,
+C<"production">), or C<undef> if not declared.
+
+B<Examples:>
+
+  my $scale = $kit->requires_scale($env);
+  # Returns: 'production' or undef
+
+=head2 services
+
+  my @services = $kit->services();
+
+Returns the list of services this kit provides, as declared in its
+C<kit.yml> metadata under the C<services> key.
+
+B<Returns:>
+
+A list of service name strings. When the C<services> field is an arrayref,
+its contents are returned as a flat list. When it is a scalar string, a
+single-element list is returned. Returns an empty list if the field is
+absent.
+
+B<Examples:>
+
+  my @services = $kit->services();
+  # Returns: ('vault') or ('director') or ()
+
+=head2 provides_service
+
+  my $bool = $kit->provides_service($service);
+
+Returns a true value if this kit provides the named service.
+
+First checks explicit declarations in the C<services> field of C<kit.yml>.
+If no explicit declarations exist, falls back to backward-compatible
+heuristics: for C<'vault'>, checks whether the kit name equals C<'vault'>;
+for C<'director'>, checks whether the kit id starts with C<'bosh/'> or the
+C<is_bosh_director> metadata flag is set.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$service>
+
+The service name to check (e.g., C<'vault'>, C<'director'>).
+
+=back
+
+B<Returns:>
+
+A true value (count of matching declarations, or C<1>) if the kit provides
+the service, or C<0> if it does not.
+
+B<Examples:>
+
+  if ($kit->provides_service('vault')) {
+      print "Kit provides a Vault service\n";
+  }
+  # Returns: 1 or 0
+
+=head2 is_dev
+
+  my $bool = $kit->is_dev();
+
+Returns false. This base-class implementation always returns C<0>.
+Subclasses representing dev kits (C<Genesis::Kit::Dev>) override this
+method to return a true value.
+
+B<Returns:>
+
+C<0>.
+
+B<Examples:>
+
+  print $kit->is_dev();
+  # prints '0' for compiled kits; '1' for dev kits
+
+=head1 ABSTRACT METHODS
+
+Concrete subclasses must implement the following methods. Calling them on a
+C<Genesis::Kit> instance directly will raise an error or produce undefined
+behavior.
+
+=head2 id
+
+  my $id = $kit->id();
+
+Returns the identity string for this kit in the form C<"name/version">.
+
+=head2 name
+
+  my $name = $kit->name();
+
+Returns the kit name (e.g., C<"cf">).
+
+=head2 version
+
+  my $version = $kit->version();
+
+Returns the kit version string (e.g., C<"2.8.0">).
+
+=head2 extract
+
+  $kit->extract();
+
+Extracts the kit's contents to a temporary working directory. After this
+method runs, C<path()>, C<glob()>, C<has_hook()>, and related methods
+become operational. Implementations are expected to memoize this operation
+so that the extraction is performed only once.
+
+=head1 INTERNAL METHODS
+
+These methods are internal to the implementation. They may change without
+notice and should not be called directly.
+
+=head2 _deref_metadata
+
+  my $copy = $self->_deref_metadata($metadata, $lookup);
+
+Recursively walks a metadata structure (arrayref, hashref, or scalar) and
+expands all C<${key}> and C<${key||default}> placeholders by calling
+C<_dereference_param>. Returns a new deep copy with all placeholders
+replaced. Elements tagged as C<maybe:key> that resolve to a missing value
+are silently dropped from the result.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$metadata>
+
+The metadata structure to dereference. May be a hashref, arrayref, or
+scalar string.
+
+=item C<$lookup>
+
+A code reference used to resolve parameter keys. Passed through to
+C<_dereference_param>.
+
+=back
+
+B<Returns:>
+
+A new arrayref, hashref, or scalar with all C<${key}> references expanded.
+
+B<Examples:>
+
+  # Called internally by dereferenced_metadata(); not typically invoked directly.
+  my $expanded = $kit->_deref_metadata($kit->metadata, $lookup);
+  # Returns: a deep copy with all ${key} placeholders replaced
+
+=head2 _dereference_param
+
+  my $val = $self->_dereference_param($lookup, $key, $default);
+
+Resolves a single parameter key by calling C<$lookup>. Follows Spruce
+C<(( grab ... ))> indirection chains until a concrete value is found.
+Results are cached on the object to avoid redundant lookups.
+
+If the resolved value contains an unresolved C<(( vault ... ))> operator,
+the method dies with a detailed error that includes an OCFP-specific hint
+when the vault path contains C<ocfp>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$lookup>
+
+A code reference that maps a key to its value.
+
+=item C<$key>
+
+The parameter key to resolve. A C<maybe:> prefix is stripped and causes
+missing keys to be silently ignored rather than recorded as unresolved.
+
+=item C<$default>
+
+Optional default value used when the key is not found.
+
+=back
+
+B<Returns:>
+
+The resolved string value, or C<"${key}"> if the key could not be resolved
+(and C<maybe:> was not set).
+
+B<Errors:>
+
+=over 4
+
+=item C<"metadata not found\n">
+
+Raised internally when a C<maybe:key> reference cannot be resolved.
+Caught by C<_deref_metadata> and silently suppressed.
+
+=item C<"Cannot dereference kit parameter '%s' to a value because it has an unresolved\n">
+
+The resolved value contains a Vault operator that has not been interpolated.
+C<%s> is the parameter key.
+
+=back
+
+B<Examples:>
+
+  # Called internally; not typically invoked directly.
+  my $lookup = sub { my ($k,$d) = @_; return $env->params->{$k} // $d };
+  my $val = $kit->_dereference_param($lookup, 'iaas', 'vsphere');
+  # Returns: the resolved value for 'iaas', or 'vsphere' if not found
+
+=head1 GENESIS KIT HOOKS
+
+Genesis kits communicate with the Genesis CLI through hook scripts located
+in the kit's C<hooks/> directory. Hooks may be Perl modules
+(C<Genesis::Hook::*>) or shell scripts. The following hooks are defined:
+
+=head3 new
+
+Provisions a new environment by interrogating the operator for required
+configuration values and creating the initial environment YAML file.
+
+=head3 feature
+
+Declares which feature flags this kit supports.
+
+=head3 blueprint
+
+Maps feature flags onto YAML fragment files within the kit, defining which
+files are merged and in what order to produce the deployment manifest.
+
+=head3 info
+
+Prints a kit-specific summary of a deployed environment, including IP
+addresses, certificates, passwords, and service URLs.
+
+=head3 check
+
+Performs pre-deployment validation of the environment configuration.
+
+=head3 pre-deploy
+
+Runs immediately before a BOSH deployment. May produce a data file that
+is later consumed by the C<post-deploy> hook.
+
+=head3 post-deploy
+
+Runs immediately after a BOSH deployment completes, regardless of whether
+the deployment succeeded. Receives the deployment exit code and any data
+produced by C<pre-deploy>.
+
+=head3 terminate
+
+Handles cleanup and teardown of a deployed environment.
+
+=head3 addon
+
+Executes arbitrary kit-specific operator commands. Kit authors use this
+hook to provide operators with additional tools, such as C<login> commands,
+health-check scripts, and rotation utilities.
+
+=head3 cloud-config
+
+Generates a BOSH cloud config for the deployment environment. A
+purpose-specific variant (e.g., C<cloud-config-aws>) may be used when
+the kit supports multiple IaaS types.
+
+=head3 cpi-config
+
+Generates a BOSH CPI config.
+
+=head3 features
+
+Determines and returns the list of active feature flags for an environment.
+
+=head3 runtime-config
+
+Generates or manages BOSH runtime configs for the deployment.
+
+=head3 edit
+
+Opens an editor for an environment file.
+
+=head3 shell
+
+Launches an interactive shell within the kit workspace environment.
+
+=head1 SEE ALSO
+
+L<Genesis::Kit::Compiled>, L<Genesis::Kit::Dev>, L<Genesis::Base>
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
 
 =cut

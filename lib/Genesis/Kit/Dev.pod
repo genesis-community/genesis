@@ -1,50 +1,242 @@
 =head1 NAME
 
-Genesis::Kit::Dev
+Genesis::Kit::Dev - A Genesis kit loaded directly from a C<dev/> directory on disk.
+
+=head1 SYNOPSIS
+
+  use Genesis::Kit::Dev;
+
+  # Construct from a dev kit directory
+  my $kit = Genesis::Kit::Dev->new('/path/to/deployment/dev');
+
+  print $kit->id();      # prints 'my-kit/1.0.0 (dev)'
+  print $kit->name();    # prints 'dev'
+  print $kit->version(); # prints 'latest'
+  print $kit->is_dev();  # prints '1'
+
+  # Extract to a temporary workspace before accessing kit contents
+  $kit->extract();
+  my $hook_path = $kit->path('hooks/blueprint');
 
 =head1 DESCRIPTION
 
-This class represents a "dev" kit, one that exist as a directory on-disk,
-and not as a compiled tarball archive.  Kit authors use dev kits whenever
-they are updating or modifying kits, and operators may opt to use dev kits
-if they are experimenting, or working outside the capabilities of existing
-kits.
+C<Genesis::Kit::Dev> represents a Genesis kit that lives as a directory on
+disk rather than as a compiled tarball archive. Kit authors use dev kits
+when iterating on kit code: the kit is loaded directly from the C<dev/>
+directory in the deployment root, so changes take effect immediately without
+a compile step.
 
-=head1 CONSTRUCTORS
+Operators may also use dev kits when experimenting with kit modifications or
+working outside the capabilities of published kit releases.
 
-=head2 new($path)
-
-Instantiates a new dev kit, using source files in C<$path>.
-
+This class inherits from L<Genesis::Kit>, which provides methods such as
+C<path>, C<glob>, C<has_hook>, C<metadata>, and C<known_hooks>.
+Inherited methods are not re-documented here; see L<Genesis::Kit> for
+details.
 
 =head1 METHODS
 
-=head2 id()
+=head2 new
 
-Returns the identity of the dev kit, which is always C<(dev kit)>.  This is
-useful for error messages and reporting.
+  my $kit = Genesis::Kit::Dev->new($path);
 
-=head2 name()
+Creates a new C<Genesis::Kit::Dev> object backed by the kit sources at
+C<$path>. No validation of the directory contents is performed at
+construction time; the directory is read when C<extract> is first called.
 
-Returns the name of the dev kit, which is always C<dev>.
+B<Parameters:>
 
-=head2 version()
+=over 4
 
-Returns the version of the dev kit, which is always C<latest>.
+=item C<$path>
 
-=head2 kit_bug($fmt, ...)
+The path to the C<dev/> kit directory. This is typically an absolute path
+to the C<dev/> subdirectory inside a Genesis deployment repository (e.g.,
+C<"/path/to/my-deployment/dev">).
 
-Prints an error to the screen, complete with details about how the problem
-at hand is a problem with the (local) development kit.
+=back
 
-=head2 extract()
+B<Returns:>
 
-Copies the contents of the dev/ working directory to a temporary workspace,
-and installs the Genesis hooks helper script.  The copy is done to avoid
-accidental modifications to pristine dev kit sources, and to ensure that we
-can safely write the hooks helper.
+A blessed C<Genesis::Kit::Dev> object.
 
-This method is memoized; subsequent calls to C<extract> will not re-copy the
-dev/ working directory to the temporary workspace.
+B<Examples:>
+
+  my $kit = Genesis::Kit::Dev->new('/home/user/deployments/cf/dev');
+  print $kit->name();    # prints 'dev'
+  print $kit->version(); # prints 'latest'
+
+=head2 id
+
+  my $id = $kit->id();
+
+Returns the identity string for this dev kit. The string is formed from
+the C<name> and C<version> fields in C<kit.yml>, with C<(dev)> appended
+to distinguish it from compiled kits. If the metadata fields are missing
+they default to C<unknown> and C<in-development> respectively.
+
+B<Returns:>
+
+A string of the form C<"$name/$version (dev)">, for example
+C<"cf/2.8.0 (dev)">. When metadata is unavailable, returns
+C<"unknown/in-development (dev)">.
+
+B<Examples:>
+
+  my $kit = Genesis::Kit::Dev->new('/path/to/dev');
+  print $kit->id();
+  # Returns: 'cf/2.8.0 (dev)'
+
+=head2 name
+
+  my $name = $kit->name();
+
+Returns the name of this dev kit. Always returns the string C<"dev">,
+regardless of the kit's actual name in C<kit.yml>.
+
+B<Returns:>
+
+The string C<"dev">.
+
+B<Examples:>
+
+  print $kit->name();
+  # Returns: 'dev'
+
+=head2 version
+
+  my $version = $kit->version();
+
+Returns the version of this dev kit. Always returns the string C<"latest">,
+regardless of the version declared in C<kit.yml>.
+
+B<Returns:>
+
+The string C<"latest">.
+
+B<Examples:>
+
+  print $kit->version();
+  # Returns: 'latest'
+
+=head2 is_dev
+
+  my $bool = $kit->is_dev();
+
+Returns a true value indicating that this is a dev kit. This overrides
+the C<is_dev> method from L<Genesis::Kit>, which returns C<0>.
+
+B<Returns:>
+
+C<1>.
+
+B<Examples:>
+
+  print $kit->is_dev();
+  # Returns: 1
+
+  # Distinguish dev kits from compiled kits:
+  if ($kit->is_dev()) {
+      print "Running from dev/ directory\n";
+  }
+
+=head2 kit_bug
+
+  $kit->kit_bug(@msg);
+
+Reports a bug in the dev kit and terminates the process. This method is
+intended to be called when the kit behaves in a way that indicates a defect
+in the kit author's code rather than an operator configuration error.
+
+C<@msg> is passed to C<csprintf>, which treats the first element as a
+format string and the remaining elements as arguments. C<csprintf> supports
+ANSI color markup and standard C<sprintf> conversion specifiers.
+
+After the formatted message, the output always includes:
+
+  This is a bug in your dev/ kit.
+  Please contact the author(s):
+    - you
+
+The method always dies (throws an exception via C<die>). Before dying,
+C<$!> is set to 2 (C<ENOENT>). Callers that wrap this in an C<eval> block
+can inspect C<$!> to distinguish kit bugs from other fatal errors.
+
+B<Parameters:>
+
+=over 4
+
+=item C<@msg>
+
+A list whose first element is a C<csprintf>-compatible format string and
+whose remaining elements are arguments interpolated into that string. May
+contain ANSI color markup and standard C<sprintf> conversion specifiers.
+
+=back
+
+B<Returns:>
+
+Does not return. Always dies. Sets C<$!> to 2 before dying.
+
+B<Examples:>
+
+  # In a hook, signal an unexpected state in the dev kit
+  $kit->kit_bug("Unexpected feature flag '%s' encountered", $flag);
+  # prints and dies with:
+  #   Unexpected feature flag 'unknown-feature' encountered
+  #   This is a bug in your dev/ kit.
+  #   Please contact the author(s):
+  #     - you
+
+=head2 extract
+
+  $kit->extract();
+
+Copies the contents of the C<dev/> working directory to a temporary
+workspace and installs the Genesis hooks helper script. The copy is
+performed so that hook execution cannot accidentally modify the developer's
+source files, and to ensure a safe location for writing the helper.
+
+After extraction, the inherited methods C<path>, C<glob>, C<has_hook>, and
+all hook execution methods become operational.
+
+This method is memoized: the first call performs the copy and records the
+workspace path on the object. Subsequent calls return immediately without
+re-copying.
+
+Modifies the object in-place by setting the internal C<root> field on
+first call.
+
+B<Returns:>
+
+Returns C<1> on the first call (copy performed). Returns nothing (an empty
+return) on subsequent calls when the kit has already been extracted.
+
+B<Errors:>
+
+Dies with C<"Could not copy dev/ kit directory"> if the C<cp> command fails
+to copy the directory contents to the temporary workspace.
+
+B<Examples:>
+
+  $kit->extract();
+  my $hook = $kit->path('hooks/blueprint');
+  # $hook is now a valid filesystem path inside the temporary workspace
+
+  # Subsequent calls are safe and do nothing:
+  $kit->extract();
+  $kit->extract();
+
+=head1 SEE ALSO
+
+L<Genesis::Kit>, L<Genesis::Kit::Compiled>
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
 
 =cut

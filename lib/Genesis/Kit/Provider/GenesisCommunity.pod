@@ -1,63 +1,288 @@
+=encoding utf8
+
 =head1 NAME
 
-Genesis::Kit::Provider::Default
+Genesis::Kit::Provider::GenesisCommunity - Genesis Community kit provider for Genesis deployment kits
+
+=head1 SYNOPSIS
+
+  use Genesis::Kit::Provider;
+
+  # The genesis-community provider is the default; obtain it via the base class factory
+  my $provider = Genesis::Kit::Provider->new(
+      type => 'genesis-community',
+  );
+
+  # Or create one directly (no options needed — it is a singleton)
+  my $provider = Genesis::Kit::Provider::GenesisCommunity->new();
+
+  # List available kits from the Genesis Community organization
+  my @kits = $provider->kit_names();
+
+  # Fetch a specific kit version
+  my ($name, $version, $file) = $provider->fetch_kit_version(
+      'bosh', '2.3.0', '/path/to/cache', 0
+  );
 
 =head1 DESCRIPTION
 
-This class represents a compiled kit, and its distribution as a tarball
-archive.  Most operators use kits in this format.
+C<Genesis::Kit::Provider::GenesisCommunity> is a zero-configuration subclass
+of L<Genesis::Kit::Provider::Github> that hard-codes the
+C<genesis-community> organization on C<github.com> as the kit source.  It
+is the default kit provider type used by Genesis when no explicit provider
+is configured.
 
-=head1 CONSTRUCTORS
+Because the provider target is fixed, no CLI options are required or
+accepted during C<genesis init> or C<genesis update>.  Operators who need
+to point at a different Github organization should use
+L<Genesis::Kit::Provider::Github> instead.
 
-=head2 new(%opts)
-
-Instantiates a new Kit::Compiled object.
-
-The following options are recognized:
-
-=over
-
-=item name
-
-The name of the kit.  This option is B<required>.
-
-=item version
-
-The version of the kit.  This option is B<required>.
-
-=item archive
-
-The absolute path to the compiled kit tarball.  This option is B<required>.
-
-=back
-
+All kit retrieval methods (C<kit_names>, C<kit_releases>, C<kit_versions>,
+C<fetch_kit_version>, C<fetch_kit_version_src>, and C<latest_version_of>)
+are inherited from L<Genesis::Kit::Provider::Github> unchanged and behave
+identically, operating against the C<genesis-community> organization on
+C<github.com>.
 
 =head1 METHODS
 
-=head2 id()
+=head2 init (class method)
 
-Returns the identity of the kit, in the form C<$name/$verison>.  This is
-useful for error messages and reporting.
+  my $provider = Genesis::Kit::Provider::GenesisCommunity->init();
 
-=head2 name()
+Creates a new C<GenesisCommunity> provider during C<genesis init> or
+C<genesis update> when the user selects C<genesis-community> as the
+provider type.  This method accepts no options — the provider target is
+fully determined by the class itself.
 
-Returns the name of the kit.
+Delegates immediately to L</new>.
 
-=head2 version()
+B<Returns:> A new C<Genesis::Kit::Provider::GenesisCommunity> instance.
 
-Returns the version of the kit.
+B<Examples:>
 
-=head2 kit_bug($fmt, ...)
+  my $provider = Genesis::Kit::Provider::GenesisCommunity->init();
+  print $provider->organization(); # prints 'genesis-community'
 
-Prints an error to the screen, complete with details about how the problem
-at hand is not the operator's fault, and that they should file a bug against
-the kit's Github page, or contact the authors.
+=head2 new (class method)
 
-=head2 extract()
+  my $provider = Genesis::Kit::Provider::GenesisCommunity->new();
 
-Extracts the compiled kit tarball to a temporary workspace, and installs the
-Genesis hooks helper script.
+Constructs a new C<GenesisCommunity> provider with all settings
+hard-coded.  The label is set to C<'Genesis Community organization on
+Github'>, the domain to C<'github.com'>, the organization to
+C<'genesis-community'>, and TLS to C<'yes'>.
 
-This method is memoized; subsequent calls to C<extract> will have no effect.
+No configuration parameters are accepted or needed.
+
+B<Returns:> A blessed C<Genesis::Kit::Provider::GenesisCommunity> instance
+backed by an internal C<Service::Github> remote object targeting the
+C<genesis-community> organization.
+
+B<Examples:>
+
+  my $provider = Genesis::Kit::Provider::GenesisCommunity->new();
+  print $provider->label();        # prints 'Genesis Community organization on Github'
+  print $provider->domain();       # prints 'github.com'
+  print $provider->organization(); # prints 'genesis-community'
+  print $provider->tls();          # prints 'yes'
+
+=head2 opts (class method)
+
+  my @specs = Genesis::Kit::Provider::GenesisCommunity->opts();
+
+Returns the list of L<Getopt::Long> option specification strings supported
+by L</init>.  Because the C<genesis-community> provider is a singleton
+with no configurable options, this method returns an empty list.
+
+B<Returns:> An empty list.
+
+B<Examples:>
+
+  my @specs = Genesis::Kit::Provider::GenesisCommunity->opts();
+  print scalar(@specs); # prints '0'
+
+=head2 opts_help
+
+  my $text = $provider->opts_help(%config);
+
+Returns a formatted help string describing the C<genesis-community>
+provider type, for inclusion in command-line help output.  Returns an
+empty string if C<'genesis-community'> is not listed in
+C<$config{valid_types}>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<valid_types>
+
+An array reference of provider type strings that are valid in the current
+context.  The method returns C<''> unless this list contains
+C<'genesis-community'>.
+
+=back
+
+B<Returns:> A multi-line help string describing the C<genesis-community>
+provider, or an empty string if C<'genesis-community'> is not in
+C<valid_types>.
+
+B<Examples:>
+
+  my $help = $provider->opts_help(valid_types => [qw(genesis-community github)]);
+  print $help;
+  # Prints a block beginning with:
+  #   Kit Provider `genesis-community`:
+  #
+  #     This is a singleton kit provider type that points to the Genesis Community
+  #     collection of kits hosted on github.com/genesis-community ...
+
+  # Returns empty when genesis-community is not a valid type
+  my $none = $provider->opts_help(valid_types => ['github']);
+  print length($none); # prints '0'
+
+=head2 config
+
+  my %config = $provider->config();
+
+Returns a configuration hash sufficient to identify this provider type.
+Because the C<genesis-community> provider has no configurable fields, the
+hash contains only the C<type> key.
+
+B<Returns:> A hash with a single key:
+
+=over 4
+
+=item C<type>
+
+Always C<'genesis-community'>.
+
+=back
+
+B<Examples:>
+
+  my %cfg = $provider->config();
+  # %cfg = ( type => 'genesis-community' )
+  print $cfg{type}; # prints 'genesis-community'
+
+=head2 status
+
+  my %status = $provider->status($verbose);
+
+Returns a hash of provider status information suitable for display.
+Delegates connectivity checking and kit enumeration to the parent
+L<Genesis::Kit::Provider::Github/status> implementation, then replaces
+the C<type> key with C<'genesis-community'> and simplifies the C<extras>
+display list to show only the C<Source> label rather than the Github-
+specific C<Name>, C<Domain>, C<Org>, and C<Use TLS> fields.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$verbose>
+
+Optional boolean.  Passed through to the parent C<status> implementation.
+When true, the C<kits> entry in the returned hash is a hash reference
+mapping each kit name to a release count summary string (e.g.,
+C<'3 releases, 1 pre-release'>).  When false or omitted, C<kits> is an
+array reference of sorted kit name strings.
+
+=back
+
+B<Returns:> A hash with the following keys:
+
+=over 4
+
+=item C<type>
+
+Always C<'genesis-community'>.
+
+=item C<extras>
+
+Array reference C<["Source"]> listing the supplemental display key.
+
+=item C<Source>
+
+The provider label (C<'Genesis Community organization on Github'>).
+
+=item C<status>
+
+A status string: C<'ok'> when the connectivity check succeeds, or an
+error message when it fails.
+
+=item C<kits>
+
+When the check succeeds: an array reference of sorted kit names
+(non-verbose), or a hash reference mapping kit names to release summary
+strings (verbose).  C<undef> when the check fails.
+
+=back
+
+B<Examples:>
+
+  my %info = $provider->status();
+  print $info{status};          # prints 'ok' on success
+  print $info{type};            # prints 'genesis-community'
+  print $info{Source};          # prints 'Genesis Community organization on Github'
+  print scalar(@{$info{kits}}); # prints the number of available kits
+
+  my %verbose = $provider->status(1);
+  for my $kit (keys %{$verbose{kits}}) {
+      print "$kit: $verbose{kits}{$kit}\n";
+      # prints e.g. 'bosh: 5 releases, 1 pre-release'
+  }
+
+=head1 INHERITED METHODS
+
+The following methods are inherited from L<Genesis::Kit::Provider::Github>
+and behave identically, operating against the hard-coded
+C<genesis-community> organization on C<github.com>:
+
+=over 4
+
+=item C<label>
+
+=item C<remote>
+
+=item C<domain>
+
+=item C<organization>
+
+=item C<credentials>
+
+=item C<tls>
+
+=item C<check>
+
+=item C<repos_url>
+
+=item C<releases_url>
+
+=item C<base_url>
+
+=item C<kit_names>
+
+=item C<kit_releases>
+
+=item C<kit_versions>
+
+=item C<fetch_kit_version>
+
+=item C<fetch_kit_version_src>
+
+=item C<latest_version_of>
+
+=back
+
+See L<Genesis::Kit::Provider::Github> for full documentation of each
+method.
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
 
 =cut

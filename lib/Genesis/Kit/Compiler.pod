@@ -1,92 +1,676 @@
 =head1 NAME
 
-Genesis::Kit::Compiler
+Genesis::Kit::Compiler - Compile and scaffold Genesis kit source directories.
 
-=head1 DESCRIPTION
-
-The Compiler class encapsulates all of the rules and logic that go into
-compiling a kit source directory into a distributable Genesis Kit tarball.
-It includes facilities for validating the kit source, expunging files we
-don't wish to distribute (other tarballs, ci/ directories, etc.), and
-handles the naming and composition of the Kit archive.
-
-This module is fully object-oriented, and does not export any procedural
-functions or package variables.
+=head1 SYNOPSIS
 
     use Genesis::Kit::Compiler;
 
     my $cc = Genesis::Kit::Compiler->new("path/to/kit/src");
-    if (!$cc->validate) {
-      error "#R{Problems were found with your Kit source.}";
-      exit 2;
+
+    # Validate the kit source before compiling
+    if (!$cc->validate("my-kit", "1.0.0")) {
+        error "#R{Problems were found with your Kit source.}";
+        exit 2;
     }
 
-    my $v = '1.0.9';
-    $cc->compile("my-kit", , ".");
-    # file will be ./my-kit-1.0.9.tar.gz
+    # Compile to a distributable tarball
+    my $filename = $cc->compile("my-kit", "1.0.0", ".");
+    # Returns: 'my-kit-1.0.0.tar.gz'
+    # File written to: ./my-kit-1.0.0.tar.gz
+
+    # Or scaffold a new kit source directory from scratch
+    my $scaffolder = Genesis::Kit::Compiler->new("path/to/new-kit");
+    $scaffolder->scaffold("new-kit");
+
+=head1 DESCRIPTION
+
+C<Genesis::Kit::Compiler> encapsulates all of the rules and logic that go
+into compiling a kit source directory into a distributable Genesis Kit
+tarball. It includes facilities for validating the kit source, excluding
+files that should not be distributed (C<ci/> directories, C<.git/>,
+untracked files, etc.), and handles the naming and composition of the kit
+archive.
+
+It also provides a C<scaffold> method for generating a new kit source
+directory from a built-in template, giving kit authors a correct starting
+point.
+
+This module is a standalone utility. It is not a subclass of
+C<Genesis::Kit>. It does not export any procedural functions or package
+variables.
+
+B<Note:> A single C<Genesis::Kit::Compiler> instance should not be
+reused across different source directories. Several internal methods cache
+state that is only valid for the C<$root> path provided to C<new>. In
+practice this is not an issue, since Genesis uses this for the
+C<compile-kit> sub-command, which processes only one kit at a time.
 
 =head1 METHODS
 
-=head2 new($root)
+=head2 new
 
-Instantiate a new Kit Compiler, for compiling the source found in C<$root>.
+    my $cc = Genesis::Kit::Compiler->new($root);
 
-=head2 validate()
+Constructs a new kit compiler for the source directory at C<$root>. No
+filesystem operations are performed at construction time.
 
-Validate a Kit by inspecting its source code and defined metadata.
+B<Parameters:>
 
-The following validations are performed:
+=over 4
 
-=over
+=item C<$root>
 
-=item 1.
-
-All kits must have a kit.yml with valid YAML in it.
-
-=item 2.
-
-The kit.yml file must provide values for the top-level C<name>, C<author>,
-C<homepage>, and C<github> keys.
-
-=item 3.
-
-The C<hooks/> directory must exist.
-
-=item 4.
-
-Any present hooks must be executable files.
-
-=item 5.
-
-If defined, the C<genesis_min_version> value must be a valid semantic
-version.
+The path to the kit source directory to compile or scaffold.
 
 =back
 
-=head2 compile($name, $version, $outdir)
+B<Returns:>
 
-Compiles a kit source directory into a distributable tarball, of the given
-version.  Version is specified here, vs. in the kit.yml metadata, to enable
-automation of release engineering via tools like Concourse.  Compilation
-implciitly calls C<validate()> for you, so you don't need to do so
-out-of-band.
+A blessed C<Genesis::Kit::Compiler> object.
 
-The output tarball will be written to C<$outdir/$name-$version.tar.gz>, and
-will bundle all files in the archive under the relative path
-C<$name-$version/>.
+B<Examples:>
 
-=head2 scaffold($name)
+    my $cc = Genesis::Kit::Compiler->new("/home/user/cf-genesis-kit");
+    # Returns: a Genesis::Kit::Compiler object
 
-Generates a new kit source directory, populating it with (hopefully!)
-helpful scaffolding files for things like kit.yml, hooks, and manifest
-fragments.
+=head2 validate
 
-=head2 CAVEATS
+    my $ok = $cc->validate($name, $version);
 
-You cannot easily re-use one Kit Compiler to compile a different directory.
-Several internal functions cache state that is only valid for a single root
-source directory.  In practice this is not an issue, since for the most
-part Genesis just uses this for the C<compile-kit> sub-command, which only
-deals with a single Kit.
+Validates a kit source directory by inspecting its metadata, secret
+specifications, hook scripts, and Git working tree state. Prints
+descriptive error output for each problem found.
+
+As a side effect, sets an internal C<git_clean> flag on the object
+reflecting whether the working tree has uncommitted changes. The C<compile>
+method reads this flag to decide whether to update version strings in Perl
+hook files.
+
+The following checks are performed:
+
+=over 4
+
+=item 1. Root directory existence
+
+The C<$root> directory passed to C<new> must exist. If it does not, an
+error is printed and C<0> is returned immediately without further checks.
+
+=item 2. kit.yml presence and structure
+
+C<kit.yml> must exist and contain valid YAML with a map at the root. It
+must define the top-level keys C<name>, C<version>, and C<code>.
+
+=item 3. Kit name match
+
+If C<kit.yml> defines a C<name>, it must equal the C<$name> argument.
+
+=item 4. Authorship
+
+Exactly one of C<author> (scalar) or C<authors> (array) must be present.
+Both together, or neither, are errors.
+
+=item 5. Structural field types
+
+C<authors> must be an array. C<exclude_paths> must be an array when
+present. C<services> must be an array when present.
+
+=item 6. Minimum Genesis version
+
+If C<genesis_version_min> is set, it must be a valid semantic version
+(C<x.y.z>). The currently running Genesis must satisfy the minimum. An RC
+minimum version cannot be specified when compiling a non-RC kit version.
+
+=item 7. Valid top-level keys
+
+C<kit.yml> may only contain known top-level keys. The valid set depends on
+the C<secrets_store> and C<genesis_version_min> values.
+
+=item 8. Secrets specification
+
+For kits using the C<vault> secrets store (or no explicit store), all
+C<credentials>, C<certificates>, and C<provided> blocks are parsed and
+validated. Errors in the secrets plan are reported. If any error contains
+unresolved parameter references, a hint about C<ci/test_params.yml> is
+appended.
+
+=item 9. Hook scripts
+
+The C<new> and C<blueprint> hooks are required and must be present. All
+known hooks that are present must be regular files. Bash hooks must be
+executable. Perl (C<.pm>) hooks must compile without errors (checked via
+C<perl -c>).
+
+=item 10. Git working tree
+
+The Git working tree must be clean (no staged or unstaged changes).
+If uncommitted changes are found, they are listed and validation fails
+(returns C<0>). Clean the working tree via C<git stash> or C<git commit>
+before compiling.
+
+=back
+
+B<Parameters:>
+
+=over 4
+
+=item C<$name>
+
+The expected kit name. Must match the C<name> field in C<kit.yml>.
+
+=item C<$version>
+
+The version being compiled. Used to cross-check RC constraints in
+C<genesis_version_min>.
+
+=back
+
+B<Returns:>
+
+C<1> if all checks pass, C<0> if any check fails.
+
+B<Examples:>
+
+    if ($cc->validate("cf", "2.8.0")) {
+        print "Kit source is valid\n";
+        # Returns: 1
+    } else {
+        print "Validation failed\n";
+        # Returns: 0
+    }
+
+=head2 compile
+
+    my $filename = $cc->compile($name, $version, $outdir, %opts);
+    my $filename = $cc->compile($name, $version, $outdir, force => 1);
+
+Compiles the kit source directory into a gzip-compressed tar archive and
+writes it to C<$outdir>. Validation is run implicitly before compilation.
+
+When the Git working tree is clean and C<skip-version-updates> is not set,
+the following preparatory steps are performed before archiving:
+
+=over 4
+
+=item *
+
+The C<version:> field in C<kit.yml> is updated to C<$version>.
+
+=item *
+
+The C<package> declaration line in each C<hooks/*.pm> Perl file is rewritten
+to use the correct versioned package name (e.g.,
+C<"Genesis::Hook::New::CF v2.8.0">).
+
+=item *
+
+The modified files are staged and an interactive C<git commit> editor is
+opened, pre-populated with a commit message template.
+
+=back
+
+If the working tree has uncommitted changes, or if C<skip-version-updates>
+is set, these updates are skipped with a warning.
+
+All files are collected from the source tree (see L</_select_files>) and
+bundled under a top-level directory named C<$name-$version/> inside the
+archive. Ownership metadata is normalized to a placeholder value.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$name>
+
+The kit name (e.g., C<"cf">). Used to name the output file and the
+archive's internal base directory.
+
+=item C<$version>
+
+The version string (e.g., C<"2.8.0">). Must be a valid semantic version.
+Used in the output filename, the archive's base directory, and for updating
+version strings in Perl hooks.
+
+=item C<$outdir>
+
+The directory in which to write the output tarball.
+
+=item C<%opts>
+
+Optional key-value pairs:
+
+=over 8
+
+=item C<force>
+
+If set to a true value, compilation proceeds even when C<validate> returns
+C<0>. Defaults to false.
+
+=item C<skip-version-updates>
+
+If set to a true value, skip rewriting the version string in C<kit.yml>
+and the C<package> lines in C<hooks/*.pm>, even when the working tree is
+clean. Defaults to false.
+
+=back
+
+=back
+
+B<Returns:>
+
+The filename of the produced tarball (e.g., C<"cf-2.8.0.tar.gz">) on
+success. Returns C<undef> if C<validate> fails and C<force> is not set.
+
+B<Errors:>
+
+Dies with C<"Version %s is not semantic-compliant"> if C<$version> is not
+a valid semantic version. C<%s> is the version string provided.
+
+B<Examples:>
+
+    my $filename = $cc->compile("cf", "2.8.0", "/tmp/kits");
+    # Returns: 'cf-2.8.0.tar.gz'
+    # File written to: /tmp/kits/cf-2.8.0.tar.gz
+
+    # Force compilation even if validation finds issues
+    my $filename = $cc->compile("cf", "2.8.0", ".", force => 1);
+
+    # Skip version update commits (e.g., in CI)
+    my $filename = $cc->compile("cf", "2.8.0", ".",
+        'skip-version-updates' => 1);
+
+=head2 scaffold
+
+    $cc->scaffold($name);
+
+Generates a new kit source directory at C<$root> (the path given to
+C<new>), populating it with template files so a kit author has a working
+starting point.
+
+The following files and directories are created:
+
+=over 4
+
+=item C<.gitignore>
+
+Excludes C<*.tar.gz> from version control.
+
+=item C<kit.yml>
+
+Populated with the C<$name>, version C<0.0.1>, the Git user name and email
+from C<git config>, placeholder C<docs> and C<code> URLs, and
+C<genesis_version_min: 2.7.0>.
+
+=item C<README.md>
+
+A template README with FIXME placeholders for the kit description,
+features, params, and cloud config documentation.
+
+=item C<manifests/$name.yml>
+
+A minimal BOSH deployment manifest template with one instance group,
+standard stemcell and update blocks, and placeholder release entries.
+
+=item C<hooks/new>
+
+A Bash C<new> hook that generates an environment YAML file from
+C<genesis_config_block>.
+
+=item C<hooks/blueprint>
+
+A Bash C<blueprint> hook that assembles manifests from the C<manifests/>
+directory and optional C<features/> subdirectories.
+
+=back
+
+Both generated hook scripts are made executable (mode C<0755>).
+
+B<Parameters:>
+
+=over 4
+
+=item C<$name>
+
+The kit name (e.g., C<"my-kit">). Used to name files and populate template
+content.
+
+=back
+
+B<Returns:>
+
+Nothing (returns C<undef> implicitly).
+
+B<Errors:>
+
+Dies with C<"Found a kit.yml in $self-E<gt>{root}; cowardly refusing to
+overwrite an existing kit."> if C<kit.yml> already exists in C<$root>.
+
+B<Examples:>
+
+    my $cc = Genesis::Kit::Compiler->new("/home/user/my-kit");
+    $cc->scaffold("my-kit");
+    # Creates: /home/user/my-kit/kit.yml
+    # Creates: /home/user/my-kit/README.md
+    # Creates: /home/user/my-kit/manifests/my-kit.yml
+    # Creates: /home/user/my-kit/hooks/new
+    # Creates: /home/user/my-kit/hooks/blueprint
+
+=head1 INTERNAL METHODS
+
+These methods are internal to the implementation. They may change without
+notice and should not be called directly.
+
+=head2 _lookup_test_params
+
+    $cc->_lookup_test_params($key, $default)
+
+Looks up a parameter value from C<ci/test_params.yml> in the kit source
+directory. Used as a callback by C<validate> when dereferencing kit
+metadata parameter substitutions during secrets plan validation.
+
+The file is loaded once and cached on the object. If the file does not
+exist, an empty hash is used and parameter lookups return the provided
+C<$default>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$key>
+
+The dotted-path key to look up in the test params structure.
+
+=item C<$default>
+
+The default value to return if the key is not found.
+
+=back
+
+B<Returns:>
+
+The value found in C<ci/test_params.yml> for C<$key>, or C<$default> if
+the key is absent or the file does not exist.
+
+B<Examples:>
+
+    # Called internally by validate() as a dereference callback.
+    # Given ci/test_params.yml containing:
+    #   network: 10.0.0.0/24
+    my $val = $cc->_lookup_test_params("network", "10.0.0.1/32");
+    # Returns: '10.0.0.0/24'
+
+    my $val = $cc->_lookup_test_params("missing_key", "default_value");
+    # Returns: 'default_value'
+
+=head2 _select_files
+
+    my @files = $cc->_select_files();
+
+Builds the list of files to include in the compiled tarball. Operates
+within the C<$root> directory.
+
+Always excludes: C<ci/>, C<.git/>, C<.gitignore>, C<spec/>, C<devtools/>,
+and any additional paths listed in C<kit.yml>'s C<exclude_paths> array.
+Also excludes any files that Git would remove via C<git clean -xdn>
+(untracked and ignored files). Paths that escape the kit root via C<../> in
+C<exclude_paths> are silently skipped.
+
+B<Returns:>
+
+A list of relative file paths (without leading C<./>) to include in the
+archive.
+
+=head2 _update_hook_packages
+
+    $cc->_update_hook_packages($name, $version)
+
+Rewrites the C<package> declaration line in each C<*.pm> file under
+C<hooks/> to use the correct versioned package name for the kit.
+
+Package names are generated by L</_generate_package_name>. The version
+component is extracted as a bare semantic version (without pre-release
+suffix) for the C<vX.Y.Z> version declaration; any pre-release suffix is
+appended as a comment.
+
+Does nothing if the C<hooks/> directory does not exist or contains no
+C<.pm> files.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$name>
+
+The kit name. Used by C<_to_camel_case> to derive the kit type identifier.
+
+=item C<$version>
+
+The version string. Used to construct the versioned C<package> line.
+
+=back
+
+B<Returns:>
+
+Nothing.
+
+B<Examples:>
+
+    # Called internally by compile() when the working tree is clean.
+    # Rewrites package lines in hooks/*.pm for kit 'cf' version '2.8.0'.
+    $cc->_update_hook_packages("cf", "2.8.0");
+    # Returns: nothing (void method, rewrites hooks/*.pm in-place)
+
+=head2 _to_camel_case
+
+    my $camel = $cc->_to_camel_case($name)
+
+Converts a hyphen-separated kit name into a CamelCase identifier for use
+in Perl package names. Applies special-case mappings for known acronyms:
+C<cf> becomes C<CF>, C<bosh> becomes C<BOSH>. All other parts are
+capitalized with C<ucfirst(lc(...))>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$name>
+
+A hyphen-separated name string (e.g., C<"cf-rabbitmq">).
+
+=back
+
+B<Returns:>
+
+A CamelCase string (e.g., C<"CFRabbitmq">).
+
+B<Examples:>
+
+    $cc->_to_camel_case("cf");          # Returns: 'CF'
+    $cc->_to_camel_case("bosh");        # Returns: 'BOSH'
+    $cc->_to_camel_case("rabbitmq");    # Returns: 'Rabbitmq'
+    $cc->_to_camel_case("cf-rabbitmq"); # Returns: 'CFRabbitmq'
+
+=head2 _generate_package_name
+
+    my $pkg = $cc->_generate_package_name($filename, $kit_type)
+
+Generates the Perl package name for a given hook file. The naming
+convention depends on whether the hook is a regular hook or an addon hook:
+
+=over 4
+
+=item Regular hooks
+
+Package follows the pattern C<"Genesis::Hook::HookName::KitType">
+(e.g., C<"Genesis::Hook::New::CF">).
+
+=item Addon hooks
+
+Files matching C<addon-NAME.pm> produce a package following
+C<"Genesis::Hook::Addon::KitType::AddonName">
+(e.g., C<"Genesis::Hook::Addon::CF::BindAutoscaler">).
+
+=back
+
+Any tilde shortcut suffix in the filename (e.g., C<addon-bind-autoscaler~ba>)
+is stripped before processing.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$filename>
+
+The hook filename without the C<.pm> extension.
+
+=item C<$kit_type>
+
+The CamelCase kit type identifier, as produced by L</_to_camel_case>.
+
+=back
+
+B<Returns:>
+
+A fully qualified Perl package name string.
+
+B<Examples:>
+
+    $cc->_generate_package_name("new",   "CF");
+    # Returns: 'Genesis::Hook::New::CF'
+
+    $cc->_generate_package_name("blueprint", "BOSH");
+    # Returns: 'Genesis::Hook::Blueprint::BOSH'
+
+    $cc->_generate_package_name("addon-rabbitmq", "CF");
+    # Returns: 'Genesis::Hook::Addon::CF::Rabbitmq'
+
+    # Tilde shortcut suffix is stripped before processing
+    $cc->_generate_package_name("addon-bind-autoscaler~ba", "CF");
+    # Returns: 'Genesis::Hook::Addon::CF::BindAutoscaler'
+
+=head2 _update_package_line
+
+    my $changed = $cc->_update_package_line($hook_file, $new_package_line)
+
+Reads the file at C<$hook_file>, finds the first line matching
+C</^package\s+/>, and replaces it with C<$new_package_line> if the line
+has changed. Writes the file back only when a change is made.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$hook_file>
+
+The absolute path to the Perl hook file to update.
+
+=item C<$new_package_line>
+
+The replacement C<package> declaration line (without trailing newline).
+
+=back
+
+B<Returns:>
+
+C<1> if the file was updated, C<0> if no change was needed or the file
+could not be opened.
+
+B<Examples:>
+
+    my $changed = $cc->_update_package_line(
+        "/path/to/hooks/new.pm",
+        "package Genesis::Hook::New::CF v2.8.0",
+    );
+    # Returns: 1  (file was updated)
+
+    # No-op when the package line already matches
+    my $changed = $cc->_update_package_line(
+        "/path/to/hooks/new.pm",
+        "package Genesis::Hook::New::CF v2.8.0",
+    );
+    # Returns: 0  (no change needed)
+
+=head2 _update_version
+
+    $cc->_update_version($version)
+
+Reads C<kit.yml> from C<$root> and rewrites the C<version:> line to
+C<$version>. The updated content is written back to the same file.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$version>
+
+The version string to write into C<kit.yml>.
+
+=back
+
+B<Returns:>
+
+Nothing.
+
+B<Examples:>
+
+    # Updates 'version: 0.0.1' to 'version: 2.8.0' in kit.yml
+    $cc->_update_version("2.8.0");
+    # kit.yml now contains: version: 2.8.0
+
+=head2 _prepare_hook_commit
+
+    $cc->_prepare_hook_commit($version)
+
+Stages C<kit.yml> and all C<hooks/*.pm> files via C<git add>, then opens
+an interactive C<git commit> editor pre-populated with a commit message
+template. The template reads:
+
+    Update for release v$version
+
+    Updated kit version and perl hook packages
+
+The commit editor is opened using C<git commit --edit --file>, allowing
+the developer to review and adjust the message before committing. A
+temporary file holding the message template is cleaned up after the editor
+exits.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$version>
+
+The version string used in the commit message template.
+
+=back
+
+B<Returns:>
+
+Nothing. Returns after the interactive git commit editor closes.
+
+B<Examples:>
+
+    # Called internally by compile() after _update_version and
+    # _update_hook_packages have staged their changes.
+    $cc->_prepare_hook_commit("2.8.0");
+    # prints: Updated version and package versions in perl hook files to v2.8.0.
+    # prints: Changes have been staged. Opening git commit editor...
+    # Opens: interactive git commit editor with pre-populated message
+
+=head1 CAVEATS
+
+A single C<Genesis::Kit::Compiler> object should not be reused to compile
+multiple source directories. The C<_lookup_test_params> method caches the
+loaded C<ci/test_params.yml> content on the object. Similarly, C<validate>
+sets C<git_clean> state that is consumed by C<compile>. Create a new
+instance for each distinct kit source directory.
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
 
 =cut

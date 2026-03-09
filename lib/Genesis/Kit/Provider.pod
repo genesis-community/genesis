@@ -1,88 +1,789 @@
 =head1 NAME
 
-Genesis::Kit::Provider
+Genesis::Kit::Provider - Abstract base class and factory for Genesis kit providers
+
+=head1 SYNOPSIS
+
+  use Genesis::Kit::Provider;
+
+  # Create a provider via the factory (dispatches to the appropriate subclass)
+  my $provider = Genesis::Kit::Provider->new(type => 'genesis_community');
+  my $provider = Genesis::Kit::Provider->new(type => 'github',
+      organization => 'myorg',
+  );
+
+  # Create a provider from CLI options parsed by parse_opts
+  my %kit_opts;
+  Genesis::Kit::Provider->parse_opts(\@ARGV, \%kit_opts);
+  my $provider = Genesis::Kit::Provider->init(%kit_opts);
+
+  # Get the default provider (Genesis Community)
+  my $provider = Genesis::Kit::Provider->default_provider();
+
+  # Retrieve kit names and versions
+  my @names    = $provider->kit_names();
+  my @versions = $provider->kit_versions('cf');
+
+  # Fetch the latest tarball for a kit
+  my ($name, $version, $path) = $provider->fetch_kit_version('cf', 'latest', '/tmp');
 
 =head1 DESCRIPTION
 
-This class represents a Genesis Kit Provider.  This provider knows how to list
-and fetch kits and their versions provided by that provider.
+C<Genesis::Kit::Provider> is the abstract base class for all kit provider
+implementations. It defines the interface that every provider must satisfy and
+acts as a factory: calling C<new()> or C<init()> on C<Genesis::Kit::Provider>
+directly returns an instance of the appropriate concrete subclass rather than
+of C<Genesis::Kit::Provider> itself.
 
-=head1 CONSTRUCTORS
+A kit provider knows how to enumerate kits, list their available versions, and
+download tarballs (both compiled archives and source archives). Providers differ
+in where kits are hosted: the default provider, L<Genesis::Kit::Provider::GenesisCommunity>,
+retrieves kits from the Genesis Community GitHub organisation, while
+L<Genesis::Kit::Provider::Github> retrieves kits from any arbitrary GitHub
+repository.
 
-=head2 new($path)
-
-Instantiates a new dev kit, using source files in C<$path>.
-
-=head2 downloadable($filter)
-
-Lists the known downloadable compiled kits on the Genesis Community Github
-organization.  If a filter is given, it will be used to limit the kit names to
-match that filter as a regular expression.
-
-An error will be thrown if it cannot reach the github api endpoint for
-genesis-community organization, if the response is not valid JSON, or for
-any other communication error.
-
-=head2 releases($name)
-
-Returns the list of releases for a given repository under the Genesis Community
-Github organization.  This is the full response from Github, converted from
-JSON, and includes all the information for all releases under the given
-repository.  This is primarily a low-level function for C<url> and C<versions>
-
-An error will be thrown if it cannot reach the github api endpoint for
-genesis-community organization, if the repository does not exist,  if the
-response is not valid JSON, or for any other communication error.
-
-=head2 versions($name)
-
-Returns a hash of tag,name,draft,prerelease,body and timestamp for each version
-for the named repository under the Genesis Community Github organization.
-
-An error will be thrown if it cannot reach the github api endpoint for
-genesis-community organization, if the repository does not exist,  if the
-response is not valid JSON, or for any other communication error.
-
-=head2 url($name, $version)
-
-Determines the download URL for this kit, by consulting Github.
-Right now, this is limited to just the C<genesis-community> organization.
-
-If you omit C<$version>, or set it to "latest", the most recent released
-version on Github will be used.  Otherwise, the URL for the given version
-will be used.
-
-An error will be thrown if the version in question does not exist on Github.
-
+Concrete provider subclasses must implement the following abstract methods:
+C<config>, C<check>, C<kit_names>, C<kit_releases>, C<kit_versions>,
+C<fetch_kit_version>, and C<fetch_kit_version_src>. Calling any of these on
+the base class directly triggers a C<bug()> and terminates the process.
 
 =head1 METHODS
 
-=head2 id()
+=head2 new
 
-Returns the identity of the dev kit, which is always C<(dev kit)>.  This is
-useful for error messages and reporting.
+  my $provider = Genesis::Kit::Provider->new(%config);
 
-=head2 name()
+Factory constructor. Inspects C<%config> to determine which concrete provider
+class to instantiate and delegates to that class's C<new()>.
 
-Returns the name of the dev kit, which is always C<dev>.
+Must be called on C<Genesis::Kit::Provider> itself, never on a subclass.
+Calling it on a subclass triggers an internal C<bug()>.
 
-=head2 version()
+B<Parameters:>
 
-Returns the version of the dev kit, which is always C<latest>.
+=over 4
 
-=head2 kit_bug($fmt, ...)
+=item C<type>
 
-Prints an error to the screen, complete with details about how the problem
-at hand is a problem with the (local) development kit.
+The provider type. Recognised values are C<"genesis_community"> and
+C<"github">. When C<type> is absent or set to C<"genesis_community">, a
+L<Genesis::Kit::Provider::GenesisCommunity> instance is returned. When set to
+C<"github">, a L<Genesis::Kit::Provider::Github> instance is returned.
+Additional keys in C<%config> are forwarded to the subclass constructor.
 
-=head2 extract()
+=back
 
-Copies the contents of the dev/ working directory to a temporary workspace,
-and installs the Genesis hooks helper script.  The copy is done to avoid
-accidental modifications to pristine dev kit sources, and to ensure that we
-can safely write the hooks helper.
+B<Returns:>
 
-This method is memoized; subsequent calls to C<extract> will not re-copy the
-dev/ working directory to the temporary workspace.
+An instance of the appropriate L<Genesis::Kit::Provider> subclass.
+
+B<Errors:>
+
+=over 4
+
+=item C<"%s->new is calling %s->new illegally">
+
+Thrown internally via C<bug()> when this method is called on a subclass
+instead of directly on C<Genesis::Kit::Provider>. The two C<%s> placeholders
+are the calling class and C<Genesis::Kit::Provider>, respectively.
+
+=item C<"Unknown kit provider type '$config{type}'">
+
+Thrown when C<type> is present but does not match any known provider.
+
+=back
+
+B<Examples:>
+
+  # Default (Genesis Community) provider
+  my $p = Genesis::Kit::Provider->new();
+  print ref($p); # prints 'Genesis::Kit::Provider::GenesisCommunity'
+
+  # GitHub provider
+  my $p = Genesis::Kit::Provider->new(type => 'github', organization => 'myorg');
+  print ref($p); # prints 'Genesis::Kit::Provider::Github'
+
+=head2 init
+
+  my $provider = Genesis::Kit::Provider->init(%opts);
+
+Factory constructor that builds a provider from CLI option hashes (as
+produced by C<parse_opts()>). Supports loading provider configuration from
+an existing Genesis deployment repository or a YAML/JSON file.
+
+Must be called on C<Genesis::Kit::Provider> itself, never on a subclass.
+
+B<Parameters:>
+
+=over 4
+
+=item C<kit-provider-config>
+
+Optional. Path to either an existing Genesis deployment repository (a
+directory containing C<.genesis/config>) or a YAML/JSON file describing
+provider configuration. When this key is present it takes precedence over all
+other keys: the provider is loaded from the repository or file and returned
+immediately.
+
+=item C<kit-provider>
+
+Optional. The provider type string. Recognised values are C<"genesis-community">
+(the default when this key is absent) and C<"github">. Additional keys required
+by the specific provider (e.g., C<kit-provider-org>) must also be
+present in C<%opts>; they are forwarded to the subclass's C<init()>.
+
+=back
+
+B<Returns:>
+
+An instance of the appropriate L<Genesis::Kit::Provider> subclass.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Unable to read kit-provider config: expecting either a Genesis deployment repo or a YAML/JSON file">
+
+Thrown when C<kit-provider-config> is set but the path does not match any
+recognised format (neither a Genesis repo directory nor an existing file).
+
+=item C<"Unknown kit provider type '$opts{'kit-provider'}'">
+
+Thrown when C<kit-provider> is set but does not match any known provider.
+
+=back
+
+B<Examples:>
+
+  # From a YAML config file
+  my $p = Genesis::Kit::Provider->init('kit-provider-config' => '/path/to/config.yml');
+
+  # Genesis Community provider (default)
+  my $p = Genesis::Kit::Provider->init();
+  print ref($p); # prints 'Genesis::Kit::Provider::GenesisCommunity'
+
+  # GitHub provider
+  my $p = Genesis::Kit::Provider->init('kit-provider' => 'github');
+  print ref($p); # prints 'Genesis::Kit::Provider::Github'
+
+=head2 default_provider
+
+  my $provider = Genesis::Kit::Provider->default_provider();
+
+Returns a new instance of L<Genesis::Kit::Provider::GenesisCommunity>
+constructed with no arguments. This is the default provider used when no
+provider configuration is specified.
+
+B<Returns:>
+
+A L<Genesis::Kit::Provider::GenesisCommunity> instance.
+
+B<Examples:>
+
+  my $p = Genesis::Kit::Provider->default_provider();
+  print ref($p); # prints 'Genesis::Kit::Provider::GenesisCommunity'
+
+=head2 opts
+
+  my @option_specs = Genesis::Kit::Provider->opts();
+
+Returns the list of option specification strings (in C<GetOptions> format)
+that the base provider accepts. The base class returns an empty list;
+subclasses override this method to advertise their own CLI options.
+
+B<Returns:>
+
+A list of option specification strings in C<GetOptions> format. Returns an
+empty list for the base class.
+
+B<Examples:>
+
+  my @specs = Genesis::Kit::Provider->opts();
+  # Returns: () for the base class
+
+=head2 opts_help
+
+  my $text = Genesis::Kit::Provider->opts_help(%config);
+
+Returns a multi-line help string that describes all kit provider options,
+including the general C<--kit-provider> and C<--kit-provider-config>
+options as well as the provider-specific options from all known subclasses.
+
+Must be called on C<Genesis::Kit::Provider> itself, never on a subclass.
+
+B<Parameters:>
+
+=over 4
+
+=item C<type_default_msg>
+
+Optional string appended to the C<--kit-provider> option description as the
+default-value annotation. Defaults to C<'(optional, defaults to "genesis-community")'>.
+
+=item C<valid_types>
+
+Optional arrayref of valid type name strings shown in provider-specific help
+sections. Defaults to C<['genesis-community', 'github']>.
+
+=back
+
+B<Returns:>
+
+A multi-line string containing the full kit provider help text, suitable for
+inclusion in a command's usage output.
+
+B<Errors:>
+
+=over 4
+
+=item C<"%s->new is calling %s->new illegally">
+
+Thrown internally via C<bug()> when this method is called on a subclass
+instead of directly on C<Genesis::Kit::Provider>. The two C<%s> placeholders
+are the calling class and C<Genesis::Kit::Provider>, respectively.
+
+=back
+
+B<Examples:>
+
+  print Genesis::Kit::Provider->opts_help();
+  # prints:
+  #   KIT PROVIDERS
+  #   ...
+  #   --kit-provider <type> (optional, defaults to "genesis-community")
+  #   ...
+
+=head2 parse_opts
+
+  Genesis::Kit::Provider->parse_opts(\@args, \%kit_opts);
+
+Parses kit-provider-related CLI options from C<@args> into C<%kit_opts>.
+Processing stops at C<--> to preserve positional argument boundaries.
+Non-kit-provider arguments that are consumed but not recognized are pushed
+back onto C<@args>.
+
+First extracts C<--kit-provider> to determine which subclass to use, then
+invokes that subclass's C<opts()> to obtain the provider-specific option
+specs and parses those as well. Modifies C<@args> in-place by removing all
+recognized options and leaving unrecognized arguments in place.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$args>
+
+An arrayref of raw command-line argument strings. Modified in-place: all
+consumed option tokens are removed and unrecognized tokens are returned to the
+beginning of the array.
+
+=item C<%kit_opts>
+
+A hashref into which parsed option values are written. Keys use
+C<GetOptions> naming conventions (e.g., C<kit-provider>,
+C<kit-provider-config>).
+
+=back
+
+B<Returns:>
+
+C<1> on success.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Unknown kit provider type '$type'">
+
+Thrown when C<--kit-provider> is present but does not match any known
+provider.
+
+=back
+
+B<Examples:>
+
+  my @args = ('--kit-provider', 'github', '--kit-provider-org', 'myorg', 'deploy');
+  my %kit_opts;
+  Genesis::Kit::Provider->parse_opts(\@args, \%kit_opts);
+  # @args is now ('deploy')
+  # %kit_opts is ('kit-provider' => 'github', 'kit-provider-org' => 'myorg')
+  # Returns: 1
+
+=head2 label
+
+  my $label = $provider->label();
+
+Returns the human-readable label for this provider instance, as stored in
+C<< $provider->{label} >> by the subclass constructor.
+
+B<Returns:>
+
+A string label identifying the provider, or C<undef> if none was set.
+
+B<Examples:>
+
+  print $provider->label(); # prints e.g. 'Genesis Community'
+
+=head2 config
+
+  my %config = $provider->config();
+
+Abstract method. Returns the configuration hash for this provider. The
+returned hash contains the key-value pairs that would be passed to C<new()>
+to recreate an equivalent provider object.
+
+Subclasses B<must> implement this method. Calling it on the base class
+terminates the process via C<bug()>.
+
+B<Returns:>
+
+A hash of configuration items.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Abstract Method: Expecting %s class to define concrete '%' method">
+
+Thrown via C<bug()> when called on the base class. The first C<%s> is the
+class name and C<'%'> is the method name C<config>.
+
+=back
+
+B<Examples:>
+
+  # On a concrete subclass instance:
+  my %config = $provider->config();
+  # Returns: e.g. (type => 'genesis-community')
+
+=head2 check
+
+  my $error = $provider->check();
+
+Abstract method. Tests whether this provider is reachable and operational.
+
+Subclasses B<must> implement this method. Calling it on the base class
+terminates the process via C<bug()>.
+
+B<Returns:>
+
+An error message string if the provider is unavailable, or C<undef>/empty
+string if the provider is accessible.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Abstract Method: Expecting %s class to define concrete '%' method">
+
+Thrown via C<bug()> when called on the base class. The first C<%s> is the
+class name and C<'%'> is the method name C<config>.
+
+=back
+
+B<Examples:>
+
+  my $err = $provider->check();
+  # Returns: undef or empty string if reachable, error message if not
+  if ($err) {
+      die "Provider unavailable: $err\n";
+  }
+
+=head2 kit_names
+
+  my @names = $provider->kit_names($filter);
+
+Abstract method. Returns the list of kit names available from this provider.
+Pass C<undef> or omit C<$filter> to retrieve all kit names.
+
+Subclasses B<must> implement this method. Calling it on the base class
+terminates the process via C<bug()>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$filter>
+
+Optional regular expression string. When provided, only kit names matching
+the expression are returned.
+
+=back
+
+B<Returns:>
+
+A list of kit name strings. Names do not include the C<-genesis-kit> suffix.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Abstract Method: Expecting %s class to define concrete '%' method">
+
+Thrown via C<bug()> when called on the base class. The first C<%s> is the
+class name and C<'%'> is the method name C<kits>.
+
+=back
+
+B<Examples:>
+
+  my @names = $provider->kit_names(undef);
+  # Returns: ('bosh', 'cf', 'concourse', ...)
+
+  my @cf_names = $provider->kit_names('^cf');
+  # Returns: ('cf',)
+
+=head2 kit_releases
+
+  my @releases = $provider->kit_releases($name);
+
+Abstract method. Returns the raw list of release objects for the named kit.
+The structure of each release object is determined by the concrete provider
+subclass.
+
+Subclasses B<must> implement this method. Calling it on the base class
+terminates the process via C<bug()>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$name>
+
+The kit name to retrieve releases for (e.g., C<'cf'>).
+
+=back
+
+B<Returns:>
+
+A list of provider-specific release objects.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Abstract Method: Expecting %s class to define concrete '%' method">
+
+Thrown via C<bug()> when called on the base class. The first C<%s> is the
+class name and C<'%'> is the method name C<kit_releases>.
+
+=back
+
+B<Examples:>
+
+  my @releases = $provider->kit_releases('cf');
+  # Returns: list of release objects (structure depends on provider subclass)
+
+=head2 kit_versions
+
+  my @versions = $provider->kit_versions($name, %opts);
+
+Abstract method. Returns version information records for the named kit,
+optionally filtered or limited by C<%opts>.
+
+Subclasses B<must> implement this method. Calling it on the base class
+terminates the process via C<bug()>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$name>
+
+The kit name to retrieve versions for (e.g., C<'cf'>).
+
+=item C<draft>
+
+Optional boolean. When true, include draft releases in the results.
+
+=item C<prerelease>
+
+Optional boolean. When true, include pre-release versions in the results.
+
+=item C<latest>
+
+Optional integer. When set, return only the N most recent versions in
+descending version order.
+
+=item C<version>
+
+Optional string. When set, return information for that specific version only.
+
+=back
+
+B<Returns:>
+
+A list of hashrefs. Each hashref contains at minimum:
+
+=over 4
+
+=item * C<version> - the semver version string
+
+=item * C<body> - the release notes text
+
+=item * C<draft> - boolean, true if this is a draft release
+
+=item * C<prerelease> - boolean, true if this is a pre-release
+
+=item * C<date> - the release creation date
+
+=item * C<url> - optional download URL
+
+=back
+
+B<Errors:>
+
+=over 4
+
+=item C<"Abstract Method: Expecting %s class to define concrete '%' method">
+
+Thrown via C<bug()> when called on the base class. The first C<%s> is the
+class name and C<'%'> is the method name C<kit_versions>.
+
+=back
+
+B<Examples:>
+
+  my @versions = $provider->kit_versions('cf');
+  for my $v (@versions) {
+      printf "  %s (%s)\n", $v->{version}, $v->{date};
+  }
+  # prints e.g.:
+  #   2.8.0 (2024-01-15)
+  #   2.7.1 (2023-11-02)
+
+=head2 fetch_kit_version
+
+  my ($name, $version, $file) = $provider->fetch_kit_version($name, $version, $path, $force);
+
+Abstract method. Downloads the compiled kit tarball for the named kit and
+version to the specified directory.
+
+Subclasses B<must> implement this method. Calling it on the base class
+terminates the process via C<bug()>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$name>
+
+The kit name to fetch (e.g., C<'cf'>).
+
+=item C<$version>
+
+The kit version to fetch (e.g., C<'2.8.0'> or C<'latest'>).
+
+=item C<$path>
+
+The directory in which to save the downloaded tarball.
+
+=item C<$force>
+
+Optional boolean. When true, overwrite an existing cached tarball.
+
+=back
+
+B<Returns:>
+
+A three-element list: C<($kit_name, $actual_version, $tarball_path)>. The
+C<$actual_version> reflects the resolved version when C<'latest'> was
+requested. C<$tarball_path> is the full path to the saved tarball file.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Abstract Method: Expecting %s class to define concrete '%' method">
+
+Thrown via C<bug()> when called on the base class. The first C<%s> is the
+class name and C<'%'> is the method name C<fetch_kit_version>.
+
+=back
+
+B<Examples:>
+
+  my ($name, $ver, $file) = $provider->fetch_kit_version('cf', 'latest', '/tmp', 0);
+  print "$name/$ver saved to $file\n";
+  # prints e.g.: cf/2.8.0 saved to /tmp/cf-2.8.0.tar.gz
+
+=head2 fetch_kit_version_src
+
+  my ($name, $version, $file) = $provider->fetch_kit_version_src($name, $version, $path, $force);
+
+Abstract method. Downloads the source tarball for the named kit and version
+to the specified directory.
+
+Subclasses B<must> implement this method. Calling it on the base class
+terminates the process via C<bug()>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$name>
+
+The kit name to fetch source for (e.g., C<'cf'>).
+
+=item C<$version>
+
+The kit version to fetch (e.g., C<'2.8.0'> or C<'latest'>).
+
+=item C<$path>
+
+The directory in which to save the downloaded source tarball.
+
+=item C<$force>
+
+Optional boolean. When true, overwrite an existing cached source tarball.
+
+=back
+
+B<Returns:>
+
+A three-element list: C<($kit_name, $actual_version, $tarball_path)>. The
+C<$actual_version> reflects the resolved version when C<'latest'> was
+requested. C<$tarball_path> is the full path to the saved source tarball.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Abstract Method: Expecting %s class to define concrete '%' method">
+
+Thrown via C<bug()> when called on the base class. The first C<%s> is the
+class name and C<'%'> is the method name C<fetch_kit_version_src>.
+
+=back
+
+B<Examples:>
+
+  my ($name, $ver, $file) = $provider->fetch_kit_version_src('cf', '2.8.0', '/tmp', 0);
+  print "$name/$ver source saved to $file\n";
+  # prints e.g.: cf/2.8.0 source saved to /tmp/cf-2.8.0-src.tar.gz
+
+=head2 latest_version_of
+
+  my $version = $provider->latest_version_of($name, %opts);
+
+Returns the version string of the most recent release of the named kit.
+Calls C<kit_versions()> with C<latest =E<gt> 1> and returns the C<version>
+field from the first result.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$name>
+
+The kit name to query (e.g., C<'cf'>). Required.
+
+=item C<%opts>
+
+Optional. Additional options forwarded to C<kit_versions()> (e.g.,
+C<prerelease =E<gt> 1> to include pre-releases).
+
+=back
+
+B<Returns:>
+
+The latest version string (e.g., C<"2.8.0">), or C<undef> if no versions
+are available.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Missing name for retrieving kit releases">
+
+Thrown when C<$name> is undefined or empty.
+
+=back
+
+B<Examples:>
+
+  my $ver = $provider->latest_version_of('cf');
+  print $ver; # prints e.g. '2.8.0'
+
+  # Including pre-releases
+  my $ver = $provider->latest_version_of('cf', prerelease => 1);
+  print $ver; # prints e.g. '2.9.0-rc1'
+
+=head2 kit_version_info
+
+  my $info = $provider->kit_version_info($name, $version);
+
+Returns the version information hashref for a specific kit version. Calls
+C<kit_versions()> with C<version =E<gt> $version> and returns the first
+result.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$name>
+
+The kit name to query (e.g., C<'cf'>). Required.
+
+=item C<$version>
+
+The specific version string to look up (e.g., C<'2.8.0'>).
+
+=back
+
+B<Returns:>
+
+A hashref containing the version record (see C<kit_versions()> for the
+field list), or C<undef> if the version is not found.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Missing name for retrieving kit releases">
+
+Thrown when C<$name> is undefined or empty.
+
+=back
+
+B<Examples:>
+
+  my $info = $provider->kit_version_info('cf', '2.8.0');
+  print $info->{date}; # prints e.g. '2024-01-15'
+
+=head1 ABSTRACT METHODS
+
+The following methods are defined as stubs in C<Genesis::Kit::Provider> and
+B<must> be overridden by every concrete subclass. Calling any of them on the
+base class terminates the process via C<bug()>.
+
+=over 4
+
+=item C<config>
+
+=item C<check>
+
+=item C<kit_names>
+
+=item C<kit_releases>
+
+=item C<kit_versions>
+
+=item C<fetch_kit_version>
+
+=item C<fetch_kit_version_src>
+
+=back
+
+See the individual method entries in L</METHODS> above for the interface
+contract each subclass must honour.
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
 
 =cut
