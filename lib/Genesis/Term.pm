@@ -1,11 +1,13 @@
 package Genesis::Term;
-use strict;
+
+use v5.20;
 use warnings;
 use feature 'state';
 no warnings 'utf8';
 use utf8;
 
 use Genesis::State;
+$Genesis::RC = $Genesis::RC;  # Suppress "used only once" warning
 
 use Data::Dumper;
 use File::Basename qw/basename dirname/;
@@ -16,7 +18,9 @@ use base 'Exporter';
 our @EXPORT = qw/
 	terminal_width
 	wrap fix_wrap
+	colored_block
 	in_controlling_terminal
+	get_io_target
 	csprintf csize
 	bullet checkbox
 	decolorize
@@ -25,32 +29,47 @@ our @EXPORT = qw/
 	process_markdown_block
 	render_markdown
 	elipses
+	string_to_hex
+	set_stdin
+	reset_stdin
 	$ansi_reset_line
+	$ansi_clear_to_eol
 	$ansi_cursor_up
 	$ansi_cursor_down
 	$ansi_hide_cursor
 	$ansi_show_cursor
+	$ansi_save_cursor
+	$ansi_restore_cursor
 /;
 
 # ANSI control sequences
 our $ansi_reset_line = "\r\e[2K";
+our $ansi_clear_to_eol = "\e[0K";
 our $ansi_cursor_up = "\e[A";
 our $ansi_cursor_down = "\e[B";
 our $ansi_hide_cursor = "\e[?25l";
 our $ansi_show_cursor = "\e[?25h";
+our $ansi_save_cursor = "\e[s";
+our $ansi_restore_cursor = "\e[u";
 
-my $has_tput = $ENV{TERM} ? undef : 0; # tput doesn't work if $TERM isn't defined
-sub terminal_width {
+sub has_tput {
+	return 0 unless $ENV{TERM};
+	my $out = `/bin/bash -c "type -p tput"`;
+	my $rc = $? >> 8;
+	return ($rc == 0) ? 1 : 0;
+}
+
+sub terminal_width () {
 	return $ENV{GENESIS_OUTPUT_COLUMNS} if $ENV{GENESIS_OUTPUT_COLUMNS};
-	unless (defined($has_tput)) {
-		my $out = `/bin/bash -c "type -p tput"`;
-		my $rc = $? >> 8;
-		$has_tput = ($rc == 0) ? 1 : 0;
-	}
-
-	return ($ENV{GENESIS_OUTPUT_COLUMNS} || 80) unless $has_tput;
+	return 80 unless has_tput();
 	return (grep {/^[0-9]*$/} split("\n",`tput cols`))[0] || $ENV{GENESIS_OUTPUT_COLUMNS} || 80;
 }
+sub terminal_height () {
+	return $ENV{GENESIS_OUTPUT_LINES} if $ENV{GENESIS_OUTPUT_LINES};
+	return 24 unless has_tput();
+	return (grep {/^[0-9]*$/} split("\n",`tput lines`))[0] || $ENV{GENESIS_OUTPUT_LINES} || 24;
+}
+
 my $__is_highcolour = $ENV{TERM} && $ENV{TERM} =~ /256color/;
 sub _color {
 	my ($fg,$bg) = @_;
@@ -123,6 +142,7 @@ sub _glyphize {
 		'[ ]' => "\x{25FB}",
 		'[x]' => "\x{25FC}",
 		'X'   => "\x{25FC}",
+		'_'   => "\x{00A0}",
 	);
 
 	$glyph = $glyphs{$glyph} if !envset('GENESIS_NO_UTF8') && defined($glyphs{$glyph});
@@ -150,6 +170,7 @@ sub _emojify {
 		'tmyn' => "\x{1F320}",
 		'notice' => "\x{1FAA7} ",
 		'megaphone' => "\x{1F4E3}",
+		'noentry' => "\x{26D4}\x{FE0F}",
 	);
 	return '' if envset('GENESIS_NO_UTF8');
 	return $emojis{$emoji} // '';
@@ -192,7 +213,7 @@ sub csprintf {
 	if ($@) {
 		require Carp;
 		$Carp::Verbose=1;
-		Carp::confess($@) unless ($@ =~ /^(Missing|Redundant) argument|Use of uninitialized value/);
+		Carp::confess($@) if ($@ =~ /^(Missing|Redundant) argument|Use of uninitialized value/);
 		Carp::cluck(@_) if ($ENV{GENESIS_DEV_MODE} || $ENV{GENESIS_TESTING});
 
 		$s = sprintf($fmt, @args); # run again because the error didn't set it
@@ -222,7 +243,7 @@ sub decolorize {
 
 sub csize {
 	my $str = shift;
-	my $size = length(decolorize($str)) + length(join('', (map {'  '} $str =~ m/#E\{[^\}]+}/g)));
+	return length(decolorize($str)) + length(join('', (map {csprintf($_)} $str =~ m/#E\{[^\}]+}/g)));
 }
 
 sub wrap {
@@ -284,7 +305,7 @@ sub wrap {
 sub fix_wrap {
 	my @msg = @_;
 	my $fmt = "%s";
-	$fmt = shift(@msg) if $#msg > 0;
+	$fmt = shift(@msg) if @msg > 1;
 
 	my $msg = sprintf($fmt,@msg);
 	$msg =~ s/^(\n*)(.*?)\n*\z/$2/s;
@@ -299,6 +320,19 @@ sub fix_wrap {
 	}
 
 	return $msg;
+}
+
+sub colored_block {
+  my ($text, $fg, $bg) = @_;
+	return $text if envset('NOCOLOR');
+  my $bg_ansi = _color($fg,$bg);  # Use existing color helper
+  my $erase_eol = "\e[K";
+  my $reset = "\e[0m";
+
+  return join("\n",
+    map { "${bg_ansi}${_}${erase_eol}${reset}" }
+    split(/\n/, $text, -1)
+  );
 }
 
 sub bullet { # [type,] msg, [{option: value, ...}]
@@ -347,10 +381,36 @@ sub in_controlling_terminal {
 	-t STDIN && -t STDOUT;
 }
 
+sub get_io_target {
+	my ($target) = shift//\*STDOUT;
+	return 'terminal' if -t $target;
+	return 'pipe' if -p $target;
+	if (-f $target) {
+		# Try to determine the actual file path
+		require File::stat;
+		my $stat = File::stat::stat($target);
+		my $dev = $stat->dev;
+		my $ino = $stat->ino;
+		opendir my $dh, '/proc/self/fd' or return 'file';
+		while (my $file = readdir $dh) {
+			next if $file =~ /^\.\.?$/; # skip . and ..
+			my $link = readlink("/proc/self/fd/$file");
+			next unless defined $link;
+			my $link_stat = File::stat::stat($link);
+			next unless $link_stat->dev == $dev && $link_stat->ino == $ino;
+			closedir($dh);
+			return $link;
+		}
+		closedir($dh);
+		return 'file';
+	}
+	return 'unknown device';
+}
+
 sub build_markdown_table {
 	# Convert a markdown table to a table with automatic column widths
 	# and alignment.
-	
+
 	# First, we need to parse the markdown table into a data structure
 	# that we can work with.  We'll use a regex to do this.
 	my ($table, %opts) = @_;
@@ -424,7 +484,7 @@ sub build_markdown_table {
 	} else {
 		@col_widths = @col_max_widths;
 	}
-	
+
 	# Finally, we'll render each row of the table with the appropriate column widths
 	# and alignment.
 	return "\n" x $blank_rows .
@@ -474,7 +534,7 @@ sub build_markdown_list {
 			my ($item, $point, $indent) = ($3, $2, length($1)+2);
 			$last_num = $last_num + 1
 				if ($type eq 'numbered_list');
-			$point = $type eq 'numbered_list' 
+			$point = $type eq 'numbered_list'
 				? sprintf('%2d. >>', $last_num)
 				: bullet($point, '>>', indent => 0);
 			push @li, '[['.(' 'x ($indent - 2)).$point.$item;
@@ -516,22 +576,23 @@ sub build_markdown_codeblock {
 	my $rendered_block = '';
 	$block =~ s/^\s*```.*\n//;
 	$block =~ s/\n\s*```.*\n?$//;
+	my $codecolor = $Genesis::RC->get('ui.colors.code');
 	return join("\n", map {
-		csprintf("%s%s#kK{%-*.*s}", $prefix, ' ' x $padding, $code_width, $code_width, elipses($_, $code_width))
-	} split(/\n/, $block))."\n";
+		csprintf("%s%s#%s{%-*.*s}", $prefix, ' ' x $padding, $codecolor, $code_width, $code_width, elipses($_, $code_width))
+	} split(/\n/, $block));
 }
 
 sub build_markdown_paragraph {
 	# Render a markdown paragraph to the terminal, wrapping it to the terminal width.
-	# The current code will takes any prefix padding from the first line of the 
+	# The current code will takes any prefix padding from the first line of the
 	# paragraph and apply it to the rest of the lines, regardless of the prefix
 	# padding of the rest of the lines.  This simplification may be altered in the
 	# future if it becomes a problem.
 	my ($block, %opts) = @_;
 	my $width = $opts{width} // terminal_width();
-	my $prefix = $opts{indent} 
-		? ' ' x $opts{indent} 
-		: $opts{prefix} 
+	my $prefix = $opts{indent}
+		? ' ' x $opts{indent}
+		: $opts{prefix}
 		? $opts{prefix}
 		: $block =~ m/\A(\s+)/ ? $1 : '';
 	$block =~ s/\A\s+//;
@@ -552,7 +613,6 @@ sub build_markdown_blockquote {
 	$block =~ s/^\s*>\s*//;
 	$block =~ s/\n\s*>\s*//g;
 	return wrap($block, $width, ' ' x $indent, $indent);
-	return wrap($block =~ s/^\s*>\s*//gmr, $width, boxify('line', 'left').' ');
 }
 
 sub process_markdown_block {
@@ -640,7 +700,7 @@ sub process_markdown_block {
 	} else {
 		# Paragraph
 		return build_markdown_paragraph($block, %opts);
-	} 
+	}
 }
 
 sub render_markdown {
@@ -733,7 +793,7 @@ sub _align {
 	my $len = csize($str);
 	return $str if $len >= $width;
 	my $pad = $width - $len;
-	return $align eq 'l' 
+	return $align eq 'l'
 	? $str . ' ' x $pad
 	: $align eq 'r'
 	? ' ' x $pad . $str
@@ -752,7 +812,7 @@ sub _multiline_row {
 	my $num_lines = (sort {$b <=> $a} map {scalar(@$_)} @cells)[0] || 1;
 	my $rendered_row = '';
 	for my $i (0..$num_lines-1) {
-		$rendered_row .= 
+		$rendered_row .=
 			boxify(line => 'left') .
 			join(boxify(line => 'div'), map {
 				" ".
@@ -785,6 +845,38 @@ sub elipses {
 	my ($str, $len) = @_;
 	return $str if length($str) <= $len;
 	return substr($str, 0, $len-3) . '...';
+}
+
+sub get_control_picture {
+	my $byte = shift;
+	return csprintf("#Y{%s}", chr(0x2400 + $byte)) if $byte < 32;
+	return chr($byte) if ($byte <= 126);
+	return csprintf("#y{%s}", chr(0x2421 + $byte)) if ($byte == 127);
+	return csprintf("#R{%s}", chr(0x2420 + $byte));
+}
+
+sub string_to_hex {
+	my ($str) = @_;
+
+	my $offset = 0;
+	while ($str) {
+		my $block = substr($str, 0, 16, '');     # Take 16 bytes worth
+		my $hex = '';
+		my $printable = '';
+		my @bytes = unpack('C*', $block);
+		for my $byte (@bytes) {
+			$hex .= sprintf("%02x ", $byte);
+			$printable .= get_control_picture($byte);
+		}
+
+		# Format in columns
+		printf("%04x  %-48s |%s|\n",
+			$offset,
+			$hex,
+			$printable,
+		);
+		$offset += 16;
+	}
 }
 
 # TODO:
@@ -821,5 +913,45 @@ sub elipses {
 #
 #   Motive: render help docs and release notes created in markdown, needed for
 #           help refactor phase 2
+
+### STDIN Manipulation Functions {{{
+
+my ($stdin_r, $stdin_w, $stdin_orig);
+
+# set_stdin - redirect STDIN to read from provided input {{{
+sub set_stdin {
+	my $input = shift;
+
+	if (defined($stdin_orig)) {
+		# Already redirected, close existing handles
+		close $stdin_r if $stdin_r;
+	} else {
+		# First time redirection, create original STDIN handle
+		open $stdin_orig, '<&', \*STDIN or die "can't dup STDIN: $!";
+	}
+
+	# First time redirection
+	pipe($stdin_r, $stdin_w) or die "can't create pipe: $!";
+	open STDIN, '<&', $stdin_r or die "can't dup pipe to STDIN: $!";
+	print $stdin_w $input;
+	close $stdin_w;
+	return;
+}
+
+# }}}
+# reset_stdin - restore original STDIN {{{
+sub reset_stdin {
+	return unless defined($stdin_orig); # Nothing to restore
+	open STDIN, '<&', $stdin_orig or die "can't restore STDIN: $!";
+	close $stdin_orig;
+	$stdin_orig = undef;
+	close $stdin_r;
+	$stdin_r = undef;
+	$stdin_w = undef;
+	return;
+}
+
+# }}}
+# }}}
 
 1;

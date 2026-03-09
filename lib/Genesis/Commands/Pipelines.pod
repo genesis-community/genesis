@@ -1,0 +1,878 @@
+=head1 NAME
+
+Genesis::Commands::Pipelines - Command handlers for Genesis CI/CD pipeline management
+
+=head1 SYNOPSIS
+
+  # Registered in bin/genesis via define_command:
+  genesis embed
+  genesis repipe [layout] [--config ci.yml] [--target <fly-target>] [--dry-run] [--yes] [--paused]
+  genesis graph  [layout] [--config ci.yml]
+  genesis describe [layout] [--config ci.yml]
+
+  # Invoked automatically by Concourse CI pipeline tasks:
+  genesis ci-pipeline-deploy
+  genesis ci-show-changes
+  genesis ci-generate-cache
+  genesis ci-pipeline-run-errand
+
+=head1 DESCRIPTION
+
+Provides command handlers for Genesis CI/CD pipeline management.  There are
+two distinct groups of commands in this module:
+
+=over 4
+
+=item Pipeline management (operator-facing)
+
+C<embed>, C<repipe>, C<graph>, and C<describe> are run by a Genesis operator
+to embed the Genesis binary, configure a Concourse pipeline, visualize the
+pipeline dependency graph, or display a human-readable pipeline description.
+
+=item Pipeline task handlers (Concourse-facing)
+
+C<ci_pipeline_deploy>, C<ci_show_changes>, C<ci_generate_cache>, and
+C<ci_pipeline_run_errand> are invoked by Concourse pipeline tasks.  They read
+configuration from environment variables and perform deployment, cache
+management, errand execution, and change display operations on behalf of the
+CI pipeline.
+
+=back
+
+The pipeline task handlers authenticate to Vault via AppRole credentials
+(C<VAULT_ROLE_ID> and C<VAULT_SECRET_ID>) and interact with a remote
+Vault server via L<Service::Vault::Remote>.  Git operations are performed
+using credentials supplied via C<GIT_PRIVATE_KEY> (SSH) or
+C<GIT_USERNAME>/C<GIT_PASSWORD> (HTTPS).
+
+=head1 FUNCTIONS
+
+=head2 embed()
+
+    genesis embed
+
+Embeds the current Genesis binary into the deployment repository under
+C<.genesis/>.  This ensures that all pipeline tasks use the same Genesis
+version that was present when the pipeline was configured.
+
+The binary to embed is taken from the C<GENESIS_CALLBACK_BIN> environment
+variable, falling back to C<$0> (the currently executing Genesis binary).
+
+Takes no arguments.  Prints usage and exits if any arguments are supplied.
+
+B<Returns:> The return value of C<Genesis::Top-E<gt>embed>.
+
+B<Examples:>
+
+  # Embed the currently running genesis binary into the deployment repo
+  genesis embed
+
+=head2 repipe([$layout])
+
+    genesis repipe
+    genesis repipe sandbox
+    genesis repipe --config ci.yml --target my-concourse --dry-run
+
+Generates and uploads a Concourse pipeline configuration from the genesis
+CI config file.  Parses the pipeline definition, generates Concourse YAML,
+then pauses, sets, unpauses, and exposes or hides the pipeline via the
+C<fly> CLI.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$layout> (optional)
+
+The pipeline layout to use.  Defaults to the layout inferred from the CI
+config file when omitted.
+
+=back
+
+B<Options (via C<get_options>):>
+
+=over 4
+
+=item C<--config> (default: C<ci.yml>)
+
+Path to the CI config file to parse.
+
+=item C<--target>
+
+The Concourse C<fly> target to use.  Defaults to the layout name when not
+specified.
+
+=item C<--dry-run>
+
+Print the generated Concourse YAML to standard output and exit without
+uploading.
+
+=item C<--yes>
+
+Pass the C<-n> flag to C<fly set-pipeline> to skip interactive confirmation.
+
+=item C<--paused>
+
+Leave the pipeline paused after uploading instead of unpausing it.
+
+=back
+
+B<Returns:> Nothing.  Exits 0 on success.  When C<--dry-run> is specified,
+prints the Concourse YAML to standard output and exits 0 without uploading.
+
+B<Errors:>
+
+Calls C<bail()> with C<"No vault specified or configured."> if no Vault is
+configured.
+
+Calls C<bail()> with C<"Could not pause %s pipeline: %s"> (where the first
+C<%s> is the pipeline name and the second is the command output) if
+C<fly pause-pipeline> fails with an error other than
+C<pipeline '...' not found>.
+
+Calls C<bail()> via C<onfailure> if C<fly set-pipeline>,
+C<fly unpause-pipeline>, C<fly expose-pipeline>, or C<fly hide-pipeline>
+fails.
+
+B<Examples:>
+
+  # Upload pipeline using defaults
+  genesis repipe
+  # Returns: exits 0 on success
+
+  # Preview the generated pipeline YAML without uploading
+  genesis repipe --dry-run
+  # Prints: Concourse YAML to standard output
+
+  # Upload with a specific Concourse target
+  genesis repipe --target prod-concourse
+  # Returns: exits 0 on success
+
+=head2 graph([$layout])
+
+    genesis graph
+    genesis graph sandbox
+
+Generates and prints a Graphviz DOT-format representation of the pipeline
+dependency graph.  The DOT output can be piped to C<dot> or rendered with any
+Graphviz tool.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$layout> (optional)
+
+The pipeline layout to use.  Defaults to the layout inferred from the CI
+config file when omitted.
+
+=back
+
+B<Options (via C<get_options>):>
+
+=over 4
+
+=item C<--config> (default: C<ci.yml>)
+
+Path to the CI config file to parse.
+
+=back
+
+B<Returns:> Prints the Graphviz DOT source to standard output.
+
+B<Examples:>
+
+  # Print DOT graph for the default pipeline
+  genesis graph
+
+  # Render pipeline graph as PNG
+  genesis graph | dot -Tpng -o pipeline.png
+
+=head2 describe([$layout])
+
+    genesis describe
+    genesis describe sandbox
+
+Parses the pipeline configuration and prints a human-readable description
+of the environments and their pass/trigger relationships.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$layout> (optional)
+
+The pipeline layout to use.  Defaults to the layout inferred from the CI
+config file when omitted.
+
+=back
+
+B<Options (via C<get_options>):>
+
+=over 4
+
+=item C<--config> (default: C<ci.yml>)
+
+Path to the CI config file to parse.
+
+=back
+
+B<Returns:> Prints the pipeline description to standard output.
+
+B<Examples:>
+
+  # Describe the default pipeline
+  genesis describe
+
+  # Describe a specific pipeline layout
+  genesis describe sandbox
+
+=head2 ci_pipeline_deploy()
+
+    genesis ci-pipeline-deploy
+
+Concourse pipeline task handler that authenticates to Vault, propagates
+cached files from the previous pipeline environment (if any), then deploys
+the environment named by C<CURRENT_ENV>.
+
+For proto-BOSH (C<create-env>) deployments, fetches the latest state file
+from the Git origin before deploying.  On failure, commits the updated state
+file back to the Git repository before exiting.  On success, commits all
+deployment changes back to Git.
+
+If C<PREVIOUS_ENV> is set, resets the local copies of C<.genesis/config>,
+C<.genesis/kits>, and C<.genesis/cached> to the versions from Git after
+deploying, to avoid stale cache state.
+
+Takes no arguments.  Prints usage and exits if any arguments are supplied.
+
+B<Required environment variables:>
+
+=over 4
+
+=item C<CURRENT_ENV>
+
+Name of the environment to deploy.
+
+=item C<GIT_BRANCH>
+
+Git branch to push post-deployment commits to.
+
+=item C<OUT_DIR>
+
+Path to the output directory for the Git commit.
+
+=item C<WORKING_DIR>
+
+Path to the directory containing the deployment repository.
+
+=item C<VAULT_ROLE_ID>
+
+Vault AppRole role ID for authentication.
+
+=item C<VAULT_SECRET_ID>
+
+Vault AppRole secret ID for authentication.
+
+=item C<VAULT_ADDR>
+
+URL of the Vault server.
+
+=back
+
+B<Optional environment variables:>
+
+=over 4
+
+=item C<PREVIOUS_ENV>
+
+Name of the previous pipeline environment whose cache to propagate.  When
+set, C<CACHE_DIR> is also required.
+
+=item C<CACHE_DIR>
+
+Path to the cached directory from C<PREVIOUS_ENV>.  Required when
+C<PREVIOUS_ENV> is set.
+
+=item C<GIT_PRIVATE_KEY>
+
+SSH private key for Git operations (mutually exclusive with
+C<GIT_USERNAME>/C<GIT_PASSWORD>).
+
+=item C<GIT_USERNAME> / C<GIT_PASSWORD>
+
+HTTPS credentials for Git operations (mutually exclusive with
+C<GIT_PRIVATE_KEY>).
+
+=item C<GIT_GENESIS_ROOT>
+
+Subdirectory within C<WORKING_DIR> where the Genesis deployment root lives.
+Appended to C<WORKING_DIR> when set and non-empty.
+
+=item C<GIT_AUTHOR_NAME> / C<GIT_AUTHOR_EMAIL>
+
+Git commit author identity.  Defaults to C<Concourse Bot> /
+C<concourse@pipeline>.
+
+=item C<CI_NO_REDACT>
+
+When set, disables manifest redaction during deployment output.
+
+=item C<VAULT_SKIP_VERIFY>
+
+Skip TLS verification when connecting to Vault.
+
+=item C<VAULT_NAMESPACE>
+
+Vault namespace for enterprise Vault deployments.
+
+=item C<VAULT_NO_STRONGBOX>
+
+Set to disable Strongbox integration for non-Genesis Vault deployments.
+
+=item C<VAULT_SECRETS_MOUNT>
+
+Vault secrets mount path when secrets are not under C</secret>.
+
+=back
+
+B<Errors:>
+
+Exits with status 1 after printing a list of missing variables if any
+required environment variables are unset.
+
+Calls C<bail()> with C<"The pipeline must specify either GIT_PRIVATE_KEY,
+or GIT_USERNAME and GIT_PASSWORD"> if no Git credentials are provided.
+
+Exits with status 1 if deployment fails.
+
+B<Examples:>
+
+  # Typically invoked by a Concourse task; environment variables
+  # are set by the pipeline resource:
+  CURRENT_ENV=us-east-prod \
+  GIT_BRANCH=main \
+  OUT_DIR=/tmp/out \
+  WORKING_DIR=/tmp/work \
+  VAULT_ROLE_ID=<role-id> \
+  VAULT_SECRET_ID=<secret-id> \
+  VAULT_ADDR=https://vault.example.com \
+  GIT_PRIVATE_KEY="$(cat ~/.ssh/id_rsa)" \
+  genesis ci-pipeline-deploy
+  # Returns: exits 0 on success, exits 1 on failure
+
+=head2 ci_show_changes()
+
+    genesis ci-show-changes
+
+Concourse pipeline task handler that shows what will change in the next
+deployment without actually deploying.  Authenticates to Vault, propagates
+cached files from the previous pipeline environment (if any), generates the
+prospective deployment manifest and BOSH variables file, then runs a dry-run
+shell script that diffs the current and new manifests using C<bosh diff-config>.
+
+For proto-BOSH (C<create-env>) environments, prints a notice that change
+detection is not available and exits cleanly.
+
+After running the diff, checks for mismatches between cached files from the
+previous environment and the current working directory.  If missing or
+unexpected files are found, calls C<bail()> with a descriptive message listing
+the affected files.
+
+Takes no arguments.  Prints usage and exits if any arguments are supplied.
+
+B<Required environment variables:>
+
+=over 4
+
+=item C<CURRENT_ENV>
+
+Name of the environment to inspect.
+
+=item C<GIT_BRANCH>
+
+Git branch to use for state file operations.
+
+=item C<WORKING_DIR>
+
+Path to the directory containing the deployment repository.
+
+=item C<OUT_DIR>
+
+Path to the output directory for Git commits.
+
+=item C<VAULT_ROLE_ID>
+
+Vault AppRole role ID for authentication.
+
+=item C<VAULT_SECRET_ID>
+
+Vault AppRole secret ID for authentication.
+
+=item C<VAULT_ADDR>
+
+URL of the Vault server.
+
+=back
+
+B<Optional environment variables:>
+
+The same optional variables as C<ci_pipeline_deploy> apply:
+C<PREVIOUS_ENV>, C<CACHE_DIR>, C<GIT_PRIVATE_KEY>, C<GIT_USERNAME>,
+C<GIT_PASSWORD>, C<GIT_GENESIS_ROOT>, C<GIT_AUTHOR_NAME>,
+C<GIT_AUTHOR_EMAIL>, C<VAULT_SKIP_VERIFY>, C<VAULT_NAMESPACE>,
+C<VAULT_NO_STRONGBOX>, C<VAULT_SECRETS_MOUNT>.
+
+When C<GENESIS_TRACE> is set, the generated dry-run script is run with
+C<set -ex> for verbose tracing.
+
+B<Errors:>
+
+Exits with status 1 after printing a list of missing variables if any
+required environment variables are unset.
+
+Calls C<bail()> with C<"The pipeline must specify either GIT_PRIVATE_KEY,
+or GIT_USERNAME and GIT_PASSWORD"> if no Git credentials are provided.
+
+Calls C<bail()> with C<"Failed to determine changes."> if the dry-run
+diff script exits non-zero.
+
+Calls C<bail()> with a detailed message listing missing or extra cached
+files if cache mismatches are detected.
+
+B<Examples:>
+
+  # Invoked by a Concourse task to show pending changes:
+  CURRENT_ENV=us-east-prod \
+  GIT_BRANCH=main \
+  WORKING_DIR=/tmp/work \
+  OUT_DIR=/tmp/out \
+  VAULT_ROLE_ID=<role-id> \
+  VAULT_SECRET_ID=<secret-id> \
+  VAULT_ADDR=https://vault.example.com \
+  GIT_PRIVATE_KEY="$(cat ~/.ssh/id_rsa)" \
+  genesis ci-show-changes
+  # Prints: diff output or "No differences found."
+
+=head2 ci_generate_cache()
+
+    genesis ci-generate-cache
+
+Concourse pipeline task handler that generates the environment cache
+directory (C<.genesis/cached/CURRENT_ENV>) from the files applicable
+to the current environment.  This cache is passed as an input to downstream
+pipeline tasks for environments that depend on the current one.
+
+Determines the set of files to cache using C<Genesis::Env> environment
+relationships, optionally seeding from the previous environment's cache.
+Also copies C<kit-overrides.yml>, C<ops/>, and C<bin/> from the common
+path if they exist.  Commits the generated cache to Git.
+
+When C<GENESIS_TESTING> is set, skips the final Git commit and returns early.
+
+Takes no arguments.  Prints usage and exits if any arguments are supplied.
+
+B<Required environment variables:>
+
+=over 4
+
+=item C<CURRENT_ENV>
+
+Name of the environment whose cache to generate.
+
+=item C<GIT_BRANCH>
+
+Git branch to push the cache commit to.
+
+=item C<WORKING_DIR>
+
+Path to the directory containing the deployment repository.
+
+=item C<OUT_DIR>
+
+Path to the output directory for the Git commit.
+
+=back
+
+B<Optional environment variables:>
+
+=over 4
+
+=item C<PREVIOUS_ENV>
+
+Name of the previous pipeline environment.  When set, seeds the cache from
+C<CACHE_DIR/.genesis/cached/PREVIOUS_ENV>.  C<CACHE_DIR> is required when
+C<PREVIOUS_ENV> is set.
+
+=item C<CACHE_DIR>
+
+Path to the cached directory from C<PREVIOUS_ENV>.
+
+=item C<GIT_PRIVATE_KEY>
+
+SSH private key for Git operations (mutually exclusive with
+C<GIT_USERNAME>/C<GIT_PASSWORD>).
+
+=item C<GIT_USERNAME> / C<GIT_PASSWORD>
+
+HTTPS credentials for Git operations.
+
+=item C<GIT_GENESIS_ROOT>
+
+Subdirectory within C<WORKING_DIR> (and C<CACHE_DIR>) where the Genesis
+deployment root lives.
+
+=item C<GENESIS_TESTING>
+
+When set, skips the Git commit step and returns early.
+
+=back
+
+B<Errors:>
+
+Exits with status 1 after printing a list of missing variables if any
+required environment variables are unset.
+
+Calls C<bail()> with C<"The pipeline must specify either GIT_PRIVATE_KEY,
+or GIT_USERNAME and GIT_PASSWORD"> if no Git credentials are provided.
+
+B<Examples:>
+
+  # Invoked by a Concourse task to generate the environment cache:
+  CURRENT_ENV=us-east-sandbox \
+  GIT_BRANCH=main \
+  WORKING_DIR=/tmp/work \
+  OUT_DIR=/tmp/out \
+  GIT_PRIVATE_KEY="$(cat ~/.ssh/id_rsa)" \
+  genesis ci-generate-cache
+  # Creates: .genesis/cached/us-east-sandbox/ and commits it to git
+
+=head2 ci_pipeline_run_errand()
+
+    genesis ci-pipeline-run-errand
+
+Concourse pipeline task handler that authenticates to Vault and runs a named
+BOSH errand against the environment specified by C<CURRENT_ENV>.  The errand
+to run is taken from C<ERRAND_NAME>.
+
+Takes no arguments.  Prints usage and exits if any arguments are supplied.
+
+B<Required environment variables:>
+
+=over 4
+
+=item C<CURRENT_ENV>
+
+Name of the environment against which to run the errand.
+
+=item C<ERRAND_NAME>
+
+Name of the BOSH errand to run.
+
+=item C<VAULT_ROLE_ID>
+
+Vault AppRole role ID for authentication.
+
+=item C<VAULT_SECRET_ID>
+
+Vault AppRole secret ID for authentication.
+
+=item C<VAULT_ADDR>
+
+URL of the Vault server.
+
+=back
+
+B<Optional environment variables:>
+
+=over 4
+
+=item C<VAULT_SKIP_VERIFY>
+
+Skip TLS verification when connecting to Vault.
+
+=item C<VAULT_NAMESPACE>
+
+Vault namespace for enterprise Vault deployments.
+
+=item C<VAULT_NO_STRONGBOX>
+
+Set to disable Strongbox integration for non-Genesis Vault deployments.
+
+=item C<VAULT_SECRETS_MOUNT>
+
+Vault secrets mount path when secrets are not under C</secret>.
+
+=back
+
+B<Errors:>
+
+Exits with status 1 after printing a list of missing variables if any
+required environment variables are unset.
+
+B<Examples:>
+
+  # Invoked by a Concourse task to run a smoke-test errand:
+  CURRENT_ENV=us-east-prod \
+  ERRAND_NAME=smoke-tests \
+  VAULT_ROLE_ID=<role-id> \
+  VAULT_SECRET_ID=<secret-id> \
+  VAULT_ADDR=https://vault.example.com \
+  genesis ci-pipeline-run-errand
+  # Returns: exits 0 on success
+
+=head1 INTERNAL METHODS
+
+These functions are internal to the implementation.  They may change without
+notice and should not be called directly.
+
+=head2 _vault_auth()
+
+Validates that C<VAULT_ADDR>, C<VAULT_ROLE_ID>, and C<VAULT_SECRET_ID> are
+all defined in the environment, then creates and validates a
+L<Service::Vault::Remote> connection using AppRole authentication.
+
+Honors the optional environment variables C<VAULT_SKIP_VERIFY>,
+C<VAULT_NAMESPACE>, C<VAULT_NO_STRONGBOX>, and C<VAULT_SECRETS_MOUNT>.
+
+B<Returns:> Nothing.
+
+B<Errors:>
+
+Calls C<bail()> with C<"Pipeline requires the following missing environment
+variables: %s"> (where C<%s> is a comma-separated list of variable names) if
+any of the three required variables are absent.
+
+B<Examples:>
+
+  # Called internally before any Vault-dependent operation:
+  _vault_auth();
+  # Returns: nothing; dies if required vars are missing or Vault auth fails
+
+=head2 _bail_on_missing_pipeline_environment_variables(@missing)
+
+    _bail_on_missing_pipeline_environment_variables(@undefined)
+
+Checks whether any environment variable names were passed in as missing.
+If so, prints each missing variable name, prints a message to check the CI
+pipeline configuration, and exits with status 1.  Does nothing when the list
+is empty.
+
+B<Parameters:>
+
+=over 4
+
+=item C<@missing>
+
+List of environment variable names that were expected but not defined.
+
+=back
+
+B<Returns:> Nothing.  Exits with status 1 when C<@missing> is non-empty.
+
+B<Examples:>
+
+  my @undefined = grep { !$ENV{$_} } qw/CURRENT_ENV GIT_BRANCH/;
+  _bail_on_missing_pipeline_environment_variables(@undefined);
+  # Returns: nothing when @undefined is empty; exits 1 otherwise
+
+=head2 _propagate_previous_passed_files()
+
+Copies cached Genesis files from the previous pipeline environment's cache
+directory into the working directory, then computes and returns a report of
+file mismatches.
+
+Returns immediately (C<undef>) when C<PREVIOUS_ENV> is not set.
+
+The following directories are removed from C<WORKING_DIR> and replaced with
+copies from C<CACHE_DIR>:
+
+=over 4
+
+=item C<.genesis/cached>
+
+=item C<.genesis/config>
+
+=item C<.genesis/kits>
+
+=back
+
+After copying, computes the set of files that relate the current environment
+to the previous one, then identifies files that are present in one location
+but absent in the other.
+
+B<Returns:> C<undef> when C<PREVIOUS_ENV> is not set.  Otherwise a hashref
+with keys:
+
+=over 4
+
+=item C<missing>
+
+Arrayref of file paths present in C<WORKING_DIR> but absent in C<CACHE_DIR>.
+
+=item C<extra>
+
+Arrayref of file paths present in C<CACHE_DIR> but absent in C<WORKING_DIR>.
+
+=back
+
+B<Errors:>
+
+Calls C<bail()> with C<"No CACHE_DIR set - cannot propagate passed values">
+if C<CACHE_DIR> is unset when C<PREVIOUS_ENV> is set.
+
+Calls C<bail()> with C<"No WORKING_DIR set - cannot propagate passed values">
+if C<WORKING_DIR> is unset when C<PREVIOUS_ENV> is set.
+
+B<Examples:>
+
+  my $mismatches = _propagate_previous_passed_files();
+  # Returns: undef if PREVIOUS_ENV not set
+  # Returns: { missing => [...], extra => [...] } otherwise
+
+=head2 _get_git_env($env_dir)
+
+    my %git_env = _get_git_env($tmp);
+    my $git_env = _get_git_env($tmp);
+
+Builds a hash of environment variables suitable for running Git commands in a
+Concourse task.  Creates a temporary home directory under C<$env_dir/home>
+and configures Git credentials based on the available authentication method:
+
+=over 4
+
+=item SSH key authentication
+
+When C<GIT_PRIVATE_KEY> is set, writes the key to
+C<$env_dir/home/.ssh/key> with mode C<0600>, writes an SSH config that
+disables host-key checking, and sets C<GIT_SSH_COMMAND>.
+
+=item HTTPS credential authentication
+
+When C<GIT_USERNAME> is set, writes a credential helper script to
+C<$env_dir/home/credential-helper.sh> and registers it via
+C<git config credential.helper>.
+
+=back
+
+B<Parameters:>
+
+=over 4
+
+=item C<$env_dir>
+
+Path to a temporary working directory under which the C<home> subtree is
+created.
+
+=back
+
+B<Returns:>
+
+In list context: a flat hash of environment variable name/value pairs.
+
+In scalar context: a hashref of the same pairs.
+
+The returned hash always includes: C<HOME>, C<GIT_AUTHOR_NAME>,
+C<GIT_AUTHOR_EMAIL>, C<GIT_COMMITTER_NAME>, C<GIT_COMMITTER_EMAIL>,
+C<GIT_ASKPASS>.  C<GIT_SSH_COMMAND> is added when C<GIT_PRIVATE_KEY> is set.
+
+B<Examples:>
+
+  my $tmp = workdir();
+  my $git_env = _get_git_env($tmp);
+  # Returns: hashref of git-related env vars configured for the task
+
+  my %git_env = _get_git_env($tmp);
+  # Returns: flat hash of git-related env vars
+
+=head2 _commit_changes($indir, $outdir, $branch, $message[, $filter])
+
+    _commit_changes($ENV{WORKING_DIR}, $ENV{OUT_DIR}, $ENV{GIT_BRANCH},
+                    "deployed to $ENV{CURRENT_ENV}");
+    _commit_changes($ENV{WORKING_DIR}, $ENV{OUT_DIR}, $ENV{GIT_BRANCH},
+                    "state file update", qr{^\.genesis/manifest/.*\.state$});
+
+Copies the input directory to the output directory, resets the output
+directory to the latest origin commit on C<$branch>, detects changed files in
+the input directory via C<git status --porcelain>, applies those changes
+(copies or removes) to the output directory, then commits if any changes
+remain.
+
+Files matched by the optional C<$filter> regex are the only ones applied when
+C<$filter> is provided; all other changed files are skipped.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$indir>
+
+Path to the source directory (e.g., C<WORKING_DIR>).
+
+=item C<$outdir>
+
+Path to the output directory (e.g., C<OUT_DIR>).  Removed and recreated on
+each call to avoid merge conflicts.
+
+=item C<$branch>
+
+Git branch name to reset to and commit on.
+
+=item C<$message>
+
+Commit message body.  The final commit message is prefixed with
+C<"CI commit: ">.
+
+=item C<$filter> (optional)
+
+A compiled regexp (C<qr/.../>).  When provided, only files whose paths match
+this pattern are included in the commit.
+
+=back
+
+B<Returns:> Nothing.  Exits 1 if the initial directory copy fails.
+
+B<Examples:>
+
+  _commit_changes('/tmp/work', '/tmp/out', 'main', 'deployed to sandbox');
+  # Returns: nothing; commits changed files to the out git repo
+
+=head1 ENVIRONMENT VARIABLES SUMMARY
+
+=over 4
+
+=item CI pipeline authentication
+
+C<VAULT_ADDR>, C<VAULT_ROLE_ID>, C<VAULT_SECRET_ID>,
+C<VAULT_SKIP_VERIFY>, C<VAULT_NAMESPACE>, C<VAULT_NO_STRONGBOX>,
+C<VAULT_SECRETS_MOUNT>
+
+=item CI pipeline deployment targeting
+
+C<CURRENT_ENV>, C<PREVIOUS_ENV>, C<ERRAND_NAME>
+
+=item CI pipeline Git operations
+
+C<GIT_BRANCH>, C<GIT_PRIVATE_KEY>, C<GIT_USERNAME>, C<GIT_PASSWORD>,
+C<GIT_AUTHOR_NAME>, C<GIT_AUTHOR_EMAIL>, C<GIT_GENESIS_ROOT>
+
+=item CI pipeline directory layout
+
+C<WORKING_DIR>, C<OUT_DIR>, C<CACHE_DIR>
+
+=item CI pipeline behavior flags
+
+C<CI_NO_REDACT>, C<GENESIS_TESTING>, C<GENESIS_TRACE>
+
+=back
+
+=head1 SEE ALSO
+
+L<Genesis::CI::Legacy>, L<Genesis::Top>, L<Genesis::Env>,
+L<Service::Vault::Remote>, L<Genesis::Commands>
+
+=head1 AUTHOR
+
+FiveTwenty, LLC
+
+=cut

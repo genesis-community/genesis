@@ -49,6 +49,16 @@ sub format_value {$_[0]->{format_value}||$_[0]->{stored_format_value}}
 # has_format_value - true if format_value is present locally or in store {{{
 sub has_format_value {exists($_[0]->{format_value})||exists($_[0]->{stored_format_value})}
 
+# }}}
+# reset - reset the secret to its unloaded state {{{
+sub reset {
+	my $self = shift;
+	$self->SUPER::reset;
+	delete($self->{format_value});
+	delete($self->{stored_format_value});
+	$self->{loaded} = 0;
+}
+
 #}}}
 # TODO: add calc_format_key if we ever want to be able to write new formatted value based on unformatted value
 
@@ -82,7 +92,7 @@ sub check_value {
 
 sub promote_value_to_stored {
 	my $self = shift;
-	$self->{stored_value} = delete($self->{value});
+	$self->SUPER::promote_value_to_stored;
 	$self->{stored_format_value} = delete($self->{format_value}) if $self->format_path;
 }
 

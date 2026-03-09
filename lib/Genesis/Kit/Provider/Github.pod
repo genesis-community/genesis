@@ -1,0 +1,903 @@
+=encoding utf8
+
+=head1 NAME
+
+Genesis::Kit::Provider::Github - Github-based kit provider for Genesis deployment kits
+
+=head1 SYNOPSIS
+
+  use Genesis::Kit::Provider;
+
+  # Create a Github kit provider via the base class factory
+  my $provider = Genesis::Kit::Provider->new(
+      type         => 'github',
+      organization => 'my-org',
+  );
+
+  # Or create one directly during repo init
+  my $provider = Genesis::Kit::Provider::Github->init(
+      'kit-provider-org' => 'my-org',
+  );
+
+  # List available kits
+  my @kits = $provider->kit_names();
+
+  # Fetch a specific kit version
+  my ($name, $version, $file) = $provider->fetch_kit_version(
+      'bosh', '2.3.0', '/path/to/cache', 0
+  );
+
+=head1 DESCRIPTION
+
+C<Genesis::Kit::Provider::Github> implements kit retrieval from Github or
+Github Enterprise repositories.  It discovers kits by scanning an
+organization for repositories whose names end in C<-genesis-kit>, and
+fetches releases and tarballs via the Github API.
+
+This class inherits from L<Genesis::Kit::Provider> and implements all of
+its abstract methods.  Instances are typically obtained through the base
+class factory C<< Genesis::Kit::Provider->new(type => 'github', ...) >>
+rather than constructed directly.
+
+The following constants define the defaults used when options are omitted:
+
+=over 4
+
+=item C<DEFAULT_DOMAIN>
+
+C<'github.com'> -- the Github domain used when no C<domain> is specified.
+
+=item C<DEFAULT_LABEL>
+
+C<'Custom Github-based Kit Provider'> -- the provider label used when no
+C<label> is specified.
+
+=item C<DEFAULT_TLS>
+
+C<'yes'> -- the TLS mode used when no C<tls> is specified.
+
+=back
+
+=head1 METHODS
+
+=head2 init (class method)
+
+  my $provider = Genesis::Kit::Provider::Github->init(%opts);
+
+Creates a new Github provider during C<genesis init> or C<genesis update>
+when the user selects C<github> as the provider type.  Called by
+L<Genesis::Kit::Provider/init> after determining the provider type from
+the parsed CLI options.
+
+B<Parameters:>
+
+=over 4
+
+=item C<kit-provider-name>
+
+Optional.  A human-readable label for this provider used in messages.
+Defaults to C<DEFAULT_LABEL> (C<'Custom Github-based Kit Provider'>).
+
+=item C<kit-provider-domain>
+
+Optional.  The Github domain, without the C<www> or C<api> subdomain.
+Defaults to C<DEFAULT_DOMAIN> (C<'github.com'>).  Use this for Github
+Enterprise installations.
+
+=item C<kit-provider-org>
+
+Required.  The name of the Github organization that owns the kit
+repositories.  If absent, the method dies immediately.
+
+=item C<kit-provider-tls>
+
+Optional.  TLS mode for API connections.  Accepts C<'yes'>, C<'no'>, or
+C<'skip'>.  Defaults to C<DEFAULT_TLS> (C<'yes'>).
+
+=back
+
+B<Returns:> A new C<Genesis::Kit::Provider::Github> instance.
+
+B<Errors:>
+
+=over 4
+
+=item C<"E<lt>labelE<gt> kit provider requires specifying the organization using the --kit-provider-org option">
+
+Raised when C<kit-provider-org> is not supplied.  C<E<lt>labelE<gt>> is
+the value of C<kit-provider-name>, or the default label if not provided.
+
+=item C<"Github kit provider option --kit-provider-tls only accepts: no, yes, and skip">
+
+Raised when C<kit-provider-tls> is set to any value other than C<no>,
+C<yes>, or C<skip>.
+
+=back
+
+B<Examples:>
+
+  # Minimal -- only organization is required
+  my $p = Genesis::Kit::Provider::Github->init(
+      'kit-provider-org' => 'genesis-community',
+  );
+  print $p->organization(); # prints 'genesis-community'
+
+  # Full set of options
+  my $p = Genesis::Kit::Provider::Github->init(
+      'kit-provider-name'   => 'My GHE Provider',
+      'kit-provider-domain' => 'github.example.com',
+      'kit-provider-org'    => 'my-org',
+      'kit-provider-tls'    => 'skip',
+  );
+
+=head2 new (class method)
+
+  my $provider = Genesis::Kit::Provider::Github->new(%config);
+
+Constructs a new C<Genesis::Kit::Provider::Github> instance from a
+configuration hash.  Used by L</init> and by
+L<Genesis::Kit::Provider/new> when loading a stored configuration.
+
+B<Parameters:>
+
+=over 4
+
+=item C<label>
+
+Optional.  Human-readable label for the provider.  Defaults to
+C<DEFAULT_LABEL> (C<'Custom Github-based Kit Provider'>).
+
+=item C<domain>
+
+Optional.  Github domain without subdomain.  Defaults to
+C<DEFAULT_DOMAIN> (C<'github.com'>).
+
+=item C<organization>
+
+Required in practice.  The Github organization that owns the kit
+repositories.
+
+=item C<tls>
+
+Optional.  TLS mode: C<'yes'>, C<'no'>, or C<'skip'>.  The value
+C<'insecure'> is also accepted for backwards compatibility with older
+configurations and is silently converted to C<'skip'>.  Defaults to
+C<DEFAULT_TLS> (C<'yes'>).
+
+=item C<type>
+
+Optional.  Informational; expected to be C<'github'> when present.
+
+=back
+
+B<Returns:> A blessed C<Genesis::Kit::Provider::Github> instance backed by
+an internal C<Service::Github> remote object.
+
+B<Examples:>
+
+  my $provider = Genesis::Kit::Provider::Github->new(
+      organization => 'genesis-community',
+  );
+  print $provider->domain(); # prints 'github.com'
+
+  # Load from stored config with custom domain
+  my $provider = Genesis::Kit::Provider::Github->new(
+      label        => 'Corp GHE',
+      domain       => 'github.corp.example.com',
+      organization => 'platform-team',
+      tls          => 'skip',
+  );
+
+=head2 opts (class method)
+
+  my @specs = Genesis::Kit::Provider::Github->opts();
+
+Returns the list of L<Getopt::Long> option specification strings supported
+by L</init>.  Used by L<Genesis::Kit::Provider/parse_opts> to register the
+correct options before parsing CLI arguments.
+
+B<Returns:> A list of option specification strings:
+
+  kit-provider-name=s
+  kit-provider-domain=s
+  kit-provider-org=s
+  kit-provider-tls=s
+  kit-provider-access-token=s
+
+B<Examples:>
+
+  my @specs = Genesis::Kit::Provider::Github->opts();
+  # Returns: ('kit-provider-name=s', 'kit-provider-domain=s', ...)
+
+=head2 opts_help
+
+  my $text = $provider->opts_help(%config);
+
+Returns a formatted help string describing the Github provider's CLI
+options, for inclusion in command-line help output.  Returns an empty
+string if C<'github'> is not listed in C<$config{valid_types}>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<valid_types>
+
+An array reference of provider type strings that are valid in the current
+context.  The method returns C<''> unless this list contains C<'github'>.
+
+=back
+
+B<Returns:> A multi-line help string describing all Github provider options,
+or an empty string if C<'github'> is not in C<valid_types>.
+
+B<Examples:>
+
+  my $help = $provider->opts_help(valid_types => [qw(genesis-community github)]);
+  print $help;
+  # Prints a block beginning with:
+  #   Kit Provider `github`:
+  #
+  #     This is a generic kit provider type for kits backed by Github...
+
+  # Returns empty when github is not a valid type
+  my $none = $provider->opts_help(valid_types => ['genesis-community']);
+  print length($none); # prints '0'
+
+=head2 label
+
+  my $label = $provider->label();
+
+Returns the human-readable label string for this provider.  Used in
+status messages and error output to identify the provider.
+
+Also provides several additional read-only delegation accessors that
+forward to the internal C<Service::Github> remote object:
+
+=over 4
+
+=item C<remote>
+
+Returns the C<Service::Github> remote object used to make API calls.
+
+=item C<domain>
+
+Returns the Github domain string (e.g., C<'github.com'>).
+
+=item C<organization>
+
+Returns the Github organization name string.
+
+=item C<credentials>
+
+Returns the credentials value for authenticated API requests, or C<undef>
+if no credentials are configured.  Credentials are sourced from the
+C<GITHUB_USER> and C<GITHUB_AUTH_TOKEN> environment variables by
+C<Service::Github>.
+
+=item C<tls>
+
+Returns the TLS mode string: one of C<'yes'>, C<'no'>, or C<'skip'>.
+
+=item C<check>
+
+Checks connectivity to the provider.  Accepts an optional URL argument;
+defaults to the organization's repository listing URL.  In list context
+returns C<($http_code, $error_message)>; in scalar context returns the
+error message string or C<undef> on success.
+
+=item C<repos_url>
+
+Returns the API URL for listing the organization's repositories.
+Accepts an optional page number for paginated results.
+
+=item C<releases_url>
+
+Returns the API URL for listing releases for a given repository name
+(without the C<-genesis-kit> suffix).  Accepts an optional page number.
+
+=item C<base_url>
+
+Returns the base API URL for the configured Github domain
+(e.g., C<'https://api.github.com'>).
+
+=item C<config>
+
+Returns a hash of configuration values suitable for serialization and
+later reconstruction via L</new>.  Always includes C<type> (C<'github'>)
+and C<organization>.  Includes C<label>, C<domain>, and C<tls> only when
+they differ from their respective defaults.
+
+=back
+
+B<Returns:> A string.  The default value is C<'Custom Github-based Kit Provider'>.
+
+B<Examples:>
+
+  my $provider = Genesis::Kit::Provider::Github->new(
+      organization => 'my-org',
+      label        => 'My Provider',
+  );
+  print $provider->label();        # prints 'My Provider'
+  print $provider->domain();       # prints 'github.com'
+  print $provider->organization(); # prints 'my-org'
+  print $provider->tls();          # prints 'yes'
+
+  my %cfg = $provider->config();
+  # %cfg = ( type => 'github', organization => 'my-org' )
+
+  print $provider->base_url(); # prints 'https://api.github.com'
+  print $provider->repos_url();
+  # prints 'https://api.github.com/users/my-org/repos'
+
+=head2 kit_names
+
+  my @names = $provider->kit_names($filter);
+
+Retrieves the list of kit names available from this provider.  Scans the
+configured Github organization for repositories whose names end in
+C<-genesis-kit>, strips that suffix, and returns the bare kit names.
+
+Results are cached on the object after the first call.  The optional
+C<$filter> regex is applied to the cached list on each call.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$filter>
+
+Optional.  A regular expression string.  Only kit names matching this
+pattern are returned.
+
+=back
+
+B<Returns:> A list of kit name strings.
+
+B<Errors:>
+
+If connectivity fails, the error message from C<check> is passed to
+C<bail>.
+
+If no kits are found (optionally after applying C<$filter>), dies with a
+message of the form C<"No genesis kit repositories found on ..."> and, if
+credentials are absent, appends a note that C<GITHUB_USER> and
+C<GITHUB_AUTH_TOKEN> may be required to see private repositories.
+
+B<Examples:>
+
+  my @kits = $provider->kit_names();
+  print scalar(@kits); # prints the number of available kits
+
+  my @bosh = $provider->kit_names('bosh');
+  print $bosh[0]; # prints 'bosh' if found
+
+=head2 kit_releases
+
+  my @releases = $provider->kit_releases($name);
+
+Retrieves the list of release objects for the named kit from Github.
+Results are cached per kit name after the first call.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$name>
+
+Required.  The bare kit name (without the C<-genesis-kit> suffix).
+
+=back
+
+B<Returns:> A list of release info hash references as returned by the
+C<Service::Github> remote.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Missing name for retrieving kit releases">
+
+Raised when C<$name> is not supplied.
+
+=item C<"No kit named #C{%s} exists under %s">
+
+Raised when the releases URL returns HTTP 404 and the kit name is
+confirmed absent from C<kit_names()>.  The first C<%s> is the kit name
+and the second is the provider label.
+
+=item C<"$status">
+
+When the connectivity check for the releases URL returns a non-200,
+non-404 HTTP status, C<$status> (the error string from C<check>) is
+passed directly to C<bail>.  The content of this message depends on the
+HTTP response received.
+
+=back
+
+B<Examples:>
+
+  my @releases = $provider->kit_releases('bosh');
+  for my $r (@releases) {
+      print "$r->{name}\n"; # prints each release tag
+  }
+
+=head2 kit_versions
+
+  my @versions = $provider->kit_versions($name, %opts);
+
+Retrieves version information for the named kit.  Sets an asset filter on
+C<%opts> that matches the kit's tarball filename pattern (e.g.,
+C<bosh-1.2.3.tar.gz> or C<bosh-1.2.3.tgz>), then delegates to
+C<< $self->remote->versions >>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$name>
+
+Required.  The bare kit name (without the C<-genesis-kit> suffix).
+
+=item C<%opts>
+
+Optional additional options passed through to C<< Service::Github->versions >>.
+Supported keys include:
+
+=over 4
+
+=item C<include_drafts>
+
+Boolean.  Include draft releases when true.
+
+=item C<include_prereleases>
+
+Boolean.  Include pre-release versions when true.
+
+=item C<latest>
+
+Integer.  Return at most this many versions in descending version order.
+
+=back
+
+=back
+
+B<Returns:> A list of version info hash references, each containing at
+least: C<version>, C<body>, C<draft>, C<prerelease>, C<date>, and
+optionally C<url>.
+
+B<Examples:>
+
+  my @versions = $provider->kit_versions('bosh');
+  for my $v (@versions) {
+      print "$v->{version}\n"; # prints each version string
+  }
+
+  # Only stable releases
+  my @stable = $provider->kit_versions('bosh',
+      include_drafts       => 0,
+      include_prereleases  => 0,
+  );
+
+=head2 fetch_kit_version
+
+  my ($name, $version, $file) = $provider->fetch_kit_version(
+      $name, $version, $path, $force
+  );
+
+Downloads the compiled kit tarball for the specified name and version from
+Github, with full download-time content validation before saving to disk.
+
+If C<$version> is C<undef> or the string C<'latest'>, the latest
+available version with a downloadable release asset is resolved first via
+C<latest_version_of()>.  Otherwise, any leading C<v> prefix is stripped
+from the version string.
+
+Three content validation checks are performed on the downloaded data
+before the file is written:
+
+=over 4
+
+=item 1. Empty response check
+
+If the downloaded response body is empty, the method dies immediately.
+
+=item 2. HTML interception check
+
+If the response starts with C<< <!DOCTYPE >>, C<< <html >>, or
+C<< <head >> (case-insensitive), the download is rejected as a proxy or
+captive-portal intercept.
+
+=item 3. Gzip magic bytes check
+
+If the response is non-empty but the first two bytes are not C<0x1f 0x8b>
+(the gzip magic number), a warning is emitted and the download proceeds.
+
+=back
+
+If the target file already exists and C<$force> is false, the downloaded
+content is compared against the existing file by SHA-1 hash.  If they are
+identical a warning is emitted and the process exits.  If they differ, the
+user is prompted interactively to confirm overwriting.
+
+The saved file is written with permissions C<0444> (read-only) and named
+C<$name-$version.tar.gz> under C<$path>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$name>
+
+Required.  The bare kit name (without the C<-genesis-kit> suffix).
+
+=item C<$version>
+
+Required.  The version to download, or C<'latest'> to resolve
+automatically.  A leading C<v> prefix is stripped if present.
+
+=item C<$path>
+
+Required.  Directory where the tarball should be saved.
+
+=item C<$force>
+
+Optional.  When true, skips the existing-file check and overwrites any
+existing file without prompting.
+
+=back
+
+B<Returns:> A three-element list: C<($name, $version, $file)> where
+C<$file> is the absolute path to the saved tarball.
+
+B<Errors:>
+
+=over 4
+
+=item C<"No latest version of $name kit found with a downloadable release">
+
+Raised when C<$version> is C<'latest'> or C<undef> and no downloadable
+release is found.  C<$name> is the kit name.
+
+=item C<"Version %s/%s was not found\n">
+
+Raised when the specified version does not appear in the kit's version
+list.  The first C<%s> is the kit name and the second is the version.
+
+=item C<"Version %s/%s was found but is missing its resource url.It may have been revoked (see release notes below):\n\n%s\n">
+
+Raised when the version info exists but lacks a download URL.  The C<%s>
+values are the kit name, version, and release notes body respectively.
+
+=item C<"Failed to download %s/%s from %s: returned a %s status code\n">
+
+Raised when the HTTP download returns a non-200 response code.  The C<%s>
+values are the kit name, version, provider label, and HTTP status code.
+
+=item C<"Downloaded kit %s/%s from %s but received empty response.\nThe server returned HTTP 200 but no content.">
+
+Raised when the download succeeds (HTTP 200) but the response body is
+empty.  The C<%s> values are the kit name, version, and provider label.
+
+=item C<"Downloaded kit %s/%s from %s but received an HTML page\ninstead of a kit archive.\n\nA network proxy or captive portal likely intercepted the download.\nCheck network connectivity and proxy settings.">
+
+Raised when the downloaded content begins with an HTML tag.  The C<%s>
+values are the kit name, version, and provider label.
+
+=item C<"Aborted!\n">
+
+Raised when the user declines to overwrite an existing file that differs
+from the downloaded content.
+
+=back
+
+B<Warnings:>
+
+=over 4
+
+=item C<"Downloaded data for kit %s/%s does not appear to be gzip-compressed.\nProceeding, but the kit may fail to load.">
+
+Emitted when the downloaded content is non-empty but the first two bytes
+are not C<0x1f 0x8b> (the gzip magic number).  The download is saved
+regardless.  The C<%s> values are the kit name and version.
+
+=item C<"Exact same kit already exists under #C{%s} - no change.\n">
+
+Emitted when the target file already exists, C<$force> is false, and the
+SHA-1 hash of the downloaded content matches the existing file.  The
+process exits with status 0.  C<%s> is the humanized path.
+
+=back
+
+B<Examples:>
+
+  my ($name, $ver, $file) = $provider->fetch_kit_version(
+      'bosh', '2.3.0', '/tmp/kits', 0
+  );
+  print $file; # prints '/tmp/kits/bosh-2.3.0.tar.gz'
+
+  # Fetch latest version
+  my ($name, $ver, $file) = $provider->fetch_kit_version(
+      'bosh', 'latest', '/tmp/kits', 0
+  );
+
+=head2 fetch_kit_version_src
+
+  my ($name, $version, $file) = $provider->fetch_kit_version_src(
+      $name, $version, $path, $force
+  );
+
+Downloads the source tarball for the specified kit name and version from
+Github.  Similar in structure to C<fetch_kit_version()> but fetches the
+source archive (the C<tarball_url> from the release, not the compiled kit
+asset), and saves it with a C<-src.tar.gz> suffix.
+
+If C<$version> is C<undef> or the string C<'latest'>, the latest version
+is resolved via C<latest_version_of()>.  Otherwise, a leading C<v> prefix
+is stripped.  The release is located by matching the version against the
+release tag name via C<kit_releases()>.
+
+If the target file already exists and C<$force> is false, the downloaded
+content is compared against the existing file by SHA-1 hash.  If they are
+identical, a warning is emitted and the method returns C<1>.  If they
+differ, the user is prompted interactively to confirm overwriting.
+
+The saved file is written with permissions C<0444> and named
+C<$name-$version-src.tar.gz> under C<$path>.
+
+Three content validation checks are performed on the downloaded data
+before the file is written, matching those in C<fetch_kit_version()>:
+
+=over 4
+
+=item 1. Empty response check
+
+If the downloaded response body is empty, the method dies immediately.
+
+=item 2. HTML interception check
+
+If the response starts with C<< <!DOCTYPE >>, C<< <html >>, or
+C<< <head >> (case-insensitive), the download is rejected as a proxy or
+captive-portal intercept.
+
+=item 3. Gzip magic bytes check
+
+If the response is non-empty but the first two bytes are not C<0x1f 0x8b>
+(the gzip magic number), a warning is emitted and the download proceeds.
+
+=back
+
+B<Parameters:>
+
+=over 4
+
+=item C<$name>
+
+Required.  The bare kit name (without the C<-genesis-kit> suffix).
+
+=item C<$version>
+
+Required.  The version to download, or C<'latest'> to resolve
+automatically.  A leading C<v> prefix is stripped if present.
+
+=item C<$path>
+
+Required.  Directory where the source tarball should be saved.
+
+=item C<$force>
+
+Optional.  When true, skips the existing-file check and overwrites without
+prompting.
+
+=back
+
+B<Returns:> A three-element list C<($name, $version, $file)> where
+C<$file> is the absolute path to the saved source tarball.  Returns C<1>
+if an identical file already exists and C<$force> is false.
+
+B<Errors:>
+
+=over 4
+
+=item C<"No latest version of $name kit found with a downloadable release">
+
+Raised when C<$version> is C<'latest'> or C<undef> and no release is
+found.  C<$name> is the kit name.
+
+=item C<"Version %s/%s was not found\n">
+
+Raised when the specified version does not appear in the kit's releases.
+The first C<%s> is the kit name and the second is the version.
+
+=item C<"Release %s/%s was found but is missing its tarball url.It may have been revoked (see release notes below):\n\n%s\n">
+
+Raised when the release exists but lacks a C<tarball_url>.  The C<%s>
+values are the kit name, version, and release notes body.
+
+=item C<"Failed to download %s/%s source from %s: returned a %s status code\n">
+
+Raised when the HTTP download returns a non-200 response.  The C<%s>
+values are the kit name, version, provider label, and HTTP status code.
+
+=item C<"Downloaded source for kit %s/%s from %s but received empty response.\nThe server returned HTTP 200 but no content.">
+
+Raised when the download succeeds (HTTP 200) but the response body is
+empty.  The C<%s> values are the kit name, version, and provider label.
+
+=item C<"Downloaded source for kit %s/%s from %s but received an HTML page\ninstead of a source archive.\n\nA network proxy or captive portal likely intercepted the download.\nCheck network connectivity and proxy settings.">
+
+Raised when the downloaded content begins with an HTML tag.  The C<%s>
+values are the kit name, version, and provider label.
+
+=item C<"Aborted!\n">
+
+Raised when the user declines to overwrite an existing file that differs.
+
+=back
+
+B<Warnings:>
+
+=over 4
+
+=item C<"Downloaded source data for kit %s/%s does not appear to be gzip-compressed.\nProceeding, but the source archive may fail to extract.">
+
+Emitted when the downloaded content is non-empty but the first two bytes
+are not C<0x1f 0x8b> (the gzip magic number).  The download is saved
+regardless.  The C<%s> values are the kit name and version.
+
+=item C<"Exact same kit source already exists under #C{%s} - no change.\n">
+
+Emitted when the target file already exists, C<$force> is false, and the
+SHA-1 hash of the downloaded content matches the existing file.  The
+method returns C<1>.  C<%s> is the humanized path.
+
+=back
+
+B<Examples:>
+
+  my ($name, $ver, $file) = $provider->fetch_kit_version_src(
+      'bosh', '2.3.0', '/tmp/kits', 0
+  );
+  print $file; # prints '/tmp/kits/bosh-2.3.0-src.tar.gz'
+
+=head2 latest_version_of
+
+  my $version = $provider->latest_version_of($name, %opts);
+
+Returns the version string for the latest release of the named kit that
+has a downloadable asset URL.  Delegates to C<kit_versions()> with
+C<< latest => 1 >> and returns the version string from the first result,
+or C<undef> if none is found.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$name>
+
+Required.  The bare kit name (without the C<-genesis-kit> suffix).
+
+=item C<include_drafts>
+
+Optional boolean in C<%opts>.  Passed through to C<kit_versions()> to
+include draft releases in the search.
+
+=item C<include_prereleases>
+
+Optional boolean in C<%opts>.  Passed through to C<kit_versions()> to
+include pre-release versions in the search.
+
+=back
+
+B<Returns:> A version string (e.g., C<'2.3.0'>) or C<undef> if no
+downloadable release exists.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Missing name for retrieving kit releases">
+
+Raised when C<$name> is not supplied.
+
+=back
+
+B<Examples:>
+
+  my $ver = $provider->latest_version_of('bosh');
+  print $ver; # prints '2.3.0' (or the current latest)
+
+  # Returns undef when no downloadable release exists
+  my $ver = $provider->latest_version_of('nonexistent-kit');
+  print defined($ver) ? $ver : 'undef'; # prints 'undef'
+
+=head2 status
+
+  my %status = $provider->status($verbose);
+
+Returns a hash of provider status information suitable for display.
+Performs a connectivity check and re-interprets HTTP error codes into
+human-readable messages.  When the check succeeds, collects kit names
+(and optionally per-kit release counts) and includes them in the result.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$verbose>
+
+Optional boolean.  When true, the C<kits> entry in the returned hash is a
+hash reference mapping each kit name to a release count summary string
+(e.g., C<'3 releases, 1 pre-release'>).  When false or omitted, C<kits>
+is an array reference of sorted kit name strings.
+
+=back
+
+B<Returns:> A hash with the following keys:
+
+=over 4
+
+=item C<type>
+
+Always C<'github'>.
+
+=item C<extras>
+
+Array reference C<["Name", "Domain", "Org", "Use TLS"]> listing the
+supplemental display keys.
+
+=item C<Name>
+
+The provider label.
+
+=item C<Domain>
+
+The configured Github domain.
+
+=item C<Org>
+
+The configured organization name.
+
+=item C<Use TLS>
+
+The configured TLS mode.
+
+=item C<status>
+
+A status string: C<'ok'> when the check succeeds, or an error message
+when it fails.
+
+=item C<kits>
+
+When the check succeeds: an array reference of sorted kit names
+(non-verbose), or a hash reference mapping kit names to release summary
+strings (verbose).  C<undef> when the check fails.
+
+=back
+
+B<Examples:>
+
+  my %info = $provider->status();
+  print $info{status};          # prints 'ok' on success
+  print $info{Name};            # prints the provider label
+  print scalar(@{$info{kits}}); # prints the number of available kits
+
+  my %verbose = $provider->status(1);
+  for my $kit (keys %{$verbose{kits}}) {
+      print "$kit: $verbose{kits}{$kit}\n";
+      # prints e.g. 'bosh: 5 releases, 1 pre-release'
+  }
+
+=head1 KNOWN ISSUES
+
+None at this time.
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

@@ -4,6 +4,7 @@ use strict;
 use warnings;
 use utf8;
 use Genesis;
+use Time::HiRes qw/gettimeofday/;
 
 # _memoize - cache value to be returned on subsequent calls {{{
 sub _memoize {
@@ -12,8 +13,20 @@ sub _memoize {
 		$initialize = $token;
 		$token = $self->_get_token();
 	}
-	return $self->{$token} if defined($self->{$token});
+	if (defined($self->{$token})) {
+		# If the value is already set, return it
+		trace("using memoized value for %s", $token);
+		return $self->{$token};
+	}
+
+	trace("memoizing value for %s", $token);
+	my $start = gettimeofday();
 	$self->{$token} = $initialize->($self);
+	trace(
+		"memoized value for %s in %.3f seconds",
+		$token, gettimeofday() - $start
+	);
+	return $self->{$token};
 }
 
 sub _set_memo {
@@ -46,8 +59,8 @@ sub _get_token {
 	while ($caller = (caller($level))[3]) {
 		$level++;
 		my ($pkg,$sub) = $caller =~ m/^(.*)::([^:]*)$/;
-		next unless $pkg eq ref($self);
-		next if $sub =~ /^__ANON__$/;
+		next unless $pkg && $pkg eq ref($self);
+		next if !defined($sub) || $sub =~ /^__ANON__$/;
 		return "__$sub";
 	}
 	bug("Could not find %s in stack; cannot determine memoization token", ref($self));

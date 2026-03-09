@@ -1,0 +1,371 @@
+=encoding UTF-8
+
+=head1 NAME
+
+Genesis::Hook::Features - Hook for resolving and communicating feature flags to Genesis
+
+=head1 SYNOPSIS
+
+    package Genesis::Hook::Features::my_kit;
+    use parent 'Genesis::Hook::Features';
+
+    sub perform {
+        my ($self) = @_;
+
+        # Add features unconditionally
+        $self->add_feature('ha');
+        $self->add_feature('mtls');
+
+        # Conditionally suppress a feature
+        $self->delete_feature('ha') unless $self->want_feature('ha');
+
+        # Signal completion — done() will call build_features_list() automatically
+        $self->done;
+    }
+
+    1;
+
+=head1 DESCRIPTION
+
+C<Genesis::Hook::Features> is the concrete hook class that kit authors subclass
+when they need to report the resolved feature set for a deployment environment.
+It extends L<Genesis::Hook> with a mutable feature registry and a
+C<build_features_list> method that produces an ordered list of active features
+for Genesis to consume.
+
+The features hook lifecycle:
+
+=over 4
+
+=item 1.
+
+Genesis instantiates the hook via C<init>, which calls the parent
+L<Genesis::Hook> C<init> method and then initialises an empty C<all_features>
+list and C<has_feature> lookup map. The C<env>, C<kit>, and C<features>
+constructor arguments are all required.
+
+=item 2.
+
+Genesis calls C<perform> on the hook. Kit authors implement this method, using
+C<add_feature>, C<has_feature>, and C<delete_feature> to build up the desired
+feature set.
+
+=item 3.
+
+Kit authors call C<done> (with or without an explicit list) to signal
+completion and hand the resolved feature array reference back to Genesis.
+
+=back
+
+See L<Genesis::Hook> for the full set of inherited methods including
+C<want_feature>, C<env>, C<kit>, and C<spruce_merge>.
+
+=head1 METHODS
+
+=head2 init
+
+    my $hook = Genesis::Hook::Features->init;
+
+Constructs and returns a new features hook object. Calls the parent
+L<Genesis::Hook> C<init> after validating required arguments, then initialises
+two internal data structures:
+an ordered C<all_features> list (used to preserve insertion order when building
+the final feature list) and a C<has_feature> lookup hash.
+
+B<Parameters:>
+
+=over 4
+
+=item C<%opts>
+
+Key-value pairs forwarded to the parent L<Genesis::Hook> C<init>. The
+following keys are required:
+
+=over 4
+
+=item C<env>
+
+B<(required)> A C<Genesis::Env> object for the deployment environment.
+
+=item C<kit>
+
+B<(required)> A C<Genesis::Kit> object for the kit being run.
+
+=item C<features>
+
+B<(required)> The initial feature list for the environment (typically the
+list declared in the environment YAML file).
+
+=back
+
+=back
+
+B<Returns:> A blessed C<Genesis::Hook::Features> object.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Missing required arguments for a perl-based kit hook call: %s"> -- raised
+via C<bug()> if any of C<env>, C<kit>, or C<features> are absent from
+C<%opts>. C<%s> is replaced with the comma-separated list of missing argument
+names.
+
+=back
+
+B<Examples:>
+
+    # Genesis calls this internally; kit authors do not call init() directly.
+    # Genesis::Hook::Features->init is invoked with env, kit, and features args.
+    # Returns: a blessed Genesis::Hook::Features object
+
+=head2 add_feature
+
+    $hook->add_feature($feature, $set);
+
+Registers C<$feature> in the hook's feature registry. The feature name is
+appended to the ordered C<all_features> list (which governs output order in
+C<build_features_list>) and its value is recorded in the C<has_feature> lookup
+map.
+
+When C<$set> is omitted, the feature is registered with the value C<1>
+(active). Passing an explicit C<$set> value allows a feature to be registered
+with a different truthy or falsy value.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$feature>
+
+The feature name string to register.
+
+=item C<$set>
+
+B<(optional)> The value to store for this feature in the lookup map. Defaults
+to C<1> when fewer than three arguments are passed.
+
+=back
+
+B<Returns:> Nothing.
+
+B<Examples:>
+
+    $hook->add_feature('ha');
+    # Returns: nothing (registers 'ha' with value 1)
+
+    $hook->add_feature('debug', 0);
+    # Returns: nothing (registers 'debug' with value 0)
+
+=head2 has_feature
+
+    my $value = $hook->has_feature($feature);
+
+Returns the value stored for C<$feature> in the hook's feature lookup map, or
+C<undef> if the feature was never registered. A true return value means the
+feature is active; C<undef> or a false value means it is not.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$feature>
+
+The feature name string to look up.
+
+=back
+
+B<Returns:> The value stored by C<add_feature> for this feature, or C<undef>
+if the feature is not registered.
+
+B<Examples:>
+
+    $hook->add_feature('ha');
+    my $val = $hook->has_feature('ha');
+    # Returns: 1
+
+    my $val = $hook->has_feature('nonexistent');
+    # Returns: undef
+
+=head2 delete_feature
+
+    my $value = $hook->delete_feature($feature);
+
+Removes C<$feature> from the hook's feature lookup map and returns the value
+that was stored there. After this call, C<has_feature($feature)> will return
+C<undef>. The feature name remains in the C<all_features> ordered list, but
+C<build_features_list> will skip it because the lookup entry is gone.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$feature>
+
+The feature name string to remove.
+
+=back
+
+B<Returns:> The value that was stored for C<$feature>, or C<undef> if it was
+not registered.
+
+B<Examples:>
+
+    $hook->add_feature('ha');
+    my $old = $hook->delete_feature('ha');
+    # Returns: 1
+
+    my $old = $hook->delete_feature('nonexistent');
+    # Returns: undef
+
+=head2 build_features_list
+
+    my @features = $hook->build_features_list(%opts);
+
+Iterates over the ordered C<all_features> list and returns those features that
+are currently active in the lookup map. For each feature in insertion order:
+
+=over 4
+
+=item *
+
+If the feature name appears in C<virtual_features>, the method checks for an
+entry under C<"+$feature"> (the virtual variant). If that entry is active, the
+C<"+$feature"> string is included in the result and removed from the lookup map.
+If not active, the feature is skipped entirely.
+
+=item *
+
+Otherwise, if the feature is active in the lookup map (i.e., C<has_feature>
+returns a true value), the plain feature name is included in the result and
+removed from the lookup map.
+
+=back
+
+Each included feature is deleted from the lookup map as it is emitted, so
+repeated calls to C<build_features_list> produce an empty list after the first
+call.
+
+B<Parameters:>
+
+=over 4
+
+=item C<%opts>
+
+=over 4
+
+=item C<virtual_features>
+
+B<(optional)> An array reference of feature names that should be promoted to
+their virtual (C<+>-prefixed) variants when present. Defaults to an empty
+list.
+
+=back
+
+=back
+
+B<Returns:> A list of active feature name strings, in the order they were
+added via C<add_feature>.
+
+B<Examples:>
+
+    $hook->add_feature('ha');
+    $hook->add_feature('mtls');
+    my @list = $hook->build_features_list;
+    # Returns: ('ha', 'mtls')
+
+    # With virtual features
+    $hook->add_feature('+internal-blobstore');
+    $hook->add_feature('ocfp');
+    my @list = $hook->build_features_list(
+        virtual_features => ['internal-blobstore'],
+    );
+    # Returns: ('+internal-blobstore', 'ocfp')
+
+=head2 done
+
+    $hook->done;
+
+Marks the hook as complete and records the resolved feature list. This is the
+primary way to signal to Genesis that the features hook has finished its work.
+
+The argument handling is:
+
+=over 4
+
+=item *
+
+B<No arguments> -- calls C<build_features_list()> with no options to produce
+the feature list automatically, wraps it in an array reference, and passes it
+to the parent L<Genesis::Hook> C<done>.
+
+=item *
+
+B<A single array reference> -- passed directly to the parent L<Genesis::Hook> C<done> as the
+result.
+
+=item *
+
+B<One or more plain strings> -- collected into a new array reference and passed
+to the parent L<Genesis::Hook> C<done>.
+
+=item *
+
+B<A single falsy value> (e.g., C<undef> or C<0>) -- delegated directly to
+the parent C<done($value)>, which marks the hook as I<not> complete.
+
+=back
+
+B<Parameters:>
+
+=over 4
+
+=item C<@features> or C<\@features>
+
+B<(optional)> An explicit list of feature name strings, or a single array
+reference of feature names. When omitted, C<build_features_list()> is called
+to generate the list automatically. Pass C<undef> to mark the hook as
+incomplete.
+
+=back
+
+B<Returns:> The feature array reference passed to the parent L<Genesis::Hook> C<done>, or the falsy
+value if a single falsy argument was given.
+
+B<Examples:>
+
+    # Automatic: build_features_list() is called; result passed to Genesis
+    $self->done;
+    # Returns: an array reference of the active features
+
+    # See the perform() examples in ABSTRACT METHODS for complete usage
+
+=head1 ABSTRACT METHODS
+
+The following method must be implemented by every concrete C<Genesis::Hook::Features>
+subclass. The base class implementation in L<Genesis::Hook> calls C<kit_bug>
+and terminates with an error.
+
+=head2 perform
+
+    $hook->perform;
+
+Carries out the features hook's work. The implementation should use
+C<add_feature>, C<has_feature>, and C<delete_feature> to build up the desired
+feature set, then call C<$self->done> to signal completion and pass the
+resolved feature list to Genesis.
+
+B<Returns:> Whatever value was passed to C<done>, made available via
+C<results>. The return value of C<perform> itself is not used by Genesis.
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

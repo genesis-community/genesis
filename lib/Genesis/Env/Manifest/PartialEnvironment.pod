@@ -1,0 +1,103 @@
+=head1 NAME
+
+Genesis::Env::Manifest::PartialEnvironment - Manifest built from environment files only, without kit components.
+
+=head1 SYNOPSIS
+
+  use Genesis::Env::Manifest::PartialEnvironment;
+
+  # Typically instantiated through the manifest builder, not directly.
+  my $manifest = $builder->partial_environment();
+
+  # Access the merged data or file path.
+  my $data = $manifest->data();
+  my $file = $manifest->file();
+
+  # Retrieve the human-readable description of this manifest type.
+  my $desc = $manifest->description();
+
+=head1 DESCRIPTION
+
+C<Genesis::Env::Manifest::PartialEnvironment> is a subclass of
+L<Genesis::Env::Manifest> that builds a manifest from environment-specific
+YAML files only. Kit component files are excluded from the merge, so the
+result represents a partially evaluated view of the environment.
+
+Because kit components are absent, spruce operators that depend on them
+cannot be resolved. The merge uses C<adaptive> evaluation mode so that
+any unevaluatable operators are passed through rather than treated as
+errors. Secret redaction is also disabled for this manifest type.
+
+The list of source files is determined by the builder's C<environment_files>
+method. This manifest is useful for inspecting the raw environment
+configuration before kit-supplied defaults and overrides are applied.
+
+=head1 METHODS
+
+=head2 description
+
+  my $str = $manifest->description();
+
+Returns a human-readable string identifying this manifest type and
+summarising its scope.
+
+  my $desc = $manifest->description();
+  print $desc;
+  # prints 'Partially evaluated environment files only (no kit components)
+  #         - will contain any unevaluateable spruce operators'
+
+=head2 merge_options
+
+  my $opts = $manifest->merge_options();
+
+Returns a hash reference of options to pass to the manifest builder's merge
+operation. For partial environment manifests, evaluation is set to
+C<adaptive> so that spruce operators that cannot be resolved are left in
+place rather than causing the merge to fail.
+
+B<Returns:> A hash reference of the form C<< { eval => 'adaptive' } >>.
+
+  my $opts = $manifest->merge_options();
+  print $opts->{eval};  # prints 'adaptive'
+
+=head2 merge_environment
+
+  my $env = $manifest->merge_environment();
+
+Returns a hash reference of environment variable overrides to apply during
+the merge. For partial environment manifests, the C<REDACT> variable is
+explicitly set to C<undef>, disabling secret redaction so that raw secret
+values are visible in the merged output.
+
+B<Returns:> A hash reference of the form C<< { REDACT => undef } >>.
+
+  my $env = $manifest->merge_environment();
+  print exists($env->{REDACT}) ? 'present' : 'absent';  # prints 'present'
+
+=head1 INTERNAL METHODS
+
+These methods are internal to the implementation. They may change without
+notice and should not be called directly.
+
+=head2 _merge
+
+  my ($data, $file) = $manifest->_merge();
+
+Performs the actual merge by invoking the builder's C<merge> method with
+the source files, merge options, and merge environment defined by this
+class. Returns the merged data structure and the path to the generated
+manifest file.
+
+B<Returns:> A two-element list C<($data, $file)> where C<$data> is the
+merged YAML data structure and C<$file> is the path to the written manifest
+file.
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

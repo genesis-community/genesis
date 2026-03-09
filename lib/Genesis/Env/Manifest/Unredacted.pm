@@ -5,6 +5,8 @@ use warnings;
 
 use base 'Genesis::Env::Manifest';
 
+sub description { "Complete deployment manifest with embedded clear-text secrets from Vault" }
+
 sub deployable {1}
 
 sub source_files {

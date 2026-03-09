@@ -59,6 +59,13 @@ sub init {
 }
 
 # }}}
+# default_provider - returns the default provider instance {{{
+sub default_provider {
+	require Genesis::Kit::Provider::GenesisCommunity;
+	return Genesis::Kit::Provider::GenesisCommunity->new();
+}
+
+# }}}
 # opts -  list of options supported by init method {{{
 sub opts {
 	qw/
@@ -154,7 +161,7 @@ sub config {
 	# Output expected:
 	#   Hash of config items that would be expected to create an object of this
 	#   class as arguments to its new method
-	
+
 }
 # }}}
 # check - checks the availability of this provider (abstract) {{{
@@ -178,7 +185,7 @@ sub kit_names {
 	#
 	# Output expected:
 	#   List of kit names as strings, not including the '-genesis-kit' suffix.
-	
+
 }
 
 # }}}
@@ -233,6 +240,19 @@ sub fetch_kit_version {
 	#   ( <kit_name>, <actual_version>, <path/filename to where tarball was saved> )
 }
 # }}}
+# fetch_kit_version_src - fetches a source tarball for the named kit and version from this provide (abstract) {{{
+sub fetch_kit_version_src {
+	my ($self, $name, $version, $path, $force) = @_;
+	bug("Abstract Method: Expecting %s class to define concrete '%' method", ref($self), 'fetch_kit_version_src');
+	# Input expected:
+	#		$name:    <kit name>
+	#		$version: <kit version, or 'latest'>
+	#		$path:    <directory to store kit tarball>
+	#
+	# Output expected:
+	#   ( <kit_name>, <actual_version>, <path/filename to where tarball was saved> )
+}
+# }}}
 # latest_version_of - The latest version number,  {{{
 sub latest_version_of {
 	my ($self, $name, %opts) = @_;
@@ -255,92 +275,4 @@ sub kit_version_info {
 
 1;
 
-=head1 NAME
-
-Genesis::Kit::Provider
-
-=head1 DESCRIPTION
-
-This class represents a Genesis Kit Provider.  This provider knows how to list
-and fetch kits and their versions provided by that provider.
-
-=head1 CONSTRUCTORS
-
-=head2 new($path)
-
-Instantiates a new dev kit, using source files in C<$path>.
-
-=head2 downloadable($filter)
-
-Lists the known downloadable compiled kits on the Genesis Community Github
-organization.  If a filter is given, it will be used to limit the kit names to
-match that filter as a regular expression.
-
-An error will be thrown if it cannot reach the github api endpoint for
-genesis-community organization, if the response is not valid JSON, or for
-any other communication error.
-
-=head2 releases($name)
-
-Returns the list of releases for a given repository under the Genesis Community
-Github organization.  This is the full response from Github, converted from
-JSON, and includes all the information for all releases under the given
-repository.  This is primarily a low-level function for C<url> and C<versions>
-
-An error will be thrown if it cannot reach the github api endpoint for
-genesis-community organization, if the repository does not exist,  if the
-response is not valid JSON, or for any other communication error.
-
-=head2 versions($name)
-
-Returns a hash of tag,name,draft,prerelease,body and timestamp for each version
-for the named repository under the Genesis Community Github organization.
-
-An error will be thrown if it cannot reach the github api endpoint for
-genesis-community organization, if the repository does not exist,  if the
-response is not valid JSON, or for any other communication error.
-
-=head2 url($name, $version)
-
-Determines the download URL for this kit, by consulting Github.
-Right now, this is limited to just the C<genesis-community> organization.
-
-If you omit C<$version>, or set it to "latest", the most recent released
-version on Github will be used.  Otherwise, the URL for the given version
-will be used.
-
-An error will be thrown if the version in question does not exist on Github.
-
-
-=head1 METHODS
-
-=head2 id()
-
-Returns the identity of the dev kit, which is always C<(dev kit)>.  This is
-useful for error messages and reporting.
-
-=head2 name()
-
-Returns the name of the dev kit, which is always C<dev>.
-
-=head2 version()
-
-Returns the version of the dev kit, which is always C<latest>.
-
-=head2 kit_bug($fmt, ...)
-
-Prints an error to the screen, complete with details about how the problem
-at hand is a problem with the (local) development kit.
-
-=head2 extract()
-
-Copies the contents of the dev/ working directory to a temporary workspace,
-and installs the Genesis hooks helper script.  The copy is done to avoid
-accidental modifications to pristine dev kit sources, and to ensure that we
-can safely write the hooks helper.
-
-This method is memoized; subsequent calls to C<extract> will not re-copy the
-dev/ working directory to the temporary workspace.
-
-=cut
 # vim: fdm=marker:foldlevel=1:noet

@@ -1,0 +1,6 @@
+---
+name: bosh
+author: Genesis Community
+homepage: https://github.com/genesis-community
+description: Test legacy BOSH director kit
+genesis_version_min: 2.6.0

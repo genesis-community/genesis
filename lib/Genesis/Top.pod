@@ -1,0 +1,1521 @@
+=encoding UTF-8
+
+=head1 NAME
+
+Genesis::Top - Root-directory context object for Genesis deployment repositories
+
+=head1 SYNOPSIS
+
+    use Genesis::Top;
+
+    # Open an existing deployment repository
+    my $top = Genesis::Top->new('/path/to/cf-deployments');
+
+    # Open with a specific vault target for this session
+    my $top = Genesis::Top->new('/path/to/cf-deployments', vault => 'prod-vault');
+
+    # Create a new deployment repository
+    my $top = Genesis::Top->create('/repos', 'cf');
+
+    # Common operations
+    my $env  = $top->load_env('us-east-prod');
+    my $kit  = $top->local_kit_version('cf', '2.3.0');
+    my $type = $top->type;   # Returns: 'cf'
+
+    # Check vault connectivity
+    if ($top->has_vault) {
+        my $v = $top->vault;
+        printf "Using vault: %s\n", $v->name;
+    }
+
+=head1 DESCRIPTION
+
+Several interactions with Genesis have to take place in the context of a
+I<root> directory. Often this is a C<something-deployments> git repository.
+
+C<Genesis::Top> abstracts operations on that root directory so that other
+parts of the codebase can stop worrying about file paths and instead carry
+around a C<Top> context object which handles those concerns for them.
+
+A C<Top> object manages:
+
+=over 4
+
+=item * The repository root path and file operations relative to it
+
+=item * The configuration stored in C<.genesis/config>
+
+=item * Connectivity to the Vault secrets provider
+
+=item * Kit discovery, download, and version resolution
+
+=item * Environment loading and creation
+
+=back
+
+Inherits from L<Genesis::Base>, which provides memoization helpers
+(C<_memoize>, C<_set_memo>, C<_clear_memo>, C<_get_memo>).
+
+=head1 METHODS
+
+=head2 new
+
+    my $top = Genesis::Top->new;
+
+Opens an existing Genesis deployment repository. With no arguments, opens
+the current directory. When the first argument is an odd-length list element
+(i.e., a plain scalar followed by pairs), it is taken as C<$root>; otherwise
+C<$root> defaults to C<'.'>.
+
+As a side effect, sets C<$ENV{GENESIS_ROOT}> to the absolute path of the
+repository, and sets C<$ENV{GENESIS_TARGET_VAULT}> and C<$ENV{SAFE_TARGET}>
+to the vault name when a vault is successfully connected.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$root>
+
+B<(optional)> Path to the root of an existing Genesis deployment repository.
+Defaults to C<'.'> when the argument list has an even number of elements.
+
+=item C<vault>
+
+B<(optional)> Name or URL of a safe target to use for this session only.
+Overrides the vault stored in the repository configuration without saving
+the change.
+
+=item C<no_vault>
+
+B<(optional)> When true, disables vault connectivity entirely for this
+object. Intended for test contexts.
+
+=back
+
+B<Returns:> A new C<Genesis::Top> object.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"'$root' is not a Genesis deployment repository"> — raised when the
+specified path does not contain a valid C<.genesis/config> file.
+
+=back
+
+B<Examples:>
+
+    # Open current directory as a Genesis Top object
+    my $top = Genesis::Top->new;
+    # Returns: Genesis::Top object for the current directory
+
+=head2 create
+
+    my $top = Genesis::Top->create($path, $name, %opts);
+
+Creates a new Genesis deployment repository under C<$path>. Strips a
+trailing C<-deployments?> suffix from C<$name> before use. The repository
+directory is created as C<$path/$dir> where C<$dir> defaults to
+C<$name> (or C<$name-deployments> when the legacy suffix is enabled in the
+Genesis RC configuration).
+
+The method writes C<.genesis/config>, creates the C<.genesis/> directory
+hierarchy, creates the local kits directory, and generates a C<README.md>.
+On failure the partially-created directory is removed and the error is
+re-thrown.
+
+Sets C<$ENV{GENESIS_ROOT}> as a side effect (inherited from C<_build>).
+
+B<Parameters:>
+
+=over 4
+
+=item C<$path>
+
+B<(required)> Parent directory under which the new repository directory is
+created.
+
+=item C<$name>
+
+B<(required)> Deployment type name (e.g., C<'cf'>, C<'bosh'>, C<'vault'>).
+A trailing C<-deployments?> suffix is stripped automatically. Must match
+C</^[a-z][a-z0-9_-]+$/> after stripping.
+
+=item C<directory>
+
+B<(optional)> Override the final directory name. Defaults to C<$name> or
+C<$name-deployments>.
+
+=item C<vault>
+
+B<(optional)> Safe target name or URL to record as the secrets provider.
+
+=item C<no_vault>
+
+B<(optional)> When true, skips vault configuration. Raises an error if
+C<$ENV{GENESIS_COMMAND}> is set (i.e., running in a real genesis session,
+not a test).
+
+=item C<kits_path>
+
+B<(optional)> Path to the directory where compiled kits are stored.
+Humanized relative to the repository root when possible, otherwise stored
+as an absolute path (with C<~> substituted for the home directory prefix).
+
+=item C<creator_version>, C<updater_version>, C<minimum_version>, C<manifest_store>
+
+B<(optional)> Override the corresponding config keys written to
+C<.genesis/config>.
+
+=back
+
+B<Returns:> A new C<Genesis::Top> object pointing at the newly created
+repository.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Invalid Genesis deployment repository name '$name'"> — raised when
+C<$name> (after stripping the suffix) does not match C</^[a-z][a-z0-9_-]+$/>.
+
+=item *
+
+C<"Repository directory name must only contain alpha-numeric characters, periods, hyphens and underscores">
+— raised when the resolved directory name contains illegal characters.
+
+=item *
+
+C<"Cannot create new deployments repository `$dir': already exists!"> —
+raised when the target path already exists.
+
+=item *
+
+C<"no_vault option can only be used in test contexts"> — raised when
+C<no_vault> is passed but C<$ENV{GENESIS_COMMAND}> is set.
+
+=back
+
+B<Examples:>
+
+    # Create a new CF deployment repository
+    my $top = Genesis::Top->create('/repos', 'cf');
+    # Creates /repos/cf-deployments (with legacy suffix enabled)
+    # or /repos/cf (without)
+
+    # Create with a specific directory name
+    my $top = Genesis::Top->create('/repos', 'cf',
+        directory => 'cloud-foundry',
+    );
+
+=head2 search_for_repo_path
+
+    my ($root, $path) = Genesis::Top->search_for_repo_path($deployment, %opts);
+    my @paths         = Genesis::Top->search_for_repo_path($deployment, all_paths => 1);
+
+Searches for a deployment repository whose directory name matches
+C<$deployment> within the configured deployment roots (from
+C<$HOME/.genesis/config>, plus the current and parent directories). Applies
+glob-pattern matching — anchoring with C<^> and C<$> is supported.
+
+Search roots are checked in order: the current directory (C<@current>),
+the parent directory (C<@parent>), and then each named root from the
+C<deployment_roots_map> configuration key. Within each root, BOSH
+repositories are sorted first, then other types alphabetically.
+
+When exactly one match is found it is returned immediately. When multiple
+matches are found and the process is running in a controlling terminal, an
+interactive prompt (via C<prompt_for_choice>) is presented to the user.
+When not in a controlling terminal and more than one match exists, an error
+is raised listing all matches unless C<all_paths> is set.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$deployment>
+
+B<(required)> Deployment name or glob pattern to match against repository
+directory names. The pattern is automatically wrapped with C<*...*> wildcards
+unless anchored with C<^> or C<$>.
+
+=item C<all_paths>
+
+B<(optional)> When true, returns all matching C<[$label, $path]> pairs as a
+list rather than prompting for selection.
+
+=back
+
+B<Returns:>
+
+In normal mode: a two-element list C<($deployment_root, $path)> where
+C<$deployment_root> is the parent directory of the matched repository and
+C<$path> is the full path to the repository.
+
+When C<all_paths> is true: a list of C<[$label, $path]> array references,
+one per match.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Invalid option specified to search_for_repo_path: %s"> — raised (via
+C<bug()>) when an unrecognized option key is passed. C<%s> is replaced by
+the unrecognized key name.
+
+=item *
+
+C<"No deployment repositories found matching #C{%s}"> — raised when no
+matching repository exists anywhere in the search roots. C<%s> is replaced
+by the C<@:$deployment> label.
+
+=item *
+
+C<"Ambiguous deployment repository name: #C{%s} matches multiple paths:\n  -#\@{_}%s\n\nPlease refine your match criteria.">
+— raised when multiple matches are found and the process is not in a
+controlling terminal (and C<all_paths> is not set). C<%s> is the label and
+the indented path list respectively.
+
+=item *
+
+C<"No deployment repository path selected."> — raised when the user chooses
+the "None of these" option from the interactive prompt.
+
+=back
+
+B<Examples:>
+
+    # Locate the cf deployments repository
+    my ($root, $path) = Genesis::Top->search_for_repo_path('cf');
+    # Returns: ('/srv/deployments', '/srv/deployments/cf-deployments')
+
+    # Get all matching paths without prompting
+    my @all = Genesis::Top->search_for_repo_path('*vault*', all_paths => 1);
+
+=head2 is_repo
+
+    my $bool = Genesis::Top->is_repo($path);
+
+Returns true when C<$path> looks like a valid Genesis deployment repository:
+it must have a C<.genesis/> directory, a C<.genesis/config> file, and that
+file must contain the string C<deployment_type:>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$path>
+
+B<(required)> Path to test.
+
+=back
+
+B<Returns:> A true value when C<$path> is a Genesis deployment repository,
+false otherwise.
+
+B<Examples:>
+
+    if (Genesis::Top->is_repo('/srv/cf-deployments')) {
+        my $top = Genesis::Top->new('/srv/cf-deployments');
+    }
+    # Returns: 1 when path is a Genesis repo, '' otherwise
+
+=head2 kit_provider
+
+    my $provider = $top->kit_provider;
+
+Returns the kit provider configured for this repository. The result is
+memoized after the first call. The provider is constructed from the
+C<kit_provider> hash in C<.genesis/config>, or defaults to a
+C<Genesis::Kit::Provider::GenesisCommunity> instance when that key is absent.
+
+B<Returns:> A C<Genesis::Kit::Provider> subclass instance.
+
+B<Examples:>
+
+    my $provider = $top->kit_provider;
+    my @names = $provider->kit_names;
+
+=head2 set_kit_provider
+
+    my $err = $top->set_kit_provider(%opts);
+
+Initializes a new kit provider from C<%opts> and updates the repository
+configuration. If the new provider is a
+C<Genesis::Kit::Provider::GenesisCommunity> instance, the C<kit_provider>
+key is cleared from the config (restoring the default). Otherwise the
+provider configuration is written and saved.
+
+Both branches (GenesisCommunity and custom provider) set C<updater_version>,
+call C<_validate_config()>, and save the config to disk.
+
+B<Parameters:>
+
+=over 4
+
+=item C<%opts>
+
+Options forwarded to C<< Genesis::Kit::Provider->init >>. See
+L<Genesis::Kit::Provider> for accepted keys.
+
+=back
+
+B<Returns:> The value of C<$@> after the eval block — an empty string on
+success, or the error message if initialization failed.
+
+B<Examples:>
+
+    my $err = $top->set_kit_provider(type => 'github',
+        organization => 'my-org');
+    # Returns: '' on success, error string on failure
+    die $err if $err;
+
+=head2 kit_provider_info
+
+    $top->kit_provider_info;
+
+Returns status information about the current kit provider by delegating to
+C<< $top->kit_provider->status() >>.
+
+B<Returns:> Whatever C<< Genesis::Kit::Provider->status >> returns.
+
+B<Examples:>
+
+    my $info = $top->kit_provider_info;
+    # Returns: status hash from the kit provider
+
+=head2 vault
+
+    my $vault = $top->vault(%opts);
+
+Returns the C<Service::Vault> object for this repository's secrets provider.
+The result is memoized after the first successful call; options passed on
+subsequent calls are ignored.
+
+Resolution order:
+
+=over 4
+
+=item 1.
+
+If C<$ENV{GENESIS_NO_VAULT}> is set, returns a C<Service::Vault::None>
+instance immediately.
+
+=item 2.
+
+If running inside a Genesis callback and C<$ENV{GENESIS_TARGET_VAULT}> is
+set, re-binds to the inherited vault via C<Service::Vault::Remote->rebind()>.
+
+=item 3.
+
+If the repository config has a C<secrets_provider> block, attaches to that
+vault URL using C<Service::Vault::Remote->attach(...)>. Falls back to
+C<Service::Vault::None> when attachment fails and C<no_vault> is set.
+
+=item 4.
+
+Otherwise, uses C<< Service::Vault->default >> (whatever C<safe> is currently
+targeting) and connects and validates it.
+
+=back
+
+B<Parameters:>
+
+=over 4
+
+=item C<silent>
+
+B<(optional)> Passed to C<< Service::Vault::Remote->attach >> and to
+C<< $vault->connect_and_validate >> to suppress output. Only consulted on
+the first call (before memoization).
+
+=item C<no_vault>
+
+B<(optional)> When true and attachment to the configured URL fails, returns
+a C<Service::Vault::None> instead of raising an error. Only consulted on the
+first call.
+
+=back
+
+B<Returns:> A C<Service::Vault> subclass object (C<Remote> or C<None>).
+
+B<Examples:>
+
+    my $vault = $top->vault;
+    printf "Vault: %s at %s\n", $vault->name, $vault->url;
+    # Returns: a Service::Vault::Remote or Service::Vault::None object
+
+    # Allow no-vault mode silently
+    my $vault = $top->vault(silent => 1, no_vault => 1);
+    # Returns: Service::Vault::None when no vault is reachable
+
+=head2 repo_vault
+
+    my $result = $top->repo_vault;
+
+Returns the repository's configured vault object when C<has_vault()> is true,
+or the system default vault otherwise. Builds a C<Service::Vault::Remote>
+from the C<secrets_provider> config, mirroring the attach logic in C<vault()>
+but without memoization or session options.
+
+B<Returns:> A C<Service::Vault::Remote> object when a vault is configured;
+C<< Service::Vault->default >> otherwise.
+
+=head2 has_vault
+
+    my $bool = $top->has_vault;
+
+Returns true when the repository configuration contains a non-empty
+C<secrets_provider> hash.
+
+B<Returns:> True when a vault is configured, false otherwise.
+
+B<Examples:>
+
+    if ($top->has_vault) {
+        my $v = $top->vault;
+        printf "Configured vault: %s\n", $v->name;
+    }
+
+=head2 set_vault
+
+    $top->set_vault(%opts);
+
+Sets the secrets provider for this repository, either interactively or by
+target name. Unless C<session_only> is set, the new vault configuration is
+persisted to C<.genesis/config>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<interactive>
+
+B<(optional)> When true, presents an interactive safe-target selection
+prompt. Ignores the C<target> option.
+
+=item C<target>
+
+B<(optional)> Name or URL of the safe target to use. Exactly one candidate
+vault must match; otherwise an error string is returned without raising.
+
+=item C<clear>
+
+B<(optional)> When true, removes the vault configuration entirely (clears
+C<secrets_provider> from config). B<Note:> the clear operation does not call
+C<< config->save() >>, so the change is not persisted to disk.
+
+=item C<vault>
+
+B<(optional)> A C<Service::Vault::Remote> object to set directly.
+
+=item C<session_only>
+
+B<(optional)> When true, updates the in-memory vault reference but does not
+write C<.genesis/config>.
+
+=back
+
+B<Returns:> An error string (C<"#R{[Error]} ..."> formatted) when the target
+lookup fails; nothing (C<undef>) on success.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Invalid call to Genesis::Top->set_vault"> — raised via C<bug()> when none
+of C<interactive>, C<target>, C<clear>, or a C<vault> object reference is
+provided.
+
+=back
+
+B<Examples:>
+
+    # Set vault by target name, session only
+    $top->set_vault(target => 'prod-vault', session_only => 1);
+    # Returns: undef on success
+
+    # Set vault interactively and save to config
+    $top->set_vault(interactive => 1);
+    # Returns: undef on success
+
+    # Clear vault configuration
+    $top->set_vault(clear => 1);
+    # Returns: undef on success
+
+=head2 add_vault
+
+    $top->add_vault;
+
+B<Note:> This method is an unimplemented stub. The body is empty. See TODO
+C<#ADDVAULT> in the source for the planned multi-vault support. Do not call
+this method.
+
+B<Returns:> Nothing.
+
+=head2 vault_status
+
+    my %status = $top->vault_status;
+
+Returns a hash of status information about the repository's configured vault.
+Returns an empty list when C<has_vault()> is false.
+
+The returned hash includes the raw C<secrets_provider> fields from config,
+augmented with:
+
+=over 4
+
+=item C<security>
+
+A display string: empty string for verified HTTPS, C<"#Y{(noverify)}"> for
+unverified HTTPS, or C<"#Y{(insecure)}"> for plain HTTP.
+
+=item C<alias>
+
+The local safe target alias when exactly one alias maps to the vault URL.
+
+=item C<alias_error>
+
+Set when zero or more than one local aliases map to the vault URL.
+
+=item C<status>
+
+Connectivity status string. Contains a C<safe target> command hint when no
+alias is found, a de-duplication hint when multiple aliases exist, or the
+result of C<< $vault->status >> when a single alias is found.
+
+=back
+
+B<Returns:> A flat key-value list suitable for assignment to a C<%hash>.
+Returns an empty list when C<has_vault()> is false.
+
+B<Examples:>
+
+    my %info = $top->vault_status;
+    if (%info) {
+        printf "URL:    %s\n", $info{url};
+        printf "Status: %s\n", $info{status};
+    }
+
+=head2 get_ancestral_vault
+
+    my $vault = $top->get_ancestral_vault($env);
+
+Loads the named environment and returns its ancestral vault by delegating to
+C<< Genesis::Env->new(name => $env, top => $self)->get_ancestral_vault() >>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$env>
+
+B<(required)> The name of the environment whose ancestral vault to retrieve.
+
+=back
+
+B<Returns:> Whatever C<< Genesis::Env->get_ancestral_vault >> returns.
+
+B<Examples:>
+
+    my $vault = $top->get_ancestral_vault('us-east-prod');
+    # Returns: the ancestral vault object for the environment
+
+=head2 reset_vault
+
+    $top->reset_vault;
+
+Clears the memoized vault object so that the next call to C<vault()>
+re-resolves the connection. Also modifies C<$ENV{GENESIS_NO_VAULT}>: sets it
+to C<'1'> when the string C<'no-vault'> is passed as the first argument,
+and clears it (sets it to C<''>) otherwise.
+
+B<Parameters:>
+
+=over 4
+
+=item C<'no-vault'>
+
+B<(optional)> When the literal string C<'no-vault'> is passed, sets
+C<$ENV{GENESIS_NO_VAULT}> to C<'1'>. Any other value (or no value) clears
+C<$ENV{GENESIS_NO_VAULT}>.
+
+=back
+
+B<Returns:> Nothing.
+
+B<Examples:>
+
+    $top->reset_vault;
+    # Returns: nothing; next call to vault() re-resolves the connection
+
+=head2 path
+
+    my $abs = $top->path;
+    my $abs = $top->path($relative);
+
+Returns the absolute path to the repository root directory, or the absolute
+path of C<$relative> resolved against the repository root.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$relative>
+
+B<(optional)> A path relative to the repository root. When omitted, the
+repository root itself is returned.
+
+=back
+
+B<Returns:> An absolute path string.
+
+B<Examples:>
+
+    my $root   = $top->path;               # Returns: /srv/cf-deployments
+    my $config = $top->path('.genesis/config');
+    # Returns: /srv/cf-deployments/.genesis/config
+
+=head2 mkfile
+
+    $top->mkfile($file, @rest);
+
+Creates a file at C<$file> relative to the repository root directory, by
+calling C<mkfile_or_fail> with the resolved absolute path. C<@rest> is passed
+through to C<mkfile_or_fail> unchanged (mode and/or content arguments).
+
+B<Parameters:>
+
+=over 4
+
+=item C<$file>
+
+B<(required)> Path relative to the repository root.
+
+=item C<@rest>
+
+B<(optional)> Additional arguments forwarded to C<mkfile_or_fail> (e.g.,
+file mode and content).
+
+=back
+
+B<Returns:> Nothing.
+
+B<Examples:>
+
+    $top->mkfile('notes.txt', "initial content\n");
+    # Creates /repo-root/notes.txt with the given content
+
+=head2 mkdir
+
+    $top->mkdir($dir, @rest);
+
+Creates a directory at C<$dir> relative to the repository root, by calling
+C<mkdir_or_fail> with the resolved absolute path. C<@rest> is passed through
+to C<mkdir_or_fail> unchanged (e.g., mode arguments).
+
+B<Parameters:>
+
+=over 4
+
+=item C<$dir>
+
+B<(required)> Path relative to the repository root.
+
+=item C<@rest>
+
+B<(optional)> Additional arguments forwarded to C<mkdir_or_fail>.
+
+=back
+
+B<Returns:> Nothing.
+
+B<Examples:>
+
+    $top->mkdir('.genesis/bin');
+    # Creates /repo-root/.genesis/bin/
+
+=head2 config
+
+    my $cfg = $top->config;
+
+Returns the C<Genesis::Config> object representing the repository
+configuration at C<.genesis/config>. The result is memoized after the first
+load. If the config file exists on disk, C<_validate_config()> is called each
+time to ensure the schema version is supported.
+
+B<Returns:> A C<Genesis::Config> object.
+
+B<Examples:>
+
+    my $type = $top->config->get('deployment_type');
+
+=head2 type
+
+    my $type = $top->type;
+
+Returns the deployment type of this repository (e.g., C<'cf'>, C<'bosh'>),
+read from the C<deployment_type> key in C<.genesis/config>.
+
+B<Returns:> A string, or C<undef> if the key is absent.
+
+B<Examples:>
+
+    printf "This is a %s deployment repository\n", $top->type;
+    # Returns: This is a cf deployment repository
+
+=head2 version
+
+    my $v = $top->version;
+
+Returns the integer configuration schema version. Returns C<1> if the stored
+version is not a plain integer (e.g., an old-style semver version string).
+
+B<Returns:> An integer (C<1> or C<2>).
+
+B<Examples:>
+
+    my $v = $top->version;
+    printf "Config schema version: %d\n", $v;
+    # Returns: Config schema version: 2
+
+=head2 genesis_version
+
+    my $ver = $top->genesis_version;
+
+Returns the version of Genesis that originally created this repository.
+Checks the following config keys in order: C<creator_version>,
+C<genesis_version>, and C<version> (when it is not a plain integer). Returns
+C<"Unknown"> if none of those keys yield a value.
+
+B<Returns:> A version string or C<"Unknown">.
+
+B<Examples:>
+
+    printf "Repo created by Genesis %s\n", $top->genesis_version;
+    # Returns: Repo created by Genesis 3.0.0
+
+=head2 local_kits_path
+
+    my $path = $top->local_kits_path;
+
+Returns the absolute path to the directory where compiled kits are stored.
+Resolves from (in priority order): the C<kits_path> setting in the Genesis
+RC configuration, then the C<kits_path> key in C<.genesis/config>. Expands
+C<~> and relative paths against the repository root.
+
+B<Returns:> An absolute path string, or C<undef> when neither source defines
+the path.
+
+B<Examples:>
+
+    my $kits_dir = $top->local_kits_path;
+    printf "Kits stored at: %s\n", $kits_dir;
+
+=head2 has_dev_kit
+
+    my $bool = $top->has_dev_kit;
+
+Returns true when a C<dev/> directory exists under the repository root,
+indicating that a development kit is present.
+
+B<Returns:> True if C<dev/> exists, false otherwise.
+
+B<Examples:>
+
+    if ($top->has_dev_kit) {
+        print "Using local development kit\n";
+    }
+
+=head2 envs
+
+    my @envs = $top->envs;
+
+Returns a list of C<Genesis::Env> objects for all valid environments found in
+the repository root directory. An environment is included only when its YAML
+filename has a valid environment name and C<has_env()> returns true for it.
+
+B<Returns:> A list of C<Genesis::Env> objects.
+
+B<Examples:>
+
+    for my $env ($top->envs) {
+        printf "  %s\n", $env->name;
+    }
+
+=head2 load_env
+
+    my $env = $top->load_env($name);
+
+Loads and returns a C<Genesis::Env> object for the environment named
+C<$name>. Strips a trailing C<.yml> extension from C<$name> before loading.
+
+If the environment exists (per C<has_env()>), delegates to
+C<< Genesis::Env->load >>. When running inside a Genesis callback and C<$name>
+matches C<$ENV{GENESIS_ENVIRONMENT}>, delegates to
+C<< Genesis::Env->from_envvars >> instead. Otherwise raises an error.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$name>
+
+B<(required)> Environment name, with or without a C<.yml> suffix.
+
+=back
+
+B<Returns:> A C<Genesis::Env> object.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Environment file #C{%s} does not exist%s"> — raised when the environment
+does not exist and no callback fallback applies. The first C<%s> is the
+humanized path to the missing YAML file; the second C<%s> is either empty or
+the string C<" - this does not appear to be a Genesis deployment directory!">
+when C<.genesis/config> is also absent.
+
+=back
+
+B<Examples:>
+
+    my $env = $top->load_env('us-east-prod');
+    printf "Loaded: %s\n", $env->name;  # Returns: Loaded: us-east-prod
+
+=head2 has_env
+
+    my $bool = $top->has_env($name);
+
+Returns true when a valid environment named C<$name> exists under the
+repository. Delegates all validation logic to
+C<< Genesis::Env->is_valid_env_file($name, $self) >>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$name>
+
+B<(required)> Environment name (without C<.yml> extension).
+
+=back
+
+B<Returns:> True when the environment exists and is valid, false otherwise.
+
+B<Examples:>
+
+    if ($top->has_env('us-east-prod')) {
+        my $env = $top->load_env('us-east-prod');
+    }
+    # Returns: 1 when valid, '' or undef when not
+
+=head2 create_env
+
+    my $env = $top->create_env($name, $kit, %opts);
+
+Creates a new environment by delegating to C<< Genesis::Env->create >> with
+C<top>, C<name>, and C<kit> pre-filled. C<%opts> is passed through unchanged.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$name>
+
+B<(required)> Name for the new environment.
+
+=item C<$kit>
+
+B<(required)> A C<Genesis::Kit> object to use for the new environment.
+
+=item C<%opts>
+
+B<(optional)> Additional options forwarded to C<< Genesis::Env->create >>.
+See L<Genesis::Env> for accepted keys.
+
+=back
+
+B<Returns:> A new C<Genesis::Env> object.
+
+B<Examples:>
+
+    my $kit = $top->local_kit_version('cf', '2.3.0');
+    my $env = $top->create_env('us-east-prod', $kit);
+    # Returns: new Genesis::Env object after provisioning
+
+=head2 local_kits
+
+    my $kits = $top->local_kits;
+
+Returns a two-level hash reference mapping kit names to version strings to
+C<Genesis::Kit::Compiled> objects for all locally installed kits. Delegates
+to C<< Genesis::Kit::Compiled->local_kits >> using this repository's kit
+provider and local kits path.
+
+B<Returns:> A hashref of the form:
+
+    {
+      'cf' => {
+        '2.3.0' => $kit_compiled_object,
+        '2.4.0' => $kit_compiled_object,
+      },
+    }
+
+B<Examples:>
+
+    my $kits = $top->local_kits;
+    for my $name (sort keys %$kits) {
+        for my $ver (sort keys %{$kits->{$name}}) {
+            printf "  %s/%s\n", $name, $ver;
+        }
+    }
+
+=head2 local_kit_version
+
+    my $kit = $top->local_kit_version($name, $version);
+
+Finds and returns a C<Genesis::Kit> object for the requested kit name and
+version combination. Returns C<undef> when no matching kit is found.
+
+Resolution rules (in order):
+
+=over 4
+
+=item 1.
+
+If C<$name> is C<'dev'> or both C<$name> and C<$version> are omitted, and
+a C<dev/> directory exists, returns a C<Genesis::Kit::Dev> object for that
+directory.
+
+=item 2.
+
+If C<$name> is C<'dev'> and no C<dev/> directory exists, returns C<undef>.
+
+=item 3.
+
+If C<$name> is omitted and exactly one kit type is installed, that type is
+used automatically.
+
+=item 4.
+
+If C<$version> is omitted, C<undef>, or C<'latest'>, the newest version
+(by semver) is selected.
+
+=back
+
+A C<"$name/$version"> spec string may be passed as a single argument and is
+split on the C</>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$name>
+
+B<(optional)> Kit name (e.g., C<'cf'>). Pass C<undef> to auto-detect when
+only one kit type is installed.
+
+=item C<$version>
+
+B<(optional)> Kit version string or C<'latest'>. Defaults to the newest
+installed version when omitted.
+
+=back
+
+B<Returns:> A C<Genesis::Kit> object (C<Compiled> or C<Dev>), or C<undef>.
+
+B<Examples:>
+
+    # Find the 2.3.0 CF kit
+    my $kit = $top->local_kit_version('cf', '2.3.0');
+    # Returns: Genesis::Kit::Compiled object or undef
+
+    # Find the latest CF kit
+    my $kit = $top->local_kit_version('cf', 'latest');
+    # Returns: Genesis::Kit::Compiled object for newest version
+
+    # Find the latest of whatever single kit is installed
+    my $kit = $top->local_kit_version(undef, undef);
+    # Returns: Genesis::Kit::Dev (if dev/ exists) or newest compiled kit
+
+    # Use the dev kit
+    my $kit = $top->local_kit_version('dev', undef);
+    # Returns: Genesis::Kit::Dev object or undef
+
+    # Parse a spec string
+    my $kit = $top->local_kit_version('cf/2.3.0', undef);
+    # Returns: Genesis::Kit::Compiled for cf 2.3.0
+
+=head2 remote_kit_names
+
+    my @names = $top->remote_kit_names;
+
+Returns the list of kit names available from the configured kit provider.
+Delegates to C<< $top->kit_provider->kit_names() >>; any additional
+arguments are passed through to the provider.
+
+B<Returns:> A list of kit name strings.
+
+B<Examples:>
+
+    my @names = $top->remote_kit_names;
+    printf "Available kits: %s\n", join(', ', @names);
+    # prints: Available kits: bosh, cf, vault
+
+=head2 remote_kit_versions
+
+    my @versions = $top->remote_kit_versions;
+
+Returns the list of available versions for a kit from the configured kit
+provider. Delegates to C<< $top->kit_provider->kit_versions() >>; any
+additional arguments (such as a kit name) are passed through to the provider.
+
+B<Returns:> A list of version strings.
+
+B<Examples:>
+
+    my @versions = $top->remote_kit_versions;
+    printf "Kit versions: %s\n", join(', ', @versions);
+    # prints: Kit versions: 2.2.0, 2.3.0, 2.4.0
+
+=head2 remote_kit_version_info
+
+    my $info = $top->remote_kit_version_info($name, $version);
+    my $info = $top->remote_kit_version_info("$name/$version");
+
+Returns metadata for a specific remote kit version from the kit provider.
+Resolves C<'latest'> to the actual newest version before the lookup. Accepts
+a C<"$name/$version"> spec string as a single argument.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$name>
+
+B<(required)> Kit name.
+
+=item C<$version>
+
+B<(optional)> Version string or C<'latest'>. When omitted or C<'latest'>,
+the provider's C<latest_version_of($name)> is used.
+
+=back
+
+B<Returns:> Whatever C<< Genesis::Kit::Provider->kit_versions($name, version => $version) >>
+returns.
+
+B<Examples:>
+
+    my $info = $top->remote_kit_version_info('cf', '2.3.0');
+    # Returns: kit version metadata from the provider
+    my $info = $top->remote_kit_version_info('cf/latest');
+    # Returns: kit version metadata for the latest cf release
+
+=head2 link_dev_kit
+
+    $top->link_dev_kit($path);
+
+Creates a symbolic link from C<dev/> under the repository root to C<$path>
+(resolved to an absolute path). If a C<dev> symlink already exists it is
+removed first. Fails if C<dev/> exists but is not a symlink.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$path>
+
+B<(required)> Path to the development kit directory to link. Resolved to an
+absolute path relative to the current working directory.
+
+=back
+
+B<Returns:> The invocant (C<$self>), for method chaining.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Unable to locate $path from "> — raised when the path cannot be resolved
+to an absolute path. The current working directory is appended to the
+message.
+
+=item *
+
+C<"dev/ already exists, and is not a symbolic link\n"> — raised when C<dev/>
+exists as a real directory (not a symlink).
+
+=back
+
+B<Examples:>
+
+    $top->link_dev_kit('../my-cf-kit');
+    # Creates dev/ -> /absolute/path/to/my-cf-kit
+
+=head2 embed
+
+    $top->embed($bin);
+
+Embeds the Genesis binary at C<$bin> into C<.genesis/bin/genesis> inside the
+repository. The C<.genesis/bin/> directory is created if it does not exist.
+The file is copied and set to executable permissions (0755). Used to bake a
+specific Genesis version into a CI/CD pipeline repository.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$bin>
+
+B<(required)> Path to the Genesis binary to embed (resolved to an absolute
+path).
+
+=back
+
+B<Returns:> C<1> on success.
+
+B<Examples:>
+
+    $top->embed('/usr/local/bin/genesis');
+    # Copies binary to /srv/cf-deployments/.genesis/bin/genesis
+    # Returns: 1
+
+=head2 download_kit
+
+    $top->download_kit($id, %opts);
+
+Downloads a kit from the configured kit provider and installs it into the
+repository's local kits directory (or an alternate location). The C<$id>
+argument is a kit spec of the form C<"name"> or C<"name/version">; when
+C<version> is omitted or is C<'latest'>, the provider's latest version is
+fetched.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$id>
+
+B<(required)> Kit spec string in the form C<"name"> or C<"name/version">.
+
+=item C<to>
+
+B<(optional)> Absolute path of an existing writable directory to download into.
+When set, overrides the default local kits path. Raises an error if the path
+is not a directory or is not writable.
+
+=item C<as-dev>
+
+B<(optional)> When true, downloads into a temporary working directory instead
+of the local kits path.
+
+=item C<force>
+
+B<(optional)> Passed through to
+C<< Genesis::Kit::Provider->fetch_kit_version >>. Forces re-download when the
+kit is already present.
+
+=back
+
+B<Returns:> The return value of
+C<< Genesis::Kit::Provider->fetch_kit_version() >>.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"#C{%s} is not a directory"> — raised when C<to> is specified but is not a
+directory. C<%s> is replaced by the value of C<to>.
+
+=item *
+
+C<"#C{%s} is not writable"> — raised when C<to> is specified but is not
+writable. C<%s> is replaced by the value of C<to>.
+
+=back
+
+B<Examples:>
+
+    # Download latest CF kit into repository
+    $top->download_kit('cf');
+    # Returns: kit provider fetch result
+
+    # Download a specific version
+    $top->download_kit('cf/2.3.0');
+    # Returns: kit provider fetch result
+
+    # Download into a specific directory
+    $top->download_kit('cf/2.3.0', to => '/tmp/kits');
+    # Returns: kit provider fetch result
+
+=head1 INTERNAL METHODS
+
+These methods are internal to the implementation. They may change without
+notice and should not be called directly.
+
+=head2 _build
+
+    $class->_build($root, %opts)
+
+Common construction logic shared by C<new()> and C<create()>. Blesses a new
+object with C<root> set to the absolute canonical path of C<$root>, then sets
+C<$ENV{GENESIS_ROOT}> to that path.
+
+When C<no_vault> is true in C<%opts>, memoizes a C<Service::Vault::None>
+instance and returns early. When C<vault> is set in C<%opts>, calls
+C<set_vault(target => $opts{vault}, session_only => 1)> to establish a
+session-only vault override.
+
+B<Side effects:> Sets C<$ENV{GENESIS_ROOT}> unconditionally.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$root>
+
+Path to the repository root (need not exist yet for C<create()>).
+
+=item C<%opts>
+
+Accepts C<no_vault> and C<vault>; all other options are silently passed
+through (they may be consumed by callers such as C<new()> or C<create()>).
+
+=back
+
+B<Returns:> The newly blessed C<$self>.
+
+B<Examples:>
+
+    my $self = $class->_build('/srv/cf-deployments', no_vault => 1);
+    # Returns: $self with __vault memoized as Service::Vault::None
+
+=head2 _set_vault_env
+
+    $self->_set_vault_env(%opts)
+
+Sets C<$ENV{GENESIS_TARGET_VAULT}> and C<$ENV{SAFE_TARGET}> to the vault name
+when a vault is successfully resolved. Emits a debug warning when no vault can
+be found and C<$ENV{GENESIS_NO_VAULT}> is not set.
+
+B<Side effects:> Modifies C<$ENV{GENESIS_TARGET_VAULT}> and
+C<$ENV{SAFE_TARGET}>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<silent_vault_check>
+
+B<(optional)> Forwarded as C<silent> to C<vault()>.
+
+=item C<allow_no_vault>
+
+B<(optional)> Forwarded as C<no_vault> to C<vault()>.
+
+=back
+
+B<Returns:> C<$self>.
+
+B<Examples:>
+
+    $self->_set_vault_env(silent_vault_check => 1, allow_no_vault => 1);
+    # Sets GENESIS_TARGET_VAULT and SAFE_TARGET when a vault is found
+
+=head2 _validate_config
+
+    $self->_validate_config
+
+Validates the repository configuration schema version. If the version is C<1>
+or an old-style semver string, upgrades to v2 (interactively or automatically
+based on RC settings). If the version is C<2>, validates against the schema
+returned by C<_repo_config_schema()>. Any other version causes an immediate
+error.
+
+B<Returns:> C<1> on success. Raises on invalid or unsupported config versions.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Genesis deployment repo v1 configuration is not supported, and cannot update automatically.  Manual intervention required.">
+— raised when a v1 config is detected, no controlling terminal is available,
+and automatic upgrade is disabled.
+
+=item *
+
+C<"Genesis deployment repo configuration version $config_version is not supported">
+— raised when the version is not 1, 2, or a recognized semver string.
+C<$config_version> is the literal version value from the config file.
+
+=back
+
+B<Examples:>
+
+    $self->_validate_config;
+    # Returns: 1 on success; raises on invalid schema
+
+=head2 _upgrade_config_to_v2
+
+    $self->_upgrade_config_to_v2($config_version, $upgrade_automatically)
+
+Constructs a new v2 configuration from the existing v1/semver config,
+shows a diff, and (depending on C<$upgrade_automatically> and the presence of
+a controlling terminal) prompts the user for confirmation before saving. The
+method always calls C<_validate_config()> on the candidate v2 config before
+proceeding.
+
+Modifies the object in-place: replaces C<$self-E<gt>{__config}> with the new
+v2 config object during validation, then calls C<< $self->config->replace($old_config) >>
+on success.
+
+B<Note:> C<_validate_config()> is called recursively on the new config object.
+C<bail()> inside C<_validate_config()> is the mechanism that stops execution
+when the new config is invalid.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$config_version>
+
+The raw version string from the existing config.
+
+=item C<$upgrade_automatically>
+
+One of C<'no'>, C<'yes'>, or C<'silent'>. When C<'no'>, prompts the user.
+When C<'silent'>, upgrades without any output. When any other truthy value,
+upgrades with informational output but without prompting.
+
+=back
+
+B<Returns:> Nothing on success; raises on failure.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Cannot upgrade Genesis deployment repo v1 configuration to v2.  Manual intervention required.">
+— raised when the candidate v2 config fails validation.
+
+=item *
+
+C<"Genesis deployment repo configuration upgrade to v2 aborted"> — raised
+when the user answers no to the upgrade confirmation prompt.
+
+=back
+
+B<Examples:>
+
+    $self->_upgrade_config_to_v2('1.0.0', 'silent');
+    # Returns: nothing on success; rewrites .genesis/config to v2 format
+
+=head2 _repo_config_schema
+
+    $self->_repo_config_schema
+
+Returns the schema hash used to validate a v2 C<.genesis/config> file.
+Consumed by C<< $self->config->validate() >>. The schema covers all
+recognized top-level keys:
+
+=over 4
+
+=item C<deployment_type> — required string
+
+=item C<version> — required literal C<"2">
+
+=item C<creator_version> — required; semver, C<"(development)">, or C<"Unknown">
+
+=item C<updater_version> — optional semver or C<"(development)">
+
+=item C<minimum_version> — optional semver
+
+=item C<manifest_store> — optional enum: C<repository>, C<hybrid>, C<exodus>; default C<hybrid>
+
+=item C<kits_path> — optional string; default C<$GENESIS_ROOT/.genesis/kits>
+
+=item C<kit_provider> — optional hash with sub-keys C<type>, C<organization>, C<label>, C<tls>, C<domain>
+
+=item C<secrets_provider> — optional hash with sub-keys C<url> (required), C<insecure>, C<strongbox>, C<namespace>, C<alias>
+
+=item C<deployment_change_reason_required_size> — optional number; default C<0>
+
+=item C<user_provided_bosh_creds> — optional enum: C<ignore>, C<allow>, C<require>; default C<ignore>
+
+=item C<allow_oversized_secrets> — optional boolean
+
+=item C<confirm_release_overrides> — optional enum: C<always>, C<outdated>, C<never>
+
+=back
+
+B<Returns:> A hash reference.
+
+=head1 SEE ALSO
+
+=over 4
+
+=item L<Genesis::Env>
+
+Represents a single deployment environment within a repository.
+
+=item L<Genesis::Config>
+
+Configuration file management used for C<.genesis/config>.
+
+=item L<Genesis::Kit::Provider>
+
+Abstracts kit download sources (GitHub, Genesis Community, etc.).
+
+=item L<Genesis::Kit::Compiled>
+
+Represents a compiled (tarball) kit installed in the local kits directory.
+
+=item L<Genesis::Kit::Dev>
+
+Represents an uncompiled kit in the C<dev/> directory.
+
+=item L<Genesis::Base>
+
+Base class providing memoization helpers used throughout this module.
+
+=item L<Service::Vault::Remote>
+
+Remote Vault connectivity.
+
+=item L<Service::Vault::None>
+
+No-op vault used when vault support is disabled.
+
+=back
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

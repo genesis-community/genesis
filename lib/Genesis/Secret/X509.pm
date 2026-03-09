@@ -269,7 +269,7 @@ sub _validate_value {
 	# are ignored
 	unless ($self->get('is_ca')) {
 		my (%sans,%desired_sans);
-		my @names = @{$self->get('names')||[]};
+		my @names = uniq @{$self->get('names')||[]};
 		my ($extra_sans, undef, $missing_sans) = compare_arrays(\@SANs, \@names);
 		if (!scalar(@$extra_sans) && !scalar(@$missing_sans)) {
 			$results{san} = ['ok', 'Subject Alt Names: '.(@SANs ? join(", ",map {"'$_'"} @{$self->get('names')}) : '#i{none}')]
@@ -618,7 +618,7 @@ sub _base_safe_command {
 			my $subject_cn = $self->get('subject_cn');
 			push(@cmd, '--subject', "cn=".$subject_cn) if $subject_cn;
 		}
-		push(@cmd, '--name', $_) for @names;
+		push(@cmd, '--name', $_) for uniq @names;
 	}
 
 	my ($usage) = $self->_expected_usage;

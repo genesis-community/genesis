@@ -5,6 +5,8 @@ use warnings;
 
 use base 'Genesis::Env::Manifest';
 
+sub description { "Partially evaluated manifest for debugging purposes - will contain any unevaluateable spruce operators" }
+
 sub source_files {
 	my $self = shift;
 	return [

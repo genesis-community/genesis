@@ -1,0 +1,8 @@
+---
+name: dev
+author: Genesis Community
+homepage: https://github.com/genesis-community
+description: Test kit for use_create_env no boolean
+genesis_version_min: 2.8.0
+use_create_env: no
+is_bosh_director: true

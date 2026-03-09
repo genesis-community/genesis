@@ -94,7 +94,7 @@ sub _validate_value {
 			push @validations, 'hash';
 		}
 	} else {
-		$results{valid} = ['error', "valid UUID: expecting xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxx, got ".$value];
+		$results{valid} = ['error', "invalid UUID: expecting xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxx, got ".$value];
 	}
 	return (\%results, @validations);
 }

@@ -16,9 +16,6 @@ sub string_to_yaml {
 		return substr(JSON::PP->new->allow_nonref->encode($_[0]), 1, -1);
 	}
 }
-sub boolean_to_yaml {
-	return $_[0] ? "true" : "false";
-}
 sub yaml_bool {
 	my ($bool, $default) = @_;
 	return ($default || 0) unless defined($bool);
@@ -51,9 +48,10 @@ EOF
 		if ($pipeline->{pipeline}{registry}{uri}) {
 			$registry_prefix = $pipeline->{pipeline}{registry}{uri} . "/";
 			if ($pipeline->{pipeline}{registry}{username}) {
+				my $username_as_yaml = string_to_yaml($pipeline->{pipeline}{registry}{username});
 				my $registry_password_as_yaml = string_to_yaml($pipeline->{pipeline}{registry}{password});
 				$registry_creds = <<EOF
-          username: $pipeline->{pipeline}{registry}{username},
+          username: "$username_as_yaml",
           password: "$registry_password_as_yaml",
 EOF
 			}
@@ -110,13 +108,13 @@ sub validate_pipeline {
 	unless (exists $p->{pipeline}) {
 		# fatal error
 		push @errors, "Missing top-level 'pipeline:' key.";
-		return $p, \@errors;
+		return $p, @errors;
 	}
 
 	unless (ref($p->{pipeline}) eq 'HASH') {
 		# fatal error
 		push @errors, "Top-level 'pipeline:' key must be a map.";
-		return $p, \@errors;
+		return $p, @errors;
 	}
 	for (keys %{$p->{pipeline}}) {
 		push @errors, "Unrecognized `pipeline.$_' key found."
@@ -551,7 +549,7 @@ sub parse {
 			while (@$rule) {
 				($env, $token, @$rule) = @$rule;
 				die "Unknown environment '$env' in pipeline definition '$orig'\n"
-					unless ($P->{pipeline}{boshes}{$cmd});
+					unless ($P->{pipeline}{boshes}{$env});
 				$envs{$env} = 1;
 				if (defined($token)) {
 					die "Invalid pipeline definition '$orig': expecting '<env> [-> <env>]...'.\n"
@@ -572,8 +570,8 @@ sub parse {
 
 	%envs = (); # we'll reuse envs for auto environment de-duplication
 	for my $pattern (@auto) {
-		my $regex = $pattern;
-		$regex =~ s/\*/.*/g;
+		my $regex = quotemeta($pattern);
+		$regex =~ s/\\\*/.*/g;
 		$regex = qr/^$regex$/;
 
 		my $n = 0;

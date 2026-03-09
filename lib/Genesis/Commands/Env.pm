@@ -2,6 +2,7 @@ package Genesis::Commands::Env;
 
 use strict;
 use warnings;
+use utf8;
 
 use Genesis;
 use Genesis::State;
@@ -9,6 +10,7 @@ use Genesis::Term;
 use Genesis::Commands;
 use Genesis::Top;
 use Genesis::UI;
+use Encode qw(decode_utf8);
 
 sub create {
 
@@ -113,18 +115,16 @@ sub edit {
 	my $use_manual = defined(get_options->{manual}) ? (get_options->{manual} ? 1 : 0) : undef;
 	my $prompt_for_kit = 0;
 
-	push(@warnings,
-		"Genesis version #Y{$Genesis::VERSION} does not meet the environment's ".
-		"minimum required version #R{$min_genesis_version} - you will need to ".
-		"upgrade Genesis or alter the environment file to manage this environment ".
-		"with this version of Genesis."
-	) if $min_genesis_version && !new_enough($Genesis::VERSION, $min_genesis_version);
+		# Validate Genesis version requirements
+	my $version_check = $env->validate_genesis_version_requirements();
+	push @warnings, @{$version_check->{warnings}} if @{$version_check->{warnings}};
+	push @warnings, @{$version_check->{errors}} if @{$version_check->{errors}};
 
 	bail(
 		"Cannot specify #Y{--manual} unless the editor is vi-based (vi,vim,mvim,".
 		"nvim,gvim), vscode (code) or emacs: ".
 		"Pull request are welcome for other editors."
-	) if $use_manual && ! $editor =~ m/^([gmn]?vim|vi|emacs|code)$/;
+	) if $use_manual && $editor !~ m/^([gmn]?vim|vi|emacs|code)$/;
 	if ($use_manual//1 && $editor =~ m/^([gmn]?vim|vi|emacs|code)$/) {
 		if ($kit_name eq 'dev') {
 			if (-d $top->path('dev')) {
@@ -166,7 +166,7 @@ sub edit {
 	bail(
 		"Cannot specify #Y{--include-all-ancestors} unless the editor is vi-based ".
 		"(vi,vim,mvim,nvim,gvim) or vscode (code): Pull request are welcome for other editors."
-	) if $show_ancestors && !$editor =~ m/^([gmn]?vim|vi|^code)$/;
+	) if $show_ancestors && $editor !~ m/^([gmn]?vim|vi|code)$/;
 
 	if ($show_ancestors//1 && $editor =~ m/^([gmn]?vim|vi|code)$/) {
 		my @ancestors = reverse $env->potential_environment_files;
@@ -286,9 +286,7 @@ sub check {
 	command_usage(1) if @_ != 1;
 
 	option_defaults(
-		secrets => 0,
 		manifest => 1,
-		stemcells => 0,
 	);
 	my $env = Genesis::Top->new('.')->load_env($_[0]);
 	$env->with_vault() if get_options->{secrets} || get_options->{manifest};
@@ -304,7 +302,11 @@ sub check {
 		$env->download_required_configs(@hooks);
 	}
 
-	my $ok = $env->check(map {("check_$_" => has_option($_,1))} qw/manifest secrets stemcells/);
+	get_options->{$_} //= 0 for qw/secrets stemcells/;
+
+	my $ok = $env->check(
+		(map {("check_$_" => has_option($_,1))} qw/manifest secrets stemcells/)
+	);
 	if ($ok) {
 		info "\n[#M{%s}] #G{All Checks Succeeded}", $env->name;
 		exit 0;
@@ -580,15 +582,30 @@ sub manifest {
 		->load_env($_[0])
 		->with_vault();
 
-	my $valid_types = $env->manifest_provider->known_types;
-	my $valid_subsets = $env->manifest_provider->known_subsets;
+	my %valid_types = $env->manifest_provider->known_types;
+	my %valid_subsets = $env->manifest_provider->known_subsets;
 	if (get_options->{list}) {
+		# Calculate max width for consistent alignment
+		my $max_len = ((sort {$b <=> $a} map {length($_ =~ s/_/-/gr)} (keys %valid_types, keys %valid_subsets))[0] || 0) + 2;
+
+		# Format types with descriptions
+		my @type_lines = map {
+			my $name = $_ =~ s/_/-/gr . ':';
+			sprintf("[[  #c{%-*s}>>%s", $max_len, $name, $valid_types{$_})
+		} sort keys %valid_types;
+
+		# Format subsets with descriptions
+		my @subset_lines = map {
+			my $name = $_ =~ s/_/-/gr . ':';
+			sprintf("[[  #c{%-*s}>>%s", $max_len, $name, $valid_subsets{$_})
+		} sort keys %valid_subsets;
+
 		output(
 			"Valid manifest types (defaults to default deployment manifest):\n".
-			join("", map {"  - $_\n"} map {$_ =~ s/_/-/gr} sort @$valid_types).
-			"\n".
+			join("\n", @type_lines).
+			"\n\n".
 			"Valid subsets (defaults to full contents):\n".
-			join("", map {"  - $_\n"} map {$_ =~ s/_/-/gr} sort @$valid_subsets)
+			join("\n", @subset_lines)
 		);
 		return 1;
 	}
@@ -596,12 +613,12 @@ sub manifest {
 	bail(
 		"Unknown manifest type %s - use --list option to show valid types",
 		$type
-	) if ($type && ! in_array($type =~ s/-/_/gr, @$valid_types));
+	) if ($type && ! in_array($type =~ s/-/_/gr, keys %valid_types));
 
 	bail(
 		"Unknown manifest subset %s - use --list option to show valid subsets",
 		$subset
-	) if ($subset && ! in_array($subset =~ s/-/_/gr, @$valid_subsets));
+	) if ($subset && ! in_array($subset =~ s/-/_/gr, keys %valid_subsets));
 
 	if ($env->use_create_env && scalar(@{$env->configs})) {
 		warning(
@@ -632,54 +649,603 @@ sub manifest {
 sub deploy {
 	option_defaults(
 		redact   => ! -t STDOUT,
+		reactions => 1,
 	);
-	command_usage(1) if @_ != 1;
+	command_usage(1) if @_ < 1 || @_ > 2;
+	my ($env_name, $reason) = @_;
 
 	my %options = %{get_options()};
-	my @invalid_create_env_opts = grep {$options{$_}} (qw/fix dry-run/);
+	my @invalid_create_env_opts = grep {$options{$_}} (qw/fix dry-run fix-stemcells/);
 
 	$options{'disable-reactions'} = ! delete($options{reactions});
-	my $env = Genesis::Top->new('.')->load_env($_[0])->with_vault();
+	my $env = Genesis::Top->new('.')->load_env($env_name)->with_vault()->with_bosh();
+
+	my $deployment_files = $env->deployment_cache_path_lookup('existing');
+	if (scalar(keys %$deployment_files)) {
+		# TODO: Support the --resume option here, to resume a previous deployment.
+		#       This will have to use a step file that indicates the last step
+		#       that was completed, and then resume from there, if possible.
+		if ($options{clear}) {
+			$env->deployment_cache_clear;
+		} else {
+			my $cache_dir = $env->deployment_cache_dir;
+			my $file_list = join("\n", map {
+				sprintf("[[  - >>%s", basename($_))
+			} sort values %$deployment_files);
+			warning(
+				"\nThere are cached deployment files in #C{%s} from the previous failed or interrupted deployment:\n%s%s",
+				$cache_dir, $file_list,
+				$deployment_files->{state}
+					? "\n\n[[#Yr{IMPORTANT:} >>The cached files contain a state file, which ".
+					"may contain values necessary to run this deployment successfully.  ".
+					"Please copy it to a safe location, then use the --STATE-FILE-PATH ".
+					"option to use that file instead of a potentially outdated one from ".
+					"a previously successful deployment instead of clearing and ".
+					"continuing with this deployment."
+					: ""
+			);
+			if (!$options{yes} && in_controlling_terminal()) {
+				# Ask the user if they want to clear the cache directory
+				prompt_for_boolean(
+					"Do you want to clear the cache directory and start a new deployment? [y|n]",
+					0
+				) || bail("Aborted by user");
+
+				$env->notify("Clearing deployment cache files...");
+				$env->deployment_cache_clear;
+			} else {
+				bail(
+					"\nCowardly refusing to clear deployment cache files in #C{%s} ".
+					"without user confirmation.\n\n".
+					"Use the #Y{--clear} option to clear them, or run the command ".
+					"without the #Y{--yes} option in an interactive terminal to be ".
+					"prompted.",
+					$cache_dir
+				);
+			}
+		}
+	}
+
+	# Check if the user is compelled to provide a reason for the deployment
+	if (my $min_size = $env->deployment_change_reason_required_size_policy) {
+		# TODO: Maybe prompt for a reason if it wasn't provided
+		bail(
+			"Cannot deploy environment #C{%s} without a reason (minimum length is %d characters).\n".
+			"Please provide a reason after any options on the command line",
+			$env->name, $min_size
+		) unless length($reason//'') >= $min_size;
+	}
+	$reason //= 'unknown'; # if not provided or required, use 'unknown' as the reason
 
 	if (scalar(grep {$_} ($options{fix}, $options{recreate}, $options{'dry-run'})) > 1) {
 		command_usage(1,"Can only specify one of --dry-run, --fix or --recreate");
 	}
-	$ENV{BOSH_NON_INTERACTIVE} = 'true' if delete $options{yes};
+	my $noprompt = $options{yes} // 0;
+	$ENV{BOSH_NON_INTERACTIVE} = 'true' if $noprompt;
+	my $dryrun = $options{'dry-run'} // 0;
 
 	bail(
 		"The following options cannot be specified for #M{create-env}: %s",
 		join(", ", @invalid_create_env_opts)
 	) if $env->use_create_env && @invalid_create_env_opts;
 
-	info "Preparing to deploy #C{%s}:\n  - based on kit #c{%s}\n  - using Genesis #c{%s}", $env->name, $env->kit->id, $Genesis::VERSION;
-	if ($env->use_create_env) {
-		info "  - as a #M{create-env} deployment\n";
-	} else {
-		info "  - to '#M{%s}' BOSH director at #c{%s}.\n", $env->bosh->{alias}, $env->bosh->{url};
+	if (delete $options{'fix-checks'}) {
+		$options{'fix-stemcells'} = 1 unless $env->use_create_env;
+		$options{'fix-secrets'} = 1;
 	}
-	$env
-		->with_bosh
-		->download_required_configs('deploy');
 
-	my $ok = $env->deploy(%options);
-	exit ($ok ? 0 : 1);
+	info "\nPreparing to deploy #C{%s}:\n  - based on kit #c{%s}\n  - using Genesis #c{%s}", $env->name, $env->kit->id, $Genesis::VERSION;
+	if ($env->use_create_env) {
+		info "  - as a #M{create-env} deployment.";
+	} else {
+		info "  - to '#M{%s}' BOSH director at #c{%s}.", $env->bosh->{alias}, $env->bosh->{url};
+	}
+	# Specify the environment iaas and scale
+	info(
+		"  - to a #Y{%s}-scale #G{%s} IaaS target",
+		$env->scale, $env->iaas
+	);
+
+	# Check if the kit supports the environment's IaaS
+	if (my $supported_iaas = $env->kit->metadata('supports')) {
+		bail(
+			"Genesis kit #C{%s} does not support the IaaS type #C{%s} - ".
+			"you will need to use a different kit/version.",
+			$env->kit->id, $env->iaas
+		) unless in_array($env->iaas, @$supported_iaas);
+	}
+
+	my ($cloud_config, $network_map, $cpi_config, $credhub_secrets, $cpi_err) = ();
+	my $ok = 1;
+	if (! $env->use_create_env) {
+		# TODO: refactor to clean this up a bit
+
+		if ($env->cpi_enabled) {
+			if ($env->has_hook('cpi-config')) {
+				$env->notify("checking CPI config for #C{%s} deployment...", $env->name); #FIXME: move this into the _check_cpi_config method
+				my $check_result = $env->_check_cpi_config();
+
+				bail(
+					"Cannot provide the required CPI config: %s",
+					$check_result->{msg}
+				) if $check_result->{fatal}; # Should we just set a flag instead, and skip to next check?
+
+				if ($check_result->{state} ne 'ok') {
+					if ($dryrun) {
+						dryrun(
+							"CPI config check failed: %s\n\nThis would be fixed if not in dry-run mode.",
+							$check_result->{msg}
+						);
+					} else {
+						# Just going to force the fix for now
+						my $fix_result = $env->_fix_cpi_config(
+							$check_result->{state},
+							$check_result->{fix_data},
+							noprompt => 1,
+						);
+						bail(
+							"Could not update required CPI config: %s",
+							$fix_result->{msg}
+						) unless $fix_result->{result} eq 'ok';
+					}
+				}
+			}
+		} else {
+			# Use the cpi config provided by the director (via exodus data)
+			$env->notify(
+				"Using %s CPI config from #M{%s} BOSH director...",
+				$env->director_exodus_lookup('default_cpi_config','default'),
+				$env->bosh->{alias}
+			);
+		}
+
+		if ($env->can_build_cloud_configs) {
+			# Refactor this to use _check_cloud_config and _fix_cloud_config like the cpi stuff above
+			if ($env->has_hook('cloud-config')) {
+				$env->notify("checking cloud configs for #C{%s} deployment...", $env->name);
+				info({pending=>1},
+					"[[  - >>checking for existing network claims lock on #M{%s} BOSH director...",
+					$env->bosh->{alias}
+				);
+				my $current_lock = $env->bosh->check_network_lock;
+				if ($current_lock->{status} eq 'unlocked') {
+					info "#G{available}";
+				} elsif ($current_lock->{status} eq 'locked') {
+					info "#r{locked} %s", $current_lock->{description};
+					bail(
+						"Network claims are currently locked -- cannot proceed with deployment!"
+					);
+				} elsif ($current_lock->{status} eq 'stale') {
+					info "#y{locked (stale)} %s", $current_lock->{description};
+					if ($dryrun) {
+						dryrun(
+							"Network claims are locked with a stale lock: %s\n\nThis would be fixed if not in dry-run mode.",
+							$current_lock->{description}
+						);
+					} else {
+						if (in_controlling_terminal || !$options{'yes'}) {
+							prompt_for_boolean(
+								"Clear the stale network claims lock and continue with deployment? [y|n]",
+								0
+							) or bail "Aborted by user!";
+						}
+						$env->bosh->clear_network_lock;
+						$env->notify("checking cloud configs for #C{%s} deployment (continued)...", $env->name);
+						info "[[  - >>stale network claims lock cleared.";
+					}
+				}
+
+				# Place network-update lock here, to prevent concurrent updates to the network data
+				info({pending=>1},
+					"[[  - >>acquiring network claims lock on #M{%s} BOSH director...", $env->bosh->{alias}
+				);
+				$env->bosh->acquire_network_lock();
+				info "#G{done}";
+
+				eval {
+					($cloud_config, $network_map) = $env->run_hook('cloud-config');
+
+					# TODO: Support multiple cloud configs
+					my $cloud_config_name = $env->name.'.'.$env->type;
+					my $cloud_config_dir = $env->workpath('cloud-configs');
+					my $diff_dir = $env->workpath('cloud-config-diffs');
+					my $new_path = "$cloud_config_dir/${cloud_config_name}.yml";
+					my $new_path_diff = "$diff_dir/${cloud_config_name}.yml";
+					info "[[  - >>cloud config synthesized.";
+
+					# Wrap this in an eval block to ensure the lock is cleared on error
+					mkdir($cloud_config_dir) unless -d $cloud_config_dir;
+					mkdir($diff_dir) unless -d $diff_dir;
+					mkfile_or_fail($new_path, 0644, $cloud_config);
+					my ($out, $rc, $err) = run( 'spruce merge --skip-eval $1 > $2',$new_path,$new_path_diff);
+					bail "Error generating cloud config for diff: %s", $err//$out if $rc;
+					info "[[  - >>checking for existing cloud config on #M{%s} BOSH director...", $env->bosh->{alias};
+					if ($env->bosh->has_config('cloud',$cloud_config_name)) {
+						my $old_path = "$cloud_config_dir/current-${cloud_config_name}.yml";
+						info "[[  - >>comparing generated cloud config with existing cloud config...";
+						$env->bosh->download_configs($old_path,'cloud',$cloud_config_name);
+						my ($out, $rc, $err) = run(
+							fake_tty("$cloud_config_dir/spruce-out.txt",'spruce','diff',$old_path, $new_path_diff)
+						);
+						bail "Error comparing cloud configs: %s", $err if $rc;
+
+						$out = decode_utf8($out) =~ s/\A\s*(.*?)\s*\z/$1/mrs;
+						if ($out) {
+							$out =~ s/\(root level\)/<root>/m;
+							info "[[  - >>#yui{found the following differences:}\n\n%s", $out;
+							if ($dryrun) {
+								dryrun(
+									"Cloud config check failed: %s\n\nThis would be fixed if not in dry-run mode.",
+									$out
+								);
+							} else {
+								if (in_controlling_terminal || !$options{'yes'}) {
+									prompt_for_boolean(
+										"Upload the new cloud config to the BOSH director ('no' will cancel deploy)? [y|n]",
+										1
+									) or bail "Aborted by user!";
+								}
+								my $last_check = $env->bosh->check_network_lock;
+								bail(
+									"Network claims lock was lost since last checked (may have become stale and removed) -- cannot proceed with deployment!"
+								) if ($last_check->{status} eq 'unlocked');
+								info(
+									"Uploading new cloud config to #M{%s} BOSH director...",
+									$env->bosh->{alias}
+								);
+								eval {
+									# Upload the new cloud config
+									$env->bosh->upload_config_from_file($new_path,'cloud',$cloud_config_name);
+								} or bail(
+									"Failed to upload cloud config %s to BOSH director: %s\n\nContent:\n%s",
+									$cloud_config_name,
+									fix_wrap($@),
+									slurp($new_path)
+								);
+								info "[[  - >>cloud config for #C{%s} deployment has been updated.\n", $env->name;
+							}
+						} else {
+							info "[[  - >>no changes required in cloud config; proceeding with deploy.\n";
+						}
+					} elsif ($dryrun) {
+						dryrun(
+							"Cloud config missing.  This would be created and uploaded if not in dry-run mode.",
+						);
+					} else {
+						info(
+							"[[  - >>uploading new cloud config to #M{%s} BOSH director...",
+							$env->bosh->{alias}
+						);
+						eval {
+							$env->bosh->upload_config_from_file($new_path,'cloud',$cloud_config_name);
+						} or bail(
+							"Failed to upload cloud config %s to BOSH director: %s\n\nContent:\n%s",
+							$cloud_config_name,
+							fix_wrap($@),
+							slurp($new_path)
+						);
+						info "[[  - >>cloud config for #C{%s} deployment has been created.\n", $env->name;
+					}
+
+					if (ref($network_map) eq 'HASH') {
+						if ($dryrun) {
+							dryrun(
+								"Network map would be updated on the BOSH director if not in dry-run mode."
+							);
+						} else {
+							# Update the network map on the director's exodus network data
+							$env->notify(
+								"submitting network claims for this deployment to #M{%s} BOSH director...",
+								$env->bosh->{alias}
+							);
+							eval {$env->bosh->vault->set_path(
+								$env->bosh->exodus_path.'/network', $network_map, flatten => 1, clear => 1
+							);};
+							if ($@) {
+								info("  - #R{failed to update network map}\n");
+								bail("\nCannot continue without a valid network map:\n\n%s", $@);
+							}
+							$env->bosh->clear_network_lock();
+							info("  - #G{network map successfully updated }#Gi{(lock removed)}\n");
+						}
+					}
+				}; # end eval
+
+				if ($@) {
+					my $err = $@;
+					# Clear network-update lock here (even if there was an error)
+					if ($env->bosh->network_locked_by_me) {
+						$env->notify("cleaning up...");
+						info({pending=>1},
+							"[[  - >>releasing network claims lock on #M{%s} BOSH director...", $env->bosh->{alias}
+						);
+						$env->bosh->clear_network_lock();
+						info "#G{done}";
+					}
+					die $err;
+				}
+			} else {
+				warning(
+					"Kit %s does not provide a cloud-config hook, so cloud configs will ".
+					"not be generated.  Ensure that the BOSH director has the necessary ".
+					"cloud config in place.",
+				);
+			}
+		} else {
+			warning(
+				"Cloud Configs will not be generated for this deployment.  ".
+				"Ensure that the BOSH director has the necessary cloud config in place."
+			);
+		}
+		my @hooks = qw(blueprint manifest deploy);
+		push @hooks, grep {$env->kit->has_hook($_)} qw(check pre-deploy post-deploy);
+		$env->download_required_configs(@hooks);
+	} # end if ! $env->use_create_env
+
+	# Check environment for viability
+	$env->{notify_prefix_overrides}{'determining manifest fragments for merging...'} = sprintf(
+		"[[  - >>checking manifest components...\n[[  - >>",
+	);
+	my $env_check = $env->_check_environment_viability();
+	bail("%s", $env_check->{msg}) if $env_check->{fatal};
+	$ok = 0 unless $env_check->{state} eq 'ok';
+	my $kit_files = $env_check->{kit_files};
+
+	# Check or fix secrets for required items
+	my $fix_secrets = delete($options{'fix-secrets'}) || $Genesis::RC->get('fix_on_deploy') ne 'never';
+	if ($fix_secrets && !$dryrun) {
+		my $secret_fixes = $env->_fix_secrets(noprompt => $noprompt);
+		bail(
+			"Failed to fix secrets: %s",
+			$secret_fixes->{msg}
+		) if $secret_fixes->{fatal};
+		$env->notify("%s", $secret_fixes->{msg});
+		$ok = 0 unless $secret_fixes->{result} =~ /^(ok|warning)$/;
+
+	} else {
+		my $secrets_check = $env->_check_secrets();
+		my $msg_type = $secrets_check->{state};
+		$msg_type = '%s' if $msg_type eq 'ok';
+
+		$env->notify($msg_type => $secrets_check->{msg});
+		if ($secrets_check->{state} !~ /^(ok|warning)$/) {
+			dryrun(
+				"Secrets would be automatically fixed if not in dry-run mode."
+			) if $fix_secrets;
+			$ok = 0;
+		}
+	}
+
+	# Checking yaml files - more of a visual dump than a validation
+	if (envset("GENESIS_CHECK_YAML_ON_DEPLOY")) {
+		if ($env->missing_required_configs('blueprint')) {
+			$env->notify("#Y{Required BOSH configs not provided - can't check manifest viability}");
+		} else {
+			$env->notify("inspecting YAML files used to build manifest...");
+			my @yaml_files = $env->format_yaml_files('include-kit' => 1, padding => '  ', kit_files => $kit_files);
+			info join("\n",@yaml_files)."\n";
+		}
+	}
+
+	# Check manifest validation
+	if ($ok) {
+		if ($env->missing_required_configs('manifest')) {
+			$env->notify("#Y{Required BOSH configs not provided - can't check manifest viability}");
+		} else {
+			$env->notify("running manifest viability checks...");
+			$env->manifest_provider->unredacted->validate or $ok = 0;
+		}
+	}
+
+	# Check for release overrides
+	my $release_check = $env->_check_release_overrides();
+	my $confirm = $noprompt ? 'never' : $Genesis::RC->get(
+		'confirm_release_overrides' => $env->top->config->{'confirm_release_overrides'} // 'outdated'
+	);
+	if ($release_check->{state} ne 'ok' && !$dryrun) {
+		if ($confirm eq 'always' || ($confirm eq 'outdated' && $release_check->{state} eq 'outdated')) {
+			bail(
+				"Cannot prompt user for confirmation of release version overrides - ".
+				"not in a controlling terminal.  Please specify #Y{-y|--yes} to bypass this prompt."
+			) unless in_controlling_terminal;
+
+			$ok = 0 unless prompt_for_boolean(
+				"Release version overrides detected.  Proceed with release version overrides? [y|n]",
+				1
+			);
+		}
+	}
+
+	# Check for and potentially fix stemcell availability
+	# FIXME: This won't be accurate if there is a missing CPI config for this env
+	if (!$env->use_create_env) {
+		my $stemcell_check_result = $env->_check_stemcells();
+		if ($stemcell_check_result->{state} ne 'ok') {
+			if ($options{'fix-stemcells'}) {
+				if ($dryrun) {
+					dryrun(
+						"\nStemcell check failed: %s\n\nThis would be fixed if not in dry-run mode.",
+						$stemcell_check_result->{msg}
+					);
+				} else {
+					my $stemcell_fix = $env->_fix_stemcells(
+						$stemcell_check_result->{fix_data},
+						noprompt => $noprompt,
+					);
+					bail(
+						"Failed to fix stemcells: %s",
+						$stemcell_fix->{msg}
+					) if $stemcell_fix->{fatal};
+					$env->notify("%s", $stemcell_fix->{msg}); # Check if this makes sense or is reduntant
+				}
+			} else {
+				$env->_advise_stemcell_updates(
+					$stemcell_check_result->{fix_data},
+				);
+				bail(
+					"Stemcell check failed: %s",
+					$stemcell_check_result->{msg}
+				);
+			}
+		}
+	}
+
+	bail(
+		"Preflight checks failed; deployment operation halted."
+	) unless $ok;
+
+	$ok = $env->deploy(%options, network_map => $network_map, reason => $reason);
+
+	if ($ok) {
+		success "#M{%s}/#c{%s} deployed successfully.\n", $env->name, $env->type;
+		exit 0;
+	} else {
+		bail "[#M{%s}] #R{Deployment Failed}", $env->name;
+	}
 }
 
-sub do {
-	command_usage(1) if @_ < 2;
+sub terminate {
+	my ($env, $reason, @extras) = @_;
+	command_usage(1) if @extras || !defined($env);
+
+	my %options = %{get_options()};
+	$env = Genesis::Top->new('.')->load_env($env)->with_vault()->with_bosh()
+		unless $env->isa('Genesis::Env');
+
+	# Check if the user is compelled to provide a reason for the deployment
+	if (my $min_size = $env->deployment_change_reason_required_size_policy) {
+		# TODO: Maybe prompt for reason if not provided?
+		bail(
+			"Cannot terminate environment #C{%s} without a reason (minimum length is %d characters).\n".
+			"Please provide a reason after any options on the command line",
+			$env->name, $min_size
+		) unless length($reason//'') >= $min_size;
+	}
+
+	my $flags = join(" ", map {
+		if ($_ =~ m/(resources|secrets|user-secrets|credhub|networking)/) {
+			$options{$_} ? "--$_" : "--no-$_";
+		} else {
+			"--$_";
+		}
+	} (sort keys %options));
+
+	my %clean_up = ();
+	my $default_cleanup = delete($options{'no-cleanup'}) ? 0 : 1;
+	for my $opt (qw/resources secrets user-secrets credhub networking/) {
+		$clean_up{$opt =~ s/-/_/gr} = exists($options{$opt})
+			? (delete($options{$opt}) ? 1 : 0)
+			: $default_cleanup;
+	}
+
+	my $noprompt = delete($options{'yes'})//0;
+	my $dry_run = delete($options{'dry-run'})//0;
+	my $force = delete($options{'force'})//0;
+
+	bug(
+		"Undefined options passed in from the Genesis command handler: %s",
+		join(", ", sort keys %options)
+	) if keys %options;
+
+	my $action_desc = $dry_run ? 'would' : 'will';
+	my $msg = (
+		"This $action_desc #R{terminate} this deployment:\n".
+		"[[  - >>#R{all its VMs and persistent disks} $action_desc be #R{destroyed}."
+	).(
+		$clean_up{secrets}
+		? "\n[[  - >>#R{this environment's generated secrets} $action_desc be #R{removed}".
+			($default_cleanup ? " (use --no-secrets to keep)." : ".")
+		: "\n[[  - >>#G{this environment's generated secrets} $action_desc be left in place".
+			($default_cleanup ? "." : " (use --secrets to remove).")
+	).(
+		$clean_up{user_secrets}
+		? "\n[[  - >>#R{this environment's user-provided secrets} $action_desc be #R{removed}".
+			($default_cleanup ? " (use --no-user-secrets to keep)." : ".")
+		: "\n[[  - >>#G{this environment's user-provided secrets} $action_desc be left in place".
+			($default_cleanup ? "." : " (use --user-secrets to remove).")
+	);
+	$msg .= (
+		(
+			$clean_up{credhub}
+			? "\n[[  - >>#R{this environment's credhub secrets} $action_desc be #R{removed}".
+				($default_cleanup ? " (use --no-credhub to keep)." : ".")
+			: "\n[[  - >>#G{this environment's credhub secrets} $action_desc be left in place".
+				($default_cleanup ? "." : " (use --credhub to remove).")
+		).(
+			$clean_up{resources}
+			? "\n[[  - >>#R{all unused resources} $action_desc be #R{removed} from its BOSH director".
+				($default_cleanup ? " (use --no-resources to keep)." : ".")
+			: "\n[[  - >>#G{all unused resources} $action_desc be left in place on its BOSH director".
+				($default_cleanup ? "." : " (use --resources to remove).")
+		).(
+			$clean_up{networking}
+			? "\n[[  - >>#R{all claimed networks} $action_desc be #R{removed} from its BOSH director".
+				($default_cleanup ? " (use --no-networking to keep)." : ".")
+			: "\n[[  - >>#G{all claimed networks} $action_desc be left in place on its BOSH director".
+				($default_cleanup ? "." : " (use --networking to remove).")
+		).(
+		"\n[[  - >>#R{all associated BOSH configs on its BOSH director} $action_desc be #R{removed}."
+		)
+	) unless $env->use_create_env;
+	$env->notify($msg);
+
+	if (!$dry_run && !$noprompt) {
+		notice(
+		"\nYou can run this command with the #Y{--dry-run} option to see exactly what ".
+		"would be removed without actually terminating the deployment or removing ".
+		"any asscoiated items."
+		);
+		warning "\nThis action is #R{irreversible} and #R{cannot be undone}!";
+		my $msg = sprintf(
+			"Are you sure you want to terminate #M{%s}/#c{%s} deployment? [y|n]",
+			$env->name, $env->type
+		);
+		prompt_for_boolean($msg, 0) or bail "Aborted by user!";
+	}
+
+	my $ok = $env->terminate(
+		dryrun    => $dry_run,
+		noprompt  => $noprompt,
+		force     => $force,
+		reason    => $reason,
+		flags     => $flags,
+		%clean_up
+	);
+	if ($dry_run) {
+		notice(
+			"\n#M{%s}/#c{%s} termination dry-run completed %s.\n",
+			$env->name, $env->type,
+			$ok ? "#g{successfully}" : "with #r{errors}"
+		);
+		exit($ok ? 0 : 1);
+	}
+	if ($ok) {
+		success "\n#M{%s}/#c{%s} terminated successfully.\n", $env->name, $env->type;
+		exit 0;
+	} else {
+		bail "\n#M{%s}/#c{%s} #R{termination failed!}", $env->name, $env->type;
+	}
+}
+
+sub addon {
+	command_usage(1) if @_ < 1;
 
 	my ($name, $script, @args) = @_;
+	$script = 'help' if !$script || $script eq '--help' || $script eq '-h';
 	my $env = Genesis::Top->new('.')->load_env($name)->with_vault();
 
 	$env->kit->check_prereqs($env)
 		or bail "Cannot use the kit specified by %s.\n", $env->name;
 
-	$env->has_hook('addon')
+	$env->has_hook('addon', script => $script)
 		or bail "#R{Kit %s does not provide an addon hook!}", $env->kit->id;
 
 	$env->download_required_configs('addon', "addon-$script");
 
-	info "Running #G{%s} addon for #C{%s} #M{%s} deployment", $script, $env->name, $env->type;
+	info(
+		"Running #G{%s} addon for #C{%s} #M{%s} deployment",
+		$script, $env->name, $env->type
+	) unless $script eq 'help';
 
 	$env->run_hook('addon', script => $script, args => \@args)
 		or exit 1;
@@ -694,180 +1260,5 @@ sub env_shell {
 }
 
 
-sub bosh {
-	append_options(redact => ! -t STDOUT);
-
-	command_usage(1) unless @_;
-	my $env = Genesis::Top->new('.')->load_env(shift(@_))->with_vault();
-
-	my $bosh = $env->get_target_bosh(get_options());
-
-	if (get_options->{connect}) {
-		if (in_controlling_terminal) {
-			my $call = $::CALL; # Silence single-use warning
-			error(
-				"This command is expected to be run in the following manner:\n".
-				"  eval \"\$($::CALL)\"\n".
-				"\n".
-				"This will set the BOSH environment variables in the current shell"
-			);
-			exit 1;
-		}
-		my %bosh_envs = $bosh->environment_variables
-			unless in_controlling_terminal;
-		for (keys %bosh_envs) {
-			(my $escaped_value = $bosh_envs{$_}||"") =~ s/"/"\\""/g;
-			output 'export %s="%s"', $_, $escaped_value;
-		}
-		info "Exported environmental variables for BOSH director %s", $bosh->{alias};
-		exit 0;
-	} else {
-		my ($out, $rc) = $bosh->execute({interactive => 1, dir => $ENV{GENESIS_ORIGINATING_DIR}}, @_);
-		exit $rc;
-	}
-}
-
-# }}}
-# credhub - execute a credhub command for the target environment {{{
-sub credhub {
-
-	command_usage(1) unless @_;
-	my $env = Genesis::Top->new('.')->load_env(shift(@_))->with_vault();
-
-	# TODO: Support a --connect option similar to `bosh` command so that it
-	#       will set the environment variables in the current shell.
-
-	my ($cmd,@args) = @_;
-
-	my ($bosh, $target) = $env->get_target_bosh(get_options());
-
-	my $credhub = ($target eq 'self')
-		? Service::Credhub->from_bosh($bosh, exodus_path => $env->exodus_mount, vault => $bosh->{exodus_vault}//$env->vault)
-		: $env->credhub;
-
-	# Check for invalid commands in the context of Genesis-augmented CredHub
-	# environments
-	if ($cmd =~ m/^(l|login|a|api|o|logout)$/) {
-		bail(
-			"Command #C{genesis credhub %s} is not allowed in when Genesis is ".
-			"managing authentication to CredHub",
-			$cmd
-		);
-	}
-
-	unless (get_options->{raw}) {
-
-		# Find the name or path option, and make it magically work under the
-		# environment's base path
-
-		my $name_idx = index_of('-n', @args) // index_of('--name', @args);
-		my $path_idx = index_of('-p', @args) // index_of('--path', @args) // index_of('--prefix', @args);
-
-		# Commands that take a --name option only
-		if ($cmd =~ m/^(g|get|s|set|n|generate|r|regenerate|d|delete)$/) {
-			if (defined($name_idx)) {
-				$args[$name_idx+1] = $credhub->base. $args[$name_idx+1]
-					if ($args[$name_idx+1] !~ m/^\//);
-			} else {
-				# Can't generate a name if --name isn't present -- let credhub handle it
-			}
-
-		# Commands that take a --path or --prefix option (both use -p for short)
-		} elsif ($cmd =~ m/^(e|export|interpolate|f|find)$/) {
-			if (defined($path_idx)) {
-				$args[$path_idx+1] = $credhub->base. $args[$path_idx+1]
-					if ($args[$path_idx+1] !~ m/^\//);
-			} else {
-				unshift(@args, '-p', $credhub->base);
-			}
-		}
-	}
-
-	pushd($ENV{GENESIS_ORIGINATING_DIR});
-	$env->notify(
-		"Running #C{credhub %s} against CredHub server on #M{%s} (#C{%s}):\n",
-		$cmd, $credhub->{name}, $credhub->{url}
-	);
-	my ($out, $rc) = $credhub->execute($cmd, @args);
-	popd();
-	if ($rc) {
-		$env->notify(
-			fatal => "command #C{credhub %s} failed with exit code #R{%d}\n",
-			$cmd, $rc
-		);
-	} else {
-		$env->notify(
-			success => "command #C{credhub %s} succeeded!\n",
-			$cmd
-		);
-	}
-	exit $rc;
-}
-
-
-# }}}
-sub logs {
-	my %options = %{get_options()};
-	my ($env_name, @extra_args) = @_;
-
-	my $env = Genesis::Top->new('.')->load_env($env_name)->with_vault()->with_bosh();
-	bail(
-		"No bosh logs for environments deployed with #M{create-env}"
-	) if $env->use_create_env;
-
-	my @logs = $env->bosh_logs(@extra_args);
-}
-
-sub broadcast {
-	my %options = %{get_options()};
-	my ($env_name, @extra_args) = @_;
-
-	my $targets = $options{on}; # default to all jobs
-
-	my $env = Genesis::Top->new('.')->load_env($env_name)->with_vault()->with_bosh();
-	my $bosh = $env->bosh;
-	my ($out,$rc, $err) = read_json_from($bosh->execute({interactive => 0}, 'vms', '--json'));
-	bail("Failed to fetch VM list: %s", $err) if $rc;
-	my @vms = ();
-	eval {
-		@vms = @{$out->{Tables}[0]{Rows}};
-	} or bail("Failed to parse VM list: %s", $@);
-
-	my @errors = ();
-	if ($targets) {
-		my @instances = ();
-		for my $target (@$targets) {
-			my $search_target = $target;
-			$search_target .= '/' unless $search_target =~ m{/};
-			my @match = map {$_->{instance}} grep {$_->{instance} =~ m{^\Q$target\E}} @vms;
-			if (@match) {
-				push @instances, @match;
-			} else {
-				@errors = (@errors, ($target =~ m{/})
-					? "No instances found matching specified instance ID #c{$target}"
-					: "No instances found matching specified instance type #C{$target}");
-			}
-		}
-		$targets = \@instances;
-	} else {
-		$targets = [map {$_->{instance}} @vms];
-	}
-
-	bail(
-		"Errors were encountered while determining broadcast targets:\n%s",
-		join("\n", map {"- $_"} @errors)
-	) if @errors;
-
-	for my $target ( uniq @$targets ) {
-		info("\n" . ('=' x terminal_width()));
-		info("#g{Broadcasting to }#C{%s}#g{...}", $target);
-		info('-' x terminal_width());
-		my ($out, $rc, $err) = $bosh->execute({interactive => 1}, 'ssh', $target, '--', @extra_args);
-		error("Failed to broadcast to %s: %s", $target, $err) if $rc;
-	}
-
-	info("\n" . ('=' x terminal_width()));
-	success("\nBroadcast complete!\n");
-}
 1;
 # vim: fdm=marker:foldlevel=1:noet

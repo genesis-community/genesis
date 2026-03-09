@@ -1,5 +1,5 @@
 package Genesis::Log;
-use strict;
+use v5.20;
 use warnings;
 
 use utf8;
@@ -40,6 +40,9 @@ sub new {
 	$Genesis::Log::Logger //= bless({
 		buffer => [],
 		logs => {},
+		log_templates => {},
+		realized_logs => {},
+		command_logged => {},
 		user => $user,
 		hostname => $hostname,
 		pid => $$,
@@ -58,7 +61,21 @@ sub configure_log {
 	my @valid_levels = qw/ERROR WARN DEBUG INFO TRACE/;
 	my ($level_ord, $level);
 	my $default_level = envset("QUIET") ? "ERROR" :  envset("GENESIS_TRACE") ? "TRACE" : envset("GENESIS_DEBUG") ? "DEBUG" : "INFO";
-	my $default_output_style = defined($Genesis::RC) ? $Genesis::RC->get('output_style','plain') : 'plain';
+	my $default_output_style = (defined($Genesis::RC) && $Genesis::RC->loaded) ? $Genesis::RC->get('output_style','plain') : 'plain';
+
+	# Store template if log path contains template variables
+	if ($log && $log ne '<terminal>' && $log =~ /\{(command|timestamp|date|time|pid|env)\}/) {
+		# Skip logging for certain commands
+		my $skip_commands = $options{skip_commands} || [];
+		push @$skip_commands, 'help' unless grep { $_ eq 'help' } @$skip_commands;
+
+		$self->{log_templates}{$log} = {
+			template => $log,
+			options => \%options,
+			skip_commands => $skip_commands
+		};
+		return $self;
+	}
 
 	# Create log directory if it doesn't exist.
 	if ($log && $log ne '<terminal>') {
@@ -67,8 +84,8 @@ sub configure_log {
 		if (!-d $dir) {
 			printf STDERR wrap( # Have to use printf because logs aren't set up yet
 				csprintf(
-					"[[#B{[#E{%s}NOTICE]} >>Creating missing log directory for log #c{%s}\n\n",
-					$Genesis::RC->get('output_style','plain') eq 'fun' ? 'megaphone' : '',
+					"[[#BK{[#E{%s}NOTICE]} >>Creating missing log directory for log #c{%s}\n\n",
+					(defined($Genesis::RC) && $Genesis::RC->loaded && $Genesis::RC->get('output_style','plain') eq 'fun') ? 'megaphone' : '',
 					$log
 				),
 				terminal_width
@@ -120,6 +137,19 @@ sub setup_from_configs {
 	if (ref($log_configs) eq 'ARRAY') {
 		for (@$log_configs) {
 			my $file = delete($_->{file});
+			my $path = delete($_->{path});
+
+			# Handle new format with path and file template
+			if ($path && $file) {
+				# Expand the base path
+				$path = File::Spec->rel2abs(Genesis::expand_path($path));
+				# Combine path and file template
+				$file = File::Spec->catfile($path, $file);
+			} elsif (!$file) {
+				# Default file template if not specified
+				$file = $path ? File::Spec->catfile($path, '{env}/{command}/{timestamp}.log') : '~/.genesis/last-trace';
+			}
+
 			$class->new->configure_log(File::Spec->rel2abs(Genesis::expand_path($file)), %{$_});
 			# TODO: add suppress list so that we can set a level, but ingore specific output
 			# TODO: support an only-log-if-an-error-occurred setting... that adds and flushes the log in END step if rc > 0
@@ -127,6 +157,43 @@ sub setup_from_configs {
 	} else {
 		Genesis::bail("Configuration error - logs entry must be an array");
 	}
+}
+
+sub expand_log_template {
+	my ($self, $template) = @_;
+
+	# Get timestamp components
+	my ($s,$us) = gettimeofday;
+	my $ts = sprintf "%s.%03dZ", gmtime($s)->strftime("%Y%m%dT%H%M%S"), $us / 1000;
+	my $date = gmtime($s)->strftime("%Y%m%d");
+	my $time = gmtime($s)->strftime("%H%M%S");
+
+	# Replace template variables
+	my $path = $template;
+	$path =~ s/\{command\}/$ENV{GENESIS_COMMAND} || 'unknown'/ge;
+	$path =~ s/\{timestamp\}/$ts/g;
+	$path =~ s/\{date\}/$date/g;
+	$path =~ s/\{time\}/$time/g;
+	$path =~ s/\{pid\}/$$/g;
+
+	# Handle {env} specially - remove the path component if env is not set
+	if ($path =~ /\{env\}/ && !$ENV{GENESIS_ENVIRONMENT}) {
+		# Remove {env}/ patterns
+		$path =~ s/\{env\}\///g;
+		# Remove /{env}/ patterns
+		$path =~ s/\/\{env\}\//\//g;
+		# Remove /{env} at end
+		$path =~ s/\/\{env\}$//g;
+		# Remove any remaining {env}
+		$path =~ s/\{env\}//g;
+	} else {
+		$path =~ s/\{env\}/$ENV{GENESIS_ENVIRONMENT}/ge;
+	}
+
+	# Clean up any double slashes
+	$path =~ s/\/\/+/\//g;
+
+	return $path;
 }
 
 sub is_logging {
@@ -155,17 +222,17 @@ sub set_level {
 
 sub log_styles {
 	return {
-		output    => {colors => "kC", pri => 6, emoji => 'printer'},
-		info      => {colors => "Wc", pri => 6, emoji => 'information'},
-		debug     => {colors => "Wm", emoji => 'crystal-ball'},
+		output    => {colors => "Ck", pri => 6, emoji => 'printer'},
+		info      => {colors => "cW", pri => 6, emoji => 'information'},
+		debug     => {colors => "mW", emoji => 'crystal-ball'},
 		warning   => {colors => "ky", pri => 4, emoji => 'warning'},
-		notice    => {colors => "BK", pri => 4, emoji => 'notice'},
-		error     => {colors => "WR", pri => 3, emoji => 'collision'},
-		fatal     => {colors => "Yr", pri => 0, emoji => 'stop-sign'},
-		trace     => {colors => "WG", emoji => 'detective', show_stack => 'current'},
-		qtrace    => {colors => "Wg", emoji => 'detective'},
-		dumpvar   => {colors => "WB", show_scope => 'current', emoji => 'magnifying-glass', raw => 1},
-		dumpstack => {colors => "kY", emoji => 'pancakes', raw => 1},
+		notice    => {colors => "bw", pri => 4, emoji => 'megaphone'},
+		error     => {colors => "RW", pri => 3, emoji => 'collision'},
+		fatal     => {colors => "rY", pri => 0, emoji => 'stop-sign'},
+		trace     => {colors => "GW", emoji => 'detective', show_stack => 'current'},
+		qtrace    => {colors => "gW", emoji => 'detective'},
+		dumpvar   => {colors => "BW", show_scope => 'current', emoji => 'magnifying-glass', raw => 1},
+		dumpstack => {colors => "Yk", emoji => 'pancakes', raw => 1},
 	}->{$_[0]}
 }
 
@@ -262,6 +329,10 @@ sub _log {
 		show_stack => $options->{show_stack},
 		stack      => \@stack,
 		raw        => $options->{raw},
+
+		# Terminal specific options
+		prefix     => $options->{prefix},
+		style      => $options->{style},
 	};
 
 	# Check if there are any logs for the given level
@@ -279,13 +350,35 @@ sub flush_logs {
 	my ($s,$us) = gettimeofday;
 	my $ms = $s * 1000 + int($us/1000);
 
+	# Process templates first
+	for my $template (keys %{$self->{log_templates}}) {
+		next if $self->{realized_logs}{$template}; # Already realized
+
+		# Check if we should skip logging for this command
+		my $skip_commands = $self->{log_templates}{$template}{skip_commands} || [];
+		if ($ENV{GENESIS_COMMAND} && grep { $_ eq $ENV{GENESIS_COMMAND} } @$skip_commands) {
+			# Mark as realized but don't create log
+			$self->{realized_logs}{$template} = '<skipped>';
+			next;
+		}
+
+		my $actual_log = $self->expand_log_template($template);
+		my $options = $self->{log_templates}{$template}{options};
+
+		# Configure the actual log file
+		$self->configure_log($actual_log, %$options);
+		$self->{realized_logs}{$template} = $actual_log;
+	}
+
+	# Process realized logs from templates (no need to do anything here, they're already configured)
+
 	for my $log (keys %{$self->{logs}}) {
 		my $config = $self->{logs}{$log};
 		for my $line_number ($config->{next_entry}..$last_line) {
 			my (
-					$level, $ts,      $label, $colors, $emoji, $priority, $contents, $show_stack, $stack, $pending, $reset, $raw
+					$level, $ts,      $label, $colors, $emoji, $priority, $contents, $show_stack, $stack, $pending, $reset, $raw, $term_prefix, $term_style
 			)	= @{@{$self->{buffer}}[$line_number]}{
-				qw/level   timestamp label   colors   emoji   priority   contents   show_stack   stack   pending   reset   raw/
+				qw/level   timestamp label   colors   emoji   priority   contents   show_stack   stack   pending   reset   raw   prefix        style/
 			};
 
 			next unless meets_level($config->{level},$level);
@@ -303,18 +396,19 @@ sub flush_logs {
 				my $columns = $log eq '<terminal>' ? terminal_width : ($config->{width} || 120);
 				my ($prefix,$indent);
 
+				my $style = $config->{style} || 'pointer';
+				$style = $term_style if defined($term_style) && $log eq '<terminal>';
+
 				if ($log eq '<terminal>' && grep {$_ eq $level} (qw(OUTPUT INFO))) {
 					$prefix = '';
 					$colors = '';
-				} elsif ($config->{style} eq 'fun') {
-					my $fg = substr($colors,1,1);
-					$prefix = sprintf("#%s{[}#E{%s}#%s{%s] }",$fg,$emoji,$fg,$label);
+				} elsif ($style eq 'fun') {
+					$prefix = sprintf("#%s{[#E{%s}%s]} ",$colors,$emoji,$label);
 					$prefix = "#K{$ts} $prefix" if $config->{timestamp};
-				} elsif ($config->{style} eq 'plain') {
-					my $fg = substr($colors,1,1);
-					$prefix = "#${fg}{[$label]} ";
+				} elsif ($style eq 'plain') {
+					$prefix = "#${colors}{[$label]} ";
 					$prefix = "#K{$ts} $prefix" if $config->{timestamp};
-				} elsif ($config->{style} eq 'rfc-5424') {
+				} elsif ($style eq 'rfc-5424') {
 					$priority += 8; # See https://datatracker.ietf.org/doc/html/rfc5424#section-6.2.1
 					my $msgid = '-'; #FIXME: Not yet implemented
 					no warnings 'once';
@@ -332,20 +426,25 @@ sub flush_logs {
 					$pending = undef;
 					$columns = 999;
 					$indent = "  ";
-				} else { # current default - if ($config->{style} eq 'pointer') {
-					my ($gt,$gtc) = (">",$colors);
+				} else { # current default - if ($style eq 'pointer') {
 					$prefix = $label;
-					unless (envset "NOCOLOR") {
+					my ($gt,$gtc);
+					if (envset 'NOCOLOR' || envset 'GENESIS_NO_UTF8') {
+						$colors = $gtc = substr($colors,0,1) || '-';
+						$gt = '>';
+						$gtc = '-';
+					} else {
 						$gt = csprintf('#@{>}');
-						$gtc = substr($colors||'-',1,1);
-						$prefix = " $prefix " unless envset('GENESIS_NO_UTF8');
+						$gtc = substr($colors,1,1)||'-';
+						$prefix = " $prefix ";
 					}
-					$colors = substr($colors,1,1) if envset('GENESIS_NO_UTF8');
 					$prefix = "$ts $prefix" if $config->{timestamp};
 					$prefix = sprintf("#%s{%s}#%s{%s} ", $colors,$prefix,$gtc,$gt)
 				}
+				$prefix = $term_prefix.$prefix if defined($term_prefix) && $log eq '<terminal>';
 
 				$indent ||=  ' ' x csize($prefix);
+
 				my $content;
 				eval {
 					our @trap_warnings = qw/uninitialized/;
@@ -392,6 +491,12 @@ sub flush_logs {
 					$file =~ s/^~/$ENV{HOME}/;
 					open $fh, '>>:encoding(UTF-8)', $file
 						or die "Could not open $log for writing logs: $!\n";
+
+					# Write command line as first entry if this is a new file
+					if ($ENV{GENESIS_FULL_CALL} && !$self->{command_logged}{$log} && -z $file) {
+						print $fh "Command: $ENV{GENESIS_FULL_CALL}\n\n";
+						$self->{command_logged}{$log} = 1;
+					}
 				}
 				$pre_pad =~ s/\A[\r\n]+// unless ($log eq '<terminal>' || ($last_waiting && !$reset));
 				$post_pad =~ s/[\r\n]+\z// unless ($log eq '<terminal>' || $pending);
@@ -449,6 +554,7 @@ sub _log_item_level_map {
 		'FATAL'   => 2,
 		'ERROR'   => 2,
 		'WARNING' => 3,
+		'NOTICE'  => 3,
 		'INFO'    => 4,
 		'DEBUG'   => 5,
 		'VALUE'   => 6,
@@ -478,7 +584,7 @@ sub log_levels {
 sub get_scope {
 	my ($scope) = @_;
 	my $out = "";
-	for (_get_stack($scope+1)) {
+	for (get_stack($scope+1)) {
 		$out .= csprintf("#K\@{^-}#Ki{ %s:L%d%s\n}", $_->{file}, $_->{line}, $_->{sub} ? " (in $_->{sub})" : '');
 		last unless envset ("GENESIS_STACK_TRACE");
 	}

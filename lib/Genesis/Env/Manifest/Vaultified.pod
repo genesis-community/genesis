@@ -1,0 +1,159 @@
+=head1 NAME
+
+Genesis::Env::Manifest::Vaultified - Deployable manifest with Credhub references converted to Vault operators
+
+=head1 SYNOPSIS
+
+  use Genesis::Env::Manifest::Vaultified;
+
+  # Manifests are obtained via the builder, not instantiated directly:
+  my $manifest = $builder->vaultified;
+
+  # Access the merged manifest data with Vault operators resolved:
+  my $data = $manifest->data;
+
+  # Get the path to the manifest file on disk:
+  my $file = $manifest->file;
+
+  # Get the companion redacted view:
+  my $redacted = $manifest->redacted;
+
+  # Confirm this manifest type is deployable:
+  print $manifest->deployable;  # prints '1'
+
+=head1 DESCRIPTION
+
+C<Genesis::Env::Manifest::Vaultified> is a subclass of
+C<Genesis::Env::Manifest> that produces a fully merged BOSH deployment
+manifest suitable for environments that use Vault-based secrets. It is
+the primary deployable manifest type for Vault-based Genesis kits.
+
+The class includes L<Genesis::Env::Manifest::_vaultify_mixin> to gain the
+vaultification methods. The mixin converts Credhub C<((variable))>
+references found in the manifest's C<variables> block into Spruce Vault
+operator calls, then feeds the converted manifest through a final Spruce
+merge to resolve those operators against the live Vault instance. The
+result is a complete, evaluated BOSH manifest with all secrets embedded.
+
+The C<_merge> method defines the two-phase build process:
+
+=over 4
+
+=item 1. I<Vaultification> -- calls C<vaultify> (from the mixin) on a
+deep copy of the unredacted builder data. If the manifest contains a
+C<variables> block, the Credhub references are rewritten and the
+pre-merge file is written to a temporary location.
+
+=item 2. I<Spruce merge> -- calls C<merge_vaultified_manifest> (from the
+mixin) to run Spruce over the vaultified file, resolving Vault operators.
+If the manifest had no C<variables> block, the unredacted builder data and
+file are returned unchanged.
+
+=back
+
+Manifests are built by the manifest builder. Do not instantiate this
+class directly.
+
+See L<Genesis::Env::Manifest> for the full interface inherited by this
+class, and L<Genesis::Env::Manifest::_vaultify_mixin> for the vaultification
+methods that become part of this class's interface.
+
+=head1 METHODS
+
+=head2 description
+
+  my $str = $manifest->description;
+
+Returns a human-readable string describing this manifest type:
+C<"Manifest with Credhub queries converted to Vault operator syntax and
+variable definitions converted to allow for Genesis secrets operations">.
+
+  # Example
+  my $manifest = $builder->vaultified;
+  print $manifest->description;
+  # prints 'Manifest with Credhub queries converted to Vault operator
+  #         syntax and variable definitions converted to allow for
+  #         Genesis secrets operations'
+
+=head2 deployable
+
+  my $bool = $manifest->deployable;
+
+Returns C<1>, indicating that this manifest type is suitable for direct
+submission to BOSH as a deployment manifest.
+
+  # Example
+  my $manifest = $builder->vaultified;
+  print $manifest->deployable;  # prints '1'
+
+=head2 redacted
+
+  my $redacted = $manifest->redacted;
+
+Returns the companion redacted manifest for this manifest's subset.
+Delegates to C<< $self->builder->vaultified_redacted >>, passing the
+current subset, and returns a C<Genesis::Env::Manifest::VaultifiedRedacted>
+object. The redacted form applies the same vaultification step but runs
+the final Spruce merge with C<REDACT=yes> so that secret values appear
+masked.
+
+B<Returns:> a C<Genesis::Env::Manifest::VaultifiedRedacted> object scoped
+to the same subset as this manifest.
+
+  # Example
+  my $manifest = $builder->vaultified;
+  my $redacted = $manifest->redacted;
+  print ref($redacted);  # prints 'Genesis::Env::Manifest::VaultifiedRedacted'
+
+=head1 INTERNAL METHODS
+
+These methods are internal to the implementation. They may change without
+notice and should not be called directly.
+
+=head2 _merge
+
+  my ($data, $file) = $manifest->_merge;
+
+Implements the two-phase vaultification and merge process required by the
+C<Genesis::Env::Manifest> base class.
+
+First calls C<vaultify> with a deep copy of the builder's unredacted data
+and the path returned by C<pre_merged_vaultified_file>. If vaultification
+succeeds (the manifest contained a C<variables> block), calls
+C<merge_vaultified_manifest> to produce the final merged output and
+returns its C<($data, $file)> pair.
+
+If vaultification finds no C<variables> block, returns the builder's
+cached unredacted data and file unchanged, bypassing the Spruce merge.
+
+B<Returns:> a two-element list:
+
+=over 4
+
+=item * C<$data> - The manifest data structure, either fully merged and
+evaluated or the unredacted builder data if no vaultification was needed.
+
+=item * C<$file> - The path to the manifest file on disk corresponding to
+C<$data>.
+
+=back
+
+  # Called internally by data() and file() via the parent class:
+  my ($data, $file) = $manifest->_merge;
+  # Returns: ($data_hashref, '/path/to/manifest.yml')
+
+=head1 SEE ALSO
+
+L<Genesis::Env::Manifest>,
+L<Genesis::Env::Manifest::_vaultify_mixin>,
+L<Genesis::Env::Manifest::VaultifiedRedacted>
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

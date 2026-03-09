@@ -241,3 +241,102 @@ Genesis deploy should work like pipeline in regard to propagating the
 hierarchial changes.  Make this a value in the config file (deployment) and
 have it set on/off, and/or have specific environments protected from being
 pushed without cache/gating.
+
+Transitional Cert Rotation:
+
+* Add a `--transition` option to `genesis deploy` that will do the following:
+
+  1. Warn the user that a transitional cert rotation is about to occur, and
+     they should not run any \*-secrets commands until the full deployment
+     cycle is complete.
+
+  1. Show what certs will be transitioned. Specify that any user-provided 
+     certs will not be transitioned, and to consult `genesis help
+     user-provided-certs` for more details. Ask for confirmation to proceed.
+
+  1. On first deploy, copy the current certs to
+     <cert-path>/transitional/old and generate new ca certs in the
+     original <cert-path> path using standard rotation methods (not renew
+     because we want a new key).
+
+  1. Copy the new certs to <cert-path>/transitional/new then copy back the
+     non-ca certs from <cert-path>/transitional/old to <cert-path> and merge
+     the new ca certs and the old ca certs into the <cert-path>:ca location.
+
+  1. Update exodus to show transitional state 0 - certs altered but not
+     deployed.
+
+  1. Deploy the generated manifest as normal.
+
+  1. On successful deploy, update exodus to show transitional state 1 - new 
+     ca certs deployed.
+
+  1. Prompt the user if they want to proceed to the next transitional state
+     (2 - new non-ca certs deployed).
+
+  1. At this point, the user can run `genesis deploy --transition` again to
+     proceed to the next transitional state, as tracked by exodus.  If they
+     run deploy without --transition, it will error out and tell them to
+     run with --transition to proceed, or if needed, `genesis deploy
+     --reset-transition` to revert to the previous state.
+
+  1. Identify that this is a transitional deployment to the user and which
+     certs are in transition.  Ask for confirmation to proceed.
+
+  1. Copy the new non-ca certs to their original locations.
+
+  1. Deploy the generated manifest as normal.
+
+  1. On successful deploy, update exodus to show transitional state 2 - new
+     non-ca certs deployed.
+
+  1. Prompt the user if they want to proceed to the next transitional state
+     (3 - old ca certs removed).
+
+  1. At this point, the user can run `genesis deploy --transition` again to
+     complete the transitional deployment, as tracked by exodus.  If they
+     need to revert, they can run `genesis deploy --reset-transition` to
+     do so.
+
+  1. Identify that this is a transitional deployment to the user and which
+     certs are in transition.  Ask for confirmation to proceed.
+
+  1. Copy over the new ca certs to the <cert-path>:ca location.
+
+  1. Deploy the generated manifest as normal.
+
+  1. On successful deploy, update exodus to show we are no longer in a
+     transitional state.  Remove the transitional old and new paths from safe.
+
+  1. Announce to the user that the transitional deployment is complete and
+     they can now run \*-secrets commands as needed.
+
+---
+
+Flip it on its head: The Return of the Codex
+
+It might be easier for clients to understand if we had a structure of
+<root>/env-name/type.yml, instead of <root>/env-type/env-name.yml.  This
+would also align better with the secrets structure in vault.
+
+It would also allow the <root> to contain a .genesis-env file that would set
+common environment variables that pertain across all environments under it,
+such as setting the secrets_mount, or vault namespace, etc.
+
+---
+
+* Failed deploys should be stored to exodus deployment...
+
+* Add a cleanup option to deploy that will run:
+  * bosh cleanup to remove unused releases, stemcells, etc.
+  * clean up credhub secrets that are no longer needed
+
+  This will keep disk usage down and reduce chance of running out of space.
+
+* Add option to prefix azs with the environment name/type.
+
+---
+
+* Modify the 3.1 kits to allow for `requires_iaas` and `requires_scale` to be
+  set to a list of hooks instead of boolean.  This will allow for more
+  fine-grained control over which hook requires which iaas or scale.

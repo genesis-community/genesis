@@ -1,0 +1,6 @@
+---
+name: dev
+author: Genesis Community
+homepage: https://github.com/genesis-community
+description: Test legacy non-BOSH kit
+genesis_version_min: 2.6.0

@@ -1,0 +1,13 @@
+---
+name:   bosh
+author: Dennis Bell <dbell@fivetwenty.io>
+docs:   https://github.com/genesis-community/bosh-genesis-kit
+code:   https://github.com/genesis-community/bosh-genesis-kit
+
+genesis_version_min: 3.0.0
+use_create_env: yes
+is_bosh_director: true
+
+description: |
+  BOSH director kit with genesis_version_min 3.0.0 and use_create_env for testing
+  that create-env deployments cannot be entombed.

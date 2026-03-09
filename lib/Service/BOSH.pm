@@ -2,7 +2,9 @@ package Service::BOSH;
 
 use File::Temp qw/tempfile/;
 
-use Genesis;
+use Genesis qw/
+	trace debug bail run slurp new_enough logger dump_var humanize_path dryrun
+/;
 use Genesis::State qw/envset/;
 
 ## Class Variables {{{
@@ -66,6 +68,36 @@ sub set_command {
 }
 
 # }}}
+
+sub has_director {
+	return 0;
+}
+
+# available_stemcells - get a list of available stemcells from bosh.io {{{
+sub available_stemcells {
+	require Service::BOSH::Stemcell;
+	my ($class, %opts) = @_;
+	my ($iaas, $os, $type) = @opts{qw/iaas os type/};
+	if ($opts{env}) {
+		my $env = $opts{env};
+		$iaas //= $env->iaas;
+		$os //= ($env->manifest_lookup('stemcells',[])->[0]//{})->{os};
+		$type //= $env->lookup('bosh-configs.stemcells.type', undef);
+	}
+	$os //= 'ubuntu-jammy';
+	bail(
+		"No IaaS specified for stemcell lookup"
+	) unless $iaas;
+
+	my $stemcells = Service::BOSH::Stemcell->available_stemcells(
+		iaas => $iaas,
+		os => $os,
+		all => 1,
+		type => $type,
+	);
+
+	return wantarray ? @$stemcells : $stemcells;
+}
 # }}}
 
 ## Instance Methods {{{
@@ -133,19 +165,57 @@ sub execute {
 	dump_var("bosh command" => \@cmd);
 	my @results = run($opts, @cmd);
 
-	if ($opts->{interactive} && ! $opts->{passfail} && $file) {
+	if ($opts->{interactive} && $file) {
 		$results[0] = slurp($file);
-		$results[0] =~ s/^Script [^\n]+\n//m; # remove script header (linux)
 		if ($results[0] =~ s/\nScript done.*\[COMMAND_EXIT_CODE="(.*)"]$//m) {
 			$results[1] = $1;  # Linux stores command exit code in the script output
 		}
-		$Genesis::Log::Logger->dump_var("bosh results" => \@results);
+		$results[0] =~ s/^Script [^\n]+\n//m; # remove script header (linux)
+		logger->dump_var("bosh results" => \@results);
 	}
 	return !$results[1] if $opts->{passfail};
 	return wantarray ? @results : $results[1];
 }
 
 # }}}
+
+# dryrun_of - execute a bosh command in dry-run mode {{{
+sub dryrun_of {
+	my ($self, @cmd) = @_;
+	my $opts;
+	my $execute = 0;
+	my $exec_msg = "";
+	my $interactive = undef;
+	if (ref($cmd[0]) eq 'HASH') {
+		$opts = shift @cmd;
+		$execute = delete($opts->{execute}) || 0;
+		$interactive = delete($opts->{interactive});
+		if (defined($opts->{exec_msg})) {
+			$exec_msg = " ".delete($opts->{exec_msg});
+		}
+	}
+	$interactive = 1 if $execute && !defined($interactive);
+
+	my $command = join(' ', map {$_ =~ /\s/ ? "'$_'" : $_} (humanize_path(scalar($self->command)), @cmd));
+	if (ref($self)->has_director) {
+		dryrun(
+			"\nwould execute #G{%s} on #M{%s} BOSH director%s",
+			$command,
+			$self->{alias} || $self->{host},
+			$execute ? ", resulting in$exec_msg:" : "."
+		);
+	} else {
+		dryrun(
+			"\nwould execute #G{%s}%s",
+			$command,
+			$execute ? ", resulting in$exec_msg:" : "."
+		);
+	}
+	return 1 unless $execute;
+	$execute = [qw/--dry-run/] unless ref($execute) eq 'ARRAY';
+	@cmd = (@cmd, @$execute);
+	return $self->execute({%$opts, interactive => $interactive}, @cmd);
+}
 # }}}
 1
 # vim: fdm=marker:foldlevel=1:noet

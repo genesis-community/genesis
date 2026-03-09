@@ -1,0 +1,424 @@
+#!/usr/bin/env perl
+
+use v5.20;
+use warnings;
+use Test::More;
+use Test::Deep;
+
+# Add lib to @INC for testing
+BEGIN {
+	my $genesis_lib = $ENV{GENESIS_LIB} || '../lib';
+	unshift @INC, $genesis_lib;
+}
+
+use Genesis::Term qw/colorize csprintf decolorize/;
+
+# Disable colors for consistent testing
+$ENV{NOCOLOR} = 1;
+
+subtest "Simple color blocks" => sub {
+	# Basic color functionality should work as before
+	is(colorize('#r{red text}'), 'red text', 'Simple red color block');
+	is(colorize('#b{blue text}'), 'blue text', 'Simple blue color block');
+	is(colorize('#-Y{yellow background}'), 'yellow background', 'Background color');
+	is(colorize('No colors here'), 'No colors here', 'Plain text unchanged');
+	is(colorize(''), '', 'Empty string');
+	is(colorize(undef), undef, 'Undefined input');
+};
+
+subtest "Multiple color blocks at same level" => sub {
+	is(
+		colorize('Start #r{red} middle #b{blue} end'),
+		'Start red middle blue end',
+		'Multiple color blocks with uncolored text'
+	);
+	
+	is(
+		colorize('#r{red} #b{blue} #g{green}'),
+		'red blue green',
+		'Adjacent color blocks'
+	);
+	
+	is(
+		colorize('#r{red}#b{blue}'),
+		'redblue',
+		'Adjacent color blocks without spaces'
+	);
+};
+
+subtest "Nested color inheritance" => sub {
+	# Our main new functionality
+	is(
+		colorize('#-Y{#r{[NOTICE]} #i{You #u{must} understand that this is a message}}'),
+		'[NOTICE]  You must understand that this is a message',
+		'Complex nested color inheritance'
+	);
+	
+	is(
+		colorize('#r{red with #b{blue} inside}'),
+		'red with blue inside',
+		'Simple nesting'
+	);
+	
+	is(
+		colorize('#-W{outer #r{red} #b{blue} text}'),
+		'outer red blue text',
+		'Multiple nested blocks in single parent'
+	);
+};
+
+subtest "Nested with uncolored intermediary text" => sub {
+	is(
+		colorize('Before #-Y{prefix #r{red} suffix} after'),
+		'Before prefix red suffix after',
+		'Nested with top-level and inner uncolored text'
+	);
+	
+	is(
+		colorize('#-Y{#r{red} and #b{blue}}'),
+		'red and blue',
+		'Space between nested blocks inherits parent color'
+	);
+};
+
+subtest "Deep nesting" => sub {
+	is(
+		colorize('#r{level1 #b{level2 #g{level3} back} done}'),
+		'level1 level2 level3 back done',
+		'Three levels of nesting'
+	);
+	
+	is(
+		colorize('#-W{#r{#b{#g{deep}}}}'),
+		'deep',
+		'Deeply nested single block'
+	);
+};
+
+subtest "Glyph preprocessing" => sub {
+	# Test glyph handling
+	is(
+		colorize('#@{ok}'),
+		'✓',
+		'Simple glyph conversion'
+	);
+	
+	is(
+		colorize('#r@{ok}'),
+		'✓',
+		'Colored glyph'
+	);
+	
+	is(
+		colorize('#r{text with #@{ok} glyph}'),
+		'text with ✓ glyph',
+		'Glyph in nested context'
+	);
+	
+	is(
+		colorize('#-Y{#r{Status: #@{ok}} done}'),
+		'Status: ✓ done',
+		'Glyph with nested color inheritance'
+	);
+};
+
+subtest "Emoji preprocessing" => sub {
+	# Test emoji handling  
+	is(
+		colorize('#E{crystal-ball}'),
+		'🔮',
+		'Simple emoji conversion'
+	);
+	
+	is(
+		colorize('#r{text with #E{crystal-ball} emoji}'),
+		'text with 🔮 emoji',
+		'Emoji in nested context'
+	);
+	
+	is(
+		colorize('#-Y{#r{Magic: #E{crystal-ball}} done}'),
+		'Magic: 🔮 done',
+		'Emoji with nested colors (emoji uncolored)'
+	);
+};
+
+subtest "Mixed glyph, emoji, and colors" => sub {
+	is(
+		colorize('#r{Status: #@{ok} #E{crystal-ball} #b{blue text}}'),
+		'Status: ✓ 🔮 blue text',
+		'Mix of glyphs, emojis, and nested colors'
+	);
+	
+	is(
+		colorize('Start #-Y{#r{[NOTICE]} #@{ok} #E{crystal-ball} #i{important}} end'),
+		'Start [NOTICE] ✓ 🔮 important end',
+		'Complex mix with inheritance'
+	);
+};
+
+subtest "Edge cases" => sub {
+	is(
+		colorize('#r{}'),
+		'',
+		'Empty color block'
+	);
+	
+	is(
+		colorize('#r{#b{}}'),
+		'',
+		'Nested empty color block'
+	);
+	
+	is(
+		colorize('#r{text #b{} more}'),
+		'text  more',
+		'Empty nested block with text around it'
+	);
+	
+	is(
+		colorize('#r{unclosed'),
+		'#r{unclosed',
+		'Unclosed color block left as-is'
+	);
+	
+	is(
+		colorize('#invalid{text}'),
+		'#invalid{text}',
+		'Invalid color code left as-is'
+	);
+};
+
+subtest "csprintf integration" => sub {
+	is(
+		csprintf('#r{Error: %s}', 'test error'),
+		'Error: test error',
+		'csprintf with simple color'
+	);
+	
+	is(
+		csprintf('#-Y{#r{[%s]} %s}', 'ERROR', 'something failed'),
+		'[ERROR] something failed',
+		'csprintf with nested colors'
+	);
+	
+	is(
+		csprintf('#r{Count: %d #@{ok}}', 42),
+		'Count: 42 ✓',
+		'csprintf with glyph'
+	);
+};
+
+subtest "Performance optimization paths" => sub {
+	# Test that simple strings take fast path
+	is(
+		colorize('#r{simple}'),
+		'simple',
+		'Simple color takes fast path'
+	);
+	
+	# Test that complex strings take nested path
+	is(
+		colorize('#r{outer #b{inner}}'),
+		'outer inner',
+		'Nested colors take slow path'
+	);
+};
+
+subtest "Color inheritance specifics" => sub {
+	# Test specific color combination rules
+	local $ENV{NOCOLOR} = 0;  # Enable colors for this test
+	
+	# Test that current colors override inherited
+	my $result = colorize('#-Y{#-R{text}}');
+	# Should have red background (-R) overriding yellow background (-Y)
+	ok($result =~ /text/, 'Color override produces text');
+	
+	# Test that modifiers are preserved
+	$result = colorize('#-Yi{#u{text}}');
+	# Should have yellow background, italic, underline
+	ok($result =~ /text/, 'Modifier inheritance produces text');
+	
+	$ENV{NOCOLOR} = 1;  # Restore for other tests
+};
+
+subtest "Backwards compatibility" => sub {
+	# Ensure existing colorize functionality is preserved
+	is(
+		colorize('#r{red} #b{blue}'),
+		'red blue',
+		'Legacy colorize behavior preserved'
+	);
+	
+	is(
+		csprintf('Error: #r{%s}', 'failed'),
+		'Error: failed',
+		'Legacy csprintf behavior preserved'
+	);
+};
+
+subtest "Extended color format" => sub {
+	# Test basic extended color blocks
+	is(
+		colorize('#[red]{red text}'),
+		'red text',
+		'Simple extended red color block'
+	);
+	
+	is(
+		colorize('#[blue3]{blue3 text}'),
+		'blue3 text',
+		'Extended numbered color'
+	);
+	
+	is(
+		colorize('#[bright-green]{bright green text}'),
+		'bright green text',
+		'Extended bright color'
+	);
+	
+	is(
+		colorize('#[grey10]{grey text}'),
+		'grey text',
+		'Extended grayscale color'
+	);
+	
+	# Test multiple extended colors
+	is(
+		colorize('#[red1]{red1} and #[blue2]{blue2}'),
+		'red1 and blue2',
+		'Multiple extended color blocks'
+	);
+};
+
+subtest "Extended color nesting" => sub {
+	# Test nesting with extended colors
+	is(
+		colorize('#[red3]{Outer #[blue2]{inner} text}'),
+		'Outer inner text',
+		'Extended nested colors'
+	);
+	
+	is(
+		colorize('#r{Legacy #[yellow4]{extended inside} more}'),
+		'Legacy extended inside more',
+		'Legacy with extended nested'
+	);
+	
+	is(
+		colorize('#[green1]{Extended #r{legacy inside} text}'),
+		'Extended legacy inside text',
+		'Extended with legacy nested'
+	);
+	
+	# Deep nesting with extended
+	is(
+		colorize('#[red2]{level1 #[blue3]{level2 #[green4]{level3}}}'),
+		'level1 level2 level3',
+		'Deep nesting with extended colors'
+	);
+};
+
+subtest "Extended color edge cases" => sub {
+	# Test invalid extended color names
+	is(
+		colorize('#[invalid-color]{text}'),
+		'#[invalid-color]{text}',
+		'Invalid extended color left as-is'
+	);
+	
+	# Test empty extended color blocks
+	is(
+		colorize('#[red]{}'),
+		'',
+		'Empty extended color block'
+	);
+	
+	# Test malformed extended syntax
+	is(
+		colorize('#[unclosed{text}'),
+		'#[unclosed{text}',
+		'Malformed extended color left as-is'
+	);
+	
+	is(
+		colorize('#]{text}'),
+		'#]{text}',
+		'Invalid bracket sequence left as-is'
+	);
+};
+
+subtest "Extended color xterm256 mapping" => sub {
+	# Test that we get proper xterm256 codes when available
+	local $ENV{NOCOLOR} = 0;  # Enable colors
+	
+	# Test basic colors (0-7)
+	my $red_result = colorize('#[red]{test}');
+	ok($red_result =~ /\e\[38;5;1m/ || $red_result =~ /\e\[31m/, 'Red maps to correct ANSI');
+	
+	# Test numbered colors
+	my $red3_result = colorize('#[red3]{test}');
+	ok($red3_result =~ /\e\[38;5;124m/ || $red3_result =~ /\e\[31m/, 'red3 maps to xterm256 or degrades');
+	
+	# Test bright colors
+	my $bright_red_result = colorize('#[bright-red]{test}');
+	ok($bright_red_result =~ /\e\[38;5;9m/ || $bright_red_result =~ /\e\[1;31m/, 'bright-red maps correctly');
+	
+	$ENV{NOCOLOR} = 1;  # Restore for other tests
+};
+
+subtest "Mixed legacy and extended" => sub {
+	# Test combinations of legacy and extended in various patterns
+	is(
+		colorize('#r{red} #[blue2]{blue2} #g{green}'),
+		'red blue2 green',
+		'Mix of legacy and extended at same level'
+	);
+	
+	is(
+		colorize('#-Y{#r{legacy} and #[blue3]{extended}}'),
+		'legacy and extended',
+		'Legacy background with mixed nested colors'
+	);
+	
+	is(
+		colorize('#[grey5]{Background #r{red} #[yellow2]{yellow2} text}'),
+		'Background red yellow2 text',
+		'Extended background with mixed nested'
+	);
+};
+
+subtest "decolorize function" => sub {
+	is(
+		decolorize('#r{red text}'),
+		'red text',
+		'Simple decolorize'
+	);
+	
+	is(
+		decolorize('#-Y{#r{nested} text}'),
+		'nested text',
+		'Nested decolorize'
+	);
+	
+	is(
+		decolorize('#r{text #@{ok} #E{crystal-ball}}'),
+		'text ✓ 🔮',
+		'Decolorize with glyphs and emojis'
+	);
+	
+	# Test decolorize with extended format
+	is(
+		decolorize('#[red3]{extended red text}'),
+		'extended red text',
+		'Decolorize extended format'
+	);
+	
+	is(
+		decolorize('#[blue2]{outer #[green4]{nested}}'),
+		'outer nested',
+		'Decolorize nested extended format'
+	);
+};
+
+done_testing();

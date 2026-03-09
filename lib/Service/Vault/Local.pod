@@ -1,0 +1,451 @@
+=head1 NAME
+
+Service::Vault::Local - A memory-backed local Vault instance managed through safe
+
+=head1 SYNOPSIS
+
+  use Service::Vault::Local;
+
+  # Create (or reuse) a local memory-backed vault
+  my $vault = Service::Vault::Local->create('my-env');
+
+  # Rebind to an already-running local vault without starting a new one
+  my $vault = Service::Vault::Local->rebind('local_vault_my-env_12345');
+
+  # Check if a name and optional URL look like a local vault
+  if (Service::Vault::Local->valid_local_vault($name, $url)) {
+    print "This is a local vault\n";
+  }
+
+  # Shut down a specific local vault
+  $vault->shutdown;
+
+  # Shut down all local vaults at once
+  Service::Vault::Local->shutdown_all;
+
+=head1 DESCRIPTION
+
+C<Service::Vault::Local> represents an in-memory HashiCorp Vault instance
+launched by the C<safe local -m> command and managed locally by the calling
+process. It inherits from C<Service::Vault> and starts, discovers, and
+cleanly terminates these ephemeral vault processes.
+
+Local vaults are used by Genesis when a full remote vault is not available
+or appropriate -- for example, during automated tests or isolated kit
+hooks. Each local vault is identified by a generated alias of the form
+C<local_vault_NAME_PID>, where C<NAME> is derived from the requested name
+and C<PID> is the process ID of the Perl process that created it.
+
+Internally, each local vault runs as two cooperating OS processes:
+
+=over 4
+
+=item *
+
+A C<safe local> process (the "safe" process) that manages the target
+registration and acts as a wrapper.
+
+=item *
+
+A C<vault server> child process (the "vault" process) that holds the
+actual in-memory secrets store.
+
+=back
+
+Both PIDs are tracked on the vault object so that C<shutdown> can
+terminate them in order.
+
+A process-level cache (C<%$local_vaults>) ensures that calling C<create>
+twice with the same name returns the same object. The C<DESTROY> method
+ensures the vault is shut down when the object goes out of scope, provided
+it is owned by the current process.
+
+See L<Service::Vault> for the full vault interface that all subclasses implement.
+
+=head1 METHODS
+
+=head2 create
+
+  my $vault = Service::Vault::Local->create($name);
+
+Creates and returns a C<Service::Vault::Local> object backed by a running
+in-memory Vault process. If a local vault with the same derived alias is
+already cached in the current process, the cached object is returned
+immediately without starting a new process.
+
+If no matching vault process is found running, a new C<safe local -m>
+process is launched in the background. The method waits briefly for the
+safe process and its child vault process to appear, then queries C<safe
+targets --json> to obtain the connection URL and metadata. The vault is
+polled until its status is C<ok> before being returned.
+
+After the new vault is registered, the previously active safe target is
+restored, leaving existing target state unchanged.
+
+B<Parameters:>
+
+=over 4
+
+=item $name
+
+A name string used to derive the vault alias. This may be an arbitrary
+deployment name (e.g., C<'my-env'>) or an existing local-vault alias
+(e.g., C<'local_vault_my-env_12345'>); the alias generation logic
+normalises it either way.
+
+=back
+
+B<Returns:> A C<Service::Vault::Local> object that is ready to use.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Could not start local memory-backed vault:\n%s">
+
+Raised when the C<safe local> process fails to appear after launch, or
+when the child C<vault server> process cannot be found or has the wrong
+parent PID. C<%s> is the contents of the vault's log file, which may
+contain error output from safe or vault.
+
+=item C<"Failed to find vault alias after starting local vault.">
+
+Raised when C<safe targets --json> does not return a target matching the
+generated alias after the processes are confirmed running.
+
+=item C<"Failed to connect to local memory-backed vault: %s\n\nYou may need to clean out your ~/.saferc file for stale local vaults.">
+
+Raised when the vault's status is C<ambiguous> while waiting for it to
+become ready. C<%s> is the ambiguous status string returned by C<< $vault->status >>.
+
+=back
+
+B<Examples:>
+
+  my $vault = Service::Vault::Local->create('test-env');
+  print $vault->name;   # Returns: 'local_vault_test-env_12345'
+
+  # A second call with the same name returns the cached object
+  my $same = Service::Vault::Local->create('test-env');
+  # Returns: the same $vault object
+
+=head2 rebind
+
+  my $vault = Service::Vault::Local->rebind($name);
+
+Connects to an already-running local vault without launching any new
+processes. Returns C<undef> if the name is not a valid local vault alias,
+if no safe target for it exists in C<~/.saferc>, or if the backing safe
+process is no longer running.
+
+If the alias is already cached in the current process, the cached object
+is returned immediately.
+
+B<Parameters:>
+
+=over 4
+
+=item $name
+
+An existing local vault alias or a name that passes C<valid_local_vault>.
+Must match the pattern C<local_vault_NAME_PID>.
+
+=back
+
+B<Returns:> A C<Service::Vault::Local> object for the running vault, or
+C<undef> if the vault cannot be found.
+
+B<Examples:>
+
+  # Rebind to a vault that was created by a previous process
+  my $vault = Service::Vault::Local->rebind('local_vault_my-env_12345');
+  if ($vault) {
+    print "Rebound to " . $vault->name . "\n";
+    # Returns: 'local_vault_my-env_12345'
+  }
+
+=head2 valid_local_vault
+
+  my $bool = Service::Vault::Local->valid_local_vault($name, $url);
+
+Returns true if C<$name> matches the local vault alias pattern
+(C<local_vault_NAME_PID>) and, when C<$url> is also provided, if the URL
+contains C<localhost>.
+
+This class method is used by C<Service::Vault> to distinguish local vaults
+from remote ones when iterating over known safe targets.
+
+B<Parameters:>
+
+=over 4
+
+=item $name
+
+The safe target alias to test. Must match C</^local_vault_(.*)_[0-9]+$/> to
+pass.
+
+=item $url
+
+Optional. When provided, the URL must contain the string C<localhost> in
+addition to the name pattern matching.
+
+=back
+
+B<Returns:> A true value if C<$name> matches the local vault naming
+convention (and C<$url>, when given, contains C<localhost>); false otherwise.
+
+B<Examples:>
+
+  Service::Vault::Local->valid_local_vault('local_vault_dev_99');
+  # Returns: true
+
+  Service::Vault::Local->valid_local_vault('prod-vault');
+  # Returns: false (no local_vault_ prefix)
+
+  Service::Vault::Local->valid_local_vault('local_vault_dev_99', 'http://localhost:8201');
+  # Returns: true
+
+  Service::Vault::Local->valid_local_vault('local_vault_dev_99', 'https://vault.example.com');
+  # Returns: false (URL does not contain 'localhost')
+
+=head2 shutdown_all
+
+  Service::Vault::Local->shutdown_all;
+
+Shuts down every local vault created in the current process and removes
+each from the internal cache.
+
+B<Parameters:> None.
+
+B<Returns:> Nothing meaningful.
+
+B<Examples:>
+
+  # Clean up all local vaults before process exit
+  Service::Vault::Local->shutdown_all;
+
+=head2 pid
+
+  my $pid = $vault->pid;
+
+Returns the process ID embedded in the vault's name (the numeric suffix of
+the C<local_vault_NAME_PID> alias). This is the PID of the Perl process
+that created the vault, not the PID of the vault or safe OS processes.
+
+B<Returns:> The integer PID extracted from the vault name, or C<undef> if
+the name does not match the expected pattern.
+
+B<Examples:>
+
+  my $vault = Service::Vault::Local->create('dev');
+  print $vault->pid;   # Returns: the current Perl process ID, e.g. 12345
+
+=head2 shutdown
+
+  $vault->shutdown;
+
+Terminates the vault and safe OS processes, then clears the stored PIDs.
+
+B<Strategy:> The vault process is killed B<first>. This is intentional:
+when vault dies, the safe process detects the child's death and
+self-terminates, cleaning up its C<~/.saferc> target registration in the
+process. Killing safe first would orphan the vault process and skip the
+C<.saferc> cleanup.
+
+Shutdown is skipped without error in two cases: if the vault's embedded PID
+does not match the current process (C<$$>), meaning the vault was created
+by a parent process; or if C<safe_pid> is already unset, meaning the vault
+has already been shut down.
+
+When the vault process is running, it is sent C<SIGINT> initially, escalating
+to C<SIGTERM> after 4 attempts and C<SIGKILL> after 8 attempts (each attempt
+waits 0.5 seconds). After the vault process exits, safe is expected to
+self-terminate. The method waits for this, giving safe time to clean up. If
+safe has not exited after 10 iterations (0.2 seconds each), the escalation
+fallback sends C<SIGTERM>; after 20 iterations, C<SIGKILL>.
+
+After both processes exit, the C<safe_pid> and C<vault_pid> fields are set
+to C<undef>.
+
+B<Note:> This method does not raise errors. If a process cannot be killed
+(for example, because it has already exited by the time the signal is sent),
+the loop exits naturally.
+
+B<Returns:> Nothing.
+
+B<Examples:>
+
+  my $vault = Service::Vault::Local->create('test-env');
+  # ... use the vault ...
+  $vault->shutdown;
+  # Returns: nothing; vault processes are now terminated
+
+=head1 INTERNAL METHODS
+
+These methods are internal to the implementation. They may change without
+notice and should not be called directly.
+
+=head2 _generate_alias
+
+  my $alias = _generate_alias($name);
+
+Derives a canonical local vault alias from C<$name>. If C<$name> is already
+a fully-formed local vault alias (C<local_vault_NAME_PID>), the embedded
+PID is preserved and the base name is stripped to C<NAME>. Otherwise,
+the current process ID (C<$$>) is used. Returns a string of the form
+C<local_vault_NAME_PID>.
+
+B<Parameters:>
+
+=over 4
+
+=item $name
+
+A vault name or an existing local vault alias.
+
+=back
+
+B<Returns:> A string alias of the form C<"local_vault_${name}_${pid}">.
+
+B<Examples:>
+
+  my $alias = _generate_alias('dev');
+  # Returns: 'local_vault_dev_12345'  (where 12345 is $$)
+
+  my $alias = _generate_alias('local_vault_dev_99');
+  # Returns: 'local_vault_dev_99'  (PID preserved from existing alias)
+
+=head2 _get_safe_process
+
+  my $info = _get_safe_process($alias);
+  my $info = _get_safe_process($alias, $timeout);
+
+Searches the process table for a running C<safe local -m --as ALIAS>
+process, delegating to C<_get_process> with a filter pattern built from
+C<$alias>.
+
+B<Parameters:>
+
+=over 4
+
+=item $alias
+
+The local vault alias to search for.
+
+=item $timeout
+
+Optional. Maximum time in seconds to wait for the process to appear.
+Defaults to 5 seconds when omitted.
+
+=back
+
+B<Returns:> A hash reference with keys C<pid>, C<ppid>, and C<cmd> if the
+process is found, or C<undef> if it is not found within the timeout.
+
+B<Examples:>
+
+  my $info = _get_safe_process('local_vault_dev_12345', 1);
+  # Returns: { pid => 23456, ppid => 12345, cmd => 'safe local -m --as local_vault_dev_12345' }
+
+=head2 _get_vault_process
+
+  my $info = _get_vault_process($ppid);
+  my $info = _get_vault_process($ppid, $timeout);
+
+Searches the process table for a C<vault server> process whose parent PID
+is C<$ppid>, delegating to C<_get_process> with a filter pattern built
+from C<$ppid>.
+
+B<Parameters:>
+
+=over 4
+
+=item $ppid
+
+The parent process ID of the expected vault process (i.e., the safe
+process PID).
+
+=item $timeout
+
+Optional. Maximum time in seconds to wait for the process to appear.
+Defaults to 5 seconds when omitted.
+
+=back
+
+B<Returns:> A hash reference with keys C<pid>, C<ppid>, and C<cmd> if the
+process is found, or C<undef> if it is not found within the timeout.
+
+B<Examples:>
+
+  my $info = _get_vault_process(23456, 1);
+  # Returns: { pid => 34567, ppid => 23456, cmd => 'vault server ...' }
+
+=head2 _get_process
+
+  my $info = _get_process($filter, $timeout);
+
+Polls the process table at 0.05-second intervals for up to C<$timeout>
+seconds, searching for a line matching C<$filter> via C<ps -eo
+'pid,ppid,command'>. Returns a hash reference on the first match.
+
+B<Parameters:>
+
+=over 4
+
+=item $filter
+
+A grep pattern (as accepted by the shell C<grep> command) used to filter
+C<ps> output.
+
+=item $timeout
+
+Maximum wait time in seconds. Defaults to 5 seconds when omitted or
+undefined. The value is converted to an iteration count at a 0.05-second
+polling interval.
+
+=back
+
+B<Returns:> A hash reference with keys C<pid>, C<ppid>, and C<cmd> if a
+matching process is found within the timeout; C<undef> otherwise.
+
+B<Examples:>
+
+  my $info = _get_process("\\s\\+[s]afe local -m --as local_vault_dev_12345", 2);
+  # Returns: { pid => 23456, ppid => 12345, cmd => 'safe local -m --as local_vault_dev_12345' }
+
+=head2 _process_running
+
+  my $bool = _process_running($pid);
+
+Returns true if process C<$pid> is currently running, checked via
+C<ps -o 'pid,command' -p PID> exit code.
+
+B<Parameters:>
+
+=over 4
+
+=item $pid
+
+The process ID to check.
+
+=back
+
+B<Returns:> True (exit code 0 from C<ps>) if the process exists; false otherwise.
+
+B<Examples:>
+
+  _process_running(23456);
+  # Returns: 1  (process exists)
+
+  _process_running(99999);
+  # Returns: 0  (no such process)
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

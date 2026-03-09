@@ -1,0 +1,168 @@
+=head1 NAME
+
+Genesis::State - Environment-variable helpers for Genesis runtime state
+
+=head1 SYNOPSIS
+
+  use Genesis::State;
+
+  # Check whether a boolean environment variable is set to a truthy value
+  if (envset('GENESIS_TESTING')) {
+    print "Running under test\n";
+  }
+
+  # Read an environment variable with a fallback default
+  my $target = envdefault('GENESIS_TARGET', 'default-env');
+
+  # Named convenience predicates
+  if (in_callback()) {
+    print "Genesis is invoking a kit hook\n";
+  }
+
+  if (under_test()) {
+    print "Test suite is active\n";
+  }
+
+=head1 DESCRIPTION
+
+C<Genesis::State> exports a small set of functions for querying Genesis
+runtime state via environment variables.  The module provides a consistent
+definition of what counts as a "truthy" value for boolean environment
+variables, and named predicates for the two runtime flags that Genesis
+itself relies on.
+
+All four functions are exported by default.
+
+=head1 FUNCTIONS
+
+=head2 envset
+
+  my $bool = envset($var);
+
+Returns C<1> if the environment variable named C<$var> is defined and its
+value matches the pattern C</^([1-9][0-9]*|y|yes|true)$/i>, meaning any
+positive integer, or the strings C<y>, C<yes>, or C<true> (case-insensitive).
+Returns C<0> otherwise, including when the variable is not set at all.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$var>
+
+The name of the environment variable to inspect.
+
+=back
+
+B<Returns:>
+
+C<1> if the variable is set to a recognised truthy value; C<0> otherwise.
+
+B<Examples:>
+
+  $ENV{MY_FLAG} = 'yes';
+  envset('MY_FLAG');   # Returns: 1
+
+  $ENV{MY_FLAG} = '0';
+  envset('MY_FLAG');   # Returns: 0
+
+  delete $ENV{MY_FLAG};
+  envset('MY_FLAG');   # Returns: 0
+
+  $ENV{MY_FLAG} = 'true';
+  envset('MY_FLAG');   # Returns: 1
+
+  $ENV{MY_FLAG} = '42';
+  envset('MY_FLAG');   # Returns: 1
+
+=head2 envdefault
+
+  my $value = envdefault($var, $default);
+
+Returns the value of the environment variable named C<$var> if it is
+defined, or C<$default> if the variable is not set.  An empty string is
+considered defined, so an unset variable and an empty variable behave
+differently.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$var>
+
+The name of the environment variable to read.
+
+=item C<$default>
+
+The value to return when C<$var> is not set in the environment.
+
+=back
+
+B<Returns:>
+
+The value of C<$ENV{$var}> when defined; C<$default> otherwise.
+
+B<Examples:>
+
+  $ENV{GENESIS_TARGET} = 'prod';
+  envdefault('GENESIS_TARGET', 'dev');   # Returns: 'prod'
+
+  delete $ENV{GENESIS_TARGET};
+  envdefault('GENESIS_TARGET', 'dev');   # Returns: 'dev'
+
+  $ENV{GENESIS_TARGET} = '';
+  envdefault('GENESIS_TARGET', 'dev');   # Returns: '' (empty string is defined)
+
+=head2 in_callback
+
+  my $bool = in_callback();
+
+Returns C<1> if Genesis is currently executing inside a kit hook callback,
+indicated by the environment variable C<GENESIS_IS_HELPING_YOU> being set
+to a truthy value.  Returns C<0> otherwise.
+
+This is a named predicate that delegates to C<envset('GENESIS_IS_HELPING_YOU')>.
+
+B<Returns:>
+
+C<1> when running inside a Genesis kit hook; C<0> otherwise.
+
+B<Examples:>
+
+  $ENV{GENESIS_IS_HELPING_YOU} = '1';
+  in_callback();   # Returns: 1
+
+  delete $ENV{GENESIS_IS_HELPING_YOU};
+  in_callback();   # Returns: 0
+
+=head2 under_test
+
+  my $bool = under_test();
+
+Returns C<1> if the Genesis test suite is active, indicated by the
+environment variable C<GENESIS_TESTING> being set to a truthy value.
+Returns C<0> otherwise.
+
+This is a named predicate that delegates to C<envset('GENESIS_TESTING')>.
+
+B<Returns:>
+
+C<1> when running under the Genesis test harness; C<0> otherwise.
+
+B<Examples:>
+
+  $ENV{GENESIS_TESTING} = 'true';
+  under_test();   # Returns: 1
+
+  delete $ENV{GENESIS_TESTING};
+  under_test();   # Returns: 0
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

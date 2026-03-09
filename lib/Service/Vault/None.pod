@@ -1,0 +1,111 @@
+=head1 NAME
+
+Service::Vault::None - Null-object sentinel representing the absence of a vault
+
+=head1 SYNOPSIS
+
+  use Service::Vault::None;
+
+  my $vault = Service::Vault::None->new();
+
+  # Safe to call name() and status() on a no-vault object
+  print $vault->name();    # prints ''
+  print $vault->status();  # prints 'absent'
+
+  # Any other vault method raises a bug error:
+  $vault->get('secret/foo');  # dies with a bug message
+
+=head1 DESCRIPTION
+
+C<Service::Vault::None> is a null-object implementation of the vault interface.
+Genesis instantiates it when no vault connection is required or available (for
+example, when the C<GENESIS_NO_VAULT> environment variable is set, or when a
+command is invoked with the C<no_vault> option).
+
+The object provides a minimal interface to satisfy callers that test for vault
+presence without connecting to a Vault server: C<name> returns an empty string
+and C<status> returns C<'absent'>. Any other vault method -- C<get>, C<set>,
+C<has>, and so on -- is intercepted by C<AUTOLOAD> and raises an internal bug
+error, because commands that do not need a vault must never request one.
+
+To detect whether a given vault object is this sentinel, callers can test:
+
+  if ($vault->status eq 'absent') { ... }
+
+or check the class directly:
+
+  if (ref($vault) eq 'Service::Vault::None') { ... }
+
+See L<Service::Vault> for the full vault interface that subclasses implement.
+
+=head1 METHODS
+
+=head2 new
+
+  my $vault = Service::Vault::None->new(@args);
+
+Creates a new C<Service::Vault::None> object. The object is an empty blessed
+hash; no configuration is needed or stored.
+
+B<Parameters:>
+
+=over 4
+
+=item @args
+
+Optional. Any arguments are ignored.
+
+=back
+
+B<Returns:> A new C<Service::Vault::None> object.
+
+B<Examples:>
+
+  my $vault = Service::Vault::None->new();
+  # returns a Service::Vault::None object
+
+=head2 name
+
+  my $name = $vault->name();
+
+Returns an empty string. The null vault has no name because it represents the
+absence of a vault connection.
+
+B<Returns:> An empty string C<''>.
+
+B<Examples:>
+
+  my $vault = Service::Vault::None->new();
+  print $vault->name();
+  # prints ''
+
+=head2 status
+
+  my $status = $vault->status();
+
+Returns C<'absent'>. This sentinel value distinguishes the null vault from real
+vault objects, which return status strings such as C<'ok'>, C<'sealed'>, or
+C<'unreachable'>.
+
+B<Returns:> The string C<'absent'>.
+
+B<Examples:>
+
+  my $vault = Service::Vault::None->new();
+  print $vault->status();
+  # prints 'absent'
+
+  if ($vault->status eq 'absent') {
+    print "No vault configured\n";
+  }
+  # prints 'No vault configured'
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

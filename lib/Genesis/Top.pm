@@ -1,5 +1,5 @@
 package Genesis::Top;
-use strict;
+use v5.20;
 use warnings;
 
 use base 'Genesis::Base';
@@ -21,17 +21,17 @@ use File::Path qw/rmtree/;
 
 ### Class Methods {{{
 
-# new - returns a new Genesis::Top Repository object {{{
-sub new {
+# _build - common construction logic for bare Genesis::Top object {{{
+sub _build {
 	my ($class, $root, %opts) = @_;
-	my $top = bless({ root => Cwd::abs_path($root) }, $class);
+	my $self = bless({ root => Cwd::abs_path($root) }, $class);
 
-	$ENV{GENESIS_ROOT}=$top->path();
+	$ENV{GENESIS_ROOT}=$self->path();
 
 	if ($opts{no_vault}) {
 		debug "Top for $ENV{GENESIS_ROOT} requested with no vault support";
-		$top->_set_memo('__vault', Service::Vault::None->new());
-		return $top;
+		$self->_set_memo('__vault', Service::Vault::None->new());
+		return $self;
 	}
 
 	if ($opts{vault}) {
@@ -39,17 +39,49 @@ sub new {
 		# if ($opts{env}) {
 		#   $top->add_vault($opts{vault},$opts{env})
 		# } else {
-		debug ("Overriding vault %s with user specified %s for this session", $top->vault->name, $opts{vault})
-			if $top->has_vault;
-		$top->set_vault(target => $opts{vault}, session_only => 1);
+		debug ("Overriding vault %s with user specified %s for this session", $self->vault->name, $opts{vault})
+			if $self->has_vault;
+		$self->set_vault(target => $opts{vault}, session_only => 1);
 		#}
 	}
-	if ($top->vault(silent => $opts{silent_vault_check}, no_vault => $opts{allow_no_vault})) {
-		$ENV{GENESIS_TARGET_VAULT} = $ENV{SAFE_TARGET} = $top->vault->name;
+
+	return $self;
+}
+
+# }}}
+# _set_vault_env - helper to set vault environment variables {{{
+sub _set_vault_env {
+	my ($self, %opts) = @_;
+
+	if ($self->vault(silent => $opts{silent_vault_check}, no_vault => $opts{allow_no_vault})) {
+		$ENV{GENESIS_TARGET_VAULT} = $ENV{SAFE_TARGET} = $self->vault->name;
 	} elsif (!$ENV{GENESIS_NO_VAULT}) {
 		debug {label => "WARNING"}, "Could not find any #M{safe} target.  This may cause consequences later on";
 	}
-	return $top;
+
+	return $self;
+}
+
+# }}}
+# new - returns a new Genesis::Top Repository object {{{
+sub new {
+	my $class = shift;
+
+	# If args are odd, assume root wasn't given and default it to '.'
+	my $root = @_ % 2 == 1 ? shift @_ : '.';
+	my %opts = @_;
+
+	# Validate that this is a proper Genesis repository
+	bail("'$root' is not a Genesis deployment repository")
+		unless $class->is_repo($root);
+
+	# Build the base object
+	my $self = $class->_build($root, %opts);
+
+	# Initialize vault connection and set environment variables
+	$self->_set_vault_env(%opts);
+
+	return $self;
 }
 
 # }}}
@@ -81,34 +113,71 @@ sub create {
 		"Cannot create new deployments repository `$dir': already exists!"
 	) if -e $path;
 
-	my $self = $class->new($path);
+	# Build the bare object (path doesn't exist yet, so can't use new())
+	my $self = $class->_build($path, %opts);
 	$self->mkdir(".genesis");
 
 	$self->{__kit_provider} = Genesis::Kit::Provider->init(%opts);
-	$self->{__vault} = Service::Vault::Remote->target($opts{vault});
+	# Override vault if specified (will be saved to config later)
+	$self->{__vault} = Service::Vault::Remote->target($opts{vault}) if $opts{vault};
+	my $kits_path = '';
+	if ($kits_path = $opts{kits_path}) {
+		$kits_path = expand_path($kits_path);
+		my $rel_path = humanize_path($kits_path, base_dir => $self->path());
+		if ($rel_path !~ m#^/#) {
+			debug("Kit: using relative path $rel_path for kits path");
+			$kits_path = $rel_path;
+		} else {
+			debug("Kit: using absolute path $kits_path for kits");
+			my $home_parent_dir = dirname($ENV{HOME});
+			$kits_path =~ s{^$ENV{HOME}/}{~/};
+			$kits_path =~ s{^$home_parent_dir/}{~};
+		}
+	}
 
 	eval { # to delete path if creation fails
 
-		# Write new configuration
+		# Write new configuration - Set defaults
 		$self->config->set('deployment_type',$name);
 		$self->config->set('version',2);
 		$self->config->set('creator_version', $Genesis::VERSION);
+		$self->config->set('minimum_version', $Genesis::VERSION) unless $Genesis::VERSION eq '(development)';
+		$self->config->set('manifest_store', 'exodus');
+		$self->config->set('kits_path', $kits_path) if $kits_path;
 
-		$self->config->set('secrets_provider', {
-			url       => $self->vault->url,
-			insecure  => $self->vault->verify    ? Genesis::Config::FALSE : Genesis::Config::TRUE,
-			namespace => $self->vault->namespace,
-			strongbox => $self->vault->strongbox ? Genesis::Config::TRUE  : Genesis::Config::FALSE,
-			alias     => $self->vault->name
-		});
+		# Apply any config overrides from %opts
+		for my $override (grep {exists $opts{$_}} qw(creator_version updater_version minimum_version manifest_store)) {
+			if (defined $opts{$override}) {
+				$self->config->set($override, $opts{$override});
+			} else {
+				$self->config->clear($override);
+			}
+		}
+
+		# Only set vault configuration if not using no_vault (and only allow no_vault in tests)
+		if ($opts{no_vault}) {
+			bail("no_vault option can only be used in test contexts")
+				if $ENV{GENESIS_COMMAND};
+		} else {
+			$self->config->set('secrets_provider', {
+				url       => $self->vault->url,
+				insecure  => $self->vault->verify    ? Genesis::Config::FALSE : Genesis::Config::TRUE,
+				namespace => $self->vault->namespace,
+				strongbox => $self->vault->strongbox ? Genesis::Config::TRUE  : Genesis::Config::FALSE,
+				alias     => $self->vault->name
+			});
+		}
 
 		$self->config->set('kit_provider', $self->kit_provider->config)
 			unless ref($self->kit_provider) eq "Genesis::Kit::Provider::GenesisCommunity";
 
 		$self->_validate_config;
 		$self->config->save;
+		my $kits_path = $self->local_kits_path;
+		# FIXME: Should we prompt the user to confirm if outside the repo parent dir or ~/.genesis?
+		mkdir_or_fail($kits_path) unless -d $kits_path;
 
-	$self->mkfile("README.md", # {{{
+		$self->mkfile("README.md", # {{{
 <<EOF);
 $name deployments
 ==============================
@@ -125,7 +194,7 @@ Each environment managed by this repository will have its own
 deployment file, e.g. `us-east-prod.yml`. However, in many cases,
 it can be desirable to share param configurations, or kit configurations
 across all of the environments, or specific subsets. Genesis supports
-this by splitting environment names based on hypthens (`-`), and finding
+this by splitting environment names based on hyphens (`-`), and finding
 files with common prefixes to include in the final manifest.
 
 For example, let's look at a scenario where there are three environments
@@ -140,109 +209,345 @@ To see what files are currently in play for an environment, you can run
 Quickstart
 ----------
 
-To create a new environment (called `us-east-prod-$name`):
+To create a new environment (called `us-east-prod`):
 
-    genesis new us-east-prod
+    genesis create us-east-prod
+
+To edit an environment file:
+
+    genesis us-east-prod edit
+
+To edit without opening the kit manual:
+
+    genesis us-east-prod edit --no-manual
+
+To use a specific editor command:
+
+    genesis us-east-prod edit --editor "code --wait"
+    genesis us-east-prod edit --editor "grep '<feature>'" # it doesn't have to be an editor
 
 To build the full BOSH manifest for an environment:
 
-    genesis manifest us-east-prod
+    genesis us-east-prod manifest
 
 ... and then deploy it:
 
-    genesis deploy us-east-prod
+    genesis us-east-prod deploy
+
+To deploy and automatically fix any missing requirements (secrets, stemcells, etc.):
+
+    genesis us-east-prod deploy -F
+
+The `-F` flag tells Genesis to automatically generate any missing secrets,
+upload required stemcells, and handle other deployment prerequisites.
 
 To rotate credentials for an environment:
 
-    genesis rotate-secrets us-east-prod
-    genesis deploy us-east-prod
+    genesis us-east-prod rotate-secrets
+    genesis us-east-prod deploy
 
-To change the secrets provider for the environments in this repo:
+To check for missing or invalid secrets:
 
-    genesis secrets-provider --url https://example.com:8200 --insecure
+    genesis us-east-prod check-secrets
+
+To manage secrets provider for the environments in this repo, select from known safe targets:
+
+    genesis secrets-provider -i
 
 ... or clear it to use safe's currently targeted vault:
 
     genesis secrets-provider --clear
 
-By default, the provider for kits is https://github.com/genesis-community, but
-you can set this to another provider url via the `genesis kit-provider`
-command:
+By default, the provider for kits is the Genesis Community at
+https://github.com/genesis-community, but you can set this to another
+provider url via the `genesis kit-provider` command:
 
     genesis kit-provider https://github.mycorp.com/mygenesiskits
 
-This requires that url to provide releases in the same manner as github does.
+This requires that url to provide releases in the same manner as GitHub does.
 You can see the current kit provider by calling it with no argument, or revert
-back to default with the `--clear` option.
+back to default with the `--default` option.
 
-To update the Concourse Pipeline for this repo:
+To check for kit updates and download new versions:
 
-    genesis repipe
+    genesis list-kits --updates
+    genesis fetch-kit $name [version]  # omitting version downloads the latest
 
-To check for updates for this kit:
+To update an environment to use a new kit version:
 
-    genesis list-kits -u
-
-To download a new version of the kit, and deploy it:
-
-    genesis download $name [version] # omitting version downloads the latest
-
-    # update the environment yaml to use the desired kit version,
-    # this might be in a different file if using CI to propagate
-    # deployment upgrades (perhaps us.yml)
+    # Edit the environment file to specify the new kit version
     vi us-east-prod.yml
 
-    genesis deploy us-east-prod.yml     # or commit + git push to have
-                                        # CI run through the upgrades
+    # Then deploy the updated environment
+    genesis us-east-prod deploy
 
-See the [Deployment Pipeline Documentation][3] for more
-information on getting set up with Concourse deployment pipelines.
+Environment Management
+----------------------
+
+Genesis provides several commands for managing environments:
+
+- `genesis <env> info` - Show environment details and configuration
+- `genesis <env> check` - Validate environment configuration and run checks
+- `genesis <env> edit` - Edit the environment file in your default editor
+- `genesis <env> deploy` - Deploy the environment to BOSH
+- `genesis <env> deploy -F` - Deploy with automatic prerequisite handling
+- `genesis <env> secrets` - List available secrets for the environment
+- `genesis <env> check-secrets` - Check for missing certificates and credentials
+- `genesis <env> add-secrets` - Generate missing certificates and credentials
+- `genesis <env> rotate-secrets` - Regenerate secrets for the environment
+- `genesis <env> remove-secrets` - Remove certificates and credentials
+- `genesis <env> bosh <cmd>` - Run BOSH commands against the environment
+- `genesis <env> credhub <cmd>` - Run Credhub commands against the environment
+- `genesis <env> do <task>` - Run kit-specific addon tasks
+- `genesis <env> logs` - Fetch logs from the BOSH director
+- `genesis <env> terminate` - Terminate the environment on the BOSH director
+
+Match-Mode Environment Selection
+--------------------------------
+
+Genesis supports match-mode selection using @-notation, which allows you to
+work with environments without being in their repository directory. This is
+especially useful when managing multiple repositories.
+
+To set up match-mode selection, configure deployment roots in your global
+Genesis configuration file `\$HOME/.genesis/config`:
+
+    ---
+    deployment_roots_map:
+      ops: /path/to/root/of/ops/deployments
+      test: /path/to/root/of/test/deployments
+
+This allows you to run commands like:
+
+  See the contents without changin the directory:
+    genesis \@dev:cf edit --editor "cat"
+
+  Not specifying the type defaults to bosh kit
+    genesis \@prod info
+
+  Targets the vault repository under the deployment roots map:
+    genesis \@:v secrets-provider --interactive
+
+The \@-notation supports several patterns:
+
+- `\@<env-pattern>` - Match bosh environments by name pattern
+- `\@<env-pattern>:<deployment-pattern>` - Match environments within specific deployment types
+- `\@*:<deployment-pattern>` - Match any environment within deployment types matching the pattern
+- `\@:<deployment-pattern>` - Match the repo within the specified deployment type
+
+The patterns can be incomplete glob patterns, and can additonally use `^` and
+`\$` to anchor the start and end of the name. If in a controlling terminal, you
+will be presented with a list of matching environments to choose from if the
+match is not unique.
+
+The `--editor` option is particularly useful with match-mode, as it allows you
+to interact with the environment files without changing directories:
+
+    genesis \@dev:cf edit --editor "code --wait --new-window"
+    genesis \@prod:vault edit --editor "emacs"
+    genesis \@aws-east1:jumpbox edit # Defaults to your \$EDITOR
+
+Deployment Options
+------------------
+
+The `genesis deploy` command supports several useful flags:
+
+- `-F` - Automatically fix missing requirements (secrets, stemcells, releases)
+- `-y` - Skip confirmation prompts and deploy automatically
+- `-n` - Dry-run mode (show what would be deployed without actually deploying)
+- `--redact` - Show redacted manifest during deployment process
+
+For example, to deploy an environment with automatic fixes and no prompts:
+
+    genesis us-east-prod deploy -F -y
+
+Secrets Management
+------------------
+
+Genesis integrates with Vault for secrets management. Each environment
+can have its own secrets path, and Genesis provides tools for:
+
+- Generating and rotating secrets automatically
+- Validating secret requirements
+- Supporting both Vault and Credhub backends
+- Tracking secret changes and dependencies
+
+To configure the secrets provider, use the interactive selection:
+
+    genesis secrets-provider -i
+
+This will show you a list of known safe targets and allow you to select
+the appropriate one for your environment.
+
+To clear the secrets provider and use safe's currently targeted vault:
+
+    genesis secrets-provider --clear
+
+This resets the secrets provider to use whatever vault `safe` is currently
+targeting, which is useful when switching between different vault instances
+or when you want to use your default safe configuration.
+
+Kit Features
+------------
+
+The $name kit supports various features that can be enabled in your
+environment files. Common features include:
+
+- IaaS-specific configurations (aws, azure, gcp, vsphere, etc.)
+- Scaling options (small-footprint, ha, etc.)
+- Integration features (external databases, load balancers, etc.)
+
+Check the kit documentation for a complete list of available features
+and their requirements:
+
+    genesis kit-manual $name
+
+Repository Structure
+--------------------
+
+Most of the deployment configuration happens at the base level.
+Environment YAML files and shared YAML files are stored here.
+
+The `.genesis/` directory contains:
+
+- `config` - Repository configuration and metadata
+- `kits/` - Downloaded and compiled kits
+- `manifests/` - Deployed manifest archives (if enabled)
+- `bin/` - Embedded Genesis binary for CI/CD (if present)
+
+Environment files can be organized hierarchically using hyphens in names,
+allowing shared configuration across related environments.
+
+Development and Testing
+-----------------------
+
+For kit development, you can use a local development kit:
+
+    genesis create-kit --dev --name $name
+
+This creates a `dev/` directory with an uncompiled kit for testing
+changes before release.
+
+You can also decompile an existing kit for modification:
+
+    genesis decompile-kit $name/version
+
+To build a distributable kit from your dev directory:
+
+    genesis build-kit
+
+Information and Debugging
+-------------------------
+
+Genesis provides several commands for inspecting environments:
+
+- `genesis <env> yamls` - List YAML files used for the environment
+- `genesis <env> lookup <key>` - Look up values from environment files or manifests
+- `genesis <env> vault-paths` - List vault paths used by the environment
+- `genesis environments` - List all environments in known repositories
+
+Kit Management
+--------------
+
+Genesis provides commands for managing kits:
+
+- `genesis list-kits` - List available local kits
+- `genesis list-kits --remote` - List available remote kits
+- `genesis list-kits --updates` - Check for kit updates
+- `genesis fetch-kit <name>` - Download a kit from the provider
+- `genesis compare-kits` - Compare two kit versions
+
+Getting Help
+------------
+
+Genesis provides comprehensive built-in help for all commands and options:
+
+### General Help
+
+Get an overview of all available commands:
+
+    genesis help
+
+Show the Genesis version and build information:
+
+    genesis version
+
+### Command-Specific Help
+
+Get detailed help for any command by adding `help` after the command:
+
+    genesis help <command>
+
+This is synonymous with `genesis <command> --help` and provides detailed
+information about the command's usage, options, and examples.
+
+To get a list of available commands, you can use:
+
+    genesis help
+
+### Addon Task Help
+
+List available addon tasks for an environment:
+
+    genesis <env> do list
+
+Get help for a specific addon task:
+
+    genesis <env> do <task> --help
+
+### Command Synopsis
+
+Most commands support `--help` or `-h` flags for quick reference:
+
+    genesis deploy --help
+    genesis secrets --help
+    genesis edit --help
+
+The help system shows:
+- Command syntax and usage patterns
+- Available options and flags
+- Examples of common usage scenarios
+- Related commands and cross-references
+
+### Kit Documentation
+
+Access kit-specific documentation and manual pages:
+
+		genesis kit-manual <kit-name>
+
+This opens the kit's documentation in your default pager, showing:
+- Available features and their descriptions
+- Configuration parameters and their usage
+- Examples and best practices
+
+This file is opened automatically when you run `genesis <env> edit` and placed
+in a side-by-side split with the environment file for easy reference, if you're
+\$EDITOR is `code`, `emacs`, or `vim` (gvim, mvim, nvim are also supported).
 
 Helpful Links
 -------------
 
-- [$name-genesis-kit][2] - Details on the kit used in this repo,
-  its features, prerequesites, and params.
+- [$name Genesis Kit][2] - Kit documentation, features, and parameters
+- [Genesis Documentation][3] - Complete Genesis user guide
+- [Genesis Community][4] - Community kits and support
 
-- [Deployment Pipeline Documentation][3] - Docs on all the
-  configuration options for `ci.yml`, and how the automated
-  deployment pipelines behave.
-
-[1]: https://github.com/starkandwayne/genesis
+[1]: https://github.com/genesis-community/genesis
 [2]: https://github.com/genesis-community/$name-genesis-kit
-[3]: https://github.com/starkandwayne/genesis/blob/master/docs/PIPELINES.md
-
-Repo Structure
---------------
-
-Most of the meat of the deployment repo happens at the base level.
-Envirionment YAML files, shared YAML files, and the CI
-configuration YAML file will all be here.
-
-The `.genesis/manifests` directory saves redacted copies of the
-deployment manifests as they are deployed, for posterity, and to
-keep track of any `my-env-name-state.yml` files from `bosh create-env`.
-
-The `.genesis/cached` directory is used by CI to propagate changes
-for shared YAML files along the pipelines. To aid in CI deploys, the
-`genesis/bin` directory contains an embedded copy of genesis.
-
-`.genesis/kits` contains copies of the kits that have been used in
-this deployment. Once a kit is no longer used in any environment,
-it can be safely removed.
-
-`.genesis/config` is used internally by `genesis` to understand
-what is being deployed, and how.
+[3]: https://github.com/genesis-community/genesis/tree/master/docs
+[4]: https://github.com/genesis-community
 EOF
 
 # }}}
 
 	};
-	if ($@) {
+	if (my $err = $@) {
 		debug("removing incomplete Genesis deployments repository at #C{$path} due to failed creation");
 		rmtree $path;
-		die $@;
+		die $err;
 	}
+
+	# Initialize vault connection and set environment variables
+	$self->_set_vault_env(%opts);
 
 	return $self;
 }
@@ -250,8 +555,15 @@ EOF
 # }}}
 # search_for_repo_path - search for an deployment repository path in known deployment root(s) {{{
 sub search_for_repo_path {
-	my ($class, $deployment) = @_;
+	my ($class, $deployment, %opts) = @_;
 	my $label = "\@:$deployment";
+
+	# Process and validate options
+	my $return_all = delete($opts{all_paths}) // 0;
+	bug(
+		"Invalid option specified to search_for_repo_path: %s",
+		join(", ", keys %opts)
+	) if scalar(keys %opts) > 0;
 
 	my ($root_labels, $root_map) = Genesis::deployment_roots_map(
 		['@current', $ENV{GENESIS_ORIGINATING_DIR}],
@@ -261,26 +573,26 @@ sub search_for_repo_path {
 	$deployment = "*$deployment*" =~ s/\*\^//r =~ s/\$\*//r if defined($deployment) && $deployment ne '*';
 
 	my %path_map = ();
-	for my $label (@$root_labels) {
-		my $root = $root_map->{$label};
-		my @deployments = map {s{/\.genesis/config$}{}r}
+	for my $root_label (@$root_labels) {
+		my $root = $root_map->{$root_label};
+		my @deployments = map {s{/\.genesis/config$}{}r} grep {-f $_}
 			glob("$root/".($deployment//'*')."/.genesis/config"); # Only include genesis repos
 		next unless @deployments;
-		$path_map{$label} = [@deployments];
+		$path_map{$root_label} = [@deployments];
 	}
 
 	# Order the files by current directory, then by the order of the deployment
 	# roots specified in the .genesis/config file, then bosh first, followed by
 	# any other deployments in alphabetical order.
 	my @paths = ();
-	for my $label ('@current', '@parent', @$root_labels) {
-		if ($path_map{$label}) {
-			my $is_bosh= qr{/bosh(-deployments)?/$};
+	for my $root_label (uniq ('@current', '@parent', @$root_labels)) {
+		if ($path_map{$root_label}) {
+			my $is_bosh= qr{/bosh(-deployments)?/?$};
 			push(@paths,
-				map {[$label, $_]}
+				map {[$root_label, $_]}
 				sort {
 					($a =~ $is_bosh ? 0 : 1) <=> ($b =~ $is_bosh ? 0 : 1 ) || $a cmp $b
-				} @{$path_map{$label}}
+				} @{$path_map{$root_label}}
 			);
 		}
 	}
@@ -299,30 +611,31 @@ sub search_for_repo_path {
 				my $fmt_section;
 				my $target_path = $root_map->{$section} =~ s{^$ENV{HOME}/}{~/}r;
 				my $is_current = $root_map->{$section} eq $ENV{GENESIS_ORIGINATING_DIR};
-				my $flag = $ENV{GENESIS_NO_UFT8}
+				my $flag = $ENV{GENESIS_NO_UTF8}
 					? ''
 					: $is_current ? "\x{1F4C2} " : "\x{1F4C1} ";
 				if ($section eq '@current') {
 					$fmt_section = csprintf("#Gu{%sCurrent Directory:} #Ki{%s}", $flag, $target_path);
 				} elsif ($section eq '@parent') {
-					$fmt_section = csprintf("%s#Yu{%sParent Directory:} #Ki{%s}", $flag, $target_path);
+					$fmt_section = csprintf("#Yu{%sParent Directory:} #Ki{%s}", $flag, $target_path);
 				} elsif ($section ne $root_map->{$section}) {
 					my $is_current = $root_map->{$section} eq $ENV{GENESIS_ORIGINATING_DIR};
 					$fmt_section = csprintf("#%su{%sDeployment Root '%s':} #Ki{%s}", $is_current ? 'g' : 'B', $flag, $section, $target_path);
 				} else {
 					$fmt_section = csprintf("#Bu{%sDeployment Root:} #Ki{%s}", $flag, $target_path);
 				}
-				("---$fmt_section---", [$fmt_label, csprintf("#C{%s}", humanize_path($root_map->{$section}, 1))."/$fmt_label"])
+				("---$fmt_section---", [$fmt_label, csprintf("#C{%s}", humanize_path($root_map->{$section}, absolute => 1))."/$fmt_label"])
 			} else {
-				[$fmt_label, csprintf("#C{%s}", humanize_path($root_map->{$section}, 1))."/$fmt_label"]
+				[$fmt_label, csprintf("#C{%s}", humanize_path($root_map->{$section}, absolute => 1))."/$fmt_label"]
 			}
 		} @paths;
 		bail(
-			"Ambiguous deployment repository name: #C{%s} matches multiple paths:\n  - %s\n\n".
+			"Ambiguous deployment repository name: #C{%s} matches multiple paths:\n  -#\@{_}%s\n\n".
 			"Please refine your match criteria.",
-			$label, join("\n  - ", map {$_->[1]} grep {ref($_) eq 'ARRAY'} @path_labels)
-		) unless in_controlling_terminal;
+			$label, join("\n  -#\@{_}", map {$_->[1]} grep {ref($_) eq 'ARRAY'} @path_labels)
+		) unless in_controlling_terminal || $return_all;
 
+		return @paths if $return_all;
 
 		my $selected_path = prompt_for_choice(
 			csprintf(
@@ -380,13 +693,13 @@ sub set_kit_provider {
 		info {pending => 1}, "Writing configuration...";
 		$self->{__kit_provider} = $new_provider;
 		if (ref($self->kit_provider) eq "Genesis::Kit::Provider::GenesisCommunity") {
-			$self->config->clear('kit_provider',1)
+			$self->config->clear('kit_provider');
 		} else {
 			$self->config->set('kit_provider', $self->kit_provider->config);
-			$self->config->set('updater_version', $Genesis::VERSION) if $self->config->exists();
-			$self->_validate_config;
-			$self->config->save;
 		}
+		$self->config->set('updater_version', $Genesis::VERSION) if $self->config->exists();
+		$self->_validate_config;
+		$self->config->save;
 		info "done.";
 	};
 	return $@;
@@ -439,7 +752,15 @@ sub vault {
 sub repo_vault {
 	my $self = shift;
 	return Service::Vault::default unless $self->has_vault();
-	return $self->config->get("secrets_provider.insecure");
+	my $namespace = $self->config->get("secrets_provider.namespace");
+	my $strongbox = $self->config->get("secrets_provider.strongbox");
+	my %opts = (
+		url    => $self->config->get("secrets_provider.url"),
+		verify => $self->config->get("secrets_provider.insecure") ? 0 : 1,
+	);
+	$opts{namespace} = $namespace if defined($namespace);
+	$opts{strongbox} = ($strongbox ? 1 : 0) if defined($strongbox);
+	return Service::Vault::Remote->attach(%opts);
 }
 
 # }}}
@@ -635,19 +956,17 @@ sub genesis_version {
    return "Unknown";
 }
 # }}}
-# warnings - return comma-separated list of the warnings that are configured for this environment {{{
-sub warnings {
-   my $self = @_;
-   return defined($self->config->get("warnings")) ? $self->config->get("warnings") : "deprecation,configuration,secrets";
+# local_kits_path - return the path to the local kit directory {{{
+sub local_kits_path {
+	my ($self) = @_;
+
+	# Check user config first (highest precedence)
+	my $kits_path = expand_path(
+		$Genesis::RC->get('kits_path') // $self->config->get('kits_path'),
+		$self->path()
+	);
 }
 
-# }}}
-# warn_on - return true if the repo is set to warn on the specified condition {{{
-sub warn_on {
-   my ($self,$type) = @_;
-   return scalar(grep {$type eq $_} split(/\s*,\s*/, $self->warnings));
-}
-#}}}
 # has_dev_kit - returns true if the repo has an embedded dev kit {{{
 sub has_dev_kit {
 	my ($self) = @_;
@@ -670,13 +989,8 @@ sub envs {
 		glob($self->path("*.yml"));
 
 	foreach my $env (@candidates) {
-		my $yaml_src;
-		eval {$yaml_src = slurp($self->path("$env.yml"))};
-		next if $@;
-
-		my @env_names = $yaml_src =~ /^genesis:\r?\n\r?  (?:.*\r?\n\r?  )*env:\s+([^\s]*)/mg;
-		next unless scalar(@env_names) == 1;
-		next unless $env_names[-1] eq $env;
+		# Use has_env to validate the environment (checks for genesis.env and kit info)
+		next unless $self->has_env($env);
 		push @envs, Genesis::Env->new(name => $env, top => $self);
 	}
 	return @envs;
@@ -687,12 +1001,24 @@ sub load_env {
 	my ($self, $name) = @_;
 	$name =~ s/.yml$//;
 	debug("loading environment #C{%s}", $name);
-	if ($self->has_env($name)) {
+
+	# Check if environment exists and get validation errors if any
+	my ($valid, @errors) = $self->has_env($name);
+	if ($valid) {
 		return Genesis::Env->load(top  => $self, name => $name);
 	} elsif (in_callback() && $name eq $ENV{'GENESIS_ENVIRONMENT'}) {
 		return Genesis::Env->from_envvars($self);
 	} else {
-		bail "Environment file #C{%s} does not exist", humanize_path($self->path($name.".yml"));
+		# If we have specific validation errors, use them; otherwise generic message
+		if (@errors) {
+			bail(join("\n\n", @errors));
+		} else {
+			bail(
+				"Environment file #C{%s} does not exist%s",
+				humanize_path($self->path($name.".yml")),
+				-f $self->path(".genesis/config") ? '' : " - this does not appear to be a Genesis deployment directory!"
+			);
+		}
 	}
 }
 
@@ -700,11 +1026,9 @@ sub load_env {
 # has_env - returns true if the repo has an enviroment of the given name {{{
 sub has_env {
 	my ($self, $name) = @_;
-	$name =~ s/.yml$//;
-	return Genesis::Env->exists(
-		top => $self,
-		name => $name
-	);
+	# Delegate to Genesis::Env for all validation logic
+	# This ensures consistent validation behavior and DRY principle
+	return Genesis::Env->is_valid_env_file($name, $self);
 }
 
 # }}}
@@ -728,7 +1052,7 @@ sub local_kits {
 	my ($self) = @_;
 	return Genesis::Kit::Compiled->local_kits(
 		$self->kit_provider(),
-		$self->path(".genesis/kits"),
+		$self->local_kits_path()
 	);
 }
 
@@ -802,8 +1126,8 @@ sub download_kit {
 	} elsif ($opts{'as-dev'}) {
 		$target = workdir;
 	} else {
-		$target = $self->path(".genesis/kits");
-		mkdir_or_fail($target);
+		$target = $self->local_kits_path();
+		mkdir_or_fail($target) unless -d $target;
 	}
 
 	$self->kit_provider->fetch_kit_version($name,$version,$target,$opts{force});
@@ -828,37 +1152,11 @@ sub _validate_config {
 		$self->_upgrade_config_to_v2($config_version, $upgrade_automatically);
 
 	} elsif ($config_version == 2){
-		$self->config->validate({
-			deployment_type  => {type => 'string', required => 1},
-			version          => {type => '"2"', required => 1},
-			creator_version  => {type => 'semver||"(development)"||"Unknown"', required => 1},
-			updater_version  => {type => 'semver||"(development)"'},
-			kit_provider     => {
-				type => 'hash',
-				schema => {
-					type         => {type => 'enum', values => ['github','genesis-community']}, # absences means genesis-community
-					organization => {type => 'string'},
-					label        => {type => 'string'},
-					tls          => {type => 'boolean'},
-					domain       => {type => 'string'},
-				}
-			},
-			secrets_provider => {
-				type           => 'hash',
-				schema         => {
-					url          => {type => 'string', required => 1},
-					insecure     => {type => 'boolean', default => Genesis::Config::TRUE},
-					strongbox    => {type => 'boolean', default => Genesis::Config::TRUE},
-					namespace    => {type => 'string'},
-					alias        => {type => 'string'}
-				}
-			},
-			allow_oversized_secrets   => {type => 'boolean'},
-			confirm_release_overrides => {type => 'enum', values => [qw/always outdated never/], envvar => 'GENESIS_CONFIRM_RELEASE_OVERRIDES' },
-		});
+		$self->config->validate($self->_repo_config_schema());
 	} else {
 		bail "Genesis deployment repo configuration version $config_version is not supported";
 	}
+	return 1;
 }
 
 # }}}
@@ -927,171 +1225,91 @@ sub _upgrade_config_to_v2 {
 }
 
 # }}}
+# _repo_config_schema - return the repository configuration validation schema {{{
+sub _repo_config_schema {
+	my ($self) = @_;
+	return {
+		deployment_type => {
+			type           => 'string',
+			required       => 1,
+			description    => 'Type of deployment this repository manages'
+		},
+		version => {
+			type           => '"2"',
+			required       => 1,
+			description    => 'Configuration schema version'
+		},
+		creator_version => {
+			type           => 'semver||"(development)"||"Unknown"',
+			required       => 1,
+			description    => 'Genesis version that created this repository'
+		},
+		updater_version => {
+			type           => 'semver||"(development)"',
+			description    => 'Genesis version that last updated this repository'
+		},
+		minimum_version => {
+			type           => 'semver',
+			description    => 'Minimum Genesis version required for this repository'
+		},
+		manifest_store => {
+			type           => 'enum',
+			values         => ['repository','hybrid','exodus'],
+			default        => 'hybrid',
+			description    => 'Where to store manifests'
+		},
+		kits_path => {
+			type           => 'string',
+			default        => '$GENESIS_ROOT/.genesis/kits',
+			description    => 'Path to directory containing compiled kits (defaults to .genesis/kits under the deployment base directory)',
+		},
+		kit_provider => {
+			type           => 'hash',
+			description    => 'Configuration for kit provider',
+			schema => {
+				type         => {type => 'enum', values => ['github','genesis-community']},
+				organization => {type => 'string'},
+				label        => {type => 'string'},
+				tls          => {type => 'enum', values => ['yes', 'no', 'skip', 'insecure']},
+				domain       => {type => 'string'},
+			}
+		},
+		secrets_provider => {
+			type           => 'hash',
+			description    => 'Configuration for secrets provider (Vault)',
+			schema => {
+				url          => {type => 'string', required => 1},
+				insecure     => {type => 'boolean', default => Genesis::Config::FALSE},
+				strongbox    => {type => 'boolean', default => Genesis::Config::TRUE},
+				namespace    => {type => 'string'},
+				alias        => {type => 'string'}
+			}
+		},
+		deployment_change_reason_required_size => {
+			type           => 'number',
+			default        => 0,
+			description    => 'Minimum size of the deployment change reason in characters (0 to disable)',
+		},
+		user_provided_bosh_creds => {
+			type           => 'enum',
+			default        => 'ignore',
+			values         => [qw/ignore allow require/],
+			description    => 'How should BOSH_USER and BOSH_PASSWORD env vars be handled',
+		},
+		allow_oversized_secrets => {
+			type           => 'boolean',
+			description    => 'Allow secrets larger than recommended size'
+		},
+		confirm_release_overrides => {
+			type           => 'enum',
+			values         => [qw/always outdated never/],
+			envvar         => 'GENESIS_CONFIRM_RELEASE_OVERRIDES',
+			description    => 'Confirm release overrides'
+		},
+	};
+}
+
+# }}}
 
 1;
-
-=head1 NAME
-
-Genesis::Top
-
-=head1 DESCRIPTION
-
-Several interactions with Genesis have to take place in the context of a
-I<root> directory.  Often, this is the something-deployments git repository.
-
-This module abstracts out operations on that root directory, so that other
-parts of the codebase can stop worrying about things like file paths, and
-instead can carry around a C<Top> context object which handles it for them.
-
-=head1 CONSTRUCTORS
-
-=head2 new($path)
-
-Instantiate a new Top object, pointing at C<$path>.
-
-=head2 create($path, $name, %opts)
-
-Creates a new deployment repository in C<$path>/C<$name>-deployments,
-initializes it by creating the C<.genesis/> directory hierarchy, and returns
-a new Top object pointing to that root directory.
-
-The following options are currently supported:
-
-=over
-
-=item directory
-
-Override the name of the new directory (which defaults to
-C<$name>-deployments).
-
-=back
-
-
-=head1 METHODS
-
-=head2 link_dev_kit($path)
-
-Creates a symbolic link from C<dev/> to C<$path> (re-interpreted as an
-absolute path).  This allows callers to correctly install the link for
-Genesis to find a development kit source directory.
-
-=head2 embed($bin)
-
-Embeds the file C<$bin> into C<.genesis/bin/genesis>, and chmods it
-properly.  This embedded copy of (probably Genesis) is used by the CI/CD
-pipelines to avoid having to stuff versions into docker images.
-
-=head2 download_kit($spec)
-
-Takes a kit spec (name or name/version) and attempts to download the release
-matching the spec from Github.
-
-Contact Github, search through the B<genesis-community> organization, and
-download the named kit and version (or latest) and stuff it in the
-.genesis/kits directory.  This is the magic behind C<genesis download>.
-
-This returns the actual kit name and version that was downloaded (useful when
-no version specified or was specified as "latest")
-
-=head2 path([$relative])
-
-Qualifies and returns C<$relative> as an absolute path.
-
-=head2 mkfile($file, [$mode], $contents)
-
-Creates a file, relative to the Top root directory, using C<mkfile_or_fail>.
-
-=head2 mkdir($file, [$mode])
-
-Creates a directory, relative to the Top root directory, using
-C<mkfile_or_fail>.
-
-=head2 config()
-
-Parses and returns the Genesis deployments repository configuration, found
-in C<$root/.genesis/config>.
-
-=head2 type()
-
-Returns the deployment type of this Genesis root directory, which is used in
-naming deployment environments.
-
-=head2 has_dev_kit()
-
-Returns true if the root directory has a so-called I<dev kit>, an uncompiled
-directory that contains all of the kit files, for use in buiding and testing
-Genesis kits.  The presence or absence of dev kits modifies the behavior of
-Genesis substantially.
-
-=head2 compiled_kits()
-
-Returns a two-level hashref, associating kit names to their versions, to
-their compiled tarball paths.  For example:
-
-    {
-      'bosh' => {
-        '0.2.0' => 'root/path/to/bosh-0.2.0.tar.gz',
-        '0.2.1' => 'root/path/to/bosh-0.2.1.tgz',
-      },
-    }
-
-=head2 local_kit_version([$name || $spec, [$version]])
-
-Looks through the list of compiled kits and returns the correct Genesis::Kit
-object for the requested name/version combination.  Returns C<undef> if no
-kit was found to satisfy the requirements.
-
-If C<$name> is not given (or passed explicitly as C<undef>), this function
-will look for the given C<$version> (pursuant to the rules in the following
-paragraph), and expect only a single type of kit to exist in .genesis/kits.
-If C<$name> is the string "dev", the development kit (in dev/) will be used
-if it exists, or no kit will be returned (without checking compiled kits).
-
-If C<$version> is not given (i.e. C<undef>), or is "latest", an analysis of
-the named kit will be done to determine the latest version, per semver.
-
-Some examples may help to clarify:
-
-    # find the 1.0 concourse kit:
-    $top->local_kit_version(concourse => '1.0');
-
-    # find the latest concourse kit:
-    $top->local_kit_version(concourse => 'latest');
-
-    # find the latest version of whatever kit we have
-    $top->local_kit_version(undef, 'latest');
-
-    # find version 2.0 of whatever kit we have
-    $top->local_kit_version(undef, '2.0');
-
-    # find using kit spec string
-    $top->local_kit_version('concourse/1.0.3');
-
-    # explicitly use the dev/ kit
-    $top->local_kit_version('dev');
-
-    # use whatever makes the most sense.
-    $top->local_kit_version();
-
-Note that if you omit C<$name>, there is a semantic difference between
-passing C<$version> as "latest" and not passing it (or passing it as
-C<undef>, explicitly).  In the former case (version = "latest"), the latest
-version of the singleton compiled kit is returned.  In the latter case,
-C<local_kit_version> will check for a dev/ directory and use that if available.
-
-=head2 load_env($name)
-
-Loads a new Genesis::Env object, named $name, from the root directory.
-This wraps a call to Genesis::Env->load().
-
-=head2 has_env($name)
-
-Returns true if an environment by the given name exists under the repo.
-
-=head2 create_env($name, $kit, %opts)
-
-Creates a new Genesis::Env object, which will go through provisioning.
-This wraps a call to Genesis::Env->create().
-
-=cut
 # vim: fdm=marker:foldlevel=1:noet

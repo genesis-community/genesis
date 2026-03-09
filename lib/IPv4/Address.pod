@@ -1,0 +1,451 @@
+=head1 NAME
+
+IPv4::Address - A module for handling individual IPv4 addresses.
+
+=head1 SYNOPSIS
+
+  use IPv4::Address;
+
+  # Create a new IPv4::Address object
+  my $address = IPv4::Address->new('192.168.0.1');
+  my $from_int = IPv4::Address->new(3232235521);
+  my $from_array = IPv4::Address->new([192, 168, 0, 1]);
+
+  # Get string and integer representations
+  print "Address: $address\n";
+  print "Integer: ".$address->int()."\n";
+
+  # Compare two addresses
+  my $address1 = IPv4::Address->new('192.168.0.1');
+  my $address2 = IPv4::Address->new('192.168.0.2');
+  if ($address1 < $address2) {
+      print "$address1 is less than $address2\n";
+  }
+
+=head1 DESCRIPTION
+
+The C<IPv4::Address> module provides a simple interface for creating and manipulating individual IPv4 addresses. It supports various operations such as comparison, addition, and subtraction of addresses.
+
+=head1 METHODS
+
+=head2 new (constructor)
+
+  my $address = IPv4::Address->new($address);
+
+Creates a new C<IPv4::Address> object. The input can be:
+
+=over 4
+
+=item * A dotted-decimal string (e.g., '192.168.0.1')
+
+=item * An integer (e.g., 3232235521)
+
+=item * An array reference of 4 octets (e.g., [192, 168, 0, 1])
+
+=item * A hostname (e.g., 'localhost')
+
+=back
+
+Dies if the input is invalid:
+
+=over 4
+
+=item * Array reference without exactly 4 valid octets (0-255): C<"Invalid address array; expected 4 octets, got [...]">
+
+=item * Dotted-decimal string with octets out of range: C<"Invalid address: '...'">
+
+=item * Hostname that cannot be resolved: C<"Invalid address: '...'">
+
+=back
+
+  # All of the following produce an address that prints '192.168.0.1':
+  my $addr1 = IPv4::Address->new('192.168.0.1');
+  my $addr2 = IPv4::Address->new(3232235521);
+  my $addr3 = IPv4::Address->new([192, 168, 0, 1]);
+  print $addr1;  # prints '192.168.0.1'
+
+  my $addr4 = IPv4::Address->new('localhost');
+  print $addr4;  # prints '127.0.0.1'
+
+=head2 all_for_host (class method)
+
+  my @addresses = IPv4::Address->all_for_host($hostname);
+  my $addresses = IPv4::Address->all_for_host($hostname);
+
+Returns all IPv4 addresses associated with the given hostname. In list context, returns an array of C<IPv4::Address> objects. In scalar context, returns an array reference.
+
+Dies with C<"Invalid host: `...`"> if the hostname cannot be resolved.
+
+  # Example - list context
+  my @addresses = IPv4::Address->all_for_host('localhost');
+  foreach my $address (@addresses) {
+    print $address->address(); # prints '127.0.0.1'
+  }
+
+  # Example - scalar context
+  my $addresses = IPv4::Address->all_for_host('localhost');
+  print ref($addresses);       # prints 'ARRAY'
+  print $addresses->[0];       # prints '127.0.0.1'
+
+=head2 address
+
+  my $str = $address->address();
+
+Returns the string representation of the IPv4 address.
+
+  # Example
+  my $address = IPv4::Address->new('192.168.0.1');
+  print $address->address(); # prints '192.168.0.1'
+
+=head2 range
+
+  my $str = $address->range();
+
+Returns the string representation of the IPv4 address. This method provides a polymorphic interface shared with C<IPv4::Span> and C<IPv4::Range>, allowing all three types to be used interchangeably when a string representation is needed.
+
+  # Example
+  my $address = IPv4::Address->new('192.168.0.1');
+  print $address->range(); # prints '192.168.0.1'
+
+=head2 int
+
+  my $int = $address->int();
+
+Returns the integer representation of the IPv4 address.
+
+  # Example
+  my $address = IPv4::Address->new('192.168.0.1');
+  print $address->int(); # prints '3232235521'
+
+=head2 octets
+
+  my @octets = $address->octets();
+
+Returns the octets of the IPv4 address as an array.
+
+  # Example
+  my $address = IPv4::Address->new('192.168.0.1');
+  my @octets = $address->octets(); # returns (192, 168, 0, 1)
+
+=head2 hostname
+
+  my $hostname = $address->hostname();
+
+Returns the hostname associated with the IPv4 address, if available.  Otherwise, returns undef.
+
+  # Example
+  my $address = IPv4::Address->new('127.0.0.1');
+  print $address->hostname(); # prints 'localhost'
+
+=head2 start
+
+  my $start_address = $address->start();
+
+Returns the address itself as an C<IPv4::Address>. For an individual address, start and end are the same.
+
+=head2 end
+
+  my $end_address = $address->end();
+
+Returns the address itself as an C<IPv4::Address>. For an individual address, start and end are the same. Provided for polymorphic consistency with C<IPv4::Span> and C<IPv4::Range>.
+
+=head2 size
+
+  my $size = $address->size();
+
+Returns the size of the address. For an individual address, this is always 1.
+
+=head2 in_cidr
+
+  my ($start, $end) = $address->in_cidr($mask);
+
+Returns the start and end C<IPv4::Address> objects of the CIDR block that the address belongs to.
+
+  # Example
+  my $address = IPv4::Address->new('192.168.0.1');
+  my ($start, $end) = $address->in_cidr(24);
+  print $start->address(); # prints '192.168.0.0'
+  print $end->address();   # prints '192.168.0.255'
+
+=head2 add
+
+  my $new_address = $address->add($count);
+
+Adds a specified number to the IPv4 address and returns a new C<IPv4::Address>.
+
+Dies with C<"IPv4 Address space overflow when adding N to ADDR"> if the result would exceed 255.255.255.255.
+
+  # Example
+  my $address = IPv4::Address->new('192.168.0.1');
+  my $new_address = $address->add(5);
+  print $new_address->address(); # prints '192.168.0.6'
+
+=head2 subtract
+
+  my $new_address = $address->subtract($count);
+
+Subtracts a specified number from the IPv4 address and returns a new C<IPv4::Address>.
+
+Dies with C<"IPv4 Address space underflow when subtracting N from ADDR"> if the result would go below 0.0.0.0.
+
+  # Example
+  my $address = IPv4::Address->new('192.168.0.10');
+  my $new_address = $address->subtract(5);
+  print $new_address->address(); # prints '192.168.0.5'
+
+=head2 diff
+
+  my $difference = $address->diff($other_address);
+
+Returns the integer difference between two IPv4 addresses.
+
+Dies with C<"Cannot diff an address with an integer - did you mean to call `->subtract`?"> if C<$other_address> is an integer rather than an address.
+
+  # Example
+  my $address1 = IPv4::Address->new('192.168.0.10');
+  my $address2 = IPv4::Address->new('192.168.0.5');
+  my $difference = $address1->diff($address2);
+  print $difference; # prints '5'
+
+=head2 cmp
+
+  my $result = $address1->cmp($other);
+
+Compares two IPv4 addresses. Returns -1, 0, or 1 if the first address is less than, equal to, or greater than C<$other>, respectively. Comparison is based on the integer value of the addresses, with size as a tiebreaker for mixed types (e.g., comparing an address to a span). When called via Perl's operator overloading, an additional argument indicates whether C<$other> was the original receiver of the operator and the operands were swapped so that this object's C<cmp> method would be used.
+
+  # Example
+  my $address1 = IPv4::Address->new('192.168.0.1');
+  my $address2 = IPv4::Address->new('192.168.0.2');
+  my $result = $address1->cmp($address2);
+  print $result; # prints '-1'
+
+=head2 numeric_cmp
+
+  my $result = $address1->numeric_cmp($other);
+
+Compares two IPv4 objects by size. Returns -1, 0, or 1 if the size of the first object is less than, equal to, or greater than the size of C<$other>, respectively. Can also compare the size to an integer. While the size of an address is always 1, this method is included for polymorphic consistency with C<IPv4::Span> and C<IPv4::Range>. When called via Perl's operator overloading, an additional argument indicates whether C<$other> was the original receiver of the operator and the operands were swapped so that this object's C<numeric_cmp> method would be used.
+
+  # Example - two addresses (always equal, both size 1)
+  my $address1 = IPv4::Address->new('192.168.0.1');
+  my $address2 = IPv4::Address->new('192.168.0.2');
+  my $result = $address1->numeric_cmp($address2);
+  print $result; # prints '0' (both have size 1)
+
+  # Example - compare to integer
+  $result = $address1->numeric_cmp(1);
+  print $result; # prints '0'
+
+  # Example - compare address (size 1) to span (size 10)
+  my $span = IPv4::Span->new('10.0.0.1-10.0.0.10');
+  $result = $address1 <=> $span;
+  print $result; # prints '-1' (1 < 10)
+
+=head2 eq
+
+  my $bool = $address1->eq($address2);
+
+Checks if two IPv4 addresses are equal based on their string representations. Returns true if they are equal, false otherwise.
+
+  # Example
+  my $address1 = IPv4::Address->new('192.168.0.1');
+  my $address2 = IPv4::Address->new('192.168.1.1');
+  my $eq = $address1->eq($address2) ? 'true' : 'false';
+  print $eq; # prints 'false'
+
+=head2 to
+
+  my $span = $address->to($other_address);
+
+Creates a new C<IPv4::Span> object representing the range between the current address and the specified address.
+
+  # Example
+  my $address1 = IPv4::Address->new('192.168.4.0');
+  my $address2 = IPv4::Address->new('192.168.4.10');
+  my $span = $address1->to($address2);
+  print $span->range(); # prints '192.168.4.0-192.168.4.10'
+
+=head2 numeric_eq
+
+  my $bool = $address1->numeric_eq($other);
+
+Returns true if two IPv4 addresses are numerically equal, false otherwise.
+
+  # Example
+  my $address1 = IPv4::Address->new('192.168.0.1');
+  my $address2 = IPv4::Address->new('192.168.0.1');
+  my $bool = $address1->numeric_eq($address2);
+  print $bool; # prints '1'
+
+  # Example with integer
+  my $address = IPv4::Address->new('192.168.0.1');
+  my $bool = $address->numeric_eq(1);
+  print $bool; # prints '1'
+
+=head2 clone
+
+  my $copy = $address->clone();
+
+Creates an exact copy of the address object.
+
+=head2 simplify
+
+  my $simple = $address->simplify();
+
+Returns the address object itself. Provided for compatibility with C<IPv4::Span> and C<IPv4::Range> objects.
+
+=head2 addresses
+
+  my @addresses = $address->addresses();
+
+Returns an array containing only this address. Provided for compatibility with C<IPv4::Span> and C<IPv4::Range> objects.
+
+=head2 spans
+
+  my @spans = $address->spans();
+
+Returns an array containing a single span representing this address.
+
+=head2 next
+
+  my $next_address = $address->next();
+
+Advances the internal iterator and returns the current C<IPv4::Address>, or C<undef> when exhausted. Since an address represents a single value, the first call returns the address itself and the second returns C<undef>. The iterator auto-resets after returning C<undef>. Use C<reset()> to rewind mid-iteration.
+
+  # Example
+  my $address = IPv4::Address->new('192.168.0.1');
+  print $address->next()->address(); # prints '192.168.0.1'
+  print defined($address->next()) ? 'defined' : 'undef'; # prints 'undef'
+
+=head2 reset
+
+  $address->reset();
+
+Resets the internal iterator so the next call to C<next()> returns the address again. Does not return a meaningful value.
+
+  # Example
+  my $address = IPv4::Address->new('192.168.0.1');
+  $address->next();
+  $address->reset();
+  print $address->next()->address(); # prints '192.168.0.1'
+
+=head2 contains
+
+  my $bool = $address->contains($other_address);
+
+Returns true if this address equals the given address.
+
+  # Example
+  my $address = IPv4::Address->new('192.168.0.1');
+  print $address->contains('192.168.0.1'); # prints '1'
+  print $address->contains('192.168.0.2'); # prints '0'
+
+=head2 cidr
+
+  my $cidr = $address->cidr();
+
+Returns the address in CIDR notation with a /32 suffix, since individual addresses are always considered as /32 CIDR blocks.
+
+  # Example
+  my $addr = IPv4::Address->new('192.168.1.1');
+  my $cidr = $addr->cidr();
+  print "CIDR: $cidr\n"; # prints 'CIDR: 192.168.1.1/32'
+
+=head2 cidrs
+
+  my @cidrs = $address->cidrs();
+  my $count = $address->cidrs();
+
+Returns an array containing the address in CIDR notation. For individual addresses, this always returns a single-element array containing the address with a /32 suffix. In scalar context, returns the count of CIDR strings (always 1 for an address).
+
+  # Example - list context
+  my $addr = IPv4::Address->new('192.168.1.1');
+  my @cidrs = $addr->cidrs();
+  print "CIDRs: @cidrs\n"; # prints 'CIDRs: 192.168.1.1/32'
+
+  # Example - scalar context (returns count, not a CIDR string)
+  my $count = $addr->cidrs();
+  print "Count: $count\n";  # prints 'Count: 1'
+
+=head1 INTERNAL METHODS
+
+Private methods used internally and for overloading support. These should not be called directly.
+
+=head2 __minus
+
+  my $result = $address->__minus($other, $swap);
+
+Internal method called by the overloaded C<-> operator. When C<$other> is an integer, returns a new C<IPv4::Address> decremented by that amount. When C<$other> is another C<IPv4::Address>, returns the integer difference between the two addresses. When C<$other> is a span or range, delegates to C<< IPv4::Range->subtract >>. Dies on address space underflow or if C<$swap> is true with an integer (cannot subtract an address from a number). When called via Perl's operator overloading, C<$swap> indicates whether C<$other> was the original receiver of the operator and the operands were swapped so that this object's C<__minus> method would be used.
+
+Dies with C<"Cannot subtract an address from an integer"> if C<$swap> is true (i.e., an integer appeared on the left side of the C<-> operator).
+
+Dies with C<"IPv4 Address space underflow when subtracting %d from %s"> if the integer to subtract is larger than the address's integer value. C<%d> is the integer being subtracted and C<%s> is the address string.
+
+  # Subtract an integer from an address
+  my $addr = IPv4::Address->new('192.168.0.10');
+  my $new = $addr - 5;
+  print $new->address(); # prints '192.168.0.5'
+
+  # Difference between two addresses
+  my $a = IPv4::Address->new('192.168.0.10');
+  my $b = IPv4::Address->new('192.168.0.3');
+  my $diff = $a - $b;
+  print $diff; # prints '7'
+
+=head2 __plus
+
+  my $result = $address->__plus($other, $swap);
+
+Internal method called by the overloaded C<+> operator. When C<$other> is an integer, returns a new C<IPv4::Address> incremented by that amount. When C<$other> is a span or range, delegates to C<< $other->add($self) >>. When C<$other> is another address, returns a simplified range containing both. Dies on address space overflow or if C<$swap> is true with an integer (cannot add an address to a number). When called via Perl's operator overloading, C<$swap> indicates whether C<$other> was the original receiver of the operator and the operands were swapped so that this object's C<__plus> method would be used.
+
+Dies with C<"Cannot add an address to an integer"> if C<$swap> is true (i.e., an integer appeared on the left side of the C<+> operator).
+
+Dies with C<"IPv4 Address space overflow when adding %d to %s"> if the result would exceed 255.255.255.255. C<%d> is the integer being added and C<%s> is the address string.
+
+  # Add an integer to an address
+  my $addr = IPv4::Address->new('192.168.0.1');
+  my $new = $addr + 10;
+  print $new->address(); # prints '192.168.0.11'
+
+  # Combine two addresses into a range
+  my $a = IPv4::Address->new('10.0.0.1');
+  my $b = IPv4::Address->new('10.0.0.5');
+  my $range = $a + $b;
+  print $range->range(); # prints '10.0.0.1-10.0.0.5'
+
+=head1 OVERLOADED OPERATORS
+
+The following operators are overloaded for C<IPv4::Address> objects:
+
+=over 4
+
+=item * Stringification ("") - returns the string representation of the address
+
+=item * Numeric context (0+) - returns the size (always 1)
+
+=item * Object Comparison (cmp) - compares two IPv4 entities, exclilitly their string representations.  A range, span or address are considered equal if they all contain the same single address representation.  Greater than or less than comparisons are based on the first address value, then by size.
+
+=item * Numeric Comparison (<=>) - compares the SIZE of two IPv4 entities numerically
+
+=item * Subtraction (-) - returns the difference between addresses or subtracts an integer
+
+=item * Addition (+) - returns a new address offset by the given integer
+
+=item * Assignment (=) - creates a clone of the address.  Note this is only applied when using +=, -=, etc, not on simple assignment.  Use clone explicitly for that.
+
+=item * Iteration (<>) - returns the next address in sequence, ending with undef
+
+=item * Array dereference (@{}) - returns an array reference containing the address
+
+=back
+
+=head1 AUTHOR
+
+Dennis J. Bell <dennis.j.bell@gmail.com>
+
+=head1 COPYRIGHT AND LICENSE
+
+Copyright 2024 Rubidium Studios, Ltd.
+
+This library is free software; you can redistribute it and/or modify it under the same terms as Perl itself.
+
+=cut

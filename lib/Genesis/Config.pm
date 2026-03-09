@@ -2,7 +2,7 @@ package Genesis::Config;
 use strict;
 use warnings;
 
-use Genesis qw/bail bug debug info struct_lookup struct_set_value in_array load_yaml_file run workdir mkdir_or_fail semver save_to_yaml_file/;
+use Genesis qw/bail bug debug info struct_lookup struct_set_value struct_has in_array load_yaml_file run workdir mkdir_or_fail semver save_to_yaml_file spruce_diff priority_merge flatten unflatten/;
 use Genesis::Term qw/bullet decolorize/;
 
 use JSON::PP ();
@@ -23,15 +23,18 @@ use constant {
 
 # new - return a bare config object {{{
 sub new {
-	my ($class,$path,$autosave) = @_;
+	my ($class,$path,$autosave,$content) = @_;
 
 	bug('No path to config file was specified - cannot autosave') if $autosave && !$path;
 
 	return bless({
 			path => $path,
 			persistent_signature => undef,
-			autosave => $autosave ? 1 : 0,
-			contents => {},
+			autosave => ($autosave && $path)? 1 : 0,
+			loaded_values => {},
+			set_values => $content//{},
+			env_values => {},
+			default_values => {},
 		}, $class);
 }
 
@@ -83,6 +86,14 @@ sub get {
 }
 
 # }}}
+# get_all - get all effective configuration values from all sources {{{
+sub get_all {
+	my ($self) = @_;
+	# Return a deep copy to prevent external mutation of internal state
+	return JSON::PP->new->decode(JSON::PP->new->encode($self->_contents));
+}
+
+# }}}
 # has - check if a key exists in the configuration {{{
 sub has {
 	my ($self, $key) = @_;
@@ -95,16 +106,71 @@ sub has {
 }
 
 # }}}
+# is_set - check if a key was explicitly loaded or set (not from env/defaults) {{{
+sub is_set {
+	my ($self, $key) = @_;
+
+	bug("Cannot check for key in configuration without a key") unless defined($key);
+
+	# Check if key exists in explicit contents (loaded + set, excludes env + defaults)
+	return struct_has($self->_explicit_contents, $key);
+}
+
+# }}}
+# get_source - returns the source of a configuration value {{{
+sub get_source {
+	my ($self, $key) = @_;
+
+	# Access contents to trigger lazy loading
+	$self->_contents;
+
+	# Check each source in priority order (env > set > loaded > default)
+	# Return the highest priority source that has this key
+	return 'env'     if $self->{env_values}     && struct_has($self->{env_values},     $key);
+	return 'set'     if $self->{set_values}     && struct_has($self->{set_values},     $key);
+	return 'loaded'  if $self->{loaded_values}  && struct_has($self->{loaded_values},  $key);
+	return 'default' if $self->{default_values} && struct_has($self->{default_values}, $key);
+
+	# Key doesn't exist in any source
+	return undef;
+}
+
+# }}}
+# _update_source - updates a value in a specific source structure {{{
+sub _update_source {
+	my ($self, $source, $key, $value) = @_;
+	bug("Cannot update key in configuration without a source") unless defined($source);
+	bug("Cannot update key in configuration without a key") unless defined($key);
+
+	my $source_field = "${source}_values";
+	bug("Invalid source '$source' - must be one of: env, set, loaded, default")
+		unless exists $self->{$source_field};
+
+	# Update the value in the specified source structure
+	struct_set_value($self->{$source_field}, $key, $value);
+
+	# Invalidate caches - both the key itself, its descendants, and any parent keys
+	# that might contain it (since flatten uses literal empty refs, not actual refs)
+	delete($self->{cache}{$_}) for (grep {
+		$_ =~ /^$key($|[\.\[])/  ||  # Invalidate self and all descendants
+		$key =~ /^\Q$_\E[\.\[]/      # Invalidate if updating a descendant of a cached parent
+	} keys(%{$self->{cache}}));
+	delete $self->{_contents};
+	# Only invalidate _explicit_contents if we modified loaded or set
+	delete $self->{_explicit_contents} if $source eq 'loaded' || $source eq 'set';
+}
+
+# }}}
 # set - write a value to the configuration {{{
 sub set {
 	my ($self, $key, $value, $save) = @_;
 	# TODO: Validate key and value against schema
 
-	bug("Cannot set a key in the configuration without a key") unless defined($key);
 	bug("Cannot save configuration without a path") if $save && ! $self->{path};
 
-	delete($self->{cache}{$_}) for (grep {$_ =~ /^$key($|[\.\[])/} keys(%{$self->{cache}}));
-	struct_set_value($self->_contents,$key,$value);
+	# Use _update_source to handle cache invalidation
+	$self->_update_source('set', $key, $value);
+
 	$self->save if $self->changed && ($save || $self->{autosave});
 	return $self->changed;
 }
@@ -116,8 +182,18 @@ sub clear {
 	# TODO: Delete entire structure if key is undefined, or should that be an error?
 	# TODO: Validate key and value against schema
 
+	# Trigger lazy loading
+	$self->_contents;
+
+	# Remove from both loaded_values and set_values (whichever has it)
+	struct_set_value($self->{loaded_values}, $key, undef, 1);
+	struct_set_value($self->{set_values}, $key, undef, 1);
+
+	# Invalidate caches
 	delete($self->{cache}{$_}) for (grep {$_ =~ /^$key($|[\.\[])/} keys(%{$self->{cache}}));
-	struct_set_value($self->_contents,$key,1);
+	delete $self->{_contents};
+	delete $self->{_explicit_contents};
+
 	$self->save if $self->changed && ($save || $self->{autosave});
 	return $self->changed;
 }
@@ -133,7 +209,7 @@ sub save {
 	my $i=1; while (-f "$tmp/$i.json") {$i++};
 	open my $fh, ">", "$tmp/$i.json"
 		or bail "Unable to create tempfile for YAML conversion: $!";
-	print $fh JSON::PP->new->canonical->encode($self->_contents);
+	print $fh JSON::PP->new->canonical->encode($self->_explicit_contents);
 	close $fh;
 	my ($out,$rc,$err) = run(
 		{stderr => 0},
@@ -171,7 +247,7 @@ sub replace {
 	$self->{autosave} = $autosave;
 	return;
 }
-	
+
 
 # }}}
 # validate - validate the configuration against a schema {{{
@@ -184,10 +260,11 @@ sub validate {
 	for my $key (keys %$schema) {
 		if (exists($schema->{$key}{envvar}) and exists($ENV{$schema->{$key}{envvar}})) {
 			# Environment variables take precedence over configuration values.
-			$self->set($key, $ENV{$schema->{$key}{envvar}});
-		} elsif (exists($schema->{$key}{default}) and ! exists($self->_contents->{$key})) {
-			$self->set($key, $schema->{$key}{default});
-		} elsif ($schema->{$key}{required} and ! exists($self->_contents->{$key})) {
+			$self->_update_source('env', $key, $ENV{$schema->{$key}{envvar}});
+		} elsif (exists($schema->{$key}{default}) and ! struct_has($self->{loaded_values}, $key) and ! struct_has($self->{set_values}, $key)) {
+			# Set default only if not loaded or explicitly set
+			$self->_update_source('default', $key, $schema->{$key}{default});
+		} elsif ($schema->{$key}{required} and ! struct_has($self->{loaded_values}, $key) and ! struct_has($self->{set_values}, $key)) {
 			push @errors, "#R{$key}: missing required key";
 			next;
 		}
@@ -209,6 +286,9 @@ sub validate {
 			join('', map {"\n[[".bullet('', inline => 1, indent => 0).">>$_"} @errors));
 	}
 
+	# Invalidate contents cache after all validation is complete
+	delete $self->{_contents};
+
 	return 1;
 }
 # }}}
@@ -216,11 +296,39 @@ sub validate {
 
 ### Instance Private Methods {{{
 
-# _contents - the contents of the configuration object {{{
+# _contents - the contents of the configuration object computed from source structures {{{
 sub _contents {
 	my ($self) = @_;
-	$self->_load() unless ($self->loaded) || (! $self->exists && exists($self->{contents}));
-	return $self->{contents}
+	$self->_load() unless ($self->loaded) || (! $self->exists && exists($self->{loaded_values}));
+
+	# Merge all sources with priority: env > set > loaded > default
+	# priority_merge takes multiple hashes in priority order (highest first)
+	# and prevents ancestor/descendant conflicts
+	# (if it it hasn't been cached already)
+	return $self->{_contents} //= priority_merge(
+		$self->{env_values},
+		$self->{set_values},
+		$self->{loaded_values},
+		$self->{default_values}
+	);
+}
+
+# }}}
+# _explicit_contents - only loaded and set values (for saving to disk) {{{
+sub _explicit_contents {
+	my ($self) = @_;
+	$self->_load() unless ($self->loaded) || (! $self->exists && exists($self->{loaded_values}));
+
+	# Return cached explicit contents if available
+	return $self->{_explicit_contents} if exists $self->{_explicit_contents};
+
+	# Merge only explicit sources: set > loaded
+	# Exclude env and default values from disk persistence
+	# priority_merge preserves undef values and prevents ancestor/descendant conflicts
+	return $self->{_explicit_contents} //= priority_merge(
+		$self->{set_values},
+		$self->{loaded_values}
+	);
 }
 
 # }}}
@@ -228,16 +336,22 @@ sub _contents {
 sub _load {
 	my ($self, $path) = @_;
 
+	# Re-entrancy guard: prevent infinite recursion when debug/bail
+	# triggers configure_log which reads from this same config object
+	return if $self->{_loading};
+	local $self->{_loading} = 1;
+
 	$path ||= $self->{path};
 	bug("Cannot load configuration without a path") unless $path;
 
 	if ($self->exists) {
-		($self->{contents}, my $rc, my $err) = load_yaml_file($path);
+		($self->{loaded_values}, my $rc, my $err) = load_yaml_file($path);
 		debug "Loaded ".$self->{path}." - rc:$rc";
-		bail("Failed to load %s: %s", $path, $err) if ($rc || ! $self->{contents});
+		bail("Failed to load %s: %s", $path, $err) if ($rc || ! $self->{loaded_values});
+
 		$self->{persistent_signature} = $self->_signature;
 	} else {
-		$self->{contents} = {};
+		$self->{loaded_values} = {};
 		$self->save if $self->{autosave} && $self->{path};
 	}
 }
@@ -245,7 +359,12 @@ sub _load {
 # }}}
 # _signature - generate a signature for the current in-memory contents {{{
 sub _signature {
-	sha1_hex(JSON::PP->new->canonical->encode($_[0]->{contents}))
+	my ($self) = @_;
+	# Don't trigger loading - directly compute from source structures
+	# Merge loaded + set (explicit contents) without calling _explicit_contents()
+	# Uses priority_merge to match _explicit_contents() behavior
+	my $explicit = priority_merge($self->{set_values}, $self->{loaded_values});
+	return sha1_hex(JSON::PP->new->canonical->encode($explicit));
 }
 # }}}
 # _validate_key - validate a value against a schema {{{
@@ -286,13 +405,16 @@ sub _validate_key {
 				my $subschema = $schema->{schema}{$subkey};
 				if (exists($subschema->{envvar}) && exists($ENV{$subschema->{envvar}})) {
 					# Environment variables take precedence over configuration values.
-					$self->set("$key.$subkey", $ENV{$subschema->{envvar}});
+					$self->_update_source('env', "$key.$subkey", $ENV{$subschema->{envvar}});
 				} elsif (exists($subschema->{default}) and ! exists($value->{$subkey})) {
-					$self->set("$key.$subkey", $subschema->{default});
+					$self->_update_source('default', "$key.$subkey", $subschema->{default});
 				} elsif ($subschema->{required} and ! exists($value->{$subkey})) {
 					push @errors, "#R{$key}: missing required key #ri{$subkey}";
 				}
 			}
+			# Refetch value to include newly-added defaults for recursive validation
+			# TODO: Optimize to only refetch if defaults or env values were actually set
+			$value = $self->get($key);
 			for my $subkey (sort keys %$value) {
 				if (! exists($schema->{schema}{$subkey})) {
 					push @errors, "#R{$key.$subkey}: unknown configuration key: expected one of ".join(', ', keys %{$schema->{schema}});
@@ -415,14 +537,20 @@ sub _validate_key {
 					push @errors, sprintf("No subtype matched the value: %s\n%s", $value->[$i], $error_list);
 				}
 			}
-			$self->set($key, $value);
+			# Normalize array in place - update the source structure, not set()
+			my $source = $self->get_source($key);
+			bug("Cannot normalize key '$key' - no source found") unless $source;
+			$self->_update_source($source, $key, $value);
 		}
 
 	} elsif ($type eq 'boolean') {
 		if (! in_array($value, TRUE, FALSE, 1, 0, '', undef, 'true', 'false', 'yes', 'no')) {
 			push @errors, "#R{$key}: expected a boolean, not #ri{".($value ? $value : '<null>')."}";
 		}
-		$self->set($key, $value ? TRUE : FALSE); # Normalize to JSON::PP::true or JSON::PP::false
+		# Normalize boolean in place - update the source structure, not set()
+		my $source = $self->get_source($key);
+		bug("Cannot normalize key '$key' - no source found") unless $source;
+		$self->_update_source($source, $key, $value ? TRUE : FALSE);
 	} elsif ($type eq 'enum') {
 		if (! in_array($value, @{$schema->{values}})) {
 			push @errors, "#R{$key}: unknown value: #ri{".($value ? $value : "<null>")."}; expected one of ".join(', ', @{$schema->{values}});
@@ -467,35 +595,21 @@ sub show_diff {
 	my ($self, $other) = @_;
 	$other ||= Genesis::Config->new($self->{path});
 
-	# Use spruce to diff the two configurations
-	my $file1 = workdir('genesis-config')."/genesis-config-1.yml";
-	my $file2 = workdir('genesis-config')."/genesis-config-2.yml";
-	my $diff_file  = workdir('genesis-config')."/spruce-diff.ym";
-	save_to_yaml_file($self->_contents, $file1);
-	save_to_yaml_file($other->_contents, $file2);
-
-	my $OS = "$^O";
-	my @cmd = ('spruce', 'diff', $file2, $file1);
-	if ($OS eq 'darwin') {
-		unshift @cmd, 'script', '-qe', $diff_file
-	} elsif ($OS eq 'linux') {
-		# Sometimes gnu just sucks...
-		# TODO: more rigorous wrapping of subcmd to deal with quotes and pipes
-		my $subcmd = join(" ", map {$_ =~ m/\s/ ? "\"$_\"" : $_} @cmd);
-		@cmd = ("script -q '$diff_file' -c '$subcmd'");
-	}
-	my ($diff, $rc, $err) = run( {stderr => 0}, @cmd);
+	# Use Genesis::spruce_diff to compare configurations
+	my $diff = spruce_diff(
+		{object => $other->_contents, label => 'saved'},
+		{object => $self->_contents, label => 'current'}
+	);
 
 	if ($diff) {
-		$diff = decolorize($diff) if $ENV{NOCOLOR};
 		info("Differences between existing and updated configuration:\n%s", $diff);
 	} else {
-		bug "No differences found between existing and updated configuration -- this is impossible.";
+		info("No differences found between existing and updated configuration");
 	}
 }
 
 # }}}
-# TODO: extract the hash schema validation into a separate method {{{
+# TODO: extract the hash schema validation into a separate method
 # }}}
 1;
 # vim: fdm=marker:foldlevel=1:noet

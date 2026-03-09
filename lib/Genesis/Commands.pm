@@ -28,10 +28,13 @@ our @EXPORT = qw/
 	known_commands
 	run_command
 	has_command
+	is_equivalent_command
 	equivalent_commands
 	command_help
 	command_usage
+	show_global_options
 	command_properties
+	get_args
 	get_options
 	has_option
 	option_defaults
@@ -60,14 +63,16 @@ use constant { # {{{
 	# Functional Areas (and Submodule)
 	# Used for help generation, and default command module identifier
 	ENVIRONMENT => {order =>  0, module => "Env",        label => "Environment Management"},
-	INFO        => {order =>  1, module => "Info",       label => "Informative"},
-	REPOSITORY  => {order =>  2, module => "Repo",       label => "Repository Management"},
-	KIT         => {order =>  3, module => "Kit",        label => "Kit Management"},
-	PIPELINE    => {order =>  4, module => "Pipelines",  label => "Pipeline Management"},
-	GENESIS     => {order =>  5, module => "Core",       label => "Genesis Management"},
+	BOSH        => {order =>  1, module => "Bosh",       label => "BOSH Actions"},
+	INFO        => {order =>  2, module => "Info",       label => "Informative"},
+	REPOSITORY  => {order =>  3, module => "Repo",       label => "Repository Management"},
+	KIT         => {order =>  4, module => "Kit",        label => "Kit Management"},
+	PIPELINE    => {order =>  5, module => "Pipelines",  label => "Pipeline Management"},
+	GENESIS     => {order =>  6, module => "Core",       label => "Genesis Management"},
 	UTILITY     => {order => -1, module => "Utility",    label => "Script Callback Helper"},
 	DEPRECATED  => {order => -2, module => "Deprecated", label => "Deprecated"},
 	DEV         => {order => -3, module => "Core",       label => "Development"},
+  WIP         => {order => -4, module => "Wip",        label => "Work in Progress"},
 
 	# Option Groups
 	BLANK_OPTIONS => 0,
@@ -80,6 +85,15 @@ our @global_options = ( # {{{
 	[
 		"help|h" =>
 			"Show this help screen.",
+
+		"help-full" =>
+			"Show help screen with all available options including global options.",
+
+		"helpful" =>
+			"Show help screen with all available options including global options (same as --help-full, but more fun!).",
+
+		"globals" =>
+			"Show only the global options available to all commands.",
 	],
 	[
 		"color!" =>
@@ -96,6 +110,8 @@ our @global_options = ( # {{{
 			"Enable debugging, printing helpful message about what Genesis is doing, ".
 			"to standard error.\n\n".
 			"Deprecated; use --log=DEBUG instead.",
+
+		# REFACTOR: Remove debug and trace, but ensure if used, they provide an infomative message
 
 		"trace|T" =>
 			"Deeper level of debugging.  Any trace commands within the Genesis ".
@@ -179,6 +195,7 @@ sub define_command { # {{{
 
 	$RUN{$name} = sub {
 		$ENV{GENESIS_COMMAND} = $name;
+		$ENV{GENESIS_CALLED_COMMAND} = $CALLED;
 		$ENV{GENESIS_NO_VAULT} = 1 if $PROPS{$name}{no_vault};
 		if ($fn_require) {
 			require $fn_require;
@@ -186,7 +203,7 @@ sub define_command { # {{{
 		}
 		$fn->(@_);
 	};
-	push @COMMANDS, $name;
+	push @COMMANDS, $name; # FIXME: This is denormalized from keys of $GENESIS_COMMANDS, could be a potential bug -- is it needed, or can we just use commands() and return the keys of $GENESIS_COMMANDS where key equals value?
 	$GENESIS_COMMANDS{$name} = $name;
 	$GENESIS_COMMANDS{$_} = $name for @{$PROPS{$name}{aliases} || (defined($PROPS{$name}{alias}) ? [$PROPS{$name}{alias}] : [])};
 	return;
@@ -204,6 +221,7 @@ sub current_command_alias { # {{{
 	return $CALLED;
 } # }}}
 
+# FIXME:  What's the difference between commands and known commands?  known_commands is only used by Env, to deterime if a string conflicts with a command name to add .yml to the end -- shouldn't this apply to aliases as well?
 sub known_commands { # list the known genesis commands specified by define_command {{{
 	return grep {$_ eq $GENESIS_COMMANDS{$_}} keys %GENESIS_COMMANDS;
 } # }}}
@@ -214,6 +232,7 @@ sub prepare_command { # {{{
 	trace "Preparing genesis command '$COMMAND'".($CALLED ne $COMMAND ? ' (called as $CALLED)':'');
 	parse_options(\@args);
 	set_logging_state();
+	return 1;
 } # }}}
 
 sub run_command { # {{{
@@ -237,9 +256,18 @@ sub has_command { # {{{
 	return defined($GENESIS_COMMANDS{$cmd});
 } # }}}
 
-sub equivalent_commands { # {{{
+sub is_equivalent_command {
 	my ($cmd1,$cmd2) = @_;
-	return $GENESIS_COMMANDS{$cmd1}//'' eq $GENESIS_COMMANDS{$cmd2}//'';
+	return ($GENESIS_COMMANDS{$cmd1}//'') eq ($GENESIS_COMMANDS{$cmd2}//'');
+}
+sub equivalent_commands { # {{{
+	my ($cmd) = @_;
+	my @results = ();
+	my $base_cmd = $GENESIS_COMMANDS{$cmd} || '';
+	if ($base_cmd) {
+		@results = grep {$GENESIS_COMMANDS{$_} eq $base_cmd} keys %GENESIS_COMMANDS;
+	}
+	return wantarray ? @results : \@results;
 } # }}}
 
 sub command_properties { # {{{
@@ -283,6 +311,7 @@ sub parse_options { # {{{
 	my $parsing_ok = 1;
 	my @option_warnings = ();
 	{
+		$COMMAND_OPTIONS = {};
 		local $SIG{__WARN__} = sub { push @option_warnings, @_; };
 		$parsing_ok = GetOptionsFromArray($args, $COMMAND_OPTIONS, (@base_spec,@opts_spec));
 	}
@@ -300,7 +329,7 @@ sub parse_options { # {{{
 	@COMMAND_ARGS = (@$args);
 
 	# Extract Core options
-	$ENV{NOCOLOR}        = 'y' if !delete($COMMAND_OPTIONS->{color});
+	$ENV{NOCOLOR}        = 'y' if defined($COMMAND_OPTIONS->{color}) && !delete($COMMAND_OPTIONS->{color});
 	$ENV{QUIET}          = 'y' if  delete($COMMAND_OPTIONS->{quiet});
 
 	# Remove workaround options
@@ -324,11 +353,29 @@ sub get_options { # {{{
 	return \%slice
 } # }}}
 
+sub get_args { # {{{
+	# TODO: Ideally, this should use the arguments defined in the command properties
+	# to build a hash map of the arguments, and return that.  This would allow
+	# for the arguments to be accessed by name, rather than by index.  It will also
+	# allow for pre-validation of the arguments, and for special arguments to be
+	# instantiated such as environment objects, etc.
+	return wantarray ? @COMMAND_ARGS : die "hashref not yet implemented";
+} # }}}
+
 sub has_option { # {{{
-	my ($option,$test) = @_;
-	return 0 unless defined($COMMAND_OPTIONS->{$option});
-	return 1 unless defined($test);
-	if (ref($test) eq "Regexp") {
+	# Returns 0 if the option does not exists
+	# Returns 1 if it does and no test is provided
+	# Compares the content of the option to the test if provided,
+	# which can be undef (returns true if the option is also undef),
+	# a string (returns true if the option is equal to the string),
+	# or a regex (returns true if the option matches the regex).
+	my $option = shift;
+	return 0 unless exists($COMMAND_OPTIONS->{$option});
+	return 1 unless @_;
+	my $test = shift;
+	if (!defined($COMMAND_OPTIONS->{$option}) || !defined($test)) {
+		return !defined($COMMAND_OPTIONS->{$option}) && !defined($test)
+	} elsif (ref($test) eq "Regexp") {
 		return $COMMAND_OPTIONS->{$option} =~ $test ? 1 : 0;
 	} else {
 		return $COMMAND_OPTIONS->{$option} eq $test ? 1 : 0;
@@ -453,7 +500,7 @@ sub command_help { # {{{
 } # }}}
 
 sub command_usage { # {{{
-	my ($rc, $msg) = @_;
+	my ($rc, $msg, $show_global) = @_;
 	my $called = $CALLED;
 	my $command = $GENESIS_COMMANDS{$called};
 
@@ -508,8 +555,12 @@ sub command_usage { # {{{
 		[vars    => $PROPS{$COMMAND}{variables} || [], 'Environmental Variable'],
 		[command =>$PROPS{$COMMAND}{options} || [], 'Option'],
 		[legacy  => $PROPS{$COMMAND}{deprecated_options} || []],
-		[global  => [(map {@$_} @global_options[0..$PROPS{$COMMAND}{option_group}])]],
 	);
+
+	# Only add global options if explicitly requested or if we're checking help from command line
+	if ($show_global || (!defined($show_global) && get_options->{help})) {
+		push @sources, [global  => [(map {@$_} @global_options[0..$PROPS{$COMMAND}{option_group}])]];
+	}
 	my (%options_desc, %options_def, %options_order);
 	my $opt_width=0;
 
@@ -593,6 +644,12 @@ sub command_usage { # {{{
 		}
 	}
 
+	# Add notice about global options if they're not being shown
+	if (!$show_global && defined($show_global)) {
+		$out .= "\n#i{To see all options including global ones, use }#g{${\(humanize_bin)}} #G{$command} #y{--help-full}#i{ or }#y{--helpful}\n";
+		$out .= "#i{To see only global options, use }#g{${\(humanize_bin)}} #y{--globals}\n";
+	}
+
 	# TODO: Integrate extended usage better than just dumping it at the end
 	if (ref($PROPS{$command}{extended_usage}) eq "CODE") {
 		my $extended_usage = $PROPS{$command}{extended_usage}->();
@@ -607,12 +664,84 @@ sub command_usage { # {{{
 	exit ($rc || 0);
 } # }}}
 
+sub show_global_options { # {{{
+	my $hr = "#K\{" . ("=" x terminal_width) ."}";
+	my $bc = $Genesis::BUILD =~ /\+\)/ ? 'R' : 'G';
+	my $ver = "#gi{genesis v$Genesis::VERSION}#${bc}i{$Genesis::BUILD}\n";
+
+	info "\n$hr";
+	my $out = "";
+	$out .= wrap("#G{Global Options} - Available to all Genesis commands", terminal_width)."\n\n";
+	$out .= wrap("#g{${\(humanize_bin)}} [<global options...>] #G{<command>} [<command options and args...>]",terminal_width,"#Wku{Usage:} ", 7)."\n";
+
+	my (%options_desc, %options_def, %options_order);
+	my $section = 0;
+	for my $global_opt_group (@global_options) {
+		my @options = @$global_opt_group;
+		while (my ($opt_def, $opt_desc) = splice(@options,0,2)) {
+			if ($opt_def eq '-section-break-') {
+				my $sec = '-'.$section++.'-';
+				push @{$options_order{global}}, $sec;
+				$options_desc{$sec} = "$opt_desc";
+				next;
+			}
+			push @{$options_order{global}}, $opt_def;
+			$options_desc{$opt_def} = $opt_desc;
+
+			$opt_def =~ /\^?(~?[\|a-zA-Z0-9_-]*)([\?!\+=:].*)?$/;
+			bug "Global option definition invalid: $opt_def" unless $1;
+			my ($ext,@flags) = ($2 || '', split(/\|/,$1));
+
+			my @short_flags = grep {/^.$/} @flags;
+			my @long_flags = grep {$_ !~ /^~/} grep {/^../} @flags;
+
+			if ($ext eq '!') {
+				$options_def{$opt_def} = "    #y{--[no-]$long_flags[0]}";
+				next;
+			}
+
+			my $opt_label = scalar(@short_flags) ? "-${\(shift @short_flags)}, " : "    ";
+			$opt_label .= "--${\(shift @long_flags)}" if scalar(@long_flags);
+			$opt_label =~ s/, $//; # trim comma if no long option
+			my $opt_arg = "";
+			if ($ext =~ /^=([si])\@?$/) {
+				$opt_arg = $1 eq 's' ? " <str>" : " <N>";
+			} elsif ($ext =~ /^:([si])$/) {
+				$opt_arg = $1 eq 's' ? "[=<str>]" : "[=<N>]";
+			} elsif ($ext eq '+') {
+				$opt_arg = ""; # TODO: find out how to indicate multiple flags allowed
+			}
+			$options_def{$opt_def} = "#y{$opt_label}#B{$opt_arg}";
+		}
+	}
+
+	my $def_width = (sort {$b <=> $a} map {csize($_)} values(%options_def))[0] + 4;
+
+	if (defined $options_order{global}) {
+		$out .= "\n#Wku{Global Options}\n";
+		for (@{$options_order{global}}) {
+			if ($_ =~ /^-\d+-$/) {
+				if ($options_desc{$_}) {
+					$out .= "\n#i{".wrap($options_desc{$_},terminal_width)."}\n";
+				} else {
+					$out .= "\n";
+				}
+				next;
+			}
+			$out .= "\n".wrap($options_desc{$_}, terminal_width, "  ".$options_def{$_}, $def_width)."\n";
+		}
+	}
+
+	info {raw => 1}, $out."\n$ver$hr\n";
+	exit 0;
+} # }}}
+
 sub set_top_path { # {{{
 	# Set up current repo and env file if specified
 	if (!$COMMAND_OPTIONS->{cwd} && scalar(@COMMAND_ARGS)) {
 		if (has_scope('env') &&  (-f $COMMAND_ARGS[0] || -f $COMMAND_ARGS[0].'.yml')) {
 			$COMMAND_OPTIONS->{cwd} = shift(@COMMAND_ARGS);
-		} elsif (equivalent_commands($COMMAND, 'create') && $COMMAND_ARGS[0] =~ /(.*)\/[^\/]+?(.yml)?$/ && -d $1) {
+		} elsif (is_equivalent_command(create => $COMMAND) && $COMMAND_ARGS[0] =~ /(.*)\/[^\/]+?(.yml)?$/ && -d $1) {
 			$COMMAND_OPTIONS->{cwd} = shift(@COMMAND_ARGS);
 		}
 	}
@@ -645,6 +774,9 @@ sub set_top_path { # {{{
 			$cwd = dirname($cwd);
 		}
 
+		# TODO: create top and env objects if in a repo or env context, and put them
+		# in the args hash (currently only the args array is used - see get_args)
+
 		chdir_or_fail($cwd);
 		return 1;
 	}
@@ -673,7 +805,7 @@ sub set_logging_state { # {{{
 	$ENV{GENESIS_TRACE}  = 'y' if Genesis::Log::meets_level($log_level, 'TRACE');
 
 	my $stack_trace = delete($COMMAND_OPTIONS->{'show-stack'});
-	$ENV{GENESIS_STACK_TRACE} = "y" if delete($COMMAND_OPTIONS->{'show-stack'});
+	$ENV{GENESIS_STACK_TRACE} = $stack_trace if defined($stack_trace);
 
 	$Logger->configure_log(
 		level => $log_level,
@@ -689,7 +821,7 @@ sub build_command_environment  { # {{{
 	if ($spruce_log) {
 		my @spruce_log_levels = grep {$_ =~ qr/^$spruce_log.*/i} (qw[debug trace]);
 		bail "--spruce-log is expected to be one of TRACE or DEBUG"
-			if (scalar(@spruce_log_levels) != 0);
+			if (scalar(@spruce_log_levels) == 0);
 
 		$spruce_log = $spruce_log_levels[0];
 		$ENV{DEBUG} = 'y' if $spruce_log ;
@@ -914,10 +1046,35 @@ sub check_prereqs { # {{{
 
 	my @errors = grep {$_} map {
 		my $err = check_version(@$_);
-		debug_error $err if $err;
+		debug $err if $err;
 		$err
 	} @$reqs;
 
+	# Check that we have some required but not necessarily available Perl modules
+	my $perl_modules = [
+		["MIME::Base64", "3.14", "MIME::Base64"],
+		["IO::Uncompress::Gunzip", "2.064", "IO::Uncompress::Gunzip"],
+		["IO::Compress::Gzip", "2.064", "IO::Compress::Gzip"],
+		["Archive::Tar", "1.96", "Archive::Tar"],
+	];
+
+	for my $mod (@$perl_modules) {
+		my ($name, $min, $modname) = @$mod;
+		eval "use $modname";
+		if ($@) {
+			push @errors, "Perl module $name is required but not installed";
+		} elsif (new_enough $min, $modname->VERSION) {
+			push @errors, sprintf(
+				"Perl module $name is installed but version is too old (%s < %s)",
+				$modname->VERSION, $min
+			);
+		} else {
+			debug(
+				"#G{Perl module %s/%s} is installed and meets version requirements",
+				$name, $modname->VERSION
+			)
+		}
+	}
 	# check that we has a bosh (v2)
 	require Service::BOSH;
 	eval {$ENV{GENESIS_BOSH_COMMAND} = Service::BOSH->command($bosh_min_version)};

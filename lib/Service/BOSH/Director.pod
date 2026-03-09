@@ -1,0 +1,1870 @@
+=head1 NAME
+
+Service::BOSH::Director - Full BOSH director client with environment, config, deployment, and instance management
+
+=head1 SYNOPSIS
+
+  use Service::BOSH::Director;
+
+  # Create from Vault exodus data (most common)
+  my $director = Service::BOSH::Director->from_exodus(
+    'my-bosh',
+    $genesis_env,
+  );
+
+  # Create from local BOSH CLI config alias
+  my $director = Service::BOSH::Director->from_alias(
+    'my-bosh',
+    $genesis_env,
+  );
+
+  # Create from current environment variables
+  my $director = Service::BOSH::Director->from_environment();
+
+  # Validate connectivity
+  $director->connect_and_validate();
+
+  # Work with configs
+  my %configs = $director->configs();
+  $director->upload_config(\%cloud_config, 'cloud', 'default');
+
+  # Deploy a manifest
+  $director->deployment('my-deployment');
+  $director->deploy('/path/to/manifest.yml');
+
+  # Run on a VM instance
+  my $result = $director->run_on_instance(
+    'cat /var/log/syslog',
+    target => 'api/0',
+  );
+
+=head1 DESCRIPTION
+
+C<Service::BOSH::Director> is the primary subclass of L<Service::BOSH> and
+represents a full BOSH director with credentials, connection state, and
+the complete set of BOSH operations.
+
+Instances are typically created via L</from_exodus> (reading credentials
+stored in Vault by a deployed bosh-genesis-kit environment) or via
+L</from_alias> (using a local C<~/.bosh/config> entry). A lower-level
+L</new> constructor is available for cases where credentials are assembled
+programmatically.
+
+The module covers six broad functional areas:
+
+=over 4
+
+=item Connection management
+
+L</connect_and_validate> verifies TCP reachability and BOSH API
+authorization, caching the result in C<$ENV{GENESIS_BOSH_VERIFIED}> to
+avoid repeated round trips within a Genesis run.
+
+=item Config management
+
+L</configs>, L</has_config>, L</get_config>, L</download_configs>,
+L</upload_config>, L</upload_config_from_file>, and L</delete_config>
+provide full CRUD access to BOSH named configurations (cloud, runtime,
+cpi, etc.).
+
+=item Deployment management
+
+L</deploy>, L</run_errand>, L</deployments>, L</has_deployment>,
+L</delete_deployment>, and L</cleanup> cover the full deployment lifecycle.
+
+=item Stemcell management
+
+L</stemcells> and L</upload_stemcell> list and upload stemcells.
+
+=item Network locking
+
+L</check_network_lock>, L</acquire_network_lock>,
+L</network_locked_by_me>, and L</clear_network_lock> implement a
+Vault-backed mutex used to serialise network claim updates.
+
+=item Instance operations
+
+L</run_on_instance>, L</run_on_instances>, L</upload_to_instances>, and
+L</upload_to_instance> run shell commands or upload files to BOSH-managed
+VMs via C<bosh ssh> and C<bosh scp>.
+
+=back
+
+=head1 CLASS METHODS
+
+=head2 new
+
+  my $director = Service::BOSH::Director->new($alias, %opts);
+
+Raw constructor. Parses the URL from C<opts{url}> into schema, host, and
+port components, then blesses and returns a director object. Prefer the
+factory methods L</from_exodus>, L</from_alias>, or L</from_environment>
+over calling this directly.
+
+The C<validated> flag is initialised from C<$ENV{GENESIS_BOSH_VERIFIED}>:
+the director starts pre-validated when the environment variable matches
+C<$alias>.
+
+B<Note:> No validation is performed on the URL; a malformed URL silently
+produces C<undef> for schema, host, and port (DIRECTOR-13).
+
+B<Parameters:>
+
+=over 4
+
+=item $alias
+
+The BOSH director alias name (e.g. C<'prod-bosh'>).
+
+=item %opts
+
+A hash of options:
+
+=over 4
+
+=item url
+
+The BOSH director URL (e.g. C<https://10.0.0.6:25555>). Required. Port
+defaults to C<25555> when omitted from the URL.
+
+=item env
+
+Optional C<Genesis::Env> object associated with this director.
+
+=item ca_cert
+
+Optional CA certificate string for TLS verification.
+
+=item client
+
+BOSH client (username) for authentication.
+
+=item secret
+
+BOSH client secret (password) for authentication.
+
+=item deployment
+
+Optional default deployment name.
+
+=item use_local_config
+
+Boolean. When true, the BOSH CLI local config file is used rather than
+director-level credentials.
+
+=item exodus_vault
+
+A C<Service::Vault> object for network-lock and exodus operations.
+Defaults to C<Service::Vault-E<gt>current> or C<Service::Vault-E<gt>default>
+when not provided.
+
+=item exodus_path
+
+The Vault path under which this director's exodus data is stored.
+
+=item target
+
+Relationship of this director to the environment: C<'self'> or C<'parent'>
+(default C<'parent'>).
+
+=back
+
+=back
+
+B<Returns:> A blessed C<Service::BOSH::Director> object.
+
+B<Examples:>
+
+  my $director = Service::BOSH::Director->new(
+    'prod-bosh',
+    url    => 'https://10.0.0.6:25555',
+    client => 'admin',
+    secret => 's3cr3t',
+  );
+  # Returns: a Service::BOSH::Director object
+
+=head2 has_director
+
+  my $bool = Service::BOSH::Director->has_director();
+  my $bool = $director->has_director();
+
+Returns C<1>. Overrides the base-class C<has_director> (in L<Service::BOSH>),
+which returns C<0>, to indicate that this object represents an actual
+director rather than a placeholder.
+
+B<Returns:> C<1>
+
+B<Examples:>
+
+  if ($director->has_director()) {
+    $director->connect_and_validate();
+  }
+  # Returns: 1
+
+=head2 from_exodus
+
+  my $director = Service::BOSH::Director->from_exodus($alias, $env, %opts);
+
+Factory method. Constructs a director by reading connection credentials
+from Vault exodus data that was written by a C<bosh-genesis-kit>
+deployment.
+
+The exodus path is derived from C<$env->bosh_env> unless explicitly
+supplied via C<opts{exodus_path}>. When C<opts{rel_to_env}> is C<'self'>
+the path comes from C<$env->exodus_base>; otherwise (the default C<'parent'>
+behaviour) it is built from the exodus mount and deployment alias.
+
+The exodus data is validated for the required keys C<url>,
+C<admin_username>, C<admin_password>, C<ca_cert>, and C<kit_name>. The kit
+must be of type C<bosh> (or the exodus data must set C<is_bosh>,
+C<is_director>, or include C<director> in a C<services> list).
+
+When C<$env->user_provided_bosh_creds_policy> is not C<'ignore'>, the
+C<BOSH_USER> and C<BOSH_PASSWORD> environment variables override the exodus
+credentials when both are present. When the policy is C<'require'> and
+neither variable is set, the method dies.
+
+Returns C<undef> when exodus data is not found or fails validation; these
+cases are traced but not fatal.
+
+B<Parameters:>
+
+=over 4
+
+=item $alias
+
+The BOSH director alias name.
+
+=item $env
+
+A C<Genesis::Env> object. Required; dies if not provided or not the
+correct type.
+
+=item %opts
+
+A hash of options:
+
+=over 4
+
+=item exodus_data
+
+Pre-fetched exodus data hashref. When provided, Vault is not queried.
+
+=item exodus_path
+
+Override the Vault path used to retrieve exodus data.
+
+=item exodus_mount
+
+Override the Vault mount prefix used when building the exodus path.
+
+=item exodus_vault
+
+A C<Service::Vault> object to read exodus data from. Defaults to the
+environment's vault.
+
+=item rel_to_env
+
+C<'self'> or C<'parent'> (default C<'parent'>). Controls whether the
+exodus path points to the environment's own deployment or to its
+parent BOSH director.
+
+=item bosh_deployment_type
+
+Override for the BOSH deployment type suffix in the exodus path.
+Defaults to the C<dep_type> from C<$env->bosh_env>, then C<'bosh'>.
+
+=item deployment
+
+Optional default deployment name for the returned director.
+
+=back
+
+=back
+
+B<Returns:> A C<Service::BOSH::Director> object on success, or C<undef>
+when exodus data is absent or fails validation.
+
+B<Errors:>
+
+Dies with C<"Require an env object - was not passed in"> when C<$env> is
+missing or not a C<Genesis::Env>.
+
+Dies with C<"Must provide BOSH credentials via environment variables BOSH_USER and BOSH_PASSWORD">
+when C<$env->user_provided_bosh_creds_policy> is C<'require'> and neither
+C<BOSH_USER> nor C<BOSH_PASSWORD> is set.
+
+B<Examples:>
+
+  my $director = Service::BOSH::Director->from_exodus(
+    'prod-bosh',
+    $env,
+  );
+  if ($director) {
+    $director->connect_and_validate();
+  }
+  # Returns: a Service::BOSH::Director object, or undef
+
+  # Use self-deployment exodus data
+  my $director = Service::BOSH::Director->from_exodus(
+    'my-bosh',
+    $env,
+    rel_to_env => 'self',
+  );
+  # Returns: a Service::BOSH::Director object, or undef
+
+=head2 from_alias
+
+  my $director = Service::BOSH::Director->from_alias($alias, $env, %opts);
+
+Factory method. Constructs a director using an alias entry from the local
+BOSH CLI configuration file (C<~/.bosh/config> by default). The config
+file is parsed as YAML and searched for an environment entry whose
+C<alias> field matches C<$alias>.
+
+Returns C<undef> when the config file does not exist or no matching
+alias is found.
+
+B<Note:> When C<$alias> is falsy, the method enables trace logging as a
+debugging side-effect (DIRECTOR-9, tracked in FWT-694).
+
+B<Parameters:>
+
+=over 4
+
+=item $alias
+
+The BOSH director alias to look up in the config file.
+
+=item $env
+
+An optional C<Genesis::Env> object stored on the resulting director.
+
+=item %opts
+
+A hash of options:
+
+=over 4
+
+=item config_home
+
+Override the path to the BOSH config file. Defaults to
+C<$ENV{HOME}/.bosh/config>.
+
+=item deployment
+
+Optional default deployment name for the returned director.
+
+=back
+
+Any additional options are passed through to L</new>.
+
+=back
+
+B<Returns:> A C<Service::BOSH::Director> object on success, or C<undef>
+when the config file is absent or the alias is not found.
+
+B<Examples:>
+
+  my $director = Service::BOSH::Director->from_alias('prod-bosh', $env);
+  if ($director) {
+    print "Found director at: ", $director->url(), "\n";
+  }
+  # Returns: a Service::BOSH::Director object, or undef
+
+=head2 from_environment
+
+  my $director = Service::BOSH::Director->from_environment();
+
+Factory method. Constructs a director from the current set of BOSH
+environment variables.
+
+When C<$ENV{BOSH_ENVIRONMENT}> is a valid URI and C<$ENV{BOSH_CLIENT}> is
+set, the director is created directly from C<BOSH_ENVIRONMENT>,
+C<BOSH_CLIENT>, C<BOSH_CLIENT_SECRET>, C<BOSH_CA_CERT>, C<BOSH_ALIAS>,
+and C<BOSH_DEPLOYMENT>.
+
+Otherwise, falls back to L</from_alias> using C<$ENV{BOSH_ALIAS}> (or
+C<$ENV{BOSH_ENVIRONMENT}> as the alias name) and C<$ENV{BOSH_DEPLOYMENT}>.
+
+B<Returns:> A C<Service::BOSH::Director> object, or C<undef> if no
+matching alias is found in the fallback path.
+
+B<Examples:>
+
+  # With BOSH_ENVIRONMENT set to a valid URI
+  local $ENV{BOSH_ENVIRONMENT} = 'https://10.0.0.6:25555';
+  local $ENV{BOSH_CLIENT}      = 'admin';
+  local $ENV{BOSH_CLIENT_SECRET} = 's3cr3t';
+  my $director = Service::BOSH::Director->from_environment();
+  # Returns: a Service::BOSH::Director object
+
+=head2 exodus_vault
+
+  my $vault = $director->exodus_vault();
+
+Returns the C<Service::Vault> object used for exodus data and network
+lock operations.
+
+B<Returns:> A C<Service::Vault> object.
+
+B<Errors:>
+
+Dies with C<"No exodus vault set for BOSH director"> when no exodus vault
+was configured at construction time.
+
+B<Examples:>
+
+  my $vault = $director->exodus_vault();
+  # Returns: a Service::Vault object
+
+=head2 exodus_path
+
+  my $path = $director->exodus_path();
+
+Returns the Vault path under which this director's exodus data is stored.
+
+B<Returns:> A string Vault path (e.g. C<'secret/exodus/prod/bosh'>).
+
+B<Errors:>
+
+Dies with C<"No exodus path set for BOSH director"> when no exodus path
+was configured at construction time.
+
+B<Examples:>
+
+  my $path = $director->exodus_path();
+  # Returns: 'secret/exodus/prod/bosh'
+
+=head1 INSTANCE METHODS
+
+=head2 deployment
+
+  my $name = $director->deployment();
+  $director->deployment('my-deployment');
+
+Getter/setter for the current default deployment name. When called with
+an argument, sets C<$self-E<gt>{deployment}> and returns the new value.
+When called without arguments, returns the current value.
+
+B<Note:> The guard that would call C<bug()> on extra arguments is
+unreachable because C<shift> has already consumed the argument at the
+point the check fires (DIRECTOR-2, tracked in FWT-694).
+
+B<Parameters:>
+
+=over 4
+
+=item $new_deployment
+
+Optional. The new deployment name to set.
+
+=back
+
+B<Returns:> The current (or newly set) deployment name string, or
+C<undef> when none has been set.
+
+B<Errors:>
+
+Would die with C<"Too many arguments to Service::BOSH::Director#deployment: expecting at most 1, got extra: ">
+if more than one argument were passed, but this guard is currently unreachable
+due to DIRECTOR-2.
+
+B<Examples:>
+
+  $director->deployment('cf-deployment');
+  my $name = $director->deployment();
+  # Returns: 'cf-deployment'
+
+=head2 alias
+
+  my $alias = $director->alias();
+
+Returns the BOSH director alias name as provided at construction time.
+
+B<Returns:> A string alias name.
+
+B<Examples:>
+
+  print $director->alias();
+  # Returns: 'prod-bosh'
+
+=head2 url
+
+  my $url = $director->url();
+
+Returns the reconstructed director URL in the form
+C<schema://host:port>.
+
+B<Returns:> A string URL (e.g. C<'https://10.0.0.6:25555'>).
+
+B<Examples:>
+
+  print $director->url();
+  # Returns: 'https://10.0.0.6:25555'
+
+=head2 host
+
+  my $host = $director->host();
+
+Returns the hostname or IP address portion of the director URL.
+
+B<Returns:> A string host.
+
+B<Examples:>
+
+  print $director->host();
+  # Returns: '10.0.0.6'
+
+=head2 env
+
+  my $genesis_env = $director->env();
+
+Returns the C<Genesis::Env> object associated with this director, or
+C<undef> when none was provided at construction time.
+
+B<Returns:> A C<Genesis::Env> object, or C<undef>.
+
+B<Examples:>
+
+  my $env = $director->env();
+  print $env->name() if $env;
+  # Returns: 'prod' (or undef)
+
+=head2 vault
+
+  my $vault = $director->vault();
+
+Returns the C<Service::Vault> object stored as the exodus vault. Unlike
+L</exodus_vault>, this method does not die when no vault is configured;
+it returns C<undef> instead.
+
+B<Returns:> A C<Service::Vault> object, or C<undef>.
+
+B<Examples:>
+
+  my $vault = $director->vault();
+  # Returns: a Service::Vault object, or undef
+
+=head2 environment_variables
+
+  my %vars = $director->environment_variables();
+
+Returns a hash of BOSH environment variables describing this director.
+Overrides the base-class C<environment_variables> method in L<Service::BOSH>.
+
+The returned hash always contains:
+
+=over 4
+
+=item C<BOSH_ALIAS>
+
+The director alias.
+
+=item C<BOSH_ENVIRONMENT>
+
+The director URL.
+
+=item C<BOSH_CA_CERT>
+
+The CA certificate.
+
+=item C<BOSH_CLIENT>
+
+The client username.
+
+=item C<BOSH_CLIENT_SECRET>
+
+The client secret.
+
+=item C<BOSH_REL_TO_ENV>
+
+The relationship to the associated Genesis environment (C<'parent'> by
+default).
+
+=item C<BOSH_USER>
+
+Always set to C<undef> (clears any inherited value).
+
+=item C<BOSH_PASSWORD>
+
+Always set to C<undef> (clears any inherited value).
+
+=back
+
+When both an exodus path and exodus vault are configured, the hash also
+contains C<BOSH_EXODUS_PATH> and C<BOSH_EXODUS_VAULT>.
+
+When a deployment name is set, C<BOSH_DEPLOYMENT> is included.
+
+B<Returns:> A flat hash (not a reference) of variable name to value.
+
+B<Examples:>
+
+  my %vars = $director->environment_variables();
+  # Returns: (
+  #   BOSH_ALIAS          => 'prod-bosh',
+  #   BOSH_ENVIRONMENT    => 'https://10.0.0.6:25555',
+  #   BOSH_CA_CERT        => '-----BEGIN CERTIFICATE-----...',
+  #   BOSH_CLIENT         => 'admin',
+  #   BOSH_CLIENT_SECRET  => 's3cr3t',
+  #   BOSH_REL_TO_ENV     => 'parent',
+  #   BOSH_USER           => undef,
+  #   BOSH_PASSWORD       => undef,
+  # )
+
+=head2 connect_and_validate
+
+  my $director = $director->connect_and_validate();
+
+Verifies that the BOSH director is reachable and that the configured
+credentials are authorised. Overrides the base class method.
+
+Returns C<$self> immediately when the director is already marked
+validated (either from a previous call or from C<$ENV{GENESIS_BOSH_VERIFIED}>
+at construction time).
+
+Delegates to L</status> which, on success, sets
+C<$self-E<gt>{validated}> to C<1> and C<$ENV{GENESIS_BOSH_VERIFIED}> to
+the director alias.
+
+B<Returns:> The director object (C<$self>).
+
+B<Errors:>
+
+Dies with C<"Unable to connect to #M{%s} BOSH director:\n%s - %s"> when
+the status is C<error> or C<unreachable>. C<%s> placeholders are the alias,
+the status string, and the error message.
+
+Dies with C<"Unable to connect to #M{%s} BOSH director: no active session.  Please log in and try again.">
+when the status is C<unauthorized>. C<%s> is the alias.
+
+B<Examples:>
+
+  my $director = Service::BOSH::Director->from_exodus('prod-bosh', $env);
+  $director->connect_and_validate();
+  # Returns: $director (or dies on connection failure)
+
+=head2 status
+
+  my $hashref = $director->status();
+
+Probes the BOSH director and returns a status hashref. Does not require
+prior validation.
+
+When C<$ENV{BOSH_ALL_PROXY}> is set, the probe runs C<bosh env> via the
+proxy and applies a timeout from C<$ENV{GENESIS_NETWORK_TIMEOUT}> (default
+10 seconds). Otherwise, TCP reachability to the director's host and port
+is checked first with a plain socket test.
+
+On success, the authenticated user is extracted from the C<bosh env>
+output and stored in C<$self-E<gt>{user}>, C<$self-E<gt>{validated}> is
+set to C<1>, and C<$ENV{GENESIS_BOSH_VERIFIED}> is set to
+C<$self-E<gt>{alias}>.
+
+B<Returns:> A hashref with keys:
+
+=over 4
+
+=item status
+
+One of C<'ok'>, C<'unreachable'>, C<'error'>, or C<'unauthorized'>.
+
+=item msg
+
+A human-readable message describing the status.
+
+=back
+
+B<Errors:>
+
+When C<BOSH_ALL_PROXY> is set and the proxy timeout fires, the ALRM
+signal handler raises C<"timeout\n"> internally. This is caught and
+results in a C<< { status => 'unreachable', msg => "timeout after N seconds" } >>
+return value rather than propagating as an exception (note DIRECTOR-1:
+the C<$err> variable capture is undefined behavior and may mask this).
+
+B<Examples:>
+
+  my $s = $director->status();
+  if ($s->{status} eq 'ok') {
+    print "Director is up: $s->{msg}\n";
+  }
+  # Returns: { status => 'ok', msg => 'authorized as admin' }
+
+=head2 configs
+
+  my %configs  = $director->configs();   # list context
+  my $configs  = $director->configs();   # scalar context
+
+Lists all configurations on the BOSH director.
+
+In list context, returns a flat hash. In scalar context, returns a
+reference to the same hash.
+
+The returned structure is nested:
+
+  {
+    $type => {
+      $name => {
+        current => $id,          # ID of the currently active version
+        entries => {
+          $id => {
+            date => $created_at,
+            team => $team,
+          },
+        },
+      },
+    },
+  }
+
+B<Returns:> In list context, a hash. In scalar context, a hashref.
+
+B<Examples:>
+
+  my %configs = $director->configs();
+  for my $type (sort keys %configs) {
+    for my $name (sort keys %{$configs{$type}}) {
+      print "  $type/$name (current: $configs{$type}{$name}{current})\n";
+    }
+  }
+  # Returns: ('cloud' => { default => { current => '3', entries => {...} } }, ...)
+
+=head2 has_config
+
+  my $bool = $director->has_config($type, $name);
+
+Returns true when the BOSH director has a configuration of the given type
+and name.
+
+B<Parameters:>
+
+=over 4
+
+=item $type
+
+The configuration type (e.g. C<'cloud'>, C<'runtime'>, C<'cpi'>).
+
+=item $name
+
+The configuration name (e.g. C<'default'>).
+
+=back
+
+B<Returns:> True when the configuration exists, false otherwise.
+
+B<Examples:>
+
+  if ($director->has_config('cloud', 'default')) {
+    my $content = $director->get_config('cloud', 'default');
+  }
+  # Returns: 1 if the cloud/default config exists
+
+=head2 get_config
+
+  my $content = $director->get_config($type, $name);
+
+Returns the content string of the named configuration, or C<undef> when
+no matching configuration is found.
+
+B<Parameters:>
+
+=over 4
+
+=item $type
+
+The configuration type (e.g. C<'cloud'>, C<'runtime'>).
+
+=item $name
+
+The configuration name.
+
+=back
+
+B<Returns:> A YAML string of the configuration content, or C<undef>.
+
+B<Examples:>
+
+  my $yaml = $director->get_config('cloud', 'default');
+  # Returns: '--- # cloud config YAML ...'
+
+=head2 download_configs
+
+  my @configs  = $director->download_configs($path, $type, $name);  # list context
+  my $configs  = $director->download_configs($path, $type, $name);  # scalar context
+
+Downloads one or more configurations to C<$path> on the local filesystem.
+
+When C<$name> is C<'*'> (or omitted), all configs of the given type are
+fetched and merged into a single file using C<spruce merge>. Otherwise
+the single named config is written directly.
+
+Dies when the target file is empty after writing (i.e. no matching
+configs were found on the director).
+
+Dies when the BOSH or JSON parsing commands fail.
+
+Each config entry in the returned list is a hashref with keys:
+
+=over 4
+
+=item type
+
+The configuration type.
+
+=item name
+
+The configuration name.
+
+=item label
+
+A human-readable label (e.g. C<'base cloud config'> or C<"cloud config 'extra'">).
+
+=back
+
+B<Parameters:>
+
+=over 4
+
+=item $path
+
+The local filesystem path where the merged config file will be written.
+
+=item $type
+
+The configuration type to download.
+
+=item $name
+
+Optional. The configuration name to download. Defaults to C<'*'> (all
+configs of the given type).
+
+=back
+
+B<Returns:> In list context, a list of config entry hashrefs. In scalar
+context, an arrayref of the same entries.
+
+B<Errors:>
+
+Dies with C<"Could not determine available #C{$type} configurations: $err">
+when the BOSH configs query or JSON parsing fails.
+
+Dies with C<"No matching $type configurations defined on '#M{%s}' BOSH director">
+when the downloaded file is empty. C<%s> is the director alias.
+
+Dies with C<"No $_->{label} contents."> when a fetched configuration entry
+has empty content. C<$_-E<gt>{label}> is the human-readable label of the
+config entry (e.g. C<"base cloud config">).
+
+Dies with C<"BOSH returned multiple entries for $_->label - Genesis doesn't know how to process this">
+when the BOSH C<config> command returns more than one table row for a single
+named configuration. This indicates an unexpected BOSH API response (note
+DIRECTOR-6: in the double-quoted string, C<$_-E<gt>label> interpolates as the
+stringified hashref followed by the literal text C<-E<gt>label>, producing a
+garbled message like C<"HASH(0x...)-E<gt>label">. The intended code was
+C<$_-E<gt>{label}>. This code path is also unreachable due to DIRECTOR-5:
+an identical C<if ($rc || $json_err)> check earlier in the method calls
+C<bail()> first, so the second check never fires).
+
+Dies with C<"Failed to converge the active $type configurations: $err"> when
+C<spruce merge> fails while merging multiple configs. C<$type> is the config
+type and C<$err> is the error output.
+
+B<Examples:>
+
+  my @entries = $director->download_configs('/tmp/cloud.yml', 'cloud');
+  for my $e (@entries) {
+    print "Downloaded: $e->{label}\n";
+  }
+  # Returns: ({ type => 'cloud', name => 'default', label => 'base cloud config' }, ...)
+
+=head2 upload_config
+
+  $director->upload_config($config, $type, $name, $confirm);
+
+Uploads a configuration to the BOSH director. When C<$config> is a
+hashref, it is serialised to YAML before upload. When C<$config> is a
+string, it is written directly to a temporary file, then
+L</upload_config_from_file> is called.
+
+C<$name> defaults to C<'default'> when not provided.
+
+B<Note:> The return value of the inner L</upload_config_from_file> call
+is discarded (DIRECTOR-7, tracked in FWT-694).
+
+B<Parameters:>
+
+=over 4
+
+=item $config
+
+The configuration to upload. Either a hashref (serialised to YAML) or a
+YAML string.
+
+=item $type
+
+The configuration type (e.g. C<'cloud'>, C<'runtime'>, C<'cpi'>).
+
+=item $name
+
+Optional. The configuration name. Defaults to C<'default'>.
+
+=item $confirm
+
+Optional boolean. When true, the upload runs interactively and prompts
+for confirmation.
+
+=back
+
+B<Returns:> Nothing meaningful (return value discarded internally).
+
+B<Examples:>
+
+  $director->upload_config(\%cloud_config, 'cloud', 'default');
+  # Returns: nothing meaningful
+
+  $director->upload_config($runtime_yaml, 'runtime', 'global', 1);
+  # Returns: nothing meaningful
+
+=head2 upload_config_from_file
+
+  my ($out, $rc, $err) = $director->upload_config_from_file($path, $type, $name, $confirm);  # list context
+  my $ok               = $director->upload_config_from_file($path, $type, $name, $confirm);  # scalar context
+
+Uploads a configuration from a local file to the BOSH director.
+
+For C<runtime> configs, uses C<bosh update-runtime-config>; for all
+other types, uses C<bosh update-config>. When C<$confirm> is false, the
+C<-n> (non-interactive) flag is passed.
+
+In scalar context, returns a boolean success value and dies on failure.
+In list context, returns the raw output, exit code, and stderr without
+dying on failure.
+
+B<Note:> The bail-on-failure path is asymmetric: it fires only in scalar
+context (DIRECTOR-8).
+
+B<Parameters:>
+
+=over 4
+
+=item $path
+
+The local path of the YAML config file to upload.
+
+=item $type
+
+The configuration type (e.g. C<'cloud'>, C<'runtime'>, C<'cpi'>).
+
+=item $name
+
+Optional. The configuration name. Defaults to C<'default'>.
+
+=item $confirm
+
+Optional boolean. When true, the command runs interactively.
+
+=back
+
+B<Returns:> In list context, a three-element list C<($out, $rc, $err)>.
+In scalar context, C<1> on success or C<0> on failure.
+
+B<Errors:>
+
+Dies with C<"Failed to upload %s configuration to '#M{%s}' BOSH director: %s">
+in scalar context when the upload fails. C<%s> placeholders are the config
+name, director alias, and error output.
+
+B<Examples:>
+
+  # Scalar context: dies on failure
+  my $ok = $director->upload_config_from_file(
+    '/tmp/cloud.yml', 'cloud', 'default',
+  );
+  # Returns: 1 on success
+
+  # List context: returns raw result
+  my ($out, $rc, $err) = $director->upload_config_from_file(
+    '/tmp/runtime.yml', 'runtime', 'global',
+  );
+  # Returns: ($output_string, 0, '') on success
+
+=head2 delete_config
+
+  $director->delete_config($type, $name, $confirm);
+
+Deletes the named configuration from the BOSH director. Dies on failure.
+
+B<Parameters:>
+
+=over 4
+
+=item $type
+
+The configuration type.
+
+=item $name
+
+The configuration name.
+
+=item $confirm
+
+Optional boolean. When true, the command runs interactively.
+
+=back
+
+B<Returns:> C<1> on success.
+
+B<Errors:>
+
+Dies with C<"Failed to delete %s configuration from '#M{%s}' BOSH director: %s">
+when the delete command fails. C<%s> placeholders are the config name,
+director alias, and error output.
+
+B<Examples:>
+
+  $director->delete_config('cloud', 'extra');
+  # Returns: 1
+
+=head2 deploy
+
+  $director->deploy($manifest, %opts);
+
+Deploys the given manifest file against the director's current deployment.
+Runs interactively so BOSH output is streamed to the terminal.
+
+B<Parameters:>
+
+=over 4
+
+=item $manifest
+
+Path to the manifest YAML file to deploy.
+
+=item %opts
+
+A hash of options:
+
+=over 4
+
+=item flags
+
+An arrayref of additional BOSH flags to pass (e.g. C<['--recreate']>).
+Defaults to an empty arrayref.
+
+=item vars_file
+
+Optional path to a variables file. When provided, C<-l $vars_file> is
+appended to the flags.
+
+=back
+
+=back
+
+B<Returns:> The result of C<$self-E<gt>execute(...)>.
+
+B<Errors:>
+
+Dies with C<"No deployment name provided for BOSH Director in call to deploy()">
+when C<$self-E<gt>deployment()> is not set.
+
+Dies with C<"Missing manifest in call to deploy()"> when C<$manifest>
+is not provided.
+
+B<Examples:>
+
+  $director->deployment('cf-deployment');
+  $director->deploy('/path/to/cf.yml',
+    flags     => ['--recreate'],
+    vars_file => '/path/to/vars.yml',
+  );
+  # Returns: result of bosh deploy (output, exit code, stderr)
+
+=head2 run_errand
+
+  $director->run_errand($errand);
+
+Runs the named BOSH errand against the director's current deployment.
+Runs interactively and streams output to the terminal.
+
+Always returns C<1> regardless of the errand's actual exit code, because
+the execute result is discarded (DIRECTOR-4, tracked in FWT-694).
+
+B<Note:> The C<bug()> message for a missing errand name incorrectly reads
+C<"Missing errand name in call to deploy()"> instead of
+C<"run_errand()"> (DIRECTOR-3).
+
+B<Parameters:>
+
+=over 4
+
+=item $errand
+
+The name of the BOSH errand to run.
+
+=back
+
+B<Returns:> C<1>.
+
+B<Errors:>
+
+Dies with C<"No deployment name provided for BOSH Director in call to run_errand()">
+when C<$self-E<gt>deployment()> is not set.
+
+Dies with C<"Missing errand name in call to deploy()"> when C<$errand>
+is not provided.
+
+B<Examples:>
+
+  $director->deployment('cf-deployment');
+  $director->run_errand('smoke-tests');
+  # Returns: 1
+
+=head2 deployments
+
+  my $deployments = $director->deployments();
+
+Returns a hashref of all deployments on the BOSH director, keyed by
+deployment name.
+
+Each entry contains:
+
+=over 4
+
+=item releases
+
+An arrayref of release strings (name/version).
+
+=item stemcells
+
+An arrayref of stemcell strings (name/version).
+
+=item teams
+
+An arrayref of team name strings.
+
+=back
+
+B<Returns:> A hashref of C<< { $name => { releases => [...], stemcells => [...], teams => [...] } } >>.
+
+B<Examples:>
+
+  my $deps = $director->deployments();
+  for my $name (sort keys %$deps) {
+    print "$name: ", join(', ', @{$deps->{$name}{releases}}), "\n";
+  }
+  # Returns: { 'cf-deployment' => { releases => ['cf/1.0'], stemcells => ['...'], teams => [] }, ... }
+
+=head2 has_deployment
+
+  my $bool = $director->has_deployment($deployment);
+
+Returns true when the named deployment exists on the BOSH director.
+
+B<Parameters:>
+
+=over 4
+
+=item $deployment
+
+The deployment name to check.
+
+=back
+
+B<Returns:> True when the deployment exists, false otherwise.
+
+B<Examples:>
+
+  if ($director->has_deployment('cf-deployment')) {
+    print "CF is deployed\n";
+  }
+  # Returns: 1 if the deployment exists
+
+=head2 delete_deployment
+
+  my ($out, $rc, $err) = $director->delete_deployment(%opts);  # list context
+  my $ok               = $director->delete_deployment(%opts);  # scalar context
+
+Deletes the director's current deployment. When C<opts{dryrun}> is true,
+no BOSH command is run; in list context C<(undef, 0, undef)> is returned,
+and in scalar context C<1> is returned.
+
+B<Parameters:>
+
+=over 4
+
+=item %opts
+
+A hash of options:
+
+=over 4
+
+=item force
+
+Boolean. When true, C<--force> is passed to C<bosh delete-deployment>.
+
+=item dryrun
+
+Boolean. When true, logs the command that would run and returns without
+executing it.
+
+=back
+
+=back
+
+B<Returns:> In list context, a three-element list C<($out, $rc, $err)> or
+C<(undef, 0, undef)> in dryrun mode. In scalar context, a boolean (true
+on success, or C<1> in dryrun mode).
+
+B<Errors:>
+
+Dies with C<"No deployment name provided for BOSH Director in call to delete()">
+when no deployment name has been set.
+
+B<Examples:>
+
+  $director->deployment('old-deployment');
+
+  # Dry run
+  $director->delete_deployment(dryrun => 1);
+  # Returns: 1
+
+  # Live run
+  my $ok = $director->delete_deployment(force => 1);
+  # Returns: 1 on success
+
+=head2 cleanup
+
+  my ($out, $rc, $err) = $director->cleanup(%opts);  # list context
+  my $ok               = $director->cleanup(%opts);  # scalar context
+
+Runs C<bosh clean-up> against the director. In normal (non-dryrun) mode,
+the command runs interactively.
+
+In dryrun mode, C<bosh clean-up --dry-run --tty> is executed and the
+output is parsed into a formatted summary of unused releases, stemcells,
+and compiled packages, then printed via the C<info> logger. If no unused resources
+are found, C<"No unused resources found!"> is printed instead.
+
+B<Parameters:>
+
+=over 4
+
+=item %opts
+
+A hash of options:
+
+=over 4
+
+=item all
+
+Boolean. When true, C<--all> is passed to clean up all unused resources,
+including those from the last two deployments.
+
+=item keep-orphaned-disks
+
+Boolean. When true, C<--keep-orphaned-disks> is passed to preserve
+orphaned persistent disks.
+
+=item dryrun
+
+Boolean. When true, shows what would be removed without removing it.
+
+=back
+
+=back
+
+B<Returns:> In list context, a three-element list C<($out, $rc, $err)>.
+In scalar context, a boolean (true on success).
+
+B<Note:> In dryrun mode, the list-context C<$out> value is a reformatted
+summary of unused releases, stemcells, and compiled packages -- not the raw
+C<bosh clean-up --dry-run> output. The raw output is parsed, categorised,
+and colourised before being returned and printed via C<info>.
+
+B<Examples:>
+
+  # Preview what would be cleaned up
+  my $ok = $director->cleanup(dryrun => 1);
+  # Returns: 1
+
+  # Clean up everything
+  my $ok = $director->cleanup(all => 1);
+  # Returns: 1 on success
+
+=head2 stemcells
+
+  my %stemcells  = $director->stemcells();   # list context
+  my $stemcells  = $director->stemcells();   # scalar context
+
+Lists all stemcells uploaded to the BOSH director.
+
+In list context, returns a flat hash. In scalar context, returns a
+reference to the same hash.
+
+The hash is keyed by a composite ID in the form C<"$os@$version">.
+Each entry contains:
+
+=over 4
+
+=item id
+
+The composite C<"os@version"> identifier string.
+
+=item name
+
+The full stemcell name (e.g. C<'bosh-vsphere-esxi-ubuntu-jammy-go_agent'>).
+
+=item version
+
+The version string with any trailing C<*> stripped.
+
+=item active
+
+C<1> when the stemcell is the active (most-recent) version, C<0> otherwise.
+
+=item os
+
+The OS name (e.g. C<'ubuntu-jammy'>).
+
+=item cpis
+
+An arrayref of CPI names that have this stemcell. C<'E<lt>defaultE<gt>'> is
+used when no CPI is specified.
+
+=back
+
+B<Returns:> In list context, a hash. In scalar context, a hashref.
+
+B<Examples:>
+
+  my %sc = $director->stemcells();
+  for my $id (sort keys %sc) {
+    printf "  %s (active: %s)\n", $id, $sc{$id}{active} ? 'yes' : 'no';
+  }
+  # Returns: ('ubuntu-jammy@1.406' => { id => 'ubuntu-jammy@1.406', active => 1, ... }, ...)
+
+=head2 upload_stemcell
+
+  $director->upload_stemcell($stemcell, %opts);
+
+Uploads a stemcell to the BOSH director by delegating to
+C<$stemcell-E<gt>upload($self, %opts)>. The C<$stemcell> object is
+expected to be a C<Service::BOSH::Stemcell> instance.
+
+B<Parameters:>
+
+=over 4
+
+=item $stemcell
+
+A C<Service::BOSH::Stemcell> object to upload.
+
+=item %opts
+
+Optional options passed through to C<$stemcell-E<gt>upload>.
+
+=back
+
+B<Returns:> The return value of C<$stemcell-E<gt>upload($self, %opts)>.
+
+B<Errors:>
+
+Dies with C<"No stemcell provided in call to upload_stemcell()"> when
+C<$stemcell> is not provided.
+
+B<Examples:>
+
+  my $stemcell = Service::BOSH::Stemcell->new(...);
+  $director->upload_stemcell($stemcell);
+  # Returns: result of $stemcell->upload($director, %opts)
+
+=head2 check_network_lock
+
+  my $result = $director->check_network_lock(%opts);
+
+Reads the network claim lock from the Vault path
+C<$self-E<gt>exodus_path . ':network-claim-lock'> and returns a status
+hashref.
+
+When no lock exists, returns C<< { status => 'unlocked' } >>.
+
+When a lock is found and its age exceeds C<max_lock_age> (default 1800
+seconds), the status is C<'stale'>; otherwise it is C<'locked'>.
+
+B<Parameters:>
+
+=over 4
+
+=item %opts
+
+A hash of options:
+
+=over 4
+
+=item max_lock_age
+
+Maximum age in seconds before a lock is considered stale. Defaults to
+C<1800> (30 minutes).
+
+=back
+
+=back
+
+B<Returns:> A hashref with keys:
+
+=over 4
+
+=item status
+
+C<'unlocked'>, C<'locked'>, or C<'stale'>.
+
+=item lock
+
+The decoded lock data hashref (absent when status is C<'unlocked'>).
+Contains C<at>, C<user>, C<hostname>, C<pid>, and C<env>.
+
+=item age
+
+The age of the lock in seconds (absent when status is C<'unlocked'>).
+
+=item description
+
+A human-readable string describing when and by whom the lock was acquired
+(absent when status is C<'unlocked'>).
+
+=back
+
+B<Examples:>
+
+  my $result = $director->check_network_lock();
+  if ($result->{status} eq 'unlocked') {
+    $director->acquire_network_lock();
+  } elsif ($result->{status} eq 'stale') {
+    warn "Stale lock detected: $result->{description}\n";
+  }
+  # Returns: { status => 'unlocked' }
+  #       or { status => 'locked', lock => {...}, age => 42, description => '...' }
+
+=head2 acquire_network_lock
+
+  $director->acquire_network_lock();
+
+Acquires the network claim lock by writing a JSON lock record to the Vault
+at C<$self-E<gt>exodus_path . ':network-claim-lock'> via
+C<$self-E<gt>vault-E<gt>set(...)>. The lock record contains the timestamp,
+hostname, username, PID, and environment name.
+
+Dies when the lock is already held (even when it is stale; see
+DIRECTOR-10, tracked in FWT-694).
+
+B<Returns:> Nothing (Vault write is the only externally observable effect).
+
+B<Errors:>
+
+Dies with C<"Cannot acquire network claim lock: it was locked %s.\n">
+when the lock is already held. C<%s> is the human-readable lock
+description from L</check_network_lock>.
+
+B<Examples:>
+
+  $director->acquire_network_lock();
+  # Returns: nothing (or dies if already locked)
+  # Lock is now held; clear it when done:
+  $director->clear_network_lock();
+  # Returns: nothing
+
+=head2 network_locked_by_me
+
+  my $bool = $director->network_locked_by_me();
+
+Returns true when the current process holds the network claim lock. This
+is determined by comparing the lock's PID, hostname, username, and
+environment name against the current process's values.
+
+Returns false (C<0>) immediately when no lock is held.
+
+B<Returns:> True when the current process holds the lock, false otherwise.
+
+B<Examples:>
+
+  if ($director->network_locked_by_me()) {
+    # Safe to update network config
+    $director->clear_network_lock();
+  }
+  # Returns: 1 if this process holds the lock, 0 otherwise
+
+=head2 clear_network_lock
+
+  $director->clear_network_lock();
+
+Removes the network claim lock from the Vault by calling
+C<$self-E<gt>vault-E<gt>clear(...)>. Does not check whether the current
+process holds the lock before clearing.
+
+B<Returns:> Nothing.
+
+B<Examples:>
+
+  $director->clear_network_lock();
+
+=head2 run_on_instance
+
+  my ($result, $rc, $err) = $director->run_on_instance($command, %opts);  # list, non-interactive
+  my $result               = $director->run_on_instance($command, %opts);  # scalar, non-interactive
+  my $result               = $director->run_on_instance($command, %opts);  # interactive
+
+Runs a shell command on a single BOSH-managed VM instance via C<bosh ssh>.
+
+The target is specified via C<opts{target}> in C<"group/index"> or
+C<"group"> form. When no index is given, index C<0> is used.
+
+In interactive mode (C<opts{interactive}> true), the command streams
+directly to the terminal. The return value is always a hashref with keys
+C<stdout>, C<exit_code>, C<instance>, and C<interactive>.
+
+In non-interactive mode, C<bosh ssh --json --results> is used and the
+structured output is parsed. In list context, returns
+C<($result_hashref, $rc, $err)>. In scalar context, returns only the
+result hashref.
+
+B<Parameters:>
+
+=over 4
+
+=item $command
+
+The shell command to run on the target instance.
+
+=item %opts
+
+A hash of options:
+
+=over 4
+
+=item target
+
+Required. The target instance in C<"group/index"> or C<"group"> form.
+When no index is specified, defaults to index C<0>.
+
+=item interactive
+
+Boolean. When true, the command runs interactively and output is streamed
+to the terminal. Defaults to C<0>.
+
+=item stderr
+
+Boolean. When true, standard error is captured separately. Defaults to
+C<0>. Only used in non-interactive mode.
+
+=back
+
+=back
+
+B<Returns:> In interactive mode, a hashref with C<stdout>, C<exit_code>,
+C<instance>, and C<interactive>. In non-interactive list context, a
+three-element list C<($result, $rc, $err)> where C<$result> is a hashref
+of the parsed BOSH JSON output row. In non-interactive scalar context, the
+result hashref only.
+
+B<Errors:>
+
+Dies with C<"No command provided in call to run_on_instance()"> when
+C<$command> is not provided.
+
+Dies with C<"No target specified"> when C<opts{target}> is not set.
+
+B<Examples:>
+
+  # Non-interactive
+  my $result = $director->run_on_instance(
+    'cat /var/log/syslog',
+    target => 'api/0',
+  );
+  # Returns: hashref with stdout, exit_code, etc.
+
+  # Interactive
+  $director->run_on_instance(
+    '/bin/bash',
+    target      => 'api/0',
+    interactive => 1,
+  );
+  # Returns: { stdout => '', exit_code => 0, instance => 'api/0', interactive => 1 }
+
+=head2 run_on_instances
+
+  my $results = $director->run_on_instances($command, %opts);
+
+Runs a shell command on multiple BOSH-managed VM instances via
+C<bosh ssh>.
+
+When C<opts{targets}> is empty or absent, the command is run across all
+VMs in the deployment in a single C<bosh ssh> call. Otherwise, the
+command is run on each target in turn and results are accumulated.
+
+B<Parameters:>
+
+=over 4
+
+=item $command
+
+The shell command to run on each target instance.
+
+=item %opts
+
+A hash of options:
+
+=over 4
+
+=item targets
+
+Optional. An arrayref (or single string) of instance targets in
+C<"group/index"> or C<"group"> form. When empty or absent, the command
+runs on all VMs.
+
+=item stderr
+
+Boolean. When true, standard error is captured. Defaults to C<0>.
+
+=back
+
+=back
+
+B<Returns:> An arrayref of result row hashrefs from the parsed BOSH JSON
+output. Returns an empty arrayref when there are no results.
+
+B<Errors:>
+
+Dies with C<"No command provided in call to run_on_instances()"> when
+C<$command> is not provided.
+
+B<Examples:>
+
+  # Run on all VMs
+  my $rows = $director->run_on_instances('hostname');
+  for my $row (@$rows) {
+    print "$row->{instance}: $row->{stdout}\n";
+  }
+  # Returns: [{ instance => 'api/0', stdout => 'api-0', ... }, ...]
+
+  # Run on specific targets
+  my $rows = $director->run_on_instances(
+    'uptime',
+    targets => ['api/0', 'router/0'],
+  );
+  # Returns: arrayref of result hashrefs
+
+=head2 upload_to_instances
+
+  my $results = $director->upload_to_instances(%opts);
+
+Uploads a local file to one or more BOSH-managed VM instances via
+C<bosh scp>.
+
+Each target defaults to index C<0> when no index is specified. The remote
+path defaults to C</tmp/E<lt>basenameE<gt>> of the local file.
+
+B<Parameters:>
+
+=over 4
+
+=item %opts
+
+A hash of options:
+
+=over 4
+
+=item local_path
+
+Required. The local filesystem path of the file to upload.
+
+=item remote_path
+
+Optional. The destination path on the target instance. Defaults to
+C</tmp/E<lt>basename of local_pathE<gt>>.
+
+=item targets
+
+Required. An arrayref (or single string) of instance targets in
+C<"group/index"> or C<"group"> form.
+
+=item interactive
+
+Boolean. When true, C<bosh scp> runs interactively. Defaults to C<1>.
+
+=item recursive
+
+Boolean. When true, C<--recursive> is passed to C<bosh scp>.
+
+=back
+
+=back
+
+B<Returns:> An arrayref of result hashrefs, one per target. Each hashref
+contains C<target>, C<local_path>, C<remote_path>, C<stdout>, C<exit_code>,
+and C<stderr>.
+
+B<Errors:>
+
+Dies with C<"No local_path provided in call to upload_to_instances()">
+when C<opts{local_path}> is not set.
+
+Dies with C<"No targets specified"> when C<opts{targets}> is empty or
+absent.
+
+B<Examples:>
+
+  my $results = $director->upload_to_instances(
+    local_path  => '/tmp/my-script.sh',
+    remote_path => '/tmp/my-script.sh',
+    targets     => ['api/0', 'api/1'],
+  );
+  for my $r (@$results) {
+    printf "  %s: exit=%d\n", $r->{target}, $r->{exit_code};
+  }
+  # Returns: [{ target => 'api/0', exit_code => 0, ... }, ...]
+
+=head2 upload_to_instance
+
+  my $result = $director->upload_to_instance(%opts);
+
+Single-target convenience wrapper around L</upload_to_instances>.
+Accepts C<opts{target}> (singular) instead of C<opts{targets}> and
+returns the first result hashref directly rather than an arrayref.
+
+B<Parameters:>
+
+=over 4
+
+=item %opts
+
+Same options as L</upload_to_instances>, except use C<target> (singular)
+instead of C<targets>.
+
+=back
+
+B<Returns:> A single result hashref with C<target>, C<local_path>,
+C<remote_path>, C<stdout>, C<exit_code>, and C<stderr>.
+
+B<Examples:>
+
+  my $result = $director->upload_to_instance(
+    local_path => '/tmp/patch.sh',
+    target     => 'api/0',
+  );
+  print "Exit code: $result->{exit_code}\n";
+  # Returns: { target => 'api/0', exit_code => 0, ... }
+
+=head1 KNOWN ISSUES
+
+The following defects are tracked in FWT-694 and are documented here to
+prevent callers from relying on the current (incorrect) behavior.
+
+=over 4
+
+=item DIRECTOR-1 (critical)
+
+C<status()> line 312: C<my $err = $@ if $@> is syntactically valid Perl
+but produces undefined behavior. The variable C<$err> is declared
+conditionally, which means it may be undef even when C<$@> is set,
+depending on Perl's optimizer. This can mask proxy timeout errors.
+
+=item DIRECTOR-2 (high)
+
+C<deployment()> lines 214-219: setter guard never fires. The C<shift> on
+the preceding line has already consumed the second argument from C<@_> by
+the time the C<if @_> check runs, so extra arguments are silently ignored
+rather than triggering C<bug()>.
+
+=item DIRECTOR-3 (low)
+
+C<run_errand()> line 528: the error message says C<"Missing errand name in
+call to deploy()"> but should say C<run_errand()>.
+
+=item DIRECTOR-4 (medium)
+
+C<run_errand()> always returns C<1> regardless of the errand's exit code.
+The result of C<$self-E<gt>execute(...)> is discarded before the C<return 1>
+statement.
+
+=item DIRECTOR-5 (high)
+
+C<download_configs()> contains an unreachable dead code block (the second
+C<if ($rc || $json_err)> check at line 422 can never fire because an
+identical check above it already called C<bail()>).
+
+=item DIRECTOR-6 (medium)
+
+C<download_configs()> line 431: C<$_-E<gt>label> inside a double-quoted
+string interpolates C<$_> as the stringified hashref (e.g. C<HASH(0x...)>)
+followed by the literal text C<-E<gt>label>, producing a garbled error
+message. The correct form is C<$_-E<gt>{label}>.
+
+=item DIRECTOR-7 (medium)
+
+C<upload_config()> calls C<upload_config_from_file()> but discards its
+return value, so callers of C<upload_config()> cannot determine whether
+the upload succeeded.
+
+=item DIRECTOR-8 (medium)
+
+C<upload_config_from_file()> only calls C<bail()> on failure when invoked
+in scalar or void context. In list context, a failed upload is silently
+returned as C<($out, $rc, $err)> without any automatic error handling.
+Callers in list context must check C<$rc> explicitly.
+
+=item DIRECTOR-9 (medium)
+
+C<from_alias()> mutates C<$ENV{GENESIS_TRACE}=1> when C<$alias> is
+falsy. This is a debugging artifact that permanently enables trace logging
+for the remainder of the process.
+
+=item DIRECTOR-10 (medium)
+
+C<acquire_network_lock()> treats stale locks identically to active locks
+and cannot break them. If a lock is stale (exceeded C<max_lock_age>),
+the method still dies rather than replacing the stale lock.
+
+=item DIRECTOR-13 (low)
+
+C<new()> does not validate the C<url> option. If the URL is missing or
+malformed, the regex on line 31 silently produces C<undef> for C<schema>,
+C<host>, and C<port>. The object is constructed with these undefined values
+and subsequent calls to C<url()>, C<connect_and_validate()>, or C<status()>
+will behave unpredictably.
+
+=back
+
+=head1 SEE ALSO
+
+=over 4
+
+=item L<Service::BOSH>
+
+The parent class providing the C<execute>, C<dryrun_of>, and base
+C<environment_variables> methods.
+
+=item L<Service::BOSH::CreateEnvProxy>
+
+A sibling class providing a proxy director for C<bosh create-env> style
+deployments.
+
+=item L<Service::BOSH::Stemcell>
+
+The stemcell object used by L</upload_stemcell>.
+
+=item L<Service::Vault>
+
+The Vault client used for exodus data retrieval and network locking.
+
+=back
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

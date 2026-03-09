@@ -154,7 +154,7 @@ sub filter {
 					my $check =
 						($key eq 'path') ? $_->path :
 						($key eq 'type') ? $_->type :
-					  $_->has($key)    ? $_->get($key) : undef;
+						$_->has($key)    ? $_->get($key) : undef;
 
 					if (!defined($check) && ($re || !$negate)) {
 						#if $check is not defined and the filter is a regex or a equality, there can't be a match
@@ -354,11 +354,12 @@ sub generate_secrets {
 # regenerate_secrets - create new versions of existing secrets {{{
 sub regenerate_secrets {
 	my ($self,%opts) = @_;
-	my @update_args = ('rotate', {%opts{qw/level invalid indent/}, indent => '    '});
+	$opts{action} //= 'rotate';
+	my @update_args = ($opts{action}, {%opts{qw/level invalid indent/}, indent => '    '});
 	my ($no_prompt,$interactive) = delete(@opts{qw/no_prompt interactive/});
 	my $severity = ['','invalid','problem']->[delete($opts{invalid})||0];
 
-	$self->env->notify("rotating environment secrets...");
+	$self->env->notify($opts{notice}//"rotating environment secrets...");
 	info({pending => 1}, "[[  - >>loading existing secrets from source...");
 	my $t = time_exec(sub {
 			$self->store->fill($self->secrets);
@@ -393,8 +394,9 @@ sub regenerate_secrets {
 	if (!$no_prompt && !$interactive) {
 		my $permission = $self->notify(@update_args, 'prompt',
 			msg => sprintf(
-				"[[  - >>the following secrets under path '#C{%s}' will be rotated:\n%s",
+				"[[  - >>the following secrets under path '#C{%s}' will be %s:\n%s",
 				$self->store->base,
+				($opts{action} =~ s/e?$/ed/r =~ s/yed$/ied/r),
 				join("\n",
 					map {bullet($_, inline => 1, indent => 4)}
 					map {
@@ -412,7 +414,7 @@ sub regenerate_secrets {
 					@selected_secrets
 				)
 			),
-			prompt => "    Type 'yes' to rotate these secrets"
+			prompt => "    Type 'yes' to $opts{action} these secrets"
 		);
 		return ({abort => 1}) if $permission ne 'yes';
 		info "";
@@ -456,7 +458,7 @@ sub regenerate_secrets {
 			}
 			if (@command) {
 				$self->notify(@update_args, 'notify', msg=> "\nsaving user input ... ", nonl => 1) if ! $interactive;
-				my ($out,$rc) = $secret->process_command_output('rotate', $self->query({interactive => $interactive}, @command));
+				my ($out,$rc) = $secret->process_command_output('rotate', $self->store->service->query({interactive => $interactive}, @command));
 				$self->notify(@update_args, 'notify', msg=> "\nsaving user input ... ", nonl => 1) if $interactive;
 				$self->notify(@update_args, 'done-item', result => ($rc ? 'error': 'ok'));
 				last if $rc;
@@ -504,23 +506,13 @@ sub remove_secrets {
 			if ($check_entombed) {
 				# Check if the last manifest deployed is available in exodus
 				info({pending => 1}, "[[  - >>retrieving last deployed manifest to determine active entombed secrets ... ");
-				my ($source, $error);
+				my ($source, $errors);
 				my $t = time_exec(sub {
-					($last_manifest, $manifest_type, $source, $error) = $self->env->last_deployed_manifest;
+					($last_manifest, $manifest_type, undef, $source, $errors) =
+						$self->env->last_deployed_manifest(just => 'contents');
 				});
-				if ($error) {
-					my $msg;
-					if ($source eq 'exodus') {
-						$msg = $error eq 'not_found'
-							?	"[[    #R{[ERROR]} >>no deployment details found in exodus"
-							: "[[    #R{[ERROR]} >>failed to retrieve last deployed manifest from exodus: $error"
-					} elsif ($source eq 'file') {
-						$msg = $error eq 'checksum_mismatch'
-							? "[[    #R{[ERROR]} >>local deploy manifest does not match checksum in exodus"
-							: "[[    #R{[ERROR]} >>local deploy manifest not found"
-					} else {
-						$msg = "[[    #R{[ERROR]} >>failed to retrieve last deployed manifest: $error";
-					}
+				if ($errors && @$errors) {
+					my $msg= join("\n", map {"[[    #R{[ERROR]} >>$_"} @$errors);
 					info(
 						"#R{failed!}".pretty_duration($t, 0.5, 1.0).
 						"\n$msg".
@@ -615,6 +607,13 @@ sub remove_secrets {
 }
 
 # }}}
+# reset_secrets - reset the loaded secrets in the local store {{{
+sub reset_secrets {
+	my ($self,%opts) = @_;
+	$self->store->empty($self->secrets);
+}
+
+# }}}
 # notify - callback for notifying user with processing updates {{{
 sub notify {
 	my $self = shift;
@@ -645,6 +644,7 @@ sub notify {
 			'validate/warn'    => '#Y{warning!}',
 			ok                 => '#G{done.}',
 			'rotate/skipped'   => '#Y{skipped}',
+			'repair/skipped'   => '#Y{ok}',
 			'remove/skipped'   => '#Y{skipped}',
 			'remove/aborted'   => "#R{aborted} - #Yi{all remaining ${secret_label}s skipped}",
 			'add/imported'     => '#C{imported}',
@@ -653,11 +653,13 @@ sub notify {
 			'remove/missing'   => '#B{not present}',
 			missing            => '#R{missing!}'
 		};
-		push(@{$self->{__update_notifications__items}{$args{result}} ||= []},
-				 $self->{__update_notifications__item});
+		push(
+			@{$self->{__update_notifications__items}{$args{result}} ||= []},
+			$self->{__update_notifications__item}
+		);
 
 		if ("$action/$args{result}" eq 'remove/aborted') {
-			info({pending => 1}, "\r[2K");
+			info({pending => 1}, $ansi_reset_line);
 			my @updates = @{$self->{__update_notifications__last_start}};
 			$updates[0] .= $map->{"$action/$args{result}"};
 			info(@updates);
@@ -672,13 +674,16 @@ sub notify {
 			info("%s%s", $indent_pad, join("\n$indent_pad", @lines)) if @lines;
 			info("") if $level eq 'full' || scalar @lines;
 		}
-		info({pending => 1}, "\r[2K") unless $level eq 'full';
+		info(
+			{pending => 1},
+			$ansi_reset_line
+		) unless $level eq 'full';
 
 	} elsif ($state eq 'start-item') {
 		$self->{__update_notifications__idx}++;
 		my $w = length($self->{__update_notifications__total});
 		my $long_warning='';
-		if ($args{label} eq "Diffie-Hellman key exchange parameters" && $action =~ /^(add|rotate)$/) {
+		if ($args{label} eq "Diffie-Hellman key exchange parameters" && $action =~ /^(add|rotate|repair)$/) {
 			$long_warning = ($level eq 'line' ? " - " : "; ")."#Yi{may take a very long time}"
 		}
 		$self->{__update_notifications__last_start} = [
@@ -689,7 +694,7 @@ sub notify {
 			csprintf( ($args{path} =~ /^(.*?):([^: ]*)(?: \((.*)\))?$/)
 				? "#C{$1}:#c{$2}".($3 ? " #mi{$3}" : '')
 				: "#C{$args{path}}"
-			),	
+			),
 			$args{label} . ($level eq 'line' || !$args{details} ? '' : " - $args{details}"),
 			$long_warning
 		];
@@ -715,7 +720,10 @@ sub notify {
 			pretty_duration(gettimeofday - $self->{__update_notifications__startwait},0,0,'',' - ','Ki')
 		) if ($args{result} && ($args{result} eq 'error' || $level eq 'full'));
 		error("Encountered error: %s", $args{msg}) if ($args{result} eq 'error');
-		info {pending => 1}, "\r[2K" unless $level eq 'full';
+		info(
+			{pending => 1},
+			$ansi_reset_line
+		) unless $level eq 'full';
 
 	} elsif ($state eq 'completed') {
 		my @extra_errors = @{$args{errors} || []};
@@ -775,14 +783,24 @@ sub notify {
 			"terminal.  Use #C{-y|--no-prompt} option to provide confirmation to ".
 			"bypass this limitation."
 		);
-		print "[s\n[u[B[A[s"; # make sure there is room for a newline, then restore and save the current cursor
+		# make sure there is room for a newline, then restore and save the current cursor
+		printf(
+			"%s\n%s",
+			$ansi_save_cursor,
+			$ansi_restore_cursor.$ansi_cursor_down.$ansi_cursor_up.$ansi_save_cursor
+		);
 		my $response = Genesis::UI::__prompt_for_line($args{prompt}, $args{validation}, $args{err_msg}, $args{default}, !$args{default});
-		print "[u[0K" unless $args{noclear};
+		print $ansi_restore_cursor.$ansi_clear_to_eol unless $args{noclear};
 		return $response;
 	} elsif ($state eq 'prompt') {
 		my $title = '';
 		if ($args{class}) {
-			$title = sprintf("\r[2K\n#%s{[%s]} ", $args{class} eq 'warning' ? "Y" : '-', uc($args{class}));
+			$title = sprintf(
+				"%s\n#%s{[%s]} ",
+				$ansi_reset_line,
+				$args{class} eq 'warning' ? "Y" : '-',
+				uc($args{class})
+			);
 		}
 		info "%s%s", $title, $args{msg};
 		die_unless_controlling_terminal(
@@ -936,7 +954,7 @@ sub _order_x509_secrets {
 			push @$errored_certs, $cert->reject( $cert->label => 'Cyclical CA signage detected');
 			next;
 		}
-		if (($kit_id//'') !~ /^cf\/2.*/ && $issuer) { # cf/v2.x kits have a CA subject DN error inherited from upstream
+		if (($kit_id//'') !~ /^cf\/[2-9]\.*/ && $issuer) { # cf/v2.x (and higher) kits have a CA subject DN error inherited from upstream
 			my $subject_cn = $cert->get('subject_cn',(@{$cert->get('names' => [])})[0]);
 			my $issuer_cn  = $issuer->get('subject_cn',(@{$issuer->get('names' => [])})[0]);
 			push(@$errored_certs, $cert->reject(
@@ -957,7 +975,7 @@ sub _unused_vault_secrets {
 	# Note: the intention of this method is to find unused secrets under the vault
 	# path for the kit.  It will not find secrets that may have been once used by
 	# the environment that are in the vault but under a different root path.
-	
+
 	my ($self, %opts) = @_;
 
 	my $vault_prefix = $self->store->base =~ s/^\///r;
@@ -1081,7 +1099,7 @@ sub _unused_entombed_secrets {
 	}
 
 	# Get the list of entombed secrets from the last manifest
-	my @used_paths = uniq sort 
+	my @used_paths = uniq sort
 		map {my @result = $_ =~ /\(\((.*?)\)\)/g; @result}
 		grep {$_ && /^\(\(genesis-entombed/}
 		values %{flatten({}, undef, $last_manifest)};
@@ -1217,7 +1235,7 @@ sub _remove_secrets {
 		);
 		info('');
 		return ({abort => 1}, "Quit!\n") if ($proceed ne 'yes');
-	} else {
+	} elsif (!$opts{no_header}) {
 		$self->env->notify($header);
 	}
 
@@ -1259,6 +1277,7 @@ sub _remove_secrets {
 				$self->notify('remove', 'done-item', result => 'aborted', secret_label => $label);
 				my $results = $self->notify('remove', 'completed', msg => "$label removed");
 
+				$self->store->clear_data;
 				return ({
 					abort => 1,
 					skipped => $self->{__update_notifications__total} - $self->{__update_notifications__idx} + 1 + scalar(@{$self->{__update_notifications__items}{skipped}//[]}),
@@ -1291,6 +1310,7 @@ sub _remove_secrets {
 				"Interactive removal of secrets is not yet supported"
 			) if $cmd_interactive;
 			($out, $rc) = $secret->process_command_output('remove', $self->store->service->query(@command));
+			$secret->reset;
 		} else {
 			bug "Unknown secret type for removal";
 		}
@@ -1302,6 +1322,7 @@ sub _remove_secrets {
 		}
 		last if ($rc);
 	}
+	$self->store->clear_data;
 	return $self->notify('remove', 'completed', msg => sprintf(
 		"$label%s removed", scalar(@$selected_secrets) == 1 ? '' : 's')
 	);

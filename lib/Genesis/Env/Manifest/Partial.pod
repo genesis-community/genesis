@@ -1,0 +1,142 @@
+=encoding utf8
+
+=head1 NAME
+
+Genesis::Env::Manifest::Partial - Partially evaluated manifest for debugging spruce operator issues
+
+=head1 SYNOPSIS
+
+  use Genesis::Env::Manifest::Partial;
+
+  # Partial manifests are created by the builder, not directly
+  my $manifest = $builder->partial();
+
+  # Access manifest content -- may contain unevaluated spruce operators
+  my $data = $manifest->data();   # returns parsed YAML as hashref
+  my $file = $manifest->file();   # returns path to manifest YAML file
+
+  # Identify this manifest type
+  print $manifest->type();        # prints 'partial'
+  print $manifest->label();       # prints 'partial'
+
+=head1 DESCRIPTION
+
+C<Genesis::Env::Manifest::Partial> is a subclass of L<Genesis::Env::Manifest>
+that produces a manifest using C<eval=adaptive> mode, allowing spruce to
+merge the manifest even when some spruce operators cannot be fully evaluated.
+The resulting manifest may contain literal spruce operator expressions that
+would normally be resolved.
+
+This manifest type is intended for debugging: it lets developers inspect
+the partially merged YAML structure when spruce operators cannot be resolved
+due to missing Vault values, unavailable cloud-config, or other transient
+conditions. It is not suitable for deployment.
+
+Secrets are not redacted in this manifest type. The merge environment
+explicitly sets C<REDACT> to C<undef> so that Vault operator output
+remains visible in the output.
+
+The source file list includes all standard layers: initiation file, kit
+files, cloud config (treated as optional), environment files, and the
+conclusion file. Cloud config is made optional so the merge proceeds even
+when no cloud config is available, which is common when debugging partial
+manifests.
+
+=head1 METHODS
+
+=head2 description
+
+  my $str = $manifest->description();
+
+Returns the human-readable description of this manifest type.
+
+B<Returns:> the string C<"Partially evaluated manifest for debugging purposes
+- will contain any unevaluateable spruce operators">.
+
+  my $desc = $manifest->description();
+  print $desc;
+  # Returns: 'Partially evaluated manifest for debugging purposes - will contain any unevaluateable spruce operators'
+
+=head2 merge_options
+
+  my $opts = $manifest->merge_options();
+
+Returns the spruce merge options hash reference for this manifest type.
+Sets C<eval> to C<'adaptive'>, which instructs spruce to merge the manifest
+even when some operators cannot be evaluated, leaving them in place rather
+than failing.
+
+B<Returns:> a hash reference of the form C<{ eval => 'adaptive' }>.
+
+  my $opts = $manifest->merge_options();
+  print $opts->{eval};  # Returns: 'adaptive'
+
+=head2 merge_environment
+
+  my $env = $manifest->merge_environment();
+
+Returns the environment variable hash reference used during the spruce
+merge. The returned hash merges three sources:
+
+=over 4
+
+=item * The builder's full merge environment (from
+C<< $manifest->builder->full_merge_env >>)
+
+=item * The Vault environment variables (from
+C<< $manifest->env->vault->env >>)
+
+=item * C<REDACT> set to C<undef>, disabling secret redaction so that
+Vault operator output remains visible in the partial manifest
+
+=back
+
+B<Returns:> a hash reference of environment variable names to values.
+
+  my $env = $manifest->merge_environment();
+  print defined($env->{REDACT}) ? 'redacted' : 'not redacted';
+  # Returns: 'not redacted'
+
+=head2 source_files
+
+  my $files = $manifest->source_files();
+
+Returns an array reference of the ordered merge-source file paths used to
+build this manifest. The merge order is: initiation file, kit files, cloud
+config files (optional, so the merge proceeds even when no cloud config is
+available), environment files, and conclusion file.
+
+B<Returns:> An array reference of absolute file path strings.
+
+  my $files = $manifest->source_files();
+  print ref($files);    # prints 'ARRAY'
+
+=head1 INTERNAL METHODS
+
+These methods are internal to the implementation. They may change without
+notice and should not be called directly.
+
+=head2 _merge
+
+  my ($data, $file) = $manifest->_merge();
+
+Performs the manifest merge by delegating to
+C<< $manifest->builder->merge() >> with this manifest object, the source
+files from C<source_files>, the merge options from C<merge_options>, and
+the environment variables from C<merge_environment>.
+
+Returns the merged data and the path to the written YAML file. Warnings
+and errors reported by the merge are currently not acted upon.
+
+B<Returns:> a two-element list of C<($data, $file)>, where C<$data> is the
+parsed YAML hashref and C<$file> is the path to the written YAML file.
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

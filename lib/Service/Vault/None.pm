@@ -19,11 +19,17 @@ sub new {
 
 ### Instance Methods {{{
 
-sub DESTROY {} # Prevents AUTOLOAD from causing a problem
+sub DESTROY {
+	# Prevents AUTOLOAD from causing a problem
+}
 
-sub name {return ''}
+sub name {
+	return '';
+}
 
-sub status {return 'absent'}
+sub status {
+	return 'absent';
+}
 
 # AUTOLOAD - errors out when a normal vault method is called {{{
 our $AUTOLOAD;

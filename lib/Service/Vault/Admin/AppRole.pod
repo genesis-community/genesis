@@ -1,0 +1,210 @@
+=head1 NAME
+
+Service::Vault::Admin::AppRole - Sub-service for managing Vault AppRole authentication
+
+=head1 SYNOPSIS
+
+  use Service::Vault::Admin;
+
+  my $vault = Service::Vault->connect('https://vault.example.com');
+  my $admin = Service::Vault::Admin->new($vault);
+
+  # Access via the parent admin object
+  my $approles = $admin->approles();
+
+  # Enable AppRole auth method if not already active
+  $approles->enable();
+
+  # Check whether the auth method is active
+  if ($approles->enabled()) {
+    say 'AppRole auth is enabled';
+  }
+
+  # List all defined AppRoles
+  my @roles = $approles->list();
+
+  # Check whether a specific role exists
+  if ($approles->exists('concourse')) {
+    say 'concourse AppRole is present';
+  }
+
+=head1 DESCRIPTION
+
+C<Service::Vault::Admin::AppRole> is a sub-service of C<Service::Vault::Admin>
+that provides low-level AppRole operations against a Vault instance. It handles
+enabling the AppRole auth method, querying its status, listing defined roles,
+and checking whether a named role exists.
+
+Instances of this class are not normally constructed directly. Access them
+through the C<< $admin->approles() >> accessor on a C<Service::Vault::Admin>
+object.
+
+=head1 METHODS
+
+=head2 new
+
+  my $approle_svc = Service::Vault::Admin::AppRole->new($admin);
+
+Creates a new C<Service::Vault::Admin::AppRole> instance wrapping the provided
+admin object.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$admin>
+
+A C<Service::Vault::Admin> object (or subclass). Must be defined and its ref
+must match C</^Service::Vault::Admin/>.
+
+=back
+
+B<Returns:> A blessed C<Service::Vault::Admin::AppRole> object.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Service::Vault::Admin::AppRole requires a Service::Vault::Admin object">
+
+Thrown when C<$admin> is undefined or is not a C<Service::Vault::Admin>
+instance.
+
+=back
+
+B<Examples:>
+
+  my $vault = Service::Vault->connect('https://vault.example.com');
+  my $admin = Service::Vault::Admin->new($vault);
+  my $approle_svc = Service::Vault::Admin::AppRole->new($admin);
+  # Returns: a Service::Vault::Admin::AppRole object
+
+=head2 vault
+
+  my $vault = $approle_svc->vault();
+
+Returns the underlying C<Service::Vault> object.
+
+B<Returns:> The C<Service::Vault> object associated with this instance.
+
+B<Examples:>
+
+  my $vault = $approle_svc->vault();
+  # Returns: the Service::Vault object used to construct the parent Admin instance
+
+=head2 enabled
+
+  my $bool = $approle_svc->enabled();
+
+Checks whether the AppRole auth method is enabled in Vault by listing
+all active auth methods and checking for an C<approle/> entry.
+
+B<Returns:> A true value if the C<approle/> auth method is present, false
+otherwise.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Failed to list auth methods: $err">
+
+Thrown when the Vault command to list auth methods exits with a non-zero status.
+C<$err> is the error output from the command.
+
+=back
+
+B<Examples:>
+
+  if ($approle_svc->enabled()) {
+    say 'AppRole auth method is active';
+  } else {
+    say 'AppRole auth method is not enabled';
+  }
+  # Returns: 1 if enabled, '' or undef if not
+
+=head2 enable
+
+  $approle_svc->enable();
+
+Ensures the AppRole auth method is enabled in Vault. If already enabled,
+returns without changes. Otherwise runs C<vault auth enable approle> to
+activate it.
+
+B<Returns:> C<1> in all cases.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Failed to enable AppRole auth method: $err">
+
+Thrown when the C<vault auth enable approle> command exits with a non-zero
+status. C<$err> is the error output from the command.
+
+=back
+
+B<Examples:>
+
+  $approle_svc->enable();
+  # Returns: 1
+
+  # Idempotent - safe to call even if already enabled
+  $approle_svc->enable();
+  $approle_svc->enable();
+  # Returns: 1
+
+=head2 list
+
+  my @roles = $approle_svc->list();
+
+Returns a list of all AppRole names defined in Vault under
+C<auth/approle/role>. Stderr is suppressed to avoid noise when no roles
+exist.
+
+B<Returns:> A list of role name strings, or an empty list if the Vault
+command fails or no roles exist.
+
+B<Examples:>
+
+  my @roles = $approle_svc->list();
+  for my $role (@roles) {
+    say "Role: $role";
+  }
+  # Returns: ('concourse', 'genesis-pipelines') or ()
+
+=head2 exists
+
+  my $bool = $approle_svc->exists($role_name);
+
+Checks whether an AppRole with the given name is defined in Vault. Internally
+calls C<list()> and searches for an exact match.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$role_name>
+
+The name of the AppRole to look up. Required.
+
+=back
+
+B<Returns:> A true value (the count of matching entries from C<grep>) if the
+named role exists, or an empty string if it does not.
+
+B<Examples:>
+
+  if ($approle_svc->exists('concourse')) {
+    say 'concourse role is defined';
+  }
+  # Returns: 1 if the role exists, '' if not
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

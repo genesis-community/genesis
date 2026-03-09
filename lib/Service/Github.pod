@@ -1,0 +1,988 @@
+=encoding utf8
+
+=head1 NAME
+
+Service::Github - GitHub API client for kit release discovery and download
+
+=head1 SYNOPSIS
+
+  use Service::Github;
+
+  # Default client (github.com, genesis-community org)
+  my $gh = Service::Github->new();
+
+  # Custom organisation or enterprise host
+  my $gh = Service::Github->new(
+    domain => 'github.example.com',
+    org    => 'my-org',
+    tls    => 'yes',
+    label  => 'My GitHub',
+  );
+
+  # Check connectivity
+  my $err = $gh->check();
+  die $err if $err;
+
+  # List available kit names
+  my $names = $gh->repo_names(qr/^.*-kit$/);
+
+  # Download the latest release of a kit
+  my ($name, $version, $file) = $gh->fetch_release('cf-kit', 'latest', '/tmp');
+
+=head1 DESCRIPTION
+
+C<Service::Github> provides a GitHub API client tailored for Genesis kit
+release management. It handles credential negotiation (HTTP Basic auth or
+Bearer token), paginated repository and release listing, version-specific
+release fetching, and SSH key retrieval for user validation.
+
+The client targets GitHub.com by default but can be pointed at GitHub
+Enterprise or other hosts that expose a GitHub-compatible REST API
+(serving the API under C<https://api.E<lt>domainE<gt>>) by supplying
+the C<domain> option.
+
+B<Authentication> is driven by two environment variables:
+
+=over 4
+
+=item C<GITHUB_USER>
+
+GitHub username for HTTP Basic authentication. Used only when
+C<GITHUB_AUTH_TOKEN> is also set.
+
+=item C<GITHUB_AUTH_TOKEN>
+
+Personal access token (PAT). When C<GITHUB_USER> is also set, credentials
+are sent as HTTP Basic (C<user:token>). When C<GITHUB_USER> is absent,
+the token is sent as a Bearer header. When neither variable is set, requests
+are made unauthenticated (subject to stricter rate limits).
+
+=back
+
+B<Caching:> C<repos()> caches its result in the object and re-fetches only
+when the C<$refresh> flag is passed. C<get_release_info()> maintains two
+separate caches: one for full release lists (keyed by repository name) and
+one for individual version lookups (keyed by repository name and version
+string). See L</KNOWN ISSUES> for important cache-interaction defects.
+
+=head1 KNOWN ISSUES
+
+The following defects are tracked in FWT-707 and are documented here so
+that callers are aware of the current behaviour.
+
+=over 4
+
+=item GH-1 (critical) E<mdash> B<RESOLVED>
+
+The premature early-return cache check in C<get_release_info()> has been
+removed. The correct guard at line 204 now handles all cache-hit logic.
+
+=item GH-2 (critical) E<mdash> B<RESOLVED>
+
+All C<@$versions[0]> occurrences replaced with C<$versions-E<gt>[0]>.
+
+=item GH-3 (medium) E<mdash> B<RESOLVED>
+
+C<releases()> now dereferences C<repo_names()> correctly via
+C<@{$self-E<gt>repo_names}>.
+
+=item GH-4 (medium) E<mdash> B<RESOLVED>
+
+C<get_release_info()> now checks C<ref($results) eq 'ARRAY'> before
+pushing, and records an error for unexpected non-array responses.
+
+=item GH-5 (medium)
+
+C<new()>: the C<tls =E<gt> 'skip'> option is intended to disable TLS
+certificate verification, but only C<get_user_ssh_keys()> checks
+C<$self-E<gt>{tls}> to set the C<skip_verify> parameter in the underlying
+HTTP call. All other API methods (C<check>, C<repos>, C<get_release_info>)
+hard-code C<0> for the skip_verify argument, so TLS verification is
+always performed regardless of the C<tls> setting.
+
+=item GH-6 (medium)
+
+C<get_release_info()> lines 194 and 205: on a cache hit, the method
+returns only the cached C<\@results> arrayref without a second
+C<\@errors> element. The normal return path (lines 301-305) returns a
+two-element list C<(\@results, \@errors)>. Callers that unpack both
+values on a cache hit will receive C<undef> for C<\@errors>.
+
+=item GH-7 (medium)
+
+C<latest_version_of()> line 426: passes C<include_prerelease> (singular)
+to C<versions()>, but C<versions()> at line 328 checks
+C<include_prereleases> (plural). The key-name mismatch means pre-release
+filtering has no effect when calling C<latest_version_of()>.
+
+=back
+
+=head1 CLASS METHODS
+
+=head2 new
+
+  my $gh = Service::Github->new(%config);
+
+Constructs and returns a new C<Service::Github> object. All parameters are
+optional and fall back to defaults when omitted.
+
+B<Parameters:>
+
+=over 4
+
+=item domain
+
+The GitHub (or GitHub Enterprise) domain. Defaults to C<'github.com'>.
+
+=item org
+
+The GitHub organisation whose repositories are queried. Defaults to
+C<'genesis-community'>.
+
+=item tls
+
+TLS mode for HTTPS connections. Accepted values are C<'yes'> (verify
+certificates), C<'no'> (use plain HTTP), and C<'skip'> (HTTPS but skip
+certificate verification). Any other value is normalised to C<'skip'>.
+Defaults to C<'yes'>.
+
+B<Note:> In the current implementation, C<'skip'> is only honoured by
+C<get_user_ssh_keys>; most API methods hard-code TLS verification
+regardless of this setting. See GH-5 in L</KNOWN ISSUES>.
+
+=item label
+
+Optional human-readable label for this connection, used in progress messages
+and error output. Defaults to C<"E<lt>domainE<gt>/E<lt>orgE<gt>">.
+
+=back
+
+B<Returns:> A blessed C<Service::Github> object.
+
+B<Examples:>
+
+  # Default client — github.com / genesis-community
+  my $gh = Service::Github->new();
+  # Returns: a Service::Github object
+
+  # Enterprise client with explicit label
+  my $gh = Service::Github->new(
+    domain => 'github.example.com',
+    org    => 'acme',
+    tls    => 'yes',
+    label  => 'ACME GitHub',
+  );
+  # Returns: a Service::Github object
+
+=head1 METHODS
+
+=head2 label
+
+  my $str = $gh->label();
+
+Returns the human-readable label for this GitHub connection. When a C<label>
+was supplied to C<new>, that value is returned. Otherwise, returns a string
+in the form C<"E<lt>domainE<gt>/E<lt>orgE<gt>">.
+
+B<Returns:> A string such as C<'github.com/genesis-community'>.
+
+B<Examples:>
+
+  my $gh = Service::Github->new();
+  print $gh->label();
+  # Returns: 'github.com/genesis-community'
+
+=head2 base_url
+
+  my $url = $gh->base_url();
+
+Returns the base API URL used for all GitHub API requests. The scheme is
+C<https://> unless TLS mode is C<'no'>, in which case C<http://> is used.
+The host is always prefixed with C<api.>, e.g. C<https://api.github.com>.
+
+B<Returns:> A string such as C<'https://api.github.com'>.
+
+B<Examples:>
+
+  my $gh = Service::Github->new();
+  print $gh->base_url();
+  # Returns: 'https://api.github.com'
+
+=head2 repos_url
+
+  my $url = $gh->repos_url($page);
+
+Returns the GitHub API URL for listing repositories under the configured
+organisation. Appends a C<?page=N> query parameter when C<$page> is given.
+
+B<Parameters:>
+
+=over 4
+
+=item $page
+
+Optional. Page number for paginated results.
+
+=back
+
+B<Returns:> A URL string such as
+C<'https://api.github.com/users/genesis-community/repos'>.
+
+B<Examples:>
+
+  my $url = $gh->repos_url();
+  # Returns: 'https://api.github.com/users/genesis-community/repos'
+
+  my $url = $gh->repos_url(2);
+  # Returns: 'https://api.github.com/users/genesis-community/repos?page=2'
+
+=head2 releases_url
+
+  my $url = $gh->releases_url($name, $page);
+
+Returns the GitHub API URL for listing releases of a repository under the
+configured organisation. Appends C<?page=N> when C<$page> is given.
+
+B<Parameters:>
+
+=over 4
+
+=item $name
+
+Repository name within the organisation.
+
+=item $page
+
+Optional. Page number for paginated results.
+
+=back
+
+B<Returns:> A URL string.
+
+B<Examples:>
+
+  my $url = $gh->releases_url('cf-kit');
+  # Returns: 'https://api.github.com/repos/genesis-community/cf-kit/releases'
+
+  my $url = $gh->releases_url('cf-kit', 3);
+  # Returns: 'https://api.github.com/repos/genesis-community/cf-kit/releases?page=3'
+
+=head2 release_version_urls
+
+  my $urls = $gh->release_version_urls($name, $version);
+
+Returns an arrayref of two GitHub API URLs for fetching a specific release
+by tag. Both the bare version (e.g. C<1.2.3>) and the C<v>-prefixed variant
+(e.g. C<v1.2.3>) are included, since either form may be used as the tag
+name. Any leading C<v> in C<$version> is stripped before constructing the
+pair.
+
+B<Parameters:>
+
+=over 4
+
+=item $name
+
+Repository name within the organisation.
+
+=item $version
+
+Version string. A leading C<v> is stripped before constructing the URLs.
+
+=back
+
+B<Returns:> An arrayref of two URL strings, e.g.
+C<['...releases/tags/1.2.3', '...releases/tags/v1.2.3']>.
+
+B<Examples:>
+
+  my $urls = $gh->release_version_urls('cf-kit', 'v1.2.3');
+  # Returns: [
+  #   'https://api.github.com/repos/genesis-community/cf-kit/releases/tags/1.2.3',
+  #   'https://api.github.com/repos/genesis-community/cf-kit/releases/tags/v1.2.3',
+  # ]
+
+=head2 check
+
+  # Scalar context — undef on success, error string on failure
+  my $err = $gh->check($url, $ref);
+
+  # List context — returns ($http_code, $error_string)
+  my ($code, $err) = $gh->check($url, $ref);
+
+Performs a C<HEAD> request against the given URL (defaulting to
+C<repos_url()>) to verify connectivity and authorization. Returns C<undef>
+(scalar) or C<(200, undef)> (list) on success.
+
+B<Parameters:>
+
+=over 4
+
+=item $url
+
+Optional. The URL to probe. Defaults to C<$gh-E<gt>repos_url()>.
+
+=item $ref
+
+Optional. A human-readable label for the URL used in error messages.
+Defaults to C<$url>.
+
+=back
+
+B<Returns:>
+
+In scalar context, returns C<undef> on success, or an error string on
+failure. The error string describes the specific HTTP status:
+
+=over 4
+
+=item *
+
+HTTP 404: C<"Could not find E<lt>refE<gt>; are you able to route to the Internet?\n">
+
+=item *
+
+HTTP 403: C<"Access forbidden trying to reach E<lt>refE<gt>; throttling may be in effect.  Set your GITHUB_USER and GITHUB_AUTH_TOKEN to prevent throttling.\n">
+
+=item *
+
+Other non-200: C<"Could not read E<lt>refE<gt> at E<lt>urlE<gt>; returned (E<lt>codeE<gt>):\n E<lt>msgE<gt>\n">
+
+=back
+
+In list context, returns a two-element list C<($http_code, $error_string)>
+where C<$error_string> is C<undef> on success.
+
+B<Examples:>
+
+  # Scalar context — simple success/failure check
+  my $err = $gh->check();
+  die "GitHub unreachable: $err" if $err;
+  # Returns: undef on success
+
+  # List context — inspect the HTTP status code
+  my ($code, $err) = $gh->check($gh->releases_url('cf-kit'));
+  if ($code == 404) {
+    print "Repository not found\n";
+  }
+  # Returns: (200, undef) on success
+
+=head2 get_authorized_user
+
+  my $login = $gh->get_authorized_user();
+
+Returns the GitHub login name for the credential currently in use. Calls
+the C</user> GitHub API endpoint and extracts the C<login> field from the
+JSON response.
+
+Returns C<undef> when no credentials are configured (i.e., unauthenticated
+mode). Returns an empty string C<''> when credentials are present but do
+not match the HTTP Basic or Bearer pattern (which should not occur in normal
+operation).
+
+B<Returns:> The GitHub login string (e.g. C<'octocat'>), an empty string,
+or C<undef>.
+
+B<Errors:>
+
+Dies with C<"Failed to retrieve user information from Github: %s"> when the
+API returns a non-200 status. C<%s> is the HTTP status code.
+
+Dies with C<"Failed to read user information from Github: %s"> when the
+response body cannot be parsed as JSON. C<%s> is the parse error.
+
+B<Examples:>
+
+  my $login = $gh->get_authorized_user();
+  if (defined $login) {
+    print "Authenticated as: $login\n";
+  } else {
+    print "Unauthenticated\n";
+  }
+  # Returns: 'octocat' when authenticated
+
+=head2 repos
+
+  my $repos = $gh->repos($refresh);
+
+Returns an arrayref of all repository objects for the configured organisation,
+fetched from the GitHub API. The result is cached in the object after the
+first call; pass a true value for C<$refresh> to discard the cache and
+re-fetch.
+
+Each repository object is a hash reference with the fields returned by the
+GitHub API (e.g. C<name>, C<full_name>, C<html_url>, C<private>, etc.).
+Pagination is handled automatically.
+
+B<Parameters:>
+
+=over 4
+
+=item $refresh
+
+Optional. If true, discards any cached repository list and re-fetches from
+the API.
+
+=back
+
+B<Returns:> An arrayref of repository hash references.
+
+B<Errors:>
+
+Dies with the error string from C<check()> (appended with C<"\n">) if the
+organisation's repository endpoint is not reachable.
+
+Dies with C<"Failed to read repository information from #M{%s} org: %s">
+if the API response cannot be parsed as JSON. The first C<%s> is the
+connection label; the second is the parse error.
+
+B<Examples:>
+
+  my $repos = $gh->repos();
+  print scalar(@$repos), " repositories found\n";
+  # Returns: arrayref of GitHub repository objects
+
+  # Force a cache refresh
+  my $fresh = $gh->repos(1);
+  # Returns: fresh arrayref from the API
+
+=head2 repo_names
+
+  my $names = $gh->repo_names($filter);
+
+Returns an arrayref of repository names for the configured organisation,
+optionally filtered by a regular expression.
+
+B<Parameters:>
+
+=over 4
+
+=item $filter
+
+Optional. A compiled regular expression (C<qr/.../>). Only names matching
+the pattern are returned. Defaults to C<qr/.*/>  (all names).
+
+=back
+
+B<Returns:> An arrayref of repository name strings.
+
+B<Examples:>
+
+  # All repository names
+  my $all = $gh->repo_names();
+  # Returns: ['cf-kit', 'bosh-kit', 'runtime-ci', ...]
+
+  # Only kit repositories
+  my $kits = $gh->repo_names(qr/-kit$/);
+  # Returns: ['cf-kit', 'bosh-kit', ...]
+
+=head2 releases
+
+  my @releases = $gh->releases($name, $prefix);
+
+Returns a list of all release objects for the named repository. Checks
+connectivity before fetching and provides an improved error message when
+the repository does not exist under the configured organisation. Results
+are cached by C<get_release_info()>; subsequent calls for the same C<$name>
+return the cached result. There is no refresh mechanism.
+
+Each release object is a hash reference with the fields returned by the
+GitHub releases API (e.g. C<tag_name>, C<body>, C<draft>, C<prerelease>,
+C<assets>, C<published_at>).
+
+B<Parameters:>
+
+=over 4
+
+=item $name
+
+Repository name within the organisation. Required.
+
+=item $prefix
+
+Optional. A string prepended to the progress message displayed while
+fetching. Defaults to C<''>.
+
+=back
+
+B<Returns:> A list of release hash references.
+
+B<Errors:>
+
+Dies with C<"Missing repository name"> when C<$name> is not provided.
+
+Dies with C<"No repository named #C{%s} exists under #M{%s}"> when the
+releases endpoint returns 404 and the repository name cannot be found in
+the organisation's repository list. C<%s> placeholders are the repository
+name and the connection label.
+
+Dies with one of the messages described under L</check> if the releases
+endpoint is unreachable for a reason other than 404. The C<$status> variable
+holds the message from C<check()>; possible values include
+C<"Could not find ...; are you able to route to the Internet?">,
+C<"Access forbidden trying to reach ...; throttling may be in effect. ...">
+and C<"Could not read ... at ...; returned (N):\n ...">.
+
+B<Examples:>
+
+  my @releases = $gh->releases('cf-kit');
+  print scalar(@releases), " releases found\n";
+  # Returns: list of GitHub release hash references
+
+=head2 get_release_info
+
+  my ($results, $errors) = $gh->get_release_info($name, %opts);
+
+Fetches release information for a repository. Operates in two modes:
+
+=over 4
+
+=item List mode (default)
+
+Fetches all available releases for C<$name> using the paginated releases
+endpoint. Pagination is followed automatically using HTTP C<Link> response
+headers; all pages are fetched and concatenated. Results are cached in the
+object under C<_releases{$name}>. The cache is returned on subsequent calls
+unless C<versions> mode is requested.
+
+=item Versions mode (C<versions> key present in C<%opts>)
+
+Fetches individual release records for the specified version strings using
+the per-tag release endpoint. Each fetched version is cached under
+C<_release_versions{$name}{$ver}>. Both the bare version (e.g. C<1.2.3>)
+and the C<v>-prefixed form (e.g. C<v1.2.3>) are tried.
+
+=back
+
+See L</KNOWN ISSUES> for remaining open defects (GH-5, GH-6, GH-7).
+
+B<Parameters:>
+
+=over 4
+
+=item $name
+
+Repository name within the organisation. Required.
+
+=item label
+
+Optional. Human-readable label for progress and error messages. Defaults to
+C<$gh-E<gt>label()>.
+
+=item prefix
+
+Optional. String prepended to the default progress message. Defaults to C<''>.
+
+=item msg
+
+Optional. Custom progress message printed while fetching. Pass C<undef>
+to suppress all progress output.
+
+=item fatal
+
+Optional. If true, any non-200 HTTP response or JSON parse error causes an
+immediate C<bail()> instead of being collected in C<@errors>.
+
+=item versions
+
+Optional arrayref of version strings to fetch in versions mode. Must
+contain at least one entry when present.
+
+=item suppress_errors
+
+Optional. If true, suppresses the per-error diagnostic output that would
+normally be printed for non-200 responses.
+
+=back
+
+B<Returns:> A two-element list C<(\@results, \@errors)> on a fresh fetch.
+On a cache hit, only the cached C<\@results> arrayref is returned; if
+assigned to a two-element list, C<\@errors> will be C<undef>. Callers
+should be prepared for C<\@errors> to be either C<undef> or an arrayref.
+See GH-6 in L</KNOWN ISSUES>.
+
+In list mode, C<\@results> is an arrayref of release hash references
+(same structure as returned by the GitHub releases API), and is also stored
+as the cached list for C<$name>.
+
+In versions mode, C<\@results> is an arrayref of individual release hash
+references. Versions that could not be fetched are absent from the result
+(not represented as C<undef> entries).
+
+C<\@errors> is an arrayref of error records accumulated during the fetch.
+Each element is either an error string (JSON parse failures) or a hash
+reference with keys C<code>, C<data>, C<url>, and C<msg>.
+
+B<Errors:>
+
+Calls C<bug()> with C<"Must specify at least one version to retrieve when
+using the 'versions' option"> if C<versions> is present but the arrayref
+is empty.
+
+When C<fatal> is true, dies with
+C<"Failed to retrieve release information for #M{%s}; Github responded with
+a #R{%s} status:\n#y{%s}\n\nURL: %s"> on any non-200 HTTP response. The
+first C<%s> is C<"E<lt>nameE<gt>/E<lt>versionE<gt>"> in versions mode or
+C<"E<lt>nameE<gt>"> in list mode; the subsequent C<%s> values are the HTTP
+status code, the response message, and the URL.
+
+When C<fatal> is true, also dies with
+C<"Failed to read releases information from Github: E<lt>errE<gt>"> on JSON
+parse errors.
+
+B<Examples:>
+
+  # List mode — all releases
+  my ($releases, $errors) = $gh->get_release_info('cf-kit', label => 'My GitHub');
+  print scalar(@$releases), " releases\n";
+  # Returns: (\@release_list, [])
+
+  # Versions mode — specific versions
+  my ($results, $errors) = $gh->get_release_info(
+    'cf-kit',
+    versions => ['1.2.3', '1.3.0'],
+    fatal    => 1,
+  );
+  # Returns: (\@two_release_objects, [])
+
+=head2 versions
+
+  my @versions = $gh->versions($name, %opts);
+
+Returns a filtered, normalised list of version descriptor hashes for the
+named repository. Each hash describes one release asset and contains the
+following keys:
+
+=over 4
+
+=item version
+
+Version string with the leading C<v> stripped (e.g. C<'1.2.3'>).
+
+=item body
+
+Release notes body text.
+
+=item draft
+
+Boolean — true when the release is a draft.
+
+=item prerelease
+
+Boolean — true when the release is marked as a pre-release.
+
+=item date
+
+Publication date string (C<published_at> if set, otherwise C<created_at>).
+
+=item url
+
+Browser download URL for the primary release asset, or C<''> if no
+matching asset was found.
+
+=item filename
+
+Filename of the primary release asset, or C<''> if no matching asset was
+found.
+
+=back
+
+Draft and pre-release entries are excluded by default.
+
+B<Parameters:>
+
+=over 4
+
+=item $name
+
+Repository name within the organisation. Required.
+
+=item version
+
+Optional. A specific version string to match. Leading C<v> is stripped
+before matching. When set to C<'latest'>, the C<latest> option is activated
+and C<version> is cleared. When any other value is supplied, C<include_drafts>
+and C<include_prereleases> are automatically set to true so that the exact
+version can be located regardless of its release status.
+
+=item latest
+
+Optional. Limits the results to the N most recent versions by semantic
+version ordering. When set to C<1> (the default when C<version => 'latest'>
+is given), only the single latest version is returned.
+
+=item include_drafts
+
+Optional. If true, draft releases are included in the results.
+
+=item include_prereleases
+
+Optional. If true, pre-release releases are included in the results.
+
+=item asset_filter
+
+Optional. A regular expression used to select the primary release asset
+from each release's asset list. The placeholder C<[#version#]> in the
+pattern is replaced with the version string before matching. Defaults to
+C<qr/^E<lt>nameE<gt>$/>.
+
+=back
+
+B<Returns:> A list of version descriptor hash references.
+
+B<Examples:>
+
+  # All stable versions
+  my @vers = $gh->versions('cf-kit');
+  # Returns: list of version hashes for stable releases
+
+  # Most recent stable version only
+  my @latest = $gh->versions('cf-kit', version => 'latest');
+  # Returns: one-element list with the latest version hash
+
+  # Specific version (including drafts and prereleases)
+  my @match = $gh->versions('cf-kit', version => '1.2.3');
+  # Returns: list containing the matching version hash (if found)
+
+=head2 fetch_release
+
+  my ($name, $version, $file) = $gh->fetch_release($name, $version, $path, $force);
+
+Downloads a release asset for the named repository and writes it to disk.
+When C<$version> is C<undef> or C<'latest'>, the latest available version
+with a downloadable asset is resolved automatically.
+
+If the target file already exists and C<$force> is false, the downloaded
+content is compared to the existing file by SHA-1 hash. An identical file
+triggers a warning and process exit (C<exit 0>). A differing file prompts
+the user interactively; aborting raises an error.
+
+The file is written with permissions C<0444> (read-only for all).
+
+B<Parameters:>
+
+=over 4
+
+=item $name
+
+Repository name within the organisation.
+
+=item $version
+
+Version string to download, or C<'latest'> (or C<undef>) to resolve the
+newest available version. A leading C<v> is stripped.
+
+=item $path
+
+Directory path where the release asset will be written.
+
+=item $force
+
+Optional. If true, overwrites any existing file without prompting.
+
+=back
+
+B<Returns:> A three-element list C<($name, $version, $file)> where C<$file>
+is the full path to the written file.
+
+B<Errors:>
+
+Dies with C<"No latest version of E<lt>nameE<gt> repository found with a
+downloadable release"> when C<$version> is C<undef>/C<'latest'> and no
+downloadable version exists.
+
+Dies with C<"Release %s/%s was not found"> when the resolved version cannot
+be found in the list of releases. C<%s> placeholders are the repository name
+and version string.
+
+Dies with C<"Release %s/%s was found but is missing its resource url.\nIt
+may have been revoked (see release notes below):\n\n%s\n"> when a release
+exists but has no download URL. C<%s> placeholders are the repository name,
+version string, and release body text.
+
+Dies with C<"Failed to download %s/%s from %s: returned a %s status code\n">
+when the download HTTP request returns a non-200 status. C<%s> placeholders
+are the repository name, version string, the connection label, and the HTTP
+status code.
+
+Dies with C<"Aborted!\n"> when the user declines to overwrite an existing
+but changed file.
+
+B<Examples:>
+
+  # Download the latest release into /var/cache/genesis/kits
+  my ($name, $ver, $file) = $gh->fetch_release('cf-kit', 'latest', '/var/cache/genesis/kits');
+  print "Downloaded $name v$ver to $file\n";
+  # Returns: ('cf-kit', '1.2.3', '/var/cache/genesis/kits/cf-kit-1.2.3.tar.gz')
+
+  # Download a specific version, overwriting any existing file
+  my ($name, $ver, $file) = $gh->fetch_release('cf-kit', '1.1.0', '/tmp', 1);
+  # Returns: ('cf-kit', '1.1.0', '/tmp/cf-kit-1.1.0.tar.gz')
+
+=head2 latest_version_of
+
+  my $version = $gh->latest_version_of($name, %opts);
+
+Returns the version string for the latest stable release of the named
+repository that has a downloadable asset URL. Draft releases are excluded
+unless C<include_drafts> is set; pre-releases are excluded unless
+C<include_prereleases> is set.
+
+B<Parameters:>
+
+=over 4
+
+=item $name
+
+Repository name within the organisation. Required.
+
+=item include_drafts
+
+Optional. If true, draft releases are considered when determining the latest
+version.
+
+=item include_prereleases
+
+Optional. If true, pre-release releases are considered when determining the
+latest version.
+
+B<Note:> Due to a parameter-name mismatch, this option currently has no
+effect. See GH-7 in L</KNOWN ISSUES>.
+
+=back
+
+B<Returns:> A version string (e.g. C<'1.2.3'>), or C<undef> if no
+qualifying release with a download URL exists.
+
+B<Errors:>
+
+Dies with C<"Missing name for retrieving release"> when C<$name> is not
+provided.
+
+B<Examples:>
+
+  my $ver = $gh->latest_version_of('cf-kit');
+  print "Latest: $ver\n" if defined $ver;
+  # Returns: '1.2.3'
+
+  my $ver = $gh->latest_version_of('cf-kit', include_prereleases => 1);
+  # Returns: '1.3.0-rc1' (if that is the newest with a download URL)
+
+=head2 get_user_ssh_keys
+
+  my ($keys, $err) = $gh->get_user_ssh_keys($username);
+
+Fetches all SSH public keys registered for a GitHub (or compatible) user
+by querying the C<E<lt>domainE<gt>/E<lt>usernameE<gt>.keys> endpoint. Only
+keys with a recognised algorithm prefix are returned; others are silently
+discarded.
+
+Accepted key types: C<ssh-rsa>, C<ssh-dss>, C<ssh-ed25519>,
+C<ecdsa-sha2-nistp256>, C<ecdsa-sha2-nistp384>, C<ecdsa-sha2-nistp521>.
+
+The username must conform to GitHub naming rules (1–39 characters,
+alphanumeric and hyphens, cannot start or end with a hyphen).
+
+B<Parameters:>
+
+=over 4
+
+=item $username
+
+The GitHub username whose SSH keys are to be retrieved. Required.
+
+=back
+
+B<Returns:> A two-element list C<(\@keys, $error)>.
+
+On success, C<\@keys> is an arrayref of validated SSH public key strings
+and C<$error> is C<undef>.
+
+On failure, C<\@keys> is C<undef> and C<$error> is one of:
+
+=over 4
+
+=item *
+
+C<"User 'E<lt>usernameE<gt>' not found on E<lt>domainE<gt>"> — HTTP 404.
+
+=item *
+
+C<"Rate limit exceeded (HTTP 403). Set GITHUB_AUTH_TOKEN to increase limit."> — HTTP 403.
+
+=item *
+
+C<"HTTP Error E<lt>codeE<gt>: E<lt>msgE<gt>"> — any other non-200 status.
+
+=back
+
+B<Errors:>
+
+Dies with C<"Missing username for SSH key retrieval"> when C<$username> is
+not provided.
+
+Dies with C<"Invalid username format: E<lt>usernameE<gt>"> when the username
+does not match the allowed pattern.
+
+B<Examples:>
+
+  my ($keys, $err) = $gh->get_user_ssh_keys('octocat');
+  if ($err) {
+    warn "Could not fetch keys: $err\n";
+  } else {
+    print "$_\n" for @$keys;
+  }
+  # Returns: (['ssh-ed25519 AAAA...', ...], undef) on success
+
+=head2 validate_ssh_key
+
+  my $bool = $gh->validate_ssh_key($key);
+
+Returns true when C<$key> is a syntactically valid SSH public key string
+with a recognised algorithm prefix. Returns C<0> when C<$key> is C<undef>
+or does not match the expected format.
+
+Recognised prefixes: C<ssh-rsa>, C<ssh-dss>, C<ssh-ed25519>,
+C<ecdsa-sha2-nistp256>, C<ecdsa-sha2-nistp384>, C<ecdsa-sha2-nistp521>.
+
+The key body must consist of base64 characters with up to three C<=> padding
+characters, optionally followed by a comment field.
+
+B<Parameters:>
+
+=over 4
+
+=item $key
+
+The SSH public key string to validate.
+
+=back
+
+B<Returns:> A true value (C<1>) when the key is valid. Returns C<0> when
+C<$key> is C<undef>. Returns C<''> (empty string) when C<$key> is defined
+but does not match the expected format.
+
+B<Examples:>
+
+  my $ok = $gh->validate_ssh_key('ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... user@host');
+  # Returns: 1
+
+  my $ok = $gh->validate_ssh_key('not-a-key');
+  # Returns: '' (false)
+
+  my $ok = $gh->validate_ssh_key(undef);
+  # Returns: 0
+
+=head1 SEE ALSO
+
+L<Service::Vault>, L<Service::BOSH>
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

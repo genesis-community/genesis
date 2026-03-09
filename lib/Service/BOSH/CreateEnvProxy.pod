@@ -1,0 +1,352 @@
+=head1 NAME
+
+Service::BOSH::CreateEnvProxy - BOSH service proxy for create-env operations
+
+=head1 SYNOPSIS
+
+  use Service::BOSH::CreateEnvProxy;
+
+  # Create a proxy for an environment deploying its own BOSH director
+  my $proxy = Service::BOSH::CreateEnvProxy->new($env);
+
+  # Deploy the BOSH director manifest
+  $proxy->create_env('/path/to/manifest.yml',
+    state    => '/path/to/state.json',
+    store    => '/path/to/vars-store.yml',
+  );
+
+  # Verify the bosh CLI is available
+  $proxy->connect_and_validate();
+
+  # Delete the BOSH director deployment
+  my $ok = $proxy->delete_env('/path/to/manifest.yml',
+    state => '/path/to/state.json',
+  );
+
+=head1 DESCRIPTION
+
+C<Service::BOSH::CreateEnvProxy> is a lightweight subclass of L<Service::BOSH>
+that handles BOSH operations for environments that deploy their own BOSH
+director using C<bosh create-env>. It is not a connection to a running BOSH
+director -- there is no director to connect to. The environment is its own
+director.
+
+This distinction is important: L<Service::BOSH::Director> models a running
+BOSH director that Genesis can target and query. C<Service::BOSH::CreateEnvProxy>
+is used in its place when the deployment being managed I<is> the BOSH director
+itself, deployed via C<bosh create-env> directly from a manifest and state file
+on the local filesystem.
+
+Because there is no running director, several parent-class behaviours are
+deliberately suppressed:
+
+=over 4
+
+=item *
+
+C<connect_and_validate> only checks that the C<bosh> CLI binary exists; it
+does not attempt a director login or connection.
+
+=item *
+
+C<download_configs> always raises an error, because create-env environments
+have no director to fetch configs from.
+
+=back
+
+=head1 CLASS METHODS
+
+=head2 new
+
+  my $proxy = Service::BOSH::CreateEnvProxy->new($env);
+
+Creates and returns a new C<Service::BOSH::CreateEnvProxy> object. Sets the
+internal alias to the environment's name via C<< $env->name >>. If C<$env>
+is C<undef>, the alias defaults to C<'create-env'>.
+
+B<Parameters:>
+
+=over 4
+
+=item $env
+
+A Genesis environment object that responds to C<name>. May be C<undef>.
+
+=back
+
+B<Returns:> A blessed C<Service::BOSH::CreateEnvProxy> object.
+
+B<Examples:>
+
+  my $proxy = Service::BOSH::CreateEnvProxy->new($env);
+  # Returns: a Service::BOSH::CreateEnvProxy object
+
+  my $proxy = Service::BOSH::CreateEnvProxy->new(undef);
+  # Returns: a proxy with alias 'create-env'
+
+=head1 INSTANCE METHODS
+
+=head2 alias
+
+  my $name = $proxy->alias();
+
+Returns the alias for this proxy. This is the environment name provided to
+C<new>, or C<'create-env'> if no environment was given or the stored alias
+is empty.
+
+B<Returns:> A string.
+
+B<Examples:>
+
+  my $name = $proxy->alias();
+  # Returns: 'my-env' (or 'create-env' if no env was given)
+
+=head2 create_env
+
+  $proxy->create_env($manifest, %opts);
+
+Runs C<bosh create-env> interactively against the given manifest, building
+the BOSH director from scratch or updating it in place. The state file is
+always passed via C<--state>. An optional vars store and vars file may also
+be supplied.
+
+B<Note:> This method has no dryrun path. Passing C<dryrun =E<gt> 1> in
+C<%opts> has no effect -- the real C<bosh create-env> command will still
+execute. See L</KNOWN ISSUES> (CEP-2, FWT-694).
+
+B<Parameters:>
+
+=over 4
+
+=item $manifest
+
+Path to the BOSH director deployment manifest. Required.
+
+=item state
+
+Path to the create-env state file. Required. Passed as C<--state>.
+
+=item store
+
+Optional. Path to a vars-store file. Passed as C<--vars-store> only if the
+file exists at the given path.
+
+=item vars_file
+
+Optional. Path to a variables file. Passed as C<-l> only if the file exists
+at the given path.
+
+=item flags
+
+Optional. An array reference of additional CLI flags to pass to
+C<bosh create-env> before the manifest argument.
+
+=back
+
+B<Returns:> The return value of the underlying C<execute> call. In list
+context this is C<($output, $exit_code, $stderr)>; in scalar context it
+is the raw exit code (C<0> on success). See L<Service::BOSH/execute> for
+full return semantics.
+
+B<Errors:>
+
+Dies with C<"Missing deployment manifest in call to create_env()!!"> if
+C<$manifest> is not provided.
+
+Dies with C<"Missing 'state' option in call to create_env()!!"> if the
+C<state> option is not provided.
+
+B<Examples:>
+
+  $proxy->create_env('/path/to/bosh.yml',
+    state => '/path/to/bosh-state.json',
+  );
+  # Returns: return value of execute()
+
+  $proxy->create_env('/path/to/bosh.yml',
+    state     => '/path/to/bosh-state.json',
+    store     => '/path/to/creds.yml',
+    vars_file => '/path/to/vars.yml',
+  );
+  # Returns: return value of execute()
+
+=head2 delete_env
+
+  # Scalar context
+  my $ok = $proxy->delete_env($manifest, %opts);
+
+  # List context
+  my ($out, $rc, undef) = $proxy->delete_env($manifest, %opts);
+
+Runs C<bosh delete-env> interactively against the given manifest, tearing
+down the BOSH director deployment. Supports dryrun mode.
+
+In list context, returns a three-element list. The third element is always
+C<undef>.
+
+In scalar context, returns a boolean: C<1> on success or in dryrun mode,
+C<0> on failure.
+
+B<Parameters:>
+
+=over 4
+
+=item $manifest
+
+Path to the BOSH director deployment manifest. Required.
+
+=item state
+
+Path to the create-env state file. Required. Passed as C<--state>.
+
+=item store
+
+Optional. Path to a vars-store file. Passed as C<--vars-store> only if the
+file exists at the given path.
+
+=item vars_file
+
+Optional. Path to a variables file. Passed as C<-l> only if the file exists
+at the given path.
+
+=item flags
+
+Optional. An array reference of additional CLI flags to pass to
+C<bosh delete-env> before the manifest argument.
+
+=item dryrun
+
+Optional. If true, logs the command that would be run via C<dryrun_of> and
+returns without executing it.
+
+=back
+
+B<Returns:>
+
+In dryrun mode, list context returns C<(undef, 0, undef)>; scalar context
+returns C<1>.
+
+In live mode, list context returns C<($output, $exit_code, undef)>; scalar
+context returns C<1> on success (exit code 0) or C<0> on failure.
+
+B<Errors:>
+
+Dies with C<"Missing deployment manifest in call to delete_env()!!"> if
+C<$manifest> is not provided.
+
+Dies with C<"Missing 'state' option in call to delete_env()!!"> if the
+C<state> option is not provided.
+
+B<Examples:>
+
+  # Scalar context -- boolean result
+  my $ok = $proxy->delete_env('/path/to/bosh.yml',
+    state => '/path/to/bosh-state.json',
+  );
+  # Returns: 1 on success, 0 on failure
+
+  # List context -- output and exit code
+  my ($out, $rc, undef) = $proxy->delete_env('/path/to/bosh.yml',
+    state => '/path/to/bosh-state.json',
+  );
+  # Returns: ($output, $exit_code, undef)
+
+  # Dryrun -- logs intent, does not execute
+  my $ok = $proxy->delete_env('/path/to/bosh.yml',
+    state  => '/path/to/bosh-state.json',
+    dryrun => 1,
+  );
+  # Returns: 1
+
+=head2 connect_and_validate
+
+  $proxy->connect_and_validate();
+
+Validates that the C<bosh> CLI binary is available on the system. Unlike
+the parent class and L<Service::BOSH::Director>, this method does not
+attempt to connect to or authenticate against a BOSH director -- there is
+no running director to connect to.
+
+Returns the proxy object on success.
+
+B<Returns:> The proxy object (C<$self>).
+
+B<Errors:>
+
+Dies via the base-class C<command()> method if no C<bosh> binary is found.
+The error message is:
+C<"#RE<lt>Missing `bosh`E<gt> - install the BOSH (v2) CLI from
+#BE<lt>https://github.com/cloudfoundry/bosh-cli/releasesE<gt>">.
+
+B<Note:> The C<bail('Missing bosh cli command')> call in the source is
+unreachable dead code -- the base-class C<command()> method bails before
+control returns to C<connect_and_validate>.
+
+B<Examples:>
+
+  $proxy->connect_and_validate();
+  # Returns: $proxy
+
+=head2 download_configs
+
+  $proxy->download_configs();
+
+Always raises an error. Create-env environments have no BOSH director to
+download configuration files from. This override prevents callers from
+attempting an operation that can never succeed.
+
+B<Errors:>
+
+Always dies with C<"create-env environments do not support configuration files">.
+
+B<Examples:>
+
+  eval { $proxy->download_configs() };
+  # Dies with: "create-env environments do not support configuration files"
+  # Returns: does not return
+
+=head1 KNOWN ISSUES
+
+The following defects are tracked in FWT-694 and are documented here so
+that callers are aware of the current behaviour.
+
+=over 4
+
+=item CEP-2 (medium)
+
+C<create_env()> lines 29-44: does not implement a dryrun path. Passing
+C<dryrun =E<gt> 1> in the options hash has no effect; the real
+C<bosh create-env> command executes unconditionally. The sibling method
+C<delete_env> handles dryrun correctly.
+
+=back
+
+=head1 SEE ALSO
+
+=over 4
+
+=item L<Service::BOSH>
+
+The parent class providing shared BOSH CLI logic, the C<execute> helper,
+and the C<command> class method.
+
+=item L<Service::BOSH::Director>
+
+The sibling class for environments where a BOSH director is already running
+and Genesis connects to it normally.
+
+=item L<Service::BOSH::Stemcell>
+
+Stemcell management utilities used alongside BOSH operations.
+
+=back
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

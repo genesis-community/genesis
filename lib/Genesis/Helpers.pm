@@ -44,26 +44,6 @@ sub log_from_script {
 
 1;
 
-=head1 NAME
-
-Genesis::Helpers
-
-=head1 DESCRIPTION
-
-This module wraps up the bash hooks helper that defines various functions
-designed to make life easier on Kit authors.  It also includes a method for
-writing the helper to an extracted kit workspace, but primarily we're using
-the separate module to abuse Perl's awesome __DATA__ facility.
-
-=head1 FUNCTIONS
-
-=head2 write($path)
-
-Writes the hooks helper to the given C<$path>.  Can be called more than
-once, without issue.
-
-=cut
-
 __DATA__
 
 if [[ "${GENESIS_TRACE}" == "y" ]] ; then
@@ -224,7 +204,7 @@ export -f deployed
 typeof() {
   local __key=${1:?typeof() - must specify a key to look up}
   local __val
-  __val="$(genesis  lookup "$__key" "$GENESIS_ENVIRONMENT" "" |  sed -e 's/\(.\).*/\1/')"
+  __val="$(genesis lookup "$GENESIS_ENVIRONMENT" "$__key" "" | sed -e 's/\(.\).*/\1/')"
   if [[ $__val == "{" ]]; then
     echo "map"
   elif [[ $__val == "[" ]]; then
@@ -261,10 +241,16 @@ bosh() {
         Service::BOSH::Director->from_exodus($ENV{BOSH_ALIAS}) ||
         Service::BOSH::Director->from_alias($ENV{BOSH_ALIAS})
       );
-      print "echo 'Could not connect to $ENV{BOSH_ALIAS}'\n" unless $bosh;
+      unless ($bosh) {
+        print "__bail 'Could not connect to $ENV{BOSH_ALIAS}'\n";
+        exit 0;
+      }
       my %vars = $bosh->environment_variables;
       for (keys %vars) {
-        print "export $_=\"$val{$_}\"\n";
+        next unless /^[A-Za-z_][A-Za-z0-9_]*$/;
+        my $val = defined $vars{$_} ? $vars{$_} : '';
+        $val =~ s/'/'\"'\"'/g;
+        print "export $_='$val'\n";
       }
       EOF
       )"
@@ -297,11 +283,11 @@ bosh_cpi() {
     echo "$GENESIS_TESTING_BOSH_CPI"
     return 0
   fi
-  __have_env="$(bosh env --json | jq -r '.Tables[0].Rows[0].cpi')"
-  [[ "$?" != "0" ]] && \
-    __bail "Cannot determine CPI from BOSH director - failed to communicate with BOSH director:" \
-           "${__have_env}"
-  [[ -z "${__have_env}" ]] && \
+  __have_env="$(bosh env --json 2>/dev/null | jq -r '.Tables[0].Rows[0].cpi')"
+  if [[ "$?" != "0" ]] ; then
+    __bail "Cannot determine CPI from BOSH director - failed to communicate with BOSH director"
+  fi
+  [[ -z "${__have_env}" || "${__have_env}" == "null" ]] && \
     __bail "Cannot determine CPI from BOSH director - no response from BOSH director"
 
   echo "${__have_env%_cpi}"
@@ -406,7 +392,7 @@ cloud_config_needs() {
   az|azs)                      __type=azs;           __name=az           ;;
   *) __bail --rc 77
             "cloud_config_needs(): invalid cloud-config object type '$__type'; must be one of" \
-            "                      'vm_type', 'vm_extension', 'disk_type', or 'az'" ;;
+            "                      'vm_type', 'vm_extension', 'disk_type', 'network', or 'az'" ;;
   esac
 
   local __want __have __token
@@ -460,12 +446,12 @@ cloud_config_has() {
   disk_type|disk_types)        __type=disk_types;    __name=disk_type    ;;
   az|azs)                      __type=azs;           __name=az           ;;
   *) __bail --rc 77
-            "cloud_config_needs(): invalid cloud-config object type '$__type'; must be one of" \
-            "                      'vm_type', 'vm_extension', 'disk_type', or 'az'" ;;
+            "cloud_config_has(): invalid cloud-config object type '$__type'; must be one of" \
+            "                    'vm_type', 'vm_extension', 'disk_type', 'network', or 'az'" ;;
   esac
 
   __have=$(spruce json "$GENESIS_CLOUD_CONFIG" | \
-    jq -r "if (.(${__type}//[])[] | select(.name == \"$__want\")) then 1 else 0 end")
+    jq -r "if ((.${__type}//[])[] | select(.name == \"$__want\")) then 1 else 0 end")
   if [[ -n "$__have" ]]; then
     return 0
   else
@@ -585,7 +571,7 @@ prompt_for() {
     if [[ $__rc -ne 0 ]] ; then
       # error
       rm -f "$__tmpfile"
-      _bail --rc "$__rc" "Error encountered - cannot continue";
+      __bail --rc "$__rc" "Error encountered - cannot continue";
     fi
     if [[ $__type =~ ^multi- ]] ; then
       eval "unset $__var; ${__var}=()"
@@ -666,7 +652,7 @@ export -f param_comment
 # Helper to inject new Genesis configuration (v2.6.13+)
 genesis_config_block() {
 	config_block="$(
-	if [[ "${GENESIS_USE_CREATE_ENV:-}" == '1' ]] ; then
+	if [[ "${GENESIS_USE_CREATE_ENV:-}" == "true" ]] ; then
 		cat <<EOF
   bosh_env:       ((prune))
 EOF
@@ -737,7 +723,7 @@ export -f genesis_config_block
 
 offer_environment_editor() {
   local __edit_query="${1:-''}"
-  local __file __tmpdir __editor __edit_query __editor_cmd
+  local __file __tmpdir __editor __editor_cmd
   if [[ "$__edit_query" != 'true' ]] ; then
     prompt_for __edit_query boolean \
       "Would you like to edit the '$GENESIS_ENVIRONMENT.yml' environment file?" \
@@ -782,6 +768,9 @@ move_secrets_to_credhub() {
     bail "#R{[ERROR]} Failed to store secret #C{$1} under credhub path #C{$2}:" "$result"
   fi
   result="$(safe rm "${GENESIS_SECRETS_BASE}$src" 2>&1)"
+  if [[ $? -gt 0 ]] ; then
+    bail "#R{[ERROR]} Failed to remove secret #C{$1} from vault:" "$result"
+  fi
 }
 export -f move_secrets_to_credhub
 

@@ -1,0 +1,505 @@
+=encoding UTF-8
+
+=head1 NAME
+
+Genesis::Hook::PostDeploy - Post-deploy hook for Genesis kit deployments
+
+=head1 SYNOPSIS
+
+    package Genesis::Hook::PostDeploy::my_kit;
+    use parent 'Genesis::Hook::PostDeploy';
+
+    sub perform {
+        my ($self) = @_;
+
+        if ($self->deploy_successful) {
+            $self->update_director_network_config;
+            $self->upload_director_cpi_config;
+            $self->upload_stemcells;
+            $self->upload_runtime_configs;
+        }
+
+        $self->done(1);
+    }
+
+    1;
+
+=head1 DESCRIPTION
+
+C<Genesis::Hook::PostDeploy> is the base class for post-deploy kit hooks.
+It extends C<Genesis::Hook> with post-deploy-specific behavior: inspecting the
+deployment result code, managing director-level configurations (cloud config,
+CPI config, runtime configs), uploading stemcells, and storing CredHub secrets.
+
+The hook is instantiated by Genesis after a C<bosh deploy> completes, with the
+exit code passed as C<rc>. Kit authors subclass this class and implement the
+C<perform> method to carry out any required post-deploy work.
+
+The standard usage pattern is:
+
+=over 4
+
+=item 1.
+
+Genesis calls C<init> with C<env> and C<rc> (the deployment exit code).
+
+=item 2.
+
+Genesis calls C<perform>. Kit authors implement this to call the appropriate
+post-deploy helpers (C<update_director_network_config>,
+C<upload_director_cpi_config>, C<upload_stemcells>,
+C<upload_runtime_configs>) based on what the kit requires.
+
+=item 3.
+
+The hook calls C<done> to signal completion.
+
+=back
+
+See L<Genesis::Hook> for the full base class interface, including environment
+access, feature detection, BOSH/CredHub integration, and YAML merging utilities.
+
+=head1 METHODS
+
+=head2 init
+
+    my $hook = Genesis::Hook::PostDeploy->init(%ops);
+
+Constructs and returns a new post-deploy hook object. Both C<env> and C<rc>
+are required keys in C<%ops>. Delegates to the parent class C<Genesis::Hook> C<init> after
+validating that both required arguments are present.
+
+B<Parameters:>
+
+=over 4
+
+=item C<%ops>
+
+Key-value pairs stored on the hook object. The following keys are required:
+
+=over 4
+
+=item C<env>
+
+B<(required)> A C<Genesis::Env> object representing the deployment environment.
+
+=item C<rc>
+
+B<(required)> The integer exit code from the C<bosh deploy> command. A value
+of C<0> indicates a successful deployment.
+
+=back
+
+=back
+
+B<Returns:> A blessed C<Genesis::Hook::PostDeploy> object (or subclass thereof).
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Missing required arguments for a perl-based kit hook call: %s"> -- raised
+via C<bug()> if either C<env> or C<rc> is absent from C<%ops>. C<%s> is
+replaced with the comma-separated list of missing argument names.
+
+=back
+
+B<Examples:>
+
+    my $hook = Genesis::Hook::PostDeploy->init(env => $env, rc => 0);
+    # Returns: a blessed Genesis::Hook::PostDeploy object
+
+
+
+=head2 deploy_successful
+
+    my $bool = $hook->deploy_successful;
+
+Returns true if the deployment completed successfully (i.e., the C<rc> value
+passed to C<init> was C<0>).
+
+B<Returns:> C<1> if C<rc> equals C<0>, or an empty string (false) otherwise.
+
+B<Examples:>
+
+    if ($hook->deploy_successful) {
+        $hook->upload_stemcells;
+    }
+    # Returns: 1 if the deploy exited with rc=0, '' otherwise
+
+=head2 data
+
+    my $hashref = $hook->data;
+
+Returns the hook's mutable data hash reference. The hash is initialized to an
+empty hash on first access and can be used by kit authors to store arbitrary
+values during C<perform>.
+
+B<Returns:> A hash reference (never C<undef>).
+
+B<Examples:>
+
+    my $data = $hook->data;
+    $data->{custom_key} = 'custom_value';
+    # Returns: {} on first call, then the same hash reference on subsequent calls
+
+=head2 update_director_network_config
+
+    $hook->update_director_network_config;
+
+Generates and uploads the director cloud-config for the BOSH director, then
+stores the resulting network details in the environment's exodus vault path.
+Does nothing and returns immediately if the environment cannot build cloud
+configs (C<< $env->can_build_cloud_configs >> is false).
+
+The method:
+
+=over 4
+
+=item 1.
+
+Runs the C<cloud-config> hook with C<purpose =E<gt> 'director'> to produce
+a config YAML document and a network hash.
+
+=item 2.
+
+Uploads the cloud config to the BOSH director under the name
+C<$env_name.$env_type.director>.
+
+=item 3.
+
+Stores the network hash in the environment's exodus vault path under
+C</network>.
+
+=back
+
+B<Returns:> Nothing. Returns immediately (without completing the upload) if
+the environment does not support building cloud configs.
+
+B<Examples:>
+
+    $hook->update_director_network_config;
+    # Returns: nothing; uploads config and stores network details in exodus
+
+=head2 command
+
+    my $cmd = $hook->command();
+
+Constructs a shell command string using the genesis invocation path from the
+environment (C<GENESIS_CALL_ENV> or C<GENESIS_CALL>) as the base command,
+followed by any additional arguments passed to the method. Arguments
+containing spaces, parentheses, exclamation marks, asterisks, or question
+marks are single-quoted.
+
+B<Returns:> A string containing the full shell command.
+
+B<Examples:>
+
+    my $cmd = $hook->command('do', 'upload-stemcells');
+    # Returns: 'genesis my-env do upload-stemcells'
+
+    my $cmd = $hook->command('deploy', '--dry-run');
+    # Returns: 'genesis my-env deploy --dry-run'
+
+=head2 help
+
+    $hook->help(%addons);
+
+Displays help information for the hook or for the kit's available addons.
+
+If the hook object has a C<cmd_details> method (i.e., the subclass implements
+it), the method displays the hook's own command details using the hook's
+label and returns C<1>.
+
+Otherwise, the method collects C<cmd_details> from all C<addon-*.pm> files in
+the kit's C<hooks/> directory, merges them with any entries in C<%addons>,
+and prints a formatted listing. Returns C<0> if no addons are found.
+
+B<Parameters:>
+
+=over 4
+
+=item C<%addons>
+
+B<(optional)> A hash mapping addon command names to their help text strings.
+Addon names may include a C<~> separator to specify a short alias (e.g.,
+C<"upload-stemcells~us">).
+
+=back
+
+B<Returns:> C<1> if the hook provides its own C<cmd_details>, C<0> if no
+addons are found, or nothing if addons are displayed.
+
+B<Examples:>
+
+    $hook->help;
+    # Returns: 1 if cmd_details is defined, 0 if no addons exist
+
+    $hook->help('upload-stemcells' => "Upload stemcells to the BOSH director");
+    # Returns: nothing (prints the addon listing)
+
+=head2 upload_director_cpi_config
+
+    $hook->upload_director_cpi_config;
+
+Uploads a custom CPI config to the BOSH director if the environment's CPI is
+enabled and the kit provides a C<cpi-config> hook. After a successful upload,
+any CredHub secrets produced by the CPI config hook are committed to the
+director's CredHub via C<_commit_config_credhub_secrets>.
+
+The method:
+
+=over 4
+
+=item 1.
+
+Does nothing if C<< $self->cpi_enabled >> is false or the kit has no
+C<cpi-config> hook.
+
+=item 2.
+
+Runs the C<cpi-config> hook with a CredHub prefix of
+C</cpi-config/properties/> to produce a config document, a secrets hash, and
+an errors string.
+
+=item 3.
+
+Returns C<0> and logs an error if the hook returned errors.
+
+=item 4.
+
+Uploads the config to the BOSH director under the name
+C<$cpi_name.director>.
+
+=item 5.
+
+Returns C<0> and logs an error if the upload fails.
+
+=item 6.
+
+Calls C<_commit_config_credhub_secrets> with the secrets hash.
+
+=back
+
+B<Returns:> C<0> on error (CPI config errors or upload failure), or nothing
+on success or when CPI config is not applicable.
+
+B<Examples:>
+
+    $hook->upload_director_cpi_config;
+    # Returns: 0 on error, nothing on success or when not applicable
+
+=head2 upload_stemcells
+
+    $hook->upload_stemcells;
+
+Checks for existing stemcells on the BOSH director and, if none are found,
+offers to upload one. Returns immediately without action if the deployment
+was not successful (C<deploy_successful> is false).
+
+The method:
+
+=over 4
+
+=item 1.
+
+Returns immediately (without uploading) if the deploy was not successful.
+
+=item 2.
+
+Returns C<1> if the director already has stemcells.
+
+=item 3.
+
+In interactive mode on a controlling terminal, prompts the user whether to
+upload a stemcell. Returns without uploading if the user declines.
+
+=item 4.
+
+Queries available stemcells, optionally filtered by the
+C<bosh-configs.stemcells.type> setting in the environment manifest.
+
+=item 5.
+
+Returns C<0> and logs an error if no available stemcells are found.
+
+=item 6.
+
+In interactive mode, prompts the user to select a stemcell. In
+non-interactive mode, selects the latest available stemcell automatically.
+
+=item 7.
+
+Uploads the selected stemcell and returns C<1> on success, or C<0> on
+upload failure.
+
+=back
+
+B<Returns:>
+
+=over 4
+
+=item *
+
+Nothing (returns early) if the deploy was not successful or if the user
+declined the upload prompt.
+
+=item *
+
+C<1> if stemcells already exist on the director or the upload succeeded.
+
+=item *
+
+C<0> if no available stemcells were found for the IaaS or the upload failed.
+
+=back
+
+B<Examples:>
+
+    $hook->upload_stemcells;
+    # Returns: 1 if stemcells are present or uploaded successfully
+
+    # After a failed deploy, does nothing:
+    # ($hook->deploy_successful is false -- rc != 0)
+    $hook->upload_stemcells;
+    # Returns: nothing
+
+=head2 upload_runtime_configs
+
+    $hook->upload_runtime_configs;
+
+Reads the C<bosh-configs.runtime> setting from the environment manifest and
+uploads the specified runtime configs to the BOSH director by running the
+kit's C<runtime-config> hook.
+
+Returns immediately without action if C<bosh-configs.runtime> is not set, or
+if the hash has no keys.
+
+B<Returns:>
+
+=over 4
+
+=item *
+
+Nothing if C<bosh-configs.runtime> is not configured or is empty.
+
+=item *
+
+C<0> and logs an error if the C<runtime-config> hook fails.
+
+=item *
+
+The result of C<$self->done(1)> on success.
+
+=back
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Runtime configs must be a hash reference, got %s.  Please check the 'bosh-configs.runtime' setting in the #C{%s} environment.">
+-- raised via C<bail()> if C<bosh-configs.runtime> is set but is not a hash
+reference. The first C<%s> is the ref type (or the stringified value if not
+a reference), and the second C<%s> is the environment name.
+
+=item *
+
+C<"The #M{%s} kit does not provide any runtime configs.  Please check the 'bosh-configs.runtime' setting in the #C{%s} environment.">
+-- raised via C<bail()> if runtime configs are configured but the kit does
+not provide a C<runtime-config> hook. The first C<%s> is the kit identifier
+and the second is the environment name.
+
+=item *
+
+C<"Runtime config options must be a hash reference or 'true', but:\n%s\n">
+-- raised via C<bail()> if any entry in the C<bosh-configs.runtime> hash is
+neither a hash reference nor a JSON boolean true value. C<%s> is replaced
+with a formatted list of the invalid entries.
+
+=back
+
+B<Examples:>
+
+    $hook->upload_runtime_configs;
+    # Returns: result of done(1) on success, 0 on hook failure, nothing if unconfigured
+
+=head2 results
+
+    my $result = $hook->results;
+
+Returns C<1> unconditionally, overriding the C<Genesis::Hook> base class
+implementation. Post-deploy hooks always report a successful result
+regardless of the operations performed.
+
+B<Returns:> C<1>
+
+B<Examples:>
+
+    my $r = $hook->results;
+    # Returns: 1
+
+=head1 INTERNAL METHODS
+
+These methods are internal to the implementation. They may change without
+notice and should not be called directly.
+
+=head2 _commit_config_credhub_secrets
+
+    $hook->_commit_config_credhub_secrets(\%secrets);
+
+Writes each entry in C<%secrets> to the BOSH director's CredHub instance.
+Returns immediately if C<%secrets> is empty or C<undef>. The CredHub client
+is obtained via C<< Service::Credhub->from_bosh >> using the environment's
+target BOSH director.
+
+B<Parameters:>
+
+=over 4
+
+=item C<\%secrets>
+
+B<(optional)> A hash reference mapping CredHub paths to secret values. If
+C<undef> or empty, the method returns C<1> immediately.
+
+=back
+
+B<Returns:> C<1> on success, or C<1> immediately if there are no secrets to
+commit.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"No value specified for the secret %s"> -- raised via C<bail()> if a path
+key exists in C<%secrets> but its value is false. C<%s> is the CredHub path.
+
+=item *
+
+C<"Failed to entomb the secret %s: %s"> -- raised via C<bail()> if the
+CredHub C<set> call throws an exception. The first C<%s> is the CredHub path
+and the second is the exception message.
+
+=back
+
+B<Examples:>
+
+    $hook->_commit_config_credhub_secrets({
+        '/bosh/certs/ca' => $ca_pem,
+    });
+    # Returns: 1 on success
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

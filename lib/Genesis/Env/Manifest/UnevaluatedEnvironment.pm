@@ -5,6 +5,8 @@ use warnings;
 
 use base 'Genesis::Env::Manifest';
 
+sub description { "Raw merged environment files only (no kit components) - spruce operators still in place" }
+
 sub source_files {
 	my $self = shift;
 	return [

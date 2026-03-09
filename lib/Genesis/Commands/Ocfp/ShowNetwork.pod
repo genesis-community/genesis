@@ -1,0 +1,238 @@
+=head1 NAME
+
+Genesis::Commands::Ocfp::ShowNetwork - Display OCFP network configuration and IP allocation status
+
+=head1 SYNOPSIS
+
+  # Called from Genesis::Commands::Ocfp dispatch, not directly
+  use Genesis::Commands::Ocfp::ShowNetwork;
+  Genesis::Commands::Ocfp::ShowNetwork::run($env, %options);
+
+=head1 DESCRIPTION
+
+Provides the display logic for the C<genesis E<lt>envE<gt> ocfp show network>
+command.  Gathers OCFP network configuration from Vault and IP allocation data
+from the BOSH director's exodus, then renders the information in several output
+formats.
+
+Each subnet's CIDR is broken down in sipcalc-style detail: network address,
+broadcast, netmask, wildcard mask, prefix length, total addresses, usable
+hosts, and first/last host.  IP ranges are categorized into reserved (system
+use), allocated (claimed by deployments), and free (available for new
+allocations).
+
+Handles create-env environments gracefully by showing OCFP configuration data
+without BOSH claim information when the director exodus is unavailable.
+
+=head1 FUNCTIONS
+
+=head2 run($env, %options)
+
+Entry point called by the Ocfp dispatch module.  Gathers network data from the
+environment's OCFP configuration and BOSH director exodus, applies any subnet
+filter, then dispatches to the appropriate output mode.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$env>
+
+A C<Genesis::Env> object.  Must satisfy C<< $env->is_ocfp >> (enforced by the
+dispatch layer).
+
+=item C<%options>
+
+Hash of command-line options:
+
+=over 4
+
+=item C<reserved> - Show only reserved IPs
+
+=item C<allocated> - Show only allocated/claimed IPs
+
+=item C<available> - Show only available (free) IPs
+
+=item C<subnet> - Filter to a specific subnet name
+
+=item C<summary> - Show compact summary table
+
+=item C<json> - Output as JSON
+
+=back
+
+=back
+
+Returns nothing.  Outputs directly to the terminal.
+
+=head2 _gather_network_data($env)
+
+Collects all network data into a unified hash structure.  Reads the VPC/net
+top-level config for the VPC CIDR, then iterates over all subnets to extract
+CIDR blocks, gateways, DNS, availability zones, reserved IP names, and range
+computations.  Optionally reads BOSH director exodus data for existing IP
+claims.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$env> - A C<Genesis::Env> object
+
+=back
+
+B<Returns:> A hashref with keys:
+
+=over 4
+
+=item C<env_name> - Environment name string
+
+=item C<ocfp_type> - OCFP type (C<mgmt> or C<ocf>)
+
+=item C<vpc_cidr> - VPC CIDR block string (e.g., C<192.168.0.0/20>)
+
+=item C<vpc_info> - Hashref of sipcalc-style VPC CIDR info
+
+=item C<subnets> - Hashref keyed by subnet name, each containing CIDR info,
+ranges, named reservations, and claims
+
+=back
+
+=head2 _compute_cidr_info($cidr)
+
+Computes a sipcalc-style breakdown of a CIDR block string.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$cidr> - A CIDR notation string (e.g., C<10.0.0.0/24>)
+
+=back
+
+B<Returns:> A hashref with keys: C<network>, C<broadcast>, C<netmask>,
+C<wildcard>, C<prefix_length>, C<total_addresses>, C<usable_hosts>,
+C<first_host>, C<last_host>.
+
+=head2 _compute_ranges($subnet)
+
+Replicates the range computation logic from
+C<Genesis::Hook::CloudConfig::_get_subnet_ranges>.  Parses the
+C<reserved-ips> hash to determine which IPs are explicitly reserved and which
+are explicitly available, then computes the available range by subtracting
+reserved IPs from the full CIDR range.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$subnet> - Hashref with C<cidr_block> (string) and C<reserved-ips>
+(hashref of named IP entries)
+
+=back
+
+B<Returns:> A list of two IPv4 range objects: C<($available_range,
+$reserved_range)>.
+
+=head2 _filter_by_subnet($data, $name)
+
+Filters the gathered network data to a single subnet.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$data> - The full network data hashref from C<_gather_network_data>
+
+=item C<$name> - Subnet name string (e.g., C<ocfp-0>)
+
+=back
+
+B<Returns:> A new data hashref containing only the requested subnet.  Calls
+C<bail()> if the subnet name is not found.
+
+=head2 _output_full($data, %opts)
+
+Renders the full network overview: VPC header with CIDR info, followed by
+per-subnet sections showing CIDR breakdown, reserved IPs, allocated ranges,
+available ranges, and a utilization bar.
+
+=head2 _output_summary($data, %opts)
+
+Renders a compact single-table summary with one row per subnet showing: subnet
+name, CIDR, AZ, reserved count, allocated count, free count, and utilization
+percentage.
+
+=head2 _output_reserved($data, %opts)
+
+Renders only the reserved IPs for each subnet, with purpose labels derived
+from the C<reserved-ips> key names.
+
+=head2 _output_allocated($data, %opts)
+
+Renders only the allocated/claimed IPs for each subnet, showing the claiming
+deployment network name and the IP range claimed.
+
+=head2 _output_available($data, %opts)
+
+Renders only the free (unallocated, unreserved) IP ranges for each subnet.
+
+=head2 _output_json($data, %opts)
+
+Serializes the gathered network data as JSON to standard output.  IPv4 range
+objects are converted to their string representations.
+
+=head1 INTERNAL FUNCTIONS
+
+=head2 _display_cidr_section($label, $info)
+
+Renders a labeled sipcalc-style CIDR breakdown block.
+
+=head2 _display_reserved_section($subnet_data)
+
+Renders the reserved IPs table for a single subnet.
+
+=head2 _display_allocated_section($subnet_data)
+
+Renders the allocation/claims table for a single subnet.
+
+=head2 _display_available_section($subnet_data)
+
+Renders the free IP ranges for a single subnet.
+
+=head2 _display_utilization_bar($subnet_data)
+
+Renders a visual utilization bar showing the proportions of reserved,
+allocated, and free IPs within the subnet.
+
+=head2 _netmask_from_prefix($prefix_length)
+
+Computes a dotted-decimal netmask from a prefix length (e.g., 24 yields
+C<255.255.255.0>).
+
+=head2 _wildcard_from_netmask($netmask)
+
+Computes the wildcard mask by inverting each octet of the netmask (e.g.,
+C<255.255.255.0> yields C<0.0.0.255>).
+
+=head2 _extract_named_reserved($reserved_ips)
+
+Extracts individually named IP reservations from the C<reserved-ips> hash.
+Returns an arrayref of C<< {name => $key, ip => $value} >> entries for keys
+that do not match the C<reserved_*>, C<available_*>, C<*_static> patterns.
+
+=head2 _serialize_for_json($data)
+
+Deep-copies the network data structure, converting IPv4 objects to strings and
+simplifying for JSON serialization.
+
+=head1 SEE ALSO
+
+L<Genesis::Commands::Ocfp>, L<Genesis::Hook::CloudConfig>,
+L<Genesis::Env>, L<IPv4>, L<IPv4::Span>, L<IPv4::Range>
+
+=head1 AUTHOR
+
+FiveTwenty, LLC
+
+=cut

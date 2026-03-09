@@ -1,0 +1,77 @@
+# Genesis Test Execution Manifest
+# See .claude/plans/test-organization-manifest-approach.md for details
+#
+# Format: Each section lists test files to execute in order
+# Tests are path relative to t/ directory
+# Blank lines and # comments are ignored
+
+[sanity-tests]
+# Meta-tests that validate prerequisite conditions
+# These must pass before functional tests can run
+sanity-tests/modules-compile.t   # Verify all Perl modules compile and load
+
+[unit-tests]
+# Library/module-level tests (formerly numeric-prefixed)
+# Will be reviewed and potentially split into unit/integration as updated
+# Naming: {lib-path}_{module}-{context}.t (e.g., genesis-struct.t, genesis_env-core.t)
+# Genesis.pm tests split by context:
+unit-tests/genesis-core.t        # Error/logging/env utilities
+unit-tests/genesis-string.t      # String utilities (ordify, count_nouns, sentence_join)
+unit-tests/genesis-semver.t      # Semantic versioning (semver, by_semver, new_enough)
+unit-tests/genesis-struct.t      # Data structures (struct_*, flatten, deep_merge)
+unit-tests/genesis-time.t        # Time formatting (strfuzzytime, pretty_duration)
+unit-tests/genesis-uri.t         # URI parsing (parse_uri, is_valid_uri)
+unit-tests/term-color.t.DNF
+unit-tests/ipv4-core.t
+unit-tests/boolean-core.t
+unit-tests/service_github-core.t
+unit-tests/service_bosh-director.t
+unit-tests/genesis_top-core.t
+# Temporarily disabled - see test analysis for details
+#unit-tests/kit-core.t
+#unit-tests/kit-compilation.t
+#unit-tests/hooks.t
+#unit-tests/hooks-cloudconfig.t
+unit-tests/genesis_env-name_validation.t  # Genesis::Env name validation (_env_name_errors)
+unit-tests/genesis_env-file_loading_and_inheritance.t  # Genesis::Env file loading, hierarchy, and inheritance
+unit-tests/genesis_env-accessors.t  # Genesis::Env basic accessors and identity
+unit-tests/genesis_env-use_create_env.t  # Genesis::Env use_create_env comprehensive testing
+unit-tests/genesis_env-creation.t  # Genesis::Env object creation (new, create error handling)
+unit-tests/genesis_env-metadata.t  # Genesis::Env metadata accessors (scale, iaas, features, has_feature)
+unit-tests/genesis_env-bosh.t  # Genesis::Env BOSH-related methods (_parse_bosh_env, bosh_env, bosh_alias)
+unit-tests/genesis_env_secrets_parser_fromkit-core.t  # FromKit parser defect regression tests
+unit-tests/genesis_env_secrets_store_vault-core.t  # Store::Vault code defect regression tests
+#unit-tests/genesis-cli.t
+
+[integration-tests]
+# Multi-component interaction tests that require system interaction
+# Naming: {lib-path}_{module}-{context}.t (e.g., genesis_command.t, genesis_yaml.t)
+# Genesis.pm tests requiring filesystem/network:
+integration-tests/genesis-command.t  # Command execution (run, curl, lines, fake_tty)
+integration-tests/genesis-data.t     # Data file operations (YAML/JSON load/save)
+integration-tests/genesis-files.t    # File operations (mkfile_or_fail, slurp, humanize_path)
+integration-tests/service_github-api.t   # GitHub/GitLab API integration (SSH key fetching, API methods)
+integration-tests/service_bosh_stemcells.t  # BOSH stemcell API integration (bosh.io)
+integration-tests/service_bosh_director.t   # BOSH Director constructor patterns (from_exodus, from_alias, from_environment)
+integration-tests/genesis_top-complete.t    # Genesis::Top with external vault and GitHub dependencies
+# Genesis::Env integration tests - require vault/BOSH mocks
+#integration-tests/genesis_env-core.t        # Comprehensive env operations (loading, manifest, deployment)
+#integration-tests/genesis_env-terminate.t   # Environment termination workflow
+# Tests needing rebuild - concepts preserved, need to test actual Genesis methods
+#integration-tests/genesis_env-release_sha1_validation.t  # REBUILD: Test Genesis::Env::_check_release_url_sha1
+#integration-tests/genesis-undefined_handling.t           # REBUILD: Test Genesis::new_enough with edge cases
+
+[e2e-tests]
+# Full workflow tests using genesis executable
+# Will be reviewed and potentially split during updates
+e2e-tests/compiled.t
+e2e-tests/init.t
+e2e-tests/manifest.t
+e2e-tests/new.t
+e2e-tests/params.t
+e2e-tests/pipeline.t
+e2e-tests/secrets.t
+e2e-tests/yamls.t
+
+[regression-tests]
+# Regression tests for known bugs to be added

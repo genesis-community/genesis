@@ -1,0 +1,1263 @@
+=head1 NAME
+
+Service::Vault - Abstract base class for Vault access via safe
+
+=head1 SYNOPSIS
+
+  use Service::Vault;
+
+  # Look up all configured vault targets
+  my @all = Service::Vault->find();
+
+  # Find vaults matching a specific property
+  my @local = Service::Vault->find(name => 'my-vault');
+
+  # Get the system default vault
+  my $vault = Service::Vault->default;
+
+  # Read a secret
+  my $value = $vault->get('secret/myapp', 'password');
+
+  # Write a secret
+  $vault->set('secret/myapp', 'password', 'hunter2');
+
+  # Check vault health
+  my $health = $vault->status;  # Returns: 'ok', 'sealed', 'unreachable', etc.
+
+=head1 DESCRIPTION
+
+C<Service::Vault> is the abstract base class for Vault service objects in
+Genesis. It models a single Vault target as known to the C<safe> CLI and
+provides a unified interface for reading and writing secrets, checking status,
+and managing vault lifecycle (target selection, authentication, unsealing).
+
+Concrete behaviour is provided by the two derived classes:
+
+=over 4
+
+=item L<Service::Vault::Local>
+
+A locally-managed Vault instance (e.g. a dev vault started by C<safe local>).
+
+=item L<Service::Vault::Remote>
+
+A remote Vault instance defined in the user's C<~/.saferc>.
+
+=back
+
+The class maintains three shared caches: the list of all known vaults, the
+system default vault, and the "current" vault most recently targeted by
+Genesis. These caches can be cleared with C<clear_all>.
+
+=head1 ABSTRACT METHODS
+
+Subclasses must implement the following methods. Calling them on the base
+class directly raises an error.
+
+=head2 create
+
+  Service::Vault::Local->create();
+  Service::Vault::Remote->create();
+
+Factory method that subclasses must override to create and register a new
+vault object. Calling this on C<Service::Vault> directly raises
+C<"Cannot directly instantiate a Genesis::Vault - use a derived class">.
+
+B<Errors:>
+
+Raises C<"Cannot directly instantiate a Genesis::Vault - use a derived class">
+when called on C<Service::Vault> directly.
+
+Raises C<"Expected $class to provide 'create' method, but it did not (or called SUPER)">
+when a subclass calls SUPER without overriding.
+
+B<Examples:>
+
+  # Must be called on a derived class
+  Service::Vault::Local->create('my-vault');
+  # Returns: a Service::Vault::Local object
+
+=head2 connect_and_validate
+
+  $vault->connect_and_validate();
+
+Subclasses must implement this to connect to and validate the vault.
+Sets the vault as current on success.
+
+B<Errors:>
+
+Raises C<"Expected %s to provide 'connect_and_validate' method, but it did
+not (or called SUPER)"> when called on the base class. C<%s> is the class name.
+
+B<Returns:> Defined by subclass implementation.
+
+B<Examples:>
+
+  # Subclasses call connect_and_validate internally during target/attach
+  my $vault = Service::Vault::Remote->target('prod-vault');
+  # Returns: subclass-defined (target() calls connect_and_validate internally)
+
+=head2 authenticate
+
+  $vault->authenticate();
+
+Subclasses must implement this to authenticate using credentials available
+in the environment.
+
+B<Returns:> Defined by subclass.
+
+B<Errors:>
+
+Raises C<"Expected %s to provide 'authenticate' method, but it did not (or called SUPER)">
+when called on the base class. C<%s> is the class name.
+
+B<Examples:>
+
+  # Implemented and called via subclass
+  Service::Vault::Remote->authenticate();
+  # Returns: implementation-defined
+
+=head1 METHODS
+
+=head2 new
+
+  my $vault = Service::Vault->new($url, $name, $verify, $namespace, $strongbox, $mount);
+
+Low-level constructor. Do not call directly; use a subclass factory method
+(C<create>, C<target>, C<attach>, or C<rebind>), which validate the target
+before returning a blessed C<Service::Vault> object.
+
+B<Parameters:>
+
+=over 4
+
+=item $url
+
+The Vault server URL, e.g. C<https://vault.example.com:8200>.
+
+=item $name
+
+The target alias as known in C<~/.saferc>.
+
+=item $verify
+
+Boolean. If true, TLS certificates are verified. If false, verification is
+skipped. JSON::Boolean values are coerced to plain C<1> or C<0>.
+
+=item $namespace
+
+Optional Vault namespace string. Defaults to C<''>.
+
+=item $strongbox
+
+Optional boolean. Enables strongbox mode. Defaults to true (even when
+C<undef> is passed).
+
+=item $mount
+
+Optional secret mount path. Leading and trailing slashes are normalized.
+Defaults to C</secret/>.
+
+=back
+
+B<Returns:> A blessed C<Service::Vault> object.
+
+B<Examples:>
+
+  my $vault = Service::Vault->new(
+    'https://vault.example.com:8200',
+    'prod-vault',
+    1,      # verify
+    '',     # namespace
+    1,      # strongbox
+    '/secret/',
+  );
+  # Returns: a Service::Vault object
+
+=head2 all_vaults
+
+  my @vaults = Service::Vault->all_vaults();
+
+Returns all vault targets defined in the C<safe> configuration as a list
+of C<Service::Vault> objects sorted by name. Local vaults are returned as
+C<Service::Vault::Local> objects; all others as C<Service::Vault::Remote>.
+
+B<Returns:> A list of C<Service::Vault> objects.
+
+=head2 find
+
+  my @vaults = Service::Vault->find(%filter);
+
+Returns all vaults matching the given filter criteria. Without filters,
+returns all known vaults. Filter keys are matched as strings against vault
+object properties. Valid filter keys are C<url>, C<name>, C<verify>, and
+C<namespace>.
+
+Results are cached after the first call. Use C<clear_all> to invalidate the
+cache.
+
+B<Parameters:>
+
+=over 4
+
+=item %filter
+
+Optional hash of property/value pairs to filter on.
+
+=back
+
+B<Returns:> A list of matching C<Service::Vault> objects (may be empty).
+
+B<Examples:>
+
+  # All configured vaults
+  my @all = Service::Vault->find();
+  # Returns: list of Service::Vault objects
+
+  # Vault with a specific alias
+  my ($v) = Service::Vault->find(name => 'prod-vault');
+  # Returns: the matching vault object
+
+=head2 find_by_target
+
+  my @vaults = Service::Vault->find_by_target($alias_or_url);
+
+Returns all C<Service::Vault> objects sharing the URL of the given target
+alias or URL string.
+
+B<Parameters:>
+
+=over 4
+
+=item $alias_or_url
+
+A target alias name or a full URL. If an alias is given, its URL is
+resolved first, then all aliases sharing that URL are returned.
+
+=back
+
+B<Returns:> A list of C<Service::Vault> objects (may be empty).
+
+B<Examples:>
+
+  my @shared = Service::Vault->find_by_target('my-vault');
+  # Returns: list of vault objects sharing the same URL
+
+=head2 default
+
+  my $vault = Service::Vault->default($refresh);
+
+Returns the vault set as the system default in C<safe> (the target
+C<safe target --json> reports). The result is cached; pass a true value
+for C<$refresh> to force a fresh lookup.
+
+B<Parameters:>
+
+=over 4
+
+=item $refresh
+
+Optional. If true, clears the cached default and re-queries C<safe>.
+
+=back
+
+B<Returns:> A C<Service::Vault> object, or C<undef> if no default is set.
+
+B<Examples:>
+
+  my $default = Service::Vault->default();
+  print $default->name;
+  # Returns: name of the current default vault
+
+=head2 set_default
+
+  Service::Vault->set_default($vault);
+
+Sets the given vault as the system default C<safe> target by running
+C<safe target $name>.
+
+B<Parameters:>
+
+=over 4
+
+=item $vault
+
+A C<Service::Vault> object to set as the default target.
+
+=back
+
+B<Returns:> The C<$vault> object passed in.
+
+B<Errors:>
+
+Dies with C<"Could not set default vault to #C{%s}:\n%s"> if the C<safe target>
+command fails. C<%s> is the vault name; the second C<%s> is the error output
+from safe.
+
+B<Examples:>
+
+  my ($vault) = Service::Vault->find(name => 'prod-vault');
+  my $result = Service::Vault->set_default($vault);
+  # Returns: $vault
+
+=head2 current
+
+  my $vault = Service::Vault->current();
+
+Returns the vault most recently set as the Genesis current vault by
+C<target>, C<attach>, or C<rebind> (in subclasses), or by an explicit call
+to C<set_as_current>.
+
+B<Returns:> A C<Service::Vault> object, or C<undef> if none has been set.
+
+B<Examples:>
+
+  my $cur = Service::Vault->current();
+  print $cur->name if $cur;
+  # Returns: name of the current vault
+
+=head2 clear_all
+
+  Service::Vault->clear_all();
+  $vault->clear_all();   # can also be called on an instance (for chaining)
+
+Clears all cached vault data: the vault list, the default vault, and the
+current vault. Also removes the cached environment hash from each known
+vault object. Returns the invocant to allow method chaining.
+
+Primarily used in tests, but also useful when the C<safe> configuration
+changes during a Genesis run.
+
+B<Returns:> The invocant (class or object).
+
+B<Examples:>
+
+  Service::Vault->clear_all();
+
+  # After clearing, the next find() re-queries safe
+  my @fresh = Service::Vault->find();
+  # Returns: fresh list of vault objects
+
+=head2 find_single_match_or_bail
+
+  my $vault = Service::Vault->find_single_match_or_bail($url, $current_name);
+
+Finds all vaults matching the given URL and returns the single match.
+If more than one alias is registered for the URL, dies with an error
+listing all conflicting aliases.
+
+B<Parameters:>
+
+=over 4
+
+=item $url
+
+The Vault URL to look up.
+
+=item $current_name
+
+Optional. The alias currently in use, highlighted in the error output.
+
+=back
+
+B<Returns:> The single matching C<Service::Vault> object, or C<undef> if
+none found.
+
+B<Errors:>
+
+Dies with a multi-line message beginning with
+C<"\nMore than one target is specified for URL '%s'\n"> listing the
+conflicting aliases and instructions to edit C<~/.saferc>. C<%s> is the URL.
+
+B<Examples:>
+
+  my $vault = Service::Vault->find_single_match_or_bail(
+    'https://vault.example.com:8200', 'my-vault'
+  );
+  # Returns: the matching Service::Vault object
+
+=head2 get_vault_from_descriptor
+
+  my $vault = Service::Vault->get_vault_from_descriptor($descriptor, $source);
+
+Parses a vault descriptor string (as used in C<genesis.vault>) and returns
+the single matching C<Service::Vault> object. When multiple vaults match the
+URL, the method attempts to disambiguate using the descriptor's alias. If
+still ambiguous, it dies with a detailed error.
+
+B<Parameters:>
+
+=over 4
+
+=item $descriptor
+
+A vault descriptor string in the format accepted by C<parse_vault_descriptor>.
+
+=item $source
+
+Optional. A label identifying the source of the descriptor used in error
+messages. Defaults to C<'genesis.vault'>.
+
+=back
+
+B<Returns:> The matching C<Service::Vault> object, or C<undef> if none found
+and no ambiguity error was raised.
+
+B<Errors:>
+
+Dies with C<"No url specified by vault descriptor"> if the descriptor
+contains no URL clause.
+
+Dies with a multi-line message beginning with
+C<"\nMore than one target is specified for URL '%s'%s\n\n"> when the URL
+matches multiple vaults and disambiguation fails. C<%s> placeholders are the
+URL and an optional alias-mismatch clause.
+
+B<Examples:>
+
+  my $vault = Service::Vault->get_vault_from_descriptor(
+    'https://vault.example.com:8200 as prod-vault no-verify'
+  );
+  # Returns: the matching Service::Vault object
+
+=head2 parse_vault_descriptor
+
+  # Scalar context - returns a hash reference
+  my $parsed = Service::Vault->parse_vault_descriptor($vault_info, $source);
+
+  # List context - returns a flat list
+  my ($url, $verify, $namespace, $alias, $strongbox) =
+    Service::Vault->parse_vault_descriptor($vault_info, $source);
+
+Parses a vault descriptor string into its component parts. The descriptor
+format is:
+
+  http[s]://<domain-or-ip>[:<port>][/<namespace>] [as <alias>] [no-]verify [no-]strongbox
+
+In scalar context, returns a hash reference with keys C<url>, C<verify>,
+C<alias>, C<namespace>, C<strongbox>, C<tls>, C<domain>, and C<port>.
+
+In list context, returns C<($url, $verify, $namespace, $alias, $strongbox)>.
+
+B<Parameters:>
+
+=over 4
+
+=item $vault_info
+
+The vault descriptor string to parse.
+
+=item $source
+
+Optional. Label for the descriptor source, used in error messages.
+Defaults to C<'genesis.vault'>.
+
+=back
+
+B<Returns:> In scalar context, a hash reference. In list context, a
+five-element list C<($url, $verify, $namespace, $alias, $strongbox)>.
+
+B<Errors:>
+
+Dies with a message beginning with C<"Unknown clause in #G{$source}: '#Y{$clause}'\n">
+if the descriptor contains an unrecognised token.
+
+Dies with a message beginning with C<"Missing connect clause in #G{$source}\n">
+if no URL clause is present.
+
+B<Examples:>
+
+  my $info = Service::Vault->parse_vault_descriptor(
+    'https://vault.example.com:8200 as prod no-verify'
+  );
+  # Returns: { url => 'https://vault.example.com:8200', alias => 'prod',
+  #            verify => 0, strongbox => 1, ... }
+
+  my ($url, $verify, $ns, $alias, $sb) = Service::Vault->parse_vault_descriptor(
+    'https://10.0.0.1:8200/ns1 as local verify no-strongbox'
+  );
+  # Returns: ('https://10.0.0.1:8200', 1, 'ns1', 'local', 0)
+
+=head2 url
+
+  my $url = $vault->url();
+
+Returns the URL of the Vault target in the form C<scheme://host:port>. The
+port is optional; it is implied as C<80> for C<http> and C<443> for C<https>.
+
+B<Returns:> A string such as C<'https://vault.example.com:8200'>.
+
+B<Examples:>
+
+  print $vault->url();
+  # Returns: 'https://vault.example.com:8200'
+
+=head2 name
+
+  my $name = $vault->name();
+
+Returns the target alias as registered in C<~/.saferc>.
+
+B<Returns:> A string (the target alias, e.g. C<'prod-vault'>).
+
+B<Examples:>
+
+  print $vault->name();
+  # Returns: 'prod-vault'
+
+=head2 verify
+
+  my $verify = $vault->verify();
+
+Returns whether TLS certificate verification is enabled for this vault.
+
+B<Returns:> C<1> if verification is enabled, C<0> if disabled.
+
+B<Examples:>
+
+  print $vault->verify();
+  # Returns: 1
+
+=head2 namespace
+
+  my $ns = $vault->namespace();
+
+Returns the Vault namespace string configured for this vault.
+
+B<Returns:> A string, or C<''> if no namespace is set.
+
+B<Examples:>
+
+  print $vault->namespace();
+  # Returns: ''
+
+  # When the vault URL includes a namespace path
+  print $vault->namespace();
+  # Returns: 'admin'
+
+=head2 strongbox
+
+  my $sb = $vault->strongbox();
+
+Returns whether strongbox mode is enabled. Defaults to true when not
+explicitly configured.
+
+B<Returns:> C<1> if enabled, C<0> if disabled.
+
+B<Examples:>
+
+  print $vault->strongbox();
+  # Returns: 1
+
+=head2 tls
+
+  my $is_tls = $vault->tls();
+
+Returns whether the vault URL uses HTTPS. This is computed from the URL
+rather than stored as a separate property.
+
+B<Returns:> True (C<1>) if the URL starts with C<https://>, false (empty
+string) otherwise.
+
+B<Examples:>
+
+  print $vault->tls() ? 'TLS' : 'plaintext';
+  # Returns: 'TLS'
+
+=head2 authenticated
+
+  my $bool = $vault->authenticated();
+
+Returns true if the current safe token for this vault is valid and
+C<safe auth status> confirms authentication. Always bypasses the env cache
+for a fresh token lookup.
+
+B<Returns:> True if authenticated and token is valid, false or C<undef> otherwise.
+
+B<Examples:>
+
+  if ($vault->authenticated()) {
+    print "Ready to read secrets\n";
+  }
+  # Returns: 1 when authenticated
+
+=head2 initialized
+
+  my $bool = $vault->initialized();
+
+Returns true if the vault has been initialized for Genesis use, detected by
+a C<handshake> key at the configured secrets mount (or C</secret/handshake>
+as a fallback when the mount differs from C</secret/>).
+
+B<Returns:> True if the handshake key exists, false otherwise.
+
+B<Examples:>
+
+  print $vault->initialized() ? 'ready' : 'not initialized';
+  # Returns: 'ready'
+
+=head2 query
+
+  my ($out, $rc, $err) = $vault->query();
+
+Runs a C<safe> command against this vault and returns the output, exit code,
+and stderr. The command is automatically prefixed with C<safe> if not already
+present. C<SAFE_TARGET> is always set to this vault's reference, and C<DEBUG>
+is always cleared.
+
+B<Parameters:>
+
+=over 4
+
+=item \%opts
+
+Optional hash reference of options passed to the C<run> helper. The C<env>
+key may be provided to supply additional environment variables, though
+C<SAFE_TARGET> and C<DEBUG> are always overridden.
+
+=item @cmd
+
+The safe subcommand and arguments (e.g. C<'get', 'secret/foo:bar'>).
+The leading C<'safe'> may be omitted.
+
+=back
+
+B<Returns:> A three-element list C<($output, $exit_code, $stderr)>.
+
+B<Examples:>
+
+  my ($out, $rc) = $vault->query('get', 'secret/myapp:password');
+  die "Failed" unless $rc == 0;
+
+  # With options
+  my ($out, $rc) = $vault->query({passfail => 1}, 'exists', 'secret/myapp');
+  # Returns: ('', 0, '') when the path exists
+
+=head2 get
+
+  my $value  = $vault->get($path, $key);
+  my $value  = $vault->get("$path:$key");
+  my $values = $vault->get($path);
+
+Reads a secret value or all key/value pairs from the vault.
+
+When C<$key> is provided (either as a second argument or embedded in
+C<$path> as C<path:key>), returns the value of that specific key as a
+string, or C<undef> if not found.
+
+When no key is given, fetches the entire path and returns a hash reference
+of all key/value pairs at that path. Returns an empty hash reference C<{}>
+on error.
+
+B<Parameters:>
+
+=over 4
+
+=item $path
+
+The vault secret path. May include a key suffix in C<path:key> form.
+
+=item $key
+
+Optional. The key name within the path.
+
+=back
+
+B<Returns:> A string value when a key is requested, or a hash reference
+when only a path is given.
+
+B<Errors:>
+
+Dies with C<"Expected #C{%s} to return a hash of key/value pairs, but got a %s">
+when the path returns something other than a hash. The first C<%s> is the
+path, the second is the Perl ref type returned.
+
+B<Examples:>
+
+  # Fetch a single key
+  my $pw = $vault->get('secret/myapp', 'password');
+  # Returns: 'hunter2'
+
+  # Fetch with combined path:key
+  my $pw = $vault->get('secret/myapp:password');
+  # Returns: 'hunter2'
+
+  # Fetch all keys at a path
+  my $data = $vault->get('secret/myapp');
+  # Returns: { password => 'hunter2', user => 'admin' }
+
+=head2 get_path
+
+  my $data = $vault->get_path($path);
+
+Reads all secrets under C<$path> and all subpaths, returning a nested hash
+structure. Uses C<safe export> to retrieve the entire tree in a single JSON
+call. Automatically unflattens paths stored with the C<__flattened__> marker.
+
+Returns an empty hash reference C<{}> on error.
+
+B<Parameters:>
+
+=over 4
+
+=item $path
+
+The root vault path to export from. Leading and trailing slashes are stripped.
+
+=back
+
+B<Returns:> A nested hash reference. Keys at each level correspond to path
+segments; leaf values are hash references of key/value pairs.
+
+B<Examples:>
+
+  my $tree = $vault->get_path('secret/myapp');
+  # Returns: { password => 'hunter2', db => { host => 'localhost' } }
+
+=head2 set
+
+  $vault->set($path, $key, $value);   # non-interactive
+  $vault->set($path, $key);           # interactive (prompts for value)
+
+Writes a secret to the vault. When C<$value> is provided, writes it
+directly. When C<$value> is omitted, starts an interactive C<safe set>
+prompt that hides input and requires confirmation; the caller must be in
+a controlling terminal.
+
+B<Parameters:>
+
+=over 4
+
+=item $path
+
+The vault secret path.
+
+=item $key
+
+The key name within the path.
+
+=item $value
+
+Optional. The string value to store. If omitted, interactive mode is used.
+
+=back
+
+B<Returns:> The stored C<$value> in non-interactive mode. The value re-read
+from the vault via C<get> in interactive mode.
+
+B<Errors:>
+
+Dies with C<"Could not write #C{%s:%s} to vault at #M{%s}:\n%s"> if the
+write fails in non-interactive mode. The placeholders are the path, key,
+vault URL, and command output.
+
+Dies with C<"Could not write #C{%s:%s} to vault at #M{%s}"> if the write
+fails in interactive mode.
+
+Dies with C<"#R{[ERROR]} Cannot interactively provide secrets unless in a
+controlling terminal - terminating!"> if no controlling terminal is available
+when attempting interactive mode.
+
+B<Examples:>
+
+  # Non-interactive
+  $vault->set('secret/myapp', 'password', 'hunter2');
+  # Returns: 'hunter2'
+
+  # Interactive (prompts the user)
+  $vault->set('secret/myapp', 'password');
+  # Returns: value read back from vault after interactive entry
+
+=head2 clear
+
+  $vault->clear($path, $recursive);
+
+Removes a secret path from the vault. Without C<$recursive>, removes only
+the exact path (if it exists). With C<$recursive> true, removes the path
+and all subpaths using C<safe rm -rf>.
+
+If the path does not exist and C<$recursive> is false, returns without
+error.
+
+B<Parameters:>
+
+=over 4
+
+=item $path
+
+The vault secret path to remove.
+
+=item $recursive
+
+Optional boolean. If true, recursively removes C<$path> and all subpaths.
+
+=back
+
+B<Returns:> C<1> on successful removal, or C<undef> if the path did not
+exist (non-recursive only).
+
+B<Errors:>
+
+Dies with C<"Could not clear #C{%s} in vault at #M{%s}:\n%s"> if the
+removal fails. The placeholders are the path, vault URL, and combined
+stdout/stderr.
+
+B<Examples:>
+
+  $vault->clear('secret/myapp');
+  # Returns: 1
+
+  $vault->clear('secret/myapp', 1);
+  # Returns: 1 (recursive removal)
+
+=head2 set_path
+
+  $vault->set_path($path, \%data, %opts);
+
+Writes a hash of key/value pairs to the vault at C<$path>. Handles nested
+hashes and arrays recursively. Batches writes to stay under the command-line
+length limit.
+
+B<Parameters:>
+
+=over 4
+
+=item $path
+
+The target vault path.
+
+=item \%data
+
+A hash reference of key/value pairs to write. Nested hashes and arrays are
+supported; empty containers are skipped.
+
+=item %opts
+
+Optional key/value options:
+
+=over 4
+
+=item flatten
+
+If true, the data is pre-flattened and a C<__flattened__> marker key is
+added so C<get_path> can reconstruct it.
+
+=item clear
+
+If true, the existing path is cleared before writing. When C<flatten> is
+also true, only the exact path is cleared (non-recursive). Otherwise, the
+path is cleared recursively.
+
+=back
+
+=back
+
+B<Returns:> The C<\%data> hash reference that was written.
+
+B<Errors:>
+
+Dies with C<"Could not write #C{%s} to vault at #M{%s}:\n%s"> if any
+C<safe set> command fails. The placeholders are the path, vault URL, and
+command output.
+
+B<Examples:>
+
+  $vault->set_path('secret/myapp', {
+    password => 'hunter2',
+    username => 'admin',
+  });
+  # Returns: { password => 'hunter2', username => 'admin' }
+
+  $vault->set_path('secret/myapp', \%nested_data, flatten => 1, clear => 1);
+  # Returns: the data hash reference
+
+=head2 has
+
+  my $bool = $vault->has($path, $key);
+
+Returns true if the vault contains the given path (and optionally the given
+key). Equivalent to C<safe exists $path> or C<safe exists $path:$key>.
+
+B<Parameters:>
+
+=over 4
+
+=item $path
+
+The vault secret path to check.
+
+=item $key
+
+Optional. If provided, checks for the existence of C<$path:$key>.
+
+=back
+
+B<Returns:> True if the path (or path:key) exists, false otherwise.
+
+B<Examples:>
+
+  if ($vault->has('secret/myapp')) {
+    print "path exists\n";
+  }
+  # Returns: 1 if path exists
+
+  if ($vault->has('secret/myapp', 'password')) {
+    print "key exists\n";
+  }
+  # Returns: 1 if key exists
+
+=head2 paths
+
+  my @paths = $vault->paths(@prefixes);
+
+Returns a list of all leaf paths in the vault, or all paths under one or
+more prefix strings. A leaf path is one that directly contains keys
+(not an intermediate node).
+
+When multiple prefixes are given and they overlap, a path matching more
+than one prefix is returned once per matching prefix.
+
+B<Parameters:>
+
+=over 4
+
+=item @prefixes
+
+Optional. One or more path prefix strings to filter results.
+
+=back
+
+B<Returns:> A list of path strings.
+
+B<Examples:>
+
+  my @all = $vault->paths();
+  # Returns: ('secret/myapp', 'secret/other', ...)
+
+  my @app = $vault->paths('secret/myapp');
+  # Returns: ('secret/myapp',)
+
+=head2 keys
+
+  my @keys = $vault->keys(@prefixes);
+
+Like C<paths>, but each entry includes the C<:key> suffix for every key
+stored at that path. Returns C<path:key> strings.
+
+B<Parameters:>
+
+=over 4
+
+=item @prefixes
+
+Optional. One or more path prefix strings to filter results.
+
+=back
+
+B<Returns:> A list of C<path:key> strings.
+
+B<Examples:>
+
+  my @all = $vault->keys('secret/myapp');
+  # Returns: ('secret/myapp:password', 'secret/myapp:username')
+
+=head2 status
+
+  my $status = $vault->status();
+
+Returns a string describing the current health of the vault. Possible
+values are:
+
+=over 4
+
+=item C<'ok'>
+
+The vault is reachable, authenticated, and initialized.
+
+=item C<'unreachable'>
+
+The vault host/port is not responding, or a networking issue prevents
+connection (e.g. VPN not connected). The return value may include a
+diagnostic suffix such as C<'unreachable - connection refused'>.
+
+=item C<'ambiguous - multiple targets for E<lt>urlE<gt>'>
+
+More than one safe target is registered for the vault URL.
+
+=item C<'sealed'>
+
+The vault process is running but the vault is sealed.
+
+=item C<'unauthenticated'>
+
+The vault is reachable but the local token is missing or expired.
+
+=item C<'uninitialized'>
+
+The vault is reachable and authenticated but the Genesis handshake key
+is absent.
+
+=back
+
+B<Errors:>
+
+Dies with C<"Invalid vault target URL #C{%s}: expecting http(s)://ip-or-domain(:port)">
+if the vault URL cannot be parsed. C<%s> is the configured URL.
+
+B<Examples:>
+
+  my $status = $vault->status();
+  if ($status eq 'ok') {
+    print "Vault is ready\n";
+  }
+  # Returns: 'ok'
+
+=head2 token_info
+
+  my $info = $vault->token_info();
+
+Returns a hash reference of token metadata from C<vault token lookup>. The
+structure mirrors the Vault API response (e.g. C<$info-E<gt>{data}{meta}{username}>).
+
+Returns an empty hash reference C<{}> if the lookup fails.
+
+B<Returns:> A hash reference.
+
+B<Examples:>
+
+  my $info = $vault->token_info();
+  print $info->{data}{meta}{username};
+  # Returns: 'admin'
+
+=head2 user
+
+  my $username = $vault->user();
+
+Returns the authenticated username for the current vault session. Checks
+C<data.meta.username> first, then falls back to C<data.display_name> from
+the token metadata.
+
+B<Returns:> A string username, or C<undef> if neither field is present.
+
+B<Examples:>
+
+  print $vault->user();
+  # Returns: 'admin'
+
+=head2 env
+
+  my $env = $vault->env();
+
+Returns a hash reference of environment variables needed to access the
+vault directly (C<VAULT_ADDR>, C<VAULT_TOKEN>, C<VAULT_SKIP_VERIFY>,
+C<SAFE_TARGET>). This hash can be passed directly to the C<env> option of
+the C<run> helper.
+
+The result is cached on the object after the first call. The cache is
+cleared by C<authenticated> to force a fresh token check.
+
+B<Returns:> A hash reference with keys such as C<VAULT_ADDR>,
+C<VAULT_TOKEN>, C<VAULT_SKIP_VERIFY>, and C<SAFE_TARGET>.
+
+B<Examples:>
+
+  my $env = $vault->env();
+  # Returns: { VAULT_ADDR => 'https://vault.example.com:8200',
+  #            VAULT_TOKEN => 's.xxxxxxxxxxxx', ... }
+
+=head2 token
+
+  my $token = $vault->token();
+
+Returns the current authentication token for this vault, as stored in the
+C<~/.saferc> file. Delegates to C<env-E<gt>{VAULT_TOKEN}>.
+
+B<Returns:> A string token, or C<undef> if not authenticated.
+
+B<Examples:>
+
+  my $tok = $vault->token();
+  print defined($tok) ? 'have token' : 'no token';
+  # Returns: 'have token'
+
+=head2 ref
+
+  my $ref = $vault->ref();
+
+Returns the reference string used to identify this vault to C<safe>. By
+default this is the vault URL. After calling C<ref_by_name>, it returns
+the vault name instead.
+
+B<Returns:> A string (URL or name).
+
+B<Examples:>
+
+  print $vault->ref();
+  # Returns: 'https://vault.example.com:8200'
+
+  $vault->ref_by_name();
+  print $vault->ref();
+  # Returns: 'prod-vault'
+
+=head2 ref_by_name
+
+  $vault->ref_by_name();
+
+Switches the vault's reference mode so that C<ref()> returns the vault's
+name (alias) instead of its URL. Returns the vault object for chaining.
+
+B<Returns:> The vault object.
+
+B<Examples:>
+
+  $vault->ref_by_name();
+  print $vault->ref();
+  # Returns: 'prod-vault'
+
+=head2 build_descriptor
+
+  my $descriptor = $vault->build_descriptor();
+
+Constructs a vault descriptor string from the vault's properties, in the
+format accepted by C<parse_vault_descriptor>. Includes the URL, namespace
+(if set), alias name, and the C<no-verify> and C<no-strongbox> flags if
+applicable.
+
+B<Returns:> A descriptor string such as
+C<'https://vault.example.com:8200 as prod-vault no-verify'>.
+
+B<Examples:>
+
+  my $desc = $vault->build_descriptor();
+  # Returns: 'https://vault.example.com:8200 as prod-vault'
+
+=head2 set_as_current
+
+  $vault->set_as_current();
+
+Marks this vault as the current Genesis vault, accessible via
+C<Service::Vault-E<gt>current()>. Called automatically by C<target>,
+C<attach>, and C<rebind> in subclasses. Exposed as a public method for
+cases where those methods are not used (e.g. legacy pipeline or kit.yml
+handling).
+
+B<Returns:> Nothing.
+
+B<Examples:>
+
+  $vault->set_as_current();
+  my $cur = Service::Vault->current();
+  # $cur is now $vault
+
+=head2 is_current
+
+  my $bool = $vault->is_current();
+
+Returns true if this vault is the Genesis current vault (i.e., matches
+the object last set by C<set_as_current>). Comparison uses the internal
+unique C<id> field assigned at construction.
+
+B<Returns:> True or false.
+
+B<Examples:>
+
+  $vault->set_as_current();
+  print $vault->is_current() ? 'current' : 'not current';
+  # Returns: 'current'
+
+=head2 fetch_unseal_keys
+
+  my ($ok, $message) = $vault->fetch_unseal_keys($env);
+
+Fetches vault unseal keys from C<E<lt>secrets_mountE<gt>vault/seal/keys>
+and stores them at C<$self-E<gt>{unseal_keys}> for use by C<unseal>.
+At least 3 keys must be present.
+
+B<Parameters:>
+
+=over 4
+
+=item $env
+
+A Genesis environment object that provides the C<secrets_mount> method.
+
+=back
+
+B<Returns:> A two-element list C<($success, $message)>. C<$success> is C<1>
+on success or C<0> on failure. C<$message> is a human-readable status string.
+
+B<Examples:>
+
+  my ($ok, $msg) = $vault->fetch_unseal_keys($env);
+  if ($ok) {
+    $vault->unseal();
+  } else {
+    warn "Could not fetch keys: $msg\n";
+  }
+  # Returns: (1, 'Successfully fetched vault unseal keys from ...')
+
+=head2 unseal
+
+  my ($out, $rc, $err) = $vault->unseal();
+
+Unseals the vault cluster using the unseal keys previously fetched by
+C<fetch_unseal_keys>. Uses the first three stored keys (as required by
+C<safe unseal>). Retries up to three times on failure, with a brief pause
+between attempts.
+
+Returns immediately with success if the vault is already unsealed.
+
+C<fetch_unseal_keys> must be called first.
+
+B<Returns:> A three-element list C<($output, $exit_code, $error)>.
+On success, C<$exit_code> is C<0>. On failure after all retries,
+C<$exit_code> is non-zero.
+
+B<Examples:>
+
+  my ($ok, $msg) = $vault->fetch_unseal_keys($env);
+  if ($ok) {
+    my ($out, $rc, $err) = $vault->unseal();
+    if ($rc == 0) {
+      print "Vault unsealed\n";
+    } else {
+      warn "Failed to unseal: $err\n";
+    }
+  }
+  # Returns: ($output, 0, '') on success
+
+=head1 INTERNAL METHODS
+
+These methods are internal to the implementation and may change without
+notice.
+
+=head2 _target_is_url
+
+  Service::Vault::_target_is_url($target)
+
+Returns C<1> if C<$target> is a syntactically valid Vault URL
+(C<http://> or C<https://> followed by a valid hostname or IP address and
+an optional port in the range 0-65535), or C<0> otherwise.
+
+=head2 _get_targets
+
+  my ($url, @aliases) = Service::Vault::_get_targets($target)
+
+Resolves a target name or URL to the canonical URL and all safe aliases
+sharing that URL. If C<$target> is not a URL, it is looked up by name
+first. Returns C<(undef)> if no matching vault is found.
+
+B<Examples:>
+
+  my ($url, @aliases) = Service::Vault::_get_targets('prod-vault');
+  # Returns: ('https://vault.example.com:8200', 'prod-vault', 'prod-vault-alt')
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

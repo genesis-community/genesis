@@ -1,0 +1,158 @@
+=head1 NAME
+
+Genesis::Env::Manifest::Unredacted - Complete deployment manifest with embedded clear-text secrets
+
+=head1 SYNOPSIS
+
+  use Genesis::Env::Manifest::Unredacted;
+
+  # Manifests are created via the builder, not directly
+  my $manifest = $builder->unredacted();
+
+  # Access the manifest content with secrets visible
+  my $data = $manifest->data();   # returns parsed YAML with plain-text secrets
+  my $file = $manifest->file();   # returns path to the YAML file on disk
+
+  # Get the companion redacted version
+  my $safe = $manifest->redacted();
+
+  # Write the manifest to a destination path for deployment
+  $manifest->write_to('/path/to/deploy.yml');
+
+=head1 DESCRIPTION
+
+C<Genesis::Env::Manifest::Unredacted> is the concrete manifest subclass that
+produces a complete BOSH deployment manifest with all Vault secrets resolved
+and embedded as clear-text values. This is the manifest form that BOSH
+consumes when performing a deployment.
+
+The unredacted manifest is built by merging all standard source files
+(initiation, kit, cloud config, environment files, and conclusion) using the
+full merge environment extended with Vault credentials, and with the C<REDACT>
+variable explicitly cleared to C<undef>. Clearing C<REDACT> causes any
+Vault-aware YAML operators to emit the actual secret values rather than
+redaction placeholders.
+
+This manifest is I<deployable>: the C<deployable> method returns true, marking
+it as safe to pass directly to BOSH.
+
+The C<source_files> method returns the merge order: initiation file, kit
+files, cloud config files (required, never optional), environment files, and
+conclusion file.
+
+Manifests are constructed by the builder and should not be instantiated
+directly. See L<Genesis::Env::Manifest> for the full interface inherited by
+this class.
+
+=head1 METHODS
+
+=head2 description
+
+  my $str = $manifest->description();
+
+Returns a human-readable string describing this manifest type.
+
+B<Returns:> the string C<"Complete deployment manifest with embedded
+clear-text secrets from Vault">.
+
+  my $manifest = $builder->unredacted();
+  print $manifest->description();
+  # prints 'Complete deployment manifest with embedded clear-text secrets from Vault'
+
+=head2 deployable
+
+  my $bool = $manifest->deployable();
+
+Returns C<1>, marking this manifest type as suitable for passing to
+C<bosh deploy>. Overrides the base class default of C<0>.
+
+B<Returns:> C<1>.
+
+  print $manifest->deployable();
+  # prints '1'
+
+=head2 source_files
+
+  my $files = $manifest->source_files();
+
+Returns an array reference of the ordered merge-source file paths used to
+build this manifest. The merge order is: initiation file, kit files, cloud
+config files (required, never optional), environment files, and conclusion
+file.
+
+B<Returns:> An array reference of absolute file path strings.
+
+  my $files = $manifest->source_files();
+  print ref($files);    # prints 'ARRAY'
+
+=head2 redacted
+
+  my $redacted = $manifest->redacted();
+
+Returns the companion redacted manifest for this manifest's subset. Delegates
+to C<< $builder->redacted(subset => $subset) >>, producing a
+C<Genesis::Env::Manifest::Redacted> object scoped to the same subset as this
+manifest.
+
+B<Returns:> a C<Genesis::Env::Manifest::Redacted> object.
+
+  my $unredacted = $builder->unredacted();
+  my $redacted   = $unredacted->redacted();
+  print ref($redacted); # prints 'Genesis::Env::Manifest::Redacted'
+
+=head2 merge_options
+
+  my $opts = $manifest->merge_options();
+
+Returns the merge options hash to be passed to the builder's C<merge> method.
+The unredacted manifest requires no special merge options.
+
+B<Returns:> an empty hash reference C<{}>.
+
+  my $opts = $manifest->merge_options();
+  print ref($opts);         # prints 'HASH'
+  print scalar keys %$opts; # prints '0'
+
+=head2 merge_environment
+
+  my $env = $manifest->merge_environment();
+
+Returns the environment variable hash used during the manifest merge. Combines
+the builder's full merge environment with Vault credentials from the
+environment's Vault instance, then explicitly sets C<REDACT> to C<undef>.
+Setting C<REDACT> to C<undef> causes Vault-aware YAML operators to emit actual
+secret values rather than redaction placeholders.
+
+B<Returns:> a hash reference containing the merged environment variables, with
+C<REDACT> set to C<undef>.
+
+  my $env = $manifest->merge_environment();
+  print defined($env->{REDACT}) ? 'set' : 'unset'; # prints 'unset'
+
+=head1 INTERNAL METHODS
+
+These methods are internal to the implementation. They may change without
+notice and should not be called directly.
+
+=head2 _merge
+
+  my ($data, $file) = $manifest->_merge();
+
+Invokes the builder's C<merge> method with this manifest, its source files,
+merge options, and merge environment to produce the unredacted manifest
+content. This is the implementation required by the C<Genesis::Env::Manifest>
+base class.
+
+B<Returns:> a two-element list of C<($data, $file)>, where C<$data> is the
+parsed manifest data structure and C<$file> is the path to the written YAML
+file on disk.
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

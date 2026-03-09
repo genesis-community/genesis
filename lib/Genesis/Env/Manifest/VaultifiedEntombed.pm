@@ -5,8 +5,12 @@ use warnings;
 
 use parent qw/Genesis::Env::Manifest/;
 
-do $ENV{GENESIS_LIB}."/Genesis/Env/Manifest/_entombment_mixin.pm";
-do $ENV{GENESIS_LIB}."/Genesis/Env/Manifest/_vaultify_mixin.pm";
+sub description { "Credhub secrets entombed into BOSH's Credhub from the single-source-of-truth Vault for a vaultified kit. This allows content-sensitive naming of credhub secrets to detect changes,  and use Genesis secrets operations for their management (default for credhub-based kits)" }
+
+use File::Basename;
+my $base_path = dirname(__FILE__) =~ s#^lib/##r;
+do "$base_path/_entombment_mixin.pm";
+do "$base_path/_vaultify_mixin.pm";
 
 sub deployable {1}
 

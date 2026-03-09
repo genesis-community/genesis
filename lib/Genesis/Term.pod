@@ -1,0 +1,1336 @@
+=encoding utf8
+
+=head1 NAME
+
+Genesis::Term - Terminal detection, ANSI color formatting, text wrapping, and Markdown rendering
+
+=head1 SYNOPSIS
+
+  use Genesis::Term;
+
+  # Check terminal capabilities
+  my $width = terminal_width();
+  my $height = terminal_height();
+  if (in_controlling_terminal()) {
+    print "Running interactively\n";
+  }
+
+  # Format text with color markup
+  my $colored = csprintf("#G{Success}: %s items processed", 42);
+  print decolorize($colored);  # prints 'Success: 42 items processed'
+
+  # Wrap text to terminal width
+  my $wrapped = wrap($long_text, terminal_width(), '  ');
+  print $wrapped;
+
+  # Render a Markdown document
+  print render_markdown($md_content);
+
+  # ANSI cursor controls
+  print $ansi_hide_cursor;
+  # ... do animated output ...
+  print $ansi_show_cursor;
+
+=head1 DESCRIPTION
+
+C<Genesis::Term> provides terminal-aware text formatting, ANSI color and glyph markup,
+intelligent text wrapping, and Markdown rendering for the Genesis CLI.
+
+The module exports a set of functions and ANSI control variables by default. Functions
+handle terminal dimension detection, color formatting via a compact markup syntax,
+word-wrapping with support for inline prefix markers, boxed-table drawing with Unicode
+box-drawing characters, and a full Markdown-to-terminal renderer.
+
+Color markup uses a C<#CODE{text}> syntax where the code letters choose foreground and
+background colors, italics (C<i>), and underline (C<u>). Glyph markers use C<#CODE@{glyph}>
+to substitute Unicode symbols. Emoji shortcuts use C<#E{name}>. All markup is stripped or
+converted by C<csprintf()> at render time. The C<NOCOLOR> environment variable suppresses
+all color output.
+
+The exported ANSI control variables (C<$ansi_reset_line>, C<$ansi_clear_to_eol>, etc.)
+are raw escape sequences suitable for direct inclusion in print statements to move the
+cursor, show or hide it, or clear lines.
+
+=head1 EXPORTED VARIABLES
+
+The following package-global ANSI escape sequence variables are exported by default:
+
+=over 4
+
+=item C<$ansi_reset_line>
+
+C<"\r\e[2K"> — Move cursor to column 0 and erase the entire line.
+
+=item C<$ansi_clear_to_eol>
+
+C<"\e[0K"> — Erase from the cursor position to the end of the line.
+
+=item C<$ansi_cursor_up>
+
+C<"\e[A"> — Move cursor up one line.
+
+=item C<$ansi_cursor_down>
+
+C<"\e[B"> — Move cursor down one line.
+
+=item C<$ansi_hide_cursor>
+
+C<"\e[?25l"> — Hide the terminal cursor.
+
+=item C<$ansi_show_cursor>
+
+C<"\e[?25h"> — Show the terminal cursor.
+
+=item C<$ansi_save_cursor>
+
+C<"\e[s"> — Save the current cursor position.
+
+=item C<$ansi_restore_cursor>
+
+C<"\e[u"> — Restore the previously saved cursor position.
+
+=back
+
+=head1 METHODS
+
+=head2 has_tput
+
+  my $bool = has_tput();
+
+Returns 1 if the C<TERM> environment variable is set and the C<tput> command is available
+on the system path, or 0 otherwise. Used internally before invoking C<tput> for terminal
+dimension queries. Not exported by default; use the fully-qualified name or import it
+explicitly.
+
+B<Returns:>
+
+0 if C<$ENV{TERM}> is not set. 1 if C<tput> is found on the path, 0 if not.
+
+B<Examples:>
+
+  if (has_tput()) {
+    print "tput is available\n";  # prints 'tput is available'
+  }
+
+=head2 terminal_width
+
+  my $cols = terminal_width();
+
+Returns the terminal width in columns. Checks, in order:
+
+=over 4
+
+=item 1. C<$ENV{GENESIS_OUTPUT_COLUMNS}> if set
+
+=item 2. C<tput cols> if C<tput> is available
+
+=item 3. Falls back to 80
+
+=back
+
+B<Returns:>
+
+A positive integer column count.
+
+B<Examples:>
+
+  my $width = terminal_width();
+  print "Terminal is $width columns wide\n";
+  # prints 'Terminal is 80 columns wide' when no tput or env override
+
+=head2 terminal_height
+
+  my $rows = terminal_height();
+
+Returns the terminal height in rows. Not exported by default; use the fully-qualified name
+or import it explicitly. Checks, in order:
+
+=over 4
+
+=item 1. C<$ENV{GENESIS_OUTPUT_LINES}> if set
+
+=item 2. C<tput lines> if C<tput> is available
+
+=item 3. Falls back to 24
+
+=back
+
+B<Returns:>
+
+A positive integer row count.
+
+B<Examples:>
+
+  my $height = terminal_height();
+  print "Terminal is $height rows tall\n";
+  # prints 'Terminal is 24 rows tall' when no tput or env override
+
+=head2 boxify
+
+  my $glyph = boxify($line, $position);
+
+Returns a single Unicode box-drawing character (or ASCII fallback) for the given
+line type and position within a box structure. Used by C<build_markdown_table()> to
+assemble bordered tables.
+
+When C<GENESIS_NO_UTF8> or C<GENESIS_NO_BOXES> is set, ASCII characters are used instead
+of Unicode box-drawing characters.
+
+Returns an empty string if C<$line> or C<$position> is not a recognized value.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$line>
+
+The row type: C<"top">, C<"line">, C<"mid">, or C<"bot">.
+
+=item C<$position>
+
+The column position: C<"left">, C<"right">, C<"span">, or C<"div">.
+
+=back
+
+B<Returns:>
+
+A single character string, or C<""> for unrecognized inputs.
+
+B<Examples:>
+
+  print boxify('top', 'left');   # prints '┏' (or '+' in ASCII mode)
+  print boxify('line', 'div');   # prints '┃' (or '|' in ASCII mode)
+  print boxify('bot', 'right');  # prints '┛' (or '+' in ASCII mode)
+
+=head2 csprintf
+
+  my $str = csprintf($fmt, @args);
+
+A color-aware replacement for C<sprintf>. Processes C<$fmt> with C<sprintf> using C<@args>,
+then applies the Genesis color markup language to the result:
+
+=over 4
+
+=item * C<#CODE{text}> — colorize C<text> with the given color code
+
+=item * C<#CODE@{glyph}> — substitute a named glyph symbol, then colorize it
+
+=item * C<#E{name}> — substitute a named emoji character
+
+=back
+
+Color codes are one to four characters from the set C<[-IUKRGYBMPCW*]>. Letter case
+controls brightness: uppercase gives the bright/bold variant, lowercase gives the
+standard variant. C<I> and C<U> add italic and underline formatting respectively.
+C<*> cycles through rainbow colors.
+
+Fatal sprintf warnings (missing or redundant arguments, uninitialized values) are
+propagated as exceptions via C<confess> from the C<Carp> module. Non-fatal sprintf
+warnings are logged via C<Genesis::Log> (subject to configured log level), with
+additional stack traces via C<Carp::cluck> only in dev or testing mode.
+
+B<Note:> Italic formatting (C<I>/C<i>) is suppressed when running inside C<tmux>
+(C<$ENV{TMUX}> is set).
+
+Returns an empty string if C<$fmt> is false.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$fmt>
+
+A C<sprintf>-style format string, optionally containing Genesis color markup.
+
+=item C<@args>
+
+Arguments to pass to C<sprintf>.
+
+=back
+
+B<Returns:>
+
+The formatted and color-processed string, or C<""> if C<$fmt> is false.
+
+B<Examples:>
+
+  my $msg = csprintf("#G{OK}: processed %d items", 5);
+  # Returns: colorized "OK: processed 5 items" (green "OK")
+
+  my $glyph = csprintf("#R@{-} Error occurred");
+  # Returns: colorized red cross glyph (✘) followed by " Error occurred"
+
+  my $empty = csprintf('');
+  # Returns: ''
+
+=head2 decolorize
+
+  my $plain = decolorize($str);
+
+Strips all Genesis color markup and ANSI escape sequences from C<$str>, returning
+plain text. Glyph markers are converted to their plain-text glyph equivalents. Emoji
+markers are removed entirely. Already-converted ANSI color sequences are also stripped.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$str>
+
+A string that may contain Genesis color markup (C<#CODE{...}>), glyph markup
+(C<#CODE@{...}>), emoji markup (C<#E{...}>), or raw ANSI escape sequences.
+
+=back
+
+B<Returns:>
+
+The input string with all color and escape sequences removed.
+
+B<Examples:>
+
+  my $plain = decolorize("#G{Hello}, #R{world}!");
+  # Returns: 'Hello, world!'
+
+  my $no_emoji = decolorize("Status: #E{fire} critical");
+  # Returns: 'Status:  critical'
+
+=head2 csize
+
+  my $len = csize($str);
+
+Returns the display width of C<$str> as it would appear on the terminal — that is,
+the character count after stripping all color markup and adding back the rendered
+width of any emoji characters (which expand to their Unicode codepoint representations).
+
+B<Parameters:>
+
+=over 4
+
+=item C<$str>
+
+A string optionally containing Genesis color markup or emoji markers.
+
+=back
+
+B<Returns:>
+
+An integer display width.
+
+B<Examples:>
+
+  my $len = csize("#G{Hello}");
+  print $len;  # prints '5' (color markup does not add to display width)
+
+  my $len2 = csize("plain text");
+  print $len2; # prints '10'
+
+=head2 wrap
+
+  my $wrapped = wrap($str, $width, $prefix, $indent, $continue_prefix, $init_col);
+
+Wraps C<$str> to C<$width> columns, respecting color markup for accurate display-width
+calculations. Supports a leading C<$prefix> on the first line, a numeric C<$indent>
+for continuation lines, and an optional C<$continue_prefix> string prepended to
+wrapped lines.
+
+A negative C<$width> enables raw mode: lines are indented but never word-wrapped.
+
+Supports an internal marker syntax C<[[prefix>>text> to add per-block sub-indentation
+inline within the string.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$str>
+
+The text to wrap. May contain newlines; each line is wrapped independently.
+
+=item C<$width>
+
+Maximum column width. A negative value disables wrapping (raw indent mode).
+
+=item C<$prefix>
+
+Optional prefix string for the first line. Defaults to C<"">.
+
+=item C<$indent>
+
+Optional numeric indent for continuation lines. Defaults to the display width of
+C<$prefix>.
+
+=item C<$continue_prefix>
+
+Optional prefix string prepended to each continuation line after a wrap. Defaults
+to C<"">.
+
+=item C<$init_col>
+
+Optional starting column offset. When set, the first-line output is trimmed to
+remove the first C<$init_col> characters (for use when the cursor is already
+partway across a line).
+
+=back
+
+B<Returns:>
+
+The wrapped string. Trailing newline is not included.
+
+B<Examples:>
+
+  my $out = wrap("The quick brown fox", 15, '  ');
+  # Returns:
+  #   "  The quick\n  brown fox"
+
+  my $raw = wrap("line one\nline two", -1, '> ');
+  # Returns: "> line one\n  line two"
+
+=head2 fix_wrap
+
+  my $msg = fix_wrap(@msg);
+  my $msg = fix_wrap($fmt, @args);
+
+Preprocesses a message for display by normalizing whitespace produced by Perl
+heredocs or multi-line string formatting. Leading and trailing newlines are stripped.
+When a single-argument form is used, the argument is treated as the message directly.
+When multiple arguments are given, the first is used as a C<sprintf> format string.
+
+If the message begins with a Genesis color-markup label of the form
+C<#CODE{[LABEL]}>, the label is extracted and continuation-line indentation in the
+body is collapsed so the message renders cleanly when passed to C<wrap()>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<@msg>
+
+Either a single message string, or a C<sprintf> format string followed by arguments.
+
+=back
+
+B<Returns:>
+
+The normalized message string.
+
+B<Examples:>
+
+  my $msg = fix_wrap("  text  \n");
+  # Returns: 'text'
+
+  my $msg2 = fix_wrap("#W{[NOTE]} Some\n             long text");
+  # Returns: 'Some long text'
+
+=head2 colored_block
+
+  my $block = colored_block($text, $fg, $bg);
+
+Wraps each line of C<$text> with the ANSI color codes for the given foreground
+(C<$fg>) and background (C<$bg>) colors, erasing to end-of-line on each line so the
+background fill extends to the terminal margin.
+
+Returns C<$text> unchanged if the C<NOCOLOR> environment variable is set.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$text>
+
+The text to colorize. May contain embedded newlines; each line is processed separately.
+
+=item C<$fg>
+
+Foreground color letter (e.g., C<"G"> for bright green, C<"g"> for green). Uses
+the same color code alphabet as C<csprintf()>.
+
+=item C<$bg>
+
+Background color letter (e.g., C<"k"> for black, C<"K"> for dark grey). Uses the
+same color code alphabet as C<csprintf()>.
+
+=back
+
+B<Returns:>
+
+The text with ANSI color codes applied to each line, or the original text if
+C<NOCOLOR> is set.
+
+B<Examples:>
+
+  my $block = colored_block("alert!", 'R', 'k');
+  print $block;  # prints "alert!" with red text on black background
+
+=head2 bullet
+
+  my $str = bullet($msg, %opts);
+  my $str = bullet($type, $msg, %opts);
+
+Formats a bullet point line. The first argument is the bullet type if there is an
+odd number of remaining arguments (after the first), or the message if the remaining
+arguments are all key-value pairs.
+
+Type values and their defaults:
+
+=over 4
+
+=item C<"good"> — green check mark (C<✔ >)
+
+=item C<"bad"> — red cross (C<✘ >)
+
+=item C<"warn"> — yellow warning sign (C<⚠ >)
+
+=item C<"empty"> — two spaces
+
+=item any other value or empty string — bullet (C<•>)
+
+=back
+
+B<Parameters:>
+
+=over 4
+
+=item C<$type> (optional)
+
+Bullet type: C<"good">, C<"bad">, C<"warn">, C<"empty">, or any other string. When
+present, determines default symbol and color. Defaults to empty (bullet style).
+
+=item C<$msg>
+
+The message text to place after the bullet.
+
+=item C<%opts>
+
+Optional key-value pairs:
+
+=over 8
+
+=item C<symbol>
+
+Override the bullet symbol. Supports glyph markup (C<#@{glyph}>).
+
+=item C<color>
+
+Override the bullet color code. Defaults to C<G>, C<R>, C<Y>, or C<-> based on type.
+
+=item C<indent>
+
+Left-pad width. Defaults to 2.
+
+=item C<box>
+
+If true, wraps the symbol in C<[> and C<]>. If an array reference, uses the two
+elements as the left and right box characters.
+
+=back
+
+=back
+
+B<Returns:>
+
+A formatted string with the indented, optionally boxed bullet symbol and message.
+
+B<Examples:>
+
+  print bullet('good', 'All checks passed');
+  # Returns: '  ✔  All checks passed'
+
+  print bullet('bad', 'Connection failed', indent => 0);
+  # Returns: '✘  Connection failed'
+
+  print bullet('Test item');
+  # Returns: '  •  Test item'
+
+=head2 checkbox
+
+  my $str = checkbox($state);
+
+Returns a boxed checkbox symbol: a filled square for C<"good"> states, an outlined
+square for C<"bad"> states (including empty string and C<"error">), and a warning
+symbol for C<"warn">. Equivalent to calling C<bullet()> with C<box =E<gt> 1>,
+C<indent =E<gt> 0>, and an empty message.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$state>
+
+A string. C<"warn"> produces a warning checkbox. Any truthy value other than
+C<"error"> produces a checked (good) checkbox. A false value or C<"error"> produces
+an unchecked (bad) checkbox.
+
+=back
+
+B<Returns:>
+
+A formatted checkbox string (no trailing message text).
+
+B<Examples:>
+
+  print checkbox('good');  # Returns: '[✔ ]'
+  print checkbox('bad');   # Returns: '[✘ ]'
+  print checkbox('warn');  # Returns: '[⚠ ]'
+  print checkbox('');      # Returns: '[✘ ]'
+
+=head2 in_controlling_terminal
+
+  my $bool = in_controlling_terminal();
+
+Returns true if both STDIN and STDOUT are connected to a terminal (i.e., the process
+is running interactively rather than piped or redirected).
+
+B<Returns:>
+
+True if both C<-t STDIN> and C<-t STDOUT> are true, false otherwise.
+
+B<Examples:>
+
+  if (in_controlling_terminal()) {
+    print "Interactive session\n";
+  } else {
+    print "Non-interactive session\n";
+  }
+
+=head2 get_io_target
+
+  my $target_desc = get_io_target($fh);
+
+Identifies the I/O target for a filehandle. Defaults to C<STDOUT> if no argument
+is given.
+
+Returns one of:
+
+=over 4
+
+=item C<"terminal"> — the filehandle is connected to a terminal
+
+=item C<"pipe"> — the filehandle is a named pipe
+
+=item The resolved file path — if the filehandle is a regular file and C</proc/self/fd>
+is available to resolve the inode
+
+=item C<"file"> — if the filehandle is a regular file but the path cannot be resolved
+
+=item C<"unknown device"> — for any other filehandle type
+
+=back
+
+B<Parameters:>
+
+=over 4
+
+=item C<$fh> (optional)
+
+A filehandle or glob reference. Defaults to C<\*STDOUT>.
+
+=back
+
+B<Returns:>
+
+A string describing the I/O target.
+
+B<Examples:>
+
+  my $type = get_io_target(\*STDOUT);
+  print $type;  # prints 'terminal' when running interactively
+
+  open my $fh, '>', '/tmp/test.txt' or die $!;
+  my $type = get_io_target($fh);
+  print $type;  # prints '/tmp/test.txt' on Linux, 'file' elsewhere
+
+=head2 build_markdown_table
+
+  my $rendered = build_markdown_table($table, %opts);
+
+Converts a Markdown table string into a terminal-rendered table with Unicode
+box-drawing borders, auto-computed column widths, and column alignment derived
+from the Markdown separator row.
+
+Alignment is determined by the separator row (C<--->, C<:--->, C<---:>, C<:---:>):
+left-aligned, left-aligned, right-aligned, and center-aligned respectively.
+
+Column widths are calculated to fit within the terminal width (or C<$opts{width}>),
+distributing available space proportionally to each column's natural width. With
+C<expand =E<gt> 1>, columns are expanded to fill the full available width.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$table>
+
+A Markdown table string with a header row, a separator row, and zero or more data
+rows. Each row must be pipe-delimited.
+
+=item C<%opts>
+
+Optional key-value pairs:
+
+=over 8
+
+=item C<width>
+
+Override the total render width. Defaults to C<terminal_width()>.
+
+=item C<expand>
+
+If true, expand columns to fill the full available width even when content is
+narrower.
+
+=back
+
+=back
+
+B<Returns:>
+
+A multi-line string containing the rendered table with box borders.
+
+B<Examples:>
+
+  my $md = "| Name | Age |\n|------|-----|\n| Alice | 30 |\n| Bob | 25 |";
+  print build_markdown_table($md);
+  # Prints a Unicode-bordered table with Name and Age columns
+
+=head2 process_markdown_block
+
+  my $rendered = process_markdown_block($block, %opts);
+
+Renders a single Markdown block (paragraph, header, list, code block, blockquote,
+or table) to a terminal-formatted string. Handles inline formatting (bold, italic,
+inline code, strikethrough) and link extraction.
+
+This is called by C<render_markdown()> for each block in a Markdown document.
+Link references within the block are accumulated into C<$opts{links}> (an array ref
+that must be provided by the caller when processing a document).
+
+Returns an empty string for blocks that consist entirely of link reference
+definitions with no displayable content.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$block>
+
+A single Markdown block string (content between blank lines).
+
+=item C<%opts>
+
+Optional key-value pairs:
+
+=over 8
+
+=item C<width>
+
+Render width. Defaults to C<terminal_width()>.
+
+=item C<links>
+
+Required for any block that may contain Markdown links. If omitted and a link
+pattern is found, the function will die. Pass the same array reference to all
+blocks in a document to maintain consistent link numbering.
+
+=back
+
+=back
+
+B<Returns:>
+
+The rendered terminal string for this block, or C<""> if the block contains only
+link definitions.
+
+B<Examples:>
+
+  my $links = [];
+  my $out = process_markdown_block("## Hello World", links => $links);
+  print $out;  # prints green underlined "Hello World" header
+
+  my $para = process_markdown_block("Some **bold** text.", links => $links);
+  print $para; # prints the paragraph with bold formatting applied
+
+=head2 render_markdown
+
+  my $output = render_markdown($md, %opts);
+
+Renders a complete Markdown document to a terminal-formatted string. Splits the
+document into blocks on double newlines, reassembles fractured code blocks and
+blockquotes, separates headers from adjacent content, then passes each block to
+C<process_markdown_block()>.
+
+If the document contains any hyperlinks, a C<"### Links"> section listing numbered
+link targets is appended to the output.
+
+Normalizes Windows-style CRLF line endings before processing.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$md>
+
+The full Markdown document string.
+
+=item C<%opts>
+
+Optional key-value pairs:
+
+=over 8
+
+=item C<width>
+
+Render width. Defaults to C<terminal_width()>.
+
+=back
+
+=back
+
+B<Returns:>
+
+A formatted, terminal-ready string rendering of the Markdown document.
+
+B<Examples:>
+
+  my $doc = "# Title\n\nSome **bold** text.\n\n- item one\n- item two\n";
+  print render_markdown($doc);
+  # Prints formatted title, paragraph, and bullet list
+
+=head2 superscript
+
+  my $str = superscript($num);
+
+Converts an integer (given as a string of digits) to a Unicode superscript string.
+Each digit 0-9 is replaced with its Unicode superscript equivalent.
+
+When C<GENESIS_NO_UTF8> is set, returns C<"[*N]"> in italic markup instead.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$num>
+
+A string of one or more digits to convert.
+
+=back
+
+B<Returns:>
+
+A Unicode superscript string, or a fallback italic-markup representation when
+UTF-8 is disabled.
+
+B<Examples:>
+
+  print superscript(3);   # prints '³'
+  print superscript(12);  # prints '¹²'
+
+=head2 elipses
+
+  my $truncated = elipses($str, $len);
+
+Truncates C<$str> to C<$len> characters, appending C<"..."> if truncation occurred.
+Returns C<$str> unchanged if its length is already within C<$len>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$str>
+
+The string to potentially truncate.
+
+=item C<$len>
+
+Maximum allowed length including the C<"..."> suffix.
+
+=back
+
+B<Returns:>
+
+The original string if its length is within C<$len>, otherwise the first
+C<$len - 3> characters followed by C<"...">.
+
+B<Examples:>
+
+  print elipses("Hello, world!", 10);  # prints 'Hello, ...'
+  print elipses("Short", 10);          # prints 'Short'
+
+=head2 get_control_picture
+
+  my $str = get_control_picture($byte);
+
+Returns a terminal-displayable representation of a single byte value. Control
+characters (0-31) are rendered as yellow Unicode control pictures. Printable ASCII
+(32-126) is returned as-is. DEL (127) is rendered as a yellow-dim symbol. All
+other bytes (128+) are rendered in red.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$byte>
+
+An integer byte value (0-255).
+
+=back
+
+B<Returns:>
+
+A formatted string representation of the byte value.
+
+B<Examples:>
+
+  print get_control_picture(65);   # prints 'A'
+  print get_control_picture(0);    # prints yellow NUL control picture
+
+=head2 string_to_hex
+
+  string_to_hex($str);
+
+Prints a hex dump of C<$str> to STDOUT in the style of C<hexdump -C>. Output
+is formatted as 16-byte rows with a hex offset, space-separated hex byte values,
+and a printable-character column using C<get_control_picture()> for non-printable
+bytes.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$str>
+
+The string to dump.
+
+=back
+
+B<Returns:>
+
+Nothing. Output is written directly to STDOUT via C<printf>.
+
+B<Examples:>
+
+  string_to_hex("Hello\x00\n");
+  # Prints:
+  # 0000  48 65 6c 6c 6f 00 0a                             |Hello␀↵|
+
+=head2 set_stdin
+
+  set_stdin($input);
+
+Redirects STDIN to read from C<$input>. The original STDIN handle is preserved and
+can be restored with C<reset_stdin()>. If STDIN has already been redirected, the
+previous pipe is closed before creating a new one.
+
+Intended for testing code that reads from STDIN.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$input>
+
+A string to inject as STDIN content.
+
+=back
+
+B<Returns:>
+
+Nothing.
+
+B<Errors:>
+
+=over 4
+
+=item C<"can't dup STDIN: $!"> if saving the original STDIN handle fails.
+
+=item C<"can't create pipe: $!"> if creating the replacement pipe fails.
+
+=item C<"can't dup pipe to STDIN: $!"> if redirecting STDIN to the pipe fails.
+
+=back
+
+B<Examples:>
+
+  set_stdin("yes\n");
+  my $answer = <STDIN>;
+  print $answer;  # prints 'yes'
+  reset_stdin();
+
+=head2 reset_stdin
+
+  reset_stdin();
+
+Restores STDIN to the original file descriptor saved by a previous call to
+C<set_stdin()>. Does nothing if STDIN has not been redirected.
+
+B<Returns:>
+
+Nothing.
+
+B<Errors:>
+
+=over 4
+
+=item C<"can't restore STDIN: $!"> if restoring the original STDIN handle fails.
+
+=back
+
+B<Examples:>
+
+  set_stdin("test input\n");
+  my $line = <STDIN>;
+  reset_stdin();
+  print $line;  # prints 'test input'
+
+=head1 METHODS (RENDERING HELPERS)
+
+The following methods render individual Markdown block types. They are called by
+C<process_markdown_block()> and C<render_markdown()>, but may also be used directly
+to render specific Markdown constructs.
+
+=head2 build_markdown_list
+
+  my $rendered = build_markdown_list($type, $block, %opts);
+
+Renders a Markdown ordered or unordered list block to a terminal-wrapped string.
+Handles nested indentation, continuation lines, and embedded code blocks within
+list items. Maintains list state in package-level variables so that
+C<process_markdown_block()> can track list continuation across blocks.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$type>
+
+C<"list"> for an unordered list, C<"numbered_list"> for an ordered list.
+
+=item C<$block>
+
+The raw Markdown list block text.
+
+=item C<%opts>
+
+Passed through to C<wrap()> and C<build_markdown_codeblock()>. Supports C<width>
+(default: C<terminal_width()>).
+
+=back
+
+B<Returns:>
+
+The formatted, word-wrapped list as a string.
+
+B<Examples:>
+
+  my $out = build_markdown_list('list', "- one\n- two\n- three");
+  print $out;
+  # Prints:
+  #   * one
+  #   * two
+  #   * three
+
+  my $num = build_markdown_list('numbered_list', " 1. first\n 2. second");
+  print $num;
+  # Prints:
+  #  1. first
+  #  2. second
+
+=head2 build_markdown_codeblock
+
+  my $rendered = build_markdown_codeblock($block, %opts);
+
+Renders a Markdown fenced code block (triple-backtick) to a terminal-formatted
+string. Each line is padded with left indent and padding spaces, colorized using
+the C<ui.colors.code> setting from C<$Genesis::RC>, and truncated with C<elipses()>
+if it exceeds the computed code width.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$block>
+
+The raw code block text including the opening and closing fence lines.
+
+=item C<%opts>
+
+Supports C<width> (default: C<terminal_width()>), C<indent> (default: 0),
+and C<padding> (default: 4).
+
+=back
+
+B<Returns:>
+
+The formatted code block as a string (multiple lines joined with C<"\n">).
+
+B<Examples:>
+
+  my $out = build_markdown_codeblock("```\nmy \$x = 1;\n```");
+  print $out;
+  # Prints the code line colorized with 4-space padding on each side
+
+  my $indented = build_markdown_codeblock("```\ncode\n```", indent => 2);
+  print $indented;
+  # Prints the code line with 2 spaces of left indent before the padding
+
+=head2 build_markdown_paragraph
+
+  my $rendered = build_markdown_paragraph($block, %opts);
+
+Renders a Markdown paragraph to a terminal-wrapped string. Infers the left
+prefix from C<$opts{indent}>, C<$opts{prefix}>, or leading whitespace in the block.
+Multiple sub-paragraphs separated by two or more blank lines within the block are
+joined with a blank prefix line between them.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$block>
+
+The raw paragraph text.
+
+=item C<%opts>
+
+Supports C<width>, C<indent> (numeric), and C<prefix> (string).
+
+=back
+
+B<Returns:>
+
+The word-wrapped paragraph as a string.
+
+B<Examples:>
+
+  my $out = build_markdown_paragraph("Hello world", width => 40);
+  print $out;
+  # Prints: 'Hello world'
+
+  my $indented = build_markdown_paragraph("Some text here", prefix => '  ');
+  print $indented;
+  # Prints: '  Some text here'
+
+=head2 build_markdown_blockquote
+
+  my $rendered = build_markdown_blockquote($block, %opts);
+
+Renders a Markdown blockquote block to a terminal-wrapped string. Strips the
+leading C<E<gt>> characters and indents the content by two spaces (or C<$opts{indent}>
+spaces).
+
+B<Parameters:>
+
+=over 4
+
+=item C<$block>
+
+The raw blockquote text including C<E<gt>> prefixes.
+
+=item C<%opts>
+
+Supports C<width> (default: C<terminal_width()>) and C<indent> (default: 2).
+
+=back
+
+B<Returns:>
+
+The wrapped, indented blockquote as a string.
+
+B<Examples:>
+
+  my $out = build_markdown_blockquote("> Be excellent to each other.", width => 40);
+  print $out;
+  # Prints: '  Be excellent to each other.'
+
+  my $custom = build_markdown_blockquote("> Note", indent => 4);
+  print $custom;
+  # Prints: '    Note'
+
+=head1 INTERNAL METHODS
+
+These methods are internal to the implementation. They may change without notice
+and should not be called directly.
+
+=head2 _color
+
+  my $ansi = _color($fg, $bg);
+
+Generates a raw ANSI color escape sequence for the given foreground and background
+color letter codes. On 256-color terminals (detected via C<$ENV{TERM}> containing
+C<"256color">), uses extended color codes (38;5;N / 48;5;N). On standard terminals,
+uses basic SGR codes with bold for uppercase letters.
+
+Color letters map to: C<K>/C<k> (dark grey/black), C<R>/C<r> (light red/red),
+C<G>/C<g> (light green/green), C<Y>/C<y> (yellow/amber), C<B>/C<b> (light blue/blue),
+C<M>/C<m>/C<P>/C<p> (magenta/purple), C<C>/C<c> (light cyan/dark cyan),
+C<W>/C<w> (light grey/white). Uppercase gives the bright variant.
+
+B<Parameters:>
+
+C<$fg> — foreground color letter, or undef for no foreground change.
+
+C<$bg> — background color letter, or undef for no background change.
+
+B<Returns:>
+
+A raw ANSI escape sequence string, or C<""> if neither color letter is recognized.
+
+B<Examples:>
+
+  my $seq = _color('G', undef);
+  # Returns: ANSI escape sequence for green foreground
+
+  my $none = _color('z', undef);
+  # Returns: '' (unrecognized color letter)
+
+=head2 _colorize
+
+  my $colored = _colorize($c, $msg);
+
+Applies ANSI color formatting to C<$msg> using the color code string C<$c>. Handles
+italic (C<i>), underline (C<u>), foreground, and background color letters. When the
+foreground or background is C<"*">, cycles through rainbow colors per non-whitespace
+character.
+
+Returns C<""> if C<$msg> is empty. Returns C<$msg> unchanged if C<NOCOLOR> is set.
+
+B<Parameters:>
+
+C<$c> — a color code string (one to four characters from C<[-IUKRGYBMPCWiuk*]>).
+
+C<$msg> — the text to colorize.
+
+B<Returns:>
+
+The ANSI-colored string, or the original message if color is disabled or message is empty.
+
+B<Examples:>
+
+  my $green = _colorize('G', 'hello');
+  # Returns: 'hello' wrapped in green ANSI codes
+
+  my $empty = _colorize('G', '');
+  # Returns: ''
+
+=head2 _glyphize
+
+  my $glyph = _glyphize($c, $glyph);
+
+Substitutes C<$glyph> with its Unicode equivalent when C<GENESIS_NO_UTF8> is not set.
+If C<$c> is provided, colorizes the resulting glyph via C<_colorize()>.
+
+Recognized glyph keys: C<"-">, C<"+">, C<"*">, C<" ">, C<">">, C<"!">, C<"x">,
+C<"^-">, C<"O">, C<"@">, C<"[ ]">, C<"[x]">, C<"X">, C<"_">.
+
+B<Parameters:>
+
+C<$c> — color code string, or empty string for no colorization.
+
+C<$glyph> — the glyph key to look up.
+
+B<Returns:>
+
+The Unicode glyph (or original key if UTF-8 is disabled), optionally colorized.
+
+B<Examples:>
+
+  my $check = _glyphize('G', '+');
+  # Returns: green-colored checkmark glyph (U+2714)
+
+  my $plain = _glyphize('', '*');
+  # Returns: bullet glyph (U+2022) with no color
+
+=head2 _emojify
+
+  my $emoji = _emojify($name);
+
+Returns the Unicode emoji character for the given name key. Returns C<""> if
+C<GENESIS_NO_UTF8> is set or the name is not recognized.
+
+Recognized names: C<"crystal-ball">, C<"stop-sign">, C<"collision">,
+C<"information">, C<"fire">, C<"magnifying-glass">, C<"detective">,
+C<"warning">, C<"pancakes">, C<"tap">, C<"memo">, C<"notes">, C<"printer">,
+C<"tada">, C<"tmyn">, C<"notice">, C<"megaphone">, C<"noentry">.
+
+B<Parameters:>
+
+C<$name> — the emoji name key.
+
+B<Returns:>
+
+A Unicode emoji string, or C<""> if not found or UTF-8 is disabled.
+
+B<Examples:>
+
+  my $fire = _emojify('fire');
+  # Returns: the fire emoji character (U+1F525)
+
+  my $unknown = _emojify('nonexistent');
+  # Returns: ''
+
+=head2 _align
+
+  my $padded = _align($str, $width, $align);
+
+Pads C<$str> to C<$width> characters according to C<$align> (C<"l"> for left,
+C<"r"> for right, any other value for center). Returns C<$str> unchanged if it
+is already at least C<$width> characters wide. Used by C<build_markdown_table()>
+for cell alignment.
+
+B<Parameters:>
+
+C<$str> — the string to align.
+
+C<$width> — the target display width.
+
+C<$align> — alignment: C<"l"> (left), C<"r"> (right), or anything else (center).
+
+B<Returns:>
+
+The padded string.
+
+B<Examples:>
+
+  my $left = _align('hi', 6, 'l');
+  # Returns: 'hi    ' (padded to 6 with spaces on the right)
+
+  my $right = _align('hi', 6, 'r');
+  # Returns: '    hi' (padded to 6 with spaces on the left)
+
+  my $center = _align('hi', 6, 'c');
+  # Returns: '  hi  ' (padded to 6, centered)
+
+=head2 _multiline_row
+
+  my $rendered = _multiline_row($row, $col_widths, $col_align);
+
+Renders a single data row for a Markdown table, handling cells whose wrapped
+content spans multiple lines. Each cell is wrapped to its column width and split
+on newlines or C<< <br> >> tags. The method then emits one box-bordered output
+line per row height, padding shorter cells with spaces.
+
+B<Parameters:>
+
+C<$row> — an array reference of cell content strings.
+
+C<$col_widths> — an array reference of integer column widths.
+
+C<$col_align> — an array reference of alignment characters (C<"l">, C<"r">, C<"c">).
+
+B<Returns:>
+
+A multi-line string for the rendered row including box-drawing characters.
+
+B<Examples:>
+
+  my $row = _multiline_row(['Alice', '30'], [10, 5], ['l', 'r']);
+  # Returns one or more lines of box-bordered text for the row
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

@@ -22,11 +22,18 @@ sub init {
 	%options = %{get_options()};
 
 	command_usage(1) if @_ > 1; # name is now optional if kit specified
+	command_usage(1, "You can only specify one of kit (-k) or link to a kit (-L)")
+		if scalar(grep {$_ =~ /^(?:kit|link-dev-kit)$/} keys %options) > 1;
 
 	my $abs_target;
 	my $kit_desc = "";
+	my $kit_path = undef;
+	if (exists($options{'kits-path'})) {
+		$kit_path = abs_path($options{'kits-path'}//$ENV{HOME}.'/.genesis/kits');
+		mkdir_or_fail ($kit_path) unless -d $kit_path;
+		delete($options{'kits-path'});
+	}
 	if ($options{'link-dev-kit'}) {
-		command_usage(1,"Cannot specify both a kit (-k) and a link to a kit (-L)") if $options{kit};
 		$abs_target = abs_path($options{'link-dev-kit'});
 		my $pwd = getcwd;
 		bail(
@@ -70,7 +77,7 @@ sub init {
 		);
 	}
 
-	my $top = Genesis::Top->create('.', $name, %options);
+	my $top = Genesis::Top->create('.', $name, %options, kits_path => $kit_path);
 	my $vault_desc = "\n - using default safe target for the system";
 	if ($top->vault) {
 		$vault_desc = "\n - using vault at #C{".$top->vault->url."}";
@@ -92,7 +99,8 @@ sub init {
 			debug("Kit: using local kit file $kit_file");
 			my $target = $top->path(".genesis/kits");
 			mkdir_or_fail($target);
-			copy_or_fail($kit_file, $target);
+			my $abs_src = $kit_file =~ m#^/# ? $kit_file : abs_path($ENV{GENESIS_CALLER_DIR}."/".$kit_file);
+			copy_or_fail($abs_src, $target);
 			$kit_desc = "\n - using locally provided compiled kit #C{$kit_file}.";
 
 		} elsif ($options{kit}) {

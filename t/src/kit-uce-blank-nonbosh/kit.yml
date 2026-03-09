@@ -1,0 +1,7 @@
+---
+name: dev
+author: Genesis Community
+homepage: https://github.com/genesis-community
+description: Test kit with no use_create_env non-BOSH
+genesis_version_min: 2.8.0
+is_bosh_director: false

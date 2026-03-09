@@ -4,10 +4,11 @@ use warnings;
 
 use Genesis;
 use Genesis::State;
-use Genesis::Term;
+use Genesis::Term qw/csprintf/;
 
 use Genesis::UI;
 use JSON::PP qw/decode_json/;
+use Time::HiRes qw/gettimeofday/;
 use UUID::Tiny ();
 
 ### Class Variables {{{
@@ -243,17 +244,36 @@ sub parse_vault_descriptor {
 }
 
 # }}}
+# TODO: Validate dependencies with output that is compatible wth
+# Genesis::Command::check_reqs
 # }}}
 
 ### Instance Methods {{{
 
-# public accessors: url, name, verify, tls {{{
-sub url        { $_[0]->{url};       }
-sub name       { $_[0]->{name};      }
-sub verify     { $_[0]->{verify};    }
-sub namespace  { $_[0]->{namespace}; }
-sub strongbox  { $_[0]->{strongbox}; }
-sub tls        { $_[0]->{url} =~ "^https://"; }
+# public accessors: url, name, verify, namespace, strongbox, tls {{{
+sub url {
+	$_[0]->{url};
+}
+
+sub name {
+	$_[0]->{name};
+}
+
+sub verify {
+	$_[0]->{verify};
+}
+
+sub namespace {
+	$_[0]->{namespace};
+}
+
+sub strongbox {
+	$_[0]->{strongbox};
+}
+
+sub tls {
+	$_[0]->{url} =~ "^https://";
+}
 
 #}}}
 # connect_and_validate - connect to the vault and validate that its connected {{{
@@ -302,6 +322,7 @@ sub query {
 	$opts->{env} ||= {};
 	$opts->{env}{DEBUG} = ""; # safe DEBUG is disruptive
 	$opts->{env}{SAFE_TARGET} = $self->ref unless defined($opts->{env}{SAFE_TARGET});
+	$opts->{stderr} = 0 unless defined($opts->{stderr});
 	return run($opts, @cmd);
 }
 
@@ -310,6 +331,9 @@ sub query {
 sub get {
 	my ($self, $path, $key) = @_;
 	$path =~ s/\/{2,}/\//g; # Clean up any double slashes from joins
+	if (!defined($key) && $path =~ /:/) {
+		($path, $key) = $path =~ m/^(.*?)(?::([^:]*))?$/;
+	}
 	if (defined($key)) {
 		my ($out,$rc) = $self->query({redact_output => 1}, 'get', "$path:$key");
 		return $out if $rc == 0;
@@ -319,7 +343,8 @@ sub get {
 		);
 		return undef;
 	}
-	my ($json,$rc,$err) = read_json_from($self->query({stderr => 0, redact_output => 1}, 'export', $path));
+	my $start = gettimeofday();
+	my ($yaml,$rc,$err) = $self->query({stderr => 0, redact_output => 1}, 'get', $path);
 	if ($rc || $err) {
 		debug(
 			"#R{[ERROR]} Could not read all key/value pairs from #C{%s} in vault at #M{%s}:%s\nexit code: %s",
@@ -327,24 +352,59 @@ sub get {
 		);
 		return {};
 	}
-	$path =~ s/^\///; # Trim leading / as safe doesn't honour it
-	return $json->{$path} if (ref($json) eq 'HASH');
-
-	# Safe 1.1.0 is backwards compatible, but leaving this in for futureproofing
-	if (ref($json) eq "ARRAY" and scalar(@$json) == 1) {
-		if ($json->[0]{export_version}||0 == 2) {
-			return $json->[0]{data}{$path}{versions}[-1]{value};
-		}
-	}
-	bail "Safe version incompatibility - cannot export path $path";
-
+	my $values = load_yaml($yaml);
+	bail(
+		"Expected #C{%s} to return a hash of key/value pairs, but got a %s",
+		$path, ref($values)
+	) unless ref($values) eq 'HASH';
+	trace(
+		"Exported %s key/value pairs from #C{%s} in vault at #M{%s} in %.3f seconds",
+		scalar(CORE::keys %$values), $path, $self->{url}, gettimeofday() - $start
+	);
+	return $values;
 }
 
+# }}}
+# get_path - get all the keys under a given path, including subpaths {{{
+sub get_path {
+	my ($self, $path) = @_;
+	$path =~ s{(^/*|/*$)}{}; # Trim preceeding and trailing / as safe doesn't honour it
+	my ($data,$rc,$err) = read_json_from($self->query({stderr => 0, redact_output => 1}, 'export', $path));
+	if ($rc || $err) {
+		debug(
+			"#R{[ERROR]} Could not read all key/value pairs from #C{%s} in vault at #M{%s}:%s\nexit code: %s",
+			$path,$self->{url},$err || '',$rc
+		);
+		return {};
+	}
+
+	my $results = {};
+	for my $subpath (sort keys %$data) {
+		if ($subpath eq $path) {
+			$results = delete($data->{$subpath}{__flattened__})
+				? Genesis::unflatten($data->{$subpath})
+				: $data->{$subpath};
+			next;
+		}
+		my @path_bits = split('/',substr($subpath,length($path)+1));
+		my $refobj = $results;
+		$refobj = $refobj->{shift @path_bits} //= {} while @path_bits > 1;
+		$refobj->{$path_bits[0]} = delete($data->{$subpath}{__flattened__})
+			? Genesis::unflatten($data->{$subpath})
+			: $data->{$subpath};
+	}
+	return $results;
+}
 # }}}
 # set - write a secret to the vault (prompts for value if not given) {{{
 sub set {
 	my ($self, $path, $key, $value) = @_;
 	$path =~ s/\/{2,}/\//g; # Clean up any double slashes from joins
+	# FIXME: If the path contains a :<key>, then the content of $key
+	#        should be moved to $value and $path and $key should be split
+	#        from the path.  This allows users to call set with an already
+	#        joined path:key pair.  This should not impact existing code
+	#        because currently passing in a path:key pair results in an error.
 	if (defined($value)) {
 		my ($out,$rc) = $self->query('set', $path, "${key}=${value}");
 		bail(
@@ -363,6 +423,87 @@ sub set {
 		) unless $rc == 0;
 		return $self->get($path,$key);
 	}
+}
+
+# }}}
+# clear - remove all keys under a given path {{{
+sub clear {
+	my ($self, $path, $recursive) = @_;
+	my ($out,$rc,$err) = ('',0,'');
+	if ($recursive) {
+		debug("Clearing #C{%s} and all subpaths in vault at #M{%s}", $path, $self->{url});
+		($out,$rc,$err) = $self->query('rm', '-rf', $path);
+	} elsif (!$self->has($path)) {
+		debug("Path #C{%s} does not exist in vault at #M{%s} - no need to clear", $path, $self->{url});
+		return;
+	} else {
+		debug("Clearing #C{%s} in vault at #M{%s}", $path, $self->{url});
+		($out,$rc,$err) = $self->query('rm', '-f', $path);
+	}
+	bail(
+		"Could not clear #C{%s} in vault at #M{%s}:\n%s",
+		$path,$self->{url},$out.$err
+	) unless $rc == 0;
+	return 1;
+}
+
+# set_path - writes a set of key value pairs to the vault {{{
+sub set_path {
+	my ($self, $path, $data, %opts) = @_;
+
+	my $flatten = $opts{flatten} // 0;
+	my $clear = $opts{clear} // 0;
+	if ($flatten) {
+		$data = Genesis::flatten({},'',$data);
+		$data->{__flattened__} = JSON::PP::true;
+	}
+
+	$self->clear($path, !$flatten) if ($clear);
+
+	my @set_data = ();
+	for my $key (sort keys %$data) {
+		my $value = $data->{$key};
+
+		# Skip empty containers from flatten() - vault cannot store refs
+		if (ref($value) eq 'HASH') {
+			next if keys %$value == 0;  # Skip empty hashes
+			$self->set_path("$path/$key", $value);
+			next;
+		}
+
+		if (ref($value) eq 'ARRAY') {
+			next if @$value == 0;  # Skip empty arrays
+			for my $i (0..$#{$value}) {
+				if (ref($value->[$i]) eq 'HASH') {
+					$self->set_path("$path/$key/$i", $value->[$i]);
+				} else {
+					push(@set_data, "${key}[${i}]=$value->[$i]");
+				}
+			}
+			next;  # Don't fall through to scalar handling
+		}
+
+		push(@set_data, "$key=$value");
+
+		# make sure the command isn't too long (<900 characters)
+		if (length(join(' ', @set_data)) > 900) {
+			my @new_set_data = pop(@set_data);
+			my ($out,$rc) = $self->query('set', $path, @set_data);
+			bail(
+				"Could not write #C{%s} to vault at #M{%s}:\n%s",
+				$path,$self->{url},$out
+			) unless $rc == 0;
+			@set_data = @new_set_data;
+		}
+	}
+
+  return $data unless scalar(@set_data);
+	my ($out,$rc) = $self->query('set', $path, @set_data);
+	bail(
+		"Could not write #C{%s} to vault at #M{%s}:\n%s",
+		$path,$self->{url},$out
+	) unless $rc == 0;
+	return $data;
 }
 
 # }}}
@@ -424,8 +565,11 @@ sub status {
 
 	my ($out,$rc) = $self->query({stderr => "&1"}, "vault", "status");
 	if ($rc != 0) {
+		if ($out =~ /More than one target for Vault at '(.*)'/) {
+			return "ambiguous - multiple targets for $1";
+		}
 		$out =~ /exit status ([0-9])/;
-		return "sealed" if $1 == 2;
+		return "sealed" if $1//0 == 2;
 		return "unreachable";
 	}
 
@@ -435,6 +579,26 @@ sub status {
 }
 
 # }}}
+# token_info - return the token information for the active user token {{{
+sub token_info {
+	my $self = shift;
+	my ($out,$rc, $err) = $self->query('vault', 'token', 'lookup', '-format=json');
+	return read_json_from($out) if $rc == 0;
+	debug(
+		"#R{[ERROR]} Could not get token information from vault at #M{%s}",
+		$self->{url}
+	);
+	return {};
+}
+
+# }}}
+# sub user - return the user information for the active user token {{{
+sub user {
+	my $self = shift;
+	my $token_info = $self->token_info;
+	return $token_info->{data}{meta}{username} || $token_info->{data}{display_name};
+}
+
 # env - return the environment variables needed to directly access the vault {{{
 sub env {
 	my $self = shift;
@@ -446,9 +610,8 @@ sub env {
 				},'safe', 'env', '--json')
 		);
 		$self->{_env}{VAULT_SKIP_VERIFY} ||= "";
-		# Explicitly override any existing SAFE_TARGET and GENESIS_TARGET_VAULT
+		# Explicitly override any existing SAFE_TARGET
 		$self->{_env}{SAFE_TARGET} = $self->{_env}{VAULT_ADDR};
-		$self->{_env}{GENESIS_TARGET_VAULT} = $self->{_env}{VAULT_ADDR};
 		# die on missing VAULT_ADDR env?
 	}
 
@@ -497,6 +660,67 @@ sub is_current {
 }
 
 # }}}
+# fetch_unseal_keys - fetch and store unseal keys for post-deploy unsealing {{{
+sub fetch_unseal_keys {
+	my ($self, $env) = @_;
+
+	# Clear any previously stored keys
+	my $secrets_mount = $env->secrets_mount;
+	my $keys_path = "${secrets_mount}vault/seal/keys";
+	$self->{unseal_keys} = [values(($self->get($keys_path)//{})->%*)];
+	my $key_count = scalar(@{$self->{unseal_keys}});
+
+	# Check if the keys path exists
+	return (0, "Vault unseal keys not found at #C{$keys_path}")
+		unless ($key_count);
+
+	return (0, "Insufficient unseal keys found at #C{$keys_path}: Need at least 3, found $key_count")
+		unless $key_count >= 3;
+
+	return (1, sprintf("Successfully fetched vault unseal keys from #C{%s}", $keys_path));
+}
+
+# }}}
+# unseal - unseal the vault using stored unseal keys {{{
+sub unseal {
+	my $self = shift;
+
+	# Check if we have stored unseal keys
+	unless ($self->{unseal_keys} && @{$self->{unseal_keys}}) {
+		return ("No unseal keys available", 1, "fetch_unseal_keys() must be called first");
+	}
+
+	# Check if we have at least 3 keys (required by safe unseal)
+	unless (@{$self->{unseal_keys}} >= 3) {
+		return ("Insufficient unseal keys available", 1, sprintf("safe unseal requires 3 keys, but only %d available", scalar(@{$self->{unseal_keys}})));
+	}
+
+	# Use safe unseal which unseals all vault instances in the cluster
+	# safe unseal expects exactly 3 keys, so take the first 3
+	my @keys_to_use = @{$self->{unseal_keys}}[0..2];
+	my $keys_input = join("\n", @keys_to_use) . "\n";
+
+	# Use the stdin option with query to pass keys to safe unseal
+	my ($out, $rc);
+	my ($tries, $max_tries) = (0, 3);
+	while ($tries++ < $max_tries) {
+		($out, $rc) = $self->query({stdin => $keys_input, redact_stdin => 1}, 'unseal');
+		return ($out, 0, '') if ($rc == 0) || ($out =~ /Vault is already unsealed/);
+
+		# RISK: If the unseal fails, we log all available keys for recovery purposes
+		# This is a security risk, as it exposes the unseal keys in logs, but is
+		# necessary to prevent irrevocable sealing of the vault.
+		trace(
+			"[Attempt %s] Failed to unseal vault cluster at #M{%s} - all available keys (first three used):\n%s",
+			$tries, $self->{url}, join("\n", map {sprintf("#C{%s}", $_)} @{$self->{unseal_keys}})
+		);
+		sleep(2); # brief pause before retrying
+	}
+	# If we reach here, all attempts failed
+	return ('', $rc // 1, $out || "Failed to unseal vault cluster");
+}
+
+# }}}
 # }}}
 
 ### Private helper functions {{{
@@ -527,264 +751,4 @@ sub _get_targets {
 # }}}
 # }}}
 1;
-
-=head1 NAME
-
-Service::Vault
-
-=head1 DESCRIPTION
-
-This module provides utilities for interacting with a Vault through safe.
-
-=head1 Class Methods
-
-=head2 new($url,$name,$verify)
-
-Returns a blessed Service::Vault object based on the URL, target name and TLS verify values provided.
-
-B<NOTE:> This should not be called directly, as it provides no error checking or validations.
-
-=head2 target($target, %opts)
-
-Returns a C<Service::Vault> object representing the vault at the given target
-or presents the user with an interactive prompt to specify a target.  This is
-intended to be used when setting up a deployment repo for the first time, or
-selecting a new vault for an existing deployment repo.
-
-In the case that the target is passed in, the target will be validated to
-ensure that it is known, a url or alias and that its url is unique (not being
-used by any other aliases); A C<Service::Vault> object for that target is
-returned if it is valid, otherwise, an error will be raised.
-
-In the case that the target is not passed in, all unique-url aliases will be
-presented for selection, with the current system target being shown as a
-default selection.  If there are aliases that share urls, a warning will be
-presented to the user that some invalid targets are not shown due to that.
-The user then enters the number corresponding to the desired target, and a
-C<Service::Vault> object corresponding to that slection is returned.  This
-requires that the caller is in a controlling terminal, otherwise the program
-will terminate.
-
-C<%opts> can be the following values:
-
-=over
-
-=item default_vault
-
-A C<Service::Vault> that will be used as the default
-vault selection in the interactive prompt.  If not provided, the current system
-target vault will be used.  Has no effect when not in interactive mode.
-
-=back
-
-In either cases, the target will be validated that it is reachable, authorized
-and ready to be used, and will set that vault as the C<current> vault for the
-class.
-
-=head2 attach($url, $insecure)
-
-Returns a C<Service::Vault> object for the given url according to the user's
-.saferc file.
-
-This will result in an error if the url is not known in the .saferc or if it
-is not unique to a single alias, as well as if the url is not a valid url.
-
-The C<insecure> does not matter for the attach, but does change the error
-output for describing how to add the target to the local safe configuration if
-it is missing.
-
-=head2 rebind
-
-This is used to rebind to the previous vault when in a callback from a Genesis-
-run hook.  It uses the C<GENESIS_TARGET_VAULT> environment variable that is set
-prior to running a hook, and only ensures that the vault is known to the system.
-
-=head2 find(%conditions)
-
-Without any conditions, this will return all system-defined safe targets as
-Service::Vault objects.  Specifying hash elemements of the property => value
-filters the selection to those that have that property value (compared as string)
-Valid properties are C<url>, C<name>, C<tls> and C<verify>.
-
-=head2 find_by_target($alias_or_url)
-
-This will return all Vaults that use the same url as the given alias or url.
-
-=head2 default
-
-This will return the Vault that is the set target of the system, or null if
-there is no current system target.
-
-=head2 current
-
-This will return the Vault that was the last Vault targeted by Service::Vault
-methods of target, attach or rebind, or by the explicit set_as_current method
-on a Vault object.
-
-=head2 clear_all
-
-This method removes all cached Vault objects and the C<current> and C<default>
-values.  Though mainly used for providing a clean slate for testing, it could
-also be useful if the system's safe configuration changes and those changes need
-to be picked up by Genesis during a run.
-
-=head1 Instance Methods
-
-Each C<Service::Vault> object is composed of the properties of url, its name
-(alias) as it is known on the local system, and its verify (binary opposite of
-skip-ssl-validation).  While these properties can be queried directly, it is
-better to use the accessor methods by the same name
-
-=head2 url
-
-Returns the url for the Vault object, in the form of:
-C<schema://host_name_or_ip:port>
-
-The :port is optional, and is understood to be 80 for http schema or 443 for
-https.
-
-=head2 name
-
-Returns the name (aka alias) of the vault as it is known on the local system.
-Because the same Vault target url may be known by a different name on each
-system, the use of the alias is not considered an precise identifier for a
-Vault, and only used for convenience in display output or specifying a target
-initially.
-
-=head2 verify
-
-Returns a boolean true if the vault target's certificate will be validated
-when it is connected, or false if not.  Only applicable to https urls, though
-http will default to true.
-
-=head2 tls
-
-Convenience method to check if using https (true) or http (false) rather than
-having to substring or regex the url.
-
-=head2 query
-
-Allows caller to pass a generic query to the selected vault.  The user can
-specify anything that would normally come after `safe ...` on the command line,
-but not the -T <target> option will NOT have any effect.
-
-This can take the same arguments and returns the same structure that a
-C<Genesis::run> method would, with two caveats:
-
-=over
-
-=item *
-
-Setting the environment variable SAFE_TARGET will get overwritten with the url
-of the Vault object being operated on.
-
-=item *
-
-Setting the DEBUG environment variable will get unset because it is disruptive
-to the call.  If you want to see the call being made so you can debug it, run
-the Genesis command with -T or set the GENESIS_TRACE variable to 1
-
-=back
-
-=head2 get($path[, $key])
-
-Return the string of the given path and key, or return the entire content under
-the given path if no key is given.  The path does not have to be an end node
-that contains keys; it can be a branch path, in which case all the sub-paths
-and their key:value pairs will be returned.
-
-=head2 set($path, $key[, $value])
-
-If a value is specified, it will set that value (as a string) to the given key
-on the specified path.  If no value is provided, an interactive mode will be
-started where the user will be prompted to enter the value.  This will be
-'dotted' out on the screen, and the user will have to enter the same value
-again to confirm the correctness of their entry.
-
-=head2 has($path[, $key])
-
-Returns true if the vault contains the path and optionally the key if given.
-Equivalent to C<safe exists $path> or C<safe exists $path:$key> as appropriate.
-
-=head2 paths([@prefixes])
-
-Returns a list of all paths in the vault if no prefix was specified, or all
-paths that can be found under the specified prefixes.  If you ask for
-overlapping prefixes, paths that match multiple prefixes will be returned
-multiple times.
-
-Note that this will only return node paths (paths that contain keys on their
-last path segment, so if a vault only contains
-B<secret/this/is/my/long/path:key> and you asked for paths, it would only
-return that entry, not each partial path.
-
-=head2 keys
-
-Similar to C<paths> above, but also includes the B<:key> suffix for each key
-under the matching paths.
-
-=head2 status
-
-Returns the status of the vault.  This is a string value that can be one of the
-following:
-
-=over
-
-=item unreachable
-
-This means that the vault url or port is not responding to connection attempts.
-This may be because the C<vault> executable has stopped working, or due to
-networking issue (e.g.: VPN not connected)
-
-=item unauthenticated
-
-This means that the vault is responding, but the local safe token has expired
-or not been set.  Run C<safe auth ...> to connect, then try the command again.
-
-=item sealed
-
-The vault is sealed, and must be unsealed by the administrator before you can
-access it.
-
-=item uninitialized
-
-The vault is responding and authenticated, but does not look like it was
-correctly initialized with safe.
-
-This may be a basic vault that was stood up manually -- to resolve this, simply
-run `safe set secret/handshake knock=knock` once you're sure your talking to
-the correct vault.  If you are using a different secret mount in your
-environments, replace '/secret/' with the same mount that your environments
-use.
-
-=item ok
-
-The vault is operating normally and the user is authenticated.
-
-=back
-
-=head2 env
-
-This returns a hash of the environment variable names and values for
-configuring the vault for things that use the basic Hashicorp vault environment
-variables to target a vault, such as C<spruce>.  This can be fed directly into
-the C<Genesis::run> commands C<env> option.
-
-=head2 token
-
-The authentication token for the vault, as stored in the C<.saferc> file.
-
-=head2 set_as_current
-
-Set the vault object as the current vault object used by this run of Genesis.
-This is sometimes needed when dealing with legacy aspects of genesis
-(pipelines, params from kit.yml) where there is no passing in of the C<Env> or
-C<Top> object.
-
-This is automatically called by C<target>, C<attach> and C<rebind> and
-generally doesn't need to be manually set, but there are a few circumstances
-that it may be necessary, so this was exposed as a public method.
-
-=cut
-
 # vim: fdm=marker:foldlevel=1:noet

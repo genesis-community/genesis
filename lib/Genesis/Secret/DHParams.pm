@@ -14,7 +14,7 @@ use Genesis qw/run/;
 
 ### Polymorphic Instance Methods {{{
 # label - specific label for this derived class {{{
-sub label {'RSA key pair'}
+sub label {'Diffie-Hellman parameters'}
 # }}}
 # }}}
 

@@ -8,6 +8,13 @@ use Genesis;
 use Genesis::State;
 use Genesis::Helpers;
 
+# Ignore redefinition warnings for Addon hooks
+$SIG{__WARN__} = sub {
+	my $msg = shift;
+	return if ($msg =~ /redefine/ && $msg =~ /Hook\/Addon.pm/);
+	warn $msg;
+};
+
 ### Class Methods {{{
 
 # new - abstract class only, expects derived class to specify new body {{{
@@ -17,6 +24,15 @@ sub new {
 		if ($class == __PACKAGE__);
 }
 # }}}
+
+sub known_hooks {
+	# Returns a list of known hooks that can be used in the kit.
+	return qw/
+		new feature blueprint info check pre-deploy post-deploy terminate
+		edit shell addon
+		cloud-config cpi-config features runtime-config
+	/;
+}
 # }}}
 
 ### Instance Methods {{{
@@ -60,17 +76,74 @@ sub glob {
 # }}}
 # has_hook - {{{
 sub has_hook {
-	my ($self, $hook) = @_;
+	my ($self, $hook, %opts) = @_;
+
+	if ($hook eq 'cloud-config') {
+		$hook = "cloud-config-$opts{purpose}" if ($opts{purpose});
+	}
+	if ($hook eq 'addon') {
+		my $script = $opts{script} || '';
+		return $self->{__hook_check}{$hook}{$script} if exists($self->{__hook_check}{$hook}{$script});
+		my $filename = $self->get_addon_hook_file($script);
+		return $self->{__hook_check}{$hook}{$script} = $filename;
+	}
+
 	return $self->{__hook_check}{$hook} if exists($self->{__hook_check}{$hook});
 	trace("checking the kit for a(n) '$hook' hook");
-	$self->{__hook_check}{$hook} = -f $self->path("hooks/$hook") || (
-		 !envset('GENESIS_NO_MODULE_HOOKS') && -f $self->path("hooks/${hook}.pm"
-	));
+	my $hook_path = $self->path("hooks/$hook");
+	my @allowed_exts = ('','.sh');
+	push @allowed_exts, '.pm' unless envset('GENESIS_NO_MODULE_HOOKS');
+	for my $ext (@allowed_exts) {
+		$self->{__hook_check}{$hook} = "$hook_path$ext" if (-f "$hook_path$ext");
+	}
+	return $self->{__hook_check}{$hook};
+}
+
+# }}}
+# get_addon_hook_file	- {{{
+
+sub get_addon_hook_file {
+	my ($self, $script) = @_;
+	return $self->{__addon_for_script_hook}{$script}
+		if exists($self->{__addon_for_script_hook}{$script});
+
+	# Special case for the addon hook help/list/blank script
+	return '@Genesis::Hook::Addon' if $script =~ /^(list|help|)$/ && !envset('GENESIS_NO_MODULE_HOOKS');
+	# Do  we have an explicit script using long or short name?
+	my @files =  glob($self->path('hooks/addon*'));
+	my @scripts = grep {/(\/addon-$script(~.*)?|~$script)(\.pm)?$/} @files;
+	@scripts = grep {/\/addon(\.pm)?$/} @files unless @scripts;
+
+	# sort the scripts by length, so that the longest name is first unless $GENESIS_NO_MODULE_HOOKS is set, in which case sorter first.
+	@scripts = sort {
+	 length($a) <=> length($b) * (envset('GENESIS_NO_MODULE_HOOKS') ? -1 : 1)
+	} @scripts;
+
+	return $self->{__addon_for_script_hook}{$script} = $scripts[0] if @scripts;
+}
+
+# }}}
+# get_hook_module - {{{
+sub get_hook_module {
+	my ($self, $hook_file) = @_;
+	$hook_file = $self->path($hook_file) unless $hook_file =~ m{^/};
+	open my $fh, '<', $hook_file;
+	my $line = <$fh>;
+	$line = <$fh> while ($line =~/^\s*(#.*)?$/);
+	close $fh;
+
+	if ($line =~ /^package (Genesis::Hook::[^;\s]*)/) {
+		return $1;
+	}
+	return undef;
 }
 
 # }}}
 # run_hook - {{{
 sub run_hook {
+
+	# FIXME: run_hook should always return a scalar (simple or reference), not an array or hash.
+	# TODO: Refactor method into smaller, more focused methods per hook type and generalized hook execution support methods
 	my ($self, $hook, %opts) = @_;
 
 	my $is_shell=($hook eq 'shell');
@@ -79,7 +152,8 @@ sub run_hook {
 		$hook=$opts{hook}||'shell';
 	} elsif ($is_edit) {
 		$opts{editor} ||= $ENV{EDITOR}||'vim';
-	} elsif (! $self->has_hook($hook)) {
+	} elsif ($hook ne 'addon' && !$self->has_hook($hook)) {
+		# Addon is a special case, it can be missing
 		bail("No '$hook' hook script found")
 	}
 
@@ -96,7 +170,7 @@ sub run_hook {
 
 	bug("Unrecognized hook '$hook'\n") unless grep {
 		$_ eq $hook
-	} qw/new blueprint secrets info addon check prereqs pre-deploy post-deploy features shell edit/;
+	} known_hooks();
 
 	if ($opts{env}) {
 		my %env_vars = $opts{env}->get_environment_variables($hook);
@@ -114,7 +188,7 @@ sub run_hook {
 		}
 	} else {
 		bug("The 'env' option to run_hook is required for the '$hook' hook!!")
-			if (grep { $_ eq $hook } qw/new secrets info addon check blueprint pre-deploy post-deploy features/);
+			if (grep { $_ eq $hook } qw/new secrets info addon check blueprint pre-deploy post-deploy cloud-config cpi-config features terminate/);
 	}
 
 	my (@args, %module_options);
@@ -135,11 +209,35 @@ sub run_hook {
 
 	} elsif ($hook eq 'addon') {
 		$ENV{GENESIS_ADDON_SCRIPT} = $opts{script};
-		@args = @{$opts{args} || []};
+		my $args = $opts{args} || [];
+		my @want_help = delete_from_array($args, qr/^(?:-h|--help)$/);
+		push @want_help, 'list' if !$opts{script} || $opts{script} =~ /^(list|help)$/;
+		@args = @$args; # For bash addon hooks
 		%module_options = (
 			script => $opts{script},
-			args => \@args,
+			args => $args,
+			help => scalar(@want_help) ? 1 : 0,
 		);
+
+	} elsif ($hook eq 'cloud-config') {
+		$ENV{GENESIS_CLOUD_CONFIG_SUBTYPE} = $opts{purpose};
+		# TODO: add support for multiple cpi boshes
+		%module_options = (purpose => $opts{purpose});
+
+	} elsif ($hook eq 'cpi-config') {
+		%module_options = (
+			credhub_prefix => $opts{credhub_prefix}
+		);
+		# TODO: do we need anything other than env and kit?
+
+	} elsif ($hook eq 'terminate') {
+		%module_options = (
+			mode => $opts{mode},
+			dryrun => $opts{dryrun}//0,
+			force => $opts{force}//0,
+			noprompt => $opts{noprompt}//0,
+		);
+
 	} elsif ($hook eq 'check') {
 		# Nothing special needed
 
@@ -151,15 +249,33 @@ sub run_hook {
 	} elsif ($hook eq 'post-deploy') {
 		$ENV{GENESIS_DEPLOY_RC} = defined $opts{rc} ? $opts{rc} : 255;
 		my $fn = $opts{env}->workpath("data");
-		mkfile_or_fail($fn, $opts{data}) if ($opts{data});
+		mkfile_or_fail($fn, $opts{data}) if ($opts{data}); #FIXME: should be a json file
 		$ENV{GENESIS_PREDEPLOY_DATAFILE} = $fn;
+		$module_options{rc} = $ENV{GENESIS_DEPLOY_RC};
+		$module_options{data} = $opts{data}//undef;
+		$module_options{interactive} = $opts{interactive} if ($opts{interactive});
+		$module_options{flags} = $opts{flags} if ($opts{flags});
 
 	} elsif ($hook eq 'features') {
 		bug("The 'features' option to run_hook is required for the '$hook' hook!!")
 			unless $opts{features};
+		$module_options{features} = $opts{features};
 		$ENV{GENESIS_REQUESTED_FEATURES} = join(" ", @{ $opts{features} });
+
+	} elsif ($hook eq 'runtime-config') {
+		%module_options = (
+			args => $opts{args} || [], # These are the runtime's to build (or remove), empty means all
+			interactive => $opts{interactive} || 0, # whether to run the hook interactively or not
+			dryrun => $opts{dryrun} || 0, # whether to run the hook in dry-run mode
+			remove => $opts{remove} || 0, # whether to remove the runtime configs
+			print => $opts{print} || 0, # whether to show the runtime configs
+		);
+		@args = ref($opts{args}) eq 'ARRAY' ? $opts{args}->@*
+		      : ref($opts{args}) eq 'HASH'  ? $opts{args}->%*
+		      : $opts{args} ? ($opts{args}) : ();
 	}
 
+	# Detect Perl-based hooks and psuedo-hooks
 	my ($hook_name,$hook_file,$hook_module) = ($hook,undef,undef);
 	if ($is_shell) {
 		@args = ();
@@ -180,41 +296,62 @@ EOF
 
 	} else {
 		if ($hook eq 'addon') {
-			# Check if its a perl module
-			($hook_file) =
-				grep {/(\/addon-$opts{script}(~.*)?|~$opts{script})\.pm$/}
-				glob($self->path('hooks/addon*'));
-			if (
-				($hook_file//'') =~ m/\/addon-([^~]*)(?:~(.*))?\.pm$/
-				&& ! envset('GENESIS_NO_MODULE_HOOKS')
-			) {
-				$hook_name = "hook/addon ".($2 ? "'$1/$2'" : "'$1'");
+			my $script = $module_options{script} || '';
+			$hook_file = $self->get_addon_hook_file($script) // '';
+
+			# Special case for the addon hook help/list/blank script
+			if ($hook_file =~ s/^@// && $script =~ /^(list|help|)$/) {
+				$hook_module = $hook_file;
+				$hook_file   = $ENV{GENESIS_LIB}.'/'.($hook_file =~ s{::}{/}rg).'.pm';
+				$hook_name   = $module_options{label} = "addon help";
+
+			# named addon perl script
+			} elsif ($hook_file =~ m{/addon-([^~]*)(?:~(.*))?(\.pm)?$}) {
 				my $addon_label = $2 ? "$1/$2" : $1;
+				$hook_name = "hook/addon '$addon_label'";
 				info(
 					"[1ARunning #G{%s} addon for #C{%s} #M{%s} deployment",
-					$addon_label, $opts{env}->name, $self->id
+					$addon_label =~ s/\.pm$//r, $opts{env}->name, $self->id
 				);
+
+			# Check if there's a addon.pm perl module
+			} elsif ($hook_file =~ m{hooks/addon.pm$}) {
+				$hook_name = "hook/addon '$script'";
+
 			} else {
-				$hook_file = $self->path("hooks/addon.sh");
+				$hook_file = $self->path("hooks/addon");
 				$hook_name = "hook/addon '$opts{script}'";
 			}
+
+			bail(
+				"Could not find addon hook for '%s' script in kit %s",
+				$opts{script}, $self->id
+			) unless -f $hook_file || $hook_module;
+
+		} elsif ($hook eq 'cloud-config') {
+			if ($ENV{GENESIS_CLOUD_CONFIG_SUBTYPE}) {
+				$hook_file = $self->path("hooks/cloud-config-$ENV{GENESIS_CLOUD_CONFIG_SUBTYPE}.pm");
+				if (! -f $hook_file) {
+					$self->kit_bug(
+						"Could not find cloud-config hook for '%s' support in kit %s",
+						$ENV{GENESIS_CLOUD_CONFIG_SUBTYPE}, $self->id
+					);
+				}
+				$hook_name = "hook/cloud-config ($ENV{GENESIS_CLOUD_CONFIG_SUBTYPE} support)";
+			} else {
+				$hook_file = $self->path("hooks/cloud-config.pm");
+				$hook_name = "hook/cloud-config";
+			}
 		} else {
-			$hook_file = $self->path("hooks/$hook.pm");
+			$hook_file = $self->path("hooks/${hook}.pm");
 			$hook_name = "hook/$hook";
 		}
 
-		if (-f $hook_file && !envset('GENESIS_NO_MODULE_HOOKS')) {
-			open my $fh, '<', $hook_file;
-			my $line = <$fh>;
-			$line = <$fh> while ($line =~/^\s*(#.*)?$/);
-			close $fh;
-
-			if ($line =~ /^package (Genesis::Hook::[^ ]*)/) {
-				$hook_module = $1;
-			}
-		}
+		$hook_module //= $self->get_hook_module($hook_file)
+			if (-f $hook_file && !envset('GENESIS_NO_MODULE_HOOKS'));
 
 		unless ($hook_module) {
+			# Implement tracing for bash scripts - not applicable to Perl modules
 			$hook_file = $self->path("hooks/$hook");
 			if (envset('GENESIS_TRACE')) {
 				open my $file, '<', $hook_file;
@@ -230,22 +367,28 @@ EOF
 		}
 	}
 
-	debug ("Running hook now in ".$self->path);
+	debug ("Running #C{$hook_name} hook now in ".$self->path);
 	if ($hook_module) {
-		eval {require $hook_file};
-		$module_options{file} = $opts{$hook_file};
-		$module_options{label} = $hook_name =~ s/^hook\/addon '([^'])'.*/$1/r =~ s{/}{|}r;
+		$module_options{file} = $hook_file;
+		$module_options{label} //= $hook_name =~ s/^hook\/addon '([^']*?)(?:\.pm)?'.*/$1/r =~ s{/}{|}r;
+		eval {require $hook_file unless $hook_module->can('init')};
 		bail(
 			"Could not load Perl module %s to run hook %s in kit %s: %s",
 			$hook_file, $hook_name, $self->id, $@
 		) if $@;
 
+		# Don't cache hooks that have side effects, just ones that are idempotent
 		my $hook_obj = $hook_module->init(env => $opts{env}, kit => $self, %module_options);
-		# TODO: wrap in an eval, give better error messages
+		if ($hook_obj->can("completed") && $hook_obj->completed) {
+			trace("Using cached results for '%s' hook for env %s", $hook, $opts{env}->name);
+			return $hook_obj->results();
+		}
 
-		my $ok = $hook =~ /^addon/ && scalar(grep {$_ =~ /^(?:-h|--help)$/} @args)
+		# TODO: wrap in an eval, give better error messages
+		my $ok = $module_options{help} && $hook_obj->can('help')
 			? $hook_obj->help()
 			: $hook_obj->perform();
+
 		bail(
 			"Could not run '%s' hook successfully!",
 			$hook
@@ -290,7 +433,7 @@ EOF
 		bail(
 			"Could not determine which YAML files to merge: 'blueprint' specified no files"
 		) unless @manifests;
-		return @manifests;
+		return \@manifests;
 	}
 
 	if (grep { $_ eq $hook}  qw/features/) {
@@ -300,7 +443,7 @@ EOF
 			$self->id, $out||"#i{No stdout provided}"
 		) unless $rc == 0;
 		$out =~ s/^\s+//;
-		return split(/\s+/, $out);
+		return [split(/\s+/, $out)];
 	}
 
 	if ($hook eq 'pre-deploy') {
@@ -368,6 +511,39 @@ sub metadata {
 				'spruce merge --go-patch --multi-doc "$@" | spruce json',
 				@kit_files
 		));
+
+		# Sanitize use_create_env to only allow 'yes', 'no', 'allowed', or booleans
+
+		if (exists $self->{__metadata}{use_create_env}) {
+			my $uce = $self->{__metadata}{use_create_env};
+			if (ref($uce) eq 'JSON::PP::Boolean') {
+				# JSON boolean: true -> 'yes', false -> 'no'
+				$self->{__metadata}{use_create_env} = $uce ? 'yes' : 'no';
+			} elsif (ref($uce)) {
+				kit_bug(
+					"Invalid use_create_env type '#C{%s}' in kit metadata.\n".
+					"Expected string or boolean, got %s",
+					$uce, ref($uce)
+				);
+			} else {
+				# String value: normalize to 'yes', 'no', or 'allow'
+				my $val = lc($uce // '');
+				$self->{__metadata}{use_create_env} = {
+					'yes' => 'yes', 'true'  => 'yes', '1' => 'yes',
+					'no'  => 'no',  'false' => 'no',  '0' => 'no',
+					'allow' => 'allow'
+				}->{$val};
+				$self->kit_bug(
+					"Invalid use_create_env value '#C{%s}' in kit metadata.\n".
+					"Valid values are: #Y{yes}, #Y{no}, #Y{allow}, #Y{true}, or #Y{false}",
+					$uce
+				) unless $self->{__metadata}{use_create_env};
+			}
+		} elsif (new_enough($self->{__metadata}{genesis_version_min}//'0.0.0', "2.8.0")) {
+			# Default to 'allow' for 2.8.0+ kits
+			$self->{__metadata}{use_create_env} = 'allow';
+		}
+		# Legacy kits (pre-2.8.0) should not have use_create_env set
 	}
 	return $self->{__metadata} unless @keys;
 	return $self->{__metadata}->{$keys[0]} if @keys == 1;
@@ -401,9 +577,58 @@ sub secrets_store {
 sub uses_credhub { return $_[0]->secrets_store eq "credhub"; }
 
 # }}}
+
+# provided_configs - what configs does this kit provide to BOSH? {{{
+sub provided_configs {
+	my ($self) = @_;
+
+	# Option 1:  Detect if the cloud-config hook and/or runtime-config hooks are present
+	#   - Pro: very simple and quick
+	#   - Con: only supports single cloud-config and runtime-config files
+	#
+	# Option 2: Run the cloud-config and runtime-config with a 'list' argument that returns the names of the configs being generated
+	#  - Pro: supports multiple cloud-config and runtime-config files
+	#  - Con: requires the hooks to be written to support this
+	#
+	# Option 3: Run the cloud-config and runtime-config hooks and parse the output to determine the configs being generated
+	# - Pro: supports multiple cloud-config and runtime-config files
+	# - Con: much more time consuming and complex
+	#
+	# Option 4: Support hooks that are named `<type>-config-<purpose>` and return the type and purpose of the config
+	# - Pro: supports multiple cloud-config and runtime-config files
+	#        no need to execute the hooks to determine the configs
+	#        each hook execution will return a single config content, so no extra parsing needed
+	#        each hook can be run independently if only a single config is needed (common routines can be shared in included libraries)
+	# - Con: needs kit to be updated to find and call the correct hooks
+	#
+	# Decision: We're going to go with Option 1 for now.  It's simple and quick,
+	# and we can always add support for the other options later if needed. We can
+	# define a convention to support multiple cloud-config and runtime-config
+	# files but implement the single varient only for now (leaning heavily towards
+	# Option 4).
+	#
+	# FUTURE: when supporting multipe files per type, return <type>:<purpose> for each file
+	#
+	# TBD: How do we support conditional configurations? Currently we can only
+	# upload empty configs if there is a hook, but nothing is determined to be
+	# needed.
+
+	my @configs = ();
+	push(@configs, 'cloud') if $self->has_hook('cloud-config');
+	push(@configs, 'runtime') if $self->has_hook('runtime-config');
+	return @configs;
+}
+
+# }}}
 # required_configs - what configs does this kit require from BOSH? {{{
 sub required_configs {
 	my ($self,@hooks) = @_;
+
+	# Cloud-config hook never requires a cloud config or runtime config
+	if (@hooks == 1 && $hooks[0] eq 'cloud-config') {
+		return ();
+	}
+
 	my $required_configs = $self->metadata->{required_configs};
 	unless ($required_configs) {
 		return ('cloud') if (grep {$_ eq 'manifest'} @hooks); # Erroneous, should be blueprint - need to fix in callers
@@ -437,6 +662,7 @@ sub required_configs {
 # required_connectivity - what connectivity does this kit require to do its job? {{{
 sub required_connectivity {
 	my ($self,@hooks) = @_;
+	@hooks = grep {$_} @hooks;
 	my $required_conns = $self->metadata->{required_connectivity};
 	return () unless ($required_conns);
 	return @{$required_conns} if ref($required_conns) eq 'ARRAY';
@@ -538,7 +764,12 @@ sub source_yaml_files {
 		$self->id, $Genesis::VERSION
 	) unless ($self->has_hook('blueprint'));
 
-	my @files = $self->run_hook('blueprint', env => $env);
+	my $files_ref = $self->run_hook('blueprint', env => $env);
+	bail(
+		"Kit %s blueprint hook did not return a list of files to merge",
+		$self->id
+	) unless $files_ref && ref($files_ref) eq 'ARRAY';
+	my @files = @$files_ref;
 	if ($absolute) {
 		my $env_path = $env->path();
 		@files = map { $_ =~ qr(^$env_path) ? $_ : $self->path($_) } @files;
@@ -558,6 +789,51 @@ sub dereferenced_metadata {
 		     join("\n  - ", @{$self->{__deref_miss}});
 	}
 	$self->{__deref_metadata};
+}
+
+# }}}
+# requires_iaas - does this kit require iaas to be declared in the environment {{{
+sub requires_iaas {
+	my ($self, $env) = @_;
+	return $self->metadata->{requires_iaas};
+}
+# }}}
+# requires_scale - does this kit require scale to be declared in the environment {{{
+sub requires_scale {
+	my ($self, $env) = @_;
+	return $self->metadata->{requires_scale};
+}
+# }}}
+# services - what services does this kit provide? {{{
+sub services {
+	my ($self) = @_;
+	my $services = $self->metadata->{services};
+	return () unless $services;
+	return @{$services} if ref($services) eq 'ARRAY';
+	return ($services);
+}
+
+# }}}
+# provides_service - does this kit provide the named service? {{{
+sub provides_service {
+	my ($self, $service) = @_;
+
+	# Check explicit services declaration first
+	my @declared = $self->services;
+	if (@declared) {
+		return scalar grep { $_ eq $service } @declared;
+	}
+
+	# Backward compatibility: infer from kit name and metadata
+	if ($service eq 'vault') {
+		return ($self->metadata->{name} || '') eq 'vault';
+	}
+	if ($service eq 'director') {
+		return 1 if ($self->id || '') =~ /^bosh\//;
+		return $self->metadata->{is_bosh_director} ? 1 : 0;
+	}
+
+	return 0;
 }
 
 # }}}
@@ -595,15 +871,14 @@ sub _deref_metadata {
 # _dereference_param - derefernce a referenced parameter {{{
 sub _dereference_param {
 	my ($self,$lookup,$key,$default) = @_;
+	my $maybe = $key =~ s/^maybe:// ? 1 : 0;
 	trace "Dereferencing kit param: %s [default: %s]", $key, defined($default) ? $default : 'null';
 	if (defined(($self->{__deref_cache}||{})->{$key})) {
 		trace "Genesis::Kit->_dereference_param: cache hit '%s'=>'%s'", $key, $self->{__deref_cache}{$key};
 		return $self->{__deref_cache}{$key};
 	}
-	if ($key =~ m/^maybe:/) {
-		$key =~ s/^maybe://;
-		$default = bless({},"missing_value");
-	}
+	$default = bless({},"missing_value") if $maybe;
+
 	my $val = $lookup->($key, $default);
 	die "metadata not found\n" if (ref($val) eq "missing_value");
 	while (defined($val) && $val =~ /\(\( grab \s*(\S*?)(?:\s*\|\|\s*(.*?))?\s*\)\)/) {
@@ -623,115 +898,30 @@ sub _dereference_param {
 		push @{($self->{__deref_miss}||=[])}, $key;
 		return "\${$key}"
 	}
+	if (defined($val) && $val =~ /\(\( vault /) {
+		my $hint = ($val =~ /ocfp/)
+			? "\n\n        Ensure OCFP vault configuration data has been populated.\n".
+			  "        Run: ocfp vault populate --bloc <bloc-name>"
+			: "";
+		bail(
+			"Cannot dereference kit parameter '%s' to a value because it has an unresolved\n".
+			"        vault lookup:\n[[  >>%s%s",
+			$key, $val, $hint
+		);
+	}
 	trace "Dereference: got %s", $val;
 	($self->{__deref_cache}||={})->{$key} = $val;
 	return $val; # TODO: maybe change unquoted ~ to undef, and remove quotes from default
 }
 
 # }}}
+
+# is_dev - return true if this is a dev kit {{{
+sub is_dev {
+	return 0;
+}
 # }}}
 
 1;
-
-=head1 NAME
-
-Genesis::Kit
-
-=head1 DESCRIPTION
-
-This module encapsulates all of the logic for dealing with Genesis Kits in
-the abstract.  It does not handle the concrete problems of dealing with
-tarballs (Genesis::Kit::Compiled) or dev/ directories (Genesis::Kit::Dev).
-
-=head1 CLASS METHODS
-
-=head2 new()
-
-This is an abstract method, placeholder for derived classes to provide their
-own constructors.
-
-=head1 INSTANCE METHODS
-
-=head2 path([$relative])
-
-Returns a fully-qualified, absolute path to a file inside the kit workspace.
-If C<$relative> is omitted, the workspace root is returned.
-
-=head2 glob($pattern)
-
-Returns the absolute paths to all files inside the kit workspace that match
-the given C<$pattern> file glob.
-
-=head2 metadata()
-
-Returns the parsed metadata from this kit's C<kit.yml> file.  This call is
-moemoized, so it only actually touches the disk once.
-
-=head2 check_prereqs()
-
-Checks the prerequisites of the kit, notably the C<genesis_version_min>
-assertion, against the executing environment.
-
-=head2 has_hook($name)
-
-Returns true if the kit has defined the given hook.
-
-=head2 run_hook($name, %opts)
-
-Executes the named hook and returns something useful to the caller.  It is
-an error if the kit does not define the kit; use C<has_hook> to avoid that.
-
-The specific composition of C<%opts>, as well as the return value / side
-effects of running a hook are wholly hook-dependent.  Refer to the section
-B<GENESIS KIT HOOKS>, later, for more detail.
-
-=head2 source_yaml_files(\@features, $absolute)
-
-Determines, by way of either C<hooks/blueprint> which kit YAML files need to be
-merged together, and returns there paths.
-
-If you pass C<$absolute> as a true value, the paths returned by this
-function will be absolutely qualified to the Kit's Top object root.  This is
-necessary for merging from a different directory (i.e. the deployment root,
-when blueprint is going to return paths relative to the kit working space).
-
-If C<\@features> is omitted, it defaults to the empty arrayref, C<[]>.
-
-=head1 GENESIS KIT HOOKS
-
-Genesis defines the following hooks:
-
-=head2 new
-
-Provisions a new environment, by interrogating the environment or asking the
-operator for information.
-
-=head2 blueprint
-
-Maps feature flags in an environment onto manifest fragment YAML files in
-the kit, prescribing order and augmenting feature selection with additional
-logic as needed.
-
-=head2 secrets
-
-Manages automatic generation of non-Credhub secrets that are stored in the
-shared Genesis Vault.  This hook is repoonsible for determining if secrets
-are missing (i.e. after an upgrade), adding them if they are, and rotating
-what is safe to rotate.
-
-=head2 info
-
-Prints out a kit-specific summary of a single environment.  This could
-include IP addresses, certificates, passwords, and URLs.
-
-=head2 addon
-
-Executes arbitrary actions.  This allows kit authors to enrich the Genesis
-expierience in highly kit-specific ways by giving operators new commands to
-run.  For example, the BOSH kit defines a C<login> addon that sets up a BOSH
-CLI alias and authenticates to the BOSH director, transparently pulling
-secrets from the Vault.
-
-=cut
 
 # vim: fdm=marker:foldlevel=1:noet

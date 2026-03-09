@@ -1,0 +1,882 @@
+=encoding utf8
+
+=head1 NAME
+
+Genesis::Log - Genesis logging subsystem providing structured, leveled, multi-target output
+
+=head1 SYNOPSIS
+
+  use Genesis::Log;
+
+  # Access the singleton logger (created on first use)
+  my $logger = Genesis::Log->new;
+
+  # Configure the terminal output
+  $logger->configure_log(level => 'DEBUG');
+
+  # Configure a log file
+  $logger->configure_log('/var/log/genesis/run.log', level => 'TRACE', timestamp => 1);
+
+  # Configure log files from a config array (typically from genesis.conf)
+  Genesis::Log->setup_from_configs([
+    { file => '{env}/{command}/{timestamp}.log', path => '~/.genesis/logs', level => 'TRACE' },
+  ]);
+
+  # Emit log messages at various levels
+  $logger->info("Deploying environment %s", $env_name);
+  $logger->debug("Vault path: %s", $vault_path);
+  $logger->warning("Certificate expires in %d days", $days);
+  $logger->error("Failed to connect to %s", $target);
+
+  # Dump a variable for debugging
+  $logger->dump_var({ offset => 1 }, my_var => $some_value);
+
+  # Dump the current call stack
+  $logger->dump_stack();
+
+  # Check whether a level is active on a log target
+  if ($logger->is_logging('DEBUG')) {
+    $logger->debug("Expensive debug detail: %s", expensive_call());
+  }
+
+  # Access the exported singleton and helpers
+  $Logger->info("Using the exported singleton");
+  my $valid_level = find_log_level('trac');  # Returns 'TRACE'
+  my $ok = meets_level('DEBUG', 'INFO');     # Returns true (1)
+
+=head1 DESCRIPTION
+
+C<Genesis::Log> provides the entire logging infrastructure for the Genesis
+CLI. All Genesis output -- informational messages, debug traces, warnings,
+errors, and structured diagnostics -- flows through this module.
+
+The module maintains a single global logger singleton (C<$Logger>) that
+buffers log entries and flushes them to one or more configured targets.
+Targets may be the terminal (referred to as C<'E<lt>terminalE<gt>'>) or
+named log files. Each target has its own level filter, output style,
+timestamp setting, and other options.
+
+Log output is formatted in one of four styles: C<pointer> (colored level
+arrows), C<plain> (bracketed level labels), C<fun> (emoji-prefixed labels),
+and C<rfc-5424> (syslog-compliant structured format). The active style is
+determined by the C<GENESIS_LOG_STYLE> environment variable if set, otherwise
+the RC config C<output_style> setting (which defaults to C<plain>).
+
+The module is used as a singleton -- C<new()> returns the existing instance
+if one has already been created. Normal callers use the exported C<$Logger>
+variable rather than constructing instances directly.
+
+Exported symbols (via C<use Genesis::Log>):
+
+=over 4
+
+=item * C<$Logger> -- the global logger singleton
+
+=item * C<find_log_level> -- resolve and validate a log level string
+
+=item * C<meets_level> -- test whether a level meets or exceeds a threshold
+
+=item * C<get_stack> -- capture the current call stack as an array of frames
+
+=item * C<get_scope> -- format the current call location as a display string
+
+=item * C<log_levels> -- return the list of valid log level names
+
+=item * C<log_styles> -- return the style definition hash for a named style
+
+=back
+
+=head1 METHODS
+
+=head2 new
+
+  my $logger = Genesis::Log->new;
+
+Returns the global logger singleton, creating it if it does not yet exist.
+Subsequent calls return the same instance. On creation, the logger captures
+the current username (via C<whoami>), hostname (via C<hostname>), and PID.
+
+If C<$Genesis::VERSION> equals C<"(development)">, the version stored in the
+logger is set to C<"0.0.0-rc.0">; otherwise the actual C<$Genesis::VERSION>
+string is used.
+
+B<Returns:> The C<Genesis::Log> singleton blessed object, stored in
+C<$Genesis::Log::Logger>.
+
+B<Examples:>
+
+  my $logger = Genesis::Log->new;
+  print ref($logger);  # Returns: 'Genesis::Log'
+
+  # A second call returns the same object
+  my $same = Genesis::Log->new;
+  print($logger == $same ? 'same' : 'different');  # Returns: 'same'
+
+=head2 configure_log
+
+  $logger->configure_log();
+  $logger->configure_log(%options);
+  $logger->configure_log($log_path, %options);
+
+Configures a log target. If C<$log_path> is omitted, the target is the
+terminal (C<'E<lt>terminalE<gt>'>). If C<$log_path> contains template
+variables (C<{command}>, C<{timestamp}>, C<{date}>, C<{time}>, C<{pid}>,
+or C<{env}>), the path is stored as a template and the actual log file is
+created on first flush via C<expand_log_template>.
+
+When configuring a file target, if the target directory does not exist it
+is created automatically and a notice is printed to STDERR.
+
+If the target has not been configured before, it is initialized with these
+defaults:
+
+=over 4
+
+=item * C<level> -- C<ERROR> if C<$QUIET> is set, C<TRACE> if
+C<$GENESIS_TRACE> is set, C<DEBUG> if C<$GENESIS_DEBUG> is set, otherwise
+C<INFO>
+
+=item * C<show_stack> -- C<'none'>
+
+=item * C<timestamp> -- C<0> for the terminal, C<1> for file targets
+
+=item * C<style> -- value of C<$GENESIS_LOG_STYLE> if set, otherwise the
+C<output_style> from the Genesis RC file (defaulting to C<'plain'>)
+
+=back
+
+Accepted options:
+
+=over 4
+
+=item * C<level> -- log level string; passed through C<find_log_level> for
+validation and normalization
+
+=item * C<show_stack> -- stack display mode: C<'none'>, C<'current'>,
+C<'full'>, or C<'fatal'>
+
+=item * C<timestamp> -- boolean; prefix each entry with an ISO-8601 timestamp
+
+=item * C<truncate> -- if true, sets the log's starting entry to the current
+buffer position, discarding older buffered content for this target
+
+=item * C<style> -- output style: C<'pointer'>, C<'plain'>, C<'fun'>, or
+C<'rfc-5424'>
+
+=item * C<no_color> -- if defined, overrides C<$NOCOLOR> for this target
+
+=item * C<no_utf8> -- if defined, overrides C<$GENESIS_NO_UTF8> for this
+target
+
+=item * C<lifespan> -- if C<'current'>, truncates the log file to zero bytes
+when the log is first configured (only for file targets outside of callbacks)
+
+=item * C<skip_commands> -- arrayref of Genesis command names that should not
+produce a log file for this template; the C<'help'> command is always added
+to this list automatically
+
+=back
+
+B<Returns:> C<$self>, for chaining.
+
+B<Examples:>
+
+  # Configure terminal to show DEBUG and above
+  $logger->configure_log(level => 'DEBUG');
+  # Returns: $logger
+
+  # Configure a log file with timestamps and full stack on FATAL
+  $logger->configure_log('/var/log/genesis.log',
+    level      => 'TRACE',
+    timestamp  => 1,
+    show_stack => 'fatal',
+  );
+  # Returns: $logger
+
+=head2 setup_from_configs
+
+  Genesis::Log->setup_from_configs(\@log_configs);
+
+Class method. Configures one or more log targets from an array of
+configuration hashrefs, as typically loaded from a C<genesis.conf> C<logs>
+block.
+
+Each hashref may contain:
+
+=over 4
+
+=item * C<path> -- base directory for the log file (expanded via
+Genesis::expand_path)
+
+=item * C<file> -- filename or template relative to C<path>; if C<path> is
+given but C<file> is omitted, the default template
+C<{env}/{command}/{timestamp}.log> is used; if neither is given, defaults
+to C<~/.genesis/last-trace>
+
+=item * Any option accepted by C<configure_log> (e.g., C<level>,
+C<timestamp>, C<style>)
+
+=back
+
+When both C<path> and C<file> are present, they are combined into an
+absolute path. The C<path> and C<file> keys are removed before the
+remaining options are passed to C<configure_log>.
+
+B<Returns:> Nothing (returns implicitly after configuring all targets).
+
+B<Errors:>
+
+Calls Genesis::bail with C<"Configuration error - logs entry must be an array">
+if C<\@log_configs> is not an array reference.
+
+B<Examples:>
+
+  Genesis::Log->setup_from_configs([
+    {
+      path      => '~/.genesis/logs',
+      file      => '{env}/{command}/{timestamp}.log',
+      level     => 'TRACE',
+      timestamp => 1,
+    },
+  ]);
+  # Returns: nothing (configures logger as a side effect)
+
+=head2 expand_log_template
+
+  my $path = $logger->expand_log_template($template);
+
+Expands template variables in C<$template> to produce a concrete log file
+path. The following variables are recognized:
+
+=over 4
+
+=item * C<{command}> -- replaced with C<$GENESIS_COMMAND>, or C<'unknown'>
+if not set
+
+=item * C<{timestamp}> -- replaced with a UTC timestamp in the form
+C<YYYYMMDDTHHMMSS.mmmZ>
+
+=item * C<{date}> -- replaced with the UTC date as C<YYYYMMDD>
+
+=item * C<{time}> -- replaced with the UTC time as C<HHMMSS>
+
+=item * C<{pid}> -- replaced with the current process ID
+
+=item * C<{env}> -- replaced with C<$GENESIS_ENVIRONMENT>; if that variable
+is not set, the C<{env}> component and any surrounding path separators are
+removed to avoid double slashes in the resulting path
+
+=back
+
+Any resulting double slashes are collapsed to a single slash.
+
+B<Returns:> The expanded path string.
+
+B<Examples:>
+
+  # With GENESIS_ENVIRONMENT=prod and GENESIS_COMMAND=deploy set:
+  my $path = $logger->expand_log_template(
+    '~/.genesis/logs/{env}/{command}/{timestamp}.log'
+  );
+  # Returns: '~/.genesis/logs/prod/deploy/20240101T120000000.123Z.log'
+
+  # Without GENESIS_ENVIRONMENT set, the {env}/ component is dropped:
+  my $path2 = $logger->expand_log_template(
+    '~/.genesis/logs/{env}/{command}/{timestamp}.log'
+  );
+  # Returns: '~/.genesis/logs/deploy/20240101T120000000.123Z.log'
+
+=head2 is_logging
+
+  my $bool = $logger->is_logging($level [, $log_path]);
+
+Returns true if the given C<$level> meets or exceeds the configured level
+for C<$log_path>. If C<$log_path> is omitted, the terminal target
+(C<'E<lt>terminalE<gt>'>) is checked.
+
+Returns false (C<0>) if the target has not been configured or has no level
+set.
+
+B<Parameters:>
+
+=over 4
+
+=item * C<$level> -- the log level name to test (e.g., C<'DEBUG'>, C<'TRACE'>)
+
+=item * C<$log_path> -- optional; the log target path to check; defaults to
+C<'E<lt>terminalE<gt>'>
+
+=back
+
+B<Returns:> Boolean (true or C<0>).
+
+B<Examples:>
+
+  if ($logger->is_logging('DEBUG')) {
+    $logger->debug("Expensive detail: %s", compute());
+  }
+  # Returns: 1 if DEBUG is enabled on the terminal, 0 otherwise
+
+  if ($logger->is_logging('TRACE', '/var/log/genesis.log')) {
+    $logger->trace("Trace output also going to file");
+  }
+  # Returns: 1 if TRACE is enabled on the file target, 0 otherwise
+
+=head2 style
+
+  my $style = $logger->style;
+  my $style = $logger->style($log_path);
+
+Returns the output style string for the given log target. If C<$log_path>
+is omitted, the terminal target (C<'E<lt>terminalE<gt>'>) is used.
+
+Valid style values are C<'pointer'>, C<'plain'>, C<'fun'>, and C<'rfc-5424'>.
+
+B<Errors:>
+
+Dies with C<"invalid log: $log\n"> if the target C<$log_path> has not been
+configured.
+
+B<Returns:> The style string for the target.
+
+B<Examples:>
+
+  my $s = $logger->style;
+  print $s;  # Returns: 'plain' (the default)
+
+  my $file_style = $logger->style('/var/log/genesis.log');
+  print $file_style;  # Returns: 'plain'
+
+=head2 set_level
+
+  $logger->set_level($level [, $log_path]);
+
+Sets the minimum log level for the given target. If C<$log_path> is
+omitted, the terminal target (C<'E<lt>terminalE<gt>'>) is updated. The
+level string is passed through C<find_log_level> for validation and
+normalization before being stored.
+
+B<Parameters:>
+
+=over 4
+
+=item * C<$level> -- the new log level name (e.g., C<'DEBUG'>, C<'TRACE'>)
+
+=item * C<$log_path> -- optional; the log target path to update; defaults to
+C<'E<lt>terminalE<gt>'>
+
+=back
+
+B<Errors:>
+
+Dies with C<"invalid log: $log\n"> if the target C<$log_path> has not been
+configured.
+
+B<Returns:> C<$self>, for chaining.
+
+B<Examples:>
+
+  $logger->set_level('DEBUG');
+  # Returns: $logger (terminal level set to DEBUG)
+
+  $logger->set_level('TRACE', '/var/log/genesis.log');
+  # Returns: $logger (file target level set to TRACE)
+
+  $logger->set_level('INFO')->configure_log(timestamp => 1);
+  # Returns: $logger (chained calls)
+
+=head2 log_styles
+
+  my $style_def = log_styles($style_name);
+
+Returns the style definition hashref for the named log style, or C<undef>
+if the name is not recognized. This is a package-level function exported
+as C<log_styles>.
+
+The returned hashref may contain the following keys:
+
+=over 4
+
+=item * C<colors> -- a two-character color code string used for formatting
+(background and foreground)
+
+=item * C<pri> -- numeric syslog-style priority for use in C<rfc-5424> output
+
+=item * C<emoji> -- emoji name string for use in C<fun> output style
+
+=item * C<show_stack> -- stack display mode for this style (e.g., C<'current'>
+for C<trace>)
+
+=item * C<show_scope> -- scope display mode (e.g., C<'current'> for C<dumpvar>)
+
+=item * C<raw> -- if true, output is not wrapped at the terminal width
+
+=back
+
+Recognized style names: C<output>, C<info>, C<debug>, C<warning>,
+C<notice>, C<error>, C<fatal>, C<trace>, C<qtrace>, C<dumpvar>,
+C<dumpstack>.
+
+B<Returns:> A hashref of style attributes, or C<undef> for unrecognized names.
+
+B<Examples:>
+
+  my $def = log_styles('error');
+  print $def->{colors};  # Returns: 'RW'
+  print $def->{emoji};   # Returns: 'collision'
+
+  my $undef = log_styles('bogus');
+  print defined($undef) ? 'defined' : 'undef';  # Returns: 'undef'
+
+=head2 output
+
+  $logger->output();
+  $logger->output($message);
+  $logger->output($format, @args);
+
+Emits a log entry using the given format string and arguments. This method
+is the basis for all the per-level logging shortcut methods listed below.
+
+C<$format> is a C<sprintf>-style format string. If only one argument is
+given it is treated as a literal string (a C<"%s"> format is prepended
+automatically).
+
+The following shortcut methods are all defined in the same way; each
+delegates to the internal C<_log> method with the corresponding level name
+and style definition from C<log_styles>:
+
+=over 4
+
+=item * C<output> -- level C<OUTPUT>; goes to STDOUT on terminal, no prefix/colors
+
+=item * C<info> -- level C<INFO>; goes to STDERR; no prefix/colors on terminal
+
+=item * C<debug> -- level C<DEBUG>; visible at C<DEBUG> or C<TRACE> threshold
+
+=item * C<notice> -- level C<NOTICE>
+
+=item * C<warning> -- level C<WARNING>
+
+=item * C<error> -- level C<ERROR>
+
+=item * C<fatal> -- level C<FATAL>; does not terminate the process on its own
+
+=item * C<trace> -- level C<TRACE>; automatically appends current call location
+(C<show_stack> is C<'current'> for this style)
+
+=item * C<qtrace> -- level C<TRACE>; like C<trace> but without the automatic
+stack annotation
+
+=back
+
+C<output>-level messages go to STDOUT on the terminal; all other levels go
+to STDERR.
+
+B<Returns:> Nothing.
+
+B<Examples:>
+
+  $logger->output("Deployment complete.\n");
+  # Returns: nothing (prints to STDOUT)
+
+  $logger->info("Environment %s is ready\n", $env_name);
+  # Returns: nothing (prints to STDERR)
+
+  $logger->debug("Vault path resolved to: %s", $path);
+  # Returns: nothing (printed only if terminal is at DEBUG or TRACE level)
+
+  $logger->warning("Certificate expires in %d days", $days);
+  # Returns: nothing (prints to STDERR)
+
+  $logger->error("Could not connect to vault at %s", $url);
+  # Returns: nothing (prints to STDERR)
+
+  $logger->fatal("Unrecoverable error: %s", $msg);
+  # Returns: nothing (prints to STDERR; caller must exit)
+
+  $logger->trace("Entering %s with args: %s", $method, join(', ', @args));
+  # Returns: nothing (prints to STDERR with call location appended)
+
+  $logger->qtrace("Loop iteration %d: value=%s", $i, $val);
+  # Returns: nothing (prints to STDERR at TRACE level, no location appended)
+
+In addition to the shortcut methods above, the C<output> code block in the
+source also defines C<dump_var>:
+
+  $logger->dump_var(%vars);
+  $logger->dump_var(\%options, %vars);
+  $logger->dump_var($scope_offset, %vars);
+
+C<dump_var> dumps one or more named variables to the log at C<VALUE> level
+using Data::Dumper. Each key/value pair in C<%vars> produces a separate log
+entry formatted as C<name = value>. An optional leading hashref C<\%options>
+is merged into the log entry options. An optional leading integer
+C<$scope_offset> (absolute value used) adjusts the stack depth for scope
+reporting. Returns nothing.
+
+  $logger->dump_var(my_hash => \%config, my_list => \@items);
+  # Returns: nothing (prints each variable's Data::Dumper output to STDERR)
+
+  $logger->dump_var(1, result => $value);
+  # Returns: nothing (scope offset shifted up one level)
+
+=head2 dump_stack
+
+  $logger->dump_stack;
+  $logger->dump_stack(\%options);
+  $logger->dump_stack($scope_offset);
+
+Captures the current call stack and emits it at C<STACK> level as a
+formatted table showing line number, subroutine name, and file for each
+frame. Column widths are auto-sized to the longest value in each column.
+
+An optional leading hashref C<\%options> (C<$more_options>) is merged into
+the log entry options. An optional leading integer C<$scope_offset> adjusts
+the starting depth of the stack capture.
+
+A blank line is printed to STDERR before the table to ensure the header
+aligns correctly.
+
+B<Parameters:>
+
+=over 4
+
+=item * C<\%options> (C<$more_options>) -- optional hashref of log entry
+options (e.g., C<offset>); may be given multiple times and they are merged
+
+=item * C<$scope_offset> -- optional integer; number of additional frames to
+skip from the capture starting point
+
+=back
+
+B<Returns:> Nothing.
+
+B<Examples:>
+
+  $logger->dump_stack;
+  # Returns: nothing (prints stack table to STDERR)
+
+  $logger->dump_stack(1);
+  # Returns: nothing (skips one extra frame)
+
+=head2 flush_logs
+
+  $logger->flush_logs;
+
+Normally called automatically by C<_log> after each log entry; rarely called directly.
+Flushes all buffered log entries to every configured target. Entries are
+filtered by each target's level before being written. Re-entrant calls
+return immediately (guarded by an internal C<$flushing> flag).
+
+Before flushing entries, any pending log templates are resolved to actual
+file paths via C<expand_log_template> and then configured. Templates whose
+C<skip_commands> list matches the current C<$GENESIS_COMMAND> are marked as
+C<'E<lt>skippedE<gt>'> and no file is created.
+
+For file targets, if C<$GENESIS_FULL_CALL> is set and the file is newly
+created (zero bytes), the full command line is prepended as
+C<"Command: $GENESIS_FULL_CALL\n\n">.
+
+Output style is applied per target: C<pointer>, C<plain>, C<fun>, or
+C<rfc-5424>. Stack frames are appended when the entry's C<show_stack>
+setting (or the target's C<show_stack> setting) indicates C<'current'>
+or C<'full'>.
+
+B<Errors:>
+
+Dies with C<"Could not open $log for writing logs: $!\n"> if a file target
+cannot be opened for appending (where C<$log> is the file path and C<$!>
+is the OS error message).
+
+B<Returns:> Nothing.
+
+B<Examples:>
+
+  $logger->flush_logs;
+  # Returns: nothing (flushes buffered entries to all targets)
+
+=head2 replay
+
+  $logger->replay($level [, $log_path]);
+
+Replays all buffered log entries through the given target by resetting its
+read position to the beginning of the buffer and calling C<flush_logs>.
+
+If C<$level> is provided, the target's log level is temporarily changed to
+C<$level> for the duration of the replay, then restored to its original
+value afterward.
+
+If C<$log_path> is omitted, the terminal (C<'E<lt>terminalE<gt>'>) is
+replayed.
+
+B<Parameters:>
+
+=over 4
+
+=item * C<$level> -- optional; the log level to use during replay; pass
+C<undef> to replay at the currently configured level
+
+=item * C<$log_path> -- optional; the log target to replay; defaults to
+C<'E<lt>terminalE<gt>'>
+
+=back
+
+B<Returns:> Nothing.
+
+B<Examples:>
+
+  $logger->replay('TRACE');
+  # Returns: nothing (replays all buffered entries at TRACE level on terminal)
+
+  $logger->replay(undef, '/var/log/genesis.log');
+  # Returns: nothing (replays at the file target's current level)
+
+=head2 log_levels
+
+  my @levels = log_levels();
+
+Returns the ordered list of valid user-facing log level names. This is a
+package-level function exported as C<log_levels>.
+
+The returned list is:
+
+  NONE OUTPUT ERROR WARNING INFO DEBUG TRACE
+
+Note that C<FATAL>, C<NOTICE>, C<VALUE>, and C<STACK> are used internally
+but are not included in this list because they are not valid configuration
+level names for log targets.
+
+B<Returns:> A list of level name strings.
+
+B<Examples:>
+
+  my @levels = log_levels();
+  print join(', ', @levels);
+  # Returns: 'NONE, OUTPUT, ERROR, WARNING, INFO, DEBUG, TRACE'
+
+=head2 get_scope
+
+  my $scope_str = get_scope($scope_offset);
+
+Returns a formatted string representing the current call location,
+suitable for display in log output. The string shows the file name, line
+number, and optionally the subroutine name, styled with terminal color codes.
+
+If the C<GENESIS_STACK_TRACE> environment variable is set, additional frames
+are included (one per line); otherwise only the immediate caller is shown.
+
+Internally delegates to C<get_stack> for stack frame retrieval.
+
+B<Parameters:>
+
+=over 4
+
+=item * C<$scope_offset> -- integer; number of additional stack frames to
+skip above the caller (0 = immediate caller)
+
+=back
+
+B<Returns:> A formatted string of the call location with color markup.
+
+B<Examples:>
+
+  # Example usage:
+  my $loc = get_scope(0);
+  # Returns: a string like '^- lib/Genesis/Secret.pm:L42 (in Genesis::Secret::new)'
+
+=head2 get_stack
+
+  my @frames = get_stack($scope_offset);
+
+Captures the current call stack starting C<$scope_offset> frames above the
+immediate caller. Returns a list of frame hashrefs, each containing:
+
+=over 4
+
+=item * C<file> -- the source file, humanized via Genesis::humanize_path
+
+=item * C<line> -- the line number
+
+=item * C<sub> -- the subroutine name (absent for the outermost frame)
+
+=back
+
+Frames are ordered from most recent caller to the outermost frame.
+
+B<Parameters:>
+
+=over 4
+
+=item * C<$scope_offset> -- integer; number of stack frames to skip from the
+call site (0 means start at the direct caller of C<get_stack>)
+
+=back
+
+B<Returns:> A list of frame hashrefs.
+
+B<Examples:>
+
+  my @stack = get_stack(0);
+  for my $frame (@stack) {
+    printf "%s line %d\n", $frame->{file}, $frame->{line};
+    # Returns: e.g., 'lib/Genesis/Log.pm line 300'
+  }
+
+=head2 find_log_level
+
+  my $level = find_log_level($input);
+
+Validates and normalizes a log level string. The input is uppercased and
+checked against the known levels. If the input is an unambiguous prefix of
+exactly one valid level, that level is returned.
+
+B<Parameters:>
+
+=over 4
+
+=item * C<$input> -- a log level name or prefix (case-insensitive)
+
+=back
+
+B<Errors:>
+
+Calls Genesis::bail with
+C<"Ambiguous log level $log_level: please specify one of ...">
+if the input matches more than one valid level as a prefix (where
+C<$log_level> is the uppercased input and the suffix lists the matching levels).
+
+Calls Genesis::bail with
+C<"Not a valid log level '$log_level': please specify one of ...">
+if the input does not match any valid level (where C<$log_level> is the
+uppercased input and the suffix lists all valid levels).
+
+B<Returns:> The canonical uppercase level name string.
+
+B<Examples:>
+
+  my $level = find_log_level('trac');
+  print $level;  # Returns: 'TRACE'
+
+  my $level2 = find_log_level('DEBUG');
+  print $level2;  # Returns: 'DEBUG'
+
+=head2 meets_level
+
+  my $bool = meets_level($level, $target);
+
+Returns true if C<$level> meets or exceeds C<$target> in severity. Both
+arguments may be level name strings (e.g., C<'DEBUG'>) or numeric
+ordinal integers as returned by C<level_ord>.
+
+B<Parameters:>
+
+=over 4
+
+=item * C<$level> -- the level to test
+
+=item * C<$target> -- the minimum required level
+
+=back
+
+B<Returns:> Boolean (true if C<$level E<gt>= $target> numerically, false otherwise).
+
+B<Examples:>
+
+  print meets_level('DEBUG', 'INFO')  ? 'yes' : 'no';  # Returns: 'yes'
+  print meets_level('INFO',  'DEBUG') ? 'yes' : 'no';  # Returns: 'no'
+  print meets_level('INFO',  'INFO')  ? 'yes' : 'no';  # Returns: 'yes'
+
+=head2 level_ord
+
+  my $ordinal = level_ord($level);
+
+Returns the numeric ordinal for the given log level name. Higher ordinals
+represent more verbose levels. Returns C<undef> for unrecognized level names.
+
+The ordinal mapping is:
+
+  NONE    => 0
+  OUTPUT  => 1
+  FATAL   => 2
+  ERROR   => 2
+  WARNING => 3
+  NOTICE  => 3
+  INFO    => 4
+  DEBUG   => 5
+  VALUE   => 6
+  TRACE   => 6
+  STACK   => 6
+
+B<Parameters:>
+
+=over 4
+
+=item * C<$level> -- a log level name string (uppercased internally before
+lookup)
+
+=back
+
+B<Returns:> Integer ordinal, or C<undef> for unknown levels.
+
+B<Examples:>
+
+  print level_ord('INFO');   # Returns: 4
+  print level_ord('trace');  # Returns: 6
+  print defined(level_ord('BOGUS')) ? 'defined' : 'undef';  # Returns: 'undef'
+
+=head1 INTERNAL METHODS
+
+These methods are internal to the implementation. They may change without
+notice and should not be called directly.
+
+=head2 _log
+
+  $logger->_log($level, @contents);
+  $logger->_log($level, \%options, @contents);
+
+Core method that creates a log buffer entry and triggers C<flush_logs>.
+All public log-level methods (C<info>, C<debug>, etc.) delegate here.
+
+C<@contents> is a list where the first element is a C<sprintf> format
+string and subsequent elements are values. If only one non-hashref element
+is present, a C<"%s"> format is prepended automatically.
+
+Leading hashrefs in C<@contents> are extracted as option overrides. The
+C<offset> key in any such hashref accumulates to determine the stack depth
+used when capturing the call stack.
+
+The buffer entry includes: C<level>, C<label>, C<colors>, C<emoji>,
+C<priority>, C<timestamp>, C<contents>, C<pending>, C<reset>,
+C<show_stack>, C<stack>, C<raw>, C<prefix>, and C<style>.
+
+Stack frames are captured for all entries whose level meets
+C<capture_stack_min_level> (ordinal 2, i.e., C<FATAL>/C<ERROR> and above),
+except for C<STACK>-level entries which do not capture stack frames.
+
+B<Examples:>
+
+  # Called by public methods; not normally called directly.
+  $logger->_log('INFO', 'Hello %s', 'world');
+  # Returns: nothing (appends buffer entry and flushes)
+
+=head2 _log_item_level_map
+
+  my $map = _log_item_level_map();
+
+Returns a hashref mapping every recognized log level name (including
+internal levels) to its numeric ordinal. Used by C<level_ord> and
+C<meets_level>.
+
+The map includes both user-facing levels (C<NONE>, C<OUTPUT>, C<ERROR>,
+C<WARNING>, C<INFO>, C<DEBUG>, C<TRACE>) and internal levels (C<FATAL>,
+C<NOTICE>, C<VALUE>, C<STACK>).
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

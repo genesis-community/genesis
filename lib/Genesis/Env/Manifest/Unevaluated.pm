@@ -5,6 +5,8 @@ use warnings;
 
 use base 'Genesis::Env::Manifest';
 
+sub description { "Raw merged manifest template with no interpolation (merged, but spruce operators still in place)" }
+
 sub source_files {
 	my $self = shift;
 	return [

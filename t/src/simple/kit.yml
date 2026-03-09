@@ -4,7 +4,7 @@ author: James Hunt <jhunt@starkandwayne.com>
 docs:   https://github.com/genesis-community/simple-genesis-kit
 code:   https://github.com/genesis-community/simple-genesis-kit
 
-genesis_version_min: 2.6.0
+genesis_version_min: 2.8.0
 
 description: |
   This kit provides the simplest, no-frills kit that Genesis supports.

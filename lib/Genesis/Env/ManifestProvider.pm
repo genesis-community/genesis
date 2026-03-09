@@ -53,20 +53,19 @@ sub new {
 # }}}
 # known_types - return the list of known manifest type (dynamically determined) {{{
 sub known_types {
-	# TODO - return hash with types and descriptions
-	# for each entry in %manifest_types - key is type, value->description is description
 	my @types = keys %$manifest_types;
 	@types = grep {$_ !~ /entombed/} @types
 		if ($_[0]->env->use_create_env);
-	return [@types]
+	@types = grep {$_ !~ /vaultif/} @types
+		unless ($_[0]->env->kit->uses_credhub);
+	return map { $_ => $manifest_types->{$_}->description // 'No description given' } @types;
 }
 
 # }}}
 # known_subsets - return the list of subset names that can be requested {{{
 sub known_subsets {
-	# TODO - return hash with subset and description
-	# embed descr in _subset_plans
-	return [keys %{$_[0]->_subset_plans}];
+	my %subsets = %{$_[0]->_subset_plans};
+	return map { $_ => $subsets{$_}{description} } keys %subsets;
 }
 # }}}
 # }}}
@@ -207,7 +206,26 @@ sub get_subset {
 	# The already-existant alternative source is already resolved at this point
 	$self->env->notify($manifest->get_build_notice)
 		if $manifest->has_notice && ! $self->{suppress_notification};
-	my ($operator,$selection) = %{$self->_subset_plans()->{$subset}};
+	my $subset_plan = $self->_subset_plans()->{$subset};
+	bail("Unknown subset '%s' requested for manifest %s", $subset, $manifest->type)
+		unless keys %$subset_plan;
+	my @valid_operators = qw/include exclude fetch/;
+	my %operators = %{$subset_plan}{
+		grep { exists $subset_plan->{$_} }
+		@valid_operators};
+
+	bail(
+		"Invalid subset '%s' requested for manifest %s: valid operators are %s",
+		$subset, $manifest->type,
+		join(', ', @valid_operators)
+	) unless keys %operators;
+	bail(
+		"Too many selections specified for subset '%s' in manifest %s",
+		$subset, $manifest->type
+	) if keys %operators > 1;
+	my $operator = (keys %operators)[0];
+
+	my $selection = $subset_plan->{$operator};
 	if ($req eq 'data') {
 		my $src = $src_manifest->data;
 		my $data = undef;
@@ -220,7 +238,7 @@ sub get_subset {
 			? $src->{$selection->{key}}
 			: $selection->{default};
 		} else {
-			bug("Invalid subset operator '$operator'")
+			bug("Invalid subset operator '$operator'") # Should never reach here
 		}
 		my $new_data = decode_json(encode_json($data)); # deep-copy made easy
 
@@ -282,7 +300,7 @@ sub kit_files {
 			unless $self->{suppress_notification};
 		my $tstart = gettimeofday;
 		my $files = [$self->env->kit_files('absolute')];
-		info("#G{done}".pretty_duration(gettimeofday-$tstart,0.5,2));
+		info("#G{done}".pretty_duration(gettimeofday-$tstart,0.5,2)) unless $self->{suppress_notification};
 		return $files;
 	})};
 }
@@ -384,10 +402,22 @@ sub vault_paths {
 sub _subset_plans {
 	return $_[0]->_memoize( sub {
 		return {
-			credhub_vars => { include => [qw(variables bosh-variables)]},
-			bosh_vars    => { fetch   => {key => 'bosh-variables', default => {}} },
-			pruned       => { exclude => [$_[0]->env->prunable_keys]},
-			releases     => { fetch   => {key => 'releases', default => {}} },
+			credhub_vars => {
+				description => "The list of variable and credhub lookups used in the manifest",
+				include     => [qw(variables bosh-variables)]
+			},
+			bosh_vars => {
+				description => "BOSH variables in a format suitable for bosh-cli deploy command (--vars-file|-l)",
+				fetch       => {key => 'bosh-variables', default => {}}
+			},
+			pruned => {
+				description => "Manifest with the Genesis-specific keys pruned - suitable for use with BOSH deploy",
+				exclude     => [$_[0]->env->prunable_keys]
+			},
+			releases => {
+				description => "YAML file containing the array of BOSH releases used in the deployment",
+				include     => ['releases']
+			},
 		}
 	});
 };

@@ -1,0 +1,517 @@
+=head1 NAME
+
+Service::Vault::Remote - A remote Vault target managed through safe
+
+=head1 SYNOPSIS
+
+  use Service::Vault::Remote;
+
+  # Create a new safe target and get a vault object
+  my $vault = Service::Vault::Remote->create(
+    'https://vault.example.com:8200',
+    'my-vault',
+    skip_verify => 0,
+  );
+
+  # Attach to an existing safe target by URL
+  my $vault = Service::Vault::Remote->attach(
+    url    => 'https://vault.example.com:8200',
+    verify => 1,
+  );
+
+  # Select or validate a target interactively
+  my $vault = Service::Vault::Remote->target('my-vault');
+
+  # Rebind to the previously selected vault inside a Genesis hook callback
+  my $vault = Service::Vault::Remote->rebind();
+
+  # Find all known remote vault targets
+  my @vaults = Service::Vault::Remote->find();
+
+  # Connect and authenticate
+  $vault->connect_and_validate();
+
+=head1 DESCRIPTION
+
+C<Service::Vault::Remote> represents a remote HashiCorp Vault instance
+managed through the C<safe> CLI tool. It inherits from C<Service::Vault>
+and provides class methods for acquiring a vault object (C<create>,
+C<target>, C<attach>, C<rebind>) and instance methods for connecting to and
+authenticating against the vault.
+
+Remote vaults are backed by entries in the user's C<~/.saferc> file. Each
+safe target has a name (alias), a URL, and TLS verification settings.
+C<Service::Vault::Remote> enforces that the URL is unique across all aliases,
+which is required for Genesis's distributed deployment model.
+
+Once a vault is acquired and validated, it is set as the C<current> vault
+for the process, available via C<< Service::Vault->current >>.
+
+=head1 METHODS
+
+=head2 create
+
+  my $vault = Service::Vault::Remote->create($url, $name, %opts);
+
+Creates a new safe target pointing at C<$url> with alias C<$name> and
+returns a C<Service::Vault::Remote> object representing that target. The
+previous system safe target (if any) is restored after the new target is
+registered.
+
+If a vault with the same C<$name> already exists in the internal cache, it
+is replaced by the newly created object.
+
+B<Parameters:>
+
+=over 4
+
+=item $url
+
+The URL of the Vault, e.g. C<https://vault.example.com:8200>.
+
+=item $name
+
+The alias name for the safe target.
+
+=item %opts
+
+Optional key-value pairs:
+
+=over 4
+
+=item skip_verify
+
+If true, TLS certificate verification is skipped (passes C<-k> to C<safe target>).
+
+=item namespace
+
+The Vault namespace to use (passes C<-n NAMESPACE> to C<safe target>).
+
+=item no_strongbox
+
+If true, disables strongbox support (passes C<--no-strongbox> to C<safe target>).
+
+=item mount
+
+The secrets mount point to use (default: C</secret/>).
+
+=back
+
+=back
+
+B<Returns:> A C<Service::Vault::Remote> object for the newly created target.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Could not create new Safe target %s pointing at %s:\n %s">
+
+Raised if C<safe target> exits with a non-zero status. The first C<%s> is
+the target name, the second is the URL, and the third is the error output
+from safe.
+
+=back
+
+B<Examples:>
+
+  my $vault = Service::Vault::Remote->create(
+    'https://vault.example.com:8200',
+    'prod-vault',
+    skip_verify => 0,
+    namespace   => 'myorg',
+  );
+  print $vault->name;  # Returns: 'prod-vault'
+
+=head2 target
+
+  my $vault = Service::Vault::Remote->target($target, %opts);
+  my $vault = Service::Vault::Remote->target(undef, %opts);
+
+Returns a C<Service::Vault::Remote> object for the given target, or presents
+an interactive prompt for the user to select one. Use this when setting up
+a deployment repository for the first time or switching vaults.
+
+When C<$target> is provided, it is resolved to a URL via the known safe
+targets. If the target is unknown or if its URL is shared by more than one
+alias, an error is raised.
+
+When C<$target> is not provided, the user must be in a controlling terminal.
+All targets whose URLs are unique across aliases are presented for selection.
+Targets whose URLs are shared by multiple aliases are omitted with an
+explanatory note. The previously active system vault is shown as the
+default selection.
+
+In both cases the resolved vault is validated as reachable and authenticated
+before being returned.
+
+B<Parameters:>
+
+=over 4
+
+=item $target
+
+An alias or URL of an existing safe target. Pass C<undef> (or omit) to
+enter interactive selection mode.
+
+=item %opts
+
+Optional key-value pairs:
+
+=over 4
+
+=item default_vault
+
+A C<Service::Vault> object to use as the pre-selected default in the
+interactive prompt. If not provided, the current system target vault is
+used. Has no effect when C<$target> is specified.
+
+=back
+
+=back
+
+B<Returns:> A C<Service::Vault::Remote> object that has been connected and
+validated via C<connect_and_validate>.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Safe target \"#M{%s}\" not found.  Please create itand authorize against it before re-attempting this command.">
+
+Raised when the specified C<$target> does not match any known safe target.
+C<%s> is the provided target value.
+
+=item C<"Multiple safe targets use url %s:\n%s\n\nYour ~/.saferc file cannot have more than one target for the given url.  Please remove any duplicate targets before re-attempting this command.">
+
+Raised when the resolved URL is used by more than one safe alias. C<%s> is
+the URL, and the second C<%s> is a formatted list of the conflicting alias
+names.
+
+=item C<"There are no valid vault targets found on this system.">
+
+Raised in interactive mode when no targets with unique URLs exist.
+
+=item C<"Cannot interactively select vault unless in a controlling terminal - terminating!">
+
+Raised when C<$target> is not provided and the process is not attached to
+a controlling terminal.
+
+=back
+
+B<Examples:>
+
+  # Select by known alias
+  my $vault = Service::Vault::Remote->target('prod-vault');
+  print $vault->url;  # Returns: 'https://vault.example.com:8200'
+
+  # Interactive selection (requires a terminal)
+  my $vault = Service::Vault::Remote->target(undef,
+    default_vault => Service::Vault->default,
+  );
+
+=head2 attach
+
+  my $vault = Service::Vault::Remote->attach(%opts);
+
+Returns a C<Service::Vault::Remote> object for a safe target whose URL
+matches C<url> in C<%opts>, according to the user's C<~/.saferc> file.
+
+Each option value may be a literal string or an environment variable
+reference beginning with C<$> (e.g., C<'$VAULT_ADDR'>), resolved at call
+time.
+
+TLS mode is inferred from the URL scheme (C<https> implies TLS) unless
+C<tls> is provided explicitly.
+
+When multiple targets share the same URL, namespace, and strongbox setting,
+and an C<alias> is provided that matches one of them, that specific target
+is selected. If no alias match is found among multiple candidates, an error
+is raised.
+
+B<Parameters:>
+
+=over 4
+
+=item url (required)
+
+The URL of the Vault. May be a literal URL or a C<$ENV_VAR> reference.
+
+=item alias
+
+The preferred safe target alias to use when multiple targets match the
+other filter criteria.
+
+=item tls
+
+Explicit TLS flag (1 for TLS, 0 for plain HTTP). If omitted, derived from
+the URL scheme.
+
+=item verify
+
+If true and TLS is active, TLS certificate verification is required.
+
+=item namespace
+
+The Vault namespace. Used as an additional filter when searching for
+matching safe targets.
+
+=item strongbox
+
+Whether strongbox support is expected. Used as an additional filter.
+
+=item no_vault
+
+If true and no matching safe target is found, return C<undef> instead of
+raising an error.
+
+=item silent
+
+If true, suppresses progress output during C<connect_and_validate>.
+
+=back
+
+B<Returns:> A C<Service::Vault::Remote> object that has been connected and
+validated, or C<undef> if C<no_vault> is true and no target is found.
+
+B<Errors:>
+
+=over 4
+
+=item C<"No vault target specified">
+
+Raised when C<url> is not provided or resolves to an empty value.
+
+=item C<"Expecting vault target '$url' to be a url">
+
+Raised when the resolved C<url> value is not a valid URL.
+
+=item C<"Could not find matching safe target, but the following are similar:\n...">
+
+Raised when no target exactly matches the filter but similar targets exist.
+Includes a listing of the similar targets with their differing properties.
+
+=item C<"Safe target for %s not found.  Please run\n\n  safe target <name> \"%s\"%s\n\nthen authenticate against it using the correct auth method before re-attempting this command.">
+
+Raised when no target matches and no similar targets exist. The first two
+C<%s> are the URL, and the third C<%s> is C<""> when C<verify> is true or
+C<" -k"> otherwise.
+
+=item C<"Multiple safe targets found for %s:\n%s\n\nYour ~/.saferc file cannot have more than one target for the given url, namespace, insecure or strongbox combination.  ...">
+
+Raised when more than one target matches the filter and no C<alias> matches
+any of them. C<%s> is the URL, and the second C<%s> is a list of matching
+alias names.
+
+=back
+
+B<Examples:>
+
+  my $vault = Service::Vault::Remote->attach(
+    url    => 'https://vault.example.com:8200',
+    verify => 1,
+  );
+  print $vault->name;  # Returns: the matching safe alias
+
+  # Allow missing vault (returns undef instead of dying)
+  my $vault = Service::Vault::Remote->attach(
+    url      => '$VAULT_ADDR',
+    no_vault => 1,
+  );
+
+=head2 rebind
+
+  my $vault = Service::Vault::Remote->rebind();
+
+Rebinds to the vault that was active when the current Genesis hook was
+invoked. Lighter than C<attach> or C<target>, it is designed for use inside
+hook callbacks and performs less validation.
+
+The vault is identified by the C<GENESIS_TARGET_VAULT> environment
+variable, which Genesis sets before running any hook. If the value is a
+valid URI, the matching safe target is located by URL. If the value is a
+plain name (legacy mode) and matches the current system default vault, that
+vault is used.
+
+Returns C<undef> if the vault cannot be identified, without raising an error.
+
+B<Parameters:> None.
+
+B<Returns:> A C<Service::Vault::Remote> object set as the current vault, or
+C<undef> if no matching vault could be found.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Cannot rebind to vault in callback due to missing environment variables!">
+
+Raised when C<GENESIS_TARGET_VAULT> is not set.
+
+=item C<"Cannot rebind to vault at address '$ENV{GENESIS_TARGET_VAULT}` - not found in .saferc">
+
+Raised when C<GENESIS_TARGET_VAULT> contains a URI that does not match any
+known safe target.
+
+=back
+
+B<Examples:>
+
+  # Inside a Genesis hook callback:
+  my $vault = Service::Vault::Remote->rebind()
+    or die "Could not re-establish vault connection";
+  my $value = $vault->get('secret/myapp', 'password');
+  # Returns: the stored password string
+
+=head2 find
+
+  my @vaults = Service::Vault::Remote->find(%filter);
+
+Returns all known C<Service::Vault::Remote> objects, optionally filtered by
+property. This is a subclass-scoped version of C<< Service::Vault->find >>:
+it delegates to the parent and then retains only objects whose ref is
+exactly C<Service::Vault::Remote>, excluding C<Service::Vault::Local>
+instances and other subclasses.
+
+B<Parameters:>
+
+=over 4
+
+=item %filter
+
+Optional hash of property-value pairs. Valid properties include C<url>,
+C<name>, C<tls>, and C<verify>. Each property is compared as a string.
+
+=back
+
+B<Returns:> A list of C<Service::Vault::Remote> objects matching the filter.
+
+B<Examples:>
+
+  # All remote vaults
+  my @all = Service::Vault::Remote->find();
+
+  # Only TLS-enabled vaults
+  my @tls_vaults = Service::Vault::Remote->find(tls => 1);
+  # Returns: list of Service::Vault::Remote objects using https
+
+=head2 connect_and_validate
+
+  my $vault = $vault->connect_and_validate($silent);
+
+Verifies that the vault is reachable and authenticated, then sets it as the
+current vault. If the vault is already current, no network calls are made.
+
+If the vault's status is C<unauthenticated>, C<authenticate> is called to
+attempt automatic login using environment variables. If the vault is still
+not in C<ok> status afterward, an error is raised.
+
+Unless C<$silent> is true, progress output is printed to the terminal
+during the check. Output is also suppressed when running inside a Genesis
+callback (C<in_callback>) or under the test harness (C<under_test>).
+
+B<Parameters:>
+
+=over 4
+
+=item $silent
+
+Optional. If true, suppresses all progress and status output.
+
+=back
+
+B<Returns:> The vault object itself after being set as the current vault via
+C<set_as_current>.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Could not connect to vault%s">
+
+Raised when the vault status is not C<ok> after connection and optional
+authentication. When running silently, in a callback, or under test, the
+C<%s> placeholder expands to C<" 'name' (url): status is STATUS)">. When
+running interactively, it expands to an empty string (the status was already
+printed to the terminal).
+
+=back
+
+B<Examples:>
+
+  my $vault = Service::Vault::Remote->find(url => 'https://vault.example.com:8200');
+  $vault->connect_and_validate();
+  # Returns: the $vault object, now set as current
+
+  # Silent validation (no terminal output)
+  $vault->connect_and_validate(1);
+  # Returns: the $vault object
+
+=head2 authenticate
+
+  my $vault = $vault->authenticate();
+
+Attempts to authenticate against the vault using credentials found in
+environment variables. Returns immediately if already authenticated.
+
+The following authentication methods are tried in order. The first method
+whose required environment variables are all present and non-empty is
+attempted:
+
+=over 4
+
+=item AppRole
+
+Requires C<VAULT_ROLE_ID> and C<VAULT_SECRET_ID>.
+
+=item Vault Token
+
+Requires C<VAULT_AUTH_TOKEN>.
+
+=item Username/Password
+
+Requires C<VAULT_USERNAME> and C<VAULT_PASSWORD>.
+
+=item Github Personal Access Token
+
+Requires C<VAULT_GITHUB_TOKEN>.
+
+=back
+
+After all methods are tried, a final check confirms authentication. If the
+vault is still not authenticated, an error is raised listing each method,
+its required variables, and whether any were attempted but rejected.
+
+B<Parameters:> None beyond C<$self>.
+
+B<Returns:> The vault object itself if authentication is confirmed.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Could not successfully authenticate against %s vault with safe.\n\nGenesis can automatically authenticate with safe in the following ways:\n...">
+
+Raised when no available authentication method succeeds. C<%s> is the
+vault reference (name or alias). The message lists each supported method,
+its required environment variables, and whether those variables were
+present but failed.
+
+=back
+
+B<Examples:>
+
+  # With VAULT_AUTH_TOKEN set in the environment:
+  $ENV{VAULT_AUTH_TOKEN} = 'hvs.EXAMPLE';
+  my $result = $vault->authenticate();
+  # Returns: the $vault object
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

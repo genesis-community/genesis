@@ -1,0 +1,75 @@
+%%{init: {'theme': 'default', 'themeVariables': { 'primaryColor': '#f0f0f0', 'primaryBorderColor': '#333', 'primaryTextColor': '#333', 'lineColor': '#333', 'fontSize': '16px'}}}%%
+graph TB
+    Start([genesis deploy env-name]) --> CheckFeatures{Features<br/>Hook Exists?}
+    
+    CheckFeatures -->|Yes| RunFeatures[Run Features Hook<br/>Process and validate features<br/>Add derived features]
+    CheckFeatures -->|No| Blueprint
+    RunFeatures --> Blueprint
+    
+    Blueprint[Run Blueprint Hook<br/>REQUIRED<br/>Determine manifest files<br/>based on features] --> CheckViability
+    
+    CheckViability[Check Environment Viability] --> CheckHook{Check<br/>Hook Exists?}
+    
+    CheckHook -->|Yes| RunCheck[Run Check Hook<br/>Validate configuration<br/>Check requirements]
+    CheckHook -->|No| CPICheck
+    RunCheck --> CPICheck
+    
+    CPICheck{CPI Config<br/>Needed?} -->|Yes| RunCPI[Run CPI-config Hook<br/>Generate CPI configuration<br/>For BOSH directors]
+    CPICheck -->|No| CloudCheck
+    RunCPI --> CloudCheck
+    
+    CloudCheck{Cloud-config<br/>Hook Exists?} -->|Yes + Not Create-env| RunCloud[Run Cloud-config Hook<br/>Generate cloud configuration<br/>Networks, AZs, VM types]
+    CloudCheck -->|No or Create-env| ManifestGen
+    RunCloud --> ManifestGen
+    
+    ManifestGen[Generate Deployment Manifest<br/>Merge YAML files<br/>Apply variables] --> PreDeployCheck
+    
+    PreDeployCheck{Pre-deploy<br/>Hook Exists?} -->|Yes| RunPreDeploy[Run Pre-deploy Hook<br/>Final preparations<br/>Generate data for post-deploy]
+    PreDeployCheck -->|No| BOSHDeploy
+    RunPreDeploy --> BOSHDeploy
+    
+    BOSHDeploy{Deployment<br/>Type?} -->|Regular| RunBoshDeploy[Execute: bosh deploy<br/>Apply manifest to BOSH]
+    BOSHDeploy -->|Create-env| RunCreateEnv[Execute: bosh create-env<br/>Bootstrap deployment]
+    
+    RunBoshDeploy --> DeployResult
+    RunCreateEnv --> DeployResult
+    
+    DeployResult{Deployment<br/>Result} --> PostDeployCheck
+    
+    PostDeployCheck{Post-deploy<br/>Hook Exists?} -->|Yes| RunPostDeploy[Run Post-deploy Hook<br/>Receives: deployment result<br/>and pre-deploy data]
+    PostDeployCheck -->|No| Complete
+    
+    RunPostDeploy --> DirectorCheck{Is BOSH<br/>Director?}
+    
+    DirectorCheck -->|Yes| DirectorTasks[Director-specific Tasks]
+    DirectorCheck -->|No| Complete
+    
+    DirectorTasks --> CloudConfigDir{Cloud-config-director<br/>Hook Exists?}
+    CloudConfigDir -->|Yes| UploadCloudConfig[Upload Director<br/>Cloud Config]
+    CloudConfigDir -->|No| RuntimeCheck
+    UploadCloudConfig --> RuntimeCheck
+    
+    RuntimeCheck{Runtime-config<br/>Hook Exists?} -->|Yes| RunRuntime[Run Runtime-config Hook<br/>Generate runtime config<br/>Upload to director]
+    RuntimeCheck -->|No| CPIUpload
+    RunRuntime --> CPIUpload
+    
+    CPIUpload{CPI Config<br/>to Upload?} -->|Yes| UploadCPI[Upload CPI Config<br/>to Director]
+    CPIUpload -->|No| Complete
+    UploadCPI --> Complete
+    
+    Complete([Deployment Complete])
+    
+    style Start fill:#e1f5e1,stroke:#4caf50,stroke-width:2px
+    style Complete fill:#e1f5e1,stroke:#4caf50,stroke-width:2px
+    style Blueprint fill:#ffe0e0,stroke:#f44336,stroke-width:3px
+    style RunBoshDeploy fill:#e3f2fd,stroke:#2196f3,stroke-width:2px
+    style RunCreateEnv fill:#e3f2fd,stroke:#2196f3,stroke-width:2px
+    style DeployResult fill:#fff3e0,stroke:#ff9800,stroke-width:2px
+    
+    classDef hookNode fill:#f0f0f0,stroke:#333,stroke-width:2px
+    classDef decisionNode fill:#fff9c4,stroke:#f9a825,stroke-width:2px
+    classDef actionNode fill:#e8eaf6,stroke:#5e35b1,stroke-width:2px
+    
+    class RunFeatures,RunCheck,RunCPI,RunCloud,RunPreDeploy,RunPostDeploy,RunRuntime hookNode
+    class CheckFeatures,CheckHook,CPICheck,CloudCheck,PreDeployCheck,PostDeployCheck,DirectorCheck,CloudConfigDir,RuntimeCheck,CPIUpload decisionNode
+    class CheckViability,ManifestGen,DirectorTasks,UploadCloudConfig,UploadCPI actionNode

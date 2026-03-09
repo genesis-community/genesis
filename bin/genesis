@@ -22,8 +22,8 @@ use lib $ENV{GENESIS_LIB}  ||  $FindBin::Bin.'/lib';
 $ENV{GENESIS_LIB}          ||= $FindBin::Bin.'/lib';
 $ENV{GENESIS_CALLBACK_BIN} ||= $FindBin::Bin.'/'.$FindBin::Script;
 
-use Genesis;
-use Genesis::State;
+use Genesis qw/bail trace debug logger new_enough/;
+use Genesis::State qw/envset in_callback/;
 use Genesis::Config;
 use Genesis::Term;
 use Genesis::Commands;
@@ -32,6 +32,9 @@ use Genesis::Log;
 $Genesis::APP = 'genesis';
 $Genesis::VERSION = "(development)";
 $Genesis::BUILD = "";
+
+# Command will be determined later in main()
+$ENV{GENESIS_COMMAND} = '';
 Genesis::Init();
 
 
@@ -46,7 +49,34 @@ define_command('help', {
 		],
 		skip_check_prereqs => 1,
 		no_vault => 1
-}, sub { command_help(); });
+}, sub {
+	# First check if we just want to see global options alone
+	if (!@_ && get_options->{globals}) {
+		# Show only global options
+		Genesis::Commands::show_global_options();
+		return;
+	}
+
+	if (@_) {
+		# Show help for specific command
+		my $cmd = shift;
+
+		# Check if command exists
+		if (exists $Genesis::Commands::GENESIS_COMMANDS{$cmd}) {
+			# Prepare command context for usage display
+			$Genesis::Commands::CALLED = $cmd;
+			$Genesis::Commands::COMMAND = $Genesis::Commands::GENESIS_COMMANDS{$cmd};
+			# Show globals if --globals, --help-full, or --helpful flag is present
+			my $show_global = (get_options->{globals} || get_options->{'help-full'} || get_options->{helpful}) ? 1 : 0;
+			command_usage(0, undef, $show_global);
+		} else {
+			command_help("Unknown command: #G{$cmd}", 2);
+		}
+	} else {
+		# Show general help listing
+		command_help();
+	}
+});
 
 # }}}
 # genesis version - Print the version of Genesis. {{{
@@ -223,7 +253,7 @@ define_command("create", {
 			"credentials in.  Overrides the vault specified in the deployment ".
 			"repository for the environment.",
 
-		"force|-f" =>
+		"force|f" =>
 			"Create a new environment file even if it already exists."
 	],
 	deprecated_options => [
@@ -353,7 +383,7 @@ define_command("manifest", {
 # genesis deploy - Pull in Cloud Config, Generate a manifest, deploy {{{
 define_command("deploy", {
 	summary => "Generate the manifest for the environment and deploy it to the BOSH director.",
-	usage => '<env> deploy [<options...>]',
+	usage => '<env> deploy [<options...>] [reason]',
 	alias => 'd',
 	description =>
 		"Deploy the environment to BOSH director or via create-env command.\n".
@@ -390,6 +420,25 @@ define_command("deploy", {
 			"Reupload releases in manifest and replace corrupt or missing ".
 			"jobs/packages.",
 
+		'fix-stemcells' =>
+			"Reupload stemcells in manifest and replace corrupt, incomplete or ".
+			"missing ones.  Only applicable on non-create-env environments.",
+
+		'fix-secrets' =>
+			"Rotate problematic secrets in the vault (expired, invalid or missing).",
+
+		'fix-checks|F' =>
+			"Shorthand for --fix-stemcells and --fix-secrets, as applicable.",
+
+		'clear' =>
+			"Clear the deployment cache before deploying.  This will remove any ".
+			"files that were part of a previous deployment that didn't complete.  ".
+			"If you don't use this option, and the previous deployment was ".
+			"interrupted, you will be prompted to clear the cache before ".
+			"proceeding with the deployment unless you're not in an interactive ".
+			"terminal, or use the #Y{--yes} option, in which case it will bail ".
+			"with an error.",
+
 		'recreate' =>
 			"Recreate all VMs instead of just applying changes to them. This ".
 			"requires the VMs to be responsive; use --fix if they are not.\n".
@@ -409,9 +458,125 @@ define_command("deploy", {
 
 		'max-in-flight=i' =>
 			"Override the default number of maximum VMs in flight per instance group.",
+
+		'STATE-FILE-PATH=s' =>
+			"Normally the previously deployment's state file is fetched from exodus ".
+			"deployment audit logs (or .genesis/manifests if not using exodus).  ".
+			"However, it may be necessary to fetch and alter the state file manually,".
+			"specifically in the case of a failed partial deployments.\n\n".
+			"This option will allow you to specify a specfic state file to use for ".
+			"the deploy. You can use the `info` command to retrieve the state file",
+	],
+	args => {
+		'reason' =>
+			"An optional reason for deploying the environment.  This will be ".
+			"recorded in the exodus data for the deployment."
+	}
+});
+
+# }}}
+# genesis terminate - terminate the environment on the bosh director {{{
+define_command("terminate", {
+	summary => "Terminate the environment on the BOSH director.",
+	usage => "<env> terminate [<options...>] [<reason>]",
+	aliases => ['destroy','implode','kill'],
+	description =>
+		"Terminate the environment on the BOSH director.  This will remove the ".
+		"deployment from the BOSH director, delete the cloud config associated ".
+		"with the environment, and mark the last 'deployment' as terminated in ".
+		"exodus and the deployment history.  It will also remove the local ".
+		"manifest deployment files, including state files.\n".
+		"\n".
+		"There are options for keeping associated entities, such as resources, ".
+		"secrets, user-provided secrets, credhub data, and networking claims.  ".
+		"By default, these will be removed, but you can specify the --no-* options ".
+		"to keep them.  If you are terminating the environment to redeploy it ".
+		"later, you can specify --no-cleanup to keep all the associated entities ".
+		"for the redeployment.\n".
+		"\n".
+		"[[Note: >>This command will NOT remove the environment file itself.",
+	function_group => Genesis::Commands::ENVIRONMENT,
+	scope => 'env',
+	option_group => Genesis::Commands::ENV_OPTIONS,
+	options => [
+		'yes|y' =>
+			"Don't pause to ask for confirmation to terminate the environment",
+
+		'dry-run|n' =>
+			"Show what would be done, but don't actually do it.  The -y option ".
+			"will be ignored if this is specified, as there are no prompts.",
+
+		'force|f' =>
+			"For deployments deployed by a BOSH director, this will ignore any ".
+			"errors while deleting the deployment.	For create-env deployments, ".
+			"this will skip running the drain and pre-stop scripts.",
+
+		'resources!' =>
+			"Remove or don't remove the resources from the BOSH director.  Removal ".
+			"of resources is the default behaviour.",
+
+		'secrets!' =>
+			"Remove or don't remove the secrets from the vault.  Removal of secrets ".
+			"is the default behaviour.",
+
+		'user-secrets!' =>
+			"Remove or don't remove the user-provided secrets from the vault.  ".
+			"Removal of user-provided secrets is the default behaviour.  If the ".
+			"--no-user-secrets option is specified with the --secrets option, only ".
+			"the generated secrets will be removed.",
+
+		'credhub!' =>
+			"Remove or don't remove the credhub data.  Removal of credhub data is ".
+			"the default behaviour.",
+
+		'networking!' =>
+			"Remove or don't remove the networking claims from the BOSH director.  ".
+			"Removal of networking resources is the default behaviour, but if you ".
+			"want to keep the same network map reserved for a future redeployment, ".
+			"you can specify --no-networking.",
+
+		'no-cleanup|K' =>
+			"This flips the default behaviour of the --resources, --secrets, ".
+			"--user-secrets, --credhub, and --networking options.  Instead of ".
+			"removing the resources, secrets, user-secrets, credhub data, and ".
+			"networking claims, it will keep them.  This is useful if you are ".
+			"terminating the environment to redeploy it, and want to keep the ".
+			"resources and secrets in place for the redeployment.  You can still ".
+			"specify any of the --no-* options to override this behaviour for ".
+			"specific entities.",
+	],
+	arguments => [
+		'reason' =>
+			"An optional reason for terminating the environment.  This will be ".
+			"recorded in the exodus data for the deployment."
 	]
 });
+
 # }}}
+# genesis do - run a kit addon {{{
+define_command("do", {
+	summary => "Run an addon script provided by the environment's kit.",
+	usage => "<env> do [<options...>] action [<addon options and args...>]",
+	aliases => ['apply','run','addon'],
+	description =>
+		"Run an addon from the kit against your environment.  Except for rare ".
+		"circumstances, this requires the environment to already be deployed.  ".
+		"A list of addons available and any options they support can be found by ".
+		'running the `#g{$BIN} #M{<env>} #G{$CALLED} #c{list}` addon.',
+	function_group => Genesis::Commands::ENVIRONMENT,
+	scope => 'env',
+	option_group => Genesis::Commands::ENV_OPTIONS,
+	option_passthrough => 1,
+	option_require_order => 1,
+}, "Genesis::Commands::Env::addon");
+
+# }}}
+# genesis remove - remove the environment from the BOSH director {{{
+# TODO: Create this command
+# }}}
+#}}}
+
+### BOSH and Credhub Actions {{{
 # genesis bosh - run a bosh command against the BOSH director for the specified environment {{{
 define_command("bosh", {
 	summary => "Run a BOSH cli command for the specific environment.",
@@ -426,7 +591,7 @@ define_command("bosh", {
 		"another bosh director, you should specify either --self or --parent, as ".
 		"the target is ambiguous.  If you don't specify either, it will prompt you ".
 		"to choose one if in a controlling terminal, or fail if not.",
-	function_group => Genesis::Commands::ENVIRONMENT,
+	function_group => Genesis::Commands::BOSH,
 	scope => 'env',
 	option_group => Genesis::Commands::REPO_OPTIONS,
 	option_passthrough => 1,
@@ -449,9 +614,73 @@ define_command("bosh", {
 			"cli, targeting the desired deployment and associated BOSH director."
 	]
 });
+
 # }}}
-# genesis delete - delete the environment from the BOSH director {{{
-# TODO: Create this command
+# bosh-configs - create, list, compare, view or delete bosh configs {{{
+define_command("bosh-configs", {
+	summary => "Create, update, list, view and delete bosh configs",
+	usage => "<env> bosh-configs <action> [<options...>]",
+	aliases => ['bc','configs'],
+	description =>
+		"Upload the bosh configs needed for the given environment.  Optionally, ".
+		"you can generate without uploading, list the bosh configs already ".
+		"uploaded, view the current config already uploaded, compare the current ".
+		"config with the one you would upload, or delete the config already ".
+		"uploaded.",
+	function_group => Genesis::Commands::WIP,
+	scope => 'env',
+	option_group => Genesis::Commands::ENV_OPTIONS,
+	arguments => [
+		"action" =>
+			"The action to take: upload (default), view, compare, or delete."
+	],
+	options => [
+		"type|t=s" =>
+			"Specify the type of bosh config. If not specified, it will perform the ".
+			"action on all types of bosh configs.  Valid types are: cloud, runtime, ".
+			"and cpi.",
+		# TBD: Add options for the various actions as needed
+	]
+}, "Genesis::Commands::BOSH::bosh_configs");
+
+# }}}
+# genesis ocfp - OCFP environment management and inspection {{{
+define_command("ocfp", {
+	summary => "OCFP environment management and inspection",
+	usage => "<env> ocfp <topic> <action> [<options...>]",
+	description =>
+		"Inspect and manage OCFP (Open Cloud Foundry Platform) environment ".
+		"configuration.  Currently supports:\n".
+		"\n".
+		"  ocfp show network   Show network configuration, IP reservations,\n".
+		"                      allocations, and availability\n".
+		"\n".
+		"[[Note: >>The target environment must have the 'ocfp' feature enabled.",
+	function_group => Genesis::Commands::ENVIRONMENT,
+	scope => 'env',
+	option_group => Genesis::Commands::ENV_OPTIONS,
+	arguments => [
+		"topic"  => "The topic: show",
+		"action" => "The action: network",
+	],
+	options => [
+		"reserved|r"  =>
+			"Show only reserved IPs",
+		"allocated|a"  =>
+			"Show only allocated/claimed IPs",
+		"available|A"  =>
+			"Show only available (free) IPs",
+		"subnet|s=s"   =>
+			"Filter to a specific subnet name",
+		"summary|S"    =>
+			"Show compact summary view",
+		"json|j"       =>
+			"Output as JSON",
+		"verbose|v"    =>
+			"Show detailed CIDR information",
+	]
+}, "Genesis::Commands::Ocfp::ocfp");
+
 # }}}
 # genesis credhub - run a credhub command on the Credhub server for the specified environment {{{
 define_command("credhub", {
@@ -474,7 +703,7 @@ define_command("credhub", {
 		"to choose one if in a controlling terminal, or fail if not.  Alternatively, ".
 		"you can set the `default_bosh_target` in the user config to specify the ".
 		"default target.",
-	function_group => Genesis::Commands::ENVIRONMENT,
+	function_group => Genesis::Commands::BOSH,
 	scope => 'env',
 	option_group => Genesis::Commands::REPO_OPTIONS,
 	option_passthrough => 1,
@@ -507,7 +736,7 @@ define_command("logs", {
 		"will only work for environments that are bosh deployments (i.e.: will ".
 		"work on create-env deployments, as they don't have a CredHub server ".
 		"associated with them).",
-	function_group => Genesis::Commands::ENVIRONMENT,
+	function_group => Genesis::Commands::BOSH,
 	scope => 'env',
 	option_group => Genesis::Commands::REPO_OPTIONS,
 	option_passthrough => 1,
@@ -519,13 +748,13 @@ define_command("logs", {
 define_command("broadcast", {
 	summary => "Send a command to all VMs in the environment, or a select group.",
 	usage => "<env> broadcast [<options...>] <command and command options>",
-	aliases => ['bc','vmsdo'], # legacy gb script name
+	aliases => ['bbc','vmsdo'], # legacy gb script name
 	description =>
 		"Send a command to all VMs in the environment, or a select group.  This ".
 		"command will run the given command in series on each VM, and will allow ".
 		"the user to interact with the command as if they were running it on the ".
 		"VM directly.",
-	function_group => Genesis::Commands::ENVIRONMENT,
+	function_group => Genesis::Commands::BOSH,
 	scope => 'env',
 	option_group => Genesis::Commands::REPO_OPTIONS,
 	options => [
@@ -538,39 +767,73 @@ define_command("broadcast", {
 	option_require_order => 1,
 });
 # }}}
-# genesis do - run a kit addon {{{
-define_command("do", {
-	summary => "Run an addon script provided by the environment's kit.",
-	usage => "<env> do [<options...>] action [<addon options and args...>]",
-	aliases => ['apply','run','addon'],
-	description =>
-		"Run an addon from the kit against your environment.  Except for rare ".
-		"circumstances, this requires the environment to already be deployed.  ".
-		"A list of addons available and any options they support can be found by ".
-		'running the `#g{$BIN} #M{<env>} #G{$CALLED} #c{list}` addon.',
-	function_group => Genesis::Commands::ENVIRONMENT,
-	scope => 'env',
-	option_group => Genesis::Commands::ENV_OPTIONS,
-	option_passthrough => 1,
-	option_require_order => 1,
-});
-# }}}
 # }}}
 
 ### Informative commands {{{
 # genesis info - get deployment environment information from  a kit{{{
 define_command("info", {
 	summary => "Prints out kit-specific information for a given environment.",
-	usage => "<env> info [<options...>]",
+	usage => "<env> info [<options...>] [<args>]",
 	alias => 'i',
 	description =>
 		"Get details for the current deployment of the given environment.",
 	function_group => Genesis::Commands::INFO,
 	scope => 'env',
 	option_group => Genesis::Commands::ENV_OPTIONS,
+	options => [
+		'history|H' =>
+			"Print the deployment history for the environment, if available.  ",
+		'print-artifact|p=s' =>
+			"Print the contents of the specified artifact to STDOUT.",
+		'fetch-artifacts-to=s' =>
+			"Fetch the artifacts for the environment and save them to the specified ".
+			"directory.  If the directory does not exist, it will be created.  If ".
+			"the directory exists and is not empty, it will prompt you if it can be ".
+			"overwritten.",
+		'INCLUDE-SECRETS-ARTIFACT' =>
+			"Include the secrets artifact in the artifacts fetched.  This is only ".
+			"applicable if the --fetch-artifacts-to option is specified.  If not ".
+			"specified, the secrets artifact will not be fetched, as it is not ".
+			"usually needed.",
+	],
+	arguments => [
+		"timestamp" =>
+			"If specified, will print the information for the environment at the ".
+			"given timestamp.  This is useful for getting information about a ".
+			"previous deployment, especially when retrieving artifacts.\n".
+			"\n".
+			"[[#yi{Note:} >>The kit portion of the environment information (the part ".
+			"after the horizontal line) will not be printed, as it only reflects ".
+			"the current exodus data for the last good deployment."
+	],
+
 }, "Genesis::Commands::Info::information"); # info method already taken, so can't use default
 
 # }}}
+# genesis deployments - list the history of deployments for an environment {{{
+define_command("deployments", {
+	summary => "List the history of deployments for an environment.",
+	usage => "<env> deployments [<options...>]",
+	aliasies => ['deps','hist', 'history'],
+	description =>
+		"List the history of deployments for the given environment.  This requires ".
+		"that the deployment history is stored in exodus, by way of setting ".
+		"#y{manifest_store} to #C{exodus} or #C{hybrid} in the environment file.",
+	function_group => Genesis::Commands::WIP,
+	scope => 'env',
+	option_group => Genesis::Commands::ENV_OPTIONS,
+	options => [
+		"all|a" =>
+			"List all deployments, not just the latest.",
+		"json|j" =>
+			"Output the deployments in json format.",
+		'resent|n=i' =>
+			"List the last n deployments.",
+		'details|d' =>
+			"Show the details of each deployment."
+	]
+}, "Genesis::Commands::Info::deployments"); # can remove this once functional group is no longer WIP, but Info
+
 # genesis lookup - Find a key set in environment manifests. {{{
 define_command("lookup", {
 	summary => "Look up values from an environment's file, manifest, deployment, exodus or env state.",
@@ -622,14 +885,25 @@ define_command("yamls", {
 		"is named #M{c-region-env.yml}), as well as any ops files, or specified ".
 		"by 'genesis.inherits' array in the environment file.\n".
 		"\n".
-		"If the #y{-k|--include-kit} option is specified, it will also include ".
-		"the fragments the kit supplies, depending on the features requested.",
+		"It also includes the fragments the kit supplies, depending on the ".
+		"features requested.",
 	function_group => Genesis::Commands::INFO,
 	scope => 'env',
 	option_group => Genesis::Commands::ENV_OPTIONS,
 	options => [
+		'view|v=s' =>
+			"View the specified YAML in the terminal.  This is handy to see ".
+			"or debug the content of kit fragments and dynamically generated ".
+			"YAML.  There are two extra files that can be specified:\n".
+			"[[- init.yml: >>The initial seed YAML file that genesis uses ".
+			"to start the merge process.\n".
+			"[[- fin.yml:  >>Contains all the extra merge bits that genesis ".
+			"itself provides, including exodus data",
+	],
+  deprecated_options => [
 		'include-kit|k' =>
-			"This also includes the files that will be merges from the kit."
+			"This also includes the files that will be merges from the kit.  ".
+			"Deprecated because this is now the default behaviour"
 	]
 });
 
@@ -938,6 +1212,15 @@ define_command("init", {
 				"Instead of using a kit or initializing an empty dev directory, this ".
 				"will link the specified directory to the dev directory.",
 
+			"kits-path|K:s" =>
+				"Path to the directory where Genesis will look for compiled kits, ".
+				"forming a symbolic link to the specified path in the new repository ".
+				"as the repository's #C{.genesis/kits}.  It defaults to ".
+				"#C{\$HOME/.genesis/kits} if not specified.  If that directory does ".
+				"not exist, it will be created.  You can also specify `kits-path` in ".
+				"the Genesis configuration file #C{\$HOME/.genesis/config.yml} to ".
+				"set the default path for all repositories.",
+
 			"vault=s" =>
 				"Name of a 'safe' target (a Vault) to store newly generated ".
 				"credentials in. If not specified, it will be interactively prompted for.",
@@ -1050,16 +1333,20 @@ define_command("create-kit", {
 });
 
 # }}}
-# genesis compile-kit - Create a distributable kit archive from dev/. {{{
-
-define_command("compile-kit", {
+# genesis build-kit - Create a distributable kit archive from dev/. {{{
+define_command("build-kit", {
 	summary => "Create a distributable kit archive from the kit repo or dev dir",
 	usage => "compile-kit [<options...>]",
-	alias => 'ck',
+	aliases => [qw/bk compile-kit ck/],
 	description =>
 		"Compile the kit in the current directy (if in a kit dir) or in ./dev (if ".
 		"in a deployment repo dir), automatically creating the next appropriate ".
-		"version (see options for version specification if desired)",
+		"version (see options for version specification if desired)\n".
+		"\n".
+		"Note: This has been renamed build-kit|bk to avoid confusion with the ".
+		"compile-kit|ck command in the kit repo.  The old name of compile-kit|ck ".
+		"will still work, but is deprecated, and will be removed in a future ".
+		"version.",
 	function_group => Genesis::Commands::KIT,
 	scope => [
 		[['processed','dev'] => 'repo'],
@@ -1071,7 +1358,12 @@ define_command("compile-kit", {
 	options => [
 		'version|v=s' => { argument => ' <semver>', description =>
 			"Specify the explicit version you want created.  If this version already ".
-			"exists locally or remotely, you must also specify --force to recreate it."
+			"exists locally or remotely, you must also specify --force to recreate it.\n\n".
+			"[[#y{Note:} >>If you don't specify a version explicitly, it will determine ".
+			"the next version based on the other options provided and the latest version ".
+			"it finds locally or remotely (whichever is greater), and then prompt you to ".
+			"confirm it before proceeding -- if you are using this in a pipeline, you must ".
+			"specify the version explicitly."
 		},
 
 		'major|M' =>
@@ -1109,6 +1401,11 @@ define_command("compile-kit", {
 			"Proceed with compilation even if there are unstaged or uncommitted ".
 			"changes in the working directory, or if the validation of the contents ".
 			"fails.  Normally, Genesis will refuse to continue when this happens.",
+
+		'skip-version-updates' =>
+			"By default, Genesis will update the version numbers in all the ".
+			"hook files and kit.yml file to match the version being built.  Use ".
+			"this option to skip that step.",
 	],
 	no_vault => 1,
 	skip_check_prereqs => 1,
@@ -1239,6 +1536,42 @@ define_command("download", {
 }, "Genesis::Commands::Deprecated::redirect");
 
 # }}}
+# genesis compare-kits - Compare two kits for job spec differences. {{{
+define_command("compare-kits", {
+	summary => "Compare two kits for job spec differences.",
+	usage => "compare-kits [--compare-to <kit>] [<filter> ...]",
+	alias => 'cmpk',
+	description =>
+		"Compare two kits for job spec differences.  This will compare the job ".
+		"specs in the two kits, and output a list of differences.\n".
+		"\n".
+		"The specified comparable can be a version, the path to a kit tarball, or ".
+		"a path to a kit directory.\n".
+		"\n".
+		"If no comparable is specified, it will compare the local kit with the ".
+		"latest version of the kit in the remote repository.  If run in a repo ".
+		"directory with a dev directory, it will compare against the latest local ".
+		"version.",
+	function_group => Genesis::Commands::KIT,
+	scope => ['repo','kit'],
+	option_group => Genesis::Commands::REPO_OPTIONS,
+	options => [
+		'compare-to|c=s' =>
+			"Specify the kit to compare against.  This can be a version, the path ".
+			"to a kit tarball, or a path to a kit directory.  If not specified, it ".
+			"will compare against the latest version of the kit in the remote ".
+			"repository.  If run in a repo directory with a dev directory, it will ".
+			"compare against the latest local version.",
+	],
+	arguments => [
+		'filter?' =>
+			"Filter the job specs to compare by release or release/job-name.  ".
+			"Multiple of these can be specified, and they will be OR'd together.  ".
+			"If not specified, all job specs will be compared."
+	],
+	no_vault => 1,
+});
+#
 # }}}
 
 ### Pipeline Management commands {{{
@@ -1685,6 +2018,7 @@ define_command("hack", {
 # }}}
 # }}}
 
+# FIXME: refactor main to call subroutines to improve testing of the different ways to call genesis, and parsing of the arguments.
 ###########################################################################
 sub main {
 
@@ -1766,7 +2100,7 @@ sub main {
 				# argument matches a command (or alias) -- assume its a command
 				$cmd = $arg;
 			} else {
-				if ($arg =~ /\.yml/ || -f $arg.'.yml' || equivalent_commands($_[0],'create')) {
+				if ($arg =~ /\.yml/ || -f $arg.'.yml' || is_equivalent_command(create => $_[0])) {
 					bail(
 						"Cannot specify both -C and explicit file before the Genesis subcommand"
 					) if ($ENV{GENESIS_PREFIX_TYPE} eq 'option_c');
@@ -1780,7 +2114,7 @@ sub main {
 						) unless -f $arg || $_[0] eq 'new';
 						$ENV{GENESIS_PREFIX_TYPE} = 'explicit_file';
 						$path = $arg;
-					} elsif (-f $arg.".yml" || equivalent_commands($_[0],'create')) {
+					} elsif (-f $arg.".yml" || is_equivalent_command(create => $_[0])) {
 						$ENV{GENESIS_PREFIX_TYPE} = 'file';
 						$path = $arg.".yml";
 					} else {
@@ -1811,10 +2145,20 @@ sub main {
 		trace("running command '$cmd'");
 		trace("arguments are [".join(', ', @args)."]");
 		if (has_command $cmd) {
+			# Set the command for logging purposes
+			$ENV{GENESIS_COMMAND} = $cmd;
 			prepare_command $cmd, @args;
 			set_top_path;
 			check_embedded_genesis;
-			command_usage(0) if get_options->{help};
+			# Check for help flags
+			if (get_options->{help} || get_options->{'help-full'} || get_options->{helpful}) {
+				# If both --help and --globals are specified, show full help with globals
+				my $show_global = (get_options->{'help-full'} || get_options->{helpful} || get_options->{globals}) ? 1 : 0;
+				command_usage(0, undef, $show_global);
+			} elsif (get_options->{globals} && $cmd ne 'help') {
+				# For non-help commands with --globals alone, show only global options
+				Genesis::Commands::show_global_options();
+			}
 			build_command_environment;
 			check_prereqs unless command_properties->{skip_check_prereqs};
 			run_command;
@@ -1829,6 +2173,10 @@ END {
 	my $rc = $?;
 	require Service::Vault::Local;
 	Service::Vault::Local->shutdown_all();
+
+	# Ensure STDIN is restored if it was redirected
+	reset_stdin();
+
 	my $level = envset('QUIET') ? 'ERROR' : 'INFO';
 	logger->configure_log(
 		level => $level,
@@ -1838,5 +2186,5 @@ END {
 	$? = $rc; # Have to set the exit code again before leaving...
 }
 
-main(@ARGV);
+main(@ARGV) unless caller; # Don't run main if we're being required
 # vim: fdm=marker:foldlevel=1:noet

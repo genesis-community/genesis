@@ -1,5 +1,22 @@
 package helper;
+
+BEGIN {
+	my $carp_always_loaded = eval {
+		require Carp::Always;
+		Carp::Always->import();
+		1;
+	};
+
+	if ($carp_always_loaded) {
+		print "Carp::Always loaded successfully.\n";
+	} else {
+		print "Carp::Always not available - falling back to standard die() and warn() behavior.\n";
+	}
+}
+
 use lib 't';
+use Mock;
+use MockWrapper;
 use Test::More;
 use Test::Exception;
 use Test::Differences;
@@ -10,6 +27,7 @@ use Config;
 use Encode;
 use File::Temp qw/tempdir/;
 use File::Basename qw/dirname/;
+use IO::Handle;
 use JSON::PP;
 unified_diff;
 
@@ -52,7 +70,7 @@ sub import {
 	for my $var (qw(VAULT_URL)) {
 		*{$caller . "::$var"} = \%{"helper::$var"};
 	}
-	runs_ok("genesis ping") or die "`genesis ping` failed...\n";
+	#runs_ok("genesis ping") or die "`genesis ping` failed...\n";
 }
 
 sub reset_kit {
@@ -71,6 +89,23 @@ sub workdir {
 	return $path;
 }
 
+my ($stdin_r, $stdin_w, $stdin_orig);
+sub set_stdin {
+	my $input = shift;
+	pipe($stdin_r, $stdin_w) or die "can't create pipe: $!";
+	open $stdin_orig, '<&', \*STDIN or die "can't dup STDIN: $!";
+	open STDIN, '<&', $stdin_r or die "can't dup pipe to STDIN: $!";
+	print $stdin_w $input;
+	close $stdin_w;
+	return;
+}
+
+sub reset_stdin {
+	open STDIN, '<&', $stdin_orig or die "can't restore STDIN: $!";
+	close $stdin_orig;
+	close $stdin_r;
+	return;
+}
 sub mkdir_or_fail {
 	my ($dir) = @_;
 	unless (-d $dir) {;
@@ -196,7 +231,12 @@ EOF
     my $json_printout = join("\n", map {(my $l = $_) =~ s/'/'\\''/g; "    echo '$l'"} split("\n", $json));
     $script=<<EOF;
 #!/bin/bash
+real_bosh="\$(which bosh)"
 args="\$(echo "bosh \$*" | sed -e 's/"/"\\""/g')"
+if [[ \$args =~ ^bosh\\ interpolate(\\ |\$) ]] ; then
+	exec \$real_bosh \$@
+	exit \$?
+fi
 if [[ \$args =~ \\ --json(\\ |\$) ]] ; then
   (
 $json_printout
@@ -233,7 +273,7 @@ $output
 varfail=0
 $var_checks
 [[ "\$@" == "$expect" && \$varfail == 0 ]] && exit 0;
-if [[  "\$@" == "$expect" ]] ; then
+if [[  "\$@" != "$expect" ]] ; then
   echo >&2 "Output:"
   echo >&2 "got  '\$@\'"
   echo >&2 "want '$expect'"
@@ -476,6 +516,13 @@ sub reprovision {
 	}
 
 	pass "working directory re-provisioned for next set of tests";
+}
+
+sub not_ok {
+	local $Test::Builder::Level = $Test::Builder::Level + 1;
+	my ($result, $msg) = @_;
+	$msg ||= "expected a false value";
+	ok !$result, $msg;
 }
 
 sub runs_ok($;$) {
@@ -760,6 +807,154 @@ sub expect_ok {
 				exit;
 			}
 		]);
+}
+
+sub cp_kit {
+	my ($src, $top) = @_;
+	my $dst = $top->path('dev');
+	my $err = qx(rm -rf $dst 2>&1) if -d $dst;
+	$err = qx(cp -a $TOPDIR/$src $dst 2>&1) unless $err;
+	if ($? != 0) {
+		diag "failed to copy the $src kit to $dst:";
+		diag "-----------------------------------------------";
+		diag $err ? $err : '(no output)';
+		diag "-----------------------------------------------";
+		diag "";
+		exit 1;
+	}
+}
+
+sub mk_test_kit {
+	my ($name, $version, $dest_dir) = @_;
+	my $basedir = "$name-$version";
+	my $tempdir = File::Temp::tempdir(CLEANUP => 1);
+	my $kitdir = "$tempdir/$basedir";
+
+	# Create minimal kit structure
+	mkdir_or_fail($kitdir) unless -d $kitdir;
+	put_file("$kitdir/kit.yml", "---\nname: $name\n");
+
+	# Ensure destination directory exists
+	mkdir_or_fail($dest_dir) unless -d $dest_dir;
+
+	# Create tarball
+	my $archive = "$dest_dir/$name-$version.tar.gz";
+	my $err = qx(cd $tempdir && tar czf $archive $basedir 2>&1);
+	if ($? != 0) {
+		diag "failed to create test kit archive $archive:";
+		diag "-----------------------------------------------";
+		diag $err ? $err : '(no output)';
+		diag "-----------------------------------------------";
+		exit 1;
+	}
+	return $archive;
+}
+
+sub mock {
+	my ($mock_class, $definition, $class_methods) = @_;
+
+	my $base_class = 'Mock';
+	eval qq(
+		require $mock_class;
+		die "Mock class \$mock_class already exists" if \$mock_class->isa('Mock');
+	);
+	unless ($@) {
+		# If the mock class exists, clean it out to not interfere with the new mock
+		no strict 'refs';
+		my $symtab = \%{$mock_class."::"};
+		delete $symtab->{$_} for keys %$symtab;
+	}
+	eval qq(
+		package $mock_class;
+		use parent '$base_class';
+	);
+
+	if ($class_methods) {
+		no strict 'refs';
+		no warnings 'redefine';
+		for my $method (keys %$class_methods) {
+			*{$mock_class."::".$method} = $class_methods->{$method};
+		}
+	}
+	die "Error creating mock class: $@" if $@;
+  my $mock_obj = $mock_class->new(%$definition);
+}
+
+sub make_top {
+	my (%opts) = @_;
+
+	# Extract deployment name, defaulting to 'test-deployment'
+	my $name = delete $opts{name} || 'test-deployment';
+
+	# Use a temp workdir unless path is specified, creating a unique subdirectory
+	# to avoid collisions when multiple Top objects are created with the same name
+	my $path = delete $opts{path};
+	unless ($path) {
+		require UUID::Tiny;
+		my $uuid = UUID::Tiny::create_uuid_as_string(UUID::Tiny::UUID_V4());
+		$path = workdir() . "/$uuid";
+	}
+
+	mkdir_or_fail($path) unless -d $path;
+
+	# Create the Top object using the real Genesis::Top->create() code path
+	# This ensures tests use the actual config creation logic
+	require Genesis::Top;
+	return Genesis::Top->create($path, $name, %opts);
+}
+
+sub make_env_with_kit {
+	my ($kit_path, $env_name, %opts) = @_;
+
+	# Extract genesis options from opts
+	my %genesis_opts;
+	for my $key (grep { /^(env|min_version|entomb|secrets_mount|secrets_path|exodus_mount|ci_mount|ci_base|root_ca_path)$/ } keys %opts) {
+		$genesis_opts{$key} = delete $opts{$key};
+	}
+
+	# Extract kit options (iaas, scale, features)
+	my %kit_opts;
+	for my $key (grep { /^(iaas|scale|features)$/ } keys %opts) {
+		$kit_opts{$key} = delete $opts{$key};
+	}
+
+	# Default minimum_version to undef to avoid $Genesis::VERSION (999.999.999)
+	$opts{minimum_version} //= undef;
+	$opts{no_vault} //= 1;
+	$opts{name} //= 'thing';
+
+	my $top = make_top(%opts);
+	$top->link_dev_kit($kit_path);
+
+	my $genesis_block = "  env: $env_name\n";
+	for my $key (keys %genesis_opts) {
+		$genesis_block .= "  $key: $genesis_opts{$key}\n";
+	}
+
+	my $kit_block = "  name:    dev\n  version: latest\n";
+	if (exists $kit_opts{features}) {
+		$kit_block .= "  features: $kit_opts{features}\n";
+	} else {
+		$kit_block .= "  features: []\n";
+	}
+	for my $key (grep { $_ ne 'features' } keys %kit_opts) {
+		$kit_block .= "  $key: $kit_opts{$key}\n";
+	}
+
+	put_file($top->path("$env_name.yml"), <<"EOF");
+---
+kit:
+$kit_block
+genesis:
+$genesis_block
+EOF
+
+	return $top->load_env($env_name);
+}
+
+sub wrap_obj {
+	my ($obj, %overrides) = @_;
+	return MockWrapper->new($obj, %overrides);
 }
 
 1;

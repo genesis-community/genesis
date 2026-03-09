@@ -1,0 +1,635 @@
+=head1 NAME
+
+Service::Vault::Admin - Administrative utilities for managing Vault AppRoles and policies
+
+=head1 SYNOPSIS
+
+  use Service::Vault::Admin;
+
+  my $vault = Service::Vault->new(...);
+  my $admin = Service::Vault::Admin->new($vault);
+
+  # Manage policies
+  $admin->create_policy('my-policy', $hcl_content);
+
+  # Manage AppRoles via the AppRole sub-service
+  $admin->approles->enable();
+  $admin->approles->exists('concourse');
+
+  # High-level setup for known deployment patterns
+  $admin->setup_concourse_approle(role_name => 'concourse');
+  $admin->setup_genesis_pipelines_approle(exodus_mount => '/secret/exodus');
+
+=head1 DESCRIPTION
+
+C<Service::Vault::Admin> provides higher-level administrative operations on top
+of a C<Service::Vault> connection. It covers two areas of Vault administration:
+
+=over 4
+
+=item * B<Policy management> -- creating and checking Vault HCL policies via
+C<create_policy> and C<policy_exists>.
+
+=item * B<AppRole management> -- creating AppRoles, retrieving credentials, and
+storing them back into Vault via C<create_approle>, C<get_approle_credentials>,
+and C<store_approle_credentials>.
+
+=back
+
+Lower-level AppRole operations (enabling the auth method, listing roles,
+checking existence) are delegated to the C<Service::Vault::Admin::AppRole>
+sub-service, accessible via C<< $admin->approles >>.
+
+Similarly, a Policy sub-service is accessible via C<< $admin->policies >>,
+though the Service::Vault::Admin::Policy class is not yet implemented.
+
+Two convenience methods, C<setup_concourse_approle> and
+C<setup_genesis_pipelines_approle>, orchestrate the full policy-plus-AppRole
+setup flow for Concourse CI and Genesis pipeline deployments.
+
+=head1 METHODS
+
+=head2 new
+
+  my $admin = Service::Vault::Admin->new($vault);
+
+Creates a new C<Service::Vault::Admin> instance wrapping the provided vault
+connection.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$vault>
+
+A C<Service::Vault> object (or subclass). Must be defined and its ref must
+match C</^Service::Vault/>.
+
+=back
+
+B<Returns:> A blessed C<Service::Vault::Admin> object.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Service::Vault::Admin requires a Service::Vault object">
+
+Thrown when C<$vault> is undefined or is not a C<Service::Vault> instance.
+
+=back
+
+B<Examples:>
+
+  my $vault = Service::Vault->connect('https://vault.example.com');
+  my $admin = Service::Vault::Admin->new($vault);
+  # Returns: a Service::Vault::Admin object
+
+=head2 approles
+
+  my $approle_svc = $admin->approles();
+
+Returns the C<Service::Vault::Admin::AppRole> sub-service instance associated
+with this admin object. The instance is created lazily on the first call and
+cached for subsequent calls.
+
+Use this to perform lower-level AppRole operations such as enabling the auth
+method, listing roles, or checking whether a role exists.
+
+B<Returns:> A C<Service::Vault::Admin::AppRole> object.
+
+B<Examples:>
+
+  # Enable AppRole auth method if not already enabled
+  $admin->approles->enable();
+
+  # Check whether a role exists
+  if ($admin->approles->exists('concourse')) {
+    say 'concourse AppRole is present';
+  }
+
+=head2 policies
+
+  my $policy_svc = $admin->policies();
+
+Returns the Policy sub-service instance associated with this admin object.
+The instance is a Service::Vault::Admin::Policy object, created lazily on
+the first call and cached for subsequent calls. This class is not yet
+implemented; the method exists as a placeholder for future policy
+sub-service delegation.
+
+B<Returns:> A Service::Vault::Admin::Policy object (not yet implemented).
+
+B<Examples:>
+
+  my $policy_svc = $admin->policies();
+  # Returns: a Service::Vault::Admin::Policy object (placeholder)
+
+=head2 vault
+
+  my $vault = $admin->vault();
+
+Returns the underlying C<Service::Vault> object that was passed to C<new>.
+
+B<Returns:> The C<Service::Vault> object.
+
+B<Examples:>
+
+  my $vault = $admin->vault();
+  # Returns: the Service::Vault object used to construct this Admin instance
+
+=head2 create_policy
+
+  $admin->create_policy($policy_name, $policy_content, %opts);
+
+Creates a Vault HCL policy with the given name and content. If the policy
+already exists, behavior is controlled by the C<overwrite> and C<prompt>
+options.
+
+When C<prompt> is true and C<overwrite> is false, the user is asked
+interactively whether to overwrite the existing policy. When C<prompt> is
+false and C<overwrite> is false, creation is silently skipped and C<0> is
+returned. When C<overwrite> is true, the existing policy is replaced without
+prompting.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$policy_name>
+
+The name of the Vault policy to create. Required.
+
+=item C<$policy_content>
+
+The HCL policy content string. Required.
+
+=item C<%opts>
+
+Optional key-value pairs:
+
+=over 4
+
+=item C<overwrite>
+
+When true, replaces any existing policy of the same name without prompting.
+Default: C<0>.
+
+=item C<prompt>
+
+When true and the policy already exists and C<overwrite> is false, the user
+is prompted interactively before overwriting. Default: C<1>.
+
+=back
+
+=back
+
+B<Returns:> C<1> on success, C<0> if creation was skipped because the policy
+already exists and neither C<overwrite> was set nor the user confirmed the
+overwrite prompt.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Policy name is required">
+
+Thrown when C<$policy_name> is undefined or empty.
+
+=item C<"Policy content is required">
+
+Thrown when C<$policy_content> is undefined or empty.
+
+=item C<"Failed to create policy E<lt>policy_nameE<gt>: E<lt>outputE<gt>">
+
+Thrown when the C<vault policy write> command exits with a non-zero status.
+The policy name and vault command output are interpolated into the message.
+
+=back
+
+B<Examples:>
+
+  my $hcl = 'path "secret/*" { capabilities = ["read"] }';
+
+  # Create with interactive prompt on conflict
+  my $ok = $admin->create_policy('my-policy', $hcl);
+  # Returns: 1 on success, 0 if skipped
+
+  # Force overwrite without prompting
+  $admin->create_policy('my-policy', $hcl, overwrite => 1);
+  # Returns: 1
+
+  # Skip silently if already exists (no prompt, no overwrite)
+  $admin->create_policy('my-policy', $hcl, prompt => 0);
+  # Returns: 0 if policy existed, 1 if newly created
+
+=head2 policy_exists
+
+  my $bool = $admin->policy_exists($policy_name);
+
+Checks whether a Vault policy with the given name exists by listing all
+policies and scanning for a match.
+
+Returns C<0> (false) immediately if the C<vault policy list> command fails.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$policy_name>
+
+The name of the policy to look up. Required.
+
+=back
+
+B<Returns:> A true value (the count of matching entries from C<grep>) if the
+policy exists, or C<0> if it does not exist or if listing policies failed.
+
+B<Examples:>
+
+  if ($admin->policy_exists('my-policy')) {
+    say 'policy exists';
+  }
+  # Returns: 1 if the policy exists, 0 otherwise
+
+=head2 create_approle
+
+  $admin->create_approle($role_name, %config);
+
+Creates a Vault AppRole with the given name. Default AppRole settings are
+applied and may be overridden via C<%config>. If the role already
+exists, behavior is governed by C<overwrite> and C<prompt> entries in
+C<%config>.
+
+When C<prompt> is true and C<overwrite> is false, the user is asked whether
+to recreate the role. When C<prompt> is false and C<overwrite> is false,
+creation is silently skipped. When C<overwrite> is true, the existing role is
+deleted and recreated without prompting.
+
+The C<overwrite> and C<prompt> keys are consumed from C<%config> before the
+remaining keys are forwarded as AppRole configuration arguments to
+C<vault write>.
+
+B<Default AppRole configuration:>
+
+=over 4
+
+=item C<secret_id_ttl>: C<0> (never expires)
+
+=item C<token_num_uses>: C<0> (unlimited)
+
+=item C<token_ttl>: C<60m>
+
+=item C<token_max_ttl>: C<60m>
+
+=item C<secret_id_num_uses>: C<0> (unlimited)
+
+=item C<policies>: C<"default,E<lt>role_nameE<gt>">
+
+=back
+
+B<Parameters:>
+
+=over 4
+
+=item C<$role_name>
+
+The name of the AppRole to create. Required.
+
+=item C<%config>
+
+Optional configuration hash. In addition to standard Vault AppRole
+parameters (C<token_ttl>, C<token_max_ttl>, C<policies>, etc.), the
+following control keys are recognized and removed before forwarding:
+
+=over 4
+
+=item C<overwrite>
+
+When true, deletes and recreates an existing role without prompting.
+Default: C<0>.
+
+=item C<prompt>
+
+When true and the role already exists and C<overwrite> is false, the user
+is prompted interactively before recreating. Default: C<1>.
+
+=back
+
+=back
+
+B<Returns:> C<1> on successful creation, or C<undef> if creation was skipped
+because the role already exists and neither C<overwrite> was set nor the
+user confirmed the recreate prompt.
+
+B<Errors:>
+
+=over 4
+
+=item C<"AppRole name is required">
+
+Thrown when C<$role_name> is undefined or empty.
+
+=item C<"Failed to create AppRole E<lt>role_nameE<gt>: E<lt>outputE<gt>">
+
+Thrown when the C<vault write> command exits with a non-zero status. The
+role name and vault command output are interpolated into the message.
+
+=back
+
+B<Examples:>
+
+  # Create with defaults
+  $admin->create_approle('concourse');
+  # Returns: 1
+
+  # Create with custom TTL and policy
+  $admin->create_approle('concourse',
+    token_ttl  => '120m',
+    policies   => 'default,concourse,extra-policy',
+    overwrite  => 1,
+  );
+  # Returns: 1
+
+  # Skip silently if already exists
+  $admin->create_approle('concourse', prompt => 0);
+  # Returns: undef if role existed, 1 if newly created
+
+=head2 get_approle_credentials
+
+  my ($role_id, $secret_id) = $admin->get_approle_credentials($role_name);
+
+Retrieves the role-id for the named AppRole and generates a new secret-id.
+Both values are returned as a two-element list.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$role_name>
+
+The name of the AppRole whose credentials to retrieve. Required. The role
+must already exist.
+
+=back
+
+B<Returns:> A two-element list C<($role_id, $secret_id)>. C<$role_id> is the
+static identifier for the role; C<$secret_id> is a freshly generated
+credential used to authenticate.
+
+B<Errors:>
+
+=over 4
+
+=item C<"AppRole name is required">
+
+Thrown when C<$role_name> is undefined or empty.
+
+=item C<"AppRole #C{$role_name} does not exist">
+
+Thrown when the named AppRole cannot be found. C<$role_name> is interpolated
+into the message with terminal color formatting.
+
+=item C<"Failed to retrieve credentials for AppRole E<lt>role_nameE<gt>">
+
+Thrown when either the C<vault read> (role-id) or C<vault write> (secret-id)
+command fails. The role name is interpolated into the message.
+
+=back
+
+B<Examples:>
+
+  my ($role_id, $secret_id) = $admin->get_approle_credentials('concourse');
+  say "role_id:   $role_id";
+  say "secret_id: $secret_id";
+  # Returns: a two-element list of credential strings
+
+=head2 store_approle_credentials
+
+  $admin->store_approle_credentials($role_name, $storage_path, $role_id, $secret_id);
+
+Writes the AppRole role-id and secret-id into Vault at the specified path.
+The role-id is stored under the key C<approle-id> and the secret-id under
+C<approle-secret>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$role_name>
+
+The name of the AppRole. Used only for informational log messages.
+
+=item C<$storage_path>
+
+The Vault path at which to write the credentials.
+
+=item C<$role_id>
+
+The AppRole role-id string to store.
+
+=item C<$secret_id>
+
+The AppRole secret-id string to store.
+
+=back
+
+B<Returns:> C<1> on success.
+
+B<Errors:>
+
+=over 4
+
+=item C<"All parameters are required">
+
+Thrown when any of C<$role_name>, C<$storage_path>, C<$role_id>, or
+C<$secret_id> is undefined or empty.
+
+=back
+
+B<Examples:>
+
+  $admin->store_approle_credentials(
+    'concourse',
+    '/secret/genesis/concourse',
+    $role_id,
+    $secret_id,
+  );
+  # Returns: 1
+
+=head2 setup_concourse_approle
+
+  $admin->setup_concourse_approle(%opts);
+
+Orchestrates the full AppRole setup flow for a Concourse CI deployment:
+
+=over 4
+
+=item 1. Optionally prompts the user whether to proceed.
+
+=item 2. Ensures the AppRole auth method is enabled (via C<< $self->approles->enable() >>).
+
+=item 3. Creates a Vault policy granting full access to the Concourse secrets
+path.
+
+=item 4. Creates the AppRole.
+
+=item 5. Retrieves the role-id and a new secret-id.
+
+=item 6. Stores the credentials in Vault under C<< $storage_base . $role_name >>.
+
+=back
+
+B<Parameters:>
+
+=over 4
+
+=item C<%opts>
+
+=over 4
+
+=item C<role_name>
+
+Name of the AppRole and policy to create. Default: C<'concourse'>.
+
+=item C<prompt>
+
+When true, the user is asked interactively whether to proceed before making
+any changes. Default: C<1>.
+
+=item C<concourse_path>
+
+The Vault path prefix granted in the created policy. Default: C<'/concourse'>.
+
+=item C<storage_base>
+
+Base path under which credentials are stored. The full storage path is
+C<< $storage_base . $role_name >>. Defaults to the value of the
+C<GENESIS_SECRETS_BASE> environment variable.
+
+=back
+
+Any additional keys in C<%opts> are forwarded to C<create_policy> and
+C<create_approle>.
+
+=back
+
+B<Returns:> C<1> on success, or C<undef> if the user declined the prompt.
+
+B<Examples:>
+
+  # Interactive setup with defaults
+  $admin->setup_concourse_approle();
+  # Returns: 1 on success, undef if user declined
+
+  # Non-interactive setup with custom paths
+  $admin->setup_concourse_approle(
+    role_name      => 'concourse',
+    prompt         => 0,
+    concourse_path => '/concourse/main',
+    storage_base   => '/secret/genesis/',
+    overwrite      => 1,
+  );
+  # Returns: 1
+
+=head2 setup_genesis_pipelines_approle
+
+  $admin->setup_genesis_pipelines_approle(%opts);
+
+Orchestrates the full AppRole setup flow for Genesis pipeline deployments:
+
+=over 4
+
+=item 1. Validates that an exodus mount path is available.
+
+=item 2. Optionally prompts the user whether to proceed.
+
+=item 3. Ensures the AppRole auth method is enabled (via C<< $self->approles->enable() >>).
+
+=item 4. Creates a Vault policy granting full access to the exodus metadata
+path.
+
+=item 5. Creates the AppRole.
+
+=item 6. Retrieves the role-id and a new secret-id.
+
+=item 7. Stores the credentials in Vault under C<< $storage_base . $role_name >>.
+
+=back
+
+B<Parameters:>
+
+=over 4
+
+=item C<%opts>
+
+=over 4
+
+=item C<role_name>
+
+Name of the AppRole and policy to create. Default: C<'genesis-pipelines'>.
+
+=item C<prompt>
+
+When true, the user is asked interactively whether to proceed before making
+any changes. Default: C<1>.
+
+=item C<exodus_mount>
+
+The Vault mount path for exodus data. Used as the policy path prefix
+(C<< ${exodus_mount}metadata/* >>). Defaults to the value of the
+C<GENESIS_EXODUS_MOUNT> environment variable.
+
+=item C<storage_base>
+
+Base path under which credentials are stored. The full storage path is
+C<< $storage_base . $role_name >>. Defaults to the value of the
+C<GENESIS_CI_MOUNT> environment variable.
+
+=back
+
+Any additional keys in C<%opts> are forwarded to C<create_policy> and
+C<create_approle>.
+
+=back
+
+B<Returns:> C<1> on success, or C<undef> if the user declined the prompt.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Cannot find mount for exodus path">
+
+Thrown when C<exodus_mount> is not provided and C<GENESIS_EXODUS_MOUNT> is
+not set in the environment.
+
+=back
+
+B<Examples:>
+
+  # Interactive setup with environment defaults
+  $admin->setup_genesis_pipelines_approle(
+    exodus_mount => '/secret/exodus',
+  );
+  # Returns: 1 on success, undef if user declined
+
+  # Non-interactive setup
+  $admin->setup_genesis_pipelines_approle(
+    role_name    => 'genesis-pipelines',
+    prompt       => 0,
+    exodus_mount => '/secret/exodus',
+    storage_base => '/secret/ci/',
+    overwrite    => 1,
+  );
+  # Returns: 1
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

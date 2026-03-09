@@ -2,21 +2,15 @@ package Genesis::Hook;
 use strict;
 use warnings;
 
-use Genesis qw/trace bug bail trace new_enough semver pushd popd run/;
+use Genesis qw/trace bug bail in_array new_enough semver pushd popd run humanize_path read_json_from save_to_yaml_file mkdir_or_fail/;
 use Data::Dumper ();
+use JSON::PP;
+use Digest::SHA qw(sha1_hex);
 
 sub init {
-	my ($class, %ops) = @_;
-
-	my @missing = grep {!defined($ops{$_})} qw/env kit/;
-	bug(
-		"Missing required arguments for a perl-based kit hook call: %s",
-		join(", ", @missing)
-	) if @missing;
-
-	my $hook = bless({%ops, type => $ENV{GENESIS_KIT_HOOK}},$class);
-	$hook->{features} = [$hook->env->features]
-		unless $ENV{GENESIS_KIT_HOOK} eq 'feature';
+	my ($class, %opts) = @_;
+	$class->check_for_required_args(\%opts, qw/env/);
+	my $hook = bless({%opts, complete => 0, type => $ENV{GENESIS_KIT_HOOK}},$class);
 
 	trace({raw => 1},
 		"%senvironmental variables:\n%s",
@@ -35,41 +29,66 @@ sub init {
 	return $hook;
 }
 
+sub tempfile {
+	my ($self, $file) = @_;
+	$file //= 'tempfile-'.time().'-'.int(rand(10000));
+	$file = $self->env->workpath($file);
+	return $file;
+}
+sub tempdir {
+	my ($self, $dir) = @_;
+	$dir //= 'tempdir-'.time().'-'.int(rand(10000));
+	$dir = $self->env->workpath($dir);
+	mkdir_or_fail($dir) unless -d $dir;
+	return $dir;
+}
+
 sub load_hook_module {
 	my ($class, $file, $kit) = @_;
 
-	my $hook_module;
+	$file = $kit->path($file) unless $file =~ m{^/};
+	my $hook_module = $kit->get_hook_module($file);
+	bail(
+		"Hook module %s does not exist for kit %s",
+		$file, $kit->id
+	) unless $hook_module;
 
-	if (-f $file) {
-		open my $fh, '<', $file;
-		my $line = <$fh>;
-		$line = <$fh> while ($line =~/^\s*(#.*)?$/);
-		close $fh;
+	# Check if module is already loaded to prevent redefinition warnings
+	my $module_path = ($hook_module =~ s{::}{/}gr) .'.pm';
 
-		if ($line =~ /^package (Genesis::Hook::[^ ]*)/) {
-			$hook_module = $1;
-		}
-	} else {
-		bail(
-			"Hook module %s does not exist for kit %s",
-			$file, $kit->id
-		);
+	if (!$INC{$module_path}) {
+		eval {require $file};
+		bail "Failed to load hook module %s: %s", $file, $@ if $@;
+		# Mark it as loaded in %INC to prevent reloading
+		$INC{$module_path} = $file;
 	}
-
-	eval {require $file};
-	bail "Failed to load hook module %s: %s", $file, $@ if $@;
-
 	return $hook_module;
 }
 
 sub perform {
-	$_[0]->kit->kit_bug(
+	$_[0]->kit_bug(
 		"Expect kit %s %s hook (perl module) to provide a 'perform' method",
-		$_[0]->kit, $_[0]->type
+		$_[0]->kit->id, $ENV{GENESIS_KIT_HOOK}
 	)
 }
 
-sub done {$_[0]->{complete} = 1}
+sub done {
+	my ($self) = shift;
+	if (@_) {
+		my $results = shift;
+		$self->{results} = $results;
+		$self->{complete} = defined($results) ? 1 : 0;
+		return $results;
+	} else {
+		$self->{complete} = 1;
+		$self->{results} = 1;
+		return 1;
+	}
+}
+
+sub results {$_[0]->completed ? $_[0]->{results} : undef}
+
+sub completed {$_[0]->{complete}}
 
 sub check_minimum_genesis_version {
 	my ($self,$min_version) = @_;
@@ -82,24 +101,19 @@ sub check_minimum_genesis_version {
 
 
 sub env {$_[0]->{env}}
-sub kit {$_[0]->env->kit}
 
-sub deployed {defined($_[0]->exodus_lookup('data'))}
-
-sub use_create_env {
-	# TODO: integrate with ocfp feature env types, mayby?
-	$ENV{GENESIS_USE_CREATE_ENV}||'false' eq 'true';
+sub deployed {
+	($_[0]->env->deployments->current_state eq 'deployed') ? 1 : 0
 }
 
-sub features {return @{$_[0]->{features}}}
-sub want_feature {
-	my ($self, $feature) = @_;
-	unless (defined($self->{__wanted_features})) {
-		$self->{__wanted_features} = {
-			map {($_, 1)} ($self->features)
-		}
-	}
-	return $self->{__wanted_features}{$feature};
+sub use_create_env {
+	return $_[0]->env && $_[0]->env->use_create_env;
+}
+
+sub features {
+	my $self = shift;
+	$self->{features} //= $self->env ? [$self->env->features] : [];
+	return @{$self->{features}}
 }
 
 sub set_features {
@@ -108,6 +122,53 @@ sub set_features {
 	$self->{features} = [@_];
 }
 
+sub want_feature {
+	my ($self, $feature) = @_;
+	unless (defined($self->{__wanted_features})) {
+		$self->{__wanted_features} = {
+			map {($_, 1)} ($self->features)
+		}
+	}
+	if(ref($feature) eq 'Regexp') {
+		return scalar(
+			grep {$_ =~ $feature}
+			grep {$self->{__wanted_features}{$_}}
+			keys $self->{__wanted_features}->%*
+		) ? 1 : 0;
+	} else {
+		return $self->{__wanted_features}{$feature};
+	}
+}
+sub wants_feature {$_[0]->want_feature($_[1])} # alias
+
+# Special "universal" feature detection {{{
+sub iaas {$_[0]->env && $_[0]->env->iaas}
+sub scale {$_[0]->env && $_[0]->env->scale}
+sub is_ocfp {$_[0]->env && $_[0]->env->is_ocfp}
+sub cpi_name {$_[0]->env && $_[0]->env->cpi_name}
+sub cpi_enabled {$_[0]->env && $_[0]->env->cpi_enabled}
+# }}}
+
+sub kit {$_[0]->env && $_[0]->env->kit}
+
+sub kit_bug {
+	my ($self, $msg, @args) = @_;
+	bail(
+		"Kit bug detected, but cannot determine kit for %s/%s",
+		$self->env->name, $self->env->type
+	) unless $self->kit;
+	$self->kit->kit_bug($msg, @args);
+}
+
+sub kit_has_file {
+	my ($self, $file) = @_;
+	return -f $self->kit->path($file);
+}
+
+sub supports_iaas {
+	my ($self) = @_;
+	return in_array($self->iaas, $self->env->kit->metadata->{supports}->@*);
+}
 
 sub relative_env_path {
 	my $self = shift;
@@ -118,8 +179,10 @@ sub relative_env_path {
 }
 
 sub titleize {map { s/([\\w']+)/\\u\\L\$1/gr } @_}
+
 sub label {
 	my $self = shift;
+	return $self->{label} if $self->{label};
 	$self->kit->kit_bug(
 		"Invalid Genesis Hook module: %s -- expected Genesis::Hook::<type>::<kit-name>[::<subcommand>]",
 		ref($self)
@@ -134,9 +197,115 @@ sub label {
 sub spruce_merge {
 	my ($self, @args) = @_;
 	my $opts = ref($args[0]) eq 'HASH' ? shift @args : {};
-	# TODO: make this support passing in json/yaml directly
-	my ($out, $err, $res) = run($opts, 'spruce','merge', @args);
-	bail "Failed to merge spruce files: %s", $err if $res;
+	my @spruce_opts = ();
+	my @files = ();
+	my $idx = 1;
+	while (my $arg = shift @args) {
+		if (ref($arg) eq 'HASH') {
+			# It is a raw hash, so convert it to json and store it in a file
+			my $file = $self->tempfile("spruce-merge-$idx.yml");
+			save_to_yaml_file($arg,$file);
+		} elsif ($arg =~ m/^-/) {
+			push @spruce_opts, $arg;
+			if ($arg =~ m/^--(cherry-pick|prune)$/) {
+				push @spruce_opts, shift @args;
+			}
+		} elsif (-f $arg) {
+			# It is a file, so add it to the list of files
+			push @files, $arg;
+		} elsif (-f (my $file = $self->kit->path($arg))) {
+			# It is a file in the kit, so add it to the list of files
+			push @files, $file;
+		} else {
+			bug("Invalid argument for spruce merge: %s", $arg);
+		}
+	}
+
+	my ($out, $rc, $err) = run($opts, 'spruce','merge', @spruce_opts, @files);
+	return ($out, $rc, $err) if wantarray; # allows caller to handle errors
+	bail "Failed to merge spruce files: %s", $err if $rc;
 	return $out;
 }
+
+# JSON/YAML helpers {{{
+sub TRUE  {JSON::PP::true}
+sub FALSE {JSON::PP::false}
+sub NULL  {JSON::PP::null}
+# }}}
+
+sub check_for_required_args {
+	my ($class, $ops, @required) = @_;
+	my @missing = grep {!defined($ops->{$_})} @required;
+	bug(
+		"Missing required arguments for a perl-based kit hook call: %s",
+		join(", ", @missing)
+	) if @missing;
+	return 1;
+}
+
+sub require_hook_lib {
+	my ($caller_package, $filename, $line) = caller();
+	use File::Basename qw(dirname);
+	use Cwd qw(abs_path);
+	eval "use lib dirname(abs_path(\$filename)).'/lib';";
+}
+
+sub get_config_override {
+	my ($self, $key, $default) = @_;
+	my $base = 'bosh-configs';
+	if ($key =~ m/^(cloud|runtime|cpi)\.(.+)$/) {
+		# If the key starts with cloud, runtime, or cpi, its good as-is
+	} elsif ($self->isa('Genesis::Hook::CloudConfig')) {
+		$base .= '.cloud';
+	} elsif ($self->isa('Genesis::Hook::RuntimeConfig')) {
+		$base .= '.runtime';
+	} elsif ($self->isa('Genesis::Hook::CpiConfig')) {
+		$base .= '.cpi';
+	} else {
+		require mro;
+		my @parents = mro::get_linear_isa(ref($self));
+		my $parent_class = $parents[1] if @parents > 1;
+		bail(
+			"%s hooks must specify the bosh_config type as the first part of the lookup key",
+			$parent_class // ref($self)
+		);
+	}
+	my $value = $self->env->lookup("$base.$key", $default);
+	return $value;
+}
+
+sub exodus_data {
+	my $self = shift;
+	$self->{__exodus_data} ||= $self->env->exodus_lookup('.',{});
+	return $self->{__exodus_data} unless @_;
+	return $self->{__exodus_data}{$_[0]} if @_ == 1;
+	my @results = map {$self->{__exodus_data}{$_}} @_;
+	return wantarray ? @results : \@results;
+}
+
+sub bosh {
+	my $self = shift;
+	return $self->{__bosh} ||= sub {
+		my $bosh = $_[0]->env->bosh;
+		$bosh->connect_and_validate();
+		$bosh;
+	}->($self);
+}
+
+sub read_json_from_bosh {
+	my ($self, @args) = @_;
+	my ($data,$rc,$err) = read_json_from($self->bosh->execute(@args, '--json'));
+	bail(
+		"Failed to read JSON from BOSH command: %s", $err
+	) if $rc;
+	return $data->{Tables}[0]{Rows};
+}
+sub get_credhub_variable {
+	my ($self, $prefix, $path, $key, $value) = @_;
+	my $secret_sha = substr(sha1_hex("$path--$key--".$value),0,8);
+	my $cred_name = "$prefix$path--$key--$secret_sha";
+	return $cred_name;
+}
+
 1;
+# vim: fdm=marker:ts=2:sw=2:sts=2:noet:cc=80

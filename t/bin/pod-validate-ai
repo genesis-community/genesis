@@ -1,0 +1,140 @@
+#!/bin/bash
+#
+# pod-validate-ai - AI-powered POD documentation quality validator
+#
+# This script validates Perl POD documentation against actual code using
+# Claude AI analysis. It can validate specific modules or auto-detect
+# changed files via git diff.
+#
+# Usage:
+#   pod-validate-ai                    # Validate changed files
+#   pod-validate-ai Genesis::Kit       # Validate specific module
+#   pod-validate-ai --all              # Validate all modules with POD
+#
+# Environment:
+#   GENESIS_WORKTREE  Path to Genesis worktree (default: repo root)
+#   POD_VALIDATE_BASE Git ref to compare against (default: main)
+#
+set -euo pipefail
+
+# Determine script and repo locations
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+GENESIS_ROOT="${GENESIS_WORKTREE:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
+STUDIO_ROOT="$(cd "$GENESIS_ROOT/../.." && pwd)"
+SKILL_PATH="$STUDIO_ROOT/.claude/skills/pod-validate/skill.py"
+
+# Defaults
+BASE_REF="${POD_VALIDATE_BASE:-main}"
+FORMAT="text"
+MODULES=""
+CHANGED=false
+ALL=false
+
+usage() {
+    cat <<EOF
+Usage: $(basename "$0") [OPTIONS] [MODULES...]
+
+Validate POD documentation quality using AI analysis.
+
+Options:
+  --changed       Validate only changed .pm/.pod files (default if no modules)
+  --base REF      Git ref to compare against (default: main)
+  --all           Validate all modules with POD sections
+  --json          Output as JSON
+  --help          Show this help
+
+Arguments:
+  MODULES         Space or comma-separated list of Perl module names
+
+Examples:
+  $(basename "$0")                          # Validate changed files
+  $(basename "$0") Genesis::Kit            # Validate specific module
+  $(basename "$0") Genesis::Kit Genesis::Env
+  $(basename "$0") --all                   # Validate all modules
+  $(basename "$0") --base feature-branch   # Compare to feature branch
+
+Environment:
+  GENESIS_WORKTREE  Path to Genesis worktree (default: auto-detect)
+  POD_VALIDATE_BASE Git ref to compare against (default: main)
+EOF
+}
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --changed)
+            CHANGED=true
+            shift
+            ;;
+        --base)
+            BASE_REF="$2"
+            shift 2
+            ;;
+        --all)
+            ALL=true
+            shift
+            ;;
+        --json)
+            FORMAT="json"
+            shift
+            ;;
+        --help|-h)
+            usage
+            exit 0
+            ;;
+        -*)
+            echo "Unknown option: $1" >&2
+            usage >&2
+            exit 1
+            ;;
+        *)
+            # Collect module names
+            if [[ -n "$MODULES" ]]; then
+                MODULES="$MODULES,$1"
+            else
+                MODULES="$1"
+            fi
+            shift
+            ;;
+    esac
+done
+
+# Check skill exists
+if [[ ! -f "$SKILL_PATH" ]]; then
+    echo "Error: Skill not found at $SKILL_PATH" >&2
+    echo "Make sure you're running from within the genesis-studio repository." >&2
+    exit 1
+fi
+
+# Determine what to validate
+if [[ "$ALL" == "true" ]]; then
+    # Find all modules with POD sections
+    echo "Finding all modules with POD..." >&2
+    MODULES=$(grep -l '^=head1' "$GENESIS_ROOT"/lib/**/*.pm 2>/dev/null | \
+        sed "s|$GENESIS_ROOT/lib/||; s|\.pm$||; s|/|::|g" | \
+        tr '\n' ',' | sed 's/,$//')
+
+    if [[ -z "$MODULES" ]]; then
+        echo "No modules with POD found." >&2
+        exit 0
+    fi
+
+    echo "Found $(echo "$MODULES" | tr ',' '\n' | wc -l | xargs) modules with POD" >&2
+    uv run "$SKILL_PATH" batch --modules "$MODULES" --worktree "$GENESIS_ROOT" --format "$FORMAT"
+
+elif [[ -n "$MODULES" ]]; then
+    # Validate specified modules
+    # Convert space-separated to comma-separated
+    MODULES=$(echo "$MODULES" | tr ' ' ',')
+
+    if [[ "$MODULES" == *","* ]]; then
+        uv run "$SKILL_PATH" batch --modules "$MODULES" --worktree "$GENESIS_ROOT" --format "$FORMAT"
+    else
+        uv run "$SKILL_PATH" validate "$MODULES" --worktree "$GENESIS_ROOT" --format "$FORMAT"
+    fi
+
+else
+    # Default: validate changed files
+    echo "Detecting changed modules (comparing to $BASE_REF)..." >&2
+    uv run "$SKILL_PATH" batch --changed --base "$BASE_REF" --worktree "$GENESIS_ROOT" --format "$FORMAT"
+fi

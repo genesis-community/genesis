@@ -1,0 +1,262 @@
+#!/usr/bin/env perl
+# Check POD coverage and quality for all modules using Pod::Coverage and Pod::Checker
+#
+# Usage: pod-coverage-check [OPTIONS]
+#
+# Options:
+#   --quiet, -q   Only show summary (hide method details)
+#   --min=N, -m   Minimum coverage percentage to pass (default: 0)
+#   --syntax, -s  Also check POD syntax errors
+#   --help, -h    Show this help
+
+use strict;
+use warnings;
+use lib 'lib';
+use Pod::Coverage;
+use Getopt::Long;
+use File::Find;
+
+# Optional: Pod::Checker for syntax validation
+my $has_pod_checker = eval { require Pod::Checker; 1 };
+
+my $quiet = 0;
+my $min_coverage = 0;
+my $check_syntax = 0;
+my $help = 0;
+
+GetOptions(
+	'quiet|q'  => \$quiet,
+	'min|m=i'  => \$min_coverage,
+	'syntax|s' => \$check_syntax,
+	'help|h'   => \$help,
+) or die "Usage: $0 [--quiet] [--min=N] [--syntax]\n";
+
+if ($help) {
+	print <<'USAGE';
+Usage: pod-coverage-check [OPTIONS]
+
+Check POD coverage and quality for all Perl modules in lib/
+
+Options:
+  --quiet, -q   Only show summary (hide method details)
+  --min=N, -m   Minimum coverage percentage to pass (default: 0)
+  --syntax, -s  Also check POD syntax errors (requires Pod::Checker)
+  --help, -h    Show this help
+
+Output shows:
+  - Coverage percentage per module
+  - Undocumented methods (unless --quiet)
+  - POD syntax errors (with --syntax)
+
+Exit codes:
+  0 = Coverage meets minimum threshold
+  1 = Coverage below threshold
+USAGE
+	exit 0;
+}
+
+if ($check_syntax && !$has_pod_checker) {
+	warn "Warning: Pod::Checker not available, skipping syntax checks\n";
+	$check_syntax = 0;
+}
+
+# Find all .pm files
+my @pm_files;
+find(sub {
+	push @pm_files, $File::Find::name if /\.pm$/;
+}, 'lib');
+
+my (@complete, @incomplete, @no_pod, @syntax_errors);
+
+for my $file (sort @pm_files) {
+	# Convert file path to module name
+	my $module = $file;
+	$module =~ s{^lib/}{};
+	$module =~ s{\.pm$}{};
+	$module =~ s{/}{::}g;
+
+	# Check for corresponding .pod file
+	my $pod_file = $file;
+	$pod_file =~ s{\.pm$}{.pod};
+	my $has_separate_pod = -f $pod_file;
+
+	# Check coverage
+	my $pc = eval { Pod::Coverage->new(package => $module) };
+	if ($@) {
+		push @no_pod, { module => $module, error => $@, file => $file };
+		next;
+	}
+
+	my $coverage = $pc->coverage;
+
+	# Check POD syntax if requested
+	my @pod_errors;
+	if ($check_syntax && $has_pod_checker) {
+		my $checker_file = $has_separate_pod ? $pod_file : $file;
+		@pod_errors = _check_pod_syntax($checker_file);
+	}
+
+	if (!defined $coverage) {
+		my $reason = $pc->why_unrated // 'no pod found';
+		push @no_pod, {
+			module => $module,
+			error => $reason,
+			file => $file,
+			pod_file => $has_separate_pod ? $pod_file : undef,
+			syntax_errors => \@pod_errors,
+		};
+	} elsif ($coverage == 1) {
+		my @covered = $pc->covered;
+		push @complete, {
+			module   => $module,
+			covered  => scalar(@covered),
+			total    => scalar(@covered),
+			pct      => 100,
+			methods  => \@covered,
+			file     => $file,
+			pod_file => $has_separate_pod ? $pod_file : '(embedded)',
+			syntax_errors => \@pod_errors,
+		};
+	} else {
+		my @covered = $pc->covered;
+		my @naked = $pc->naked;
+		my $total = @covered + @naked;
+		push @incomplete, {
+			module   => $module,
+			covered  => scalar(@covered),
+			total    => $total,
+			pct      => $total ? int(100 * @covered / $total) : 0,
+			naked    => \@naked,
+			methods  => \@covered,
+			file     => $file,
+			pod_file => $has_separate_pod ? $pod_file : '(embedded)',
+			syntax_errors => \@pod_errors,
+		};
+	}
+
+	# Track syntax errors separately
+	if (@pod_errors) {
+		push @syntax_errors, {
+			module => $module,
+			file => $has_separate_pod ? $pod_file : $file,
+			errors => \@pod_errors,
+		};
+	}
+}
+
+# Summary
+my $total = @complete + @incomplete + @no_pod;
+my $complete_pct = $total ? sprintf("%.1f", 100 * @complete / $total) : 0;
+my $with_pod = @complete + @incomplete;
+my $with_pod_pct = $total ? sprintf("%.1f", 100 * $with_pod / $total) : 0;
+
+print "=== POD Coverage Report ===\n\n";
+printf "Total modules:       %d\n", $total;
+printf "With POD:            %d (%s%%)\n", $with_pod, $with_pod_pct;
+printf "  Complete (100%%):   %d (%s%%)\n", scalar(@complete), $complete_pct;
+printf "  Incomplete:        %d\n", scalar(@incomplete);
+printf "No POD:              %d\n", scalar(@no_pod);
+if ($check_syntax) {
+	printf "Syntax errors:       %d modules\n", scalar(@syntax_errors);
+}
+
+if (@incomplete) {
+	print "\n--- Incomplete POD ---\n";
+	for my $m (sort { $a->{pct} <=> $b->{pct} } @incomplete) {
+		printf "\n  %3d%% (%2d/%2d) %s\n",
+			$m->{pct}, $m->{covered}, $m->{total}, $m->{module};
+		printf "              source: %s\n", $m->{pod_file};
+
+		unless ($quiet) {
+			if (@{$m->{naked}}) {
+				print "              missing:\n";
+				for my $method (sort @{$m->{naked}}) {
+					print "                - $method\n";
+				}
+			}
+		}
+
+		if (@{$m->{syntax_errors}}) {
+			print "              syntax errors:\n";
+			for my $err (@{$m->{syntax_errors}}) {
+				print "                ! $err\n";
+			}
+		}
+	}
+}
+
+if (@no_pod) {
+	print "\n--- No POD Found ---\n";
+	for my $m (sort { $a->{module} cmp $b->{module} } @no_pod) {
+		printf "  %s\n", $m->{module};
+	}
+}
+
+if (@complete && !$quiet) {
+	print "\n--- Complete POD (100%) ---\n";
+	for my $m (sort { $a->{module} cmp $b->{module} } @complete) {
+		printf "\n  %s (%d methods)\n", $m->{module}, $m->{covered};
+		printf "              source: %s\n", $m->{pod_file};
+
+		if (@{$m->{syntax_errors}}) {
+			print "              syntax errors:\n";
+			for my $err (@{$m->{syntax_errors}}) {
+				print "                ! $err\n";
+			}
+		}
+	}
+}
+
+if ($check_syntax && @syntax_errors) {
+	print "\n--- POD Syntax Errors ---\n";
+	for my $m (@syntax_errors) {
+		printf "\n  %s (%s)\n", $m->{module}, $m->{file};
+		for my $err (@{$m->{errors}}) {
+			print "    ! $err\n";
+		}
+	}
+}
+
+# Exit with appropriate code
+my $overall = $total ? (100 * @complete / $total) : 0;
+exit($overall >= $min_coverage ? 0 : 1);
+
+# Helper: Check POD syntax using Pod::Checker
+sub _check_pod_syntax {
+	my ($file) = @_;
+	return () unless -f $file;
+
+	my @errors;
+
+	# Capture Pod::Checker output
+	my $checker = Pod::Checker->new(-warnings => 1);
+
+	# Redirect checker output to capture errors
+	open my $devnull, '>', \my $output;
+	$checker->parse_from_file($file, $devnull);
+	close $devnull;
+
+	# Get error count
+	my $num_errors = $checker->num_errors;
+	my $num_warnings = $checker->num_warnings;
+
+	if ($num_errors > 0 || $num_warnings > 0) {
+		push @errors, "$num_errors error(s), $num_warnings warning(s)";
+
+		# Try to get specific messages by re-parsing to a string
+		my $messages = '';
+		open my $msg_fh, '>', \$messages;
+		my $checker2 = Pod::Checker->new(-warnings => 1);
+		$checker2->parse_from_file($file, $msg_fh);
+		close $msg_fh;
+
+		# Parse the output for specific errors
+		for my $line (split /\n/, $messages) {
+			next unless $line =~ /\S/;
+			next if $line =~ /^\s*$/;
+			push @errors, $line if $line =~ /error|warning/i;
+		}
+	}
+
+	return @errors;
+}

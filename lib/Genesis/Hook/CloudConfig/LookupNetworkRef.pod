@@ -1,0 +1,188 @@
+=encoding UTF-8
+
+=head1 NAME
+
+Genesis::Hook::CloudConfig::LookupNetworkRef - Network reference resolver for cloud-config lookups
+
+=head1 SYNOPSIS
+
+    use Genesis::Hook::CloudConfig::LookupNetworkRef;
+
+    # Direct hash lookup — resolve 'default' from network data
+    my $ref = Genesis::Hook::CloudConfig::LookupNetworkRef->new('default');
+    my $value = $ref->resolve($config, $network_data);
+
+    # Delegate to a named method on $config
+    my $ref = Genesis::Hook::CloudConfig::LookupNetworkRef->new(
+        'primary', 'lookup_network', 'extra_arg'
+    );
+    my $value = $ref->resolve($config, $network_data);
+
+    # Delegate to a code reference
+    my $ref = Genesis::Hook::CloudConfig::LookupNetworkRef->new(
+        'primary',
+        sub {
+            my ($config, $network_data, $ref_name, @args) = @_;
+            return $network_data->{$ref_name};
+        }
+    );
+    my $value = $ref->resolve($config, $network_data);
+
+=head1 DESCRIPTION
+
+C<Genesis::Hook::CloudConfig::LookupNetworkRef> encapsulates a deferred
+network reference lookup for use in cloud-config generation. An instance
+records the reference name (C<$ref>), an optional resolution strategy
+(C<$lookup_method>), and any additional arguments needed by that strategy.
+The actual lookup is deferred until C<resolve()> is called.
+
+Three resolution strategies are supported, tried in priority order:
+
+=over 4
+
+=item 1.
+
+B<Code reference> — if C<$lookup_method> is a code reference, it is called
+directly with C<($config, $network_data, $ref, @lookup_args)>.
+
+=item 2.
+
+B<Named method> — if C<$lookup_method> is a non-empty string and
+C<$config-E<gt>can($lookup_method)> returns true, the method is invoked as
+C<$config-E<gt>$lookup_method($network_data, $ref, @lookup_args)>.
+
+=item 3.
+
+B<Direct hash lookup> — if C<$ref> exists as a key in C<$network_data>, its
+value is returned directly.
+
+=back
+
+If none of the strategies succeeds, C<resolve()> dies with an informative
+error message.
+
+See also L<Genesis::Hook::CloudConfig::LookupSubnetRef> for the analogous
+class that operates on subnet data.
+
+=head1 METHODS
+
+=head2 new
+
+    my $lookup_ref = Genesis::Hook::CloudConfig::LookupNetworkRef->new($ref, $lookup_method, @lookup_args);
+
+Creates a new C<LookupNetworkRef> object encapsulating a deferred network
+reference lookup.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$ref>
+
+The name of the reference to resolve. Used as a hash key when performing a
+direct lookup in C<$network_data>, and passed as an argument to code-ref and
+method-based resolution strategies.
+
+=item C<$lookup_method>
+
+B<(optional)> The resolution strategy. May be a code reference or a method
+name (string). When omitted or C<undef>, resolution falls back to a direct
+hash lookup in C<$network_data>.
+
+=item C<@lookup_args>
+
+B<(optional)> Additional arguments forwarded to C<$lookup_method> when it is
+a code reference or a named method on C<$config>.
+
+=back
+
+B<Returns:> A new C<Genesis::Hook::CloudConfig::LookupNetworkRef> object.
+
+B<Examples:>
+
+    # No strategy -- direct hash lookup
+    my $ref = Genesis::Hook::CloudConfig::LookupNetworkRef->new('default');
+    # Returns: a LookupNetworkRef object that will look up 'default' in network data
+
+    # Named method strategy with extra args
+    my $ref = Genesis::Hook::CloudConfig::LookupNetworkRef->new('primary', 'resolve_network', 'az1');
+    # Returns: a LookupNetworkRef object that will call $config->resolve_network(...)
+
+    # Code reference strategy
+    my $ref = Genesis::Hook::CloudConfig::LookupNetworkRef->new('mgmt', sub {
+        my ($config, $net, $name) = @_;
+        return $net->{$name}{cidr};
+    });
+    # Returns: a LookupNetworkRef object that will invoke the code reference
+
+=head2 resolve
+
+    my $value = $ref->resolve($config, $network_data);
+
+Resolves the reference against C<$network_data> using the strategy recorded
+at construction time. The three strategies are tried in order: code reference,
+named method on C<$config>, then direct hash lookup in C<$network_data>. If
+none succeeds, the method dies.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$config>
+
+The cloud-config object. Must support C<can()>. Used to dispatch named-method
+lookups when C<$lookup_method> is a string.
+
+=item C<$network_data>
+
+A hash reference containing the network data to search. Used both as the
+direct lookup target and as an argument passed to code-ref and method-based
+strategies.
+
+=back
+
+B<Returns:> The resolved value. The type and structure depend on the
+resolution strategy and the contents of C<$network_data>.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Could not resolve reference '$ref' in network data. Please ensure the reference exists and is spelled correctly.">
+
+Thrown via C<bail()> when none of the three resolution strategies succeeds.
+C<$ref> is the reference name passed to C<new()>.
+
+=back
+
+B<Examples:>
+
+    my $net_data = { default => '10.0.0.0/24', mgmt => '192.168.1.0/24' };
+
+    # Direct hash lookup
+    my $ref = Genesis::Hook::CloudConfig::LookupNetworkRef->new('default');
+    my $cidr = $ref->resolve($config, $net_data);
+    # Returns: '10.0.0.0/24'
+
+    # Named method dispatch
+    my $ref = Genesis::Hook::CloudConfig::LookupNetworkRef->new(
+        'mgmt', 'get_network_cidr'
+    );
+    my $cidr = $ref->resolve($config, $net_data);
+    # Returns: value from $config->get_network_cidr($net_data, 'mgmt')
+
+    # Unknown reference — dies
+    my $ref = Genesis::Hook::CloudConfig::LookupNetworkRef->new('missing');
+    $ref->resolve($config, $net_data);
+    # Dies: Could not resolve reference 'missing' in network data.
+    #       Please ensure the reference exists and is spelled correctly.
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

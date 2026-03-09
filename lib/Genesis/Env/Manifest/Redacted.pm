@@ -5,6 +5,8 @@ use warnings;
 
 use base 'Genesis::Env::Manifest';
 
+sub description { "Full manifest with secrets redacted for safe viewing" }
+
 sub source_files {
 	my $self = shift;
 	return [

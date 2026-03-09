@@ -1,0 +1,475 @@
+=head1 NAME
+
+Genesis::Kit::Compiled - A compiled Genesis kit distributed as a tarball archive.
+
+=head1 SYNOPSIS
+
+  use Genesis::Kit::Compiled;
+
+  # Construct directly from a known archive on disk
+  my $kit = Genesis::Kit::Compiled->new(
+      name     => 'cf',
+      version  => '2.8.0',
+      archive  => '/path/to/cf-2.8.0.tar.gz',
+      provider => $provider,
+  );
+
+  print $kit->id();      # prints 'cf/2.8.0'
+  print $kit->name();    # prints 'cf'
+  print $kit->version(); # prints '2.8.0'
+
+  # Scan a directory for all locally cached kit tarballs
+  my $kits = Genesis::Kit::Compiled->local_kits($provider, '/path/to/cache');
+  for my $name (sort keys %$kits) {
+      for my $version (sort keys %{$kits->{$name}}) {
+          print "Found kit: $name/$version\n";
+      }
+  }
+
+  # Extract the kit to a temporary workspace before accessing its contents
+  $kit->extract();
+
+=head1 DESCRIPTION
+
+C<Genesis::Kit::Compiled> represents a Genesis kit that has been compiled and
+distributed as a gzip-compressed tar archive (C<.tar.gz> or C<.tgz>). This is
+the standard format for consuming kits in production deployments.
+
+The constructor runs a multi-phase validation of the archive before the object
+is created, catching common failure modes such as incomplete downloads, network
+proxy interceptions, and corrupt archives.
+
+This class inherits from L<Genesis::Kit>, which provides methods such as
+C<path>, C<glob>, C<has_hook>, C<metadata>, and C<known_hooks>.
+Inherited methods are not re-documented here; see L<Genesis::Kit> for details.
+
+=head1 METHODS
+
+=head2 new
+
+  my $kit = Genesis::Kit::Compiled->new(%opts);
+
+Creates a new C<Genesis::Kit::Compiled> object. Before the object is
+constructed, the archive is validated through a multi-phase check (see
+L</_validate_tar_archive> for the full validation sequence).
+
+B<Parameters:>
+
+=over 4
+
+=item C<archive>
+
+The path to the compiled kit tarball (C<.tar.gz> or C<.tgz>). This option is
+B<required>.
+
+=item C<name>
+
+The expected name of the kit (e.g., C<cf>). When provided together with
+C<version>, the archive's internal base directory is checked to confirm it
+matches. When omitted, the name is extracted from the archive's base directory.
+
+=item C<version>
+
+The expected version of the kit (e.g., C<2.8.0> or C<v2.8.0>). A leading
+C<v> is stripped before comparison. When provided together with C<name>, the
+archive's internal base directory is checked to confirm it matches. When
+omitted, the version is extracted from the archive's base directory.
+
+=item C<provider>
+
+The provider object associated with this kit (e.g., a local cache or remote
+registry). Stored on the object for reference; not used during validation.
+
+=back
+
+B<Returns:>
+
+A blessed C<Genesis::Kit::Compiled> object.
+
+B<Errors:>
+
+Dies with the first validation error encountered by C<_validate_tar_archive>.
+See L</_validate_tar_archive> for the full list of error conditions.
+
+B<Examples:>
+
+  my $kit = Genesis::Kit::Compiled->new(
+      name     => 'cf',
+      version  => '2.8.0',
+      archive  => '/var/cache/genesis/cf-2.8.0.tar.gz',
+      provider => $provider,
+  );
+  print $kit->id(); # prints 'cf/2.8.0'
+
+=head2 local_kits
+
+  my $kits = Genesis::Kit::Compiled->local_kits($provider, $path);
+  my $kits = Genesis::Kit::Compiled->local_kits($provider);
+
+Class method. Scans a directory for kit tarballs and returns a nested hashref
+of all valid compiled kits found.
+
+Files in C<$path> are matched against the pattern
+C<name-version.tar.gz> or C<name-version.tgz>, where the version component
+follows the form C<N>, C<N.N>, C<N.N.N>, or C<N.N.N-rcN> (with optional
+dots or dashes around the C<rc> separator). Non-matching files are silently
+skipped.
+
+For each matching file, C<new()> is called with the extracted name, version,
+archive path, and the given provider. Each call also validates the archive; see
+L</_validate_tar_archive>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$provider>
+
+The provider to associate with all discovered kit objects. Passed through to
+C<new()> as the C<provider> option.
+
+=item C<$path>
+
+The directory to scan. Defaults to C<'.'> (current directory) when not
+provided or undefined. A trailing slash is stripped before use.
+
+=back
+
+B<Returns:>
+
+A hashref with the structure C<< { $name => { $version => $kit_object } } >>,
+where each value is a C<Genesis::Kit::Compiled> instance. Returns an empty
+hashref if no matching files are found.
+
+B<Errors:>
+
+If a matching tarball fails validation inside C<new()>, a warning is emitted
+identifying the file and the validation error, and that file is skipped.
+The scan continues with remaining files. No single corrupt archive can
+prevent discovery of other valid kits in the same directory.
+
+B<Examples:>
+
+  my $kits = Genesis::Kit::Compiled->local_kits($provider, '/var/cache/genesis');
+  for my $name (sort keys %$kits) {
+      for my $version (sort keys %{$kits->{$name}}) {
+          printf "Kit: %s/%s\n", $name, $version;
+      }
+  }
+  # prints e.g.:
+  #   Kit: bosh/2.3.0
+  #   Kit: cf/2.8.0
+
+=head2 id
+
+  my $id = $kit->id();
+
+Returns the identity string of the kit in the form C<name/version>. Useful
+for error messages and log output.
+
+B<Returns:>
+
+A string of the form C<"$name/$version">, e.g., C<"cf/2.8.0">.
+
+B<Examples:>
+
+  my $kit = Genesis::Kit::Compiled->new(
+      name    => 'cf',
+      version => '2.8.0',
+      archive => '/path/to/cf-2.8.0.tar.gz',
+  );
+  print $kit->id(); # prints 'cf/2.8.0'
+
+=head2 name
+
+  my $name = $kit->name();
+
+Returns the name of the kit.
+
+B<Returns:>
+
+A string containing the kit name (e.g., C<"cf">).
+
+B<Examples:>
+
+  print $kit->name(); # prints 'cf'
+
+=head2 version
+
+  my $version = $kit->version();
+
+Returns the version of the kit.
+
+B<Returns:>
+
+A string containing the kit version (e.g., C<"2.8.0">). This is always the
+normalized version without a leading C<v>, as any leading C<v> is stripped
+during construction.
+
+B<Examples:>
+
+  print $kit->version(); # prints '2.8.0'
+
+=head2 kit_bug
+
+  $kit->kit_bug(@msg);
+
+Reports a bug in the kit and terminates the process. This method is intended
+to be called when a kit behaves in a way that indicates a defect in the kit
+itself rather than an operator configuration error.
+
+C<@msg> is passed to C<csprintf>, which treats the first element as a format
+string and the remaining elements as arguments. C<csprintf> supports ANSI
+color markup and standard C<sprintf> conversion specifiers. The formatted
+message is followed by an attribution line naming the kit. If the kit's
+C<kit.yml> metadata contains a C<code> field pointing to a GitHub repository,
+a link to the issue tracker is appended. Otherwise, if the metadata contains
+an C<authors> or C<author> field, the author contact information is listed.
+
+The method always dies (throws an exception via C<die>). Before dying,
+C<$!> is set to 2 (C<ENOENT>). Callers that wrap this in an C<eval> block
+can inspect C<$!> to distinguish kit bugs from other fatal errors.
+
+B<Parameters:>
+
+=over 4
+
+=item C<@msg>
+
+A list whose first element is a C<csprintf>-compatible format string and
+whose remaining elements are arguments interpolated into that string. May
+contain ANSI color markup and standard C<sprintf> conversion specifiers.
+
+=back
+
+B<Returns:>
+
+Does not return. Always dies. Sets C<$!> to 2 before dying.
+
+B<Examples:>
+
+  # In a kit hook, signal an unexpected state
+  $kit->kit_bug("Unexpected value %s in manifest key 'foo'", $bad_value);
+  # prints and dies with:
+  #   Unexpected value bar in manifest key 'foo'
+  #   This is a bug in the cf/2.8.0 kit.
+  #   Please file an issue at https://github.com/genesis-community/cf-genesis-kit/issues
+
+=head2 extract
+
+  $kit->extract();
+
+Extracts the kit tarball to a temporary working directory and installs the
+Genesis hooks helper script. After extraction, the kit's C<path>, C<glob>,
+C<has_hook>, and related methods inherited from L<Genesis::Kit> become
+operational.
+
+This method is memoized: the first call performs the extraction and records
+the working directory on the object. Subsequent calls return immediately
+without re-extracting.
+
+Files are extracted relative to the kit's root, with the leading
+C<name-version/> directory prefix stripped. For example,
+C<cf-2.8.0/hooks/new> is extracted as C<hooks/new> under the working
+directory.
+
+Modifies the object in-place by setting the internal C<root> field to the
+temporary working directory path.
+
+B<Returns:>
+
+Returns C<1> on the first call (extraction performed). Returns nothing
+(C<undef>) on subsequent calls when the kit has already been extracted.
+
+B<Examples:>
+
+  $kit->extract();
+  my $hook_path = $kit->path('hooks/new');
+  # $hook_path is now a valid filesystem path to the extracted hook
+
+=head1 INTERNAL METHODS
+
+These methods are internal to the implementation. They may change without
+notice and should not be called directly.
+
+=head2 _validate_tar_archive
+
+  my $tar = Genesis::Kit::Compiled->_validate_tar_archive(\%opts);
+
+Private class method. Validates the archive referenced by C<$opts->{archive}>
+through a series of checks and, if all checks pass, opens and returns an
+Archive::Tar object ready for use.
+
+This is the centerpiece of archive validation. It runs the following phases
+in order, halting at the first failure:
+
+=over 4
+
+=item 1. Missing archive option
+
+Dies with C<"Missing required option: archive"> if C<$opts->{archive}> is not
+set.
+
+=item 2. Archive file existence
+
+Dies with C<"Archive file does not exist: %s"> (where C<%s> is the archive
+path) if the file does not exist on disk.
+
+=item 3. File readability
+
+Dies if the file exists but cannot be read - for example, due to restrictive
+permissions or a SELinux denial. The error format is:
+
+  C<"Kit archive file %s exists but cannot be read.">
+
+followed by the current username and uid. C<%s> is the archive path.
+
+=item 4. Empty file
+
+Dies if the file size is zero. The error format is:
+
+  C<"Kit archive file %s is empty (0 bytes).">
+
+C<%s> is the archive path. This typically indicates an interrupted download
+or a full disk.
+
+=item 5. Archive read for content checks (C<.tar.gz> and C<.tgz> only)
+
+Opens the archive file in raw binary mode to read its first 512 bytes for
+the content checks in steps 5a and 5b below. Dies with:
+
+  C<"Unable to read kit archive %s: %s">
+
+if the file cannot be opened. The first C<%s> is the archive path and the
+second C<%s> is the system error message from C<$!>.
+
+=item 5a. HTML content detection (C<.tar.gz> and C<.tgz> only)
+
+Checks the first 512 bytes for HTML tags
+(C<< <!DOCTYPE >> , C<< <html >> , C<< <head >> , C<< <body >>). Dies if
+HTML is detected. The error format is:
+
+  C<"Kit archive file %s contains HTML instead of a gzip archive (%d bytes).">
+
+C<%s> is the archive path and C<%d> is the file size in bytes. This catches
+cases where a network proxy or captive portal intercepted the download and
+returned an HTML page instead of the kit archive.
+
+=item 5b. Gzip magic bytes (C<.tar.gz> and C<.tgz> only)
+
+Verifies that the first two bytes of the file are C<1f 8b> (the gzip magic
+number). Dies if the magic bytes are absent. The error format is:
+
+  C<"Kit archive file %s is not a valid gzip file (%d bytes).">
+
+followed by the expected and actual leading bytes. C<%s> is the archive path
+and C<%d> is the file size in bytes.
+
+=item 6. Decompression module availability (C<.tar.gz> and C<.tgz> only)
+
+Checks that at least one of IO::Uncompress::Gunzip or IO::Zlib is
+available. Dies if neither module can be loaded. The error format is:
+
+  C<"Cannot decompress kit archive %s: neither IO::Uncompress::Gunzip nor IO::Zlib is installed.">
+
+C<%s> is the archive path.
+
+=item 7. Archive::Tar open with warning capture
+
+Attempts to open the archive using Archive::Tar->new(), capturing any
+warnings emitted during the open. Dies if the open fails or returns a false
+value. The error format is:
+
+  C<"Failed to read kit archive %s.">
+
+followed by the Archive::Tar version, Perl version, file size in bytes, and
+any captured warnings. C<%s> is the archive path.
+
+=item 8. Base directory validation
+
+Inspects the top-level directories in the archive. Dies with:
+
+  C<"Archive file %s does not appear to be a valid Genesis kit (missing base directory)">
+
+if no single top-level directory is found. C<%s> is the archive path.
+
+The base directory must match the pattern C<name-version/>, where the version
+follows the standard Genesis versioning scheme. If the directory exists but
+does not match that pattern, dies with:
+
+  C<"Archive file %s does not appear to be a valid Genesis kit (missing base director 'name-version')">
+
+Note: the word "director" is a typographic error preserved from the original
+implementation.
+
+=item 9. Name and version matching
+
+If both C<$opts->{name}> and C<$opts->{version}> are provided, the archive's
+base directory name and version are compared against them. Dies if they do not
+match. The error format is:
+
+  C<"Archive file %s name/version (%s/%s) does not match provided name/version (%s/%s)">
+
+The five C<%s> placeholders are: archive path, name found in the archive,
+version found in the archive, expected name, and expected version.
+
+If neither C<name> nor C<version> is provided, the name and version are
+inferred from the archive's base directory and written back into C<$opts>.
+
+=item 10. kit.yml presence
+
+Dies if the archive does not contain a C<kit.yml> file in the base directory.
+The error format is:
+
+  C<"Archive file %s does not appear to be a valid Genesis kit (missing kit.yml in base directory %s)">
+
+The two C<%s> placeholders are the archive path and the base directory name.
+
+=back
+
+B<Parameters:>
+
+=over 4
+
+=item C<$opts>
+
+A hashref of options, the same set accepted by C<new()>. The C<archive> key
+is required. The C<name> and C<version> keys, if present, are used for
+cross-validation. C<name> and C<version> may be written back into C<$opts>
+when they are inferred from the archive contents.
+
+=back
+
+B<Returns:>
+
+An opened Archive::Tar object representing the validated archive. This
+object is stored on the kit instance and used by C<extract>.
+
+B<Examples:>
+
+  # Called internally by new(); not typically invoked directly.
+  # On success, returns an Archive::Tar object:
+  my %opts = (
+      name    => 'cf',
+      version => '2.8.0',
+      archive => '/var/cache/genesis/cf-2.8.0.tar.gz',
+  );
+  my $tar = Genesis::Kit::Compiled->_validate_tar_archive(\%opts);
+  # Returns: an Archive::Tar object ready for extraction
+
+  # On failure (e.g., missing archive), dies with:
+  #   Missing required option: archive
+
+=head1 KNOWN ISSUES
+
+None at this time.
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

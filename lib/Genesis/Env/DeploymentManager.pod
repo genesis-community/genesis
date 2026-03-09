@@ -1,0 +1,662 @@
+=head1 NAME
+
+Genesis::Env::DeploymentManager - Manager for deployment audits in Genesis environments
+
+=head1 SYNOPSIS
+
+  # Create a new deployment manager for an environment
+  my $mgr = Genesis::Env::DeploymentManager->new($env);
+
+  # Get all deployment audits
+  my @all = $mgr->all();
+
+  # Find specific deployments with filters
+  my @deploys = $mgr->find(action => 'deploy');
+
+  # Get deployments within a date range
+  my @recent = $mgr->find(range => '>20240101', limit => 10);
+
+  # Get the latest deployment (including failed)
+  my $latest = $mgr->latest(include_failed => 1);
+
+  # Get the latest successful deployment
+  my $latest_ok = $mgr->latest_successful();
+
+  # Check current deployment state
+  my $state = $mgr->current_state(); # 'deployed', 'terminated', or 'undeployed'
+
+  # Build a new deployment audit object
+  my $deployment = $mgr->build('deploy', 'success');
+
+  # Reset the internal cache
+  $mgr->reset();
+
+=head1 DESCRIPTION
+
+C<Genesis::Env::DeploymentManager> provides management of deployment audits for
+Genesis environments. It handles retrieval, filtering, and creation of
+C<Genesis::Env::Deployment> records, which are stored in Vault.
+
+This class maintains a cache of deployment audits retrieved from Vault and
+provides various methods to query and filter these deployments based on action
+type, result status, timestamps, and more.
+
+Deployment audits are sorted latest-first throughout. The cache is cleared by
+calling C<reset()>.
+
+=head1 METHODS
+
+=head2 new
+
+  my $mgr = Genesis::Env::DeploymentManager->new($env);
+
+Creates a new deployment manager for the given Genesis environment.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$env>
+
+A C<Genesis::Env> object representing the environment whose deployments this
+manager will track.
+
+=back
+
+B<Returns:> A new C<Genesis::Env::DeploymentManager> instance.
+
+  # Example
+  my $mgr = Genesis::Env::DeploymentManager->new($env);
+  print ref($mgr); # prints 'Genesis::Env::DeploymentManager'
+
+=head2 all
+
+  my @deployments = $mgr->all();
+
+Returns all deployment audits for the environment, sorted by timestamp
+(newest first). Results are cached for performance; call C<reset()> to
+invalidate the cache.
+
+B<Returns:> A list of C<Genesis::Env::Deployment> objects. Always returns a
+list (never a reference), to protect against accidental modification of the
+internal cache.
+
+  # Example
+  my @all = $mgr->all();
+  print scalar(@all); # prints the count of deployments
+
+=head2 reset
+
+  $mgr->reset();
+
+Clears the internal cache of deployment audits. The next call to any method
+that reads deployments will fetch fresh data from Vault.
+
+B<Returns:> Nothing meaningful.
+
+  # Example
+  $mgr->reset();
+  my @fresh = $mgr->all(); # re-fetches from Vault
+
+=head2 find
+
+  my @deployments = $mgr->find(%options);
+  my @timestamps  = $mgr->find(timestamps_only => 1, %options);
+
+Finds deployment audits matching the specified criteria. By default, only
+successful deployments are returned.
+
+B<Parameters:>
+
+=over 4
+
+=item C<action>
+
+Filter by action type. Valid values are C<'deploy'> and C<'terminate'>.
+
+=item C<result>
+
+Filter by result status. When this option is given, all deployments (including
+failed and pending) are searched, overriding the default successful-only
+behaviour.
+
+=item C<all>
+
+If true, include failed and pending deployments. Default: only successful
+deployments are returned.
+
+=item C<timestamps_only>
+
+If true, return timestamp strings instead of C<Genesis::Env::Deployment>
+objects.
+
+=item C<limit>
+
+Return at most this many deployments (the most recent N, after all other
+filters are applied).
+
+=item C<range>
+
+Filter by position or timestamp range. Supported formats:
+
+=over 4
+
+=item Integer range: C<N> or C<N...M>
+
+Selects by position index in chronological (oldest-first) order after all
+other filters are applied. Index 0 refers to the oldest matching deployment.
+Negative values count from the newest end (C<-1> is newest, C<-2> is
+second-newest). A single C<N> selects exactly that position. C<N...M>
+selects positions N through M inclusive; returned deployments are reordered
+into latest-first order regardless of whether N < M or N > M.
+
+=item Comparison: C<< <TS >>, C<< <=TS >>, C<< >TS >>, C<< >=TS >>
+
+Selects deployments before or after a given timestamp C<TS>.
+
+=item Between: C<LOE<lt>xE<lt>HI> or C<LOE<lt>=xE<lt>=HI>
+
+Selects deployments between two timestamps.  C<LO> and C<HI> are timestamps,
+and C<x> is a placeholder representing each deployment under test.  Use
+C<E<lt>> for strict (exclusive) bounds or C<E<lt>=> for inclusive bounds.
+For example, C<2024-01E<lt>xE<lt>2024-06> selects deployments strictly after
+January 2024 and strictly before June 2024.
+
+=back
+
+Timestamp format: C<YYYY[-MM[-DD[T HH[:MM[:SS[Z [+-]HHMM]]]]]]> -- any
+trailing components may be omitted and are filled with boundary values based
+on the comparison direction.
+
+=back
+
+B<Errors:> Dies with C<"Invalid options: %s"> (where C<%s> is a
+comma-separated list of the unrecognised keys) when any key in C<%options> is
+not one of C<action>, C<result>, C<all>, C<timestamps_only>, C<limit>, or
+C<range>.
+
+B<Returns:> A list of C<Genesis::Env::Deployment> objects, or (when
+C<timestamps_only> is set) a list of timestamp strings. Returns an empty list
+when no deployments match.
+
+  # Example - all successful deploys
+  my @deploys = $mgr->find(action => 'deploy');
+  print scalar(@deploys); # prints the count of successful deploys
+
+  # Example - timestamps of the 5 most recent successful deployments
+  my @ts = $mgr->find(timestamps_only => 1, limit => 5);
+  print $ts[0]; # prints the most recent timestamp, e.g. '20240315120000'
+
+=head2 at
+
+  my $deployment = $mgr->at($timestamp);
+
+Retrieves the deployment audit whose timestamp exactly matches C<$timestamp>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$timestamp>
+
+The exact timestamp string of the deployment to retrieve.
+
+=back
+
+B<Returns:> A C<Genesis::Env::Deployment> object, or C<undef> if no
+deployment with that timestamp exists.
+
+  # Example
+  my $d = $mgr->at('20240315120000');
+  print defined($d) ? $d->action : 'not found'; # prints 'deploy' or 'not found'
+
+=head2 latest
+
+  my $deployment = $mgr->latest(%options);
+
+Returns the most recent deployment audit that matches the given criteria,
+scanning from newest to oldest. By default, failed deployments are skipped.
+
+B<Parameters:>
+
+=over 4
+
+=item C<action>
+
+Filter by action type (C<'deploy'> or C<'terminate'>).
+
+=item C<result>
+
+Filter by result status.
+
+=item C<include_failed>
+
+If true, failed deployments are included in the search. Default: false.
+
+=back
+
+B<Returns:> The most recent matching C<Genesis::Env::Deployment> object, or
+C<undef> if none is found.
+
+  # Example - most recent successful deployment of any action
+  my $d = $mgr->latest();
+  print $d->action if $d; # prints 'deploy' or 'terminate'
+
+  # Example - most recent attempt regardless of result
+  my $last = $mgr->latest(include_failed => 1);
+  print $last->lookup('result') if $last;
+
+=head2 latest_successful
+
+  my $deployment = $mgr->latest_successful(%options);
+  my $deployment = $mgr->latest_successful(action => 'deploy');
+
+Returns the most recent successful deployment. This is a convenience wrapper
+around C<find()> with C<limit =E<gt> 1>; since C<find()> returns only
+successful deployments by default, the first result is the latest success.
+
+Accepts the same options as C<find()>.
+
+B<Returns:> A C<Genesis::Env::Deployment> object, or C<undef> if no
+successful deployment exists.
+
+  # Example
+  my $last_ok = $mgr->latest_successful();
+  print $last_ok->lookup('result') if $last_ok; # prints 'success' or 'post-failed'
+
+=head2 current_state
+
+  my $state = $mgr->current_state();
+
+Determines the current deployment state of the environment by examining the
+most recent successful deployment.
+
+The method first calls C<find()> (which returns only successful deployments).
+If none are found, it checks for legacy exodus data: if any exodus keys exist
+the environment is considered C<'deployed'>. If there are no successful audit
+records and no exodus data the environment is C<'undeployed'>.
+
+When successful deployments do exist, the first (newest) deployment's action
+determines the result: C<'deployed'> for C<'deploy'>, or C<'terminated'> for
+C<'terminate'>.
+
+B<Returns:> One of the strings C<'deployed'>, C<'terminated'>, or
+C<'undeployed'>.
+
+  # Example
+  my $state = $mgr->current_state();
+  print $state; # prints 'deployed', 'terminated', or 'undeployed'
+
+=head2 build
+
+  my $deployment = $mgr->build($action, $result, %options);
+
+Constructs a new C<Genesis::Env::Deployment> object by merging caller-supplied
+C<%options> on top of the base deployment content generated by
+C<_base_deployment_content()>. The returned object is not committed; call
+C<< $deployment->commit() >> to persist it.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$action>
+
+The deployment action. Valid values are C<'deploy'> and C<'terminate'>.
+
+=item C<$result>
+
+The deployment result (e.g., C<'success'>, C<'failed'>, C<'assumed'>).
+
+=item C<%options>
+
+Additional key/value pairs to deep-merge on top of the base content. Caller-
+supplied values override the base content for any keys in common.
+
+=back
+
+B<Returns:> A new C<Genesis::Env::Deployment> object.
+
+  # Example
+  my $d = $mgr->build('deploy', 'success', reason => 'manual release');
+  print ref($d); # prints 'Genesis::Env::Deployment'
+  $d->commit();  # persist to Vault
+
+=head2 next_sequence_number
+
+  my $n = $mgr->next_sequence_number();
+
+Calculates the next sequence number for a new deployment audit record.
+
+If no deployments exist, returns C<1>. If the most recent deployment has no
+sequence field, falls back to C<scalar($self-E<gt>all) + 1> (total count plus
+one). Otherwise returns the most recent sequence number incremented by one.
+
+B<Returns:> The next sequence number as a positive integer.
+
+  # Example
+  my $n = $mgr->next_sequence_number();
+  print $n; # prints, e.g., '5'
+
+=head2 env
+
+  my $env = $mgr->env();
+
+Returns the C<Genesis::Env> object this deployment manager is associated with.
+
+B<Returns:> A C<Genesis::Env> object.
+
+  # Example
+  my $env = $mgr->env();
+  print $env->name; # prints the environment name
+
+=head2 synthesize_from_exodus
+
+  my $deployment = $mgr->synthesize_from_exodus($exodus_data);
+
+Constructs a synthetic C<Genesis::Env::Deployment> object from exodus data.
+This is intended for environments that were deployed before Genesis supported
+deployment audits.
+
+If C<$exodus_data> is not provided, it is fetched from the environment's
+exodus store via C<< $env->exodus_lookup('.', {}) >>.
+
+When the exodus data hash is empty (no data at all), C<undef> is returned
+since it cannot be determined whether the environment was ever deployed.
+
+The synthesized deployment always records C<action =E<gt> 'deploy'> and a
+result of C<'success'>. Several identity fields (C<vault>, C<git>, C<concourse>,
+C<bosh> users) are set to C<'unknown'> because the exodus store does not
+retain that information.
+
+The C<manifest.sha2> field is populated from C<$exodus_data-E<gt>{manifest_sha1}>
+for compatibility with C<Deployment-E<gt>new()> validation, and
+C<manifest.sha1> is set to the same value. The C<using_sha1 =E<gt> 1> flag
+indicates that both fields contain a SHA-1 digest rather than the SHA-256
+used by current deployments.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$exodus_data>
+
+Optional hashref of exodus data. When omitted, the current exodus store is
+queried. When provided, it is used as-is without querying Vault.
+
+=back
+
+B<Returns:> A C<Genesis::Env::Deployment> object synthesized from the exodus
+data, or C<undef> if the exodus data hash is empty.
+
+  # Example - synthesize from the current exodus store
+  my $d = $mgr->synthesize_from_exodus();
+  if ($d) {
+    print $d->action; # prints 'deploy'
+  }
+
+  # Example - synthesize from previously fetched exodus data
+  my $exodus = $env->exodus_lookup('.', {});
+  my $d = $mgr->synthesize_from_exodus($exodus);
+
+=head1 INTERNAL METHODS
+
+These methods are internal to the implementation. They may change without
+notice and should not be called directly.
+
+=head2 _all
+
+  my @deployments = $mgr->_all();
+  my $deployments = $mgr->_all();
+
+Fetches and caches all deployment audit records from Vault. Called internally
+by C<all()> and other methods.
+
+In list context returns a list of C<Genesis::Env::Deployment> objects sorted
+newest-first. In scalar context returns an arrayref to the cached list
+(suitable for efficient read-only access).
+
+If Vault returns no data for the deployments path, caches an empty list and
+returns an empty list or empty arrayref according to calling context.
+
+Modifies the object in-place by populating C<{__all_deployments}> on first
+call.
+
+  # Example
+  my $ref = $mgr->_all();          # scalar context - returns arrayref
+  print ref($ref);                  # prints 'ARRAY'
+  my @list = $mgr->_all();         # list context - returns list
+  print scalar(@list);              # prints the count of deployments
+
+=head2 _base_deployment_content
+
+  my $hashref = $mgr->_base_deployment_content($action, $result);
+
+Assembles the base data structure for a new deployment audit record. Called by
+C<build()>.
+
+The returned hashref always includes C<action>, C<result>,
+C<genesis_version>, and C<reason>. Unless C<$result> is C<'assumed'>, it also
+collects kit metadata, user identity (from C<who -mH> and environment
+variables), and artifact paths. For C<$action eq 'deploy'> it additionally
+includes C<parameters> and a C<manifest.sha2> computed with SHA-256.
+
+The C<bosh_target> key is placed at the top level of the base content
+(C<$base-E<gt>{bosh_target}>), consistent with how it is read from Vault and
+how C<synthesize_from_exodus()> constructs it. When C<who -mH> returns no
+current-user row (e.g., in non-interactive or containerised contexts), the
+user data defaults to an empty arrayref and C<$ENV{USER}> is used as the
+username.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$action>
+
+The deployment action. Valid values are C<'deploy'> and C<'terminate'>.
+
+=item C<$result>
+
+The deployment result string. When equal to C<'assumed'>, kit metadata, user
+data, artifact paths, and manifest information are omitted from the base
+content.
+
+=back
+
+B<Returns:> A hashref of base deployment audit fields suitable for passing to
+C<Genesis::Env::Deployment-E<gt>new()>.
+
+  # Example
+  my $base = $mgr->_base_deployment_content('deploy', 'success');
+  print ref($base); # prints 'HASH'
+
+=head2 _base_artifacts
+
+  my $hashref = $mgr->_base_artifacts($action);
+
+Returns a hashref of deployment artifact paths keyed by artifact type.
+
+For C<'deploy'> actions the hashref contains: C<log>, C<manifest>,
+C<unpruned>, C<vars>, C<state>, C<store>, and C<secrets> (an arrayref of Vault
+paths). For C<'terminate'> actions only C<log> and C<state> are included.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$action>
+
+The deployment action. Must be C<'deploy'> or C<'terminate'>.
+
+=back
+
+B<Errors:> Dies with C<"Invalid action: %s"> (where C<%s> is the value of
+C<$action>) when given an unrecognised action.
+
+B<Returns:> A hashref of artifact type names to file paths (or an arrayref for
+C<secrets>).
+
+  # Example
+  my $artifacts = $mgr->_base_artifacts('deploy');
+  print ref($artifacts); # prints 'HASH'
+
+=head2 _filter_by_range
+
+  my $deferred = $mgr->_filter_by_range(\@deployments, $range);
+
+Filters C<@deployments> (in-place) or returns a deferred index arrayref,
+depending on the C<$range> format. Always verifies sort order first via
+C<_confirm_deployments_sorted()>.
+
+For integer ranges (e.g., C<'0'>, C<'2...5'>), returns an arrayref of array
+indices. The caller (C<find()>) applies these indices after all other filters
+are complete.
+
+For timestamp ranges (comparisons and between expressions), modifies
+C<@deployments> in-place by shifting elements from the front that are newer
+than the C<before> bound, and splicing elements from the end that are older
+than the C<after> bound, then returns C<undef>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<\@deployments>
+
+Arrayref of C<Genesis::Env::Deployment> objects, sorted newest-first.
+Modified in-place for timestamp range formats.
+
+=item C<$range>
+
+Range expression string. See C<find()> for the full syntax.
+
+=back
+
+B<Errors:> Dies with C<"Invalid range format: %s"> (where C<%s> is the
+unrecognised range string) when the format is not recognised.
+
+B<Returns:> An arrayref of integer indices for integer ranges, or C<undef> for
+timestamp ranges (the array was modified in-place).
+
+  # Example - integer range returns deferred index list
+  my $idx = $mgr->_filter_by_range(\@deployments, '0...2');
+  print ref($idx); # prints 'ARRAY'
+
+=head2 _confirm_deployments_sorted
+
+  $mgr->_confirm_deployments_sorted(\@deployments);
+  $mgr->_confirm_deployments_sorted();
+
+Verifies that C<@deployments> is sorted newest-first by timestamp. If the
+optional arrayref is omitted, C<_all()> is called to obtain the full list.
+
+Arrays of zero or one element are considered sorted and return immediately.
+
+B<Parameters:>
+
+=over 4
+
+=item C<\@deployments>
+
+Optional arrayref of C<Genesis::Env::Deployment> objects to check. Defaults
+to the full cached list from C<_all()>.
+
+=back
+
+B<Errors:> Calls C<bug()> (which terminates with an internal error) if any
+element has a timestamp greater than the preceding element, meaning the list
+is not sorted newest-first. The internal message format is:
+C<"Deployments are not sorted by timestamp in latest-first order!\n\nDeployment %s at index %s is after Deployment %s at index %s">
+where the C<%s> placeholders are filled with the out-of-order timestamps and
+their array indices.
+
+B<Returns:> C<1> when the list is confirmed sorted.
+
+  # Example
+  $mgr->_confirm_deployments_sorted(\@deployments);
+  print 'sorted'; # prints 'sorted' when no bug is triggered
+
+=head2 _get_last_day_of_month
+
+  my $day = _get_last_day_of_month($year, $month);
+
+Package function (not an instance method) that returns the last calendar day
+of the given month, correctly accounting for leap years and varying month
+lengths.
+
+Computes the answer by constructing a C<strptime> object for the first day
+of the following month and subtracting one day.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$year>
+
+Four-digit year (e.g., C<2024>).
+
+=item C<$month>
+
+Month number, 1-12.
+
+=back
+
+B<Returns:> The integer day-of-month of the last day of the given month (e.g.,
+C<31> for January, C<28> or C<29> for February).
+
+  # Example
+  my $last = Genesis::Env::DeploymentManager::_get_last_day_of_month(2024, 2);
+  print $last; # prints '29' (2024 is a leap year)
+
+=head2 _parse_into_timestamp_gt_cmp
+
+  my $ts = _parse_into_timestamp_gt_cmp($ts_string, $cmp_op);
+
+Package function (not an instance method) that parses a partial or full
+timestamp string and a comparison operator into a normalised, fully-specified
+timestamp string suitable for lexicographic comparison against stored
+deployment timestamps.
+
+The effective boundary direction is determined by C<$gt ^ $eq>: when the
+effective direction is true (C<< > >> or C<< <= >>), missing fields are filled
+with their maximum values (month 12, last day of month, hour 23, minute 59,
+second 59); when false (C<< < >> or C<< >= >>), missing fields are filled with
+their minimum values (month 01, day 01, hour 00, minute 00, second 00).
+
+After filling in the boundary values, the code adjusts the timestamp by
+subtracting one second when the effective direction is false (start-of-period
+fills), and makes no adjustment when true (end-of-period fills).
+
+B<Parameters:>
+
+=over 4
+
+=item C<$ts_string>
+
+A partial or full timestamp string of the form
+C<YYYY[-MM[-DD[T HH[:MM[:SS[Z [+-]HHMM]]]]]]>.
+
+=item C<$cmp_op>
+
+Comparison operator string: C<< '>' >>, C<< '>=' >>, C<< '<' >>, or
+C<< '<=' >>.
+
+=back
+
+B<Returns:> A normalised timestamp string formatted according to
+C<EXODUS_TIME_FORMAT_SHORT>.
+
+  # Example - expand a partial year to an end-of-year boundary
+  my $ts = Genesis::Env::DeploymentManager::_parse_into_timestamp_gt_cmp('2024', '>');
+  print $ts; # prints a timestamp near '20241231235959'
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

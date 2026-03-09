@@ -1,0 +1,2970 @@
+=encoding UTF-8
+
+=head1 NAME
+
+Genesis - Core utility functions for the Genesis deployment toolkit
+
+=head1 SYNOPSIS
+
+    use Genesis;
+
+    # Initialise Genesis for the current run
+    Genesis::Init();
+
+    # Run an external command and capture output
+    my ($out, $rc, $err) = run({ stderr => 0 }, 'spruce json "$1"', $file);
+
+    # Parse and compare semantic versions
+    my @parts = semver('1.2.3-rc.1');
+    bail("Need genesis >= 2.0") unless new_enough($Genesis::VERSION, '2.0');
+
+    # Navigate directories with a stack
+    pushd('/some/path');
+    # ... do work ...
+    popd();
+
+=head1 DESCRIPTION
+
+C<Genesis> is the central utility library for the Genesis BOSH deployment
+toolkit. It exports a large set of general-purpose functions that are used
+throughout the codebase and in kit hooks. All functions are exported by
+default via C<Exporter>.
+
+Functions cover:
+
+=over 4
+
+=item * Initialisation and runtime environment setup (C<Init>)
+
+=item * Logging and error reporting (C<bail>, C<bug>, C<logger>, and friends)
+
+=item * External command execution (C<run>, C<curl>, C<lines>)
+
+=item * Filesystem helpers (C<slurp>, C<mkfile_or_fail>, C<pushd>, etc.)
+
+=item * Data manipulation (C<flatten>, C<unflatten>, C<deep_merge>, C<struct_lookup>, etc.)
+
+=item * Semantic version handling (C<semver>, C<by_semver>, C<new_enough>)
+
+=item * Time and duration formatting (C<strfuzzytime>, C<pretty_duration>)
+
+=item * Array and string utilities (C<uniq>, C<in_array>, C<sentence_join>, etc.)
+
+=item * Global configuration validation (C<validate_global_config>, C<global_config_schema>)
+
+=back
+
+The package also exports the constants C<EXODUS_TIME_FORMAT> and
+C<EXODUS_TIME_FORMAT_SHORT> used when reading or writing Exodus deployment
+metadata timestamps.
+
+=head1 METHODS
+
+=head2 Init
+
+    Genesis::Init();
+    Genesis::Init($version);
+
+Initialises the Genesis runtime. Loads and validates the global configuration
+file at C<~/.genesis/config>, configures logging, and populates a set of
+C<GENESIS_*> environment variables that child processes and kit hooks depend on.
+
+Must be called exactly once at process startup before any other Genesis
+operations.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$version> (optional)
+
+The version string to advertise as C<GENESIS_VERSION>. Defaults to
+C<$Genesis::VERSION>.
+
+=back
+
+B<Returns:> nothing.
+
+B<Examples:>
+
+    Genesis::Init();        # Returns: nothing
+    Genesis::Init('2.8.0'); # Returns: nothing
+
+=head2 deployment_roots_map
+
+    my ($labels_ref, $roots_ref) = Genesis::deployment_roots_map(@extras);
+    my $map = Genesis::deployment_roots_map(@extras);
+
+Reads the C<deployment_roots> list from the global Genesis configuration,
+expands each path (tilde and environment-variable expansion, then
+C<abs_path> resolution), and assigns human-readable labels. Optional
+C<@extras> entries (array-references of C<[$label, $path]>) are merged in.
+
+In list context returns a two-element list: an array reference of label
+strings in order, and a hash reference mapping label to absolute path. In
+scalar context returns a hash reference with keys C<labels> (array ref) and
+C<roots> (hash ref).
+
+B<Parameters:>
+
+=over 4
+
+=item C<@extras> (optional)
+
+Zero or more C<[$label, $path]> array references representing additional
+deployment roots to include. Paths are expanded before comparison.
+
+=back
+
+B<Returns:>
+
+In list context: C<(\@labels, \%roots)>.
+
+In scalar context: C<{ labels => \@labels, roots => \%roots }>.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Deployment root labels cannot start with a '\@' character.  This is reserved for Genesis internal use.  Please check your configuration file or GENSIS_DEPLOYMENT_ROOTS environment variable.">
+
+Raised when a labelled root uses a label starting with C<@>.
+
+=item C<"Duplicate deployment root label '%s' found">
+
+Raised when two roots resolve to the same label. C<%s> is the duplicate label.
+
+=back
+
+B<Examples:>
+
+    # list context
+    my ($labels, $roots) = Genesis::deployment_roots_map();
+    for my $label (@$labels) {
+        printf "%s => %s\n", $label, $roots->{$label};
+        # prints: staging => /home/user/deployments/staging
+    }
+
+    # scalar context
+    my $map = Genesis::deployment_roots_map([staging => '~/deployments/staging']);
+    # Returns: { labels => ['staging'], roots => { staging => '/home/user/deployments/staging' } }
+
+=head2 expand_path
+
+    my $abs = expand_path($path);
+    my $abs = expand_path($path, $base_path);
+
+Expands C<$path> into an absolute path by:
+
+=over 4
+
+=item 1. Substituting leading C<~> or C<~username> with the home directory.
+
+=item 2. Expanding C<$VAR> and C<${VAR}> environment-variable references.
+
+=item 3. Resolving the result to an absolute, symlink-free path, optionally
+relative to C<$base_path>.
+
+=back
+
+Returns C<undef> if C<$path> is undefined.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$path>
+
+The path to expand. May contain C<~>, C<~user>, or C<$VAR>/C<${VAR}>
+sequences.
+
+=item C<$base_path> (optional)
+
+If supplied, the working directory is temporarily changed to C<$base_path>
+before resolving the path, so relative paths are interpreted from there.
+
+=back
+
+B<Returns:> The expanded absolute path string, or C<undef> if C<$path> is
+undefined.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Unknown user '$1' in path expansion">
+
+Raised when a C<~username> expansion cannot find the named user. C<$1> is
+the username.
+
+=item C<"Environment variable '%s' is not set in path %s">
+
+Raised when a C<$VAR> reference in the path refers to an unset variable.
+C<%s> (first) is the variable name; C<%s> (second) is the partially expanded
+path.
+
+=back
+
+B<Examples:>
+
+    my $path = expand_path('~/deployments');
+    # Returns: '/home/user/deployments'
+
+    my $path = expand_path('$GENESIS_LIB/kits', '/tmp');
+    # Returns: absolute path to kits under $GENESIS_LIB, resolved from /tmp
+
+=head2 absolute_path
+
+    my $abs = absolute_path($path);
+    my $abs = absolute_path($path, $base_path);
+
+Legacy alias for C<expand_path>. Accepts and returns the same arguments.
+
+B<Returns:> The result of C<expand_path(@_)>.
+
+B<Examples:>
+
+    my $abs = absolute_path('~/foo');
+    # Returns: '/home/user/foo'
+
+=head2 in_repo_dir
+
+    my $bool = in_repo_dir();
+
+Returns true if the current working directory appears to be a Genesis
+deployment repository -- specifically if C<.genesis/> and
+C<.genesis/config> exist, and the config file contains a C<deployment_type:>
+line.
+
+B<Returns:> A boolean-ish value.
+
+B<Examples:>
+
+    bail("Not in a Genesis repo") unless in_repo_dir();
+    # bails if not in a deployment repository
+
+=head2 in_kit_dir
+
+    my $bool = in_kit_dir();
+
+Returns true if the current working directory appears to be a Genesis kit
+directory (i.e., C<kit.yml> exists).
+
+B<Returns:> A boolean-ish value.
+
+B<Examples:>
+
+    bail("Not in a kit directory") unless in_kit_dir();
+    # bails if kit.yml is not present
+
+=head2 vaulted
+
+    my $bool = vaulted();
+
+Returns true if a Vault service has been selected and is available via
+the current Vault instance.
+
+B<Returns:> A boolean-ish value (double-negated truthy/falsy).
+
+B<Examples:>
+
+    if (vaulted()) {
+        # a vault is available
+    }
+    # Returns: 1 when vault is selected, '' otherwise
+
+=head2 safe_path_exists
+
+    my $bool = safe_path_exists($vault_path);
+
+Returns true if C<$vault_path> exists in the currently selected Vault.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$vault_path>
+
+The Vault path to test, e.g. C<"secret/my-env/deployment/credentials">.
+
+=back
+
+B<Returns:> True if the path exists, false otherwise.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Cannot verify path exists in safe without a vault being selected first">
+
+Raised (via C<bug>) if no Vault is currently selected.
+
+=back
+
+B<Examples:>
+
+    if (safe_path_exists('secret/myenv/bosh/admin')) {
+        # path exists in vault
+    }
+    # Returns: 1 if path exists, '' otherwise
+
+=head2 logger
+
+    my $log = logger();
+
+Returns the active C<Genesis::Log> logger instance, creating and configuring
+a new one with default settings if none exists yet.
+
+The following logging dispatch functions are exported alongside C<logger> and
+delegate to it at the appropriate log level. All accept a C<sprintf>-style
+format string and optional arguments, and support C<csprintf>-style color
+codes. When called inside an active C<eval> block, any fatal dispatcher
+(C<bail>) will C<die> rather than exit; the die string begins with C<"\n">
+followed by the formatted message. The C<$more_options> hash reference, when
+supplied as a leading argument, may include C<exitcode> and C<offset> keys.
+
+=over 4
+
+=item C<output($fmt, @args)> -- OUTPUT level
+
+=item C<fatal($fmt, @args)> -- FATAL level (does not exit)
+
+=item C<error($fmt, @args)> -- ERROR level
+
+=item C<warning($fmt, @args)> -- WARNING level
+
+=item C<success($fmt, @args)> -- WARNING level, styled as success (DONE label)
+
+=item C<dryrun($fmt, @args)> -- WARNING level, styled as dry-run (DRYRUN label)
+
+=item C<notice($fmt, @args)> -- NOTICE level
+
+=item C<info($fmt, @args)> -- INFO level
+
+=item C<debug($fmt, @args)> -- DEBUG level
+
+=item C<trace($fmt, @args)> -- TRACE level (includes stack info)
+
+=item C<qtrace($fmt, @args)> -- TRACE level (no stack info)
+
+=item C<dump_var([$scope,] $name, $value)> -- dumps named value at TRACE level
+
+=item C<dump_stack([$scope])> -- dumps call stack at TRACE level
+
+=item C<bail([\%opts,] $fmt, @args)> -- exits the process (or C<die>s inside an active C<eval> block) with a FATAL-level error message
+
+=back
+
+B<Returns:> A C<Genesis::Log> object.
+
+B<Errors:>
+
+The internal C<bail> dispatcher used by logging helpers may C<die> with a
+message beginning with C<"\n"> when called inside an active C<eval> block
+(and when C<GENESIS_IGNORE_EVAL> is not set). The full message follows.
+
+B<Examples:>
+
+    logger()->info("Hello from Genesis");
+    # Returns: Genesis::Log object
+
+    info("Processing %s", $env_name);
+    # prints: INFO message to logger
+
+    trace("value is %s", $val);
+    # prints: TRACE message with stack info
+
+=head2 bug
+
+    bug($fmt, @args);
+    bug(\%opts, $fmt, @args);
+
+Prints a fatal error message that identifies the problem as a Genesis
+internal bug, appends a stack trace, and requests the operator file a GitHub
+issue. In an active C<eval> block it C<die>s rather than exiting.
+
+In development builds (when C<$Genesis::VERSION> contains C<"dev">) an
+additional note is printed asking the user to reproduce with an official
+release before filing.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$more_options> (optional)
+
+A hash reference (or multiple hash references, consumed with C<shift>) with
+optional keys C<exitcode> (integer exit code, defaults to C<1>) and C<offset>
+(stack offset for log attribution).
+
+=item C<$fmt, @args>
+
+A C<sprintf>-style format string and arguments.
+
+=back
+
+B<Returns:> Does not return (exits or dies).
+
+B<Errors:>
+
+When called inside an active C<eval> block (and C<GENESIS_IGNORE_EVAL> is not
+set), C<bug> calls C<die> with a message starting with C<"\n"> followed by the
+formatted bug report. This allows callers to catch it for cleanup. The die
+message format is C<"\n"> followed by the formatted report.
+
+B<Examples:>
+
+    bug("Unexpected ref type '%s' in pipeline", ref($obj));
+    # Returns: does not return -- exits process or dies in eval
+
+=head2 workdir
+
+    my $dir = workdir();
+    my $dir = workdir($suffix);
+
+Returns a temporary scratch directory that is automatically cleaned up when
+the process exits.
+
+When called without arguments (or with an empty C<$suffix>), returns a
+freshly created temporary directory every call.
+
+When called with a C<$suffix>, returns a stable directory for that suffix:
+if one was already created (or is specified by the C<GENESIS_WORKDIR$SUFFIX>
+environment variable), the same path is returned on subsequent calls.
+The chosen path is also exported as C<GENESIS_WORKDIR$SUFFIX> so that child
+processes inherit it.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$suffix> (optional)
+
+A short name (upcased and prefixed with C<_>) that identifies a named work
+directory. For example, C<workdir('spruce-diff')> uses the key
+C<_SPRUCE-DIFF>.
+
+=back
+
+B<Returns:> An absolute path to the temporary directory.
+
+B<Examples:>
+
+    my $tmp = workdir();
+    # Returns: '/tmp/.../tmp_XXXXXXXXXX'
+
+    my $scratch = workdir('my-plugin');
+    # Returns: '/tmp/.../tmp_XXXXXXXXXX' (same path on second call)
+
+=head2 tmpfile
+
+    my $path = tmpfile(%opts);
+
+Creates and returns the path to a new, empty temporary file inside the
+Genesis work directory. The file is not opened.
+
+B<Parameters:>
+
+=over 4
+
+=item C<dir> (optional)
+
+Directory in which to create the file. Defaults to C<workdir()>.
+
+=item C<ext> (optional)
+
+Filename suffix (e.g., C<'.yml'>). Defaults to the empty string.
+
+=item C<template> (optional)
+
+Filename template (C<X>-based template as used by tempfile). Defaults to
+C<'tmp_XXXXXXXXXX'>.
+
+=back
+
+B<Returns:> The absolute path to the new temporary file as a string.
+
+B<Examples:>
+
+    my $file = tmpfile(ext => '.json');
+    # Returns: '/tmp/.../tmp_aBcDeFgHiJ.json'
+
+=head2 semver
+
+    my $parts_ref = semver($v);
+    my ($major, $minor, $patch, $rc) = semver($v);
+
+Parses a semantic version string. Recognises formats such as C<1>,
+C<1.2>, C<1.2.3>, and C<1.2.3-rc2> / C<1.2.3-rc.2> / C<1.2.3-rc-2>.
+
+In scalar context returns an array reference C<[$major, $minor, $patch, $rc]>.
+In list context returns the four components directly.
+
+Missing components default to C<0>. Release-candidate numbers are stored as
+C<$rc_number - 100000>, making them sort below their corresponding release.
+
+Returns nothing (empty list or undef) if C<$v> does not match the expected
+format.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$v>
+
+The version string to parse. A leading C<v> is accepted (e.g., C<v1.2.3>).
+
+=back
+
+B<Returns:>
+
+In list context: C<($major, $minor, $patch, $rc_offset)>.
+
+In scalar context: C<[$major, $minor, $patch, $rc_offset]>, or C<undef> on
+parse failure.
+
+B<Examples:>
+
+    my ($maj, $min, $pat, $rc) = semver('1.2.3-rc.2');
+    # Returns: (1, 2, 3, -99998)
+
+    my $parts = semver('2.0');
+    # Returns: [2, 0, 0, 0]
+
+    semver('not-a-version');
+    # Returns: undef (scalar), () (list)
+
+=head2 by_semver
+
+    my @sorted = sort { by_semver($a, $b) } @versions;
+
+Comparison function for sorting semantic version strings. Returns C<-1>,
+C<0>, or C<1> following the convention of C<< <=> >> and C<cmp>. Release
+candidates sort below their corresponding release (e.g., C<1.0.0-rc5> is
+less than C<1.0.0>).
+
+If either argument cannot be parsed as a semver, returns C<0>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$a>
+
+First version string.
+
+=item C<$b>
+
+Second version string.
+
+=back
+
+B<Returns:> C<-1>, C<0>, or C<1>.
+
+B<Examples:>
+
+    my @sorted = sort { by_semver($a, $b) } qw/2.0.0 1.9.0 2.0.0-rc1/;
+    # Returns: ('1.9.0', '2.0.0-rc1', '2.0.0')
+
+=head2 new_enough
+
+    my $ok = new_enough($version, $minimum);
+
+Returns true if C<$version> is semantically greater than or equal to
+C<$minimum>. Returns false (C<0>) if either string fails to parse as a semver.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$version>
+
+The version to test.
+
+=item C<$minimum>
+
+The required minimum version.
+
+=back
+
+B<Returns:> Boolean (true/false).
+
+B<Examples:>
+
+    new_enough('2.8.1', '2.0.0');  # Returns: 1
+    new_enough('1.9.0', '2.0.0');  # Returns: ''
+    new_enough('bad',   '2.0.0');  # Returns: 0
+
+=head2 strfuzzytime
+
+    my $fuzzy = strfuzzytime($datestring);
+    my $fuzzy = strfuzzytime($datestring, $output_format);
+    my $fuzzy = strfuzzytime($datestring, $output_format, $input_format);
+
+Converts a date or duration into a human-readable natural-language
+approximation such as C<"about 3 hours ago"> or C<"in about a week">.
+
+The function supports two operating modes determined by C<$input_format>:
+
+=over 4
+
+=item * B<Time-point mode> (default): C<$datestring> is parsed as a timestamp
+using C<$input_format> (default C<"%Y-%m-%d %H:%M:%S %z">). The returned
+string is relative to the current time, e.g. C<"about 2 days ago">.
+
+=item * B<Duration mode>: When C<$input_format> is C<'seconds'>, or when
+C<$datestring> is a Time::Seconds object, the value is treated as an
+elapsed duration rather than a point in time. The returned string describes
+the duration itself, e.g. C<"about 5 minutes">.
+
+=back
+
+When C<$output_format> is provided it is used as a C<strftime>-style template
+with the additional C<%~> atom that is replaced by the fuzzy string. Example:
+C<"%Y-%m-%d (%~)"> might produce C<"2024-01-15 (about 2 months ago)">.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$datestring>
+
+A timestamp string, a Time::Piece object, a Time::Seconds object, or
+a plain integer number of seconds.
+
+=item C<$output_format> (optional)
+
+A C<strftime>-style format string. If it contains C<%~>, that placeholder is
+replaced by the fuzzy description. Without C<$output_format>, only the fuzzy
+string is returned.
+
+=item C<$input_format> (optional)
+
+The C<strptime> format for parsing C<$datestring>. Defaults to
+C<"%Y-%m-%d %H:%M:%S %z">. Pass C<'seconds'> to treat the input as an elapsed
+duration.
+
+=back
+
+B<Returns:> A human-readable string describing the time or duration.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Invalid input for 'seconds' format: %s">
+
+Raised (via C<bug>) when C<$input_format> is C<'seconds'> but C<$datestring>
+is not a Time::Seconds object, does not have a C<seconds> method, and is
+not a plain integer. C<%s> is the ref type or the raw value.
+
+=back
+
+B<Examples:>
+
+    my $fuzzy = strfuzzytime('2024-01-01 00:00:00 +0000');
+    # Returns: 'about 1 year ago' (depending on current time)
+
+    my $str = strfuzzytime('2024-01-01 00:00:00 +0000', 'Updated: %~');
+    # Returns: 'Updated: about 1 year ago'
+
+    my $dur = strfuzzytime(300, undef, 'seconds');
+    # Returns: 'about 5 minutes'
+
+=head2 get_real_local_timezone
+
+    my $tz = get_real_local_timezone();
+
+Returns the system's local timezone name by inspecting C</etc/localtime>
+(symlink target on most Linux/macOS systems) or C</etc/timezone>. Falls back
+to the value of C<$ENV{ORIG_TZ}> if neither file provides a result.
+
+B<Returns:> A timezone name string such as C<"America/New_York">, or whatever
+C<$ENV{ORIG_TZ}> contains.
+
+B<Examples:>
+
+    my $tz = get_real_local_timezone();
+    # Returns: 'America/Chicago'
+
+=head2 local_strftime
+
+    my $str = local_strftime($time, $format);
+
+Formats a time value using C<strftime> in the system's real local timezone,
+even though Genesis internally pins C<$ENV{TZ}> to UTC. Temporarily switches
+the timezone, formats, then restores UTC.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$time>
+
+A Unix epoch integer or an object with a C<strftime> method.
+
+=item C<$format>
+
+A C<strftime>-compatible format string, e.g. C<"%Y-%m-%d %H:%M:%S">.
+
+=back
+
+B<Returns:> The formatted time string.
+
+B<Examples:>
+
+    my $str = local_strftime(time(), '%Y-%m-%d %H:%M:%S %Z');
+    # Returns: '2024-06-01 10:30:00 CDT' (in America/Chicago)
+
+=head2 ordify
+
+    my $str = ordify($n);
+
+Returns the English ordinal representation of the integer C<$n> with a
+trailing space, e.g. C<"1st ">, C<"2nd ">, C<"3rd ">, C<"4th ">, C<"13th ">.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$n>
+
+A positive integer.
+
+=back
+
+B<Returns:> A string such as C<"1st ">, C<"22nd ">, C<"103rd ">.
+
+B<Examples:>
+
+    ordify(1);   # Returns: '1st '
+    ordify(13);  # Returns: '13th '
+    ordify(21);  # Returns: '21st '
+
+=head2 parse_uri
+
+    my %parts = parse_uri($uri);
+
+Parses C<$uri> as an RFC-3986 URI and returns a hash with the following
+keys (any absent component has an undefined value):
+
+    uri         The full original URI string
+    scheme      The URI scheme (e.g., 'https', 'file')
+    authority   The authority component (host + optional port)
+    host        Hostname or IP address
+    port        TCP port number (optional)
+    path        The path component
+    query       Query string (everything after '?')
+    fragment    Fragment (everything after '#')
+
+B<Parameters:>
+
+=over 4
+
+=item C<$uri>
+
+The URI string to parse.
+
+=back
+
+B<Returns:> A hash (not a hash reference) of parsed components.
+
+B<Examples:>
+
+    my %p = parse_uri('https://example.com:8443/path?q=1#frag');
+    # Returns: hash with scheme=>'https', host=>'example.com', port=>'8443',
+    #          path=>'/path', query=>'q=1', fragment=>'frag'
+
+=head2 is_valid_uri
+
+    my $bool = is_valid_uri($uri);
+
+Returns the C<uri> component from C<parse_uri> if C<$uri> is a valid C<http>,
+C<https>, or C<file> URI with a non-empty authority (or a C<file> URI with a
+path), and C<undef> otherwise.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$uri>
+
+The string to validate.
+
+=back
+
+B<Returns:> The canonical URI string on success, or C<undef>.
+
+B<Examples:>
+
+    is_valid_uri('https://example.com/path');  # Returns: 'https://example.com/path'
+    is_valid_uri('ftp://example.com');          # Returns: undef
+    is_valid_uri('not a uri');                  # Returns: undef
+
+=head2 run
+
+    my ($out, $rc, $err) = run(\%opts, $command, @args);
+    my $out               = run($command);
+
+Executes a shell command and returns its output and exit code.
+
+Three calling styles are supported:
+
+    # 1. Single string with embedded arguments
+    my ($out, $rc) = run("safe read a/b/c | spruce json");
+
+    # 2. Pre-tokenized command and arguments
+    my ($out, $rc) = run('spruce', 'merge', '--skip-eval', @files);
+
+    # 3. Template string with positional arguments (recommended)
+    my ($out, $rc, $err) = run('spruce merge "$1" - "$2" < "$3.yml"',
+                                $file1, $file2, $file3);
+
+Style 3 is recommended because it safely encapsulates arguments. References
+to C<$1>, C<$2>, etc. in the command string are replaced with the
+corresponding arguments before the shell sees them.
+
+B<Parameters:>
+
+=over 4
+
+=item C<\%opts> (optional)
+
+A hash reference controlling execution behaviour:
+
+=over 4
+
+=item C<interactive>
+
+If true, runs the command with the C<system> call so that it shares the
+terminal. Captured output is undefined.
+
+=item C<passfail>
+
+If true, returns C<1> (success) or C<0> (failure) rather than output.
+
+=item C<onfailure>
+
+A message string to C<bail> with if the command exits non-zero. The command's
+stderr and stdout are appended to the message.
+
+=item C<env>
+
+A hash of environment variable names to values (or C<undef> to unset) that
+are applied only for the duration of the command.
+
+=item C<shell>
+
+The shell to use. Defaults to C</bin/bash>.
+
+=item C<stderr>
+
+Controls stderr disposition. The default (C<'&1'>) merges stderr into stdout.
+Pass C<undef> to let stderr reach the terminal unredirected. Pass C<0> to
+capture stderr separately (returned as the third list element, or as the
+scalar return value on non-zero exit).
+
+=item C<dir>
+
+Change to this directory before executing the command.
+
+=item C<stdin>
+
+Redirect stdin for the command.
+
+=item C<redact_output>
+
+If true, suppresses output from trace/debug logs.
+
+=item C<redact_env>
+
+If true, redacts environment variable values in trace/debug logs.
+
+=back
+
+=item C<$command>
+
+The command string, with optional C<$1>-style argument placeholders.
+
+=item C<@args>
+
+Positional arguments substituted into C<$command>'s C<$1>, C<$2>, ...
+placeholders.
+
+=back
+
+B<Returns:>
+
+In list context (default): C<($out, $rc, $err)>. C<$err> is defined only when
+C<stderr => 0> was passed.
+
+In scalar context: C<$out>, or C<$err> if the exit code is non-zero and stderr
+was captured.
+
+When C<passfail> is set: C<1> or C<0>.
+
+When C<interactive> is set: C<(undef, $rc)> in list context, C<$rc> in scalar.
+
+Returns C<undef> in void context.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Could not open pipe to run #C{%s}">
+
+Raised via C<bail> if the pipe to the child process cannot be opened. C<%s>
+is the full command string.
+
+=back
+
+B<Examples:>
+
+    # Capture stdout and exit code
+    my ($out, $rc) = run('git log --oneline -5');
+    # Returns: (git log output string, 0)
+
+    # Separate stderr
+    my ($out, $rc, $err) = run({ stderr => 0 }, 'spruce json "$1"', $file);
+    # Returns: (json string, 0, '')
+
+    # Bail on failure
+    run({ onfailure => "git fetch failed" }, 'git fetch origin');
+    # Returns: nothing (exits on failure)
+
+=head2 fake_tty
+
+    my @cmd = fake_tty($output_file, @cmd);
+
+Wraps C<@cmd> in an OS-specific C<script> invocation so that the child
+process believes it is running in a TTY. The output is also written to
+C<$output_file>. Supports macOS (C<darwin>) and Linux.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$output_file>
+
+The file path where C<script> will record the session output.
+
+=item C<@cmd>
+
+The command and arguments to run inside the fake TTY.
+
+=back
+
+B<Returns:> The modified command array ready to pass to C<run()>.
+
+B<Examples:>
+
+    my @cmd = fake_tty('/tmp/out.log', 'spruce', 'diff', $a, $b);
+    # Returns: ('script', '-qeF', '/tmp/out.log', 'spruce', 'diff', $a, $b)
+    run(@cmd);
+
+=head2 lines
+
+    my @lines = lines($out, $rc, $err);
+
+Splits C<$out> on the input record separator and returns the resulting list,
+or an empty list if C<$rc> is non-zero. Designed to wrap the return value of
+C<run()>:
+
+    my @lines = lines(run('git branch'));
+
+B<Parameters:>
+
+=over 4
+
+=item C<$out>
+
+The captured stdout string.
+
+=item C<$rc>
+
+The exit code. If non-zero, an empty list is returned.
+
+=item C<$err>
+
+Not used; present only to allow splatting the three-element C<run()> return.
+
+=back
+
+B<Returns:> A list of lines, or the empty list on non-zero C<$rc>.
+
+B<Examples:>
+
+    my @branches = lines(run('git branch --list'));
+    # Returns: ('  main', '* feature-x', ...)
+
+=head2 read_json_from
+
+    my $data = read_json_from($out, $rc, $err);
+    my ($data, $rc, $err) = read_json_from($out, $rc, $err);
+
+Parses C<$out> as JSON and returns the decoded structure. Designed to wrap
+C<run()>:
+
+    my $data = read_json_from(run('kubectl get pods -o json'));
+
+In scalar context, calls C<bail> with the JSON parse error if C<$out> is not valid JSON
+(and C<$rc> is zero). In list context, returns the data (possibly C<undef>),
+the original C<$rc>, and any error message encountered during parsing.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$out>
+
+The command output string to parse as JSON.
+
+=item C<$rc>
+
+The exit code. If non-zero, C<$out> is not parsed.
+
+=item C<$err>
+
+An existing error string. In list context this may be overridden with a JSON
+parse error.
+
+=back
+
+B<Returns:>
+
+In list context: C<($data, $rc, $err)>.
+
+In scalar context: the decoded JSON data structure, or dies on parse failure.
+
+B<Examples:>
+
+    # Scalar context -- dies on bad JSON
+    my $pods = read_json_from(run({ stderr => 0 }, 'kubectl get pods -o json'));
+    # Returns: hashref of parsed pod list
+
+    # List context -- caller handles errors
+    my ($data, $rc, $err) = read_json_from(run({ stderr => 0 }, 'safe get secret/foo'));
+    # Returns: (hashref, 0, '') on success; (undef, $rc, $err) on failure
+
+=head2 curl
+
+    my ($status, $status_line, $body) = curl($method, $url);
+    my ($status, $status_line, $body, $headers, $stderr) = curl($method, $url, \%headers, $data, $skip_verify, $creds);
+    my ($status, $status_line, $body, $headers, $stderr) = curl(\%args, $url);
+
+Executes a C<curl> HTTP request and returns the response.
+
+Two calling styles:
+
+=over 4
+
+=item B<Positional>:
+
+    curl($method, $url, $headers, $data, $skip_verify, $creds)
+
+=item B<Hash reference>:
+
+    curl({method => 'POST', headers => {...}, data => '...', skip_verify => 1, creds => '...', file => $path}, $url)
+
+=back
+
+B<Parameters:>
+
+=over 4
+
+=item C<$method>
+
+HTTP method: one of C<GET>, C<POST>, C<PUT>, C<DELETE>, C<HEAD>
+(case-insensitive).
+
+=item C<$url>
+
+The URL to request.
+
+=item C<$headers> (optional)
+
+A hash reference of extra HTTP headers to include.
+
+=item C<$data> (optional)
+
+A request body string (passed as C<-d> to curl).
+
+=item C<$skip_verify> (optional)
+
+If true, TLS certificate verification is disabled (C<-k>).
+
+=item C<$creds> (optional)
+
+Credentials string. If it starts with C<"Bearer ">, it is sent as an
+C<Authorization> header; otherwise it is passed as C<user:password> via C<-u>.
+
+=item C<file> (optional, hash-ref style only)
+
+A file path. When provided, the response body is written to this file and the
+path is returned in place of the body string.
+
+=back
+
+B<Returns:>
+
+For C<HEAD> requests: C<($status, $status_line, $combined_output)>.
+
+For all other requests: C<($status, $status_line, $body_or_file, $headers, $stderr)>.
+
+On curl execution failure: C<(599, "Error executing curl command", $stderr)>.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Internal error: \$args is not a hash reference, got %s">
+
+Raised via C<bug> if the internal args structure is not a hash reference. C<%s>
+is the ref type or C<'scalar'>.
+
+=item C<"No url provided to Genesis::curl">
+
+Raised via C<bug> if C<$url> is undefined or empty.
+
+=item C<"No method provided to Genesis::curl">
+
+Raised via C<bug> if no HTTP method was supplied.
+
+=item C<"Invalid method '%s' provided to Genesis::curl.  Must be one of GET, POST, PUT, DELETE, HEAD">
+
+Raised via C<bail> for an unrecognised HTTP method. C<%s> is the supplied value.
+
+=back
+
+B<Examples:>
+
+    my ($st, $line, $body) = curl('GET', 'https://api.example.com/v1/info');
+    # Returns: (200, '200 OK', '{"status":"ok"}', ...)
+    bail("API error: $line") unless $st == 200;
+
+=head2 spruce_diff
+
+    my ($diff, $rc, $err) = spruce_diff($first, $second);
+
+Runs C<spruce diff> against two YAML sources and returns the coloured diff
+output, exit code, and any stderr.
+
+Each argument can be:
+
+=over 4
+
+=item * A file path string (must exist on disk).
+
+=item * A hash reference with exactly one of:
+
+=over 4
+
+=item C<file> -- path to an existing file (plus an optional C<label> key).
+
+=item C<object> -- a Perl data structure serialised to a temporary YAML file.
+
+=item C<content> -- a YAML string written to a temporary file.
+
+=back
+
+=back
+
+B<Parameters:>
+
+=over 4
+
+=item C<$first>
+
+The first YAML source (file path or hash reference).
+
+=item C<$second>
+
+The second YAML source (file path or hash reference).
+
+=back
+
+B<Returns:> C<($diff_output, $rc, $err)>.
+
+B<Errors:>
+
+=over 4
+
+=item C<"spruce diff requires two files">
+
+Raised via C<bug> if called with other than exactly two arguments.
+
+=item C<"Can only specify one of 'file', 'object', or 'content' in the %s argument hashref">
+
+Raised via C<bug> when a hash-ref argument specifies more than one source key.
+C<%s> is C<"first"> or C<"second">.
+
+=item C<"%s argument hashref must contain a 'file', 'object', or 'content' key">
+
+Raised via C<bug> when a hash-ref argument has none of the expected keys.
+C<%s> is C<"first"> or C<"second">.
+
+=item C<"Invalid %s argument type '%s', expected a file path, or a hashref with 'file', 'object', or 'content' key, or a string">
+
+Raised via C<bug> when an argument is neither a file path nor a recognised hash
+reference. C<%s> (first) is C<"first"> or C<"second">; C<%s> (second) is the
+ref type.
+
+=back
+
+B<Examples:>
+
+    my ($diff, $rc) = spruce_diff($before_file, $after_file);
+    # Returns: (diff string, 0) on success; (diff string, 1) on differences found
+    print $diff if $rc;
+
+=head2 slurp
+
+    my $contents = slurp($file);
+
+Opens C<$file> for reading and returns its entire contents as a string.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$file>
+
+The path to the file to read.
+
+=back
+
+B<Returns:> The file contents as a scalar string.
+
+B<Errors:>
+
+=over 4
+
+=item C<"failed to open '$file' for reading: $!\n">
+
+Raised via C<bail> if the file cannot be opened. C<$file> is the path; C<$!>
+is the OS error.
+
+=back
+
+B<Examples:>
+
+    my $yaml = slurp('manifests/base.yml');
+    # Returns: string contents of the file
+
+=head2 mkfile_or_fail
+
+    my $path = mkfile_or_fail($path, $content);
+    my $path = mkfile_or_fail($path, $mode, $content);
+
+Creates a file at C<$path> with the given C<$content>, creating any missing
+parent directories automatically. If C<$mode> is supplied the file's
+permissions are set via C<chmod_or_fail>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$path>
+
+The path of the file to create.
+
+=item C<$mode> (optional)
+
+An octal permission mode (e.g., C<0644>). When omitted, the second argument is
+treated as C<$content>.
+
+=item C<$content>
+
+The string content to write to the file.
+
+=back
+
+B<Returns:> C<$path> on success.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Unable to open $file for writing: $!">
+
+Raised via C<bail> if the file cannot be opened for writing.
+
+=item C<"Error creating file $file: $@">
+
+Raised via C<bail> if an exception occurs during the write.
+
+=back
+
+B<Examples:>
+
+    mkfile_or_fail('/tmp/hello.txt', "hello world\n");
+    # Returns: '/tmp/hello.txt'
+
+    mkfile_or_fail('/tmp/script.sh', 0755, "#!/bin/bash\necho hi\n");
+    # Returns: '/tmp/script.sh'
+
+=head2 mkdir_or_fail
+
+    my $dir = mkdir_or_fail($path);
+    my $dir = mkdir_or_fail($path, $mode);
+
+Creates C<$path> and any missing parent directories (equivalent to
+C<mkdir -p>). If C<$mode> is supplied the directory's permissions are set via
+C<chmod_or_fail>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$path>
+
+The directory path to create.
+
+=item C<$mode> (optional)
+
+An octal permission mode (e.g., C<0755>).
+
+=back
+
+B<Returns:> C<$path> on success.
+
+B<Examples:>
+
+    mkdir_or_fail('/tmp/work/subdir');
+    # Returns: '/tmp/work/subdir'
+
+    mkdir_or_fail('/tmp/secure', 0700);
+    # Returns: '/tmp/secure'
+
+=head2 chdir_or_fail
+
+    chdir_or_fail($dir);
+
+Changes the current working directory to C<$dir>, or bails with an error
+message.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$dir>
+
+The directory to change into.
+
+=back
+
+B<Returns:> nothing.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Unable to change directory to $dir/: $!">
+
+Raised via C<bail> on failure. C<$dir> is the target directory; C<$!> is the
+OS error.
+
+=back
+
+B<Examples:>
+
+    chdir_or_fail('/var/vcap/store');
+    # Returns: nothing (bails on failure)
+
+=head2 symlink_or_fail
+
+    symlink_or_fail($source, $dest);
+
+Creates a symbolic link at C<$dest> pointing to C<$source>. Both the existence
+of C<$source> and the absence of C<$dest> are verified first.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$source>
+
+The target the symlink should point to. Must exist.
+
+=item C<$dest>
+
+The path of the new symlink. Must not already exist.
+
+=back
+
+B<Returns:> nothing.
+
+B<Errors:>
+
+=over 4
+
+=item C<"$source does not exist!">
+
+Raised via C<bail> if C<$source> does not exist.
+
+=item C<"Unable to link $source to $dest: $!\n">
+
+Raised via C<bail> if the link creation fails.
+
+=back
+
+B<Examples:>
+
+    symlink_or_fail('/opt/genesis/bin/genesis', '/usr/local/bin/genesis');
+    # creates symlink or bails
+
+=head2 copy_or_fail
+
+    copy_or_fail($from, $to);
+
+Copies the file C<$from> to C<$to> using block-level I/O. If C<$to> is a
+directory, the basename of C<$from> is appended.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$from>
+
+Source file path. Must be a regular file.
+
+=item C<$to>
+
+Destination file path or directory.
+
+=back
+
+B<Returns:> nothing.
+
+B<Errors:>
+
+=over 4
+
+=item C<"$from: $!\n">
+
+Raised via C<bail> if C<$from> is not a regular file.
+
+=item C<"Unable to open $from for reading: $!">
+
+Raised via C<bail> if the source cannot be opened.
+
+=item C<"Unable to open $to for writing: $!">
+
+Raised via C<bail> if the destination cannot be opened.
+
+=item C<"System read error: $!\n">
+
+Raised via C<die> on a read error (interrupted reads are retried).
+
+=item C<"System write error: $!\n">
+
+Raised via C<die> on a write error.
+
+=back
+
+B<Examples:>
+
+    copy_or_fail('src/manifest.yml', 'work/manifest.yml');
+    # Returns: nothing (bails on failure)
+
+=head2 copy_tree_or_fail
+
+    copy_tree_or_fail($from, $to);
+    copy_tree_or_fail($from, $to, $trim);
+
+Recursively copies the directory tree rooted at C<$from> into C<$to>.
+C<$to> is created if it does not exist. The optional C<$trim> string is
+stripped from the front of each destination path.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$from>
+
+Source path. Must exist.
+
+=item C<$to>
+
+Destination directory. Must not exist as a non-directory file.
+
+=item C<$trim> (optional)
+
+A path prefix to remove from each destination path.
+
+=back
+
+B<Returns:> nothing.
+
+B<Errors:>
+
+=over 4
+
+=item C<"$from: No such file or directory">
+
+Raised via C<bail> if C<$from> does not exist.
+
+=item C<"$to: Exists and is not a directory">
+
+Raised via C<bail> if C<$to> exists but is not a directory.
+
+=back
+
+B<Examples:>
+
+    copy_tree_or_fail('kit-src/', 'kit-build/');
+    # Returns: nothing (bails on failure)
+
+=head2 chmod_or_fail
+
+    chmod_or_fail($mode, $path);
+
+Changes the permissions of C<$path> to C<$mode>, or bails.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$mode>
+
+An octal integer permission mode (e.g., C<0755>). Do not quote it.
+
+=item C<$path>
+
+The file or directory to modify.
+
+=back
+
+B<Returns:> nothing.
+
+B<Errors:>
+
+=over 4
+
+=item C<"$path: $!">
+
+Raised via C<bail> if C<$path> does not exist.
+
+=item C<"Could not change mode of $path: $!">
+
+Raised via C<bail> if C<chmod> fails.
+
+=back
+
+B<Examples:>
+
+    chmod_or_fail(0755, '/usr/local/bin/genesis');
+    # sets executable bit or bails
+
+=head2 humanize_path
+
+    my $short = humanize_path($path);
+    my $short = humanize_path($path, %opts);
+
+Returns a compact, human-readable version of C<$path> relative to the
+current working directory (or C<$opts{base_dir}> if supplied). Applies the
+following heuristics in order:
+
+=over 4
+
+=item 1. Checks the path cache. Results are keyed by C<"$path\@$pwd">.
+
+=item 2. Normalises a leading C<~> to an absolute path for internal computation.
+
+=item 3. If C<$opts{root_map}> is provided, replaces a matching deployment
+root prefix with C<[Deployment Root 'label']:>.
+
+=item 4. Computes the shortest of the relative path and a C<~/> or C<./> path.
+
+=back
+
+B<Parameters:>
+
+=over 4
+
+=item C<$path>
+
+The path to humanize.
+
+=item C<base_dir> (optional)
+
+Base directory for relative path computation. Defaults to
+C<GENESIS_CALLER_DIR> or the current working directory.
+
+=item C<root_map> (optional)
+
+A hash reference as returned by C<deployment_roots_map()> in scalar context
+(with C<roots> and C<labels> keys), used to replace known deployment root
+paths with their labels.
+
+=item C<absolute> (optional)
+
+If true, suppresses relative-path computation and returns only the
+C<~/> or absolute form.
+
+=back
+
+B<Returns:> A human-readable path string. The result is cached.
+
+B<Examples:>
+
+    humanize_path('/home/user/deployments/bosh/bosh.yml');
+    # Returns: '~/deployments/bosh/bosh.yml' (when cwd is elsewhere)
+
+    humanize_path('/home/user/deployments/bosh/bosh.yml',
+                  root_map => deployment_roots_map());
+    # Returns: "[Deployment Root 'bosh']:bosh.yml"
+
+=head2 humanize_bin
+
+    my $name = humanize_bin();
+
+Returns the most user-friendly name for the genesis binary pointed to by
+C<GENESIS_CALLBACK_BIN>. If the binary is on C<$PATH> under its basename,
+returns just the basename; otherwise returns the humanized path. Returns the
+empty string if C<GENESIS_CALLBACK_BIN> is not set.
+
+The result is cached after the first call.
+
+B<Returns:> A string (possibly empty).
+
+B<Examples:>
+
+    my $bin = humanize_bin();
+    # Returns: 'genesis' (when binary is on PATH)
+
+=head2 time_exec
+
+    my $elapsed = time_exec($cmd, $args);
+
+Executes C<$cmd->($args)>, measures how long it takes, logs the duration,
+and returns elapsed time in seconds as a floating-point value. Re-raises any
+exception thrown by C<$cmd>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$cmd>
+
+A code reference to invoke.
+
+=item C<$args>
+
+Argument passed to C<$cmd>.
+
+=back
+
+B<Returns:> Elapsed time in seconds (floating-point).
+
+B<Examples:>
+
+    my $secs = time_exec(sub { run('git fetch') }, undef);
+    # Returns: 1.230456 (elapsed seconds)
+
+=head2 load_json
+
+    my $data = load_json($json_string);
+
+Decodes a JSON string (including bare scalars) and returns the resulting Perl
+data structure.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$json_string>
+
+A valid JSON string.
+
+=back
+
+B<Returns:> The decoded Perl value (hash ref, array ref, scalar, etc.).
+
+B<Examples:>
+
+    my $data = load_json('{"key":"value"}');
+    # Returns: { key => 'value' }
+
+=head2 load_json_file
+
+    my $data = load_json_file($file);
+    my ($data, $err_code, $err_msg) = load_json_file($file);
+
+Reads C<$file> from disk and decodes its JSON content.
+
+In scalar context returns the decoded structure (or C<undef> on error). In
+list context returns C<($data, $error_flag, $error_message)> where
+C<$error_flag> is C<1> on failure and C<0> on success.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$file>
+
+Path to the JSON file.
+
+=back
+
+B<Returns:>
+
+In scalar context: the decoded structure or C<undef>.
+
+In list context: C<($data, $err_flag, $err_msg)>.
+
+B<Examples:>
+
+    my $config = load_json_file('/etc/genesis/config.json');
+    # Returns: hashref of parsed JSON
+
+    my ($data, $failed, $msg) = load_json_file('output.json');
+    # Returns: (hashref, 0, '') on success; (undef, 1, 'error message') on failure
+
+=head2 load_yaml_file
+
+    my $data = load_yaml_file($file);
+    my ($data, $rc, $err) = load_yaml_file($file);
+
+Converts C<$file> from YAML to JSON using C<spruce json>, then decodes the
+JSON and returns the resulting Perl data structure.
+
+In scalar context returns the decoded structure (or C<undef> if spruce
+failed). In list context returns C<($data, $rc, $err)>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$file>
+
+Path to the YAML file.
+
+=back
+
+B<Returns:>
+
+In scalar context: decoded structure or C<undef>.
+
+In list context: C<($data, $rc, $err)>.
+
+B<Examples:>
+
+    my $manifest = load_yaml_file('manifests/base.yml');
+    # Returns: hashref of parsed YAML
+
+    my ($data, $rc, $err) = load_yaml_file('kit.yml');
+    # Returns: (hashref, 0, '') on success; (undef, $rc, $err) on failure
+
+=head2 load_yaml
+
+    my $data = load_yaml($yaml_string);
+
+Converts a YAML string to a Perl data structure by writing it to a temporary
+file and calling C<load_yaml_file>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$yaml_string>
+
+A YAML string to parse.
+
+=back
+
+B<Returns:> The decoded Perl data structure.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Unable to create tempfile for YAML conversion: $!">
+
+Raised via C<bail> if the temporary file cannot be opened for writing.
+
+=back
+
+B<Examples:>
+
+    my $data = load_yaml("key: value\nlist:\n  - a\n  - b\n");
+    # Returns: { key => 'value', list => ['a', 'b'] }
+
+=head2 save_to_json_file
+
+    save_to_json_file($data, $file);
+
+Serialises C<$data> to JSON and writes it to C<$file> with mode C<0644>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$data>
+
+The Perl data structure to serialise.
+
+=item C<$file>
+
+The destination file path.
+
+=back
+
+B<Returns:> nothing.
+
+B<Examples:>
+
+    save_to_json_file({ version => '1.0' }, '/tmp/meta.json');
+    # writes {"version":"1.0"} to /tmp/meta.json
+
+=head2 save_to_yaml_file
+
+    save_to_yaml_file($data, $file);
+
+Serialises C<$data> to YAML using C<spruce merge --skip-eval> and writes it
+to C<$file>. Also normalises orphaned C<))> tokens that spruce occasionally
+places on their own lines.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$data>
+
+The Perl data structure to serialise.
+
+=item C<$file>
+
+The destination file path.
+
+=back
+
+B<Returns:> nothing.
+
+B<Examples:>
+
+    save_to_yaml_file({ name => 'bosh' }, 'config.yml');
+    # writes YAML to config.yml
+
+=head2 to_yaml
+
+    my $yaml = to_yaml($data);
+
+Converts C<$data> to a YAML string by serialising to JSON and then running
+C<spruce merge --skip-eval>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$data>
+
+The Perl data structure to convert.
+
+=back
+
+B<Returns:> A YAML string, or C<undef> if spruce produced no output.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Error converting data to YAML: $err">
+
+Raised via C<bail> if spruce exits non-zero. C<$err> is the captured stderr.
+
+=back
+
+B<Examples:>
+
+    my $yaml = to_yaml({ key => 'value' });
+    # Returns: "key: value\n"
+
+=head2 pushd
+
+    pushd($dir);
+
+Saves the current working directory on an internal stack and changes to
+C<$dir>. Pair with C<popd()> to return.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$dir>
+
+The directory to change into.
+
+=back
+
+B<Returns:> nothing.
+
+B<Examples:>
+
+    pushd('/tmp/work');
+    # changes to /tmp/work
+    popd();
+    # returns to previous directory
+
+=head2 popd
+
+    popd();
+
+Restores the working directory to the location saved by the most recent
+C<pushd()> call.
+
+B<Returns:> nothing.
+
+B<Errors:>
+
+=over 4
+
+=item C<"popd called when we don't have anything on the directory stack">
+
+Raised via C<bug> if C<popd> is called when the directory stack is empty.
+
+=back
+
+B<Examples:>
+
+    pushd('/some/path');
+    popd();
+    # Returns to previous directory
+
+=head2 tcp_listening
+
+    my $status = tcp_listening($host, $port);
+
+Attempts to open a TCP connection to C<$host> on C<$port>. Returns a string
+indicating the result.
+
+The timeout defaults to C<10> seconds but can be overridden by setting
+C<GENESIS_NETWORK_TIMEOUT>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$host>
+
+The hostname or IP address to connect to.
+
+=item C<$port>
+
+The TCP port number.
+
+=back
+
+B<Returns:> One of:
+
+=over 4
+
+=item C<'ok'>
+
+Connection succeeded.
+
+=item C<'timeout'>
+
+Connection attempt timed out (the alarm signal delivered C<"timeout\n">).
+
+=item C<'failed'>
+
+Connection was refused or otherwise failed (the socket open delivered
+C<"failed\n">).
+
+=back
+
+B<Errors:>
+
+The internal C<eval> block uses C<die "timeout\n"> and C<die "failed\n"> as
+control-flow signals. These are caught and converted to the string return
+values described above. They are not propagated to the caller.
+
+B<Examples:>
+
+    my $status = tcp_listening('10.0.0.1', 25555);
+    # Returns: 'ok', 'timeout', or 'failed'
+    bail("BOSH director not reachable") unless $status eq 'ok';
+
+=head2 die_unless_controlling_terminal
+
+    die_unless_controlling_terminal();
+    die_unless_controlling_terminal($fmt, @args);
+
+Bails with an error if the current process is not running in a controlling
+terminal. This is called before operations that require interactive user input.
+
+If called without arguments, the error message names the calling subroutine.
+If called with arguments, they are forwarded directly to C<bail>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$fmt, @args> (optional)
+
+A custom C<bail>-style error message. If omitted a default message naming the
+calling method is generated.
+
+=back
+
+B<Returns:> nothing (returns only if already in a controlling terminal).
+
+B<Examples:>
+
+    sub prompt_user {
+        die_unless_controlling_terminal();
+        # bails with method name if not in a terminal
+    }
+
+=head2 struct_set_value
+
+    my $old = struct_set_value($what, $key, $value);
+    my $old = struct_set_value($what, $key, $value, $clear);
+
+Sets or removes a value inside a nested Perl data structure (hashes and
+arrays) addressed by a dot/bracket key path.
+
+Key syntax:
+
+=over 4
+
+=item * C<"foo.bar"> -- hash key C<foo>, then hash key C<bar>.
+
+=item * C<"list[2]"> -- array element at index 2.
+
+=item * C<"list[name=foo]"> -- element in an array-of-hashes where C<name> eq
+C<"foo">.
+
+=item * C<"foo..bar"> -- literal key C<"foo.bar"> (double-dot escapes a literal
+dot).
+
+=back
+
+When C<$clear> is true the key is deleted rather than set.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$what>
+
+The data structure to modify (hash ref or array ref).
+
+=item C<$key>
+
+A dot/bracket path string addressing the target location.
+
+=item C<$value>
+
+The value to assign at the target location.
+
+=item C<$clear> (optional)
+
+If true, delete the target key instead of setting it.
+
+=back
+
+B<Returns:> The previous value at the target location, or C<undef> when
+C<$clear> is true and no previous value existed.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Type Mismatch: expected array at %s, got %s">
+
+Raised via C<bail> when a numeric/search index is used on a non-array
+structure. C<%s> (first) is the key path; C<%s> (second) is the actual type.
+
+=item C<"Type Mismatch: expected array of hashes at %s, got %s">
+
+Raised via C<bail> when a C<key=value> search is used on a non-array.
+
+=item C<"Cannot append new entry to array of hashes, as it is not a hash with %s set to %s">
+
+Raised via C<bail> when appending via C<key=value> search fails because
+C<$value> does not contain the required identifying key.
+
+=item C<"Could not find hash with key '%s' and value '%s' at %s">
+
+Raised via C<bail> when a C<key=value> search has no match and more path
+components remain.
+
+=item C<"Type Mismatch: expected array of hashes at %s, got %s at position %d">
+
+Raised via C<bail> when a matched array element is not a hash reference.
+
+=item C<"Type Mismatch: expected hash at %s, got %s">
+
+Raised via C<bail> when a hash key is used on a non-hash structure.
+
+=back
+
+B<Examples:>
+
+    my $data = { servers => [{ name => 'web', port => 80 }] };
+    struct_set_value($data, 'servers[name=web].port', 443);
+    # $data->{servers}[0]{port} is now 443
+
+    struct_set_value($data, 'debug', 1);
+    # Returns: undef (previous value was absent)
+
+=head2 struct_lookup
+
+    my $value = struct_lookup($what, $key);
+    my $value = struct_lookup($what, $keys_ref, $default);
+    my ($value, $matched_key) = struct_lookup($what, $keys_ref, $default);
+
+Looks up a value in a nested Perl data structure using the same dot/bracket
+key syntax as C<struct_set_value>. Accepts a single key string or an array
+reference of keys to try in order (returning the first match).
+
+In scalar context returns the value (or C<$default> if no key matched). In
+list context also returns the key that matched (or C<undef> on no match).
+C<$default> may be a code reference, in which case it is called and its return
+value is used.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$what>
+
+The data structure to search.
+
+=item C<$key> or C<$keys_ref>
+
+A key path string, or an array reference of key path strings to try in order.
+
+=item C<$default> (optional)
+
+Value (or code ref) to return when no key matches. Defaults to C<undef>.
+
+=back
+
+B<Returns:>
+
+In scalar context: the matched value or C<$default>.
+
+In list context: C<($value, $matched_key)>.
+
+B<Examples:>
+
+    my $port = struct_lookup($config, 'server.port', 8080);
+    # Returns: 443 if present, 8080 otherwise
+
+    my ($val, $key) = struct_lookup($data, [qw/name key id/], undef);
+    # Returns: ('myname', 'name') -- first key found
+
+=head2 struct_has
+
+    my $bool = struct_has($what, $key);
+    my $bool = struct_has($what, $keys_ref);
+
+Returns true if any of the given keys exists in C<$what>, using
+C<struct_lookup> internally. Accepts the same key forms as C<struct_lookup>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$what>
+
+The data structure to inspect.
+
+=item C<$key> or C<$keys_ref>
+
+A key path string or array reference of key paths.
+
+=back
+
+B<Returns:> A boolean-ish value.
+
+B<Examples:>
+
+    if (struct_has($config, 'database.host')) {
+        my $host = struct_lookup($config, 'database.host');
+        # $host is the hostname string
+    }
+    # Returns: 1 if 'database.host' exists, '' otherwise
+
+=head2 flatten
+
+    my $flat = flatten($data);
+
+Converts a nested Perl hash/array structure into a flat hash reference
+whose keys are dot/bracket paths and whose values are the leaf scalars. Empty
+arrays and empty hashes are preserved as C<[]> and C<{}> respectively.
+
+Hash key dots are escaped to C<~> in the flattened keys.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$data>
+
+The nested structure to flatten (hash ref, array ref, or scalar).
+
+=back
+
+B<Returns:> A flat hash reference.
+
+B<Examples:>
+
+    my $flat = flatten({ a => { b => 1 }, c => [10, 20] });
+    # Returns: { 'a.b' => 1, 'c[0]' => 10, 'c[1]' => 20 }
+
+=head2 unflatten
+
+    my $data = unflatten($flat);
+
+Converts a flat dot/bracket key hash reference back into a nested Perl
+structure. This is the inverse of C<flatten>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$flat>
+
+A hash reference whose keys are dot/bracket paths. Non-hash input is returned
+unchanged.
+
+=back
+
+B<Returns:> The reconstructed nested structure.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Cannot unflatten data that contains both array elements and hash keys at same level (at $branch)">
+
+Raised via C<die> when a group of siblings contains a mix of array-index keys
+(C<[0]>, C<[1]>) and hash keys.
+
+=item C<"Array cannot have scalar and non-scalar values (at ${branch}[$i])">
+
+Raised via C<die> when an array position has both a scalar entry and a
+sub-structure.
+
+=item C<"Hash cannot have scalar and non-scalar values (at ...)">
+
+Raised via C<die> when a hash key has both a scalar value and a sub-structure.
+
+=back
+
+B<Examples:>
+
+    my $data = unflatten({ 'a.b' => 1, 'c[0]' => 10, 'c[1]' => 20 });
+    # Returns: { a => { b => 1 }, c => [10, 20] }
+
+=head2 deep_merge
+
+    my $result = deep_merge($base, @overlays);
+
+Merges one or more overlay structures into C<$base> using a flatten-then-merge
+strategy. Overlay keys overwrite base keys; keys whose value is C<undef> in
+an overlay are deleted from the result.
+
+String control values may be interspersed in C<@overlays>:
+
+=over 4
+
+=item C<'flatten'> or C<'flattened'>
+
+Return the result in flattened form.
+
+=item C<'unflatten'> or C<'unflattened'>
+
+Return the result in unflattened form (default).
+
+=item C<'flatten=1'> or C<'flatten=0'>
+
+Numeric flag equivalent to the above.
+
+=back
+
+B<Parameters:>
+
+=over 4
+
+=item C<$base>
+
+The base hash reference.
+
+=item C<@overlays>
+
+One or more hash references to merge onto C<$base>, optionally interspersed
+with control strings.
+
+=back
+
+B<Returns:> The merged structure (flattened or unflattened depending on flags).
+
+B<Errors:>
+
+=over 4
+
+=item C<"deep_merge: unknown overlay value: %s - expecting either '(un)flatten(ed)' or 'flattened=1|0'">
+
+Raised via C<bug> for an unrecognised string control value.
+
+=item C<"deep_merge: unknown overlay type: %s">
+
+Raised via C<bug> when an overlay is neither a hash ref nor a string.
+
+=back
+
+B<Examples:>
+
+    my $merged = deep_merge(
+        { a => 1, b => 2 },
+        { b => 3, c => 4 }
+    );
+    # Returns: { a => 1, b => 3, c => 4 }
+
+=head2 priority_merge
+
+    my $result = priority_merge(@structures);
+
+Merges a list of structures in priority order (first structure wins).
+Unlike C<deep_merge>, a shallower key blocks all its descendants: if C<foo>
+exists at the top level from a high-priority structure, C<foo.bar> from a
+lower-priority structure is ignored.
+
+B<Parameters:>
+
+=over 4
+
+=item C<@structures>
+
+Hash references in descending priority order (highest priority first).
+
+=back
+
+B<Returns:> The merged structure as a nested hash reference.
+
+B<Examples:>
+
+    my $result = priority_merge(
+        { a => 1, b => { x => 9 } },
+        { a => 99, b => { x => 1, y => 2 }, c => 3 }
+    );
+    # Returns: { a => 1, b => { x => 9 }, c => 3 }
+
+=head2 uniq
+
+    my @unique = uniq(@items);
+
+Returns the elements of C<@items> with duplicates removed, preserving the
+first occurrence order.
+
+B<Parameters:>
+
+=over 4
+
+=item C<@items>
+
+The list to deduplicate.
+
+=back
+
+B<Returns:> The deduplicated list.
+
+B<Examples:>
+
+    my @u = uniq(1, 2, 1, 3, 2);
+    # Returns: (1, 2, 3)
+
+=head2 in_array
+
+    my $bool = in_array($item, @arr);
+
+Returns true if C<$item> is present in C<@arr>. Handles C<undef> correctly
+(an C<undef> item matches an C<undef> element).
+
+B<Parameters:>
+
+=over 4
+
+=item C<$item>
+
+The value to search for (may be C<undef>).
+
+=item C<@arr>
+
+The array to search.
+
+=back
+
+B<Returns:> A boolean-ish value.
+
+B<Examples:>
+
+    in_array('bosh', qw/bosh cf shield/);   # Returns: 1
+    in_array('vault', qw/bosh cf shield/);  # Returns: ''
+
+=head2 index_of
+
+    my $idx = index_of($item, @arr);
+
+Returns the zero-based index of the first occurrence of C<$item> in C<@arr>,
+or C<undef> if not found.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$item>
+
+The value to find.
+
+=item C<@arr>
+
+The array to search.
+
+=back
+
+B<Returns:> An integer index, or C<undef>.
+
+B<Examples:>
+
+    my $i = index_of('cf', qw/bosh cf shield/);  # Returns: 1
+    my $i = index_of('vault', qw/bosh cf/);       # Returns: undef
+
+=head2 compare_arrays
+
+    my ($only_in_1, $in_both, $only_in_2) = compare_arrays(\@arr1, \@arr2);
+    my $result = compare_arrays(\@arr1, \@arr2);
+
+Compares two arrays as sets and returns three groups: elements only in the
+first array, elements in both, and elements only in the second array.
+Duplicates within a single array are ignored (set semantics). Ordering within
+each group follows the order of the corresponding source array.
+
+In list context returns three array references. In scalar context returns a
+single array reference containing the three groups.
+
+B<Parameters:>
+
+=over 4
+
+=item C<\@arr1>
+
+First array reference.
+
+=item C<\@arr2>
+
+Second array reference.
+
+=back
+
+B<Returns:>
+
+In list context: C<(\@only_in_1, \@in_both, \@only_in_2)>.
+
+In scalar context: C<[\@only_in_1, \@in_both, \@only_in_2]>.
+
+B<Examples:>
+
+    my ($only_old, $both, $only_new) = compare_arrays([1,2,3], [2,3,4]);
+    # Returns: ([1], [2,3], [4])
+
+=head2 delete_from_array
+
+    my @removed = delete_from_array($arr_ref, @search_terms);
+
+Removes all elements from C<$arr_ref> (in-place) that match any of the regex
+C<@search_terms>. Returns the list of removed elements.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$arr_ref>
+
+An array reference to modify in-place.
+
+=item C<@search_terms>
+
+One or more compiled or uncompiled regular expressions.
+
+=back
+
+B<Returns:> The list of removed elements, or the empty list if nothing matched.
+
+B<Examples:>
+
+    my @arr = ('foo', 'bar', 'baz');
+    my @removed = delete_from_array(\@arr, qr/^ba/);
+    # Returns: ('bar', 'baz') -- @arr is now ('foo')
+
+=head2 sentence_join
+
+    my $str = sentence_join(@items);
+
+Joins a list of strings with C<", "> between all but the last pair, which is
+joined with C<" and ">. Returns the empty string for an empty list.
+
+B<Parameters:>
+
+=over 4
+
+=item C<@items>
+
+The strings to join.
+
+=back
+
+B<Returns:> A single joined string.
+
+B<Examples:>
+
+    sentence_join('a');               # Returns: 'a'
+    sentence_join('a', 'b');          # Returns: 'a and b'
+    sentence_join('a', 'b', 'c');     # Returns: 'a, b and c'
+    sentence_join();                  # Returns: ''
+
+=head2 get_opts
+
+    my %slice = get_opts($hash_ref, @keys);
+
+Extracts a subset of keys from C<$hash_ref>, trying each key name and also
+its hyphen-equivalent (underscores replaced with hyphens). Only keys that
+exist in C<$hash_ref> are included in the result.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$hash_ref>
+
+The source hash reference to extract keys from.
+
+=item C<@keys>
+
+The list of key names to extract.
+
+=back
+
+B<Returns:> A hash (not a reference) containing the matching key-value pairs.
+
+B<Examples:>
+
+    my %opts = (skip_verify => 1, method => 'POST');
+    my %sub = get_opts(\%opts, 'skip_verify', 'timeout');
+    # Returns: (skip_verify => 1)
+
+=head2 pretty_duration
+
+    my $str = pretty_duration($duration);
+    my $str = pretty_duration($duration, $good, $bad, $wrap, $prefix, $style, $force);
+
+Formats a floating-point duration (in seconds) as a colourised human-readable
+string such as C<"(1.2 s)"> or C<"[2 m 15 s]">. Returns the empty string
+unless C<GENESIS_SHOW_DURATION> is set or C<$force> is true.
+
+Durations are formatted with adaptive precision:
+
+=over 4
+
+=item * Under 1 ms -- microseconds (us)
+
+=item * Under 2 s -- milliseconds (ms)
+
+=item * Under 10 s -- one decimal place in seconds
+
+=item * Under 60 s -- whole seconds
+
+=item * Under 1 hour -- minutes and seconds
+
+=item * 1 hour or more -- hours and minutes
+
+=back
+
+B<Parameters:>
+
+=over 4
+
+=item C<$duration>
+
+Elapsed time in seconds (floating-point).
+
+=item C<$good> (optional)
+
+If the duration is at or below this threshold, the output is green.
+
+=item C<$bad> (optional)
+
+If the duration is at or above this threshold, the output is red.
+
+=item C<$wrap> (optional)
+
+A two-character string whose first character is the opening bracket and last
+is the closing bracket (e.g., C<'()'>, C<'[]'>). Defaults to C<'()'>.
+
+=item C<$prefix> (optional)
+
+A string prepended before the opening bracket. Defaults to C<' '>.
+
+=item C<$style> (optional)
+
+A C<csprintf> color code applied to the brackets and prefix. Defaults to
+C<'-'> (plain).
+
+=item C<$force> (optional)
+
+If true, output is produced even when C<GENESIS_SHOW_DURATION> is not set.
+
+=back
+
+B<Returns:> A colourised duration string, or the empty string.
+
+B<Examples:>
+
+    pretty_duration(0.5, undef, undef, '()', ' ', '-', 1);
+    # Returns: ' (500 ms)'
+
+    pretty_duration(125, 60, 300, '[]', ' took ', 'b', 1);
+    # Returns: ' took [2 m 5 s]' (coloured red when over $bad threshold)
+
+=head2 count_nouns
+
+    my $str = count_nouns($count, $noun);
+    my $str = count_nouns($count, $noun, %opts);
+
+Returns a string combining C<$count> and the appropriately pluralised form
+of C<$noun>. Handles common English pluralisation rules:
+
+=over 4
+
+=item * Singular (count == 1): C<"$noun"> unchanged.
+
+=item * Words ending in C<ch>, C<sh>, C<x>, C<ss>: append C<"es">.
+
+=item * Words ending in vowel + C<s> or C<z>: append C<"es"> (e.g., C<"buzzes">).
+
+=item * Words ending in consonant + C<y>: replace C<y> with C<"ies">.
+
+=item * All others: append C<"s">.
+
+=back
+
+B<Parameters:>
+
+=over 4
+
+=item C<$count>
+
+The numeric count.
+
+=item C<$noun>
+
+The noun to pluralise.
+
+=item C<suppress_count> (optional)
+
+If true, the count is not included in the output.
+
+=item C<prefix> (optional)
+
+An array reference of two strings: C<[$singular_prefix, $plural_prefix]>.
+The appropriate element is prepended to the output.
+
+=back
+
+B<Returns:> A string such as C<"1 file">, C<"3 files">, C<"2 churches">.
+
+B<Examples:>
+
+    count_nouns(1, 'file');    # Returns: '1 file'
+    count_nouns(3, 'file');    # Returns: '3 files'
+    count_nouns(2, 'church');  # Returns: '2 churches'
+    count_nouns(0, 'match', suppress_count => 1);  # Returns: 'matches'
+
+=head2 parse_fixed_width_table
+
+    my @rows = parse_fixed_width_table($header, @rows);
+    my $rows  = parse_fixed_width_table($header, @rows);
+    my @rows = parse_fixed_width_table(\%opts, $header, @rows);
+
+Parses a fixed-width tabular output (as produced by tools like C<bosh vms>)
+into an array of hash references, one per row. Column positions are inferred
+from the header line: columns are separated by two or more spaces.
+
+Returns an empty list (or empty array ref) when C<$header> is undefined.
+
+B<Parameters:>
+
+=over 4
+
+=item C<\%opts> (optional)
+
+A hash reference with option keys:
+
+=over 4
+
+=item C<array_rows>
+
+If true, each row is returned as an array reference of values (in header order)
+rather than a hash reference. A leading array reference containing the column
+names is prepended to the results.
+
+=back
+
+=item C<$header>
+
+The header line string, with columns separated by two or more spaces.
+
+=item C<@rows>
+
+The data row strings to parse.
+
+=back
+
+B<Returns:>
+
+In list context: a list of hash (or array) references, one per row.
+
+In scalar context: an array reference of the same.
+
+B<Examples:>
+
+    my $header = "NAME           STATUS   IP";
+    my @data   = ("bosh/0         running  10.0.0.5");
+    my @rows = parse_fixed_width_table($header, @data);
+    # Returns: ({ NAME => 'bosh/0', STATUS => 'running', IP => '10.0.0.5' })
+
+    my $rows_ref = parse_fixed_width_table(undef);
+    # Returns: []
+
+=head2 validate_global_config
+
+    validate_global_config($config_obj);
+
+Validates a C<Genesis::Config> object against the canonical Genesis global
+configuration schema returned by C<global_config_schema()>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$config_obj>
+
+A C<Genesis::Config> instance (typically the C<~/.genesis/config> loaded at
+startup).
+
+=back
+
+B<Returns:> nothing.
+
+B<Examples:>
+
+    my $rc = Genesis::Config->new("$ENV{HOME}/.genesis/config");
+    validate_global_config($rc);
+    # Returns: nothing (bails on schema violations)
+
+=head2 global_config_schema
+
+    my $schema = global_config_schema();
+
+Returns a hash reference describing the schema for the Genesis global
+configuration file. Each top-level key is a configuration setting name; its
+value is a descriptor hash with fields such as C<type>, C<default>,
+C<envvar>, C<description>, and for enumeration types a C<values> list.
+
+The schema covers the following settings:
+
+=over 4
+
+=item C<default_bosh_target>
+
+Enum (C<ask>, C<self>, C<parent>). Controls default BOSH target selection.
+Env var: C<GENESIS_DEFAULT_BOSH_TARGET>.
+
+=item C<legacy_repo_suffix>
+
+Boolean. Use the legacy C<-deployments> repository suffix.
+Env var: C<GENESIS_LEGACY_REPO_SUFFIX>.
+
+=item C<embedded_genesis>
+
+Enum (C<ignore>, C<check>, C<warn>). How to handle embedded genesis versions.
+
+=item C<output_style>
+
+Enum (C<plain>, C<fun>, C<pointer>). CLI output style.
+
+=item C<show_duration>
+
+Boolean. Show command execution duration.
+Env var: C<GENESIS_SHOW_DURATION>.
+
+=item C<automatic_config_upgrade>
+
+Enum (C<no>, C<yes>, C<silent>). Automatic configuration upgrade behaviour.
+Env var: C<GENESIS_CONFIG_AUTOMATIC_UPGRADE>.
+
+=item C<fix_on_deploy>
+
+Enum (C<always>, C<ask>, C<never>). Automatic fix behaviour during deployment.
+Env var: C<GENESIS_FIX_ON_DEPLOY>.
+
+=item C<confirm_release_overrides>
+
+Enum (C<always>, C<outdated>, C<never>). Release override confirmation policy.
+Env var: C<GENESIS_CONFIRM_RELEASE_OVERRIDES>.
+
+=item C<spec_cache_dir>
+
+String. Directory for caching kit specifications.
+Env var: C<GENESIS_SPEC_CACHE_DIR>.
+
+=item C<bosh_logs_path>
+
+String. Path for storing BOSH deployment logs. Defaults to
+C<< <DEPLOYMENT_ROOT>/bosh_logs >>.
+Env var: C<GENESIS_DEPLOYMENT_LOGS_PATH>.
+
+=item C<deployment_roots>
+
+Array of strings or label=path pairs. Deployment root directories.
+Env var: C<GENESIS_DEPLOYMENT_ROOTS> (colon-separated).
+
+=item C<kits_path>
+
+String. Override path for kit storage.
+
+=item C<suppress_warnings>
+
+Hash with sub-keys C<oversized_secrets> and C<bosh_target> (booleans).
+
+=item C<ui>
+
+Hash with sub-key C<colors> controlling C<code> and C<warning_alert> display
+colors.
+
+=item C<logs>
+
+Array of log-destination hashes. Each entry supports C<file>, C<level>,
+C<show_stack>, C<truncate>, C<style>, C<lifespan>, and C<timestamp>.
+
+=back
+
+B<Returns:> A hash reference (the schema definition).
+
+B<Examples:>
+
+    my $schema = global_config_schema();
+    # Returns: hashref with keys like 'output_style', 'show_duration', etc.
+    print $schema->{output_style}{default};  # prints 'plain'
+
+=head2 deployment_roots_str_format
+
+    my $str = Genesis::deployment_roots_str_format($root);
+
+Formats a deployment root entry for display. If C<$root> is a plain scalar,
+returns it unchanged. If it is a hash reference with C<label> and C<path>
+keys, returns a colourised string of the form C<[label] path>.
+
+Not exported. Used internally as a callback passed via glob reference.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$root>
+
+Either a plain path string or a hash reference with C<label> and C<path>
+keys.
+
+=back
+
+B<Returns:> A display string.
+
+B<Examples:>
+
+    Genesis::deployment_roots_str_format('/home/user/deployments');
+    # Returns: '/home/user/deployments'
+
+    Genesis::deployment_roots_str_format({ label => 'prod', path => '/deployments/prod' });
+    # Returns: '[prod] /deployments/prod' (with colour codes applied)
+
+=head1 INTERNAL METHODS
+
+These methods are internal to the implementation. They may change without
+notice and should not be called directly.
+
+=head2 _lookup_key
+
+    my ($found, $value) = _lookup_key($what, $key);
+
+Traverses a nested Perl data structure (hash refs and array refs) using a
+dot/bracket key path and returns a two-element list: a boolean indicating
+whether the key was found, and the value at that location (or C<undef>).
+
+Array elements may be addressed by numeric index (C<[0]>) or by a
+C<name=value> search among the keys C<name>, C<key>, and C<id> (or any
+explicit key via C<key=value> syntax). Double-dot (C<..>) in the key is
+treated as a literal dot in a hash key name.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$what>
+
+The data structure to traverse (hash ref, array ref, or scalar).
+
+=item C<$key>
+
+A dot/bracket path string.
+
+=back
+
+B<Returns:> C<(1, $value)> on success, C<(0, undef)> when the key is not found.
+
+B<Examples:>
+
+    my ($found, $val) = _lookup_key({ a => { b => 42 } }, 'a.b');
+    # Returns: (1, 42)
+
+    my ($found, $val) = _lookup_key({ a => 1 }, 'x');
+    # Returns: (0, undef)
+
+=head2 _u2d
+
+    my $str = _u2d($str);
+
+Replaces every underscore in C<$str> with a hyphen. Used by C<get_opts> to
+look up hyphenated variants of underscore-separated option keys.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$str>
+
+A string possibly containing underscores.
+
+=back
+
+B<Returns:> The string with all underscores replaced by hyphens.
+
+B<Examples:>
+
+    _u2d('skip_verify');  # Returns: 'skip-verify'
+    _u2d('no_change');    # Returns: 'no-change'
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

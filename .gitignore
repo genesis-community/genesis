@@ -12,3 +12,9 @@ t/repos/compiled-kit-test/new-env.yml
 .*.sw?
 .sw?
 /cover_db
+.vscode/
+*.code-workspace
+.DS_Store
+
+.claude
+.serena

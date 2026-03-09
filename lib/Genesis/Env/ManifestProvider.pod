@@ -1,0 +1,721 @@
+=encoding utf8
+
+=head1 NAME
+
+Genesis::Env::ManifestProvider - Manifest builder and cache coordinator for a Genesis environment
+
+=head1 SYNOPSIS
+
+  use Genesis::Env::ManifestProvider;
+
+  # Typically obtained via a Genesis::Env object, not constructed directly
+  my $provider = Genesis::Env::ManifestProvider->new($env);
+
+  # Access a typed manifest
+  my $manifest = $provider->unredacted();
+  my $data     = $manifest->data();
+
+  # Access the deployment manifest
+  my $deploy   = $provider->deployment();
+
+  # Access a manifest subset
+  my $pruned   = $provider->unredacted(subset => 'pruned');
+
+  # List known types and subsets
+  my %types   = $provider->known_types();
+  my %subsets = $provider->known_subsets();
+
+  # Find all vault secret paths referenced in the manifest
+  my $paths = $provider->vault_paths();
+
+  # Reset all cached manifests and work files
+  $provider->reset();
+
+=head1 DESCRIPTION
+
+C<Genesis::Env::ManifestProvider> is the central coordinator for building,
+caching, and accessing manifests for a Genesis deployment environment. It is
+owned by a C<Genesis::Env> instance and provides a uniform interface to every
+manifest variant the environment supports.
+
+At load time, the provider dynamically discovers all C<Genesis::Env::Manifest::*>
+subclasses present on disk and installs one accessor method per type. Each
+accessor returns a cached C<Genesis::Env::Manifest> object (or builds one on
+first access). Passing a C<subset> option to an accessor returns a narrowed
+view of that manifest type.
+
+The provider also manages the set of recognized subset names (C<credhub_vars>,
+C<bosh_vars>, C<pruned>, C<releases>) and the low-level merge operations
+(via C<spruce>) that all manifest subclasses delegate back to it.
+
+The following manifest type accessors are installed automatically at class
+load time:
+
+=over 4
+
+=item C<entombed>
+
+Manifest with secrets entombed into BOSH's Credhub from the
+single-source-of-truth Vault (default for regular kits). Deployable.
+
+=item C<partial>
+
+Partially evaluated manifest for debugging purposes -- will contain any
+unevaluatable spruce operators.
+
+=item C<partial_environment>
+
+Partially evaluated environment files only (no kit components) -- will
+contain any unevaluatable spruce operators.
+
+=item C<redacted>
+
+Full manifest with secrets redacted for safe viewing.
+
+=item C<unevaluated>
+
+Raw merged manifest template with no interpolation (merged, but spruce
+operators still in place).
+
+=item C<unevaluated_environment>
+
+Raw merged environment files only (no kit components) -- spruce operators
+still in place.
+
+=item C<unredacted>
+
+Complete deployment manifest with embedded clear-text secrets from Vault.
+Deployable.
+
+=item C<vaultified>
+
+Manifest with Credhub queries converted to Vault operator syntax and variable
+definitions converted to allow for Genesis secrets operations. Deployable.
+
+=item C<vaultified_entombed>
+
+Credhub secrets entombed into BOSH's Credhub from the single-source-of-truth
+Vault for a vaultified kit. Allows content-sensitive naming of Credhub
+secrets and use of Genesis secrets operations for their management (default
+for Credhub-based kits). Deployable.
+
+=item C<vaultified_redacted>
+
+Redacted manifest for an environment that has been vaultified, with secrets
+redacted for safe viewing.
+
+=back
+
+All type accessors share the same calling convention:
+
+  my $manifest = $provider->$type();
+  my $manifest = $provider->$type(subset => $subset_name);
+  my $manifest = $provider->$type(notify => 1);
+  my $manifest = $provider->$type(notification => $notice);
+
+The C<subset> option names a known subset (see L</known_subsets>). The
+C<notify> and C<notification> options trigger a notification on the manifest
+before it is returned. Results are cached in the provider keyed by type and
+subset name.
+
+=head1 METHODS
+
+=head2 new
+
+  my $provider = Genesis::Env::ManifestProvider->new($env);
+
+Constructs a new, empty provider bound to the given C<$env> object. No
+manifests are built at construction time; they are created lazily on first
+access.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$env>
+
+A C<Genesis::Env> instance that owns this provider.
+
+=back
+
+B<Returns:> A new C<Genesis::Env::ManifestProvider> object.
+
+B<Examples:>
+
+  my $provider = Genesis::Env::ManifestProvider->new($env);
+  # Returns: a Genesis::Env::ManifestProvider object
+
+=head2 known_types
+
+  my %types = $provider->known_types();
+
+Returns a hash mapping each known manifest type name to its human-readable
+description. Types that are irrelevant for the current environment are
+excluded automatically:
+
+=over 4
+
+=item *
+
+Types matching C<entombed> are excluded when the environment uses
+C<create-env> mode.
+
+=item *
+
+Types matching C<vaultif> are excluded when the environment's kit does not
+use Credhub.
+
+=back
+
+B<Returns:> A flat list suitable for assignment to a hash, where keys are
+type name strings (e.g., C<"unredacted">) and values are description strings.
+
+B<Examples:>
+
+  my %types = $provider->known_types();
+  for my $type (sort keys %types) {
+      printf "%s: %s\n", $type, $types{$type};
+  }
+  # prints each available type and its description
+
+=head2 known_subsets
+
+  my %subsets = $provider->known_subsets();
+
+Returns a hash mapping each known subset name to its human-readable
+description. The built-in subsets are:
+
+=over 4
+
+=item C<credhub_vars>
+
+The list of variable and Credhub lookups used in the manifest.
+
+=item C<bosh_vars>
+
+BOSH variables in a format suitable for the C<bosh deploy> C<--vars-file>
+(C<-l>) option.
+
+=item C<pruned>
+
+Manifest with Genesis-specific keys pruned -- suitable for use with
+C<bosh deploy>.
+
+=item C<releases>
+
+YAML file containing the array of BOSH releases used in the deployment.
+
+=back
+
+B<Returns:> A flat list suitable for assignment to a hash, where keys are
+subset name strings and values are description strings.
+
+B<Examples:>
+
+  my %subsets = $provider->known_subsets();
+  print join(', ', sort keys %subsets);
+  # prints: bosh_vars, credhub_vars, pruned, releases
+
+=head2 env
+
+  my $env = $provider->env();
+
+Returns the C<Genesis::Env> object that owns this provider.
+
+B<Returns:> A C<Genesis::Env> object.
+
+B<Examples:>
+
+  my $env = $provider->env();
+  # Returns: the Genesis::Env object bound to this provider
+
+=head2 set_deployment
+
+  $provider->set_deployment($type);
+
+Sets the default deployment manifest type. Subsequent calls to C<deployment>
+will return a manifest of this type. C<$type> must be a known deployable
+manifest type name (e.g., C<"entombed">, C<"unredacted">); otherwise the
+method aborts with an internal error.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$type>
+
+A manifest type name string. The type must exist and must be flagged as
+deployable.
+
+=back
+
+B<Returns:> The provider object itself, for method chaining.
+
+B<Errors:>
+
+Dies with C<"Manifest type $type is not deployable"> if C<$type> is not a
+known manifest type or is not marked as deployable. C<$type> in the message
+is the literal name string that was passed.
+
+B<Examples:>
+
+  $provider->set_deployment('entombed');
+  my $manifest = $provider->deployment();
+  # Returns: a Genesis::Env::Manifest::Entombed object
+
+=head2 deployment
+
+  my $manifest = $provider->deployment();
+
+Returns the manifest object for the current default deployment type. If no
+default has been set via C<set_deployment>, the type is determined by calling
+C<< $env->deployment_manifest_type >>. Any additional arguments are forwarded
+to the type accessor.
+
+B<Returns:> A C<Genesis::Env::Manifest> subclass object for the deployment
+manifest type.
+
+B<Examples:>
+
+  my $manifest = $provider->deployment();
+  # Returns: a Genesis::Env::Manifest object of the deployment type
+
+=head2 base_manifest
+
+  my $manifest = $provider->base_manifest(@args);
+
+Returns the manifest most suitable for looking up data -- the non-entombed,
+non-redacted view. Selects C<vaultified> when the environment has been
+vaultified; otherwise selects C<unredacted>. Any additional arguments are
+forwarded to the selected type accessor.
+
+B<Returns:> A C<Genesis::Env::Manifest::Vaultified> or
+C<Genesis::Env::Manifest::Unredacted> object, depending on the environment's
+vaultification state. The type decision is memoized after the first call.
+
+B<Examples:>
+
+  my $manifest = $provider->base_manifest();
+  # Returns: vaultified or unredacted manifest depending on env state
+
+=head2 reset
+
+  $provider->reset();
+
+Resets all cached manifest objects and work files for this provider. Each
+cached manifest object has its own reset called before being discarded.
+All memoized provider-level values (keys beginning with C<__>) are cleared,
+the deployment type is set back to undef, and all C<manifest-E<lt>nameE<gt>-*>
+work files in the environment work directory are deleted.
+
+B<Returns:> The provider object itself, for method chaining.
+
+B<Examples:>
+
+  $provider->reset();
+  my $fresh = $provider->unredacted();
+  # Returns: a freshly built manifest, ignoring any prior cache
+
+=head2 merge
+
+  my ($data, $file, $warnings, $errors) = $provider->merge($manifest, $sources, $options, $env_vars);
+
+Merges a set of YAML source files using C<spruce merge> and saves the result
+to the manifest's work file. This is the low-level build operation used by
+all C<Genesis::Env::Manifest> subclasses; it is not normally called
+directly by application code.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$manifest>
+
+A C<Genesis::Env::Manifest> object for which the merge is being performed.
+Used to determine the output file name, type label, and whether to emit a
+build notification.
+
+=item C<$sources>
+
+An array reference of absolute file paths to merge in order.
+
+=item C<$options>
+
+A hash reference of merge options. The C<eval> key controls spruce evaluation
+mode: C<"full"> (default) for full evaluation, C<"no"> to pass
+C<--skip-eval>, or C<"adaptive"> to defer unresolvable operators rather than
+failing. The C<multidoc> key (default 1) passes C<--multi-doc> to spruce
+when true. The C<gopatch> key (default 1) passes C<--go-patch> to spruce
+when true.
+
+=item C<$env_vars>
+
+An optional hash reference of environment variables to set when invoking
+spruce. Defaults to an empty hash.
+
+=back
+
+B<Returns:> A four-element list C<($data, $file, $warnings, $errors)> where
+C<$data> is a hash reference of the parsed merged YAML (or C<undef> on error),
+C<$file> is the absolute path to the saved manifest file (or C<undef> on
+error), C<$warnings> is a string of warnings from spruce in adaptive mode
+(or C<undef>), and C<$errors> is a string of error output if the merge failed
+(or C<undef> on success).
+
+B<Examples:>
+
+  my ($data, $file, $warnings, $errors) = $provider->merge(
+      $manifest,
+      [$init_file, @kit_files, @env_files, $cap_file],
+      {eval => 'full', multidoc => 1, gopatch => 1},
+      {GENESIS_ENV => 'prod'}
+  );
+  # Returns: ($data_hashref, '/path/to/manifest.yml', undef, undef)
+
+=head2 get_subset
+
+  my ($data, $file) = $provider->get_subset($manifest, $subset, $req);
+
+Derives a subset manifest from its parent manifest type using include,
+exclude, or fetch operations defined in the subset plan. Used internally by
+manifest subclasses; not normally called by application code.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$manifest>
+
+The C<Genesis::Env::Manifest> subset object being built. Its type determines
+the parent manifest to derive from.
+
+=item C<$subset>
+
+The subset name (e.g., C<"pruned">, C<"releases">). Must match a key in the
+subset plans.
+
+=item C<$req>
+
+Either C<"data"> to return the subset as a Perl data structure, or any other
+value to write the subset to a file and return its path.
+
+=back
+
+B<Returns:> A two-element list C<($data, $file)>. When C<$req> is C<"data">,
+C<$data> is a hash (or scalar) and C<$file> is C<undef>. Otherwise, C<$data>
+is C<undef> and C<$file> is the path to the written subset file.
+
+B<Errors:>
+
+Dies with C<"Unknown subset '%s' requested for manifest %s"> if C<$subset>
+does not match any known subset plan. C<%s> is the subset name and C<%s> is
+the manifest type.
+
+Dies with C<"Invalid subset '%s' requested for manifest %s: valid operators are %s">
+if the subset plan exists but contains none of the recognized operators
+(C<include>, C<exclude>, C<fetch>).
+
+Dies with C<"Too many selections specified for subset '%s' in manifest %s">
+if the subset plan specifies more than one operator.
+
+Dies with C<"Could not get subset %s from %s manifest: %s"> if the
+file-mode subset extraction command fails. The placeholders are the subset
+name, the source manifest type, and the error output.
+
+B<Examples:>
+
+  my ($data, undef) = $provider->get_subset($manifest, 'releases', 'data');
+  # Returns: (hashref containing 'releases' key, undef)
+
+  my (undef, $file) = $provider->get_subset($manifest, 'pruned', 'file');
+  # Returns: (undef, '/path/to/pruned-manifest-file.yml')
+
+=head2 initiation_file
+
+  my $path = $provider->initiation_file();
+
+Returns the path to the initiation YAML file used as the first source in a
+manifest merge. The result is memoized after the first call.
+
+B<Returns:> An absolute file path string.
+
+B<Examples:>
+
+  my $path = $provider->initiation_file();
+  # Returns: '/path/to/env/.genesis/manifests/initiation.yml'
+
+=head2 kit_files
+
+  my @paths = $provider->kit_files();
+
+Returns the list of absolute file paths contributed by the kit's blueprint for
+this environment. Results are memoized. On first call, emits a pending
+notification while the kit is queried.
+
+B<Returns:> A list of absolute file path strings.
+
+B<Examples:>
+
+  my @files = $provider->kit_files();
+  # Returns: ('/path/to/kit/base.yml', '/path/to/kit/addons/db.yml', ...)
+
+=head2 cloud_config_files
+
+  my @paths = $provider->cloud_config_files(%options);
+
+Returns the list of cloud config YAML files needed for the manifest build.
+Results are memoized separately for the required and optional cases.
+
+B<Parameters:>
+
+=over 4
+
+=item C<optional>
+
+Boolean. When true, optional cloud config files are included; when false or
+absent, only required files are returned.
+
+=back
+
+B<Returns:> A list of absolute file path strings.
+
+B<Examples:>
+
+  my @files = $provider->cloud_config_files();
+  # Returns: required cloud config file paths
+
+  my @all = $provider->cloud_config_files(optional => 1);
+  # Returns: required and optional cloud config file paths
+
+=head2 environment_files
+
+  my @paths = $provider->environment_files();
+
+Returns the list of local environment YAML files used in the manifest build.
+Results are memoized after the first call.
+
+B<Returns:> A list of absolute file path strings.
+
+B<Examples:>
+
+  my @files = $provider->environment_files();
+  # Returns: ('/path/to/env/us-east-1-prod.yml', ...)
+
+=head2 conclusion_file
+
+  my $path = $provider->conclusion_file();
+
+Returns the path to the conclusion (cap) YAML file appended as the final
+source in a manifest merge. The result is memoized after the first call.
+
+B<Returns:> An absolute file path string.
+
+B<Examples:>
+
+  my $path = $provider->conclusion_file();
+  # Returns: '/path/to/env/.genesis/manifests/conclusion.yml'
+
+=head2 full_merge_env
+
+  my $env_vars = $provider->full_merge_env();
+
+Returns a hash reference of all environment variables required when running a
+full manifest merge. Variables are retrieved from the associated
+C<Genesis::Env> object using the C<manifest> context. The result is memoized
+after the first call.
+
+B<Returns:> A hash reference of environment variable name-to-value pairs.
+
+B<Examples:>
+
+  my $vars = $provider->full_merge_env();
+  # Returns: { GENESIS_ENV => 'prod', BOSH_ENVIRONMENT => 'bosh', ... }
+
+=head2 valid_subset
+
+  my $bool = $provider->valid_subset($subset);
+
+Returns true if C<$subset> is a known subset name, false (C<undef>) if
+C<$subset> is C<undef>, and aborts with an internal error if C<$subset> is a
+defined but unrecognized name.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$subset>
+
+The subset name to validate, or C<undef>.
+
+=back
+
+B<Returns:> C<1> if the subset is valid, C<undef> if C<$subset> is C<undef>.
+
+B<Errors:>
+
+Dies with C<"Invalid subset '$subset' requested for manifest"> if C<$subset>
+is defined but is not a recognized subset name. C<$subset> is the literal
+name string that was passed.
+
+B<Examples:>
+
+  my $ok = $provider->valid_subset('pruned');
+  # Returns: 1
+
+  my $ok = $provider->valid_subset(undef);
+  # Returns: undef
+
+=head2 vault_paths
+
+  my $paths = $provider->vault_paths(%opts);
+
+Extracts and returns a map of all Vault secret paths referenced in a
+manifest. Uses C<spruce vaultinfo> to enumerate the secrets and their
+referencing locations within the manifest.
+
+The manifest to inspect is determined by the options provided:
+
+=over 4
+
+=item If C<data> is given -- writes the data to a temporary YAML file and inspects it.
+
+=item If C<file> is given -- inspects the named file directly.
+
+=item If C<manifest> is given -- inspects the manifest's associated file.
+
+=item Otherwise -- builds and inspects the C<unevaluated> manifest for this environment.
+
+=back
+
+B<Parameters:>
+
+=over 4
+
+=item C<data>
+
+Optional. A Perl data structure (hash reference) to serialize to YAML and
+inspect.
+
+=item C<file>
+
+Optional. An absolute path to an existing YAML manifest file to inspect.
+
+=item C<manifest>
+
+Optional. A C<Genesis::Env::Manifest> object whose associated file is
+inspected.
+
+=item C<notify>
+
+Optional boolean. Controls whether a notification is emitted when the
+C<unevaluated> manifest must be built. Defaults to C<1> (notify).
+
+=back
+
+B<Returns:> A hash reference where each key is a vault path string (always
+beginning with C</>) and each value is an array reference of the locations
+within the manifest that reference that path.
+
+B<Errors:>
+
+Dies with C<"Expecting spruce vaultinfo to return an array of secrets, got this instead:\n\n">
+followed by a Data::Dumper dump of the unexpected value, if the
+C<spruce vaultinfo> output is not a hash containing a C<secrets> array.
+
+B<Examples:>
+
+  my $paths = $provider->vault_paths();
+  for my $path (sort keys %$paths) {
+      printf "%s referenced at: %s\n", $path, join(', ', @{$paths->{$path}});
+  }
+  # prints each vault path and where it appears in the manifest
+
+  my $paths = $provider->vault_paths(file => '/tmp/my-manifest.yml');
+  # Returns: hashref of vault paths from the given file
+
+=head1 INTERNAL METHODS
+
+These methods are internal to the implementation. They may change without
+notice and should not be called directly.
+
+=head2 _subset_plans
+
+  my $plans = $provider->_subset_plans();
+
+Returns a hash reference defining the available manifest subsets and their
+extraction rules. Each key is a subset name; each value is a hash with a
+C<description> and exactly one of:
+
+=over 4
+
+=item C<include>
+
+An array reference of top-level YAML keys to cherry-pick from the source
+manifest.
+
+=item C<exclude>
+
+An array reference of top-level YAML keys to prune from the source manifest.
+
+=item C<fetch>
+
+A hash reference with a C<key> to extract and a C<default> to use when the
+key is absent.
+
+=back
+
+The result is memoized after the first call.
+
+B<Returns:> A hash reference of subset plan definitions.
+
+=head2 _adaptive_merge
+
+  my ($out, $warnings) = $provider->_adaptive_merge(\%opts, @files);
+
+Attempts to merge source files with C<spruce merge>. When the initial merge
+fails due to unresolvable operators (e.g., missing Vault secrets or
+unevaluatable references), it inspects the error output, locates the
+problematic spruce operators in the source content, rewrites them as
+C<(( defer ... ))> expressions, and retries. Up to five retry attempts are
+made before giving up.
+
+Accepts an optional leading hash reference of options (e.g., C<env> for
+environment variables to pass to the merge command). If the first positional
+argument after C<$self> is not a hash reference, no options hash is consumed.
+The remaining arguments are a list of absolute file paths to merge.
+
+In list context, returns C<($merged_yaml, $warnings_string)>. In scalar
+context, returns only C<$merged_yaml>. The C<$warnings_string> contains spruce
+stderr output: on the early-success path it is the stderr from the successful
+merge (which may be empty or contain warnings); on the retry path it contains
+the original error output collected before retry attempts began.
+
+B<Errors:>
+
+Dies with C<"Internal error: Could not find line causing error '$err_msg' during adaptive merge.">
+if a failing spruce error path cannot be traced back to a source location
+in the merged content. C<$err_msg> is the spruce error message text.
+
+Dies with C<"Could not merge %s environment files:\n\n%s\n\n..."> if all
+retry attempts are exhausted and the merge still fails. C<%s> is the
+environment name and C<%s> is the original or final error output. The
+message also suggests C<export GENESIS_UNEVALED_PARAMS=1> as a partial
+workaround.
+
+B<Examples:>
+
+  my ($yaml, $warnings) = $provider->_adaptive_merge(
+      {env => {GENESIS_ENV => 'prod'}},
+      $init_file, $kit_file, $env_file
+  );
+  # Returns: ($merged_yaml_string, $warnings_string_or_undef)
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

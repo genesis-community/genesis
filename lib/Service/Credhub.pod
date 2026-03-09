@@ -1,0 +1,910 @@
+=encoding utf8
+
+=head1 NAME
+
+Service::Credhub - CredHub credential store service object
+
+=head1 SYNOPSIS
+
+  use Service::Credhub;
+
+  # Build from a connected BOSH director (preferred)
+  my $ch = Service::Credhub->from_bosh($bosh);
+
+  # Low-level constructor
+  my $ch = Service::Credhub->new(
+    'my-bosh',
+    '/my-bosh/',
+    'https://credhub.example.com:8844',
+    'credhub-client',
+    's3cr3t',
+    $ca_cert_pem,
+  );
+
+  # Pre-load all credentials into memory cache
+  $ch->preload();
+
+  # Read a credential
+  my $val = $ch->get('db/password');
+
+  # Write a credential
+  my $id = $ch->set('db/password', 'hunter2');
+
+  # List paths under base
+  my @paths = $ch->paths();
+
+=head1 DESCRIPTION
+
+C<Service::Credhub> models a single CredHub credential store and provides a
+high-level interface for reading, writing, listing, and deleting credentials.
+It authenticates to CredHub using client credentials (client ID and secret)
+together with a CA certificate, passing these as environment variables to
+each C<credhub> CLI invocation.
+
+The preferred way to construct a C<Service::Credhub> object is via
+C<from_bosh>, which reads all required connection details from the exodus
+data of a BOSH deployment. The raw C<new> constructor is available for
+testing or when exodus is not in use.
+
+Credential values in CredHub can be one of seven types: C<certificate>,
+C<ssh>, C<rsa>, C<user>, C<password>, C<json>, or C<value>. The C<set>
+method handles all seven and performs per-type validation before invoking
+the CLI.
+
+An in-memory cache is available for read-heavy workloads. Call C<preload>
+once to fetch all credentials under the base path; subsequent C<get> and
+C<has> calls read from the cache without network round-trips.
+
+The authentication environment hash (containing keys C<CREDHUB_SERVER>,
+C<CREDHUB_CLIENT>, C<CREDHUB_SECRET>, and C<CREDHUB_CA_CERT>) is passed to
+every C<credhub> CLI subprocess automatically.
+
+The environment variable C<GENESIS_SHOW_CREDHUB_SECRETS> controls redaction.
+When set, credential values are shown in plain text in command output;
+otherwise they are redacted.
+
+=head1 KNOWN ISSUES
+
+The following defects are tracked in FWT-707 and are documented here so
+that callers are aware of the current behaviour.
+
+=over 4
+
+=item CH-1 (critical) E<mdash> B<RESOLVED>
+
+C<query()>: the C<delete> key now matches the condition key (C<_data>).
+
+=item CH-2 (medium) E<mdash> B<RESOLVED>
+
+C<set()> error messages now report only the missing keys via
+C<sentence_join(@$missing)>, and the double-space typo is fixed.
+
+=item CH-3 (medium) E<mdash> B<RESOLVED>
+
+C<preload()> now uses C<$self-E<gt>base()> (via a local variable) with
+C<\Q...\E> quoting in the regex substitution.
+
+=item CH-4 (low) E<mdash> B<RESOLVED>
+
+C<set()> now updates the in-memory cache after a successful write when the
+cache is populated.
+
+=item CH-5 (low) E<mdash> B<RESOLVED>
+
+C<is_preloaded()> now returns true when the cache has been initialised,
+even if the credential store is empty.
+
+=back
+
+=head1 CLASS METHODS
+
+=head2 new
+
+  my $ch = Service::Credhub->new($name, $base, $url, $username, $password, $ca_cert);
+
+Low-level constructor. Prefer C<from_bosh> when a BOSH director object is
+available, as it reads all connection details from exodus data and validates
+the result.
+
+B<Parameters:>
+
+=over 4
+
+=item $name
+
+A label identifying this CredHub instance, typically the BOSH director
+alias (e.g. C<'prod-bosh'>).
+
+=item $base
+
+The base path prefix for all credentials managed by this object
+(e.g. C<'/prod-bosh/'>). A trailing slash is normalised by the C<base>
+accessor.
+
+=item $url
+
+The CredHub API URL including scheme and port
+(e.g. C<'https://credhub.example.com:8844'>).
+
+=item $username
+
+The UAA client ID used to authenticate with CredHub.
+
+=item $password
+
+The UAA client secret paired with C<$username>.
+
+=item $ca_cert
+
+The PEM-encoded CA certificate chain trusted for TLS verification. This is
+set as C<CREDHUB_CA_CERT> in the subprocess environment.
+
+=back
+
+B<Returns:> A blessed C<Service::Credhub> object.
+
+B<Examples:>
+
+  my $ch = Service::Credhub->new(
+    'prod-bosh',
+    '/prod-bosh/',
+    'https://10.0.0.10:8844',
+    'credhub-admin',
+    'secret',
+    $ca_pem,
+  );
+  # Returns: a Service::Credhub object
+
+=head2 from_bosh
+
+  my $ch = Service::Credhub->from_bosh($bosh, %opts);
+
+Preferred factory. Reads CredHub connection details from the exodus data of
+a BOSH deployment and returns a fully configured C<Service::Credhub> object.
+
+The vault used to read exodus data is resolved in this order:
+
+=over 4
+
+=item 1.
+
+C<$opts{exodus_vault}> if provided.
+
+=item 2.
+
+C<$bosh-E<gt>exodus_vault()> if it returns a defined value.
+
+=item 3.
+
+C<Service::Vault-E<gt>current()> if a current vault has been set.
+
+=item 4.
+
+C<Service::Vault-E<gt>default()> as a final fallback.
+
+=back
+
+The exodus path is C<$opts{exodus_path}> if provided, otherwise
+C<$bosh-E<gt>exodus_path()>.
+
+The following exodus keys are required:
+
+=over 4
+
+=item C<credhub_url>
+
+=item C<credhub_username>
+
+=item C<credhub_password>
+
+=item C<credhub_ca_cert>
+
+=back
+
+The optional exodus key C<ca_cert>, when present, is prepended to
+C<credhub_ca_cert> to form the full CA certificate chain.
+
+The base path is taken from the exodus key C<credhub_base> when present,
+then C<$opts{base}>, then C<"/"> as a default.
+
+B<Parameters:>
+
+=over 4
+
+=item $bosh
+
+A C<Service::BOSH> object providing C<alias>, C<exodus_vault>, and
+C<exodus_path>.
+
+=item %opts
+
+Optional key/value pairs:
+
+=over 4
+
+=item exodus_vault
+
+A C<Service::Vault> object to use for reading exodus data. Overrides the
+vault resolved from C<$bosh>.
+
+=item exodus_path
+
+The vault path to the exodus data. Overrides C<$bosh-E<gt>exodus_path()>.
+
+=item base
+
+Fallback base path when the exodus data contains no C<credhub_base> key.
+Defaults to C<"/">.
+
+=item return_on_error
+
+If true, returns C<undef> instead of calling C<bail()> when exodus data is
+missing or incomplete.
+
+=back
+
+=back
+
+B<Returns:> A C<Service::Credhub> object on success, or C<undef> when
+C<return_on_error> is set and exodus data is absent or invalid.
+
+B<Errors:>
+
+Dies with C<"No exodus data found under E<lt>pathE<gt> on vault E<lt>nameE<gt>"> if
+no exodus data exists at the resolved path and C<return_on_error> is not
+set.
+
+Dies with C<"Exodus data E<lt>sourceE<gt> does not appear to be for a deployment
+containing a CredHub endpoint:\n  Missing keys: E<lt>listE<gt>"> if any of the
+four required exodus keys are absent and C<return_on_error> is not set.
+
+B<Examples:>
+
+  # Standard usage
+  my $ch = Service::Credhub->from_bosh($bosh);
+  # Returns: a Service::Credhub object
+
+  # Custom exodus path; return undef on error instead of dying
+  my $ch = Service::Credhub->from_bosh($bosh,
+    exodus_path    => 'secret/exodus/prod/bosh',
+    return_on_error => 1,
+  );
+  # Returns: a Service::Credhub object, or undef if exodus data is missing
+
+=head1 METHODS
+
+=head2 base
+
+  my $base = $ch->base();
+
+Returns the base credential path, always with a trailing slash. The raw
+stored value may or may not include a trailing slash; C<base> normalises it.
+
+B<Returns:> A string such as C<'/prod-bosh/'>.
+
+B<Examples:>
+
+  print $ch->base();
+  # Returns: '/prod-bosh/'
+
+=head2 env
+
+  my $env = $ch->env();
+
+Returns a hash reference of environment variables used to authenticate with
+the CredHub CLI. The returned hash contains the keys C<CREDHUB_SERVER>,
+C<CREDHUB_CLIENT>, C<CREDHUB_SECRET>, and C<CREDHUB_CA_CERT>, set from
+the object's connection details. This hash is passed to every C<credhub>
+subprocess spawned by the module.
+
+B<Returns:> A hash reference suitable for passing as the C<env> option to
+C<run()>.
+
+B<Examples:>
+
+  my $env = $ch->env();
+  # Returns: {
+  #   CREDHUB_SERVER  => 'https://10.0.0.10:8844',
+  #   CREDHUB_CLIENT  => 'credhub-admin',
+  #   CREDHUB_SECRET  => 'secret',
+  #   CREDHUB_CA_CERT => '-----BEGIN CERTIFICATE-----...',
+  # }
+
+=head2 preload
+
+  $ch->preload();
+
+Exports all credentials under the base path using C<credhub export -j>,
+parses the JSON response, and stores each credential in an in-memory cache
+keyed by the credential name relative to the base path. Subsequent calls
+to C<get> and C<has> check the cache before making network requests.
+
+If the export command fails, the cache is cleared (C<delete $self-E<gt>{cached}>).
+On success, C<$self-E<gt>{cached}> is a hash reference mapping relative
+credential names to their values. For composite credential types
+(e.g. C<certificate>, C<ssh>, C<user>), the cached value is a hash
+reference; for simple types (C<password>, C<value>), it is a scalar string.
+
+When C<GENESIS_SHOW_CREDHUB_SECRETS> is set in the environment, CredHub
+output is not redacted.
+
+B<Note:> C<preload()> uses the C<base()> accessor to normalise the base path
+prefix when building cache keys.
+
+B<Returns:> The C<Service::Credhub> object, for method chaining.
+
+B<Examples:>
+
+  $ch->preload();
+  # Returns: $ch (the object itself)
+
+  # Chain with is_preloaded check
+  if ($ch->preload()->is_preloaded()) {
+    print "Cache populated\n";
+  }
+
+=head2 is_preloaded
+
+  my $bool = $ch->is_preloaded();
+
+Returns true if the in-memory cache has been initialised by a successful
+call to C<preload()>. Returns false if C<preload> has never been called,
+if it failed, or if the cache was cleared.
+
+An empty credential store still returns true after a successful preload,
+allowing callers to distinguish "never preloaded" from "preloaded but empty."
+
+B<Returns:> True (C<1>) if the cache is initialised, false otherwise.
+
+B<Examples:>
+
+  if ($ch->is_preloaded()) {
+    print "Cache is ready\n";
+  }
+
+=head2 has
+
+  my $bool = $ch->has($path, $key);
+
+Returns true if a credential exists at C<$path> in CredHub, and optionally
+if a specific C<$key> is present within that credential's value hash.
+
+When the in-memory cache is populated and C<$path> is present in it, the
+check is performed against the cache without a network request. Otherwise,
+C<data($path)> is called to fetch the credential live.
+
+B<Parameters:>
+
+=over 4
+
+=item $path
+
+The credential path relative to the base (e.g. C<'db/password'>) or
+absolute (starting with C</>).
+
+=item $key
+
+Optional. When given, checks that C<$path>'s value is a hash and that
+C<$key> exists within it.
+
+=back
+
+B<Returns:> True if the credential (and optional key) exists, false or the
+empty string if not found or if an error occurred.
+
+B<Examples:>
+
+  if ($ch->has('db/password')) {
+    print "Credential exists\n";
+  }
+  # Returns: 1 if the credential exists
+
+  if ($ch->has('db/cert', 'certificate')) {
+    print "Certificate key present\n";
+  }
+  # Returns: 1 if the 'certificate' key exists within the credential
+
+=head2 get
+
+  my $value           = $ch->get($path, $key);
+  my ($value, $error)  = $ch->get($path, $key);
+
+Retrieves a credential value from CredHub. When the in-memory cache is
+populated and contains C<$path>, the value is returned from the cache
+without a network request. Otherwise C<data($path)> is called.
+
+In scalar context, returns the credential value (or the value of C<$key>
+within it). In list context, returns the value and an error string (C<undef>
+when no error occurred).
+
+B<Parameters:>
+
+=over 4
+
+=item $path
+
+The credential path relative to the base or absolute.
+
+=item $key
+
+Optional. When given, returns C<$data-E<gt>{value}{$key}> instead of the
+full value.
+
+=back
+
+B<Returns:>
+
+In scalar context, returns the credential value, or the value of C<$key>
+within the credential's value hash when C<$key> is provided. Returns
+C<undef> if the credential or key does not exist.
+
+In list context, returns C<($value, $error)>. C<$error> is C<undef> on
+success and contains an error string on failure.
+
+B<Examples:>
+
+  # Scalar context — value only
+  my $pw = $ch->get('db/password');
+  # Returns: 'hunter2'
+
+  # Scalar context — specific key within the credential
+  my $cert = $ch->get('db/cert', 'certificate');
+  # Returns: '-----BEGIN CERTIFICATE-----...'
+
+  # List context — value and error
+  my ($val, $err) = $ch->get('db/password');
+  die "Error: $err" if $err;
+  # Returns: ('hunter2', undef) on success
+
+=head2 data
+
+  my $data = $ch->data($path);
+
+Fetches raw credential data from CredHub for the given path by running
+C<credhub get -j -n E<lt>full_pathE<gt>>. Strips CredHub's "two login methods"
+warning from stderr before reporting errors.
+
+When C<GENESIS_SHOW_CREDHUB_SECRETS> is set in the environment, CredHub
+output is not redacted.
+
+This is a low-level method. Most callers should use C<get> or C<has>
+instead.
+
+B<Parameters:>
+
+=over 4
+
+=item $path
+
+The credential path relative to the base or absolute.
+
+=back
+
+B<Returns:> On success, a hash reference as decoded from the CredHub JSON
+response (contains a C<value> key). On failure, a hash reference
+C<{ error =E<gt> $err }> where C<$err> is the cleaned stderr output.
+
+B<Examples:>
+
+  my $data = $ch->data('db/password');
+  if ($data->{error}) {
+    warn "CredHub error: $data->{error}\n";
+  } else {
+    print $data->{value};
+  }
+  # Returns: { value => 'hunter2' } on success
+
+=head2 set
+
+  my $id               = $ch->set($path, $value, $type);
+  my ($out, $rc, $err)  = $ch->set($path, $value, $type);
+
+Stores a credential in CredHub at the given path. The credential type is
+determined from C<$type> when provided, or auto-detected: a reference value
+becomes C<json>; a plain scalar becomes C<value>.
+
+Each type imposes specific requirements on C<$value>:
+
+=over 4
+
+=item C<certificate>
+
+C<$value> must be a hash reference containing C<certificate> and
+C<private_key>, plus exactly one of C<root> (the CA certificate PEM) or
+C<root_path> (the CredHub path to the CA certificate).
+
+=item C<ssh> / C<rsa>
+
+C<$value> must be a hash reference containing C<public_key> and
+C<private_key>.
+
+=item C<user>
+
+C<$value> must be a hash reference containing C<username> and C<password>.
+
+=item C<password>
+
+C<$value> must be a hash reference containing C<password>.
+
+=item C<json>
+
+C<$value> must be an ARRAY or HASH reference. The value is JSON-encoded
+before being sent to CredHub.
+
+=item C<value>
+
+C<$value> must be a non-empty scalar string. Dollar signs in the value are
+escaped via an environment variable substitution trick to avoid shell
+interpretation.
+
+=back
+
+In scalar context, returns the credential ID string assigned by CredHub
+and dies on error. In list context, returns C<($out, $rc, $err)> from the
+C<credhub set> invocation without dying on non-zero exit.
+
+When C<GENESIS_SHOW_CREDHUB_SECRETS> is set in the environment, CredHub
+output is not redacted.
+
+B<Note:> On success, the in-memory cache (when populated) is updated with
+the new value so that a subsequent C<get()> on the same path returns the
+cached result without a network round-trip.
+
+B<Parameters:>
+
+=over 4
+
+=item $path
+
+The credential path relative to the base or absolute.
+
+=item $value
+
+The value to store. Type and format requirements are described above.
+
+=item $type
+
+Optional. One of C<certificate>, C<ssh>, C<rsa>, C<user>, C<password>,
+C<json>, or C<value>. Auto-detected when omitted.
+
+=back
+
+B<Returns:>
+
+In scalar context, returns the CredHub credential ID string (e.g.
+C<'abc123def456'>). Dies on error.
+
+In list context, returns C<($out, $rc, $err)>. C<$rc> is C<0> on success
+or a non-zero exit code on failure.
+
+B<Errors:>
+
+Dies with C<"Invalid parameters specified for creating a CredHub certificate value: E<lt>keysE<gt>">
+when unexpected keys are present in the hash for type C<certificate>.
+
+Dies with C<"You must supply the certificate and the private_key when creating a CredHub certificate value.">
+when C<certificate> or C<private_key> is missing for type C<certificate>.
+
+Dies with C<"You must supply either the root ca certificate (root) or the CredHub path to the root ca (root_path) when creating a certificate, but not both.">
+when exactly one of C<root> or C<root_path> is not provided for type C<certificate>.
+
+Dies with C<"Invalid parameters specified for creating a CredHub %s value: %s">
+when unexpected keys are present for types C<ssh>, C<rsa>, C<user>, or
+C<password>. C<%s> is the uppercased type name and the invalid key list.
+
+Dies with C<"You must supply the %s when creating a Credhub %s value">
+when required keys are missing for types C<ssh>, C<rsa>, C<user>, or
+C<password>. C<%s> placeholders are the missing key list and the
+uppercased type name.
+
+Dies with C<"You must specify a HASH or an ARRAY as the value when creating a CredHub json value">
+when C<$value> is not a reference for type C<json>.
+
+Dies with C<"You must specify a non-empty string when creating a CredHub 'value' value">
+when C<$value> is undefined, a reference, or an empty string for type
+C<value>.
+
+Dies with C<"Unknown CredHub type: E<lt>typeE<gt> - expecting one of: certificate, rsa, ssh, user, password, json, or value">
+when an unsupported type string is given.
+
+Dies with C<"Could not create the Credhub %s value for path %s:...\n\n[Exit Code: %s]">
+in scalar context when C<credhub set> exits non-zero. C<%s> placeholders
+are the type (or C<"secret"> for type C<value>), the path, optional stdout
+and stderr sections, and the exit code.
+
+B<Examples:>
+
+  # Store a plain value (scalar context)
+  my $id = $ch->set('db/password', 'hunter2');
+  # Returns: '4f7a1c2b-...' (CredHub credential ID)
+
+  # Store a plain value (list context — no die on error)
+  my ($out, $rc, $err) = $ch->set('db/password', 'hunter2');
+  # Returns: ($json_output, 0, '') on success
+
+  # Store a JSON credential
+  my $id = $ch->set('app/config', { host => 'db.internal', port => 5432 });
+  # Returns: CredHub credential ID (type auto-detected as 'json')
+
+  # Store a certificate
+  my $id = $ch->set('tls/cert', {
+    certificate => $cert_pem,
+    private_key => $key_pem,
+    root        => $ca_pem,
+  }, 'certificate');
+  # Returns: CredHub credential ID
+
+=head2 paths
+
+  my @paths = $ch->paths($filter);
+
+Lists credential paths in CredHub.
+
+=over 4
+
+=item No filter
+
+Lists all credential paths under the base path.
+
+=item String filter
+
+Restricts the CredHub-side query using the C<-n> prefix flag, returning
+only paths whose names begin with the given string.
+
+=item Regexp filter
+
+Fetches all paths (no server-side filter) and returns only those matching
+the regexp on the client side.
+
+=back
+
+Returns an empty list when CredHub reports that no credentials match the
+query prefix.
+
+B<Parameters:>
+
+=over 4
+
+=item $filter
+
+Optional. A plain string for a CredHub-side prefix match, or a compiled
+C<Regexp> object (C<qr/.../>) for a client-side grep. When omitted, all
+paths under the base are returned.
+
+=back
+
+B<Returns:> A list of credential path strings. Returns an empty list when
+no credentials match.
+
+B<Errors:>
+
+Dies with C<"Could not list CredHub paths under %s:%s\n\n[Exit Code: %s]">
+if the C<credhub find> command fails for a reason other than no matching
+credentials. C<%s> placeholders are the filter or base path, optional
+stderr output, and the exit code.
+
+B<Examples:>
+
+  # All paths under base
+  my @all = $ch->paths();
+  # Returns: ('/prod-bosh/db/password', '/prod-bosh/tls/cert', ...)
+
+  # Server-side prefix filter
+  my @db = $ch->paths('db/');
+  # Returns: ('/prod-bosh/db/password', '/prod-bosh/db/cert')
+
+  # Client-side regexp filter
+  my @tls = $ch->paths(qr/\/tls\//);
+  # Returns: paths whose names contain '/tls/'
+
+=head2 keys
+
+  $ch->keys();
+
+This method is not implemented. Calling it unconditionally raises a
+programming error via C<bug()>. It exists as a stub to signal that
+the operation is not supported for CredHub credential stores.
+
+B<Returns:> Never returns; always dies.
+
+B<Errors:>
+
+Always dies with C<"Service::Credhub::keys method not supported">.
+
+B<Examples:>
+
+  # Do not call this method — it always dies
+  $ch->keys();
+  # Returns: never — always dies with "Service::Credhub::keys method not supported"
+
+=head2 delete
+
+  my ($out, $rc, $err) = $ch->delete($name);
+
+Deletes the single named credential from CredHub by running
+C<credhub delete --name E<lt>full_pathE<gt>>.
+
+B<Parameters:>
+
+=over 4
+
+=item $name
+
+The credential name relative to the base or absolute.
+
+=back
+
+B<Returns:> A three-element list C<($out, $rc, $err)>. C<$rc> is C<0> on
+success or a non-zero exit code if the deletion failed.
+
+B<Examples:>
+
+  my ($out, $rc, $err) = $ch->delete('db/password');
+  die "Delete failed: $err" if $rc;
+  # Returns: ('', 0, '') on success
+
+=head2 delete_all
+
+  my ($out, $rc, $err) = $ch->delete_all($path);
+
+Deletes all credentials under a given path in CredHub by running
+C<credhub delete --path E<lt>full_pathE<gt>>.
+
+B<Parameters:>
+
+=over 4
+
+=item $path
+
+The credential path prefix relative to the base or absolute. All
+credentials whose names begin with this path are deleted.
+
+=back
+
+B<Returns:> A three-element list C<($out, $rc, $err)>. C<$rc> is C<0> on
+success or a non-zero exit code if the deletion failed.
+
+B<Examples:>
+
+  my ($out, $rc, $err) = $ch->delete_all('db/');
+  die "delete_all failed: $err" if $rc;
+  # Returns: ('', 0, '') on success
+
+=head2 query
+
+  my $result = $ch->query($path, %params);
+
+Issues a raw HTTP request to the CredHub API using C<credhub curl --path>,
+and returns the parsed JSON response as a hash reference.
+
+Recognised special keys in C<%params>:
+
+=over 4
+
+=item _method
+
+The HTTP method string (e.g. C<'get'>, C<'post'>). Passed to C<credhub curl>
+as C<-X E<lt>METHOD_UPPERCASEDE<gt>>. If omitted, C<credhub curl> uses its
+default (C<GET>).
+
+=item _data
+
+When C<_data> is defined in C<%params>, its value is passed to
+C<credhub curl> as the C<-d> request body.
+
+=back
+
+B<Parameters:>
+
+=over 4
+
+=item $path
+
+The CredHub API path (e.g. C<'/api/v1/data'>). Passed directly to
+C<credhub curl --path>.
+
+=item %params
+
+Optional. Supports C<_method> and C<_data> as described above.
+Additional keys are accepted by the hash but currently not forwarded to
+the request (see the TODO in the source).
+
+=back
+
+B<Returns:> A hash reference containing the parsed JSON response body.
+
+B<Examples:>
+
+  # Simple GET
+  my $result = $ch->query('/api/v1/data', _method => 'get');
+  # Returns: parsed JSON response as a hash reference
+
+  # POST with body
+  my $result = $ch->query('/api/v1/data',
+    _method => 'post',
+    _data   => encode_json({ name => '/my/cred', type => 'value' }),
+  );
+  # Returns: parsed JSON response as a hash reference
+
+=head2 execute
+
+  my ($out, $rc, $err) = $ch->execute($cmd, @args);
+
+Executes an arbitrary C<credhub> subcommand in interactive mode, with
+CredHub authentication environment variables set and the environment
+redacted from logs. Stderr is suppressed.
+
+B<Parameters:>
+
+=over 4
+
+=item $cmd
+
+The C<credhub> subcommand string (e.g. C<'get'>, C<'set'>, C<'find'>).
+
+=item @args
+
+Additional arguments passed to the C<credhub> subprocess after C<$cmd>.
+
+=back
+
+B<Returns:> A three-element list C<($out, $rc, $err)>. C<$rc> is C<0> on
+success or a non-zero exit code on failure.
+
+B<Examples:>
+
+  my ($out, $rc, $err) = $ch->execute('version');
+  # Returns: ($version_output, 0, '') on success
+
+  my ($out, $rc) = $ch->execute('find', '-j', '-n', '/prod-bosh/');
+  # Returns: ($json_output, 0) on success
+
+=head1 INTERNAL METHODS
+
+These methods are internal to the implementation. They may change without
+notice and should not be called directly.
+
+=head2 _full_path
+
+  $ch->_full_path($path)
+
+Returns the fully qualified CredHub credential path. If C<$path> is
+undefined or empty, returns the raw base path (C<$self-E<gt>{base}>). If
+C<$path> begins with C</>, it is returned as-is. Otherwise, the base path
+and C<$path> are joined with C</>.
+
+B<Parameters:>
+
+=over 4
+
+=item $path
+
+Optional. A relative or absolute credential path.
+
+=back
+
+B<Returns:> A string — the resolved full credential path.
+
+B<Examples:>
+
+  # Relative path is prepended with base
+  $ch->_full_path('db/password');
+  # Returns: '/prod-bosh/db/password'
+
+  # Absolute path is returned unchanged
+  $ch->_full_path('/other/path');
+  # Returns: '/other/path'
+
+=head1 SEE ALSO
+
+L<Service::Vault>, L<Service::BOSH>
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

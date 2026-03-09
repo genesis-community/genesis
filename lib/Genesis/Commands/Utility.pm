@@ -170,7 +170,7 @@ sub ui_prompt_for {
 	command_usage(1) if @_ < 2; # prompt is optional, type and path are not
 	my ($type,$path,@prompt_lines) = @_;
 	my $prompt = join("\n",@prompt_lines);
-	my $use_vault = ($type =~ /^secret-*/);
+	my $use_vault = ($type =~ /^secret-/);
 	if ($use_vault) {
 		get_options->{secret} = $path;
 		eval {

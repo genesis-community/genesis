@@ -1,0 +1,418 @@
+=head1 NAME
+
+Boolean - A lightweight boolean object implementation with operator overloading
+
+=head1 SYNOPSIS
+
+    use Boolean;
+
+    # Create boolean objects
+    my $true  = Boolean->true;
+    my $false = Boolean->false;
+
+    # Parse values into boolean objects
+    my $bool = Boolean->parse("yes");     # true
+    my $bool = Boolean->parse("no");      # false
+    my $bool = Boolean->parse(1);         # true
+    my $bool = Boolean->parse(0);         # false
+
+    # Boolean operations with overloaded operators
+    print "true"  if $bool;               # boolean context
+    print "false" if !$bool;              # negation operator
+    print $bool . "\n";                   # string context
+    my $num = $bool + 0;                  # numeric context
+
+    # String and numeric conversion
+    print $bool->to_str();                # "true" or "false"
+    print $bool->to_str("YES", "NO");     # custom string values
+    print $bool->to_str("ON");            # auto-derives "OFF"
+    print $bool->to_i();                  # 1 or 0
+
+    # Register custom boolean pairs
+    Boolean->register_pair('available', 'unavailable');
+    my $status = Boolean->parse('available');  # true
+
+=head1 DESCRIPTION
+
+The Boolean package provides a lightweight implementation of boolean objects
+with proper operator overloading for use in boolean, string, and numeric
+contexts. It uses protected singletons for maximum efficiency while preventing
+corruption of the boolean state.
+
+Boolean objects are implemented as blessed references to read-only scalar
+values, ensuring that the internal state cannot be modified after creation.
+This provides both memory efficiency (only two objects are ever created) and
+safety from accidental modification.
+
+=head1 CLASS METHODS
+
+=head2 true
+
+    my $true_obj = Boolean->true;
+
+Returns a Boolean object representing the logical true value. This method
+always returns the same singleton object for efficiency.
+
+=head2 false
+
+    my $false_obj = Boolean->false;
+
+Returns a Boolean object representing the logical false value. This method
+always returns the same singleton object for efficiency.
+
+=head2 parse
+
+    my $bool = Boolean->parse($value);
+
+Parses a scalar value and returns the appropriate Boolean object. If the
+value is already a Boolean object, it is returned unchanged. Returns
+C<undef> for unrecognized string values.
+
+B<Reference Values:> Array and hash references are processed via the C<of> method.
+Other reference types use standard Perl truthiness rules.
+
+B<Numeric Values:> Any value matching the pattern C</^-?\d+(?:\.\d+)?$/> where
+0 is false, everything else is true.
+
+B<String Values:> Uses the extensible boolean pairs system to recognize values.
+Case-insensitive matching is performed against registered boolean pairs.
+
+B<Recognized True Values:> y, yes, on, true, t, 1, ok, good, pass, up, hi,
+high, start, open, enable, enabled, active, show, shown, verbose
+
+B<Recognized False Values:> n, no, off, false, f, 0, error, bad, fail, down,
+lo, low, stop, closed, disable, disabled, inactive, hide, hidden, quiet
+
+B<Custom Pairs:> Additional pairs can be registered using C<register_pair()>.
+
+B<Undefined/Empty Values:> C<undef> or empty strings return false.
+
+B<Unknown Values:> Unrecognized strings return C<undef> to allow callers
+to distinguish between a false Boolean object and an unparseable value.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<invalid call to Boolean::parse - only one argument allowed> — raised if
+more than one argument is passed.
+
+=back
+
+B<Examples:>
+
+    my $yes   = Boolean->parse("yes");      # Boolean true
+    my $zero  = Boolean->parse(0);          # Boolean false
+    my $undef = Boolean->parse("unknown");  # undef
+
+=head2 of
+
+    my $bool = Boolean->of($value);
+
+Creates a Boolean object from a given value using standard Perl truthiness
+rules. For arrays and hashes, empty containers return false, non-empty
+containers return true. For objects with boolean overloading, uses that.
+For objects without boolean overloading, attempts to call common boolean
+methods like C<is_true>, C<is_empty>, etc.
+
+=head2 register_pair
+
+    Boolean->register_pair($true_value, $false_value);
+
+Registers a custom boolean pair for use in parsing and string generation.
+Both values are stored case-insensitively and can be used in C<parse()>
+and auto-derived in C<to_str()>.
+
+=over
+
+=item C<$true_value>
+
+B<(required)> The string representing the true value. Must be a non-empty
+string or an object with string overloading.
+
+=item C<$false_value>
+
+B<(required)> The string representing the false value. Must be a non-empty
+string or an object with string overloading.
+
+=back
+
+Returns C<1> on success.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<Invalid call to Boolean::register_pair - must provide two strings of non-zero length>
+— raised if the argument count is not exactly two.
+
+=item *
+
+C<Invalid true value - must be a non-empty string or an object that provides a string value>
+— raised if C<$true_value> is undefined, empty, or a non-stringifiable reference.
+
+=item *
+
+C<Invalid false value - must be a non-empty string or an object that provides a string value>
+— raised if C<$false_value> is undefined, empty, or a non-stringifiable reference.
+
+=back
+
+B<Examples:>
+
+    Boolean->register_pair('online', 'offline');  # returns 1
+    my $b = Boolean->parse('online');             # Boolean true
+    print $b->to_str('online');                   # "online"
+
+=head1 INSTANCE METHODS
+
+=head2 to_str
+
+    my $string = $bool->to_str();
+    my $string = $bool->to_str($true_value);
+    my $string = $bool->to_str($true_value, $false_value);
+
+Converts the Boolean object to a string representation. By default, returns
+"true" for true values and "false" for false values.
+
+=over
+
+=item C<$true_value>
+
+B<(optional)> The string to return for true values. Defaults to C<"true">.
+
+=item C<$false_value>
+
+B<(optional)> The string to return for false values. When omitted, the
+method attempts to auto-derive the false value from registered boolean
+pairs, preserving the original capitalization pattern. If no matching
+pair is found, defaults to C<"false">.
+
+=back
+
+When only C<$true_value> is provided, the method attempts to auto-derive
+the corresponding false value using the registered boolean pairs, preserving
+the original capitalization pattern. If no matching pair is found, defaults
+to "false".
+
+The method includes an optimization: when using default values (C<$true_value>
+equals "true" and C<$false_value> is undefined or "false"), it returns the
+appropriate value directly without additional processing.
+
+B<Examples:>
+
+    my $true = Boolean->true;
+    print $true->to_str();              # "true"
+    print $true->to_str("YES", "NO");   # "YES"
+    print $true->to_str("ON");          # "ON" (auto-derives "OFF")
+
+    my $false = Boolean->false;
+    print $false->to_str("YES", "NO");  # "NO"
+    print $false->to_str("ON");         # "OFF" (auto-derived)
+
+=head2 to_i
+
+    my $integer = $bool->to_i();
+
+Converts the Boolean object to an integer representation. Returns 1 for
+true values and 0 for false values.
+
+=head2 to_json
+
+    my $json_bool = $bool->to_json();
+
+Converts the Boolean object to a JSON::PP::Boolean representation for use
+with JSON serialization. Returns JSON::PP->true() for true values and
+JSON::PP->false() for false values. This method requires JSON::PP at runtime.
+
+=head1 OPERATOR OVERLOADING
+
+The Boolean package overloads the following operators for natural usage:
+
+=head2 Boolean Context (bool)
+
+    if ($bool) { ... }
+    print "true" if $bool;
+
+Returns the underlying boolean value for use in conditional expressions.
+
+=head2 Negation (!)
+
+    my $opposite = !$bool;
+    print "false" if !$bool;
+
+Returns the opposite Boolean object using the same singleton instances.
+If the object represents true, returns the false singleton, and vice versa.
+
+=head2 String Context ("")
+
+    print "$bool\n";
+    my $string = $bool . " value";
+
+Converts the Boolean object to its string representation using the default
+values ("true" or "false").
+
+=head2 Numeric Context (0+)
+
+    my $number = $bool + 0;
+    my $sum = $bool + 5;
+
+Converts the Boolean object to its numeric representation (1 or 0).
+
+=head2 Comparison Operators
+
+    my $result = $bool1 == $bool2;    # numeric equality
+    my $result = $bool1 eq $bool2;    # string equality
+    my $result = $bool1 != $bool2;    # numeric inequality
+    my $result = $bool1 ne $bool2;    # string inequality
+
+The Boolean package supports comparison with other Boolean objects and
+automatic conversion of other values for comparison. When comparing with
+non-Boolean values, they are converted using appropriate methods:
+
+=over 4
+
+=item * String comparisons (eq/ne) convert the other value using C<parse()>
+
+=item * Numeric comparisons (==/!=) convert the other value using C<of()>
+
+=item * Boolean-to-Boolean comparisons directly compare underlying values
+
+=back
+
+=head1 IMPLEMENTATION DETAILS
+
+The Boolean package uses several advanced Perl techniques for efficiency
+and safety:
+
+=head2 Protected Singletons
+
+Only two Boolean objects are ever created during the lifetime of the program.
+These singletons are created at compile time and their underlying scalar
+values are marked as read-only using the Perl internal function C<Internals::SvREADONLY> to prevent
+accidental modification.
+
+=head2 Memory Efficiency
+
+Since all true values share the same object and all false values share the
+same object, memory usage is minimized regardless of how many Boolean
+objects are used in the program.
+
+=head2 Thread Safety
+
+The read-only nature of the singleton objects makes them inherently thread-safe,
+as no thread can modify the shared state.
+
+=head2 Extensible Boolean Pairs
+
+The package maintains a registry of boolean pairs that can be extended at
+runtime. The pairing system supports:
+
+=over 4
+
+=item * Case-insensitive matching
+
+=item * Automatic case preservation in output
+
+=item * Bidirectional lookup (true->false and false->true)
+
+=item * Runtime registration of custom pairs
+
+=back
+
+=head2 Case Preservation Limitations
+
+The C<_preserve_case> function handles common capitalization patterns but
+has limitations with complex cases:
+
+=over 4
+
+=item * Supports: all lowercase, ALL UPPERCASE, and First letter capitalized
+
+=item * Does not handle: CamelCase, snake_case, or other mixed patterns
+
+=item * Fallback: defaults to lowercase for unrecognized patterns
+
+=back
+
+For complex capitalization requirements, explicit false values should be
+provided to the C<to_str> method rather than relying on auto-derivation.
+
+=head1 EXAMPLES
+
+=head2 Basic Usage
+
+    use Boolean;
+
+    my $flag = Boolean->parse($ENV{DEBUG});
+
+    if ($flag) {
+        print "Debug mode enabled\n";
+    }
+
+    print "Flag is: " . $flag->to_str("ON", "OFF") . "\n";
+
+=head2 Configuration Processing
+
+    use Boolean;
+
+    my %raw = (debug => 'yes', verbose => 'no', enabled => '1');
+    my %config = (
+        debug    => Boolean->parse($raw{debug}),     # Boolean true
+        verbose  => Boolean->parse($raw{verbose}),    # Boolean false
+        enabled  => Boolean->parse($raw{enabled}),    # Boolean true
+    );
+
+    # Use in boolean context
+    warn "Debug output enabled" if $config{debug};
+
+    # Convert to strings for output
+    printf "Configuration: debug=%s, verbose=%s, enabled=%s\n",
+        map { $_->to_str } @config{qw(debug verbose enabled)};
+
+=head2 JSON Integration
+
+    use Boolean;
+    use JSON::PP;
+
+    my $data = {
+        success => Boolean->parse('yes')->to_json(),
+        enabled => Boolean->parse('on')->to_json(),
+        debug   => Boolean->parse('false')->to_json(),
+    };
+
+    my $json = JSON::PP->new->encode($data);
+    # Results in proper JSON booleans: {"success":true,"enabled":true,"debug":false}
+
+=head1 COMPARISON TO OTHER BOOLEAN MODULES
+
+Unlike JSON::PP::Boolean or other boolean implementations, this Boolean
+package:
+
+=over 4
+
+=item * Uses protected singletons for maximum efficiency
+
+=item * Provides extensive operator overloading for natural usage
+
+=item * Uses read-only scalars to prevent state corruption
+
+=item * Includes flexible parsing of common boolean representations
+
+=item * Follows Genesis project coding standards
+
+=back
+
+=head1 SEE ALSO
+
+L<overload>, L<JSON::PP::Boolean>
+
+=head1 AUTHOR
+
+Dennis Bell <dbell@fivetwenty.io>
+
+=cut

@@ -1,0 +1,1692 @@
+=encoding utf8
+
+=head1 NAME
+
+Genesis::Helpers - Bash helper library for Genesis kit hooks
+
+=head1 SYNOPSIS
+
+    # In Perl -- write the helper script to a kit workspace
+    Genesis::Helpers->write($workspace_path);
+
+    # In kit hook scripts — source the helper and use its functions
+    genesis do ...
+    exodus "kit_version"
+    lookup "params.key" "default"
+    want_feature "feature-name"
+    cloud_config_needs network "my-net"
+    bosh deploy manifest.yml
+
+=head1 DESCRIPTION
+
+C<Genesis::Helpers> wraps a comprehensive bash helper script in Perl's
+C<__DATA__> section.  When a Genesis kit hook script is about to run, Genesis
+calls C<< Genesis::Helpers->write($path) >> to extract the script to disk.
+The kit hook then sources the file, gaining access to a high-level bash API
+for interacting with Genesis, BOSH, Vault, cloud configs, environment
+parameters, and feature flags.
+
+The bash functions are the module's primary API surface.  Kit authors call
+them directly in their hook scripts (C<hooks/blueprint>, C<hooks/check>,
+C<hooks/new>, C<hooks/deploy>, C<hooks/addon>, etc.).  The two Perl methods
+(C<write> and C<log_from_script>) are delivery and logging infrastructure
+that kit authors do not call directly.
+
+=head1 METHODS
+
+=head2 write
+
+    Genesis::Helpers->write($path);
+
+Class method.  Reads the entire C<__DATA__> section of this module on the
+first call (caching the result in a package-scoped variable) and writes it
+to the file at C<$path>.  Subsequent calls write the cached content without
+re-reading C<DATA>.
+
+Can be called more than once without issue.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$path>
+
+Absolute or relative path to the file where the bash helper script should be
+written.  The file is created or overwritten.
+
+=back
+
+B<Returns:>
+
+Returns nothing meaningful.
+
+B<Errors:>
+
+Dies with C<"Could not open $path for writing the helpers script: $!\n"> if
+the file cannot be opened for writing.
+
+B<Examples:>
+
+    my $ws = '/tmp/my-kit-workspace';
+    Genesis::Helpers->write("$ws/helpers.sh");
+    # Returns: nothing (helpers.sh now contains the full bash helper library)
+
+=head2 log_from_script
+
+    Genesis::Helpers::log_from_script(@args);
+
+Dispatches a log message from a bash hook script into the Genesis Perl
+logging system.  This method is called internally by the C<genesis_log> bash
+function; kit authors do not call it directly.
+
+On each invocation the method lazily initialises the Genesis RC config (the user's
+C<~/.genesis/config>) and configures the Genesis logging system from that config.
+C<STDOUT> and C<STDERR> are set to C<UTF-8> mode.
+
+If the first element of C<@args> begins with C<@> (e.g., C<@fatal>,
+C<@warn>), that element is removed from the argument list, converted to
+lower-case, stripped of the leading C<@>, and used as the log-level
+selector.  The corresponding Genesis log function is looked up via C<can>.
+If no such log level exists, the Genesis C<bug> function is called.  When no
+C<@level> prefix is present, the Genesis C<info> function is used.
+
+The remaining arguments are joined with newlines, word-wrapped by the Genesis
+word-wrap helper, and passed to the resolved log function with
+C<< {show_stack =E<gt> 'none'} >>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<@args>
+
+One or more strings.  The optional first element may be a log-level tag of
+the form C<@levelname> (e.g., C<@fatal>, C<@warn>, C<@debug>).  Remaining
+elements are the message lines to log.
+
+=back
+
+B<Returns:>
+
+Returns nothing (explicit C<return;>).
+
+B<Errors:>
+
+Calls the Genesis C<bug> function with C<"$log_level is not a valid log command for Genesis"> if the specified log level does not correspond to a callable method on the Genesis package.
+
+B<Examples:>
+
+    # Called internally by the genesis_log bash wrapper:
+    # genesis_log @fatal "Something went wrong"
+    # which invokes:
+    Genesis::Helpers::log_from_script('@fatal', 'Something went wrong');
+    # Returns: nothing (logs at the fatal level via Genesis::fatal())
+
+=head1 BASH HELPER FUNCTIONS
+
+The following functions are available in every Genesis kit hook script after
+Genesis writes and sources the helper library.  They are defined in the
+C<__DATA__> section of this module and exported to the shell environment via
+C<export -f>.
+
+When C<GENESIS_TRACE=y> is set, the helper script prints all environment
+variables to STDERR at load time to assist with debugging.
+
+B<Genesis CLI Functions>
+
+=head2 genesis
+
+    genesis ARGS...
+
+Invokes the Genesis binary via the C<GENESIS_CALLBACK_BIN> environment
+variable, rooted at C<GENESIS_ROOT>.  This wrapper ensures all hook-script
+calls to C<genesis> use the correct binary and working directory, even when
+the hook is executed in a different directory.
+
+B<Arguments:>
+
+=over 4
+
+=item C<ARGS...>
+
+Any arguments to pass to the Genesis CLI.
+
+=back
+
+B<Returns:>
+
+Returns the exit code of the Genesis binary.  Exits with code 2 on error
+(see B<Errors> below).
+
+B<Errors:>
+
+Prints C<"Genesis command not specified - this is a bug in Genesis, or you
+are running $0 outside of Genesis"> to STDERR and exits with code 2 if
+C<GENESIS_CALLBACK_BIN> is unset or empty.
+
+B<Examples:>
+
+    genesis check --cloud
+    genesis lookup "$GENESIS_ENVIRONMENT" "params.key" ""
+
+=head2 describe
+
+    describe TEXT...
+
+Renders Genesis color-coded terminal markup and prints the result to STDOUT.
+Uses the Genesis terminal color-sprint function internally.
+
+B<Arguments:>
+
+=over 4
+
+=item C<TEXT...>
+
+One or more strings, each supporting Genesis terminal markup (e.g.,
+C<#G{green}>, C<#R{red}>, C<#C{cyan}>, C<#Bu{bold underline}>).
+
+=back
+
+B<Returns:>
+
+Prints the formatted text to STDOUT.  Does not return a meaningful value.
+
+B<Examples:>
+
+    describe "#G{[OK]} Configuration validated"
+    describe "#R{[ERROR]} Required parameter missing: #C{$key}"
+
+=head2 genesis_log
+
+    genesis_log [@LEVEL] MESSAGE...
+
+Sends a log message to the Genesis Perl logging system by invoking
+C<log_from_script> (in the C<Genesis::Helpers> Perl module) via C<perl>.
+This is how bash hook scripts write to the Genesis structured log.
+
+B<Arguments:>
+
+=over 4
+
+=item C<@LEVEL> (optional)
+
+A log-level tag prefixed with C<@>, e.g., C<@fatal>, C<@warn>, C<@debug>,
+C<@trace>.  When omitted, the message is logged at the C<info> level.
+
+=item C<MESSAGE...>
+
+One or more message strings.
+
+=back
+
+B<Returns:>
+
+Does not return a meaningful value.  Log output is dispatched to the Genesis
+logging system (which may write to STDERR, log files, or both depending on
+the Genesis RC configuration).
+
+B<Examples:>
+
+    genesis_log "Deployment started"
+    genesis_log @warn "Deprecated feature detected"
+    genesis_log @fatal "Cannot continue without required secret"
+
+=head2 titleize
+
+    titleize STRING...
+
+Converts a string to title case (each word's first letter capitalised, rest
+lower-cased) using a Perl one-liner.
+
+B<Arguments:>
+
+=over 4
+
+=item C<STRING...>
+
+One or more words or a sentence.  When no arguments are given, the function
+outputs nothing.
+
+=back
+
+B<Returns:>
+
+Prints the title-cased string to STDOUT.
+
+B<Examples:>
+
+    titleize "hello world"
+    # output: Hello World
+
+    label="$(titleize $GENESIS_KIT_NAME)"
+
+=head2 humanize_path
+
+    humanize_path PATH
+
+Converts an absolute file path into a human-readable form (e.g., replacing
+the home directory with C<~>) using the Genesis C<humanize_path> helper.
+
+B<Arguments:>
+
+=over 4
+
+=item C<PATH>
+
+The file-system path to humanize.
+
+=back
+
+B<Returns:>
+
+Prints the humanized path to STDOUT.
+
+B<Examples:>
+
+    humanize_path "/home/user/.genesis/config"
+    # output: ~/.genesis/config
+
+=head1 Error Handling
+
+=head2 __bail
+
+    __bail [--rc EXIT_CODE] MESSAGE...
+
+Internal error-reporting function.  Logs all C<MESSAGE> lines at the
+C<@fatal> log level via C<genesis_log> (output is redirected to STDERR),
+then exits the current shell process.
+
+B<Arguments:>
+
+=over 4
+
+=item C<--rc EXIT_CODE> (optional)
+
+Specifies the exit code.  Defaults to C<1> when omitted.
+
+=item C<MESSAGE...>
+
+One or more message strings describing the fatal error.
+
+=back
+
+B<Examples:>
+
+    __bail "Something is badly wrong"
+    __bail --rc 2 "Unrecoverable error encountered"
+
+=head2 bail
+
+    bail [--rc EXIT_CODE] MESSAGE...
+
+Public alias for C<__bail>.  Kit hook scripts should use C<bail> instead of
+C<__bail>, as C<__bail> is intended for use within the helper library itself.
+
+B<Arguments:>
+
+=over 4
+
+=item C<--rc EXIT_CODE> (optional)
+
+Exit code.  Defaults to C<1>.
+
+=item C<MESSAGE...>
+
+One or more message strings.
+
+=back
+
+B<Examples:>
+
+    bail "Required parameter 'params.app_domain' is not set"
+    bail --rc 3 "Cloud config check failed"
+
+=head2 safe
+
+    safe ARGS...
+
+Vault command guard.  This function is conditionally defined only when
+C<SAFE_TARGET> is empty or does not match C<GENESIS_TARGET_VAULT>.  When
+defined, any call to C<safe> immediately bails with a fatal error instead
+of executing the command, preventing accidental Vault operations against the
+wrong target.
+
+When C<SAFE_TARGET> matches C<GENESIS_TARGET_VAULT>, this wrapper is B<not>
+defined, allowing the real C<safe> CLI to be called normally.
+
+B<Arguments:>
+
+=over 4
+
+=item C<ARGS...>
+
+Any arguments (ignored — the function always bails when defined).
+
+=back
+
+B<Errors:>
+
+Calls C<__bail> with C<"Safe target not associated with Genesis Vault --
+this is a bug in Genesis, or you are running $0 outside of Genesis">.
+
+=head1 Exodus Data
+
+=head2 exodus
+
+    exodus KEY
+    exodus ENV/TYPE KEY
+    exodus ENV/TYPE --all
+
+Retrieves a value from the Genesis exodus data store in Vault.  Exodus data
+is written by Genesis during deployment and holds key deployment outputs for
+cross-environment references.
+
+When called with one argument, looks up C<KEY> under the current environment
+and type (C<$GENESIS_ENVIRONMENT/$GENESIS_TYPE>).
+
+When called with two arguments, C<ENV/TYPE> specifies the target environment
+and deployment type, and C<KEY> is the key to retrieve.
+
+When C<--all> is passed as the key, prints all exodus data for the target
+as a JSON object (via C<spruce json | jq -r .>).
+
+The function outputs nothing and returns silently if the requested key does
+not exist in Vault.
+
+B<Arguments:>
+
+=over 4
+
+=item C<KEY>
+
+The exodus key to retrieve (e.g., C<kit_version>, C<tsa_url>, C<api_url>).
+Required.  Use C<--all> to retrieve all keys.
+
+=item C<ENV/TYPE> (optional, first argument when two are given)
+
+The environment and deployment type to query, e.g., C<my-proto/concourse>.
+Defaults to C<$GENESIS_ENVIRONMENT/$GENESIS_TYPE>.
+
+=back
+
+B<Returns:>
+
+Prints the value of the requested key to STDOUT, or prints JSON when
+C<--all> is used.  Produces no output if the key does not exist.
+
+B<Errors:>
+
+The function does not call C<bail> directly.  If the requested key does not
+exist, it produces no output and returns silently.  Errors from the
+underlying C<safe> commands are not caught.
+
+B<Examples:>
+
+    # What version was this environment last deployed with?
+    version=$(exodus kit_version)
+
+    # What is the TSA URL of a remote Concourse?
+    tsa=$(exodus my-proto/concourse tsa_url)
+
+    # Get the CF API URL for the local CF instance
+    api=$(exodus $GENESIS_ENVIRONMENT/cf api_url)
+
+    # Dump all exodus data for the current environment
+    exodus --all
+
+=head2 have_exodus_data_for
+
+    have_exodus_data_for ENV/TYPE
+
+Returns true (exit code 0) if exodus data exists in Vault for the given
+C<ENV/TYPE> path; false (non-zero) otherwise.
+
+B<Arguments:>
+
+=over 4
+
+=item C<ENV/TYPE>
+
+The environment and deployment type path to check (e.g.,
+C<my-env/bosh>).  Required.
+
+=back
+
+B<Returns:>
+
+Exit code 0 if the path exists, non-zero if not.
+
+B<Errors:>
+
+Calls C<bail> if C<ENV/TYPE> is not provided:
+C<"have_exodus_data_for() must provide an environment/type">.
+
+B<Examples:>
+
+    if have_exodus_data_for "my-env/bosh" ; then
+      bosh_ip=$(exodus my-env/bosh static_ip)
+    fi
+
+=head2 have_exodus_data
+
+    have_exodus_data
+
+Returns true (exit code 0) if exodus data exists for the current environment
+and deployment type (C<$GENESIS_ENVIRONMENT/$GENESIS_TYPE>); false otherwise.
+
+B<Returns:>
+
+Exit code 0 if exodus data exists, non-zero if not.
+
+B<Examples:>
+
+    if have_exodus_data ; then
+      echo "This environment has been deployed before"
+    fi
+
+=head1 Version and Deployment
+
+=head2 new_enough
+
+    new_enough HAVE MINIMUM
+
+Compares two semantic version strings.  Returns exit code 0 if C<HAVE> is
+greater than or equal to C<MINIMUM>; non-zero otherwise.
+
+Temporarily disables the shell's C<errexit> (C<-e>) option during the
+comparison and restores it afterward to avoid spurious script failures.
+
+B<Arguments:>
+
+=over 4
+
+=item C<HAVE>
+
+The version string to test (e.g., C<2.8.6>).  Required.
+
+=item C<MINIMUM>
+
+The minimum acceptable version string (e.g., C<2.8.6-rc1>).  Required.
+
+=back
+
+B<Returns:>
+
+Exit code 0 if C<HAVE E<gt>= MINIMUM>, non-zero otherwise.
+
+B<Errors:>
+
+Exits with a bash error if either argument is missing:
+C<"new_enough() requires an actual version as the first argument"> or
+C<"new_enough() requires an actual version as the second argument">.
+
+B<Examples:>
+
+    if new_enough "$GENESIS_VERSION" "2.8.6" ; then
+      echo "Genesis is new enough"
+    fi
+
+=head2 lookup
+
+    lookup KEY [DEFAULT]
+
+Looks up C<KEY> in the current environment's YAML files (evaluated via a
+skip-eval Spruce merge) and prints the result.  When the key is not found,
+C<DEFAULT> is printed; if C<DEFAULT> is also absent, an empty string is
+used.
+
+Delegates to C<genesis lookup "$GENESIS_ENVIRONMENT" KEY [DEFAULT]>.
+
+B<Arguments:>
+
+=over 4
+
+=item C<KEY>
+
+A dot-separated YAML path, e.g., C<params.app_domain>.  Required.
+
+=item C<DEFAULT> (optional)
+
+Value to return when the key is absent.
+
+=back
+
+B<Returns:>
+
+Prints the looked-up value or default to STDOUT.
+
+B<Examples:>
+
+    domain=$(lookup params.app_domain "example.com")
+    port=$(lookup params.port 8080)
+
+=head2 deployed
+
+    deployed
+
+Returns exit code 0 if the current environment has been successfully
+deployed at least once (i.e., exodus data contains a C<dated> key); non-zero
+otherwise.
+
+B<Returns:>
+
+Exit code 0 if previously deployed, non-zero otherwise.
+
+B<Examples:>
+
+    if deployed ; then
+      echo "This environment has prior deployments"
+    fi
+
+=head2 typeof
+
+    typeof KEY
+
+Looks up C<KEY> in the environment YAML files and prints the YAML type of
+its value: C<"map">, C<"list">, C<"scalar">, or an empty string if the key
+is absent or empty.
+
+B<Arguments:>
+
+=over 4
+
+=item C<KEY>
+
+A dot-separated YAML path to inspect.  Required.
+
+=back
+
+B<Returns:>
+
+Prints one of C<map>, C<list>, C<scalar>, or the empty string to STDOUT.
+
+B<Errors:>
+
+Exits with a bash error if C<KEY> is missing:
+C<"typeof() - must specify a key to look up">.
+
+B<Examples:>
+
+    t=$(typeof params.networks)
+    if [[ "$t" == "list" ]] ; then
+      echo "networks is a list"
+    fi
+
+=head2 use_create_env
+
+    use_create_env
+
+Returns exit code 0 if the current deployment uses C<bosh create-env>
+(proto/bootstrapping deployments), non-zero otherwise.
+
+For kits whose C<GENESIS_MIN_VERSION_FOR_KIT> is older than C<2.8.6-rc1>,
+the check falls back to looking for the C<proto> feature flag.  For kits
+requiring Genesis C<2.8.6-rc1> or later, C<use_create_env> reads the
+C<GENESIS_USE_CREATE_ENV> environment variable.
+
+B<Returns:>
+
+Exit code 0 if C<create-env> is in use, non-zero otherwise.
+
+B<Examples:>
+
+    if use_create_env ; then
+      echo "This is a proto BOSH deployment"
+    fi
+
+=head2 version_check
+
+    version_check MIN_VERSION
+
+Checks that the running Genesis version is at least C<MIN_VERSION>.  Skips
+the check when C<GENESIS_VERSION> ends in C<-dev>.  Prints an error message
+to STDERR and returns exit code 1 if the version requirement is not met.
+
+B<Arguments:>
+
+=over 4
+
+=item C<MIN_VERSION>
+
+The minimum required Genesis version string (e.g., C<2.8.6>).  Required.
+
+=back
+
+B<Returns:>
+
+Exit code 0 if the version requirement is satisfied (or in dev mode), 1
+otherwise.
+
+B<Errors:>
+
+Exits with a bash error if C<MIN_VERSION> is not provided:
+C<"version_check called without specifying minimum version">.
+
+Prints to STDERR:
+C<"[ERROR] Genesis vVERSION is required by HOOK.  Please upgrade before continuing">
+when the version is insufficient.
+
+B<Examples:>
+
+    version_check "2.8.6" || exit 1
+
+=head1 BOSH
+
+=head2 bosh
+
+    bosh ARGS...
+
+Wrapper around the BOSH CLI that ensures the director is reachable and
+authenticated before passing C<ARGS...> through to the underlying BOSH
+command.
+
+Behaviour depends on whether a C<$GENESIS_ENVIRONMENT.yml> file exists in
+C<GENESIS_ROOT>:
+
+=over 4
+
+=item *
+
+If the environment YAML file exists, delegates to C<GENESIS_CALLBACK_BIN>
+with the environment file path and C<bosh ARGS...>.  On success, sets
+C<GENESIS_BOSH_VERIFIED> to the current C<BOSH_ALIAS>.
+
+=item *
+
+Otherwise (legacy path), falls back to the C<GENESIS_BOSH_COMMAND>
+executable, attempting to resolve BOSH credentials from the C<BOSH_ALIAS>
+exodus data if C<BOSH_ENVIRONMENT> or C<BOSH_CA_CERT> are not set, then
+validates connectivity via C<Service::BOSH::Director>.
+
+=back
+
+When C<GENESIS_SHOW_BOSH_CMD> is set, prints the BOSH command to STDERR
+before executing.
+
+B<Arguments:>
+
+=over 4
+
+=item C<ARGS...>
+
+Any arguments to pass to the BOSH CLI.
+
+=back
+
+B<Returns:>
+
+Exits with the same return code as the BOSH command.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"[ERROR] BOSH CLI command not specified - this is a bug in Genesis, or you are running $0 outside of Genesis"> — C<GENESIS_BOSH_COMMAND> is unset on the legacy path.
+
+=item *
+
+C<"[ERROR] Environment not found for BOSH Director -- please ensure you've configured your BOSH alias used by this environment"> — C<BOSH_ENVIRONMENT> or C<BOSH_CA_CERT> could not be resolved.
+
+=item *
+
+C<"[ERROR] Could not connect to BOSH director '#M{ALIAS}' (#M{ENVIRONMENT})"> — director is unreachable or authentication failed.
+
+=back
+
+B<Examples:>
+
+    bosh deploy manifest.yml -d "$GENESIS_ENVIRONMENT"
+    bosh vms -d "$GENESIS_ENVIRONMENT"
+
+=head2 bosh_cpi
+
+    bosh_cpi
+
+Returns the Cloud Provider Interface (CPI) name of the BOSH director by
+querying C<bosh env --json>.  Strips the trailing C<_cpi> suffix from the
+returned value.
+
+When C<GENESIS_TESTING_BOSH_CPI> is set in the environment, returns that
+value directly without contacting the director (useful in test suites).
+
+B<Returns:>
+
+Prints the CPI name (e.g., C<aws>, C<vsphere>, C<google>) to STDOUT and
+exits with code 0.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Cannot determine CPI from BOSH director - failed to communicate with BOSH director: DETAIL"> — the C<bosh env> command failed.
+
+=item *
+
+C<"Cannot determine CPI from BOSH director - no response from BOSH director"> — the C<bosh env> command succeeded but returned an empty CPI.
+
+=back
+
+B<Examples:>
+
+    cpi=$(bosh_cpi)
+    if [[ "$cpi" == "vsphere" ]] ; then
+      echo "Running on vSphere"
+    fi
+
+=head1 Cloud Config
+
+=head2 cloud_config_needs
+
+    cloud_config_needs TYPE NAME...
+    cloud_config_needs static_ips NETWORK COUNT
+
+Verifies that the BOSH cloud config contains the named objects of the given
+type, accumulating pass/fail messages.  Call C<check_cloud_config> after all
+checks to report results.
+
+Supported types (singular or plural forms accepted):
+
+=over 4
+
+=item * C<vm_type> / C<vm_types>
+
+=item * C<vm_extension> / C<vm_extensions>
+
+=item * C<network> / C<networks>
+
+=item * C<disk_type> / C<disk_types>
+
+=item * C<az> / C<azs>
+
+=item * C<static_ips> — special form; counts available static IPs in C<NETWORK> and verifies at least C<COUNT> are available
+
+=back
+
+Each named object is checked only once (duplicates are skipped).  Results
+are displayed inline when checks are already in progress; otherwise the
+C<"[Checking cloud config]"> header is printed automatically.
+
+B<Arguments:>
+
+=over 4
+
+=item C<TYPE>
+
+The cloud-config object type to check.  Required.
+
+=item C<NAME...>
+
+One or more names to check for the given type.  For C<static_ips>, provide
+C<NETWORK> (network name) and C<COUNT> (integer) instead.
+
+=back
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"cloud_config_needs() - must specify a type"> — C<TYPE> is missing.
+
+=item *
+
+C<"cloud_config_needs(static_ips) - must supply network name"> — network name missing for C<static_ips> check.
+
+=item *
+
+C<"cloud_config_needs(static_ips) - must supply static_ip count"> — count missing for C<static_ips> check.
+
+=item *
+
+C<"cloud_config_needs(): invalid cloud-config object type 'TYPE'; must be one of vm_type, vm_extension, disk_type, or az"> — unknown type, exits with code 77.
+
+=back
+
+B<Examples:>
+
+    cloud_config_needs vm_type default
+    cloud_config_needs network private public
+    cloud_config_needs disk_type 10GB
+    cloud_config_needs static_ips private 3
+    check_cloud_config || exit 1
+
+=head2 check_cloud_config
+
+    check_cloud_config
+
+Finalizes cloud config validation.  If C<cloud_config_needs> was not
+previously called in the current hook, prints a C<[Checking cloud config]>
+header and any accumulated error messages.  Returns exit code 1 if any
+requirement failed, 0 if all checks passed.
+
+B<Returns:>
+
+Exit code 0 if all cloud config requirements are met; 1 otherwise.
+
+B<Examples:>
+
+    check_cloud_config || exit 1
+    check_cloud_config && describe "  Cloud config [#G{OK}]"
+
+=head2 cloud_config_has
+
+    cloud_config_has TYPE NAME
+
+Tests whether the BOSH cloud config contains a single named object of
+C<TYPE>, without accumulating error messages or printing output.  Supports
+the same type names as C<cloud_config_needs>.
+
+B<Arguments:>
+
+=over 4
+
+=item C<TYPE>
+
+The cloud-config object type.  Required.
+
+=item C<NAME>
+
+The name of the object to check.  Required.
+
+=back
+
+B<Returns:>
+
+Exit code 0 if the object exists; 1 otherwise.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"cloud_config_has() - must specify a type"> — C<TYPE> is missing.
+
+=item *
+
+C<"cloud_config_has() - must specify a name"> — C<NAME> is missing.
+
+=item *
+
+Exits with code 77 for an invalid type, with message C<"cloud_config_needs(): invalid cloud-config object type 'TYPE'; must be one of vm_type, vm_extension, disk_type, or az">.
+
+=back
+
+B<Examples:>
+
+    if cloud_config_has vm_type large ; then
+      echo "Large VM type is available"
+    fi
+
+=head2 ccq
+
+    ccq JQ_FILTER...
+
+Queries the BOSH cloud config as JSON using C<jq>.  Lazily converts
+C<GENESIS_CLOUD_CONFIG> to JSON on the first call and caches the result.
+
+B<Arguments:>
+
+=over 4
+
+=item C<JQ_FILTER...>
+
+One or more C<jq> filter expressions passed directly to C<jq -r>.
+
+=back
+
+B<Returns:>
+
+Prints the C<jq> output to STDOUT.
+
+B<Errors:>
+
+Calls C<bail> with C<"Cloud config contents not available - cannot continue"> if C<GENESIS_CLOUD_CONFIG> is unset.
+
+B<Examples:>
+
+    # List all VM type names
+    ccq '.vm_types[].name'
+
+    # Get all network names
+    ccq '.networks[] | .name'
+
+=head2 rcq
+
+    rcq JQ_FILTER...
+
+Queries the BOSH runtime config as JSON using C<jq>.  Lazily converts
+C<GENESIS_RUNTIME_CONFIG> to JSON on the first call and caches the result.
+
+B<Arguments:>
+
+=over 4
+
+=item C<JQ_FILTER...>
+
+One or more C<jq> filter expressions passed directly to C<jq -r>.
+
+=back
+
+B<Returns:>
+
+Prints the C<jq> output to STDOUT.
+
+B<Errors:>
+
+Calls C<bail> with C<"Runtime config contents not available - cannot continue"> if C<GENESIS_RUNTIME_CONFIG> is unset.
+
+B<Examples:>
+
+    # List all addon names from runtime config
+    rcq '.addons[].name'
+
+=head1 Feature Flags
+
+=head2 want_feature
+
+    want_feature FEATURE
+
+Returns exit code 0 if C<FEATURE> is present in the space-separated
+C<GENESIS_REQUESTED_FEATURES> environment variable; non-zero otherwise.
+
+B<Arguments:>
+
+=over 4
+
+=item C<FEATURE>
+
+The feature flag name to test.  Required.
+
+=back
+
+B<Returns:>
+
+Exit code 0 if the feature is requested, non-zero otherwise.
+
+B<Errors:>
+
+Exits with a bash error if C<FEATURE> is not provided:
+C<"want_feature() -- must specify a feature">.
+
+B<Examples:>
+
+    if want_feature uaa-auth ; then
+      setup_uaa_authentication
+    fi
+
+    want_feature tls && enable_tls
+
+=head2 invalid_features
+
+    invalid_features VALID_FEATURE...
+
+Prints (to STDOUT) any features in C<GENESIS_REQUESTED_FEATURES> that are
+not listed among the C<VALID_FEATURE> arguments.  Features beginning with
+C<+> are always considered valid and are skipped.
+
+B<Arguments:>
+
+=over 4
+
+=item C<VALID_FEATURE...>
+
+The list of valid feature flag names recognised by this kit.
+
+=back
+
+B<Returns:>
+
+Prints space-separated invalid feature names to STDOUT, or nothing if all
+requested features are valid.  Always exits with code 0.
+
+B<Examples:>
+
+    for bad in $(invalid_features tls uaa-auth ha) ; do
+      echo "Unrecognized feature: $bad"
+    done
+
+=head2 valid_features
+
+    valid_features VALID_FEATURE...
+
+Returns exit code 0 if every feature in C<GENESIS_REQUESTED_FEATURES> is
+present in the C<VALID_FEATURE> list (features beginning with C<+> are
+always accepted); returns exit code 1 if any feature is not recognised.
+
+B<Arguments:>
+
+=over 4
+
+=item C<VALID_FEATURE...>
+
+The list of valid feature flag names.
+
+=back
+
+B<Returns:>
+
+Exit code 0 if all requested features are valid; 1 otherwise.
+
+B<Examples:>
+
+    if ! valid_features tls uaa ha ; then
+      bail "Unrecognized feature flags requested"
+    fi
+
+=head2 validate_features
+
+    validate_features VALID_FEATURE...
+
+Calls C<valid_features> and, if any unknown feature is found, calls
+C<__bail> with a human-readable list of the invalid flags.
+
+B<Arguments:>
+
+=over 4
+
+=item C<VALID_FEATURE...>
+
+The list of valid feature flag names for this kit.
+
+=back
+
+B<Errors:>
+
+Calls C<__bail> with a message listing each invalid flag on its own line:
+
+    [ERROR] my-kit/1.0.0 does not understand the following feature flags:
+     - bad-flag-1
+     - bad-flag-2
+
+B<Examples:>
+
+    # In hooks/blueprint:
+    validate_features tls uaa-auth ha metrics
+
+=head1 User Interaction
+
+=head2 prompt_for
+
+    prompt_for VARNAME TYPE [OPTIONS...] PROMPT
+
+Prompts the user for a value via the Genesis UI subsystem
+(C<genesis ui-prompt-for>).  Supports scalar, boolean, multi-line, and
+secret value types.
+
+For C<secret-> types, the value is stored directly via Genesis's secret
+handling.  For all other types, the result is written to a temporary file
+and read back:
+
+=over 4
+
+=item *
+
+For C<multi-> types the value is an array stored in C<VARNAME> as a bash
+array.
+
+=item *
+
+For all other types the value is a scalar string stored in C<VARNAME>.
+
+=back
+
+B<Arguments:>
+
+=over 4
+
+=item C<VARNAME>
+
+The name of the bash variable to receive the user's input.  Required.
+
+=item C<TYPE>
+
+The input type: C<boolean>, C<string>, C<multi-line>, C<multi-string>,
+C<secret-rsa>, C<secret-ca>, etc.  Types beginning with C<secret-> are
+handled entirely by Genesis.  Types beginning with C<multi-> result in a
+bash array.  Required.
+
+=item C<OPTIONS...>
+
+Additional flags passed to C<genesis ui-prompt-for> (e.g., C<--inline>).
+
+=item C<PROMPT>
+
+The prompt text shown to the user.
+
+=back
+
+B<Returns:>
+
+Exit code 0 on success.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+Prints C<"Error encountered - cannot continue"> and exits with the error
+code returned by C<genesis ui-prompt-for> on failure.
+
+=item *
+
+Prints C<"Failed to create tmpfile: PATH"> to STDERR and exits with code 2
+if the temporary file cannot be created.
+
+=back
+
+B<Examples:>
+
+    prompt_for domain string "What is the application domain?"
+    echo "Domain: $domain"
+
+    prompt_for edit_file boolean --inline \
+      "Would you like to edit the environment file?"
+
+=head2 param_entry
+
+    param_entry VARNAME KEY [OPTIONS] [VALUES...]
+
+Appends a YAML parameter entry to the string variable C<VARNAME>.
+Handles scalar values, multi-line block scalars, and array values.
+
+B<Arguments:>
+
+=over 4
+
+=item C<VARNAME>
+
+Name of the bash variable (passed by reference) to append to.  Required.
+
+=item C<KEY>
+
+The YAML key name.  Required.
+
+=item C<-d> (optional)
+
+Marks the entry as a commented-out default (prepends C<#> to the key).
+
+=item C<-a> (optional)
+
+Treats remaining arguments as array items rather than a scalar value.
+
+=item C<VALUES...>
+
+The value(s) for the key.  When C<-a> is given, each argument becomes a
+list item.
+
+=back
+
+B<Returns:>
+
+Does not return a meaningful value.  Appends YAML content to C<VARNAME>
+in place.
+
+B<Examples:>
+
+    param_entry config "app_domain" "example.com"
+    # appends:  app_domain: example.com
+
+    param_entry config -d "optional_key" "default_value"
+    # appends:  #optional_key: default_value
+
+    param_entry config -a "items" "one" "two" "three"
+    # appends:
+    #   items:
+    #   - one
+    #   - two
+    #   - three
+
+=head2 param_comment
+
+    param_comment VARNAME [-e] COMMENT_LINE...
+
+Appends comment lines to the string variable C<VARNAME> in YAML comment
+format (prefixed with C<#>).  When C<-e> is specified, each line is also
+printed to STDOUT (useful as a preamble displayed before a user prompt).
+
+B<Arguments:>
+
+=over 4
+
+=item C<VARNAME>
+
+Name of the bash variable to append to.  Required.
+
+=item C<-e> (optional)
+
+Echo each comment line to STDOUT as well.
+
+=item C<COMMENT_LINE...>
+
+One or more comment text lines.
+
+=back
+
+B<Returns:>
+
+Does not return a meaningful value.  Appends comment lines to C<VARNAME>
+in place.  When C<-e> is used, also prints each line to STDOUT.
+
+B<Examples:>
+
+    param_comment config "This is a required parameter"
+    param_comment config -e "Enter your domain below:"
+    prompt_for domain string "Domain:"
+
+=head1 Configuration Generation
+
+=head2 genesis_config_block
+
+    genesis_config_block
+
+Prints a C<genesis:> YAML block for inclusion in an environment file.  The
+block is built from the currently active Genesis environment variables:
+
+=over 4
+
+=item *
+
+C<env:> is always written.
+
+=item *
+
+C<use_create_env: true> is added when C<use_create_env> returns success.
+
+=item *
+
+C<bosh_env:> is added when C<BOSH_ALIAS> differs from C<GENESIS_ENVIRONMENT>
+and is non-empty; it is set to C<((prune))> when C<GENESIS_USE_CREATE_ENV>
+is exactly C<1>.
+
+=item *
+
+C<vault:> is added when C<GENESIS_ENV_VAULT_DESCRIPTOR> is set.
+
+=item *
+
+C<min_version:> is added when C<GENESIS_MIN_VERSION> is set and not C<0.0.0>.
+
+=item *
+
+C<secrets_path:>, C<secrets_mount:>, C<exodus_mount:>, C<ci_mount:>,
+C<root_ca_path:>, and C<credhub_env:> are added when their respective
+C<_OVERRIDE> environment variables are set.
+
+=back
+
+B<Returns:>
+
+Prints the complete C<genesis:> YAML block to STDOUT.
+
+B<Examples:>
+
+    genesis_config_block >> "$GENESIS_ROOT/$GENESIS_ENVIRONMENT.yml"
+
+=head2 offer_environment_editor
+
+    offer_environment_editor [true|false]
+
+Offers the operator the option to open an editor on the environment YAML
+file.  When the argument is C<'true'>, opens the editor immediately without
+prompting.  Otherwise, prompts via C<prompt_for> with a yes/no question.
+
+If C<genesis man> is able to generate a manual page for the environment
+file, and the editor is C<vim> or C<emacs>, the editor is opened in a split
+view with the manual alongside the environment file.  Falls back to opening
+only the environment file when a manual cannot be generated or the editor is
+not recognized.
+
+The editor is determined by the C<EDITOR> environment variable (defaults to
+C<vim>).
+
+B<Arguments:>
+
+=over 4
+
+=item C<true|false> (optional)
+
+Pass C<'true'> to skip the prompt and open the editor immediately.  Any
+other value (including omitting the argument) causes a yes/no prompt to be
+shown.
+
+=back
+
+B<Returns:>
+
+Does not return a meaningful value.  Launches the user's editor and blocks
+until the editor exits.  If the user declines the prompt, returns without
+opening an editor.
+
+B<Examples:>
+
+    offer_environment_editor
+    offer_environment_editor true   # skip the prompt
+
+=head1 Secrets
+
+=head2 move_secrets_to_credhub
+
+    move_secrets_to_credhub SRC_PATH DST_PATH
+
+Reads a secret value from the Genesis Vault at
+C<$GENESIS_SECRETS_BASE/SRC_PATH> and stores it in CredHub at
+C</$GENESIS_CREDHUB_ROOT/DST_PATH>, then removes the source secret from
+Vault.
+
+B<Arguments:>
+
+=over 4
+
+=item C<SRC_PATH>
+
+The Vault path suffix (relative to C<GENESIS_SECRETS_BASE>) of the secret
+to migrate.  Required.
+
+=item C<DST_PATH>
+
+The CredHub path suffix (relative to C<GENESIS_CREDHUB_ROOT>) where the
+secret will be stored.  Required.
+
+=back
+
+B<Errors:>
+
+Calls C<bail> with C<"[ERROR] Failed to store secret $SRC_PATH under
+credhub path $DST_PATH: DETAIL"> if C<credhub set> fails.
+
+B<Examples:>
+
+    move_secrets_to_credhub "ssl/server:certificate" "myapp/ssl-cert"
+
+=head1 Addon Hook Utilities
+
+The following functions are conditionally defined only when
+C<GENESIS_KIT_HOOK> equals C<"addon">.
+
+=head2 print_addon_descriptions
+
+    print_addon_descriptions LABEL DESCRIPTION [LABEL DESCRIPTION ...]
+
+Prints a formatted list of available addon commands for the current kit.
+
+Accepts pairs of C<LABEL> and C<DESCRIPTION> arguments, where C<LABEL> may
+contain a C<~> character to define a short alias (e.g., C<deploy~d> defines
+the C<deploy> command with alias C<d>).
+
+After the static list, automatically scans the C<hooks/> directory for
+executable C<addon-*> scripts and C<addon-*.pm> Perl module hooks.  Shell
+scripts are invoked with the C<help> argument; Perl module hooks use the
+C<cmd_details> class method.  Both are displayed as additional addon entries.
+
+B<Arguments:>
+
+=over 4
+
+=item C<LABEL> C<DESCRIPTION> ...
+
+Alternating pairs of addon name (optionally with C<~ALIAS>) and description
+text.  Must be provided in pairs.
+
+=back
+
+B<Examples:>
+
+    print_addon_descriptions \
+      "deploy~d"   "Deploy the application" \
+      "undeploy~u" "Remove the application" \
+      "list~ls"    "List deployed instances"
+
+=head2 run_extended_addon
+
+    run_extended_addon [ARGS...]
+
+Locates and executes the addon hook script identified by
+C<GENESIS_ADDON_SCRIPT>.  Looks for scripts in C<hooks/> using the
+following resolution order:
+
+=over 4
+
+=item 1. Exact match: C<hooks/addon-$GENESIS_ADDON_SCRIPT>
+
+=item 2. Prefix with alias suffix: C<hooks/addon-$GENESIS_ADDON_SCRIPT~*>
+
+=item 3. Any hook with a matching C<~ALIAS>: C<hooks/addon-*~$GENESIS_ADDON_SCRIPT>
+
+=back
+
+When resolved via alias (case 3), prints the canonical addon name to STDERR.
+Ensures the located script is executable before running it.
+
+Passes all C<ARGS...> to the addon script as C<run ARGS...>.
+
+B<Errors:>
+
+Prints C<"Unrecognized KITNAME Genesis Kit addon."> and calls C<list>
+followed by C<exit 1> if no matching script is found.
+
+B<Examples:>
+
+    # In a kit's hooks/addon file:
+    run_extended_addon "$@"
+
+=head1 INTERNAL BASH FUNCTIONS
+
+These functions are used internally by the helper library.  Kit hook
+scripts should not call them directly.
+
+=head2 __ip2dec
+
+    __ip2dec IP_ADDRESS
+
+Converts a dotted-decimal IPv4 address to its decimal integer equivalent.
+Used internally by C<cloud_config_needs static_ips> to count available
+static IP addresses.
+
+B<Arguments:>
+
+=over 4
+
+=item C<IP_ADDRESS>
+
+A dotted-decimal IPv4 address (e.g., C<10.0.0.5>).
+
+=back
+
+B<Returns:>
+
+Prints the decimal integer representation to STDOUT.
+
+=head1 ENVIRONMENT VARIABLES
+
+The following environment variables must be set by Genesis before hook
+scripts are run.  The helper functions depend on them.
+
+=over 4
+
+=item C<GENESIS_CALLBACK_BIN>
+
+Absolute path to the Genesis binary.  Used by the C<genesis> and C<bosh> bash functions.
+
+=item C<GENESIS_ROOT>
+
+Absolute path to the Genesis environment directory (contains C<.yml>
+environment files).
+
+=item C<GENESIS_ENVIRONMENT>
+
+Name of the current environment being operated on (e.g., C<prod-bosh>).
+
+=item C<GENESIS_TYPE>
+
+The deployment type of the current kit (e.g., C<bosh>, C<cf>, C<concourse>).
+
+=item C<GENESIS_KIT_ID>
+
+Human-readable kit identifier including version (e.g., C<bosh/2.4.0>).
+
+=item C<GENESIS_KIT_NAME>
+
+Kit name without version (e.g., C<bosh>).
+
+=item C<GENESIS_KIT_VERSION>
+
+Kit version string.
+
+=item C<GENESIS_KIT_HOOK>
+
+Name of the currently executing hook (e.g., C<blueprint>, C<check>,
+C<addon>).
+
+=item C<GENESIS_ADDON_SCRIPT>
+
+When C<GENESIS_KIT_HOOK=addon>, the name of the addon subcommand being run.
+
+=item C<GENESIS_EXODUS_MOUNT>
+
+Vault mount path prefix for exodus data (e.g., C<secret/genesis/deployments/>).
+
+=item C<GENESIS_REQUESTED_FEATURES>
+
+Space-separated list of feature flags requested for the current environment.
+
+=item C<GENESIS_CLOUD_CONFIG>
+
+Path to the current BOSH cloud config YAML file.  Required by all
+C<cloud_config_*> and C<ccq> functions.
+
+=item C<GENESIS_RUNTIME_CONFIG>
+
+Path to the current BOSH runtime config YAML file.  Required by C<rcq>.
+
+=item C<GENESIS_BOSH_COMMAND>
+
+Path to the BOSH CLI executable (legacy path; used when no environment YAML
+is present).
+
+=item C<BOSH_ENVIRONMENT>
+
+BOSH director URL.  Used by the legacy C<bosh> bash function path.
+
+=item C<BOSH_CA_CERT>
+
+CA certificate for the BOSH director.  Used by the legacy C<bosh> bash function path.
+
+=item C<BOSH_ALIAS>
+
+BOSH director alias.  Used by the C<bosh> bash function to identify the director and track
+verification state via C<GENESIS_BOSH_VERIFIED>.
+
+=item C<GENESIS_VERSION>
+
+Running Genesis version string (e.g., C<2.8.6>).  Used by C<version_check>.
+
+=item C<GENESIS_MIN_VERSION>
+
+Minimum Genesis version required by the current kit.  Used by
+C<genesis_config_block>.
+
+=item C<GENESIS_MIN_VERSION_FOR_KIT>
+
+Minimum Genesis version required by the current kit when using
+C<bosh create-env>.  Used by C<use_create_env>.
+
+=item C<GENESIS_USE_CREATE_ENV>
+
+Set to C<"true"> by Genesis when the deployment uses C<bosh create-env>.
+Used by C<use_create_env>.
+
+=item C<GENESIS_SECRETS_BASE>
+
+Vault path prefix for this environment's secrets.  Used by
+C<move_secrets_to_credhub>.
+
+=item C<GENESIS_CREDHUB_ROOT>
+
+CredHub path prefix for this environment.  Used by
+C<move_secrets_to_credhub>.
+
+=item C<GENESIS_TRACE>
+
+When set to C<"y">, the helper script prints all environment variables to
+STDERR at load time.
+
+=item C<GENESIS_SHOW_BOSH_CMD>
+
+When set, the C<bosh> bash wrapper prints the full BOSH command to STDERR
+before executing it.
+
+=item C<GENESIS_LIB>
+
+Path to the Genesis Perl library directory.  Used by C<describe>,
+C<genesis_log>, C<humanize_path>, and the C<bosh> bash function's fallback path.
+
+=item C<GENESIS_TESTING_BOSH_CPI>
+
+When set, C<bosh_cpi> returns this value directly instead of querying the
+director.  Intended for use in test suites.
+
+=item C<GENESIS_BOSH_VERIFIED>
+
+Set to the current C<BOSH_ALIAS> by the C<bosh> bash function after the director is
+successfully validated.  Used to avoid redundant validation calls within a
+single hook run.
+
+=item C<SAFE_TARGET>
+
+Must match C<GENESIS_TARGET_VAULT> for the C<safe> command to be usable.
+If not, a C<safe> wrapper is installed that calls C<__bail> with an error
+message rather than making unguarded Vault calls.
+
+=item C<GENESIS_TARGET_VAULT>
+
+The expected Vault target for this Genesis environment.  Compared against
+C<SAFE_TARGET> to determine whether the C<safe> CLI guard wrapper should
+be installed.
+
+=item C<GENESIS_ENV_VAULT_DESCRIPTOR>
+
+Human-readable Vault descriptor for the current environment.  When set,
+C<genesis_config_block> includes a C<vault:> key in the output.
+
+=item C<GENESIS_SECRETS_SLUG_OVERRIDE>
+
+When set, C<genesis_config_block> includes a C<secrets_path:> key.
+
+=item C<GENESIS_SECRETS_MOUNT_OVERRIDE>
+
+When set, C<genesis_config_block> includes a C<secrets_mount:> key.
+
+=item C<GENESIS_EXODUS_MOUNT_OVERRIDE>
+
+When set, C<genesis_config_block> includes an C<exodus_mount:> key.
+
+=item C<GENESIS_CI_MOUNT_OVERRIDE>
+
+When set, C<genesis_config_block> includes a C<ci_mount:> key.
+
+=item C<GENESIS_ROOT_CA_PATH>
+
+When set, C<genesis_config_block> includes a C<root_ca_path:> key.
+
+=item C<GENESIS_CREDHUB_EXODUS_SOURCE_OVERRIDE>
+
+When set, C<genesis_config_block> includes a C<credhub_env:> key.
+
+=back
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

@@ -10,102 +10,273 @@ use Genesis;
 use Genesis::State;
 use Genesis::Term;
 use Genesis::Commands;
+use Genesis::UI qw/prompt_for_boolean new_prompt_for_choice/;
 use Genesis::Top;
+use Genesis::Env::Deployment;
 
 use Cwd            qw/getcwd abs_path/;
 use File::Basename qw/basename/;
 use JSON::PP       qw/encode_json/;
+use Time::HiRes    qw/gettimeofday/;
 
 sub information {
 	# TODO: Make use of terminal_width and wrap to make this look better
+	# FIXME: Make compatible with new (and existing) exodus data, including the deployment audit log
 
-	command_usage(1) if @_ != 1;
+	command_usage(1) if @_ < 1 || @_ > 2;
 
-	my ($name) = @_;
+	my ($name,$timestamp) = @_;
 	my $env = Genesis::Top->new('.')->load_env($name)->with_vault();
 
-	my @hooks = grep {$env->kit->has_hook($_)} qw(info);
-	$env->download_required_configs(@hooks);
+	# Timestamp is only valid if the environment has deployment audit logs
+	if ($timestamp) {
+		bail(
+			"Cannot use timestamp arguement with environments that do not have ".
+			"deployment audit logs.  Please ensure the environment file specifies ".
+			"#C{genesis.minimum_version} of at least #B{3.1.0}, and that the ".
+			"#C{manifest_store} is set to #B{exodus} or #B{hybrid} in the ".
+			"#c{<repo>/.genesis/config} file.",
+		) if $env->manifest_store eq 'repository';
+	} else {
+		my @hooks = grep {$env->kit->has_hook($_)} qw(info);
+		$env->download_required_configs(@hooks);
+	}
 
 	my $out = sprintf(
 		"\n#c{%s}\n\n#C{%s Deployment for Environment '}#M{%s}#C{'}\n\n",
 		"=" x terminal_width, uc($env->type), $env->name
 	);
 
-	my $exodus = $env->exodus_lookup("",{});
-	my $unknown = csprintf("#YI{unknown}");
-	if ($exodus->{dated}) {
-		$out .= sprintf(
-			"  #I{Last deployed} %s\n".
-			"  #I{           by} #C{%s}\n",
-			strfuzzytime($exodus->{dated}, "#C{%~} #K{(%I:%M%p on %b %d, %Y %Z)}"),
-			$exodus->{deployer} || $unknown
+	my $deployment = undef;
+	if ($timestamp) {
+		my $trimmed_ts = $timestamp =~ s/[ \/:T]+//gr; # TODO: Handle converting to UTC if another timezone is specified
+		my @deployments = $env->deployments->find(all => 1, range => $trimmed_ts);
+		if (@deployments <= 1 && !defined($deployments[0]) ) {
+			bail(
+				"Could not find a deployment with timestamp matching ".
+				"#C{%s} in environment #M{%s}.  Please ensure the timestamp is correct.",
+				$timestamp, $env->name
+			);
+		} elsif (scalar(@deployments) > 1) {
+			# If we found multiple deployments with the timestamp descriptor, prompt the user to chose one from a list we provide using new_prompt_for_choice
+			my $choice = new_prompt_for_choice(
+				header => sprintf(
+					"Multiple deployments found with timestamp matching #C{%s} in environment #M{%s}.  Please select one:",
+					$timestamp, $env->name
+				),
+				choices => [(map {{
+					value => $_,
+					label => sprintf(
+						"%s - %s %s - #y{%s}",
+						$_->completed('%Y/%m/%d %H:%M:%S'),
+						$_->action eq 'deploy' ? 'deployment' : 'termination',
+						$_->result,
+						$_->user_description =~ s/ \[/\} #ki\{[/r || '#YI{unknown}'
+					),
+				}}	@deployments), {separator => 1}, {value => 'Cancel'}],
+				default => $deployments[0]
+			);
+
+			bail(
+				"Aborted!"
+			) if $choice eq 'Cancel';
+			$deployment = $choice;
+		} else {
+			$deployment = $deployments[0];
+		}
+	} else {
+		$deployment = $env->deployments->latest_successful;
+		unless ($deployment) {
+			# Synthesize a last deployment based on the current exodus data
+			my $exodus = $env->exodus_lookup(".",{});
+			$deployment = $env->deployments->synthesize_from_exodus($exodus)
+		}
+	}
+
+	if (my $artifact = get_options->{'print-artifact'}) {
+		# If the user specified an artifact to print, we will print it
+		# and exit.
+		my $artifact_content = $deployment->artifact($artifact);
+		bail(
+			"Artifact '%s' not found in deployment %s.  Please confirm the artifact exists.",
+			$artifact, $deployment->timestamp
+		) unless ($artifact_content);
+
+		my $output_target = get_io_target;
+		my $target_msg = ($output_target eq 'terminal')
+			? ":\n"
+			: " written to #C{$output_target}";
+		info(
+			"Contents of artifact '%s' for deployment %s%s\n",
+			$artifact,
+			$deployment->timestamp,
+			$target_msg
 		);
-		if ($exodus->{bosh}) {
-			if ($exodus->{bosh} eq "(none)" || $exodus->{bosh} eq '~' || $exodus->{use_create_env}) {
-				$out .= sprintf(
-					"  #I{     %s BOSH} #CI{create-env}\n",
-					(defined($exodus->{as_director}) && !$exodus->{as_director}) ? 'via' : ' as'
-				);
+		output {raw => 1}, $artifact_content;
+		exit 0;
+	}
+
+	if (my $path = get_options->{'fetch-artifacts-to'}) {
+		# If the user specified a path to fetch artifacts to, we will
+		# fetch all artifacts and write them to the specified path.
+		my @artifact_types = $deployment->artifact_types;
+		bail(
+			"Deployment #%d has no artifacts to fetch.",
+			$deployment->sequence
+		) unless scalar(@artifact_types);
+
+		# Normalize the path in reference to the calling directory
+		$path = Genesis::absolute_path($path, $ENV{GENESIS_CALLER_DIR});
+		my $path_label = humanize_path($path);
+
+		mkdir_or_fail($path) unless -d $path;
+
+		# Check if there are any existing files in the path
+		my @existing_files = map {s/^$path\///r} glob("$path/*");
+		if (@existing_files) {
+			prompt_for_boolean(
+				wrap(
+					"Path '$path_label' is not empty.  Continuing may overwrite some files - proceed? [y|n]",
+					terminal_width
+				),
+				0,
+			) or bail('Aborted!');
+		}
+
+		info(
+			"Fetching artifacts for deployment #%s to '%s'...\n",
+			$deployment->timestamp, $path_label
+		);
+		for my $artifact_type (@artifact_types) {
+			next if $artifact_type eq 'secrets' && !get_options->{'INCLUDE-SECRETS-ARTIFACT'};
+			info({pending => 1}, "[[  - >>fetching artifact type #M{%s} ... ", $artifact_type);
+			my $output = $deployment->extract_artifacts_to($path, $artifact_type);
+			my $file = $output->{$artifact_type};
+			if ($file) {
+				info("done: #C{%s}", humanize_path($file));
 			} else {
-				$out .= sprintf("  #I{      to BOSH} #CI{%s}\n",$exodus->{bosh});
+				error("failed to fetch artifact type '%s' for deployment #%d", $artifact_type, $deployment->sequence);
+				exit 1;
 			}
 		}
+		success("\nDone!\n");
+		exit 0;
+	}
+
+	my $unknown = csprintf("#YI{unknown}");
+	if ($deployment) {
 		$out .= sprintf(
-			"  #I{ based on kit} #C{%s}#C{/%s}%s%s\n",
-			$exodus->{kit_name}||$unknown,
-			$exodus->{kit_version}||$unknown,
-			($exodus->{kit_is_dev} ? " #y{(dev)}" : ''),
-			($env->kit->version ne $exodus->{kit_version}||'' ? " -- #Y{local file specifies ${\($env->kit->id)}!}" : '')
-		);
-		$out .= sprintf(
-			"  #I{        using} #C{Genesis v%s}\n",
-			$exodus->{version} ||$unknown
+			"[[  #I{%13s} >>%s\n".
+			"[[  #I{           by} >>#C{%s}\n",
+			$deployment->action eq 'deploy' ? 'Deployed' : 'Terminated',
+			strfuzzytime($deployment->completed, "#C{%~} #-K{(%I:%M%p on %b %d, %Y %Z)}"),
+			$deployment->user_description =~ s/ \[/\} #ki\{[/r || $unknown
 		);
 
-		my ($manifest_path,$exists,$sha1) = $env->cached_manifest_info;
-		my $pwd = Cwd::abs_path(Cwd::getcwd);
-		$manifest_path =~ s#^$pwd/##;
-		if ($exists) {
-			if (! defined($exodus->{manifest_sha1})) {
-				info $out;
-				$out = '';
-				error(
-					"\nCannot confirm local cached deployment manifest pertains to this ".
-					"deployment -- perform another deployment to correct this problem."
-				);
-			} elsif ($exodus->{manifest_sha1} ne $sha1) {
-				info $out;
-				$out = '';
-				warning(
-					"\nLatest deployment does not match the local cached deployment ".
-					"manifest, perhaps you need to perform a #C{git pull}."
-				)
-			} else {
-				$out .= sprintf(
-					"  #I{with manifest} #C{%s} #K{(redacted)}\n",
-					$manifest_path
-				);
-			}
-		} else {
-			info $out;
-			$out = '';
-			warning(
-				"\nNo local cashed deployment manifest found for this environment, ".
-				"perhaps you need to perform a #C{git pull}."
+		# TODO: Handle standalone create-env deployments that aren't BOSH deployments
+		if ($deployment->lookup('create_env')) {
+			$out .= sprintf(
+				"[[  #I{     via BOSH} >>#CI{create-env}\n"
+			);
+		} elsif ($deployment->lookup('bosh_target')) {
+			$out .= sprintf(
+				"[[  #I{      on BOSH} >>#CI{%s}\n",
+				$deployment->lookup('bosh_target.name')
+			);
+		}
+
+		$out .= sprintf(
+			"[[  #I{ based on kit} >>#C{%s}%s%s\n",
+			$deployment->lookup('kit.id') =~ s/ \(.*\)//r, # Remove the @dev suffix if present
+			($deployment->lookup('kit.is_dev') ? " #y{(dev)}" : ''),
+			($env->kit->version ne $deployment->lookup('kit.version','')
+				? " #E{warning}#Y{local file specifies ${\($env->kit->id)}!}"
+				: ''
+			)
+		) if $deployment->action eq 'deploy';
+
+		$out .= sprintf(
+			"[[  #I{        using}>> #C{Genesis v%s}\n",
+			$deployment->lookup('genesis_version', 'unknown')
+		);
+
+		# TODO: Restore manifest validation status for 'repository' manifests
+		if ($env->manifest_store eq 'repository') {
+			# Do the manifest validation status here...
+			bail(
+				"Currently Genesis does not support manifest validation for ".
+				"environments that store manifests in the repository.  Please set ".
+				"#C{manifest_store} in the environment's #C{.genesis/config} to ".
+				"#C{exodus} or #C{hybrid} to enable manifest validation."
 			)
 		}
-		if ($exodus->{features}) {
-			my @features = split(',',$exodus->{features});
-			$out .= "\n       #I{Features} ";
+
+		if ($deployment->{kit}{features}) {
+			my @features = split(',', $deployment->{kit}{features});
+			$out .= "\n[[      #Wku{Kit Features:} >>";
 			if (@features) {
-				$out .= "#C{".join("}\n                #C{",@features)."}\n";
+				$out .= "#C{".join("}\n[[                >>#C{",@features)."}\n";
 			} else {
 				$out .= "#Ci{None}\n";
 			}
 		}
 
-		if ($env->has_hook('info')) {
+		if ($env->manifest_store ne 'repository') {
+			# All the manifests are stored in exodus, so we can get the details from
+			# the last successful deployment.
+			$out .= sprintf("\n#Wku{Archived Files:}\n");
+			if (my @archived_types = $deployment->artifact_types) {
+				my @standard_types = qw(manifest unpruned redacted vars redacted_vars state store secrets log);
+				my (undef, $common, $extra) = compare_arrays(\@standard_types, \@archived_types); # Sort common first then any others
+				my @details = $deployment->details_for_artifacts(@$common, @$extra);
+				for my $artifact (@details) {
+					$out .= sprintf(
+						"[[  #I{%13.13s} >>#g{%s} #Ki{(%s b, SHA2: %s)}\n",
+						$artifact->{type},
+						$artifact->{filename},
+						$artifact->{size},
+						$artifact->{sha2} ? $artifact->{sha2} =~ s/^([a-f0-9]{6}).*([a-f0-9]{6})$/$1...$2/ir : 'n/a'
+					);
+				}
+			}
+		}
+
+		if (get_options->{history}) {
+			# Show the history of deployments
+			my @deployments = $env->deployments->all;
+			if (@deployments > 1) {
+				my $prefix = "\n[[       #Wku{History:} >>";
+				my @roles = ();
+				for my $deployment (@deployments) {
+					my ($roles_string, @used_roles) = $deployment->user_colorized_roles;
+					@roles = uniq (@roles, @used_roles);
+					$out .= sprintf(
+						"%s#-K{[%s]} #%s{%-22s} - %s - #Ki{%s}\n",
+						$prefix,
+						$deployment->completed("%Y/%m/%d %H:%M"),
+						$deployment->succeeded ? 'G' : 'R',
+						($deployment->action eq 'deploy' ? 'deployment ' : 'termination ').
+						($deployment->succeeded ? 'succeeded' : 'failed   '),
+						$roles_string =~ s/%/%%/gr, # Escape % signs in the roles string
+						$deployment->lookup('kit.id')
+					);
+					$prefix = "[[                >>";
+					$out .= sprintf(
+						"%s[[           #i{Reason:} >>%s\n\n",
+						$prefix,
+						$deployment->reason
+					) if $deployment->has_reason;
+					$out .= sprintf(
+						"%s[[            #i{Error:} >>%s\n\n",
+						$prefix,
+						$deployment->error
+					) if $deployment->has_error && $deployment->error ne 'Deployment failed.';
+				}
+				$out .=     "\n[[   #I{user legend:} >>".Genesis::Env::Deployment::user_colorized_legend(@roles)."\n";
+			}
+		}
+
+		if ($env->has_hook('info') && !$timestamp && !get_options->{history}) {
 			info "$out\n#c{%s}\n", "-" x terminal_width;
 			$out = '';
 			$env->run_hook('info');
@@ -117,7 +288,6 @@ sub information {
 
 	info "$out\n#c{%s}\n", "=" x terminal_width;
 }
-
 
 sub lookup {
 	command_usage(1) if @_ < 2 or @_ > 3;
@@ -185,7 +355,7 @@ sub lookup {
 
 sub yamls {
 	option_defaults(
-		"include-kit" => 0
+		"include-kit" => 1
 	);
 	command_usage(1) if @_ != 1;
 
@@ -193,8 +363,48 @@ sub yamls {
 		->new('.')
 		->load_env($_[0])
 		->download_required_configs('blueprint');
-	my @files = $env->format_yaml_files(%{get_options()});
+
+	my $view = delete(get_options->{view});
+	if ($view) {
+		my $file;
+		if ($view =~ /^(init|fin).yml$/) {
+			# Check if the file is a dynamically generated genesis meta file:
+			$file = $1 eq 'init' ? $env->_init_yaml_file : $env->_cap_yaml_file;
+			output {raw => 1}, slurp($file);
+			exit 0;
+		}
+
+		if (-f ($file = $env->path($view))) {
+			# If the file exists under the environment's path, we will read it and output
+			# it to the terminal.
+			output {raw => 1}, slurp($file);
+			exit 0;
+		}
+
+		my $start_time = gettimeofday();
+		$env->notify({pending => 1}, 'building file list for the current kit features...');
+		$env->kit_files;
+		info('#G{done}%s', pretty_duration(gettimeofday() - $start_time));
+		$env->notify({pending => 0}, 'done in %.2f seconds', gettimeofday() - $start_time);
+		if (-f ($file = $env->kit->path($view))) {
+			# If the file exists under the kit's path, we will read it and output
+			# it to the terminal.
+			output {raw => 1}, slurp($file);
+			exit 0;
+		}
+		bail(
+			"File '%s' not found in environment '%s' or kit '%s'.",
+			$view, $env->name, $env->kit->id
+		);
+	}
+
+	my $start_time = gettimeofday();
+	$env->notify({pending => 1}, 'building file list for the current kit features...');
+	my @kit_files = $env->kit_files;
+	info('#G{done}%s', pretty_duration(gettimeofday() - $start_time));
+	my @files = $env->format_yaml_files(%{get_options()}, kit_files => \@kit_files);
 	output join("\n", @files)."\n";
+	exit 0;
 }
 
 sub vault_paths {
@@ -217,6 +427,12 @@ sub vault_paths {
 	# TODO: Do we want to color code secret and exodus mounts and base paths?
 	output "$msg\n";
 }
+
+sub deployments {
+	my ($name) = @_;
+	bail("The 'deployments' command is not yet fully implemented.");
+}
+
 
 sub kit_manual {
 	my ($name) = @_;
@@ -305,7 +521,7 @@ sub environments {
 	my $json = get_options->{json};
 	my %data;
 	#preemptively check that vault is available
-	
+
 	# Get the list of deployment roots
 	my $root_map = Genesis::deployment_roots_map(
 		['@current', $ENV{GENESIS_ORIGINATING_DIR}],
@@ -325,12 +541,12 @@ sub environments {
 				info(
 					"\nReading %s under deployment root #C{%s}",
 					$group_by eq 'env' ? "environments" : "repositories",
-					humanize_path($root, $root_map) =~ s{/?$}{/}r =~ s{>\e\[0m/$}{>\e\[0m}r
+					humanize_path($root, root_map => $root_map) =~ s{/?$}{/}r =~ s{>\e\[0m/$}{>\e\[0m}r
 				);
 			} else {
 				info(
 					"\nDeployment root #C{%s} contains the following %s:",
-					humanize_path($root, $root_map) =~ s{/?$}{/}r =~ s{>\e\[0m/$}{>\e\[0m}r,
+					humanize_path($root, root_map => $root_map) =~ s{/?$}{/}r =~ s{>\e\[0m/$}{>\e\[0m}r,
 					$group_by eq 'env' ? "environments" : "repositories"
 				);
 			}
@@ -447,7 +663,9 @@ sub environments {
 						for my $env_name (sort keys %deployments_by_name) {
 							info "\n[[  >>#u{Environment }#cu{%s}#u{:}", $env_name;
 							for my $env_info (@{$deployments_by_name{$env_name}}) {
-								my $type = $env_info->{is_director} ? '#R{BOSH director}' : '#G{'.$env_info->{type}.' deployment}';
+								my $type = ($env_info->{is_director} && $env_info->{is_director} ne 'unknown')
+								? '#R{BOSH director}'
+								: '#G{'.$env_info->{type}.' deployment}';
 								my $msg = sprintf(
 									"[[    $type#yi{%s}: >>#m{%s}",
 									$env_info->{path} =~ /^$env_info->{type}(-deployments)?$/ ? '' : ' (in '.$env_info->{path}.')',
@@ -480,8 +698,8 @@ sub environments {
 				} else {
 					info {pending => 1}, $ansi_reset_line.$ansi_cursor_up.$ansi_show_cursor;
 					info "\n[[  #E{warning}>>#Ki{No environments found}" . ($search
-					 ? sprintf("#Ki{ matching pattern }#Ci{%s}", $search)
-					 : '#Ki{.}'
+						? sprintf("#Ki{ matching pattern }#Ci{%s}", $search)
+						: '#Ki{.}'
 					);
 				}
 			}

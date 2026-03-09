@@ -4,6 +4,7 @@ use warnings;
 
 use Genesis;
 use Genesis::Term;
+use Genesis::State qw/envset/;
 use Genesis::UI;
 use JSON::PP qw/decode_json encode_json/;
 use UUID::Tiny ();
@@ -22,16 +23,17 @@ sub new {
 		ca_cert  => $ca_cert,
 	}, $class)
 }
+
 # }}}
 # from_bosh - create a credhub object from the BOSH director details {{{
 sub from_bosh {
 	my ($class, $bosh, %opts) = @_;
 	my ($exodus, $exodus_source);
 
-	$opts{vault} ||= (Service::Vault->current || Service::Vault->default);
+	my $exodus_vault = $opts{exodus_vault} || $bosh->exodus_vault || Service::Vault->current || Service::Vault->default;
 	my $exodus_path = $opts{exodus_path} || $bosh->exodus_path;
-	$exodus = $opts{vault}->get($exodus_path);
-	$exodus_source = csprintf("under #C{%s} on vault #M{%s}", $exodus_path, $opts{vault}->name);
+	$exodus = $exodus_vault->get($exodus_path);
+	$exodus_source = csprintf("under #C{%s} on vault #M{%s}", $exodus_path, $exodus_vault->name);
 	unless ($exodus) {
 		my $msg = "No exodus data found under $exodus_source";
 		bail($msg) unless $opts{return_on_error};
@@ -87,7 +89,7 @@ sub preload {
 	my ($out,$rc,$err) = run({
 			env => $self->env(),
 			redact_env => 1,
-			redact_output => 1,
+			redact_output => envset('GENESIS_SHOW_CREDHUB_SECRETS') ? 0 : 1,
 			stderr => 0
 		},
 		'credhub', 'export', '-j', '-p', $self->base
@@ -96,16 +98,17 @@ sub preload {
 		delete($self->{cached});
 	} else {
 		my $data = read_json_from($out, $rc, $err);
+		my $base = $self->base();
 		$self->{cached} = $rc ? {} : {(
-			map {($_->{Name} =~ s/$self->{base}\///r, $_->{Value})} @{$data->{Credentials}}
+			map {($_->{Name} =~ s/\Q$base\E//r, $_->{Value})} @{$data->{Credentials} // []}
 		)};
 	}
-	return;
+	return $self;
 }
 
 sub is_preloaded {
 	my $self = shift;
-	return defined($self->{cached}) && ref($self->{cached}) eq 'HASH' && scalar(keys %{$self->{cached}});
+	return defined($self->{cached}) && ref($self->{cached}) eq 'HASH';
 }
 
 sub has {
@@ -133,7 +136,7 @@ sub data {
 	my ($out,$rc,$err) = run({
 			env => $self->env(),
 			redact_env => 1,
-			redact_output => 1,
+			redact_output => envset('GENESIS_SHOW_CREDHUB_SECRETS') ? 0 : 1,
 			stderr => 0
 		},
 		'credhub', 'get', '-j', '-n', $self->_full_path($path)
@@ -158,7 +161,7 @@ sub set {
 			join(', ',@$invalid)
 		) if @$invalid;
 		bail(
-			"You must supply either the certificate and the public_key when creating ".
+			"You must supply the certificate and the private_key when creating ".
 			"a CredHub certificate value."
 		) if @$missing;
 		bail(
@@ -180,8 +183,8 @@ sub set {
 			uc($type), join(', ',@$invalid)
 		) if @$invalid;
 		bail(
-			"You must supply the %s  when creating a Credhub %s value",
-			sentence_join(@valid_keys), uc($type)
+			"You must supply the %s when creating a Credhub %s value",
+			sentence_join(@$missing), uc($type)
 		) if @$missing;
 
 		push @args, '-u', $value->{public_key};
@@ -197,8 +200,8 @@ sub set {
 			uc($type), join(', ',@$invalid)
 		) if @$invalid;
 		bail(
-			"You must supply the %s  when creating a Credhub %s value",
-			sentence_join(@valid_keys), uc($type)
+			"You must supply the %s when creating a Credhub %s value",
+			sentence_join(@$missing), uc($type)
 		) if @$missing;
 
 		push @args, '-z', $value->{username} if defined($value->{username});
@@ -213,9 +216,9 @@ sub set {
 
 	} elsif ($type eq 'value') {
 		bail(
-			"You must specify a HASH or an ARRAY as the value when creating a CredHub ".
-			"json value"
-		) unless defined($value) and ref($value) eq '';
+			"You must specify a non-empty string when creating a CredHub ".
+			"'value' value"
+		) unless defined($value) and ref($value) eq '' && $value ne '';
 		$value =~ s/\$/\${__dollar_symbol__}/g if $value =~ /\$/;
 		push @args, '-v', {redact => $value};
 
@@ -231,18 +234,25 @@ sub set {
 				%{$self->env()},
 				__dollar_symbol__ => '$'
 			},
-			redact_output => 1,
+			redact_output => envset('GENESIS_SHOW_CREDHUB_SECRETS') ? 0 : 1,
 			redact_env => 1,
 			stderr => 0
 		},
 		'credhub', 'set', '-j', @args
 	);
+	return ($out, $rc, $err) if wantarray;
+
 	bail(
-		"Could not create the Credhub %s value:\n%s\n[Exit Code: %s]",
-		$type,$out,$rc
+		"Could not create the Credhub %s value for path #c{%s}:%s%s\n\n[Exit Code: %s]",
+		$type eq 'value' ? 'secret' : $type,
+		$path,
+		$out ? "\n\n#wui{STDOUT:}\n$out" : '',
+		$err ? "\n\n#rui{STDERR:}\n$err" : '',
+		$rc
 	) if $rc;
 	my $result = read_json_from($out, $rc, $err);
-	# TODO: update cache if it exists
+	$self->{cached}{$path} = $result->{value} // $value
+		if defined($self->{cached});
 	return ($result->{id});
 }
 
@@ -250,21 +260,31 @@ sub paths {
 	my ($self,$filter) = @_;
 	my @filter = ();
 	if (!  defined($filter)) {
-		push(@filter, '-n', $self->{base}.'/');
-	} elsif ($filter && ref($filter) ne "") {
+		push(@filter, '-n', $self->base());
+	} elsif ($filter && ref($filter) eq "") {
 		push(@filter, '-n', $self->_full_path($filter));
 	}
 
-	my $paths = read_json_from(run({
+	my ($paths, $rc, $err) = read_json_from(run({
 			env => $self->env(),
 			redact_env => 1,
 			stderr => 0,
 		},
 		'credhub', 'find', '-j', @filter
 	));
+	if ($rc) {
+		$err = decolorize($err) =~ s/\AWARNING: Two different login methods were detected.*?\n\n\n//sr =~ s/^\s+|\s+\z//gr;
+		bail(
+			"Could not list CredHub paths under #c{%s}:%s\n\n[Exit Code: %s]",
+			defined($filter) ? $filter : $self->{base},
+			$err ? "\n\n#rui{STDERR:}\n$err" : '',
+			$rc
+		) unless $err =~ /^No credentials exist which match/;
+		return ();
+	}
 	return
-	  grep {ref($filter) ne "Regexp" || $_ =~ $filter}
-	  map {$_->{name}}
+		grep {ref($filter) ne "Regexp" || $_ =~ $filter}
+		map {$_->{name}}
 		@{$paths->{credentials}};
 }
 
@@ -296,11 +316,11 @@ sub delete_all {
 
 sub query {
 	my ($self,$path,%params) = @_;
-	
+
 	my @args;
 	push @args, '-X', uc(delete($params{_method}))
 		if defined $params{_method};
-	push @args, '-d', delete($params{data})
+	push @args, '-d', delete($params{_data})
 		if defined $params{_data};
 	# TODO: extract uri-encoded query params out of %params
 	return scalar(read_json_from(run({

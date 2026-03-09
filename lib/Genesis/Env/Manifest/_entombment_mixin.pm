@@ -2,8 +2,8 @@
 
 use Digest::SHA qw/sha1_hex/;
 
-use Genesis;
-use Genesis::Term;
+use Genesis qw/info bail read_json_from lines/;
+use Genesis::Term qw/terminal_width wrap csprintf/;
 
 use Service::Vault::Local;
 use Service::Credhub;
@@ -77,7 +77,7 @@ sub _entomb_secrets {
 			$cred_path =~ s#^/#_/#;
 			for my $key (sort @{$secret_keys{$secret}}) {
 				my $value = $secret_values{substr($secret,1)}{$key};
-				my ($credhub_var, $secret_sha, $action, $action_color, $existing) = $self->_entomb_secret(
+				my ($credhub_var, $secret_sha, $action, $action_color, $existing) = $self->_entomb_secret_for_vault(
 					$local_vault, $secret, $key, $value, $credhub, $cred_path, $entombment_prefix
 				);
 				$results{$action} += 1;
@@ -128,7 +128,7 @@ sub _setup_local_vault {
 	return $local_vault;
 }
 
-sub _entomb_secret {
+sub _entomb_secret_for_vault {
 	my ($self, $local_vault, $vault_path, $key, $value, $credhub, $cred_path, $entombment_prefix) = @_;
 	$entombment_prefix //= 'genesis-entombed/';
 	my $secret_sha = substr(sha1_hex("$cred_path--$key--".$value),0,8);
@@ -148,8 +148,32 @@ sub _entomb_secret {
 			$action_color = $existing ? "ri" : "gi";
 		}
 	}
-	$local_vault->set($vault_path, $key, $credhub_var);
+	$local_vault->set($vault_path, $key, $credhub_var) if $local_vault;
 	return ($credhub_var, $secret_sha, $action, $action_color, $existing);
+}
+
+sub _entomb_secret {
+	return shift->_entomb_secret_for_vault(@_) if scalar(@_) > 6; # Backwards compatibility
+	my ($self, $credhub, $path, $key, $value, $prefix) = @_;
+	$prefix //= 'genesis-entombed/';
+	# REFACTOR: Extract this out to a helper (used here and in CpiConfig.pm)
+	my $secret_sha = substr(sha1_hex("$path--$key--".$value),0,8);
+	my $cred_name = "$prefix$path--$key--$secret_sha";
+	# end REFACTOR
+	my $credhub_var = "(($cred_name))";
+	my $existing = $credhub->get($cred_name);
+	my $action = "exists";
+	unless ($existing && $existing eq $value) {
+		$credhub->set($cred_name, $value);
+		my $new_value = $credhub->get($cred_name);
+		if ($new_value ne $value) {
+			$action = "failed";
+		} else {
+			$action = $existing ? "altered" : "new";
+		}
+	}
+	my $color = {new => "gi", exists => "yi", altered => "ri", failed => "Yr"}->{$action};
+	return ($credhub_var, $secret_sha, $action, $color, $existing);
 }
 
 1;

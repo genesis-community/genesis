@@ -17,12 +17,14 @@ sub init {
 # new - create a default genesis-community kit provider {{{
 sub new {
 	my ($class) = @_;
+	my $label = "Genesis Community organization on Github";
 	bless({
-		label  => "Genesis Community organization on Github",
+		label  => $label,
 		remote => Service::Github->new(
 								domain => "github.com",
 								org    => "genesis-community",
-								tls    => "yes"
+								tls    => "yes",
+								label  => $label
 							)
 	}, $class);
 }
@@ -83,67 +85,4 @@ sub status {
 # }}}
 1;
 
-=head1 NAME
-
-Genesis::Kit::Provider::Default
-
-=head1 DESCRIPTION
-
-This class represents a compiled kit, and its distribution as a tarball
-archive.  Most operators use kits in this format.
-
-=head1 CONSTRUCTORS
-
-=head2 new(%opts)
-
-Instantiates a new Kit::Compiled object.
-
-The following options are recognized:
-
-=over
-
-=item name
-
-The name of the kit.  This option is B<required>.
-
-=item version
-
-The version of the kit.  This option is B<required>.
-
-=item archive
-
-The absolute path to the compiled kit tarball.  This option is B<required>.
-
-=back
-
-
-=head1 METHODS
-
-=head2 id()
-
-Returns the identity of the kit, in the form C<$name/$verison>.  This is
-useful for error messages and reporting.
-
-=head2 name()
-
-Returns the name of the kit.
-
-=head2 version()
-
-Returns the version of the kit.
-
-=head2 kit_bug($fmt, ...)
-
-Prints an error to the screen, complete with details about how the problem
-at hand is not the operator's fault, and that they should file a bug against
-the kit's Github page, or contact the authors.
-
-=head2 extract()
-
-Extracts the compiled kit tarball to a temporary workspace, and installs the
-Genesis hooks helper script.
-
-This method is memoized; subsequent calls to C<extract> will have no effect.
-
-=cut
 # vim: fdm=marker:foldlevel=1:noet

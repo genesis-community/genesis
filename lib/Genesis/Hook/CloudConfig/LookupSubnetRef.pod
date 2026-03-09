@@ -1,0 +1,167 @@
+=encoding UTF-8
+
+=head1 NAME
+
+Genesis::Hook::CloudConfig::LookupSubnetRef - Deferred reference resolver for cloud-config subnet data
+
+=head1 SYNOPSIS
+
+    use Genesis::Hook::CloudConfig::LookupSubnetRef;
+
+    # Direct key lookup in subnet data
+    my $ref = Genesis::Hook::CloudConfig::LookupSubnetRef->new('gateway');
+
+    # Method-dispatched lookup with extra arguments
+    my $ref = Genesis::Hook::CloudConfig::LookupSubnetRef->new(
+        'cidr',
+        'lookup_subnet_cidr',
+        $extra_arg,
+    );
+
+    # Resolve the reference against a config object and subnet data hash
+    my $value = $ref->resolve($config, $subnet_data);
+
+=head1 DESCRIPTION
+
+C<Genesis::Hook::CloudConfig::LookupSubnetRef> represents a pending reference
+into a subnet data hash that is resolved at a later point when the target
+cloud-config object and subnet data are available.
+
+An instance captures three pieces of information at construction time: the
+name of the key to look up (C<$ref>), an optional method name to dispatch on
+the config object for custom resolution (C<$lookup_method>), and any
+additional arguments to forward to that method (C<@lookup_args>). Resolution
+is deferred until C<resolve()> is called with a live config object and the
+relevant subnet data hash.
+
+This class is a sibling to
+C<Genesis::Hook::CloudConfig::LookupNetworkRef>, which performs the same
+role for network-level data rather than subnet-level data. Both classes are
+used by cloud-config hook implementations to build up a set of lazy
+references that are evaluated once all data is loaded.
+
+=head1 METHODS
+
+=head2 new
+
+    my $ref_obj = Genesis::Hook::CloudConfig::LookupSubnetRef->new($ref, $lookup_method, @lookup_args);
+
+Creates a new lookup reference object that records a subnet data key and an
+optional resolution strategy for later evaluation by C<resolve()>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$ref>
+
+B<(required)> The key name to look up in the subnet data hash when
+C<resolve()> is called.
+
+=item C<$lookup_method>
+
+B<(optional)> The name of a method to call on the config object for custom
+resolution. When provided and the config object supports this method (via
+C<can()>), that method is called instead of performing a direct hash lookup.
+Pass C<undef> to use direct key lookup only.
+
+=item C<@lookup_args>
+
+B<(optional)> Zero or more additional arguments forwarded to C<$lookup_method>
+when the method-dispatch path is taken.
+
+=back
+
+B<Returns:> A new blessed C<Genesis::Hook::CloudConfig::LookupSubnetRef>
+object.
+
+B<Examples:>
+
+    # Simple key lookup -- resolves $subnet_data->{gateway} at resolve time
+    my $gw_ref = Genesis::Hook::CloudConfig::LookupSubnetRef->new('gateway');
+    # Returns: a LookupSubnetRef object with ref='gateway'
+
+    # Custom method dispatch with extra arguments
+    my $cidr_ref = Genesis::Hook::CloudConfig::LookupSubnetRef->new('cidr', 'lookup_subnet_cidr', $zone);
+    # Returns: a LookupSubnetRef object with ref='cidr', lookup_method='lookup_subnet_cidr'
+
+=head2 resolve
+
+    my $value = $ref_obj->resolve($config, $subnet_data);
+
+Resolves the reference against C<$config> and C<$subnet_data> using the
+strategy recorded at construction time. Three resolution paths are attempted
+in order:
+
+=over 4
+
+=item 1.
+
+If a C<$lookup_method> was provided and the config object supports that method
+(C<$config-E<gt>can($lookup_method)> is true), the method is called as
+C<$config-E<gt>$lookup_method($subnet_data, $ref, @lookup_args)> and its
+return value is returned.
+
+=item 2.
+
+If the key C<$ref> exists directly in C<$subnet_data>, C<$subnet_data-E<gt>{$ref}>
+is returned.
+
+=item 3.
+
+If neither path succeeds, C<bail()> is called with an error message.
+
+=back
+
+B<Parameters:>
+
+=over 4
+
+=item C<$config>
+
+B<(required)> The cloud-config object against which to dispatch the optional
+lookup method. Must support C<can()>.
+
+=item C<$subnet_data>
+
+B<(required)> A hash reference containing the subnet data fields to search.
+Typically one entry from the subnet list in a cloud-config network stanza.
+
+=back
+
+B<Returns:> The resolved value from the config method or the subnet data hash.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Could not resolve reference '$ref' in subnet data. Please ensure the reference exists and is spelled correctly.">
+
+Raised via C<bail()> when neither the method-dispatch path nor the direct key
+lookup finds a value. C<$ref> is replaced with the key name passed to C<new()>.
+
+=back
+
+B<Examples:>
+
+    my $ref_obj = Genesis::Hook::CloudConfig::LookupSubnetRef->new('gateway');
+    my $gateway = $ref_obj->resolve($config, { gateway => '10.0.0.1', cidr => '10.0.0.0/24' });
+    # Returns: '10.0.0.1'
+
+    my $cidr_ref = Genesis::Hook::CloudConfig::LookupSubnetRef->new(
+        'cidr',
+        'lookup_subnet_cidr',
+        $zone,
+    );
+    my $cidr = $cidr_ref->resolve($config, $subnet_data);
+    # Returns: result of $config->lookup_subnet_cidr($subnet_data, 'cidr', $zone)
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

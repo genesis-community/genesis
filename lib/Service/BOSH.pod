@@ -1,0 +1,483 @@
+=encoding utf8
+
+=head1 NAME
+
+Service::BOSH - Abstract base class for BOSH service objects
+
+=head1 SYNOPSIS
+
+  use Service::BOSH;
+
+  # Find the best installed BOSH CLI
+  my $bosh_path = Service::BOSH->command();
+
+  # Find a BOSH CLI within a version range
+  my $bosh_path = Service::BOSH->command('2.0.0', '3.0.0');
+
+  # Override the BOSH command path
+  Service::BOSH->set_command('/usr/local/bin/bosh');
+
+  # List available stemcells for an IaaS
+  my @stemcells = Service::BOSH->available_stemcells(iaas => 'aws');
+
+  # Subclass check (Service::BOSH is abstract)
+  # has_director returns true for Director, false for CreateEnvProxy
+  if (Service::BOSH::Director->has_director) {
+    print "Director is available\n";
+  }
+
+=head1 DESCRIPTION
+
+C<Service::BOSH> is the abstract base class for BOSH service objects in
+Genesis. It discovers and caches the local BOSH CLI, provides stemcell
+lookup, and defines the interface that all BOSH service subclasses share.
+
+Concrete behaviour is provided by the two derived classes:
+
+=over 4
+
+=item L<Service::BOSH::Director>
+
+A BOSH Director connection with full environment variable support,
+C<connect_and_validate>, and C<download_configs>.
+
+=item L<Service::BOSH::CreateEnvProxy>
+
+A proxy for BOSH C<create-env> operations, used when no director is
+available.
+
+=back
+
+The class caches the resolved BOSH CLI path in a package-level variable.
+The cache is bypassed when the C<GENESIS_BOSH_COMMAND> environment variable
+is set, and can be overridden programmatically with C<set_command>.
+
+=head1 CLASS METHODS
+
+=head2 command
+
+  my $path = Service::BOSH->command($min_version, $max_version);
+
+Returns the path to the best available BOSH CLI on the system. Searches for
+executables named C<bosh-cli>, C<bosh2>, C<boshv2>, and C<bosh> in order,
+selects the highest version within any version constraints given, and caches
+the result in a package-level variable.
+
+If C<GENESIS_BOSH_COMMAND> is set in the environment, that value is returned
+immediately without any discovery or caching. If the cache is already
+populated and no version constraints are given, the cached value is returned
+without re-scanning.
+
+B<Parameters:>
+
+=over 4
+
+=item $min_version
+
+Optional. The minimum acceptable BOSH CLI version string (e.g. C<'2.0.0'>).
+Defaults to C<'0.0.0'> (any version).
+
+=item $max_version
+
+Optional. The maximum acceptable BOSH CLI version string (e.g. C<'3.0.0'>).
+When provided, only CLI versions less than or equal to this value are
+considered.
+
+=back
+
+B<Returns:> The full path to the selected BOSH CLI executable, except when
+version constraints are applied and a matching CLI is found via the scan
+loop -- in that case, returns C<undef> due to a missing return statement
+(BOSH-1; see L</KNOWN ISSUES>). The early-return paths (C<GENESIS_BOSH_COMMAND>
+and the no-constraints cache hit) are not affected.
+
+B<Errors:>
+
+Dies with C<"#R{Missing `bosh`} - install the BOSH (v2) CLI from
+#B{https://github.com/cloudfoundry/bosh-cli/releases}"> if no BOSH CLI
+executable is found on the system.
+
+Dies with a message beginning with C<"BOSH CLI #c{v%s} %s is required, but
+this system only provides the following:"> if no installed CLI satisfies the
+version constraints. C<%s> is the minimum version; the second C<%s> is
+either C<"or higher"> or C<"up to #Y{vX.Y.Z}"> when a maximum is specified.
+
+B<Examples:>
+
+  # Any BOSH CLI version
+  my $bosh = Service::BOSH->command();
+  # Returns: '/usr/local/bin/bosh'
+
+  # Require at least v2.0.0
+  my $bosh = Service::BOSH->command('2.0.0');
+  # Returns: '/usr/local/bin/bosh'
+
+  # Version range
+  my $bosh = Service::BOSH->command('2.0.0', '3.0.0');
+  # Returns: '/usr/local/bin/bosh'
+
+=head2 set_command
+
+  Service::BOSH->set_command($cmd);
+
+Overrides the cached BOSH CLI path. Subsequent calls to C<command()> that
+would normally use the cache will return C<$cmd> instead. Does not affect
+the C<GENESIS_BOSH_COMMAND> environment variable.
+
+B<Parameters:>
+
+=over 4
+
+=item $cmd
+
+The full path to the BOSH CLI executable to use.
+
+=back
+
+B<Returns:> Nothing.
+
+B<Examples:>
+
+  Service::BOSH->set_command('/opt/bosh/bin/bosh');
+  # Returns: nothing (undef)
+
+=head2 has_director
+
+  my $bool = Service::BOSH->has_director();
+  my $bool = $bosh->has_director();
+
+Returns C<0> in the base class. C<Service::BOSH::Director> overrides this
+to return C<1>; C<Service::BOSH::CreateEnvProxy> returns C<0>.
+
+B<Returns:> C<0>.
+
+B<Examples:>
+
+  if (Service::BOSH->has_director) {
+    # director-specific operations
+  }
+  # Returns: 0
+
+=head2 available_stemcells
+
+  # List context — returns a list of stemcell objects
+  my @stemcells = Service::BOSH->available_stemcells(%opts);
+
+  # Scalar context — returns an array reference
+  my $stemcells = Service::BOSH->available_stemcells(%opts);
+
+Queries bosh.io for available stemcells matching the given criteria.
+Delegates to C<Service::BOSH::Stemcell-E<gt>available_stemcells>. When an
+C<env> object is supplied, IaaS, OS, and type are derived from that
+environment's configuration and only overridden by explicitly provided option
+values.
+
+B<Parameters:>
+
+=over 4
+
+=item iaas
+
+Required (unless C<env> is provided). The IaaS name (e.g. C<'aws'>,
+C<'google'>, C<'vsphere'>).
+
+=item os
+
+Optional. The stemcell OS slug (e.g. C<'ubuntu-jammy'>). Defaults to
+C<'ubuntu-jammy'>.
+
+=item type
+
+Optional. The stemcell type (e.g. C<'light'>). Defaults to C<undef>.
+
+=item env
+
+Optional. A Genesis environment object. When present, C<iaas>, C<os>, and
+C<type> are derived from the environment's manifest and config, serving as
+defaults for any values not explicitly supplied.
+
+=back
+
+B<Returns:> In list context, a list of stemcell objects. In scalar context,
+an array reference of stemcell objects.
+
+B<Errors:>
+
+Dies with C<"No IaaS specified for stemcell lookup"> if no C<iaas> value
+can be determined from either the C<%opts> hash or the C<env> object.
+
+B<Examples:>
+
+  # With explicit IaaS
+  my @stemcells = Service::BOSH->available_stemcells(iaas => 'aws');
+  # Returns: list of stemcell objects for AWS
+
+  # Scalar context for the array reference
+  my $stemcells = Service::BOSH->available_stemcells(iaas => 'google', os => 'ubuntu-jammy');
+  # Returns: array reference of stemcell objects
+
+  # Derived from a Genesis environment object
+  my @stemcells = Service::BOSH->available_stemcells(env => $env);
+  # Returns: list of stemcell objects matching the environment's IaaS and OS
+
+=head1 INSTANCE METHODS
+
+=head2 environment_variables
+
+  my %vars = $bosh->environment_variables();
+
+Returns a hash of environment variables to set when executing BOSH
+commands. The base class returns an empty list. Subclasses override this
+to provide BOSH director credentials and connection settings.
+
+B<Returns:> An empty list in the base class. Subclasses return a flat
+key/value list suitable for use in a hash assignment.
+
+B<Examples:>
+
+  my %env = $bosh->environment_variables();
+  # Returns: () in the base class
+
+=head2 execute
+
+  my @results  = $bosh->execute(@cmd);
+  my $exit_code = $bosh->execute(@cmd);
+  my $success  = $bosh->execute(\%opts, @cmd);
+
+Executes a BOSH CLI command with environment setup, interactive output
+capture, and optional dry-run mode awareness.
+
+The command in C<@cmd> may be provided in three forms:
+
+=over 4
+
+=item *
+
+A string beginning with C<bosh> — the leading C<bosh> token is replaced
+with the resolved CLI path.
+
+=item *
+
+A string containing shell operators (C<|> or variable references) — the CLI
+path is prepended to the entire string for shell interpolation.
+
+=item *
+
+A plain subcommand list (e.g. C<'deploy', $manifest>) — the CLI path and
+any C<-n> flag are unshifted onto the argument list.
+
+=back
+
+When C<$opts-E<gt>{interactive}> is true and the command is not C<int>,
+output is captured via the C<script> command (using C<script -q> on macOS
+and C<script -q -c> on Linux) so that interactive terminal output is
+available in C<$results[0]> after the command completes.
+
+C<HTTPS_PROXY> and C<https_proxy> are cleared from the subprocess
+environment unless C<GENESIS_HONOR_ENV> is set. C<BOSH_NON_INTERACTIVE>
+is always cleared from the subprocess environment; the C<-n> flag is
+prepended to the command instead when C<BOSH_NON_INTERACTIVE> is set in the
+calling process.
+
+B<Parameters:>
+
+=over 4
+
+=item \%opts
+
+Optional hash reference of execution options. Recognised keys:
+
+=over 4
+
+=item passfail
+
+If true, returns a boolean: C<1> on success (exit code 0), C<''> on failure.
+
+=item interactive
+
+If true, captures output via C<script> and runs the command attached to
+the terminal.
+
+=item deployment
+
+BOSH deployment name. Set as C<BOSH_DEPLOYMENT> in the subprocess
+environment. Falls back to C<$self-E<gt>{deployment}> if not provided.
+
+=item stderr
+
+Whether to capture stderr. Defaults to C<0> unless C<interactive> is true.
+
+=item env
+
+Hash reference of additional environment variables to merge into the
+subprocess environment.
+
+=back
+
+=item @cmd
+
+The BOSH subcommand and arguments.
+
+=back
+
+B<Returns:> When C<passfail> is set, returns a boolean (C<1> for success,
+C<''> for failure). In list context without C<passfail>, returns
+C<($output, $exit_code, $stderr)>. In scalar context without C<passfail>,
+returns the raw exit code (C<0> for success, non-zero for failure).
+
+B<Note:> The scalar return is a raw exit code, where C<0> means success
+(falsy in boolean context). This is inverted relative to the C<passfail>
+boolean return. See L</KNOWN ISSUES> (BOSH-2, FWT-694).
+
+B<Examples:>
+
+  # Simple subcommand
+  my ($out, $rc) = $bosh->execute('cloud-config');
+  # Returns: ($output, 0) on success
+
+  # Check success/failure with passfail
+  my $ok = $bosh->execute({passfail => 1}, 'deploy', $manifest);
+  # Returns: 1 on success
+
+  # Interactive command with output capture
+  my ($out, $rc) = $bosh->execute({interactive => 1}, 'deploy', $manifest);
+  # Returns: ($captured_output, 0) on success
+
+=head2 dryrun_of
+
+  $bosh->dryrun_of(@cmd);
+  $bosh->dryrun_of(\%opts, @cmd);
+
+Prints a dry-run message describing the BOSH command that would be executed,
+then optionally executes it with C<--dry-run> flags appended.
+
+When C<has_director> is true, the message identifies the BOSH director by
+alias or host. Otherwise, the message describes the command without a
+director reference.
+
+B<Parameters:>
+
+=over 4
+
+=item \%opts
+
+Optional hash reference. Recognised keys:
+
+=over 4
+
+=item execute
+
+Controls whether the command is actually run after printing the dry-run
+message. If false (the default), only the message is printed and C<1> is
+returned. If set to a scalar true value (e.g. C<1>), the command is
+executed with C<--dry-run> appended. If set to an array reference of flag
+strings (e.g. C<['--dry-run', '--no-redact']>), those flags are appended
+instead of the default C<['--dry-run']>.
+
+=item exec_msg
+
+Optional string appended to the dry-run message when C<execute> is true
+(e.g. C<'deploying manifest'>). A leading space is added automatically.
+
+=item interactive
+
+Optional boolean. Controls whether the underlying C<execute> call uses
+interactive mode. Defaults to C<1> when C<execute> is true.
+
+=back
+
+=item @cmd
+
+The BOSH subcommand and arguments.
+
+=back
+
+B<Returns:> C<1> when C<execute> is false. When C<execute> is true, returns
+the result of the underlying C<execute> call.
+
+B<Examples:>
+
+  # Print dry-run message only
+  $bosh->dryrun_of('deploy', $manifest);
+  # Returns: 1
+
+  # Print message and execute with --dry-run
+  my ($out, $rc) = $bosh->dryrun_of({execute => 1}, 'deploy', $manifest);
+  # Returns: ($output, 0) on success
+
+  # Custom execute flags
+  $bosh->dryrun_of({execute => ['--dry-run', '--no-redact']}, 'deploy', $manifest);
+  # Returns: result of execute
+
+=head1 OVERRIDE POINTS
+
+The following methods are intended to be overridden by subclasses. The base
+class provides default behaviour; subclasses replace or extend it.
+
+=head2 has_director
+
+Returns C<0> in the base class. Override in subclasses that represent a
+full BOSH director connection to return C<1>. C<Service::BOSH::Director>
+overrides this to return C<1>; C<Service::BOSH::CreateEnvProxy> inherits
+the base-class C<0>. See L</has_director> under CLASS METHODS for the
+full signature and examples.
+
+=head2 environment_variables
+
+Returns an empty list in the base class. Override to return a flat
+key/value list of environment variables required to authenticate and
+connect to a BOSH director. C<Service::BOSH::Director> provides the full
+set of C<BOSH_*> variables; the base class returns nothing.
+
+=head2 connect_and_validate
+
+Not defined in the base class. Both C<Service::BOSH::Director> and
+C<Service::BOSH::CreateEnvProxy> implement this method to establish and
+validate their respective connections.
+
+=head2 download_configs
+
+Not defined in the base class. Both C<Service::BOSH::Director> and
+C<Service::BOSH::CreateEnvProxy> implement this method to retrieve BOSH
+configs from their respective sources.
+
+=head1 KNOWN ISSUES
+
+The following defects are tracked in FWT-694 and are documented here so
+that callers are aware of the current behaviour.
+
+=over 4
+
+=item BOSH-1 (medium)
+
+C<command()> line 61: stores the selected CLI path in C<$bosh_cmd> and
+then falls off the end of the sub without returning C<$bosh_cmd>. When
+version constraints are in effect and a matching CLI is found, the method
+returns C<undef> rather than the path. The early-return paths
+(C<GENESIS_BOSH_COMMAND> and the no-constraints cache hit) are not
+affected.
+
+=item BOSH-2 (medium)
+
+C<execute()> lines 176-177: in scalar context without the C<passfail>
+option, returns C<$results[1]>, which is the raw process exit code. A
+successful command returns C<0>, which is falsy in Perl. This is the
+inverse of the boolean C<passfail> return. Callers using scalar context
+should test for C<== 0> rather than simple truth.
+
+=back
+
+=head1 SEE ALSO
+
+L<Service::BOSH::Director>, L<Service::BOSH::CreateEnvProxy>,
+L<Service::BOSH::Stemcell>
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

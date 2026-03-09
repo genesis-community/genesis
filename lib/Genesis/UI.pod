@@ -1,0 +1,636 @@
+=head1 NAME
+
+Genesis::UI - Interactive text user interface prompts for Genesis and kit hooks
+
+=head1 SYNOPSIS
+
+    use Genesis::UI;
+
+    # Boolean prompt
+    my $answer = prompt_for_boolean("Enable feature?", "y");
+    # Returns JSON::PP::true or JSON::PP::false
+
+    # Single choice from a list
+    my $env = prompt_for_choice(
+        "Select an environment:",
+        [qw(dev staging prod)],
+        "dev"
+    );
+
+    # Free-form line input with validation
+    my $ip = prompt_for_line(
+        "Enter the IP address of your BOSH director",
+        "IP address",
+        undef,
+        "ip"
+    );
+
+=head1 DESCRIPTION
+
+This module provides utilities for the text user interfaces used by C<Genesis>
+and its C<hooks/*> scripts. It exports interactive prompt functions that read
+from C<STDIN> and write to C<STDERR> (or C<STDOUT> for some formatted output).
+
+All exported functions loop until the user provides a valid response, printing
+an error and re-prompting on invalid input.
+
+=head1 METHODS
+
+=head2 prompt_for_boolean
+
+    my $result = prompt_for_boolean($prompt, $default, $invert);
+
+Displays C<$prompt> on one line, then a C<[y|n] E<gt>> prompt on the following
+line. If C<$prompt> already contains C<[y|n]>, the entire prompt is shown on a
+single line.
+
+When C<$default> is provided, the matching option in C<[y|n]> is capitalized
+and colored green. Accepts C<y>, C<yes>, C<true>, C<n>, C<no>, or C<false> as
+input (case-insensitive); single initial characters are also accepted.
+
+If C<$invert> is true, the logical sense of the response is reversed before
+returning. This is useful when the question is more natural to ask in the
+positive but the stored value is negative.
+
+B<Parameters:>
+
+=over
+
+=item C<$prompt>
+
+The question to display to the user.
+
+=item C<$default>
+
+Optional. The default answer used when the user presses Enter without input.
+May be C<"y">, C<"yes">, C<"true">, C<"n">, C<"no">, C<"false">, C<1>, or
+C<0>. Numeric C<0>/C<1> values are normalized to C<"n">/C<"y">.
+
+=item C<$invert>
+
+Optional. If true, the returned boolean value is the logical inverse of the
+user's answer.
+
+=back
+
+B<Returns:> A JSON boolean object. Yes-responses return the JSON true constant;
+no-responses return the JSON false constant (reversed when C<$invert> is true).
+The returned values are suitable for direct use in JSON serialization.
+
+B<Examples:>
+
+    my $enabled = prompt_for_boolean("Enable debug mode? [y|n]", "n");
+    # Returns: JSON false if user enters 'n' or presses Enter
+
+    my $disabled = prompt_for_boolean("Skip certificate validation?", "n", 1);
+    # Returns: JSON false if user enters 'y' (inverted)
+
+=head2 prompt_for_choices
+
+    my $selected = prompt_for_choices($prompt, $choices, $min, $max, $labels, $err_msg);
+
+Displays a numbered list of choices preceded by C<$prompt>, then prompts the
+user to enter selection numbers one at a time. The user enters a blank line to
+finish (or selection ends automatically when C<$max> is reached).
+
+B<Note:> Unlike C<prompt_for_choice>, this function does not support
+section-header labels (C<---text--->) or separator labels (C<--->).
+
+B<Parameters:>
+
+=over
+
+=item C<$prompt>
+
+Preamble text displayed above the numbered list.
+
+=item C<$choices>
+
+Required. An array reference of choice values.
+
+=item C<$min>
+
+Optional. Minimum number of selections required. Defaults to C<0>.
+
+=item C<$max>
+
+Optional. Maximum number of selections allowed. Defaults to the total number
+of choices.
+
+=item C<$labels>
+
+Optional. An array reference of display labels, indexed to match C<$choices>.
+Each label may be either a plain string or an array reference of two strings:
+the first is shown in the numbered list, the second is shown on the
+confirmation line after the user selects that item. Defaults to using the
+choice values as labels.
+
+=item C<$err_msg>
+
+Optional. Custom error message shown when the user enters an invalid selection
+number. Defaults to C<"Invalid choice - enter a number between 1 and $max">.
+
+=back
+
+B<Returns:> An array reference of the selected choice values, in the order
+they were selected.
+
+B<Errors:>
+
+Dies with C<"Illegal list maximum count specified. Please contact your kit author for a fix.\n">
+if C<$max> is less than C<$min>.
+
+B<Examples:>
+
+    my $picks = prompt_for_choices(
+        "Select deployment targets:",
+        [qw(us-east-1 us-west-2 eu-west-1)],
+        1,   # at least 1
+        2,   # at most 2
+    );
+    # Returns: e.g. ['us-east-1', 'eu-west-1']
+
+=head2 prompt_for_choice
+
+    my $chosen = prompt_for_choice($prompt, $choices, $default, $labels, $err_msg, $object_description);
+
+Similar to C<prompt_for_choices>, but limited to exactly one selection. In
+exchange for this limitation, the function supports a C<$default> value that
+is returned when the user presses Enter without input.
+
+If C<$labels> are provided, they follow the same format as in
+C<prompt_for_choices>: plain strings or two-element array references. Labels
+matching the pattern C<---text---> are treated as section headers displayed
+without a selection number; the label C<"---"> inserts a blank separator line.
+
+The C<$default> is matched against the choice values (not the labels). The
+matching choice's label has a green C<(default)> suffix appended when
+displayed.
+
+B<Parameters:>
+
+=over
+
+=item C<$prompt>
+
+Text displayed above the numbered list.
+
+=item C<$choices>
+
+Required. An array reference of choice values.
+
+=item C<$default>
+
+Optional. The value from C<$choices> to pre-select. The user can accept it by
+pressing Enter.
+
+=item C<$labels>
+
+Optional. Display labels for the choices; see description above.
+
+=item C<$err_msg>
+
+Optional. Custom error message shown on invalid input. Defaults to
+C<"enter a number between 1 and $num_choices">.
+
+=item C<$object_description>
+
+Optional. The noun used in the selection prompt line (e.g., C<"environment">
+produces C<"Select environment E<gt>">). Defaults to C<"choice">.
+
+=back
+
+B<Returns:> The selected element from C<$choices>.
+
+B<Examples:>
+
+    my $env = prompt_for_choice(
+        "Which environment?",
+        [qw(dev staging prod)],
+        "dev",
+    );
+    # Returns: e.g. 'staging'
+
+    my $region = prompt_for_choice(
+        "Select a region:",
+        [qw(us-east-1 us-west-2 eu-west-1)],
+        undef,
+        undef,
+        undef,
+        "region",
+    );
+    # Prompt reads: "Select region >"
+
+=head2 prompt_for_line
+
+    my $value = prompt_for_line($prompt, $label, $default, $validation, $err_msg);
+
+Prompts the user for a single line of text, optionally validating the input
+and reprompting on invalid entries.
+
+The display is split between C<$prompt> and C<$label>. C<$prompt> is printed
+once above the input, while C<$label> appears on each reprompt line inline
+with the C<E<gt>> cursor. Either may be C<undef>: pass C<undef> for C<$prompt>
+to use label-only mode (label repeats each attempt), or C<undef> for C<$label>
+to use a bare C<E<gt>> cursor.
+
+When C<$default> is defined and non-empty, it is shown in green next to the
+prompt or label. Pressing Enter accepts the default. If C<$default> is an
+empty string C<"">, the empty response is accepted silently without displaying
+a default hint.
+
+B<Parameters:>
+
+=over
+
+=item C<$prompt>
+
+Optional. One-time explanatory text printed before the input line.
+
+=item C<$label>
+
+Optional. Label repeated on each input attempt. Appended with C<E<gt>> to
+form the cursor.
+
+=item C<$default>
+
+Optional. Default value returned when the user presses Enter on a blank line.
+Pass C<undef> to require a non-empty response. Pass C<""> to allow blank
+without displaying a default hint.
+
+=item C<$validation>
+
+Optional. A validation specifier. Supported values:
+
+=over
+
+=item C<"ip">
+
+Requires a valid IPv4 address: four dot-separated octets in the range 0-255,
+with no zero-padding.
+
+=item C<"url">
+
+Requires a valid URL.
+
+=item C<"port">
+
+Requires a numeric value between 0 and 65535. Deprecated: prefer the
+C<"0-65535"> bounded numeric form.
+
+=item C<"n-m"> or C<"n+">
+
+Bounded numeric validation. C<"n-m"> requires a value between C<n> and C<m>
+inclusive; C<"n+"> requires a value of at least C<n>. Both C<n> and C<m> must
+be non-negative integers (matching C</^\d+$/>).
+
+=item C<"/pattern/flags"> or C<"!/pattern/flags">
+
+Regular expression validation. Supports C<i>, C<m>, and C<s> flags. A leading
+C<!> negates the match (entry must I<not> match the pattern).
+
+=item C<"[val1,val2,...]"> or C<"![val1,val2,...]">
+
+Explicit list validation. Entry must be (or, with C<!>, must not be) one of
+the comma-separated values in the brackets.
+
+=item C<"vault_path">
+
+Requires a path that exists in the currently targeted Vault. Skips the
+existence check when not connected to a Vault.
+
+=item C<"vault_path_and_key">
+
+Requires a C<path:key> pair where both the path and key exist in the currently
+targeted Vault. Skips the existence check when not connected to a Vault.
+
+=item code reference
+
+A subroutine C<sub { my ($value, $err_msg) = @_; ... }> that returns an empty
+string on success or an error message string on failure.
+
+=back
+
+=item C<$err_msg>
+
+Optional. Custom error message passed to the validation function when
+validation fails.
+
+=back
+
+B<Returns:> The validated input string, or a numeric value if the input
+parses as a number.
+
+B<Examples:>
+
+    my $ip = prompt_for_line(
+        "Enter the BOSH director IP",
+        "Director IP",
+        "10.0.0.6",
+        "ip",
+    );
+    # Returns: e.g. '10.0.0.6'
+
+    my $port = prompt_for_line(undef, "Port number", "443", "0-65535");
+    # Returns: e.g. 443  (numeric)
+
+=head2 prompt_for_list
+
+    my $items = prompt_for_list($type, $prompt, $label, $min, $max, $validation, $err_msg, $end_prompt);
+
+Collects multiple entries from the user, returning them as an array reference.
+Each entry is prompted with an ordinal label (C<"1st value E<gt>">,
+C<"2nd value E<gt>">, etc.). The loop ends when the user submits a blank entry
+(line mode) or presses Ctrl-D on an empty block (block mode), or when C<$max>
+entries have been collected.
+
+B<Parameters:>
+
+=over
+
+=item C<$type>
+
+Required. Either C<"line"> to collect single-line entries via
+C<prompt_for_line>, or C<"block"> to collect multi-line entries via
+C<prompt_for_block>.
+
+=item C<$prompt>
+
+Text printed once above the first prompt.
+
+=item C<$label>
+
+Optional. Noun used in each ordinal prompt. Defaults to C<"value">.
+
+=item C<$min>
+
+Optional. Minimum number of entries required. Defaults to C<0>.
+
+=item C<$max>
+
+Optional. Maximum number of entries allowed. When reached, the loop ends
+automatically. Must be at least C<1> when provided.
+
+=item C<$validation>
+
+Optional. Validation specifier for C<"line"> type entries; uses the same
+format as C<prompt_for_line>. Ignored for C<"block"> type.
+
+=item C<$err_msg>
+
+Optional. Custom error message passed to the validation function on failure.
+
+=item C<$end_prompt>
+
+Optional. Text appended to C<$prompt> to inform the user how to end input.
+Defaults to C<"(leave $label empty to end)">.
+
+=back
+
+B<Returns:> An array reference of the collected entry strings, in the order
+they were entered.
+
+B<Errors:>
+
+Dies with C<"Illegal list maximum count specified. Please contact your kit author for a fix.\n">
+if C<$max> is defined and less than C<1>.
+
+B<Examples:>
+
+    my $ips = prompt_for_list(
+        "line",
+        "Enter the IP addresses of your NTP servers",
+        "NTP IP",
+        1,    # at least 1
+        undef,
+        "ip",
+    );
+    # Returns: e.g. ['10.0.0.1', '10.0.0.2']
+
+    my $certs = prompt_for_list("block", "Paste each CA certificate", "CA cert", 1);
+    # Returns: array ref of PEM certificate strings
+
+=head2 prompt_for_block
+
+    my $text = prompt_for_block($prompt);
+
+Prompts the user to enter a multi-line block of text. The prompt is displayed
+with a dashed underline, and the user signals end-of-input by pressing
+C<Ctrl-D> on an empty line. The C<(Enter E<lt>CTRL-DE<gt> to end)> note is
+appended to the prompt automatically.
+
+B<Parameters:>
+
+=over
+
+=item C<$prompt>
+
+Text displayed above the input area.
+
+=back
+
+B<Returns:> The full block of text entered by the user as a single string,
+with all newlines preserved.
+
+B<Examples:>
+
+    my $notes = prompt_for_block("Paste your deployment notes:");
+    # Returns: e.g. "Line one\nLine two\n"
+
+=head2 new_prompt_for_choice
+
+    my $value = new_prompt_for_choice(%options);
+
+A modernized single-choice selector that accepts a named-parameter hash. It
+supports compact multi-column display, optional pagination, section headers,
+and separators within the choice list.
+
+Can also be called in the legacy positional argument style for backwards
+compatibility: C<new_prompt_for_choice($prompt, $choices, $default, $labels, $err_msg, $object_description)>.
+When the second argument is an array reference, the legacy code path is taken
+and the positional arguments are converted to named options internally.
+
+B<Parameters:>
+
+=over
+
+=item C<choices>
+
+Required. An array reference of choice items. Each item is either a plain
+scalar (used as both value and label) or a hash reference with the following
+optional keys:
+
+=over
+
+=item C<value>
+
+The value returned when this item is selected (required for selectable items).
+
+=item C<label>
+
+Display text shown in the numbered list. Defaults to C<value>.
+
+=item C<summary>
+
+Text shown on the confirmation line after the user selects this item.
+Defaults to C<label>.
+
+=item C<section>
+
+A string that causes this entry to be rendered as a section header (bold,
+underlined) rather than a numbered choice.
+
+=item C<separator>
+
+A boolean that causes this entry to render as a blank separator line rather
+than a numbered choice.
+
+=back
+
+=item C<header>
+
+Optional. Heading text displayed above the choice list. Defaults to
+C<"Select one of the following choices:"> (noun from C<description> is
+substituted).
+
+=item C<default>
+
+Optional. The default selection. May be the choice's C<value> string, a
+positive 1-based index, or a negative index counting from the end (e.g.,
+C<-1> selects the last choice).
+
+=item C<description>
+
+Optional. The noun used in the C<"Select E<lt>descriptionE<gt> E<gt>"> prompt
+line. Defaults to C<"choice">.
+
+=item C<error>
+
+Optional. Custom error message shown when the user enters an invalid number.
+Defaults to C<"Enter a number between 1 and $num_choices">.
+
+=item C<compact>
+
+Optional. Intended to display choices in multiple columns calculated to fit
+the terminal width. B<Not yet implemented:> enabling C<compact> (any true
+value) is currently broken and will cause the program to abort with a fatal
+error. Defaults to C<0>.
+
+=item C<paginate>
+
+Optional. Setting C<paginate =E<gt> 1> currently has no effect; pagination is
+not yet implemented. Defaults to C<0>.
+
+=back
+
+B<Returns:> The C<value> of the selected choice.
+
+B<Errors:>
+
+Calls C<bug()> with C<"Invalid options passed to prompt_for_choice: %s"> if
+unknown keys are present in the options hash, where C<%s> is a comma-separated
+list of the unknown key names.
+
+Calls C<bug()> with C<"prompt_for_choice requires 'choices' parameter and it must be an arrayref">
+if C<choices> is missing or not an array reference.
+
+Calls C<bug()> with C<"Invalid default choice: %s"> if the C<default> value
+does not match any choice's value or a valid index, where C<%s> is the
+provided default value.
+
+B<Examples:>
+
+    my $region = new_prompt_for_choice(
+        header      => "Which AWS region?",
+        choices     => [qw(us-east-1 us-west-2 eu-west-1)],
+        default     => "us-east-1",
+        description => "region",
+    );
+    # Returns: e.g. 'us-west-2'
+
+    my $env = new_prompt_for_choice(
+        header  => "Select deployment environment:",
+        choices => [
+            { value => "dev",     label => "Development" },
+            { value => "staging", label => "Staging" },
+            { value => "prod",    label => "Production" },
+        ],
+        default => "dev",
+    );
+    # Returns: e.g. 'staging'
+
+=head1 INTERNAL METHODS
+
+These methods are internal to the implementation. They may change without
+notice and should not be called directly.
+
+=head2 __prompt_for_line
+
+    __prompt_for_line($prompt, $validation, $err_msg, $default, $allow_blank)
+
+Core line-input loop used by all public prompt functions. Displays the prompt
+with a trailing C<E<gt>>, reads from C<STDIN>, applies the optional validation
+specifier, and loops until the input passes or the blank-allowed condition is
+met.
+
+When C<$default> is defined and the user presses Enter, the default is
+substituted and echoed back. When C<$allow_blank> is true and the input is
+empty, returns C<""> immediately. Numeric inputs are detainted and returned as
+numbers.
+
+Dies with C<"Error compiling param regex: $!"> if the C<$validation> string is
+a regex-format specifier and the pattern fails to compile.
+
+B<Examples:>
+
+    # Used internally by prompt_for_line and prompt_for_choices
+    my $val = __prompt_for_line("Enter IP", "ip", undef, "10.0.0.1", undef);
+    # Returns: user input or '10.0.0.1' if Enter pressed
+
+=head2 __prompt_for_block
+
+    __prompt_for_block($prompt)
+
+Core block-input reader used by C<prompt_for_block> and C<prompt_for_list> in
+block mode. Displays the prompt with a dashed underline and appends
+C<(Enter E<lt>CTRL-DE<gt> to end)>, then reads all lines from C<STDIN> until
+EOF. Returns the collected text as a single joined string.
+
+B<Examples:>
+
+    # Used internally by prompt_for_block and prompt_for_list
+    my $text = __prompt_for_block("Paste certificate");
+    # Returns: multi-line string ending with final newline
+
+=head2 __process_legacy_prompt_for_choice_args
+
+    __process_legacy_prompt_for_choice_args($prompt, $old_choices, $old_default, $labels, $err_msg, $object_description)
+
+Converts the positional argument style of the original C<prompt_for_choice>
+into the named-option hash expected by C<new_prompt_for_choice>. Called
+automatically when C<new_prompt_for_choice> detects legacy-style arguments
+(second argument is an array reference).
+
+Section headers (labels matching C<---text--->)  and separators (labels equal
+to C<--->) in C<$labels> are converted to C<{section =E<gt> ...}> and
+C<{separator =E<gt> 1}> hash entries in the resulting choices array.
+
+Returns a flat key-value list suitable for assignment to a C<%options> hash.
+
+B<Examples:>
+
+    # Used internally by new_prompt_for_choice when legacy args are detected
+    my %opts = __process_legacy_prompt_for_choice_args(
+        "Select env:", [qw(dev staging prod)], "dev", undef, undef, undef
+    );
+    # Returns: (header => 'Select env:', choices => [...], default => 'dev', ...)
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

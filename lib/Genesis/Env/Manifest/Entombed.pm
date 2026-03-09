@@ -4,8 +4,10 @@ use strict;
 use warnings;
 
 use parent qw/Genesis::Env::Manifest/;
+require File::Basename;
+do((File::Basename::dirname(__FILE__) =~ s#^lib/##r) . "/_entombment_mixin.pm");
 
-do $ENV{GENESIS_LIB}."/Genesis/Env/Manifest/_entombment_mixin.pm";
+sub description { "Manifest with secrets entombed into BOSH's Credhub from the single-source-of-truth Vault (default for regular kits)" }
 
 sub deployable {1}
 

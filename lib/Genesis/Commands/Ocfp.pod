@@ -1,0 +1,82 @@
+=head1 NAME
+
+Genesis::Commands::Ocfp - Command dispatch for OCFP environment management
+
+=head1 SYNOPSIS
+
+  # Registered in bin/genesis via define_command:
+  genesis <env> ocfp show network [options]
+
+=head1 DESCRIPTION
+
+Provides the top-level command dispatch for OCFP (Open Cloud Foundry Platform)
+environment management and inspection commands.  The dispatch follows a
+two-level topic/action pattern:
+
+  ocfp <topic> <action>
+
+Currently supported:
+
+=over 4
+
+=item C<show network>
+
+Display network configuration, IP reservations, allocations, and
+availability.  See L<Genesis::Commands::Ocfp::ShowNetwork> for details.
+
+=back
+
+=head1 FUNCTIONS
+
+=head2 ocfp($env_name, $topic, $action, @extra_args)
+
+Top-level entry point registered with C<define_command>.  Validates the
+environment is OCFP-enabled, then dispatches to the appropriate topic handler.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$env_name> - Environment name string
+
+=item C<$topic> - The topic (currently only C<show>)
+
+=item C<$action> - The action within the topic (currently only C<network>)
+
+=item C<@extra_args> - Any additional arguments (currently rejected)
+
+=back
+
+Calls C<bail()> if the environment is not OCFP-enabled or if the topic/action
+is invalid.
+
+=head2 ocfp_show($env, $action, %options)
+
+Dispatches C<show> topic actions.  Currently supports:
+
+=over 4
+
+=item C<network> - Delegates to L<Genesis::Commands::Ocfp::ShowNetwork/run>
+
+=back
+
+=head1 ENVIRONMENT REQUIREMENTS
+
+The target environment must have the C<ocfp> feature enabled
+(C<< $env->is_ocfp >> returns true).  Non-OCFP environments produce a clear
+error message.
+
+For create-env environments where the BOSH director exodus data is not
+available, commands degrade gracefully by showing OCFP configuration data
+without BOSH IP claims.
+
+=head1 SEE ALSO
+
+L<Genesis::Commands::Ocfp::ShowNetwork>, L<Genesis::Commands::Bosh>,
+L<Genesis::Env>
+
+=head1 AUTHOR
+
+FiveTwenty, LLC
+
+=cut

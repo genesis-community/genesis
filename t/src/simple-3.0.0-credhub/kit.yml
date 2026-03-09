@@ -1,0 +1,12 @@
+---
+name:   simple
+author: Dennis Bell <dbell@fivetwenty.io>
+docs:   https://github.com/genesis-community/simple-genesis-kit
+code:   https://github.com/genesis-community/simple-genesis-kit
+
+genesis_version_min: 3.0.0
+secrets_store: credhub
+
+description: |
+  Simple kit with genesis_version_min 3.0.0 and credhub secrets_store
+  for testing vaultified deployment_manifest_type.

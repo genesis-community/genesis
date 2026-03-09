@@ -1,0 +1,639 @@
+=head1 NAME
+
+Service::BOSH::Stemcell - Models a BOSH stemcell, with support for querying bosh.io and uploading to directors
+
+=head1 SYNOPSIS
+
+  use Service::BOSH::Stemcell;
+
+  # Query available stemcells for a given IaaS and OS
+  my $stemcells = Service::BOSH::Stemcell->available_stemcells(
+    iaas => 'google',
+    os   => 'ubuntu-jammy',
+  );
+
+  # Find a specific stemcell by version
+  my $sc = Service::BOSH::Stemcell->find('aws', 'ubuntu-jammy', '1.latest');
+
+  # Interactively select a stemcell
+  my $selected = Service::BOSH::Stemcell->select_stemcell(iaas => 'vsphere');
+
+  # Construct a stemcell object directly
+  my $stemcell = Service::BOSH::Stemcell->new(
+    iaas    => 'aws',
+    os      => 'ubuntu-jammy',
+    type    => 'light',
+    url     => 'https://bosh.io/d/stemcells/bosh-aws-xen-hvm-ubuntu-jammy-go_agent?v=1.625',
+    name    => 'bosh-aws-xen-hvm-ubuntu-jammy-go_agent',
+    version => '1.625',
+  );
+
+  # Upload to a BOSH director
+  my $ok = $sc->upload($bosh, fix => 1);
+
+  # Show a formatted description
+  print $sc->description();
+
+=head1 DESCRIPTION
+
+C<Service::BOSH::Stemcell> models a single BOSH stemcell entry. It provides
+class methods for querying the bosh.io API to discover available stemcells,
+an interactive selection UI for choosing among them, and a constructor for
+building stemcell objects from raw metadata (e.g. parsed from a BOSH manifest
+or API response).
+
+Once a stemcell object is in hand, instance methods support type-checking,
+upload to a BOSH director, and producing human-readable descriptions.
+
+Stemcells come in two types: C<light> (a cloud-provider image reference) and
+C<regular> (a full disk image). Both types are surfaced by the API query
+methods. The C<type> option on most methods allows filtering to one type.
+
+The bosh.io API base URL defaults to C<https://bosh.io/api/v1/stemcells/>.
+This can be overridden by passing the C<stemcell_url> option to
+C<available_stemcells>.
+
+B<Note:> Digest::SHA, File::Temp, and File::Path are imported by this module
+but are not currently used. They are artifacts of the unimplemented
+C<download> feature.
+
+=head1 CONSTANTS
+
+=over 4
+
+=item C<default_stemcell_url>
+
+  Service::BOSH::Stemcell::default_stemcell_url
+
+The default bosh.io API base URL used for stemcell queries:
+C<'https://bosh.io/api/v1/stemcells/'>.
+
+=item C<valid_stemcell_types>
+
+  Service::BOSH::Stemcell::valid_stemcell_types
+
+An array reference listing the valid stemcell type values:
+C<['regular', 'light']>.
+
+=back
+
+=head1 CLASS METHODS
+
+=head2 available_stemcells
+
+  my $stemcells = Service::BOSH::Stemcell->available_stemcells(%opts);
+
+Queries the bosh.io API for stemcells matching the given IaaS, OS, and type
+criteria. Returns an array reference of C<Service::BOSH::Stemcell> objects
+sorted by version descending (newest first), with C<light> before C<regular>
+for equal versions.
+
+The C<iaas> option is required. A trailing C<-cpi> suffix is stripped from
+the IaaS name if present. The C<os> option defaults to C<'ubuntu-jammy'>. The
+agent suffix (C<-go_agent>) is appended automatically for supported OS families
+(ubuntu trusty/xenial/bionic/focal/jammy and windows); it is omitted for newer
+OS families such as ubuntu-noble.
+
+B<Note:> This method calls JSON::PP to decode the API response but does not
+import JSON::PP itself (see L</KNOWN ISSUES>, SC-2). At runtime the call
+succeeds only if another module (e.g. C<Service::BOSH::Director>) has already
+loaded JSON::PP.
+
+B<Parameters:>
+
+=over 4
+
+=item iaas
+
+Required. The IaaS name. Valid values correspond to the keys recognised by
+C<cpi_stemcell_prefix>: C<aws>, C<azure>, C<google>, C<openstack>, C<stackit>,
+C<vsphere>, C<virtualbox>, C<warden>.
+
+=item os
+
+Optional. The guest OS slug (e.g. C<'ubuntu-jammy'>, C<'ubuntu-noble'>,
+C<'windows2019'>). Defaults to C<'ubuntu-jammy'>.
+
+=item all
+
+Optional boolean. If true, passes C<all=1> to the bosh.io API, requesting all
+available versions rather than only the latest. Defaults to false.
+
+=item type
+
+Optional. Filter results to a single stemcell type: C<'light'> or
+C<'regular'>. When omitted, both types are returned.
+
+=item cpi
+
+Optional. Override the CPI prefix string used in the bosh.io URL instead of
+deriving it from C<iaas> via C<cpi_stemcell_prefix>.
+
+=item agent
+
+Optional. Override the agent suffix string appended to the URL. When omitted,
+the suffix is determined automatically from the OS slug.
+
+=item stemcell_url
+
+Optional. Override the bosh.io API base URL. Defaults to
+C<default_stemcell_url>.
+
+=back
+
+B<Returns:> An array reference of C<Service::BOSH::Stemcell> objects.
+
+B<Errors:>
+
+Dies with C<"No IaaS specified for stemcell lookup"> if C<iaas> is not
+provided.
+
+Dies with C<"No stemcells found for %s on the %s CPI"> if the resolved CPI
+prefix is empty (i.e. the IaaS is not recognised). C<%s> is the OS slug;
+the second C<%s> is the (empty) CPI string.
+
+B<Note:> The HTTP response status from the bosh.io API is not checked. If the
+request fails (network error, non-200 status), the response body is passed
+to C<JSON::PP-E<gt>decode> unchanged, which will die with an unhandled
+exception on malformed input.
+
+B<Examples:>
+
+  my $all = Service::BOSH::Stemcell->available_stemcells(
+    iaas => 'aws',
+    os   => 'ubuntu-jammy',
+    all  => 1,
+  );
+  # Returns: arrayref of Service::BOSH::Stemcell objects, newest first
+
+  my $light_only = Service::BOSH::Stemcell->available_stemcells(
+    iaas => 'google',
+    type => 'light',
+  );
+  # Returns: arrayref containing only light stemcells
+
+=head2 select_stemcell
+
+  my $stemcell = Service::BOSH::Stemcell->select_stemcell(%opts);
+
+Presents an interactive terminal UI for choosing a stemcell. The user is
+prompted to select a major version (when multiple exist), then a minor
+version, and finally a type (when both C<light> and C<regular> are available
+for the selected version and no C<type> filter is in effect).
+
+Stemcells are grouped by major version, then by minor version within the
+selected major. When only one major or minor version is available, that step
+is skipped automatically.
+
+The C<stemcells> option accepts a pre-fetched array reference; when omitted,
+C<available_stemcells> is called with the remaining options.
+
+B<Note:> When C<type> is provided and both types exist for the selected minor
+version, the method returns the stemcell at an arbitrary hash key rather than
+the filtered type (see L</KNOWN ISSUES>, SC-5). The C<type> filter is applied
+correctly at the major-version grouping step and at the version label display,
+but not at final selection.
+
+B<Parameters:>
+
+=over 4
+
+=item stemcells
+
+Optional. A pre-fetched array reference of C<Service::BOSH::Stemcell> objects
+(as returned by C<available_stemcells>). When provided, no API call is made.
+
+=item type
+
+Optional. Filter to a specific stemcell type: C<'light'> or C<'regular'>.
+See the note above regarding SC-5.
+
+=item (other opts)
+
+Any additional options accepted by C<available_stemcells> (C<iaas>, C<os>,
+C<all>, C<cpi>, C<agent>, C<stemcell_url>) are passed through when
+C<stemcells> is not provided.
+
+=back
+
+B<Returns:> A single C<Service::BOSH::Stemcell> object chosen by the user.
+
+B<Examples:>
+
+  my $sc = Service::BOSH::Stemcell->select_stemcell(
+    iaas => 'vsphere',
+    os   => 'ubuntu-jammy',
+  );
+  # Returns: the user-selected Service::BOSH::Stemcell object
+
+  # Using a pre-fetched list
+  my $list = Service::BOSH::Stemcell->available_stemcells(iaas => 'aws');
+  my $sc = Service::BOSH::Stemcell->select_stemcell(stemcells => $list);
+  # Returns: the user-selected Service::BOSH::Stemcell object
+
+=head2 find
+
+  my $stemcell = Service::BOSH::Stemcell->find($iaas, $os, $version, $type);
+
+Finds a specific stemcell by version. Calls C<available_stemcells> with
+C<all =E<gt> 1> and then searches the results.
+
+The C<$version> argument accepts a plain version string (e.g. C<'1.625'>)
+or one of the following special forms:
+
+=over 4
+
+=item C<'latest'>
+
+Returns the newest available stemcell.
+
+=item C<'N.latest'>
+
+Returns the newest stemcell whose version begins with the major number C<N>
+(e.g. C<'1.latest'> returns the latest C<1.x> stemcell).
+
+=back
+
+B<Parameters:>
+
+=over 4
+
+=item $iaas
+
+The IaaS name (e.g. C<'aws'>).
+
+=item $os
+
+The guest OS slug (e.g. C<'ubuntu-jammy'>).
+
+=item $version
+
+The version string or C<'latest'> / C<'N.latest'>.
+
+=item $type
+
+Optional. Filter to a specific stemcell type: C<'light'> or C<'regular'>.
+
+=back
+
+B<Returns:> The first matching C<Service::BOSH::Stemcell> object, or C<undef>
+if none found.
+
+B<Examples:>
+
+  my $sc = Service::BOSH::Stemcell->find('aws', 'ubuntu-jammy', 'latest');
+  # Returns: the newest available stemcell, or undef
+
+  my $sc = Service::BOSH::Stemcell->find('google', 'ubuntu-jammy', '1.latest', 'light');
+  # Returns: the newest 1.x light stemcell for Google, or undef
+
+  my $sc = Service::BOSH::Stemcell->find('vsphere', 'ubuntu-jammy', '1.480');
+  # Returns: the stemcell at version 1.480, or undef
+
+=head2 new
+
+  my $sc = Service::BOSH::Stemcell->new(%description);
+
+Constructs a new C<Service::BOSH::Stemcell> object from a flat hash of
+metadata. Validates that all keys are from the known set and that all
+required keys are present.
+
+B<Parameters:>
+
+=over 4
+
+=item %description
+
+A flat hash of stemcell metadata. Valid keys are:
+
+=over 4
+
+=item iaas
+
+Required. The IaaS name (e.g. C<'aws'>).
+
+=item os
+
+Required. The guest OS slug (e.g. C<'ubuntu-jammy'>).
+
+=item type
+
+Required. The stemcell type: C<'light'> or C<'regular'>.
+
+=item url
+
+Required. The download URL or local file path.
+
+=item name
+
+Required. The stemcell name as reported by bosh.io (e.g.
+C<'bosh-aws-xen-hvm-ubuntu-jammy-go_agent'>).
+
+=item version
+
+Required. The stemcell version string (e.g. C<'1.625'>).
+
+=item size
+
+Optional. File size in bytes.
+
+=item sha1
+
+Optional. SHA-1 checksum of the stemcell file.
+
+=item md5
+
+Optional. MD5 checksum of the stemcell file.
+
+=item sha256
+
+Optional. SHA-256 checksum of the stemcell file.
+
+=back
+
+=back
+
+B<Returns:> A blessed C<Service::BOSH::Stemcell> object.
+
+B<Errors:>
+
+Dies with C<"Invalid stemcell description: Invalid keys: %s. "> if any
+unrecognised keys are present. C<%s> is a comma-separated list of the
+offending key names.
+
+Dies with C<"Invalid stemcell description: Missing keys: %s. "> if any
+required keys are absent. C<%s> is a comma-separated list of the missing
+key names.
+
+B<Examples:>
+
+  my $sc = Service::BOSH::Stemcell->new(
+    iaas    => 'aws',
+    os      => 'ubuntu-jammy',
+    type    => 'light',
+    url     => 'https://bosh.io/d/stemcells/bosh-aws-xen-hvm-ubuntu-jammy-go_agent?v=1.625',
+    name    => 'bosh-aws-xen-hvm-ubuntu-jammy-go_agent',
+    version => '1.625',
+    sha1    => 'abc123...',
+  );
+  # Returns: a Service::BOSH::Stemcell object
+
+=head2 cpi_stemcell_prefix
+
+  my $prefix = Service::BOSH::Stemcell->cpi_stemcell_prefix($iaas);
+  my $prefix = $sc->cpi_stemcell_prefix($iaas);
+
+Maps an IaaS name to the CPI prefix string used in bosh.io stemcell names.
+Can be called as a class method or instance method.
+
+The mapping is:
+
+  aws         => aws-xen-hvm
+  azure       => azure-hyperv
+  google      => google-kvm
+  openstack   => openstack-kvm
+  stackit     => openstack-kvm
+  vsphere     => vsphere-esxi
+  virtualbox  => warden-boshlite
+  warden      => warden-boshlite
+
+B<Parameters:>
+
+=over 4
+
+=item $iaas
+
+The IaaS name to look up.
+
+=back
+
+B<Returns:> The CPI prefix string (e.g. C<'aws-xen-hvm'>), or an empty
+string if the IaaS is not recognised.
+
+B<Note:> The source code names this parameter C<$cpi>, but it accepts an
+IaaS name and returns a CPI prefix. The POD uses C<$iaas> to reflect the
+semantic role of the argument.
+
+B<Examples:>
+
+  my $prefix = Service::BOSH::Stemcell->cpi_stemcell_prefix('google');
+  # Returns: 'google-kvm'
+
+  my $prefix = Service::BOSH::Stemcell->cpi_stemcell_prefix('unknown-iaas');
+  # Returns: ''
+
+=head1 INSTANCE METHODS
+
+=head2 is_type
+
+  my $bool = $sc->is_type($type);
+  my $bool = $sc->is_light();
+  my $bool = $sc->is_full();
+  my $bool = $sc->is_local();
+
+C<is_type> returns true if the stemcell's type matches C<$type>.
+
+The following convenience methods are also provided:
+
+=over 4
+
+=item C<is_light()>
+
+Returns true if the stemcell type is C<'light'>.
+
+=item C<is_full()>
+
+Returns true if the stemcell type is C<'regular'> (a full disk image).
+
+=item C<is_local()>
+
+Returns true if the stemcell URL is not an HTTP or HTTPS URL (i.e. it refers
+to a local file path).
+
+=item C<download($file)>
+
+B<Not implemented.> Always dies with C<"Downloading stemcell from %s is not
+implemented yet">. C<%s> is the stemcell's URL. The C<$file> parameter and
+the C<return 1> statement that follows the error are unreachable dead code.
+
+The unused imports Digest::SHA, File::Temp, and File::Path are placeholders
+for a future implementation of this method.
+
+=back
+
+B<Parameters:>
+
+=over 4
+
+=item $type
+
+For C<is_type> only. The type string to compare: C<'light'> or C<'regular'>.
+
+=item $file
+
+For C<download> only. The local file path (currently unused).
+
+=back
+
+B<Returns:> Boolean for C<is_type>, C<is_light>, C<is_full>, and C<is_local>.
+C<download> never returns.
+
+B<Errors:>
+
+Dies with C<"Downloading stemcell from %s is not implemented yet">.
+C<%s> is the stemcell's URL.
+
+B<Examples:>
+
+  if ($sc->is_type('light')) {
+    print "This is a light stemcell\n";
+  }
+  # Returns: 1 for a light stemcell
+
+  if ($sc->is_light()) {
+    print "Light stemcell\n";
+  }
+  # Returns: 1 for a light stemcell
+
+=head2 upload
+
+  my ($out, $rc, $err) = $sc->upload($bosh, %opts);
+  my $ok = $sc->upload($bosh, %opts);
+
+Uploads the stemcell to a BOSH director. Builds an C<upload-stemcell> command
+and delegates to C<$bosh-E<gt>execute>.
+
+For remote stemcells (not C<is_local>), the C<--sha1>, C<--version>, and
+C<--name> flags are added to the command when the corresponding values are
+available.
+
+When C<dryrun> is true, calls C<$bosh-E<gt>dryrun_of> and returns without
+executing the upload. In list context the dryrun return is C<(undef, 0, undef)>;
+in scalar context it is C<1>.
+
+B<Parameters:>
+
+=over 4
+
+=item $bosh
+
+A C<Service::BOSH::Director> object (or equivalent) providing C<execute> and
+C<dryrun_of> methods.
+
+=item fix
+
+Optional boolean. If true, passes C<--fix> to C<bosh upload-stemcell>,
+allowing re-upload of an already-present stemcell.
+
+=item dryrun
+
+Optional boolean. If true, records the command via C<dryrun_of> and returns
+without uploading.
+
+=item silent
+
+Optional boolean. If true, runs the upload non-interactively (no live output).
+Defaults to interactive mode.
+
+=back
+
+B<Returns:>
+
+In list context: a three-element list C<($output, $exit_code, $stderr)>.
+C<$exit_code> is C<0> on success.
+
+In scalar context: C<1> on success (C<$exit_code == 0>), C<0> on failure.
+
+In dryrun mode, list context returns C<(undef, 0, undef)> and scalar context
+returns C<1>.
+
+B<Examples:>
+
+  # Scalar context -- boolean result
+  my $ok = $sc->upload($bosh);
+  print $ok ? "Uploaded\n" : "Upload failed\n";
+  # Returns: 1 on success
+
+  # List context -- full output
+  my ($out, $rc, $err) = $sc->upload($bosh, silent => 1);
+  die "Upload failed: $err" if $rc;
+  # Returns: ($output, 0, '') on success
+
+  # Dry run
+  my $ok = $sc->upload($bosh, dryrun => 1);
+  # Returns: 1 (no actual upload performed)
+
+=head2 description
+
+  my $text = $sc->description($title);
+
+Returns a formatted multi-line string describing the stemcell, using
+terminal colour markup via C<csprintf>. The output includes IaaS, OS, type,
+version, URL or file path, size, and SHA1 fields.
+
+For remote stemcells the URL label is C<URL:>; for local stemcells it is
+C<File:>.
+
+B<Parameters:>
+
+=over 4
+
+=item $title
+
+Optional. A heading string for the description block. Defaults to
+C<"Stemcell $name"> where C<$name> is the stemcell's name field.
+
+=back
+
+B<Returns:> A formatted string suitable for display on a terminal.
+
+B<Examples:>
+
+  print $sc->description();
+  # Returns: multi-line string beginning with "Stemcell bosh-aws-xen-hvm-..."
+
+  print $sc->description("My Stemcell");
+  # Returns: multi-line string beginning with "My Stemcell"
+
+=head1 KNOWN ISSUES
+
+The following defects are tracked in FWT-694 and are documented here so
+that callers are aware of the current behaviour.
+
+=over 4
+
+=item SC-2 (high)
+
+C<available_stemcells()> line 49: calls C<JSON::PP> to decode the bosh.io
+API response but the module does not contain C<use JSON::PP>. At runtime
+this call succeeds only when another module loaded earlier in the process
+(such as C<Service::BOSH::Director>) has already imported C<JSON::PP>. If
+called in isolation the method will crash with
+C<"Can't locate object method "new" via package "JSON::PP">.
+
+=item SC-5 (medium)
+
+C<select_stemcell()> line 131: when the C<type> option is provided and
+both C<light> and C<regular> stemcells exist for the selected minor
+version, the method returns the stemcell at an arbitrary hash key
+(determined by Perl's hash iteration order) rather than the stemcell
+matching the requested type. The C<if ($type_filter || @types == 1)>
+branch reaches into
+C<(keys %{$grouped_by_minor{$selected_minor}})[0]> without filtering on
+C<$type_filter>.
+
+=back
+
+=head1 SEE ALSO
+
+L<Service::BOSH>, L<Service::BOSH::Director>
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

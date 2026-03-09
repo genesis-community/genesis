@@ -1,0 +1,514 @@
+=encoding UTF-8
+
+=head1 NAME
+
+Genesis::Hook::Blueprint - Hook subclass for assembling the YAML file list for a BOSH deployment
+
+=head1 SYNOPSIS
+
+    package Genesis::Hook::Blueprint::my_kit;
+    use parent 'Genesis::Hook::Blueprint';
+
+    sub perform {
+        my ($self) = @_;
+
+        $self->check_minimum_genesis_version('3.0.0');
+
+        $self->validate_features(
+            valid_features => [qw(ha tls external-db)],
+            deprecated_features => {
+                'postgres' => { replace => 'external-db', msg => 'use external-db instead' },
+            },
+        );
+
+        $self->add_files('base/base.yml');
+        $self->add_files_if_wants('ha', 'base/ha.yml');
+        $self->add_files_if_exists('ops/custom.yml');
+
+        $self->done($self->results);
+    }
+
+    1;
+
+=head1 DESCRIPTION
+
+C<Genesis::Hook::Blueprint> is the concrete hook base class for kit blueprint
+hooks. Kit authors subclass this class and implement C<perform> to build the
+ordered list of YAML files that Genesis passes to C<spruce merge> when
+assembling a deployment manifest.
+
+The blueprint hook lifecycle is:
+
+=over 4
+
+=item 1.
+
+Genesis calls C<init>, which delegates to L<Genesis::Hook/init> and then
+initializes C<< $hook->{features} >> from the environment and sets
+C<< $hook->{files} >> to an empty array reference.
+
+=item 2.
+
+Genesis calls C<perform> on the concrete subclass. The C<perform>
+implementation uses the file-management and feature-validation methods
+provided by this class to build up the file list.
+
+=item 3.
+
+The kit calls C<< $self->done($self->results) >> to signal completion and
+hand the assembled file list back to Genesis.
+
+=back
+
+This class extends L<Genesis::Hook> and inherits all of its methods for
+feature detection, environment and kit access, BOSH integration, and YAML
+merging. See L<Genesis::Hook> for full documentation of inherited methods.
+
+=head1 METHODS
+
+=head2 init
+
+    my $hook = Genesis::Hook::Blueprint->init;
+
+Constructs and returns a new blueprint hook object. Delegates to
+L<Genesis::Hook/init> for the base initialization, then populates
+C<< $hook->{features} >> from the environment's current feature list and
+initializes C<< $hook->{files} >> to an empty array reference.
+
+B<Parameters:>
+
+=over 4
+
+=item C<%opts>
+
+Key-value pairs forwarded to L<Genesis::Hook/init>. The C<env> key is
+required. See L<Genesis::Hook/init> for the full list of accepted keys.
+
+=back
+
+B<Returns:> A blessed C<Genesis::Hook::Blueprint> object (or a subclass
+object when called on a subclass).
+
+B<Examples:>
+
+    my $hook = Genesis::Hook::Blueprint->init;
+    # Returns: a blessed Genesis::Hook::Blueprint object (call with env => $env)
+
+
+=head2 add_files
+
+    $hook->add_files;
+
+Appends one or more filenames to the blueprint's ordered file list. Files
+are added in the order supplied and are included in the final manifest merge
+in that order.
+
+B<Parameters:>
+
+=over 4
+
+=item C<@files>
+
+One or more file path strings to append to the file list.
+
+=back
+
+B<Returns:> Nothing.
+
+B<Examples:>
+
+    $self->add_files;  # call with one or more filenames
+    # Returns: nothing (files are appended to the internal list)
+
+=head2 add_files_if_wants
+
+    $hook->add_files_if_wants($feature_test, @files);
+
+Appends the given files to the file list only if the environment has the
+specified feature active. If C<want_feature($feature_test)> returns false,
+the call is a no-op.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$feature_test>
+
+A feature name string or a compiled C<Regexp> object. Passed directly to
+C<want_feature>; see L<Genesis::Hook/want_feature> for matching semantics.
+
+=item C<@files>
+
+One or more file path strings to append when the feature is active.
+
+=back
+
+B<Returns:> Nothing.
+
+B<Examples:>
+
+    $self->add_files_if_wants('ha', 'base/ha.yml');
+    # Returns: nothing (appends 'base/ha.yml' to file list when 'ha' is active)
+
+    $self->add_files_if_wants(qr/^proto-/, 'base/proto.yml');
+    # Returns: nothing (appends 'base/proto.yml' when any feature matching ^proto- is active)
+
+=head2 add_files_if_exists
+
+    $hook->add_files_if_exists(@files);
+
+Appends each file to the file list only if that file exists on disk.
+Relative paths are resolved under the kit root via C<< $kit->path($file) >>.
+Absolute paths must fall under the environment's base directory; absolute
+paths that resolve outside the environment directory are silently skipped
+with a debug log message.
+
+B<Parameters:>
+
+=over 4
+
+=item C<@files>
+
+One or more file paths to test and conditionally append. Relative paths are
+resolved against the kit root. Absolute paths must be within the environment
+base directory.
+
+=back
+
+B<Returns:> Nothing.
+
+B<Examples:>
+
+    $self->add_files_if_exists('overlays/custom.yml');
+    # Returns: nothing (appends 'overlays/custom.yml' if it exists under the kit root)
+
+    $self->add_files_if_exists('/path/to/env/ops/override.yml');
+    # Returns: nothing (appends the absolute path only if it exists and is within the env dir)
+
+=head2 remove_files
+
+    $hook->remove_files;
+
+Removes the specified filenames from the blueprint's file list. Any file in
+C<@files> that appears in the current list is removed; files not present in
+the list are ignored. The list order of remaining files is preserved.
+
+B<Parameters:>
+
+=over 4
+
+=item C<@files>
+
+One or more file path strings to remove from the file list.
+
+=back
+
+B<Returns:> Nothing.
+
+B<Examples:>
+
+    $self->remove_files;  # call with one or more filenames to remove
+    # Returns: nothing (matching files are removed from the internal list)
+
+=head2 exchange_files
+
+    $hook->exchange_files(%exchange);
+
+Replaces files in the current list in-place using a substitution map. For
+each entry in the file list, if the entry's value appears as a key in
+C<%exchange>, it is replaced with the corresponding value. The replacement
+stops early once all keys in C<%exchange> have been consumed.
+
+B<Parameters:>
+
+=over 4
+
+=item C<%exchange>
+
+A hash mapping old filenames to new filenames. Each key that matches a
+filename in the current list is replaced by its corresponding value.
+
+=back
+
+B<Returns:> Nothing.
+
+B<Examples:>
+
+    $self->exchange_files(
+        'base/networking-v1.yml' => 'base/networking-v2.yml',
+    );
+    # Returns: nothing (replaces 'base/networking-v1.yml' with 'base/networking-v2.yml' in-place)
+
+=head2 ops_dir
+
+    my $dir = $hook->ops_dir;
+
+Returns the ops directory path for the environment. The value is read from
+the environment's C<genesis.ops_dir> parameter. If the parameter is not set,
+the default value C<'ops'> is returned.
+
+B<Returns:> A string directory path, defaulting to C<'ops'>.
+
+B<Examples:>
+
+    my $dir = $hook->ops_dir;
+    # Returns: 'ops' (default), or the value of genesis.ops_dir if set
+
+=head2 upstream_dir
+
+    my $dir = $hook->upstream_dir;
+
+Returns the upstream directory path stored on the hook object, with a
+trailing slash appended if not already present. Returns C<undef> if no
+upstream directory has been configured on the hook.
+
+B<Returns:> The upstream directory string with a trailing slash, or C<undef>
+if C<< $hook->{upstream_dir} >> is not set.
+
+B<Examples:>
+
+    # When upstream_dir is set to 'upstream'
+    my $dir = $hook->upstream_dir;
+    # Returns: 'upstream/'
+
+    # When upstream_dir is not configured
+    my $dir = $hook->upstream_dir;
+    # Returns: undef
+
+=head2 upstream_pattern_match
+
+    my $re = $hook->upstream_pattern_match;
+
+Returns the regular expression used to identify upstream operation features.
+If C<< $hook->{upstream_pattern_match} >> is set, that value is returned.
+Otherwise the default pattern C<qr/^operations\/(.*)$/> is returned.
+
+B<Returns:> A compiled C<Regexp> object.
+
+B<Examples:>
+
+    my $re = $hook->upstream_pattern_match;
+    # Returns: qr/^operations\/(.*)$/ (default)
+
+    if ('operations/ha' =~ $hook->upstream_pattern_match) {
+        # feature is an upstream operation reference
+    }
+
+=head2 validate_features
+
+    $hook->validate_features(%opts);
+
+Validates the environment's features against a set of known-valid, deprecated,
+and mutually exclusive feature definitions. Valid features are accepted;
+deprecated features are translated to their replacements with warnings;
+features matching the upstream pattern are looked up in the kit's upstream
+directory; features matching ops files in the environment's ops directory are
+accepted as custom ops features; all remaining features produce errors.
+
+After validation, the hook's feature list is updated via C<set_features> to
+contain only the curated (accepted) feature names.
+
+If any warnings were generated, they are reported via the Genesis
+C<warning> function. If any errors were generated, the method terminates
+via C<bail()>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<valid_features>
+
+B<(required)> Either an array reference of valid feature name strings, or a
+hash reference mapping feature names to true values. Any feature not in this
+set (and not otherwise handled) is rejected as invalid.
+
+=item C<deprecated_features>
+
+B<(optional)> A hash reference mapping deprecated feature names to resolution
+descriptors. Each value may be a plain string (treated as a single replacement
+feature), or a hash reference with the following keys:
+
+=over 4
+
+=item C<replace>
+
+A string (single replacement feature), an array reference of replacement
+feature names (multiple replacements), or an empty array reference (feature
+is now default behavior and can be removed).
+
+=item C<msg>
+
+An optional message string appended to the warning or error text.
+
+=back
+
+=item C<mutually_exclusive_features>
+
+B<(optional)> A hash reference mapping group names to array references of
+feature names. If more than one feature from any group is active after
+validation, an error is raised.
+
+=item C<warnings>
+
+B<(optional)> An array reference of pre-existing warning strings to include
+in the warning output.
+
+=item C<errors>
+
+B<(optional)> An array reference of pre-existing error strings to include in
+the error output.
+
+=back
+
+B<Returns:> Nothing. Terminates via C<bail()> if any validation errors are
+found.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Invalid valid_features parameter: expected a hash or array reference, got %s">
+-- raised via C<bail()> if C<valid_features> is neither a hash reference nor
+an array reference. C<%s> is replaced with the type string of the value
+received, or a representation of the scalar value.
+
+=item *
+
+C<"\nFeature validation encountered the following errors:\n%s"> -- raised via
+C<bail()> if any features are invalid, removed, or mutually exclusive. C<%s>
+is replaced with the formatted list of error messages.
+
+=back
+
+B<Examples:>
+
+    $self->validate_features(
+        valid_features => [qw(ha tls external-db)],
+        deprecated_features => {
+            'postgres' => { replace => 'external-db' },
+            'old-tls'  => { replace => ['tls'], msg => 'updated in v2.0' },
+            'legacy'   => { replace => [], msg => 'now enabled by default' },
+        },
+        mutually_exclusive_features => {
+            'database' => [qw(internal-db external-db)],
+        },
+    );
+    # Returns: nothing on success; calls bail() if validation fails
+
+=head2 results
+
+    my $files = $hook->results;
+
+Returns the assembled file list after the blueprint hook has completed.
+Terminates with an error if the hook has not been marked complete, or if the
+file list is empty.
+
+B<Returns:> An array reference of file path strings representing the ordered
+list of YAML files to merge into the deployment manifest.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Blueprint hook could not be run"> -- raised via C<bail()> if the hook has
+not been marked complete (i.e., C<done> was never called, or was called with
+C<undef>).
+
+=item *
+
+C<"Could not determine which YAML files to merge: 'blueprint' specified no files">
+-- raised via C<bail()> if the hook completed but no files were added to the
+list.
+
+=back
+
+B<Examples:>
+
+    $self->done($self->results);
+    my $files = $hook->results;
+    # Returns: ['base/base.yml', 'base/ha.yml', ...]
+
+=head1 INTERNAL METHODS
+
+These methods are internal to the implementation. They may change without
+notice and should not be called directly.
+
+=head2 _handle_deprecated_feature
+
+    $hook->_handle_deprecated_feature(
+        $feature, $resolution,
+        $curated_features, $warnings_ref, $errors_ref
+    );
+
+Processes a single deprecated feature entry during C<validate_features>.
+Interprets the C<$resolution> descriptor to determine whether the feature
+should be replaced by one or more new features, silently removed (now default
+behavior), or rejected with an error. Appends warning or error messages to the
+supplied array references as appropriate.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$feature>
+
+The deprecated feature name being processed.
+
+=item C<$resolution>
+
+A hash reference (or plain string, which is promoted to
+C<< { replace => $string } >>) describing how to handle the deprecated
+feature. Recognized keys are C<replace> and C<msg>. If the hash has a
+C<params> key, the method terminates with an unimplemented error.
+
+=item C<$curated_features>
+
+An array reference to which replacement feature names are appended when the
+deprecated feature has replacements.
+
+=item C<$warnings_ref>
+
+An array reference to which warning strings are appended.
+
+=item C<$errors_ref>
+
+An array reference to which error strings are appended.
+
+=back
+
+B<Returns:> C<1>.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Feature replacement by params not yet implemented for $feature"> -- raised
+via C<bail()> if the resolution hash contains a C<params> key. C<$feature>
+is interpolated directly into the string.
+
+=back
+
+B<Examples:>
+
+    $self->_handle_deprecated_feature(
+        'old-ssl', { replace => 'tls' },
+        \@curated, \@warnings, \@errors,
+    );
+    # Appends 'tls' to @curated and a deprecation warning to @warnings
+    # Returns: 1
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

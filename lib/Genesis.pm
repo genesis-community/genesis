@@ -16,6 +16,7 @@ use Genesis::State;
 
 use Cwd ();
 use Data::Dumper;
+use Encode qw/decode_utf8/;
 use File::Basename qw/basename dirname/;
 use File::Find ();
 use File::Temp qw/tempdir tempfile/;
@@ -27,8 +28,25 @@ use Time::HiRes qw/gettimeofday/;
 use Time::Piece;
 use Time::Seconds;
 
-
 use utf8;
+
+BEGIN { # Enable development mode if GENESIS_DEV_MODE is set
+	if ($ENV{GENESIS_DEV_MODE} && $ENV{GENESIS_DEV_MODE} =~ /^(?:1|yes|true)$/i) {
+		printf STDERR "Running in development mode, using Genesis lib from %s\n",
+			$ENV{GENESIS_LIB} || $ENV{HOME}.'/.genesis/lib';
+		eval {require Pry; Pry->import()};
+		printf STDERR "  - Pry is %s on this system\n", $@ ? 'not available' : 'available';
+		eval {require Carp::Always; Carp::Always->import()};
+		printf STDERR "  - Carp::Always is %s\n", $@ ? 'not available on this system' :'active';
+		eval {require Smart::Comments; Smart::Comments->import()};
+		printf STDERR "  - Smart::Comments is %s\n", $@ ? 'not available on this system' :'active';
+	}
+}
+
+use constant {
+	EXODUS_TIME_FORMAT => "%Y-%m-%d %H:%M:%S %z",
+	EXODUS_TIME_FORMAT_SHORT => "%Y%m%d%H%M%S",
+};
 
 # Timezone hackage to workaround keeping local TZ;
 unless ($ENV{ORIG_TZ}) {
@@ -40,10 +58,13 @@ unless ($ENV{ORIG_TZ}) {
 
 use base 'Exporter';
 our @EXPORT = qw/
+	EXODUS_TIME_FORMAT
+	EXODUS_TIME_FORMAT_SHORT
+
 	in_repo_dir in_kit_dir
 
 	logger
-	error bail bug fatal warning info output success
+	error bail bug fatal warning info output success notice dryrun
 	debug trace dump_stack dump_var qtrace
 
 	vaulted
@@ -59,11 +80,15 @@ our @EXPORT = qw/
 	is_valid_uri
 
 	strfuzzytime
+	get_real_local_timezone
+	local_strftime
 	pretty_duration
 	ordify
 	count_nouns
 
-	run lines curl
+	spruce_diff
+
+	run lines curl fake_tty
 	read_json_from
 	safe_path_exists
 
@@ -73,81 +98,44 @@ our @EXPORT = qw/
 	symlink_or_fail
 	copy_or_fail
 	copy_tree_or_fail
+	expand_path
+	absolute_path
 	humanize_path
 	humanize_bin
 
 	load_json load_json_file save_to_json_file
 	load_yaml load_yaml_file save_to_yaml_file
+	to_yaml
 
 	pushd popd
 
 	struct_set_value
 	struct_lookup
+	struct_has
 	flatten
 	unflatten
+	deep_merge
+	priority_merge
 	in_array
 	index_of
 	compare_arrays
+	delete_from_array
 	sentence_join
+	parse_fixed_width_table
 	uniq
 	get_opts
 
 	tcp_listening
 	die_unless_controlling_terminal
+
+	validate_global_config global_config_schema
 /;
 
 sub Init {
 	my $version = shift // $Genesis::VERSION;
 	$Genesis::RC = Genesis::Config->new($ENV{HOME}."/.genesis/config");
 	# FIXME: If command is ping, don't error out, but print validation errors
-	$Genesis::RC->validate({
-		default_bosh_target      => { type => 'enum',    default => 'ask',    values => [qw/ask self parent/],       envvar => 'GENESIS_DEFAULT_BOSH_TARGET' },
-		legacy_repo_suffix       => { type => 'boolean', default => 0,                                               envvar => 'GENESIS_LEGACY_REPO_SUFFIX' },
-		embedded_genesis         => { type => 'enum',    default => 'ignore', values => [qw/ignore check warn/]},
-		output_style             => { type => 'enum',    default => 'plain',  values => [qw/plain fun pointer/]},
-		show_duration            => { type => 'boolean', default => 0,                                               envvar => 'GENESIS_SHOW_DURATION' },
-		automatic_config_upgrade => { type => 'enum',    default => 'no',     values => [qw/no yes silent/],         envvar => 'GENESIS_CONFIG_AUTOMATIC_UPGRADE' },
-		confirm_release_overrides=> { type => 'enum',                         values => [qw/always outdated never/], envvar => 'GENESIS_CONFIRM_RELEASE_OVERRIDES' },
-
-		bosh_logs_path           => { type => 'string',  default => "<DEPLOYMENT_ROOT>/bosh_logs",                   envvar => 'GENESIS_DEPLOYMENT_LOGS_PATH'},
-		deployment_roots  => {
-			type => 'array',
-			default => [],
-			subtype => 'string||hasharray', # Can be a string or a hash of label => path
-			envvar => 'GENESIS_DEPLOYMENT_ROOTS', # Comma-separated list of path strings or label=path pairs
-			envsplit => ':',
-			envconvert => [
-				{ type => 'hasharray', pair_split => ';', kv_split => '=', key_type => 'string', value_type => 'string' },
-				{ type => 'string' }
-			]
-		},
-
-		suppress_warnings => {
-			type => 'hash',
-			schema => {
-				oversized_secrets => { type => 'boolean', default => 0 , envvar => 'GENESIS_SUPRESS_OVERSIZED_SECRETS_WARNING'},
-				bosh_target =>       { type => 'boolean', default => 0 , envvar => 'GENESIS_SUPPRESS_BOSH_TARGET_WARNING'},
-			}
-		},
-
-		# To be implemented:
-		# executable_environments  => { type => 'boolean', default => 0 },
-		# fix_secrets_on_deploy    => { type => 'boolean', default => 0 },
-
-		logs => {
-			type => 'array',
-			subtype => 'hash',
-			schema => {
-				file => { type => 'string', required => 1 },
-				level => { type => 'enum', default => 'INFO', values => [qw/TRACE DEBUG INFO WARN ERROR OUTPUT/]},
-				show_stack => { type => 'enum', default => 'default', values => [qw/default none full current fatal/]},
-				truncate => { type => 'boolean', default => 0 },
-				style => { type => 'enum', default => 'plain', values => [qw/plain fun pointer rfc-5424/]},
-				lifespan => { type => 'enum', default => 'forever', values => [qw/forever current/]},
-				timestamp => { type => 'boolean', default => 0 },
-			}
-		}
-	});
+	validate_global_config($Genesis::RC);
 	Genesis::Log->setup_from_configs($Genesis::RC->get("logs",[]));
 
 	our $USER_AGENT_STRING = "genesis/$Genesis::VERSION";
@@ -162,7 +150,6 @@ sub Init {
 	$ENV{GENESIS_ORIGINATING_DIR}= Cwd::getcwd;
 	$ENV{GENESIS_CALL_BIN}       = humanize_bin();
 	$ENV{GENESIS_FULL_CALL}      = join(" ", map {$_ =~ / / ? "\"$_\"" : $_} ($ENV{GENESIS_CALL_BIN}, @ARGV));
-
 }
 
 sub deployment_roots_map {
@@ -236,14 +223,39 @@ sub deployment_roots_map {
 }
 
 sub expand_path {
-	my ($path) = @_;
-	$path =~ s/^~/$ENV{HOME}/;
-	$path =~ s/\$([A-Za-z0-9_]+)/$ENV{$1}/g;
-	if (-l $path) {
-		$path = readlink($path);
-		$path = expand_path($path) if -l $path;
+	my ($path, $base_path) = @_;
+	return undef unless defined $path;
+
+	# Expand tilde patterns
+	if ($path =~ /^~/) {
+		if ($path eq '~' || $path =~ m{^~/}) {
+			$path =~ s{^~}{$ENV{HOME}};
+		} elsif ($path =~ m{^~([^/]+)}) {
+			# Handle ~username expansion
+			my $user_home = (getpwnam($1))[7];
+			bail("Unknown user '$1' in path expansion") unless $user_home;
+			$path =~ s{^~[^/]+}{$user_home};
+		}
 	}
+
+	# Expand environment variables
+	while ($path =~ s#\$(?:\{([A-Za-z0-9_]+)\}|([A-Za-z0-9_]+))#$ENV{$1//$2}||$&#e) {
+		bail(
+			"Environment variable '%s' is not set in path %s", $1//$2, $path
+		) unless defined $ENV{$1//$2};
+	}
+
+	# Convert to absolute path and resolve symlinks (abs_path does both)
+	pushd($base_path) if ($base_path);
+	$path = Cwd::abs_path($path);
+	popd() if ($base_path);
+
 	return $path;
+}
+
+# Legacy alias for backward compatibility
+sub absolute_path {
+	return expand_path(@_);
 }
 
 sub in_repo_dir {
@@ -269,7 +281,9 @@ sub output     {logger->output({offset => 1},@_);}
 sub fatal      {logger->fatal({offset => 1},@_);}
 sub error      {logger->error({offset => 1},@_);}
 sub warning    {logger->warning({offset => 1},@_);}
-sub success    {logger->warning({offset => 1, emoji => 'tada', colors => 'kg', label => 'DONE'}, @_);}
+sub success    {logger->warning({offset => 1, emoji => 'tada', colors => 'gk', label => 'DONE'}, @_);}
+sub dryrun     {logger->warning({offset => 1, emoji => 'noentry', colors => 'Wg', label => 'DRYRUN'}, @_);}
+sub notice     {logger->notice({offset => 1}, @_);}
 sub info       {logger->info({offset => 1},@_);}
 sub debug      {logger->debug({offset => 1},@_);}
 sub trace      {logger->trace({offset => 1},@_);}
@@ -407,13 +421,32 @@ sub new_enough {
 
 sub strfuzzytime {
 	my ($datestring,$output_format, $input_format) = @_;
-	$input_format ||= "%Y-%m-%d %H:%M:%S %z";
+	$input_format //= ref($datestring) eq 'Time::Seconds'
+		? 'seconds'
+		: "%Y-%m-%d %H:%M:%S %z";
 
-	my $time = Time::Piece->strptime($datestring,$input_format);
-	my $delta = Time::Piece->new() - $time;
-	my $fuzzy;
-	my $past = ($delta >= 0);
-	$delta = - $delta unless $past;
+	my ($delta,$fuzzy,$past,$time);
+	if ($input_format eq 'seconds') {
+		if (ref($datestring) eq 'Time::Seconds') {
+			$delta = $datestring;
+			$time = $delta->seconds;
+		} elsif ($datestring->can('seconds')) {
+			$time = $datestring->seconds;
+			$delta = Time::Seconds->new($time);
+		} elsif (ref($datestring) eq '' && $datestring =~ /^\d+$/) {
+			$time = $datestring;
+			$delta = Time::Seconds->new($datestring);
+		} else {
+			bug("Invalid input for 'seconds' format: %s", ref($datestring) || $datestring);
+		}
+	} else {
+		$time = ref($datestring) eq 'Time::Piece'
+			? $datestring
+			: Time::Piece->strptime($datestring, $input_format);
+		$delta = Time::Piece->new() - $time;
+		$past = ($delta >= 0);
+		$delta = - $delta unless $past;
+	}
 
 	# Adapted from rails' distance_of_time_in_words
 	if ($delta->minutes < 2) {
@@ -445,19 +478,48 @@ sub strfuzzytime {
 	} elsif ($delta->months < 1.5) {
 		$fuzzy = "more than a month";
 	} elsif ($delta->months < 22) {
-		my $aproach = (int($delta->months) == int($delta->months + 0.5)) ? "just over" : "almost";
-		$fuzzy = sprintf("%s %d months", $aproach, $delta->months + 0.5);
+		my $approach = (int($delta->months) == int($delta->months + 0.5)) ? "just over" : "almost";
+		$fuzzy = sprintf("%s %d months", $approach, $delta->months + 0.5);
 	} elsif ($delta->months < 25) {
 		$fuzzy = "about 2 years";
 	} else {
-		$fuzzy = sprintf("more than %d years", $delta->years );
+		my $half = (int($delta->years) == int($delta->years + 0.5)) ? "" : " and a half";
+		$fuzzy = sprintf("more than %d%s years", $delta->years, $half );
 	}
-	$fuzzy = $past ? "$fuzzy ago" : "in $fuzzy";
-	if ($output_format) {
-		my @lt = localtime($time->epoch); # Convert to localtime
-		$fuzzy = join($fuzzy, map {strftime($_, @lt)} split(/%~/, $output_format))
+	if ($input_format eq 'seconds') {
+		$fuzzy = sprintf(
+			# ie "%s seconds - %~"
+			join($fuzzy, split(/%~/, $output_format)),
+			$time
+		) if $output_format;
+	} else {
+		$fuzzy = $past ? "$fuzzy ago" : "in $fuzzy";
+		if ($output_format) {
+			my @lt = localtime($time->epoch); # Convert to localtime
+			$fuzzy = join($fuzzy, map {strftime($_, @lt)} split(/%~/, $output_format))
+		}
 	}
 	return $fuzzy;
+}
+
+sub get_real_local_timezone {
+	my $tz = $ENV{ORIG_TZ};
+	if (-l '/etc/localtime') {
+		($tz = readlink '/etc/localtime') =~ s#.*zoneinfo/##;
+	} elsif (-f '/etc/timezone') {
+		$tz = `cat /etc/timezone`
+	}
+	$tz
+}
+
+sub local_strftime {
+	my $time = shift;
+	$ENV{TZ} = get_real_local_timezone();
+	POSIX::tzset();
+	my $out = localtime($time)->strftime(@_);
+	$ENV{TZ} = "UTC";
+	POSIX::tzset();
+	return $out;
 }
 
 our %ord_suffix = (11 => 'th', 12 => 'th', 13 => 'th', 1 => 'st', 2 => 'nd', 3 => 'rd');
@@ -501,17 +563,17 @@ sub run {
 
 	my $prog = shift @args;
 	if ($prog !~ /\$\{?[\@0-9]/ && scalar(@args) > 0) {
-		$prog .= ' "$@"'; # old style of passing in args as array, need to wrap for shell call
+		$prog .= ' "${@}"'; # old style of passing in args as array, need to wrap for shell call
 	}
 
 	local %ENV = %ENV; # To get local scope for duration of this call
 	my $tracemsg = "";
 	if (scalar(keys %{$opts{env} || {}})) {
 		$tracemsg = "#M{Setting environment values:}";
-		for (keys %{$opts{env} || {}}) {
+		for (sort keys %{$opts{env} || {}}) {
 			if (defined($opts{env}{$_})) {
 				$ENV{$_} = $opts{env}{$_};
-				$tracemsg .= $opts{redact_env}
+				$tracemsg .= $opts{redact_env} # FIXME: This should also allow for a hash of keys to redact for fine-grained control
 					? csprintf("\n#B{%s}='#Ci{<redacted>}'",$_)
 					: csprintf("\n#B{%s}='#C{%s}'",$_,$ENV{$_});
 			} else {
@@ -538,10 +600,12 @@ sub run {
 		my $cmd_arg = $args[$i];
 		my $trace_arg = undef;
 		if (ref($cmd_arg) eq 'HASH' && (scalar(keys %{$cmd_arg}) eq 1) && defined($cmd_arg->{redact})) {
-			$trace_arg = "<redacted>";
+			my $size = length($cmd_arg->{redact}//'');
+			$trace_arg = "<redacted:$size bytes>";
 			$cmd_arg = $cmd_arg->{redact};
 		}
-		$cmd_arg =~ s/(?<!\\)\$(?:{([^}]+)}|([A-Za-z0-9_]*))/my $v = $ENV{$1||$2}; defined($v) ? $v : ""/eg;
+		# FIXME: How to handle undefined values
+		$cmd_arg =~ s/(?<!\\)\$(?:{([^\}]+)}|([A-Za-z0-9_]*))/my $v = $ENV{$1||$2}; defined($v) ? $v : ""/eg;
 
 		# Normal flow, assume arg is string-equivalent as before
 		push(@trace_args, $trace_arg//$cmd_arg);
@@ -559,16 +623,31 @@ sub run {
 	my @cmd = ($shell, "-c", $prog, @cmd_args);
 	my $start_time = gettimeofday();
 	my $out;
-	if ($opts{interactive}) {
-		system @cmd;
-	} else {
-		open my $pipe, "-|", @cmd
-		  or bail("Could not open pipe to run #C{%s}", join(' ',@cmd));
-		$out = do { local $/; <$pipe> };
-		$out =~ s/\s+$//;
-		close $pipe;
-	}
-	qtrace("command duration: %s", Time::Seconds->new(sprintf ("%0.3f", gettimeofday() - $start_time))->pretty());
+
+	# Handle STDIN redirection if requested
+	set_stdin($opts{stdin}) if ($opts{stdin});
+
+	eval {
+		if ($opts{interactive}) {
+			system @cmd;
+		} else {
+			open my $pipe, "-|", @cmd
+				or bail("Could not open pipe to run #C{%s}", join(' ',@cmd));
+			$out = do { local $/; <$pipe> };
+			$out =~ s/\s+$//;
+			close $pipe;
+		}
+	};
+	my $eval_err = $@;
+
+	# Always reset STDIN if it was redirected
+	reset_stdin() if ($opts{stdin});
+
+	# Re-throw any errors after STDIN cleanup
+	die $eval_err if $eval_err;
+
+my $duration = gettimeofday() - $start_time;
+qtrace("command duration: %s", pretty_duration($duration, undef,undef,'','',undef,1));
 
 	my $err = slurp($err_file) if ($err_file && -f $err_file);
 	my $rc = $? >>8;
@@ -602,6 +681,21 @@ sub run {
 	return ($rc > 0 && defined($err) ? $err : $out);
 }
 
+# Wrap the command in an OS-specific script call to fake being in a tty terminal.
+sub fake_tty {
+	my ($file, @cmd) = @_;
+	my $OS = "$^O";
+	if ($OS eq 'darwin') {
+		unshift @cmd, 'script', '-qeF', $file
+	} elsif ($OS eq 'linux') {
+		# Sometimes gnu just sucks...
+		# TODO: more rigorous wrapping of subcmd to deal with quotes and pipes
+		my $subcmd = join(" ", map {$_ =~ m/\s/ ? "\"$_\"" : $_} @cmd);
+		@cmd = ("script -qf '$file' -c '$subcmd'");
+	}
+	return @cmd
+}
+
 sub lines {
 	my ($out, $rc, $err) = @_;
 	return $rc ? () : split $/, $out;
@@ -621,22 +715,47 @@ sub read_json_from {
 }
 
 sub curl {
-	my ($method, $url, $headers, $data, $skip_verify, $creds) = @_;
-	$headers ||= {};
+	my ($url, $args);
+	if (ref($_[0]) eq 'HASH') {
+		($args, $url) = @_;
+		$args->{method} ||= 'GET';
+		$args->{headers} ||= {};
+	} else {
+		$args = {};
+		$args->{method} = shift // 'GET';
+		$url = shift;
+		$args->{headers} = shift || {};
+		$args->{data} = shift if @_;
+		$args->{skip_verify} = shift if @_;
+		$args->{creds} = shift if @_;
+	}
+
+	# TODO: Validate args to ensure invalid keys are not passed
+
+
+	bug(
+		"Internal error: \$args is not a hash reference, got %s", ref($args) || 'scalar'
+	)	unless (ref($args) eq 'HASH');
+
+	my ($method, $headers, $data, $skip_verify, $creds, $file) = $args->@{qw/method headers data skip_verify creds file/};
 
 	bug("No url provided to Genesis::curl") unless $url;
-	bug("No methhod provided to Genesis::curl") unless $method;
+	bug("No method provided to Genesis::curl") unless $method;
+	bail(
+		"Invalid method '%s' provided to Genesis::curl.  Must be one of GET, POST, PUT, DELETE, HEAD",
+		$method
+	) unless !ref($method) && $method =~ m/^(GET|POST|PUT|DELETE|HEAD)$/i;
 
-	my $header_opt = "i";
+	my $header_opt = "";
 	my @flags = ("-X", $method);
 	if ($method eq "HEAD") {
 		$header_opt = 'I';
-	} elsif ($method eq "POST") {
-		push @flags, qw/--post301 --post302/;
 	}
+	push (@flags, "-D", "/dev/stderr")      if  $method ne "HEAD";
+	push @flags, qw/--post301 --post302/    if  $method eq "POST";
 	push @flags, "-H", "$_: $headers->{$_}" for (keys %$headers);
 	push @flags, "-d", $data                if  $data;
-	push @flags, "-k"                       if  ($skip_verify);
+	push @flags, "-k"                       if  $skip_verify;
 	if ($creds) {
 		if ($creds =~ "^Bearer ") {
 			push @flags, "-H", "Authorization: $creds"
@@ -645,6 +764,7 @@ sub curl {
 		}
 	}
 	push @flags, "-v"                       if  (envset('GENESIS_DEBUG'));
+	push @flags, "-o", $file                if  $file;
 
 	my $status = "";
 	my $status_line = "";
@@ -653,26 +773,98 @@ sub curl {
 	my ($out, $rc, $err) = run({ stderr => 0 }, 'curl', '-'.$header_opt.'sSL', $url, @flags);
 	return (599, "Error executing curl command", $err) if ($rc);
 
-	my @data = lines($out,$rc);
+	my @data = lines($out, $rc);
+	my @err_data = lines($err, $rc);
 	my $in_header;
 	my @header_data;
 	my $line;
-	while ($line = shift @data) {
+
+	my $header_src = $method eq 'HEAD' ? \@data : \@err_data;
+	while ($line = shift @$header_src) {
 		if ($line =~ m/^HTTP\/\d+(?:\.\d)?\s+((\d+)(\s+.*)?)$/) {
 			$in_header = 1;
-			chomp($status_line = $1);
 			$status = $2;
+			$status_line = $1 =~ s/[\r\n]+$//r; # Strip off line endings
 		}
 		last unless $in_header;
 		push @header_data, $line;
-		$in_header=0 if ($line =~ /^\s+$/);
+		$in_header = 0 if ($line =~ /^\s+$/);
 	}
-	unshift @data, $line if defined($line);
+	unshift @$header_src, $line if defined($line);
 
 	dump_var header => join($/,@header_data);
-	return  $status, $status_line, join($/, @header_data, @data)
+	return  $status, $status_line, join($/, @header_data, @data, @err_data)
 		if ($header_opt eq 'I');
-	return $status, $status_line, join($/, @data), join($/, @header_data);
+	return $status, $status_line, $file ? $file : join($/, @data), join($/, @header_data), join($/, @err_data);
+}
+
+# spruce_diff - diff two yaml files, and return the diff as a colored string.
+sub spruce_diff {
+	my ($first, $second) = @_;
+	bug("spruce diff requires two files") unless @_ == 2;
+
+	my $scratchdir = workdir('spruce-diff');
+
+	# Helper function to process arguments consistently
+	my $process_arg = sub {
+		my ($arg, $arg_id) = @_;
+
+		# If the argument is a file, just return it
+		return $arg if (ref($arg) eq '' && $arg && -f $arg);
+
+		if (ref($arg) eq 'HASH') {
+			bug(
+				"Can only specify one of 'file', 'object', or 'content' in the %s argument hashref",
+				$arg_id
+			) if (grep {in_array($_, qw/file object content/)} keys %$arg) > 1;
+
+			# If we have a file and no label, just use the given file directly
+			return $arg->{file} if ($arg->{file} && !$arg->{label});
+
+			# Sanitize the label to make sure it is a valid file name
+			my $label = $arg->{label} // "spruce-diff-$arg_id";
+			$label =~ s/[^\w]+/_/g; # replace non-word characters with underscores
+			my $tmpfile;
+			while (1) {
+				$tmpfile = sprintf(
+					"%s/%s-%06.6d.yml",
+					$scratchdir,
+					$label,
+					int(rand(1000000))
+				);
+				last unless -e $tmpfile; # make sure the file does not already exist
+			}
+			trace("Creating temporary file %s for %s argument", $tmpfile, $arg_id);
+
+			copy_or_fail($arg->{file}, $tmpfile) if $arg->{file};
+			save_to_yaml_file($arg->{object}, $tmpfile) if $arg->{object};
+			mkfile_or_fail($tmpfile, 0644, $arg->{content}) if $arg->{content};
+
+			return $tmpfile if -f $tmpfile;
+			bug("$arg_id argument hashref must contain a 'file', 'object', or 'content' key");
+		}
+
+		bug(
+			"Invalid %s argument type '%s', expected a file path, or a hashref with 'file', 'object', or 'content' key, or a string",
+			$arg_id, ref($arg) ? lc(ref($arg)) : defined $arg ? 'scalar' : 'undef'
+		)
+	};
+
+	# Process both arguments using the helper function
+	$first = $process_arg->($first, "first");
+	$second = $process_arg->($second, "second");
+
+	my $out_file = "$scratchdir/out.diff";
+	my (undef,$rc,$err) = run({redact => 1}, fake_tty($out_file, "spruce", "diff", $first, $second));
+	my $out = slurp($out_file);
+	if ($out =~ s/\nScript done.*\[COMMAND_EXIT_CODE="(.*)"]$//m) {
+		$rc = $1;  # Linux stores command exit code in the script output
+	}
+	$out =~ s/^Script [^\n]+\n//m; # remove script header (linux)
+
+	# FIXME: diff between failed diff vs diff with differences
+	$out = decode_utf8($out) =~ s/\A\s*(.*?)\s*\z/$1/smr;
+	return ($out, $rc, $err);
 }
 
 sub slurp {
@@ -736,11 +928,27 @@ sub copy_or_fail {
 	-f $from or bail "$from: $!\n";
 	$to.=($to =~ /\/$/?'':'/').basename($from) if -d $to;
 	trace("copying $from to $to");
-	open my $in,  "<", $from or bail "Unable to open $from for reading: $!";
-	open my $out, ">", $to   or bail "Unable to open $to for writing: $!";
-	print $out $_ while (<$in>);
-	close $in;
-	close $out;
+	open IN,  "<", $from or bail "Unable to open $from for reading: $!";
+	open OUT, ">", $to   or bail "Unable to open $to for writing: $!";
+
+	my $blksize = (stat IN)[11] || 16384; # preferred block size?
+	my ($len, $written, $buf, $offset);
+	while ($len = sysread IN, $buf, $blksize) {
+		if (!defined $len) {
+			next if $! =~ /^Interrupted/;       # ^Z and fg
+			die "System read error: $!\n";
+		}
+		$offset = 0;
+		while ($len) { # Handle partial writes.
+			defined($written = syswrite OUT, $buf, $len, $offset)
+				or die "System write error: $!\n";
+			$len    -= $written;
+			$offset += $written;
+		};
+	}
+
+	close(IN);
+	close(OUT);
 }
 
 sub copy_tree_or_fail {
@@ -774,10 +982,10 @@ sub chmod_or_fail {
 
 our %path_cache = ();
 sub humanize_path {
-	my ($path, $absolute) = @_;
+	my ($path, %opts) = @_;
 
 	#TODO: cache paths better
-	my $pwd = Cwd::abs_path($ENV{GENESIS_CALLER_DIR} || Cwd::getcwd());
+	my $pwd = $opts{base_dir} || Cwd::abs_path($ENV{GENESIS_CALLER_DIR} || Cwd::getcwd());
 	return $path_cache{"$path\@$pwd"}
 		if ($path =~ m{^/} && defined($path_cache{"$path\@$pwd"}));
 
@@ -786,8 +994,20 @@ sub humanize_path {
 	while ($path =~ s/\/[^\/]*\/\.\.\//\//) {};
 	while ($path =~ s/\/\.\//\//) {};
 
+	if (defined $opts{root_map}) {
+		my %root_map = %{$opts{root_map}{roots}};
+		my %path_lookup = map {($root_map{$_}, $_)} keys %root_map;
+		for my $root (sort {length($b) <=> length($a)} keys %path_lookup) {
+			next if ($root eq $path_lookup{$root}); # skip unnamed roots
+			if (substr($path,0,length($root)) eq $root) {
+				$path = "[Deployment Root '$path_lookup{$root}']:".substr($path,length($root)+1);
+				return $path;
+			}
+		}
+	}
+
 	my $rel_path;
-	unless ($absolute) {
+	unless ($opts{absolute}) {
 		my @path_bits = split('/',$path);
 		my @pwd_bits = split('/',$pwd);
 		my $i=-1; while ($i < $#path_bits && $i < $#pwd_bits && $path_bits[++$i] eq $pwd_bits[$i]) {};
@@ -880,7 +1100,35 @@ sub save_to_yaml_file {
 	my $i=1; while (-f "$file.$i.json") {$i++};
 	my $tmpfile = "$file.$i.json";
 	save_to_json_file($data,$tmpfile);
-	run('spruce merge --skip-eval "$1" | perl -I$GENESIS_LIB -MGenesis -e \'my $c=do{local $/;<STDIN>};$c=~s/\s*\z/\n/ms;print $c\' > $2; rm "$1"', $tmpfile, $file);
+	run('spruce merge --skip-eval "$1" | perl -e \'my $c=do{local $/;<STDIN>};$c=~s/\s*\z/\n/ms;print $c\' > $2; rm "$1"', $tmpfile, $file);
+
+	# Fix orphaned ')) on new lines - join them with previous line
+	my $content = slurp($file);
+	my @lines = split /\n/, $content;
+	my @fixed_lines;
+
+	for my $i (0 .. $#lines) {
+		my $line = $lines[$i];
+
+		# If this line is just whitespace + )), join it with the previous line
+		if ($line =~ /^\s*\)\)\s*$/ && @fixed_lines) {
+			$fixed_lines[-1] .= ' ))';
+		} else {
+			push @fixed_lines, $line;
+		}
+	}
+
+	mkfile_or_fail($file, join("\n", @fixed_lines) . "\n");
+}
+
+sub to_yaml {
+	my ($data) = @_;
+	my $json = JSON::PP->new->allow_nonref->encode($data);
+	my $tmp = tempfile;
+	mkfile_or_fail($tmp, 0644, $json);
+	my ($out,$rc,$err) = run({ stderr => 0 }, qw/spruce merge --skip-eval/, $tmp);
+	bail("Error converting data to YAML: $err") if $rc;
+	return $out if $out;
 }
 
 my @DIRSTACK;
@@ -928,7 +1176,7 @@ sub _lookup_key {
 
 	return (1,$what) if $key eq '';
 
-	$key =~ s/\.\./.\0/;
+	$key =~ s/\.\./\0/g;
 	for (split /[\[\.]+/, $key) {
 		if (ref($what) eq 'ARRAY') {
 			my ($k, $v) = (/^(?:(.*?)=)?(.*?)]?$/);
@@ -950,7 +1198,7 @@ sub _lookup_key {
 				return (0, undef) unless $found;
 			}
 		} else {
-			my $k = $_ eq "\0" ? "." : $_;
+			(my $k = $_) =~ s/\0/./g;
 			return (0, undef) unless eval {exists $what->{$k}};
 			$what = $what->{$k};
 		}
@@ -982,6 +1230,49 @@ sub struct_set_value {
 			} else {
 				return $what->[$idx] = $value;
 			}
+		} elsif ($bit && $bit =~ /([^=]+)=(.*)/) {
+			# This is a search for a hash in an array, e.g. "name=unique-identifier"
+			# lets find the index of the hash, and use that as the 'what'.
+			my ($k, $v) = ($1, $2);
+			bail(
+				"Type Mismatch: expected array of hashes at %s, got %s",
+				$path, lc(ref($what) || "scalar")
+			) unless ref($what) eq 'ARRAY';
+			my $idx = 0; $idx += 1
+				while $idx < scalar(@{$what}) && ref($what->[$idx]) eq 'HASH' && $what->[$idx]{$k} ne $v;
+			if ($idx >= scalar(@{$what})) {
+				# If not found, and no more path bits, push the new value as the result;
+				if (!@bits) {
+					return undef if $clear;
+					bail(
+						"Cannot append new entry to array of hashes, as it is not a hash with %s set to %s",
+						$k, $v
+					) unless ref($value) eq 'HASH' && exists($value->{$k}) && $value->{$k} eq $v;
+					push @{$what}, $value;
+					return undef;
+				}
+				bail(
+					"Could not find hash with key '%s' and value '%s' at %s",
+					$k, $v, $path
+				);
+			}
+
+			bail(
+				"Type Mismatch: expected array of hashes at %s, got %s at position %d",
+				$path, lc(ref($what->[$idx]) || "scalar"), $idx
+			) unless ref($what->[$idx]) eq 'HASH';
+			if (@bits) {
+				$what=$what->[$idx];
+			} elsif ($clear) {
+				my $old = $what->[$idx];
+				splice(@$what, $idx, 1);
+				return $old;
+			} else {
+				my $old = $what->[$idx];
+				$what->[$idx] = $value;
+				return $old;
+			}
+
 		} else {
 			$path .= ($path ? "." : "") . $bit;
 			bail(
@@ -993,9 +1284,11 @@ sub struct_set_value {
 					unless exists($what->{$bit});
 				$what=$what->{$bit};
 			} elsif ($clear) {
-				#return delete $what->{$bit};
+				return delete $what->{$bit};
 			} else {
-				return $what->{$bit} = $value;
+				my $old = $what->{$bit};
+				$what->{$bit} = $value;
+				return $old;
 			}
 		}
 	}
@@ -1020,18 +1313,39 @@ sub struct_lookup {
 	return wantarray ? ($value,$key) : $value;
 }
 
+# struct_has - return true if the given key exists in the structure {{{
+sub struct_has {
+	my ($what, $keys) = @_;
+	my (undef, $found) = struct_lookup($what, $keys, undef);
+	return defined $found;
+}
+# }}}
+
 # flatten - convert deep structure to single sequence of key:value {{{
 sub flatten {
-	my ($final, $key, $val) = @_;
+	my ($final, $key, $val) = (@_ == 1 ) ? ({},'', $_[0]) : @_;
 
 	if (ref $val eq 'ARRAY') {
-		for (my $i = 0; $i < @$val; $i++) {
-			flatten($final, $key ? "${key}[$i]" : "$i", $val->[$i]);
+		if (@$val == 0) {
+			# Preserve empty arrays by storing the array ref itself
+			# Skip if top-level (key is empty string from initial call)
+			$final->{$key} = [] if defined($key) && length($key);
+		} else {
+			for (my $i = 0; $i < @$val; $i++) {
+				flatten($final, $key ? "${key}[$i]" : "$i", $val->[$i]);
+			}
 		}
 
 	} elsif (ref $val eq 'HASH') {
-		for (keys %$val) {
-			flatten($final, $key ? "$key.$_" : "$_", $val->{$_})
+		if (keys %$val == 0) {
+			# Preserve empty hashes by storing the hash ref itself
+			# Skip if top-level (key is empty string from initial call)
+			$final->{$key} = {} if defined($key) && length($key);
+		} else {
+			for (keys %$val) {
+				my $leaf_key = $_ =~ s/\./~/gr;
+				flatten($final, $key ? "$key.$leaf_key" : "$leaf_key", $val->{$_})
+			}
 		}
 
 	} else {
@@ -1076,7 +1390,9 @@ sub unflatten {
 		my %h_data;
 		for my $k (sort keys %$data) {
 			my ($pk, $sk) = $k =~ /^([^\[\.]*)(?:\.)?([^\.].*?)?$/;
+			$pk =~ s/~/./g;
 			if (defined $sk) {
+				# If $h_data{$pk} is an array ref,
 				die "Hash cannot have scalar and non-scalar values (at ".join('.', grep $_, ($branch, "pk")).")"
 					if defined $h_data{$pk} && ref($h_data{$pk}) ne 'HASH';
 				$h_data{$pk}->{$sk} = delete $data->{$k};
@@ -1087,10 +1403,71 @@ sub unflatten {
 			}
 		}
 		for my $k (sort keys %h_data) {
-			$h_data{$k} = unflatten($h_data{$k}, join('.', grep $_, ($branch, "$k")));
+			my $nk = $k =~ s/~/./gr;
+			$h_data{$nk} = unflatten($h_data{$nk}, join('.', grep $_, ($branch, "$k")));
 		}
 		return {%h_data}
 	}
+}
+
+# }}}
+# deep_merge - merge hash references {{{
+sub deep_merge {
+	my ($base, @overlays) = @_;
+	my $flatten = 0;
+	my $flat_base = flatten($base);
+	for my $removed_key (grep {! defined $flat_base->{$_}} keys %$flat_base) {
+		delete $flat_base->{$removed_key};
+	}
+	# FIXME: This doesn't handle arrays of hashes properly -- it just overwrites them in position order.
+	while (my $overlay = shift @overlays) {
+		if (ref($overlay) eq 'HASH') {
+			my $flat_overlay = flatten($overlay);
+			for my $removed_key (grep {not defined $flat_overlay->{$_}} keys %$flat_overlay) {
+				delete $flat_base->{$removed_key};
+				delete $flat_overlay->{$removed_key};
+			}
+			$flat_base = { %$flat_base, %$flat_overlay };
+		} elsif (ref($overlay) eq '') {
+			if (!defined($overlay)) {
+				$flatten = 1;
+			} elsif($overlay =~ /^(un)?flatten(ed)?$/) {
+				$flatten = defined($1) ? 0 : 1;
+			} elsif($overlay =~ /^(?:flatten=)?([01])$/) {
+				$flatten = $1;
+			} else {
+				bug("deep_merge: unknown overlay value: %s - expecting either '(un)flatten(ed)' or 'flattened=1|0'", $overlay);
+			}
+		} else {
+			bug("deep_merge: unknown overlay type: %s", ref($overlay));
+		}
+	}
+	return $flatten ? $flat_base : unflatten($flat_base);
+}
+
+# }}}
+# priority_merge - priority-aware merge with conflict detection {{{
+sub priority_merge {
+	my @structures = @_;  # In priority order, highest first
+	my $merged = {};
+	my $blocked = {};  # Ancestors blocked because descendants exist
+
+	for my $structure (@structures) {
+		my $flat = flatten($structure);
+
+		for my $key (keys %$flat) {
+			# Don't add keys if there are deeper keys already present
+			next if grep {$_ =~ /^\Q$key\E(\.|[\[]|$)/} keys %$merged;
+
+			# Don't add keys if any ancestor is already present
+			next if grep {$key =~ /^\Q$_\E(\.|[\[]|$)/} keys %$merged;
+
+			# No conflict - add the key and block all its ancestors
+			$merged->{$key} = $flat->{$key};
+		}
+	}
+
+	return unflatten($merged);
 }
 
 # }}}
@@ -1119,19 +1496,58 @@ sub index_of {
 sub compare_arrays {
 	my ($arr1, $arr2) = @_;
 
-	my %matrix = ();
-	$matrix{$_} -=1 for @$arr1;
-	$matrix{$_} +=1 for @$arr2;
+	# Create sets for presence checking
+	my %in_arr1 = map { $_ => 1 } @$arr1;
+	my %in_arr2 = map { $_ => 1 } @$arr2;
 
-	my @results = ([],[],[]);
-	for (@$arr1, @$arr2) { # This is O(n), probably a better way to do it while still keeping order
-		next unless defined($matrix{$_});
-		push(@{$results[delete($matrix{$_})+1]}, $_);
+	my @results = ([], [], []);
+	my %processed = ();
+
+	# Process arr1 first to preserve its order for "only in arr1" and "in both"
+	for my $item (@$arr1) {
+		next if $processed{$item}++; # Skip duplicates - treat as sets
+		push(@{$results[$in_arr1{$item} && $in_arr2{$item} ? 1 : 0]}, $item)
+	}
+
+	# Process arr2 for "only in arr2" items
+	for my $item (@$arr2) {
+		next if $processed{$item}++; # Skip duplicates and already processed items
+		push(@{$results[2]}, $item) if ($in_arr2{$item} && !$in_arr1{$item})
 	}
 	return wantarray ? @results : \@results;
 }
 
+sub delete_from_array {
+	my ($arr_ref, @search_terms) = @_;
+
+	my %index_matches;
+	for my $i (0 .. $#{$arr_ref}) {
+		for my $term (@search_terms) {
+			if ($arr_ref->[$i] =~ $term) {
+				$index_matches{$i} = 1;
+				last;  # Stop checking other terms if a match is found
+			}
+		}
+	}
+	return () unless keys %index_matches;
+
+	my @removed = ();
+	my @kept = ();
+
+	for my $idx (0 .. $#{$arr_ref}) {
+		if (exists $index_matches{$idx}) {
+			push @removed, $arr_ref->[$idx];
+		} else {
+			push @kept, $arr_ref->[$idx];
+		}
+	}
+	@$arr_ref = @kept;
+	return @removed;
+}
+
 sub sentence_join {
+  return '' unless @_;
+  return $_[0] if scalar(@_) == 1;
   join(' and ', grep {$_} (join(", ",@_[0...scalar(@_)-2]), @_[scalar(@_)-1]))
 }
 
@@ -1156,8 +1572,8 @@ sub _u2d {
 }
 
 sub pretty_duration {
-	my ($duration, $good, $bad, $wrap, $prefix, $style) = @_;
-	return '' unless $ENV{GENESIS_SHOW_DURATION};
+	my ($duration, $good, $bad, $wrap, $prefix, $style, $force) = @_;
+	return '' unless $ENV{GENESIS_SHOW_DURATION} || $force;
 	$wrap //= '()';
 	$prefix //= ' ';
 	$style //= '-';
@@ -1180,7 +1596,7 @@ sub pretty_duration {
 		: $style;
 
 	my ($start,$end) = (substr($wrap,0,1),substr($wrap, length($wrap)-1, 1));
-	return sprintf(
+	return csprintf(
 		"#%s{%s%s}#%s{$fmt}#%s{%s}",
 		$style, $prefix, $start, $color, @values, $style, $end
 	);
@@ -1202,378 +1618,223 @@ sub count_nouns {
 	return "$value${noun}s";
 }
 
+sub parse_fixed_width_table {
+	my ($header, @rows) = @_;
+
+	my $opts = {};
+	if (ref($header) eq 'HASH') {
+		$opts = $header;
+		$header = shift @rows;
+	}
+
+	return wantarray ? () : [] unless $header;
+
+	# Get column names and their positions
+	my @cols = split(/\s{2,}/, $header);
+	my @positions = (0);
+	push @positions, pos($header)
+		while ($header =~ /(?:\S+)(\s{2,})/g);
+
+	# Create array of column ranges
+	my @ranges = map {
+		[$positions[$_], $positions[$_+1] - $positions[$_]]
+	} (0..$#cols-1);
+	push @ranges,	[$positions[$#cols], 999999]; # RISK: 999999 allows for a wide table, but not infinite
+
+	# Parse each row into a hash
+	my @results;
+	for my $row (@rows) {
+		my %hash;
+		$row = sprintf("%-*s", $positions[-1], $row); # Make sure row is long enough
+		$hash{$cols[$_]} =
+			substr($row, $ranges[$_][0], $ranges[$_][1]) =~ s/^\s+|\s+$//gr
+				for (0..$#cols);
+		push @results, ($opts->{array_rows} ? [@hash{@cols}] : \%hash);
+	}
+	unshift @results, \@cols if $opts->{array_rows};
+  return wantarray ? @results : \@results;
+}
+
+# validate_global_config - validate global configuration {{{
+sub validate_global_config {
+	my ($config_obj) = @_;
+	$config_obj->validate(global_config_schema());
+}
+
+# }}}
+# global_config_schema - return the global configuration validation schema {{{
+sub global_config_schema {
+	return {
+		default_bosh_target => {
+			type          => 'enum',
+			default       => 'ask',
+			values        => [qw/ask self parent/],
+			envvar        => 'GENESIS_DEFAULT_BOSH_TARGET',
+			description   => 'Default BOSH target selection behavior'
+		},
+		legacy_repo_suffix => {
+			type          => 'boolean',
+			default       => 0,
+			envvar        => 'GENESIS_LEGACY_REPO_SUFFIX',
+			description   => 'Use legacy "-deployments" suffix for new repositories'
+		},
+		embedded_genesis => {
+			type          => 'enum',
+			default       => 'ignore',
+			values        => [qw/ignore check warn/],
+			description   => 'How to handle embedded genesis versions'
+		},
+		output_style => {
+			type          => 'enum',
+			default       => 'plain',
+			values        => [qw/plain fun pointer/],
+			description   => 'CLI output style'
+		},
+		show_duration => {
+			type          => 'boolean',
+			default       => 0,
+			envvar        => 'GENESIS_SHOW_DURATION',
+			description   => 'Show command execution duration'
+		},
+		automatic_config_upgrade => {
+			type          => 'enum',
+			default       => 'no',
+			values        => [qw/no yes silent/],
+			envvar        => 'GENESIS_CONFIG_AUTOMATIC_UPGRADE',
+			description   => 'Automatically upgrade configuration files'
+		},
+		fix_on_deploy => {
+			type          => 'enum',
+			default       => 'never',
+			values        => [qw/always ask never/],
+			envvar        => 'GENESIS_FIX_ON_DEPLOY',
+			description   => 'Automatically fix issues during deployment'
+		},
+		confirm_release_overrides => {
+			type          => 'enum',
+			values        => [qw/always outdated never/],
+			envvar        => 'GENESIS_CONFIRM_RELEASE_OVERRIDES',
+			description   => 'Confirm release overrides'
+		},
+		spec_cache_dir => {
+			type          => 'string',
+			default       => "",
+			envvar        => 'GENESIS_SPEC_CACHE_DIR',
+			description   => 'Directory for caching kit specifications'
+		},
+		bosh_logs_path => {
+			type          => 'string',
+			default       => "<DEPLOYMENT_ROOT>/bosh_logs",
+			envvar        => 'GENESIS_DEPLOYMENT_LOGS_PATH',
+			description   => 'Path for storing BOSH logs'
+		},
+		deployment_roots  => {
+			type          => 'array',
+			default       => [],
+			subtype       => 'string||hasharray', # Can be a string or a hash of label => path
+			envvar        => 'GENESIS_DEPLOYMENT_ROOTS', # Comma-separated list of path strings or label=path pairs
+			envsplit      => ':',
+			envconvert    => [
+			                   { type => 'hasharray', pair_split => ';', kv_split => '=', key_type => 'string', value_type => 'string' },
+			                   { type => 'string' }
+			],
+			str_format    => \*Genesis::deployment_roots_str_format,
+			description   => 'List of deployment root directories',
+		},
+		kits_path => {
+			type          => 'string',
+			description   => 'Path for storing kit files. Defaults to deployment repository\'s config settings.',
+		},
+
+		suppress_warnings => {
+			type   => 'hash',
+			schema => {
+				oversized_secrets => { type => 'boolean', default => 0 , envvar => 'GENESIS_SUPRESS_OVERSIZED_SECRETS_WARNING'},
+				bosh_target =>       { type => 'boolean', default => 0 , envvar => 'GENESIS_SUPPRESS_BOSH_TARGET_WARNING'},
+			}
+		},
+
+		ui => {
+			type    => 'hash',
+			default => {},
+			schema  => {
+				colors => {
+					type    => 'hash',
+					default => {},
+					schema  => {
+						code => {
+							type        => 'string',
+							default     => 'Yb', # Yellow on dark blue
+							envvar      => 'GENESIS_UI_COLOR_CODE',
+							description => 'Color for code blocks in the UI'
+						},
+						warning_alert => {
+							type        => 'string',
+							default     => 'kYi', # Black on yellow header, yellow text
+							envvar      => 'GENESIS_UI_COLOR_WARNING',
+							description => 'Color for warning messages in the UI'
+						},
+					}
+				}
+			}
+		},
+
+		logs => {
+			type => 'array',
+			subtype => 'hash',
+			schema => {
+				file => {
+					type        => 'string',
+					required    => 1,
+					description => 'File path for the log file'
+				},
+				level => {
+					type => 'enum',
+					default => 'INFO',
+					values => [qw/TRACE DEBUG INFO WARN ERROR OUTPUT/],
+					description => 'Log level for the file'
+				},
+				show_stack => {
+					type => 'enum',
+					default => 'default',
+					values => [qw/default none full current fatal/],
+					description => 'Stack trace visibility',
+				},
+				truncate => {
+					type => 'boolean',
+					default => 1,
+					description => 'Truncate the log file on startup',
+				},
+				style => {
+					type => 'enum',
+					default => 'plain',
+					values => [qw/plain fun pointer rfc-5424/],
+					description => 'Log output style',
+				},
+				lifespan => {
+					type => 'enum',
+					default => 'current',
+					values => [qw/forever current/],
+					description => 'Log file lifespan',
+				},
+				timestamp => {
+					type => 'boolean',
+					default => 0,
+					description => 'Include timestamps in log entries',
+				},
+			}
+		}
+	};
+}
+
+# }}}
+# deployment_roots_str_format - format for deployment roots in config {{{
+sub deployment_roots_str_format {
+	my ($root) = @_;
+	return $root unless ref($root);
+	return "#Y[$root->{label}] #m{$root->{path}}";
+}
+
+# }}}
 1;
-
-=head1 NAME
-
-Genesis
-
-=head1 DESCRIPTION
-
-This module contains assorted and sundry utilities that more or less stand
-on their own.  All of these procedures are exported by default.
-
-    use Genesis;
-    explain("utilities are utilitous!");
-
-=head1 FUNCTIONS
-
-=head2 envset($var)
-
-Returns true if the environment variable C<$var> has been set to a truthy
-value, which are: 1, "y", "yes", and "true", case-insensitive.
-
-=head2 envdefault($var, [$default])
-
-Returns the value of the environment variable C<$var>, or the value
-C<$default> if the environment variable is not set.  Note that there is a
-difference between an environment variable with no value (it is still set),
-and an unset variable.
-
-=head2 csprintf($fmt, ...)
-
-Formats a string, interpreting sequences like C<#X{...}> as ANSI colorized
-regions.  The following values for C<X> are supported:
-
-    K, k    Black
-    R, r    Red
-    G, g    Green
-    Y, y    Yellow
-    B, b    Bulue
-    M, m    Magenta
-    P, p    (alias for Magenta)
-    C, c    Cyan
-    W, w    White
-    *       RAINBOW MODE
-
-Uppercase letters indicate bold coloring, which is usually what you want.
-
-Example:
-
-    print csprintf("Life is #G{good}!\n");
-    print csprintf("Life is #G{%s}!\n", "good");
-
-The C<*> color format activates RAINBOW MODE, in which each printable
-characters gets a different color, cycling through the sequence RGYBMC.
-Try it; it's fun.
-
-=head2 explain($fmt, ...)
-
-Print a message to standard output, unless the C<$QUIET> environment
-variable has been set to a truthy value (i.e. "yes").  Supports color
-formatting codes.  A trailing newline will be added for you.
-
-C<explain> is for normal, everyday messages, prompts, etc.
-
-=head2 debug($fmt, ...)
-
-Print debugging output to standard error, but only if either the
-C<$GENESIS_DEBUG> or C<$GENESIS_TRACE> environment variables have been set.
-Supports color formatting codes.  A trailing newline will be added for you.
-Debug messages are all prefix with the string "DEBUG> ".
-
-C<debug> is for verbose output that might help an operator troubleshoot a
-configuration or environmental issue.
-
-=head2 trace($fmt, ...)
-
-Print trace-level debugging (super debugging) to standard error, but only if
-the C<$GENESIS_TRACE> environment variable has been set.
-Supports color formatting codes.  A trailing newline will be added for you.
-Debug messages are all prefix with the string "TRACE> ".
-
-C<trace> is for extra-verbose internal messages that might help a Genesis
-core contributor figure out why Genesis is being bad in the wild.
-
-=head2 dump_var([$scope,] name=>value [, name2=value2, ...])
-
-Dumps one or more named values to standard error if C<$GENESIS_TRACE> or
-C<$GENESIS_TRACE> environment variables have been set to "truthy".  Optional
-scope level will report the corresponding stack level adjustment as the
-source of the output, defaults to the calling scope (can be positive or negative)
-
-=head2 dump_stack([$scope])
-
-Dumps the current stack to standard error if C<$GENESIS_TRACE> or
-C<$GENESIS_TRACE> environment variables have been set to "truthy".  Optional
-scope level will start that much below the calling scope (can be expressed as
-positive or negative)
-
-=head2 error($fmt, ...)
-
-Print an error to standard error, but do not interrupt the flow of
-execution (as opposed to C<bail>).  This function does not honor C<$QUIET>.
-Supports color formatting codes.  A trailing newline will be added for you.
-
-=head2 bail($fmt, ...)
-
-Print an error to standard error, and exit the program immediately, with an
-exit code of C<1>.  This function does not honor C<$QUIET>.
-Supports color formatting codes.  A trailing newline will be added for you.
-
-=head2 bug($fmt, ...)
-
-Prints an error to standard error, informing the operator that the aberrant
-behavior detected is in fact a bug in Genesis itself, and asking them to
-please submit an issue to the project Github page.
-
-=head2 workdir()
-
-Generate a unique, temporary directory to be used for scratch space.  When
-the program exits, all provisioned work directories will be cleaned up.
-
-=head2 semver($v)
-
-Parses a semantic version string, and returns it as an array of the major,
-minor, revision, and release candidate components.  If any piece is missing
-(i.e. "1.0"), inferior components are treated as '0'.  This makes "1.0"
-equivalent to "1.0.0-rc.0".
-
-The following version formats are recognized:
-
-    1
-    1.0
-    1.23
-    1.23.4
-    1.23.4-rc2
-    1.23.4-rc.2
-    1.23.4-rc-2
-
-=head2 by_semver($a,$b)
-
-Sorting routine to sort by semver.  See perlops for cmp or <=> for details.
-
-Release candidate versions are counted as less than their point release, so
-1.0.0-rc5 is not newer than 1.0.0.  Otherwise, sorts by major, then minor, then
-patch, then rc.
-
-=head2 new_enough($version, $minimum)
-
-Returns true if C<$version> is, semantically speaking, greater than or equal
-to the C<$minimum> required version.  Release candidate versions are counted
-as less than their point release, so 1.0.0-rc5 is not newer than 1.0.0.
-
-=head2 strfuzzytime($timestring, [$output_format, [$input_format]])
-
-Parses the C<$timestring>, then returns the aproximate delta from now in natural
-language (eg: "a few moments ago", "in about a week and a half", "about 2 days
-ago")
-
-You can also pass in an output format, and performs C<strfdate> on the C<timestring>,
-with the additional format atom of '%~' as a placeholder for the fuzzy delta.
-
-It expects C<$timestring> to be formatted as "%Y-%m-%d %H:%M:%S %z" -- if the
-source timestring is a different format, you can specify the format as per
-C<strptime>.
-
-=head2 ordify($n)
-
-Turn a number into its (English) ordinal representation, i.e. 1st for 1, 3rd
-for 3rd, 13th for 13, etc.  The returned string will have a single trailing
-space, for some reason.
-
-=head2 parse_uri($uri)
-
-Parses C<$uri> as an RFC-compliant URI.  Returns a hashref with the
-following keys:
-
-    uri       The full URI
-    scheme    The scheme of the URI, i.e. "http"
-    host      Hostname or IP address
-    port      (optional) TCP port number
-    path      Requested path
-    query     Query string (everything after the '?')
-    fragment  Document fragment (everything after the '#')
-
-=head2 is_valid_uri($uri)
-
-Returns true if C<$uri> can be parsed successfully as a URI.
-
-=head2 run([\%opts,] $command, @args)
-
-Run a command.  This is the Swiss Army knife of command execution, with lots
-of bells and whistles.
-
-You can operate this in three modes:
-
-    # Single string, embedded arguments
-    my ($out, $rc, $err) = run("safe read a/b/c | spruce json");
-
-    # Pre-tokenized array of arguments
-    my ($out, $rc, $err) = run('spruce', 'merge', '--skip-eval, @files);
-
-    # Complicated pipeline, pre-tokenized arguments
-    my ($out, $rc, $err) = run('spruce merge "$1" - "$2" < "$3.yml"',
-                               $file1, $file2, $file3);
-
-In all cases, the output of the command (including STDERR) is returned, along
-with the exit code (without the other bits that normally accompany C<$?>).  If
-you specify C<{stderr => 0}> as an option, the stderr will be made available
-as a third returned value
-
-The third form is recommended as it properly encapsulates/tokenizes the
-arguments to prevent accidental expansion or splitting due to quoting and
-spaces.  If using it, remember to quote all variable references.
-
-You can also pass a hash reference as the first argument to supply options
-to change the behaviour of the execution.  The following options are
-supported:
-
-=over
-
-=item interactive
-
-If true, run the command interactively on a controlling terminal.  This uses
-the perl `system` command, so capturing output cannot be done.  Returned
-output will be undefined.
-
-=item passfail
-
-If true, returns true if exit code is 0, false otherwise.  Can work in
-conjunction with interactive.
-
-=item onfailure
-
-An error message to bail with, in the event that the program either fails to
-execute, or exits non-zero.  In non-interactive mode, the output of the
-failing command will be printed (in interactive mode, it's already been
-printed).
-
-=item env
-
-A hash defining modifications to the execution environment.  These
-environment variables will only be set for the duration of the command run.
-
-=item shell
-
-Change the executing shell from C</bin/bash> to something else.  You
-generally don't need to set this unless you are doing something strange.
-
-=item stderr
-
-A shell-specific redirection destination for standard error.  This gets
-appended to the idiom "2>".  Normally, standard error is redirected back
-into standard output.  If you pass this explicitly as C<undef>, standard
-error will B<not> be redirected for you, at all, and will be written directly
-to the terminal.
-
-As a special case, if you specify 0 instead, stderr will be returned as a
-separate third argument, assuming you call C<run> in an list context.  If you
-run it in a scalar context, stderr will be retunred instead of stdout.
-
-=over
-
-Finally, if you are not running in C<interactive> or C<passfail> mode, you
-can call this in either scalar or list context.  In list context, the output
-and exit code are returned in a list, otherwise just the output.
-
-    # scalar context
-    my $out = run('grep "$1" "$@"', $pattern, @files);
-    my $rc = $? >> 8;
-
-    # list contex
-    my ($out, $rc, $err) = run('spruce json "$1" | jq -r "$2"', $_, $filter);
-
-
-=head2 lines($out, $rc, $err)
-
-Ignore C<$rc>, and split C<$out> on newlines, returning the resulting list.
-This is best used with C<run()>, like this:
-
-    my @lines = lines(run('some command'));
-
-=head2 read_json_from($out, $rc, $err)
-
-Ignore C<$rc>, and parses C<$out> as JSON, returning the resulting structure.
-It is primarily intended to wrap C<run()>, like this:
-
-    my $data = read_json_from(run('some command that outputs json'));
-
-If called in scalar context, it will return the json if it was parseable, or
-otherwise die with whatever message JSON::PP generates when encountering
-non-JSON content.
-
-If called in list context, it will return the json (if successfully read), the
-C<$rc> of the command, and any error encountered when trying to parse the json.
-This is to allow the caller to handle any error in the call or the parse
-themselves.
-
-=head2 curl($method, $url, $headers, $data, $skip_verify, $creds)
-
-Runs the C<curl> command, with the appropriate credentials, and returns the
-status code, status line, and output data and headers to the caller:
-
-    my ($st, $line, $response, $headers) = curl(GET => 'https://example.com');
-    if ($st != 200) {
-      die "request failed: $line\n";
-    }
-    print "data:\n";
-    print $response;
-
-
-=head2 slurp($path)
-
-Opens C<$path> for reading, reads its entire contents into memory, and
-returns that as a string.  Dies if it was unable to open the file.
-
-=head2 mkfile_or_fail($path, [$mode,] $contents)
-
-Creates a new file at C<$path>, with the given contents.
-If C<$mode> is given, the file will be given those permissions, via
-C<chmod_or_fail>.
-
-=head2 mkdir_or_fail($path, $mode)
-
-Create a new directory at C<$path>.
-If C<$mode> is given, the directory will be given those permissions, via
-C<chmod_or_fail>.
-
-=head2 chdir_or_fail($path)
-
-Changes the current working directory to C<$path>, or dies trying.
-
-=head2 symlink_or_fail($src, $dst)
-
-Creates a symbolic link called C<$dst>, pointing to the file or directory at
-C<$src>, or dies trying.
-
-=head2 copy_or_fail($src, $dst)
-
-Copies the file C<$src> to the file C<$dst>, or dies trying.  This uses I/O
-to copy, instead of the `cp` command.
-
-=head2 chmod_or_fail($mode, $path)
-
-Changes the permissions on C<$path> to C<$mode>, or dies trying.
-
-
-=head2 load_json($json)
-
-Parse C<$json> (as a JSON string) into a hashref.
-
-
-=head2 load_yaml($yaml)
-
-Convert C<$yaml> into JSON by way of a C<spruce merge>, and then parse it
-into a hashref.
-
-
-=head2 load_yaml_file($file)
-
-Read C<$file> into memory, and then convert it into JSON via C<load_yaml>.
-
-
-=head2 pushd($dir)
-
-Temporarily change the current working directory to C<$dir>, until the next
-paired call to C<popd>.  This is similary to shell pushd / popd builtins.
-
-
-=head2 popd($dir)
-
-Restore the current working directory to what it was immediately before the
-last call to C<pushd>.  This is similarly to shell pushd / popd builtins.
-
-
-=cut
 # vim: fdm=marker:foldlevel=1:noet

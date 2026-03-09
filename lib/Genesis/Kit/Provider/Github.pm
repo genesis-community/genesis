@@ -25,7 +25,7 @@ sub init {
 
 	bail("$label kit provider requires specifying the organization using the --kit-provider-org option")
 		unless $opts{"kit-provider-org"};
-	
+
 	$opts{"kit-provider-tls"} ||= DEFAULT_TLS;
 	bail("Github kit provider option --kit-provider-tls only accepts: no, yes, and skip")
 		unless $opts{"kit-provider-tls"} =~ /^(no|yes|skip)$/;
@@ -42,13 +42,18 @@ sub init {
 # new - create a default github kit provider {{{
 sub new {
 	my ($class, %config) = @_;
+	my $label = $config{label} || DEFAULT_LABEL;
+	my $tls = $config{tls} || DEFAULT_TLS;
+	$tls = "skip" if $tls eq 'insecure'; # flexibility for older configs
+
 	bless({
-		label  => $config{label} || DEFAULT_LABEL,
+		label  => $label,
 		remote => Service::Github->new(
-		            domain => $config{domain} || DEFAULT_DOMAIN,
-		            org    => $config{organization},
-		            tls    => $config{tls} || DEFAULT_TLS
-		          )
+			domain => $config{domain} || DEFAULT_DOMAIN,
+			org    => $config{organization},
+			tls    => $tls,
+			label  => $label
+		)
 	}, $class);
 }
 
@@ -174,9 +179,7 @@ sub kit_releases {
 		bail "$status"."\n" if $status;
 		trace "About to get releases from Github";
 
-		info {pending=>1}, "Retrieving list of available releases for #M{%s} kit on #C{%s} ...",$name,$self->label;
-		$self->{_releases}{$name} = $self->remote->get_release_info($name."-genesis-kit", "Genesis Kit $name");
-		info "#G{ done.}";
+		$self->{_releases}{$name} = $self->remote->get_release_info($name."-genesis-kit", label => $self->label);
 	}
 
 	return @{$self->{_releases}{$name}};
@@ -227,6 +230,32 @@ sub fetch_kit_version {
 		$name, $version, $self->label, $code
 	) unless $code == 200;
 	info "#G{done.}";
+
+	# Validate downloaded content before saving
+	if (length($data) == 0) {
+		bail(
+			"Downloaded kit %s/%s from %s but received empty response.\n".
+			"The server returned HTTP 200 but no content.",
+			$name, $version, $self->label
+		);
+	}
+	if ($data =~ /\A<(!DOCTYPE|html|head)/i) {
+		bail(
+			"Downloaded kit %s/%s from %s but received an HTML page\n".
+			"instead of a kit archive.\n\n".
+			"A network proxy or captive portal likely intercepted the download.\n".
+			"Check network connectivity and proxy settings.",
+			$name, $version, $self->label
+		);
+	}
+	if (length($data) >= 2 && substr($data, 0, 2) ne "\x1f\x8b") {
+		warning(
+			"Downloaded data for kit %s/%s does not appear to be gzip-compressed.\n".
+			"Proceeding, but the kit may fail to load.",
+			$name, $version
+		);
+	}
+
 	my $file = "$path/$name-$version.tar.gz";
 	if (-f $file) {
 		if (! $force) {
@@ -254,13 +283,102 @@ sub fetch_kit_version {
 	return ($name,$version,$file);
 }
 # }}}
+# fetch_kit_version_src - fetches a source tarball for the named kit and version from this provider {{{
+sub fetch_kit_version_src {
+	my ($self, $name, $version, $path, $force) = @_;
+
+	if (!defined($version) || $version eq 'latest') {
+		# Better to call `latest_version` prior to this, but this is a safety valve.
+		$version = $self->latest_version_of($name);
+		bail("No latest version of $name kit found with a downloadable release")
+			unless $version;
+	} else {
+		$version =~ s/^v//;
+	}
+
+	my $version_info = (
+		grep {$_->{name} =~ m{^v?$version$}}
+		$self->kit_releases($name)
+	)[0];
+	bail(
+		"Version %s/%s was not found\n",
+		$name, $version
+	) unless $version_info && ref($version_info) eq 'HASH';
+
+	my $url = $version_info->{tarball_url};
+	bail(
+		"Release %s/%s was found but is missing its tarball url.".
+		"It may have been revoked (see release notes below):\n\n%s\n",
+		$name, $version, $version_info->{body}
+	) unless $url;
+
+	info {pending=> 1}, "Downloading source of v%s of #M{%s} kit from #C{%s} ... ",$version,$name,$self->label;
+	my ($code, $msg, $data) = curl("GET", $url, undef, undef, 0, $self->credentials);
+	bail(
+		"Failed to download %s/%s source from %s: returned a %s status code\n",
+		$name, $version, $self->label, $code
+	) unless $code == 200;
+	info "#G{done.}";
+
+	# Validate downloaded content before saving
+	if (length($data) == 0) {
+		bail(
+			"Downloaded source for kit %s/%s from %s but received empty response.\n".
+			"The server returned HTTP 200 but no content.",
+			$name, $version, $self->label
+		);
+	}
+	if ($data =~ /\A<(!DOCTYPE|html|head)/i) {
+		bail(
+			"Downloaded source for kit %s/%s from %s but received an HTML page\n".
+			"instead of a source archive.\n\n".
+			"A network proxy or captive portal likely intercepted the download.\n".
+			"Check network connectivity and proxy settings.",
+			$name, $version, $self->label
+		);
+	}
+	if (length($data) >= 2 && substr($data, 0, 2) ne "\x1f\x8b") {
+		warning(
+			"Downloaded source data for kit %s/%s does not appear to be gzip-compressed.\n".
+			"Proceeding, but the source archive may fail to extract.",
+			$name, $version
+		);
+	}
+
+	my $file = "$path/$name-$version-src.tar.gz";
+	if (-f $file) {
+		if (! $force) {
+			my $old_data = slurp($file);
+			if (sha1_hex($data) eq sha1_hex($old_data)) {
+				warning(
+					"Exact same kit source already exists under #C{%s} - no change.\n",
+					humanize_path($path)
+				);
+				return 1;
+			} else {
+				error "Kit $name/$version source already exists, but is different!";
+				die_unless_controlling_terminal;
+				my $overwrite = prompt_for_boolean("Do you want to overwrite the existing file with the content downloaded from\n$self->{label}",0);
+				bail "Aborted!\n" unless $overwrite;
+			}
+		}
+		chmod_or_fail(0600, $file);
+	}
+	mkfile_or_fail($file, 0444, $data);
+
+	# TODO: Add to gt
+	debug("downloaded source of kit #M{%s}/#C{%s}: %s bytes", $name, $version, length($data));
+
+	return ($name,$version,$file);
+}
+# }}}
 # latest_version_of - The actual version for the latest release of the given kit name {{{
 sub latest_version_of {
 	my ($self, $name, %opts) = @_;
 	bail("Missing name for retrieving kit releases") unless $name;
 	my $version = (
 		grep {$_->{url}}
-		$self->kit_versions($name, latest => 1, include_drafts => $opts{include_drafts}, include_prerelease => $opts{include_prereleases})
+		$self->kit_versions($name, latest => 1, include_drafts => $opts{include_drafts}, include_prereleases => $opts{include_prereleases})
 	)[0];
 	return $version && $version->{version};
 }
@@ -326,65 +444,4 @@ sub status {
 # }}}
 1;
 
-=head1 NAME
-
-Genesis::Kit::Provider::Github
-
-=head1 DESCRIPTION
-
-
-=head1 CONSTRUCTORS
-
-=head2 new(%opts)
-
-Instantiates a new Kit::Compiled object.
-
-The following options are recognized:
-
-=over
-
-=item name
-
-The name of the kit.  This option is B<required>.
-
-=item version
-
-The version of the kit.  This option is B<required>.
-
-=item archive
-
-The absolute path to the compiled kit tarball.  This option is B<required>.
-
-=back
-
-
-=head1 METHODS
-
-=head2 id()
-
-Returns the identity of the kit, in the form C<$name/$verison>.  This is
-useful for error messages and reporting.
-
-=head2 name()
-
-Returns the name of the kit.
-
-=head2 version()
-
-Returns the version of the kit.
-
-=head2 kit_bug($fmt, ...)
-
-Prints an error to the screen, complete with details about how the problem
-at hand is not the operator's fault, and that they should file a bug against
-the kit's Github page, or contact the authors.
-
-=head2 extract()
-
-Extracts the compiled kit tarball to a temporary workspace, and installs the
-Genesis hooks helper script.
-
-This method is memoized; subsequent calls to C<extract> will have no effect.
-
-=cut
 # vim: fdm=marker:foldlevel=1:noet
