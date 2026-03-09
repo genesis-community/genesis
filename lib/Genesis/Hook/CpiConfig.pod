@@ -282,14 +282,6 @@ this path is currently non-functional due to three defects described below.
 The resulting flat hash is passed through C<unflatten> to produce a nested
 structure when dot-notation config paths are used.
 
-B<Note:> The vault-reference override path (lines 167-176) contains three
-defects that prevent it from functioning correctly. The method called to
-compute the CredHub path does not exist (CPI-1), the resolved value is
-discarded due to variable shadowing (CPI-3), and the captured vault path
-component C<$rel_path> is never used (CPI-2). Any C<bosh-configs.cpi>
-override value that contains a vault reference will crash at runtime. See
-CPI-1, CPI-2, and CPI-3 in L</KNOWN ISSUES>.
-
 B<Parameters:>
 
 =over 4

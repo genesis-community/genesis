@@ -120,12 +120,6 @@ Resolves the lookup reference against C<$config> by calling C<struct_lookup>
 with the stored paths and default. Returns the first matching value found
 in C<$config>, or the default value if none of the paths match.
 
-B<Note:> C<struct_lookup> is called without being imported. The module lacks
-a C<use Genesis qw(struct_lookup)> statement, so any call to C<resolve>
-will die with C<"Undefined subroutine
-&Genesis::Hook::CloudConfig::LookupRef::struct_lookup"> at runtime.
-See LR-1 in L</KNOWN ISSUES>.
-
 B<Parameters:>
 
 =over 4

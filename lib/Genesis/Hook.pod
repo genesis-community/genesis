@@ -1028,12 +1028,6 @@ Returns the full path to a directory inside the environment's work directory,
 creating it if it does not already exist. If C<$name> is omitted, a name of
 the form C<tempdir-E<lt>timestampE<gt>-E<lt>randomE<gt>> is generated.
 
-B<Note:> C<mkdir_or_fail> is called on line 42 but is not listed in the
-explicit C<use Genesis qw(...)> import on line 5. The function is available
-at runtime because Genesis exports it by default, but it is inconsistent
-with the explicit import style used for all other Genesis functions in the
-same file. See HK-1 in L</KNOWN ISSUES>.
-
 B<Parameters:>
 
 =over 4

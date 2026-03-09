@@ -467,15 +467,6 @@ the request list. When all configs are excluded, the requests list is empty.
 Modifies the object in-place (sets C<< $self->{requests} >> and
 C<< $self->{request_options} >>).
 
-B<Note:> The short-circuit path (line 171) and the excluded-requests
-fallback (line 257) both call C<get_req_names> instead of C<_get_req_names>.
-No public method named C<get_req_names> exists; both call sites crash at
-runtime with a C<"Can't locate object method"> error. See RC-1 in
-L</KNOWN ISSUES>. Additionally, the defined-or (C<//>) at line 257
-evaluates C<@requests> in scalar context, so the fallback is never reached
-even when the array is empty; exclusion-only configurations silently produce
-an empty request list. See RC-4 in L</KNOWN ISSUES>.
-
 B<Returns:> C<1> on success.
 
 B<Errors:>
@@ -699,12 +690,6 @@ Otherwise, calls the BOSH client's C<upload_config> method. On failure, logs
 the error, discards any secrets registered for this build, and returns
 C<undef>. On success, returns C<1>.
 
-B<Note:> The interactive confirmation prompt (line 390) passes C<$invert=1>
-to C<prompt_for_boolean>, reversing the sense of the answer: a "Yes" response
-causes the upload to be skipped and a "No" response allows it to proceed.
-This is the opposite of the displayed prompt text. See RC-2 in
-L</KNOWN ISSUES>.
-
 B<Parameters:>
 
 =over 4
@@ -774,13 +759,6 @@ Otherwise, prompts the operator for confirmation. If the operator declines,
 skips that config.
 
 =back
-
-B<Note:> The log messages for active configs (lines 433 and 444) contain
-the misspelling C<"actve"> rather than C<"active">. This appears in both the
-dry-run output and the interactive confirmation prompt. See RC-3 in
-L</KNOWN ISSUES>. Additionally, the C<else> block at lines 442-446 uses
-space indentation while the rest of the file uses hard tabs (RC-5; see
-L</KNOWN ISSUES>).
 
 B<Returns:> The result of C<$self->done(1)>.
 

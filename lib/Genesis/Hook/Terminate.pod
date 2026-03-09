@@ -118,13 +118,6 @@ confirmation.
 
 B<Returns:> A blessed C<Genesis::Hook::Terminate> object.
 
-B<Note:> C<init> sets C<< $self->{completed} >> (with C<-ed> suffix) to
-C<0>, but the base class C<Genesis::Hook> reads and writes C<< $self->{complete} >>
-(without the suffix), as seen in C<done> and C<completed>. The initialization
-has no effect: C<< $hook->completed >> will read the correct C<{complete}>
-key, which is set to C<0> by the base class C<init>. The spurious
-C<{completed}> key is dead data. See TERM-1 in L</KNOWN ISSUES>.
-
 B<Errors:>
 
 =over 4
