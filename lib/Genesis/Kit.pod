@@ -8,8 +8,14 @@ Genesis::Kit - Abstract base class for all Genesis kit types.
   use Genesis::Kit::Compiled;
   use Genesis::Kit::Dev;
 
-  # Typical access through a provider:
-  my $kit = $provider->kit('cf', '2.8.0');
+  # Typical access through a provider and constructor:
+  my ($name, $ver, $file) = $provider->fetch_kit_version('cf', 'latest', '/tmp');
+  my $kit = Genesis::Kit::Compiled->new(
+      name     => $name,
+      version  => $ver,
+      archive  => $file,
+      provider => $provider,
+  );
 
   # Inspect kit identity and metadata
   print $kit->id();             # prints 'cf/2.8.0'
@@ -344,7 +350,7 @@ Key-value options. The available keys depend on which hook is being run:
 
 =item C<env>
 
-A C<Genesis::Env> object. Required for the C<new>, C<secrets>, C<info>,
+A C<Genesis::Env> object. Required for the C<new>, C<info>,
 C<addon>, C<check>, C<blueprint>, C<pre-deploy>, C<post-deploy>,
 C<cloud-config>, C<cpi-config>, C<features>, and C<terminate> hooks.
 
@@ -375,11 +381,6 @@ Used with the C<addon> hook. The name of the addon script to execute.
 
 Used with the C<addon> and C<runtime-config> hooks. An arrayref of
 arguments to pass to the hook.
-
-=item C<action>
-
-Used with the C<secrets> hook. The secrets action to perform (e.g.,
-C<"check">, C<"add">, C<"rotate">).
 
 =item C<purpose>
 
@@ -472,7 +473,7 @@ Returns an arrayref of feature flag strings.
 Returns a two-element list: a boolean success flag and the pre-deploy data
 contents (or C<undef> if no data file was produced).
 
-=item C<addon>, C<check>, C<secrets check>
+=item C<addon>, C<check>
 
 Returns a boolean: C<1> on success, C<0> on failure.
 

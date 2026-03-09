@@ -7,9 +7,9 @@ Genesis::Kit::Provider - Abstract base class and factory for Genesis kit provide
   use Genesis::Kit::Provider;
 
   # Create a provider via the factory (dispatches to the appropriate subclass)
-  my $provider = Genesis::Kit::Provider->new(type => 'genesis-community');
+  my $provider = Genesis::Kit::Provider->new(type => 'genesis_community');
   my $provider = Genesis::Kit::Provider->new(type => 'github',
-      owner => 'myorg',
+      organization => 'myorg',
   );
 
   # Create a provider from CLI options parsed by parse_opts
@@ -100,7 +100,7 @@ B<Examples:>
   print ref($p); # prints 'Genesis::Kit::Provider::GenesisCommunity'
 
   # GitHub provider
-  my $p = Genesis::Kit::Provider->new(type => 'github', owner => 'myorg');
+  my $p = Genesis::Kit::Provider->new(type => 'github', organization => 'myorg');
   print ref($p); # prints 'Genesis::Kit::Provider::Github'
 
 =head2 init
@@ -129,7 +129,7 @@ immediately.
 
 Optional. The provider type string. Recognised values are C<"genesis-community">
 (the default when this key is absent) and C<"github">. Additional keys required
-by the specific provider (e.g., C<kit-provider-github-owner>) must also be
+by the specific provider (e.g., C<kit-provider-org>) must also be
 present in C<%opts>; they are forwarded to the subclass's C<init()>.
 
 =back
@@ -302,11 +302,11 @@ provider.
 
 B<Examples:>
 
-  my @args = ('--kit-provider', 'github', '--kit-provider-github-owner', 'myorg', 'deploy');
+  my @args = ('--kit-provider', 'github', '--kit-provider-org', 'myorg', 'deploy');
   my %kit_opts;
   Genesis::Kit::Provider->parse_opts(\@args, \%kit_opts);
   # @args is now ('deploy')
-  # %kit_opts is ('kit-provider' => 'github', 'kit-provider-github-owner' => 'myorg')
+  # %kit_opts is ('kit-provider' => 'github', 'kit-provider-org' => 'myorg')
   # Returns: 1
 
 =head2 label

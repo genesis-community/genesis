@@ -646,7 +646,7 @@ The version string used in the commit message template.
 
 B<Returns:>
 
-Nothing. Exits after the interactive git commit editor closes.
+Nothing. Returns after the interactive git commit editor closes.
 
 B<Examples:>
 
