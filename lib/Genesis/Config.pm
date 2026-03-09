@@ -156,6 +156,7 @@ sub save {
 	print $fh2 $out."\n";
 	close $fh2;
 	$self->{persistant_signature} = $self->_signature;
+	return;
 }
 
 # }}}
@@ -166,10 +167,9 @@ sub replace {
 	$prev_config->{autosave} = 0;
 	$self->{path} = $prev_config->path;
 	$self->{persistant_signature} = $prev_config->{persistant_signature};
-	$self->{loaded} = 1;
-	my $ok = $self->save;
+	$self->save;
 	$self->{autosave} = $autosave;
-	return $ok;
+	return;
 }
 	
 

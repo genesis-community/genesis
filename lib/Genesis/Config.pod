@@ -1,0 +1,864 @@
+=encoding UTF-8
+
+=head1 NAME
+
+Genesis::Config - Configuration file management with multi-layer value resolution
+
+=head1 SYNOPSIS
+
+    use Genesis::Config;
+
+    # Create a config object backed by a file
+    my $cfg = Genesis::Config->new('/path/to/config.yml');
+
+    # Create with autosave enabled
+    my $cfg = Genesis::Config->new('/path/to/config.yml', 1);
+
+    # Create an in-memory config with initial content
+    my $cfg = Genesis::Config->new(undef, 0, {key => 'value'});
+
+    # Validate against a schema before use
+    $cfg->validate({
+        log_level => { type => 'enum', values => [qw(debug info warn error)], default => 'info' },
+        max_retries => { type => 'integer' },
+    });
+
+    # Read values
+    my $level = $cfg->get('log_level');              # Returns 'info'
+    my $retries = $cfg->get('max_retries', 3);       # Returns value or default 3
+    print "missing\n" unless $cfg->has('missing_key');
+
+    # Write values
+    $cfg->set('log_level', 'debug');
+    $cfg->save;
+
+    # Inspect source of a value
+    my $src = $cfg->get_source('log_level');         # 'env', 'set', 'loaded', or 'default'
+
+    # Show what changed since last save
+    $cfg->show_diff;
+
+=head1 DESCRIPTION
+
+C<Genesis::Config> manages configuration data loaded from YAML files on disk.
+It maintains four independent value stores that are merged at read time with a
+fixed priority order:
+
+    env > set > loaded > default
+
+=over 4
+
+=item * B<env> - values injected by C<validate()> from environment variables
+declared in the schema
+
+=item * B<set> - values written programmatically via C<set()> or passed as
+C<$content> to the constructor
+
+=item * B<loaded> - values read from the YAML file on disk
+
+=item * B<default> - values provided by the schema via C<validate()>
+
+=back
+
+When C<get()> reads a key it sees the highest-priority store that contains
+that key. Only the I<set> and I<loaded> stores are written to disk when
+C<save()> is called; env and default values are ephemeral.
+
+Values are lazily loaded from disk on the first access. If the file does not
+yet exist and C<autosave> was enabled, a new file is created automatically.
+
+A SHA-1 signature of the explicit (set + loaded) contents tracks whether the
+in-memory state differs from what was last written, enabling C<changed()> and
+conditional auto-save on C<set()> and C<clear()>.
+
+=head1 METHODS
+
+=head2 new
+
+    my $cfg = Genesis::Config->new($path, $autosave, $content);
+
+Creates a new C<Genesis::Config> object. The file at C<$path> is not read
+immediately; loading is deferred until the first value access.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$path>
+
+B<(optional)> Filesystem path to the YAML configuration file. Pass C<undef>
+for an in-memory-only config object that cannot be saved.
+
+=item C<$autosave>
+
+B<(optional)> When true and C<$path> is defined, the config is automatically
+written to disk after any C<set()> or C<clear()> call that results in a change.
+Silently ignored if C<$path> is undefined. Defaults to disabled.
+
+=item C<$content>
+
+B<(optional)> A hash reference used to pre-populate the I<set> store. Keys
+from this hash have I<set>-layer priority and appear in the saved file.
+Defaults to an empty hash.
+
+=back
+
+B<Returns:> A new C<Genesis::Config> object.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"No path to config file was specified - cannot autosave"> — raised if
+C<$autosave> is true but C<$path> is undefined.
+
+=back
+
+B<Examples:>
+
+    # File-backed config, no autosave
+    my $cfg = Genesis::Config->new('/etc/genesis/config.yml');
+
+    # File-backed config with autosave
+    my $cfg = Genesis::Config->new('/etc/genesis/config.yml', 1);
+
+    # In-memory config with initial values
+    my $cfg = Genesis::Config->new(undef, 0, {timeout => 30});
+    print $cfg->get('timeout');  # Returns: 30
+
+=head2 path
+
+    my $path = $cfg->path;
+
+Returns the filesystem path associated with this config object.
+
+B<Returns:> The path string passed to C<new()>, or C<undef> if no path was
+given.
+
+B<Examples:>
+
+    my $cfg = Genesis::Config->new('/etc/genesis/config.yml');
+    print $cfg->path;  # Returns: /etc/genesis/config.yml
+
+=head2 exists
+
+    my $bool = $cfg->exists;
+
+Tests whether the configuration file exists on the filesystem.
+
+B<Returns:> True (the result of C<-f>) if the file exists and is a plain file.
+Returns C<0> (false) if no path was set or the file does not exist.
+
+B<Examples:>
+
+    if ($cfg->exists) {
+        print "Config file is present\n";
+    } else {
+        print "Config file not yet created\n";
+    }
+
+=head2 loaded
+
+    my $bool = $cfg->loaded;
+
+Tests whether the config has been initialized — either loaded from disk or
+written to disk at least once. A config that has never been accessed from a
+file that does not yet exist is not considered loaded.
+
+B<Returns:> C<1> if the config has been loaded or saved. Returns C<undef>
+(false) otherwise.
+
+B<Examples:>
+
+    my $cfg = Genesis::Config->new('/path/to/config.yml');
+    print $cfg->loaded ? "yes" : "no";  # Returns: no (before first access)
+    $cfg->get('any_key');
+    print $cfg->loaded ? "yes" : "no";  # Returns: yes (after lazy load)
+
+=head2 changed
+
+    my $bool = $cfg->changed;
+
+Tests whether the in-memory state differs from what was last written to or
+read from disk. The comparison is performed against a SHA-1 signature of the
+explicit (I<set> + I<loaded>) contents.
+
+B<Returns:> A true value if the current contents differ from the persisted
+state, false otherwise. Always returns true for a config that has never been
+loaded or saved.
+
+B<Examples:>
+
+    $cfg->set('key', 'value');
+    if ($cfg->changed) {
+        $cfg->save;
+    }
+
+=head2 get
+
+    my $value = $cfg->get($key, $default, $set_if_missing);
+
+Retrieves the value for C<$key> from the merged configuration, applying the
+priority order C<env E<gt> set E<gt> loaded E<gt> default>. Results are
+cached by key after the first lookup.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$key>
+
+The configuration key to look up. Supports dot-notation and bracket-notation
+for nested structures (e.g., C<"db.host">, C<"servers[0]">). Pass an empty
+string or C<undef> to retrieve the entire configuration hash.
+
+=item C<$default>
+
+B<(optional)> Value to return when C<$key> is not found in any source. Not
+stored unless C<$set_if_missing> is also true.
+
+=item C<$set_if_missing>
+
+B<(optional)> When true, and the key is not found in any source, the default
+value is written to the I<set> store via C<set()> before returning.
+
+=back
+
+B<Returns:> The effective value for the key, or C<$default> (which may be
+C<undef>) if the key is absent from all sources.
+
+B<Examples:>
+
+    my $level = $cfg->get('log_level');           # Returns: 'info'
+    my $host  = $cfg->get('db.host', 'localhost'); # Returns: 'localhost' if unset
+
+    # Store default if missing
+    my $timeout = $cfg->get('timeout', 30, 1);
+    # Returns: 30 and writes it to the set store if 'timeout' was absent
+
+=head2 get_all
+
+    my $hashref = $cfg->get_all;
+
+Returns the complete merged configuration as a hash reference, applying the
+same C<env E<gt> set E<gt> loaded E<gt> default> priority order used by
+C<get()>.
+
+B<Returns:> A deep copy of the merged configuration hash. Modifying the
+returned hash does not affect the internal state of the config object.
+
+B<Examples:>
+
+    my $all = $cfg->get_all;
+    for my $key (sort keys %$all) {
+        printf "%s = %s\n", $key, $all->{$key};
+    }
+
+=head2 has
+
+    my $bool = $cfg->has($key);
+
+Tests whether C<$key> exists in the merged configuration (any source layer).
+
+B<Parameters:>
+
+=over 4
+
+=item C<$key>
+
+B<(required)> The configuration key to check. Must be defined.
+
+=back
+
+B<Returns:> True if the key exists in any source layer, false otherwise.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Cannot check for key in configuration without a key"> — raised if C<$key>
+is undefined.
+
+=back
+
+B<Examples:>
+
+    print $cfg->has('db.password') ? "found" : "missing";  # Returns: found or missing
+
+    if ($cfg->has('db.password')) {
+        my $pw = $cfg->get('db.password');
+    }
+
+=head2 is_set
+
+    my $bool = $cfg->is_set($key);
+
+Tests whether C<$key> was explicitly loaded from disk or written via C<set()>.
+Returns false for keys that exist only in the I<env> or I<default> layers.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$key>
+
+B<(required)> The configuration key to check. Must be defined.
+
+=back
+
+B<Returns:> True if the key is present in the I<set> or I<loaded> store, false
+otherwise.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Cannot check for key in configuration without a key"> — raised if C<$key>
+is undefined.
+
+=back
+
+B<Examples:>
+
+    $cfg->validate({ color => { type => 'string', default => 'blue' } });
+    print $cfg->is_set('color') ? "explicit" : "default";
+    # Returns: default  (value came from schema default, not from disk or set())
+
+=head2 get_source
+
+    my $source = $cfg->get_source($key);
+
+Returns a string identifying the highest-priority source layer that provides
+a value for C<$key>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$key>
+
+The configuration key to inspect.
+
+=back
+
+B<Returns:> One of the strings C<'env'>, C<'set'>, C<'loaded'>, or
+C<'default'>, corresponding to the layer that wins for this key. Returns
+C<undef> if the key is not present in any layer.
+
+B<Examples:>
+
+    $cfg->set('timeout', 30);
+    print $cfg->get_source('timeout');  # Returns: set
+
+    # After validate() maps an env var
+    $ENV{MY_LOG_LEVEL} = 'debug';
+    $cfg->validate({ log_level => { envvar => 'MY_LOG_LEVEL', type => 'string' } });
+    print $cfg->get_source('log_level');  # Returns: env
+
+=head2 set
+
+    my $changed = $cfg->set($key, $value, $save);
+
+Writes C<$value> into the I<set> store for C<$key>. If the object has a path
+and either C<$save> or C<autosave> is enabled, and the change results in a
+difference from the last persisted state, C<save()> is called automatically.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$key>
+
+The configuration key to write. Supports dot-notation and bracket-notation
+for nested structures.
+
+=item C<$value>
+
+The value to store. May be a scalar, array reference, or hash reference.
+
+=item C<$save>
+
+B<(optional)> When true, triggers an immediate C<save()> if the config has
+changed. Requires a path to have been set on the object.
+
+=back
+
+B<Returns:> The result of C<changed()> after the write — true if the config
+now differs from the persisted state, false if not.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Cannot save configuration without a path"> — raised if C<$save> is true
+but no path was set on the config object.
+
+=back
+
+B<Examples:>
+
+    $cfg->set('log_level', 'debug');
+    $cfg->set('db.host', 'db.example.com', 1);  # Write and save immediately
+    print $cfg->get('db.host');  # Returns: db.example.com
+
+=head2 clear
+
+    my $changed = $cfg->clear($key, $save);
+
+Removes C<$key> from both the I<set> and I<loaded> stores. If the object has
+a path and either C<$save> or C<autosave> is enabled, and the removal results
+in a difference from the last persisted state, C<save()> is called
+automatically.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$key>
+
+The configuration key to remove.
+
+=item C<$save>
+
+B<(optional)> When true, triggers an immediate C<save()> if the config has
+changed. Requires a path to have been set on the object.
+
+=back
+
+B<Returns:> The result of C<changed()> after the removal — true if the config
+now differs from the persisted state, false if not.
+
+B<Examples:>
+
+    $cfg->clear('log_level');
+    print $cfg->has('log_level') ? "still set" : "cleared";  # Returns: cleared
+
+    $cfg->clear('db.host', 1);  # Remove and save immediately
+
+=head2 save
+
+    $cfg->save;
+
+Serializes the explicit (I<set> + I<loaded>) contents to disk at the path
+given to C<new()>. The file is written as YAML via C<spruce merge>, with a
+generated header comment noting that the file is managed by Genesis and
+recording the current user and timestamp.
+
+Parent directories are created automatically if they do not exist.
+
+After a successful write, the internal signature is updated so that
+C<changed()> returns false.
+
+B<Returns:> Nothing. This method is called for its side effects only.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Cannot save configuration without a path"> — raised if no path was set
+on the config object.
+
+=item *
+
+C<"Unable to create tempfile for YAML conversion: $!"> — raised if the
+temporary JSON file used for YAML conversion cannot be opened. C<$!> is
+the system error message, interpolated directly into the string.
+
+=item *
+
+C<"Failed to convert configuration file %s to yaml: %s"> — raised if the
+C<spruce merge> command fails. The first C<%s> is the file path and the
+second is the error output from C<spruce>.
+
+=item *
+
+C<"Failed to write configuration file to %s: %s"> — raised if the output
+file cannot be opened for writing. The first C<%s> is the file path and the
+second is the system error message.
+
+=back
+
+B<Examples:>
+
+    $cfg->set('log_level', 'info');
+    $cfg->save;
+    print $cfg->changed ? "still dirty" : "clean";  # Returns: clean
+
+=head2 replace
+
+    $cfg->replace($prev_config);
+
+Adopts the path and persisted-state signature from C<$prev_config> and
+immediately writes the receiver's current contents to that path. The
+C<autosave> flag from C<$prev_config> is preserved on the receiver after
+the write completes.
+
+This method is used to atomically swap one config object's content into the
+file previously owned by another config object.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$prev_config>
+
+A C<Genesis::Config> object whose path and persisted signature will be adopted.
+Its C<autosave> flag is temporarily disabled during the write to prevent
+double-saves.
+
+=back
+
+B<Returns:> Nothing. This method is called for its side effects only.
+
+B<Errors:> See C<save()> for the errors that may be raised during the write.
+
+B<Examples:>
+
+    # Replace the on-disk content of $old_cfg with the content of $new_cfg
+    $new_cfg->replace($old_cfg);
+    print $new_cfg->path;     # Returns: same path as $old_cfg had
+
+=head2 validate
+
+    my $ok = $cfg->validate($schema);
+
+Validates the configuration against a schema hash and applies environment
+variable overrides and default values. On success, stores the schema on the
+object and returns true. On failure, calls C<bail()> with a formatted list
+of all validation errors.
+
+The schema is a hash reference keyed by top-level configuration key names.
+Each value is a hash reference describing that key's constraints:
+
+=over 4
+
+=item C<type>
+
+B<(required)> The expected type. Supported types are: C<string>, C<number>,
+C<integer>, C<boolean>, C<enum>, C<array>, C<hash>, C<hasharray>, C<semver>,
+C<null>, C<any>, and a literal string in double quotes (e.g., C<'"fixed"'>).
+Multiple types may be joined with C<||> (e.g., C<'string||null'>).
+
+=item C<required>
+
+When true, validation fails if the key is absent from both the I<set> and
+I<loaded> stores.
+
+=item C<default>
+
+A value to inject into the I<default> store when the key is absent from
+both the I<set> and I<loaded> stores.
+
+=item C<envvar>
+
+The name of an environment variable whose value, if set, overrides all other
+sources for this key by injecting into the I<env> store.
+
+=item C<values>
+
+For C<type => 'enum'>: an array reference of the permitted values.
+
+=item C<subtype>
+
+For C<type => 'array'>: the expected type of each element.
+
+=item C<schema>
+
+For C<type => 'hash'> or C<type => 'hasharray'>: a nested schema hash
+describing the expected structure of sub-keys.
+
+=item C<envsplit>
+
+For C<type => 'array'> when the value arrives as a string (e.g., from an
+environment variable): a regex pattern on which to split the string into
+array elements.
+
+=item C<envconvert>
+
+For C<type => 'array'>: an array of conversion rules applied to each
+element after splitting.
+
+=item C<allow_null>
+
+For C<type => 'semver'>: when true, C<undef> is accepted without error.
+
+=back
+
+C<boolean> and C<array> values are normalized in-place during validation
+(booleans are coerced to JSON::PP boolean objects; arrays parsed from
+environment strings are split and converted).
+
+B<Parameters:>
+
+=over 4
+
+=item C<$schema>
+
+A hash reference describing the expected shape and constraints of the
+configuration.
+
+=back
+
+B<Returns:> C<1> on success.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Configuration validation failed for #C{%s}:%s"> — raised via C<bail()> if
+any validation errors are found. The first C<%s> is the config file path
+(wrapped in C<#C{}> for color highlighting); the second is a formatted
+bullet-list of all error messages.
+
+=back
+
+B<Examples:>
+
+    $cfg->validate({
+        log_level => {
+            type    => 'enum',
+            values  => [qw(debug info warn error)],
+            default => 'info',
+        },
+        max_retries => {
+            type     => 'integer',
+            required => 1,
+        },
+        db_url => {
+            type   => 'string',
+            envvar => 'DATABASE_URL',
+        },
+    });
+    # Returns: 1 if valid, otherwise calls bail()
+
+=head2 show_diff
+
+    $cfg->show_diff;
+    $cfg->show_diff($other_config);
+
+Compares the current in-memory configuration against another config object
+and prints the differences using C<spruce_diff>. Output goes to the Genesis
+info log.
+
+If no differences are found, prints a message saying so. If differences
+exist, prints a formatted diff showing what changed.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$other_config>
+
+B<(optional)> A C<Genesis::Config> object to compare against. Defaults to a
+freshly-loaded copy of the same file on disk (i.e., the last saved state).
+
+=back
+
+B<Returns:> Nothing. Output is printed to the Genesis info log.
+
+B<Examples:>
+
+    # Show what has changed since the last save
+    $cfg->show_diff;
+    # prints: "No differences found between existing and updated configuration"
+    # or a spruce-format diff if changes exist
+
+    # Compare two config objects
+    $cfg->show_diff($baseline_cfg);
+    # prints: diff between $baseline_cfg contents and $cfg contents
+
+=head1 INTERNAL METHODS
+
+These methods are internal to the implementation. They may change without
+notice and should not be called directly.
+
+=head2 _contents
+
+    $self->_contents
+
+Returns the fully merged configuration hash (C<env E<gt> set E<gt> loaded
+E<gt> default>) as a hash reference. Triggers lazy loading from disk if the
+object has not yet been loaded. The result is cached on the object and
+invalidated by C<_update_source()>.
+
+=head2 _explicit_contents
+
+    $self->_explicit_contents
+
+Returns the merged I<set>+I<loaded> hash reference — the subset of values
+that are written to disk by C<save()>. Env and default values are excluded.
+Triggers lazy loading from disk if needed. The result is cached and
+invalidated by C<_update_source()> whenever the I<set> or I<loaded> store
+changes.
+
+=head2 _load
+
+    $self->_load
+    $self->_load($path)
+
+Loads the YAML file at C<$path> (or C<$self-E<gt>{path}> if omitted) into
+the I<loaded> store. Sets the persisted signature after a successful read.
+If the file does not exist and C<autosave> is enabled, creates it by calling
+C<save()>. Includes a re-entrancy guard to prevent infinite recursion when
+internal logging triggers a config read.
+
+Modifies the object in-place (C<loaded_values>, C<persistant_signature>).
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Cannot load configuration without a path"> — raised if no path is
+available.
+
+=item *
+
+C<"Failed to load %s: %s"> — raised if the YAML file cannot be read or
+parsed. The first C<%s> is the file path and the second is the error detail.
+
+=back
+
+B<Examples:>
+
+    $self->_load;
+    # Loads $self->{path} into loaded_values; sets persistant_signature on success
+
+    $self->_load('/alternate/path.yml');
+    # Loads the alternate file instead of the configured path
+
+=head2 _signature
+
+    $self->_signature
+
+Computes and returns a SHA-1 hex digest of the canonical JSON encoding of
+the explicit (I<set> + I<loaded>) contents. Used by C<changed()> and
+C<save()> to detect whether the in-memory state differs from the persisted
+state. Does not trigger lazy loading.
+
+=head2 _update_source
+
+    $self->_update_source($source, $key, $value)
+
+Writes C<$value> into the specified source store (C<'env'>, C<'set'>,
+C<'loaded'>, or C<'default'>), then invalidates the relevant caches. The
+merged C<_contents> cache is always cleared. The C<_explicit_contents> cache
+is cleared only when C<$source> is C<'set'> or C<'loaded'>.
+
+B<Returns:> Nothing.
+
+B<Examples:>
+
+    $self->_update_source('set', 'log_level', 'debug');
+    # Writes 'debug' into the set store and clears the _contents cache
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Cannot update key in configuration without a source"> — raised if
+C<$source> is undefined.
+
+=item *
+
+C<"Cannot update key in configuration without a key"> — raised if C<$key>
+is undefined.
+
+=item *
+
+C<"Invalid source '$source' - must be one of: env, set, loaded, default">
+— raised if C<$source> is not one of the four recognized source names.
+
+=back
+
+=head2 _validate_key
+
+    $self->_validate_key($key, $schema)
+
+Recursively validates the value of C<$key> against a single schema entry.
+Handles all supported types: C<string>, C<number>, C<integer>, C<boolean>,
+C<enum>, C<array>, C<hash>, C<hasharray>, C<semver>, C<null>, C<any>, literal
+string types, and C<||>-joined union types.
+
+For C<array> and C<boolean> types, normalizes the value in-place via
+C<_update_source()>: booleans are coerced to JSON::PP boolean objects; array
+values parsed from environment strings are split and element-wise converted.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$key>
+
+The configuration key being validated (used in error messages and for
+recursive sub-key lookups).
+
+=item C<$schema>
+
+A hash reference with at minimum a C<type> key. Additional keys (C<values>,
+C<schema>, C<subtype>, C<envsplit>, C<envconvert>, C<allow_null>) are
+consulted depending on the type.
+
+=back
+
+B<Returns:> A list of error strings. An empty list means the value is valid.
+
+B<Examples:>
+
+    my @errs = $self->_validate_key('log_level', {type => 'enum', values => [qw(debug info)]});
+    # Returns: () if value is valid, or a list of error strings if not
+
+B<Errors:> (internal — these call C<bug()> and abort rather than returning
+errors)
+
+=over 4
+
+=item *
+
+C<"Schema for $key has no type"> — raised if the schema entry has no C<type>
+key.
+
+=item *
+
+C<"Schema for array $key has no envsplit, but was given a string value: #ri{%s}">
+— raised if an array key received a string value but the schema provides no
+C<envsplit> pattern for splitting it.
+
+=item *
+
+C<"Schema for array $key hash value has no schema"> — raised if a C<hash>
+subtype is encountered inside an array but the schema has no nested C<schema>
+key.
+
+=item *
+
+C<"Cannot normalize key '$key' - no source found"> — raised if a C<boolean>
+or C<array> value needs to be normalized in-place but C<get_source()> returns
+C<undef> for that key.
+
+=back
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut
