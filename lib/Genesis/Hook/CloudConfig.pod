@@ -418,6 +418,9 @@ argument format.
 
 B<Returns:> A C<Genesis::Hook::CloudConfig::LookupNetworkRef> object.
 
+B<Note:> The fold-marker comment on line 184 mislabels this subroutine as
+C<subnet_reference> (CC-6b; see L</KNOWN ISSUES>).
+
 B<Examples:>
 
     my $ref = $self->network_reference('sgs', sub {
@@ -1048,6 +1051,12 @@ The CPI-specific AZ name to record.
 
 B<Returns:> Nothing meaningful.
 
+B<Note:> The assignment statement on line 230 is missing a terminating
+semicolon. This is accepted by Perl because the subroutine closing brace
+follows immediately, but is a latent defect (CC-7; see L</KNOWN ISSUES>).
+The fold-marker comment on line 226 also names the wrong subroutine
+(CC-6; see L</KNOWN ISSUES>).
+
 B<Examples:>
 
     $self->_add_cpi_to_network_az('z1', 'my-env-z1');
@@ -1336,6 +1345,12 @@ of error messages.
 
 =back
 
+B<Note:> The per-entry content check at line 896 contains an operator
+precedence bug (CC-2; see L</KNOWN ISSUES>). The C<!ref(...)> expression
+produces C<""> or C<"1"> before the C<eq 'HASH'> comparison, so the check
+is always false and invalid per-entry configurations are silently accepted
+rather than reported as errors.
+
 B<Examples:>
 
     $self->_validate_override_schema;
@@ -1388,6 +1403,13 @@ Thrown when a C<< <based-on> >> source target cannot be found. C<%s> are
 type, target, source target, environment name, and the overrides base path.
 
 =back
+
+B<Note:> The cycle detection at line 970 uses C<$type> (the singular type
+name, e.g., C<'vm_type'>) as the key into C<$extended_config>, but
+C<$extended_config> is keyed by C<$group_label> (the plural form, e.g.,
+C<'vm_types'>). This means the existence check always returns false, so
+cycles are never detected and the bail is unreachable (CC-1; see
+L</KNOWN ISSUES>).
 
 B<Examples:>
 
@@ -1600,6 +1622,14 @@ IaaS-to-properties map passed to C<_cloud_properties_for_iaas>.
 
 B<Returns:> A merged cloud properties hashref.
 
+B<Note:> The per-subnet override lookup at line 1216 appends
+C<'.cloud_properties'> to a C<$source_path> that already ends in
+C<'.cloud_properties'>, producing a doubled path such as
+C<'bosh-configs.cloud.networks.deployment.subnets.ocfp-a.cloud_properties.cloud_properties'>.
+This path never resolves, so all explicit per-subnet cloud-property
+overrides from the environment file are silently ignored (CC-4; see
+L</KNOWN ISSUES>).
+
 B<Examples:>
 
     my $props = $self->_network_cloud_properties_for_iaas(
@@ -1705,6 +1735,13 @@ The flattened resource config hashref to evaluate against.
 =back
 
 B<Returns:> The rule's C<properties> hashref if conditions match, or C<{}>.
+
+B<Note:> The regex branch at lines 1352-1361 contains an unreachable
+C<elsif> at line 1358. The C<elsif ($field_value eq $test)> clause is only
+reached when C<$field_value> is C<undef> (the outer C<if (defined(...))>
+guards the defined case), yet it attempts string comparison against an
+undefined value. This branch can never set C<$field_matches> to true and
+constitutes dead code (CC-5; see L</KNOWN ISSUES>).
 
 B<Examples:>
 
@@ -2111,6 +2148,13 @@ Thrown when input subnets have different gateways.
 
 =back
 
+B<Note:> Both bail messages at lines 1673 and 1677 use single-quoted
+strings (C<'\n'>), so the C<\n> in each message is a literal backslash
+followed by C<n>, not a newline character. The C<%s> format arguments are
+also broken — the C<map> expressions produce an alternating key/value
+list rather than formatted C<"key: values"> lines, so the error detail
+is garbled. See CC-3 in L</KNOWN ISSUES>.
+
 B<Examples:>
 
     my $lsa = $self->_build_logical_subnet_amalgamation('deployment', \@subnet_configs);
@@ -2235,6 +2279,86 @@ B<Examples:>
 
     my $plural = _plural_of('network');
     # Returns: 'networks'
+
+=head1 KNOWN ISSUES
+
+The following defects are tracked in FWT-751 and are documented here so
+that callers are aware of the current behaviour.
+
+=over 4
+
+=item CC-1 (critical)
+
+C<_add_extended_cloud_config()> line 970: the cycle detection check uses
+C<$type> (singular, e.g., C<'vm_type'>) as the lookup key into
+C<$extended_config>, which is keyed by C<$group_label> (plural, e.g.,
+C<'vm_types'>). The existence check therefore always returns false, making
+the cycle detection bail unreachable. Cyclic C<< <based-on> >> chains will
+cause an infinite loop rather than a clean error.
+
+=item CC-2 (critical)
+
+C<_validate_override_schema()> line 896: C<!ref($config->{$type_key}{$_})
+eq 'HASH'> applies C<!> to the C<ref(...)> call before comparing to
+C<'HASH'>. Because C<!ref(...)> yields C<""> or C<"1">, the C<eq 'HASH'>
+comparison is always false. Per-entry type validation never collects errors,
+so non-hashmap configurations inside explicit type sections are silently
+accepted.
+
+=item CC-3 (critical)
+
+C<_build_logical_subnet_amalgamation()> lines 1673 and 1677: both
+C<bail()> calls use single-quoted strings, so C<'\n'> is a literal
+backslash-n rather than a newline. The C<map> expressions in the C<%s>
+slot also produce an alternating key/value list instead of
+C<"key: values"> lines. When subnets have mismatched ranges or gateways
+the error message is emitted with literal C<\n> characters and malformed
+detail text.
+
+=item CC-4 (critical)
+
+C<_network_cloud_properties_for_iaas()> line 1216: when resolving
+per-subnet cloud-property overrides the code calls
+C<< $self->env->lookup($source_path . '.cloud_properties') >> where
+C<$source_path> already ends with C<'.cloud_properties'>. The doubled
+suffix (e.g.,
+C<'bosh-configs.cloud.networks.target.subnets.id.cloud_properties.cloud_properties'>)
+never resolves, so all explicit per-subnet cloud-property overrides
+from environment files are silently ignored.
+
+=item CC-5 (dead code)
+
+C<_evaluate_matching_rule()> lines 1352-1361: the C<elsif> branch at
+line 1358 (C<elsif ($field_value eq $test)>) is unreachable. It sits
+inside an C<if (defined($test) && ...)> regex block and is only entered
+when C<$field_value> is C<undef> (because the preceding
+C<if (defined($field_value))> already handles the defined case).
+Comparing C<undef eq $test> never yields true, so the branch can never
+set C<$field_matches> to 1. Literal-string fallback matching for
+undefined field values does not work.
+
+=item CC-6 (smell)
+
+Line 226: the fold-marker comment reads C<# _az_definition_for> but the
+subroutine declared on that line is C<_add_cpi_to_network_az>. This is
+a copy-paste artifact with no runtime effect, but it makes C<vim> fold
+navigation misleading.
+
+=item CC-6b (smell)
+
+Lines 184-185: the C<network_reference> subroutine has a fold-marker
+comment that reads C<# subnet_reference>. This is a duplicate/wrong fold
+comment with no runtime effect.
+
+=item CC-7 (smell)
+
+C<_add_cpi_to_network_az()> line 230: the assignment statement has no
+terminating semicolon. Perl accepts this because the closing brace of the
+subroutine follows immediately, but it is a latent defect E<mdash> any code
+inserted between the assignment and the closing brace would silently become
+an argument to the assignment rather than a separate statement.
+
+=back
 
 =head1 AUTHORS
 
