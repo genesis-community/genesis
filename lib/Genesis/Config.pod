@@ -408,8 +408,8 @@ B<Errors:>
 
 =item *
 
-C<"Cannot set a key in the configuration without a key"> — raised if C<$key>
-is undefined.
+C<"Cannot update key in configuration without a key"> — raised (via
+C<_update_source()>) if C<$key> is undefined.
 
 =item *
 
