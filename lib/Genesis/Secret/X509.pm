@@ -426,7 +426,7 @@ sub _get_safe_command_for_rotate {
 
 	my $action = 'renew';
 	if ($opts{'regen_x509_keys'}) {
-		my $value = $self->value || $self->plan->store->read->value;
+		my $value = $self->value;
 		$action = 'issue' if ($value && $value->{key});
 	}
 	my @cmd = $self->_base_safe_command($action, @names);
