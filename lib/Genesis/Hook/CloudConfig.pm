@@ -174,7 +174,7 @@ sub lookup_ref {
 }
 
 # }}}
-# subnet_reference - Returns a reference to a subnet value that can be retrived per subnet {{{
+# network_reference - Returns a reference to a network value that can be resolved later {{{
 sub network_reference {
 	my $self = shift;
 	return Genesis::Hook::CloudConfig::LookupNetworkRef->new(@_);
@@ -223,11 +223,11 @@ sub build_cpi_azs {
 }
 
 # }}}
-# _az_definition_for - Returns the definition for a given AZ {{{
+# _add_cpi_to_network_az - Adds a CPI entry to a network AZ {{{
 sub _add_cpi_to_network_az {
 	my ($self, $az_name, $cpi_az_name) = @_;
 	my $network = $self->network;
-	$network->{azs}{$az_name}{for_cpi}{$self->cpi_name} = $cpi_az_name
+	$network->{azs}{$az_name}{for_cpi}{$self->cpi_name} = $cpi_az_name;
 }
 
 # }}}
@@ -1349,16 +1349,15 @@ sub _evaluate_matching_rule {
 					my ($op, $regex, $flags) = ($1, $2, $3);
 					$op //= '=';
 					my $compiled_regex = $flags ? qr/(?$flags)$regex/ : qr/$regex/;
-					if (defined($field_value)) {
-						my $re_match = $field_value =~ /$compiled_regex/;
-						if (($op eq '!') eq !$re_match) { # Either '!' and doesn't match, or '=' and matches
-							$field_matches = 1;
-							last;
-						}
-					} elsif ($field_value eq $test) {
+					my $re_match = $field_value =~ /$compiled_regex/;
+					if (($op eq '!') eq !$re_match) { # Either '!' and doesn't match, or '=' and matches
 						$field_matches = 1;
 						last;
 					}
+				} elsif (defined($test) && $field_value eq $test) {
+					# Literal string comparison
+					$field_matches = 1;
+					last;
 				}
 			}
 			$failed_match = 1 unless $field_matches;
