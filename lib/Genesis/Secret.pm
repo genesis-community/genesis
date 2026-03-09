@@ -23,7 +23,6 @@ sub new {
 			$path, $args
 		);
 	} else {
-		my %src =
 		return bless({
 			path => $alt_path || $path,
 			definition => $args,
