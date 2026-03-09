@@ -962,13 +962,14 @@ C<validate_runtime_config_requests()> lines 171 and 257: both previously
 called C<get_req_names> but only C<_get_req_names> (with underscore prefix)
 exists. Fixed by correcting both call sites to C<_get_req_names>.
 
-=item RC-2 (critical) E<mdash> B<RESOLVED>
+=item RC-2 (critical) E<mdash> B<by-design>
 
-C<upload_runtime_config()> line 390: previously passed C<$invert=1> as the
-third argument to C<prompt_for_boolean>, which inverted the sense of the
-operator's answer. Fixed by removing the C<$invert> argument. Note:
-C<remove_configs()> line 447 also passes C<$invert=1> but produces correct
-behaviour through accidental double inversion E<mdash> left unchanged.
+C<upload_runtime_config()> line 390: C<prompt_for_boolean($prompt, 1, 1)>
+passes C<$invert=1> as the third argument. This is intentional E<mdash> the
+C<if(true){skip}> control flow pattern requires the inverted return so that
+a "Yes" answer proceeds with the upload and a "No" answer skips it.
+C<remove_configs()> line 447 uses the same pattern. Both call sites are
+correct.
 
 =item RC-3 (smell) E<mdash> B<RESOLVED>
 

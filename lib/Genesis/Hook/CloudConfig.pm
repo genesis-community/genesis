@@ -1670,11 +1670,11 @@ sub _build_logical_subnet_amalgamation {
 	}
 	bail(
 		"Cannot create LSA for subnets with different ranges:\n%s",
-		join("\n", map {"%s: %s" } map {$_ => join(', ', @{$ranges{$_}})} keys %ranges)
+		join("\n", map { sprintf("%s: %s", $_, join(', ', @{$ranges{$_}})) } keys %ranges)
 	) if keys(%ranges) > 1;
 	bail(
 		"Cannot create LSA for subnets with different gateways:\n%s",
-		join("\n", map {"%s: %s" } map {$_ => join(', ', @{$gateways{$_}})} keys %gateways)
+		join("\n", map { sprintf("%s: %s", $_, join(', ', @{$gateways{$_}})) } keys %gateways)
 	) if keys(%gateways) > 1;
 
 	my ($range) = keys %ranges;

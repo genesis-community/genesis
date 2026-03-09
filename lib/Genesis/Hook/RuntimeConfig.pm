@@ -389,7 +389,7 @@ sub upload_runtime_config {
 			"[[  - >>upload #m{%s} runtime config #c{%s} to BOSH director #M{%s}? [y|n]",
 			$description, $config_name, $self->bosh->alias || $self->bosh->host
 		), terminal_width - 2);
-		if (prompt_for_boolean($prompt, 1)) {
+		if (prompt_for_boolean($prompt, 1, 1)) {
 			info("[[  - >>#y{skipped}\n");
 			return undef;
 		}
