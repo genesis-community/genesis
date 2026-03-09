@@ -836,6 +836,22 @@ EOF
 	is($config2->get('top.branch2.leaf4'), 'value4', "another unmodified leaf in different branch preserved");
 };
 
+subtest 'replace() preserves prev_config autosave' => sub {
+	my $config_file = "$tmp/test15b.yml";
+	put_file($config_file, "---\nold: value\n");
+
+	my $old_config = Genesis::Config->new($config_file, 1); # autosave=1
+	$old_config->get('old'); # Load it
+
+	my $new_config = Genesis::Config->new();
+	$new_config->set('new', 'value');
+
+	$new_config->replace($old_config);
+
+	is($old_config->{autosave}, 1, "prev_config autosave is preserved after replace");
+	is($new_config->{autosave}, 1, "new config inherits prev_config autosave");
+};
+
 subtest '_load() with explicit path argument' => sub {
 	my $alt_file = "$tmp/test_alt_load.yml";
 	put_file($alt_file, "---\nalt_key: alt_value\n");

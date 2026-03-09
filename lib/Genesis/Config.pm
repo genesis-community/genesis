@@ -239,8 +239,8 @@ sub save {
 # replace - replace the configuration with a new hash {{{
 sub replace {
 	my ($self, $prev_config) = @_;
-	my $autosave = $prev_config->{'autosave'};
-	$prev_config->{autosave} = 0;
+	my $autosave = $prev_config->{autosave};
+	local $prev_config->{autosave} = 0;
 	$self->{path} = $prev_config->path;
 	$self->{persistent_signature} = $prev_config->{persistent_signature};
 	$self->save;
