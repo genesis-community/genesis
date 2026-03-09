@@ -1,0 +1,961 @@
+=encoding UTF-8
+
+=head1 NAME
+
+Genesis::Hook::RuntimeConfig - Hook base class for generating and uploading BOSH runtime configs
+
+=head1 SYNOPSIS
+
+    package Genesis::Hook::RuntimeConfig::my_kit;
+    use parent 'Genesis::Hook::RuntimeConfig';
+
+    sub init {
+        my ($class, %opts) = @_;
+        my $self = $class->SUPER::init(%opts);
+        $self->register_runtime_config_builds(
+            'dns',
+            ['logging', 'Logging'],
+        );
+        return $self;
+    }
+
+    sub build_dns_runtime {
+        my ($self) = @_;
+        my $data = {
+            releases => [...],
+            addons   => [...],
+        };
+        return ($data, undef, undef);
+    }
+
+    sub build_logging_runtime {
+        my ($self) = @_;
+        # Return ($data, 'skipped', 'reason') to skip
+        # Return ($data, 'failed', 'reason') to report failure
+        my $yaml = "releases:\n- name: loggregator\n  version: 1.0\n";
+        return ($yaml, undef, undef);
+    }
+
+    1;
+
+=head1 DESCRIPTION
+
+C<Genesis::Hook::RuntimeConfig> is the base class for kit hooks that generate
+and upload BOSH runtime configs. Kits subclass this module, call
+C<register_runtime_config_builds> in their C<init> method to declare which
+runtime configs they provide, and implement a C<build_E<lt>nameE<gt>_runtime>
+method for each registered config.
+
+The standard lifecycle for a runtime config hook is:
+
+=over 4
+
+=item 1.
+
+Genesis instantiates the hook via C<init>, passing C<env> and C<kit> options.
+The subclass C<init> calls the parent class C<init> via C<SUPER> and then calls
+C<register_runtime_config_builds> to declare available config types.
+
+=item 2.
+
+Before C<perform> is called, the caller invokes
+C<validate_runtime_config_requests> to normalize the requested config names
+from C<< $self->{args} >> into C<< $self->{requests} >> and
+C<< $self->{request_options} >>.
+
+=item 3.
+
+C<perform> orchestrates the build-compare-upload cycle (or removal cycle
+when C<remove> is set). For each requested config, C<build> invokes the
+subclass's C<build_E<lt>nameE<gt>_runtime> method, then
+C<compare_configs> diffs against the existing BOSH director config, and
+C<upload_runtime_config> pushes the new config unless a dry run is in effect.
+
+=item 4.
+
+After all configs are processed, C<store_secrets> entombs any Vault secrets
+that were fetched during the build into CredHub (when CredHub entombment is
+enabled and Genesis compatibility is at least C<3.0.0-rc.1>).
+
+=back
+
+Subclass C<build_E<lt>nameE<gt>_runtime> methods must return a three-element
+list: C<($config_data, $status, $message)>. C<$config_data> is a YAML string
+or a hash/array reference (automatically converted to YAML). C<$status> may
+be C<undef> for success, C<'skipped'> to silently skip this config, or
+C<'failed'> to log an error and skip. C<$message> is a human-readable detail
+string used when C<$status> is C<'skipped'> or C<'failed'>.
+
+This class inherits from L<Genesis::Hook>. See that module for the full set
+of inherited methods including C<done>, C<env>, C<kit>, C<want_feature>,
+C<spruce_merge>, C<get_credhub_variable>, and others.
+
+=head1 METHODS
+
+=head2 init
+
+    my $hook = Genesis::Hook::RuntimeConfig->init(%opts);
+
+Constructs and returns a new runtime config hook object. Validates required
+and optional options, then delegates to L<Genesis::Hook/init> before initializing
+runtime-config-specific state. Resolves the BOSH director object (using
+C<get_target_bosh> when the environment is itself a BOSH director, otherwise
+C<< $env->bosh >>), initializes a C<Service::Credhub> object from the BOSH
+director, and sets up empty builds and secrets registries.
+
+B<Parameters:>
+
+=over 4
+
+=item C<%opts>
+
+Key-value pairs that configure the hook. The following keys are recognized:
+
+=over 4
+
+=item C<env>
+
+B<(required)> A C<Genesis::Env> object for the deployment environment.
+
+=item C<kit>
+
+B<(required)> A C<Genesis::Kit> object for the kit being executed.
+
+=item C<interactive>
+
+B<(optional)> When true, the hook prompts for confirmation before uploading
+each config. Defaults to C<0>.
+
+=item C<dryrun>
+
+B<(optional)> When true, the hook builds and compares configs but does not
+upload or remove them. Defaults to C<0>.
+
+=item C<print>
+
+B<(optional)> When true, the hook prints generated config content to the
+terminal instead of uploading it. Cannot be combined with C<remove>.
+Defaults to C<0>.
+
+=item C<remove>
+
+B<(optional)> When true, the hook removes the requested runtime configs from
+the BOSH director instead of generating and uploading them. Cannot be
+combined with C<print>. Defaults to C<0>.
+
+=item C<args>
+
+B<(optional)> Runtime config request arguments. May be a boolean true value,
+a config name string, a comma-separated list of names, an array of names and
+option hashes, or a hash mapping config names to option hashes. When
+C<undef>, an empty array reference, or a JSON boolean true value, all
+registered configs are requested with default options.
+
+=item C<file>
+
+B<(optional)> Path to an associated file. Stored on the object for use by
+subclasses.
+
+=item C<label>
+
+B<(optional)> A human-readable label for display. Stored on the object for
+use by subclasses.
+
+=back
+
+=back
+
+B<Returns:> A blessed runtime config hook object.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Missing required arguments for a perl-based runtime-config hook call: %s">
+-- raised via C<bug()> if C<env> or C<kit> is absent from C<%opts>. C<%s>
+is replaced with the comma-separated list of missing argument names.
+
+=item *
+
+C<"Invalid optional arguments for a perl-based runtime-config hook call: %s">
+-- raised via C<bug()> if any unrecognized keys appear in C<%opts>. C<%s>
+is replaced with the comma-separated list of invalid argument names.
+
+=item *
+
+C<"Cannot specify both 'print' and 'remove' options."> -- raised via
+C<bail()> if both C<print> and C<remove> are set to true values.
+
+=back
+
+B<Examples:>
+
+    my $hook = Genesis::Hook::RuntimeConfig::my_kit->init(
+        env => $env,
+        kit => $kit,
+    );
+    # Returns: a blessed Genesis::Hook::RuntimeConfig::my_kit object
+
+    my $hook = Genesis::Hook::RuntimeConfig::my_kit->init(
+        env         => $env,
+        kit         => $kit,
+        dryrun      => 1,
+        interactive => 0,
+        args        => 'dns',
+    );
+    # Returns: a blessed hook configured for a dry-run of the 'dns' config
+
+=head2 dryrun
+
+    my $bool     = $hook->dryrun;
+    my $bool     = $hook->interactive;
+    my $bool     = $hook->print;
+    my $bool     = $hook->remove;
+    my $bosh     = $hook->bosh;
+    my $credhub  = $hook->credhub;
+    my $base     = $hook->credhub_base;
+
+Accessor methods for the hook's configuration state.
+
+B<dryrun> -- Returns the dry-run flag. When true, the hook builds and
+compares configs but does not upload or remove anything. Defaults to C<0>.
+
+B<interactive> -- Returns the interactive flag. When true, the hook prompts
+for confirmation before each config upload. Defaults to C<0>.
+
+B<print> -- Returns the print flag. When true, the hook prints generated
+runtime config content to the terminal rather than uploading it. Defaults
+to C<0>.
+
+B<remove> -- Returns the remove flag. When true, the hook removes the
+requested runtime configs from the BOSH director rather than generating and
+uploading them. Defaults to C<0>.
+
+B<bosh> -- Returns the BOSH client object initialized during C<init>. When
+the environment is a BOSH director, returns the self-referencing target BOSH
+object; otherwise returns the environment's associated BOSH director client.
+
+B<credhub> -- Returns the C<Service::Credhub> object initialized from the
+BOSH director during C<init>. May be C<undef> if the BOSH director has no
+associated CredHub.
+
+B<credhub_base> -- Returns the CredHub base path for secret entombment, or
+C<undef> if CredHub entombment is not enabled for this environment.
+Entombment requires Genesis feature compatibility of at least C<3.0.0-rc.1>,
+the C<genesis.entomb> manifest key set to a true value, and a CredHub object
+with a base path available.
+
+B<Returns:>
+
+C<dryrun>, C<interactive>, C<print>, and C<remove> return C<1> if the
+corresponding flag is active, C<0> otherwise.
+
+C<bosh> returns the BOSH client object.
+
+C<credhub> returns a C<Service::Credhub> object, or C<undef>.
+
+C<credhub_base> returns the CredHub base path string, or C<undef>.
+
+B<Examples:>
+
+    if ($hook->dryrun) {
+        print "Would upload config (dry-run mode)\n";
+    }
+    # Returns: 1 if dry-run mode is active, 0 otherwise
+
+    my $bosh = $hook->bosh;
+    my $configs = $bosh->get_config('runtime', 'my-env.dns');
+    # Returns: the BOSH client object
+
+    if (my $base = $hook->credhub_base) {
+        print "Entombing secrets under: $base\n";
+    }
+    # Returns: '/bosh-genesis-kit/bosh-us-east-1/' or undef
+
+=head2 config_name_for
+
+    my $name = $hook->config_name_for($build);
+
+Returns the fully-qualified BOSH runtime config name for the given build
+identifier. The name is formed by joining the environment's BOSH config name
+with the build identifier using a period.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$build>
+
+The build identifier string (e.g., C<'dns'>, C<'logging'>).
+
+=back
+
+B<Returns:> A string of the form C<"E<lt>bosh_config_nameE<gt>.E<lt>buildE<gt>">.
+
+B<Examples:>
+
+    my $name = $hook->config_name_for('dns');
+    # Returns: 'us-east-1-bosh.dns'
+
+    my $name = $hook->config_name_for('logging');
+    # Returns: 'us-east-1-bosh.logging'
+
+=head2 perform
+
+    $hook->perform;
+
+Executes the runtime config hook. Notifies the operator of the action being
+taken, then either removes or generates-and-uploads the requested runtime
+configs depending on the hook's flags.
+
+When removal is requested (C<remove> is true), delegates entirely to
+C<remove_configs> and returns its result.
+
+Otherwise, for each config name in C<< $self->{requests} >>:
+
+=over 4
+
+=item 1.
+
+Calls C<build> to invoke the subclass's C<build_E<lt>nameE<gt>_runtime>
+method. Skips configs that return C<undef>.
+
+=item 2.
+
+If C<print> is set, calls C<print_config> and skips to the next config.
+
+=item 3.
+
+Calls C<compare_configs> to diff against the existing BOSH director config.
+Skips if the config is already up to date (C<compare_configs> returns
+C<undef>).
+
+=item 4.
+
+Skips the upload step if dry-run mode is active.
+
+=item 5.
+
+Otherwise calls C<upload_runtime_config> to push the new config.
+
+=back
+
+After the loop, calls C<store_secrets> to entomb any Vault secrets fetched
+during the build into CredHub.
+
+B<Returns:> The result of C<$self->done()>, or the result of C<remove_configs>
+if removal was requested.
+
+B<Examples:>
+
+    $hook->validate_runtime_config_requests;
+    $hook->perform;
+    # Returns: the result of $self->done()
+
+=head2 register_runtime_config_builds
+
+    $hook->register_runtime_config_builds(@names);
+
+Declares the set of runtime configs this hook can build. Each entry in
+C<@names> is either a plain string build name or a two-element array
+reference C<[$name, $description]>. For plain strings, the description is
+derived automatically by splitting the name on hyphens and underscores and
+title-casing each word.
+
+For each name, a corresponding C<build_E<lt>nameE<gt>_runtime> method must
+exist on the hook object (hyphens in the name are converted to underscores
+when forming the method name). If the method cannot be found, C<kit_bug> is
+called.
+
+Modifies the object in-place (replaces any previously registered builds).
+
+B<Parameters:>
+
+=over 4
+
+=item C<@names>
+
+One or more build descriptors. Each element is either:
+
+=over 4
+
+=item *
+
+A string -- the build name. Must match C</^[a-z0-9\-_]+$/i>. The description
+is auto-derived from the name.
+
+=item *
+
+An array reference C<[$name, $description]> -- the build name and an explicit
+human-readable description string.
+
+=back
+
+=back
+
+B<Returns:> C<$self>, for method chaining.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"No builds specified for registration"> -- raised via C<bail()> if
+C<@names> is empty.
+
+=item *
+
+C<"Invalid runtime config name '%s' specified"> -- raised via C<bail()> if a
+name contains characters other than alphanumerics, hyphens, or underscores.
+C<%s> is replaced with the offending name.
+
+=back
+
+B<Examples:>
+
+    $self->register_runtime_config_builds(
+        'dns',
+        ['logging', 'Log Aggregation'],
+    );
+    # Returns: $self
+
+    # Requires these methods to exist on the object:
+    #   build_dns_runtime
+    #   build_logging_runtime
+
+=head2 validate_runtime_config_requests
+
+    $hook->validate_runtime_config_requests;
+
+Normalizes and validates the runtime config requests stored in
+C<< $self->{args} >>. On success, populates C<< $self->{requests} >> with a
+deduplicated list of requested build names and C<< $self->{request_options} >>
+with a hash of per-build option hashes.
+
+Accepts C<< $self->{args} >> in several formats:
+
+=over 4
+
+=item *
+
+C<undef>, an empty value, or a JSON boolean true -- requests all registered
+configs with default options.
+
+=item *
+
+A plain string or comma-separated list of names -- requests the named configs
+with no options.
+
+=item *
+
+An array reference -- each element may be a string (build name), a hash
+reference (options merged across all preceding names), or a JSON boolean
+(true to include, false to exclude).
+
+=item *
+
+A hash reference mapping build names (or C<'*'> or C<'all'>) to option
+hashes or JSON booleans.
+
+=back
+
+Boolean false values in hash or array arguments exclude those configs from
+the request list. When all configs are excluded, the requests list is empty.
+
+Modifies the object in-place (sets C<< $self->{requests} >> and
+C<< $self->{request_options} >>).
+
+B<Returns:> C<1> on success.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Invalid runtime config request argument type: expecting a string, a boolean, or hash of options, got %s">
+-- raised via C<bail()> if an array element is an unrecognized reference
+type. C<%s> is replaced with the reference type.
+
+=item *
+
+C<"Invalid runtime config request arguments: expecting a #C{true}, a string, array of strings or build =E<gt> option hash, or a hash of runtime build with options or boolean, but got %s">
+-- raised via C<bail()> if C<< $self->{args} >> is not a recognized type
+(not a string, array, or hash). C<%s> is replaced with a description of the
+actual value received (e.g., C<"a CODE value"> or C<"'some_value'">).
+
+=item *
+
+C<"Invalid runtime config request options for '%s': expecting a hash or boolean, got %s">
+-- raised via C<bail()> if a request's options value is neither a hash
+reference nor a JSON boolean. The first C<%s> is the request identifier and
+the second is the type or value encountered.
+
+=item *
+
+C<"Invalid runtime config requests: %s\n\nExpecting one or more of the following:\n%s\n\n">
+-- raised via C<bail()> if any requested build names are not in the
+registered builds list. The first C<%s> is the comma-separated list of
+invalid names and the second is a formatted list of the valid registered
+names with their descriptions.
+
+=back
+
+B<Examples:>
+
+    # Request all configs (args is undef or true)
+    $hook->{args} = undef;
+    $hook->validate_runtime_config_requests;
+    # Returns: 1
+    # $hook->{requests} = ['dns', 'logging', ...]
+
+    # Request a specific config by name
+    $hook->{args} = 'dns';
+    $hook->validate_runtime_config_requests;
+    # Returns: 1
+    # $hook->{requests} = ['dns']
+
+    # Request with options
+    $hook->{args} = { dns => { ttl => 300 }, logging => {} };
+    $hook->validate_runtime_config_requests;
+    # Returns: 1
+    # $hook->{request_options} = { dns => { ttl => 300 }, logging => {} }
+
+=head2 action
+
+    my $description = $hook->action;
+
+Returns a human-readable description of the action the hook will perform,
+based on the current flag state.
+
+B<Returns:> One of the strings C<"remove">, C<"generate">, or
+C<"generate and upload">, depending on whether the C<remove> or C<dryrun>
+flags are set.
+
+B<Examples:>
+
+    my $action = $hook->action;
+    # Returns: 'generate and upload' (normal mode)
+    # Returns: 'generate' (dry-run mode)
+    # Returns: 'remove' (remove mode)
+
+=head2 build
+
+    my $config_data = $hook->build($build);
+
+Invokes the registered C<build_E<lt>nameE<gt>_runtime> method for the named
+build and returns the resulting YAML string. If the build method returns a
+hash or array reference, it is converted to YAML automatically.
+
+If the build method returns a status of C<'failed'>, logs the error and
+returns C<undef>. If the build method returns a status of C<'skipped'>, logs
+a warning and returns C<undef>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$build>
+
+The build identifier string. Must match a name previously registered via
+C<register_runtime_config_builds>.
+
+=back
+
+B<Returns:> A YAML string on success, or C<undef> if the build failed or was
+skipped.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"No runtime config name specified"> -- raised via C<bail()> if C<$build>
+is undefined or empty.
+
+=item *
+
+C<"Invalid runtime config name '%s' specified"> -- raised via C<bail()> if
+C<$build> is not in the registered builds list. C<%s> is replaced with
+the build name.
+
+=back
+
+B<Examples:>
+
+    my $yaml = $hook->build('dns');
+    # Returns: a YAML string, or undef if failed/skipped
+
+=head2 print_config
+
+    $hook->print_config($config_data, $config_name);
+
+Prints the given runtime config YAML to the terminal in a formatted code
+block, using the terminal's configured code color scheme. The output includes
+a header bar with the config name.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$config_data>
+
+The YAML string content of the runtime config to display.
+
+=item C<$config_name>
+
+The fully-qualified BOSH runtime config name (e.g., C<'us-east-1-bosh.dns'>),
+displayed in the header bar.
+
+=back
+
+B<Returns:> C<1>.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"No runtime config contents given"> -- raised via C<bail()> if
+C<$config_data> is undefined or empty.
+
+=back
+
+B<Examples:>
+
+    $hook->print_config($yaml, 'us-east-1-bosh.dns');
+    # prints the YAML content with a formatted header to the terminal
+    # Returns: 1
+
+=head2 compare_configs
+
+    my $needs_upload = $hook->compare_configs($build, $config_data, $config_name);
+
+Compares the generated runtime config against the config currently on the
+BOSH director.
+
+If the named config does not yet exist on the director, logs its content and
+returns C<1> (indicating an upload is needed).
+
+If the config already exists, uses C<spruce_diff> to compare the existing
+and generated YAML. If there are differences, logs the diff and returns C<1>.
+If there are no differences, logs that the config is up to date and returns
+C<undef> (indicating no upload is needed).
+
+B<Parameters:>
+
+=over 4
+
+=item C<$build>
+
+The build identifier string, used to look up the human-readable description
+for log messages.
+
+=item C<$config_data>
+
+The generated YAML string to compare against the existing config.
+
+=item C<$config_name>
+
+The fully-qualified BOSH runtime config name to look up on the director.
+
+=back
+
+B<Returns:> C<1> if an upload is needed (new config or differences found),
+C<undef> if the config is already up to date.
+
+B<Examples:>
+
+    my $needs_upload = $hook->compare_configs('dns', $yaml, 'us-east-1-bosh.dns');
+    if ($needs_upload) {
+        $hook->upload_runtime_config('dns', $yaml, 'us-east-1-bosh.dns');
+    }
+    # Returns: 1 if upload is needed, undef if already up to date
+
+=head2 upload_runtime_config
+
+    $hook->upload_runtime_config($build, $config_data, $config_name);
+
+Uploads the generated runtime config to the BOSH director.
+
+In interactive mode, first checks that a controlling terminal is available,
+then prompts the operator for confirmation. If the operator declines, returns
+C<undef> without uploading.
+
+Otherwise, calls the BOSH client's C<upload_config> method. On failure, logs
+the error, discards any secrets registered for this build, and returns
+C<undef>. On success, returns C<1>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$build>
+
+The build identifier string, used to look up the description and to clean up
+secrets on failure.
+
+=item C<$config_data>
+
+The YAML string content of the runtime config to upload.
+
+=item C<$config_name>
+
+The fully-qualified BOSH runtime config name to pass to the director.
+
+=back
+
+B<Returns:> C<1> on success, C<undef> if the upload was skipped or failed.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Not in a controlling terminal, cannot prompt for confirmation to upload ">
+-- raised via C<bail()> in interactive mode when no controlling terminal is
+available. The message continues with C<"runtime config. Please use #y{%s}
+to skip the confirmation prompt.">, where C<%s> is replaced with the
+applicable yes-flag string (defaulting to C<'--yes'>).
+
+=back
+
+B<Examples:>
+
+    my $ok = $hook->upload_runtime_config('dns', $yaml, 'us-east-1-bosh.dns');
+    # Returns: 1 on success, undef if skipped or failed
+
+=head2 remove_configs
+
+    $hook->remove_configs;
+
+Removes the requested runtime configs from the BOSH director. Fetches the
+current list of runtime configs from the director, then for each requested
+config:
+
+=over 4
+
+=item *
+
+If the config does not exist on the director, logs a notice and skips.
+
+=item *
+
+In dry-run mode, logs what would be removed (including config ID and creation
+date) but takes no action.
+
+=item *
+
+With the C<yes> flag set, removes the config without prompting.
+
+=item *
+
+Otherwise, prompts the operator for confirmation. If the operator declines,
+skips that config.
+
+=back
+
+B<Returns:> The result of C<$self->done(1)>.
+
+B<Examples:>
+
+    $hook->{args} = 'dns';
+    $hook->validate_runtime_config_requests;
+    $hook->remove_configs;
+    # Returns: the result of done(1)
+
+=head2 store_secrets
+
+    $hook->store_secrets;
+
+Entombs all Vault secrets fetched during the runtime config build phase into
+CredHub. Collects secrets from all builds' secret registries, then either
+lists what would be entombed (dry-run mode) or iterates over each secret and
+calls C<< $self->credhub->set >> to store the value.
+
+Does nothing if no secrets were collected during the build phase.
+
+B<Returns:> Nothing.
+
+B<Examples:>
+
+    $hook->store_secrets;
+    # Entombs any pending Vault secrets into CredHub, or lists them in dry-run mode
+    # Returns: nothing
+
+=head1 INTERNAL METHODS
+
+These methods are internal to the implementation. They may change without
+notice and should not be called directly.
+
+=head2 _get_secret
+
+    $obj->_get_secret($secret)
+
+Retrieves a secret from Vault and, if CredHub entombment is enabled, registers
+it for later entombment and returns a CredHub interpolation reference
+C<"(($credhub_var))"> instead of the raw value.
+
+C<$secret> is a string of the form C<"path:key"> (relative to the
+environment's secrets store base path, unless the path begins with C</>).
+When C<credhub_base> returns a defined value, the raw Vault value is stored
+under C<< $self->{secrets}{$config}{$credhub_var} >> and the CredHub
+reference string is returned. Otherwise, the raw Vault value is returned
+directly.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$secret>
+
+A string of the form C<"path:key"> identifying the Vault secret to retrieve.
+
+=back
+
+B<Returns:> The raw secret value if CredHub entombment is not active, or a
+CredHub interpolation string C<"(($credhub_var))"> if entombment is enabled.
+
+B<Examples:>
+
+    my $val = $self->_get_secret('certs/server:certificate');
+    # Returns: '-----BEGIN CERTIFICATE-----...' (raw value, no CredHub)
+    # Returns: '((//bosh/.../certs--server--certificate--a1b2c3d4))' (with CredHub entombment)
+
+=head2 _get_exodus_secret
+
+    $obj->_get_exodus_secret($key, $default, $deployment_slug)
+
+Retrieves a value from the environment's exodus data and, if CredHub
+entombment is enabled, registers it for entombment and returns a CredHub
+interpolation reference.
+
+Uses C<exodus_lookup> for the value retrieval. When C<credhub_base> is
+defined, derives the entombment path from C<$deployment_slug> (defaulting to
+C<< $env->exodus_slug >> if not provided), and stores the value under
+C<< $self->{secrets}{$config}{$credhub_var} >>. Returns the CredHub reference
+string C<"(($credhub_var))"> when entombment is active.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$key>
+
+The exodus data key to retrieve.
+
+=item C<$default>
+
+B<(optional)> Default value if the key is not found in exodus data.
+
+=item C<$deployment_slug>
+
+B<(optional)> The deployment slug used to scope the entombment path.
+Defaults to C<< $env->exodus_slug >>.
+
+=back
+
+B<Returns:> The raw exodus value if CredHub entombment is not active, or a
+CredHub interpolation string C<"(($credhub_var))"> if entombment is enabled.
+
+B<Examples:>
+
+    my $url = $self->_get_exodus_secret('director_url');
+    # Returns: 'https://bosh.example.com' (raw value, no CredHub)
+    # Returns: '((//bosh/.../exodus--director_url--a1b2c3d4))' (with CredHub entombment)
+
+    my $url = $self->_get_exodus_secret('director_url', 'https://default', 'bosh/us-east-1');
+    # Returns: the exodus value for 'bosh/us-east-1', or 'https://default' if absent
+
+=head2 _get_runtime_configs
+
+    $obj->_get_runtime_configs
+    $obj->_get_runtime_configs($name)
+
+Fetches runtime config metadata from the BOSH director via
+C<bosh configs --type=runtime --json>. When C<$name> is provided, appends
+C<--name=$name> to filter results to that config name.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$name>
+
+B<(optional)> The config name to filter by. When omitted, all runtime configs
+are returned.
+
+=back
+
+B<Returns:> An array reference of row hash references from the first table
+in the BOSH JSON response. Each row contains C<name>, C<id>, and
+C<created_at> fields.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Failed to get runtime configs: %s"> -- raised via C<bail()> if the BOSH
+command fails. C<%s> is replaced with the error output.
+
+=back
+
+B<Examples:>
+
+    my $rows = $self->_get_runtime_configs;
+    # Returns: [{ name => 'us-east-1-bosh.dns', id => '3', created_at => '...' }, ...]
+
+    my $rows = $self->_get_runtime_configs('us-east-1-bosh.dns');
+    # Returns: [{ name => 'us-east-1-bosh.dns', id => '3', created_at => '...' }]
+
+=head2 _get_req_names
+
+    $obj->_get_req_names($req_id)
+
+Resolves a request identifier to a list of registered build names.
+
+If C<$req_id> is C<'*'> or C<'all'>, returns all registered build names
+sorted by their registration order. Otherwise, splits C<$req_id> on commas
+and returns the resulting list.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$req_id>
+
+A build name string, a comma-separated list of build names, or the wildcard
+C<'*'> or C<'all'> to select all registered builds.
+
+=back
+
+B<Returns:> A list of build name strings.
+
+B<Examples:>
+
+    my @names = $self->_get_req_names('*');
+    # Returns: ('dns', 'logging', ...) sorted by registration order
+
+    my @names = $self->_get_req_names('dns,logging');
+    # Returns: ('dns', 'logging')
+
+    my @names = $self->_get_req_names('dns');
+    # Returns: ('dns')
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

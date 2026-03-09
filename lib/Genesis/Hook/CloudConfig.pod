@@ -1,0 +1,2247 @@
+=encoding UTF-8
+
+=head1 NAME
+
+Genesis::Hook::CloudConfig - Hook subclass for generating BOSH cloud configs from Genesis environments
+
+=head1 SYNOPSIS
+
+    package Genesis::Hook::CloudConfig::my_kit;
+    use parent 'Genesis::Hook::CloudConfig';
+
+    sub perform {
+        my ($self) = @_;
+
+        my $config = {};
+
+        push @{$config->{azs}}, {
+            name             => 'z1',
+            cloud_properties => { availability_zone => 'us-east-1a' },
+        };
+
+        push @{$config->{vm_types}}, $self->vm_type_definition(
+            'default',
+            common                  => { instance_type => 't3.medium' },
+            cloud_properties_for_iaas => { aws => { instance_type => 't3.medium' } },
+        );
+
+        push @{$config->{networks}}, $self->network_definition(
+            'deployment',
+            strategy       => 'ocfp',
+            dynamic_subnets => { subnets => undef, allocation => { size => 64 } },
+        );
+
+        $self->done($config);
+    }
+
+    1;
+
+=head1 DESCRIPTION
+
+C<Genesis::Hook::CloudConfig> is the base class for Genesis kit hooks that
+generate BOSH cloud configs. Kit authors subclass this class, implement
+C<perform>, build a cloud config hashref using the provided definition
+helpers, and call C<done($config)> when finished.
+
+The class extends C<Genesis::Hook> with cloud-config-specific functionality:
+
+=over 4
+
+=item *
+
+AZ lookup and CPI-shadow AZ generation
+
+=item *
+
+Network definition building (OCFP dynamic, greedy, and VIP strategies)
+
+=item *
+
+Subnet range calculation and allocation tracking (including Logical Subnet
+Amalgamation for multi-AZ shared-CIDR deployments)
+
+=item *
+
+VM type, VM extension, and disk type definition helpers
+
+=item *
+
+User- and director-level override application from environment files
+
+=back
+
+When C<done> is called, the class validates the config hashref, processes
+subnets into BOSH-compatible form (including LSA conversion), serializes the
+result to canonical YAML with deterministic key ordering, and stores it on
+the object for retrieval via C<results>.
+
+Instances are cached per C<id> (basename plus optional purpose), so multiple
+calls to C<init> for the same deployment return the same object.
+
+See also:
+
+=over 4
+
+=item L<Genesis::Hook>
+
+=item L<Genesis::Hook::CloudConfig::LookupRef>
+
+=item L<Genesis::Hook::CloudConfig::LookupNetworkRef>
+
+=item L<Genesis::Hook::CloudConfig::LookupSubnetRef>
+
+=item L<Genesis::Hook::CloudConfig::Helpers>
+
+=back
+
+=head1 METHODS
+
+=head2 init
+
+    my $hook = Genesis::Hook::CloudConfig->init(%opts);
+
+Constructs and returns a cloud config hook object. The C<env> key in C<%opts>
+is required. If the environment uses C<create-env> (i.e., is a BOSH director
+bootstrap environment), the call dies because directors have no cloud config
+of their own.
+
+The object is cached by a composite key built from C<basename> and C<purpose>,
+so calling C<init> again with the same parameters returns the previously
+constructed object without reinitializing.
+
+Calls the base-class C<init> to set up shared hook state, then populates:
+
+=over 4
+
+=item *
+
+C<overrides> — environment and director cloud-config override data
+
+=item *
+
+C<network> — BOSH director network data fetched from director exodus
+
+=item *
+
+C<ocfp_config> — OCFP C<net>/C<vpc> config, only for OCFP environments
+
+=back
+
+B<Parameters:>
+
+=over 4
+
+=item C<%opts>
+
+Key-value pairs. The following keys are recognized:
+
+=over 4
+
+=item C<env>
+
+B<(required)> A C<Genesis::Env> object for the deployment being operated on.
+
+=item C<purpose>
+
+B<(optional)> A subtype string appended to the basename to form the object
+identity key. Defaults to the C<GENESIS_CLOUD_CONFIG_SUBTYPE> environment
+variable if set.
+
+=item C<basename>
+
+B<(optional)> The base name used to prefix component names. Defaults to
+C<< env->name . '.' . env->type >>.
+
+=back
+
+=back
+
+B<Returns:> A blessed C<Genesis::Hook::CloudConfig> object (or a subclass
+instance if called on a subclass).
+
+B<Errors:>
+
+=over 4
+
+=item C<"Create-env environments do not have deployment cloud configs,as there is no director to upload them to.">
+
+Thrown when C<env> uses create-env mode.
+
+=back
+
+B<Examples:>
+
+    my $hook = Genesis::Hook::CloudConfig->init(env => $env);
+    # Returns: a Genesis::Hook::CloudConfig instance
+
+=head2 done
+
+    $self->done($contents);
+
+Marks the cloud config hook as complete. Validates that C<$contents> is a
+hashref, processes subnet definitions into BOSH-compatible form (converting
+shared-CIDR subnets into Logical Subnet Amalgamations as needed), serializes
+the result to YAML with deterministic key ordering (C<name> first,
+C<cloud_properties> last), and stores the result on the object.
+
+Modifies the object in-place by setting C<< $self->{contents} >>.
+
+After this call, C<completed> returns true and C<results> returns the
+serialized cloud config.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$contents>
+
+B<(required)> A hashref containing the full BOSH cloud config structure.
+Expected keys include C<azs>, C<vm_types>, C<disk_types>, C<networks>, and
+C<vm_extensions>, though the structure is not validated beyond the type check.
+
+=back
+
+B<Returns:> The return value of the base class C<done> method.
+
+B<Errors:>
+
+=over 4
+
+=item C<"CloudConfig hook must return a hashref containing the cloud config - got %s">
+
+Thrown when C<$contents> is not a hashref. C<%s> is replaced with the ref
+type of the argument, or C<'scalar value'> if it is not a reference.
+
+=back
+
+B<Examples:>
+
+    $self->done({
+        azs      => [{ name => 'z1', cloud_properties => {} }],
+        vm_types => [{ name => 'default', cloud_properties => {} }],
+    });
+    # Returns: the base-class done() return value; sets hook as completed
+
+=head2 results
+
+    my ($config, $network) = $self->results;
+    my $hashref = $self->results;
+
+Returns the cloud config produced by the hook after it has completed. Returns
+C<undef> (with a trace-level warning) if called before the hook completes.
+
+B<Returns:>
+
+In list context, returns a two-element list:
+
+=over 4
+
+=item C<$config>
+
+The serialized cloud config as a YAML string.
+
+=item C<$network>
+
+The BOSH director network data hashref used during config generation.
+
+=back
+
+In scalar context, returns a hashref with keys C<config> and C<network>.
+
+B<Examples:>
+
+    # List context
+    my ($yaml, $net) = $self->results;
+    # Returns: ('--- azs: ...', { azs => {...}, subnets => {...} })
+
+    # Scalar context
+    my $r = $self->results;
+    # Returns: { config => '--- azs: ...', network => {...} }
+
+=head2 basename
+
+    my $base   = $self->basename;
+    my $yaml   = $self->contents;
+    my $path   = $self->overrides_base;
+    my $name   = $self->name_for(@parts);
+
+Accessor methods for common cloud config properties.
+
+C<basename> returns the basename string used to prefix all component names.
+It defaults to C<< env_name.env_type >> unless overridden at construction
+time.
+
+C<contents> returns the serialized YAML cloud config string stored by
+C<done>. Returns an empty hashref if C<done> has not been called yet.
+
+C<overrides_base> returns the base lookup path used to find cloud config
+override definitions in the environment file. Always returns
+C<'bosh-configs.cloud'>.
+
+C<name_for> constructs a component name by joining the hook's C<basename>
+with the hyphen-joined C<@parts>, separated by dots. One or more part
+strings should be provided.
+
+B<Returns:>
+
+=over 4
+
+=item C<basename>
+
+A string of the form C<< env_name.env_type >>.
+
+=item C<contents>
+
+A YAML string, or an empty hashref before C<done> is called.
+
+=item C<overrides_base>
+
+The string C<'bosh-configs.cloud'>.
+
+=item C<name_for>
+
+A string of the form C<< basename.part1-part2-... >>.
+
+=back
+
+B<Examples:>
+
+    my $base = $self->basename;
+    # Returns: 'my-env.bosh'
+
+    my $yaml = $self->contents;
+    # Returns: "azs:\n- name: z1\n  cloud_properties: ...\n"
+
+    my $path = $self->overrides_base;
+    # Returns: 'bosh-configs.cloud'
+
+    my $name = $self->name_for('vm', 'default');
+    # Returns: 'my-env.bosh.vm-default'
+
+=head2 for_scale
+
+    my $value = $self->for_scale(\%map, $default);
+
+Looks up the current environment scale in C<%map> and returns the
+corresponding value. If the scale is not found, returns C<$default>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<\%map>
+
+A hashref mapping scale names (e.g., C<'dev'>, C<'prod'>) to values.
+
+=item C<$default>
+
+B<(optional)> Value to return when the current scale is not in C<%map>.
+
+=back
+
+B<Returns:> The value from C<%map> for the current scale, or C<$default>.
+
+B<Examples:>
+
+    my $size = $self->for_scale({ dev => 1, prod => 3 }, 2);
+    # Returns: 1  (if scale is 'dev')
+
+=head2 for_iaas
+
+    my $value = $self->for_iaas(\%map, $default);
+
+Looks up the current environment IaaS in C<%map> and returns the
+corresponding value. If the IaaS is not found, returns C<$default>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<\%map>
+
+A hashref mapping IaaS names (e.g., C<'aws'>, C<'azure'>, C<'vsphere'>) to
+values.
+
+=item C<$default>
+
+B<(optional)> Value to return when the current IaaS is not in C<%map>.
+
+=back
+
+B<Returns:> The value from C<%map> for the current IaaS, or C<$default>.
+
+B<Examples:>
+
+    my $type = $self->for_iaas({ aws => 't3.medium', vsphere => 'small' }, 'medium');
+    # Returns: 't3.medium'  (if IaaS is 'aws')
+
+=head2 lookup_ref
+
+    my $ref = $self->lookup_ref($paths, $default);
+
+Creates a L<Genesis::Hook::CloudConfig::LookupRef> that defers resolution of
+a value until the config definition is processed. The ref is resolved against
+C<< $env->params >> when the definition is applied.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$paths>
+
+A string or arrayref of environment parameter paths to look up.
+
+=item C<$default>
+
+B<(optional)> Value to return if none of the paths yield a defined value.
+
+=back
+
+B<Returns:> A C<Genesis::Hook::CloudConfig::LookupRef> object.
+
+B<Examples:>
+
+    my $ref = $self->lookup_ref('params.instance_type', 't3.medium');
+    # Returns: a LookupRef that resolves to the instance_type param
+
+=head2 network_reference
+
+    my $ref = $self->network_reference();
+
+Creates a L<Genesis::Hook::CloudConfig::LookupNetworkRef> that defers
+resolution of a cloud property value until subnet definitions are processed.
+The ref is resolved against the BOSH director network data. All C<@args> are
+passed directly to C<Genesis::Hook::CloudConfig::LookupNetworkRef->new>.
+
+See L<Genesis::Hook::CloudConfig::LookupNetworkRef> for the accepted
+argument format.
+
+B<Returns:> A C<Genesis::Hook::CloudConfig::LookupNetworkRef> object.
+
+B<Examples:>
+
+    my $ref = $self->network_reference('sgs', sub {
+        my ($self, $data, $ref) = @_;
+        return $data->{sgs}{'default'}{id};
+    });
+    # Returns: a LookupNetworkRef that resolves to the default SG id
+
+=head2 subnet_reference
+
+    my $ref = $self->subnet_reference();
+
+Creates a L<Genesis::Hook::CloudConfig::LookupSubnetRef> that defers
+resolution of a cloud property to per-subnet OCFP config data. Only
+supported for OCFP network strategies. All C<@args> are passed directly to
+C<Genesis::Hook::CloudConfig::LookupSubnetRef->new>.
+
+See L<Genesis::Hook::CloudConfig::LookupSubnetRef> for the accepted
+argument format.
+
+B<Returns:> A C<Genesis::Hook::CloudConfig::LookupSubnetRef> object.
+
+B<Examples:>
+
+    my $ref = $self->subnet_reference('subnet_id');
+    # Returns: a LookupSubnetRef for subnet-level property resolution
+
+=head2 build_cloud_config
+
+    my $config = $self->build_cloud_config(\%config);
+
+Applies any extended cloud config definitions from the environment file
+(from C<bosh-configs.cloud> in the env YAML) onto the given C<%config>
+hashref. Extended definitions may add new VM types, disk types, and VM
+extensions via C<<based-on>> inheritance.
+
+B<Parameters:>
+
+=over 4
+
+=item C<\%config>
+
+B<(required)> The partial cloud config hashref assembled by the kit's
+C<perform> method. Modified in-place by adding entries from the environment's
+extended cloud config.
+
+=back
+
+B<Returns:> The C<\%config> hashref, with any extended definitions merged in.
+
+B<Examples:>
+
+    my $config = { vm_types => [...], networks => [...] };
+    $self->build_cloud_config($config);
+    # Returns: $config with any env-defined vm_types/disk_types/vm_extensions added
+
+=head2 build_cpi_azs
+
+    my %az_block = $self->build_cpi_azs(%options);
+
+Builds CPI-specific shadow AZ definitions for environments with a custom CPI
+enabled. Returns an empty list if the environment does not have CPI enabled.
+
+Each AZ in the parent's available AZs gets a corresponding shadow AZ using
+the environment's AZ prefix plus the AZ index number. The network data is
+updated to record the CPI-specific AZ name for each base AZ.
+
+B<Parameters:>
+
+=over 4
+
+=item C<%options>
+
+B<(optional)> Options passed through to C<_az_definition_for>. The
+C<virtual> option suppresses cloud properties from the AZ definition.
+
+=back
+
+B<Returns:> In list context, a two-element list C<(azs => \@azs)> suitable
+for direct inclusion in a cloud config hashref. Returns an empty list if CPI
+is not enabled.
+
+B<Examples:>
+
+    my %cpi_block = $self->build_cpi_azs;
+    # Returns: (azs => [{ name => 'my-env-z1', cloud_properties => {...}, cpi => '...' }])
+
+    push @{$config->{azs}}, $cpi_block{azs}->@* if %cpi_block;
+
+=head2 relinquish_networks
+
+    $self->relinquish_networks(@networks);
+
+Removes the claim records for the named network targets from all subnets in
+the network data. This allows previously allocated IP ranges to be freed and
+re-allocated to other networks.
+
+B<Parameters:>
+
+=over 4
+
+=item C<@networks>
+
+One or more network target names (the target portion, not the fully qualified
+name). Each name is expanded via C<name_for('net', $_)> before the claim is
+removed.
+
+=back
+
+B<Returns:> Nothing.
+
+B<Examples:>
+
+    $self->relinquish_networks('deployment', 'compilation');
+    # Removes allocation claims for my-env.bosh.net-deployment and
+    # my-env.bosh.net-compilation from all subnet claim records
+
+=head2 network_definition
+
+    my $config = $self->network_definition($target, %rules);
+
+Builds and returns a BOSH network definition hashref for the named network
+target. The network strategy is selected via the C<strategy> key in C<%rules>
+and dispatched to the corresponding builder method.
+
+Supported strategies:
+
+=over 4
+
+=item C<'vip'>
+
+Returns a minimal VIP network config (name and type only).
+
+=item C<'ocfp'>
+
+Builds a full OCFP network definition using one of the OCFP network models
+(C<dynamic_subnets>, C<greedy_subnets>, or C<subnets>). The chosen model key
+must be present in C<%rules>.
+
+=item C<'generic'>
+
+Not yet implemented; calls C<bug()> if invoked.
+
+=back
+
+After building the definition, records subnet IP allocations via
+C<update_network>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$target>
+
+The network target name (e.g., C<'deployment'>, C<'compilation'>).
+
+=item C<%rules>
+
+Key-value options controlling network generation:
+
+=over 4
+
+=item C<strategy>
+
+B<(optional)> The network strategy. Defaults to C<'generic'>.
+
+=item C<name_prefix>
+
+B<(optional)> When set, the network name is C<name_prefix . target> rather
+than C<name_for('net', target)>.
+
+=item C<dynamic_subnets>, C<greedy_subnets>, C<subnets>
+
+For OCFP strategies, one of these keys must be present. Its value is a
+hashref describing the allocation model (subnets filter, allocation counts,
+cloud properties, etc.).
+
+=back
+
+=back
+
+B<Returns:> A network definition hashref (with at minimum C<name> and C<type>
+keys), or an empty list if the strategy/environment combination does not
+apply (e.g., OCFP strategy requested on a non-OCFP environment).
+
+B<Errors:>
+
+=over 4
+
+=item C<"Network definition strategy %s is not supported by the cloud config hook">
+
+Thrown when C<strategy> names a method that does not exist on the class.
+C<%s> is the unsupported strategy name.
+
+=back
+
+B<Examples:>
+
+    my $net = $self->network_definition('deployment',
+        strategy       => 'ocfp',
+        dynamic_subnets => {
+            subnets    => undef,
+            allocation => { size => 64, statics => 8 },
+            cloud_properties_for_iaas => { aws => { subnet => 'subnet-abc' } },
+        },
+    );
+    # Returns: { name => 'my-env.bosh.net-deployment', type => 'manual', subnets => [...] }
+
+=head2 network
+
+    my $network_data = $self->network;
+
+Returns the BOSH director network data hashref, loading it lazily from
+director exodus if not already cached on the object.
+
+B<Returns:> A hashref containing C<azs>, C<subnets>, and related BOSH
+director network information.
+
+B<Examples:>
+
+    my $net = $self->network;
+    # Returns: { azs => { z1 => {...} }, subnets => { 'ocfp-a' => {...} } }
+
+=head2 update_network
+
+    $self->update_network($target, \%config, %options);
+
+Updates the internal network data to record IP allocation claims made by
+C<$target>. Clears any pre-existing claims for the network before recording
+new ones. Skips claim recording for greedy networks (those with the
+C<greedy_subnets> option set).
+
+B<Parameters:>
+
+=over 4
+
+=item C<$target>
+
+The network target name. The fully qualified network name is derived via
+C<name_for('net', $target)>.
+
+=item C<\%config>
+
+The network definition hashref produced by C<network_definition>. Its
+C<subnets> array is iterated to extract subnet names, ranges, and reserved
+ranges for allocation tracking.
+
+=item C<%options>
+
+If the C<greedy_subnets> key is present, claim recording is skipped.
+
+=back
+
+B<Returns:> Nothing (or early-returns for greedy networks).
+
+B<Examples:>
+
+    $self->update_network('deployment', $config);
+    # Returns: nothing; records allocation claims for each subnet in $config->{subnets}
+
+=head2 get_allocated_networks
+
+    my $allocations = $self->get_allocated_networks;
+
+Returns a hashref summarizing all current network allocation claims across all
+subnets. The structure maps fully qualified network names to per-subnet
+records containing the allocated IP range and availability zone.
+
+B<Returns:> A hashref of the form:
+
+    {
+        'my-env.bosh.net-deployment' => {
+            'ocfp-a' => { allocated => '10.0.1.0-10.0.1.63', az => 'z1' },
+            'ocfp-b' => { allocated => '10.0.2.0-10.0.2.63', az => 'z2' },
+        },
+    }
+
+B<Examples:>
+
+    my $allocs = $self->get_allocated_networks;
+    # Returns: { 'env.bosh.net-deployment' => { 'subnet-a' => { allocated => '...', az => 'z1' } } }
+
+=head2 get_network_security_groups
+
+    my $sgs = $self->get_network_security_groups($type, @names);
+
+Returns a L<Genesis::Hook::CloudConfig::LookupNetworkRef> that resolves to
+an arrayref of security group values from the BOSH director network data.
+The resolver filters C<sgs> entries by name (if C<@names> is provided) and
+returns the requested field (C<id> by default).
+
+B<Parameters:>
+
+=over 4
+
+=item C<$type>
+
+B<(optional)> The SG field to return (e.g., C<'id'>, C<'name'>). Defaults to
+C<'id'>.
+
+=item C<@names>
+
+B<(optional)> Security group names to include. When empty, all SGs are
+returned.
+
+=back
+
+B<Returns:> A C<Genesis::Hook::CloudConfig::LookupNetworkRef> that resolves
+to an arrayref of security group values.
+
+B<Examples:>
+
+    my $sgs_ref = $self->get_network_security_groups('id', 'bosh-sg', 'director-sg');
+    # Returns: a LookupNetworkRef; resolves to ['sg-abc123', 'sg-def456']
+
+=head2 lookup_az
+
+    my $az_name = $self->lookup_az($az);
+
+Resolves an AZ identifier to the canonical AZ name used by BOSH. Searches by
+exact key, by the C<name> field in the AZ definition, and by the CPI-specific
+AZ mapping if CPI is enabled. Returns the CPI-specific name when CPI is
+enabled.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$az>
+
+The AZ identifier to resolve (e.g., C<'z1'>, C<'us-east-1a'>).
+
+=back
+
+B<Returns:> The canonical AZ name string for use in subnet definitions.
+
+B<Errors:>
+
+=over 4
+
+=item C<"No availability zones available; you may need to run a deploy on the %s BOSH director to update its network information.">
+
+Thrown when the network data contains no AZs at all. C<%s> is replaced with
+the BOSH director alias.
+
+=item C<"Availability zone %s not found in the available AZs for the network">
+
+Thrown when the given AZ identifier does not match any known AZ. C<%s> is
+replaced with the C<$az> argument.
+
+=back
+
+B<Examples:>
+
+    my $az_name = $self->lookup_az('z1');
+    # Returns: 'us-east-1a'  (the canonical AZ name from BOSH director data)
+
+=head2 get_available_azs
+
+    my $azs = $self->get_available_azs;
+
+Returns the full AZ hash from the BOSH director network data.
+
+B<Returns:> A hashref mapping AZ keys to AZ definition hashrefs (containing
+C<name>, C<cloud_properties>, and optionally C<for_cpi> entries).
+
+B<Examples:>
+
+    my $azs = $self->get_available_azs;
+    # Returns: { z1 => { name => 'us-east-1a', cloud_properties => {...} } }
+
+=head2 get_available_azs_in_network
+
+    my $azs = $self->get_available_azs_in_network($target);
+
+Returns an arrayref of AZ names that have allocated subnets for the named
+network target.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$target>
+
+The network target name (the target portion passed to C<network_definition>).
+
+=back
+
+B<Returns:> An arrayref of unique, sorted AZ name strings.
+
+B<Examples:>
+
+    my $azs = $self->get_available_azs_in_network('deployment');
+    # Returns: ['z1', 'z2', 'z3']
+
+=head2 get_network_size
+
+    my $count = $self->get_network_size($target, @az_filters);
+
+Returns the total number of allocated IPs for the named network across all
+subnets. When C<@az_filters> is provided, only subnets in the specified AZs
+are counted.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$target>
+
+The network target name.
+
+=item C<@az_filters>
+
+B<(optional)> AZ names to filter by. When empty, all AZs are included.
+
+=back
+
+B<Returns:> An integer count of allocated IPs.
+
+B<Examples:>
+
+    my $size = $self->get_network_size('deployment');
+    # Returns: 128  (total IPs across all subnets)
+
+    my $size = $self->get_network_size('deployment', 'z1');
+    # Returns: 64  (IPs in z1 only)
+
+=head2 subnets
+
+    my $subnets = $self->subnets;
+
+Returns the OCFP subnet definitions for the environment, loaded lazily from
+the OCFP config at the C<net.subnets> or C<vpc.subnets> path.
+
+B<Returns:> A hashref mapping subnet names to subnet definition hashrefs.
+
+B<Examples:>
+
+    my $subnets = $self->subnets;
+    # Returns: { 'ocfp-a' => { cidr_block => '10.0.1.0/24', az => 'z1', ... } }
+
+=head2 vm_type_definition
+
+    my $defn = $self->vm_type_definition();
+
+Builds a BOSH VM type definition hashref for the named VM type. Delegates
+to C<_config_definition> with the C<vm_type> type and the C<vm> prefix.
+Applies environment overrides from C<bosh-configs.cloud.vm_type_defaults>
+and C<bosh-configs.cloud.vm_types.$name>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$name>
+
+The VM type target name (e.g., C<'default'>, C<'compilation'>).
+
+=item C<%maps>
+
+Key-value options with the following recognized keys:
+
+=over 4
+
+=item C<common>
+
+B<(optional)> A hashref of properties shared across all IaaSes.
+
+=item C<cloud_properties_for_iaas>
+
+B<(optional)> A hashref mapping IaaS names to cloud property hashrefs.
+
+=back
+
+=back
+
+B<Returns:> A VM type definition hashref with C<name> and optionally
+C<cloud_properties> keys, or an empty list if no properties apply.
+
+B<Examples:>
+
+    my $vm = $self->vm_type_definition('default',
+        common                  => { stemcell => { name => 'ubuntu-jammy', version => 'latest' } },
+        cloud_properties_for_iaas => {
+            aws     => { instance_type => 't3.medium' },
+            vsphere => { cpu => 2, ram => 4096 },
+        },
+    );
+    # Returns: { name => 'my-env.bosh.vm-default', cloud_properties => { instance_type => 't3.medium' } }
+
+=head2 vm_extension_definition
+
+    my $defn = $self->vm_extension_definition($name, \%data);
+
+Builds a BOSH VM extension definition hashref for the named extension.
+Unlike other definition methods, VM extensions do not use the C<name_for>
+prefix — the name is used as-is. Returns an empty list if no cloud properties
+exist for the current IaaS.
+
+Applies environment overrides from C<bosh-configs.cloud.vm_extension_defaults>
+and C<bosh-configs.cloud.vm_extensions.$name>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$name>
+
+The VM extension name (used verbatim, not prefixed with basename).
+
+=item C<\%data>
+
+A hashref. If a C<cloud_properties_for_iaas> key is present, its value is
+used for IaaS lookup. Otherwise C<\%data> itself is treated as the IaaS map.
+
+=back
+
+B<Returns:> A VM extension definition hashref with C<name> and
+C<cloud_properties> keys, or an empty list if no cloud properties exist for
+the current IaaS.
+
+B<Examples:>
+
+    my $ext = $self->vm_extension_definition('100GB_ephemeral_disk', {
+        cloud_properties_for_iaas => {
+            aws => { ephemeral_disk => { size => 102400 } },
+        },
+    });
+    # Returns: { name => '100GB_ephemeral_disk', cloud_properties => { ephemeral_disk => { size => 102400 } } }
+
+=head2 disk_type_definition
+
+    my $defn = $self->disk_type_definition();
+
+Builds a BOSH disk type definition hashref for the named disk type. Delegates
+to C<_config_definition> with the C<disk_type> type and the C<disk> prefix.
+Applies environment overrides from C<bosh-configs.cloud.disk_type_defaults>
+and C<bosh-configs.cloud.disk_types.$name>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$name>
+
+The disk type target name (e.g., C<'default'>, C<'large'>).
+
+=item C<%maps>
+
+Key-value options with the following recognized keys:
+
+=over 4
+
+=item C<common>
+
+B<(optional)> A hashref of properties shared across all IaaSes.
+
+=item C<cloud_properties_for_iaas>
+
+B<(optional)> A hashref mapping IaaS names to cloud property hashrefs.
+
+=back
+
+=back
+
+B<Returns:> A disk type definition hashref with C<name> and optionally
+C<cloud_properties> keys, or an empty list if no properties apply.
+
+B<Examples:>
+
+    my $disk = $self->disk_type_definition('default',
+        common                  => { disk_size => 51200 },
+        cloud_properties_for_iaas => {
+            aws => { type => 'gp3' },
+        },
+    );
+    # Returns: { name => 'my-env.bosh.disk-default', cloud_properties => { type => 'gp3' } }
+
+=head1 INTERNAL METHODS
+
+These methods are internal to the implementation. They may change without
+notice and should not be called directly.
+
+=head2 _can_build_cloud_config
+
+    my $bool = $class->_can_build_cloud_config($env);
+
+Returns true if the environment can have a cloud config built for it (i.e.,
+it does not use create-env mode).
+
+B<Parameters:>
+
+=over 4
+
+=item C<$env>
+
+A C<Genesis::Env> object.
+
+=back
+
+B<Returns:> A boolean — true if C<< $env->use_create_env >> is false.
+
+B<Examples:>
+
+    my $ok = Genesis::Hook::CloudConfig->_can_build_cloud_config($env);
+    # Returns: 1 (if not a create-env deployment)
+
+=head2 _add_cpi_to_network_az
+
+    $self->_add_cpi_to_network_az($az_name, $cpi_az_name);
+
+Records the CPI-specific AZ name for a base AZ in the network data, under
+C<< $network->{azs}{$az_name}{for_cpi}{$cpi_name} >>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$az_name>
+
+The base AZ key in the network data.
+
+=item C<$cpi_az_name>
+
+The CPI-specific AZ name to record.
+
+=back
+
+B<Returns:> Nothing meaningful.
+
+B<Examples:>
+
+    $self->_add_cpi_to_network_az('z1', 'my-env-z1');
+    # Returns: nothing; records that the CPI-specific name for AZ z1 is 'my-env-z1'
+
+=head2 _build_generic_network_definition
+
+    $self->_build_generic_network_definition($target, $config, %options);
+
+Stub for generic (non-OCFP) network definition building. Not yet
+implemented; always calls C<bug()>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$target>
+
+The network target name.
+
+=item C<$config>
+
+The partial network config hashref (modified in-place by the builder).
+
+=item C<%options>
+
+Additional options.
+
+=back
+
+B<Returns:> Does not return (calls C<bug()>).
+
+B<Errors:>
+
+=over 4
+
+=item C<"Generic network definition building is not yet implemented">
+
+Always thrown — this method is a stub.
+
+=back
+
+B<Examples:>
+
+    # Not intended for direct use; called internally by network_definition
+    $self->_build_generic_network_definition('deployment', $config);
+    # Returns: does not return; dies with "Generic network definition building is not yet implemented"
+
+=head2 _available_ocfp_network_models
+
+    my @models = $self->_available_ocfp_network_models;
+
+Returns the list of supported OCFP network model names. Overridable in kit
+hook subclasses to allow kits to provide custom network models.
+
+B<Returns:> A list: C<('dynamic_subnets', 'subnets', 'greedy_subnets')>.
+
+B<Examples:>
+
+    my @models = $self->_available_ocfp_network_models;
+    # Returns: ('dynamic_subnets', 'subnets', 'greedy_subnets')
+
+=head2 _build_ocfp_network_definition
+
+    $self->_build_ocfp_network_definition($target, $config, %options);
+
+Dispatches OCFP network definition building to the appropriate model builder
+based on which model key is present in C<%options>. Exactly one model key
+must be present; multiple or zero model keys are errors.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$target>
+
+The network target name.
+
+=item C<$config>
+
+The partial network config hashref.
+
+=item C<%options>
+
+Must contain exactly one key from C<_available_ocfp_network_models>.
+
+=back
+
+B<Returns:> The return value of the dispatched model builder.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Network definition for %s can only have one network model, but found %d: %s">
+
+Thrown when more than one model key is present. C<%s> are the target name,
+model count, and model names.
+
+=item C<"Network definition for %s must have one of the following network models: %s">
+
+Thrown when no model key is present. C<%s> are the target name and available
+model names.
+
+=item C<"Network model %s is not supported for OCFP network definitions">
+
+Thrown when the selected model builder method does not exist on the class.
+C<%s> is the model name.
+
+=back
+
+B<Examples:>
+
+    # Not intended for direct use; called internally by network_definition
+    $self->_build_ocfp_network_definition('deployment', $config,
+        dynamic_subnets => { allocation => { size => 64 } }
+    );
+    # Returns: result of _build_ocfp_network_model_dynamic_subnets
+
+=head2 _build_ocfp_network_model_greedy_subnets
+
+    $self->_build_ocfp_network_model_greedy_subnets($target, $config, %options);
+
+Builds an OCFP greedy network definition. Greedy networks consume all
+available IPs in the OCFP subnet CIDR ranges and do not allocate static IPs.
+Only OCFP-prefixed subnets are included.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$target>
+
+The network target name.
+
+=item C<$config>
+
+The partial network config hashref. Populated in-place with a C<subnets> array.
+
+=item C<%options>
+
+Must contain C<greedy_subnets>, a hashref with:
+
+=over 4
+
+=item C<subnets>
+
+B<(optional)> A subnet filter (name, arrayref, or regexp) passed to C<_filter_subnets>.
+
+=item C<cloud_properties_for_iaas>
+
+B<(optional)> A hashref mapping IaaS names to cloud property hashrefs for the subnets.
+
+=back
+
+=back
+
+B<Returns:> Nothing meaningful (modifies C<$config> in-place).
+
+B<Errors:>
+
+=over 4
+
+=item C<"No ocfp-* subnets found in the ocfp configuration for network %s">
+
+Thrown when no OCFP-prefixed subnets are found. C<%s> is the target name.
+
+=back
+
+B<Examples:>
+
+    # Not intended for direct use; called internally by _build_ocfp_network_definition
+    $self->_build_ocfp_network_model_greedy_subnets('deployment', $config,
+        greedy_subnets => { cloud_properties_for_iaas => { aws => { subnet => 'subnet-abc' } } }
+    );
+    # Returns: nothing; populates $config->{subnets} with greedy subnet definitions
+
+=head2 _build_ocfp_network_model_dynamic_subnets
+
+    $self->_build_ocfp_network_model_dynamic_subnets($target, $config, %options);
+
+Builds an OCFP dynamic subnet network definition. Dynamically allocates IP
+ranges for each OCFP subnet based on existing claims, total VM counts, and
+static IP requirements. Supports Logical Subnet Amalgamation for subnets
+sharing the same CIDR.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$target>
+
+The network target name.
+
+=item C<$config>
+
+The partial network config hashref. Populated in-place with a C<subnets> array.
+
+=item C<%options>
+
+Must contain C<dynamic_subnets>, a hashref with:
+
+=over 4
+
+=item C<subnets>
+
+B<(optional)> A subnet filter passed to C<_filter_subnets>.
+
+=item C<allocation>
+
+A hashref specifying allocation sizes via one of:
+
+=over 4
+
+=item C<total_size>
+
+Total VM count distributed evenly across subnets.
+
+=item C<vms_per_subnet>
+
+A hashref mapping subnet names to individual counts.
+
+=item C<size>
+
+A fixed count per subnet (or a CIDR mask like C<'/26'>).
+
+=back
+
+=item C<statics>
+
+B<(optional)> Number of static IPs per subnet (or a CIDR mask). Defaults to 0.
+
+=item C<cloud_properties_for_iaas>
+
+B<(optional)> IaaS-specific cloud properties for subnets.
+
+=back
+
+=back
+
+B<Returns:> C<1> on success.
+
+B<Errors:>
+
+=over 4
+
+=item C<"No ocfp-* subnets found in the ocfp configuration for network %s">
+
+Thrown when no OCFP-prefixed subnets exist. C<%s> is the target name.
+
+=item C<"More static IPs requested (%d) than the allocation for the %s subnet for network %s allows (%d)">
+
+Thrown when static count exceeds subnet allocation.
+
+=back
+
+B<Examples:>
+
+    # Not intended for direct use; called internally by _build_ocfp_network_definition
+    $self->_build_ocfp_network_model_dynamic_subnets('deployment', $config,
+        dynamic_subnets => { allocation => { size => 64, statics => 8 } }
+    );
+    # Returns: 1; populates $config->{subnets} with dynamic subnet definitions
+
+=head2 _validate_override_schema
+
+    $self->_validate_override_schema;
+
+Validates the structure of the C<bosh-configs.cloud> section in the
+environment file. Checks that root keys are valid type plurals, type defaults,
+or matching rules; that defaults sections are hashrefs; that matching rules
+contain C<conditions> arrays and C<properties> hashrefs; and that no
+meta-keys (C<< <based-on> >>, C<< <explicit-name> >>) appear in defaults or
+rule properties.
+
+B<Returns:> C<1> if valid, or throws if errors are found.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Errors found in cloud config overrides:\n%s">
+
+Thrown when any validation error is detected. C<%s> is a newline-joined list
+of error messages.
+
+=back
+
+B<Examples:>
+
+    $self->_validate_override_schema;
+    # Returns: 1 if the bosh-configs.cloud section is valid
+
+=head2 _add_extended_cloud_config
+
+    $self->_add_extended_cloud_config(\%config);
+
+Reads the C<bosh-configs.cloud> environment overrides and appends any defined
+VM types, disk types, VM extensions, or network entries to C<%config>.
+Supports C<< <based-on> >> inheritance (deep-merging from an existing entry)
+and deferred processing to resolve ordering dependencies. Network additions
+are not currently supported and will throw.
+
+B<Parameters:>
+
+=over 4
+
+=item C<\%config>
+
+The cloud config hashref to extend. Modified in-place.
+
+=back
+
+B<Returns:> The modified C<\%config> hashref.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Invalid cloud config definition '#R{%s}' in #C{%s} environment file">
+
+Thrown when an override group key is not a recognized plural type name.
+C<%s> are the group key and environment name.
+
+=item C<"Extended cloud config network definitions are not supported yet: '%s' in #C{%s} environment file">
+
+Thrown when a network entry is found in the extended config. C<%s> are the
+target name and environment name.
+
+=item C<"Cyclic dependency detected for target '%s' in extended cloud config for type '%s'">
+
+Thrown when a C<< <based-on> >> chain creates a cycle. C<%s> are the target
+and type names.
+
+=item C<"The %s target '%s' depends on '%s' in environment #C{%s} %s definition, but it does not exist">
+
+Thrown when a C<< <based-on> >> source target cannot be found. C<%s> are
+type, target, source target, environment name, and the overrides base path.
+
+=back
+
+B<Examples:>
+
+    $self->_add_extended_cloud_config($config);
+    # Returns: $config with any env-extended vm_types/disk_types/vm_extensions merged in
+
+=head2 _config_definition
+
+    my $defn = $self->_config_definition($type, $prefix, $target, %maps);
+
+Builds a single BOSH resource definition (VM type or disk type) hashref.
+Validates C<%maps> keys, constructs the C<name> via C<name_for>, resolves
+IaaS-specific cloud properties, applies environment overrides via
+C<_process_config_overrides>, and removes empty C<cloud_properties> hashrefs.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$type>
+
+The resource type constant (e.g., C<VM_TYPE>, C<DISK_TYPE>).
+
+=item C<$prefix>
+
+The name prefix (e.g., C<'vm'>, C<'disk'>).
+
+=item C<$target>
+
+The resource target name.
+
+=item C<%maps>
+
+Recognized keys: C<common> (shared properties hashref) and
+C<cloud_properties_for_iaas> (IaaS-to-properties map).
+
+=back
+
+B<Returns:> A definition hashref, or an empty list if the result contains
+only a C<name> key.
+
+B<Examples:>
+
+    my $defn = $self->_config_definition('vm_type', 'vm', 'default',
+        common                  => { instance_type => 't3.medium' },
+        cloud_properties_for_iaas => { aws => { instance_type => 't3.medium' } },
+    );
+    # Returns: { name => 'my-env.bosh.vm-default', cloud_properties => { instance_type => 't3.medium' } }
+
+=head2 _subnet_definition
+
+    my $defn = $self->_subnet_definition($target, $subnet_id, \%fields, $strategy);
+
+Builds a single BOSH subnet definition hashref for the given subnet. Resolves
+range, reserved IPs, AZ(s), gateway, DNS, static IPs, and cloud properties
+from C<%fields>, resolving any C<LookupSubnetRef> or C<LookupNetworkRef>
+objects in cloud properties.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$target>
+
+The network target name.
+
+=item C<$subnet_id>
+
+The subnet identifier string.
+
+=item C<\%fields>
+
+A hashref containing subnet specification fields: C<range>, C<reserved>,
+C<az> or C<azs>, C<gateway>, C<dns>, and optionally C<static> and
+C<cloud_properties_for_iaas>.
+
+=item C<$strategy>
+
+The network strategy string (e.g., C<'ocfp:dynamic_subnets'>). Used to
+determine how C<LookupSubnetRef>/C<LookupNetworkRef> objects are resolved.
+
+=back
+
+B<Returns:> A subnet definition hashref.
+
+B<Errors:>
+
+=over 4
+
+=item C<"No availability zone(s) specified for network %s subnet %s">
+
+Thrown when neither C<az> nor C<azs> is present in C<%fields>. C<%s> are
+the target and subnet ID.
+
+=item C<"LookupSubnetRef not implemented for strategy $strategy">
+
+Thrown when a C<LookupSubnetRef> is encountered with a non-OCFP strategy.
+
+=item C<"LookupNetworkRef not implemented for strategy $strategy">
+
+Thrown when a C<LookupNetworkRef> is encountered with a non-OCFP strategy.
+
+=back
+
+B<Examples:>
+
+    my $subnet = $self->_subnet_definition('deployment', 'ocfp-a',
+        { az => 'z1', range => '10.0.1.0/24', gateway => '10.0.1.1',
+          dns => ['10.0.1.1'], reserved => ['10.0.1.0-10.0.1.4'] },
+        'ocfp:dynamic_subnets'
+    );
+    # Returns: { az => 'us-east-1a', range => '10.0.1.0/24', gateway => '10.0.1.1', ... }
+
+=head2 _get_network_subnet_property
+
+    my $value = $self->_get_network_subnet_property($target, $subnet_id, $fields, $property, %opts);
+
+Resolves a single subnet property by checking a priority-ordered list of
+sources: the cloud-config definition C<%fields>, environment network defaults,
+per-network subnet defaults, and per-subnet overrides. Returns the highest
+priority value found.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$target>
+
+Network target name.
+
+=item C<$subnet_id>
+
+Subnet identifier.
+
+=item C<\%fields>
+
+The baseline subnet field hashref (the cloud-config definition value).
+
+=item C<$property>
+
+The property name to resolve (e.g., C<'range'>, C<'gateway'>, C<'az'>).
+
+=item C<%opts>
+
+=over 4
+
+=item C<no_defaults>
+
+When true, skips the environment defaults lookup (used for C<reserved>).
+
+=item C<optional>
+
+When true, returns C<undef> instead of throwing when no value is found.
+
+=back
+
+=back
+
+B<Returns:> The resolved property value.
+
+B<Errors:>
+
+=over 4
+
+=item C<"No %s specified for network %s subnet %s (source: %s)">
+
+Thrown when the property is required but not found. C<%s> are the property
+name, target, subnet ID, and source description.
+
+=back
+
+B<Examples:>
+
+    my $range = $self->_get_network_subnet_property(
+        'deployment', 'ocfp-a', \%fields, 'range'
+    );
+    # Returns: '10.0.1.0/24'
+
+=head2 _network_cloud_properties_for_iaas
+
+    my $props = $self->_network_cloud_properties_for_iaas(
+        $target, $subnet_id, \%fields, %map
+    );
+
+Resolves and merges cloud properties for a subnet, applying network-level
+and subnet-level overrides on top of the IaaS-matched base from C<%map>.
+Removes undefined values from the merged result.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$target>
+
+Network target name.
+
+=item C<$subnet_id>
+
+Subnet identifier.
+
+=item C<\%fields>
+
+Subnet field hashref (used for matching-rule evaluation context).
+
+=item C<%map>
+
+IaaS-to-properties map passed to C<_cloud_properties_for_iaas>.
+
+=back
+
+B<Returns:> A merged cloud properties hashref.
+
+B<Examples:>
+
+    my $props = $self->_network_cloud_properties_for_iaas(
+        'deployment', 'ocfp-a', \%fields, aws => { subnet => 'subnet-abc' }
+    );
+    # Returns: { subnet => 'subnet-abc' }
+
+=head2 _cloud_properties_for_iaas
+
+    my $props = $self->_cloud_properties_for_iaas(%map);
+    my ($props, $found) = $self->_cloud_properties_for_iaas(%map);
+
+Selects cloud properties from C<%map> for the current IaaS. Tries an exact
+match on the IaaS name, then a pipe-delimited multi-IaaS key match (e.g.,
+C<'aws|azure'>), then falls back to the C<'*'> wildcard key.
+
+B<Parameters:>
+
+=over 4
+
+=item C<%map>
+
+A hash mapping IaaS names (or C<'*'>) to cloud properties hashrefs.
+
+=back
+
+B<Returns:>
+
+In scalar context, returns the matched cloud properties hashref (or C<{}> if
+no match). In list context, returns C<($hashref, $found)> where C<$found> is
+true when a key was explicitly matched.
+
+B<Examples:>
+
+    my $props = $self->_cloud_properties_for_iaas(
+        aws   => { instance_type => 't3.medium' },
+        '*'   => { instance_type => 't2.micro' },
+    );
+    # Returns: { instance_type => 't3.medium' }  (if IaaS is 'aws')
+
+    my ($props, $found) = $self->_cloud_properties_for_iaas(aws => { instance_type => 't3.medium' });
+    # Returns: ({ instance_type => 't3.medium' }, 1)
+
+=head2 _process_config_overrides
+
+    my $config = $self->_process_config_overrides($type, $target, \%config);
+
+Evaluates deferred values (C<CODE> refs and C<LookupRef> objects) in the
+config, then applies environment defaults, conditional matching rules, and
+specific overrides from C<bosh-configs.cloud> in that order.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$type>
+
+The resource type (e.g., C<'vm_type'>, C<'disk_type'>).
+
+=item C<$target>
+
+The resource target name.
+
+=item C<\%config>
+
+The resource definition hashref to process.
+
+=back
+
+B<Returns:> The processed config as an unflattened hashref.
+
+B<Examples:>
+
+    my $config = $self->_process_config_overrides('vm_type', 'default', \%config);
+    # Returns: { instance_type => 't3.medium', ... }  (with env overrides applied)
+
+=head2 _evaluate_matching_rule
+
+    my $properties = $self->_evaluate_matching_rule($target, \%rule, $config);
+
+Evaluates a single conditional override rule against the current config.
+Conditions are evaluated as OR between condition sets and AND within each set.
+Patterns may be literal values, C<undef>, or regex strings in the form
+C<"/pattern/flags"> or C<"!~/pattern/flags">.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$target>
+
+The resource target name (used as context, not directly evaluated).
+
+=item C<\%rule>
+
+A hashref with a C<conditions> arrayref (sets of field-pattern maps) and a
+C<properties> hashref.
+
+=item C<$config>
+
+The flattened resource config hashref to evaluate against.
+
+=back
+
+B<Returns:> The rule's C<properties> hashref if conditions match, or C<{}>.
+
+B<Examples:>
+
+    my $props = $self->_evaluate_matching_rule('default', $rule, $config);
+    # Returns: { disk_size => 10240 }  (if the rule conditions matched)
+
+=head2 _validate_definition
+
+    $self->_validate_definition($type, $target, %maps);
+
+Validates that C<%maps> contains only the C<common> and
+C<cloud_properties_for_iaas> keys, that at least one of these keys is
+present, and that each present key is a hashref. Calls C<kit_bug> on the
+environment's kit for any violation.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$type>
+
+The resource type name.
+
+=item C<$target>
+
+The resource target name.
+
+=item C<%maps>
+
+The maps hashref to validate.
+
+=back
+
+B<Returns:> C<1> if valid.
+
+B<Examples:>
+
+    $self->_validate_definition('vm_type', 'default',
+        common => { instance_type => 't3.medium' }
+    );
+    # Returns: 1 if maps are valid
+
+=head2 _bosh_exodus_lookup
+
+    my $value = $self->_bosh_exodus_lookup($path);
+
+Returns the value at C<$path> in the deploying BOSH director's exodus data.
+Returns C<undef> immediately for create-env environments (which have no
+director exodus).
+
+B<Parameters:>
+
+=over 4
+
+=item C<$path>
+
+The exodus data path to look up (e.g., C<'/network'>).
+
+=back
+
+B<Returns:> The value at the exodus path, or C<undef> for create-env environments.
+
+B<Examples:>
+
+    my $data = $self->_bosh_exodus_lookup('/network');
+    # Returns: { azs => {...}, subnets => {...} }
+
+=head2 _get_subnet_ranges
+
+    my ($available, $reserved) = $self->_get_subnet_ranges(\%subnet);
+
+Computes the available and reserved IP ranges for a single OCFP subnet based
+on its C<cidr_block> and C<reserved-ips> entries. Returns two C<IPv4> range
+objects.
+
+B<Parameters:>
+
+=over 4
+
+=item C<\%subnet>
+
+A subnet definition hashref with C<cidr_block> and C<reserved-ips> entries.
+
+=back
+
+B<Returns:> A two-element list C<($available, $reserved)>, each an C<IPv4>
+range object.
+
+B<Examples:>
+
+    my ($available, $reserved) = $self->_get_subnet_ranges($subnet);
+    # Returns: (IPv4 range of available IPs, IPv4 range of reserved IPs)
+
+=head2 _get_existing_allocations
+
+    my $allocations = $self->_get_existing_allocations;
+
+Reads the current subnet claim records from the network data and returns them
+as a hashref mapping network names to per-subnet C<IPv4> range objects.
+
+B<Returns:> A hashref of the form
+C<{ $network => { $subnet => IPv4 object } }>.
+
+B<Examples:>
+
+    my $allocs = $self->_get_existing_allocations;
+    # Returns: { 'env.bosh.net-deployment' => { 'ocfp-a' => IPv4 object } }
+
+=head2 _calculate_subnet_allocation
+
+    my $range = $self->_calculate_subnet_allocation(
+        $target, $available, $existing, $count
+    );
+
+Calculates the new IP allocation range for a subnet, growing or shrinking
+the existing allocation to reach C<$count> IPs. Adds IPs from the available
+range when growing; removes from the high end of the existing range when
+shrinking.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$target>
+
+Network target name (used in error messages).
+
+=item C<$available>
+
+An C<IPv4> range object of IPs available for new allocation.
+
+=item C<$existing>
+
+An C<IPv4> range object of currently allocated IPs.
+
+=item C<$count>
+
+The desired total IP count.
+
+=back
+
+B<Returns:> A simplified C<IPv4> range object of the new allocation.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Negative IP allocation for network '%s' allocation - not enough allocated IPs to remove">
+
+Thrown when shrinking yields an impossible negative allocation. C<%s> is the
+target name.
+
+=item C<"Not enough available IPs in the subnet for the network '%s' allocation:  (has %d, needs %d)">
+
+Thrown when the available range cannot satisfy the growth request.
+
+=back
+
+B<Examples:>
+
+    my $range = $self->_calculate_subnet_allocation('deployment', $available, $existing, 64);
+    # Returns: IPv4 range object of 64 IPs
+
+=head2 _calculate_static_allocation
+
+    my $range = $self->_calculate_static_allocation($target, $allocated, $count);
+
+Calculates the static IP range by slicing the first C<$count> IPs from the
+allocated range. If C<$count> is a percentage string (e.g., C<'25%'>), the
+count is computed as that fraction of the allocated size.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$target>
+
+Network target name.
+
+=item C<$allocated>
+
+An C<IPv4> range object of the total allocated range.
+
+=item C<$count>
+
+An integer count, a CIDR mask string (e.g., C<'/26'>), or a percentage
+string (e.g., C<'25%'>).
+
+=back
+
+B<Returns:> A simplified C<IPv4> range object of static IPs.
+
+B<Examples:>
+
+    my $statics = $self->_calculate_static_allocation('deployment', $allocated, 8);
+    # Returns: IPv4 range object of the first 8 IPs in the allocated range
+
+=head2 _get_reserved_allocation
+
+    my ($allocation, $static) = $self->_get_reserved_allocation($target, \%subnet);
+
+Retrieves the pre-reserved IPs for a named network target within a subnet.
+Reserved ranges are read from C<< $subnet->{'reserved-ips'} >> keys matching
+C<< ${target}_a >>, C<< ${target}_b >>, etc. (as inclusive pairs) and
+C<< ${target}_ip* >> keys (individual IPs). Also returns the static flag
+C<< ${target}_static >> (defaults to C<1>).
+
+B<Parameters:>
+
+=over 4
+
+=item C<$target>
+
+Network target name.
+
+=item C<\%subnet>
+
+A subnet definition hashref with a C<reserved-ips> entry.
+
+=back
+
+B<Returns:> A two-element list C<($allocation, $static)> where C<$allocation>
+is a simplified C<IPv4> range object and C<$static> is the static flag value.
+
+B<Examples:>
+
+    my ($reserved_ips, $is_static) = $self->_get_reserved_allocation('bosh', $subnet);
+    # Returns: (IPv4 range of bosh-reserved IPs, 1)
+
+=head2 _get_bosh_network_data
+
+    my $data = $self->_get_bosh_network_data;
+
+Fetches the BOSH director network data from the C</network> path in the
+director's exodus.
+
+B<Returns:> The network data hashref from director exodus.
+
+B<Examples:>
+
+    my $data = $self->_get_bosh_network_data;
+    # Returns: { azs => { z1 => {...} }, subnets => { 'ocfp-a' => {...} } }
+
+=head2 _filter_subnets
+
+    my $subnets = $self->_filter_subnets($subnet_filter);
+
+Filters the available subnets from C<$self->subnets> using the given filter.
+The filter may be a subnet name string, an arrayref of names/regexps, or
+a compiled C<Regexp>. Returns all subnets when C<$subnet_filter> is
+C<undef>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$subnet_filter>
+
+B<(optional)> A subnet name string, C<Regexp>, or arrayref of names/regexps.
+When C<undef>, all subnets are returned.
+
+=back
+
+B<Returns:> A hashref of matching subnet name to subnet definition entries.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Invalid subnet filter type: %s">
+
+Thrown when a filter entry is a reference type other than C<Regexp>. C<%s>
+is the ref type.
+
+=back
+
+B<Examples:>
+
+    my $subnets = $self->_filter_subnets('ocfp-a');
+    # Returns: { 'ocfp-a' => { cidr_block => '10.0.1.0/24', ... } }
+
+    my $subnets = $self->_filter_subnets(qr/^ocfp-/);
+    # Returns: { 'ocfp-a' => {...}, 'ocfp-b' => {...} }
+
+=head2 _az_definition_for
+
+    my $config = $self->_az_definition_for(\%az, %options);
+
+Builds a single AZ definition hashref from the given AZ data. When
+C<< $options{virtual} >> is true, C<cloud_properties> is omitted. When CPI
+is enabled, adds a C<cpi> field.
+
+B<Parameters:>
+
+=over 4
+
+=item C<\%az>
+
+An AZ data hashref with C<name> and C<cloud_properties> (JSON-encoded string)
+fields.
+
+=item C<%options>
+
+=over 4
+
+=item C<name>
+
+B<(optional)> Override for the AZ name (supports CPI shadow naming).
+
+=item C<virtual>
+
+B<(optional)> When true, omits C<cloud_properties> from the definition.
+
+=back
+
+=back
+
+B<Returns:> An AZ definition hashref.
+
+B<Examples:>
+
+    my $az = $self->_az_definition_for($az_data, name => 'my-env-z1');
+    # Returns: { name => 'my-env-z1', cloud_properties => { availability_zone => 'us-east-1a' } }
+
+=head2 _process_network_subnets
+
+    $self->_process_network_subnets(\@networks);
+
+Processes the C<subnets> arrays in a BOSH networks definition to make them
+compatible with BOSH expectations: removes per-subnet C<name> fields and
+converts subnets sharing the same CIDR range into Logical Subnet
+Amalgamations (LSAs) via C<_build_logical_subnet_amalgamation>.
+
+VIP networks are skipped. Returns early if C<\@networks> is not an arrayref.
+
+B<Parameters:>
+
+=over 4
+
+=item C<\@networks>
+
+The C<networks> array from a cloud config hashref.
+
+=back
+
+B<Returns:> C<1> on success.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Network definition is not a hashref: %s">
+
+Thrown when a network entry is not a hashref or lacks a C<subnets> key.
+C<%s> is the network value.
+
+=back
+
+B<Examples:>
+
+    $self->_process_network_subnets($config->{networks});
+    # Returns: 1; converts shared-CIDR subnets to LSAs in-place
+
+=head2 _build_logical_subnet_amalgamation
+
+    my $lsa = $self->_build_logical_subnet_amalgamation($target, \@subnet_configs);
+
+Merges multiple subnet definitions sharing the same CIDR range into a single
+Logical Subnet Amalgamation (LSA) hashref. Validates that all subnets have
+the same range and gateway, deduplicates AZs and DNS servers, and calculates
+merged reserved and static ranges. Returns C<undef> if all IPs in the range
+are reserved.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$target>
+
+Network name (used in error context).
+
+=item C<\@subnet_configs>
+
+Arrayref of subnet hashrefs, each with C<name>, C<range>, C<gateway>,
+C<az>/C<azs>, C<dns>, C<reserved>, and optionally C<static> and
+C<cloud_properties>.
+
+=back
+
+B<Returns:> An LSA hashref, or the single input subnet if only one is given,
+or C<undef> if the range is fully reserved.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Cannot create LSA for subnets with different ranges:\n%s">
+
+Thrown when input subnets have different CIDR ranges.
+
+=item C<"Cannot create LSA for subnets with different gateways:\n%s">
+
+Thrown when input subnets have different gateways.
+
+=back
+
+B<Examples:>
+
+    my $lsa = $self->_build_logical_subnet_amalgamation('deployment', \@subnet_configs);
+    # Returns: { range => '10.0.1.0/24', azs => ['z1','z2'], reserved => [...], ... }
+
+=head2 _get_subnet_ref
+
+    my $ref = $self->_get_subnet_ref($name, \@all_subnets);
+
+Resolves a subnet name to either the direct subnet key or the LSA key that
+contains it. Checks exact match first, then searches LSA keys
+(C<"LSA|subnet1|subnet2|..."> format).
+
+B<Parameters:>
+
+=over 4
+
+=item C<$name>
+
+The subnet name to look up.
+
+=item C<\@all_subnets>
+
+B<(optional)> The list of available subnet keys. Defaults to the keys of
+C<< $self->network->{subnets} >>.
+
+=back
+
+B<Returns:> The matching subnet key or LSA key string.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Subnet %s not found in the available subnets: %s">
+
+Thrown when neither the exact name nor any LSA containing it is found.
+C<%s> are the name and the comma-joined available subnet list.
+
+=back
+
+B<Examples:>
+
+    my $ref = $self->_get_subnet_ref('ocfp-a');
+    # Returns: 'ocfp-a'  (if ocfp-a is a direct subnet key)
+
+    my $ref = $self->_get_subnet_ref('ocfp-a', ['LSA|ocfp-a|ocfp-b', 'ocfp-c']);
+    # Returns: 'LSA|ocfp-a|ocfp-b'
+
+=head2 _standardized_subnet_cidr
+
+    my $cidr = $self->_standardized_subnet_cidr(\%subnet, $name, $target);
+
+Validates that a subnet's C<cidr_block> represents a single contiguous CIDR
+block and returns the standardized CIDR string.
+
+B<Parameters:>
+
+=over 4
+
+=item C<\%subnet>
+
+A subnet hashref with a C<cidr_block> field.
+
+=item C<$name>
+
+The subnet name (used in error messages).
+
+=item C<$target>
+
+The network target name (used in error messages).
+
+=back
+
+B<Returns:> A standardized CIDR string (e.g., C<'10.0.1.0/24'>).
+
+B<Errors:>
+
+=over 4
+
+=item C<"Subnet %s for network %s is not a single CIDR block, but has multiple ranges: %s">
+
+Thrown when the CIDR block spans multiple ranges. C<%s> are the subnet name,
+target name, and the ranges found.
+
+=item C<"Subnet %s for network %s is not a single CIDR block, but has multiple CIDRs: %s">
+
+Thrown when the CIDR block contains multiple CIDR expressions. C<%s> are
+the subnet name, target name, and the CIDRs found.
+
+=back
+
+B<Examples:>
+
+    my $cidr = $self->_standardized_subnet_cidr($subnet, 'ocfp-a', 'deployment');
+    # Returns: '10.0.1.0/24'
+
+=head2 _plural_of
+
+    my $plural = _plural_of($word);
+
+Returns the plural form of C<$word> using C<count_nouns> (with count C<2>
+and the C<suppress_count> option). Used to map singular type names (e.g.,
+C<'vm_type'>) to their plural config keys (e.g., C<'vm_types'>).
+
+B<Parameters:>
+
+=over 4
+
+=item C<$word>
+
+The singular noun to pluralize.
+
+=back
+
+B<Returns:> The pluralized string.
+
+B<Examples:>
+
+    my $plural = _plural_of('vm_type');
+    # Returns: 'vm_types'
+
+    my $plural = _plural_of('network');
+    # Returns: 'networks'
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

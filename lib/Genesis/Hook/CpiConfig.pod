@@ -1,0 +1,372 @@
+=encoding UTF-8
+
+=head1 NAME
+
+Genesis::Hook::CpiConfig - Hook implementation for generating BOSH CPI configs
+
+=head1 SYNOPSIS
+
+    package Genesis::Hook::CpiConfig::my_kit;
+    use parent 'Genesis::Hook::CpiConfig';
+
+    sub perform {
+        my ($self) = @_;
+
+        my $properties = $self->gather_properties(
+            'datacenter',
+            'datastore',
+            '!password@credentials.vcenter_password',
+        );
+
+        my $config = $self->build_cpi_config_for_iaas(
+            vsphere => $properties,
+        );
+
+        $self->done($config);
+    }
+
+    1;
+
+=head1 DESCRIPTION
+
+C<Genesis::Hook::CpiConfig> is the base class for Genesis kit hooks that
+generate BOSH CPI (Cloud Provider Interface) configurations. It extends
+C<Genesis::Hook> with infrastructure specific to CPI config generation:
+property lookup and resolution from environment manifests and OCFP
+configuration, secret entombment into CredHub, and construction of the CPI
+config data structure.
+
+Kit authors subclass this class and implement C<perform>. The C<perform>
+method should call C<gather_properties> to resolve CPI property values,
+C<build_cpi_config_for_iaas> to assemble the BOSH CPI config structure, and
+finally C<done> to signal completion and deliver the result to Genesis.
+
+The hook lifecycle follows the standard C<Genesis::Hook> pattern. See
+L<Genesis::Hook> for inherited methods including C<init>, C<perform>,
+C<completed>, C<env>, C<iaas>, C<features>, C<want_feature>, and BOSH
+integration helpers.
+
+=head1 METHODS
+
+=head2 init
+
+    my $hook = Genesis::Hook::CpiConfig->init(%opts);
+
+Constructs and returns a new C<Genesis::Hook::CpiConfig> object. Delegates
+to the parent class for base initialization, then initializes two internal
+stores: C<cpi_config> (empty hashref) and C<credhub_secrets> (empty
+hashref).
+
+B<Parameters:>
+
+=over 4
+
+=item C<%ops>
+
+Key-value pairs passed through to C<Genesis::Hook>'s C<init>. The C<env> key
+is required. See L<Genesis::Hook/init> for the full list of accepted options.
+
+=back
+
+B<Returns:> A blessed C<Genesis::Hook::CpiConfig> object (or subclass).
+
+B<Examples:>
+
+    my $hook = Genesis::Hook::CpiConfig->init(env => $env);
+    # Returns: a blessed Genesis::Hook::CpiConfig object
+
+=head2 done
+
+    $hook->done($config, $error);
+    $hook->done(undef, $error_message);
+    $hook->done($config);
+
+Signals that CPI config generation is complete. When C<$config> is a
+defined, truthy value, it is serialized to a temporary YAML file and the
+YAML string is stored as the hook's content. When C<$config> is false or
+undefined, the content is set to C<undef>. An optional C<$error> string
+records any error that occurred during generation. Sets the internal
+C<complete> flag to C<1>.
+
+Modifies the object in-place.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$config>
+
+A data structure (hashref) representing the CPI config to serialize to YAML,
+or C<undef> / a false value to indicate that no config was produced.
+
+=item C<$error>
+
+B<(optional)> An error message string to record. Stored as C<undef> if not
+provided.
+
+=back
+
+B<Returns:> C<1> (the value of the C<complete> flag after being set).
+
+B<Examples:>
+
+    # Signal success with a config structure
+    $self->done($cpi_config_hashref);
+    # Returns: 1
+
+    # Signal that generation produced no config
+    $self->done(undef, "IaaS not supported for this environment");
+    # Returns: 1
+
+=head2 results
+
+    my $hashref          = $hook->results;
+    my ($content, $secrets, $error) = $hook->results;
+
+Returns the results of CPI config generation after C<done> has been called.
+Returns early with an empty/undefined value if the hook has not yet
+completed.
+
+In scalar context, returns a hashref with three keys: C<content> (the
+generated YAML string, or C<undef>), C<credhub_secrets> (a hashref mapping
+CredHub credential names to their values), and C<error> (an error message
+string, or C<undef>).
+
+In list context, returns the three values directly in the order
+C<(content, credhub_secrets, error)>.
+
+B<Returns:>
+
+In scalar context: a hashref with keys C<content>, C<credhub_secrets>, and
+C<error>, or C<undef> if the hook has not completed.
+
+In list context: C<($content, $credhub_secrets, $error)>, or an empty list
+if the hook has not completed.
+
+B<Examples:>
+
+    $hook->done($config);
+
+    # Scalar context
+    my $r = $hook->results;
+    print $r->{content};
+    # Returns: { content => '...yaml...', credhub_secrets => {...}, error => undef }
+
+    # List context
+    my ($yaml, $secrets, $err) = $hook->results;
+    # Returns: ('...yaml...', { '/path/cred--key--abc1234' => 'value' }, undef)
+
+    # Before done() is called
+    my $r = $hook->results;
+    # Returns: undef (scalar context) or () (list context)
+
+=head2 build_cpi_config_for_iaas
+
+    my $config = $hook->build_cpi_config_for_iaas(%configs);
+
+Builds a BOSH CPI config data structure for the environment's IaaS type.
+C<%configs> is a dispatch table mapping IaaS type strings (e.g., C<'aws'>,
+C<'vsphere'>) to either a properties hashref or a code reference that
+returns one. Only the entry matching the environment's current IaaS is used.
+If the current IaaS is not present in C<%configs>, the method terminates
+with an error.
+
+B<Parameters:>
+
+=over 4
+
+=item C<%configs>
+
+A hash mapping IaaS type strings to CPI properties. Values may be either a
+hashref of CPI properties or a C<CODE> reference that, when called with no
+arguments, returns a hashref of CPI properties.
+
+=back
+
+B<Returns:> A hashref suitable for passing to C<done>, structured as:
+
+    {
+        cpis => [
+            {
+                name       => $env->cpi_name,
+                type       => $iaas,
+                properties => \%properties,
+            }
+        ],
+    }
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Unsupported IaaS: %s"> -- raised via C<bail()> if the environment's IaaS
+type is not a key in C<%configs>. C<%s> is replaced with the IaaS type
+string.
+
+=back
+
+B<Examples:>
+
+    my $config = $hook->build_cpi_config_for_iaas(
+        aws     => { region => 'us-east-1', default_key_name => 'bosh' },
+        vsphere => sub { { datacenter => $hook->env->lookup('params.datacenter') } },
+    );
+    # Returns: { cpis => [{ name => 'aws_cpi', type => 'aws', properties => {...} }] }
+
+    $self->done($config);
+    # Returns: 1
+
+=head2 gather_properties
+
+    my $properties = $hook->gather_properties(@properties);
+
+Resolves a list of CPI property descriptors into a flat hashref of values
+suitable for use as the C<properties> key in a CPI config structure. Each
+descriptor is a string in a mini-language that controls where to look up the
+value, what default to use, and where to place it in the output.
+
+B<Property descriptor syntax:>
+
+    [!]property_name[@alt1,alt2][:default_value|?][>config_path]
+
+=over 4
+
+=item C<property_name>
+
+The primary lookup key. Used to search C<bosh-configs.cpi.E<lt>keyE<gt>> in
+the environment manifest, and C<cpi.E<lt>iaasE<gt>.E<lt>keyE<gt>> in the
+OCFP configuration. Also used as the output key in the returned hashref
+unless C<< > >> is specified.
+
+=item C<!>
+
+Marks the property as a secret. The resolved value is entombed in CredHub
+via C<cpi_entombment_path_for>, the original value is stored in the hook's
+C<credhub_secrets> store, and the property's value in the output is replaced
+with the CredHub reference C<(( path ))>.
+
+=item C<@alt1,alt2,...>
+
+Alternative lookup keys tried in order if C<property_name> is not found.
+Multiple alternatives are comma-separated.
+
+=item C<:default_value>
+
+A default value to use if the property is not found via any lookup. The
+default is parsed as JSON if possible; otherwise used verbatim. Use C<true>,
+C<false>, and C<null> for their JSON/YAML equivalents. Quoted strings are
+parsed as JSON strings.
+
+=item C<?>
+
+Makes the property optional. If not found via any lookup, the property is
+omitted from the output entirely (no error, no default).
+
+=item C<< >config_path >>
+
+Overrides the output key in the returned hashref. Useful for nested
+properties using dot-notation (e.g., C<< connection_options.connect_timeout >>).
+
+=back
+
+Values are resolved in this priority order: C<bosh-configs.cpi.*> in the
+environment manifest, then C<cpi.E<lt>iaasE<gt>.*> in the OCFP
+configuration, then the descriptor's default. After the declared properties
+are resolved, any additional keys present in C<bosh-configs.cpi> that were
+not already resolved are merged in as overrides. Vault references in
+override values are entombed in CredHub automatically.
+
+The resulting flat hash is passed through C<unflatten> to produce a nested
+structure when dot-notation config paths are used.
+
+B<Parameters:>
+
+=over 4
+
+=item C<@properties>
+
+A list of property descriptor strings as described above.
+
+=back
+
+B<Returns:> A hashref of resolved CPI property values, unflattened into a
+nested structure.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Missing default for CPI config value for %s, and none found in environment">
+-- raised via C<bail()> when a non-optional property has no value in the
+manifest, no value in the OCFP configuration, and no default in its
+descriptor. C<%s> is replaced with the property name.
+
+=back
+
+B<Examples:>
+
+    my $props = $hook->gather_properties(
+        'datacenter',                        # required, from env or OCFP
+        'datastore:default-datastore',       # optional with default
+        'timeout?',                          # omitted if not set
+        '!vcenter_password',                 # secret: entombed in CredHub
+        'clusters@vsphere_clusters:[]',      # alternate lookup with default
+        'ntp>global.ntp',                    # placed at properties.global.ntp
+    );
+    # Returns: { datacenter => '...', datastore => '...', global => { ntp => [...] }, ... }
+
+=head2 cpi_entombment_path_for
+
+    my $path = $hook->cpi_entombment_path_for($key, $value);
+
+Computes a deterministic CredHub credential path for a CPI config property
+value. The path is of the form:
+
+    $prefix . 'cpi-config-property--' . $key . '--' . $sha1
+
+where C<$prefix> is taken from C<< $self->{credhub_prefix} >> if set,
+otherwise from C<< $env->cpi_credhub_base >>, and C<$sha1> is the first 8
+hex characters of the SHA-1 digest of the string
+C<"cpi-config-property--$key--$value">.
+
+This method is used internally by C<gather_properties> to generate stable,
+unique CredHub paths for secret values. The path is the same for a given
+combination of key and value, making it safe to call idempotently.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$key>
+
+The property name or config path for which a CredHub credential is being
+created.
+
+=item C<$value>
+
+The secret value. Incorporated into the SHA-1 hash to produce a unique path
+per distinct value.
+
+=back
+
+B<Returns:> A CredHub credential path string of the form
+C<"${prefix}cpi-config-property--$key--$sha1">.
+
+B<Examples:>
+
+    my $path = $hook->cpi_entombment_path_for('vcenter_password', 's3cr3t');
+    # Returns: '/bosh/cpi-config-property--vcenter_password--a1b2c3d4'
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

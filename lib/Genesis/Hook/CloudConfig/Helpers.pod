@@ -1,0 +1,91 @@
+=encoding UTF-8
+
+=head1 NAME
+
+Genesis::Hook::CloudConfig::Helpers - Exported size-conversion utilities for CloudConfig hooks
+
+=head1 SYNOPSIS
+
+    use Genesis::Hook::CloudConfig::Helpers;
+
+    # Specify disk sizes in readable units — all values are returned in megabytes
+    my $disk_mb = gigabytes(50);   # Returns: 51200
+    my $ram_mb  = megabytes(4096); # Returns: 4096
+
+=head1 DESCRIPTION
+
+C<Genesis::Hook::CloudConfig::Helpers> provides two exported helper functions,
+C<megabytes> and C<gigabytes>, for use in CloudConfig hook implementations.
+Both functions return a size expressed in megabytes, allowing hook authors to
+write capacity values in natural units while keeping the output consistent.
+
+The module exports both functions automatically via C<Exporter>; no import
+list is required.
+
+=head1 FUNCTIONS
+
+=over 4
+
+=item B<megabytes($n)>
+
+    my $mb = megabytes($n);
+
+Returns C<$n> unchanged. This function exists purely for readability and
+uniformity alongside C<gigabytes>: writing C<megabytes(4096)> makes the
+intended unit explicit in the calling code.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$n>
+
+A numeric value representing a size already expressed in megabytes.
+
+=back
+
+B<Returns:> The value of C<$n> unchanged.
+
+B<Examples:>
+
+    my $mb = megabytes(4096);
+    # Returns: 4096
+
+=item B<gigabytes($n)>
+
+    my $mb = gigabytes($n);
+
+Converts C<$n> gigabytes to megabytes by multiplying by 1024. Use this when
+specifying disk or memory capacities in gigabyte units in a CloudConfig hook.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$n>
+
+A numeric value representing a size in gigabytes.
+
+=back
+
+B<Returns:> C<$n> multiplied by 1024, expressed in megabytes.
+
+B<Examples:>
+
+    my $mb = gigabytes(50);
+    # Returns: 51200
+
+    my $mb = gigabytes(1);
+    # Returns: 1024
+
+=back
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

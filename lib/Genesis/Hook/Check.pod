@@ -1,0 +1,498 @@
+=encoding UTF-8
+
+=head1 NAME
+
+Genesis::Hook::Check - Hook implementation for kit environment pre-flight checks
+
+=head1 SYNOPSIS
+
+    package Genesis::Hook::Check::my_kit;
+    use parent 'Genesis::Hook::Check';
+
+    sub perform {
+        my ($self) = @_;
+
+        $self->start_check('cloud-config');
+        $self->has_entry('cloud-config', 'vm_type',     'small');
+        $self->has_entry('cloud-config', 'network',     'default');
+        $self->check_result('cloud-config');
+
+        $self->start_check('environment');
+        $self->has_entry('environment', 'params', 'base_domain');
+        $self->check_result('environment');
+
+        $self->done(0);
+    }
+
+    1;
+
+=head1 DESCRIPTION
+
+C<Genesis::Hook::Check> is the base class for kit check hooks. Kit authors
+subclass this module and implement the C<perform> method to verify that the
+environment is correctly configured before a deployment is attempted.
+
+A check hook typically iterates over a set of named checks, printing
+pass/fail results for each one. The methods provided by this class handle
+the structured output formatting and record-keeping for those results.
+
+The check lifecycle follows three phases for each config area being checked:
+
+=over 4
+
+=item 1.
+
+Call C<start_check> to announce the category being checked (e.g.,
+C<'cloud-config'>, C<'runtime-config'>, or C<'environment'>).
+
+=item 2.
+
+Call C<has_entry> one or more times to verify that specific named entries
+exist in the appropriate BOSH config or environment manifest.
+
+=item 3.
+
+Call C<check_result> to print the aggregate pass/fail result for that
+category.
+
+=back
+
+This class inherits from L<Genesis::Hook>. See L<Genesis::Hook> for the
+full lifecycle description, including C<init>, C<done>, C<env>, C<features>,
+and all other base class methods.
+
+=head1 METHODS
+
+=head2 init
+
+    my $hook = Genesis::Hook::Check->init();
+
+Constructs and returns a new check hook object. Validates that the required
+C<env> and C<kit> keys are present in the initialization arguments (passed
+as a flat key-value list), then delegates to C<< Genesis::Hook->init >> to
+complete initialization.
+
+B<Parameters:>
+
+=over 4
+
+=item C<%opts>
+
+Key-value pairs stored on the hook object. The following keys are required:
+
+=over 4
+
+=item C<env>
+
+B<(required)> A C<Genesis::Env> object representing the deployment environment.
+
+=item C<kit>
+
+B<(required)> A C<Genesis::Kit> object for the kit being checked.
+
+=back
+
+=back
+
+B<Returns:> A blessed C<Genesis::Hook::Check> object (or a subclass thereof).
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Missing required arguments for a perl-based kit hook call: %s"> -- raised
+via C<bug()> if either C<env> or C<kit> is absent from C<%opts>. C<%s> is
+replaced with the comma-separated list of missing argument names.
+
+=back
+
+B<Examples:>
+
+    my $hook = Genesis::Hook::Check->init(env => $env, kit => $kit);
+    # Returns: a blessed Genesis::Hook::Check object
+
+=head2 start_check
+
+    $hook->start_check($type);
+
+Prints a formatted status line announcing the start of checks for the given
+C<$type> category. Hyphens and underscores in C<$type> are replaced with
+spaces in the output.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$type>
+
+A string label for the category of checks being started (e.g.,
+C<'cloud-config'>, C<'runtime-config'>, C<'environment'>).
+
+=back
+
+B<Returns:> Nothing meaningful.
+
+B<Examples:>
+
+    $hook->start_check('cloud-config');
+    # prints: "  - checking cloud config..."
+
+    $hook->start_check('runtime_config');
+    # prints: "  - checking runtime config..."
+
+=head2 check_result
+
+    my $ok = $hook->check_result($config, $result, $message);
+
+Records and displays the final pass/fail status for a config category. If
+C<$result> is not explicitly provided, the result is derived from the
+accumulated C<has_entry> checks for C<$config>: all entries must have passed
+for the result to be C<'passed'>; any failure produces C<'failed'>.
+
+The C<$result> argument accepts the following values, which are normalized
+before display:
+
+=over 4
+
+=item *
+
+C<'error'>, a false value, or C<0> -- normalized to C<'failed'>
+
+=item *
+
+C<'ok'>, C<'passed'>, or C<'1'> -- normalized to C<'passed'>
+
+=item *
+
+Any other truthy string (e.g., C<'warning'>) -- displayed as-is, colored
+yellow
+
+=back
+
+B<Parameters:>
+
+=over 4
+
+=item C<$config>
+
+The config category label (e.g., C<'cloud-config'>). Hyphens and underscores
+are replaced with spaces in the output.
+
+=item C<$result>
+
+B<(optional)> An explicit result value. When not provided (C<undef>), the
+result is computed from the C<has_entry> checks recorded for C<$config>.
+
+=item C<$message>
+
+B<(optional)> An additional message appended to the result line, separated
+by C<" - ">.
+
+=back
+
+B<Returns:> C<1> if the result is C<'passed'> or any other non-failed value;
+C<0> if the result is C<'failed'>.
+
+B<Examples:>
+
+    # Explicit pass
+    my $ok = $hook->check_result('cloud-config', 'passed');
+    # Returns: 1
+
+    # Derive result from accumulated has_entry checks
+    $hook->has_entry('cloud-config', 'vm_type', 'small');
+    my $ok = $hook->check_result('cloud-config');
+    # Returns: 1 if all prior cloud-config has_entry checks passed, 0 otherwise
+
+    # With an explicit message
+    my $ok = $hook->check_result('environment', 0, 'missing required params');
+    # Returns: 0
+
+=head2 has_entry
+
+    $hook->has_entry($config, $type, $name, @args);
+
+Checks whether a named entry of the given type exists in the specified config
+source, then prints a formatted check-mark or cross-mark result. The check
+result is stored internally and accumulated for a subsequent C<check_result>
+call.
+
+The C<$config> argument determines which backing method is used:
+
+=over 4
+
+=item C<'cloud-config'>
+
+Delegates to C<has_cloud_config_entry>.
+
+=item C<'runtime-config'>
+
+Delegates to C<has_runtime_config_entry>.
+
+=item C<'environment'>
+
+Delegates to C<has_environment_entry>.
+
+=back
+
+B<Parameters:>
+
+=over 4
+
+=item C<$config>
+
+The config source to check. Must be one of C<'cloud-config'>,
+C<'runtime-config'>, or C<'environment'>.
+
+=item C<$type>
+
+The entry type within the config source (e.g., C<'vm_type'>, C<'network'>,
+C<'params'>, C<'job'>).
+
+=item C<$name>
+
+The name of the specific entry to look up.
+
+=item C<@args>
+
+Additional arguments passed through to the underlying check method.
+Interpretation depends on C<$config> and C<$type>; see
+C<has_cloud_config_entry>, C<has_runtime_config_entry>, and
+C<has_environment_entry> for details.
+
+=back
+
+B<Returns:> Nothing meaningful.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Unknown check type: %s - expecting 'cloud-config', 'runtime-config' or 'environment'"> --
+printed via the Genesis error logger if C<$config> is not one of the three recognized values.
+Returns C<0> without storing a check result.
+
+=back
+
+B<Examples:>
+
+    $hook->has_entry('cloud-config', 'vm_type', 'small');
+    # prints: a checkmark/cross with "vm type small"
+
+    $hook->has_entry('environment', 'params', 'base_domain');
+    # prints: a checkmark/cross with "params.base_domain is provided"
+
+    $hook->has_entry('runtime-config', 'job', 'bosh-dns');
+    # prints: a checkmark/cross with "bosh-dns job exists"
+
+=head2 has_cloud_config_entry
+
+    my $ok = $hook->has_cloud_config_entry($type, $name, @args);
+
+Checks whether a named entry of the given C<$type> exists in the environment's
+cloud config. The cloud config is fetched from the environment on the first
+call and cached for subsequent calls. The C<$type> string is pluralized for
+the key lookup (e.g., C<'vm_type'> becomes C<'vm_types'>).
+
+B<Parameters:>
+
+=over 4
+
+=item C<$type>
+
+The cloud-config resource type (e.g., C<'vm_type'>, C<'network'>,
+C<'disk_type'>).
+
+=item C<$name>
+
+The name of the entry to search for within the pluralized type list.
+
+=item C<@args>
+
+Currently unused; reserved for future extension.
+
+=back
+
+B<Returns:> C<1> if an entry with the given C<$name> exists in the cloud
+config under the pluralized C<$type> key, C<0> otherwise.
+
+B<Examples:>
+
+    my $ok = $hook->has_cloud_config_entry('vm_type', 'small');
+    # Returns: 1 if cloud config has a vm_types entry named 'small', 0 otherwise
+
+    my $ok = $hook->has_cloud_config_entry('network', 'default');
+    # Returns: 1 if cloud config has a networks entry named 'default', 0 otherwise
+
+=head2 has_runtime_config_entry
+
+    my ($ok, @msg) = $hook->has_runtime_config_entry($type, $name, @args);
+
+Checks whether a named entry of the given C<$type> exists in the environment's
+runtime config. Currently only supports C<$type eq 'job'>, which checks
+whether a job with the given C<$name> appears in any addon within the runtime
+config. The runtime config is fetched on the first call and cached; the
+unique list of job names across all addons is also cached after the first
+call.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$type>
+
+The runtime-config entry type to check. Currently only C<'job'> is supported.
+
+=item C<$name>
+
+The name of the job to search for across all runtime config addons.
+
+=item C<@args>
+
+Currently unused; reserved for future extension.
+
+=back
+
+B<Returns:> In list context, a two-or-three element list: the boolean result
+(C<1> or C<0>), a C<sprintf>-style format string for the display message,
+and the job name.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Unknown check type: %s - expecting 'job' (might have to add %s implementation)"> --
+raised via C<bug()> if C<$type> is not C<'job'>. Both C<%s> placeholders are
+replaced with C<$type>.
+
+=back
+
+B<Examples:>
+
+    my ($ok) = $hook->has_runtime_config_entry('job', 'bosh-dns');
+    # Returns: (1) if bosh-dns appears as a job in any runtime config addon
+
+=head2 has_environment_entry
+
+    my ($ok, @msg) = $hook->has_environment_entry($type, $name, @args);
+
+Checks whether an entry exists in the environment's manifest. The full
+environment manifest is fetched on the first call and cached. Supports two
+check types: C<'params'> and C<'exodus'>.
+
+For C<$type eq 'params'>, the named parameter is looked up under
+C<params.$name> in the environment manifest. The C<@args> list is interpreted
+as a flat hash of options:
+
+=over 4
+
+=item C<type =E<gt> $reqtype>
+
+Checks that the parameter exists and is of the given type. Supported type
+strings include C<'string'>, C<'undefined'>, and reference types (via
+C<ref()>). When C<$reqtype> is C<'undefined'>, passes if the parameter is
+not defined.
+
+=item C<value_in =E<gt> \@allowed>
+
+Checks that the parameter value is one of the values in C<\@allowed>.
+
+=item C<retired =E<gt> 1>
+
+Checks that the parameter is I<not> defined (i.e., has been removed from
+the environment). Passes if the parameter is absent.
+
+=item C<msg =E<gt> $custom_message>
+
+Overrides the default display message for this check.
+
+=back
+
+When none of C<type>, C<value_in>, or C<retired> are given, the check simply
+verifies that the parameter is defined.
+
+For C<$type eq 'exodus'>, checks whether exodus data exists for the
+environment. When neither C<env> nor C<deployment> options are given, checks
+whether the current environment's own exodus data contains the C<name> key.
+When C<deployment> is provided, looks up the named C<$name> key in the exodus
+data for the specified environment and deployment path.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$type>
+
+The entry category to check: C<'params'> or C<'exodus'>.
+
+=item C<$name>
+
+For C<'params'>: the parameter name under C<params> in the manifest.
+For C<'exodus'>: the exodus key to look up.
+
+=item C<@args>
+
+A flat list of key-value option pairs (interpreted as C<%opts>). See above
+for supported keys.
+
+=back
+
+B<Returns:> In list context, a list of two or three elements: the boolean
+result (C<1> or C<0>), a C<sprintf>-style format string for the display
+message, and one or more format arguments.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Unknown check type: %s - expecting 'params' (might have to add %s implementation)"> --
+raised via C<bug()> if C<$type> is not C<'params'> or C<'exodus'>. Both
+C<%s> placeholders are replaced with C<$type>.
+
+=back
+
+B<Examples:>
+
+    # Check that a param is defined
+    my ($ok) = $hook->has_environment_entry('params', 'base_domain');
+    # Returns: (1) if params.base_domain is defined in the environment manifest
+
+    # Check that a param is a string
+    my ($ok) = $hook->has_environment_entry('params', 'base_domain', type => 'string');
+    # Returns: (1) if params.base_domain is defined (any non-reference value)
+
+    # Check that a param holds one of the allowed values
+    my ($ok) = $hook->has_environment_entry('params', 'scale',
+        value_in => [qw(dev staging prod)]);
+    # Returns: (1) if params.scale is one of dev, staging, or prod
+
+    # Check that a retired param has been removed
+    my ($ok) = $hook->has_environment_entry('params', 'old_param', retired => 1);
+    # Returns: (1) if params.old_param is not defined
+
+    # Check exodus data for current environment
+    my ($ok) = $hook->has_environment_entry('exodus', 'director_url');
+    # Returns: (1) if the environment's own exodus data contains the 'name' key
+
+    # Check exodus data for another deployment
+    my ($ok) = $hook->has_environment_entry('exodus', 'director_url',
+        deployment => 'bosh/bosh');
+    # Returns: (1) if director_url exists in exodus for bosh/bosh
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

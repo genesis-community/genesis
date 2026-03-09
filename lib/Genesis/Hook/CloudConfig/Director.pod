@@ -1,0 +1,420 @@
+=encoding UTF-8
+
+=head1 NAME
+
+Genesis::Hook::CloudConfig::Director - Director-specific cloud-config hook for OCFP-managed BOSH environments
+
+=head1 SYNOPSIS
+
+    package Genesis::Hook::CloudConfig::Director;
+    use parent 'Genesis::Hook::CloudConfig';
+
+    # Instantiate via the parent factory; purpose must be 'director'
+    my $hook = Genesis::Hook::CloudConfig::Director->init(
+        env     => $env,
+        purpose => 'director',
+    );
+
+    # Build AZ definitions for inclusion in a cloud config
+    my @azs = $hook->build_az_definitions(prefix => 'z');
+
+    # Get the compilation block
+    my %compilation = $hook->compilation_definition(strategy => 'ocfp');
+
+    # Retrieve the env-level override base key
+    my $base = $hook->overrides_base;
+    # Returns: 'bosh-configs.director_cloud'
+
+=head1 DESCRIPTION
+
+C<Genesis::Hook::CloudConfig::Director> is the director-level cloud-config
+hook. It extends C<Genesis::Hook::CloudConfig> with the behavior needed to
+generate availability-zone and subnet definitions specifically for a BOSH
+director deployment, driven entirely by OCFP configuration stored in Vault.
+
+On initialization the hook:
+
+=over 4
+
+=item *
+
+Enforces that C<purpose> is exactly C<'director'>.
+
+=item *
+
+Delegates to the parent C<init> to set up the shared
+cloud-config infrastructure, including the AZ prefix derived from the
+environment name.
+
+=item *
+
+Loads AZ definitions from the OCFP Vault config mount
+(C<net.azs> or C<vpc.azs>) and populates C<< $self->{network}{azs} >>.
+
+=item *
+
+Loads subnet definitions from the OCFP Vault config mount
+(C<net.subnets> or C<vpc.subnets>), filtering to subnets whose names
+start with C<ocfp->, and populates C<< $self->{network}{subnets} >>.
+
+=back
+
+Existing exodus network data (C</network:.>) is consulted during both steps
+so that CPI-specific AZ data (C<for_cpi>) and subnet allocation data
+(C<claims>) added outside the director hook are preserved across
+re-initializations.
+
+Only OCFP-managed environments (C<< $env->is_ocfp >> returns true) are
+supported. Non-OCFP environments trigger a C<bug()> call at initialization
+time.
+
+See also:
+
+=over 4
+
+=item L<Genesis::Hook::CloudConfig>
+
+=item L<Genesis::Hook>
+
+=back
+
+=head1 METHODS
+
+=head2 init
+
+    my $hook = Genesis::Hook::CloudConfig::Director->init(%opts);
+
+Constructs and returns a director cloud-config hook object. Enforces that
+C<< $opts{purpose} >> is exactly C<'director'>, then delegates to the parent
+C<init> with C<< network => {} >> added to C<%opts>. After the parent object
+is built, calls C<_set_network_azs> and C<_set_network_subnets> to populate
+the in-memory network data from the OCFP Vault config.
+
+B<Parameters:>
+
+=over 4
+
+=item C<%opts>
+
+Key-value pairs forwarded to the parent C<init>. The
+following key is required by this subclass:
+
+=over 4
+
+=item C<purpose>
+
+B<(required)> Must be the string C<'director'>. Any other value (or absence)
+causes the method to bail with an error.
+
+=back
+
+All other keys (C<env>, C<basename>, etc.) are passed through to the parent
+unchanged.
+
+=back
+
+B<Returns:> A blessed C<Genesis::Hook::CloudConfig::Director> object.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Purpose must be 'director' - %s"> -- raised via C<bail()> if C<purpose>
+is absent or not equal to C<'director'>. C<%s> is replaced with
+C<"got '$opts{purpose}'"> when a wrong value was supplied, or
+C<"no purpose provided"> when the key was absent.
+
+=back
+
+B<Examples:>
+
+    my $hook = Genesis::Hook::CloudConfig::Director->init(
+        env     => $env,
+        purpose => 'director',
+    );
+    # Returns: a blessed Genesis::Hook::CloudConfig::Director object
+
+    # Wrong purpose
+    Genesis::Hook::CloudConfig::Director->init(env => $env, purpose => 'runtime');
+    # Dies: "Purpose must be 'director' - got 'runtime'"
+
+=head2 build_az_definitions
+
+    my @azs     = $hook->build_az_definitions(%options);
+    my $azs_ref = $hook->build_az_definitions(%options);
+
+Builds and returns the availability-zone definitions for all AZs known to
+this director. For each AZ stored in C<< $self->{network}{azs} >> (populated
+during C<init>), calls C<_az_definition_for> to produce the BOSH-compatible
+AZ definition hash. The results are deduplicated and sorted by name.
+
+B<Parameters:>
+
+=over 4
+
+=item C<%options>
+
+Key-value options forwarded to C<_az_definition_for> for each AZ, with the
+following key consumed by this method before forwarding:
+
+=over 4
+
+=item C<prefix>
+
+B<(optional)> A string prepended to each AZ name. Defaults to C<''> (empty
+string).
+
+=back
+
+Other keys in C<%options> (e.g., C<strategy>) are passed through to
+C<_az_definition_for> unchanged.
+
+=back
+
+B<Returns:>
+
+In list context, returns a list of AZ definition hash references, each
+suitable for use as an entry in the BOSH cloud config C<azs> array.
+
+In scalar context, returns an array reference of the same hashes.
+
+Each AZ definition hash contains at least a C<name> key; additional keys
+depend on the C<_az_definition_for> implementation.
+
+B<Examples:>
+
+    # List context
+    my @azs = $hook->build_az_definitions(prefix => 'z');
+    # Returns: ({ name => 'z1', ... }, { name => 'z2', ... }, ...)
+
+    # Scalar context
+    my $azs_ref = $hook->build_az_definitions;
+    # Returns: [{ name => '1', ... }, { name => '2', ... }, ...]
+
+=head2 compilation_definition
+
+    my %compilation = $hook->compilation_definition(%options);
+
+Returns the BOSH compilation block definition for this director environment.
+Resolves the compilation network name, VM type, availability zones, worker
+count, and VM reuse setting, then returns them as a flat hash.
+
+The compilation network name and VM type are resolved via C<name_for>. The
+first AZ available in the compilation network (from
+C<get_available_azs_in_network('compilation')>) is used. The worker count
+is the size of the compilation network in that AZ
+(C<get_network_size('compilation', $az)>). The C<reuse_compilation_vms>
+flag is read from the environment's manifest key
+C<bosh-configs.director_cloud.compilation.reuse_vms>, defaulting to
+C<$self-E<gt>TRUE> (the JSON boolean true value) if not set.
+
+Currently only the C<'ocfp'> strategy is supported.
+
+B<Parameters:>
+
+=over 4
+
+=item C<%options>
+
+=over 4
+
+=item C<strategy>
+
+B<(optional)> The build strategy. Only C<'ocfp'> is currently accepted.
+Defaults to C<'generic'>, but any value other than C<'ocfp'> causes the
+method to bail with an error.
+
+=back
+
+=back
+
+B<Returns:> A flat hash with the following keys:
+
+=over 4
+
+=item C<network>
+
+The resolved compilation network name (e.g., C<'my-env.bosh.net.compilation'>).
+
+=item C<vm_type>
+
+The resolved compilation VM type name.
+
+=item C<az>
+
+The name of the first available AZ in the compilation network.
+
+=item C<workers>
+
+The number of compilation workers derived from the compilation network size.
+
+=item C<reuse_compilation_vms>
+
+A JSON boolean value (C<$self-E<gt>TRUE> by default, or the value from
+C<bosh-configs.director_cloud.compilation.reuse_vms>).
+
+=back
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Unsupported strategy for building compilation definitions: %s"> -- raised
+via C<bail()> if C<strategy> is any value other than C<'ocfp'>. C<%s> is
+replaced with the supplied strategy string.
+
+=back
+
+B<Examples:>
+
+    my %comp = $hook->compilation_definition(strategy => 'ocfp');
+    # Returns: (
+    #   network              => 'my-env.bosh.net.compilation',
+    #   vm_type              => 'my-env.bosh.vm.compilation',
+    #   az                   => 'z1',
+    #   workers              => 4,
+    #   reuse_compilation_vms => JSON::PP::true,
+    # )
+
+    $hook->compilation_definition(strategy => 'generic');
+    # Dies: "Unsupported strategy for building compilation definitions: generic"
+
+=head2 overrides_base
+
+    my $base = $hook->overrides_base;
+
+Returns the environment manifest key path under which director cloud-config
+overrides are looked up. This is used by the inherited override-application
+machinery to locate user-supplied overrides.
+
+B<Returns:> The string C<'bosh-configs.director_cloud'>.
+
+B<Examples:>
+
+    my $base = $hook->overrides_base;
+    # Returns: 'bosh-configs.director_cloud'
+
+=head1 INTERNAL METHODS
+
+These methods are internal to the implementation. They may change without
+notice and should not be called directly.
+
+=head2 _can_build_cloud_config
+
+    $class->_can_build_cloud_config($env)
+
+Override of the parent abstract method. Always returns C<1> because the
+director cloud config can always be built, regardless of the environment
+state.
+
+B<Returns:> C<1>.
+
+B<Examples:>
+
+    my $ok = Genesis::Hook::CloudConfig::Director->_can_build_cloud_config($env);
+    # Returns: 1
+
+=head2 _set_network_azs
+
+    $self->_set_network_azs(%opts)
+
+Populates C<< $self->{network}{azs} >> from the OCFP Vault config. Looks up
+AZ data from C<net.azs> or C<vpc.azs> via
+C<< $self->env->ocfp_config_lookup >>. For each AZ, the index is taken from
+the C<index> field in Vault data or extracted from trailing digits of the AZ
+name. Cloud properties (JSON-encoded) are validated by JSON decoding;
+an empty JSON object (C<'{}'>) is used when none are stored.
+
+If existing exodus network data contains AZ entries with a C<for_cpi> field,
+those values are preserved in the newly built C<%azs> hash before it is
+stored on the object, so CPI-specific AZ data added externally is not lost.
+
+B<Parameters:>
+
+=over 4
+
+=item C<%opts>
+
+Currently unused; reserved for future use.
+
+=back
+
+B<Returns:> Nothing. Modifies C<< $self->{network}{azs} >> in-place.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Invalid json in cloud properties for AZ %s: %s"> -- raised via C<bug()>
+if the stored cloud properties string is not valid JSON. The first C<%s> is
+the AZ name and the second is the JSON parse error.
+
+=item *
+
+C<"NYI: Unsupported environment for setting AZs: only environments using ocfp feature is supported at this time"> -- raised via C<bug()> if the
+environment is not an OCFP environment.
+
+=back
+
+B<Examples:>
+
+    $hook->_set_network_azs;
+    # Returns: nothing; $hook->{network}{azs} is now populated
+
+=head2 _set_network_subnets
+
+    $self->_set_network_subnets
+
+Populates C<< $self->{network}{subnets} >> from the OCFP Vault config. Looks
+up subnet data from C<net.subnets> or C<vpc.subnets> via
+C<< $self->env->ocfp_config_lookup >>, filtering to subnet names that match
+the C</^ocfp-/> prefix. For each subnet, stores the IPv4 range (parsed from
+C<cidr_block>) and the resolved AZ name (via C<lookup_az>).
+
+If existing exodus network data contains subnet entries with a C<claims>
+field, those values are preserved in the newly built C<%subnets> hash so
+that subnet allocation data added outside the director hook is not lost.
+
+B<Returns:> Nothing. Modifies C<< $self->{network}{subnets} >> in-place.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"NYI: Unsupported environment for setting subnets: only environments using ocfp feature is supported at this time"> -- raised via C<bug()> if the
+environment is not an OCFP environment.
+
+=back
+
+B<Examples:>
+
+    $hook->_set_network_subnets;
+    # Returns: nothing; $hook->{network}{subnets} is now populated
+
+=head2 _get_bosh_network_data
+
+    my $data = $self->_get_bosh_network_data;
+
+Returns the stored network data hash for this BOSH director by calling
+C<< $self->env->exodus_lookup('/network:.') >>. Returns C<undef> if no
+exodus network data exists yet.
+
+B<Returns:> A hash reference of exodus network data, or C<undef>.
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut

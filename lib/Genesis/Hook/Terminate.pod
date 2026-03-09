@@ -1,0 +1,237 @@
+=encoding UTF-8
+
+=head1 NAME
+
+Genesis::Hook::Terminate - Hook class for kit termination lifecycle callbacks
+
+=head1 SYNOPSIS
+
+    package Genesis::Hook::Terminate::my_kit;
+    use parent 'Genesis::Hook::Terminate';
+
+    sub before_terminate {
+        my ($self) = @_;
+        # Runs before the environment is torn down
+        return 1;
+    }
+
+    sub after_terminate {
+        my ($self) = @_;
+        # Runs after the environment has been torn down
+        return 1;
+    }
+
+    sub failed_terminate {
+        my ($self) = @_;
+        # Runs when termination fails
+        return 1;
+    }
+
+    1;
+
+=head1 DESCRIPTION
+
+C<Genesis::Hook::Terminate> is the base class for kit-provided terminate hooks.
+It extends L<Genesis::Hook> and implements the lifecycle for cleaning up or
+reacting to environment teardown operations.
+
+When Genesis terminates (removes or destroys) an environment, it invokes the
+terminate hook at up to three points depending on outcome:
+
+=over 4
+
+=item *
+
+C<before> -- called before the termination begins, allowing the kit to prepare
+or verify preconditions.
+
+=item *
+
+C<after> -- called after successful termination, allowing the kit to perform
+final cleanup.
+
+=item *
+
+C<failed> -- called when termination fails, allowing the kit to handle error
+conditions.
+
+=back
+
+Kit authors subclass C<Genesis::Hook::Terminate> and implement one or more of
+the mode-specific methods (C<before_terminate>, C<after_terminate>,
+C<failed_terminate>). The C<perform> method dispatches to the correct one
+based on the C<mode> set at construction time.
+
+=head1 METHODS
+
+=head2 init
+
+    my $hook = Genesis::Hook::Terminate->init(%args);
+
+Constructs and returns a new C<Genesis::Hook::Terminate> object. Validates that
+all required arguments are present, normalizes the C<dry_run> argument key to
+C<dryrun> if needed, and validates that the C<mode> is one of the three
+recognized values.
+
+B<Parameters:>
+
+=over 4
+
+=item C<%args>
+
+Key-value pairs stored on the hook object. The following keys are required:
+
+=over 4
+
+=item C<env>
+
+B<(required)> A C<Genesis::Env> object representing the deployment environment.
+
+=item C<kit>
+
+B<(required)> A C<Genesis::Kit> object for the kit being executed.
+
+=item C<mode>
+
+B<(required)> The termination phase. Must be one of C<'before'>, C<'after'>,
+or C<'failed'>.
+
+=item C<dryrun>
+
+B<(required)> Boolean. When true, the hook should simulate actions without
+making real changes. May also be passed as C<dry_run>, which is automatically
+renamed to C<dryrun>.
+
+=item C<force>
+
+B<(required)> Boolean. When true, the hook should proceed without safety
+checks.
+
+=item C<noprompt>
+
+B<(required)> Boolean. When true, the hook should not prompt the user for
+confirmation.
+
+=back
+
+=back
+
+B<Returns:> A blessed C<Genesis::Hook::Terminate> object.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Missing required arguments for a perl-based kit hook call: %s"> -- raised
+via C<bug()> if any of the required arguments (C<env>, C<kit>, C<mode>,
+C<dryrun>, C<force>, C<noprompt>) are absent. C<%s> is replaced with the
+comma-separated list of missing argument names.
+
+=item *
+
+C<"Unknown termination mode '%s'; expected 'before', 'after', or 'failed'">
+-- raised via C<bug()> if C<mode> is not one of the three valid values. C<%s>
+is replaced with the provided mode string.
+
+=back
+
+B<Examples:>
+
+    my $hook = Genesis::Hook::Terminate->init(
+        env      => $env,
+        kit      => $kit,
+        mode     => 'before',
+        dryrun   => 0,
+        force    => 0,
+        noprompt => 0,
+    );
+    # Returns: a blessed Genesis::Hook::Terminate object
+
+    # dry_run is accepted and renamed to dryrun automatically
+    my $hook = Genesis::Hook::Terminate->init(
+        env      => $env,
+        kit      => $kit,
+        mode     => 'after',
+        dry_run  => 1,
+        force    => 0,
+        noprompt => 1,
+    );
+    # Returns: a blessed Genesis::Hook::Terminate object with dryrun => 1
+
+=head2 perform
+
+    $hook->perform;
+
+Dispatches to the mode-specific terminate method on the hook object. The method
+name is derived from the C<mode> set at construction time: for example, mode
+C<'before'> dispatches to C<before_terminate>, mode C<'after'> dispatches to
+C<after_terminate>, and mode C<'failed'> dispatches to C<failed_terminate>.
+
+Kit authors implement these methods in their subclass. If the derived method
+is not present on the object, a kit bug error is raised.
+
+After calling the mode-specific method, calls C<$self->done($result)> to
+record the result and mark the hook complete.
+
+B<Returns:> The return value of C<< $self->done($result) >>, where C<$result>
+is whatever the mode-specific method returned.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+Kit bug raised via C<< $self->kit->kit_bug >> if the mode-specific method
+(e.g., C<before_terminate>) is not implemented on the hook object. The error
+message identifies the missing method name and the kit name.
+
+=back
+
+B<Examples:>
+
+    package Genesis::Hook::Terminate::my_kit;
+    use parent 'Genesis::Hook::Terminate';
+
+    sub before_terminate {
+        my ($self) = @_;
+        # Pre-teardown logic here
+        return 1;
+    }
+
+    1;
+
+    # Genesis calls:
+    $hook->perform;
+    # Dispatches to before_terminate() and calls done(1)
+
+=head2 is_dryrun
+
+    my $bool = $hook->is_dryrun;
+
+Returns the value of the C<dryrun> flag set at construction time.
+
+B<Returns:> The boolean value of C<< $self->{dryrun} >>. True if the hook was
+constructed with C<dryrun> (or C<dry_run>) set to a true value, false otherwise.
+
+B<Examples:>
+
+    if ($hook->is_dryrun) {
+        # Simulate actions without making real changes
+        say "Would terminate environment: " . $hook->env->name;
+    } else {
+        # Proceed with actual termination
+    }
+    # Returns: 1 or 0 (or undef) depending on the dryrun flag
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut
