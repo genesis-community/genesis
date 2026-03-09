@@ -192,12 +192,13 @@ credential name, or C<undef> if no prior value existed.
 Single-secret entombment method retained for backwards compatibility. When
 called with more than six arguments (counting C<$self>) it delegates
 immediately to L<"_entomb_secret_for_vault"> using all passed arguments;
-in that case the caller must supply the full
-L<_entomb_secret_for_vault|"_entomb_secret_for_vault"> parameter list
-(C<$local_vault, $vault_path, $key, $value, $credhub, $cred_path,
-$entombment_prefix>). With six or fewer arguments the method performs the
-same SHA-based naming and Credhub write logic as
-C<_entomb_secret_for_vault> using the parameters listed below.
+in that case the caller must supply the
+L<_entomb_secret_for_vault|"_entomb_secret_for_vault"> parameters
+(C<$local_vault, $vault_path, $key, $value, $credhub, $cred_path>),
+with C<$entombment_prefix> optional (defaults to C<"genesis-entombed/">).
+With six or fewer arguments the method performs the same SHA-based naming
+and Credhub write logic as C<_entomb_secret_for_vault> using the
+parameters listed below.
 
 B<Parameters:>
 
