@@ -1,0 +1,1123 @@
+=encoding UTF-8
+
+=head1 NAME
+
+Genesis::Hook - Base class for all Genesis kit hook implementations
+
+=head1 SYNOPSIS
+
+    package Genesis::Hook::Blueprint::my_kit;
+    use parent 'Genesis::Hook::Blueprint';
+
+    sub perform {
+        my ($self) = @_;
+
+        $self->check_minimum_genesis_version('3.0.0');
+
+        if ($self->want_feature('ha')) {
+            # include HA manifests
+        }
+
+        my ($out, $rc, $err) = $self->spruce_merge(
+            'base.yml',
+            'networking.yml',
+        );
+
+        $self->done($out);
+    }
+
+    1;
+
+=head1 DESCRIPTION
+
+C<Genesis::Hook> is the base class for all Genesis kit hook implementations.
+Kit authors subclass one of the concrete hook types (e.g.,
+C<Genesis::Hook::Blueprint>, C<Genesis::Hook::Check>,
+C<Genesis::Hook::Features>) and implement the C<perform> method. The base
+class provides the shared infrastructure: environment and kit access, feature
+detection, BOSH and CredHub integration, YAML merging utilities, and the
+init/perform/done lifecycle.
+
+The standard hook lifecycle is:
+
+=over 4
+
+=item 1.
+
+Genesis instantiates the hook via C<init>, passing an C<env> option that
+holds the C<Genesis::Env> object for the deployment being operated on.
+
+=item 2.
+
+Genesis calls C<perform> on the hook. Kit authors implement this method to
+carry out the hook's work.
+
+=item 3.
+
+The hook signals completion by calling C<done>, optionally passing a result
+value. Genesis reads the outcome via C<completed> and C<results>.
+
+=back
+
+Concrete hook subclasses that override C<perform> should call C<$self->done>
+or C<$self->done($value)> before returning. Subclasses that do not implement
+C<perform> will trigger a kit bug error at runtime.
+
+=head1 METHODS
+
+=head2 init
+
+    my $hook = Genesis::Hook->init(%opts);
+
+Constructs and returns a new hook object. C<env> is required in C<%opts>; all
+other key-value pairs are stored verbatim on the object. The hook's type is
+read from the C<GENESIS_KIT_HOOK> environment variable and stored as
+C<< $hook->{type} >>. Traces all environment variables at the C<trace> log
+level during initialization.
+
+B<Parameters:>
+
+=over 4
+
+=item C<%opts>
+
+Key-value pairs stored on the hook object. The following key is required:
+
+=over 4
+
+=item C<env>
+
+B<(required)> A C<Genesis::Env> object representing the deployment environment
+that the hook is being run against.
+
+=back
+
+=back
+
+B<Returns:> A blessed hook object of the calling class.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Missing required arguments for a perl-based kit hook call: %s"> -- raised
+via C<bug()> if the C<env> key is absent from C<%opts>. C<%s> is replaced
+with the comma-separated list of missing argument names.
+
+=back
+
+B<Examples:>
+
+    my $hook = Genesis::Hook::Blueprint->init(env => $env);
+    # Returns: a blessed Genesis::Hook::Blueprint object
+
+=head2 perform
+
+    $hook->perform;
+
+Abstract method that must be implemented by every concrete hook subclass.
+The base class implementation calls C<kit_bug> with a message instructing
+the kit author to provide a C<perform> method. Kit authors override this
+method to implement the hook's logic and must call C<done> before returning.
+
+B<Returns:> Nothing -- the base class implementation always calls C<kit_bug>,
+which terminates the process.
+
+B<Examples:>
+
+    package Genesis::Hook::Blueprint::my_kit;
+    use parent 'Genesis::Hook::Blueprint';
+
+    sub perform {
+        my ($self) = @_;
+        # ... hook logic ...
+        $self->done($manifest_yaml);
+        # Returns: nothing (done() handles the result)
+    }
+
+=head2 done
+
+    $hook->done;
+    $hook->done($results);
+
+Marks the hook as complete and records an optional result value. When called
+without arguments, sets the result to C<1> and marks the hook complete. When
+called with a defined C<$results> argument, stores that value and marks the
+hook complete. When called with an explicit C<undef>, stores C<undef> and
+marks the hook as I<not> complete (the C<complete> flag is set to C<0>).
+
+Modifies the object in-place.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$results>
+
+B<(optional)> Any value to record as the hook's result. Pass C<undef>
+explicitly to mark the hook as incomplete.
+
+=back
+
+B<Returns:> The C<$results> value passed in, or C<1> when called with no
+arguments.
+
+B<Examples:>
+
+    # Signal success with no particular result
+    $self->done;
+    # Returns: 1
+
+    # Signal success and return a YAML string to Genesis
+    $self->done($merged_yaml);
+    # Returns: the value of $merged_yaml
+
+    # Signal that no result is available (marks hook incomplete)
+    $self->done(undef);
+    # Returns: undef
+
+=head2 results
+
+    my $value   = $hook->results;
+    my $bool    = $hook->completed;
+    $hook->check_minimum_genesis_version($min_version);
+
+This entry covers three closely related methods that appear together in the
+source:
+
+B<results> -- Returns the result recorded by C<done>, or C<undef> if the
+hook has not been marked complete.
+
+B<completed> -- Returns true if C<done> has been called in a way that marks
+the hook complete (i.e., C<done> was called with a defined argument or with
+no arguments).
+
+B<check_minimum_genesis_version> -- Verifies that the running Genesis version
+is at least C<$min_version>. Both the running version and C<$min_version>
+must be valid semantic version strings. If either is invalid, or if the
+running version is older than required, the method terminates with an
+upgrade prompt.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$min_version>
+
+A semantic version string (e.g., C<'3.0.0'>) specifying the minimum
+required Genesis version. Used by C<check_minimum_genesis_version> only.
+
+=back
+
+B<Returns:>
+
+C<results> returns the stored result value, or C<undef> if C<completed>
+returns false.
+
+C<completed> returns the value of the internal C<complete> flag (C<1>
+or C<0>).
+
+C<check_minimum_genesis_version> returns nothing on success.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"The %s kit %s hook requires Genesis v%s or higher -- cannot continue.
+Please upgrade using #G{%s upgrade}"> -- raised via C<bail()> by
+C<check_minimum_genesis_version> if the running Genesis version is too old
+or either version string is not a valid semver. The placeholders are: kit
+identifier, hook type, minimum version string, and the genesis binary name.
+
+=back
+
+B<Examples:>
+
+    $hook->done('some output');
+    print $hook->completed ? "yes" : "no";
+    # Returns: yes
+
+    my $r = $hook->results;
+    # Returns: 'some output'
+
+    $hook->check_minimum_genesis_version('3.0.0');
+    # Returns: nothing on success; dies if version requirement not met
+
+=head2 env
+
+    my $env = $hook->env;
+
+Returns the C<Genesis::Env> object associated with this hook, as passed to
+C<init>.
+
+Also provides C<deployed> -- returns C<1> if the environment has already
+been deployed (its current deployment state is C<'deployed'>), or C<0>
+otherwise.
+
+    my $bool = $hook->deployed;
+
+B<Returns:>
+
+C<env> returns the C<Genesis::Env> object stored on the hook.
+
+C<deployed> returns C<1> or C<0>.
+
+B<Examples:>
+
+    my $env = $hook->env;
+    print $env->name;
+    # Returns: the environment's name
+
+    if ($hook->deployed) {
+        my $data = $hook->exodus_data('director_url');
+    }
+    # Returns: 1 if already deployed, 0 otherwise
+
+=head2 use_create_env
+
+    my $bool = $hook->use_create_env;
+
+Returns true if the environment is configured to use C<bosh create-env>
+rather than a standard BOSH director deployment. Returns C<undef> or false
+if no environment is associated with the hook.
+
+B<Returns:> The boolean result of C<< $env->use_create_env >>, or C<undef>.
+
+B<Examples:>
+
+    if ($hook->use_create_env) {
+        # this is a proto/create-env environment
+    }
+    # Returns: 1 if using create-env, undef otherwise
+
+=head2 features
+
+    my @features = $hook->features;
+
+Returns the list of features active for the environment. The list is
+retrieved from the environment object on first call and cached on the hook.
+
+B<Returns:> A list of feature name strings.
+
+B<Examples:>
+
+    my @features = $hook->features;
+    # Returns: ('ha', 'tls', ...)
+
+=head2 set_features
+
+    $hook->set_features();
+
+Replaces the hook's cached feature list with the supplied C<@features>.
+Clears the internal feature-lookup cache so that subsequent calls to
+C<want_feature> use the new list.
+
+Modifies the object in-place.
+
+B<Parameters:>
+
+=over 4
+
+=item C<@features>
+
+The new list of feature name strings to activate.
+
+=back
+
+B<Returns:> The method has no meaningful return value.  The implicit return is
+an internal implementation detail and should not be relied upon.
+
+B<Examples:>
+
+    $hook->set_features('ha', 'tls');
+    print $hook->want_feature('ha') ? "yes" : "no";
+    # Returns: yes
+
+=head2 want_feature
+
+    my $bool = $hook->want_feature($feature);
+
+Tests whether a given feature is active. C<$feature> may be a plain string
+or a compiled regular expression. For plain strings, returns a true value
+if the feature is present in the active feature set. For regular expressions,
+returns C<1> if at least one active feature name matches, or C<0> if none
+match.
+
+The internal feature lookup hash is built lazily on the first call and
+cached until C<set_features> is called.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$feature>
+
+A feature name string, or a C<Regexp> object (e.g., C<qr/^proto-/>) to
+match against all active feature names.
+
+=back
+
+B<Returns:> A true value if the feature is active, false otherwise. Returns
+C<1> for regex matches, or the hash slot value (C<1>) for exact string
+matches.
+
+B<Examples:>
+
+    # Exact match
+    if ($hook->want_feature('ha')) {
+        # include HA manifests
+    }
+    # Returns: 1 if 'ha' is in the feature set, undef otherwise
+
+    # Regex match
+    my $has_proto = $hook->want_feature(qr/^proto-/);
+    # Returns: 1 if any feature name starts with 'proto-', 0 otherwise
+
+=head2 wants_feature
+
+    my $bool    = $hook->wants_feature($feature, $feature2);
+    my $iaas    = $hook->iaas;
+    my $scale   = $hook->scale;
+    my $bool    = $hook->is_ocfp;
+    my $name    = $hook->cpi_name;
+    my $bool    = $hook->cpi_enabled;
+    my $kit     = $hook->kit;
+    $hook->kit_bug($msg, @args);
+
+This entry covers C<wants_feature> and the environment-delegation accessors
+that appear together in the source.
+
+B<wants_feature> -- Alias for C<want_feature>. Accepts the same arguments
+and returns the same value.
+
+B<iaas> -- Returns the IaaS type string for the environment (e.g., C<'aws'>,
+C<'vsphere'>, C<'azure'>), or C<undef> if no environment is set.
+
+B<scale> -- Returns the scale classification for the environment (e.g.,
+C<'dev'>, C<'prod'>), or C<undef> if no environment is set.
+
+B<is_ocfp> -- Returns true if the environment is an OCFP-managed environment,
+or C<undef> if no environment is set.
+
+B<cpi_name> -- Returns the CPI name for the environment (e.g., C<'aws_cpi'>,
+C<'vsphere_cpi'>), or C<undef> if no environment is set.
+
+B<cpi_enabled> -- Returns true if the environment's CPI is enabled, or
+C<undef> if no environment is set.
+
+B<kit> -- Returns the C<Genesis::Kit> object for the environment's kit, or
+C<undef> if no environment is set.
+
+B<kit_bug> -- Reports a kit bug by delegating to
+C<< $hook->kit->kit_bug($msg, @args) >>. If no kit is available, dies with
+an error identifying the environment.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$feature>
+
+For C<wants_feature>: a feature name string or C<Regexp> object.
+
+=item C<$msg>
+
+For C<kit_bug>: a C<sprintf>-style format string describing the bug.
+
+=item C<@args>
+
+For C<kit_bug>: arguments for the format string.
+
+=back
+
+B<Returns:>
+
+C<wants_feature> returns a true value if the feature is active, false
+otherwise.
+
+C<iaas>, C<scale>, C<is_ocfp>, C<cpi_name>, C<cpi_enabled>, and C<kit>
+return the corresponding value from the environment object, or C<undef> if
+no environment is set.
+
+C<kit_bug> never returns -- it always terminates the process via C<bail()>.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Kit bug detected, but cannot determine kit for %s/%s"> -- raised by
+C<kit_bug> if C<kit> returns undef. The first C<%s> is the environment
+name and the second is the environment type.
+
+=back
+
+B<Examples:>
+
+    if ($hook->wants_feature('mtls')) {
+        # mTLS feature is active
+    }
+    # Returns: 1 if active, undef otherwise
+
+    my $iaas = $hook->iaas;
+    # Returns: 'aws'
+
+    $hook->kit_bug("Unexpected option value %s: %s", 'mode', $mode);
+    # Returns: never (always dies)
+
+=head2 kit_has_file
+
+    my $bool = $hook->kit_has_file($file);
+
+Tests whether the given C<$file> exists as a plain file inside the kit's
+directory.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$file>
+
+A path relative to the kit root.
+
+=back
+
+B<Returns:> True if the file exists and is a plain file, false otherwise.
+
+B<Examples:>
+
+    if ($hook->kit_has_file('hooks/post-deploy')) {
+        # kit ships a post-deploy hook
+    }
+    # Returns: 1 if the file exists, empty string otherwise
+
+=head2 supports_iaas
+
+    my $bool = $hook->supports_iaas;
+
+Returns true if the environment's IaaS type appears in the kit metadata's
+C<supports> list.
+
+B<Returns:> True if the IaaS is in the kit's supported list, false otherwise.
+
+B<Examples:>
+
+    unless ($hook->supports_iaas) {
+        # warn that this IaaS is not supported
+    }
+    # Returns: 1 if supported, empty string otherwise
+
+=head2 relative_env_path
+
+    my $path = $hook->relative_env_path;
+
+Returns a human-readable path to the environment file, relative to the
+directory from which genesis was originally invoked
+(C<GENESIS_ORIGINATING_DIR>).
+
+B<Returns:> A string path to the environment file.
+
+B<Examples:>
+
+    my $path = $hook->relative_env_path;
+    # Returns: './envs/dev/us-east-1.yml'
+
+=head2 titleize
+
+    my @titled = titleize(@words);
+
+Applies title-case formatting to each string in C<@words>. Each word
+beginning with a letter or apostrophe is capitalized with the remainder
+lowercased.  This is a plain function, not a method -- it operates
+directly on its argument list without stripping an invocant.
+
+B<Parameters:>
+
+=over 4
+
+=item C<@words>
+
+Strings to title-case.
+
+=back
+
+B<Returns:> A list of title-cased strings.
+
+B<Examples:>
+
+    my @t = titleize('hello world');
+    # Returns: ('Hello World')
+
+=head2 spruce_merge
+
+    my $yaml = $hook->spruce_merge(@args);
+    my ($yaml, $rc, $err) = $hook->spruce_merge(\%run_opts, @args);
+
+Runs C<spruce merge> on a list of YAML files and raw hash arguments. Each
+element of C<@args> may be:
+
+=over 4
+
+=item *
+
+A hash reference -- serialized to a temporary YAML file and included as a
+merge input.
+
+=item *
+
+A string beginning with C<-> -- treated as a C<spruce> command-line option.
+If the option is C<--cherry-pick> or C<--prune>, the immediately following
+argument is consumed as its value.
+
+=item *
+
+An absolute file path that exists on disk -- included directly.
+
+=item *
+
+A relative path that resolves to an existing file under the kit root via
+C<< $kit->path($arg) >> -- resolved and included.
+
+=back
+
+In list context, returns the raw output, exit code, and error string from
+C<spruce merge>, allowing the caller to handle errors. In scalar context,
+terminates on non-zero exit.
+
+An optional C<\%run_opts> hash reference may be passed as the first argument
+to control the underlying C<run> call.
+
+B<Parameters:>
+
+=over 4
+
+=item C<\%run_opts>
+
+B<(optional)> A hash reference of options for the underlying C<run> call.
+Must be the first argument if present.
+
+=item C<@args>
+
+Files, hash references, and C<spruce> flags to pass to C<spruce merge>.
+
+=back
+
+B<Returns:>
+
+In scalar context, returns the merged YAML output string.
+
+In list context, returns C<($yaml, $rc, $err)> -- the output, exit code, and
+error string from C<spruce merge>.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Invalid argument for spruce merge: %s"> -- raised via C<bug()> if an
+argument is neither a hash reference, a flag, nor an existing file. C<%s>
+is replaced with the unrecognized argument.
+
+=item *
+
+C<"Failed to merge spruce files: %s"> -- raised via C<bail()> in scalar
+context if C<spruce merge> exits with a non-zero status. C<%s> is replaced
+with the error output from C<spruce>.
+
+=back
+
+B<Examples:>
+
+    # Scalar context -- terminates on error
+    my $yaml = $hook->spruce_merge('base.yml', 'networking.yml');
+    # Returns: merged YAML string
+
+    # List context -- caller handles errors
+    my ($out, $rc, $err) = $hook->spruce_merge('base.yml', 'override.yml');
+    # Returns: ($yaml_string, 0, '') on success
+
+    # Mix of files and inline data
+    my $yaml = $hook->spruce_merge(
+        'base.yml',
+        { meta => { name => $hook->env->name } },
+    );
+    # Returns: merged YAML string
+
+    # With spruce options
+    my $yaml = $hook->spruce_merge(
+        'base.yml',
+        '--prune', 'meta',
+        'overlay.yml',
+    );
+    # Returns: merged YAML string with 'meta' key pruned
+
+=head2 TRUE
+
+    my $true  = Genesis::Hook->TRUE($ops, @required);
+    my $false = Genesis::Hook->FALSE;
+    my $null  = Genesis::Hook->NULL;
+
+JSON/YAML boolean and null helpers. These four methods are documented
+together because they appear in the source as a group with C<check_for_required_args>.
+
+B<TRUE> returns the JSON boolean true value, suitable for use in data
+structures that will be serialized to JSON or YAML.
+
+B<FALSE> returns the JSON boolean false value.
+
+B<NULL> returns the JSON null value.
+
+B<check_for_required_args> validates that all keys listed in C<@required>
+are present in the hash reference C<$ops>. See L</check_for_required_args>
+under L</INTERNAL METHODS> for details; it is documented there in full
+because it is grouped with these methods in the source.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$ops>
+
+For C<check_for_required_args>: a hash reference of constructor options to
+validate. Not used by C<TRUE>, C<FALSE>, or C<NULL>.
+
+=item C<@required>
+
+For C<check_for_required_args>: the list of key names that must be defined
+in C<$ops>.
+
+=back
+
+B<Returns:>
+
+C<TRUE> returns the JSON boolean true singleton (JSON::PP::true).
+
+C<FALSE> returns the JSON boolean false singleton (JSON::PP::false).
+
+C<NULL> returns the JSON null singleton (JSON::PP::null).
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Missing required arguments for a perl-based kit hook call: %s"> -- raised
+via C<bug()> by C<check_for_required_args> if any required keys are absent.
+C<%s> is replaced with the comma-separated list of missing key names.
+
+=back
+
+B<Examples:>
+
+    my $data = {
+        enabled => $hook->TRUE,
+        debug   => $hook->FALSE,
+        comment => $hook->NULL,
+    };
+    # Returns: a hash with JSON-compatible boolean and null values
+
+=head2 require_hook_lib
+
+    Genesis::Hook->require_hook_lib;
+
+Adds the C<lib/> directory adjacent to the calling file to Perl's C<@INC>,
+allowing hook modules to load local library files. This method uses
+C<caller()> to determine the calling file's location.
+
+B<Returns:> Nothing meaningful (the return value of the internal C<eval>).
+
+B<Examples:>
+
+    # At the top of a kit hook module:
+    Genesis::Hook->require_hook_lib;
+    use MyKit::Helper;
+    # Returns: nothing meaningful
+
+=head2 get_config_override
+
+    my $value = $hook->get_config_override($key, $default);
+
+Looks up a BOSH config override value from the environment's manifest. The
+lookup path is C<bosh-configs.E<lt>typeE<gt>.E<lt>keyE<gt>>, where the type
+(C<cloud>, C<runtime>, or C<cpi>) is inferred from the hook's class unless
+the key already starts with one of those prefixes.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$key>
+
+The configuration key to look up. If it begins with C<cloud.>, C<runtime.>,
+or C<cpi.>, it is used as-is under C<bosh-configs>. Otherwise, the type
+prefix is determined by the hook's class (C<Genesis::Hook::CloudConfig>,
+C<Genesis::Hook::RuntimeConfig>, or C<Genesis::Hook::CpiConfig>).
+
+=item C<$default>
+
+B<(optional)> The default value to return if the key is not found.
+
+=back
+
+B<Returns:> The resolved value from the environment's manifest, or
+C<$default> if absent.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"%s hooks must specify the bosh_config type as the first part of the
+lookup key"> -- raised via C<bail()> if the hook is not a known config hook
+class and C<$key> has no recognized type prefix. C<%s> is replaced with the
+parent class name.
+
+=back
+
+B<Examples:>
+
+    # From a CloudConfig hook -- key resolved under bosh-configs.cloud.*
+    my $networks = $hook->get_config_override('networks', []);
+    # Returns: the value of bosh-configs.cloud.networks, or []
+
+    # Explicit type prefix -- works from any hook class
+    my $rules = $hook->get_config_override('runtime.addons', []);
+    # Returns: the value of bosh-configs.runtime.addons, or []
+
+=head2 exodus_data
+
+    my $hashref = $hook->exodus_data();
+    my $value   = $hook->exodus_data;
+    my @values  = $hook->exodus_data;
+
+Retrieves exodus metadata for the environment. The full exodus hash is
+fetched once from C<< $env->exodus_lookup('.', {}) >> and cached on the
+hook for subsequent calls.
+
+With no arguments, returns the full exodus data hash reference. With a
+single key, returns the value for that key. With multiple keys, returns the
+corresponding values -- as a list in list context, or as an array reference
+in scalar context.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$key>, C<$key2>, ...
+
+B<(optional)> One or more exodus data keys to retrieve.
+
+=back
+
+B<Returns:>
+
+With no arguments, returns a hash reference of all exodus data.
+
+With one argument, returns the scalar value for that key.
+
+With two or more arguments, returns a list of values in list context, or an
+array reference in scalar context.
+
+B<Examples:>
+
+    # All exodus data
+    my $data = $hook->exodus_data;
+    # Returns: { director_url => '...', ... }
+
+    # Single key
+    my $url = $hook->exodus_data('director_url');
+    # Returns: 'https://bosh.example.com'
+
+    # Multiple keys in list context
+    my ($url, $user) = $hook->exodus_data('director_url', 'admin_username');
+    # Returns: ('https://bosh.example.com', 'admin')
+
+    # Multiple keys in scalar context
+    my $aref = $hook->exodus_data('director_url', 'admin_username');
+    # Returns: ['https://bosh.example.com', 'admin']
+
+=head2 bosh
+
+    my $bosh = $hook->bosh;
+
+Returns a connected and validated BOSH client object for the environment's
+BOSH director. The client is created on the first call and cached for
+subsequent calls.
+
+B<Returns:> A connected BOSH client object.
+
+B<Examples:>
+
+    my $bosh = $hook->bosh;
+    my ($out, $rc) = $bosh->execute('deployments', '--column', 'name');
+    # Returns: the cached BOSH client object
+
+=head2 read_json_from_bosh
+
+    my $rows = $hook->read_json_from_bosh(@args);
+
+Runs a BOSH command with C<--json> appended and parses the first table's
+rows from the JSON response. Calls C<bail()> on failure.
+
+B<Parameters:>
+
+=over 4
+
+=item C<@args>
+
+Command-line arguments to pass to the BOSH execute method (the C<--json>
+flag is appended automatically).
+
+=back
+
+B<Returns:> An array reference of row hash references from the first table
+in the BOSH JSON output.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Failed to read JSON from BOSH command: %s"> -- raised via C<bail()> if
+the BOSH command exits with a non-zero status. C<%s> is replaced with the
+error output.
+
+=back
+
+B<Examples:>
+
+    my $rows = $hook->read_json_from_bosh('deployments', '--column', 'name');
+    # Returns: [{ name => 'my-deployment' }, ...]
+
+=head2 get_credhub_variable
+
+    my $cred_name = $hook->get_credhub_variable($prefix, $path, $key, $value);
+
+Computes a deterministic CredHub credential name by hashing the path, key,
+and value together. The name is of the form
+C<"$prefix$path--$key--$sha1">, where the SHA-1 digest is the first 8 hex
+characters of C<sha1("$path--$key--$value")>.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$prefix>
+
+A string prefix for the CredHub credential name.
+
+=item C<$path>
+
+The path component used in the hash and in the credential name.
+
+=item C<$key>
+
+The key component used in the hash and in the credential name.
+
+=item C<$value>
+
+The value hashed into the credential name to make it deterministic and
+unique per value.
+
+=back
+
+B<Returns:> A credential name string of the form
+C<"$prefix$path--$key--$sha1">.
+
+B<Examples:>
+
+    my $name = $hook->get_credhub_variable('/bosh/', 'certs', 'ca', $ca_pem);
+    # Returns: '/bosh/certs--ca--a1b2c3d4'
+
+=head2 load_hook_module
+
+    my $module = Genesis::Hook->load_hook_module($file, $kit);
+
+Loads a Perl module file for a kit hook. If C<$file> is not an absolute
+path, it is resolved relative to the kit's root. The module's package name
+is retrieved from the kit and the file is C<require>d only if it has not
+already been loaded (checked via C<%INC>). After loading, the module is
+registered in C<%INC> to prevent redefinition warnings on subsequent calls.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$file>
+
+Path to the Perl module file. If not absolute, resolved relative to the
+kit root.
+
+=item C<$kit>
+
+A C<Genesis::Kit> object used to resolve the file path and retrieve the
+module's package name.
+
+=back
+
+B<Returns:> The package name string of the loaded hook module.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Hook module %s does not exist for kit %s"> -- raised if the kit cannot
+provide a module name for the file. The first C<%s> is the resolved file
+path and the second is the kit identifier.
+
+=item *
+
+C<"Failed to load hook module %s: %s"> -- raised if C<require> fails. The
+first C<%s> is the file path and the second is the Perl error string.
+
+=back
+
+B<Examples:>
+
+    my $pkg = Genesis::Hook->load_hook_module('hooks/blueprint.pm', $kit);
+    # Returns: 'Genesis::Hook::Blueprint::my_kit'
+
+=head2 tempfile
+
+    my $path = $hook->tempfile;
+    my $path = $hook->tempfile($name);
+
+Returns the full path to a file inside the environment's work directory.
+If C<$name> is omitted, a name of the form
+C<tempfile-E<lt>timestampE<gt>-E<lt>randomE<gt>> is generated. The file
+itself is not created; only the path is returned.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$name>
+
+B<(optional)> The filename to use within the work directory. Defaults to an
+auto-generated name based on the current time and a random number.
+
+=back
+
+B<Returns:> The full path string for the temporary file.
+
+B<Examples:>
+
+    my $path = $hook->tempfile('manifest.yml');
+    # Returns: '/path/to/env/work/manifest.yml'
+
+    my $path = $hook->tempfile;
+    # Returns: '/path/to/env/work/tempfile-1710000000-4321'
+
+=head2 tempdir
+
+    my $path = $hook->tempdir;
+    my $path = $hook->tempdir($name);
+
+Returns the full path to a directory inside the environment's work directory,
+creating it if it does not already exist. If C<$name> is omitted, a name of
+the form C<tempdir-E<lt>timestampE<gt>-E<lt>randomE<gt>> is generated.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$name>
+
+B<(optional)> The directory name to use within the work directory. Defaults
+to an auto-generated name based on the current time and a random number.
+
+=back
+
+B<Returns:> The full path string for the temporary directory.
+
+B<Examples:>
+
+    my $dir = $hook->tempdir('staging');
+    # Returns: '/path/to/env/work/staging' (created if absent)
+
+    my $dir = $hook->tempdir;
+    # Returns: '/path/to/env/work/tempdir-1710000000-9876' (created if absent)
+
+=head1 ABSTRACT METHODS
+
+The following method must be implemented by every concrete hook subclass.
+The base class implementation calls C<kit_bug> and terminates with an error.
+
+=head2 perform
+
+    $hook->perform;
+
+Carries out the hook's work. The implementation must call C<$self->done> or
+C<$self->done($result)> before returning to signal completion. See
+C<Genesis::Hook::Blueprint>, C<Genesis::Hook::Check>,
+and C<Genesis::Hook::Features> for examples of complete implementations.
+
+B<Returns:> Whatever value was passed to C<done>, made available via
+C<results>. The return value of C<perform> itself is not used by Genesis;
+only the value recorded via C<done> matters.
+
+=head1 INTERNAL METHODS
+
+These methods are internal to the implementation. They may change without
+notice and should not be called directly.
+
+=head2 check_for_required_args
+
+    Genesis::Hook->check_for_required_args(\%opts, @required);
+
+Validates that all keys listed in C<@required> are present (defined) in
+C<%opts>. Used by C<init> to enforce required constructor arguments.
+
+B<Parameters:>
+
+=over 4
+
+=item C<\%opts>
+
+A hash reference of the options to check.
+
+=item C<@required>
+
+The list of key names that must be defined in C<%opts>.
+
+=back
+
+B<Returns:> C<1> if all required keys are present.
+
+B<Errors:>
+
+=over 4
+
+=item *
+
+C<"Missing required arguments for a perl-based kit hook call: %s"> -- raised
+via C<bug()> if any required keys are absent. C<%s> is replaced with the
+comma-separated list of missing key names.
+
+=back
+
+B<Examples:>
+
+    Genesis::Hook->check_for_required_args(\%opts, qw/env/);
+    # Returns: 1 if 'env' is present in %opts; dies otherwise
+
+=head1 AUTHORS
+
+Written by the Genesis team.
+
+=head1 COPYRIGHT
+
+This module is free software, distributed under the same terms as Perl itself.
+
+=cut
