@@ -4,6 +4,8 @@ package Genesis::Hook::CloudConfig::LookupRef;
 use strict;
 use warnings;
 
+use Genesis qw(struct_lookup);
+
 sub new {
 	my ($class, $paths, $default) = @_;
 	$paths = [ $paths ] unless ref($paths) eq 'ARRAY';

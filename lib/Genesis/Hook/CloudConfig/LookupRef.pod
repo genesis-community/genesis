@@ -158,13 +158,10 @@ that callers are aware of the current behaviour.
 
 =over 4
 
-=item LR-1 (critical)
+=item LR-1 (critical) E<mdash> B<RESOLVED>
 
-C<resolve> line 28: calls C<struct_lookup> without importing it. The
-module has no C<use Genesis qw(struct_lookup)> statement. Any call to
-C<resolve> will die at runtime with C<"Undefined subroutine
-&Genesis::Hook::CloudConfig::LookupRef::struct_lookup">. The fix is to add
-C<use Genesis qw(struct_lookup);> to the module.
+C<resolve> line 28: previously called C<struct_lookup> without importing it.
+Fixed by adding C<use Genesis qw(struct_lookup);> to the module.
 
 =back
 

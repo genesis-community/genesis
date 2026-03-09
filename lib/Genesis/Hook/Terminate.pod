@@ -240,14 +240,11 @@ that callers are aware of the current behaviour.
 
 =over 4
 
-=item TERM-1 (smell)
+=item TERM-1 (smell) E<mdash> B<RESOLVED>
 
-C<init> line 25: sets C<< $self->{completed} >> (with C<-ed> suffix) to
-C<0>. The base class C<Genesis::Hook> stores and reads the completion flag
-under C<< $self->{complete} >> (no C<-ed> suffix), as seen in C<done> and
-C<completed>. The assignment in C<Terminate>'s C<init> writes to a key that
-is never read, so it has no observable effect. The key should be
-C<{complete}> to be consistent with the base class.
+C<init> line 25: previously set C<< $self->{completed} >> (with C<-ed>
+suffix) which was inconsistent with the base class key C<{complete}>. Fixed
+by changing to C<< $self->{complete} >>.
 
 =back
 

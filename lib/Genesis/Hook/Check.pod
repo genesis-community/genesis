@@ -499,14 +499,13 @@ that callers are aware of the current behaviour.
 
 =over 4
 
-=item CHK-1 (inconsistency)
+=item CHK-1 (inconsistency) E<mdash> B<by-design>
 
-C<done> is never called within C<Genesis::Hook::Check> itself. Other hook
-classes (e.g., C<Genesis::Hook::Terminate>) call C<< $self->done($result) >>
-at the end of C<perform>. C<Genesis::Hook::Check> omits this call, leaving
-the hook in an incomplete state unless the subclass explicitly calls C<done>
-in its own C<perform> implementation. Subclasses must call C<< $self->done >>
-(or C<< $self->done($result) >>) before returning from C<perform>.
+C<done> is never called within C<Genesis::Hook::Check> itself.
+C<Genesis::Hook::Check> is an abstract base class that delegates C<perform>
+to subclasses. Subclasses are responsible for calling
+C<< $self->done($result) >> before returning from C<perform>. This is the
+intended lifecycle pattern, not a bug.
 
 =back
 
