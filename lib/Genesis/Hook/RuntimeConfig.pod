@@ -950,6 +950,48 @@ B<Examples:>
     my @names = $self->_get_req_names('dns');
     # Returns: ('dns')
 
+=head1 KNOWN ISSUES
+
+The following defects are tracked in FWT-751 and are documented here so
+that callers are aware of the current behaviour.
+
+=over 4
+
+=item RC-1 (critical) E<mdash> B<RESOLVED>
+
+C<validate_runtime_config_requests()> lines 171 and 257: both previously
+called C<get_req_names> but only C<_get_req_names> (with underscore prefix)
+exists. Fixed by correcting both call sites to C<_get_req_names>.
+
+=item RC-2 (critical) E<mdash> B<by-design>
+
+C<upload_runtime_config()> line 390: C<prompt_for_boolean($prompt, 1, 1)>
+passes C<$invert=1> as the third argument. This is intentional E<mdash> the
+C<if(true){skip}> control flow pattern requires the inverted return so that
+a "Yes" answer proceeds with the upload and a "No" answer skips it.
+C<remove_configs()> line 447 uses the same pattern. Both call sites are
+correct.
+
+=item RC-3 (smell) E<mdash> B<RESOLVED>
+
+C<remove_configs()> lines 433 and 444: both log messages previously
+contained the misspelling C<"actve">. Fixed by correcting to C<"active">.
+
+=item RC-4 (logic bug) E<mdash> B<RESOLVED>
+
+C<validate_runtime_config_requests()> line 257: the defined-or operator
+C<//> previously evaluated C<@requests> in scalar context (array length),
+which is always defined even when empty. The fallback was therefore never
+reached. Fixed by using an explicit ternary check on C<@requests>.
+
+=item RC-5 (smell) E<mdash> B<RESOLVED>
+
+C<remove_configs()> lines 442-446: the C<else> block previously used space
+indentation while the rest of the file uses hard tabs. Fixed by converting
+to tab indentation consistent with the vim modeline.
+
+=back
+
 =head1 AUTHORS
 
 Written by the Genesis team.

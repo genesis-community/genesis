@@ -1112,6 +1112,21 @@ B<Examples:>
     Genesis::Hook->check_for_required_args(\%opts, qw/env/);
     # Returns: 1 if 'env' is present in %opts; dies otherwise
 
+=head1 KNOWN ISSUES
+
+The following defects are tracked in FWT-751 and are documented here so
+that callers are aware of the current behaviour.
+
+=over 4
+
+=item HK-1 (smell) E<mdash> B<RESOLVED>
+
+Lines 5 and 42: C<mkdir_or_fail> was previously absent from the explicit
+import list despite being called in C<tempdir()>. Fixed by adding
+C<mkdir_or_fail> to the C<use Genesis qw(...)> import list.
+
+=back
+
 =head1 AUTHORS
 
 Written by the Genesis team.

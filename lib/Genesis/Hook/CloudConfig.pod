@@ -2236,6 +2236,71 @@ B<Examples:>
     my $plural = _plural_of('network');
     # Returns: 'networks'
 
+=head1 KNOWN ISSUES
+
+The following defects are tracked in FWT-751 and are documented here so
+that callers are aware of the current behaviour.
+
+=over 4
+
+=item CC-1 (critical) E<mdash> B<RESOLVED>
+
+C<_add_extended_cloud_config()> line 970: the cycle detection check
+previously used C<$type> (singular) as the lookup key into
+C<$extended_config>, which is keyed by C<$group_label> (plural). The
+existence check therefore always returned false, making the cycle detection
+bail unreachable. Fixed by changing C<$type> to C<$group_label>.
+
+=item CC-2 (critical) E<mdash> B<RESOLVED>
+
+C<_validate_override_schema()> line 896: C<!ref(...)> previously applied
+C<!> to the C<ref(...)> call before comparing to C<'HASH'>. Because
+C<!ref(...)> yields C<""> or C<"1">, the C<eq 'HASH'> comparison was
+always false. Fixed by changing to C<ref(...) ne 'HASH'>.
+
+=item CC-3 (critical) E<mdash> B<RESOLVED>
+
+C<_build_logical_subnet_amalgamation()> lines 1673 and 1677: both
+C<bail()> calls previously used single-quoted strings, so C<'\n'> was a
+literal backslash-n rather than a newline. Fixed by changing to
+double-quoted strings.
+
+=item CC-4 (critical) E<mdash> B<RESOLVED>
+
+C<_network_cloud_properties_for_iaas()> line 1216: when resolving
+per-subnet cloud-property overrides the code previously appended
+C<'.cloud_properties'> to C<$source_path> which already ended with
+C<'.cloud_properties'>. The doubled suffix never resolved, so all
+explicit per-subnet cloud-property overrides were silently ignored.
+Fixed by removing the redundant suffix.
+
+=item CC-5 (dead code) E<mdash> B<RESOLVED>
+
+C<_evaluate_matching_rule()>: the C<elsif> branch for literal-string
+comparison was previously unreachable, nested inside the regex C<if>
+block. Fixed by restructuring: the literal-string comparison is now an
+C<elsif> on the outer C<if>, and the redundant C<defined($field_value)>
+guard was removed (C<$field_value> is always defined at that point).
+
+=item CC-6 (smell) E<mdash> B<RESOLVED>
+
+Line 226: the fold-marker comment previously read C<# _az_definition_for>
+but the subroutine is C<_add_cpi_to_network_az>. Fixed by correcting the
+fold-marker comment.
+
+=item CC-6b (smell) E<mdash> B<RESOLVED>
+
+Line 177: the C<network_reference> subroutine previously had a fold-marker
+comment that read C<# subnet_reference>. Fixed by correcting the
+fold-marker comment.
+
+=item CC-7 (smell) E<mdash> B<RESOLVED>
+
+C<_add_cpi_to_network_az()> line 230: the assignment statement previously
+had no terminating semicolon. Fixed by adding the missing semicolon.
+
+=back
+
 =head1 AUTHORS
 
 Written by the Genesis team.

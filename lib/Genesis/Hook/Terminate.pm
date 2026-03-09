@@ -22,7 +22,7 @@ sub init {
 		"Unknown termination mode '%s'; expected 'before', 'after', or 'failed'",
 		$obj->{mode}
 	) unless $obj->{mode} =~ /^(before|after|failed)$/;
-	$obj->{completed} = 0;
+	$obj->{complete} = 0;
 	return $obj;
 }
 

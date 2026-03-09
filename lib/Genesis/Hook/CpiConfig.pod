@@ -276,7 +276,8 @@ environment manifest, then C<cpi.E<lt>iaasE<gt>.*> in the OCFP
 configuration, then the descriptor's default. After the declared properties
 are resolved, any additional keys present in C<bosh-configs.cpi> that were
 not already resolved are merged in as overrides. Vault references in
-override values are entombed in CredHub automatically.
+override values are intended to be entombed in CredHub automatically, but
+this path is currently non-functional due to three defects described below.
 
 The resulting flat hash is passed through C<unflatten> to produce a nested
 structure when dot-notation config paths are used.
@@ -360,6 +361,35 @@ B<Examples:>
 
     my $path = $hook->cpi_entombment_path_for('vcenter_password', 's3cr3t');
     # Returns: '/bosh/cpi-config-property--vcenter_password--a1b2c3d4'
+
+=head1 KNOWN ISSUES
+
+The following defects are tracked in FWT-751 and are documented here so
+that callers are aware of the current behaviour.
+
+=over 4
+
+=item CPI-1 (critical) E<mdash> B<RESOLVED>
+
+C<gather_properties()> line 174: the vault-reference override path previously
+called C<credhub_entombment_path_for>, which does not exist. Fixed by
+correcting to C<cpi_entombment_path_for>.
+
+=item CPI-2 (dead code) E<mdash> B<RESOLVED>
+
+C<gather_properties()> line 172: the vault-reference regex previously
+captured the path into C<$rel_path = $2>, which was never used. Fixed by
+removing the unused capture assignment.
+
+=item CPI-3 (dead code / bug) E<mdash> B<RESOLVED>
+
+C<gather_properties()> line 173: previously declared C<my $value> inside the
+vault-reference C<if> block, shadowing the outer C<$value>. The inner
+variable went out of scope, so the outer C<$value> was never updated. Fixed
+by removing the C<my> declaration so the assignment updates the outer
+C<$value>.
+
+=back
 
 =head1 AUTHORS
 

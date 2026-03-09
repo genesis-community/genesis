@@ -145,6 +145,20 @@ B<Examples:>
     my $value = $ref->resolve({});
     # Returns: 'default-net'
 
+=head1 KNOWN ISSUES
+
+The following defects are tracked in FWT-751 and are documented here so
+that callers are aware of the current behaviour.
+
+=over 4
+
+=item LR-1 (critical) E<mdash> B<RESOLVED>
+
+C<resolve> line 28: previously called C<struct_lookup> without importing it.
+Fixed by adding C<use Genesis qw(struct_lookup);> to the module.
+
+=back
+
 =head1 AUTHORS
 
 Written by the Genesis team.

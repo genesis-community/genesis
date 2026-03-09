@@ -168,7 +168,7 @@ sub validate_runtime_config_requests {
 		# If no args are specified or the argument is 'true', we assume all valid
 		# runtime configs are requested with default options (short-circuit the rest
 		# of the function)
-		$self->{requests} = [$self->get_req_names('*')];
+		$self->{requests} = [$self->_get_req_names('*')];
 		$self->{request_options} = {};
 		return 1;
 	}
@@ -254,7 +254,9 @@ sub validate_runtime_config_requests {
 	if (@excluded_reqs) {
 		# If there are any excluded requests, we remove them from the requests list
 		# (defaults to all builds)
-		@requests = grep {!in_array($_, @excluded_reqs)} @requests//$self->get_req_names('*');
+		@requests = @requests
+			? grep {!in_array($_, @excluded_reqs)} @requests
+			: grep {!in_array($_, @excluded_reqs)} $self->_get_req_names('*');
 	}
 
 	# Step 4: Validate the requests
@@ -430,7 +432,7 @@ sub remove_configs {
 		if ($self->{dryrun}) {
 			info(
 				"[[  - >>would remove %s runtime config #c{%s} (id: %s - %s)",
-				$existing{$config}{used} ? "#y{actve}" : "#g{unused}",
+				$existing{$config}{used} ? "#y{active}" : "#g{unused}",
 				$config, $existing{$config}{id}, $existing{$config}{since}
 			);
 		} elsif ($self->{yes}) {
@@ -439,11 +441,11 @@ sub remove_configs {
 			$self->{bosh}->delete_config('runtime', $config);
 			info("#G{done}".pretty_duration(gettimeofday() - $start_time));
 		} else {
-      my $prompt = wrap(sprintf(
-        "[[  - >>remove %s runtime config #c{%s} (id: %s - %s)? [y|n]",
-        $existing{$config}{used} ? "#y{actve}" : "#g{unused}",
-        $config, $existing{$config}{id}, $existing{$config}{since}
-      ), terminal_width - 2);
+			my $prompt = wrap(sprintf(
+				"[[  - >>remove %s runtime config #c{%s} (id: %s - %s)? [y|n]",
+				$existing{$config}{used} ? "#y{active}" : "#g{unused}",
+				$config, $existing{$config}{id}, $existing{$config}{since}
+			), terminal_width - 2);
 			if (prompt_for_boolean($prompt, 0, 1)) {
 				info("[[  - >>#y{skipping}\n");
 				next;

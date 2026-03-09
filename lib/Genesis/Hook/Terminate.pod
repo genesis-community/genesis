@@ -226,6 +226,21 @@ B<Examples:>
     }
     # Returns: 1 or 0 (or undef) depending on the dryrun flag
 
+=head1 KNOWN ISSUES
+
+The following defects are tracked in FWT-751 and are documented here so
+that callers are aware of the current behaviour.
+
+=over 4
+
+=item TERM-1 (smell) E<mdash> B<RESOLVED>
+
+C<init> line 25: previously set C<< $self->{completed} >> (with C<-ed>
+suffix) which was inconsistent with the base class key C<{complete}>. Fixed
+by changing to C<< $self->{complete} >>.
+
+=back
+
 =head1 AUTHORS
 
 Written by the Genesis team.

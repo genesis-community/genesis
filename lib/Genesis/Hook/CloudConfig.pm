@@ -174,7 +174,7 @@ sub lookup_ref {
 }
 
 # }}}
-# subnet_reference - Returns a reference to a subnet value that can be retrived per subnet {{{
+# network_reference - Returns a reference to a network value that can be resolved later {{{
 sub network_reference {
 	my $self = shift;
 	return Genesis::Hook::CloudConfig::LookupNetworkRef->new(@_);
@@ -223,11 +223,11 @@ sub build_cpi_azs {
 }
 
 # }}}
-# _az_definition_for - Returns the definition for a given AZ {{{
+# _add_cpi_to_network_az - Adds a CPI entry to a network AZ {{{
 sub _add_cpi_to_network_az {
 	my ($self, $az_name, $cpi_az_name) = @_;
 	my $network = $self->network;
-	$network->{azs}{$az_name}{for_cpi}{$self->cpi_name} = $cpi_az_name
+	$network->{azs}{$az_name}{for_cpi}{$self->cpi_name} = $cpi_az_name;
 }
 
 # }}}
@@ -893,7 +893,7 @@ sub _validate_override_schema {
 			next;
 		}
 		my @invalid_explicit_type_contents = grep {
-			!ref($config->{$type_key}{$_}) eq 'HASH'
+			ref($config->{$type_key}{$_}) ne 'HASH'
 		} keys %{$config->{$type_key}};
 		push(@errors, sprintf(
 			"Invalid configurations in #C{%s.%s} (must be hashmaps): %s",
@@ -967,7 +967,7 @@ sub _add_extended_cloud_config {
 
 				if (!$src_name) {
 					# FIXME: Check for both explicit and env-prefixed names for the source target?
-					if (exists($extended_config->{$type}{$src_target})) {
+					if (exists($extended_config->{$group_label}{$src_target})) {
 						bail(
 							"Cyclic dependency detected for target '%s' in extended cloud config for type '%s'",
 							$target, $type
@@ -1213,7 +1213,7 @@ sub _network_cloud_properties_for_iaas {
 				}
 			}
 		} else {
-			my ($override, $found) = $self->env->lookup($source_path.'.cloud_properties');
+			my ($override, $found) = $self->env->lookup($source_path);
 			if (defined($found)) {
 				$config = {%$config, flatten($override)->%*};
 				$source = $source_path;
@@ -1349,16 +1349,15 @@ sub _evaluate_matching_rule {
 					my ($op, $regex, $flags) = ($1, $2, $3);
 					$op //= '=';
 					my $compiled_regex = $flags ? qr/(?$flags)$regex/ : qr/$regex/;
-					if (defined($field_value)) {
-						my $re_match = $field_value =~ /$compiled_regex/;
-						if (($op eq '!') eq !$re_match) { # Either '!' and doesn't match, or '=' and matches
-							$field_matches = 1;
-							last;
-						}
-					} elsif ($field_value eq $test) {
+					my $re_match = $field_value =~ /$compiled_regex/;
+					if (($op eq '!') eq !$re_match) { # Either '!' and doesn't match, or '=' and matches
 						$field_matches = 1;
 						last;
 					}
+				} elsif (defined($test) && $field_value eq $test) {
+					# Literal string comparison
+					$field_matches = 1;
+					last;
 				}
 			}
 			$failed_match = 1 unless $field_matches;
@@ -1670,12 +1669,12 @@ sub _build_logical_subnet_amalgamation {
 		push @{$gateways{$subnet_configs_hash{$subnet_name}->{gateway}}}, $subnet_name;
 	}
 	bail(
-		'Cannot create LSA for subnets with different ranges:\n%s',
-		join("\n", map {"%s: %s" } map {$_ => join(', ', @{$ranges{$_}})} keys %ranges)
+		"Cannot create LSA for subnets with different ranges:\n%s",
+		join("\n", map { sprintf("%s: %s", $_, join(', ', @{$ranges{$_}})) } keys %ranges)
 	) if keys(%ranges) > 1;
 	bail(
-		'Cannot create LSA for subnets with different gateways:\n%s',
-		join("\n", map {"%s: %s" } map {$_ => join(', ', @{$gateways{$_}})} keys %gateways)
+		"Cannot create LSA for subnets with different gateways:\n%s",
+		join("\n", map { sprintf("%s: %s", $_, join(', ', @{$gateways{$_}})) } keys %gateways)
 	) if keys(%gateways) > 1;
 
 	my ($range) = keys %ranges;
