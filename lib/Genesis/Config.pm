@@ -141,7 +141,7 @@ sub save {
 		"$tmp/$i.json"
 	);
 	bail(
-		"Failed to convert configuration file to yaml: %s",
+		"Failed to convert configuration file %s to yaml: %s",
 		$self->{path}, $err
 	) if $rc;
 	mkdir_or_fail(dirname($self->{path}));
@@ -238,7 +238,7 @@ sub _load {
 		$self->{persistant_signature} = $self->_signature;
 	} else {
 		$self->{contents} = {};
-		$self->{save} if $self->{autosave} && $self->{path};
+		$self->save if $self->{autosave} && $self->{path};
 	}
 }
 
