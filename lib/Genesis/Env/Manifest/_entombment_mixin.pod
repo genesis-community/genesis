@@ -88,20 +88,17 @@ nothing to entomb.
 
 B<Errors:>
 
-Calls C<bail> with the message C<"Failed to entomb one or more secrets into
-Credhub.  This may be due to a bug in Genesis, communication or
-authentication error with Credhub, or a value that Credhub can't
-support.\n\nPlease try again without the --entomb option if used, or if
-deploying, use the --no-entomb option, if this persists.\n\nPlease contact
-the Genesis team, or open a issue on #Bu{%s/issues/new}"> (where C<%s> is
-C<$Genesis::GITHUB>) if any individual secret fails to round-trip through
-Credhub correctly.
+Calls C<bail> if any individual secret fails to round-trip through Credhub
+correctly. The error message advises the operator to retry without the
+C<--entomb> option (or with C<--no-entomb> when deploying) and directs them
+to the Genesis GitHub issue tracker (C<$Genesis::GITHUB>).
 
 B<Examples:>
 
-    # Entomb all manifest secrets; returns 1 when vault paths are found.
+    # Entomb all manifest secrets.
     my $entombed = $manifest->_entomb_secrets(undef);
-    # Returns: 1 if secrets were copied to Credhub, 0 if no vault paths found
+    # Returns: 1 if secrets were copied to Credhub (or already entombed),
+    #          0 if no vault paths found
 
 =head2 _setup_local_vault
 
@@ -194,19 +191,14 @@ credential name, or C<undef> if no prior value existed.
 
 Single-secret entombment method retained for backwards compatibility. When
 called with more than six arguments (counting C<$self>) it delegates
-immediately to L<"_entomb_secret_for_vault"> using all passed arguments.
-Otherwise it performs the same SHA-based naming and Credhub write logic as
-C<_entomb_secret_for_vault> using the parameters listed below.
-
-B<WARNING:> This method contains a known defect (FWT-736). The implementation
-references the variable C<$cred_path> in the SHA computation and credential
-name construction (lines 160-161), but the parameter actually received is
-named C<$path>. Because C<$cred_path> is not declared in this scope it
-evaluates to C<undef>, producing an incorrect credential name and SHA digest.
-Additionally, the return variable C<$color> is assigned without C<my>,
-creating an implicit package global. These issues do not affect calls that
-are redirected to C<_entomb_secret_for_vault> via the arity guard. Callers
-should use C<_entomb_secret_for_vault> instead until FWT-736 is resolved.
+immediately to L<"_entomb_secret_for_vault"> using all passed arguments;
+in that case the caller must supply the
+L<_entomb_secret_for_vault|"_entomb_secret_for_vault"> parameters
+(C<$local_vault, $vault_path, $key, $value, $credhub, $cred_path>),
+with C<$entombment_prefix> optional (defaults to C<"genesis-entombed/">).
+With six or fewer arguments the method performs the same SHA-based naming
+and Credhub write logic as C<_entomb_secret_for_vault> using the
+parameters listed below.
 
 B<Parameters:>
 
@@ -214,9 +206,9 @@ B<Parameters:>
 
 =item * C<$credhub> - A connected C<Service::Credhub> instance.
 
-=item * C<$path> - The credential path segment. B<Note:> due to FWT-736 this
-parameter is not used in the implementation body; C<$cred_path> (undef) is
-used instead.
+=item * C<$path> - The credential path segment used to construct the Credhub
+credential name and SHA digest, analogous to C<$cred_path> in
+L<"_entomb_secret_for_vault">.
 
 =item * C<$key> - The key name within the credential path.
 
