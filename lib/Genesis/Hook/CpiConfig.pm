@@ -169,9 +169,8 @@ sub gather_properties {
 		if (!ref($value) && $value =~ /^\(\( ?vault ([^"]* )?"(.*)" ?\)\)$/) {
 			# This is a vault reference, so we need to entomb it
 			my $vault_base = $1; # TODO: Do we need to resolve this or is the relative path sufficient?
-			my $rel_path = $2;
-			my $value = $self->env->lookup("bosh-configs.cpi.$override");
-			my $path = $self->credhub_entombment_path_for($override,$value);
+			$value = $self->env->lookup("bosh-configs.cpi.$override");
+			my $path = $self->cpi_entombment_path_for($override,$value);
 			$self->{credhub_secrets}{$path} = $value;
 			$value = "(($vault_base $path))";
 		}

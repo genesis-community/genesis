@@ -377,35 +377,25 @@ that callers are aware of the current behaviour.
 
 =over 4
 
-=item CPI-1 (critical)
+=item CPI-1 (critical) E<mdash> B<RESOLVED>
 
-C<gather_properties()> line 174: the vault-reference override path calls
-C<$self-E<gt>credhub_entombment_path_for($override, $value)>, but no method
-with that name exists on this class or its parent. The correct method is
-C<cpi_entombment_path_for>. Any C<bosh-configs.cpi> override value
-containing a vault reference C<(( vault ... ))> crashes at runtime with
-C<"Can't locate object method 'credhub_entombment_path_for'">.
+C<gather_properties()> line 174: the vault-reference override path previously
+called C<credhub_entombment_path_for>, which does not exist. Fixed by
+correcting to C<cpi_entombment_path_for>.
 
-=item CPI-2 (dead code)
+=item CPI-2 (dead code) E<mdash> B<RESOLVED>
 
-C<gather_properties()> line 172: the vault-reference regex captures the path
-component after the vault keyword into C<$rel_path = $2>, but C<$rel_path>
-is never referenced again in the block or elsewhere. The captured value is
-silently discarded. This defect is only observable after CPI-1 is fixed,
-since CPI-1 crashes before this line executes.
+C<gather_properties()> line 172: the vault-reference regex previously
+captured the path into C<$rel_path = $2>, which was never used. Fixed by
+removing the unused capture assignment.
 
-=item CPI-3 (dead code / bug)
+=item CPI-3 (dead code / bug) E<mdash> B<RESOLVED>
 
-C<gather_properties()> lines 167 and 173: the outer C<$value> bound at line
-167 from C<$overrides-E<gt>{$override}> is shadowed by C<my $value> declared
-at line 173 (inside the vault-reference C<if> block). The inner C<$value>
-receives the result of C<env-E<gt>lookup(...)> but goes out of scope when the
-block exits. The outer C<$value> is never updated, so the CredHub reference
-string computed at line 176 (C<"(($vault_base $path))">) is also assigned to
-the inner variable and discarded. The config ultimately stores the original
-raw vault reference string rather than the CredHub interpolation token. This
-defect is only observable after CPI-1 is fixed, since CPI-1 crashes before
-the shadowed assignment executes.
+C<gather_properties()> line 173: previously declared C<my $value> inside the
+vault-reference C<if> block, shadowing the outer C<$value>. The inner
+variable went out of scope, so the outer C<$value> was never updated. Fixed
+by removing the C<my> declaration so the assignment updates the outer
+C<$value>.
 
 =back
 
