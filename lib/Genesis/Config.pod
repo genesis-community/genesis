@@ -182,8 +182,10 @@ nested calls to skip loading without setting C<persistant_signature>.
 In this transient state, C<loaded()> returns false for the nested caller.
 This is intentional — it allows C<Genesis::Log> to safely fall back to
 default output settings when the configuration file is still being read.
-The outermost C<_load()> call sets C<persistant_signature> upon completion,
-after which C<loaded()> returns true.
+On successful load, the outermost C<_load()> call sets
+C<persistant_signature> upon completion, after which C<loaded()> returns
+true. See the non-existent file note under C<_load()> for cases where
+C<persistant_signature> remains unset.
 
 =head2 changed
 
@@ -739,7 +741,7 @@ trigger a read from this same config object. When the guard fires:
 
 =item *
 
-C<loaded_values> is not populated by the nested call
+C<loaded_values> is not modified by the nested call
 
 =item *
 
