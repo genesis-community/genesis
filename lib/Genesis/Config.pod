@@ -177,6 +177,16 @@ B<Examples:>
     $cfg->get('any_key');
     print $cfg->loaded ? "yes" : "no";  # Returns: yes (after lazy load)
 
+B<Re-entrancy note:> During C<_load()>, the re-entrancy guard causes
+nested calls to skip loading without setting C<persistant_signature>.
+In this transient state, C<loaded()> returns false for the nested caller.
+This is intentional — it allows C<Genesis::Log> to safely fall back to
+default output settings when the configuration file is still being read.
+On successful load, the outermost C<_load()> call sets
+C<persistant_signature> upon completion, after which C<loaded()> returns
+true. See the non-existent file note under C<_load()> for cases where
+C<persistant_signature> remains unset.
+
 =head2 changed
 
     my $bool = $cfg->changed;
@@ -457,8 +467,11 @@ Parent directories are created automatically if they do not exist.
 After a successful write, the internal signature is updated so that
 C<changed()> returns false.
 
-B<Returns:> The updated SHA-1 signature string (the result of the internal
-signature update). This value is not typically used by callers.
+B<Returns:> Does not return a meaningful value. Callers should invoke
+C<save()> in void context. The method implicitly returns the updated
+SHA-1 signature (from the internal signature assignment), but this is an
+implementation artifact — no caller relies on it, and future versions may
+change the implicit return without notice.
 
 B<Errors:>
 
@@ -497,7 +510,7 @@ B<Examples:>
 
 =head2 replace
 
-    my $ok = $cfg->replace($prev_config);
+    $cfg->replace($prev_config);
 
 Adopts the path and persisted-state signature from C<$prev_config> and
 immediately writes the receiver's current contents to that path. The
@@ -519,7 +532,10 @@ double-saves.
 
 =back
 
-B<Returns:> The result of C<save()> — the updated SHA-1 signature string.
+B<Returns:> Does not return a meaningful value. Callers should invoke
+C<replace()> in void context. The method currently returns the result
+of C<save()> (a SHA-1 signature string), but this is not intended as a
+boolean or status indicator despite the internal variable name C<$ok>.
 
 B<Errors:> See C<save()> for the errors that may be raised during the write.
 
@@ -716,6 +732,35 @@ C<save()>. Includes a re-entrancy guard to prevent infinite recursion when
 internal logging triggers a config read.
 
 Modifies the object in-place (C<loaded_values>, C<persistant_signature>).
+
+B<Re-entrancy guard:> The guard (C<return if $self-E<gt>{_loading}>) prevents
+infinite recursion when internal operations (e.g., C<debug()> logging)
+trigger a read from this same config object. When the guard fires:
+
+=over 4
+
+=item *
+
+C<loaded_values> is not modified by the nested call
+
+=item *
+
+C<persistant_signature> is not set, so C<loaded()> returns false
+
+=item *
+
+Callers such as C<Genesis::Log> check C<loaded()> and use safe defaults
+
+=back
+
+The guard uses C<local> to automatically reset when C<_load()> exits,
+so it only affects the duration of the current load operation.
+
+B<Non-existent file note:> When the file does not exist and C<autosave>
+is disabled, C<_load()> completes without setting C<persistant_signature>.
+In this case C<loaded()> remains false after the load attempt returns.
+This is expected — a config that has never been persisted is not considered
+loaded.
 
 B<Errors:>
 
