@@ -467,6 +467,15 @@ the request list. When all configs are excluded, the requests list is empty.
 Modifies the object in-place (sets C<< $self->{requests} >> and
 C<< $self->{request_options} >>).
 
+B<Note:> The short-circuit path (line 171) and the excluded-requests
+fallback (line 257) both call C<get_req_names> instead of C<_get_req_names>.
+No public method named C<get_req_names> exists; both call sites crash at
+runtime with a C<"Can't locate object method"> error. See RC-1 in
+L</KNOWN ISSUES>. Additionally, the defined-or (C<//>) at line 257
+evaluates C<@requests> in scalar context, so the fallback is never reached
+even when the array is empty; exclusion-only configurations silently produce
+an empty request list. See RC-4 in L</KNOWN ISSUES>.
+
 B<Returns:> C<1> on success.
 
 B<Errors:>
@@ -690,6 +699,12 @@ Otherwise, calls the BOSH client's C<upload_config> method. On failure, logs
 the error, discards any secrets registered for this build, and returns
 C<undef>. On success, returns C<1>.
 
+B<Note:> The interactive confirmation prompt (line 390) passes C<$invert=1>
+to C<prompt_for_boolean>, reversing the sense of the answer: a "Yes" response
+causes the upload to be skipped and a "No" response allows it to proceed.
+This is the opposite of the displayed prompt text. See RC-2 in
+L</KNOWN ISSUES>.
+
 B<Parameters:>
 
 =over 4
@@ -759,6 +774,13 @@ Otherwise, prompts the operator for confirmation. If the operator declines,
 skips that config.
 
 =back
+
+B<Note:> The log messages for active configs (lines 433 and 444) contain
+the misspelling C<"actve"> rather than C<"active">. This appears in both the
+dry-run output and the interactive confirmation prompt. See RC-3 in
+L</KNOWN ISSUES>. Additionally, the C<else> block at lines 442-446 uses
+space indentation while the rest of the file uses hard tabs (RC-5; see
+L</KNOWN ISSUES>).
 
 B<Returns:> The result of C<$self->done(1)>.
 
@@ -948,6 +970,64 @@ B<Examples:>
 
     my @names = $self->_get_req_names('dns');
     # Returns: ('dns')
+
+=head1 KNOWN ISSUES
+
+The following defects are tracked in FWT-751 and are documented here so
+that callers are aware of the current behaviour.
+
+=over 4
+
+=item RC-1 (critical)
+
+C<validate_runtime_config_requests()> lines 171 and 257: both call
+C<get_req_names> but only C<_get_req_names> (with an underscore prefix)
+exists. The short-circuit path taken when C<< $self->{args} >> is undef, empty, or a
+false JSON boolean (line 171) crashes at runtime with C<"Can't locate object
+method 'get_req_names'">. The excluded-requests fallback (line 257) has the
+same wrong method name but is only reached when C<@requests> is undef, a
+narrower condition. Any caller that hits either code path receives a fatal
+error rather than the expected request list.
+
+=item RC-2 (critical)
+
+C<upload_runtime_config()> line 390: C<prompt_for_boolean($prompt, 1, 1)>
+passes C<$invert=1> as the third argument, which inverts the sense of the
+operator's answer. When the operator answers "Yes" to the upload prompt, the
+upload is skipped (C<info("skipped")> is printed and the method returns
+C<undef>). When the operator answers "No", the upload proceeds. This is the
+opposite of the displayed question text. Note: C<remove_configs()> line 447
+also passes C<$invert=1> but produces correct behaviour through accidental
+double inversion E<mdash> the surrounding control flow negates the inverted
+return, so "Yes" removes and "No" skips as intended.
+
+=item RC-3 (smell)
+
+C<remove_configs()> lines 433 and 444: both log messages that distinguish
+an in-use config from an unused one contain the misspelling C<"actve"> where
+C<"active"> was intended. The typo appears in dry-run output and in the
+interactive confirmation prompt shown to the operator.
+
+=item RC-4 (logic bug)
+
+C<validate_runtime_config_requests()> line 257: the defined-or operator
+C<//> has lower precedence than list operators. The expression
+C<@requests//$self-E<gt>get_req_names('*')> evaluates C<@requests> in scalar
+context (array length), which is always defined (even when the array is
+empty). The fallback C<get_req_names('*')> is therefore never reached.
+Exclusion-only configurations (where the user specifies only items to
+exclude, expecting the default to be all-minus-excluded) silently produce an
+empty request list instead of all-minus-excluded. This is a distinct defect
+from the wrong method name in RC-1.
+
+=item RC-5 (smell)
+
+C<remove_configs()> lines 442-446: the C<else> block uses space indentation
+while the rest of the file uses hard tabs exclusively. This mixed
+indentation is inconsistent with the vim modeline at line 579 which sets
+C<noet> (no-expand-tab).
+
+=back
 
 =head1 AUTHORS
 
