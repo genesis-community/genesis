@@ -101,7 +101,7 @@ B<Errors:>
 =item *
 
 C<"Missing required arguments for a perl-based kit hook call: %s"> -- raised
-via C<bug()> if either C<env> or C<rc> is absent from C<%opts>. C<%s> is
+via C<bug()> if either C<env> or C<rc> is absent from C<%ops>. C<%s> is
 replaced with the comma-separated list of missing argument names.
 
 =back

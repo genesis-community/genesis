@@ -147,8 +147,9 @@ combined with C<print>. Defaults to C<0>.
 
 B<(optional)> Runtime config request arguments. May be a boolean true value,
 a config name string, a comma-separated list of names, an array of names and
-option hashes, or a hash mapping config names to option hashes. Defaults to
-an empty array reference, which requests all registered configs.
+option hashes, or a hash mapping config names to option hashes. When
+C<undef>, an empty array reference, or a JSON boolean true value, all
+registered configs are requested with default options.
 
 =item C<file>
 
@@ -481,10 +482,10 @@ type. C<%s> is replaced with the reference type.
 
 =item *
 
-C<"Invalid runtime config request arguments: expecting a #C{true}, a ">
+C<"Invalid runtime config request arguments: expecting a #C{true}, a string, array of strings or build =E<gt> option hash, or a hash of runtime build with options or boolean, but got %s">
 -- raised via C<bail()> if C<< $self->{args} >> is not a recognized type
-(not a string, array, or hash). The message continues with a description of
-the expected types and the actual value received.
+(not a string, array, or hash). C<%s> is replaced with a description of the
+actual value received (e.g., C<"a CODE value"> or C<"'some_value'">).
 
 =item *
 

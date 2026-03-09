@@ -354,7 +354,7 @@ per distinct value.
 =back
 
 B<Returns:> A CredHub credential path string of the form
-C<"$prefix cpi-config-property--$key--$sha1">.
+C<"${prefix}cpi-config-property--$key--$sha1">.
 
 B<Examples:>
 
