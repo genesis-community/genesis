@@ -118,6 +118,13 @@ confirmation.
 
 B<Returns:> A blessed C<Genesis::Hook::Terminate> object.
 
+B<Note:> C<init> sets C<< $self->{completed} >> (with C<-ed> suffix) to
+C<0>, but the base class C<Genesis::Hook> reads and writes C<< $self->{complete} >>
+(without the suffix), as seen in C<done> and C<completed>. The initialization
+has no effect: C<< $hook->completed >> will read the correct C<{complete}>
+key, which is set to C<0> by the base class C<init>. The spurious
+C<{completed}> key is dead data. See TERM-1 in L</KNOWN ISSUES>.
+
 B<Errors:>
 
 =over 4
@@ -225,6 +232,24 @@ B<Examples:>
         # Proceed with actual termination
     }
     # Returns: 1 or 0 (or undef) depending on the dryrun flag
+
+=head1 KNOWN ISSUES
+
+The following defects are tracked in FWT-751 and are documented here so
+that callers are aware of the current behaviour.
+
+=over 4
+
+=item TERM-1 (smell)
+
+C<init> line 25: sets C<< $self->{completed} >> (with C<-ed> suffix) to
+C<0>. The base class C<Genesis::Hook> stores and reads the completion flag
+under C<< $self->{complete} >> (no C<-ed> suffix), as seen in C<done> and
+C<completed>. The assignment in C<Terminate>'s C<init> writes to a key that
+is never read, so it has no observable effect. The key should be
+C<{complete}> to be consistent with the base class.
+
+=back
 
 =head1 AUTHORS
 

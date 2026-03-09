@@ -1028,6 +1028,12 @@ Returns the full path to a directory inside the environment's work directory,
 creating it if it does not already exist. If C<$name> is omitted, a name of
 the form C<tempdir-E<lt>timestampE<gt>-E<lt>randomE<gt>> is generated.
 
+B<Note:> C<mkdir_or_fail> is called on line 42 but is not listed in the
+explicit C<use Genesis qw(...)> import on line 5. The function is available
+at runtime because Genesis exports it by default, but it is inconsistent
+with the explicit import style used for all other Genesis functions in the
+same file. See HK-1 in L</KNOWN ISSUES>.
+
 B<Parameters:>
 
 =over 4
@@ -1111,6 +1117,24 @@ B<Examples:>
 
     Genesis::Hook->check_for_required_args(\%opts, qw/env/);
     # Returns: 1 if 'env' is present in %opts; dies otherwise
+
+=head1 KNOWN ISSUES
+
+The following defects are tracked in FWT-751 and are documented here so
+that callers are aware of the current behaviour.
+
+=over 4
+
+=item HK-1 (smell)
+
+Lines 5 and 42: C<mkdir_or_fail> is called in C<tempdir()> but is absent
+from the explicit import list in C<use Genesis qw(trace bug bail ...)> on
+line 5. The function works at runtime because Genesis exports it as part of
+its default export set, but this is inconsistent with the explicit import
+style used for every other Genesis function referenced in the same file.
+The fix is to add C<mkdir_or_fail> to the explicit import list.
+
+=back
 
 =head1 AUTHORS
 
