@@ -69,7 +69,6 @@ if [[ $extra_prompts == 'true' ]] ; then
 	prompt_for boolean_a boolean --default y "Is this a question?"
 	param_entry params_out "boolean-a" "$boolean_a"
 
-				type: boolean
 	param_comment params_out -e "Defaults to no"
 	prompt_for boolean_b boolean "Did you answer this?" --default no
 	param_entry params_out "boolean-b" "$boolean_b"

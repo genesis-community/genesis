@@ -21,14 +21,14 @@ subtest 'run() - basic command execution' => sub {
 	($out, $rc, $err) = run('echo "hello world"');
 	is $rc, 0, 'simple echo returns 0';
 	is $out, 'hello world', 'simple echo returns correct output';
-	is $err, '', 'simple echo has no stderr';
+	ok !defined($err), 'simple echo has no stderr (undef when not capturing)';
 
 	# Command with exit code
 	($out, $rc, $err) = run('exit 42');
 	is $rc, 42, 'exit 42 returns correct exit code';
 
-	# Command with stderr
-	($out, $rc, $err) = run('echo "error message" >&2');
+	# Command with stderr (use stderr=>0 to capture separately, brace group for redirect scope)
+	($out, $rc, $err) = run({stderr => '0'}, '{ echo "error message" >&2; }');
 	is $rc, 0, 'stderr command returns 0';
 	like $err, qr/error message/, 'stderr captured correctly';
 };
@@ -88,14 +88,14 @@ subtest 'run() - environment variables' => sub {
 subtest 'run() - stderr handling' => sub {
 	my ($out, $rc, $err);
 
-	# Default stderr capture
-	($out, $rc, $err) = run('echo "stdout" && echo "stderr" >&2');
+	# Separate stderr capture (use stderr=>0 with brace group for correct redirect scope)
+	($out, $rc, $err) = run({stderr => '0'}, '{ echo "stdout"; echo "stderr" >&2; }');
 	is $rc, 0, 'stderr capture returns 0';
 	is $out, 'stdout', 'stdout captured';
 	like $err, qr/stderr/, 'stderr captured separately';
 
-	# stderr to stdout
-	($out, $rc, $err) = run({stderr => '&1'}, 'echo "stdout" && echo "stderr" >&2');
+	# stderr merged to stdout (brace group so 2>&1 applies to entire command)
+	($out, $rc, $err) = run({stderr => '&1'}, '{ echo "stdout"; echo "stderr" >&2; }');
 	is $rc, 0, 'stderr redirect returns 0';
 	like $out, qr/stdout.*stderr|stderr.*stdout/s, 'stderr redirected to stdout';
 };

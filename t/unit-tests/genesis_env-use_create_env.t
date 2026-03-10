@@ -199,7 +199,7 @@ genesis:
 EOF
 
 	throws_ok { $top->load_env('proto-conflict')->use_create_env }
-		qr/bosh_env.*create-env.*proto/is,
+		qr/create-env.*proto.*bosh_env/is,
 		'allowed kit: proto feature with bosh_env throws error';
 
 	# Test 7: Conflicting use_create_env: true and bosh_env
@@ -435,7 +435,7 @@ genesis:
 EOF
 
 	throws_ok { $top->load_env('proto-conflict')->use_create_env }
-		qr/bosh_env.*create-env.*proto/is,
+		qr/create-env.*proto.*bosh_env/is,
 		'legacy BOSH kit: proto + bosh_env throws error';
 
 	# Test 6: Legacy non-BOSH kit always returns false

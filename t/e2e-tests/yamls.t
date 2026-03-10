@@ -5,6 +5,9 @@ use warnings;
 use lib 't';
 use helper;
 
+$ENV{NOCOLOR} = 1;
+$ENV{GENESIS_OUTPUT_COLUMNS} = 120;
+
 vault_ok();
 
 my $tmp = workdir 'yamls-deployments';
@@ -30,30 +33,34 @@ subtest 'hierarchical inheritance' => sub {
 	put_file "sw-openstack-east-prod.yml", "--- {genesis: {env: 'sw-openstack-east-prod'}}";
 	put_file "cloud.yml", "--- {}";
 
-	output_ok "genesis yamls sw-aws-east.yml --config cloud=cloud.yml", <<EOF, "yaml ordering is correct for a middle file";
-./sw.yml
-./sw-aws.yml
-./sw-aws-east.yml
+	output_ok "(genesis yamls sw-aws-east.yml --config cloud=cloud.yml 2>/dev/null)", <<EOF, "yaml ordering is correct for a middle file";
+Omega/2.0.0 (dev): manifest.yml
+            local: sw.yml
+            local: sw-aws.yml
+            local: sw-aws-east.yml
 EOF
 
-	output_ok "genesis yamls sw-aws-east-dev --config cloud.yml", <<EOF, "yaml ordering is correct for the end file";
-./sw.yml
-./sw-aws.yml
-./sw-aws-east.yml
-./sw-aws-east-dev.yml
+	output_ok "(genesis yamls sw-aws-east-dev --config cloud.yml 2>/dev/null)", <<EOF, "yaml ordering is correct for the end file";
+Omega/2.0.0 (dev): manifest.yml
+            local: sw.yml
+            local: sw-aws.yml
+            local: sw-aws-east.yml
+            local: sw-aws-east-dev.yml
 EOF
 
-	output_ok "genesis yamls sw-vsphere-east-dev -c cloud.yml", <<EOF, "yaml ordering is correct for an alternative prefix";
-./sw.yml
-./sw-vsphere.yml
-./sw-vsphere-east.yml
-./sw-vsphere-east-dev.yml
+	output_ok "(genesis yamls sw-vsphere-east-dev -c cloud.yml 2>/dev/null)", <<EOF, "yaml ordering is correct for an alternative prefix";
+Omega/2.0.0 (dev): manifest.yml
+            local: sw.yml
+            local: sw-vsphere.yml
+            local: sw-vsphere-east.yml
+            local: sw-vsphere-east-dev.yml
 EOF
 
 	put_file "rt.yml", "--- {}";
-	output_ok "genesis yamls sw-openstack-east-prod.yml --config runtime=rt.yml --config cloud=cloud.yml", <<EOF, "yaml ordering os correct when there are missing intermediary yamls";
-./sw.yml
-./sw-openstack-east-prod.yml
+	output_ok "(genesis yamls sw-openstack-east-prod.yml --config runtime=rt.yml --config cloud=cloud.yml 2>/dev/null)", <<EOF, "yaml ordering os correct when there are missing intermediary yamls";
+Omega/2.0.0 (dev): manifest.yml
+            local: sw.yml
+            local: sw-openstack-east-prod.yml
 EOF
 };
 
@@ -67,13 +74,14 @@ subtest 'explicit inheritance' => sub {
 	put_file "yang.yml", "--- {genesis: {inherits: [yin]}}";
 	put_file "c-real-env.yml", "--- {genesis: {env: 'c-real-env', inherits: [yin]}}";
 
-	output_ok "genesis yamls c-real-env.yml -c cloud.yml", <<EOF, "yaml ordering for explicit inheritance";
-./base.yml
-./corp.yml
-./c.yml
-./yang.yml
-./yin.yml
-./c-real-env.yml
+	output_ok "(genesis yamls c-real-env.yml -c cloud.yml 2>/dev/null)", <<EOF, "yaml ordering for explicit inheritance";
+Omega/2.0.0 (dev): manifest.yml
+            local: base.yml
+            local: corp.yml
+            local: c.yml
+            local: yin.yml
+            local: yang.yml
+            local: c-real-env.yml
 EOF
 };
 
@@ -85,27 +93,30 @@ subtest 'genesis.inherits behaviour' => sub {
 	put_file "intermediate.yml", "--- {genesis: {inherits: [base]}}";
 	put_file "final.yml", "--- {genesis: {env: final, inherits: [adjacent, intermediate]}}";
 
-	output_ok "genesis yamls final.yml --config cloud=cloud.yml", <<EOF, "yaml ordering is correct for inherited files";
-./adjacent.yml
-./base.yml
-./intermediate.yml
-./final.yml
+	output_ok "(genesis yamls final.yml --config cloud=cloud.yml 2>/dev/null)", <<EOF, "yaml ordering is correct for inherited files";
+Omega/2.0.0 (dev): manifest.yml
+            local: adjacent.yml
+            local: base.yml
+            local: intermediate.yml
+            local: final.yml
 EOF
 
 	put_file "multi_inherit.yml", "--- {genesis: {env: multi_inherit,inherits: [base, intermediate]}}";
 
-	output_ok "genesis yamls multi_inherit.yml --config cloud=cloud.yml", <<EOF, "yaml ordering is correct for multiple inheritance";
-./base.yml
-./intermediate.yml
-./multi_inherit.yml
+	output_ok "(genesis yamls multi_inherit.yml --config cloud=cloud.yml 2>/dev/null)", <<EOF, "yaml ordering is correct for multiple inheritance";
+Omega/2.0.0 (dev): manifest.yml
+            local: base.yml
+            local: intermediate.yml
+            local: multi_inherit.yml
 EOF
 
 	put_file "circular1.yml", "--- {genesis: {env: circular1, inherits: [circular2]}}";
 	put_file "circular2.yml", "--- {genesis: {env: circular2, inherits: [circular1]}}";
 
-	output_ok "genesis yamls circular1.yml --config cloud=cloud.yml", <<EOF, "yaml ordering handles circular inheritance";
-./circular2.yml
-./circular1.yml
+	output_ok "(genesis yamls circular1.yml --config cloud=cloud.yml 2>/dev/null)", <<EOF, "yaml ordering handles circular inheritance";
+Omega/2.0.0 (dev): manifest.yml
+            local: circular2.yml
+            local: circular1.yml
 EOF
 };
 

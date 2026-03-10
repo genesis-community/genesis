@@ -46,9 +46,7 @@ subtest 'type and label' => sub {
 
 	my $secret = Genesis::Secret::DHParams->new('path:key', size => 2048);
 	is($secret->type, 'dhparams', "type() returns 'dhparams'");
-	# Note: label() returns 'RSA key pair' which seems like a copy-paste error
-	# but we test what it actually returns, not what it should return
-	is($secret->label, 'RSA key pair', "label() returns 'RSA key pair'");
+	is($secret->label, 'Diffie-Hellman parameters', "label() returns 'Diffie-Hellman parameters'");
 };
 
 subtest 'describe()' => sub {

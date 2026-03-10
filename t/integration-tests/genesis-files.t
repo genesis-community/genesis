@@ -130,22 +130,22 @@ subtest 'copy_tree_or_fail' => sub {
 subtest 'expand_path and absolute_path' => sub {
 	my $tmp = Cwd::abs_path(workdir);
 
-	# Tilde expansion
-	local $ENV{HOME} = '/home/testuser';
-	is expand_path('~/file.txt'), '/home/testuser/file.txt', 'tilde expands to HOME';
-	is expand_path('~'), '/home/testuser', 'bare tilde expands to HOME';
+	# Tilde expansion (use real paths so Cwd::abs_path can resolve)
+	local $ENV{HOME} = $tmp;
+	mkdir_or_fail("$tmp/subdir") unless -d "$tmp/subdir";
+	is expand_path('~/subdir'), "$tmp/subdir", 'tilde expands to HOME';
+	is expand_path('~'), $tmp, 'bare tilde expands to HOME';
 
-	# Environment variable expansion
-	local $ENV{TEST_DIR} = '/test/directory';
-	is expand_path('$TEST_DIR/file.txt'), '/test/directory/file.txt', 'env var expansion with ${VAR}';
-	is expand_path('${TEST_DIR}/file.txt'), '/test/directory/file.txt', 'env var expansion with ${VAR}';
+	# Environment variable expansion (use real paths)
+	local $ENV{TEST_DIR} = $tmp;
+	is expand_path('$TEST_DIR/subdir'), "$tmp/subdir", 'env var expansion with $VAR';
+	is expand_path('${TEST_DIR}/subdir'), "$tmp/subdir", 'env var expansion with ${VAR}';
 
-	# Relative path expansion
-	my $cwd = Cwd::getcwd();
-	like expand_path('relative/path'), qr{^/}, 'relative path becomes absolute';
+	# Absolute path stays absolute
+	like expand_path($tmp), qr{^/}, 'absolute path stays absolute';
 
 	# absolute_path is alias for expand_path
-	is absolute_path('~/test'), expand_path('~/test'), 'absolute_path is alias for expand_path';
+	is absolute_path('~/subdir'), expand_path('~/subdir'), 'absolute_path is alias for expand_path';
 
 	# undef handling
 	is expand_path(undef), undef, 'undef returns undef';

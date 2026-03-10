@@ -38,9 +38,25 @@ unit-tests/genesis_env-accessors.t  # Genesis::Env basic accessors and identity
 unit-tests/genesis_env-use_create_env.t  # Genesis::Env use_create_env comprehensive testing
 unit-tests/genesis_env-creation.t  # Genesis::Env object creation (new, create error handling)
 unit-tests/genesis_env-metadata.t  # Genesis::Env metadata accessors (scale, iaas, features, has_feature)
-unit-tests/genesis_env-bosh.t  # Genesis::Env BOSH-related methods (_parse_bosh_env, bosh_env, bosh_alias)
+unit-tests/genesis_env-build_vault_path_components.t
+unit-tests/genesis_env-deployment_cache.t
+unit-tests/genesis_env-deployment.t
+unit-tests/genesis_env-manifest_helpers.t
 unit-tests/genesis_env_secrets_parser_fromkit-core.t  # FromKit parser defect regression tests
 unit-tests/genesis_env_secrets_store_vault-core.t  # Store::Vault code defect regression tests
+unit-tests/genesis_log-get_scope.t
+unit-tests/genesis_secret-base.t
+unit-tests/genesis_secret_dhparams-core.t
+unit-tests/genesis_secret_invalid-core.t
+unit-tests/genesis_secret_random-core.t
+unit-tests/genesis_secret_ssh-core.t
+unit-tests/genesis_secret_userprovided-core.t
+unit-tests/genesis_secret_uuid-core.t
+unit-tests/genesis_secret_x509-core.t
+unit-tests/genesis_term-csize.t
+unit-tests/kit-archive-validation.t
+unit-tests/ocfp-show-network.t
+unit-tests/genesis_config-core.t
 #unit-tests/genesis-cli.t
 
 [integration-tests]

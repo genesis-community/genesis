@@ -46,7 +46,7 @@ kit:
   version: latest
   features: []
 
-params:
+genesis:
   env: proto
 EOF
 
@@ -105,7 +105,7 @@ kit:
   version: latest
   features: []
 
-params:
+genesis:
   env: test
 EOF
 
@@ -137,7 +137,7 @@ kit:
   version: latest
   features: []
 
-params:
+genesis:
   env: invalid
 EOF
 
@@ -191,7 +191,7 @@ kit:
   version: latest
   features: []
 
-params:
+genesis:
   env: alias-test
 EOF
 
