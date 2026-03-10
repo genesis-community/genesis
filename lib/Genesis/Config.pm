@@ -400,6 +400,12 @@ sub _validate_key {
 		if (ref($value) ne 'HASH') {
 			push @errors, "#R{$key}: expected a hash";
 		} else {
+			# Check if loaded_values has an explicit empty hash for this key
+			my $loaded_is_empty_hash = 0;
+			if (keys(%$value) == 0 && struct_has($self->{loaded_values}, $key)) {
+				my $loaded_val = struct_lookup($self->{loaded_values}, $key);
+				$loaded_is_empty_hash = (ref($loaded_val) eq 'HASH' && keys(%$loaded_val) == 0);
+			}
 			# Ensure all required keys are present, and all defaults are set
 			for my $subkey (keys %{$schema->{schema}}) {
 				my $subschema = $schema->{schema}{$subkey};
@@ -407,7 +413,11 @@ sub _validate_key {
 					# Environment variables take precedence over configuration values.
 					$self->_update_source('env', "$key.$subkey", $ENV{$subschema->{envvar}});
 				} elsif (exists($subschema->{default}) and ! exists($value->{$subkey})) {
-					$self->_update_source('default', "$key.$subkey", $subschema->{default});
+					# When the parent key was explicitly {} in loaded_values, apply
+					# defaults at loaded priority so they aren't blocked by
+					# the empty hash placeholder in priority_merge
+					my $source = $loaded_is_empty_hash ? 'loaded' : 'default';
+					$self->_update_source($source, "$key.$subkey", $subschema->{default});
 				} elsif ($subschema->{required} and ! exists($value->{$subkey})) {
 					push @errors, "#R{$key}: missing required key #ri{$subkey}";
 				}

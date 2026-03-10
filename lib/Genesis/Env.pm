@@ -524,8 +524,13 @@ sub is_valid_env_file {
 			last;
 		}
 
+		# Block format: genesis:\n  env: name
 		my @env_names = $yaml_src =~ /^genesis:\r?\n\r?  (?:.*\r?\n\r?  )*env:\s+([^\s]*)/mg;
-		unless (scalar(@env_names) == 1 && $env_names[0] eq $name) {
+		# Inline format: {genesis: {env: 'name'}} or {genesis: {env: name}}
+		unless (@env_names) {
+			@env_names = $yaml_src =~ /\bgenesis:\s*\{[^}]*\benv:\s*'?([a-zA-Z0-9_][a-zA-Z0-9_-]*)'?/mg;
+		}
+		unless (scalar(@env_names) == 1 && ($env_names[0] eq $name || envset("GENESIS_LEGACY"))) {
 			if (scalar(@env_names) == 0) {
 				push @errors, sprintf(
 					"Environment file #C{%s} does not contain a 'genesis.env' declaration.",
@@ -567,7 +572,11 @@ sub is_valid_env_file {
 				last if $has_kit_name && $has_kit_version;
 			}
 
+			# Skip kit validation error if a dev kit is present AND no kit: block
+			# exists in any env file (handles env files that rely entirely on the dev kit)
 			unless ($has_kit_name && $has_kit_version) {
+				my $has_kit_block = ($yaml_src =~ /^kit:/m);
+				last if !$has_kit_block && !$has_kit_name && !$has_kit_version && $top->has_dev_kit();
 				my @missing;
 				push @missing, "kit.name" unless $has_kit_name;
 				push @missing, "kit.version" unless $has_kit_version;

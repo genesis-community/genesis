@@ -173,9 +173,10 @@ sub create {
 
 		$self->_validate_config;
 		$self->config->save;
-		my $kits_path = $self->local_kits_path;
-		# FIXME: Should we prompt the user to confirm if outside the repo parent dir or ~/.genesis?
-		mkdir_or_fail($kits_path) unless -d $kits_path;
+		if ($kits_path) {
+			my $resolved_kits_path = $self->local_kits_path;
+			mkdir_or_fail($resolved_kits_path) unless -d $resolved_kits_path;
+		}
 
 		$self->mkfile("README.md", # {{{
 <<EOF);

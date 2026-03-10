@@ -130,7 +130,8 @@ sub __prompt_for_block {
 	$prompt = "$prompt (Enter <CTRL-D> to end)";
 	(my $line = $prompt) =~ s/./-/g;
 	print csprintf("%s","\n$prompt\n$line\n");
-	my @data = <STDIN>;
+	open(my $in, '<&', fileno(STDIN)) or $in = \*STDIN;
+	my @data = <$in>;
 	return join("", @data);
 }
 

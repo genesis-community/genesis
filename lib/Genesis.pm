@@ -961,7 +961,8 @@ sub copy_tree_or_fail {
 	File::Find::find({wanted => sub {push @subfiles, $File::Find::name}},$from);
 	for (grep {$_ ne '.'} @subfiles) {
 		(my $src = $_) =~ s#^\./##;
-		(my $dst = $_) =~ s ^$trim / ; #using nulls to mitigate trim character collition
+		my $effective_trim = ($trim ne '') ? $trim : $from;
+		(my $dst = $_) =~ s{^\Q$effective_trim\E/?}{};
 		$dst = "$to/$dst";
 		$dst =~ s#//#/#g;
 		if (-d $src) {
