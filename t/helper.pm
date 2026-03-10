@@ -44,6 +44,12 @@ sub import {
 		exit 2
 	}
 
+	# Kill orphaned vault and fake BOSH processes from prior test runs
+	for my $pattern ('vault.*server.*-config', 'vault-.*listen') {
+		my @pids = map { /^\s*(\d+)/ ? $1 : () } `ps ax | grep '$pattern' | grep -v grep`;
+		kill 'TERM', @pids if @pids;
+	}
+
 	# Clear out t/tmp each test
 	if ( -d "${TOPDIR}/t/tmp") {
 		`rm -rf ${TOPDIR}/t/tmp`;
@@ -57,6 +63,14 @@ sub import {
 	$ENV{PATH} = "${TOPDIR}/bin:$ENV{PATH}";
 	$ENV{OFFLINE} = 'y';
 	$ENV{GENESIS_LIB} = "$ENV{GENESIS_TOPDIR}/lib";
+
+	# Ensure absolute lib paths in @INC so runtime require() works after chdir
+	for my $dir ("$TOPDIR/lib", "$TOPDIR/t") {
+		unshift @INC, $dir unless grep { $_ eq $dir } @INC;
+	}
+
+	# Ignore SIGURG from TCP out-of-band data (vault/Test::TCP sockets)
+	$SIG{URG} = 'IGNORE';
 
 	my $caller = caller;
 	for my $glob (sort keys %helper::) {

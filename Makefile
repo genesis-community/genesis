@@ -43,7 +43,8 @@ coverage:
 	SKIP_SECRETS_TESTS=yes cover -t -ignore_re '(/Legacy.pm|/JSON/|/UUID/|^t/.*\.pm)' -report $(COVERAGE_REPORT_FORMAT)
 
 test: sanity-test
-	prove -lf $(TESTS)
+	@echo "Running all tests from manifest..."
+	@prove -lf $(shell t/bin/parse-manifest $(TEST_MANIFEST) sanity-tests unit-tests integration-tests e2e-tests)
 
 test-all: sanity-test unit-tests integration-tests e2e-tests
 
@@ -58,12 +59,6 @@ integration-tests: sanity-test
 e2e-tests: sanity-test
 	@echo "Running e2e tests (full workflows)..."
 	@prove -l $(shell t/bin/parse-manifest $(TEST_MANIFEST) e2e-tests)
-
-test-all: sanity-test unit-tests integration-tests e2e-tests
-
-test-manifest: sanity-test
-	@echo "Running all tests from manifest..."
-	@prove -lf $(TESTS)
 
 test-quick: unit-tests
 

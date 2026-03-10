@@ -1,8 +1,10 @@
 #!/bin/bash
 set -ue
 
+vault_pid=""
 bail() {
 	printf >&2 $*
+	[[ -n "$vault_pid" ]] && kill $vault_pid 2>/dev/null
 	exit 2
 }
 

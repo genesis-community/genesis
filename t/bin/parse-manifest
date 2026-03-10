@@ -2,23 +2,22 @@
 use strict;
 use warnings;
 
-# Parse test manifest and extract test files for a given section
-# Usage: parse-manifest <manifest-file> <section-name>
+# Parse test manifest and extract test files for given section(s)
+# Usage: parse-manifest <manifest-file> <section-name> [section-name ...]
 
-my ($manifest, $section) = @ARGV;
-die "Usage: $0 <manifest-file> <section-name>\n" unless $manifest && $section;
+my $manifest = shift @ARGV;
+my @sections = @ARGV;
+die "Usage: $0 <manifest-file> <section-name> [section-name ...]\n" unless $manifest && @sections;
+
+my %wanted = map { $_ => 1 } @sections;
 
 open my $fh, '<', $manifest or die "Cannot open $manifest: $!\n";
 
 my $in_section = 0;
 while (<$fh>) {
 	chomp;
-	if (/^\[$section\]/) {
-		$in_section = 1;
-		next;
-	}
-	if (/^\[/) {
-		$in_section = 0;
+	if (/^\[(.+?)\]/) {
+		$in_section = $wanted{$1} ? 1 : 0;
 		next;
 	}
 	next unless $in_section;
