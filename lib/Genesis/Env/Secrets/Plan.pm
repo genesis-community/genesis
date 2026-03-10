@@ -329,11 +329,13 @@ sub generate_secrets {
 				last if $rc;
 			}
 		} else {
-			my ($out, $rc) = $secret->process_command_output(
+			my ($out, $rc, $err) = $secret->process_command_output(
 				'add', $self->store->service->query(@command)
 			);
-			if ($out =~ /refusing to .* as it is already present/ ||
-					$out =~ /refusing to .* as the following keys would be clobbered:/) {
+			if (($out && $out =~ /refusing to .* as it is already present/) ||
+					($err && $err =~ /refusing to .* as it is already present/) ||
+					($out && $out =~ /refusing to .* as the following keys would be clobbered:/) ||
+					($err && $err =~ /refusing to .* as the following keys would be clobbered:/)) {
 				$self->notify(@update_args, 'done-item', result => 'skipped')
 			} elsif ($rc == '0' && !$out) {
 				if ($import_msg) {
@@ -435,6 +437,10 @@ sub regenerate_secrets {
 		}
 
 		my @command = $secret->get_safe_command_for('rotate', %opts);
+		unless (@command) {
+			$self->notify(@update_args, 'done-item', result => 'skipped');
+			next;
+		}
 		my $cmd_interactive = $secret->is_command_interactive('rotate', %opts);
 
 		my ($result, $msg) = ();
@@ -464,9 +470,11 @@ sub regenerate_secrets {
 				last if $rc;
 			}
 		} else {
-			my ($out, $rc) = $secret->process_command_output('rotate', $self->store->service->query(@command));
-			if ($out =~ /refusing to .* as it is already present/ ||
-					$out =~ /refusing to .* as the following keys would be clobbered:/) {
+			my ($out, $rc, $err) = $secret->process_command_output('rotate', $self->store->service->query(@command));
+			if (($out && $out =~ /refusing to .* as it is already present/) ||
+					($err && $err =~ /refusing to .* as it is already present/) ||
+					($out && $out =~ /refusing to .* as the following keys would be clobbered:/) ||
+					($err && $err =~ /refusing to .* as the following keys would be clobbered:/)) {
 				$self->notify(@update_args, 'done-item', result => 'skipped')
 			} elsif ($rc == '0') {
 				$self->notify(@update_args, 'done-item', result => 'ok', msg => $out||undef)

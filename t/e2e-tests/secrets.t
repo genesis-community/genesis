@@ -1745,7 +1745,9 @@ EOF
   - processed 6 secret definitions [6 x509]
 
 [west-us-sandbox/certificates] checking presence of environment secrets...
-  - loading secrets from source...done
+  - loading secrets from source...
+[WARNING] Vault export returned no data for /secret/west/us/sandbox/certificates/
+done
   - checking 6 secrets under path '/secret/west/us/sandbox/certificates/':
     [1/6] auto-generated-certs-a/ca X.509 certificate - CA, self-signed ... missing!
     [2/6] auto-generated-certs-a/server X.509 certificate - signed by 'auto-generated-certs-a/ca' ... missing!

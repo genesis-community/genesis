@@ -54,10 +54,9 @@ sub _optional_constructor_opts {
 sub __get_safe_command_for_generate {
 	my ($self,$action,%opts) = @_;
 	debug("%s __get_safe_command_for_generate: unconsumed opts: %s", ref($self), join(', ', sort keys %opts)) if %opts;
+	return () if $action eq 'rotate' && $self->get('fixed') && $self->has_value;
 	my @cmd = ();
 	if (in_controlling_terminal) {
-		# FIXME: don't prompt if secret is fixed and value is present when rotating
-		# TODO: some method to keep existing value?
 		if ($self->get('multiline')) {
 			my $file=workdir().'/secret_contents';
 			push (@cmd, \&prompt_for_multiline_secret, $file, $self->get('prompt'));
