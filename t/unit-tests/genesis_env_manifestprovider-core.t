@@ -557,8 +557,8 @@ subtest 'environment_files() returns a list' => sub {
 		sub { @files = $provider->environment_files },
 		'environment_files() does not die'
 	);
-	# The list may be empty or contain files; just verify it is a list
-	ok(ref(\@files) eq 'ARRAY', 'environment_files() returns a list');
+	# Verify the return is a usable list with a non-negative count
+	cmp_ok(scalar @files, '>=', 0, 'environment_files() returns a list with non-negative count');
 
 	done_testing;
 };
