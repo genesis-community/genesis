@@ -835,6 +835,21 @@ subtest 'Phase 4: Write operations — set()' => sub {
 			'__dollar_symbol__ env var set for dollar escaping');
 		is($captured_env->{env}{__dollar_symbol__}, '$',
 			'__dollar_symbol__ maps to $');
+
+		# Verify the -v payload was actually rewritten with ${__dollar_symbol__}
+		my $v_arg;
+		for (my $i = 0; $i < @set_captured_cmd - 1; $i++) {
+			next if ref $set_captured_cmd[$i];
+			if ($set_captured_cmd[$i] eq '-v') {
+				$v_arg = $set_captured_cmd[$i+1];
+				last;
+			}
+		}
+		ok(defined $v_arg, 'captured -v argument');
+		# set() wraps the value in {redact => $escaped_value}
+		is(ref($v_arg), 'HASH', '-v arg is a redact hashref');
+		like($v_arg->{redact}, qr/\$\{__dollar_symbol__\}/,
+			'-v payload uses ${__dollar_symbol__} for dollar escaping');
 	};
 
 	subtest 'json type — auto-detected for hashref' => sub {
