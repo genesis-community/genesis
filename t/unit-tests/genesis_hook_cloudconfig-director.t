@@ -110,6 +110,7 @@ subtest 'initialization' => sub {
 	require_ok "hooks/cloud-config-bosh-director.pm";
 
 	my $env = mock_env();
+	local $ENV{GENESIS_ENVIRONMENT} = "test-env-dir-$test_seq";
 
 	throws_ok {
 		Genesis::Hook::CloudConfig::Bosh::Director->init(env => $env)
@@ -122,7 +123,6 @@ subtest 'initialization' => sub {
 		'init() dies when wrong purpose is provided';
 
 	my $hook;
-	local $ENV{GENESIS_ENVIRONMENT} = "test-env-dir-$test_seq";
 	lives_ok {
 		$hook = Genesis::Hook::CloudConfig::Bosh::Director->init(env => $env, purpose => 'director')
 	} 'init() succeeds with purpose => director';

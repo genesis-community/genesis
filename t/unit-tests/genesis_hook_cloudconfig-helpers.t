@@ -14,8 +14,6 @@ $ENV{GENESIS_LIB} ||= abs_path('lib');
 $ENV{GENESIS_OUTPUT_COLUMNS} = 80;
 $ENV{NOCOLOR} = 1;
 
-plan tests => 5;
-
 use_ok 'Genesis::Hook::CloudConfig::Helpers';
 
 subtest 'megabytes - returns value unchanged' => sub {
