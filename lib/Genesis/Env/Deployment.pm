@@ -59,7 +59,7 @@ sub new {
 		unless ref($env) && $env->isa('Genesis::Env');
 
 	# Unflatten the data if it contains dot notation
-	%data = unflatten(\%data) if grep {$_ =~ /\./} keys %data;
+	%data = %{unflatten(\%data)} if grep {$_ =~ /\./} keys %data;
 
 	# Lets do some sanitizing before we validate the data for older dev versions
 	if (my $state = delete($data{state})) {

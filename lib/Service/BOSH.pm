@@ -171,6 +171,7 @@ sub execute {
 			$results[1] = $1;  # Linux stores command exit code in the script output
 		}
 		$results[0] =~ s/^Script [^\n]+\n//m; # remove script header (linux)
+		$results[0] =~ s/^\^D[\x08]*//;       # remove macOS script ^D prefix + backspaces
 		logger->dump_var("bosh results" => \@results);
 	}
 	return !$results[1] if $opts->{passfail};

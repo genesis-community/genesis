@@ -3843,10 +3843,12 @@ sub update_deployment_exodus {
 		push @errors, fix_wrap($@) if ($@);
 
 		unless (@errors) {
-			my $latest_deployment = $self->deployments->latest;
-			$self->vault->set(
-				$self->exodus_base, 'sequence' => $latest_deployment->sequence,
-			) if ($latest_deployment->succeeded && $latest_deployment->sequence);
+			if ($action eq 'deploy') {
+				my $latest_deployment = $self->deployments->latest;
+				$self->vault->set(
+					$self->exodus_base, 'sequence' => $latest_deployment->sequence,
+				) if ($latest_deployment->succeeded && $latest_deployment->sequence);
+			}
 		}
 	}
 
@@ -3927,12 +3929,14 @@ sub terminate {
 		my ($date, $time) = $last_deployment->completed(EXODUS_TIME_FORMAT) =~ m{^(\d{4}-\d{2}-\d{2}).(\d{2}:\d{2}:\d{2})};
 		# FIXME: Parse with Time::Piece, then present in local time
 
+		my $term_user   = $last_deployment->lookup('user.shell');
+		my $term_reason = $last_deployment->reason;
 		warning(
 			"\nEnvironment #C{%s} has already been terminated%s on %s at %s UTC%s\n\n%s",
 			$self->name,
-			$last_deployment->{user}{shell} ? ' by #B{'.$last_deployment->{user}{shell}.'}' : '',
+			$term_user   ? ' by #B{'.$term_user.'}' : '',
 			$date, $time,
-			$last_deployment->{reason} ? " for reason: '#Y{".$last_deployment->{reason}."}'" : '',
+			$term_reason ? " for reason: '#Y{".$term_reason."}'" : '',
 			$force ? 'Forcing termination anyway...' : 'Cowardly refusing to terminate.  Use --force to attempt anyway.'
 		);
 		return 0 unless $force;
@@ -4177,7 +4181,9 @@ sub terminate {
 			push(@{$configs->{$config_type}}, $config_name)
 				if $self->bosh->has_config($config_type, $config_name);
 		}
-		my $network_claims = $self->get_network_claims();
+		my $network_claims = $clean_up{networking}
+			? $self->get_network_claims()
+			: {};
 		if (scalar keys $network_claims->%*) {
 			for my $network (keys $network_claims->%*) {
 				$claims->{$network}{description} = sprintf("\n  #Cu{%s}:", $network);
@@ -4322,6 +4328,7 @@ sub terminate {
 			reason  => $reason,
 			flags   => $term_flags,
 			started => Time::Piece->new(int($start))->strftime(EXODUS_TIME_FORMAT),
+			quiet   => 1,
 		);
 	} else {
 		# No exodus deployment audit data to update, so just remove the base exodus data
