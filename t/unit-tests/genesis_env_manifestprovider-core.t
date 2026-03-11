@@ -604,6 +604,38 @@ subtest 'kit_files() method exists (requires vault for full execution)' => sub {
 	done_testing;
 };
 
+# ============================================================================
+# Section 11: Complex Methods (require external tooling)
+# ============================================================================
+# These methods require spruce and/or vault and cannot be unit tested without
+# those services running. Documented here as TODO for integration test coverage.
+
+subtest 'merge() orchestrates spruce merge (requires spruce)' => sub {
+	TODO: {
+		local $TODO = 'merge() invokes spruce merge and requires external spruce binary';
+		ok(0, 'merge() integration test not run in unit suite');
+	}
+	done_testing;
+};
+
+subtest 'get_subset() derives subset manifests (requires spruce)' => sub {
+	TODO: {
+		local $TODO = 'get_subset() uses spruce cherry-pick/prune and requires spruce binary';
+		ok(0, 'get_subset() integration test not run in unit suite');
+	}
+	done_testing;
+};
+
+subtest 'vault_paths() extracts vault secrets from manifest (requires spruce)' => sub {
+	TODO: {
+		local $TODO = 'vault_paths() calls spruce vaultinfo and requires spruce binary and vault access';
+		my $env = make_env_with_kit('t/src/simple', 'vp-test');
+		my $provider = $env->manifest_provider;
+		ok($provider->can('vault_paths'), 'provider has vault_paths method');
+	}
+	done_testing;
+};
+
 done_testing;
 
 # vim: ts=2 sw=2 sts=2 noet fdm=marker foldlevel=1 nu

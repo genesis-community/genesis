@@ -21,6 +21,7 @@ use_ok 'Genesis::Env::Manifest::Redacted';
 use_ok 'Genesis::Env::Manifest::Entombed';
 use_ok 'Genesis::Env::Manifest::VaultifiedEntombed';
 use_ok 'Genesis::Env::Manifest::PartialEnvironment';
+use_ok 'Genesis::Env::Manifest::Vaultified';
 
 $ENV{GENESIS_OUTPUT_COLUMNS}=80;
 
@@ -433,6 +434,123 @@ subtest 'get_vault_paths delegates to builder->vault_paths' => sub {
 	my $manifest = Genesis::Env::Manifest::Unredacted->new($mock_builder, undef);
 	my $result = $manifest->get_vault_paths;
 	is($result, $expected_paths, 'get_vault_paths() returns builder->vault_paths result');
+};
+
+# ============================================================================
+# Section 11: data() and file() Memoized Accessors
+# ============================================================================
+
+subtest 'data() returns pre-set data via memoization' => sub {
+	my (undef, $mock_builder) = _make_mocks();
+	my $manifest = Genesis::Env::Manifest::Unredacted->new($mock_builder, undef);
+
+	my $data = {name => 'test-deployment', instance_groups => []};
+	$manifest->set_data($data);
+	is($manifest->data, $data, 'data() returns pre-set data without triggering merge');
+};
+
+subtest 'data() is memoized - second call returns same reference' => sub {
+	my (undef, $mock_builder) = _make_mocks();
+	my $manifest = Genesis::Env::Manifest::Unredacted->new($mock_builder, undef);
+
+	my $data = {name => 'memoize-test'};
+	$manifest->set_data($data);
+
+	my $first  = $manifest->data;
+	my $second = $manifest->data;
+	is($first, $second, 'data() returns same reference on repeated calls');
+};
+
+subtest 'file() returns pre-set file via memoization' => sub {
+	my (undef, $mock_builder) = _make_mocks();
+	my $manifest = Genesis::Env::Manifest::Unredacted->new($mock_builder, undef);
+
+	my $path = workdir('manifests') . '/test-manifest.yml';
+	$manifest->set_file($path);
+	is($manifest->file, $path, 'file() returns pre-set file path without triggering merge');
+};
+
+subtest 'file() is memoized - second call returns same value' => sub {
+	my (undef, $mock_builder) = _make_mocks();
+	my $manifest = Genesis::Env::Manifest::Unredacted->new($mock_builder, undef);
+
+	my $path = '/tmp/memo-file-test.yml';
+	$manifest->set_file($path);
+
+	my $first  = $manifest->file;
+	my $second = $manifest->file;
+	is($first, $second, 'file() returns same value on repeated calls');
+};
+
+subtest 'data() for subset manifest delegates to builder->get_subset' => sub {
+	my ($mock_env, undef) = _make_mocks();
+
+	my $subset_data = {releases => [{name => 'test-release', version => '1.0'}]};
+	# Use Mock::ReferencedValue for list returns (coderef returns are scalar context in Mock)
+	my $mock_builder = Mock->new(
+		env         => $mock_env,
+		vault_paths => sub { {} },
+		get_subset  => Mock::ReferencedValue->new([$subset_data, undef]),
+	);
+
+	my $manifest = Genesis::Env::Manifest::Unredacted->new($mock_builder, 'releases');
+	ok($manifest->is_subset, 'manifest is a subset');
+
+	my $result = $manifest->data;
+	is_deeply($result, $subset_data, 'data() for subset delegates to builder->get_subset');
+};
+
+subtest 'file() for subset manifest delegates to builder->get_subset' => sub {
+	my ($mock_env, undef) = _make_mocks();
+
+	my $fake_file = workdir('manifests') . '/subset-output.yml';
+	# Use Mock::ReferencedValue for list returns (coderef returns are scalar context in Mock)
+	my $mock_builder = Mock->new(
+		env         => $mock_env,
+		vault_paths => sub { {} },
+		get_subset  => Mock::ReferencedValue->new([undef, $fake_file]),
+	);
+
+	my $manifest = Genesis::Env::Manifest::Unredacted->new($mock_builder, 'pruned');
+	my $result = $manifest->file;
+	is($result, $fake_file, 'file() for subset delegates to builder->get_subset');
+};
+
+# ============================================================================
+# Section 12: write_to()
+# ============================================================================
+
+subtest 'write_to() copies manifest file to destination' => sub {
+	my (undef, $mock_builder) = _make_mocks();
+	my $manifest = Genesis::Env::Manifest::Unredacted->new($mock_builder, undef);
+
+	my $src  = workdir('manifests') . '/write-to-src.yml';
+	my $dest = workdir('manifests') . '/write-to-dest.yml';
+	put_file($src, "---\nfoo: bar\n");
+	$manifest->set_file($src);
+
+	$manifest->write_to($dest);
+	ok(-f $dest, 'destination file exists after write_to()');
+	is(get_file($dest), "---\nfoo: bar\n", 'destination file has correct content');
+
+	unlink $src, $dest;
+};
+
+# ============================================================================
+# Section 13: deployable() on Additional Subclasses
+# ============================================================================
+
+subtest 'deployable() returns 1 for all deployable subclasses' => sub {
+	my (undef, $mock_builder) = _make_mocks();
+
+	my $entombed = Genesis::Env::Manifest::Entombed->new($mock_builder, undef);
+	is($entombed->deployable, 1, 'Entombed->deployable returns 1');
+
+	my $vaultified = Genesis::Env::Manifest::Vaultified->new($mock_builder, undef);
+	is($vaultified->deployable, 1, 'Vaultified->deployable returns 1');
+
+	my $ve = Genesis::Env::Manifest::VaultifiedEntombed->new($mock_builder, undef);
+	is($ve->deployable, 1, 'VaultifiedEntombed->deployable returns 1');
 };
 
 done_testing;
