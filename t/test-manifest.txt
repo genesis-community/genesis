@@ -119,6 +119,12 @@ e2e-tests/params.t
 e2e-tests/pipeline.t
 e2e-tests/secrets.t
 e2e-tests/yamls.t
+# Genesis::Commands E2E tests (FWT-571)
+e2e-tests/deploy.t
+e2e-tests/check.t
+e2e-tests/bosh-commands.t
+e2e-tests/info-commands.t
+e2e-tests/kit-commands.t
 
 [regression-tests]
 # Regression tests for known bugs to be added
