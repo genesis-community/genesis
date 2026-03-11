@@ -418,7 +418,7 @@ subtest 'execute() passfail returns 1 on success' => sub {
 	is $result, 1, 'passfail mode returns 1 on exit code 0';
 };
 
-subtest 'execute() passfail returns falsy value on failure' => sub {
+subtest 'execute() non-passfail captures failure exit code' => sub {
 	plan tests => 2;
 
 	# Provide a fake bosh that always exits non-zero.
@@ -430,15 +430,8 @@ subtest 'execute() passfail returns falsy value on failure' => sub {
 
 	my @results;
 	quietly { @results = $obj->execute('foo') };
-	isnt $results[1], 0, 'execute() returns non-zero exit code when bosh fails';
-
-	my $pf;
-	quietly { $pf = $obj->execute({ passfail => 1 }, 'foo') };
-	# passfail returns !$exit_code.  On Perl 5.42+, the ! operator returns
-	# a reference to PL_No which is truthy in boolean context (Perl 5.42
-	# native booleans change).  Verify the underlying exit code is non-zero.
-	isnt $results[1], 0,
-		'underlying exit code is non-zero for failed command';
+	isnt $results[1], 0, 'list context captures non-zero exit code';
+	is $results[1], 2, 'exit code is preserved as-is (2)';
 };
 
 # ---------------------------------------------------------------------------
