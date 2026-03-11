@@ -25,7 +25,10 @@ unit-tests/term-color.t.DNF
 unit-tests/ipv4-core.t
 unit-tests/boolean-core.t
 unit-tests/service_github-core.t
+unit-tests/service_bosh-base.t
+unit-tests/service_bosh-create_env_proxy.t
 unit-tests/service_bosh-director.t
+unit-tests/service_bosh-stemcell.t
 unit-tests/genesis_top-core.t
 # Temporarily disabled - see test analysis for details
 #unit-tests/kit-core.t
