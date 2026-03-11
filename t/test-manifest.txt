@@ -103,7 +103,13 @@ integration-tests/genesis_top-complete.t    # Genesis::Top with external vault a
 integration-tests/service_vault-operations.t  # Service::Vault real vault operations
 # Genesis::Env integration tests - require vault/BOSH mocks
 #integration-tests/genesis_env-core.t        # Comprehensive env operations (loading, manifest, deployment)
-#integration-tests/genesis_env-terminate.t   # Environment termination workflow
+#integration-tests/genesis_env-terminate.t   # Replaced by genesis_env-terminate_workflow.t
+# Genesis::Env workflow integration tests (FWT-568)
+integration-tests/genesis_env-deploy_workflow.t      # Deploy and post-deploy workflow
+integration-tests/genesis_env-terminate_workflow.t   # Terminate and cleanup workflow
+integration-tests/genesis_env-check_workflow.t       # Pre-deployment validation workflow
+integration-tests/genesis_env-secrets_workflow.t     # Secrets lifecycle workflow
+integration-tests/genesis_env-bosh_config_workflow.t # BOSH config management workflow
 # Tests needing rebuild - concepts preserved, need to test actual Genesis methods
 #integration-tests/genesis_env-release_sha1_validation.t  # REBUILD: Test Genesis::Env::_check_release_url_sha1
 #integration-tests/genesis-undefined_handling.t           # REBUILD: Test Genesis::new_enough with edge cases
