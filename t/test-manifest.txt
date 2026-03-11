@@ -57,6 +57,7 @@ unit-tests/genesis_term-csize.t
 unit-tests/kit-archive-validation.t
 unit-tests/ocfp-show-network.t
 unit-tests/genesis_config-core.t
+unit-tests/service_credhub-core.t  # Service::Credhub unit tests (constructor, accessors, CRUD operations)
 #unit-tests/genesis-cli.t
 
 [integration-tests]
