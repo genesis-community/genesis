@@ -11,7 +11,7 @@ use Test::Deep;
 use Test::Exception;
 use Test::Output;
 use Test::Exit;
-use Cwd qw/getcwd abs_path/;
+use Cwd qw/abs_path/;
 
 use Genesis::Commands;
 use PadWalker qw/closed_over/;
@@ -295,9 +295,28 @@ subtest 'get_options - full and sliced' => sub {
 	is($slice->{name}, 'hello', "name in slice");
 	ok(!exists $slice->{count}, "count excluded from slice");
 
-	# NOTE: get_options has an underscore-to-dash fallback via _u2d(),
-	# but _u2d is a private function in Genesis.pm not exported to Commands.
-	# This is a latent bug -- the fallback path would fail at runtime.
+	# NOTE: get_options is intended to have an underscore-to-dash fallback via
+	# _u2d(), but _u2d currently lives privately in Genesis.pm and is not
+	# exported to Commands.  The following TODO test documents the desired
+	# behavior and exposes the current bug without breaking the suite.
+	{
+		local $TODO = "get_options underscore-to-dash fallback via _u2d() is currently broken";
+
+		reset_commands_state();
+		define_command('u2d-opt-test', {
+			options => [
+				'bosh-env=s' => 'BOSH environment',
+			],
+		});
+
+		prepare_command('u2d-opt-test', '--bosh-env', 'dev');
+
+		lives_ok {
+			my $u2d = get_options('bosh_env');
+			is($u2d->{bosh_env}, 'dev',
+				"underscore key 'bosh_env' should be resolved from '--bosh-env' option");
+		} "get_options supports underscore-to-dash fallback for option keys";
+	}
 };
 
 subtest 'get_args' => sub {
