@@ -35,6 +35,7 @@ unit-tests/genesis_top-core.t
 unit-tests/genesis_kit-core.t            # Genesis::Kit base class
 unit-tests/genesis_kit_compiled-core.t   # Genesis::Kit::Compiled
 unit-tests/genesis_kit_dev-core.t        # Genesis::Kit::Dev
+unit-tests/genesis_kit_compiler-core.t   # Genesis::Kit::Compiler (POD-driven, FWT-547)
 # Temporarily disabled - see test analysis for details
 #unit-tests/kit-compilation.t
 #unit-tests/hooks.t
