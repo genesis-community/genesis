@@ -93,6 +93,16 @@ unit-tests/genesis_commands-core.t  # Genesis::Commands infrastructure (registra
 unit-tests/genesis_kit_provider-core.t              # Genesis::Kit::Provider base class/factory
 unit-tests/genesis_kit_provider_github-core.t        # Genesis::Kit::Provider::Github
 unit-tests/genesis_kit_provider_genesiscommunity-core.t  # Genesis::Kit::Provider::GenesisCommunity
+# Genesis::Hook tests (POD-driven, FWT-560)
+unit-tests/genesis_hook-core.t               # Genesis::Hook base class
+unit-tests/genesis_hook_addon-core.t         # Genesis::Hook::Addon
+unit-tests/genesis_hook_blueprint-core.t     # Genesis::Hook::Blueprint
+unit-tests/genesis_hook_check-core.t         # Genesis::Hook::Check
+unit-tests/genesis_hook_cpiconfig-core.t     # Genesis::Hook::CpiConfig
+unit-tests/genesis_hook_features-core.t      # Genesis::Hook::Features
+unit-tests/genesis_hook_postdeploy-core.t    # Genesis::Hook::PostDeploy
+unit-tests/genesis_hook_runtimeconfig-core.t # Genesis::Hook::RuntimeConfig
+unit-tests/genesis_hook_terminate-core.t     # Genesis::Hook::Terminate
 
 [integration-tests]
 # Multi-component interaction tests that require system interaction
