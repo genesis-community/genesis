@@ -45,6 +45,12 @@ unit-tests/genesis_env-manifest_helpers.t
 unit-tests/genesis_env_secrets_parser_fromkit-core.t  # FromKit parser defect regression tests
 unit-tests/genesis_env_secrets_store_vault-core.t  # Store::Vault code defect regression tests
 unit-tests/genesis_log-get_scope.t
+unit-tests/genesis_log-core.t
+unit-tests/genesis_log-levels.t
+unit-tests/genesis_log-styles.t
+unit-tests/genesis_log-stack.t
+unit-tests/genesis_log-routing.t
+unit-tests/genesis_log-convenience.t
 unit-tests/genesis_secret-base.t
 unit-tests/genesis_secret_dhparams-core.t
 unit-tests/genesis_secret_invalid-core.t
