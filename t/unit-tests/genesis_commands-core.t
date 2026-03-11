@@ -92,6 +92,10 @@ subtest 'define_command - full properties and coderef' => sub {
 
 	my @cmd_list = commands();
 	is(scalar(@cmd_list), 1, "one command registered");
+
+	# Verify the wrapper closure dispatches to the provided coderef
+	$Genesis::Commands::RUN{'full-cmd'}->();
+	is($called, 1, "RUN closure dispatches to provided coderef");
 };
 
 subtest 'define_command - explicit function name string' => sub {
@@ -148,10 +152,10 @@ subtest 'has_command' => sub {
 
 	define_command('deploy', { alias => 'dep' });
 
-	ok( has_command('deploy'),     "canonical command found");
-	ok( has_command('dep'),        "alias found");
-	ok(!has_command('nosuchcmd'),  "nonexistent returns false");
-	ok(!has_command(''),           "empty string returns false");
+	ok(     has_command('deploy'),     "canonical command found");
+	ok(     has_command('dep'),        "alias found");
+	not_ok( has_command('nosuchcmd'),  "nonexistent returns false");
+	not_ok( has_command(''),           "empty string returns false");
 };
 
 subtest 'is_equivalent_command' => sub {
@@ -160,11 +164,11 @@ subtest 'is_equivalent_command' => sub {
 	define_command('deploy', { alias => 'dep' });
 	define_command('check');
 
-	ok( is_equivalent_command('dep', 'deploy'),       "alias and canonical are equivalent");
-	ok( is_equivalent_command('deploy', 'dep'),       "reversed order also equivalent");
-	ok(!is_equivalent_command('deploy', 'check'),     "different commands not equivalent");
-	ok(!is_equivalent_command('', 'deploy'),           "empty string not equivalent");
-	ok(!is_equivalent_command('nonexist', 'deploy'),   "nonexistent not equivalent");
+	ok(     is_equivalent_command('dep', 'deploy'),       "alias and canonical are equivalent");
+	ok(     is_equivalent_command('deploy', 'dep'),       "reversed order also equivalent");
+	not_ok( is_equivalent_command('deploy', 'check'),     "different commands not equivalent");
+	not_ok( is_equivalent_command('', 'deploy'),           "empty string not equivalent");
+	not_ok( is_equivalent_command('nonexist', 'deploy'),   "nonexistent not equivalent");
 };
 
 subtest 'equivalent_commands' => sub {
@@ -323,14 +327,14 @@ subtest 'has_option' => sub {
 	# Existence tests
 	ok( has_option('flag'),  "existing boolean option returns true");
 	ok( has_option('mode'),  "existing string option returns true");
-	ok(!has_option('maybe'), "unset option returns false");
-	ok(!has_option('nope'),  "nonexistent option returns false");
+	not_ok( has_option('maybe'), "unset option returns false");
+	not_ok( has_option('nope'),  "nonexistent option returns false");
 
 	# Value tests
 	ok( has_option('mode', 'json'),     "string match returns true");
-	ok(!has_option('mode', 'yaml'),     "string mismatch returns false");
-	ok( has_option('mode', qr/^js/),    "regex match returns true");
-	ok(!has_option('mode', qr/^xml/),   "regex mismatch returns false");
+	not_ok( has_option('mode', 'yaml'),     "string mismatch returns false");
+	ok(     has_option('mode', qr/^js/),    "regex match returns true");
+	not_ok( has_option('mode', qr/^xml/),   "regex mismatch returns false");
 };
 
 subtest 'option_defaults' => sub {
@@ -348,6 +352,11 @@ subtest 'option_defaults' => sub {
 	option_defaults(verbose => 1, extra => 'yes');
 	is(get_options()->{verbose}, 0, "already-set default not overwritten");
 	is(get_options()->{extra}, 'yes', "additional default applied");
+
+	# undef value edge case: defined() check means undef IS overwritten
+	append_options(maybe => undef);
+	option_defaults(maybe => 'fallback');
+	is(get_options()->{maybe}, 'fallback', "undef value IS overwritten by option_defaults");
 };
 
 subtest 'append_options' => sub {
@@ -705,8 +714,11 @@ subtest 'command_usage - exits nonzero with error' => sub {
 			"command_usage(1, msg) exits nonzero";
 	};
 
-	# Under test, the error message path is skipped but exit code is non-zero
-	ok(length($stderr) > 0, "output is non-empty");
+	# NOTE: under_test() is true ($ENV{GENESIS_TESTING}), so the error
+	# message path (fatal + brief hint) is skipped. Instead, the full
+	# usage screen is shown and exit($rc) is called. The error message
+	# content cannot be verified in the test harness.
+	like($stderr, qr/Usage error test/, "full usage shown even with error rc under test");
 };
 
 subtest 'show_global_options' => sub {
