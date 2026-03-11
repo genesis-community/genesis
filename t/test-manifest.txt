@@ -88,6 +88,10 @@ unit-tests/genesis_config-core.t
 unit-tests/service_credhub-core.t  # Service::Credhub unit tests (constructor, accessors, CRUD operations)
 unit-tests/genesis_commands-core.t  # Genesis::Commands infrastructure (registration, parsing, dispatch deps)
 #unit-tests/genesis-cli.t
+# Kit Provider tests (POD-driven, FWT-548)
+unit-tests/genesis_kit_provider-core.t              # Genesis::Kit::Provider base class/factory
+unit-tests/genesis_kit_provider_github-core.t        # Genesis::Kit::Provider::Github
+unit-tests/genesis_kit_provider_genesiscommunity-core.t  # Genesis::Kit::Provider::GenesisCommunity
 
 [integration-tests]
 # Multi-component interaction tests that require system interaction
