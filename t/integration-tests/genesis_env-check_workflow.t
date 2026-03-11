@@ -151,7 +151,7 @@ EOF
     } "check-test environment loaded";
 
     # Configure env for testing
-    $env->top->config->set('genesis.manifest_store','hybrid');
+    $env->top->config->set('manifest_store','hybrid');
     $env->use_config($top->path(".cloud.yml"));
     $Genesis::VERSION = '3.1.0-rc.20';
 
@@ -262,7 +262,7 @@ EOF
             $env2 = $top2->load_env('check-noconfig');
         } "environment without cloud config loaded";
 
-        $env2->top->config->set('genesis.manifest_store','hybrid');
+        $env2->top->config->set('manifest_store','hybrid');
         $Genesis::VERSION = '3.1.0-rc.20';
 
         # check() should not crash when configs are missing -- it warns instead

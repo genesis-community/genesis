@@ -232,7 +232,7 @@ EOF
 		# Test that a nonexistent deployment warns and exits
 		my ($stdout,$stderr) = output_from {
 			not_ok(
-				$env->terminate('force' => 0, 'nopronmpt' => 1), "terminate exits when no prior deployment found"
+				$env->terminate('force' => 0, 'noprompt' => 1), "terminate exits when no prior deployment found"
 			)
 		};
 		like($stderr, qr/No exodus data found for termination-test; may not exist./, "terminate warns when no prior deployment found");

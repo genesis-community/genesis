@@ -151,7 +151,7 @@ EOF
     } "secrets-test environment loaded";
 
     # Configure env for testing
-    $env->top->config->set('genesis.manifest_store','hybrid');
+    $env->top->config->set('manifest_store','hybrid');
     $env->use_config($top->path(".cloud.yml"));
     $Genesis::VERSION = '3.1.0-rc.20';
 

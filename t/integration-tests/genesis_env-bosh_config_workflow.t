@@ -156,7 +156,7 @@ EOF
     } "config-test environment loaded";
 
     # Configure env for testing
-    $env->top->config->set('genesis.manifest_store','hybrid');
+    $env->top->config->set('manifest_store','hybrid');
     $Genesis::VERSION = '3.1.0-rc.20';
 
     subtest 'use_config registers config file' => sub {
@@ -215,7 +215,7 @@ EOF
             $env2 = $top2->load_env('missing-config');
         } "missing-config environment loaded";
 
-        $env2->top->config->set('genesis.manifest_store','hybrid');
+        $env2->top->config->set('manifest_store','hybrid');
         $Genesis::VERSION = '3.1.0-rc.20';
 
         # The simple kit's blueprint hook does not declare required configs,
@@ -251,7 +251,7 @@ EOF
             $env3 = $top3->load_env('hasconfig-test');
         } "hasconfig-test environment loaded";
 
-        $env3->top->config->set('genesis.manifest_store','hybrid');
+        $env3->top->config->set('manifest_store','hybrid');
 
         # use_config() sets $ENV{GENESIS_CLOUD_CONFIG} as a side effect;
         # localise it so the previous subtest's registration does not bleed in.
@@ -312,7 +312,7 @@ EOF
             $env4 = $top4->load_env('multiconfig-test');
         } "multiconfig-test environment loaded";
 
-        $env4->top->config->set('genesis.manifest_store','hybrid');
+        $env4->top->config->set('manifest_store','hybrid');
 
         my $cloud_file   = $top4->path(".cloud.yml");
         my $runtime_file = $top4->path(".runtime.yml");
