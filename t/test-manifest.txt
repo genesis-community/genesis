@@ -54,6 +54,18 @@ unit-tests/genesis_secret_userprovided-core.t
 unit-tests/genesis_secret_uuid-core.t
 unit-tests/genesis_secret_x509-core.t
 unit-tests/genesis_term-csize.t
+# Genesis::Term tests (FWT-577)
+unit-tests/genesis_term-terminal_detection.t
+unit-tests/genesis_term-csprintf.t
+unit-tests/genesis_term-color_internals.t
+unit-tests/genesis_term-text_formatting.t
+unit-tests/genesis_term-box_drawing.t
+unit-tests/genesis_term-markdown.t
+unit-tests/genesis_term-utilities.t
+# Genesis::UI tests (FWT-577)
+unit-tests/genesis_ui-boolean_and_line.t
+unit-tests/genesis_ui-choice.t
+unit-tests/genesis_ui-list_and_validation.t
 unit-tests/kit-archive-validation.t
 unit-tests/ocfp-show-network.t
 unit-tests/genesis_config-core.t
