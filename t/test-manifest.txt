@@ -44,6 +44,9 @@ unit-tests/genesis_env-deployment.t
 unit-tests/genesis_env-manifest_helpers.t
 unit-tests/genesis_env_secrets_parser_fromkit-core.t  # FromKit parser defect regression tests
 unit-tests/genesis_env_secrets_store_vault-core.t  # Store::Vault code defect regression tests
+unit-tests/service_vault-core.t          # Service::Vault base class + None with MockWrapper
+unit-tests/service_vault_remote-core.t   # Service::Vault::Remote with mocks
+unit-tests/service_vault_admin-core.t    # Service::Vault::Admin + AppRole with mocks
 unit-tests/genesis_log-get_scope.t
 unit-tests/genesis_secret-base.t
 unit-tests/genesis_secret_dhparams-core.t
@@ -70,6 +73,7 @@ integration-tests/service_github-api.t   # GitHub/GitLab API integration (SSH ke
 integration-tests/service_bosh_stemcells.t  # BOSH stemcell API integration (bosh.io)
 integration-tests/service_bosh_director.t   # BOSH Director constructor patterns (from_exodus, from_alias, from_environment)
 integration-tests/genesis_top-complete.t    # Genesis::Top with external vault and GitHub dependencies
+integration-tests/service_vault-operations.t  # Service::Vault real vault operations
 # Genesis::Env integration tests - require vault/BOSH mocks
 #integration-tests/genesis_env-core.t        # Comprehensive env operations (loading, manifest, deployment)
 #integration-tests/genesis_env-terminate.t   # Environment termination workflow
