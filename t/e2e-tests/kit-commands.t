@@ -27,8 +27,11 @@ subtest 'create-kit without --name fails with usage error' => sub {
 
 	my (undef, $exit, $out) = run_fails "genesis create-kit 2>&1", undef,
 		"genesis create-kit without --name fails";
-	ok $exit != 0,
-		"exit code is non-zero when --name is omitted";
+	is $exit, 2,
+		"exit code is 2 (usage error) when --name is omitted";
+	matches $out,
+		qr/--name/,
+		"usage output mentions required --name option";
 
 	chdir $TOPDIR;
 };
