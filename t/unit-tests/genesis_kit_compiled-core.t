@@ -16,7 +16,6 @@ use_ok 'Genesis::Config';
 $Genesis::RC = Genesis::Config->new("$ENV{HOME}/.genesis/config");
 
 use_ok 'Service::Vault::Remote';
-use Genesis::Kit::Compiler;
 
 package mockenv;
 sub new {

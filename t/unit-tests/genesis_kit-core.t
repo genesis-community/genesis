@@ -22,7 +22,6 @@ use Genesis::Kit::Compiler;
 # tests moved to integration tests
 
 package mockenv;
-use Data::Dumper;
 
 sub new {
 	my ($class, @features) = @_;
@@ -51,7 +50,7 @@ sub get_environment_variables {
 	$env{GENESIS_VERIFY_VAULT} = $self->vault->verify || "";
 
 	$env{HOOK_ENV_VARS}='setup';
-	$env{GENESIS_VAULT_PREFIX} = $env{GENESIS_SECRETS_PATH} = secrets_path;
+	$env{GENESIS_VAULT_PREFIX} = $env{GENESIS_SECRETS_PATH} = $self->secrets_path;
 	return %env;
 }
 

@@ -17,7 +17,6 @@ use_ok 'Service::Vault::Remote';
 
 $Genesis::RC = Genesis::Config->new("$ENV{HOME}/.genesis/config");
 
-use Genesis::Kit::Compiler;
 
 # ---------------------------------------------------------------------------
 # Helpers
