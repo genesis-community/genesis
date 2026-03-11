@@ -108,8 +108,7 @@ subtest 'in_controlling_terminal returns false under prove' => sub {
 
 subtest 'in_controlling_terminal returns a defined value' => sub {
 	my $result = in_controlling_terminal();
-	# result is defined (may be empty string or 0 for false)
-	ok(defined($result) || !$result,
+	ok(defined $result,
 		'in_controlling_terminal returns a defined value');
 };
 
