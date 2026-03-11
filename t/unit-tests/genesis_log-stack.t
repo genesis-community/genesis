@@ -132,8 +132,8 @@ subtest 'get_scope without GENESIS_STACK_TRACE emits a single frame' => sub {
 	local $ENV{GENESIS_STACK_TRACE};
 	delete $ENV{GENESIS_STACK_TRACE};
 
-	sub _scope_from_depth { get_scope(0) }
-	my $scope = _scope_from_depth();
+	my $scope_from_depth = sub { get_scope(0) };
+	my $scope = $scope_from_depth->();
 	my @segs = split /\n/, $scope;
 	is scalar(@segs), 2,
 		'without GENESIS_STACK_TRACE get_scope emits exactly one frame (2 ANSI segments)';
@@ -144,8 +144,8 @@ subtest 'get_scope with GENESIS_STACK_TRACE emits multiple frames' => sub {
 	# Calling through a helper sub guarantees at least 2 frames, giving >= 4 segments.
 	local $ENV{GENESIS_STACK_TRACE} = '1';
 
-	sub _scope_from_depth_trace { get_scope(0) }
-	my $scope = _scope_from_depth_trace();
+	my $scope_from_depth_trace = sub { get_scope(0) };
+	my $scope = $scope_from_depth_trace->();
 	my @segs = split /\n/, $scope;
 	ok scalar(@segs) > 2,
 		'with GENESIS_STACK_TRACE get_scope emits more than one frame (> 2 ANSI segments)';

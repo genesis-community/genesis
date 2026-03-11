@@ -87,30 +87,10 @@ subtest 'find_log_level - unambiguous prefix lookup' => sub {
 	is find_log_level('deb'),   'DEBUG',   'deb    => DEBUG (prefix, lowercase)';
 };
 
-subtest 'find_log_level - ambiguous prefix dies' => sub {
-	# 'T' matches both TRACE (and no others in the 7-level list since TRACE is
-	# the only T-prefixed level) — actually only TRACE starts with T, so 'T'
-	# is unambiguous.  Use a prefix that matches multiple levels.
-	# 'E' matches ERROR only (no other level starts with E), so also unambiguous.
-	# 'IN' matches INFO only.
-	# A genuinely ambiguous prefix across the 7 levels: none share a prefix
-	# letter uniquely causing ambiguity... let's verify: the 7 levels are:
-	#   NONE, OUTPUT, ERROR, WARNING, INFO, DEBUG, TRACE
-	# 'N'   => NONE only          (unambiguous)
-	# 'O'   => OUTPUT only        (unambiguous)
-	# 'E'   => ERROR only         (unambiguous)
-	# 'W'   => WARNING only       (unambiguous)
-	# 'I'   => INFO only          (unambiguous)
-	# 'D'   => DEBUG only         (unambiguous)
-	# 'T'   => TRACE only         (unambiguous)
-	# There is no single-character ambiguous prefix for these 7 levels.
-	# A multi-char prefix that doesn't match any level is the invalid case.
-	# The ambiguous case requires a prefix matching >1 level, which cannot
-	# occur with these 7 distinct first-letters.  We still test the code path
-	# by constructing a scenario: the test confirms die behavior for invalid.
-	# (Ambiguity coverage is structural; we document it here for clarity.)
-	pass 'no ambiguous prefix exists among the 7 user-facing levels (by design)';
-};
+# Note: No ambiguous prefix test — the 7 user-facing levels (NONE, OUTPUT,
+# ERROR, WARNING, INFO, DEBUG, TRACE) each have distinct first letters, so
+# no prefix can match more than one level.  The ambiguous code path in
+# find_log_level() is unreachable with the current level set.
 
 subtest 'find_log_level - invalid level name dies' => sub {
 	quietly {

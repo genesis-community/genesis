@@ -9,21 +9,6 @@ use_ok 'Genesis::Log';
 Genesis::Log->import();
 
 # ---------------------------------------------------------------------------
-# Singleton reset helper
-# ---------------------------------------------------------------------------
-# Because Genesis::Log is a singleton, each subtest that needs a pristine
-# logger must reset $Genesis::Log::Logger before calling new().
-sub reset_logger {
-    no warnings 'once';
-    $Genesis::Log::Logger = undef;
-    # Suppress any QUIET/DEBUG/TRACE env influence for clean defaults
-    local $ENV{QUIET}         = undef;
-    local $ENV{GENESIS_TRACE} = undef;
-    local $ENV{GENESIS_DEBUG} = undef;
-    return Genesis::Log->new();
-}
-
-# ---------------------------------------------------------------------------
 # configure_log() — terminal target (no path argument)
 # ---------------------------------------------------------------------------
 
