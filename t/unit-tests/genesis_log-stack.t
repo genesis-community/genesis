@@ -84,11 +84,13 @@ subtest 'frames returned from within a subtest include caller info' => sub {
 		ok scalar(@stack) > 0, 'stack is non-empty inside nested subtest';
 	};
 
-	# At least one frame's line should be >= $call_line because we know
-	# the call happened at or after that line.
-	my $found_line = grep { $_->{line} >= $call_line } @stack;
-	ok $found_line > 0,
-		'at least one frame references a line at or after the get_stack() call';
+	# Match on both filename (substring — get_stack humanizes paths) and
+	# exact line number to avoid false positives from unrelated frames.
+	my $found_call_site = grep {
+		$_->{file} =~ /genesis_log-stack\.t/ && $_->{line} == $call_line
+	} @stack;
+	ok $found_call_site > 0,
+		'stack includes a frame for the get_stack() call site in this file';
 };
 
 # ---------------------------------------------------------------------------

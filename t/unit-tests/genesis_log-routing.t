@@ -6,7 +6,6 @@ use helper;
 use File::Temp qw/tempdir/;
 
 use_ok 'Genesis::Log';
-Genesis::Log->import();
 
 # ---------------------------------------------------------------------------
 # configure_log() — terminal target (no path argument)

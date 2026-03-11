@@ -5,7 +5,6 @@ use lib 't';
 use helper;
 
 use_ok 'Genesis::Log';
-use Genesis::Log; # use_ok does not run import; pull in exported symbols
 
 # level_ord is not in @EXPORT so we alias it for readability
 *level_ord = \&Genesis::Log::level_ord;
