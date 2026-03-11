@@ -27,8 +27,11 @@ unit-tests/boolean-core.t
 unit-tests/service_github-core.t
 unit-tests/service_bosh-director.t
 unit-tests/genesis_top-core.t
+# Kit module tests (POD-driven, FWT-546)
+unit-tests/genesis_kit-core.t            # Genesis::Kit base class
+unit-tests/genesis_kit_compiled-core.t   # Genesis::Kit::Compiled
+unit-tests/genesis_kit_dev-core.t        # Genesis::Kit::Dev
 # Temporarily disabled - see test analysis for details
-#unit-tests/kit-core.t
 #unit-tests/kit-compilation.t
 #unit-tests/hooks.t
 #unit-tests/hooks-cloudconfig.t
