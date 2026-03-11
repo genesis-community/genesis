@@ -523,16 +523,13 @@ subtest 'AppRole::new - wrong class throws' => sub {
 };
 
 # ---------------------------------------------------------------------------
-# FWT-657 DEFECT: AppRole::new constructor bail message typo
+# AppRole::new constructor bail message spelling
 # ---------------------------------------------------------------------------
-TODO: {
-	local $TODO = "FWT-657: Constructor bail message says 'equires' instead of 'requires'";
-	eval {
-		Service::Vault::Admin::AppRole->new(undef);
-	};
-	like($@, qr/\brequires\b/,
-		'AppRole::new error message spells "requires" correctly');
-}
+eval {
+	Service::Vault::Admin::AppRole->new(undef);
+};
+like($@, qr/\brequires\b/,
+	'AppRole::new error message spells "requires" correctly');
 
 # ---------------------------------------------------------------------------
 # 13. AppRole::vault
@@ -553,12 +550,9 @@ subtest 'AppRole::enabled - approle/ key present means enabled' => sub {
 	my $admin = Service::Vault::Admin->new($vault);
 	my $ar    = Service::Vault::Admin::AppRole->new($admin);
 
-	TODO: {
-		local $TODO = "FWT-657: AppRole::enabled() calls read_json_from() which is not imported into the package namespace";
-		my $result = eval { $ar->enabled() };
-		ok(!$@, 'enabled() does not die');
-		ok($result, 'enabled() returns true when approle/ key is present');
-	}
+	my $result = eval { $ar->enabled() };
+	ok(!$@, 'enabled() does not die');
+	ok($result, 'enabled() returns true when approle/ key is present');
 };
 
 subtest 'AppRole::enabled - approle/ key absent means disabled' => sub {
@@ -567,12 +561,9 @@ subtest 'AppRole::enabled - approle/ key absent means disabled' => sub {
 	my $admin = Service::Vault::Admin->new($vault);
 	my $ar    = Service::Vault::Admin::AppRole->new($admin);
 
-	TODO: {
-		local $TODO = "FWT-657: AppRole::enabled() calls read_json_from() which is not imported into the package namespace";
-		my $result = eval { $ar->enabled() };
-		ok(!$@, 'enabled() does not die');
-		ok(!$result, 'enabled() returns false when approle/ key is absent');
-	}
+	my $result = eval { $ar->enabled() };
+	ok(!$@, 'enabled() does not die');
+	ok(!$result, 'enabled() returns false when approle/ key is absent');
 };
 
 # ---------------------------------------------------------------------------
@@ -584,15 +575,12 @@ subtest 'AppRole::enable - already enabled short-circuits' => sub {
 	my $admin = Service::Vault::Admin->new($vault);
 	my $ar    = Service::Vault::Admin::AppRole->new($admin);
 
-	TODO: {
-		local $TODO = "FWT-657: AppRole::enable() calls enabled() which calls read_json_from() not imported in package";
-		my $result = eval { $ar->enable() };
-		ok(!$@, 'enable() does not die when already enabled');
-		is($result, 1, 'enable() returns 1 when already enabled');
-		my $enable_calls = grep { grep { /auth enable/ } @$_ } @{$vault->{_query_calls}};
-		is($enable_calls, 0,
-			'enable() does not call vault auth enable when already enabled');
-	}
+	my $result = eval { $ar->enable() };
+	ok(!$@, 'enable() does not die when already enabled');
+	is($result, 1, 'enable() returns 1 when already enabled');
+	my $enable_calls = grep { join(' ', @$_) =~ /auth enable/ } @{$vault->{_query_calls}};
+	is($enable_calls, 0,
+		'enable() does not call vault auth enable when already enabled');
 };
 
 subtest 'AppRole::enable - not enabled calls vault auth enable' => sub {
@@ -604,15 +592,12 @@ subtest 'AppRole::enable - not enabled calls vault auth enable' => sub {
 	my $admin = Service::Vault::Admin->new($vault);
 	my $ar    = Service::Vault::Admin::AppRole->new($admin);
 
-	TODO: {
-		local $TODO = "FWT-657: AppRole::enable() calls enabled() which calls read_json_from() not imported in package";
-		my $result = eval { $ar->enable() };
-		ok(!$@, 'enable() does not die when needs enabling');
-		is($result, 1, 'enable() returns 1 after enabling');
-		my $enable_calls = grep { grep { /auth enable/ } @$_ } @{$vault->{_query_calls}};
-		ok($enable_calls,
-			'enable() calls vault auth enable when not already enabled');
-	}
+	my $result = eval { $ar->enable() };
+	ok(!$@, 'enable() does not die when needs enabling');
+	is($result, 1, 'enable() returns 1 after enabling');
+	my $enable_calls = grep { join(' ', @$_) =~ /auth enable/ } @{$vault->{_query_calls}};
+	ok($enable_calls,
+		'enable() calls vault auth enable when not already enabled');
 };
 
 subtest 'AppRole::enable - vault failure throws' => sub {
@@ -624,13 +609,10 @@ subtest 'AppRole::enable - vault failure throws' => sub {
 	my $admin = Service::Vault::Admin->new($vault);
 	my $ar    = Service::Vault::Admin::AppRole->new($admin);
 
-	TODO: {
-		local $TODO = "FWT-657: AppRole::enable() calls enabled() which calls read_json_from() not imported in package";
-		throws_ok {
-			$ar->enable();
-		} qr/Failed to enable AppRole auth method/,
-			'enable() throws when vault auth enable fails';
-	}
+	throws_ok {
+		$ar->enable();
+	} qr/Failed to enable AppRole auth method/,
+		'enable() throws when vault auth enable fails';
 };
 
 # ---------------------------------------------------------------------------
@@ -642,14 +624,11 @@ subtest 'AppRole::list - parses JSON array' => sub {
 	my $admin = Service::Vault::Admin->new($vault);
 	my $ar    = Service::Vault::Admin::AppRole->new($admin);
 
-	TODO: {
-		local $TODO = "FWT-657: AppRole::list() calls read_json_from() which is not imported into the package namespace";
-		my @roles = eval { $ar->list() };
-		ok(!$@, 'list() does not die');
-		is(scalar(@roles), 2, 'list() returns correct number of roles');
-		ok((grep { $_ eq 'concourse' }         @roles), 'list() includes concourse');
-		ok((grep { $_ eq 'genesis-pipelines' } @roles), 'list() includes genesis-pipelines');
-	}
+	my @roles = eval { $ar->list() };
+	ok(!$@, 'list() does not die');
+	is(scalar(@roles), 2, 'list() returns correct number of roles');
+	ok((grep { $_ eq 'concourse' }         @roles), 'list() includes concourse');
+	ok((grep { $_ eq 'genesis-pipelines' } @roles), 'list() includes genesis-pipelines');
 };
 
 subtest 'AppRole::list - vault failure returns empty list' => sub {
@@ -658,12 +637,9 @@ subtest 'AppRole::list - vault failure returns empty list' => sub {
 	my $admin = Service::Vault::Admin->new($vault);
 	my $ar    = Service::Vault::Admin::AppRole->new($admin);
 
-	TODO: {
-		local $TODO = "FWT-657: AppRole::list() calls read_json_from() which is not imported into the package namespace";
-		my @roles = eval { $ar->list() };
-		ok(!$@, 'list() does not die on vault failure');
-		is(scalar(@roles), 0, 'list() returns empty list when vault fails');
-	}
+	my @roles = eval { $ar->list() };
+	ok(!$@, 'list() does not die on vault failure');
+	is(scalar(@roles), 0, 'list() returns empty list when vault fails');
 };
 
 # ---------------------------------------------------------------------------
@@ -675,12 +651,9 @@ subtest 'AppRole::exists - found in list' => sub {
 	my $admin = Service::Vault::Admin->new($vault);
 	my $ar    = Service::Vault::Admin::AppRole->new($admin);
 
-	TODO: {
-		local $TODO = "FWT-657: AppRole::exists() delegates to list() which calls read_json_from() not imported in package";
-		my $result = eval { $ar->exists('concourse') };
-		ok(!$@, 'exists() does not die');
-		ok($result, 'exists() returns true when role is in the list');
-	}
+	my $result = eval { $ar->exists('concourse') };
+	ok(!$@, 'exists() does not die');
+	ok($result, 'exists() returns true when role is in the list');
 };
 
 subtest 'AppRole::exists - not found' => sub {
@@ -689,12 +662,9 @@ subtest 'AppRole::exists - not found' => sub {
 	my $admin = Service::Vault::Admin->new($vault);
 	my $ar    = Service::Vault::Admin::AppRole->new($admin);
 
-	TODO: {
-		local $TODO = "FWT-657: AppRole::exists() delegates to list() which calls read_json_from() not imported in package";
-		my $result = eval { $ar->exists('concourse') };
-		ok(!$@, 'exists() does not die');
-		ok(!$result, 'exists() returns false when role is not in the list');
-	}
+	my $result = eval { $ar->exists('concourse') };
+	ok(!$@, 'exists() does not die');
+	ok(!$result, 'exists() returns false when role is not in the list');
 };
 
 done_testing;

@@ -20,7 +20,7 @@ is($vault_target, 'genesis-ci-unit-tests',
 # connect_and_validate() requires initialized() == true, which checks for
 # /secret/handshake. Write the handshake via safe CLI before constructing
 # the Service::Vault object.
-system("SAFE_TARGET=$vault_target safe set secret/handshake knock=knock >/dev/null 2>&1");
+system("SAFE_TARGET=$vault_target safe set /secret/handshake knock=knock >/dev/null 2>&1");
 is($? >> 8, 0, 'wrote handshake secret for vault initialization');
 # }}}
 
