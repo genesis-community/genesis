@@ -21,9 +21,9 @@ $ENV{GENESIS_OUTPUT_COLUMNS} = 120;
 $ENV{GIT_EDITOR}            = 'true';
 
 # ---------------------------------------------------------------------------
-# Shared temp root for all subtests that need a kit directory on disk.
-# Each subtest that mutates state creates its own subdirectory so tests
-# remain fully independent.
+# Shared temp root for all subtests. init_kit_repo() resets the default
+# kit directory via rm -rf before each use; subtests run serially so
+# there is no cross-test coupling.
 # ---------------------------------------------------------------------------
 
 my $tmp = workdir("KIT_COMPILER");
@@ -81,9 +81,9 @@ sub remove {
         next if $_ =~ $re;
         print $out $_;
     }
-    close $in;
-    close $out;
-    rename "$file~", $file;
+    close $in  or die "close $file: $!";
+    close $out or die "close $file~: $!";
+    rename "$file~", $file or die "rename $file~ -> $file: $!";
 }
 
 ###############################################################################
