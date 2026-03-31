@@ -562,6 +562,113 @@ subtest 'ASTBuilder - _build_from_env_files: non-existent dir returns empty' => 
 	is scalar(@$edges),      0, "no edges for missing dir";
 };
 
+subtest 'ASTBuilder - env-files format: build() produces AST with workflow graph' => sub {
+	my $tmp = tempdir(CLEANUP => 1);
+
+	open my $fh, '>', "$tmp/lab.yml" or die $!;
+	print $fh "---\ngenesis:\n  pipeline:\n    require_pr: false\n";
+	close $fh;
+
+	open $fh, '>', "$tmp/prod.yml" or die $!;
+	print $fh "---\ngenesis:\n  pipeline:\n    prior_env: lab\n    require_pr: true\n";
+	close $fh;
+
+	my $builder = Genesis::CI::Compiler::ASTBuilder->new();
+	my $ast = $builder->build({
+		_source_format => 'env-files',
+		env_dir        => $tmp,
+		pipeline       => { metadata => { name => 'ef-test' } },
+	}, {});
+
+	isa_ok $ast, 'Genesis::CI::Compiler::AST', "build returns AST";
+	ok $ast->workflows->{default}, "default workflow created";
+	my $graph = $ast->workflows->{default}{graph};
+	ok $graph, "workflow has graph";
+	ok exists $graph->{nodes}{lab},  "lab node in graph";
+	ok exists $graph->{nodes}{prod}, "prod node in graph";
+
+	my @edges = @{$graph->{edges}};
+	is scalar(@edges), 1, "one edge";
+	is $edges[0]{from}, 'lab',  "edge from lab";
+	is $edges[0]{to},   'prod', "edge to prod";
+
+	is $graph->{nodes}{prod}{require_pr}, 1, "prod require_pr=1 in AST";
+	is $graph->{nodes}{lab}{require_pr},  0, "lab require_pr=0 in AST";
+};
+
+subtest 'ASTBuilder - legacy nodes enriched with gate flags from env files' => sub {
+	my $tmp = tempdir(CLEANUP => 1);
+
+	open my $fh, '>', "$tmp/sandbox.yml" or die $!;
+	print $fh "---\ngenesis:\n  pipeline:\n    manual: false\n";
+	close $fh;
+
+	open $fh, '>', "$tmp/prod.yml" or die $!;
+	print $fh "---\ngenesis:\n  pipeline:\n    require_pr: true\n    manual: true\n";
+	close $fh;
+
+	my $builder = Genesis::CI::Compiler::ASTBuilder->new(env_dir => $tmp);
+	my $parsed = {
+		_source_format => 'legacy',
+		_source_path   => 'ci.yml',
+		_legacy_raw    => {
+			pipeline => {
+				name   => 'enrich-test',
+				git    => { branch => 'main' },
+				boshes => {
+					sandbox => { alias => 'sandbox' },
+					prod    => { alias => 'prod' },
+				},
+				task => { image => 'genesiscommunity/concourse', version => 'latest' },
+			},
+		},
+		integrations => {},
+		targets      => {},
+		pipeline     => {
+			workflows => {
+				default => {
+					environments  => [qw(sandbox prod)],
+					auto_patterns => [],
+					will_trigger  => { sandbox => ['prod'] },
+				},
+			},
+		},
+	};
+	my $ast = $builder->build($parsed, {});
+
+	my $nodes = $ast->workflows->{default}{graph}{nodes};
+	is $nodes->{prod}{require_pr}, 1, "prod require_pr enriched from env file";
+	is $nodes->{prod}{manual},     1, "prod manual enriched from env file";
+	is $nodes->{sandbox}{manual},  0, "sandbox manual=0 from env file";
+};
+
+subtest 'ASTBuilder + PipelineDescriptor - end-to-end env-file mermaid gates' => sub {
+	my $tmp = tempdir(CLEANUP => 1);
+
+	open my $fh, '>', "$tmp/lab.yml" or die $!;
+	print $fh "---\ngenesis:\n  pipeline:\n    require_pr: false\n";
+	close $fh;
+
+	open $fh, '>', "$tmp/prod.yml" or die $!;
+	print $fh "---\ngenesis:\n  pipeline:\n    prior_env: lab\n    require_pr: true\n    manual: true\n";
+	close $fh;
+
+	my $builder = Genesis::CI::Compiler::ASTBuilder->new();
+	my $ast = $builder->build({
+		_source_format => 'env-files',
+		env_dir        => $tmp,
+		pipeline       => { metadata => { name => 'e2e-gate-test' } },
+	}, {});
+
+	my $descriptor = Genesis::CI::Compiler::PipelineDescriptor->new(ast => $ast);
+	my $mermaid = $descriptor->mermaid();
+
+	like $mermaid, qr/flowchart LR/,                      "starts with flowchart LR";
+	like $mermaid, qr/lab\s+-->/,                         "lab has outgoing edge";
+	like $mermaid, qr/prod\(\[prod\\nPR\+MANUAL\]\)/,     "prod has PR+MANUAL gate annotation";
+	unlike $mermaid, qr/lab\(\[/,                         "lab has no gate annotation";
+};
+
 ### ============================================================ ###
 ### Validator Tests
 ### ============================================================ ###

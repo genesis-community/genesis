@@ -13,7 +13,8 @@ sub new {
 	my ($class, %opts) = @_;
 
 	return bless({
-		top => $opts{top},
+		top     => $opts{top},
+		env_dir => $opts{env_dir},
 	}, $class);
 }
 
@@ -29,6 +30,8 @@ sub build {
 
 	if ($parsed->{_source_format} eq 'legacy') {
 		%ast_data = $self->_build_from_legacy($parsed, $scripts);
+	} elsif ($parsed->{_source_format} eq 'env-files') {
+		%ast_data = $self->_build_from_env_files_format($parsed, $scripts);
 	} else {
 		%ast_data = $self->_build_from_multi_file($parsed, $scripts);
 	}
@@ -172,6 +175,18 @@ sub _build_legacy_workflows {
 		for my $from (keys %will_trigger) {
 			for my $to (@{$will_trigger{$from}}) {
 				push @edges, { from => $from, to => $to };
+			}
+		}
+
+		# Enrich nodes with require_pr/manual from env files when available
+		my $env_dir = $self->{env_dir}
+			|| ($self->{top} ? $self->{top}->path() : undef);
+		if ($env_dir) {
+			my ($ef_nodes) = $self->_build_from_env_files($env_dir);
+			for my $env (keys %nodes) {
+				my $ef = $ef_nodes->{$env} or next;
+				$nodes{$env}{require_pr} = $ef->{require_pr};
+				$nodes{$env}{manual}     = $ef->{manual};
 			}
 		}
 
@@ -340,6 +355,47 @@ sub _build_workflow_graph {
 # }}}
 ### Env-File Format Builder {{{
 
+# _build_from_env_files_format - build full AST when source is env files only {{{
+#
+# Used when _source_format eq 'env-files'.  Scans env_dir (from parsed
+# or from self->{env_dir} / self->{top}->path()) for *.yml files containing
+# genesis.pipeline.* keys, builds a single 'default' workflow from the
+# resulting nodes and edges, and returns an ast_data hash.
+sub _build_from_env_files_format {
+	my ($self, $parsed, $scripts) = @_;
+
+	my $pipeline = $parsed->{pipeline} || {};
+	my $env_dir  = $parsed->{env_dir}
+		|| $self->{env_dir}
+		|| ($self->{top} ? $self->{top}->path() : '.');
+
+	my ($nodes, $edges) = $self->_build_from_env_files($env_dir);
+
+	my $workflows = {
+		default => {
+			name     => 'default',
+			type     => 'deployment',
+			triggers => [],
+			graph    => {
+				nodes => $nodes,
+				edges => $edges,
+			},
+		},
+	};
+
+	return (
+		metadata        => $pipeline->{metadata} || { name => 'genesis-pipeline', version => '1.0' },
+		branches        => $pipeline->{branches} || { live => 'main', target_prefix => 'target/' },
+		integrations    => $parsed->{integrations}    || {},
+		targets         => $parsed->{targets}         || {},
+		scripts         => $scripts                   || {},
+		workflows       => $workflows,
+		configuration   => $pipeline->{configuration} || {},
+		provider_config => $parsed->{provider_config} || {},
+	);
+}
+
+# }}}
 # _build_from_env_files - build workflow graph nodes+edges from genesis.pipeline.* {{{
 #
 # Scans *.yml files in $dir.  For each file that contains a
