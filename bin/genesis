@@ -1292,6 +1292,25 @@ define_command("repipe", {
 
 		'paused|P' =>
 			"Keep the pipeline paused after repiping.",
+
+		'platform|provider|p=s' =>
+			"CI provider/platform to generate for: 'concourse' or 'github-actions'.\n".
+			"When specified, uses the new compiler pipeline instead of the legacy ".
+			"code path. Looks for .genesis/ci/ directory first, falls back to ci.yml.",
+
+		'output-dir|o=s' =>
+			"Write compiled pipeline artifacts to this directory instead of ".
+			"deploying. Requires --provider. Writes pipeline YAML and AST JSON ".
+			"for inspection and debugging.",
+
+		'skip-vault' =>
+			"Skip vault connectivity when compiling pipelines. Requires --provider.\n".
+			"Useful for local compilation and inspection without a running vault.",
+
+		'debug-dir=s' =>
+			"Dump intermediate compiler artifacts (parsed config, AST, resolved ".
+			"pipeline, provider output) to this directory for debugging. ".
+			"Requires --provider.",
 	],
 	deprecated_options => [
 		'vault=s' =>
@@ -1326,6 +1345,13 @@ define_command("graph", {
 			"Path to the pipeline configuration file, which specifies Git ".
 			"parameters, notification settings, pipeline layouts, etc.\n".
 			"Defaults to 'ci.yml'",
+
+		'platform|provider|p=s' =>
+			"CI provider/platform: 'concourse' or 'github-actions'.\n".
+			"When specified, uses the compiler pipeline for output generation.",
+
+		'debug-dir=s' =>
+			"Dump intermediate compiler artifacts to this directory for debugging.",
 	]
 });
 # }}}
@@ -1351,6 +1377,13 @@ define_command("describe", {
 			"Path to the pipeline configuration file, which specifies Git ".
 			"parameters, notification settings, pipeline layouts, etc.\n".
 			"Defaults to 'ci.yml'",
+
+		'platform|provider|p=s' =>
+			"CI provider/platform: 'concourse' or 'github-actions'.\n".
+			"When specified, uses the compiler pipeline for output generation.",
+
+		'debug-dir=s' =>
+			"Dump intermediate compiler artifacts to this directory for debugging.",
 	]
 });
 # }}}

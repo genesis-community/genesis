@@ -1,0 +1,39 @@
+targets:
+  sandbox:
+    name: sandbox
+    alias: us-west-1-sandbox
+    type: bosh-director
+    tags: []
+    connection:
+      url: https://bosh.sandbox.example.com:25555
+      auth:
+        type: basic
+        client_id: admin
+        client_secret: ((sandbox-bosh-password))
+      ca_cert: ((sandbox-bosh-ca))
+
+  preprod:
+    name: preprod
+    alias: us-west-1-preprod
+    type: bosh-director
+    tags: []
+    connection:
+      url: https://bosh.preprod.example.com:25555
+      auth:
+        type: basic
+        client_id: admin
+        client_secret: ((preprod-bosh-password))
+      ca_cert: ((preprod-bosh-ca))
+
+  prod:
+    name: prod
+    alias: us-west-1-prod
+    type: bosh-director
+    tags: []
+    connection:
+      url: https://bosh.prod.example.com:25555
+      auth:
+        type: basic
+        client_id: admin
+        client_secret: ((prod-bosh-password))
+      ca_cert: ((prod-bosh-ca))

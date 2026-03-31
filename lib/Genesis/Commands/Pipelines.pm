@@ -9,10 +9,12 @@ use Genesis::Commands;
 use Genesis::Top;
 use Genesis::Env;
 use Genesis::CI::Legacy qw//;
+use Genesis::CI::Compiler;
 use Service::Vault::Remote;
 
 use File::Basename qw/dirname/;
 use File::Path qw/rmtree/;
+use JSON::PP;
 
 sub embed {
 	command_usage(1) if @_;
@@ -24,6 +26,33 @@ sub embed {
 sub repipe {
 	option_defaults(config => 'ci.yml');
 	my $layout = $_[0];
+
+	# Resolve --provider/--platform into a canonical platform value
+	my $platform = get_options->{platform};
+
+	bail("--output-dir requires --provider")
+		if get_options->{'output-dir'} && !$platform;
+
+	bail("--skip-vault requires --provider")
+		if get_options->{'skip-vault'} && !$platform;
+
+	bail("--debug-dir requires --provider")
+		if get_options->{'debug-dir'} && !$platform;
+
+	# New compiler pipeline when --provider/--platform is specified
+	if ($platform) {
+		my $top;
+		if (get_options->{'skip-vault'}) {
+			$top = Genesis::Top->new('.');
+		} else {
+			$top = Genesis::Top->new('.', vault=>get_options->{vault});
+			bail("No vault specified or configured.\n".
+				"Use --skip-vault with --platform to compile without vault access."
+			) unless $top->vault;
+		}
+		return _repipe_compiled($top, $layout);
+	}
+
 	my $top = Genesis::Top->new('.', vault=>get_options->{vault});
 	bail(
 		"No vault specified or configured."
@@ -71,6 +100,11 @@ sub graph {
 	my $layout = $_[0];
 	my $top = Genesis::Top->new('.');
 
+	# New compiler pipeline when --platform is specified
+	if (get_options->{platform}) {
+		return _graph_compiled($top, $layout);
+	}
+
 	(my $pipeline, $layout) = Genesis::CI::Legacy::parse(get_options->{config}, $top, $layout);
 	my $dot = Genesis::CI::Legacy::generate_pipeline_graphviz_source($pipeline);
 	output "$dot";
@@ -81,6 +115,11 @@ sub describe {
 	option_defaults(config => 'ci.yml');
 	my $layout = $_[0];
 	my $top = Genesis::Top->new('.');
+
+	# New compiler pipeline when --platform is specified
+	if (get_options->{platform}) {
+		return _describe_compiled($top, $layout);
+	}
 
 	(my $pipeline, $layout) = Genesis::CI::Legacy::parse(get_options->{config}, $top, $layout);
 	Genesis::CI::Legacy::generate_pipeline_human_description($pipeline);
@@ -394,6 +433,339 @@ sub ci_pipeline_run_errand {
 	$env->bosh->run_errand($ENV{ERRAND_NAME});
 	exit 0;
 }
+
+### Compiler Pipeline Functions {{{
+
+# _repipe_compiled - deploy pipeline using the new compiler system {{{
+sub _repipe_compiled {
+	my ($top, $layout) = @_;
+	my $platform = get_options->{platform};
+
+	my $result = _compile_pipeline($top, $platform);
+	my $ast    = $result->{ast};
+	my $output = $result->{output};
+
+	my $name = $ast->metadata->{name}
+		or bail("Pipeline AST has no name defined");
+
+	# --output-dir: write artifacts to directory and exit
+	if (my $out_dir = get_options->{'output-dir'}) {
+		mkdir_or_fail($out_dir);
+		for my $file (sort keys %$output) {
+			mkfile_or_fail("$out_dir/$file", $output->{$file});
+			info("Wrote #C{%s/%s}", $out_dir, $file);
+		}
+		mkfile_or_fail("$out_dir/ast.json",
+			JSON::PP->new->pretty->canonical->encode({%$ast}));
+		info("Wrote #C{%s/ast.json}", $out_dir);
+		info("Pipeline artifacts written to #C{%s/}", $out_dir);
+		exit 0;
+	}
+
+	# For concourse, output is { 'pipeline.yml' => $yaml_string }
+	if ($platform eq 'concourse') {
+		my $yaml = $output->{'pipeline.yml'}
+			or bail("Concourse provider did not produce pipeline.yml");
+
+		if (get_options->{'dry-run'}) {
+			output({raw => 1}, $yaml);
+			exit 0;
+		}
+
+		option_defaults(target => $layout || $name);
+
+		my ($out,$rc) = run(
+			'fly -t $1 pause-pipeline -p $2',
+			get_options->{target}, $name
+		);
+		bail("Could not pause #c{%s} pipeline: $out", $name)
+			unless $rc == 0 || $out =~ /pipeline '.*' not found/;
+
+		my $yes = get_options->{yes} ? ' -n ' : '';
+		my $dir = workdir;
+		mkfile_or_fail("${dir}/pipeline.yml", $yaml);
+		run({ interactive => 1, onfailure => "Could not upload pipeline $name" },
+			'fly -t $1 set-pipeline '.$yes.' -p $2 -c $3/pipeline.yml',
+			get_options->{target}, $name, $dir);
+
+		run(
+			{ interactive => 1, onfailure => "Could not unpause pipeline $name" },
+			'fly -t $1 unpause-pipeline -p $2',
+			get_options->{target}, $name
+		) unless (get_options->{paused});
+
+		my $public = $ast->configuration->{public} || 0;
+		my $action = ($public ? 'expose' : 'hide');
+		run({ interactive => 1, onfailure => "Could not $action pipeline $name" },
+			'fly -t $1 '.$action.'-pipeline -p $2',
+			get_options->{target}, $name);
+
+	} elsif ($platform eq 'github-actions') {
+		# GitHub Actions outputs workflow YAML files to .github/workflows/
+		if (get_options->{'dry-run'}) {
+			for my $file (sort keys %$output) {
+				output "#G{--- %s ---}", $file;
+				output({raw => 1}, $output->{$file});
+			}
+			exit 0;
+		}
+
+		for my $file (sort keys %$output) {
+			my $path = ".github/workflows/$file";
+			mkdir_or_fail(dirname($path));
+			mkfile_or_fail($path, $output->{$file});
+			info("Wrote #C{%s}", $path);
+		}
+		info("GitHub Actions workflows written. Commit and push to activate.");
+	} else {
+		bail("Unsupported platform '%s' for repipe", $platform);
+	}
+
+	exit 0;
+}
+
+# }}}
+# _graph_compiled - write pipeline.md with Mermaid flowchart {{{
+sub _graph_compiled {
+	my ($top, $layout) = @_;
+	my $platform = get_options->{platform};
+
+	my $result   = _compile_pipeline($top, $platform);
+	my $ast      = $result->{ast};
+	my $provider = $result->{provider};
+
+	# Use provider's graph_md method if available
+	my $md;
+	if ($provider->can('graph_md')) {
+		$md = $provider->graph_md();
+	} else {
+		$md = _ast_to_mermaid_md($ast);
+	}
+
+	mkfile_or_fail('pipeline.md', $md);
+	info("Wrote #C{pipeline.md}");
+	exit 0;
+}
+
+# }}}
+# _describe_compiled - describe compiled pipeline in human-readable form {{{
+sub _describe_compiled {
+	my ($top, $layout) = @_;
+	my $platform = get_options->{platform};
+
+	my $result   = _compile_pipeline($top, $platform);
+	my $ast      = $result->{ast};
+	my $provider = $result->{provider};
+
+	# Use provider's describe method if available
+	if ($provider->can('generate_description')) {
+		$provider->generate_description($ast);
+		exit 0;
+	}
+
+	# Fall back to generic AST-based description
+	_describe_ast($ast, $platform);
+	exit 0;
+}
+
+# }}}
+# _compile_pipeline - run the compiler pipeline and return results {{{
+sub _compile_pipeline {
+	my ($top, $platform) = @_;
+
+	my %compiler_opts = (top => $top);
+
+	# Detect configuration source
+	my $ci_dir = '.genesis/ci';
+	if (-d $ci_dir && -f "$ci_dir/pipeline.yml") {
+		$compiler_opts{ci_dir} = $ci_dir;
+		info("Using multi-file configuration from #C{%s/}", $ci_dir);
+	} else {
+		$compiler_opts{file} = get_options->{config} || 'ci.yml';
+		info("Using legacy configuration from #C{%s}", $compiler_opts{file});
+	}
+
+	my $compiler = Genesis::CI::Compiler->new(%compiler_opts);
+	my $result = $compiler->compile(provider => $platform);
+
+	# Dump debug artifacts if --debug-dir is specified
+	if (my $debug_dir = get_options->{'debug-dir'}) {
+		_dump_debug_artifacts($debug_dir, $result, $platform);
+	}
+
+	return $result;
+}
+
+# }}}
+# _dump_debug_artifacts - write compiler intermediates to debug directory {{{
+sub _dump_debug_artifacts {
+	my ($debug_dir, $result, $platform) = @_;
+
+	mkdir_or_fail($debug_dir);
+
+	my $json = JSON::PP->new->pretty->canonical;
+
+	# 1. Parsed config (what the parser produced)
+	if ($result->{parsed}) {
+		mkfile_or_fail("$debug_dir/01-parsed.json",
+			$json->encode($result->{parsed}));
+		info("Debug: wrote #C{%s/01-parsed.json}", $debug_dir);
+	}
+
+	# 2. AST source representation (internal Genesis concepts)
+	if (my $ast = $result->{ast}) {
+		my %source;
+		for my $key (qw(branches integrations targets workflows configuration
+						provider_config triggers resources)) {
+			my $accessor = $ast->can($key);
+			$source{$key} = $accessor->($ast) if $accessor;
+		}
+		$source{metadata} = $ast->metadata;
+		$source{scripts}  = $ast->scripts;
+
+		mkfile_or_fail("$debug_dir/02-ast-source.json",
+			$json->encode(\%source));
+		info("Debug: wrote #C{%s/02-ast-source.json}", $debug_dir);
+
+		# 3. Resolved generic pipeline (what PipelineDescriptor produced)
+		if ($ast->pipeline && %{$ast->pipeline}) {
+			# Write pipeline structure (minus visualization/description for readability)
+			my %pipeline = %{$ast->pipeline};
+			my $mermaid     = delete $pipeline{mermaid};
+			my $pipeline_md = delete $pipeline{pipeline_md};
+			my $description = delete $pipeline{description};
+
+			mkfile_or_fail("$debug_dir/03-pipeline.json",
+				$json->encode(\%pipeline));
+			info("Debug: wrote #C{%s/03-pipeline.json}", $debug_dir);
+
+			# 4. Mermaid pipeline.md
+			if ($pipeline_md) {
+				mkfile_or_fail("$debug_dir/04-pipeline.md", $pipeline_md);
+				info("Debug: wrote #C{%s/04-pipeline.md}", $debug_dir);
+			}
+
+			# 5. Human description
+			if ($description) {
+				mkfile_or_fail("$debug_dir/05-description.txt", $description);
+				info("Debug: wrote #C{%s/05-description.txt}", $debug_dir);
+			}
+		}
+	}
+
+	# 6. Provider output (final platform-specific YAML)
+	if ($result->{output}) {
+		if (ref($result->{output}) eq 'HASH') {
+			for my $file (sort keys %{$result->{output}}) {
+				mkfile_or_fail("$debug_dir/06-output-$file",
+					$result->{output}{$file});
+				info("Debug: wrote #C{%s/06-output-%s}", $debug_dir, $file);
+			}
+		} else {
+			mkfile_or_fail("$debug_dir/06-output.yml", $result->{output});
+			info("Debug: wrote #C{%s/06-output.yml}", $debug_dir);
+		}
+	}
+
+	info("Debug artifacts written to #C{%s/}", $debug_dir);
+}
+
+# }}}
+# _ast_to_mermaid_md - fallback Mermaid pipeline.md from a bare AST {{{
+sub _ast_to_mermaid_md {
+	my ($ast) = @_;
+
+	my $name  = $ast->metadata->{name} || 'genesis-pipeline';
+	my @lines = ("flowchart LR");
+
+	for my $wf_name ($ast->workflow_names) {
+		my $wf = $ast->workflows->{$wf_name};
+		next unless $wf->{graph};
+
+		my $nodes = $wf->{graph}{nodes} || {};
+		my $edges = $wf->{graph}{edges} || [];
+
+		my %in_any_edge;
+		for my $edge (@$edges) {
+			$in_any_edge{$edge->{from}} = 1;
+			$in_any_edge{$edge->{to}}   = 1;
+		}
+
+		for my $edge (@$edges) {
+			my $from = $nodes->{$edge->{from}}{alias} || $edge->{from};
+			my $to   = $nodes->{$edge->{to}}{alias}   || $edge->{to};
+			($from) =~ s/[^a-zA-Z0-9_]/_/g;
+			($to)   =~ s/[^a-zA-Z0-9_]/_/g;
+			push @lines, "  $from --> $to";
+		}
+
+		for my $n (sort keys %$nodes) {
+			next if $in_any_edge{$n};
+			my $alias = $nodes->{$n}{alias} || $n;
+			($alias) =~ s/[^a-zA-Z0-9_]/_/g;
+			push @lines, "  $alias";
+		}
+	}
+
+	my $mermaid = join("\n", @lines) . "\n";
+	return "# Pipeline: $name\n\n\`\`\`mermaid\n${mermaid}\`\`\`\n";
+}
+
+# }}}
+# _describe_ast - describe AST contents in human-readable form {{{
+sub _describe_ast {
+	my ($ast, $platform) = @_;
+
+	output "#G{Pipeline}: #C{%s}", $ast->metadata->{name} || '(unnamed)';
+	output "  #Yi{Platform}: %s", $platform;
+	output "  #Yi{Source}:   %s", $ast->metadata->{source} || 'unknown';
+	output "";
+
+	# Integrations
+	my $integrations = $ast->integrations || {};
+	if (my $sc = $integrations->{source_control}) {
+		output "#G{Source Control}:";
+		output "  Provider:   %s", $sc->{provider} || 'unknown';
+		output "  Repository: %s", $sc->{repository} || 'unknown';
+	}
+
+	# Targets
+	my @targets = $ast->target_names;
+	if (@targets) {
+		output "";
+		output "#G{Targets}: (%d)", scalar @targets;
+		for my $name (sort @targets) {
+			output "  - #C{%s}", $name;
+		}
+	}
+
+	# Workflows
+	my @workflows = $ast->workflow_names;
+	if (@workflows) {
+		output "";
+		output "#G{Workflows}: (%d)", scalar @workflows;
+		for my $wf_name (sort @workflows) {
+			my $wf = $ast->workflows->{$wf_name};
+			output "  #Yi{%s} (%s)", $wf_name, $wf->{type} || 'deployment';
+
+			if ($wf->{graph} && $wf->{graph}{nodes}) {
+				my $nodes = $wf->{graph}{nodes};
+				my $edges = $wf->{graph}{edges} || [];
+				output "    Stages: %s", join(' -> ',
+					map { $_->{alias} || $_->{genesis_env} || $_->{stage_name} }
+					map { $nodes->{$_} }
+					sort keys %$nodes
+				);
+				output "    Edges:  %d", scalar @$edges;
+			}
+		}
+	}
+
+	output "";
+}
+
+# }}}
+# }}}
 
 ### Support functions
 

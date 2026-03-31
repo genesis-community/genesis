@@ -1,0 +1,133 @@
+---
+# Deployment Targets Configuration
+# Defines BOSH directors and deployment environments
+
+targets:
+  # US-West Region - Sandbox
+  us-west-sandbox:
+    name: us-west-sandbox
+    type: bosh-director
+    alias: sandbox
+    region: us-west-2
+
+    tags:
+      - sandbox
+      - us-west
+      - auto-deploy
+
+    connection:
+      url: https://bosh.us-west.sandbox.example.com:25555
+
+      auth:
+        type: basic
+        client_id: admin
+        client_secret: ((bosh/us-west-sandbox/admin-password))
+
+      ca_cert: ((bosh/us-west-sandbox/ca-cert))
+
+    genesis_env: us-west-sandbox
+
+  # US-West Region - Pre-Production
+  us-west-preprod:
+    name: us-west-preprod
+    type: bosh-director
+    alias: preprod
+    region: us-west-2
+
+    tags:
+      - preprod
+      - us-west
+
+    connection:
+      url: https://bosh.us-west.preprod.example.com:25555
+
+      auth:
+        type: basic
+        client_id: admin
+        client_secret: ((bosh/us-west-preprod/admin-password))
+
+      ca_cert: ((bosh/us-west-preprod/ca-cert))
+
+    genesis_env: us-west-preprod
+
+  # US-West Region - Production
+  us-west-prod:
+    name: us-west-prod
+    type: bosh-director
+    alias: prod
+    region: us-west-2
+
+    tags:
+      - production
+      - us-west
+
+    connection:
+      url: https://bosh.us-west.prod.example.com:25555
+
+      auth:
+        type: basic
+        client_id: admin
+        client_secret: ((bosh/us-west-prod/admin-password))
+
+      ca_cert: ((bosh/us-west-prod/ca-cert))
+
+    genesis_env: us-west-prod
+
+  # US-East Region - Sandbox
+  us-east-sandbox:
+    name: us-east-sandbox
+    type: bosh-director
+    alias: sandbox
+    region: us-east-1
+
+    tags:
+      - sandbox
+      - us-east
+      - auto-deploy
+
+    connection:
+      url: https://bosh.us-east.sandbox.example.com:25555
+
+      auth:
+        type: basic
+        client_id: admin
+        client_secret: ((bosh/us-east-sandbox/admin-password))
+
+      ca_cert: ((bosh/us-east-sandbox/ca-cert))
+
+    genesis_env: us-east-sandbox
+
+  # US-East Region - Production
+  us-east-prod:
+    name: us-east-prod
+    type: bosh-director
+    alias: prod
+    region: us-east-1
+
+    tags:
+      - production
+      - us-east
+
+    connection:
+      url: https://bosh.us-east.prod.example.com:25555
+
+      auth:
+        type: basic
+        client_id: admin
+        client_secret: ((bosh/us-east-prod/admin-password))
+
+      ca_cert: ((bosh/us-east-prod/ca-cert))
+
+    genesis_env: us-east-prod
+
+  # Proto-BOSH (create-env)
+  proto-bosh:
+    name: proto-bosh
+    type: bosh-create-env
+    alias: proto
+
+    tags:
+      - create-env
+      - bootstrap
+
+    genesis_env: proto-bosh

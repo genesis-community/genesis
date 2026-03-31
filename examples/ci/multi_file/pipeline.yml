@@ -1,0 +1,116 @@
+---
+# Multi-File CI Pipeline Configuration
+# This is the main pipeline definition file for .genesis/ci/
+#
+# See: lib/Genesis/CI/Compiler/README.md for full documentation
+
+metadata:
+  name: cf-deployments-pipeline
+  version: 2.0
+  description: Cloud Foundry multi-region deployment pipeline
+
+branches:
+  live: main                    # Main branch to monitor for changes
+  target_prefix: target/        # Prefix for target-specific branches
+
+workflows:
+  # Main deployment workflow: sandbox → preprod → prod
+  deploy:
+    type: deployment
+    description: Standard deployment progression across environments
+
+    triggers:
+      - type: git-commit
+        branch: (( grab branches.live ))
+        pattern: "*-sandbox"     # Auto-trigger sandbox deployments
+
+    stages:
+      - name: us-west-sandbox
+        script: deploy/genesis-deploy
+        inputs:
+          - deployment-repo
+        outputs:
+          - name: deployment-manifest
+            path: .genesis/manifests/
+        on_failure: notify
+
+      - name: us-west-preprod
+        script: deploy/genesis-deploy
+        inputs:
+          - deployment-repo
+        on_failure: notify
+
+      - name: us-west-prod
+        script: deploy/genesis-deploy
+        inputs:
+          - deployment-repo
+        on_failure: notify
+
+  # Smoke test workflow
+  smoke-tests:
+    type: test
+    description: Run smoke tests after deployment
+
+    triggers:
+      - type: deployment-complete
+        pattern: "*"
+
+    stages:
+      - name: smoke-test
+        script: test/smoke-tests
+        inputs:
+          - deployment-repo
+        timeout: 15m
+
+  # Kit update workflow
+  kit-update:
+    type: maintenance
+    description: Auto-update Genesis kit versions
+
+    triggers:
+      - type: schedule
+        cron: "0 2 * * 1"  # Weekly on Monday at 2am
+
+    stages:
+      - name: check-updates
+        script: maintenance/check-kit-updates
+
+      - name: update-kit
+        script: maintenance/update-kit
+
+      - name: test-updated-kit
+        script: test/unit-tests
+
+configuration:
+  public: false               # Pipeline not publicly visible
+  tagged: false               # Don't limit to tagged releases
+  unredacted: false           # Redact secrets in output
+  debug: false                # Disable debug mode
+
+  task:
+    image: genesiscommunity/concourse
+    version: latest
+    privileged: []            # No privileged tasks by default
+
+  notifications:
+    style: inline             # inline | grouped | parallel
+
+  groups:
+    sandbox:
+      - us-west-sandbox
+      - us-east-sandbox
+
+    production:
+      - us-west-prod
+      - us-east-prod
+
+  errands:
+    smoke-tests:
+      when: after_deploy
+      envs: ["*-prod"]
+
+  auto_update:
+    file: .genesis/kits
+    kit: cf
+    org: genesis-community
+    period: 24h

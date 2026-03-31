@@ -1,0 +1,157 @@
+---
+# Script Manifest
+# Explicit definitions for pipeline scripts
+# Scripts can also use inline @genesis-script annotations
+
+scripts:
+  deploy/genesis-deploy:
+    description: Execute Genesis deployment to BOSH director
+    path: scripts/deploy/genesis-deploy.sh
+    executor: bash
+    version: 1.0
+
+    requirements:
+      - tool: genesis
+        version: ">=3.1.0"
+      - tool: bosh
+        version: ">=7.0.0"
+      - tool: safe
+        version: ">=1.7.0"
+
+    inputs:
+      - name: deployment-repo
+        type: git-repository
+        required: true
+      - name: previous-manifest
+        type: file
+        required: false
+
+    outputs:
+      - name: deployment-manifest
+        type: file
+        path: .genesis/manifests/
+      - name: deployment-state
+        type: file
+        path: .genesis/state/
+
+    environment:
+      required:
+        - CURRENT_ENV
+        - VAULT_ADDR
+        - VAULT_ROLE_ID
+        - VAULT_SECRET_ID
+        - BOSH_ENVIRONMENT
+        - BOSH_CLIENT
+        - BOSH_CLIENT_SECRET
+        - BOSH_CA_CERT
+      optional:
+        - GENESIS_TRACE
+        - GENESIS_DEBUG
+        - BOSH_DEPLOYMENT
+
+    timeout: 60m
+    privileged: false
+    exit_codes:
+      0: success
+      1: deployment_failed
+      2: validation_failed
+      3: bosh_unavailable
+
+  test/smoke-tests:
+    description: Run smoke tests against deployed CF
+    path: scripts/test/smoke-tests.sh
+    executor: bash
+    version: 1.0
+
+    requirements:
+      - tool: cf
+        version: ">=8.0.0"
+      - tool: curl
+
+    inputs:
+      - name: deployment-repo
+        type: git-repository
+        required: true
+
+    environment:
+      required:
+        - CURRENT_ENV
+        - CF_API
+        - CF_USERNAME
+        - CF_PASSWORD
+
+    timeout: 15m
+    privileged: false
+
+  test/unit-tests:
+    description: Run unit tests for Genesis kit
+    path: scripts/test/unit-tests.sh
+    executor: bash
+    version: 1.0
+
+    requirements:
+      - tool: genesis
+      - tool: spruce
+
+    inputs:
+      - name: deployment-repo
+        type: git-repository
+        required: true
+
+    timeout: 10m
+    privileged: false
+
+  maintenance/check-kit-updates:
+    description: Check for available Genesis kit updates
+    path: scripts/maintenance/check-kit-updates.sh
+    executor: bash
+    version: 1.0
+
+    requirements:
+      - tool: genesis
+      - tool: curl
+      - tool: jq
+
+    inputs:
+      - name: deployment-repo
+        type: git-repository
+        required: true
+
+    outputs:
+      - name: update-info
+        type: file
+        path: .genesis/kit-updates.json
+
+    timeout: 5m
+    privileged: false
+
+  maintenance/update-kit:
+    description: Update Genesis kit to latest version
+    path: scripts/maintenance/update-kit.sh
+    executor: bash
+    version: 1.0
+
+    requirements:
+      - tool: genesis
+      - tool: git
+
+    inputs:
+      - name: deployment-repo
+        type: git-repository
+        required: true
+      - name: update-info
+        type: file
+        required: true
+
+    outputs:
+      - name: updated-repo
+        type: git-repository
+        path: .
+
+    environment:
+      required:
+        - GIT_AUTHOR_NAME
+        - GIT_AUTHOR_EMAIL
+
+    timeout: 10m
+    privileged: false

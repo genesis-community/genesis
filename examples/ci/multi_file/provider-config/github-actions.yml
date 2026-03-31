@@ -1,0 +1,54 @@
+---
+# GitHub Actions-specific configuration overrides (This is a for-instance we do not maintain a github actions provider at this time)
+
+# Workflow-level settings
+runs-on: ubuntu-latest
+
+# Concurrency control
+concurrency:
+  group: cf-deployments
+  cancel-in-progress: false
+
+# Environment configuration
+environments:
+  production:
+    required_reviewers:
+      - ops-team
+      - platform-lead
+    wait_timer: 30  # minutes
+
+  sandbox:
+    required_reviewers: []
+
+# Job timeout (default for all jobs)
+timeout_minutes: 90
+
+# Permissions
+permissions:
+  contents: read
+  id-token: write  # For OIDC authentication
+
+# GitHub Actions-specific steps
+pre_steps:
+  - name: Setup Genesis CLI
+    run: |
+      curl -sL https://github.com/genesis-community/genesis/releases/latest/download/genesis -o /usr/local/bin/genesis
+      chmod +x /usr/local/bin/genesis
+      genesis --version
+
+  - name: Setup BOSH CLI
+    run: |
+      wget -q https://github.com/cloudfoundry/bosh-cli/releases/latest/download/bosh-cli-*-linux-amd64
+      chmod +x bosh-cli-*-linux-amd64
+      sudo mv bosh-cli-*-linux-amd64 /usr/local/bin/bosh
+      bosh --version
+
+# Matrix strategy for parallel deployments
+matrix:
+  regions:
+    - us-west
+    - us-east
+  environments:
+    - sandbox
+    - preprod
+    - prod

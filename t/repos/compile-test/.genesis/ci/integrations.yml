@@ -1,0 +1,34 @@
+vault:
+  url: https://vault.example.com:8200
+  namespace: genesis
+  auth:
+    type: approle
+    role_id: my-role-id
+    secret_id: ((vault-approle-secret))
+  options:
+    tls_verify: true
+
+source_control:
+  provider: github
+  repository: myorg/my-deployments
+  uri: git@github.com:myorg/my-deployments.git
+  default_branch: main
+  root: "."
+  auth:
+    type: ssh-key
+    private_key: ((github-deploy-key))
+  commit_author:
+    name: Concourse Bot
+    email: ci@example.com
+
+notifications:
+  - type: slack
+    name: slack
+    webhook: ((slack-webhook-url))
+    channel: "#deployments"
+    username: genesis-ci
+    icon: https://example.com/genesis.png
+    events:
+      - started
+      - failed
+      - succeeded
