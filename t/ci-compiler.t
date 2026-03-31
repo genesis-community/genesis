@@ -1333,9 +1333,9 @@ subtest 'Concourse - OCFP config name support' => sub {
 ### Concourse Provider - Native Graphviz and Describe
 ### ============================================================ ###
 
-subtest 'Concourse - native graphviz generation' => sub {
+subtest 'PipelineDescriptor - mermaid basic generation' => sub {
 	my $ast = Genesis::CI::Compiler::AST->new(
-		metadata => { name => 'viz-test', deployment_type => 'cf' },
+		metadata => { name => 'mermaid-test', deployment_type => 'cf' },
 		workflows => {
 			default => {
 				name => 'default',
@@ -1343,7 +1343,7 @@ subtest 'Concourse - native graphviz generation' => sub {
 					nodes => {
 						sandbox => { stage_name => 'sandbox', alias => 'sandbox', auto => 1 },
 						preprod => { stage_name => 'preprod', alias => 'preprod', auto => 0 },
-						prod    => { stage_name => 'prod', alias => 'prod', auto => 0 },
+						prod    => { stage_name => 'prod',    alias => 'prod',    auto => 0 },
 					},
 					edges => [
 						{ from => 'sandbox', to => 'preprod' },
@@ -1355,17 +1355,119 @@ subtest 'Concourse - native graphviz generation' => sub {
 	);
 
 	my $descriptor = Genesis::CI::Compiler::PipelineDescriptor->new(ast => $ast);
-	my $dot = $descriptor->graphviz();
+	my $mermaid = $descriptor->mermaid();
 
-	_debug_write('concourse-graphviz.dot', $dot // '');
+	_debug_write('pipeline-mermaid.txt', $mermaid // '');
 
-	like $dot, qr/digraph/, "DOT output contains digraph";
-	like $dot, qr/rankdir = LR/, "left-to-right layout";
-	like $dot, qr/"sandbox".*label="sandbox-cf"/, "sandbox node with correct label";
-	like $dot, qr/"sandbox" -> "preprod"/, "edge from sandbox to preprod";
-	like $dot, qr/"preprod" -> "prod"/, "edge from preprod to prod";
-	like $dot, qr/lightgreen/, "auto env colored green";
-	like $dot, qr/lightyellow/, "manual env colored yellow";
+	like $mermaid, qr/^flowchart LR/m,       "starts with flowchart LR";
+	like $mermaid, qr/sandbox\s+-->/,        "sandbox has outgoing edge";
+	like $mermaid, qr/sandbox\s+-->\s+preprod/, "edge from sandbox to preprod";
+	like $mermaid, qr/preprod\s+-->\s+prod/,    "edge from preprod to prod";
+	unlike $mermaid, qr/digraph/,            "no DOT syntax present";
+};
+
+subtest 'PipelineDescriptor - mermaid gate annotations' => sub {
+	my $ast = Genesis::CI::Compiler::AST->new(
+		metadata => { name => 'gate-test' },
+		workflows => {
+			default => {
+				name => 'default',
+				graph => {
+					nodes => {
+						lab     => { alias => 'lab',     auto => 1 },
+						nonprod => { alias => 'nonprod', auto => 0 },
+						prod    => { alias => 'prod',    auto => 0, require_pr => 1 },
+						staging => { alias => 'staging', auto => 0, require_pr => 1, manual => 1 },
+						mgmt    => { alias => 'mgmt',    auto => 0, manual => 1 },
+					},
+					edges => [
+						{ from => 'lab',     to => 'nonprod' },
+						{ from => 'nonprod', to => 'prod'    },
+						{ from => 'nonprod', to => 'staging' },
+					],
+				},
+			},
+		},
+	);
+
+	my $descriptor = Genesis::CI::Compiler::PipelineDescriptor->new(ast => $ast);
+	my $mermaid = $descriptor->mermaid();
+
+	_debug_write('pipeline-mermaid-gates.txt', $mermaid // '');
+
+	like $mermaid, qr/prod\(\[prod\\nPR\]\)/,              "PR gate annotation on prod";
+	like $mermaid, qr/staging\(\[staging\\nPR\+MANUAL\]\)/, "PR+MANUAL annotation on staging";
+	like $mermaid, qr/mgmt\(\[mgmt\\nMANUAL\]\)/,          "MANUAL annotation on isolated mgmt";
+	unlike $mermaid, qr/lab\(\[/,    "lab has no gate annotation";
+	unlike $mermaid, qr/nonprod\(\[/, "nonprod has no gate annotation";
+};
+
+subtest 'PipelineDescriptor - mermaid isolated nodes' => sub {
+	my $ast = Genesis::CI::Compiler::AST->new(
+		metadata => { name => 'isolated-test' },
+		workflows => {
+			default => {
+				name => 'default',
+				graph => {
+					nodes => {
+						connected => { alias => 'connected' },
+						isolated  => { alias => 'isolated'  },
+					},
+					edges => [
+						{ from => 'connected', to => 'connected' },
+					],
+				},
+			},
+		},
+	);
+
+	# Single-node isolated: no edges at all
+	my $ast2 = Genesis::CI::Compiler::AST->new(
+		metadata => { name => 'solo-test' },
+		workflows => {
+			default => {
+				name => 'default',
+				graph => {
+					nodes => { solo => { alias => 'solo', manual => 1 } },
+					edges => [],
+				},
+			},
+		},
+	);
+
+	my $descriptor = Genesis::CI::Compiler::PipelineDescriptor->new(ast => $ast2);
+	my $mermaid = $descriptor->mermaid();
+
+	like $mermaid, qr/solo\(\[solo\\nMANUAL\]\)/, "isolated gated node rendered standalone";
+};
+
+subtest 'PipelineDescriptor - pipeline_md format' => sub {
+	my $ast = Genesis::CI::Compiler::AST->new(
+		metadata => { name => 'md-test' },
+		workflows => {
+			default => {
+				name  => 'default',
+				graph => {
+					nodes => {
+						lab  => { alias => 'lab' },
+						prod => { alias => 'prod' },
+					},
+					edges => [{ from => 'lab', to => 'prod' }],
+				},
+			},
+		},
+	);
+
+	my $descriptor = Genesis::CI::Compiler::PipelineDescriptor->new(ast => $ast);
+	my $md = $descriptor->pipeline_md();
+
+	_debug_write('pipeline.md', $md // '');
+
+	like $md, qr/^# Pipeline: md-test$/m, "Markdown h1 with pipeline name";
+	like $md, qr/```mermaid/,             "fenced mermaid code block opens";
+	like $md, qr/flowchart LR/,           "flowchart directive present";
+	like $md, qr/lab\s+-->\s+prod/,       "edge present in md";
+	like $md, qr/```\s*$/m,               "fenced code block closes";
 };
 
 subtest 'Concourse - native describe generation' => sub {

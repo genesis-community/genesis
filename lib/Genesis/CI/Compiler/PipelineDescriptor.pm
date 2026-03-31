@@ -166,49 +166,81 @@ sub describe {
 	};
 
 	# Include visualization and description in the pipeline
-	$pipeline->{graphviz}    = $self->graphviz();
+	$pipeline->{mermaid}     = $self->mermaid();
+	$pipeline->{pipeline_md} = $self->pipeline_md();
 	$pipeline->{description} = $self->description();
 
 	return $pipeline;
 }
 
 # }}}
-# graphviz - generate DOT source from AST workflow graph {{{
-sub graphviz {
+# mermaid - generate Mermaid flowchart LR source from AST workflow graph {{{
+sub mermaid {
 	my ($self) = @_;
 
-	my $ast         = $self->{ast};
-	my $name        = $ast->metadata->{name} || 'genesis-pipeline';
-	my $deploy_type = $ast->metadata->{deployment_type} || 'deployment';
-
-	my @lines = (
-		"digraph \"$name\" {",
-		"  rankdir = LR;",
-		"  node [shape=box, style=filled, color=lightblue];",
-		"",
-	);
+	my $ast   = $self->{ast};
+	my @lines = ("flowchart LR");
 
 	for my $wf_name (sort $ast->workflow_names) {
 		my $workflow = $ast->workflows->{$wf_name};
 		my $wf_data  = $self->_extract_workflow_data($ast, $workflow);
+		my $graph    = $workflow->{graph} || {};
+		my $nodes    = $graph->{nodes}    || {};
+		my $edges    = $graph->{edges}    || [];
 
-		for my $env (@{$wf_data->{environments}}) {
-			my $alias   = $wf_data->{aliases}{$env} || $env;
-			my $is_auto = $wf_data->{auto}{$env};
-			my $label   = "$alias-$deploy_type";
-			my $color   = $is_auto ? 'lightgreen' : 'lightyellow';
-
-			push @lines, "  \"$env\" [label=\"$label\", color=$color];";
+		# Build outgoing edge map; track which nodes appear in any edge
+		my (%out_edges, %in_any_edge);
+		for my $edge (@$edges) {
+			push @{$out_edges{$edge->{from}}}, $edge->{to};
+			$in_any_edge{$edge->{from}} = 1;
+			$in_any_edge{$edge->{to}}   = 1;
 		}
 
-		my $graph = $workflow->{graph} || {};
-		for my $edge (@{$graph->{edges} || []}) {
-			push @lines, "  \"$edge->{from}\" -> \"$edge->{to}\";";
+		# Topological order gives a clean left-to-right layout
+		my @order = @$edges
+			? _topological_sort($graph)
+			: sort @{$wf_data->{environments}};
+
+		# Emit edges; node shapes are defined inline on first appearance as target
+		my %shape_defined;
+		for my $env (@order) {
+			next unless $out_edges{$env};
+
+			my $from_alias = $wf_data->{aliases}{$env} || $env;
+			my $from_id    = _mermaid_id($from_alias);
+			$shape_defined{$from_id} = 1;
+
+			for my $to_env (@{$out_edges{$env}}) {
+				my $to_alias = $wf_data->{aliases}{$to_env} || $to_env;
+				my $to_id    = _mermaid_id($to_alias);
+				my $to_ref   = $shape_defined{$to_id}
+					? $to_id
+					: _mermaid_node_def($to_alias, $nodes->{$to_env});
+				$shape_defined{$to_id} = 1;
+				push @lines, "  $from_id --> $to_ref";
+			}
+		}
+
+		# Isolated nodes (no edges) rendered standalone at the bottom
+		for my $env (@order) {
+			next if $in_any_edge{$env};
+			my $alias = $wf_data->{aliases}{$env} || $env;
+			push @lines, "  " . _mermaid_node_def($alias, $nodes->{$env});
 		}
 	}
 
-	push @lines, "}", "";
-	return join("\n", @lines);
+	return join("\n", @lines) . "\n";
+}
+
+# }}}
+# pipeline_md - Markdown document wrapping the Mermaid flowchart {{{
+sub pipeline_md {
+	my ($self) = @_;
+
+	my $name    = $self->{ast}->metadata->{name} || 'genesis-pipeline';
+	my $mermaid = $self->mermaid();
+
+	return "# Pipeline: $name\n\n\`\`\`mermaid\n${mermaid}\`\`\`\n";
 }
 
 # }}}
@@ -1225,6 +1257,34 @@ sub _shared_env_files {
 }
 
 # }}}
+# _mermaid_id - sanitize a string for use as a Mermaid node identifier {{{
+sub _mermaid_id {
+	my ($name) = @_;
+	(my $id = $name) =~ s/[^a-zA-Z0-9_]/_/g;
+	return $id;
+}
+
+# }}}
+# _mermaid_node_def - node reference with optional gate shape annotation {{{
+sub _mermaid_node_def {
+	my ($alias, $node) = @_;
+	$node ||= {};
+	my $id  = _mermaid_id($alias);
+	my $pr  = $node->{require_pr} || 0;
+	my $man = $node->{manual}     || 0;
+
+	if ($pr && $man) {
+		return "$id([$alias\\nPR+MANUAL])";
+	} elsif ($pr) {
+		return "$id([$alias\\nPR])";
+	} elsif ($man) {
+		return "$id([$alias\\nMANUAL])";
+	} else {
+		return $id;
+	}
+}
+
+# }}}
 # _topological_sort - standard topological sort on a workflow graph {{{
 sub _topological_sort {
 	my ($graph) = @_;
@@ -1293,8 +1353,9 @@ generation, locker integration, auto-update, notification wiring, etc.
   # }
 
   # Or get visualization/description
-  my $dot = $descriptor->graphviz();
-  my $txt = $descriptor->description();
+  my $mermaid = $descriptor->mermaid();      # raw flowchart LR block
+  my $md      = $descriptor->pipeline_md(); # Markdown document with fenced block
+  my $txt     = $descriptor->description();
 
 =head1 SEE ALSO
 

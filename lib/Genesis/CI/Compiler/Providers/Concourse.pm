@@ -300,23 +300,22 @@ sub _generate_native {
 # }}}
 ### Additional Concourse-Specific Methods {{{
 
-# graphviz - generate graphviz dot source {{{
-sub graphviz {
+# graph_md - generate pipeline.md with Mermaid flowchart {{{
+sub graph_md {
 	my ($self) = @_;
 
-	bail("Must call parse() before graphviz()") unless $self->{config};
+	bail("Must call parse() before graph_md()") unless $self->{config};
 
-	# Legacy fallback
+	# Legacy fallback: no Mermaid support; return minimal document
 	if ($self->{_platform} && $self->{_platform} eq 'legacy') {
-		return Genesis::CI::Legacy::generate_pipeline_graphviz_source(
-			$self->{config}
-		);
+		my $name = ($self->{config}{pipeline} || {})->{name} || 'pipeline';
+		return "# Pipeline: $name\n\n*(Legacy provider — graph not available)*\n";
 	}
 
-	# Native graphviz from AST
+	# Native Mermaid from AST
 	bail("No AST available; call parse() first") unless $self->{ast};
 	$self->_ensure_pipeline_resolved();
-	return $self->{ast}->graphviz();
+	return $self->{ast}->pipeline_md();
 }
 
 # }}}
@@ -468,9 +467,9 @@ Returns ".yml".
 
 =head1 CONCOURSE-SPECIFIC METHODS
 
-=head2 graphviz()
+=head2 graph_md()
 
-Generate Graphviz DOT source for pipeline visualization.
+Generate pipeline.md content containing a Mermaid flowchart LR diagram.
 
 =head2 describe()
 

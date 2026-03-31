@@ -66,8 +66,12 @@ sub jobs { $_[0]->{pipeline}{jobs} || [] }
 sub groups { $_[0]->{pipeline}{groups} || [] }
 
 # }}}
-# graphviz - pre-built DOT source for visualization {{{
-sub graphviz { $_[0]->{pipeline}{graphviz} }
+# mermaid - pre-built Mermaid flowchart LR source {{{
+sub mermaid { $_[0]->{pipeline}{mermaid} }
+
+# }}}
+# pipeline_md - pre-built Markdown document with fenced Mermaid block {{{
+sub pipeline_md { $_[0]->{pipeline}{pipeline_md} }
 
 # }}}
 # description - pre-built human-readable description {{{

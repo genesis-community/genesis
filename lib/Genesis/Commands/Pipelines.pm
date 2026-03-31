@@ -525,7 +525,7 @@ sub _repipe_compiled {
 }
 
 # }}}
-# _graph_compiled - generate graphviz from compiled pipeline {{{
+# _graph_compiled - write pipeline.md with Mermaid flowchart {{{
 sub _graph_compiled {
 	my ($top, $layout) = @_;
 	my $platform = get_options->{platform};
@@ -534,16 +534,16 @@ sub _graph_compiled {
 	my $ast      = $result->{ast};
 	my $provider = $result->{provider};
 
-	# Use provider's graphviz method if available
-	if ($provider->can('generate_graphviz')) {
-		my $dot = $provider->generate_graphviz($ast);
-		output "$dot";
-		exit 0;
+	# Use provider's graph_md method if available
+	my $md;
+	if ($provider->can('graph_md')) {
+		$md = $provider->graph_md();
+	} else {
+		$md = _ast_to_mermaid_md($ast);
 	}
 
-	# Fall back to generic AST-based graphviz
-	my $dot = _ast_to_graphviz($ast);
-	output "$dot";
+	mkfile_or_fail('pipeline.md', $md);
+	info("Wrote #C{pipeline.md}");
 	exit 0;
 }
 
@@ -629,19 +629,20 @@ sub _dump_debug_artifacts {
 
 		# 3. Resolved generic pipeline (what PipelineDescriptor produced)
 		if ($ast->pipeline && %{$ast->pipeline}) {
-			# Write pipeline structure (minus graphviz/description for readability)
+			# Write pipeline structure (minus visualization/description for readability)
 			my %pipeline = %{$ast->pipeline};
-			my $graphviz    = delete $pipeline{graphviz};
+			my $mermaid     = delete $pipeline{mermaid};
+			my $pipeline_md = delete $pipeline{pipeline_md};
 			my $description = delete $pipeline{description};
 
 			mkfile_or_fail("$debug_dir/03-pipeline.json",
 				$json->encode(\%pipeline));
 			info("Debug: wrote #C{%s/03-pipeline.json}", $debug_dir);
 
-			# 4. Graphviz DOT source
-			if ($graphviz) {
-				mkfile_or_fail("$debug_dir/04-pipeline.dot", $graphviz);
-				info("Debug: wrote #C{%s/04-pipeline.dot}", $debug_dir);
+			# 4. Mermaid pipeline.md
+			if ($pipeline_md) {
+				mkfile_or_fail("$debug_dir/04-pipeline.md", $pipeline_md);
+				info("Debug: wrote #C{%s/04-pipeline.md}", $debug_dir);
 			}
 
 			# 5. Human description
@@ -670,47 +671,44 @@ sub _dump_debug_artifacts {
 }
 
 # }}}
-# _ast_to_graphviz - generate graphviz DOT source from an AST {{{
-sub _ast_to_graphviz {
+# _ast_to_mermaid_md - fallback Mermaid pipeline.md from a bare AST {{{
+sub _ast_to_mermaid_md {
 	my ($ast) = @_;
 
-	my @lines = (
-		'digraph pipeline {',
-		'  rankdir=LR;',
-		'  node [shape=box, style=filled, fillcolor=lightblue];',
-		sprintf('  labelloc=t; label="%s";', $ast->metadata->{name} || 'Pipeline'),
-		'',
-	);
+	my $name  = $ast->metadata->{name} || 'genesis-pipeline';
+	my @lines = ("flowchart LR");
 
 	for my $wf_name ($ast->workflow_names) {
 		my $wf = $ast->workflows->{$wf_name};
 		next unless $wf->{graph};
 
-		push @lines, sprintf('  subgraph cluster_%s {', $wf_name);
-		push @lines, sprintf('    label="%s";', $wf_name);
-
 		my $nodes = $wf->{graph}{nodes} || {};
 		my $edges = $wf->{graph}{edges} || [];
 
-		for my $node_name (sort keys %$nodes) {
-			my $node = $nodes->{$node_name};
-			my $label = $node->{alias} || $node->{genesis_env} || $node_name;
-			my $color = $node->{auto} ? 'palegreen' : 'lightblue';
-			push @lines, sprintf('    "%s_%s" [label="%s", fillcolor=%s];',
-				$wf_name, $node_name, $label, $color);
+		my %in_any_edge;
+		for my $edge (@$edges) {
+			$in_any_edge{$edge->{from}} = 1;
+			$in_any_edge{$edge->{to}}   = 1;
 		}
 
 		for my $edge (@$edges) {
-			push @lines, sprintf('    "%s_%s" -> "%s_%s";',
-				$wf_name, $edge->{from}, $wf_name, $edge->{to});
+			my $from = $nodes->{$edge->{from}}{alias} || $edge->{from};
+			my $to   = $nodes->{$edge->{to}}{alias}   || $edge->{to};
+			($from) =~ s/[^a-zA-Z0-9_]/_/g;
+			($to)   =~ s/[^a-zA-Z0-9_]/_/g;
+			push @lines, "  $from --> $to";
 		}
 
-		push @lines, '  }';
-		push @lines, '';
+		for my $n (sort keys %$nodes) {
+			next if $in_any_edge{$n};
+			my $alias = $nodes->{$n}{alias} || $n;
+			($alias) =~ s/[^a-zA-Z0-9_]/_/g;
+			push @lines, "  $alias";
+		}
 	}
 
-	push @lines, '}';
-	return join("\n", @lines);
+	my $mermaid = join("\n", @lines) . "\n";
+	return "# Pipeline: $name\n\n\`\`\`mermaid\n${mermaid}\`\`\`\n";
 }
 
 # }}}
