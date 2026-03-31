@@ -102,6 +102,9 @@ sub compile {
 		$output = { $filename => $raw_output };
 	}
 
+	# Stage 7: Apply provider-specific overrides (optional)
+	$output = $self->_apply_provider_overrides($output, $provider_type);
+
 	return {
 		ast      => $ast,
 		output   => $output,
@@ -126,6 +129,54 @@ sub can_compile {
 # }}}
 ### Internal Methods {{{
 
+# _apply_provider_overrides - deep-merge ci-overrides-<provider>.yml via spruce {{{
+sub _apply_provider_overrides {
+	my ($self, $output, $provider_type) = @_;
+
+	# Locate the ci directory
+	my $ci_dir = $self->{ci_dir};
+	unless ($ci_dir) {
+		my $f = $self->{file} || '';
+		($ci_dir = $f) =~ s{/[^/]+$}{} or $ci_dir = '.';
+	}
+
+	my $override_file = "$ci_dir/ci-overrides-${provider_type}.yml";
+	return $output unless -f $override_file;
+
+	info("Applying ci-overrides-%s.yml...", $provider_type);
+
+	my $dir = workdir;
+	my %merged;
+
+	for my $filename (sort keys %$output) {
+		my $content = $output->{$filename};
+
+		# Only spruce-merge YAML files; pass others through unchanged
+		unless ($filename =~ /\.ya?ml$/i) {
+			$merged{$filename} = $content;
+			next;
+		}
+
+		my $base_path = "$dir/override-base-${filename}";
+		open(my $fh, '>', $base_path)
+			or bail("Cannot write temporary override base %s: %s", $base_path, $!);
+		print $fh $content;
+		close $fh;
+
+		my ($merged_yaml, $rc) = run(
+			'spruce', 'merge', $base_path, $override_file
+		);
+		bail("Failed to apply ci-overrides-%s.yml: spruce merge returned non-zero",
+			$provider_type)
+			unless $rc == 0;
+
+		$merged{$filename} = $merged_yaml;
+	}
+
+	return \%merged;
+}
+
+# }}}
 # _resolve_provider_class - map type name to provider package and file {{{
 sub _resolve_provider_class {
 	my ($self, $type) = @_;
@@ -163,7 +214,9 @@ Genesis::CI::Compiler orchestrates the full compilation pipeline:
   2. Validator - Validate structure, cross-references, semantics
   3. ScriptDiscovery - Find and parse script metadata
   4. ASTBuilder - Construct platform-agnostic AST
-  5. Provider  - Generate platform-specific output from AST
+  5. PipelineDescriptor - Resolve generic pipeline from source AST
+  6. Provider  - Generate platform-specific output from AST
+  7. Overrides - Deep-merge ci-overrides-<provider>.yml if present
 
 =head1 SYNOPSIS
 

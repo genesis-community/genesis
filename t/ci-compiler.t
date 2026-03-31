@@ -1483,6 +1483,82 @@ subtest 'Compiler - can_compile' => sub {
 	ok $result, "can_compile returns true when pipeline.yml exists";
 };
 
+### ============================================================ ###
+### Compiler - _apply_provider_overrides
+### ============================================================ ###
+
+subtest 'Compiler - override skipped when file absent' => sub {
+	my $tmp = tempdir(CLEANUP => 1);
+	mkpath("$tmp/ci");
+
+	my $compiler = Genesis::CI::Compiler->new(ci_dir => "$tmp/ci");
+	my $output = { 'pipeline.yml' => "---\njobs: []\n" };
+
+	my $result = $compiler->_apply_provider_overrides($output, 'concourse');
+	is_deeply $result, $output,
+		"output unchanged when ci-overrides-concourse.yml is absent";
+};
+
+subtest 'Compiler - override skipped for non-YAML files' => sub {
+	my $tmp = tempdir(CLEANUP => 1);
+	mkpath("$tmp/ci");
+
+	# Create override file
+	open my $fh, '>', "$tmp/ci/ci-overrides-concourse.yml" or die $!;
+	print $fh "---\nfoo: overridden\n";
+	close $fh;
+
+	my $compiler = Genesis::CI::Compiler->new(ci_dir => "$tmp/ci");
+	my $output = { 'pipeline.sh' => "#!/bin/bash\necho hi\n" };
+
+	my $result = $compiler->_apply_provider_overrides($output, 'concourse');
+	is_deeply $result, $output,
+		"non-YAML output files are passed through unchanged";
+};
+
+subtest 'Compiler - override applied via spruce merge' => sub {
+	my $spruce = do { chomp(my $s = `which spruce 2>/dev/null`); $s };
+	unless ($spruce && -x $spruce) {
+		plan skip_all => "spruce not in PATH";
+		return;
+	}
+
+	my $tmp = tempdir(CLEANUP => 1);
+	mkpath("$tmp/ci");
+
+	open my $fh, '>', "$tmp/ci/ci-overrides-concourse.yml" or die $!;
+	print $fh "---\nextra_key: injected_by_override\n";
+	close $fh;
+
+	my $compiler = Genesis::CI::Compiler->new(ci_dir => "$tmp/ci");
+	my $output = { 'pipeline.yml' => "---\nbase_key: base_value\n" };
+
+	my $result = $compiler->_apply_provider_overrides($output, 'concourse');
+	ok defined($result->{'pipeline.yml'}), "merged pipeline.yml present";
+	like $result->{'pipeline.yml'}, qr/base_key:\s*base_value/,
+		"base content preserved after merge";
+	like $result->{'pipeline.yml'}, qr/extra_key:\s*injected_by_override/,
+		"override key added by merge";
+};
+
+subtest 'Compiler - override lookup uses ci_dir' => sub {
+	my $tmp = tempdir(CLEANUP => 1);
+	mkpath("$tmp/ci");
+	mkpath("$tmp/other");
+
+	# Override only in $tmp/other, not in $tmp/ci
+	open my $fh, '>', "$tmp/other/ci-overrides-concourse.yml" or die $!;
+	print $fh "---\nshould_not: appear\n";
+	close $fh;
+
+	my $compiler = Genesis::CI::Compiler->new(ci_dir => "$tmp/ci");
+	my $output = { 'pipeline.yml' => "---\njobs: []\n" };
+
+	my $result = $compiler->_apply_provider_overrides($output, 'concourse');
+	is_deeply $result, $output,
+		"override in wrong directory is not applied";
+};
+
 done_testing;
 
 # vim: ts=2 sw=2 sts=2 noet fdm=marker foldlevel=1 nu
