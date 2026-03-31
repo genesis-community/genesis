@@ -338,8 +338,132 @@ sub _build_workflow_graph {
 
 # }}}
 # }}}
+### Env-File Format Builder {{{
+
+# _build_from_env_files - build workflow graph nodes+edges from genesis.pipeline.* {{{
+#
+# Scans *.yml files in $dir.  For each file that contains a
+#
+#   genesis:
+#     pipeline:
+#       prior_env:  <upstream-env>
+#       require_pr: true|false
+#       manual:     true|false
+#
+# block, a graph node is created (keyed by the file stem) and, when
+# prior_env names another env that is also present, a directed edge
+# is added: prior_env -> this_env.
+#
+# Returns: (\%nodes, \@edges)
+sub _build_from_env_files {
+	my ($self, $dir) = @_;
+
+	my (%nodes, %prior_envs);
+
+	opendir(my $dh, $dir) or return ({}, []);
+	my @files = sort grep { /\.ya?ml$/i && -f "$dir/$_" } readdir($dh);
+	closedir $dh;
+
+	for my $file (@files) {
+		my $pipeline_data = _read_genesis_pipeline_keys("$dir/$file");
+		next unless %$pipeline_data;
+
+		(my $env = $file) =~ s/\.ya?ml$//i;
+
+		$nodes{$env} = {
+			stage_name  => $env,
+			target_name => $env,
+			alias       => $env,
+			genesis_env => $env,
+			auto        => 0,
+			type        => 'deployment',
+			require_pr  => _truthy($pipeline_data->{require_pr}),
+			manual      => _truthy($pipeline_data->{manual}),
+		};
+
+		$prior_envs{$env} = $pipeline_data->{prior_env}
+			if $pipeline_data->{prior_env};
+	}
+
+	my @edges;
+	for my $env (sort keys %prior_envs) {
+		my $upstream = $prior_envs{$env};
+		push @edges, { from => $upstream, to => $env }
+			if exists $nodes{$upstream};
+	}
+
+	return (\%nodes, \@edges);
+}
+
+# }}}
+# }}}
 ### Internal Helpers {{{
 
+# _read_genesis_pipeline_keys - extract genesis.pipeline.* from a YAML file {{{
+#
+# Reads a YAML file line-by-line looking for the nested structure:
+#   genesis:
+#     pipeline:
+#       key: value
+#
+# Returns a hashref of the pipeline sub-keys (may be empty).
+# No external YAML parser needed — only flat scalar values are extracted.
+sub _read_genesis_pipeline_keys {
+	my ($file) = @_;
+
+	open(my $fh, '<', $file) or return {};
+	my @lines = <$fh>;
+	close $fh;
+
+	my %result;
+	my ($in_genesis, $in_pipeline) = (0, 0);
+
+	for my $line (@lines) {
+		chomp $line;
+		next if $line =~ /^\s*#/ || $line =~ /^\s*---/;
+
+		# Top-level key resets context
+		if ($line =~ /^([a-zA-Z_][a-zA-Z0-9_]*):\s*(.*)$/) {
+			my $key = $1;
+			$in_genesis  = ($key eq 'genesis') ? 1 : 0;
+			$in_pipeline = 0;
+			next;
+		}
+
+		# 'pipeline:' under genesis (2-space indent)
+		if ($in_genesis && $line =~ /^  pipeline:\s*$/) {
+			$in_pipeline = 1;
+			next;
+		}
+
+		# Another 2-space key under genesis resets pipeline context
+		if ($in_genesis && $line =~ /^  [a-zA-Z]/) {
+			$in_pipeline = 0;
+			next;
+		}
+
+		# 4-space keys under genesis.pipeline
+		if ($in_pipeline && $line =~ /^    ([a-zA-Z_][a-zA-Z0-9_]*):\s*(.*)$/) {
+			my ($k, $v) = ($1, $2);
+			$v =~ s/\s*#.*$//;   # strip inline comment
+			$v =~ s/^\s+|\s+$//g; # trim
+			$result{$k} = $v;
+		}
+	}
+
+	return \%result;
+}
+
+# }}}
+# _truthy - convert YAML-ish string values to 0/1 {{{
+sub _truthy {
+	my ($v) = @_;
+	return 0 unless defined $v && $v ne '';
+	return 0 if $v =~ /^(false|no|0)$/i;
+	return 1;
+}
+
+# }}}
 # _yaml_bool - handle yaml boolean values with defaults {{{
 sub _yaml_bool {
 	my ($bool, $default) = @_;

@@ -462,6 +462,107 @@ subtest 'ASTBuilder - no auto-population without explicit triggers/resources' =>
 };
 
 ### ============================================================ ###
+### ASTBuilder - _build_from_env_files Tests
+### ============================================================ ###
+
+subtest 'ASTBuilder - _build_from_env_files: basic linear chain' => sub {
+	my $tmp = tempdir(CLEANUP => 1);
+
+	# lab.yml — entry point, no prior_env
+	open my $fh, '>', "$tmp/lab.yml" or die $!;
+	print $fh "---\ngenesis:\n  pipeline:\n    require_pr: false\n";
+	close $fh;
+
+	# nonprod.yml — triggered after lab
+	open $fh, '>', "$tmp/nonprod.yml" or die $!;
+	print $fh "---\ngenesis:\n  pipeline:\n    prior_env: lab\n";
+	close $fh;
+
+	# prod.yml — triggered after nonprod, requires PR
+	open $fh, '>', "$tmp/prod.yml" or die $!;
+	print $fh "---\ngenesis:\n  pipeline:\n    prior_env: nonprod\n    require_pr: true\n";
+	close $fh;
+
+	my $builder = Genesis::CI::Compiler::ASTBuilder->new();
+	my ($nodes, $edges) = $builder->_build_from_env_files($tmp);
+
+	ok exists $nodes->{lab},     "lab node present";
+	ok exists $nodes->{nonprod}, "nonprod node present";
+	ok exists $nodes->{prod},    "prod node present";
+
+	my @sorted_edges = sort { $a->{from} cmp $b->{from} } @$edges;
+	is scalar(@sorted_edges), 2, "two edges built";
+	is $sorted_edges[0]{from}, 'lab',     "first edge: lab -> nonprod (from)";
+	is $sorted_edges[0]{to},   'nonprod', "first edge: lab -> nonprod (to)";
+	is $sorted_edges[1]{from}, 'nonprod', "second edge: nonprod -> prod (from)";
+	is $sorted_edges[1]{to},   'prod',    "second edge: nonprod -> prod (to)";
+
+	ok !$nodes->{prod}{require_pr} == 0 || $nodes->{prod}{require_pr},
+		"prod node has require_pr set";
+	is $nodes->{prod}{require_pr}, 1, "prod require_pr is 1";
+	is $nodes->{lab}{require_pr},  0, "lab require_pr is 0";
+};
+
+subtest 'ASTBuilder - _build_from_env_files: manual gate flag' => sub {
+	my $tmp = tempdir(CLEANUP => 1);
+
+	open my $fh, '>', "$tmp/sandbox.yml" or die $!;
+	print $fh "---\ngenesis:\n  pipeline:\n    manual: true\n";
+	close $fh;
+
+	open $fh, '>', "$tmp/prod.yml" or die $!;
+	print $fh "---\ngenesis:\n  pipeline:\n    prior_env: sandbox\n    manual: false\n";
+	close $fh;
+
+	my $builder = Genesis::CI::Compiler::ASTBuilder->new();
+	my ($nodes, $edges) = $builder->_build_from_env_files($tmp);
+
+	is $nodes->{sandbox}{manual}, 1, "sandbox manual flag is 1";
+	is $nodes->{prod}{manual},    0, "prod manual flag is 0";
+};
+
+subtest 'ASTBuilder - _build_from_env_files: files without genesis.pipeline ignored' => sub {
+	my $tmp = tempdir(CLEANUP => 1);
+
+	# file with genesis block but no pipeline sub-key
+	open my $fh, '>', "$tmp/infra.yml" or die $!;
+	print $fh "---\ngenesis:\n  env: infra\n";
+	close $fh;
+
+	# unrelated YAML file
+	open $fh, '>', "$tmp/params.yml" or die $!;
+	print $fh "---\nparams:\n  key: value\n";
+	close $fh;
+
+	my $builder = Genesis::CI::Compiler::ASTBuilder->new();
+	my ($nodes, $edges) = $builder->_build_from_env_files($tmp);
+
+	is scalar(keys %$nodes), 0, "no nodes from files without genesis.pipeline";
+	is scalar(@$edges),      0, "no edges either";
+};
+
+subtest 'ASTBuilder - _build_from_env_files: prior_env referencing unknown env is ignored' => sub {
+	my $tmp = tempdir(CLEANUP => 1);
+
+	open my $fh, '>', "$tmp/prod.yml" or die $!;
+	print $fh "---\ngenesis:\n  pipeline:\n    prior_env: missing-lab\n";
+	close $fh;
+
+	my $builder = Genesis::CI::Compiler::ASTBuilder->new();
+	my ($nodes, $edges) = $builder->_build_from_env_files($tmp);
+
+	ok exists $nodes->{prod}, "prod node still created";
+	is scalar(@$edges), 0, "no edge added for unknown prior_env";
+};
+
+subtest 'ASTBuilder - _build_from_env_files: non-existent dir returns empty' => sub {
+	my $builder = Genesis::CI::Compiler::ASTBuilder->new();
+	my ($nodes, $edges) = $builder->_build_from_env_files('/does/not/exist/xyz');
+	is scalar(keys %$nodes), 0, "no nodes for missing dir";
+	is scalar(@$edges),      0, "no edges for missing dir";
+};
+
+### ============================================================ ###
 ### Validator Tests
 ### ============================================================ ###
 
