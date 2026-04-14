@@ -5,6 +5,7 @@ use warnings;
 
 use Genesis;
 use Genesis::Commands;
+use Genesis::Term qw/in_controlling_terminal/;
 use Genesis::Top;
 use Genesis::Kit::Provider;
 
@@ -12,6 +13,311 @@ use Cwd qw/getcwd abs_path/;
 use File::Basename qw/basename/;
 use File::Path qw/rmtree/;
 use JSON::PP qw/encode_json/;
+
+sub repo_init {
+	_repo_init_parse();
+	_repo_init_validate();
+	my $result = _repo_init_execute();
+	_repo_init_report($result);
+	exit 0;
+}
+
+sub _repo_init_execute {
+	my %opts = %{get_options()};
+	my $name = $opts{_name};
+	my $dir = $opts{_dir};
+
+	# Resolve link-dev-kit to absolute path before we potentially chdir
+	my $abs_dev_target;
+	if ($opts{'link-dev-kit'}) {
+		$abs_dev_target = abs_path($opts{'link-dev-kit'});
+		bail("Link target '%s' cannot be found!", $opts{'link-dev-kit'})
+			unless $abs_dev_target;
+	}
+
+	# Check git author config
+	if ($ENV{GIT_AUTHOR_NAME}) {
+		$ENV{GIT_COMMITTER_NAME} ||= $ENV{GIT_AUTHOR_NAME};
+	} else {
+		run({ onfailure => 'Please setup git: git config --global user.name "Your Name"' },
+			'git config user.name');
+	}
+	if ($ENV{GIT_AUTHOR_EMAIL}) {
+		$ENV{GIT_COMMITTER_EMAIL} ||= $ENV{GIT_AUTHOR_EMAIL};
+	} else {
+		run({ onfailure => 'Please setup git: git config --global user.email your@email.com' },
+			'git config user.email');
+	}
+
+	# Handle existing directory (before any interactive prompts)
+	my %create_opts = %opts;
+	if (-e $dir) {
+		if ($opts{force}) {
+			rmtree $dir;
+		} elsif (in_controlling_terminal && Genesis::UI::prompt_for_boolean(
+			"Directory #C{$dir} already exists. Replace it? [y|n] ", 0
+		)) {
+			rmtree $dir;
+		} else {
+			bail("Cannot create repository: directory #C{$dir} already exists. Use -F to force replacement.");
+		}
+	}
+
+	# Subrepo detection
+	my $in_git_repo = run({ passfail => 1 }, 'git rev-parse --is-inside-work-tree 2>/dev/null');
+	my $use_subdir = $opts{sub};
+	if ($in_git_repo && !defined($use_subdir)) {
+		$use_subdir = 1;
+	}
+
+	# Vault selection
+	if ($opts{'skip-vault'}) {
+		$create_opts{skip_vault} = 1;
+		delete $create_opts{vault};
+		delete $create_opts{'skip-vault'};
+	} elsif (!$opts{vault}) {
+		# Interactive vault selection
+		my $vault = _select_vault_target();
+		if ($vault) {
+			$create_opts{vault} = $vault->{name};
+		} else {
+			$create_opts{skip_vault} = 1;
+		}
+	}
+
+	# Kits path handling
+	my $kit_path;
+	if (exists($create_opts{'kits-path'})) {
+		$kit_path = abs_path($create_opts{'kits-path'} // $ENV{HOME}.'/.genesis/kits');
+		mkdir_or_fail($kit_path) unless -d $kit_path;
+		delete $create_opts{'kits-path'};
+	}
+
+	# Remove repo-init specific options before passing to Top->create
+	my $ci_provider = delete $create_opts{'ci-provider'};
+	delete $create_opts{force};
+	delete $create_opts{'skip-vault'};
+	delete $create_opts{'sub'};
+	delete $create_opts{_name};
+	delete $create_opts{_dir};
+
+	# Create the repo via Top->create
+	my $top = Genesis::Top->create('.', $name, %create_opts, kits_path => $kit_path);
+	$top->embed($ENV{GENESIS_CALLBACK_BIN} || $0);
+
+	my $root = $top->path;
+	my $human_root = humanize_path($root);
+	my $kit_desc = "";
+
+	pushd($root);
+	eval {
+		# Kit setup
+		if ($abs_dev_target) {
+			symlink_or_fail($abs_dev_target, "./dev");
+			$kit_desc = "linked to kit at #C{$abs_dev_target}";
+		} elsif ($opts{kit}) {
+			my $kit_file;
+			if ($opts{kit} =~ m#(?:.*/)?([^/]+)-\d+\.\d+\.\d+(?:-rc\.?\d+)?\.t(?:ar\.)?gz#) {
+				bail("Local compiled kit file %s not found", $opts{kit}) unless -f $opts{kit};
+				$kit_file = $opts{kit};
+			}
+			if ($kit_file) {
+				my $target = $top->path(".genesis/kits");
+				mkdir_or_fail($target);
+				my $abs_src = $kit_file =~ m#^/# ? $kit_file : abs_path($ENV{GENESIS_CALLER_DIR}."/".$kit_file);
+				copy_or_fail($abs_src, $target);
+				$kit_desc = "using locally provided compiled kit #C{$kit_file}";
+			} else {
+				my ($kit_name, $kit_version) = $top->download_kit($opts{kit});
+				$kit_desc = "using the #C{$kit_name/$kit_version} kit";
+			}
+		} else {
+			mkdir_or_fail("./dev");
+			$kit_desc = "with an empty development kit in #C{$human_root/dev}";
+		}
+
+		# CI provider scaffold
+		if ($ci_provider) {
+			_create_ci_scaffold($top, $ci_provider);
+		}
+
+		# Git init (skip if subdirectory of existing repo)
+		unless ($use_subdir) {
+			run({ onfailure => "Failed to initialize git in $human_root/" },
+				'git init && git add .');
+			run({ onfailure => "Failed to commit initial repository in $human_root/" },
+				'git commit -m "Initial Genesis Repo"');
+		}
+	};
+	my $err = $@;
+	popd;
+	if ($err) {
+		debug("removing incomplete Genesis repository at #C{$root} due to failed creation");
+		rmtree $root;
+		bail $err;
+	}
+
+	return {
+		root        => $root,
+		human_root  => $human_root,
+		name        => $name,
+		kit_desc    => $kit_desc,
+		ci_provider => $ci_provider,
+		vault_skipped => $create_opts{skip_vault} ? 1 : 0,
+		vault       => $create_opts{skip_vault} ? undef : ($top->vault ? $top->vault->url : undef),
+		submodule   => $use_subdir,
+	};
+}
+
+sub _repo_init_report {
+	my ($result) = @_;
+
+	my @details;
+	push @details, " - $result->{kit_desc}" if $result->{kit_desc};
+
+	if ($result->{vault}) {
+		my $vault_desc = "using vault at #C{$result->{vault}}";
+		push @details, " - $vault_desc";
+	} else {
+		push @details, " - #Y{vault not configured} (use #C{genesis secrets-provider} to set)";
+	}
+
+	if ($result->{ci_provider}) {
+		push @details, " - CI provider: #C{$result->{ci_provider}}";
+	}
+
+	if ($result->{submodule}) {
+		push @details, " - created as subdirectory (no separate git)";
+	}
+
+	info "\nInitialized Genesis repository in #C{%s}\n%s\n",
+		$result->{human_root}, join("\n", @details);
+}
+
+sub _select_vault_target {
+	# Ask if user wants to configure vault now or skip
+	my $configure = Genesis::UI::prompt_for_boolean(
+		"Would you like to configure a secrets vault now? [y|n] ", 1
+	);
+	return undef unless $configure;
+
+	# Use the existing interactive vault selector from Service::Vault::Remote
+	require Service::Vault::Remote;
+	my $vault = eval { Service::Vault::Remote->target(undef) };
+	return $vault;
+}
+
+sub _create_ci_scaffold {
+	my ($top, $provider) = @_;
+
+	# Write ci: section to .genesis/config
+	$top->config->set('ci', {
+		enabled  => Genesis::Config::TRUE,
+		provider => $provider,
+		pipeline => {
+			name => $top->config->get('deployment_type'),
+		},
+	});
+	$top->config->save;
+
+	# Create .genesis/ci/ scaffold
+	my $ci_dir = $top->path(".genesis/ci");
+	mkdir_or_fail($ci_dir);
+
+	mkfile_or_fail("$ci_dir/targets.yml", <<'TARGETS');
+---
+# BOSH director connection info (per environment)
+# Fill in for each environment that will be deployed via pipeline.
+#
+# Example:
+#   my-env:
+#     url:      https://bosh.example.com:25555
+#     ca_cert:  (( vault "secret/bosh/ssl:ca" ))
+#     username: admin
+#     password: (( vault "secret/bosh/admin:password" ))
+TARGETS
+
+	mkfile_or_fail("$ci_dir/resources.yml", <<'RESOURCES');
+---
+# Abstract resource declarations
+# These are translated to provider-specific format during compilation.
+RESOURCES
+
+	mkfile_or_fail("$ci_dir/ci-overrides-${provider}.yml", <<'OVERRIDES');
+---
+# Post-provider output overrides
+# Merged over provider output after compilation.
+# Use this for provider-specific customizations.
+OVERRIDES
+}
+
+sub _repo_init_parse {
+	my %options;
+	Genesis::Kit::Provider->parse_opts(\@_, \%options);
+	append_options(%options);
+	return 1;
+}
+
+sub _repo_init_validate {
+	my %opts = %{get_options()};
+	my @args = get_args();
+	my $name = $args[0];
+
+	# Derive name from kit if not specified
+	unless ($name) {
+		if ($opts{kit} && $opts{kit} !~ m#\.t(?:ar\.)?gz$#) {
+			($name = $opts{kit}) =~ s|/.*||;
+		} elsif ($opts{'link-dev-kit'}) {
+			$name = basename($opts{'link-dev-kit'});
+		}
+	}
+
+	# Must have a name or a kit to derive it from
+	bail(
+		"You must specify a deployment name, a kit (-k), or a dev link target (-l)."
+	) unless $name;
+
+	# --kit and --link-dev-kit are mutually exclusive
+	bail(
+		"You can only specify one of kit (-k) or link to a kit (-l)."
+	) if $opts{kit} && $opts{'link-dev-kit'};
+
+	# --vault and --skip-vault are mutually exclusive
+	bail(
+		"Cannot specify both --vault and --skip-vault."
+	) if $opts{vault} && $opts{'skip-vault'};
+
+	# --ci-provider must be a valid value
+	if ($opts{'ci-provider'}) {
+		my @valid = qw(concourse github-actions manual);
+		bail(
+			"Invalid --ci-provider '%s'. Must be one of: %s",
+			$opts{'ci-provider'}, join(', ', @valid)
+		) unless grep { $_ eq $opts{'ci-provider'} } @valid;
+	}
+
+	# Store derived values back into options for execution phase
+	my $dir = $opts{directory} || $name;
+	option_defaults(
+		_name => $name,
+		_dir  => $dir,
+	);
+
+	# Summarize intent
+	my @plan;
+	push @plan, "kit: #C{$opts{kit}}" if $opts{kit};
+	push @plan, "kit: dev link to #C{$opts{'link-dev-kit'}}" if $opts{'link-dev-kit'};
+	push @plan, "kit: #Yi{empty dev directory}" unless $opts{kit} || $opts{'link-dev-kit'};
+	push @plan, "vault: #C{$opts{vault}}" if $opts{vault};
+	push @plan, "vault: #Yi{deferred}" if $opts{'skip-vault'};
+	push @plan, "vault: #Yi{will prompt}" unless $opts{vault} || $opts{'skip-vault'};
+	push @plan, "ci provider: #C{$opts{'ci-provider'}}" if $opts{'ci-provider'};
+	info "\nCreating #C{%s} deployment repository in #M{%s/}:", $name, $dir;
+	info "  %s", $_ for @plan;
+	info "";
+
+	return 1;
+}
 
 sub init {
 	my %options;

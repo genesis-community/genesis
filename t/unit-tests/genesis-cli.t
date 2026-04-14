@@ -77,6 +77,7 @@ subtest 'genesis terminate' => sub {
 	$args[0] = mock 'Genesis::Env' => {
 		name => 'my-env',
 		type => 'my-type',
+		deployment_change_reason_required_size_policy => 0,
 		notify => sub {
 			my ($self, $msg) = @_;
 			info("[my-env/my-type] ".$msg);
@@ -126,6 +127,7 @@ subtest 'genesis terminate' => sub {
 	$args[0] = mock 'Genesis::Env' => {
 		name => 'my-env',
 		type => 'my-type',
+		deployment_change_reason_required_size_policy => 0,
 		notify => sub {
 			my ($self, $msg) = @_;
 			info("[my-env/my-type] ".$msg);
@@ -176,6 +178,7 @@ subtest 'genesis terminate' => sub {
 	$args[0] = mock 'Genesis::Env' => {
 		name => 'my-env',
 		type => 'my-type',
+		deployment_change_reason_required_size_policy => 0,
 		notify => sub {
 			my ($self, $msg) = @_;
 			info("[my-env/my-type] ".$msg);
@@ -254,6 +257,414 @@ Are you sure you want to terminate my-env/my-type deployment? [y|N] >
 
 EOF
 
+};
+
+subtest 'genesis repo-init' => sub {
+	plan tests => 17;
+
+	ok(has_command('repo-init'), "repo-init command is registered");
+	ok(is_equivalent_command('init' => 'repo-init'), "init is an alias for repo-init");
+	like(command_properties('repo-init')->{usage}, qr/repo-init.*\[.*options/, "usage string mentions repo-init and options");
+
+	is(command_properties('repo-init')->{function_group}, Genesis::Commands::REPOSITORY, "repo-init belongs to repository group");
+	is(command_properties('repo-init')->{scope}, 'empty', "repo-init has empty scope (no existing repo needed)");
+
+	my %opts = command_properties('repo-init')->{options}->@*;
+
+	# Existing init options preserved
+	ok(exists $opts{'kit|k=s'}, "repo-init has --kit option");
+	ok(exists $opts{'link-dev-kit|l=s'}, "repo-init has --link-dev-kit option");
+	ok(exists $opts{'directory|d=s'}, "repo-init has --directory option");
+	ok(exists $opts{'vault=s'}, "repo-init has --vault option");
+
+	# New options
+	ok(exists $opts{'sub!'}, "repo-init has toggleable --sub option for subrepo detection");
+	ok(exists $opts{'skip-vault'}, "repo-init has --skip-vault option to defer vault config");
+	ok(exists $opts{'ci-provider=s'}, "repo-init has --ci-provider option");
+	ok(exists $opts{'force|F'}, "repo-init has --force option");
+
+	not_ok(command_properties('repo-init')->{deprecated}, "repo-init is not deprecated");
+
+	my $subref = $Genesis::Commands::RUN{'repo-init'};
+	is(ref($subref), 'CODE', "repo-init command has a subroutine reference");
+	cmp_deeply(scalar(closed_over($subref)), {
+		'$fn' => \'Genesis::Commands::Repo::repo_init',
+		'$fn_require' => \'Genesis/Commands/Repo.pm',
+		'$name' => \'repo-init',
+	}, "repo-init command routes to Repo::repo_init");
+
+	# init alias resolves to repo-init via GENESIS_COMMANDS
+	is($Genesis::Commands::GENESIS_COMMANDS{init}, 'repo-init',
+		"init alias resolves to repo-init");
+};
+
+subtest 'repo-init option processing' => sub {
+	plan tests => 18;
+
+	# Basic invocation with kit and name
+	prepare_command('repo-init', '-k', 'bosh', 'my-bosh');
+	build_command_environment;
+	my %opts = %{get_options()};
+	my @args = get_args();
+	is($opts{kit}, 'bosh', "kit option parsed correctly");
+	is($args[0], 'my-bosh', "name argument passed through");
+
+	# With --skip-vault
+	prepare_command('repo-init', '-k', 'bosh', '--skip-vault', 'my-bosh');
+	build_command_environment;
+	%opts = %{get_options()};
+	ok($opts{'skip-vault'}, "--skip-vault flag is set");
+	ok(!$opts{vault}, "vault is not set when skip-vault used");
+
+	# With --vault
+	prepare_command('repo-init', '-k', 'bosh', '--vault', 'my-vault', 'my-bosh');
+	build_command_environment;
+	%opts = %{get_options()};
+	is($opts{vault}, 'my-vault', "--vault value parsed correctly");
+	ok(!$opts{'skip-vault'}, "skip-vault not set when vault specified");
+
+	# With --ci-provider
+	prepare_command('repo-init', '-k', 'cf', '--ci-provider', 'concourse', 'my-cf');
+	build_command_environment;
+	%opts = %{get_options()};
+	is($opts{'ci-provider'}, 'concourse', "--ci-provider concourse parsed");
+
+	prepare_command('repo-init', '-k', 'cf', '--ci-provider', 'github-actions', 'my-cf');
+	build_command_environment;
+	%opts = %{get_options()};
+	is($opts{'ci-provider'}, 'github-actions', "--ci-provider github-actions parsed");
+
+	prepare_command('repo-init', '-k', 'cf', '--ci-provider', 'manual', 'my-cf');
+	build_command_environment;
+	%opts = %{get_options()};
+	is($opts{'ci-provider'}, 'manual', "--ci-provider manual parsed");
+
+	# With --sub
+	prepare_command('repo-init', '-k', 'bosh', '--sub', 'my-bosh');
+	build_command_environment;
+	%opts = %{get_options()};
+	is($opts{sub}, 1, "--sub flag sets sub to true");
+
+	# With --no-sub
+	prepare_command('repo-init', '-k', 'bosh', '--no-sub', 'my-bosh');
+	build_command_environment;
+	%opts = %{get_options()};
+	is($opts{sub}, 0, "--no-sub flag sets sub to false");
+
+	# Without --sub (not specified)
+	prepare_command('repo-init', '-k', 'bosh', 'my-bosh');
+	build_command_environment;
+	%opts = %{get_options()};
+	ok(!defined($opts{sub}), "sub is undefined when not specified");
+
+	# With --directory
+	prepare_command('repo-init', '-k', 'bosh', '-d', '/tmp/my-repo', 'my-bosh');
+	build_command_environment;
+	%opts = %{get_options()};
+	is($opts{directory}, '/tmp/my-repo', "--directory parsed correctly");
+
+	# With --link-dev-kit
+	prepare_command('repo-init', '-l', '/path/to/dev-kit', 'my-dev');
+	build_command_environment;
+	%opts = %{get_options()};
+	is($opts{'link-dev-kit'}, '/path/to/dev-kit', "--link-dev-kit parsed correctly");
+	ok(!$opts{kit}, "kit not set when link-dev-kit used");
+
+	# Name defaults from kit when not specified
+	prepare_command('repo-init', '-k', 'shield');
+	build_command_environment;
+	@args = get_args();
+	is(scalar(@args), 0, "no positional args when name not specified");
+
+	# All options together
+	prepare_command('repo-init', '-k', 'bosh', '--ci-provider', 'concourse', '--skip-vault', '--sub', '-d', '/tmp/test', 'my-bosh');
+	build_command_environment;
+	%opts = %{get_options()};
+	@args = get_args();
+	is($opts{kit}, 'bosh', "kit parsed in combined invocation");
+	is($args[0], 'my-bosh', "name parsed in combined invocation");
+};
+
+subtest 'repo-init validation' => sub {
+	plan tests => 10;
+
+	require Genesis::Commands::Repo;
+	delete $ENV{GENESIS_IGNORE_EVAL}; # Allow bail() to die instead of exit
+
+	# Valid cases
+	prepare_command('repo-init', '-k', 'bosh', 'my-bosh');
+	build_command_environment;
+	Genesis::Commands::Repo::_repo_init_parse();
+	lives_ok { Genesis::Commands::Repo::_repo_init_validate() }
+		"valid: kit + name passes";
+
+	prepare_command('repo-init', '-k', 'bosh', '--skip-vault', 'my-bosh');
+	build_command_environment;
+	Genesis::Commands::Repo::_repo_init_parse();
+	lives_ok { Genesis::Commands::Repo::_repo_init_validate() }
+		"valid: skip-vault passes";
+
+	prepare_command('repo-init', '-k', 'bosh', '--ci-provider', 'concourse', 'my-bosh');
+	build_command_environment;
+	Genesis::Commands::Repo::_repo_init_parse();
+	lives_ok { Genesis::Commands::Repo::_repo_init_validate() }
+		"valid: ci-provider concourse passes";
+
+	prepare_command('repo-init', '-k', 'bosh', '--ci-provider', 'manual', 'my-bosh');
+	build_command_environment;
+	Genesis::Commands::Repo::_repo_init_parse();
+	lives_ok { Genesis::Commands::Repo::_repo_init_validate() }
+		"valid: ci-provider manual passes";
+
+	prepare_command('repo-init', '-k', 'bosh', '--ci-provider', 'github-actions', 'my-bosh');
+	build_command_environment;
+	Genesis::Commands::Repo::_repo_init_parse();
+	lives_ok { Genesis::Commands::Repo::_repo_init_validate() }
+		"valid: ci-provider github-actions passes";
+
+	# Name derived from kit when not specified
+	prepare_command('repo-init', '-k', 'shield');
+	build_command_environment;
+	Genesis::Commands::Repo::_repo_init_parse();
+	lives_ok { Genesis::Commands::Repo::_repo_init_validate() }
+		"valid: name derived from kit";
+
+	# Invalid: --vault and --skip-vault together
+	prepare_command('repo-init', '-k', 'bosh', '--vault', 'my-vault', '--skip-vault', 'my-bosh');
+	build_command_environment;
+	Genesis::Commands::Repo::_repo_init_parse();
+	throws_ok { Genesis::Commands::Repo::_repo_init_validate() }
+		qr/Cannot specify both --vault and --skip-vault/,
+		"rejects --vault with --skip-vault";
+
+	# Invalid: --kit and --link-dev-kit together
+	prepare_command('repo-init', '-k', 'bosh', '-l', '/path/to/kit', 'my-bosh');
+	build_command_environment;
+	Genesis::Commands::Repo::_repo_init_parse();
+	throws_ok { Genesis::Commands::Repo::_repo_init_validate() }
+		qr/only specify one of kit.*or link/i,
+		"rejects --kit with --link-dev-kit";
+
+	# Invalid: no name, no kit, no link-dev-kit
+	prepare_command('repo-init');
+	build_command_environment;
+	Genesis::Commands::Repo::_repo_init_parse();
+	throws_ok { Genesis::Commands::Repo::_repo_init_validate() }
+		qr/must specify a deployment name/i,
+		"rejects empty invocation";
+
+	# Invalid: bad ci-provider value
+	prepare_command('repo-init', '-k', 'bosh', '--ci-provider', 'jenkins', 'my-bosh');
+	build_command_environment;
+	Genesis::Commands::Repo::_repo_init_parse();
+	throws_ok { Genesis::Commands::Repo::_repo_init_validate() }
+		qr/Invalid --ci-provider 'jenkins'/,
+		"rejects invalid ci-provider value";
+};
+
+subtest 'repo-init execution (integration)' => sub {
+	plan tests => 41;
+
+	require Genesis::Commands::Repo;
+	local $Genesis::VERSION = '3.2.0-rc2';
+	delete $ENV{GENESIS_IGNORE_EVAL};
+	$ENV{GIT_AUTHOR_NAME} = 'Test User';
+	$ENV{GIT_AUTHOR_EMAIL} = 'test@example.com';
+	$ENV{GIT_COMMITTER_NAME} = 'Test User';
+	$ENV{GIT_COMMITTER_EMAIL} = 'test@example.com';
+
+	# Test 1: Basic --sub --skip-vault creates directory without .git
+	my $basedir = workdir('repo-init-test-1');
+	pushd($basedir);
+	# Init a git repo so --sub detection works
+	run('git init 2>/dev/null');
+
+	prepare_command('repo-init', '-k', 'bosh', '--sub', '--skip-vault');
+	build_command_environment;
+	Genesis::Commands::Repo::_repo_init_parse();
+	Genesis::Commands::Repo::_repo_init_validate();
+	my $result = Genesis::Commands::Repo::_repo_init_execute();
+
+	ok(-d "$basedir/bosh", "bosh directory created");
+	ok(-d "$basedir/bosh/.genesis", ".genesis directory created");
+	ok(-f "$basedir/bosh/.genesis/config", ".genesis/config created");
+	ok(!-e "$basedir/bosh/.git", "no .git in subdirectory mode");
+	ok(-d "$basedir/bosh/.genesis/kits", ".genesis/kits directory created");
+	ok(-d "$basedir/bosh/.genesis/bin", ".genesis/bin directory created (embedded genesis)");
+
+	# Verify config has no secrets_provider
+	my $config_text = slurp("$basedir/bosh/.genesis/config");
+	unlike($config_text, qr/secrets_provider/, "config has no secrets_provider when skip-vault");
+	like($config_text, qr/deployment_type: bosh/, "config has correct deployment_type");
+
+	# Verify result hash
+	is($result->{name}, 'bosh', "result name is bosh");
+	ok($result->{vault_skipped}, "result vault_skipped is true");
+	ok(!$result->{vault}, "result vault is undef");
+	ok($result->{submodule}, "result submodule is true");
+	popd;
+
+	# Test 2: --no-sub creates .git
+	my $basedir2 = workdir('repo-init-test-2');
+	pushd($basedir2);
+	run('git init 2>/dev/null');
+
+	prepare_command('repo-init', '-k', 'bosh', '--no-sub', '--skip-vault');
+	build_command_environment;
+	Genesis::Commands::Repo::_repo_init_parse();
+	Genesis::Commands::Repo::_repo_init_validate();
+	my $result2 = Genesis::Commands::Repo::_repo_init_execute();
+
+	ok(-d "$basedir2/bosh/.git", ".git created in --no-sub mode");
+	ok(!$result2->{submodule}, "result submodule is false");
+	popd;
+
+	# Test 3: --force replaces existing directory
+	my $basedir3 = workdir('repo-init-test-3');
+	pushd($basedir3);
+	mkdir_or_fail("$basedir3/bosh");
+	mkfile_or_fail("$basedir3/bosh/sentinel.txt", "should be removed");
+
+	prepare_command('repo-init', '-k', 'bosh', '--no-sub', '--skip-vault', '-F');
+	build_command_environment;
+	Genesis::Commands::Repo::_repo_init_parse();
+	Genesis::Commands::Repo::_repo_init_validate();
+	my $result3 = Genesis::Commands::Repo::_repo_init_execute();
+
+	ok(-d "$basedir3/bosh/.genesis", ".genesis created after force replace");
+	ok(!-f "$basedir3/bosh/sentinel.txt", "old sentinel file removed by force");
+	popd;
+
+	# Test 4: Name derived from kit
+	my $basedir4 = workdir('repo-init-test-4');
+	pushd($basedir4);
+
+	prepare_command('repo-init', '-k', 'shield', '--no-sub', '--skip-vault');
+	build_command_environment;
+	Genesis::Commands::Repo::_repo_init_parse();
+	Genesis::Commands::Repo::_repo_init_validate();
+	my $result4 = Genesis::Commands::Repo::_repo_init_execute();
+
+	ok(-d "$basedir4/shield/.genesis", "directory named from kit");
+	is($result4->{name}, 'shield', "name derived from kit");
+	popd;
+
+	# Test 5: Existing directory without --force bails (non-interactive)
+	my $basedir5 = workdir('repo-init-test-5');
+	pushd($basedir5);
+	mkdir_or_fail("$basedir5/bosh");
+
+	prepare_command('repo-init', '-k', 'bosh', '--no-sub', '--skip-vault');
+	build_command_environment;
+	Genesis::Commands::Repo::_repo_init_parse();
+	Genesis::Commands::Repo::_repo_init_validate();
+	throws_ok {
+		Genesis::Commands::Repo::_repo_init_execute();
+	} qr/already exists.*-F/i,
+		"bails on existing directory in non-interactive mode";
+	popd;
+
+	# Test 6: Custom --directory
+	my $basedir6 = workdir('repo-init-test-6');
+	pushd($basedir6);
+
+	prepare_command('repo-init', '-k', 'bosh', '--no-sub', '--skip-vault', '-d', 'my-custom-dir');
+	build_command_environment;
+	Genesis::Commands::Repo::_repo_init_parse();
+	Genesis::Commands::Repo::_repo_init_validate();
+	my $result6 = Genesis::Commands::Repo::_repo_init_execute();
+
+	ok(-d "$basedir6/my-custom-dir/.genesis", "custom directory created via --directory");
+	ok(!-e "$basedir6/bosh", "default 'bosh' directory not created when --directory used");
+	my $cfg6 = slurp("$basedir6/my-custom-dir/.genesis/config");
+	like($cfg6, qr/deployment_type: bosh/, "config deployment_type is still bosh despite custom dir name");
+	popd;
+
+	# Test 7: Custom name different from kit
+	my $basedir7 = workdir('repo-init-test-7');
+	pushd($basedir7);
+
+	prepare_command('repo-init', '-k', 'bosh', '--no-sub', '--skip-vault', 'my-boshen');
+	build_command_environment;
+	Genesis::Commands::Repo::_repo_init_parse();
+	Genesis::Commands::Repo::_repo_init_validate();
+	my $result7 = Genesis::Commands::Repo::_repo_init_execute();
+
+	ok(-d "$basedir7/my-boshen/.genesis", "directory uses custom name, not kit name");
+	ok(!-e "$basedir7/bosh", "default 'bosh' directory not created");
+	is($result7->{name}, 'my-boshen', "result name matches custom name");
+	my $cfg7 = slurp("$basedir7/my-boshen/.genesis/config");
+	like($cfg7, qr/deployment_type: my-boshen/, "config deployment_type uses custom name");
+	popd;
+
+	# Test 8: --link-dev-kit creates symlink
+	my $basedir8 = workdir('repo-init-test-8');
+	my $devkit_dir = workdir('repo-init-test-8-devkit');
+	mkdir_or_fail("$devkit_dir/hooks");
+	mkfile_or_fail("$devkit_dir/kit.yml", "name: testkit\nversion: 0.0.1\n");
+	pushd($basedir8);
+
+	prepare_command('repo-init', '-l', $devkit_dir, '--no-sub', '--skip-vault', 'my-devkit');
+	build_command_environment;
+	Genesis::Commands::Repo::_repo_init_parse();
+	Genesis::Commands::Repo::_repo_init_validate();
+	my $result8 = Genesis::Commands::Repo::_repo_init_execute();
+
+	ok(-d "$basedir8/my-devkit/.genesis", ".genesis created for linked dev kit");
+	ok(-l "$basedir8/my-devkit/dev", "dev is a symlink");
+	is(Cwd::abs_path(readlink("$basedir8/my-devkit/dev")), Cwd::abs_path($devkit_dir), "dev symlink points to correct target");
+	like($result8->{kit_desc}, qr/linked.*kit/i, "result kit_desc mentions linked kit");
+	popd;
+
+	# Test 9: Auto-detect git repo → subdirectory mode (no --sub flag)
+	my $basedir9a = workdir('repo-init-test-9a');
+	pushd($basedir9a);
+	run('git init 2>/dev/null');
+
+	prepare_command('repo-init', '-k', 'bosh', '--skip-vault');
+	build_command_environment;
+	Genesis::Commands::Repo::_repo_init_parse();
+	Genesis::Commands::Repo::_repo_init_validate();
+	my $result9a = Genesis::Commands::Repo::_repo_init_execute();
+
+	ok(!-e "$basedir9a/bosh/.git", "auto-detected git repo: no .git created");
+	ok($result9a->{submodule}, "auto-detected git repo: result submodule is true");
+	popd;
+
+	# Test 10: Outside git repo without --sub → standalone with .git
+	my $basedir10 = workdir('repo-init-test-10');
+	pushd($basedir10);
+	# Do NOT run git init — this is not a git repo
+
+	prepare_command('repo-init', '-k', 'bosh', '--skip-vault');
+	build_command_environment;
+	Genesis::Commands::Repo::_repo_init_parse();
+	Genesis::Commands::Repo::_repo_init_validate();
+	my $result10 = Genesis::Commands::Repo::_repo_init_execute();
+
+	ok(-d "$basedir10/bosh/.git", "outside git repo: .git created");
+	ok(!$result10->{submodule}, "outside git repo: result submodule is false");
+	popd;
+
+	# Test 11: Config values are correct across scenarios (detailed config validation)
+	my $basedir11 = workdir('repo-init-test-11');
+	pushd($basedir11);
+
+	prepare_command('repo-init', '-k', 'cf', '--no-sub', '--skip-vault');
+	build_command_environment;
+	Genesis::Commands::Repo::_repo_init_parse();
+	Genesis::Commands::Repo::_repo_init_validate();
+	my $result11 = Genesis::Commands::Repo::_repo_init_execute();
+
+	my $cfg9 = slurp("$basedir11/cf/.genesis/config");
+	like($cfg9, qr/deployment_type: cf/, "cf config has deployment_type: cf");
+	like($cfg9, qr/version: 2/, "config has version: 2");
+	like($cfg9, qr/creator_version: 3\.2\.0-rc2/, "config has correct creator_version");
+	like($cfg9, qr/minimum_version: 3\.2\.0-rc2/, "config has minimum_version");
+	like($cfg9, qr/manifest_store: exodus/, "config has manifest_store: exodus");
+	unlike($cfg9, qr/secrets_provider/, "config has no secrets_provider when skip-vault");
+	unlike($cfg9, qr/kit_provider/, "config has no kit_provider (using default genesis-community)");
+	popd;
 };
 
 done_testing;

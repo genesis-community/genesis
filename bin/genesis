@@ -1191,13 +1191,15 @@ define_command("remove-secrets", {
 
 ### Repository Management commands {{{
 # genesis init - initialize a new Genesis repository {{{
-define_command("init", {
+define_command("repo-init", {
 		summary => "Initialize a new Genesis deployment repository.",
-		usage => "init [-k KIT/VERSION|-l path/to/local/kit] [-d directory] [--vault target] [name]",
+		usage => "repo-init [-k KIT] [<options...>] [name]",
+		alias => 'init',
 		description =>
 			"Create a new Genesis deployment repository, specific to the given kit type.",
 		function_group => Genesis::Commands::REPOSITORY,
 		scope => 'empty',
+		no_vault => 1,
 		option_group => Genesis::Commands::REPO_OPTIONS,
 		options => [
 			"kit|k=s" =>
@@ -1234,6 +1236,26 @@ define_command("init", {
 				"the '-deployments' suffix, but the option is still available for ".
 				"backward compatibility by setting the #Y{legacy_repo_suffix} option in ".
 				"the Genesis configuration file \$HOME/.genesis/config.yml to true.",
+
+			'sub!' =>
+				"Control whether the new repo is created as a subdirectory of the ".
+				"current git repository (no separate .git). If not specified and ".
+				"the current directory is inside a git repo, subdirectory mode is ".
+				"used automatically.",
+
+			'force|F' =>
+				"If the target directory already exists, remove it and recreate. ".
+				"Without this flag, you will be prompted to confirm replacement.",
+
+			'skip-vault' =>
+				"Defer vault configuration. The repo will be created without a ".
+				"secrets provider. You must configure one via #C{genesis secrets-provider} ".
+				"before creating environments.",
+
+			'ci-provider=s' =>
+				"CI provider for pipeline automation: 'concourse', 'github-actions', ".
+				"or 'manual'. When specified, writes the ci: section to .genesis/config ".
+				"and generates the .genesis/ci/ scaffold.",
 		],
 		option_passthrough => 1,
 		arguments => [

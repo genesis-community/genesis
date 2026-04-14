@@ -154,10 +154,12 @@ sub create {
 			}
 		}
 
-		# Only set vault configuration if not using no_vault (and only allow no_vault in tests)
-		if ($opts{no_vault}) {
+		# Set vault configuration if available
+		if ($opts{no_vault} || $opts{skip_vault}) {
+			# no_vault: test contexts only
+			# skip_vault: user explicitly deferred via --skip-vault (legacy mode)
 			bail("no_vault option can only be used in test contexts")
-				if $ENV{GENESIS_COMMAND};
+				if $opts{no_vault} && $ENV{GENESIS_COMMAND};
 		} else {
 			$self->config->set('secrets_provider', {
 				url       => $self->vault->url,
