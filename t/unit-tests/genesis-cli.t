@@ -463,7 +463,7 @@ subtest 'repo-init validation' => sub {
 };
 
 subtest 'repo-init execution (integration)' => sub {
-	plan tests => 55;
+	plan tests => 56;
 
 	require Genesis::Commands::Repo;
 	local $Genesis::VERSION = '3.2.0-rc2';
@@ -490,7 +490,7 @@ subtest 'repo-init execution (integration)' => sub {
 	ok(-f "$basedir/bosh/.genesis/config", ".genesis/config created");
 	ok(!-e "$basedir/bosh/.git", "no .git in subdirectory mode");
 	ok(-d "$basedir/bosh/.genesis/kits", ".genesis/kits directory created");
-	ok(-d "$basedir/bosh/.genesis/bin", ".genesis/bin directory created (embedded genesis)");
+	ok(!-d "$basedir/bosh/.genesis/bin", "no .genesis/bin without CI provider");
 
 	# Verify config has no secrets_provider
 	my $config_text = slurp("$basedir/bosh/.genesis/config");
@@ -682,6 +682,7 @@ subtest 'repo-init execution (integration)' => sub {
 	like($cfg12, qr/enabled: true/, "concourse: ci.enabled is true");
 	like($cfg12, qr/name: bosh/, "concourse: ci.pipeline.name matches deployment type");
 	ok(-d "$basedir12/bosh/.genesis/ci", "concourse: .genesis/ci/ directory created");
+	ok(-d "$basedir12/bosh/.genesis/bin", "concourse: genesis binary embedded for pipeline");
 	is($result12->{ci_provider}, 'concourse', "concourse: result ci_provider correct");
 	popd;
 

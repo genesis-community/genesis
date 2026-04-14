@@ -103,7 +103,7 @@ sub _repo_init_execute {
 
 	# Create the repo via Top->create
 	my $top = Genesis::Top->create('.', $name, %create_opts, kits_path => $kit_path);
-	$top->embed($ENV{GENESIS_CALLBACK_BIN} || $0);
+	$top->embed($ENV{GENESIS_CALLBACK_BIN} || $0) if $ci_provider;
 
 	my $root = $top->path;
 	my $human_root = humanize_path($root);
