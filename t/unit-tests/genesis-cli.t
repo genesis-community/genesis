@@ -463,7 +463,7 @@ subtest 'repo-init validation' => sub {
 };
 
 subtest 'repo-init execution (integration)' => sub {
-	plan tests => 41;
+	plan tests => 55;
 
 	require Genesis::Commands::Repo;
 	local $Genesis::VERSION = '3.2.0-rc2';
@@ -664,6 +664,72 @@ subtest 'repo-init execution (integration)' => sub {
 	like($cfg9, qr/manifest_store: exodus/, "config has manifest_store: exodus");
 	unlike($cfg9, qr/secrets_provider/, "config has no secrets_provider when skip-vault");
 	unlike($cfg9, qr/kit_provider/, "config has no kit_provider (using default genesis-community)");
+	popd;
+
+	# Test 12: --ci-provider concourse writes config and creates ci dir
+	my $basedir12 = workdir('repo-init-test-12');
+	pushd($basedir12);
+
+	prepare_command('repo-init', '-k', 'bosh', '--no-sub', '--skip-vault', '--ci-provider', 'concourse');
+	build_command_environment;
+	Genesis::Commands::Repo::_repo_init_parse();
+	Genesis::Commands::Repo::_repo_init_validate();
+	my $result12 = Genesis::Commands::Repo::_repo_init_execute();
+
+	my $cfg12 = slurp("$basedir12/bosh/.genesis/config");
+	like($cfg12, qr/ci:/, "concourse: config has ci: section");
+	like($cfg12, qr/provider: concourse/, "concourse: ci.provider set");
+	like($cfg12, qr/enabled: true/, "concourse: ci.enabled is true");
+	like($cfg12, qr/name: bosh/, "concourse: ci.pipeline.name matches deployment type");
+	ok(-d "$basedir12/bosh/.genesis/ci", "concourse: .genesis/ci/ directory created");
+	is($result12->{ci_provider}, 'concourse', "concourse: result ci_provider correct");
+	popd;
+
+	# Test 13: --ci-provider manual
+	my $basedir13 = workdir('repo-init-test-13');
+	pushd($basedir13);
+
+	prepare_command('repo-init', '-k', 'cf', '--no-sub', '--skip-vault', '--ci-provider', 'manual');
+	build_command_environment;
+	Genesis::Commands::Repo::_repo_init_parse();
+	Genesis::Commands::Repo::_repo_init_validate();
+	my $result13 = Genesis::Commands::Repo::_repo_init_execute();
+
+	my $cfg13 = slurp("$basedir13/cf/.genesis/config");
+	like($cfg13, qr/provider: manual/, "manual: ci.provider set");
+	ok(-d "$basedir13/cf/.genesis/ci", "manual: .genesis/ci/ directory created");
+	is($result13->{ci_provider}, 'manual', "manual: result ci_provider correct");
+	popd;
+
+	# Test 14: --ci-provider github-actions
+	my $basedir14 = workdir('repo-init-test-14');
+	pushd($basedir14);
+
+	prepare_command('repo-init', '-k', 'bosh', '--no-sub', '--skip-vault', '--ci-provider', 'github-actions');
+	build_command_environment;
+	Genesis::Commands::Repo::_repo_init_parse();
+	Genesis::Commands::Repo::_repo_init_validate();
+	my $result14 = Genesis::Commands::Repo::_repo_init_execute();
+
+	my $cfg14 = slurp("$basedir14/bosh/.genesis/config");
+	like($cfg14, qr/provider: github-actions/, "github-actions: ci.provider set");
+	is($result14->{ci_provider}, 'github-actions', "github-actions: result ci_provider correct");
+	popd;
+
+	# Test 15: No --ci-provider → no ci: in config, no .genesis/ci/
+	my $basedir15 = workdir('repo-init-test-15');
+	pushd($basedir15);
+
+	prepare_command('repo-init', '-k', 'bosh', '--no-sub', '--skip-vault');
+	build_command_environment;
+	Genesis::Commands::Repo::_repo_init_parse();
+	Genesis::Commands::Repo::_repo_init_validate();
+	my $result15 = Genesis::Commands::Repo::_repo_init_execute();
+
+	my $cfg15 = slurp("$basedir15/bosh/.genesis/config");
+	unlike($cfg15, qr/^ci:/m, "no-provider: config has no ci: section");
+	ok(!-d "$basedir15/bosh/.genesis/ci", "no-provider: no .genesis/ci/ directory");
+	ok(!$result15->{ci_provider}, "no-provider: result ci_provider is undef");
 	popd;
 };
 

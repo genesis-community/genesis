@@ -220,35 +220,10 @@ sub _create_ci_scaffold {
 	});
 	$top->config->save;
 
-	# Create .genesis/ci/ scaffold
+	# Create .genesis/ci/ directory for future user overrides
 	my $ci_dir = $top->path(".genesis/ci");
 	mkdir_or_fail($ci_dir);
-
-	mkfile_or_fail("$ci_dir/targets.yml", <<'TARGETS');
----
-# BOSH director connection info (per environment)
-# Fill in for each environment that will be deployed via pipeline.
-#
-# Example:
-#   my-env:
-#     url:      https://bosh.example.com:25555
-#     ca_cert:  (( vault "secret/bosh/ssl:ca" ))
-#     username: admin
-#     password: (( vault "secret/bosh/admin:password" ))
-TARGETS
-
-	mkfile_or_fail("$ci_dir/resources.yml", <<'RESOURCES');
----
-# Abstract resource declarations
-# These are translated to provider-specific format during compilation.
-RESOURCES
-
-	mkfile_or_fail("$ci_dir/ci-overrides-${provider}.yml", <<'OVERRIDES');
----
-# Post-provider output overrides
-# Merged over provider output after compilation.
-# Use this for provider-specific customizations.
-OVERRIDES
+	mkfile_or_fail("$ci_dir/.keep", "");
 }
 
 sub _repo_init_parse {
