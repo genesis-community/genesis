@@ -213,7 +213,9 @@ sub _create_ci_scaffold {
 	# Write ci: section to .genesis/config
 	$top->config->set('ci', {
 		enabled  => Genesis::Config::TRUE,
-		provider => $provider,
+		provider => {
+			type => $provider,
+		},
 		pipeline => {
 			name => $top->config->get('deployment_type'),
 		},

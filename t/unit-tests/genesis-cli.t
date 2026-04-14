@@ -678,7 +678,7 @@ subtest 'repo-init execution (integration)' => sub {
 
 	my $cfg12 = slurp("$basedir12/bosh/.genesis/config");
 	like($cfg12, qr/ci:/, "concourse: config has ci: section");
-	like($cfg12, qr/provider: concourse/, "concourse: ci.provider set");
+	like($cfg12, qr/type: concourse/, "concourse: ci.provider.type set");
 	like($cfg12, qr/enabled: true/, "concourse: ci.enabled is true");
 	like($cfg12, qr/name: bosh/, "concourse: ci.pipeline.name matches deployment type");
 	ok(-d "$basedir12/bosh/.genesis/ci", "concourse: .genesis/ci/ directory created");
@@ -696,7 +696,7 @@ subtest 'repo-init execution (integration)' => sub {
 	my $result13 = Genesis::Commands::Repo::_repo_init_execute();
 
 	my $cfg13 = slurp("$basedir13/cf/.genesis/config");
-	like($cfg13, qr/provider: manual/, "manual: ci.provider set");
+	like($cfg13, qr/type: manual/, "manual: ci.provider.type set");
 	ok(-d "$basedir13/cf/.genesis/ci", "manual: .genesis/ci/ directory created");
 	is($result13->{ci_provider}, 'manual', "manual: result ci_provider correct");
 	popd;
@@ -712,7 +712,7 @@ subtest 'repo-init execution (integration)' => sub {
 	my $result14 = Genesis::Commands::Repo::_repo_init_execute();
 
 	my $cfg14 = slurp("$basedir14/bosh/.genesis/config");
-	like($cfg14, qr/provider: github-actions/, "github-actions: ci.provider set");
+	like($cfg14, qr/type: github-actions/, "github-actions: ci.provider.type set");
 	is($result14->{ci_provider}, 'github-actions', "github-actions: result ci_provider correct");
 	popd;
 
