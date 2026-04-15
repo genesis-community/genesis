@@ -305,26 +305,7 @@ sub _repo_init_execute {
 
 sub _repo_init_report {
 	my ($result) = @_;
-
-	my @details;
-	push @details, " - $result->{kit_desc}" if $result->{kit_desc};
-
-	if ($result->{vault}) {
-		push @details, " - using vault at #C{$result->{vault}}";
-	} else {
-		push @details, " - #Y{vault not configured} (use #C{genesis secrets-provider} to set)";
-	}
-
-	if ($result->{ci_provider}) {
-		push @details, " - CI provider: #C{$result->{ci_provider}}";
-	}
-
-	if ($result->{submodule}) {
-		push @details, " - created as subdirectory (no separate git)";
-	}
-
-	info "\nInitialized Genesis repository in #C{%s}\n%s\n",
-		$result->{human_root}, join("\n", @details);
+	success "\nGenesis repository #C{%s} created successfully.\n", $result->{name};
 }
 
 # -- Helpers -------------------------------------------------------------------
