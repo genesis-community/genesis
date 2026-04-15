@@ -14,25 +14,102 @@ use File::Basename qw/basename/;
 use File::Path qw/rmtree/;
 use JSON::PP qw/encode_json/;
 
+# ==============================================================================
+# repo-init (replaces init)
+# ==============================================================================
+
 sub repo_init {
-	_repo_init_parse();
 	_repo_init_validate();
 	my $result = _repo_init_execute();
 	_repo_init_report($result);
 	exit 0;
 }
 
-sub _repo_init_execute {
+# -- Phase 1: Validation (parse + validate + gather + prompt) ------------------
+#
+# Order within validation:
+#   1. Parse options and derive values (fast, no side effects)
+#   2. Check invalid option combinations (fast bail)
+#   3. Gather data: resolve kit provider, check kit availability, detect git repo
+#   4. Check for destructive prerequisites (existing directory)
+#   5. Prompt for missing info (vault selection)
+#   6. Summarize intent
+#
+sub _repo_init_validate {
 	my %opts = %{get_options()};
-	my $name = $opts{_name};
-	my $dir = $opts{_dir};
+	my @args = get_args();
 
-	# Resolve link-dev-kit to absolute path before we potentially chdir
-	my $abs_dev_target;
-	if ($opts{'link-dev-kit'}) {
-		$abs_dev_target = abs_path($opts{'link-dev-kit'});
-		bail("Link target '%s' cannot be found!", $opts{'link-dev-kit'})
-			unless $abs_dev_target;
+	# --- 1. Parse and derive ---
+
+	my $name = $args[0];
+	my $kit_file;
+
+	# Check if kit is a local file path
+	if ($opts{kit} && $opts{kit} =~ m#(?:.*/)?([^/]+)-\d+\.\d+\.\d+(?:-rc\.?\d+)?\.t(?:ar\.)?gz#) {
+		$kit_file = $opts{kit};
+		$name = $1 unless $name;
+	}
+
+	# Derive name from kit or link-dev-kit if not specified
+	unless ($name) {
+		if ($opts{kit} && !$kit_file) {
+			($name = $opts{kit}) =~ s|/.*||;
+		} elsif ($opts{'link-dev-kit'}) {
+			$name = basename($opts{'link-dev-kit'});
+		}
+	}
+
+	my $dir = $opts{directory} || $name;
+	my $parent_dir = abs_path(getcwd());
+	my $target_path = "$parent_dir/$dir";
+
+	# --- 2. Check invalid option combinations ---
+
+	bail(
+		"You must specify a deployment name, a kit (-k), or a dev link target (-l)."
+	) unless $name;
+
+	bail(
+		"You can only specify one of kit (-k) or link to a kit (-l)."
+	) if $opts{kit} && $opts{'link-dev-kit'};
+
+	bail(
+		"Cannot specify both --vault and --skip-vault."
+	) if $opts{vault} && $opts{'skip-vault'};
+
+	if ($opts{'ci-provider'}) {
+		my @valid = qw(concourse github-actions manual);
+		bail(
+			"Invalid --ci-provider '%s'. Must be one of: %s",
+			$opts{'ci-provider'}, join(', ', @valid)
+		) unless grep { $_ eq $opts{'ci-provider'} } @valid;
+	}
+
+	# --- 3. Gather data: validate kit source, detect git repo ---
+
+	# Validate kit source exists before any destructive actions
+	my ($resolved_kit_name, $resolved_kit_version);
+	if ($kit_file) {
+		bail("Local compiled kit file '%s' not found.", $kit_file)
+			unless -f $kit_file;
+	} elsif ($opts{'link-dev-kit'}) {
+		bail("Dev kit link target '%s' not found.", $opts{'link-dev-kit'})
+			unless -e $opts{'link-dev-kit'};
+	} elsif ($opts{kit}) {
+		# Remote kit — build provider and resolve name/version
+		($resolved_kit_name, $resolved_kit_version) = split('/', $opts{kit}, 2);
+
+		my %provider_opts;
+		Genesis::Kit::Provider->parse_opts(\@args, \%provider_opts);
+		my $provider = eval { Genesis::Kit::Provider->init(%provider_opts) };
+		bail("Could not initialize kit provider: %s", $@) if $@;
+
+		# Resolve version — also validates the kit exists on the provider
+		unless ($resolved_kit_version && $resolved_kit_version ne 'latest') {
+			$resolved_kit_version = eval { $provider->latest_version_of($resolved_kit_name) };
+			bail("Kit '%s' not found or no versions available from %s.",
+				$resolved_kit_name, $provider->label) unless $resolved_kit_version;
+		}
 	}
 
 	# Check git author config
@@ -49,60 +126,122 @@ sub _repo_init_execute {
 			'git config user.email');
 	}
 
-	# Handle existing directory (before any interactive prompts)
-	my %create_opts = %opts;
-	if (-e $dir) {
-		if ($opts{force}) {
-			rmtree $dir;
-		} elsif (in_controlling_terminal && Genesis::UI::prompt_for_boolean(
-			"Directory #C{$dir} already exists. Replace it? [y|n] ", 0
-		)) {
-			rmtree $dir;
-		} else {
-			bail("Cannot create repository: directory #C{$dir} already exists. Use -F to force replacement.");
-		}
-	}
-
-	# Subrepo detection
+	# Detect git repo for subdirectory mode
 	my $in_git_repo = run({ passfail => 1 }, 'git rev-parse --is-inside-work-tree 2>/dev/null');
 	my $use_subdir = $opts{sub};
 	if ($in_git_repo && !defined($use_subdir)) {
 		$use_subdir = 1;
 	}
 
-	# Vault selection
-	if ($opts{'skip-vault'}) {
-		$create_opts{skip_vault} = 1;
-		delete $create_opts{vault};
-		delete $create_opts{'skip-vault'};
-	} elsif (!$opts{vault}) {
-		# Interactive vault selection
-		my $vault = _select_vault_target();
-		if ($vault) {
-			$create_opts{vault} = $vault->{name};
+	# --- 4. Check destructive prerequisites ---
+
+	my $replace_existing = 0;
+	if (-e $target_path) {
+		if ($opts{force}) {
+			$replace_existing = 1;
+		} elsif (in_controlling_terminal && Genesis::UI::prompt_for_boolean(
+			"Directory #C{$dir} already exists. Replace it? [y|n] ", 0
+		)) {
+			$replace_existing = 1;
 		} else {
-			$create_opts{skip_vault} = 1;
+			bail("Cannot create repository: directory #C{$dir} already exists. Use -F to force replacement.");
 		}
 	}
 
-	# Kits path handling
-	my $kit_path;
-	if (exists($create_opts{'kits-path'})) {
-		$kit_path = abs_path($create_opts{'kits-path'} // $ENV{HOME}.'/.genesis/kits');
-		mkdir_or_fail($kit_path) unless -d $kit_path;
-		delete $create_opts{'kits-path'};
+	# --- 5. Prompt for missing info ---
+
+	my $vault_target;
+	if ($opts{'skip-vault'}) {
+		# explicitly skipped
+	} elsif ($opts{vault}) {
+		$vault_target = $opts{vault};
+	} else {
+		my $vault = _select_vault_target();
+		$vault_target = $vault->{name} if $vault;
 	}
 
-	# Remove repo-init specific options before passing to Top->create
-	my $ci_provider = delete $create_opts{'ci-provider'};
-	delete $create_opts{force};
-	delete $create_opts{'skip-vault'};
-	delete $create_opts{'sub'};
-	delete $create_opts{_name};
-	delete $create_opts{_dir};
+	# --- 6. Store derived values and summarize intent ---
+
+	option_defaults(
+		_name                 => $name,
+		_dir                  => $dir,
+		_parent_dir           => $parent_dir,
+		_target_path          => $target_path,
+		_kit_file             => $kit_file,
+		_use_subdir           => $use_subdir,
+		_vault_target         => $vault_target,
+		_replace_existing     => $replace_existing,
+		_resolved_kit_name    => $resolved_kit_name,
+		_resolved_kit_version => $resolved_kit_version,
+	);
+
+	my @plan;
+	if ($resolved_kit_name) {
+		push @plan, "kit: #C{$resolved_kit_name/$resolved_kit_version}";
+	} elsif ($kit_file) {
+		push @plan, "kit: #C{$kit_file} (local)";
+	} elsif ($opts{'link-dev-kit'}) {
+		push @plan, "kit: dev link to #C{$opts{'link-dev-kit'}}";
+	} else {
+		push @plan, "kit: #Yi{empty dev directory}";
+	}
+	push @plan, "vault: #C{$vault_target}" if $vault_target;
+	push @plan, "vault: #Yi{deferred}" unless $vault_target;
+	push @plan, "ci provider: #C{$opts{'ci-provider'}}" if $opts{'ci-provider'};
+	push @plan, "subdirectory: #C{yes} (no separate git)" if $use_subdir;
+	info "\nCreating #C{%s} deployment repository in #M{%s/}:", $name, $dir;
+	info "  %s", $_ for @plan;
+	info "";
+
+	return 1;
+}
+
+# -- Phase 2: Execution -------------------------------------------------------
+#
+# All validation is complete. This phase only does work — no prompts, no bails
+# on user input. Failures here are unexpected errors.
+#
+sub _repo_init_execute {
+	my %opts = %{get_options()};
+	my $name             = $opts{_name};
+	my $dir              = $opts{_dir};
+	my $parent_dir       = $opts{_parent_dir};
+	my $target_path      = $opts{_target_path};
+	my $kit_file         = $opts{_kit_file};
+	my $use_subdir       = $opts{_use_subdir};
+	my $vault_target     = $opts{_vault_target};  # undef = skip vault
+	my $replace_existing = $opts{_replace_existing};
+	my $ci_provider      = $opts{'ci-provider'};
+
+	# Remove existing directory if validation approved it
+	if ($replace_existing && -e $target_path) {
+		rmtree $target_path;
+	}
+
+	# Resolve link-dev-kit to absolute path before we potentially chdir
+	my $abs_dev_target;
+	if ($opts{'link-dev-kit'}) {
+		$abs_dev_target = abs_path($opts{'link-dev-kit'});
+	}
+
+	# Build create options for Top->create
+	my %create_opts;
+	if ($vault_target) {
+		$create_opts{vault} = $vault_target;
+	} else {
+		$create_opts{skip_vault} = 1;
+	}
+	$create_opts{directory}  = $opts{directory} if $opts{directory};
+
+	# Kits path handling
+	my $kit_path;
+	if (exists($opts{'kits-path'})) {
+		$kit_path = abs_path($opts{'kits-path'} // $ENV{HOME}.'/.genesis/kits');
+		mkdir_or_fail($kit_path) unless -d $kit_path;
+	}
 
 	# Create the repo via Top->create
-	my $top = Genesis::Top->create('.', $name, %create_opts, kits_path => $kit_path);
+	my $top = Genesis::Top->create($parent_dir, $name, %create_opts, kits_path => $kit_path);
 	$top->embed($ENV{GENESIS_CALLBACK_BIN} || $0) if $ci_provider;
 
 	my $root = $top->path;
@@ -115,22 +254,15 @@ sub _repo_init_execute {
 		if ($abs_dev_target) {
 			symlink_or_fail($abs_dev_target, "./dev");
 			$kit_desc = "linked to kit at #C{$abs_dev_target}";
+		} elsif ($kit_file) {
+			my $target = $top->path(".genesis/kits");
+			mkdir_or_fail($target);
+			my $abs_src = $kit_file =~ m#^/# ? $kit_file : abs_path($ENV{GENESIS_CALLER_DIR}."/".$kit_file);
+			copy_or_fail($abs_src, $target);
+			$kit_desc = "using locally provided compiled kit #C{$kit_file}";
 		} elsif ($opts{kit}) {
-			my $kit_file;
-			if ($opts{kit} =~ m#(?:.*/)?([^/]+)-\d+\.\d+\.\d+(?:-rc\.?\d+)?\.t(?:ar\.)?gz#) {
-				bail("Local compiled kit file %s not found", $opts{kit}) unless -f $opts{kit};
-				$kit_file = $opts{kit};
-			}
-			if ($kit_file) {
-				my $target = $top->path(".genesis/kits");
-				mkdir_or_fail($target);
-				my $abs_src = $kit_file =~ m#^/# ? $kit_file : abs_path($ENV{GENESIS_CALLER_DIR}."/".$kit_file);
-				copy_or_fail($abs_src, $target);
-				$kit_desc = "using locally provided compiled kit #C{$kit_file}";
-			} else {
-				my ($kit_name, $kit_version) = $top->download_kit($opts{kit});
-				$kit_desc = "using the #C{$kit_name/$kit_version} kit";
-			}
+			my ($kit_name, $kit_version) = $top->download_kit($opts{kit});
+			$kit_desc = "using the #C{$kit_name/$kit_version} kit";
 		} else {
 			mkdir_or_fail("./dev");
 			$kit_desc = "with an empty development kit in #C{$human_root/dev}";
@@ -158,16 +290,18 @@ sub _repo_init_execute {
 	}
 
 	return {
-		root        => $root,
-		human_root  => $human_root,
-		name        => $name,
-		kit_desc    => $kit_desc,
-		ci_provider => $ci_provider,
-		vault_skipped => $create_opts{skip_vault} ? 1 : 0,
-		vault       => $create_opts{skip_vault} ? undef : ($top->vault ? $top->vault->url : undef),
-		submodule   => $use_subdir,
+		root          => $root,
+		human_root    => $human_root,
+		name          => $name,
+		kit_desc      => $kit_desc,
+		ci_provider   => $ci_provider,
+		vault_skipped => $vault_target ? 0 : 1,
+		vault         => $vault_target ? ($top->vault ? $top->vault->url : $vault_target) : undef,
+		submodule     => $use_subdir,
 	};
 }
+
+# -- Phase 3: Report ----------------------------------------------------------
 
 sub _repo_init_report {
 	my ($result) = @_;
@@ -176,8 +310,7 @@ sub _repo_init_report {
 	push @details, " - $result->{kit_desc}" if $result->{kit_desc};
 
 	if ($result->{vault}) {
-		my $vault_desc = "using vault at #C{$result->{vault}}";
-		push @details, " - $vault_desc";
+		push @details, " - using vault at #C{$result->{vault}}";
 	} else {
 		push @details, " - #Y{vault not configured} (use #C{genesis secrets-provider} to set)";
 	}
@@ -194,14 +327,14 @@ sub _repo_init_report {
 		$result->{human_root}, join("\n", @details);
 }
 
+# -- Helpers -------------------------------------------------------------------
+
 sub _select_vault_target {
-	# Ask if user wants to configure vault now or skip
 	my $configure = Genesis::UI::prompt_for_boolean(
 		"Would you like to configure a secrets vault now? [y|n] ", 1
 	);
 	return undef unless $configure;
 
-	# Use the existing interactive vault selector from Service::Vault::Remote
 	require Service::Vault::Remote;
 	my $vault = eval { Service::Vault::Remote->target(undef) };
 	return $vault;
@@ -210,7 +343,6 @@ sub _select_vault_target {
 sub _create_ci_scaffold {
 	my ($top, $provider) = @_;
 
-	# Write ci: section to .genesis/config
 	$top->config->set('ci', {
 		enabled  => Genesis::Config::TRUE,
 		provider => {
@@ -222,89 +354,23 @@ sub _create_ci_scaffold {
 	});
 	$top->config->save;
 
-	# Create .genesis/ci/ directory for future user overrides
 	my $ci_dir = $top->path(".genesis/ci");
 	mkdir_or_fail($ci_dir);
 	mkfile_or_fail("$ci_dir/.keep", "");
 }
 
-sub _repo_init_parse {
-	my %options;
-	Genesis::Kit::Provider->parse_opts(\@_, \%options);
-	append_options(%options);
-	return 1;
-}
 
-sub _repo_init_validate {
-	my %opts = %{get_options()};
-	my @args = get_args();
-	my $name = $args[0];
-
-	# Derive name from kit if not specified
-	unless ($name) {
-		if ($opts{kit} && $opts{kit} !~ m#\.t(?:ar\.)?gz$#) {
-			($name = $opts{kit}) =~ s|/.*||;
-		} elsif ($opts{'link-dev-kit'}) {
-			$name = basename($opts{'link-dev-kit'});
-		}
-	}
-
-	# Must have a name or a kit to derive it from
-	bail(
-		"You must specify a deployment name, a kit (-k), or a dev link target (-l)."
-	) unless $name;
-
-	# --kit and --link-dev-kit are mutually exclusive
-	bail(
-		"You can only specify one of kit (-k) or link to a kit (-l)."
-	) if $opts{kit} && $opts{'link-dev-kit'};
-
-	# --vault and --skip-vault are mutually exclusive
-	bail(
-		"Cannot specify both --vault and --skip-vault."
-	) if $opts{vault} && $opts{'skip-vault'};
-
-	# --ci-provider must be a valid value
-	if ($opts{'ci-provider'}) {
-		my @valid = qw(concourse github-actions manual);
-		bail(
-			"Invalid --ci-provider '%s'. Must be one of: %s",
-			$opts{'ci-provider'}, join(', ', @valid)
-		) unless grep { $_ eq $opts{'ci-provider'} } @valid;
-	}
-
-	# Store derived values back into options for execution phase
-	my $dir = $opts{directory} || $name;
-	option_defaults(
-		_name => $name,
-		_dir  => $dir,
-	);
-
-	# Summarize intent
-	my @plan;
-	push @plan, "kit: #C{$opts{kit}}" if $opts{kit};
-	push @plan, "kit: dev link to #C{$opts{'link-dev-kit'}}" if $opts{'link-dev-kit'};
-	push @plan, "kit: #Yi{empty dev directory}" unless $opts{kit} || $opts{'link-dev-kit'};
-	push @plan, "vault: #C{$opts{vault}}" if $opts{vault};
-	push @plan, "vault: #Yi{deferred}" if $opts{'skip-vault'};
-	push @plan, "vault: #Yi{will prompt}" unless $opts{vault} || $opts{'skip-vault'};
-	push @plan, "ci provider: #C{$opts{'ci-provider'}}" if $opts{'ci-provider'};
-	info "\nCreating #C{%s} deployment repository in #M{%s/}:", $name, $dir;
-	info "  %s", $_ for @plan;
-	info "";
-
-	return 1;
-}
+# ==============================================================================
+# Legacy init (preserved for backward compatibility, aliased to repo-init)
+# ==============================================================================
 
 sub init {
 	my %options;
-	# FIXME: The following might work, but it may need some tweaking as it used to
-	# run before the regular option parser.
 	Genesis::Kit::Provider->parse_opts(\@_, \%options);
 	append_options(%options);
 	%options = %{get_options()};
 
-	command_usage(1) if @_ > 1; # name is now optional if kit specified
+	command_usage(1) if @_ > 1;
 	command_usage(1, "You can only specify one of kit (-k) or link to a kit (-L)")
 		if scalar(grep {$_ =~ /^(?:kit|link-dev-kit)$/} keys %options) > 1;
 
@@ -414,8 +480,12 @@ sub init {
 	exit 0;
 }
 
+# ==============================================================================
+# Other repo commands
+# ==============================================================================
+
 sub secrets_provider {
-	command_usage(1) if @_ > 1; # target is optional
+	command_usage(1) if @_ > 1;
 
 	my %options = %{get_options(qw(interactive clear))};
 	$options{target} = shift if scalar(@_);
@@ -435,7 +505,7 @@ sub secrets_provider {
 	my %vault_info = $top->vault_status;
 	if (%vault_info) {
 		if ($vault_info{status} eq "unauthenticated") {
-			eval {$top->vault->authenticate}; # Try to auto-authenticate
+			eval {$top->vault->authenticate};
 			%vault_info = $top->vault_status;
 		}
 		info(
