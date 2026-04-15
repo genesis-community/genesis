@@ -202,16 +202,24 @@ sub _repo_init_validate {
 # on user input. Failures here are unexpected errors.
 #
 sub _repo_init_execute {
-	my %opts = %{get_options()};
-	my $name             = $opts{_name};
-	my $dir              = $opts{_dir};
-	my $parent_dir       = $opts{_parent_dir};
-	my $target_path      = $opts{_target_path};
-	my $kit_file         = $opts{_kit_file};
-	my $use_subdir       = $opts{_use_subdir};
-	my $vault_target     = $opts{_vault_target};  # undef = skip vault
-	my $replace_existing = $opts{_replace_existing};
-	my $ci_provider      = $opts{'ci-provider'};
+	my (
+		$name,             # derived name of the deployment/repo
+		$dir,              # target directory name (derived from name or specified by user)
+		$parent_dir,       # parent directory where repo will be created (usually cwd)
+		$target_path,      # full path to the target directory ($parent_dir/$dir)
+		$kit_file,         # optional local kit file to copy into the repo
+		$kit_spec,         # optional remote kit name[/version] to download
+		$use_subdir,       # whether to create the repo as a subdirectory of an existing git repo
+		$vault_target,     # vault target to configure, or undef to skip vault
+		$replace_existing, # whether to remove existing target directory if it exists
+		$linked_dev_kit,   # optional path to a local dev kit to link into the repo
+		$ci_provider,      # optional CI provider type
+		$directory,        # optional custom directory name override
+		$kits_path,        # optional custom kits path
+	) = get_options()->@{qw/
+		_name _dir _parent_dir _target_path _kit_file kit _use_subdir _vault_target _replace_existing
+		link-dev-kit ci-provider directory kits-path
+	/};
 
 	# Remove existing directory if validation approved it
 	if ($replace_existing && -e $target_path) {
@@ -220,8 +228,8 @@ sub _repo_init_execute {
 
 	# Resolve link-dev-kit to absolute path before we potentially chdir
 	my $abs_dev_target;
-	if ($opts{'link-dev-kit'}) {
-		$abs_dev_target = abs_path($opts{'link-dev-kit'});
+	if ($linked_dev_kit) {
+		$abs_dev_target = abs_path($linked_dev_kit);
 	}
 
 	# Build create options for Top->create
@@ -231,12 +239,12 @@ sub _repo_init_execute {
 	} else {
 		$create_opts{skip_vault} = 1;
 	}
-	$create_opts{directory}  = $opts{directory} if $opts{directory};
+	$create_opts{directory} = $directory if $directory;
 
 	# Kits path handling
 	my $kit_path;
-	if (exists($opts{'kits-path'})) {
-		$kit_path = abs_path($opts{'kits-path'} // $ENV{HOME}.'/.genesis/kits');
+	if (defined $kits_path) {
+		$kit_path = abs_path($kits_path // $ENV{HOME}.'/.genesis/kits');
 		mkdir_or_fail($kit_path) unless -d $kit_path;
 	}
 
@@ -260,8 +268,8 @@ sub _repo_init_execute {
 			my $abs_src = $kit_file =~ m#^/# ? $kit_file : abs_path($ENV{GENESIS_CALLER_DIR}."/".$kit_file);
 			copy_or_fail($abs_src, $target);
 			$kit_desc = "using locally provided compiled kit #C{$kit_file}";
-		} elsif ($opts{kit}) {
-			my ($kit_name, $kit_version) = $top->download_kit($opts{kit});
+		} elsif ($kit_spec) {
+			my ($kit_name, $kit_version) = $top->download_kit($kit_spec);
 			$kit_desc = "using the #C{$kit_name/$kit_version} kit";
 		} else {
 			mkdir_or_fail("./dev");
