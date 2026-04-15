@@ -117,7 +117,7 @@ sub create {
 	my $self = $class->_build($path, %opts);
 	$self->mkdir(".genesis");
 
-	$self->{__kit_provider} = Genesis::Kit::Provider->init(%opts);
+	$self->{__kit_provider} = $opts{kit_provider} || Genesis::Kit::Provider->init(%opts);
 	# Override vault if specified (will be saved to config later)
 	$self->{__vault} = Service::Vault::Remote->target($opts{vault}) if $opts{vault};
 	my $kits_path = '';

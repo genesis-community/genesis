@@ -85,31 +85,16 @@ sub _repo_init_validate {
 		) unless grep { $_ eq $opts{'ci-provider'} } @valid;
 	}
 
-	# --- 3. Gather data: validate kit source, detect git repo ---
+	# --- 3. Gather data: validate local sources, detect git repo ---
 
-	# Validate kit source exists before any destructive actions
-	my ($resolved_kit_name, $resolved_kit_version);
+	# Validate local kit sources exist
 	if ($kit_file) {
 		bail("Local compiled kit file '%s' not found.", $kit_file)
 			unless -f $kit_file;
-	} elsif ($opts{'link-dev-kit'}) {
+	}
+	if ($opts{'link-dev-kit'}) {
 		bail("Dev kit link target '%s' not found.", $opts{'link-dev-kit'})
 			unless -e $opts{'link-dev-kit'};
-	} elsif ($opts{kit}) {
-		# Remote kit — build provider and resolve name/version
-		($resolved_kit_name, $resolved_kit_version) = split('/', $opts{kit}, 2);
-
-		my %provider_opts;
-		Genesis::Kit::Provider->parse_opts(\@args, \%provider_opts);
-		my $provider = eval { Genesis::Kit::Provider->init(%provider_opts) };
-		bail("Could not initialize kit provider: %s", $@) if $@;
-
-		# Resolve version — also validates the kit exists on the provider
-		unless ($resolved_kit_version && $resolved_kit_version ne 'latest') {
-			$resolved_kit_version = eval { $provider->latest_version_of($resolved_kit_name) };
-			bail("Kit '%s' not found or no versions available from %s.",
-				$resolved_kit_name, $provider->label) unless $resolved_kit_version;
-		}
 	}
 
 	# Check git author config
@@ -133,7 +118,7 @@ sub _repo_init_validate {
 		$use_subdir = 1;
 	}
 
-	# --- 4. Check destructive prerequisites ---
+	# --- 4. Check destructive prerequisites (before expensive network calls) ---
 
 	my $replace_existing = 0;
 	if (-e $target_path) {
@@ -148,7 +133,30 @@ sub _repo_init_validate {
 		}
 	}
 
-	# --- 5. Prompt for missing info ---
+	# --- 5. Validate remote kit availability (network, after directory check) ---
+
+	my ($resolved_kit_name, $resolved_kit_version, $kit_provider);
+	if ($opts{kit} && !$kit_file) {
+		($resolved_kit_name, $resolved_kit_version) = split('/', $opts{kit}, 2);
+
+		my %provider_opts;
+		Genesis::Kit::Provider->parse_opts(\@args, \%provider_opts);
+		$kit_provider = eval { Genesis::Kit::Provider->init(%provider_opts) };
+		bail("Could not initialize kit provider: %s", $@) if $@;
+
+		if ($resolved_kit_version && $resolved_kit_version ne 'latest') {
+			my @versions = eval { $kit_provider->kit_versions($resolved_kit_name) };
+			my $exists = grep { $_->{version} eq $resolved_kit_version } @versions;
+			bail("Kit '%s/%s' not found from %s.",
+				$resolved_kit_name, $resolved_kit_version, $kit_provider->label) unless $exists;
+		} else {
+			$resolved_kit_version = eval { $kit_provider->latest_version_of($resolved_kit_name) };
+			bail("Kit '%s' not found or no versions available from %s.",
+				$resolved_kit_name, $kit_provider->label) unless $resolved_kit_version;
+		}
+	}
+
+	# --- 6. Prompt for missing info ---
 
 	my $vault_target;
 	if ($opts{'skip-vault'}) {
@@ -160,7 +168,7 @@ sub _repo_init_validate {
 		$vault_target = $vault->{name} if $vault;
 	}
 
-	# --- 6. Store derived values and summarize intent ---
+	# --- 8. Store derived values and summarize intent ---
 
 	option_defaults(
 		_name                 => $name,
@@ -168,6 +176,7 @@ sub _repo_init_validate {
 		_parent_dir           => $parent_dir,
 		_target_path          => $target_path,
 		_kit_file             => $kit_file,
+		_kit_provider         => $kit_provider,
 		_use_subdir           => $use_subdir,
 		_vault_target         => $vault_target,
 		_replace_existing     => $replace_existing,
@@ -209,6 +218,7 @@ sub _repo_init_execute {
 		$target_path,      # full path to the target directory ($parent_dir/$dir)
 		$kit_file,         # optional local kit file to copy into the repo
 		$kit_spec,         # optional remote kit name[/version] to download
+		$kit_provider,     # optional pre-built kit provider (from validation, with cached versions)
 		$use_subdir,       # whether to create the repo as a subdirectory of an existing git repo
 		$vault_target,     # vault target to configure, or undef to skip vault
 		$replace_existing, # whether to remove existing target directory if it exists
@@ -217,12 +227,13 @@ sub _repo_init_execute {
 		$directory,        # optional custom directory name override
 		$kits_path,        # optional custom kits path
 	) = get_options()->@{qw/
-		_name _dir _parent_dir _target_path _kit_file kit _use_subdir _vault_target _replace_existing
-		link-dev-kit ci-provider directory kits-path
+		_name _dir _parent_dir _target_path _kit_file kit _kit_provider _use_subdir _vault_target
+		_replace_existing link-dev-kit ci-provider directory kits-path
 	/};
 
 	# Remove existing directory if validation approved it
 	if ($replace_existing && -e $target_path) {
+		info "Removing existing directory #C{%s}...", $dir;
 		rmtree $target_path;
 	}
 
@@ -248,7 +259,8 @@ sub _repo_init_execute {
 		mkdir_or_fail($kit_path) unless -d $kit_path;
 	}
 
-	# Create the repo via Top->create
+	# Create the repo via Top->create (pass kit_provider if we already built one)
+	$create_opts{kit_provider} = $kit_provider if $kit_provider;
 	my $top = Genesis::Top->create($parent_dir, $name, %create_opts, kits_path => $kit_path);
 	$top->embed($ENV{GENESIS_CALLBACK_BIN} || $0) if $ci_provider;
 
