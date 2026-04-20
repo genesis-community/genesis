@@ -4430,7 +4430,7 @@ sub rotate_secrets {
 		} else {
 			$self->notify(success => "doesn't have any secrets to rotate.\n");
 		}
-		exit 0;
+		return ({empty => 1});
 	}
 
 	kit_bug(
