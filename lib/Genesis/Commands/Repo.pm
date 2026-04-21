@@ -20,7 +20,8 @@ use JSON::PP qw/encode_json/;
 
 sub repo_init {
 	_repo_init_validate();
-	_repo_init_report(scalar _repo_init_execute());
+	my $result = _repo_init_execute();
+	_repo_init_report($result);
 	exit 0;
 }
 
@@ -29,18 +30,12 @@ sub repo_init {
 # Order within validation:
 #   1. Parse options and derive values (fast, no side effects)
 #   2. Check invalid option combinations (fast bail)
-#   3. Gather data: validate local sources, detect git repo (no network)
-#   4. Subdir preflight: dirty check, control-branch check
-#   5. Check destructive prerequisites (existing directory, before network)
-#   6. Validate remote kit availability (network calls)
-#   7. Prompt for missing info (vault, CI provider wizard)
-#   8. Store derived values and summarize intent
+#   3. Gather data: resolve kit provider, check kit availability, detect git repo
+#   4. Check for destructive prerequisites (existing directory)
+#   5. Prompt for missing info (vault selection)
+#   6. Summarize intent
 #
 sub _repo_init_validate {
-	# Passthrough options (e.g. --kit-provider-*) have already been
-	# parsed by the framework's extended_handlers and are available in
-	# get_options()->{kit_provider}.  @args from get_args()
-	# contains only true positional arguments.
 	my %opts = %{get_options()};
 	my @args = get_args();
 
@@ -82,13 +77,13 @@ sub _repo_init_validate {
 		"Cannot specify both --vault and --skip-vault."
 	) if $opts{vault} && $opts{'skip-vault'};
 
-	# CI provider options (--ci-provider, --ci-target, etc.) have been
-	# parsed by the framework's extended_handlers into the ci_provider
-	# slot.  We extract the opts hash here for quick flag checks (e.g.
-	# branch validation), but defer building the actual provider object
-	# until step 6 (after directory/kit validation passes) so the
-	# interactive wizard doesn't run if we're going to bail anyway.
-	my %ci_provider_opts = %{$opts{ci_provider} // {}};
+	if ($opts{'ci-provider'}) {
+		my @valid = qw(concourse github-actions manual);
+		bail(
+			"Invalid --ci-provider '%s'. Must be one of: %s",
+			$opts{'ci-provider'}, join(', ', @valid)
+		) unless grep { $_ eq $opts{'ci-provider'} } @valid;
+	}
 
 	# --- 3. Gather data: validate local sources, detect git repo ---
 
@@ -116,78 +111,11 @@ sub _repo_init_validate {
 			'git config user.email');
 	}
 
-	# Guardrail: forbid creating a new Genesis repo inside (or under) an
-	# existing one.  Nested Genesis repos are never correct in this
-	# ecosystem -- pipeline tooling, kit discovery, and .genesis/config
-	# resolution all assume a single enclosing deployment root.
-	if (my $enclosing = _find_enclosing_genesis_repo()) {
-		bail(
-			"Cannot create a new Genesis deployment repository inside an ".
-			"existing one.\n  Enclosing deployment repo: #C{%s}",
-			humanize_path($enclosing)
-		);
-	}
-
-	# Auto-detect whether we're inside an existing (non-Genesis) git
-	# worktree.  If so, the new repo is created as a subdirectory with no
-	# separate .git -- it will share history with the surrounding repo.
-	# This is reported in the plan below so the user can notice an
-	# unexpected enclosure.
-	my $use_subdir = run({ passfail => 1 }, 'git rev-parse --is-inside-work-tree 2>/dev/null') ? 1 : 0;
-
-	# In subdir mode, require the enclosing repo to have no staged or
-	# unstaged changes to tracked files.  Untracked files are fine.
-	# This means that if execution fails and we need to roll back the
-	# index, we can do so without risking the user's in-progress work.
-	# #C{-F|--force} bypasses this check for users who understand the
-	# risk (e.g. scripted environments, known-safe index).
-	if ($use_subdir && !$opts{force}) {
-		my ($dirty) = run({}, 'git status --porcelain --untracked-files=no');
-		if (defined($dirty) && $dirty =~ /\S/) {
-			bail(
-				"Cannot create a Genesis deployment repository inside an ".
-				"enclosing git repository that has uncommitted changes to ".
-				"tracked files.\n".
-				"  Please commit, stash, or discard the following first, ".
-				"or rerun with #C{-F|--force} to bypass this check:\n\n%s\n",
-				$dirty
-			);
-		}
-	}
-
-	# In subdir mode AND when a CI provider is being configured,
-	# require the enclosing repo to be on the CI control branch.
-	# Genesis pipeline tooling treats this branch as the single source
-	# of truth from which environment branches are cut
-	# (#C{genesis new}) and against which deploys are validated
-	# (#C{genesis deploy}).  We do not rename or create branches in
-	# the enclosing repo -- the user must set this up themselves.  No
-	# #C{--force} bypass: this is a topology requirement, not a safety
-	# check.
-	#
-	# Without #C{--ci-provider}, no pipeline topology is being
-	# established, so the branch name is irrelevant at this point.
-	my $control_branch = Genesis::Top::DEFAULT_CONTROL_BRANCH();
-	if ($use_subdir && $ci_provider_opts{'ci-provider'}) {
-		my ($branch) = run({}, 'git rev-parse --abbrev-ref HEAD');
-		chomp $branch if defined $branch;
-		if (!defined($branch) || $branch ne $control_branch) {
-			bail(
-				"Configuring a CI provider requires the enclosing git ".
-				"repository to be on a branch named #C{%s}, but it is ".
-				"currently on #C{%s}.\n".
-				"  Please switch to the #C{%s} branch before running ".
-				"#C{repo-init --ci-provider ...}:\n\n".
-				"    git checkout %s\n\n".
-				"  or, if it doesn't exist yet:\n\n".
-				"    git checkout -b %s\n",
-				$control_branch,
-				$branch // '<detached HEAD>',
-				$control_branch,
-				$control_branch,
-				$control_branch
-			);
-		}
+	# Detect git repo for subdirectory mode
+	my $in_git_repo = run({ passfail => 1 }, 'git rev-parse --is-inside-work-tree 2>/dev/null');
+	my $use_subdir = $opts{sub};
+	if ($in_git_repo && !defined($use_subdir)) {
+		$use_subdir = 1;
 	}
 
 	# --- 4. Check destructive prerequisites (before expensive network calls) ---
@@ -211,9 +139,8 @@ sub _repo_init_validate {
 	if ($opts{kit} && !$kit_file) {
 		($resolved_kit_name, $resolved_kit_version) = split('/', $opts{kit}, 2);
 
-		# Kit provider options were parsed by the framework's
-		# extended_handlers into the kit_provider slot.
-		my %provider_opts = %{$opts{kit_provider} // {}};
+		my %provider_opts;
+		Genesis::Kit::Provider->parse_opts(\@args, \%provider_opts);
 		$kit_provider = eval { Genesis::Kit::Provider->init(%provider_opts) };
 		bail("Could not initialize kit provider: %s", $@) if $@;
 
@@ -230,10 +157,6 @@ sub _repo_init_validate {
 	}
 
 	# --- 6. Prompt for missing info ---
-	#
-	# Interactive steps are deferred until here so we don't waste the
-	# user's time if validation is going to bail (directory exists,
-	# kit not found, wrong branch, etc.).
 
 	my $vault_target;
 	if ($opts{'skip-vault'}) {
@@ -245,30 +168,7 @@ sub _repo_init_validate {
 		$vault_target = $vault->{name} if $vault;
 	}
 
-	# Build the CI provider object now that all preflight checks have
-	# passed.  If required flags (--ci-target, etc.) were omitted and
-	# we have a controlling terminal, fall back to the interactive
-	# wizard to collect them.
-	my $ci_provider_obj;
-	if ($ci_provider_opts{'ci-provider'}) {
-		$ci_provider_obj = eval { Genesis::CI::Provider->init(%ci_provider_opts) };
-		if ($@) {
-			if (in_controlling_terminal) {
-				$ci_provider_obj = eval {
-					Genesis::CI::Provider->new(type => $ci_provider_opts{'ci-provider'})
-						->interactive_wizard(undef, %ci_provider_opts);
-				};
-				bail("CI provider wizard failed: %s", $@) if $@;
-			} else {
-				bail("Could not initialize CI provider: %s", $@);
-			}
-		}
-
-		# Verify the provider's toolchain is available before we do any work
-		$ci_provider_obj->check_prereqs() or exit 86;
-	}
-
-	# --- 7. Store derived values and summarize intent ---
+	# --- 8. Store derived values and summarize intent ---
 
 	option_defaults(
 		_name                 => $name,
@@ -277,7 +177,6 @@ sub _repo_init_validate {
 		_target_path          => $target_path,
 		_kit_file             => $kit_file,
 		_kit_provider         => $kit_provider,
-		_ci_provider_obj      => $ci_provider_obj,
 		_use_subdir           => $use_subdir,
 		_vault_target         => $vault_target,
 		_replace_existing     => $replace_existing,
@@ -297,8 +196,8 @@ sub _repo_init_validate {
 	}
 	push @plan, "vault: #C{$vault_target}" if $vault_target;
 	push @plan, "vault: #Yi{deferred}" unless $vault_target;
-	push @plan, "ci provider: #C{" . $ci_provider_obj->label . "}" if $ci_provider_obj;
-	push @plan, "subdirectory of enclosing git repo: #C{yes} (no separate .git, auto-detected)" if $use_subdir;
+	push @plan, "ci provider: #C{$opts{'ci-provider'}}" if $opts{'ci-provider'};
+	push @plan, "subdirectory: #C{yes} (no separate git)" if $use_subdir;
 	info "\nCreating #C{%s} deployment repository in #M{%s/}:", $name, $dir;
 	info "  %s", $_ for @plan;
 	info "";
@@ -313,7 +212,6 @@ sub _repo_init_validate {
 #
 sub _repo_init_execute {
 	my (
-		# Derived and validated values from validation phase (prefixed with _)
 		$name,             # derived name of the deployment/repo
 		$dir,              # target directory name (derived from name or specified by user)
 		$parent_dir,       # parent directory where repo will be created (usually cwd)
@@ -325,16 +223,12 @@ sub _repo_init_execute {
 		$vault_target,     # vault target to configure, or undef to skip vault
 		$replace_existing, # whether to remove existing target directory if it exists
 		$linked_dev_kit,   # optional path to a local dev kit to link into the repo
-		$ci_provider_obj,  # optional Genesis::CI::Provider object (from validation)
-
-		# User provided options (validated but not altered)
+		$ci_provider,      # optional CI provider type
 		$directory,        # optional custom directory name override
 		$kits_path,        # optional custom kits path
-		$no_commit,        # skip the initial commit (stage only)
-		$reason,           # optional commit message override
 	) = get_options()->@{qw/
 		_name _dir _parent_dir _target_path _kit_file kit _kit_provider _use_subdir _vault_target
-		_replace_existing link-dev-kit _ci_provider_obj directory kits-path no-commit reason
+		_replace_existing link-dev-kit ci-provider directory kits-path
 	/};
 
 	# Remove existing directory if validation approved it
@@ -368,7 +262,7 @@ sub _repo_init_execute {
 	# Create the repo via Top->create (pass kit_provider if we already built one)
 	$create_opts{kit_provider} = $kit_provider if $kit_provider;
 	my $top = Genesis::Top->create($parent_dir, $name, %create_opts, kits_path => $kit_path);
-	$top->embed($ENV{GENESIS_CALLBACK_BIN} || $0) if $ci_provider_obj;
+	$top->embed($ENV{GENESIS_CALLBACK_BIN} || $0) if $ci_provider;
 
 	my $root = $top->path;
 	my $human_root = humanize_path($root);
@@ -395,192 +289,46 @@ sub _repo_init_execute {
 		}
 
 		# CI provider scaffold
-		if ($ci_provider_obj) {
-			_create_ci_scaffold($top, $ci_provider_obj);
+		if ($ci_provider) {
+			_create_ci_scaffold($top, $ci_provider);
 		}
 
-		# Only create a new .git when we're not already sitting inside
-		# an enclosing git worktree; in subdir mode we share the
-		# parent's .git and just stage into its index.  In standalone
-		# mode, if the user is establishing pipeline topology
-		# (--ci-provider given), force the initial branch name to the
-		# control branch so the initial commit lands there instead of
-		# on whatever git's init.defaultBranch happens to be.  When
-		# no CI provider is being configured, let git choose its
-		# default branch -- pipeline topology is not relevant yet.
-		# #C{git symbolic-ref HEAD} works on all git versions, unlike
-		# #C{git init -b} which requires >= 2.28.
+		# Git init (skip if subdirectory of existing repo)
 		unless ($use_subdir) {
-			if ($ci_provider_obj) {
-				my $branch = Genesis::Top::DEFAULT_CONTROL_BRANCH();
-				run({ onfailure => "Failed to initialize git in $human_root/" },
-					"git init && git symbolic-ref HEAD refs/heads/$branch");
-			} else {
-				run({ onfailure => "Failed to initialize git in $human_root/" },
-					'git init');
-			}
-		}
-		run({ onfailure => "Failed to stage repository in $human_root/" },
-			'git add .');
-
-		# Check if the only staged changes are metadata-only (the
-		# "Last updated" comment and/or updater/creator_version in
-		# .genesis/config).  If so, roll them back — re-running
-		# repo-init with --force on the same kit version shouldn't
-		# produce a commit with no meaningful content.
-		my ($diff_names) = run({}, 'git diff --cached --name-only -- .');
-		if ($diff_names && $diff_names =~ /\S/) {
-			my @changed = grep { /\S/ } split /\n/, $diff_names;
-			if (@changed == 1 && $changed[0] =~ m{\.genesis/config$}) {
-				my ($diff_content) = run({}, 'git diff --cached -- .genesis/config');
-				my @meaningful = grep {
-					/^[-+]/ && !/^[-+]{3}\s/ &&
-					$_ !~ /^[-+]\s*#\s*Last updated by\b/ &&
-					$_ !~ /^[-+]\s*(updater_version|creator_version):/
-				} split /\n/, $diff_content;
-				unless (@meaningful) {
-					run({}, 'git checkout -- .genesis/config');
-				}
-			}
-		}
-
-		# Show a summary of what we just staged so the user can see
-		# exactly what the initial commit (or leftover stage) contains.
-		my ($stat) = run({}, 'git diff --cached --stat -- .');
-		if ($stat && $stat =~ /\S/) {
-			info "\n#G{Files staged for initial commit:}";
-			info "  %s", $_ for split /\n/, $stat;
-			info "";
-		} else {
-			info "\nNo changes to commit — repository contents are unchanged.";
-			$kit_desc = "unchanged (already up to date)";
-		}
-
-		# Commit unless the user explicitly opted out or there is
-		# nothing staged.
-		if (!$stat || $stat !~ /\S/) {
-			# nothing to commit — already reported above
-		} elsif ($no_commit) {
-			info "Skipping initial commit (#C{--no-commit} set); files remain staged.";
-		} else {
-			my $message = $reason || "Initial Genesis repo for $name";
-			my @cmd = ('git', 'commit', '-m', $message);
-			push @cmd, '--', '.' if $use_subdir;
-			run({ onfailure => "Failed to commit initial repository in $human_root/" }, @cmd);
-
-			# Report the commit that was just made so the user has a
-			# clear record of what was recorded (and, in subdir mode,
-			# where in the enclosing repo's history to find it).
-			my ($sha) = run({}, 'git rev-parse --short HEAD');
-			chomp $sha if defined $sha;
-			info "#G{Committed} #C{%s} -- %s", $sha // '<unknown>', $message;
+			run({ onfailure => "Failed to initialize git in $human_root/" },
+				'git init && git add .');
+			run({ onfailure => "Failed to commit initial repository in $human_root/" },
+				'git commit -m "Initial Genesis Repo"');
 		}
 	};
 	my $err = $@;
-	eval { popd };  # always restore cwd; swallow errors to not mask $err
-
-	# On failure, return only what the report phase needs to clean up
-	# and bail -- the $top object may be in a partial state and its
-	# accessors (vault, etc.) are not safe to call.
+	popd;
 	if ($err) {
-		return {
-			error        => $err,
-			root         => $root,
-			human_root   => $human_root,
-			target_path  => $target_path,
-			parent_dir   => $parent_dir,
-			use_subdir   => $use_subdir,
-		};
+		debug("removing incomplete Genesis repository at #C{$root} due to failed creation");
+		rmtree $root;
+		bail $err;
 	}
 
-	# Success: the repository is created and (if requested) committed.
-	# Resolving the vault URL for the report is not part of the
-	# command's core purpose -- if it trips a runtime error, warn the
-	# user but do NOT fail the command (the repo is already on disk).
-	my %result = (
-		error         => undef,
+	return {
 		root          => $root,
 		human_root    => $human_root,
 		name          => $name,
 		kit_desc      => $kit_desc,
-		ci_provider   => $ci_provider_obj ? $ci_provider_obj->label : undef,
+		ci_provider   => $ci_provider,
 		vault_skipped => $vault_target ? 0 : 1,
-		vault         => $vault_target,
+		vault         => $vault_target ? ($top->vault ? $top->vault->url : $vault_target) : undef,
 		submodule     => $use_subdir,
-	);
-	eval {
-		$result{vault} = $vault_target
-			? ($top->vault ? $top->vault->url : $vault_target)
-			: undef;
 	};
-	if (my $housekeeping_err = $@) {
-		warning(
-			"Repository was created successfully, but a post-commit ".
-			"housekeeping step failed (non-fatal):\n%s",
-			$housekeeping_err
-		);
-	}
-	return \%result;
 }
 
 # -- Phase 3: Report ----------------------------------------------------------
-#
-# Handles both success and failure.  On failure, cleans up any partial
-# initialization (removing the new directory and, in subdir mode,
-# unstaging from the enclosing repo's index) before bailing with an
-# appropriate message.  On success, prints the summary.
-#
+
 sub _repo_init_report {
 	my ($result) = @_;
-
-	if ($result->{error}) {
-		debug(
-			"removing incomplete Genesis repository at #C{%s} due to failed creation",
-			$result->{root}
-		);
-		# In subdir mode, unstage anything we added to the enclosing
-		# repo's index before deleting the directory so the parent
-		# repo's working state is left clean.  This is safe because
-		# validation ensured the parent repo had no other tracked
-		# changes (or the user passed --force); the pathspec scopes
-		# the reset strictly to what we just staged.
-		if ($result->{use_subdir}) {
-			eval {
-				run({ dir => $result->{parent_dir} },
-					'git', 'reset', 'HEAD', '--', $result->{target_path});
-			};
-		}
-		rmtree $result->{root} if -e $result->{root};
-		bail(
-			"Failed to create Genesis repository at #C{%s}:\n%s",
-			$result->{human_root}, $result->{error}
-		);
-	}
-
 	success "\nGenesis repository #C{%s} created successfully.\n", $result->{name};
 }
 
 # -- Helpers -------------------------------------------------------------------
-
-# Walk upward from the current working directory looking for an
-# enclosing Genesis deployment repository.  Returns the absolute path
-# of the enclosing repo if found, otherwise undef.
-#
-# The global #C{in_repo_dir()} helper only checks cwd, and almost every
-# consumer downstream uses #C{Genesis::Top->new('.')} which assumes
-# cwd IS the repo root -- so teaching the global helper to walk up
-# would ripple.  This variant is scoped to #C{repo-init}'s guardrail
-# against creating a nested deployment repo.
-sub _find_enclosing_genesis_repo {
-	my $dir = abs_path(getcwd());
-	while (defined($dir) && length($dir) > 1) {
-		return $dir if Genesis::Top->is_repo($dir);
-		my $parent = dirname($dir);
-		last if $parent eq $dir;
-		$dir = $parent;
-	}
-	return undef;
-}
 
 sub _select_vault_target {
 	my $configure = Genesis::UI::prompt_for_boolean(
@@ -596,12 +344,11 @@ sub _select_vault_target {
 sub _create_ci_scaffold {
 	my ($top, $provider) = @_;
 
-	# $provider may be a Genesis::CI::Provider object or a plain string (legacy).
-	my %provider_cfg = ref($provider) ? $provider->config() : (type => $provider);
-
 	$top->config->set('ci', {
 		enabled  => Genesis::Config::TRUE,
-		provider => \%provider_cfg,
+		provider => {
+			type => $provider,
+		},
 		pipeline => {
 			name => $top->config->get('deployment_type'),
 		},
