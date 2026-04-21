@@ -13,11 +13,11 @@ use JSON::PP;
 ### Provider Constants {{{
 
 use constant {
-	DEFAULT_TEAM          => 'main',
-	DEFAULT_PIPELINE_NAME => undef,    # falls back to deployment_type from Top
-	DEFAULT_EXPOSE        => 0,
-	DEFAULT_PAUSE         => 0,
-	DEFAULT_INSECURE      => 0,
+	DEFAULT_TEAM            => 'main',
+	DEFAULT_PIPELINE_NAME   => undef,    # falls back to deployment_type from Top
+	DEFAULT_EXPOSE          => 0,
+	DEFAULT_PAUSE_AFTER_SET => 0,
+	DEFAULT_INSECURE        => 0,
 };
 
 # }}}
@@ -177,9 +177,9 @@ sub provider_options_schema {
 			default     => DEFAULT_EXPOSE,
 			description => 'Make pipeline publicly viewable (fly expose-pipeline)',
 		},
-		pause => {
+		pause_after_set => {
 			type        => 'boolean',
-			default     => DEFAULT_PAUSE,
+			default     => DEFAULT_PAUSE_AFTER_SET,
 			description => 'Leave pipeline paused after fly set-pipeline',
 		},
 		insecure => {
@@ -194,11 +194,22 @@ sub provider_options_schema {
 # provider_options_defaults - default values for all Concourse options {{{
 sub provider_options_defaults {
 	return {
-		team     => DEFAULT_TEAM,
-		expose   => DEFAULT_EXPOSE,
-		pause    => DEFAULT_PAUSE,
-		insecure => DEFAULT_INSECURE,
+		team            => DEFAULT_TEAM,
+		expose          => DEFAULT_EXPOSE,
+		pause_after_set => DEFAULT_PAUSE_AFTER_SET,
+		insecure        => DEFAULT_INSECURE,
 	};
+}
+
+# }}}
+# normalize_provider_opts - remap ci-pause (CLI) to pause_after_set (schema key) {{{
+sub normalize_provider_opts {
+	my ($class, $opts) = @_;
+	my $normalized = $class->SUPER::normalize_provider_opts($opts);
+	if (exists $normalized->{pause} && !exists $normalized->{pause_after_set}) {
+		$normalized->{pause_after_set} = delete $normalized->{pause};
+	}
+	return $normalized;
 }
 
 # }}}
@@ -213,7 +224,7 @@ sub describe_provider {
 	my $team      = $self->provider_option('team')          || DEFAULT_TEAM;
 	my $pipe_name = $self->provider_option('pipeline_name') || '(deployment type)';
 	my $expose    = $self->provider_option('expose')    ? 'yes' : 'no';
-	my $paused    = $self->provider_option('pause')     ? 'yes' : 'no';
+	my $paused    = $self->provider_option('pause_after_set') ? 'yes' : 'no';
 	my $insecure  = $self->provider_option('insecure')  ? 'yes' : 'no';
 
 	return (
@@ -321,7 +332,7 @@ sub deploy {
 
 	bail("Must call parse() before deploy()") unless $self->{config};
 
-	# All keys use config-file names (target, team, pipeline_name, pause, expose).
+	# All keys use config-file names (target, team, pipeline_name, pause_after_set, expose).
 	# Callers are responsible for normalizing cli-prefixed keys before calling deploy().
 
 	# --- Resolve options from three tiers ---
@@ -349,9 +360,9 @@ sub deploy {
 	# Pause/expose/dry-run/insecure: call-site override > provider_opts > defaults
 	my $dry_run  = $opts{'dry-run'};
 	my $yes      = $opts{yes};
-	my $pause    = $opts{pause}
-		// $self->provider_option('pause')
-		// DEFAULT_PAUSE;
+	my $pause    = $opts{pause_after_set}
+		// $self->provider_option('pause_after_set')
+		// DEFAULT_PAUSE_AFTER_SET;
 	my $expose   = $opts{expose}
 		// $self->provider_option('expose')
 		// _yaml_bool(($self->{config}{pipeline} || {})->{public}, DEFAULT_EXPOSE);

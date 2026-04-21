@@ -195,6 +195,21 @@ sub validate_config_section {
 	bail("'ci' configuration in .genesis/config must be a hash")
 		unless ref($data) eq 'HASH';
 
+	# ci.targets must be a non-empty hash
+	my $targets = $data->{targets};
+	bail("'ci.targets' is required and must define at least one target")
+		unless defined($targets) && ref($targets) eq 'HASH' && scalar(keys %$targets) > 0;
+
+	# ci.integrations.source_control is required
+	my $integrations = $data->{integrations};
+	if (defined $integrations) {
+		bail("'ci.integrations' must be a hash") unless ref($integrations) eq 'HASH';
+		bail("'ci.integrations.source_control' is required")
+			unless defined $integrations->{source_control};
+	} else {
+		bail("'ci.integrations.source_control' is required");
+	}
+
 	# Validate ci.provider section against the provider's own schema
 	if (my $provider_data = $data->{provider}) {
 		bail("'ci.provider' must be a hash")
