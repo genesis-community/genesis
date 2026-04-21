@@ -16,95 +16,340 @@ use File::Basename qw/dirname/;
 use File::Path qw/rmtree/;
 use JSON::PP;
 
+### Public Commands {{{
+
+# embed - embed Genesis binary in the repository {{{
 sub embed {
 	command_usage(1) if @_;
-
-	# FIXME: update .genesis/config with new version info
 	Genesis::Top->new('.')->embed($ENV{GENESIS_CALLBACK_BIN} || $0);
 }
 
-sub repipe {
-	warning("'genesis repipe' is deprecated and will be removed in a future version.  Use 'genesis pipeline-apply' instead.");
+# }}}
+# apply - compile and deploy pipeline (replaces genesis repipe) {{{
+sub apply {
+	my ($layout) = @_;
 	option_defaults(config => 'ci.yml');
-	my $layout = $_[0];
 
-	# Resolve --provider/--platform into a canonical platform value
-	my $platform = get_options->{platform};
+	my $opts     = get_options;
+	my $platform = $opts->{platform} || 'concourse';
 
-	bail("--output-dir requires --provider")
-		if get_options->{'output-dir'} && !$platform;
+	bail("--output-dir requires --platform")
+		if $opts->{'output-dir'} && !$opts->{platform};
+	bail("--debug-dir requires --platform")
+		if $opts->{'debug-dir'} && !$opts->{platform};
 
-	bail("--skip-vault requires --provider")
-		if get_options->{'skip-vault'} && !$platform;
+	my $top    = _get_top($opts);
+	my $result = _compile_pipeline($top, $platform);
 
-	bail("--debug-dir requires --provider")
-		if get_options->{'debug-dir'} && !$platform;
+	_dump_debug_artifacts($opts->{'debug-dir'}, $result, $platform)
+		if $opts->{'debug-dir'};
 
-	# New compiler pipeline when --provider/--platform is specified
-	if ($platform) {
-		my $top;
-		if (get_options->{'skip-vault'}) {
-			$top = Genesis::Top->new('.');
-		} else {
-			$top = Genesis::Top->new('.', vault=>get_options->{vault});
-			bail("No vault specified or configured.\n".
-				"Use --skip-vault with --platform to compile without vault access."
-			) unless $top->vault;
+	my $ast    = $result->{ast};
+	my $output = $result->{output};
+	my $name   = $ast->metadata->{name}
+		or bail("Pipeline AST has no name defined");
+
+	if (my $out_dir = $opts->{'output-dir'}) {
+		mkdir_or_fail($out_dir);
+		for my $file (sort keys %$output) {
+			mkfile_or_fail("$out_dir/$file", $output->{$file});
+			info("Wrote #C{%s/%s}", $out_dir, $file);
 		}
-		return _repipe_compiled($top, $layout);
-	}
-
-	my $top = Genesis::Top->new('.', vault=>get_options->{vault});
-	bail(
-		"No vault specified or configured."
-	) unless $top->vault;
-
-	(my $pipeline, $layout) = Genesis::CI::Legacy::parse(get_options->{config}, $top, $layout);
-
-	option_defaults(target => $layout);
-	my $yaml = Genesis::CI::Legacy::generate_pipeline_concourse_yaml($pipeline, $top);
-	if (get_options->{'dry-run'}) {
-		output({raw => 1}, $yaml);
+		mkfile_or_fail("$out_dir/ast.json",
+			JSON::PP->new->pretty->canonical->encode({%$ast}));
+		info("Wrote #C{%s/ast.json}", $out_dir);
 		exit 0;
 	}
 
-	my ($out,$rc) = run(
-		'fly -t $1 pause-pipeline -p $2',
-		get_options->{target}, $pipeline->{pipeline}{name}
-	);
-	bail("Could not pause #C{%s} pipeline: $out", $pipeline->{pipeline}{name})
-		unless $rc == 0 || $out =~ /pipeline '.*' not found/;
+	if ($platform eq 'concourse') {
+		my $provider = $result->{provider};
 
-	my $yes = get_options->{yes} ? ' -n ' : '';
-	my $dir = workdir;
-	mkfile_or_fail("${dir}/pipeline.yml", $yaml);
-	run({ interactive => 1, onfailure => "Could not upload pipeline $pipeline->{pipeline}{name}" },
-		'fly -t $1 set-pipeline '.$yes.' -p $2 -c $3/pipeline.yml',
-		get_options->{target}, $pipeline->{pipeline}{name}, $dir);
+		if ($opts->{'dry-run'}) {
+			my $yaml = $output->{'pipeline.yml'}
+				or bail("Concourse provider did not produce pipeline.yml");
+			output({raw => 1}, $yaml);
+			exit 0;
+		}
 
-	run(
-		{ interactive => 1, onfailure => "Could not unpause pipeline $pipeline->{pipeline}{name}" },
-		'fly -t $1 unpause-pipeline -p $2',
-		get_options->{target}, $pipeline->{pipeline}{name}
-	) unless (get_options->{paused});
+		$provider->check_prereqs() or exit 86;
 
-	my $action = ($pipeline->{pipeline}{public} ? 'expose' : 'hide');
-	run({ interactive => 1, onfailure => "Could not $action pipeline $pipeline->{pipeline}{name}" },
-		'fly -t $1 '.$action.'-pipeline -p $2',
-		get_options->{target}, $pipeline->{pipeline}{name});
+		require Genesis::CI::Compiler::PipelineProvider;
+		my %deploy_opts = %{ Genesis::CI::Compiler::PipelineProvider->normalize_provider_opts(
+			$result->{provider_cli_opts} || {}
+		) };
+		$deploy_opts{target} //= $opts->{target} // $layout // $name;
+		$deploy_opts{pause}  //= $opts->{paused};
+		$provider->deploy(%deploy_opts, yes => $opts->{yes});
+
+	} elsif ($platform eq 'github-actions') {
+		if ($opts->{'dry-run'}) {
+			for my $file (sort keys %$output) {
+				output "#G{--- %s ---}", $file;
+				output({raw => 1}, $output->{$file});
+			}
+			exit 0;
+		}
+		for my $file (sort keys %$output) {
+			my $path = ".github/workflows/$file";
+			mkdir_or_fail(dirname($path));
+			mkfile_or_fail($path, $output->{$file});
+			info("Wrote #C{%s}", $path);
+		}
+		info("GitHub Actions workflows written. Commit and push to activate.");
+
+	} else {
+		bail("Unsupported platform '%s' for pipeline apply", $platform);
+	}
 
 	exit 0;
 }
 
+# }}}
+# pipeline_graph - write pipeline.md with Mermaid flowchart {{{
+sub pipeline_graph {
+	my ($layout) = @_;
+	option_defaults(config => 'ci.yml');
+
+	my $opts     = get_options;
+	my $platform = $opts->{platform} || 'concourse';
+	my $top      = Genesis::Top->new('.');
+	my $result   = _compile_pipeline($top, $platform);
+	my $ast      = $result->{ast};
+	my $provider = $result->{provider};
+
+	my $md = $provider->can('graph_md')
+		? $provider->graph_md()
+		: _ast_to_mermaid_md($ast);
+
+	mkfile_or_fail('pipeline.md', $md);
+	info("Wrote #C{pipeline.md}");
+	exit 0;
+}
+
+# }}}
+# pipeline_describe - human-readable pipeline progression {{{
+sub pipeline_describe {
+	my ($layout) = @_;
+	option_defaults(config => 'ci.yml');
+
+	my $opts     = get_options;
+	my $platform = $opts->{platform} || 'concourse';
+	my $top      = Genesis::Top->new('.');
+	my $result   = _compile_pipeline($top, $platform);
+	my $ast      = $result->{ast};
+	my $provider = $result->{provider};
+
+	if ($provider->can('generate_description')) {
+		$provider->generate_description($ast);
+	} else {
+		_describe_ast($ast, $platform);
+	}
+	exit 0;
+}
+
+# }}}
+# diff - show compiled vs live pipeline delta {{{
+sub diff {
+	option_defaults(config => 'ci.yml');
+
+	my $opts     = get_options;
+	my $platform = $opts->{platform} || 'concourse';
+
+	bail("diff is only supported for the 'concourse' platform")
+		unless $platform eq 'concourse';
+
+	my $top    = _get_top($opts, skip_vault => 1);
+	my $result = _compile_pipeline($top, $platform);
+	my $ast    = $result->{ast};
+	my $output = $result->{output};
+
+	my $name   = $ast->metadata->{name}
+		or bail("Pipeline AST has no name defined");
+	my $target = $opts->{target} || $name;
+
+	my $compiled = $output->{'pipeline.yml'}
+		or bail("Concourse provider did not produce pipeline.yml");
+
+	my $dir = workdir;
+	mkfile_or_fail("$dir/compiled.yml", $compiled);
+
+	my ($live, $rc) = run('fly -t $1 get-pipeline -p $2', $target, $name);
+	if ($rc != 0) {
+		info("#Y{Pipeline '%s' does not exist on target '%s' — nothing to diff against.}",
+			$name, $target);
+		info("Run #C{genesis pipeline-apply} to deploy it first.");
+		exit 0;
+	}
+	mkfile_or_fail("$dir/live.yml", $live);
+
+	my ($diff_out, $diff_rc) = run(
+		'diff -u --label live --label compiled $1 $2',
+		"$dir/live.yml", "$dir/compiled.yml"
+	);
+
+	if ($diff_rc == 0) {
+		info("#G{No differences} — compiled pipeline matches live pipeline.");
+	} else {
+		output({raw => 1}, $diff_out);
+	}
+	exit 0;
+}
+
+# }}}
+# status - show per-env job health {{{
+sub status {
+	my ($filter_env) = @_;
+	option_defaults(config => 'ci.yml');
+
+	my $opts     = get_options;
+	my $platform = $opts->{platform} || 'concourse';
+
+	bail("status is only supported for the 'concourse' platform")
+		unless $platform eq 'concourse';
+
+	my $top    = _get_top($opts, skip_vault => 1);
+	my $result = _compile_pipeline($top, $platform);
+	my $ast    = $result->{ast};
+	my $name   = $ast->metadata->{name}
+		or bail("Pipeline AST has no name defined");
+	my $target = $opts->{target} || $name;
+
+	my ($json_out, $rc) = run('fly -t $1 jobs -p $2 --json', $target, $name);
+	bail("Could not get jobs for pipeline '%s' on target '%s': %s", $name, $target, $json_out)
+		unless $rc == 0;
+
+	my $jobs;
+	eval { $jobs = JSON::PP->new->decode($json_out) };
+	bail("Failed to parse fly jobs output: %s", $@) if $@;
+
+	output "#G{Pipeline}: #C{%s}  (#Yi{target}: %s)", $name, $target;
+	output "";
+
+	my %job_by_name = map { $_->{name} => $_ } @$jobs;
+
+	my @ordered_names;
+	for my $wf_name ($ast->workflow_names) {
+		my @stage_order = eval { $ast->workflow_stage_order($wf_name) };
+		if (@stage_order) {
+			my $nodes = ($ast->workflows->{$wf_name} || {})->{graph}{nodes} || {};
+			push @ordered_names, map { $nodes->{$_}{alias} || $_ } @stage_order;
+		}
+	}
+	my %seen = map { $_ => 1 } @ordered_names;
+	push @ordered_names, sort grep { !$seen{$_} } keys %job_by_name;
+
+	my $col_w = 40;
+	output "  %-${col_w}s  %-10s  %s", "Environment", "Status", "Notes";
+	output "  %s  %s  %s", '-' x $col_w, '-' x 10, '-' x 20;
+
+	for my $job_name (@ordered_names) {
+		next if $filter_env && $job_name ne $filter_env;
+		my $job = $job_by_name{$job_name} or next;
+
+		my $status = _job_status_label($job);
+		my @notes;
+		push @notes, 'paused'  if $job->{paused};
+		push @notes, 'errored' if ($job->{finished_build} || {})->{status} eq 'errored';
+
+		output "  %-${col_w}s  %-10s  %s",
+			$job_name,
+			$status,
+			join(', ', @notes) || '';
+	}
+	output "";
+	exit 0;
+}
+
+# }}}
+# pause - pause env job or entire pipeline {{{
+sub pause {
+	my ($env) = @_;
+	option_defaults(config => 'ci.yml');
+
+	my $opts     = get_options;
+	my $platform = $opts->{platform} || 'concourse';
+
+	bail("pause is only supported for the 'concourse' platform")
+		unless $platform eq 'concourse';
+
+	my $top    = _get_top($opts, skip_vault => 1);
+	my $result = _compile_pipeline($top, $platform);
+	my $ast    = $result->{ast};
+	my $name   = $ast->metadata->{name}
+		or bail("Pipeline AST has no name defined");
+	my $target = $opts->{target} || $name;
+
+	if ($env) {
+		run({ interactive => 1,
+		      onfailure => "Could not pause job '$env' in pipeline '$name'" },
+			'fly -t $1 pause-job -p $2 -j $3',
+			$target, $name, $env);
+		info("Paused job #C{%s} in pipeline #C{%s}", $env, $name);
+	} else {
+		run({ interactive => 1,
+		      onfailure => "Could not pause pipeline '$name'" },
+			'fly -t $1 pause-pipeline -p $2',
+			$target, $name);
+		info("Paused pipeline #C{%s}", $name);
+	}
+	exit 0;
+}
+
+# }}}
+# resume - resume env job or entire pipeline {{{
+sub resume {
+	my ($env) = @_;
+	option_defaults(config => 'ci.yml');
+
+	my $opts     = get_options;
+	my $platform = $opts->{platform} || 'concourse';
+
+	bail("resume is only supported for the 'concourse' platform")
+		unless $platform eq 'concourse';
+
+	my $top    = _get_top($opts, skip_vault => 1);
+	my $result = _compile_pipeline($top, $platform);
+	my $ast    = $result->{ast};
+	my $name   = $ast->metadata->{name}
+		or bail("Pipeline AST has no name defined");
+	my $target = $opts->{target} || $name;
+
+	if ($env) {
+		run({ interactive => 1,
+		      onfailure => "Could not resume job '$env' in pipeline '$name'" },
+			'fly -t $1 unpause-job -p $2 -j $3',
+			$target, $name, $env);
+		info("Resumed job #C{%s} in pipeline #C{%s}", $env, $name);
+	} else {
+		run({ interactive => 1,
+		      onfailure => "Could not resume pipeline '$name'" },
+			'fly -t $1 unpause-pipeline -p $2',
+			$target, $name);
+		info("Resumed pipeline #C{%s}", $name);
+	}
+	exit 0;
+}
+
+# }}}
+# }}}
+### Deprecated Commands {{{
+
+# repipe - deprecated; delegates to apply {{{
+sub repipe {
+	warning("'genesis repipe' is deprecated and will be removed in a future version.  Use 'genesis pipeline-apply' instead.");
+	apply(@_);
+}
+
+# }}}
+# graph - deprecated; legacy graphviz without --platform, modern pipeline.md with {{{
 sub graph {
 	warning("'genesis graph' is deprecated and will be removed in a future version.  Use 'genesis pipeline-graph' instead.");
 	option_defaults(config => 'ci.yml');
 	my $layout = $_[0];
-	my $top = Genesis::Top->new('.');
+	my $top    = Genesis::Top->new('.');
 
-	# New compiler pipeline when --platform is specified
 	if (get_options->{platform}) {
-		return _graph_compiled($top, $layout);
+		return pipeline_graph($layout);
 	}
 
 	(my $pipeline, $layout) = Genesis::CI::Legacy::parse(get_options->{config}, $top, $layout);
@@ -113,29 +358,22 @@ sub graph {
 	exit 0;
 }
 
+# }}}
+# describe - deprecated; delegates to pipeline_describe {{{
 sub describe {
 	warning("'genesis describe' is deprecated and will be removed in a future version.  Use 'genesis pipeline-describe' instead.");
-	option_defaults(config => 'ci.yml');
-	my $layout = $_[0];
-	my $top = Genesis::Top->new('.');
-
-	# New compiler pipeline when --platform is specified
-	if (get_options->{platform}) {
-		return _describe_compiled($top, $layout);
-	}
-
-	(my $pipeline, $layout) = Genesis::CI::Legacy::parse(get_options->{config}, $top, $layout);
-	Genesis::CI::Legacy::generate_pipeline_human_description($pipeline);
-	exit 0;
+	pipeline_describe(@_);
 }
+
+# }}}
+# }}}
+### CI Task Commands {{{
 
 sub ci_pipeline_deploy {
 	command_usage(1) if @_;
 
 	info("[#G{genesis} ci-pipeline-deploy] v#G{$Genesis::VERSION}\n");
 
-	# TODO: support detection of required vars in the prepare_command step. (maybe
-	# show optional variables with a ? after them, or ?1a ?1b to show either/or
 	my @undefined = grep { !$ENV{$_} }
 		qw/CURRENT_ENV GIT_BRANCH OUT_DIR WORKING_DIR VAULT_ROLE_ID VAULT_SECRET_ID VAULT_ADDR/;
 	push @undefined, "CACHE_DIR" if ($ENV{PREVIOUS_ENV} && ! $ENV{CACHE_DIR});
@@ -145,21 +383,18 @@ sub ci_pipeline_deploy {
 		"The pipeline must specify either GIT_PRIVATE_KEY, or GIT_USERNAME and ".
 		"GIT_PASSWORD"
 	) unless $ENV{GIT_PRIVATE_KEY} || ($ENV{GIT_USERNAME} && $ENV{GIT_PASSWORD});
-	# FIXME: Support Bearer Token
 
 	_vault_auth();
 
 	_propagate_previous_passed_files();
 
-	# Load the environment in order to check other required variables
 	my $workdir = $ENV{WORKING_DIR};
 	$workdir .= "/$ENV{GIT_GENESIS_ROOT}" if (defined($ENV{GIT_GENESIS_ROOT}) && $ENV{GIT_GENESIS_ROOT} ne "");
 	pushd $workdir;
 	my $env = Genesis::Top->new('.')->load_env($ENV{CURRENT_ENV})->with_vault();
 
 	if ($env->use_create_env) {
-		# Make sure that state is up to date. Keep environment changes local to this scope.
-		my $tmp = workdir;
+		my $tmp     = workdir;
 		my $git_env = _get_git_env($tmp);
 		run({ onfailure   => "Could not reset to the latest state file from origin. State file may not exist, which occurs if the proto bosh has not been deployed once manually.",
 			interactive => 1,
@@ -168,7 +403,7 @@ sub ci_pipeline_deploy {
 			$ENV{GIT_BRANCH}, $ENV{CURRENT_ENV});
 	}
 
-	_bail_on_missing_pipeline_environment_variables(@undefined); # FIXME -- is this needed?
+	_bail_on_missing_pipeline_environment_variables(@undefined);
 
 	info "Preparing to deploy #C{%s}:\n  - based on kit #c{%s}", $env->name, $env->kit->id;
 	if ($env->use_create_env) {
@@ -180,11 +415,11 @@ sub ci_pipeline_deploy {
 
 	my $result;
 	my %deploy_opts = (
-		redact => !envset('CI_NO_REDACT'),
-		'disable-reactions' => 0,
-		'yes' => 1,
+		redact               => !envset('CI_NO_REDACT'),
+		'disable-reactions'  => 0,
+		'yes'                => 1,
 	);
-	$ENV{BOSH_NON_INTERACTIVE} = 'true'; # Doesn't work without this...
+	$ENV{BOSH_NON_INTERACTIVE} = 'true';
 	eval {
 		$result = $env->with_bosh
 		              ->download_required_configs('deploy')
@@ -193,7 +428,6 @@ sub ci_pipeline_deploy {
 
 	if ($@ || !$result) {
 		error "#R{Deployment failed!}\n%s", $@ || "";
-		# Make sure to commit the state file in the case of failure
 		if ($env->use_create_env) {
 			popd;
 			_commit_changes(
@@ -206,13 +440,10 @@ sub ci_pipeline_deploy {
 	}
 
 	if ($ENV{PREVIOUS_ENV}) {
-		## rm cache dir
-		## copy previous env cache dir
-		# leaving as system calls for Concourse so output shows up in log
 		system("rm -rf .genesis/config .genesis/kits .genesis/cached") == 0 or exit 1;
-		system("git checkout .genesis/config"); # ignore failure for git checkout so that
-		system("git checkout .genesis/kits");   # we don't cause problems if these files dont
-		system("git checkout .genesis/cached"); # yet exist in the working tree (but did in the cache tree)
+		system("git checkout .genesis/config");
+		system("git checkout .genesis/kits");
+		system("git checkout .genesis/cached");
 	}
 	popd;
 	_commit_changes($ENV{WORKING_DIR}, $ENV{OUT_DIR}, $ENV{GIT_BRANCH},
@@ -238,7 +469,6 @@ sub ci_show_changes {
 
 	my $mismatches = _propagate_previous_passed_files();
 
-	# Load the environment in order to check other required variables
 	my $workdir = $ENV{WORKING_DIR};
 	$workdir .= "/$ENV{GIT_GENESIS_ROOT}" if (defined($ENV{GIT_GENESIS_ROOT}) && $ENV{GIT_GENESIS_ROOT} ne "");
 	pushd $workdir;
@@ -297,7 +527,7 @@ current_variables="$(bosh int <(bosh curl "/deployments/${deployment}/variables"
 bosh diff-config --json \
 		 --from-content <(bosh int <(spruce merge --fallback-append <(echo "${current_configs}") <(echo "${current_manifest}") <(echo "${current_variables}"))) \
 		 --to-content <(bosh int <(spruce merge --fallback-append <(echo "${new_configs}") <(echo "${new_manifest}") <(echo "${new_variables}")) -l ${vars_file}) \
-		 | jq -r '.Tables[0].Rows[0] | if (.diff == "" ) then "[32;1mNo differences found.[0m" else .diff end'
+		 | jq -r '.Tables[0].Rows[0] | if (.diff == "" ) then "[32;1mNo differences found.[0m" else .diff end'
 EOF
 
 	my %envvars = $env->get_environment_variables();
@@ -320,10 +550,9 @@ EOF
 				$differences += 1; last;
 			}
 			my $cache_file = slurp("$ENV{CACHE_DIR}/$_");
-			my $work_file = slurp("$ENV{WORKING_DIR}/$_");
-			unless ($cache_file eq $work_file) { $differences += 1; last; };
+			my $work_file  = slurp("$ENV{WORKING_DIR}/$_");
+			unless ($cache_file eq $work_file) { $differences += 1; last; }
 		}
-
 		@extra = () unless $differences;
 	}
 
@@ -356,23 +585,8 @@ sub ci_generate_cache {
 
 	command_usage(1) if @_;
 
-	# environment variables we should have
-	#   CURRENT_ENV     - Name of the current environment
-	#   GIT_BRANCH      - Name of the git branch to push commits to. post-deploy
-	#   GIT_PRIVATE_KEY - Private Key to use for pushing commits, post-deploy, ssh
-	#   GIT_USERNAME    - Username to use for pushing commits, post-deploy, https
-	#   GIT_PASSWORD    - Password to use for pushing commits, post-deploy, https
-	#   PREVIOUS_ENV    - Name of the previous env, or null if none
-	#   CACHE_DIR       - Path to the directory of the previous environment's cache
-	#   WORKING_DIR     - Path to the directory to deploy/work from
-	#   OUT_DIR         - Path to the directory to output to
-	#
-	# TODO: Detect if we need to run genesis from a different directory, based
-	# on the min genesis version of the environment for cached, changes, or git
-	# repo.
 	my @undefined = grep { !$ENV{$_} }
-		qw/CURRENT_ENV GIT_BRANCH
-			 WORKING_DIR OUT_DIR/;
+		qw/CURRENT_ENV GIT_BRANCH WORKING_DIR OUT_DIR/;
 	push(@undefined, 'CACHE_DIR') if $ENV{PREVIOUS_ENV} && ! $ENV{CACHE_DIR};
 	_bail_on_missing_pipeline_environment_variables(@undefined);
 	bail("The pipeline must specify either GIT_PRIVATE_KEY, or GIT_USERNAME and GIT_PASSWORD")
@@ -414,18 +628,6 @@ sub ci_pipeline_run_errand {
 
 	command_usage(1) if @_;
 
-	# environment variables we should have
-	#   CURRENT_ENV         - Name of the current environment
-	#   ERRAND_NAME         - Name of the Smoke Test errand to run
-	#
-	#   VAULT_ROLE_ID       - Vault RoleID to authenticate to Vault with
-	#   VAULT_SECRET_ID     - Vault SecretID to authenticate to Vault with
-	#   VAULT_ADDR          - URL of the Vault to use for credentials retrieval
-	#   VAULT_SKIP_VERIFY   - Whether or not to enforce SSL/TLS validation
-	#   VAULT_NAMESPACE     - Set for enterprise vaults that require namespaces
-	#   VAULT_NO_STRONGBOX  - Set true for non Genesis vault deployments
-	#   VAULT_SECRETS_MOUNT - Set if vault secrets are not found under /secret
-
 	my @undefined = grep { !$ENV{$_} }
 		qw/CURRENT_ENV ERRAND_NAME VAULT_ROLE_ID VAULT_SECRET_ID VAULT_ADDR/;
 	_bail_on_missing_pipeline_environment_variables(@undefined);
@@ -437,166 +639,39 @@ sub ci_pipeline_run_errand {
 	exit 0;
 }
 
-### Compiler Pipeline Functions {{{
-
-# _repipe_compiled - deploy pipeline using the new compiler system {{{
-sub _repipe_compiled {
-	my ($top, $layout) = @_;
-	my $platform = get_options->{platform};
-
-	my $result = _compile_pipeline($top, $platform);
-	my $ast    = $result->{ast};
-	my $output = $result->{output};
-
-	my $name = $ast->metadata->{name}
-		or bail("Pipeline AST has no name defined");
-
-	# --output-dir: write artifacts to directory and exit
-	if (my $out_dir = get_options->{'output-dir'}) {
-		mkdir_or_fail($out_dir);
-		for my $file (sort keys %$output) {
-			mkfile_or_fail("$out_dir/$file", $output->{$file});
-			info("Wrote #C{%s/%s}", $out_dir, $file);
-		}
-		mkfile_or_fail("$out_dir/ast.json",
-			JSON::PP->new->pretty->canonical->encode({%$ast}));
-		info("Wrote #C{%s/ast.json}", $out_dir);
-		info("Pipeline artifacts written to #C{%s/}", $out_dir);
-		exit 0;
-	}
-
-	# For concourse: delegate deploy to the provider, which applies the
-	# three-tier option resolution (CLI > ci.provider: config > defaults).
-	if ($platform eq 'concourse') {
-		my $provider = $result->{provider};
-
-		# --dry-run: print pipeline YAML and exit without deploying
-		if (get_options->{'dry-run'}) {
-			my $yaml = $output->{'pipeline.yml'}
-				or bail("Concourse provider did not produce pipeline.yml");
-			output({raw => 1}, $yaml);
-			exit 0;
-		}
-
-		# Verify the provider's toolchain is available before attempting deploy.
-		$provider->check_prereqs() or exit 86;
-
-		# Normalize provider CLI opts (ci-* → config keys) then merge legacy
-		# repipe aliases (--target → target, --paused → pause) before calling deploy().
-		require Genesis::CI::Compiler::PipelineProvider;
-		my %deploy_opts = %{ Genesis::CI::Compiler::PipelineProvider->normalize_provider_opts(
-			$result->{provider_cli_opts} || {}
-		) };
-		$deploy_opts{target} //= get_options->{target} // $layout;
-		$deploy_opts{pause}  //= get_options->{paused};
-		$provider->deploy(%deploy_opts, yes => get_options->{yes});
-
-	} elsif ($platform eq 'github-actions') {
-		# GitHub Actions outputs workflow YAML files to .github/workflows/
-		if (get_options->{'dry-run'}) {
-			for my $file (sort keys %$output) {
-				output "#G{--- %s ---}", $file;
-				output({raw => 1}, $output->{$file});
-			}
-			exit 0;
-		}
-
-		for my $file (sort keys %$output) {
-			my $path = ".github/workflows/$file";
-			mkdir_or_fail(dirname($path));
-			mkfile_or_fail($path, $output->{$file});
-			info("Wrote #C{%s}", $path);
-		}
-		info("GitHub Actions workflows written. Commit and push to activate.");
-	} else {
-		bail("Unsupported platform '%s' for repipe", $platform);
-	}
-
-	exit 0;
-}
-
 # }}}
-# _graph_compiled - write pipeline.md with Mermaid flowchart {{{
-sub _graph_compiled {
-	my ($top, $layout) = @_;
-	my $platform = get_options->{platform};
-
-	my $result   = _compile_pipeline($top, $platform);
-	my $ast      = $result->{ast};
-	my $provider = $result->{provider};
-
-	# Use provider's graph_md method if available
-	my $md;
-	if ($provider->can('graph_md')) {
-		$md = $provider->graph_md();
-	} else {
-		$md = _ast_to_mermaid_md($ast);
-	}
-
-	mkfile_or_fail('pipeline.md', $md);
-	info("Wrote #C{pipeline.md}");
-	exit 0;
-}
-
 # }}}
-# _describe_compiled - describe compiled pipeline in human-readable form {{{
-sub _describe_compiled {
-	my ($top, $layout) = @_;
-	my $platform = get_options->{platform};
+### Internal Compiler Helpers {{{
 
-	my $result   = _compile_pipeline($top, $platform);
-	my $ast      = $result->{ast};
-	my $provider = $result->{provider};
-
-	# Use provider's describe method if available
-	if ($provider->can('generate_description')) {
-		$provider->generate_description($ast);
-		exit 0;
-	}
-
-	# Fall back to generic AST-based description
-	_describe_ast($ast, $platform);
-	exit 0;
-}
-
-# }}}
-# _compile_pipeline - run the compiler pipeline and return results {{{
+# _compile_pipeline - detect config source and compile; returns result hash {{{
 sub _compile_pipeline {
 	my ($top, $platform) = @_;
 
 	my %compiler_opts = (top => $top);
 
-	# Detect configuration source — priority order:
-	#   1. .genesis/ci/ directory with targets.yml or pipeline.yml (multi-file)
-	#   2. ci: section in .genesis/config                          (genesis-config, Phase E)
-	#   3. Legacy ci.yml / --config file                          (backward compat)
+	# Priority order:
+	#   1. .genesis/ci/pipeline.yml or targets.yml  (multi-file)
+	#   2. ci: section in .genesis/config           (genesis-config)
+	#   3. Legacy ci.yml / --config file            (backward compat)
 	my $ci_dir = $top->path('.genesis/ci');
 	if (-d $ci_dir && (-f "$ci_dir/pipeline.yml" || -f "$ci_dir/targets.yml")) {
 		$compiler_opts{ci_dir} = $ci_dir;
 		info("Using multi-file CI configuration from #C{.genesis/ci/}");
 	} elsif (Genesis::CI::Compiler->can_compile_from_genesis_config($top)) {
-		# Parser reads ci: from $top->config — no ci_dir or file needed
 		info("Using inline CI configuration from #C{.genesis/config}");
 	} else {
 		$compiler_opts{file} = get_options->{config} || $top->path('ci.yml');
 		info("Using legacy CI configuration from #C{%s}", $compiler_opts{file});
 	}
 
-	# Parse provider-specific CLI flags via the provider options system.
-	# This mirrors Kit::Provider::parse_opts() — first pass extracts the
-	# provider type, second pass loads that provider's cli_opts() and parses them.
+	# Parse provider-specific CLI flags
 	my %provider_cli_opts;
 	{
-		# Build a synthetic argv from get_options so we can run GetOptionsFromArray.
-		# Provider flags are prefixed with 'ci-' and live alongside existing flags.
-		# We only need to pull the ones the provider declares.
 		require Genesis::CI::Compiler::PipelineProvider;
-		my @argv = (); # provider flags come from get_options, not ARGV at this point
+		my @argv = ();
 		Genesis::CI::Compiler::PipelineProvider->parse_cli_opts(
 			\@argv, \%provider_cli_opts, $platform
 		);
-		# Merge any provider-specific flags already captured by the outer option parser.
-		# Ask the provider what keys it owns — don't hardcode them here.
 		for my $key (Genesis::CI::Compiler::PipelineProvider->cli_opt_keys($platform)) {
 			$provider_cli_opts{$key} = get_options->{$key}
 				if defined get_options->{$key};
@@ -604,12 +679,11 @@ sub _compile_pipeline {
 	}
 
 	my $compiler = Genesis::CI::Compiler->new(%compiler_opts);
-	my $result = $compiler->compile(
+	my $result   = $compiler->compile(
 		provider      => $platform,
 		provider_opts => \%provider_cli_opts,
 	);
 
-	# Dump debug artifacts if --debug-dir is specified
 	if (my $debug_dir = get_options->{'debug-dir'}) {
 		_dump_debug_artifacts($debug_dir, $result, $platform);
 	}
@@ -619,7 +693,25 @@ sub _compile_pipeline {
 }
 
 # }}}
-# _dump_debug_artifacts - write compiler intermediates to debug directory {{{
+# _get_top - create Genesis::Top, optionally skipping vault {{{
+sub _get_top {
+	my ($opts, %defaults) = @_;
+
+	my $skip = $opts->{'skip-vault'} || $defaults{skip_vault};
+	if ($skip) {
+		return Genesis::Top->new('.');
+	}
+
+	my $top = Genesis::Top->new('.', vault => $opts->{vault});
+	bail(
+		"No vault specified or configured.\n".
+		"Use --skip-vault to compile without vault access."
+	) unless $top->vault;
+	return $top;
+}
+
+# }}}
+# _dump_debug_artifacts - write compiler intermediates to a directory {{{
 sub _dump_debug_artifacts {
 	my ($debug_dir, $result, $platform) = @_;
 
@@ -627,18 +719,16 @@ sub _dump_debug_artifacts {
 
 	my $json = JSON::PP->new->pretty->canonical;
 
-	# 1. Parsed config (what the parser produced)
 	if ($result->{parsed}) {
 		mkfile_or_fail("$debug_dir/01-parsed.json",
 			$json->encode($result->{parsed}));
 		info("Debug: wrote #C{%s/01-parsed.json}", $debug_dir);
 	}
 
-	# 2. AST source representation (internal Genesis concepts)
 	if (my $ast = $result->{ast}) {
 		my %source;
 		for my $key (qw(branches integrations targets workflows configuration
-						provider_config triggers resources)) {
+		                provider_config triggers resources)) {
 			my $accessor = $ast->can($key);
 			$source{$key} = $accessor->($ast) if $accessor;
 		}
@@ -649,10 +739,8 @@ sub _dump_debug_artifacts {
 			$json->encode(\%source));
 		info("Debug: wrote #C{%s/02-ast-source.json}", $debug_dir);
 
-		# 3. Resolved generic pipeline (what PipelineDescriptor produced)
 		if ($ast->pipeline && %{$ast->pipeline}) {
-			# Write pipeline structure (minus visualization/description for readability)
-			my %pipeline = %{$ast->pipeline};
+			my %pipeline    = %{$ast->pipeline};
 			my $mermaid     = delete $pipeline{mermaid};
 			my $pipeline_md = delete $pipeline{pipeline_md};
 			my $description = delete $pipeline{description};
@@ -661,13 +749,11 @@ sub _dump_debug_artifacts {
 				$json->encode(\%pipeline));
 			info("Debug: wrote #C{%s/03-pipeline.json}", $debug_dir);
 
-			# 4. Mermaid pipeline.md
 			if ($pipeline_md) {
 				mkfile_or_fail("$debug_dir/04-pipeline.md", $pipeline_md);
 				info("Debug: wrote #C{%s/04-pipeline.md}", $debug_dir);
 			}
 
-			# 5. Human description
 			if ($description) {
 				mkfile_or_fail("$debug_dir/05-description.txt", $description);
 				info("Debug: wrote #C{%s/05-description.txt}", $debug_dir);
@@ -675,7 +761,6 @@ sub _dump_debug_artifacts {
 		}
 	}
 
-	# 6. Provider output (final platform-specific YAML)
 	if ($result->{output}) {
 		if (ref($result->{output}) eq 'HASH') {
 			for my $file (sort keys %{$result->{output}}) {
@@ -693,7 +778,7 @@ sub _dump_debug_artifacts {
 }
 
 # }}}
-# _ast_to_mermaid_md - fallback Mermaid pipeline.md from a bare AST {{{
+# _ast_to_mermaid_md - generate pipeline.md Mermaid content from a bare AST {{{
 sub _ast_to_mermaid_md {
 	my ($ast) = @_;
 
@@ -734,7 +819,7 @@ sub _ast_to_mermaid_md {
 }
 
 # }}}
-# _describe_ast - describe AST contents in human-readable form {{{
+# _describe_ast - human-readable AST description {{{
 sub _describe_ast {
 	my ($ast, $platform) = @_;
 
@@ -743,25 +828,20 @@ sub _describe_ast {
 	output "  #Yi{Source}:   %s", $ast->metadata->{source} || 'unknown';
 	output "";
 
-	# Integrations
 	my $integrations = $ast->integrations || {};
 	if (my $sc = $integrations->{source_control}) {
 		output "#G{Source Control}:";
-		output "  Provider:   %s", $sc->{provider} || 'unknown';
+		output "  Provider:   %s", $sc->{provider}   || 'unknown';
 		output "  Repository: %s", $sc->{repository} || 'unknown';
 	}
 
-	# Targets
 	my @targets = $ast->target_names;
 	if (@targets) {
 		output "";
 		output "#G{Targets}: (%d)", scalar @targets;
-		for my $name (sort @targets) {
-			output "  - #C{%s}", $name;
-		}
+		output "  - #C{%s}", $_ for sort @targets;
 	}
 
-	# Workflows
 	my @workflows = $ast->workflow_names;
 	if (@workflows) {
 		output "";
@@ -787,10 +867,19 @@ sub _describe_ast {
 }
 
 # }}}
+# _job_status_label - derive a display status from a fly jobs JSON entry {{{
+sub _job_status_label {
+	my ($job) = @_;
+	return 'paused' if $job->{paused};
+	my $fb = $job->{finished_build} || {};
+	return $fb->{status} || 'pending';
+}
+
 # }}}
+# }}}
+### CI Task Helpers {{{
 
-### Support functions
-
+# _vault_auth - authenticate to vault using AppRole credentials from env {{{
 sub _vault_auth {
 	my @missing_variables = grep {
 		!exists($ENV{$_}) || !defined($ENV{$_})
@@ -800,18 +889,18 @@ sub _vault_auth {
 		join(", ", @missing_variables)
 	) if @missing_variables;
 
-	# TODO: This should be handled by repo or env vault yaml entries (#BETTERVAULTTARGET)
 	Service::Vault::Remote->create(
 		$ENV{VAULT_ADDR},
 		'deployments-vault',
-		skip_verify => envset("VAULT_SKIP_VERIFY"),
-		namespace => $ENV{VAULT_NAMESPACE},
+		skip_verify  => envset("VAULT_SKIP_VERIFY"),
+		namespace    => $ENV{VAULT_NAMESPACE},
 		no_strongbox => envset("VAULT_NO_STRONGBOX"),
-		mount => $ENV{VAULT_SECRETS_MOUNT}
+		mount        => $ENV{VAULT_SECRETS_MOUNT}
 	)->connect_and_validate();
 }
 
-# _bail_on_missing_pipeline_environment_variables - provide consistent error message when missing pipeline environment variables {{{
+# }}}
+# _bail_on_missing_pipeline_environment_variables - consistent error for missing CI env vars {{{
 sub _bail_on_missing_pipeline_environment_variables {
 	if (@_) {
 		error("The following #R{required} environment variables have not been defined:");
@@ -823,12 +912,12 @@ sub _bail_on_missing_pipeline_environment_variables {
 }
 
 # }}}
-# _propagate_previous_passed_files - copy cached files from previous pipeline environment {{{
+# _propagate_previous_passed_files - copy cached files from previous pipeline env {{{
 sub _propagate_previous_passed_files {
 
 	return unless $ENV{PREVIOUS_ENV};
 
-	bail "No CACHE_DIR set - cannot propagate passed values" unless $ENV{CACHE_DIR};
+	bail "No CACHE_DIR set - cannot propagate passed values"   unless $ENV{CACHE_DIR};
 	bail "No WORKING_DIR set - cannot propagate passed values" unless $ENV{WORKING_DIR};
 
 	my $workdir  = $ENV{WORKING_DIR};
@@ -838,7 +927,7 @@ sub _propagate_previous_passed_files {
 		$cachedir .= "/$ENV{GIT_GENESIS_ROOT}";
 	}
 
-	my @cachables=(
+	my @cachables = (
 		".genesis/cached",
 		".genesis/config",
 		".genesis/kits"
@@ -851,26 +940,24 @@ sub _propagate_previous_passed_files {
 	) for (@cachables);
 
 	info "\n#C{Copying over cached files from $ENV{PREVIOUS_ENV} environment:}";
-
 	run(
 		{ onfailure => "#R{[ERROR]} Failed to copy '$cachedir/$_' to '$workdir/$_'", interactive => 1 },
 		'cp', '-Rv', "$cachedir/$_", "$workdir/$_"
 	) for (@cachables);
 
-  my $env = Genesis::Top->new($workdir)->load_env($ENV{CURRENT_ENV});
+	my $env = Genesis::Top->new($workdir)->load_env($ENV{CURRENT_ENV});
 	my @files = map {(my $s = $_) =~ s/^\.\///; $s}
 		grep {$_ !~ /^not-shared/}
 		$env->relate($ENV{PREVIOUS_ENV},'','not-shared');
 	return {
 		missing => [grep {-f "$workdir/$_" && ! -f "$cachedir/$_"} @files],
 		extra   => [grep {-f "$cachedir/$_" && ! -f "$workdir/$_"} @files],
-	}
+	};
 }
 
 # }}}
-# _get_git_env - setup a git configuration in the 'home' directory under the given dir, and return env {{{
+# _get_git_env - set up git credentials in a temp home dir, return env hash {{{
 sub _get_git_env {
-
 	my ($env_dir) = @_;
 	my %env;
 	$env{HOME}                = "$env_dir/home";
@@ -890,8 +977,8 @@ Host *
   LogLevel QUIET
   IdentityFile $env_dir/home/.ssh/key
 EOF
-		$env{GIT_SSH_COMMAND}     = "ssh -F $env_dir/home/.ssh/config";
-	};
+		$env{GIT_SSH_COMMAND} = "ssh -F $env_dir/home/.ssh/config";
+	}
 	if ($ENV{GIT_USERNAME}) {
 		mkdir_or_fail( "$env_dir/home", 0700);
 		mkfile_or_fail("$env_dir/home/credential-helper.sh", 0755, <<'EOF');
@@ -903,39 +990,25 @@ EOF
 	}
 
 	return wantarray ? %env : \%env;
-
 }
 
 # }}}
-# _commit_changes - commit changes back to genesis that incorporate the upstream values {{{
+# _commit_changes - commit post-deploy changes back to the git repo {{{
 sub _commit_changes {
 	my ($indir, $outdir, $branch, $message, $filter) = @_;
 
-	# the below copying of files into new repos from older repos is all
-	# done in the name of avoiding merge conflicts, or weird errors when
-	# rebasing, and git discovers that there are no changes after you rebase
-
-	# remove any old directories if they are left over (only really happens when
-	# debugging a failed run)
 	run(
 		{onfailure => "#R{[ERROR]} Failed to remove remnant of previous changes commit"},
 		'rm -rf "$1"', $outdir
 	) if -d $outdir;
 
-	# create an output git repo based off of latest origin/$branch
 	run({ interactive => 1, passfail => 1},
 		'cp -R "$1" "$2"', $indir, $outdir) or exit 1;
 	pushd $outdir;
 
-	my $tmp = workdir;
+	my $tmp     = workdir;
 	my $git_env = _get_git_env($tmp);
 
-	# What's Going On?
-	#   reset --hard : reset the repo to the current commit on branch
-	#   clean -df:     remove any untracked files (ie the new cached files)
-	#   checkout:      ensure we're on the named branch, to correctly push later
-	#   pull origin:   ensure we're up-to-date with any changes that may have
-	#                  happened during pipeline
 	run({ onfailure   => "Could not reset to the newest applicable ref in git",
 		  interactive => 1,
 		  env => $git_env },
@@ -943,13 +1016,12 @@ sub _commit_changes {
 		$branch);
 	popd;
 
-	# find and copy (or remove if appropriate) all potential changes to the outdir
 	pushd $indir;
 	my @output = lines(run({env => $git_env}, 'git status --porcelain'));
 	popd;
 	info "Detected the following changes in repo:" if @output;
 	for my $change (@output) {
-		my ($action,$file)= $change =~ /^(..).(.*)$/;
+		my ($action,$file) = $change =~ /^(..).(.*)$/;
 		next if $filter && ref($filter) && ref($filter) =~ /^regexp$/i && $file !~ $filter;
 		if ($action =~ /.D/) {
 			info "  - #R{removed:} $file";
@@ -960,7 +1032,6 @@ sub _commit_changes {
 		} else {
 			mkdir_or_fail(dirname("$outdir/$file"));
 			info "  - ".($action eq "??" ? "#G{added:}   " : "#Y{changed:} ").$file;
-
 			run(
 				{ onfailure => "Could not copy changed files to output directory" },
 				'cp -Rv "$1" "$2"', "$indir/$file", "$outdir/$file"
@@ -968,12 +1039,10 @@ sub _commit_changes {
 		}
 	}
 
-	# check if any changes actually exist in the outdir (potential changes may have alread
-	# been tracked after $indir's commit, so they could disappear here), then commit them
 	pushd $outdir;
 	my ($output, undef) = run({env => $git_env}, 'git status --porcelain');
 	if ($output) {
-		run({ interactive => 1, # print output to Concourse log
+		run({ interactive => 1,
 			  env => $git_env },
 			'git add -A && '.
 			'git status && '.
@@ -981,6 +1050,73 @@ sub _commit_changes {
 			'git commit -m "$1"', "CI commit: $message");
 	}
 }
+
+# }}}
 # }}}
 
 1;
+
+=head1 NAME
+
+Genesis::Commands::Pipelines - Pipeline management command suite
+
+=head1 DESCRIPTION
+
+Implements the C<genesis pipeline-*> command family and the legacy
+C<repipe>, C<graph>, C<describe>, C<embed>, and C<ci-*> commands.
+
+=head1 COMMANDS
+
+=over 4
+
+=item B<pipeline-apply> [--platform PROVIDER] [--dry-run] [--paused]
+
+Compile and deploy the pipeline. Defaults to Concourse. Supports
+C<--dry-run> (print YAML only) and C<--output-dir> (write artifacts).
+
+=item B<pipeline-graph> [--platform PROVIDER]
+
+Compile pipeline and write C<pipeline.md> containing a Mermaid flowchart.
+
+=item B<pipeline-describe> [--platform PROVIDER]
+
+Compile pipeline and print a human-readable ordered progression.
+
+=item B<pipeline-diff> [--target TARGET]
+
+Compare compiled pipeline YAML against the live pipeline via
+C<fly get-pipeline>.
+
+=item B<pipeline-status> [<env>] [--target TARGET]
+
+Query C<fly jobs> for per-environment job status.
+
+=item B<pipeline-pause> [<env>] [--target TARGET]
+
+Pause a specific environment's job, or the entire pipeline.
+
+=item B<pipeline-resume> [<env>] [--target TARGET]
+
+Resume a specific environment's job, or the entire pipeline.
+
+=item B<repipe> (deprecated)
+
+Alias for C<pipeline-apply>.
+
+=item B<graph> (deprecated)
+
+Legacy graphviz output without C<--platform>; C<pipeline-graph> with it.
+
+=item B<describe> (deprecated)
+
+Alias for C<pipeline-describe>.
+
+=back
+
+=head1 SEE ALSO
+
+Genesis::CI::Compiler, Genesis::CI::Legacy
+
+=cut
+
+# vim: ts=2 sw=2 sts=2 noet fdm=marker foldlevel=1 nu

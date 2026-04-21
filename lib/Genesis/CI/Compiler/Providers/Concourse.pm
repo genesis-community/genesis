@@ -542,7 +542,7 @@ sub graph_md {
 }
 
 # }}}
-# generate_description - alias for describe(); called by Genesis::Commands::Pipeline {{{
+# generate_description - alias for describe(); called by Genesis::Commands::Pipelines {{{
 sub generate_description { $_[0]->describe() }
 
 # }}}

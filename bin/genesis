@@ -2021,7 +2021,7 @@ define_command("pipeline-apply", {
 		'debug-dir=s' =>
 			"Write intermediate compiler artifacts to this directory.",
 	],
-}, 'Genesis::Commands::Pipeline::apply');
+}, 'Genesis::Commands::Pipelines::apply');
 # }}}
 # genesis pipeline-graph - write Mermaid pipeline.md {{{
 define_command("pipeline-graph", {
@@ -2040,7 +2040,7 @@ define_command("pipeline-graph", {
 		'platform|provider|p=s' =>
 			"CI provider: 'concourse' (default) or 'github-actions'.",
 	],
-}, 'Genesis::Commands::Pipeline::graph');
+}, 'Genesis::Commands::Pipelines::pipeline_graph');
 # }}}
 # genesis pipeline-describe - human-readable pipeline description {{{
 define_command("pipeline-describe", {
@@ -2059,7 +2059,7 @@ define_command("pipeline-describe", {
 		'platform|provider|p=s' =>
 			"CI provider: 'concourse' (default) or 'github-actions'.",
 	],
-}, 'Genesis::Commands::Pipeline::describe');
+}, 'Genesis::Commands::Pipelines::pipeline_describe');
 # }}}
 # genesis pipeline-diff - show compiled vs live pipeline delta {{{
 define_command("pipeline-diff", {
@@ -2085,7 +2085,7 @@ define_command("pipeline-diff", {
 		'skip-vault' =>
 			"Skip vault connectivity when compiling.",
 	],
-}, 'Genesis::Commands::Pipeline::diff');
+}, 'Genesis::Commands::Pipelines::diff');
 # }}}
 # genesis pipeline-status - show per-environment job health {{{
 define_command("pipeline-status", {
@@ -2113,7 +2113,7 @@ define_command("pipeline-status", {
 		'skip-vault' =>
 			"Skip vault connectivity when compiling.",
 	],
-}, 'Genesis::Commands::Pipeline::status');
+}, 'Genesis::Commands::Pipelines::status');
 # }}}
 # genesis pipeline-pause - pause an environment job or entire pipeline {{{
 define_command("pipeline-pause", {
@@ -2141,7 +2141,7 @@ define_command("pipeline-pause", {
 		'skip-vault' =>
 			"Skip vault connectivity when compiling.",
 	],
-}, 'Genesis::Commands::Pipeline::pause');
+}, 'Genesis::Commands::Pipelines::pause');
 # }}}
 # genesis pipeline-resume - resume an environment job or entire pipeline {{{
 define_command("pipeline-resume", {
@@ -2169,7 +2169,7 @@ define_command("pipeline-resume", {
 		'skip-vault' =>
 			"Skip vault connectivity when compiling.",
 	],
-}, 'Genesis::Commands::Pipeline::resume');
+}, 'Genesis::Commands::Pipelines::resume');
 # }}}
 # }}}
 

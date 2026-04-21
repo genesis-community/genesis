@@ -14,7 +14,7 @@ $ENV{GENESIS_LIB}     ||= 'lib';
 use_ok 'Genesis::CI::Compiler::Parser';
 use_ok 'Genesis::CI::Compiler::ASTBuilder';
 use_ok 'Genesis::CI::Compiler';
-use_ok 'Genesis::Commands::Pipeline';
+use_ok 'Genesis::Commands::Pipelines';
 
 ### ============================================================ ###
 ### Phase A — env-files topology without pipeline.yml
@@ -159,17 +159,19 @@ YAML
 ### Phase B — Genesis::Commands::Pipeline module
 ### ============================================================ ###
 
-subtest 'Commands::Pipeline module loads correctly' => sub {
-	can_ok 'Genesis::Commands::Pipeline', 'apply';
-	can_ok 'Genesis::Commands::Pipeline', 'graph';
-	can_ok 'Genesis::Commands::Pipeline', 'describe';
-	can_ok 'Genesis::Commands::Pipeline', 'diff';
-	can_ok 'Genesis::Commands::Pipeline', 'status';
-	can_ok 'Genesis::Commands::Pipeline', 'pause';
-	can_ok 'Genesis::Commands::Pipeline', 'resume';
+subtest 'Commands::Pipelines module loads correctly' => sub {
+	can_ok 'Genesis::Commands::Pipelines', 'apply';
+	can_ok 'Genesis::Commands::Pipelines', 'pipeline_graph';
+	can_ok 'Genesis::Commands::Pipelines', 'pipeline_describe';
+	can_ok 'Genesis::Commands::Pipelines', 'diff';
+	can_ok 'Genesis::Commands::Pipelines', 'status';
+	can_ok 'Genesis::Commands::Pipelines', 'pause';
+	can_ok 'Genesis::Commands::Pipelines', 'resume';
+	can_ok 'Genesis::Commands::Pipelines', 'graph';
+	can_ok 'Genesis::Commands::Pipelines', 'describe';
 };
 
-subtest 'Commands::Pipeline - _compile helper: detects multi-file config' => sub {
+subtest 'Commands::Pipelines - _compile_pipeline helper: detects multi-file config' => sub {
 	my $tmp = tempdir(CLEANUP => 1);
 	mkpath("$tmp/.genesis/ci");
 
@@ -190,7 +192,7 @@ YAML
 
 	my $top = bless({}, 'Genesis::Top');  # stub
 	my $result = eval {
-		Genesis::Commands::Pipeline::_compile($top, 'concourse', {})
+		Genesis::Commands::Pipelines::_compile_pipeline($top, 'concourse')
 	};
 	# This will bail due to no vault/spruce in test environment, but we just
 	# check the compiler path was resolved correctly
@@ -203,7 +205,7 @@ YAML
 	chdir($orig);
 };
 
-subtest 'Commands::Pipeline - _mermaid_md generates valid Mermaid markdown' => sub {
+subtest 'Commands::Pipelines - _ast_to_mermaid_md generates valid Mermaid markdown' => sub {
 	my $ast = Genesis::CI::Compiler::AST->new(
 		metadata  => { name => 'test-pipeline' },
 		workflows => {
@@ -225,7 +227,7 @@ subtest 'Commands::Pipeline - _mermaid_md generates valid Mermaid markdown' => s
 		},
 	);
 
-	my $md = Genesis::Commands::Pipeline::_mermaid_md($ast);
+	my $md = Genesis::Commands::Pipelines::_ast_to_mermaid_md($ast);
 
 	like $md, qr/^# Pipeline: test-pipeline/m, "H1 heading present";
 	like $md, qr/```mermaid/,                  "mermaid fence open";
@@ -235,7 +237,7 @@ subtest 'Commands::Pipeline - _mermaid_md generates valid Mermaid markdown' => s
 	like $md, qr/```/,                          "mermaid fence close";
 };
 
-subtest 'Commands::Pipeline - _print_description does not die' => sub {
+subtest 'Commands::Pipelines - _describe_ast does not die' => sub {
 	my $ast = Genesis::CI::Compiler::AST->new(
 		metadata     => { name => 'test-pipeline', source => 'multi-file' },
 		integrations => {
@@ -259,25 +261,25 @@ subtest 'Commands::Pipeline - _print_description does not die' => sub {
 		},
 	);
 
-	eval { Genesis::Commands::Pipeline::_print_description($ast, 'concourse') };
-	ok !$@, "_print_description does not die: $@";
+	eval { Genesis::Commands::Pipelines::_describe_ast($ast, 'concourse') };
+	ok !$@, "_describe_ast does not die: $@";
 };
 
-subtest 'Commands::Pipeline - _job_status_label returns expected labels' => sub {
-	is Genesis::Commands::Pipeline::_job_status_label({ paused => 1 }),
+subtest 'Commands::Pipelines - _job_status_label returns expected labels' => sub {
+	is Genesis::Commands::Pipelines::_job_status_label({ paused => 1 }),
 		'paused', "paused job returns 'paused'";
 
-	is Genesis::Commands::Pipeline::_job_status_label({
+	is Genesis::Commands::Pipelines::_job_status_label({
 		paused => 0,
 		finished_build => { status => 'succeeded' },
 	}), 'succeeded', "succeeded job";
 
-	is Genesis::Commands::Pipeline::_job_status_label({
+	is Genesis::Commands::Pipelines::_job_status_label({
 		paused => 0,
 		finished_build => { status => 'failed' },
 	}), 'failed', "failed job";
 
-	is Genesis::Commands::Pipeline::_job_status_label({
+	is Genesis::Commands::Pipelines::_job_status_label({
 		paused => 0,
 	}), 'pending', "job with no build is pending";
 };
