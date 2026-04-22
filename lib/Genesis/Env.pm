@@ -3635,6 +3635,16 @@ sub _post_deploy {
 		$opts{'canaries'} ? "canaries=$opts{'canaries'}" : undef,
 		$opts{'max-in-flight'} ? "max-in-flight=$opts{'max-in-flight'}" : undef,
 	));
+
+	# Run early-post-deploy hook
+	$self->run_hook(
+		'early-post-deploy',
+		rc => $state->{results}[1],
+		data => $state->{predeploy_data},
+		interactive => !$noprompt,
+		flags => $opt_flags,
+	) if $self->has_hook('early-post-deploy');
+
 	my $exodus_overrides = {};
 	if ($self->is_bosh_director && $self->cpi_enabled) {
 		$exodus_overrides->{default_cpi_config} = $self->cpi_name;
