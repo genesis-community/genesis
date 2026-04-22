@@ -116,7 +116,8 @@ sub store_data {
 		if (defined $data) {
 			$self->{__data} = $data;
 		} else {
-			warning("Vault export returned no data for %s", $self->base);
+			warning("Vault export returned no data for %s", $self->base)
+				if $self->env->exists;
 		}
 	}
 	return $self->{__data} // {};

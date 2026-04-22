@@ -265,8 +265,10 @@ sub validate {
 			# Set default only if not loaded or explicitly set
 			$self->_update_source('default', $key, $schema->{$key}{default});
 		} elsif ($schema->{$key}{required} and ! struct_has($self->{loaded_values}, $key) and ! struct_has($self->{set_values}, $key)) {
-			push @errors, "#R{$key}: missing required key";
-			next;
+			if (_is_required($schema->{$key}{required}, $self->_contents)) {
+				push @errors, "#R{$key}: missing required key";
+				next;
+			}
 		}
 	}
 
@@ -367,6 +369,29 @@ sub _signature {
 	return sha1_hex(JSON::PP->new->canonical->encode($explicit));
 }
 # }}}
+# _is_required - evaluate whether a 'required' constraint is active {{{
+#   1              → always required
+#   'sibling'      → required when sibling is truthy
+#   { sibling => v } → required when sibling eq v
+#
+# Multiple hash keys are OR'd together.  Future: support arrayref values
+# for multi-match on a single sibling, and negation (e.g. { '!key' => v }).
+sub _is_required {
+	my ($req, $siblings) = @_;
+	return 0 unless $req;
+	return 1 unless ref($req) || $req =~ /\D/;
+	if (ref($req) eq 'HASH') {
+		for my $dep (keys %$req) {
+			return 1 if exists($siblings->{$dep}) && defined($siblings->{$dep})
+				&& $siblings->{$dep} eq $req->{$dep};
+		}
+		return 0;
+	}
+	# String (non-numeric): truthy check on named sibling
+	return $siblings->{$req} ? 1 : 0;
+}
+
+# }}}
 # _validate_key - validate a value against a schema {{{
 sub _validate_key {
 	my ($self, $key, $schema) = @_;
@@ -419,7 +444,9 @@ sub _validate_key {
 					my $source = $loaded_is_empty_hash ? 'loaded' : 'default';
 					$self->_update_source($source, "$key.$subkey", $subschema->{default});
 				} elsif ($subschema->{required} and ! exists($value->{$subkey})) {
-					push @errors, "#R{$key}: missing required key #ri{$subkey}";
+					if (_is_required($subschema->{required}, $value)) {
+						push @errors, "#R{$key}: missing required key #ri{$subkey}";
+					}
 				}
 			}
 			# Refetch value to include newly-added defaults for recursive validation
@@ -590,6 +617,9 @@ sub _validate_key {
 		if (defined($value)) {
 			push @errors, "#R{$key}: expected null, not #ri{".($value ? $value : "<null>")."}";
 		}
+	} elsif ($type eq 'opaque') {
+		# Passthrough — any value accepted, sub-keys not validated here.
+		# Used for config sections delegated to other modules (see Top::register_config_section).
 	} elsif ($type eq 'any') {
 		# Do nothing
 	} else {

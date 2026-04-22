@@ -378,18 +378,38 @@ sub _build_workflow_graph {
 sub _build_from_env_files {
 	my ($self, $dir) = @_;
 
-	my (%nodes, %prior_envs);
-
 	opendir(my $dh, $dir) or return ({}, []);
 	my @files = sort grep { /\.ya?ml$/i && -f "$dir/$_" } readdir($dh);
 	closedir $dh;
 
+	# Pass 1: collect genesis.pipeline data and note which files exist
+	my (%pipeline_data, %file_exists);
 	for my $file (@files) {
-		my $pipeline_data = _read_genesis_pipeline_keys("$dir/$file");
-		next unless %$pipeline_data;
-
 		(my $env = $file) =~ s/\.ya?ml$//i;
+		$file_exists{$env} = 1;
+		my $data = _read_genesis_pipeline_keys("$dir/$file");
+		$pipeline_data{$env} = $data if %$data;
+	}
 
+	# Identify envs referenced as prior_env — these are pipeline entrypoints
+	# that may have no genesis.pipeline block themselves (Phase C design).
+	my %referenced_upstream;
+	for my $env (keys %pipeline_data) {
+		my $upstream = $pipeline_data{$env}{prior_env} or next;
+		$referenced_upstream{$upstream} = 1;
+	}
+
+	# Pass 2: build nodes for envs that either have pipeline data OR are
+	# referenced as upstream by another env AND have a file in the directory.
+	my %nodes;
+	my %prior_env_map;
+	my %envs_to_include = (
+		%pipeline_data,
+		map { $_ => {} } grep { $file_exists{$_} } keys %referenced_upstream,
+	);
+
+	for my $env (sort keys %envs_to_include) {
+		my $data = $pipeline_data{$env} || {};
 		$nodes{$env} = {
 			stage_name  => $env,
 			target_name => $env,
@@ -397,17 +417,15 @@ sub _build_from_env_files {
 			genesis_env => $env,
 			auto        => 0,
 			type        => 'deployment',
-			require_pr  => _truthy($pipeline_data->{require_pr}),
-			manual      => _truthy($pipeline_data->{manual}),
+			require_pr  => _truthy($data->{require_pr}),
+			manual      => _truthy($data->{manual}),
 		};
-
-		$prior_envs{$env} = $pipeline_data->{prior_env}
-			if $pipeline_data->{prior_env};
+		$prior_env_map{$env} = $data->{prior_env} if $data->{prior_env};
 	}
 
 	my @edges;
-	for my $env (sort keys %prior_envs) {
-		my $upstream = $prior_envs{$env};
+	for my $env (sort keys %prior_env_map) {
+		my $upstream = $prior_env_map{$env};
 		push @edges, { from => $upstream, to => $env }
 			if exists $nodes{$upstream};
 	}
@@ -445,7 +463,7 @@ sub _read_genesis_pipeline_keys {
 		# Top-level key resets context
 		if ($line =~ /^([a-zA-Z_][a-zA-Z0-9_]*):\s*(.*)$/) {
 			my $key = $1;
-			$in_genesis  = ($key eq 'genesis') ? 1 : 0;
+			$in_genesis  = $key eq 'genesis' ? 1 : 0;
 			$in_pipeline = 0;
 			next;
 		}

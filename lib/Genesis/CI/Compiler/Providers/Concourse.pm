@@ -10,6 +10,17 @@ use Genesis::CI::Legacy;
 use Genesis::CI::Compiler::PipelineDescriptor;
 use JSON::PP;
 
+### Provider Constants {{{
+
+use constant {
+	DEFAULT_TEAM            => 'main',
+	DEFAULT_PIPELINE_NAME   => undef,    # falls back to deployment_type from Top
+	DEFAULT_EXPOSE          => 0,
+	DEFAULT_PAUSE_AFTER_SET => 0,
+	DEFAULT_INSECURE        => 0,
+};
+
+# }}}
 ### Class Methods {{{
 
 # new - constructor for compiler pipeline path {{{
@@ -19,8 +30,9 @@ sub new {
 	# Compiler construction path: receives AST and optionally top
 	if ($opts{ast}) {
 		return bless({
-			ast => $opts{ast},
-			top => $opts{top},
+			ast           => $opts{ast},
+			top           => $opts{top},
+			provider_opts => $opts{provider_opts} || {},
 		}, $class);
 	}
 
@@ -30,21 +42,203 @@ sub new {
 }
 
 # }}}
-# init - initialize Concourse provider {{{
+# init - initialize Concourse provider (trait interface path) {{{
 sub init {
 	my ($class, %opts) = @_;
 
 	my $self = bless({
-		file      => $opts{file},
-		top       => $opts{top},
-		layout    => $opts{layout},
-		_platform => $opts{platform} || '',
-		config    => undef,
-		ast       => undef,
-		errors    => [],
+		file          => $opts{file},
+		top           => $opts{top},
+		layout        => $opts{layout},
+		_platform     => $opts{platform} || '',
+		provider_opts => $opts{provider_opts} || {},
+		config        => undef,
+		ast           => undef,
+		errors        => [],
 	}, $class);
 
 	return $self;
+}
+
+# }}}
+# }}}
+### Provider Options System {{{
+# Modelled after Genesis::Kit::Provider::Github — each method mirrors its
+# kit-provider counterpart so the patterns are interchangeable.
+
+# provider_type - canonical type string {{{
+sub provider_type { 'concourse' }
+
+# }}}
+# check_prereqs - returns 1 if fly is in PATH, 0 + error() if not {{{
+sub check_prereqs {
+	my ($self) = @_;
+
+	my ($fly_path) = run({ stderr => 0 }, 'type -p fly');
+	chomp($fly_path //= '');
+	unless ($fly_path) {
+		error(
+			"Cannot deploy Concourse pipeline: the #C{fly} CLI was not found in ".
+			"your PATH.\n".
+			"  Install it from your Concourse server:\n".
+			"    #C{<concourse-url>/api/v1/cli?arch=amd64&platform=<linux|darwin|windows>}\n".
+			"  Or log in via the Concourse UI and download fly from the bottom-right icon.",
+		);
+		return 0;
+	}
+
+	return 1;
+}
+
+# }}}
+# cli_opts - Getopt::Long specs for deploy-time command-line flags {{{
+#
+# All CI provider options are prefixed with 'ci-' to avoid clashing with
+# top-level genesis option names.
+sub cli_opts {
+	qw/
+		ci-target=s
+		ci-team=s
+		ci-pipeline-name=s
+		ci-pause
+		ci-expose
+		ci-insecure
+	/;
+}
+
+# }}}
+# cli_opts_help - formatted help text for Concourse CLI flags {{{
+sub cli_opts_help {
+	my ($class, %config) = @_;
+	return '' unless grep { $_ eq 'concourse' } @{$config{valid_types} || ['concourse']};
+	return <<'EOF';
+  CI Provider `concourse`:
+
+    Deploys Genesis pipelines to a Concourse CI server using the fly CLI.
+    Requires a configured fly target (see: fly login).
+
+    --ci-target <name>  (required if not set in .genesis/config ci.provider.target)
+        The fly target alias that identifies the Concourse server.
+        Create a target with: fly login -t <name> -c <url>
+
+    --ci-team <name>  (optional, default: "main")
+        The Concourse team to use when setting the pipeline.
+        Must match an existing team on the target Concourse server.
+
+    --ci-pipeline-name <name>  (optional, default: deployment type from .genesis/config)
+        Override the pipeline name used in Concourse.
+        Defaults to the repository's deployment_type (e.g., "cf", "bosh").
+
+    --ci-pause  (optional, default: false)
+        Leave the pipeline in a paused state after fly set-pipeline completes.
+        By default the pipeline is unpaused immediately after being set.
+
+    --ci-expose  (optional, default: false)
+        Run fly expose-pipeline after setting, making the pipeline publicly
+        viewable without authentication.  Useful for open-source pipelines.
+
+    --ci-insecure  (optional, default: false)
+        Skip TLS certificate verification when communicating with Concourse.
+        Passes --skip-ssl-validation (-k) to all fly commands.  Use when the
+        Concourse server uses a self-signed or otherwise untrusted certificate.
+
+EOF
+}
+
+# }}}
+# provider_options_schema - schema for ci.provider: when type=concourse {{{
+#
+# Keys map directly to the ci.provider: sub-keys in .genesis/config.
+# This schema is used by:
+#   - Genesis::CI::Compiler::validate_config_section()
+#   - Genesis::CI::Compiler::Validator::_validate_multi_file()
+sub provider_options_schema {
+	return {
+		type => {
+			type        => 'string',
+			required    => 1,
+			description => 'Provider type (must be "concourse")',
+		},
+		target => {
+			type        => 'string',
+			description => 'Fly target alias (fly login -t <target>)',
+		},
+		team => {
+			type        => 'string',
+			default     => DEFAULT_TEAM,
+			description => 'Concourse team name',
+		},
+		pipeline_name => {
+			type        => 'string',
+			description => 'Pipeline name override (defaults to deployment_type)',
+		},
+		expose => {
+			type        => 'boolean',
+			default     => DEFAULT_EXPOSE,
+			description => 'Make pipeline publicly viewable (fly expose-pipeline)',
+		},
+		pause_after_set => {
+			type        => 'boolean',
+			default     => DEFAULT_PAUSE_AFTER_SET,
+			description => 'Leave pipeline paused after fly set-pipeline',
+		},
+		insecure => {
+			type        => 'boolean',
+			default     => DEFAULT_INSECURE,
+			description => 'Skip TLS certificate verification (fly --skip-ssl-validation)',
+		},
+	};
+}
+
+# }}}
+# provider_options_defaults - default values for all Concourse options {{{
+sub provider_options_defaults {
+	return {
+		team            => DEFAULT_TEAM,
+		expose          => DEFAULT_EXPOSE,
+		pause_after_set => DEFAULT_PAUSE_AFTER_SET,
+		insecure        => DEFAULT_INSECURE,
+	};
+}
+
+# }}}
+# normalize_provider_opts - remap ci-pause (CLI) to pause_after_set (schema key) {{{
+sub normalize_provider_opts {
+	my ($class, $opts) = @_;
+	my $normalized = $class->SUPER::normalize_provider_opts($opts);
+	if (exists $normalized->{pause} && !exists $normalized->{pause_after_set}) {
+		$normalized->{pause_after_set} = delete $normalized->{pause};
+	}
+	return $normalized;
+}
+
+# }}}
+# describe_provider - structured self-description for display {{{
+#
+# Mirrors Genesis::Kit::Provider::Github::status() — returns a hash with
+# type, label, an ordered 'extras' list, and a per-key status structure.
+sub describe_provider {
+	my ($self) = @_;
+
+	my $target    = $self->provider_option('target')        || '(not set)';
+	my $team      = $self->provider_option('team')          || DEFAULT_TEAM;
+	my $pipe_name = $self->provider_option('pipeline_name') || '(deployment type)';
+	my $expose    = $self->provider_option('expose')    ? 'yes' : 'no';
+	my $paused    = $self->provider_option('pause_after_set') ? 'yes' : 'no';
+	my $insecure  = $self->provider_option('insecure')  ? 'yes' : 'no';
+
+	return (
+		type     => 'concourse',
+		label    => 'Concourse',
+		extras   => [qw(Target Team Pipeline Expose PauseAfterSet Insecure)],
+		Target        => $target,
+		Team          => $team,
+		Pipeline      => $pipe_name,
+		Expose        => $expose,
+		PauseAfterSet => $paused,
+		Insecure      => $insecure,
+		status   => 'ok',
+	);
 }
 
 # }}}
@@ -101,7 +295,6 @@ sub parse {
 
 	$self->{ast}    = $ast;
 	$self->{config} = $parsed;
-	$self->{layout} = $self->{layout};
 
 	return $self;
 }
@@ -128,67 +321,108 @@ sub generate {
 
 # }}}
 # deploy - deploy pipeline to Concourse via fly CLI {{{
+#
+# Option resolution priority (highest to lowest):
+#   1. Caller-supplied %opts (from command-line flags via parse_cli_opts)
+#   2. provider_opts stored in $self (loaded from ci.provider: in .genesis/config)
+#   3. Legacy $self->{layout} (backward compat)
+#   4. Built-in defaults (team: main, etc.)
 sub deploy {
 	my ($self, %opts) = @_;
-	
-	my $target = $opts{target} || $self->{layout};
-	my $pipeline_name = $self->{config}{pipeline}{name};
-	my $dry_run = $opts{'dry-run'};
-	my $yes = $opts{yes};
-	my $paused = $opts{paused};
-	
+
 	bail("Must call parse() before deploy()") unless $self->{config};
-	
+
+	# All keys use config-file names (target, team, pipeline_name, pause_after_set, expose).
+	# Callers are responsible for normalizing cli-prefixed keys before calling deploy().
+
+	# --- Resolve options from three tiers ---
+
+	# Target: call-site override > provider_opts > legacy layout
+	my $target = $opts{target}
+		// $self->provider_option('target')
+		// $self->{layout};
+	bail("No Concourse target specified.  Use --ci-target or set ci.provider.target in .genesis/config")
+		unless $target;
+
+	# Team: call-site override > provider_opts > default
+	my $team = $opts{team}
+		// $self->provider_option('team')
+		// DEFAULT_TEAM;
+
+	# Pipeline name: call-site override > provider_opts > config name > deployment_type
+	my $pipeline_name = $opts{pipeline_name}
+		// $self->provider_option('pipeline_name')
+		// $self->{config}{pipeline}{name}
+		// ($self->{top} ? $self->{top}->type : undef);
+	bail("Cannot determine pipeline name — set ci.provider.pipeline_name or ensure deployment_type is set")
+		unless $pipeline_name;
+
+	# Pause/expose/dry-run/insecure: call-site override > provider_opts > defaults
+	my $dry_run  = $opts{'dry-run'};
+	my $yes      = $opts{yes};
+	my $pause    = $opts{pause_after_set}
+		// $self->provider_option('pause_after_set')
+		// DEFAULT_PAUSE_AFTER_SET;
+	my $expose   = $opts{expose}
+		// $self->provider_option('expose')
+		// _yaml_bool(($self->{config}{pipeline} || {})->{public}, DEFAULT_EXPOSE);
+	my $insecure = $opts{insecure}
+		// $self->provider_option('insecure')
+		// DEFAULT_INSECURE;
+
 	my $yaml = $self->generate();
-	
+
 	if ($dry_run) {
 		output({raw => 1}, $yaml);
 		return;
 	}
-	
-	# Pause pipeline before updating
+
+	my $k_flag = $insecure ? ' -k' : '';
+
+	# Pause pipeline before updating (safe to do even when not found yet)
 	my ($out, $rc) = run(
-		'fly -t $1 pause-pipeline -p $2',
+		"fly${k_flag} -t \$1 pause-pipeline -p \$2",
 		$target, $pipeline_name
 	);
 	bail("Could not pause pipeline '%s': %s", $pipeline_name, $out)
 		unless $rc == 0 || $out =~ /pipeline '.*' not found/;
-	
+
 	# Write pipeline to temp file
 	my $dir = workdir;
 	mkfile_or_fail("${dir}/pipeline.yml", $yaml);
-	
+
 	# Upload pipeline
-	my $yes_flag = $yes ? '-n' : '';
+	my $yes_flag  = $yes ? ' -n' : '';
+	my $team_flag = " --team=$team";
 	run({
 		interactive => 1,
-		onfailure => "Could not upload pipeline $pipeline_name"
+		onfailure => "Could not upload pipeline $pipeline_name",
 	},
-		'fly -t $1 set-pipeline '.$yes_flag.' -p $2 -c $3/pipeline.yml',
+		"fly${k_flag} -t \$1 set-pipeline${yes_flag}${team_flag} -p \$2 -c \$3/pipeline.yml",
 		$target, $pipeline_name, $dir
 	);
-	
-	# Unpause pipeline (unless --paused)
-	unless ($paused) {
+
+	# Unpause pipeline (unless ci.provider.pause or --ci-pause override)
+	unless ($pause) {
 		run({
 			interactive => 1,
-			onfailure => "Could not unpause pipeline $pipeline_name"
+			onfailure => "Could not unpause pipeline $pipeline_name",
 		},
-			'fly -t $1 unpause-pipeline -p $2',
+			"fly${k_flag} -t \$1 unpause-pipeline -p \$2",
 			$target, $pipeline_name
 		);
 	}
-	
-	# Set visibility (public/private)
-	my $action = $self->{config}{pipeline}{public} ? 'expose' : 'hide';
+
+	# Set visibility (expose vs hide)
+	my $action = $expose ? 'expose' : 'hide';
 	run({
 		interactive => 1,
-		onfailure => "Could not $action pipeline $pipeline_name"
+		onfailure => "Could not $action pipeline $pipeline_name",
 	},
-		'fly -t $1 '.$action.'-pipeline -p $2',
+		"fly${k_flag} -t \$1 ${action}-pipeline -p \$2",
 		$target, $pipeline_name
 	);
-	
+
 	return;
 }
 
@@ -319,7 +553,7 @@ sub graph_md {
 }
 
 # }}}
-# generate_description - alias for describe(); called by Genesis::Commands::Pipeline {{{
+# generate_description - alias for describe(); called by Genesis::Commands::Pipelines {{{
 sub generate_description { $_[0]->describe() }
 
 # }}}

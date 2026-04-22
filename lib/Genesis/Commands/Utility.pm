@@ -101,20 +101,15 @@ sub multi_select_prompt_handler {
 sub secret_line_prompt_handler {
 	my ($prompt,%opts) = @_;
 	my $secret = delete $opts{secret};
-	my $env = delete $opts{env};
+	my $secrets_base = delete $opts{secrets_base};
 	validate_prompt_opts("secret-line", \%opts, qw(echo));
 
-	my $vault;
-	if ($env && $env->kit->feature_compatibility('2.7.0-rc4')) {
-		$secret = $env->secrets_base.$secret unless $secret =~ /^\//;
-		$vault = $env->vault;
-	} else {
-		$secret = "secret/$secret";
-		require Service::Vault::Remote;
-		$vault = Service::Vault::Remote->current || Service::Vault::Remote->rebind();
-	}
-	my ($path, $key) = split /:/, $secret;
+	require Service::Vault::Remote;
+	my $vault = Service::Vault::Remote->current || Service::Vault::Remote->rebind();
 	bail("No vault selected!") unless $vault;
+
+	$secret = $secrets_base.$secret unless $secret =~ /^\//;
+	my ($path, $key) = split /:/, $secret;
 	print "\n";
 	$vault->query(
 		{ interactive => 1, onfailure => "Failed to save data to #C{$secret} in vault" },
@@ -123,21 +118,16 @@ sub secret_line_prompt_handler {
 sub secret_block_prompt_handler {
 	my ($prompt,%opts) = @_;
 	my $secret = delete $opts{secret};
-	my $env = delete $opts{env};
+	my $secrets_base = delete $opts{secrets_base};
 	validate_prompt_opts("secret-block", \%opts, ());
 	my $file = mkfile_or_fail(workdir()."/param", prompt_for_block($prompt));
 
-	my $vault;
-	if ($env && $env->kit->feature_compatibility('2.7.0-rc4')) {
-		$secret = $env->secrets_base.$secret unless $secret =~ /^\//;
-		$vault = $env->vault;
-	} else {
-		$secret = "secret/$secret";
-		require Service::Vault::Remote;
-		$vault = Service::Vault::Remote->current || Service::Vault::Remote->rebind();
-	}
-	my ($path, $key) = split /:/, $secret;
+	require Service::Vault::Remote;
+	my $vault = Service::Vault::Remote->current || Service::Vault::Remote->rebind();
 	bail("No vault selected!") unless $vault;
+
+	$secret = $secrets_base.$secret unless $secret =~ /^\//;
+	my ($path, $key) = split /:/, $secret;
 	print "\n";
 	$vault->query(
 		{ onfailure => "Failed to save data to #C{$secret} in vault" },
@@ -173,14 +163,8 @@ sub ui_prompt_for {
 	my $use_vault = ($type =~ /^secret-/);
 	if ($use_vault) {
 		get_options->{secret} = $path;
-		eval {
-			require Genesis::Top;
-			get_options->{env} = Genesis::Top->new($ENV{GENESIS_ROOT})->load_env($ENV{GENESIS_ENVIRONMENT});
-		};
-		if ($@) {
-			debug "Failed in ui-prompt-for attempting to load environment:\n$@";
-			bail "Cannot prompt for secrets outside a kit hook";
-		}
+		get_options->{secrets_base} = $ENV{GENESIS_SECRETS_BASE}
+			|| bail("Cannot prompt for secrets: GENESIS_SECRETS_BASE not set (not in a kit hook?)");
 	}
 
 	bail(

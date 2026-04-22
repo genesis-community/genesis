@@ -525,4 +525,95 @@ subtest 'new_prompt_for_choice header auto-generated when omitted' => sub {
 	like($out, qr/Select one of the following/, 'auto-generated header shown');
 };
 
+# ── Regression tests for bugs found during FWT-915/919 ──────────────────────
+
+subtest 'new_prompt_for_choice no default does not auto-select first item' => sub {
+	plan tests => 3;
+
+	# Without a default, pressing Enter should re-prompt (not select
+	# item 1).  Feed blank + valid selection to verify re-prompting
+	# occurred.  Bug: undef == 0 in numeric context made the first
+	# item the implicit default.
+	set_stdin("\n2\n");
+	my $result;
+	my $out = combined_from {
+		$result = new_prompt_for_choice(
+			header  => "Pick:",
+			choices => [qw(alpha beta gamma)],
+			# no default
+		);
+	};
+	reset_stdin();
+
+	is($result, 'beta', 'blank enter without default re-prompts; second input accepted');
+	my @prompts = ($out =~ /Select choice >/g);
+	cmp_ok(scalar @prompts, '>=', 2, 'prompt appeared at least twice (re-prompted after blank enter)');
+	like($out, qr/No default/, 'error message shown on blank enter without default');
+};
+
+subtest 'new_prompt_for_choice separator does not corrupt numbering' => sub {
+	plan tests => 2;
+
+	# Choices with a separator: the separator should not get a number,
+	# and items after it should be numbered contiguously.
+	# Bug: $section_offset was a package global that leaked between
+	# calls, causing items to start at 0 instead of 1.
+	set_stdin("3\n");
+	my $result;
+	my $out = combined_from {
+		$result = new_prompt_for_choice(
+			header  => "Pick:",
+			choices => [
+				{value => 'a', label => 'Alpha'},
+				{value => 'b', label => 'Beta'},
+				{separator => 1},
+				{value => 'c', label => 'Gamma'},
+			],
+		);
+	};
+	reset_stdin();
+
+	is($result, 'c', 'item after separator selected by correct number');
+	like($out, qr/1\) Alpha.*2\) Beta.*3\) Gamma/s,
+		'items numbered 1-3 with separator consuming no number');
+};
+
+subtest 'new_prompt_for_choice numbering correct across sequential calls' => sub {
+	plan tests => 2;
+
+	# Two calls in a row: the second call should start numbering at 1,
+	# not carry over $section_offset from the first call.
+	# Bug: $section_offset was a package global.
+
+	# First call — has a separator
+	set_stdin("1\n");
+	my $r1;
+	combined_from {
+		$r1 = new_prompt_for_choice(
+			header  => "First:",
+			choices => [
+				{value => 'x'},
+				{separator => 1},
+				{value => 'y'},
+			],
+		);
+	};
+	reset_stdin();
+
+	is($r1, 'x', 'first call: item 1 selected correctly');
+
+	# Second call — should not be affected by the first
+	set_stdin("1\n");
+	my $r2;
+	my $out = combined_from {
+		$r2 = new_prompt_for_choice(
+			header  => "Second:",
+			choices => [qw(a b c)],
+		);
+	};
+	reset_stdin();
+
+	is($r2, 'a', 'second call: numbering starts fresh at 1');
+};
+
 done_testing;

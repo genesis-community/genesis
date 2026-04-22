@@ -177,6 +177,12 @@ sub define_command { # {{{
 	};
 
 	$PROPS{$name} = {%$default_props, %$props};
+
+	# extended_handlers implies option_passthrough: the main parser
+	# must leave unrecognised flags in @args for the handlers to claim.
+	if ($PROPS{$name}{extended_handlers}) {
+		$PROPS{$name}{option_passthrough} = 1;
+	}
 	my $fn_require = '';
 	if (ref($fn) ne "CODE") {
 		if (defined($fn)) {
@@ -282,6 +288,31 @@ sub parse_options { # {{{
 
 	my $args = shift;
 	my $args_copy = [@$args];
+
+	# Validate extended handlers once, up front, before any option
+	# parsing.  This is the single gateway for both command execution
+	# and help rendering (prepare_command always calls parse_options
+	# first), so we validate here rather than duplicating in
+	# command_help.  Each handler class must be loadable and must
+	# implement the required contract methods.
+	if (my $handlers = $PROPS{$COMMAND}{extended_handlers}) {
+		for my $class (@$handlers) {
+			(my $file = $class) =~ s|::|/|g;
+			eval { require "$file.pm" };
+			bail(
+				"Extended handler #C{%s} for command #C{%s} could not be loaded:\n%s",
+				$class, $COMMAND, $@
+			) if $@;
+			for my $method (qw(parse_opts opts_help opts_slot)) {
+				bail(
+					"Extended handler #C{%s} for command #C{%s} does not implement ".
+					"the required #C{%s} method.",
+					$class, $COMMAND, $method
+				) unless $class->can($method);
+			}
+		}
+	}
+
 	my @base_spec = keys %{({map {@$_} @global_options[0..$PROPS{$COMMAND}{option_group}]})};
 
 	my @opts_spec = (
@@ -327,6 +358,31 @@ sub parse_options { # {{{
 
 	shift @$args if ($args->[0]||'') eq '--';
 	@COMMAND_ARGS = (@$args);
+
+	# Extended handlers: each registered handler class gets a chance to
+	# consume its flags from @COMMAND_ARGS and populate a slot in
+	# $COMMAND_OPTIONS.  Handlers run in declared order so each sees
+	# only what prior handlers left behind.  The classes were already
+	# required and validated at the top of this sub.
+	if (my $handlers = $PROPS{$COMMAND}{extended_handlers}) {
+		for my $class (@$handlers) {
+			my %slot;
+			$class->parse_opts(\@COMMAND_ARGS, \%slot);
+			$COMMAND_OPTIONS->{$class->opts_slot()} = \%slot;
+		}
+
+		# After all handlers have run, anything still looking like an
+		# option is unclaimed -- reject it the same way the main parser
+		# would without option_passthrough.
+		my @unknown = grep { /^-/ } @COMMAND_ARGS;
+		if (@unknown) {
+			command_usage(1, sprintf(
+				"Unknown option%s: %s",
+				@unknown > 1 ? 's' : '',
+				join(', ', @unknown)
+			));
+		}
+	}
 
 	# Extract Core options
 	$ENV{NOCOLOR}        = 'y' if defined($COMMAND_OPTIONS->{color}) && !delete($COMMAND_OPTIONS->{color});
@@ -650,8 +706,26 @@ sub command_usage { # {{{
 		$out .= "#i{To see only global options, use }#g{${\(humanize_bin)}} #y{--globals}\n";
 	}
 
-	# TODO: Integrate extended usage better than just dumping it at the end
-	if (ref($PROPS{$command}{extended_usage}) eq "CODE") {
+	# Extended usage: render help from registered handlers (preferred),
+	# or fall back to legacy extended_usage closure if no handlers are
+	# registered.
+	# Extended handlers were already required and validated in
+	# parse_options (which always runs before command_help via
+	# prepare_command).
+	if (my $handlers = $PROPS{$command}{extended_handlers}) {
+		my $extended_usage = '';
+		for my $class (@$handlers) {
+			my $help = $class->opts_help();
+			if ($help) {
+				$help =~ s/\s*$//s;
+				$extended_usage .= $help . "\n";
+			}
+		}
+		if ($extended_usage =~ /\S/) {
+			$out .= "\n#Wku{Extended Usage Information}\n";
+			$out .= "\n$extended_usage\n";
+		}
+	} elsif (ref($PROPS{$command}{extended_usage}) eq "CODE") {
 		my $extended_usage = $PROPS{$command}{extended_usage}->();
 		if ($extended_usage) {
 			$extended_usage =~ s/\s*$//s;

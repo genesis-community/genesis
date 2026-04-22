@@ -894,6 +894,56 @@ subtest 'validate() integer type accepts zero and rejects leading zeros' => sub 
 	);
 };
 
+subtest 'conditional required (polymorphic)' => sub {
+	local $ENV{NOCOLOR} = 1;
+	my $schema = {
+		mode => {type => 'string', required => 1},
+		target => {type => 'string', required => 'mode'},
+		url => {type => 'string', required => {mode => 'remote'}},
+		port => {type => 'number', required => {mode => 'remote'}},
+	};
+
+	# mode=local, no target → fails (required => 'mode' means required when mode is truthy)
+	my $c1 = Genesis::Config->new(undef, 0, {mode => 'local'});
+	throws_ok(
+		sub { $c1->validate($schema) },
+		qr/target: missing required key/,
+		"required => 'sibling': fails when sibling is truthy and key missing"
+	);
+
+	# mode=local, target present, no url → ok (url only required when mode eq 'remote')
+	my $c2 = Genesis::Config->new(undef, 0, {mode => 'local', target => '/tmp'});
+	lives_ok(
+		sub { $c2->validate($schema) },
+		"required => {mode => 'remote'}: passes when mode is 'local'"
+	);
+
+	# mode=remote, target present, no url → fails
+	my $c3 = Genesis::Config->new(undef, 0, {mode => 'remote', target => 'srv1'});
+	throws_ok(
+		sub { $c3->validate($schema) },
+		qr/url: missing required key/,
+		"required => {mode => 'remote'}: fails when mode is 'remote' and key missing"
+	);
+
+	# mode=remote, all present → passes
+	my $c4 = Genesis::Config->new(undef, 0, {mode => 'remote', target => 'srv1', url => 'http://x', port => 8080});
+	lives_ok(
+		sub { $c4->validate($schema) },
+		"required => {mode => 'remote'}: passes when all keys present"
+	);
+
+	# required => 0 means not required
+	my $schema2 = {
+		name => {type => 'string', required => 0},
+	};
+	my $c5 = Genesis::Config->new(undef, 0, {});
+	lives_ok(
+		sub { $c5->validate($schema2) },
+		"required => 0 means not required"
+	);
+};
+
 done_testing;
 
 # vim: ts=2 sw=2 sts=2 noet fdm=marker foldlevel=1 nu

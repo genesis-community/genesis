@@ -340,9 +340,19 @@ sub create {
 	my $env = $class->new(get_opts(\%opts, qw(name top kit)));
 	my $create_env = $opts{'create-env'};
 
-	# environment must not already exist...
-	die "Environment file $env->{file} already exists.\n"
-		if -f $env->path($env->{file});
+	# environment must not already exist (unless --force)
+	my $env_path = $env->path($env->{file});
+	if (-f $env_path) {
+		die "Environment file $env->{file} already exists.\n"
+			unless $opts{force};
+		# Move the existing file out of the way so the new hook
+		# starts fresh and $self->exists returns false.  The .old
+		# file is kept for reference (manual diff / re-create).
+		my $old_path = "${env_path}.old";
+		rename($env_path, $old_path)
+			or bail("Could not move existing %s to %s: %s", $env->{file}, "$env->{file}.old", $!);
+		notice("\nMoved existing #C{%s} to #C{%s.old}", $env->{file}, $env->{file});
+	}
 
 	# Sanitize the vault descriptor, if present
 	if ($opts{vault}) {
@@ -389,15 +399,30 @@ sub create {
 			$env->{__params}{genesis}{use_create_env} = 0;
 			$env->{__params}{genesis}{bosh_env} = $bosh_env//$opts{name};
 		} else {
-			# Complicated state: the kit allows but does not require create-env.
-			warning(
-				"\nKit #M{%s} supports both bosh and create-env deployment.  No --create-env ".
-				"option specified, so using bosh deployment method.",
-				$env->kit->id
-			) unless defined($create_env) || $bosh_env;
+			# Kit allows but does not require create-env.  When neither
+			# --create-env nor --bosh-env is given, default based on
+			# whether the kit is a BOSH director: director kits default
+			# to create-env (they create the director itself), everything
+			# else defaults to bosh deployment.  This matches the
+			# pre-2.8.0 heuristic and the use_create_env accessor logic.
 			bail(
 				"Cannot specify a bosh environment for environments that use create-env deployment method."
 			) if $create_env && $bosh_env;
+			unless (defined($create_env) || $bosh_env) {
+				if ($env->is_bosh_director) {
+					$create_env = 1;
+					warning(
+						"\nNo #C{--bosh-env} specified — defaulting to #C{create-env} deployment ".
+						"for this BOSH director kit."
+					);
+				} else {
+					warning(
+						"\nKit #M{%s} supports both bosh and create-env deployment.  No --create-env ".
+						"option specified, so using bosh deployment method.",
+						$env->kit->id
+					);
+				}
+			}
 			$env->{__params}{genesis}{use_create_env} = $create_env//0;
 			$env->{__params}{genesis}{bosh_env} = $create_env ? '' : $bosh_env || $opts{name};
 		}
@@ -419,7 +444,7 @@ sub create {
 	bail("No vault specified or configured.")
 		unless $env->vault;
 
-	my ($results) = $env->remove_secrets(all => 1, no_populate => 1);
+	my ($results) = $env->remove_secrets(all => 'purge');
 	bail "Cannot continue with existing secrets for this environment"
 		if ($results->{abort} || $results->{error});
 
@@ -455,11 +480,6 @@ sub create {
 		}
 	}
 
-	if (! $env->add_secrets(verbose=>1, import => 1)) {
-		$env->remove_secrets(all => 1, 'no-prompt' => 1);
-		unlink $env->file;
-		return undef;
-	}
 	return $env;
 }
 
@@ -1458,28 +1478,61 @@ sub scale {
 
 # }}}
 # iaas - returns the iaas for the environment {{{
+#
+# Resolution order:
+#   1. kit.iaas (explicit — works for both OCFP and non-OCFP)
+#   2. kit.features (non-OCFP only: silently upconvert IaaS feature)
+#   3. Director exodus data (inherited from parent BOSH director)
+#   4. Bail with context-appropriate message
+#
+my @_known_iaas = qw(vsphere aws azure google openstack warden);
 sub iaas {
 	my ($self) = @_;
-	my $iaas = $self->lookup('kit.iaas');
 
+	# 1. Explicit kit.iaas (OCFP sets this; non-OCFP may also use it)
+	my $iaas = $self->lookup('kit.iaas');
 	return lc($iaas) if $iaas;
 
-	bail(
-		"No IaaS type set for %s environment, which uses a create-env deployment. ".
-		"Please set the `kit.iaas` in the enviroment file -- you can use #G{%s ".
-		"%s edit} to do this.",
-		$self->name,
-		humanize_bin(),
-		humanize_path($self->path($self->name))
-	) if $self->use_create_env;
+	# 2. Non-OCFP: silently derive from kit.features.
+	#    Check kit.features directly via lookup (returns from __params
+	#    cache during create) — do NOT call is_ocfp()/has_feature()
+	#    which triggers features() → features hook → get_environment_variables
+	#    → iaas() recursion.
+	my @features = @{$self->lookup('kit.features', [])};
+	my $is_ocfp = grep { $_ eq 'ocfp' } @features;
+	unless ($is_ocfp) {
+		for my $f (@features) {
+			return lc($f) if grep { $f eq $_ } @_known_iaas;
+		}
+	}
 
-	eval {$iaas = $self->director_exodus_lookup('iaas') }; # FIXME: How to handle multiple CPIs?
+	# 3. Inherit from the BOSH director's exodus data
+	unless ($self->use_create_env) {
+		eval { $iaas = $self->director_exodus_lookup('iaas') }; # FIXME: How to handle multiple CPIs?
+		return lc($iaas) if $iaas;
+	}
 
+	# 4. Nothing found — bail with appropriate guidance
+	if ($is_ocfp) {
+		bail(
+			"No IaaS type set for OCFP environment %s. ".
+			"Set #C{kit.iaas} in the environment file or ensure it is ".
+			"inherited from the parent BOSH director.",
+			$self->name,
+		);
+	} elsif ($self->use_create_env) {
+		bail(
+			"No IaaS type found for %s environment (create-env deployment). ".
+			"Set #C{kit.iaas} in the environment file or include the IaaS ".
+			"as a kit feature (e.g. #C{features: [vsphere, ...]}).",
+			$self->name,
+		);
+	}
 	bail(
 		"No IaaS type set for %s environment, and no default IaaS type set for ".
 		"deployments under %s bosh director.",
 		$self->name, $self->bosh->alias
-	) if ! $iaas && $self->kit->requires_iaas($self);
+	) if $self->kit->requires_iaas($self);
 
 	return lc($iaas//'');
 }
@@ -1876,11 +1929,21 @@ sub credhub_connection_env {
 	my ($credhub_src,$credhub_src_key) = $self->lookup(
 		['genesis.credhub_env','genesis.bosh_env','params.bosh','genesis.env','params.env']
 	);
+
+	# create-env environments have genesis.bosh_env = '' (empty string)
+	# which lookup finds as "defined".  Fall through to the next keys
+	# so we don't try to parse an empty string as a BOSH env descriptor.
+	if ($credhub_src_key && $credhub_src_key eq 'genesis.bosh_env' && !length($credhub_src // '')) {
+		($credhub_src,$credhub_src_key) = $self->lookup(
+			['genesis.env','params.env']
+		);
+	}
+
 	my %env=();
 
 	my $credhub_info = {};
 	$env{GENESIS_CREDHUB_EXODUS_SOURCE_OVERRIDE} = "";
-	if ($credhub_src_key eq 'genesis.bosh_env') {
+	if ($credhub_src_key && $credhub_src_key eq 'genesis.bosh_env') {
 		my ($bosh_alias,$bosh_dep_type,$bosh_exodus_vault,$bosh_exodus_mount) = $self->_parse_bosh_env($credhub_src);
 		$bosh_alias //= $self->name;
 		$bosh_dep_type //= 'bosh';
@@ -4456,13 +4519,60 @@ sub rotate_secrets {
 sub remove_secrets {
 	my ($self, %opts) = @_;
 
+	# Modes:
+	#   all => 'purge'  — pre-create: wipe vault paths without a
+	#                     secrets plan (env file may not exist yet)
+	#   all => 1        — interactive: wipe with plan-based labeling
+	#   (neither)       — targeted removal by filter
+	#
+	# Legacy: all => 1, no_populate => 1 is treated as all => 'purge'
+	if ($opts{all} && $opts{no_populate}) {
+		$opts{all} = 'purge';
+		delete $opts{no_populate};
+	}
+
 	my $store = $self->secrets_store(%opts);
 
-	# Determine secrets_store from kit - assume vault for now (credhub ignored)
 	if ($opts{all}) {
-		# TODO: extract this to a method in Genesis::Env::Secrets::Store
 		my @paths = $store->store_paths();
 		return ({empty => 1}) unless scalar(@paths);
+
+		# Purge mode: called from create() before the env file exists.
+		# We can't build a secrets_plan (the blueprint hook needs the
+		# env file), so skip plan-based labeling and just wipe the
+		# vault paths directly after prompting with raw paths.
+		if ($opts{all} eq 'purge') {
+			unless ($opts{'no-prompt'}) {
+				die_unless_controlling_terminal(
+					"\nCannot prompt for confirmation to remove all secrets outside a ".
+					"controlling terminal.  Use #C{-y|--no-prompt} option to provide ".
+					"confirmation to bypass this limitation."
+				);
+				warning(
+					"\nExisting secrets found under '#C{%s}' from a previous run.\n".
+					"The following %d path(s) will be removed:\n",
+					$self->secrets_base, scalar(@paths)
+				);
+				my $prefix = $store->base =~ s/^\///r;
+				for my $full_path (sort @paths) {
+					info(bullet("#C{%s}", $full_path =~ s/^$prefix//r));
+				}
+				my $response = prompt_for_line(undef, "Type 'yes' to remove these secrets; anything else will abort","");
+				if ($response ne 'yes') {
+					return ({abort => 1}, sprintf(
+						"Keeping all existing secrets under '#C{%s}'.",
+						$store->base
+					));
+				}
+			}
+			output {pending => 1}, "Deleting existing secrets under '#C{%s}'...", $store->base;
+			my ($out,$rc) = $store->service->query('rm', '-rf', $store->base);
+			if ($rc) {
+				my $msg = "Failed to remove secrets under '#C{%s}':\n%s";
+				return ({error => 1}, sprintf($msg, $store->base, $out));
+			}
+			return ({success => 1}, "#G{All applicable secrets removed.}");
+		}
 
 		my $plan = $self->secrets_plan(%opts, silent => 1);
 		unless ($opts{'no-prompt'}) {
@@ -5545,8 +5655,17 @@ sub _cap_yaml_file {
 	my $cap_file  = $self->workpath("fin.yml");
 
 	my $now = strftime(EXODUS_TIME_FORMAT, gmtime());
-	my $bosh_target = $self->use_create_env ? "~" : $self->bosh_env->{description};
-	my $bosh_exodus_path = $self->use_create_env ? "~" : $self->bosh->exodus_path;
+	my ($bosh_target, $bosh_exodus_path);
+	if ($self->use_create_env) {
+		$bosh_target = "~";
+		$bosh_exodus_path = "~";
+	} else {
+		$bosh_target = $self->bosh_env->{description};
+		# Prefer live director; fall back to bosh_env-derived path when
+		# the parent director hasn't been deployed yet.
+		my $bosh = eval { $self->bosh };
+		$bosh_exodus_path = $bosh ? $bosh->exodus_path : $self->bosh_env->{exodus_path};
+	}
 	mkfile_or_fail($cap_file, 0644, <<EOF);
 ---
 name: (( concat genesis.env "-$type" ))
@@ -5746,12 +5865,24 @@ sub _parse_bosh_env {
 	my ($name, $dep_type, $vault_url, $exodus_mount) =
 		($bosh_env_description) =~ m/^([^\/\@]+)(?:\/([^\@]+))?(?:@(?:(https?:\/\/[^\/]+)?(?:\/|$))?(.*))?$/;
 
+	# Synthesize the BOSH director's exodus path from parsed components.
+	# This allows callers to reference the path without needing a live
+	# director (e.g., during env creation before the parent is deployed).
+	my $mount = $exodus_mount;
+	unless ($mount) {
+		(my $sm = $self->secrets_mount) =~ s#/?$#/#;
+		$mount = "${sm}exodus/";
+	}
+	$mount =~ s#/?$#/#;
+	my $bosh_exodus_path = sprintf("%s%s/%s", $mount, $name, $dep_type || 'bosh');
+
 	return wantarray ? ($name, $dep_type, $vault_url, $exodus_mount) : {
-		name         => $name,
-		dep_type     => $dep_type,
-		vault_url    => $vault_url,
-		exodus_mount => $exodus_mount,
-		description  => $bosh_env_description,
+		name              => $name,
+		dep_type          => $dep_type,
+		vault_url         => $vault_url,
+		exodus_mount      => $exodus_mount,
+		exodus_path       => $bosh_exodus_path,
+		description       => $bosh_env_description,
 	};
 }
 

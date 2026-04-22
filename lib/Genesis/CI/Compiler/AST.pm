@@ -132,9 +132,9 @@ sub trigger_names {
 sub resources_matching {
 	my ($self, $pattern) = @_;
 
-	my $regex = $pattern;
-	$regex =~ s/\*/.*/g;
-	$regex =~ s/\?/./g;
+	my $regex = join('', map {
+		$_ eq '*' ? '.*' : $_ eq '?' ? '.' : quotemeta($_)
+	} split(/([*?])/, $pattern, -1));
 	$regex = qr/^$regex$/;
 
 	my @matching;
@@ -149,9 +149,9 @@ sub resources_matching {
 sub targets_matching {
 	my ($self, $pattern) = @_;
 
-	my $regex = $pattern;
-	$regex =~ s/\*/.*/g;
-	$regex =~ s/\?/./g;
+	my $regex = join('', map {
+		$_ eq '*' ? '.*' : $_ eq '?' ? '.' : quotemeta($_)
+	} split(/([*?])/, $pattern, -1));
 	$regex = qr/^$regex$/;
 
 	my @matching;
@@ -350,7 +350,7 @@ the generic pipeline and should not be accessed by providers directly.
   my $resources      = $ast->pipeline_resources;
   my $jobs           = $ast->jobs;
   my $groups         = $ast->groups;
-  my $dot            = $ast->graphviz;
+  my $dot            = $ast->mermaid;
   my $text           = $ast->description;
 
 =head1 SEE ALSO

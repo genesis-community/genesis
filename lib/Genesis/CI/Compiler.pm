@@ -9,6 +9,14 @@ use Genesis::CI::Compiler::ScriptDiscovery;
 use Genesis::CI::Compiler::ASTBuilder;
 use Genesis::CI::Compiler::PipelineDescriptor;
 
+# Register as the owner of the ci: section in .genesis/config.
+# This runs at module load time so Top.pm's _validate_config() can
+# delegate ci: section validation to us when we're loaded.
+{
+	require Genesis::Top;
+	Genesis::Top->register_config_section('ci', __PACKAGE__);
+}
+
 ### Constructor {{{
 
 # new - create a new compiler instance {{{
@@ -90,7 +98,23 @@ sub compile {
 	eval { require $provider_info->{file} } ## no critic
 		or bail("Failed to load CI provider '%s': %s", $provider_type, $@);
 
-	my $provider = $provider_info->{class}->new(ast => $ast, top => $self->{top});
+	# Extract provider options from parsed config (ci.provider: section)
+	# and merge with any caller-supplied opts.  Normalize caller opts from their
+	# CLI form (ci-* prefixed, hyphenated) to config/schema form (unprefixed, underscored)
+	# so that provider_option() and provider_config() always see consistent keys.
+	require Genesis::CI::Compiler::PipelineProvider;
+	my $provider_opts = {
+		%{ $parsed->{provider} || {} },
+		%{ Genesis::CI::Compiler::PipelineProvider->normalize_provider_opts(
+			$opts{provider_opts} || {}
+		) },
+	};
+
+	my $provider = $provider_info->{class}->new(
+		ast           => $ast,
+		top           => $self->{top},
+		provider_opts => $provider_opts,
+	);
 	my $raw_output = $provider->generate_from_ast($ast);
 
 	# Wrap raw output into file map using provider's output_files manifest
@@ -146,6 +170,92 @@ sub can_compile_from_env_files {
 }
 
 # }}}
+# can_compile_from_genesis_config - detect if ci: section exists in .genesis/config {{{
+#
+# Returns true when $top has a Genesis::Config with a ci: key, meaning
+# CI configuration is embedded inline in .genesis/config rather than in
+# separate files under .genesis/ci/.
+sub can_compile_from_genesis_config {
+	my ($class, $top) = @_;
+	return 0 unless $top && $top->can('config');
+	return 0 unless eval { $top->config->has('ci') };
+	return 1;
+}
+
+# }}}
+# validate_config_section - validate the ci: section delegated by Top.pm {{{
+#
+# Called by Top::_validate_config() when this module is loaded and a ci: key
+# exists in .genesis/config.  Performs structural validation; detailed
+# cross-reference checks happen later in Compiler::Validator during compile().
+sub validate_config_section {
+	my ($class, $data, $top) = @_;
+
+	return unless defined $data;
+	bail("'ci' configuration in .genesis/config must be a hash")
+		unless ref($data) eq 'HASH';
+
+	# ci.targets must be a non-empty hash
+	my $targets = $data->{targets};
+	bail("'ci.targets' is required and must define at least one target")
+		unless defined($targets) && ref($targets) eq 'HASH' && scalar(keys %$targets) > 0;
+
+	# ci.integrations.source_control is required and must be a hash
+	my $integrations = $data->{integrations};
+	if (defined $integrations) {
+		bail("'ci.integrations' must be a hash") unless ref($integrations) eq 'HASH';
+		my $sc = $integrations->{source_control};
+		bail("'ci.integrations.source_control' is required")
+			unless defined $sc;
+		bail("'ci.integrations.source_control' must be a hash")
+			unless ref($sc) eq 'HASH';
+	} else {
+		bail("'ci.integrations.source_control' is required");
+	}
+
+	# Validate ci.provider section against the provider's own schema
+	if (my $provider_data = $data->{provider}) {
+		bail("'ci.provider' must be a hash")
+			unless ref($provider_data) eq 'HASH';
+
+		my $type = $provider_data->{type};
+		bail("'ci.provider.type' is required") unless $type;
+
+		# Load provider class to get its schema
+		my $provider_info = eval { $class->_resolve_provider_class($type) };
+		if ($@) {
+			bail("'ci.provider.type' is '%s', which is not a known CI provider type.  ".
+				"Valid types: %s", $type,
+				join(', ', Genesis::CI::Compiler::PipelineProvider->known_providers()));
+		}
+
+		eval { require $provider_info->{file} };  ## no critic
+		if ($@) {
+			bail("Failed to load CI provider '%s' for config validation: %s", $type, $@);
+		}
+
+		my $schema   = $provider_info->{class}->provider_options_schema();
+		my $defaults = $provider_info->{class}->provider_options_defaults();
+
+		# Check required keys
+		for my $key (sort keys %$schema) {
+			my $spec = $schema->{$key};
+			next unless $spec->{required};
+			bail("'ci.provider.%s' is required for provider type '%s'", $key, $type)
+				unless defined $provider_data->{$key};
+		}
+
+		# Check unknown keys
+		for my $key (sort keys %$provider_data) {
+			next if exists $schema->{$key};
+			bail("'ci.provider.%s' is not a recognized option for provider type '%s'.  ".
+				"Valid options: %s",
+				$key, $type, join(', ', sort keys %$schema));
+		}
+	}
+}
+
+# }}}
 # }}}
 ### Internal Methods {{{
 
@@ -180,8 +290,10 @@ sub _apply_provider_overrides {
 		my $base_path = "$dir/override-base-${filename}";
 		open(my $fh, '>', $base_path)
 			or bail("Cannot write temporary override base %s: %s", $base_path, $!);
-		print $fh $content;
-		close $fh;
+		print $fh $content
+			or bail("Cannot write to temporary override base %s: %s", $base_path, $!);
+		close $fh
+			or bail("Cannot flush temporary override base %s: %s", $base_path, $!);
 
 		my ($merged_yaml, $rc) = run(
 			'spruce', 'merge', $base_path, $override_file

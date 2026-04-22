@@ -113,8 +113,9 @@ sub parse {
 	my @expansion_pool = $known ? @$known : @envs;
 	my %auto_envs;
 	for my $pattern (@auto_patterns) {
-		my $regex = $pattern;
-		$regex =~ s/\*/.*/g;
+		# Build a safe regex: escape metacharacters in literal segments,
+		# then replace \* (escaped asterisk) with .* for glob semantics.
+		my $regex = join('.*', map { quotemeta($_) } split(/\*/, $pattern, -1));
 		$regex = qr/^$regex$/;
 
 		my $matched = 0;

@@ -143,6 +143,7 @@ sub from_exodus {
 # }}}
 # from_alias - create a BOSH director object that uses a local config alias {{{
 sub from_alias {
+	debug("from_alias called with %d args: [%s]", scalar(@_)-1, join(', ', map {defined($_) ? "'$_'" : 'undef'} @_[1..$#_]));
 	my ($class, $alias, $env, %opts) = @_;
 
 	my $config_home = $opts{config_home} || "$ENV{HOME}/.bosh/config";
@@ -177,6 +178,9 @@ sub from_environment {
 	#
 	# 2. We need to indicate if we want the self or parent BOSH director
 
+	debug("from_environment: BOSH_ALIAS=%s BOSH_ENVIRONMENT=%s BOSH_CLIENT=%s BOSH_DEPLOYMENT=%s",
+		$ENV{BOSH_ALIAS}//'(undef)', $ENV{BOSH_ENVIRONMENT}//'(undef)',
+		$ENV{BOSH_CLIENT}//'(undef)', $ENV{BOSH_DEPLOYMENT}//'(undef)');
 	if (is_valid_uri($ENV{BOSH_ENVIRONMENT}) && $ENV{BOSH_CLIENT}) {
 		return $class->new(
 			$ENV{BOSH_ALIAS},
@@ -188,7 +192,8 @@ sub from_environment {
 			deployment => $ENV{BOSH_DEPLOYMENT}
 		);
 	} else {
-		return $class->from_alias($ENV{BOSH_ALIAS} || $ENV{BOSH_ENVIRONMENT}, deployment => $ENV{BOSH_DEPLOYMENT});
+		return $class->from_alias($ENV{BOSH_ALIAS} || $ENV{BOSH_ENVIRONMENT}, undef,
+			$ENV{BOSH_DEPLOYMENT} ? (deployment => $ENV{BOSH_DEPLOYMENT}) : ());
 	}
 }
 

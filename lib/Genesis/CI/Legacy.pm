@@ -276,7 +276,6 @@ sub validate_pipeline {
 						push @errors, "Unrecognized `pipeline.email.smtp.$_' key found."
 							unless m/^(host|port|username|password)$/;
 					}
-				} else {
 				}
 			}
 		}

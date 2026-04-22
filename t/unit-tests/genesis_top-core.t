@@ -199,7 +199,7 @@ subtest 'repo creation with no_vault' => sub {
 
 	# Verify config contents
 	my $config = $top->config->_explicit_contents;
-	is($config->{version}, 2, "config has version 2");
+	is($config->{version}, 3, "config has version 3 (LATEST_CONFIG_VERSION)");
 	is($config->{deployment_type}, "testkit", "config has correct deployment_type");
 	is($config->{creator_version}, "3.1.0", "config has creator_version");
 
@@ -216,7 +216,7 @@ subtest 'repo creation with no_vault' => sub {
 	# Verify the actual .genesis/config file matches expected structure
 	yaml_is get_file("$tmp/.genesis/config"), <<EOF, ".genesis/config file has correct content";
 ---
-version: 2
+version: 3
 deployment_type: testkit
 creator_version: "3.1.0"
 minimum_version: "3.1.0"

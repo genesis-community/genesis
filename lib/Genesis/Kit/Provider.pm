@@ -66,6 +66,10 @@ sub default_provider {
 }
 
 # }}}
+# opts_slot - key name for this handler's parsed options in $COMMAND_OPTIONS {{{
+sub opts_slot { 'kit_provider' }
+
+# }}}
 # opts -  list of options supported by init method {{{
 sub opts {
 	qw/

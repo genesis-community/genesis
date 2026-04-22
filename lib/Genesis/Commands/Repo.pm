@@ -7,10 +7,10 @@ use Genesis;
 use Genesis::Commands;
 use Genesis::Term qw/in_controlling_terminal/;
 use Genesis::Top;
-use Genesis::Kit::Provider;
+use Genesis::UI;
 
 use Cwd qw/getcwd abs_path/;
-use File::Basename qw/basename/;
+use File::Basename qw/basename dirname/;
 use File::Path qw/rmtree/;
 use JSON::PP qw/encode_json/;
 
@@ -467,8 +467,31 @@ sub init {
 		run({ onfailure => "Failed to initialize a git repository in $human_root/" },
 			'git init && git add .');
 
-		run({ onfailure => "Failed to commit initial Genesis repository in $human_root/" },
-			'git commit -m "Initial Genesis Repo"');
+		# Show a summary of what was staged
+		my ($stat) = run({}, 'git diff --cached --stat');
+		if ($stat && $stat =~ /\S/) {
+			info "\n#G{Files staged for initial commit:}";
+			for my $line (split /\n/, $stat) {
+				info "  %s", $line;
+			}
+			info "";
+		}
+
+		my $do_commit;
+		if ($options{commit}) {
+			$do_commit = 1;
+		} elsif ($options{'no-commit'}) {
+			$do_commit = 0;
+		} else {
+			$do_commit = prompt_for_boolean(
+				"Commit initial state? [y|n]", "y"
+			);
+		}
+
+		if ($do_commit) {
+			run({ onfailure => "Failed to commit initial Genesis repository in $human_root/" },
+				'git commit -m "Initial Genesis Repo"');
+		}
 	};
 	my $err = $@;
 	popd;
@@ -590,6 +613,347 @@ sub kit_provider {
 		$kit_list = "#Yi{None}";
 	}
 	info("         Kits: %s\n\n", $kit_list) if $info{status} eq "ok";
+}
+
+# PARKED: this is Tristan's CI-only repo-init handler from the upstream
+# merge.  It conflicts with our phased repo-init at the top of this file
+# (both registered under the same command name, causing Perl to redefine
+# our sub).  Renamed to repo_configure_ci as a parking slot until the
+# folding meeting resolves how his CI-scaffold logic merges into our
+# _create_ci_scaffold.  Not currently dispatched by any command.
+sub repo_configure_ci {
+	my %options = %{get_options()};
+	command_usage(1) if @_;
+
+	my $top = Genesis::Top->new('.', no_vault => 1);
+
+	bail(
+		"CI provider already configured (#C{%s}).\n".
+		"Use #C{genesis repo-update} to modify the existing configuration.",
+		$top->config->get('ci.provider')
+	) if $top->config->has('ci.provider');
+
+	my $cfg = _ci_wizard(\%options, $top, _empty_ci_defaults($top));
+	_write_ci_config($top, $cfg);
+
+	info(
+		"\n#G{CI configuration initialized}\n".
+		"  Provider : #C{%s}\n".
+		"  Config   : #C{.genesis/config}\n".
+		"  Scaffold : #C{.genesis/ci/}\n\n".
+		"Add environment targets to #C{.genesis/ci/targets.yml}, then run\n".
+		"#C{genesis pipeline-apply} to deploy the pipeline.\n",
+		$cfg->{ci_provider}
+	);
+	exit 0;
+}
+
+sub repo_update {
+	my %options = %{get_options()};
+	command_usage(1) if @_;
+
+	my $top = Genesis::Top->new('.', no_vault => 1);
+
+	unless ($top->config->has('ci.provider')) {
+		warning(
+			"CI provider is not configured for this repository.\n".
+			"Use #C{genesis repo-init} to set up CI from scratch."
+		);
+	}
+
+	my @flag_keys = keys %options;
+
+	if (@flag_keys) {
+		# Non-interactive: apply only the provided flags, leave everything else alone
+		_apply_ci_flags(\%options, $top);
+	} else {
+		# Bare invocation: full wizard with existing values pre-populated
+		my $cfg = _ci_wizard(\%options, $top, _existing_ci_defaults($top));
+		_write_ci_config($top, $cfg);
+	}
+
+	info(
+		"\n#G{CI configuration updated}\n".
+		"  Provider : #C{%s}\n".
+		"  Config   : #C{.genesis/config}\n".
+		"  Scaffold : #C{.genesis/ci/}\n",
+		$top->config->get('ci.provider') // '(none)'
+	);
+	exit 0;
+}
+
+### Private helpers ###########################################################
+
+# _empty_ci_defaults - blank defaults for repo_configure_ci wizard
+sub _empty_ci_defaults {
+	my ($top) = @_;
+	return {
+		ci_provider   => 'concourse',
+		git_uri       => '',
+		git_branch    => 'main',
+		vault_url     => '',
+		pipeline_name => $top->type,
+	};
+}
+
+# _existing_ci_defaults - load current values for repo_update wizard
+sub _existing_ci_defaults {
+	my ($top) = @_;
+
+	my $defaults = _empty_ci_defaults($top);
+	$defaults->{ci_provider} = $top->config->get('ci.provider')
+		if $top->config->has('ci.provider');
+
+	my $ci_dir = $top->path('.genesis/ci');
+	if (-f "$ci_dir/integrations.yml") {
+		eval {
+			my $raw = slurp("$ci_dir/integrations.yml");
+			# Extract vault.url: capture only within the vault: block, stopping
+			# before the next top-level key (no leading spaces) to avoid matching
+			# url: keys in other sections.
+			if ($raw =~ /^vault:\s*\n((?:[ \t]+[^\n]*\n)*)/m) {
+				my $vault_block = $1;
+				$defaults->{vault_url} = $1 if $vault_block =~ /url:\s*(\S+)/;
+			}
+			# source_control.uri and default_branch are unique keys in our schema
+			if ($raw =~ /uri:\s*(\S+)/) {
+				$defaults->{git_uri} = $1;
+			}
+			if ($raw =~ /default_branch:\s*(\S+)/) {
+				$defaults->{git_branch} = $1;
+			}
+		};
+	}
+
+	if (-f "$ci_dir/pipeline.yml") {
+		eval {
+			my $raw = slurp("$ci_dir/pipeline.yml");
+			if ($raw =~ /name:\s*(\S+)/) {
+				$defaults->{pipeline_name} = $1;
+			}
+		};
+	}
+
+	return $defaults;
+}
+
+# _ci_wizard - prompt for any config values not supplied as flags
+sub _ci_wizard {
+	my ($options, $top, $defaults) = @_;
+
+	my $ci_provider = $options->{'ci-provider'} // do {
+		prompt_for_choice(
+			"CI provider:",
+			[qw(concourse github-actions none)],
+			$defaults->{ci_provider},
+		);
+	};
+
+	my $pipeline_name = $options->{'pipeline-name'} // do {
+		prompt_for_line(
+			"Pipeline name:",
+			"pipeline name",
+			$defaults->{pipeline_name},
+		);
+	};
+
+	my $git_uri = $options->{'git-uri'} // do {
+		prompt_for_line(
+			"Git repository URI (e.g. git\@github.com:org/repo.git):",
+			"git uri",
+			$defaults->{git_uri},
+		);
+	};
+
+	my $git_branch = $options->{'git-branch'} // do {
+		prompt_for_line(
+			"Default branch:",
+			"branch",
+			$defaults->{git_branch},
+		);
+	};
+
+	my $vault_url = $options->{'vault-url'} // do {
+		prompt_for_line(
+			"Vault URL (e.g. https://vault.example.com:8200):",
+			"vault url",
+			$defaults->{vault_url},
+		);
+	};
+
+	return {
+		ci_provider   => $ci_provider,
+		pipeline_name => $pipeline_name,
+		git_uri       => $git_uri,
+		git_branch    => $git_branch,
+		vault_url     => $vault_url,
+	};
+}
+
+# _apply_ci_flags - non-interactive partial update (repo_update with flags)
+sub _apply_ci_flags {
+	my ($options, $top) = @_;
+
+	unless ($top->config->has('ci.provider') || exists $options->{'ci-provider'}) {
+		warning(
+			"CI provider not configured and --ci-provider not given.\n".
+			"Run #C{genesis repo-init} to perform initial CI setup."
+		);
+	}
+
+	if (exists $options->{'ci-provider'}) {
+		my $provider = $options->{'ci-provider'};
+		bail(
+			"Unknown CI provider '#R{%s}'. Valid values: concourse, github-actions, none.",
+			$provider
+		) unless grep { $_ eq $provider } qw(concourse github-actions none);
+		$top->config->set('ci.provider', $provider, 1);
+	}
+
+	my $ci_dir = $top->path('.genesis/ci');
+	mkdir_or_fail($ci_dir) unless -d $ci_dir;
+
+	# Update integrations.yml in-place if any integration flags were given
+	my @integration_flags = grep { exists $options->{$_} } qw(git-uri git-branch vault-url);
+	if (@integration_flags && -f "$ci_dir/integrations.yml") {
+		my $raw = slurp("$ci_dir/integrations.yml");
+		if (exists $options->{'vault-url'}) {
+			my $v = $options->{'vault-url'};
+			$raw =~ s/^(\s{0,4}url:\s*)\S+/$1$v/m;
+		}
+		if (exists $options->{'git-uri'}) {
+			my $v = $options->{'git-uri'};
+			$raw =~ s/^(\s{0,4}uri:\s*)\S+/$1$v/m;
+		}
+		if (exists $options->{'git-branch'}) {
+			my $v = $options->{'git-branch'};
+			$raw =~ s/^(\s{0,4}default_branch:\s*)\S+/$1$v/m;
+		}
+		mkfile_or_fail("$ci_dir/integrations.yml", $raw);
+	} elsif (@integration_flags) {
+		# integrations.yml doesn't exist yet - need full defaults to write it
+		my $defaults  = _existing_ci_defaults($top);
+		$defaults->{'vault-url'}   = $options->{'vault-url'}   if exists $options->{'vault-url'};
+		$defaults->{'git-uri'}     = $options->{'git-uri'}     if exists $options->{'git-uri'};
+		$defaults->{'git-branch'}  = $options->{'git-branch'}  if exists $options->{'git-branch'};
+		_write_integrations($ci_dir, $defaults);
+	}
+
+	# Write provider override scaffold if provider changed and file is absent
+	if (exists $options->{'ci-provider'} && $options->{'ci-provider'} ne 'none') {
+		_write_if_absent("$ci_dir/ci-overrides-$options->{'ci-provider'}.yml",
+			_overrides_scaffold($options->{'ci-provider'}));
+	}
+
+	# Ensure other scaffold stubs exist
+	_write_if_absent("$ci_dir/targets.yml",  _targets_scaffold());
+	_write_if_absent("$ci_dir/resources.yml", _resources_scaffold());
+}
+
+# _write_ci_config - write config key and scaffold directory for init/full update
+sub _write_ci_config {
+	my ($top, $cfg) = @_;
+
+	my $provider = $cfg->{ci_provider};
+
+	$top->config->set('ci.provider', $provider, 1);
+
+	my $ci_dir = $top->path('.genesis/ci');
+	mkdir_or_fail($ci_dir) unless -d $ci_dir;
+
+	# integrations.yml — always write (contains wizard-collected values)
+	_write_integrations($ci_dir, $cfg);
+
+	# Remaining scaffold files: write only if absent (preserve manual edits on update)
+	_write_if_absent("$ci_dir/targets.yml",   _targets_scaffold());
+	_write_if_absent("$ci_dir/resources.yml", _resources_scaffold());
+	if ($provider ne 'none') {
+		_write_if_absent("$ci_dir/ci-overrides-${provider}.yml",
+			_overrides_scaffold($provider));
+	}
+}
+
+# _write_integrations - write .genesis/ci/integrations.yml from collected config
+sub _write_integrations {
+	my ($ci_dir, $cfg) = @_;
+
+	my $vault_url     = $cfg->{vault_url}   // $cfg->{'vault-url'}   // '';
+	my $git_uri       = $cfg->{git_uri}     // $cfg->{'git-uri'}     // '';
+	my $git_branch    = $cfg->{git_branch}  // $cfg->{'git-branch'}  // 'main';
+
+	mkfile_or_fail("$ci_dir/integrations.yml", <<"YAML");
+---
+vault:
+  url: $vault_url
+  namespace: genesis
+  auth:
+    type: approle
+    role_id: ((vault-role-id))
+    secret_id: ((vault-secret-id))
+  options:
+    tls_verify: true
+
+source_control:
+  provider: github
+  uri: $git_uri
+  default_branch: $git_branch
+  root: "."
+  auth:
+    type: ssh-key
+    private_key: ((github-deploy-key))
+  commit_author:
+    name: Concourse Bot
+    email: ci\@example.com
+YAML
+}
+
+sub _write_if_absent {
+	my ($path, $content) = @_;
+	mkfile_or_fail($path, $content) unless -f $path;
+}
+
+sub _targets_scaffold {
+	return <<'YAML';
+---
+# targets.yml - BOSH director targets for pipeline deployments.
+# Add one stanza per environment. The key name must match the environment
+# name used in pipeline topology declarations (genesis.pipeline.prior_env).
+#
+# Example:
+#   sandbox:
+#     name: sandbox
+#     alias: us-west-1-sandbox
+#     type: bosh-director
+#     tags: []
+#     connection:
+#       url: https://bosh.sandbox.example.com:25555
+#       auth:
+#         type: basic
+#         client_id: admin
+#         client_secret: ((sandbox-bosh-password))
+#       ca_cert: ((sandbox-bosh-ca))
+targets: {}
+YAML
+}
+
+sub _resources_scaffold {
+	return <<'YAML';
+---
+# resources.yml - Additional CI resources.
+# Add custom Concourse resource definitions or GitHub Actions inputs here.
+resources: []
+YAML
+}
+
+sub _overrides_scaffold {
+	my ($provider) = @_;
+	return <<"YAML";
+---
+# ci-overrides-${provider}.yml
+# Spruce-merged over generated pipeline YAML after provider output.
+# Supports all spruce operators: (( grab )), (( inject )), (( append )), etc.
+# Leave empty or remove this file to use the default generated pipeline.
+YAML
 }
 
 1;

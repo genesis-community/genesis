@@ -27,9 +27,14 @@ sub new {
 sub parse {
 	my ($self) = @_;
 
-	# Determine parsing mode: multi-file (.genesis/ci/) or legacy single file
+	# Determine parsing mode, in priority order:
+	#   1. .genesis/ci/ directory  (multi-file)
+	#   2. .genesis/config ci: key (inline genesis-config)
+	#   3. Legacy ci.yml file      (single-file legacy)
 	if ($self->{ci_dir} && -d $self->{ci_dir}) {
 		return $self->_parse_multi_file($self->{ci_dir});
+	} elsif ($self->{top} && eval { $self->{top}->config->has('ci') }) {
+		return $self->_parse_genesis_config($self->{top}->config->get('ci'));
 	} elsif ($self->{file} && -f $self->{file}) {
 		return $self->_parse_legacy_file($self->{file});
 	} elsif ($self->{ci_dir}) {
@@ -37,7 +42,8 @@ sub parse {
 	} elsif ($self->{file}) {
 		bail("CI configuration file '%s' not found", $self->{file});
 	} else {
-		bail("No CI configuration file or directory specified");
+		bail("No CI configuration found: no .genesis/ci/ directory, no ci: section ".
+			"in .genesis/config, and no ci.yml file");
 	}
 }
 
@@ -95,6 +101,51 @@ sub _parse_multi_file {
 	# Store source format for downstream use
 	$parsed{_source_format} = 'multi-file';
 	$parsed{_source_path}   = $ci_dir;
+
+	return \%parsed;
+}
+
+# }}}
+# }}}
+### Genesis Config Parser {{{
+
+# _parse_genesis_config - parse the ci: section from .genesis/config {{{
+#
+# Maps the ci: sub-keys directly to the same normalized structure produced by
+# _parse_multi_file(), so all downstream stages (Validator, ASTBuilder, etc.)
+# are format-agnostic.
+#
+# Expected ci: structure (all optional except targets + integrations):
+#
+#   ci:
+#     targets:         { name: { type, connection, ... } }  # required
+#     integrations:    { vault: {...}, source_control: {...} }  # required
+#     pipeline:        { workflows: {...}, ... }             # optional
+#     scripts:         { script_id: { path, ... } }         # optional
+#     provider_config: { concourse: {...} }                  # optional
+sub _parse_genesis_config {
+	my ($self, $data) = @_;
+
+	my %parsed;
+
+	$parsed{pipeline}        = $data->{pipeline}        || {};
+	$parsed{targets}         = $data->{targets}         || {};
+	$parsed{integrations}    = $data->{integrations}    || {};
+	$parsed{scripts}         = $data->{scripts}         || {};
+	$parsed{provider}        = $data->{provider}        || {};
+	$parsed{provider_config} = $data->{provider_config} || {};
+
+	# When no pipeline section is provided, workflow topology is derived from
+	# genesis.pipeline.* keys in environment YAML files (same as multi-file
+	# with no pipeline.yml).  Point ASTBuilder at the repo root.
+	unless (%{$parsed{pipeline}}) {
+		$parsed{env_dir} = $self->{top} ? $self->{top}->path() : '.';
+	}
+
+	$parsed{_source_format} = 'genesis-config';
+	$parsed{_source_path}   = $self->{top}
+		? $self->{top}->path('.genesis/config')
+		: '.genesis/config';
 
 	return \%parsed;
 }

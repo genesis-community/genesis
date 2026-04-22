@@ -19,6 +19,37 @@ use Genesis::Config;
 use Cwd ();
 use File::Path qw/rmtree/;
 
+# ---- Constants --------------------------------------------------------------
+#
+# Default name of the CI "control" branch -- the branch from which
+# environment branches are cut by 'genesis new' and against which
+# 'genesis deploy' validates its working state.  Captured as a constant
+# (and a config key) so it can change without rippling through the
+# codebase; not currently exposed to end users.
+use constant DEFAULT_CONTROL_BRANCH => 'control';
+use constant LATEST_CONFIG_VERSION  => 3;
+
+### Config Section Delegation Registry {{{
+# Modules may register themselves as handlers for specific top-level keys in
+# .genesis/config.  Top.pm owns the core schema; registered handlers own their
+# section's schema and validation.  This pattern is reusable for any future
+# section beyond ci:.
+#
+#   Genesis::Top->register_config_section('ci', 'Genesis::CI::Compiler');
+#
+# The handler class must implement:
+#   validate_config_section($data, $top)  # called after core schema validation
+
+my %_config_section_handlers;
+
+# register_config_section - register a module as owner of a config section {{{
+sub register_config_section {
+	my ($class, $section, $handler) = @_;
+	$_config_section_handlers{$section} = $handler;
+}
+
+# }}}
+# }}}
 ### Class Methods {{{
 
 # _build - common construction logic for bare Genesis::Top object {{{
@@ -139,7 +170,7 @@ sub create {
 
 		# Write new configuration - Set defaults
 		$self->config->set('deployment_type',$name);
-		$self->config->set('version',2);
+		$self->config->set('version', LATEST_CONFIG_VERSION);
 		$self->config->set('creator_version', $Genesis::VERSION);
 		$self->config->set('minimum_version', $Genesis::VERSION) unless $Genesis::VERSION eq '(development)';
 		$self->config->set('manifest_store', 'exodus');
@@ -942,6 +973,33 @@ sub type {
 }
 
 # }}}
+# ci_control_branch - return the configured CI control branch name {{{
+#
+# Returns the branch name that Genesis pipeline tooling treats as the
+# source of truth for this deployment repository.  Reads from
+# #C{ci.control_branch} in #C{.genesis/config}, defaulting to the
+# value of the #C{DEFAULT_CONTROL_BRANCH} constant.  Intentionally
+# not exposed as a user-facing option at this time.
+sub ci_control_branch {
+	my ($self) = @_;
+	return $self->config->get('ci.control_branch', DEFAULT_CONTROL_BRANCH);
+}
+
+# }}}
+# ci_enabled - return whether CI pipeline is enabled {{{
+sub ci_enabled {
+	my ($self) = @_;
+	return $self->config->get('ci.enabled');
+}
+
+# }}}
+# ci_configured - return whether CI is enabled AND has a provider configured {{{
+sub ci_configured {
+	my ($self) = @_;
+	return $self->config->get('ci.enabled') && $self->config->has('ci.provider.type');
+}
+
+# }}}
 # version - return the version of the cofiguration schema {{{
 sub version {
 	my ($self) = @_;
@@ -1143,6 +1201,8 @@ sub download_kit {
 # _validate_config - validate the configuration of the repo {{{
 sub _validate_config {
 	my ($self) = @_;
+	return 1 if $self->{__config_validated};
+	$self->{__config_validated} = 1;
 	my $config_version = $self->config->get(version => 1);
 	if ($config_version == 1 || $config_version =~ /^\d+\.\d+\.\d+(-[A-Za-z0-9_-]\.?\d+)?$/) {
 
@@ -1155,7 +1215,58 @@ sub _validate_config {
 		$self->_upgrade_config_to_v2($config_version, $upgrade_automatically);
 
 	} elsif ($config_version == 2){
+		$self->config->validate($self->_repo_config_schema_v2());
+		$self->{__config_disk_version} = 2;
+
+		# Check for legacy ci.yml — bail until post-MVP migration is implemented.
+		# Only flag it if it looks like a pipeline config (has 'pipeline:' key),
+		# not an environment file (which would have 'kit:' or 'genesis:').
+		my $ci_yml = $self->path('ci.yml');
+		if (-f $ci_yml && _is_legacy_ci_file($ci_yml)) {
+			bail(
+				"Legacy CI configuration detected at #C{ci.yml}.\n".
+				"Pipeline support requires a v3 config.  Please run:\n\n".
+				"  genesis repo-init --upgrade\n\n".
+				"to migrate your CI configuration into the v3 config format."
+			);
+		}
+
+		# Augment in-memory with v3 defaults so downstream code sees
+		# a uniform v3 shape.  These go into the 'default' layer and
+		# will NOT be persisted to disk on save.
+		$self->config->_update_source('default', 'ci', {
+			enabled => Genesis::Config::FALSE,
+		});
+
+	} elsif ($config_version == 3){
 		$self->config->validate($self->_repo_config_schema());
+		$self->{__config_disk_version} = 3;
+
+		# Detect legacy ci.yml alongside v3 config
+		my $ci_yml = $self->path('ci.yml');
+		if (-f $ci_yml && _is_legacy_ci_file($ci_yml)) {
+			if ($self->config->get('ci.enabled') && $self->config->has('ci.provider.type')) {
+				bail(
+					"Legacy #C{ci.yml} conflicts with the v3 CI configuration.\n".
+					"Remove #C{ci.yml} — CI is already configured in #C{.genesis/config}."
+				);
+			} else {
+				bail(
+					"Legacy CI configuration detected at #C{ci.yml}.\n".
+					"Pipeline support requires migrating this into the v3 config.  Please run:\n\n".
+					"  genesis repo-init --upgrade\n\n".
+					"to migrate your CI configuration into the v3 config format."
+				);
+			}
+		}
+
+		# Delegate validation of registered sections to their owning modules
+		for my $section (sort keys %_config_section_handlers) {
+			next unless $self->config->has($section);
+			my $handler = $_config_section_handlers{$section};
+			$handler->validate_config_section($self->config->get($section), $self)
+				if $handler->can('validate_config_section');
+		}
 	} else {
 		bail "Genesis deployment repo configuration version $config_version is not supported";
 	}
@@ -1228,8 +1339,8 @@ sub _upgrade_config_to_v2 {
 }
 
 # }}}
-# _repo_config_schema - return the repository configuration validation schema {{{
-sub _repo_config_schema {
+# _repo_config_schema_v2 - v2 configuration validation schema {{{
+sub _repo_config_schema_v2 {
 	my ($self) = @_;
 	return {
 		deployment_type => {
@@ -1310,6 +1421,59 @@ sub _repo_config_schema {
 			description    => 'Confirm release overrides'
 		},
 	};
+}
+
+# }}}
+# _repo_config_schema - v3 configuration validation schema (superset of v2) {{{
+sub _repo_config_schema {
+	my ($self) = @_;
+	return {
+		%{$self->_repo_config_schema_v2()},
+		version => {
+			type           => '"3"',
+			required       => 1,
+			description    => 'Configuration schema version'
+		},
+		ci => {
+			type           => 'hash',
+			description    => 'CI pipeline configuration',
+			schema => {
+				enabled => {type => 'boolean', default => Genesis::Config::FALSE, description => 'Whether CI pipeline is active'},
+				provider => {
+					type        => 'hash',
+					required    => 'enabled',
+					description => 'CI provider connection details',
+					schema => {
+						type     => {type => 'enum', values => ['concourse', 'gha', 'manual'], description => 'CI system type'},
+						target   => {type => 'string', description => 'Provider target name (e.g., fly target)'},
+						url      => {type => 'string', description => 'Provider API URL'},
+						team     => {type => 'string', description => 'Provider team/org'},
+						insecure => {type => 'boolean', default => Genesis::Config::FALSE, description => 'Skip TLS verification'},
+					}
+				},
+				pipeline => {
+					type        => 'hash',
+					description => 'Pipeline generation settings',
+					schema => {
+						name => {type => 'string', description => 'Pipeline name (defaults to deployment_type)'},
+					}
+				},
+			}
+		},
+	};
+}
+
+# }}}
+# _is_legacy_ci_file - detect whether ci.yml is a pipeline config (not an env file) {{{
+sub _is_legacy_ci_file {
+	my ($path) = @_;
+	open my $fh, '<', $path or return 0;
+	while (<$fh>) {
+		return 1 if /^pipeline:/;
+		return 0 if /^kit:/ || /^genesis:/;
+	}
+	close $fh;
+	return 0;
 }
 
 # }}}

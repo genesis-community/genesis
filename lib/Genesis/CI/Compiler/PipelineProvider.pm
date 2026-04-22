@@ -4,7 +4,30 @@ use warnings;
 
 use Genesis;
 use JSON::PP;
+use Getopt::Long qw/GetOptionsFromArray/;
 
+### Provider Registry {{{
+# Maps provider type strings to their class and file paths.
+# Used by parse_cli_opts(), all_cli_opts_help(), and the compiler itself.
+
+my %_providers = (
+	'concourse' => {
+		class => 'Genesis::CI::Concourse',
+		file  => 'Genesis/CI/Compiler/Providers/Concourse.pm',
+	},
+	'github-actions' => {
+		class => 'Genesis::CI::GithubActions',
+		file  => 'Genesis/CI/Compiler/Providers/GithubActions.pm',
+	},
+);
+
+# known_providers - return list of known provider type strings {{{
+sub known_providers {
+	return sort keys %_providers;
+}
+
+# }}}
+# }}}
 ### Constructor {{{
 
 # new - create a new provider instance {{{
@@ -16,8 +39,9 @@ sub new {
 		if $class eq __PACKAGE__;
 
 	return bless({
-		ast => $opts{ast},
-		top => $opts{top},
+		ast           => $opts{ast},
+		top           => $opts{top},
+		provider_opts => $opts{provider_opts} || {},
 	}, $class);
 }
 
@@ -34,6 +58,13 @@ sub platform_name {
 }
 
 # }}}
+# provider_type - return canonical type string, e.g. 'concourse' {{{
+sub provider_type {
+	my ($self) = @_;
+	bug("Subclass '%s' must implement provider_type()", ref($self));
+}
+
+# }}}
 # generate_from_ast - generate platform-specific output from AST {{{
 sub generate_from_ast {
 	my ($self, $ast) = @_;
@@ -45,6 +76,278 @@ sub generate_from_ast {
 sub output_files {
 	my ($self) = @_;
 	bug("Subclass '%s' must implement output_files()", ref($self));
+}
+
+# }}}
+# }}}
+### Prerequisite Checking {{{
+
+# check_prereqs - returns 1 if toolchain is present, 0 + error() if not {{{
+sub check_prereqs {
+	return 1;
+}
+
+# }}}
+# }}}
+### Provider Options Contract {{{
+# These methods define the provider options system, modelled after
+# Genesis::Kit::Provider.  Subclasses override them to expose their
+# platform-specific flags, help text, and config-section schemas.
+
+# cli_opts - Getopt::Long option specs for deploy-time command-line flags {{{
+#
+# Returns a list of Getopt::Long spec strings, e.g.:
+#   qw( ci-target=s  ci-team=s  ci-pause  ci-expose )
+#
+# All CI-provider opts are prefixed with 'ci-' to avoid collisions with
+# top-level genesis option names (--target, --dry-run, etc.).
+#
+# Subclasses override to declare their provider-specific options.
+# Base implementation returns empty list (no provider-specific opts).
+sub cli_opts {
+	return qw//;
+}
+
+# }}}
+# cli_opts_help - formatted help text for cli_opts() {{{
+#
+# Returns a multi-line string (heredoc) documenting each option.
+# Format mirrors Genesis::Kit::Provider::Github::opts_help():
+#
+#   --ci-target <value>  (required)
+#       The fly target to deploy to.
+#
+#   --ci-team <value>  (optional, default: "main")
+#       The Concourse team name.
+#
+# %config may include:
+#   valid_types  - arrayref of provider type strings to show help for
+#
+# Subclasses override to document their specific options.
+sub cli_opts_help {
+	my ($class, %config) = @_;
+	return '';
+}
+
+# }}}
+# provider_options_schema - schema for the ci.provider: config section {{{
+#
+# Returns a hashref whose structure mirrors Top::_repo_config_schema():
+#
+#   {
+#     type      => { type => 'string', required => 1, description => '...' },
+#     target    => { type => 'string', description => '...' },
+#     team      => { type => 'string', default => 'main', description => '...' },
+#     expose    => { type => 'boolean', default => 0,    description => '...' },
+#     ...
+#   }
+#
+# The base class always contributes the common 'type' key; subclasses add
+# their own keys.  Used by validate_config_section() in Compiler.pm and
+# _validate_multi_file() in Validator.pm.
+sub provider_options_schema {
+	return {
+		type => {
+			type        => 'string',
+			required    => 1,
+			description => 'CI provider type (concourse, github-actions)',
+		},
+	};
+}
+
+# }}}
+# provider_options_defaults - default values for provider options {{{
+#
+# Returns a flat hashref of key => default_value.  Keys match those in
+# provider_options_schema().  Values here are NOT included in the config()
+# output — only explicitly-set non-default values are saved.
+sub provider_options_defaults {
+	return {};
+}
+
+# }}}
+# provider_config - return stored provider options (non-defaults only) {{{
+#
+# Returns a hashref suitable for round-tripping through the ci.provider:
+# config section — i.e. the type key plus any explicitly-set values that
+# differ from provider_options_defaults().
+sub provider_config {
+	my ($self) = @_;
+	my $defaults = $self->provider_options_defaults();
+	my $opts     = $self->{provider_opts} || {};
+	my %out = ( type => $self->provider_type() );
+	for my $k (keys %$opts) {
+		next unless defined $opts->{$k};
+		next if exists $defaults->{$k}
+		     && defined $defaults->{$k}
+		     && "$defaults->{$k}" eq "$opts->{$k}";
+		$out{$k} = $opts->{$k};
+	}
+	return \%out;
+}
+
+# }}}
+# provider_option - get a single provider option, applying defaults {{{
+sub provider_option {
+	my ($self, $key) = @_;
+	my $opts     = $self->{provider_opts} || {};
+	my $defaults = $self->provider_options_defaults();
+	return exists $opts->{$key}     ? $opts->{$key}
+	     : exists $defaults->{$key} ? $defaults->{$key}
+	     : undef;
+}
+
+# }}}
+# describe_provider - structured hash describing this provider instance {{{
+#
+# Returns a hash suitable for human-readable display, analogous to
+# Genesis::Kit::Provider::Github::status().
+#
+#   type    => 'concourse'
+#   label   => 'Concourse'       # human platform name
+#   extras  => [qw(Target Team Pipeline)]   # keys to show in order
+#   Target  => 'my-target'
+#   Team    => 'main'
+#   Pipeline => 'cf'
+#   status  => 'ok'              # or error message
+#
+# Subclasses override to add platform-specific fields.
+sub describe_provider {
+	my ($self) = @_;
+	return (
+		type   => $self->provider_type(),
+		label  => $self->platform_name(),
+		extras => [],
+		status => 'ok',
+	);
+}
+
+# }}}
+# }}}
+### Class Methods — Provider Options Parsing {{{
+
+# parse_cli_opts - two-pass CLI option parsing (mirrors Kit::Provider::parse_opts) {{{
+#
+# Usage:
+#   Genesis::CI::Compiler::PipelineProvider->parse_cli_opts(
+#       \@ARGV,           # args array (modified in place)
+#       \%opts,           # options hash (populated in place)
+#       $provider_type,   # optional: already-known provider type
+#   );
+#
+# Pass 1: parse --ci-provider <type> (if not already known)
+# Pass 2: load provider class, get cli_opts(), parse provider-specific flags
+#
+# Returns 1. Remaining unparsed args are put back into $args.
+sub parse_cli_opts {
+	my ($class, $args, $opts, $provider_type) = @_;
+
+	Getopt::Long::Configure(
+		qw(pass_through permute no_auto_abbrev no_ignore_case bundling)
+	);
+
+	# Collect args up to '--'
+	my $opt_args = [];
+	while (scalar(@$args) && $args->[0] ne '--') {
+		push @$opt_args, shift @$args;
+	}
+
+	# Pass 1: extract --ci-provider if not already known
+	unless ($provider_type) {
+		GetOptionsFromArray($opt_args, $opts, 'ci-provider=s');
+		$provider_type = $opts->{'ci-provider'} // $opts->{platform};
+	}
+
+	# Pass 2: load provider and parse provider-specific flags
+	if ($provider_type && exists $_providers{$provider_type}) {
+		my $info = $_providers{$provider_type};
+		eval { require $info->{file} }  ## no critic
+			or bail("Failed to load CI provider '%s': %s", $provider_type, $@);
+
+		my @extra_opts = $info->{class}->cli_opts();
+		GetOptionsFromArray($opt_args, $opts, @extra_opts) if @extra_opts;
+	}
+
+	# Return unparsed args to caller
+	while (scalar(@$opt_args)) { unshift @$args, pop @$opt_args }
+
+	return 1;
+}
+
+# }}}
+# cli_key_to_config_key - convert a ci-* CLI key to its config/schema key {{{
+#
+# The convention is: strip the 'ci-' prefix, convert hyphens to underscores.
+# Examples:
+#   ci-target        => target
+#   ci-team          => team
+#   ci-pipeline-name => pipeline_name
+#   ci-pause         => pause
+#   ci-expose        => expose
+#
+# Non-ci-prefixed keys are returned unchanged (already in config form).
+sub cli_key_to_config_key {
+	my ($class, $key) = @_;
+	$key =~ s/^ci-//;
+	$key =~ s/-/_/g;
+	return $key;
+}
+
+# }}}
+# normalize_provider_opts - convert a hash of CLI-keyed opts to config keys {{{
+sub normalize_provider_opts {
+	my ($class, $opts) = @_;
+	my %out;
+	for my $k (keys %{ $opts || {} }) {
+		$out{ $class->cli_key_to_config_key($k) } = $opts->{$k};
+	}
+	return \%out;
+}
+
+# }}}
+# cli_opt_keys - return parsed option key names for a given provider type {{{
+#
+# Strips Getopt::Long type suffixes (=s, !, +, etc.) leaving bare key names.
+# Used by the commands layer to copy matching options from get_options without
+# hardcoding provider-specific names.
+sub cli_opt_keys {
+	my ($class, $provider_type) = @_;
+	my $info = $_providers{$provider_type} or return ();
+	eval { require $info->{file} }  ## no critic
+		or bail("Failed to load CI provider '%s': %s", $provider_type, $@);
+	return map { (split /[=!+:]/, $_)[0] } $info->{class}->cli_opts();
+}
+
+# }}}
+# all_cli_opts_help - assembled help text for all known providers {{{
+#
+# Prints shared CI flags, then delegates to each provider's cli_opts_help().
+# Mirrors Genesis::Kit::Provider::opts_help() in structure.
+sub all_cli_opts_help {
+	my ($class, %config) = @_;
+
+	$config{valid_types} ||= [sort keys %_providers];
+
+	# Load all provider classes for their help text
+	for my $type (sort keys %_providers) {
+		eval { require $_providers{$type}{file} };  ## no critic
+	}
+
+	my $provider_help = join('',
+		map  { $_providers{$_}{class}->cli_opts_help(%config) }
+		grep { eval { require $_providers{$_}{file}; 1 } }  ## no critic
+		sort keys %_providers
+	);
+
+	return <<EOF;
+CI PROVIDER OPTIONS
+
+  --ci-provider <type>  (optional, defaults to "concourse")
+      The CI provider to use for pipeline generation and deployment.
+      Available types: ${\ join(', ', sort keys %_providers) }
+
+$provider_help
+EOF
 }
 
 # }}}
@@ -148,9 +451,9 @@ sub topological_sort {
 sub matches_pattern {
 	my ($self, $name, $pattern) = @_;
 
-	my $regex = $pattern;
-	$regex =~ s/\*/.*/g;
-	$regex =~ s/\?/./g;
+	my $regex = join('', map {
+		$_ eq '*' ? '.*' : $_ eq '?' ? '.' : quotemeta($_)
+	} split(/([*?])/, $pattern, -1));
 
 	return $name =~ /^$regex$/;
 }

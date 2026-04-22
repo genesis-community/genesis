@@ -254,7 +254,31 @@ define_command("create", {
 			"repository for the environment.",
 
 		"force|f" =>
-			"Create a new environment file even if it already exists."
+			"Create a new environment file even if it already exists.",
+
+		"prior-env=s" =>
+			"Name of the prior environment in the pipeline chain (the environment ".
+			"that must succeed before this one deploys).  Only used when a CI ".
+			"provider is configured in #C{.genesis/config}.  Omit or leave blank ".
+			"to designate this environment as a pipeline entrypoint.",
+
+		"require-pr" =>
+			"Require a pull-request gate before this environment deploys.  ".
+			"Only used when a CI provider is configured in #C{.genesis/config}.",
+
+		"manual" =>
+			"Require a manual CI trigger before this environment deploys.  ".
+			"Only used when a CI provider is configured in #C{.genesis/config}.",
+
+		"no-commit" =>
+			"Stage the new environment file but skip the git commit and ".
+			"environment branch creation.  Only applies when a CI ".
+			"provider is configured.",
+
+		"reason=s" =>
+			"Commit message for the environment commit.  Defaults to ".
+			"#C{Add environment <name>}.  Only applies when a CI ".
+			"provider is configured and #C{--no-commit} is not set.",
 	],
 	deprecated_options => [
 		"^prefix=s" =>
@@ -1257,16 +1281,12 @@ define_command("repo-init", {
 				"or 'manual'. When specified, writes the ci: section to .genesis/config ".
 				"and generates the .genesis/ci/ scaffold.",
 		],
-		option_passthrough => 1,
+		extended_handlers => ['Genesis::Kit::Provider', 'Genesis::CI::Provider'],
 		arguments => [
 			"name?" =>
 				"If the name argument is not specified, it will default to the same ".
 				"name as the kit.  You must specify either name or kit."
 		],
-		extended_usage => sub {
-			require Genesis::Kit::Provider;
-			Genesis::Kit::Provider->opts_help();
-		}
 });
 
 # }}}
@@ -1324,12 +1344,86 @@ define_command("kit-provider", {
 		"export-config" =>
 			"Export the current kit provider information."
 	],
-	extended_usage => sub {
-			require Genesis::Kit::Provider;
-			Genesis::Kit::Provider->opts_help();
-	}
+	extended_handlers => ['Genesis::Kit::Provider'],
 });
 
+# }}}
+# PARKED: Tristan's CI-only repo-init define_command block -- kept
+# verbatim here for the upcoming merge meeting, but commented out so
+# it does NOT override our phased repo-init definition earlier in this
+# file.  The handler sub has been renamed in lib/Genesis/Commands/Repo.pm
+# to repo_configure_ci.  If this block is ever re-enabled, the final
+# dispatcher arg below must be updated to match that new name.
+#
+# genesis repo-init - one-time CI provider setup {{{
+# define_command("repo-init", {
+# 	summary => "Initialize CI configuration for this Genesis deployment repository.",
+# 	usage   => "repo-init [--ci-provider PROVIDER] [--git-uri URI] [--git-branch BRANCH] [--vault-url URL] [--pipeline-name NAME]",
+# 	description =>
+# 		"One-time setup that writes a #C{ci:} section to #C{.genesis/config} and ".
+# 		"generates the #C{.genesis/ci/} scaffold files required by the pipeline ".
+# 		"compiler.\n".
+# 		"\n".
+# 		"Errors if CI is already configured for this repository. Use ".
+# 		"#C{genesis repo-update} to modify an existing configuration.\n".
+# 		"\n".
+# 		"When required flags are omitted an interactive wizard collects them.",
+# 	function_group => Genesis::Commands::REPOSITORY,
+# 	scope          => 'repo',
+# 	option_group   => Genesis::Commands::REPO_OPTIONS,
+# 	options => [
+# 		'ci-provider|P=s' =>
+# 			"CI provider to configure: #C{concourse} (default), ".
+# 			"#C{github-actions}, or #C{none}.",
+#
+# 		'git-uri|g=s' =>
+# 			"Git repository URI (e.g. #C{git\@github.com:org/repo.git}).",
+#
+# 		'git-branch|b=s' =>
+# 			"Default branch for the source-control integration. Defaults to #C{main}.",
+#
+# 		'vault-url|V=s' =>
+# 			"Vault URL for the secrets integration ".
+# 			"(e.g. #C{https://vault.example.com:8200}).",
+#
+# 		'pipeline-name|n=s' =>
+# 			"Name written into #C{pipeline.yml} metadata. Defaults to the ".
+# 			"deployment type.",
+# 	],
+# }, 'Genesis::Commands::Repo::repo_configure_ci');
+# }}}
+# genesis repo-update - idempotent CI config update {{{
+define_command("repo-update", {
+	summary => "Update CI configuration for this Genesis deployment repository.",
+	usage   => "repo-update [--ci-provider PROVIDER] [--git-uri URI] [--git-branch BRANCH] [--vault-url URL] [--pipeline-name NAME]",
+	description =>
+		"Idempotent counterpart to #C{genesis repo-init}. Updates the CI ".
+		"configuration in #C{.genesis/config} and regenerates missing scaffold ".
+		"files in #C{.genesis/ci/}.\n".
+		"\n".
+		"When called with flags, only the specified values are changed; ".
+		"everything else is left as-is. A bare invocation (no flags) launches ".
+		"an interactive wizard pre-populated with the current configuration.",
+	function_group => Genesis::Commands::REPOSITORY,
+	scope          => 'repo',
+	option_group   => Genesis::Commands::REPO_OPTIONS,
+	options => [
+		'ci-provider|P=s' =>
+			"CI provider to configure: #C{concourse}, #C{github-actions}, or #C{none}.",
+
+		'git-uri|g=s' =>
+			"Git repository URI.",
+
+		'git-branch|b=s' =>
+			"Default branch for the source-control integration.",
+
+		'vault-url|V=s' =>
+			"Vault URL for the secrets integration.",
+
+		'pipeline-name|n=s' =>
+			"Name written into #C{pipeline.yml} metadata.",
+	],
+}, 'Genesis::Commands::Repo::repo_update');
 # }}}
 # }}}
 
@@ -1926,7 +2020,7 @@ define_command("pipeline-apply", {
 		'debug-dir=s' =>
 			"Write intermediate compiler artifacts to this directory.",
 	],
-}, 'Genesis::Commands::Pipeline::apply');
+}, 'Genesis::Commands::Pipelines::apply');
 # }}}
 # genesis pipeline-graph - write Mermaid pipeline.md {{{
 define_command("pipeline-graph", {
@@ -1945,7 +2039,7 @@ define_command("pipeline-graph", {
 		'platform|provider|p=s' =>
 			"CI provider: 'concourse' (default) or 'github-actions'.",
 	],
-}, 'Genesis::Commands::Pipeline::graph');
+}, 'Genesis::Commands::Pipelines::pipeline_graph');
 # }}}
 # genesis pipeline-describe - human-readable pipeline description {{{
 define_command("pipeline-describe", {
@@ -1964,7 +2058,7 @@ define_command("pipeline-describe", {
 		'platform|provider|p=s' =>
 			"CI provider: 'concourse' (default) or 'github-actions'.",
 	],
-}, 'Genesis::Commands::Pipeline::describe');
+}, 'Genesis::Commands::Pipelines::pipeline_describe');
 # }}}
 # genesis pipeline-diff - show compiled vs live pipeline delta {{{
 define_command("pipeline-diff", {
@@ -1990,7 +2084,7 @@ define_command("pipeline-diff", {
 		'skip-vault' =>
 			"Skip vault connectivity when compiling.",
 	],
-}, 'Genesis::Commands::Pipeline::diff');
+}, 'Genesis::Commands::Pipelines::diff');
 # }}}
 # genesis pipeline-status - show per-environment job health {{{
 define_command("pipeline-status", {
@@ -2018,7 +2112,7 @@ define_command("pipeline-status", {
 		'skip-vault' =>
 			"Skip vault connectivity when compiling.",
 	],
-}, 'Genesis::Commands::Pipeline::status');
+}, 'Genesis::Commands::Pipelines::status');
 # }}}
 # genesis pipeline-pause - pause an environment job or entire pipeline {{{
 define_command("pipeline-pause", {
@@ -2046,7 +2140,7 @@ define_command("pipeline-pause", {
 		'skip-vault' =>
 			"Skip vault connectivity when compiling.",
 	],
-}, 'Genesis::Commands::Pipeline::pause');
+}, 'Genesis::Commands::Pipelines::pause');
 # }}}
 # genesis pipeline-resume - resume an environment job or entire pipeline {{{
 define_command("pipeline-resume", {
@@ -2074,7 +2168,7 @@ define_command("pipeline-resume", {
 		'skip-vault' =>
 			"Skip vault connectivity when compiling.",
 	],
-}, 'Genesis::Commands::Pipeline::resume');
+}, 'Genesis::Commands::Pipelines::resume');
 # }}}
 # }}}
 

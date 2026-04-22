@@ -1,4 +1,7 @@
 package Genesis::UI;
+use v5.20;
+use warnings;
+use strict;
 
 use base 'Exporter';
 our @EXPORT = qw/
@@ -130,7 +133,8 @@ sub __prompt_for_block {
 	$prompt = "$prompt (Enter <CTRL-D> to end)";
 	(my $line = $prompt) =~ s/./-/g;
 	print csprintf("%s","\n$prompt\n$line\n");
-	open(my $in, '<&', fileno(STDIN)) or $in = \*STDIN;
+	my $in;
+	open($in, '<&', fileno(STDIN)) or $in = \*STDIN;
 	my @data = <$in>;
 	return join("", @data);
 }
@@ -427,7 +431,7 @@ sub new_prompt_for_choice {
 			}
 			my $label = $choice->{label} // $choice->{value};
 			$max_label_len = max($max_label_len, length($label)+ $max_number_width + 2); # 2 for column separator 
-			push @{$sections{$section_headers[-1] //= []}}, $choice;
+			push @{$sections->{$section_headers[-1] //= []}}, $choice;
 		}
 		$columns = int($max_width / $max_label_len);
 		$col_width = int($max_width / $columns);
@@ -454,8 +458,13 @@ sub new_prompt_for_choice {
 
 	# Display header
 	my $form = $options{header}."\n";
+	my %selection_map;
+	my $default_choice;
 	# Handle user input
 	my $display_choices = sub {
+		my $section_offset = 0;
+		%selection_map = ();
+		$default_choice = undef;
 
 		for my $section_header (@section_headers) {
 			if ($section_header) {
@@ -467,7 +476,7 @@ sub new_prompt_for_choice {
 					$form .= csprintf("\n  #Wku{%s}\n", $section_header);
 				}
 			}
-			my $section_choices = $sections{$section_header};
+			my $section_choices = $sections->{$section_header};
 		};
 		
 		# Calculate item ranges for pagination
@@ -487,7 +496,7 @@ sub new_prompt_for_choice {
 			}
 			
 			# Calculate number of columns that fit
-			my $cols = max(1, int($terminal_width / ($max_label_len + 2)));
+			my $cols = max(1, int(terminal_width() / ($max_label_len + 2)));
 			
 			# Display items in columns
 			my $col = 0;
@@ -556,7 +565,7 @@ sub new_prompt_for_choice {
 				my $choice = $i+1-$section_offset;
 				$selection_map{$choice} = $choices->[$i];
 				$form .= csprintf("\n  %*s) %s", $iw, $choice, $choices->[$i]{label});
-				$default_choice = $choice if $i == $default_idx;
+				$default_choice = $choice if defined($default_idx) && $i == $default_idx;
 			}
 		}
 		

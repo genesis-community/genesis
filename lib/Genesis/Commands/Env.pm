@@ -71,60 +71,199 @@ sub create {
 	# check version prereqs
 	$kit->check_prereqs() or exit 86;
 
+	# Pipeline-aware repos require new environments to be created on the
+	# control branch so the topology is visible to pipeline tooling and
+	# the environment branch can be cut from the right point.
+	my $ci_configured = $top->ci_configured;
+	if ($ci_configured) {
+		my $control = Genesis::Top::DEFAULT_CONTROL_BRANCH();
+		my ($branch) = run({}, 'git rev-parse --abbrev-ref HEAD');
+		chomp $branch if defined $branch;
+		if (!defined($branch) || $branch ne $control) {
+			bail(
+				"Creating environments requires being on the #C{%s} branch, ".
+				"but you are currently on #C{%s}.\n\n".
+				"    git checkout %s\n",
+				$control,
+				$branch // '<detached HEAD>',
+				$control
+			);
+		}
+	}
+
 	# create the environment
 	info("\nSetting up new environment #C{$name} based on kit %s ...", $kit->id);
 	my $env = $top->create_env($name, $kit, %{get_options()});
 	bail "Failed to create environment $name" unless $env;
 
-	# Phase C: prompt for pipeline metadata when CI provider is configured
-	if ($top->config->has('ci.provider')) {
+	# Phase C: write pipeline metadata when CI provider is configured.
+	# Runs interactively when in a controlling terminal; honours --prior-env,
+	# --require-pr, and --manual flags for non-interactive (scripted) use.
+	if ($ci_configured) {
+		my $ci_type = $top->config->get('ci.provider.type') // 'unknown';
 		info(
-			"\n#G{Pipeline configuration} (ci.provider: #C{%s})\n",
-			$top->config->get('ci.provider')
+			"\n#G{Pipeline configuration} (ci provider: #C{%s})\n",
+			$ci_type
 		);
 
-		my $prior_env = prompt_for_line(
-			"Prior environment (leave blank if this is the pipeline entrypoint):",
-			"prior env",
-			"",
-		);
+		my %cli_opts = %{get_options()};
+		my $interactive = in_controlling_terminal;
 
-		my $require_pr = prompt_for_boolean(
-			"Require a PR gate before this environment deploys? [y|n]",
-			"n",
-		);
+		my $prior_env;
+		if (exists $cli_opts{'prior-env'}) {
+			$prior_env = $cli_opts{'prior-env'} // '';
+			if (length($prior_env)) {
+				my %known = map { $_->name => 1 } $top->envs();
+				bail(
+					"--prior-env '%s' does not match any environment in this repository.",
+					$prior_env
+				) unless $known{$prior_env};
+			}
+		} elsif ($interactive) {
+			my @existing = grep { $_->name ne $name } $top->envs();
+			if (@existing) {
+				my @env_names = map { $_->name } @existing;
+				my @choices = map {{ value => $_, label => $_ }} @env_names;
+				push @choices, { separator => 1 };
+				push @choices, {
+					value => '',
+					label => '#Yi{(none — pipeline entrypoint)}',
+					summary => '(entrypoint)',
+				};
+				$prior_env = new_prompt_for_choice(
+					header      => "Select prior environment (must succeed before this one):",
+					choices     => \@choices,
+					description => "environment",
+				);
+			} else {
+				$prior_env = '';
+				info("No other environments found — #C{%s} will be the pipeline entrypoint.", $name);
+			}
+		}
 
-		my $manual = prompt_for_boolean(
-			"Require a manual CI trigger before this environment deploys? [y|n]",
-			"n",
-		);
+		# --- require_pr / manual ---
+		my $require_pr;
+		if (exists $cli_opts{'require-pr'}) {
+			$require_pr = $cli_opts{'require-pr'} ? 1 : 0;
+		} elsif ($interactive) {
+			$require_pr = prompt_for_boolean(
+				"Require a PR gate before this environment deploys? [y|n]",
+				"n",
+			);
+		}
 
-		if (length($prior_env)) {
+		my $manual;
+		if (exists $cli_opts{manual}) {
+			$manual = $cli_opts{manual} ? 1 : 0;
+		} elsif ($interactive) {
+			$manual = prompt_for_boolean(
+				"Require a manual CI trigger before this environment deploys? [y|n]",
+				"n",
+			);
+		}
+
+		# Write pipeline: section when there is something to record.
+		# Entrypoints (no prior_env) can still carry manual: true.
+		if (length($prior_env // '') || $require_pr || $manual) {
 			my $pipeline_yaml = "  pipeline:\n";
-			$pipeline_yaml .= "    prior_env: $prior_env\n";
-			$pipeline_yaml .= "    require_pr: true\n" if $require_pr;
-			$pipeline_yaml .= "    manual: true\n"     if $manual;
+			$pipeline_yaml .= "    prior_env:    $prior_env\n" if length($prior_env // '');
+			$pipeline_yaml .= "    require_pr:   true\n"       if $require_pr;
+			$pipeline_yaml .= "    manual:       true\n"       if $manual;
 
 			my $file     = $env->path($env->file);
 			my $contents = slurp($file);
-			unless ($contents =~ /^  pipeline:/m) {
-				$contents =~ s/^(  env:\s+\S[^\n]*\n)/$1$pipeline_yaml/m;
-				mkfile_or_fail($file, $contents);
-			}
 
-			info("#G{Pipeline metadata written to} #C{%s}", $env->file);
+			if ($contents =~ /^\s+pipeline:/m) {
+				info(
+					"#Y{Note}: pipeline section already present in #C{%s}, skipping injection.",
+					$env->file
+				);
+			} else {
+				my $injected = ($contents =~ s/^((\s+)env:\s+\S[^\n]*\n)/$1$pipeline_yaml/m);
+				if ($injected) {
+					mkfile_or_fail($file, $contents);
+					info("#G{Pipeline metadata written to} #C{%s}", $env->file);
+				} else {
+					warning(
+						"Could not inject pipeline metadata into #C{%s}: ".
+						"'env:' key not found at expected indentation. ".
+						"Add the pipeline section manually:\n%s",
+						$env->file, $pipeline_yaml
+					);
+				}
+			}
 		} else {
-			info("No prior environment — #C{%s} is a pipeline entrypoint, no pipeline section written.", $name);
+			info(
+				"#C{%s} is a pipeline entrypoint with no gate flags — no pipeline section written.",
+				$name
+			);
 		}
 	}
 
+	# Git operations: stage, commit, and create an environment branch.
+	# Only when CI is configured and --no-commit is not set.
+	my %cli_opts_git = %{get_options()};
+	if ($ci_configured) {
+		my $env_file = $env->file;
+		run({ onfailure => "Failed to stage $env_file" },
+			'git', 'add', $env_file);
+
+		if ($cli_opts_git{'no-commit'}) {
+			info "Skipping commit (#C{--no-commit} set); #C{%s} remains staged.", $env_file;
+		} else {
+			my $message = $cli_opts_git{reason}
+				|| "Add environment $name";
+			run({ onfailure => "Failed to commit $env_file" },
+				'git', 'commit', '-m', $message);
+
+			my ($sha) = run({}, 'git rev-parse --short HEAD');
+			chomp $sha if defined $sha;
+			info "#G{Committed} #C{%s} -- %s", $sha // '<unknown>', $message;
+
+			# Create the environment branch at the current commit.
+			# This is the branch where future config changes and
+			# deploys for this environment will happen.  We stay on
+			# the control branch.
+			run({ onfailure => "Failed to create branch '$name'" },
+				'git', 'branch', $name);
+			info "Environment branch #C{%s} created.", $name;
+		}
+	}
+
+	# Generate secrets.  Non-fatal — the env file, pipeline metadata, and
+	# git branch are already in place; secrets can be retried later with
+	# `genesis add-secrets` or will be generated at deploy time.
+	my $secrets_ok = eval { $env->add_secrets(verbose => 1, import => 1) };
+	if (!$secrets_ok) {
+		my $err = $@ || '';
+		$err =~ s/\s+$//;
+		warning(
+			"Secret generation incomplete for #C{%s}.%s\n".
+			"Run #C{genesis add-secrets '%s'} to retry, or secrets will be\n".
+			"generated at deploy time.",
+			$name,
+			$err ? "\n$err" : '',
+			$name
+		);
+	}
+
 	# let the user know
-	info(
-		"New environment $env->{name} provisioned!\n\n".
-		"To deploy, run this:\n\n".
-		"  #C{genesis deploy '%s'}\n",
-		$env->{name}
-	);
+	if ($ci_configured && !$cli_opts_git{'no-commit'}) {
+		info(
+			"\nNew environment #C{%s} provisioned!\n\n".
+			"To deploy, switch to the environment branch and run:\n\n".
+			"  #C{git checkout '%s'}\n".
+			"  #C{genesis deploy '%s'}\n",
+			$env->{name}, $name, $env->{name}
+		);
+	} else {
+		info(
+			"\nNew environment #C{%s} provisioned!\n\n".
+			"To deploy, run this:\n\n".
+			"  #C{genesis deploy '%s'}\n",
+			$env->{name}, $env->{name}
+		);
+	}
 }
 
 sub edit {
