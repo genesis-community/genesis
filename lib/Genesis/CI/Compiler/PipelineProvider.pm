@@ -177,7 +177,10 @@ sub provider_config {
 	my $opts     = $self->{provider_opts} || {};
 	my %out = ( type => $self->provider_type() );
 	for my $k (keys %$opts) {
-		next if exists $defaults->{$k} && $defaults->{$k} eq ($opts->{$k} // '');
+		next unless defined $opts->{$k};
+		next if exists $defaults->{$k}
+		     && defined $defaults->{$k}
+		     && "$defaults->{$k}" eq "$opts->{$k}";
 		$out{$k} = $opts->{$k};
 	}
 	return \%out;

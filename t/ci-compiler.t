@@ -2604,6 +2604,157 @@ subtest 'PipelineProvider::Concourse - check_prereqs returns 0 when fly absent' 
 	ok !$result, 'check_prereqs returns 0 when fly is not in PATH';
 };
 
+### ============================================================ ###
+### Concourse insecure option
+### ============================================================ ###
+
+subtest 'Concourse - insecure in provider_options_schema' => sub {
+	my $schema = Genesis::CI::Concourse->provider_options_schema();
+	ok exists $schema->{insecure},              "'insecure' key present in schema";
+	is $schema->{insecure}{type}, 'boolean',    "insecure type is boolean";
+	ok !$schema->{insecure}{required},          "insecure is not required";
+	is $schema->{insecure}{default}, 0,         "insecure default is 0";
+};
+
+subtest 'Concourse - insecure in provider_options_defaults' => sub {
+	my $defaults = Genesis::CI::Concourse->provider_options_defaults();
+	ok exists $defaults->{insecure},  "insecure present in defaults";
+	is $defaults->{insecure}, 0,      "insecure default is 0 (false)";
+};
+
+subtest 'Concourse - ci-insecure declared in cli_opts' => sub {
+	my @opts = Genesis::CI::Concourse->cli_opts();
+	ok grep { $_ eq 'ci-insecure' } @opts, "ci-insecure declared (boolean flag)";
+};
+
+subtest 'Concourse - insecure omitted from provider_config when default (false)' => sub {
+	my $ast = Genesis::CI::Compiler::AST->new();
+	my $provider = Genesis::CI::Concourse->new(
+		ast           => $ast,
+		provider_opts => { type => 'concourse', target => 't', insecure => 0 },
+	);
+	my $config = $provider->provider_config();
+	ok !exists $config->{insecure}, "insecure omitted when false (matches default)";
+};
+
+subtest 'Concourse - insecure included in provider_config when true' => sub {
+	my $ast = Genesis::CI::Compiler::AST->new();
+	my $provider = Genesis::CI::Concourse->new(
+		ast           => $ast,
+		provider_opts => { type => 'concourse', target => 't', insecure => 1 },
+	);
+	my $config = $provider->provider_config();
+	is $config->{insecure}, 1, "insecure=1 included in provider_config";
+};
+
+subtest 'Concourse - provider_option insecure defaults to 0' => sub {
+	my $ast      = Genesis::CI::Compiler::AST->new();
+	my $provider = Genesis::CI::Concourse->new(ast => $ast);
+	is $provider->provider_option('insecure'), 0, "insecure defaults to 0";
+};
+
+subtest 'Concourse - describe_provider includes Insecure field' => sub {
+	my $ast = Genesis::CI::Compiler::AST->new();
+	my $provider = Genesis::CI::Concourse->new(
+		ast           => $ast,
+		provider_opts => { target => 'myci', insecure => 1 },
+	);
+	my %info = $provider->describe_provider();
+	ok grep { $_ eq 'Insecure' } @{$info{extras}}, "Insecure in extras list";
+	is $info{Insecure}, 'yes', "Insecure field is 'yes' when insecure=1";
+};
+
+### ============================================================ ###
+### Concourse normalize_provider_opts override
+### ============================================================ ###
+
+subtest 'Concourse - normalize_provider_opts remaps ci-pause to pause_after_set' => sub {
+	my $normalized = Genesis::CI::Concourse->normalize_provider_opts({
+		'ci-pause' => 1,
+	});
+	ok !exists $normalized->{pause},          "raw 'pause' key not present after remap";
+	is $normalized->{pause_after_set}, 1,     "pause_after_set=1 after remapping ci-pause";
+};
+
+subtest 'Concourse - normalize_provider_opts does not remap if pause_after_set already set' => sub {
+	my $normalized = Genesis::CI::Concourse->normalize_provider_opts({
+		'ci-pause'       => 0,
+		'pause_after_set' => 1,
+	});
+	is $normalized->{pause_after_set}, 1,
+		"explicit pause_after_set wins over ci-pause when both present";
+};
+
+subtest 'Concourse - normalize_provider_opts handles full CLI key set' => sub {
+	my $normalized = Genesis::CI::Concourse->normalize_provider_opts({
+		'ci-target'        => 'myci',
+		'ci-team'          => 'platform',
+		'ci-pipeline-name' => 'cf-deploy',
+		'ci-pause'         => 1,
+		'ci-expose'        => 0,
+		'ci-insecure'      => 1,
+	});
+	is $normalized->{target},          'myci',      "target normalized";
+	is $normalized->{team},            'platform',  "team normalized";
+	is $normalized->{pipeline_name},   'cf-deploy', "pipeline_name normalized";
+	is $normalized->{pause_after_set}, 1,           "pause_after_set normalized from ci-pause";
+	is $normalized->{expose},          0,           "expose normalized";
+	is $normalized->{insecure},        1,           "insecure normalized";
+	ok !exists $normalized->{pause},                "no stale 'pause' key present";
+};
+
+### ============================================================ ###
+### provider_config boolean comparison (PipelineProvider)
+### ============================================================ ###
+
+subtest 'PipelineProvider - provider_config skips undef opts' => sub {
+	my $ast = Genesis::CI::Compiler::AST->new();
+	my $provider = Genesis::CI::Concourse->new(
+		ast           => $ast,
+		provider_opts => { type => 'concourse', team => undef },
+	);
+	my $config = $provider->provider_config();
+	ok !exists $config->{team}, "undef opt not included in provider_config";
+};
+
+subtest 'PipelineProvider - provider_config keeps boolean false when non-default' => sub {
+	my $ast = Genesis::CI::Compiler::AST->new();
+	# expose default is 0; setting expose=>0 explicitly should still omit it
+	# insecure default is 0; setting insecure=>1 should include it
+	my $provider = Genesis::CI::Concourse->new(
+		ast           => $ast,
+		provider_opts => { type => 'concourse', expose => 0, insecure => 1 },
+	);
+	my $config = $provider->provider_config();
+	ok !exists $config->{expose},  "expose=0 (matches default) omitted";
+	is $config->{insecure}, 1,     "insecure=1 (non-default) included";
+};
+
+### ============================================================ ###
+### validate_config_section: source_control must be a hash
+### ============================================================ ###
+
+subtest 'Compiler - validate_config_section: rejects scalar source_control' => sub {
+	my $bad = {
+		%$_ci_data,
+		integrations => { source_control => 1 },
+	};
+	eval { Genesis::CI::Compiler->validate_config_section($bad, undef) };
+	like $@, qr/source_control.*must be a hash/i,
+		"scalar source_control triggers error";
+};
+
+subtest 'Compiler - validate_config_section: accepts hash source_control' => sub {
+	my $good = {
+		%$_ci_data,
+		integrations => {
+			source_control => { provider => 'github', repository => 'org/repo' },
+		},
+	};
+	eval { Genesis::CI::Compiler->validate_config_section($good, undef) };
+	ok !$@, "hash source_control passes validation" or diag $@;
+};
+
 done_testing;
 
 # vim: ts=2 sw=2 sts=2 noet fdm=marker foldlevel=1 nu

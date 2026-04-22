@@ -73,12 +73,11 @@ sub apply {
 
 		$provider->check_prereqs() or exit 86;
 
-		require Genesis::CI::Compiler::PipelineProvider;
-		my %deploy_opts = %{ Genesis::CI::Compiler::PipelineProvider->normalize_provider_opts(
+		my %deploy_opts = %{ $provider->normalize_provider_opts(
 			$result->{provider_cli_opts} || {}
 		) };
-		$deploy_opts{target} //= $opts->{target} // $layout // $name;
-		$deploy_opts{pause}  //= $opts->{paused};
+		$deploy_opts{target}          //= $opts->{target} // $layout // $name;
+		$deploy_opts{pause_after_set} //= $opts->{paused};
 		$provider->deploy(%deploy_opts, yes => $opts->{yes});
 
 	} elsif ($platform eq 'github-actions') {
@@ -165,7 +164,7 @@ sub diff {
 
 	my $name   = $ast->metadata->{name}
 		or bail("Pipeline AST has no name defined");
-	my $target = $opts->{target} || $name;
+	my ($target, $k_flag) = _concourse_fly_flags($result, $opts, $name);
 
 	my $compiled = $output->{'pipeline.yml'}
 		or bail("Concourse provider did not produce pipeline.yml");
@@ -173,7 +172,7 @@ sub diff {
 	my $dir = workdir;
 	mkfile_or_fail("$dir/compiled.yml", $compiled);
 
-	my ($live, $rc) = run('fly -t $1 get-pipeline -p $2', $target, $name);
+	my ($live, $rc) = run("fly${k_flag} -t \$1 get-pipeline -p \$2", $target, $name);
 	if ($rc != 0) {
 		info("#Y{Pipeline '%s' does not exist on target '%s' — nothing to diff against.}",
 			$name, $target);
@@ -212,9 +211,9 @@ sub status {
 	my $ast    = $result->{ast};
 	my $name   = $ast->metadata->{name}
 		or bail("Pipeline AST has no name defined");
-	my $target = $opts->{target} || $name;
+	my ($target, $k_flag) = _concourse_fly_flags($result, $opts, $name);
 
-	my ($json_out, $rc) = run('fly -t $1 jobs -p $2 --json', $target, $name);
+	my ($json_out, $rc) = run("fly${k_flag} -t \$1 jobs -p \$2 --json", $target, $name);
 	bail("Could not get jobs for pipeline '%s' on target '%s': %s", $name, $target, $json_out)
 		unless $rc == 0;
 
@@ -277,18 +276,18 @@ sub pause {
 	my $ast    = $result->{ast};
 	my $name   = $ast->metadata->{name}
 		or bail("Pipeline AST has no name defined");
-	my $target = $opts->{target} || $name;
+	my ($target, $k_flag) = _concourse_fly_flags($result, $opts, $name);
 
 	if ($env) {
 		run({ interactive => 1,
 		      onfailure => "Could not pause job '$env' in pipeline '$name'" },
-			'fly -t $1 pause-job -p $2 -j $3',
+			"fly${k_flag} -t \$1 pause-job -p \$2 -j \$3",
 			$target, $name, $env);
 		info("Paused job #C{%s} in pipeline #C{%s}", $env, $name);
 	} else {
 		run({ interactive => 1,
 		      onfailure => "Could not pause pipeline '$name'" },
-			'fly -t $1 pause-pipeline -p $2',
+			"fly${k_flag} -t \$1 pause-pipeline -p \$2",
 			$target, $name);
 		info("Paused pipeline #C{%s}", $name);
 	}
@@ -312,18 +311,18 @@ sub resume {
 	my $ast    = $result->{ast};
 	my $name   = $ast->metadata->{name}
 		or bail("Pipeline AST has no name defined");
-	my $target = $opts->{target} || $name;
+	my ($target, $k_flag) = _concourse_fly_flags($result, $opts, $name);
 
 	if ($env) {
 		run({ interactive => 1,
 		      onfailure => "Could not resume job '$env' in pipeline '$name'" },
-			'fly -t $1 unpause-job -p $2 -j $3',
+			"fly${k_flag} -t \$1 unpause-job -p \$2 -j \$3",
 			$target, $name, $env);
 		info("Resumed job #C{%s} in pipeline #C{%s}", $env, $name);
 	} else {
 		run({ interactive => 1,
 		      onfailure => "Could not resume pipeline '$name'" },
-			'fly -t $1 unpause-pipeline -p $2',
+			"fly${k_flag} -t \$1 unpause-pipeline -p \$2",
 			$target, $name);
 		info("Resumed pipeline #C{%s}", $name);
 	}
@@ -864,6 +863,23 @@ sub _describe_ast {
 	}
 
 	output "";
+}
+
+# }}}
+# _concourse_fly_flags - derive (target, k_flag) from compiled result + CLI opts {{{
+#
+# Target resolution: explicit --target CLI opt > ci.provider.target config > pipeline name.
+# k_flag is ' -k' when insecure is set, '' otherwise.
+sub _concourse_fly_flags {
+	my ($result, $opts, $name) = @_;
+	my $provider = $result->{provider};
+	my $target   = $opts->{target}
+		// ($provider->can('provider_option') ? $provider->provider_option('target') : undef)
+		// $name;
+	my $insecure = $provider->can('provider_option')
+		? ($provider->provider_option('insecure') // 0) : 0;
+	my $k_flag   = $insecure ? ' -k' : '';
+	return ($target, $k_flag);
 }
 
 # }}}

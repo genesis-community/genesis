@@ -200,12 +200,15 @@ sub validate_config_section {
 	bail("'ci.targets' is required and must define at least one target")
 		unless defined($targets) && ref($targets) eq 'HASH' && scalar(keys %$targets) > 0;
 
-	# ci.integrations.source_control is required
+	# ci.integrations.source_control is required and must be a hash
 	my $integrations = $data->{integrations};
 	if (defined $integrations) {
 		bail("'ci.integrations' must be a hash") unless ref($integrations) eq 'HASH';
+		my $sc = $integrations->{source_control};
 		bail("'ci.integrations.source_control' is required")
-			unless defined $integrations->{source_control};
+			unless defined $sc;
+		bail("'ci.integrations.source_control' must be a hash")
+			unless ref($sc) eq 'HASH';
 	} else {
 		bail("'ci.integrations.source_control' is required");
 	}
