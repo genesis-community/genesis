@@ -186,6 +186,7 @@ sub cpi_stemcell_prefix {
     'google'      => 'google-kvm',
     'openstack'   => 'openstack-kvm',
 		'stackit'     => 'openstack-kvm',
+    'pve'         => 'openstack-kvm',
     'vsphere'     => 'vsphere-esxi',
     'virtualbox'  => 'warden-boshlite',
     'warden'      => 'warden-boshlite',
