@@ -472,6 +472,26 @@ subtest 'cpi_entombment_path_for - uses credhub_prefix override when set' => sub
 		'credhub_prefix override is used when set on hook');
 };
 
+subtest 'cpi_entombment_path_for - dotted keys are flattened out of the path' => sub {
+	plan tests => 3;
+
+	my $hook  = make_hook();
+	my $key   = 'pve.host';
+	my $value = 'pve.example.com';
+
+	my $stub = 'cpi-config-property';
+	my $sha  = substr(sha1_hex("$stub--$key--$value"), 0, 8);
+
+	my $path = $hook->cpi_entombment_path_for($key, $value);
+
+	is($path, "/bosh/my-env/${stub}--pve_host--${sha}",
+		'dot in the property key is replaced in the CredHub path');
+	unlike($path, qr/\./,
+		'returned path contains no dot for BOSH to split the reference on');
+	isnt($path, $hook->cpi_entombment_path_for('pve_host', $value),
+		'a key that flattens alike still gets its own path, since the sha covers the original key');
+};
+
 subtest 'cpi_entombment_path_for - different values produce different paths' => sub {
 	plan tests => 1;
 

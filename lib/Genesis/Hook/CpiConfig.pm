@@ -199,7 +199,16 @@ sub cpi_entombment_path_for {
 	my $prefix = $self->{credhub_prefix} // $self->env->cpi_credhub_base;
 	my $stub = 'cpi-config-property';
 	my $secret_sha = substr(sha1_hex("$stub--$key--".$value),0,8);
-	return "$prefix$stub--$key--$secret_sha";
+
+	# BOSH resolves ((name.subkey)) by splitting the reference on its first dot,
+	# so a nested property key such as pve.host would have the director ask the
+	# config server for a truncated credential name and get a 404 back. Flatten
+	# anything outside [A-Za-z0-9_-] so the stored name and the manifest
+	# reference agree and carry no dot. The sha still covers the original key,
+	# so two keys that flatten alike keep distinct paths.
+	(my $safe_key = $key) =~ s/[^A-Za-z0-9_-]/_/g;
+
+	return "$prefix$stub--$safe_key--$secret_sha";
 }
 
 1;
