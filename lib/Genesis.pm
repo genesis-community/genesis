@@ -1308,10 +1308,11 @@ sub tcp_listening {
 		local $SIG{ALRM} = sub {die "timeout\n"; };
 		alarm $timeout;
 		my $socket = IO::Socket::INET->new(PeerAddr => $host, PeerPort => $port, Proto => 'tcp');
+		alarm 0;
 		die "failed\n" unless $socket;
 		$socket->close();
-		alarm 0;
 	};
+	alarm 0;
 	return ($@ eq "timeout\n" ? "timeout" : "failed") if ($@);
 	return 'ok';
 }

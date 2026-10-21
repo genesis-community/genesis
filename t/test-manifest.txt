@@ -38,6 +38,7 @@ unit-tests/service_bosh-stemcell.t
 unit-tests/genesis-run_exit_status_under_trace.t  # run() keeps the exit code when tracing is on
 unit-tests/genesis-spruce_diff_exit_codes.t   # spruce diff's exit code survives script(1) on macOS and Linux
 unit-tests/service_bosh-interactive_exit_codes.t  # interactive bosh and fake_tty keep the exit code under script(1)
+unit-tests/genesis-tcp_listening_alarm.t      # tcp_listening leaves no alarm armed
 unit-tests/service_vault-core.t          # Service::Vault base class + None with MockWrapper
 unit-tests/service_vault-strongbox_intent.t  # tri-state strongbox read from ~/.saferc
 unit-tests/service_vault-unseal_strongbox.t  # unseal keeps safe's stderr, flags partial unseal

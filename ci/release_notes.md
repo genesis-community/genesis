@@ -277,6 +277,13 @@
   and relied on a failure message that never fired there.  It now checks the
   exit code bosh returns and stops with an error when the errand fails.
 
+* A refused connection no longer kills Genesis with SIGALRM.
+
+  Checking a vault or BOSH director whose port refused the connection left
+  the connection timeout armed, so Genesis was killed by SIGALRM
+  `GENESIS_NETWORK_TIMEOUT` seconds later (10 by default) if it was still
+  running.  The timeout is now cancelled however the check ends.
+
 # Internal Changes/Improvements
 
 ## BOSH Refactor

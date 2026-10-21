@@ -2579,6 +2579,15 @@ The internal C<eval> block uses C<die "timeout\n"> and C<die "failed\n"> as
 control-flow signals. These are caught and converted to the string return
 values described above. They are not propagated to the caller.
 
+The connect timeout is an C<alarm>, and it must be cancelled on every path
+out of the C<eval>.  The C<eval>'s C<local> SIGALRM handler goes with it,
+so an alarm still armed when this returns fires under the default action
+and kills Genesis C<GENESIS_NETWORK_TIMEOUT> seconds later.  The alarm is
+cancelled straight after the connect, before a refused connection dies out
+of the C<eval>, and again after the C<eval>.  C<Service::Vault::status> and
+C<Service::BOSH::Director::status> call this on every vault and director
+check.
+
 B<Examples:>
 
     my $status = tcp_listening('10.0.0.1', 25555);
