@@ -4237,6 +4237,50 @@ sub _pre_deploy {
 }
 
 # }}}
+# _last_manifest_integrity_issue - report a stale locally-stored manifest {{{
+sub _last_manifest_integrity_issue {
+	my ($self, $last_manifest) = @_;
+
+	# Deployment archives carry their own manifest, so there is no local copy
+	# that could have drifted from what was deployed.
+	return undef unless ref($last_manifest) eq 'HASH'
+		&& ($last_manifest->{source}||'') ne 'exodus-deployments'
+		&& ref($last_manifest->{manifest}) eq 'HASH'
+		&& $last_manifest->{manifest}{path};
+
+	my $expected_sha1 = $last_manifest->{manifest_sha1};
+	return
+		"Cannot confirm local cached deployment manifest pertains to ".
+		"the current deployment (sha1 sum missing from exodus data)."
+		unless defined($expected_sha1) && $expected_sha1 ne '';
+
+	# The state file is committed beside the manifest it was made with, so it is
+	# the repository copy that has to match what exodus says was deployed.  A
+	# manifest downloaded from exodus matches its own sha1 by construction, and
+	# says nothing about the state file.
+	my $repo_sha1 = $last_manifest->{manifest}{sha1};
+	if (($last_manifest->{source}||'') ne 'repository') {
+		my $repo_manifest = $self->path(".genesis/manifests/".$self->name.".yml");
+		if (-f $repo_manifest) {
+			$repo_sha1 = digest_file_hex($repo_manifest, 'SHA-1');
+		} else {
+			return undef unless ($last_manifest->{state}{source}||'') eq 'repository';
+			return
+				"Cannot confirm the state file in the local repository pertains to the ".
+				"current deployment (no deployed manifest beside it to check against exodus).";
+		}
+	}
+
+	return
+		"Manifest in the deployment archive does not match the manifest in the ".
+		"local repository; perhaps you need to perform a #C{git pull}.  #y{Differences ".
+		"will not be accurate for this deployment compared to what was last deployed.}"
+		unless ($repo_sha1||'') eq $expected_sha1;
+
+	return undef;
+}
+
+# }}}
 # _deploy_create_env - handle create-env deployment {{{
 sub _deploy_create_env {
 	my ($self, %opts) = @_;
@@ -4246,7 +4290,7 @@ sub _deploy_create_env {
 	debug("deploying this environment via `bosh create-env`, locally");
 	my $last_manifest = $self->last_deployed_manifest(files => 1, contents => 0);
 
-	my ($last_manifest_path, $last_manifest_sha1);
+	my $last_manifest_path;
 	unless ($last_manifest->{not_found}) {
 		if ($last_manifest->{errors}) {
 			$self->_cleanup_and_bail("Errors encountered while retrieving last deployed manifest: %s",
@@ -4254,7 +4298,6 @@ sub _deploy_create_env {
 			);
 		}
 		$last_manifest_path = ($last_manifest->{manifest}{path});
-		$last_manifest_sha1 = $last_manifest->{manifest_sha1};
 	}
 
 	my $alternative_state_file = $opts{'STATE-FILE-PATH'};
@@ -4269,36 +4312,20 @@ sub _deploy_create_env {
 	my $recovered = $self->_recovered_create_env_state();
 
 	# Validate manifest consistency
-	if ($last_manifest_path && ($last_manifest->{source}||'') ne 'exodus-deployments') {
-		# Legacy method of storing state files, and possibly manifests
-		my $last_state_path = $last_manifest->{state}{path};
-		my $last_manifest_repo_path = $last_state_path =~ s/-state\.yml$/.yml/r;
-		my $last_repo_sha1 = sha1_hex(slurp($last_manifest_repo_path));
-		my $issue = '';
-
-		if (!defined($last_manifest_sha1) || $last_manifest_sha1 eq '') {
-			$issue = "Cannot confirm local cached deployment manifest pertains to ".
-			         "the current deployment (sha1 sum missing from exodus data).";
-		} elsif ($last_repo_sha1 ne $last_manifest_sha1) {
-			$issue = "Manifest in the deployment archive does not match the manifest in the ".
-			         "local repository; perhaps you need to perform a #C{git pull}.  #y{Differences ".
-			         "will not be accurate for this deployment compared to what was last deployed.}";
-		}
-		if ($issue) {
-			$issue .= "  #R{This may mean your state file is also out of date!}";
-			if (in_controlling_terminal) {
-				warning("\n".$issue);
-				prompt_for_boolean(
-					"Proceed with BOSH create-env for the #C{${\($self->name)}} anyways? [y|n] ",
-					0
-				) or $self->_cleanup_and_bail("Aborted!\n");
-				$self->notify("\nchecking for the currently deployed manifest...");
-			} else {
-				bail(
-					"$issue\n\nRefusing to deploy to protect integrity of the environment.  ".
-					"Run this command in a terminal to be asked whether to proceed anyway."
-				);
-			}
+	if (my $issue = $self->_last_manifest_integrity_issue($last_manifest)) {
+		$issue .= "  #R{This may mean your state file is also out of date!}";
+		if (in_controlling_terminal) {
+			warning("\n".$issue);
+			prompt_for_boolean(
+				"Proceed with BOSH create-env for the #C{${\($self->name)}} anyways? [y|n] ",
+				0
+			) or $self->_cleanup_and_bail("Aborted!\n");
+			$self->notify("\nchecking for the currently deployed manifest...");
+		} else {
+			bail(
+				"$issue\n\nRefusing to deploy to protect integrity of the environment.  ".
+				"Run this command in a terminal to be asked whether to proceed anyway."
+			);
 		}
 	}
 
@@ -4309,19 +4336,6 @@ sub _deploy_create_env {
 		) unless $last_manifest->{state}{path}
 		      || $recovered->{state}
 		      || $alternative_state_file;
-
-		if ($last_manifest->{manifest}{source} eq 'repository' && !defined($last_manifest->{manifest_sha1})) {
-			warning(
-				"Cannot confirm local cached deployment manifest pertains to the ".
-				"current deployment."
-			);
-		} elsif ($last_manifest_sha1 && $last_manifest_sha1 ne sha1_hex(slurp($last_manifest_path))) {
-			warning(
-				"Manifest in the deployment archive does not match the manifest in the ".
-				"local repository; perhaps you need to perform a #C{git pull}.  #y{Differences ".
-				"will not be accurate for this deployment compared to what was last deployed.}"
-			);
-		}
 
 		info("\n[[  - >>comparing against the last deployed manifest...");
 		my ($out, $rc, $err) = spruce_diff(

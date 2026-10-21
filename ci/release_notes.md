@@ -320,6 +320,23 @@
   `GENESIS_NETWORK_TIMEOUT` seconds later (10 by default) if it was still
   running.  The timeout is now cancelled however the check ends.
 
+* Redeploying a `create-env` environment no longer reports a false manifest
+  mismatch.
+
+  Before a `create-env` deploy, Genesis checks that the manifest kept in the
+  repository is the one that was last deployed.  Since create-env started
+  writing its state to `-state.json`, that check hashed the state file
+  instead of the manifest, so every redeploy reported that "Manifest in the
+  deployment archive does not match the manifest in the local repository".
+  At a terminal you were asked whether to proceed, and without one Genesis
+  refused to deploy.  The check now compares the manifest in the repository,
+  even when the last manifest was downloaded from exodus, and the warning
+  appears once instead of twice when that manifest really is stale.  A state
+  file in the repository with no manifest beside it is now reported, because
+  nothing shows which deployment it belongs to.  An environment with no
+  recorded state file now stops with "Cannot find state file for previous
+  deployment" instead of "failed to open ''".
+
 # Internal Changes/Improvements
 
 ## BOSH Refactor

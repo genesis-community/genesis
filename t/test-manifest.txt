@@ -72,6 +72,7 @@ unit-tests/genesis_env-deployment_cache.t
 unit-tests/genesis_env-deployment.t
 unit-tests/genesis_env-deploy_to_bosh.t  # bosh deploy flags; a dry run adds -n
 unit-tests/genesis_env-create_env_state_recovery.t  # create-env state recovered from a failed deploy
+unit-tests/genesis_env-last_manifest_integrity.t  # create-env manifest checked against the exodus sha1
 unit-tests/genesis_env-manifest_helpers.t
 # Genesis::Env method coverage
 unit-tests/genesis_env-lookups.t         # lookup() and lookup_unevaled() variants
