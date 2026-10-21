@@ -60,7 +60,7 @@ unit-tests/genesis_kit_compiler-core.t   # Genesis::Kit::Compiler (POD-driven)
 # Temporarily disabled - see test analysis for details
 #unit-tests/kit-compilation.t
 #unit-tests/hooks.t
-#unit-tests/hooks-cloudconfig.t
+unit-tests/hooks-cloudconfig.t
 unit-tests/genesis_env-name_validation.t  # Genesis::Env name validation (_env_name_errors)
 unit-tests/genesis_env-file_loading_and_inheritance.t  # Genesis::Env file loading, hierarchy, and inheritance
 unit-tests/genesis_env-accessors.t  # Genesis::Env basic accessors and identity

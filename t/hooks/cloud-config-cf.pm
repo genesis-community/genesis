@@ -122,9 +122,9 @@ sub perform {
 			} (sort keys %$vm_matrix)),
 		],
 		'vm_extensions' => [
-			$self->vm_extension_definition('diego-ssh-proxy-network-properties', common => {}),
-			$self->vm_extension_definition('cf-router-network-properties', common => {}),
-			$self->vm_extension_definition('cf-tcp-router-network-properties', common => {}),
+			$self->vm_extension_definition('diego-ssh-proxy-network-properties', { openstack => {} }),
+			$self->vm_extension_definition('cf-router-network-properties', { openstack => { security_groups => ['default'] } }),
+			$self->vm_extension_definition('cf-tcp-router-network-properties', { aws => { security_groups => ['default'] } }),
 		],
 		'disk_types' => [
 			$self->disk_type_definition('database',

@@ -209,15 +209,15 @@ subtest 'Genesis::Hook::CloudConfig::Bosh' => sub {
 			cmp_deeply([@azs], [
 				{
 					cloud_properties => {"zone" => "us-east-1a"},
-					name             => 'test-env-mgmt-az1',
+					name             => 'test-env-mgmt-z1',
 				},
 				{
 					cloud_properties => {"zone" => "us-east-1b"},
-					name             => 'test-env-mgmt-az2',
+					name             => 'test-env-mgmt-z2',
 				},
 				{
 					cloud_properties => {"zone" => "us-east-1c"},
-					name             => 'test-env-mgmt-az3',
+					name             => 'test-env-mgmt-z3',
 				},
 			], 'AZ definitions are correct');
 		};
@@ -281,9 +281,9 @@ subtest 'Genesis::Hook::CloudConfig::Bosh' => sub {
 			cmp_deeply(\%compilation, {
 					network => 'test-env-mgmt.bosh.net-compilation',
 					vm_type => 'test-env-mgmt.bosh.vm-compilation',
-					az      => 'test-env-mgmt-az2',
+					az      => 'test-env-mgmt-z2',
 					workers => 4,
-					reuse_compilation => JSON::PP::true,
+					reuse_compilation_vms => JSON::PP::true,
 				}, 'Compilation definition is correct');
 			cmp_deeply([sort keys %{$cc_director_hook->network->{azs}}], ['az1', 'az2', 'az3'], 'Available AZs are correct and unaltered');
 		};
@@ -298,21 +298,21 @@ subtest 'Genesis::Hook::CloudConfig::Bosh' => sub {
 			is(ref($results), 'HASH', 'Cloud config results returned');
 			eq_or_diff($results->{config}, <<EOF, 'Cloud config is correct');
 azs:
-- name: test-env-mgmt-az1
-- name: test-env-mgmt-az2
-- name: test-env-mgmt-az3
+- name: test-env-mgmt-z1
+- name: test-env-mgmt-z2
+- name: test-env-mgmt-z3
 
 compilation:
-  az: test-env-mgmt-az2
+  az: test-env-mgmt-z2
   network: test-env-mgmt.bosh.net-compilation
-  reuse_compilation: true
+  reuse_compilation_vms: true
   vm_type: test-env-mgmt.bosh.vm-compilation
   workers: 4
 
 networks:
 - name: test-env-mgmt.bosh.net-compilation
   subnets:
-  - az: test-env-mgmt-az2
+  - az: test-env-mgmt-z2
     dns:
     - 10.0.1.2
     gateway: 10.0.1.1
@@ -338,32 +338,35 @@ EOF
 				'azs' => {
 					'az1' => {
 						'cloud_properties' => '{"zone": "us-east-1a"}',
-						'name' => 'test-env-mgmt-az1'
+						'index' => '1',
+						'name' => 'test-env-mgmt-z1'
 					},
 					'az2' => {
 						'cloud_properties' => '{"zone": "us-east-1b"}',
-						'name' => 'test-env-mgmt-az2'
+						'index' => '2',
+						'name' => 'test-env-mgmt-z2'
 					},
 					'az3' => {
 						'cloud_properties' => '{"zone": "us-east-1c"}',
-						'name' => 'test-env-mgmt-az3'
+						'index' => '3',
+						'name' => 'test-env-mgmt-z3'
 					}
 				},
 				'subnets' => {
 					'ocfp-0' => {
-						'az' => 'test-env-mgmt-az1',
+						'az' => 'test-env-mgmt-z1',
 						'claims' => {},
 						'range' => '10.0.0.0-10.0.0.255'
 					},
 					'ocfp-1' => {
-						'az' => 'test-env-mgmt-az2',
+						'az' => 'test-env-mgmt-z2',
 						'claims' => {
 							'test-env-mgmt.bosh.net-compilation' => '10.0.1.37-10.0.1.40'
 						},
 						'range' => '10.0.1.0-10.0.1.255'
 					},
 					'ocfp-2' => {
-						'az' => 'test-env-mgmt-az3',
+						'az' => 'test-env-mgmt-z3',
 						'claims' => {},
 						'range' => '10.0.2.0-10.0.2.255'
 					}
@@ -462,22 +465,25 @@ EOF
 		subtest "network availability zones" => sub {
 			plan tests => 3; # 1 is() + 1 is() + 1 cmp_deeply
 
-      is( $cc_hook->lookup_az('az1'), 'test-env-mgmt-az1', 'AZ lookup is correct' );
-      is( $cc_hook->lookup_az('az4'), undef, 'AZ lookup returns undef for unknown AZ' );
+      is( $cc_hook->lookup_az('az1'), 'test-env-mgmt-z1', 'AZ lookup is correct' );
+      throws_ok { $cc_hook->lookup_az('az4') } qr/Availability zone az4 not found/, 'AZ lookup dies for unknown AZ';
 
 			# TODO: Test network_reference and subnet_reference
 			cmp_deeply( $cc_hook->get_available_azs, {
 				'az1' => {
 					'cloud_properties' => '{"zone": "us-east-1a"}',
-					'name'             => 'test-env-mgmt-az1'
+					'index' => '1',
+					'name'             => 'test-env-mgmt-z1'
 				},
 				'az2' => {
 					'cloud_properties' => '{"zone": "us-east-1b"}',
-					'name'             => 'test-env-mgmt-az2'
+					'index' => '2',
+					'name'             => 'test-env-mgmt-z2'
 				},
 				'az3' => {
 					'cloud_properties' => '{"zone": "us-east-1c"}',
-					'name'             => 'test-env-mgmt-az3'
+					'index' => '3',
+					'name'             => 'test-env-mgmt-z3'
 				}
 			}, 'Available AZs are correct');
 		};
@@ -540,25 +546,27 @@ EOF
 			is($network->{type}, 'manual', 'Network type is correct');
 			is(scalar(@{$network->{subnets}}), 2, 'Network has 2 subnets');
 			cmp_deeply($network->{subnets}[0], {
-				'az' => 'test-env-mgmt-az1',
+				'az' => 'test-env-mgmt-z1',
 				'cloud_properties' => {
 					'net_id' => 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxx01',
 					'security_groups' => [ 'default' ]
 				},
 				'dns' => [ '10.0.0.2' ],
 				'gateway' => '10.0.0.1',
+				'name' => 'ocfp-0',
 				'range' => '10.0.0.0/24',
 				'reserved' => [ '10.0.0.0-10.0.0.4', '10.0.0.6-10.0.0.255' ],
 				'static' => [ '10.0.0.5' ]
 			}, 'First subnet is correct');
 			cmp_deeply($network->{subnets}[1], {
-				'az' => 'test-env-mgmt-az3',
+				'az' => 'test-env-mgmt-z3',
 				'cloud_properties' => {
 					'net_id' => 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxx01',
 					'security_groups' => [ 'default' ]
 				},
 				'dns' => [ '10.0.2.2' ],
 				'gateway' => '10.0.2.1',
+				'name' => 'ocfp-2',
 				'range' => '10.0.2.0/24',
 				'reserved' => [ '10.0.2.0-10.0.2.5', '10.0.2.7-10.0.2.255' ],
 				'static' => [ '10.0.2.6' ]
@@ -655,9 +663,8 @@ EOF
 			}, 'VM type definition is correct for AWS');
 
 			$env->_mock_set_responses( 'iaas' => 'unknown' );
-			throws_ok {
-				$build_vm_type->()
-			} qr/Unsupported unknown IaaS for building vm_type\s+definitions in test-kit\/1.0.0/ms, 'Unsupported IaaS';
+			my @unsupported_vm_type = $build_vm_type->();
+			cmp_deeply(\@unsupported_vm_type, [], 'VM type is omitted when it has no cloud properties for the IaaS');
 			$env->_mock_remove_responses( 'iaas' );
 		}; # VM type definition
 
@@ -724,9 +731,11 @@ EOF
 			}, 'Disk type definition is correct for AWS');
 
 			$env->_mock_set_responses( 'iaas' => 'vsphere' );
-			throws_ok {
-				$build_disk_type->()
-			} qr/Unsupported vsphere IaaS for building disk_type\s+definitions in test-kit\/1.0.0/ms, 'Unsupported IaaS: vsphere';	
+			$disk_type = $build_disk_type->();
+			cmp_deeply($disk_type, {
+				'name' => 'test-env-ocf.bosh.disk-bosh',
+				'disk_size' => 64 * 1024,
+			}, 'Disk type omits cloud properties when none exist for the IaaS');
 			$env->_mock_remove_responses( 'iaas' );
 
 		}; # disk type definition
@@ -752,7 +761,7 @@ disk_types:
 networks:
 - name: test-env-ocf.bosh.net-bosh
   subnets:
-  - az: test-env-mgmt-az1
+  - az: test-env-mgmt-z1
     dns:
     - 10.0.0.2
     gateway: 10.0.0.1
@@ -781,34 +790,37 @@ EOF
 				'azs' => {
 					'az1' => {
 						'cloud_properties' => '{"zone": "us-east-1a"}',
-						'name' => 'test-env-mgmt-az1'
+						'index' => '1',
+						'name' => 'test-env-mgmt-z1'
 					},
 					'az2' => {
 						'cloud_properties' => '{"zone": "us-east-1b"}',
-						'name' => 'test-env-mgmt-az2'
+						'index' => '2',
+						'name' => 'test-env-mgmt-z2'
 					},
 					'az3' => {
 						'cloud_properties' => '{"zone": "us-east-1c"}',
-						'name' => 'test-env-mgmt-az3'
+						'index' => '3',
+						'name' => 'test-env-mgmt-z3'
 					}
 				},
 				'subnets' => {
 					'ocfp-0' => {
-						'az' => 'test-env-mgmt-az1',
+						'az' => 'test-env-mgmt-z1',
 						'claims' => {
 							'test-env-ocf.bosh.net-bosh' => '10.0.0.5'
 						},
 						'range' => '10.0.0.0-10.0.0.255',
 					},
 					'ocfp-1' => {
-						'az' => 'test-env-mgmt-az2',
+						'az' => 'test-env-mgmt-z2',
 						'claims' => {
 							'test-env-mgmt.bosh.net-compilation' => '10.0.1.37-10.0.1.40'
 						},
 						'range' => '10.0.1.0-10.0.1.255',
 					},
 					'ocfp-2' => {
-						'az' => 'test-env-mgmt-az3',
+						'az' => 'test-env-mgmt-z3',
 						'claims' => {},
 						'range' => '10.0.2.0-10.0.2.255',
 					}
@@ -843,7 +855,7 @@ subtest "Genesis::Hook::CloudConfig::CF" => sub {
 			croak "CloudConfig hook called env_config_overrides without a type" unless $type;
 			croak "CloudConfig hook called env_config_overrides with an invalid type: $type" unless $type eq 'cloud';
 
-			return struct_lookup($self->{config}, 'bosh-configs.cloud', {});
+			return scalar struct_lookup($self->{config}, 'bosh-configs.cloud', {});
 		},
 		director_config_overrides => {},
 		ocfp_subnet_prefix => 'ocfp',
@@ -920,7 +932,7 @@ disk_types:
 networks:
 - name: test-env-ocf.cf.net-ocf-core
   subnets:
-  - az: test-env-mgmt-az1
+  - az: test-env-mgmt-z1
     dns:
     - 10.0.0.2
     gateway: 10.0.0.1
@@ -932,7 +944,7 @@ networks:
       net_id: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxx01
       security_groups:
       - default
-  - az: test-env-mgmt-az2
+  - az: test-env-mgmt-z2
     dns:
     - 10.0.1.2
     gateway: 10.0.1.1
@@ -944,7 +956,7 @@ networks:
       net_id: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxx01
       security_groups:
       - default
-  - az: test-env-mgmt-az3
+  - az: test-env-mgmt-z3
     dns:
     - 10.0.2.2
     gateway: 10.0.2.1
@@ -959,7 +971,7 @@ networks:
   type: manual
 - name: test-env-ocf.cf.net-ocf-edge
   subnets:
-  - az: test-env-mgmt-az1
+  - az: test-env-mgmt-z1
     dns:
     - 10.0.0.2
     gateway: 10.0.0.1
@@ -971,7 +983,7 @@ networks:
       net_id: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxx01
       security_groups:
       - default
-  - az: test-env-mgmt-az2
+  - az: test-env-mgmt-z2
     dns:
     - 10.0.1.2
     gateway: 10.0.1.1
@@ -983,7 +995,7 @@ networks:
       net_id: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxx01
       security_groups:
       - default
-  - az: test-env-mgmt-az3
+  - az: test-env-mgmt-z3
     dns:
     - 10.0.2.2
     gateway: 10.0.2.1
@@ -998,7 +1010,7 @@ networks:
   type: manual
 - name: test-env-ocf.cf.net-ocf-tcp
   subnets:
-  - az: test-env-mgmt-az1
+  - az: test-env-mgmt-z1
     dns:
     - 10.0.0.2
     gateway: 10.0.0.1
@@ -1010,7 +1022,7 @@ networks:
       net_id: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxx01
       security_groups:
       - default
-  - az: test-env-mgmt-az2
+  - az: test-env-mgmt-z2
     dns:
     - 10.0.1.2
     gateway: 10.0.1.1
@@ -1022,7 +1034,7 @@ networks:
       net_id: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxx01
       security_groups:
       - default
-  - az: test-env-mgmt-az3
+  - az: test-env-mgmt-z3
     dns:
     - 10.0.2.2
     gateway: 10.0.2.1
@@ -1037,7 +1049,7 @@ networks:
   type: manual
 - name: test-env-ocf.cf.net-ocf-db
   subnets:
-  - az: test-env-mgmt-az1
+  - az: test-env-mgmt-z1
     dns:
     - 10.0.0.2
     gateway: 10.0.0.1
@@ -1052,7 +1064,7 @@ networks:
   type: manual
 - name: test-env-ocf.cf.net-ocf-runtime
   subnets:
-  - az: test-env-mgmt-az1
+  - az: test-env-mgmt-z1
     dns:
     - 10.0.0.2
     gateway: 10.0.0.1
@@ -1064,7 +1076,7 @@ networks:
       net_id: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxx01
       security_groups:
       - default
-  - az: test-env-mgmt-az2
+  - az: test-env-mgmt-z2
     dns:
     - 10.0.1.2
     gateway: 10.0.1.1
@@ -1076,7 +1088,7 @@ networks:
       net_id: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxx01
       security_groups:
       - default
-  - az: test-env-mgmt-az3
+  - az: test-env-mgmt-z3
     dns:
     - 10.0.2.2
     gateway: 10.0.2.1
@@ -1091,9 +1103,11 @@ networks:
   type: manual
 
 vm_extensions:
-- name: test-env-ocf.cf.vmx-diego-ssh-proxy-network-properties
-- name: test-env-ocf.cf.vmx-cf-router-network-properties
-- name: test-env-ocf.cf.vmx-cf-tcp-router-network-properties
+- name: diego-ssh-proxy-network-properties
+- name: cf-router-network-properties
+  cloud_properties:
+    security_groups:
+    - default
 
 vm_types:
 - name: test-env-ocf.cf.vm-api
@@ -1214,20 +1228,23 @@ EOF
 			'azs' => {
 				'az1' => {
 					'cloud_properties' => '{"zone": "us-east-1a"}',
-					'name' => 'test-env-mgmt-az1'
+					'index' => '1',
+					'name' => 'test-env-mgmt-z1'
 				},
 				'az2' => {
-					'cloud_properties' => '{"zone": "us-east-1b"}', 
-					'name' => 'test-env-mgmt-az2'
+					'cloud_properties' => '{"zone": "us-east-1b"}',
+					'index' => '2',
+					'name' => 'test-env-mgmt-z2'
 				},
 				'az3' => {
 					'cloud_properties' => '{"zone": "us-east-1c"}',
-					'name' => 'test-env-mgmt-az3'
+					'index' => '3',
+					'name' => 'test-env-mgmt-z3'
 				}
 			},
 			'subnets' => {
 				'ocfp-0' => {
-					'az' => 'test-env-mgmt-az1',
+					'az' => 'test-env-mgmt-z1',
 					'claims' => {
 						'test-env-ocf.bosh.net-bosh' => '10.0.0.5',
 						'test-env-ocf.cf.net-ocf-core' => '10.0.0.37-10.0.0.47',
@@ -1239,7 +1256,7 @@ EOF
 					'range' => '10.0.0.0-10.0.0.255'
 				},
 				'ocfp-1' => {
-					'az' => 'test-env-mgmt-az2', 
+					'az' => 'test-env-mgmt-z2', 
 					'claims' => {
 						'test-env-mgmt.bosh.net-compilation' => '10.0.1.37-10.0.1.40',
 						'test-env-ocf.cf.net-ocf-core' => '10.0.1.41-10.0.1.51',
@@ -1250,7 +1267,7 @@ EOF
 					'range' => '10.0.1.0-10.0.1.255'
 				},
 				'ocfp-2' => {
-					'az' => 'test-env-mgmt-az3',
+					'az' => 'test-env-mgmt-z3',
 					'claims' => {
 						'test-env-ocf.cf.net-ocf-core' => '10.0.2.37-10.0.2.47',
 						'test-env-ocf.cf.net-ocf-edge' => '10.0.2.48',
