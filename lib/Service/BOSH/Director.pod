@@ -1346,8 +1346,12 @@ B<Examples:>
 Runs the named BOSH errand against the director's current deployment.
 Runs interactively and streams output to the terminal.
 
-Always returns C<1> regardless of the errand's actual exit code, because
-the execute result is discarded. See C<errand-discards-exit-code> in L</KNOWN ISSUES>.
+Bails when bosh exits nonzero, so a caller can report success once this
+returns.  The check reads the exit code that C<execute> returns, rather
+than relying on an C<onfailure> message from C<run()>, so it holds even
+where C<script> hides the code and C<execute> recovers it from the
+typescript.  Kit addons that run a smoke-test errand and then print
+success depend on it.
 
 B<Note:> The C<bug()> message for a missing errand name incorrectly reads
 C<"Missing errand name in call to deploy()"> instead of
@@ -1363,9 +1367,12 @@ The name of the BOSH errand to run.
 
 =back
 
-B<Returns:> C<1>.
+B<Returns:> C<1> when the errand succeeds.
 
 B<Errors:>
+
+Bails with C<"Failed to run errand '$errand' (... BOSH director): bosh exited N">
+when bosh exits nonzero.
 
 Dies with C<"No deployment name provided for BOSH Director in call to run_errand()">
 when C<$self-E<gt>deployment()> is not set.
@@ -2579,14 +2586,6 @@ on the current, incorrect behaviour.
 
 C<run_errand()>: the error message says C<"Missing errand name in call to
 deploy()"> but should say C<run_errand()>.
-
-=item errand-discards-return-value (low)
-
-C<run_errand()> discards the result of C<< $self->execute(...) >> and
-always returns C<1>. In practice a failing errand does not slip past --
-the call sets C<onfailure>, so a non-zero exit bails rather than
-returning. The defect is that the return value carries no information, so
-it cannot be used to distinguish outcomes that do not bail.
 
 =item upload-config-asymmetric-bail (medium)
 

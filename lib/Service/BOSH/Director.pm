@@ -694,10 +694,11 @@ sub run_errand {
 	bug("Missing errand name in call to deploy()")
 		unless $errand;
 
-	$self->execute(
-		{ interactive => 1, onfailure => "Failed to run errand '$errand' ($self->{deployment} deployment on $self->{alias} BOSH director)" },
-		'-n', 'run-errand', $errand
-	);
+	my (undef, $rc) = $self->execute({interactive => 1}, '-n', 'run-errand', $errand);
+	bail(
+		"Failed to run errand '%s' (%s deployment on '#M{%s}' BOSH director): bosh exited %s",
+		$errand, $self->{deployment}, $self->{alias}, $rc
+	) if $rc;
 
 	return 1;
 }

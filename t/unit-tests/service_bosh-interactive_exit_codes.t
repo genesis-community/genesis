@@ -9,8 +9,9 @@ use warnings;
 # in a "Script done" trailer of its typescript either way.
 #
 # Without -e on Linux, run() saw script's 0, so an onfailure message never
-# fired, and run_errand(), which bails through onfailure, reported every
-# failed errand as a success.
+# fired, and run_errand(), which relied on onfailure alone and returned 1,
+# reported every failed errand as a success.  run_errand() now acts on the
+# exit code that execute() returns.
 #
 # A fake script(1) on PATH reproduces each platform's behaviour, so every
 # path runs on any host.
@@ -121,5 +122,18 @@ for my $os (qw/darwin linux/) {
 		is($rc, 3, 'a command that exits 3 under fake_tty reports rc 3');
 	};
 }
+
+# run_errand must not lean on the wrapper alone: execute() recovers the code
+# from the typescript when script(1) hides it, and run_errand has to act on
+# what execute() returns.
+subtest 'run_errand acts on the exit code execute returns' => sub {
+	no warnings qw(redefine once);
+	local *Service::BOSH::Director::execute = sub { return wantarray ? ("Exit code 1", 1) : 1 };
+	use warnings qw(redefine once);
+
+	quietly { throws_ok {
+		director->run_errand('smoke-tests');
+	} qr/Failed to run errand 'smoke-tests'.*bosh\s+exited\s+1/s, 'a nonzero code from execute makes run_errand bail'; };
+};
 
 done_testing;

@@ -270,6 +270,13 @@
   there, and to the `script` that runs `spruce diff`.  macOS `script` already
   returned bosh's exit code.
 
+* `run_errand` fails when the errand fails.
+
+  Kit addons that run an errand through `run_errand` printed success after a
+  failed errand on Linux, because `run_errand` returned 1 whatever happened
+  and relied on a failure message that never fired there.  It now checks the
+  exit code bosh returns and stops with an error when the errand fails.
+
 # Internal Changes/Improvements
 
 ## BOSH Refactor
