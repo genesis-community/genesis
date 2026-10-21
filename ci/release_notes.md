@@ -273,6 +273,18 @@
   against the wrong image.  A named stemcell that is missing is reported for
   manual upload instead of being offered a bosh.io stemcell of another name.
 
+* `genesis new --vault` resolves a descriptor the way `genesis.vault` does.
+
+  The command matched every field of the descriptor exactly against the
+  safe targets, so a `strongbox` or `no-strongbox` clause that the target's
+  `~/.saferc` entry did not repeat, an https URL with no `verify` clause, a
+  trailing `/`, or a namespace without a port found nothing, and the command
+  died with "Invalid call to Genesis::Top->set_vault".  `genesis new` for a
+  child environment failed the same way when an ancestor's `genesis.vault`
+  had one of those shapes.  Both now use one resolver, in which strongbox
+  only breaks ties, verify is compared only for https, and a descriptor with
+  no matching target names the URL and the `safe target` command to run.
+
 * Fix bug where default config type was lost when fetching configs from BOSH
   director, resulting in bad messages and error reports.
 

@@ -2736,16 +2736,7 @@ sub vault {
 				$ENV{GENESIS_TARGET_VAULT} eq $details->{url}
 			);
 
-		my %filter = ();
-		$filter{verify} = ($details->{verify} && $details->{tls} ? 1 : 0 ) if $details->{tls};
-		$filter{namespace} = $details->{namespace} || '';
-		$filter{strongbox} = $details->{strongbox};
-
-		return Service::Vault::Remote->attach(
-			url => $details->{url},
-			alias => $details->{alias},
-			%filter
-		);
+		return Service::Vault->get_vault_from_descriptor($vault_info);
 	});
 	return $ref;
 

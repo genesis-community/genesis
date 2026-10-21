@@ -514,7 +514,10 @@ C<< config->save() >>, so the change is not persisted to disk.
 
 =item C<vault>
 
-B<(optional)> A C<Service::Vault::Remote> object to set directly.
+B<(optional)> A C<Service::Vault::Remote> object to set directly.  Anything
+else passed here, including C<undef>, bails with a message naming what was
+given, because it reaches this option from a lookup the operator controls
+(C<genesis new --vault>) rather than from a Genesis bug.
 
 =item C<session_only>
 
@@ -532,9 +535,14 @@ B<Errors:>
 
 =item *
 
+C<"Cannot use ... as the secrets provider for this repository"> - bails
+when the C<vault> option is given but is not a C<Service::Vault::Remote>,
+such as a local vault or C<undef>.
+
+=item *
+
 C<"Invalid call to Genesis::Top->set_vault"> - raised via C<bug()> when none
-of C<interactive>, C<target>, C<clear>, or a C<vault> object reference is
-provided.
+of C<interactive>, C<target>, C<clear>, or C<vault> is provided.
 
 =back
 

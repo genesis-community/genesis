@@ -248,47 +248,16 @@ sub rebind {
 # }}}
 # get_vault_from_descriptor - find unique vault from vault descriptor, or bail {{{
 sub get_vault_from_descriptor {
-
 	my ($class, $descriptor, $source) = @_;
-	my $filter = $class->parse_vault_descriptor($descriptor, $source);
-	my ($alias,$url) = delete(@{$filter}{qw/alias url domain port tls/});
-
-	bail(
-		"No url specified by vault descriptor"
-	) unless $url;
-	my @matches =  $class->find(url => $url, %$filter);
-
-	# TODO: If none found, try by alias name?  Potential for mismatch though...
-
-	if (@matches > 1) {
-		my @named_matches = grep {$_->name eq $alias} @matches;
-		@matches = @named_matches if @named_matches == 1;
-	}
-
-	return $matches[0] if @matches <= 1;
-
-	# Error processing
-	my ($alias_clause, $alias_msg) = ('','');
-	if ($alias) {
-		$alias_clause = ", (and none match the provided vault alias of '$alias').";
-		$alias_msg = ", or add/modify the alias of the desired target to '$alias'"
-	}
-
-	my $default = $class->default->name;
-	my $current = $ENV{GENESIS_TARGET_VAULT};
-
-	bail(
-		"\nMore than one target is specified for URL '%s'%s\n\n".
-		"        Please edit your ~/.saferc, and remove all but one of these:\n".
-		"        - %s\n".
-		"        (or alter the URLs to be unique%s)",
-		$url,$alias_clause, join("\n        - ", map {
-			$_->name eq ($current||'')
-				? "#G{".$_->name." (current)}"
-				: $_->name eq ($default||'')
-					? "#g{".$_->name." (default)}"
-					: "#y{".$_->name."}"
-		} @matches), $alias_msg
+	my $details = $class->parse_vault_descriptor($descriptor, $source);
+	require Service::Vault::Remote;
+	return Service::Vault::Remote->attach(
+		url       => $details->{url},
+		alias     => $details->{alias},
+		tls       => $details->{tls},
+		verify    => $details->{verify},
+		namespace => $details->{namespace} // '',
+		strongbox => $details->{strongbox},
 	);
 }
 
@@ -311,9 +280,9 @@ sub parse_vault_descriptor {
 			$strongbox = $1 ? 0 : 1;
 		} elsif ($clause =~ /^(no-)?verify/) {
 			$verify = $1 ? 0 : 1;
-		} elsif ($clause =~ /^(http(s)?:\/\/([^:]*)(?::([0-9]+))?)(?:\/(.*))?$/) {
+		} elsif ($clause =~ /^(http(s)?:\/\/([^:\/]*)(?::([0-9]+))?)(?:\/(.*))?$/) {
 			$url = $1;
-			$tls = ($2||'' eq 's');
+			$tls = ($2 // '') eq 's' ? 1 : 0;
 			$domain = $3;
 			$port = $4;
 			$namespace = $5;

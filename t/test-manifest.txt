@@ -41,6 +41,7 @@ unit-tests/service_bosh-interactive_exit_codes.t  # interactive bosh and fake_tt
 unit-tests/genesis-tcp_listening_alarm.t      # tcp_listening leaves no alarm armed
 unit-tests/service_vault-core.t          # Service::Vault base class + None with MockWrapper
 unit-tests/service_vault-strongbox_intent.t  # tri-state strongbox read from ~/.saferc
+unit-tests/service_vault-descriptor_lookup.t # descriptors resolve as genesis.vault does
 unit-tests/service_vault-unseal_strongbox.t  # unseal keeps safe's stderr, flags partial unseal
 unit-tests/service_vault-unseal_nodes.t     # per-node Raft unseal and leader wait, keys kept out of traces
 unit-tests/service_vault_remote-core.t   # Service::Vault::Remote with mocks
@@ -49,6 +50,7 @@ unit-tests/service_vault_remote-create_strongbox.t  # create can enable strongbo
 unit-tests/service_vault_admin-core.t    # Service::Vault::Admin + AppRole with mocks
 unit-tests/genesis_top-core.t
 unit-tests/genesis_top-secrets_provider_strongbox.t  # re-point must not disarm strongbox
+unit-tests/genesis_top-set_vault_object.t   # set_vault refuses a non-remote vault readably
 # Kit module tests (POD-driven)
 unit-tests/genesis_kit-core.t            # Genesis::Kit base class
 unit-tests/genesis_kit_compiled-core.t   # Genesis::Kit::Compiled

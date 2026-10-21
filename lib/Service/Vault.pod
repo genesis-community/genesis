@@ -545,10 +545,23 @@ B<Examples:>
 
   my $vault = Service::Vault->get_vault_from_descriptor($descriptor, $source);
 
-Parses a vault descriptor string (as used in C<genesis.vault>) and returns
-the single matching C<Service::Vault> object. When multiple vaults match the
-URL, the method attempts to disambiguate using the descriptor's alias. If
-still ambiguous, it dies with a detailed error.
+Parses a vault descriptor string (as used in C<genesis.vault> or given to
+C<genesis new --vault>) and resolves it to a connected vault through
+L<Service::Vault::Remote/attach>.
+
+This is the only descriptor resolver.  C<Genesis::Env::vault> and the
+C<create> command both call it, so a descriptor that resolves in an
+environment file resolves the same way on the command line.  It must keep
+delegating to C<attach> rather than building its own C<find> filter: an
+exact match on every parsed field excluded targets over strongbox (which
+only selects a seal-state sidecar), over the C<verify> default of an http
+URL, and over a namespace the descriptor never stated, and then returned
+C<undef> instead of saying why.
+
+The filter therefore compares C<url>, C<namespace> (an absent namespace is
+the root namespace, C<''>), and C<verify> only for an https URL.  Strongbox
+breaks ties between otherwise identical targets and is reconciled against
+the target, but never excludes one.  The alias likewise only breaks ties.
 
 B<Parameters:>
 
@@ -565,25 +578,25 @@ messages. Defaults to C<'genesis.vault'>.
 
 =back
 
-B<Returns:> The matching C<Service::Vault> object, or C<undef> if none found
-and no ambiguity error was raised.
+B<Returns:> The matching vault, connected and validated.  It never returns
+C<undef> for a descriptor whose target is missing; that case bails.
 
 B<Errors:>
 
-Dies with C<"No url specified by vault descriptor"> if the descriptor
-contains no URL clause.
+Everything C<parse_vault_descriptor> raises for a malformed descriptor.
 
-Dies with a multi-line message beginning with
-C<"\nMore than one target is specified for URL '%s'%s\n\n"> when the URL
-matches multiple vaults and disambiguation fails. C<%s> placeholders are the
-URL and an optional alias-mismatch clause.
+Everything C<attach> raises: a list of similar targets when one at the URL
+differs in namespace or verify, "Safe target for ... not found" with the
+C<safe target> command to run when none is at the URL and no vault
+credentials are in the environment, and a list of duplicates when several
+targets match and the alias does not pick one.
 
 B<Examples:>
 
   my $vault = Service::Vault->get_vault_from_descriptor(
     'https://vault.example.com:8200 as prod-vault no-verify'
   );
-  # Returns: the matching Service::Vault object
+  # Returns: the matching Service::Vault::Remote object
 
 =head2 parse_vault_descriptor
 
@@ -613,6 +626,12 @@ drew a warning against targets that had simply said nothing.
 
 The alias may be the last element of the descriptor; it is not required to
 be followed by another clause.
+
+The host stops at the first C<:> or C</>, so a path after the host is the
+namespace whether or not a port precedes it, and a trailing C</> names no
+namespace.  Letting the host run to the next C<:> folded the path into the
+URL, which then matched no safe target.  C<tls> is C<1> or C<0>, and
+C<verify> defaults to it.
 
 B<Parameters:>
 

@@ -17,6 +17,7 @@ use Service::Vault::None;
 use Genesis::Config;
 
 use Cwd ();
+use Scalar::Util qw/blessed/;
 use File::Path qw/rmtree/;
 
 # ---- Constants --------------------------------------------------------------
@@ -842,8 +843,16 @@ sub set_vault {
 		$new_vault = $candidates[0];
 	} elsif ($opts{clear}) {
 		$new_vault = undef;
-	} elsif (ref($opts{vault}) eq "Service::Vault::Remote") {
-		$new_vault = $opts{vault}
+	} elsif (exists($opts{vault})) {
+		my $vault = $opts{vault};
+		bail(
+			"Cannot use %s as the secrets provider for this repository, because ".
+			"only a remote safe target can be one.",
+			blessed($vault) && $vault->isa('Service::Vault')
+				? sprintf("vault #C{%s} at #M{%s}", $vault->name, $vault->url)
+				: "an unresolved vault"
+		) unless blessed($vault) && $vault->isa('Service::Vault::Remote');
+		$new_vault = $vault;
 	} else {
 		bug "Invalid call to Genesis::Top->set_vault"
 	}
