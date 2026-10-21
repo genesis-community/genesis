@@ -264,6 +264,12 @@
   stemcell, and `deploy --fix-stemcells --dry-run` no longer claims it would
   fix them.
 
+* A director that hangs behind `BOSH_ALL_PROXY` is now unreachable.
+
+  The proxied director check lost its own timeout, so a director that never
+  answered was marked as validated.  Genesis now stops with an error that
+  names the director and the proxy.
+
 * Stemcells named by `name` in the manifest are now matched by name.
 
   As BOSH does, a manifest stemcell that gives a `name` now matches the

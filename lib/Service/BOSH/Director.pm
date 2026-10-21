@@ -371,17 +371,25 @@ sub status {
 	my ($out, $rc, $err);
 	if ($ENV{BOSH_ALL_PROXY}) {
 		my $timeout = $ENV{GENESIS_NETWORK_TIMEOUT} || 10;
+		# RISK: the alarm settles the outcome but does not stop bosh -- run()
+		#       still waits for the child to exit before this eval unwinds.
 		eval {
 			local $SIG{ALRM} = sub {die "timeout\n"; };
 			alarm $timeout;
-			($out,$rc,$err) = eval{$self->execute('env','--json')};
+			($out,$rc,$err) = $self->execute('env','--json');
 			alarm 0;
 		};
-		$err = $@;
-		return {
-			status => 'unreachable',
-			msg => $err eq "timeout\n" ? "timeout after $timeout seconds" : $err
-		} if ($err);
+		alarm 0;
+		if ($@ =~ /\Atimeout\n/) { # Carp::Always appends a backtrace
+			(my $proxy = $ENV{BOSH_ALL_PROXY}) =~ s/\?.*//; # drop private-key and other options
+			return {
+				status => 'unreachable',
+				msg => sprintf(
+					"timed out after %s seconds waiting for %s through proxy %s",
+					$timeout, $self->url, $proxy
+				)
+			};
+		}
 	} else {
 		my $status = tcp_listening($self->{host},$self->{port});
 		return {status => 'unreachable', msg => $status} unless ($status eq 'ok');

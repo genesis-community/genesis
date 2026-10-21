@@ -773,6 +773,15 @@ proxy and applies a timeout from C<$ENV{GENESIS_NETWORK_TIMEOUT}> (default
 10 seconds). Otherwise, TCP reachability to the director's host and port
 is checked first with a plain socket test.
 
+A proxied probe that times out reports C<unreachable> and never marks the
+director validated, and the alarm is cancelled on every way out of the
+probe. The timeout decides the outcome but does not stop C<bosh>: the
+call still returns only once the C<bosh> process exits. The timeout is
+recognised by matching C<"timeout\n"> at the start of C<$@> rather than
+by string equality, because Carp::Always (loaded by the test helper and
+by Genesis's own debug mode) appends a backtrace to the die message, and
+an equality test there lets a hung director through as C<ok>.
+
 On success, the authenticated user is extracted from the C<bosh env>
 output and stored in C<$self-E<gt>{user}>, C<$self-E<gt>{validated}> is
 set to C<1>, and C<$ENV{GENESIS_BOSH_VERIFIED}> is set to
@@ -794,10 +803,14 @@ A human-readable message describing the status.
 
 B<Errors:>
 
-When C<BOSH_ALL_PROXY> is set and the proxy timeout fires, the ALRM
-signal handler raises C<"timeout\n"> internally. This is caught and
-results in a C<< { status => 'unreachable', msg => "timeout after N seconds" } >>
-return value rather than propagating as an exception.
+None raised. When C<BOSH_ALL_PROXY> is set and the proxy timeout fires,
+the result is
+C<< { status => 'unreachable', msg => "timed out after N seconds waiting for URL through proxy PROXY" } >>,
+where C<URL> is the director's L</url> and C<PROXY> is C<BOSH_ALL_PROXY>
+with its query string (such as C<private-key>) removed. L</connect_and_validate>
+turns that result into its C<unreachable> error. When C<bosh env> fails
+or dies, through the proxy or not, the result is C<error>, and the
+message carries C<bosh>'s stderr or the exception text.
 
 B<Examples:>
 
