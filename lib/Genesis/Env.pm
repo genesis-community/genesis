@@ -6756,7 +6756,7 @@ sub _check_stemcells {
 		info(
 			"[[%s>>Stemcell #C{%s} (%s/%s) %s#R{ for CPI }#ri{%s}#R{!}",
 			bullet('bad', '', box => 1),
-			$stemcell_info->{alias}, $stemcell_info->{os},
+			$stemcell_info->{alias}, $stemcell_info->{name} // $stemcell_info->{os},
 			$stemcell_info->{search_term},
 			$stemcell_info->{latest} ? "#R{- no matching stemcells available}" : '#R{missing}',
 			$stemcell_info->{cpi},
@@ -6768,9 +6768,13 @@ sub _check_stemcells {
 		# Some stemcells are missing, while others have preferred alternatives
 		my @unknown = grep {!defined($_->{alt})} @missing;
 		return {
-			state => 'error',
-			fatal => 1,
-			msg   => "required stemcells source unknown - requires manual upload:\n- #R{".join("\n- ", map {$_->{os}."@".$_->{search_term}} @unknown)."}",
+			state    => 'error',
+			fatal    => 1,
+			msg      => "required stemcells source unknown - requires manual upload:\n- #R{".join("\n- ", map {($_->{name} // $_->{os})."@".$_->{search_term}} @unknown)."}",
+			fix_data => {
+				missing => \@missing,
+				alt     => \@alt,
+			},
 		} if @unknown;
 
 		return {
@@ -6813,7 +6817,7 @@ sub _fix_stemcells {
 	my @unknown = grep {!defined($_->{alt})} (@$missing, @$alt);
 	bail (
 		"Required stemcells source unknown - requires manual upload:\n- #R{%s}",
-		join("\n- ", map {$_->{os}."@".$_->{search_term}} @unknown)
+		join("\n- ", map {($_->{name} // $_->{os})."@".$_->{search_term}} @unknown)
 	) if @unknown;
 
 	my @downloadable = grep {$_->{alt}} (@$missing, @$alt);
@@ -6943,6 +6947,7 @@ sub _advise_stemcell_updates {
 			!$seen{$id}++;
 		} @downloadable;
 	}
+	return unless @downloadable;
 
 	my $msg = "\n#Y{The following stemcells are available for download:}";
 	my @stemcell_ids = ();
@@ -7347,10 +7352,11 @@ sub _get_stemcell_status {
 
 	my $stemcells_to_check = $self->partial_manifest_lookup('stemcells');
 	my %available = $self->bosh->stemcells;
-	my %newest_by_os = ();
+	my (%newest_by_os, %newest_by_name) = ();
 	for my $key (reverse sort {by_semver($available{$a}{version}, $available{$b}{version})} keys %available) {
 		my ($os, $version) = split('@', $key, 2);
 		push @{$newest_by_os{$os}}, $key;
+		push @{$newest_by_name{$_}}, $key for keys %{$available{$key}{names}};
 	}
 
 	# Multi-CPI fan-out: validate each requested stemcell against every
@@ -7366,10 +7372,16 @@ sub _get_stemcell_status {
 
 	for my $stemcell_info (@$stemcells_to_check) {
 		for my $cpi (@cpis) {
-			my ($alias, $os, $version) = @$stemcell_info{qw/alias os version/};
-			$alias //= "stemcell-$os-$version";
-			my $newest = $newest_by_os{$os}->[0];
-			my $result = {alias => $alias, os => $os, search_term => $version, cpi => $cpi};
+			my ($alias, $name, $os, $version) = @$stemcell_info{qw/alias name os version/};
+			$alias //= "stemcell-".($name // $os)."-$version";
+			# BOSH matches a named stemcell by name alone, ignoring any os given
+			my @candidates = defined($name)
+				? @{$newest_by_name{$name} // []}
+				: @{$newest_by_os{$os} // []};
+			my $cpis_for = sub {
+				defined($name) ? $available{$_[0]}{names}{$name} : $available{$_[0]}{cpis}
+			};
+			my $result = {alias => $alias, name => $name, os => $os, search_term => $version, cpi => $cpi};
 			my ($wants_latest,$major_version) = $version =~ /^((?:(\d+)\.)?latest)$/;
 
 			# Finding "latest" stemcells is a bit tricky, because we need to
@@ -7381,7 +7393,7 @@ sub _get_stemcell_status {
 			if ($wants_latest) {
 				$result->{latest} = 1;
 				$result->{search_type} = 'latest';
-				my @targets = exists($newest_by_os{$os}) ? ($newest_by_os{$os}->@*) : ();
+				my @targets = @candidates;
 				my $latest_major_version = @targets ? int($available{$targets[0]}{version}) : 0;
 				if (defined($major_version) && $major_version != $latest_major_version) {
 					$result->{search_type} = 'latest-minor';
@@ -7394,7 +7406,7 @@ sub _get_stemcell_status {
 				if (@targets) {
 					# Check if the latest version is available for the desired CPI
 					my @cpi_targets = grep {
-						in_array($cpi, $available{$_}{cpis}->@*)
+						in_array($cpi, $cpis_for->($_)->@*)
 					} @targets;
 					if (@cpi_targets) {
 						$result->{found} = $available{$cpi_targets[0]};
@@ -7403,38 +7415,35 @@ sub _get_stemcell_status {
 						$result->{alt} = Service::BOSH::Stemcell->find(
 							$self->iaas, $available{$targets[0]}->@{qw/os version/},
 							scalar($self->lookup('bosh-configs.stemcells.type',undef))
-						);
-						$result->{alt_existing_cpis} = $available{$targets[0]}->{cpis};
+						) unless defined($name);
+						$result->{alt_existing_cpis} = $cpis_for->($targets[0]);
 					}
 				} else {
-					# No stemcells available for the desired os.  $newest is
-					# undef (no entry in %newest_by_os for this OS), so there
-					# are no existing-CPI stemcells to report.
+					# No stemcells available for the desired version; report the
+					# cpis of the newest one for this os or name, if any.
 					$result->{alt} = Service::BOSH::Stemcell->find(
 						$self->iaas,
 						$os,
 						$version
-					);
-					$result->{alt_existing_cpis} = defined($newest)
-						? $available{$newest}{cpis}
-						: [];
+					) unless defined($name);
+					$result->{alt_existing_cpis} = @candidates ? $cpis_for->($candidates[0]) : [];
 				}
 
 			} else {
 				$result->{search_type} = 'exact';
-				my $key = "$os\@$version";
-				my $match = $available{$key};
-				if (in_array($cpi, $match->{cpis}->@*)) {
-					$result->{found} = $match;
+				my ($key) = grep {(split('@', $_, 2))[1] eq $version} @candidates;
+				if ($key && in_array($cpi, $cpis_for->($key)->@*)) {
+					$result->{found} = $available{$key};
 				} else {
 					$result->{alt} = Service::BOSH::Stemcell->find(
 						$self->iaas,
 						$os,
 						$version
-					);
-					$result->{alt_existing_cpis} = ($available{$key}//{})->{cpis};
+					) unless defined($name);
+					$result->{alt_existing_cpis} = $key ? $cpis_for->($key) : undef;
 				}
 			}
+			$result->{os} = $result->{found}{os} if $result->{found};
 			push @results, $result;
 		}
 	}

@@ -1598,6 +1598,13 @@ The OS name (e.g. C<'ubuntu-jammy'>).
 An arrayref of CPI names that have this stemcell. C<'E<lt>defaultE<gt>'> is
 used when no CPI is specified.
 
+=item names
+
+A hashref from each stemcell name uploaded with this OS and version to an
+arrayref of the CPIs that have it.  Images with different names can share
+an C<os@version> key, and C<name> holds only the first one seen, so
+matching by name must use this map.
+
 =back
 
 B<Returns:> In list context, a hash. In scalar context, a hashref.

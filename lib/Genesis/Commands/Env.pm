@@ -1445,37 +1445,12 @@ sub deploy {
 
 	# Check for and potentially fix stemcell availability
 	# FIXME: This won't be accurate if there is a missing CPI config for this env
-	if (!$env->use_create_env) {
-		my $stemcell_check_result = $env->_check_stemcells();
-		if ($stemcell_check_result->{state} ne 'ok') {
-			if ($options{'fix-stemcells'}) {
-				if ($dryrun) {
-					dryrun(
-						"\nStemcell check failed: %s\n\nThis would be fixed if not in dry-run mode.",
-						$stemcell_check_result->{msg}
-					);
-				} else {
-					my $stemcell_fix = $env->_fix_stemcells(
-						$stemcell_check_result->{fix_data},
-						noprompt => $noprompt,
-					);
-					bail(
-						"Failed to fix stemcells: %s",
-						$stemcell_fix->{msg}
-					) if $stemcell_fix->{fatal};
-					$env->notify("%s", $stemcell_fix->{msg}); # Check if this makes sense or is reduntant
-				}
-			} else {
-				$env->_advise_stemcell_updates(
-					$stemcell_check_result->{fix_data},
-				);
-				bail(
-					"Stemcell check failed: %s",
-					$stemcell_check_result->{msg}
-				);
-			}
-		}
-	}
+	_deploy_check_stemcells(
+		$env,
+		fix      => $options{'fix-stemcells'},
+		dryrun   => $dryrun,
+		noprompt => $noprompt,
+	) if !$env->use_create_env;
 
 	bail(
 		"Preflight checks failed; deployment operation halted."
@@ -2019,6 +1994,42 @@ sub _deploy_submit_network_claims {
 		: "  - #G{network map successfully updated}, #y{but the network claims lock was not removed, because it was no longer this deploy's to remove}\n"
 	);
 	return 1;
+}
+
+# }}}
+# _deploy_check_stemcells - check the env's stemcells on the director and fix or advise on any that are missing {{{
+sub _deploy_check_stemcells {
+	my ($env, %opts) = @_;
+	my $stemcell_check_result = $env->_check_stemcells();
+	return 1 if $stemcell_check_result->{state} eq 'ok';
+
+	if ($opts{fix} && !$stemcell_check_result->{fatal}) {
+		if ($opts{dryrun}) {
+			dryrun(
+				"\nStemcell check failed: %s\n\nThis would be fixed if not in dry-run mode.",
+				$stemcell_check_result->{msg}
+			);
+		} else {
+			my $stemcell_fix = $env->_fix_stemcells(
+				$stemcell_check_result->{fix_data},
+				noprompt => $opts{noprompt},
+			);
+			bail(
+				"Failed to fix stemcells: %s",
+				$stemcell_fix->{msg}
+			) if $stemcell_fix->{fatal};
+			$env->notify("%s", $stemcell_fix->{msg}); # Check if this makes sense or is reduntant
+		}
+		return 1;
+	}
+
+	$env->_advise_stemcell_updates(
+		$stemcell_check_result->{fix_data},
+	);
+	bail(
+		"Stemcell check failed: %s",
+		$stemcell_check_result->{msg}
+	);
 }
 
 # }}}

@@ -675,7 +675,7 @@ subtest 'environment_variables() deep' => sub {
 };
 
 subtest 'stemcells()' => sub {
-	plan tests => 7;
+	plan tests => 9;
 
 	local $ENV{GENESIS_BOSH_COMMAND};
 
@@ -715,6 +715,14 @@ SCRIPT
 	# helper, so the test exercises the parsing path regardless.
 	is($stemcells->{'ubuntu-bionic@1.36'}{active}, 1,
 		'bionic active flag set');
+
+	# Two images sharing os@version keep their own names and cpis
+	is_deeply($stemcells->{'ubuntu-xenial@621.74'}{names}, {
+		'bosh-warden-boshlite-ubuntu-xenial-go_agent' => ['<default>'],
+		'bosh-vsphere-esxi-ubuntu-xenial-go_agent'    => ['vsphere'],
+	}, 'names maps each stemcell name to its own cpis');
+	is_deeply($stemcells->{'ubuntu-xenial@621.74'}{cpis}, ['<default>', 'vsphere'],
+		'cpis still lists every cpi for the os@version');
 };
 
 subtest 'upload_stemcell() delegation' => sub {

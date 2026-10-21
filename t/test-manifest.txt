@@ -169,6 +169,7 @@ unit-tests/genesis_ci_propagation-propagate_envs.t  # env propagation
 # Genesis::Env extension tests
 unit-tests/genesis_env-cpi_config.t                       # cpi_config()/director-cpi
 unit-tests/genesis_env-cpis.t                             # multi-cpi accessors
+unit-tests/genesis_env-stemcells.t                        # stemcell check: name matching, unknown sources
 unit-tests/genesis_env-stop_renewer_for_self_deploy.t     # vault token-renewer pause during self-deploy
 unit-tests/genesis_env-cpi_az_map_exodus_fallback.t       # cpi_az_map falling back to exodus data
 unit-tests/genesis_env-deployment_may_affect_secrets_vault.t  # self-hosted vault gate matches names, IPv6, and ranges
@@ -198,6 +199,7 @@ unit-tests/genesis_commands_env_reason-core.t  # deploy-driven reason and cascad
 unit-tests/genesis_commands_env-network_lock.t  # network claims lock around the deploy cloud config check
 unit-tests/genesis_commands_env-deploy_confirm.t  # deploy questions: --yes answers, a terminal asks, a pipe stops
 unit-tests/genesis_commands_env-dryrun_cloud_config_warning.t  # dry-run warnings about the director's cloud config
+unit-tests/genesis_commands_env-check_stemcells.t  # deploy stemcell gate: fix, advise, or stop
 unit-tests/genesis_commands_repo-init.t        # repo-init CLI (registration + option parsing; validate + execute in integration-tests/)
 unit-tests/genesis_commands_check-embedded-genesis_version.t  # embedded version read from packed $VERSION line; legacy form still accepted
 unit-tests/genesis_commands_repo-init_no_commit_identity.t  # --no-commit needs no git identity; committing still does

@@ -723,9 +723,11 @@ sub stemcells {
 			version => $stemcell->{version} =~ s/^([0-9\.]+).*/$1/r,
 			active => $stemcell->{version} =~ m/\*/ ? 1 : 0,
 			os => $stemcell->{os},
-			cpis => []
+			cpis => [],
+			names => {},
 		};
 		push @{$stemcells{$id}{cpis}}, $cpi;
+		push @{$stemcells{$id}{names}{$stemcell->{name}}}, $cpi;
 	}
 
 	return wantarray ? %stemcells : \%stemcells;

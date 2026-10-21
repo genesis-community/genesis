@@ -255,6 +255,24 @@
   second build, so a claim that was saved by an earlier Genesis may change
   by one address the first time it is built.
 
+* Stemcells with no download source now stop with a clear message.
+
+  When a required stemcell was missing from the director and Genesis could
+  not find a download for it, `deploy` and `check` stopped with "Cannot fix
+  stemcells without a valid fix_data" and never said which stemcell was the
+  problem.  They now stop with "requires manual upload" and list each such
+  stemcell, and `deploy --fix-stemcells --dry-run` no longer claims it would
+  fix them.
+
+* Stemcells named by `name` in the manifest are now matched by name.
+
+  As BOSH does, a manifest stemcell that gives a `name` now matches the
+  director's stemcells by name and version, including `latest`, and its `os`
+  is ignored.  Before this fix Genesis checked only `os`, so a name-only
+  stemcell was never found, and one with both a name and an os was checked
+  against the wrong image.  A named stemcell that is missing is reported for
+  manual upload instead of being offered a bosh.io stemcell of another name.
+
 * Fix bug where default config type was lost when fetching configs from BOSH
   director, resulting in bad messages and error reports.
 
