@@ -161,7 +161,7 @@ sub execute {
 				# argument list must be flattened with shell_quote: naive
 				# joining lets values containing shell metacharacters split
 				# into separate arguments or execute as injected commands.
-				@cmd = ('script', '-q', $file, '-c', shell_quote(@cmd));
+				@cmd = ('script', '-qe', $file, '-c', shell_quote(@cmd));
 			}
 		}
 	}

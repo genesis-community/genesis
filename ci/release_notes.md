@@ -261,6 +261,15 @@
 * Export `GENESIS_EXODUS_MOUNT` to hooks environment.  This was missing from the
   set of vault path environment variables available to hook scripts.
 
+* Interactive BOSH commands report their exit code on Linux.
+
+  Genesis runs interactive bosh commands under `script` so that bosh keeps a
+  terminal.  util-linux `script` exits 0 whatever bosh did unless it is given
+  `-e`, so on Linux a failed command never raised its failure message, and a
+  bosh killed by a signal was reported as a success.  Genesis now passes `-e`
+  there, and to the `script` that runs `spruce diff`.  macOS `script` already
+  returned bosh's exit code.
+
 # Internal Changes/Improvements
 
 ## BOSH Refactor

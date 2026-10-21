@@ -815,9 +815,9 @@ sub compare_kits {
 
 # Compares two job spec files, and says whether they are unchanged, changed,
 # or could not be compared.  The diff, or spruce's error, comes back with the
-# status.  This goes through spruce_diff because script(1) only passes
-# spruce's exit code through on macOS, so a spruce failure on Linux used to
-# be shown as a set of spec changes.
+# status.  This goes through spruce_diff, which reads spruce's own exit
+# code on every platform, so a spruce failure is never shown as a set of
+# spec changes.
 sub _diff_job_specs {
 	my ($removed, $added) = @_;
 	my ($diff, $rc) = spruce_diff($removed, $added);

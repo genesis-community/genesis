@@ -1527,11 +1527,18 @@ containing shell metacharacters (pipes, semicolons, quotes) survive the
 inner shell's re-parsing intact instead of being split or executed as
 injected commands.
 
+Both forms pass C<-e>, so C<script> exits with the wrapped command's exit
+code.  macOS C<script> always does that and accepts C<-e> for compatibility.
+util-linux C<script> exits 0 without it, whatever the command did, so
+dropping C<-e> on Linux makes C<run()> report every wrapped command as a
+success.  C<spruce_diff> depends on it with util-linux releases older than
+2.35, which write no exit code trailer.
+
 B<Examples:>
 
     my @cmd = fake_tty('/tmp/out.log', 'spruce', 'diff', $a, $b);
     # Returns (macOS): ('script', '-qeF', '/tmp/out.log', 'spruce', 'diff', $a, $b)
-    # Returns (Linux): ('script', '-qf', '/tmp/out.log', '-c', "'spruce' 'diff' '$a' '$b'")
+    # Returns (Linux): ('script', '-qef', '/tmp/out.log', '-c', "'spruce' 'diff' '$a' '$b'")
     run(@cmd);
 
 =head2 lines
@@ -1723,16 +1730,17 @@ output, exit code, and any stderr.
 
 The exit code is spruce's own on both platforms: 0 when the sources match, 1
 when they differ, and 2 or higher when spruce could not compare them, in
-which case the output holds spruce's error.  On macOS C<script -e> passes the
-code through.  On Linux C<script(1)> always exits 0, so the code is read
-from the C<[COMMAND_EXIT_CODE="N"]> trailer of the typescript.  A trailer
-that carries a reason instead of a code, such as
-C<< [<terminated by signal 15>] >>, is reported as rc 2 with the reason
-appended to the output.  The typescript's header and trailer never appear in
-the returned output.
+which case the output holds spruce's error.  C<fake_tty> runs spruce under
+C<script -e>, which passes the code through on both platforms.  On Linux the
+C<[COMMAND_EXIT_CODE="N"]> trailer of the typescript records the code as
+well, and the trailer's code is the one returned.  A trailer that carries a
+reason instead of a code, such as C<< [<terminated by signal 15>] >>, is
+reported as rc 2 or higher with the reason appended to the output.  The
+typescript's header and trailer never appear in the returned output.
 
 Call this rather than running C<spruce diff> under C<fake_tty> directly,
-which loses the exit code on Linux.
+which leaves the typescript's header and trailer in the output and the
+trailer's reason unread.
 
 Each argument can be:
 

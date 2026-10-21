@@ -332,7 +332,7 @@ subtest 'fake_tty on linux quotes the flattened subcommand' => sub {
 	local $^O = 'linux';
 	my @cmd = Genesis::fake_tty('/tmp/out.log', 'spruce', 'diff', 'a file', 'pipe|arg');
 	eq_or_diff \@cmd,
-		['script', '-qf', '/tmp/out.log', '-c', "'spruce' 'diff' 'a file' 'pipe|arg'"],
+		['script', '-qef', '/tmp/out.log', '-c', "'spruce' 'diff' 'a file' 'pipe|arg'"],
 		'linux form is an argument list with a shell_quoted -c payload';
 };
 

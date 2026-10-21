@@ -46,7 +46,7 @@ case "$1" in
 		"$@" 2>&1 | sed 's/$/\r/' | tee "$file"
 		exit "${PIPESTATUS[0]}"
 		;;
-	-qf) # util-linux: run the -c string, record the exit code in a trailer
+	-qef) # util-linux with -e: run the -c string, record the exit code in a trailer, and return it
 		file="$2"
 		[[ "$3" == "-c" ]] || { echo "fake script: expected -c" >&2; exit 64; }
 		printf 'Script started on 2026-10-01 12:00:00+00:00 [COMMAND="%s" TERM="xterm" TTY="/dev/pts/0" COLUMNS="80" LINES="24"]\n' "$4" > "$file"
@@ -57,7 +57,7 @@ case "$1" in
 		else
 			printf '\nScript done on 2026-10-01 12:00:01+00:00 [COMMAND_EXIT_CODE="%s"]\n' "$rc" >> "$file"
 		fi
-		exit 0
+		exit "$rc"
 		;;
 esac
 echo "fake script: unexpected flags $1" >&2

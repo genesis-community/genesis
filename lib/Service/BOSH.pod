@@ -266,8 +266,16 @@ any C<-n> flag are unshifted onto the argument list.
 
 When C<$opts-E<gt>{interactive}> is true and the command is not C<int>,
 output is captured via the C<script> command (using C<script -q> on macOS
-and C<script -q -c> on Linux) so that interactive terminal output is
+and C<script -qe -c> on Linux) so that interactive terminal output is
 available in C<$results[0]> after the command completes.
+
+The Linux wrapper must keep C<-e>.  util-linux C<script> exits 0 without it,
+whatever bosh did, so C<run()> never fires an C<onfailure> message, and the
+exit code is left to the typescript's C<[COMMAND_EXIT_CODE="N"]> trailer.
+util-linux releases older than 2.35 write no such trailer, and a bosh killed
+by a signal leaves a reason there instead of a code, so both read as
+success.  macOS C<script> always exits with the child's code.  C<deploy> and
+C<run_errand> in L<Service::BOSH::Director> depend on it.
 
 C<HTTPS_PROXY> and C<https_proxy> are cleared from the subprocess
 environment unless C<GENESIS_HONOR_ENV> is set. C<BOSH_NON_INTERACTIVE>

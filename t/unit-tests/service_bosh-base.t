@@ -934,7 +934,7 @@ subtest 'execute() interactive on linux shell-quotes the script -c payload' => s
 
 	is scalar(@captured), 5, 'run() receives script as an argument list, not one string';
 	is $captured[0], 'script', 'wrapped in script';
-	is $captured[1], '-q',     'quiet flag';
+	is $captured[1], '-qe',    'quiet flag, returning the child exit code';
 	like $captured[2], qr/bosh-output/, 'output capture file';
 	is $captured[3], '-c',     'subcommand passed via -c';
 	is $captured[4], "'/fake/bosh' 'attach-disk' 'web/0' 'disk-1|orphan;rm -rf /'",

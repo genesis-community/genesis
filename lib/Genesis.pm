@@ -816,7 +816,7 @@ sub fake_tty {
 		# list must be flattened with shell_quote: naive joining lets values
 		# containing shell metacharacters split into separate arguments or
 		# execute as injected commands.
-		@cmd = ('script', '-qf', $file, '-c', shell_quote(@cmd));
+		@cmd = ('script', '-qef', $file, '-c', shell_quote(@cmd));
 	}
 	return @cmd
 }
@@ -927,8 +927,8 @@ sub curl {
 # along with spruce's own exit code: 0 for no differences, 1 for differences,
 # and 2 or more when spruce could not compare the files, in which case the
 # output holds spruce's error.  Always use this instead of running
-# `spruce diff` under fake_tty directly, because script(1) only passes the
-# exit code through on macOS.
+# `spruce diff` under fake_tty directly, because it strips script(1)'s
+# header and trailer and reads the exit code the trailer records.
 sub spruce_diff {
 	my ($first, $second) = @_;
 	bug("spruce diff requires two files") unless @_ == 2;
@@ -988,13 +988,13 @@ sub spruce_diff {
 	my (undef,$rc,$err) = run({redact => 1}, fake_tty($out_file, "spruce", "diff", $first, $second));
 	my $out = slurp($out_file);
 
-	# util-linux script(1) exits 0 whatever the command did, and records the
-	# command's exit code in a "Script done" trailer instead.  When the
-	# trailer carries a reason in place of a code, the command did not exit
-	# on its own (`[<terminated by signal 15>]`, for example); that is a
-	# failure, and the reason is kept in the output so the caller can report
-	# it.  Releases older than 2.35 write a bare date, which is removed and
-	# leaves the exit code as script(1) gave it.
+	# util-linux script(1) records the command's exit code in a "Script done"
+	# trailer as well as returning it under -e.  When the trailer carries a
+	# reason in place of a code, the command did not exit on its own
+	# (`[<terminated by signal 15>]`, for example); that is a failure, and the
+	# reason is kept in the output so the caller can report it.  Releases older
+	# than 2.35 write a bare date, which is removed and leaves the exit code as
+	# script(1) gave it.
 	if ($out =~ s/\n?^Script done on ([^\n]*)\n?\z//m) {
 		my $trailer = $1;
 		if ($trailer =~ /\[COMMAND_EXIT_CODE="(\d+)"\]/) {

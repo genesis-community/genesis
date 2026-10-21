@@ -600,8 +600,8 @@ notice and should not be called directly.
 
 Compares two job spec files with C<spruce_diff> and reports whether the spec
 is unchanged, changed, or could not be compared.  It reads spruce's own exit
-code, which C<script(1)> passes through only on macOS, so a spruce failure is
-reported as an error on Linux too rather than as a set of spec changes.
+code, so a spruce failure is reported as an error on either platform rather
+than as a set of spec changes.
 
 B<Parameters:>
 
