@@ -14,6 +14,7 @@ use Sys::Hostname ();
 
 use_ok "Service::BOSH";
 use_ok "Service::BOSH::Director";
+use Service::Vault;
 use Genesis;
 
 # ===========================================================================
@@ -77,6 +78,12 @@ package MockLockVault {
 			return 0;
 		}
 		$rec->{data} = {%$data};
+		# A writer that stores its pid as a JSON number, as Genesis did
+		# before it kept every lock value a string
+		$rec->{data}{pid} = 0 + $rec->{data}{pid}
+			if ($self->{pid_form} // '') eq 'number' && defined($rec->{data}{pid});
+		# Every version written, oldest first, as a kv v2 mount keeps them
+		push @{$rec->{history}}, {%{$rec->{data}}};
 		$rec->{version}++;
 		push @{$self->{log}}, ['write', $path];
 		$self->_after;
@@ -721,6 +728,382 @@ subtest 'a kv v1 release the vault refuses is reported, not counted as released'
 	throws_ok { $bosh->clear_network_lock } qr/Could not delete.*permission denied/,
 		'the refused delete is a failure';
 	ok($bosh->network_locked_by_me, 'and the lock is still there, as the failure says');
+};
+
+# ---------------------------------------------------------------------------
+# How the lock is stored
+#
+# The lock record sits under the director's exodus path, so a safe export of
+# that path takes it along.  safe 1.26.0 exports a value that is not a
+# string with its JSON type kept (export format 3), and Genesis refuses an
+# export whose current version of a secret holds anything but strings, so
+# every lock value has to go to the vault as a string.  Genesis before that
+# change stored the pid as a number, and both have to share the lock while a
+# rollout is under way.  The tests run on both kinds of kv mount.
+# ---------------------------------------------------------------------------
+
+# The JSON type a value has as it was decoded, by the check the export
+# reader makes: undef for a string.
+sub json_type { Service::Vault::_export_value_type($_[0]) }
+
+# A lock record as it comes out of the vault, freshly decoded, with its pid
+# a JSON number or a JSON string.
+sub decoded_lock {
+	my ($form, %fields) = @_;
+	my $record = lock_record(%fields);
+	$record->{pid} = $form eq 'number' ? 0 + $record->{pid} : "$record->{pid}";
+	return JSON::PP::decode_json(JSON::PP::encode_json($record));
+}
+
+# The pid of a process that has exited and been reaped
+sub dead_pid {
+	my $pid = fork() // die "Could not fork: $!\n";
+	exit 0 if $pid == 0;
+	waitpid($pid, 0);
+	die "Process $pid is still there after it was reaped\n" if kill(0, $pid);
+	return $pid;
+}
+
+# What safe 1.26.0's `safe export` of the director's exodus path prints for
+# the mock's records: the latest version of each secret, or with all => 1
+# every version a kv v2 mount keeps.  It is format 1 when each secret has
+# one version of strings, 2 when some secret has more, and 3 when some
+# value is not a string, which then keeps its JSON type.  Formats 2 and 3
+# give an empty version no value, give each secret the number of its oldest
+# exported version as `first` unless that is 1, and name the mount of any
+# secret with more than one version in `requires_versioning`.
+sub safe_export {
+	my ($vault, %opts) = @_;
+	my %versions;   # path => [[number, data], ...], oldest first
+	for my $path (grep { m{^\Q$EXODUS\E(?:/|$)} } keys %{$vault->{store}}) {
+		my $rec = $vault->{store}{$path};
+		my @all = $vault->{kv_version} == 2 && $rec->{history}
+			? map { [$_ + 1, $rec->{history}[$_]] } 0 .. $#{$rec->{history}}
+			: ([$rec->{version}, $rec->{data}]);
+		$versions{$path} = $opts{all} ? [@all] : [$all[-1]];
+	}
+	my $typed = grep { defined json_type($_) } map { values %{$_->[1]} } map { @$_ } values %versions;
+	my $many  = grep { @$_ > 1 } values %versions;
+	my $json = JSON::PP->new->canonical;
+	return $json->encode({map { ($_ => $versions{$_}[0][1]) } keys %versions})
+		unless $typed || $many;
+	return $json->encode([{
+		export_version      => $typed ? 3 : 2,
+		data                => {map {
+			my $first = $versions{$_}[0][0];
+			($_ => {
+				($first == 1 ? () : (first => $first)),
+				versions => [map { %{$_->[1]} ? {value => $_->[1]} : {} } @{$versions{$_}}],
+			})
+		} keys %versions},
+		requires_versioning => {$many ? ('secret/' => JSON::PP::true) : ()},
+	}]);
+}
+
+# Every lock below is taken with no wait for a competing kv v1 write.
+$Service::BOSH::Director::NETWORK_LOCK_SETTLE_SECONDS = 0;
+
+# A real Service::Vault, with `safe curl` answered by a kv mount kept in
+# memory, so that the request bodies are the JSON that would go to the vault.
+sub curl_vault {
+	my ($kv_version, $bodies) = @_;
+	my $vault = Service::Vault->new('https://vault.example.com:8200', 'test-vault', 1, '', undef, '/secret/');
+	my (%store, %version);
+	my $answer = sub {
+		my ($status, $body) = @_;
+		my %reason = (200 => 'OK', 204 => 'No Content', 404 => 'Not Found');
+		my $out = "HTTP/1.1 $status $reason{$status}\r\nContent-Type: application/json\r\n\r\n"
+			.(defined($body) ? JSON::PP::encode_json($body) : '')."\n";
+		return ($out, $status >= 400 ? 1 : 0, '');
+	};
+	$vault->{__test_query} = sub {
+		my (undef, $method, $uri, $body) = @_;   # curl METHOD URI [BODY]
+		return $answer->(200, {data => {path => 'secret/', type => 'kv', options => {version => "$kv_version"}}})
+			if $uri =~ m{^/sys/internal/ui/mounts/};
+		my $key = $uri =~ s{^/secret/(?:data/)?}{}r;
+		if ($method eq 'POST') {
+			push @$bodies, $body;
+			my $sent = JSON::PP::decode_json($body);
+			$store{$key} = $kv_version == 2 ? $sent->{data} : $sent;
+			$version{$key}++;
+			return $kv_version == 2 ? $answer->(200, {data => {version => $version{$key}}}) : $answer->(204);
+		}
+		if ($method eq 'GET') {
+			return $answer->(404, {errors => []}) unless $store{$key};
+			return $kv_version == 2
+				? $answer->(200, {data => {data => $store{$key}, metadata => {version => $version{$key}}}})
+				: $answer->(200, {data => $store{$key}});
+		}
+		return ('', 1, "!! no stub for $method $uri");
+	};
+	return $vault;
+}
+
+for my $kv_version (2, 1) {
+	subtest "kv v$kv_version: the lock goes to the vault with every value a JSON string" => sub {
+		local $ENV{GENESIS_VAULT_CONFIRM_WRITES} = '0';
+		no warnings qw(redefine once);
+		local $Service::BOSH::Director::NETWORK_LOCK_SETTLE_SECONDS = 0;
+		local *Service::Vault::query = sub {
+			my $self = shift;
+			shift if ref($_[0]) eq 'HASH';
+			shift if $_[0] eq 'safe';
+			return $self->{__test_query}->(@_);
+		};
+
+		my @bodies;
+		my $bosh = director(curl_vault($kv_version, \@bodies));
+		is(try_acquire($bosh), 'won', 'the lock is taken');
+		is(scalar(@bodies), 1, 'with one write to the vault');
+
+		my $sent = JSON::PP::decode_json($bodies[0] // '{}');
+		my $record = $kv_version == 2 ? $sent->{data} : $sent;
+		is(ref($record), 'HASH', 'which sends the lock record') or return;
+		is_deeply([sort keys %$record], [qw(at env hostname pid token user)], 'with every field of the lock');
+		like($bodies[0], qr/"pid":"$$"/, 'the pid is sent as a JSON string')
+			or diag $bodies[0];
+		is_deeply({map {($_ => json_type($record->{$_}))} keys %$record},
+			{map {($_ => undef)} keys %$record},
+			'and so is every other value, by the check the export reader makes');
+
+		my $exported;
+		lives_ok { $exported = Service::Vault::normalize_export({$LOCK_PATH => $record}) }
+			'the record, exported, is one Genesis can read';
+		is($exported->{$LOCK_PATH}{pid}, "$$", 'with the pid as it was written');
+		ok($bosh->network_locked_by_me, 'and the lock reads back as this process\'s');
+	};
+}
+
+# The record each kind of writer leaves, as the export reader sees its pid
+my %STORED_PID = (number => 'number', this => undef);
+
+for my $kv_version (2, 1) {
+for my $holder ('number', 'string') {
+	for my $contender ('number', 'this') {
+		my $name = "kv v$kv_version: a $holder pid holder against a contender that writes "
+			.($contender eq 'this' ? 'a string pid' : 'a number pid');
+
+		subtest "$name: a live lock is refused" => sub {
+			my $vault = MockLockVault->new(kv_version => $kv_version);
+			$vault->{pid_form} = $contender;
+			seed_lock($vault, decoded_lock($holder, age => 60, pid => 4242));
+			my $result = try_acquire(director($vault));
+			like($result, qr/^refused: .*pid: 4242/s, 'the lock is refused, naming the holder\'s pid')
+				or diag $result;
+			is($vault->{store}{$LOCK_PATH}{data}{token}, 'held-elsewhere', 'and the holder keeps it');
+		};
+
+		subtest "$name: a lock past the timeout is taken over" => sub {
+			my $vault = MockLockVault->new(kv_version => $kv_version);
+			$vault->{pid_form} = $contender;
+			seed_lock($vault, decoded_lock($holder, age => 7200, pid => 4242));
+			my $bosh = director($vault);
+			is(try_acquire($bosh), 'won', 'the stale lock is taken over');
+			ok($bosh->network_locked_by_me, 'and is held by the contender');
+			is(json_type($vault->{store}{$LOCK_PATH}{data}{pid}), $STORED_PID{$contender},
+				'whose record holds its pid as that writer stores it');
+		};
+
+		subtest "$name: a same-host lock whose pid is dead is taken over" => sub {
+			my $vault = MockLockVault->new(kv_version => $kv_version);
+			$vault->{pid_form} = $contender;
+			seed_lock($vault, decoded_lock($holder, age => 60, hostname => Sys::Hostname::hostname(), pid => dead_pid()));
+			my $bosh = director($vault);
+			is($bosh->check_network_lock->{status}, 'stale', 'the lock is stale');
+			is(try_acquire($bosh), 'won', 'and is taken over');
+			is(json_type($vault->{store}{$LOCK_PATH}{data}{pid}), $STORED_PID{$contender},
+				'whose record holds its pid as that writer stores it');
+		};
+
+		subtest "$name: a same-host lock whose pid cannot be signalled is still held" => sub {
+			plan skip_all => 'running as root, which can signal every process' if $> == 0;
+			my $vault = MockLockVault->new(kv_version => $kv_version);
+			$vault->{pid_form} = $contender;
+			seed_lock($vault, decoded_lock($holder, age => 60, hostname => Sys::Hostname::hostname(), pid => 1));
+			ok(!kill(0, 1) && $!{EPERM}, 'pid 1 answers a signal check with EPERM');
+			like(try_acquire(director($vault)), qr/^refused: /, 'so the lock is refused');
+			is($vault->{store}{$LOCK_PATH}{data}{token}, 'held-elsewhere', 'and the holder keeps it');
+		};
+	}
+}
+
+for my $pair (['number', 'this'], ['this', 'number']) {
+	my ($holder, $contender) = @$pair;
+	my $name = "kv v$kv_version: "
+		.($holder eq 'number' ? 'a number pid holder and a string pid contender'
+			: 'a string pid holder and a number pid contender');
+
+	subtest "$name: only the token says who holds the lock" => sub {
+		my $vault = MockLockVault->new(kv_version => $kv_version);
+		my ($mine, $theirs) = (director($vault), director($vault));
+		$vault->{pid_form} = $holder;
+		is(try_acquire($mine), 'won', 'the holder takes the lock');
+		is(json_type($vault->{store}{$LOCK_PATH}{data}{pid}), $STORED_PID{$holder},
+			'and its record holds its pid as that writer stores it');
+
+		$vault->{pid_form} = $contender;
+		like(as_other_process(sub { try_acquire($theirs) }), qr/^refused: /,
+			'the contender, on the same host with a live pid, is refused');
+		ok(!as_other_process(sub { $theirs->network_locked_by_me }), 'and does not hold the lock');
+		ok($mine->network_locked_by_me, 'which the holder still does');
+		ok(!as_other_process(sub { $theirs->clear_network_lock }), 'the contender\'s release removes nothing');
+		ok($mine->network_locked_by_me, 'and the holder still holds the lock');
+		ok($mine->clear_network_lock, 'until it releases it');
+		is($mine->check_network_lock->{status}, 'unlocked', 'and the director is unlocked');
+	};
+
+	subtest "$name: a holder whose stale lock was taken over has lost it" => sub {
+		my $vault = MockLockVault->new(kv_version => $kv_version);
+		my ($mine, $theirs) = (director($vault), director($vault));
+		$vault->{pid_form} = $holder;
+		is(try_acquire($mine), 'won', 'the holder takes the lock');
+		is(json_type($vault->{store}{$LOCK_PATH}{data}{pid}), $STORED_PID{$holder},
+			'and its record holds its pid as that writer stores it');
+		$vault->{store}{$LOCK_PATH}{data}{at} = strftime('%Y-%m-%d %H:%M:%S +0000', gmtime(time - 7200));
+
+		$vault->{pid_form} = $contender;
+		is(as_other_process(sub { try_acquire($theirs) }), 'won', 'the contender takes over the stale lock');
+		is(json_type($vault->{store}{$LOCK_PATH}{data}{pid}), $STORED_PID{$contender},
+			'and its record holds its pid as that writer stores it');
+		throws_ok { $mine->ensure_network_lock_held('write the network claims') }
+			qr/no longer holds the network claims lock/, 'the holder is stopped';
+		ok(!$mine->clear_network_lock, 'and its release removes nothing');
+		ok(as_other_process(sub { $theirs->network_locked_by_me }), 'so the contender still holds the lock');
+		ok(as_other_process(sub { $theirs->clear_network_lock }), 'until it releases it');
+	};
+}
+}
+
+subtest 'kv v1: a stale lock read back unchanged is cleared, whatever its pid type' => sub {
+	for my $form ('number', 'string') {
+		for my $case (
+			['past the timeout', age => 7200],
+			['from a dead pid on this host', age => 60, hostname => Sys::Hostname::hostname(), pid => dead_pid()],
+		) {
+			my ($what, %fields) = @$case;
+			my $vault = MockLockVault->new(kv_version => 1);
+			my $bosh = director($vault);
+			seed_lock($vault, decoded_lock($form, %fields));
+			my $seen = $bosh->check_network_lock;
+			is($seen->{status}, 'stale', "$form pid, $what: the lock is stale");
+			ok($bosh->clear_network_lock(stale => $seen), "$form pid, $what: and is cleared");
+			ok(!exists $vault->{store}{$LOCK_PATH}, "$form pid, $what: and is gone");
+		}
+	}
+};
+
+subtest 'kv v1: a stale lock that changed after it was read is left alone, whatever its pid type' => sub {
+	for my $form ('number', 'string') {
+		for my $change (['token', token => 'taken-since'], ['holder', user => 'someone-else', hostname => 'elsewhere']) {
+			my ($what, %changed) = @$change;
+			my $vault = MockLockVault->new(kv_version => 1);
+			my $bosh = director($vault);
+			seed_lock($vault, decoded_lock($form, age => 7200));
+			my $seen = $bosh->check_network_lock;
+			seed_lock($vault, decoded_lock($form, age => 7200, %changed));
+			ok(!$bosh->clear_network_lock(stale => $seen), "$form pid, changed $what: the lock is not cleared");
+			ok(exists $vault->{store}{$LOCK_PATH}, "$form pid, changed $what: and is still there");
+		}
+	}
+};
+
+# The director's own exodus data, which the export takes along with the lock
+sub seed_exodus {
+	my ($vault) = @_;
+	$vault->{store}{$EXODUS} = {version => 1, data => {url => 'https://127.0.0.1:25555'}};
+}
+
+sub read_export {
+	my ($vault, %opts) = @_;
+	return Service::Vault::normalize_export(JSON::PP::decode_json(safe_export($vault, %opts)));
+}
+
+for my $kv_version (2, 1) {
+	subtest "kv v$kv_version: the director's exodus data exports readably while this Genesis holds the lock, and after" => sub {
+		my $vault = MockLockVault->new(kv_version => $kv_version);
+		seed_exodus($vault);
+		my $bosh = director($vault);
+		is(try_acquire($bosh), 'won', 'the lock is taken');
+
+		my $exported;
+		like(safe_export($vault), qr/^\{/, 'safe exports it as format 1, every value a string');
+		lives_ok { $exported = read_export($vault) } 'and Genesis reads the export';
+		is($exported->{$LOCK_PATH}{pid}, "$$", 'with the lock in it');
+
+		ok($bosh->clear_network_lock, 'once the lock is released');
+		lives_ok { $exported = read_export($vault) } 'the export still reads';
+		is_deeply($exported->{$LOCK_PATH}, $kv_version == 2 ? {} : undef,
+			$kv_version == 2 ? 'with the released lock a secret with no keys' : 'with no lock in it');
+		return unless $kv_version == 2;
+		like(safe_export($vault, all => 1), qr/"export_version":2/,
+			'an export of every version is format 2, as the history holds only strings');
+		lives_ok { $exported = read_export($vault, all => 1) } 'and Genesis reads it';
+		is_deeply($exported->{$LOCK_PATH}, {}, 'with the released lock current');
+	};
+
+	subtest "kv v$kv_version: a lock an earlier Genesis left behind stops the export until it is replaced or released" => sub {
+		my $vault = MockLockVault->new(kv_version => $kv_version);
+		seed_exodus($vault);
+		$vault->{pid_form} = 'number';
+		is(try_acquire(director($vault)), 'won', 'an earlier Genesis takes the lock, and stores its pid as a number');
+		like(safe_export($vault), qr/"export_version":3/, 'which safe exports as format 3');
+		throws_ok { read_export($vault) }
+			qr/Cannot use the safe export of .*network-claim-lock.*pid.*typed value, a JSON number/s,
+			'and Genesis refuses, naming the lock and its pid';
+
+		# It dies without releasing it, and this Genesis takes it over once it is stale.
+		$vault->{store}{$LOCK_PATH}{data}{at} = strftime('%Y-%m-%d %H:%M:%S +0000', gmtime(time - 7200));
+		delete $vault->{pid_form};
+		my $bosh = director($vault);
+		is(as_other_process(sub { try_acquire($bosh) }), 'won', 'this Genesis takes over the stale lock');
+		my $exported;
+		lives_ok { $exported = read_export($vault) } 'and the export reads again';
+		is(json_type($exported->{$LOCK_PATH}{pid}), undef, 'with a string pid in the lock');
+		ok(as_other_process(sub { $bosh->clear_network_lock }), 'which it then releases');
+		lives_ok { read_export($vault) } 'and the export still reads';
+		return unless $kv_version == 2;
+
+		my $all = safe_export($vault, all => 1);
+		like($all, qr/"export_version":3/, 'an export of every version is format 3, for the number pid in the history');
+		like($all, qr/\{\}\]/, 'with no value for the released version');
+		like($all, qr/"requires_versioning":\{"secret\/":true\}/, 'and naming the mount that keeps versions');
+		lives_ok { $exported = read_export($vault, all => 1) } 'and Genesis reads it';
+		is_deeply($exported->{$LOCK_PATH}, {}, 'as only the current, released version counts');
+
+		# Released by the earlier Genesis itself, with no takeover in between
+		my $released = MockLockVault->new(kv_version => 2);
+		seed_exodus($released);
+		$released->{pid_form} = 'number';
+		my $earlier = director($released);
+		is(try_acquire($earlier), 'won', 'an earlier Genesis takes the lock');
+		ok($earlier->clear_network_lock, 'and releases it');
+		like(safe_export($released), qr/^\{/, 'the export of the latest versions is format 1 again');
+		lives_ok { read_export($released) } 'and reads';
+		lives_ok { $exported = read_export($released, all => 1) } 'as does one of every version, number pid and all';
+		is_deeply($exported->{$LOCK_PATH}, {}, 'with the released lock current');
+
+		is(try_acquire($earlier), 'won', 'once the earlier Genesis takes the lock again');
+		like(safe_export($released), qr/"first":3.*"export_version":3/s,
+			'the export of the latest versions is format 3, from the lock\'s third version');
+		throws_ok { read_export($released) } qr/typed value, a JSON number/, 'and is refused again';
+	};
+}
+
+# safe 1.26.0's export of every version of a lock an earlier Genesis took
+# and released, as it prints it: format 3, and no value for the release.
+subtest 'a format 3 export of a released lock with a number pid in its history reads' => sub {
+	my $export = JSON::PP::decode_json(sprintf(
+		'[{"export_version":3,"data":{'.
+			'"%s":{"versions":[{"value":{"url":"https://127.0.0.1:25555"}}]},'.
+			'"%s":{"versions":[{"value":{"at":"2026-10-22 12:00:00 +0000","env":"lab",'.
+				'"hostname":"jumpbox","pid":4242,"token":"t","user":"jdoe"}},{}]}'.
+		'},"requires_versioning":{"secret/":true}}]',
+		$EXODUS, $LOCK_PATH
+	));
+	my $exported;
+	lives_ok { $exported = Service::Vault::normalize_export($export) } 'Genesis reads it';
+	is_deeply($exported, {$EXODUS => {url => 'https://127.0.0.1:25555'}, $LOCK_PATH => {}},
+		'with the released lock a secret with no keys');
 };
 
 done_testing;

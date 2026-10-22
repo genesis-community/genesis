@@ -1783,8 +1783,13 @@ L</network_lock_path>, after checking that an older Genesis does not hold
 the older form of the lock (see L</_refuse_legacy_network_lock>).  The
 record holds the time, hostname, user, PID, environment name, and a token
 that marks it as this process's own (see L</_network_lock_token>).  The time is written in UTC with a C<+0000>
-offset, so that a reader on any host works out the same age for it.  A
-stale lock is taken over, with a note saying whose it was.
+offset, so that a reader on any host works out the same age for it.
+Every value, the PID included, is written as a string.  The record
+sits under the director's exodus path, so a C<safe export> of that path takes it
+along, and Genesis refuses an export whose current version of a secret holds
+anything but strings (see L<Service::Vault/normalize_export>), as safe 1.26.0
+exports a JSON number there.  A stale lock is taken over, with a note saying
+whose it was.
 
 How the write is made depends on the kv mount the lock is on:
 

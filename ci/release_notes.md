@@ -347,6 +347,8 @@
 
 * Genesis reads every `safe export` format.  safe writes a versioned export (format 2) when a secret has more than one version, and safe 1.26 writes format 3 when a value is not a string, such as an object or a number written by another tool.  Genesis read only format 1, so deploys, secret checks, entombment, and exodus lookups died with "Not a HASH reference".  They now read the current version of each secret in any format, leave out a secret whose current version is deleted or destroyed, and stop with an error naming the path and key of any value that is not a string, since Genesis reads every secret as a string.  An export format Genesis does not know also stops with a clear error.
 
+* The network claims lock now stores its pid as a string.  An earlier build stored it as a JSON number, and while such a lock was held or left behind, a deploy that exported the director's exodus data with safe 1.26.0 could stop with "Cannot use the safe export".  A lock released since, whose history alone holds the number, does not stop the export.
+
 # Internal Changes/Improvements
 
 ## BOSH Refactor

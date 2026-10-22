@@ -996,7 +996,12 @@ sub acquire_network_lock {
 			at       => strftime('%Y-%m-%d %H:%M:%S +0000', gmtime()),
 			hostname => Sys::Hostname::hostname(),
 			user     => $ENV{USER} // 'unknown',
-			pid      => $$,
+			# Every value is written as a string.  The record sits under the
+			# director's exodus path, so exporting that path takes it along,
+			# and Genesis refuses an export whose current version of a secret
+			# holds anything but strings, as safe 1.26.0 exports a JSON
+			# number here.
+			pid      => "$$",
 			env      => $self->env ? $self->env->name : 'unknown',
 			token    => $self->_network_lock_token,
 		};
