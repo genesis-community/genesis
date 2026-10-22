@@ -291,6 +291,10 @@
   only breaks ties, verify is compared only for https, and a descriptor with
   no matching target names the URL and the `safe target` command to run.
 
+* `genesis new --vault` accepts the name of a safe target, as its help says.
+
+  A bare name such as `--vault prod-vault` died with "Unknown clause", because only vault descriptors were understood. A single word with no URL scheme is now looked up as a safe target name, even when it contains `:` or `/` or matches a descriptor keyword such as `verify`, and an unknown name is reported by name along with how to list the targets. The new environment's `genesis.vault` records the descriptor of the target the name resolved to, leaving out an alias that would not read back as that name, such as one starting with `$` or containing a space. A name whose URL another safe target shares is refused with both target names, because Genesis hands the vault to safe by URL and safe cannot choose between them. When a descriptor holds characters YAML would misread, such as an alias of `#ops` or `ops:`, the env file now writes it quoted, so the environment reads it back intact. Anything else is still parsed as a descriptor and recorded as given, exactly as before. An ancestor's `genesis.vault` still has to be a descriptor, because a target name only means something in one operator's `~/.saferc`.
+
 * Fix bug where default config type was lost when fetching configs from BOSH
   director, resulting in bad messages and error reports.
 

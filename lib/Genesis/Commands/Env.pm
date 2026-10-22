@@ -30,13 +30,25 @@ sub create {
 	$name =~ s/\.yml$//;
 
 	my $top = Genesis::Top->new('.');
-	my $vault_desc = get_options->{vault} || $top->get_ancestral_vault($name) || '';
-	if ($vault_desc) {
+	# Presence, not truth: a safe target can be named '0'.
+	my $vault_opt = get_options->{vault};
+	my $has_vault_opt = defined($vault_opt) && $vault_opt ne '';
+	my $vault_desc = $has_vault_opt ? $vault_opt : $top->get_ancestral_vault($name);
+	if (defined($vault_desc) && $vault_desc ne '') {
 		if ( $vault_desc eq "?") {
 			$top->set_vault(interactive => 1);
-		} else {
-			my $vault = Service::Vault->get_vault_from_descriptor($vault_desc, get_options->{vault} ? '--vault option' : '');
+		} elsif ($has_vault_opt) {
+			# Only --vault takes a target name; an ancestor's genesis.vault is
+			# committed to the repository, so it must stay a portable descriptor.
+			my $vault = Service::Vault->get_vault_from_descriptor($vault_desc, '--vault option', target_name => 1);
 			$top->set_vault(vault => $vault);
+			# The new environment records a descriptor.  A name only means
+			# something in this ~/.saferc, so it is recorded as the target it
+			# resolved to rather than read again downstream.
+			get_options->{vault} = $vault->build_descriptor()
+				if defined(Service::Vault->bare_target_name($vault_desc));
+		} else {
+			$top->set_vault(vault => Service::Vault->get_vault_from_descriptor($vault_desc));
 		}
 		$vault_desc = $top->vault->build_descriptor()
 	}

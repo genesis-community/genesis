@@ -43,6 +43,7 @@ unit-tests/genesis-tcp_listening_alarm.t      # tcp_listening leaves no alarm ar
 unit-tests/service_vault-core.t          # Service::Vault base class + None with MockWrapper
 unit-tests/service_vault-strongbox_intent.t  # tri-state strongbox read from ~/.saferc
 unit-tests/service_vault-descriptor_lookup.t # descriptors resolve as genesis.vault does
+unit-tests/service_vault-descriptor_target_name.t # --vault takes a bare safe target name
 unit-tests/service_vault-unseal_strongbox.t  # unseal keeps safe's stderr, flags partial unseal
 unit-tests/service_vault-unseal_nodes.t     # per-node Raft unseal and leader wait, keys kept out of traces
 unit-tests/service_vault-export_formats.t   # every safe export version read as v1; typed values refused
@@ -53,6 +54,7 @@ unit-tests/service_vault_admin-core.t    # Service::Vault::Admin + AppRole with 
 unit-tests/genesis_top-core.t
 unit-tests/genesis_top-secrets_provider_strongbox.t  # re-point must not disarm strongbox
 unit-tests/genesis_top-set_vault_object.t   # set_vault refuses a non-remote vault readably
+unit-tests/genesis_commands_env-create_vault.t # genesis new picks and records its vault
 # Kit module tests (POD-driven)
 unit-tests/genesis_kit-core.t            # Genesis::Kit base class
 unit-tests/genesis_kit_compiled-core.t   # Genesis::Kit::Compiled
@@ -83,6 +85,7 @@ unit-tests/genesis_env-bosh.t            # _parse_bosh_env(), is_bosh_director()
 unit-tests/genesis_env-exodus.t          # Path construction: secrets/exodus/ci/ocfp_config mount/slug/base
 unit-tests/genesis_env-configs.t         # configs(), required_configs(), has_config() BOSH config mgmt
 unit-tests/genesis_env-vault_ops.t       # get_ancestral_vault(), exodus_lookup(), vault_paths()
+unit-tests/genesis_env-vault_descriptor_yaml.t # genesis.vault survives the YAML it is written to
 unit-tests/genesis_env-get_target_bosh.t # director lookup: which of the three failures is reported
 unit-tests/genesis_env-fix_secrets_conflicts.t  # _fix_secrets manifest/credhub conflict detection
 unit-tests/genesis_env_secrets_parser_fromkit-core.t  # FromKit parser defect regression tests

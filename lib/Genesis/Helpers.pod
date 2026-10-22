@@ -1310,7 +1310,9 @@ is exactly C<1>.
 
 =item *
 
-C<vault:> is added when C<GENESIS_ENV_VAULT_DESCRIPTOR> is set.
+C<vault:> is added when C<GENESIS_ENV_VAULT_DESCRIPTOR> is set.  The
+descriptor is single-quoted unless it is a URL followed by plain words, so a
+safe target name such as C<#ops> or C<ops:> in its alias survives as YAML.
 
 =item *
 

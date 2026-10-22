@@ -370,7 +370,7 @@ sub create {
 	}
 
 	# Sanitize the vault descriptor, if present
-	if ($opts{vault}) {
+	if (defined($opts{vault}) && $opts{vault} ne '') {
 		unless (grep {$_ =~ /^https?:\/\/[^\/]+/} (split(' ',$opts{vault}))) {
 			my $vault = (Service::Vault->find(name => $opts{vault}))[0];
 			bail(
@@ -515,10 +515,17 @@ sub genesis_config_block {
 	push @out, "  bosh_env:<pad>$bosh_env_desc"
 		if !$self->use_create_env && $bosh_env_desc ne '' && $bosh_env_desc ne $self->name;
 
-	# vault: prefer env-configured value; omit if unset
+	# vault: prefer env-configured value; omit if unset.  The alias is a safe
+	# target name, which may hold characters YAML reads as a comment or a
+	# mapping, so anything but a plain URL and plain words is quoted.
 	my $vault_desc = $self->lookup('genesis.vault', undef);
-	push @out, "  vault:<pad>$vault_desc"
-		if defined($vault_desc) && $vault_desc ne '';
+	if (defined($vault_desc) && $vault_desc ne '') {
+		(my $quoted = $vault_desc) =~ s/'/''/g;
+		push @out, "  vault:<pad>".(
+			$vault_desc =~ m{^https?://[A-Za-z0-9._/:+!@=%~-]*[A-Za-z0-9._/+!@=%~-](?: [A-Za-z0-9._/+!@=%~-]+)*$}
+				? $vault_desc : "'$quoted'"
+		);
+	}
 
 	# min_version: prefer env value, else use current runtime (except development)
 	my $min_version = $self->lookup(['genesis.min_version','genesis.minimum_version'], undef);

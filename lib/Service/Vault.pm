@@ -247,11 +247,55 @@ sub rebind {
 }
 
 # }}}
+# bare_target_name - the safe target name an input names, if it is one {{{
+sub bare_target_name {
+	my ($class, $input) = @_;
+	# A single token with no URL scheme can never be a working descriptor,
+	# because a descriptor needs its URL, so taking it as a target name
+	# shadows no descriptor.  Clause keywords, colons and slashes are all
+	# legal in a target name.
+	my $name = $input // '';
+	$name =~ s/^\s+|\s+$//g;
+	return undef unless $name =~ /^\S+$/ && $name !~ m{^[a-z][a-z0-9+.-]*://}i;
+	return $name;
+}
+
+# }}}
 # get_vault_from_descriptor - find unique vault from vault descriptor, or bail {{{
 sub get_vault_from_descriptor {
-	my ($class, $descriptor, $source) = @_;
-	my $details = $class->parse_vault_descriptor($descriptor, $source);
+	my ($class, $descriptor, $source, %opts) = @_;
 	require Service::Vault::Remote;
+
+	my $name = $opts{target_name} ? $class->bare_target_name($descriptor) : undef;
+	if (defined($name)) {
+		my ($target) = Service::Vault->find(name => $name);
+		bail(
+			"Safe target '#M{%s}' given by the #G{%s} was not found.\n".
+			"Run #G{safe targets} to list the known targets, or give a vault descriptor:\n".
+			"  http#Cu{s}://<domain-or-ip>#Cu{:<port>}#Cu{/<namespace>} #Cu{as <alias>} #Cu{[no-]verify} #Cu{[no-]strongbox}%s",
+			$name, $source || 'genesis.vault',
+			$name =~ /^(no-)?(verify|strongbox)$/
+				? "\n'$name' is also a descriptor clause, but a descriptor needs a URL."
+				: ''
+		) unless $target;
+		# Genesis hands a vault to safe, and to hooks, by URL, and safe will
+		# not pick between targets that share one.
+		my @shared = grep {$_->name ne $target->name} Service::Vault->find(url => $target->url);
+		bail(
+			"Safe target '#M{%s}' shares its URL #M{%s} with %s.\n".
+			"Genesis needs one safe target per URL, because it hands the vault to ".
+			"safe by URL.  Remove the other targets for that URL from ~/.saferc, ".
+			"or point them elsewhere, before re-attempting this command.",
+			$target->name, $target->url, join(', ', map {$_->name} @shared)
+		) if @shared;
+		# The name already picked exactly one target, so it is used as is.
+		# attach would only look it up again, by fields it reads a leading
+		# '$' in as an environment variable, which a target name may start
+		# with.
+		return $target->connect_and_validate();
+	}
+
+	my $details = $class->parse_vault_descriptor($descriptor, $source);
 	return Service::Vault::Remote->attach(
 		url       => $details->{url},
 		alias     => $details->{alias},
@@ -1378,7 +1422,13 @@ sub build_descriptor {
 	my ($self) = @_;
 	my $descriptor = $self->url;
 	$descriptor .= ("/".$self->namespace) if $self->namespace;
-	$descriptor .= " as ".$self->name;
+	# The alias is one whitespace-delimited word, and attach reads a leading
+	# '$' in it as an environment variable, so a name that would not read
+	# back as itself is left out rather than written as some other alias.
+	# It only breaks ties between targets at one URL, which Genesis cannot
+	# use anyway, since it hands vaults to safe by URL.
+	my $name = $self->name // '';
+	$descriptor .= " as $name" if $name =~ /^[^\s\$]\S*$/;
 	$descriptor .= " no-verify" if $self->tls && !$self->verify;
 	# Only a stated setting earns a clause, in either direction.  A target
 	# that never stated the flag emits nothing, so the descriptor carries

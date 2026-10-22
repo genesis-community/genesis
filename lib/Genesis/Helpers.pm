@@ -662,8 +662,16 @@ EOF
 EOF
 	fi
 	if [[ -n "${GENESIS_ENV_VAULT_DESCRIPTOR:-}" ]] ; then
+		# The alias is a safe target name, which may hold characters YAML reads
+		# as a comment or a mapping, so anything but a plain URL and plain words
+		# is quoted.
+		vault_desc="$GENESIS_ENV_VAULT_DESCRIPTOR"
+		plain_desc='^https?://[A-Za-z0-9._/:+!@=%~-]*[A-Za-z0-9._/+!@=%~-]( [A-Za-z0-9._/+!@=%~-]+)*$'
+		if ! [[ $vault_desc =~ $plain_desc ]] ; then
+			vault_desc="'$(printf '%s' "$vault_desc" | sed "s/'/''/g")'"
+		fi
 		cat <<EOF
-  vault:          $GENESIS_ENV_VAULT_DESCRIPTOR
+  vault:          $vault_desc
 EOF
 	fi
 	if [[ -n "${GENESIS_MIN_VERSION:-}" && $GENESIS_MIN_VERSION != '0.0.0' ]] ; then

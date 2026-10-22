@@ -541,13 +541,64 @@ B<Examples:>
   );
   # Returns: the matching Service::Vault object
 
+=head2 bare_target_name
+
+  my $name = Service::Vault->bare_target_name($input);
+
+Says whether C<$input> names a safe target rather than describing a vault,
+and returns the name if so.  Input that, once trimmed, is a single token
+with no URL scheme (nothing like C<https://> at its start) is a name.  A
+name never shadows a descriptor that could work, because a descriptor needs
+a URL.  A name may still be a clause keyword such as C<verify> or
+C<no-strongbox>, contain C<:> or C</>, start with C<$>, or be C<0>, since
+all of those are legal in a target name.
+
+L</get_vault_from_descriptor> uses it to decide how to resolve its input,
+and C<genesis new> uses it to decide whether to record the resolved
+target's descriptor in place of what was typed.
+
+B<Parameters:>
+
+=over 4
+
+=item $input
+
+The text given for a vault, such as the value of C<--vault>.
+
+=back
+
+B<Returns:> The trimmed name, or C<undef> when C<$input> is a descriptor or
+blank.  It never consults F<~/.saferc>, so a name it returns may still match
+no target.
+
+B<Examples:>
+
+  Service::Vault->bare_target_name('  prod-vault ');   # 'prod-vault'
+  Service::Vault->bare_target_name('lab:ops');          # 'lab:ops'
+  Service::Vault->bare_target_name('https://vault.example.com');  # undef
+  Service::Vault->bare_target_name('ops as ops');       # undef
+
 =head2 get_vault_from_descriptor
 
   my $vault = Service::Vault->get_vault_from_descriptor($descriptor, $source);
+  my $vault = Service::Vault->get_vault_from_descriptor($input, $source, target_name => 1);
 
 Parses a vault descriptor string (as used in C<genesis.vault> or given to
 C<genesis new --vault>) and resolves it to a connected vault through
 L<Service::Vault::Remote/attach>.
+
+With C<target_name>, the input may instead be the name of a safe target,
+as decided by L</bare_target_name>; everything else is parsed as a
+descriptor.  The named target is used as found, connected and validated,
+without a second lookup through C<attach>.  The name has already picked
+exactly one target, and C<attach> would read a leading C<$> in the name as
+an environment variable.  The named target must be the only one at its URL,
+because Genesis hands a vault to safe, and to hooks, by URL, and safe will
+not choose between targets that share one.
+
+Only C<genesis new --vault> passes C<target_name>.  A target name lives in
+one operator's F<~/.saferc>, so an environment file, which is committed and
+read on other machines, keeps to descriptors.
 
 This is the only descriptor resolver.  C<Genesis::Env::vault> and the
 C<create> command both call it, so a descriptor that resolves in an
@@ -576,12 +627,26 @@ A vault descriptor string in the format accepted by C<parse_vault_descriptor>.
 Optional. A label identifying the source of the descriptor used in error
 messages. Defaults to C<'genesis.vault'>.
 
+=item target_name
+
+Optional. When true, a bare safe target name is accepted as described
+above.  Defaults to false, which accepts descriptors only.
+
 =back
 
 B<Returns:> The matching vault, connected and validated.  It never returns
 C<undef> for a descriptor whose target is missing; that case bails.
 
 B<Errors:>
+
+C<"Safe target '...' given by the ... was not found."> when a target name is
+accepted and no safe target has it.  The message says how to list targets
+and what a descriptor looks like, and, for a name that is also a clause
+keyword, that a descriptor needs a URL.
+
+C<"Safe target '...' shares its URL ... with ...">, naming the other
+targets, when a target name is accepted and another target has the same URL,
+whatever its namespace.
 
 Everything C<parse_vault_descriptor> raises for a malformed descriptor.
 
@@ -597,6 +662,11 @@ B<Examples:>
     'https://vault.example.com:8200 as prod-vault no-verify'
   );
   # Returns: the matching Service::Vault::Remote object
+
+  my $vault = Service::Vault->get_vault_from_descriptor(
+    'prod-vault', '--vault option', target_name => 1
+  );
+  # Returns: the vault of the safe target named prod-vault
 
 =head2 parse_vault_descriptor
 
@@ -1958,6 +2028,12 @@ Constructs a vault descriptor string from the vault's properties, in the
 format accepted by C<parse_vault_descriptor>. Includes the URL, namespace
 (if set), alias name, and the C<no-verify> and C<no-strongbox> flags if
 applicable.
+
+The alias is left out when the name would not read back as itself: a name
+containing whitespace would end the alias early, and C<attach> reads a
+leading C<$> as an environment variable.  The alias only breaks ties
+between targets at one URL, which Genesis does not support, so the
+descriptor without it still resolves to the same target.
 
 A strongbox clause is emitted only for a B<stated> setting, in either
 direction: C<strongbox> when enabled, C<no-strongbox> when disabled, and
