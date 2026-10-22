@@ -575,7 +575,7 @@ subtest 'get() splits combined path:key from single arg' => sub {
 subtest 'get_path_strict() reads the same tree get_path() does' => sub {
 	plan tests => 2;
 	my $v = make_vault();
-	my $export = '{"secret/x":{"__flattened__":true,"a.b":"c"},"secret/x/y":{"k":"v"}}';
+	my $export = '{"secret/x":{"__flattened__":"1","a.b":"c"},"secret/x/y":{"k":"v"}}';
 
 	no warnings 'redefine';
 	local *Service::Vault::query = sub { return ($export, 0, '') };

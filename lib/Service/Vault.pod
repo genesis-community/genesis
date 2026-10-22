@@ -936,9 +936,13 @@ B<Examples:>
 
 Reads all secrets under C<$path> and all subpaths, returning a nested hash
 structure. Uses C<safe export> to retrieve the entire tree in a single JSON
-call. Automatically unflattens paths stored with the C<__flattened__> marker.
+call, and reads every export version through L</normalize_export>.
+Automatically unflattens paths stored with the C<__flattened__> marker.
 
-Returns an empty hash reference C<{}> on error.
+Returns an empty hash reference C<{}> when the export fails or cannot be
+parsed. A value under the path that is not a string is not a failed read; it
+dies, as L</normalize_export> does, rather than read as an empty tree or as
+a converted string.
 
 B<Parameters:>
 
@@ -1007,6 +1011,11 @@ the path, a sealed vault, or an unreachable vault) and to say to run
 C<safe export> on the path and C<safe vault status>. The text here is the
 start of it.
 
+=item C<"Cannot use the safe export ...">
+
+Raised by L</normalize_export> when the export holds a value that is not a
+string, or is in a format it does not read.
+
 =back
 
 B<Examples:>
@@ -1020,6 +1029,137 @@ B<Examples:>
   # With the vault sealed or the token expired
   $vault->get_path_strict('secret/myapp');
   # Dies: Could not read secret/myapp from vault at https://...: <safe's error>
+
+=head2 normalize_export
+
+  my $export = Service::Vault::normalize_export($data);
+
+Reduces a decoded C<safe export> of any export version to the flat shape of
+version 1, a hash of full vault path to the key/value pairs stored there,
+with every value a string. Every reader of C<safe export> output goes
+through it, so none of them depends on which version C<safe> chose to write.
+It is a function, not a method.
+
+C<safe> writes version 1, a bare object of path to key/value pairs, when
+every secret has one version and every value is a string. It writes version
+2, an array holding one object with C<export_version> 2 and a C<data> object
+of paths, when some secret has more than one version. Each path there holds
+a C<versions> list, oldest first, and each version has a C<value> object and
+C<deleted> and C<destroyed> flags. Version 3 is the same shape with
+C<export_version> 3, written when some value is not a string, and its values
+keep the JSON type they were stored with.
+
+The last version of each path is its current one, and its C<value> is what
+is returned. When that version is deleted or destroyed, the path has nothing
+a read returns, so the path is left out, and an older version is not used in
+its place. A path with no versions is left out too, and so is a version 1
+path whose value is C<null>. A current version with no C<value> gives an
+empty hash.
+
+A value that is not a string makes it die rather than turn the value into
+one. That covers JSON objects, lists, numbers, booleans, and C<null>.
+Genesis reads every secret as a string, and the text Perl would make of a
+number or a boolean is not always the text C<safe> shows for it, so a
+converted value could differ from the secret without anything saying so. A
+string in version 3 is a JSON string, so a string that spells a number, such
+as C<"42">, is a string and is kept. An integer too large for Perl is
+decoded by C<JSON::PP> as its digits, so it reads as a string.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$data>
+
+The decoded export, as C<load_json> or C<read_json_from> returns it, of any
+export version. It is not modified.
+
+=back
+
+B<Returns:> A new hash reference of full vault path to a hash of key/value
+pairs, or C<undef> when C<$data> is C<undef>.
+
+B<Errors:>
+
+Every message starts with C<Cannot use the safe export>, which is what
+L</is_export_error> looks for.
+
+=over 4
+
+=item C<"Cannot use the safe export of #C{%s}: its #C{%s} key holds a typed value, a JSON %s, not a string. ...">
+
+Raised (via C<bail()>) when the current value of a key is not a string. The
+placeholders are the path, the key, and the JSON type, one of C<object>,
+C<list>, C<number>, C<boolean>, or C<null>.
+
+=item C<"Cannot use the safe export: it is export_version %s, and Genesis reads only versions 1, 2, and 3. ...">
+
+Raised when a versioned export has an C<export_version> other than 2 or 3,
+or none, which shows as C<(none)>.
+
+=item C<"Cannot use the safe export: it is not an object or an array, but a JSON %s.">
+
+Raised when the export is neither a version 1 object nor a versioned array.
+
+=item C<"Cannot use the safe export: a versioned export is an array holding one export object, but this one holds %d %s.">
+
+Raised when the array of a versioned export does not hold exactly one
+object.
+
+=item C<"Cannot use the safe export: its #C{data} is not an object of paths.">
+
+Raised when the C<data> of a versioned export is not an object.
+
+=item C<"Cannot use the safe export of #C{%s}: its versions are not a list.">
+
+Raised when a path of a versioned export has no C<versions> list.
+
+=item C<"Cannot use the safe export of #C{%s}: it is not an object of keys, but a JSON %s.">
+
+Raised when the value at a path is not an object of key/value pairs.
+
+=back
+
+B<Examples:>
+
+  my $export = Service::Vault::normalize_export(load_json(
+    '[{"export_version":3,"data":{"secret/myapp":{"versions":['.
+    '{"value":{"password":"old"}},{"value":{"password":"hunter2"}}]}}}]'
+  ));
+  # Returns: { 'secret/myapp' => { password => 'hunter2' } }
+
+  Service::Vault::normalize_export({'secret/myapp' => {port => 8443}});
+  # Dies: Cannot use the safe export of secret/myapp: its port key holds
+  #       a typed value, a JSON number, not a string. ...
+
+=head2 is_export_error
+
+  my $refused = Service::Vault::is_export_error($@);
+
+Tells whether an error came from L</normalize_export>, so that a caller that
+catches the errors of a read in an C<eval> can let this one through. A
+secret Genesis cannot read is a different answer from a read that failed,
+and treating it as one would hide a value that needs fixing. It is a
+function, not a method.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$err>
+
+The error to check, usually C<$@>. It may be C<undef> or empty.
+
+=back
+
+B<Returns:> True when C<$err> is an error raised by C<normalize_export>,
+and false otherwise.
+
+B<Examples:>
+
+  my $deploys = eval { $env->vault->get_path($path) };
+  die $@ if Service::Vault::is_export_error($@);
+  # A failed read still falls through; an unreadable value does not.
 
 =head2 set
 
@@ -2591,15 +2731,17 @@ and those are not read back.
   my $tree = $vault->_unpack_path_export($path, $data);
 
 Nests the paths of a C<safe export> under the path the export was made for,
-for L</get_path> and L</get_path_strict>. The export is a flat hash of full
-vault paths to the key/value pairs stored at each. The pairs stored at
+for L</get_path> and L</get_path_strict>. The export is first reduced to a
+flat hash of full vault paths to the key/value pairs stored at each by
+L</normalize_export>, whatever its export version, and dies as that does on
+a value that is not a string. The pairs stored at
 C<$path> itself become the top level of the result, and the pairs at each
 subpath are placed under the keys named by the rest of its path. A path
 stored with the C<__flattened__> marker has the marker removed and is
 unflattened with C<Genesis::unflatten>.
 
-The hashes in C<$data> that carry the marker are modified, because the marker
-is deleted from them.
+C<$data> itself is not modified, since the marker is deleted from the copies
+C<normalize_export> makes.
 
 B<Parameters:>
 
@@ -2611,11 +2753,22 @@ The path the export was made for, without leading or trailing slashes.
 
 =item C<$data>
 
-The decoded export, a hash reference of full vault path to key/value hash.
+The decoded export, of any export version.
 
 =back
 
 B<Returns:> A nested hash reference, empty when C<$data> holds no paths.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Cannot use the safe export ...">
+
+Raised (via C<bail()>) by L</normalize_export> when the export holds a value
+that is not a string, or is in a format it does not read.
+
+=back
 
 B<Examples:>
 
@@ -2624,6 +2777,86 @@ B<Examples:>
     'secret/myapp/db' => {host => 'localhost'},
   });
   # Returns: { user => 'admin', db => { host => 'localhost' } }
+
+=head2 _export_pairs
+
+  my $pairs = _export_pairs($path, $value);
+
+Checks the key/value pairs exported for one path for L</normalize_export>,
+and returns a copy of them. It dies when C<$value> is not a hash, or when any
+of its values is not a string, as C<_export_value_type> judges it.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$path>
+
+The vault path the pairs were exported from, named in any error.
+
+=item C<$value>
+
+The decoded value exported for the path.
+
+=back
+
+B<Returns:> A new hash reference holding the same key/value pairs.
+
+B<Errors:>
+
+=over 4
+
+=item C<"Cannot use the safe export of #C{%s}: it is not an object of keys, but a JSON %s.">
+
+Raised (via C<bail()>) when C<$value> is not a hash reference.
+
+=item C<"Cannot use the safe export of #C{%s}: its #C{%s} key holds a typed value, a JSON %s, not a string. ...">
+
+Raised when a value is not a string. The first key in sorted order that
+holds one is named.
+
+=back
+
+B<Examples:>
+
+  my $pairs = _export_pairs('secret/myapp', {password => 'hunter2'});
+  # Returns: { password => 'hunter2' }
+
+  _export_pairs('secret/myapp', {enabled => JSON::PP::true});
+  # Dies: Cannot use the safe export of secret/myapp: its enabled key holds
+  #       a typed value, a JSON boolean, not a string. ...
+
+=head2 _export_value_type
+
+  my $type = _export_value_type($value);
+
+Names the JSON type of a decoded value that is not a string, for
+L</normalize_export> to refuse it. A hash is an C<object>, an array is a
+C<list>, a C<JSON::PP::Boolean> is a C<boolean>, and C<undef> is C<null>.
+A plain scalar is a C<number> when it has a numeric value and no string
+value, which is how C<JSON::PP> decodes a JSON number and how it tells one
+from a string when it encodes. The check is only sound on a value that has
+not been used as a string since it was decoded, since that gives it a
+string value.
+
+B<Parameters:>
+
+=over 4
+
+=item C<$value>
+
+A value from a decoded export.
+
+=back
+
+B<Returns:> The JSON type as a string, or C<undef> when the value is a
+string.
+
+B<Examples:>
+
+  _export_value_type(load_json('{"n":42}')->{n});   # Returns: 'number'
+  _export_value_type(load_json('{"n":"42"}')->{n}); # Returns: undef
+  _export_value_type([]);                           # Returns: 'list'
 
 =head2 _kv_curl
 

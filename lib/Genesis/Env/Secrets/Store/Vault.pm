@@ -4,6 +4,7 @@ use warnings;
 
 use Genesis;
 use Genesis::Term;
+use Service::Vault;
 
 use vars qw($AUTOLOAD);
 sub AUTOLOAD {
@@ -110,13 +111,13 @@ sub store_data {
 		%opts = (%opts, %{shift @_});
 	}
 	unless (exists $self->{__data}) {
-		my $data = read_json_from(
+		my $data = Service::Vault::normalize_export(scalar(read_json_from(
 			$self->service->query(
 				{stderr => '&1', redact_output => 1},
 				'export',
 				grep {$_} ($self->base, $self->root_ca_path)
 			)
-		);
+		)));
 		if (defined $data) {
 			$self->{__data} = $data;
 		} else {

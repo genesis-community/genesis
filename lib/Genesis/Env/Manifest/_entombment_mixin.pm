@@ -3,6 +3,7 @@
 use Genesis qw/info bail read_json_from lines/;
 use Genesis::Term qw/terminal_width wrap csprintf/;
 
+use Service::Vault;
 use Service::Vault::Local;
 use Service::Credhub;
 use Genesis::Env::Secrets::Entombment qw(
@@ -54,9 +55,9 @@ sub _entomb_secrets {
 			push(@{$secret_keys{$s}}, $k)
 		}
 		my %secret_values = %{
-			scalar(read_json_from(
+			Service::Vault::normalize_export(scalar(read_json_from(
 				$src_vault->query({redact_output => 1},"export", keys %secret_keys)
-			))
+			))) // {}
 		};
 		# BUG FIX for safe export on similar names
 		for (map {substr($_,1)} keys %secret_keys) {

@@ -45,6 +45,7 @@ unit-tests/service_vault-strongbox_intent.t  # tri-state strongbox read from ~/.
 unit-tests/service_vault-descriptor_lookup.t # descriptors resolve as genesis.vault does
 unit-tests/service_vault-unseal_strongbox.t  # unseal keeps safe's stderr, flags partial unseal
 unit-tests/service_vault-unseal_nodes.t     # per-node Raft unseal and leader wait, keys kept out of traces
+unit-tests/service_vault-export_formats.t   # every safe export version read as v1; typed values refused
 unit-tests/service_vault_remote-core.t   # Service::Vault::Remote with mocks
 unit-tests/service_vault_remote-strongbox_attach.t  # strongbox never gates resolution
 unit-tests/service_vault_remote-create_strongbox.t  # create can enable strongbox, not just disable

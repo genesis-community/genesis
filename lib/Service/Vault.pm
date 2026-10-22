@@ -8,6 +8,7 @@ use Genesis::Term qw/csprintf/;
 
 use Genesis::UI;
 use JSON::PP qw/decode_json encode_json/;
+use B ();
 use List::Util qw/min max/;
 use POSIX ();
 use Time::HiRes qw/gettimeofday/;
@@ -512,6 +513,7 @@ sub get_path_strict {
 # _unpack_path_export - nest the paths in a safe export under the path it was made for {{{
 sub _unpack_path_export {
 	my ($self, $path, $data) = @_;
+	$data = normalize_export($data) // {};
 	my $results = {};
 	for my $subpath (sort keys %$data) {
 		if ($subpath eq $path) {
@@ -529,6 +531,117 @@ sub _unpack_path_export {
 	}
 	return $results;
 }
+# }}}
+# normalize_export - reduce a decoded safe export of any version to {path => {key => string}} {{{
+sub normalize_export {
+	my ($data) = @_;
+	return undef unless defined($data);
+
+	# v1 is the bare object of path to key/value pairs that safe writes when
+	# every secret has one version of strings.
+	my $export;
+	if (ref($data) eq 'HASH') {
+		$export = {};
+		for my $path (sort CORE::keys %$data) {
+			next unless defined($data->{$path}); # a path with no value has nothing to read
+			$export->{$path} = _export_pairs($path, $data->{$path});
+		}
+		return $export;
+	}
+
+	bail(
+		"Cannot use the safe export: it is not an object or an array, but a JSON %s.",
+		_export_value_type($data) // "string"
+	) unless ref($data) eq 'ARRAY';
+	bail(
+		"Cannot use the safe export: a versioned export is an array holding one ".
+		"export object, but this one holds %d %s.",
+		scalar(@$data), (@$data == 1 ? 'value that is not an object' : 'values')
+	) unless @$data == 1 && ref($data->[0]) eq 'HASH';
+
+	# v2 and v3 keep each secret's versions oldest first, so the last is the
+	# current one.  v3 differs only in that its values keep their JSON type.
+	my $version = $data->[0]{export_version};
+	bail(
+		"Cannot use the safe export: it is export_version %s, and Genesis reads ".
+		"only versions 1, 2, and 3.  If a newer #C{safe} wrote it, read it with ".
+		"a Genesis that knows that version.",
+		$version // '(none)'
+	) unless defined($version) && !ref($version) && $version =~ /^[23]$/;
+
+	my $secrets = $data->[0]{data} // {};
+	bail("Cannot use the safe export: its #C{data} is not an object of paths.")
+		unless ref($secrets) eq 'HASH';
+
+	$export = {};
+	for my $path (sort CORE::keys %$secrets) {
+		my $versions = ref($secrets->{$path}) eq 'HASH' ? $secrets->{$path}{versions} : undef;
+		bail(
+			"Cannot use the safe export of #C{%s}: its versions are not a list.",
+			$path
+		) unless ref($versions) eq 'ARRAY';
+
+		# A current version that is deleted or destroyed leaves the path with
+		# nothing a read returns, as safe leaves it after an import, so an older
+		# version is not read in its place.
+		my $current = $versions->[-1];
+		next unless ref($current) eq 'HASH' && !$current->{deleted} && !$current->{destroyed};
+		$export->{$path} = _export_pairs($path, $current->{value} // {});
+	}
+	return $export;
+}
+
+# }}}
+# is_export_error - true when an error came from normalize_export {{{
+sub is_export_error {
+	my ($err) = @_;
+	return defined($err) && $err =~ /Cannot\s+use\s+the\s+safe\s+export/;
+}
+
+# }}}
+# _export_pairs - check the key/value pairs of one exported path are all strings {{{
+sub _export_pairs {
+	my ($path, $pairs) = @_;
+	bail(
+		"Cannot use the safe export of #C{%s}: it is not an object of keys, but a JSON %s.",
+		$path, _export_value_type($pairs) // 'string'
+	) unless ref($pairs) eq 'HASH';
+
+	# Genesis reads every secret as a string, and the text a typed value would
+	# turn into here is not the text safe shows for it, so it is refused rather
+	# than converted.
+	for my $key (sort CORE::keys %$pairs) {
+		my $type = _export_value_type($pairs->{$key}) or next;
+		bail(
+			"Cannot use the safe export of #C{%s}: its #C{%s} key holds a typed ".
+			"value, a JSON %s, not a string.  Genesis reads every secret as a ".
+			"string and cannot use it; store it as a string, or move it out of ".
+			"the path Genesis reads.",
+			$path, $key, $type
+		);
+	}
+	return {%$pairs};
+}
+
+# }}}
+# _export_value_type - the JSON type of a decoded value that is not a string {{{
+sub _export_value_type {
+	my ($value) = @_;
+	return 'null' unless defined($value);
+	if (my $type = ref($value)) {
+		return 'object'  if $type eq 'HASH';
+		return 'list'    if $type eq 'ARRAY';
+		return 'boolean' if JSON::PP::is_bool($value);
+		return lc($type);
+	}
+
+	# JSON::PP decodes a number to a scalar with no string value, which is how
+	# it tells a number from a string when it encodes one too.
+	my $flags = B::svref_2object(\$value)->FLAGS;
+	return 'number' if ($flags & (B::SVp_IOK() | B::SVp_NOK())) && !($flags & B::SVp_POK());
+	return undef;
+}
+
 # }}}
 # set - write a secret to the vault (prompts for value if not given) {{{
 sub set {
