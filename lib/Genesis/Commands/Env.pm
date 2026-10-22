@@ -35,22 +35,25 @@ sub create {
 	my $has_vault_opt = defined($vault_opt) && $vault_opt ne '';
 	my $vault_desc = $has_vault_opt ? $vault_opt : $top->get_ancestral_vault($name);
 	if (defined($vault_desc) && $vault_desc ne '') {
+		my $vault;
 		if ( $vault_desc eq "?") {
-			$top->set_vault(interactive => 1);
+			# Picked for this command only; whether the pick is also recorded
+			# for the repository is _use_vault_for_new's call, as for any other.
+			$top->set_vault(interactive => 1, session_only => 1);
+			$vault = $top->vault;
 		} elsif ($has_vault_opt) {
 			# Only --vault takes a target name; an ancestor's genesis.vault is
 			# committed to the repository, so it must stay a portable descriptor.
-			my $vault = Service::Vault->get_vault_from_descriptor($vault_desc, '--vault option', target_name => 1);
-			$top->set_vault(vault => $vault);
-			# The new environment records a descriptor.  A name only means
-			# something in this ~/.saferc, so it is recorded as the target it
-			# resolved to rather than read again downstream.
-			get_options->{vault} = $vault->build_descriptor()
-				if defined(Service::Vault->bare_target_name($vault_desc));
+			$vault = Service::Vault->get_vault_from_descriptor($vault_desc, '--vault option', target_name => 1);
 		} else {
-			$top->set_vault(vault => Service::Vault->get_vault_from_descriptor($vault_desc));
+			$vault = Service::Vault->get_vault_from_descriptor($vault_desc);
 		}
-		$vault_desc = $top->vault->build_descriptor()
+		_use_vault_for_new($top, $vault);
+		# The new environment records a descriptor.  A name, or the ? that
+		# asked for a pick, only means something here, so it is recorded as the
+		# target it resolved to rather than read again downstream.
+		get_options->{vault} = $vault->build_descriptor()
+			if $has_vault_opt && defined(Service::Vault->bare_target_name($vault_desc));
 	}
 
 	# determine the kit to use (dev or compiled)
@@ -309,6 +312,41 @@ sub create {
 	}
 }
 
+# _use_vault_for_new - use a vault for new, recording it only if none is {{{
+#
+# The repository's secrets provider is shared by every environment in it,
+# so a vault picked for one new environment is recorded in .genesis/config
+# only when the repository has none.  Otherwise it is used for this command
+# alone, and the operator is told if the recorded provider differs.
+sub _use_vault_for_new {
+	my ($top, $vault) = @_;
+
+	unless ($top->has_vault) {
+		$top->set_vault(vault => $vault);
+		return;
+	}
+
+	$top->set_vault(vault => $vault, session_only => 1);
+	my $recorded = $top->config->get('secrets_provider');
+	my $where = sub {
+		my ($url, $namespace) = @_;
+		($url = $url // '') =~ s{/+$}{};
+		($namespace = $namespace // '') =~ s{^/+|/+$}{}g;
+		return $namespace eq '' ? $url : "$url/$namespace";
+	};
+	my $recorded_at = $where->($recorded->{url}, $recorded->{namespace});
+	my $vault_at    = $where->($vault->url, $vault->namespace);
+	return if $recorded_at eq $vault_at;
+
+	info(
+		"\n#Y{Note:} #C{.genesis/config} was left alone, so the repository's ".
+		"secrets provider is still #M{%s} (#C{%s}).  This command uses #M{%s} (#C{%s}).",
+		$recorded_at, $recorded->{alias} // 'no alias', $vault_at, $vault->name
+	);
+	return;
+}
+
+# }}}
 sub edit {
 	option_defaults(
 		editor => $ENV{EDITOR} || 'vim',

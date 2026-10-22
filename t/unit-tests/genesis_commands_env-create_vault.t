@@ -1,9 +1,11 @@
 #!/usr/bin/env perl
 # How `genesis new` picks the vault for a new environment, and what it
-# records in .genesis/config.  create() is run for real, with a stub kit,
-# through Genesis::Env::create's handling of the vault, and stopped where
-# that first asks the environment for its kit, so the vault the new
-# environment file would record can be checked too.
+# records in .genesis/config.  The repository's secrets provider is shared
+# by every environment in it, so a vault chosen for one new environment is
+# recorded there only when the repository has none.  create() is run for
+# real, with a stub kit, through Genesis::Env::create's handling of the
+# vault, and stopped where that first asks the environment for its kit, so
+# the vault the new environment file would record can be checked too.
 use strict;
 use warnings;
 
@@ -76,6 +78,11 @@ sub create_in {
 	local *Service::Vault::Local::valid_local_vault = sub {0};
 	local *Service::Vault::Remote::connect_and_validate = sub {$_[0]};
 	local *Genesis::Top::get_ancestral_vault = sub {$stub{ancestral}};
+	# The interactive picker, answering with the target named in $stub{pick}.
+	local *Service::Vault::Remote::target = sub {
+		my ($class, $target, %opts) = @_;
+		return (Service::Vault->find(name => $stub{pick}))[0];
+	};
 	local *Genesis::Top::local_kit_version = sub {$top = $_[0]; $kit};
 	local *Genesis::Env::new = sub {
 		my ($class, %opts) = @_;
@@ -188,6 +195,138 @@ subtest 'a name whose URL another target shares stops before anything is written
 	like($err.$out, qr/shares its URL https:\/\/vault\.example\.com with alpha/, 'says why');
 	ok(!defined(provider($repo)), 'records nothing for the repository');
 	ok(!defined($recorded), 'or for the environment');
+};
+
+sub config_text {
+	my ($repo) = @_;
+	open my $fh, '<', "$repo/.genesis/config" or die "cannot read config: $!";
+	local $/;
+	return <$fh>;
+}
+
+my %OLD = (url => 'https://old.example.com', insecure => 'true',
+           namespace => '""', alias => 'old-target');
+
+subtest 'a different vault leaves the recorded provider alone' => sub {
+	plan tests => 5;
+
+	my $repo = repo(%OLD);
+	my $before = config_text($repo);
+	my ($err, $out, $vault) = create_in($repo, {vault => 'ops'},
+		[target(), target(name => 'old-target', url => 'https://old.example.com', verify => JSON::PP::false)]);
+	like($err, qr/^\Q$STOP\E/, 'reaches the environment parameters');
+	is($vault && $vault->name, 'ops', 'uses the given vault for this command');
+	is(config_text($repo), $before, '.genesis/config is untouched');
+	like($out, qr/left .*secrets provider.*https:\/\/old\.example\.com \(old-target\)/s,
+		'says the repository setting was left, and where it still points');
+	like($out, qr/https:\/\/vault\.example\.com \(ops\)/,
+		'and which vault this command uses');
+};
+
+subtest 'a descriptor for a different vault is handled the same way' => sub {
+	plan tests => 3;
+
+	my $repo = repo(%OLD);
+	my $before = config_text($repo);
+	my ($err, $out, $vault) = create_in($repo, {vault => 'https://vault.example.com as ops'},
+		[target(), target(name => 'old-target', url => 'https://old.example.com', verify => JSON::PP::false)]);
+	is($vault && $vault->name, 'ops', 'uses the given vault for this command');
+	is(config_text($repo), $before, '.genesis/config is untouched');
+	like($out, qr/left .*secrets provider/s, 'says the repository setting was left');
+};
+
+subtest 'the vault already recorded is used without rewriting it' => sub {
+	plan tests => 4;
+
+	# Same URL and namespace under another alias is still the same vault.
+	my $repo = repo(url => 'https://vault.example.com', insecure => 'false',
+	                namespace => '""', alias => 'ops-old-name');
+	my $before = config_text($repo);
+	my ($err, $out, $vault) = create_in($repo, {vault => 'ops'}, [target()]);
+	like($err, qr/^\Q$STOP\E/, 'reaches the environment parameters');
+	is($vault && $vault->name, 'ops', 'uses the given vault');
+	is(config_text($repo), $before, '.genesis/config is untouched');
+	unlike($out, qr/secrets provider/, 'and says nothing about it');
+};
+
+subtest 'another namespace on the recorded URL is a different vault' => sub {
+	plan tests => 2;
+
+	my $repo = repo(url => 'https://vault.example.com', insecure => 'false',
+	                namespace => 'team1', alias => 'ops-team1');
+	my $before = config_text($repo);
+	# A descriptor, since a name is refused when another target shares its URL.
+	my ($err, $out, $vault) = create_in($repo, {vault => 'https://vault.example.com as ops'},
+		[target(), target(name => 'ops-team1', namespace => 'team1')]);
+	is(config_text($repo), $before, '.genesis/config is untouched');
+	like($out, qr/left .*secrets provider/s, 'says the repository setting was left');
+};
+
+subtest "an ancestor's vault does not repoint the repository either" => sub {
+	plan tests => 3;
+
+	my $repo = repo(%OLD);
+	my $before = config_text($repo);
+	my ($err, $out, $vault) = create_in($repo, {},
+		[target(), target(name => 'old-target', url => 'https://old.example.com', verify => JSON::PP::false)],
+		ancestral => 'https://vault.example.com as ops');
+	is($vault && $vault->name, 'ops', "uses the ancestor's vault");
+	is(config_text($repo), $before, '.genesis/config is untouched');
+	like($out, qr/left .*secrets provider/s, 'says the repository setting was left');
+};
+
+subtest "an ancestor's vault is recorded when the repository has none" => sub {
+	plan tests => 1;
+
+	my $repo = repo();
+	create_in($repo, {}, [target()], ancestral => 'https://vault.example.com as ops');
+	is((provider($repo) // {})->{alias}, 'ops', 'records it');
+};
+
+subtest 'an interactive pick of a different vault leaves the provider alone' => sub {
+	plan tests => 5;
+
+	my $repo = repo(%OLD);
+	my $before = config_text($repo);
+	my ($err, $out, $vault, $recorded) = create_in($repo, {vault => '?'},
+		[target(), target(name => 'old-target', url => 'https://old.example.com', verify => JSON::PP::false)],
+		pick => 'ops');
+	like($err, qr/^\Q$STOP\E/, 'reaches the environment parameters');
+	is($vault && $vault->name, 'ops', 'uses the picked vault for this command');
+	is(config_text($repo), $before, '.genesis/config is untouched');
+	like($out, qr/left .*secrets provider.*https:\/\/old\.example\.com \(old-target\)/s,
+		'says the repository setting was left, and where it still points');
+	is($recorded, 'https://vault.example.com as ops',
+		'the new environment records the picked vault, not a literal ?');
+};
+
+subtest 'an interactive pick is recorded when the repository has none' => sub {
+	plan tests => 3;
+
+	my $repo = repo();
+	my ($err, $out, $vault, $recorded) = create_in($repo, {vault => '?'}, [target()], pick => 'ops');
+	like($err, qr/^\Q$STOP\E/, 'reaches the environment parameters');
+	is((provider($repo) // {})->{alias}, 'ops', 'records it for the repository');
+	is($recorded, 'https://vault.example.com as ops', 'and for the new environment');
+};
+
+subtest 'an interactive pick of a name with a space records a descriptor that reads back' => sub {
+	plan tests => 3;
+
+	my ($err, $out, $vault, $recorded) = create_in(repo(), {vault => '?'},
+		[target(name => 'ops west')], pick => 'ops west');
+	like($err, qr/^\Q$STOP\E/, 'reaches the environment parameters');
+	is($recorded, 'https://vault.example.com', 'records the URL without the alias');
+	my $back = eval {
+		local *Service::Vault::read_json_from = sub {[target(name => 'ops west')]};
+		local *Service::Vault::run = sub {('', 0, '')};
+		local *Service::Vault::Remote::connect_and_validate = sub {$_[0]};
+		local $ENV{GENESIS_TRACE};
+		Service::Vault->clear_all;
+		Service::Vault->get_vault_from_descriptor($recorded);
+	};
+	is($back && $back->name, 'ops west', 'which resolves back to the picked target')
+		or diag $@;
 };
 
 done_testing;

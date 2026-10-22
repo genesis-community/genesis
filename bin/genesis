@@ -272,7 +272,8 @@ define_command("create", {
 			"The name of a `safe' target (a Vault) to store newly generated ".
 			"credentials in, or a vault descriptor such as ".
 			"`https://<host>[:<port>] as <alias>'.  Overrides the vault ".
-			"specified in the deployment repository for the environment.",
+			"specified in the deployment repository for the environment.  ".
+			"It becomes the repository's vault only if none is set yet.",
 
 		"force|f" =>
 			"Create a new environment file even if it already exists.",

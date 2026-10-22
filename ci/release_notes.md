@@ -295,6 +295,10 @@
 
   A bare name such as `--vault prod-vault` died with "Unknown clause", because only vault descriptors were understood. A single word with no URL scheme is now looked up as a safe target name, even when it contains `:` or `/` or matches a descriptor keyword such as `verify`, and an unknown name is reported by name along with how to list the targets. The new environment's `genesis.vault` records the descriptor of the target the name resolved to, leaving out an alias that would not read back as that name, such as one starting with `$` or containing a space. A name whose URL another safe target shares is refused with both target names, because Genesis hands the vault to safe by URL and safe cannot choose between them. When a descriptor holds characters YAML would misread, such as an alias of `#ops` or `ops:`, the env file now writes it quoted, so the environment reads it back intact. Anything else is still parsed as a descriptor and recorded as given, exactly as before. An ancestor's `genesis.vault` still has to be a descriptor, because a target name only means something in one operator's `~/.saferc`.
 
+* `genesis new --vault` no longer repoints the whole repository.
+
+  The vault given to `genesis new` was always written to `.genesis/config` as the repository's secrets provider, which every environment without its own `genesis.vault` relies on, so creating one environment on another vault silently moved all of those. The vault is now recorded only when the repository has no secrets provider yet. When one is recorded, the given vault is used for that command alone, and if it differs, a note says that `.genesis/config` was left alone and where it still points. A vault picked interactively with `--vault ?` or inherited from an ancestor's `genesis.vault` is handled the same way, and a picked vault is now recorded in the new environment as its descriptor, where the literal `?` used to fail the command.
+
 * Fix bug where default config type was lost when fetching configs from BOSH
   director, resulting in bad messages and error reports.
 
