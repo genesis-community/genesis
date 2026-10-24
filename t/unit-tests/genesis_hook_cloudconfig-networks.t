@@ -2804,6 +2804,51 @@ subtest 'lab claims (mgmt) - records outside the subnet-reserved range keep a cl
 		'and the record at .221 is in no claim on ocfp-2');
 };
 
+# ---------------------------------------------------------------------------
+# network_definition must not touch the caller's $_.  Kits call it from inside
+# map/for over constant lists, where $_ is a read-only alias.
+# ---------------------------------------------------------------------------
+subtest 'network_definition - leaves the caller\'s $_ alone' => sub {
+	plan tests => 6;
+
+	my $build = sub {
+		my $hook = Genesis::Hook::CloudConfig::Bosh->init(env => make_deploy_env());
+		my $net;
+		stderr_from { $net = $hook->network_definition('bosh',
+			strategy => 'ocfp',
+			dynamic_subnets => {
+				allocation => { size => 0, statics => 0 },
+				cloud_properties_for_iaas => {
+					openstack => {
+						'net_id'          => $hook->network_reference('id'),
+						'security_groups' => ['default'],
+					},
+				},
+			},
+		) };
+		return $net;
+	};
+
+	my $plain = $build->();
+	ok(scalar @{$plain->{subnets}}, 'baseline network has subnets from own reserved-ips');
+
+	my @mapped;
+	lives_ok { @mapped = map { $build->() } qw(x) }
+		'network_definition survives a read-only $_ (map over constants)';
+	cmp_deeply($mapped[0]{subnets}, $plain->{subnets}, "subnets match the call made without the alias");
+
+	lives_ok { for (qw(x)) { $build->() } }
+		'network_definition survives a read-only $_ (for over constants)';
+
+	my $mine = 'caller value';
+	for ($mine) { $build->() }
+	is($mine, 'caller value', 'caller\'s writable $_ keeps its value');
+
+	local $_ = 'outer';
+	$build->();
+	is($_, 'outer', 'global $_ is untouched');
+};
+
 done_testing;
 
 

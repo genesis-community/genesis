@@ -1600,9 +1600,9 @@ sub _repo_config_schema {
 sub _is_legacy_ci_file {
 	my ($path) = @_;
 	open my $fh, '<', $path or return 0;
-	while (<$fh>) {
-		return 1 if /^pipeline:/;
-		return 0 if /^kit:/ || /^genesis:/;
+	while (defined(my $line = <$fh>)) {
+		return 1 if $line =~ /^pipeline:/;
+		return 0 if $line =~ /^kit:/ || $line =~ /^genesis:/;
 	}
 	close $fh;
 	return 0;

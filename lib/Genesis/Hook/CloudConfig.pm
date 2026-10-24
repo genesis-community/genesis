@@ -588,9 +588,11 @@ sub _build_ocfp_network_model_dynamic_subnets {
 		# the static list, or into the dynamic range if <target>_static is 0
 		my $reserved_ips = IPv4->new($own_records);
 
-		while (<$reserved_ips>) {
-			$reserved_static ? $static_range += $_ : $allocated_range += $_;
-			$reserved     -= $_;
+		# Lexical loop variable: a bare while(<>) would assign to the global $_,
+		# which is read-only when a kit calls us from map/for over constants.
+		while (defined(my $ip = <$reserved_ips>)) {
+			$reserved_static ? $static_range += $ip : $allocated_range += $ip;
+			$reserved     -= $ip;
 		}
 
 		my $fields = {

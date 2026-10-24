@@ -1099,4 +1099,43 @@ EOF
 		"repo_vault() returns a vault object");
 };
 
+subtest '_is_legacy_ci_file leaves the caller\'s $_ alone' => sub {
+	my $dir = workdir();
+	mkfile_or_fail("$dir/pipeline.yml", "---\npipeline:\n  name: x\n");
+	mkfile_or_fail("$dir/env.yml", "---\nkit:\n  name: x\n");
+	my $is = \&Genesis::Top::_is_legacy_ci_file;
+
+	for my $case ([pipeline => 1], [env => 0]) {
+		my ($name, $want) = @$case;
+		my $file = "$dir/" . ($name eq 'pipeline' ? 'pipeline.yml' : 'env.yml');
+		is($is->($file), $want, "$name file detected without an alias");
+		my @r;
+		eval { @r = map { $is->($file) } qw(x); 1 }
+			or fail("$name: died under a read-only \$_: $@");
+		is($r[0], $want, "$name file gives the same result inside map over constants");
+		eval { for (qw(x)) { $is->($file) } 1 }
+			or fail("$name: died under for over constants: $@");
+	}
+
+	my $mine = 'caller value';
+	for ($mine) { $is->("$dir/pipeline.yml") }
+	is($mine, 'caller value', "caller's writable \$_ keeps its value");
+};
+
+subtest 'config leaves the caller\'s $_ alone when ci.yml is checked' => sub {
+	my $fresh = sub {
+		my $dir = make_test_repo(workdir());
+		mkfile_or_fail("$dir/ci.yml", "---\npipeline:\n  name: x\n");
+		return Genesis::Top->new($dir, no_vault => 1);
+	};
+	my $plain = $fresh->();
+	my $want  = $plain->config->get('deployment_type');
+	my $top   = $fresh->();
+	my @got;
+	eval { @got = map { $top->config->get('deployment_type') } qw(x); 1 }
+		or fail("config died under a read-only \$_: $@");
+	is($got[0], $want, 'config inside map over constants matches the plain call');
+	is($top->has_legacy_ci_yml, $plain->has_legacy_ci_yml, 'legacy ci.yml flag matches');
+};
+
 done_testing;

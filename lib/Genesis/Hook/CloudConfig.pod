@@ -693,7 +693,8 @@ Not yet implemented; calls C<bug()> if invoked.
 =back
 
 After building the definition, records subnet IP allocations via
-C<update_network>.
+C<update_network>. The method leaves the caller's C<$_> untouched, so it is
+safe to call from inside C<map> or C<for> over a list of constants.
 
 B<Parameters:>
 

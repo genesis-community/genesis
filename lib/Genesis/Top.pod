@@ -1538,7 +1538,8 @@ C<pipeline:> key means yes, while C<kit:> or C<genesis:> mean this is an
 environment file that merely happens to be named C<ci.yml> and the answer is
 no. An unreadable file is treated as not legacy rather than as an error --
 the caller is deciding whether to show a migration message, not validating
-the repository.
+the repository. The function leaves the caller's C<$_> untouched, so it is
+safe to reach from inside C<map> or C<for> over a list of constants.
 
 B<Parameters:>
 

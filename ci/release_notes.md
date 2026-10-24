@@ -1,5 +1,7 @@
 # New Features
 
+* Fixed cloud-config hooks and repository config loading dying with "Modification of a read-only value attempted" (or clobbering the caller's `$_`) when `network_definition` or `config` was called from inside `map` or `for` over a constant list.
+
 * Per-AZ CPI extension point in cloud-config hooks.
 
   `Genesis::Hook::CloudConfig` now exposes `cpi_name_for_az($az_key,
